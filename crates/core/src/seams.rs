@@ -25,4 +25,10 @@ pub trait Transfers: Send + Sync {
     /// the finished file. Progress goes out as `transfer` events; a stall falls back to the
     /// next-best peer for the same song.
     async fn complete(&self, track: &TrackId, source: &SourceRef) -> Result<PathBuf>;
+
+    /// The source to `complete` when the listener picked none: the one the song streamed
+    /// from, else the best-ranked known one. `None` when no peer is known to share it.
+    async fn source_for(&self, _track: &TrackId) -> Result<Option<SourceRef>> {
+        Ok(None)
+    }
 }
