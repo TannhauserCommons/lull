@@ -1,44 +1,266 @@
-//! Soulseek through slskd: search (streamed, merged, ranked), transfers, progressive streaming
-//! from growing files, peer fallback and the size-capped stream cache. This crate is the only
-//! code that talks to slskd (docs/context/soulseek.md).
+//! Soulseek through slskd: search (merged, ranked), transfers with peer fallback, progressive
+//! streaming from growing files and the size-capped stream cache. This crate is the only code
+//! that talks to slskd (docs/context/soulseek.md).
 
+mod api;
+mod cache;
+mod fetch;
+mod files;
+mod layout;
+mod peers;
+mod range;
+mod rank;
+mod search;
+mod share;
+mod slskd;
+mod sources;
+mod stream;
+
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use axum::Router;
 use lull_core::db::Migrations;
 use lull_core::ids::TrackId;
-use lull_core::model::SourceRef;
+use lull_core::model::{SourceRef, Track};
 use lull_core::seams::{Library, Transfers};
 use lull_core::status::State;
-use lull_core::{Ctx, Error, Result};
+use lull_core::{Ctx, Error, Result, catalog};
+use serde_json::Value;
+
+use crate::cache::{Cache, Pin};
+use crate::fetch::Fetcher;
+use crate::layout::Layout;
+use crate::peers::Peers;
+use crate::search::Searches;
+use crate::slskd::Slskd;
+use crate::sources::Sources;
 
 pub const MIGRATIONS: Migrations = Migrations {
     owner: "soulseek",
-    steps: &[],
+    steps: &[r#"
+        -- Every file lull asked slskd for: the stream cache's index. Only these are ever evicted.
+        CREATE TABLE soulseek_files (
+            track_id    TEXT NOT NULL,
+            user        TEXT NOT NULL,
+            remote_path TEXT NOT NULL,
+            size        INTEGER NOT NULL,
+            local_path  TEXT NOT NULL,
+            complete    INTEGER NOT NULL DEFAULT 0,
+            used_at     INTEGER NOT NULL,          -- unix seconds, for least-recently-used eviction
+            PRIMARY KEY (user, remote_path)
+        );
+        CREATE INDEX soulseek_files_track ON soulseek_files(track_id);
+        -- Peers that stalled on us recently; ranking demotes them.
+        CREATE TABLE soulseek_peers (
+            user        TEXT PRIMARY KEY,
+            stalls      INTEGER NOT NULL,
+            stalled_at  INTEGER NOT NULL
+        );
+    "#],
 };
 
+/// How often the connection is checked while it's healthy, and while it isn't.
+const CHECK_OK: Duration = Duration::from_secs(15);
+const CHECK_DOWN: Duration = Duration::from_secs(5);
+/// How often the cache is measured and idle finished songs are let go.
+const HOUSEKEEPING: Duration = Duration::from_secs(60);
+
 pub struct Service {
-    #[allow(dead_code)] // SKELETON: used once the crate is built out
     ctx: Ctx,
+    slskd: Slskd,
+    online: AtomicBool,
+    searches: Searches,
+    sources: Sources,
+    fetcher: Fetcher,
+    cache: Cache,
+    /// Songs being saved: pinned in the cache until their save ends.
+    saving: Mutex<HashMap<TrackId, Pin>>,
 }
 
 pub async fn start(ctx: &Ctx) -> Result<Arc<Service>> {
-    // SKELETON: connect to slskd, keep status current, start cache eviction.
+    let config = &ctx.config.soulseek;
+    let slskd = Slskd::new(ctx.http.clone(), &config.slskd_url, config.slskd_api_key.clone())?;
+    let peers = Peers::load(ctx.db.clone()).await?;
+    let sources = Sources::new(peers.clone(), config.preferred_formats.clone());
+    let cache = Cache::new(
+        ctx.db.clone(),
+        ctx.status.clone(),
+        config.transfers_dir.clone(),
+        ctx.config.cache.max_bytes,
+    );
+    let searches = Searches::new(slskd.clone(), ctx.bus.clone(), ctx.db.clone(), sources.clone());
+    let layout = Arc::new(RwLock::new(Layout::new(&config.transfers_dir, None)));
+    let fetcher = Fetcher::new(
+        slskd.clone(),
+        layout.clone(),
+        cache.clone(),
+        peers,
+        sources.clone(),
+        searches.clone(),
+        ctx.bus.clone(),
+    );
+    let svc = Arc::new(Service {
+        ctx: ctx.clone(),
+        slskd: slskd.clone(),
+        online: AtomicBool::new(false),
+        searches,
+        sources,
+        fetcher,
+        cache,
+        saving: Mutex::default(),
+    });
     ctx.status
-        .set("soulseek", State::Down, "not built yet", serde_json::Value::Null);
-    Ok(Arc::new(Service { ctx: ctx.clone() }))
+        .set("soulseek", State::Down, "Connecting to slskd", Value::Null);
+    svc.cache.report().await?;
+    tokio::spawn(watch_connection(svc.clone(), layout));
+    tokio::spawn(housekeeping(svc.clone()));
+    tokio::spawn(release_saves(svc.clone()));
+    if config.share == lull_core::config::Share::Library {
+        tokio::spawn(share::rescan_after_saves(slskd, ctx.bus.clone()));
+    }
+    Ok(svc)
 }
 
 /// `/api/search`, `/api/tracks/{id}/sources`, `/api/stream/{id}`, `/api/transfers/...`.
-pub fn router(_svc: Arc<Service>, _library: Arc<dyn Library>) -> Router {
-    Router::new() // SKELETON
+pub fn router(svc: Arc<Service>, library: Arc<dyn Library>) -> Router {
+    svc.searches.set_library(library);
+    api::router(svc)
+}
+
+impl Service {
+    async fn track(&self, id: &TrackId) -> Result<Track> {
+        let lookup = id.clone();
+        self.ctx
+            .db
+            .call(move |c| catalog::track(c, &lookup))
+            .await?
+            .ok_or_else(|| Error::NotFound(format!("track {id} is unknown")))
+    }
 }
 
 #[async_trait]
 impl Transfers for Service {
-    async fn complete(&self, _track: &TrackId, _source: &SourceRef) -> Result<PathBuf> {
-        Err(Error::unavailable("soulseek", "transfers are not built yet")) // SKELETON
+    async fn complete(&self, track: &TrackId, source: &SourceRef) -> Result<PathBuf> {
+        let t = self.track(track).await?;
+        let path = self.fetcher.complete(t, source.clone()).await?;
+        if let Ok(mut saving) = self.saving.lock() {
+            saving.insert(track.clone(), self.cache.pin(track));
+        }
+        Ok(path)
     }
+
+    async fn source_for(&self, track: &TrackId) -> Result<Option<SourceRef>> {
+        if let Some(s) = self.fetcher.current_source(track) {
+            return Ok(Some(s));
+        }
+        if let Some(e) = self.cache.finished(track, None).await? {
+            return Ok(Some(e.source));
+        }
+        Ok(self
+            .sources
+            .ranked(track)
+            .into_iter()
+            .next()
+            .map(|r| r.source.source_ref()))
+    }
+}
+
+/// Keeps the `soulseek` status current: connected, reconnecting or down. On each (re)connect
+/// it learns where slskd keeps its files and checks that lull can see them and that sharing
+/// matches `LULL_SHARE`.
+async fn watch_connection(svc: Arc<Service>, layout: Arc<RwLock<Layout>>) {
+    let config = &svc.ctx.config.soulseek;
+    let mut was_online = false;
+    loop {
+        let (state, detail) = match svc.slskd.server().await {
+            Ok(server) if server.is_logged_in => {
+                let mut problems = Vec::new();
+                if !was_online {
+                    match svc.slskd.options().await {
+                        Ok(options) => {
+                            let next = Layout::new(&config.transfers_dir, options.map(|o| o.directories));
+                            if let Ok(mut l) = layout.write() {
+                                *l = next;
+                            }
+                        }
+                        Err(e) => tracing::warn!(error = %e, "reading slskd's folders"),
+                    }
+                }
+                if let Some(missing) = layout
+                    .read()
+                    .ok()
+                    .and_then(|l| l.missing().map(|p| p.display().to_string()))
+                {
+                    problems.push(format!(
+                        "lull cannot see slskd's files at {missing}; check LULL_TRANSFERS_DIR"
+                    ));
+                }
+                problems.extend(share::mismatch(&svc.slskd, config.share).await);
+                let who = server.username.map(|u| format!(" as {u}")).unwrap_or_default();
+                match problems.is_empty() {
+                    true => (State::Ok, format!("Connected{who}")),
+                    false => (State::Warn, format!("Connected{who}, but {}", problems.join("; "))),
+                }
+            }
+            Ok(server) if server.is_transitioning => (State::Warn, "Reconnecting to Soulseek".to_owned()),
+            Ok(_) => (
+                State::Down,
+                "slskd is not connected to Soulseek; it retries by itself, so if this lasts check its Soulseek login"
+                    .to_owned(),
+            ),
+            Err(e) => (State::Down, e.to_string()),
+        };
+        let online = state != State::Down && detail.starts_with("Connected");
+        svc.online.store(online, Ordering::Relaxed);
+        was_online = online;
+        svc.ctx.status.set("soulseek", state, detail, Value::Null);
+        tokio::time::sleep(if online { CHECK_OK } else { CHECK_DOWN }).await;
+    }
+}
+
+async fn housekeeping(svc: Arc<Service>) {
+    loop {
+        tokio::time::sleep(HOUSEKEEPING).await;
+        svc.fetcher.sweep();
+        if let Err(e) = svc.cache.make_room(0).await {
+            tracing::warn!(error = %e, "stream cache housekeeping");
+        }
+    }
+}
+
+/// A save holds its song in the cache until the save ends, however it ends.
+async fn release_saves(svc: Arc<Service>) {
+    let mut events = svc.ctx.bus.subscribe();
+    loop {
+        match events.recv().await {
+            Ok(e) if e.topic == "save" && save_over(&e.data) => {
+                let Some(track) = e.data.get("trackId").and_then(Value::as_str) else {
+                    continue;
+                };
+                if let Ok(mut saving) = svc.saving.lock() {
+                    saving.remove(&TrackId(track.to_owned()));
+                }
+            }
+            Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+        }
+    }
+}
+
+/// The song is in the library: the last step is done, or only Jellyfin's rescan is pending.
+fn save_finished(save: &Value) -> bool {
+    match save.get("status").and_then(Value::as_str) {
+        Some("pending") => true,
+        Some("done") => save.get("step").and_then(Value::as_u64) == Some(5),
+        _ => false,
+    }
+}
+
+fn save_over(save: &Value) -> bool {
+    save_finished(save) || save.get("status").and_then(Value::as_str) == Some("failed")
 }
