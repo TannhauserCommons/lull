@@ -6,7 +6,7 @@
 
 | Table | Owner | What |
 |---|---|---|
-| `likes`, `follows`, `plays` | core (written only by collection) | Readable by every crate: discovery reads them for taste, lastfm reads `plays` by `playId` |
+| `likes`, `follows`, `plays` | core (written only by collection) | Readable by every crate: discovery reads them for taste |
 | `collection_plays` | collection | Per play: `recommended`, `ended_at` (null while playing), `scrobble` (latest status) |
 | `collection_saves` | collection | Songs saved through lull, from library's `save` events (step 5 `done`, or `pending` = written, rescan failed) |
 | `collection_playlists`, `collection_playlist_items` | collection | `pl-<seq>` ids from an AUTOINCREMENT column, so a deleted playlist's id is never reused. Items are keyed by position, so a song can appear twice |
@@ -14,10 +14,10 @@
 
 ## Plays and events
 
-- **Lifecycle.** The UI calls `POST /api/plays` when a song starts and `PATCH /api/plays/{id}` once when it stops. The row is written before the event goes out, because lastfm reads it.
+- **Lifecycle.** The UI calls `POST /api/plays` when a song starts and `PATCH /api/plays/{id}` once when it stops. The row is written before the event goes out, so a reader can find it; lastfm itself takes everything from the event payload.
 - **`play.ended` goes out exactly once.** A second `PATCH` is 409, because otherwise a play would scrobble twice. A play the UI never ends (tab killed without `keepalive`) stays open: it shows in history and stats with `playedS: 0` and is never scrobbled. lull doesn't guess how much was heard.
 - **`at` is always the start time**, in both events and history, since Last.fm's timestamp is the start.
-- **Scrobble status.** lastfm owns the scrobble rules. It publishes `scrobble { playId, status: pending|done|short }` (agreed with the Discovery session), and collection stores the latest status per play. `null` in history means lastfm never reported: not connected, or scrobbling off.
+- **Scrobble status.** lastfm owns the scrobble rules. It publishes `scrobble { playId, status: pending|done|short }` (api.md#events), and collection stores the latest status per play. `short` = Last.fm's rule failed (track of 30 s or less, or less than half and less than 4 min heard); a skip after the half still scrobbles. `null` in history means lastfm never reported: not connected, or scrobbling off.
 - **History and stats need the listener's timezone** (`?tz=`, minutes east of UTC). The server has no other way to know where a day ends.
 
 ## Playlists and M3U

@@ -159,7 +159,6 @@ struct DiscoverySources {
     listenbrainz: bool,
     musicbrainz: bool,
     lastfm: bool,
-    discogs: bool,
 }
 
 impl Default for DiscoverySources {
@@ -168,7 +167,6 @@ impl Default for DiscoverySources {
             listenbrainz: true,
             musicbrainz: true,
             lastfm: true,
-            discogs: true,
         }
     }
 }
@@ -354,7 +352,6 @@ fn config_entries(ctx: &Ctx) -> Vec<(&'static str, Vec<(String, Value)>)> {
                     "listenbrainzToken",
                     secret(config.discovery.listenbrainz_token.is_some()),
                 ),
-                e("discogsToken", secret(config.discovery.discogs_token.is_some())),
             ],
         ),
         (
