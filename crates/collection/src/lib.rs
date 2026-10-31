@@ -27,7 +27,8 @@ use tokio::sync::broadcast::error::RecvError;
 
 pub const MIGRATIONS: Migrations = Migrations {
     owner: "collection",
-    steps: &[r#"
+    steps: &[
+        r#"
         -- Per-play state core's plays table has no column for.
         CREATE TABLE collection_plays (
             play_id      INTEGER PRIMARY KEY,         -- plays.id
@@ -60,7 +61,12 @@ pub const MIGRATIONS: Migrations = Migrations {
             id    INTEGER PRIMARY KEY CHECK (id = 1),
             json  TEXT NOT NULL
         );
-    "#],
+    "#,
+        // `discovery.on.discogs` had no reader and was removed; stored settings must still parse.
+        r#"
+        UPDATE collection_settings SET json = json_remove(json, '$.discovery.on.discogs');
+    "#,
+    ],
 };
 
 pub struct Service {

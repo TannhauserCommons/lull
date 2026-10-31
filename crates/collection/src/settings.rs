@@ -394,3 +394,30 @@ fn merge(base: &mut Value, patch: Value) {
 fn to_value(prefs: &Prefs) -> Result<Value> {
     serde_json::to_value(prefs).map_err(|e| Error::internal(format!("settings json: {e}")))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lull_core::db::{Db, Migrations};
+
+    #[tokio::test]
+    async fn settings_stored_by_an_older_build_still_load() -> Result<()> {
+        let db = Db::memory()?;
+        let first = Migrations {
+            owner: crate::MIGRATIONS.owner,
+            steps: &crate::MIGRATIONS.steps[..1],
+        };
+        db.migrate(&first)?;
+        db.call(|conn| {
+            let old = r#"{"discovery":{"adventurousness":0.7,"on":{"discogs":false,"lastfm":false}}}"#;
+            conn.execute("INSERT INTO collection_settings (id, json) VALUES (1, ?1)", [old])?;
+            Ok(())
+        })
+        .await?;
+        db.migrate(&crate::MIGRATIONS)?;
+        let prefs = db.call(|conn| load(conn)).await?;
+        assert_eq!(prefs.discovery.adventurousness, 0.7);
+        assert!(!prefs.discovery.on.lastfm);
+        Ok(())
+    }
+}
