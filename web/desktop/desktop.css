@@ -73,12 +73,7 @@
   position: relative; z-index: 1; min-height: 100vh; min-height: 100dvh; display: grid; place-items: center;
   padding: 56px var(--gutter) 40px;
 }
-.dk-page--inline { min-height: 0; place-items: start; padding: var(--sp-6) 0 0; }   /* inside another page (prototype, board) */
 .dk-page__inner { width: 100%; max-width: 480px; display: grid; justify-items: center; gap: var(--sp-6); }
-.dk-page--inline .dk-page__inner { justify-items: stretch; }
-.dk-page--inline .dk-page__inner > .brand-mark { display: none; }
-.dk-proto { max-width: 720px; }
-.dk-proto__lede { margin-top: var(--sp-2); }
 .dk-page .wordmark { font-size: 2.25rem; }
 .dk-card { width: 100%; }                         /* used with .card */
 .dk-card__title { font: var(--t-h2); letter-spacing: var(--t-h2-track); }
@@ -144,7 +139,8 @@
 /* =====================================================================
    4. Mini player windows (frameless, transparent, always on top)
    ===================================================================== */
-html.dk-transparent, html.dk-transparent body { background: transparent; }
+/* outranks every design's wallpaper (:root[data-design="x"] body): the device silhouette is the window's shape */
+:root.dk-transparent[data-design], :root.dk-transparent[data-design] body { background: transparent; }
 :root.dk-transparent, :root.dk-transparent[data-theme] { color-scheme: normal; }   /* an iframe/webview whose scheme differs from its host is painted opaque */
 .dk-mini { display: grid; place-items: start center; padding: 8px 10px 0; }
 .dk-mini--opaque { background: var(--sky); min-height: 100vh; min-height: 100dvh; padding-top: 10px; }
@@ -163,6 +159,9 @@ html.dk-transparent, html.dk-transparent body { background: transparent; }
 .dk-mini__win .ic { width: 18px; height: 18px; }
 .dk-mini__now { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: var(--sp-3); align-items: center; }
 .dk-mini__now .cover { --cover-size: 84px; border-color: var(--mocha-edge); }
+/* real cover art (from the main window's Media Session) instead of a placeholder recipe and its sparkle */
+.dk-art::after { content: none; }
+.dk-art > img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .dk-mini .device__title { font-size: 1.0625rem; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .dk-mini .device__artist { font-size: .875rem; }
 .dk-mini .device__facts { margin-top: 6px; }

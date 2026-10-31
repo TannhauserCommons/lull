@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lull</title>
+<!-- The desktop wrapper's own page (desktop/src/pages.rs): connect, server unreachable, mini player.
+     Hash: #view=connect|offline|mini|strip&design=<name>&theme=day|night|system, plus the view's data. -->
+<link rel="icon" href="../assets/app-icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../base.css">
+<link rel="stylesheet" href="../components.css">
+<link rel="stylesheet" href="desktop.css">
+<link rel="stylesheet" id="design-css" href="../designs/lull/design.css">
+<script src="../designs/designs.js"></script>
+<script>
+  (function () {   /* design, theme and transparency before first paint */
+    var q = new URLSearchParams(location.hash.slice(1)), view = q.get('view');
+    Designs.boot();
+    Designs.applyTheme(q.get('theme') || 'system');
+    if ((view === 'mini' || view === 'strip') && !q.get('opaque')) document.documentElement.classList.add('dk-transparent');
+  })();
+</script>
+</head>
+<body>
+<div id="dk-root"></div>
+<script src="../icons.js"></script>
+<script src="desktop.js"></script>
+<script>LullDesktop.mountPage();</script>
+</body>
+</html>

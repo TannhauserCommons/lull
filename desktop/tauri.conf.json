@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "lull",
+  "mainBinaryName": "lull",
+  "identifier": "io.github.tannhausercommons.lull",
+  "build": {
+    "frontendDist": "dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "deb", "rpm", "appimage"],
+    "category": "Music",
+    "shortDescription": "Self-hosted music player",
+    "longDescription": "lull plays music from your own server: Soulseek while it downloads, your Jellyfin library, discovery and Last.fm. The desktop app adds a tray, a mini player and media keys.",
+    "icon": [
+      "../web/assets/icons/icon-16.png",
+      "../web/assets/icons/icon-24.png",
+      "../web/assets/icons/icon-32.png",
+      "../web/assets/icons/icon-48.png",
+      "../web/assets/icons/icon-64.png",
+      "../web/assets/icons/icon-128.png",
+      "../web/assets/icons/icon-256.png",
+      "../web/assets/icons/icon-512.png",
+      "../web/assets/icons/app.ico"
+    ],
+    "linux": {
+      "deb": {
+        "files": { "/usr/share/icons/hicolor/scalable/apps/lull.svg": "../web/assets/app-icon.svg" }
+      },
+      "rpm": {
+        "files": { "/usr/share/icons/hicolor/scalable/apps/lull.svg": "../web/assets/app-icon.svg" }
+      }
+    }
+  }
+}

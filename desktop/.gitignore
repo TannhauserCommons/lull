@@ -1,0 +1,6 @@
+# Build outputs: the staged web files build.rs copies, Tauri's generated schemas and command permissions.
+/dist
+/gen
+/permissions
+/target
+/node_modules
