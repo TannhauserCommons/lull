@@ -335,7 +335,7 @@ impl MusicBrainz {
     }
 
     async fn get<T: DeserializeOwned>(&self, path: &str, query: &[(&str, &str)]) -> Result<T> {
-        self.http.pace(SERVICE, http::MUSICBRAINZ_PACE).await;
+        self.http.pace(http::MUSICBRAINZ, http::MUSICBRAINZ_PACE).await;
         self.http
             .json(SERVICE, |c| {
                 c.get(format!("{WS}/{path}")).query(query).query(&[("fmt", "json")])

@@ -55,7 +55,7 @@ Topic → payload. Published on the bus and streamed to the browser. Owners add 
 | `like` | collection | `{ trackId, liked }`. Taste, other devices |
 | `follow` | collection | `{ kind: artist\|tag, id, followed }`. Discovery, other devices |
 | `settings` | collection | The stored settings (the editable part of `GET /api/settings`), at start-up and on every change. Collection starts after every other crate, so a receiver made in `start()` gets the start-up copy |
-| `scrobble` | lastfm | `{ playId, status: pending\|done\|short }`: queued, sent to Last.fm, or too short to count (History's scrobble column) |
+| `scrobble` | lastfm | `{ playId (string), status: pending\|done\|short }`: queued, sent to Last.fm, or short of Last.fm's rule (History's scrobble column). Nothing while Last.fm is off, disconnected or scrobbling is switched off |
 | `lastfm.history` | lastfm | `{ user, artists: [{ name, plays }] }`: the listener's Last.fm top artists, a taste signal for discovery; empty when off or disconnected |
 
 ## Soulseek (`crates/soulseek`)

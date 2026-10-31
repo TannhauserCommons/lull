@@ -103,7 +103,8 @@ pub fn router(svc: Arc<Service>) -> Router {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PlayEvent {
-    play_id: i64,
+    /// `plays.id` as a string.
+    play_id: String,
     at: i64,
     #[serde(default)]
     played_s: u32,
@@ -143,7 +144,13 @@ async fn listen(svc: Arc<Service>, mut rx: broadcast::Receiver<Event>) {
         };
         let outcome = match serde_json::from_value::<PlayEvent>(event.data) {
             Ok(p) if started => svc.now_playing(&p.play()).await,
-            Ok(p) => svc.ended(p.play_id, p.play(), p.played_s).await,
+            Ok(p) => match p.play_id.parse() {
+                Ok(id) => svc.ended(id, p.play(), p.played_s).await,
+                Err(_) => Err(lull_core::Error::internal(format!(
+                    "play.ended names play {:?}",
+                    p.play_id
+                ))),
+            },
             Err(e) => Err(lull_core::Error::internal(format!("{} payload: {e}", event.topic))),
         };
         if let Err(e) = outcome {
@@ -199,27 +206,30 @@ impl Service {
             .or_else(|f| self.on_failure(f))
     }
 
+    /// Queues an eligible play and reports the verdict; with scrobbling off, says nothing.
     async fn ended(&self, play_id: i64, play: Play, played_s: u32) -> Result<()> {
-        let Some(acc) = self.account().await? else {
+        if !self.account().await?.is_some_and(|a| a.scrobbling) {
             return Ok(());
+        }
+        let status = if rules::scrobbles(play.duration_s, played_s) {
+            self.ctx
+                .db
+                .call(move |c| queue::push(c, play_id, &play, lull_core::now()))
+                .await?;
+            self.wake.notify_one();
+            "pending"
+        } else {
+            "short"
         };
-        let eligible = rules::scrobbles(play.duration_s, played_s);
-        let status = match (eligible, acc.scrobbling) {
-            (false, _) => "short",
-            (true, false) => return Ok(()),
-            (true, true) => {
-                self.ctx
-                    .db
-                    .call(move |c| queue::push(c, play_id, &play, lull_core::now()))
-                    .await?;
-                self.wake.notify_one();
-                "pending"
-            }
-        };
+        self.publish_scrobble(play_id, status);
+        Ok(())
+    }
+
+    /// `scrobble { playId, status }` for History (collection keeps the latest per play).
+    fn publish_scrobble(&self, play_id: i64, status: &str) {
         self.ctx
             .bus
-            .publish("scrobble", json!({ "playId": play_id, "status": status }));
-        Ok(())
+            .publish("scrobble", json!({ "playId": play_id.to_string(), "status": status }));
     }
 
     /// Sends every due batch until the queue is empty, waiting or Last.fm fails.
@@ -242,10 +252,8 @@ impl Service {
             match client.scrobble(&acc.session_key, &plays).await {
                 Ok(()) => {
                     self.ctx.db.call(move |c| queue::remove(c, &ids)).await?;
-                    for id in batch.iter().map(|q| q.play_id) {
-                        self.ctx
-                            .bus
-                            .publish("scrobble", json!({ "playId": id, "status": "done" }));
+                    for q in &batch {
+                        self.publish_scrobble(q.play_id, "done");
                     }
                 }
                 Err(f) => {
