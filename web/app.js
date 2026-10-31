@@ -1052,7 +1052,7 @@
   /* ---------- the two decks ---------- */
   var decks = [makeDeck(), makeDeck()], cur = decks[0], nxt = decks[1];
   function makeDeck() {
-    var d = { el: new Audio(), entry: null, url: null, soulseek: false, fade: 1, norm: 1, gain: null, analyser: null, retried: false };
+    var d = { el: new Audio(), entry: null, url: null, soulseek: false, fade: 1, norm: 1, gain: null, analyser: null, attempt: 0 };
     d.el.preload = 'auto';
     ['playing', 'waiting', 'timeupdate', 'durationchange', 'progress', 'ended', 'error'].forEach(function (type) {
       d.el.addEventListener(type, function () { onMedia(d, type); });
@@ -1069,7 +1069,7 @@
     var t = M.track(entry.trackId), url = streamUrl(t, entry.source, forceSoulseek);
     if (d.entry === entry && d.url === url) return;
     release(d);
-    d.entry = entry; d.url = url; d.soulseek = url.indexOf('api/stream/') >= 0; d.retried = false; d.fade = 1; d.norm = 1; d.ms = 0; d.msN = 0;
+    d.entry = entry; d.url = url; d.soulseek = url.indexOf('api/stream/') >= 0; d.attempt = 0; d.fade = 1; d.norm = 1; d.ms = 0; d.msN = 0;
     d.el.src = url;
     d.el.load();
   }
@@ -1352,6 +1352,8 @@
     var q = ps.queue[ps.index], d = q && q.trackId === e.trackId ? cur : nxt.entry && nxt.entry.trackId === e.trackId ? nxt : null;
     if (!d || !d.soulseek) return;
     if (e.size && e.received >= e.size) d.complete = true;
+    /* a fallback to another peer ends the old response: reopen the stream and seek back to where we were */
+    if (e.attempt > d.attempt) { d.attempt = e.attempt; if (d === cur) reopen(d); }
     if (d === nxt) { d.entry.resolve = e.status === 'failed' ? 'none' : e.status === 'streaming' ? 'ready' : 'resolving'; changed('queue'); return; }
     var prevPeer = ps.peer && ps.peer.name, t = P.current();
     ps.received = e.size ? clamp(e.received / e.size, 0, 1) : ps.received;
@@ -1360,7 +1362,7 @@
     ps.failedPeers = (e.failedPeers || []).map(function (f) { return typeof f === 'string' ? { peer: f, at: null } : f; });
     if (e.peer) {
       ps.peer = { name: e.peer, rank: ps.failedPeers.length + 1, of: ps.peersFound || null, speed: e.speed ? e.speed / 1e6 : (ps.peer && ps.peer.speed) || 0,
-        format: (ps.source && ps.source.format) || t.format, sizeMB: e.size ? e.size / 1e6 : t.sizeMB };
+        format: e.format || (ps.source && ps.source.format) || t.format, sizeMB: e.size ? e.size / 1e6 : t.sizeMB };
     }
     var elPlaying = !cur.el.paused && cur.el.readyState >= 3;
     switch (e.status) {
@@ -1395,14 +1397,15 @@
     if (cur.soulseek && !ps.received && out.length) ps.received = out[out.length - 1][1];   // until the first event
   }
 
+  /* reattach a deck to its stream at the same time position (after a peer fallback cut the response) */
+  function reopen(d) {
+    var at = d.el.currentTime || ps.pos;
+    d.el.src = d.url; d.el.load(); d.el.currentTime = at;
+    if (ps.playing) start(d);
+  }
   /* the element failed: ask the server why (the body says it in a sentence), then show it */
   function onError(d) {
     var t = P.current();
-    if (d.soulseek && !d.retried && ps.status !== 'failed') {        // a peer fallback can break the byte stream once
-      d.retried = true; var at = ps.pos;
-      d.el.src = d.url; d.el.load(); d.el.currentTime = at; if (ps.playing) start(d);
-      return;
-    }
     fetch(d.url, { headers: { Range: 'bytes=0-0' }, credentials: 'same-origin' }).then(function (res) {
       if (res.ok) return 'This file can\'t be played in this browser';
       return res.json().then(function (b) { return b.message; }, function () { return 'The server answered ' + res.status; });
@@ -1427,6 +1430,9 @@
   }
   function onEnded() {
     if (ps.crossfade) { finishCrossfade(); return; }
+    /* a Soulseek response that ends early is a fallback in progress, not the song's end: the `stream` event
+       with the next attempt reopens it */
+    if (cur.soulseek && !cur.complete && P.duration() - ps.pos > 2) { ps.status = 'buffering'; changed('status'); return; }
     var i = nextIndex(true);
     if (i >= 0 && i !== ps.index && nxt.entry === ps.queue[i]) {        // gapless: the next song is already loaded
       endPlay('completed'); shuffleNext = null;

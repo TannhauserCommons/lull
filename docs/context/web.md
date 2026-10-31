@@ -90,7 +90,10 @@ The state shape and methods are DESIGN.md 7.8; the insides:
   `buffered` is `audio.buffered` cut to `received`. A seek may go anywhere for saved songs and only up to what has
   arrived for Soulseek ones (`P.seekable(f)`); beyond it snaps back, shakes and announces.
 - **Errors**: when the element fails, the engine fetches the same URL (`Range: bytes=0-0`) to read the server's
-  sentence and shows it (`failed` / `jellyfin-error`). One silent re-attach is allowed per song for a peer fallback.
+  sentence and shows it (`failed` / `jellyfin-error`).
+- **Peer fallback**: the server ends the old response and raises `attempt` in `stream` events; the engine reopens the
+  stream URL and seeks back to the same time. A Soulseek response that ends before the song does (and before the
+  transfer completed) is treated as that fallback in progress, never as the song's end.
 - **Gapless**: the next song is preloaded 30 s before the end (90 s when the current transfer is done) and handed
   over on `ended`. Off when Settings > Playback turns gapless off.
 - **Crossfade** (`playback.crossfade` seconds): the next deck starts under an equal-power fade.

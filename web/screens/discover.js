@@ -27,11 +27,8 @@
     if (f.lossless) return [f.bits ? f.bits + '-bit' : '', f.khz ? f.khz + ' kHz' : ''].filter(Boolean).join(', ');
     return f.kbps ? f.kbps + ' kbps' : '';
   }
-  /* one comparable number per format: any lossless file outranks any lossy one */
+  /* one comparable number per format (the picker's quality sort): any lossless file outranks any lossy one */
   function quality(label) { var f = fmt(label); return f.lossless ? 1e4 + (f.bits || 16) * (f.khz || 44.1) : f.kbps || 0; }
-  function isBetter(a, b) { return quality(a) > quality(b); }
-  /* worth flagging as "better than saved": lossy -> lossless, or a higher-resolution lossless file */
-  function isUpgrade(a, b) { return fmt(a).lossless && isBetter(a, b); }
   function mbps(v) { return (Math.round((v || 0) * 10) / 10) + ' MB/s'; }
   function plural(n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')); }
   function isPhone() { return window.innerWidth < 640; }
@@ -446,21 +443,26 @@
   /* =====================================================================
      2. Search: library hits at once (GET /api/search), Soulseek rows stream in as `search.results` events
      ===================================================================== */
-  /* one search session. peerSongs: trackId -> result row { trackId, sources, format }; folders: albumIds */
+  /* one search session. Soulseek runs only for 3+ characters (`slsk`); while it runs only the files / peers counters
+     move, and the last event (done) carries the rows: peerSongs: trackId -> { trackId, sources, best, dup },
+     albums: albumId -> { albumId, trackIds, folders } (in arrival order: peerOrder, albumOrder) */
   var S = { q: null, src: 'all', ll: false, showAll: false, seq: 0, loading: false, error: null, searchId: null,
-    library: [], peerSongs: {}, peerOrder: [], folders: [], peers: 0, done: true };
+    library: [], libraryError: null, slsk: false, files: 0, peers: 0, done: true, slskError: null,
+    peerSongs: {}, peerOrder: [], albums: {}, albumOrder: [] };
 
   function slskDown() { var s = App.store.get('services'); return !!(s && s.soulseek && s.soulseek.state === 'down'); }
-  function streaming() { return !slskDown() && S.src !== 'library' && !S.done; }
+  function streaming() { return S.slsk && !slskDown() && S.src !== 'library' && !S.done; }
   function search(q) {
     var mine = S.seq += 1;
-    Object.assign(S, { q: q, showAll: false, loading: !!q, error: null, searchId: null,
-      library: [], peerSongs: {}, peerOrder: [], folders: [], peers: 0, done: !q });
+    Object.assign(S, { q: q, showAll: false, loading: !!q, error: null, searchId: null, library: [], libraryError: null,
+      slsk: q.length >= 3, files: 0, peers: 0, done: !q, slskError: null, peerSongs: {}, peerOrder: [], albums: {}, albumOrder: [] });
     if (!q) return;
     M.api('/api/search?q=' + encodeURIComponent(q)).then(function (res) {
       if (mine !== S.seq) return;
-      S.loading = false; S.searchId = res.searchId; S.library = res.library || [];
-      if (slskDown()) finish();              // nothing will stream in
+      S.loading = false; S.searchId = res.searchId; S.library = res.library || []; S.libraryError = res.libraryError || null;
+      /* the same words within 10 minutes reuse the search: its latest event counts as if it had just arrived */
+      if (res.soulseek) { M.absorb(res.soulseek.entities); applyResults(res.soulseek); }
+      if (!S.slsk || slskDown()) finish();      // nothing will stream in
       paint('results', resultsBody());
     }, function (err) {
       if (mine !== S.seq) return;
@@ -468,21 +470,23 @@
       paint('results', resultsBody());
     });
   }
-  /* rows may repeat across events (a song gains peers): the latest row for an id wins */
   App.on('server:search.results', function (e) {
     if (!e || !S.searchId || e.searchId !== S.searchId) return;     // app.js has already absorbed e.entities
-    (e.results || []).forEach(function (row) {
-      if (row.kind === 'track') {
-        if (!S.peerSongs[row.trackId]) S.peerOrder.push(row.trackId);
-        S.peerSongs[row.trackId] = row;
-      } else if (row.kind === 'album') {
-        if (S.folders.indexOf(row.albumId) < 0) S.folders.push(row.albumId);
-      } else console.error('Unknown search result', row);
-    });
-    S.peers = e.peers || S.peers;
-    if (e.done) finish();
+    applyResults(e);
     paint('results', resultsBody());
   });
+  function applyResults(e) {
+    S.files = e.files || 0; S.peers = e.peers || 0;
+    if (!e.done) return;
+    S.slskError = e.error || null;
+    S.peerSongs = {}; S.peerOrder = []; S.albums = {}; S.albumOrder = [];
+    (e.results || []).forEach(function (row) {
+      if (row.kind === 'track') { S.peerSongs[row.trackId] = row; S.peerOrder.push(row.trackId); }
+      else if (row.kind === 'album') { S.albums[row.albumId] = row; S.albumOrder.push(row.albumId); }
+      else console.error('Unknown search result', row);
+    });
+    finish();
+  }
   function finish() {
     if (S.done) return;
     S.done = true;
@@ -490,6 +494,8 @@
     App.announce(scanText());
   }
 
+  /* an album's songs: the entity's, or the Soulseek folder row's when the entity doesn't list them */
+  function trackIdsOf(a) { var row = S.albums[a.id]; return a.trackIds.length || !row ? a.trackIds : row.trackIds || []; }
   /* what the answers name, as entities: songs (library first), albums (Soulseek folders, plus saved albums whose
      title matches), artists whose name matches */
   function collect(q) {
@@ -497,19 +503,20 @@
     function hit(s) { s = String(s || '').toLowerCase(); return words.length && words.every(function (w) { return s.indexOf(w) >= 0; }); }
     var tracks = unique(S.library.concat(S.peerOrder)).map(M.track).filter(Boolean);
     var libAlbums = tracks.filter(function (t) { return App.isSaved(t.id); }).map(function (t) { return t.albumId; });
-    var albums = unique(S.folders.concat(libAlbums)).map(M.album).filter(function (a) { return a && (S.folders.indexOf(a.id) >= 0 || hit(a.title + ' ' + a.artist)); });
+    var albums = unique(S.albumOrder.concat(libAlbums)).map(M.album).filter(function (a) { return a && (S.albums[a.id] || hit(a.title + ' ' + a.artist)); });
     var artistIds = unique(tracks.map(function (t) { return t.artistId; }).concat(albums.map(function (a) { return a.artistId; })));
     var artists = artistIds.map(M.artist).filter(function (a) { return a && hit(a.name); });
     return { tracks: tracks, albums: albums, artists: artists };
   }
-  /* the best Soulseek copy's format for a song, when peers share it */
-  function peerFormat(t) { var row = S.peerSongs[t.id]; return row && row.format; }
+  /* the best Soulseek copy's format: a song's best source, an album's best folder */
+  function peerFormat(t) { var row = S.peerSongs[t.id]; return row && row.best && row.best.format; }
+  function albumFormat(a) { var row = S.albums[a.id]; return row && row.folders && row.folders[0] ? row.folders[0].format : a.format; }
   function filtered(R) {
     var libOnly = S.src === 'library' || slskDown();
     function lossless(t) { return fmt(t.format).lossless || (!libOnly && fmt(peerFormat(t)).lossless); }
     var songs = R.tracks.filter(function (t) { return (!libOnly || App.isSaved(t.id)) && (!S.ll || lossless(t)); });
     songs.sort(function (a, b) { return (App.isSaved(b.id) ? 1 : 0) - (App.isSaved(a.id) ? 1 : 0); });
-    var albums = R.albums.filter(function (a) { return (!libOnly || a.saved !== 'none') && (!S.ll || fmt(a.format).lossless); });
+    var albums = R.albums.filter(function (a) { return (!libOnly || a.saved !== 'none') && (!S.ll || fmt(albumFormat(a)).lossless); });
     var artists = R.artists.filter(function (a) { return !libOnly || M.albumsBy(a.id).some(function (al) { return al.saved !== 'none'; }); });
     return { songs: songs, albums: albums, artists: artists };
   }
@@ -577,7 +584,7 @@
 
   function resultsBody() {
     if (S.loading) {
-      return html`<section class="card disc-card">${ui.labelRule('songs')}${scanLine()}${ui.skeleton('row', 3)}</section>`;
+      return html`<section class="card disc-card">${ui.labelRule('songs')}${ui.skeleton('row', 3)}</section>`;
     }
     if (S.error) {
       return html`<section class="card disc-card">${ui.emptyState({ art: 'star', title: 'Couldn\'t search', text: S.error.message,
@@ -586,10 +593,10 @@
     var R = collect(S.q), F = filtered(R);
     if (!F.songs.length && !F.albums.length && !F.artists.length) {
       if (streaming()) {
-        return html`<section class="card disc-card">${ui.labelRule('songs')}${scanLine()}
-          <p class="disc-note">Nothing in your library. Still asking peers.</p>${ui.skeleton('row', 3)}</section>`;
+        return html`<section class="card disc-card">${ui.labelRule('songs')}${scanLine()}${libraryNote()}
+          <p class="disc-note">${S.libraryError ? 'Still asking peers.' : 'Nothing in your library. Still asking peers.'}</p>${ui.skeleton('row', 3)}</section>`;
       }
-      return html`<section class="card disc-card">${S.src !== 'library' ? scanLine(true) : ''}${ui.emptyState(noResults(R))}</section>`;
+      return html`<section class="card disc-card">${S.src !== 'library' ? scanLine(true) : ''}${libraryNote()}${ui.emptyState(noResults(R))}</section>`;
     }
     var top = pickTop(F, S.q);
     var songs = F.songs, limit = S.showAll ? songs.length : 6, shown = songs.slice(0, limit);
@@ -600,9 +607,11 @@
     }
     var rows = shown.map(function (t, i) {
       var row = S.peerSongs[t.id], saved = App.isSaved(t.id);
-      var dup = !row || !saved || slskDown() ? null : isUpgrade(row.format, t.format) ? 'better' : S.src === 'soulseek' ? 'saved' : null;
-      /* a Soulseek row carries its peer count, which the row shows as "N sources" */
-      var markup = String(ui.trackRow(row ? Object.assign({}, t, { sources: row.sources }) : t, { dense: true, showSources: true, index: i + 1 }));
+      /* the server marks a Soulseek row that matches a saved song; "matches" shows only when the list is Soulseek's */
+      var dup = !row || slskDown() ? null : row.dup === 'better' ? 'better' : row.dup === 'note' && S.src === 'soulseek' ? 'saved' : null;
+      /* a Soulseek row carries its peer count ("N sources") and, for a song not saved, the best file's format */
+      var shownTrack = row ? Object.assign({}, t, { sources: row.sources }, !saved && row.best ? { format: row.best.format } : {}) : t;
+      var markup = String(ui.trackRow(shownTrack, { dense: true, showSources: true, index: i + 1 }));
       /* the duplicate marker goes on the artist line, so badges never squeeze the title */
       return raw(markup.replace(/(<div class="trow__artist">[\s\S]*?)(<\/div>)/, function (m, a, b) { return a + (dup ? String(dup === 'better' ? ui.dupBetter() : ui.dupNote()) : '') + b; }));
     });
@@ -610,7 +619,7 @@
         ${top ? html`<section class="card disc-card disc-top" aria-labelledby="disc-h-top">${ui.labelRule('top result', { id: 'disc-h-top' })}${topCard(top)}</section>` : ''}
         <section class="card disc-card disc-songs" aria-labelledby="disc-h-songs">
           ${ui.labelRule('songs', { id: 'disc-h-songs' })}
-          ${scanLine()}
+          ${scanLine()}${libraryNote()}
           ${songs.length ? html`<ol class="tlist tlist--dense" data-ids="${shown.map(function (t) { return t.id; }).join(',')}" aria-label="Songs">${rows}</ol>`
             : html`<p class="disc-note">No songs match${S.ll ? ' in lossless' : ''}.</p>`}
           ${streaming() ? ui.skeleton('row', 2) : ''}
@@ -619,12 +628,13 @@
       </div>
       ${F.albums.length || F.artists.length ? html`<div class="disc-duo disc-duo--results2">
         ${F.albums.length ? html`<section class="card disc-card" aria-labelledby="disc-h-albums">${ui.labelRule('albums', { id: 'disc-h-albums' })}
-          <div class="shelf disc-shelf">${F.albums.map(folderTile)}</div></section>` : ''}
+          <div class="shelf disc-shelf">${F.albums.map(function (a) { return S.albums[a.id] ? folderTile(a) : ui.releaseTile(a); })}</div></section>` : ''}
         ${F.artists.length ? html`<section class="card disc-card" aria-labelledby="disc-h-artists">${ui.labelRule('artists', { id: 'disc-h-artists' })}
           <div class="shelf disc-shelf disc-shelf--artists">${F.artists.map(artistTile)}</div></section>` : ''}
       </div>` : ''}`;
   }
   function noResults(R) {
+    if (!S.slsk) return { art: 'moon', title: 'Nothing saved matches ' + S.q, text: 'Type at least three characters to ask Soulseek peers too.' };
     if (S.src === 'library' || slskDown()) {
       return { art: 'moon', title: 'Nothing saved matches ' + S.q, text: slskDown() ? 'Soulseek is down, so only your library was searched. Try again once it is back.' : 'Your library has nothing by that name. Soulseek peers might.',
         action: slskDown() ? { label: 'Soulseek settings', act: 'open-sources' } : { label: 'Search Soulseek too', act: 'disc-src-all' } };
@@ -634,8 +644,14 @@
       action: { label: 'Search Soulseek again', act: 'disc-search-again' }, secondary: { label: 'Clear search', act: 'disc-clear' } };
   }
 
-  /* Soulseek line above the songs: live counters while peers answer; the bar drifts until the search is done */
+  /* the library half failed: say why, next to whatever Soulseek found */
+  function libraryNote() {
+    return S.libraryError ? html`<p class="disc-issue" role="status">${icon('warning')}<span>Your library couldn't be searched: ${S.libraryError}</span></p>` : '';
+  }
+  /* Soulseek line above the songs: live files / peers counters while peers answer (rows come when it ends);
+     the bar drifts until then. Absent for short queries, which search the library only. */
   function scanLine(noAgain) {
+    if (!S.slsk) return '';
     if (slskDown()) {
       return html`<div class="disc-scan is-down" role="status">${ui.statusGlyph('down', 'Soulseek down')}<span class="disc-scan__text">Soulseek is down, so only your library was searched.</span>
         <button class="btn btn--sm" data-act="open-sources">Soulseek settings</button></div>`;
@@ -643,6 +659,10 @@
     if (S.src === 'library') {
       return html`<div class="disc-scan disc-scan--lib">${icon('saved')}<span class="disc-scan__text">Showing your library only.</span>
         <button class="btn btn--quiet btn--sm" data-act="disc-src-all">Include Soulseek</button></div>`;
+    }
+    if (S.slskError) {
+      return html`<div class="disc-scan is-down" role="status">${ui.statusGlyph('down', 'Soulseek search failed')}<span class="disc-scan__text">Soulseek search failed: ${S.slskError}</span>
+        <button class="btn btn--sm" data-act="disc-search-again">${icon('refresh')}Search again</button></div>`;
     }
     var done = S.done;
     return html`<div class="disc-scan${done ? ' is-done' : ''}" data-scan>
@@ -653,14 +673,14 @@
     </div>`;
   }
   function scanText() {
-    var n = S.peerOrder.length + S.folders.length;
-    return (S.done ? 'Soulseek: ' : 'Searching Soulseek: ') + plural(n, 'result') + ' from ' + plural(S.peers, 'peer');
+    if (!S.done) return 'Searching Soulseek: ' + plural(S.files, 'file') + ' from ' + plural(S.peers, 'peer');
+    return 'Soulseek: ' + plural(S.peerOrder.length, 'song') + ' and ' + plural(S.albumOrder.length, 'album') + ' from ' + plural(S.peers, 'peer');
   }
 
   function topCard(top) {
     if (top.kind === 'track') {
-      var t = top.item, saved = App.isSaved(t.id), row = S.peerSongs[t.id], best = row && row.format;
-      var better = saved && best && !slskDown() && isUpgrade(best, t.format);
+      var t = top.item, saved = App.isSaved(t.id), row = S.peerSongs[t.id], best = peerFormat(t);
+      var better = !!(row && row.dup === 'better') && !slskDown();
       return html`<div class="disc-top__body">
           ${ui.cover(t, 112)}
           <div class="disc-top__info">
@@ -680,21 +700,21 @@
         <div data-issue="${t.id}">${saveIssue(t.id)}</div>`;
     }
     if (top.kind === 'album') {
-      var a = top.item, savedN = a.trackIds.filter(App.isSaved).length;
+      var a = top.item, ids = trackIdsOf(a), savedN = ids.filter(App.isSaved).length, fmtA = albumFormat(a);
       return html`<div class="disc-top__body">
           ${ui.cover(a, 112)}
           <div class="disc-top__info">
             <p class="disc-top__kind">${a.type}${a.saved === 'none' ? ', Soulseek folder' : ''}</p>
             <h3 class="disc-top__title">${a.title}</h3>
             <p class="disc-top__by"><a href="#/artist/${a.artistId}">${a.artist}</a>${a.year ? ', ' + a.year : ''}</p>
-            <div class="cluster disc-top__badges">${a.trackIds.length && savedN === a.trackIds.length ? ui.savedBadge() : savedN ? html`<span class="badge badge-saved">${icon('saved')}${savedN} of ${a.trackIds.length} saved</span>` : ui.soulseekBadge()}
-              ${a.format ? ui.qualityChip(a.format) : ''}${a.trackIds.length ? html`<span class="px fg-2">${plural(a.trackIds.length, 'track')}${a.sizeMB ? ', ' + size(a.sizeMB) : ''}</span>` : ''}</div>
+            <div class="cluster disc-top__badges">${ids.length && savedN === ids.length ? ui.savedBadge() : savedN ? html`<span class="badge badge-saved">${icon('saved')}${savedN} of ${ids.length} saved</span>` : ui.soulseekBadge()}
+              ${fmtA ? ui.qualityChip(fmtA) : ''}${ids.length ? html`<span class="px fg-2">${plural(ids.length, 'track')}${a.sizeMB ? ', ' + size(a.sizeMB) : ''}</span>` : ''}</div>
           </div>
         </div>
         <div class="disc-top__actions">
           <button class="btn btn--primary" data-act="play-album" data-id="${a.id}">${icon('play')}Play album</button>
-          ${slskDown() ? '' : html`<button class="btn" data-act="disc-folder" data-id="${a.id}">${icon('soulseek')}Open folder</button>`}
-          ${!a.trackIds.length || savedN < a.trackIds.length ? html`<button class="btn" data-act="save-album" data-id="${a.id}">${icon('save')}Save whole album</button>` : ''}
+          ${S.albums[a.id] && !slskDown() ? html`<button class="btn" data-act="disc-folder" data-id="${a.id}">${icon('soulseek')}Open folder</button>`: ''}
+          ${!ids.length || savedN < ids.length ? html`<button class="btn" data-act="save-album" data-id="${a.id}">${icon('save')}Save whole album</button>` : ''}
           ${ui.iconButton('radio', 'Start radio from ' + a.title, { 'data-act': 'disc-radio', 'data-kind': 'album', 'data-id': a.id })}
         </div>`;
     }
@@ -722,13 +742,13 @@
       <button class="btn btn--quiet btn--sm" data-act="disc-save-sheet" data-id="${id}">${s.status === 'failed' ? 'Fix it' : 'Details'}</button></div>`;
   }
   function folderTile(a) {
-    var n = a.trackIds.length;
+    var n = trackIdsOf(a).length;
     return html`<div class="tile disc-folder-tile">
       <div class="tile__art"><button class="disc-tile-open" data-act="disc-folder" data-id="${a.id}" tabindex="-1" aria-hidden="true">${ui.cover(a, '100%')}</button>
         <button class="tile__play" data-act="play-album" data-id="${a.id}" aria-label="Play ${a.title}" data-tip="Play">${icon('play')}</button></div>
       <div class="tile__title"><button data-act="disc-folder" data-id="${a.id}" aria-label="Open ${a.title} folder">${a.title}</button></div>
       <div class="tile__by">${a.artist}</div>
-      <div class="tile__meta">${icon(a.saved === 'all' ? 'saved' : 'soulseek', a.saved === 'all' ? 'Saved' : 'On Soulseek', 'ic-16')}<span>${n ? plural(n, 'track') + (a.sizeMB ? ', ' + size(a.sizeMB) : '') : a.type}</span></div>
+      <div class="tile__meta">${icon(a.saved === 'all' ? 'saved' : 'soulseek', a.saved === 'all' ? 'Saved' : 'On Soulseek', 'ic-16')}<span>${n ? plural(n, 'track') : a.type}${S.albums[a.id].folders.length > 1 ? ', ' + plural(S.albums[a.id].folders.length, 'folder') : ''}</span></div>
     </div>`;
   }
   function artistTile(a) {
@@ -816,13 +836,13 @@
       <p class="disc-shead__by">${t.artist}, ${t.album}</p></div>${sub || ''}</div>`;
   }
 
-  /* --- Soulseek folder (album result): each peer sharing the album's first song is one folder ---
+  /* --- Soulseek folder (album result): the search row's peer folders, best first ---
      The open folder (module state, so the sheet's buttons can read it after the sheet closes):
-     { albumId, sources, done, error, idx: the folder in use, stop } */
+     { albumId, trackIds, folders, idx: the folder shown } */
   var folder = null;
   function folderBody(a, fs) {
-    var cur = fs.sources && fs.sources[fs.idx], n = a.trackIds.length, savedN = a.trackIds.filter(App.isSaved).length;
-    var by = [a.year, a.label].filter(Boolean).join(', ');
+    var cur = fs.folders[fs.idx], ids = fs.trackIds, n = ids.length, savedN = ids.filter(App.isSaved).length;
+    var by = [a.year, a.label].filter(Boolean).join(', '), missing = cur && cur.tracks < n ? n - cur.tracks : 0;
     return html`<div class="disc-folder">
       <div class="disc-folder__head">
         <div class="disc-folder__art">${ui.cover(a, 128)}</div>
@@ -830,82 +850,53 @@
           <p class="disc-top__kind">${a.type} folder${cur ? html` from <b>${cur.peer}</b>` : ''}</p>
           <h3 class="disc-folder__title">${a.title}</h3>
           <p class="disc-top__by"><a href="#/artist/${a.artistId}" data-close>${a.artist}</a>${by ? ', ' + by : ''}</p>
-          <div class="cluster disc-folder__facts">${cur ? ui.qualityChip(cur.format) : ''}${n ? html`<span class="px">${plural(n, 'track')}</span>` : ''}${a.sizeMB ? html`<span class="px">${size(a.sizeMB)}</span>` : ''}
-            ${cur ? html`<span class="px">${mbps(cur.speed)}</span><span class="disc-folder__slot">${icon(cur.freeSlot ? 'check' : 'clock', null, 'ic-16')}${cur.freeSlot ? 'free slot' : 'queue of ' + cur.queue}</span>` : ''}</div>
+          ${cur ? html`<div class="cluster disc-folder__facts">${ui.qualityChip(cur.format)}<span class="px">${plural(cur.tracks, 'track')}</span>${cur.sizeBytes ? html`<span class="px">${size(cur.sizeBytes / 1e6)}</span>` : ''}
+            <span class="px">${mbps(cur.speed)}</span><span class="disc-folder__slot">${icon(cur.freeSlot ? 'check' : 'clock', null, 'ic-16')}${cur.freeSlot ? 'free slot' : 'queue of ' + cur.queue}</span></div>` : ''}
           <div class="disc-top__actions">
-            <button class="btn btn--primary" data-act="disc-folder-play" data-id="${a.id}" data-close autofocus ${n ? '' : raw('disabled')}>${icon('play')}Play album</button>
+            <button class="btn btn--primary" data-act="disc-folder-play" data-close autofocus ${n ? '' : raw('disabled')}>${icon('play')}Play album</button>
             ${n && savedN === n ? ui.savedBadge() : html`<button class="btn" data-act="save-album" data-id="${a.id}">${icon('save')}${savedN ? 'Save the other ' + (n - savedN) : 'Save whole album'}</button>`}
             ${ui.iconButton('radio', 'Start radio from ' + a.title, { 'data-act': 'disc-radio', 'data-kind': 'album', 'data-id': a.id, 'data-close': '' })}
             <a class="btn btn--quiet" href="#/album/${a.id}" data-close>Album page</a>
           </div>
         </div>
       </div>
-      <div data-region="agg">${aggInline(a.trackIds, a.title)}</div>
+      <div data-region="agg">${aggInline(ids, a.title)}</div>
+      ${missing ? html`<p class="disc-issue">${icon('info')}<span>This folder is missing ${plural(missing, 'track')}. Missing songs are fetched from other peers when you play or save them.</span></p>` : ''}
       ${ui.labelRule('tracks', { level: 'h3', sm: true })}
-      ${n ? ui.trackList(a.trackIds, { dense: true, label: a.title + ' tracks' }) : ui.skeleton('row', 4)}
+      ${ui.trackList(ids, { dense: true, label: a.title + ' tracks' })}
       ${ui.labelRule('other folders', { level: 'h3', sm: true })}
-      ${folderAlts(fs)}
+      ${fs.folders.length > 1 ? html`<ul class="disc-alts">${fs.folders.map(function (f, i) {
+        if (i === fs.idx) return '';
+        return html`<li class="disc-alt">
+          <span class="disc-alt__peer">${icon('peer')}<b>${f.peer}</b></span>${ui.qualityChip(f.format)}
+          <span class="px disc-alt__fact">${f.tracks}/${n}</span><span class="px disc-alt__fact">${f.sizeBytes ? size(f.sizeBytes / 1e6) : ''}</span><span class="px disc-alt__fact">${mbps(f.speed)}</span>
+          <span class="score" style="--s:${f.score / 100}" role="img" aria-label="Score ${f.score} of 100"><i></i></span>
+          <button class="btn btn--sm" data-act="disc-folder-show" data-i="${i}" aria-label="Show ${f.peer}'s folder">Show</button></li>`;
+      })}</ul>` : html`<p class="disc-note">No other peer shares this album.</p>`}
     </div>`;
   }
-  function folderAlts(fs) {
-    if (fs.error) {
-      return ui.emptyState({ art: 'star', title: 'Couldn\'t ask peers for folders', text: fs.error.message, action: { label: 'Try again', act: 'disc-folder-retry' } });
-    }
-    if (!fs.sources) return ui.skeleton('row', 2);
-    var others = fs.sources.filter(function (s, i) { return i !== fs.idx; });
-    if (!others.length) return html`<p class="disc-note">${fs.done ? 'No other peer shares this album right now.' : 'Still asking peers.'}</p>`;
-    return html`<ul class="disc-alts">${fs.sources.map(function (f, i) {
-      if (i === fs.idx) return '';
-      return html`<li class="disc-alt">
-        <span class="disc-alt__peer">${icon('peer')}<b>${f.peer}</b></span>${ui.qualityChip(f.format)}
-        <span class="px disc-alt__fact">${mbps(f.speed)}</span><span class="px disc-alt__fact">${f.freeSlot ? 'free slot' : 'queue ' + f.queue}</span>
-        <span class="score" style="--s:${f.score / 100}" role="img" aria-label="Score ${f.score} of 100"><i></i></span>
-        <button class="btn btn--sm" data-act="disc-folder-use" data-i="${i}">Use this folder</button></li>`;
-    })}</ul>`;
-  }
   function openFolder(albumId) {
-    var a = M.album(albumId); if (!a) return null;
-    var fs = folder = { albumId: albumId, sources: null, done: false, error: null, idx: 0, stop: null, closed: false };
-    var offSave = null, sheet;
-    function repaint() { if (!fs.closed) paint('folder', folderBody(a, fs), sheet.el); }
-    /* the album's songs may not be known yet (a folder fresh from search): fetch them, then ask for its peers */
-    fs.watch = function () {
-      fs.error = null; repaint();
-      App.albumTracks(albumId).then(function (ids) {
-        if (fs.closed) return;
-        if (!ids.length) { fs.sources = []; fs.done = true; repaint(); return; }
-        if (fs.stop) fs.stop();
-        fs.stop = watchSources(ids[0], function (res) {
-          if (res.error) fs.error = res.error; else { fs.sources = res.sources; fs.done = res.done; }
-          repaint();
-        });
-      }, function (err) { fs.error = err; repaint(); });
-    };
-    sheet = App.openSheet({ title: 'soulseek folder', wide: true, className: 'disc-sheet', body: html`<div data-region="folder">${folderBody(a, fs)}</div>`,
+    var a = M.album(albumId), row = S.albums[albumId]; if (!a || !row) return null;
+    var fs = folder = { albumId: albumId, trackIds: trackIdsOf(a), folders: row.folders || [], idx: 0 };
+    var off = null;
+    var sheet = App.openSheet({ title: 'soulseek folder', wide: true, className: 'disc-sheet', body: html`<div data-region="folder">${folderBody(a, fs)}</div>`,
       onMount: function (el) {
-        offSave = App.on('save', function (d) { if (a.trackIds.indexOf(d.id) >= 0) paint('agg', aggInline(a.trackIds, a.title), el); });
+        off = App.on('save', function (d) { if (fs.trackIds.indexOf(d.id) >= 0) paint('agg', aggInline(fs.trackIds, a.title), el); });
       },
-      onClose: function () { fs.closed = true; if (offSave) offSave(); if (fs.stop) fs.stop(); } });
-    fs.watch();
+      onClose: function () { if (off) off(); } });
     App.syncRows();
     return sheet;
   }
+  /* rows name a folder, not each song's file, so the player picks each song's peer itself */
+  function playFolder(fs) { if (fs.trackIds.length) P.playList(fs.trackIds, 0); }
   App.action('disc-folder', function (el) { openFolder(el.getAttribute('data-id')); });
-  App.action('disc-folder-retry', function () { if (folder && !folder.closed) folder.watch(); });
-  App.action('disc-folder-use', function (el) {
-    var fs = folder; if (!fs || fs.closed || !fs.sources) return;
-    var alt = fs.sources[+el.getAttribute('data-i')]; if (!alt) return;
-    fs.idx = fs.sources.indexOf(alt);
+  /* shows another peer's folder facts; playing still lets the player pick each song's peer (see playFolder) */
+  App.action('disc-folder-show', function (el) {
+    var fs = folder, f = fs && fs.folders[+el.getAttribute('data-i')]; if (!f) return;
+    fs.idx = fs.folders.indexOf(f);
     paint('folder', folderBody(M.album(fs.albumId), fs));
-    App.toast('Using the folder from ' + alt.peer + ', ' + fmt(alt.format).label, { icon: 'soulseek' });
   });
-  /* play the album, its first song from the folder in use */
-  App.action('disc-folder-play', function () {
-    var fs = folder, a = fs && M.album(fs.albumId); if (!a || !a.trackIds.length) return;
-    var cur = fs.sources && fs.sources[fs.idx], sources = {};
-    if (cur) sources[a.trackIds[0]] = sourceFor(cur);
-    P.playList(a.trackIds, 0, { sources: sources });
-  });
+  App.action('disc-folder-play', function () { if (folder) playFolder(folder); });
 
   /* --- source picker ---
      The open picker (module state, read by its buttons): { trackId, sources, done, error, sort, stop } */
@@ -922,7 +913,8 @@
   }
   function srcRow(t, s, i, note, first) {
     var f = fmt(s.format), x = s.factors;
-    var tip = x ? 'format ' + x.format + ' + speed ' + x.speed + ' + free slot ' + x.slot + ' + queue ' + x.queue + ' = ' + s.score : 'score ' + s.score;
+    var tip = x ? 'format ' + x.format + ' + speed ' + x.speed + ' + free slot ' + x.slot + ' + queue ' + x.queue +
+      (x.stalled ? ' - stalled ' + Math.abs(x.stalled) : '') + ' = ' + s.score : 'score ' + s.score;
     return html`<div class="src-row${note ? ' is-failed' : ''}${s.preferred ? ' is-preferred' : ''}" role="row">
       <span class="disc-src__peer" role="cell"><button class="src-row__peer" data-act="disc-use-source" data-id="${t.id}" data-i="${i}" ${first ? raw('autofocus') : ''}
         aria-label="Play from ${s.peer}, ${f.label}, score ${s.score}${note ? ', ' + note : ''}${s.preferred ? ', preferred format' : ''}">${icon('peer')}<span class="ellipsis">${s.peer}</span></button>
@@ -1170,8 +1162,8 @@
   App.action('disc-save-version', function (el) {
     var id = el.getAttribute('data-id'), t = M.track(id); if (!t) return;
     var fail = function (err) { App.toast('Couldn\'t offer a better copy of ' + t.title + ': ' + err.message, { kind: 'error' }); };
-    M.api(sourcesPath(id)).then(function (res) {
-      var best = (res.sources || [])[0];
+    var row = S.peerSongs[id];
+    (row && row.best ? Promise.resolve(row.best) : M.api(sourcesPath(id)).then(function (res) { return (res.sources || [])[0]; })).then(function (best) {
       if (!best) { App.toast('No peer shares ' + t.title + ' right now', { icon: 'no-source' }); return; }
       var offered = { peer: best.peer, path: best.path, size: best.sizeBytes };
       savedCopy(id, offered).then(function (d) {
