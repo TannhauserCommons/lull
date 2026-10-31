@@ -508,7 +508,7 @@ pub fn merge(responses: &[slskd::Response]) -> Merged {
                     formats: HashMap::new(),
                     cover: covers.contains(&(r.username.as_str(), files::folder(&f.filename))),
                 });
-            folder.size += source.size;
+            folder.size = folder.size.saturating_add(source.size);
             *folder.formats.entry(source.facts.format.clone()).or_default() += 1;
             folder.best.get_or_insert_with(|| source.clone());
             folder.tracks.insert(

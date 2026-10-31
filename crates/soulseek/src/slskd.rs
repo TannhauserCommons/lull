@@ -24,6 +24,12 @@ pub struct Slskd {
 #[derive(Debug, Deserialize)]
 struct Application {
     server: Server,
+    user: Option<User>,
+}
+
+#[derive(Debug, Deserialize)]
+struct User {
+    username: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -89,6 +95,9 @@ pub struct Transfer {
     pub average_speed: f64,
     pub place_in_queue: Option<u32>,
     pub exception: Option<String>,
+    /// Set while slskd waits to retry a failed attempt itself (the state still reads `Completed`).
+    #[serde(default)]
+    pub next_attempt_at: Option<String>,
 }
 
 /// Where a transfer stands, from its state flags.
@@ -108,6 +117,8 @@ impl Transfer {
         let s = self.state.as_str();
         if s.contains("Succeeded") {
             Phase::Succeeded
+        } else if s.contains("Completed") && self.next_attempt_at.is_some() {
+            Phase::Queued
         } else if s.contains("Completed") {
             Phase::Failed
         } else if s.contains("InProgress") {
@@ -195,7 +206,10 @@ impl Slskd {
     /// (`/server` needs the administrator role).
     pub async fn server(&self) -> Result<Server> {
         let app: Application = self.get(&["application"]).await?;
-        Ok(app.server)
+        Ok(Server {
+            username: app.user.and_then(|u| u.username),
+            ..app.server
+        })
     }
 
     /// Needs an API key with the administrator role; `None` when the key isn't one.

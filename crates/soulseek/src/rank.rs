@@ -61,7 +61,7 @@ pub fn factors(offer: &Offer, preferred: &[String]) -> Factors {
         queue: if offer.free_slot {
             QUEUE_MAX
         } else {
-            QUEUE_MAX.saturating_sub(offer.queue.min(255) as u8 * 2)
+            QUEUE_MAX.saturating_sub(offer.queue.saturating_mul(2).min(u32::from(QUEUE_MAX)) as u8)
         },
         stalled: if offer.stalled_before {
             -(STALL_PENALTY as i8)
@@ -144,6 +144,13 @@ mod tests {
         assert!(score(&free_mp3) > score(&queued_flac));
         let f = factors(&queued_flac, &prefs());
         assert_eq!((f.slot, f.queue), (SLOT_BUSY, 3));
+        // Real peers report queues in the thousands: the factor bottoms out at zero.
+        let swamped = Offer {
+            free_slot: false,
+            queue: 5_000,
+            ..offer("flac")
+        };
+        assert_eq!(factors(&swamped, &prefs()).queue, 0);
     }
 
     #[test]

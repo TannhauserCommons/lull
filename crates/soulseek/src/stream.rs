@@ -143,7 +143,8 @@ struct Feed {
 
 /// The body: read what's on disk, wait for more, stop at the span's end. The file's own
 /// length is the truth for what has arrived; slskd writes it front to back and never sizes it
-/// up front.
+/// up front. The file is reopened by path whenever the fetch sees more on disk than this
+/// handle does: slskd moves the finished file, and may recreate it when it retries a peer.
 fn chunks(state: Feed) -> impl futures_util::Stream<Item = std::io::Result<Bytes>> {
     futures_util::stream::try_unfold(state, |mut s| async move {
         loop {
@@ -154,8 +155,7 @@ fn chunks(state: Feed) -> impl futures_util::Stream<Item = std::io::Result<Bytes
             if p.attempt != s.attempt {
                 return Err(std::io::Error::other("the stream moved to another peer; reopen it"));
             }
-            // slskd moves the finished file; a reader that opens late follows it there.
-            if (s.file.is_none() || (p.ended() && p.path.as_ref() != Some(&s.path)))
+            if s.file.is_none()
                 && let Some(path) = p.path.clone()
             {
                 match File::open(&path).await {
@@ -169,23 +169,37 @@ fn chunks(state: Feed) -> impl futures_util::Stream<Item = std::io::Result<Bytes
                 }
             }
             if let Some(f) = s.file.as_mut() {
-                let on_disk = f.metadata().await?.len();
-                let want = range::sendable(s.span, s.pos, on_disk).min(CHUNK as u64) as usize;
-                let mut buf = vec![0; want];
-                let n = if want > 0 { f.read(&mut buf).await? } else { 0 };
-                if n > 0 {
-                    buf.truncate(n);
-                    s.pos += n as u64;
-                    return Ok(Some((Bytes::from(buf), s)));
-                }
-                if p.ended() && p.path.as_ref() == Some(&s.path) {
-                    return Err(std::io::Error::other(match p.status {
-                        crate::fetch::Status::Done => "the file is shorter than the peer said",
-                        _ => "the transfer ended before this part arrived",
-                    }));
+                match read_chunk(f, s.span, s.pos).await {
+                    Ok(buf) if !buf.is_empty() => {
+                        s.pos += buf.len() as u64;
+                        return Ok(Some((Bytes::from(buf), s)));
+                    }
+                    // Nothing new through this handle, but the fetch sees more at its path (or a
+                    // new path): the file was moved or recreated under us.
+                    Ok(_) if p.received > s.pos || p.path.as_ref() != Some(&s.path) => s.file = None,
+                    Ok(_) if p.ended() => {
+                        return Err(std::io::Error::other(match p.status {
+                            crate::fetch::Status::Done => "the file is shorter than the peer said",
+                            _ => "the transfer ended before this part arrived",
+                        }));
+                    }
+                    Ok(_) => {}
+                    // The handle went bad while slskd is still writing: reopen by path.
+                    Err(_) if !p.ended() => s.file = None,
+                    Err(e) => return Err(e),
                 }
             }
             let _ = tokio::time::timeout(TICK, s.rx.changed()).await;
         }
     })
+}
+
+/// Up to one chunk of the span from `pos`, never past what this handle sees on disk.
+async fn read_chunk(f: &mut File, span: Span, pos: u64) -> std::io::Result<Vec<u8>> {
+    let on_disk = f.metadata().await?.len();
+    let want = range::sendable(span, pos, on_disk).min(CHUNK as u64) as usize;
+    let mut buf = vec![0; want];
+    let n = if want > 0 { f.read(&mut buf).await? } else { 0 };
+    buf.truncate(n);
+    Ok(buf)
 }

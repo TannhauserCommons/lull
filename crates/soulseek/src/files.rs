@@ -61,8 +61,15 @@ pub fn song(path: &str) -> Option<Song> {
     if disc_dir.is_some() {
         dirs.pop();
     }
-    let folder = dirs.pop().map(read_folder).unwrap_or_default();
-    let parent_artist = dirs.pop().filter(|d| !is_generic(d)).map(clean);
+    let mut folder = dirs.pop().map(read_folder).unwrap_or_default();
+    // `Artist\Albums\Album`: grouping folders between artist and album name nobody.
+    let parent_artist = dirs.iter().rev().find(|d| !is_generic(d)).map(|d| clean(d));
+    if folder.artist.is_none()
+        && let (Some(album), Some(artist)) = (&folder.album, &parent_artist)
+    {
+        // `Artist [1992] Album`: the folder repeats the artist without a dash.
+        folder.album = Some(strip_leading_artist(album, artist));
+    }
     let folder_artist = folder.artist.or(parent_artist);
 
     let file = read_file(stem, folder_artist.as_deref());
@@ -101,7 +108,7 @@ pub fn facts(ext: &str, size: u64, a: Attributes) -> Option<FileFacts> {
     // Lossless files rarely carry a bitrate; derive it from size and length.
     let kbps = a.bit_rate.filter(|&k| k > 0).or_else(|| {
         let secs = u64::from(a.length.filter(|&l| l > 0)?);
-        u32::try_from(size * 8 / secs / 1000).ok()
+        u32::try_from(size.saturating_mul(8) / secs / 1000).ok()
     });
     let format = match (codec, lossless) {
         (_, true) => match (bits, khz) {
@@ -218,7 +225,7 @@ fn read_file(stem: &str, folder_artist: Option<&str>) -> File {
     let first = normalize_artist(&parts[0]);
     let various =
         folder_artist.is_some_and(|a| matches!(normalize_artist(a).as_str(), "various artists" | "va" | "various"));
-    let (artist, title) = match folder_artist.map(normalize_artist) {
+    let (artist, mut title) = match folder_artist.map(normalize_artist) {
         // `Artist - Title` in an artist's own folder, or the file names its artist.
         Some(fa) if !various && first.starts_with(&fa) => (None, parts[1..].join(" - ")),
         None => (Some(parts[0].clone()), parts[1..].join(" - ")),
@@ -226,6 +233,13 @@ fn read_file(stem: &str, folder_artist: Option<&str>) -> File {
         // A dash inside the title itself ("Song - Live").
         _ => (None, parts.join(" - ")),
     };
+    // `Artist - 01 Title`: the number follows the artist.
+    if no.is_none()
+        && let (_, Some(n), rest) = leading_number(&title)
+    {
+        no = Some(n);
+        title = rest.to_owned();
+    }
     File {
         artist,
         title,
@@ -244,12 +258,13 @@ fn leading_number(s: &str) -> (Option<u32>, Option<u32>, &str) {
         return (None, None, s);
     }
     let after = rest.trim_start_matches([' ', '.', '_', ')']);
-    // `1-03 Title`: disc, dash, track.
-    if num.len() == 1
+    // `1-03 Title`, `01-03 Title`: disc, dash, track.
+    if num.len() <= 2
         && let Some(rest) = after.strip_prefix('-')
     {
         let d2 = rest.len() - rest.trim_start_matches(|c: char| c.is_ascii_digit()).len();
-        if (1..=2).contains(&d2) {
+        let ends = matches!(rest[d2..].chars().next(), None | Some(' ' | '.' | '-' | '_'));
+        if (1..=2).contains(&d2) && ends {
             let (track, title) = rest.split_at(d2);
             return (num.parse().ok(), track.parse().ok(), trim_sep(title));
         }
@@ -362,12 +377,26 @@ fn is_generic(dir: &str) -> bool {
     dir.contains(':') || n.chars().count() <= 1 || ROOTS.contains(&n.as_str())
 }
 
+/// Drops the artist's words from the front of an album name, when they're there.
+fn strip_leading_artist(album: &str, artist: &str) -> String {
+    let artist_words = normalize_artist(artist).split(' ').count();
+    let words: Vec<&str> = album.split_whitespace().collect();
+    let lead = words.iter().take(artist_words).copied().collect::<Vec<_>>().join(" ");
+    if words.len() > artist_words && normalize_artist(&lead) == normalize_artist(artist) {
+        clean(&words[artist_words..].join(" "))
+    } else {
+        album.to_owned()
+    }
+}
+
 fn clean(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 #[cfg(test)]
 mod tests {
+    use lull_core::ids::TrackId;
+
     use super::*;
 
     /// Merging across peers depends on reading the same song from differently organised shares.
@@ -396,6 +425,22 @@ mod tests {
                 ),
                 "{path}"
             );
+        }
+        // Seen live: disc-track prefixes, grouping folders, the artist repeated in the folder.
+        for path in [
+            r"Music\Aphex Twin\Selected Ambient Works 85–92 (2008)\01-01 Xtal.flac",
+            r"music\Aphex Twin\Albums\Selected Ambient Works 85–92 (1992)\01 - Xtal.flac",
+            r"@@xoezd\Music\Aphex Twin\Aphex Twin [1992] Selected Ambient Works 85-92\01 - Aphex Twin - Xtal.flac",
+            r"music\mattia\Aphex Twin\aphex twin [1992] selected ambient works 85-92\01-xtal.flac",
+            r"@@cheuh\complete\Aphex Twin\Albums\1992 (2008) - Selected Ambient Works 85-92 (CD, Album, RM, RE)\01 Xtal.mp3",
+        ] {
+            let s = song(path).unwrap_or_else(|| unreachable!("{path}"));
+            assert_eq!(
+                TrackId::of(&s.artist, &s.album, &s.title),
+                TrackId::of("Aphex Twin", "Selected Ambient Works 85-92", "Xtal"),
+                "{path}: {s:?}"
+            );
+            assert_eq!(s.no, Some(1), "{path}");
         }
         let disc = song(r"@@x\Music\Artist\Album\CD2\1-04 Song (Live).flac").unwrap_or_else(|| unreachable!());
         assert_eq!(

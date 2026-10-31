@@ -179,7 +179,6 @@ impl Cache {
     }
 
     async fn report_usage(&self, used: u64, disk_short: bool) {
-        let gb = |b: u64| b as f64 / 1e9;
         let (state, detail) = if disk_short {
             (
                 State::Down,
@@ -189,19 +188,15 @@ impl Cache {
             (
                 State::Warn,
                 format!(
-                    "{:.1} of {:.1} GB used, by music that is playing or being saved",
-                    gb(used),
-                    gb(self.cap)
+                    "{} of {} used, by music that is playing or being saved",
+                    size(used),
+                    size(self.cap)
                 ),
             )
         } else {
             (
                 State::Ok,
-                format!(
-                    "{:.1} of {:.1} GB used, oldest audio evicted first",
-                    gb(used),
-                    gb(self.cap)
-                ),
+                format!("{} of {} used, oldest audio evicted first", size(used), size(self.cap)),
             )
         };
         self.status.set(
@@ -253,6 +248,14 @@ impl Cache {
                 Ok(())
             })
             .await
+    }
+}
+
+/// "640 MB", "3.1 GB": what the status tray shows.
+fn size(bytes: u64) -> String {
+    match bytes {
+        b if b < 1_000_000_000 => format!("{} MB", b / 1_000_000),
+        b => format!("{:.1} GB", b as f64 / 1e9),
     }
 }
 

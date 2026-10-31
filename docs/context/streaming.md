@@ -37,6 +37,6 @@ Stream status follows the fetch: `finding → queued → buffering` (under 256 K
 - **Before answering.** The response waits until the fetch has a source (which gives the size and type) and bytes cover the requested start. A request from byte 0 waits as long as the fetch keeps trying. A seek past what has arrived waits 8 s, then answers 416 (`Content-Range: bytes */size`).
 - **Ranges.** They resolve against the file's full size from the search (`range.rs`): 200 for no range, 206 for one range, and suffix ranges are supported. Multi-range and malformed headers get the whole file.
 - **The body.** It reads at most 64 KiB at a time, never past the file's current length on disk (`range::sendable`), then waits for slskd to write more. Memory per response is one chunk; nothing is copied to a second file.
-- **When slskd finishes.** It moves the file; a reader that opens late follows the finished path.
+- **When the file moves or is recreated.** slskd moves the finished file, and may recreate the incomplete one when it retries a peer. Whenever the fetch sees more bytes at its path than the open handle shows, or the handle fails while the transfer runs, the reader reopens by path at the same position (on a Windows host, Docker Desktop leaves old handles on the old copy).
 - **Fallback ends a response** with an error, since another peer's file has different bytes. The player sees the `stream` fallback event, reopens the stream URL and seeks back by time.
 - **Saved tracks** stream from the library crate (`/api/library/stream/{id}`), not here.

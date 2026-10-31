@@ -21,7 +21,7 @@
   - `ok`: logged in;
   - `warn`: reconnecting, or connected with a problem (lull can't see slskd's folders, or shares don't match `LULL_SHARE`);
   - `down`: slskd unreachable or the key rejected.
-- **State flags.** slskd sends state fields as comma-separated flag names (`Completed, Succeeded`, `Queued, Remotely`). Only `Completed` is final; between retries a transfer goes back to `Queued, Locally`.
+- **State flags.** slskd sends state fields as comma-separated flag names (`Completed, Succeeded`, `Queued, Remotely`). A transfer slskd will retry itself still reads `Completed, Errored` while it waits, with `nextAttemptAt` set; lull treats that as queued. Only `Completed` without `nextAttemptAt` is final.
 - **Enqueue.** Downloads are queued with `POST /transfers/downloads/batches`, which returns the transfer ids. Queueing a file that is already running returns a failure, and lull reuses the running transfer.
 
 ## Search

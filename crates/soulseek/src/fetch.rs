@@ -428,7 +428,9 @@ impl Fetcher {
                 ended.pop_front();
             }
         }
-        if p.status != Status::Done
+        // A stopped fetch leaves even when it finished at the last moment: nobody is playing it.
+        let stopped = *f.stop.borrow();
+        if (p.status != Status::Done || stopped)
             && let Ok(mut live) = self.live.lock()
         {
             live.retain(|_, other| !Arc::ptr_eq(other, &f));
@@ -532,6 +534,7 @@ impl Fetcher {
             p.speed = 0;
             p.queue_pos = None;
             p.path = None;
+            p.error = None;
         });
         let transfer = match self.slskd.enqueue(&source.user, &source.path, source.size).await {
             Ok(t) => t,
@@ -553,10 +556,18 @@ impl Fetcher {
         let begun = Instant::now();
         let mut last_bytes = (0u64, Instant::now());
         let mut recorded = false;
+        let mut was_running = false;
         loop {
             tokio::select! {
                 _ = tokio::time::sleep(POLL) => {}
                 _ = stopped(stop) => {
+                    // It may have finished since the last poll: keep track of a finished file
+                    // (cached, evictable) rather than cancel what's already done.
+                    if let Ok(t) = self.slskd.download(&source.user, &transfer.id).await
+                        && t.phase() == Phase::Succeeded
+                    {
+                        return self.finish(f, source, &t).await.map_err(|e| Err(Stop::Failed(e.to_string())));
+                    }
                     if let Err(e) = self.slskd.cancel(&source.user, &transfer.id).await {
                         tracing::warn!(error = %e, "cancelling a transfer in slskd");
                     }
@@ -578,9 +589,13 @@ impl Fetcher {
                 recorded = true;
             }
             let received = on_disk.as_ref().map_or(t.bytes_transferred, |(_, len)| *len);
-            if received > last_bytes.0 {
+            // Silence counts from the last new byte, or from when the peer started sending: a
+            // slow connection set-up (or slskd retrying the peer) is not a stall.
+            let running = t.phase() == Phase::InProgress;
+            if received > last_bytes.0 || (running && !was_running) {
                 last_bytes = (received, Instant::now());
             }
+            was_running = running;
             let quiet = last_bytes.1.elapsed();
             match t.phase() {
                 Phase::Starting if begun.elapsed() > START_TIMEOUT => {
@@ -606,21 +621,10 @@ impl Fetcher {
                     return Err(Ok(Skip::Stalled(format!("{}: {why}", source.user))));
                 }
                 Phase::Succeeded => {
-                    let path = self
-                        .finished_path(&t)
+                    return self
+                        .finish(f, source, &t)
                         .await
-                        .map_err(|e| Err(Stop::Failed(e.to_string())))?;
-                    self.cache
-                        .record(record(path.clone(), true))
-                        .await
-                        .map_err(|e| Err(Stop::Failed(e.to_string())))?;
-                    if let Err(e) = self.peers.delivered(&source.user).await {
-                        tracing::warn!(error = %e, "clearing a peer's stall record");
-                    }
-                    if let Err(e) = self.slskd.cancel(&source.user, &t.id).await {
-                        tracing::debug!(error = %e, "removing a finished transfer from slskd's list");
-                    }
-                    return Ok(path);
+                        .map_err(|e| Err(Stop::Failed(e.to_string())));
                 }
                 phase => self.update(f, |p| {
                     p.received = received;
@@ -636,6 +640,31 @@ impl Fetcher {
                 }),
             }
         }
+    }
+
+    /// A transfer slskd finished: the file is recorded in the cache where slskd moved it, the
+    /// peer's stall record is cleared, and slskd's transfer record is removed.
+    async fn finish(&self, f: &Fetch, source: &Source, t: &Transfer) -> Result<PathBuf> {
+        let path = self.finished_path(t).await?;
+        self.cache
+            .record(Entry {
+                track: f.track.id.clone(),
+                source: source.source_ref(),
+                path: path.clone(),
+                complete: true,
+                used_at: lull_core::now(),
+            })
+            .await?;
+        if let Err(e) = self.cache.report().await {
+            tracing::warn!(error = %e, "measuring the stream cache");
+        }
+        if let Err(e) = self.peers.delivered(&source.user).await {
+            tracing::warn!(error = %e, "clearing a peer's stall record");
+        }
+        if let Err(e) = self.slskd.cancel(&source.user, &t.id).await {
+            tracing::debug!(error = %e, "removing a finished transfer from slskd's list");
+        }
+        Ok(path)
     }
 
     async fn give_up(&self, source: &Source, t: &Transfer) {
