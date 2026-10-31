@@ -121,6 +121,8 @@ impl Tray {
         report(self.mini.set_checked(open));
     }
 
+    /// Windows only: the glyph follows the taskbar theme (platform::follow_taskbar).
+    #[cfg(windows)]
     pub fn set_icon(&self, image: tauri::image::Image<'static>) {
         report(self.icon.set_icon(Some(image)));
     }
