@@ -75,7 +75,6 @@ pub struct LastFm {
 pub struct Discovery {
     pub listenbrainz_user: Option<String>,
     pub listenbrainz_token: Option<Secret>,
-    pub discogs_token: Option<Secret>,
 }
 
 /// A credential: never printed, never sent to the UI.
@@ -179,7 +178,6 @@ impl Config {
             discovery: Discovery {
                 listenbrainz_user: v.opt("LULL_LISTENBRAINZ_USER"),
                 listenbrainz_token: v.opt("LULL_LISTENBRAINZ_TOKEN").map(Secret),
-                discogs_token: v.opt("LULL_DISCOGS_TOKEN").map(Secret),
             },
         };
         match v.0.into_keys().next() {

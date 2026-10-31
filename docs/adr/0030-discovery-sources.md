@@ -41,5 +41,5 @@ The feed, radio and the album, artist and tag pages need recommendations, simila
 - **Works without a single key.** Picks, radio, new releases, tags and tracklists all work. Last.fm adds bios, listener counts and tag descriptions. A ListenBrainz user name adds "listeners like you" picks.
 - **Niche by construction.** Tag picks come from the low-popularity end of a tag. New releases include releases with a few listens.
 - **Slow first build, then cached.** MusicBrainz's 1/s and ListenBrainz's 1/s make the first feed build take tens of seconds. It runs in the background and is cached, so only the very first visit waits.
-- **`LULL_DISCOGS_TOKEN` has no reader.** The integrator is asked to remove it from `core::config` and `deploy/.env.example` (core changes are additive-only for other owners).
+- **No Discogs settings.** `LULL_DISCOGS_TOKEN` and the Settings > Discovery switch for Discogs were removed with this decision.
 - **Last.fm terms:** non-commercial use, and data is credited where shown (`via` on picks, the UI's attribution).

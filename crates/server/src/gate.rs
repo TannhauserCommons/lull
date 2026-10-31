@@ -56,8 +56,10 @@ pub fn router(config: &Config) -> Router {
             if !gate.accepts(token) {
                 return Err(lull_core::Error::Unauthorized);
             }
+            // Lax, not Strict: Last.fm's sign-in redirects back to /api/lastfm/callback, a cross-site
+            // top-level GET that must still carry the token. Cross-site POSTs still never send it.
             let cookie = format!(
-                "{COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000{}",
+                "{COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000{}",
                 if secure { "; Secure" } else { "" }
             );
             Ok(([(header::SET_COOKIE, cookie)], StatusCode::NO_CONTENT))
