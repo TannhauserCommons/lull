@@ -8,12 +8,16 @@ publish.workspace = true
 
 [dependencies]
 lull-core.workspace = true
-async-trait.workspace = true
 axum.workspace = true
+# Query strings for reads, form bodies for signed writes.
+reqwest = { workspace = true, features = ["query", "form"] }
+rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+# Last.fm signs every authenticated call with an MD5 of its parameters (api_sig).
+md-5 = "0.10.6"
 
 [lints]
 workspace = true
