@@ -1,8 +1,10 @@
 /* screens/now.js: Now Playing (device, info stack, source card, lyrics), phone sheet tabs,
    and the Queue / Lyrics / Activity tabs of the context panel.
+   Everything about playback renders from App.player.state (the engine); lyrics and source lists come from the
+   server; activity from the store ('activity', 'saves', 'activityError').
 
    Sections: 1 state + helpers, 2 device (full + compact), 3 info stack + source card,
-   4 lyrics, 5 queue, 6 activity, 7 route + live updates, 8 actions, 9 panels, 10 prototype states. */
+   4 lyrics, 5 queue, 6 activity, 7 route + live updates, 8 actions, 9 panels. */
 (function () {
   'use strict';
   var html = App.html, raw = App.raw, ui = App.ui, M = App.data, icon = App.icon, $ = App.$, $$ = App.$$;
@@ -14,21 +16,33 @@
   var PAGES = ['now', 'source', 'save'];               // device screen pages (select pill cycles them)
   var TABS = ['art', 'lyrics', 'queue', 'details'];    // phone sheet tabs
   var view = { page: 'now', tab: 'art', detailsOpen: false, detailsTrack: null };
-  var demo = { lyrics: null, radioError: false };   // forced by the state switcher
-  var lyricsLoaded = {};                               // trackId -> true once "fetched" (mock lazy fetch)
   var lyAway = {};                                     // lyrics instance key -> user scrolled away
   var actFilter = 'all';
+  var actHidden = {};                                  // job id -> hidden by "Clear finished" (this view only)
   var pendingFocus = null;                             // data-fk of the focused control before a re-render
 
   function cur() { return P.current(); }
   function busy() { return ['finding', 'queued', 'buffering', 'stalled'].indexOf(ps.status) >= 0; }
   function playingNow() { return ps.playing && cur() && ['idle', 'ended', 'failed', 'jellyfin-error'].indexOf(ps.status) < 0; }
+  function onRoute() { return App.current.path === '/now'; }
+  /* the song plays from the library (Jellyfin), not a Soulseek peer; a saved song buffers before it plays */
+  function fromLibrary(t) {
+    if (ps.status === 'library' || ps.status === 'jellyfin-error') return true;
+    return ps.status === 'buffering' && !ps.peer && App.isSaved(t.id);
+  }
+  function peerName() { return ps.peer ? ps.peer.name : 'a peer'; }
+  /* "2 of 7" ("2/7" with sep '/') once the number of answering peers is known, else "2" */
+  function rankOf(n, sep) { return ps.peer && ps.peer.of ? n + (sep || ' of ') + ps.peer.of : String(n); }
+  function nextRank() { return (ps.peer ? ps.peer.rank : 1) + 1; }
+  function mbps(v) { return Math.round((+v || 0) * 10) / 10 + ' MB/s'; }
+  /* a peer that failed: { peer, at } (at = % received, when the server says) */
+  function stalledAt(f) { return f.at != null ? f.peer + ' at ' + f.at + '%' : f.peer; }
+  /* the ranked source row of the peer now streaming: the one picked by hand, else its row in the fetched list */
   function peerSource(t) {
     if (!t || !ps.peer) return null;
-    return t.sources.filter(function (s) { return s.peer === ps.peer.name; })[0] || null;
+    if (ps.source && ps.source.peer === ps.peer.name) return ps.source;
+    return sourceList(t.id).filter(function (s) { return s.peer === ps.peer.name; })[0] || null;
   }
-  function onRoute() { return App.current.path === '/now'; }
-  function bufferedAt(f) { return ps.buffered.some(function (r) { return f >= r[0] && f <= r[1]; }); }
 
   /* Re-renders keep keyboard focus on the same logical control: focusable things carry data-fk.
      withFocus(key, fn) names the control to focus after fn's re-render (a moved row, the next row). */
@@ -75,17 +89,17 @@
     return html`<button class="now-sbtn" data-act="${act}" ${id ? raw('data-id="' + App.esc(id) + '"') : ''} data-fk="sbtn-${act}">${label}</button>`;
   }
   function nowFacts(t) {
-    var fmt = ps.status === 'library' || !ps.peer ? t.format : ps.peer.format || t.format;
-    var chip = ui.qualityChip(fmt, { solid: true });
+    var chip = ui.qualityChip(fromLibrary(t) || !ps.peer ? t.format : ps.peer.format || t.format, { solid: true });
     switch (ps.status) {
-      case 'finding': return html`${chip}<span class="device__fact"><span class="spin-ring" aria-hidden="true"></span><span data-now-bind="peers">${ps.peersFound}</span>&nbsp;peers</span>`;
-      case 'queued': return html`${chip}<span class="device__fact">queue #${ps.queuePos}</span>`;
-      case 'stalled': return html`${chip}<span class="device__fact">next ${(ps.peer ? ps.peer.rank : 1) + 1}/${ps.peer ? ps.peer.of : 1}</span>`;
+      case 'finding': return html`${chip}<span class="device__fact"><span class="spin-ring" aria-hidden="true"></span>${ps.peersFound}&nbsp;peers</span>`;
+      case 'queued': return html`${chip}<span class="device__fact">${ps.queuePos ? 'queue #' + ps.queuePos : 'queued'}</span>`;
+      case 'stalled': return html`${chip}<span class="device__fact">next ${rankOf(nextRank(), '/')}</span>`;
       case 'failed': return html`${screenBtn('retry', 'retry-search')}${screenBtn('pick source', 'pick-source')}`;
-      case 'jellyfin-error': return html`${screenBtn('try soulseek', 'try-soulseek')}`;
+      case 'jellyfin-error': return screenBtn('try soulseek', 'try-soulseek');
       case 'ended': return html`${screenBtn('replay', 'play')}${screenBtn('radio', 'start-radio-current')}`;
-      case 'library': return html`${chip}<span class="device__fact">library</span>`;
-      default: return html`${chip}<span class="device__fact">peer&nbsp;<span data-bind="received">${Math.round(ps.received * 100)}%</span></span>`;
+      default:
+        if (fromLibrary(t)) return html`${chip}<span class="device__fact">library</span>`;
+        return html`${chip}<span class="device__fact">peer&nbsp;<span data-bind="received">${Math.round(ps.received * 100)}%</span></span>`;
     }
   }
   function pageNow(t) {
@@ -99,16 +113,16 @@
   }
   function pageSource(t) {
     if (!t) return kv([['source', 'none']]);
-    if (ps.status === 'library' || ps.status === 'jellyfin-error' || !ps.peer) {
-      return kv([['source', 'jellyfin'], ['format', t.format], ['size', t.sizeMB + ' MB'], ['state', ps.status === 'jellyfin-error' ? 'missing' : 'saved']]);
+    if (fromLibrary(t)) {
+      return kv([['source', 'jellyfin'], ['format', t.format], ['size', App.fmt.size(t.sizeMB)], ['state', ps.status === 'jellyfin-error' ? 'missing' : 'saved']]);
     }
-    var s = peerSource(t) || {};
-    var last = ps.failedPeers[ps.failedPeers.length - 1];
+    if (!ps.peer) return kv([['source', 'soulseek'], ['state', stateText()], ['peers', ps.peersFound]]);
+    var s = peerSource(t), last = ps.failedPeers[ps.failedPeers.length - 1];
     return kv([
-      ['peer', ps.peer.name], ['rank', ps.peer.rank + ' of ' + ps.peer.of], ['speed', (ps.status === 'stalled' ? 0 : ps.peer.speed) + ' MB/s'],
-      ['slot', s.freeSlot ? 'free' : 'queue ' + (s.queue || 0)],
+      ['peer', ps.peer.name], ['rank', rankOf(ps.peer.rank)], ['speed', mbps(ps.status === 'stalled' ? 0 : ps.peer.speed)],
+      s ? ['slot', s.freeSlot ? 'free' : 'queue ' + (s.queue || 0)] : ['peers', ps.peersFound],
       ['received', raw('<span data-bind="received">' + Math.round(ps.received * 100) + '%</span>')],
-      last ? ['fallback', last.peer + ' ' + last.at + '%'] : ['format', ps.peer.format || t.format]
+      last ? ['fallback', stalledAt(last)] : ['format', ps.peer.format || t.format]
     ]);
   }
   function pageSave(t) {
@@ -233,9 +247,11 @@
     var t = cur();
     return t ? html`${icon('queue', null, 'ic-16')}<span>playing from your queue</span>` : html`${icon('sparkle', null, 'ic-16')}<span>nothing queued</span>`;
   }
+  /* why this song: its pick in the home feed (when Home has loaded it), or the artist radio it came from */
   function reasonFor(t) {
-    var pick = M.feed.picks.filter(function (p) { return p.trackId === t.id; })[0];
-    if (pick) return ui.reasonChip(pick.reasons[0], { more: pick.reasons.length - 1, via: pick.via, itemId: t.id });
+    var feed = M.peek('/api/feed');
+    var pick = feed && (feed.picks || []).filter(function (p) { return p.trackId === t.id; })[0];
+    if (pick && pick.reasons && pick.reasons.length) return ui.reasonChip(pick.reasons[0], { more: pick.reasons.length - 1, via: pick.via, itemId: t.id });
     if (ps.radio && ps.radio.seed && ps.radio.seed.kind === 'artist' && t.artistId !== ps.radio.seed.id) {
       return ui.reasonChip({ kind: 'like', name: ps.radio.name, ref: ps.radio.seed.id }, { itemId: t.id });
     }
@@ -247,7 +263,7 @@
     var a = M.album(t.albumId);
     return html`<p class="now-head__from">${fromLine()}</p>
       <h1 class="t-title-xl now-head__title">${t.title}</h1>
-      <p class="now-head__by"><a class="link" href="#/artist/${t.artistId}">${t.artist}</a>, <a class="link-plain" href="#/album/${t.albumId}">${t.album}${a && a.type !== 'album' ? ' ' + a.type : ''}</a>, ${t.year}</p>
+      <p class="now-head__by"><a class="link" href="#/artist/${t.artistId}">${t.artist}</a>, <a class="link-plain" href="#/album/${t.albumId}">${t.album}${a && a.type !== 'album' ? ' ' + a.type : ''}</a>${t.year ? ', ' + t.year : ''}</p>
       <div class="now-head__chips">${t.tags.map(function (g) { return ui.tagChip(g); })}${reasonFor(t)}</div>`;
   }
   function actionRow() {
@@ -270,16 +286,18 @@
   /* source card: where the audio comes from + the 5-step save pipeline + a details expander */
   function sourceHead(t) {
     var src = peerSource(t);
-    var size = (ps.peer && ps.peer.sizeMB) || (src && src.sizeMB) || t.sizeMB;
+    var size = (ps.peer && ps.peer.sizeMB) || (src && src.sizeBytes / 1e6) || t.sizeMB;
+    /* buffering after a peer fallback, or from the library: the engine's own sentence says which */
+    if (ps.status === 'buffering' && (ps.fallback || fromLibrary(t))) return html`${icon(ps.fallback ? 'refresh' : 'saved')}<span>${P.statusText()}</span>`;
     switch (ps.status) {
       case 'library': return html`${icon('saved')}<span>Playing from <b>your library</b></span>${ui.qualityChip(t.format, { solid: true })}<span class="source-card__stat">jellyfin</span>`;
-      case 'jellyfin-error': return html`${icon('warning')}<span><b>Library item unavailable.</b> Jellyfin can't find the file.</span><button class="btn btn--sm" data-act="try-soulseek" data-fk="src-try">Try Soulseek instead</button>`;
-      case 'finding': return html`${icon('soulseek')}<span>Finding a source, <b data-now-bind="peers">${ps.peersFound}</b> peers answered</span>`;
-      case 'queued': return html`${icon('clock')}<span>Queued at <b>${ps.peer.name}</b>, position ${ps.queuePos}</span>`;
-      case 'failed': return html`${icon('warning')}<span><b>Couldn't play:</b> no peer responded</span><button class="btn btn--sm" data-act="retry-search" data-fk="src-retry">Retry search</button>`;
-      case 'stalled': return html`${icon('refresh')}<span><b>${ps.peer.name}</b> stalled, switching to source ${ps.peer.rank + 1} of ${ps.peer.of}</span><button class="btn btn--sm" data-act="pick-source" data-fk="src-pick">Choose manually</button>`;
+      case 'jellyfin-error': return html`${icon('warning')}<span><b>Library item unavailable.</b> ${ps.error || 'Jellyfin can\'t find the file.'}</span><button class="btn btn--sm" data-act="try-soulseek" data-fk="src-try">Try Soulseek instead</button>`;
+      case 'finding': return html`${icon('soulseek')}<span>Finding a source, <b>${ps.peersFound}</b> peers answered</span>`;
+      case 'queued': return html`${icon('clock')}<span>Queued at <b>${peerName()}</b>${ps.queuePos ? ', position ' + ps.queuePos : ''}</span>`;
+      case 'failed': return html`${icon('warning')}<span><b>${P.statusText()}</b></span><button class="btn btn--sm" data-act="retry-search" data-fk="src-retry">Retry search</button>`;
+      case 'stalled': return html`${icon('refresh')}<span><b>${peerName()}</b> stalled, switching to source ${rankOf(nextRank())}</span><button class="btn btn--sm" data-act="pick-source" data-fk="src-pick">Choose manually</button>`;
       case 'ended': return html`${icon('info')}<span>End of queue</span><button class="btn btn--sm" data-act="start-radio-current" data-fk="src-radio">Start radio</button>`;
-      default: return html`${icon('soulseek')}<span>Streaming from <b>${ps.peer ? ps.peer.name : 'a peer'}</b></span>${ui.qualityChip(ps.peer && ps.peer.format || t.format, { solid: true })}<span class="source-card__stat">${ps.peer ? ps.peer.speed : 0} MB/s</span><span class="source-card__stat"><span data-bind="received">${Math.round(ps.received * 100)}%</span> of ${size} MB</span>`;
+      default: return html`${icon('soulseek')}<span>Streaming from <b>${peerName()}</b></span>${ui.qualityChip(ps.peer && ps.peer.format || t.format, { solid: true })}<span class="source-card__stat">${mbps(ps.peer && ps.peer.speed)}</span><span class="source-card__stat"><span data-bind="received">${Math.round(ps.received * 100)}%</span> of ${App.fmt.size(size)}</span>`;
     }
   }
   function saveState(t) {
@@ -291,25 +309,48 @@
       <div class="pipeline__text"><span class="pipeline__step">not saved</span><span class="pipeline__label">Save keeps a tagged copy in your library</span></div></div>`;
   }
   function sourceDetails(t) {
-    var src = peerSource(t), f = M.formats[(ps.peer && ps.peer.format) || t.format] || {};
-    var rows = [['Album', html`<a class="link" href="#/album/${t.albumId}">${t.album}</a>, ${t.year}`], ['Format', f.detail || t.format]];
-    if (ps.peer && ps.status !== 'library') {
-      rows.push(['Peer', ps.peer.name + ', source ' + ps.peer.rank + ' of ' + ps.peer.of]);
-      if (src) rows.push(['Upload slot', src.freeSlot ? 'Free now' : 'Queue of ' + src.queue]);
-      rows.push(['Speed', ps.peer.speed + ' MB/s']);
-    } else rows.push(['Source', 'Jellyfin library']);
-    rows.push(['Size', ((ps.peer && ps.peer.sizeMB) || t.sizeMB) + ' MB']);
-    if (ps.failedPeers.length) rows.push(['Fallbacks', ps.failedPeers.map(function (p) { return p.peer + ' stalled at ' + p.at + '%'; }).join(', ')]);
+    var src = peerSource(t), lib = fromLibrary(t), known = sources[t.id] && sources[t.id].data;
+    var rows = [['Album', html`<a class="link" href="#/album/${t.albumId}">${t.album}</a>${t.year ? ', ' + t.year : ''}`],
+      ['Format', (!lib && ps.peer && ps.peer.format) || t.format || 'unknown']];
+    if (!lib && ps.peer) {
+      rows.push(['Peer', ps.peer.name + ', source ' + rankOf(ps.peer.rank)]);
+      if (src) rows.push(['Upload slot', src.freeSlot ? 'Free now' : 'Queue of ' + (src.queue || 0)]);
+      rows.push(['Speed', mbps(ps.peer.speed)]);
+    } else rows.push(['Source', lib ? 'Jellyfin library' : 'Soulseek, ' + stateText()]);
+    rows.push(['Size', App.fmt.size((ps.peer && ps.peer.sizeMB) || t.sizeMB)]);
+    if (ps.failedPeers.length) rows.push(['Fallbacks', ps.failedPeers.map(stalledAt).join(', ')]);
+    var label = view.detailsTrack ? 'Hide sources' : known ? 'See all ' + (known.sources || []).length + ' sources' : 'See all sources';
     return html`<dl class="now-src__dl">${rows.map(function (r) { return html`<div><dt>${r[0]}</dt><dd>${r[1]}</dd></div>`; })}</dl>
-      <div class="now-src__more"><button class="btn btn--sm" data-act="now-other-sources" data-id="${t.id}" aria-expanded="${String(!!view.detailsTrack)}" data-fk="src-list">${icon('soulseek')}${view.detailsTrack ? 'Hide sources' : 'See all ' + t.sources.length + ' sources'}</button></div>
-      ${view.detailsTrack && M.track(view.detailsTrack) ? sourcesTable(M.track(view.detailsTrack)) : ''}`;
+      <div class="now-src__more"><button class="btn btn--sm" data-act="now-other-sources" data-id="${t.id}" aria-expanded="${String(!!view.detailsTrack)}" data-fk="src-list">${icon('soulseek')}${label}</button></div>
+      ${view.detailsTrack ? sourcesTable(view.detailsTrack) : ''}`;
   }
-  function sourcesTable(t) {
-    return html`${t.id !== P.currentId() ? html`<p class="now-src__line">${icon('info')}<span>Sources for <b>${t.title}</b>, ${t.artist}</span></p>` : ''}<div class="src-table now-src__table" role="list" aria-label="Sources for ${t.title}">${t.sources.map(function (s, i) {
-      var on = ps.peer && ps.peer.name === s.peer;
-      return html`<div class="src-row ${on ? 'is-preferred' : ''}" role="listitem"><span class="src-row__peer">${icon('peer')}${s.peer}</span><span>${ui.qualityChip(s.format)}</span><span class="src-row__opt">${s.speed} MB/s</span><span class="score" style="--s:${s.score / 100}" data-tip="score ${s.score}"><i></i></span>
-        <button class="btn btn--sm" data-act="now-use-source" data-id="${t.id}" data-si="${i}" ${on ? raw('aria-current="true"') : ''} data-fk="use-${i}">${on ? 'Playing' : 'Use'}</button></div>`;
-    })}</div>`;
+  /* ranked sources per song (GET /api/tracks/{id}/sources), fetched when the list opens. Kept here rather than in an
+     M.get read: a settled M.get re-renders the whole route (replaying the device's power-on); this swaps the card. */
+  var sources = {};
+  function loadSources(id) {
+    var r = sources[id] = { loading: true, error: null, data: sources[id] ? sources[id].data : null };
+    M.api('/api/tracks/' + encodeURIComponent(id) + '/sources').then(function (d) { r.data = d || {}; }, function (err) { r.error = err; })
+      .then(function () { r.loading = false; if (sources[id] === r) refreshSourceCard(); });
+    return r;
+  }
+  function sourcesRead(id) { return sources[id] || loadSources(id); }
+  function sourceList(id) { var r = sources[id]; return r && r.data && r.data.sources || []; }
+  function refreshSourceCard() { swap($('[data-now="src"]'), sourceCard()); }
+  function sourcesTable(id) {
+    var t = M.track(id), r = sourcesRead(id);
+    var head = t && id !== P.currentId() ? html`<p class="now-src__line">${icon('info')}<span>Sources for <b>${t.title}</b>, ${t.artist}</span></p>` : '';
+    var reload = function (label) { return html`<div class="now-src__more"><button class="btn btn--sm" data-act="now-src-reload" data-id="${id}" data-fk="src-reload">${label}</button></div>`; };
+    if (r.error) return html`${head}<p class="now-src__line" role="alert">${icon('warning')}<span>${r.error.message}</span></p>${reload('Try again')}`;
+    if (!r.data) return html`${head}<div class="now-src__table" role="status"><span class="vh">Looking for sources</span>${ui.skeleton('row', 3)}</div>`;
+    var list = r.data.sources || [];
+    var rows = list.map(function (s, i) {
+      var on = !!(ps.peer && ps.peer.name === s.peer && id === P.currentId());
+      return html`<div class="src-row${s.preferred ? ' is-preferred' : ''}${s.stalledBefore ? ' is-failed' : ''}" role="listitem"><span class="src-row__peer">${icon('peer')}${s.peer}</span><span>${ui.qualityChip(s.format)}</span><span class="src-row__opt">${mbps(s.speed)}</span><span class="score" style="--s:${(s.score || 0) / 100}" data-tip="score ${s.score}"><i></i></span>
+        <button class="btn btn--sm" data-act="now-use-source" data-id="${id}" data-si="${i}" aria-label="${on ? 'Playing' : 'Use'} ${s.peer}${s.stalledBefore ? ', stalled before' : ''}" ${on ? raw('aria-current="true"') : ''} data-fk="use-${i}">${on ? 'Playing' : 'Use'}</button></div>`;
+    });
+    return html`${head}${list.length ? html`<div class="src-table now-src__table" role="list" aria-label="Sources for ${t ? t.title : 'this song'}">${rows}</div>`
+      : html`<p class="now-src__line">${icon('info')}<span>No peer has this song right now.</span></p>`}
+      ${r.data.done ? '' : html`<p class="now-src__line">${icon('soulseek')}<span>Still searching Soulseek, more peers may answer.</span></p>${reload('Refresh')}`}`;
   }
   function sourceCard() {
     var t = cur();
@@ -329,40 +370,42 @@
   /* up next preview (2 songs) with a link into the queue */
   function upNext() {
     var rows = [], i = ps.index + 1;
-    while (rows.length < 2 && i < ps.queue.length) { rows.push(qRow(ps.queue[i], i, { preview: true })); i++; }
+    while (rows.length < 2 && i < ps.queue.length) { if (M.track(ps.queue[i].trackId)) rows.push(qRow(ps.queue[i], i, { preview: true })); i++; }
     return html`${ui.labelRule('up next', { action: { label: 'Queue', act: 'now-open-queue' } })}
       ${rows.length ? html`<ol class="tlist tlist--dense now-q__list" aria-label="Up next">${rows}</ol>`
         : html`<p class="now-next__none">${icon('sparkle', null, 'ic-16')}Nothing up next.</p><button class="btn btn--sm" data-act="start-radio-current">${icon('radio')}Start radio</button>`}`;
   }
 
   /* =====================================================================
-     4. Lyrics (LRCLIB shape): synced + word sync, plain, instrumental, not found, loading, error
+     4. Lyrics (LRCLIB via the server): synced, plain, instrumental, none, loading, error (503 = rate-limited)
      ===================================================================== */
-  function parseLRC(text) {
-    return text.split('\n').map(function (l) {
-      var m = /^\[(\d+):(\d+(?:\.\d+)?)\]\s?(.*)$/.exec(l);
-      return m ? { t: +m[1] * 60 + +m[2], key: (+m[1] * 60 + +m[2]).toFixed(2), text: m[3].trim() } : null;
-    }).filter(Boolean);
+  /* GET /api/lyrics/{id} -> { kind: synced|plain|instrumental|none, lines [{ t, text }], plain, source }, once per song.
+     Not an M.get read: the Lyrics panel shows on every route and a settled M.get only re-renders the route;
+     this re-renders the lyrics blocks wherever they are. */
+  var lyrics = {};
+  function lyricsRead(id) {
+    var r = lyrics[id];
+    if (r) return r;
+    r = lyrics[id] = { loading: true, error: null, data: null };
+    M.api('/api/lyrics/' + encodeURIComponent(id)).then(function (d) { r.data = d || {}; }, function (err) { r.error = err; })
+      .then(function () { r.loading = false; if (lyrics[id] === r && P.currentId() === id) refreshLyrics(); });
+    return r;
   }
   function lyricsFor(t) {
-    if (demo.lyrics === 'loading' || demo.lyrics === 'error') return { state: demo.lyrics };
-    var rec = M.lyrics[t.id];
-    if (!lyricsLoaded[t.id]) { fetchLyrics(t.id); return { state: 'loading' }; }
-    if (!rec) return { state: 'notfound' };
-    if (rec.instrumental) return { state: 'instrumental' };
-    if (rec.syncedLyrics) return { state: 'synced', lines: parseLRC(rec.syncedLyrics), words: rec.wordSync || {} };
-    if (rec.plainLyrics) return { state: 'plain', text: rec.plainLyrics };
-    return { state: 'notfound' };
-  }
-  /* mock lazy fetch: the first look at a song's lyrics shows the loading state briefly */
-  function fetchLyrics(id) {
-    if (fetchLyrics[id]) return;
-    /* PROTO: simulated delay */ fetchLyrics[id] = setTimeout(function () { lyricsLoaded[id] = true; delete fetchLyrics[id]; refreshLyrics(); }, 650);
+    var r = lyricsRead(t.id), d = r.data;
+    if (r.error) return { state: 'error', error: r.error };
+    if (!d) return { state: 'loading' };
+    var lines = d.lines || [];
+    var text = d.plain || lines.map(function (l) { return l.text; }).join('\n');
+    if (d.kind === 'synced' && lines.length) return { state: 'synced', lines: lines, source: d.source };
+    if (d.kind === 'synced' || d.kind === 'plain') return { state: text ? 'plain' : 'none', text: text, source: d.source };
+    if (d.kind === 'instrumental' || d.kind === 'none') return { state: d.kind, source: d.source };
+    return { state: 'error', error: { message: 'The server sent lyrics of an unknown kind (' + d.kind + ').' } };
   }
   function lyStep() { var s = +(App.storage('lyricStep') || 0); return App.clamp(isNaN(s) ? 0 : s, -2, 2); }
   function lyTag(L) {
-    var map = { synced: Object.keys(L.words || {}).length ? 'word sync' : 'synced', plain: 'not synced' };
-    return map[L.state] ? html`<span class="now-ly__tag">${map[L.state]}</span>` : '';
+    var label = { synced: 'synced', plain: 'not synced' }[L.state];
+    return label ? html`<span class="now-ly__tag">${label}</span>` : '';
   }
   function lyTools() {
     var s = lyStep();
@@ -371,16 +414,11 @@
       <button class="btn-icon btn-icon--bare btn-icon--sm" data-act="now-ly-size" data-dir="1" aria-label="Larger lyrics" data-tip="Larger text" ${s >= 2 ? raw('disabled') : ''} data-fk="ly-plus"><span class="now-ly__a" aria-hidden="true">A+</span></button></span>`;
   }
   function lyLines(L, key) {
-    var i = currentLine(L.lines), out = [];
-    L.lines.forEach(function (l, n) {
-      if (!l.text) { out.push(html`<li class="now-ly__gap" aria-hidden="true"><i></i><i></i><i></i></li>`); return; }
-      var words = L.words[l.key], cls = n < i ? 'is-past' : n === i ? 'is-current' : '';
-      var inner = words ? raw(words.map(function (w, k) {
-        return '<span class="now-ly__w" data-t="' + w[0] + '">' + App.esc(w[1]) + (k < words.length - 1 ? ' ' : '') + '</span>';
-      }).join('')) : l.text;
-      out.push(html`<li><button class="now-ly__line ${cls}" data-t="${l.t}" data-i="${n}" tabindex="${n === Math.max(i, firstSung(L.lines)) ? 0 : -1}" ${n === i ? raw('aria-current="true"') : ''} data-fk="ly-${key}-${n}">${inner}</button></li>`);
+    var i = currentLine(L.lines), first = firstSung(L.lines);
+    return L.lines.map(function (l, n) {
+      if (!l.text) return html`<li class="now-ly__gap" aria-hidden="true"><i></i><i></i><i></i></li>`;
+      return html`<li><button class="now-ly__line ${n < i ? 'is-past' : n === i ? 'is-current' : ''}" data-t="${l.t}" data-i="${n}" tabindex="${n === Math.max(i, first) ? 0 : -1}" ${n === i ? raw('aria-current="true"') : ''} data-fk="ly-${key}-${n}">${l.text}</button></li>`;
     });
-    return out;
   }
   function firstSung(lines) { for (var i = 0; i < lines.length; i++) if (lines[i].text) return i; return 0; }
   function currentLine(lines) {
@@ -394,8 +432,8 @@
     if (!t) return html`<div class="now-ly now-ly--${key}">${ui.emptyState({ art: 'wave', title: 'Nothing playing', text: 'Lyrics show up here while a song plays.' })}</div>`;
     var L = lyricsFor(t);
     if (L.state === 'loading') body = html`<div class="now-ly__state" role="status"><span class="vh">Loading lyrics</span>${ui.skeleton('text', 7)}</div>`;
-    else if (L.state === 'error') body = html`<div class="now-ly__state">${ui.emptyState({ art: 'star', title: 'Lyrics unavailable right now', text: 'LRCLIB asked us to slow down (too many requests). Trying again in 40\u00a0s.', action: { label: 'Try again', act: 'now-ly-retry' } })}</div>`;
-    else if (L.state === 'notfound') body = html`<div class="now-ly__state">${ui.emptyState({ art: 'slot', title: 'No lyrics found', text: 'LRCLIB has nothing for this song yet. Check again later.', action: { label: 'Check again', act: 'now-ly-retry' } })}</div>`;
+    else if (L.state === 'error') body = html`<div class="now-ly__state">${ui.emptyState({ art: 'star', title: 'Lyrics unavailable right now', text: L.error.message, action: { label: 'Try again', act: 'now-ly-retry' } })}</div>`;
+    else if (L.state === 'none') body = html`<div class="now-ly__state">${ui.emptyState({ art: 'slot', title: 'No lyrics found', text: 'LRCLIB has nothing for this song yet. Check again later.', action: { label: 'Check again', act: 'now-ly-retry' } })}</div>`;
     else if (L.state === 'instrumental') body = html`<div class="now-ly__state">${ui.emptyState({ art: 'wave', title: 'Instrumental', text: 'No words in this one. Just listen.' })}</div>`;
     else if (L.state === 'plain') body = html`<div class="now-ly__view"><div class="now-ly__scroll now-ly__plain" tabindex="0" aria-label="Lyrics, not synced">${L.text.split('\n\n').map(function (st) {
       return html`<p>${st.split('\n').map(function (ln, i) { return html`${i ? raw('<br>') : ''}${ln}`; })}</p>`;
@@ -409,12 +447,12 @@
     return html`<div class="now-ly now-ly--${key}" data-state="${L.state}" style="--ly-step:${lyStep()}">
       ${key === 'page' ? html`<div class="now-ly__head">${ui.labelRule('lyrics')}${lyTag(L)}</div>` : html`<div class="now-ly__head">${lyTag(L)}<span class="spacer"></span></div>`}
       ${body}
-      <div class="now-ly__foot"><span class="now-ly__attr">Lyrics from LRCLIB</span>${L.state === 'synced' || L.state === 'plain' ? lyTools() : ''}</div>
+      <div class="now-ly__foot"><span class="now-ly__attr">Lyrics provided by ${L.source || 'LRCLIB'}</span>${L.state === 'synced' || L.state === 'plain' ? lyTools() : ''}</div>
     </div>`;
   }
   function refreshLyrics() {
     var c = $('[data-now="lyrics"]'); if (c) swap(c, lyricsBlock('page'));
-    if (App.store.get('ctxTab') === 'lyrics' || $('#ctx-body .now-ly')) App.refreshPanel();
+    if (App.store.get('ctxTab') === 'lyrics') App.refreshPanel();
     lyMountAll();
   }
 
@@ -448,6 +486,8 @@
     try { sc.scrollTo({ top: Math.max(0, top), behavior: smooth && !App.reducedMotion() ? 'smooth' : 'auto' }); } catch (e) { sc.scrollTop = Math.max(0, top); }
     clearTimeout(st.autoT); st.autoT = setTimeout(function () { st.auto = false; }, smooth ? 700 : 60);
   }
+  /* a line can be jumped to only inside what has arrived (the engine's rule, P.seekable) */
+  function lineSeekable(line) { return P.seekable(+line.getAttribute('data-t') / (P.duration() || 1)); }
   function lyUpdate(sc, jump) {
     var st = sc._ly, lines = st.lines; if (!lines.length) return;
     var p = ps.pos + .15, i = -1;
@@ -460,13 +500,12 @@
       st.cur = i;
       if (!lyAway[st.key] && (i >= 0 || jump)) lyScroll(sc, lines[Math.max(i, 0)], !jump);
     }
-    if (i >= 0) $$('.now-ly__w', lines[i]).forEach(function (w) { w.classList.toggle('is-sung', +w.getAttribute('data-t') <= p); });
     // lines outside the downloaded part cannot be jumped to: say so on hover / focus
-    var dur = P.duration() || 1, bk = ps.buffered.map(function (r) { return r.join('-'); }).join('|');
+    var bk = ps.buffered.map(function (r) { return r.join('-'); }).join('|') + '/' + ps.received;
     if (bk !== st.bk) {
       st.bk = bk;
       lines.forEach(function (l) {
-        var ok = bufferedAt(+l.getAttribute('data-t') / dur);
+        var ok = lineSeekable(l);
         l.setAttribute('data-tip', ok ? 'Jump to ' + fmtTime(+l.getAttribute('data-t')) : 'Not downloaded yet (' + Math.round(ps.received * 100) + '%)');
         l.classList.toggle('is-far', !ok);
       });
@@ -476,9 +515,9 @@
   function lyTick() { $$('.now-ly__scroll[data-sync]').forEach(function (sc) { if (!sc._ly) lyInit(sc); else lyUpdate(sc, false); }); }
   document.addEventListener('click', function (e) {
     var line = e.target.closest('.now-ly__line'); if (!line) return;
-    var t = +line.getAttribute('data-t'), sc = line.closest('.now-ly__scroll');
-    if (bufferedAt(t / (P.duration() || 1))) {
-      P.seek(t); if (!ps.playing) P.play();
+    var sc = line.closest('.now-ly__scroll');
+    if (lineSeekable(line)) {
+      P.seek(+line.getAttribute('data-t')); if (!ps.playing) P.play();
       if (sc && sc._ly) { lyAway[sc._ly.key] = false; var b = sc.parentNode.querySelector('.now-ly__back'); if (b) b.hidden = true; sc._ly.cur = -2; lyUpdate(sc, false); }
     } else {
       line.classList.remove('is-denied'); void line.offsetWidth; line.classList.add('is-denied');
@@ -517,18 +556,18 @@
   }
   function radioHead() {
     if (!ps.radio) return '';
-    var steer = ps.radio.steer == null ? .4 : ps.radio.steer;
+    var steer = ps.radio.steer == null ? .4 : ps.radio.steer, steerId = App.uid('now-steer');
     return html`<div class="now-q__radio">
       <div class="now-q__radio-row">${icon('radio')}<span class="now-q__radio-name">Radio: <b>${ps.radio.name}</b></span>
         <button class="btn-icon btn-icon--bare btn-icon--sm" data-act="now-radio-stop" aria-label="Stop radio" data-tip="Stop radio" data-fk="radio-stop">${icon('close', null, 'ic-16')}</button></div>
       <label class="switch-row now-q__keep"><span class="switch-row__label">Keeps adding songs</span>
         <button class="switch" role="switch" aria-checked="${ps.radio.keepsAdding ? 'true' : 'false'}" data-act="now-radio-keep" aria-label="Radio keeps adding songs" data-fk="radio-keep"></button></label>
       <div class="now-q__steer">
-        <label class="now-q__steer-label" for="now-steer-${App.uid('s')}">Steer</label>
-        <input class="range" type="range" min="0" max="100" step="5" value="${Math.round(steer * 100)}" style="--fill:${Math.round(steer * 100)}%" data-now-steer aria-valuetext="${steerText(steer)}" data-fk="radio-steer">
+        <label class="now-q__steer-label" for="${steerId}">Steer</label>
+        <input class="range" id="${steerId}" type="range" min="0" max="100" step="5" value="${Math.round(steer * 100)}" style="--fill:${Math.round(steer * 100)}%" data-now-steer aria-valuetext="${steerText(steer)}" data-fk="radio-steer">
         <div class="now-q__steer-ends" aria-hidden="true"><span>Familiar</span><span>Adventurous</span></div>
       </div>
-      ${demo.radioError ? html`<div class="now-q__err" role="alert">${icon('warning', null, 'ic-16')}<span>Radio paused: couldn't find playable songs.</span><button class="btn btn--sm" data-act="now-radio-retry" data-fk="radio-retry">Try again</button></div>` : ''}
+      ${ps.radio.error ? html`<div class="now-q__err" role="alert">${icon('warning', null, 'ic-16')}<span>Radio paused: ${ps.radio.error}</span><button class="btn btn--sm" data-act="now-radio-retry" data-fk="radio-retry">Try again</button></div>` : ''}
     </div>`;
   }
   function steerText(v) { return v < .25 ? 'Mostly familiar' : v < .45 ? 'A little adventurous' : v < .7 ? 'Balanced' : 'Very adventurous'; }
@@ -539,7 +578,7 @@
     var rows = [html`<li class="now-q__group label-rule label-rule--sm"><h3>now playing</h3></li>`, qRow(ps.queue[ps.index], ps.index)];
     GROUPS.forEach(function (g) {
       var items = [];
-      ps.queue.forEach(function (q, i) { if (i > ps.index && q.group === g[0]) items.push(qRow(q, i)); });
+      ps.queue.forEach(function (q, i) { if (i > ps.index && q.group === g[0] && M.track(q.trackId)) items.push(qRow(q, i)); });
       if (!items.length) return;
       var label = g[0] === 'radio' && !(ps.radio && ps.radio.keepsAdding) ? 'from radio' : g[1];
       rows.push(html`<li class="now-q__group label-rule label-rule--sm"><h3>${label}</h3><span class="now-q__count">${items.length}</span></li>`);
@@ -564,7 +603,7 @@
     if (to <= ps.index || to >= ps.queue.length) { App.announce(dir < 0 ? 'Already first after the current song' : 'Already last'); return; }
     var q = ps.queue[qi], t = M.track(q.trackId);
     withFocus('row-' + q.uid, function () { P.move(qi, to); });
-    App.announce('Moved ' + t.title + ' to position ' + (to - ps.index));
+    App.announce('Moved ' + (t ? t.title : 'the song') + ' to position ' + (to - ps.index));
   }
   function jumpTo(qi) {
     if (qi === ps.index) { P.toggle(); return; }
@@ -613,65 +652,82 @@
     clearDropLine(); qDrag = null;
     if (from === ps.index) { App.toast('That song is playing. Move the others around it.', { icon: 'info' }); return; }
     to = Math.max(to, ps.index + 1);
-    if (to !== from) { var t = M.track(ps.queue[from].trackId); P.move(from, to); App.announce('Moved ' + t.title); }
+    if (to !== from) { var t = M.track(ps.queue[from].trackId); P.move(from, to); App.announce('Moved ' + (t ? t.title : 'the song')); }
   }, true);
 
   /* =====================================================================
      6. Activity: transfers (hatched progress), saves (5 steps), imports, rescans; filters; All quiet
      ===================================================================== */
+  var SAVE_STATUS = { running: 'saving', done: 'saved', failed: 'failed', pending: 'pending' };   // save job stepState -> record status
+  /* Rows: transfers, imports and rescans from store 'activity'; saves from store 'saves' (the live record per song),
+     plus the save jobs the server listed for songs this page holds no record for. */
   function jobs() {
-    var list = (App.store.get('activity') || []).slice(), saves = App.store.get('saves') || {};
+    var saves = App.store.get('saves') || {};
+    var list = (App.store.get('activity') || []).filter(function (j) { return !(j.kind === 'save' && saves[j.trackId]); })
+      .map(function (j) { return j.kind === 'save' ? Object.assign({}, j, { status: SAVE_STATUS[j.stepState] || 'saving' }) : j; });
     Object.keys(saves).forEach(function (id) {
       var s = saves[id];
-      list = list.filter(function (j) { return !(j.kind === 'save' && j.trackId === id); });
-      list.unshift({ id: 'save-' + id, kind: 'save', trackId: id, step: s.step, live: true, error: s.error,
-        stepState: s.status === 'saving' ? 'running' : s.status === 'failed' ? 'failed' : 'done' });
+      list.unshift({ id: s.jobId || 'save-' + id, jobId: s.jobId, kind: 'save', trackId: id, step: s.step, status: s.status, error: s.error });
     });
-    return list;
+    return list.filter(function (j) { return !(actHidden[j.id] && jobState(j) === 'done'); });
   }
   function jobState(j) {
-    if (j.kind === 'transfer') return j.state === 'failed' ? 'failed' : j.state === 'transferring' || j.state === 'queued' ? 'active' : 'done';
-    if (j.kind === 'save') return j.stepState === 'running' ? 'active' : j.stepState === 'failed' ? 'failed' : 'done';
+    if (j.kind === 'transfer') return j.state === 'failed' ? 'failed' : ['transferring', 'queued', 'stalled'].indexOf(j.state) >= 0 ? 'active' : 'done';
+    if (j.kind === 'save') return j.status === 'saving' ? 'active' : j.status === 'failed' ? 'failed' : 'done';
     return j.state === 'running' ? 'active' : j.state === 'failed' ? 'failed' : 'done';
+  }
+  function jobTitle(j) {
+    var t = j.trackId && M.track(j.trackId);
+    return t ? t.title : j.kind === 'import' ? j.name || 'Playlist import' : j.kind === 'rescan' ? 'Jellyfin rescan' : 'Unknown song';
   }
   function actBtn(ic, label, act, j, extra) {
     return html`<button class="btn-icon btn-icon--bare btn-icon--sm" data-act="${act}" data-job="${j.id}" ${extra ? raw(extra) : ''} aria-label="${label}" data-tip="${label}" data-fk="${act}-${j.id}">${icon(ic, null, 'ic-16')}</button>`;
   }
-  function jobRow(j) {
-    var t = j.trackId ? M.track(j.trackId) : null, st = jobState(j), meta, extra = '', acts = '';
-    var live = j.kind === 'transfer' && j.trackId === P.currentId() && j.state === 'transferring';
-    if (j.kind === 'transfer') {
-      var pct = live ? Math.round(ps.received * 100) : j.pct;
-      if (j.state === 'transferring') { meta = html`${icon('soulseek', null, 'ic-16')}<span>${j.peer}, ${live && ps.peer ? ps.peer.speed : j.speed} MB/s, <span ${live ? raw('data-bind="received"') : ''}>${pct}%</span></span>`; extra = html`<div class="progress progress--xfer" style="--p:${pct / 100}" ${live ? raw('data-now-xfer') : ''}><i></i></div>`; acts = html`${actBtn('close', 'Cancel transfer', 'now-job-cancel', j)}`; }
-      else if (j.state === 'queued') { meta = html`${icon('clock', null, 'ic-16')}<span>Queued at ${j.peer}, position ${j.queuePos}</span>`; extra = html`<div class="progress" style="--p:0"><i></i></div>`; acts = actBtn('close', 'Cancel transfer', 'now-job-cancel', j); }
-      else if (j.state === 'failed') { meta = html`${ui.statusGlyph('down', 'Failed')}<span>${j.error}</span>`; extra = html`<div class="progress progress--failed" style="--p:${j.pct / 100}"><i></i></div>`; acts = html`${actBtn('refresh', 'Retry transfer', 'now-job-retry', j)}${actBtn('soulseek', 'Pick another source', 'show-sources', j, 'data-id="' + j.trackId + '"')}`; }
-      else { meta = html`${icon('close', null, 'ic-16')}<span>Cancelled at ${j.pct}%</span>`; acts = actBtn('refresh', 'Start again', 'now-job-retry', j); }
-    } else if (j.kind === 'save') {
-      meta = '';
-      extra = ui.pipeline(j.step, j.stepState === 'running' ? 'saving' : j.stepState === 'failed' ? 'failed' : 'saved', j.error);
-      if (st === 'active') acts = actBtn('close', 'Cancel save', 'now-job-cancel', j);
-      else if (st === 'failed') acts = html`${App.discover ? actBtn('info', 'What went wrong', 'now-job-fix', j) : ''}${actBtn('refresh', 'Retry save', 'now-job-retry', j)}`;
-      else acts = actBtn('library', 'Show album', 'go-album', j, 'data-id="' + j.trackId + '"');
-    } else if (j.kind === 'import') {
-      meta = html`${ui.statusGlyph('ok', 'Done')}<span>${j.matched} matched, ${j.search} searching, ${j.notFound} not found</span>`;
-      acts = html`<button class="btn btn--sm btn--quiet" data-act="now-job-review" data-fk="review-${j.id}">Review</button>`;
-    } else {
-      meta = html`${ui.statusGlyph('ok', 'Done')}<span>${j.detail}</span>`;
+  function transferParts(j) {
+    var pct = Math.round(j.pct || 0), cancel = actBtn('close', 'Cancel transfer', 'now-job-cancel', j);
+    switch (j.state) {
+      case 'transferring': return { meta: html`${icon('soulseek', null, 'ic-16')}<span>${j.peer}, ${mbps(j.speed)}, ${pct}%</span>`, extra: html`<div class="progress progress--xfer" style="--p:${pct / 100}"><i></i></div>`, acts: cancel };
+      case 'queued': return { meta: html`${icon('clock', null, 'ic-16')}<span>Queued at ${j.peer}${j.queuePos ? ', position ' + j.queuePos : ''}</span>`, extra: html`<div class="progress" style="--p:0"><i></i></div>`, acts: cancel };
+      case 'stalled': return { meta: html`${icon('refresh', null, 'ic-16')}<span>${j.peer} stalled at ${pct}%</span>`, extra: html`<div class="progress progress--xfer" style="--p:${pct / 100}"><i></i></div>`, acts: cancel };
+      case 'failed': return { meta: html`${ui.statusGlyph('down', 'Failed')}<span>${j.error || 'Transfer failed'}</span>`, extra: html`<div class="progress progress--failed" style="--p:${pct / 100}"><i></i></div>`,
+        acts: html`${actBtn('refresh', 'Retry transfer', 'now-job-retry', j)}${j.trackId ? actBtn('soulseek', 'Pick another source', 'show-sources', j, 'data-id="' + App.esc(j.trackId) + '"') : ''}` };
+      case 'cancelled': return { meta: html`${icon('close', null, 'ic-16')}<span>Cancelled at ${pct}%</span>`, extra: '', acts: actBtn('refresh', 'Start again', 'now-job-retry', j) };
+      default: return { meta: html`${ui.statusGlyph('ok', 'Done')}<span>${j.peer ? 'Transferred from ' + j.peer : 'Transferred'}</span>`, extra: '', acts: '' };
     }
-    var title = t ? t.title : j.kind === 'import' ? j.name : 'Jellyfin rescan';
-    var sub = t ? t.artist : j.kind === 'import' ? 'Playlist import' : 'Library';
-    var art = t ? ui.cover(t, 40) : html`<span class="now-act__glyph" aria-hidden="true">${icon(j.kind === 'import' ? 'import' : 'refresh')}</span>`;
+  }
+  function saveParts(j, st) {
+    var acts;
+    if (st === 'failed') acts = html`${App.discover ? actBtn('info', 'What went wrong', 'now-job-fix', j) : ''}${actBtn('refresh', 'Retry save', 'now-job-retry', j)}`;
+    else if (st === 'done') acts = actBtn('library', 'Show album', 'go-album', j, 'data-id="' + App.esc(j.trackId) + '"');
+    return { meta: '', extra: ui.pipeline(j.step || 1, j.status, j.error), acts: acts || '' };
+  }
+  function otherParts(j, st) {
+    if (st === 'failed') return { meta: html`${ui.statusGlyph('down', 'Failed')}<span>${j.error || 'Failed'}</span>`, extra: '', acts: '' };
+    if (st === 'active') return { meta: html`<span class="spin-ring" aria-hidden="true"></span><span>${j.detail || 'Running'}</span>`, extra: '', acts: '' };
+    if (j.kind === 'import') {
+      return { meta: html`${ui.statusGlyph('ok', 'Done')}<span>${j.matched || 0} matched, ${j.search || 0} searching, ${j.notFound || 0} not found</span>`, extra: '',
+        acts: html`<button class="btn btn--sm btn--quiet" data-act="now-job-review" data-fk="review-${j.id}">Review</button>` };
+    }
+    return { meta: html`${ui.statusGlyph('ok', 'Done')}<span>${j.detail || 'Done'}</span>`, extra: '', acts: '' };
+  }
+  function jobRow(j) {
+    var t = j.trackId ? M.track(j.trackId) : null, st = jobState(j);
+    var parts = j.kind === 'transfer' ? transferParts(j) : j.kind === 'save' ? saveParts(j, st) : otherParts(j, st);
+    var sub = t ? t.artist : j.kind === 'import' ? 'Playlist import' : j.kind === 'rescan' ? 'Library' : '';
+    var art = t ? ui.cover(t, 40) : html`<span class="now-act__glyph" aria-hidden="true">${icon(j.kind === 'import' ? 'import' : j.kind === 'rescan' ? 'refresh' : 'soulseek')}</span>`;
     return html`<li class="now-act__row is-${st}">
       <div class="now-act__art">${art}</div>
       <div class="now-act__main">
-        <div class="now-act__title"><b>${title}</b><span>${sub}</span></div>
-        ${meta ? html`<div class="now-act__meta">${meta}</div>` : ''}
-        ${extra}
+        <div class="now-act__title"><b>${jobTitle(j)}</b><span>${sub}</span></div>
+        ${parts.meta ? html`<div class="now-act__meta">${parts.meta}</div>` : ''}
+        ${parts.extra}
       </div>
-      <div class="now-act__acts">${acts}</div>
+      <div class="now-act__acts">${parts.acts}</div>
     </li>`;
   }
   function activityBlock() {
+    var err = App.store.get('activityError');
+    if (err) return html`<div class="now-act">${ui.emptyState({ art: 'star', title: 'Couldn\'t load activity', text: err, action: { label: 'Try again', act: 'now-act-reload' } })}</div>`;
     var all = jobs(), counts = { all: all.length, active: 0, done: 0, failed: 0 };
     all.forEach(function (j) { counts[jobState(j)]++; });
     if (!all.length) return html`<div class="now-act">${ui.emptyState({ art: 'moon', title: 'All quiet', text: 'Transfers, saves and imports show up here while they run.' })}</div>`;
@@ -690,9 +746,6 @@
       <div class="now-q__foot"><button class="btn btn--sm" data-act="now-act-clear" ${counts.done ? '' : raw('disabled')} data-fk="act-clear">${icon('check')}Clear finished</button></div>
     </div>`;
   }
-  function setJob(id, patch) {
-    App.store.update('activity', function (list) { return list.map(function (j) { return j.id === id ? Object.assign({}, j, patch) : j; }); });
-  }
 
   /* =====================================================================
      7. Route: /now (desktop two columns, tablet, phone sheet with Art / Lyrics / Queue / Details)
@@ -708,7 +761,6 @@
     if (q.tab && TABS.indexOf(q.tab) >= 0) view.tab = q.tab;
     view.detailsTrack = q.track || null;
     if (q.tab === 'details') view.detailsOpen = true;
-    var t = cur();
     return html`<div class="now" data-tab="${view.tab}" data-page="${view.page}">
       <div class="now__top"><p class="now-head__from">${fromLine()}</p>${ui.iconButton('more', 'More player actions', { 'data-act': 'player-more', 'aria-haspopup': 'menu', cls: 'btn-icon--bare' })}</div>
       <div class="now__grid" id="now-panel" role="region" aria-label="Now Playing">
@@ -825,12 +877,8 @@
     updateControls();
   }
 
-  /* one live tick for lyrics, peer counters and the current transfer's progress */
-  App.on('tick', function () {
-    lyTick();
-    $$('[data-now-bind="peers"]').forEach(function (el) { el.textContent = ps.peersFound; });
-    $$('[data-now-xfer]').forEach(function (el) { el.style.setProperty('--p', ps.received.toFixed(3)); });
-  });
+  /* synced lyrics follow the position on every engine tick */
+  App.on('tick', lyTick);
 
   /* =====================================================================
      8. Actions
@@ -855,7 +903,7 @@
     var seg = $('.now-seg', root), i = TABS.indexOf(tab);
     seg.style.setProperty('--i', i);
     $$('.seg__btn', seg).forEach(function (b, n) { b.setAttribute('aria-selected', String(n === i)); b.tabIndex = n === i ? 0 : -1; if (n === i && focus) b.focus(); });
-    if (tab === 'details' && !view.detailsOpen) { view.detailsOpen = true; swap($('[data-now="src"]'), sourceCard()); }
+    if (tab === 'details' && !view.detailsOpen) { view.detailsOpen = true; refreshSourceCard(); }
     $$('.now-ly__scroll[data-sync]', root).forEach(function (sc) { if (sc._ly) { sc._ly.cur = -2; lyUpdate(sc, true); } });
   }
   document.addEventListener('keydown', function (e) {        // arrow keys move between the phone tabs
@@ -866,15 +914,20 @@
   });
   App.action('now-details', function () {
     view.detailsOpen = !view.detailsOpen;
-    swap($('[data-now="src"]'), sourceCard());
+    refreshSourceCard();
   });
   App.action('now-other-sources', function (el) {
-    view.detailsTrack = view.detailsTrack ? null : el.getAttribute('data-id');
-    swap($('[data-now="src"]'), sourceCard());
+    var id = el.getAttribute('data-id'), r = sources[id];
+    view.detailsTrack = view.detailsTrack ? null : id;
+    // reopening a list that failed or was still filling asks again
+    if (view.detailsTrack && r && !r.loading && (r.error || !(r.data && r.data.done))) loadSources(id);
+    refreshSourceCard();
   });
+  App.action('now-src-reload', function (el) { loadSources(el.getAttribute('data-id')); refreshSourceCard(); });
   App.action('now-use-source', function (el) {
-    var id = el.getAttribute('data-id'), si = +el.getAttribute('data-si'), s = M.track(id).sources[si];
-    P.useSource(id, si); App.toast('Now from ' + s.peer + ', ' + s.format, { icon: 'soulseek' });
+    var id = el.getAttribute('data-id'), s = sourceList(id)[+el.getAttribute('data-si')]; if (!s) return;
+    P.useSource(id, s);
+    App.toast('Now from ' + s.peer + (s.format ? ', ' + s.format : ''), { icon: 'soulseek' });
   });
   App.action('now-open-queue', function () {
     if (window.innerWidth < 640 && onRoute()) { setTab('queue', true); return; }
@@ -898,13 +951,14 @@
   });
   App.action('now-ly-retry', function () {
     var t = cur(); if (!t) return;
-    demo.lyrics = null; lyricsLoaded[t.id] = false; refreshLyrics();
+    delete lyrics[t.id]; refreshLyrics();
   });
 
   // queue
   App.action('now-q-jump', function (el) { jumpTo(+el.getAttribute('data-qi')); });
   App.action('now-q-menu', function (el) {
-    var qi = +el.getAttribute('data-qi'), q = ps.queue[qi], t = M.track(q.trackId), playing = qi === ps.index;
+    var qi = +el.getAttribute('data-qi'), q = ps.queue[qi], t = q && M.track(q.trackId), playing = qi === ps.index;
+    if (!t) return;
     var items = [
       { label: playing ? (ps.playing ? 'Pause' : 'Play') : 'Play now', icon: playing && ps.playing ? 'pause' : 'play', run: function () { jumpTo(qi); } }
     ];
@@ -923,13 +977,14 @@
   });
   App.action('now-q-clear', function () { P.clear(); });
   App.action('now-q-playlist', function () {
-    var ids = ps.queue.map(function (q) { return q.trackId; }), id = 'pl-queue-' + Date.now();
-    var name = ps.radio ? ps.radio.name.toLowerCase() + ' radio' : 'saved queue';
-    App.store.update('playlists', function (l) {
-      l.push({ id: id, name: name, desc: 'Saved from the queue.', created: '2026-10-31', updated: '2026-10-31',
-        items: ids.map(function (tid) { return { trackId: tid, added: '2026-10-31' }; }) });
+    var ids = ps.queue.map(function (q) { return q.trackId; });
+    var name = ps.radio && ps.radio.name ? ps.radio.name.toLowerCase() + ' radio' : 'saved queue';
+    App.createPlaylist({ name: name, desc: 'Saved from the queue.' }).then(function (p) {
+      if (!p) return;                                         // createPlaylist already said why
+      return App.savePlaylistOrder(p.id, ids).then(function () {
+        App.toast('Saved ' + ids.length + ' songs as playlist "' + name + '"', { icon: 'playlists', action: 'Open', onAction: function () { App.go('/playlist/' + p.id); } });
+      }, function (err) { App.toast('Couldn\'t add the songs to "' + name + '": ' + err.message, { kind: 'error' }); });
     });
-    App.toast('Saved ' + ids.length + ' songs as playlist "' + name + '"', { icon: 'playlists', action: 'Open', onAction: function () { App.go('/playlist/' + id); } });
   });
   App.action('now-q-library', function () {
     var ids = ps.queue.map(function (q) { return q.trackId; }).filter(function (id, i, a) { return a.indexOf(id) === i && !App.isSaved(id); });
@@ -948,56 +1003,62 @@
     P.setRadio(null);
     App.toast('Radio stopped. The queue stays.', { icon: 'radio', action: 'Undo', onAction: function () { P.setRadio(before); } });
   });
-  App.action('now-radio-retry', function () { demo.radioError = false; App.refreshPanel(); swap($('[data-now="queue"]'), queueBlock()); App.toast('Looking for more radio songs', { icon: 'radio' }); });
+  App.action('now-radio-retry', function () {
+    withFocus('radio-keep', function () { P.setRadio({ error: null }); });
+    App.toast('Looking for more radio songs', { icon: 'radio' });
+  });
+  /* the slider only repaints while it moves; the steer goes to the engine on release (which re-fills the radio) */
   document.addEventListener('input', function (e) {
     var r = e.target.closest && e.target.closest('[data-now-steer]'); if (!r) return;
-    var v = +r.value / 100; r.style.setProperty('--fill', r.value + '%'); r.setAttribute('aria-valuetext', steerText(v));
-    if (ps.radio) ps.radio.steer = v;                      // no queue event: keeps the slider under the pointer
+    r.style.setProperty('--fill', r.value + '%'); r.setAttribute('aria-valuetext', steerText(+r.value / 100));
   });
   document.addEventListener('change', function (e) {
-    var r = e.target.closest && e.target.closest('[data-now-steer]'); if (!r) return;
-    App.toast('Radio steering: ' + steerText(+r.value / 100).toLowerCase() + '. Upcoming songs will follow.', { icon: 'radio' });
+    var r = e.target.closest && e.target.closest('[data-now-steer]'); if (!r || !ps.radio) return;
+    var v = +r.value / 100;
+    withFocus('radio-steer', function () { P.setRadio({ steer: v }); });
+    App.toast('Radio steering: ' + steerText(v).toLowerCase() + '. Upcoming songs will follow.', { icon: 'radio' });
   });
 
   // activity
+  function findJob(id) { return jobs().filter(function (j) { return j.id === id; })[0]; }
+  function toastError(err) { App.toast(err.message, { kind: 'error' }); }
+  /* a save job the server listed that this page holds no record for: record it, so retry and the recovery sheet
+     act on that job (App.saves keys saves by song) */
+  function adoptSave(j) {
+    if (!App.saves.get(j.trackId)) App.saves.set(j.trackId, { jobId: j.id, step: j.step || 1, status: j.status, error: j.error || null });
+  }
   App.action('now-act-filter', function (el) { actFilter = el.getAttribute('data-value'); withFocus('f-' + actFilter, App.refreshPanel); });
+  App.action('now-act-reload', function () { App.loadJobs(); });
+  /* "Clear finished" is a view action: it hides the finished rows in this panel (Undo shows them again); the jobs
+     stay on the server, and a hidden job that starts again shows again. */
   App.action('now-act-clear', function () {
-    var before = App.store.get('activity').slice(), savesBefore = Object.assign({}, App.store.get('saves'));
-    App.store.set('activity', before.filter(function (j) { return jobState(j) !== 'done'; }));
-    Object.keys(savesBefore).forEach(function (id) { if (savesBefore[id].status === 'saved') App.saves.set(id, null); });
+    var ids = jobs().filter(function (j) { return jobState(j) === 'done'; }).map(function (j) { return j.id; });
+    ids.forEach(function (id) { actHidden[id] = true; });
+    App.refreshPanel();
     App.toast('Cleared finished jobs', { icon: 'check', action: 'Undo', onAction: function () {
-      App.store.set('activity', before); Object.keys(savesBefore).forEach(function (id) { App.saves.set(id, savesBefore[id]); });
+      ids.forEach(function (id) { delete actHidden[id]; }); App.refreshPanel();
     } });
   });
-  function findJob(id) { return jobs().filter(function (j) { return j.id === id; })[0]; }
   App.action('now-job-cancel', function (el) {
     var j = findJob(el.getAttribute('data-job')); if (!j) return;
-    var t = M.track(j.trackId);
-    if (j.kind === 'save') {
-      if (j.live) App.saves.set(j.trackId, null); else App.store.update('activity', function (l) { return l.filter(function (x) { return x.id !== j.id; }); });
-      App.toast('Save cancelled: ' + t.title, { icon: 'close' });
-      return;
-    }
-    var pct = j.trackId === P.currentId() ? Math.round(ps.received * 100) : j.pct;
-    setJob(j.id, { state: 'cancelled', pct: pct });
-    App.toast('Transfer cancelled: ' + t.title, { icon: 'close', action: 'Undo', onAction: function () { setJob(j.id, { state: j.state, pct: j.pct }); } });
+    M.api('/api/transfers/' + encodeURIComponent(j.id), { method: 'DELETE' }).then(function () {
+      App.toast('Transfer cancelled: ' + jobTitle(j), { icon: 'close' });
+    }, toastError);
   });
   App.action('now-job-retry', function (el) {
     var j = findJob(el.getAttribute('data-job')); if (!j) return;
-    var t = M.track(j.trackId);
     if (j.kind === 'save') {
-      if (!j.live) App.store.update('activity', function (l) { return l.filter(function (x) { return x.id !== j.id; }); });
-      App.saves.set(j.trackId, { step: j.step || 1, status: 'saving', pct: 0 });
-      App.toast('Retrying save: ' + t.title, { icon: 'refresh' });
+      adoptSave(j); App.saves.retry(j.trackId);
+      App.toast('Retrying save: ' + jobTitle(j), { icon: 'refresh' });
       return;
     }
-    var next = t.sources[1] || t.sources[0];
-    setJob(j.id, { state: 'transferring', peer: next.peer, speed: next.speed, error: null });
-    App.toast('Retrying from ' + next.peer, { icon: 'soulseek' });
+    M.api('/api/transfers/' + encodeURIComponent(j.id) + '/retry', { method: 'POST' }).then(function () {
+      App.toast('Retrying transfer: ' + jobTitle(j), { icon: 'soulseek' });
+    }, toastError);
   });
   App.action('now-job-fix', function (el) {              // the recovery sheet reads the live save record
     var j = findJob(el.getAttribute('data-job')); if (!j || !App.discover) return;
-    if (!j.live) App.saves.set(j.trackId, { step: j.step, status: 'failed', error: j.error, frozen: true });
+    adoptSave(j);
     App.discover.openSaveSheet(j.trackId);
   });
   App.action('now-job-review', function () { if (window.innerWidth < 1360) App.closePanel(); App.go('/playlists'); });
@@ -1030,67 +1091,4 @@
 
   App.route('/now', { render: render, mount: mount, title: function () { var t = cur(); return t ? t.title + ', Now Playing' : 'Now Playing'; }, view: 'now', nav: null,
     meta: function () { return App.fmt.formatLine(cur()); } });
-
-  /* =====================================================================
-     10. Prototype states (listed by the state switcher)
-     ===================================================================== */
-  function reset() {
-    demo.lyrics = null; demo.radioError = false; lyAway = {}; view.page = 'now'; view.detailsOpen = false;
-    App.saves.set('t-satellite-porch-1', null);
-  }
-  function streamingRadio(pos, playing) {
-    P.setRadio(null);
-    P.playList(M.queue.items.map(function (q) { return q.trackId; }), 0, { radio: Object.assign({}, M.queue.radio) });
-    ps.queue.forEach(function (q, i) { q.group = M.queue.items[i].group; q.resolve = M.queue.items[i].resolve; });
-    lyricsLoaded['t-satellite-porch-1'] = true;
-    P.setState({ status: 'streaming', playing: playing !== false, received: .62, buffered: [[0, .58]], pos: pos == null ? 84 : pos, durationKnown: false,
-      peer: { name: 'otter-lamp', rank: 1, of: 7, speed: 2.4, format: 'FLAC 16/44.1', sizeMB: 31.4 } });
-  }
-  function lyricState(id, label, trackIds, extra) {
-    return { id: id, label: label, route: '/now', apply: function () {
-      reset(); view.tab = 'lyrics';
-      if (trackIds) { P.playList(trackIds, 0); P.setState({ status: 'library', playing: true, received: 1, buffered: [[0, 1]], durationKnown: true, pos: 40 }); trackIds.forEach(function (i) { lyricsLoaded[i] = true; }); }
-      else streamingRadio(27, true);
-      if (extra) extra();
-      if (window.innerWidth >= 1100) App.openPanel('lyrics');
-    } };
-  }
-  App.registerStates('now', [
-    { id: 'now-streaming', label: 'Now Playing: streaming from a peer', route: '/now', apply: function () { reset(); view.tab = 'art'; streamingRadio(84, true); } },
-    { id: 'now-library', label: 'Now Playing: playing from library', route: '/now', apply: function () { reset(); view.tab = 'art'; P.playList(['t-lantern-season-1', 't-lantern-season-2', 't-glasshouse-bloom-1'], 0); P.setState({ pos: 61, playing: true }); lyricsLoaded['t-lantern-season-1'] = true; } },
-    { id: 'now-paused', label: 'Now Playing: paused', route: '/now', apply: function () { reset(); streamingRadio(84, false); } },
-    { id: 'now-page-source', label: 'Now Playing: device Source page', route: '/now', apply: function () { reset(); streamingRadio(84, true); view.page = 'source'; } },
-    { id: 'now-page-save', label: 'Now Playing: device Save page, saving step 2', route: '/now', apply: function () { reset(); streamingRadio(84, true); view.page = 'save'; App.saves.set('t-satellite-porch-1', { step: 2, status: 'saving', pct: 100, frozen: true }); } },
-    { id: 'now-save-failed', label: 'Now Playing: save failed at cover art', route: '/now', apply: function () { reset(); streamingRadio(84, true); view.page = 'save'; App.saves.set('t-satellite-porch-1', { step: 3, status: 'failed', error: 'No cover art found. Retry or save without art.' }); } },
-    { id: 'now-finding', label: 'Now Playing: finding a source', route: '/now', apply: function () { reset(); streamingRadio(0, true); P.setState({ status: 'finding', peersFound: 23, received: 0, buffered: [], pos: 0 }); } },
-    { id: 'now-stalled', label: 'Now Playing: peer stalled, falling back', route: '/now', apply: function () { reset(); streamingRadio(70, true); P.setState({ status: 'stalled', received: .38, buffered: [[0, .36]], failedPeers: [{ peer: 'mossbank', at: 21 }] }); view.detailsOpen = true; } },
-    { id: 'now-failed', label: 'Now Playing: all sources failed', route: '/now', apply: function () { reset(); streamingRadio(0, false); P.setState({ status: 'failed', playing: false, received: 0, buffered: [], error: 'Couldn\'t play: no peer responded' }); } },
-    { id: 'now-idle', label: 'Now Playing: nothing queued', route: '/now', apply: function () { reset(); P.setState({ queue: [], index: 0, status: 'idle', playing: false, radio: null }); } },
-    { id: 'now-phone-details', label: 'Now Playing (phone): Details tab', route: '/now', apply: function () { reset(); streamingRadio(84, true); view.tab = 'details'; view.detailsOpen = true; } },
-    { id: 'now-phone-queue', label: 'Now Playing (phone): Queue tab', route: '/now', apply: function () { reset(); streamingRadio(84, true); view.tab = 'queue'; } },
-    lyricState('now-lyrics-word', 'Lyrics: synced with word highlight'),
-    lyricState('now-lyrics-synced', 'Lyrics: synced (line by line)', ['t-marble-soda-club-1']),
-    lyricState('now-lyrics-scrolled', 'Lyrics: scrolled away, back to current line', null, function () { ps.pos = 96; lyAway.page = lyAway.panel = true; }),
-    lyricState('now-lyrics-plain', 'Lyrics: plain, not synced', ['t-glasshouse-bloom-1']),
-    lyricState('now-lyrics-instrumental', 'Lyrics: instrumental', ['t-harbour-lights-2']),
-    lyricState('now-lyrics-notfound', 'Lyrics: not found', ['t-night-bus-2']),
-    lyricState('now-lyrics-loading', 'Lyrics: loading', null, function () { demo.lyrics = 'loading'; }),
-    lyricState('now-lyrics-error', 'Lyrics: unavailable (rate limited)', null, function () { demo.lyrics = 'error'; }),
-    { id: 'now-queue-radio', label: 'Queue: radio with keeps-adding and steer', route: '/now', apply: function () { reset(); streamingRadio(84, true); view.tab = 'queue'; App.openPanel('queue'); } },
-    { id: 'now-queue-user', label: 'Queue: your own queue, no radio', route: '/now', apply: function () {
-      reset(); view.tab = 'queue';
-      P.playList(['t-lantern-season-1', 't-glasshouse-bloom-1', 't-marble-soda-club-1', 't-lantern-season-2', 't-lantern-season-3', 't-lantern-season-4'], 0);
-      ps.queue[1].group = 'next'; ps.queue[2].group = 'next'; ps.queue[2].resolve = 'resolving'; ps.queue[5].resolve = 'none';
-      P.setState({ pos: 30, playing: true }); App.openPanel('queue');
-    } },
-    { id: 'now-queue-radio-error', label: 'Queue: radio paused, no playable songs', route: '/now', apply: function () { reset(); streamingRadio(84, true); demo.radioError = true; view.tab = 'queue'; App.openPanel('queue'); } },
-    { id: 'now-queue-empty', label: 'Queue: empty', route: '/now', apply: function () { reset(); P.setState({ queue: [], index: 0, status: 'idle', playing: false, radio: null }); view.tab = 'queue'; App.openPanel('queue'); } },
-    { id: 'now-activity', label: 'Activity: transfers, saves, imports', route: '/now', apply: function () { reset(); actFilter = 'all'; App.store.set('activity', M.activity.map(function (j) { return Object.assign({}, j); })); App.openPanel('activity'); } },
-    { id: 'now-activity-failed', label: 'Activity: failed filter', route: '/now', apply: function () { reset(); actFilter = 'failed'; App.store.set('activity', M.activity.map(function (j) { return Object.assign({}, j); })); App.openPanel('activity'); } },
-    { id: 'now-activity-quiet', label: 'Activity: all quiet', route: '/now', apply: function () {
-      reset(); actFilter = 'all'; App.store.set('activity', []);
-      Object.keys(App.store.get('saves')).forEach(function (id) { App.saves.set(id, null); });
-      App.openPanel('activity');
-    } }
-  ]);
 })();

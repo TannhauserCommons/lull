@@ -1,27 +1,52 @@
 /* screens/discover.js: Home (discovery feed), Search, Soulseek folder sheet, source picker,
    source details and the save flow (duplicate dialog, step failures, release picker, aggregate saves).
    Owner: discover. Takes over the hooks beforeSave, sourcePicker, sourceDetails and reason.
+   Server: GET /api/feed, GET /api/search + `search.results` events, GET /api/tracks/{id}/sources,
+   POST /api/library/duplicates, /api/saves/{jobId}/releases|release (docs/context/api.md).
    Also exposes App.discover.{ openFolder, openPicker, openDetails, openSaveSheet, openAggregate,
    openReleasePicker, openDuplicate, startRadio } for other screens. */
 (function () {
   'use strict';
   var html = App.html, raw = App.raw, ui = App.ui, M = App.data, icon = App.icon, $ = App.$, $$ = App.$$;
-  var P = App.player;
+  var P = App.player, size = App.fmt.size;
+  var FEED = '/api/feed';
+  var SOURCES_POLL_MS = 2000;       // how often an unfinished source list (`done` false) is asked again
 
   /* =====================================================================
      Small helpers
      ===================================================================== */
-  function fmt(name) { return M.formats[name] || { label: name, codec: name, detail: '', lossless: false, kbps: 0, mbPerMin: 2 }; }
-  function isBetter(a, b) { return fmt(a).kbps > fmt(b).kbps; }
+  /* format facts by label; a label no track has carried yet is read from the label itself ("FLAC 16/44.1", "MP3 320") */
+  function fmt(label) {
+    label = label || '';
+    if (M.formats[label]) return M.formats[label];
+    var parts = label.split(' '), spec = parts[1] || '', lossless = /^(FLAC|ALAC|WAV|AIFF)$/i.test(parts[0]), bk = spec.split('/');
+    return { label: label, codec: parts[0], lossless: lossless, bits: lossless ? +bk[0] || null : null,
+      khz: lossless ? +bk[1] || null : null, kbps: lossless ? null : parseInt(spec, 10) || null };
+  }
+  function detail(f) {
+    if (f.lossless) return [f.bits ? f.bits + '-bit' : '', f.khz ? f.khz + ' kHz' : ''].filter(Boolean).join(', ');
+    return f.kbps ? f.kbps + ' kbps' : '';
+  }
+  /* one comparable number per format: any lossless file outranks any lossy one */
+  function quality(label) { var f = fmt(label); return f.lossless ? 1e4 + (f.bits || 16) * (f.khz || 44.1) : f.kbps || 0; }
+  function isBetter(a, b) { return quality(a) > quality(b); }
   /* worth flagging as "better than saved": lossy -> lossless, or a higher-resolution lossless file */
-  function isUpgrade(a, b) { var fa = fmt(a), fb = fmt(b); return fa.lossless && (!fb.lossless || fa.kbps > fb.kbps); }
-  function sizeFor(format, sec) { return fmt(format).mbPerMin * sec / 60; }
-  function size(mb) { return mb >= 1000 ? (mb / 1000).toFixed(1) + ' GB' : (mb >= 100 ? Math.round(mb) : Math.round(mb * 10) / 10) + ' MB'; }
+  function isUpgrade(a, b) { return fmt(a).lossless && isBetter(a, b); }
+  function mbps(v) { return (Math.round((v || 0) * 10) / 10) + ' MB/s'; }
   function plural(n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')); }
   function isPhone() { return window.innerWidth < 640; }
-  function hashStr(s) { var h = 7; for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 100003; return h; }
   function thousands(n) { return n >= 1000 ? (Math.round(n / 100) / 10) + 'k' : String(n); }
-  function pickFor(trackId) { return M.feed.picks.filter(function (p) { return p.trackId === trackId; })[0] || null; }
+  function unique(list) { return list.filter(function (x, i) { return list.indexOf(x) === i; }); }
+  /* unix seconds -> "just now", "6 min ago", "3 h ago", "Oct 29" */
+  function ago(at) {
+    var s = Date.now() / 1000 - at;
+    if (s < 60) return 'just now';
+    if (s < 3600) return Math.floor(s / 60) + ' min ago';
+    if (s < 86400) return Math.floor(s / 3600) + ' h ago';
+    return App.fmt.date(at);
+  }
+  /* followed tags live in the store next to followed artists; a tag's id is its name */
+  function followedTagIds() { return Object.keys(App.store.get('followed') || {}).filter(function (id) { return !/^ar-/.test(id); }); }
 
   /* re-render one [data-region] in place; keeps focus on the same control when it still exists */
   function paint(name, markup, root) {
@@ -38,60 +63,78 @@
 
   /* radio from anything: start it, then show where it lands (queue panel; Now Playing > Queue on phone) */
   function startRadio(seed) {
-    P.startRadio(seed);
-    if (isPhone()) App.go('/now?tab=queue'); else App.openPanel('queue');
+    return P.startRadio(seed).then(function (ok) {
+      if (ok) { if (isPhone()) App.go('/now?tab=queue'); else App.openPanel('queue'); }
+      return ok;
+    });
   }
   App.action('disc-radio', function (el) {
     App.closePopover();
     startRadio({ kind: el.getAttribute('data-kind') || 'track', id: el.getAttribute('data-id') });
   });
 
-  /* prototype states: apply() runs on navigation only; `open` (an overlay) runs once after mount */
-  var pendingOpen = null, STATE_Q = {};
-  function st(id, label, route, o) {
-    o = o || {};
-    if (o.q != null) STATE_Q[id] = { q: o.q, p: o.p == null ? 1 : o.p };
-    return { id: id, label: label, route: route, apply: function (ctx) {
-      if (o.q != null && slskDown()) App.setService('soulseek', { state: 'ok', detail: 'Connected, 63 peers answered the last search' });
-      if (o.apply) o.apply(ctx);
-      pendingOpen = o.open || null;
-    } };
+  /* ---------- a track's Soulseek sources: ranked by the server, asked again until `done` ---------- */
+  function sourcesPath(id) { return '/api/tracks/' + encodeURIComponent(id) + '/sources'; }
+  /* onUpdate({ sources, done }) after each answer, or onUpdate({ error }); returns stop() */
+  function watchSources(id, onUpdate) {
+    var timer = null, stopped = false;
+    (function ask() {
+      M.api(sourcesPath(id)).then(function (res) {
+        if (stopped) return;
+        onUpdate({ sources: res.sources || [], done: !!res.done });
+        if (!res.done) timer = setTimeout(ask, SOURCES_POLL_MS);
+      }, function (err) { if (!stopped) onUpdate({ error: err }); });
+    })();
+    return function stop() { stopped = true; clearTimeout(timer); };
   }
-  function runPending() { var fn = pendingOpen; pendingOpen = null; if (fn) setTimeout(fn, 160); }
+  /* peers that failed this track before: the server's stalledBefore (unix time), plus the player's own fallbacks */
+  function failedNotes(trackId, sources) {
+    var notes = {};
+    sources.forEach(function (s) { if (s.stalledBefore) notes[s.peer] = typeof s.stalledBefore === 'number' ? 'stalled ' + ago(s.stalledBefore) : 'stalled before'; });
+    if (P.currentId() === trackId) P.state.failedPeers.forEach(function (f) { notes[f.peer] = f.at != null ? 'stalled at ' + f.at + '%' : 'stalled just now'; });
+    return notes;
+  }
+  /* the part of a source row the player and the save pipeline take */
+  function sourceFor(s) { return { peer: s.peer, path: s.path, format: s.format, sizeBytes: s.sizeBytes, speed: s.speed }; }
 
   /* =====================================================================
-     1. Home / discovery feed
+     1. Home / discovery feed (GET /api/feed)
      ===================================================================== */
-  var H = freshHome(null);
-  function freshHome(key) {
-    return { key: key, loading: key === 'discover-home-loading', shelfError: key === 'discover-home-shelf-error', shelfLoading: false,
-      cold: key === 'discover-home-cold', noSourceFirst: key === 'discover-home-no-source',
-      dismissed: {}, coldPicks: {}, finding: null, found: {}, rotate: 0 };
-  }
+  /* view state: picks dismissed this session, cold-start choices, "search again" on picks with no source,
+     the cold-start follows in flight, and the shelves showing skeletons while the feed reloads */
+  var H = { dismissed: {}, coldPicks: {}, finding: null, found: {}, building: false, reloading: null };
+  function list(feed, key) { return (feed && feed[key]) || []; }
   function greeting() {
-    var c = /* PROTO: ?clock=HH (0-23) pins the hour for screenshots */ App.current && App.current.query.clock;
-    var h = c != null && /^\d{1,2}$/.test(c) ? +c : new Date().getHours();
+    var h = new Date().getHours();
     return h >= 5 && h < 12 ? 'good morning' : h >= 12 && h < 18 ? 'good afternoon' : 'good evening';
   }
-
-  function renderHome(ctx) {
-    var key = /* PROTO: demo state */ ctx.state || '';
-    if (H.key !== key) H = freshHome(key);
-    if (H.cold) return renderCold();
-    return html`<div class="disc-home">
-      <header class="disc-hello">
+  function hello(sum) {
+    return html`<header class="disc-hello">
         <h1 class="t-display">${greeting()}${ui.sparkle('--s:18px')}</h1>
-        <p class="disc-hello__sum">${H.loading ? 'Gathering new releases and picks for you.' : M.feed.summary}</p>
-      </header>
-      ${homeLead()}
+        <p class="disc-hello__sum">${sum || ''}</p>
+      </header>`;
+  }
+
+  function renderHome() {
+    var r = M.get(FEED), feed = H.building ? null : r.data;
+    /* a reload has answered (new data or a new error): its shelves stop showing skeletons */
+    if (H.reloading && (r.data !== H.reloading.data || r.error !== H.reloading.error)) H.reloading = null;
+    if (r.error && !r.data) {
+      return html`<div class="disc-home">${hello('')}${App.errorCard(r.error, { path: FEED, title: 'Couldn\'t load your feed' })}</div>`;
+    }
+    if (feed && isCold(feed)) return renderCold(feed);
+    return html`<div class="disc-home">
+      ${hello(feed ? feed.summary : 'Gathering new releases and picks for you.')}
+      ${feed && r.error ? App.errorCard(r.error, { path: FEED, title: 'Couldn\'t refresh your feed' }) : ''}
+      ${feed ? homeLead() : ''}
       <div class="disc-duo">
-        <section class="card disc-card" aria-labelledby="disc-h-new" data-region="new" data-meta="${plural(M.feed.newReleases.length, 'release')}">${newReleasesBody()}</section>
-        <section class="card disc-card" aria-labelledby="disc-h-radio" data-region="radio">${radioBody()}</section>
+        <section class="card disc-card" aria-labelledby="disc-h-new" data-region="new" data-meta="${feed ? plural(list(feed, 'newReleases').length, 'release') : ''}">${newReleasesBody(feed)}</section>
+        <section class="card disc-card" aria-labelledby="disc-h-radio" data-region="radio">${radioBody(feed)}</section>
       </div>
-      <section class="card disc-card" aria-labelledby="disc-h-picks" data-region="picks" data-meta="updated ${M.feed.updated}">${picksBody()}</section>
+      <section class="card disc-card" aria-labelledby="disc-h-picks" data-region="picks" data-meta="${feed && feed.updated ? 'updated ' + ago(feed.updated) : ''}">${picksBody(feed)}</section>
       <div class="disc-duo disc-duo--even">
-        <section class="card disc-card" aria-labelledby="disc-h-jump" data-region="jump">${jumpBody()}</section>
-        <section class="card disc-card" aria-labelledby="disc-h-tags" data-region="tags">${tagsBody()}</section>
+        <section class="card disc-card" aria-labelledby="disc-h-jump" data-region="jump">${jumpBody(feed)}</section>
+        <section class="card disc-card" aria-labelledby="disc-h-tags" data-region="tags">${tagsBody(feed)}</section>
       </div>
     </div>`;
   }
@@ -100,13 +143,12 @@
      shelves. Default: nothing. ctx = { track, player, queue: next tracks (up to 8), parts: { cover(t, size),
      playButton(size), likeButton(t), trackList(tracks, opts), formatLine(t) } }. Rendered as .disc-lead[data-region="lead"]. */
   function homeLead() {
-    if (H.loading) return '';
     var t = P.current();
     var out = String(App.slot('homeLead', { track: t, player: P.state, queue: P.upNext(8), parts: {
       cover: function (x, size) { return ui.cover(x, size || 64); },
       playButton: function (size) { return gloss(size); },
       likeButton: function (x) { return ui.likeButton((x || t || {}).id || ''); },
-      trackList: function (list, opts) { return ui.trackList(list, Object.assign({ dense: true }, opts || {})); },
+      trackList: function (tracks, opts) { return ui.trackList(tracks, Object.assign({ dense: true }, opts || {})); },
       formatLine: App.fmt.formatLine } }, function () { return ''; }));
     return out ? html`<div class="disc-lead" data-region="lead">${raw(out)}</div>` : '';
   }
@@ -114,24 +156,43 @@
     var on = P.state.playing;
     return html`<button class="btn-gloss btn-gloss--${size || 56}" data-act="play" data-bind="play" aria-label="${on ? 'Pause' : 'Play'}" data-tip="${on ? 'Pause (Space)' : 'Play (Space)'}"><i class="btn-gloss__spin" aria-hidden="true"></i>${icon(on ? 'pause' : 'play', null, on ? '' : 'ic-play')}</button>`;
   }
-  function newReleasesBody() {
-    var head = ui.labelRule('new releases', { id: 'disc-h-new', action: H.loading || H.shelfError || H.shelfLoading ? null : { label: 'See all', href: '#/library/albums' } });
-    if (H.loading || H.shelfLoading) return html`${head}<div class="disc-skel-shelf">${ui.skeleton('tile', 4)}</div>`;
-    if (H.shelfError) {
-      return html`${head}${ui.emptyState({ art: 'star', title: 'Couldn\'t load new releases',
-        text: 'MusicBrainz didn\'t answer in time. The rest of your feed is fine.', action: { label: 'Retry', act: 'disc-retry-shelf' } })}`;
-    }
-    return html`${head}<div class="shelf disc-shelf">${M.feed.newReleases.map(function (id) { return ui.releaseTile(id); })}</div>`;
+
+  /* shelves: key in the feed (and in its `errors`) -> region and body, so one shelf can be repainted alone */
+  var SHELVES = {
+    newReleases: ['new', newReleasesBody], radioStarters: ['radio', radioBody], picks: ['picks', picksBody],
+    jumpBackIn: ['jump', jumpBody], followedTags: ['tags', tagsBody]
+  };
+  function paintShelf(key) {
+    var s = SHELVES[key], feed = M.peek(FEED);
+    if (s && feed) paint(s[0], s[1](feed));
+  }
+  /* a shelf still loading shows its skeleton; one the server couldn't fill shows its message and a retry */
+  function shelfIssue(feed, key, title, skeleton) {
+    if (!feed || (H.reloading && H.reloading.shelves.indexOf(key) >= 0)) return skeleton;
+    var msg = feed.errors && feed.errors[key];
+    return msg ? ui.emptyState({ art: 'star', title: title, text: msg, action: { label: 'Retry', act: 'disc-retry-shelf', id: key } }) : null;
+  }
+
+  function newReleasesBody(feed) {
+    var issue = shelfIssue(feed, 'newReleases', 'Couldn\'t load new releases', html`<div class="disc-skel-shelf">${ui.skeleton('tile', 4)}</div>`);
+    var head = ui.labelRule('new releases', { id: 'disc-h-new', action: issue ? null : { label: 'See all', href: '#/library/albums' } });
+    if (issue) return html`${head}${issue}`;
+    var albums = list(feed, 'newReleases').filter(function (id) { return M.album(id); });
+    if (!albums.length) return html`${head}<p class="disc-note">No new releases from artists you follow yet.</p>`;
+    return html`${head}<div class="shelf disc-shelf">${albums.map(function (id) { return ui.releaseTile(id); })}</div>`;
   }
 
   function seedArt(seed, px) {
-    var key = seed.kind === 'track' ? M.track(seed.id).albumId : seed.id;
-    return ui.cover(key, px || 48, { round: true });
+    var t = seed.kind === 'track' ? M.track(seed.id) : null;
+    return ui.cover(t ? t.albumId : seed.id, px || 48, { round: true });
   }
-  function radioBody() {
+  function radioBody(feed) {
+    var issue = shelfIssue(feed, 'radioStarters', 'Couldn\'t load radio starters', ui.skeleton('row', 4));
     var head = ui.labelRule('radio starters', { id: 'disc-h-radio' });
-    if (H.loading) return html`${head}${ui.skeleton('row', 4)}`;
-    return html`${head}<ul class="disc-starters">${M.feed.radioStarters.map(function (r) {
+    if (issue) return html`${head}${issue}`;
+    var starters = list(feed, 'radioStarters');
+    if (!starters.length) return html`${head}<p class="disc-note">Play a few songs and radio starters show up here.</p>`;
+    return html`${head}<ul class="disc-starters">${starters.map(function (r) {
       /* the whole row starts the radio on click; the round button is the keyboard control */
       return html`<li class="disc-starter" data-act="disc-radio" data-kind="${r.seed.kind}" data-id="${r.seed.id}">
         ${seedArt(r.seed)}
@@ -141,27 +202,28 @@
     })}</ul>`;
   }
 
-  function visiblePicks() {
+  function pickFor(trackId) { return list(M.peek(FEED), 'picks').filter(function (p) { return p.trackId === trackId; })[0] || null; }
+  /* picks still shown: not dismissed, artist not hidden, track known; picks with a source first */
+  function visiblePicks(feed) {
     var hidden = App.store.get('hiddenArtists') || {};
-    var list = M.feed.picks.filter(function (p) { return !H.dismissed[p.trackId] && !hidden[M.track(p.trackId).artistId]; });
-    var normal = list.filter(function (p) { return !p.noSource; }), none = list.filter(function (p) { return p.noSource; });
-    var r = normal.length ? H.rotate % normal.length : 0;
-    normal = normal.slice(r).concat(normal.slice(0, r));
-    return (H.noSourceFirst ? none.concat(normal) : normal).slice(0, 6);
+    var shown = list(feed, 'picks').filter(function (p) { var t = M.track(p.trackId); return t && !H.dismissed[p.trackId] && !hidden[t.artistId]; });
+    return shown.filter(function (p) { return !p.noSource; }).concat(shown.filter(function (p) { return p.noSource; })).slice(0, 6);
   }
-  function picksBody() {
-    var head = ui.labelRule('picked for you', { id: 'disc-h-picks', action: H.loading ? null : { label: 'Refresh picks', act: 'disc-rotate' } });
-    if (H.loading) return html`${head}<div class="disc-picks-skel">${ui.skeleton('row', 6)}</div>`;
-    var picks = visiblePicks();
+  function picksBody(feed) {
+    var issue = shelfIssue(feed, 'picks', 'Couldn\'t load your picks', html`<div class="disc-picks-skel">${ui.skeleton('row', 6)}</div>`);
+    var head = ui.labelRule('picked for you', { id: 'disc-h-picks', action: issue ? null : { label: 'Refresh picks', act: 'disc-refresh-picks' } });
+    if (issue) return html`${head}${issue}`;
+    var picks = visiblePicks(feed);
     if (!picks.length) {
       return html`${head}${ui.emptyState({ art: 'moon', title: 'No picks right now',
-        text: 'You hid everything we had. Like a few songs or follow a tag and new picks show up here.', action: { label: 'Browse tags', href: '#/following' } })}`;
+        text: (list(feed, 'picks').length ? 'You hid everything we had. ' : '') + 'Like a few songs or follow a tag and new picks show up here.',
+        action: { label: 'Browse tags', href: '#/following' } })}`;
     }
     var playable = picks.filter(function (p) { return !p.noSource || H.found[p.trackId]; }).map(function (p) { return p.trackId; });
     return html`${head}<ul class="disc-picks" data-ids="${playable.join(',')}">${picks.map(pickItem)}</ul>`;
   }
   function pickItem(p) {
-    var t = M.track(p.trackId), more = p.reasons.length - 1;
+    var t = M.track(p.trackId), reasons = p.reasons || [];
     var noSrc = p.noSource && !H.found[t.id], finding = H.finding === t.id;
     return html`<li class="disc-pick${noSrc ? ' is-nosource' : ''}">
       <div class="disc-pick__art">${ui.cover(t, 64)}${noSrc ? '' : html`<button class="disc-pick__play" data-act="play-track" data-id="${t.id}" tabindex="-1" aria-label="Play ${t.title}" data-tip="Play">${icon('play')}</button>`}</div>
@@ -170,7 +232,7 @@
         <a class="disc-pick__by" href="#/artist/${t.artistId}">${t.artist}</a>
       </div>
       <div class="disc-pick__end">${ui.likeButton(t.id)}<button class="btn-icon btn-icon--bare" data-act="disc-pick-menu" data-id="${t.id}" aria-haspopup="menu" aria-label="More actions for ${t.title}" data-tip="More">${icon('more')}</button></div>
-      <div class="disc-pick__why">${ui.reasonChip(p.reasons[0], { more: more, via: p.via, itemId: t.id })}
+      <div class="disc-pick__why">${reasons[0] ? ui.reasonChip(reasons[0], { more: reasons.length - 1, via: p.via, itemId: t.id }) : ''}
         ${noSrc ? html`<div class="disc-pick__nosrc">
           ${finding ? html`<span class="resolve" role="status"><span class="spin-ring" aria-hidden="true"></span>Searching Soulseek</span>`
             : html`<span class="resolve">${icon('no-source')}No source found yet</span>`}
@@ -182,15 +244,16 @@
   function jumpTile(j) {
     var art, href, title, by, byHref, play, round = false;
     if (j.kind === 'album') {
-      var a = M.album(j.id); art = ui.cover(a, '100%'); href = '#/album/' + a.id; title = a.title; by = a.artist; byHref = '#/artist/' + a.artistId;
+      var a = M.album(j.id); if (!a) return '';
+      art = ui.cover(a, '100%'); href = '#/album/' + a.id; title = a.title; by = a.artist; byHref = '#/artist/' + a.artistId;
       play = html`<button class="tile__play" data-act="play-album" data-id="${a.id}" aria-label="Play ${a.title}" data-tip="Play">${icon('play')}</button>`;
     } else if (j.kind === 'playlist') {
-      var p = (App.store.get('playlists') || []).filter(function (x) { return x.id === j.id; })[0];
-      if (!p) return '';
+      var p = M.playlist(j.id); if (!p) return '';
       art = ui.mosaic(p.items.map(function (i) { return i.trackId; }), '100%'); href = '#/playlist/' + p.id; title = p.name; by = 'playlist, ' + plural(p.items.length, 'song');
       play = html`<button class="tile__play" data-act="play-playlist" data-id="${p.id}" aria-label="Play ${p.name}" data-tip="Play">${icon('play')}</button>`;
     } else {
-      var ar = M.artist(j.id); art = ui.cover(ar.id, '100%', { round: true }); href = '#/artist/' + ar.id; title = ar.name; by = 'artist'; round = true;
+      var ar = M.artist(j.id); if (!ar) return '';
+      art = ui.cover(ar.id, '100%', { round: true }); href = '#/artist/' + ar.id; title = ar.name; by = 'artist'; round = true;
       play = html`<button class="tile__play" data-act="disc-radio" data-kind="artist" data-id="${ar.id}" aria-label="Start ${ar.name} radio" data-tip="Start radio">${icon('radio')}</button>`;
     }
     return html`<div class="tile disc-jump${round ? ' disc-jump--round' : ''}">
@@ -199,41 +262,48 @@
       <div class="tile__by">${byHref ? html`<a href="${byHref}">${by}</a>` : by}</div>
     </div>`;
   }
-  function jumpBody() {
-    var head = ui.labelRule('jump back in', { id: 'disc-h-jump', action: H.loading ? null : { label: 'History', href: '#/history' } });
-    if (H.loading) return html`${head}<div class="disc-skel-shelf">${ui.skeleton('tile', 4)}</div>`;
-    return html`${head}<div class="shelf disc-shelf disc-shelf--sm">${M.feed.jumpBackIn.map(jumpTile)}</div>`;
+  function jumpBody(feed) {
+    var issue = shelfIssue(feed, 'jumpBackIn', 'Couldn\'t load what you played', html`<div class="disc-skel-shelf">${ui.skeleton('tile', 4)}</div>`);
+    var head = ui.labelRule('jump back in', { id: 'disc-h-jump', action: issue ? null : { label: 'History', href: '#/history' } });
+    if (issue) return html`${head}${issue}`;
+    var tiles = list(feed, 'jumpBackIn').map(jumpTile).filter(function (x) { return String(x); });
+    if (!tiles.length) return html`${head}<p class="disc-note">Nothing to jump back into yet. What you play shows up here.</p>`;
+    return html`${head}<div class="shelf disc-shelf disc-shelf--sm">${tiles}</div>`;
   }
 
-  function tagsBody() {
-    var head = ui.labelRule('tags you follow', { id: 'disc-h-tags', action: H.loading ? null : { label: 'Manage', href: '#/following' } });
-    if (H.loading) return html`${head}<div class="cluster">${ui.skeleton('chip', 5)}</div>`;
-    var followed = M.tags.filter(function (t) { return App.isFollowed(t.id); });
-    var related = M.tags.filter(function (t) { return !App.isFollowed(t.id); }).slice(0, 4);
+  function tagsBody(feed) {
+    var issue = shelfIssue(feed, 'followedTags', 'Couldn\'t load your tags', html`<div class="cluster">${ui.skeleton('chip', 5)}</div>`);
+    var head = ui.labelRule('tags you follow', { id: 'disc-h-tags', action: issue ? null : { label: 'Manage', href: '#/following' } });
+    if (issue) return html`${head}${issue}`;
+    var followed = followedTagIds();
+    var related = unique([].concat.apply([], followed.map(function (id) { return M.tag(id).related || []; })))
+      .filter(function (id) { return !App.isFollowed(id); }).slice(0, 4);
     return html`${head}
-      ${followed.length ? html`<ul class="disc-tags">${followed.map(function (t) {
+      ${followed.length ? html`<ul class="disc-tags">${followed.map(function (id) {
+        var t = M.tag(id);
         return html`<li class="disc-tag"><a class="disc-tag__name" href="#/tag/${encodeURIComponent(t.id)}">${icon('tag')}<span>${t.name}</span></a>
-          <span class="disc-tag__desc">${t.desc}</span>
+          <span class="disc-tag__desc">${t.desc || ''}</span>
           <button class="btn-icon btn-icon--bare btn-icon--sm" data-act="disc-radio" data-kind="tag" data-id="${t.id}" aria-label="Start ${t.name} radio" data-tip="Start radio">${icon('radio')}</button></li>`;
-      })}</ul>` : html`<p class="disc-note">You don't follow any tags yet. Follow one below and its new releases show up here.</p>`}
-      ${related.length ? html`${ui.labelRule('you might like', { level: 'h3', sm: true })}<div class="cluster">${related.map(function (t) { return ui.tagChip(t.id, { toggle: true, pressed: false }); })}</div>` : ''}`;
+      })}</ul>` : html`<p class="disc-note">You don't follow any tags yet. Follow one and its new releases show up here.</p>`}
+      ${related.length ? html`${ui.labelRule('you might like', { level: 'h3', sm: true })}<div class="cluster">${related.map(function (id) { return ui.tagChip(id, { toggle: true, pressed: false }); })}</div>` : ''}`;
   }
 
-  /* cold start: nothing played, nothing followed yet */
-  var CLOUD_W = { 'dream-gaze': 3, 'city-pop revival': 3, 'chiptune-folk': 2, 'ambient jazz': 2, slowcore: 1, 'shibuya-kei': 2, 'bedroom pop': 3, shoegaze: 1 };
-  function renderCold() {
+  /* cold start: the server had nothing to go on (no picks, no history, nothing followed) and offers tags to begin with */
+  function isCold(feed) {
+    return !list(feed, 'picks').length && !list(feed, 'jumpBackIn').length && !list(feed, 'followedTags').length &&
+      !Object.keys(feed.errors || {}).length && list(feed, 'coldStartTags').length > 0;
+  }
+  function renderCold(feed) {
+    var tags = list(feed, 'coldStartTags'), artists = list(feed, 'coldStartArtists').map(M.artist).filter(Boolean);
     return html`<div class="disc-home">
-      <header class="disc-hello">
-        <h1 class="t-display">${greeting()}${ui.sparkle('--s:18px')}</h1>
-        <p class="disc-hello__sum">Nothing to go on yet. Pick a few tags or artists and your feed fills in from there.</p>
-      </header>
+      ${hello('Nothing to go on yet. Pick a few tags or artists and your feed fills in from there.')}
       <section class="card disc-card disc-cold" aria-labelledby="disc-h-cold">
         ${ui.labelRule('pick a few to start', { id: 'disc-h-cold' })}
-        <div class="disc-cloud" role="group" aria-label="Tags">${M.feed.coldStartTags.map(function (id) { return coldTag(id); })}</div>
-        ${ui.labelRule('or a few artists', { level: 'h3', sm: true })}
-        <ul class="disc-cold__artists">${M.artists.slice(0, 6).map(function (a) {
-          return html`<li class="disc-cold__artist">${ui.cover(a.id, 56, { round: true })}<span class="disc-cold__name">${a.name}<small>${a.tags[0]}</small></span>${coldArtistBtn(a)}</li>`;
-        })}</ul>
+        <div class="disc-cloud" role="group" aria-label="Tags">${tags.map(function (id, i) { return coldTag(id, 3 - Math.floor(i * 3 / tags.length)); })}</div>
+        ${artists.length ? html`${ui.labelRule('or a few artists', { level: 'h3', sm: true })}
+        <ul class="disc-cold__artists">${artists.slice(0, 6).map(function (a) {
+          return html`<li class="disc-cold__artist">${ui.cover(a.id, 56, { round: true })}<span class="disc-cold__name">${a.name}<small>${a.tags[0] || ''}</small></span>${coldArtistBtn(a)}</li>`;
+        })}</ul>` : ''}
         <div class="disc-cold__foot">
           <span class="disc-cold__count" data-cold-count aria-live="polite">${coldCount()}</span>
           <span class="spacer"></span>
@@ -243,9 +313,10 @@
       </section>
     </div>`;
   }
-  function coldTag(id) {
+  /* w = cloud weight 1-3; the server lists the most common tags first, so they draw largest */
+  function coldTag(id, w) {
     var on = !!H.coldPicks[id];
-    return html`<button class="chip disc-cloud__tag disc-cloud__tag--w${CLOUD_W[id] || 1}" data-act="disc-cold-pick" data-id="${id}" aria-pressed="${on ? 'true' : 'false'}">${on ? icon('check') : ''}${M.tag(id) ? M.tag(id).name : id}</button>`;
+    return html`<button class="chip disc-cloud__tag disc-cloud__tag--w${w || 1}" data-act="disc-cold-pick" data-id="${id}" aria-pressed="${on ? 'true' : 'false'}">${on ? icon('check') : ''}${M.tag(id).name}</button>`;
   }
   function coldArtistBtn(a) {
     var on = !!H.coldPicks[a.id];
@@ -257,36 +328,45 @@
   }
 
   /* home actions */
-  App.action('disc-retry-shelf', function () {
-    H.shelfError = false; H.shelfLoading = true; paint('new', newReleasesBody());
-    App.announce('Loading new releases');
-    /* PROTO: simulated delay */ setTimeout(function () {
-      H.shelfLoading = false; paint('new', newReleasesBody());
-      var first = $('[data-region="new"] .tile__title a'); if (first) first.focus({ preventScroll: true });
-      App.announce('New releases loaded');
-    }, 1000);
-  });
-  App.action('disc-rotate', function () {
-    H.rotate += 2; paint('picks', picksBody());
-    App.toast('Fresh picks from your recent listening', { icon: 'sparkle' });
-  });
+  /* refetch the feed in place: the named shelves show skeletons until it answers, the rest stays put */
+  function reloadFeed(keys) {
+    var r = M.get(FEED);
+    H.reloading = { shelves: keys, data: r.data, error: r.error };
+    keys.forEach(paintShelf);
+    App.announce('Reloading your feed');
+    M.reload(FEED);
+  }
+  App.action('disc-retry-shelf', function (el) { reloadFeed([el.getAttribute('data-id')]); });
+  App.action('disc-refresh-picks', function () { reloadFeed(['picks']); });
+  /* a pick with no source: ask Soulseek again; the first source that answers makes it playable */
   App.action('disc-find', function (el) {
     var id = el.getAttribute('data-id'), t = M.track(id);
-    H.finding = id; paint('picks', picksBody()); App.announce('Searching Soulseek for ' + t.title);
-    /* PROTO: simulated delay */ setTimeout(function () {
-      H.finding = null; H.found[id] = true;
-      if ($('[data-region="picks"]')) paint('picks', picksBody());
-      App.toast('Found ' + plural(t.sources.length, 'source') + ' for ' + t.title, { kind: 'ok', icon: 'soulseek', action: 'Play',
-        onAction: function () { P.playTrack(id); } });
-    }, 2400);
+    if (!t || H.finding) return;
+    H.finding = id; paintShelf('picks'); App.announce('Searching Soulseek for ' + t.title);
+    var stop = watchSources(id, function (res) {
+      var found = !res.error && res.sources.length > 0;
+      if (!res.error && !found && !res.done) return;
+      stop(); H.finding = null;
+      if (found) H.found[id] = true;
+      paintShelf('picks');
+      if (res.error) App.toast('Couldn\'t search Soulseek: ' + res.error.message, { kind: 'error' });
+      else if (found) App.toast('Found ' + plural(res.sources.length, 'source') + ' for ' + t.title, { kind: 'ok', icon: 'soulseek', action: 'Play', onAction: function () { P.playTrack(id); } });
+      else App.toast('Still no source for ' + t.title + '. Peers may share it later.', { icon: 'no-source' });
+    });
   });
-  function dismissPick(id, msg) {
-    H.dismissed[id] = true; paint('picks', picksBody());
-    App.toast(msg || 'Removed from your picks', { icon: 'info', action: 'Undo', onAction: function () { delete H.dismissed[id]; paint('picks', picksBody()); } });
+  /* "less like this" is feedback the server keeps; once it has, the pick leaves the list */
+  function lessLike(id) {
+    App.closePopover(true);
+    M.api('/api/feedback', { method: 'POST', body: { kind: 'less-like', id: id } }).then(function () {
+      var wasPick = !!pickFor(id);
+      if (wasPick) { H.dismissed[id] = true; paintShelf('picks'); }
+      App.toast('Got it: less like this' + (wasPick ? ', and removed from your picks' : ''), { icon: 'info' });
+    }, function (err) { App.toast('Couldn\'t send that to your feed: ' + err.message, { kind: 'error' }); });
   }
+  App.action('disc-less', function (el) { lessLike(el.getAttribute('data-id')); });
   App.action('disc-pick-menu', function (el) {
-    var id = el.getAttribute('data-id'), t = M.track(id), p = pickFor(id), followed = App.isFollowed(t.artistId);
-    var noSrc = p && p.noSource && !H.found[id];
+    var id = el.getAttribute('data-id'), t = M.track(id); if (!t) return;
+    var p = pickFor(id), followed = App.isFollowed(t.artistId), noSrc = p && p.noSource && !H.found[id];
     var items = noSrc ? [] : [
       { label: 'Play next', icon: 'queue', run: function () { P.playNext([id]); } },
       { label: 'Add to queue', icon: 'plus', run: function () { P.addToQueue([id]); } },
@@ -297,7 +377,7 @@
       { label: 'Start radio', icon: 'radio', run: function () { startRadio({ kind: 'track', id: id }); } }
     ]);
     if (!noSrc) items.push({ label: 'Show sources', icon: 'soulseek', run: function () { openPicker(id); } });
-    items.push('sep', { label: 'Not interested', icon: 'close', run: function () { dismissPick(id); } });
+    items.push('sep', { label: 'Not interested', icon: 'close', run: function () { lessLike(id); } });
     App.menu(el, items, { label: 'Actions for ' + t.title });
   });
   App.action('disc-cold-pick', function (el) {
@@ -309,34 +389,34 @@
     el.innerHTML = tmp.firstChild.innerHTML;
     var c = $('[data-cold-count]'); if (c) c.textContent = coldCount();
   });
+  /* follow every cold-start pick (PUT /api/follows/...), then fetch the feed those follows build */
   App.action('disc-build-feed', function () {
     var ids = Object.keys(H.coldPicks);
     if (!ids.length) { App.toast('Pick at least one tag or artist first', { icon: 'info' }); return; }
-    App.store.update('followed', function (f) { ids.forEach(function (id) { f[id] = true; }); });
-    H = freshHome(''); H.loading = true;
-    history.replaceState(null, '', '#/home');
-    App.refresh();
-    /* PROTO: simulated delay */ setTimeout(function () {
-      if (App.current.path !== '/home') return;
-      H.loading = false; App.refresh();
-      App.toast('Following ' + plural(ids.length, 'pick') + '. Your feed is ready.', { kind: 'ok', icon: 'sparkle' });
-    }, 1400);
-  });
-  App.action('disc-less', function (el) {
-    var id = el.getAttribute('data-id'); App.closePopover(true);
-    if (id && pickFor(id) && $('[data-region="picks"]')) dismissPick(id, 'Got it: less like this, and removed from your picks');
-    else App.toast('Got it: less like this', { icon: 'info' });
+    H.building = true; App.refresh();
+    function refreshHome() { H.building = false; if (App.current.path === '/home') App.refresh(); }
+    Promise.all(ids.map(function (id) {
+      return M.api('/api/follows/' + (/^ar-/.test(id) ? 'artist' : 'tag') + '/' + encodeURIComponent(id), { method: 'PUT' }).then(function () {
+        App.store.update('followed', function (f) { f[id] = true; });
+        delete H.coldPicks[id];
+      });
+    })).then(function () {
+      M.invalidate([FEED]); refreshHome();
+      App.toast('Following ' + plural(ids.length, 'pick') + '. Your feed is building from them.', { kind: 'ok', icon: 'sparkle' });
+    }, function (err) {
+      refreshHome();
+      App.toast('Couldn\'t follow your picks: ' + err.message, { kind: 'error' });
+    });
   });
 
   function mountHome(ctx) {
-    var offStore = App.on('store', function (keys) {
-      if (H.cold || H.loading) return;
-      if (keys.indexOf('hiddenArtists') >= 0) paint('picks', picksBody());
-      if (keys.indexOf('followed') >= 0) paint('tags', tagsBody());
-      if (keys.indexOf('playlists') >= 0) paint('jump', jumpBody());
-    });
-    ctx.onCleanup(offStore);
-    runPending();
+    ctx.onCleanup(App.on('store', function (keys) {
+      var feed = M.peek(FEED);
+      if (!feed || H.building || isCold(feed)) return;
+      if (keys.indexOf('hiddenArtists') >= 0) paintShelf('picks');
+      if (keys.indexOf('followed') >= 0) paintShelf('followedTags');
+      if (keys.indexOf('playlists') >= 0) paintShelf('jumpBackIn');
+    }));
   }
 
   /* reason popover: every reason for the item, the data source, and the three feedback actions */
@@ -349,66 +429,90 @@
   }
   App.hooks.reason = function (anchor, r) {
     var p = r.item ? pickFor(r.item) : null, t = r.item ? M.track(r.item) : null;
-    var reasons = p ? p.reasons : [{ kind: r.kind, name: r.name, ref: r.ref }];
+    var reasons = p && p.reasons && p.reasons.length ? p.reasons : [{ kind: r.kind, name: r.name, ref: r.ref }];
     var artist = t ? M.artist(t.artistId) : (r.kind !== 'tag' && r.ref ? M.artist(r.ref) : null);
+    var target = r.item || r.ref || '', via = r.via || (p && p.via);
     App.popover(anchor, html`<div class="popover__head">${icon('sparkle')}<span>why this?</span></div>
       <div class="popover__body disc-why">
         ${t ? html`<p class="disc-why__item">${t.title}, ${t.artist}</p>` : ''}
         <ul class="disc-why__list">${reasons.map(function (x) { return html`<li>${icon(REASON_ICON[x.kind] || 'sparkle')}<span>${reasonText(x)}</span></li>`; })}</ul>
-        <p class="disc-why__via">via ${r.via || (p && p.via) || 'ListenBrainz'}</p>
+        ${via ? html`<p class="disc-why__via">via ${via}</p>` : ''}
       </div>
       <div class="popover__actions">
-        <button class="btn btn--sm" data-act="more-like" data-id="${r.item || ''}">${icon('plus')}More like this</button>
-        <button class="btn btn--sm" data-act="disc-less" data-id="${r.item || ''}">${icon('minus')}Less like this</button>
+        ${target ? html`<button class="btn btn--sm" data-act="more-like" data-id="${target}">${icon('plus')}More like this</button>
+        <button class="btn btn--sm" data-act="disc-less" data-id="${target}">${icon('minus')}Less like this</button>` : ''}
         ${artist ? html`<button class="btn btn--sm" data-act="hide-artist" data-id="${artist.id}" aria-label="Hide ${artist.name} from your feed">Hide this artist</button>` : ''}
       </div>`, { label: 'Why this was suggested', className: 'disc-why-pop' });
   };
 
   /* =====================================================================
-     2. Search: library first (instant), Soulseek streams in with a live counter
+     2. Search: library hits at once (GET /api/search), Soulseek rows stream in as `search.results` events
      ===================================================================== */
-  var SEARCH_MS = 12000;
-  var S = { q: null, t0: 0, frozen: null, src: 'all', ll: false, showAll: false, done: false, stateKey: null, timer: null };
+  /* one search session. peerSongs: trackId -> result row { trackId, sources, format }; folders: albumIds */
+  var S = { q: null, src: 'all', ll: false, showAll: false, seq: 0, loading: false, error: null, searchId: null,
+    library: [], peerSongs: {}, peerOrder: [], folders: [], peers: 0, done: true };
 
-  function progress() {
-    if (S.frozen != null) return S.frozen;
-    return Math.min(1, (Date.now() - S.t0) / SEARCH_MS);
-  }
   function slskDown() { var s = App.store.get('services'); return !!(s && s.soulseek && s.soulseek.state === 'down'); }
-  function streaming() { return !slskDown() && S.src !== 'library' && progress() < 1; }
-  function beginSession(q) {
-    if (q === S.q) return;
-    S.q = q; S.t0 = Date.now(); S.frozen = null; S.showAll = false; S.done = !q;
+  function streaming() { return !slskDown() && S.src !== 'library' && !S.done; }
+  function search(q) {
+    var mine = S.seq += 1;
+    Object.assign(S, { q: q, showAll: false, loading: !!q, error: null, searchId: null,
+      library: [], peerSongs: {}, peerOrder: [], folders: [], peers: 0, done: !q });
+    if (!q) return;
+    M.api('/api/search?q=' + encodeURIComponent(q)).then(function (res) {
+      if (mine !== S.seq) return;
+      S.loading = false; S.searchId = res.searchId; S.library = res.library || [];
+      if (slskDown()) finish();              // nothing will stream in
+      paint('results', resultsBody());
+    }, function (err) {
+      if (mine !== S.seq) return;
+      S.loading = false; S.error = err; S.done = true;
+      paint('results', resultsBody());
+    });
+  }
+  /* rows may repeat across events (a song gains peers): the latest row for an id wins */
+  App.on('server:search.results', function (e) {
+    if (!e || !S.searchId || e.searchId !== S.searchId) return;     // app.js has already absorbed e.entities
+    (e.results || []).forEach(function (row) {
+      if (row.kind === 'track') {
+        if (!S.peerSongs[row.trackId]) S.peerOrder.push(row.trackId);
+        S.peerSongs[row.trackId] = row;
+      } else if (row.kind === 'album') {
+        if (S.folders.indexOf(row.albumId) < 0) S.folders.push(row.albumId);
+      } else console.error('Unknown search result', row);
+    });
+    S.peers = e.peers || S.peers;
+    if (e.done) finish();
+    paint('results', resultsBody());
+  });
+  function finish() {
+    if (S.done) return;
+    S.done = true;
+    addRecent(S.q);
+    App.announce(scanText());
   }
 
-  /* match every word against title + artist + album; artists also come in through their matching albums */
-  function runSearch(q) {
+  /* what the answers name, as entities: songs (library first), albums (Soulseek folders, plus saved albums whose
+     title matches), artists whose name matches */
+  function collect(q) {
     var words = String(q || '').toLowerCase().split(/\s+/).filter(Boolean);
-    function hit(s) { s = s.toLowerCase(); return words.length && words.every(function (w) { return s.indexOf(w) >= 0; }); }
-    var tracks = M.tracks.filter(function (t) { return hit(t.title + ' ' + t.artist + ' ' + t.album); });
-    var albums = M.albums.filter(function (a) { return hit(a.title + ' ' + a.artist); });
-    var artists = M.artists.filter(function (a) { return hit(a.name) || albums.some(function (al) { return al.artistId === a.id; }); });
-    var srcCount = tracks.reduce(function (n, t) { return n + t.sources.length; }, 0);
-    var total = tracks.length ? srcCount * 4 + hashStr(q) % 17 : 0;
-    return { tracks: tracks, albums: albums, artists: artists, total: total, peers: Math.round(total / 3.4) };
+    function hit(s) { s = String(s || '').toLowerCase(); return words.length && words.every(function (w) { return s.indexOf(w) >= 0; }); }
+    var tracks = unique(S.library.concat(S.peerOrder)).map(M.track).filter(Boolean);
+    var libAlbums = tracks.filter(function (t) { return App.isSaved(t.id); }).map(function (t) { return t.albumId; });
+    var albums = unique(S.folders.concat(libAlbums)).map(M.album).filter(function (a) { return a && (S.folders.indexOf(a.id) >= 0 || hit(a.title + ' ' + a.artist)); });
+    var artistIds = unique(tracks.map(function (t) { return t.artistId; }).concat(albums.map(function (a) { return a.artistId; })));
+    var artists = artistIds.map(M.artist).filter(function (a) { return a && hit(a.name); });
+    return { tracks: tracks, albums: albums, artists: artists };
   }
-  function bestFormat(t) { return App.isSaved(t.id) ? t.format : t.sources[0].format; }
+  /* the best Soulseek copy's format for a song, when peers share it */
+  function peerFormat(t) { var row = S.peerSongs[t.id]; return row && row.format; }
   function filtered(R) {
-    var down = slskDown(), src = S.src;
-    function keepTrack(t) {
-      var saved = App.isSaved(t.id);
-      if ((src === 'library' || down) && !saved) return false;
-      if (S.ll && !fmt(bestFormat(t)).lossless && !(saved && fmt(t.sources[0].format).lossless && src === 'soulseek')) return false;
-      return true;
-    }
-    function keepAlbum(a) {
-      if ((src === 'library' || down) && a.saved === 'none') return false;
-      return !S.ll || fmt(a.format).lossless;
-    }
-    var songs = R.tracks.filter(keepTrack);
+    var libOnly = S.src === 'library' || slskDown();
+    function lossless(t) { return fmt(t.format).lossless || (!libOnly && fmt(peerFormat(t)).lossless); }
+    var songs = R.tracks.filter(function (t) { return (!libOnly || App.isSaved(t.id)) && (!S.ll || lossless(t)); });
     songs.sort(function (a, b) { return (App.isSaved(b.id) ? 1 : 0) - (App.isSaved(a.id) ? 1 : 0); });
-    var albums = R.albums.filter(keepAlbum);
-    var artists = R.artists.filter(function (a) { return !(src === 'library' || down) || M.albumsBy(a.id).some(function (al) { return al.saved !== 'none'; }); });
+    var albums = R.albums.filter(function (a) { return (!libOnly || a.saved !== 'none') && (!S.ll || fmt(a.format).lossless); });
+    var artists = R.artists.filter(function (a) { return !libOnly || M.albumsBy(a.id).some(function (al) { return al.saved !== 'none'; }); });
     return { songs: songs, albums: albums, artists: artists };
   }
   function pickTop(F, q) {
@@ -421,21 +525,11 @@
     if (F.songs[0]) return { kind: 'track', item: F.songs[0] };
     return null;
   }
-
-  /* gating for streamed results: [data-after=p] shows once progress >= p, [data-before=p] hides then */
-  function after(th) { return raw(' data-after="' + th + '"' + (streaming() && progress() < th ? ' hidden' : '')); }
-  function before(th) { return raw(' data-before="' + th + '"' + (streaming() && progress() < th ? '' : ' hidden')); }
   function slskOnly(t) { return !App.isSaved(t.id); }
 
   function renderSearch(ctx) {
-    var def = /* PROTO: demo state */ ctx.state && STATE_Q[ctx.state];
-    if (def && ctx.query.q == null) {
-      /* PROTO: demo state */ if (S.stateKey !== ctx.state) { S.stateKey = ctx.state; S.q = def.q; S.t0 = Date.now(); S.frozen = def.p; S.showAll = false; S.src = 'all'; S.ll = false; S.done = true; }
-    } else {
-      if (S.stateKey) { S.q = null; S.stateKey = null; }      // leaving a demo state: start a live session
-      beginSession(ctx.query.q || '');
-    }
-    var q = S.q || '';
+    var q = (ctx.query.q || '').trim();
+    if (q !== S.q) search(q);
     return html`<div class="disc-search">
       <header class="disc-hello disc-hello--search">
         <h1 class="t-display">search</h1>
@@ -464,12 +558,11 @@
   }
 
   function emptySearchBody() {
-    var tags = M.tags.filter(function (t) { return App.isFollowed(t.id); });
     return html`<div class="disc-duo">
       <section class="card disc-card" aria-labelledby="disc-h-recent" data-region="recents">${recentsBody()}</section>
       <section class="card disc-card" aria-labelledby="disc-h-sugg">
         ${ui.labelRule('from tags you follow', { id: 'disc-h-sugg' })}
-        <div class="cluster disc-sugg">${tags.map(function (t) { return ui.chip(t.name, { href: '#/search?q=' + encodeURIComponent(t.name), icon: 'search' }); })}</div>
+        <div class="cluster disc-sugg">${followedTagIds().map(function (id) { var t = M.tag(id); return ui.chip(t.name, { href: '#/search?q=' + encodeURIComponent(t.name), icon: 'search' }); })}</div>
         <p class="disc-note">Press ${ui.keycap('/')} anywhere to jump here. Saved songs show up at once; Soulseek takes about ten seconds to hear back from peers.</p>
       </section>
     </div>`;
@@ -485,14 +578,20 @@
   }
 
   function resultsBody() {
-    var R = runSearch(S.q), F = filtered(R);
-    var any = F.songs.length || F.albums.length || F.artists.length;
-    if (!any) {
+    if (S.loading) {
+      return html`<section class="card disc-card">${ui.labelRule('songs')}${scanLine()}${ui.skeleton('row', 3)}</section>`;
+    }
+    if (S.error) {
+      return html`<section class="card disc-card">${ui.emptyState({ art: 'star', title: 'Couldn\'t search', text: S.error.message,
+        action: { label: 'Try again', act: 'disc-search-again' } })}</section>`;
+    }
+    var R = collect(S.q), F = filtered(R);
+    if (!F.songs.length && !F.albums.length && !F.artists.length) {
       if (streaming()) {
-        return html`<section class="card disc-card">${ui.labelRule('songs')}${scanLine(R)}
+        return html`<section class="card disc-card">${ui.labelRule('songs')}${scanLine()}
           <p class="disc-note">Nothing in your library. Still asking peers.</p>${ui.skeleton('row', 3)}</section>`;
       }
-      return html`<section class="card disc-card">${S.src !== 'library' ? scanLine(R, true) : ''}${ui.emptyState(noResults())}</section>`;
+      return html`<section class="card disc-card">${S.src !== 'library' ? scanLine(true) : ''}${ui.emptyState(noResults(R))}</section>`;
     }
     var top = pickTop(F, S.q);
     var songs = F.songs, limit = S.showAll ? songs.length : 6, shown = songs.slice(0, limit);
@@ -501,81 +600,77 @@
       var nLib = Math.min(libHits.length, limit - Math.min(2, peerHits.length));
       shown = libHits.slice(0, nLib).concat(peerHits.slice(0, limit - nLib));
     }
-    var k = 0;   // index among Soulseek-only rows, for staggered arrival
     var rows = shown.map(function (t, i) {
-      var saved = App.isSaved(t.id), best = t.sources[0].format;
-      var dup = slskDown() ? null : saved && isUpgrade(best, t.format) ? 'better' : saved && S.src === 'soulseek' ? 'saved' : null;
+      var row = S.peerSongs[t.id], saved = App.isSaved(t.id);
+      var dup = !row || !saved || slskDown() ? null : isUpgrade(row.format, t.format) ? 'better' : S.src === 'soulseek' ? 'saved' : null;
+      /* a Soulseek row carries its peer count, which the row shows as "N sources" */
+      var markup = String(ui.trackRow(row ? Object.assign({}, t, { sources: row.sources }) : t, { dense: true, showSources: true, index: i + 1 }));
       /* the duplicate marker goes on the artist line, so badges never squeeze the title */
-      var row = String(ui.trackRow(t, { dense: true, showSources: true, index: i + 1 }))
-        .replace(/(<div class="trow__artist">[\s\S]*?)(<\/div>)/, function (m, a, b) { return a + (dup ? String(dup === 'better' ? ui.dupBetter() : ui.dupNote()) : '') + b; });
-      if (!saved) { row = row.replace('<li ', '<li' + String(after(Math.min(.9, .12 + k * .1))) + ' '); k++; }
-      return raw(row);
+      return raw(markup.replace(/(<div class="trow__artist">[\s\S]*?)(<\/div>)/, function (m, a, b) { return a + (dup ? String(dup === 'better' ? ui.dupBetter() : ui.dupNote()) : '') + b; }));
     });
-    var waiting = songs.length && shown.some(slskOnly) && streaming();
-    var topAfter = top && top.kind === 'track' && slskOnly(top.item) ? .12 : top && top.kind === 'album' && top.item.saved === 'none' ? .45 : 0;
     return html`<div class="disc-duo disc-duo--results">
-        ${top ? html`<section class="card disc-card disc-top" aria-labelledby="disc-h-top">${ui.labelRule('top result', { id: 'disc-h-top' })}
-          ${topAfter ? html`<div${before(topAfter)}>${ui.skeleton('row', 2)}</div>` : ''}<div${after(topAfter)}>${topCard(top)}</div></section>` : ''}
+        ${top ? html`<section class="card disc-card disc-top" aria-labelledby="disc-h-top">${ui.labelRule('top result', { id: 'disc-h-top' })}${topCard(top)}</section>` : ''}
         <section class="card disc-card disc-songs" aria-labelledby="disc-h-songs">
           ${ui.labelRule('songs', { id: 'disc-h-songs' })}
-          ${scanLine(R)}
+          ${scanLine()}
           ${songs.length ? html`<ol class="tlist tlist--dense" data-ids="${shown.map(function (t) { return t.id; }).join(',')}" aria-label="Songs">${rows}</ol>`
             : html`<p class="disc-note">No songs match${S.ll ? ' in lossless' : ''}.</p>`}
-          ${waiting ? html`<div${before(.12 + (k - 1) * .1)}>${ui.skeleton('row', 2)}</div>` : ''}
+          ${streaming() ? ui.skeleton('row', 2) : ''}
           ${songs.length > limit ? html`<button class="btn btn--quiet disc-more" data-act="disc-show-all">Show all ${plural(songs.length, 'song')}</button>` : ''}
         </section>
       </div>
       ${F.albums.length || F.artists.length ? html`<div class="disc-duo disc-duo--results2">
         ${F.albums.length ? html`<section class="card disc-card" aria-labelledby="disc-h-albums">${ui.labelRule('albums', { id: 'disc-h-albums' })}
-          <div class="shelf disc-shelf">${F.albums.map(function (a) { return folderTile(a, a.saved === 'none' ? .45 : 0); })}</div></section>` : ''}
+          <div class="shelf disc-shelf">${F.albums.map(folderTile)}</div></section>` : ''}
         ${F.artists.length ? html`<section class="card disc-card" aria-labelledby="disc-h-artists">${ui.labelRule('artists', { id: 'disc-h-artists' })}
           <div class="shelf disc-shelf disc-shelf--artists">${F.artists.map(artistTile)}</div></section>` : ''}
       </div>` : ''}`;
   }
-  function noResults() {
+  function noResults(R) {
     if (S.src === 'library' || slskDown()) {
-      return { art: 'moon', title: 'Nothing saved matches ' + S.q, text: slskDown() ? 'Soulseek is reconnecting, so only your library was searched. Try again once it is back.' : 'Your library has nothing by that name. Soulseek peers might.',
-        action: slskDown() ? { label: 'Reconnect Soulseek', act: 'soulseek-reconnect' } : { label: 'Search Soulseek too', act: 'disc-src-all' } };
+      return { art: 'moon', title: 'Nothing saved matches ' + S.q, text: slskDown() ? 'Soulseek is down, so only your library was searched. Try again once it is back.' : 'Your library has nothing by that name. Soulseek peers might.',
+        action: slskDown() ? { label: 'Soulseek settings', act: 'open-sources' } : { label: 'Search Soulseek too', act: 'disc-src-all' } };
     }
-    if (S.ll) return { art: 'moon', title: 'No lossless copies of ' + S.q, text: 'Peers only share lossy files for this. Turn off Lossless only to see them.', action: { label: 'Show all formats', act: 'disc-ll' } };
+    if (S.ll && R.tracks.length) return { art: 'moon', title: 'No lossless copies of ' + S.q, text: 'Peers only share lossy files for this. Turn off Lossless only to see them.', action: { label: 'Show all formats', act: 'disc-ll' } };
     return { art: 'moon', title: 'Nothing for ' + S.q, text: 'Not in your library, and no peer shares it right now. Check the spelling or try fewer words.',
       action: { label: 'Search Soulseek again', act: 'disc-search-again' }, secondary: { label: 'Clear search', act: 'disc-clear' } };
   }
 
-  function scanLine(R, noAgain) {
+  /* Soulseek line above the songs: live counters while peers answer; the bar drifts until the search is done */
+  function scanLine(noAgain) {
     if (slskDown()) {
-      return html`<div class="disc-scan is-down" role="status">${ui.statusGlyph('down', 'Soulseek down')}<span class="disc-scan__text">Soulseek is reconnecting, so only your library was searched.</span>
-        <button class="btn btn--sm" data-act="soulseek-reconnect">Reconnect</button></div>`;
+      return html`<div class="disc-scan is-down" role="status">${ui.statusGlyph('down', 'Soulseek down')}<span class="disc-scan__text">Soulseek is down, so only your library was searched.</span>
+        <button class="btn btn--sm" data-act="open-sources">Soulseek settings</button></div>`;
     }
     if (S.src === 'library') {
       return html`<div class="disc-scan disc-scan--lib">${icon('saved')}<span class="disc-scan__text">Showing your library only.</span>
         <button class="btn btn--quiet btn--sm" data-act="disc-src-all">Include Soulseek</button></div>`;
     }
-    var p = progress(), done = p >= 1;
+    var done = S.done;
     return html`<div class="disc-scan${done ? ' is-done' : ''}" data-scan>
       ${icon('soulseek')}
-      <span class="disc-scan__text" data-scan-text>${scanText(R, p)}</span>
-      <span class="disc-scan__left px" data-scan-left aria-hidden="true">${done ? '' : '~' + Math.ceil((1 - p) * SEARCH_MS / 1000) + ' s'}</span>
+      <span class="disc-scan__text" data-scan-text aria-live="polite">${scanText()}</span>
       ${done && !noAgain ? html`<button class="btn btn--quiet btn--sm" data-act="disc-search-again">${icon('refresh')}Search again</button>` : ''}
-      <div class="progress disc-scan__bar" role="progressbar" aria-label="Soulseek search" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(p * 100)}" data-scan-bar><i style="--p:${p.toFixed(3)}"></i></div>
+      <div class="progress${done ? '' : ' progress--xfer'} disc-scan__bar" role="progressbar" aria-label="Soulseek search" aria-valuetext="${done ? 'finished' : 'still asking peers'}" data-scan-bar><i style="--p:1"></i></div>
     </div>`;
   }
-  function scanText(R, p) {
-    var e = 1 - Math.pow(1 - p, 2), n = Math.round(R.total * e), peers = Math.max(n ? 1 : 0, Math.round(R.peers * e));
-    return (p >= 1 ? 'Soulseek: ' : 'Searching Soulseek: ') + plural(n, 'result') + ' from ' + plural(peers, 'peer');
+  function scanText() {
+    var n = S.peerOrder.length + S.folders.length;
+    return (S.done ? 'Soulseek: ' : 'Searching Soulseek: ') + plural(n, 'result') + ' from ' + plural(S.peers, 'peer');
   }
 
   function topCard(top) {
     if (top.kind === 'track') {
-      var t = top.item, saved = App.isSaved(t.id), best = t.sources[0], better = saved && !slskDown() && isUpgrade(best.format, t.format);
+      var t = top.item, saved = App.isSaved(t.id), row = S.peerSongs[t.id], best = row && row.format;
+      var better = saved && best && !slskDown() && isUpgrade(best, t.format);
       return html`<div class="disc-top__body">
           ${ui.cover(t, 112)}
           <div class="disc-top__info">
             <p class="disc-top__kind">song</p>
             <h3 class="disc-top__title">${t.title}</h3>
             <p class="disc-top__by"><a href="#/artist/${t.artistId}">${t.artist}</a>, <a href="#/album/${t.albumId}">${t.album}</a></p>
-            <div class="cluster disc-top__badges">${ui.sourceBadge(t)}${ui.qualityChip(saved ? t.format : best.format)}
-              <button class="disc-top__n" data-act="show-sources" data-id="${t.id}">${plural(t.sources.length, 'source')}</button>${better ? ui.dupBetter() : ''}</div>
+            <div class="cluster disc-top__badges">${ui.sourceBadge(t)}${ui.qualityChip(saved || !best ? t.format : best)}
+              ${row && row.sources ? html`<button class="disc-top__n" data-act="show-sources" data-id="${t.id}">${plural(row.sources, 'source')}</button>` : ''}${better ? ui.dupBetter() : ''}</div>
           </div>
         </div>
         <div class="disc-top__actions">
@@ -591,17 +686,17 @@
       return html`<div class="disc-top__body">
           ${ui.cover(a, 112)}
           <div class="disc-top__info">
-            <p class="disc-top__kind">${a.type === 'album' ? 'album' : a.type}${a.saved === 'none' ? ', Soulseek folder' : ''}</p>
+            <p class="disc-top__kind">${a.type}${a.saved === 'none' ? ', Soulseek folder' : ''}</p>
             <h3 class="disc-top__title">${a.title}</h3>
-            <p class="disc-top__by"><a href="#/artist/${a.artistId}">${a.artist}</a>, ${a.year}</p>
-            <div class="cluster disc-top__badges">${savedN === a.trackIds.length ? ui.savedBadge() : savedN ? html`<span class="badge badge-saved">${icon('saved')}${savedN} of ${a.trackIds.length} saved</span>` : ui.soulseekBadge()}
-              ${ui.qualityChip(a.format)}<span class="px fg-2">${plural(a.trackIds.length, 'track')}, ${size(a.sizeMB)}</span></div>
+            <p class="disc-top__by"><a href="#/artist/${a.artistId}">${a.artist}</a>${a.year ? ', ' + a.year : ''}</p>
+            <div class="cluster disc-top__badges">${a.trackIds.length && savedN === a.trackIds.length ? ui.savedBadge() : savedN ? html`<span class="badge badge-saved">${icon('saved')}${savedN} of ${a.trackIds.length} saved</span>` : ui.soulseekBadge()}
+              ${a.format ? ui.qualityChip(a.format) : ''}${a.trackIds.length ? html`<span class="px fg-2">${plural(a.trackIds.length, 'track')}${a.sizeMB ? ', ' + size(a.sizeMB) : ''}</span>` : ''}</div>
           </div>
         </div>
         <div class="disc-top__actions">
           <button class="btn btn--primary" data-act="play-album" data-id="${a.id}">${icon('play')}Play album</button>
           ${slskDown() ? '' : html`<button class="btn" data-act="disc-folder" data-id="${a.id}">${icon('soulseek')}Open folder</button>`}
-          ${savedN < a.trackIds.length ? html`<button class="btn" data-act="save-album" data-id="${a.id}">${icon('save')}Save whole album</button>` : ''}
+          ${!a.trackIds.length || savedN < a.trackIds.length ? html`<button class="btn" data-act="save-album" data-id="${a.id}">${icon('save')}Save whole album</button>` : ''}
           ${ui.iconButton('radio', 'Start radio from ' + a.title, { 'data-act': 'disc-radio', 'data-kind': 'album', 'data-id': a.id })}
         </div>`;
     }
@@ -611,7 +706,7 @@
         <div class="disc-top__info">
           <p class="disc-top__kind">artist</p>
           <h3 class="disc-top__title">${ar.name}</h3>
-          <p class="disc-top__by">${thousands(ar.listeners)} listeners</p>
+          ${ar.listeners != null ? html`<p class="disc-top__by">${thousands(ar.listeners)} listeners</p>` : ''}
           <div class="cluster disc-top__badges">${ar.tags.slice(0, 2).map(function (g) { return ui.tagChip(g); })}</div>
         </div>
       </div>
@@ -628,13 +723,14 @@
       <span>${s.status === 'failed' ? 'Save stopped at step ' + s.step + ': ' + (s.error || M.saveSteps[s.step - 1]) : 'Saved to disk, waiting for Jellyfin'}</span>
       <button class="btn btn--quiet btn--sm" data-act="disc-save-sheet" data-id="${id}">${s.status === 'failed' ? 'Fix it' : 'Details'}</button></div>`;
   }
-  function folderTile(a, th) {
-    return html`<div class="tile disc-folder-tile"${after(th)}>
+  function folderTile(a) {
+    var n = a.trackIds.length;
+    return html`<div class="tile disc-folder-tile">
       <div class="tile__art"><button class="disc-tile-open" data-act="disc-folder" data-id="${a.id}" tabindex="-1" aria-hidden="true">${ui.cover(a, '100%')}</button>
         <button class="tile__play" data-act="play-album" data-id="${a.id}" aria-label="Play ${a.title}" data-tip="Play">${icon('play')}</button></div>
       <div class="tile__title"><button data-act="disc-folder" data-id="${a.id}" aria-label="Open ${a.title} folder">${a.title}</button></div>
       <div class="tile__by">${a.artist}</div>
-      <div class="tile__meta">${icon(a.saved === 'all' ? 'saved' : 'soulseek', a.saved === 'all' ? 'Saved' : 'On Soulseek', 'ic-16')}<span>${a.trackIds.length} tracks, ${size(a.sizeMB)}</span></div>
+      <div class="tile__meta">${icon(a.saved === 'all' ? 'saved' : 'soulseek', a.saved === 'all' ? 'Saved' : 'On Soulseek', 'ic-16')}<span>${n ? plural(n, 'track') + (a.sizeMB ? ', ' + size(a.sizeMB) : '') : a.type}</span></div>
     </div>`;
   }
   function artistTile(a) {
@@ -642,31 +738,10 @@
       <div class="tile__art"><a href="#/artist/${a.id}" tabindex="-1" aria-hidden="true">${ui.cover(a.id, '100%', { round: true })}</a>
         <button class="tile__play" data-act="disc-radio" data-kind="artist" data-id="${a.id}" aria-label="Start ${a.name} radio" data-tip="Start radio">${icon('radio')}</button></div>
       <div class="tile__title"><a href="#/artist/${a.id}">${a.name}</a></div>
-      <div class="tile__by">${thousands(a.listeners)} listeners</div>
+      <div class="tile__by">${a.listeners != null ? thousands(a.listeners) + ' listeners' : 'artist'}</div>
     </div>`;
   }
 
-  /* live update while Soulseek answers: counter, bar, staggered rows; no re-render (focus stays put) */
-  function searchTick() {
-    var p = progress(), R = runSearch(S.q);
-    var txt = $('[data-scan-text]'); if (txt) txt.textContent = scanText(R, p);
-    var left = $('[data-scan-left]'); if (left) left.textContent = p >= 1 ? '' : '~' + Math.ceil((1 - p) * SEARCH_MS / 1000) + ' s';
-    var bar = $('[data-scan-bar]');
-    if (bar) { bar.setAttribute('aria-valuenow', Math.round(p * 100)); $('i', bar).style.setProperty('--p', p.toFixed(3)); }
-    $$('[data-after]').forEach(function (el) { el.hidden = p < +el.getAttribute('data-after'); });
-    $$('[data-before]').forEach(function (el) { el.hidden = p >= +el.getAttribute('data-before'); });
-    if (p >= 1) {
-      stopTimer();
-      if (!S.done) {
-        S.done = true;
-        if (S.frozen == null) addRecent(S.q);
-        App.announce(scanText(R, 1));
-      }
-      paint('results', resultsBody());
-    }
-  }
-  function stopTimer() { if (S.timer) { clearInterval(S.timer); S.timer = null; } }
-  function ensureTimer() { stopTimer(); if (S.q && S.frozen == null && streaming()) /* PROTO: simulated streaming search */ S.timer = setInterval(searchTick, 250); }
   function addRecent(q) {
     q = String(q || '').trim(); if (q.length < 2) return;
     App.store.update('recentSearches', function (r) { var i = r.indexOf(q); if (i >= 0) r.splice(i, 1); r.unshift(q); r.length = Math.min(r.length, 8); });
@@ -674,13 +749,12 @@
 
   /* phone: the header field is hidden, so the page has its own; it updates the results in place */
   function setQuery(q) {
-    q = q.trim();
+    q = q.trim(); if (q === S.q) return;
     history.replaceState(null, '', '#/search' + (q ? '?q=' + encodeURIComponent(q) : ''));
-    S.stateKey = null; beginSession(q);
+    search(q);
     var f = $('[data-filters]'); if (f) f.hidden = !q;
     paint('sub', subline());
     paint('results', q ? resultsBody() : emptySearchBody());
-    ensureTimer();
   }
   function mountSearch(ctx) {
     var input = $('#disc-q'), t = null;
@@ -691,35 +765,29 @@
         if (e.key === 'Escape' && input.value) { e.stopPropagation(); input.value = ''; setQuery(''); }
       });
     }
-    ensureTimer();
     var offStore = App.on('store', function (keys) {
-      if (keys.indexOf('services') >= 0 && S.q) { paint('results', resultsBody()); ensureTimer(); }
+      if (keys.indexOf('services') >= 0 && S.q) paint('results', resultsBody());
       if (keys.indexOf('recentSearches') >= 0 && !S.q) paint('recents', recentsBody());
     });
     var offSave = App.on('save', function (d) { var el = $('[data-issue="' + d.id + '"]'); if (el) el.innerHTML = String(saveIssue(d.id)); });
-    ctx.onCleanup(function () { stopTimer(); clearTimeout(t); offStore(); offSave(); });
-    setTimeout(function () {                    // keep the header field in step (state links carry no ?q=)
-      var h = $('#header-search'); if (h && document.activeElement !== h && h.value !== (S.q || '')) { h.value = S.q || ''; }
-      var c = $('#header-search-clear'); if (c && h) c.hidden = !h.value;
-    }, 0);
-    runPending();
+    ctx.onCleanup(function () { clearTimeout(t); offStore(); offSave(); });
   }
 
   /* search actions */
   App.action('disc-src', function (el) {
     S.src = el.getAttribute('data-value') || 'all';
     $$('[data-act="disc-src"]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-value') === S.src)); });
-    paint('results', resultsBody()); ensureTimer();
+    paint('results', resultsBody());
   });
   App.action('disc-src-all', function () { var b = $('[data-act="disc-src"][data-value="all"]'); if (b) { b.click(); b.focus(); } });
   App.action('disc-ll', function () {
     S.ll = !S.ll;
     $$('.disc-filters [data-act="disc-ll"]').forEach(function (b) { b.setAttribute('aria-pressed', String(S.ll)); });
-    paint('results', resultsBody()); ensureTimer();
+    paint('results', resultsBody());
   });
   App.action('disc-search-again', function () {
-    S.t0 = Date.now(); S.frozen = null; S.done = false; S.showAll = false;
-    paint('results', resultsBody()); ensureTimer(); App.announce('Searching Soulseek again');
+    search(S.q);
+    paint('results', resultsBody()); App.announce('Searching Soulseek again');
   });
   App.action('disc-clear', function () {
     var h = $('#header-search'); if (h) h.value = '';
@@ -745,162 +813,214 @@
      3. Sheets: Soulseek folder, source picker, source details
      ===================================================================== */
   function sheetHead(t, sub) {
+    if (!t) return '';
     return html`<div class="disc-shead">${ui.cover(t, 56)}<div class="disc-shead__main"><p class="disc-shead__title">${t.title}</p>
       <p class="disc-shead__by">${t.artist}, ${t.album}</p></div>${sub || ''}</div>`;
   }
 
-  /* --- Soulseek folder (album result) --- */
-  function folderAlts(a) {
-    var first = M.track(a.trackIds[0]);
-    return first.sources.map(function (s, i) {
-      return { peer: s.peer, format: s.format, speed: s.speed, freeSlot: s.freeSlot, queue: s.queue, score: s.score,
-        tracks: a.trackIds.length - (i === 2 ? 1 : 0), sizeMB: sizeFor(s.format, a.duration), cover: i !== 1 };
-    });
-  }
-  function folderBody(a, idx) {
-    var alts = folderAlts(a), cur = alts[idx], savedN = a.trackIds.filter(App.isSaved).length, all = savedN === a.trackIds.length;
-    var missing = a.trackIds.length - cur.tracks;
+  /* --- Soulseek folder (album result): each peer sharing the album's first song is one folder ---
+     The open folder (module state, so the sheet's buttons can read it after the sheet closes):
+     { albumId, sources, done, error, idx: the folder in use, stop } */
+  var folder = null;
+  function folderBody(a, fs) {
+    var cur = fs.sources && fs.sources[fs.idx], n = a.trackIds.length, savedN = a.trackIds.filter(App.isSaved).length;
+    var by = [a.year, a.label].filter(Boolean).join(', ');
     return html`<div class="disc-folder">
       <div class="disc-folder__head">
-        <div class="disc-folder__art">${ui.cover(a, 128)}${cur.cover ? '' : html`<span class="disc-folder__nocover">no cover in folder</span>`}</div>
+        <div class="disc-folder__art">${ui.cover(a, 128)}</div>
         <div class="disc-folder__info">
-          <p class="disc-top__kind">${a.type} folder from <b>${cur.peer}</b></p>
+          <p class="disc-top__kind">${a.type} folder${cur ? html` from <b>${cur.peer}</b>` : ''}</p>
           <h3 class="disc-folder__title">${a.title}</h3>
-          <p class="disc-top__by"><a href="#/artist/${a.artistId}" data-close>${a.artist}</a>, ${a.year}, ${a.label}</p>
-          <div class="cluster disc-folder__facts">${ui.qualityChip(cur.format)}<span class="px">${cur.tracks} tracks</span><span class="px">${size(cur.sizeMB)}</span>
-            <span class="px">${cur.speed} MB/s</span><span class="disc-folder__slot">${icon(cur.freeSlot ? 'check' : 'clock', null, 'ic-16')}${cur.freeSlot ? 'free slot' : 'queue of ' + cur.queue}</span></div>
+          <p class="disc-top__by"><a href="#/artist/${a.artistId}" data-close>${a.artist}</a>${by ? ', ' + by : ''}</p>
+          <div class="cluster disc-folder__facts">${cur ? ui.qualityChip(cur.format) : ''}${n ? html`<span class="px">${plural(n, 'track')}</span>` : ''}${a.sizeMB ? html`<span class="px">${size(a.sizeMB)}</span>` : ''}
+            ${cur ? html`<span class="px">${mbps(cur.speed)}</span><span class="disc-folder__slot">${icon(cur.freeSlot ? 'check' : 'clock', null, 'ic-16')}${cur.freeSlot ? 'free slot' : 'queue of ' + cur.queue}</span>` : ''}</div>
           <div class="disc-top__actions">
-            <button class="btn btn--primary" data-act="play-album" data-id="${a.id}" data-close autofocus>${icon('play')}Play album</button>
-            ${all ? ui.savedBadge() : html`<button class="btn" data-act="save-album" data-id="${a.id}">${icon('save')}${savedN ? 'Save the other ' + (a.trackIds.length - savedN) : 'Save whole album'}</button>`}
+            <button class="btn btn--primary" data-act="disc-folder-play" data-id="${a.id}" data-close autofocus ${n ? '' : raw('disabled')}>${icon('play')}Play album</button>
+            ${n && savedN === n ? ui.savedBadge() : html`<button class="btn" data-act="save-album" data-id="${a.id}">${icon('save')}${savedN ? 'Save the other ' + (n - savedN) : 'Save whole album'}</button>`}
             ${ui.iconButton('radio', 'Start radio from ' + a.title, { 'data-act': 'disc-radio', 'data-kind': 'album', 'data-id': a.id, 'data-close': '' })}
             <a class="btn btn--quiet" href="#/album/${a.id}" data-close>Album page</a>
           </div>
         </div>
       </div>
       <div data-region="agg">${aggInline(a.trackIds, a.title)}</div>
-      ${missing ? html`<p class="disc-issue">${icon('info')}<span>This folder is missing ${plural(missing, 'track')}. Missing songs are fetched from other peers when you play or save them.</span></p>` : ''}
       ${ui.labelRule('tracks', { level: 'h3', sm: true })}
-      ${ui.trackList(a.trackIds, { dense: true, label: a.title + ' tracks' })}
+      ${n ? ui.trackList(a.trackIds, { dense: true, label: a.title + ' tracks' }) : ui.skeleton('row', 4)}
       ${ui.labelRule('other folders', { level: 'h3', sm: true })}
-      <ul class="disc-alts">${alts.map(function (f, i) {
-        if (i === idx) return '';
-        return html`<li class="disc-alt">
-          <span class="disc-alt__peer">${icon('peer')}<b>${f.peer}</b></span>${ui.qualityChip(f.format)}
-          <span class="px disc-alt__fact">${f.tracks}/${a.trackIds.length}</span><span class="px disc-alt__fact">${size(f.sizeMB)}</span><span class="px disc-alt__fact">${f.speed} MB/s</span>
-          <span class="score" style="--s:${f.score / 100}" role="img" aria-label="Score ${f.score} of 100"><i></i></span>
-          <button class="btn btn--sm" data-act="disc-folder-use" data-id="${a.id}" data-i="${i}">Use this folder</button></li>`;
-      })}</ul>
+      ${folderAlts(fs)}
     </div>`;
   }
-  var folderSheet = null;
-  function openFolder(albumId, idx) {
-    var a = M.album(albumId); idx = idx || 0;
-    var off = null;
-    folderSheet = App.openSheet({ title: 'soulseek folder', wide: true, className: 'disc-sheet', body: folderBody(a, idx),
+  function folderAlts(fs) {
+    if (fs.error) {
+      return ui.emptyState({ art: 'star', title: 'Couldn\'t ask peers for folders', text: fs.error.message, action: { label: 'Try again', act: 'disc-folder-retry' } });
+    }
+    if (!fs.sources) return ui.skeleton('row', 2);
+    var others = fs.sources.filter(function (s, i) { return i !== fs.idx; });
+    if (!others.length) return html`<p class="disc-note">${fs.done ? 'No other peer shares this album right now.' : 'Still asking peers.'}</p>`;
+    return html`<ul class="disc-alts">${fs.sources.map(function (f, i) {
+      if (i === fs.idx) return '';
+      return html`<li class="disc-alt">
+        <span class="disc-alt__peer">${icon('peer')}<b>${f.peer}</b></span>${ui.qualityChip(f.format)}
+        <span class="px disc-alt__fact">${mbps(f.speed)}</span><span class="px disc-alt__fact">${f.freeSlot ? 'free slot' : 'queue ' + f.queue}</span>
+        <span class="score" style="--s:${f.score / 100}" role="img" aria-label="Score ${f.score} of 100"><i></i></span>
+        <button class="btn btn--sm" data-act="disc-folder-use" data-i="${i}">Use this folder</button></li>`;
+    })}</ul>`;
+  }
+  function openFolder(albumId) {
+    var a = M.album(albumId); if (!a) return null;
+    var fs = folder = { albumId: albumId, sources: null, done: false, error: null, idx: 0, stop: null, closed: false };
+    var offSave = null, sheet;
+    function repaint() { if (!fs.closed) paint('folder', folderBody(a, fs), sheet.el); }
+    /* the album's songs may not be known yet (a folder fresh from search): fetch them, then ask for its peers */
+    fs.watch = function () {
+      fs.error = null; repaint();
+      App.albumTracks(albumId).then(function (ids) {
+        if (fs.closed) return;
+        if (!ids.length) { fs.sources = []; fs.done = true; repaint(); return; }
+        if (fs.stop) fs.stop();
+        fs.stop = watchSources(ids[0], function (res) {
+          if (res.error) fs.error = res.error; else { fs.sources = res.sources; fs.done = res.done; }
+          repaint();
+        });
+      }, function (err) { fs.error = err; repaint(); });
+    };
+    sheet = App.openSheet({ title: 'soulseek folder', wide: true, className: 'disc-sheet', body: html`<div data-region="folder">${folderBody(a, fs)}</div>`,
       onMount: function (el) {
-        off = App.on('save', function (d) { if (a.trackIds.indexOf(d.id) >= 0) paint('agg', aggInline(a.trackIds, a.title), el); });
+        offSave = App.on('save', function (d) { if (a.trackIds.indexOf(d.id) >= 0) paint('agg', aggInline(a.trackIds, a.title), el); });
       },
-      onClose: function () { if (off) off(); folderSheet = null; } });
-    folderSheet.albumId = albumId;
+      onClose: function () { fs.closed = true; if (offSave) offSave(); if (fs.stop) fs.stop(); } });
+    fs.watch();
     App.syncRows();
-    return folderSheet;
+    return sheet;
   }
   App.action('disc-folder', function (el) { openFolder(el.getAttribute('data-id')); });
+  App.action('disc-folder-retry', function () { if (folder && !folder.closed) folder.watch(); });
   App.action('disc-folder-use', function (el) {
-    if (!folderSheet) return;
-    var a = M.album(el.getAttribute('data-id')), i = +el.getAttribute('data-i'), alt = folderAlts(a)[i];
-    $('.sheet__body', folderSheet.el).innerHTML = String(folderBody(a, i));
-    App.syncRows();
-    var first = $('.sheet__body button', folderSheet.el); if (first) first.focus();
+    var fs = folder; if (!fs || fs.closed || !fs.sources) return;
+    var alt = fs.sources[+el.getAttribute('data-i')]; if (!alt) return;
+    fs.idx = fs.sources.indexOf(alt);
+    paint('folder', folderBody(M.album(fs.albumId), fs));
     App.toast('Using the folder from ' + alt.peer + ', ' + fmt(alt.format).label, { icon: 'soulseek' });
   });
+  /* play the album, its first song from the folder in use */
+  App.action('disc-folder-play', function () {
+    var fs = folder, a = fs && M.album(fs.albumId); if (!a || !a.trackIds.length) return;
+    var cur = fs.sources && fs.sources[fs.idx], sources = {};
+    if (cur) sources[a.trackIds[0]] = sourceFor(cur);
+    P.playList(a.trackIds, 0, { sources: sources });
+  });
 
-  /* --- source picker --- */
-  var FAILED = {};          // trackId -> { peer: 'stalled 2 min ago' } (demo history, plus the player's own failures)
-  var pickerSort = 'score', picker = null;
-  function failedNotes(t) {
-    var notes = Object.assign({}, FAILED[t.id] || {});
-    if (P.currentId() === t.id) P.state.failedPeers.forEach(function (f) { notes[f.peer] = 'stalled at ' + f.at + '%'; });
-    return notes;
-  }
-  function sortedSources(t) {
-    var list = t.sources.map(function (s, i) { return Object.assign({ i: i }, s); });
+  /* --- source picker ---
+     The open picker (module state, read by its buttons): { trackId, sources, done, error, sort, stop } */
+  var picker = null;
+  function sortedSources(t, pk) {
+    var rows = pk.sources.map(function (s, i) { return { s: s, i: i }; });
     var by = {
-      score: function (a, b) { return b.score - a.score; },
-      quality: function (a, b) { return fmt(b.format).kbps - fmt(a.format).kbps || b.score - a.score; },
-      speed: function (a, b) { return b.speed - a.speed; },
-      size: function (a, b) { return sizeFor(a.format, t.duration) - sizeFor(b.format, t.duration); }
-    }[pickerSort];
-    return list.sort(by);
+      score: function (a, b) { return b.s.score - a.s.score; },
+      quality: function (a, b) { return quality(b.s.format) - quality(a.s.format) || b.s.score - a.s.score; },
+      speed: function (a, b) { return b.s.speed - a.s.speed; },
+      size: function (a, b) { return (a.s.sizeBytes || 0) - (b.s.sizeBytes || 0); }
+    }[pk.sort];
+    return rows.sort(by);
   }
-  function srcRow(t, s, note, first) {
+  function srcRow(t, s, i, note, first) {
     var f = fmt(s.format), x = s.factors;
-    var tip = 'format ' + x.format + ' + speed ' + x.speed + ' + free slot ' + x.slot + ' + queue ' + x.queue + ' = ' + s.score;
-    return html`<div class="src-row${note ? ' is-failed' : ''}${f.lossless ? ' is-preferred' : ''}" role="row">
-      <span class="disc-src__peer" role="cell"><button class="src-row__peer" data-act="disc-use-source" data-id="${t.id}" data-i="${s.i}" ${first ? raw('autofocus') : ''}
-        aria-label="Play from ${s.peer}, ${f.label}, score ${s.score}${note ? ', ' + note : ''}${f.lossless ? ', preferred format' : ''}">${icon('peer')}<span class="ellipsis">${s.peer}</span></button>
+    var tip = x ? 'format ' + x.format + ' + speed ' + x.speed + ' + free slot ' + x.slot + ' + queue ' + x.queue + ' = ' + s.score : 'score ' + s.score;
+    return html`<div class="src-row${note ? ' is-failed' : ''}${s.preferred ? ' is-preferred' : ''}" role="row">
+      <span class="disc-src__peer" role="cell"><button class="src-row__peer" data-act="disc-use-source" data-id="${t.id}" data-i="${i}" ${first ? raw('autofocus') : ''}
+        aria-label="Play from ${s.peer}, ${f.label}, score ${s.score}${note ? ', ' + note : ''}${s.preferred ? ', preferred format' : ''}">${icon('peer')}<span class="ellipsis">${s.peer}</span></button>
         ${note ? html`<span class="disc-src__note">${note}</span>` : ''}</span>
       <span role="cell">${ui.qualityChip(s.format)}</span>
-      <span class="src-row__opt" role="cell">${size(sizeFor(s.format, t.duration))}</span>
-      <span class="src-row__opt" role="cell">${s.speed} MB/s</span>
+      <span class="src-row__opt" role="cell">${s.sizeBytes ? size(s.sizeBytes / 1e6) : ''}</span>
+      <span class="src-row__opt" role="cell">${mbps(s.speed)}</span>
       <span class="src-row__opt" role="cell">${icon(s.freeSlot ? 'check' : 'close', s.freeSlot ? 'Free slot' : 'No free slot')}</span>
       <span class="src-row__opt" role="cell">${s.queue}</span>
       <span class="disc-src__score" role="cell" tabindex="0" data-tip="${tip}" aria-label="Score ${s.score} of 100: ${tip}"><span class="score" style="--s:${(s.score / 100).toFixed(2)}"><i></i></span><span class="px">${s.score}</span></span>
     </div>`;
   }
-  function pickerRows(t, loading) {
-    var notes = failedNotes(t);
-    return html`<div class="src-row src-row--head" role="row"><span role="columnheader">peer</span><span role="columnheader">quality</span>
+  function pickerRows(t, pk) {
+    if (!pk.sources) {
+      return pk.error ? ui.emptyState({ art: 'star', title: 'Couldn\'t load sources', text: pk.error.message, action: { label: 'Try again', act: 'disc-src-retry' } })
+        : ui.skeleton('row', 3);
+    }
+    if (!pk.sources.length && pk.done) {
+      return ui.emptyState({ art: 'moon', title: 'No peer shares this right now', text: 'Soulseek peers come and go. Ask again in a while.',
+        action: { label: 'Search again', act: 'disc-src-retry' } });
+    }
+    var notes = failedNotes(t.id, pk.sources);
+    return html`<div class="src-table disc-src" role="table" aria-label="Sources for ${t.title}">
+      <div class="src-row src-row--head" role="row"><span role="columnheader">peer</span><span role="columnheader">quality</span>
         <span class="src-row__opt" role="columnheader">size</span><span class="src-row__opt" role="columnheader">speed</span>
         <span class="src-row__opt" role="columnheader">slot</span><span class="src-row__opt" role="columnheader">queue</span><span role="columnheader">score</span></div>
-      ${sortedSources(t).map(function (s, i) { return srcRow(t, s, notes[s.peer], i === 0); })}
-      ${loading ? html`<div class="src-row disc-src__more" role="row"><span role="cell"><span class="spin-ring" aria-hidden="true"></span>Still searching: more peers may answer</span></div>` : ''}`;
+      ${sortedSources(t, pk).map(function (r, n) { return srcRow(t, r.s, r.i, notes[r.s.peer], n === 0); })}
+      ${pk.error ? html`<div class="src-row disc-src__more" role="row"><span role="cell">${icon('warning', null, 'ic-16')}Stopped asking peers: ${pk.error.message}
+          <button class="btn btn--quiet btn--sm" data-act="disc-src-retry">Ask again</button></span></div>`
+        : !pk.done ? html`<div class="src-row disc-src__more" role="row"><span role="cell"><span class="spin-ring" aria-hidden="true"></span>Still searching: more peers may answer</span></div>` : ''}
+    </div>`;
   }
-  function pickerBody(t, loading) {
-    var lossless = t.sources.filter(function (s) { return fmt(s.format).lossless; }).length;
-    return html`${sheetHead(t, html`<span class="disc-shead__meta"><span class="px">${plural(t.sources.length, 'source')}</span><span>${lossless} lossless</span></span>`)}
+  function pickerMeta(pk) {
+    if (!pk.sources) return html`<span class="px">asking peers</span>`;
+    var lossless = pk.sources.filter(function (s) { return fmt(s.format).lossless; }).length;
+    return html`<span class="px">${plural(pk.sources.length, 'source')}</span><span>${lossless} lossless</span>`;
+  }
+  function pickerBody(t, pk) {
+    return html`${sheetHead(t, html`<span class="disc-shead__meta" data-region="srcmeta">${pickerMeta(pk)}</span>`)}
       <div class="disc-picker__bar">
         <span class="disc-picker__label" id="disc-sort-l">Sort by</span>
         <div class="cluster" role="group" aria-labelledby="disc-sort-l">${['score', 'quality', 'speed', 'size'].map(function (k) {
-          return ui.filterPill(k.charAt(0).toUpperCase() + k.slice(1), { act: 'disc-src-sort', value: k, pressed: pickerSort === k });
+          return ui.filterPill(k.charAt(0).toUpperCase() + k.slice(1), { act: 'disc-src-sort', value: k, pressed: pk.sort === k });
         })}</div>
       </div>
-      <div class="src-table disc-src" role="table" aria-label="Sources for ${t.title}" data-region="srcrows">${pickerRows(t, loading)}</div>
+      <div data-region="srcrows">${pickerRows(t, pk)}</div>
       <p class="disc-note disc-picker__hint">Score weighs format, peer speed, a free upload slot and queue length. Hover or focus a score for the breakdown.</p>`;
   }
-  function openPicker(trackId, o) {
-    o = o || {};
-    var t = M.track(trackId); if (!t) return;
-    var loading = o.loading != null ? o.loading : (App.current.path === '/search' && streaming());
-    pickerSort = 'score';
-    var timer = null;
-    picker = App.openSheet({ title: 'pick a source', wide: true, className: 'disc-sheet disc-picker', body: pickerBody(t, loading),
+  function openPicker(trackId) {
+    var t = M.track(trackId); if (!t) return null;
+    var pk = picker = { trackId: trackId, sources: null, done: false, error: null, sort: 'score', stop: null, closed: false };
+    var sheet;
+    function repaint() {
+      if (pk.closed) return;
+      paint('srcmeta', pickerMeta(pk), sheet.el);
+      paint('srcrows', pickerRows(t, pk), sheet.el);
+    }
+    pk.watch = function () {
+      if (pk.stop) pk.stop();
+      pk.error = null; repaint();
+      pk.stop = watchSources(trackId, function (res) {
+        var wasDone = pk.done;
+        if (res.error) pk.error = res.error; else { pk.sources = res.sources; pk.done = res.done; }
+        repaint();
+        if (pk.done && !wasDone) App.announce('Search finished: ' + plural(pk.sources.length, 'source'));
+      });
+    };
+    sheet = App.openSheet({ title: 'pick a source', wide: true, className: 'disc-sheet disc-picker', body: pickerBody(t, pk),
       foot: html`<button class="btn" data-close>Cancel</button><button class="btn btn--primary" data-act="disc-play-best" data-id="${t.id}" data-close>${icon('play')}Play best source</button>`,
-      onMount: function (el) {
-        if (!loading) return;
-        /* PROTO: simulated delay */ timer = setTimeout(function () { paint('srcrows', pickerRows(t, false), el); App.announce('Search finished: ' + plural(t.sources.length, 'source')); }, 3500);
-      },
-      onClose: function () { clearTimeout(timer); picker = null; } });
-    picker.trackId = trackId;
-    return picker;
+      onClose: function () { pk.closed = true; if (pk.stop) pk.stop(); } });
+    pk.watch();
+    return sheet;
   }
   App.hooks.sourcePicker = function (trackId) { openPicker(trackId); };
   App.action('disc-src-sort', function (el) {
-    if (!picker) return;
-    pickerSort = el.getAttribute('data-value');
-    $$('[data-act="disc-src-sort"]', picker.el).forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-value') === pickerSort)); });
-    paint('srcrows', pickerRows(M.track(picker.trackId), !!$('.disc-src__more', picker.el)), picker.el);
+    var pk = picker; if (!pk || pk.closed) return;
+    pk.sort = el.getAttribute('data-value');
+    $$('[data-act="disc-src-sort"]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-value') === pk.sort)); });
+    paint('srcrows', pickerRows(M.track(pk.trackId), pk));
   });
-  function useSource(id, i) {
-    var t = M.track(id), s = t.sources[i], again = failedNotes(t)[s.peer];
-    P.useSource(id, i);
-    App.toast((again ? 'Trying ' + s.peer + ' again, ' : 'Playing from ' + s.peer + ', ') + fmt(s.format).label, { icon: 'soulseek' });
+  App.action('disc-src-retry', function () { if (picker && !picker.closed) { picker.done = false; picker.watch(); } });
+  function useSource(id, s, note) {
+    P.useSource(id, sourceFor(s));
+    App.toast((note ? 'Trying ' + s.peer + ' again, ' : 'Playing from ' + s.peer + ', ') + fmt(s.format).label, { icon: 'soulseek' });
   }
-  App.action('disc-use-source', function (el) { var id = el.getAttribute('data-id'); App.closeTop(); useSource(id, +el.getAttribute('data-i')); });
+  App.action('disc-use-source', function (el) {
+    var pk = picker, s = pk && pk.sources && pk.sources[+el.getAttribute('data-i')]; if (!s) return;
+    var note = failedNotes(pk.trackId, pk.sources)[s.peer];
+    App.closeTop(); useSource(pk.trackId, s, note);
+  });
+  /* the best source that hasn't failed; before any source has answered, the player picks on its own */
   App.action('disc-play-best', function (el) {
-    var t = M.track(el.getAttribute('data-id')), notes = failedNotes(t);
-    var best = t.sources.map(function (s, i) { return Object.assign({ i: i }, s); }).filter(function (s) { return !notes[s.peer]; })[0] || { i: 0 };
-    useSource(t.id, best.i);
+    var id = el.getAttribute('data-id'), pk = picker && picker.trackId === id ? picker : null;
+    if (!pk || !pk.sources || !pk.sources.length) { P.playTrack(id); return; }
+    var notes = failedNotes(id, pk.sources);
+    useSource(id, pk.sources.filter(function (s) { return !notes[s.peer]; })[0] || pk.sources[0]);
   });
   App.action('disc-swap-picker', function (el) { var id = el.getAttribute('data-id'); App.closeTop(); openPicker(id); });
 
@@ -923,32 +1043,33 @@
       return html`${sheetHead(t)}<div class="source-card">
           <div class="source-card__head">${icon('saved')}<span>Playing from <b>your library</b> via Jellyfin</span>${ui.qualityChip(t.format, { solid: true })}</div></div>
         <dl class="disc-kv">
-          <div><dt>Format</dt><dd>${f0.codec}, ${f0.detail}</dd></div>
-          <div><dt>Bitrate</dt><dd class="px">${f0.kbps} kbps</dd></div>
-          <div><dt>Size</dt><dd class="px">${size(sizeFor(t.format, t.duration))}</dd></div>
+          <div><dt>Format</dt><dd>${f0.codec}${detail(f0) ? ', ' + detail(f0) : ''}</dd></div>
+          ${t.kbps || f0.kbps ? html`<div><dt>Bitrate</dt><dd class="px">${t.kbps || f0.kbps} kbps</dd></div>` : ''}
+          ${t.sizeMB ? html`<div><dt>Size</dt><dd class="px">${size(t.sizeMB)}</dd></div>` : ''}
           <div><dt>State</dt><dd>${ui.statusGlyph('ok')} saved, plays at once</dd></div>
         </dl>`;
     }
-    var peer = ps.peer, f = fmt(peer.format || t.format), total = sizeFor(peer.format || t.format, t.duration);
+    var peer = ps.peer, f = fmt(peer.format || t.format), total = peer.sizeMB || t.sizeMB, kbps = f.kbps || t.kbps;
+    var path = ps.source && ps.source.peer === peer.name ? ps.source.path : null;
     return html`${sheetHead(t)}
       <div class="source-card">
         <div class="source-card__head">${icon('soulseek')}<span>Streaming from <b>${peer.name}</b></span>${ui.qualityChip(f.label, { solid: true })}
-          <span class="source-card__stat" data-d="speed">${peer.speed} MB/s</span><span class="source-card__stat" data-d="recv">${Math.round(ps.received * 100)}% of ${size(total)}</span></div>
+          <span class="source-card__stat" data-d="speed">${mbps(peer.speed)}</span><span class="source-card__stat" data-d="recv">${Math.round(ps.received * 100)}%${total ? ' of ' + size(total) : ''}</span></div>
         ${save ? ui.pipeline(save.step, save.status === 'pending' ? 'saving' : save.status, save.error) : ''}
       </div>
       <dl class="disc-kv">
-        <div><dt>Peer</dt><dd><b>${peer.name}</b>, source ${peer.rank} of ${peer.of}</dd></div>
-        <div><dt>Format</dt><dd>${f.codec}, ${f.detail}</dd></div>
-        <div><dt>Bitrate</dt><dd class="px">${f.kbps} kbps</dd></div>
-        <div><dt>Size</dt><dd class="px">${size(total)}</dd></div>
-        <div><dt>Speed</dt><dd class="px" data-d="speed">${peer.speed} MB/s</dd></div>
-        <div><dt>Received</dt><dd class="px" data-d="bytes">${size(total * ps.received)} of ${size(total)}</dd></div>
+        <div><dt>Peer</dt><dd><b>${peer.name}</b>, source ${peer.rank}${peer.of ? ' of ' + peer.of : ''}</dd></div>
+        <div><dt>Format</dt><dd>${f.codec}${detail(f) ? ', ' + detail(f) : ''}</dd></div>
+        ${kbps ? html`<div><dt>Bitrate</dt><dd class="px">${kbps} kbps</dd></div>` : ''}
+        ${total ? html`<div><dt>Size</dt><dd class="px">${size(total)}</dd></div>` : ''}
+        <div><dt>Speed</dt><dd class="px" data-d="speed">${mbps(peer.speed)}</dd></div>
+        ${total ? html`<div><dt>Received</dt><dd class="px" data-d="bytes">${size(total * ps.received)} of ${size(total)}</dd></div>` : ''}
         <div><dt>State</dt><dd data-d="state">${ui.statusGlyph(st[0])} ${st[1]}</dd></div>
-        <div class="disc-kv__wide"><dt>File</dt><dd class="disc-kv__path">${(t.sources.filter(function (s) { return s.peer === peer.name; })[0] || t.sources[0]).path}</dd></div>
+        ${path ? html`<div class="disc-kv__wide"><dt>File</dt><dd class="disc-kv__path">${path}</dd></div>` : ''}
       </dl>
       ${ui.labelRule('fallback history', { level: 'h3', sm: true })}
       ${ps.failedPeers.length ? html`<ol class="disc-fallback">${ps.failedPeers.map(function (fp) {
-          return html`<li>${ui.statusGlyph('down')}<span><b>${fp.peer}</b> stalled at ${fp.at}%, switched to the next source</span></li>`;
+          return html`<li>${ui.statusGlyph('down')}<span><b>${fp.peer}</b> stalled${fp.at != null ? ' at ' + fp.at + '%' : ''}, switched to the next source</span></li>`;
         })}<li>${ui.statusGlyph('ok')}<span>Now from <b>${peer.name}</b>, kept your position</span></li></ol>`
         : html`<p class="disc-note">No fallbacks. The first peer has held up.</p>`}`;
   }
@@ -959,10 +1080,10 @@
       onMount: function (el) {
         offTick = App.on('tick', function () {
           var ps = P.state, peer = ps.peer, cur = P.current(); if (!peer || !cur) return;
-          var total = sizeFor(peer.format || cur.format, cur.duration), stt = xferState();
-          $$('[data-d="speed"]', el).forEach(function (n) { n.textContent = peer.speed + ' MB/s'; });
-          $$('[data-d="recv"]', el).forEach(function (n) { n.textContent = Math.round(ps.received * 100) + '% of ' + size(total); });
-          $$('[data-d="bytes"]', el).forEach(function (n) { n.textContent = size(total * ps.received) + ' of ' + size(total); });
+          var total = peer.sizeMB || cur.sizeMB, stt = xferState();
+          $$('[data-d="speed"]', el).forEach(function (n) { n.textContent = mbps(peer.speed); });
+          $$('[data-d="recv"]', el).forEach(function (n) { n.textContent = Math.round(ps.received * 100) + '%' + (total ? ' of ' + size(total) : ''); });
+          if (total) $$('[data-d="bytes"]', el).forEach(function (n) { n.textContent = size(total * ps.received) + ' of ' + size(total); });
           $$('[data-d="state"]', el).forEach(function (n) { if (n.getAttribute('data-was') !== stt[1]) { n.setAttribute('data-was', stt[1]); n.innerHTML = String(html`${ui.statusGlyph(stt[0])} ${stt[1]}`); } });
         });
         offPlayer = App.on('player', function (k) { if (k === 'track' || k === 'source') paint('details', detailsBody(), el); });
@@ -975,38 +1096,46 @@
   /* =====================================================================
      4. Save flow: duplicate dialog, save sheet (steps + recovery), release picker, aggregate saves
      ===================================================================== */
-  /* a different copy of an already-saved song (same title and artist) */
-  function dupOf(id) {
-    var t = M.track(id);
-    return M.tracks.filter(function (x) { return x.id !== id && App.isSaved(x.id) && x.title === t.title && x.artistId === t.artistId; })[0] || null;
-  }
-  /* album and queue saves skip the per-song check (their progress shows as an aggregate) */
+  /* one song: ask the library whether a copy is already saved (POST /api/library/duplicates). Album and queue
+     saves skip the per-song check (their progress shows as an aggregate). */
   App.hooks.beforeSave = function (ids, proceed) {
-    var have = ids.length === 1 ? dupOf(ids[0]) : null;
-    if (!have) { proceed(ids); return; }
-    var t = M.track(ids[0]);
-    openDuplicate(have.id, { trackId: t.id, peer: t.sources[0].peer, format: t.sources[0].format, speed: t.sources[0].speed }, function (choice) {
-      proceed(choice === 'keep' ? [] : ids);
+    if (ids.length !== 1) { proceed(ids); return; }
+    var id = ids[0];
+    M.api('/api/library/duplicates', { method: 'POST', body: { ids: ids } }).then(function (res) {
+      var d = (res.items || []).filter(function (x) { return x.trackId === id; })[0];
+      if (!d || !d.existing) { proceed(ids); return; }
+      openDuplicate(d.existing, candidate(id), d.better, function (choice) {
+        if (choice === 'keep') proceed([]); else proceed(ids, { mode: choice });
+      });
+    }, function (err) {
+      App.toast('Couldn\'t check your library for a saved copy (' + err.message + '). Saving anyway.', { kind: 'error' });
+      proceed(ids);
     });
   };
+  /* the copy about to be saved: the playing peer's file when this song is playing, else the song's own facts */
+  function candidate(id) {
+    var t = M.track(id) || {}, ps = P.state, playing = P.currentId() === id && ps.peer;
+    return { format: (playing && ps.peer.format) || t.format, sizeMB: (playing && ps.peer.sizeMB) || t.sizeMB, kbps: t.kbps,
+      peer: playing ? ps.peer.name : null, speed: playing ? ps.peer.speed : null };
+  }
 
   var dupDone = null;
-  function openDuplicate(savedId, cand, onChoice) {
-    var t = M.track(savedId), better = isBetter(cand.format, t.format);
-    function card(label, format, sub, isBest, note) {
-      var f = fmt(format);
+  /* existing: the saved Track; cand: { format, sizeMB, kbps, peer, speed }; onChoice('keep' | 'separate' | 'replace') */
+  function openDuplicate(existing, cand, better, onChoice) {
+    function card(label, c, sub, isBest, note) {
+      var f = fmt(c.format), kbps = c.kbps || f.kbps;
       return html`<div class="disc-dup__card${isBest ? ' is-better' : ''}">
         <p class="disc-dup__label">${label}</p>
-        <div class="disc-dup__row">${ui.cover(t, 56)}<div>${ui.qualityChip(format)}<p class="disc-dup__sub">${sub}</p></div></div>
-        <dl class="disc-dup__facts"><div><dt>Detail</dt><dd>${f.detail}</dd></div><div><dt>Bitrate</dt><dd class="px">${f.kbps} kbps</dd></div><div><dt>Size</dt><dd class="px">${size(sizeFor(format, t.duration))}</dd></div></dl>
+        <div class="disc-dup__row">${ui.cover(existing, 56)}<div>${ui.qualityChip(c.format)}<p class="disc-dup__sub">${sub}</p></div></div>
+        <dl class="disc-dup__facts"><div><dt>Detail</dt><dd>${detail(f)}</dd></div><div><dt>Bitrate</dt><dd class="px">${kbps ? kbps + ' kbps' : ''}</dd></div><div><dt>Size</dt><dd class="px">${c.sizeMB ? size(c.sizeMB) : ''}</dd></div></dl>
         ${isBest ? html`<p class="disc-dup__best">${icon('arrow-up')}better quality</p>` : note ? html`<p class="disc-dup__keep">${icon('saved')}${note}</p>` : ''}
       </div>`;
     }
-    dupDone = { savedId: savedId, cand: cand, onChoice: onChoice || null };
+    dupDone = { existing: existing, cand: cand, onChoice: onChoice };
     return App.openDialog({ title: 'already in your library', wide: true, className: 'disc-dup-dialog',
-      body: html`<p class="disc-dup__lead"><b>${t.artist}, ${t.title}</b> is already saved as ${fmt(t.format).label}. What should happen to this copy?</p>
-        <div class="disc-dup">${card('in your library', t.format, 'Saved, plays from Jellyfin', false, better ? '' : 'same or better')}
-          ${card('from ' + cand.peer, cand.format, 'On Soulseek, ' + cand.speed + ' MB/s', better)}</div>
+      body: html`<p class="disc-dup__lead"><b>${existing.artist}, ${existing.title}</b> is already saved as ${fmt(existing.format).label}. What should happen to this copy?</p>
+        <div class="disc-dup">${card('in your library', existing, 'Saved, plays from Jellyfin', false, better ? '' : 'same or better')}
+          ${card('from ' + (cand.peer || 'Soulseek'), cand, 'On Soulseek' + (cand.speed ? ', ' + mbps(cand.speed) : ''), better)}</div>
         <p class="disc-note">Set what happens by default in <a class="link" href="#/settings/library" data-close>Settings, Library</a>.</p>`,
       foot: html`<button class="btn" data-act="disc-dup" data-choice="separate" data-close>Save as a separate version</button>
         ${better ? html`<button class="btn" data-act="disc-dup" data-choice="replace" data-close>${icon('arrow-up')}Replace with better quality</button>` : ''}
@@ -1014,25 +1143,31 @@
   }
   App.action('disc-dup', function (el) {
     var d = dupDone; dupDone = null; if (!d) return;
-    var choice = el.getAttribute('data-choice'), t = M.track(d.savedId), label = fmt(d.cand.format).label;
-    if (d.onChoice) { d.onChoice(choice); return; }
-    if (choice === 'keep') { App.toast('Kept the saved copy of ' + t.title, { icon: 'saved' }); return; }
-    App.toast(choice === 'replace' ? 'Replacing ' + t.title + ' with ' + label + '. The old file is kept until this finishes.' : 'Saving a second copy of ' + t.title + ', ' + label, { icon: 'save' });
-    /* PROTO: simulated delay */ setTimeout(function () {
-      App.toast(choice === 'replace' ? t.title + ' is now ' + label : 'Saved: ' + t.title + ' (' + label + ' version)', { kind: 'ok', icon: 'saved' });
-    }, 4500);
+    var choice = el.getAttribute('data-choice'), label = fmt(d.cand.format).label, title = d.existing.title;
+    if (choice === 'keep') App.toast('Kept the saved copy of ' + title, { icon: 'saved' });
+    else App.toast(choice === 'replace' ? 'Replacing ' + title + ' with ' + label : 'Saving a second copy of ' + title + ', ' + label, { icon: 'save' });
+    d.onChoice(choice);
   });
+  /* a saved song that peers share in better quality: offer that copy (the best source the server ranks) */
   App.action('disc-save-version', function (el) {
-    var t = M.track(el.getAttribute('data-id')), s = t.sources[0];
-    openDuplicate(t.id, { trackId: t.id, peer: s.peer, format: s.format, speed: s.speed });
+    var id = el.getAttribute('data-id'), t = M.track(id); if (!t) return;
+    M.api(sourcesPath(id)).then(function (res) {
+      var best = (res.sources || [])[0];
+      if (!best) { App.toast('No peer shares ' + t.title + ' right now', { icon: 'no-source' }); return; }
+      var cand = { format: best.format, sizeMB: best.sizeBytes ? best.sizeBytes / 1e6 : null, peer: best.peer, speed: best.speed };
+      openDuplicate(t, cand, isBetter(best.format, t.format), function (choice) {
+        if (choice === 'keep') return;
+        var source = {}; source[id] = { peer: best.peer, path: best.path };
+        App.saves.start([id], { mode: choice, source: source });
+      });
+    }, function (err) { App.toast('Couldn\'t ask peers for ' + t.title + ': ' + err.message, { kind: 'error' }); });
   });
 
   /* --- save sheet: the 5 steps, the error, and what to do about it --- */
   var RECOVER = {
     transfer: function (id, s) {
-      var t = M.track(id), next = t.sources[1] || t.sources[0];
       return { text: s.error || 'The transfer stopped before the file was complete.', actions: html`
-        <button class="btn btn--primary" data-act="disc-save-next-source" data-id="${id}">${icon('refresh')}Retry with ${next.peer}</button>
+        <button class="btn btn--primary" data-act="disc-save-retry" data-id="${id}">${icon('refresh')}Retry the transfer</button>
         <button class="btn" data-act="disc-swap-picker" data-id="${id}">${icon('soulseek')}Pick a source</button>` };
     },
     match: function (id, s) {
@@ -1046,7 +1181,7 @@
         <a class="btn" href="#/settings/library" data-close>Library settings</a>` };
     }
   };
-  function failKind(s) { return s.kind || (s.step === 1 ? 'transfer' : s.step === 2 ? 'match' : 'write'); }
+  function failKind(s) { return RECOVER[s.kind] ? s.kind : s.step === 1 ? 'transfer' : s.step === 2 ? 'match' : 'write'; }
   function saveBody(id) {
     var t = M.track(id), s = App.saves.get(id), saved = App.isSaved(id);
     if (!s && !saved) {
@@ -1055,7 +1190,7 @@
     var step = s ? s.step : 5, status = s ? s.status : 'saved';
     var steps = M.saveSteps.map(function (label, i) {
       var n = i + 1, cls = status === 'saved' || n < step ? 'is-done' : n === step ? (status === 'failed' ? 'is-failed' : status === 'pending' ? 'is-wait' : 'is-current') : '';
-      var note = n === 1 && cls === 'is-current' && s ? (s.pct || 0) + '%' : n === 3 && s && s.nocover && n <= step ? 'none found, saving without one' : n === 5 && status === 'pending' ? 'Jellyfin is down, retrying every minute' : '';
+      var note = n === 1 && cls === 'is-current' && s ? (s.pct || 0) + '%' : n === 3 && s && s.nocover && n <= step ? 'none found, saving without one' : n === 5 && status === 'pending' ? (s.error || 'waiting for Jellyfin') : '';
       var ic = cls === 'is-done' ? (n === 3 && s && s.nocover ? 'dash' : 'check') : cls === 'is-failed' ? 'close' : cls === 'is-wait' ? 'clock' : cls === 'is-current' ? null : 'dash';
       return html`<li class="disc-step ${cls}${n === 3 && s && s.nocover && n < step ? ' is-skipped' : ''}">
         <span class="disc-step__mark" aria-hidden="true">${ic ? icon(ic, null, 'ic-16') : raw('<span class="spin-ring"></span>')}</span>
@@ -1068,9 +1203,9 @@
       <ol class="disc-steps">${steps}</ol>
       ${rec ? html`<div class="disc-recover" role="alert">${ui.statusGlyph('down', 'Failed')}<div><p class="disc-recover__text">${rec.text}</p><div class="disc-recover__actions">${rec.actions}</div></div></div>` : ''}
       ${status === 'pending' ? html`<div class="disc-recover is-wait">${icon('clock')}<div><p class="disc-recover__text">Saved to disk. It will appear in your library when Jellyfin is back.</p>
-        <div class="disc-recover__actions"><button class="btn" data-act="disc-rescan" data-id="${id}">${icon('refresh')}Retry rescan now</button></div></div></div>` : ''}
+        <div class="disc-recover__actions"><button class="btn" data-act="disc-rescan">${icon('refresh')}Retry rescan now</button></div></div></div>` : ''}
       ${status === 'saving' ? html`<p class="disc-note">You can close this. Saving carries on, and Activity shows its progress.</p>` : ''}
-      ${status === 'saved' ? html`<p class="disc-note">${t.title} is in your library. Its badge now reads Saved everywhere.</p>` : ''}`;
+      ${status === 'saved' ? html`<p class="disc-note">${t ? t.title : 'This song'} is in your library. Its badge now reads Saved everywhere.</p>` : ''}`;
   }
   function openSaveSheet(id) {
     var off = null;
@@ -1081,51 +1216,66 @@
   }
   App.action('disc-save-sheet', function (el) { openSaveSheet(el.getAttribute('data-id')); });
   App.action('disc-save-retry', function (el) { App.saves.retry(el.getAttribute('data-id')); });
-  App.action('disc-save-next-source', function (el) {
-    var id = el.getAttribute('data-id'), t = M.track(id), next = t.sources[1] || t.sources[0];
-    App.saves.set(id, { step: 1, status: 'saving', pct: 0 });
-    App.toast('Retrying the transfer from ' + next.peer, { icon: 'soulseek' });
-  });
-  App.action('disc-rescan', function (el) {
-    App.saves.set(el.getAttribute('data-id'), { step: 5, status: 'saving', pct: 100 });
-    App.toast('Asking Jellyfin to rescan', { icon: 'refresh' });
+  /* the file is on disk; Jellyfin only needs to pick it up (progress arrives as `save` events) */
+  App.action('disc-rescan', function () {
+    M.api('/api/library/rescan', { method: 'POST' }).then(function () { App.toast('Asked Jellyfin to rescan', { icon: 'refresh' }); },
+      function (err) { App.toast('Couldn\'t ask Jellyfin to rescan: ' + err.message, { kind: 'error' }); });
   });
 
-  /* --- MusicBrainz release picker (step 2 had no confident match) --- */
-  function releases(t) {
-    var a = M.album(t.albumId);
-    return [
-      { id: 'r1', title: a.title, kind: a.type + ', digital', label: a.label, date: a.released, country: 'Worldwide', tracks: a.trackIds.length },
-      { id: 'r2', title: a.title + ' (deluxe)', kind: a.type + ', CD', label: a.label, date: (a.year + 1) + '-02-14', country: 'United Kingdom', tracks: a.trackIds.length + 3 },
-      { id: 'r3', title: t.title, kind: 'single, 7 inch vinyl', label: 'Porchlight Press', date: a.year + '-04-30', country: 'Japan', tracks: 2 }
-    ];
+  /* --- MusicBrainz release picker (step 2 had no confident match): GET/POST /api/saves/{jobId}/release(s) ---
+     The open picker (module state, read by its buttons): { trackId, jobId, items, error, el } */
+  var rel = null;
+  function jobOf(id) { var s = App.saves.get(id); return s && s.jobId; }
+  function relBody(r) {
+    var t = M.track(r.trackId);
+    if (r.error) return ui.emptyState({ art: 'star', title: 'Couldn\'t load the releases', text: r.error.message, action: { label: 'Try again', act: 'disc-rel-reload' } });
+    if (!r.items) return ui.skeleton('row', 3);
+    if (!r.items.length) return html`<p class="disc-dup__lead">MusicBrainz has no release that holds <b>${t.title}</b>. Save it with the file's own tags.</p>`;
+    return html`<p class="disc-dup__lead">MusicBrainz found ${r.items.length} releases that could hold <b>${t.title}</b> by ${t.artist}. Pick the one your file came from.</p>
+      <fieldset class="disc-rel"><legend class="vh">Releases</legend>
+        <div class="disc-rel__head" aria-hidden="true"><span></span><span>release</span><span>date</span><span>country</span><span>tracks</span></div>
+        ${r.items.map(function (x, i) {
+          return html`<label class="disc-rel__row"><input type="radio" name="disc-rel" value="${x.mbid}" ${i === 0 ? raw('checked') : ''}>
+            <span class="disc-rel__title">${x.title}<small>${[x.kind, x.label].filter(Boolean).join(', ')}</small></span>
+            <span class="px disc-rel__date">${x.date || ''}</span><span class="disc-rel__country">${x.country || ''}</span><span class="px disc-rel__n">${x.tracks}<span class="vh"> tracks</span></span></label>`;
+        })}
+      </fieldset>
+      <p class="disc-note">Your file: ${App.fmt.time(t.duration)}, ${fmt(t.format).label}${t.no ? ', track ' + t.no : ''}, tagged "${t.album}".</p>`;
+  }
+  function loadReleases(r) {
+    r.error = null; r.items = null; paint('rels', relBody(r), r.el);
+    M.api('/api/saves/' + encodeURIComponent(r.jobId) + '/releases').then(function (res) {
+      r.items = res.items || []; paint('rels', relBody(r), r.el);
+    }, function (err) { r.error = err; paint('rels', relBody(r), r.el); });
   }
   function openReleasePicker(id) {
-    var t = M.track(id), list = releases(t);
-    return App.openDialog({ title: 'pick the right release', wide: true, className: 'disc-rel-dialog',
-      body: html`<p class="disc-dup__lead">MusicBrainz found ${list.length} releases that could hold <b>${t.title}</b> by ${t.artist}. Pick the one your file came from.</p>
-        <fieldset class="disc-rel"><legend class="vh">Releases</legend>
-          <div class="disc-rel__head" aria-hidden="true"><span></span><span>release</span><span>date</span><span>country</span><span>tracks</span></div>
-          ${list.map(function (r, i) {
-            return html`<label class="disc-rel__row"><input type="radio" name="disc-rel" value="${r.id}" ${i === 0 ? raw('checked') : ''}>
-              <span class="disc-rel__title">${r.title}<small>${r.kind}, ${r.label}</small></span>
-              <span class="px disc-rel__date">${r.date}</span><span class="disc-rel__country">${r.country}</span><span class="px disc-rel__n">${r.tracks}<span class="vh"> tracks</span></span></label>`;
-          })}
-        </fieldset>
-        <p class="disc-note">Your file: ${App.fmt.time(t.duration)}, ${fmt(t.sources[0].format).label}, track ${t.no}, tagged "${t.album}".</p>`,
+    var t = M.track(id), jobId = jobOf(id);
+    if (!t || !jobId) { App.toast('This song has no save waiting for a release', { kind: 'error' }); return null; }
+    var r = rel = { trackId: id, jobId: jobId, items: null, error: null, el: null };
+    var dlg = App.openDialog({ title: 'pick the right release', wide: true, className: 'disc-rel-dialog',
+      body: html`<div data-region="rels">${relBody(r)}</div>`,
       foot: html`<button class="btn" data-act="disc-rel-skip" data-id="${id}" data-close>Save with existing tags</button>
         <button class="btn btn--primary" data-act="disc-rel-use" data-id="${id}" data-close>Use this release</button>` });
+    r.el = dlg.el;
+    loadReleases(r);
+    return dlg;
+  }
+  /* POST the choice; the save carries on and reports through `save` events */
+  function chooseRelease(id, body, ok) {
+    var jobId = jobOf(id);
+    if (!jobId) { App.toast('This song has no save waiting for a release', { kind: 'error' }); return; }
+    M.api('/api/saves/' + encodeURIComponent(jobId) + '/release', { method: 'POST', body: body }).then(function () { App.toast(ok, { icon: 'check', kind: 'ok' }); },
+      function (err) { App.toast('Couldn\'t use that release: ' + err.message, { kind: 'error' }); });
   }
   App.action('disc-release', function (el) { openReleasePicker(el.getAttribute('data-id')); });
+  App.action('disc-rel-reload', function () { if (rel) loadReleases(rel); });
   App.action('disc-rel-use', function (el) {
-    var id = el.getAttribute('data-id'), pickEl = $('input[name="disc-rel"]:checked'), r = releases(M.track(id)).filter(function (x) { return pickEl && x.id === pickEl.value; })[0];
-    App.saves.set(id, { step: 3, status: 'saving', pct: 100 });
-    App.toast('Matched to ' + (r ? r.title + ' (' + r.date.slice(0, 4) + ')' : 'that release') + '. Saving carries on.', { icon: 'check', kind: 'ok' });
+    var id = el.getAttribute('data-id'), pickEl = $('input[name="disc-rel"]:checked');
+    var r = rel && rel.items && pickEl ? rel.items.filter(function (x) { return x.mbid === pickEl.value; })[0] : null;
+    if (!r) { App.toast('Pick a release first', { icon: 'info' }); return; }
+    chooseRelease(id, { mbid: r.mbid }, 'Matched to ' + r.title + (r.date ? ' (' + String(r.date).slice(0, 4) + ')' : '') + '. Saving carries on.');
   });
-  App.action('disc-rel-skip', function (el) {
-    App.saves.set(el.getAttribute('data-id'), { step: 3, status: 'saving', pct: 100 });
-    App.toast('Saving with the file\'s own tags', { icon: 'save' });
-  });
+  App.action('disc-rel-skip', function (el) { chooseRelease(el.getAttribute('data-id'), { keepTags: true }, 'Saving with the file\'s own tags'); });
 
   /* --- aggregate saves: whole album, the queue --- */
   function aggCounts(ids) {
@@ -1152,10 +1302,11 @@
     var c = aggCounts(ids);
     return html`<div class="disc-agg disc-agg--sheet">
         <div class="disc-agg__top">${icon(c.failed ? 'warning' : 'save')}<span class="disc-agg__text">${aggText(c)}</span></div>
-        <div class="progress" role="progressbar" aria-label="Saving ${label}" aria-valuemin="0" aria-valuemax="${c.total}" aria-valuenow="${c.saved}"><i style="--p:${(c.saved / c.total).toFixed(3)}"></i></div>
+        <div class="progress" role="progressbar" aria-label="Saving ${label}" aria-valuemin="0" aria-valuemax="${c.total}" aria-valuenow="${c.saved}"><i style="--p:${(c.total ? c.saved / c.total : 0).toFixed(3)}"></i></div>
       </div>
       <ul class="disc-aggl">${ids.map(function (id) {
         var t = M.track(id), s = App.saves.get(id), status;
+        if (!t) return '';
         if (App.isSaved(id)) status = ui.savedBadge();
         else if (s && s.status === 'failed') status = html`<span class="disc-aggl__fail">${ui.statusGlyph('down', 'Failed')}Needs attention</span><button class="btn btn--sm" data-act="disc-save-sheet" data-id="${id}">Fix</button>`;
         else if (s && s.status === 'pending') status = html`<span class="disc-aggl__st">${icon('clock', null, 'ic-16')}waiting for Jellyfin</span>`;
@@ -1180,73 +1331,12 @@
   });
 
   /* =====================================================================
-     5. Routes, states, public API
+     5. Routes, public API
      ===================================================================== */
-  App.route('/home', { render: renderHome, mount: mountHome, nav: 'home', title: 'Home', meta: function () { return 'updated ' + M.feed.updated; } });
+  App.route('/home', { render: renderHome, mount: mountHome, nav: 'home', title: 'Home',
+    meta: function () { var f = M.peek(FEED); return f && f.updated ? 'updated ' + ago(f.updated) : ''; } });
   App.route('/search', { render: renderSearch, mount: mountSearch, nav: 'search', keepFocus: true, meta: function () { return S.src === 'library' ? 'library only' : 'library + soulseek'; },
     title: function () { return S.q ? 'Search: ' + S.q : 'Search'; } });
-
-  var DEMO = 't-satellite-porch-1', ALBUM = 'al-satellite-porch';
-  function clearDemo(ids) { (ids || M.album(ALBUM).trackIds).forEach(function (id) { if (App.saves.get(id)) App.saves.set(id, null); }); }
-  function demoSave(rec) { return function () { clearDemo(); App.saves.set(DEMO, Object.assign({ frozen: true }, rec)); }; }
-  function playDemo() { if (P.currentId() !== DEMO) P.playTrack(DEMO, M.album(ALBUM).trackIds); }
-
-  App.registerStates('discover', [
-    st('discover-home', 'Home: discovery feed', '/home'),
-    st('discover-home-loading', 'Home: loading skeletons', '/home'),
-    st('discover-home-shelf-error', 'Home: one shelf failed (new releases)', '/home'),
-    st('discover-home-cold', 'Home: cold start, pick tags and artists', '/home'),
-    st('discover-home-no-source', 'Home: pick with no source found yet', '/home'),
-    st('discover-home-reason', 'Home: reason popover open', '/home', { open: function () { var c = $('.disc-pick .chip-more') || $('.disc-pick .chip-reason'); if (c) c.click(); } }),
-    st('discover-radio', 'Radio: started from a radio starter', '/home', { open: function () { startRadio(M.feed.radioStarters[1].seed); } }),
-    st('discover-search-empty', 'Search: empty, recent searches', '/search', { q: '' }),
-    st('discover-search-typing', 'Search: typing, Soulseek still answering', '/search', { q: 'sat', p: .38 }),
-    st('discover-search-results', 'Search: results (album top result)', '/search', { q: 'satellite' }),
-    st('discover-search-dup', 'Search: song top result, better than saved', '/search', { q: 'lantern season' }),
-    st('discover-search-none', 'Search: no results', '/search', { q: 'mirrorball' }),
-    st('discover-search-slsk-down', 'Search: Soulseek unavailable', '/search', { q: 'satellite',
-      apply: function () { App.setService('soulseek', { state: 'down', detail: 'Reconnecting, try 3 of 5' }); } }),
-    st('discover-folder', 'Sheet: Soulseek album folder', '/search', { q: 'satellite', open: function () { openFolder(ALBUM); } }),
-    st('discover-picker', 'Sheet: source picker', '/search', { q: 'satellite', open: function () { openPicker(DEMO, { loading: false }); } }),
-    st('discover-picker-stalled', 'Sheet: source picker, stalled source + still searching', '/search', { q: 'satellite',
-      apply: function () { var t = M.track(DEMO); FAILED[DEMO] = {}; FAILED[DEMO][t.sources[1].peer] = 'stalled 2 min ago'; },
-      open: function () { openPicker(DEMO, { loading: true }); } }),
-    st('discover-details', 'Sheet: source details (streaming)', '/home', { apply: playDemo, open: openDetails }),
-    st('discover-details-fallback', 'Sheet: source details with fallback history', '/home', {
-      apply: function () {
-        playDemo(); var t = M.track(DEMO), s = t.sources[1];
-        P.setState({ status: 'streaming', playing: true, received: .62, buffered: [[0, .58]], pos: 84, durationKnown: true,
-          failedPeers: [{ peer: t.sources[0].peer, at: 38 }], fallback: { from: t.sources[0].peer, to: s.peer, n: 2, of: t.sources.length },
-          peer: { name: s.peer, rank: 2, of: t.sources.length, speed: s.speed, format: s.format, sizeMB: s.sizeMB } });
-      }, open: openDetails }),
-    st('discover-save-duplicate', 'Save: duplicate dialog (better quality)', '/search', { q: 'lantern season',
-      open: function () { var t = M.track('t-lantern-season-1'), s = t.sources[0]; openDuplicate(t.id, { trackId: t.id, peer: s.peer, format: s.format, speed: s.speed }); } }),
-    st('discover-save-progress', 'Save: step 2 of 5 in progress', '/home', { apply: demoSave({ step: 2, status: 'saving', pct: 100 }), open: function () { openSaveSheet(DEMO); } }),
-    st('discover-save-fail-transfer', 'Save: transfer failed (step 1)', '/home', { apply: demoSave({ step: 1, status: 'failed', kind: 'transfer', error: 'Transfer failed: the peer stopped answering at 38%' }), open: function () { openSaveSheet(DEMO); } }),
-    st('discover-save-fail-match', 'Save: no MusicBrainz match (step 2)', '/home', { apply: demoSave({ step: 2, status: 'failed', kind: 'match', error: 'No confident MusicBrainz match (3 candidates)' }), open: function () { openSaveSheet(DEMO); } }),
-    st('discover-save-release-picker', 'Save: MusicBrainz release picker', '/home', { apply: demoSave({ step: 2, status: 'failed', kind: 'match', error: 'No confident MusicBrainz match (3 candidates)' }), open: function () { openReleasePicker(DEMO); } }),
-    st('discover-save-no-cover', 'Save: no cover art (non-blocking)', '/home', { apply: demoSave({ step: 4, status: 'saving', pct: 100, nocover: true }), open: function () { openSaveSheet(DEMO); } }),
-    st('discover-save-fail-write', 'Save: write failed (disk full)', '/home', { apply: demoSave({ step: 4, status: 'failed', kind: 'write', error: 'Couldn\'t write the file: the library drive is full' }), open: function () { openSaveSheet(DEMO); } }),
-    st('discover-save-pending', 'Save: on disk, waiting for Jellyfin', '/home', { apply: demoSave({ step: 5, status: 'pending', pct: 100 }), open: function () { openSaveSheet(DEMO); } }),
-    st('discover-save-album', 'Save: whole album, aggregate progress', '/search', { q: 'satellite',
-      apply: function () {
-        var ids = M.album(ALBUM).trackIds; clearDemo(ids);
-        App.saves.set(ids[0], { step: 5, status: 'saved', pct: 100 }); App.saves.set(ids[1], { step: 5, status: 'saved', pct: 100 });
-        App.saves.set(ids[2], { step: 3, status: 'saving', pct: 100, frozen: true });
-        App.saves.set(ids[3], { step: 2, status: 'failed', kind: 'match', error: 'No confident MusicBrainz match (3 candidates)', frozen: true });
-        App.saves.set(ids[4], { step: 1, status: 'saving', pct: 40, frozen: true });
-      }, open: function () { openFolder(ALBUM); } }),
-    st('discover-save-queue', 'Save: the queue, aggregate progress', '/home', {
-      apply: function () {
-        var ids = P.state.queue.map(function (x) { return x.trackId; }).filter(function (id) { return !M.track(id).saved; });
-        clearDemo(ids);
-        ids.forEach(function (id, i) {
-          App.saves.set(id, i === 0 ? { step: 5, status: 'saved', pct: 100 } : i === 1 ? { step: 2, status: 'failed', kind: 'match', error: 'No confident MusicBrainz match', frozen: true }
-            : i === 2 ? { step: 4, status: 'saving', pct: 100, frozen: true } : { step: 1, status: 'saving', pct: 30 * i % 100, frozen: true });
-        });
-      },
-      open: function () { openAggregate('your queue', P.state.queue.map(function (x) { return x.trackId; })); } })
-  ]);
 
   App.discover = { openFolder: openFolder, openPicker: openPicker, openDetails: openDetails, openSaveSheet: openSaveSheet,
     openAggregate: openAggregate, openReleasePicker: openReleasePicker, openDuplicate: openDuplicate, startRadio: startRadio };

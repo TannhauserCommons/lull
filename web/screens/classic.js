@@ -1,97 +1,82 @@
-/* screens/classic.js: Classic mode (Webamp stage, skin drawer, Classic window chrome).
-   A full-viewport stage over the dimmed app: glossy title pill with three orbs (Exit / Skins / Help),
-   the Webamp mount slot, a skin drawer (Browse / Favourites / Downloaded) and a footer notice.
-   The prototype never loads Webamp; it draws a placeholder of the slot tinted with the active skin.
+/* screens/classic.js: Classic mode (/classic): Webamp on a full-viewport stage, the skin drawer, Classic window chrome.
+   The stage lives on <body> above the inert app, which renders dimmed behind it: glossy title pill with three orbs
+   (Exit / Skins / Help), the Webamp slot, a skin drawer (Browse / Favourites / Downloaded) and a footer notice.
+   design/DESIGN.md section 12 is the design; docs/context/web.md the data layer and the player engine.
 
-   ---------------------------------------------------------------------------------------------
-   Real-app integration (Webamp 2.3.1, pinned, lazy-loaded the first time the stage opens, never on boot)
-
-     var webamp = new Webamp({
-       initialSkin: { url: skinUrl(appliedMd5) },               // same-origin cached .wsz (see museum notes below)
-       availableSkins: favourites.map(function (s) { return { url: skinUrl(s.md5), name: s.name }; }),
-                                                                 // also listed in Webamp's own Options > Skins menu
-       initialTracks: queue.map(function (t) {                   // always pass metaData + duration, otherwise
-         return { url: t.streamUrl, metaData: { artist: t.artist, title: t.title }, duration: t.duration };
-       }),                                                       // Webamp fetches each file's head to read them
-       windowLayout: {                                           // px; phones close the equalizer (275 px wide fits)
-         main: { position: { top: 0, left: 0 } },
-         equalizer: { position: { top: 116, left: 0 }, closed: isPhone },
-         playlist: { position: { top: isPhone ? 116 : 232, left: 0 }, size: { extraWidth: 0, extraHeight: 0 } }
-       },
-       enableHotkeys: false,                                     // lull owns shortcuts ([data-webamp] silences ours)
-       enableMediaSession: false,                                // lull owns Media Session and forwards to Webamp
-       zIndex: 36,                                               // just above --z-classic (35), below sheets/popovers/toasts
-       handleTrackDropEvent: dropIntoAppQueue,                   // returns Track[] | null
-       handleSaveListEvent: exportM3u, handleLoadListEvent: importM3u
-     });
-     webamp.onWillClose(function (cancel) { cancel(); exitClassic(); });   // Webamp's own close = leave Classic
-     webamp.renderInto(document.getElementById('webamp-stage'));            // since 2.3.0; host is position: relative
-     Preview / apply: webamp.setSkinFromUrl(url); webamp.skinIsLoaded().then(onApplied). The server validates each
-       .wsz when it caches it (a zip holding main.bmp); a load that has not resolved after ~10 s counts as failed and
-       setSkinFromUrl(previousUrl) restores the old skin.
-     Hand-off: on enter, pause the app engine and give Webamp the queue, index and position (setCurrentTrack,
-       seekToTime). Webamp has no play/pause/seek events, so on exit read getMediaStatus(), getPlaylistTracks(),
-       isShuffleEnabled(), isRepeatEnabled() back into the app engine. Keep the instance: dispose() still leaks,
-       so create once, close() on exit and reopen() on the next visit.
-     A dropped local .wsz: webamp.setSkinFromUrl(URL.createObjectURL(file)).
-
-   Winamp Skin Museum (public GraphQL, https://api.webamp.org/graphql, CORS allowed; ~105k skins):
-     Browse:  search_classic_skins(query, first: 30, offset, nsfw: false) when searching (debounce 300 ms),
-              skins(first: 30, offset, sort: MUSEUM, filter: APPROVED) otherwise -> { count, nodes }.
-     Fields:  md5 (stable id for favourites), filename, screenshot_url (275 x 348 png), download_url (.wsz),
-              museum_url (https://skins.webamp.org/skin/<md5>), nsfw.
-     download_url sends no CORS headers, so the server downloads and caches skins and serves them same-origin.
-     Cards show <img src=screenshot_url width=275 height=348> with image-rendering: pixelated; the prototype
-     draws a stand-in from each mock skin's palette in the same box (.cls-shot).
-   --------------------------------------------------------------------------------------------- */
+   Webamp 2.3.1 (vendor/webamp/webamp.bundle.min.js, copied by scripts/vendor-web.sh) loads with a <script> tag the
+   first time the stage opens, never on boot. One instance renders into #webamp-stage; later visits close() and
+   reopen() it (dispose() still leaks), so the stage element itself is kept and moved into each new stage.
+   - Hand-off: on enter the app engine pauses and Webamp gets the queue (URLs from App.player.streamUrl) with title,
+     artist, album and duration, plus the index, position, shuffle, repeat and volume. Webamp has no play/pause/seek
+     events, so on exit (its own close button, Esc, W or any route change) the playlist, current song, position,
+     shuffle and repeat are read back into App.player. While open, App.hooks.media points media keys at Webamp and
+     songs heard there are recorded with App.recordPlay.
+   - Skins: GET /api/skins?q=&offset= (the server's Winamp Skin Museum proxy), /api/skins/favourites, files from
+     /api/skins/{md5}.wsz (validated, cached, same origin). A skin file is fetched here first, so a failure shows the
+     server's sentence instead of Webamp's alert(); Webamp then parses the blob. A preview reverts after 15 s unless
+     kept; a skin Webamp hasn't finished after 10 s counts as failed and the previous one comes back.
+   - Skins this device has loaded are listed as Downloaded (the server cached them) and stay usable offline. */
 (function () {
   'use strict';
-  var html = App.html, raw = App.raw, ui = App.ui, M = App.data, icon = App.icon, $ = App.$, $$ = App.$$;
+  var html = App.html, raw = App.raw, ui = App.ui, M = App.data, P = App.player, icon = App.icon, $ = App.$, $$ = App.$$;
 
-  var MUSEUM_TOTAL = 105577;      // count from skins(sort: MUSEUM); shown as context, mock list is 8
+  var BUNDLE = 'vendor/webamp/webamp.bundle.min.js';
   var PREVIEW_SECONDS = 15;
+  var APPLY_TIMEOUT_MS = 10000;
+  var SEARCH_DEBOUNCE_MS = 300;
 
-  /* ---------- model (kept across visits, so exit + re-enter finds things as they were) ---------- */
-  var S;
-  function freshModel() {
-    var saved = App.storage('classic') || {};
-    var favs = saved.favs, dl = saved.downloaded;
-    return {
-      skins: M.skins.map(function (s) {
-        return Object.assign({}, s, {
-          favourite: favs ? favs.indexOf(s.id) >= 0 : s.favourite,
-          downloaded: dl ? dl.indexOf(s.id) >= 0 : s.downloaded
-        });
-      }),
-      applied: saved.applied || M.settings.appearance.defaultSkin,
-      tab: 'browse', query: '', searching: false, loading: false, offline: false,
-      drawer: null,                 // null = by width (docked open on desktop, closed below)
-      noticeHidden: !!saved.noticeHidden,
-      preview: null,                // { id, prev, left }
-      busy: null,                   // { id, mode: 'apply'|'preview', phase: 'download'|'apply', pct }
-      failed: null,                 // { id, kept }
-      failOnce: { '1be94d08': true } // Graphite 98: first load fails (damaged file), retry works
-    };
-  }
-  S = freshModel();
+  /* ---------- model (kept across visits, so leaving and coming back finds things as they were) ---------- */
+  var saved = App.storage('classic') || {};
+  var S = {
+    tab: 'browse', query: '',
+    drawer: null,                       // null = by width (docked open on desktop, closed below)
+    noticeHidden: !!saved.noticeHidden,
+    applied: saved.applied || null,     // the skin chosen here; else Settings > Appearance's default; else Webamp's base
+    defaultSkin: null,
+    downloaded: saved.downloaded || [], // museum skins this device has loaded
+    local: [],                          // .wsz files opened this session: { md5: 'local:...', name, file, url, local }
+    browse: { items: [], more: false, loading: false, error: null, key: null, want: null },  // key: the query items answer
+    favs: { items: [], loading: false, error: null },
+    showNsfw: false,
+    offline: false,
+    player: { state: 'idle', message: '' },  // Webamp: idle | loading | ready | failed (message says why)
+    preview: null,                      // { skin, prev, left }
+    busy: null,                         // { skin, mode: apply | preview | restore, phase: download | apply }
+    failed: null                        // { skin, kept, message }
+  };
   function persist() {
-    App.storage('classic', {
-      applied: S.applied, noticeHidden: S.noticeHidden,
-      favs: S.skins.filter(function (s) { return s.favourite; }).map(function (s) { return s.id; }),
-      downloaded: S.skins.filter(function (s) { return s.downloaded; }).map(function (s) { return s.id; })
-    });
+    App.storage('classic', { applied: S.applied && !S.applied.local ? S.applied : null, noticeHidden: S.noticeHidden, downloaded: S.downloaded });
   }
-  function skin(id) { return S.skins.filter(function (s) { return s.id === id; })[0]; }
-  function skinVars(s) {
-    return s ? '--sk1:' + s.palette[0] + ';--sk2:' + s.palette[1] + ';--sk3:' + s.palette[2] : '';
+  function appliedSkin() { return S.applied || S.defaultSkin; }
+  function nameOf(s) { return s ? s.name : 'Webamp\'s base skin'; }
+  function sameSkin(a, b) { return !!a && !!b && a.md5 === b.md5; }
+  function isDownloaded(s) { return !!s.local || S.downloaded.some(function (d) { return d.md5 === s.md5; }); }
+  function isFavourite(s) { return S.favs.items.some(function (f) { return f.md5 === s.md5; }); }
+  function findSkin(md5) {
+    return [].concat(S.browse.items, S.favs.items, S.downloaded, S.local, S.failed ? S.failed.skin : [], appliedSkin() || [])
+      .filter(function (s) { return s.md5 === md5; })[0];
   }
-  function museumUrl(s) { return 'https://skins.webamp.org/skin/' + s.id; }  // real field: museum_url (md5 ids)
+  function skinFileUrl(md5) { return M.url('/api/skins/' + encodeURIComponent(md5) + '.wsz'); }
+  function isWsz(file) { return /\.wsz$/i.test(file.name); }
+  /* a setting may come back as { value, source: 'config' } (docs/context/api.md) */
+  function settingValue(x) { return x && typeof x === 'object' && 'value' in x ? x.value : x; }
   function isDocked() { return window.innerWidth >= 1100; }
   function drawerOpen() { return S.drawer === null ? isDocked() : S.drawer; }
+  function onClassic() { return /^#\/classic(?:[/?]|$)/.test(location.hash); }
+
+  /* museum skins from the server, checked at the boundary: an md5 id, and only https links reach an href */
+  function museumSkins(list) {
+    var out = [];
+    (list || []).forEach(function (s) {
+      if (!s || !/^[0-9a-f]{32}$/i.test(s.md5)) { console.error('Skipping a skin without an md5 id', s); return; }
+      out.push({ md5: s.md5, name: String(s.name || s.md5), screenshotUrl: String(s.screenshotUrl || ''),
+        museumUrl: /^https:\/\//.test(s.museumUrl) ? s.museumUrl : '', nsfw: !!s.nsfw });
+    });
+    return out;
+  }
 
   /* ---------- the stage element (lives on <body>, above the inert app) ---------- */
-  var root = null, lastPage = null, restore = null, closedAt = 0, timers = [];
-  var searchTimer = 0, previewTimer = 0;
+  var root = null, stage = null, lastPage = null, restore = null, timers = [], visit = 0;
 
   /* remember the page Classic was opened from: it renders dimmed behind the stage, and Exit returns to it */
   App.on('route', function (cur) {
@@ -106,16 +91,23 @@
 
   function behindMarkup(ctx) {
     if (!lastPage || !lastPage.route || !lastPage.route.render) return '';
-    var q = Object.assign({}, lastPage.query); delete q.state;
     try {
-      return lastPage.route.render({ params: lastPage.params, query: q, state: null, el: ctx.el, route: lastPage.route, onCleanup: function () {} });
+      return lastPage.route.render({ params: lastPage.params, query: lastPage.query, el: ctx.el, route: lastPage.route, onCleanup: function () {} });
     } catch (e) { return ''; }
   }
   function lastHref() {
     if (!lastPage) return '/home';
-    var q = Object.keys(lastPage.query).filter(function (k) { return k !== 'state'; })
+    var q = Object.keys(lastPage.query)
       .map(function (k) { return encodeURIComponent(k) + '=' + encodeURIComponent(lastPage.query[k]); }).join('&');
     return lastPage.path + (q ? '?' + q : '');
+  }
+
+  /* #webamp-stage: Webamp's renderInto host, owned by React once rendered, so nothing else goes inside it */
+  function makeStage() {
+    var el = document.createElement('div');
+    el.className = 'cls-slot'; el.id = 'webamp-stage';
+    el.setAttribute('data-webamp', ''); el.setAttribute('role', 'region'); el.setAttribute('aria-label', 'Webamp');
+    return el;
   }
 
   /* ---------- markup ---------- */
@@ -132,63 +124,52 @@
             <h1 class="win__title" id="cls-title">classic</h1>
           </div>
         </header>
-        <div class="cls-desk" id="cls-desk">${deskMarkup()}</div>
+        <div class="cls-desk" id="cls-desk"><div class="cls-desk__status" id="cls-status">${statusMarkup()}</div></div>
         <footer class="cls-foot" id="cls-foot">${footMarkup()}</footer>
         <aside class="cls-drawer win s-panel" id="cls-drawer" aria-label="Skins" ${drawerOpen() ? '' : raw('inert')}>${drawerMarkup()}</aside>
       </div>
       <i class="cls-crt-line" aria-hidden="true"></i>`;
   }
 
-  /* the Webamp slot: the real app calls webamp.renderInto() on #webamp-stage */
-  function deskMarkup() {
-    var shown = S.preview ? skin(S.preview.id) : skin(S.applied);
-    var t = App.player.current();
-    return html`<div class="cls-slot" id="webamp-stage" data-webamp style="${skinVars(shown)}">
-        <span class="cls-slot__tag s-card">${icon('classic', null, 'ic-16')}Webamp renders here</span>
-        <span class="cls-slot__tag cls-slot__tag--drop s-card">${icon('import', null, 'ic-16')}Drop a .wsz to apply it</span>
-        <div class="cls-ghost">
-          <div class="cls-ghost__body" role="img" aria-label="${'Placeholder for the Webamp windows (main, equalizer, playlist) in the ' + (shown ? shown.name : '') + ' skin'}">
-            <span class="cls-shot cls-shot--ghost"><i class="cls-shot__win cls-shot__win--main"></i><i class="cls-shot__win cls-shot__win--eq"></i><i class="cls-shot__win cls-shot__win--pl"></i></span>
-            <span class="cls-ghost__legend">
-              <span class="cls-ghost__tag s-card">main <b>275x116</b></span>
-              <span class="cls-ghost__tag s-card">equalizer <b>275x116</b></span>
-              <span class="cls-ghost__tag s-card">playlist <b>275x116+</b></span>
-            </span>
-          </div>
-          <p class="cls-ghost__cap s-card">
-            <span class="cls-ghost__skin">${shown ? shown.name : ''}${S.preview ? html` <em>(preview)</em>` : ''}</span>
-            <span class="fg-2">${t ? t.title + ', ' + t.artist : 'Queue is empty'}</span>
-          </p>
-        </div>
-        ${S.busy ? busyMarkup() : ''}
-        ${S.failed ? failedMarkup() : ''}
-      </div>
-      ${S.preview ? previewMarkup() : ''}`;
+  /* what sits over the stage: Webamp starting or failed, a skin loading or failed, the preview bar */
+  function statusMarkup() {
+    if (S.player.state === 'loading') return busyBox('Starting Webamp', 'Loading the player, only the first time classic mode opens', true);
+    if (S.player.state === 'failed') {
+      return html`<div class="cls-failed banner banner--down s-card" role="alert">
+        ${icon('warning')}<span class="banner__msg">Webamp didn't start: ${S.player.message}</span>
+        <button class="btn btn--sm" data-act="cls-start">Try again</button>
+      </div>`;
+    }
+    return html`${S.busy ? busyMarkup() : ''}${S.failed ? failedMarkup() : ''}${S.preview ? previewMarkup() : ''}`;
   }
-  function busyMarkup() {
-    var s = skin(S.busy.id), dl = S.busy.phase === 'download';
+  function busyBox(title, text, xfer) {
     return html`<div class="cls-busy s-card" role="status">
       <span class="spin-ring" aria-hidden="true"></span>
       <div class="cls-busy__text">
-        <strong>${dl ? 'Downloading ' : 'Applying '}${s.name}</strong>
-        <span class="fg-2">${dl ? 'Fetching the skin from the museum and caching it' : 'Waiting for Webamp to load the skin'}</span>
-        <span class="progress${dl ? ' progress--xfer' : ''}" aria-hidden="true"><i style="--p:${dl ? S.busy.pct : 1}"></i></span>
+        <strong>${title}</strong>
+        <span class="fg-2">${text}</span>
+        <span class="progress${xfer ? ' progress--xfer' : ''}" aria-hidden="true"><i style="--p:1"></i></span>
       </div>
     </div>`;
   }
+  function busyMarkup() {
+    var s = S.busy.skin, dl = S.busy.phase === 'download';
+    return busyBox((dl ? 'Downloading ' : 'Applying ') + s.name,
+      dl ? 'Fetching the skin from the museum and caching it' : 'Waiting for Webamp to load the skin', dl);
+  }
   function failedMarkup() {
-    var s = skin(S.failed.id), kept = skin(S.failed.kept);
+    var f = S.failed;
     return html`<div class="cls-failed banner banner--down s-card" role="alert">
-      ${icon('warning')}<span class="banner__msg">Couldn't load ${s.name}: the skin file is damaged. ${kept ? kept.name : 'The previous skin'} stays on.</span>
-      <button class="btn btn--sm" data-act="cls-retry" data-id="${s.id}">Try again</button>
+      ${icon('warning')}<span class="banner__msg">Couldn't load ${f.skin.name}: ${f.message} ${nameOf(f.kept)} stays on.</span>
+      <button class="btn btn--sm" data-act="cls-retry" data-id="${f.skin.md5}">Try again</button>
       <button class="btn-icon btn-icon--bare btn-icon--sm" data-act="cls-dismiss-failed" aria-label="Dismiss" data-tip="Dismiss">${icon('close', null, 'ic-16')}</button>
     </div>`;
   }
   function previewMarkup() {
-    var s = skin(S.preview.id), left = S.preview.left;
+    var left = S.preview.left;
     return html`<div class="cls-preview s-card" role="group" aria-label="Skin preview">
       <div class="cls-preview__text">
-        <strong>Previewing ${s.name}</strong>
+        <strong>Previewing ${S.preview.skin.name}</strong>
         <span class="fg-2 num" id="cls-count">Reverts in ${left} s unless you keep it</span>
         <span class="progress" aria-hidden="true"><i id="cls-count-bar" style="--p:${left / PREVIEW_SECONDS}"></i></span>
       </div>
@@ -213,8 +194,8 @@
   var TABS = [['browse', 'Browse'], ['favourites', 'Favourites'], ['downloaded', 'Downloaded']];
   function drawerMarkup() {
     var i = TABS.map(function (t) { return t[0]; }).indexOf(S.tab);
-    var ph = S.tab === 'browse' ? (S.offline ? 'Search downloaded skins' : 'Search ' + MUSEUM_TOTAL.toLocaleString('en') + ' skins')
-      : S.tab === 'favourites' ? 'Search favourites' : 'Search downloaded skins';
+    var ph = S.tab === 'favourites' ? 'Search favourites'
+      : S.tab === 'downloaded' || S.offline ? 'Search downloaded skins' : 'Search the Winamp Skin Museum';
     return html`<div class="win__bar">
         <span class="win__title" id="cls-drawer-title">skins</span>
         <button class="btn-icon btn-icon--bare btn-icon--sm cls-drawer__close" data-act="cls-drawer" aria-label="Close skins" data-tip="Close skins">${icon('close', null, 'ic-16')}</button>
@@ -244,65 +225,86 @@
       </div>`;
   }
 
+  /* Browse is the server's answer for the query (offline: downloaded skins); the other tabs filter by name here */
   function visibleSkins() {
-    var q = S.query.trim().toLowerCase();
-    return S.skins.filter(function (s) {
-      if (s.nsfw && !M.settings.appearance.showNsfwSkins) return false;
-      if (S.tab === 'favourites' && !s.favourite) return false;
-      if ((S.tab === 'downloaded' || S.offline) && !s.downloaded) return false;
-      return !q || (s.name + ' ' + s.file).toLowerCase().indexOf(q) >= 0;
+    var museum = S.tab === 'browse' && !S.offline;
+    var list = museum ? S.browse.items : S.tab === 'favourites' ? S.favs.items : S.local.concat(S.downloaded);
+    var q = museum ? '' : S.query.trim().toLowerCase();
+    return list.filter(function (s) {
+      if (s.nsfw && !S.showNsfw) return false;
+      return !q || s.name.toLowerCase().indexOf(q) >= 0;
     });
   }
   function listMarkup() {
-    var notes = [];
-    if (S.offline) notes.push(html`<div class="banner banner--warn s-card cls-note">${icon('offline')}<span class="banner__msg">You're offline, so only downloaded skins are listed.</span></div>`);
-    if (S.loading) {
+    var notes = S.offline ? html`<div class="banner banner--warn s-card cls-note">${icon('offline')}<span class="banner__msg">You're offline, so only downloaded skins are listed.</span></div>` : '';
+    var museum = S.tab === 'browse' && !S.offline, b = S.browse, src = museum ? b : S.tab === 'favourites' ? S.favs : null;
+    if (src && src.error && !src.items.length) {
+      return html`${notes}${ui.emptyState({ art: 'star', title: museum ? 'Couldn\'t load skins' : 'Couldn\'t load your favourites',
+        text: src.error.message, action: { label: 'Try again', act: 'cls-reload', id: S.tab } })}`;
+    }
+    if (src && src.loading && !src.items.length) {
+      if (museum && S.query.trim()) return html`${notes}<p class="cls-meta" role="status"><span class="spin-ring" aria-hidden="true"></span>Searching the museum</p>`;
       return html`${notes}<p class="vh" role="status">Loading skins</p><ul class="cls-grid" aria-hidden="true">${[0, 1, 2, 3].map(function () {
         return raw('<li class="cls-card cls-card--skel"><span class="skel cls-skel-shot"></span><span class="skel skel--title" style="width:70%"></span><span class="skel skel--text" style="width:45%"></span></li>');
       })}</ul>`;
     }
-    if (S.searching) return html`${notes}<p class="cls-meta" role="status"><span class="spin-ring" aria-hidden="true"></span>Searching the museum</p>`;
     var list = visibleSkins();
     if (!list.length) return html`${notes}${emptyMarkup()}`;
-    var meta = S.tab === 'browse' && !S.offline
-      ? (S.query ? list.length + (list.length === 1 ? ' skin matches' : ' skins match') + ' "' + S.query + '"'
-        : 'Most loved first, ' + list.length + ' of ' + MUSEUM_TOTAL.toLocaleString('en') + ' shown')
-      : list.length + (list.length === 1 ? ' skin' : ' skins');
+    var n = list.length;
+    var meta = !museum ? n + (n === 1 ? ' skin' : ' skins')
+      : S.query.trim() ? n + (b.more ? '+' : '') + (n === 1 && !b.more ? ' skin matches' : ' skins match') + ' "' + S.query.trim() + '"'
+      : 'Most loved first, ' + n + ' shown';
     return html`${notes}<p class="cls-meta" role="status">${meta}</p>
       <ul class="cls-grid">${list.map(cardMarkup)}</ul>
-      ${S.tab === 'browse' && !M.settings.appearance.showNsfwSkins ? html`<p class="cls-nsfw" id="cls-nsfw">${icon('lock', null, 'ic-16')}<span>Skins marked NSFW are hidden. <a href="#/settings/appearance">Show them in Settings</a></span></p>` : ''}`;
+      ${museum ? moreMarkup() : ''}
+      ${museum && !S.showNsfw ? html`<p class="cls-nsfw" id="cls-nsfw">${icon('lock', null, 'ic-16')}<span>Skins marked NSFW are hidden. <a href="#/settings/appearance">Show them in Settings</a></span></p>` : ''}`;
+  }
+  /* the museum list pages 30 at a time: the next page on request, or why it didn't come */
+  function moreMarkup() {
+    var b = S.browse;
+    if (b.error) {
+      return html`<div class="banner banner--down s-card cls-note">${icon('warning')}<span class="banner__msg">Couldn't load more skins: ${b.error.message}</span>
+        <button class="btn btn--sm" data-act="cls-more">Try again</button></div>`;
+    }
+    if (!b.more) return '';
+    return html`<div class="cls-more"><button class="btn btn--sm" data-act="cls-more" ${b.loading ? raw('aria-disabled="true"') : ''}>${b.loading ? html`<span class="spin-ring" aria-hidden="true"></span>Loading more` : 'Show more skins'}</button></div>`;
   }
   function emptyMarkup() {
-    if (S.query) return ui.emptyState({ art: 'star', title: 'No skins match "' + S.query + '"', text: 'Try a shorter word, or a colour such as purple or mint.', action: { label: 'Clear search', act: 'cls-clear' } });
+    var q = S.query.trim();
+    if (q) return ui.emptyState({ art: 'star', title: 'No skins match "' + q + '"', text: 'Try a shorter word, or a colour such as purple or mint.', action: { label: 'Clear search', act: 'cls-clear' } });
     if (S.tab === 'favourites') return ui.emptyState({ art: 'star', title: 'No favourite skins yet', text: 'Star a skin to keep it here. Favourites also appear in Webamp\'s own skins menu.', action: { label: 'Browse skins', act: 'cls-tab', id: 'browse' } });
+    if (S.tab === 'browse' && !S.offline) return ui.emptyState({ art: 'star', title: 'No skins to show', text: 'The Winamp Skin Museum sent an empty list. Try again in a moment.', action: { label: 'Try again', act: 'cls-reload', id: 'browse' } });
     return ui.emptyState({ art: 'slot', title: 'Nothing downloaded yet', text: 'Skins you preview or apply are cached here, so they work offline.', action: { label: 'Browse skins', act: 'cls-tab', id: 'browse' } });
   }
+  function shotMarkup(s) {
+    if (!s.screenshotUrl) return html`<span class="cls-shot cls-shot--blank" aria-hidden="true">${icon('classic')}</span>`;
+    return html`<span class="cls-shot" aria-hidden="true"><img src="${s.screenshotUrl}" width="275" height="348" alt="" loading="lazy" decoding="async"></span>`;
+  }
   function cardMarkup(s) {
-    var applied = S.applied === s.id && !S.preview, previewing = S.preview && S.preview.id === s.id;
-    var busy = S.busy && S.busy.id === s.id, failed = S.failed && S.failed.id === s.id;
+    var applied = sameSkin(appliedSkin(), s) && !S.preview, previewing = S.preview && sameSkin(S.preview.skin, s);
+    var busy = S.busy && sameSkin(S.busy.skin, s), failed = S.failed && sameSkin(S.failed.skin, s);
     var status = busy ? html`<span class="spin-ring" aria-hidden="true"></span>${S.busy.phase === 'download' ? 'Downloading' : 'Applying'}`
       : failed ? html`${icon('warning', null, 'ic-16')}Couldn't load`
       : previewing ? html`${icon('sparkle', null, 'ic-16')}Previewing`
       : applied ? html`${icon('check', null, 'ic-16')}Applied`
-      : s.downloaded ? html`${icon('saved', null, 'ic-16')}Downloaded`
+      : s.local ? html`${icon('import', null, 'ic-16')}From this device`
+      : isDownloaded(s) ? html`${icon('saved', null, 'ic-16')}Downloaded`
       : html`${icon('external', null, 'ic-16')}On the museum`;
-    var offlineBlocked = S.offline && !s.downloaded;
-    return html`<li class="cls-card s-card${applied ? ' is-applied' : ''}${previewing ? ' is-previewing' : ''}${failed ? ' is-failed' : ''}" data-skin="${s.id}">
-      <button class="cls-card__shot" data-act="cls-preview" data-id="${s.id}" data-tip="Preview" aria-label="${'Preview ' + s.name}" ${busy ? raw('aria-disabled="true"') : ''}>
-        <span class="cls-shot" style="${skinVars(s)}" aria-hidden="true"><i class="cls-shot__win cls-shot__win--main"></i><i class="cls-shot__win cls-shot__win--eq"></i><i class="cls-shot__win cls-shot__win--pl"></i></span>
-      </button>
+    var blocked = busy || !webamp || (S.offline && !isDownloaded(s));
+    return html`<li class="cls-card s-card${applied ? ' is-applied' : ''}${previewing ? ' is-previewing' : ''}${failed ? ' is-failed' : ''}" data-skin="${s.md5}">
+      <button class="cls-card__shot" data-act="cls-preview" data-id="${s.md5}" data-tip="Preview" aria-label="${'Preview ' + s.name}" ${blocked ? raw('aria-disabled="true"') : ''}>${shotMarkup(s)}</button>
       <div class="cls-card__text">
         <span class="cls-card__name ellipsis">${s.name}</span>
-        <span class="cls-card__file ellipsis">${s.file}</span>
+        ${s.local ? html`<span class="cls-card__file ellipsis">${s.file}</span>` : ''}
         <span class="cls-card__status${failed ? ' is-bad' : ''}">${status}</span>
       </div>
       <div class="cls-card__acts">
-        ${applied ? html`<button class="btn btn--sm" aria-disabled="true" data-act="cls-applied" data-id="${s.id}">Applied</button>`
-          : failed ? html`<button class="btn btn--sm" data-act="cls-retry" data-id="${s.id}">Retry</button>`
-          : html`<button class="btn btn--sm" data-act="cls-apply" data-id="${s.id}" ${busy || offlineBlocked ? raw('aria-disabled="true"') : ''}>Apply</button>`}
+        ${applied ? html`<button class="btn btn--sm" aria-disabled="true" data-act="cls-applied" data-id="${s.md5}">Applied</button>`
+          : failed ? html`<button class="btn btn--sm" data-act="cls-retry" data-id="${s.md5}">Retry</button>`
+          : html`<button class="btn btn--sm" data-act="cls-apply" data-id="${s.md5}" ${blocked ? raw('aria-disabled="true"') : ''}>Apply</button>`}
         <span class="spacer"></span>
-        <button class="btn-icon btn-icon--bare btn-icon--sm" data-act="cls-fav" data-id="${s.id}" aria-pressed="${s.favourite ? 'true' : 'false'}" aria-label="${'Favourite ' + s.name}" data-tip="${s.favourite ? 'Remove from favourites' : 'Add to favourites'}">${icon(s.favourite ? 'star-fill' : 'star', null, 'ic-16')}</button>
-        <a class="btn-icon btn-icon--bare btn-icon--sm" href="${museumUrl(s)}" target="_blank" rel="noopener" data-act="cls-museum" data-id="${s.id}" aria-label="${'View ' + s.name + ' on the Winamp Skin Museum'}" data-tip="${S.offline ? 'Needs a connection' : 'View on the Winamp Skin Museum'}" ${S.offline ? raw('aria-disabled="true"') : ''}>${icon('external', null, 'ic-16')}</a>
+        ${s.local ? '' : html`<button class="btn-icon btn-icon--bare btn-icon--sm" data-act="cls-fav" data-id="${s.md5}" aria-pressed="${isFavourite(s) ? 'true' : 'false'}" aria-label="${'Favourite ' + s.name}" data-tip="${isFavourite(s) ? 'Remove from favourites' : 'Add to favourites'}">${icon(isFavourite(s) ? 'star-fill' : 'star', null, 'ic-16')}</button>`}
+        ${s.museumUrl ? html`<a class="btn-icon btn-icon--bare btn-icon--sm" href="${s.museumUrl}" target="_blank" rel="noopener" aria-label="${'View ' + s.name + ' on the Winamp Skin Museum'}" data-tip="View on the Winamp Skin Museum">${icon('external', null, 'ic-16')}</a>` : ''}
       </div>
     </li>`;
   }
@@ -310,7 +312,7 @@
   /* ---------- partial re-renders (focus stays where it was) ---------- */
   function focusKey() {
     var a = document.activeElement;
-    if (!root || !a || !root.contains(a)) return null;
+    if (!root || !a || !root.contains(a) || stage.contains(a)) return null;
     if (a.id) return '#' + a.id;
     var act = a.getAttribute('data-act');
     return act ? '[data-act="' + act + '"]' + (a.getAttribute('data-id') ? '[data-id="' + a.getAttribute('data-id') + '"]' : '') : null;
@@ -327,21 +329,21 @@
     body.innerHTML = String(listMarkup()); body.scrollTop = top;
     if (k && k !== '#cls-search') refocus(k, '#cls-list');
   }
-  function renderDesk() {
+  function renderStatus() {
     if (!root) return;
     var k = focusKey();
-    $('#cls-desk', root).innerHTML = String(deskMarkup());
+    $('#cls-status', root).innerHTML = String(statusMarkup());
     if (k) refocus(k);
   }
   function renderDrawer() {
     if (!root) return;
-    var k = focusKey(), d = $('#cls-drawer', root);
-    d.innerHTML = String(drawerMarkup());
+    var k = focusKey();
+    $('#cls-drawer', root).innerHTML = String(drawerMarkup());
     bindDrawer();
     if (k) refocus(k);
   }
   function renderFoot() { if (root) $('#cls-foot', root).innerHTML = String(footMarkup()); }
-  function renderAll() { renderDesk(); renderList(); }
+  function renderAll() { renderStatus(); renderList(); }
 
   function syncDrawer() {
     if (!root) return;
@@ -366,46 +368,342 @@
     }
   }
 
-  /* ---------- skin flows: preview (Keep / Revert), apply, failure, local .wsz ---------- */
-  function load(id, mode) {
-    var s = skin(id);
-    if (!s) return;
-    if (S.busy) { App.toast('Wait for ' + skin(S.busy.id).name + ' to finish loading', { icon: 'clock' }); return; }
-    if (S.offline && !s.downloaded) { App.toast('You\'re offline. ' + s.name + ' isn\'t downloaded yet.', { icon: 'offline' }); return; }
-    if (S.preview && mode === 'apply' && S.preview.id === id) { keep(); return; }
-    if (S.preview) endPreview(false, true);
-    S.failed = null;
-    S.busy = { id: id, mode: mode, phase: s.downloaded ? 'apply' : 'download', pct: 0 };
-    App.announce((s.downloaded ? 'Applying ' : 'Downloading ') + s.name);
-    renderAll();
-    step();
-    function step() {
-      if (!S.busy || S.busy.id !== id) return;
-      if (S.busy.phase === 'download') {
-        S.busy.pct = Math.min(1, S.busy.pct + 0.25);
-        var bar = root && $('.cls-busy .progress > i', root); if (bar) bar.style.setProperty('--p', S.busy.pct);
-        if (S.busy.pct >= 1) { s.downloaded = true; S.busy.phase = 'apply'; renderAll(); }
-        later(step, 300); return;
-      }
-      later(finish, 700);                              // skinIsLoaded()
+  /* ---------- server reads ---------- */
+  var browseSeq = 0, browseTimer = 0;
+  /* the Browse list for the current query; more appends the next page. delay debounces typing and paging */
+  function loadBrowse(more, delay) {
+    clearTimeout(browseTimer);
+    var b = S.browse, q = S.query.trim(), seq = ++browseSeq;
+    if (!more && b.key !== q) { b.items = []; b.more = false; }
+    b.loading = true; b.error = null; b.want = q;
+    renderList();
+    browseTimer = setTimeout(function () {
+      M.api('/api/skins?q=' + encodeURIComponent(q) + '&offset=' + (more ? b.items.length : 0)).then(function (res) {
+        if (seq !== browseSeq) return;
+        var page = museumSkins(res && res.items);
+        b.items = more ? b.items.concat(page) : page; b.more = !!(res && res.more); b.key = q;
+        b.loading = false; S.offline = false;
+        renderList();
+      }, function (err) {
+        if (seq !== browseSeq) return;
+        b.loading = false; b.error = err;
+        var wasOffline = S.offline;
+        S.offline = err.status === 0 || !navigator.onLine;
+        if (S.offline !== wasOffline) renderDrawer(); else renderList();
+      });
+    }, delay || 0);
+  }
+  /* load Browse when what it shows doesn't answer the current query (and isn't on its way) */
+  function ensureBrowse() {
+    var b = S.browse, q = S.query.trim();
+    if ((b.key === q && !b.error) || (b.loading && b.want === q)) return;
+    loadBrowse(false);
+  }
+  function loadFavourites() {
+    S.favs.loading = true; S.favs.error = null; renderList();
+    return M.api('/api/skins/favourites').then(function (res) {
+      S.favs.items = museumSkins(res && res.items);
+    }, function (err) { S.favs.error = err; }).then(function () { S.favs.loading = false; renderList(); });
+  }
+  /* NSFW visibility and the default skin come from Settings > Appearance */
+  function loadSettings() {
+    return M.api('/api/settings').then(function (s) {
+      var a = (s && s.appearance) || {}, md5 = settingValue(a.defaultSkin);
+      S.showNsfw = settingValue(a.showNsfwSkins) === true;
+      S.defaultSkin = md5 ? findSkin(md5) || { md5: md5, name: 'your default skin', screenshotUrl: '', museumUrl: '', nsfw: false } : null;
+      renderList();
+    }, function (err) { console.warn('Settings unavailable, NSFW skins stay hidden:', err.message); });
+  }
+  /* once per session; both settle either way (their errors show in the drawer or fall back to hiding NSFW) */
+  var sessionReads = null;
+  function readOnce() {
+    if (!sessionReads) sessionReads = Promise.all([loadFavourites(), loadSettings()]);
+    return sessionReads;
+  }
+
+  /* ---------- Webamp: load, create once, reopen ---------- */
+  var webamp = null, webampClosed = false, closingByUs = false, prepared = null, creating = null;
+  function loadBundle() {
+    return new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = BUNDLE;
+      s.onload = function () {
+        if (typeof window.Webamp === 'function') resolve(window.Webamp);
+        else reject(new Error(BUNDLE + ' loaded but defined no Webamp.'));
+      };
+      s.onerror = function () {
+        s.remove();
+        reject(new Error('the player file (' + BUNDLE + ') didn\'t load. Check your connection; a server built from source needs `mise run setup`.'));
+      };
+      document.head.appendChild(s);
+    });
+  }
+  /* the bundle plus what the constructor needs (favourites for its skins menu); a failed load can be retried */
+  function prepare() {
+    if (!prepared) {
+      prepared = Promise.all([loadBundle(), readOnce()]).then(function (r) { return r[0]; },
+        function (err) { prepared = null; throw err; });
     }
-    function finish() {
-      if (!S.busy || S.busy.id !== id) return;
-      S.busy = null;
-      if (S.failOnce[id]) {
-        delete S.failOnce[id];
-        S.failed = { id: id, kept: S.applied };
-        App.announce('Couldn\'t load ' + s.name + '. ' + skin(S.applied).name + ' stays on.');
-        renderAll(); persist(); return;
+    return prepared;
+  }
+  function createWebamp(Webamp) {
+    if (!Webamp.browserIsSupported()) throw new Error('this browser lacks Web Audio or canvas, which Webamp needs.');
+    var phone = window.innerWidth < 640;                       // the equalizer closes so 275 px fits a phone
+    var w = new Webamp({
+      availableSkins: S.favs.items.map(function (s) { return { url: skinFileUrl(s.md5), name: s.name }; }),
+      windowLayout: {
+        main: { position: { top: 0, left: 0 } },
+        equalizer: { position: { top: 116, left: 0 }, closed: phone },
+        playlist: { position: { top: phone ? 116 : 232, left: 0 }, size: { extraWidth: 0, extraHeight: 0 } }
+      },
+      enableHotkeys: false,                                     // lull owns the shortcuts ([data-webamp] silences them)
+      enableMediaSession: false,                                // and Media Session
+      /* the stage is a stacking context, so this only lifts what Webamp puts on <body> (its context menu) over it */
+      zIndex: parseInt(getComputedStyle(document.documentElement).getPropertyValue('--z-classic'), 10) + 1,
+      handleTrackDropEvent: onWebampDrop,
+      handleSaveListEvent: exportM3u,
+      handleLoadListEvent: importM3u
+    });
+    w.onWillClose(function (cancel) { if (closingByUs) return; cancel(); exit(); });   // its close button = leave Classic
+    w.onTrackDidChange(onWebampTrack);
+    w.media.on('timeupdate', onWebampTime);
+    /* Webamp can seek only once the file's duration is known */
+    w.media.on('fileLoaded', function () { if (pendingSeek !== null) { var at = pendingSeek; pendingSeek = null; w.seekToTime(at); } });
+    return w.renderInto(stage).then(function () { webamp = w; }, function (err) {
+      w.dispose();
+      var fresh = makeStage();                                  // React may own the old host: start clean next time
+      if (stage.parentNode) stage.parentNode.replaceChild(fresh, stage);
+      stage = fresh;
+      throw err;
+    });
+  }
+  /* every visit: make sure Webamp is up, then hand it the queue. A visit that ended meanwhile does nothing */
+  function startWebamp() {
+    var mine = visit;
+    function current() { return mine === visit && root; }
+    if (!webamp) { S.player = { state: 'loading', message: '' }; renderStatus(); }
+    prepare().then(function (Webamp) {
+      if (webamp || !current()) return null;
+      if (!creating) {
+        creating = createWebamp(Webamp).then(function () { creating = null; }, function (err) { creating = null; throw err; });
       }
-      if (mode === 'preview') startPreview(id);
-      else { S.applied = id; App.toast(s.name + ' is your classic skin', { icon: 'check', kind: 'ok' }); App.announce(s.name + ' applied'); }
-      persist(); renderAll();
+      return creating;
+    }).then(function () {
+      if (current() && webamp) webampReady();
+    }, function (err) {
+      if (!current()) return;
+      S.player = { state: 'failed', message: err && err.message || String(err) };
+      renderAll();
+    });
+  }
+  var skinRestored = false, pendingFile = null;
+  function webampReady() {
+    S.player = { state: 'ready', message: '' };
+    if (webampClosed) { webamp.reopen(); webampClosed = false; }
+    handOver();
+    App.hooks.media = webampControls;                          // media keys and the lock screen drive Webamp now
+    renderAll();
+    if (!skinRestored && appliedSkin()) { skinRestored = true; load(appliedSkin(), 'restore'); }
+    if (pendingFile) { var f = pendingFile; pendingFile = null; applyLocal(f); }
+  }
+
+  /* ---------- hand-off between the app engine and Webamp ---------- */
+  var urlToId = {}, currentUrl = null, pendingSeek = null, handedOver = false;
+  function absolute(url) { return new URL(url, location.href).href; }
+  /* a queue entry as a Webamp track; metaData and duration spare Webamp fetching each file's head */
+  function webampTrack(trackId, source) {
+    var t = M.track(trackId), url = t && P.streamUrl(t.id, source);
+    if (!url) return null;
+    urlToId[absolute(url)] = t.id;
+    return { url: url, metaData: { title: t.title, artist: t.artist, album: t.album }, duration: t.duration || undefined };
+  }
+  function handOver() {
+    var ps = P.state, wasPlaying = ps.playing, index = 0, tracks = [];
+    if (wasPlaying) P.pause();
+    urlToId = {};
+    ps.queue.forEach(function (q, i) {
+      var t = webampTrack(q.trackId, q.source);
+      if (!t) return;
+      if (i === ps.index) index = tracks.length;
+      tracks.push(t);
+    });
+    webamp.setTracksToPlay([]);                                 // empties Webamp's list without starting anything
+    webamp.appendTracks(tracks);
+    if (webamp.isShuffleEnabled() !== ps.shuffle) webamp.toggleShuffle();
+    if (webamp.isRepeatEnabled() !== (ps.repeat !== 'off')) webamp.toggleRepeat();
+    webamp.setVolume(Math.round((ps.muted ? 0 : ps.volume) * 100));
+    if (tracks.length) {
+      pendingSeek = ps.pos > 1 ? ps.pos : null;
+      webamp.setCurrentTrack(index);
+      if (wasPlaying) webamp.play();
+    }
+    handedOver = true;
+  }
+  /* Webamp's list, song, position and modes back into the app engine. Songs Webamp played from local files
+     have no place in a lull queue and are left out */
+  function handBack() {
+    handedOver = false; pendingSeek = null;
+    var playing = webamp.getMediaStatus() === 'PLAYING', pos = webamp.media.timeElapsed();
+    var ids = [], index = -1, local = 0;
+    webamp.getPlaylistTracks().forEach(function (t) {
+      var url = absolute(t.url), id = urlToId[url];
+      if (!id) { local += 1; return; }
+      if (index < 0 && url === currentUrl) index = ids.length;
+      ids.push(id);
+    });
+    syncModes();
+    if (local) App.toast(local === 1 ? 'The local file you added in Webamp isn\'t in your queue' : 'The ' + local + ' local files you added in Webamp aren\'t in your queue', { icon: 'info' });
+    if (!ids.length) return;                                    // nothing of lull's left in Webamp: the queue stays
+    if (index < 0) { index = 0; pos = 0; playing = false; }     // Webamp was on a local file
+    var ps = P.state, same = ids.length === ps.queue.length && ids.every(function (id, i) { return ps.queue[i].trackId === id; });
+    if (!same) P.playList(ids, index, { at: pos, autoplay: playing });
+    else if (index !== ps.index) P.jumpTo(index, { at: pos, autoplay: playing });   // keeps radio and queue groups
+    else {
+      if (Math.abs(pos - ps.pos) > 1) P.seek(pos);
+      if (playing) P.play();
     }
   }
-  function startPreview(id) {
-    S.preview = { id: id, prev: S.applied, left: PREVIEW_SECONDS };
-    App.announce('Previewing ' + skin(id).name + '. Keep it or it reverts in ' + PREVIEW_SECONDS + ' seconds.');
+  /* App.hooks.media while Classic is open */
+  var webampControls = {
+    play: function () { webamp.play(); }, pause: function () { webamp.pause(); },
+    prev: function () { webamp.previousTrack(); }, next: function () { webamp.nextTrack(); },
+    seek: function (sec) { webamp.seekToTime(sec); },
+    seekBy: function (sec) { if (sec < 0) webamp.seekBackward(-sec); else webamp.seekForward(sec); }
+  };
+
+  /* ---------- listening history for songs heard in Webamp (App.recordPlay: scrobbles, history, taste) ---------- */
+  var listen = null;                                            // { rec, last (s into the song), dur }
+  function nearEnd(l) { return l.dur > 0 && l.last >= l.dur - 1.5; }
+  function endListen(how) { if (listen) { listen.rec.end(how); listen = null; } }
+  function onWebampTrack(t) {
+    currentUrl = t ? absolute(t.url) : null;
+    if (listen) endListen(nearEnd(listen) ? 'completed' : 'skipped');
+  }
+  /* Webamp's media clock (several times a second while playing, and on seeks): the record begins once a lull song
+     plays, and gains the seconds that passed in steady playback (jumps from seeks don't count) */
+  function onWebampTime() {
+    if (!handedOver) return;
+    var playing = webamp.getMediaStatus() === 'PLAYING', now = webamp.media.timeElapsed();
+    if (listen && now < listen.last - 1 && nearEnd(listen)) endListen('completed');   // the same song again (repeat)
+    if (!listen) {
+      var id = currentUrl && urlToId[currentUrl];
+      if (!playing || !id) return;
+      listen = { rec: App.recordPlay(id, webamp.media.duration() || M.track(id).duration), last: now, dur: 0 };
+    }
+    var dt = now - listen.last;
+    if (playing && dt > 0 && dt < 1.5) listen.rec.listened += dt;
+    listen.last = now; listen.dur = webamp.media.duration();
+  }
+  /* Webamp's repeat is on or off: on keeps the app's all / one, off turns it off */
+  function syncModes() {
+    var ps = P.state, shuffle = webamp.isShuffleEnabled(), repeat = webamp.isRepeatEnabled();
+    if (shuffle !== ps.shuffle) P.setShuffle(shuffle);
+    if (repeat && ps.repeat === 'off') P.cycleRepeat();
+    while (!repeat && ps.repeat !== 'off') P.cycleRepeat();
+  }
+
+  /* files dropped on Webamp's windows: a .wsz applies here; lull songs dragged from another lull window join the list
+     (and the queue on exit); anything else (audio files) Webamp plays by itself */
+  function onWebampDrop(e) {
+    var dt = e.dataTransfer, skinFile = Array.prototype.filter.call(dt.files || [], isWsz)[0];
+    if (skinFile) { takeSkinFile(skinFile); return []; }
+    var tracks = (dt.getData('text/plain') || '').split(',').map(function (id) { return webampTrack(id.trim(), null); }).filter(Boolean);
+    return tracks.length ? tracks : null;
+  }
+  /* Webamp's playlist menu. Save list: the lull songs in it as an M3U download. Load list: the library's M3U import,
+     which matches each line and makes a lull playlist (Webamp's list stays as it is) */
+  function exportM3u(tracks) {
+    var lines = ['#EXTM3U'];
+    tracks.forEach(function (wt) {
+      var url = wt.url && absolute(wt.url), t = url && M.track(urlToId[url]);
+      if (t) lines.push('#EXTINF:' + Math.round(t.duration || -1) + ',' + t.artist + ' - ' + t.title, url);
+    });
+    if (lines.length === 1) { App.toast('Nothing to save: the list holds no lull songs', { icon: 'info' }); return null; }
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([lines.join('\n') + '\n'], { type: 'audio/x-mpegurl' }));
+    a.download = 'lull-queue.m3u8';
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);   // the download has started by then
+    App.toast('Saved the list as lull-queue.m3u8', { icon: 'check', kind: 'ok' });
+    return null;
+  }
+  function importM3u() {
+    var input = document.createElement('input');
+    input.type = 'file'; input.accept = '.m3u,.m3u8,audio/x-mpegurl'; input.hidden = true;
+    input.addEventListener('change', function () { if (input.files[0]) libraryImport(input.files[0]); input.remove(); });
+    document.body.appendChild(input); input.click();
+    return null;
+  }
+
+  /* ---------- skins in Webamp: fetch, apply, preview, restore ---------- */
+  /* a URL Webamp can parse: the .wsz fetched from the server (its sentence on failure), or the local file */
+  function fetchSkin(skin) {
+    if (skin.local) return Promise.resolve(skin.url);
+    /* md5-addressed files never change, so any cached copy will do, which also keeps them working offline */
+    return fetch(skinFileUrl(skin.md5), { credentials: 'same-origin', cache: 'force-cache' }).then(function (res) {
+      if (res.ok) return res.blob().then(function (b) { return URL.createObjectURL(b); });
+      if (res.status === 401) M.onUnauthorized();
+      return res.json().then(function (e) { return e && e.message; }, function () { return null; }).then(function (msg) {
+        throw new Error(msg || 'the server answered ' + res.status + '.');
+      });
+    }, function () { throw new Error('can\'t reach the lull server.'); });
+  }
+  function applyUrl(url) {
+    webamp.setSkinFromUrl(url);
+    return new Promise(function (resolve, reject) {
+      var t = setTimeout(function () { reject(new Error('Webamp didn\'t finish loading it within 10 seconds.')); }, APPLY_TIMEOUT_MS);
+      webamp.skinIsLoaded().then(function () { clearTimeout(t); resolve(); }, function (e) { clearTimeout(t); reject(e); });
+    });
+  }
+  /* show a skin without the busy states (revert, restore after a failure); null = Webamp's base skin */
+  function showSkin(skin) {
+    /* Webamp has no public call for its base skin: this is the action its own Skins > <Base Skin> menu sends (2.3.1) */
+    if (!skin) webamp.store.dispatch({ type: 'LOAD_DEFAULT_SKIN' });
+    else webamp.setSkinFromUrl(skin.local ? skin.url : skinFileUrl(skin.md5));
+  }
+  function markDownloaded(skin) {
+    if (skin.local || isDownloaded(skin)) return;
+    S.downloaded.unshift(skin);
+  }
+  /* mode: apply | preview | restore (the applied skin on Webamp's first start: no toast) */
+  function load(skin, mode) {
+    if (!webamp) { App.toast(S.player.state === 'failed' ? 'Webamp didn\'t start, so skins can\'t load' : 'Webamp is still starting', { icon: 'clock' }); return; }
+    if (S.busy) { App.toast('Wait for ' + S.busy.skin.name + ' to finish loading', { icon: 'clock' }); return; }
+    if (S.offline && !isDownloaded(skin)) { App.toast('You\'re offline. ' + skin.name + ' isn\'t downloaded yet.', { icon: 'offline' }); return; }
+    if (S.preview && mode === 'apply' && sameSkin(S.preview.skin, skin)) { endPreview(true); return; }
+    var kept = mode === 'restore' ? null : S.preview ? S.preview.prev : appliedSkin();
+    var replacesPreview = !!S.preview;
+    if (replacesPreview) { clearInterval(previewTimer); S.preview = null; }
+    var job = S.busy = { skin: skin, mode: mode, phase: isDownloaded(skin) ? 'apply' : 'download' }, objectUrl = null;
+    S.failed = null;
+    if (mode !== 'restore') App.announce((job.phase === 'download' ? 'Downloading ' : 'Applying ') + skin.name);
+    renderAll();
+    fetchSkin(skin).then(function (url) {
+      if (!skin.local) objectUrl = url;
+      job.phase = 'apply'; renderAll();
+      return applyUrl(url);
+    }).then(function () {
+      S.busy = null;
+      markDownloaded(skin);
+      if (mode === 'preview') { if (root) startPreview(skin, kept); else showSkin(kept); }   // left mid-load: no preview
+      else if (mode === 'apply') {
+        S.applied = skin;
+        App.toast(skin.name + ' is your classic skin', { icon: 'check', kind: 'ok' }); App.announce(skin.name + ' applied');
+      }
+      persist(); renderAll();
+    }, function (err) {
+      S.busy = null;
+      S.failed = { skin: skin, kept: kept, message: err.message };
+      if (job.phase === 'apply' || replacesPreview) showSkin(kept);   // Webamp may be half-way into it
+      App.announce('Couldn\'t load ' + skin.name + '. ' + nameOf(kept) + ' stays on.');
+      renderAll();
+    }).then(function () { if (objectUrl) URL.revokeObjectURL(objectUrl); });
+  }
+
+  var previewTimer = 0;
+  function startPreview(skin, prev) {
+    S.preview = { skin: skin, prev: prev, left: PREVIEW_SECONDS };
+    App.announce('Previewing ' + skin.name + '. Keep it or it reverts in ' + PREVIEW_SECONDS + ' seconds.');
     clearInterval(previewTimer);
     previewTimer = setInterval(tick, 1000);
   }
@@ -421,47 +719,49 @@
   }
   function endPreview(kept, quiet) {
     if (!S.preview) return;
-    var p = S.preview, s = skin(p.id), focusInBar = root && $('.cls-preview', root) && $('.cls-preview', root).contains(document.activeElement);
+    var p = S.preview, bar = root && $('.cls-preview', root), focusInBar = bar && bar.contains(document.activeElement);
     clearInterval(previewTimer); S.preview = null;
-    if (kept) S.applied = p.id;
+    if (kept) S.applied = p.skin; else showSkin(p.prev);
     persist();
-    if (!quiet) {
-      App.toast(kept ? s.name + ' is your classic skin' : 'Back to ' + skin(p.prev).name,
-        kept ? { icon: 'check', kind: 'ok' } : { icon: 'undo', action: 'Preview again', onAction: function () { load(p.id, 'preview'); } });
-      renderAll();
-      if (focusInBar) refocus('[data-act="cls-preview"][data-id="' + p.id + '"]', '#cls-search');
-    }
+    if (quiet) return;
+    App.toast(kept ? p.skin.name + ' is your classic skin' : 'Back to ' + nameOf(p.prev),
+      kept ? { icon: 'check', kind: 'ok' } : { icon: 'undo', action: 'Preview again', onAction: function () { load(p.skin, 'preview'); } });
+    renderAll();
+    if (focusInBar) refocus('[data-act="cls-preview"][data-id="' + p.skin.md5 + '"]', '#cls-search');
   }
-  function keep() { endPreview(true); }
 
   function wszName(file) {
     return file.replace(/\.wsz$/i, '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim()
       .replace(/\b\w/g, function (c) { return c.toUpperCase(); }) || 'Local skin';
   }
-  /* a dropped or opened .wsz: applied locally (real app: setSkinFromUrl(URL.createObjectURL(file))) */
+  /* a .wsz from this device: applied from memory (URL.createObjectURL), listed under Downloaded for the session */
   function applyLocal(file) {
-    var h = 0; for (var i = 0; i < file.name.length; i++) h = (h * 31 + file.name.charCodeAt(i)) >>> 0;
-    var id = 'local-' + h.toString(16);
-    if (!skin(id)) {
-      var base = M.skins[h % M.skins.length];   // stand-in thumbnail colours; the real app reads the file
-      S.skins.unshift({ id: id, name: wszName(file.name), file: file.name, palette: base.palette.slice(), favourite: false, downloaded: true, nsfw: false, local: true });
+    var key = 'local:' + file.name + ':' + file.size;
+    var skin = S.local.filter(function (s) { return s.md5 === key; })[0];
+    if (!skin) {
+      skin = { md5: key, name: wszName(file.name), file: file.name, url: URL.createObjectURL(file), local: true, screenshotUrl: '', museumUrl: '', nsfw: false };
+      S.local.unshift(skin);
     }
     S.tab = 'downloaded'; S.query = '';
     if (root) { renderDrawer(); setDrawer(true); }
-    load(id, 'apply');
+    load(skin, 'apply');
+  }
+  /* applies now, or as soon as Webamp is up */
+  function takeSkinFile(file) {
+    if (webamp && root) applyLocal(file); else pendingFile = file;
   }
 
-  var prevImport = App.hooks.importFile, pendingFile = null;
+  /* .wsz files dropped on the window open Classic and apply; everything else stays the library's (M3U import) */
+  var libraryImport = App.hooks.importFile;
   App.hooks.importFile = function (file) {
-    if (!/\.wsz$/i.test(file.name)) { prevImport(file); return; }
-    if (App.current.path === '/classic') applyLocal(file);
-    else { pendingFile = file; App.go('/classic'); }
+    if (!isWsz(file)) { libraryImport(file); return; }
+    takeSkinFile(file);
+    if (!onClassic()) App.go('/classic');
   };
 
   /* ---------- actions ---------- */
   function exit() {
     if (!root || root.classList.contains('is-leaving')) return;
-    if (S.preview) endPreview(false, true);
     root.classList.add('is-leaving');
     later(function () { App.go(lastHref()); }, App.reducedMotion() ? 130 : 200);
   }
@@ -470,7 +770,7 @@
   App.action('cls-help', function (el) {
     App.popover(el, html`<div class="popover__head">${icon('classic')}<span>classic mode</span></div>
       <div class="popover__body cls-help">
-        <p>Webamp plays your queue here with its own skins. Drag its windows anywhere on the stage.</p>
+        <p>Webamp plays your queue here with its own skins. Drag its windows anywhere on the stage, and drop a .wsz file anywhere to apply it.</p>
         <ul class="cls-help__keys">
           <li><kbd class="kbd">Esc</kbd><span>Back to lull, where you left off</span></li>
           <li><kbd class="kbd">W</kbd><span>Classic mode on or off</span></li>
@@ -483,57 +783,67 @@
       </div>`, { label: 'Classic mode help', className: 'cls-pop' });
   });
   App.action('cls-help-close', function () { App.closePopover(true); });
+  App.action('cls-start', startWebamp);
   App.action('cls-tab', function (el) { setTab(el.getAttribute('data-id'), true); });
   function clearSearch() {
-    S.query = ''; S.searching = false; clearTimeout(searchTimer);
+    S.query = '';
     var i = root && $('#cls-search', root); if (i) { i.value = ''; i.focus(); }
-    syncClear(); renderList();
+    syncClear();
+    if (S.tab === 'browse' && !S.offline) ensureBrowse(); else renderList();
   }
   App.action('cls-clear', clearSearch);
   App.action('cls-open-file', function () { var f = root && $('#cls-file', root); if (f) { f.value = ''; f.click(); } });
+  App.action('cls-more', function () { if (!S.browse.loading) loadBrowse(true, SEARCH_DEBOUNCE_MS); });
+  App.action('cls-reload', function (el) {
+    if (el.getAttribute('data-id') === 'favourites') loadFavourites(); else loadBrowse(false);
+  });
   App.action('cls-preview', function (el) {
-    var id = el.getAttribute('data-id');
-    if (S.preview && S.preview.id === id) { App.toast('Already previewing ' + skin(id).name, { icon: 'sparkle' }); return; }
-    if (S.applied === id && !S.preview) { App.toast(skin(id).name + ' is already on', { icon: 'check' }); return; }
-    load(id, 'preview');
+    var s = findSkin(el.getAttribute('data-id'));
+    if (!s) return;
+    if (S.preview && sameSkin(S.preview.skin, s)) { App.toast('Already previewing ' + s.name, { icon: 'sparkle' }); return; }
+    if (sameSkin(appliedSkin(), s) && !S.preview) { App.toast(s.name + ' is already on', { icon: 'check' }); return; }
+    load(s, 'preview');
   });
   App.action('cls-apply', function (el) {
-    var s = skin(el.getAttribute('data-id'));
-    if (S.busy && S.busy.id === s.id) return;
-    if (S.offline && !s.downloaded) { App.toast('You\'re offline. ' + s.name + ' isn\'t downloaded yet.', { icon: 'offline' }); return; }
-    load(s.id, 'apply');
+    var s = findSkin(el.getAttribute('data-id'));
+    if (s && !(S.busy && sameSkin(S.busy.skin, s))) load(s, 'apply');
   });
-  App.action('cls-applied', function (el) { App.toast(skin(el.getAttribute('data-id')).name + ' is already your classic skin', { icon: 'check' }); });
-  App.action('cls-retry', function (el) { load(el.getAttribute('data-id'), 'apply'); });
+  App.action('cls-applied', function (el) { var s = findSkin(el.getAttribute('data-id')); if (s) App.toast(s.name + ' is already your classic skin', { icon: 'check' }); });
+  App.action('cls-retry', function (el) { var s = findSkin(el.getAttribute('data-id')); if (s) load(s, 'apply'); });
   App.action('cls-dismiss-failed', function () { S.failed = null; renderAll(); refocus(null, '#cls-search'); });
-  App.action('cls-keep', keep);
+  App.action('cls-keep', function () { endPreview(true); });
   App.action('cls-revert', function () { endPreview(false); });
   App.action('cls-notice', function () {
     S.noticeHidden = true; persist(); renderFoot();
     refocus('.cls-exit .btn');
     App.toast('Notice hidden. Help keeps it.', { icon: 'info' });
   });
-  App.action('cls-fav', function (el) {
-    var s = skin(el.getAttribute('data-id'));
-    s.favourite = !s.favourite; persist();
-    if (S.tab === 'favourites' && !s.favourite) {
-      App.toast('Removed ' + s.name + ' from favourites', { icon: 'star', action: 'Undo', onAction: function () { s.favourite = true; persist(); renderList(); } });
-    } else App.announce(s.favourite ? s.name + ' added to favourites' : s.name + ' removed from favourites');
+  /* favourites change at once and roll back with the server's sentence if it refuses */
+  function setFavourite(s, on) {
+    var before = S.favs.items;
+    S.favs.items = on ? [s].concat(before.filter(function (f) { return f.md5 !== s.md5; })) : before.filter(function (f) { return f.md5 !== s.md5; });
     renderList();
-    if (!$('[data-act="cls-fav"][data-id="' + s.id + '"]', root)) refocus(null, '#cls-list');
-  });
-  /* museum links: the prototype's ids are fictional, so it says where the link goes instead of opening a 404 */
-  App.action('cls-museum', function (el, e) {
-    if (e) e.preventDefault();
-    var s = skin(el.getAttribute('data-id'));
-    if (S.offline) { App.toast('The museum needs a connection', { icon: 'offline' }); return; }
-    App.toast(s ? 'Opens ' + s.name + ' on the Winamp Skin Museum in your browser' : 'Opens the Winamp Skin Museum in your browser', { icon: 'external' });
+    M.api('/api/skins/favourites/' + encodeURIComponent(s.md5), { method: on ? 'PUT' : 'DELETE' }).catch(function (err) {
+      S.favs.items = before; renderList();
+      App.toast(err.message, { kind: 'error', icon: 'warning' });
+    });
+  }
+  App.action('cls-fav', function (el) {
+    var s = findSkin(el.getAttribute('data-id'));
+    if (!s || s.local) return;
+    var on = !isFavourite(s);
+    setFavourite(s, on);
+    if (S.tab === 'favourites' && !on) {
+      App.toast('Removed ' + s.name + ' from favourites', { icon: 'star', action: 'Undo', onAction: function () { setFavourite(s, true); } });
+    } else App.announce(on ? s.name + ' added to favourites' : s.name + ' removed from favourites');
+    if (!$('[data-act="cls-fav"][data-id="' + s.md5 + '"]', root)) refocus(null, '#cls-list');
   });
 
   function setTab(id, focus) {
     if (TABS.map(function (t) { return t[0]; }).indexOf(id) < 0) return;
-    S.tab = id; S.query = ''; S.searching = false; S.loading = false; clearTimeout(searchTimer);
+    S.tab = id; S.query = '';
     renderDrawer();
+    if (id === 'browse' && !S.offline) ensureBrowse();
     if (focus) refocus('#cls-tab-' + id);
   }
   function syncClear() {
@@ -547,11 +857,7 @@
     var input = $('#cls-search', d);
     input.addEventListener('input', function () {
       S.query = input.value; syncClear();
-      clearTimeout(searchTimer);
-      if (S.tab === 'browse' && !S.offline && S.query.trim()) {        // museum search: debounce 300 ms, then a round trip
-        S.searching = true; renderList();
-        /* PROTO: simulated delay */ searchTimer = setTimeout(function () { S.searching = false; renderList(); }, 300 + 350);
-      } else { S.searching = false; renderList(); }
+      if (S.tab === 'browse' && !S.offline) loadBrowse(false, SEARCH_DEBOUNCE_MS); else renderList();
     });
     $('#cls-tabs', d).addEventListener('keydown', function (e) {
       var keys = { ArrowRight: 1, ArrowLeft: -1, Home: -9, End: 9 };
@@ -564,12 +870,12 @@
     $('#cls-file', d).addEventListener('change', function (e) {
       var f = e.target.files && e.target.files[0];
       if (!f) return;
-      if (!/\.wsz$/i.test(f.name)) { App.toast(f.name + ' isn\'t a .wsz skin', { kind: 'error', icon: 'warning' }); return; }
-      applyLocal(f);
+      if (!isWsz(f)) { App.toast(f.name + ' isn\'t a .wsz skin', { kind: 'error', icon: 'warning' }); return; }
+      takeSkinFile(f);
     });
   }
 
-  /* keyboard: Esc and W leave Classic, Tab stays inside the stage (the app behind is inert) */
+  /* keyboard: Esc and W leave Classic (W not inside Webamp), Tab stays inside the stage (the app behind is inert) */
   function onKey(e) {
     if (!root) return;
     var overlayOpen = document.querySelector('body > .popover, body > .menu, #overlay-host > .is-open');
@@ -583,7 +889,7 @@
       }
       e.preventDefault(); e.stopPropagation(); exit(); return;
     }
-    if ((e.key === 'w' || e.key === 'W') && !typing && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if ((e.key === 'w' || e.key === 'W') && !typing && !e.ctrlKey && !e.metaKey && !e.altKey && !(a && a.closest && a.closest('[data-webamp]'))) {
       e.preventDefault(); e.stopPropagation(); exit(); return;
     }
     if (e.key === 'Tab') {
@@ -596,115 +902,72 @@
       else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); }
     }
   }
+  var lastDocked = isDocked();
+  function onResize() {
+    if (isDocked() === lastDocked) return;
+    lastDocked = isDocked(); syncDrawer();
+  }
+  function onOnline() { if (S.offline) { S.offline = false; renderDrawer(); ensureBrowse(); } }
 
   function later(fn, ms) { var t = setTimeout(fn, ms); timers.push(t); return t; }
 
-  /* ---------- states (prototype switcher) ---------- */
-  function applyState(id) {
-    if (!id || id.indexOf('classic-') !== 0) return;
-    S = freshModel();
-    S.skins = M.skins.map(function (s) { return Object.assign({}, s); });   // states ignore stored favourites
-    S.applied = M.settings.appearance.defaultSkin; S.noticeHidden = false;
-    switch (id) {
-      case 'classic-drawer-closed': S.drawer = false; break;
-      case 'classic-favourites': S.tab = 'favourites'; S.drawer = true; break;
-      case 'classic-favourites-empty': S.tab = 'favourites'; S.drawer = true; S.skins.forEach(function (s) { s.favourite = false; }); break;
-      case 'classic-downloaded': S.tab = 'downloaded'; S.drawer = true; break;
-      case 'classic-search-empty': S.query = 'glitter'; S.drawer = true; break;
-      case 'classic-loading': S.loading = true; S.drawer = true; break;
-      case 'classic-preview': S.preview = { id: 'b72e01d4', prev: S.applied, left: 12 }; break;
-      case 'classic-applying': S.busy = { id: 'd45b7e20', mode: 'apply', phase: 'download', pct: .5, frozen: true }; break;
-      case 'classic-failed': S.failed = { id: '1be94d08', kept: S.applied }; delete S.failOnce['1be94d08']; break;
-      case 'classic-offline': S.offline = true; S.drawer = true; break;
-      case 'classic-nsfw': S.drawer = true; break;
-      case 'classic-notice': S.drawer = false; break;
-    }
+  /* ---------- open / close ---------- */
+  function openStage() {
+    visit += 1;
+    if (restore) restore.path = lastPage ? lastPage.path : '/home';
+    root = document.createElement('div');
+    root.className = 's-sky cls-root';
+    root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-labelledby', 'cls-title');
+    root.setAttribute('data-drawer', drawerOpen() ? 'open' : 'closed');
+    root.setAttribute('tabindex', '-1');                       // the dialog itself takes focus; Tab moves into it
+    root.innerHTML = String(stageMarkup());
+    if (!stage) stage = makeStage();
+    $('#cls-desk', root).insertBefore(stage, $('#cls-status', root));
+    document.body.appendChild(root);
+    document.documentElement.setAttribute('data-classic', 'on');
+    $('#app').setAttribute('inert', ''); $('#app').setAttribute('aria-hidden', 'true');
+    bindDrawer();
+    requestAnimationFrame(function () { requestAnimationFrame(function () { if (root) root.classList.add('is-on'); }); });
+    later(function () { if (root) root.focus({ preventScroll: true }); }, 60);
+    document.addEventListener('keydown', onKey, true);
+    window.addEventListener('resize', onResize);
+    window.addEventListener('online', onOnline);
+    lastDocked = isDocked();
+    readOnce();
+    ensureBrowse();                                            // offline: finds out whether that is still so
+    startWebamp();
   }
-
-  App.registerStates('classic', [
-    { id: 'classic-stage', label: 'Classic: stage with skin drawer', route: '/classic' },
-    { id: 'classic-drawer-closed', label: 'Classic: stage, drawer closed', route: '/classic' },
-    { id: 'classic-favourites', label: 'Classic: favourite skins', route: '/classic' },
-    { id: 'classic-favourites-empty', label: 'Classic: no favourites yet', route: '/classic' },
-    { id: 'classic-downloaded', label: 'Classic: downloaded skins', route: '/classic' },
-    { id: 'classic-search-empty', label: 'Classic: skin search, no results', route: '/classic' },
-    { id: 'classic-loading', label: 'Classic: loading skins', route: '/classic' },
-    { id: 'classic-preview', label: 'Classic: preview with Keep / Revert', route: '/classic' },
-    { id: 'classic-applying', label: 'Classic: downloading and applying a skin', route: '/classic' },
-    { id: 'classic-failed', label: 'Classic: skin failed to load', route: '/classic' },
-    { id: 'classic-offline', label: 'Classic: offline, downloaded skins only', route: '/classic' },
-    { id: 'classic-nsfw', label: 'Classic: NSFW skins hidden note', route: '/classic' },
-    { id: 'classic-notice', label: 'Classic: features-differ notice', route: '/classic' },
-    { id: 'classic-drop', label: 'Classic: drop a .wsz file', route: '/classic' }
-  ]);
+  function closeStage() {
+    visit += 1;                                                // a Webamp start still in flight won't hand over now
+    if (S.preview) endPreview(false, true);                    // leaving mid-preview keeps the applied skin
+    if (webamp) {
+      App.hooks.media = null;                                  // back to the app engine
+      endListen('stopped');
+      if (handedOver) handBack();
+      closingByUs = true; webamp.close(); closingByUs = false;  // close() asks onWillClose too: let it through
+      webampClosed = true;
+    }
+    document.removeEventListener('keydown', onKey, true);
+    window.removeEventListener('resize', onResize);
+    window.removeEventListener('online', onOnline);
+    timers.forEach(clearTimeout); timers = [];
+    App.closePopover();
+    root.remove(); root = null;
+    document.documentElement.removeAttribute('data-classic');
+    $('#app').removeAttribute('inert'); $('#app').removeAttribute('aria-hidden');
+  }
 
   /* ---------- route ---------- */
   App.route('/classic', {
     title: 'Classic mode',
     render: function (ctx) {
-      if (!root && Date.now() - closedAt > 400) restore = { scroll: ctx.el.scrollTop, opener: document.activeElement };
-      /* PROTO: demo state */ if (ctx.state) applyState(ctx.state);
+      if (!root) restore = { scroll: ctx.el.scrollTop, opener: document.activeElement };
       return html`<div class="cls-behind" aria-hidden="true">${behindMarkup(ctx)}</div>`;
     },
     mount: function (ctx) {
-      var quick = Date.now() - closedAt < 400;                // re-render (state switch): no second power-on
-      if (restore) restore.path = lastPage ? lastPage.path : '/home';
-      root = document.createElement('div');
-      root.className = 's-sky cls-root' + (quick ? ' is-on is-quick' : '');
-      root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-labelledby', 'cls-title');
-      root.setAttribute('data-drawer', drawerOpen() ? 'open' : 'closed');
-      root.innerHTML = String(stageMarkup());
-      document.body.appendChild(root);
-      document.documentElement.setAttribute('data-classic', 'on');
-      $('#app').setAttribute('inert', ''); $('#app').setAttribute('aria-hidden', 'true');
-      bindDrawer();
-      if (!quick) requestAnimationFrame(function () { requestAnimationFrame(function () { if (root) root.classList.add('is-on'); }); });
-      root.setAttribute('tabindex', '-1');                     // the dialog itself takes focus; Tab moves into it
-      later(function () {
-        var first = /* PROTO: demo state */ ctx.state === 'classic-preview' ? $('[data-act="cls-keep"]', root) : root;
-        if (first) first.focus({ preventScroll: true });
-      }, quick ? 0 : 60);
-
-      document.addEventListener('keydown', onKey, true);
-      var offPlayer = App.on('player', function (kind) { if (kind === 'track' && !S.busy) renderDesk(); });
-      var lastDocked = isDocked();
-      function onResize() {
-        if (isDocked() === lastDocked) return;
-        lastDocked = isDocked(); syncDrawer();
-      }
-      window.addEventListener('resize', onResize);
-
-      if (S.preview) { clearInterval(previewTimer); previewTimer = setInterval(tick, 1000); }
-      if (S.busy && !S.busy.frozen) { var b = S.busy; S.busy = null; load(b.id, b.mode); }
-      var busyId = S.busy ? S.busy.id : S.failed ? S.failed.id : null;   // bring the card in question into view
-      if (busyId) later(function () { var c = $('[data-skin="' + busyId + '"]', root); if (c) c.scrollIntoView({ block: 'nearest' }); }, 30);
-      /* PROTO: simulated delay, demo state */ if (!S.listed && !ctx.state) {                          // first visit: the museum list takes a moment
-        S.loading = true; renderList();
-        later(function () { S.loading = false; renderList(); }, 700);
-      }
-      S.listed = true;
-      /* PROTO: demo state */ if (ctx.state === 'classic-nsfw') later(function () { var n = $('#cls-nsfw', root); if (n) n.scrollIntoView({ block: 'end' }); }, 30);
-      var drop = $('#drop-overlay');
-      /* PROTO: demo state */ if (ctx.state === 'classic-drop') {
-        $('.drop-overlay__label', drop).textContent = 'Drop .wsz to apply skin';
-        drop.hidden = false; drop.classList.add('is-on');
-      }
-      if (pendingFile) { var f = pendingFile; pendingFile = null; applyLocal(f); }
-
-      ctx.onCleanup(function () {
-        document.removeEventListener('keydown', onKey, true);
-        window.removeEventListener('resize', onResize);
-        offPlayer();
-        timers.forEach(clearTimeout); timers = [];
-        clearInterval(previewTimer); clearTimeout(searchTimer); S.searching = false;
-        S.busy = null; S.loading = false;               // a half-done download is dropped, not left spinning
-        if (S.preview) endPreview(false, true);         // leaving mid-preview keeps the applied skin
-        /* PROTO: demo state */ if (ctx.state === 'classic-drop') { drop.classList.remove('is-on'); drop.hidden = true; }
-        App.closePopover();
-        root.remove(); root = null; closedAt = Date.now();
-        document.documentElement.removeAttribute('data-classic');
-        $('#app').removeAttribute('inert'); $('#app').removeAttribute('aria-hidden');
-      });
+      if (!root) openStage();
+      /* a re-render of /classic (a read behind the stage settled) keeps the stage; leaving closes it */
+      ctx.onCleanup(function () { if (!onClassic()) closeStage(); });
     }
   });
 })();

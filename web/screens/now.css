@@ -194,8 +194,6 @@
 .now-ly__line:hover { background: var(--bg-2); color: var(--fg); }
 .now-ly__line.is-far { cursor: not-allowed; }
 .now-ly__line.is-current { color: var(--fg); font-weight: 800; font-size: calc(var(--ly-size) + .25rem); line-height: 1.35; box-shadow: inset 3px 0 0 var(--heart); border-radius: 4px 12px 12px 4px; }
-.now-ly__w { border-radius: 4px; padding: 1px 0; -webkit-box-decoration-break: clone; box-decoration-break: clone; transition: background-color var(--dur-1); }
-.now-ly__line.is-current .now-ly__w.is-sung { background: var(--rsn-bg); }
 .now-ly__line.is-denied { animation: knob-shake 120ms linear 2; }
 :root[data-motion="reduce"] .now-ly__line.is-denied { outline: 2px solid var(--focus); outline-offset: -2px; }
 @media (prefers-reduced-motion: reduce) { :root:not([data-motion="full"]) .now-ly__line.is-denied { outline: 2px solid var(--focus); outline-offset: -2px; } }

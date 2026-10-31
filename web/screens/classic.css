@@ -1,5 +1,4 @@
-/* screens/classic.css: Classic mode stage, Webamp slot placeholder, skin drawer.
-   Semantic tokens only; skin thumbnails read --sk1..3, set inline from each skin's palette (data, not theme). */
+/* screens/classic.css: Classic mode stage, the Webamp slot, skin drawer. Semantic tokens only. */
 
 /* ---------- stage: full viewport over the app, which shows through at 30% (solid scrim, no blur) ---------- */
 .cls-root {
@@ -8,7 +7,6 @@
 }
 .cls-root.is-on { opacity: 1; }
 .cls-root:focus { outline: none; }                           /* the dialog container; its controls keep their rings */
-.cls-root.is-quick { transition: none; }
 .cls-root.is-leaving { opacity: 0; transition-duration: var(--dur-2); transition-timing-function: var(--ease-in-out); }
 .cls-scrim { position: absolute; inset: 0; background: var(--bg); opacity: .7; }
 
@@ -20,12 +18,12 @@
 .cls-root[data-drawer="closed"] .cls-crt { grid-template: "bar" auto "desk" minmax(0, 1fr) "foot" auto / minmax(0, 1fr); }
 
 /* CRT power-on: vertical scale .02 -> 1 in 300 ms with one bright line; reduced motion keeps only the root fade */
-.cls-root.is-on:not(.is-quick) .cls-crt { animation: cls-crt 300ms var(--ease-out) both; }
+.cls-root.is-on .cls-crt { animation: cls-crt 300ms var(--ease-out) both; }
 .cls-crt-line {
   position: absolute; left: 8%; right: 8%; top: 50%; height: 2px; margin-top: -1px; border-radius: 1px;
   background: var(--star); opacity: 0; pointer-events: none;
 }
-.cls-root.is-on:not(.is-quick) .cls-crt-line { animation: cls-line 360ms var(--ease-out) both; }
+.cls-root.is-on .cls-crt-line { animation: cls-line 360ms var(--ease-out) both; }
 @keyframes cls-crt { from { transform: scaleY(.02); } to { transform: none; } }
 @keyframes cls-line { 0% { opacity: 1; transform: scaleX(.3); } 45% { opacity: 1; transform: none; } 100% { opacity: 0; transform: none; } }
 
@@ -37,70 +35,20 @@
 
 /* ---------- desk + Webamp slot ---------- */
 .cls-desk { grid-area: desk; position: relative; min-height: 0; display: grid; }
-/* #webamp-stage: Webamp's renderInto host. It must be positioned (relative) and it clips nothing:
-   Webamp windows are draggable anywhere inside it. */
+/* #webamp-stage: Webamp's renderInto host. It must be positioned and it clips nothing: Webamp windows are draggable
+   anywhere inside it. isolation keeps Webamp's own z-indexes inside the stage, under the status boxes and the drawer. */
 .cls-slot {
-  position: relative; min-height: 0; display: grid; place-items: center; padding: var(--sp-12) var(--sp-4);
-  border: var(--stroke) dashed var(--edge); border-radius: var(--r-card); overflow: hidden;
+  position: relative; min-height: 0; isolation: isolate;
+  border: var(--stroke) dashed var(--edge); border-radius: var(--r-card);
 }
-.cls-slot__tag {
-  position: absolute; left: 12px; top: 12px; display: inline-flex; align-items: center; gap: 6px;
-  padding: 4px 12px; border: var(--stroke-thin) solid var(--line); border-radius: var(--r-pill); font: var(--t-micro);
-}
-.cls-slot__tag--drop { left: auto; right: 12px; }
-.cls-ghost { display: grid; justify-items: start; gap: var(--sp-3); }
-.cls-ghost__body { display: grid; grid-template-columns: 275px auto; gap: var(--sp-3); }
-.cls-shot--ghost { width: 275px; border-radius: 4px; outline: var(--stroke) solid var(--line); }   /* 1x, like Webamp */
-.cls-ghost__legend { display: grid; grid-template-rows: repeat(3, minmax(0, 1fr)); align-items: center; justify-items: start; }
-.cls-ghost__tag {
-  position: relative; display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap;
-  padding: 3px 8px; border: var(--stroke-thin) solid var(--line); border-radius: var(--r-chip); font: var(--t-micro);
-}
-.cls-ghost__tag::before {                                   /* leader line back to its window */
-  content: ""; position: absolute; right: 100%; top: 50%; width: var(--sp-3); border-top: var(--stroke-thin) dashed var(--edge);
-}
-.cls-ghost__tag b { font: var(--t-px); letter-spacing: var(--t-px-track); font-weight: 400; }
-.cls-ghost__cap {
-  display: grid; gap: 2px; width: 275px; margin: 0 0 5px; padding: var(--sp-2) var(--sp-3);
-  border: var(--stroke) solid var(--line); border-radius: var(--r-input); box-shadow: var(--stack-1l); font: var(--t-meta);
-}
-.cls-ghost__skin { font-weight: 800; color: var(--fg); }
-.cls-ghost__skin em { font-weight: 700; color: var(--fg-2); }
+.cls-desk__status { display: contents; }                     /* its boxes position against the desk */
 
-/* skin picture: real app = <img src=screenshot_url> (275 x 348: main, equalizer, playlist stacked) */
-.cls-shot {
-  display: grid; grid-template-rows: repeat(3, minmax(0, 1fr)); aspect-ratio: 275 / 348; overflow: hidden;
-  background: var(--sk3, var(--ink)); image-rendering: pixelated;
-}
-.cls-shot__win { position: relative; display: block; border: 1px solid var(--sk3, var(--ink)); background-color: var(--sk1, var(--lav)); }
-.cls-shot__win::before {                                     /* title bar: 1 px stripes, the pixel-skin texture */
-  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 12%;
-  background: repeating-linear-gradient(180deg, var(--sk2, var(--lilac)) 0 1px, var(--sk1, var(--lav)) 1px 2px);
-}
-.cls-shot__win--main {
-  background:
-    linear-gradient(var(--sk3, var(--ink)), var(--sk3, var(--ink))) 5% 38% / 38% 44% no-repeat,                      /* display */
-    linear-gradient(var(--sk2, var(--lilac)), var(--sk2, var(--lilac))) 94% 26% / 46% 9% no-repeat,                      /* song ticker */
-    linear-gradient(var(--sk3, var(--ink)), var(--sk3, var(--ink))) 94% 46% / 46% 6% no-repeat,                      /* volume, balance */
-    linear-gradient(var(--sk2, var(--lilac)), var(--sk2, var(--lilac))) 50% 74% / 90% 5% no-repeat,                      /* seek */
-    repeating-linear-gradient(90deg, var(--sk3, var(--ink)) 0 15%, transparent 15% 20%) 5% 93% / 52% 11% no-repeat,  /* buttons */
-    var(--sk1, var(--lav));
-}
-.cls-shot__win--eq {
-  background:
-    repeating-linear-gradient(90deg, var(--sk3, var(--ink)) 0 4%, transparent 4% 9.5%) 50% 74% / 86% 50% no-repeat,  /* sliders */
-    linear-gradient(var(--sk2, var(--lilac)), var(--sk2, var(--lilac))) 50% 34% / 86% 5% no-repeat,                      /* response line */
-    var(--sk1, var(--lav));
-}
-.cls-shot__win--pl {
-  background:
-    linear-gradient(var(--sk2, var(--lilac)), var(--sk2, var(--lilac))) 10% 26% / 74% 9% no-repeat,                      /* playing row */
-    repeating-linear-gradient(180deg, var(--sk3, var(--ink)) 0 9%, transparent 9% 18%) 10% 72% / 74% 54% no-repeat,  /* rows */
-    linear-gradient(var(--sk3, var(--ink)), var(--sk3, var(--ink))) 94% 55% / 5% 66% no-repeat,                      /* scrollbar */
-    var(--sk1, var(--lav));
-}
+/* skin picture: the museum screenshot (275 x 348: main, equalizer, playlist stacked), pixels kept sharp */
+.cls-shot { display: block; aspect-ratio: 275 / 348; overflow: hidden; background: var(--bg-2); image-rendering: pixelated; }
+.cls-shot img { display: block; width: 100%; height: 100%; }
+.cls-shot--blank { display: grid; place-items: center; color: var(--fg-2); }   /* a local file has no screenshot */
 
-/* applying / failed sit at the bottom of the slot; fixed boxes, so nothing shifts */
+/* starting / applying / failed sit at the bottom of the stage; fixed boxes, so nothing shifts */
 .cls-busy, .cls-failed {
   position: absolute; left: 50%; bottom: var(--sp-6); transform: translateX(-50%); width: min(440px, calc(100% - 32px));
   box-shadow: var(--stack-sm);
@@ -158,6 +106,8 @@
 
 .cls-meta { display: flex; align-items: center; gap: var(--sp-2); margin: var(--sp-1) 0 var(--sp-3); font: var(--t-micro); color: var(--fg-2); }
 .cls-note { margin-bottom: var(--sp-3); font-size: .875rem; }
+.cls-more { display: flex; justify-content: center; margin-top: var(--sp-4); }
+.cls-grid + .cls-note { margin: var(--sp-4) 0 0; }           /* a page that didn't load, under the ones that did */
 .cls-nsfw { display: flex; align-items: flex-start; gap: var(--sp-2); margin: var(--sp-5) 0 0; font: var(--t-micro); color: var(--fg-2); }
 .cls-nsfw .ic { flex: none; margin-top: 1px; }
 .cls-nsfw a { color: var(--link); text-decoration: underline; text-underline-offset: 3px; }
@@ -210,11 +160,6 @@
 }
 @media (max-width: 639px) {
   .cls-crt { gap: var(--sp-3); padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
-  .cls-slot { padding: var(--sp-12) var(--sp-2) var(--sp-4); align-items: start; }
-  .cls-shot--ghost { aspect-ratio: 275 / 232; grid-template-rows: repeat(2, minmax(0, 1fr)); }   /* equalizer closed on phones */
-  .cls-shot--ghost .cls-shot__win--eq { display: none; }
-  .cls-ghost__legend, .cls-slot__tag--drop { display: none; }
-  .cls-ghost__body { grid-template-columns: 275px; }
   .cls-foot { flex-direction: column; }
   .cls-notice { padding-right: 8px; }
   .cls-notice p { font-size: .8125rem; }

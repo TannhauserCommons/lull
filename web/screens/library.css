@@ -55,6 +55,10 @@
 .lib-tile--pl.is-drop-target { outline-offset: 6px; border-radius: var(--r-art); }
 .lib .shelf { padding-bottom: var(--sp-4); }
 
+/* loading: tile skeletons laid out like the grid they stand in for; the hero's cover slot */
+.lib-skel-grid .skel-group { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--sp-6) var(--sp-5); }
+.lib-hero > .skel--cover { width: var(--lib-art); }
+
 /* "new playlist" tile: dashed slot the size of a cover */
 .lib-newtile { display: grid; gap: 2px; align-content: start; text-align: left; color: var(--fg); }
 .lib-newtile__box {
@@ -112,6 +116,7 @@
 .lib-status p { flex: 1; font: var(--t-meta); }
 .lib-status .sg { width: 16px; height: 16px; }
 .lib-day + .lib-day { margin-top: var(--sp-5); }
+.lib-more { display: flex; justify-content: center; margin-top: var(--sp-5); }
 .lib-history .trow { grid-template-columns: 48px var(--art) minmax(0, 1fr) auto auto 52px 40px; }
 .lib-history .trow__num { font-size: .8125rem; }
 .lib-history .scrobble { order: -1; margin-right: var(--sp-2); }
@@ -205,14 +210,6 @@ button.lib-th:hover { color: var(--fg); background: var(--bg-2); }
 /* ---------- dialogs: edit, export, import ---------- */
 .lib-form { display: grid; gap: var(--sp-4); }
 .lib-textarea { height: auto; min-height: 88px; padding: var(--sp-3) var(--sp-4); line-height: 1.45; resize: vertical; }
-.lib-choice { border: 0; padding: 0; margin: 0; display: grid; gap: var(--sp-2); }
-.lib-choice legend { margin-bottom: var(--sp-2); }
-.lib-choice__opt { display: flex; gap: var(--sp-3); align-items: flex-start; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-input); border: var(--stroke) solid var(--divider); cursor: pointer; }
-.lib-choice__opt:hover { background: var(--bg-2); }
-.lib-choice__opt:has(input:checked) { border-color: var(--line); background: var(--bg-2); }
-.lib-choice__opt input { width: 18px; height: 18px; margin-top: 3px; accent-color: var(--focus); flex: none; }
-.lib-choice__opt > span { display: grid; gap: 2px; font: var(--t-meta); }
-.lib-choice__opt b { font: 800 1rem/1.3 var(--f-ui); }
 .lib-m3u {
   margin: 0; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-input); background: var(--bg-2);
   font: 600 .8125rem/1.6 var(--f-ui); font-variant-numeric: tabular-nums; color: var(--fg-2); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto;
@@ -270,7 +267,7 @@ button.lib-th:hover { color: var(--fg); background: var(--bg-2); }
   .lib-pl__bar [data-act="lib-pl-edit"], .lib-pl__bar [data-act="lib-pl-export"] { display: none; }   /* both are in the more menu */
   .lib-pl__bar .btn-save { padding: 0 12px; }
   .lib-pl__bar .btn-save span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-  .lib-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-5) var(--sp-4); }
+  .lib-grid, .lib-skel-grid .skel-group { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-5) var(--sp-4); }
   .lib-tags { grid-template-columns: minmax(0, 1fr); }
   .lib-legend { display: none; }
   .lib-listhead { align-items: flex-start; flex-direction: column; gap: var(--sp-3); }

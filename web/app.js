@@ -1,14 +1,15 @@
-/* lull prototype core: one global `App` namespace, no modules, no framework.
+/* lull core: one global `App` namespace, no modules, no framework.
    Sections: 1 utilities + html template, 2 events + store, 3 preferences (theme/motion/text size/design),
-   4 router + states, 5 render helpers (App.ui), 6 overlays (sheet, dialog, popover, menu, tooltip,
+   4 router, 5 render helpers (App.ui), 6 overlays (sheet, dialog, popover, menu, tooltip,
    toast, banner), 7 save pipeline, 8 player engine, 9 live bindings (seek bars, waveforms, rows),
    10 shell (rail, header, tray, context panel, player bar, mini-player), 11 actions, 12 keyboard,
-   13 media session, 14 drag and drop, 15 boot.
-   The API used by screens is documented in DESIGN.md section 7 (package root). Prototype-only code is marked PROTO. */
+   13 media session, 14 drag and drop, 15 server events and boot.
+   The API used by screens is design/DESIGN.md section 7; the data layer and player engine are in
+   docs/context/web.md. Data comes from data.js (App.data). */
 (function () {
   'use strict';
   var App = window.App = {};
-  var M = window.MOCK;
+  var M = window.LullData;
 
   /* =====================================================================
      1. Utilities + html tagged template
@@ -42,8 +43,13 @@
     return (estimated ? '~' : '') + Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
   }
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  function fmtDate(iso, withYear) {
-    var p = String(iso).split('-');
+  /* an ISO date as precise as known ("2026", "2026-10", "2026-10-29") or unix seconds -> "Oct 29, 2026" */
+  function fmtDate(when, withYear) {
+    if (when == null || when === '') return '';
+    if (typeof when === 'number') when = new Date(when * 1000).toISOString().slice(0, 10);
+    var p = String(when).split('-');
+    if (!p[1]) return p[0];
+    if (!p[2]) return MONTHS[+p[1] - 1] + ' ' + p[0];
     return MONTHS[+p[1] - 1] + ' ' + (+p[2]) + (withYear ? ', ' + p[0] : '');
   }
   function fmtLength(sec) {                 // "48 min" / "1 h 12 min"
@@ -86,7 +92,7 @@
   }
   /* album facts: "Tracks: 8  Duration: 00:36:12  Size: 250 MB" */
   function albumLine(a) {
-    return a ? 'Tracks: ' + a.trackIds.length + '  Duration: ' + fmtClock(a.duration) + '  Size: ' + fmtSize(a.sizeMB) : '';
+    return a ? 'Tracks: ' + a.trackIds.length + '  Duration: ' + fmtClock(a.duration) + (a.sizeMB ? '  Size: ' + fmtSize(a.sizeMB) : '') : '';
   }
   App.fmt = { time: fmtTime, date: fmtDate, length: fmtLength, size: fmtSize, clock: fmtClock, formatLine: formatLine, albumLine: albumLine };
   App.storage = storage; App.data = M; App.clamp = clamp; App.uid = nextId;
@@ -105,21 +111,24 @@
     });
   };
 
-  var likedInit = {}; M.tracks.forEach(function (t) { if (t.liked) likedInit[t.id] = true; });
-  var followedInit = {};
-  M.artists.forEach(function (a) { if (a.followed) followedInit[a.id] = true; });
-  M.tags.forEach(function (t) { if (t.followed) followedInit[t.id] = true; });
-
+  /* the four services the tray shows; /health and `service` events fill them in (state off = not reported) */
+  var SERVICE_LABELS = { soulseek: 'soulseek', jellyfin: 'jellyfin', lastfm: 'last.fm', cache: 'cache' };
+  function serviceDefaults() {
+    var s = {};
+    Object.keys(SERVICE_LABELS).forEach(function (k) { s[k] = { state: 'off', label: SERVICE_LABELS[k], detail: 'Waiting for the server' }; });
+    return s;
+  }
   var state = {
-    liked: likedInit,              // { trackId: true }
-    followed: followedInit,        // { artistId | tagId: true }
-    saves: {},                     // { trackId: { step 1-5, status: saving|saved|failed|pending, pct, error } }
-    services: JSON.parse(JSON.stringify(M.services)),
-    activity: JSON.parse(JSON.stringify(M.activity)),
-    playlists: JSON.parse(JSON.stringify(M.playlists)),
-    recentSearches: M.recentSearches.slice(),
+    liked: {},                     // { trackId: true }            GET /api/likes
+    followed: {},                  // { artistId | tagId: true }   GET /api/follows
+    saves: {},                     // { trackId: { step 1-5, status: saving|saved|failed|pending, pct, error, jobId } }
+    services: serviceDefaults(),   // GET /health + `service` events
+    activity: [],                  // GET /api/jobs + `job` / `transfer` events
+    playlists: [],                 // GET /api/playlists
+    recentSearches: storage('recentSearches') || [],   // this device only
     hiddenArtists: {},
-    ctxTab: 'queue'
+    ctxTab: 'queue',
+    crossfadeSec: 0
   };
   /* App.store: get(key), set(key, value) or set({ key: value }), update(key, fn), subscribe(fn(keys)) -> unsubscribe */
   App.store = {
@@ -127,6 +136,8 @@
     set: function (key, value) {
       var patch = typeof key === 'object' ? key : {}; if (typeof key === 'string') patch[key] = value;
       Object.keys(patch).forEach(function (k) { state[k] = patch[k]; });
+      if ('recentSearches' in patch) storage('recentSearches', state.recentSearches);
+      if ('playlists' in patch) M.playlists = state.playlists;
       App.emit('store', Object.keys(patch));
     },
     update: function (key, fn) { var v = fn(state[key]); App.store.set(key, v === undefined ? state[key] : v); },
@@ -141,21 +152,38 @@
     if (s) return s.status === 'saved';
     var t = M.track(id); return !!(t && t.saved);
   };
+  /* likes and follows change at once and are sent to the server; a refusal puts them back and says why */
   App.toggleLike = function (id, force) {
     var on = force === undefined ? !state.liked[id] : !!force;
-    App.store.update('liked', function (l) { if (on) l[id] = true; else delete l[id]; });
-    var t = M.track(id);
+    setLiked([id], on);
     App.toast(on ? 'Added to Liked songs' : 'Removed from Liked songs', {
       icon: on ? 'heart-fill' : 'heart', action: 'Undo', onAction: function () { App.toggleLike(id, !on); }, quiet: true
     });
-    App.emit('like', { id: id, liked: on, track: t });
   };
-  App.toggleFollow = function (id) {
-    var on = !state.followed[id];
-    App.store.update('followed', function (f) { if (on) f[id] = true; else delete f[id]; });
+  /* setLiked(ids, on): many at once (album and selection actions) */
+  function setLiked(ids, on) {
+    App.store.update('liked', function (l) { ids.forEach(function (id) { if (on) l[id] = true; else delete l[id]; }); });
+    ids.forEach(function (id) { App.emit('like', { id: id, liked: on, track: M.track(id) }); });
+    Promise.all(ids.map(function (id) {
+      return M.api('/api/likes/' + encodeURIComponent(id), { method: on ? 'PUT' : 'DELETE' });
+    })).catch(function (err) {
+      App.store.update('liked', function (l) { ids.forEach(function (id) { if (on) delete l[id]; else l[id] = true; }); });
+      ids.forEach(function (id) { App.emit('like', { id: id, liked: !on, track: M.track(id) }); });
+      App.toast('Couldn\'t ' + (on ? 'like' : 'unlike') + ': ' + err.message, { kind: 'error' });
+    });
+  }
+  App.setLiked = setLiked;
+  App.toggleFollow = function (id, force) {
+    var on = force === undefined ? !state.followed[id] : !!force, kind = /^ar-/.test(id) ? 'artist' : 'tag';
     var a = M.artist(id), name = a ? a.name : id;
-    App.toast(on ? 'Following ' + name : 'Unfollowed ' + name, { icon: 'follow', action: 'Undo', onAction: function () { App.toggleFollow(id); } });
+    App.store.update('followed', function (f) { if (on) f[id] = true; else delete f[id]; });
     App.emit('follow', { id: id, followed: on });
+    App.toast(on ? 'Following ' + name : 'Unfollowed ' + name, { icon: 'follow', action: 'Undo', onAction: function () { App.toggleFollow(id, !on); } });
+    M.api('/api/follows/' + kind + '/' + encodeURIComponent(id), { method: on ? 'PUT' : 'DELETE' }).catch(function (err) {
+      App.store.update('followed', function (f) { if (on) delete f[id]; else f[id] = true; });
+      App.emit('follow', { id: id, followed: !on });
+      App.toast('Couldn\'t ' + (on ? 'follow ' : 'unfollow ') + name + ': ' + err.message, { kind: 'error' });
+    });
   };
 
   /* =====================================================================
@@ -222,16 +250,15 @@
   };
 
   /* =====================================================================
-     4. Router + states
+     4. Router
      ===================================================================== */
   var routes = [];
-  App.states = {};           // { screenKey: [{ id, label, route, apply? }] }
-  App.current = { path: '/home', params: {}, query: {}, state: null, route: null };
+  App.current = { path: '/home', params: {}, query: {}, route: null };
   var cleanups = [];
 
   /* App.route('/album/:id', render, opts) or App.route(pattern, { render, mount, title, nav, view }).
      render(ctx) returns markup (Safe or string); mount(ctx) runs after it is in the DOM.
-     ctx = { params, query, state, el (the view), onCleanup(fn) }. ':name?' marks an optional segment. */
+     ctx = { params, query, el (the view), onCleanup(fn) }. ':name?' marks an optional segment. */
   App.route = function (pattern, render, opts) {
     var def = typeof render === 'function' ? Object.assign({ render: render }, opts || {}) : render;
     var keys = [];
@@ -241,12 +268,6 @@
     def.pattern = pattern; def.re = re; def.keys = keys;
     routes = routes.filter(function (r) { return r.pattern !== pattern; });
     routes.push(def);
-  };
-  App.registerStates = function (key, list) { App.states[key] = list; App.emit('states', key); };
-  App.findState = function (id) {
-    var found = null;
-    Object.keys(App.states).forEach(function (k) { App.states[k].forEach(function (s) { if (s.id === id) found = s; }); });
-    return found;
   };
   function parseHash() {
     var h = location.hash.replace(/^#/, '') || '/home';
@@ -273,17 +294,16 @@
       var m = routes[i].re.exec(loc.path);
       if (m) { route = routes[i]; route.keys.forEach(function (k, j) { if (m[j + 1] !== undefined) params[k] = decodeURIComponent(m[j + 1]); }); break; }
     }
-    // global flags (not persisted): theme, motion, design, state
+    // global flags (not persisted): theme, motion, design
     if (loc.query.theme || loc.query.motion) { applyFlags(loc.query); applyPrefs(prefs); }
     if (!isRefresh && loc.query.design && loc.query.design !== Designs.current && Designs.valid(loc.query.design)) App.setDesign(loc.query.design, true);
-    var st = loc.query.state ? App.findState(loc.query.state) : null;
+    if (!isRefresh) M.nextRoute();                    // reads made by the previous route stop re-rendering
 
     cleanups.forEach(function (fn) { try { fn(); } catch (e) { console.error(e); } }); cleanups = [];
     var view = $('#view');
-    var ctx = { params: params, query: loc.query, state: loc.query.state || null, el: view, route: route,
+    var ctx = { params: params, query: loc.query, el: view, route: route,
       onCleanup: function (fn) { cleanups.push(fn); } };
-    App.current = { path: loc.path, params: params, query: loc.query, state: ctx.state, route: route };
-    if (st && st.apply && !isRefresh) { try { st.apply(ctx); } catch (e) { console.error('state apply', e); } }
+    App.current = { path: loc.path, params: params, query: loc.query, route: route };
 
     var markup;
     if (!route) markup = notFound(loc.path);
@@ -323,6 +343,12 @@
       text: 'The address ' + path + ' does not match a screen. Head home and pick something to play.',
       action: { label: 'Go home', href: '#/home' } })}</div>`;
   }
+  /* the honest error card for a read that failed (M.get(...).error): the server's own sentence + retry */
+  App.errorCard = function (err, o) {
+    o = o || {};
+    return html`<div class="card" ${o.label ? raw('aria-label="' + esc(o.label) + '"') : ''}>${App.ui.emptyState({ art: o.art || 'star',
+      title: o.title || 'Couldn\'t load this', text: err && err.message || String(err), action: { label: 'Try again', act: 'reload-read', id: o.path || '' } })}</div>`;
+  };
   function renderError(e) {
     return html`<div class="card" style="max-width:640px">${App.ui.emptyState({ art: 'star', title: 'This screen hit a snag',
       text: String(e && e.message || e), action: { label: 'Reload', act: 'reload' } })}</div>`;
@@ -347,8 +373,25 @@
       round: !!opts.round, label: opts.label || '' };
     return raw(String(App.slot('coverArt', c, coverMarkup)));
   };
-  /* default coverArt slot: one span; the .c1-.c8 recipe draws the art in CSS */
-  function coverMarkup(c) { return '<span class="' + c.cls + '" style="--cover-size-base:' + c.size + '"' + c.attrs + '></span>'; }
+  /* default coverArt slot: one span; the .c1-.c8 recipe draws the art in CSS until (and unless) the real cover
+     loads: <img class="cover__img"> from /api/art, and .has-art on the span once it has (see the load listener) */
+  function coverMarkup(c) {
+    return '<span class="' + c.cls + '" style="--cover-size-base:' + c.size + '"' + c.attrs + '>' + artImg(c.key, c.size) + '</span>';
+  }
+  var artMissing = {};          // albums whose art 404'd this session: not asked for again
+  function artImg(key, size) {
+    if (!/^al-/.test(key) || artMissing[key]) return '';
+    var px = parseInt(size, 10), want = /%$/.test(size) || !px ? 256 : px <= 96 ? 96 : px <= 256 ? 256 : 512;
+    return '<img class="cover__img" loading="lazy" decoding="async" alt="" data-art="' + esc(key) + '" src="' + esc(App.artUrl(key, want)) + '">';
+  }
+  App.artUrl = function (albumId, size) { return M.url('/api/art/' + encodeURIComponent(albumId) + '?size=' + size); };
+  document.addEventListener('load', function (e) {
+    var img = e.target; if (img.tagName === 'IMG' && img.classList.contains('cover__img')) img.parentNode.classList.add('has-art');
+  }, true);
+  document.addEventListener('error', function (e) {
+    var img = e.target; if (img.tagName !== 'IMG' || !img.classList.contains('cover__img')) return;
+    artMissing[img.getAttribute('data-art')] = true; img.remove();
+  }, true);
   /* 2x2 mosaic of the first four distinct album covers (playlists) */
   ui.mosaic = function (trackIds, size, label) {
     var seen = {}, keys = [];
@@ -358,7 +401,7 @@
     return raw('<span class="mosaic" style="--cover-size-base:' + px + '"' + (label ? ' role="img" aria-label="' + esc(label) + '"' : ' aria-hidden="true"') + '>' +
       keys.map(function (k) {
         var c = { key: k, recipe: App.coverClass(k), size: '100%', cls: 'cover ' + App.coverClass(k), attrs: '', round: false, label: '', mosaic: true };
-        return String(App.slot('coverArt', c, function (x) { return '<span class="' + x.cls + '"></span>'; }));
+        return String(App.slot('coverArt', c, function (x) { return '<span class="' + x.cls + '">' + artImg(x.key, '100%') + '</span>'; }));
       }).join('') + '</span>');
   };
 
@@ -381,9 +424,10 @@
   ui.newBadge = function () { return html`<span class="badge-new">new</span>`; };
   ui.countBadge = function (n, label) { return html`<span class="badge-count" ${label ? raw('aria-label="' + esc(label) + '"') : ''}>${n}</span>`; };
   ui.keycap = function (k) { return html`<kbd class="kbd">${k}</kbd>`; };
+  /* ok | warn | down | off (not set up: drawn as down's shape in the quiet colour) */
   ui.statusGlyph = function (st, label) {
     var name = st === 'ok' ? 'status-ok' : st === 'warn' ? 'status-warn' : 'status-down';
-    return raw(window.icon(name, label, 'sg sg--' + (st === 'ok' ? 'ok' : st === 'warn' ? 'warn' : 'down')));
+    return raw(window.icon(name, label, 'sg sg--' + (st === 'ok' || st === 'warn' || st === 'off' ? st : 'down')));
   };
   ui.dupNote = function () { return html`<span class="dup-note">${icon('link')}matches a saved song</span>`; };
   ui.dupBetter = function () { return html`<span class="dup-better">${icon('arrow-up')}better than saved</span>`; };
@@ -473,12 +517,14 @@
       </div>
       <div class="trow__album"><a href="#/album/${track.albumId}" tabindex="-1">${track.album}</a></div>
       ${opts.added ? html`<div class="trow__added">${fmtDate(opts.added, true)}</div>` : ''}
-      <div class="trow__badges">${opts.badges || ''}${opts.dup === 'better' ? ui.dupBetter() : opts.dup ? ui.dupNote() : ''}${ui.sourceBadge(track)}${ui.qualityChip(track.format)}${opts.showSources ? html`<button class="trow__sources" data-act="show-sources" data-id="${track.id}" tabindex="-1" aria-label="${track.sources.length} sources for ${track.title}. Pick a source" data-tip="Pick a source">${track.sources.length} sources</button>` : ''}</div>
+      <div class="trow__badges">${opts.badges || ''}${opts.dup === 'better' ? ui.dupBetter() : opts.dup ? ui.dupNote() : ''}${ui.sourceBadge(track)}${track.format ? ui.qualityChip(track.format) : ''}${opts.showSources && sourceCount(track) ? html`<button class="trow__sources" data-act="show-sources" data-id="${track.id}" tabindex="-1" aria-label="${sourceCount(track)} sources for ${track.title}. Pick a source" data-tip="Pick a source">${sourceCount(track)} sources</button>` : ''}</div>
       <div class="trow__like">${ui.likeButton(track.id)}</div>
       <div class="trow__dur">${fmtTime(track.duration)}</div>
       <div class="trow__more">${opts.actions === false ? '' : html`<button class="btn-icon btn-icon--bare" data-act="track-menu" data-id="${track.id}" aria-haspopup="menu" aria-label="More actions for ${track.title}" data-tip="More">${icon('more')}</button>`}</div>
     </li>`;
   };
+  /* how many peers offer a track: a search result's count, or the length of a fetched source list */
+  function sourceCount(t) { return typeof t.sources === 'number' ? t.sources : t.sources ? t.sources.length : 0; }
   /* list wrapper: data-ids gives play-track its context (the rest of the list becomes the queue) */
   ui.trackList = function (tracks, opts) {
     opts = opts || {};
@@ -496,7 +542,7 @@
         <button class="tile__play" data-act="play-album" data-id="${album.id}" aria-label="Play ${album.title}" data-tip="Play">${icon('play')}</button></div>
       <div class="tile__title"><a href="#/album/${album.id}">${album.title}</a></div>
       <div class="tile__by"><a href="#/artist/${album.artistId}">${album.artist}</a></div>
-      <div class="tile__meta">${album.isNew && opts.showNew !== false ? ui.newBadge() : ''}<span>${album.type.toLowerCase()}, ${fmtDate(album.released)}</span></div>
+      <div class="tile__meta">${album.isNew && opts.showNew !== false ? ui.newBadge() : ''}<span>${album.type.toLowerCase()}${album.released ? ', ' + fmtDate(album.released) : ''}</span></div>
     </div>`;
   };
 
@@ -669,7 +715,7 @@
       <div class="sheet__body">${o.body || ''}</div>
       ${o.foot ? html`<footer class="sheet__foot">${o.foot}</footer>` : ''}`);
     host.appendChild(scrim); host.appendChild(el);
-    var layer = { kind: kind, el: el, scrim: scrim, opener: opener, onClose: o.onClose };
+    var layer = { kind: kind, el: el, scrim: scrim, opener: opener, onClose: o.onClose, dismissible: o.dismissible !== false };
     layer.close = function (silent) {
       if (layer.closed) return; layer.closed = true;
       layers = layers.filter(function (l) { return l !== layer; });
@@ -692,6 +738,8 @@
   App.openSheet = function (o) { return openLayer('sheet', o); };
   App.openDialog = function (o) { return openLayer('dialog', o); };
   App.closeTop = function () { var l = layers[layers.length - 1]; if (l) { l.close(); return true; } return false; };
+  /* Esc: the top layer unless it must stay (the token gate); true when Esc was used up */
+  function escapeTop() { var l = layers[layers.length - 1]; if (!l) return false; if (l.dismissible) l.close(); return true; }
   /* confirm dialog: App.confirm({ title, text, confirm: 'Delete', danger: true }).then-style callback */
   App.confirm = function (o, onYes) {
     var d = App.openDialog({ title: o.title, body: html`<p class="prose">${o.text}</p>`,
@@ -888,8 +936,8 @@
   });
 
   /* =====================================================================
-     7. Save pipeline (5 steps, simulated): App.saves.start(ids), retry(id), get(id)
-        PROTO: mock engine. Keep the App.saves API and the 'save' events; replace the timer with real save jobs.
+     7. Save pipeline: App.saves.start(ids), retry(id), get(id), set(id, record)
+        POST /api/saves starts one job per track; `save` events carry each step (docs/context/api.md).
      ===================================================================== */
   App.hooks = {
     /* screens may replace any hook; defaults keep every control working */
@@ -900,151 +948,290 @@
     addToPlaylist: function (ids, anchor) { defaultAddToPlaylist(ids, anchor); },
     shortcuts: function () { defaultShortcutsDialog(); },
     palette: function () { var s = $('#header-search'); if (s && s.offsetParent) s.focus(); else App.go('/search'); },
-    importFile: function (file) { App.toast('Opened ' + file.name + ' for import', { icon: 'import' }); App.go('/playlists'); },
-    moreSheet: function () { defaultMoreSheet(); }
+    importFile: function (file) { App.toast('Only M3U playlists can be dropped here, not ' + file.name, { kind: 'error' }); },
+    moreSheet: function () { defaultMoreSheet(); },
+    /* media keys / lock screen target: null = App.player; Classic mode sets { play, pause, prev, next, seek, seekBy } */
+    media: null
   };
+  var SAVE_STATUS = { running: 'saving', done: 'saved', failed: 'failed', pending: 'pending' };
   App.saves = {
     get: function (id) { return state.saves[id]; },
-    start: function (ids) {
-      ids = [].concat(ids).filter(function (id) { return !App.isSaved(id) && !(state.saves[id] && state.saves[id].status === 'saving'); });
+    /* opts: { mode: 'separate'|'replace' (duplicate dialog: a saved song may be saved again), source: { trackId: { peer, path } } } */
+    start: function (ids, opts) {
+      opts = opts || {};
+      ids = [].concat(ids).filter(function (id) { return (opts.mode || !App.isSaved(id)) && !(state.saves[id] && state.saves[id].status === 'saving'); });
       if (!ids.length) { App.toast('Already in your library', { icon: 'saved' }); return; }
-      App.hooks.beforeSave(ids, function (ok) {
-        (ok || ids).forEach(function (id) { setSave(id, { step: 1, status: 'saving', pct: 0 }); });
-        if ((ok || ids).length > 1) App.toast('Saving ' + (ok || ids).length + ' songs to your library', { icon: 'save' });
-      });
+      App.hooks.beforeSave(ids, function (ok, o) { startSaves(ok || ids, Object.assign({}, opts, o)); });
     },
-    retry: function (id) { setSave(id, { step: (state.saves[id] && state.saves[id].step) || 1, status: 'saving', pct: 0 }); },
-    /* for states: force a save record, e.g. App.saves.set(id, { step: 2, status: 'failed', error: '...' }) */
+    retry: function (id) {
+      var s = state.saves[id];
+      if (!s || !s.jobId) { App.saves.start([id]); return; }
+      setSave(id, Object.assign({}, s, { status: 'saving', error: null }));
+      M.api('/api/saves/' + encodeURIComponent(s.jobId) + '/retry', { method: 'POST' }).catch(function (err) { saveFailed([id], err); });
+    },
     set: function (id, rec) { setSave(id, rec); }
   };
+  function startSaves(ids, opts) {
+    if (!ids.length) return;
+    ids.forEach(function (id) { setSave(id, { step: 1, status: 'saving', pct: 0 }); });
+    if (ids.length > 1) App.toast('Saving ' + ids.length + ' songs to your library', { icon: 'save' });
+    /* the playing song is saved from the peer it streams from, so the transfer is not started twice */
+    var source = Object.assign({}, opts.source);
+    if (ps.source && ids.indexOf(P.currentId()) >= 0 && !source[P.currentId()]) source[P.currentId()] = { peer: ps.source.peer, path: ps.source.path };
+    var body = { ids: ids };
+    if (Object.keys(source).length) body.source = source;
+    if (opts.mode) body.mode = opts.mode;
+    M.api('/api/saves', { method: 'POST', body: body }).then(function (res) {
+      (res.jobs || []).forEach(function (jobId, i) {
+        var id = ids[i]; if (id && state.saves[id]) setSave(id, Object.assign({}, state.saves[id], { jobId: jobId }));
+      });
+    }, function (err) { saveFailed(ids, err); });
+  }
+  function saveFailed(ids, err) {
+    ids.forEach(function (id) { setSave(id, Object.assign({}, state.saves[id], { status: 'failed', error: err.message })); });
+    App.toast('Couldn\'t save: ' + err.message, { kind: 'error' });
+  }
   function setSave(id, rec) {
     App.store.update('saves', function (s) { if (rec) s[id] = rec; else delete s[id]; });
     App.emit('save', { id: id, save: rec });
     App.syncRows(); updateActivityBadge();
   }
-  setInterval(function () {                   // advance running saves about once a second
-    Object.keys(state.saves).forEach(function (id) {
-      var s = state.saves[id]; if (s.status !== 'saving' || s.frozen) return;
-      if (s.step === 1 && s.pct < 100) { s.pct = Math.min(100, s.pct + 34); App.emit('save', { id: id, save: s }); return; }
-      if (s.step < 5) { setSave(id, { step: s.step + 1, status: 'saving', pct: 100 }); return; }
-      setSave(id, { step: 5, status: 'saved', pct: 100 });
-      var t = M.track(id);
-      App.toast('Saved to library: ' + (t ? t.title : id), { kind: 'ok', icon: 'saved', action: 'Show', onAction: function () { App.go('/album/' + t.albumId); } });
-    });
-  }, 1100);
+  /* `save` event: { jobId, trackId, step, status: running|done|failed|pending, pct, error, kind, nocover } */
+  function onSaveEvent(e) {
+    var was = state.saves[e.trackId], status = SAVE_STATUS[e.status] || 'saving';
+    setSave(e.trackId, { jobId: e.jobId, step: e.step, status: status, pct: e.pct || 0, error: e.error || null, kind: e.kind || null, nocover: !!e.nocover });
+    if (status !== 'saved' || (was && was.status === 'saved')) return;
+    M.patchTrack(e.trackId, { saved: true });
+    var t = M.track(e.trackId);
+    App.toast('Saved to library: ' + (t ? t.title : 'one song'), { kind: 'ok', icon: 'saved', action: t ? 'Show' : null,
+      onAction: function () { App.go('/album/' + t.albumId); } });
+    App.announce('Saved ' + (t ? t.title : 'the song') + ' to your library');
+  }
 
   /* =====================================================================
-     8. Player engine (mock: a timer, no audio)
-        PROTO: mock engine. Keep App.player.state, its methods and the 'player' / 'tick' events; replace the insides.
+     8. Player engine. Two <audio> elements: the playing one and the next, preloaded for gapless and
+        crossfade. Saved songs come from /api/library/stream/{id}; Soulseek songs from /api/stream/{id},
+        which serves bytes while the transfer runs (`stream` events report finding, queued, stalled,
+        fallback). Loudness normalisation and crossfade go through Web Audio gains when switched on.
      status: idle | finding | queued | buffering | streaming | stalled | failed | library | ended | jellyfin-error
      `playing` is separate: paused = playing false while streaming or library.
      Fractions (0-1) of the track: received (bytes transferred), buffered ranges [[from, to], ...].
      ===================================================================== */
   var P = App.player = {};
+  var saved0 = storage('player') || {};
   var ps = P.state = {
-    queue: M.queue.items.map(function (q, i) { return Object.assign({ uid: 'q' + i }, q); }),
-    index: 0, playing: false, pos: 84, status: 'streaming',
-    received: .62, buffered: [[0, .58]], durationKnown: false,
-    peer: { name: 'otter-lamp', rank: 1, of: 7, speed: 2.4 }, peersFound: 63, queuePos: 0,
-    fallback: null, failedPeers: [], crossfade: false, shuffle: false, repeat: 'off',
-    volume: .7, muted: false, radio: Object.assign({}, M.queue.radio), frozen: false, error: null
+    queue: [], index: 0, playing: false, pos: 0, status: 'idle',
+    received: 0, buffered: [], durationKnown: false,
+    peer: null, peersFound: 0, queuePos: 0, fallback: null, failedPeers: [], source: null,
+    crossfade: false, shuffle: !!saved0.shuffle, repeat: saved0.repeat || 'off',
+    volume: saved0.volume == null ? .7 : saved0.volume, muted: !!saved0.muted, radio: null, error: null
   };
-  var quSeq = 100;
+  var quSeq = 0, duration = 0;
   P.current = function () { var q = ps.queue[ps.index]; return q ? M.track(q.trackId) : null; };
   P.currentId = function () { var q = ps.queue[ps.index]; return q ? q.trackId : null; };
-  P.duration = function () { var t = P.current(); return t ? t.duration : 0; };
-  P.upNext = function (n) { return ps.queue.slice(ps.index + 1, ps.index + 1 + (n || 2)).map(function (q) { return M.track(q.trackId); }); };
-  function changed(kind) { App.emit('player', kind || 'state'); }
+  P.duration = function () { var t = P.current(); return duration || (t ? t.duration : 0); };
+  P.upNext = function (n) { return ps.queue.slice(ps.index + 1, ps.index + 1 + (n || 2)).map(function (q) { return M.track(q.trackId); }).filter(Boolean); };
+  function changed(kind) { App.emit('player', kind || 'state'); persistSoon(); }
 
-  /* begin playing queue[index]: library tracks start at once; Soulseek tracks go finding -> buffering -> streaming */
+  /* playback settings (Settings > Playback; GET /api/settings), defaults until the server answers */
+  var playback = { gapless: true, crossfade: 0, normalisation: 'off', radioWhenQueueEnds: true, volumeStep: 5 };
+  P.volumeStep = function () { return (playback.volumeStep || 5) / 100; };
+  App.setPlayback = function (patch) {
+    Object.assign(playback, patch);
+    App.store.set('crossfadeSec', playback.crossfade || 0);
+    applyLevels();
+  };
+
+  /* ---------- the two decks ---------- */
+  var decks = [makeDeck(), makeDeck()], cur = decks[0], nxt = decks[1];
+  function makeDeck() {
+    var d = { el: new Audio(), entry: null, url: null, soulseek: false, fade: 1, norm: 1, gain: null, analyser: null, retried: false };
+    d.el.preload = 'auto';
+    ['playing', 'waiting', 'timeupdate', 'durationchange', 'progress', 'ended', 'error'].forEach(function (type) {
+      d.el.addEventListener(type, function () { onMedia(d, type); });
+    });
+    return d;
+  }
+  function streamUrl(t, source, forceSoulseek) {
+    if (App.isSaved(t.id) && !forceSoulseek) return M.url('/api/library/stream/' + encodeURIComponent(t.id));
+    var q = source ? '?peer=' + encodeURIComponent(source.peer) + '&path=' + encodeURIComponent(source.path) : '';
+    return M.url('/api/stream/' + encodeURIComponent(t.id) + q);
+  }
+  /* point a deck at a queue entry (no-op when it already holds it) */
+  function arm(d, entry, forceSoulseek) {
+    var t = M.track(entry.trackId), url = streamUrl(t, entry.source, forceSoulseek);
+    if (d.entry === entry && d.url === url) return;
+    release(d);
+    d.entry = entry; d.url = url; d.soulseek = url.indexOf('api/stream/') >= 0; d.retried = false; d.fade = 1; d.norm = 1; d.ms = 0; d.msN = 0;
+    d.el.src = url;
+    d.el.load();
+  }
+  /* empty a deck; a Soulseek transfer nobody will listen to is cancelled (DELETE /api/stream/{id}) */
+  function release(d) {
+    if (d.entry && d.soulseek && !d.complete) {
+      var id = d.entry.trackId, other = d === cur ? nxt : cur;
+      if (!(other.entry && other.entry.trackId === id)) M.api('/api/stream/' + encodeURIComponent(id), { method: 'DELETE' }).catch(function () {});
+    }
+    d.entry = null; d.url = null; d.complete = false;
+    d.el.pause(); d.el.removeAttribute('src'); d.el.load();
+  }
+
+  function onMedia(d, type) {
+    if (d !== cur) { if (type === 'error' && d.entry) d.entry.resolve = 'none'; return; }
+    var t = P.current(); if (!t) return;
+    switch (type) {
+      case 'playing':
+        ps.status = d.soulseek ? 'streaming' : 'library'; ps.error = null;
+        beginPlay(t);
+        break;
+      case 'waiting':
+        if (ps.playing && (ps.status === 'streaming' || ps.status === 'library')) ps.status = 'buffering';
+        break;
+      case 'timeupdate': trackListening(d); ps.pos = d.el.currentTime; return;
+      case 'durationchange':
+        if (isFinite(d.el.duration) && d.el.duration > 0) { duration = d.el.duration; ps.durationKnown = !d.soulseek || ps.received >= 1; }
+        break;
+      case 'progress': updateBuffered(); return;
+      case 'ended': onEnded(); return;
+      case 'error': onError(d); return;
+      default: return;
+    }
+    changed('status');
+  }
+
+  /* ---------- load, play, pause ---------- */
+  function resetTrackState() {
+    ps.pos = 0; duration = 0; ps.fallback = null; ps.failedPeers = []; ps.error = null; ps.crossfade = false;
+    ps.peer = null; ps.peersFound = 0; ps.queuePos = 0; ps.durationKnown = false;
+  }
+  /* begin playing queue[index]: opts { autoplay (default true), at (seconds), reason (how the last song ended), forceSoulseek } */
   function load(index, opts) {
     opts = opts || {};
-    ps.index = clamp(index, 0, ps.queue.length - 1);
-    var t = P.current();
-    ps.pos = 0; ps.fallback = null; ps.failedPeers = []; ps.error = null; ps.crossfade = false; ps.frozen = false;
-    if (!t) { ps.status = 'idle'; ps.playing = false; changed('track'); return; }
-    if (App.isSaved(t.id)) {
-      ps.status = 'library'; ps.received = 1; ps.buffered = [[0, 1]]; ps.durationKnown = true;
-      ps.peer = null;
-    } else {
-      var src = t.sources[0];
-      ps.status = 'finding'; ps.received = 0; ps.buffered = []; ps.durationKnown = false; ps.peersFound = 0;
-      ps.peer = { name: src.peer, rank: 1, of: t.sources.length, speed: src.speed, format: src.format, sizeMB: src.sizeMB };
-      ps.findTicks = 0;
-    }
+    endPlay(opts.reason || 'skipped');
+    ps.index = clamp(index, 0, Math.max(0, ps.queue.length - 1));
+    resetTrackState();
+    var entry = ps.queue[ps.index], t = P.current();
+    if (!t) { release(cur); release(nxt); ps.status = 'idle'; ps.playing = false; ps.source = null; changed('track'); return; }
+    if (nxt.entry === entry && !opts.forceSoulseek) { var s = cur; cur = nxt; nxt = s; }   // already preloaded
+    release(nxt);                                       // the other deck's song is not what plays now
+    arm(cur, entry, opts.forceSoulseek);
+    ps.source = entry.source || null;
+    if (cur.soulseek) { ps.status = 'finding'; ps.received = 0; ps.buffered = []; }
+    else { ps.status = 'library'; ps.received = 1; ps.buffered = []; ps.durationKnown = true; }
     ps.playing = opts.autoplay !== false;
+    if (opts.at) cur.el.currentTime = ps.pos = opts.at;
+    if (ps.playing) start(cur);
+    applyLevels();
     changed('track');
+    topUpRadio();
+  }
+  function start(d) {
+    ensureGraph();
+    var p = d.el.play();
+    if (p && p.catch) p.catch(function (err) {
+      if (err.name === 'NotAllowedError') { ps.playing = false; changed('play'); }    // autoplay blocked until a tap
+    });
   }
   P.play = function () {
     if (!ps.queue.length) { App.toast('Nothing queued. Search or pick something from Home.', { icon: 'info' }); return; }
     if (ps.status === 'ended') { load(0); return; }
     if (ps.status === 'failed' || ps.status === 'jellyfin-error') { P.retry(); return; }
-    ps.playing = true; changed('play');
+    if (!cur.entry) { load(ps.index, { at: App.isSaved(P.currentId()) ? ps.pos : 0 }); return; }   // restored after a reload
+    ps.playing = true; start(cur); changed('play');
   };
-  P.pause = function () { ps.playing = false; changed('play'); };
+  P.pause = function () { ps.playing = false; cur.el.pause(); if (ps.crossfade) finishCrossfade(); changed('play'); };
   P.toggle = function () { if (ps.playing) P.pause(); else P.play(); };
+
+  /* the index the queue moves to next: repeat one (only when a song ends by itself), shuffle, wrap, or -1 */
+  var shuffleNext = null;
+  function nextIndex(auto) {
+    if (auto && ps.repeat === 'one') return ps.index;
+    if (ps.shuffle && ps.queue.length > 2) {
+      if (shuffleNext === null || shuffleNext === ps.index || shuffleNext >= ps.queue.length) {
+        do { shuffleNext = Math.floor(Math.random() * ps.queue.length); } while (shuffleNext === ps.index);
+      }
+      return shuffleNext;
+    }
+    if (ps.index + 1 < ps.queue.length) return ps.index + 1;
+    return ps.repeat === 'all' ? 0 : -1;
+  }
   P.next = function (auto) {
     if (!ps.queue.length) return;
-    if (ps.repeat === 'one' && auto) { ps.pos = 0; changed('seek'); return; }
-    var nextIndex = ps.index + 1;
-    if (ps.shuffle && ps.queue.length > 2) {
-      do { nextIndex = Math.floor(Math.random() * ps.queue.length); } while (nextIndex === ps.index);
+    var i = nextIndex(auto); shuffleNext = null;
+    if (i === ps.index && auto) { cur.el.currentTime = 0; endPlay('completed'); start(cur); return; }
+    if (i < 0) {                                        // the end: radio may still add songs
+      topUpRadio().then(function (added) { if (added) load(ps.index + 1, { reason: auto ? 'completed' : 'skipped' }); else endQueue(auto); });
+      return;
     }
-    if (nextIndex >= ps.queue.length) {
-      if (ps.repeat === 'all') nextIndex = 0;
-      else if (ps.radio && ps.radio.keepsAdding) { radioTopUp(); nextIndex = ps.index + 1; }
-      else { ps.status = 'ended'; ps.playing = false; ps.pos = P.duration(); changed('ended'); return; }
-    }
-    load(nextIndex);
+    load(i, { reason: auto ? 'completed' : 'skipped' });
   };
+  function endQueue(auto) {
+    endPlay(auto ? 'completed' : 'skipped');
+    ps.status = 'ended'; ps.playing = false; ps.pos = P.duration(); cur.el.pause();
+    changed('ended');
+  }
   P.prev = function () {
-    if (ps.pos > 3 || ps.index === 0) { ps.pos = 0; changed('seek'); return; }
+    if (ps.pos > 3 || ps.index === 0) { P.seek(0); return; }
     load(ps.index - 1);
   };
-  /* seekable = inside a buffered range. Outside: snap to the nearest seekable point and shake (returns false). */
+
+  /* ---------- seeking: only inside what has arrived ---------- */
+  /* how far a seek may go (0-1): everything for saved songs, what the transfer delivered for Soulseek ones */
+  function seekLimit() {
+    if (!cur.soulseek) return 1;
+    var bufEnd = ps.buffered.reduce(function (m, r) { return Math.max(m, r[1]); }, 0);
+    return Math.max(bufEnd, ps.received >= 1 ? 1 : ps.received - .01);
+  }
+  P.seekable = function (f) { return P.current() ? f <= seekLimit() : false; };
+  /* outside what arrived: snap to the furthest point that did, shake (seek bar) and return false */
   P.seekFraction = function (f) {
     f = clamp(f, 0, 1);
-    var ok = ps.buffered.some(function (r) { return f >= r[0] && f <= r[1]; });
-    var target = f;
-    if (!ok) {
-      var best = null;
-      ps.buffered.forEach(function (r) { var c = f < r[0] ? r[0] : r[1]; if (best === null || Math.abs(c - f) < Math.abs(best - f)) best = c; });
-      target = best === null ? ps.pos / (P.duration() || 1) : Math.max(0, best - .004);
-    }
-    ps.pos = target * P.duration();
-    if (ps.status === 'buffering' && ok) ps.status = ps.playing ? 'streaming' : ps.status;
+    var dur = P.duration(); if (!dur || !cur.entry) return false;
+    var ok = P.seekable(f), target = ok ? f : Math.max(0, seekLimit() - .004);
+    cur.el.currentTime = ps.pos = target * dur;
     changed('seek');
     if (!ok) App.emit('seek-denied', { fraction: f, received: ps.received });
     return ok;
   };
   P.seek = function (sec) { return P.seekFraction(sec / (P.duration() || 1)); };
   P.seekBy = function (d) { return P.seek(ps.pos + d); };
-  P.setShuffle = function (on) { ps.shuffle = on == null ? !ps.shuffle : !!on; changed('mode'); };
-  P.cycleRepeat = function () { ps.repeat = { off: 'all', all: 'one', one: 'off' }[ps.repeat]; changed('mode'); };
-  P.setVolume = function (v) { ps.volume = clamp(v, 0, 1); ps.muted = false; changed('volume'); };
-  P.toggleMute = function () { ps.muted = !ps.muted; changed('volume'); };
-  P.setRadio = function (patch) { ps.radio = patch === null ? null : Object.assign({}, ps.radio || {}, patch); changed('queue'); };
 
-  function entry(id, group) { quSeq += 1; return { uid: 'q' + quSeq, trackId: id, group: group || 'context', resolve: App.isSaved(id) ? 'ready' : 'resolving' }; }
-  /* replace the queue and start: playList(ids, startIndex, { radio }) */
+  P.setShuffle = function (on) { ps.shuffle = on == null ? !ps.shuffle : !!on; shuffleNext = null; releaseNext(); changed('mode'); };
+  P.cycleRepeat = function () { ps.repeat = { off: 'all', all: 'one', one: 'off' }[ps.repeat]; releaseNext(); changed('mode'); };
+  P.setVolume = function (v) { ps.volume = clamp(v, 0, 1); ps.muted = false; applyLevels(); changed('volume'); };
+  P.toggleMute = function () { ps.muted = !ps.muted; applyLevels(); changed('volume'); };
+
+  /* ---------- queue ---------- */
+  function entry(id, group, source) {
+    quSeq += 1;
+    return { uid: 'q' + quSeq, trackId: id, group: group || 'context', resolve: App.isSaved(id) ? 'ready' : 'resolved', source: source || null };
+  }
+  function queueChanged() { shuffleNext = null; releaseNext(); changed('queue'); }
+  /* replace the queue and start: playList(ids, startIndex, { radio, sources: { trackId: source }, at, autoplay }) */
   P.playList = function (ids, start, opts) {
     opts = opts || {};
-    ps.queue = ids.map(function (id) { return entry(id, 'context'); });
+    var group = opts.radio ? 'radio' : 'context', sources = opts.sources || {};
+    endPlay('skipped'); release(nxt);
+    ps.queue = ids.map(function (id) { return entry(id, group, sources[id]); });
     ps.radio = opts.radio || null;
-    load(start || 0);
-    changed('queue');
+    load(start || 0, { reason: 'skipped', at: opts.at, autoplay: opts.autoplay });
+    queueChanged();
   };
+  /* move to queue[index] without touching the queue: jumpTo(index, { at, autoplay }) */
+  P.jumpTo = function (index, opts) { load(index, Object.assign({ reason: 'skipped' }, opts)); };
+  P.streamUrl = function (trackId, source) { var t = M.track(trackId); return t ? streamUrl(t, source) : null; };
   P.playTrack = function (id, contextIds) {
     var ids = contextIds && contextIds.indexOf(id) >= 0 ? contextIds : [id];
     P.playList(ids, ids.indexOf(id));
   };
+  function titleOf(id) { var t = M.track(id); return t ? t.title : 'one song'; }
   P.playNext = function (ids) {
     ids = [].concat(ids); var at = ps.index + 1;
     while (ps.queue[at] && ps.queue[at].group === 'next') at++;
     ps.queue.splice.apply(ps.queue, [at, 0].concat(ids.map(function (id) { return entry(id, 'next'); })));
     if (ps.status === 'idle') load(0);
-    changed('queue');
-    App.toast(ids.length > 1 ? ids.length + ' songs will play next' : 'Playing next: ' + M.track(ids[0]).title, { icon: 'queue' });
+    queueChanged();
+    App.toast(ids.length > 1 ? ids.length + ' songs will play next' : 'Playing next: ' + titleOf(ids[0]), { icon: 'queue' });
   };
   P.addToQueue = function (ids) {
     ids = [].concat(ids);
@@ -1052,134 +1239,356 @@
     while (at > ps.index + 1 && ps.queue[at - 1].group === 'radio') at--;   // before the radio tail
     ps.queue.splice.apply(ps.queue, [at, 0].concat(ids.map(function (id) { return entry(id, 'context'); })));
     if (ps.status === 'idle') load(0);
-    changed('queue');
-    App.toast(ids.length > 1 ? 'Added ' + ids.length + ' songs to the queue' : 'Added to queue: ' + M.track(ids[0]).title, { icon: 'queue' });
+    queueChanged();
+    App.toast(ids.length > 1 ? 'Added ' + ids.length + ' songs to the queue' : 'Added to queue: ' + titleOf(ids[0]), { icon: 'queue' });
   };
   P.removeAt = function (i) {
     if (i === ps.index) { App.toast('That song is playing. Skip it instead.', { icon: 'info' }); return; }
     var removed = ps.queue.splice(i, 1)[0]; if (i < ps.index) ps.index--;
-    changed('queue');
+    queueChanged();
     App.toast('Removed from queue', { icon: 'trash', action: 'Undo', onAction: function () {
-      ps.queue.splice(i, 0, removed); if (i <= ps.index) ps.index++; changed('queue');
+      ps.queue.splice(i, 0, removed); if (i <= ps.index) ps.index++; queueChanged();
     } });
   };
   P.move = function (from, to) {
     if (from === to || from < 0 || to < 0 || from >= ps.queue.length || to >= ps.queue.length) return;
-    var cur = ps.queue[ps.index], item = ps.queue.splice(from, 1)[0];
-    ps.queue.splice(to, 0, item); ps.index = ps.queue.indexOf(cur); changed('queue');
+    var playingEntry = ps.queue[ps.index], item = ps.queue.splice(from, 1)[0];
+    ps.queue.splice(to, 0, item); ps.index = ps.queue.indexOf(playingEntry); queueChanged();
   };
   P.clear = function () {
-    var before = ps.queue.slice(), beforeIndex = ps.index;
-    var cur = ps.queue[ps.index];
-    ps.queue = cur ? [cur] : []; ps.index = 0; changed('queue');
-    App.toast('Queue cleared', { icon: 'trash', action: 'Undo', onAction: function () { ps.queue = before; ps.index = beforeIndex; changed('queue'); } });
+    var before = ps.queue.slice(), beforeIndex = ps.index, playingEntry = ps.queue[ps.index];
+    ps.queue = playingEntry ? [playingEntry] : []; ps.index = 0; queueChanged();
+    App.toast('Queue cleared', { icon: 'trash', action: 'Undo', onAction: function () { ps.queue = before; ps.index = beforeIndex; queueChanged(); } });
   };
-  P.startRadio = function (seed) {
-    var name = seed.kind === 'artist' ? M.artist(seed.id).name : seed.kind === 'tag' ? seed.id : seed.kind === 'album' ? M.album(seed.id).title : M.track(seed.id).title;
-    var pool = M.tracks.filter(function (t) {
-      if (seed.kind === 'artist') return t.artistId === seed.id || M.artist(seed.id).tags.some(function (g) { return t.tags.indexOf(g) >= 0; });
-      if (seed.kind === 'tag') return t.tags.indexOf(seed.id) >= 0;
-      var base = seed.kind === 'album' ? M.album(seed.id) : M.track(seed.id);
-      return base.tags.some(function (g) { return t.tags.indexOf(g) >= 0; });
-    }).map(function (t) { return t.id; });
-    pool.sort(function (a, b) { return hash(a + name) % 97 - hash(b + name) % 97; });
-    if (seed.kind === 'track') { pool = pool.filter(function (id) { return id !== seed.id; }); pool.unshift(seed.id); }
-    P.playList(pool.slice(0, 12), 0, { radio: { name: name, seed: seed, keepsAdding: true, steer: .4 } });
-    ps.queue.forEach(function (q, i) { if (i > 3) q.group = 'radio'; });
-    changed('queue');
-    App.toast('Radio: ' + name + ', keeps adding songs', { icon: 'radio' });
-  };
-  function radioTopUp() {
-    var have = {}; ps.queue.forEach(function (q) { have[q.trackId] = 1; });
-    var more = M.tracks.filter(function (t) { return !have[t.id]; }).slice(0, 3);
-    more.forEach(function (t) { ps.queue.push(entry(t.id, 'radio')); });
-    changed('queue');
-  }
-  /* manual source choice from the picker: P.useSource(trackId, sourceIndex) */
-  P.useSource = function (trackId, si) {
+  /* manual source choice (source picker): useSource(trackId, { peer, path, format, sizeBytes, speed }) */
+  P.useSource = function (trackId, source) {
     var i = ps.queue.findIndex(function (q) { return q.trackId === trackId; });
-    if (i < 0) { ps.queue.splice(ps.index + (ps.queue.length ? 1 : 0), 0, entry(trackId, 'next')); i = ps.index + (ps.queue.length > 1 ? 1 : 0); }
-    load(i);
-    var t = M.track(trackId), s = t.sources[si || 0];
-    ps.peer = { name: s.peer, rank: (si || 0) + 1, of: t.sources.length, speed: s.speed, format: s.format, sizeMB: s.sizeMB };
-    changed('source');
+    if (i < 0) { i = ps.queue.length ? ps.index + 1 : 0; ps.queue.splice(i, 0, entry(trackId, 'next', source)); }
+    else ps.queue[i].source = source;
+    load(i, { forceSoulseek: true });
+    queueChanged();
   };
-  P.retry = function () { load(ps.index); };
-  /* set a state directly (prototype state switcher). Freezes automatic status changes. */
-  P.setState = function (patch) {
-    if (patch.queue) { ps.queue = patch.queue.map(function (id) { return entry(id, 'context'); }); delete patch.queue; }
-    Object.assign(ps, { frozen: true }, patch); changed('track');
-  };
+  P.retry = function () { load(ps.index, { at: ps.status === 'failed' ? 0 : ps.pos }); };
+  /* a saved song Jellyfin can't serve: stream it from Soulseek instead */
+  P.trySoulseek = function () { if (P.current()) load(ps.index, { forceSoulseek: true }); };
 
+  /* ---------- radio: GET /api/radio tops the queue up while "keeps adding" is on ---------- */
+  function radioActive() { return !!(ps.radio && ps.radio.keepsAdding); }
+  function radioName(seed) {
+    var e = seed.kind === 'artist' ? M.artist(seed.id) : seed.kind === 'track' ? M.track(seed.id) : null;
+    return e ? e.name || e.title : seed.id;
+  }
+  function fetchRadio(seed, steer, exclude) {
+    var q = '?kind=' + seed.kind + '&id=' + encodeURIComponent(seed.id) + '&steer=' + (steer == null ? .4 : steer).toFixed(2) +
+      (exclude && exclude.length ? '&exclude=' + exclude.map(encodeURIComponent).join(',') : '');
+    return M.api('/api/radio' + q).then(function (res) { return res.items || []; });
+  }
+  /* albums seed from their first song; the radio endpoint takes track, artist or tag */
+  function radioSeed(seed) {
+    if (seed.kind !== 'album') return seed;
+    var a = M.album(seed.id);
+    return a && a.trackIds.length ? { kind: 'track', id: a.trackIds[0] } : { kind: 'artist', id: a ? a.artistId : seed.id };
+  }
+  P.startRadio = function (seed) {
+    seed = radioSeed(seed);
+    var name = radioName(seed);
+    return fetchRadio(seed, .4, []).then(function (ids) {
+      if (seed.kind === 'track') ids = [seed.id].concat(ids.filter(function (id) { return id !== seed.id; }));
+      if (!ids.length) { App.toast('No radio for ' + name + ' yet: nothing similar was found', { icon: 'radio' }); return false; }
+      P.playList(ids, 0, { radio: { name: name, seed: seed, keepsAdding: true, steer: .4 } });
+      App.toast('Radio: ' + name + ', keeps adding songs', { icon: 'radio' });
+      return true;
+    }, function (err) {
+      App.toast('Couldn\'t start radio: ' + err.message, { kind: 'error' });
+      return false;
+    });
+  };
+  /* steering or switching "keeps adding" re-fills the radio songs that have not played yet */
+  P.setRadio = function (patch) {
+    var was = ps.radio || {}, steerChanged = patch && ps.radio && patch.steer != null && patch.steer !== was.steer;
+    ps.radio = patch === null ? null : Object.assign({}, was, patch);
+    if (steerChanged) ps.queue = ps.queue.filter(function (q, i) { return i <= ps.index || q.group !== 'radio'; });
+    /* a new steer, "keeps adding" switched on, or a retry after an error (error cleared) tops up now */
+    if (patch && (steerChanged || patch.keepsAdding && !was.keepsAdding || 'error' in patch && !patch.error)) topUpRadio();
+    queueChanged();
+  };
+  var topping = null;
+  /* keep at least three songs after the playing one; resolves to how many were added.
+     With "radio when the queue ends" (Settings > Playback), the last song seeds a radio as it starts. */
+  function topUpRadio() {
+    if (topping) return topping;
+    var left = ps.queue.length - ps.index - 1;
+    if (!ps.radio && playback.radioWhenQueueEnds && ps.repeat === 'off' && ps.queue.length && left === 0) {
+      var last = ps.queue[ps.index];
+      ps.radio = { name: radioName({ kind: 'track', id: last.trackId }), seed: { kind: 'track', id: last.trackId }, keepsAdding: true, steer: .4 };
+    }
+    if (!radioActive() || left >= 3) return Promise.resolve(0);
+    var have = ps.queue.map(function (q) { return q.trackId; });
+    topping = fetchRadio(ps.radio.seed, ps.radio.steer, have).then(function (ids) {
+      topping = null;
+      if (ps.radio && ps.radio.error) ps.radio = Object.assign({}, ps.radio, { error: null });
+      ids = ids.filter(function (id) { return have.indexOf(id) < 0; });
+      ids.forEach(function (id) { ps.queue.push(entry(id, 'radio')); });
+      if (ids.length) queueChanged();
+      return ids.length;
+    }, function (err) {
+      topping = null;
+      ps.radio = Object.assign({}, ps.radio, { error: err.message });
+      changed('queue');
+      return 0;
+    });
+    return topping;
+  }
+
+  /* ---------- server `stream` events: the Soulseek side of the playing song ---------- */
+  function onStreamEvent(e) {
+    var q = ps.queue[ps.index], d = q && q.trackId === e.trackId ? cur : nxt.entry && nxt.entry.trackId === e.trackId ? nxt : null;
+    if (!d || !d.soulseek) return;
+    if (e.size && e.received >= e.size) d.complete = true;
+    if (d === nxt) { d.entry.resolve = e.status === 'failed' ? 'none' : e.status === 'streaming' ? 'ready' : 'resolving'; changed('queue'); return; }
+    var prevPeer = ps.peer && ps.peer.name, t = P.current();
+    ps.received = e.size ? clamp(e.received / e.size, 0, 1) : ps.received;
+    ps.peersFound = e.peersFound || ps.peersFound;
+    ps.queuePos = e.queuePos || 0;
+    ps.failedPeers = (e.failedPeers || []).map(function (f) { return typeof f === 'string' ? { peer: f, at: null } : f; });
+    if (e.peer) {
+      ps.peer = { name: e.peer, rank: ps.failedPeers.length + 1, of: ps.peersFound || null, speed: e.speed ? e.speed / 1e6 : (ps.peer && ps.peer.speed) || 0,
+        format: (ps.source && ps.source.format) || t.format, sizeMB: e.size ? e.size / 1e6 : t.sizeMB };
+    }
+    var elPlaying = !cur.el.paused && cur.el.readyState >= 3;
+    switch (e.status) {
+      case 'finding': case 'queued': case 'stalled':
+        if (!elPlaying || e.status === 'stalled') ps.status = e.status; break;
+      case 'buffering': if (!elPlaying) ps.status = 'buffering'; break;
+      case 'streaming': ps.status = elPlaying || !ps.playing ? 'streaming' : 'buffering'; ps.fallback = null; break;
+      case 'fallback':
+        ps.fallback = { from: prevPeer, to: e.peer, n: ps.failedPeers.length + 1, of: ps.peersFound || null };
+        ps.status = 'buffering';
+        if (e.peer && e.peer !== prevPeer) App.toast('Now from ' + e.peer, { icon: 'soulseek', kind: 'ok' });
+        break;
+      case 'failed':
+        ps.status = 'failed'; ps.playing = false; cur.el.pause();
+        ps.error = e.error || 'Couldn\'t play: no peer responded';
+        if (q) q.resolve = 'none';
+        break;
+    }
+    if (ps.received >= 1 && isFinite(cur.el.duration)) ps.durationKnown = true;
+    updateBuffered();
+    changed(e.peer !== prevPeer ? 'source' : 'status');
+  }
+
+  /* buffered = what the element holds, cut to what the transfer delivered (both 0-1 of the song) */
+  function updateBuffered() {
+    var el = cur.el, dur = P.duration(), out = [];
+    if (dur) for (var i = 0; i < el.buffered.length; i++) {
+      var a = el.buffered.start(i) / dur, b = Math.min(el.buffered.end(i) / dur, cur.soulseek ? ps.received || 1 : 1);
+      if (b > a) out.push([clamp(a, 0, 1), clamp(b, 0, 1)]);
+    }
+    ps.buffered = out;
+    if (cur.soulseek && !ps.received && out.length) ps.received = out[out.length - 1][1];   // until the first event
+  }
+
+  /* the element failed: ask the server why (the body says it in a sentence), then show it */
+  function onError(d) {
+    var t = P.current();
+    if (d.soulseek && !d.retried && ps.status !== 'failed') {        // a peer fallback can break the byte stream once
+      d.retried = true; var at = ps.pos;
+      d.el.src = d.url; d.el.load(); d.el.currentTime = at; if (ps.playing) start(d);
+      return;
+    }
+    fetch(d.url, { headers: { Range: 'bytes=0-0' }, credentials: 'same-origin' }).then(function (res) {
+      if (res.ok) return 'This file can\'t be played in this browser';
+      return res.json().then(function (b) { return b.message; }, function () { return 'The server answered ' + res.status; });
+    }, function () { return 'Can\'t reach the lull server'; }).then(function (msg) {
+      if (d !== cur || P.current() !== t) return;
+      ps.playing = false; ps.error = msg;
+      ps.status = d.soulseek ? 'failed' : 'jellyfin-error';
+      changed('status');
+    });
+  }
+
+  /* ---------- gapless hand-over, crossfade, preload ---------- */
+  function releaseNext() { if (nxt.entry) release(nxt); }
+  /* preload the next song once the playing one is close to its end (or its transfer is done) */
+  function preloadNext() {
+    var i = nextIndex(true);
+    if (i < 0 || i === ps.index || !playback.gapless && !playback.crossfade) return;
+    /* a Soulseek song still transferring gets the bandwidth to itself until its last half minute */
+    var e = ps.queue[i], dur = P.duration(), lead = Math.max(30, (playback.crossfade || 0) + 15) + (cur.soulseek && ps.received < 1 ? 0 : 60);
+    if (!dur || dur - ps.pos > lead) return;
+    if (nxt.entry !== e) { arm(nxt, e); if (e.resolve === 'resolved') e.resolve = 'resolving'; changed('queue'); }
+  }
+  function onEnded() {
+    if (ps.crossfade) { finishCrossfade(); return; }
+    var i = nextIndex(true);
+    if (i >= 0 && i !== ps.index && nxt.entry === ps.queue[i]) {        // gapless: the next song is already loaded
+      endPlay('completed'); shuffleNext = null;
+      var s = cur; cur = nxt; nxt = s; release(nxt);
+      ps.index = i; resetTrackState();
+      ps.status = cur.soulseek ? 'buffering' : 'library'; ps.received = cur.soulseek && !cur.complete ? 0 : 1; ps.source = cur.entry.source || null;
+      start(cur); applyLevels(); changed('track'); topUpRadio();
+      return;
+    }
+    P.next(true);
+  }
+  function maybeCrossfade() {
+    var xf = playback.crossfade || 0, dur = P.duration(), i = nextIndex(true);
+    if (!xf || ps.crossfade || !ps.playing || i < 0 || i === ps.index || dur - ps.pos > xf || ps.repeat === 'one') return;
+    if (nxt.entry !== ps.queue[i] || nxt.el.readyState < 3) return;
+    ps.crossfade = true; xfStart = Date.now(); xfLen = Math.max(1, (dur - ps.pos) * 1000);
+    nxt.fade = 0; start(nxt);
+    changed('status');
+  }
+  var xfStart = 0, xfLen = 0;
+  function stepCrossfade() {
+    if (!ps.crossfade) return;
+    var k = clamp((Date.now() - xfStart) / xfLen, 0, 1);
+    cur.fade = Math.cos(k * Math.PI / 2); nxt.fade = Math.sin(k * Math.PI / 2);   // equal-power
+    applyLevels();
+    if (k >= 1) finishCrossfade();
+  }
+  function finishCrossfade() {
+    if (!ps.crossfade) return;
+    ps.crossfade = false;
+    if (!ps.playing) { nxt.fade = 1; nxt.el.pause(); nxt.el.currentTime = 0; applyLevels(); changed('status'); return; }
+    endPlay('completed');
+    var i = nextIndex(true); shuffleNext = null;
+    var s = cur; cur = nxt; nxt = s; cur.fade = 1; release(nxt);
+    ps.index = i; resetTrackState(); ps.pos = cur.el.currentTime;
+    ps.status = cur.soulseek ? 'streaming' : 'library'; ps.received = cur.soulseek ? ps.received : 1; ps.source = cur.entry.source || null;
+    applyLevels(); changed('track'); topUpRadio();
+  }
+
+  /* ---------- levels: volume x crossfade x loudness normalisation ---------- */
+  var audioCtx = null, master = null;
+  function wantGraph() { return playback.normalisation && playback.normalisation !== 'off' || playback.crossfade > 0; }
+  /* Web Audio only when a feature needs it; built inside a user gesture (play), once */
+  function ensureGraph() {
+    if (audioCtx || !wantGraph() || !window.AudioContext) { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); return; }
+    audioCtx = new AudioContext();
+    master = audioCtx.createGain(); master.connect(audioCtx.destination);
+    decks.forEach(function (d) {
+      var src = audioCtx.createMediaElementSource(d.el);
+      d.gain = audioCtx.createGain(); d.analyser = audioCtx.createAnalyser(); d.analyser.fftSize = 2048;
+      src.connect(d.gain); d.gain.connect(master); src.connect(d.analyser);
+    });
+    applyLevels();
+  }
+  function applyLevels() {
+    var vol = ps.muted ? 0 : ps.volume * ps.volume;                     // perceptual curve
+    decks.forEach(function (d) {
+      var level = d.fade * (playback.normalisation === 'off' ? 1 : d.norm);
+      if (d.gain) { d.gain.gain.setTargetAtTime(level, audioCtx.currentTime, .05); d.el.volume = 1; }
+      else d.el.volume = clamp(vol * d.fade, 0, 1);
+    });
+    if (master) master.gain.setTargetAtTime(vol, audioCtx.currentTime, .05);
+  }
+  /* ReplayGain from the track when the library supplies it (replayGain: { track, album } in dB), otherwise
+     measured: mean loudness of what has played, levelled toward -18 dBFS RMS, within -12 to +6 dB */
+  var TARGET_RMS = .126;
+  function normalise(d) {
+    if (!d.gain || playback.normalisation === 'off' || !d.entry) return;
+    var t = M.track(d.entry.trackId), rg = t && t.replayGain;
+    var db = rg && (playback.normalisation === 'replaygain-album' ? rg.album : playback.normalisation.indexOf('replaygain') === 0 ? rg.track : null);
+    if (db != null) { d.norm = Math.pow(10, db / 20); return; }
+    if (d.el.paused) return;
+    var buf = d.buf || (d.buf = new Float32Array(d.analyser.fftSize));
+    d.analyser.getFloatTimeDomainData(buf);
+    var sum = 0; for (var i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+    d.ms += sum / buf.length; d.msN += 1;
+    if (d.msN < 12) return;                                            // ~3 s of listening before adjusting
+    var rms = Math.sqrt(d.ms / d.msN); if (rms < 1e-4) return;
+    d.norm = clamp(TARGET_RMS / rms, Math.pow(10, -12 / 20), Math.pow(10, 6 / 20));
+  }
+
+  /* ---------- plays: POST /api/plays when a song starts, PATCH when it ends (scrobbling, history, taste) ---------- */
+  /* App.recordPlay(trackId, durationS) -> { listened (seconds heard, the caller adds to it), end(how) };
+     how: completed (ended by itself) | skipped (the listener moved on) | stopped (page closed).
+     Also used by Classic mode, where Webamp plays. */
+  var playWarned = false;
+  App.recordPlay = function (trackId, dur) {
+    var rec = { listened: 0, ended: false };
+    var id = M.api('/api/plays', { method: 'POST', body: { trackId: trackId, duration: Math.round(dur || 0) } })
+      .then(function (r) { return r && r.playId; }, function (err) {
+        if (!playWarned) { playWarned = true; App.toast('Listening history is off: ' + err.message, { kind: 'error' }); }
+        return null;
+      });
+    rec.end = function (how) {
+      if (rec.ended) return; rec.ended = true;
+      id.then(function (playId) {
+        if (playId) M.api('/api/plays/' + encodeURIComponent(playId), { method: 'PATCH', keepalive: true,
+          body: { playedS: Math.round(rec.listened), completed: how === 'completed', skipped: how === 'skipped' } }).catch(function () {});
+      });
+    };
+    return rec;
+  };
+  var play = null;            // { uid (queue entry), rec, last (element time at the last timeupdate) }
+  function beginPlay(t) {
+    var e = ps.queue[ps.index];
+    if (play && play.uid === e.uid) return;
+    endPlay('skipped');
+    play = { uid: e.uid, rec: App.recordPlay(t.id, P.duration()), last: null };
+  }
+  function trackListening(d) {
+    if (!play) return;
+    var now = d.el.currentTime, dt = play.last == null ? 0 : now - play.last;
+    if (dt > 0 && dt < 1.5 && ps.playing) play.rec.listened += dt;
+    play.last = now;
+  }
+  function endPlay(how) { if (play) { play.rec.end(how); play = null; } }
+  window.addEventListener('pagehide', function () { endPlay('stopped'); persist(); });
+
+  /* ---------- the clock: position, crossfade, preload, normalisation; 'tick' for screens ---------- */
   var TICK = 250;
   setInterval(function () {
+    if (!cur.entry) return;
+    if (ps.playing) { normalise(cur); if (ps.crossfade) normalise(nxt); }
+    stepCrossfade(); maybeCrossfade(); preloadNext();
     if (document.hidden) return;
-    var t = P.current(), dt = TICK / 1000;
-    if (!t) return;
-    var dur = t.duration, before = ps.status;
-    // transfer keeps going while streaming/buffering/stalled-recovering (paused too: bytes still arrive)
-    if (['streaming', 'buffering'].indexOf(ps.status) >= 0 && ps.peer && ps.received < 1) {
-      ps.received = Math.min(1, ps.received + (ps.peer.speed / (ps.peer.sizeMB || 30)) * dt * .5);
-      var end = Math.max(0, ps.received - .04);
-      if (!ps.buffered.length) ps.buffered = [[0, end]];
-      else ps.buffered[ps.buffered.length - 1][1] = Math.max(ps.buffered[ps.buffered.length - 1][1], end);
-      if (ps.received >= 1) { ps.buffered[ps.buffered.length - 1][1] = 1; ps.durationKnown = true; }
-      else if (ps.received > .3) ps.durationKnown = true;
-    }
-    if (!ps.frozen) {
-      if (ps.status === 'finding') {
-        ps.peersFound += 3 + Math.floor(Math.random() * 6); ps.findTicks += 1;
-        if (ps.findTicks > 8) ps.status = 'buffering';
-      } else if (ps.status === 'queued') {
-        ps.findTicks += 1; if (ps.findTicks % 4 === 0) ps.queuePos -= 1;
-        if (ps.queuePos <= 0) ps.status = 'buffering';
-      } else if (ps.status === 'buffering') {
-        var bufEnd = ps.buffered.length ? ps.buffered[ps.buffered.length - 1][1] * dur : 0;
-        if (bufEnd - ps.pos > 4 || ps.received >= 1) ps.status = 'streaming';
-      } else if (ps.status === 'stalled') {
-        ps.stallTicks = (ps.stallTicks || 0) + 1;
-        if (ps.stallTicks > 12) fallbackToNextPeer();
-      }
-    }
-    if (ps.playing && (ps.status === 'streaming' || ps.status === 'library')) {
-      ps.pos += dt;
-      var limit = ps.buffered.length ? ps.buffered[ps.buffered.length - 1][1] * dur : 0;
-      if (ps.status === 'streaming' && ps.pos >= limit - .1 && ps.received < 1 && !ps.frozen) { ps.pos = Math.max(0, limit - .1); ps.status = 'buffering'; }
-      var fade = App.store.get('crossfadeSec') || 0, xf = fade > 0 && dur - ps.pos <= fade;
-      if (!ps.frozen && xf !== ps.crossfade) { ps.crossfade = xf; changed('status'); }
-      if (ps.pos >= dur) { ps.pos = dur; if (!ps.frozen) P.next(true); else ps.pos = 0; }
-    }
-    if (ps.status !== before) changed('status');
+    ps.pos = cur.el.currentTime || ps.pos;
+    updateBuffered();
     App.emit('tick', ps);
   }, TICK);
-  function fallbackToNextPeer() {
-    var t = P.current(), r = ps.peer ? ps.peer.rank : 1;
-    ps.stallTicks = 0;
-    if (r >= t.sources.length) { ps.status = 'failed'; ps.playing = false; ps.error = 'Couldn\'t play: no peer responded'; changed('status'); return; }
-    var from = ps.peer.name, s = t.sources[r];
-    ps.failedPeers.push({ peer: from, at: Math.round(ps.received * 100) });
-    ps.peer = { name: s.peer, rank: r + 1, of: t.sources.length, speed: s.speed, format: s.format, sizeMB: s.sizeMB };
-    ps.fallback = { from: from, to: s.peer, n: r + 1, of: t.sources.length };
-    ps.status = 'buffering';
-    App.toast('Now from ' + s.peer + ', ' + s.format, { icon: 'soulseek', kind: 'ok' });
-    changed('source');
+
+  /* ---------- the queue survives a reload on this device (localStorage, a convenience) ---------- */
+  var persistTimer = null;
+  function persistSoon() { clearTimeout(persistTimer); persistTimer = setTimeout(persist, 600); }
+  function persist() {
+    var keep = {};
+    ps.queue.forEach(function (q) { var t = M.track(q.trackId); if (t) keep[t.id] = t; });
+    storage('player', { volume: ps.volume, muted: ps.muted, shuffle: ps.shuffle, repeat: ps.repeat, radio: ps.radio,
+      index: ps.index, pos: ps.pos, queue: ps.queue.map(function (q) { return { trackId: q.trackId, group: q.group, source: q.source }; }), tracks: keep });
   }
-  P.stall = function () { ps.status = 'stalled'; ps.stallTicks = 0; ps.frozen = false; changed('status'); };
+  function restore() {
+    if (!saved0.queue || !saved0.queue.length) return;
+    M.absorb({ tracks: saved0.tracks });
+    ps.queue = saved0.queue.filter(function (q) { return M.track(q.trackId); }).map(function (q) { return entry(q.trackId, q.group, q.source); });
+    if (!ps.queue.length) return;
+    ps.index = clamp(saved0.index || 0, 0, ps.queue.length - 1);
+    ps.radio = saved0.radio || null;
+    ps.pos = saved0.pos || 0;
+    var t = P.current();
+    ps.status = App.isSaved(t.id) ? 'library' : 'streaming';
+    ps.received = App.isSaved(t.id) ? 1 : 0;
+  }
+  restore();
 
   /* one line describing the current status (player bar state tab, mini-player sub line, aria) */
   P.statusText = function () {
-    var t = P.current();
+    var peer = ps.peer ? ps.peer.name : 'a peer', of = ps.peer && ps.peer.of ? ' of ' + ps.peer.of : '';
     switch (ps.status) {
       case 'idle': return 'Search or pick something from Home';
-      case 'finding': return 'Finding a source, ' + ps.peersFound + ' peers answered';
-      case 'queued': return 'Queued at peer ' + (ps.peer ? ps.peer.name : '') + ', position ' + ps.queuePos;
-      case 'buffering': return ps.fallback ? 'Switching to ' + ps.fallback.to + ' (' + ps.fallback.n + ' of ' + ps.fallback.of + ')' : 'Buffering from ' + (ps.peer ? ps.peer.name : 'peer');
-      case 'stalled': return 'Peer stalled, switching to next source (' + ((ps.peer ? ps.peer.rank : 1) + 1) + ' of ' + (ps.peer ? ps.peer.of : 1) + ')';
+      case 'finding': return 'Finding a source' + (ps.peersFound ? ', ' + ps.peersFound + ' peers answered' : '');
+      case 'queued': return 'Queued at peer ' + peer + (ps.queuePos ? ', position ' + ps.queuePos : '');
+      case 'buffering':
+        if (!cur.soulseek) return 'Loading from your library';
+        return ps.fallback ? 'Switching to ' + ps.fallback.to + ' (' + ps.fallback.n + (ps.fallback.of ? ' of ' + ps.fallback.of : '') + ')' : 'Buffering from ' + peer;
+      case 'stalled': return 'Peer stalled, switching to the next source (' + ((ps.peer ? ps.peer.rank : 1) + 1) + of + ')';
       case 'failed': return ps.error || 'Couldn\'t play: no peer responded';
-      case 'jellyfin-error': return 'Library item unavailable';
+      case 'jellyfin-error': return 'Library item unavailable' + (ps.error ? ': ' + ps.error : '');
       case 'ended': return 'End of queue';
       default:
-        if (ps.crossfade) { var n = P.upNext(1)[0]; return 'Crossfading into ' + (n ? n.title : 'the next song'); }
+        if (ps.crossfade) { var n = M.track(nxt.entry ? nxt.entry.trackId : ''); return 'Crossfading into ' + (n ? n.title : 'the next song'); }
         return null;
     }
   };
@@ -1296,7 +1705,7 @@
     $$('.seek__tip.is-on').forEach(function (t) { if (!el || !el.contains(t)) t.classList.remove('is-on'); });
     if (!el) return;
     var f = seekFrac(el, e.clientX), tip = $('.seek__tip', el);
-    var inBuf = ps.buffered.some(function (r) { return f >= r[0] && f <= r[1]; });
+    var inBuf = P.seekable(f);
     if (!tip) return;
     tip.textContent = inBuf ? fmtTime(f * P.duration()) : 'Not downloaded yet (' + Math.round(ps.received * 100) + '%)';
     tip.style.left = (f * 100) + '%'; tip.classList.add('is-on');
@@ -1325,7 +1734,7 @@
      10. Shell: rail, header, status tray, context panel, player bar, mini-player, tab bar
      ===================================================================== */
   function followedTags() {
-    return html`${M.tags.filter(function (t) { return state.followed[t.id]; }).map(function (t) { return ui.tagChip(t.id); })}`;
+    return html`${Object.keys(state.followed).filter(function (id) { return !/^ar-/.test(id); }).map(function (id) { return ui.tagChip(id); })}`;
   }
   function playlistLinks() {
     return html`${state.playlists.map(function (p) {
@@ -1353,10 +1762,11 @@
   }
   /* everything outside the view that a design can change: brand, rail, tray, context panel, player bar */
   function renderShell() { renderBrand(); renderRail(); renderTray(); renderCtx(); renderBar(); layoutCtx(); }
-  function trayLabel(svc) {
+  var STATE_WORDS = { ok: 'ok', warn: 'needs attention', down: 'down', off: 'not set up' };
+  function trayLabel() {
     var s = state.services, parts = [];
     Object.keys(s).forEach(function (k) {
-      parts.push(s[k].label + ' ' + (s[k].state === 'ok' ? 'ok' : s[k].state === 'warn' ? 'needs attention' : 'down') + (k === 'cache' ? ', ' + s[k].usedGB + ' of ' + s[k].capGB + ' GB' : k === 'lastfm' && s[k].queued ? ', ' + s[k].queued + ' queued' : ''));
+      parts.push(s[k].label + ' ' + STATE_WORDS[s[k].state] + (k === 'cache' && s[k].capGB ? ', ' + s[k].usedGB + ' of ' + s[k].capGB + ' GB' : k === 'lastfm' && s[k].queued ? ', ' + s[k].queued + ' queued' : ''));
     });
     return 'Service status: ' + parts.join('; ') + '. Open details';
   }
@@ -1373,29 +1783,38 @@
   function renderTray() {
     var s = state.services, c = s.cache;
     var frac = c.capGB ? Math.max(0, Math.min(1, c.usedGB / c.capGB)) : 0;
-    var cacheAttrs = raw('data-cache-used="' + c.usedGB + '" data-cache-cap="' + c.capGB + '" style="--cache-frac:' + frac.toFixed(3) + '"');
+    var cacheAttrs = raw('data-cache-used="' + (c.usedGB || 0) + '" data-cache-cap="' + (c.capGB || 0) + '" style="--cache-frac:' + frac.toFixed(3) + '"');
+    var gb = c.capGB ? c.usedGB + '/' + c.capGB + 'G' : 'off';
     var full = html`${['soulseek', 'jellyfin', 'lastfm'].map(function (k) {
       var extra = k === 'lastfm' && s.lastfm.queued ? html`&nbsp;<span class="tray__count">${s.lastfm.queued}</span><span class="tray__label-long">&nbsp;queued</span>` : '';
       return html`<span class="tray__pill" data-svc="${k}" data-state="${s[k].state}">${ui.statusGlyph(s[k].state)}${s[k].label}${extra}</span>`;
-    })}<span class="tray__pill tray__pill--cache" data-svc="cache" data-state="${c.state}" ${cacheAttrs}>${ui.statusGlyph(c.state)}<span class="tray__label-long">cache&nbsp;</span>${c.usedGB}/${c.capGB}G</span>`;
+    })}<span class="tray__pill tray__pill--cache" data-svc="cache" data-state="${c.state}" ${cacheAttrs}>${ui.statusGlyph(c.state)}<span class="tray__label-long">cache&nbsp;</span>${gb}</span>`;
     var worst = trayWorst();
-    var compact = html`<span class="tray__pill" data-worst="${worst.state}">${['soulseek', 'jellyfin', 'lastfm'].map(function (k) { return ui.statusGlyph(s[k].state); })}<span class="tray__word">${worst.word}</span><span class="tray__gb">${c.usedGB}G</span></span>`;
+    var compact = html`<span class="tray__pill" data-worst="${worst.state}">${['soulseek', 'jellyfin', 'lastfm'].map(function (k) { return ui.statusGlyph(s[k].state); })}<span class="tray__word">${worst.word}</span>${c.capGB ? html`<span class="tray__gb">${c.usedGB}G</span>` : ''}</span>`;
     $$('[data-tray]').forEach(function (b) {
       b.innerHTML = String(b.getAttribute('data-tray') === 'compact' ? compact : full);
       b.setAttribute('aria-label', trayLabel());
       b.style.setProperty('--cache-frac', frac.toFixed(3));
-      b.setAttribute('data-cache-used', c.usedGB); b.setAttribute('data-cache-cap', c.capGB);
+      b.setAttribute('data-cache-used', c.usedGB || 0); b.setAttribute('data-cache-cap', c.capGB || 0);
     });
   }
   function statusPopover(anchor) {
     var s = state.services;
-    var actions = { soulseek: ['Reconnect', 'soulseek-reconnect'], jellyfin: ['Rescan', 'jellyfin-rescan'], lastfm: ['Retry now', 'lastfm-retry'], cache: ['Manage', 'open-cache'] };
+    var actions = { soulseek: ['Settings', 'open-sources'], jellyfin: ['Rescan', 'jellyfin-rescan'], lastfm: ['Retry now', 'lastfm-retry'], cache: ['Manage', 'open-cache'] };
     var body = html`<div class="popover__head">services</div><div class="status-list">${Object.keys(s).map(function (k) {
       var st = s[k].state;
-      return html`<div class="status-row">${ui.statusGlyph(st, st === 'ok' ? 'ok' : st === 'warn' ? 'warning' : 'down')}<div><span class="status-row__name">${s[k].label}</span><span class="status-row__detail">${s[k].detail}</span></div>
+      return html`<div class="status-row">${ui.statusGlyph(st, STATE_WORDS[st])}<div><span class="status-row__name">${s[k].label}</span><span class="status-row__detail">${s[k].detail}</span></div>
         <button class="btn btn--sm" data-act="${actions[k][1]}">${actions[k][0]}</button></div>`;
     })}</div>`;
     App.popover(anchor, body, { label: 'Service status', className: 'popover--status' });
+  }
+  /* a service as /health or a `service` event reports it: { state, detail, extra } -> the tray's shape */
+  function applyService(name, svc) {
+    if (!SERVICE_LABELS[name]) return;
+    var x = svc.extra || {}, patch = { state: svc.state, detail: svc.detail };
+    if (name === 'cache') { patch.usedGB = Math.round((x.usedBytes || 0) / 1e8) / 10; patch.capGB = Math.round((x.capBytes || 0) / 1e8) / 10; }
+    if (name === 'lastfm') patch.queued = x.queued || 0;
+    App.setService(name, patch);
   }
   App.setService = function (key, patch) {
     App.store.update('services', function (s) { s[key] = Object.assign({}, s[key], patch); });
@@ -1406,10 +1825,29 @@
     if (keys.indexOf('playlists') >= 0 || keys.indexOf('followed') >= 0) renderRail();
   });
 
+  /* running jobs: transfers and imports from the activity list; saves from the save records (one per track) */
   function activeJobs() {
-    var n = state.activity.filter(function (j) { return j.state === 'transferring' || j.state === 'queued' || j.stepState === 'running'; }).length;
+    var n = state.activity.filter(function (j) { return j.kind !== 'save' && (j.state === 'transferring' || j.state === 'queued' || j.state === 'running'); }).length;
     return n + Object.keys(state.saves).filter(function (id) { return state.saves[id].status === 'saving'; }).length;
   }
+  /* GET /api/jobs + `job` / `transfer` events keep the Activity list (rows shaped like design/prototype/mock-data.js activity, id = jobId) */
+  function upsertJob(row) {
+    App.store.update('activity', function (list) {
+      var i = list.findIndex(function (j) { return j.id === row.id; });
+      if (i < 0) list.unshift(row); else list[i] = Object.assign({}, list[i], row);
+    });
+  }
+  function onJobEvent(e) { upsertJob(Object.assign({}, e, { id: e.jobId })); }
+  function onTransferEvent(e) {
+    upsertJob({ id: e.jobId, kind: 'transfer', trackId: e.trackId, peer: e.peer, state: e.state, queuePos: e.queuePos,
+      pct: e.size ? Math.round(e.received / e.size * 100) : 0, speed: e.speed ? e.speed / 1e6 : 0, error: e.error || null });
+  }
+  function loadJobs() {
+    return M.api('/api/jobs').then(function (res) {
+      App.store.set({ activity: (res.items || res || []).map(function (j) { return Object.assign({ id: j.jobId }, j); }), activityError: null });
+    }, function (err) { App.store.set({ activity: [], activityError: err.message }); });
+  }
+  App.loadJobs = loadJobs;
   function updateActivityBadge() {
     var n = activeJobs();
     $$('[data-activity-count]').forEach(function (el) { el.textContent = n; el.hidden = !n; });
@@ -1498,7 +1936,7 @@
         <div class="pbar__text">
           <div class="pbar__title"><a href="#/album/${t.albumId}">${t.title}</a></div>
           <div class="pbar__artist"><a href="#/artist/${t.artistId}">${t.artist}</a></div>
-          <div class="pbar__badges">${ui.sourceBadge(t)}${ui.qualityChip(ps.peer && ps.status !== 'library' ? ps.peer.format || t.format : t.format, { solid: true, button: true, id: t.id })}</div>
+          <div class="pbar__badges">${ui.sourceBadge(t)}${playingFormat(t) ? ui.qualityChip(playingFormat(t), { solid: true, button: true, id: t.id }) : ''}</div>
         </div>`);
     }
     // state tab above the seek bar
@@ -1558,6 +1996,8 @@
     updateSeeks();
     updateMediaSession();
   }
+  /* the format actually playing: the picked peer's file for Soulseek, the library file otherwise */
+  function playingFormat(t) { return ps.peer && ps.status !== 'library' ? ps.peer.format || t.format : t.format; }
   App.on('player', renderBar);
   App.on('save', function (d) { if (d.id === P.currentId()) renderBar(); });
   App.on('like', function (d) { if (d.id === P.currentId()) App.syncRows(); });
@@ -1585,12 +2025,12 @@
 
   /* default reason popover (discover screen may replace App.hooks.reason) */
   function defaultReasonPopover(anchor, r) {
-    var expl = { like: 'You play ' + r.name + ' often and liked 4 of their songs this month.',
-      tag: 'This sits in ' + r.name + ', a tag you follow and play a lot.',
-      listeners: 'People who play ' + r.name + ' also play this a lot.',
+    var expl = { like: 'You like songs by ' + r.name + '.',
+      tag: 'This sits in ' + r.name + ', a tag you follow or play.',
+      listeners: 'People who play ' + r.name + ' also play this.',
       fresh: r.name + ' released this recently, and you follow them.' }[r.kind] || '';
     App.popover(anchor, html`<div class="popover__head">why this?</div><div class="popover__body"><p>${expl}</p><p class="t-micro fg-2" style="margin-top:6px">via ${r.via || 'ListenBrainz'}</p></div>
-      <div class="popover__actions"><button class="btn btn--sm" data-act="more-like">More like this</button><button class="btn btn--sm" data-act="less-like">Less like this</button>${r.kind === 'tag' ? '' : html`<button class="btn btn--sm" data-act="hide-artist" data-id="${r.ref}">Hide this artist</button>`}</div>`,
+      <div class="popover__actions"><button class="btn btn--sm" data-act="more-like" data-id="${r.item || ''}">More like this</button><button class="btn btn--sm" data-act="less-like" data-id="${r.item || ''}">Less like this</button>${r.kind === 'tag' ? '' : html`<button class="btn btn--sm" data-act="hide-artist" data-id="${r.ref}">Hide this artist</button>`}</div>`,
       { label: 'Why this was suggested' });
   }
   /* default add-to-playlist picker */
@@ -1599,21 +2039,42 @@
       return { label: p.name, icon: 'playlists', run: function () { addToPlaylist(p.id, ids); } };
     });
     items.push('sep'); items.push({ label: 'New playlist', icon: 'plus', run: function () {
-      var id = 'pl-new-' + Date.now();
-      App.store.update('playlists', function (l) { l.push({ id: id, name: 'new playlist', desc: '', created: '2026-10-31', updated: '2026-10-31', items: [] }); });
-      addToPlaylist(id, ids);
+      App.createPlaylist({ name: 'new playlist', desc: '' }).then(function (p) { if (p) addToPlaylist(p.id, ids); });
     } });
     if (anchor) App.menu(anchor, items, { label: 'Add to playlist' });
     else App.openSheet({ title: 'add to playlist', body: html`${items.filter(function (i) { return i !== 'sep'; }).map(function (it, i) { return html`<button class="menu__item" data-pi="${i}">${icon(it.icon)}<span>${it.label}</span></button>`; })}`,
       onMount: function (el, close) { el.addEventListener('click', function (e) { var b = e.target.closest('[data-pi]'); if (b) { close(); items.filter(function (i) { return i !== 'sep'; })[+b.getAttribute('data-pi')].run(); } }); } });
   }
+  /* playlists live on the server (GET/POST /api/playlists, PUT .../tracks with the full order); the store holds
+     the last answer. App.savePlaylistOrder(id, trackIds) sends a new order and takes the server's playlist back. */
+  function loadPlaylists() {
+    return M.api('/api/playlists').then(function (res) {
+      App.store.set({ playlists: Array.isArray(res) ? res : res.items || [], playlistsError: null });
+    }, function (err) { App.store.set({ playlists: [], playlistsError: err.message }); });
+  }
+  function putPlaylist(p) {
+    App.store.update('playlists', function (l) { var i = l.findIndex(function (x) { return x.id === p.id; }); if (i < 0) l.push(p); else l[i] = p; });
+    return p;
+  }
+  App.loadPlaylists = loadPlaylists;
+  App.createPlaylist = function (fields) {
+    return M.api('/api/playlists', { method: 'POST', body: fields }).then(putPlaylist, function (err) {
+      App.toast('Couldn\'t create the playlist: ' + err.message, { kind: 'error' }); return null;
+    });
+  };
+  App.savePlaylistOrder = function (plId, trackIds) {
+    return M.api('/api/playlists/' + encodeURIComponent(plId) + '/tracks', { method: 'PUT', body: trackIds }).then(function (p) {
+      if (p && p.id) return putPlaylist(p);
+      return loadPlaylists();
+    });
+  };
   function addToPlaylist(plId, ids) {
     ids = [].concat(ids);
-    App.store.update('playlists', function (l) { l.forEach(function (p) { if (p.id === plId) { ids.forEach(function (id) { p.items.unshift({ trackId: id, added: '2026-10-31' }); }); p.updated = '2026-10-31'; } }); });
-    var p = state.playlists.filter(function (x) { return x.id === plId; })[0];
-    App.toast('Added to ' + p.name, { icon: 'playlists', action: 'Undo', onAction: function () {
-      App.store.update('playlists', function (l) { l.forEach(function (x) { if (x.id === plId) x.items.splice(0, ids.length); }); });
-    } });
+    var p = M.playlist(plId); if (!p) return;
+    var before = p.items.map(function (i) { return i.trackId; });
+    App.savePlaylistOrder(plId, ids.concat(before)).then(function () {
+      App.toast('Added to ' + p.name, { icon: 'playlists', action: 'Undo', onAction: function () { App.savePlaylistOrder(plId, before); } });
+    }, function (err) { App.toast('Couldn\'t add to ' + p.name + ': ' + err.message, { kind: 'error' }); });
   }
   App.addToPlaylist = addToPlaylist;
   function defaultShortcutsDialog() {
@@ -1635,16 +2096,45 @@
   function listIds(el) { var l = el.closest('[data-ids]'); return l ? l.getAttribute('data-ids').split(',') : null; }
   /* start radio, then show where it landed: the Queue panel (phone: Now Playing, Queue tab) */
   function startRadio(seed) {
-    P.startRadio(seed);
-    if (window.innerWidth < 640) App.go('/now?tab=queue'); else App.openPanel('queue');
+    P.startRadio(seed).then(function (ok) {
+      if (!ok) return;
+      if (window.innerWidth < 640) App.go('/now?tab=queue'); else App.openPanel('queue');
+    });
+  }
+  /* an album's songs, fetched when only the album head is known yet (shelf tiles) */
+  function albumTracks(id) {
+    var a = M.album(id);
+    if (a && a.trackIds.length) return Promise.resolve(a.trackIds);
+    return M.api('/api/albums/' + encodeURIComponent(id)).then(function () { var x = M.album(id); return x ? x.trackIds : []; });
+  }
+  App.albumTracks = albumTracks;
+  function withAlbum(id, fn) {
+    albumTracks(id).then(function (list) {
+      if (list.length) fn(list); else App.toast('This album has no songs to play yet', { icon: 'info' });
+    }, function (err) { App.toast('Couldn\'t open the album: ' + err.message, { kind: 'error' }); });
+  }
+  function feedback(kind, id, done) {
+    App.closePopover(true);
+    M.api('/api/feedback', { method: 'POST', body: { kind: kind, id: id } }).then(done, function (err) {
+      App.toast('Couldn\'t send that to your feed: ' + err.message, { kind: 'error' });
+    });
+  }
+  function serverAction(path, ok) {
+    App.closePopover(true);
+    M.api(path, { method: 'POST' }).then(function () { App.toast(ok, { kind: 'ok' }); }, function (err) { App.toast(err.message, { kind: 'error' }); });
   }
   Object.assign(actions, {
     'noop': function () {},
     'noop-saved': function () { App.toast('Already saved to your library', { icon: 'saved' }); },
     'reload': function () { location.reload(); },
     'play-track': function (el) { var id = el.getAttribute('data-id'); P.playTrack(id, listIds(el)); },
-    'play-album': function (el) { var a = M.album(el.getAttribute('data-id')); P.playList(a.trackIds, 0); App.toast('Playing ' + a.title, { icon: 'play' }); },
-    'shuffle-album': function (el) { var a = M.album(el.getAttribute('data-id')); P.playList(a.trackIds, Math.floor(Math.random() * a.trackIds.length)); P.setShuffle(true); },
+    'play-album': function (el) {
+      var id = el.getAttribute('data-id');
+      withAlbum(id, function (list) { P.playList(list, 0); App.toast('Playing ' + M.album(id).title, { icon: 'play' }); });
+    },
+    'shuffle-album': function (el) {
+      withAlbum(el.getAttribute('data-id'), function (list) { P.setShuffle(true); P.playList(list, Math.floor(Math.random() * list.length)); });
+    },
     'play-playlist': function (el) {
       var p = state.playlists.filter(function (x) { return x.id === el.getAttribute('data-id'); })[0];
       if (!p.items.length) { App.toast('This playlist is empty. Drag songs here or use Add to playlist.', { icon: 'info' }); return; }
@@ -1655,7 +2145,7 @@
     'queue-add': function (el) { P.addToQueue(ids(el)); },
     'like': function (el) { App.toggleLike(el.getAttribute('data-id')); },
     'save': function (el) { var id = el.getAttribute('data-id'), s = state.saves[id]; if (s && s.status === 'failed') App.saves.retry(id); else App.saves.start(ids(el)); },
-    'save-album': function (el) { App.saves.start(M.album(el.getAttribute('data-id')).trackIds); },
+    'save-album': function (el) { withAlbum(el.getAttribute('data-id'), App.saves.start); },
     'go-album': function (el) { var t = M.track(el.getAttribute('data-id')); App.go('/album/' + (t ? t.albumId : el.getAttribute('data-id'))); },
     'follow': function (el) { App.toggleFollow(el.getAttribute('data-id')); },
     'follow-tag': function (el) {
@@ -1672,15 +2162,17 @@
       App.hooks.reason(el, { kind: el.getAttribute('data-kind'), ref: el.getAttribute('data-ref'), name: el.getAttribute('data-name'),
         via: el.getAttribute('data-via'), item: el.getAttribute('data-item') });
     },
-    'more-like': function () { App.closePopover(true); App.toast('Got it: more like this in your feed', { icon: 'sparkle' }); },
-    'less-like': function () { App.closePopover(true); App.toast('Got it: less like this', { icon: 'info', action: 'Undo', onAction: function () {} }); },
+    'more-like': function (el) { feedback('more-like', el.getAttribute('data-id'), function () { App.toast('Got it: more like this in your feed', { icon: 'sparkle' }); }); },
+    'less-like': function (el) { feedback('less-like', el.getAttribute('data-id'), function () { App.toast('Got it: less like this', { icon: 'info' }); }); },
     'hide-artist': function (el) {
-      var id = el.getAttribute('data-id'), a = M.artist(id); App.closePopover(true);
-      App.store.update('hiddenArtists', function (h) { h[id] = true; });
-      App.toast('Hidden ' + (a ? a.name : 'artist') + ' from your feed', { icon: 'info', action: 'Undo', onAction: function () { App.store.update('hiddenArtists', function (h) { delete h[id]; }); } });
+      var id = el.getAttribute('data-id'), a = M.artist(id);
+      feedback('hide-artist', id, function () {
+        App.store.update('hiddenArtists', function (h) { h[id] = true; });
+        App.toast('Hidden ' + (a ? a.name : 'the artist') + ' from your feed', { icon: 'info' });
+      });
     },
     'track-menu': function (el) {
-      var id = el.getAttribute('data-id'), t = M.track(id);
+      var id = el.getAttribute('data-id'), t = M.track(id); if (!t) return;
       App.menu(el, [
         { label: 'Play next', icon: 'queue', run: function () { P.playNext([id]); } },
         { label: 'Add to queue', icon: 'plus', run: function () { P.addToQueue([id]); } },
@@ -1691,7 +2183,7 @@
         { label: 'Go to album', icon: 'library', run: function () { App.go('/album/' + t.albumId); } },
         { label: 'Go to artist', icon: 'peer', run: function () { App.go('/artist/' + t.artistId); } },
         { label: 'Show sources', icon: 'soulseek', run: function () { App.hooks.sourcePicker(id); } }
-      ], { label: 'Actions for ' + t.title });
+      ], { label: 'Actions for ' + (t ? t.title : 'this song') });
     },
     'player-more': function (el) {
       var t = P.current();
@@ -1711,7 +2203,8 @@
     'play': function () { P.toggle(); }, 'next': function () { P.next(); }, 'prev': function () { P.prev(); },
     'shuffle': function () { P.setShuffle(); }, 'repeat': function () { P.cycleRepeat(); }, 'mute': function () { P.toggleMute(); },
     'retry-search': function () { P.retry(); App.toast('Searching Soulseek again', { icon: 'refresh' }); },
-    'try-soulseek': function () { var t = P.current(); ps.frozen = false; ps.status = 'finding'; ps.peersFound = 0; ps.findTicks = 0; ps.received = 0; ps.buffered = []; ps.playing = true; ps.peer = { name: t.sources[0].peer, rank: 1, of: t.sources.length, speed: t.sources[0].speed, format: t.sources[0].format, sizeMB: t.sources[0].sizeMB }; changed('status'); },
+    'try-soulseek': function () { P.trySoulseek(); },
+    'reload-read': function (el) { var path = el.getAttribute('data-id'); if (path) M.reload(path); else { M.invalidate(); App.refresh(); } },
     'toggle-panel': function (el) { App.togglePanel(el.getAttribute('data-tab')); },
     'close-panel': function () { App.closePanel(); },
     'open-activity': function () { App.openPanel('activity'); },
@@ -1723,9 +2216,9 @@
     'shortcuts': function () { App.hooks.shortcuts(); },
     'palette': function () { App.hooks.palette(); },
     'classic': function () { App.go('/classic'); },
-    'soulseek-reconnect': function () { App.closePopover(true); App.setService('soulseek', { state: 'ok', detail: 'Reconnected just now' }); App.toast('Soulseek reconnected', { kind: 'ok', icon: 'soulseek' }); },
-    'jellyfin-rescan': function () { App.closePopover(true); App.toast('Jellyfin rescan started', { icon: 'refresh' }); },
-    'lastfm-retry': function () { App.closePopover(true); App.setService('lastfm', { state: 'ok', queued: 0, detail: 'Connected as moth_and_lantern, nothing waiting' }); App.toast('2 scrobbles sent to Last.fm', { kind: 'ok' }); },
+    'open-sources': function () { App.closePopover(); App.go('/settings/sources'); },
+    'jellyfin-rescan': function () { serverAction('/api/library/rescan', 'Jellyfin rescan started'); },
+    'lastfm-retry': function () { serverAction('/api/lastfm/retry', 'Sending queued scrobbles to Last.fm'); },
     'open-cache': function () { App.closePopover(); App.go('/settings/cache'); },
     'clear-search': function () { var i = $('#header-search'); i.value = ''; i.focus(); toggleClear(); },
     'back': function () { App.back(); },
@@ -1790,7 +2283,7 @@
     var a = document.activeElement, k = e.key, mod = e.ctrlKey || e.metaKey;
     if (k === 'Escape') {
       if (App.closePopover(true)) return;
-      if (App.closeTop()) return;
+      if (escapeTop()) return;
       var mode = $('#app').getAttribute('data-ctx');
       if (mode === 'open') { App.closePanel(); return; }
       if (App.current.route && App.current.route.view === 'now' && window.innerWidth < 640) { App.back(); return; }
@@ -1825,8 +2318,8 @@
       case ' ': if (a && (a.tagName === 'BUTTON' || a.tagName === 'A')) return; e.preventDefault(); P.toggle(); break;
       case 'ArrowRight': if (onControl) return; e.preventDefault(); P.seekBy(e.shiftKey ? 30 : 5); break;
       case 'ArrowLeft': if (onControl) return; e.preventDefault(); P.seekBy(e.shiftKey ? -30 : -5); break;
-      case 'ArrowUp': if (onControl) return; e.preventDefault(); P.setVolume(ps.volume + .05); break;
-      case 'ArrowDown': if (onControl) return; e.preventDefault(); P.setVolume(ps.volume - .05); break;
+      case 'ArrowUp': if (onControl) return; e.preventDefault(); P.setVolume(ps.volume + P.volumeStep()); break;
+      case 'ArrowDown': if (onControl) return; e.preventDefault(); P.setVolume(ps.volume - P.volumeStep()); break;
       case 'n': case 'N': P.next(); break;
       case 'p': case 'P': P.prev(); break;
       case 'm': case 'M': P.toggleMute(); break;
@@ -1855,22 +2348,32 @@
     try {
       if (t && msKey !== t.id) {
         msKey = t.id;
-        var art = 'assets/fallback-art-';   // the server renders real covers at these sizes; this is the brand fallback
-        navigator.mediaSession.metadata = new MediaMetadata({ title: t.title, artist: t.artist, album: t.album,
-          // artwork must be http(s): skipped when the prototype is opened from file://
-          artwork: location.protocol === 'file:' ? [] : [96, 256, 512].map(function (s) { return { src: art + s + '.png', sizes: s + 'x' + s, type: 'image/png' }; }) });
+        setMetadata(t, artwork(function (s) { return 'assets/fallback-art-' + s + '.png'; }));
+        /* the real cover once it is known to exist; the brand art stays when it doesn't */
+        var probe = new Image(), id = t.id;
+        probe.onload = function () { if (msKey === id) setMetadata(t, artwork(function (s) { return App.artUrl(t.albumId, s); })); };
+        probe.src = App.artUrl(t.albumId, 96);
       }
+      if (!t) { msKey = null; navigator.mediaSession.metadata = null; }
       navigator.mediaSession.playbackState = !t ? 'none' : ps.playing ? 'playing' : 'paused';
-      if (t && navigator.mediaSession.setPositionState) navigator.mediaSession.setPositionState({ duration: t.duration, playbackRate: 1, position: Math.min(ps.pos, t.duration) });
-    } catch (e) { /* some browsers reject parts of this on file:// */ }
+      var dur = P.duration();
+      if (t && dur && navigator.mediaSession.setPositionState) navigator.mediaSession.setPositionState({ duration: dur, playbackRate: 1, position: Math.min(ps.pos, dur) });
+    } catch (e) { console.warn('Media Session rejected an update', e); }
   }
+  function artwork(src) {
+    return [96, 256, 512].map(function (s) { return { src: new URL(src(s), location.href).href, sizes: s + 'x' + s }; });
+  }
+  function setMetadata(t, art) { navigator.mediaSession.metadata = new MediaMetadata({ title: t.title, artist: t.artist, album: t.album, artwork: art }); }
+  App.on('player', function (k) { if (k === 'seek' || k === 'status' || k === 'play') updateMediaSession(); });
   function wireMediaSession() {
     if (!('mediaSession' in navigator)) return;
+    /* the player the keys drive: the app engine, or whatever App.hooks.media is set to (Classic mode: Webamp) */
+    function T() { return App.hooks.media || P; }
     var h = {
-      play: function () { P.play(); }, pause: function () { P.pause(); }, stop: function () { P.pause(); P.seek(0); },
-      previoustrack: function () { P.prev(); }, nexttrack: function () { P.next(); },
-      seekto: function (d) { P.seek(d.seekTime); },                       // clamps to buffered, same as the seek bar
-      seekbackward: function (d) { P.seekBy(-(d.seekOffset || 10)); }, seekforward: function (d) { P.seekBy(d.seekOffset || 10); }
+      play: function () { T().play(); }, pause: function () { T().pause(); }, stop: function () { T().pause(); T().seek(0); },
+      previoustrack: function () { T().prev(); }, nexttrack: function () { T().next(); },
+      seekto: function (d) { T().seek(d.seekTime); },                     // the engine clamps to what arrived, like the seek bar
+      seekbackward: function (d) { T().seekBy(-(d.seekOffset || 10)); }, seekforward: function (d) { T().seekBy(d.seekOffset || 10); }
     };
     Object.keys(h).forEach(function (k) { try { navigator.mediaSession.setActionHandler(k, h[k]); } catch (e) { /* unsupported action */ } });
   }
@@ -1883,7 +2386,9 @@
     var r = e.target.closest && e.target.closest('[draggable="true"][data-track-id], [draggable="true"][data-album-id]');
     if (!r) return;
     var sel = $$('.trow.is-selected', r.parentElement);
-    dragIds = r.hasAttribute('data-album-id') ? M.album(r.getAttribute('data-album-id')).trackIds
+    var album = r.hasAttribute('data-album-id') && M.album(r.getAttribute('data-album-id'));
+    if (r.hasAttribute('data-album-id') && !(album && album.trackIds.length)) { e.preventDefault(); return; }   // songs not known yet
+    dragIds = album ? album.trackIds
       : sel.length > 1 && r.classList.contains('is-selected') ? sel.map(function (x) { return x.getAttribute('data-track-id'); }) : [r.getAttribute('data-track-id')];
     e.dataTransfer.effectAllowed = 'copyMove';
     e.dataTransfer.setData('text/plain', dragIds.join(','));
@@ -1929,22 +2434,127 @@
   });
 
   /* =====================================================================
-     15. Boot: shell wiring, player bar states, first render
+     15. Server events and boot: token gate (GET /api/ping), /health, the event stream, collections,
+         service worker. Each source of truth is fetched once here and kept current by events.
      ===================================================================== */
-  App.registerStates('player', [            // PROTO: demo states for the state switcher
-    { id: 'player-idle', label: 'Player: idle (nothing queued)', route: '/home', apply: function () { P.setState({ queue: [], index: 0, status: 'idle', playing: false }); } },
-    { id: 'player-finding', label: 'Player: finding a source', route: '/home', apply: function () { load(0); P.setState({ status: 'finding', peersFound: 23, playing: true }); } },
-    { id: 'player-queued', label: 'Player: queued at peer', route: '/home', apply: function () { load(0); P.setState({ status: 'queued', queuePos: 3, playing: true, received: 0, buffered: [] }); } },
-    { id: 'player-buffering', label: 'Player: buffering', route: '/home', apply: function () { load(0); P.setState({ status: 'buffering', playing: true, received: .12, buffered: [[0, .1]], pos: 22 }); } },
-    { id: 'player-streaming', label: 'Player: streaming from peer', route: '/home', apply: function () { load(0); Object.assign(ps, { status: 'streaming', playing: true, received: .62, buffered: [[0, .3], [.36, .58]], pos: 84, frozen: false, durationKnown: false }); changed('track'); } },
-    { id: 'player-stalled', label: 'Player: peer stalled, falling back', route: '/home', apply: function () { load(0); Object.assign(ps, { status: 'stalled', playing: true, received: .38, buffered: [[0, .36]], pos: 70, frozen: true }); changed('track'); } },
-    { id: 'player-failed', label: 'Player: all sources failed', route: '/home', apply: function () { load(0); P.setState({ status: 'failed', playing: false, received: 0, buffered: [], error: 'Couldn\'t play: no peer responded' }); } },
-    { id: 'player-library', label: 'Player: playing from library', route: '/home', apply: function () { P.playList(['t-lantern-season-1', 't-lantern-season-2', 't-glasshouse-bloom-1'], 0); ps.pos = 61; } },
-    { id: 'player-paused', label: 'Player: paused', route: '/home', apply: function () { P.playList(['t-lantern-season-1', 't-lantern-season-2'], 0); ps.pos = 98; P.pause(); } },
-    { id: 'player-ended', label: 'Player: end of queue', route: '/home', apply: function () { P.setState({ queue: ['t-glasshouse-bloom-6'], index: 0, status: 'ended', playing: false, pos: 213, received: 1, buffered: [[0, 1]], durationKnown: true, radio: null }); } },
-    { id: 'player-jellyfin-error', label: 'Player: library item unavailable', route: '/home', apply: function () { P.playList(['t-glasshouse-bloom-2'], 0); P.setState({ status: 'jellyfin-error', playing: false, received: 0, buffered: [] }); } },
-    { id: 'player-crossfade', label: 'Player: crossfading', route: '/home', apply: function () { App.store.set('crossfadeSec', 6); P.playList(['t-lantern-season-6', 't-lantern-season-7'], 0); P.setState({ pos: 180, crossfade: true, playing: true }); } }
-  ]);
+  /* `service`, `stream`, `save`, `job`, `transfer` drive the engines here; every topic is also re-emitted as
+     App.emit('server:<topic>', payload) for screens (search.results -> discover.js). */
+  var serverHandlers = {
+    service: function (e) { applyService(e.name, e.service); },
+    stream: onStreamEvent,
+    save: onSaveEvent,
+    job: onJobEvent,
+    transfer: onTransferEvent,
+    resync: function () { refetchAll(); }
+  };
+  function onServerEvent(topic, payload) {
+    if (payload && payload.entities) M.absorb(payload.entities);
+    if (serverHandlers[topic]) serverHandlers[topic](payload);
+    App.emit('server:' + topic, payload);
+  }
+  /* App.server: { reachable, version, authorized } -- read by the banners, the gate and Settings > App */
+  App.server = { reachable: true, version: null, authorized: true };
+  function setServer(patch) { Object.assign(App.server, patch); App.emit('server', App.server); }
+  M.onUnauthorized = function () { if (App.server.authorized) setServer({ authorized: false }); };
+  M.onSettled = function () { if (booted) renderRoute(true); };
+
+  /* GET /health: services, version, reachability; also brings a closed event stream back once the server answers */
+  function loadHealth() {
+    return fetch(M.url('/health'), { credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (h) {
+      var changedVersion = App.server.version && App.server.version !== h.version;
+      setServer({ reachable: true, version: h.version });
+      if (events && events.readyState === EventSource.CLOSED && App.server.authorized) connectEvents();
+      Object.keys(h.services || {}).forEach(function (k) { applyService(k, h.services[k]); });
+      if (changedVersion) App.emit('pwa', { kind: 'update' });
+    }, function () { setServer({ reachable: false }); });
+  }
+  function loadCollections() {
+    return Promise.all([
+      M.api('/api/likes').then(function (r) {
+        var l = {}; (r.items || []).forEach(function (id) { l[id] = true; }); App.store.set('liked', l);
+      }, function (err) { console.warn('Likes unavailable:', err.message); }),
+      M.api('/api/follows').then(function (r) {
+        var f = {}; (r.artists || []).concat(r.tags || []).forEach(function (id) { f[id] = true; }); App.store.set('followed', f);
+      }, function (err) { console.warn('Follows unavailable:', err.message); }),
+      loadPlaylists(), loadJobs(), loadSettings()
+    ]).then(function () { App.syncRows(); });
+  }
+  /* Settings > Playback values the engine needs; a value may come back as { value, source: 'config' } */
+  function loadSettings() {
+    return M.api('/api/settings').then(function (s) {
+      var pb = (s && s.playback) || {}, v = function (x) { return x && typeof x === 'object' && 'value' in x ? x.value : x; };
+      App.setPlayback({ gapless: v(pb.gapless) !== false, crossfade: +v(pb.crossfade) || 0,
+        normalisation: v(pb.normalisation) || 'off', radioWhenQueueEnds: v(pb.radioWhenQueueEnds) !== false, volumeStep: +v(pb.volumeStep) || 5 });
+    }, function (err) { console.warn('Settings unavailable, playback uses defaults:', err.message); });
+  }
+  /* after a reconnect or a resync: everything the events would have told us */
+  function refetchAll() {
+    M.invalidate();
+    loadHealth(); loadCollections();
+    if (booted) renderRoute(true);
+  }
+  var events = null, connectedOnce = false;
+  function connectEvents() {
+    if (events) events.close();
+    events = M.connect(onServerEvent, function () {
+      if (connectedOnce) refetchAll();
+      connectedOnce = true;
+      setServer({ reachable: true });
+    }, function () { loadHealth(); });
+  }
+  /* the token gate (system.js) calls this once POST /api/session has set the cookie */
+  App.checkHealth = loadHealth;
+  App.start = function () {
+    var wasLocked = !App.server.authorized;
+    setServer({ authorized: true });
+    if (wasLocked) { M.invalidate(); renderRoute(true); }       // reads made behind the gate failed with 401
+    connectEvents(); loadCollections();
+  };
+  function startServer() {
+    loadHealth().then(registerWorker);
+    M.api('/api/ping').then(App.start, function (err) {
+      if (err.status !== 401) { setServer({ reachable: false }); App.start(); }   // offline start: the shell still works
+    });
+  }
+
+  /* service worker (sw.js): the app shell for offline start; a new server version prompts a reload */
+  function registerWorker() {
+    if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
+    navigator.serviceWorker.register('sw.js?v=' + encodeURIComponent(App.server.version || '0')).then(function (reg) {
+      worker = reg;
+      navigator.serviceWorker.ready.then(function (r) {          // keep what this page loaded (shell, design, fonts)
+        var urls = performance.getEntriesByType('resource').map(function (x) { return x.name; }).concat([location.href.split('#')[0]]);
+        if (r.active) r.active.postMessage({ type: 'cache', urls: urls });
+      });
+      reg.addEventListener('updatefound', function () {
+        var w = reg.installing;
+        w.addEventListener('statechange', function () {
+          if (w.state === 'installed' && navigator.serviceWorker.controller) App.emit('pwa', { kind: 'update' });
+        });
+      });
+    }, function (err) { console.warn('Service worker not registered:', err.message); });
+  }
+  var worker = null;
+  navigator.serviceWorker && navigator.serviceWorker.addEventListener('controllerchange', function () { if (updating) location.reload(); });
+  var updating = false;
+  var installPrompt = null;
+  window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); installPrompt = e; App.emit('pwa', { kind: 'installable' }); });
+  window.addEventListener('appinstalled', function () { installPrompt = null; App.emit('pwa', { kind: 'installed' }); });
+  /* App.pwa: install() shows the browser's prompt (resolves true when accepted); installable(); installed();
+     update() switches to the waiting version (or just reloads when only the server changed) */
+  App.pwa = {
+    update: function () {
+      if (worker && worker.waiting) { updating = true; worker.waiting.postMessage({ type: 'skip-waiting' }); }
+      else location.reload();
+    },
+    installable: function () { return !!installPrompt; },
+    installed: function () { return matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; },
+    install: function () {
+      if (!installPrompt) return Promise.resolve(false);
+      var p = installPrompt; installPrompt = null; p.prompt();
+      return p.userChoice.then(function (c) { return c.outcome === 'accepted'; });
+    }
+  };
 
   function toggleClear() { var i = $('#header-search'), c = $('#header-search-clear'); if (c) c.hidden = !i.value; }
   function wireHeader() {
@@ -1985,6 +2595,7 @@
   function boot() {
     renderBrand(); renderRail(); renderTray(); wireHeader(); wireThemeButtons(); layoutCtx(); renderCtx(); wireMediaSession();
     updateActivityBadge(); renderBar();
+    window.addEventListener('online', refetchAll);
     var headsQueued = false;                                   // card heads survive any repaint (see ui.cardHeads)
     var mo = new MutationObserver(function () {
       if (headsQueued) return; headsQueued = true;
@@ -2000,6 +2611,7 @@
     App.on('store', function (k) { if (k.indexOf('saves') >= 0 || k.indexOf('activity') >= 0) { updateActivityBadge(); if (state.ctxTab === 'activity') renderCtx(); } });
     booted = true;
     renderRoute();
+    startServer();
     App.emit('ready');
   }
   /* boot once the DOM is parsed and the design's design.js (if any) has registered its slots */

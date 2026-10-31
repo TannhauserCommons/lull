@@ -1059,14 +1059,6 @@
   :root[data-design="lull"] .disc-songs .trow__album { display: none; }
 }
 
-/* the desktop board's still of Home (desktop/preview.js): the same flat discover window, big tall release cards */
-:root[data-design="lull"] .main:has(.pv-greeting)::before { content: "discover"; }
-:root[data-design="lull"] .view__inner:has(> .pv-greeting) { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 12px; }
-:root[data-design="lull"] .pv-greeting { margin: 0 0 12px; font: 900 1.25rem/1.2 var(--f-ui); letter-spacing: -.01em; }
-:root[data-design="lull"] .pv-summary { margin: 0; font: 700 .8125rem/1.4 var(--f-ui); }
-:root[data-design="lull"] .view__inner:has(> .pv-greeting) > .card { flex: 1 0 100%; background: none; border: 0; box-shadow: none; padding: 0; }
-:root[data-design="lull"] .view__inner:has(> .pv-greeting) .shelf { grid-auto-columns: calc((100% - 3 * 16px) / 4.25); }
-
 /* wide desks: six picks; releases in four columns, the other shelves in three */
 @media (min-width: 1880px) {
   :root[data-design="lull"] .disc-home .disc-picks { --picks: 6; }
@@ -1357,7 +1349,7 @@
   color: var(--l-ink-dim); letter-spacing: -.02em;
 }
 :root[data-design="lull"] .now-ly__line.is-current::before { content: ""; position: absolute; left: -22px; top: .45em; width: 16px; height: 16px; background: var(--heart); -webkit-mask: var(--l-spark) center / contain no-repeat; mask: var(--l-spark) center / contain no-repeat; }
-:root[data-design="lull"] .now-ly__line.is-current:not(:has(.now-ly__w)), :root[data-design="lull"] .now-ly__line.is-current .now-ly__w.is-sung {
+:root[data-design="lull"] .now-ly__line.is-current {
   background: none; color: var(--fg);
   text-decoration: underline var(--l-hl) .42em; text-underline-offset: -.24em; text-decoration-skip-ink: none;
 }
@@ -1465,8 +1457,6 @@
 :root[data-design="lull"] .orb--blue { --orb: var(--l-orb-3); } :root[data-design="lull"] .orb--lav { --orb: var(--l-orb-2); } :root[data-design="lull"] .orb--mag { --orb: var(--l-orb-1); }
 :root[data-design="lull"] .cls-desk { margin: 4px 4px 0; padding: 12px 12px 0; }
 :root[data-design="lull"] .cls-slot { border: 0; border-radius: 10px 10px 24px 10px; background: var(--screen); box-shadow: inset 0 2px 0 rgba(0, 0, 0, .2), 0 0 0 var(--stroke) rgba(43, 38, 80, .5); color: var(--l-screen-ink); }
-:root[data-design="lull"] .cls-shot--ghost { outline-color: rgba(255, 255, 255, .45); }
-:root[data-design="lull"] .cls-ghost__tag::before { border-top-color: rgba(255, 255, 255, .55); }
 :root[data-design="lull"] .cls-foot { margin: 0 4px 4px; padding: 10px 12px 12px; gap: 10px; }
 :root[data-design="lull"] .cls-notice, :root[data-design="lull"] .cls-exit { border-color: var(--l-rule); border-radius: 12px; background: var(--l-card); }
 :root[data-design="lull"] .cls-drawer { background: var(--sky); border: var(--stroke) solid var(--l-edge); border-radius: 14px; padding: 4px; box-shadow: inset 0 0 0 4px var(--l-frame), var(--l-win-stack); overflow: visible; margin: 0; }

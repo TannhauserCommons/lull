@@ -138,17 +138,15 @@ button.disc-pick__title:hover { text-decoration: underline; text-underline-offse
   .disc-filters__group { flex-wrap: nowrap; }
 }
 
-/* Soulseek progress line: counter + determinate bar */
+/* Soulseek progress line: live counters + a bar that drifts until the search is done */
 .disc-scan {
-  display: grid; grid-template-columns: 20px minmax(0, 1fr) auto auto; align-items: center; gap: 6px var(--sp-2);
+  display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 6px var(--sp-2);
   margin: calc(-1 * var(--sp-2)) 0 var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: 14px; background: var(--bg-2);
 }
 .disc-scan > .ic { color: var(--fg-2); }
 .disc-scan__text { font: 700 .875rem/1.3 var(--f-ui); }
-.disc-scan__left { color: var(--fg-2); }
 .disc-scan__bar { grid-column: 1 / -1; height: 6px; }
 .disc-scan.is-done .disc-scan__bar > i { background: var(--link); }
-.disc-scan.is-down, .disc-scan--lib { grid-template-columns: 20px minmax(0, 1fr) auto; }
 .disc-scan.is-down > .sg { justify-self: center; }
 .disc-scan.is-down .disc-scan__bar { display: none; }
 .disc-songs .tlist { margin-bottom: var(--sp-2); }
@@ -213,7 +211,6 @@ button.disc-pick__title:hover { text-decoration: underline; text-underline-offse
 /* folder sheet */
 .disc-folder__head { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: var(--sp-5); align-items: start; margin-bottom: var(--sp-4); }
 .disc-folder__art { display: grid; gap: var(--sp-2); justify-items: center; }
-.disc-folder__nocover { font: var(--t-micro); color: var(--fg-2); }
 .disc-folder__info { display: grid; justify-items: start; gap: 2px; min-width: 0; }
 .disc-folder__title { font: var(--t-title-xl); letter-spacing: var(--t-title-xl-track); font-size: 1.75rem; }
 .disc-folder__facts { margin-top: var(--sp-2); color: var(--fg-2); }

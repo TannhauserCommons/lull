@@ -158,7 +158,6 @@
   background-image: var(--pt-sky-art), radial-gradient(circle at 1px 1px, var(--pt-dot) 1px, transparent 1.6px);
   background-size: 480px 480px, 24px 24px;
 }
-:root[data-design="petal"][data-theme="night"] body.pv-board { background-image: radial-gradient(circle at 1px 1px, var(--pt-dot) 1px, transparent 1.6px); background-size: 24px 24px; }   /* the board's long copy sits on the page: no stars under it */
 :root[data-design="petal"] .sky-specks { display: none; }
 :root[data-design="petal"] ::selection { background: var(--peri); color: var(--ink); }
 
@@ -273,7 +272,8 @@
 }
 :root[data-design="petal"] .cover--xs { border-width: 1px; }
 :root[data-design="petal"] .cover::before, :root[data-design="petal"] .cover::after { display: none; }
-:root[data-design="petal"] .cover.pv-flip { transform: scaleX(-1); }
+:root[data-design="petal"] .cover.pv-flip:not(.has-art) { transform: scaleX(-1); }   /* mirror the pixel scenes, never real art */
+:root[data-design="petal"] .cover__img { image-rendering: auto; }
 :root[data-design="petal"] .c1 { background-image: url("art/c1.svg"); }
 :root[data-design="petal"] .c2 { background-image: url("art/c2.svg"); }
 :root[data-design="petal"] .c3 { background-image: url("art/c3.svg"); }
@@ -892,15 +892,6 @@
 :root[data-design="petal"] .cls-bar { overflow: hidden; }
 :root[data-design="petal"] .cls-desk { background: var(--pt-blush) var(--pt-clouds) 0 0 / 192px 112px repeat; image-rendering: pixelated; box-shadow: var(--stack); }
 :root[data-design="petal"] .cls-slot { border: 0; }
-:root[data-design="petal"] .cls-ghost {
-  position: relative; padding: 46px 18px 18px; background: var(--cream); border: 1.5px solid var(--pt-frame); border-radius: 6px; box-shadow: var(--stack);
-}
-:root[data-design="petal"] .cls-ghost::before {   /* the window's gloss title bar with orbs */
-  content: "classic window"; position: absolute; left: 0; right: 0; top: 0; height: 32px; padding-left: 70px; border-bottom: 1px solid var(--pt-bar-line);
-  border-radius: 5px 5px 0 0; font: var(--t-label); line-height: 32px; text-transform: uppercase; letter-spacing: .16em; color: var(--fg-sky);
-  background: var(--pt-orbs), linear-gradient(180deg, var(--pt-bar-1) 0%, var(--pt-bar-2) 46%, var(--pt-bar-3) 47%, var(--pt-bar-4) 100%);
-  background-position: 12px 10px, 12px 10px, 12px 10px, 0 0; background-size: 46px 12px, 46px 12px, 46px 12px, auto; background-repeat: no-repeat;
-}
 :root[data-design="petal"] .win { border: 1.5px solid var(--pt-frame); }
 :root[data-design="petal"] .win__bar { background: linear-gradient(180deg, var(--pt-bar-1) 0%, var(--pt-bar-2) 46%, var(--pt-bar-3) 47%, var(--pt-bar-4) 100%); border-bottom: 1px solid var(--pt-bar-line); }
 :root[data-design="petal"] .win__title {

@@ -846,10 +846,6 @@
   content: "lull"; position: absolute; left: 50%; bottom: 7px; transform: translateX(-50%); pointer-events: none;
   font: italic 900 1.25rem/1 var(--f-ui); letter-spacing: -.02em; color: #2b2550; text-shadow: 0 1px 0 #d2b9bd;
 }
-:root[data-design="skydeck"] :is(.cls-slot__tag, .cls-ghost__tag, .cls-ghost__cap) { background: var(--mocha-edge); color: var(--lilac); border-color: var(--lavender); }
-:root[data-design="skydeck"] .cls-slot__tag { font: var(--t-px); letter-spacing: var(--t-px-track); }
-:root[data-design="skydeck"] .cls-ghost__skin { color: var(--lilac); }
-:root[data-design="skydeck"] :is(.cls-ghost__skin em, .cls-ghost__cap) { color: var(--lavender); }
 :root[data-design="skydeck"] .cls-drawer > .win__bar { background: var(--sd-band); border-bottom: var(--stroke) solid var(--line); box-shadow: inset 0 1.5px 0 #ffffff55; }
 :root[data-design="skydeck"] .cls-drawer .win__title { background: none; border: 0; color: var(--sd-band-ink); font: italic 900 1.125rem/1 var(--f-ui); }
 :root[data-design="skydeck"] .cls-drawer .cls-drawer__close { color: var(--sd-band-ink); }
