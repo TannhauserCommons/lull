@@ -1,0 +1,126 @@
+# lull and its Soulseek sidecar (slskd). One env file next to this one (.env, from .env.example)
+# picks the shape with COMPOSE_PROFILES:
+#   plain  lull + slskd on your network
+#   vpn    lull + slskd routed through gluetun, with the VPN's forwarded port as slskd's listen port
+#   (empty) lull alone, talking to an slskd you already run
+# Each shape is explained in docs/context/deploy.md.
+name: lull
+
+# slskd's settings, shared by the plain and vpn services.
+x-slskd: &slskd
+  image: slskd/slskd:0.26.2
+  restart: unless-stopped
+  user: ${RUN_AS:-1000:1000}
+  depends_on:
+    init:
+      condition: service_completed_successfully
+  # slskd won't start without its folders. LULL_SHARE decides what it shares; slskd reads its
+  # shares only at start, from the env.
+  command:
+    - bash
+    - -c
+    - >-
+      mkdir -p /transfers/incomplete /transfers/complete &&
+      if [ "$$LULL_SHARE" != none ]; then export SLSKD_SHARED_DIR=/music; fi;
+      exec ./slskd
+  environment: &slskd-env
+    LULL_SHARE: ${LULL_SHARE:-library}
+    SLSKD_SLSK_USERNAME: ${SLSK_USERNAME:-}
+    SLSKD_SLSK_PASSWORD: ${SLSK_PASSWORD:-}
+    # The administrator key lull uses; the same value as lull's own setting.
+    SLSKD_API_KEY: ${LULL_SLSKD_API_KEY:-}
+    SLSKD_SLSK_LISTEN_PORT: ${SLSK_LISTEN_PORT:-50300}
+    # slskd's web port stays inside this network, so plain HTTP is enough.
+    SLSKD_NO_HTTPS: "true"
+    SLSKD_HTTP_PORT: "5030"
+    SLSKD_INCOMPLETE_DIR: /transfers/incomplete
+    SLSKD_DOWNLOADS_DIR: /transfers/complete
+  volumes:
+    - slskd:/app
+    - ${TRANSFERS:-transfers}:/transfers
+    - ${MUSIC_DIR:?set MUSIC_DIR to your Jellyfin music folder}:/music:ro
+
+services:
+  lull:
+    image: ghcr.io/tannhausercommons/lull:${IMAGE_TAG:-main}
+    restart: unless-stopped
+    user: ${RUN_AS:-1000:1000}
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    env_file: .env
+    ports:
+      - ${PORT:-8080}:8080
+    volumes:
+      - lull:/data
+      - ${TRANSFERS:-transfers}:/transfers
+      - ${MUSIC_DIR:?set MUSIC_DIR to your Jellyfin music folder}:/music
+
+  # Plain: slskd on the host's network connection. Forward SLSK_LISTEN_PORT on your router for
+  # more peers; without it slskd still works, reaching fewer of them.
+  slskd:
+    <<: *slskd
+    profiles: [plain]
+    ports:
+      - ${SLSK_LISTEN_PORT:-50300}:${SLSK_LISTEN_PORT:-50300}
+
+  # VPN: all of slskd's traffic leaves through gluetun. slskd asks gluetun for the forwarded port
+  # and listens on it, so peers can reach it through the VPN.
+  slskd-vpn:
+    <<: *slskd
+    profiles: [vpn]
+    network_mode: service:gluetun
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      gluetun:
+        condition: service_healthy
+    environment:
+      <<: *slskd-env
+      SLSKD_VPN: "true"
+      SLSKD_VPN_PORT_FORWARDING: "true"
+      SLSKD_VPN_GLUETUN_URL: http://localhost:8000
+      SLSKD_VPN_GLUETUN_API_KEY: ${GLUETUN_API_KEY:-}
+
+  gluetun:
+    image: qmcgaw/gluetun:v3.41.3
+    profiles: [vpn]
+    restart: unless-stopped
+    cap_add: [NET_ADMIN]
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      VPN_SERVICE_PROVIDER: ${VPN_SERVICE_PROVIDER:-}
+      VPN_TYPE: ${VPN_TYPE:-wireguard}
+      WIREGUARD_PRIVATE_KEY: ${WIREGUARD_PRIVATE_KEY:-}
+      WIREGUARD_ADDRESSES: ${WIREGUARD_ADDRESSES:-}
+      OPENVPN_USER: ${OPENVPN_USER:-}
+      OPENVPN_PASSWORD: ${OPENVPN_PASSWORD:-}
+      SERVER_COUNTRIES: ${VPN_SERVER_COUNTRIES:-}
+      VPN_PORT_FORWARDING: "on"
+      # Lets lull, on this compose network, reach slskd's API (never published to the host).
+      FIREWALL_INPUT_PORTS: "5030"
+      # gluetun's control server answers slskd only with this key.
+      HTTP_CONTROL_SERVER_AUTH_DEFAULT_ROLE: '{"auth":"apikey","apikey":"${GLUETUN_API_KEY:-}"}'
+    networks:
+      default:
+        # slskd shares gluetun's network, so this is where lull finds it: http://slskd:5030.
+        aliases: [slskd]
+
+  # Docker creates new volumes owned by root; this hands fresh ones to RUN_AS once, so lull and
+  # slskd never run as root. Folders you already own (TRANSFERS as a path) are left alone.
+  init:
+    image: busybox:1.37.0
+    command:
+      - sh
+      - -c
+      - for d in /data /app /transfers; do [ "$$(stat -c %u $$d)" = 0 ] && chown ${RUN_AS:-1000:1000} $$d; done; true
+    volumes:
+      - lull:/data
+      - slskd:/app
+      - ${TRANSFERS:-transfers}:/transfers
+
+volumes:
+  lull:
+  slskd:
+  transfers:
