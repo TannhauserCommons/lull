@@ -50,8 +50,11 @@ Topic → payload. Published on the bus and streamed to the browser. Owners add 
 | `stream` | soulseek | `{ trackId, status: finding\|queued\|buffering\|streaming\|stalled\|fallback\|failed, peer?, peersFound?, queuePos?, received, size, failedPeers? }` drives the player's streaming states |
 | `save` | library | `{ jobId, trackId, step: 1-5, status: running\|done\|failed\|pending, pct, error?, kind?, nocover? }` (steps: transfer, match, cover, tag+write, rescan) |
 | `job` | any | `{ jobId, kind: transfer\|save\|import\|rescan, ... }` mirrors `MOCK.activity` rows |
-| `play.started` | collection | `{ playId, trackId, at, duration }` (internal: lastfm now-playing, taste) |
-| `play.ended` | collection | `{ playId, trackId, at, playedS, completed, skipped }` (internal: scrobbling, taste) |
+| `play.started` | collection | `{ playId, trackId, at, duration, artist, title, album }`. lastfm now-playing, taste. The `plays` row is written first |
+| `play.ended` | collection | `{ playId, trackId, at, playedS, completed, skipped, duration, artist, title, album }`, exactly once per play. `at` is the play's **start** (Last.fm's timestamp). Scrobbling, taste |
+| `like` | collection | `{ trackId, liked }`. Taste, other devices |
+| `follow` | collection | `{ kind: artist\|tag, id, followed }`. Discovery, other devices |
+| `settings` | collection | The stored settings (the editable part of `GET /api/settings`), at start-up and on every change. Collection starts after every other crate, so a receiver made in `start()` gets the start-up copy |
 
 ## Soulseek (`crates/soulseek`)
 
@@ -91,16 +94,25 @@ Topic → payload. Published on the bus and streamed to the browser. Owners add 
 
 ## Collection (`crates/collection`, `crates/skins`)
 
+Details and rules: [collection.md](collection.md), [skins.md](skins.md).
+
 | Method + path | Returns |
 |---|---|
-| `GET /api/likes` · `PUT /api/likes/{trackId}` · `DELETE /api/likes/{trackId}` | `{ items: [trackId], entities }` |
-| `GET /api/follows` · `PUT/DELETE /api/follows/{artist\|tag}/{id}` | `{ artists: [id], tags: [id] }` |
-| `POST /api/plays { trackId, duration }` → `{ playId }` · `PATCH /api/plays/{playId} { playedS, completed, skipped }` | Records listening. Publishes `play.started` / `play.ended` |
-| `GET /api/history?before=` | `MOCK.history` shape, grouped by day, with scrobble status |
-| `GET /api/playlists` · `POST` · `GET/PATCH/DELETE /api/playlists/{id}` · `PUT /api/playlists/{id}/tracks [trackId]` (order) | `MOCK.playlists` shape |
-| `POST /api/playlists/import` (M3U body) → per-line match preview: `library \| will-search \| not-found` · `GET /api/playlists/{id}.m3u8` | M3U |
-| `GET /api/stats?period=7d\|30d\|12m\|all` | `MOCK.stats.byPeriod[p]` shape + taste summary |
-| `GET /api/settings` · `PATCH /api/settings` | `MOCK.settings` shape. Values from server config come back read-only (`{ value, source: "config" }`) and are never revealed if secret |
-| `GET /api/skins?q=&offset=` | Museum skins: `{ items: [{ md5, name, screenshotUrl, museumUrl, nsfw }], more }` |
-| `GET /api/skins/{md5}.wsz` | The skin file: validated, cached, same origin |
-| `GET /api/skins/favourites` · `PUT/DELETE /api/skins/favourites/{md5}` | Favourites |
+| `GET /api/likes?limit=&offset=` | `{ items: [trackId], total, entities }`, newest first |
+| `PUT /api/likes/{trackId}` · `DELETE /api/likes/{trackId}` | 204 (idempotent). 404 for a track the catalog doesn't know. Publishes `like` |
+| `GET /api/follows` | `{ artists: [id], tags: [id], entities }`, newest first. Artist entities carry only `name` |
+| `PUT /api/follows/artist/{id} { name }` · `PUT /api/follows/tag/{name}` · `DELETE /api/follows/{artist\|tag}/{id}` | 204. The artist name must give back the id (`ArtistId::of(name)`), else 400. Publishes `follow` |
+| `POST /api/plays { trackId, duration?, recommended? }` | `{ playId }` (a string). `duration` defaults to the catalog's; `recommended`: started from a feed pick or radio (Stats hit rate). Publishes `play.started` |
+| `PATCH /api/plays/{playId} { playedS, completed, skipped }` | `{ playId }`. Once per play: a second end is 409. Publishes `play.ended`. Use `fetch(..., { keepalive: true })` so a closing tab still ends its play |
+| `GET /api/history?before=&limit=&tz=` | `{ days: [{ day: "YYYY-MM-DD", items: [{ playId, trackId, at, playedS, completed, skipped, scrobble: done\|pending\|short\|null }] }], next, entities }`, newest first. `tz` = minutes east of UTC (`-new Date().getTimezoneOffset()`), so days split at the listener's midnight. `next` is the `before` of the next page; a day can continue there (merge equal `day`s). `scrobble` comes from lastfm's `scrobble` event; null = never reported |
+| `GET /api/playlists?limit=&offset=` | `{ items: [Playlist], total, entities }`, most recently changed first. Playlist = `{ id: "pl-…", name, desc, created, updated, items: [{ trackId, added }] }` (unix times) |
+| `POST /api/playlists { name, desc?, trackIds?, imported? }` | 201 + Playlist + entities. Every id must be in the catalog (else 400). `imported: { file, library, willSearch, notFound }` (the preview's counts) publishes an import `job` for Activity |
+| `GET /api/playlists/{id}` · `PATCH { name?, desc? }` · `DELETE` | Playlist + entities · Playlist + entities · 204 |
+| `PUT /api/playlists/{id}/tracks [trackId]` | The whole new order (adds, removes, moves). Songs that stay keep their `added`. Playlist + entities |
+| `POST /api/playlists/import` (body: the .m3u/.m3u8 bytes) | `{ name, lines: [{ n, location, artist, title, status: library\|will-search\|not-found, trackId }], counts: { library, willSearch, notFound }, libraryChecked, entities }`. Creates nothing; the UI then `POST`s the playlist with the ids it keeps. `libraryChecked: false` = the library couldn't be asked, so saved songs may show as `will-search` |
+| `GET /api/playlists/{id}.m3u8` | M3U8 attachment: `#EXTINF` + `#EXTALB` + an absolute stream link per song (`/api/library/stream/…` saved, `/api/stream/…` otherwise), based on `LULL_PUBLIC_URL`, else the request's host. Importing it back gives the same ids |
+| `GET /api/stats?period=7d\|30d\|12m\|all&tz=` | `MOCK.stats.byPeriod[p]`: `{ minutes, plays, artists, saves, skipRate, newArtists, hitRate: { recommended, liked, saved }, topArtists: [[id, n]], topTracks: [[id, n]], topTags: [[tag, percent]], clock: [24 plays per local hour] }` + entities. The taste block is discovery's `GET /api/taste` |
+| `GET /api/settings` · `PATCH /api/settings` (partial object) | `MOCK.settings` minus appearance (per device) and Last.fm switches (`/api/lastfm`). Stored: `playback { gapless, crossfade, normalisation, loudnessTarget, volumeStep, radioWhenQueueEnds }`, `sources { formatPreset, minBitrate, maxPeerQueue, stallTimeout, autoPick }`, `library { duplicatePolicy }`, `sharing { uploadSlots, uploadLimitKBs }`, `discovery { adventurousness, on: { listenbrainz, musicbrainz, lastfm, discogs } }`. From config, read-only: `{ value, source: "config" }`, secrets `{ value: null, source: "config", secret: true, set }`. `cache.usedGB` is live (null until soulseek reports). A `PATCH` with an unknown key, a config key or a bad value is refused whole (400). Publishes `settings` |
+| `GET /api/skins?q=&offset=&nsfw=` | `{ items: [{ md5, name, file, screenshotUrl, museumUrl, nsfw, favourite, downloaded }], more }`, 30 a page. Empty `q` = the museum's own order. NSFW hidden unless `nsfw=true` (the per-device setting). Screenshots load straight from the museum's CDN |
+| `GET /api/skins/{md5}.wsz` | The skin file: downloaded once, validated (a zip with `main.bmp`), cached, same origin, `immutable` |
+| `GET /api/skins/favourites` · `PUT/DELETE /api/skins/favourites/{md5}` | `{ items: [skin] }`, newest first · 204 (404 for a skin the museum doesn't have) |
