@@ -48,8 +48,8 @@ Topic → payload. Published on the bus and streamed to the browser. Owners add 
 | `search.results` | soulseek | `{ searchId, results: [...], peers, done, entities }` (Soulseek section) |
 | `transfer` | soulseek | `{ jobId, trackId, peer, state: queued\|transferring\|stalled\|done\|failed\|cancelled, queuePos?, received, size, speed, error? }` |
 | `stream` | soulseek | `{ trackId, status: finding\|queued\|buffering\|streaming\|stalled\|fallback\|failed, peer?, peersFound?, queuePos?, received, size, failedPeers? }` drives the player's streaming states |
-| `save` | library | `{ jobId, trackId, step: 1-5, status: running\|done\|failed\|pending, pct, error?, kind?, nocover? }` (steps: transfer, match, cover, tag+write, rescan) |
-| `job` | any | `{ jobId, kind: transfer\|save\|import\|rescan, ... }` mirrors `MOCK.activity` rows |
+| `save` | library | `{ jobId, trackId, step: 1-5, status: running\|done\|failed\|pending, pct, error, kind: transfer\|match\|write\|null, nocover }` (steps: transfer, match, cover, tag+write, rescan). `kind` names the recovery for a failure; `pct` moves during step 1 only |
+| `job` | any | `{ jobId, kind: transfer\|save\|import\|rescan, started, ... }`: one Activity row, the same shape `GET /api/jobs` lists. Library's rows: save `{ trackId, step, stepState, pct, error, failKind, nocover }`, rescan `{ state: running\|done\|failed, pct, detail }`. Other crates publish their own rows here to appear in `/api/jobs` |
 | `play.started` | collection | `{ playId, trackId, at, duration, artist, title, album }`. lastfm now-playing, taste. The `plays` row is written first |
 | `play.ended` | collection | `{ playId, trackId, at, playedS, completed, skipped, duration, artist, title, album }`, exactly once per play. `at` is the play's **start** (Last.fm's timestamp). Scrobbling, taste |
 | `like` | collection | `{ trackId, liked }`. Taste, other devices |
@@ -68,17 +68,25 @@ Topic → payload. Published on the bus and streamed to the browser. Owners add 
 
 ## Library (`crates/library`)
 
+All of these answer 503 `unavailable` when Jellyfin isn't configured. Lists and lookups come from lull's copy of the library, so they keep working while Jellyfin is down.
+
 | Method + path | Returns |
 |---|---|
-| `GET /api/tracks/{id}` | Track (catalog + saved state) + entities |
-| `GET /api/library/{albums\|artists\|songs\|genres}?sort=&filter=` | Jellyfin-backed lists. When Jellyfin is down, the last cached read-only list with `stale: true` |
-| `GET /api/library/stream/{trackId}` | Saved-track audio, proxied from Jellyfin with Range support |
-| `GET /api/art/{albumId}?size=96\|256\|512` | Cover image (Jellyfin, else Cover Art Archive), same origin, cached |
-| `POST /api/saves { ids: [trackId], source?: { trackId: { peer, path } } }` | `{ jobs: [jobId] }`. Progress comes as `save` events |
-| `POST /api/library/duplicates { ids }` | `{ items: [{ trackId, existing: Track, better: bool }] }`, for the duplicate dialog |
-| `GET /api/saves/{jobId}/releases` · `POST /api/saves/{jobId}/release { mbid \| keepTags: true }` · `POST /api/saves/{jobId}/retry` | Release picker and retry |
-| `GET /api/jobs` | All jobs, transfer + save + import + rescan (`MOCK.activity` shape) |
-| `POST /api/library/rescan` | Asks Jellyfin to rescan |
+| `GET /api/tracks/{id}` | `{ track, entities }`. A saved track (also under the id it was saved as, see save-flow.md#ids), else the catalog's with `saved: false`; 404 if neither knows it |
+| `GET /api/library/songs?sort=album\|title\|artist\|recent` | `{ items: [trackId], total, entities: { tracks }, stale }` |
+| `GET /api/library/albums?sort=recent\|title\|artist\|year` | `{ items: [albumId], total, entities: { albums }, stale }`. Library albums are `saved: "all"` |
+| `GET /api/library/artists?sort=name` | `{ items: [artistId], total, entities: { artists }, stale }` |
+| `GET /api/library/genres?sort=songs\|name` | `{ items: [{ id, name, artists, songs, trackIds }], total, entities: { tracks }, stale }` (`trackIds`: a few, for the mosaic) |
+| ↳ every list | Also `filter=` (words in title, artist or album), `limit=` (default 200, max 5000), `offset=`. An unknown `sort` is 400. `stale: true` while Jellyfin is down and the list is the last one read |
+| `GET /api/library/stream/{trackId}` | The saved file from Jellyfin. `Range` is passed through (206 + `Content-Range`), the body streams through without buffering. 404 if not saved |
+| `GET /api/art/{albumId}?size=96\|256\|512` | The cover image (`Cache-Control: private, max-age=86400`). Jellyfin's for saved albums, else the Cover Art Archive's (found through the catalog and MusicBrainz for albums that aren't saved). Cached on disk; 404 when there is none |
+| `POST /api/library/duplicates { ids, source?: { trackId: { peer, path, size } } }` | `{ items: [{ trackId, existing: Track, better }] }` for the ids that are saved already. `better`: the offered file is clearly better (lossless over lossy, or a fifth more bitrate) |
+| `POST /api/saves { ids, source?: { trackId: { peer, path, size } }, duplicate?: { trackId: separate\|replace } }` | `{ jobs: [jobId], skipped: [trackId] }`. One job per id; progress as `save` events. `source` is a row of `/api/tracks/{id}/sources` (`sizeBytes` is accepted for `size`); without one, Soulseek's `source_for` picks (the peer it streamed from, else the best known), and with none known the job fails at step 1 (`kind: transfer`). An id already saved is skipped unless `duplicate` says what to do (the duplicate dialog's answer; "keep" = don't send it). An id already saving returns its running job |
+| `GET /api/saves/{jobId}/releases` | `{ items: [{ mbid, recording, releaseGroup, title, artist, kind, date, country, tracks, score }], track }`: the release picker after a `match` failure, best first (`kind`: "album, CD"); `track` is what lull knows of the file |
+| `POST /api/saves/{jobId}/release { mbid } \| { keepTags: true }` | `{ jobId }`. Continues the save with that release, or with the file's own tags. 409 if the job isn't waiting for a release |
+| `POST /api/saves/{jobId}/retry [{ source }]` | `{ jobId, step, status }`. Restarts a failed save from its failed step (a new `source` for a transfer failure), or asks Jellyfin again for a pending one. 409 otherwise |
+| `GET /api/jobs` · `DELETE /api/jobs` | `{ items: [row] }`, newest first: library's save and rescan jobs plus the latest `job` event of every other job. `DELETE` clears finished rows (failed saves stay) → 204 |
+| `POST /api/library/rescan` | 202 `{ jobId }`: runs Jellyfin's library scan; the rescan job follows its progress and ends with "Jellyfin found N new songs" |
 
 ## Discovery (`crates/discovery`, `crates/lastfm`, `crates/lyrics`)
 
