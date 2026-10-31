@@ -11,11 +11,15 @@
      events, so on exit (its own close button, Esc, W or any route change) the playlist, current song, position,
      shuffle and repeat are read back into App.player. While open, App.hooks.media points media keys at Webamp and
      songs heard there are recorded with App.recordPlay.
-   - Skins: GET /api/skins?q=&offset= (the server's Winamp Skin Museum proxy), /api/skins/favourites, files from
-     /api/skins/{md5}.wsz (validated, cached, same origin). A skin file is fetched here first, so a failure shows the
-     server's sentence instead of Webamp's alert(); Webamp then parses the blob. A preview reverts after 15 s unless
-     kept; a skin Webamp hasn't finished after 10 s counts as failed and the previous one comes back.
-   - Skins this device has loaded are listed as Downloaded (the server cached them) and stay usable offline. */
+   - Skins (docs/context/skins.md): GET /api/skins?q=&offset=&nsfw= (the server's Winamp Skin Museum proxy, with
+     favourite and downloaded flags), /api/skins/favourites, files from /api/skins/{md5}.wsz (validated, cached, same
+     origin, immutable). A skin file is fetched here first, so a failure shows the server's sentence instead of
+     Webamp's alert(); Webamp then parses the blob. A preview reverts after 15 s unless kept; a skin Webamp hasn't
+     finished after 10 s counts as failed and the previous one comes back.
+   - Downloaded = skins the server has cached (its flag), plus .wsz files opened this session; offline, the drawer
+     lists favourites and downloaded skins from the last answers.
+   - NSFW visibility and the default skin are per-device settings (Settings > Appearance writes them to
+     App.storage 'showNsfwSkins' and 'defaultSkin'), read each time the stage opens. */
 (function () {
   'use strict';
   var html = App.html, raw = App.raw, ui = App.ui, M = App.data, P = App.player, icon = App.icon, $ = App.$, $$ = App.$$;
@@ -33,9 +37,8 @@
     noticeHidden: !!saved.noticeHidden,
     applied: saved.applied || null,     // the skin chosen here; else Settings > Appearance's default; else Webamp's base
     defaultSkin: null,
-    downloaded: saved.downloaded || [], // museum skins this device has loaded
     local: [],                          // .wsz files opened this session: { md5: 'local:...', name, file, url, local }
-    browse: { items: [], more: false, loading: false, error: null, key: null, want: null },  // key: the query items answer
+    browse: { items: [], more: false, loading: false, error: null, key: null, want: null },  // key: the request items answer
     favs: { items: [], loading: false, error: null },
     showNsfw: false,
     offline: false,
@@ -45,21 +48,27 @@
     failed: null                        // { skin, kept, message }
   };
   function persist() {
-    App.storage('classic', { applied: S.applied && !S.applied.local ? S.applied : null, noticeHidden: S.noticeHidden, downloaded: S.downloaded });
+    App.storage('classic', { applied: S.applied && !S.applied.local ? S.applied : null, noticeHidden: S.noticeHidden });
   }
   function appliedSkin() { return S.applied || S.defaultSkin; }
   function nameOf(s) { return s ? s.name : 'Webamp\'s base skin'; }
   function sameSkin(a, b) { return !!a && !!b && a.md5 === b.md5; }
-  function isDownloaded(s) { return !!s.local || S.downloaded.some(function (d) { return d.md5 === s.md5; }); }
-  function isFavourite(s) { return S.favs.items.some(function (f) { return f.md5 === s.md5; }); }
-  function findSkin(md5) {
-    return [].concat(S.browse.items, S.favs.items, S.downloaded, S.local, S.failed ? S.failed.skin : [], appliedSkin() || [])
-      .filter(function (s) { return s.md5 === md5; })[0];
+  function isDownloaded(s) { return !!s.local || !!s.downloaded; }
+  function isFavourite(s) { return !!s.favourite; }
+  /* every skin object known now (one md5 can appear in several lists), first copy of each */
+  function knownSkins() {
+    var seen = {};
+    return [].concat(S.local, S.favs.items, S.browse.items, S.failed ? S.failed.skin : [], appliedSkin() || [])
+      .filter(function (s) { return !seen[s.md5] && (seen[s.md5] = true); });
+  }
+  function findSkin(md5) { return knownSkins().filter(function (s) { return s.md5 === md5; })[0]; }
+  /* the server's flags live on each copy; a change here updates them all */
+  function setFlag(md5, key, value) {
+    [].concat(S.favs.items, S.browse.items, S.applied || [], S.defaultSkin || [])
+      .forEach(function (s) { if (s.md5 === md5) s[key] = value; });
   }
   function skinFileUrl(md5) { return M.url('/api/skins/' + encodeURIComponent(md5) + '.wsz'); }
   function isWsz(file) { return /\.wsz$/i.test(file.name); }
-  /* a setting may come back as { value, source: 'config' } (docs/context/api.md) */
-  function settingValue(x) { return x && typeof x === 'object' && 'value' in x ? x.value : x; }
   function isDocked() { return window.innerWidth >= 1100; }
   function drawerOpen() { return S.drawer === null ? isDocked() : S.drawer; }
   function onClassic() { return /^#\/classic(?:[/?]|$)/.test(location.hash); }
@@ -70,7 +79,8 @@
     (list || []).forEach(function (s) {
       if (!s || !/^[0-9a-f]{32}$/i.test(s.md5)) { console.error('Skipping a skin without an md5 id', s); return; }
       out.push({ md5: s.md5, name: String(s.name || s.md5), screenshotUrl: String(s.screenshotUrl || ''),
-        museumUrl: /^https:\/\//.test(s.museumUrl) ? s.museumUrl : '', nsfw: !!s.nsfw });
+        museumUrl: /^https:\/\//.test(s.museumUrl) ? s.museumUrl : '', nsfw: !!s.nsfw,
+        favourite: !!s.favourite, downloaded: !!s.downloaded });
     });
     return out;
   }
@@ -225,10 +235,12 @@
       </div>`;
   }
 
-  /* Browse is the server's answer for the query (offline: downloaded skins); the other tabs filter by name here */
+  /* Browse is the server's answer for the query (offline: favourites and downloaded skins); the other tabs filter
+     by name here */
   function visibleSkins() {
     var museum = S.tab === 'browse' && !S.offline;
-    var list = museum ? S.browse.items : S.tab === 'favourites' ? S.favs.items : S.local.concat(S.downloaded);
+    var list = museum ? S.browse.items : S.tab === 'favourites' ? S.favs.items
+      : knownSkins().filter(function (s) { return isDownloaded(s) || (S.tab === 'browse' && isFavourite(s)); });
     var q = museum ? '' : S.query.trim().toLowerCase();
     return list.filter(function (s) {
       if (s.nsfw && !S.showNsfw) return false;
@@ -236,7 +248,7 @@
     });
   }
   function listMarkup() {
-    var notes = S.offline ? html`<div class="banner banner--warn s-card cls-note">${icon('offline')}<span class="banner__msg">You're offline, so only downloaded skins are listed.</span></div>` : '';
+    var notes = S.offline ? html`<div class="banner banner--warn s-card cls-note">${icon('offline')}<span class="banner__msg">You're offline, so only favourite and downloaded skins are listed.</span></div>` : '';
     var museum = S.tab === 'browse' && !S.offline, b = S.browse, src = museum ? b : S.tab === 'favourites' ? S.favs : null;
     if (src && src.error && !src.items.length) {
       return html`${notes}${ui.emptyState({ art: 'star', title: museum ? 'Couldn\'t load skins' : 'Couldn\'t load your favourites',
@@ -370,15 +382,17 @@
 
   /* ---------- server reads ---------- */
   var browseSeq = 0, browseTimer = 0;
-  /* the Browse list for the current query; more appends the next page. delay debounces typing and paging */
+  /* the Browse request for the current query and NSFW setting (nsfw=true only when this device shows them) */
+  function browseKey() { return 'q=' + encodeURIComponent(S.query.trim()) + (S.showNsfw ? '&nsfw=true' : ''); }
+  /* the Browse list for the current request; more appends the next page. delay debounces typing and paging */
   function loadBrowse(more, delay) {
     clearTimeout(browseTimer);
-    var b = S.browse, q = S.query.trim(), seq = ++browseSeq;
+    var b = S.browse, q = browseKey(), seq = ++browseSeq;
     if (!more && b.key !== q) { b.items = []; b.more = false; }
     b.loading = true; b.error = null; b.want = q;
     renderList();
     browseTimer = setTimeout(function () {
-      M.api('/api/skins?q=' + encodeURIComponent(q) + '&offset=' + (more ? b.items.length : 0)).then(function (res) {
+      M.api('/api/skins?' + q + '&offset=' + (more ? b.items.length : 0)).then(function (res) {
         if (seq !== browseSeq) return;
         var page = museumSkins(res && res.items);
         b.items = more ? b.items.concat(page) : page; b.more = !!(res && res.more); b.key = q;
@@ -393,9 +407,9 @@
       });
     }, delay || 0);
   }
-  /* load Browse when what it shows doesn't answer the current query (and isn't on its way) */
+  /* load Browse when what it shows doesn't answer the current request (and isn't on its way) */
   function ensureBrowse() {
-    var b = S.browse, q = S.query.trim();
+    var b = S.browse, q = browseKey();
     if ((b.key === q && !b.error) || (b.loading && b.want === q)) return;
     loadBrowse(false);
   }
@@ -405,20 +419,19 @@
       S.favs.items = museumSkins(res && res.items);
     }, function (err) { S.favs.error = err; }).then(function () { S.favs.loading = false; renderList(); });
   }
-  /* NSFW visibility and the default skin come from Settings > Appearance */
-  function loadSettings() {
-    return M.api('/api/settings').then(function (s) {
-      var a = (s && s.appearance) || {}, md5 = settingValue(a.defaultSkin);
-      S.showNsfw = settingValue(a.showNsfwSkins) === true;
-      S.defaultSkin = md5 ? findSkin(md5) || { md5: md5, name: 'your default skin', screenshotUrl: '', museumUrl: '', nsfw: false } : null;
-      renderList();
-    }, function (err) { console.warn('Settings unavailable, NSFW skins stay hidden:', err.message); });
+  /* NSFW visibility and the default skin: per device, written by Settings > Appearance */
+  function readDevicePrefs() {
+    var md5 = App.storage('defaultSkin');
+    S.showNsfw = App.storage('showNsfwSkins') === true;
+    S.defaultSkin = typeof md5 === 'string' && md5
+      ? findSkin(md5) || { md5: md5, name: 'your default skin', screenshotUrl: '', museumUrl: '', nsfw: false, favourite: false, downloaded: false }
+      : null;
   }
-  /* once per session; both settle either way (their errors show in the drawer or fall back to hiding NSFW) */
-  var sessionReads = null;
+  /* favourites once per session (retry from the drawer); settles either way, its error shows in the drawer */
+  var favsRead = null;
   function readOnce() {
-    if (!sessionReads) sessionReads = Promise.all([loadFavourites(), loadSettings()]);
-    return sessionReads;
+    if (!favsRead) favsRead = loadFavourites();
+    return favsRead;
   }
 
   /* ---------- Webamp: load, create once, reopen ---------- */
@@ -639,7 +652,7 @@
   /* a URL Webamp can parse: the .wsz fetched from the server (its sentence on failure), or the local file */
   function fetchSkin(skin) {
     if (skin.local) return Promise.resolve(skin.url);
-    /* md5-addressed files never change, so any cached copy will do, which also keeps them working offline */
+    /* the server serves .wsz as immutable (named by md5), so any cached copy will do, also offline */
     return fetch(skinFileUrl(skin.md5), { credentials: 'same-origin', cache: 'force-cache' }).then(function (res) {
       if (res.ok) return res.blob().then(function (b) { return URL.createObjectURL(b); });
       if (res.status === 401) M.onUnauthorized();
@@ -661,10 +674,6 @@
     if (!skin) webamp.store.dispatch({ type: 'LOAD_DEFAULT_SKIN' });
     else webamp.setSkinFromUrl(skin.local ? skin.url : skinFileUrl(skin.md5));
   }
-  function markDownloaded(skin) {
-    if (skin.local || isDownloaded(skin)) return;
-    S.downloaded.unshift(skin);
-  }
   /* mode: apply | preview | restore (the applied skin on Webamp's first start: no toast) */
   function load(skin, mode) {
     if (!webamp) { App.toast(S.player.state === 'failed' ? 'Webamp didn\'t start, so skins can\'t load' : 'Webamp is still starting', { icon: 'clock' }); return; }
@@ -684,7 +693,7 @@
       return applyUrl(url);
     }).then(function () {
       S.busy = null;
-      markDownloaded(skin);
+      if (!skin.local) { skin.downloaded = true; setFlag(skin.md5, 'downloaded', true); }   // the server cached it
       if (mode === 'preview') { if (root) startPreview(skin, kept); else showSkin(kept); }   // left mid-load: no preview
       else if (mode === 'apply') {
         S.applied = skin;
@@ -818,13 +827,15 @@
     refocus('.cls-exit .btn');
     App.toast('Notice hidden. Help keeps it.', { icon: 'info' });
   });
-  /* favourites change at once and roll back with the server's sentence if it refuses */
+  /* favourites change at once (newest first, like the server's list) and roll back with its sentence if refused */
   function setFavourite(s, on) {
     var before = S.favs.items;
-    S.favs.items = on ? [s].concat(before.filter(function (f) { return f.md5 !== s.md5; })) : before.filter(function (f) { return f.md5 !== s.md5; });
+    S.favs.items = (on ? [s] : []).concat(before.filter(function (f) { return f.md5 !== s.md5; }));
+    s.favourite = on; setFlag(s.md5, 'favourite', on);
     renderList();
     M.api('/api/skins/favourites/' + encodeURIComponent(s.md5), { method: on ? 'PUT' : 'DELETE' }).catch(function (err) {
-      S.favs.items = before; renderList();
+      S.favs.items = before; s.favourite = !on; setFlag(s.md5, 'favourite', !on);
+      renderList();
       App.toast(err.message, { kind: 'error', icon: 'warning' });
     });
   }
@@ -933,6 +944,7 @@
     window.addEventListener('resize', onResize);
     window.addEventListener('online', onOnline);
     lastDocked = isDocked();
+    readDevicePrefs();
     readOnce();
     ensureBrowse();                                            // offline: finds out whether that is still so
     startWebamp();

@@ -33,7 +33,6 @@
 .lib-sort .ic { width: 16px; height: 16px; }
 .lib-count { margin-left: 2px; font: 700 .75rem/1 var(--f-ui); color: var(--fg-2); font-variant-numeric: tabular-nums; }
 .pill-filter[aria-pressed="true"] .lib-count { color: var(--ink); }
-.lib-filters { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: calc(var(--sp-1) * -1) 0 var(--sp-5); }
 .lib-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-4); }
 .lib-facts { color: var(--fg-2); }
 .lib-foot { margin-top: var(--sp-4); font: var(--t-micro); color: var(--fg-2); }

@@ -86,6 +86,18 @@
   function readError(err, path, title) {
     return ui.emptyState({ art: 'star', title: title || 'Couldn\'t load this', text: err.message, action: { label: 'Try again', act: 'reload-read', id: path } });
   }
+  /* a discovery page's own entity ({ album } / { artist }): put through the cache so it gets the normalised shape */
+  function pageEntity(d, field, mapKey, lookup) {
+    var e = d[field]; if (!e || !e.id) return null;
+    var map = {}; map[mapKey] = {}; map[mapKey][e.id] = e;
+    M.absorb(map);
+    return lookup(e.id);
+  }
+  /* a section of a discovery page that failed on the server (`errors: { section: message }`): its sentence + retry */
+  function sectionError(d, section, path) {
+    var msg = d.errors && d.errors[section];
+    return msg ? readError({ message: msg }, path, 'Couldn\'t load this part') : '';
+  }
   function gridSkeleton(n) { return html`<div class="lib-skel-grid">${ui.skeleton('tile', n || 8)}</div>`; }
   function listSkeleton(label) { return html`<section class="card lib-card" aria-label="${label}">${ui.skeleton('row', 6)}</section>`; }
 
@@ -108,10 +120,10 @@
       <button class="btn btn--sm" data-act="reload-read" data-id="${path}">${icon('refresh')}Retry connection</button></div>`;
   }
   /* how much of an album is saved (all | partial | none): counted from its songs when known, so it follows the
-     save pipeline live; else the album's own summary (`saved`, `savedCount`) from a list that sent only the head */
+     save pipeline live; else the album's own `saved` summary (library lists send only the album head) */
   function savedState(a) {
     var total = a.trackIds.length, n = a.trackIds.filter(isSaved).length;
-    if (!total) return { state: a.saved || 'none', text: a.savedCount ? a.savedCount + ' saved' : 'partly saved' };
+    if (!total) return { state: a.saved || 'none', text: 'partly saved' };
     return { state: n === total ? 'all' : n ? 'partial' : 'none', text: n + ' of ' + total, label: n + ' of ' + total + ' songs saved' };
   }
   function albumStatus(a) {
@@ -177,17 +189,15 @@
       <div class="tile__by">${artistMeta(ar)}</div>
     </div>`;
   }
-  /* following, then saved songs (when the server counts them), then Last.fm listeners */
+  /* following, else Last.fm listeners when known */
   function artistMeta(ar) {
-    var n = typeof ar.savedCount === 'number' ? ar.savedCount : 0;
-    if (App.isFollowed(ar.id)) return html`${icon('check', null, 'ic-16')} following${n ? ', ' + n + ' saved' : ''}`;
-    if (n) return plural(n, 'saved song');
+    if (App.isFollowed(ar.id)) return html`${icon('check', null, 'ic-16')} following`;
     return ar.listeners ? (ar.listeners / 1000).toFixed(1) + 'k listeners' : '';
   }
 
   /* =====================================================================
      2. Library home: frame + segments (Albums, Artists, Songs, Genres & tags, Liked, History, Playlists, Following)
-        Segments read GET /api/library/{seg}?sort=&filter= ({ items, total, entities }, `stale` from the cache).
+        Segments read GET /api/library/{seg}?sort=&limit= ({ items, total, entities, stale }).
      ===================================================================== */
   var SEGMENTS = [
     { id: 'albums', label: 'Albums', href: '#/library/albums' },
@@ -199,19 +209,26 @@
     { id: 'playlists', label: 'Playlists', href: '#/playlists' },
     { id: 'following', label: 'Following', href: '#/following' }
   ];
-  var ALBUM_FILTERS = [['all', 'All'], ['saved', 'Saved'], ['partial', 'Partly saved'], ['none', 'Not saved yet']];
-  var ALBUM_SORTS = { recent: 'Newest first', title: 'Title', artist: 'Artist' };
-  var SONG_SORTS = { album: 'Album order', title: 'Title', artist: 'Artist', plays: 'Most played' };
+  /* the server's sort keys (an unknown one is a 400); artists sort by name, genres by song count (its defaults) */
+  var ALBUM_SORTS = { recent: 'Recently saved', title: 'Title', artist: 'Artist', year: 'Release year' };
+  var SONG_SORTS = { album: 'Album order', title: 'Title', artist: 'Artist', recent: 'Recently saved' };
   /* stored per device; a value this version doesn't know falls back to the default */
   function pref(key, known, fallback) { var v = App.storage(key); return known.indexOf(v) >= 0 ? v : fallback; }
   var prefs = {
-    albumFilter: pref('libAlbumFilter', ALBUM_FILTERS.map(function (f) { return f[0]; }), 'all'),
     albumSort: pref('libAlbumSort', Object.keys(ALBUM_SORTS), 'recent'),
     songSort: pref('libSongSort', Object.keys(SONG_SORTS), 'album')
   };
+  /* lists come 200 at a time; "Show all" raises a list's limit to its total (the server's cap is 5000) */
+  var MAX_LIMIT = 5000, limits = {};
+  function withLimit(path, key) { return limits[key] ? path + (path.indexOf('?') < 0 ? '?' : '&') + 'limit=' + limits[key] : path; }
+  function showAll(key, d, noun) {
+    var shown = (d.items || []).length, total = count(d);
+    if (shown >= total || shown >= MAX_LIMIT) return '';
+    return html`<p class="lib-more"><button class="btn btn--quiet btn--sm" data-act="lib-show-all" data-id="${key}" data-value="${Math.min(total, MAX_LIMIT)}">Show all ${plural(total, noun)}</button></p>`;
+  }
   function libraryPath(seg) {
-    var q = seg === 'albums' ? '?sort=' + prefs.albumSort + '&filter=' + prefs.albumFilter : seg === 'songs' ? '?sort=' + prefs.songSort : '';
-    return '/api/library/' + seg + q;
+    var q = seg === 'albums' ? '?sort=' + prefs.albumSort : seg === 'songs' ? '?sort=' + prefs.songSort : '';
+    return withLimit('/api/library/' + seg + q, seg);
   }
 
   /* `path` is the read the page shows (the notice's retry re-reads it); `stale` = served from the offline cache */
@@ -242,27 +259,22 @@
     return html`<button class="btn btn--quiet btn--sm lib-sort" data-act="${act}" aria-haspopup="menu">${icon('sort')}${label}${icon('chevron-down', null, 'ic-16')}</button>`;
   }
 
+  /* every library album is saved, so there is no saved-state filter: the list, sorted, with its count */
   function albumsSegment(r, path) {
-    var f = prefs.albumFilter;
     return html`<section class="card lib-card" aria-labelledby="lib-albums-h">
-      ${ruleWith('albums', 'lib-albums-h', sortButton('lib-album-sort', ALBUM_SORTS[prefs.albumSort]))}
-      <div class="lib-filters" role="group" aria-label="Show albums">${ALBUM_FILTERS.map(function (x) {
-        var on = f === x[0];
-        return html`<button class="pill-filter" data-act="lib-album-filter" data-value="${x[0]}" aria-pressed="${on ? 'true' : 'false'}">${x[1]}${on && r.data ? html`<span class="lib-count">${count(r.data)}</span>` : ''}</button>`;
-      })}</div>
+      ${ruleWith('albums', 'lib-albums-h', html`${r.data ? html`<span class="lib-count">${count(r.data)}</span>` : ''}${sortButton('lib-album-sort', ALBUM_SORTS[prefs.albumSort])}`)}
       ${listBody(r, path, gridSkeleton(), function (d) {
-        var list = resolve(d.items, M.album);
-        return list.length ? html`<div class="lib-grid">${list.map(albumTile)}</div>`
-          : ui.emptyState({ art: 'slot', title: 'No albums here', text: 'Nothing matches this filter.', action: { label: 'Show all albums', act: 'lib-album-filter', id: 'all' } });
+        return html`<div class="lib-grid">${resolve(d.items, M.album).map(albumTile)}</div>${showAll('albums', d, 'album')}`;
       })}
     </section>`;
   }
+  /* the server sorts by name; artists you follow come first */
   function artistsSegment(r, path) {
     return html`<section class="card lib-card" aria-labelledby="lib-artists-h">
       ${ruleWith('artists', 'lib-artists-h', html`<a class="btn btn--quiet btn--sm" href="#/following">Manage following</a>`)}
       ${listBody(r, path, gridSkeleton(), function (d) {
-        var list = resolve(d.items, M.artist).sort(function (a, b) { return (App.isFollowed(b.id) - App.isFollowed(a.id)) || a.name.localeCompare(b.name); });
-        return html`<div class="lib-grid lib-grid--artists">${list.map(artistTile)}</div>`;
+        var list = resolve(d.items, M.artist).sort(function (a, b) { return App.isFollowed(b.id) - App.isFollowed(a.id); });
+        return html`<div class="lib-grid lib-grid--artists">${list.map(artistTile)}</div>${showAll('artists', d, 'artist')}`;
       })}
     </section>`;
   }
@@ -276,31 +288,31 @@
           <button class="btn" data-act="lib-shuffle-ids" data-ids="${ids.join(',')}">${icon('shuffle')}Shuffle</button>
           <span class="lib-facts px">${plural(ids.length, 'song')}, ${fmt.length(sumDuration(ids))}</span>
         </div>
-        ${ui.trackList(list, { label: 'Saved songs', unavailable: jellyfinDown() || !!d.stale })}`;
+        ${ui.trackList(list, { label: 'Saved songs', unavailable: jellyfinDown() || !!d.stale })}
+        ${showAll('songs', d, 'song')}`;
       })}
     </section>`;
   }
-  /* genre items are tag ids or tag objects; counts and covers show when the server sends them */
+  /* genre items are { id, name, artists, songs, trackIds (a few, for the mosaic) }; a tag page that has been read
+     leaves its description in the tag cache */
   function genresSegment(r, path) {
     return html`<section class="card lib-card" aria-labelledby="lib-genres-h">
       ${ruleWith('genres & tags', 'lib-genres-h', html`<span class="t-micro fg-2">Tags from MusicBrainz and Last.fm</span>`)}
       ${listBody(r, path, ui.skeleton('row', 6), function (d) {
-        var tags = (d.items || []).map(function (v) { return typeof v === 'string' ? M.tag(v) : v && v.id ? Object.assign({}, M.tag(v.id), v) : null; }).filter(Boolean);
+        var tags = (d.items || []).map(function (g) { return Object.assign({}, M.tag(g.id), g); });
         if (!tags.length) return ui.emptyState({ art: 'moon', title: 'No tags yet', text: 'Tags arrive with the songs you save, from MusicBrainz and Last.fm.' });
-        return html`<ul class="lib-tags">${tags.map(genreCard)}</ul>`;
+        return html`<ul class="lib-tags">${tags.map(genreCard)}</ul>${showAll('genres', d, 'tag')}`;
       })}
     </section>`;
   }
   function genreCard(tag) {
-    var on = App.isFollowed(tag.id), facts = [];
-    if (typeof tag.artistCount === 'number') facts.push(plural(tag.artistCount, 'artist'));
-    if (typeof tag.savedCount === 'number') facts.push(plural(tag.savedCount, 'saved song'));
+    var on = App.isFollowed(tag.id);
     return html`<li class="lib-tagcard inset">
-      <a class="lib-tagcard__art" href="#/tag/${encodeURIComponent(tag.id)}" tabindex="-1" aria-hidden="true">${ui.mosaic(idList(tag.trackIds), 72)}</a>
+      <a class="lib-tagcard__art" href="#/tag/${encodeURIComponent(tag.id)}" tabindex="-1" aria-hidden="true">${ui.mosaic(tag.trackIds || [], 72)}</a>
       <div class="lib-tagcard__main">
         <h3><a href="#/tag/${encodeURIComponent(tag.id)}">${tag.name}</a></h3>
-        ${facts.length ? html`<p class="lib-tagcard__meta">${facts.join(', ')}</p>` : ''}
-        <p class="lib-tagcard__desc">${tag.desc}</p>
+        <p class="lib-tagcard__meta">${plural(tag.artists || 0, 'artist')}, ${plural(tag.songs || 0, 'saved song')}</p>
+        ${tag.desc ? html`<p class="lib-tagcard__desc">${tag.desc}</p>` : ''}
       </div>
       <div class="lib-tagcard__tools"><button class="chip" data-act="follow-tag" data-id="${tag.id}" aria-pressed="${on ? 'true' : 'false'}" aria-label="Follow ${tag.name}">${icon(on ? 'check' : 'plus')}${on ? 'Following' : 'Follow'}</button>
         ${ui.iconButton('radio', 'Start ' + tag.name + ' radio', { 'data-act': 'start-radio', 'data-kind': 'tag', 'data-id': tag.id, cls: 'btn-icon--sm' })}</div>
@@ -311,29 +323,29 @@
   function renderLibrary(ctx) {
     var seg = ctx.params.segment || 'albums';
     if (seg === 'liked') return renderLiked();
-    if (seg === 'history') return renderHistory(ctx);
+    if (seg === 'history') return renderHistory();
     if (seg === 'following') return renderFollowing();
     if (seg === 'saved') seg = 'songs';
     if (!SEGMENT_BODY[seg]) seg = 'albums';
     var path = libraryPath(seg), r = M.get(path), d = r.data;
-    /* nothing saved at all (an album filter that matches nothing is not an empty library) */
-    var empty = d && !count(d) && seg !== 'genres' && !(seg === 'albums' && prefs.albumFilter !== 'all');
+    var empty = d && !count(d) && seg !== 'genres';      // nothing saved at all
     return libraryFrame(seg, empty ? emptyLibraryCard() : SEGMENT_BODY[seg](r, path), path, !!(d && d.stale));
   }
-  function mountLibrary(ctx) { liveSaveButtons(ctx); liveOn(ctx, ['followed', 'liked', 'services']); }
+  function mountLibrary(ctx) {
+    if (ctx.params.segment === 'liked') { mountLiked(ctx); return; }
+    liveSaveButtons(ctx); liveOn(ctx, ['followed', 'liked', 'services']);
+  }
 
   /* =====================================================================
-     3. Album page: one cream card, art left, title block, disc headers (GET /api/albums/{id})
+     3. Album page: one cream card, art left, title block, disc headers (GET /api/albums/{id} -> { album, entities })
      ===================================================================== */
   function renderAlbum(ctx) {
     var path = albumPath(ctx.params.id);
     return entityPage('album', path, function (d) {
-      var a = M.album(ctx.params.id); if (!a) return null;
-      var ids = a.trackIds.length ? a.trackIds : idList(d.tracks);
-      var tracks = ids.map(M.track).filter(Boolean), down = jellyfinDown();
+      var a = pageEntity(d, 'album', 'albums', M.album); if (!a) return null;
+      var ids = a.trackIds, tracks = ids.map(M.track).filter(Boolean), down = jellyfinDown();
       var discs = []; tracks.forEach(function (t) { var n = (t.disc || 1) - 1; (discs[n] = discs[n] || []).push(t); });
       discs = discs.filter(Boolean);
-      var related = resolve(d.related, M.album).filter(function (x) { return x.id !== a.id; });
       return html`<div class="view__inner lib">
         ${jellyfinNotice(path)}
         <article class="card lib-page" aria-labelledby="lib-album-title" data-meta="${albumMeta(a)}" data-tracks="${tracks.length}" data-duration="${a.duration}" data-size="${a.sizeMB}">
@@ -370,8 +382,6 @@
           })}
           <p class="lib-foot">${albumFoot(a)}</p>
         </article>
-        ${related.length ? html`<section class="card lib-card" aria-labelledby="lib-related-h">${ruleWith('more like this', 'lib-related-h')}
-          <div class="shelf">${related.slice(0, 8).map(albumTile)}</div></section>` : ''}
       </div>`;
     });
   }
@@ -385,15 +395,15 @@
   function mountAlbum(ctx) { liveSaveButtons(ctx); liveOn(ctx, ['liked', 'services']); }
 
   /* =====================================================================
-     4. Artist page: round art, follow, radio, top songs, discography, similar (GET /api/artists/{id})
+     4. Artist page: round art, follow, radio, top songs, discography, similar
+        (GET /api/artists/{id} -> { artist, topTracks, albums (newest first), similar, errors? })
      ===================================================================== */
   function renderArtist(ctx) {
     var path = artistPath(ctx.params.id);
     return entityPage('artist', path, function (d) {
-      var ar = M.artist(ctx.params.id); if (!ar) return null;
+      var ar = pageEntity(d, 'artist', 'artists', M.artist); if (!ar) return null;
       var top = resolve(d.topTracks, M.track), topIds = top.map(function (t) { return t.id; });
-      var albums = d.discography ? resolve(d.discography, M.album) : M.albumsBy(ar.id);
-      var similar = resolve(d.similar, M.artist).filter(function (x) { return x.id !== ar.id; });
+      var albums = resolve(d.albums, M.album), similar = resolve(d.similar, M.artist).filter(function (x) { return x.id !== ar.id; });
       return html`<div class="view__inner lib">
         ${jellyfinNotice(path)}
         <section class="card lib-page" aria-labelledby="lib-artist-title">
@@ -416,63 +426,56 @@
         <div class="lib-cols">
           <section class="card lib-card" aria-labelledby="lib-top-h">
             ${ruleWith('top songs', 'lib-top-h', html`<span class="t-micro fg-2">by your plays</span>`)}
-            ${top.length ? ui.trackList(top, { label: 'Top songs by ' + ar.name, unavailable: jellyfinDown() })
-              : ui.emptyState({ art: 'wave', title: 'No top songs yet', text: 'Play some ' + ar.name + ' and the songs you come back to show up here.' })}
+            ${sectionError(d, 'topTracks', path) || (top.length ? ui.trackList(top, { label: 'Top songs by ' + ar.name, unavailable: jellyfinDown() })
+              : ui.emptyState({ art: 'wave', title: 'No top songs yet', text: 'Play some ' + ar.name + ' and the songs you come back to show up here.' }))}
           </section>
           <section class="card lib-card" aria-labelledby="lib-disco-h">
             ${ruleWith('discography', 'lib-disco-h', html`<span class="t-micro fg-2">${plural(albums.length, 'release')}</span>`)}
-            ${albums.length ? html`<div class="shelf">${albums.map(albumTile)}</div>`
-              : ui.emptyState({ art: 'moon', title: 'No releases found', text: 'Artist radio still finds their songs on Soulseek.' })}
+            ${sectionError(d, 'albums', path) || (albums.length ? html`<div class="shelf">${albums.map(albumTile)}</div>`
+              : ui.emptyState({ art: 'moon', title: 'No releases found', text: 'Artist radio still finds their songs on Soulseek.' }))}
           </section>
         </div>
-        ${similar.length ? html`<section class="card lib-card" aria-labelledby="lib-similar-h">${ruleWith('similar artists', 'lib-similar-h', html`<span class="t-micro fg-2">via Last.fm similar artists</span>`)}
-          <div class="shelf">${similar.map(artistTile)}</div></section>` : ''}
+        ${similar.length || sectionError(d, 'similar', path) ? html`<section class="card lib-card" aria-labelledby="lib-similar-h">${ruleWith('similar artists', 'lib-similar-h', html`<span class="t-micro fg-2">via Last.fm similar artists</span>`)}
+          ${sectionError(d, 'similar', path) || html`<div class="shelf">${similar.map(artistTile)}</div>`}</section>` : ''}
       </div>`;
     });
   }
   function mountArtist(ctx) { liveSaveButtons(ctx); liveOn(ctx, ['followed', 'liked', 'services']); }
 
   /* =====================================================================
-     5. Genre / tag page: follow, tag radio, top artists, releases, top songs (GET /api/tags/{id})
+     5. Genre / tag page: follow, tag radio, top artists, new releases
+        (GET /api/tags/{id} -> { tag: { id, name, desc, related }, artists, newReleases (last 90 days), errors? })
      ===================================================================== */
   function renderTag(ctx) {
-    var id = ctx.params.id;
-    return entityPage('tag', tagPath(id), function (d) {
-      var tag = M.tag(id), desc = d.description || tag.desc || 'No description yet. Tags come from MusicBrainz and Last.fm.';
-      var artists = resolve(d.topArtists, M.artist), albums = resolve(d.newReleases, M.album);
-      var top = resolve(d.topTracks, M.track), topIds = top.map(function (t) { return t.id; });
-      var related = d.related || tag.related || [], on = App.isFollowed(id);
+    var id = ctx.params.id, path = tagPath(id);
+    return entityPage('tag', path, function (d) {
+      var tag = pageEntity(d, 'tag', 'tags', M.tag) || M.tag(id), related = tag.related || [], on = App.isFollowed(id);
+      var artists = resolve(d.artists, M.artist), albums = resolve(d.newReleases, M.album);
+      /* the cover mosaic: one known song from each new release */
+      var coverIds = albums.map(function (a) { return a.trackIds[0]; }).filter(Boolean);
       return html`<div class="view__inner lib">
         <section class="card lib-page" aria-labelledby="lib-tag-title">
           <div class="lib-hero">
-            ${ui.mosaic(topIds, 'var(--lib-art)', 'Covers tagged ' + tag.name)}
+            ${ui.mosaic(coverIds, 'var(--lib-art)', 'Covers tagged ' + tag.name)}
             <div class="lib-hero__info">
-              <p class="lib-kicker">tag, ${plural(artists.length, 'artist')}, ${plural(albums.length, 'release')}</p>
+              <p class="lib-kicker">tag, ${plural(artists.length, 'artist')}, ${plural(albums.length, 'new release')}</p>
               <h1 class="t-display lib-title" id="lib-tag-title">${tag.name}</h1>
-              <p class="lib-bio">${desc}</p>
+              <p class="lib-bio">${tag.desc || 'No description yet. Tags come from MusicBrainz and Last.fm.'}</p>
               <div class="lib-actions">
                 <button class="btn btn--primary" data-act="start-radio" data-kind="tag" data-id="${id}">${icon('radio')}Tag radio</button>
                 <button class="btn lib-toggle" data-act="follow-tag" data-id="${id}" aria-pressed="${on ? 'true' : 'false'}">${icon(on ? 'check' : 'follow')}${on ? 'Following' : 'Follow tag'}</button>
-                ${topIds.length ? html`<button class="btn" data-act="play-ids" data-ids="${topIds.join(',')}">${icon('play', null, 'ic-play')}Play top songs</button>` : ''}
               </div>
               ${related.length ? html`<div class="lib-chips"><span class="t-micro fg-2">related</span>${related.map(function (g) { return ui.tagChip(g); })}</div>` : ''}
             </div>
           </div>
         </section>
-        ${artists.length ? html`<section class="card lib-card" aria-labelledby="lib-tagartists-h">${ruleWith('top artists', 'lib-tagartists-h')}
-          <div class="shelf">${artists.map(artistTile)}</div></section>` : ''}
-        <div class="lib-cols">
-          <section class="card lib-card" aria-labelledby="lib-tagrel-h">
-            ${ruleWith('releases', 'lib-tagrel-h', html`<span class="t-micro fg-2">newest first</span>`)}
-            ${albums.length ? html`<div class="lib-grid lib-grid--tight">${albums.map(albumTile)}</div>`
-              : ui.emptyState({ art: 'moon', title: 'No releases yet', text: 'Nothing in this tag so far. Tag radio still finds songs on Soulseek.' })}
-          </section>
-          <section class="card lib-card" aria-labelledby="lib-tagtop-h">
-            ${ruleWith('top songs', 'lib-tagtop-h')}
-            ${top.length ? ui.trackList(top, { label: 'Top songs tagged ' + tag.name, unavailable: jellyfinDown() })
-              : ui.emptyState({ art: 'wave', title: 'No songs yet', text: 'Play tag radio to hear what this tag sounds like.' })}
-          </section>
-        </div>
+        ${artists.length || sectionError(d, 'artists', path) ? html`<section class="card lib-card" aria-labelledby="lib-tagartists-h">${ruleWith('top artists', 'lib-tagartists-h')}
+          ${sectionError(d, 'artists', path) || html`<div class="shelf">${artists.map(artistTile)}</div>`}</section>` : ''}
+        <section class="card lib-card" aria-labelledby="lib-tagrel-h">
+          ${ruleWith('new releases', 'lib-tagrel-h', html`<span class="t-micro fg-2">the last 90 days, newest first</span>`)}
+          ${sectionError(d, 'newReleases', path) || (albums.length ? html`<div class="lib-grid lib-grid--tight">${albums.map(albumTile)}</div>`
+            : ui.emptyState({ art: 'moon', title: 'No new releases', text: 'Nothing new in this tag lately. Tag radio still finds songs on Soulseek.' }))}
+        </section>
       </div>`;
     });
   }
@@ -481,18 +484,20 @@
   /* =====================================================================
      6. Liked, History, Following (library segments with their own routes)
      ===================================================================== */
-  /* GET /api/likes gives the order (newest first) and the songs; the store says what is liked right now */
+  /* GET /api/likes gives the order (newest first) and the songs; the store says what is liked right now, so an
+     unlike drops out at once and a new like arrives with the refetch mountLiked asks for */
+  function likedPath() { return withLimit('/api/likes', 'liked'); }
   function renderLiked() {
-    var path = '/api/likes', r = M.get(path);
+    var path = likedPath(), r = M.get(path);
     return libraryFrame('liked', r.loading ? listSkeleton('Liked songs') : r.error ? App.errorCard(r.error, { path: path, label: 'Liked songs' }) : likedBody(r.data), path);
   }
-  function likedIds(d) {
-    var listed = idList(d.items).filter(isLiked);
-    var since = Object.keys(App.store.get('liked')).filter(function (id) { return listed.indexOf(id) < 0; }).reverse();
-    return since.concat(listed).filter(function (id) { return M.track(id); });
+  function mountLiked(ctx) {
+    liveSaveButtons(ctx);
+    liveOn(ctx, ['services']);
+    liveOn(ctx, ['liked'], function () { M.reload(likedPath()); refreshKeepFocus(); });
   }
   function likedBody(d) {
-    var ids = likedIds(d);
+    var ids = idList(d.items).filter(function (id) { return isLiked(id) && M.track(id); });
     if (!ids.length) {
       return html`<section class="card lib-card" aria-label="Liked songs">${ui.emptyState({ art: 'star', title: 'No liked songs yet',
         text: 'Tap the heart on any song, or press L while it plays. Likes also steer your recommendations.', action: { label: 'Find something to like', href: '#/home' } })}</section>`;
@@ -511,53 +516,76 @@
         </div>
       </div>
       ${ui.trackList(ids, { label: 'Liked songs, newest first', unavailable: jellyfinDown() })}
+      ${showAll('liked', d, 'liked song')}
     </section>`;
   }
 
-  /* GET /api/history?before=<unix s>: days (newest first) of plays { trackId, at, scrobble }; `more` = older plays exist */
-  function renderHistory(ctx) {
-    var before = ctx.query.before, path = '/api/history' + (before ? '?before=' + encodeURIComponent(before) : ''), r = M.get(path);
-    return libraryFrame('history', r.loading ? listSkeleton('History') : r.error ? App.errorCard(r.error, { path: path, label: 'History' }) : historyBody(r.data, before), path);
+  /* GET /api/history?tz=&before=: days ({ day: YYYY-MM-DD, items: plays newest first }), `next` = the cursor of the
+     next page. "Older plays" adds a page below; a day split across two pages is merged into one. */
+  var historyPages = [], historyBase = null;     // cursors of the older pages shown; the first page they follow
+  function historyPath(before) {
+    return '/api/history?tz=' + (-new Date().getTimezoneOffset()) + (before ? '&before=' + encodeURIComponent(before) : '');
   }
-  /* a pending scrobble counts as sent once Last.fm has nothing queued */
+  function renderHistory() {
+    var path = historyPath(), r = M.get(path);
+    /* a refetched first page may end elsewhere, so the older pages that followed it no longer join up */
+    if (r.data !== historyBase) { historyBase = r.data; historyPages = []; }
+    return libraryFrame('history', r.loading ? listSkeleton('History') : r.error ? App.errorCard(r.error, { path: path, label: 'History' }) : historyBody(r.data), path);
+  }
+  /* the loaded pages' days merged, and how the list ends: the next cursor, a page loading, or a failed one */
+  function historyDays(first) {
+    var days = [], byDay = {}, next = first.next, tail = '';
+    [first].concat(historyPages.map(function (cursor) {
+      var path = historyPath(cursor), r = M.get(path);
+      return r.loading ? { pending: ui.skeleton('row', 3) } : r.error ? { pending: readError(r.error, path) } : r.data;
+    })).some(function (page) {
+      if (page.pending) { tail = page.pending; next = null; return true; }
+      (page.days || []).forEach(function (day) {
+        if (byDay[day.day]) byDay[day.day].items = byDay[day.day].items.concat(day.items);
+        else { byDay[day.day] = { day: day.day, items: day.items.slice() }; days.push(byDay[day.day]); }
+      });
+      next = page.next;
+      return false;
+    });
+    return { days: days.filter(function (day) { return day.items.length; }), next: next, tail: tail };
+  }
+  /* a pending scrobble counts as sent once Last.fm has nothing queued; null = never reported (no badge) */
   function scrobbleOf(item) {
     var lf = App.store.get('services').lastfm;
     return item.scrobble === 'pending' && lf && lf.state === 'ok' && !lf.queued ? 'done' : item.scrobble;
   }
   function two(n) { return String(n).padStart(2, '0'); }
   function clockOf(at) { var d = new Date(at * 1000); return two(d.getHours()) + ':' + two(d.getMinutes()); }
-  /* a day heading: the server's label, or "Today" / "Yesterday" / "Wed 28 Oct" from an ISO date or the first play */
-  function dayLabel(day) {
-    var iso = /^\d{4}-\d{2}-\d{2}$/.test(day.day || '') ? day.day : null;
-    if (day.day && !iso) return day.day;
-    var d = iso ? new Date(iso + 'T12:00:00') : new Date(((day.items[0] || {}).at || 0) * 1000), today = new Date();
-    var diff = Math.round((new Date(today.getFullYear(), today.getMonth(), today.getDate()) - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 864e5);
+  /* "Today" / "Yesterday" / "Wed 28 Oct" for a YYYY-MM-DD day (already split at the listener's midnight) */
+  function dayLabel(iso) {
+    var p = iso.split('-'), d = new Date(+p[0], +p[1] - 1, +p[2]), now = new Date();
+    var diff = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - d) / 864e5);
     return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
   }
-  function historyBody(d, before) {
-    var days = (Array.isArray(d) ? d : d.days || d.items || []).filter(function (day) { return day.items && day.items.length; });
-    if (!days.length) {
-      return html`<section class="card lib-card" aria-label="History">${before
-        ? ui.emptyState({ art: 'wave', title: 'No older plays', text: 'That is everything lull has heard you play.', action: { label: 'Back to today', href: '#/history' } })
-        : ui.emptyState({ art: 'wave', title: 'Nothing played yet', text: 'Songs you play show up here by day, with their Last.fm scrobble status.', action: { label: 'Go home', href: '#/home' } })}</section>`;
+  function historyBody(first) {
+    var h = historyDays(first), days = h.days;
+    if (!days.length && !h.tail) {
+      return html`<section class="card lib-card" aria-label="History">${ui.emptyState({ art: 'wave', title: 'Nothing played yet',
+        text: 'Songs you play show up here by day, with their Last.fm scrobble status.', action: { label: 'Go home', href: '#/home' } })}</section>`;
     }
     var waiting = days.reduce(function (n, day) { return n + day.items.filter(function (i) { return scrobbleOf(i) === 'pending'; }).length; }, 0);
     var status = waiting
       ? html`${ui.statusGlyph('warn', 'Waiting')}<p><b>${plural(waiting, 'scrobble')} waiting for Last.fm.</b> They stay queued and retry on their own.</p><button class="btn btn--sm" data-act="lastfm-retry">${icon('refresh')}Retry now</button>`
       : html`${ui.statusGlyph('ok', 'Up to date')}<p><b>Every eligible play is scrobbled.</b> Songs under 30 seconds are skipped, as Last.fm asks.</p>`;
-    var lastDay = days[days.length - 1], oldest = lastDay.items[lastDay.items.length - 1].at;
     return html`<section class="card lib-card" aria-labelledby="lib-history-h">
       ${ruleWith('history', 'lib-history-h', html`<ul class="lib-legend" aria-label="Scrobble status key">
         <li>${icon('check', null, 'ic-16')}scrobbled</li><li>${icon('clock', null, 'ic-16')}pending</li><li>${icon('dash', null, 'ic-16')}too short</li></ul>`)}
       <div class="lib-status inset">${status}</div>
       ${days.map(function (day) {
-        var label = dayLabel(day), ids = day.items.map(function (i) { return i.trackId; });
+        var label = dayLabel(day.day), ids = day.items.map(function (i) { return i.trackId; });
         return html`<div class="lib-day">${ui.labelRule(label, { level: 'h3', sm: true })}
           <ol class="tlist lib-history" data-ids="${ids.join(',')}" aria-label="Played ${label}">${day.items.map(function (i) {
-            return ui.trackRow(i.trackId, { index: clockOf(i.at), draggable: false, unavailable: jellyfinDown() && isSaved(i.trackId), badges: ui.scrobble(scrobbleOf(i)) });
+            var sc = scrobbleOf(i);
+            return ui.trackRow(i.trackId, { index: clockOf(i.at), draggable: false, unavailable: jellyfinDown() && isSaved(i.trackId), badges: sc ? ui.scrobble(sc) : '' });
           })}</ol></div>`;
       })}
-      ${d.more ? html`<p class="lib-more"><a class="btn btn--quiet btn--sm" href="#/history?before=${oldest}">${icon('clock')}Older plays</a></p>` : ''}
+      ${h.tail}
+      ${h.next ? html`<p class="lib-more"><button class="btn btn--quiet btn--sm" data-act="lib-history-older" data-id="${h.next}">${icon('clock')}Older plays</button></p>` : ''}
     </section>`;
   }
 
@@ -772,15 +800,9 @@
         onAction: function () { saveOrder(p, before).then(function (back) { if (back) focusRow(row); }); } });
     });
   }
-  /* a new playlist with songs in it: create, then send its order */
-  function makePlaylist(name, desc, ids) {
-    return App.createPlaylist({ name: name, desc: desc || '' }).then(function (p) {
-      if (!p || !ids.length) return p;
-      return App.savePlaylistOrder(p.id, ids).then(function () { return playlist(p.id) || p; }, function (err) {
-        App.toast('Created ' + name + ', but couldn\'t add the songs: ' + err.message, { kind: 'error' });
-        return p;
-      });
-    });
+  /* a new playlist with songs in it, in one POST (App.createPlaylist says why when it fails, and answers null) */
+  function makePlaylist(name, desc, ids, imported) {
+    return App.createPlaylist({ name: name, desc: desc || '', trackIds: ids, imported: imported });
   }
   function saveDetails(p, name, desc) {
     return M.api(playlistPath(p.id), { method: 'PATCH', body: { name: name, desc: desc } }).then(App.loadPlaylists);
@@ -974,8 +996,8 @@
 
   /* =====================================================================
      10. M3U import (App.hooks.importFile + the Import buttons): the server matches each line
-         (POST /api/playlists/import -> library | will-search | not-found), the preview shows it, importing makes
-         a playlist of every line that has a song id (will-search songs are found on Soulseek when played or saved)
+         (POST /api/playlists/import -> library | will-search | not-found; it creates nothing), the preview shows it,
+         importing POSTs a playlist of every line with a song id (will-search songs are found on Soulseek when played)
      ===================================================================== */
   function openImportStart() {
     App.openDialog({
@@ -991,24 +1013,23 @@
     document.body.appendChild(input); input.click();
   }
   var IMPORT_LABEL = { library: 'In your library', 'will-search': 'Searched on Soulseek when played', 'not-found': 'Not found' };
-  /* the preview's lines, checked: a status this version doesn't know fails the import rather than guess */
-  function importLines(res) {
-    var lines = Array.isArray(res) ? res : res && (res.items || res.lines) || [];
-    return lines.map(function (l) {
+  /* the preview { name, lines: [{ n, location, artist, title, status, trackId }], counts, libraryChecked }, checked:
+     a status this version doesn't know fails the import rather than guess */
+  function checkPreview(res) {
+    res.lines.forEach(function (l) {
       if (!IMPORT_LABEL[l.status]) throw new M.ApiError(0, 'bad_preview', 'The server sent an import line lull doesn\'t understand (' + l.status + ').');
-      return { status: l.status, trackId: l.trackId || null, track: l.trackId ? M.track(l.trackId) : null,
-        path: l.path || l.line || '', title: l.title || '', artist: l.artist || '' };
     });
+    return res;
   }
-  function importRow(l, i) {
-    var t = l.track, status;
+  function importRow(l) {
+    var t = l.trackId && M.track(l.trackId), status;
     if (l.status === 'library') status = ui.savedBadge();
     else if (l.status === 'will-search') status = html`${ui.soulseekBadge()}<span class="lib-imp__src">when played</span>`;
-    else status = html`<span class="lib-imp__none">${icon('no-source', null, 'ic-16')}not found</span><a class="btn btn--quiet btn--sm" href="#/search?q=${encodeURIComponent((l.artist + ' ' + l.title).trim() || l.path)}" data-close>Search</a>`;
+    else status = html`<span class="lib-imp__none">${icon('no-source', null, 'ic-16')}not found</span><a class="btn btn--quiet btn--sm" href="#/search?q=${encodeURIComponent(((l.artist || '') + ' ' + (l.title || '')).trim() || l.location)}" data-close>Search</a>`;
     return html`<li class="lib-imp__row" data-status="${l.status}">
-      <span class="lib-imp__n">${i + 1}</span>
+      <span class="lib-imp__n">${l.n}</span>
       ${t ? ui.cover(t, 40) : html`<span class="lib-imp__blank" aria-hidden="true">${icon('no-source')}</span>`}
-      <span class="lib-imp__main"><b>${t ? t.title : l.title || l.path}</b><span>${t ? t.artist : l.artist || 'unknown artist'}</span><small>${l.path}</small></span>
+      <span class="lib-imp__main"><b>${t ? t.title : l.title || l.location}</b><span>${t ? t.artist : l.artist || 'unknown artist'}</span><small>${l.location}</small></span>
       <span class="lib-imp__status"><span class="vh">${IMPORT_LABEL[l.status]}: </span>${status}</span>
     </li>`;
   }
@@ -1020,21 +1041,22 @@
       body: html`<div class="lib-form"><p class="lib-help">Matching each line to your library and Soulseek.</p>${ui.skeleton('row', 4)}</div>`,
       onClose: function () { cancelled = true; }
     });
-    M.api('/api/playlists/import', { method: 'POST', body: String(text) }).then(importLines).then(function (lines) {
-      if (!cancelled) showImportPreview(fileName, lines);
+    M.api('/api/playlists/import', { method: 'POST', body: String(text) }).then(checkPreview).then(function (preview) {
+      if (!cancelled) showImportPreview(fileName, preview);
     }, function (err) {
       if (cancelled) return;
       wait.close();
       App.toast('Couldn\'t import ' + fileName + ': ' + err.message, { kind: 'error', icon: 'warning' });
     });
   }
-  function showImportPreview(fileName, lines) {
-    var tally = { library: 0, 'will-search': 0, 'not-found': 0 }; lines.forEach(function (l) { tally[l.status]++; });
+  function showImportPreview(fileName, preview) {
+    var lines = preview.lines, counts = preview.counts;
+    var tally = { all: lines.length, library: counts.library, 'will-search': counts.willSearch, 'not-found': counts.notFound };
     var usable = lines.filter(function (l) { return l.trackId; });
     var searchIds = usable.filter(function (l) { return l.status === 'will-search'; }).map(function (l) { return l.trackId; });
-    var nameId = App.uid('lib-imp'), base = fileName.replace(/\.m3u8?$/i, '');
+    var nameId = App.uid('lib-imp'), base = preview.name || fileName.replace(/\.m3u8?$/i, '');
     function filterPill(key, label, ic) {
-      return html`<button class="pill-filter" data-imp-filter="${key}" aria-pressed="${key === 'all' ? 'true' : 'false'}">${ic ? icon(ic) : ''}${label}<span class="lib-count">${key === 'all' ? lines.length : tally[key]}</span></button>`;
+      return html`<button class="pill-filter" data-imp-filter="${key}" aria-pressed="${key === 'all' ? 'true' : 'false'}">${ic ? icon(ic) : ''}${label}<span class="lib-count">${tally[key]}</span></button>`;
     }
     App.openDialog({
       title: 'import ' + fileName, wide: true, className: 'lib-import',
@@ -1044,6 +1066,7 @@
         <div class="lib-imp__sum" role="group" aria-label="Show lines">
           ${filterPill('all', 'All')}${filterPill('library', 'In library', 'saved')}${filterPill('will-search', 'On Soulseek', 'soulseek')}${filterPill('not-found', 'Not found', 'no-source')}
         </div>
+        ${preview.libraryChecked ? '' : html`<p class="lib-help">${icon('warning', null, 'ic-16')}Your library couldn't be checked just now, so songs you've saved may show as found on Soulseek.</p>`}
         <ol class="lib-imp__list" aria-label="Lines in ${fileName}">${lines.map(importRow)}</ol>
         ${searchIds.length ? html`<label class="switch-row lib-imp__opt"><span><span class="switch-row__label">Save the Soulseek matches too</span>
           <span class="switch-row__help">${plural(searchIds.length, 'song')}. Otherwise they stream when played.</span></span>
@@ -1067,11 +1090,12 @@
           var name = $('#' + nameId, el).value.trim() || base;
           var saveToo = !!$('[data-imp-save][aria-checked="true"]', el);
           close();
-          makePlaylist(name, 'Imported from ' + fileName + '.', usable.map(function (l) { return l.trackId; })).then(function (p) {
+          var imported = { file: fileName, library: counts.library, willSearch: counts.willSearch, notFound: counts.notFound };
+          makePlaylist(name, 'Imported from ' + fileName + '.', usable.map(function (l) { return l.trackId; }), imported).then(function (p) {
             if (!p) return;
             if (saveToo) App.saves.start(searchIds);
             App.go('/playlist/' + p.id);
-            App.toast('Imported ' + plural(usable.length, 'song') + (tally['not-found'] ? '. ' + tally['not-found'] + ' weren\'t found.' : ''), { kind: 'ok', icon: 'import' });
+            App.toast('Imported ' + plural(usable.length, 'song') + (counts.notFound ? '. ' + counts.notFound + ' weren\'t found.' : ''), { kind: 'ok', icon: 'import' });
           });
         });
       }
@@ -1111,9 +1135,8 @@
     App.toast(on ? 'Liked ' + plural(changed.length, 'song') : 'Removed ' + plural(changed.length, 'like'), { icon: on ? 'heart-fill' : 'heart', action: 'Undo',
       onAction: function () { App.setLiked(changed, !on); } });
   });
-  App.action('lib-album-filter', function (el) {
-    prefs.albumFilter = el.getAttribute('data-value') || el.getAttribute('data-id') || 'all'; App.storage('libAlbumFilter', prefs.albumFilter); refreshKeepFocus();
-  });
+  App.action('lib-history-older', function (el) { historyPages.push(el.getAttribute('data-id')); refreshKeepFocus(); });
+  App.action('lib-show-all', function (el) { limits[el.getAttribute('data-id')] = +el.getAttribute('data-value'); App.refresh(); });
   function sortMenu(el, table, key, store) {
     App.menu(el, Object.keys(table).map(function (k) {
       return { label: table[k], icon: prefs[key] === k ? 'check' : 'dash', run: function () { prefs[key] = k; App.storage(store, k); App.refresh(); } };
@@ -1208,11 +1231,11 @@
   function titleOf(fn, kind) { return function (ctx) { var x = fn(ctx.params.id); return x ? (x.title || x.name) : kind; }; }
   function artistMetaLine(ctx) {
     var d = M.peek(artistPath(ctx.params.id));
-    return d && d.discography ? plural(idList(d.discography).length, 'release') : '';
+    return d && d.albums ? plural(d.albums.length, 'release') : '';
   }
   App.route('/library/:segment?', { render: renderLibrary, mount: mountLibrary, nav: 'library',
     title: function (ctx) { var s = SEGMENTS.filter(function (x) { return x.id === ctx.params.segment; })[0]; return 'Library' + (s ? ': ' + s.label : ''); } });
-  App.route('/liked', { render: renderLiked, mount: mountLibrary, nav: 'library', title: 'Liked songs' });
+  App.route('/liked', { render: renderLiked, mount: mountLiked, nav: 'library', title: 'Liked songs' });
   App.route('/history', { render: renderHistory, mount: mountLibrary, nav: 'library', title: 'History' });
   App.route('/following', { render: renderFollowing, mount: mountLibrary, nav: 'library', title: 'Following' });
   App.route('/album/:id', { render: renderAlbum, mount: mountAlbum, nav: 'library', title: titleOf(M.album, 'Album'), meta: metaOf(M.album, albumMeta) });

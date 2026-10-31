@@ -1522,8 +1522,7 @@
 :root[data-design="lull"] .app[data-screen="library"] .lib-card > .lib-rule { justify-content: flex-end; min-height: 0; margin: 0; }
 @media (min-width: 640px) {
   :root[data-design="lull"] .app[data-screen="library"] .lib-card { position: relative; }
-  :root[data-design="lull"] .app[data-screen="library"] .lib-card > .lib-rule:has(+ :is(.lib-filters, .lib-bar)) { position: absolute; top: 0; right: 0; }
-  :root[data-design="lull"] .app[data-screen="library"] .lib-card > .lib-filters { min-height: 32px; margin-bottom: 16px; padding-right: 170px; }
+  :root[data-design="lull"] .app[data-screen="library"] .lib-card > .lib-rule:has(+ .lib-bar) { position: absolute; top: 0; right: 0; }
 }
 /* artist page: the antenna glyph before each artist name already says "Soulseek", so the badge stops repeating it */
 :root[data-design="lull"] .app[data-screen="artist"] .trow .badge-slsk { display: none; }

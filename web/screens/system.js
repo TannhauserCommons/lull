@@ -14,9 +14,10 @@
   /* =====================================================================
      0. Helpers and generic controls
      ===================================================================== */
-  /* the mini player and "change server" exist only inside the desktop wrapper */
-  function inWrapper() { return !!(window.__TAURI__ && window.LullDesktop); }
-  if (inWrapper()) App.shortcuts.push({ group: 'Panels', keys: ['Ctrl+Shift+M'], label: 'Mini player (desktop app)' });
+  /* the mini player and the wrapper's own settings exist only inside the desktop app. desktop.js loads after this
+     file, so the shortcut checks for Tauri itself (as desktop.js does) */
+  function inWrapper() { return !!(window.LullDesktop && window.LullDesktop.inWrapper); }
+  if (window.__TAURI__) App.shortcuts.push({ group: 'Panels', keys: ['Ctrl+Shift+M'], label: 'Mini player (desktop app)' });
 
   function num(x) { return Number(x).toLocaleString('en'); }
   function hours(min) {
@@ -47,10 +48,15 @@
   }
 
   /* ---------- settings values ----------
-     GET /api/settings answers in the MOCK.settings shape. A value fixed by the server config comes back as
-     { value, source: 'config' }: shown read-only, never edited, and secrets never shown (DESIGN.md 14.10). */
+     GET /api/settings: the stored keys plain, values fixed by the server config as { value, source: 'config' }
+     (shown read-only, never edited), secrets as { value: null, source: 'config', secret: true, set }
+     (only whether they are set; DESIGN.md 14.10). Appearance is per device; Last.fm's switches are /api/lastfm. */
   function isConfig(x) { return !!x && typeof x === 'object' && x.source === 'config'; }
   function val(x) { return isConfig(x) ? x.value : x; }
+  function configText(x) {
+    if (x && x.secret) return x.set ? 'set in server config' : 'not set';
+    var v = val(x); return v == null || v === '' ? 'not set' : String(v);
+  }
   function settings() { return M.peek(SETTINGS); }
   function lookup(path) { return path.split('.').reduce(function (o, k) { return o == null ? o : o[k]; }, settings()); }
   function locked(path) { return isConfig(lookup(path)); }
@@ -74,7 +80,7 @@
     obj[last] = v;
   }
   /* PATCH /api/settings with only the changed keys, as a partial settings object. The change shows at once;
-     if the server refuses it, it is put back and the server's sentence is shown. */
+     the server refuses a bad change whole (400), and then it is put back and the server's sentence is shown. */
   function save(changes) {
     var s = settings(), body = {}, before = {}, paths = Object.keys(changes);
     paths.forEach(function (path) {
@@ -93,13 +99,26 @@
   function playbackPrefs() {
     var pb = settings().playback;
     return { gapless: !!val(pb.gapless), crossfade: +val(pb.crossfade) || 0, normalisation: val(pb.normalisation) || 'off',
-      radioWhenQueueEnds: !!val(pb.radioWhenQueueEnds), volumeStep: +val(pb.volumeStep) || 5 };
+      loudnessTarget: +val(pb.loudnessTarget) || -14, radioWhenQueueEnds: !!val(pb.radioWhenQueueEnds), volumeStep: +val(pb.volumeStep) || 5 };
   }
+  /* the `settings` event (any device's change, our own included): merge what differs, re-render if anything did */
+  App.on('server:settings', function (stored) {
+    var s = settings(), changed = false;
+    if (!s) return;
+    Object.keys(stored).forEach(function (sec) {
+      Object.keys(stored[sec]).forEach(function (k) {
+        var path = sec + '.' + k;
+        if (JSON.stringify(val(lookup(path))) === JSON.stringify(stored[sec][k])) return;
+        assign(s, path, stored[sec][k]); changed = true;
+      });
+    });
+    if (changed && App.current.path.indexOf('/settings') === 0) App.refresh();
+  });
 
   /* ---------- generic controls. Each reads and writes its value by its data-key path. ---------- */
   /* a config-fixed value in place of a control: read-only, with a lock */
   function lockedValue(label, text) {
-    return html`<span class="input input--readonly sys-locked" tabindex="0" aria-label="${label}: ${text || 'hidden'}. Set in server config, read only." data-tip="Set in server config">${icon('lock', null, 'ic-16')}<span class="ellipsis">${text || 'hidden'}</span></span>`;
+    return html`<span class="input input--readonly sys-locked" tabindex="0" aria-label="${label}: ${text}. Set in server config, read only." data-tip="Set in server config">${icon('lock', null, 'ic-16')}<span class="ellipsis">${text}</span></span>`;
   }
 
   /* one-of-N choice: a segmented pill with role=radiogroup; arrows move and select */
@@ -146,7 +165,7 @@
     opts = opts || {};
     var id = App.uid('sys-sw'), on = !!get(path), disabled = opts.disabled || (locked(path) && 'This one is set in server config');
     return html`<label class="switch-row sys-row ${disabled ? 'is-disabled' : ''}">
-      <span class="sys-row__text"><span class="sys-row__label" id="${id}">${label}${opts.status || ''}</span>${help ? html`<span class="sys-row__help" id="${id}-h">${help}</span>` : ''}</span>
+      <span class="sys-row__text"><span class="sys-row__label" id="${id}">${label}</span>${help ? html`<span class="sys-row__help" id="${id}-h">${help}</span>` : ''}</span>
       <button type="button" class="switch" role="switch" aria-checked="${on ? 'true' : 'false'}" aria-labelledby="${id}" ${help ? raw('aria-describedby="' + id + '-h"') : ''} data-switch="${path}" ${disabled ? raw('aria-disabled="true" data-locked-msg="' + App.esc(disabled) + '"') : ''}></button></label>`;
   }
   document.addEventListener('click', function (e) {
@@ -194,16 +213,16 @@
     if (b.disabled) btns[b === btns[0] ? 1 : 0].focus();
   });
 
-  /* a settings row: label + help left, control right */
+  /* a settings row: label + help left, control right; opts.when names a group of rows shown together */
   function row(label, help, control, opts) {
     opts = opts || {};
-    return html`<div class="sys-row ${opts.cls || ''}">
+    return html`<div class="sys-row ${opts.cls || ''}" ${opts.when ? raw('data-when="' + opts.when + '"') : ''} ${opts.hidden ? raw('hidden') : ''}>
       <div class="sys-row__text"><span class="sys-row__label">${label}</span>${help ? html`<span class="sys-row__help">${help}</span>` : ''}</div>
       <div class="sys-row__ctl">${control}</div></div>`;
   }
-  /* a value only the server config sets (URLs, credentials): read-only; leave `x` out for secrets */
+  /* a value only the server config sets (URLs, credentials, naming): read-only */
   function configRow(label, x, help) {
-    return row(label, help || 'Set in server config. Change it there and restart the server.', lockedValue(label, val(x)), { cls: 'sys-row--locked' });
+    return row(label, help || 'Set in server config. Change it there and restart the server.', lockedValue(label, configText(x)), { cls: 'sys-row--locked' });
   }
   /* follow toggle chip; the check is always in the markup and CSS shows it only when pressed (.chip__check) */
   function followChip(id, name, act) {
@@ -216,35 +235,27 @@
      ===================================================================== */
   /* [id, tab label, phrase, days in the period (0: unknown, all time)] */
   var PERIODS = [['7d', '7 days', 'in the last 7 days', 7], ['30d', '30 days', 'in the last 30 days', 30], ['12m', '12 months', 'in the last 12 months', 365], ['all', 'All time', 'since you started', 0]];
-  var DAYS = [['Mon', 'Monday'], ['Tue', 'Tuesday'], ['Wed', 'Wednesday'], ['Thu', 'Thursday'], ['Fri', 'Friday'], ['Sat', 'Saturday'], ['Sun', 'Sunday']];
   var HEAT = ['--lavender', '--lav', '--peri', '--peri-deep', '--indigo'];
   var NEEDED_MIN = 120;                           // stats and the taste profile need about two hours of listening
   var statsUi = { period: '7d', focusTab: false };
 
-  function statsPath(p) { return '/api/stats?period=' + p; }
+  /* tz = minutes east of UTC, so the clock and the periods follow the listener's own hours */
+  function statsPath(p) { return '/api/stats?period=' + p + '&tz=' + -new Date().getTimezoneOffset(); }
+  var TASTE = '/api/taste';
   function periodOf(id) { return PERIODS.filter(function (p) { return p[0] === id; })[0] || PERIODS[0]; }
   function hh(h) { return (h < 10 ? '0' : '') + h + ':00'; }
   function topValue(list) { return Math.max.apply(null, [1].concat(list.map(function (x) { return x[1]; }))); }
-  /* the clock is 24 hourly values, or 7 rows of 24 (Monday first) when the server splits it by weekday */
-  function clockRows(clock) { return Array.isArray(clock[0]) ? clock : [clock]; }
-  function heatCells(rows) {
-    var cells = [], max = 0, total = 0;
-    rows.forEach(function (hoursOfDay, r) {
-      hoursOfDay.forEach(function (v, h) { cells.push({ r: r, h: h, v: v }); max = Math.max(max, v); total += v; });
+  /* the clock: plays per local hour, 24 values */
+  function heatCells(clock) {
+    var max = Math.max.apply(null, clock), total = clock.reduce(function (a, b) { return a + b; }, 0);
+    return clock.map(function (v, h) {
+      return { h: h, share: share(v, total), level: !max || v < max * .12 ? 0 : Math.min(4, Math.ceil(v / max * 4)) };
     });
-    cells.forEach(function (c) {
-      c.share = share(c.v, total);
-      c.level = !max || c.v < max * .12 ? 0 : Math.min(4, Math.ceil(c.v / max * 4));
-    });
-    return cells;
   }
-  /* the busiest two hours, all days together */
-  function peakRange(rows) {
+  /* the busiest two hours */
+  function peakRange(clock) {
     var best = -1, at = 0;
-    for (var h = 0; h < 24; h++) {
-      var s = rows.reduce(function (sum, r) { return sum + r[h] + r[(h + 1) % 24]; }, 0);
-      if (s > best) { best = s; at = h; }
-    }
+    for (var h = 0; h < 24; h++) { var s = clock[h] + clock[(h + 1) % 24]; if (s > best) { best = s; at = h; } }
     return hh(at) + ' and ' + hh((at + 2) % 24);
   }
   function shareText(x) { return x && x < .005 ? 'under 1%' : pct(x); }
@@ -274,8 +285,7 @@
     }
     if (r.error) return page('Couldn\'t count your plays.', App.errorCard(r.error, { path: path, title: 'Couldn\'t load your stats' }));
     if (d.minutes < NEEDED_MIN) return page('Stats fill in once you have listened for a while.', emptyStats(d));
-    var rows = clockRows(d.clock);
-    return page(hours(d.minutes) + ' across ' + num(d.plays) + ' plays ' + per[2] + ', mostly between ' + peakRange(rows) + '.', statsBody(d, per, rows));
+    return page(hours(d.minutes) + ' across ' + num(d.plays) + ' plays ' + per[2] + ', mostly between ' + peakRange(d.clock) + '.', statsBody(d, per));
   }
 
   function emptyStats(d) {
@@ -284,14 +294,12 @@
       <div class="sys-empty-stats__progress"><div class="sys-meter-label"><span>${hours(d.minutes)} of 2 h</span><span class="fg-2">${pct(p)}</span></div><div class="progress" role="progressbar" aria-label="Listening needed for stats" aria-valuenow="${Math.round(p * 100)}" aria-valuemin="0" aria-valuemax="100" style="--p:${p}"><i></i></div></div></div>`;
   }
 
-  function statsBody(d, per, rows) {
+  function statsBody(d, per) {
     var days = per[3], hr = d.hitRate, likedP = share(hr.liked, hr.recommended), savedP = share(hr.saved, hr.recommended);
     /* ids the cache can't resolve render nothing (docs/context/web.md) */
     var artists = d.topArtists.filter(function (x) { return M.artist(x[0]); });
     var tracks = d.topTracks.filter(function (x) { return M.track(x[0]); });
     var maxA = topValue(artists), maxT = topValue(tracks), maxG = topValue(d.topTags);
-    var cells = heatCells(rows), labels = rows.length === 7 ? DAYS : [['All', 'all days']];
-    var peakCell = cells.reduce(function (a, c) { return c.v > a.v ? c : a; });
     var listening = d.minutes / 60 < 100 ? (d.minutes / 60).toFixed(1) : num(Math.round(d.minutes / 60));
 
     return html`<div class="sys-tiles">
@@ -315,13 +323,11 @@
               <span class="sys-bars__main"><button class="sys-bars__name" data-act="play-track" data-id="${t.id}" aria-label="Play ${t.title} by ${t.artist}">${t.title}</button><span class="sys-bars__by"><a href="#/artist/${t.artistId}">${t.artist}</a></span>${bar(x[1], maxT)}</span><span class="sys-bars__val num">${num(x[1])}<span class="fg-2"> plays</span></span></li>`;
           })}</ol></section>
         <section class="card sys-card sys-span" aria-labelledby="sys-h-clock">${ui.labelRule('listening clock', { id: 'sys-h-clock' })}
-          <p class="sys-card__lede">When you listen, by ${rows.length === 7 ? 'weekday and hour' : 'hour of the day'}. Darker squares mean more listening.</p>
-          <div class="sys-heat" role="img" aria-label="${'Listening clock. Most listening ' + (rows.length === 7 ? 'on ' + DAYS[peakCell.r][1] + 's; overall ' : '') + 'between ' + peakRange(rows) + '.'}">
+          <p class="sys-card__lede">When you listen, by hour of the day. Darker squares mean more plays.</p>
+          <div class="sys-heat" role="img" aria-label="${'Listening clock. Most listening between ' + peakRange(d.clock) + '.'}">
             <span></span>${[0, 6, 12, 18].map(function (h) { return html`<span class="sys-heat__hour" style="grid-column:${h + 2} / span 6">${hh(h)}</span>`; })}
-            ${labels.map(function (day, r) {
-              return html`<span class="sys-heat__day">${day[0]}</span>${cells.slice(r * 24, r * 24 + 24).map(function (c) {
-                return html`<i class="sys-heat__cell" style="--c:var(${HEAT[c.level]})" data-l="${c.level}" data-tip="${day[0]} ${hh(c.h)}: ${shareText(c.share)} of your listening"></i>`;
-              })}`;
+            <span class="sys-heat__day">All</span>${heatCells(d.clock).map(function (c) {
+              return html`<i class="sys-heat__cell" style="--c:var(${HEAT[c.level]})" data-l="${c.level}" data-tip="${hh(c.h)}: ${shareText(c.share)} of your plays"></i>`;
             })}
           </div>
           <div class="sys-legend" aria-hidden="true"><span>less</span>${HEAT.map(function (v, i) { return html`<i class="sys-heat__cell" style="--c:var(${v})" data-l="${i}"></i>`; })}<span>more</span></div>
@@ -339,13 +345,20 @@
           </dl>
           <div class="inset sys-newart"><span class="sys-newart__n num">${num(d.newArtists)}</span><span>new artists ${per[2]}.</span></div>
         </section>
-        ${tasteCard(d.taste)}
+        ${tasteCard()}
       </div>`;
   }
 
-  /* the taste summary that comes with the stats: { artists: [[id, weight 0-1]], tags: [[name, weight]] } */
-  function tasteCard(taste) {
-    var artists = taste.artists.filter(function (x) { return M.artist(x[0]); }), empty = !artists.length && !taste.tags.length;
+  /* discovery's taste profile (GET /api/taste): { artists: [[id, weight 0-1]], tags: [[name, weight]] }, its own read */
+  function tasteCard() {
+    var r = M.get(TASTE);
+    function card(body, action) {
+      return html`<section class="card sys-card sys-span" aria-labelledby="sys-h-taste" id="sys-taste">
+        ${ui.labelRule('your taste profile', { id: 'sys-h-taste', action: action })}${body}</section>`;
+    }
+    if (r.loading) return card(ui.skeleton('row', 3));
+    if (r.error) return card(readError(r.error, TASTE, 'Couldn\'t load your taste profile'));
+    var taste = r.data, artists = taste.artists.filter(function (x) { return M.artist(x[0]); }), empty = !artists.length && !taste.tags.length;
     function col(title, list, kind) {
       return html`<div class="sys-taste__col">${ui.labelRule(title, { level: 'h3', sm: true })}<ol class="sys-bars sys-bars--taste">${list.map(function (x) {
         var name = kind === 'artist' ? M.artist(x[0]).name : x[0], w = Math.round(x[1] * 100);
@@ -359,8 +372,7 @@
       ? ui.emptyState({ art: 'moon', title: 'No taste profile yet', text: 'Home learns from what you play, like and save next.' })
       : html`<p class="sys-card__lede">This is what Home leans on. Weights come from plays, likes, saves and follows over the last 90 days; 100 is your strongest signal. Use the info buttons to see why, or turn something down.</p>
         <div class="sys-taste">${col('artists', artists, 'artist')}${col('tags', taste.tags, 'tag')}</div>`;
-    return html`<section class="card sys-card sys-span" aria-labelledby="sys-h-taste" id="sys-taste">
-      ${ui.labelRule('your taste profile', { id: 'sys-h-taste', action: empty ? null : { label: 'Reset taste', act: 'sys-taste-reset' } })}${body}</section>`;
+    return card(body, empty ? null : { label: 'Reset taste', act: 'sys-taste-reset' });
   }
 
   function mountStats(ctx) {
@@ -381,12 +393,8 @@
     if (statsUi.focusTab) { statsUi.focusTab = false; var sel = $('[aria-selected="true"]', tl); if (sel) sel.focus(); }
   }
 
-  /* the taste profile is the same in every period: refetch the one showing, forget the others */
-  function refreshStats() {
-    var showing = statsPath(statsUi.period);
-    PERIODS.forEach(function (p) { if (statsPath(p[0]) !== showing) M.invalidate(statsPath(p[0])); });
-    M.reload(showing);
-  }
+  /* weights change with feedback and reset: refetch the taste read in place */
+  function refreshTaste() { M.reload(TASTE); }
   App.action('sys-play-top', function (el) {
     var ids = $('[data-ids]', el.closest('.sys-card')).getAttribute('data-ids').split(',');
     P.playList(ids, 0); App.toast('Playing your top songs', { icon: 'play' });
@@ -407,19 +415,19 @@
     App.popover(el, html`<div class="popover__head">${name}: ${w}</div><div class="popover__body"><p>${text}</p><p class="t-micro fg-2" style="margin-top:6px">via your listening history</p></div>
       <div class="popover__actions"><button class="btn btn--sm" data-act="sys-taste-less" data-id="${id}" data-name="${name}">${icon('minus')}Less of this</button><a class="btn btn--sm" href="${kind === 'artist' ? '#/artist/' + id : '#/tag/' + encodeURIComponent(id)}">Open ${kind}</a></div>`, { label: 'Why ' + name + ' has this weight' });
   });
-  /* "less of this" is the same feedback Home sends; the new weight comes back with the stats */
+  /* "less of this" is the same feedback Home sends; the new weight comes back with the taste read */
   App.action('sys-taste-less', function (el) {
     var id = el.getAttribute('data-id'), name = el.getAttribute('data-name');
     App.closePopover();
     M.api('/api/feedback', { method: 'POST', body: { kind: 'less-like', id: id } }).then(function () {
-      refreshStats();
+      refreshTaste();
       App.toast('Turned down ' + name, { icon: 'minus' });
     }, function (err) { App.toast('Couldn\'t turn down ' + name + ': ' + err.message, { kind: 'error' }); });
   });
   App.action('sys-taste-reset', function () {
     App.confirm({ title: 'reset your taste profile?', text: 'Home forgets the weights for every artist and tag and relearns from what you play next. Your plays, likes, saves and follows stay as they are.', confirm: 'Reset taste', danger: true }, function () {
       M.api('/api/taste/reset', { method: 'POST' }).then(function () {
-        refreshStats();
+        refreshTaste();
         App.toast('Taste profile reset', { icon: 'refresh' });
       }, function (err) { App.toast('Couldn\'t reset the taste profile: ' + err.message, { kind: 'error' }); });
     });
@@ -453,11 +461,13 @@
 
   /* ---------- playback ---------- */
   fmtRange['playback.crossfade'] = function (v) { return v ? v + ' s' : 'Off'; };
+  effects['playback.normalisation'] = function (v) { $$('[data-when="loudness"]').forEach(function (r) { r.hidden = v !== 'loudness'; }); };
   function secPlayback() {
     return html`
       ${switchRow('playback.gapless', 'Gapless playback', 'Where the source allows. Lossy files from Soulseek may still have a short gap.')}
       ${row('Crossfade', 'Blend the end of one song into the next. Albums marked gapless never crossfade.', range('playback.crossfade', 'Crossfade, seconds', 0, 12, 1))}
       ${row('Loudness normalisation', 'ReplayGain reads tags in the file. Loudness measures files that have no tags.', choice('playback.normalisation', 'Loudness normalisation', [['off', 'Off'], ['replaygain-track', 'Track'], ['replaygain-album', 'Album'], ['loudness', 'Loudness']], 'sys-seg--4'))}
+      ${row('Target loudness', 'Quieter targets leave more headroom for dynamic music.', choice('playback.loudnessTarget', 'Target loudness', [[-18, '-18 LUFS'], [-14, '-14 LUFS'], [-11, '-11 LUFS']]), { when: 'loudness', hidden: get('playback.normalisation') !== 'loudness', cls: 'sys-row--sub' })}
       ${row('Volume step', 'How far Up, Down and the D-pad move the volume.', choice('playback.volumeStep', 'Volume step', [[2, '2%'], [5, '5%'], [10, '10%']]))}
       ${switchRow('playback.radioWhenQueueEnds', 'Continue with radio when the queue ends', 'Starts a radio from the last song so the music keeps going.')}`;
   }
@@ -465,123 +475,62 @@
   /* ---------- sources ---------- */
   /* the format classes the source picker ranks: label -> [what it is, typical kbps for the size estimate] */
   var FORMATS = { 'FLAC 16/44.1': ['16-bit, 44.1 kHz', 1040], 'FLAC 24/96': ['24-bit, 96 kHz', 2800], 'MP3 320': ['320 kbps CBR', 320], 'MP3 V0': ['~245 kbps VBR', 245], 'OPUS 160': ['160 kbps', 160] };
+  /* sources.formatPreset -> the order the picker tries formats in */
   var PRESETS = {
     lossless: ['FLAC 16/44.1', 'FLAC 24/96', 'MP3 320', 'MP3 V0', 'OPUS 160'],
     bitrate: ['MP3 320', 'MP3 V0', 'OPUS 160', 'FLAC 16/44.1', 'FLAC 24/96'],
     small: ['OPUS 160', 'MP3 V0', 'MP3 320', 'FLAC 16/44.1', 'FLAC 24/96']
   };
   fmtRange['sources.stallTimeout'] = function (v) { return v + ' s'; };
-  /* a preset sets the whole order; the order is saved with it so the picker and this list agree */
-  custom['sources.preferred'] = { set: function (v) { save({ 'sources.preferred': v, 'sources.formatOrder': PRESETS[v].slice() }); repaint('#sys-order', formatItems()); } };
+  effects['sources.formatPreset'] = function () { repaint('#sys-order', formatItems()); };
   effects['sources.autoPick'] = function (v) { App.announce(v ? 'Best source is picked automatically' : 'You will choose the source each time'); };
-  function formatOrder() {
-    var o = get('sources.formatOrder');
-    return Array.isArray(o) && o.length ? o : PRESETS[get('sources.preferred')] || PRESETS.lossless;
-  }
   function formatItems() {
-    var o = formatOrder(), fixed = locked('sources.formatOrder');
-    return html`${o.map(function (f, i) {
+    return html`${PRESETS[get('sources.formatPreset')].map(function (f, i) {
       var fm = FORMATS[f];
-      return html`<li class="sys-order__item" data-format="${f}"><span class="sys-order__n num">${i + 1}</span>${ui.qualityChip(f)}${fm ? html`<span class="sys-order__note">${fm[0]}, about ${Math.round(fm[1] * .03)} MB a song</span>` : ''}
-        ${fixed ? '' : html`<span class="sys-order__btns"><button type="button" class="btn-icon btn-icon--sm btn-icon--bare" data-act="sys-format-move" data-dir="-1" aria-label="Move ${f} up" data-tip="Move up" ${i === 0 ? raw('disabled') : ''}>${icon('chevron-up', null, 'ic-16')}</button><button type="button" class="btn-icon btn-icon--sm btn-icon--bare" data-act="sys-format-move" data-dir="1" aria-label="Move ${f} down" data-tip="Move down" ${i === o.length - 1 ? raw('disabled') : ''}>${icon('chevron-down', null, 'ic-16')}</button></span>`}</li>`;
+      return html`<li class="sys-order__item" data-format="${f}"><span class="sys-order__n num">${i + 1}</span>${ui.qualityChip(f)}<span class="sys-order__note">${fm[0]}, about ${Math.round(fm[1] * .03)} MB a song</span></li>`;
     })}`;
   }
-  App.action('sys-format-move', function (el) {
-    var f = el.closest('[data-format]').getAttribute('data-format'), dir = +el.getAttribute('data-dir'), o = formatOrder().slice();
-    var i = o.indexOf(f), j = i + dir; if (j < 0 || j >= o.length) return;
-    o.splice(i, 1); o.splice(j, 0, f);
-    var preset = Object.keys(PRESETS).filter(function (k) { return PRESETS[k].join() === o.join(); })[0] || 'custom';
-    save({ 'sources.formatOrder': o, 'sources.preferred': preset });
-    showChoice('sources.preferred', preset);
-    var at = j === 0 || j === o.length - 1 ? -dir : dir;
-    repaint('#sys-order', formatItems(), '[data-format="' + f + '"] [data-dir="' + at + '"]');
-    App.announce(f + ' moved to position ' + (j + 1));
-  });
   function secSources() {
     return html`
       <div class="sys-row sys-row--stack">
         <div class="sys-row__text"><span class="sys-row__label" id="sys-order-l">Preferred formats</span><span class="sys-row__help">The source picker tries these in order, then weighs peer speed, free slots and queue length.</span></div>
-        <div class="sys-row__ctl">${choice('sources.preferred', 'Format preset', [['lossless', 'Lossless first'], ['bitrate', 'High bitrate first'], ['small', 'Smallest first']], 'sys-seg--wrap')}
+        <div class="sys-row__ctl">${choice('sources.formatPreset', 'Format preset', [['lossless', 'Lossless first'], ['bitrate', 'High bitrate first'], ['small', 'Smallest first']], 'sys-seg--wrap')}
           <ol class="sys-order" id="sys-order" aria-labelledby="sys-order-l">${formatItems()}</ol></div></div>
       ${row('Minimum bitrate', 'Lossy files below this are ignored, kbps.', choice('sources.minBitrate', 'Minimum bitrate', [[128, '128'], [192, '192'], [256, '256'], [320, '320']]))}
       ${row('Longest peer queue', 'Skip peers with more people waiting than this.', stepper('sources.maxPeerQueue', 'Longest peer queue', 0, 50, 5, 'waiting'))}
       ${row('Stall timeout', 'If a peer stops sending for this long, switch to the next source.', range('sources.stallTimeout', 'Stall timeout, seconds', 5, 60, 5))}
       ${switchRow('sources.autoPick', 'Pick the best source automatically', 'Off: the source list opens every time you play something new.')}
-      ${group('soulseek account')}
-      ${configRow('Username', lookup('sources.username'))}
-      ${configRow('Password')}`;
+      ${group('soulseek connection')}
+      ${configRow('slskd address', lookup('sources.slskdUrl'), 'lull reaches Soulseek through slskd, which holds your Soulseek account. Set in server config.')}
+      ${configRow('slskd API key', lookup('sources.slskdApiKey'))}`;
   }
 
-  /* ---------- cache ---------- */
-  fmtRange['cache.capGB'] = function (v) { return v + ' GB'; };
-  effects['cache.capGB'] = function () { repaintUsage(); };
+  /* ---------- cache: size from server config, usage live from the soulseek crate. Nothing here clears it:
+     the server has no endpoint for that, and the oldest audio is evicted on its own. ---------- */
   function usageBar() {
-    var b = get('cache.breakdown') || {}, cap = get('cache.capGB'), used = Math.min(cap, get('cache.usedGB'));
-    var full = used >= cap - .05;
-    var segs = [['playing', 'Playing and queued', b.playing || 0], ['recent', 'Recently played', b.recent || 0], ['evictable', 'Can be evicted', b.evictable || 0]];
-    return html`<div class="sys-usage__head"><span class="sys-usage__big num">${used.toFixed(1)} <span class="fg-2">of ${cap} GB used</span></span>${full ? statusLine('warn', 'Full') : statusLine('ok', (cap - used).toFixed(1) + ' GB free')}</div>
-      <div class="sys-usage__bar" role="img" aria-label="${'Cache: ' + segs.map(function (s) { return s[1] + ' ' + s[2].toFixed(1) + ' GB'; }).join(', ') + ', ' + Math.max(0, cap - used).toFixed(1) + ' GB free'}">${segs.map(function (s) {
-        return html`<i class="sys-usage__seg sys-usage__seg--${s[0]}" style="--w:${share(s[2], cap) * 100}%"></i>`;
-      })}</div>
-      <ul class="sys-usage__legend">${segs.map(function (s) { return html`<li><i class="sys-usage__seg sys-usage__seg--${s[0]}" aria-hidden="true"></i>${s[1]}<span class="num">${s[2].toFixed(1)} GB</span></li>`; })}<li><i class="sys-usage__seg sys-usage__seg--free" aria-hidden="true"></i>Free<span class="num">${Math.max(0, cap - used).toFixed(1)} GB</span></li></ul>
-      ${full ? html`<p class="sys-note sys-note--warn">${icon('warning', null, 'ic-16')}<span>The cache is full, so playback may pause when every item is in use. Raise the size or clear the cache.</span></p>` : ''}`;
+    var cap = get('cache.capGB'), used = get('cache.usedGB');
+    if (used == null) return html`<div class="sys-usage__head"><span class="sys-usage__big num">${num(cap)} <span class="fg-2">GB cache</span></span>${statusLine('off', 'Usage not reported yet')}</div>`;
+    used = Math.min(cap, used);
+    var full = used >= cap - .05, free = Math.max(0, cap - used);
+    return html`<div class="sys-usage__head"><span class="sys-usage__big num">${used.toFixed(1)} <span class="fg-2">of ${num(cap)} GB used</span></span>${full ? statusLine('warn', 'Full') : statusLine('ok', free.toFixed(1) + ' GB free')}</div>
+      <div class="sys-usage__bar" role="img" aria-label="${'Cache: ' + used.toFixed(1) + ' GB of streamed audio, ' + free.toFixed(1) + ' GB free'}"><i class="sys-usage__seg sys-usage__seg--playing" style="--w:${share(used, cap) * 100}%"></i></div>
+      <ul class="sys-usage__legend"><li><i class="sys-usage__seg sys-usage__seg--playing" aria-hidden="true"></i>Streamed audio<span class="num">${used.toFixed(1)} GB</span></li><li><i class="sys-usage__seg sys-usage__seg--free" aria-hidden="true"></i>Free<span class="num">${free.toFixed(1)} GB</span></li></ul>`;
   }
-  function repaintUsage() { repaint('#sys-usage', usageBar()); }
-  App.action('sys-cache-clear', function () {
-    var b = get('cache.breakdown') || {}, freeable = get('cache.usedGB') - (b.playing || 0);
-    App.confirm({ title: 'clear the cache?', text: 'This removes ' + Math.max(0, freeable).toFixed(1) + ' GB of streamed audio. Your saved library is not touched, and the song that is playing stays.', confirm: 'Clear cache', danger: true }, function () {
-      M.api('/api/cache', { method: 'DELETE' }).then(function () {
-        M.reload(SETTINGS);
-        App.toast('Cache cleared. Your library was not touched.', { kind: 'ok', icon: 'trash' });
-      }, function (err) { App.toast('Couldn\'t clear the cache: ' + err.message, { kind: 'error' }); });
-    });
-  });
   function secCache() {
     return html`<div class="sys-usage" id="sys-usage">${usageBar()}</div>
-      ${row('Cache size', 'Streamed audio is kept up to this size so replays start instantly.', range('cache.capGB', 'Cache size, gigabytes', 1, 50, 1))}
-      ${row('Clear cache', 'Removes streamed audio only. Your saved library is not touched.', html`<button class="btn" data-act="sys-cache-clear">${icon('trash')}Clear cache</button>`)}
-      <p class="sys-note">${icon('info', null, 'ic-16')}<span>When the cache is full, the oldest audio that is not playing or queued goes first. Songs in your queue are always kept.</span></p>`;
+      ${configRow('Cache size', get('cache.capGB') + ' GB', 'Streamed audio is kept up to this size so replays start instantly. Set in server config.')}
+      <p class="sys-note">${icon('info', null, 'ic-16')}<span>When the cache is full, the oldest audio that is not playing or queued goes first. Songs in your queue are always kept, and your saved library is never touched.</span></p>`;
   }
 
   /* ---------- library and saving ---------- */
-  var TOKENS = ['artist', 'album', 'year', 'disc', 'track:02', 'title', 'ext'];
-  var DEFAULT_NAMING = '{artist}/{year} - {album}/{track:02} - {title}.{ext}';
-  /* the preview names the playing (or first queued) song; with nothing queued it spells the tokens out */
+  /* the naming template is server config; the preview shows where the playing (or first queued) song would go */
   function previewTrack() { return P.current() || P.state.queue.map(function (q) { return M.track(q.trackId); }).filter(Boolean)[0]; }
   function namingPreview(tpl) {
     var t = previewTrack(), al = t && M.album(t.albumId);
     var vals = t ? { artist: t.artist, album: t.album, year: t.year || (al && al.year) || '', disc: t.disc || 1, 'track:02': String(t.no || 1).padStart(2, '0'), track: t.no || 1, title: t.title, ext: (t.codec || 'flac').toLowerCase() }
       : { artist: 'Artist', album: 'Album', year: 'Year', disc: '1', 'track:02': '01', track: '1', title: 'Title', ext: 'flac' };
-    var bad = [];
-    var out = tpl.replace(/\{([^}]*)\}/g, function (m, k) { if (k in vals) return vals[k]; bad.push(m); return m; });
-    return { path: out, bad: bad };
+    return tpl.replace(/\{([^}]*)\}/g, function (m, k) { return k in vals ? vals[k] : m; });
   }
-  function namingOut(tpl) {
-    var p = namingPreview(tpl);
-    return html`${p.bad.length ? html`<span class="field__error" id="sys-naming-err">${icon('warning', null, 'ic-16')}Unknown ${p.bad.length > 1 ? 'tokens' : 'token'} ${p.bad.join(', ')}. Use the buttons below.</span>` : ''}
-      <div class="inset sys-preview"><span class="sys-preview__label">Saves as</span><span class="sys-preview__path">${get('library.musicFolder') || ''}/${p.path}</span></div>`;
-  }
-  App.action('sys-token-insert', function (el) {
-    var input = $('#sys-naming'), tok = '{' + el.getAttribute('data-token') + '}';
-    var s = input.selectionStart == null ? input.value.length : input.selectionStart, e = input.selectionEnd == null ? s : input.selectionEnd;
-    input.value = input.value.slice(0, s) + tok + input.value.slice(e);
-    input.focus(); input.setSelectionRange(s + tok.length, s + tok.length);
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-  });
-  /* the preview follows every keystroke; the template is saved when the field is left, and only when valid */
-  document.addEventListener('input', function (e) {
-    if (e.target.id !== 'sys-naming') return;
-    e.target.setAttribute('aria-invalid', namingPreview(e.target.value).bad.length ? 'true' : 'false');
-    repaint('#sys-naming-out', namingOut(e.target.value));
-  });
-  document.addEventListener('change', function (e) {
-    if (e.target.id !== 'sys-naming' || namingPreview(e.target.value).bad.length || e.target.value === get('library.naming')) return;
-    setVal('library.naming', e.target.value);
-  });
-  App.action('sys-naming-reset', function () {
-    var i = $('#sys-naming'); i.value = DEFAULT_NAMING;
-    i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new Event('change', { bubbles: true })); i.focus();
-  });
   function jellyfinStatus() { var st = App.store.get('services').jellyfin; return statusLine(st.state, st.detail); }
   App.action('sys-jellyfin-test', function (el) {
     el.disabled = true; repaint('#sys-jf-status', spinnerLine('Testing connection'));
@@ -599,39 +548,46 @@
     return spinnerLine(job.detail || 'Rescanning the library');
   }
   function secLibrary() {
-    var naming = get('library.naming');
+    var naming = get('library.naming'), folder = get('library.musicFolder');
     return html`${row('Jellyfin', 'Where saved songs live and play from.', html`<div class="sys-inline"><span id="sys-jf-status" aria-live="polite">${jellyfinStatus()}</span><button class="btn btn--sm" data-act="sys-jellyfin-test">Test connection</button></div>`)}
       ${configRow('Server URL', lookup('library.jellyfinUrl'))}
-      ${configRow('API key')}
+      ${configRow('User', lookup('library.jellyfinUser'))}
+      ${configRow('API key', lookup('library.jellyfinApiKey'))}
       ${configRow('Music folder', lookup('library.musicFolder'))}
       ${group('saving')}
-      ${locked('library.naming') ? configRow('Folder and file names', lookup('library.naming')) : html`<div class="sys-row sys-row--stack">
-        <div class="sys-row__text"><label class="sys-row__label" for="sys-naming">Folder and file names</label><span class="sys-row__help" id="sys-naming-help">Saved songs are named from this template. The preview uses the song that is playing.</span></div>
-        <div class="sys-row__ctl">
-          <div class="sys-naming"><input class="input sys-naming__input" id="sys-naming" value="${naming}" spellcheck="false" autocomplete="off" aria-describedby="sys-naming-help sys-naming-out" aria-invalid="${namingPreview(naming).bad.length ? 'true' : 'false'}"><button class="btn btn--quiet btn--sm" data-act="sys-naming-reset">Reset</button></div>
-          <div class="sys-tokens" role="group" aria-label="Insert a token">${TOKENS.map(function (k) { return html`<button type="button" class="chip" data-act="sys-token-insert" data-token="${k}">{${k}}</button>`; })}</div>
-          <div id="sys-naming-out" aria-live="polite">${namingOut(naming)}</div>
-        </div></div>`}
+      ${configRow('Folder and file names', lookup('library.naming'), 'Saved songs are named from this template. Set in server config.')}
+      ${naming ? html`<div class="inset sys-preview"><span class="sys-preview__label">Saves as</span><span class="sys-preview__path">${folder || ''}/${namingPreview(naming)}</span></div>` : ''}
       ${row('When a song is already saved', 'What Save does when the library has the same song.', choice('library.duplicatePolicy', 'Duplicate policy', [['ask', 'Ask each time'], ['keep', 'Keep existing'], ['replace', 'Replace if better']], 'sys-seg--wrap'))}
       ${row('Rescan library', 'Picks up files added to the music folder outside lull.', html`<div class="sys-inline sys-inline--col"><button class="btn" data-act="jellyfin-rescan">${icon('refresh')}Rescan library now</button><div id="sys-rescan" class="sys-rescan" aria-live="polite">${rescanStatus()}</div></div>`)}`;
   }
 
-  /* ---------- sharing ---------- */
+  /* ---------- sharing: what is shared is server config; slots and speed are stored ---------- */
   fmtRange['sharing.uploadLimitKBs'] = function (v) { return v ? num(v) + ' KB/s' : 'No limit'; };
-  effects['sharing.mode'] = function () { repaint('#sys-sharing', sharingBody(), '[data-key="sharing.mode"] [aria-checked="true"]'); };
-  function sharingBody() {
+  function secSharing() {
     var on = get('sharing.mode') === 'library';
-    return html`${row('Sharing now', '', on ? statusLine('ok', 'Sharing ' + num(get('sharing.sharedFiles') || 0) + ' files, read-only') : statusLine('warn', 'Sharing nothing'), { cls: 'sys-row--status' })}
-      ${row('Share with Soulseek peers', 'Default: your saved library, read-only. Peers can download songs; they can never change or delete anything.', choice('sharing.mode', 'What to share', [['library', 'Saved library, read-only'], ['none', 'Nothing']], 'sys-seg--wrap'))}
+    return html`${row('Sharing now', '', on ? statusLine('ok', 'Sharing your saved library, read-only') : statusLine('warn', 'Sharing nothing'), { cls: 'sys-row--status' })}
+      ${row('Share with Soulseek peers', 'Your saved library, read-only, or nothing. Peers can download songs; they can never change or delete anything.', choice('sharing.mode', 'What to share', [['library', 'Saved library, read-only'], ['none', 'Nothing']], 'sys-seg--wrap'))}
       <p class="sys-note ${on ? '' : 'sys-note--warn'}">${icon(on ? 'info' : 'warning', null, 'ic-16')}<span>Soulseek expects sharing. Many peers queue or refuse people who share nothing, so finding sources gets slower${on ? '.' : ' while this is off.'}</span></p>
       <div class="${on ? '' : 'sys-off'}" ${on ? '' : raw('inert')}>
-        ${row('Upload slots', 'How many peers can download from you at once.', stepper('sharing.uploadSlots', 'Upload slots', 1, 10, 1))}
+        ${row('Upload slots', 'How many peers can download from you at once.', stepper('sharing.uploadSlots', 'Upload slots', 1, 20, 1))}
         ${row('Upload speed limit', 'Keeps uploads from slowing your own streams.', range('sharing.uploadLimitKBs', 'Upload speed limit', 0, 2000, 100))}
       </div>`;
   }
-  function secSharing() { return html`<div id="sys-sharing">${sharingBody()}</div>`; }
 
-  /* ---------- Last.fm: GET /api/lastfm { connected, user, scrobbling, queued }; connecting leaves for Last.fm ---------- */
+  /* ---------- Last.fm: GET /api/lastfm { configured, connected, user, scrobbling, useHistory, queued, error? };
+     its two switches are PATCH /api/lastfm. Connecting leaves for Last.fm in this window; the callback comes back
+     to #/settings/lastfm (with `error` set when it failed). ---------- */
+  ['scrobbling', 'useHistory'].forEach(function (key) {
+    custom['lastfm.' + key] = { get: function () { return !!(M.peek(LASTFM) || {})[key]; }, set: function (v) {
+      var l = M.peek(LASTFM), patch = {}; patch[key] = v; l[key] = v;
+      M.api(LASTFM, { method: 'PATCH', body: patch }).then(null, function (err) {
+        l[key] = !v;
+        App.toast('Couldn\'t change that: ' + err.message, { kind: 'error' });
+        App.refresh();
+      });
+    } };
+  });
+  effects['lastfm.scrobbling'] = function (v) { App.announce(v ? 'Scrobbling on' : 'Scrobbling paused'); };
   App.action('sys-lfm-connect', function () { location.href = M.url('/api/lastfm/connect'); });
   App.action('sys-lfm-disconnect', function () {
     var q = (M.peek(LASTFM) || {}).queued || 0;
@@ -649,7 +605,6 @@
       App.toast('Sending queued scrobbles to Last.fm', { kind: 'ok', icon: 'check' });
     }, function (err) { el.disabled = false; App.toast('Couldn\'t send scrobbles: ' + err.message, { kind: 'error' }); });
   });
-  effects['lastfm.scrobbling'] = function (v) { App.announce(v ? 'Scrobbling on' : 'Scrobbling paused'); };
   function lastfmBox() {
     var r = M.get(LASTFM), s = r.data;
     if (r.loading) return ui.skeleton('text', 2);
@@ -657,52 +612,45 @@
       return html`<div class="inset sys-connect sys-connect--error" role="alert">${ui.statusGlyph('down', 'Error')}<div><p class="sys-connect__title">Couldn't check Last.fm</p><p class="sys-connect__text">${r.error.message}</p></div>
         <div class="sys-connect__actions"><button class="btn btn--primary" data-act="reload-read" data-id="${LASTFM}">Try again</button></div></div>`;
     }
+    if (!s.configured) {
+      return html`<div class="inset sys-connect">${ui.statusGlyph('off', 'Not set up')}<div><p class="sys-connect__title">Not set up</p><p class="sys-connect__text">Last.fm needs an API key and shared secret in the server config. Add them there and restart the server to connect.</p></div></div>`;
+    }
+    if (!s.connected && s.error) {
+      return html`<div class="inset sys-connect sys-connect--error" role="alert">${ui.statusGlyph('down', 'Error')}<div><p class="sys-connect__title">Couldn't connect to Last.fm</p><p class="sys-connect__text">${s.error}</p></div>
+        <div class="sys-connect__actions"><button class="btn btn--primary" data-act="sys-lfm-connect">Try again</button></div></div>`;
+    }
     if (!s.connected) {
       return html`<div class="inset sys-connect">${icon('radio', null, 'ic-24')}<div><p class="sys-connect__title">Not connected</p><p class="sys-connect__text">Connect to scrobble what you play and let your Last.fm history shape recommendations. Last.fm opens in this window and brings you back here.</p></div>
         <div class="sys-connect__actions"><button class="btn btn--primary" data-act="sys-lfm-connect">${icon('external')}Connect Last.fm</button></div></div>`;
     }
     return html`<div class="inset sys-connect sys-connect--ok">${ui.statusGlyph('ok', 'Connected')}<div><p class="sys-connect__title">Connected as <b>${s.user}</b></p><p class="sys-connect__text">Scrobbles go to Last.fm after half a song or 4 minutes, whichever comes first.</p></div>
       <div class="sys-connect__actions"><button class="btn" data-act="sys-lfm-disconnect">Disconnect</button></div></div>
-      ${withSettings(function () {
-        return html`${switchRow('lastfm.scrobbling', 'Scrobble what I play', 'Library and Soulseek plays both count.')}
-          ${row('Queued scrobbles', s.queued ? 'Waiting because Last.fm did not answer. They retry on their own.' : 'Nothing waiting.', s.queued ? html`<div class="sys-inline">${ui.countBadge(s.queued, s.queued + ' queued')}<button class="btn btn--sm" data-act="sys-lfm-retry">Retry now</button></div>` : statusLine('ok', 'All sent'))}
-          ${switchRow('lastfm.useHistory', 'Use my Last.fm history for recommendations', 'Adds years of listening to the taste profile on Stats.')}`;
-      })}`;
+      ${switchRow('lastfm.scrobbling', 'Scrobble what I play', 'Library and Soulseek plays both count.')}
+      ${row('Queued scrobbles', s.queued ? 'Waiting because Last.fm did not answer. They retry on their own.' : 'Nothing waiting.', s.queued ? html`<div class="sys-inline">${ui.countBadge(s.queued, s.queued + ' queued')}<button class="btn btn--sm" data-act="sys-lfm-retry">Retry now</button></div>` : statusLine('ok', 'All sent'))}
+      ${switchRow('lastfm.useHistory', 'Use my Last.fm history for recommendations', 'Adds years of listening to the taste profile on Stats.')}`;
   }
   function secLastfm() {
     return html`<div id="sys-lastfm">${lastfmBox()}</div>
       ${group('app credentials')}
-      ${configRow('API key')}
-      ${configRow('Shared secret')}`;
+      ${withSettings(function () { return html`${configRow('API key', lookup('lastfm.apiKey'))}${configRow('Shared secret', lookup('lastfm.apiSecret'))}`; })}`;
   }
 
   /* ---------- discovery ---------- */
   var DSOURCES = [
     ['listenbrainz', 'ListenBrainz', 'Similar artists and what listeners like you play. No account needed.'],
     ['musicbrainz', 'MusicBrainz', 'Release dates, tags and the new-release feed. Saving uses it to match songs either way.'],
-    ['lastfm', 'Last.fm', 'Similar artists and tags, plus your history when Last.fm is connected.'],
-    ['discogs', 'Discogs', 'Labels and pressings for older releases. Needs a token in server config.']
+    ['lastfm', 'Last.fm', 'Similar artists and tags, plus your history when Last.fm is connected.']
   ];
-  var SOURCE_WORD = { ok: 'online', warn: 'limited', down: 'down', off: 'needs config' };
   fmtRange['discovery.adventurousness'] = function (v) { return v < .34 ? 'Familiar' : v < .67 ? 'Balanced' : 'Adventurous'; };
-  DSOURCES.forEach(function (s) {
-    /* discovery.sources has each source's status; discovery.on whether it is used (on while unset, unless not configured) */
-    custom['discovery.on.' + s[0]] = { get: function () {
-      var on = lookup('discovery.on.' + s[0]);
-      return on == null ? lookup('discovery.sources.' + s[0]) !== 'off' : !!val(on);
-    } };
-    effects['discovery.on.' + s[0]] = function (v) { App.announce(s[1] + (v ? ' on' : ' off')); };
-  });
+  DSOURCES.forEach(function (s) { effects['discovery.on.' + s[0]] = function (v) { App.announce(s[1] + (v ? ' on' : ' off')); }; });
   function secDiscovery() {
     var followed = Object.keys(App.store.get('followed') || {});
     var tagIds = followed.filter(function (id) { return !isArtistId(id); }), artistIds = followed.filter(isArtistId);
     var arts = artistIds.map(M.artist).filter(Boolean);
     return html`${row('Adventurousness', 'How far Home and radio stray from what you already play.', html`${range('discovery.adventurousness', 'Adventurousness', 0, 1, .05)}<span class="sys-range__ends" aria-hidden="true"><span>Familiar</span><span>Adventurous</span></span>`)}
       ${group('sources')}
-      ${DSOURCES.map(function (s) {
-        var st = lookup('discovery.sources.' + s[0]) || 'off';
-        return switchRow('discovery.on.' + s[0], s[1], s[2], { disabled: st === 'off' && 'Set up ' + s[1] + ' in server config to turn this on', status: html`<span class="sys-src-status">${ui.statusGlyph(st)}${SOURCE_WORD[st]}</span>` });
-      })}
+      ${DSOURCES.map(function (s) { return switchRow('discovery.on.' + s[0], s[1], s[2]); })}
+      ${configRow('ListenBrainz user', lookup('discovery.listenbrainzUser'))}
       ${group('following')}
       <div class="sys-row sys-row--stack"><div class="sys-row__text"><span class="sys-row__label">Tags</span><span class="sys-row__help">Followed tags feed Home with fresh releases. Tap to unfollow; follow more from any tag page.</span></div>
         <div class="sys-row__ctl">${tagIds.length ? html`<div class="cluster sys-chips">${tagIds.map(function (id) { return followChip(id, M.tag(id).name); })}</div>` : html`<p class="sys-row__help">No tags followed yet.</p>`}</div></div>
@@ -716,7 +664,7 @@
     $$('[data-act="sys-follow"][data-id="' + e.id + '"]').forEach(function (b) { b.setAttribute('aria-pressed', e.followed ? 'true' : 'false'); b.textContent = e.followed ? 'Following' : 'Follow'; });
   });
 
-  /* ---------- appearance: design, theme, motion, text size per device; Classic mode defaults on the server ---------- */
+  /* ---------- appearance: all per device (App.setPref, and App.storage for Classic mode's two) ---------- */
   var designFocus = false;                         // the picker had focus: give it back after the re-render
   custom['device.design'] = { get: function () { return App.prefs().design; }, set: function (v) {
     designFocus = !!(document.activeElement && document.activeElement.closest('.sys-designs'));
@@ -726,6 +674,9 @@
   custom['device.theme'] = { get: function () { return App.prefs().theme; }, set: function (v) { App.setPref('theme', v === 'system' ? null : v); } };
   custom['device.motion'] = { get: function () { return App.prefs().motion; }, set: function (v) { App.setPref('motion', v); } };
   custom['device.textSize'] = { get: function () { return App.prefs().textSize; }, set: function (v) { App.setPref('textSize', v); } };
+  /* Classic mode reads these two from the same storage keys */
+  custom['device.defaultSkin'] = { get: function () { return App.storage('defaultSkin'); }, set: function (v) { App.storage('defaultSkin', v); } };
+  custom['device.showNsfwSkins'] = { get: function () { return App.storage('showNsfwSkins') === true; }, set: function (v) { App.storage('showNsfwSkins', v); } };
   /* design preview card: the design's screenshot (assets/previews/<name>-{day,night}.webp, when d.preview) over a tiny
      picture of the shell (rail / topnav / dock) in its swatches, which shows while the image loads or when there is none */
   function designCard(name, on) {
@@ -743,10 +694,9 @@
     var r = M.get(SKIN_FAVS);
     if (r.loading) return ui.skeleton('chip', 3);
     if (r.error) return html`<p class="field__error">${icon('warning', null, 'ic-16')}${r.error.message}</p><button class="btn btn--sm" data-act="reload-read" data-id="${SKIN_FAVS}">Try again</button>`;
-    var skins = r.data.items, cur = get('appearance.defaultSkin');
+    var skins = r.data.items, cur = get('device.defaultSkin');
     if (!skins.length) return html`<p class="sys-row__help">No favourite skins yet. Star one in Classic mode and it shows up here.</p>`;
-    if (locked('appearance.defaultSkin')) return lockedValue('Default skin', (skins.filter(function (s) { return s.md5 === cur; })[0] || { name: cur }).name);
-    return html`<div class="sys-skins" role="radiogroup" aria-labelledby="sys-skin-l" data-key="appearance.defaultSkin">${skins.map(function (s) {
+    return html`<div class="sys-skins" role="radiogroup" aria-labelledby="sys-skin-l" data-key="device.defaultSkin">${skins.map(function (s) {
       var on = s.md5 === cur;
       return html`<button type="button" class="sys-skin" role="radio" aria-checked="${on ? 'true' : 'false'}" tabindex="${on ? '0' : '-1'}" data-value="${s.md5}"><span class="sys-skin__thumb" aria-hidden="true">${s.screenshotUrl ? html`<img src="${s.screenshotUrl}" alt="" loading="lazy" decoding="async">` : ''}</span><span class="sys-skin__name">${s.name}</span>${icon('star-fill', 'Favourite', 'ic-16 sys-skin__fav')}</button>`;
     })}</div>`;
@@ -759,11 +709,9 @@
       ${row('Motion', 'Reduced swaps slides and loops for quick fades. Full ignores the system setting.', choice('device.motion', 'Motion', [['system', 'Match system'], ['reduce', 'Reduced'], ['full', 'Full']]))}
       ${row('Text size', 'Scales all text and spacing on this device.', choice('device.textSize', 'Text size', [[90, 'Smaller'], [100, 'Default'], [112, 'Larger'], [125, 'Largest']], 'sys-seg--4'))}
       ${group('classic mode')}
-      ${withSettings(function () {
-        return html`<div class="sys-row sys-row--stack"><div class="sys-row__text"><span class="sys-row__label" id="sys-skin-l">Default skin</span><span class="sys-row__help">Used when Classic mode opens. Your favourite skins are listed; find more in Classic mode.</span></div>
-          <div class="sys-row__ctl">${skinPicker()}<a class="btn btn--quiet btn--sm" href="#/classic">${icon('classic')}Browse skins in Classic mode</a></div></div>
-        ${switchRow('appearance.showNsfwSkins', 'Show NSFW skins', 'Hidden by default in the skin browser.')}`;
-      })}`;
+      <div class="sys-row sys-row--stack"><div class="sys-row__text"><span class="sys-row__label" id="sys-skin-l">Default skin</span><span class="sys-row__help">Used when Classic mode opens on this device. Your favourite skins are listed; find more in Classic mode.</span></div>
+        <div class="sys-row__ctl">${skinPicker()}<a class="btn btn--quiet btn--sm" href="#/classic">${icon('classic')}Browse skins in Classic mode</a></div></div>
+      ${switchRow('device.showNsfwSkins', 'Show NSFW skins', 'Hidden by default in the skin browser on this device.')}`;
   }
 
   /* ---------- shortcuts (read-only list) ---------- */
@@ -808,18 +756,51 @@
       repaint('#sys-health', healthRows(true)); App.announce('Health checked');
     });
   });
-  App.action('sys-desktop-connect', function () { window.LullDesktop.windowAction('change-server'); });
   function serverAddress() { return location.href.split('#')[0].replace(/index\.html$/, ''); }
+
+  /* ---------- the desktop wrapper's own settings (LullDesktop.settings / setSettings), read once per visit ---------- */
+  var desk = null;                                 // { loading, error, data }
+  function errText(err) { return err && err.message || String(err); }
+  function loadDesktop() {
+    desk = { loading: true };
+    window.LullDesktop.settings().then(function (d) { desk = { data: d }; repaint('#sys-desktop', desktopRows()); },
+      function (err) { desk = { error: errText(err) }; repaint('#sys-desktop', desktopRows()); });
+  }
+  ['closeToTray', 'launchAtLogin', 'startInTray', 'miniStyle', 'miniOnTop', 'ownTitlebar'].forEach(function (key) {
+    custom['desktop.' + key] = { get: function () { return desk.data[key]; }, set: function (v) {
+      var before = desk.data[key], patch = {}; patch[key] = v; desk.data[key] = v;
+      window.LullDesktop.setSettings(patch).then(null, function (err) {
+        desk.data[key] = before;
+        App.toast('Couldn\'t change that: ' + errText(err), { kind: 'error' });
+        repaint('#sys-desktop', desktopRows());
+      });
+    } };
+  });
+  effects['desktop.ownTitlebar'] = function () { App.toast('Restart lull to change the title bar', { icon: 'refresh' }); };
+  App.action('sys-desktop-connect', function () { window.LullDesktop.windowAction('change-server'); });
+  App.action('sys-desktop-reload', function () { loadDesktop(); repaint('#sys-desktop', desktopRows()); });
+  function desktopRows() {
+    if (desk.loading) return ui.skeleton('text', 4);
+    if (desk.error) return ui.emptyState({ art: 'star', title: 'Couldn\'t read the desktop app\'s settings', text: desk.error, action: { label: 'Try again', act: 'sys-desktop-reload' } });
+    var d = desk.data, noTray = !d.tray && 'This desktop has no tray icon';
+    return html`${row('Server address', 'The desktop app loads lull from this server.', html`<span class="sys-inline">${lockedValue('Server address', d.server || serverAddress())}<button class="btn btn--sm" data-act="sys-desktop-connect">Change server...</button></span>`)}
+      ${switchRow('desktop.closeToTray', 'Close to tray', 'Closing the window keeps the music playing; quit from the tray icon.', { disabled: noTray })}
+      ${switchRow('desktop.launchAtLogin', 'Launch at login', 'Starts with your computer.')}
+      ${switchRow('desktop.startInTray', 'Start in the tray', 'Launches without opening the window.', { disabled: noTray })}
+      ${row('Mini player style', 'Opens from the tray, the player bar or Ctrl+Shift+M.', choice('desktop.miniStyle', 'Mini player style', [['device', 'Device'], ['strip', 'Strip']]))}
+      ${switchRow('desktop.miniOnTop', 'Mini player always on top', 'Some Linux desktops decide this themselves.')}
+      ${d.ownTitlebar == null ? '' : switchRow('desktop.ownTitlebar', 'Use lull title bar', 'Replaces the system title bar; takes effect after a restart.')}`;
+  }
   function secApp() {
+    if (inWrapper() && !desk) loadDesktop();
     return html`${row('Version', '', html`<span class="sys-inline"><span class="px sys-version" id="sys-version">${App.server.version || 'not reported yet'}</span><button class="btn btn--sm" data-act="sys-update-check">Check for updates</button></span>`)}
       ${row('Install app', 'Adds lull to your home screen or dock with lock-screen controls and its own window.', html`<div id="sys-install">${installBody()}</div>`)}
       ${row('First-run steps', 'Connect Last.fm, follow a few tags, try a search.', html`<a class="btn" href="#/welcome">Show welcome steps</a>`)}
       ${group('server')}
-      ${inWrapper()
-        ? row('Server address', 'The desktop app loads lull from this server.', html`<span class="sys-inline">${lockedValue('Server address', serverAddress())}<button class="btn btn--sm" data-act="sys-desktop-connect">Change server...</button></span>`)
-        : configRow('Server address', serverAddress(), 'The address this page was loaded from.')}
+      ${inWrapper() ? '' : configRow('Server address', serverAddress(), 'The address this page was loaded from.')}
       <div class="sys-row sys-row--stack"><div class="sys-row__text"><span class="sys-row__label">Server health</span><span class="sys-row__help">What the server reports about itself and its services.</span></div>
-        <div class="sys-row__ctl"><div id="sys-health" aria-live="polite">${healthRows(false)}</div><button class="btn btn--sm" data-act="sys-health">${icon('refresh')}Check now</button></div></div>`;
+        <div class="sys-row__ctl"><div id="sys-health" aria-live="polite">${healthRows(false)}</div><button class="btn btn--sm" data-act="sys-health">${icon('refresh')}Check now</button></div></div>
+      ${inWrapper() ? html`${group('desktop app')}<div id="sys-desktop">${desktopRows()}</div>` : ''}`;
   }
 
   var BODY = {
@@ -864,7 +845,10 @@
       }),
       App.on('pwa', function () { repaint('#sys-install', installBody()); })
     ];
-    ctx.onCleanup(function () { offs.forEach(function (off) { off(); }); });
+    ctx.onCleanup(function () {
+      offs.forEach(function (off) { off(); });
+      if (!/^#\/settings\/app\b/.test(location.hash)) desk = null;   // leaving Settings > App: read the wrapper again next visit
+    });
   }
   App.route('/settings/:section?', { render: renderSettings, mount: mountSettings, nav: 'settings', title: function (ctx) { var s = sectionOf(ctx.params.section); return s ? s[1] + ' settings' : 'Settings'; } });
 
@@ -1040,7 +1024,8 @@
     if (r.loading) return ui.skeleton('chip', 1);
     if (r.error) return html`<p class="field__error">${icon('warning', null, 'ic-16')}${r.error.message}</p><button class="btn btn--sm" data-act="reload-read" data-id="${LASTFM}">Try again</button>`;
     if (r.data.connected) return html`<p class="sys-step__done">${icon('check', null, 'ic-16')}Connected as <b>${r.data.user}</b></p>`;
-    return html`<button class="btn btn--sm" data-act="sys-lfm-connect">${icon('external')}Connect Last.fm</button>`;
+    if (!r.data.configured) return html`<p class="sys-row__help">Last.fm isn't set up in the server config yet. Skip this step for now.</p>`;
+    return html`${r.data.error ? html`<p class="field__error">${icon('warning', null, 'ic-16')}${r.data.error}</p>` : ''}<button class="btn btn--sm" data-act="sys-lfm-connect">${icon('external')}${r.data.error ? 'Try again' : 'Connect Last.fm'}</button>`;
   }
   function welcomeFollowCount() {
     var feed = M.peek(FEED); if (!feed) return 0;

@@ -166,15 +166,16 @@
     var s = SHELVES[key], feed = M.peek(FEED);
     if (s && feed) paint(s[0], s[1](feed));
   }
-  /* a shelf still loading shows its skeleton; one the server couldn't fill shows its message and a retry */
-  function shelfIssue(feed, key, title, skeleton) {
+  /* a shelf still loading shows its skeleton. The shelves the server may fail to fill alone (newReleases, picks:
+     the keys of `errors`) pass errorTitle and show the server's message with a retry. */
+  function shelfIssue(feed, key, skeleton, errorTitle) {
     if (!feed || (H.reloading && H.reloading.shelves.indexOf(key) >= 0)) return skeleton;
-    var msg = feed.errors && feed.errors[key];
-    return msg ? ui.emptyState({ art: 'star', title: title, text: msg, action: { label: 'Retry', act: 'disc-retry-shelf', id: key } }) : null;
+    var msg = errorTitle && feed.errors && feed.errors[key];
+    return msg ? ui.emptyState({ art: 'star', title: errorTitle, text: msg, action: { label: 'Retry', act: 'disc-retry-shelf', id: key } }) : null;
   }
 
   function newReleasesBody(feed) {
-    var issue = shelfIssue(feed, 'newReleases', 'Couldn\'t load new releases', html`<div class="disc-skel-shelf">${ui.skeleton('tile', 4)}</div>`);
+    var issue = shelfIssue(feed, 'newReleases', html`<div class="disc-skel-shelf">${ui.skeleton('tile', 4)}</div>`, 'Couldn\'t load new releases');
     var head = ui.labelRule('new releases', { id: 'disc-h-new', action: issue ? null : { label: 'See all', href: '#/library/albums' } });
     if (issue) return html`${head}${issue}`;
     var albums = list(feed, 'newReleases').filter(function (id) { return M.album(id); });
@@ -187,7 +188,7 @@
     return ui.cover(t ? t.albumId : seed.id, px || 48, { round: true });
   }
   function radioBody(feed) {
-    var issue = shelfIssue(feed, 'radioStarters', 'Couldn\'t load radio starters', ui.skeleton('row', 4));
+    var issue = shelfIssue(feed, 'radioStarters', ui.skeleton('row', 4));
     var head = ui.labelRule('radio starters', { id: 'disc-h-radio' });
     if (issue) return html`${head}${issue}`;
     var starters = list(feed, 'radioStarters');
@@ -210,7 +211,7 @@
     return shown.filter(function (p) { return !p.noSource; }).concat(shown.filter(function (p) { return p.noSource; })).slice(0, 6);
   }
   function picksBody(feed) {
-    var issue = shelfIssue(feed, 'picks', 'Couldn\'t load your picks', html`<div class="disc-picks-skel">${ui.skeleton('row', 6)}</div>`);
+    var issue = shelfIssue(feed, 'picks', html`<div class="disc-picks-skel">${ui.skeleton('row', 6)}</div>`, 'Couldn\'t load your picks');
     var head = ui.labelRule('picked for you', { id: 'disc-h-picks', action: issue ? null : { label: 'Refresh picks', act: 'disc-refresh-picks' } });
     if (issue) return html`${head}${issue}`;
     var picks = visiblePicks(feed);
@@ -241,16 +242,13 @@
     </li>`;
   }
 
+  /* j: { kind: album | artist, id } */
   function jumpTile(j) {
     var art, href, title, by, byHref, play, round = false;
     if (j.kind === 'album') {
       var a = M.album(j.id); if (!a) return '';
       art = ui.cover(a, '100%'); href = '#/album/' + a.id; title = a.title; by = a.artist; byHref = '#/artist/' + a.artistId;
       play = html`<button class="tile__play" data-act="play-album" data-id="${a.id}" aria-label="Play ${a.title}" data-tip="Play">${icon('play')}</button>`;
-    } else if (j.kind === 'playlist') {
-      var p = M.playlist(j.id); if (!p) return '';
-      art = ui.mosaic(p.items.map(function (i) { return i.trackId; }), '100%'); href = '#/playlist/' + p.id; title = p.name; by = 'playlist, ' + plural(p.items.length, 'song');
-      play = html`<button class="tile__play" data-act="play-playlist" data-id="${p.id}" aria-label="Play ${p.name}" data-tip="Play">${icon('play')}</button>`;
     } else {
       var ar = M.artist(j.id); if (!ar) return '';
       art = ui.cover(ar.id, '100%', { round: true }); href = '#/artist/' + ar.id; title = ar.name; by = 'artist'; round = true;
@@ -263,7 +261,7 @@
     </div>`;
   }
   function jumpBody(feed) {
-    var issue = shelfIssue(feed, 'jumpBackIn', 'Couldn\'t load what you played', html`<div class="disc-skel-shelf">${ui.skeleton('tile', 4)}</div>`);
+    var issue = shelfIssue(feed, 'jumpBackIn', html`<div class="disc-skel-shelf">${ui.skeleton('tile', 4)}</div>`);
     var head = ui.labelRule('jump back in', { id: 'disc-h-jump', action: issue ? null : { label: 'History', href: '#/history' } });
     if (issue) return html`${head}${issue}`;
     var tiles = list(feed, 'jumpBackIn').map(jumpTile).filter(function (x) { return String(x); });
@@ -272,7 +270,7 @@
   }
 
   function tagsBody(feed) {
-    var issue = shelfIssue(feed, 'followedTags', 'Couldn\'t load your tags', html`<div class="cluster">${ui.skeleton('chip', 5)}</div>`);
+    var issue = shelfIssue(feed, 'followedTags', html`<div class="cluster">${ui.skeleton('chip', 5)}</div>`);
     var head = ui.labelRule('tags you follow', { id: 'disc-h-tags', action: issue ? null : { label: 'Manage', href: '#/following' } });
     if (issue) return html`${head}${issue}`;
     var followed = followedTagIds();
@@ -415,7 +413,6 @@
       if (!feed || H.building || isCold(feed)) return;
       if (keys.indexOf('hiddenArtists') >= 0) paintShelf('picks');
       if (keys.indexOf('followed') >= 0) paintShelf('followedTags');
-      if (keys.indexOf('playlists') >= 0) paintShelf('jumpBackIn');
     }));
   }
 
@@ -431,7 +428,8 @@
     var p = r.item ? pickFor(r.item) : null, t = r.item ? M.track(r.item) : null;
     var reasons = p && p.reasons && p.reasons.length ? p.reasons : [{ kind: r.kind, name: r.name, ref: r.ref }];
     var artist = t ? M.artist(t.artistId) : (r.kind !== 'tag' && r.ref ? M.artist(r.ref) : null);
-    var target = r.item || r.ref || '', via = r.via || (p && p.via);
+    /* feedback takes a track or an artist id; a tag reason, or "listeners like you" (no ref), has only the item */
+    var target = r.item || (/^ar-/.test(r.ref || '') ? r.ref : ''), via = r.via || (p && p.via);
     App.popover(anchor, html`<div class="popover__head">${icon('sparkle')}<span>why this?</span></div>
       <div class="popover__body disc-why">
         ${t ? html`<p class="disc-why__item">${t.title}, ${t.artist}</p>` : ''}
@@ -973,9 +971,11 @@
       <div data-region="srcrows">${pickerRows(t, pk)}</div>
       <p class="disc-note disc-picker__hint">Score weighs format, peer speed, a free upload slot and queue length. Hover or focus a score for the breakdown.</p>`;
   }
-  function openPicker(trackId) {
+  /* o.forSave: the pick answers a failed save's transfer (the job continues from that peer) instead of playing */
+  function openPicker(trackId, o) {
     var t = M.track(trackId); if (!t) return null;
-    var pk = picker = { trackId: trackId, sources: null, done: false, error: null, sort: 'score', stop: null, closed: false };
+    var forSave = !!(o && o.forSave);
+    var pk = picker = { trackId: trackId, forSave: forSave, sources: null, done: false, error: null, sort: 'score', stop: null, closed: false };
     var sheet;
     function repaint() {
       if (pk.closed) return;
@@ -993,7 +993,7 @@
       });
     };
     sheet = App.openSheet({ title: 'pick a source', wide: true, className: 'disc-sheet disc-picker', body: pickerBody(t, pk),
-      foot: html`<button class="btn" data-close>Cancel</button><button class="btn btn--primary" data-act="disc-play-best" data-id="${t.id}" data-close>${icon('play')}Play best source</button>`,
+      foot: html`<button class="btn" data-close>Cancel</button><button class="btn btn--primary" data-act="disc-play-best" data-id="${t.id}" data-close>${forSave ? html`${icon('refresh')}Retry with the best source` : html`${icon('play')}Play best source`}</button>`,
       onClose: function () { pk.closed = true; if (pk.stop) pk.stop(); } });
     pk.watch();
     return sheet;
@@ -1006,21 +1006,27 @@
     paint('srcrows', pickerRows(M.track(pk.trackId), pk));
   });
   App.action('disc-src-retry', function () { if (picker && !picker.closed) { picker.done = false; picker.watch(); } });
-  function useSource(id, s, note) {
-    P.useSource(id, sourceFor(s));
+  /* a picked source plays, or (picker opened for a failed save) restarts that save's transfer from it */
+  function useSource(pk, s, note) {
+    if (pk.forSave) {
+      App.saves.retry(pk.trackId, { peer: s.peer, path: s.path, size: s.sizeBytes });
+      App.toast('Retrying the save from ' + s.peer + ', ' + fmt(s.format).label, { icon: 'soulseek' });
+      return;
+    }
+    P.useSource(pk.trackId, sourceFor(s));
     App.toast((note ? 'Trying ' + s.peer + ' again, ' : 'Playing from ' + s.peer + ', ') + fmt(s.format).label, { icon: 'soulseek' });
   }
   App.action('disc-use-source', function (el) {
     var pk = picker, s = pk && pk.sources && pk.sources[+el.getAttribute('data-i')]; if (!s) return;
     var note = failedNotes(pk.trackId, pk.sources)[s.peer];
-    App.closeTop(); useSource(pk.trackId, s, note);
+    App.closeTop(); useSource(pk, s, note);
   });
-  /* the best source that hasn't failed; before any source has answered, the player picks on its own */
+  /* the best source that hasn't failed; before any source has answered, the player (or the save job) picks on its own */
   App.action('disc-play-best', function (el) {
     var id = el.getAttribute('data-id'), pk = picker && picker.trackId === id ? picker : null;
-    if (!pk || !pk.sources || !pk.sources.length) { P.playTrack(id); return; }
+    if (!pk || !pk.sources || !pk.sources.length) { if (pk && pk.forSave) App.saves.retry(id); else P.playTrack(id); return; }
     var notes = failedNotes(id, pk.sources);
-    useSource(id, pk.sources.filter(function (s) { return !notes[s.peer]; })[0] || pk.sources[0]);
+    useSource(pk, pk.sources.filter(function (s) { return !notes[s.peer]; })[0] || pk.sources[0]);
   });
   App.action('disc-swap-picker', function (el) { var id = el.getAttribute('data-id'); App.closeTop(); openPicker(id); });
 
@@ -1101,9 +1107,8 @@
   App.hooks.beforeSave = function (ids, proceed) {
     if (ids.length !== 1) { proceed(ids); return; }
     var id = ids[0];
-    M.api('/api/library/duplicates', { method: 'POST', body: { ids: ids } }).then(function (res) {
-      var d = (res.items || []).filter(function (x) { return x.trackId === id; })[0];
-      if (!d || !d.existing) { proceed(ids); return; }
+    savedCopy(id, playingSource(id)).then(function (d) {
+      if (!d) { proceed(ids); return; }
       openDuplicate(d.existing, candidate(id), d.better, function (choice) {
         if (choice === 'keep') proceed([]); else proceed(ids, { mode: choice });
       });
@@ -1112,6 +1117,19 @@
       proceed(ids);
     });
   };
+  /* the saved copy of one song, or null; `source` ({ peer, path, size }) is the offered file `better` compares against */
+  function savedCopy(id, source) {
+    var body = { ids: [id] };
+    if (source) { body.source = {}; body.source[id] = source; }
+    return M.api('/api/library/duplicates', { method: 'POST', body: body }).then(function (res) {
+      return (res.items || []).filter(function (x) { return x.trackId === id && x.existing; })[0] || null;
+    });
+  }
+  /* the file a save of this song would take: the manually picked peer's, when it is the one playing */
+  function playingSource(id) {
+    var src = P.currentId() === id && P.state.source;
+    return src ? { peer: src.peer, path: src.path, size: src.sizeBytes } : null;
+  }
   /* the copy about to be saved: the playing peer's file when this song is playing, else the song's own facts */
   function candidate(id) {
     var t = M.track(id) || {}, ps = P.state, playing = P.currentId() === id && ps.peer;
@@ -1148,19 +1166,23 @@
     else App.toast(choice === 'replace' ? 'Replacing ' + title + ' with ' + label : 'Saving a second copy of ' + title + ', ' + label, { icon: 'save' });
     d.onChoice(choice);
   });
-  /* a saved song that peers share in better quality: offer that copy (the best source the server ranks) */
+  /* a saved song that peers share in better quality: offer the best source the server ranks, compared by the library */
   App.action('disc-save-version', function (el) {
     var id = el.getAttribute('data-id'), t = M.track(id); if (!t) return;
+    var fail = function (err) { App.toast('Couldn\'t offer a better copy of ' + t.title + ': ' + err.message, { kind: 'error' }); };
     M.api(sourcesPath(id)).then(function (res) {
       var best = (res.sources || [])[0];
       if (!best) { App.toast('No peer shares ' + t.title + ' right now', { icon: 'no-source' }); return; }
-      var cand = { format: best.format, sizeMB: best.sizeBytes ? best.sizeBytes / 1e6 : null, peer: best.peer, speed: best.speed };
-      openDuplicate(t, cand, isBetter(best.format, t.format), function (choice) {
-        if (choice === 'keep') return;
-        var source = {}; source[id] = { peer: best.peer, path: best.path };
-        App.saves.start([id], { mode: choice, source: source });
-      });
-    }, function (err) { App.toast('Couldn\'t ask peers for ' + t.title + ': ' + err.message, { kind: 'error' }); });
+      var offered = { peer: best.peer, path: best.path, size: best.sizeBytes };
+      savedCopy(id, offered).then(function (d) {
+        var cand = { format: best.format, sizeMB: best.sizeBytes ? best.sizeBytes / 1e6 : null, peer: best.peer, speed: best.speed };
+        openDuplicate(d ? d.existing : t, cand, !!(d && d.better), function (choice) {
+          if (choice === 'keep') return;
+          var source = {}; source[id] = offered;
+          App.saves.start([id], { mode: choice, source: source });   // with a mode, start() doesn't ask again
+        });
+      }, fail);
+    }, fail);
   });
 
   /* --- save sheet: the 5 steps, the error, and what to do about it --- */
@@ -1168,7 +1190,7 @@
     transfer: function (id, s) {
       return { text: s.error || 'The transfer stopped before the file was complete.', actions: html`
         <button class="btn btn--primary" data-act="disc-save-retry" data-id="${id}">${icon('refresh')}Retry the transfer</button>
-        <button class="btn" data-act="disc-swap-picker" data-id="${id}">${icon('soulseek')}Pick a source</button>` };
+        <button class="btn" data-act="disc-save-pick" data-id="${id}">${icon('soulseek')}Pick a source</button>` };
     },
     match: function (id, s) {
       return { text: s.error || 'MusicBrainz found several releases and none is a sure fit.', actions: html`
@@ -1216,6 +1238,7 @@
   }
   App.action('disc-save-sheet', function (el) { openSaveSheet(el.getAttribute('data-id')); });
   App.action('disc-save-retry', function (el) { App.saves.retry(el.getAttribute('data-id')); });
+  App.action('disc-save-pick', function (el) { openPicker(el.getAttribute('data-id'), { forSave: true }); });
   /* the file is on disk; Jellyfin only needs to pick it up (progress arrives as `save` events) */
   App.action('disc-rescan', function () {
     M.api('/api/library/rescan', { method: 'POST' }).then(function () { App.toast('Asked Jellyfin to rescan', { icon: 'refresh' }); },
@@ -1223,7 +1246,8 @@
   });
 
   /* --- MusicBrainz release picker (step 2 had no confident match): GET/POST /api/saves/{jobId}/release(s) ---
-     The open picker (module state, read by its buttons): { trackId, jobId, items, error, el } */
+     The open picker (module state, read by its buttons): { trackId, jobId, items, file, error, el }; `file` is the
+     server's `track`: what lull knows of the file being saved */
   var rel = null;
   function jobOf(id) { var s = App.saves.get(id); return s && s.jobId; }
   function relBody(r) {
@@ -1236,22 +1260,26 @@
         <div class="disc-rel__head" aria-hidden="true"><span></span><span>release</span><span>date</span><span>country</span><span>tracks</span></div>
         ${r.items.map(function (x, i) {
           return html`<label class="disc-rel__row"><input type="radio" name="disc-rel" value="${x.mbid}" ${i === 0 ? raw('checked') : ''}>
-            <span class="disc-rel__title">${x.title}<small>${[x.kind, x.label].filter(Boolean).join(', ')}</small></span>
+            <span class="disc-rel__title">${x.title}<small>${[x.kind, x.artist].filter(Boolean).join(', ')}</small></span>
             <span class="px disc-rel__date">${x.date || ''}</span><span class="disc-rel__country">${x.country || ''}</span><span class="px disc-rel__n">${x.tracks}<span class="vh"> tracks</span></span></label>`;
         })}
       </fieldset>
-      <p class="disc-note">Your file: ${App.fmt.time(t.duration)}, ${fmt(t.format).label}${t.no ? ', track ' + t.no : ''}, tagged "${t.album}".</p>`;
+      ${fileNote(r.file || t)}`;
+  }
+  function fileNote(f) {
+    var facts = [f.duration ? App.fmt.time(f.duration) : '', f.format ? fmt(f.format).label : '', f.no ? 'track ' + f.no : '', f.album ? 'tagged "' + f.album + '"' : ''];
+    return html`<p class="disc-note">Your file: ${facts.filter(Boolean).join(', ')}.</p>`;
   }
   function loadReleases(r) {
     r.error = null; r.items = null; paint('rels', relBody(r), r.el);
     M.api('/api/saves/' + encodeURIComponent(r.jobId) + '/releases').then(function (res) {
-      r.items = res.items || []; paint('rels', relBody(r), r.el);
+      r.items = res.items || []; r.file = res.track || null; paint('rels', relBody(r), r.el);
     }, function (err) { r.error = err; paint('rels', relBody(r), r.el); });
   }
   function openReleasePicker(id) {
     var t = M.track(id), jobId = jobOf(id);
     if (!t || !jobId) { App.toast('This song has no save waiting for a release', { kind: 'error' }); return null; }
-    var r = rel = { trackId: id, jobId: jobId, items: null, error: null, el: null };
+    var r = rel = { trackId: id, jobId: jobId, items: null, file: null, error: null, el: null };
     var dlg = App.openDialog({ title: 'pick the right release', wide: true, className: 'disc-rel-dialog',
       body: html`<div data-region="rels">${relBody(r)}</div>`,
       foot: html`<button class="btn" data-act="disc-rel-skip" data-id="${id}" data-close>Save with existing tags</button>

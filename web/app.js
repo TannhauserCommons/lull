@@ -179,7 +179,9 @@
     App.store.update('followed', function (f) { if (on) f[id] = true; else delete f[id]; });
     App.emit('follow', { id: id, followed: on });
     App.toast(on ? 'Following ' + name : 'Unfollowed ' + name, { icon: 'follow', action: 'Undo', onAction: function () { App.toggleFollow(id, !on); } });
-    M.api('/api/follows/' + kind + '/' + encodeURIComponent(id), { method: on ? 'PUT' : 'DELETE' }).catch(function (err) {
+    /* following an artist sends its name: the server derives the id from it and refuses a mismatch */
+    var body = on && kind === 'artist' ? { name: name } : undefined;
+    M.api('/api/follows/' + kind + '/' + encodeURIComponent(id), { method: on ? 'PUT' : 'DELETE', body: body }).catch(function (err) {
       App.store.update('followed', function (f) { if (on) delete f[id]; else f[id] = true; });
       App.emit('follow', { id: id, followed: !on });
       App.toast('Couldn\'t ' + (on ? 'follow ' : 'unfollow ') + name + ': ' + err.message, { kind: 'error' });
@@ -956,18 +958,21 @@
   var SAVE_STATUS = { running: 'saving', done: 'saved', failed: 'failed', pending: 'pending' };
   App.saves = {
     get: function (id) { return state.saves[id]; },
-    /* opts: { mode: 'separate'|'replace' (duplicate dialog: a saved song may be saved again), source: { trackId: { peer, path } } } */
+    /* opts: { mode: 'separate'|'replace' (the duplicate dialog's answer: a saved song is saved again), source: { trackId: { peer, path, size } } } */
     start: function (ids, opts) {
       opts = opts || {};
       ids = [].concat(ids).filter(function (id) { return (opts.mode || !App.isSaved(id)) && !(state.saves[id] && state.saves[id].status === 'saving'); });
       if (!ids.length) { App.toast('Already in your library', { icon: 'saved' }); return; }
+      if (opts.mode) { startSaves(ids, opts); return; }           // the duplicate question is already answered
       App.hooks.beforeSave(ids, function (ok, o) { startSaves(ok || ids, Object.assign({}, opts, o)); });
     },
-    retry: function (id) {
+    /* restarts a failed save from its failed step; source ({ peer, path, size }) answers a transfer failure */
+    retry: function (id, source) {
       var s = state.saves[id];
-      if (!s || !s.jobId) { App.saves.start([id]); return; }
+      if (!s || !s.jobId) { var src = {}; if (source) src[id] = source; App.saves.start([id], { source: src }); return; }
       setSave(id, Object.assign({}, s, { status: 'saving', error: null }));
-      M.api('/api/saves/' + encodeURIComponent(s.jobId) + '/retry', { method: 'POST' }).catch(function (err) { saveFailed([id], err); });
+      M.api('/api/saves/' + encodeURIComponent(s.jobId) + '/retry', { method: 'POST', body: source ? { source: source } : undefined })
+        .catch(function (err) { saveFailed([id], err); });
     },
     set: function (id, rec) { setSave(id, rec); }
   };
@@ -976,14 +981,16 @@
     ids.forEach(function (id) { setSave(id, { step: 1, status: 'saving', pct: 0 }); });
     if (ids.length > 1) App.toast('Saving ' + ids.length + ' songs to your library', { icon: 'save' });
     /* the playing song is saved from the peer it streams from, so the transfer is not started twice */
-    var source = Object.assign({}, opts.source);
-    if (ps.source && ids.indexOf(P.currentId()) >= 0 && !source[P.currentId()]) source[P.currentId()] = { peer: ps.source.peer, path: ps.source.path };
+    var source = Object.assign({}, opts.source), cur = P.currentId();
+    if (ps.source && ids.indexOf(cur) >= 0 && !source[cur]) source[cur] = { peer: ps.source.peer, path: ps.source.path, size: ps.source.sizeBytes };
     var body = { ids: ids };
     if (Object.keys(source).length) body.source = source;
-    if (opts.mode) body.mode = opts.mode;
+    if (opts.mode) { body.duplicate = {}; ids.forEach(function (id) { body.duplicate[id] = opts.mode; }); }
     M.api('/api/saves', { method: 'POST', body: body }).then(function (res) {
+      var skipped = res.skipped || [], started = ids.filter(function (id) { return skipped.indexOf(id) < 0; });
+      skipped.forEach(function (id) { setSave(id, null); M.patchTrack(id, { saved: true }); });   // already in the library
       (res.jobs || []).forEach(function (jobId, i) {
-        var id = ids[i]; if (id && state.saves[id]) setSave(id, Object.assign({}, state.saves[id], { jobId: jobId }));
+        var id = started[i]; if (id && state.saves[id]) setSave(id, Object.assign({}, state.saves[id], { jobId: jobId }));
       });
     }, function (err) { saveFailed(ids, err); });
   }
@@ -1034,7 +1041,7 @@
   function changed(kind) { App.emit('player', kind || 'state'); persistSoon(); }
 
   /* playback settings (Settings > Playback; GET /api/settings), defaults until the server answers */
-  var playback = { gapless: true, crossfade: 0, normalisation: 'off', radioWhenQueueEnds: true, volumeStep: 5 };
+  var playback = { gapless: true, crossfade: 0, normalisation: 'off', loudnessTarget: -14, radioWhenQueueEnds: true, volumeStep: 5 };
   P.volumeStep = function () { return (playback.volumeStep || 5) / 100; };
   App.setPlayback = function (patch) {
     Object.assign(playback, patch);
@@ -1484,8 +1491,8 @@
     if (master) master.gain.setTargetAtTime(vol, audioCtx.currentTime, .05);
   }
   /* ReplayGain from the track when the library supplies it (replayGain: { track, album } in dB), otherwise
-     measured: mean loudness of what has played, levelled toward -18 dBFS RMS, within -12 to +6 dB */
-  var TARGET_RMS = .126;
+     measured: mean loudness of what has played (unweighted RMS, close enough to LUFS for levelling songs
+     against each other), levelled toward Settings > Playback's target (-18 / -14 / -11), within -12 to +6 dB */
   function normalise(d) {
     if (!d.gain || playback.normalisation === 'off' || !d.entry) return;
     var t = M.track(d.entry.trackId), rg = t && t.replayGain;
@@ -1498,17 +1505,20 @@
     d.ms += sum / buf.length; d.msN += 1;
     if (d.msN < 12) return;                                            // ~3 s of listening before adjusting
     var rms = Math.sqrt(d.ms / d.msN); if (rms < 1e-4) return;
-    d.norm = clamp(TARGET_RMS / rms, Math.pow(10, -12 / 20), Math.pow(10, 6 / 20));
+    d.norm = clamp(Math.pow(10, playback.loudnessTarget / 20) / rms, Math.pow(10, -12 / 20), Math.pow(10, 6 / 20));
   }
 
   /* ---------- plays: POST /api/plays when a song starts, PATCH when it ends (scrobbling, history, taste) ---------- */
-  /* App.recordPlay(trackId, durationS) -> { listened (seconds heard, the caller adds to it), end(how) };
+  /* App.recordPlay(trackId, durationS, recommended) -> { listened (seconds heard, the caller adds to it), end(how) };
+     recommended: started from radio or a feed pick (Stats hit rate);
      how: completed (ended by itself) | skipped (the listener moved on) | stopped (page closed).
      Also used by Classic mode, where Webamp plays. */
   var playWarned = false;
-  App.recordPlay = function (trackId, dur) {
+  App.recordPlay = function (trackId, dur, recommended) {
     var rec = { listened: 0, ended: false };
-    var id = M.api('/api/plays', { method: 'POST', body: { trackId: trackId, duration: Math.round(dur || 0) } })
+    var body = { trackId: trackId, recommended: !!recommended };
+    if (dur) body.duration = Math.round(dur);
+    var id = M.api('/api/plays', { method: 'POST', body: body })
       .then(function (r) { return r && r.playId; }, function (err) {
         if (!playWarned) { playWarned = true; App.toast('Listening history is off: ' + err.message, { kind: 'error' }); }
         return null;
@@ -1527,7 +1537,7 @@
     var e = ps.queue[ps.index];
     if (play && play.uid === e.uid) return;
     endPlay('skipped');
-    play = { uid: e.uid, rec: App.recordPlay(t.id, P.duration()), last: null };
+    play = { uid: e.uid, rec: App.recordPlay(t.id, P.duration(), e.group === 'radio'), last: null };
   }
   function trackListening(d) {
     if (!play) return;
@@ -1844,7 +1854,14 @@
   }
   function loadJobs() {
     return M.api('/api/jobs').then(function (res) {
-      App.store.set({ activity: (res.items || res || []).map(function (j) { return Object.assign({ id: j.jobId }, j); }), activityError: null });
+      var rows = (res.items || []).map(function (j) { return Object.assign({ id: j.jobId }, j); });
+      /* unfinished saves survive a reload: their rows seed the save records the buttons read (newest row wins) */
+      rows.slice().reverse().forEach(function (j) {
+        if (j.kind !== 'save' || !j.trackId || j.stepState === 'done') return;
+        setSave(j.trackId, { jobId: j.jobId, step: j.step, status: SAVE_STATUS[j.stepState] || 'saving', pct: j.pct || 0,
+          error: j.error || null, kind: j.failKind || null, nocover: !!j.nocover });
+      });
+      App.store.set({ activity: rows, activityError: null });
     }, function (err) { App.store.set({ activity: [], activityError: err.message }); });
   }
   App.loadJobs = loadJobs;
@@ -2208,7 +2225,8 @@
     'toggle-panel': function (el) { App.togglePanel(el.getAttribute('data-tab')); },
     'close-panel': function () { App.closePanel(); },
     'open-activity': function () { App.openPanel('activity'); },
-    'open-now': function () { App.go('/now'); },
+    /* the player bar's Device view: the wrapper's mini player window inside the desktop app, Now Playing elsewhere */
+    'open-now': function () { if (window.LullDesktop && LullDesktop.inWrapper) LullDesktop.openMini(); else App.go('/now'); },
     'theme': function () { App.toggleTheme(); },
     'status': function (el) { statusPopover(el); },
     'shelf': function (el) { shelfPopover(el); },
@@ -2445,6 +2463,10 @@
     save: onSaveEvent,
     job: onJobEvent,
     transfer: onTransferEvent,
+    /* likes, follows and settings changed elsewhere (another device or tab) */
+    like: function (e) { if (App.isLiked(e.trackId) !== e.liked) { App.store.update('liked', function (l) { if (e.liked) l[e.trackId] = true; else delete l[e.trackId]; }); App.syncRows(); } },
+    follow: function (e) { if (App.isFollowed(e.id) !== e.followed) App.store.update('followed', function (f) { if (e.followed) f[e.id] = true; else delete f[e.id]; }); },
+    settings: function (s) { applyPlaybackSettings(s); },
     resync: function () { refetchAll(); }
   };
   function onServerEvent(topic, payload) {
@@ -2481,11 +2503,12 @@
   }
   /* Settings > Playback values the engine needs; a value may come back as { value, source: 'config' } */
   function loadSettings() {
-    return M.api('/api/settings').then(function (s) {
-      var pb = (s && s.playback) || {}, v = function (x) { return x && typeof x === 'object' && 'value' in x ? x.value : x; };
-      App.setPlayback({ gapless: v(pb.gapless) !== false, crossfade: +v(pb.crossfade) || 0,
-        normalisation: v(pb.normalisation) || 'off', radioWhenQueueEnds: v(pb.radioWhenQueueEnds) !== false, volumeStep: +v(pb.volumeStep) || 5 });
-    }, function (err) { console.warn('Settings unavailable, playback uses defaults:', err.message); });
+    return M.api('/api/settings').then(applyPlaybackSettings, function (err) { console.warn('Settings unavailable, playback uses defaults:', err.message); });
+  }
+  function applyPlaybackSettings(s) {
+    var pb = (s && s.playback) || {}, v = function (x) { return x && typeof x === 'object' && 'value' in x ? x.value : x; };
+    App.setPlayback({ gapless: v(pb.gapless) !== false, crossfade: +v(pb.crossfade) || 0, normalisation: v(pb.normalisation) || 'off',
+      loudnessTarget: +v(pb.loudnessTarget) || -14, radioWhenQueueEnds: v(pb.radioWhenQueueEnds) !== false, volumeStep: +v(pb.volumeStep) || 5 });
   }
   /* after a reconnect or a resync: everything the events would have told us */
   function refetchAll() {

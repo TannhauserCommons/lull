@@ -18,7 +18,6 @@
   var view = { page: 'now', tab: 'art', detailsOpen: false, detailsTrack: null };
   var lyAway = {};                                     // lyrics instance key -> user scrolled away
   var actFilter = 'all';
-  var actHidden = {};                                  // job id -> hidden by "Clear finished" (this view only)
   var pendingFocus = null;                             // data-fk of the focused control before a re-render
 
   function cur() { return P.current(); }
@@ -669,7 +668,7 @@
       var s = saves[id];
       list.unshift({ id: s.jobId || 'save-' + id, jobId: s.jobId, kind: 'save', trackId: id, step: s.step, status: s.status, error: s.error });
     });
-    return list.filter(function (j) { return !(actHidden[j.id] && jobState(j) === 'done'); });
+    return list;
   }
   function jobState(j) {
     if (j.kind === 'transfer') return j.state === 'failed' ? 'failed' : ['transferring', 'queued', 'stalled'].indexOf(j.state) >= 0 ? 'active' : 'done';
@@ -1025,19 +1024,22 @@
   /* a save job the server listed that this page holds no record for: record it, so retry and the recovery sheet
      act on that job (App.saves keys saves by song) */
   function adoptSave(j) {
-    if (!App.saves.get(j.trackId)) App.saves.set(j.trackId, { jobId: j.id, step: j.step || 1, status: j.status, error: j.error || null });
+    if (!App.saves.get(j.trackId)) {
+      App.saves.set(j.trackId, { jobId: j.id, step: j.step || 1, status: j.status, pct: j.pct || 0, error: j.error || null,
+        kind: j.failKind || null, nocover: !!j.nocover });
+    }
   }
   App.action('now-act-filter', function (el) { actFilter = el.getAttribute('data-value'); withFocus('f-' + actFilter, App.refreshPanel); });
   App.action('now-act-reload', function () { App.loadJobs(); });
-  /* "Clear finished" is a view action: it hides the finished rows in this panel (Undo shows them again); the jobs
-     stay on the server, and a hidden job that starts again shows again. */
+  /* DELETE /api/jobs clears the server's finished rows (failed saves stay); the finished save records go too,
+     since the songs keep their saved state on the track itself */
   App.action('now-act-clear', function () {
-    var ids = jobs().filter(function (j) { return jobState(j) === 'done'; }).map(function (j) { return j.id; });
-    ids.forEach(function (id) { actHidden[id] = true; });
-    App.refreshPanel();
-    App.toast('Cleared finished jobs', { icon: 'check', action: 'Undo', onAction: function () {
-      ids.forEach(function (id) { delete actHidden[id]; }); App.refreshPanel();
-    } });
+    M.api('/api/jobs', { method: 'DELETE' }).then(function () {
+      var saves = App.store.get('saves') || {};
+      Object.keys(saves).forEach(function (id) { if (saves[id].status === 'saved') App.saves.set(id, null); });
+      App.toast('Cleared finished jobs', { icon: 'check' });
+      return App.loadJobs();
+    }, toastError);
   });
   App.action('now-job-cancel', function (el) {
     var j = findJob(el.getAttribute('data-job')); if (!j) return;

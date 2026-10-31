@@ -53,20 +53,20 @@ data, ever.
 | Fact | Source of truth | Kept current by |
 |---|---|---|
 | tracks, albums, artists | server entities | every response (`M.absorb`) |
-| liked, followed | `GET /api/likes`, `/api/follows` -> `App.store` `liked`, `followed` | `App.toggleLike`, `App.setLiked`, `App.toggleFollow` (PUT/DELETE) |
+| liked, followed | `GET /api/likes`, `/api/follows` -> `App.store` `liked`, `followed` | `App.toggleLike`, `App.setLiked`, `App.toggleFollow` (PUT/DELETE); `like` / `follow` events from other devices |
 | playlists | `GET /api/playlists` -> store `playlists` (= `M.playlists`) | `App.createPlaylist`, `App.savePlaylistOrder`, `App.addToPlaylist` |
-| saves | store `saves` `{ trackId: { jobId, step, status, pct, error, kind, nocover } }` | `App.saves.*`, `save` events |
+| saves | store `saves` `{ trackId: { jobId, step, status, pct, error, kind, nocover } }`, seeded from unfinished save rows of `GET /api/jobs` | `App.saves.start(ids, { mode, source })` (`mode` = the duplicate dialog's separate/replace), `retry`, `save` events |
 | activity | `GET /api/jobs` -> store `activity` (rows keyed `id` = jobId) | `job`, `transfer` events |
 | services | `GET /health` -> store `services` (`state ok|warn|down|off`, `label`, `detail`, `queued`, `usedGB`, `capGB`) | `service` events |
 | server reachability, auth, version | `App.server { reachable, authorized, version }`, event `server` | `/api/ping`, `/health`, event stream errors |
-| playback settings | `GET /api/settings` playback -> `App.setPlayback(patch)` | Settings > Playback calls `App.setPlayback` after a PATCH |
+| playback settings | `GET /api/settings` playback -> `App.setPlayback(patch)` | Settings > Playback calls `App.setPlayback` after a PATCH; `settings` events |
 | recent searches | store `recentSearches`, this device only (`localStorage`) | discover.js |
 | queue, volume, shuffle, repeat | `App.player.state`, saved per device so a reload keeps the queue | the engine |
 
 ### Server events
 
-`data.js` opens one `EventSource('/api/events')`. app.js handles `service`, `stream`, `save`, `job`, `transfer` and
-`resync`, then re-emits every topic as `App.emit('server:<topic>', payload)` (discover.js listens to
+`data.js` opens one `EventSource('/api/events')`. Any payload's `entities` are absorbed first. app.js handles
+`service`, `stream`, `save`, `job`, `transfer`, `like`, `follow`, `settings` and `resync`, then re-emits every topic as `App.emit('server:<topic>', payload)` (discover.js listens to
 `server:search.results`). On every reconnect after the first, and on `resync`, app.js invalidates all reads and
 refetches health, collections and the current route. A closed stream (401) checks `/api/ping`.
 
@@ -96,10 +96,13 @@ The state shape and methods are DESIGN.md 7.8; the insides:
 - **Crossfade** (`playback.crossfade` seconds): the next deck starts under an equal-power fade.
 - **Normalisation** (`off | replaygain-track | replaygain-album | loudness`): Web Audio gain per deck. ReplayGain uses
   `track.replayGain { track, album }` (dB) when the library supplies it; otherwise the measured loudness of what has
-  played is levelled toward -18 dBFS RMS within -12..+6 dB. The Web Audio graph is built only when normalisation or
+  played (unweighted RMS) is levelled toward `playback.loudnessTarget` (-18 / -14 / -11) within -12..+6 dB. The Web Audio graph is built only when normalisation or
   crossfade is on, inside the first play gesture.
-- **Plays**: `POST /api/plays` when a song starts playing, `PATCH /api/plays/{playId}` with `playedS` (time actually
-  heard), `completed`, `skipped` when it ends, is skipped, or the page closes (`keepalive`).
+- **Plays**: `App.recordPlay(trackId, duration, recommended)` posts `POST /api/plays` when a song starts playing
+  (`recommended` for radio songs) and its `end(how)` sends `PATCH /api/plays/{playId}` with `playedS` (time actually
+  heard), `completed`, `skipped` when it ends, is skipped, or the page closes (`keepalive`). Classic mode uses it too.
+- **Other players**: `App.hooks.media` (default `null` = the engine) is what media keys drive; Classic mode points it
+  at Webamp while open. `P.jumpTo(index, { at, autoplay })`, `P.streamUrl(trackId, source)` serve the hand-back.
 - **Radio**: `P.startRadio({ kind: track|artist|tag|album, id })` fetches `/api/radio`; while "keeps adding" is on
   the queue is topped up to three songs ahead (`exclude` = what is queued). With "radio when the queue ends", the
   last song seeds a radio as it starts. Changing the steer re-fills the radio songs not yet played.
