@@ -959,9 +959,9 @@ dependencies = [
 name = "lull-skins"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "axum",
  "lull-core",
+ "rusqlite",
  "serde",
  "serde_json",
  "tokio",
