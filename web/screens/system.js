@@ -681,7 +681,7 @@
      picture of the shell (rail / topnav / dock) in its swatches, which shows while the image loads or when there is none */
   function designCard(name, on) {
     var d = App.designs[name], sw = d.swatches;
-    var pv = new URL(Designs.base + 'assets/previews/' + name, location.href).href;   // absolute: a url() in a custom property resolves against the stylesheet that uses it
+    var pv = new URL(Designs.base + '../assets/previews/' + name, location.href).href;   // absolute: a url() in a custom property resolves against the stylesheet that uses it
     var shot = d.preview ? ';--pv-day:url("' + pv + '-day.webp");--pv-night:url("' + pv + '-night.webp")' : '';
     return html`<button type="button" class="sys-design" role="radio" aria-checked="${on ? 'true' : 'false'}" tabindex="${on ? '0' : '-1'}" data-value="${name}"
       style="${'--d1:' + sw[0] + ';--d2:' + sw[1] + ';--d3:' + sw[2] + ';--d4:' + sw[3] + shot}">
