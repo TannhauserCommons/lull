@@ -24,6 +24,8 @@ pub const USER_AGENT: &str = concat!(
 
 /// MusicBrainz allows one request per second per IP, whichever crate sends it (`Http::pace`).
 pub const MUSICBRAINZ_PACE: Duration = Duration::from_millis(1100);
+/// The `Http::pace` key for MusicBrainz: every crate must use this one, so they share the budget.
+pub const MUSICBRAINZ: &str = "musicbrainz";
 
 #[derive(Clone)]
 pub struct Http {
