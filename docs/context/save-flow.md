@@ -39,6 +39,7 @@
   - Releases of the same album tie by design. Among them the official, earliest release wins, then the lowest id, so the choice is stable.
 - **Not sure** fails step 2 as `match` with up to 8 candidates, one per release, for the picker.
   - Without an album name (a loose file), an album, its single and a best-of tie. The listener picks.
+- **A resumed save whose transfer is gone.** Soulseek keeps the finished transfer pinned only until the save fails, pends or finishes. A save resumed from step 2-4 (a picked release, a retry) whose file was evicted transfers it again first; a chosen release is kept.
 - **Pacing.** MusicBrainz allows one request per second per IP, shared by every crate: `Http::pace("musicbrainz", MUSICBRAINZ_PACE)`. A save makes two requests (search, release lookup).
 
 ## Tags

@@ -573,6 +573,12 @@ pub async fn choose(svc: &Arc<Service>, mut job: SaveJob, mbid: Option<String>) 
 }
 
 async fn restart(svc: &Arc<Service>, mut job: SaveJob) -> Result<SaveJob> {
+    // Soulseek unpins a transfer once its save fails, so a save resumed later may find the file
+    // evicted: transfer it again first (a chosen release is kept, so matching is skipped).
+    if (2..=4).contains(&job.step) && !job.file.as_ref().is_some_and(|f| f.exists()) {
+        job.step = 1;
+        job.file = None;
+    }
     job.status = Status::Running;
     job.error = None;
     job.fail_kind = None;
