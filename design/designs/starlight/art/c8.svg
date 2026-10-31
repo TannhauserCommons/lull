@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" preserveAspectRatio="xMidYMid slice">
+  <!-- starlight cover c8: arched window with curtains, the moon inside (cream / mauve). Filters: w = watercolour wobble, b = soft glow. -->
+  <defs>
+    <filter id="w" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence type="fractalNoise" baseFrequency=".07" numOctaves="2" seed="4"/>
+      <feDisplacementMap in="SourceGraphic" scale="2.4"/>
+    </filter>
+    <filter id="b" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3.5"/>
+    </filter>
+    <linearGradient id="s" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#efdfcf"/>
+      <stop offset="1" stop-color="#d9c1b3"/>
+    </linearGradient>
+    <linearGradient id="n" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2d3450"/>
+      <stop offset="1" stop-color="#5c6aa2"/>
+    </linearGradient>
+  </defs>
+  <rect width="120" height="120" fill="url(#s)"/>
+  <path d="M32 98V52A28 28 0 0 1 88 52V98Z" fill="url(#n)"/>
+  <circle cx="70" cy="46" r="12" fill="#fff3dc" opacity=".4" filter="url(#b)"/>
+  <circle cx="70" cy="46" r="6.5" fill="#fff4e0"/>
+  <circle cx="44" cy="40" r="0.8" fill="#fff"/>
+  <circle cx="52" cy="60" r="0.7" fill="#fff"/>
+  <circle cx="78" cy="66" r="0.8" fill="#fff"/>
+  <circle cx="46" cy="76" r="0.6" fill="#fff"/>
+  <circle cx="62" cy="32" r="0.7" fill="#fff"/>
+  <circle cx="80" cy="84" r="0.7" fill="#fff"/>
+  <path transform="translate(48 52) scale(3.4)" fill="#fffaf6" d="M0-1C.12-.12.12-.12 1 0C.12.12.12.12 0 1C-.12.12-.12.12-1 0C-.12-.12-.12-.12 0-1Z"/>
+  <g fill="none" stroke="#8a6c72" stroke-width="2">
+    <path d="M32 98V52A28 28 0 0 1 88 52V98Z"/>
+    <path d="M60 24V98M32 66H88" stroke-width="1.4"/>
+  </g>
+  <g filter="url(#w)">
+    <path d="M22 14Q40 52 30 106H16V14Z" fill="#b98a9c"/>
+    <path d="M98 14Q80 52 90 106H104V14Z" fill="#b98a9c"/>
+  </g>
+  <path d="M24 14H96" stroke="#8a6c72" stroke-width="2.4" stroke-linecap="round"/>
+  <rect x="24" y="97" width="72" height="5" rx="2" fill="#c7a49b"/>
+</svg>

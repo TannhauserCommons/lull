@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="lull desktop app (Tauri v2): window chrome per OS, mini player, tray, first-run connect and unreachable states.">
+<title>Desktop app - lull</title>
+<link rel="icon" href="../assets/app-icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../base.css">
+<link rel="stylesheet" href="../components.css">
+<link rel="stylesheet" href="desktop.css">
+<link rel="stylesheet" href="preview.css">
+<link rel="stylesheet" id="design-css" href="../designs/lull/design.css">
+<script src="../designs/designs.js"></script>
+<script>
+  (function () {   /* ?design=, ?theme=day|night and ?motion=reduce from the hash or query, before first paint */
+    var q = (location.hash.split('?')[1] || '') + '&' + location.search.slice(1), d = document.documentElement, m;
+    Designs.boot();
+    m = /(?:^|&)theme=(day|night)/.exec(q); Designs.applyTheme(m ? m[1] : 'system');
+    if ((m = /(?:^|&)motion=(reduce|full)/.exec(q))) d.setAttribute('data-motion', m[1]);
+  })();
+</script>
+</head>
+<body class="pv-board pv-os s-sky">
+<div class="sky-specks" aria-hidden="true">
+  <span class="sparkle" style="--s:20px; right:6%; top:60px"></span>
+  <span class="sparkle" style="--s:12px; right:11%; top:120px"></span>
+</div>
+
+<div class="pv-wrap">
+  <header class="pv-head">
+    <div>
+      <span class="brand-mark" role="img" aria-label="lull" data-pv-brand><span class="wordmark brand" aria-hidden="true"><span class="brand__name">lull</span><span class="brand__orn wordmark__spark"></span></span></span>
+      <h1 class="t-display">desktop app</h1>
+      <p class="pv-head__lede">The Tauri v2 wrapper for Windows and Linux. It loads the same web UI from your server and adds window chrome, a mini player, a tray and OS media controls. Decisions and sizes are in <code>DESKTOP.md</code>; windows on this board are drawn at true size and scaled to fit.</p>
+    </div>
+    <div class="pv-head__tools">
+      <a class="btn" href="../prototype/index.html#/desktop">Open in the prototype</a>
+      <button class="btn-icon" type="button" data-pv-theme aria-label="Switch the board theme"></button>
+    </div>
+  </header>
+
+  <nav aria-label="Sections"><ul class="pv-toc">
+    <li><a href="#windows">Windows 11</a></li><li><a href="#linux">Linux</a></li><li><a href="#mini">Mini player</a></li>
+    <li><a href="#tray">Tray</a></li><li><a href="#connect">First run</a></li><li><a href="#offline">Unreachable</a></li>
+    <li><a href="#close">Close to tray</a></li><li><a href="#icons">Icons</a></li>
+  </ul></nav>
+
+  <!-- ================================================================= -->
+  <section class="pv-sec" id="windows" aria-labelledby="h-windows">
+    <div class="label-rule"><h2 id="h-windows">windows 11</h2></div>
+    <p class="pv-sec__lede">No native title bar: the app header is the title bar. Caption buttons sit flush in the top-right corner; the header, its spacer, the rail head and the 16 px top margin are drag regions. The OS still draws the 1 px border, rounded corners and shadow (<code>shadow: true</code>).</p>
+    <div class="pv-grid pv-grid--2">
+      <figure class="pv-frame pv-win">
+        <div class="pv-fit" data-w="1280" data-h="800"><div><iframe src="window.html#view=app&amp;os=win&amp;theme=day" title="Windows 11 window, day theme"></iframe></div></div>
+        <figcaption><b>Day.</b> 1280x800 default, min 480x600. Try the caption buttons.</figcaption>
+      </figure>
+      <figure class="pv-frame pv-win">
+        <div class="pv-fit" data-w="1280" data-h="800"><div><iframe src="window.html#view=app&amp;os=win&amp;theme=night" title="Windows 11 window, night theme"></iframe></div></div>
+        <figcaption><b>Night.</b> Same layout; caption glyphs use the sky surface's text colour.</figcaption>
+      </figure>
+    </div>
+    <div class="pv-grid pv-grid--2">
+      <figure class="pv-frame">
+        <div class="pv-crop"><iframe src="window.html#view=app&amp;os=win&amp;theme=day&amp;drag=1" title="Title bar detail, day, drag regions outlined" tabindex="-1"></iframe></div>
+        <figcaption><b>Detail at 2x, drag regions dashed.</b> Caption buttons <span class="pv-kbd-dim">46x32</span> each, glyphs 10 px. Hover a button: Minimise and Maximise fill with the sky's hover colour, Close fills with the down colour (lilac glyph, 6.2:1). The header reserves 130 px on the right.</figcaption>
+      </figure>
+      <figure class="pv-frame">
+        <div class="pv-crop"><iframe src="window.html#view=app&amp;os=win&amp;theme=night&amp;drag=1" title="Title bar detail, night, drag regions outlined" tabindex="-1"></iframe></div>
+        <figcaption><b>Night detail.</b> An inactive window dims the glyphs to the secondary text colour, as Windows does. Double-click any drag region to maximise.</figcaption>
+      </figure>
+    </div>
+    <ul class="pv-notes">
+      <li>Snap: drag to a screen edge, Win+arrows and Win+Z all work. The Snap Layouts flyout on hovering Maximise needs a native hit-test overlay that core Tauri v2 doesn't provide; accepted for v1.</li>
+      <li>Maximised, the window loses its corners (the frame above squares them when you press Maximise); nothing in the layout moves.</li>
+      <li><code>dragDropEnabled: false</code>, or Windows swallows HTML5 drag and drop (row drags, M3U and skin drops).</li>
+    </ul>
+  </section>
+
+  <!-- ================================================================= -->
+  <section class="pv-sec" id="linux" aria-labelledby="h-linux">
+    <div class="label-rule"><h2 id="h-linux">linux</h2></div>
+    <p class="pv-sec__lede">Native decorations by default, so GNOME and KDE users get the buttons and layout their desktop sets. A "Use lull title bar" setting (off by default, restart to apply) turns the app header into a GNOME-style header bar.</p>
+    <div class="pv-grid pv-grid--3">
+      <figure class="pv-frame pv-adw">
+        <div class="pv-fit" data-w="1280" data-h="846"><div>
+          <div class="pv-adw__bar" aria-hidden="true"><b>lull</b><span class="pv-adw__btns"><i><svg class="dk-glyph" viewBox="0 0 10 10"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7"/></svg></i></span></span></div>
+          <iframe src="window.html#view=app&amp;os=native&amp;theme=night" title="GNOME window with the default GTK title bar, night theme"></iframe>
+        </div></div>
+        <figcaption><b>GNOME, default.</b> GTK draws the header bar; buttons follow <code>button-layout</code> (here GNOME's default, close only).</figcaption>
+      </figure>
+      <figure class="pv-frame pv-gnome">
+        <div class="pv-fit" data-w="1280" data-h="800"><div><iframe src="window.html#view=app&amp;os=gnome&amp;theme=night&amp;layout=:minimize,maximize,close" title="GNOME window with the optional lull title bar, night theme"></iframe></div></div>
+        <figcaption><b>GNOME, lull title bar (opt-in).</b> Round 24 px buttons at the end of the header, in the user's order (here Ubuntu's minimise, maximise, close). No OS shadow, so the window draws a 1 px edge.</figcaption>
+      </figure>
+      <figure class="pv-frame pv-kde">
+        <div class="pv-fit" data-w="1280" data-h="830"><div>
+          <div class="pv-kde__bar" aria-hidden="true"><img src="../assets/icons/icon-16.png" alt=""><b>Home - lull</b><span class="pv-kde__btns">
+            <i><svg class="dk-glyph" viewBox="0 0 10 10"><path d="M1.5 3.5 5 7l3.5-3.5"/></svg></i><i><svg class="dk-glyph" viewBox="0 0 10 10"><path d="M1.5 6.5 5 3l3.5 3.5"/></svg></i><i><svg class="dk-glyph" viewBox="0 0 10 10"><path d="M2 2l6 6M8 2 2 8"/></svg></i></span></div>
+          <iframe src="window.html#view=app&amp;os=native&amp;theme=day" title="KDE Plasma window with the native Breeze title bar, day theme"></iframe>
+        </div></div>
+        <figcaption><b>KDE Plasma.</b> KWin draws the Breeze title bar server-side (GTK3 apps get server-side decorations on KWin). The app is untouched.</figcaption>
+      </figure>
+    </div>
+    <ul class="pv-notes">
+      <li>Wayland: the compositor places windows, so only window size is restored, and "always on top" for the mini player is the user's call (window menu).</li>
+      <li>The window title the OS shows is the page title ("Home - lull").</li>
+    </ul>
+  </section>
+
+  <!-- ================================================================= -->
+  <section class="pv-sec" id="mini" aria-labelledby="h-mini">
+    <div class="label-rule"><h2 id="h-mini">mini player</h2></div>
+    <p class="pv-sec__lede">Frameless, transparent, always-on-top windows. The device window's shape is the handheld itself, stack included; the striped backdrop stands in for whatever is behind it on the desktop. Drag by the body or bezel, never the screen (the waveform seeks). Every control works here.</p>
+    <div class="pv-desk">
+      <figure class="pv-frame" style="--frame-w:340px">
+        <div class="pv-fit" data-w="340" data-h="560"><div><iframe src="window.html#view=mini&amp;theme=day" title="Mini player, device, day" allowtransparency="true"></iframe></div></div>
+        <figcaption><b>Device, day.</b> Window 340x560.</figcaption>
+      </figure>
+      <figure class="pv-frame" style="--frame-w:340px">
+        <div class="pv-fit" data-w="340" data-h="560"><div><iframe src="window.html#view=mini&amp;theme=night" title="Mini player, device, night" allowtransparency="true"></iframe></div></div>
+        <figcaption><b>Device, night.</b> Same window on a dark desktop.</figcaption>
+      </figure>
+      <figure class="pv-frame" style="--frame-w:340px">
+        <div class="pv-fit" data-w="340" data-h="560"><div><iframe src="window.html#view=mini&amp;theme=night&amp;opaque=1" title="Mini player, opaque fallback, night"></iframe></div></div>
+        <figcaption><b>Opaque fallback.</b> X11 without a compositor: a plain sky window with the device inset.</figcaption>
+      </figure>
+    </div>
+    <div class="pv-desk pv-desk--strip" style="margin-top:var(--sp-5)">
+      <figure class="pv-frame" style="--frame-w:540px">
+        <div class="pv-fit" data-w="540" data-h="90"><div><iframe src="window.html#view=strip&amp;theme=day" title="Mini player, strip, day" allowtransparency="true"></iframe></div></div>
+        <figcaption><b>Strip, day.</b> Window 540x90 (bar 520x64 + stack).</figcaption>
+      </figure>
+      <figure class="pv-frame" style="--frame-w:540px">
+        <div class="pv-fit" data-w="540" data-h="90"><div><iframe src="window.html#view=strip&amp;theme=night" title="Mini player, strip, night" allowtransparency="true"></iframe></div></div>
+        <figcaption><b>Strip, night.</b> Title and artist are the drag region.</figcaption>
+      </figure>
+    </div>
+    <ul class="pv-notes" style="margin-top:var(--sp-6)">
+      <li>Opened from the tray ("Mini player"), the device button in the player bar, or Ctrl+Shift+M. The full window hides while a mini window shows.</li>
+      <li>Windows: <code>transparent: true</code>, <code>shadow: false</code> (an OS shadow would outline the rectangle). Linux needs a compositor; otherwise the opaque fallback.</li>
+    </ul>
+  </section>
+
+  <!-- ================================================================= -->
+  <section class="pv-sec" id="tray" aria-labelledby="h-tray">
+    <div class="label-rule"><h2 id="h-tray">tray</h2></div>
+    <p class="pv-sec__lede">A monochrome mark: the app icon's rounded square, solid, with the lull sparkle cut out. Windows picks the light or dark glyph from the taskbar theme (not the app theme); Linux uses the symbolic SVG so the panel recolours it.</p>
+    <div class="pv-bars">
+      <div class="pv-bar pv-bar--win-light"><span class="pv-bar__label">Windows 11, light taskbar</span>
+        <svg class="ic pv-bar__sys" aria-hidden="true"><use href="#i-chevron-up"/></svg><span class="pv-bar__slot is-ours"><img src="../assets/icons/tray-light-16.png" width="16" height="16" alt="lull tray icon, dark glyph"></span>
+        <svg class="ic pv-bar__sys" aria-hidden="true"><use href="#i-volume-2"/></svg><span>21:14</span></div>
+      <div class="pv-bar pv-bar--win-dark"><span class="pv-bar__label">Windows 11, dark taskbar</span>
+        <svg class="ic pv-bar__sys" aria-hidden="true"><use href="#i-chevron-up"/></svg><span class="pv-bar__slot is-ours"><img src="../assets/icons/tray-dark-16.png" width="16" height="16" alt="lull tray icon, light glyph"></span>
+        <svg class="ic pv-bar__sys" aria-hidden="true"><use href="#i-volume-2"/></svg><span>21:14</span></div>
+      <div class="pv-bar pv-bar--gnome"><span class="pv-bar__label">GNOME top bar (AppIndicator extension)</span>
+        <span class="pv-bar__slot is-ours"><img src="../assets/icons/tray-symbolic.svg" width="16" height="16" alt="lull symbolic tray icon" style="filter:invert(1)"></span>
+        <svg class="ic pv-bar__sys" aria-hidden="true"><use href="#i-volume-2"/></svg><span>Oct 31 21:14</span></div>
+      <div class="pv-bar pv-bar--kde-light"><span class="pv-bar__label">KDE Plasma, Breeze light panel</span>
+        <span class="pv-bar__slot is-ours"><img src="../assets/icons/tray-light-24.png" width="22" height="22" alt="lull tray icon, dark glyph"></span>
+        <svg class="ic pv-bar__sys" aria-hidden="true"><use href="#i-volume-2"/></svg><span>21:14</span></div>
+      <div class="pv-bar pv-bar--kde-dark"><span class="pv-bar__label">KDE Plasma, Breeze dark panel</span>
+        <span class="pv-bar__slot is-ours"><img src="../assets/icons/tray-dark-24.png" width="22" height="22" alt="lull tray icon, light glyph"></span>
+        <svg class="ic pv-bar__sys" aria-hidden="true"><use href="#i-volume-2"/></svg><span>21:14</span></div>
+    </div>
+    <div class="pv-zoom" aria-label="Tray glyphs at 4x, pixel for pixel">
+      <figure><img class="on-light" src="../assets/icons/tray-light-16.png" width="64" height="64" alt="16 px dark glyph at 4x"><figcaption>16</figcaption></figure>
+      <figure><img class="on-light" src="../assets/icons/tray-light-20.png" width="80" height="80" alt="20 px dark glyph at 4x"><figcaption>20</figcaption></figure>
+      <figure><img class="on-light" src="../assets/icons/tray-light-24.png" width="96" height="96" alt="24 px dark glyph at 4x"><figcaption>24</figcaption></figure>
+      <figure><img class="on-light" src="../assets/icons/tray-light-32.png" width="128" height="128" alt="32 px dark glyph at 4x"><figcaption>32</figcaption></figure>
+      <figure><img class="on-dark" src="../assets/icons/tray-dark-16.png" width="64" height="64" alt="16 px light glyph at 4x"><figcaption>16</figcaption></figure>
+      <figure><img class="on-dark" src="../assets/icons/tray-dark-20.png" width="80" height="80" alt="20 px light glyph at 4x"><figcaption>20</figcaption></figure>
+      <figure><img class="on-dark" src="../assets/icons/tray-dark-24.png" width="96" height="96" alt="24 px light glyph at 4x"><figcaption>24</figcaption></figure>
+      <figure><img class="on-dark" src="../assets/icons/tray-dark-32.png" width="128" height="128" alt="32 px light glyph at 4x"><figcaption>32</figcaption></figure>
+    </div>
+
+    <h3 class="t-h2" style="margin-top:var(--sp-10)">menu (native menu, styled by OS)</h3>
+    <p class="pv-sec__lede" style="margin-top:var(--sp-2)">Same items and order everywhere; the OS draws them. Windows: left click shows or hides the window, right click opens this. Linux: clicks aren't delivered, so the menu opens on any click and holds every action. Click an item to see the event the web UI gets.</p>
+    <div class="pv-menus">
+      <figure class="pv-menu-fig"><ul class="pv-menu pv-menu--win pv-menu--win-light" role="menu" aria-label="Tray menu, Windows 11 light" data-pv-menu></ul><figcaption><b>Windows 11, light.</b> Native menu, styled by OS.</figcaption></figure>
+      <figure class="pv-menu-fig"><ul class="pv-menu pv-menu--win pv-menu--win-dark" role="menu" aria-label="Tray menu, Windows 11 dark" data-pv-menu></ul><figcaption><b>Windows 11, dark.</b> Native menu, styled by OS.</figcaption></figure>
+      <figure class="pv-menu-fig"><ul class="pv-menu pv-menu--gnome" role="menu" aria-label="Tray menu, GNOME" data-pv-menu></ul><figcaption><b>GNOME Shell.</b> Native menu, styled by OS.</figcaption></figure>
+      <figure class="pv-menu-fig"><ul class="pv-menu pv-menu--kde" role="menu" aria-label="Tray menu, KDE Plasma" data-pv-menu></ul><figcaption><b>KDE Plasma.</b> Native menu, styled by OS.</figcaption></figure>
+    </div>
+    <p class="pv-log" role="status"><svg class="ic" aria-hidden="true"><use href="#i-info"/></svg><span data-pv-log>Click a menu item.</span></p>
+  </section>
+
+  <!-- ================================================================= -->
+  <section class="pv-sec" id="connect" aria-labelledby="h-connect">
+    <div class="label-rule"><h2 id="h-connect">first run: connect</h2></div>
+    <p class="pv-sec__lede">A local page bundled in the wrapper (the server isn't known yet), built from the same tokens and the token gate's look with an address field on top. The status line has a fixed height, so states swap without moving the buttons. In the live window, Test reaches <code>music.home.arpa</code>; any other host is unreachable and a token under 12 characters is rejected.</p>
+    <figure class="pv-frame pv-win">
+      <div class="pv-fit" data-w="1280" data-h="800"><div><iframe src="window.html#view=connect&amp;os=win&amp;theme=night" title="First-run connect window, live"></iframe></div></div>
+      <figcaption><b>Live, Windows, night.</b> Connect tests first, then loads the app in the window.</figcaption>
+    </figure>
+    <div class="pv-states" style="margin-top:var(--sp-8)">
+      <div class="pv-state"><div class="label-rule label-rule--sm"><h3>idle</h3></div><div data-pv-connect="idle"></div></div>
+      <div class="pv-state"><div class="label-rule label-rule--sm"><h3>testing</h3></div><div data-pv-connect="testing"></div></div>
+      <div class="pv-state"><div class="label-rule label-rule--sm"><h3>connected</h3></div><div data-pv-connect="ok"></div></div>
+      <div class="pv-state"><div class="label-rule label-rule--sm"><h3>unreachable</h3></div><div data-pv-connect="unreachable"></div></div>
+      <div class="pv-state"><div class="label-rule label-rule--sm"><h3>token rejected</h3></div><div data-pv-connect="rejected"></div></div>
+      <div class="pv-state"><div class="label-rule label-rule--sm"><h3>address not valid</h3></div><div data-pv-connect="invalid"></div></div>
+    </div>
+  </section>
+
+  <!-- ================================================================= -->
+  <section class="pv-sec" id="offline" aria-labelledby="h-offline">
+    <div class="label-rule"><h2 id="h-offline">server unreachable at launch</h2></div>
+    <p class="pv-sec__lede">Also a local page: the web UI can't load, so the wrapper shows this and retries with backoff (2, 4, 8, 16, 30 s). The tray says "Not connected" and its transport items are disabled. Once the app is loaded, a dropped server is the web UI's own banner instead.</p>
+    <div class="pv-grid pv-grid--2">
+      <figure class="pv-frame pv-win">
+        <div class="pv-fit" data-w="1280" data-h="800"><div><iframe src="window.html#view=offline&amp;os=win&amp;theme=day" title="Server unreachable window, Windows, day"></iframe></div></div>
+        <figcaption><b>Windows, day.</b> Countdown, Retry now, Change server, Details.</figcaption>
+      </figure>
+      <figure class="pv-frame pv-kde">
+        <div class="pv-fit" data-w="1280" data-h="830"><div>
+          <div class="pv-kde__bar" aria-hidden="true"><img src="../assets/icons/icon-16.png" alt=""><b>Not connected - lull</b><span class="pv-kde__btns">
+            <i><svg class="dk-glyph" viewBox="0 0 10 10"><path d="M1.5 3.5 5 7l3.5-3.5"/></svg></i><i><svg class="dk-glyph" viewBox="0 0 10 10"><path d="M1.5 6.5 5 3l3.5 3.5"/></svg></i><i><svg class="dk-glyph" viewBox="0 0 10 10"><path d="M2 2l6 6M8 2 2 8"/></svg></i></span></div>
+          <iframe src="window.html#view=offline&amp;os=native&amp;theme=night" title="Server unreachable window, KDE, night"></iframe>
+        </div></div>
+        <figcaption><b>KDE, night.</b> Same page inside the native title bar.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ================================================================= -->
+  <section class="pv-sec" id="close" aria-labelledby="h-close">
+    <div class="label-rule"><h2 id="h-close">close to tray</h2></div>
+    <p class="pv-sec__lede">Closing the window keeps the music playing when a tray exists. The first time, the web UI asks once. Without a tray (GNOME without the AppIndicator extension), Close quits.</p>
+    <figure class="pv-frame pv-win">
+      <div class="pv-fit" data-w="1280" data-h="800"><div><iframe src="window.html#view=app&amp;os=win&amp;theme=night&amp;dialog=1" title="Keep playing in the tray dialog"></iframe></div></div>
+      <figcaption><b>First close.</b> Focus-trapped dialog; Esc cancels. "Don't ask again" is on by default.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ================================================================= -->
+  <section class="pv-sec" id="icons" aria-labelledby="h-icons">
+    <div class="label-rule"><h2 id="h-icons">app icons</h2></div>
+    <p class="pv-sec__lede">From <code>assets/app-icon.svg</code>: a glossy lavender rounded square with the lull sparkle. 16, 24 and 32 are redrawn on the pixel grid (heavier edge, one sparkle, the pink accent only from 32 up) instead of scaled down. All files are in <code>assets/icons/</code>.</p>
+    <div class="pv-icons pv-icons--light">
+      <figure><img src="../assets/icons/icon-16.png" width="16" height="16" alt="16 px"><figcaption>16</figcaption></figure>
+      <figure><img src="../assets/icons/icon-24.png" width="24" height="24" alt="24 px"><figcaption>24</figcaption></figure>
+      <figure><img src="../assets/icons/icon-32.png" width="32" height="32" alt="32 px"><figcaption>32</figcaption></figure>
+      <figure><img src="../assets/icons/icon-48.png" width="48" height="48" alt="48 px"><figcaption>48</figcaption></figure>
+      <figure><img src="../assets/icons/icon-64.png" width="64" height="64" alt="64 px"><figcaption>64</figcaption></figure>
+      <figure><img src="../assets/icons/icon-128.png" width="128" height="128" alt="128 px"><figcaption>128</figcaption></figure>
+      <figure><img src="../assets/icons/icon-256.png" width="256" height="256" class="pv-big" alt="256 px"><figcaption>256</figcaption></figure>
+    </div>
+    <div class="pv-icons pv-icons--dark">
+      <figure><img src="../assets/icons/icon-16.png" width="16" height="16" alt="16 px on dark"><figcaption>16</figcaption></figure>
+      <figure><img src="../assets/icons/icon-24.png" width="24" height="24" alt="24 px on dark"><figcaption>24</figcaption></figure>
+      <figure><img src="../assets/icons/icon-32.png" width="32" height="32" alt="32 px on dark"><figcaption>32</figcaption></figure>
+      <figure><img src="../assets/icons/icon-16.png" width="64" height="64" style="image-rendering:pixelated" alt="16 px at 4x"><figcaption>16 at 4x</figcaption></figure>
+      <figure><img src="../assets/icons/icon-24.png" width="96" height="96" style="image-rendering:pixelated" alt="24 px at 4x"><figcaption>24 at 4x</figcaption></figure>
+      <figure><img src="../assets/icons/icon-32.png" width="128" height="128" style="image-rendering:pixelated" alt="32 px at 4x"><figcaption>32 at 4x</figcaption></figure>
+      <figure><img src="../assets/icons/app.ico" width="48" height="48" alt="app.ico"><figcaption>app.ico</figcaption></figure>
+      <figure><div class="pv-mask"><img src="../assets/icons/icon-maskable-512.png" width="192" height="192" alt="Maskable icon, circle mask"></div><figcaption>maskable 512</figcaption></figure>
+      <figure><button type="button" class="btn btn--sm" data-pv-safe aria-pressed="false">Show safe zone</button><figcaption>80% circle</figcaption></figure>
+    </div>
+    <div class="pv-table-wrap"><table class="pv-table">
+      <thead><tr><th scope="col">Target</th><th scope="col">Files in assets/icons/</th></tr></thead>
+      <tbody>
+        <tr><td>Windows exe, installer</td><td>app.ico (16, 24, 32, 48, 64, 256)</td></tr>
+        <tr><td>Tauri bundle.icon</td><td>icon-32.png, icon-128.png, icon-256.png, app.ico</td></tr>
+        <tr><td>Linux hicolor</td><td>icon-16 to icon-512 PNGs, ../app-icon.svg (scalable), tray-symbolic.svg</td></tr>
+        <tr><td>PWA manifest</td><td>icon-192.png, icon-512.png, icon-maskable-512.png</td></tr>
+        <tr><td>Tray</td><td>tray-light-16/20/24/32.png, tray-dark-16/20/24/32.png, tray-symbolic.svg</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+</div>
+
+<script src="../icons.js"></script>
+<script src="desktop.js"></script>
+<script>
+  /* tray menu items, one list for every OS mock (order and labels from DESKTOP.md section 4) */
+  (function () {
+    var check = '<svg class="ic pv-menu__check" aria-hidden="true"><use href="#i-check"/></svg>';
+    function item(act, label, role) {
+      return '<li role="none"><button type="button" class="pv-menu__item" role="' + (role || 'menuitem') + '" data-tray-act="' + act + '"' +
+        (role ? ' aria-checked="false"' : '') + '>' + check + '<span class="pv-menu__label">' + label + '</span></button></li>';
+    }
+    var sep = '<li role="separator" class="pv-menu__sep"></li>';
+    var html = '<li role="none"><span class="pv-menu__item" role="menuitem" aria-disabled="true"><span></span><span class="pv-menu__label">Paper Moon Static, Velvet Orchard</span></span></li>' + sep +
+      item('play-pause', 'Pause') + item('next', 'Next') + item('previous', 'Previous') + sep +
+      item('like', 'Like', 'menuitemcheckbox') + item('save', 'Save to library') + sep +
+      item('show', 'Show lull') + item('mini', 'Mini player', 'menuitemcheckbox') + item('classic', 'Classic mode') + sep +
+      item('quit', 'Quit lull');
+    Array.prototype.forEach.call(document.querySelectorAll('[data-pv-menu]'), function (m) { m.innerHTML = html; });
+  })();
+</script>
+<script src="preview.js"></script>
+</body>
+</html>

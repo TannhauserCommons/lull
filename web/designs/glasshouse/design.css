@@ -1,0 +1,1252 @@
+/* glasshouse: a silvery-glass Y2K media desktop after midnight (moodboard 03 + 05 + 01).
+   Misty wallpaper with stars and typewriter captions, frosted windows with aero title bars and glossy beads,
+   desktop-icon navigation with a status gadget, an AIMP media window on Home, a rose gloss play orb.
+   Night is home, day is pale pearl. Every rule is scoped under :root[data-design="glasshouse"].
+   Glass: solid token fills by default; translucency + blur only under @supports (backdrop-filter). Text on glass is
+   checked on the worst composite (fill over the darkest / lightest wallpaper stop), see the check: comments.
+   Sections: fonts, tokens, wallpaper + captions, type, windows, controls, rows + tiles + covers, seek, shell,
+   screens (home, search, library, stats + settings + welcome, empty states, banners, overlays), now playing,
+   mini player, classic, phone, motion. */
+
+/* ---------- fonts (SIL OFL 1.1, licences in fonts/) ---------- */
+@font-face { font-family: "Instrument Serif"; font-style: normal; font-weight: 400; font-display: swap; src: url("fonts/instrument-serif-latin.woff2") format("woff2"); }
+@font-face { font-family: "Instrument Serif"; font-style: italic; font-weight: 400; font-display: swap; src: url("fonts/instrument-serif-italic-latin.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url("fonts/plex-mono-400-latin.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500; font-display: swap; src: url("fonts/plex-mono-500-latin.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 600; font-display: swap; src: url("fonts/plex-mono-600-latin.woff2") format("woff2"); }
+
+/* =====================================================================
+   Tokens. Day block = palette + day theme; the night block repeats every theme token it changes.
+   ===================================================================== */
+:root[data-design="glasshouse"] {
+  /* type: Nunito UI, Instrument Serif for titles, Plex Mono for machine facts, window titles and captions */
+  --f-px: "IBM Plex Mono", ui-monospace, monospace;
+  --f-serif: "Instrument Serif", "Iowan Old Style", Georgia, serif;
+  --t-display: italic 400 3.5rem/1 var(--f-serif);      --t-display-track: -.005em;
+  --t-title-xl: 400 2.75rem/1.02 var(--f-serif);        --t-title-xl-track: 0;
+  --t-h2: 800 1.125rem/1.2 var(--f-ui);                 --t-h2-track: -.005em;
+  --t-px: 500 .8125rem/1.15 var(--f-px);                --t-px-track: 0;
+
+  /* palette (theme-invariant unless the night block repeats it) */
+  --cream: #f8f8fc; --cream-2: #ecedf4; --cream-3: #e0e2ec;
+  --ink: #191b28; --ink-2: #4d5168; --link-on-cream: #2d4f80;
+  --peri: #c3d3ec; --peri-deep: #5b6f96; --lav: #cdc8df; --lavender: #e4e2ee;
+  --lilac: #f6f6fb; --indigo: #2c3470; --star: #fbfaff;
+  --pink: #e7aebe; --pink-soft: #f7e5eb; --pink-ink: #8b3954; --pink-light: #f1cbd6;
+  --mauve: #b48b98; --mocha: #8e3f58; --mocha-edge: #4d2a38; --screen: #232737;
+  --line: #7a8098;
+  --ok: #2f6b4f; --warn: #7a5200; --down: #a3324f;
+  --skel: #dcdde6; --skel-hi: #ebecf2; --wave-dim: #6c7186;
+  --dusk: #2a2f40; --dusk-deep: #1a1d29;
+  --card-seek-played: #5a2236; --card-seek-buffered: #6f8ab8;
+  --win-hi: #f3f5fb; --win-upper: #9fb3d6; --win-mid: #3d4a6a; --win-glow: #6f84ad; --win-edge: #232a40;
+
+  /* day theme: pale pearl */
+  --sky: #e8e9f1; --sky-deep: #dcdde8;
+  --panel: #f4f4f9; --panel-2: #e6e7f0;
+  --tray: #dcdee9; --tray-edge: #a7acc0;
+  --fg-sky: #191b28; --fg-sky-2: #474b62;
+  --fg-panel: #191b28; --fg-panel-2: #4d5168;
+  --link: #2d4f80; --accent-ui: #2d4f80;
+  --heart: #8b3954; --edge: #7a8098; --focus: #2c3470;
+  --seek-played: #5a2236; --seek-buffered: #6f8ab8; --seek-line: #7a8098;
+  --q-lossless: #2c3470; --q-lossy: #4d5168;
+  --reason-bg: #f7e5eb; --reason-fg: #8b3954;
+  --play-ring: #4d2a38; --wordmark-2: #2d4f80;
+  --sparkle: #ffffff; --speck: #a9a6c6;
+  --scrim: #10121c; --scrim-alpha: .35;
+  --gloss-ring-w: 0px;
+  color-scheme: light;
+
+  /* glasshouse-only (theme): wallpaper, glass fills, title bars, keys, LCD */
+  --gh-wall-0: #c2c8dc; --gh-wall-1: #e2e5f0; --gh-wall-2: #d6dcec; --gh-fog: #ffffff;
+  --gh-glow-1: #bfb0e0; --gh-glow-2: #98bbe6; --gh-glow-3: #f0c3d1; --gh-moon: #ffffff; --gh-ghost: rgba(70, 80, 122, .16);
+  --gh-blush-1: #f7dee5; --gh-blush-2: #fbeef2; --gh-blush-ink: #5b3546;
+  --gh-label-fg: #191b28; --gh-halo: #eef0f7; --gh-label-cur-bg: #b9cdee; --gh-label-cur-fg: #191b28;
+  --gh-glass-panel: rgba(250, 250, 253, .66); --gh-glass-card: rgba(255, 255, 255, .78); --gh-glass-card-2: rgba(250, 250, 254, .7);
+  --gh-sheen: rgba(255, 255, 255, .85); --gh-sheen-panel: rgba(255, 255, 255, .6); --gh-bar-shadow: rgba(255, 255, 255, .55);
+  --gh-blur: blur(18px) saturate(1.4);
+  --gh-rim: rgba(255, 255, 255, .9);                 /* inner top highlight on glass */
+  --gh-frame: #9aa0b6;                               /* window outline */
+  --gh-bar-1: #f7faff; --gh-bar-2: #d5e1f4; --gh-bar-3: #adc2e4; --gh-bar-4: #c2d3ee; --gh-bar-ink: #191b28; --gh-bar-ink-2: #34405f;
+  --gh-cast: rgba(60, 64, 98, .28);
+  --gh-caption: #3d4058;
+  --gh-key-1: #ffffff; --gh-key-2: #e9ebf3; --gh-key-3: #d3d7e4; --gh-key-edge: #8d93aa; --gh-key-ink: #191b28;
+  --gh-keyg: linear-gradient(180deg, var(--gh-key-1) 0%, var(--gh-key-2) 50%, var(--gh-key-3) 51%, var(--gh-key-2) 100%);
+  --gh-lit-1: #eef4ff; --gh-lit-2: #b9cdee; --gh-lit-3: #93b0de; --gh-lit-edge: #4d6696;
+  --gh-lcd: linear-gradient(180deg, #232840, #2a3048); --gh-lcd-edge: #1a1e2e;
+  --gh-ok: #2f8f5f; --gh-warn: #b07a12; --gh-down: #c0405f; --gh-ring: #f8f8fc;
+}
+:root[data-design="glasshouse"][data-theme="night"] {
+  --cream: #c9ccd8; --cream-2: #bdc0cd; --cream-3: #b1b4c2;
+  --ink-2: #33364d; --link-on-cream: #1f3a63; --line: #4d5168;
+  --ok: #24543d; --warn: #5e3f00; --down: #85263f;
+  --card-seek-buffered: #5f7aa6;
+  --sky: #1a1d29; --sky-deep: #242838;
+  --panel: #1d2030; --panel-2: #2a2e40;
+  --tray: #151824; --tray-edge: #0e1018;
+  --fg-sky: #eef0f7; --fg-sky-2: #b4b8cb;
+  --fg-panel: #eceef6; --fg-panel-2: #b4b8cb;
+  --link: #a9c3ea; --accent-ui: #a9c3ea;
+  --heart: #eaa3b8; --edge: #8d93aa; --focus: #f4f5fb;
+  --seek-played: #f3c1cf; --seek-buffered: #5a7299; --seek-line: #8d93aa;
+  --q-lossless: #b8cdf0; --q-lossy: #c3c6d6;
+  --reason-bg: #3b2a36; --reason-fg: #f2bfcf;
+  --play-ring: #cdc8df; --wordmark-2: #a9c3ea;
+  --sparkle: #fbfaff; --speck: #fbfaff;
+  --scrim: #07080d; --scrim-alpha: .6;
+  --gloss-ring-w: 0px;
+  color-scheme: dark;
+  --gh-wall-0: #1b1d2a; --gh-wall-1: #3d4152; --gh-wall-2: #555a6b; --gh-fog: #7d8293;
+  --gh-glow-1: #8b86a8; --gh-glow-2: #5d7192; --gh-glow-3: #7b4858; --gh-moon: #e8e6f4; --gh-ghost: rgba(236, 238, 250, .16);
+  --gh-blush-1: #e9c6d1; --gh-blush-2: #ddd0da; --gh-blush-ink: #4e2c3b;
+  --gh-label-fg: #eef0f7; --gh-halo: #12141f; --gh-label-cur-bg: #3f5786; --gh-label-cur-fg: #f4f5fb;
+  --gh-glass-panel: rgba(26, 29, 43, .7); --gh-glass-card: rgba(222, 225, 237, .8); --gh-glass-card-2: rgba(208, 212, 226, .76);
+  --gh-sheen: rgba(255, 255, 255, .34); --gh-sheen-panel: rgba(255, 255, 255, .07); --gh-bar-shadow: rgba(10, 12, 22, .45);
+  --gh-blur: blur(18px) saturate(1.3);
+  --gh-rim: rgba(255, 255, 255, .55);
+  --gh-frame: #0c0e16;
+  --gh-bar-1: #626e8e; --gh-bar-2: #4e5976; --gh-bar-3: #39435d; --gh-bar-4: #2f3850; --gh-bar-ink: #f4f5fb; --gh-bar-ink-2: #c9d3ea;
+  --gh-cast: rgba(0, 0, 0, .55);
+  --gh-caption: #d5d8e5;
+  --gh-key-1: #4b5370; --gh-key-2: #323950; --gh-key-3: #262b3e; --gh-key-edge: #0c0e16; --gh-key-ink: #eceef6;
+  --gh-keyg: linear-gradient(180deg, var(--gh-key-1) 0%, var(--gh-key-2) 50%, var(--gh-key-3) 51%, var(--gh-key-2) 100%);
+  --gh-lit-1: #8ea6d2; --gh-lit-2: #5b75a6; --gh-lit-3: #3f5786; --gh-lit-edge: #c9d6f0;
+  --gh-lcd: linear-gradient(180deg, #11131c, #1d2131); --gh-lcd-edge: #0b0d14;
+  --gh-ok: #6fd6a0; --gh-warn: #f0c060; --gh-down: #f08aa4; --gh-ring: #2a2e40;
+}
+/* shape, depth and shared recipes (theme-invariant; the var() inside resolve per theme on :root) */
+:root[data-design="glasshouse"] {
+  --r-chip: 6px; --r-thumb: 6px; --r-art: 8px; --r-input: 10px; --r-panel: 14px; --r-card: 12px;
+  --r-device: 16px; --r-bezel: 10px;
+  --stack-off-1: 0px; --stack-off-2: 0px; --stack-reserve: 18px;
+  --stack: 0 18px 36px -22px var(--gh-cast), 0 2px 6px -3px var(--gh-cast);
+  --stack-sm: 0 10px 24px -16px var(--gh-cast), 0 1px 4px -2px var(--gh-cast);
+  --stack-1l: 0 10px 24px -16px var(--gh-cast);
+  --stack-press: 0 6px 16px -12px var(--gh-cast);
+  --gh-barh: 30px;
+  --gh-bar: linear-gradient(180deg, var(--gh-bar-1) 0%, var(--gh-bar-2) 48%, var(--gh-bar-3) 52%, var(--gh-bar-4) 100%);
+  --gh-lit: linear-gradient(180deg, #eef4ff 0%, #b9cdee 50%, #a9c1e8 51%, #c3d5f1 100%);   /* the lit glass key (ink text) */
+  --gh-orb: radial-gradient(120% 90% at 50% 100%, #c97a92 0%, #8e3f58 46%, #6e2a42 74%);    /* rose gloss body (white text) */
+  --gh-rose-hi: #d98da4; --gh-rose: #8e3f58; --gh-rose-lo: #6e2a42; --gh-rose-glow: #c97a92; --gh-rose-edge: #4d2a38;
+  --gh-beads: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='41' height='11' viewBox='0 0 41 11'%3E%3Cdefs%3E%3CradialGradient id='a' cx='.5' cy='.35' r='.65'%3E%3Cstop offset='0' stop-color='%23d6e6f8'/%3E%3Cstop offset='.7' stop-color='%238fb0d8'/%3E%3Cstop offset='1' stop-color='%2333476b'/%3E%3C/radialGradient%3E%3CradialGradient id='b' cx='.5' cy='.35' r='.65'%3E%3Cstop offset='0' stop-color='%23e6e1f4'/%3E%3Cstop offset='.7' stop-color='%23b9b1d6'/%3E%3Cstop offset='1' stop-color='%234a4468'/%3E%3C/radialGradient%3E%3CradialGradient id='c' cx='.5' cy='.35' r='.65'%3E%3Cstop offset='0' stop-color='%23f3cbd7'/%3E%3Cstop offset='.7' stop-color='%23c97a92'/%3E%3Cstop offset='1' stop-color='%234d2a38'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='5.5' cy='5.5' r='4.9' fill='url(%23a)' stroke='%2333476b' stroke-width='.8'/%3E%3Cellipse cx='5.5' cy='3.4' rx='2.4' ry='1.3' fill='%23fff' fill-opacity='.85'/%3E%3Ccircle cx='20.5' cy='5.5' r='4.9' fill='url(%23b)' stroke='%234a4468' stroke-width='.8'/%3E%3Cellipse cx='20.5' cy='3.4' rx='2.4' ry='1.3' fill='%23fff' fill-opacity='.85'/%3E%3Ccircle cx='35.5' cy='5.5' r='4.9' fill='url(%23c)' stroke='%234d2a38' stroke-width='.8'/%3E%3Cellipse cx='35.5' cy='3.4' rx='2.4' ry='1.3' fill='%23fff' fill-opacity='.85'/%3E%3C/svg%3E");   /* three glossy beads (steel, lilac, rose), decorative */
+}
+
+/* Contrast pairs that the base list does not cover (worst composites: the glass fill over the darkest wallpaper stop for
+   dark text, over the brightest fog / halo for light text; the solid fallbacks are the plain tokens, checked by the base list).
+   window body, night: --gh-glass-card-2 over #1b1d2a = #a5a8b6; day: over #c2c8dc = #e9ebf4
+   check: #191b28 on #a5a8b6 4.5     check: #33364d on #a5a8b6 4.5     check: #1f3a63 on #a5a8b6 4.5
+   check: #4d5168 on #a5a8b6 3       check: #191b28 on #e9ebf4 4.5     check: #4d5168 on #e9ebf4 4.5
+   smoky panels, night: --gh-glass-panel over the halo #9a9cad = #404352; day over #c2c8dc = #e7e9f3
+   check: #eceef6 on #404352 4.5     check: #b4b8cb on #404352 4.5     check: #a9c3ea on #404352 4.5
+   check: #191b28 on #e7e9f3 4.5     check: #4d5168 on #e7e9f3 4.5
+   title bars: text sits on the middle stops (the gloss above it is lighter in day, darker at night)
+   check: --gh-bar-ink on --gh-bar-2 4.5    check: --gh-bar-ink on --gh-bar-3 4.5    check: --gh-bar-ink-2 on --gh-bar-3 4.5
+   check: --gh-bar-ink on --gh-bar-1 4.5
+   rose gloss (play orb, primary): white text on the body stop; the highlight stays above the text band
+   check: #ffffff on --gh-rose 4.5   check: #ffffff on --gh-rose-lo 4.5
+   glass keys and the lit tile: check: --gh-key-ink on --gh-key-2 4.5   check: --gh-key-ink on --gh-key-3 4.5
+   check: #191b28 on #b9cdee 4.5     check: #191b28 on #a9c1e8 4.5
+   playing row (blush): check: --gh-blush-ink on --gh-blush-1 4.5   check: --gh-rose-lo on --gh-blush-1 4.5   check: #191b28 on --gh-blush-1 4.5
+   check: --gh-blush-ink on --gh-blush-2 4.5
+   desktop-icon labels on the wallpaper (the left mist band keeps the column dark at night, pale by day; measured: night
+   <= #3a3e4e, day >= #dfe3ee behind the labels): check: #eef0f7 on #3a3e4e 4.5   check: #191b28 on #dfe3ee 4.5
+   check: --gh-label-cur-fg on --gh-label-cur-bg 4.5
+   status dots (UI, 3:1) on the gadget glass: check: #6fd6a0 on #404352 3   check: #f0c060 on #404352 3   check: #f08aa4 on #404352 3
+   day: check: #2f8f5f on #e7e9f3 3   check: #b07a12 on #e7e9f3 3   check: #c0405f on #e7e9f3 3
+   LCD strips (player bar format line, tickers, home deck), night + day stops:
+   check: #c6d6f2 on #1d2131 4.5   check: #f3c1cf on #1d2131 4.5   check: #9aa7c2 on #1d2131 4.5   check: #eceef6 on #1d2131 4.5
+   check: #c6d6f2 on #2a3048 4.5   check: #f3c1cf on #2a3048 4.5   check: #9aa7c2 on #2a3048 4.5   check: #eceef6 on #2a3048 4.5
+   night lyrics LCD: check: #f3c1cf on #1a1e2c 4.5   check: #c6cde0 on #1a1e2c 4.5   check: #8d93aa on #1a1e2c 4.5
+   skin tabs: check: #191b28 on #dfe3ee 4.5   check: --gh-bar-ink on --gh-bar-3 4.5
+   brand (chrome lull, large text) on the header glass: check: #b9bdd0 on #1d2030 3   check: #3d4058 on #f4f4f9 3
+   wallpaper captions (decorative) on the brightest mist stop: check: --gh-caption on --gh-wall-2 4.5   check: --gh-caption on --gh-wall-1 4.5 */
+
+/* =====================================================================
+   Wallpaper (img 03 + 01). The features sit where the windows are, so the frosted glass has something to blur:
+   a steel bloom behind the main column, a rose bloom behind the queue, img 03's lens rings through the middle,
+   a moon halo top right. A dark (day: pale) mist band down the left keeps the desktop-icon captions legible.
+   Stars and lens drift slowly with the page scroll (scroll-driven; static under reduced motion).
+   ===================================================================== */
+:root[data-design="glasshouse"],
+:root[data-design="glasshouse"] body { background: var(--gh-wall-0); }
+:root[data-design="glasshouse"] .sky-specks {
+  background:
+    linear-gradient(90deg, var(--gh-wall-0) 0, color-mix(in srgb, var(--gh-wall-0) 80%, transparent) 104px, transparent 150px),
+    radial-gradient(44vmax 36vmax at 92% 0%, color-mix(in srgb, var(--gh-moon) 30%, transparent) 0%, color-mix(in srgb, var(--gh-moon) 8%, transparent) 40%, transparent 64%),
+    radial-gradient(30vmax 26vmax at 86% 64%, color-mix(in srgb, var(--gh-glow-3) 70%, transparent) 0%, transparent 70%),
+    radial-gradient(36vmax 22vmax at 38% 36%, color-mix(in srgb, var(--gh-glow-2) 60%, transparent) 0%, transparent 72%),
+    radial-gradient(30vmax 18vmax at 30% 78%, color-mix(in srgb, var(--gh-glow-1) 55%, transparent) 0%, transparent 70%),
+    linear-gradient(118deg, transparent 0 46%, color-mix(in srgb, var(--gh-fog) 18%, transparent) 52%, transparent 58%,
+      transparent 63%, color-mix(in srgb, var(--gh-fog) 12%, transparent) 66%, transparent 71%),
+    radial-gradient(40vmax 14vmax at 58% 52%, color-mix(in srgb, var(--gh-fog) 34%, transparent) 0%, transparent 72%),
+    linear-gradient(172deg, var(--gh-wall-0) 0%, var(--gh-wall-1) 34%, var(--gh-wall-2) 56%, var(--gh-wall-1) 78%, var(--gh-wall-0) 100%);
+}
+/* lens rings (img 03's eye, abstracted) and the star field: two drifting layers */
+:root[data-design="glasshouse"] .sky-specks::after {
+  content: ""; position: absolute; inset: -60px 0;
+  background:
+    radial-gradient(circle at 48% 54%, transparent 0 21vmax, var(--gh-ghost) 21.3vmax 22.1vmax, transparent 22.5vmax,
+      transparent 27vmax, color-mix(in srgb, var(--gh-ghost) 70%, transparent) 27.2vmax 27.7vmax, transparent 28.1vmax,
+      transparent 33vmax, color-mix(in srgb, var(--gh-ghost) 45%, transparent) 33.2vmax 33.5vmax, transparent 33.9vmax),
+    radial-gradient(circle at 48% 54%, color-mix(in srgb, var(--gh-glow-1) 40%, transparent) 0 6vmax, transparent 16vmax);
+}
+:root[data-design="glasshouse"] .sky-specks::before {
+  inset: -80px 0 0;
+  background-image:
+    radial-gradient(1.4px 1.4px at 12% 18%, var(--speck) 50%, transparent 51%),
+    radial-gradient(1px 1px at 37% 72%, var(--speck) 50%, transparent 51%),
+    radial-gradient(1.8px 1.8px at 68% 34%, var(--speck) 50%, transparent 51%),
+    radial-gradient(1px 1px at 84% 81%, var(--speck) 50%, transparent 51%),
+    radial-gradient(1.2px 1.2px at 55% 9%, var(--speck) 50%, transparent 51%),
+    radial-gradient(1px 1px at 23% 47%, var(--speck) 50%, transparent 51%),
+    radial-gradient(2.4px 2.4px at 93% 52%, color-mix(in srgb, var(--speck) 70%, transparent) 40%, transparent 60%),
+    radial-gradient(1px 1px at 4% 88%, var(--speck) 50%, transparent 51%);
+  background-size: 310px 290px, 230px 270px, 410px 330px, 190px 210px, 370px 250px, 270px 350px, 520px 460px, 150px 170px;
+  opacity: .8;
+  /* no specks over the heading band, where page titles and captions sit */
+  -webkit-mask-image: linear-gradient(180deg, transparent 0 250px, #000 330px); mask-image: linear-gradient(180deg, transparent 0 250px, #000 330px);
+}
+:root[data-design="glasshouse"] .sky-specks .sparkle { filter: drop-shadow(0 0 6px color-mix(in srgb, var(--sparkle) 70%, transparent)); }
+:root[data-design="glasshouse"][data-theme="day"] .sky-specks .sparkle { filter: drop-shadow(0 0 3px var(--gh-glow-1)); }
+/* the wallpaper sparkles never straddle a window edge: with the queue docked the first two sit fully behind it (soft
+   glows through the frosted glass); elsewhere they would land on titles or edges, so they stay off */
+:root[data-design="glasshouse"] .sky-specks .sparkle { display: none; }
+@media (min-width: 1360px) {
+  :root[data-design="glasshouse"]:has(.app[data-ctx="docked"]) .sky-specks .sparkle:nth-child(-n+2) { display: block; translate: 0 90px; }
+}
+@supports (animation-timeline: scroll()) {
+  :root[data-design="glasshouse"] body { timeline-scope: --gh-scroll; }
+  :root[data-design="glasshouse"] .view { scroll-timeline: --gh-scroll block; }
+  :root[data-design="glasshouse"] .sky-specks::before { animation: gh-drift-stars linear both; animation-timeline: --gh-scroll; }
+  :root[data-design="glasshouse"] .sky-specks::after { animation: gh-drift-lens linear both; animation-timeline: --gh-scroll; }
+}
+@keyframes gh-drift-stars { to { transform: translateY(-80px); } }
+@keyframes gh-drift-lens { to { transform: translateY(-36px); } }
+
+/* typewriter captions (img 03 "close the world, open the next."): decorative pseudo text with empty alt text
+   (content: "..." / ""), placed in each screen's own heading so it types in again on every route change and
+   scrolls away with the page. Desktop only. Lines reveal one after the other in character steps. */
+:root[data-design="glasshouse"] :is(.disc-hello, .lib-head, .sys-head, .now-head, .sys-welcome__head, .sys-settings, .lib-page) { position: relative; }
+:root[data-design="glasshouse"] :is(.disc-hello, .lib-head, .sys-head, .now-head, .sys-welcome__head, .sys-settings, .lib-page)::after {
+  position: absolute; z-index: 1; top: 6px; right: 0; width: max-content; text-align: left; pointer-events: none; white-space: pre;
+  font: 400 .9375rem/1.6 var(--f-px); letter-spacing: .02em; color: var(--gh-caption);
+  text-shadow: 0 0 14px var(--gh-wall-0), 0 0 2px var(--gh-wall-0);
+  animation: gh-type 1500ms 200ms both;
+}
+@keyframes gh-type {
+  0% { clip-path: polygon(0 0, 0 0, 0 50%, 0 50%, 0 50%, 0 50%); animation-timing-function: steps(34, end); }
+  50% { clip-path: polygon(0 0, 100% 0, 100% 50%, 0 50%, 0 50%, 0 50%); }
+  50.01% { clip-path: polygon(0 0, 100% 0, 100% 50%, 0 50%, 0 100%, 0 100%); animation-timing-function: steps(34, end); }
+  100% { clip-path: polygon(0 0, 100% 0, 100% 50%, 100% 50%, 100% 100%, 0 100%); }
+}
+@keyframes gh-type-line { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0); } }
+:root[data-design="glasshouse"] .lib-page::after { animation-timing-function: steps(44, end); }
+@media (min-width: 1100px) {
+  :root[data-design="glasshouse"] .disc-home > .disc-hello::after { content: "fog on the glass, signal in the wire.\A tonight the queue knows the way home_" / ""; }
+  :root[data-design="glasshouse"] .disc-search > .disc-hello::after { content: "somebody, somewhere,\A is sharing exactly this_" / ""; top: 0; }
+  :root[data-design="glasshouse"] .app[data-screen="library"] .lib-head::after { content: "everything you kept,\A kept warm_" / ""; }
+  :root[data-design="glasshouse"] .app[data-screen="liked"] .lib-head::after { content: "every heart you left\A on the glass_" / ""; }
+  :root[data-design="glasshouse"] .app[data-screen="history"] .lib-head::after { content: "where the night went,\A one song at a time_" / ""; }
+  :root[data-design="glasshouse"] .app[data-screen="following"] .lib-head::after { content: "voices you keep\A a window open for_" / ""; }
+  :root[data-design="glasshouse"] .app[data-screen="playlists"] .lib-head::after { content: "mixtapes for windows\A that never close_" / ""; }
+  :root[data-design="glasshouse"] .sys-stats .sys-head::after { content: "counting satellites\A one play at a time_" / ""; }
+  :root[data-design="glasshouse"] .sys-settings::after { content: "turn the dials,\A keep the static low_" / ""; top: 4px; }
+  :root[data-design="glasshouse"] .sys-welcome__head::after { content: "three steps,\A then the night is yours_" / ""; }
+  :root[data-design="glasshouse"] .now-head::after { content: "static on the line,\A moon on the glass_" / ""; top: 44px; }
+  /* page windows: the caption types onto the glass beside the hero, built from the page's own meta */
+  :root[data-design="glasshouse"] .lib-page::after { top: calc(var(--gh-barh) + 10px); right: 22px; color: var(--ink-2); text-shadow: none; font-size: .875rem; animation-name: gh-type-line; }
+  :root[data-design="glasshouse"] .app[data-screen="album"] .lib-page::after { content: "side a to side b :: " attr(data-meta) " of weather_" / ""; }
+  :root[data-design="glasshouse"] .app[data-screen="playlist"] .lib-page::after { content: "for the window seat :: " attr(data-meta) "_" / ""; }
+  :root[data-design="glasshouse"] .app[data-screen="artist"] .lib-page::after { content: "a voice on the wire, still transmitting_" / ""; }
+  :root[data-design="glasshouse"] .app[data-screen="tag"] .lib-page::after { content: "drifting in from every window_" / ""; }
+  /* library index pages: the caption is a flex item between the title block and the tools */
+  :root[data-design="glasshouse"] .lib-head::after { position: static; order: 1; margin-left: auto; align-self: center; }
+  :root[data-design="glasshouse"] .lib-head__tools { order: 2; }
+  /* stats: the same, so the caption never sits on the period control (the control wraps to its own row, right-aligned) */
+  :root[data-design="glasshouse"] .sys-stats .sys-head::after { position: static; order: 1; margin-left: auto; align-self: center; }
+  :root[data-design="glasshouse"] .sys-stats .sys-period { order: 2; margin-left: auto; }
+}
+
+/* =====================================================================
+   Type
+   ===================================================================== */
+:root[data-design="glasshouse"] .t-display,
+:root[data-design="glasshouse"] .t-title-xl { font-feature-settings: "liga", "dlig"; }
+:root[data-design="glasshouse"] .view .t-display { text-shadow: 0 0 24px color-mix(in srgb, var(--gh-glow-1) 55%, transparent); }
+:root[data-design="glasshouse"] .lib-kicker,
+:root[data-design="glasshouse"] .now-head__from,
+:root[data-design="glasshouse"] .disc-hello__sum,
+:root[data-design="glasshouse"] .lib-head__sub,
+:root[data-design="glasshouse"] .sys-lede { font: 500 .875rem/1.45 var(--f-px); letter-spacing: .01em; }
+:root[data-design="glasshouse"] .now-head__from b,
+:root[data-design="glasshouse"] .disc-hello__sum b { font-weight: 600; }
+
+/* =====================================================================
+   Windows: shell panels (smoky glass) and windows (frosted silver) with aero title bars and beads.
+   Solid token fills by default; translucency, blur and the diagonal specular sweep only under @supports.
+   ===================================================================== */
+:root[data-design="glasshouse"] :is(.rail, .ctx, .pbar, .mini, .tabbar, .header) {
+  border: 1px solid var(--gh-frame);
+  box-shadow: inset 0 1px 0 var(--gh-rim), inset 0 0 0 1px color-mix(in srgb, var(--gh-rim) 22%, transparent), var(--stack-1l);
+}
+/* the header strip has no blur (backdrop-filter would trap the fixed status gadget): a near-solid smoky fill */
+:root[data-design="glasshouse"] .header { background: linear-gradient(128deg, var(--gh-sheen-panel) 0%, transparent 30%), color-mix(in srgb, var(--panel) 90%, transparent); }
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root[data-design="glasshouse"] :is(.ctx, .pbar, .mini, .tabbar) {
+    background: linear-gradient(128deg, var(--gh-sheen-panel) 0%, transparent 30%), var(--gh-glass-panel);
+    -webkit-backdrop-filter: var(--gh-blur); backdrop-filter: var(--gh-blur);
+  }
+  :root[data-design="glasshouse"] :is(.card, .sheet, .dialog, .popover, .menu, .toast, .banner-slot:not(:empty)) {
+    background: linear-gradient(128deg, var(--gh-sheen) 0%, transparent 36%),
+      linear-gradient(180deg, var(--gh-glass-card) 0%, var(--gh-glass-card-2) 100%);
+    -webkit-backdrop-filter: var(--gh-blur); backdrop-filter: var(--gh-blur);
+  }
+}
+
+/* every card is a window: its head (visible or the revealed hidden one) becomes the aero title bar */
+:root[data-design="glasshouse"] .card {
+  border: 1px solid var(--gh-frame); border-radius: var(--r-card);
+  box-shadow: inset 0 1px 0 var(--gh-rim), inset 0 0 0 1px color-mix(in srgb, var(--gh-rim) 45%, transparent), var(--stack);
+  padding-top: calc(var(--gh-barh) + 18px); --rule: var(--edge);
+  /* inside the (always light) windows the keys are pearl glass in both themes */
+  --gh-key-1: #ffffff; --gh-key-2: #eceef5; --gh-key-3: #d7dbe7; --gh-key-edge: #7a8098; --gh-key-ink: #191b28;
+  --gh-keyg: linear-gradient(180deg, #ffffff 0%, #eceef5 50%, #d7dbe7 51%, #eceef5 100%);
+}
+:root[data-design="glasshouse"] .card--flush { padding-top: var(--gh-barh); }
+/* one title-bar recipe for windows, sheets, gadgets and the queue */
+:root[data-design="glasshouse"] :is(.card > .card-head, .sheet__head, .ctx > .region-title, .sys-tile__label, .win__bar) {
+  color: var(--gh-bar-ink); border-bottom: 1px solid var(--gh-frame); background: var(--gh-bar);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 65%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--gh-bar-1) 45%, transparent);
+  text-shadow: 0 1px 0 var(--gh-bar-shadow);
+}
+:root[data-design="glasshouse"] .card > :is(.card-head, .card-head--hidden) {
+  position: absolute; z-index: 1; left: 0; right: 0; top: 0; display: flex; align-items: center; gap: 10px; overflow: hidden;
+  height: var(--gh-barh); margin: 0; padding: 0 10px 0 12px; border-radius: calc(var(--r-card) - 1px) calc(var(--r-card) - 1px) 0 0;
+  --focus: var(--gh-bar-ink); --fg: var(--gh-bar-ink); --fg-2: var(--gh-bar-ink-2); --link: var(--gh-bar-ink);
+}
+/* title-bar sheen: sweeps once across a window's bar on hover (base.css stops it under reduced motion) */
+:root[data-design="glasshouse"] .card > .card-head::before {
+  content: ""; position: absolute; z-index: -1; top: 0; bottom: 0; left: 0; width: 38%; pointer-events: none;
+  background: linear-gradient(100deg, transparent 0%, rgba(255, 255, 255, .55) 50%, transparent 100%);
+  transform: translateX(-120%); opacity: 0;
+}
+:root[data-design="glasshouse"] .card:hover > .card-head::before { animation: gh-sheen 900ms var(--ease-out) 1; }
+@keyframes gh-sheen { 0% { transform: translateX(-120%); opacity: .9; } 100% { transform: translateX(300%); opacity: 0; } }
+:root[data-design="glasshouse"] :is(.card-head__title, .card > .card-head > h2, .card > .card-head > h3) {
+  flex: 1 0 auto; max-width: calc(100% - 64px); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 600 .8125rem/1 var(--f-px); letter-spacing: .03em; color: var(--gh-bar-ink); text-transform: lowercase;
+}
+:root[data-design="glasshouse"] :is(.card-head__title, .sheet__title, .ctx > .region-title, .win__title)::before { content: "::\00a0"; color: var(--gh-bar-ink-2); }
+:root[data-design="glasshouse"] .card-head__meta { order: 2; flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; font: 500 .75rem/1 var(--f-px); color: var(--gh-bar-ink-2); }
+:root[data-design="glasshouse"] .card-head:has(> .btn--quiet, > a, > .label-rule__end) > .card-head__meta { display: none; }
+:root[data-design="glasshouse"] .card > .card-head::after {      /* three glossy beads (decorative) */
+  content: ""; order: 3; flex: none; width: 41px; height: 11px; min-width: 0; margin: 0; background: var(--gh-beads) center / 41px 11px no-repeat;
+}
+:root[data-design="glasshouse"] .card > .card-head > :is(.btn--quiet, a, .label-rule__end) {
+  order: 2; min-height: 22px; padding: 0 6px; font: 600 .75rem/1 var(--f-px); letter-spacing: .02em; color: var(--gh-bar-ink);
+}
+:root[data-design="glasshouse"] .card > .card-head > :is(.btn--quiet, a) { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+:root[data-design="glasshouse"] .card > .card-head > .btn--quiet::before { inset: -6px -2px; }
+:root[data-design="glasshouse"] .card > .card-head > .label-rule__end { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; }
+:root[data-design="glasshouse"] .card > .card-head .label-rule__end * { font-family: var(--f-px); color: var(--gh-bar-ink); }
+:root[data-design="glasshouse"] .card > .card-head .label-rule__end .btn--quiet { min-height: 22px; font: 600 .75rem/1 var(--f-px); }
+
+/* inner section labels (not window heads): mono label + hatched rule (img 05) */
+:root[data-design="glasshouse"] .label-rule:not(.card-head) > :is(h2, h3),
+:root[data-design="glasshouse"] .label-rule:not(.card-head) .label-rule__text { font: 600 .875rem/1.2 var(--f-px); letter-spacing: .02em; }
+:root[data-design="glasshouse"] .label-rule:not(.card-head)::after {
+  height: 7px; background: repeating-linear-gradient(-55deg, var(--rule, var(--edge)) 0 1.2px, transparent 1.2px 5px); opacity: .7;
+}
+:root[data-design="glasshouse"] .label-rule--sm > :is(h2, h3) { font: 500 .8125rem/1.2 var(--f-px); color: var(--fg-2); }
+
+/* img 03 header strips: "Tracks: 8  Duration: 00:36:12" bands inside windows (album discs, playlist table head,
+   the queue's now / next / then labels, the home media window) */
+:root[data-design="glasshouse"] :is(.lib-disc, .lib-page > .label-rule--sm, .lib-thead, .gh-aimp__strip) {
+  min-height: 26px; padding: 3px 10px; border-radius: 5px; align-items: center; border: 0;
+  background: linear-gradient(180deg, color-mix(in srgb, #fff 70%, transparent), color-mix(in srgb, var(--gh-lit-2) 30%, transparent));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 40%, transparent);
+  font: 500 .8125rem/1.2 var(--f-px); color: var(--fg-2);
+}
+:root[data-design="glasshouse"] :is(.lib-disc, .lib-page > .label-rule--sm)::after { display: none; }
+:root[data-design="glasshouse"] .lib-disc { margin-top: var(--sp-4); }
+:root[data-design="glasshouse"] .lib-disc > h2 { flex: 1; color: var(--fg); }
+:root[data-design="glasshouse"] .lib-disc .label-rule__end { font: 500 .8125rem/1 var(--f-px); color: var(--fg-2); }
+
+/* =====================================================================
+   Controls: glass keys, rose gloss, chips, badges, segments, inputs, tray
+   ===================================================================== */
+:root[data-design="glasshouse"] .btn {
+  min-height: 36px; border-radius: 9px; border: 1px solid var(--gh-key-edge); color: var(--gh-key-ink); background: var(--gh-keyg);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 55%, transparent); font-weight: 800; font-size: .875rem;
+}
+:root[data-design="glasshouse"] :is(.btn, .btn-icon:not(.btn-icon--bare)):hover { background: linear-gradient(180deg, var(--gh-key-1) 0%, var(--gh-key-1) 50%, var(--gh-key-2) 51%, var(--gh-key-1) 100%); }
+:root[data-design="glasshouse"] .btn:active { background: var(--gh-key-3); box-shadow: inset 0 2px 3px var(--gh-cast); }
+:root[data-design="glasshouse"] .btn--quiet,
+:root[data-design="glasshouse"] .btn--quiet:is(:hover, :active) { background: transparent; border-color: transparent; box-shadow: none; color: var(--link); }
+/* primary + danger: the rose gloss (img 03 transport) */
+:root[data-design="glasshouse"] :is(.btn--primary, .btn--danger) {
+  isolation: isolate; margin-bottom: 0; color: #fff; border-color: var(--gh-rose-edge);
+  background: linear-gradient(180deg, var(--gh-rose-hi) 0%, var(--gh-rose) 30%, var(--gh-rose-lo) 74%, var(--gh-rose-glow) 100%);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 45%, transparent), 0 6px 14px -8px var(--gh-rose-lo);
+  text-shadow: 0 1px 0 var(--gh-rose-edge);
+}
+:root[data-design="glasshouse"] :is(.btn--primary, .btn--danger):hover { background: linear-gradient(180deg, var(--gh-rose-hi) 0%, var(--gh-rose) 36%, var(--gh-rose) 74%, var(--gh-rose-glow) 100%); }
+:root[data-design="glasshouse"] .btn--primary:active { transform: translateY(1px); box-shadow: inset 0 2px 4px var(--gh-rose-edge); }
+:root[data-design="glasshouse"] :is(.btn--primary, .btn--danger, .btn-gloss) .ic { filter: drop-shadow(0 1px 0 var(--gh-rose-edge)); }
+:root[data-design="glasshouse"] .btn:is(:disabled, [aria-disabled="true"]) { background: transparent; box-shadow: none; color: var(--fg-2); text-shadow: none; border-style: dashed; }
+:root[data-design="glasshouse"] .btn-save[data-state="saved"] { background: var(--peri); color: var(--ink); border-color: var(--gh-lit-edge); text-shadow: none; }
+:root[data-design="glasshouse"] .btn-save[data-state="library"] { background: transparent; box-shadow: none; text-shadow: none; color: var(--fg-2); }
+
+/* icon buttons: glass keys */
+:root[data-design="glasshouse"] .btn-icon { border: 1px solid transparent; border-radius: 10px; }
+:root[data-design="glasshouse"] .btn-icon:not(.btn-icon--bare) { border-color: var(--gh-key-edge); background: var(--gh-keyg);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 50%, transparent); color: var(--gh-key-ink); }
+:root[data-design="glasshouse"] .btn-icon--bare:hover { background: var(--bg-2); }
+:root[data-design="glasshouse"] .btn-icon__badge { background: var(--gh-rose); color: #fff; border: 1px solid var(--gh-rose-edge); font-family: var(--f-px); font-weight: 600; }
+
+/* gloss orb: rose (main play, like key, Classic). Highlight band stays in the top 34%. */
+:root[data-design="glasshouse"] .btn-gloss {
+  color: #fff; border: 1px solid var(--gh-rose-edge); background: var(--gh-orb);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gh-rose-glow) 22%, transparent), 0 8px 18px -8px var(--gh-rose-lo), inset 0 -2px 6px color-mix(in srgb, #fff 18%, transparent);
+}
+:root[data-design="glasshouse"] .btn-gloss::before { left: 18%; right: 18%; top: 5%; height: 34%; background: linear-gradient(180deg, rgba(255, 255, 255, .78), rgba(255, 255, 255, .06)); }
+:root[data-design="glasshouse"] .btn-gloss::after { left: 22%; right: 22%; bottom: 4%; height: 22%; background: radial-gradient(ellipse at 50% 100%, rgba(255, 228, 236, .55), transparent 72%); }
+:root[data-design="glasshouse"] .btn-gloss:active { transform: translateY(1px); box-shadow: 0 0 0 3px color-mix(in srgb, var(--gh-rose-glow) 22%, transparent); }
+:root[data-design="glasshouse"] .btn-gloss.is-liked { color: #fff; }
+:root[data-design="glasshouse"] .btn-gloss__spin { border-color: var(--gh-rose-glow); }
+
+/* chips, pills, badges */
+:root[data-design="glasshouse"] .chip {
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent); background: linear-gradient(180deg, var(--lilac), var(--lavender));
+  box-shadow: inset 0 1px 0 #fff; font-weight: 700;
+}
+:root[data-design="glasshouse"] .chip-reason { border-radius: 8px; border-color: color-mix(in srgb, var(--rsn-fg) 35%, transparent); }
+:root[data-design="glasshouse"] .pill-filter { border-width: 1px; }
+:root[data-design="glasshouse"] :is(.chip[aria-pressed="true"], .chip.is-on, .badge-saved, .pill-filter[aria-pressed="true"], .nav-pill[aria-current="page"],
+  .lib-segs a.pill-filter[aria-current="page"], .sys-nav__item[aria-current="page"]) {
+  background: var(--gh-lit); border-color: var(--gh-lit-edge); color: var(--ink); box-shadow: inset 0 1px 0 #fff;
+}
+:root[data-design="glasshouse"] .badge { border-width: 1px; font-family: var(--f-px); font-weight: 600; letter-spacing: 0; }
+:root[data-design="glasshouse"] .badge-new { background: linear-gradient(180deg, var(--pink-light), var(--pink)); border: 1px solid var(--pink-ink); border-radius: 4px; padding: 2px 5px; font: 600 .75rem/1 var(--f-px); }
+:root[data-design="glasshouse"] .badge-count { background: var(--gh-rose); color: #fff; font-family: var(--f-px); }
+:root[data-design="glasshouse"] .q-chip { border-width: 1px; border-radius: 4px; height: 22px; font-weight: 600; font-size: .75rem; }
+:root[data-design="glasshouse"] .q-chip--solid.q-chip--ll { background: linear-gradient(180deg, #4a5596, var(--indigo)); }
+
+/* segments (ctx tabs, stats period, library sections): a glass groove with a lit glass key */
+:root[data-design="glasshouse"] :is(.seg, .lib-segs ul) { border: 1px solid var(--edge); border-radius: 10px; background: var(--bg-2); box-shadow: inset 0 1px 3px var(--gh-cast); }
+:root[data-design="glasshouse"] .seg__ind { border-radius: 7px; background: var(--gh-lit); box-shadow: inset 0 0 0 1px var(--gh-lit-edge), inset 0 2px 0 #fff; }
+:root[data-design="glasshouse"] .seg__btn { border-radius: 7px; }
+:root[data-design="glasshouse"] .lib-segs ul { width: max-content; max-width: 100%; gap: 2px; padding: 3px; background: color-mix(in srgb, var(--panel) 88%, transparent); }
+:root[data-design="glasshouse"] .lib-segs a.pill-filter { min-height: 34px; padding: 0 14px; border-radius: 7px; border-color: transparent; background: transparent; color: var(--fg-panel); font-weight: 700; }
+:root[data-design="glasshouse"] .lib-segs a.pill-filter:not([aria-current="page"]):hover { background: color-mix(in srgb, var(--gh-lit-2) 30%, transparent); }
+
+/* switch: a glass groove with a lit pearl */
+:root[data-design="glasshouse"] .switch { border-width: 1px; box-shadow: inset 0 1px 3px var(--gh-cast); }
+:root[data-design="glasshouse"] .switch[aria-checked="true"] { background: linear-gradient(180deg, var(--gh-rose-glow), var(--gh-rose)); border-color: var(--gh-rose-edge); }
+
+/* inputs: inset glass wells */
+:root[data-design="glasshouse"] .input { border-width: 1px; border-radius: var(--r-input); box-shadow: inset 0 1px 3px var(--gh-cast); }
+:root[data-design="glasshouse"] .kbd { font-weight: 600; border-width: 1px; box-shadow: 0 1px 0 var(--edge); border-radius: 4px; font-size: .75rem; height: 22px; min-width: 22px; }
+
+/* status tray: stat tiles in a glass groove; status lights are 8px dots with a ring (both themes) */
+:root[data-design="glasshouse"] .tray { border-width: 1px; border-radius: 10px; box-shadow: inset 0 1px 3px var(--gh-cast); }
+:root[data-design="glasshouse"] .tray__pill {
+  height: 28px; border-radius: 7px; font: 500 .75rem/1 var(--f-px); letter-spacing: 0; color: var(--ink);
+  background: linear-gradient(180deg, #f6f8fd 0%, #dde5f3 50%, #c9d6ec 51%, #d6e1f2 100%); box-shadow: inset 0 1px 0 #fff;
+}
+:root[data-design="glasshouse"] .tray:hover .tray__pill { background: linear-gradient(180deg, #fff 0%, #e8eef8 50%, #d6e1f2 51%, #e3ebf7 100%); }
+:root[data-design="glasshouse"] .tray .sg { width: 9px; height: 9px; border-radius: 50%; background: var(--gh-ok); box-shadow: 0 0 0 2px var(--gh-ring); }
+:root[data-design="glasshouse"] .tray .sg use { display: none; }
+:root[data-design="glasshouse"] .tray .sg--warn { background: var(--gh-warn); border-radius: 2px; transform: rotate(45deg) scale(.9); }
+:root[data-design="glasshouse"] .tray .sg--down { background: var(--gh-down); border-radius: 1px; }
+:root[data-design="glasshouse"] .tray__pill .sg { --gh-ring: #f8f8fc; --gh-ok: #2f8f5f; --gh-warn: #b07a12; --gh-down: #c0405f; }
+/* compact tray (tablet): "● ● ◆ last.fm queued · 3.1G" (the shared .tray__word, no count). Phone: no cache size. */
+:root[data-design="glasshouse"] .tray--compact .tray__pill { gap: 6px; }
+:root[data-design="glasshouse"] .tray--compact .sg { order: -2; }
+:root[data-design="glasshouse"] .tray--compact .tray__word { display: inline; order: -1; margin-left: 2px; font: 600 .75rem/1 var(--f-px); }
+:root[data-design="glasshouse"] .tray--compact .tray__word::after { content: " \00b7"; }
+:root[data-design="glasshouse"] .tray--compact .tray__gb { display: inline; }
+
+/* =====================================================================
+   Rows: the dense AIMP list (img 03). Wide lists: "1. Title - Artist" over the mono file line
+   ("FLAC :: 44.1 kHz, 1123 kbps, 32.8 MB"), the source state in a narrow column, the row centred;
+   the playing row is blush with a rose bar.
+   ===================================================================== */
+:root[data-design="glasshouse"] .trow { border-radius: 6px; }
+:root[data-design="glasshouse"] .tlist > .trow:nth-child(even) { background: color-mix(in srgb, var(--bg-2) 40%, transparent); }
+:root[data-design="glasshouse"] .trow:is(:hover, :focus-within) { background: color-mix(in srgb, var(--gh-lit-2) 38%, var(--bg)); }
+:root[data-design="glasshouse"] .tlist > .trow.is-playing,
+:root[data-design="glasshouse"] .trow.is-playing { background: linear-gradient(90deg, var(--gh-blush-1), var(--gh-blush-2)); box-shadow: inset 3px 0 0 var(--gh-rose);
+  --fg: var(--ink); --fg-2: var(--gh-blush-ink); --link: var(--gh-rose-lo); }
+:root[data-design="glasshouse"] .trow.is-playing .trow__title { color: var(--gh-rose-lo); }
+:root[data-design="glasshouse"] .trow .eq { color: var(--gh-rose); }
+:root[data-design="glasshouse"] :is(.trow__dur, .trow__num) { font: 500 .8125rem/1 var(--f-px); }
+:root[data-design="glasshouse"] :is(.trow__added, .trow__album) { font: 400 .8125rem/1.2 var(--f-px); }
+:root[data-design="glasshouse"] .trow__sources { font: 500 .75rem/1.2 var(--f-px); }
+:root[data-design="glasshouse"] .trow__art .cover { width: var(--art); }
+:root[data-design="glasshouse"] .trow__fmt { font: 500 .75rem/1.25 var(--f-px); letter-spacing: 0; color: var(--fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:root[data-design="glasshouse"] .trow__fmt::before { content: "::\00a0"; }
+@container tlist (min-width: 521px) {
+  :root[data-design="glasshouse"] :is(.tlist:not(.tlist--dense), .disc-search .tlist, .lib-pl-list) > .trow { --art: 34px; min-height: 50px; padding: 5px 8px; align-items: center; }
+  :root[data-design="glasshouse"] :is(.tlist:not(.tlist--dense), .disc-search .tlist) > .trow {
+    grid-template-columns: 26px var(--art) minmax(0, 1fr) auto 40px 52px 40px;
+    grid-template-areas: "num art main badges like dur more";
+  }
+  :root[data-design="glasshouse"] :is(.tlist:not(.tlist--dense), .disc-search .tlist) .trow__num { font-weight: 600; }
+  :root[data-design="glasshouse"] :is(.tlist:not(.tlist--dense), .disc-search .tlist, .lib-pl-list) .trow__n::after { content: "."; }
+  /* main: line 1 "title - artist" (never wraps; the artist ellipsises), line 2 the file line, "better than saved" under it */
+  :root[data-design="glasshouse"] :is(.tlist:not(.tlist--dense), .disc-search .tlist, .lib-pl-list) .trow__main { display: grid; grid-template-columns: fit-content(78%) minmax(0, 1fr); align-items: baseline; gap: 2px 8px; }
+  :root[data-design="glasshouse"] :is(.tlist:not(.tlist--dense), .disc-search .tlist, .lib-pl-list) .trow__title { grid-column: 1; min-width: 0; font: 700 .9375rem/1.25 var(--f-ui); }
+  :root[data-design="glasshouse"] :is(.tlist:not(.tlist--dense), .disc-search .tlist, .lib-pl-list) .trow__artist { display: contents; }
+  :root[data-design="glasshouse"] :is(.tlist:not(.tlist--dense), .disc-search .tlist, .lib-pl-list) .trow__artist > a { grid-column: 2; grid-row: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 .875rem/1.25 var(--f-ui); color: var(--fg-2); }
+  :root[data-design="glasshouse"] :is(.tlist:not(.tlist--dense), .disc-search .tlist, .lib-pl-list) .trow__artist > a::before { content: "-\00a0"; }
+  :root[data-design="glasshouse"] :is(.tlist:not(.tlist--dense), .disc-search .tlist, .lib-pl-list) .trow__mini { display: none; }
+  :root[data-design="glasshouse"] :is(.tlist:not(.tlist--dense), .disc-search .tlist, .lib-pl-list) .trow__fmt { display: block; grid-column: 1 / -1; grid-row: 2; min-width: 0; }
+  :root[data-design="glasshouse"] .disc-search .dup-better { display: flex; align-items: center; gap: 4px; grid-column: 1 / -1; grid-row: 3; font: 600 .75rem/1.25 var(--f-px); color: var(--gh-rose-lo); }
+  /* the source column: mono "Saved" / "Soulseek" and the sources link (the format chip is the file line now) */
+  :root[data-design="glasshouse"] :is(.tlist:not(.tlist--dense), .disc-search .tlist) .trow__badges { flex-direction: column; align-items: flex-start; justify-content: center; gap: 4px; min-width: 74px; }
+  :root[data-design="glasshouse"] :is(.tlist:not(.tlist--dense), .disc-search .tlist, .lib-pl-list) .trow__badges .q-chip { display: none; }
+  :root[data-design="glasshouse"] :is(.tlist:not(.tlist--dense), .disc-search .tlist) .trow__badges .badge {
+    height: auto; min-height: 0; padding: 0; border: 0; background: none; box-shadow: none; gap: 4px;
+    font: 500 .75rem/1.2 var(--f-px); color: var(--fg-2); white-space: nowrap;
+  }
+  :root[data-design="glasshouse"] :is(.tlist:not(.tlist--dense), .disc-search .tlist) .trow__badges .ic { width: 12px; height: 12px; }
+  :root[data-design="glasshouse"] :is(.tlist:not(.tlist--dense), .disc-search .tlist) .trow__sources::before { inset: -14px -4px; }
+}
+@container tlist (min-width: 760px) {
+  :root[data-design="glasshouse"] :is(.tlist:not(.tlist--dense), .disc-search .tlist) > .trow {
+    grid-template-columns: 26px var(--art) minmax(0, 1.5fr) minmax(0, .7fr) auto 40px 52px 40px;
+    grid-template-areas: "num art main album badges like dur more";
+  }
+  :root[data-design="glasshouse"] .tlist--dated:not(.tlist--dense) > .trow {
+    grid-template-columns: 26px var(--art) minmax(0, 1.5fr) minmax(0, .7fr) 104px auto 40px 52px 40px;
+    grid-template-areas: "num art main album added badges like dur more";
+  }
+  /* album and artist pages: the album column would repeat one name on every row; the file line gets the room */
+  :root[data-design="glasshouse"] .app:is([data-screen="album"], [data-screen="artist"]) .tlist:not(.tlist--dense) > .trow {
+    grid-template-columns: 26px var(--art) minmax(0, 1fr) auto 40px 52px 40px;
+    grid-template-areas: "num art main badges like dur more";
+  }
+  :root[data-design="glasshouse"] .app:is([data-screen="album"], [data-screen="artist"]) .tlist:not(.tlist--dense) .trow__album { display: none; }
+}
+
+/* tiles: titles may take two lines; play orbs shown on hover / focus (always on touch) */
+:root[data-design="glasshouse"] .tile__title { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.2; }
+:root[data-design="glasshouse"] .tile__meta { font: 500 .75rem/1.2 var(--f-px); }
+:root[data-design="glasshouse"] .tile__play { width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--gh-rose-edge); color: #fff; background: var(--gh-orb);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5), 0 6px 12px -6px var(--gh-rose-lo); }
+:root[data-design="glasshouse"] .tile__play .ic { width: 16px; height: 16px; }
+:root[data-design="glasshouse"] .tile__play:hover { background: radial-gradient(120% 90% at 50% 100%, var(--gh-rose-hi) 0%, var(--gh-rose) 56%, var(--gh-rose-lo) 84%); }
+@media (hover: hover) {
+  :root[data-design="glasshouse"] .tile .tile__play { opacity: 0; transform: translateY(4px); transition: opacity var(--dur-1), transform var(--dur-1); }
+  :root[data-design="glasshouse"] .tile:is(:hover, :focus-within) .tile__play { opacity: 1; transform: none; }
+}
+
+/* covers: eight glasshouse recipes, all CSS (frame line + inner reflection). The base sparkle stays on two of them. */
+:root[data-design="glasshouse"] .cover { border: 1px solid color-mix(in srgb, var(--gh-frame) 80%, transparent); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .55); }
+:root[data-design="glasshouse"] .cover::before { z-index: 0; }
+:root[data-design="glasshouse"] .cover::after { background: #fbfbff; filter: drop-shadow(0 0 4px rgba(255, 255, 255, .8)); }
+:root[data-design="glasshouse"] .cover:not(.c4, .c7)::after { display: none; }
+/* c1 chrome orb resting in fog */
+:root[data-design="glasshouse"] .c1 { --cv: radial-gradient(90% 40% at 50% 100%, rgba(255, 255, 255, .55), transparent 70%), linear-gradient(165deg, #c9d5e8 0%, #7e8fb0 70%, #56627f 100%); }
+:root[data-design="glasshouse"] .c1::before { width: 56%; left: 22%; bottom: 14%; border-radius: 50%;
+  background: radial-gradient(circle at 34% 28%, #fff 0 8%, #e9edf6 14%, #a4afc6 42%, #4b5674 74%, #cfd6e6 96%);
+  box-shadow: 0 6px 12px -6px rgba(20, 24, 40, .6); }
+/* c2 frosted window: a blush lamp behind wet glass, condensation dots and a window cross */
+:root[data-design="glasshouse"] .c2 { --cv:
+  radial-gradient(circle, rgba(255, 255, 255, .7) 0 1px, transparent 1.6px) 0 0 / 9% 11%,
+  radial-gradient(circle, rgba(255, 255, 255, .45) 0 1.4px, transparent 2px) 4% 6% / 13% 15%,
+  radial-gradient(44% 38% at 64% 40%, #f3cfdb 0%, rgba(243, 207, 219, 0) 100%),
+  linear-gradient(180deg, #8d9ab6 0%, #c9d0de 52%, #76839f 100%); }
+:root[data-design="glasshouse"] .c2::before { inset: 0; background:
+  linear-gradient(90deg, transparent calc(50% - 1.5%), rgba(84, 94, 124, .5) 0 calc(50% + 1.5%), transparent 0),
+  linear-gradient(180deg, transparent calc(46% - 1.5%), rgba(84, 94, 124, .5) 0 calc(46% + 1.5%), transparent 0); }
+/* c3 CD rainbow ring */
+:root[data-design="glasshouse"] .c3 { --cv: radial-gradient(120% 100% at 20% 0%, #eef0f8 0%, #c9cfe2 45%, #7f8db0 110%); }
+:root[data-design="glasshouse"] .c3::before {
+  width: 66%; aspect-ratio: 1; inset: 17% auto auto 17%; border: 0; border-radius: 50%;
+  background: radial-gradient(circle, #e8eaf2 0 11%, #9aa3bd 11.5% 13%, transparent 13.5%),
+    conic-gradient(from 20deg, #f3d9e3, #cfe0f3, #e4e2ee, #f6e6c9, #d5f0ea, #d6cdf0, #f3d9e3);
+  box-shadow: inset 0 0 0 1px rgba(60, 64, 98, .35), 0 3px 8px -3px rgba(20, 22, 40, .5);
+}
+/* c4 moon through rain (keeps the sparkle) */
+:root[data-design="glasshouse"] .c4 { --cv: repeating-linear-gradient(104deg, transparent 0 9px, rgba(200, 212, 240, .16) 9px 10px),
+  radial-gradient(70% 50% at 70% 10%, #565b86 0%, transparent 70%), linear-gradient(180deg, #252a3d 0%, #161925 100%); }
+:root[data-design="glasshouse"] .c4::before { inset: auto auto 20% 18%; width: 34%; aspect-ratio: 1; border-radius: 50%;
+  background: radial-gradient(circle at 40% 38%, #fbf6f8 0 30%, #d9d4e6 62%, #9c98b8 100%); box-shadow: 0 0 18px 4px rgba(220, 214, 240, .35); }
+/* c5 misty skyline with one lit window */
+:root[data-design="glasshouse"] .c5 { --cv: radial-gradient(70% 40% at 50% 62%, rgba(255, 255, 255, .5), transparent 70%), linear-gradient(180deg, #8d98b3 0%, #c9cfdf 60%, #e3e6ef 100%); }
+:root[data-design="glasshouse"] .c5::before { inset: 34% 0 0; -webkit-mask: none; mask: none; image-rendering: auto; background:
+  linear-gradient(#e7aebe, #e7aebe) 60% 44% / 5% 6% no-repeat,
+  linear-gradient(#4b5674, #4b5674) 6% 100% / 14% 52% no-repeat, linear-gradient(#56627f, #56627f) 24% 100% / 12% 72% no-repeat,
+  linear-gradient(#3f4864, #3f4864) 52% 100% / 18% 90% no-repeat, linear-gradient(#5d6a88, #5d6a88) 76% 100% / 12% 60% no-repeat,
+  linear-gradient(#4b5674, #4b5674) 94% 100% / 10% 44% no-repeat;
+  -webkit-mask-image: linear-gradient(180deg, rgba(0, 0, 0, .55), #000 70%); mask-image: linear-gradient(180deg, rgba(0, 0, 0, .55), #000 70%); }
+/* c6 venetian-blind light across a steel wall */
+:root[data-design="glasshouse"] .c6 { --cv: linear-gradient(200deg, #c6cbe0 0%, #7e8fb0 55%, #3d4a6a 100%); }
+:root[data-design="glasshouse"] .c6::before { inset: -20% -10%; height: auto; transform: rotate(-24deg);
+  background: repeating-linear-gradient(180deg, rgba(255, 244, 236, .5) 0 7%, transparent 7% 13%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 10%, #000 40%, #000 70%, transparent 95%); mask-image: linear-gradient(90deg, transparent 10%, #000 40%, #000 70%, transparent 95%); }
+/* c7 aero bubbles (keeps the sparkle) */
+:root[data-design="glasshouse"] .c7 { --cv: linear-gradient(170deg, #e2ecf8 0%, #9fb6d8 100%); }
+:root[data-design="glasshouse"] .c7::before { inset: 0; height: auto; border-radius: 0; background:
+  radial-gradient(circle at 32% 66%, rgba(255, 255, 255, .95) 0 3%, rgba(255, 255, 255, .25) 4% 17%, rgba(120, 150, 200, .5) 18%, transparent 19.5%),
+  radial-gradient(circle at 62% 44%, rgba(255, 255, 255, .95) 0 2%, rgba(255, 255, 255, .2) 3% 11%, rgba(120, 150, 200, .5) 12%, transparent 13.5%),
+  radial-gradient(circle at 70% 78%, rgba(255, 255, 255, .9) 0 1.5%, rgba(255, 255, 255, .2) 2% 7%, rgba(120, 150, 200, .5) 7.5%, transparent 9%),
+  radial-gradient(circle at 24% 30%, rgba(255, 255, 255, .9) 0 1%, rgba(255, 255, 255, .2) 1.5% 5%, rgba(120, 150, 200, .5) 5.5%, transparent 7%); }
+:root[data-design="glasshouse"] .c7::after { width: 18%; right: 12%; top: 10%; }
+/* c8 tape reel window over a rose dusk */
+:root[data-design="glasshouse"] .c8 { --cv: linear-gradient(180deg, #1c2030 0%, #3c4360 46%, #8e5b72 76%, #d9a7b6 100%); }
+:root[data-design="glasshouse"] .c8::before { inset: 30% 12% 30%; height: auto; border-radius: 8% / 18%; border: 1px solid rgba(255, 255, 255, .5); background:
+  radial-gradient(circle at 27% 50%, #e8eaf2 0 6%, #2a2f40 6.5% 10%, #c9cfe2 10.5% 21%, transparent 21.5%),
+  radial-gradient(circle at 73% 50%, #e8eaf2 0 6%, #2a2f40 6.5% 10%, #c9cfe2 10.5% 15%, transparent 15.5%),
+  rgba(18, 20, 31, .55); }
+
+/* =====================================================================
+   Seek, waveform, ranges
+   ===================================================================== */
+:root[data-design="glasshouse"] .seek__track { height: 6px; margin-top: -3px; border-radius: 3px; box-shadow: inset 0 0 0 1px var(--seek-line), inset 0 1px 2px var(--gh-cast); }
+:root[data-design="glasshouse"] .seek__knob { background: radial-gradient(circle at 50% 30%, #fff 0 25%, var(--seek-played) 60%); border: 1px solid var(--gh-rose-edge); box-shadow: 0 1px 3px var(--gh-cast); }
+:root[data-design="glasshouse"] .seek-row__time { font: 500 .8125rem/1 var(--f-px); }
+:root[data-design="glasshouse"] .wave-times { font: 500 .75rem/1 var(--f-px); }
+:root[data-design="glasshouse"] .range::-webkit-slider-thumb { background: radial-gradient(circle at 50% 30%, #fff 0 25%, var(--accent-ui) 60%); }
+
+/* =====================================================================
+   Shell: brand, header strip, desktop icons (dock), status gadget, queue gadget, player bar, tablet
+   ===================================================================== */
+/* brand: "lull" in chrome serif with a 1px steel outline, a blinking typewriter caret and an aero bead */
+:root[data-design="glasshouse"] :is(.header__brand, .rail__head) .gh-brand { width: auto; height: auto; padding: 0; font-size: 2.125rem; }
+:root[data-design="glasshouse"] .gh-brand { display: inline-flex; align-items: baseline; gap: 1px; font: italic 400 2.125rem/1 var(--f-serif); letter-spacing: 0; }
+:root[data-design="glasshouse"] .gh-brand .brand__name {
+  padding: 0 .06em .08em 0; color: #b9bdd0;
+  background: linear-gradient(180deg, #ffffff 0 45%, #b9bdd0 50%, #eef0f7 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  -webkit-text-stroke: .6px #7d8299; filter: drop-shadow(0 1px 0 rgba(10, 12, 22, .5));
+}
+:root[data-design="glasshouse"][data-theme="day"] .gh-brand .brand__name { color: #3d4058;
+  background-image: linear-gradient(180deg, #5d6280 0 45%, #262a3e 50%, #4d5372 100%); -webkit-text-stroke: .6px #191b28; filter: drop-shadow(0 1px 0 #fff); }
+:root[data-design="glasshouse"] .gh-brand__caret { width: .34em; height: .08em; margin-left: .04em; background: var(--fg-panel-2); animation: gh-blink 1s steps(1) infinite; }
+:root[data-design="glasshouse"] .gh-brand__bead { align-self: flex-start; width: 11px; height: 11px; margin: .05em 0 0 4px; border-radius: 50%; border: 1px solid var(--gh-rose-edge);
+  background: radial-gradient(circle at 40% 30%, #fff 0 18%, var(--gh-rose-glow) 48%, var(--gh-rose) 86%); box-shadow: 0 0 6px var(--gh-rose-glow); }
+@keyframes gh-blink { 50% { opacity: 0; } }
+:root.is-hidden[data-design="glasshouse"] .gh-brand__caret { animation-play-state: paused; }
+
+@media (min-width: 640px) {
+  :root[data-design="glasshouse"][data-shell="dock"] .header { min-height: 54px; border-radius: 14px; padding: 5px 8px 5px 18px; margin-bottom: 14px; }
+  :root[data-design="glasshouse"][data-shell="dock"] .header__search { max-width: 520px; }
+  :root[data-design="glasshouse"][data-shell="dock"] .header__search .input { height: 40px; background: var(--panel-2); }
+  :root[data-design="glasshouse"][data-shell="dock"] .header .btn-icon { width: 40px; height: 40px; }
+  :root[data-design="glasshouse"] .header .search-field__clear { width: 32px; height: 32px; background: transparent; border-color: transparent; box-shadow: none; }
+}
+
+/* queue gadget (img 03's right half): smoky glass with a title bar, AIMP strips for now / next / then, blush current row */
+:root[data-design="glasshouse"] .ctx { border-radius: var(--r-panel); overflow: hidden; margin-bottom: 14px; }
+:root[data-design="glasshouse"] .app[data-ctx="docked"] .ctx { position: relative; }     /* the overlay panel is already fixed */
+:root[data-design="glasshouse"] .ctx > .region-title {
+  display: flex; align-items: center; height: var(--gh-barh); flex: none; padding: 0 10px 0 12px;
+  font: 600 .8125rem/1 var(--f-px); letter-spacing: .03em;
+}
+:root[data-design="glasshouse"] .ctx > .region-meta { position: absolute; z-index: 1; top: 0; right: 62px; max-width: 46%; height: var(--gh-barh); display: flex; align-items: center;
+  overflow: hidden; white-space: nowrap; font: 500 .75rem/1 var(--f-px); color: var(--gh-bar-ink); text-shadow: 0 1px 0 var(--gh-bar-shadow); }
+:root[data-design="glasshouse"] .ctx > .region-title::after { content: ""; flex: 1; height: 11px; background: var(--gh-beads) right center / 41px 11px no-repeat; }
+:root[data-design="glasshouse"] .ctx__head { padding: 10px 10px 6px; }
+:root[data-design="glasshouse"] .ctx .label-rule--sm {
+  margin: 8px 0 4px; padding: 0 8px; min-height: 22px; border-radius: 4px; align-items: center;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--gh-lit-1) 22%, transparent), color-mix(in srgb, var(--gh-lit-2) 12%, transparent));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gh-lit-1) 22%, transparent);
+}
+:root[data-design="glasshouse"] .ctx .label-rule--sm::after { display: none; }
+:root[data-design="glasshouse"] .ctx .label-rule--sm > :is(h2, h3) { flex: 1; color: var(--fg-panel); }
+:root[data-design="glasshouse"] .ctx .label-rule--sm .label-rule__end { font: 500 .75rem/1 var(--f-px); color: var(--fg-panel-2); }
+:root[data-design="glasshouse"] .ctx .trow { --art: 36px; min-height: 46px; }
+
+/* player bar: a glass transport window with an LCD strip for the format and a "now playing" title tab */
+:root[data-design="glasshouse"] .pbar { border-radius: var(--r-panel); margin-bottom: 16px; }
+:root[data-design="glasshouse"] .pbar__title { font-weight: 800; }
+:root[data-design="glasshouse"] .pbar__artist { font: 500 .8125rem/1.3 var(--f-px); letter-spacing: .01em; }
+:root[data-design="glasshouse"] .pbar__artist::before { content: ":: "; }
+/* LCD language, shared by the bar's format strip, the tickers, the home deck and the device hint */
+:root[data-design="glasshouse"] :is(.pbar__badges, .gh-ticker, .pbar__state) {
+  background: var(--gh-lcd); border: 1px solid var(--gh-lcd-edge); color: #c6d6f2;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, .55), inset 0 0 0 1px rgba(160, 190, 240, .08), 0 1px 0 color-mix(in srgb, var(--gh-rim) 50%, transparent);
+}
+:root[data-design="glasshouse"] .pbar__badges { width: max-content; max-width: 100%; gap: 0; padding: 2px 10px; margin-top: 4px; min-height: 22px; border-radius: 5px; }
+:root[data-design="glasshouse"] .pbar__badges > *,
+:root[data-design="glasshouse"] .pbar__badges .badge { height: auto; min-height: 0; padding: 0; border: 0; background: none; box-shadow: none; gap: 4px;
+  font: 500 .75rem/1.2 var(--f-px); letter-spacing: .02em; color: #c6d6f2; white-space: nowrap; }
+:root[data-design="glasshouse"] .pbar__badges > * + * { margin-left: 10px; }
+:root[data-design="glasshouse"] .pbar__badges .q-chip { background: none; border: 0; padding: 0 2px 0 0; }
+:root[data-design="glasshouse"] .pbar__badges .q-chip,
+:root[data-design="glasshouse"] .pbar__badges .q-chip::before { color: #f3c1cf; }
+:root[data-design="glasshouse"] .pbar__controls { gap: 8px; }
+:root[data-design="glasshouse"] :is(.pbar__controls, .pbar__tools) .btn-icon { width: 36px; height: 32px; border-radius: 8px; }
+:root[data-design="glasshouse"] .pbar__controls .btn-icon:not(.btn-gloss) {
+  border: 1px solid var(--gh-key-edge); color: var(--gh-key-ink); background: var(--gh-keyg); box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 45%, transparent);
+}
+/* the state line is an LCD tab docked on the bar's top edge; the content area makes room for it, so it never covers a window */
+:root[data-design="glasshouse"] .pbar__state { max-width: min(820px, 76%); border-radius: 8px 8px 0 0; border-bottom: 0; font: 500 .75rem/1.2 var(--f-px); letter-spacing: 0; }
+:root[data-design="glasshouse"] .pbar__state > .ic,
+:root[data-design="glasshouse"] .pbar__state .btn--quiet { color: #f3c1cf; }
+:root[data-design="glasshouse"] .pbar__state .btn--quiet { min-height: 24px; font-family: var(--f-px); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+@media (min-width: 640px) { :root[data-design="glasshouse"] .app:has(.pbar__state:not([hidden])) .main { margin-bottom: 30px; } }
+:root[data-design="glasshouse"] .bezel-thumb { padding: 3px; border-radius: 8px; border: 1px solid var(--gh-frame);
+  background: linear-gradient(180deg, #e9ebf3, #b9bfd1); box-shadow: inset 0 1px 0 #fff; }
+:root[data-design="glasshouse"] .bezel-thumb .cover { border-radius: 5px; }
+@media (min-width: 1100px) {
+  :root[data-design="glasshouse"] .pbar > .region-title {
+    display: flex; align-items: center; position: absolute; left: 18px; top: -19px; height: 19px; padding: 0 10px 0 8px;
+    border: 1px solid var(--gh-frame); border-bottom: 0; border-radius: 7px 7px 0 0; background: var(--gh-bar);
+    font: 600 .6875rem/1 var(--f-px); letter-spacing: .04em; color: var(--gh-bar-ink); text-shadow: 0 1px 0 var(--gh-bar-shadow);
+  }
+  :root[data-design="glasshouse"] .pbar > .region-title::before { content: "::\00a0"; color: var(--gh-bar-ink-2); }
+}
+
+/* desktop (>= 1100): the dock becomes a column of desktop icons on the wallpaper, the status gadget under them */
+@media (min-width: 1100px) {
+  :root[data-design="glasshouse"][data-shell="dock"] .header__brand { flex: 1 1 0; }
+  :root[data-design="glasshouse"][data-shell="dock"] .header__tools { flex: 1 1 0; justify-content: flex-end; }
+  :root[data-design="glasshouse"][data-shell="dock"] .header > .spacer { display: none; }
+  :root[data-design="glasshouse"][data-shell="dock"] .header__search { flex: 0 1 560px; max-width: 560px; }
+  :root[data-design="glasshouse"][data-shell="dock"] .app {
+    grid-template-columns: 104px minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-areas: "head head" "banner banner" "dock main" "bar bar"; column-gap: 10px;
+  }
+  :root[data-design="glasshouse"][data-shell="dock"] .app[data-ctx="docked"] {
+    grid-template-columns: 104px minmax(520px, 1fr) var(--ctx);
+    grid-template-areas: "head head head" "banner banner banner" "dock main ctx" "bar bar bar";
+  }
+  :root[data-design="glasshouse"][data-shell="dock"] .rail {
+    grid-area: dock; justify-self: stretch; align-self: start; flex-direction: column; margin: 0; padding: 4px 0 0;
+    background: transparent; border: 0; box-shadow: none; overflow: visible;
+  }
+  :root[data-design="glasshouse"][data-shell="dock"] .rail__nav { grid-auto-flow: row; gap: 6px; padding: 0; justify-items: center; }
+  :root[data-design="glasshouse"][data-shell="dock"] .nav-item {
+    width: 96px; height: auto; min-height: 0; flex-direction: column; gap: 4px; padding: 4px 2px 3px; border: 0; border-radius: 10px;
+    color: var(--gh-label-fg); background: transparent;
+  }
+  /* desktop-icon caption (img 03): wallpaper-coloured text with a two-layer halo; a chip only for the current page */
+  :root[data-design="glasshouse"][data-shell="dock"] .nav-item__label {
+    display: block; padding: 2px 7px; border-radius: 4px; font: 700 .8125rem/1.15 var(--f-ui); letter-spacing: .01em; color: var(--gh-label-fg);
+    text-shadow: 0 0 3px var(--gh-halo), 0 0 8px var(--gh-halo);
+  }
+  :root[data-design="glasshouse"][data-shell="dock"] .nav-item .ic {
+    width: 46px; height: 46px; padding: 12px; border-radius: 13px; flex: none; color: var(--gh-key-ink); border: 1px solid var(--gh-key-edge);
+    background: radial-gradient(80% 40% at 50% 0%, rgba(255, 255, 255, .55), transparent 70%), var(--gh-keyg);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 50%, transparent), 0 8px 16px -10px var(--gh-cast);
+    stroke-width: 1.6;
+  }
+  :root[data-design="glasshouse"][data-shell="dock"] .nav-item:hover .ic { box-shadow: inset 0 1px 0 #fff, 0 0 16px -2px color-mix(in srgb, #a9c3ea 60%, transparent); }
+  :root[data-design="glasshouse"][data-shell="dock"] .nav-item[aria-current="page"] .ic {
+    color: var(--ink); border-color: var(--gh-lit-edge); background: radial-gradient(80% 40% at 50% 0%, #fff, transparent 70%), var(--gh-lit);
+    box-shadow: inset 0 1px 0 #fff, 0 0 18px -2px color-mix(in srgb, #a9c3ea 70%, transparent);
+  }
+  :root[data-design="glasshouse"][data-shell="dock"] .nav-item[aria-current="page"] .nav-item__label { background: var(--gh-label-cur-bg); color: var(--gh-label-cur-fg); text-shadow: none; }
+  /* with notices open the column gets shorter: tighter icons, and it scrolls rather than slide under the bar */
+  :root[data-design="glasshouse"][data-shell="dock"]:has(.banner) .rail { align-self: stretch; min-height: 0; overflow-y: auto; scrollbar-width: none; }
+  :root[data-design="glasshouse"][data-shell="dock"]:has(.banner) .rail__nav { gap: 2px; }
+  :root[data-design="glasshouse"][data-shell="dock"]:has(.banner) .nav-item .ic { width: 40px; height: 40px; padding: 10px; }
+}
+/* status gadget (img 03's left gadgets): the tray leaves the header and stacks under the desktop icons as a small
+   window of tiles, anchored to the icon column (CSS anchor positioning) so it always sits right under the icons and can
+   never cover them. While a banner shows (the column moves down) and without anchor support, the tray stays in the header. */
+@supports (anchor-name: --a) {
+  @media (min-width: 1100px) and (min-height: 880px) {
+    :root[data-design="glasshouse"][data-shell="dock"] .rail { anchor-name: --gh-dock; }
+    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(.banner)) .tray--full {
+      position: fixed; z-index: 2; position-anchor: --gh-dock; top: calc(anchor(bottom) + 10px); left: anchor(left); width: anchor-size(width);
+      display: grid; gap: 0; padding: 22px 0 2px; border-radius: 10px; border: 1px solid var(--gh-frame); overflow: hidden;
+      background: linear-gradient(128deg, var(--gh-sheen-panel) 0%, transparent 34%), color-mix(in srgb, var(--panel) 92%, transparent);
+      box-shadow: inset 0 1px 0 var(--gh-rim), var(--stack-1l);
+    }
+    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(.banner)) .tray--full:hover { background: color-mix(in srgb, var(--panel-2) 94%, transparent); }
+    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(.banner)) .tray--full::before {
+      content: ":: status"; position: absolute; left: 0; right: 0; top: 0; height: 22px; padding: 0 8px;
+      display: flex; align-items: center; font: 600 .6875rem/1 var(--f-px); letter-spacing: .04em; color: var(--gh-bar-ink);
+      background: var(--gh-bar); border-bottom: 1px solid var(--gh-frame); text-shadow: 0 1px 0 var(--gh-bar-shadow);
+    }
+    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(.banner)) .tray--full .tray__pill {
+      display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 6px; height: auto; padding: 7px 9px 7px;
+      border-radius: 0; background: transparent; box-shadow: none; color: var(--fg-panel); font: 600 .8125rem/1.15 var(--f-px);
+    }
+    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(.banner)) .tray--full .tray__pill + .tray__pill { border-top: 1px solid color-mix(in srgb, var(--fg-panel-2) 22%, transparent); }
+    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(.banner)) .tray--full .tray__pill > .sg { grid-column: 2; grid-row: 1; --gh-ring: inherit; }
+    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(.banner)) .tray--full .sg { --gh-ok: inherit; --gh-warn: inherit; --gh-down: inherit; }
+    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(.banner)) .tray--full .tray__label-long { display: block; grid-column: 1 / -1; grid-row: 2;
+      font: 500 .6875rem/1.2 var(--f-px); color: var(--fg-panel-2); }
+    /* cache tile: the big value on its own line and a meter from --cache-frac */
+    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(.banner)) .tray--full .tray__pill--cache { font-size: 1.0625rem; letter-spacing: -.02em; }
+    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(.banner)) .tray--full .tray__pill--cache .tray__label-long { grid-row: 3; letter-spacing: .02em; }
+    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(.banner)) .tray--full .tray__pill--cache::after {
+      content: ""; grid-column: 1 / -1; grid-row: 2; height: 5px; margin-top: 3px; border-radius: 3px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg-panel-2) 45%, transparent);
+      background: linear-gradient(90deg, var(--gh-lit-3), #a9c3ea) 0 0 / calc(var(--cache-frac, .5) * 100%) 100% no-repeat, color-mix(in srgb, var(--panel-2) 80%, transparent);
+    }
+  }
+}
+
+/* tablet (640-1099): the base floating dock as a glass shelf of keys; compact search field */
+@media (min-width: 640px) and (max-width: 1099px) {
+  :root[data-design="glasshouse"][data-shell="dock"] .rail { border-radius: 14px; padding: 5px 7px; }
+  :root[data-design="glasshouse"][data-shell="dock"] .nav-item { border-radius: 10px; }
+  :root[data-design="glasshouse"][data-shell="dock"] .nav-item[aria-current="page"] { background: var(--gh-lit); color: var(--ink); border-color: var(--gh-lit-edge); }
+  :root[data-design="glasshouse"] .pbar__title { font-size: .9375rem; }
+}
+@media (max-width: 1099px) {
+  :root[data-design="glasshouse"] .header__search .input { font-size: .875rem; padding-right: 40px; }
+  :root[data-design="glasshouse"] .header__search .input::placeholder { font-size: .875rem; }
+  :root[data-design="glasshouse"] .header__search .kbd { display: none; }      /* decorative hint; the field needs the room */
+}
+
+/* =====================================================================
+   Home: greeting band, the AIMP media window (homeLead), new releases | radio starters, picks
+   ===================================================================== */
+:root[data-design="glasshouse"] .disc-hello { margin: 0 0 var(--sp-4); padding-right: 0; }
+:root[data-design="glasshouse"] .disc-hello h1 { margin-bottom: 4px; }
+:root[data-design="glasshouse"] .disc-home > .disc-hello h1 { font-size: 3.75rem; }
+:root[data-design="glasshouse"] .disc-hello__sum { max-width: 58ch; }
+:root[data-design="glasshouse"] .disc-lead { margin-bottom: var(--sp-5); }
+
+/* the media window: LCD deck | header strip + numbered list; ticker on the bottom edge */
+:root[data-design="glasshouse"] .gh-aimp {
+  display: grid; grid-template-columns: 272px minmax(0, 1fr); grid-template-areas: "deck list" "tick tick"; gap: 12px 16px;
+  padding: calc(var(--gh-barh) + 12px) 12px 12px;
+}
+:root[data-design="glasshouse"] .gh-aimp__bar { padding-right: 58px; }
+:root[data-design="glasshouse"] .gh-aimp__bar .gh-skin { top: 5px; right: 60px; }
+:root[data-design="glasshouse"] .gh-aimp__deck { grid-area: deck; display: grid; align-content: start; gap: 10px; min-width: 0; }
+:root[data-design="glasshouse"] .gh-aimp__lcd {
+  display: grid; justify-items: center; gap: 8px; padding: 14px 12px 10px; border-radius: 8px; text-align: center;
+  background: radial-gradient(120% 80% at 80% 0%, #2f3550 0%, #1d2030 55%, #161925 100%); border: 1px solid #0b0d14;
+  box-shadow: inset 0 0 0 1px #3a4058, inset 0 12px 30px -16px rgba(169, 195, 234, .35), 0 12px 24px -14px color-mix(in srgb, #9fb8e6 50%, transparent);
+  color: #eceef6;
+}
+:root[data-design="glasshouse"] .gh-aimp__lcd .cover { border-color: #3a4058; box-shadow: 0 14px 26px -14px rgba(159, 184, 230, .55), inset 0 1px 0 rgba(255, 255, 255, .4); }
+:root[data-design="glasshouse"] .gh-aimp__meta { display: grid; gap: 3px; min-width: 0; max-width: 100%; }
+:root[data-design="glasshouse"] .gh-aimp__meta p { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root[data-design="glasshouse"] .gh-aimp__title { font: 400 1.625rem/1.05 var(--f-serif); color: #f4f5fb; }
+:root[data-design="glasshouse"] .gh-aimp__artist { font: italic 400 1.25rem/1.1 var(--f-serif); color: #f3c1cf; }
+:root[data-design="glasshouse"] .gh-aimp__fmt { font: 500 .6875rem/1.3 var(--f-px); color: #9aa7c2; }
+:root[data-design="glasshouse"] .gh-aimp__time { margin: 0; font: 500 .8125rem/1 var(--f-px); color: #c6d6f2; }
+:root[data-design="glasshouse"] .gh-aimp__time b { color: #f3c1cf; font-weight: 600; }
+:root[data-design="glasshouse"] .gh-aimp__keys { display: flex; align-items: center; justify-content: center; gap: 10px; }
+:root[data-design="glasshouse"] .gh-aimp__keys > .btn-icon { width: 44px; height: 36px; border-radius: 9px; }
+:root[data-design="glasshouse"] .gh-aimp__like .btn-icon { width: 40px; height: 36px; border-color: var(--gh-key-edge); background: var(--gh-keyg); color: var(--gh-rose-lo); }
+:root[data-design="glasshouse"] .gh-aimp__list { grid-area: list; display: grid; align-content: start; gap: 6px; min-width: 0; }
+:root[data-design="glasshouse"] .gh-aimp__strip { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 0; color: var(--fg); }
+:root[data-design="glasshouse"] .gh-aimp__open { margin-left: auto; color: var(--link-on-cream); text-decoration: underline; text-underline-offset: 3px; }
+/* AIMP rows: "1. Title - Artist" over the file line, time on the right; no thumbnails */
+:root[data-design="glasshouse"] .gh-aimp .tlist { gap: 1px; }
+:root[data-design="glasshouse"] .gh-aimp .trow {
+  grid-template-columns: 22px minmax(0, 1fr) 36px 44px 36px; grid-template-areas: "num main like dur more";
+  min-height: 40px; padding: 3px 6px; column-gap: 8px; align-items: center;
+}
+:root[data-design="glasshouse"] .gh-aimp .trow__art { display: none; }
+:root[data-design="glasshouse"] .gh-aimp .trow__n::after { content: "."; }
+:root[data-design="glasshouse"] .gh-aimp .trow__main { display: grid; grid-template-columns: fit-content(78%) minmax(0, 1fr); align-items: baseline; gap: 1px 6px; }
+:root[data-design="glasshouse"] .gh-aimp .trow__title { min-width: 0; font: 700 .875rem/1.2 var(--f-ui); }
+:root[data-design="glasshouse"] .gh-aimp .trow__artist { display: contents; }
+:root[data-design="glasshouse"] .gh-aimp .trow__artist > a { grid-column: 2; grid-row: 1; min-width: 0; font: 600 .8125rem/1.2 var(--f-ui); color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root[data-design="glasshouse"] .gh-aimp .trow__artist > a::before { content: "-\00a0"; }
+:root[data-design="glasshouse"] .gh-aimp .trow__mini { display: none; }
+:root[data-design="glasshouse"] .gh-aimp .trow__fmt { display: block; grid-column: 1 / -1; font-size: .6875rem; }
+:root[data-design="glasshouse"] .gh-aimp :is(.trow__badges, .trow__album) { display: none; }
+:root[data-design="glasshouse"] .gh-aimp .trow .btn-icon { width: 32px; height: 32px; }
+/* tickers: one mono line that scrolls like img 03's footer; paused on hover / focus, static (ellipsised) under reduced motion */
+:root[data-design="glasshouse"] .gh-ticker { overflow: hidden; border-radius: 6px; padding: 4px 0; font: 500 .75rem/1.3 var(--f-px); letter-spacing: .02em; white-space: nowrap; }
+:root[data-design="glasshouse"] .gh-ticker__track { display: flex; width: max-content; animation: gh-tick 34s linear infinite; }
+:root[data-design="glasshouse"] .gh-ticker__run { padding: 0 2.5em 0 12px; }
+:root[data-design="glasshouse"] .gh-ticker :is(b, [data-bind="pos"]) { font-weight: 600; color: #f3c1cf; }
+:root[data-design="glasshouse"] .gh-ticker i { font-style: normal; color: #9aa7c2; }
+:root[data-design="glasshouse"] :is(.gh-ticker:hover, .gh-aimp:focus-within, .gh-np:focus-within) .gh-ticker__track,
+:root.is-hidden[data-design="glasshouse"] .gh-ticker__track { animation-play-state: paused; }
+@keyframes gh-tick { to { transform: translateX(-50%); } }
+:root[data-design="glasshouse"] .gh-aimp__ticker { grid-area: tick; }
+
+/* new releases | radio starters (two half windows), picks */
+@container disc (min-width: 820px) {
+  :root[data-design="glasshouse"] .disc-home > .disc-duo:not(.disc-duo--even) { grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr); align-items: stretch; }
+  :root[data-design="glasshouse"] .disc-home > .disc-duo:not(.disc-duo--even) .disc-shelf { grid-auto-columns: calc((100% - 2 * var(--sp-5) - 10px) / 3); }
+  :root[data-design="glasshouse"] .disc-home .disc-duo--even { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); align-items: stretch; }
+}
+/* radio starters: the orb is the play button (a rose ring and a glyph on hover / focus, always on touch); two-line text */
+:root[data-design="glasshouse"] .disc-duo .disc-starters { grid-template-columns: minmax(0, 1fr); }
+:root[data-design="glasshouse"] .disc-starter { position: relative; grid-template-columns: 48px minmax(0, 1fr); border-radius: 8px; }
+:root[data-design="glasshouse"] .disc-starter__play {
+  position: absolute; left: 8px; top: 50%; width: 48px; height: 48px; margin-top: -24px; border-radius: 50%;
+  border: 1px solid transparent; background: transparent; box-shadow: none; color: #fff; opacity: 0; transition: opacity var(--dur-1);
+}
+:root[data-design="glasshouse"] .disc-starter__play:not(.btn-icon--bare):hover { background: color-mix(in srgb, var(--gh-rose) 72%, transparent); }
+:root[data-design="glasshouse"] :is(.disc-starter:hover, .disc-starter:focus-within) .disc-starter__play,
+:root[data-design="glasshouse"] .disc-starter__play:focus-visible {
+  opacity: 1; background: color-mix(in srgb, var(--gh-rose) 72%, transparent); border-color: var(--gh-rose-edge);
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--gh-rose), 0 6px 14px -6px var(--gh-rose-lo);
+}
+@media (hover: none) { :root[data-design="glasshouse"] .disc-starter__play { opacity: 1; background: color-mix(in srgb, var(--gh-rose) 60%, transparent); } }
+:root[data-design="glasshouse"] :is(.disc-starter__title, .disc-starter__sub) { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+:root[data-design="glasshouse"] .disc-starter__title { line-height: 1.2; }
+:root[data-design="glasshouse"] :is(.disc-starter__sub, .disc-pick__by, .disc-top__kind, .lib-hero__facts .px) { font: 500 .8125rem/1.3 var(--f-px); }
+:root[data-design="glasshouse"] .disc-pick { border-radius: 8px; }
+
+/* =====================================================================
+   Search
+   ===================================================================== */
+@container disc (min-width: 820px) {
+  :root[data-design="glasshouse"] .disc-search .disc-duo--results { grid-template-columns: minmax(260px, .62fr) minmax(0, 1.5fr); align-items: start; }
+  :root[data-design="glasshouse"] .disc-search .disc-duo--results .disc-top__body { grid-template-columns: minmax(0, 1fr); justify-items: start; gap: var(--sp-3); }
+  :root[data-design="glasshouse"] .disc-search .disc-duo--results .disc-top__body .cover { width: 168px; --cover-size: 168px; }
+  :root[data-design="glasshouse"] .disc-search .disc-duo--results .disc-top__actions { flex-wrap: wrap; gap: 8px; }
+}
+:root[data-design="glasshouse"] .disc-top__title { font-size: 2rem; }
+/* "searching Soulseek" strip: a glass key groove with a lit glass fill */
+:root[data-design="glasshouse"] .disc-scan { border-radius: 8px; border: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, #fff 55%, transparent), color-mix(in srgb, var(--gh-lit-2) 26%, transparent)); font-family: var(--f-px); }
+
+/* =====================================================================
+   Library: section keys, page windows, playlist table, artist orb
+   ===================================================================== */
+:root[data-design="glasshouse"] .lib-thead { margin: 0 0 6px; }
+:root[data-design="glasshouse"] .lib-th { font: 600 .75rem/1 var(--f-px); letter-spacing: .02em; text-transform: lowercase; color: var(--fg-2); min-height: 24px; }
+:root[data-design="glasshouse"] .lib-th--title::after { content: "\00a0- artist :: file"; font-weight: 500; }
+:root[data-design="glasshouse"] .lib-pl-list .trow { align-items: center; }
+:root[data-design="glasshouse"] .lib-pl-list .trow__fmt { display: block; }
+:root[data-design="glasshouse"] .cover--round.c2::before { display: none; }
+:root[data-design="glasshouse"] .lib-hero .cover--round {
+  box-shadow: inset 0 22px 34px -10px rgba(255, 255, 255, .55), inset 0 -26px 40px -12px rgba(20, 24, 44, .55), inset 0 0 0 1px rgba(255, 255, 255, .5),
+    0 22px 44px -20px color-mix(in srgb, var(--gh-glow-2) 80%, transparent);
+}
+
+/* =====================================================================
+   Stats, settings, welcome
+   ===================================================================== */
+/* stats: every tile is a mini gadget (title bar from its label, big mono value) */
+:root[data-design="glasshouse"] .sys-tile.card { padding: calc(var(--gh-barh) + 10px) var(--sp-3) var(--sp-3); }
+:root[data-design="glasshouse"] .sys-tile__label {
+  position: absolute; left: 0; right: 0; top: 0; height: var(--gh-barh); padding: 0 10px; border-radius: calc(var(--r-card) - 1px) calc(var(--r-card) - 1px) 0 0;
+  font: 600 .75rem/1 var(--f-px); letter-spacing: .03em; text-transform: lowercase;
+}
+:root[data-design="glasshouse"] .sys-tile__label .ic { display: none; }
+@container sys (min-width: 521px) { :root[data-design="glasshouse"] .sys-tiles { grid-template-columns: minmax(0, 1.6fr) repeat(4, minmax(0, 1fr)); } }
+@container sys (max-width: 520px) {      /* phone: 2 + 2 + 1 (the odd last tile spans the row) */
+  :root[data-design="glasshouse"] .sys-tile.card { grid-column: span 3; }
+  :root[data-design="glasshouse"] .sys-tile.card:last-child:nth-child(odd) { grid-column: 1 / -1; }
+}
+:root[data-design="glasshouse"] .sys-tile__label::before { content: "::"; color: var(--gh-bar-ink-2); }
+:root[data-design="glasshouse"] .sys-tile__value { font: 500 1.75rem/1.1 var(--f-px); letter-spacing: -.02em; }
+:root[data-design="glasshouse"] .sys-tile__sub { font: 500 .75rem/1.3 var(--f-px); }
+:root[data-design="glasshouse"] .sys-bar { height: 9px; background: color-mix(in srgb, var(--bg-2) 70%, var(--line)); box-shadow: inset 0 1px 2px var(--gh-cast); }
+:root[data-design="glasshouse"] .sys-bar > i { background: linear-gradient(90deg, var(--gh-lit-3), var(--gh-lit-2)); box-shadow: inset -4px 0 0 var(--gh-rose), inset 0 1px 0 rgba(255, 255, 255, .5); }
+/* settings: the section list is a smoky gadget window too */
+:root[data-design="glasshouse"] .sys-nav { position: relative; padding-top: calc(var(--gh-barh) + 8px); border-color: var(--gh-frame); overflow: hidden; }
+:root[data-design="glasshouse"] .sys-nav::before {
+  content: ":: sections"; position: absolute; left: 0; right: 0; top: 0; height: var(--gh-barh); padding: 0 12px; display: flex; align-items: center;
+  background: var(--gh-beads) right 10px center / 41px 11px no-repeat, var(--gh-bar); border-bottom: 1px solid var(--gh-frame);
+  color: var(--gh-bar-ink); font: 600 .8125rem/1 var(--f-px); letter-spacing: .03em; text-shadow: 0 1px 0 var(--gh-bar-shadow);
+}
+:root[data-design="glasshouse"] .sys-nav__item { border-radius: 8px; }
+/* cache legend: two wide columns so "Playing and queued" and its figure each stay on one line */
+:root[data-design="glasshouse"] .sys-usage__legend { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+:root[data-design="glasshouse"] .sys-usage__legend .num { white-space: nowrap; }
+/* design picker: an odd last card spans two columns instead of leaving a hole */
+:root[data-design="glasshouse"] .sys-design:last-child:nth-child(3n+2) { grid-column: span 2; }
+/* welcome: the get-started window spans the column like every other main window */
+:root[data-design="glasshouse"] .sys-welcome__card { max-width: none; }
+@media (min-width: 1100px) { :root[data-design="glasshouse"] .sys-welcome > .sparkle { display: none; } }   /* the caption sits there */
+
+/* =====================================================================
+   Empty states (emptyArt slot): a tiny aero window whose LCD says what is missing, with a blinking caret
+   ===================================================================== */
+:root[data-design="glasshouse"] .empty { padding: var(--sp-6) var(--sp-4); }
+:root[data-design="glasshouse"] .empty__art { width: auto; height: auto; color: inherit; }
+:root[data-design="glasshouse"] .gh-empty { display: grid; width: 220px; border: 1px solid var(--gh-frame); border-radius: 9px; overflow: hidden;
+  background: linear-gradient(180deg, #e3e8f3, #cfd5e4); box-shadow: inset 0 1px 0 #fff, 0 16px 30px -18px var(--gh-cast); transform: rotate(-2deg); }
+:root[data-design="glasshouse"] .gh-empty__bar { height: 20px; border-bottom: 1px solid var(--gh-frame); background: var(--gh-beads) right 6px center / 33px 9px no-repeat, var(--gh-bar); }
+:root[data-design="glasshouse"] .gh-empty__lcd { display: flex; align-items: center; justify-content: center; gap: 2px; margin: 10px; padding: 16px 10px; border-radius: 6px;
+  background: var(--gh-lcd); border: 1px solid var(--gh-lcd-edge); box-shadow: inset 0 1px 4px rgba(0, 0, 0, .6); font: 500 .9375rem/1.2 var(--f-px); color: #c6d6f2; }
+:root[data-design="glasshouse"] .gh-empty--err .gh-empty__lcd { color: #f3c1cf; }
+:root[data-design="glasshouse"] .gh-caret { width: .6em; height: 2px; align-self: flex-end; margin-bottom: .2em; background: currentColor; animation: gh-blink 1s steps(1) infinite; }
+
+/* =====================================================================
+   Banners: one aero "notices" window (no count in its title: phones hide all but the lead banner), compact rows inside
+   ===================================================================== */
+:root[data-design="glasshouse"] .banner-slot:not(:empty) {
+  display: grid; gap: 0; position: relative; margin: 0 0 12px; padding: var(--gh-barh) 0 0;
+  border: 1px solid var(--gh-frame); border-radius: var(--r-card); overflow: hidden; background: var(--cream);
+  box-shadow: inset 0 1px 0 var(--gh-rim), var(--stack-sm);
+}
+:root[data-design="glasshouse"] .banner-slot:not(:empty)::after {
+  content: ":: notices"; position: absolute; left: 0; right: 0; top: 0; height: var(--gh-barh); padding: 0 12px;
+  display: flex; align-items: center; font: 600 .8125rem/1 var(--f-px); letter-spacing: .03em; color: var(--gh-bar-ink);
+  background: var(--gh-beads) right 10px center / 41px 11px no-repeat, var(--gh-bar); border-bottom: 1px solid var(--gh-frame); text-shadow: 0 1px 0 var(--gh-bar-shadow);
+}
+:root[data-design="glasshouse"] .banner-slot:not(:empty):not(:has(.banner + .banner))::after { content: ":: notice"; }
+:root[data-design="glasshouse"] .banner { min-height: 40px; padding: 4px 10px 4px 18px; border: 0; border-radius: 0; background: transparent; box-shadow: none; font-size: .875rem; }
+:root[data-design="glasshouse"] .banner + .banner { border-top: 1px solid color-mix(in srgb, var(--line) 45%, transparent); }
+:root[data-design="glasshouse"] .banner .btn { min-height: 30px; }
+
+/* =====================================================================
+   Overlays: sheets, dialogs, popovers, menus, toast balloon, tooltip
+   ===================================================================== */
+:root[data-design="glasshouse"] :is(.sheet, .dialog, .popover, .menu, .toast) {
+  border: 1px solid var(--gh-frame); box-shadow: inset 0 1px 0 var(--gh-rim), 0 24px 48px -24px var(--gh-cast), 0 2px 8px -4px var(--gh-cast);
+}
+:root[data-design="glasshouse"] :is(.dialog, .sheet) { overflow: hidden; }
+:root[data-design="glasshouse"] .sheet__head { min-height: 40px; padding: 4px 8px 4px 16px; }
+:root[data-design="glasshouse"] .sheet__head .btn-icon { color: var(--gh-bar-ink); border-color: transparent; background: transparent; box-shadow: none; width: 32px; height: 32px; }
+:root[data-design="glasshouse"] .sheet__head .btn-icon:hover { background: color-mix(in srgb, #fff 22%, transparent); }
+:root[data-design="glasshouse"] .sheet__title { font: 600 .9375rem/1.2 var(--f-px); letter-spacing: .02em; color: var(--gh-bar-ink); }
+:root[data-design="glasshouse"] .sheet__body { padding-top: var(--sp-4); }
+:root[data-design="glasshouse"] .popover__head { font: 600 .875rem/1.2 var(--f-px); letter-spacing: .02em; }
+@media (min-width: 640px) {      /* on desktop the sheet floats as a whole window (bottom bevel + margin) */
+  :root[data-design="glasshouse"] .sheet { bottom: 24px; border-bottom: 1px solid var(--gh-frame); border-radius: var(--r-panel); max-height: min(calc(100dvh - 72px), 880px); }
+  :root[data-design="glasshouse"] .sheet:not(.is-open) { transform: translate(-50%, calc(100% + 48px)); }
+}
+/* toast: a small aero notification balloon (title bar, beads, mono label, rose action) */
+:root[data-design="glasshouse"] .toast-region { width: min(480px, calc(100vw - 32px)); }
+:root[data-design="glasshouse"] .toast { position: relative; padding-top: calc(22px + 8px); border-radius: 10px; overflow: hidden; background: var(--cream); }
+:root[data-design="glasshouse"] .toast::before {
+  content: ":: notice"; position: absolute; left: 0; right: 0; top: 0; height: 22px; padding: 0 10px; display: flex; align-items: center;
+  background: var(--gh-beads) right 8px center / 41px 11px no-repeat, var(--gh-bar); border-bottom: 1px solid var(--gh-frame);
+  color: var(--gh-bar-ink); font: 600 .6875rem/1 var(--f-px); letter-spacing: .04em; text-shadow: 0 1px 0 var(--gh-bar-shadow);
+}
+:root[data-design="glasshouse"] .toast--error::before { content: ":: problem"; }
+:root[data-design="glasshouse"] .toast .btn--quiet { color: var(--gh-rose-lo); font-family: var(--f-px); text-decoration: underline; text-underline-offset: 3px; }
+:root[data-design="glasshouse"] .tooltip { background: var(--ink); color: var(--lilac); font: 500 .75rem/1.3 var(--f-px); border-radius: 4px; }
+
+/* =====================================================================
+   Now Playing: the handheld becomes an aero media-player window; lyrics become the LCD at night
+   ===================================================================== */
+:root[data-design="glasshouse"] .device {
+  padding: calc(var(--gh-barh) + 8px) 8px 10px; border: 1px solid var(--gh-frame); border-radius: var(--r-device); color: var(--gh-bar-ink);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--gh-bar-4) 70%, var(--gh-wall-0)), var(--gh-wall-0));
+  box-shadow: inset 0 1px 0 var(--gh-rim), var(--stack); margin-bottom: 18px;
+}
+:root[data-design="glasshouse"][data-theme="day"] .device { background: linear-gradient(180deg, #e3e8f3, #cfd5e4); color: var(--ink); }
+:root[data-design="glasshouse"] .device::before {           /* title bar */
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: var(--gh-barh); border-radius: calc(var(--r-device) - 1px) calc(var(--r-device) - 1px) 0 0;
+  border-bottom: 1px solid var(--gh-frame);
+  background: var(--gh-beads) right 6px top 8px / 41px 11px no-repeat, var(--gh-bar);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 70%, transparent);
+}
+:root[data-design="glasshouse"] .device__led { left: 12px; top: 0; height: var(--gh-barh); z-index: 1; color: var(--gh-bar-ink); font: 600 .8125rem/1 var(--f-px); letter-spacing: .03em; }
+:root[data-design="glasshouse"] .device__led::before { content: ":: player /"; color: var(--gh-bar-ink-2); }
+:root[data-design="glasshouse"] :is(.device__led, .dk-mini__led) i { order: 2; width: 8px; height: 8px; background: radial-gradient(circle at 40% 35%, #fff 0 15%, var(--gh-rose-glow) 45%, var(--gh-rose) 80%); box-shadow: 0 0 6px var(--gh-rose-glow); }
+:root[data-design="glasshouse"] .device__bezel { padding: 6px; border: 1px solid var(--gh-frame); border-radius: var(--r-bezel); background: #0f1119;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 14px 26px -12px color-mix(in srgb, #9fb8e6 45%, transparent); }
+:root[data-design="glasshouse"] .device__screen { border-radius: 6px; box-shadow: inset 0 0 0 1px #3a4058, inset 0 12px 30px -16px rgba(169, 195, 234, .35);
+  background: radial-gradient(120% 80% at 80% 0%, #2f3550 0%, #1d2030 55%, #161925 100%); }
+:root[data-design="glasshouse"] .device__screen.s-screen { --fg: #eceef6; --fg-2: #b4b8cb; --edge: #8d93aa; --bg-2: #2a2e40; --bg-3: #353a50; --link: #f3c1cf; }
+:root[data-design="glasshouse"] .device__title { font: 400 1.625rem/1.05 var(--f-serif); }
+:root[data-design="glasshouse"] .device__artist { font: 500 .8125rem/1.3 var(--f-px); letter-spacing: .02em; }
+:root[data-design="glasshouse"] .device__artist::before { content: ":: "; color: var(--wave-dim); }
+:root[data-design="glasshouse"] .device__fact { border-width: 1px; border-radius: 4px; font-size: .75rem; }
+:root[data-design="glasshouse"] .device__select { background: #2a2e40; border: 1px solid #5b6380; color: #eceef6; font: 500 .75rem/1 var(--f-px); }
+:root[data-design="glasshouse"] .device__page-head { font: 500 .75rem/1 var(--f-px); letter-spacing: .04em; }
+:root[data-design="glasshouse"] :is(.device__brand, .device__grill, .now__keys) { display: none; }
+:root[data-design="glasshouse"] .device .wave__bar { border-radius: 1px; background: #3d4460; }
+:root[data-design="glasshouse"] .device .wave__bar.is-played { background: linear-gradient(180deg, #f6d6df, #c97a92); }
+:root[data-design="glasshouse"] .device .wave__bar.is-buf { box-shadow: inset 0 0 0 1px #7f9cc8; }
+:root[data-design="glasshouse"] .device .wave__bar.is-xfer { background: repeating-linear-gradient(to top, #7f9cc8 0 2px, transparent 2px 4px); }
+:root[data-design="glasshouse"] .device .wave__head { background: #fff; box-shadow: 0 0 6px #f3c1cf; }
+/* transport strip: dpad + keys flattened into one row of glass keys around the rose orb */
+:root[data-design="glasshouse"] .device__controls { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 14px 4px 4px; }
+:root[data-design="glasshouse"] .device__controls :is(.dpad, .device__ab, .device__key) { display: contents; font-size: 0; }
+:root[data-design="glasshouse"] :is(.device__controls .dpad__hub, .device__key > span:not(:first-child)) { display: none; }
+:root[data-design="glasshouse"] :is(.device__controls, .device--compact) .dpad__btn {
+  width: 44px; height: 36px; border: 1px solid var(--gh-key-edge); border-radius: 9px; color: var(--gh-key-ink); background: var(--gh-keyg);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 45%, transparent);
+}
+:root[data-design="glasshouse"] .device__controls .dpad__btn:hover { background: linear-gradient(180deg, var(--gh-key-1) 0%, var(--gh-key-1) 50%, var(--gh-key-2) 51%, var(--gh-key-1) 100%); }
+:root[data-design="glasshouse"] .dpad__btn--down { order: 1; } :root[data-design="glasshouse"] .dpad__btn--left { order: 2; }
+:root[data-design="glasshouse"] .device__key--a > :first-child { order: 3; margin: 0 6px; }
+:root[data-design="glasshouse"] .dpad__btn--right { order: 4; } :root[data-design="glasshouse"] .dpad__btn--up { order: 5; }
+:root[data-design="glasshouse"] .device__key--b > :first-child { order: 6; margin-left: 6px; }
+:root[data-design="glasshouse"] .device__pills { gap: 8px; padding: 10px 0 0; }
+:root[data-design="glasshouse"] .device__pill { grid-auto-flow: column; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 7px; border: 1px solid var(--gh-key-edge);
+  color: var(--gh-key-ink); font: 500 .75rem/1 var(--f-px); background: var(--gh-keyg); }
+:root[data-design="glasshouse"] .device__pill > i { width: 8px; height: 8px; border-radius: 50%; border: 1px solid var(--gh-key-edge); background: var(--gh-key-3); }
+:root[data-design="glasshouse"] .device__pill[aria-pressed="true"] > i { box-shadow: 0 0 6px #a9c3ea; background: #a9c3ea; }
+:root[data-design="glasshouse"] .device--compact { padding: 6px; }
+:root[data-design="glasshouse"] .device--compact::before { display: none; }
+
+/* skin tabs on a media window's title edge (design.js): the current skin is text, the other one is a button */
+:root[data-design="glasshouse"] .gh-skin { position: absolute; z-index: 2; top: 5px; right: 58px; display: flex; gap: 2px; height: calc(var(--gh-barh) - 5px); }
+:root[data-design="glasshouse"] .gh-skin__tab {
+  display: inline-flex; align-items: center; height: 100%; padding: 0 10px; border: 1px solid var(--gh-frame); border-bottom: 0; border-radius: 6px 6px 0 0;
+  font: 600 .6875rem/1 var(--f-px); letter-spacing: .08em; text-transform: uppercase; text-shadow: none;
+}
+:root[data-design="glasshouse"] .gh-skin__btn { position: relative; color: var(--gh-bar-ink); background: var(--gh-bar-3); cursor: pointer; }
+:root[data-design="glasshouse"] .gh-skin__btn::before { content: ""; position: absolute; inset: -8px -2px -4px; }
+:root[data-design="glasshouse"] .gh-skin__btn:hover { background: var(--gh-bar-2); }
+:root[data-design="glasshouse"] .gh-skin__cur { color: #191b28; background: linear-gradient(180deg, #fbfbff, #dfe3ee); box-shadow: inset 0 1px 0 #fff; }
+:root[data-design="glasshouse"][data-theme="day"] :is(.gh-skin__btn.gh-skin--light, .gh-skin__cur.gh-skin--dark),
+:root[data-design="glasshouse"][data-theme="night"] :is(.gh-skin__btn.gh-skin--dark, .gh-skin__cur.gh-skin--light) { display: none; }
+/* track change: a light sweep crosses the LCD each time now.js slides a new track in */
+:root[data-design="glasshouse"] .gh-np .now-slide { position: relative; }
+:root[data-design="glasshouse"] .gh-np .now-slide::after {
+  content: ""; position: absolute; z-index: 3; top: -12px; bottom: -12px; left: 0; width: 40%; pointer-events: none;
+  background: linear-gradient(100deg, transparent, rgba(214, 228, 255, .22) 45%, rgba(255, 255, 255, .34) 50%, transparent);
+  transform: translateX(-110%) skewX(-12deg); opacity: 0; animation: gh-lcd-sweep 1100ms var(--ease-out) 200ms 1;
+}
+@keyframes gh-lcd-sweep { 0% { transform: translateX(-110%) skewX(-12deg); opacity: 1; } 100% { transform: translateX(290%) skewX(-12deg); opacity: 0; } }
+:root[data-design="glasshouse"] .gh-np__ticker { margin: 10px 2px 0; }
+/* on Now Playing the bar's orb steps down to a key: the device's orb is the one big play button on the page */
+@media (min-width: 640px) {
+  :root[data-design="glasshouse"] .app:has(.now) .pbar__controls .btn-gloss { --size: 44px; width: 44px; height: 44px; }
+}
+/* failure: the device LCD holds retry / pick source, the bar's LCD tab keeps Skip; the source window keeps the reason only */
+:root[data-design="glasshouse"] .app:has(.now) .pbar__state :is([data-act="retry-search"], [data-act="pick-source"]),
+:root[data-design="glasshouse"] .now-srccard .source-card__head .btn { display: none; }
+
+/* info column: serif byline, action keys with mono labels under them */
+:root[data-design="glasshouse"] .now-head__by { font: italic 400 1.375rem/1.25 var(--f-serif); }
+:root[data-design="glasshouse"] .now-head__by .link { font-weight: 400; }
+:root[data-design="glasshouse"] .now-acts { align-items: flex-start; gap: 8px; }
+@media (min-width: 1100px) {      /* wide: each icon key carries its mono label under it (tablet keeps the tooltips) */
+  :root[data-design="glasshouse"] .now-acts__btn { flex-direction: column; width: auto; min-width: 52px; height: auto; padding: 6px 6px 4px; gap: 3px; }
+  :root[data-design="glasshouse"] .now-acts__btn .now-acts__label { display: block; font: 500 .6875rem/1.1 var(--f-px); letter-spacing: 0; text-transform: lowercase; }
+}
+/* lyrics: blush current line by day; at night the window body is the device's LCD (scanlines, rose glow on the line) */
+:root[data-design="glasshouse"] .now-ly__line { font-weight: 700; }
+:root[data-design="glasshouse"] .now-ly__line.is-current { box-shadow: inset 3px 0 0 var(--gh-rose); background: linear-gradient(90deg, var(--gh-blush-1), var(--gh-blush-2)); color: var(--gh-rose-lo); }
+:root[data-design="glasshouse"] .now-ly__view {
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 84px, #000 calc(100% - 64px), transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0, #000 84px, #000 calc(100% - 64px), transparent 100%);
+}
+:root[data-design="glasshouse"] .now-lycard .now-ly__head { position: absolute; z-index: 2; top: 4px; right: 68px; min-height: 22px; }
+:root[data-design="glasshouse"] .now-lycard .now-ly__head .label-rule { display: none; }
+:root[data-design="glasshouse"] .now-lycard .now-ly__tag { color: var(--gh-bar-ink); border-color: var(--gh-bar-ink-2); }
+:root[data-design="glasshouse"] .now-lycard .now-ly__view { margin-top: 0; }
+:root[data-design="glasshouse"] .now-ly__tag { border-width: 1px; border-radius: 4px; font-size: .75rem; }
+:root[data-design="glasshouse"][data-theme="night"] .now-lycard {
+  --fg: #c6cde0; --fg-2: #8d93aa; --bg-2: #262b3d; --link: #a9c3ea; --edge: #5b6380; --divider: #2c3246; --focus: #f4f5fb;
+  background: repeating-linear-gradient(180deg, rgba(160, 190, 240, .04) 0 1px, transparent 1px 3px),
+    radial-gradient(100% 60% at 70% 0%, #262c42 0%, #1a1e2c 60%, #161925 100%);
+  box-shadow: inset 0 0 0 1px #3a4058, inset 0 1px 0 rgba(255, 255, 255, .12), var(--stack);
+}
+:root[data-design="glasshouse"][data-theme="night"] .now-lycard .now-ly__line.is-current { background: rgba(243, 193, 207, .08); color: #f3c1cf; text-shadow: 0 0 12px rgba(243, 193, 207, .6); }
+:root[data-design="glasshouse"][data-theme="night"] .now-lycard .now-ly__line:not(.is-current):hover { background: #262b3d; color: #eceef6; }
+:root[data-design="glasshouse"] .source-card { border-radius: 8px; border: 1px solid color-mix(in srgb, var(--line) 45%, transparent); }
+:root[data-design="glasshouse"] .source-card__stat::before { content: ":: "; color: var(--fg-2); }
+:root[data-design="glasshouse"] .pipeline__seg { border-width: 1px; border-radius: 3px; }
+:root[data-design="glasshouse"] .pipeline__text { margin-top: 6px; }
+/* nothing saved yet: one line in words, not five empty steps */
+:root[data-design="glasshouse"] .pipeline-wrap:not(:has(.pipeline__seg[class*="is-"])) .pipeline { display: none; }
+:root[data-design="glasshouse"] .pipeline-wrap:not(:has(.pipeline__seg[class*="is-"])) .pipeline__text { margin-top: 0; }
+:root[data-design="glasshouse"] .pipeline-wrap:not(:has(.pipeline__seg[class*="is-"])) .pipeline__step::first-letter { text-transform: uppercase; }
+
+/* =====================================================================
+   Desktop mini player window (desktop/window.html): window buttons sit in the title bar, so no beads there
+   ===================================================================== */
+:root[data-design="glasshouse"] .dk-mini .device::before { background: var(--gh-bar); }
+:root[data-design="glasshouse"] .dk-mini__head { top: 1px; left: 12px; right: 6px; }
+:root[data-design="glasshouse"] :is(.dk-mini__led, .dk-mini__win) { color: var(--gh-bar-ink); --focus: var(--gh-bar-ink); }
+:root[data-design="glasshouse"] .dk-mini__led { font: 600 .8125rem/1 var(--f-px); }
+:root[data-design="glasshouse"] .dk-mini__led::before { content: ":: mini /"; color: var(--gh-bar-ink-2); }
+:root[data-design="glasshouse"] .dk-mini__win { width: 26px; height: 26px; border-radius: 7px; }
+:root[data-design="glasshouse"] .dk-mini__win:hover { background: color-mix(in srgb, #fff 22%, transparent); }
+:root[data-design="glasshouse"] .dk-mini .device__controls { gap: 6px; }
+:root[data-design="glasshouse"] .dk-mini .device__controls .dpad__btn { width: 34px; height: 32px; }
+:root[data-design="glasshouse"] .dk-mini--opaque .device { min-height: calc(100vh - 22px); min-height: calc(100dvh - 22px); margin-bottom: 0; display: flex; flex-direction: column; }
+:root[data-design="glasshouse"] .dk-mini--opaque .device__controls { margin-top: auto; }
+:root[data-design="glasshouse"] .dk-mini__now { grid-template-columns: minmax(0, 1fr); justify-items: center; text-align: center; gap: 8px; }
+:root[data-design="glasshouse"] .dk-mini__now .cover { --cover-size: 132px; width: 132px; box-shadow: 0 14px 26px -14px rgba(159, 184, 230, .55), inset 0 1px 0 rgba(255, 255, 255, .4); }
+:root[data-design="glasshouse"] .dk-mini .device__facts { justify-content: center; }
+:root[data-design="glasshouse"] .dk-mini .device__title { font-size: 1.5rem; }
+:root[data-design="glasshouse"] .dk-strip { border: 1px solid var(--gh-frame); box-shadow: inset 0 1px 0 var(--gh-rim), var(--stack-1l); }
+
+/* =====================================================================
+   Classic stage: the misty desktop itself (the app is hidden while the stage is open, so nothing smears behind it),
+   standard window bars (mono title, orbs on the right in bead order) and a frosted stage with a faint lens ring
+   ===================================================================== */
+:root[data-design="glasshouse"][data-classic="on"] .app { visibility: hidden; }
+:root[data-design="glasshouse"] .cls-scrim { opacity: 1; background: color-mix(in srgb, var(--gh-wall-0) 28%, transparent); }
+:root[data-design="glasshouse"] .win { border: 1px solid var(--gh-frame); border-radius: var(--r-card); }
+:root[data-design="glasshouse"] .cls-bar { background: transparent; box-shadow: var(--stack-1l); }
+:root[data-design="glasshouse"] .cls-bar .win__bar { padding: 4px 10px 4px 14px; }
+:root[data-design="glasshouse"] .win__title {
+  order: 1; display: flex; align-items: center; justify-content: flex-start; height: 28px; padding: 0; border: 0; border-radius: 0; background: none;
+  font: 600 .9375rem/1 var(--f-px); letter-spacing: .04em; color: var(--gh-bar-ink); text-shadow: 0 1px 0 var(--gh-bar-shadow);
+}
+:root[data-design="glasshouse"] .cls-bar .win__title { height: 30px; }
+:root[data-design="glasshouse"] .win__orbs { order: 2; gap: 8px; }
+:root[data-design="glasshouse"] .orb { width: 16px; height: 16px; border-color: rgba(0, 0, 0, .45);
+  background: radial-gradient(circle at 50% 28%, #fff 0 14%, transparent 34%), radial-gradient(circle at 50% 80%, rgba(255, 255, 255, .5), transparent 60%), var(--orb); }
+:root[data-design="glasshouse"] .orb::after { display: none; }
+:root[data-design="glasshouse"] .orb--blue { --orb: #8fb0d8; } :root[data-design="glasshouse"] .orb--lav { --orb: #b9b1d6; } :root[data-design="glasshouse"] .orb--mag { --orb: var(--gh-rose-glow); }
+:root[data-design="glasshouse"] .orb:hover { filter: brightness(1.12); }
+:root[data-design="glasshouse"] .cls-slot { border: 1px solid var(--gh-frame); border-radius: var(--r-card);
+  background: radial-gradient(circle at 50% 55%, transparent 0 30%, var(--gh-ghost) 30.5% 31.5%, transparent 32% 40%, color-mix(in srgb, var(--gh-ghost) 60%, transparent) 40.5% 41%, transparent 41.5%),
+    linear-gradient(128deg, var(--gh-sheen-panel), transparent 40%), color-mix(in srgb, var(--panel) 55%, transparent);
+  box-shadow: inset 0 1px 0 var(--gh-rim), inset 0 2px 12px var(--gh-cast); }
+:root[data-design="glasshouse"] :is(.cls-notice, .cls-exit) {      /* small windows: a slim aero band on top */
+  border: 1px solid var(--gh-frame); border-radius: 10px; padding-top: 14px;
+  background: var(--gh-bar) top / 100% 8px no-repeat, linear-gradient(128deg, var(--gh-sheen-panel), transparent 40%), var(--cream);
+  box-shadow: inset 0 1px 0 var(--gh-rim), var(--stack-sm);
+}
+
+/* =====================================================================
+   Phone (< 640): glass header, capsule mini player, glass tab dock; Now Playing art is the hero
+   ===================================================================== */
+@media (max-width: 639px) {
+  :root[data-design="glasshouse"] .header { margin: 8px 8px 6px; border-radius: 14px; padding-top: 8px; padding-bottom: 8px; }
+  :root[data-design="glasshouse"] .gh-brand { font-size: 1.875rem; }
+  /* header row fits brand + tray + two keys inside 360px (and at 125% text): the tray keeps its glyphs and word but
+     drops the cache size and stacks the word on two short lines ("last.fm / queued"), 40px keys */
+  :root[data-design="glasshouse"] :is(.header__tools, .tray--compact, .tray--compact .tray__pill) { min-width: 0; flex-shrink: 1; }
+  :root[data-design="glasshouse"] .tray--compact .tray__gb { display: none; }
+  :root[data-design="glasshouse"] .tray--compact .tray__word { min-width: 0; max-width: 9ch; overflow: hidden; white-space: normal; font-size: .6875rem; line-height: 1.1; }
+  :root[data-design="glasshouse"] .tray--compact .tray__word::after { content: none; }
+  :root[data-design="glasshouse"] .header .btn-icon { width: 40px; height: 40px; }
+  :root[data-design="glasshouse"] .mini { border-radius: 14px; }
+  :root[data-design="glasshouse"] .tabbar { margin: 0 8px 8px; border-radius: 16px; height: var(--tab-h); padding: 4px 6px; border-top-width: 1px; }
+  :root[data-design="glasshouse"] .tab { font: 600 .6875rem/1 var(--f-px); }
+  :root[data-design="glasshouse"] .tab .ic { border-radius: 8px; }
+  :root[data-design="glasshouse"] .tab[aria-current="page"] .ic { background: var(--gh-lit); box-shadow: inset 0 0 0 1px var(--gh-lit-edge); }
+  :root[data-design="glasshouse"] .disc-home > .disc-hello h1 { font-size: 2.75rem; }
+  :root[data-design="glasshouse"] .card { padding-top: calc(var(--gh-barh) + 12px); }
+  :root[data-design="glasshouse"] .sys-tile__value { font-size: 1.375rem; white-space: nowrap; }
+  /* home media window: one LCD row (cover + title), the strip, four rows, the ticker; the mini player has the keys */
+  :root[data-design="glasshouse"] .gh-aimp { grid-template-columns: minmax(0, 1fr); grid-template-areas: "deck" "list" "tick"; padding: calc(var(--gh-barh) + 10px) 10px 10px; }
+  :root[data-design="glasshouse"] .gh-aimp__bar .gh-skin { display: none; }
+  :root[data-design="glasshouse"] .gh-aimp__lcd { grid-template-columns: 76px minmax(0, 1fr); justify-items: start; text-align: left; padding: 10px; }
+  :root[data-design="glasshouse"] .gh-aimp__lcd .cover { width: 76px; grid-row: span 2; }
+  :root[data-design="glasshouse"] .gh-aimp__title { font-size: 1.375rem; }
+  :root[data-design="glasshouse"] .gh-aimp__keys { display: none; }
+  :root[data-design="glasshouse"] .gh-aimp .trow:nth-child(n+5) { display: none; }
+  :root[data-design="glasshouse"] .gh-aimp .trow { grid-template-columns: 22px minmax(0, 1fr) 40px 32px; grid-template-areas: "num main dur more"; }
+  :root[data-design="glasshouse"] .gh-aimp .trow__like { display: none; }
+  :root[data-design="glasshouse"] .gh-aimp__open { margin-left: 0; }
+  /* search: the top result's keys stay on two rows at most */
+  :root[data-design="glasshouse"] .disc-top__actions { flex-wrap: nowrap; gap: 8px; }
+  :root[data-design="glasshouse"] .disc-top__actions .btn { flex: 1 1 auto; min-width: 0; padding: 0 10px; }
+  /* Now Playing, Art tab: the LCD runs to the window edge and the cover is the hero; title and format lines under it */
+  :root[data-design="glasshouse"] .now__top .now-head__from { font: 500 .75rem/1.3 var(--f-px); letter-spacing: 0; white-space: nowrap; }
+  :root[data-design="glasshouse"] .now-dev { padding: calc(var(--gh-barh) + 6px) 4px 10px; }
+  :root[data-design="glasshouse"] .now-dev .device__bezel { padding: 3px; }
+  :root[data-design="glasshouse"] .now-dev .device__screen { padding: 8px 8px 12px; }
+  :root[data-design="glasshouse"] .now-dev .now-dev__page[data-now="page"] { height: auto; min-height: var(--now-page-h); }
+  :root[data-design="glasshouse"] .now-dev .device__now { grid-template-columns: minmax(0, 1fr); justify-items: center; text-align: center; gap: 10px; }
+  :root[data-design="glasshouse"] .now-dev .device__now .cover { width: min(100%, 300px); --cover-size: min(100%, 300px); border-radius: 8px;
+    box-shadow: 0 16px 30px -14px rgba(159, 184, 230, .55), inset 0 1px 0 rgba(255, 255, 255, .4); }
+  :root[data-design="glasshouse"] .now-dev .now-dev__meta { justify-items: center; }
+  :root[data-design="glasshouse"] .now-dev .device__title { font-size: 1.75rem; }
+  :root[data-design="glasshouse"] .now-dev .device__facts { justify-content: center; }
+  :root[data-design="glasshouse"] .gh-skin__tab { padding: 0 7px; }
+  :root[data-design="glasshouse"] .gh-np__ticker { display: none; }
+  /* compact deck (Lyrics / Queue / Details): two rows, title over artist, then the keys */
+  :root[data-design="glasshouse"] .now-devc .device__bezel { grid-template-columns: 56px minmax(0, 1fr); grid-template-areas: "art screen" "keys keys"; min-height: 0; row-gap: 8px; padding: 8px; }
+  :root[data-design="glasshouse"] .now-devc__art { grid-area: art; }
+  :root[data-design="glasshouse"] .now-devc .device__screen { grid-area: screen; grid-column: auto; }
+  :root[data-design="glasshouse"] .now-devc .device__title { font: 400 1.375rem/1.1 var(--f-serif); }
+  :root[data-design="glasshouse"] .now-devc__keys { grid-area: keys; display: flex; justify-content: center; gap: 10px; }
+  :root[data-design="glasshouse"] .now-devc__skip { order: 1; }
+  :root[data-design="glasshouse"] .now-devc__keys > [data-now="ca"] { order: 2; }
+  :root[data-design="glasshouse"] .now-devc__keys > [data-now="cb"] { order: 3; }
+}
+
+/* =====================================================================
+   Motion: windows rise in on route change; base.css stops everything under reduced motion
+   ===================================================================== */
+:root[data-design="glasshouse"] .view .card { animation: gh-rise var(--dur-3) var(--ease-out) both; }
+:root[data-design="glasshouse"] .view .card:nth-of-type(2) { animation-delay: 40ms; }
+:root[data-design="glasshouse"] .view .card:nth-of-type(3) { animation-delay: 80ms; }
+@keyframes gh-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }

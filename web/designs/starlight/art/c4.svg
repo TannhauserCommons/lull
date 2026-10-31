@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" preserveAspectRatio="xMidYMid slice">
+  <!-- starlight cover c4: constellation with dotted lines (lavender). Filters: w = watercolour wobble, b = soft glow. -->
+  <defs>
+    <filter id="w" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence type="fractalNoise" baseFrequency=".07" numOctaves="2" seed="4"/>
+      <feDisplacementMap in="SourceGraphic" scale="2.4"/>
+    </filter>
+    <filter id="b" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3.5"/>
+    </filter>
+    <linearGradient id="s" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#efe8fc"/>
+      <stop offset="1" stop-color="#9d90da"/>
+    </linearGradient>
+  </defs>
+  <rect width="120" height="120" fill="url(#s)"/>
+  <ellipse cx="60" cy="56" rx="70" ry="14" transform="rotate(-24 60 56)" fill="#fff" opacity=".28" filter="url(#b)"/>
+  <polyline points="20,34 40,22 58,42 82,30 100,50 76,68 50,78" fill="none" stroke="#fff" stroke-width="1" stroke-dasharray="2 2.6" stroke-linecap="round" opacity=".95"/>
+  <circle cx="20" cy="34" r="2.1" fill="#fff"/>
+  <circle cx="40" cy="22" r="2.1" fill="#fff"/>
+  <circle cx="58" cy="42" r="2.1" fill="#fff"/>
+  <circle cx="100" cy="50" r="2.1" fill="#fff"/>
+  <circle cx="76" cy="68" r="2.1" fill="#fff"/>
+  <circle cx="50" cy="78" r="2.1" fill="#fff"/>
+  <circle cx="20" cy="34" r="4.5" fill="#fff" opacity="0.25"/>
+  <circle cx="40" cy="22" r="4.5" fill="#fff" opacity="0.25"/>
+  <circle cx="58" cy="42" r="4.5" fill="#fff" opacity="0.25"/>
+  <path transform="translate(82 30) scale(8)" fill="#fffaf6" d="M0-1C.12-.12.12-.12 1 0C.12.12.12.12 0 1C-.12.12-.12.12-1 0C-.12-.12-.12-.12 0-1Z"/>
+  <circle cx="12" cy="12" r="0.8" fill="#fff"/>
+  <circle cx="108" cy="14" r="1" fill="#fff"/>
+  <circle cx="30" cy="96" r="0.8" fill="#fff"/>
+  <circle cx="104" cy="86" r="0.7" fill="#fff"/>
+  <circle cx="66" cy="10" r="0.7" fill="#fff"/>
+  <circle cx="14" cy="66" r="0.9" fill="#fff"/>
+  <path d="M0 102Q30 92 60 100T120 96V120H0Z" fill="#8173c6" filter="url(#w)"/>
+</svg>

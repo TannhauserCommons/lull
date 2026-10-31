@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "description": "Only Webamp: the UI itself is buildless. `mise run setup` copies the bundle into web/vendor/.",
+  "dependencies": {
+    "webamp": "2.3.1"
+  }
+}

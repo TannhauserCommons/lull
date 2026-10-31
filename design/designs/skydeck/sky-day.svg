@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 310 140">
+  <!-- skydeck day ornament: a pearl sun in a blush halo, two cloud puffs drifting over it,
+       a dotted constellation and three pink sparkles -->
+  <defs>
+    <radialGradient id="halo">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".95"/>
+      <stop offset=".4" stop-color="#ffffff" stop-opacity=".5"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="blush">
+      <stop offset="0" stop-color="#f6cee4" stop-opacity="1"/>
+      <stop offset=".55" stop-color="#f6cee4" stop-opacity=".55"/>
+      <stop offset="1" stop-color="#f6cee4" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="pearl" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#fde9f3"/>
+    </linearGradient>
+    <path id="spark" d="M0 -1C.14 -.14 .14 -.14 1 0C.14 .14 .14 .14 0 1C-.14 .14 -.14 .14 -1 0C-.14 -.14 -.14 -.14 0 -1Z"/>
+    <g id="puff">
+      <circle cx="0" cy="0" r="11"/><circle cx="14" cy="-7" r="14"/><circle cx="31" cy="-2" r="11"/>
+      <rect x="-8" y="0" width="47" height="9" rx="4.5"/>
+    </g>
+  </defs>
+  <circle cx="246" cy="60" r="64" fill="url(#halo)"/>
+  <circle cx="246" cy="60" r="38" fill="url(#blush)"/>
+  <circle cx="246" cy="60" r="21" fill="url(#pearl)" stroke="#efbfd8" stroke-width="1.5"/>
+  <path d="M234 52a14 14 0 0 1 10-7" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- clouds: white body with a lilac underside -->
+  <use href="#puff" transform="translate(236 83)" fill="#d9d2f5"/>
+  <use href="#puff" transform="translate(236 80)" fill="#ffffff"/>
+  <use href="#puff" transform="translate(186 108) scale(.7)" fill="#d9d2f5"/>
+  <use href="#puff" transform="translate(186 106) scale(.7)" fill="#ffffff"/>
+  <g stroke="#a99bd0" stroke-width="1" stroke-dasharray="2 3" opacity=".8">
+    <line x1="30" y1="34" x2="74" y2="16"/>
+    <line x1="74" y1="16" x2="116" y2="38"/>
+    <line x1="116" y1="38" x2="152" y2="20"/>
+    <line x1="116" y1="38" x2="178" y2="46"/>
+  </g>
+  <g fill="#8f80c4">
+    <circle cx="30" cy="34" r="1.7"/><circle cx="74" cy="16" r="2.4"/><circle cx="116" cy="38" r="1.7"/>
+    <circle cx="152" cy="20" r="2.4"/><circle cx="178" cy="46" r="1.7"/>
+  </g>
+  <g fill="#dd9fc9">
+    <use href="#spark" transform="translate(268 30) scale(11)" fill="#ffffff"/>
+    <use href="#spark" transform="translate(298 120) scale(9)"/>
+    <use href="#spark" transform="translate(8 70) scale(4)" opacity=".7"/>
+  </g>
+</svg>

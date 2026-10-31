@@ -1,0 +1,204 @@
+/* Desktop design board (preview.html) + window.html helpers. Board only, never shipped in the app.
+   App surfaces read tokens. The .pv-os block holds reference colours of NATIVE OS chrome
+   (Windows 11, GNOME/Adwaita, KDE/Breeze) that the OS draws around or instead of lull;
+   they exist only to show context and are not lull tokens. */
+
+.pv-os {
+  --win-light: #f3f3f3; --win-light-2: #e9e9e9; --win-light-line: #e0e0e0; --win-light-fg: #1b1b1b;
+  --win-dark: #202020; --win-dark-2: #2d2d2d; --win-dark-line: #3a3a3a; --win-dark-fg: #f3f3f3;
+  --win-border: #8a8a8a;
+  --gnome-bar: #000000; --gnome-fg: #f6f5f4; --gnome-menu: #353535; --gnome-menu-2: #474747; --gnome-hb: #303030; --gnome-hb-btn: #474747;
+  --kde-light: #eff0f1; --kde-light-2: #dee0e2; --kde-light-fg: #232629; --kde-dark: #202326; --kde-dark-2: #31363b; --kde-dark-fg: #fcfcfc;
+  --kde-select: #3daee9; --kde-close: #da4453;
+  --os-font-win: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --os-font-gnome: Cantarell, "Adwaita Sans", system-ui, sans-serif;
+  --os-font-kde: "Noto Sans", system-ui, sans-serif;
+}
+
+/* =====================================================================
+   window.html
+   ===================================================================== */
+.pv-window #pv-root { position: relative; }
+.pv-window .pv-greeting { margin-top: 4px; }
+.pv-window .pv-summary { margin: 6px 0 20px; }
+.pv-window .shelf { overflow: hidden; }
+/* drag-region overlay for the detail crops (?drag=1) */
+.pv-show-drag [data-tauri-drag-region] { outline: 2px dashed var(--accent-ui); outline-offset: -2px; }
+.pv-show-drag .dk-dragstrip { background: repeating-linear-gradient(45deg, var(--accent-ui) 0 2px, transparent 2px 7px); }
+.pv-cover { position: fixed; inset: 0; z-index: var(--z-overlay); display: grid; place-items: center; padding: var(--sp-6); }
+.pv-cover__card { display: grid; justify-items: center; gap: var(--sp-3); max-width: 420px; text-align: center; }
+.pv-wnote {
+  position: fixed; left: 50%; bottom: 16px; z-index: var(--z-toast); transform: translate(-50%, 4px); opacity: 0;
+  padding: 6px 12px; border-radius: var(--r-chip); background: var(--ink); color: var(--cream); font: var(--t-micro); white-space: nowrap;
+  transition: opacity var(--dur-1), transform var(--dur-1);
+}
+.pv-wnote.is-on { opacity: 1; transform: translate(-50%, 0); }
+
+/* =====================================================================
+   Board layout
+   ===================================================================== */
+.pv-board { min-height: 100vh; }
+.pv-wrap { position: relative; z-index: 1; max-width: 1360px; margin: 0 auto; padding: 32px var(--gutter) 64px; }
+.pv-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-4); align-items: start; }
+.pv-head .wordmark { font-size: 1.75rem; }
+.pv-head h1 { margin-top: var(--sp-2); }
+.pv-head__lede { max-width: 72ch; margin-top: var(--sp-2); color: var(--fg-2); }
+.pv-head__tools { display: flex; align-items: center; gap: var(--sp-2); }
+.pv-head .btn-icon { width: 44px; height: 44px; background: var(--panel); color: var(--fg-panel); border-color: var(--theme-edge); }
+.pv-toc { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-6) 0 var(--sp-2); padding: 0; list-style: none; }
+.pv-toc a { display: inline-flex; align-items: center; min-height: 36px; padding: 0 var(--sp-3); border-radius: var(--r-pill); border: var(--stroke) solid var(--edge); background: var(--panel); color: var(--fg-panel); font: 700 .875rem/1 var(--f-ui); }
+.pv-toc a:hover { background: var(--panel-2); }
+.pv-sec { margin-top: var(--sp-12); scroll-margin-top: 16px; }
+.pv-sec > .label-rule h2 { font-size: 1.5rem; }
+.pv-sec__lede { max-width: 72ch; margin: calc(var(--sp-2) * -1) 0 var(--sp-5); color: var(--fg-2); }
+.pv-grid { display: grid; gap: var(--sp-6) var(--sp-6); align-items: start; }
+.pv-grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.pv-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.pv-grid + .pv-grid, .pv-grid + .pv-notes, .pv-notes + .pv-grid { margin-top: var(--sp-6); }
+@media (max-width: 1099px) { .pv-grid--3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 799px) { .pv-grid--2, .pv-grid--3 { grid-template-columns: minmax(0, 1fr); } }
+
+.pv-frame { margin: 0; min-width: 0; }
+.pv-frame figcaption { margin-top: var(--sp-3); font: var(--t-meta); color: var(--fg-2); }
+.pv-frame figcaption b { color: var(--fg); font-weight: 800; }
+.pv-fit { position: relative; width: 100%; }
+.pv-fit > * { transform-origin: 0 0; }
+.pv-fit iframe { display: block; width: 100%; height: 100%; border: 0; background: transparent; }
+
+/* Windows 11 frame: 1 px border, 8 px corners (square when maximised) */
+.pv-win .pv-fit > * { border: 1px solid var(--win-border); border-radius: 8px; overflow: hidden; }
+.pv-frame.is-max .pv-fit > * { border-radius: 0; }
+/* undecorated Linux window: square, the app draws its own 1 px edge */
+.pv-gnome .pv-fit > * { overflow: hidden; }
+/* GNOME default: GTK draws an Adwaita header bar above the app */
+.pv-adw .pv-fit > * { display: grid; grid-template-rows: 46px minmax(0, 1fr); border-radius: 12px 12px 0 0; overflow: hidden; border: 1px solid var(--gnome-hb-btn); }
+.pv-adw__bar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 0 8px; background: var(--gnome-hb); color: var(--gnome-fg); font: 700 15px/1 var(--os-font-gnome); }
+.pv-adw__bar > b { grid-column: 2; }
+.pv-adw__btns { grid-column: 3; justify-self: end; display: flex; gap: 12px; }
+.pv-adw__btns i { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--gnome-hb-btn); }
+/* KDE: KWin draws a Breeze title bar (server-side) */
+.pv-kde .pv-fit > * { display: grid; grid-template-rows: 30px minmax(0, 1fr); border: 1px solid var(--kde-light-2); overflow: hidden; border-radius: 4px 4px 0 0; }
+.pv-kde__bar { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; padding: 0 6px; background: var(--kde-light-2); color: var(--kde-light-fg); font: 400 13px/1 var(--os-font-kde); }
+.pv-kde__bar img { width: 16px; height: 16px; }
+.pv-kde__bar b { justify-self: center; font-weight: 400; }
+.pv-kde__btns { display: flex; gap: 6px; }
+.pv-kde__btns i { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; color: var(--kde-light-fg); }
+.pv-kde__btns i:last-child { background: var(--kde-close); color: var(--kde-light); }
+.pv-adw .dk-glyph, .pv-kde .dk-glyph { width: 8px; height: 8px; stroke-width: 1.5; }
+
+/* detail crop: the top-right of a 1280 px window at 1:1 */
+.pv-crop { position: relative; height: 168px; overflow: hidden; border: 1px solid var(--win-border); border-radius: 8px 8px 0 0; border-bottom: 0; }
+.pv-crop iframe { position: absolute; top: 0; right: 0; width: 1280px; height: 800px; border: 0; transform: scale(2); transform-origin: 100% 0; }
+
+/* desktop backdrop for transparent mini windows */
+.pv-desk {
+  display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: center; gap: var(--sp-6); padding: var(--sp-6);
+  border-radius: var(--r-panel); border: var(--stroke) dashed var(--edge);
+  background: repeating-linear-gradient(135deg, var(--sky-deep) 0 14px, var(--sky) 14px 28px);
+}
+.pv-desk .pv-frame { flex: 0 1 auto; width: var(--frame-w); max-width: 100%; }
+.pv-desk .pv-fit iframe { color-scheme: normal; }
+
+
+/* notes */
+.pv-notes { display: grid; gap: var(--sp-2); max-width: 80ch; margin: 0; padding-left: 1.2em; color: var(--fg); }
+.pv-notes li::marker { color: var(--fg-2); }
+.pv-notes code, .pv-sec code { font: 700 .875em/1 var(--f-ui); padding: 1px 6px; border-radius: var(--r-chip); background: var(--panel); color: var(--fg-panel); border: 1px solid var(--theme-edge); }
+.pv-kbd-dim { font: var(--t-px); letter-spacing: var(--t-px-track); }
+
+/* =====================================================================
+   Tray: icons on taskbars, native menus
+   ===================================================================== */
+.pv-bars { display: grid; gap: var(--sp-3); }
+.pv-bar { display: flex; align-items: center; gap: 14px; min-height: 48px; padding: 0 14px; border-radius: 10px; font: 400 12px/1.2 var(--os-font-win); }
+.pv-bar__label { flex: 1; font: var(--t-meta); }
+.pv-bar__slot { display: grid; place-items: center; width: 32px; height: 40px; border-radius: 4px; }
+.pv-bar__slot.is-ours { box-shadow: inset 0 0 0 1px currentColor; }
+.pv-bar__slot img { display: block; image-rendering: auto; }
+.pv-bar__sys { width: 16px; height: 16px; opacity: .85; }
+.pv-bar--win-light { background: var(--win-light); color: var(--win-light-fg); }
+.pv-bar--win-dark { background: var(--win-dark); color: var(--win-dark-fg); }
+.pv-bar--gnome { min-height: 32px; border-radius: 6px; background: var(--gnome-bar); color: var(--gnome-fg); font-family: var(--os-font-gnome); font-weight: 700; }
+.pv-bar--gnome .pv-bar__slot { height: 28px; }
+.pv-bar--kde-light { min-height: 44px; background: var(--kde-light); color: var(--kde-light-fg); font-family: var(--os-font-kde); }
+.pv-bar--kde-dark { min-height: 44px; background: var(--kde-dark); color: var(--kde-dark-fg); font-family: var(--os-font-kde); }
+.pv-bar .pv-bar__label { color: inherit; }
+
+.pv-zoom { display: flex; flex-wrap: wrap; gap: var(--sp-4); align-items: flex-end; margin-top: var(--sp-5); }
+.pv-zoom figure { margin: 0; display: grid; gap: 6px; justify-items: center; font: var(--t-px); letter-spacing: var(--t-px-track); color: var(--fg-2); }
+.pv-zoom img { image-rendering: pixelated; display: block; padding: 8px; border-radius: var(--r-chip); border: 1px solid var(--edge); }
+.pv-zoom .on-light { background: var(--win-light); }
+.pv-zoom .on-dark { background: var(--win-dark); }
+
+.pv-menus { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-6); align-items: start; }
+@media (max-width: 1099px) { .pv-menus { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 639px) { .pv-menus { grid-template-columns: minmax(0, 1fr); } }
+.pv-menu-fig { margin: 0; }
+.pv-menu-fig figcaption { margin-top: var(--sp-3); font: var(--t-meta); color: var(--fg-2); }
+.pv-menu-fig figcaption b { color: var(--fg); }
+.pv-menu { display: grid; width: max-content; min-width: 220px; max-width: 100%; padding: 4px; margin: 0; list-style: none; }
+.pv-menu li[role="none"] { display: contents; }
+.pv-menu__item {
+  display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 0 12px 0 8px;
+  text-align: left; color: inherit; font: inherit; border-radius: 4px;
+}
+.pv-menu__item:disabled, .pv-menu__item[aria-disabled="true"] { opacity: .55; cursor: default; }
+.pv-menu__check { width: 16px; height: 16px; visibility: hidden; }
+.pv-menu__item[aria-checked="true"] .pv-menu__check { visibility: visible; }
+.pv-menu__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pv-menu__sep { height: 1px; margin: 4px 0; }
+.pv-menu__item:focus-visible { outline-offset: -2px; }
+/* Windows 11 */
+.pv-menu--win { border-radius: 8px; font: 400 14px/1.2 var(--os-font-win); }
+.pv-menu--win-light { background: var(--win-light); color: var(--win-light-fg); border: 1px solid var(--win-light-line); --focus: var(--win-light-fg); }
+.pv-menu--win-light .pv-menu__item:not(:disabled):hover { background: var(--win-light-2); }
+.pv-menu--win-light .pv-menu__sep { background: var(--win-light-line); }
+.pv-menu--win-dark { background: var(--win-dark-2); color: var(--win-dark-fg); border: 1px solid var(--win-dark-line); --focus: var(--win-dark-fg); }
+.pv-menu--win-dark .pv-menu__item:not(:disabled):hover { background: var(--win-dark-line); }
+.pv-menu--win-dark .pv-menu__sep { background: var(--win-dark-line); }
+/* GNOME Shell (AppIndicator menu) */
+.pv-menu--gnome { padding: 6px; border-radius: 12px; background: var(--gnome-menu); color: var(--gnome-fg); font: 400 14px/1.2 var(--os-font-gnome); --focus: var(--gnome-fg); }
+.pv-menu--gnome .pv-menu__item { min-height: 34px; border-radius: 8px; }
+.pv-menu--gnome .pv-menu__item:not(:disabled):hover { background: var(--gnome-menu-2); }
+.pv-menu--gnome .pv-menu__sep { background: var(--gnome-menu-2); margin: 6px 8px; }
+/* KDE Plasma (Breeze) */
+.pv-menu--kde { border-radius: 4px; background: var(--kde-light); color: var(--kde-light-fg); border: 1px solid var(--kde-light-2); font: 400 13px/1.2 var(--os-font-kde); --focus: var(--kde-select); }
+.pv-menu--kde .pv-menu__item { min-height: 28px; border-radius: 2px; }
+.pv-menu--kde .pv-menu__item:not(:disabled):hover { box-shadow: inset 0 0 0 1px var(--kde-select); }
+.pv-menu--kde .pv-menu__sep { background: var(--kde-light-2); }
+.pv-log {
+  display: flex; align-items: center; gap: var(--sp-2); min-height: 48px; margin-top: var(--sp-5); padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--r-input); border: var(--stroke) solid var(--edge); background: var(--panel); color: var(--fg-panel); font: 600 .9375rem/1.4 var(--f-ui);
+}
+.pv-log .ic { color: var(--fg-panel-2); flex: none; }
+
+/* =====================================================================
+   Connect states grid, icons
+   ===================================================================== */
+.pv-states { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-6); align-items: start; }
+@media (max-width: 1199px) { .pv-states { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 699px) { .pv-states { grid-template-columns: minmax(0, 1fr); } }
+.pv-state > .label-rule { margin-bottom: 0; }
+.pv-state .dk-page--inline { padding-top: var(--sp-3); }
+
+.pv-icons { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-5); padding: var(--sp-5); border-radius: var(--r-panel); }
+.pv-icons + .pv-icons { margin-top: var(--sp-3); }
+.pv-icons figure { margin: 0; display: grid; justify-items: center; gap: 6px; font: var(--t-px); letter-spacing: var(--t-px-track); }
+.pv-icons img { display: block; }
+.pv-icons--light { background: var(--cream); color: var(--ink-2); border: var(--stroke) solid var(--line); }
+.pv-icons--dark { background: var(--sky-deep); color: var(--fg-sky-2); border: var(--stroke) solid var(--edge); }
+:root[data-theme="night"] .pv-icons--dark { background: var(--tray); }
+.pv-big { max-width: 100%; height: auto; }
+.pv-mask { position: relative; width: 192px; height: 192px; border-radius: 50%; overflow: hidden; }
+.pv-mask img { width: 100%; height: 100%; }
+.pv-mask::after { content: ""; position: absolute; inset: 10%; border-radius: 50%; border: 2px dashed var(--star); opacity: 0; }
+.pv-mask.is-safe { border-radius: 0; }
+.pv-mask.is-safe::after { opacity: 1; }
+.pv-table { width: 100%; max-width: 900px; border-collapse: collapse; font: var(--t-meta); }
+.pv-table th, .pv-table td { padding: 10px 12px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--divider); }
+.pv-table th { font-weight: 800; color: var(--fg); }
+.pv-table td { color: var(--fg); }
+.pv-table td:first-child { white-space: nowrap; font-weight: 700; }
+.pv-table-wrap { overflow-x: auto; margin-top: var(--sp-5); }
+@media (max-width: 639px) { .pv-head { grid-template-columns: minmax(0, 1fr); } .pv-sec { margin-top: var(--sp-10); } }
+@media (max-width: 799px) { .pv-board > .sky-specks .sparkle { display: none; } }   /* no room beside the text */

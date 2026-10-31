@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f7f4ff">
+<meta name="description" content="lull: a self-hosted music player that streams from Soulseek and saves to Jellyfin.">
+<title>lull</title>
+<link rel="icon" href="../assets/app-icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../base.css">
+<link rel="stylesheet" href="../components.css">
+<link rel="stylesheet" href="screens/discover.css">
+<link rel="stylesheet" href="screens/now.css">
+<link rel="stylesheet" href="screens/library.css">
+<link rel="stylesheet" href="screens/system.css">
+<link rel="stylesheet" href="screens/classic.css">
+<link rel="stylesheet" href="../desktop/desktop.css">
+<link rel="stylesheet" id="design-css" href="../designs/lull/design.css">
+<script src="../designs/designs.js"></script>
+<script>
+  /* before first paint: design (stylesheet + data-design/data-shell), stored theme / motion / text size,
+     or ?theme= / ?motion= / ?design= in the hash, so there is no flash */
+  (function () {
+    var d = document.documentElement, p = {};
+    Designs.boot();
+    try { p = JSON.parse(localStorage.getItem('lull:prefs')) || {}; } catch (e) { p = {}; }
+    var q = (location.hash.split('?')[1] || '') + '&' + location.search.slice(1);
+    var m = /(?:^|&)theme=(day|night|system)/.exec(q); if (m) p.theme = m[1];
+    var mo = /(?:^|&)motion=(reduce|full|system)/.exec(q); if (mo) p.motion = mo[1];
+    Designs.applyTheme(p.theme);                       /* 'system' resolves to day / night and follows the OS */
+    if (p.motion === 'reduce' || p.motion === 'full') d.setAttribute('data-motion', p.motion);
+    if (p.textSize && +p.textSize !== 100) d.style.fontSize = +p.textSize + '%';
+  })();
+</script>
+</head>
+<body>
+<div class="sky-specks" aria-hidden="true">
+  <span class="sparkle" style="--s:22px; right:4%; top:84px"></span>
+  <span class="sparkle" style="--s:12px; right:9%; top:140px"></span>
+  <span class="sparkle" style="--s:16px; left:2%; bottom:26%"></span>
+</div>
+<button class="skip-link btn btn--primary" data-act="skip">Skip to content</button>
+
+<div class="app" id="app">
+  <!-- rail: full on desktop, icons on tablet, hidden on phone -->
+  <nav class="rail s-panel" aria-label="Main" data-region="rail">
+    <span class="region-title" aria-hidden="true">menu</span>
+    <div class="rail__head"><a href="#/home" aria-label="lull home" data-brand><span class="wordmark brand" aria-hidden="true"><span class="brand__name">lull</span><span class="brand__orn wordmark__spark"></span></span></a></div>
+    <div class="rail__nav">
+      <a class="nav-item" data-nav="home" href="#/home" data-tip="Home"><svg class="ic" aria-hidden="true"><use href="#i-home"/></svg><span class="nav-item__label">Home</span></a>
+      <a class="nav-item" data-nav="search" href="#/search" data-tip="Search"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg><span class="nav-item__label">Search</span></a>
+      <a class="nav-item" data-nav="library" href="#/library" data-tip="Library"><svg class="ic" aria-hidden="true"><use href="#i-library"/></svg><span class="nav-item__label">Library</span></a>
+      <a class="nav-item" data-nav="playlists" href="#/playlists" data-tip="Playlists"><svg class="ic" aria-hidden="true"><use href="#i-playlists"/></svg><span class="nav-item__label">Playlists</span></a>
+      <a class="nav-item" data-nav="stats" href="#/stats" data-tip="Stats"><svg class="ic" aria-hidden="true"><use href="#i-stats"/></svg><span class="nav-item__label">Stats</span></a>
+      <a class="nav-item" data-nav="settings" href="#/settings" data-tip="Settings"><svg class="ic" aria-hidden="true"><use href="#i-settings"/></svg><span class="nav-item__label">Settings</span></a>
+    </div>
+    <div class="rail__scroll">
+      <div class="rail__section"><div class="label-rule label-rule--sm"><h2>following</h2></div></div>
+      <div class="rail__tags" id="rail-tags"></div>
+      <div class="rail__section"><div class="label-rule label-rule--sm"><h2>playlists</h2></div></div>
+      <ul class="rail__list" id="rail-playlists"></ul>
+    </div>
+    <div class="rail__foot"><button data-act="shortcuts">Press <kbd class="kbd">?</kbd> for shortcuts</button><span>v0.1</span></div>
+  </nav>
+
+  <header class="header" data-region="header">
+    <div class="header__brand"><a href="#/home" aria-label="lull home" data-brand><span class="wordmark brand" aria-hidden="true"><span class="brand__name">lull</span><span class="brand__orn wordmark__spark"></span></span></a></div>
+    <!-- top navigation pills: shown only in the topnav shell (designs choose the shell); the search field is Search -->
+    <nav class="header__nav" aria-label="Main" data-region="topnav">
+      <a class="nav-pill" data-nav="home" href="#/home" data-tip="Home"><svg class="ic" aria-hidden="true"><use href="#i-home"/></svg><span class="nav-pill__label">Home</span></a>
+      <a class="nav-pill" data-nav="library" href="#/library" data-tip="Library"><svg class="ic" aria-hidden="true"><use href="#i-library"/></svg><span class="nav-pill__label">Library</span></a>
+      <a class="nav-pill" data-nav="playlists" href="#/playlists" data-tip="Playlists"><svg class="ic" aria-hidden="true"><use href="#i-playlists"/></svg><span class="nav-pill__label">Playlists</span></a>
+      <a class="nav-pill" data-nav="stats" href="#/stats" data-tip="Stats"><svg class="ic" aria-hidden="true"><use href="#i-stats"/></svg><span class="nav-pill__label">Stats</span></a>
+    </nav>
+    <div class="header__search search-field" role="search">
+      <svg class="ic" aria-hidden="true"><use href="#i-search"/></svg>
+      <label class="vh" for="header-search">Search your library and Soulseek</label>
+      <input class="input" id="header-search" type="search" placeholder="Search songs, albums, artists" autocomplete="off" spellcheck="false">
+      <span class="search-field__end">
+        <button class="btn-icon btn-icon--bare btn-icon--sm search-field__clear" id="header-search-clear" data-act="clear-search" aria-label="Clear search" data-tip="Clear" hidden><svg class="ic ic-16" aria-hidden="true"><use href="#i-close"/></svg></button>
+        <kbd class="kbd" aria-hidden="true">/</kbd>
+      </span>
+    </div>
+    <div class="spacer"></div>
+    <div class="header__tools">
+      <button class="tray tray--full" data-tray="full" data-act="status" aria-haspopup="dialog" aria-expanded="false"></button>
+      <button class="tray tray--compact" data-tray="compact" data-act="status" aria-haspopup="dialog" aria-expanded="false"></button>
+      <button class="btn-icon header__shelf" data-act="shelf" aria-haspopup="dialog" aria-expanded="false" aria-label="Following and playlists" data-tip="Following and playlists"><svg class="ic" aria-hidden="true"><use href="#i-follow"/></svg></button>
+      <a class="btn-icon header__settings" data-nav="settings" href="#/settings" aria-label="Settings" data-tip="Settings"><svg class="ic" aria-hidden="true"><use href="#i-settings"/></svg></a>
+      <button class="btn-icon" data-act="open-activity" data-tip="Activity"><svg class="ic" aria-hidden="true"><use href="#i-activity"/></svg><span class="btn-icon__badge" data-activity-count hidden>0</span></button>
+      <button class="btn-icon" data-act="theme" data-tip="Switch theme (T)" aria-label="Switch theme"><svg class="ic" aria-hidden="true"><use href="#i-sun"/></svg></button>
+    </div>
+  </header>
+  <div class="banner-slot" id="banners"></div>
+
+  <div class="main" data-region="content">
+    <div class="sheet-bar">
+      <button class="btn-icon btn-icon--bare" data-act="back" aria-label="Close Now Playing" data-tip="Close"><svg class="ic ic-24" aria-hidden="true"><use href="#i-chevron-down"/></svg></button>
+      <span class="sheet__handle" aria-hidden="true"></span>
+    </div>
+    <main class="view" id="view" tabindex="-1"></main>
+  </div>
+
+  <!-- context panel: docked >= 1360, overlay 1100-1359, drawer on tablet, sheet on phone -->
+  <aside class="ctx s-panel" id="ctx" aria-label="Queue, lyrics and activity" data-region="ctx">
+    <span class="region-title" aria-hidden="true" id="ctx-title">queue</span><span class="region-meta" aria-hidden="true" id="ctx-meta"></span>
+    <div class="ctx__head">
+      <div class="seg" role="tablist" id="ctx-tabs" aria-label="Panel"></div>
+      <button class="btn-icon btn-icon--bare" data-act="close-panel" aria-label="Close panel" data-tip="Close panel (Esc)"><svg class="ic" aria-hidden="true"><use href="#i-close"/></svg></button>
+    </div>
+    <div class="ctx__body" id="ctx-body" role="tabpanel" tabindex="-1" data-drop="queue"></div>
+  </aside>
+  <div class="ctx-scrim" id="ctx-scrim" aria-hidden="true"></div>
+
+  <!-- player bar: desktop + tablet -->
+  <section class="pbar s-panel" id="pbar" aria-label="Player" data-drop="play" data-region="playerbar">
+    <span class="region-title" aria-hidden="true">now playing</span>
+    <div class="pbar__state" id="pbar-state" role="status" aria-live="polite" hidden></div>
+    <div class="pbar__now" id="pbar-now"></div>
+    <div class="pbar__centre">
+      <div class="pbar__controls">
+        <button class="btn-icon btn-icon--bare" data-act="shuffle" data-bind="shuffle" aria-pressed="false" aria-label="Shuffle" data-tip="Shuffle (S)"><svg class="ic" aria-hidden="true"><use href="#i-shuffle"/></svg></button>
+        <button class="btn-icon btn-icon--bare" data-act="prev" aria-label="Previous" data-tip="Previous (P)"><svg class="ic" aria-hidden="true"><use href="#i-prev"/></svg></button>
+        <button class="btn-gloss" data-act="play" data-bind="play" aria-label="Play" data-tip="Play (Space)"><i class="btn-gloss__spin" aria-hidden="true"></i><svg class="ic ic-play" aria-hidden="true"><use href="#i-play"/></svg></button>
+        <button class="btn-icon btn-icon--bare" data-act="next" aria-label="Next" data-tip="Next (N)"><svg class="ic" aria-hidden="true"><use href="#i-next"/></svg></button>
+        <button class="btn-icon btn-icon--bare" data-act="repeat" data-bind="repeat" aria-pressed="false" aria-label="Repeat off" data-tip="Repeat (R)"><svg class="ic" aria-hidden="true"><use href="#i-repeat"/></svg></button>
+      </div>
+      <div class="pbar__seek seek-row">
+        <span class="seek-row__time" data-bind="pos">0:00</span>
+        <div class="seek" data-seek="player" role="slider" tabindex="0" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div class="seek__track"><div class="seek__xfer"></div><div class="seek__bufs"></div><div class="seek__played"></div></div>
+          <div class="seek__rail"><div class="seek__knob"></div></div>
+          <div class="seek__tip" aria-hidden="true"></div>
+        </div>
+        <span class="seek-row__time" data-bind="dur">0:00</span>
+      </div>
+    </div>
+    <div class="pbar__tools">
+      <span class="pbar__xfade" data-bind="xfade" hidden><i></i>xfade<span class="vh">Crossfade active</span></span>
+      <button class="btn-icon btn-icon--bare" data-act="like" data-bind="like" aria-label="Like (L)" data-tip="Like (L)"><svg class="ic" aria-hidden="true"><use href="#i-heart"/></svg></button>
+      <button class="btn-icon btn-icon--bare" data-act="save" data-bind="save" aria-label="Save to library" data-tip="Save (Shift+S)"><svg class="ic" aria-hidden="true"><use href="#i-save"/></svg></button>
+      <button class="btn-icon btn-icon--bare is-wide" data-act="toggle-panel" data-tab="lyrics" aria-label="Lyrics" data-tip="Lyrics (Y)"><svg class="ic" aria-hidden="true"><use href="#i-lyrics"/></svg></button>
+      <button class="btn-icon btn-icon--bare" data-act="toggle-panel" data-tab="queue" aria-label="Queue" data-tip="Queue (Q)"><svg class="ic" aria-hidden="true"><use href="#i-queue"/></svg></button>
+      <button class="btn-icon btn-icon--bare is-wide" data-act="classic" aria-label="Classic mode" data-tip="Classic mode (W)"><svg class="ic" aria-hidden="true"><use href="#i-classic"/></svg></button>
+      <button class="btn-icon btn-icon--bare is-wide" data-act="open-now" aria-label="Device view" data-tip="Device view"><svg class="ic" aria-hidden="true"><use href="#i-device"/></svg></button>
+      <div class="vol">
+        <button class="btn-icon btn-icon--bare" data-act="mute" data-bind="mute" aria-pressed="false" aria-label="Mute (M)" data-tip="Mute (M)"><svg class="ic" aria-hidden="true"><use href="#i-volume-2"/></svg></button>
+        <div class="seek" data-seek="volume" role="slider" tabindex="0" aria-label="Volume" aria-valuemin="0" aria-valuemax="100" aria-valuenow="70">
+          <div class="seek__track"><div class="seek__played"></div></div>
+          <div class="seek__rail"><div class="seek__knob"></div></div>
+        </div>
+      </div>
+      <button class="btn-icon btn-icon--bare" data-act="player-more" aria-haspopup="menu" aria-label="More player actions" data-tip="More"><svg class="ic" aria-hidden="true"><use href="#i-more"/></svg></button>
+    </div>
+  </section>
+
+  <!-- phone: mini-player + 4-tab bar -->
+  <section class="mini s-panel" id="mini" aria-label="Now playing" data-drop="play" data-region="mini">
+    <div class="seek seek--line" data-seek="player" aria-hidden="true">
+      <div class="seek__track"><div class="seek__xfer"></div><div class="seek__bufs"></div><div class="seek__played"></div></div>
+    </div>
+    <a class="bezel-thumb" id="mini-thumb" href="#/now" aria-label="Open Now Playing"></a>
+    <a class="mini__text" href="#/now"><span class="mini__title" id="mini-title"></span><span class="mini__sub" id="mini-sub"></span></a>
+    <button class="btn-gloss btn-gloss--40" data-act="play" data-bind="play" aria-label="Play"><i class="btn-gloss__spin" aria-hidden="true"></i><svg class="ic ic-play" aria-hidden="true"><use href="#i-play"/></svg></button>
+    <button class="btn-icon btn-icon--bare" data-act="next" aria-label="Next"><svg class="ic" aria-hidden="true"><use href="#i-next"/></svg></button>
+  </section>
+  <nav class="tabbar s-panel" aria-label="Main" data-region="tabbar">
+    <a class="tab" data-nav="home" href="#/home"><svg class="ic" aria-hidden="true"><use href="#i-home"/></svg><span>Home</span></a>
+    <a class="tab" data-nav="search" href="#/search"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg><span>Search</span></a>
+    <a class="tab" data-nav="library" href="#/library"><svg class="ic" aria-hidden="true"><use href="#i-library"/></svg><span>Library</span></a>
+    <button class="tab" data-nav="more" data-act="more-sheet" aria-haspopup="dialog"><svg class="ic" aria-hidden="true"><use href="#i-more"/></svg><span>More</span></button>
+  </nav>
+</div>
+
+<div id="overlay-host"></div>
+<div class="toast-region" id="toasts" aria-live="polite"></div>
+<div class="drop-overlay" id="drop-overlay" hidden><div class="drop-overlay__frame"></div><div class="drop-overlay__label s-card"></div></div>
+<div class="vh" id="announcer" aria-live="polite"></div>
+
+<script src="../icons.js"></script>
+<script src="mock-data.js"></script>
+<script src="app.js"></script>
+<script src="screens/discover.js"></script>
+<script src="screens/now.js"></script>
+<script src="screens/library.js"></script>
+<script src="screens/system.js"></script>
+<script src="screens/classic.js"></script>
+<script src="../desktop/desktop.js"></script>
+</body>
+</html>

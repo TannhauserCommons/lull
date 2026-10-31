@@ -1,0 +1,28 @@
+# One entry point for humans, agents and CI. `mise run setup` once per clone.
+[tools]
+node = "24.11"
+
+[tasks.setup]
+description = "Toolchain, Webamp bundle and git hooks"
+run = ["rustup toolchain install", "sh scripts/vendor-web.sh"]
+
+[tasks.check]
+description = "Exactly what CI runs"
+run = [
+  "cargo fmt --all --check",
+  "cargo clippy --workspace --all-targets --locked -- -D warnings",
+  "cargo test --workspace --locked",
+]
+
+[tasks.test]
+description = "Tests only"
+run = "cargo test --workspace --locked"
+
+[tasks.dev]
+description = "Run lull locally with settings from .env (UI files reload from disk)"
+run = "cargo run --bin lull"
+env = { LULL_CONFIG = ".env", LULL_DATA_DIR = "data", LULL_LOG = "info,lull=debug" }
+
+[tasks.image]
+description = "Build the container image locally"
+run = "docker build -t lull:dev ."

@@ -1,0 +1,19 @@
+[package]
+name = "lull-library"
+description = "The Jellyfin library and the save pipeline (MusicBrainz, Cover Art Archive, tags, rescan)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+lull-core.workspace = true
+async-trait.workspace = true
+axum.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

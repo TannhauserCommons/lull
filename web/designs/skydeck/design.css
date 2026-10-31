@@ -1,0 +1,855 @@
+/* skydeck: a pocket handheld under a dusk sky (moodboard img 01 + 02).
+   The base CSS already is skydeck; this layer adds
+   - the sky: day = lavender to blush with cloud puffs and a pearl sun, night = mottled paper navy with a moon,
+   - console chrome: the player bar is the handheld turned sideways (cart slot, keys, LCD strip, dock), LED tray,
+     periwinkle head bands on panels and sheets, LCD read-outs (stats, toasts, facts, status),
+   - cartridges: Now Playing has one seated in the device, library heroes are cartridges, empty states ask for one,
+   - the backlight: night LCDs glow, day LCDs are reflective (pixel grid).
+   Ornaments live next to this file as readable SVG (sky-day.svg, sky-night.svg, sparkle-*.svg).
+   Fonts: base only (Nunito + Jersey 10). Every rule is scoped to :root[data-design="skydeck"]. */
+
+/* =====================================================================
+   1. Tokens
+   ===================================================================== */
+:root[data-design="skydeck"] {
+  --ctx: 344px; --bar-h: 100px;
+  --sky: #e4def9; --sky-deep: #d6cdf3;
+  --panel: #fbf9ff; --panel-2: #eee9fd;
+  --fg-sky: #2b2550; --fg-sky-2: #5b5478;
+  --fg-panel: #2b2550; --fg-panel-2: #5b5478;
+  --stack-2: #8fa3e0;
+  --tray: #c3c2e2; --tray-edge: #8f8bb0;
+  --scrim: #2b2550; --scrim-alpha: .45;
+  /* skydeck-only */
+  --sd-band: #b6c7f5; --sd-band-ink: #2b2550; --sd-band-ink-2: #3d3491;
+  --sd-panel-edge: #8f8bb0;
+  --sd-shelf: #d6cdf3; --sd-shelf-edge: #a9a3cf;
+  --sd-glow: #fff9fe; --sd-glow-2: #f9dcefb3;
+  --sd-console: linear-gradient(180deg, #c6d3f8 0%, var(--peri) 30%, #adbff2 100%);
+  --sd-console-lo: #9db0ea;
+  --sd-bar-stack: 0 6px 0 -2px var(--lav), 0 6px 0 0 var(--line);
+  --sd-lcd-tex: repeating-linear-gradient(90deg, #fff9fe0a 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(0deg, #fff9fe0a 0 1px, transparent 1px 3px);
+  --sd-lcd-glow: inset 0 0 0 transparent;
+  --sd-key-rim: 0 0 0 transparent;
+  --sd-sky-bg:
+    radial-gradient(38% 22% at 8% 100%, #ffffffcc 0%, #ffffff00 70%),
+    radial-gradient(30% 18% at 30% 104%, #ffffffb3 0%, #ffffff00 70%),
+    radial-gradient(34% 20% at 74% 102%, #ffffffbf 0%, #ffffff00 70%),
+    radial-gradient(26% 16% at 96% 96%, #ffffffa6 0%, #ffffff00 70%),
+    radial-gradient(34% 26% at 80% 6%, #fff9fea6 0%, #fff9fe00 70%),
+    linear-gradient(180deg, #e4def9 0%, #e6dff9 52%, #eee0f5 74%, #f6e1ee 100%);
+  --sd-moon: url("sky-day.svg");
+  --sd-spark: url("sparkle-pink.svg");
+  --sd-spark-c: url("sparkle-cream.svg");
+}
+:root[data-design="skydeck"][data-theme="night"] {
+  --sky: #414759; --sky-deep: #2a2f40;
+  --panel: #2a2f40; --panel-2: #353b50;
+  --fg-sky: #f2e3d1; --fg-sky-2: #c3c2e2;
+  --fg-panel: #f2e3d1; --fg-panel-2: #c3c2e2;
+  --stack-2: #5a75b5;
+  --tray: #262c3e; --tray-edge: #a9adc4;
+  --scrim: #161a28; --scrim-alpha: .55;
+  --sd-band: #526dad; --sd-band-ink: #fff9fe; --sd-band-ink-2: #e4def9;
+  --sd-panel-edge: #a9adc4;
+  --sd-shelf: #262c3e; --sd-shelf-edge: #6f7493;
+  --sd-glow: #c3c2e24d; --sd-glow-2: #c3c2e21f;
+  --sd-console: linear-gradient(180deg, #b6c7f5 0%, #a6b8ee 14%, #9fb2ea 100%);
+  --sd-console-lo: #8b9fdc;
+  --sd-bar-stack: 0 6px 0 -2px var(--lav), 0 6px 0 0 var(--line), 0 12px 0 -2px var(--peri-deep), 0 12px 0 0 var(--line);
+  --sd-lcd-tex: linear-gradient(transparent, transparent);
+  --sd-lcd-glow: inset 0 0 22px #f6cee41f;
+  --sd-key-rim: 0 0 0 1px #e4def966;
+  --sd-sky-bg:
+    radial-gradient(70% 30% at 50% 104%, #6d6491b3 0%, #6d649100 75%),
+    radial-gradient(30% 22% at 14% 22%, #535a70a6 0%, #535a7000 70%),
+    radial-gradient(26% 30% at 62% 14%, #20263ad9 0%, #20263a00 70%),
+    radial-gradient(36% 26% at 80% 58%, #20263ac7 0%, #20263a00 70%),
+    radial-gradient(24% 20% at 36% 66%, #535a7099 0%, #535a7000 70%),
+    radial-gradient(22% 18% at 92% 30%, #535a708c 0%, #535a7000 70%),
+    radial-gradient(20% 16% at 44% 40%, #20263a8c 0%, #20263a00 70%),
+    linear-gradient(180deg, #2f3446 0%, #393f53 35%, #414759 70%, #4a4a63 100%);
+  --sd-moon: url("sky-night.svg");
+  --sd-spark: url("sparkle-star.svg");
+}
+/* Contrast pairs the script cannot derive (gradients, local tokens):
+   sky stops (text sits on the sky):
+   check: #5b5478 on #f6e1ee 4.5
+   check: #2b2550 on #f6e1ee 4.5
+   check: #c3c2e2 on #20263a 4.5
+   check: #c3c2e2 on #4a4a63 4.5
+   console body (player bar, mini, device), day #adbff2 is the darkest stop, night #9fb2ea:
+   check: --ink on --peri 4.5
+   check: #433a6b on #adbff2 4.5
+   check: #433a6b on #9fb2ea 4.5
+   check: --ink on #9fb2ea 4.5
+   check: --indigo on #9fb2ea 3
+   check: #8f3573 on #9fb2ea 3
+   check: #4f5370 on #9fb2ea 3
+   dock track (lavender, both themes):
+   check: --ink on --lav 4.5
+   check: #433a6b on --lav 4.5
+   check: --indigo on --lav 3
+   check: --pink-ink on --lav 3
+   LCDs (mocha screen) and their keys:
+   check: --lilac on --screen 4.5
+   check: #f9dcec on --screen 4.5
+   check: --star on --mocha-edge 4.5
+   check: --lilac on --mocha-edge 4.5
+   check: --peri on --screen 3
+   check: #b9e6c9 on --screen 3
+   check: --pink-light on --screen 3
+   head bands:
+   check: --sd-band-ink on --sd-band 4.5
+   check: --sd-band-ink-2 on --sd-band 3
+   tray: warn pill, down pill, LED rings:
+   check: --ink on --pink-soft 4.5
+   check: #f9dcec on --screen 4.5
+   check: #3b3345 on --peri 3
+   library shelf (tabs):
+   check: --fg-sky on --sd-shelf 4.5
+   cartridge label + bezel wordmark (debossed ink):
+   check: --ink on --cream 4.5
+   check: #2b2550 on --mauve 3
+   check: --indigo on --mauve 3 */
+
+/* =====================================================================
+   2. The sky: gradient + mottling, star dust, sparkles, moon or sun
+   ===================================================================== */
+:root[data-design="skydeck"], :root[data-design="skydeck"] body { background: var(--sky); }
+:root[data-design="skydeck"] body { background: var(--sd-sky-bg) fixed; }
+:root[data-design="skydeck"] .sky-specks::before { opacity: .7; }
+:root[data-design="skydeck"][data-theme="night"] .sky-specks::before { opacity: 1; }
+/* three placed sparkles + star dust, denser in the top 240 px */
+:root[data-design="skydeck"] .sky-specks::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    var(--sd-spark), var(--sd-spark), var(--sd-spark),
+    radial-gradient(1.2px 1.2px at 30% 20%, var(--speck) 50%, transparent 51%),
+    radial-gradient(1px 1px at 70% 60%, var(--speck) 50%, transparent 51%),
+    radial-gradient(1.6px 1.6px at 50% 85%, var(--speck) 50%, transparent 51%),
+    radial-gradient(1px 1px at 15% 45%, var(--speck) 50%, transparent 51%),
+    radial-gradient(1.3px 1.3px at 85% 30%, var(--speck) 50%, transparent 51%),
+    radial-gradient(1px 1px at 8% 64%, var(--speck) 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 44% 38%, var(--speck) 50%, transparent 51%),
+    radial-gradient(1px 1px at 77% 12%, var(--speck) 50%, transparent 51%),
+    radial-gradient(1.2px 1.2px at 29% 91%, var(--speck) 50%, transparent 51%);
+  background-repeat: no-repeat, no-repeat, no-repeat, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat, repeat, repeat, repeat;
+  background-size: 20px 20px, 14px 14px, 26px 26px, 61px 240px, 83px 240px, 109px 240px, 137px 240px, 163px 240px, 170px 150px, 260px 230px, 210px 190px, 290px 270px;
+  background-position: 8px calc(100% - 132px), calc(100% - 4px) 56%, calc(100% - 30px) 92px, 0 0, 17px 0, 40px 0, 5px 0, 90px 0, 0 0, 0 0, 0 0, 0 0;
+  opacity: .75; animation: sd-twinkle 7s ease-in-out infinite alternate;
+}
+:root[data-design="skydeck"][data-theme="night"] .sky-specks::after { opacity: .9; }
+:root.is-hidden[data-design="skydeck"] .sky-specks::after,
+:root.is-hidden[data-design="skydeck"] .tray .sg--down,
+:root.is-hidden[data-design="skydeck"] .sd-empty__cursor,
+:root.is-hidden[data-design="skydeck"] .sd-empty--nosignal .sd-empty__lcd::before { animation-play-state: paused; }   /* loops rest in hidden tabs */
+@keyframes sd-twinkle { from { opacity: .6; } to { opacity: 1; } }
+
+/* moon (night) or pearl sun + clouds (day) with a constellation, in the empty top-right of the page;
+   hidden where a hero card owns that space */
+:root[data-design="skydeck"] .main::before {
+  content: ""; position: absolute; z-index: 0; top: -12px; right: 14px; width: 310px; height: 140px;
+  background: var(--sd-moon) right top / contain no-repeat; pointer-events: none;
+}
+:root[data-design="skydeck"] .main:has(.now, .lib-page, .lib-head)::before { display: none; }
+:root[data-design="skydeck"] .view { z-index: 1; }
+
+/* one big cream sparkle kisses the top-right corner of the page's first card (img 01) */
+:root[data-design="skydeck"] .view .card:first-of-type:not(.card .card, .now .card, .sys-tile, .lib-page)::after {
+  content: ""; position: absolute; z-index: 2; top: -15px; right: -13px; width: 30px; height: 30px; pointer-events: none;
+  background: var(--sd-spark-c) center / contain no-repeat; filter: drop-shadow(0 0 4px #fff9fe80);
+}
+:root[data-design="skydeck"][data-theme="day"] .view .card:first-of-type:not(.card .card, .now .card, .sys-tile, .lib-page)::after {
+  background-image: var(--sd-spark); filter: none;
+}
+
+@media (max-width: 1099px) { :root[data-design="skydeck"] .main::before { width: 150px; height: 120px; background-size: 310px 140px; } }
+@media (max-width: 639px) { :root[data-design="skydeck"] .main::before { display: none; } }
+/* the scrolling view fades at its bottom edge instead of slicing a row under the player bar */
+@media (min-width: 640px) {
+  :root[data-design="skydeck"] .view {
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 26px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 26px), transparent);
+  }
+}
+
+/* =====================================================================
+   3. Panels: rail + context panel as img 02 widgets (periwinkle head band)
+   ===================================================================== */
+:root[data-design="skydeck"] .rail,
+:root[data-design="skydeck"] .ctx { border-color: var(--sd-panel-edge); }
+:root[data-design="skydeck"] .rail { position: relative; }
+:root[data-design="skydeck"] .rail__head,
+:root[data-design="skydeck"] .ctx__head {
+  background: var(--sd-band); border-bottom: var(--stroke) solid var(--line); margin-bottom: 8px; box-shadow: inset 0 1.5px 0 #ffffff55;
+}
+:root[data-design="skydeck"] .rail__head { padding: 14px 18px 12px 20px; }
+:root[data-design="skydeck"] .ctx__head { border-radius: calc(var(--r-panel) - 2px) calc(var(--r-panel) - 2px) 0 0; padding: 10px 10px 10px 12px; }
+:root[data-design="skydeck"] .ctx__head > .btn-icon { color: var(--sd-band-ink); }
+:root[data-design="skydeck"] .ctx__head > .btn-icon:hover { background: #ffffff33; }
+/* brand "lull" on the band: ink name, pink spark */
+:root[data-design="skydeck"] .rail__head .brand { --wm-1: var(--sd-band-ink); --wm-spark: var(--pink-ink); }
+:root[data-design="skydeck"][data-theme="night"] .rail__head .brand { --wm-spark: var(--pink-light); }
+:root[data-design="skydeck"] .nav-item[aria-current="page"] { box-shadow: 0 3px 0 -1px var(--peri-deep), 0 3px 0 0 var(--line); margin-bottom: 3px; }
+/* long lists fade out at the panel's bottom edge instead of being cut mid-row */
+:root[data-design="skydeck"] .rail__scroll,
+:root[data-design="skydeck"] .ctx__body {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+}
+/* tablet icon rail: a tiny console sits in the empty foot (img 02 left widget) */
+@media (min-width: 640px) and (max-width: 1099px) {
+  :root[data-design="skydeck"] .rail::after {
+    content: ""; position: absolute; left: 50%; bottom: 18px; width: 44px; height: 64px; transform: translateX(-50%); pointer-events: none;
+    border: var(--stroke) solid var(--line); border-radius: 8px 8px 16px 8px;
+    background:
+      radial-gradient(circle at 9px 54px, var(--mocha) 0 4px, transparent 4.5px),
+      radial-gradient(circle at 31px 52px, var(--pink) 0 4px, transparent 4.5px),
+      radial-gradient(circle at 6px 5px, var(--pink) 0 2px, transparent 2.5px),
+      linear-gradient(var(--screen), var(--screen)) 6px 10px / 28px 24px no-repeat,
+      linear-gradient(var(--mauve), var(--mauve)) 3px 7px / 34px 30px no-repeat,
+      var(--sd-console);
+    box-shadow: 0 4px 0 -2px var(--lav), 0 4px 0 0 var(--line);
+  }
+}
+
+/* =====================================================================
+   4. Header: search pill + roomy LED status tray (img 02 top bar)
+   ===================================================================== */
+:root[data-design="skydeck"] .header__search .input { box-shadow: inset 0 2px 0 var(--panel-2); }
+:root[data-design="skydeck"] .tray { padding: 4px; gap: 5px; box-shadow: inset 0 2px 0 #00000014; }
+:root[data-design="skydeck"] .tray__pill {
+  height: 32px; padding: 1px 15px 0 12px; gap: 0; font-size: 1.25rem; letter-spacing: .05em;
+  box-shadow: inset 0 1.5px 0 #e9f5ff, inset 0 -2px 0 #9fb2ea;
+}
+:root[data-design="skydeck"] .tray:hover .tray__pill[data-state="ok"] { background: #c9d6fa; }
+/* severity reads by pill colour too: ok = periwinkle, warn = pink soft, down = a dark LCD pill */
+:root[data-design="skydeck"] .tray__pill[data-state="warn"] { background: var(--pink-soft); box-shadow: inset 0 1.5px 0 #fff, inset 0 -2px 0 #efc6dd; }
+:root[data-design="skydeck"] .tray__pill[data-state="down"] {
+  background: var(--screen); color: #f9dcec; box-shadow: inset 0 2px 0 #00000033, inset 0 0 0 1.5px var(--mocha-edge), var(--sd-lcd-glow);
+}
+/* status glyphs become LEDs: ok = round, warn = diamond, down = slashed and pulsing (shape, not only colour) */
+:root[data-design="skydeck"] .tray .sg {
+  --led: #7fd6a0; width: 9px; height: 9px; margin: -1px 9px 0 0; border-radius: 50%; color: transparent;
+  background: radial-gradient(circle at 35% 30%, #ffffffb3 0 18%, transparent 30%), var(--led);
+  box-shadow: 0 0 0 1.5px #3b3345, 0 0 5px 2px color-mix(in srgb, var(--led) 55%, transparent);
+}
+:root[data-design="skydeck"] .tray .sg--warn { --led: #f2c46b; width: 8px; height: 8px; border-radius: 1.5px; transform: rotate(45deg); }
+:root[data-design="skydeck"] .tray .sg--down {
+  --led: #f08fb2; background: linear-gradient(135deg, var(--led) 0 40%, #3b3345 40% 60%, var(--led) 60%);
+  animation: sd-led-down 2s ease-in-out infinite alternate;
+}
+@keyframes sd-led-down { from { box-shadow: 0 0 0 1.5px #3b3345, 0 0 2px 1px #f08fb233; } to { box-shadow: 0 0 0 1.5px #3b3345, 0 0 7px 3px #f08fb2a6; } }
+/* compact tray (tablet, phone): one LCD pill of LEDs + cache; when something is wrong the cache gives way to .tray__word */
+:root[data-design="skydeck"] .tray--compact .tray__pill {
+  background: var(--screen); color: var(--lilac); padding: 1px 12px 0 12px;
+  box-shadow: inset 0 2px 0 #00000026, inset 0 0 0 1.5px var(--mocha-edge), var(--sd-lcd-glow);
+}
+:root[data-design="skydeck"] .tray--compact .sg { margin-right: 7px; box-shadow: 0 0 0 1.5px var(--mocha-edge), 0 0 5px 2px color-mix(in srgb, var(--led) 55%, transparent); }
+:root[data-design="skydeck"] .tray--compact .sg:last-of-type { margin-right: 10px; }
+:root[data-design="skydeck"] .tray--compact .tray__pill[data-worst="down"] { color: #f9dcec; }
+
+/* =====================================================================
+   5. Covers and tiles: light inner line (img 01 thumbs), a moon or sun per recipe, mocha play keys
+   ===================================================================== */
+:root[data-design="skydeck"] .cover { box-shadow: inset 0 0 0 1px #fff9fe59; }
+:root[data-design="skydeck"] .c1::before { box-shadow: 0 0 0 7px #fff9fe2e, 0 0 0 15px #fff9fe14; }
+:root[data-design="skydeck"] .c2 { --cv: linear-gradient(180deg, #e9d9f6 0%, var(--pink-soft) 30%, var(--pink) 100%); }
+:root[data-design="skydeck"] .c2::before {
+  inset: 0;
+  background:
+    repeating-linear-gradient(180deg, #fff9fecc 0 2px, transparent 2px 9px) 0 100% / 100% 42% no-repeat,
+    radial-gradient(circle at 62% 58%, #fff9fe 0 15%, #fff9fe55 15.5% 20%, #fff9fe22 20.5% 26%, transparent 26.5%);
+}
+:root[data-design="skydeck"] .c4::before { background-image:
+  radial-gradient(circle at 74% 72%, #fff9fe 0 9%, #fff9fe33 9.5% 14%, transparent 14.5%),
+  radial-gradient(1.4px 1.4px at 20% 30%, var(--star) 50%, transparent 51%), radial-gradient(1px 1px at 60% 42%, var(--star) 50%, transparent 51%),
+  radial-gradient(1.6px 1.6px at 82% 26%, var(--star) 50%, transparent 51%), radial-gradient(1px 1px at 35% 86%, var(--star) 50%, transparent 51%),
+  radial-gradient(1.2px 1.2px at 48% 18%, var(--star) 50%, transparent 51%); }
+:root[data-design="skydeck"] .c6::before {
+  height: 100%;
+  background:
+    repeating-linear-gradient(180deg, #fff9fe8c 0 1.5px, transparent 1.5px 7px) 0 100% / 100% 44% no-repeat,
+    radial-gradient(circle at 30% 36%, #fff9fe 0 10%, #fff9fe40 10.5% 16%, transparent 16.5%);
+}
+:root[data-design="skydeck"] .c8::before { box-shadow: 0 -1px 0 #fff9fe80; }
+/* check: --lilac on --mocha 3 (tile play glyph) */
+:root[data-design="skydeck"] .tile__play {
+  background: var(--mocha); color: var(--lilac); border-color: var(--mocha-edge);
+  box-shadow: inset 0 2px 0 #a48a93, 0 2px 0 var(--mocha-edge), var(--sd-key-rim);
+}
+:root[data-design="skydeck"] .tile__play:hover { background: var(--mocha-edge); }
+
+/* =====================================================================
+   6. Cards, LCD read-outs and the backlight
+   ===================================================================== */
+/* a light inner rim like the paper edge of img 01 */
+:root[data-design="skydeck"] .card { box-shadow: inset 0 1.5px 0 #fffaf2, var(--stack); }
+/* every mocha LCD: reflective pixel grid by day, a warm backlight at night; the theme switch fades it */
+:root[data-design="skydeck"] :is(.device__screen, .pbar__seek, .pbar__state, .sys-tile.card, .toast, .tray__pill, .sd-empty__lcd) {
+  transition: box-shadow 300ms var(--ease-out), background-color 300ms var(--ease-out);
+}
+
+/* rows: the hero (or the search card) states format and saved once; rows keep only what differs.
+   Hidden facts stay readable to screen readers (visually-hidden, not display: none). */
+:root[data-design="skydeck"] :is(.lib, .disc-songs) .trow__badges .badge-saved,
+:root[data-design="skydeck"] .lib-page ~ * .trow__badges .q-chip--ll,
+:root[data-design="skydeck"] .lib-page .trow__badges .q-chip--ll {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+:root[data-design="skydeck"] .lib .trow__badges .badge-slsk { font-size: 0; gap: 0; width: 28px; padding: 0; justify-content: center; }
+:root[data-design="skydeck"] .lib .trow__badges .badge-slsk .ic { margin: 0; }
+:root[data-design="skydeck"] .lib .trow__badges .q-chip:not(.q-chip--ly) { border-color: transparent; background: none; color: var(--fg-2); padding-inline: 2px; }
+:root[data-design="skydeck"] .lib .trow__badges .q-chip:not(.q-chip--ly)::before { display: none; }
+
+/* ---------- library heroes are cartridges: grip ridges, a cut corner, the cover on a label sticker,
+   the facts on a little LCD ---------- */
+:root[data-design="skydeck"] .view .lib-page.card {
+  clip-path: polygon(26px 0, 100% 0, 100% calc(100% + 24px), 0 calc(100% + 24px), 0 26px);
+}
+:root[data-design="skydeck"] .view .lib-page.card::before {      /* grip ridges on the top edge */
+  content: ""; position: absolute; top: 9px; left: 50%; width: min(34%, 260px); height: 9px; transform: translateX(-50%); pointer-events: none;
+  background: repeating-linear-gradient(180deg, #bfa68a 0 1.5px, #fffaf2 1.5px 3.5px); border-radius: 1px; height: 12px;
+}
+:root[data-design="skydeck"] .view .lib-page.card::after {       /* the stroke along the cut corner */
+  content: ""; position: absolute; top: 0; left: 0; width: 37px; height: var(--stroke); background: var(--line);
+  transform-origin: 0 0; transform: translate(0, 26px) rotate(-45deg); pointer-events: none;
+}
+:root[data-design="skydeck"] .lib-hero > .cover,
+:root[data-design="skydeck"] .lib-hero > .mosaic,
+:root[data-design="skydeck"] .lib-pl__head > .mosaic {
+  box-shadow: inset 0 0 0 1px #fff9fe59, 0 0 0 8px #fffaf2, 0 0 0 9px var(--ink-2), 0 6px 0 4px var(--cream-3), 0 6px 0 5px var(--ink-2);
+}
+:root[data-design="skydeck"] .lib-hero > .cover.cover--round { box-shadow: inset 0 0 0 1px #fff9fe59, 0 0 0 8px #fffaf2, 0 0 0 9px var(--ink-2); }
+:root[data-design="skydeck"] .lib-pl__head { padding-top: calc(var(--card-pad) + 14px); }
+:root[data-design="skydeck"] .lib-page > .lib-hero { margin-top: 14px; }
+/* the facts read out on a little LCD */
+:root[data-design="skydeck"] .lib-kicker,
+:root[data-design="skydeck"] .lib-pl__facts,
+:root[data-design="skydeck"] .lib-hero__facts > .px {
+  display: inline-flex; align-items: center; gap: 10px; width: fit-content; padding: 3px 12px 1px; border-radius: 8px 8px 13px 8px;
+  background: var(--sd-lcd-tex), var(--screen); color: var(--lilac); font: var(--t-px); letter-spacing: var(--t-px-track);
+  box-shadow: inset 0 2px 0 #00000033, inset 0 0 0 1.5px var(--mocha-edge), var(--sd-lcd-glow);
+}
+:root[data-design="skydeck"] .lib-kicker { margin-bottom: 8px; font-style: normal; }
+:root[data-design="skydeck"] .lib-pl__facts > * { color: inherit; font: inherit; }
+:root[data-design="skydeck"] .lib-pl__upd { color: #f9dcec; }
+:root[data-design="skydeck"] .lib-pl__upd::before { content: "\00b7"; margin-right: 10px; color: var(--lavender); }
+/* "In library" is a state, not an action: a quiet status line */
+:root[data-design="skydeck"] .lib-actions .btn-save[data-state="library"] {
+  border-color: transparent; background: none; box-shadow: none; color: var(--fg-2); padding-inline: 6px; font-weight: 700;
+}
+
+/* ---------- library tabs: a cartridge shelf (one row, scrolls, fades at the edge) ---------- */
+:root[data-design="skydeck"] .lib-segs ul {
+  gap: 4px; padding: 5px; width: fit-content; max-width: 100%; border-radius: 18px;
+  background: var(--sd-shelf); border: var(--stroke) solid var(--sd-shelf-edge); box-shadow: inset 0 2px 0 #00000014;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+}
+:root[data-design="skydeck"] .lib-segs a.pill-filter { flex: none; min-height: 36px; border-color: transparent; background: none; color: var(--fg-sky); box-shadow: none; }
+:root[data-design="skydeck"] .lib-segs a.pill-filter:hover { background: #ffffff33; }
+:root[data-design="skydeck"] .lib-segs a.pill-filter[aria-current="page"] {
+  background: var(--sd-console); color: var(--ink); border-color: var(--line); border-radius: 12px 12px 16px 12px;
+  box-shadow: inset 0 1.5px 0 #e9f5ff, 0 3px 0 -1px var(--peri-deep), 0 3px 0 0 var(--line);
+}
+:root[data-design="skydeck"] .lib-filters {
+  flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 4px; margin: 0 -4px var(--sp-4);   /* room for focus rings */
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+}
+:root[data-design="skydeck"] .lib-filters > * { flex: none; }
+
+/* ---------- stats: tiles read out on little LCDs in a mauve bezel (img 02 clock blocks), bars as pixel blocks ---------- */
+:root[data-design="skydeck"] .sys-tile.card {
+  --bg: var(--screen); --fg: var(--lilac); --fg-2: var(--lavender); --focus: var(--star);
+  background: linear-gradient(118deg, #fff9fe00 0 62%, #fff9fe0f 62% 76%, #fff9fe00 76%), var(--sd-lcd-tex), var(--screen); color: var(--lilac);
+  border-color: var(--mocha-edge); border-radius: 14px 14px 26px 14px; padding: 15px 18px 16px;
+  box-shadow: inset 0 0 0 5px var(--mauve), inset 0 0 0 6.5px var(--mocha-edge), inset 0 9px 0 #00000024, var(--sd-lcd-glow), 0 5px 0 -2px var(--stack-1), 0 5px 0 0 var(--line);
+}
+:root[data-design="skydeck"] .sys-tile__value { font: 400 2.5rem/1 var(--f-px); letter-spacing: .02em; color: var(--star); }
+:root[data-design="skydeck"] .sys-tile__label { color: #f9dcec; }
+:root[data-design="skydeck"] .sys-tile__sub { text-wrap: balance; }
+:root[data-design="skydeck"] .sys-order__note { white-space: normal; } /* the content card is narrower here; wrap so the size estimate stays visible */
+:root[data-design="skydeck"] .sys-bar { height: 10px; border-radius: 3px; background: var(--sd-lcd-tex), var(--screen); box-shadow: inset 0 1.5px 0 #00000033; }
+:root[data-design="skydeck"] .sys-bar > i {
+  border-radius: 2px; background: repeating-linear-gradient(90deg, var(--peri) 0 7px, transparent 7px 9px);
+}
+:root[data-design="skydeck"] .sys-bars__row:first-child .sys-bar > i { background: repeating-linear-gradient(90deg, var(--pink-light) 0 7px, transparent 7px 9px); }
+@media (min-width: 600px) and (max-width: 1099px) {        /* five tiles as 3 + 2, no orphan */
+  :root[data-design="skydeck"] .sys-tiles { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px 14px; }
+  :root[data-design="skydeck"] .sys-tile.card { grid-column: span 2; }
+  :root[data-design="skydeck"] .sys-tile.card:nth-child(n+4) { grid-column: span 3; }
+  :root[data-design="skydeck"] .sys-tile__value { font-size: 2.125rem; }
+}
+@media (max-width: 599px) {
+  :root[data-design="skydeck"] .sys-tiles { grid-template-columns: 1fr 1fr; gap: 12px; }
+  :root[data-design="skydeck"] .sys-tile.card,
+  :root[data-design="skydeck"] .sys-tile.card:nth-child(n+4) { grid-column: auto; padding: 13px 14px 14px; }
+  :root[data-design="skydeck"] .sys-tile.card:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  :root[data-design="skydeck"] .sys-tile__value { font-size: 2rem; }
+  :root[data-design="skydeck"] .sys-tile__sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+}
+
+/* =====================================================================
+   7. Home and search
+   ===================================================================== */
+/* home with the queue docked (main column 700-979 px): new releases beside radio starters as a list, so
+   "picked for you" starts above the fold; the shelf shows 2.5 covers and fades at its edge to say it scrolls */
+@container disc (min-width: 700px) and (max-width: 979px) {
+  :root[data-design="skydeck"] .disc-home > .disc-duo:first-of-type { grid-template-columns: minmax(0, 1fr) 300px; column-gap: var(--sp-5); }
+  :root[data-design="skydeck"] .disc-home > .disc-duo:first-of-type .disc-shelf {
+    grid-auto-columns: 150px;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
+  }
+  :root[data-design="skydeck"] .disc-home > .disc-duo:first-of-type > .card:last-child { padding-inline: 18px 14px; }
+  :root[data-design="skydeck"] .disc-home > .disc-duo:first-of-type .disc-starters { grid-template-columns: minmax(0, 1fr); }
+  :root[data-design="skydeck"] .disc-home .disc-starter { grid-template-columns: 40px minmax(0, 1fr) 36px; min-height: 56px; gap: 10px; padding: 4px 4px 4px 2px; }
+  :root[data-design="skydeck"] .disc-home .disc-starter > .cover { --cover-size: 40px !important; }   /* inline --cover-size from the markup */
+  :root[data-design="skydeck"] .disc-home .disc-starter__title { font-size: .9375rem; }
+  :root[data-design="skydeck"] .disc-home .disc-starter__play { width: 36px; height: 36px; }
+}
+:root[data-design="skydeck"] .disc-hello { margin-bottom: var(--sp-4); }
+
+/* search: one compact top result, rows with one quiet pixel line of facts, then the Soulseek section */
+@media (min-width: 640px) {
+  :root[data-design="skydeck"] .disc-top > [data-after] { display: flex; align-items: center; gap: var(--sp-4) var(--sp-5); flex-wrap: wrap; }
+  :root[data-design="skydeck"] .disc-top .disc-top__body { flex: 1 1 300px; grid-template-columns: 64px minmax(0, 1fr); gap: var(--sp-4); align-items: center; }
+  :root[data-design="skydeck"] .disc-top .disc-top__body > .cover { --cover-size: 64px !important; }   /* inline --cover-size from the markup */
+  :root[data-design="skydeck"] .disc-top .disc-top__kind { display: none; }
+  :root[data-design="skydeck"] .disc-top .disc-top__title { font-size: 1.375rem; line-height: 1.15; }
+  :root[data-design="skydeck"] .disc-top .disc-top__badges { margin-top: 4px; }
+  :root[data-design="skydeck"] .disc-top .disc-top__actions { margin: 0; }
+  :root[data-design="skydeck"] .disc-top .card-head { margin-bottom: var(--sp-3); }
+  :root[data-design="skydeck"] .disc-top.card { padding-top: 16px; padding-bottom: 16px; }
+  :root[data-design="skydeck"] .disc-songs .disc-scan { margin-bottom: 4px; }
+}
+/* stacked (main column under 980 px): the top result and the songs read as one cream card, like one
+   search panel: no gap, no stack between them, a hairline instead */
+@container disc (max-width: 979px) {
+  :root[data-design="skydeck"] .disc-duo--results { row-gap: 0; }
+  :root[data-design="skydeck"] .disc-duo--results > .disc-top.card { margin-bottom: 0; border-bottom: 0; border-radius: var(--r-card) var(--r-card) 0 0; box-shadow: inset 0 1.5px 0 #fffaf2; }
+  :root[data-design="skydeck"] .disc-duo--results > .disc-top + .disc-songs.card { border-top: 1px solid var(--divider); border-radius: 0 0 var(--r-card) var(--r-card); box-shadow: var(--stack); }
+  :root[data-design="skydeck"] .disc-duo--results > .disc-top + .disc-songs.card::after { display: none; }
+}
+:root[data-design="skydeck"] .disc-top .disc-top__by { margin: 0; }
+:root[data-design="skydeck"] .disc-top .disc-top__badges .badge-saved { font-size: 0; gap: 0; width: 26px; padding: 0; justify-content: center; }
+:root[data-design="skydeck"] .disc-songs .trow__artist { flex-wrap: wrap; }
+:root[data-design="skydeck"] .disc-songs .trow__artist .dup-better { flex-basis: 100%; margin-left: 0; }
+:root[data-design="skydeck"] .disc-songs .trow__badges { gap: 8px; }
+:root[data-design="skydeck"] .disc-songs .trow__badges .q-chip--ll {
+  border-color: transparent; background: none; padding: 0; color: var(--fg-2); font: var(--t-px); letter-spacing: var(--t-px-track);
+}
+:root[data-design="skydeck"] .disc-songs .trow__badges .q-chip--ll::before { display: none; }
+:root[data-design="skydeck"] .disc-songs .trow__sources { font: var(--t-px); letter-spacing: var(--t-px-track); color: var(--fg-2); }
+/* section labels inside the songs list: "in your library", then "on soulseek" where peers' rows start */
+:root[data-design="skydeck"] .disc-songs .tlist > .trow:first-child:has(.badge-saved),
+:root[data-design="skydeck"] .disc-songs .trow:has(.badge-saved) + .trow:not(:has(.badge-saved)),
+:root[data-design="skydeck"] .disc-songs .tlist > .trow:first-child:not(:has(.badge-saved)) { margin-top: 26px; }
+:root[data-design="skydeck"] .disc-songs .tlist > .trow:first-child:has(.badge-saved)::before,
+:root[data-design="skydeck"] .disc-songs .trow:has(.badge-saved) + .trow:not(:has(.badge-saved))::before,
+:root[data-design="skydeck"] .disc-songs .tlist > .trow:first-child:not(:has(.badge-saved))::before {
+  content: "in your library"; position: absolute; left: 6px; top: -24px; pointer-events: none;
+  font: var(--t-px); letter-spacing: var(--t-px-track); color: var(--fg-2);
+}
+:root[data-design="skydeck"] .disc-songs .trow:has(.badge-saved) + .trow:not(:has(.badge-saved))::before,
+:root[data-design="skydeck"] .disc-songs .tlist > .trow:first-child:not(:has(.badge-saved))::before { content: "on soulseek"; }
+@media (max-width: 1099px) {
+  :root[data-design="skydeck"] .disc-songs .trow__badges .q-chip--ll,
+  :root[data-design="skydeck"] .disc-songs .trow__sources { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+@media (max-width: 639px) {
+  :root[data-design="skydeck"] .disc-top .disc-top__actions { flex-wrap: nowrap; gap: 8px; }
+  :root[data-design="skydeck"] .disc-top .disc-top__actions > .btn { flex: 1 1 auto; padding-inline: 12px; }
+  :root[data-design="skydeck"] .disc-top .disc-top__body { grid-template-columns: 72px minmax(0, 1fr); }
+  :root[data-design="skydeck"] .disc-top .disc-top__body > .cover { --cover-size: 72px !important; }  /* inline --cover-size from the markup */
+}
+
+/* =====================================================================
+   8. Overlays: sheets and dialogs (head band), scrim, toasts (an LCD message)
+   ===================================================================== */
+:root[data-design="skydeck"] :is(.sheet, .dialog) > .sheet__head {
+  background: var(--peri); color: var(--ink); border-bottom: var(--stroke) solid var(--line);
+  border-radius: calc(var(--r-panel) - 2px) calc(var(--r-panel) - 2px) 0 0; padding-top: 12px; padding-bottom: 12px; margin-bottom: 10px;
+  box-shadow: inset 0 2px 0 #e9f5ff; --fg: var(--ink); --focus: var(--indigo);
+}
+:root[data-design="skydeck"] :is(.sheet, .dialog) > .sheet__head .btn-icon { color: var(--ink); border-color: transparent; }
+:root[data-design="skydeck"] :is(.sheet, .dialog) > .sheet__head .btn-icon:hover { background: #ffffff59; }
+:root[data-design="skydeck"] .sheet { overflow: hidden; }
+/* desktop: every sheet and dialog floats inside the window with 32 px air under it; its body scrolls */
+@media (min-width: 640px) {
+  :root[data-design="skydeck"] :is(.sheet, .dialog) { max-height: calc(100dvh - 96px); }
+  :root[data-design="skydeck"] .sheet {
+    bottom: 32px; border-bottom: var(--stroke) solid var(--line); border-radius: var(--r-panel);
+    box-shadow: 0 6px 0 -2px var(--lav), 0 6px 0 0 var(--line); padding-bottom: 0;
+  }
+  :root[data-design="skydeck"]:not([data-motion="reduce"]) .sheet:not(.is-open) { transform: translate(-50%, calc(100% + 48px)); }
+}
+@media (max-width: 639px) {
+  :root[data-design="skydeck"] .sheet:has(> .sheet__handle) { background-image: linear-gradient(var(--peri) 0 12px, transparent 12px); }
+  :root[data-design="skydeck"] .sheet > .sheet__handle + .sheet__head { border-radius: 0; box-shadow: none; }
+}
+:root[data-design="skydeck"] .toast {
+  --bg: var(--screen); --bg-2: var(--mocha); --fg: var(--lilac); --fg-2: var(--lavender);
+  --link: #f9dcec; --edge: var(--lavender); --focus: var(--star); --divider: var(--mocha);
+  background: linear-gradient(115deg, #fff9fe00 0 62%, #fff9fe10 62% 76%, #fff9fe00 76%), var(--sd-lcd-tex), var(--screen); color: var(--lilac);
+  border: 3px solid var(--mauve); outline: var(--stroke) solid var(--mocha-edge); outline-offset: 0;
+  border-radius: 14px 14px 24px 14px; margin-bottom: 9px;
+  box-shadow: inset 0 3px 0 #00000024, var(--sd-lcd-glow), 0 7px 0 -2px var(--lav), 0 7px 0 0 var(--line);
+}
+:root[data-design="skydeck"] .toast:focus-visible { outline-color: var(--star); }
+:root[data-design="skydeck"] .toast .btn-icon { color: var(--lilac); }
+:root[data-design="skydeck"] .toast .btn-icon:hover { background: var(--mocha); }
+:root[data-design="skydeck"] .toast--error > .ic { color: var(--pink-light); }
+:root[data-design="skydeck"] .toast--ok > .ic { color: #b9e6c9; }
+
+/* =====================================================================
+   9. Empty and error states: a little handheld asking for a cartridge (design.js emptyArt slot)
+   ===================================================================== */
+:root[data-design="skydeck"] .empty__art:has(.sd-empty) { width: 132px; height: auto; display: grid; place-items: center; }
+:root[data-design="skydeck"] .sd-empty {
+  position: relative; display: grid; justify-items: center; width: 112px; height: 150px; padding: 10px 10px 0;
+  border: var(--stroke) solid var(--line); border-radius: 12px 12px 30px 12px;
+  background: var(--sd-console); box-shadow: inset 0 2px 0 #e9f5ff, inset 0 -3px 0 var(--sd-console-lo), 0 5px 0 -2px var(--lav), 0 5px 0 0 var(--line);
+}
+:root[data-design="skydeck"] .sd-empty__bezel { width: 100%; padding: 6px; border-radius: 8px 8px 16px 8px; background: var(--mauve); box-shadow: inset 0 1.5px 0 #c9adb1; }
+:root[data-design="skydeck"] .sd-empty__lcd {
+  position: relative; display: grid; place-content: center; height: 58px; padding: 0 6px; overflow: hidden; border-radius: 5px;
+  background: var(--sd-lcd-tex), var(--screen); color: var(--lilac); text-align: center;
+  font: 400 1.125rem/.95 var(--f-px); letter-spacing: .04em; text-transform: uppercase;
+  box-shadow: inset 0 0 0 1.5px var(--mocha-edge), inset 0 3px 0 #00000024, var(--sd-lcd-glow);
+}
+:root[data-design="skydeck"] .sd-empty__cursor { display: inline-block; width: .5em; height: 2px; margin-left: 2px; background: currentColor; vertical-align: baseline; animation: sd-blink 1.1s steps(1) infinite; }
+@keyframes sd-blink { 50% { opacity: 0; } }
+:root[data-design="skydeck"] .sd-empty__keys { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 12px 6px 0; }
+:root[data-design="skydeck"] .sd-empty__dpad {
+  width: 26px; height: 26px; background:
+    linear-gradient(var(--mocha), var(--mocha)) center / 26px 9px no-repeat,
+    linear-gradient(var(--mocha), var(--mocha)) center / 9px 26px no-repeat;
+}
+:root[data-design="skydeck"] .sd-empty__ab { display: flex; gap: 5px; transform: rotate(-20deg); }
+:root[data-design="skydeck"] .sd-empty__ab i { width: 14px; height: 14px; border-radius: 50%; background: var(--mocha); box-shadow: inset 0 1.5px 0 #a48a93; }
+:root[data-design="skydeck"] .sd-empty__ab i + i { background: var(--pink); box-shadow: inset 0 1.5px 0 #f6cee4; }
+/* no signal: analogue static on the LCD, two frames */
+:root[data-design="skydeck"] .sd-empty--nosignal .sd-empty__lcd { color: #f9dcec; }
+:root[data-design="skydeck"] .sd-empty--nosignal .sd-empty__lcd::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .35;
+  background: repeating-linear-gradient(0deg, #fff9fe33 0 1px, transparent 1px 3px), repeating-linear-gradient(90deg, #00000026 0 2px, transparent 2px 5px);
+  animation: sd-static .24s steps(2) infinite;
+}
+@keyframes sd-static { 50% { background-position: 0 1px, 3px 0; } }
+:root[data-design="skydeck"] .empty__art:has(.sd-empty) .sparkle { top: 0; right: 4px; }
+
+/* =====================================================================
+   10. Player bar: the handheld turned sideways (cart slot + title | keys over an LCD strip | dock)
+   ===================================================================== */
+:root[data-design="skydeck"] .pbar,
+:root[data-design="skydeck"] .mini {
+  --bg: var(--peri); --bg-2: #a6b9ef; --bg-3: #98acea;
+  --fg: var(--ink); --fg-2: #433a6b; --link: var(--indigo); --accent-ui: var(--indigo); --heart: var(--pink-ink);
+  --edge: #4f5370; --focus: var(--indigo); --divider: #9fb1e8;
+  --q-ll: var(--indigo); --q-ly: #433a6b; --rsn-bg: var(--pink-soft); --rsn-fg: var(--pink-ink);
+  --seek-played: var(--indigo); --seek-buffered: #7489c4; --seek-line: #4f5370;
+  background: var(--sd-console); color: var(--ink); border-color: var(--line);
+}
+:root[data-design="skydeck"][data-theme="night"] :is(.pbar, .mini) { --heart: #8f3573; }   /* a deeper pink on the darker night body */
+:root[data-design="skydeck"] .pbar {
+  grid-template-columns: minmax(220px, 1fr) minmax(340px, 1.6fr) auto; gap: var(--sp-5);
+  border-radius: 22px 22px 44px 22px; padding: 0 16px 0 12px;
+  box-shadow: inset 0 2px 0 #e9f5ff, inset 0 -3px 0 var(--sd-console-lo), var(--sd-bar-stack);
+}
+:root[data-design="skydeck"] .pbar .pbar__title { font-size: 1.125rem; }
+/* the thumb sits in a cart slot with a lip */
+:root[data-design="skydeck"] .pbar .bezel-thumb { box-shadow: 0 -4px 0 -1px var(--sd-console-lo), 0 -4px 0 0 var(--line); }
+:root[data-design="skydeck"][data-theme="day"] .pbar .bezel-thumb { background: var(--peri-deep); border-color: var(--line); }
+:root[data-design="skydeck"] .pbar__centre { gap: 6px; align-self: stretch; align-content: center; }
+:root[data-design="skydeck"] .pbar .btn-gloss { --size: 50px; }
+/* shuffle / repeat: a pink LED under the key when it is on */
+:root[data-design="skydeck"] .pbar__controls .btn-icon[aria-pressed] { position: relative; }
+:root[data-design="skydeck"] .pbar__controls .btn-icon[aria-pressed="true"]::after {
+  content: ""; position: absolute; left: 50%; bottom: 1px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%;
+  background: var(--pink-ink); box-shadow: 0 0 0 1px #fff9fe99, 0 0 5px 1px #dd9fc9;
+}
+/* the LCD strip holding the seek, a state caption and pixel times */
+:root[data-design="skydeck"] .pbar__seek {
+  --seek-played: var(--lilac); --seek-buffered: var(--peri); --seek-line: var(--lav); --bg: var(--screen);
+  --fg-2: var(--lavender); --focus: var(--star);
+  max-width: none; height: 30px; padding: 0 12px; border-radius: 10px 10px 16px 10px;
+  background: linear-gradient(115deg, #fff9fe00 0 58%, #fff9fe12 58% 72%, #fff9fe00 72%), var(--sd-lcd-tex), var(--screen);
+  border: var(--stroke) solid var(--mocha-edge); box-shadow: inset 0 2px 0 #00000026, var(--sd-lcd-glow);
+}
+:root[data-design="skydeck"] .pbar__seek:focus-within { outline: 2px solid var(--indigo); outline-offset: 2px; }
+:root[data-design="skydeck"] .pbar__seek .seek:focus-visible { outline: none; }
+:root[data-design="skydeck"] .pbar__seek .seek { height: 26px; }
+:root[data-design="skydeck"] .pbar__seek .seek-row__time { font: var(--t-px); letter-spacing: var(--t-px-track); color: var(--lilac); min-width: 34px; }
+/* the buffered region is drawn as LCD pixels */
+:root[data-design="skydeck"] .pbar__seek .seek__buf { background: repeating-linear-gradient(90deg, var(--peri) 0 3px, transparent 3px 5px); opacity: .85; }
+@media (min-width: 1100px) {
+  :root[data-design="skydeck"] .pbar__seek { grid-template-columns: auto auto minmax(0, 1fr) auto; }
+  :root[data-design="skydeck"] .pbar__seek::before { content: ""; font: var(--t-px); letter-spacing: var(--t-px-track); color: #f9dcec; }
+  :root[data-design="skydeck"] .pbar:is([data-status="streaming"], [data-status="library"]) .pbar__seek::before { padding-right: 10px; border-right: 1px solid #9c8790; }
+  :root[data-design="skydeck"] .pbar[data-status="streaming"] .pbar__seek::before { content: "\25cf  streaming"; }
+  :root[data-design="skydeck"] .pbar[data-status="library"] .pbar__seek::before { content: "\25cf  library"; }
+  :root[data-design="skydeck"] .pbar[data-playing="false"]:is([data-status="streaming"], [data-status="library"]) .pbar__seek::before { content: "\25cb  paused"; }
+}
+/* the dock: one recessed lavender track holding the right-hand keys, level with the LCD strip */
+:root[data-design="skydeck"] .pbar__tools {
+  --bg-2: #d3d2ee; --edge: #6f6c94;
+  align-self: end; margin-bottom: 14px; justify-self: end; height: 40px; padding: 0 8px 0 6px; gap: 0;
+  background: var(--lav); border: var(--stroke) solid #8f8bb0; border-radius: 14px 14px 22px 14px;
+  box-shadow: inset 0 2px 0 #00000017, 0 1.5px 0 #e9f5ff;
+}
+:root[data-design="skydeck"] .pbar__tools > .btn-icon--bare,
+:root[data-design="skydeck"] .pbar__tools .vol > .btn-icon--bare { width: 34px; height: 34px; }
+:root[data-design="skydeck"] .pbar .btn-icon--bare:hover { background: #ffffff40; }
+:root[data-design="skydeck"] .pbar__tools .btn-icon--bare:hover { background: #ffffff73; }
+:root[data-design="skydeck"] .pbar__tools .vol { gap: 2px; }
+/* tablet: three real columns, so the dock never sits on the LCD */
+@media (max-width: 1099px) {
+  :root[data-design="skydeck"] .pbar { grid-template-columns: minmax(150px, 1fr) minmax(220px, 1.25fr) auto; gap: var(--sp-4); }
+  :root[data-design="skydeck"] .pbar__centre { width: auto; }
+  :root[data-design="skydeck"] .pbar__tools { padding: 0 4px; }
+}
+/* status line: shown on the LCD strip itself (anchor positioning; older engines keep the base tab).
+   Failed: the reason in full plus short keys; the full labels stay the accessible names. */
+:root[data-design="skydeck"] .pbar__state {
+  background: var(--sd-lcd-tex), var(--screen); color: var(--lilac); border-color: var(--mocha-edge);
+  font: var(--t-px); letter-spacing: var(--t-px-track);
+  --fg: var(--lilac); --fg-2: var(--lavender); --link: #f9dcec; --focus: var(--star); --heart: var(--pink-light); --bg-2: var(--mocha);
+}
+:root[data-design="skydeck"] .pbar__state > .ic { color: var(--pink-light); }
+:root[data-design="skydeck"] .pbar__state.is-error { color: #f9dcec; }
+:root[data-design="skydeck"] .pbar__state.is-error > span { flex: none; }
+:root[data-design="skydeck"] .pbar__state .btn--quiet {
+  color: #f9dcec; font: var(--t-px); letter-spacing: var(--t-px-track); text-decoration: underline; text-underline-offset: 3px; min-height: 22px;
+}
+:root[data-design="skydeck"] .pbar__state .btn--quiet:hover { background: var(--mocha-edge); }
+:root[data-design="skydeck"] .pbar__state .btn--quiet:is([data-act="retry-search"], [data-act="pick-source"], [data-act="next"]) { font-size: 0; }
+:root[data-design="skydeck"] .pbar__state .btn--quiet:is([data-act="retry-search"], [data-act="pick-source"], [data-act="next"])::after { font: var(--t-px); letter-spacing: var(--t-px-track); }
+:root[data-design="skydeck"] .pbar__state .btn--quiet[data-act="retry-search"]::after { content: "retry"; }
+:root[data-design="skydeck"] .pbar__state .btn--quiet[data-act="pick-source"]::after { content: "source"; }
+:root[data-design="skydeck"] .pbar__state .btn--quiet[data-act="next"]::after { content: "skip"; }
+@supports (anchor-name: --a) {
+  :root[data-design="skydeck"] .pbar__seek { anchor-name: --sd-lcd; }
+  :root[data-design="skydeck"] .pbar__state {
+    position: absolute; position-anchor: --sd-lcd; left: anchor(left); right: anchor(right); top: anchor(top); bottom: anchor(bottom);
+    transform: none; max-width: none; z-index: 2; justify-content: center; gap: 6px; padding: 1px 10px 0;
+    border: var(--stroke) solid var(--mocha-edge); border-radius: 10px 10px 16px 10px; box-shadow: inset 0 2px 0 #00000026, var(--sd-lcd-glow);
+  }
+}
+
+/* ---------- mini player (phone): a mini console strip ---------- */
+:root[data-design="skydeck"] .mini {
+  border-radius: 16px 16px 26px 16px; box-shadow: inset 0 2px 0 #e9f5ff, 0 4px 0 -2px var(--lav), 0 4px 0 0 var(--line); overflow: visible;
+}
+:root[data-design="skydeck"] .mini > .seek--line { left: 14px; right: 22px; top: -1px; }
+
+/* =====================================================================
+   11. The handheld (Now Playing, desktop mini player window)
+   ===================================================================== */
+:root[data-design="skydeck"] .device {
+  background: linear-gradient(180deg, #c8d4f9 0%, var(--peri) 18%, #b1c2f3 70%, #a9bbf0 100%);
+  box-shadow: inset 0 2px 0 #e9f5ff, inset 2px 0 0 #d3ddfa, inset 0 -4px 0 #9aaeea, var(--stack-sm);
+}
+:root[data-design="skydeck"] .device__led i { background: var(--pink); box-shadow: 0 0 0 1.5px var(--mocha-edge), 0 0 0 4px #dd9fc94d; }
+:root[data-design="skydeck"] .device__bezel { box-shadow: inset 0 2px 0 #c9adb1, inset 0 -2px 0 #9c7f85; }
+:root[data-design="skydeck"] .device__screen {
+  background: linear-gradient(118deg, #fff9fe00 0 60%, #fff9fe0f 60% 74%, #fff9fe00 74%), var(--sd-lcd-tex), var(--screen);
+  box-shadow: inset 0 0 0 var(--stroke) var(--mocha-edge), inset 0 4px 0 #00000024, var(--sd-lcd-glow);
+}
+/* the LCD backlight warms up while a track plays */
+:root[data-design="skydeck"] .now:has(.wave.is-playing) .now-dev .device__screen {
+  box-shadow: inset 0 0 0 var(--stroke) var(--mocha-edge), inset 0 4px 0 #00000024, inset 0 0 34px #f6cee42e;
+}
+/* the wordmark is printed on the bezel in debossed ink (Game Boy style) */
+:root[data-design="skydeck"] .device__brand .brand { --wm-1: #2b2550; --wm-spark: var(--pink-light); text-shadow: 0 1px 0 #d2b9bd; }
+:root[data-design="skydeck"] .device__select { background: var(--mocha-edge); color: var(--star); }
+:root[data-design="skydeck"] .device__select:hover { background: #4d3d44; }
+:root[data-design="skydeck"] .dpad { filter: drop-shadow(0 3px 0 var(--mocha-edge)); }
+:root[data-design="skydeck"] .dpad__btn { box-shadow: inset 0 1.5px 0 #a48a93, var(--sd-key-rim); }
+:root[data-design="skydeck"] .dpad__btn:active { transform: translateY(2px); box-shadow: inset 0 2px 0 #00000026; }
+:root[data-design="skydeck"] .dpad__hub { display: grid; place-items: center; }
+:root[data-design="skydeck"] .dpad__hub::after { margin: 0; width: 16px; height: 16px; box-shadow: inset 0 2px 0 #00000033; }
+:root[data-design="skydeck"] .device__key .btn-gloss:active { transform: translateY(2px); }
+/* select / start: the pill and its label tilt together, with room between them (img 02) */
+:root[data-design="skydeck"] .device__pills { gap: 34px; padding-top: 22px; }
+:root[data-design="skydeck"] .device__pill { gap: 8px; transform: rotate(-22deg); }
+:root[data-design="skydeck"] .device__pill > i { box-shadow: inset 0 1.5px 0 #ffffffaa, 0 2px 0 var(--mocha-edge), var(--sd-key-rim); transition: box-shadow var(--dur-1), transform var(--dur-press) var(--ease-out); }
+:root[data-design="skydeck"] .device__pill:active > i { transform: translateY(2px); box-shadow: inset 0 1.5px 0 #ffffffaa; }
+:root[data-design="skydeck"] .device__pill[aria-pressed="true"] > i { box-shadow: inset 0 0 0 3px var(--mocha-edge), 0 2px 0 var(--mocha-edge); }
+:root[data-design="skydeck"] .device__grill { grid-template-columns: repeat(6, 6px); gap: 7px; transform: rotate(-28deg); right: 34px; bottom: 34px; }
+:root[data-design="skydeck"] .device__grill i { width: 6px; height: 26px; border-radius: 3px; background: var(--mocha); box-shadow: inset 0 2px 0 var(--mocha-edge); }
+:root[data-design="skydeck"] .device__grill i:nth-child(n+7) { display: none; }
+/* rim: just the LED and "power"; play state lives on the LCD only */
+:root[data-design="skydeck"] .now-dev .device__led [data-now="led"] { display: none; }
+:root[data-design="skydeck"] .now-dev .device__led::after { content: "power"; }
+:root[data-design="skydeck"] .now-dev .device__led { top: 7px; }
+:root[data-design="skydeck"] .now:has(.wave.is-playing) .device__led i { animation: sd-led 1.8s ease-in-out infinite alternate; }
+@keyframes sd-led { from { box-shadow: 0 0 0 1.5px var(--mocha-edge), 0 0 0 3px #dd9fc933; } to { box-shadow: 0 0 0 1.5px var(--mocha-edge), 0 0 0 6px #dd9fc966; } }
+
+/* failed: the LCD drops to a "no signal" screen (glyph, words, a flat line for the waveform) */
+:root[data-design="skydeck"] .app:has(.pbar[data-status="failed"]) .now-dev [data-now="head"] { color: #f9dcec; font-weight: 800; }
+:root[data-design="skydeck"] .app:has(.pbar[data-status="failed"]) .now-dev .device__now { visibility: hidden; }
+:root[data-design="skydeck"] .app:has(.pbar[data-status="failed"]) .now-dev__page { position: relative; }
+:root[data-design="skydeck"] .app:has(.pbar[data-status="failed"]) .now-dev__page::before,
+:root[data-design="skydeck"] .app:has(.pbar[data-status="failed"]) .now-dev__page::after {
+  position: absolute; left: 0; right: 0; text-align: center; font-family: var(--f-px); letter-spacing: .04em; color: #f9dcec;
+}
+:root[data-design="skydeck"] .app:has(.pbar[data-status="failed"]) .now-dev__page::before { content: "\26a0\FE0E  no signal"; top: calc(50% - 30px); font-size: 2rem; line-height: 1; }
+:root[data-design="skydeck"] .app:has(.pbar[data-status="failed"]) .now-dev__page::after { content: "all sources failed"; top: calc(50% + 8px); font-size: 1.25rem; line-height: 1; color: var(--lilac); }
+:root[data-design="skydeck"] .app:has(.pbar[data-status="failed"]) .now-dev .device__screen { background-image: repeating-linear-gradient(0deg, #fff9fe12 0 1px, transparent 1px 3px); }
+:root[data-design="skydeck"] .app:has(.pbar[data-status="failed"]) .now-dev .wave__rail { visibility: hidden; }
+:root[data-design="skydeck"] .app:has(.pbar[data-status="failed"]) .now-dev .wave__bar { height: 1px !important; min-height: 0; background: var(--lavender); }   /* bar heights are inline */
+
+/* the cartridge seated in the top slot (design.js nowHero): grey-lilac plastic, grip ridges, notch, cream label with
+   the live cover + title; it lifts and reseats on track change */
+:root[data-design="skydeck"] .now { isolation: isolate; max-width: 1320px; }
+:root[data-design="skydeck"] .now__dev { position: relative; padding-top: 50px; }
+:root[data-design="skydeck"] .now__dev > .device { z-index: 1; }
+:root[data-design="skydeck"] .sd-cart {
+  position: absolute; z-index: 0; top: 0; left: 50%; width: min(60%, 240px); height: 76px; transform: translateX(-50%);
+  border: var(--stroke) solid var(--line); border-radius: 9px 9px 4px 4px;
+  background: linear-gradient(180deg, #aea8c8 0%, #9d97b8 30%, #948db1 100%);
+  box-shadow: inset 0 2px 0 #cdc8e0, inset -3px 0 0 #8a83a8, inset 3px 0 0 #a9a3c3;
+  transition: transform var(--dur-2) var(--ease-out);
+}
+:root[data-design="skydeck"] .sd-cart::before {             /* notch on the left edge */
+  content: ""; position: absolute; left: -2px; top: 24px; width: 6px; height: 16px; border-radius: 0 4px 4px 0;
+  background: #7d769c; border: var(--stroke) solid var(--line); border-left: 0;
+}
+:root[data-design="skydeck"] .sd-cart__grip {
+  position: absolute; left: 28%; right: 28%; top: 5px; height: 8px; border-radius: 1px;
+  background: repeating-linear-gradient(180deg, #7d769c 0 1.5px, #c6c1dc 1.5px 3px, transparent 3px 3.5px);
+}
+:root[data-design="skydeck"] .sd-cart__label {
+  position: absolute; left: 14px; right: 12px; top: 16px; height: 30px; display: flex; align-items: center; gap: 7px;
+  padding: 0 8px 0 3px; background: var(--cream); border: 1px solid var(--ink); border-radius: 4px 4px 2px 2px;
+  box-shadow: inset 0 -3px 0 #e6cfb6; overflow: hidden;
+}
+:root[data-design="skydeck"] .sd-cart__art { flex: none; display: grid; }
+:root[data-design="skydeck"] .sd-cart__art .cover { --cover-size: 23px !important; border-radius: 3px; border-width: 1px; }   /* inline --cover-size from the markup */
+:root[data-design="skydeck"] .sd-cart__art .now-dev__slot { width: 23px; height: 23px; margin: 0; border-radius: 3px; border-color: var(--line); }
+:root[data-design="skydeck"] .sd-cart__title { min-width: 0; flex: 1; display: block; overflow: hidden; }
+:root[data-design="skydeck"] .sd-cart__title .now-slide { display: block; }
+:root[data-design="skydeck"] .sd-cart__title .device__title {
+  margin: 1px 0 0; font: var(--t-px); letter-spacing: var(--t-px-track); color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+:root[data-design="skydeck"] .sd-cart__title :is(.device__artist, .wave) { display: none; }
+:root[data-design="skydeck"] .sd-cart:has(.now-slide.is-out) { transform: translate(-50%, -9px); }
+
+/* moonlight halo behind the device, with two sparkles kissing its corners (img 01) */
+:root[data-design="skydeck"] .now__dev::after {
+  content: ""; position: absolute; z-index: -1; left: 50%; top: 50%; width: 150%; aspect-ratio: 1; transform: translate(-50%, -50%);
+  pointer-events: none; background: radial-gradient(closest-side, var(--sd-glow) 0 58%, var(--sd-glow-2) 80%, transparent 100%);
+}
+:root[data-design="skydeck"] .now__dev::before {
+  content: ""; position: absolute; z-index: 2; inset: 30px -14px -2px -16px; pointer-events: none;
+  background: var(--sd-spark-c) 0 22px / 26px 26px no-repeat, var(--sd-spark-c) 100% calc(100% - 64px) / 16px 16px no-repeat;
+  filter: drop-shadow(0 0 4px #fff9fe99);
+}
+:root[data-design="skydeck"][data-theme="day"] .now__dev::before { background-image: var(--sd-spark), var(--sd-spark); filter: none; }
+
+/* desktop / tablet: the device is sized by the window height so it keeps its floor and the key hint row;
+   the lyrics card ends above the bar and fades */
+@media (min-width: 640px) {
+  :root[data-design="skydeck"] .now__keys { margin-top: 10px; }
+  :root[data-design="skydeck"] .now-lycard { max-height: calc(100dvh - 470px); min-height: 300px; overflow: hidden; }
+  :root[data-design="skydeck"] .now-lycard .now-ly__view {
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 26px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 26px), transparent);
+  }
+  /* the source card: before a save starts, its five empty steps are not drawn, so they never contradict the
+     stream's own progress ("87% of 30.2 MB"); the "not saved" line stays */
+  :root[data-design="skydeck"] .now-srccard .pipeline:not(:has(.is-done, .is-current, .is-failed)) { display: none; }
+}
+/* short windows: the device column scales down as one object (zoom keeps its proportions and hit areas) */
+@media (min-width: 640px) and (max-height: 1000px) { :root[data-design="skydeck"] .now__dev { zoom: .86; } }
+@media (min-width: 640px) and (max-height: 820px) { :root[data-design="skydeck"] .now__dev { zoom: .76; } }
+/* action keys under the title, labelled like the device keys */
+@media (min-width: 640px) {
+  :root[data-design="skydeck"] .now-acts { align-items: flex-start; gap: 10px; }
+  :root[data-design="skydeck"] .now-acts .btn-save { margin-right: 6px; }
+  :root[data-design="skydeck"] .now-acts__btn {
+    width: 58px; height: auto; min-height: 0; padding: 0; display: grid; justify-items: center; gap: 3px;
+    border: 0; background: none; box-shadow: none; color: var(--fg); font: var(--t-px); letter-spacing: var(--t-px-track);
+  }
+  :root[data-design="skydeck"] .now-acts__btn > .ic {
+    box-sizing: content-box; width: 20px; height: 20px; padding: 10px; border-radius: 50%;
+    border: var(--stroke) solid var(--edge); background: var(--panel); color: var(--fg-panel);
+    box-shadow: 0 3px 0 -1px var(--stack-1), 0 3px 0 0 var(--line); transition: transform var(--dur-press) var(--ease-out);
+  }
+  :root[data-design="skydeck"] .now-acts__btn:hover > .ic { background: var(--panel-2); }
+  :root[data-design="skydeck"] .now-acts__btn:active > .ic { transform: translateY(2px); box-shadow: 0 1px 0 0 var(--line); }
+  :root[data-design="skydeck"] .now-acts__btn[aria-pressed="true"] > .ic { background: var(--peri); color: var(--ink); }
+  :root[data-design="skydeck"] .now-acts__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  :root[data-design="skydeck"] .now-acts__btn::after { content: "add"; color: var(--fg-sky); }
+  :root[data-design="skydeck"] .now-acts__btn[data-act="start-radio"]::after { content: "radio"; }
+  :root[data-design="skydeck"] .now-acts__btn[data-act="follow"]::after { content: "follow"; }
+  :root[data-design="skydeck"] .now-acts__btn[data-act="classic"]::after { content: "classic"; }
+  :root[data-design="skydeck"] .now-acts__btn:focus-visible { outline: none; }
+  :root[data-design="skydeck"] .now-acts__btn:focus-visible > .ic { outline: 2px solid var(--focus); outline-offset: 2px; }
+}
+/* phone: the Art tab turns the LCD into a big cover; title and an even grid of actions under the device */
+@media (max-width: 639px) {
+  :root[data-design="skydeck"] .now__dev { padding-top: 38px; }
+  :root[data-design="skydeck"] .now__dev::before { display: none; }       /* sparkle budget: the sky already has its five */
+  :root[data-design="skydeck"] .sd-cart { height: 64px; width: min(58%, 210px); }
+  :root[data-design="skydeck"] .sd-cart__label { top: 13px; height: 26px; }
+  :root[data-design="skydeck"] .sd-cart__grip { top: 4px; height: 6px; }
+  :root[data-design="skydeck"] .sd-cart::before { top: 18px; height: 13px; }
+  :root[data-design="skydeck"] .sd-cart__art .cover,
+  :root[data-design="skydeck"] .sd-cart__art .now-dev__slot { --cover-size: 19px !important; width: 19px; height: 19px; }   /* inline --cover-size */
+  :root[data-design="skydeck"] .now-dev .dpad__hub::after { width: 13px; height: 13px; }
+  :root[data-design="skydeck"] .now-dev .device__led { top: 1px; }
+  :root[data-design="skydeck"] .now-dev .device__pills { padding-top: 14px; gap: 30px; }
+  :root[data-design="skydeck"] .now[data-tab="art"] .now-dev { --now-page-h: 196px; }
+  :root[data-design="skydeck"] .now[data-tab="art"] .now-dev .device__now { --now-art: 176px; grid-template-columns: 1fr; justify-items: center; }
+  :root[data-design="skydeck"] .now[data-tab="art"] .now-dev .now-dev__meta { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  :root[data-design="skydeck"] .now[data-tab="art"] .now-head__title {
+    position: static; width: auto; height: auto; overflow: visible; clip-path: none; white-space: normal;
+    margin: 0; font: italic 900 1.625rem/1.1 var(--f-ui); letter-spacing: -.01em; color: var(--fg-sky);
+  }
+  :root[data-design="skydeck"] .now[data-tab="art"] .now-head__by { display: block; margin: 4px 0 10px; }
+  :root[data-design="skydeck"] .now-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  :root[data-design="skydeck"] .now-acts .btn { justify-content: center; width: auto; }
+  :root[data-design="skydeck"] .now-acts .btn-save { grid-column: 1 / -1; }
+}
+
+/* =====================================================================
+   12. Classic: the stage is the console (Webamp sits on the LCD inside the mauve bezel)
+   ===================================================================== */
+:root[data-design="skydeck"] .cls-scrim { opacity: 1; background: var(--sd-sky-bg); }
+:root[data-design="skydeck"] .cls-bar {
+  background: var(--sd-band); border-color: var(--line); box-shadow: inset 0 1.5px 0 #ffffff55, 0 5px 0 -2px var(--stack-1), 0 5px 0 0 var(--line);
+}
+:root[data-design="skydeck"] .cls-bar .win__title { background: none; border: 0; color: var(--sd-band-ink); font: italic 900 1.375rem/1 var(--f-ui); letter-spacing: -.01em; }
+:root[data-design="skydeck"] .cls-bar .orb {
+  width: 24px; height: 24px; border: var(--stroke) solid var(--mocha-edge); background: var(--mocha);
+  box-shadow: inset 0 2px 0 #a48a93, 0 2px 0 var(--mocha-edge);
+}
+:root[data-design="skydeck"] .cls-bar .orb--lav { background: var(--lav); box-shadow: inset 0 2px 0 #e9f5ff, 0 2px 0 var(--mocha-edge); }
+:root[data-design="skydeck"] .cls-bar .orb--mag { background: var(--pink); box-shadow: inset 0 2px 0 #f6cee4, 0 2px 0 var(--mocha-edge); }
+:root[data-design="skydeck"] .cls-slot {
+  --bg: var(--screen); --bg-2: var(--mocha); --bg-3: var(--mocha-edge); --fg: var(--lilac); --fg-2: var(--lavender);
+  --edge: var(--lavender); --line: var(--mocha-edge); --focus: var(--star);
+  background: linear-gradient(118deg, #fff9fe00 0 64%, #fff9fe0d 64% 76%, #fff9fe00 76%), var(--sd-lcd-tex), var(--screen); color: var(--lilac);
+  border: 16px solid var(--mauve); border-bottom-width: 36px; outline: var(--stroke) solid var(--mocha-edge); outline-offset: 0;
+  border-radius: 22px 22px 56px 22px;
+  box-shadow: inset 0 0 0 var(--stroke) var(--mocha-edge), inset 0 5px 0 #00000026, var(--sd-lcd-glow), 0 7px 0 -2px var(--lav), 0 7px 0 0 var(--mocha-edge);
+}
+:root[data-design="skydeck"] .cls-slot .s-card { --bg: var(--mocha-edge); --bg-2: #4d3d44; --fg: var(--lilac); --fg-2: var(--lavender); --edge: var(--lavender); --link: #f9dcec; --focus: var(--star); }
+:root[data-design="skydeck"] .cls-desk::after {           /* the product name printed on the chin, like the Now device */
+  content: "lull"; position: absolute; left: 50%; bottom: 7px; transform: translateX(-50%); pointer-events: none;
+  font: italic 900 1.25rem/1 var(--f-ui); letter-spacing: -.02em; color: #2b2550; text-shadow: 0 1px 0 #d2b9bd;
+}
+:root[data-design="skydeck"] :is(.cls-slot__tag, .cls-ghost__tag, .cls-ghost__cap) { background: var(--mocha-edge); color: var(--lilac); border-color: var(--lavender); }
+:root[data-design="skydeck"] .cls-slot__tag { font: var(--t-px); letter-spacing: var(--t-px-track); }
+:root[data-design="skydeck"] .cls-ghost__skin { color: var(--lilac); }
+:root[data-design="skydeck"] :is(.cls-ghost__skin em, .cls-ghost__cap) { color: var(--lavender); }
+:root[data-design="skydeck"] .cls-drawer > .win__bar { background: var(--sd-band); border-bottom: var(--stroke) solid var(--line); box-shadow: inset 0 1.5px 0 #ffffff55; }
+:root[data-design="skydeck"] .cls-drawer .win__title { background: none; border: 0; color: var(--sd-band-ink); font: italic 900 1.125rem/1 var(--f-ui); }
+:root[data-design="skydeck"] .cls-drawer .cls-drawer__close { color: var(--sd-band-ink); }

@@ -1,0 +1,9 @@
+.git
+target
+web/node_modules
+web/vendor
+design
+desktop
+docs
+.env
+.env.*

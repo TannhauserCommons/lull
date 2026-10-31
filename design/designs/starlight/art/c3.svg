@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" preserveAspectRatio="xMidYMid slice">
+  <!-- starlight cover c3: lantern at the end of a pier (deep navy). Filters: w = watercolour wobble, b = soft glow. -->
+  <defs>
+    <filter id="w" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence type="fractalNoise" baseFrequency=".07" numOctaves="2" seed="4"/>
+      <feDisplacementMap in="SourceGraphic" scale="2.4"/>
+    </filter>
+    <filter id="b" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3.5"/>
+    </filter>
+    <linearGradient id="s" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1f2539"/>
+      <stop offset="0.7" stop-color="#4a5a92"/>
+    </linearGradient>
+    <linearGradient id="a" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#34417a"/>
+      <stop offset="1" stop-color="#1a2034"/>
+    </linearGradient>
+  </defs>
+  <rect width="120" height="120" fill="url(#s)"/>
+  <circle cx="30.7" cy="37.7" r="0.7" fill="#fff"/>
+  <circle cx="106.6" cy="33.4" r="1.1" fill="#fff"/>
+  <circle cx="11.3" cy="4.8" r="0.9" fill="#fff"/>
+  <circle cx="33.0" cy="18.5" r="0.9" fill="#fff"/>
+  <circle cx="64.6" cy="38.1" r="0.9" fill="#fff"/>
+  <circle cx="75.6" cy="13.3" r="0.6" fill="#fff"/>
+  <circle cx="101.2" cy="36.4" r="0.5" fill="#fff"/>
+  <circle cx="79.2" cy="8.0" r="1.1" fill="#fff"/>
+  <circle cx="8.8" cy="52.4" r="0.7" fill="#fff"/>
+  <circle cx="56.9" cy="48.6" r="0.9" fill="#fff"/>
+  <circle cx="84.0" cy="61.1" r="0.9" fill="#fff"/>
+  <circle cx="85.6" cy="39.8" r="0.6" fill="#fff"/>
+  <circle cx="102.4" cy="10.0" r="0.6" fill="#fff"/>
+  <circle cx="59.4" cy="20.0" r="0.9" fill="#fff"/>
+  <circle cx="91.2" cy="57.0" r="0.9" fill="#fff"/>
+  <circle cx="60.8" cy="27.9" r="0.7" fill="#fff"/>
+  <circle cx="63.8" cy="29.3" r="0.6" fill="#fff"/>
+  <circle cx="105.3" cy="46.3" r="0.5" fill="#fff"/>
+  <circle cx="99.9" cy="65.4" r="0.6" fill="#fff"/>
+  <circle cx="82.2" cy="24.2" r="1.1" fill="#fff"/>
+  <circle cx="105.3" cy="39.3" r="0.6" fill="#fff"/>
+  <circle cx="74.9" cy="65.3" r="0.7" fill="#fff"/>
+  <path transform="translate(98 22) scale(6)" fill="#fffaf6" d="M0-1C.12-.12.12-.12 1 0C.12.12.12.12 0 1C-.12.12-.12.12-1 0C-.12-.12-.12-.12 0-1Z"/>
+  <rect y="80" width="120" height="40" fill="url(#a)"/>
+  <circle cx="70" cy="60" r="18" fill="#f6d48a" opacity=".4" filter="url(#b)"/>
+  <g fill="#f6d48a" opacity=".55" filter="url(#w)">
+    <rect x="66.0" y="90" width="8" height="1.6" rx=".8"/>
+    <rect x="67.5" y="95" width="5" height="1.6" rx=".8"/>
+    <rect x="65.5" y="100" width="9" height="1.6" rx=".8"/>
+    <rect x="68.0" y="106" width="4" height="1.6" rx=".8"/>
+  </g>
+  <g fill="#141927">
+    <path d="M0 83L76 79V83L0 89Z"/>
+    <rect x="8" y="84" width="3" height="18"/>
+    <rect x="30" y="83" width="3" height="17"/>
+    <rect x="52" y="81" width="3" height="15"/>
+    <rect x="72" y="80" width="2.5" height="13"/>
+    <rect x="69.2" y="62" width="1.6" height="18"/>
+  </g>
+  <rect x="66" y="55" width="8" height="9" rx="2" fill="#f9dc96"/>
+  <rect x="65" y="53.5" width="10" height="2" rx="1" fill="#141927"/>
+</svg>

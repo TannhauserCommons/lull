@@ -1,0 +1,9 @@
+/target
+/web/node_modules
+/web/vendor
+.env
+.env.*
+!deploy/.env.example
+/data
+# Third-party moodboard images: reference only, never published with the repo.
+/design/inspo

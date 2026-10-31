@@ -1,0 +1,209 @@
+/* lull desktop wrapper (Tauri v2): the wrapper's own UI. Spec: DESKTOP.md.
+   Reads semantic tokens only (tokens.css + base.css surfaces); prefix dk-.
+   Sections: 1 title bars, 2 local pages (connect, unreachable), 3 close-to-tray dialog,
+   4 mini player (device window, strip), 5 standalone tooltip. */
+
+/* =====================================================================
+   1. Title bars
+   ===================================================================== */
+.dk-glyph { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; overflow: visible; }
+
+/* Windows 11: caption buttons flush with the window's top-right corner, 46x32 each */
+.dk-caption {
+  position: fixed; top: 0; right: 0; z-index: var(--z-overlay); display: flex;
+  color: var(--fg-sky);
+}
+.dk-caption__btn {
+  display: grid; place-items: center; width: 46px; height: 32px; color: inherit; background: transparent;
+  transition: background-color var(--dur-1), color var(--dur-1);
+}
+.dk-caption__btn:hover { background: var(--sky-deep); }
+.dk-caption__btn:active { background: var(--panel-2); }
+.dk-caption__btn--close:hover, .dk-caption__btn--close:active { background: var(--down); color: var(--lilac); }
+.dk-caption__btn--close:active { background: var(--pink-ink); }
+.dk-caption__btn:focus-visible { outline-offset: -3px; }
+:root[data-window-inactive] .dk-caption { color: var(--fg-sky-2); }
+
+/* the shell's 16 px top margin stays draggable (data-tauri-drag-region) */
+.dk-dragstrip { position: fixed; top: 0; left: 0; right: 138px; height: 16px; z-index: calc(var(--z-overlay) - 1); }
+
+/* header makes room for the caption buttons (138 px wide, measured from the window edge) */
+@media (max-width: 639px), (min-width: 820px) {
+  :root[data-titlebar="win"] .header { padding-right: 138px; }
+  /* topnav / dock shells draw the header as a strip: the strip itself stops short of the caption buttons */
+  :root[data-titlebar="win"][data-shell="topnav"] .header, :root[data-titlebar="win"][data-shell="dock"] .header { padding-right: 8px; margin-right: 130px; }
+}
+/* 640-819: a tablet header can't spare 138 px, so the caption buttons get their own 32 px strip above the shell */
+@media (min-width: 640px) and (max-width: 819px) {
+  :root[data-titlebar="win"] #app { padding-top: 32px; }
+  :root[data-titlebar="win"] .dk-dragstrip { height: 32px; }
+}
+@media (max-width: 1439px) { :root[data-titlebar="win"] .header .tray__label-long { display: none; } }   /* give the search its width back */
+/* below 1440 the caption buttons leave no room for the full tray: it goes compact earlier than in a browser */
+@media (min-width: 640px) and (max-width: 1439px) {
+  :root[data-titlebar="win"] .header .tray--full { display: none; }
+  :root[data-titlebar="win"] .header .tray--compact { display: inline-flex; }
+}
+
+/* Linux (optional "lull title bar"): GNOME header-bar window buttons at the end of the header,
+   order from the desktop's button-layout. Round 24 px, 34 px hit. */
+.dk-hb { display: flex; align-items: center; gap: 10px; margin-left: var(--sp-3); flex: none; }
+.dk-hb--start { order: -1; margin: 0 var(--sp-3) 0 0; }
+.dk-hb__btn {
+  position: relative; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%;
+  background: var(--panel-2); color: var(--fg-panel); transition: background-color var(--dur-1);
+}
+.dk-hb__btn::before { content: ""; position: absolute; inset: -5px; border-radius: 50%; }
+.dk-hb__btn:hover { background: var(--sky-deep); }
+.dk-hb__btn:active { background: var(--panel); }
+.dk-hb__btn .dk-glyph { width: 8px; height: 8px; stroke-width: 1.5; }
+.field__help[hidden] { display: none; }
+/* local pages (connect, unreachable) have no app header: a plain draggable bar carries the window buttons */
+.dk-titlebar--bare .dk-dragstrip { height: 32px; }
+:root[data-titlebar="gnome"] .dk-titlebar--bare {
+  position: fixed; top: 0; left: 0; right: 0; z-index: var(--z-overlay); display: flex; align-items: center; height: 46px; padding: 0 11px;
+}
+:root[data-titlebar="gnome"] .dk-titlebar--bare .spacer { flex: 1; align-self: stretch; }
+:root[data-titlebar="gnome"] body { box-shadow: inset 0 0 0 1px var(--edge); }   /* undecorated Linux windows have no shadow */
+
+/* =====================================================================
+   2. Local pages bundled in the wrapper: first-run connect, server unreachable
+   ===================================================================== */
+.dk-page {
+  position: relative; z-index: 1; min-height: 100vh; min-height: 100dvh; display: grid; place-items: center;
+  padding: 56px var(--gutter) 40px;
+}
+.dk-page--inline { min-height: 0; place-items: start; padding: var(--sp-6) 0 0; }   /* inside another page (prototype, board) */
+.dk-page__inner { width: 100%; max-width: 480px; display: grid; justify-items: center; gap: var(--sp-6); }
+.dk-page--inline .dk-page__inner { justify-items: stretch; }
+.dk-page--inline .dk-page__inner > .brand-mark { display: none; }
+.dk-proto { max-width: 720px; }
+.dk-proto__lede { margin-top: var(--sp-2); }
+.dk-page .wordmark { font-size: 2.25rem; }
+.dk-card { width: 100%; }                         /* used with .card */
+.dk-card__title { font: var(--t-h2); letter-spacing: var(--t-h2-track); }
+.dk-card__lede { margin-top: var(--sp-1); font: var(--t-meta); color: var(--fg-2); }
+.dk-form { display: grid; gap: var(--sp-5); margin-top: var(--sp-5); }
+.dk-form .field__help { margin-top: -2px; }
+.dk-form .input { background: var(--panel); }
+.dk-form .input[aria-invalid="true"] { border-color: var(--down); box-shadow: inset 0 0 0 1px var(--down); }
+.dk-field-row { position: relative; }
+.dk-field-row .input { padding-right: 76px; }
+.dk-reveal { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); color: var(--theme-link); --focus: var(--theme-focus); }   /* sits on the input, not the card */
+.dk-form .field__error { color: var(--down); }
+.dk-form .field__error[hidden] { display: none; }
+.dk-form .switch-row { min-height: 44px; }
+.dk-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--sp-3); }
+
+/* fixed-height status line: states swap inside it, nothing below moves */
+.dk-status {
+  display: flex; align-items: flex-start; gap: var(--sp-2); min-height: calc(4.2em + 2 * var(--sp-3)); padding: var(--sp-3) var(--sp-4);   /* room for 3 lines */
+  border-radius: var(--r-input); background: var(--bg-2); font: 600 .9375rem/1.4 var(--f-ui); color: var(--fg);
+}
+.dk-status > .ic, .dk-status > .sg, .dk-status > .spin-ring { margin-top: 3px; flex: none; }
+.dk-status > .sg { width: 14px; height: 14px; }
+.dk-status > .ic { width: 18px; height: 18px; color: var(--fg-2); margin-top: 1px; }
+.dk-status__text { flex: 1; min-width: 0; }
+.dk-status .btn--quiet { min-height: 24px; margin: -2px 0; padding: 0 2px; }
+.dk-status[data-state="idle"] { color: var(--fg-2); }
+.dk-status[data-state="idle"], .dk-status[data-state="testing"] { align-items: center; }
+.dk-status[data-state="idle"] > *, .dk-status[data-state="testing"] > * { margin-top: 0; }
+
+/* unreachable */
+.dk-offline { text-align: center; }
+.dk-offline .empty__art { margin: 0 auto var(--sp-2); }
+.dk-offline__text { max-width: 36ch; margin: var(--sp-2) auto 0; font: var(--t-body); color: var(--fg-2); }
+.dk-retry { display: grid; gap: var(--sp-2); justify-items: center; margin: var(--sp-5) auto 0; max-width: 260px; }
+.dk-retry__label { font: var(--t-px); letter-spacing: var(--t-px-track); color: var(--fg-2); }
+.dk-retry .progress { width: 100%; }
+.dk-offline .dk-actions { justify-content: center; margin-top: var(--sp-5); }
+.dk-details { margin-top: var(--sp-5); text-align: left; border-top: 1px solid var(--divider); padding-top: var(--sp-3); }
+.dk-details summary {
+  display: flex; align-items: center; gap: var(--sp-2); min-height: 44px; cursor: pointer; list-style: none;
+  font: 800 .9375rem/1 var(--f-ui); color: var(--link);
+}
+.dk-details summary::-webkit-details-marker { display: none; }
+.dk-details summary .ic { transition: transform var(--dur-1) var(--ease-out); }
+.dk-details[open] summary .ic { transform: rotate(180deg); }
+.dk-kv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--sp-2) var(--sp-4); margin: var(--sp-2) 0 0; font: var(--t-meta); }
+.dk-kv dt { color: var(--fg-2); }
+.dk-kv dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+.dk-kv .px { font: var(--t-px); letter-spacing: var(--t-px-track); }
+
+/* =====================================================================
+   3. Close-to-tray dialog (first close only). Solid scrim, no blur.
+   ===================================================================== */
+.dk-modal { position: fixed; inset: 0; z-index: var(--z-overlay); display: grid; place-items: center; padding: var(--sp-4); }
+.dk-modal__scrim { position: absolute; inset: 0; background: var(--scrim); opacity: var(--scrim-alpha); }
+.dk-modal .dk-card { position: relative; max-width: 440px; animation: dk-pop var(--dur-1) var(--ease-out) both; }
+.dk-modal .dk-card p { margin-top: var(--sp-2); font: var(--t-body); color: var(--fg-2); }
+.dk-modal .switch-row { margin-top: var(--sp-3); }
+.dk-modal .dk-actions { margin-top: var(--sp-5); }
+@keyframes dk-pop { from { opacity: 0; transform: translateY(4px); } }
+
+/* =====================================================================
+   4. Mini player windows (frameless, transparent, always on top)
+   ===================================================================== */
+html.dk-transparent, html.dk-transparent body { background: transparent; }
+:root.dk-transparent, :root.dk-transparent[data-theme] { color-scheme: normal; }   /* an iframe/webview whose scheme differs from its host is painted opaque */
+.dk-mini { display: grid; place-items: start center; padding: 8px 10px 0; }
+.dk-mini--opaque { background: var(--sky); min-height: 100vh; min-height: 100dvh; padding-top: 10px; }
+
+/* the handheld at 320 px: same parts as Now Playing, tightened */
+.dk-mini .device { --device-w: 320px; width: 320px; padding: 36px 18px 18px; margin-bottom: 12px; }
+.dk-mini .device__bezel { padding: 12px 12px 6px; }
+.dk-mini .device__screen { min-height: 0; padding: 12px; }
+.dk-mini__head { position: absolute; left: 22px; right: 12px; top: 4px; display: flex; align-items: center; gap: var(--sp-2); }
+.dk-mini__led { display: inline-flex; align-items: center; gap: 6px; font: var(--t-px); color: var(--indigo); }
+.dk-mini__led i { width: 7px; height: 7px; border-radius: 50%; background: var(--pink); box-shadow: 0 0 0 1.5px var(--mocha-edge); }
+.dk-mini__head .spacer { flex: 1; align-self: stretch; }
+.dk-mini__win { position: relative; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; color: var(--indigo); }
+.dk-mini__win::before { content: ""; position: absolute; inset: -8px -4px; border-radius: 50%; }
+.dk-mini__win:hover { background: var(--lavender); }
+.dk-mini__win .ic { width: 18px; height: 18px; }
+.dk-mini__now { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: var(--sp-3); align-items: center; }
+.dk-mini__now .cover { --cover-size: 84px; border-color: var(--mocha-edge); }
+.dk-mini .device__title { font-size: 1.0625rem; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.dk-mini .device__artist { font-size: .875rem; }
+.dk-mini .device__facts { margin-top: 6px; }
+.dk-mini .wave { height: 36px; margin-top: var(--sp-2); }
+.dk-mini .device__page-head { min-height: 24px; }
+.dk-mini .device__brand { padding-top: 4px; }
+.dk-mini .device__brand .wordmark { font-size: 1.125rem; }
+.dk-mini .device__controls { padding: 12px 0 0; gap: var(--sp-2); }
+.dk-mini .dpad { grid-template-columns: repeat(3, 38px); grid-template-rows: repeat(3, 38px); }
+.dk-mini .dpad__hub::after { margin: 10px; }
+.dk-mini .device__ab { height: 104px; }
+.dk-mini .device__key--a { right: 0; top: 0; }
+.dk-mini .device__key--b { right: 76px; top: 36px; }
+.dk-mini .device__pills { padding: 6px 64px 0 0; gap: 20px; }
+.dk-mini .device__pill > i { width: 48px; }
+.dk-mini .device__grill { right: 30px; bottom: 22px; grid-template-columns: repeat(3, 7px); }
+.dk-mini__note {                                  /* transient line on the screen ("vol 70%", window actions) */
+  position: absolute; left: 12px; right: 12px; bottom: 10px; z-index: 3; padding: 4px 8px 3px; border-radius: var(--r-chip);
+  background: var(--mocha-edge); color: var(--lilac); font: var(--t-px); text-align: center; opacity: 0; transition: opacity var(--dur-1);
+}
+.dk-mini__note.is-on { opacity: 1; }
+
+/* strip: one slim bar */
+.dk-strip-wrap { padding: 8px 10px 0; }
+.dk-strip {
+  position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--sp-3);
+  width: 520px; height: 64px; padding: 0 8px 0 6px; border: var(--stroke) solid var(--edge); border-radius: var(--r-panel);
+  box-shadow: var(--stack-1l); overflow: visible;
+}
+.dk-strip > .seek--line { position: absolute; left: 14px; right: 14px; top: -1px; }
+.dk-strip .bezel-thumb { padding: 3px; border-radius: 8px 8px 14px 8px; }
+.dk-strip .bezel-thumb .cover { --cover-size: 40px; border-radius: 5px; }
+.dk-strip__text { min-width: 0; display: grid; gap: 1px; align-self: stretch; align-content: center; }
+.dk-strip__title { font: 800 .9375rem/1.2 var(--f-ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dk-strip__artist { font: var(--t-meta); color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dk-strip__keys { display: flex; align-items: center; gap: 0; }
+.dk-strip__keys .btn-gloss { margin: 0 4px; }
+.dk-strip__keys .btn-icon .ic { width: 20px; height: 20px; }
+.dk-strip__keys .dk-sep { width: 1px; height: 28px; margin: 0 4px; background: var(--divider); }
+
+/* =====================================================================
+   5. Standalone tooltip (the prototype's App provides its own)
+   ===================================================================== */
+.dk-tip { white-space: nowrap; }

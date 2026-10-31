@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lull window</title>
+<!-- One desktop window's content, used by preview.html in iframes.
+     Hash: #view=app|connect|offline|mini|strip&os=win|gnome|kde&theme=day|night&design=<name>&state=<connect state>&opaque=1&drag=1&dialog=1 -->
+<link rel="icon" href="../assets/app-icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../base.css">
+<link rel="stylesheet" href="../components.css">
+<link rel="stylesheet" href="desktop.css">
+<link rel="stylesheet" href="preview.css">
+<link rel="stylesheet" id="design-css" href="../designs/lull/design.css">
+<script src="../designs/designs.js"></script>
+<script>
+  (function () {   /* design, theme + motion before first paint */
+    var q = location.hash.slice(1), d = document.documentElement, m;
+    Designs.boot();
+    m = /(?:^|&)theme=(day|night)/.exec(q); Designs.applyTheme(m ? m[1] : 'system');
+    if ((m = /(?:^|&)motion=(reduce|full)/.exec(q))) d.setAttribute('data-motion', m[1]);
+    if (/(?:^|&)view=(mini|strip)/.test(q) && !/(?:^|&)opaque=1/.test(q)) d.className = 'dk-transparent';
+  })();
+</script>
+</head>
+<body class="pv-window">
+<script src="../icons.js"></script>
+<script src="desktop.js"></script>
+<script src="preview.js"></script>
+</body>
+</html>

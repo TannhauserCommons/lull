@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1600" viewBox="0 0 1600 1600">
+  <!-- crumpled paper (night): low-frequency noise lit from the top left (feDiffuseLighting) gives img 01's soft creases.
+       Grey around 50%, blended soft-light into the sky colour. One 1600 px sheet, never tiled, so it has no seams. -->
+  <filter id="p" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency=".011" numOctaves="4" seed="7"/>
+    <feDiffuseLighting surfaceScale="2.6" lighting-color="#fff"><feDistantLight azimuth="225" elevation="50"/></feDiffuseLighting>
+    <feComponentTransfer>
+      <feFuncR type="linear" slope="1.15" intercept="-.39"/><feFuncG type="linear" slope="1.15" intercept="-.39"/><feFuncB type="linear" slope="1.15" intercept="-.39"/>
+    </feComponentTransfer>
+  </filter>
+  <rect width="1600" height="1600" filter="url(#p)"/>
+</svg>

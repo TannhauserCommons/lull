@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" preserveAspectRatio="xMidYMid slice">
+  <!-- starlight cover c6: shooting star over hills. Filters: w = watercolour wobble, b = soft glow. -->
+  <defs>
+    <filter id="w" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence type="fractalNoise" baseFrequency=".07" numOctaves="2" seed="4"/>
+      <feDisplacementMap in="SourceGraphic" scale="2.4"/>
+    </filter>
+    <filter id="b" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3.5"/>
+    </filter>
+    <linearGradient id="s" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#353b52"/>
+      <stop offset="0.85" stop-color="#8c90c6"/>
+    </linearGradient>
+    <linearGradient id="t" x1="96" y1="22" x2="35" y2="55" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="120" height="120" fill="url(#s)"/>
+  <circle cx="92.9" cy="58.2" r="1" fill="#fff"/>
+  <circle cx="89.4" cy="6.4" r="0.6" fill="#fff"/>
+  <circle cx="78.2" cy="35.0" r="0.8" fill="#fff"/>
+  <circle cx="39.8" cy="5.4" r="1" fill="#fff"/>
+  <circle cx="93.8" cy="52.2" r="1" fill="#fff"/>
+  <circle cx="106.0" cy="39.6" r="0.5" fill="#fff"/>
+  <circle cx="25.6" cy="40.5" r="0.8" fill="#fff"/>
+  <circle cx="78.2" cy="44.3" r="0.5" fill="#fff"/>
+  <circle cx="98.6" cy="26.1" r="0.5" fill="#fff"/>
+  <circle cx="44.6" cy="31.1" r="0.8" fill="#fff"/>
+  <circle cx="53.9" cy="10.2" r="0.6" fill="#fff"/>
+  <circle cx="82.5" cy="56.6" r="0.5" fill="#fff"/>
+  <circle cx="110.6" cy="42.8" r="0.6" fill="#fff"/>
+  <circle cx="96.7" cy="64.2" r="1" fill="#fff"/>
+  <circle cx="108.5" cy="64.0" r="0.5" fill="#fff"/>
+  <circle cx="74.9" cy="20.2" r="1" fill="#fff"/>
+  <polygon points="96,22 34,54 36,57" fill="url(#t)"/>
+  <path transform="translate(96 22) scale(6)" fill="#fffaf6" d="M0-1C.12-.12.12-.12 1 0C.12.12.12.12 0 1C-.12.12-.12.12-1 0C-.12-.12-.12-.12 0-1Z"/>
+  <circle cx="96" cy="22" r="8" fill="#fff" opacity=".35" filter="url(#b)"/>
+  <path d="M0 84Q30 66 62 80T120 72V120H0Z" fill="#6377b8" filter="url(#w)"/>
+  <path d="M0 100Q40 84 80 96T120 92V120H0Z" fill="#2e3962"/>
+  <rect x="84" y="93" width="3.2" height="3.2" fill="#f6d48a"/>
+</svg>

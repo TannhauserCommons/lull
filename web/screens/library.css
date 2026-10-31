@@ -1,0 +1,288 @@
+/* screens/library.css: Library + Playlists (owner: library). Screen-specific layout only;
+   colours come from semantic surface tokens (and palette fills the spec defines: --peri, --cream-2). */
+
+.lib { --lib-art: 232px; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-5); container: lib / inline-size; }
+.lib > .card { margin-bottom: 0; }   /* the grid gap + stack reserve below */
+.lib > *:not(:last-child).card, .lib .lib-cols > .card { margin-bottom: var(--stack-reserve); }
+
+/* ---------- page head on the sky ---------- */
+.lib-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--sp-4); margin-top: var(--sp-2); }
+.lib-head .t-display { margin: 0; }
+.lib-head__sub { margin-top: var(--sp-2); font: var(--t-body); color: var(--fg-2); max-width: 72ch; }
+.lib-head__tools { display: flex; align-items: center; gap: var(--sp-3); }
+
+/* segments: filter pills that are navigation links */
+.lib-segs ul { display: flex; gap: var(--sp-2); list-style: none; margin: 0; padding: 4px 2px 6px; overflow-x: auto; scrollbar-width: none; }
+.lib-segs ul::-webkit-scrollbar { display: none; }
+.lib-segs a.pill-filter { min-height: 38px; padding: 0 16px; }
+.lib-segs a.pill-filter[aria-current="page"] { background: var(--peri); color: var(--ink); border-color: var(--line); }
+
+/* Jellyfin offline notice (cream strip with a 4 px status bar, like a banner) */
+.lib-notice {
+  display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border-radius: var(--r-panel);
+  border: var(--stroke) solid var(--line); box-shadow: inset 4px 0 0 var(--down), var(--stack-1l); margin-bottom: 6px;
+}
+.lib-notice p { flex: 1; font: var(--t-meta); }
+.lib-notice .sg { width: 16px; height: 16px; }
+
+/* ---------- cards ---------- */
+.lib-card { min-width: 0; }
+.lib-rule { margin-bottom: var(--sp-4); }
+.lib-rule .label-rule__end { display: flex; align-items: center; gap: var(--sp-2); }
+.lib-sort { gap: 6px; }
+.lib-sort .ic { width: 16px; height: 16px; }
+.lib-count { margin-left: 2px; font: 700 .75rem/1 var(--f-ui); color: var(--fg-2); font-variant-numeric: tabular-nums; }
+.pill-filter[aria-pressed="true"] .lib-count { color: var(--ink); }
+.lib-filters { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: calc(var(--sp-1) * -1) 0 var(--sp-5); }
+.lib-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-4); }
+.lib-facts { color: var(--fg-2); }
+.lib-foot { margin-top: var(--sp-4); font: var(--t-micro); color: var(--fg-2); }
+.lib-cols { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: var(--sp-6); align-items: start; }
+
+/* album / artist / playlist grids */
+.lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--sp-6) var(--sp-5); }
+.lib-grid--tight { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+.lib-grid--artists { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+.lib-tile[draggable="true"] { cursor: grab; }
+.lib-tile .tile__art > a { display: block; border-radius: var(--r-art); }
+.lib-tile__meta { display: flex; align-items: center; gap: var(--sp-2); margin-top: 6px; min-width: 0; color: var(--fg-2); white-space: nowrap; }
+.lib-tile__meta .badge { padding-top: 2px; padding-bottom: 2px; }
+.lib-tile--artist .tile__art > a { border-radius: 50%; }
+.lib-tile--artist .tile__title, .lib-tile--artist .tile__by { text-align: center; }
+.lib-tile--artist .tile__by { display: flex; align-items: center; justify-content: center; gap: 4px; }
+.lib-tile--artist .tile__play { right: 4px; bottom: 0; }
+.lib-tile--pl .mosaic { border-radius: var(--r-art); }
+.lib-tile--pl.is-drop-target { outline-offset: 6px; border-radius: var(--r-art); }
+.lib .shelf { padding-bottom: var(--sp-4); }
+
+/* "new playlist" tile: dashed slot the size of a cover */
+.lib-newtile { display: grid; gap: 2px; align-content: start; text-align: left; color: var(--fg); }
+.lib-newtile__box {
+  display: grid; place-items: center; aspect-ratio: 1; margin-bottom: var(--sp-3); border-radius: var(--r-art);
+  border: var(--stroke) dashed var(--edge); color: var(--link); transition: background-color var(--dur-1);
+}
+.lib-newtile:hover .lib-newtile__box { background: var(--bg-2); }
+.lib-newtile:focus-visible { outline: none; }
+.lib-newtile:focus-visible .lib-newtile__box { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* genres & tags: flat insets inside the card */
+.lib-tags { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: var(--sp-3); list-style: none; margin: 0; padding: 0; }
+.lib-tagcard { display: grid; grid-template-columns: 72px minmax(0, 1fr); grid-template-areas: "art main" "tools tools"; gap: var(--sp-3) var(--sp-4); align-items: start; }
+.lib-tagcard__art { grid-area: art; border-radius: var(--r-thumb); }
+.lib-tagcard__main { grid-area: main; min-width: 0; }
+.lib-tagcard h3 { font: var(--t-row); }
+.lib-tagcard h3 a:hover { color: var(--link); text-decoration: underline; text-underline-offset: 3px; }
+.lib-tagcard__meta { font: var(--t-micro); color: var(--fg-2); margin: 2px 0 6px; }
+.lib-tagcard__desc { font: var(--t-meta); color: var(--fg-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.lib-tagcard__tools { grid-area: tools; display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
+
+/* ---------- hero (album, artist, tag) and playlist head ---------- */
+.lib-hero, .lib-pl__head { display: grid; grid-template-columns: var(--lib-art) minmax(0, 1fr); gap: var(--sp-8); align-items: center; }
+.lib-hero { margin-bottom: var(--sp-6); }
+.lib-page > .lib-hero:last-child { margin-bottom: 0; }
+.lib-hero > .cover, .lib-hero > .mosaic, .lib-pl__head > .mosaic { width: var(--lib-art); }
+.lib-hero > .mosaic, .lib-pl__head > .mosaic { border-radius: var(--r-art); }
+.lib-hero__info { display: grid; gap: var(--sp-3); min-width: 0; justify-items: start; }
+.lib-kicker { font: italic 800 .9375rem/1.2 var(--f-ui); color: var(--fg-2); }
+.lib-title { overflow-wrap: anywhere; margin: -4px 0 0; }
+.lib-hero__by { margin-top: -6px; font: 800 1.125rem/1.3 var(--f-ui); }
+.lib-hero__by a { color: var(--link); }
+.lib-hero__by a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.lib-hero__facts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); color: var(--fg-2); }
+.lib-hero__fmt { display: none; }   /* design hook: album file facts (App.fmt.albumLine), hidden in the base look */
+.lib-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.lib-bio { max-width: 64ch; font: var(--t-body); color: var(--fg-2); }
+.lib-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); margin-top: var(--sp-2); }
+.lib-actions__icons { display: flex; align-items: center; gap: var(--sp-2); }
+.lib .btn[aria-pressed="true"].lib-toggle { background: var(--peri); color: var(--ink); border-color: var(--line); }
+.lib-disc { margin: var(--sp-5) 0 var(--sp-2); }
+.lib-disc:first-of-type { margin-top: 0; }
+.lib-adddesc { justify-self: start; margin-left: calc(var(--sp-2) * -1); }
+
+/* list header (liked) */
+.lib-listhead { display: flex; align-items: flex-end; gap: var(--sp-5); margin-bottom: var(--sp-5); }
+.lib-listhead__title { font: var(--t-title-xl); letter-spacing: var(--t-title-xl-track, -.02em); margin-bottom: var(--sp-1); }
+.lib-listhead__text { display: grid; gap: var(--sp-2); min-width: 0; }
+.lib-listhead__text .lib-bar { margin: var(--sp-1) 0 0; }
+
+/* ---------- history ---------- */
+.lib-legend { display: flex; gap: var(--sp-4); list-style: none; margin: 0; padding: 0; font: var(--t-micro); color: var(--fg-2); }
+.lib-legend li { display: inline-flex; align-items: center; gap: 4px; }
+.lib-status { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-5); padding: var(--sp-3) var(--sp-4); }
+.lib-status p { flex: 1; font: var(--t-meta); }
+.lib-status .sg { width: 16px; height: 16px; }
+.lib-day + .lib-day { margin-top: var(--sp-5); }
+.lib-history .trow { grid-template-columns: 48px var(--art) minmax(0, 1fr) auto auto 52px 40px; }
+.lib-history .trow__num { font-size: .8125rem; }
+.lib-history .scrobble { order: -1; margin-right: var(--sp-2); }
+@container tlist (min-width: 760px) {
+  .lib-history .trow { grid-template-columns: 48px var(--art) minmax(0, 1.3fr) minmax(0, 1fr) auto auto 52px 40px; }
+}
+@container tlist (max-width: 520px) {
+  .lib-history .trow { grid-template-columns: var(--art) minmax(0, 1fr) auto 40px; grid-template-areas: "art main badges more"; }
+  .lib-history .trow__badges { display: flex; }
+  .lib-history .trow__badges > :not(.scrobble), .lib-history .trow__like { display: none; }
+}
+
+/* ---------- following ---------- */
+.lib-flist { list-style: none; margin: 0; padding: 0; display: grid; }
+.lib-frow { display: flex; align-items: center; gap: var(--sp-3); min-height: 64px; padding: 8px 0; }
+.lib-frow + .lib-frow { border-top: 1px solid var(--divider); }
+.lib-frow__main { flex: 1; min-width: 0; display: grid; }
+.lib-frow__name { font: var(--t-row); justify-self: start; }
+.lib-frow__name:hover { color: var(--link); text-decoration: underline; text-underline-offset: 3px; }
+.lib-frow__meta { font: var(--t-meta); color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-frow .btn { flex: none; }
+.lib-suggest { margin-top: var(--sp-5); }
+
+/* ---------- playlist page (moodboard 04) ---------- */
+.lib-pl__head { padding: var(--card-pad) var(--card-pad) var(--sp-5); }
+.lib-pl__title { margin: -2px 0 0; overflow-wrap: anywhere; }
+.lib-pl__facts { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2) var(--sp-4); color: var(--fg-2); }
+.lib-pl__upd { font: var(--t-meta); }
+.lib-pl__bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); padding: var(--sp-4) var(--card-pad);
+  border-top: 1px solid var(--divider);
+}
+.lib-pl__bar .spacer { flex: 1; }
+.lib-sortnote { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 var(--card-pad) var(--sp-2); font: var(--t-meta); color: var(--fg-2); }
+.lib-table { container: libpl / inline-size; padding: 0 calc(var(--card-pad) - 8px) var(--card-pad); }
+.lib-thead {   /* same grid as the rows below, so the labels sit over their columns */
+  --art: 48px; display: grid; align-items: center; column-gap: var(--sp-3); padding: 0 8px; min-height: 40px; margin-bottom: var(--sp-2);
+  grid-template-columns: 32px var(--art) minmax(0, 1fr) 196px 36px 52px 40px; border-bottom: 1.5px solid var(--peri-deep);
+}
+.lib-th { display: inline-flex; align-items: center; gap: 2px; justify-self: start; min-height: 32px; padding: 0 4px; margin-left: -4px; border-radius: var(--r-chip);
+  font: 800 .8125rem/1 var(--f-ui); color: var(--fg-2); white-space: nowrap; }
+button.lib-th:hover { color: var(--fg); background: var(--bg-2); }
+.lib-th[aria-pressed="true"] { color: var(--link); }
+.lib-th--num { grid-column: 1; justify-self: center; margin-left: 0; }
+.lib-th--title { grid-column: 2 / span 2; }
+.lib-th--album, .lib-th--added { display: none; }
+.lib-th--like { grid-column: 5; justify-self: center; margin-left: 0; }
+.lib-th--dur { grid-column: 6; justify-self: end; margin-right: -4px; }
+/* rows (moodboard 04 table): # / title / album / date added / heart / time; source shows as the small
+   icon by the artist. The badge column comes back when the card is wide enough for it. */
+.lib-pl-list .trow { grid-template-columns: 32px var(--art) minmax(0, 1fr) 36px 52px 40px; grid-template-areas: "num art main like dur more"; }
+.lib-pl-list .trow__badges { display: none; }
+.lib-pl-list .trow__mini { display: inline-flex; }
+.lib-pl-list .trow__like { justify-self: center; }
+.lib-pl-list.is-drop-target { outline: none; background: none; }
+.lib-pl-list .drop-line { list-style: none; }
+.lib-thead { grid-template-columns: 32px var(--art) minmax(0, 1fr) 36px 52px 40px; }
+.lib-th--like { grid-column: 4; } .lib-th--dur { grid-column: 5; }
+@container libpl (min-width: 620px) {
+  .lib-thead, .lib-pl-list .trow { grid-template-columns: 32px var(--art) minmax(0, 1.3fr) minmax(0, 1fr) 112px 36px 52px 40px; }
+  .lib-pl-list .trow { grid-template-areas: "num art main album added like dur more"; }
+  .lib-pl-list .trow__album, .lib-pl-list .trow__added { display: block; }
+  .lib-th--album { display: inline-flex; grid-column: 4; }
+  .lib-th--added { display: inline-flex; grid-column: 5; }
+  .lib-th--like { grid-column: 6; } .lib-th--dur { grid-column: 7; }
+}
+@container libpl (min-width: 1040px) {
+  .lib-thead, .lib-pl-list .trow { grid-template-columns: 32px var(--art) minmax(0, 1.3fr) minmax(0, 1fr) 112px 196px 36px 52px 40px; }
+  .lib-pl-list .trow { grid-template-areas: "num art main album added badges like dur more"; }
+  .lib-pl-list .trow__badges { display: flex; justify-content: flex-start; }
+  .lib-pl-list .trow__mini { display: none; }
+  .lib-th--like { grid-column: 7; } .lib-th--dur { grid-column: 8; }
+}
+@container tlist (max-width: 520px) {
+  .lib-pl-list .trow { grid-template-columns: var(--art) minmax(0, 1fr) auto 40px; grid-template-areas: "art main like more"; }
+}
+@container libpl (max-width: 520px) { .lib-thead { display: none; } }
+
+/* empty playlist / import drop zones */
+.lib-dropzone {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--sp-2) var(--sp-3); margin-top: var(--sp-6);
+  padding: var(--sp-5); border: var(--stroke) dashed var(--edge); border-radius: var(--r-panel); color: var(--fg-2); text-align: center;
+}
+.lib-dropzone p { font: var(--t-meta); }
+.lib-dropzone b { color: var(--fg); }
+.lib-dropzone--songs { margin: 0 var(--card-pad) var(--card-pad); padding: var(--sp-2); }
+.lib-dropzone.is-drop-target { border-color: var(--accent-ui); outline: none; }
+.lib-form .lib-dropzone { margin-top: 0; flex-direction: column; padding: var(--sp-8) var(--sp-5); }
+.lib-help { margin-top: var(--sp-3); font: var(--t-meta); color: var(--fg-2); }
+
+/* ---------- dialogs: edit, export, import ---------- */
+.lib-form { display: grid; gap: var(--sp-4); }
+.lib-textarea { height: auto; min-height: 88px; padding: var(--sp-3) var(--sp-4); line-height: 1.45; resize: vertical; }
+.lib-choice { border: 0; padding: 0; margin: 0; display: grid; gap: var(--sp-2); }
+.lib-choice legend { margin-bottom: var(--sp-2); }
+.lib-choice__opt { display: flex; gap: var(--sp-3); align-items: flex-start; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-input); border: var(--stroke) solid var(--divider); cursor: pointer; }
+.lib-choice__opt:hover { background: var(--bg-2); }
+.lib-choice__opt:has(input:checked) { border-color: var(--line); background: var(--bg-2); }
+.lib-choice__opt input { width: 18px; height: 18px; margin-top: 3px; accent-color: var(--focus); flex: none; }
+.lib-choice__opt > span { display: grid; gap: 2px; font: var(--t-meta); }
+.lib-choice__opt b { font: 800 1rem/1.3 var(--f-ui); }
+.lib-m3u {
+  margin: 0; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-input); background: var(--bg-2);
+  font: 600 .8125rem/1.6 var(--f-ui); font-variant-numeric: tabular-nums; color: var(--fg-2); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto;
+}
+.lib-import .sheet__body { padding-bottom: var(--sp-4); }
+.lib-imp__sum { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.lib-imp__list { list-style: none; margin: 0; padding: 0; display: block; max-height: min(42vh, 380px); overflow: auto; border-top: 1px solid var(--divider); border-bottom: 1px solid var(--divider); }
+.lib-imp__row { display: grid; grid-template-columns: 24px 40px minmax(0, 1fr) auto; align-items: center; gap: var(--sp-3); min-height: 56px; margin-top: 2px; padding: 6px 8px; border-radius: 12px; }
+.lib-imp__row:hover { background: var(--bg-2); }
+.lib-imp__row[hidden] { display: none; }
+.lib-imp__n { font: 700 .8125rem/1 var(--f-ui); color: var(--fg-2); text-align: right; font-variant-numeric: tabular-nums; }
+.lib-imp__blank { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 6px; border: var(--stroke-thin) dashed var(--edge); color: var(--fg-2); }
+.lib-imp__main { display: grid; min-width: 0; }
+.lib-imp__main b { font: 800 1rem/1.25 var(--f-ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-imp__main span { font: var(--t-meta); color: var(--fg-2); }
+.lib-imp__main small { font: var(--t-micro); color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-imp__status { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-2); }
+.lib-imp__src { font: var(--t-micro); color: var(--fg-2); white-space: nowrap; }
+.lib-imp__none { display: inline-flex; align-items: center; gap: 4px; font: 700 .8125rem/1 var(--f-ui); color: var(--fg-2); font-style: italic; }
+.lib-imp__opt { padding: 0 var(--sp-1); }
+
+/* add-to-playlist picker sheet */
+.lib-picker .sheet__body { display: grid; gap: var(--sp-3); align-content: start; }
+.lib-picker__what { font: var(--t-meta); color: var(--fg-2); }
+.lib-picker__what b { color: var(--fg); }
+.lib-picker__search .input { padding-right: var(--sp-4); }
+.lib-pick-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.lib-pick { display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 56px; padding: 6px 8px; border-radius: 14px; text-align: left; color: var(--fg); }
+.lib-pick:hover { background: var(--bg-2); }
+.lib-pick:focus-visible { outline-offset: -2px; }
+.lib-pick__text { display: grid; min-width: 0; }
+.lib-pick__text b { font: 800 1rem/1.25 var(--f-ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-pick__text > span { font: var(--t-meta); color: var(--fg-2); }
+.lib-pick__have { display: inline-flex; align-items: center; gap: 4px; color: var(--link); }
+.lib-pick__plus { display: grid; place-items: center; width: 44px; height: 44px; flex: none; border-radius: var(--r-thumb); border: var(--stroke) dashed var(--edge); color: var(--link); }
+.lib-pick-new { display: flex; gap: var(--sp-2); }
+.lib-pick-new[hidden] { display: none; }
+.lib-pick-none { font: var(--t-meta); color: var(--fg-2); padding: 0 8px; }
+
+/* ---------- tablet + phone ---------- */
+@container lib (max-width: 960px) { .lib-cols { grid-template-columns: minmax(0, 1fr); gap: var(--sp-5); } }
+@media (max-width: 1099px) {
+  .lib { --lib-art: 188px; }
+  .lib-hero, .lib-pl__head { gap: var(--sp-6); }
+}
+@media (max-width: 639px) {
+  .lib { --lib-art: 148px; gap: var(--sp-4); }
+  .lib-head { align-items: flex-start; }
+  .lib-head__tools .btn { min-height: 40px; }
+  .lib-segs { margin: 0 -16px; }
+  .lib-segs ul { padding: 4px 16px 6px; }
+  .lib-hero, .lib-pl__head { grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); align-items: start; }
+  .lib-hero { margin-bottom: var(--sp-5); }
+  .lib-pl__bar { gap: var(--sp-2); }
+  .lib-pl__bar [data-act="lib-pl-edit"], .lib-pl__bar [data-act="lib-pl-export"] { display: none; }   /* both are in the more menu */
+  .lib-pl__bar .btn-save { padding: 0 12px; }
+  .lib-pl__bar .btn-save span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .lib-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-5) var(--sp-4); }
+  .lib-tags { grid-template-columns: minmax(0, 1fr); }
+  .lib-legend { display: none; }
+  .lib-listhead { align-items: flex-start; flex-direction: column; gap: var(--sp-3); }
+  .lib-listhead__art { --cover-size: 72px; }
+  .lib-table { padding: 0 8px var(--sp-4); }
+  .lib-frow [data-act="start-radio"] { display: none; }   /* radio stays one tap away on the artist / tag page */
+  .lib-frow .btn { min-height: 36px; padding: 0 12px; }
+  .lib-status, .lib-notice { flex-wrap: wrap; }
+  .lib-status p, .lib-notice p { flex-basis: calc(100% - 32px); }
+  .lib-imp__row { grid-template-columns: 40px minmax(0, 1fr); grid-template-areas: "art main" "art status"; row-gap: 4px; }
+  .lib-imp__n { display: none; }
+  .lib-imp__row > .cover, .lib-imp__blank { grid-area: art; }
+  .lib-imp__main { grid-area: main; }
+  .lib-imp__status { grid-area: status; justify-content: flex-start; }
+}

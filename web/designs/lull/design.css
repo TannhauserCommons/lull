@@ -1,0 +1,1765 @@
+/* lull: a Y2K pastel desktop. Every view is a titled window with a
+   glossy title bar and three orbs, framed by mocha trays top and bottom. Gloss only on things you press.
+   Day is home; night is a lavender-indigo Y2K night with the same windows.
+   Layer over the base (tokens.css, base.css, components.css, screens). API: DESIGN.md section 3. */
+
+@font-face {
+  font-family: "Audiowide"; font-style: normal; font-weight: 400; font-display: swap;
+  src: url("fonts/audiowide-latin.woff2") format("woff2");
+}
+
+/* =====================================================================
+   Tokens: day (and everything theme-invariant)
+   ===================================================================== */
+:root[data-design="lull"] {
+  --f-disp: "Audiowide", "Nunito", ui-rounded, sans-serif;
+  /* type: Nunito everywhere; machine facts in Nunito 800 instead of the pixel face */
+  --t-display: 900 2.25rem/1.05 var(--f-ui); --t-display-track: -.025em;
+  --t-title-xl: 900 2rem/1.08 var(--f-ui);
+  --t-h2: 800 1.125rem/1.2 var(--f-ui);
+  --t-row: 800 .9375rem/1.25 var(--f-ui);
+  --t-body: 600 .9375rem/1.5 var(--f-ui);
+  --t-meta: 600 .8125rem/1.35 var(--f-ui);
+  --t-micro: 800 .75rem/1.3 var(--f-ui);
+  --t-px: 800 .75rem/1 var(--f-ui); --t-px-track: .02em;
+  --t-lyric: 800 1.3125rem/1.35 var(--f-ui);
+  --t-lyric-cur: 900 1.75rem/1.2 var(--f-ui);
+  /* shape */
+  --r-chip: 5px; --r-thumb: 8px; --r-art: 10px; --r-input: 12px; --r-panel: 14px; --r-card: 14px;
+  --r-device: 18px 18px 48px 18px; --r-bezel: 10px 10px 30px 10px;
+  --stroke: 1.5px; --icon-stroke: 1.8;
+  --stack-off-1: 5px; --stack-off-2: 10px;
+  --card-pad: 18px; --bar-h: 80px; --ctx: 340px;
+  /* palette (invariant) */
+  --ink: #2b2650; --ink-2: #5a4e8a; --link-on-cream: #5544aa;
+  --cream: #fdfcff; --cream-2: #f1edfd; --cream-3: #e6e0fb;
+  --line: #7772b4; --stack-1: #c3c2e2; --stack-2: #5a75b5;
+  --screen: #66535a; --skel: #e4def9; --skel-hi: #f4f1ff;
+  --card-seek-played: #3a3196; --card-seek-buffered: #8f84da;
+
+  /* theme: day. "sky" = the window body, "panel" = white panels inside it; the wallpaper is --l-wall */
+  --sky: var(--l-win); --sky-deep: #ece7fd; --panel: var(--l-card); --panel-2: #efeafe;
+  --tray: var(--l-tray); --tray-edge: #6b585e;
+  --fg-sky: #2b2650; --fg-sky-2: #5a4e8a; --fg-panel: #2b2650; --fg-panel-2: #5a4e8a;
+  --link: #5544aa; --accent-ui: #5544aa; --heart: #9c3f7e; --edge: #7772b4; --focus: #3d3491;
+  --seek-played: #3a3196; --seek-buffered: #8f84da; --seek-line: #7772b4;
+  --q-lossless: #4a3fa3; --q-lossy: #6e5560; --reason-bg: #fce8f3; --reason-fg: #9c3f7e;
+  --play-ring: #43389c; --wordmark-2: #5544aa; --sparkle: #dd9fc9; --speck: #ffffff;
+  --scrim: #2b2650; --scrim-alpha: .35; --gloss-ring-w: 0px;
+
+  /* lull's own (--l-win / --l-tray feed --sky / --tray so the theme change can animate them, see "Night falls") */
+  --l-win: #f7f4ff; --l-tray: #856e74;
+  --l-wall: #e4def9; --l-wall-2: #fce8f3; --l-wall-3: #b6c7f5; --l-wall-4: #ecc6d8;
+  --l-frame: #e4def9; --l-edge: #7772b4;
+  --l-bar: #b6c7f5; --l-bar-hi: #e3eafd; --l-bar-ink: #2b2650; --l-bar-line: rgba(255, 255, 255, .8);
+  --l-card: #fdfcff; --l-card-2: #f1edfd; --l-rule: #d6cef6; --l-hatch: #cfc7ee;
+  --l-muted: #6e5560; --l-ribbon: #5544aa;
+  --l-tile: #b6c7f5; --l-tile-hi: #e9f5ff; --l-tile-ink: #2b2650;
+  --l-received: #e4def9;
+  --l-switch: #b6619a; --l-slsk: #937479;
+  --l-gloss: linear-gradient(180deg, #b8adf7 0%, #6e5ed4 20%, #5a4ac0 50%, #5042b2 74%, #8373de 100%);
+  --l-gloss-edge: #43389c; --l-gloss-glow: rgba(215, 200, 255, .6);
+  --l-pink-gloss: linear-gradient(180deg, #fbd9ec 0%, #e3a0cb 22%, #c66fa8 54%, #b35d97 78%, #e09ac6 100%);
+  --l-pink-edge: #8e3f74;
+  --l-orb-1: #7f9be0; --l-orb-2: #a593e4; --l-orb-3: #d68fc0;
+  --l-shell: linear-gradient(180deg, #d4defb 0%, #b6c7f5 55%, #a9bcf0 100%); --l-shell-hi: #e9f5ff;
+  --l-screen-ink: #fff9fe; --l-ink-dim: #7772b4; --l-warn-ink: #7a2f62;
+  --l-hl: #c4d1f7;
+}
+/* check: --fg-sky on --sky 4.5 */
+/* check: --fg-sky-2 on --sky 4.5 */
+/* check: --fg-panel-2 on --l-card 4.5 */
+/* check: --fg-panel-2 on --l-card-2 4.5 */
+/* check: --l-muted on --sky 4.5 */
+/* check: --link on --l-card 4.5 */
+/* check: --l-tile-ink on --l-tile 4.5 */
+/* check: --l-bar-ink on --l-bar 4.5 */
+/* check: #ffffff on --l-ribbon 4.5 */
+/* check: --reason-fg on --reason-bg 4.5 */
+/* check: --heart on --l-card 3 */
+/* check: --l-edge on --sky 3 */
+/* check: --l-edge on --l-card 3 */
+/* check: --l-screen-ink on --screen 4.5 */
+/* check: --focus on --sky 3 */
+/* check: --focus on --l-frame 3 */
+/* check: #ffffff on #6e5ed4 4.5 */
+/* check: #ffffff on #5d66c8 4.5 */
+/* check: #fff9fe on #5a56b8 4.5 */
+/* check: #cdc4f7 on #454d97 3 */
+/* check: --l-ink-dim on --sky 3 */
+/* check: --l-warn-ink on --l-tile 4.5 */
+/* check: #fff9fe on --tray 4.5 */
+/* check: --l-switch on --sky 3 */
+/* check: --fg-sky on --l-hl 4.5 */
+
+/* =====================================================================
+   Tokens: night (lavender-indigo Y2K night). Every theme token set above is set again here.
+   ===================================================================== */
+:root[data-design="lull"][data-theme="night"] {
+  --line: #8588d3; --stack-1: #4e5398; --stack-2: #9a8ee0;
+  --screen: #1b1d3e; --skel: #3a3e78; --skel-hi: #484d8c;
+  --card-seek-played: #fff9fe; --card-seek-buffered: #8c88d8;
+  --sky: var(--l-win); --sky-deep: #33366c; --panel: var(--l-card); --panel-2: #444985;
+  --tray: var(--l-tray); --tray-edge: #0f1029;
+  --l-win: #2a2c5a; --l-tray: #1a1b3a;
+  --fg-sky: #f4efff; --fg-sky-2: #cdc4f7; --fg-panel: #f4efff; --fg-panel-2: #cdc4f7;
+  --link: #cfc0ff; --accent-ui: #b6c7f5; --heart: #f3b0d9; --edge: #8f92dc; --focus: #fff9fe;
+  --seek-played: #fff9fe; --seek-buffered: #8c88d8; --seek-line: #8f92dc;
+  --q-lossless: #cfc0ff; --q-lossy: #cdc4f7; --reason-bg: #4f3a6c; --reason-fg: #f8d2e8;
+  --play-ring: #c3c2e2; --wordmark-2: #cfc0ff; --sparkle: #fff9fe; --speck: #fff9fe;
+  --scrim: #0c0d24; --scrim-alpha: .62; --gloss-ring-w: 0px;
+  --l-wall: #1d1f45; --l-wall-2: #4a3c8c; --l-wall-3: #2b3b80; --l-wall-4: #5b3a7c;
+  --l-frame: #3c3f7c; --l-edge: #9194de;
+  --l-bar: #5a56b8; --l-bar-hi: #8f88e4; --l-bar-ink: #fff9fe; --l-bar-line: rgba(255, 255, 255, .34);
+  --l-card: #3a3e78; --l-card-2: #444985; --l-rule: #575ca0; --l-hatch: #5c61a6;
+  --l-muted: #c4bde0; --l-ribbon: #6252cc;
+  --l-tile: #464b8c; --l-tile-hi: #6268b0; --l-tile-ink: #f6f2ff;
+  --l-received: #464b8c;
+  --l-switch: #dd9fc9; --l-slsk: #ad8e94;
+  --l-gloss: linear-gradient(180deg, #a9b2f4 0%, #5d66c8 20%, #4a50a6 50%, #40479a 74%, #6e7ed0 100%);
+  --l-gloss-edge: #232a66; --l-gloss-glow: rgba(180, 196, 255, .5);
+  --l-pink-gloss: linear-gradient(180deg, #f6d3e8 0%, #d48ab9 22%, #ad568d 54%, #9c4a80 78%, #cf86b6 100%);
+  --l-pink-edge: #6f2a59;
+  --l-orb-1: #7c9ae4; --l-orb-2: #a796e6; --l-orb-3: #e09ac8;
+  --l-shell: linear-gradient(180deg, #6a6fcc 0%, #5257ac 55%, #4a4f9f 100%); --l-shell-hi: #9aa0e6;
+  --l-screen-ink: #f2eefe; --l-ink-dim: #a7a3d8; --l-warn-ink: #ffd6ec;
+  --l-hl: #4f4fa8;
+}
+/* status inks: lull night has no cream cards, so "connected", "done" and warnings sit on navy and take light tones.
+   Set on body, not :root, because the base pairs (status on cream) still describe the shared tokens. */
+:root[data-design="lull"][data-theme="night"] body { --ok: #8fdcb4; --warn: #f2c879; --down: #ffb0c6; }
+:root[data-design="lull"][data-theme="night"] :is(.disc-step.is-failed .disc-step__mark, .sys-step.is-done .sys-step__n) { color: var(--tray); }
+/* check: #8fdcb4 on #3a3e78 4.5 */
+/* check: #f2c879 on #3a3e78 4.5 */
+/* check: #ffb0c6 on #3a3e78 4.5 */
+/* check: #8fdcb4 on #444985 4.5 */
+/* check: #ffb0c6 on #444985 4.5 */
+/* check: #1a1b3a on #ffb0c6 4.5 */
+/* check: #1a1b3a on #b6c7f5 4.5 */
+
+/* Night falls: the surface tokens are registered colours, so flipping data-theme animates the desk instead of
+   cutting: title bars and tiles dusk first, then the windows, then the wallpaper. Reduced motion: instant. */
+@property --l-wall { syntax: "<color>"; inherits: true; initial-value: #e4def9; }
+@property --l-wall-2 { syntax: "<color>"; inherits: true; initial-value: #fce8f3; }
+@property --l-wall-3 { syntax: "<color>"; inherits: true; initial-value: #b6c7f5; }
+@property --l-wall-4 { syntax: "<color>"; inherits: true; initial-value: #ecc6d8; }
+@property --l-bar { syntax: "<color>"; inherits: true; initial-value: #b6c7f5; }
+@property --l-bar-hi { syntax: "<color>"; inherits: true; initial-value: #e3eafd; }
+@property --l-tile { syntax: "<color>"; inherits: true; initial-value: #b6c7f5; }
+@property --l-tray { syntax: "<color>"; inherits: true; initial-value: #856e74; }
+@property --l-frame { syntax: "<color>"; inherits: true; initial-value: #e4def9; }
+@property --l-win { syntax: "<color>"; inherits: true; initial-value: #f7f4ff; }
+@property --l-card { syntax: "<color>"; inherits: true; initial-value: #fdfcff; }
+@property --l-card-2 { syntax: "<color>"; inherits: true; initial-value: #f1edfd; }
+:root[data-design="lull"] {
+  transition: --l-bar .5s ease, --l-bar-hi .5s ease, --l-tile .5s ease, --l-tray .6s ease,
+    --l-frame .7s .1s ease, --l-win .7s .1s ease, --l-card .7s .1s ease, --l-card-2 .7s .1s ease,
+    --l-wall .9s .2s ease, --l-wall-2 .9s .25s ease, --l-wall-3 .9s .3s ease, --l-wall-4 .9s .35s ease;
+}
+/* base.css's reduced-motion rules match descendants (`:root *`), not the root that carries these transitions */
+:root[data-design="lull"][data-motion="reduce"] { transition: none; }
+@media (prefers-reduced-motion: reduce) { :root[data-design="lull"]:not([data-motion="full"]) { transition: none; } }
+
+/* shared recipes (built from the theme tokens above, so they follow the theme) */
+:root[data-design="lull"] {
+  /* gloss highlight band: a light ellipse over the top 40%, as a background layer (pseudo elements stay free) */
+  --l-hi: linear-gradient(180deg, rgba(255, 244, 255, .74), rgba(255, 244, 255, 0)) 50% 2px / 74% 30% no-repeat;
+  /* small pills (< 36px): a thin glint only, so it never sits under the cap height */
+  --l-hi-sm: linear-gradient(180deg, rgba(255, 244, 255, .6), rgba(255, 244, 255, 0)) 50% 1.5px / 70% 4px no-repeat;
+  --l-orb-shine: radial-gradient(circle at 50% 30%, rgba(255, 255, 255, .95) 0 1.4px, transparent 3px);
+  --l-bar-bg: linear-gradient(180deg, var(--l-bar-hi) 0%, var(--l-bar) 52%, var(--l-bar) 100%);
+  /* 45 degree hatch on a 6 px tile: seamless, so it can march (live "received" tape) */
+  --l-hatch-bg: repeating-linear-gradient(-45deg, var(--l-hatch) 0 1.5px, transparent 1.5px 4.243px) 0 0 / 6px 6px;
+  --l-win-stack: 0 4px 0 -1.5px var(--stack-1), 0 4px 0 0 var(--l-edge);
+  --l-card-stack: 0 5px 0 -1.5px var(--stack-1), 0 5px 0 0 var(--l-edge), 0 10px 0 -1.5px var(--stack-2), 0 10px 0 0 var(--l-edge);
+  --l-spark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23fff' d='M12 0c.6 6.6 5.4 11.4 12 12-6.6.6-11.4 5.4-12 12-.6-6.6-5.4-11.4-12-12C6.6 11.4 11.4 6.6 12 0z'/%3E%3C/svg%3E");
+}
+/* three title-bar orbs (img 05), drawn as background layers, decorative. Declared again on the two desk windows so
+   a window without focus can swap in quiet orbs, like an inactive window on a real desktop */
+:root[data-design="lull"], :root[data-design="lull"] :is(.main, .ctx) {
+  --l-orbs:
+    var(--l-orb-shine) 11px 50% / 13px 13px no-repeat, radial-gradient(circle, var(--l-orb-3) 0 5.4px, rgba(43, 38, 80, .55) 5.6px 6.4px, transparent 6.8px) 11px 50% / 13px 13px no-repeat,
+    var(--l-orb-shine) 30px 50% / 13px 13px no-repeat, radial-gradient(circle, var(--l-orb-2) 0 5.4px, rgba(43, 38, 80, .55) 5.6px 6.4px, transparent 6.8px) 30px 50% / 13px 13px no-repeat,
+    var(--l-orb-shine) 49px 50% / 13px 13px no-repeat, radial-gradient(circle, var(--l-orb-1) 0 5.4px, rgba(43, 38, 80, .55) 5.6px 6.4px, transparent 6.8px) 49px 50% / 13px 13px no-repeat;
+}
+/* the main window is the active one unless focus is in the side window */
+:root[data-design="lull"] .ctx:not(:focus-within), :root[data-design="lull"] .app:has(.ctx:focus-within) .main { --l-orb-1: #b4bbdc; --l-orb-2: #c0b8de; --l-orb-3: #d2bcd0; }
+:root[data-design="lull"][data-theme="night"] .ctx:not(:focus-within), :root[data-design="lull"][data-theme="night"] .app:has(.ctx:focus-within) .main { --l-orb-1: #7d84b8; --l-orb-2: #8a83bd; --l-orb-3: #a58ab4; }
+
+/* =====================================================================
+   Desk: wallpaper (img 02 pastel / night: violet sky with stars)
+   ===================================================================== */
+:root[data-design="lull"], :root[data-design="lull"] body, :root[data-design="lull"] .cls-scrim {
+  background:
+    radial-gradient(900px 640px at 8% 0%, var(--l-wall-2) 0%, transparent 62%),
+    radial-gradient(820px 620px at 96% 18%, color-mix(in srgb, var(--l-wall-3) 75%, transparent) 0%, transparent 64%),
+    radial-gradient(900px 560px at 55% 108%, var(--l-wall-4) 0%, transparent 60%),
+    linear-gradient(165deg, var(--l-wall), color-mix(in srgb, var(--l-wall) 60%, var(--l-wall-2))) fixed;
+  background-color: var(--l-wall);
+}
+/* starfield: an irregular tile of specks plus three 4-point sparkles (img 01); day: soft white with a violet glow */
+:root[data-design="lull"] .sky-specks::before { background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='520' height='420'%3E%3Cg fill='%23fff9fe'%3E%3Ccircle cx='335' cy='81' r='1.5' opacity='0.45'/%3E%3Ccircle cx='78' cy='278' r='0.8' opacity='0.75'/%3E%3Ccircle cx='63' cy='263' r='1' opacity='0.45'/%3E%3Ccircle cx='92' cy='226' r='1.5' opacity='0.45'/%3E%3Ccircle cx='250' cy='50' r='1.5' opacity='0.45'/%3E%3Ccircle cx='130' cy='118' r='0.6' opacity='1'/%3E%3Ccircle cx='410' cy='29' r='1' opacity='0.45'/%3E%3Ccircle cx='140' cy='152' r='1.5' opacity='0.6'/%3E%3Ccircle cx='124' cy='296' r='1' opacity='1'/%3E%3Ccircle cx='189' cy='56' r='1' opacity='0.75'/%3E%3Ccircle cx='103' cy='284' r='0.8' opacity='1'/%3E%3Ccircle cx='65' cy='320' r='1' opacity='0.9'/%3E%3Ccircle cx='441' cy='401' r='1.2' opacity='0.9'/%3E%3Ccircle cx='468' cy='189' r='1' opacity='0.6'/%3E%3Ccircle cx='188' cy='361' r='1' opacity='0.45'/%3E%3Ccircle cx='311' cy='272' r='1.8' opacity='0.75'/%3E%3Ccircle cx='463' cy='151' r='0.8' opacity='0.45'/%3E%3Ccircle cx='432' cy='88' r='1.2' opacity='0.6'/%3E%3Ccircle cx='504' cy='219' r='0.6' opacity='0.45'/%3E%3Ccircle cx='325' cy='178' r='1.2' opacity='1'/%3E%3Ccircle cx='512' cy='300' r='1.8' opacity='0.45'/%3E%3Ccircle cx='99' cy='142' r='1.8' opacity='0.45'/%3E%3Ccircle cx='66' cy='378' r='1' opacity='1'/%3E%3Ccircle cx='460' cy='149' r='1.5' opacity='0.75'/%3E%3Ccircle cx='27' cy='240' r='1.2' opacity='0.6'/%3E%3Ccircle cx='123' cy='256' r='0.6' opacity='0.6'/%3E%3Cpath d='M0-7c.4 4.4 2.6 6.6 7 7-4.4.4-6.6 2.6-7 7-.4-4.4-2.6-6.6-7-7 4.4-.4 6.6-2.6 7-7z' transform='translate(130,64) scale(0.9)'/%3E%3Cpath d='M0-7c.4 4.4 2.6 6.6 7 7-4.4.4-6.6 2.6-7 7-.4-4.4-2.6-6.6-7-7 4.4-.4 6.6-2.6 7-7z' transform='translate(402,250) scale(0.7)'/%3E%3Cpath d='M0-7c.4 4.4 2.6 6.6 7 7-4.4.4-6.6 2.6-7 7-.4-4.4-2.6-6.6-7-7 4.4-.4 6.6-2.6 7-7z' transform='translate(262,380) scale(0.55)'/%3E%3C/g%3E%3C/svg%3E") 0 0 / 520px 420px; opacity: .9; }
+:root[data-design="lull"][data-theme="day"] .sky-specks::before { opacity: .85; filter: drop-shadow(0 0 1.5px rgba(123, 106, 224, .7)); }
+
+/* =====================================================================
+   Windows: shared frame, title bar (orbs, title, right-hand meta), body
+   ===================================================================== */
+:root[data-design="lull"] .main, :root[data-design="lull"] .ctx {
+  background: var(--l-frame); border: var(--stroke) solid var(--l-edge); border-radius: 14px; padding: 4px;
+  box-shadow: var(--l-win-stack); margin-bottom: 18px;
+}
+:root[data-design="lull"] .main::before, :root[data-design="lull"] .ctx > .region-title, :root[data-design="lull"] .lull-win__bar {
+  display: flex; align-items: center; flex: none; height: 30px; padding: 0 12px 0 68px; border-radius: 10px 10px 4px 4px;
+  background: var(--l-orbs), var(--l-bar-bg); box-shadow: inset 0 1px 0 var(--l-bar-line), inset 0 -1px 0 rgba(43, 38, 80, .1);
+  color: var(--l-bar-ink); font: 400 .8125rem/1 var(--f-disp); letter-spacing: .04em; text-transform: lowercase; white-space: nowrap;
+}
+/* the bar names the kind of window ("discover", "search", "album"); the live meta sits on the right */
+:root[data-design="lull"] .main::before { content: "lull"; }
+:root[data-design="lull"] .app[data-screen="home"] .main::before { content: "discover"; }
+:root[data-design="lull"] .app[data-screen="search"] .main::before { content: "search"; }
+:root[data-design="lull"] .app[data-screen="library"] .main::before { content: "library"; }
+:root[data-design="lull"] .app[data-screen="liked"] .main::before { content: "liked"; }
+:root[data-design="lull"] .app[data-screen="history"] .main::before { content: "history"; }
+:root[data-design="lull"] .app[data-screen="following"] .main::before { content: "following"; }
+:root[data-design="lull"] .app[data-screen="album"] .main::before { content: "album"; }
+:root[data-design="lull"] .app[data-screen="artist"] .main::before { content: "artist"; }
+:root[data-design="lull"] .app[data-screen="tag"] .main::before { content: "tag"; }
+:root[data-design="lull"] .app[data-screen="playlists"] .main::before { content: "playlists"; }
+:root[data-design="lull"] .app[data-screen="playlist"] .main::before { content: "playlist"; }
+:root[data-design="lull"] .app[data-screen="stats"] .main::before { content: "stats"; }
+:root[data-design="lull"] .app[data-screen="settings"] .main::before { content: "settings"; }
+:root[data-design="lull"] .app[data-screen="welcome"] .main::before { content: "welcome"; }
+:root[data-design="lull"] .main::after {
+  content: attr(data-meta); position: absolute; top: 4px; right: 16px; height: 30px; display: flex; align-items: center; pointer-events: none;
+  color: var(--l-bar-ink); font: 800 .75rem/1 var(--f-ui); white-space: nowrap;
+}
+/* routes without a live meta keep a quiet fact that never goes stale */
+:root[data-design="lull"] .app[data-screen="library"] .main[data-meta=""]::after, :root[data-design="lull"] .app[data-screen="playlists"] .main[data-meta=""]::after { content: "saved on your server"; }
+:root[data-design="lull"] .app[data-screen="settings"] .main[data-meta=""]::after { content: "this device + server"; }
+:root[data-design="lull"] .view {
+  margin-top: 4px; border-radius: 4px 4px 10px 10px; background: var(--sky); padding: 16px 22px 36px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #fff 65%, transparent); scrollbar-width: thin; scrollbar-color: var(--l-edge) transparent;
+}
+:root[data-design="lull"][data-theme="night"] .view { box-shadow: inset 0 0 0 1px rgba(195, 194, 226, .1); }
+/* whatever the fold cuts reads as "scroll for more": a fade riding the window's foot. Sticky, so it never clips focus
+   rings or fixed children the way a mask on the scroller would (the sticky edge sits at the content box, so bottom is
+   minus the view's bottom padding). It shows only while there is more below: a scroll-driven animation runs only
+   on a window that scrolls, and fades out over the last 24 px. A window that fits gets no fade. */
+@keyframes lull-more { from, 96% { opacity: 1; } to { opacity: 0; } }
+:root[data-design="lull"] .view::after {
+  content: ""; position: sticky; bottom: -36px; display: block; height: 22px; margin: 0 -22px -22px; pointer-events: none;
+  background: linear-gradient(transparent, var(--sky)); opacity: 0;
+  animation: lull-more linear both; animation-timeline: scroll(nearest block);
+}
+/* the title bar is the title: page H1s that only repeat it stay for screen readers */
+:root[data-design="lull"] .disc-hello--search h1, :root[data-design="lull"] .lib-head > h1, :root[data-design="lull"] .lib-head h1.t-display, :root[data-design="lull"] .sys-head h1, :root[data-design="lull"] .sys-settings__title {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+
+/* context panel = a window titled by its tab ("queue", "lyrics", "activity") with the live meta; the tabs are the
+   first row of its body and the close X sits inside the bar */
+:root[data-design="lull"] .ctx { width: auto; }
+:root[data-design="lull"] .app[data-ctx="docked"] .ctx { position: relative; }
+:root[data-design="lull"] .ctx > .region-title { padding-right: 44px; }
+:root[data-design="lull"] .ctx > .region-meta {
+  display: block; position: absolute; top: 4px; right: 44px; line-height: 30px; pointer-events: none;
+  color: var(--l-bar-ink); font: 800 .75rem/30px var(--f-ui); white-space: nowrap;
+}
+:root[data-design="lull"] .ctx__head { position: static; margin-top: 4px; padding: 10px 10px 4px; border-radius: 4px 4px 0 0; background: var(--sky); }
+:root[data-design="lull"] .ctx__head .seg { min-height: 0; }
+:root[data-design="lull"] .ctx__head .seg__btn { min-height: 28px; font-size: .8125rem; }
+:root[data-design="lull"] .ctx__head .badge-count { min-width: 16px; height: 16px; font-size: .625rem; }
+:root[data-design="lull"] .ctx__head [data-act="close-panel"] { position: absolute; top: 7px; right: 10px; width: 24px; height: 24px; color: var(--l-bar-ink); }
+:root[data-design="lull"] .ctx__head [data-act="close-panel"] .ic { width: 15px; height: 15px; }
+:root[data-design="lull"] .ctx__head [data-act="close-panel"]:hover { background: rgba(255, 255, 255, .35); }
+:root[data-design="lull"] .ctx__body {
+  flex: 1; background: var(--sky); border-radius: 0 0 10px 10px; padding: 8px 10px 14px;
+  scrollbar-width: thin; scrollbar-color: var(--l-edge) transparent;
+}
+/* queue window: the radio is a 40 px pink strip (name, "keeps adding", switch). Steer and Stop drop down
+   from it as a little paper panel while the strip is hovered or holds focus, so the queue keeps its rows and ends
+   on its own footer. Touch screens keep Steer in the flow. */
+:root[data-design="lull"] .now-q__radio {
+  position: relative; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 8px; min-height: 40px; padding: 0 6px 0 12px;
+  border-radius: 12px; border: 1px solid color-mix(in srgb, var(--pink) 70%, transparent); background: var(--reason-bg); color: var(--reason-fg);
+}
+:root[data-design="lull"] .now-q__radio-row > .ic { color: var(--reason-fg); width: 17px; height: 17px; }
+:root[data-design="lull"] .now-q__radio-name { font: 800 .8125rem/1.2 var(--f-ui); }
+:root[data-design="lull"] .now-q__keep { min-height: 36px; gap: 8px; }
+:root[data-design="lull"] .now-q__keep .switch-row__label { font: 800 0/1 var(--f-ui); color: var(--reason-fg); }
+/* the strip words it "keeps adding" (the switch itself is named "Radio keeps adding songs") */
+:root[data-design="lull"] .now-q__keep .switch-row__label::before { content: "keeps adding"; font-size: .75rem; }
+:root[data-design="lull"] .now-q__radio .switch:not([aria-checked="true"]) { background: var(--l-card); }
+:root[data-design="lull"] .now-q__steer { grid-column: 1 / -1; padding-bottom: 8px; color: var(--fg-panel); }
+@media (hover: hover) {
+  :root[data-design="lull"] .now-q__radio-row { display: contents; }
+  :root[data-design="lull"] .now-q__radio-row > .ic { display: none; }
+  :root[data-design="lull"] .now-q__steer {
+    position: absolute; z-index: 3; top: calc(100% + 6px); left: 0; right: 0; padding: 10px 52px 10px 12px;
+    background: var(--l-card); color: var(--fg-panel); border: var(--stroke) solid var(--l-edge); border-radius: 12px; box-shadow: var(--l-win-stack);
+  }
+  :root[data-design="lull"] .now-q__radio [data-act="now-radio-stop"] { position: absolute; z-index: 4; top: calc(100% + 18px); right: 12px; color: var(--fg-panel); }
+  :root[data-design="lull"] .now-q__radio:not(:hover, :focus-within) :is(.now-q__steer, [data-act="now-radio-stop"]) { visibility: hidden; opacity: 0; }
+  :root[data-design="lull"] .now-q__radio :is(.now-q__steer, [data-act="now-radio-stop"]) { transition: opacity var(--dur-2), visibility var(--dur-2); }
+}
+:root[data-design="lull"] .now-q__hint { white-space: normal; }
+/* check: --reason-fg on --reason-bg 4.5 */
+
+/* on Now Playing the lyrics window already sits beside the panel, so the panel never shows lyrics there: its Lyrics
+   tab is dropped, and if lyrics were asked for (a state, ?tab) the body points at the middle window instead of
+   repeating it. The tab strip's inline --n / --i come from core, so the two-tab layout needs !important to win. */
+@media (min-width: 640px) {
+  :root[data-design="lull"] .app[data-screen="now"] #ctx-tabs { --n: 2 !important; }
+  :root[data-design="lull"] .app[data-screen="now"] #ctx-tabs:has(#ctx-tab-activity[aria-selected="true"]) { --i: 1 !important; }
+  :root[data-design="lull"] .app[data-screen="now"] #ctx-tabs:has(#ctx-tab-lyrics[aria-selected="true"]) .seg__ind { opacity: 0; }
+  :root[data-design="lull"] .app[data-screen="now"] #ctx-tab-lyrics { display: none; }
+  :root[data-design="lull"] .app[data-screen="now"] #ctx-body .now-ly--panel { display: none; }
+  :root[data-design="lull"] .app[data-screen="now"] #ctx-body:has(.now-ly--panel)::before {
+    content: "Lyrics are open in the middle window. Pick Queue or Activity above."; display: block; margin: 18px 6px;
+    padding: 12px 14px; border-radius: 12px; border: 1px dashed var(--l-edge); color: var(--fg-panel-2); font: 700 .8125rem/1.4 var(--f-ui);
+  }
+}
+
+/* =====================================================================
+   Top strip (topnav shell): mocha tray with tiles (img 02 status bar)
+   ===================================================================== */
+:root[data-design="lull"] .wordmark.lull-wm {
+  --wm-1: #fff; display: inline-flex; align-items: center; height: 38px; padding: 0 20px 0 15px; border-radius: 999px; isolation: isolate;
+  background: var(--l-hi), var(--l-gloss); border: var(--stroke) solid var(--l-gloss-edge); box-shadow: inset 0 -2px 4px var(--l-gloss-glow);
+  font: 400 1.3125rem/1 var(--f-disp); letter-spacing: .02em; color: #fff; text-shadow: 0 1px 0 rgba(40, 25, 110, .6), 0 0 1.5px #2f2580, 0 0 3px rgba(47, 37, 128, .55);
+}
+:root[data-design="lull"] .lull-wm .wordmark__spark { position: relative; right: auto; top: -.42em; margin-left: 1px; width: .55em; height: .55em; background: #fff9fe; }
+@media (min-width: 640px) {
+  :root[data-design="lull"] .app { padding: 12px 16px 0; column-gap: 16px; }
+  :root[data-design="lull"] .app:not([data-ctx="docked"]) .ctx { top: 84px; bottom: calc(var(--bar-h) + 30px); }
+}
+:root[data-design="lull"] .header {
+  min-height: 54px; margin-bottom: 14px; padding: 6px; gap: 6px; background: var(--tray); color: #fff9fe;
+  border: var(--stroke) solid var(--tray-edge); border-radius: 16px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22);
+}
+:root[data-design="lull"] .header__brand { margin-right: 0; }
+:root[data-design="lull"] .header__brand a { display: block; border-radius: 999px; }
+:root[data-design="lull"] .header__nav { gap: 6px; }
+:root[data-design="lull"] .nav-pill, :root[data-design="lull"] .header .btn-icon, :root[data-design="lull"] .header .tray__pill {
+  height: 40px; border-radius: 10px; border: 0; background: var(--l-tile); color: var(--l-tile-ink);
+  box-shadow: inset 0 1px 0 var(--l-tile-hi), 0 1px 0 rgba(0, 0, 0, .12);
+}
+:root[data-design="lull"] .nav-pill { padding: 0 14px 0 11px; font: 800 .875rem/1 var(--f-ui); gap: 7px; }
+:root[data-design="lull"] .nav-pill .ic { width: 18px; height: 18px; }
+/* desk widths: every pill keeps its label from 1360; 1100-1359 labels Home and Library, Playlists and
+   Stats go icon-only. Below 1600 the "following and playlists" shelf tile steps aside for the labels: Playlists
+   and Library (Following) reach the same lists. */
+@media (min-width: 1100px) and (max-width: 1359px) {
+  :root[data-design="lull"] .nav-pill:is([data-nav="home"], [data-nav="library"]) { width: auto; padding: 0 14px 0 11px; }
+  :root[data-design="lull"] .nav-pill:is([data-nav="home"], [data-nav="library"]) .nav-pill__label { display: inline; }
+}
+@media (min-width: 1100px) and (max-width: 1599px) {
+  :root[data-design="lull"] .header__shelf { display: none; }
+}
+:root[data-design="lull"] .nav-pill:hover, :root[data-design="lull"] .header .btn-icon:hover, :root[data-design="lull"] .header .tray:hover .tray__pill { background: color-mix(in srgb, var(--l-tile) 82%, #fff); }
+:root[data-design="lull"] .nav-pill[aria-current="page"], :root[data-design="lull"] .header .btn-icon[aria-current="page"], :root[data-design="lull"] .header .btn-icon[data-act="theme"] {
+  border-radius: 999px; background: var(--l-hi), var(--l-gloss); color: #fff; border: var(--stroke) solid var(--l-gloss-edge);
+  box-shadow: inset 0 -2px 4px var(--l-gloss-glow); text-shadow: 0 1px 0 rgba(40, 25, 110, .55);
+}
+:root[data-design="lull"] .header .btn-icon { width: 40px; }
+:root[data-design="lull"] .header .btn-icon__badge { top: -6px; right: -6px; border-color: var(--tray-edge); }
+:root[data-design="lull"] .header__search { flex: 1 1 260px; min-width: 0; max-width: none; }
+:root[data-design="lull"] .header__search .input {
+  height: 40px; border-radius: 10px; border: var(--stroke) solid transparent; background: var(--l-card); color: var(--fg-panel);
+  box-shadow: inset 0 1px 2px rgba(43, 38, 80, .14); font: 700 .875rem/1 var(--f-ui); text-overflow: ellipsis;
+}
+:root[data-design="lull"] .header__search .input:focus-visible { border-color: var(--l-ribbon); }
+/* below 1600 the long placeholder would be cut: the field shows a short "Search music" (the label still names it) */
+@media (min-width: 640px) and (max-width: 1599px) {
+  :root[data-design="lull"] .header__search .input::placeholder { color: transparent; }
+  :root[data-design="lull"] .header__search:has(.input:placeholder-shown)::after {
+    content: "Search music"; position: absolute; left: 42px; top: 50%; transform: translateY(-50%); pointer-events: none;
+    color: var(--fg-panel-2); font: 700 .875rem/1 var(--f-ui);
+  }
+  :root[data-design="lull"] .header__search:has(.input:disabled)::after { content: "Search paused: server offline"; }
+}
+
+/* status tray: one tile of services (ringed dot shape + name, Last.fm's queue as a count), then the cache tile with a
+   fill meter (--cache-frac) and "3.1 / 5 GB" */
+:root[data-design="lull"] .header .tray { padding: 0; gap: 6px; background: none; border: 0; box-shadow: none; }
+:root[data-design="lull"] .header .tray__pill { padding: 0 8px; gap: 6px; font: 800 .8125rem/1 var(--f-ui); letter-spacing: 0; }
+/* service names in their own casing (the markup is lowercase): glyph, name, then the Last.fm count */
+:root[data-design="lull"] .header .tray--full .tray__pill:not(.tray__pill--cache) { font-size: 0; }
+:root[data-design="lull"] .header .tray--full .tray__pill > .sg { order: -1; }
+:root[data-design="lull"] .header .tray--full .tray__pill[data-svc="soulseek"]::before { content: "Soulseek"; font-size: .8125rem; }
+:root[data-design="lull"] .header .tray--full .tray__pill[data-svc="jellyfin"]::before { content: "Jellyfin"; font-size: .8125rem; }
+:root[data-design="lull"] .header .tray--full .tray__pill[data-svc="lastfm"]::before { content: "Last.fm"; font-size: .8125rem; }
+:root[data-design="lull"] .header .tray--full .tray__pill:first-child { border-radius: 10px 0 0 10px; padding-left: 11px; }
+:root[data-design="lull"] .header .tray--full .tray__pill:nth-child(2) { border-radius: 0; }
+:root[data-design="lull"] .header .tray--full .tray__pill:nth-child(3) { border-radius: 0 10px 10px 0; padding-right: 11px; }
+:root[data-design="lull"] .header .tray--full .tray__pill:nth-child(2), :root[data-design="lull"] .header .tray--full .tray__pill:nth-child(3) { margin-left: -6px; }
+:root[data-design="lull"] .header .tray:focus-visible { outline-offset: 3px; border-radius: 10px; }
+:root[data-design="lull"] .header .tray__pill[data-state="warn"]:not([data-svc="lastfm"]), :root[data-design="lull"] .header .tray__pill[data-state="down"] { color: var(--l-warn-ink); }
+:root[data-design="lull"] .header .tray--full .tray__label-long { display: none; }
+:root[data-design="lull"] .header .tray__count {
+  display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
+  background: var(--pink); color: #2b2650; font: 900 .6875rem/1 var(--f-ui);
+}
+:root[data-design="lull"] .header .tray__pill--cache { padding: 0 12px; border-radius: 10px; font-size: 0; }
+:root[data-design="lull"] .header .tray__pill--cache > .sg, :root[data-design="lull"] .header .tray__pill--cache .tray__label-long { display: none; }
+:root[data-design="lull"] .header .tray__pill--cache::before {
+  content: ""; width: 44px; height: 8px; border-radius: 9px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--l-edge) 70%, transparent);
+  background: linear-gradient(90deg, var(--l-ribbon) calc(var(--cache-frac, 0) * 100%), color-mix(in srgb, var(--l-card) 70%, transparent) 0);
+}
+:root[data-design="lull"] .header .tray__pill--cache[data-state="warn"]::before, :root[data-design="lull"] .header .tray__pill--cache[data-state="down"]::before {
+  background: linear-gradient(90deg, var(--l-switch) calc(var(--cache-frac, 0) * 100%), color-mix(in srgb, var(--l-card) 70%, transparent) 0);
+}
+:root[data-design="lull"] .header .tray__pill--cache::after { content: attr(data-cache-used) " / " attr(data-cache-cap) " GB"; font-size: .8125rem; white-space: nowrap; }
+/* status dots: ringed so they read on any tile; the shape already differs (ok = circle, warn = diamond) */
+:root[data-design="lull"] .tray .sg { width: 15px; height: 15px; margin: 0 -2px; overflow: visible; filter: drop-shadow(1.2px 0 0 #fff9fe) drop-shadow(-1.2px 0 0 #fff9fe) drop-shadow(0 1.2px 0 #fff9fe) drop-shadow(0 -1.2px 0 #fff9fe); }
+/* compact tray (tablet, phone): the worst state in words (.tray__word, "all good" included), never colour alone */
+:root[data-design="lull"] .tray--compact .tray__gb { display: none; }
+:root[data-design="lull"] .tray--compact .tray__word { display: inline; margin-left: 2px; font: 800 .8125rem/1 var(--f-ui); }
+:root[data-design="lull"] .tray--compact .tray__pill:not([data-worst="ok"]) .tray__word { color: var(--l-warn-ink); }
+/* focus on the mocha trays: a light ring (the dark default would vanish on mocha) */
+:root[data-design="lull"] .header, :root[data-design="lull"] .tabbar { --focus: #fff9fe; }
+/* the wordmark elsewhere (device brand etc.) */
+:root[data-design="lull"] .wordmark { font: 400 1.375rem/1 var(--f-disp); letter-spacing: .02em; }
+
+/* =====================================================================
+   Player dock: a mocha tray holding the light player window and four glossy tiles
+   (lyrics, queue, classic, device). Desk grid: now + like | transport | seek group | save, volume, more || tiles.
+   Tablet: two rows inside the same light window (now + transport + tools, then the seek group).
+   ===================================================================== */
+:root[data-design="lull"] .pbar {
+  height: var(--bar-h); margin: 0 0 12px; padding: 6px; column-gap: 0;
+  background: var(--tray); border: var(--stroke) solid var(--tray-edge); border-radius: 18px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
+}
+/* the light player window, drawn by the region title behind the controls */
+:root[data-design="lull"] .pbar > .region-title {
+  display: block; grid-area: 1 / 1 / -1 / -1; align-self: stretch; font-size: 0; border-radius: 13px;
+  background: var(--sky); box-shadow: inset 0 0 0 1px color-mix(in srgb, #fff 55%, transparent), 0 0 0 var(--stroke) var(--tray-edge);
+}
+:root[data-design="lull"][data-theme="night"] .pbar > .region-title { box-shadow: inset 0 0 0 1px rgba(195, 194, 226, .12), 0 0 0 var(--stroke) var(--tray-edge); }
+:root[data-design="lull"] .pbar > :not(.region-title):not(.pbar__state) { position: relative; z-index: 1; }
+/* the state line (failed / stalled): the tray grows a shelf on top and the line sits there as a little lavender
+   strip with its actions, so it never covers a window frame */
+@media (min-width: 640px) {
+  :root[data-design="lull"] .app:has(#pbar-state:not([hidden])) { --bar-h: 120px; }
+  :root[data-design="lull"] .pbar:has(#pbar-state:not([hidden])) { padding-top: 46px; }
+  :root[data-design="lull"] .pbar__state {
+    top: 7px; bottom: auto; left: calc(50% - 116px); max-width: min(720px, 70%); height: 32px; padding: 0 8px 0 10px; gap: 10px;
+    border: var(--stroke) solid var(--tray-edge); border-radius: 10px; background: var(--sky); color: var(--fg-panel);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 55%, transparent); font: 800 .8125rem/1 var(--f-ui);
+  }
+  :root[data-design="lull"] .pbar__state .btn--quiet { color: var(--link); }
+}
+@media (min-width: 640px) and (max-width: 1099px) {
+  :root[data-design="lull"] .app:has(#pbar-state:not([hidden])) { --bar-h: 156px; }
+  :root[data-design="lull"] .pbar__state { left: 50%; }
+}
+:root[data-design="lull"] .pbar__now { gap: 12px; padding-left: 6px; }
+:root[data-design="lull"] .bezel-thumb { padding: 0; background: none; border: 0; border-radius: 10px; }
+:root[data-design="lull"] .bezel-thumb .cover { --cover-size: 54px; border-radius: 9px; border-color: var(--l-edge); }
+:root[data-design="lull"] .bezel-thumb:hover { background: none; }
+:root[data-design="lull"] .pbar__controls { gap: 6px; }
+:root[data-design="lull"] .pbar .btn-gloss { --size: 52px; }
+:root[data-design="lull"] .pbar__seek .seek { height: 22px; }
+/* the knob's rail sits at the play position itself instead of being a full-width box slid right by it, so it never
+   runs past the bar (and the window) when the seek spans the whole tray */
+:root[data-design="lull"] .pbar__seek .seek__rail { left: calc(var(--pos) * 100%); right: auto; width: 0; transform: none; }
+/* the seek group is headed by what the stream is doing ("Streaming from peer") */
+:root[data-design="lull"] .pbar__seek { max-width: none; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 8px; align-items: center; }
+:root[data-design="lull"] .pbar__seek::before { content: "now playing"; grid-column: 1 / -1; margin: 0 0 1px 2px; color: var(--link); font: 800 .75rem/1.2 var(--f-ui); }
+:root[data-design="lull"] .pbar[data-playing="false"] .pbar__seek::before { content: "paused"; }
+/* while bytes still arrive the head also says how much is in (--rx is the received %, an integer) */
+:root[data-design="lull"] .pbar__seek:has(.is-transferring)::before { counter-reset: rx var(--rx); content: "streaming from peer \00b7  " counter(rx) "% received"; }
+:root[data-design="lull"] .pbar[data-playing="false"] .pbar__seek:has(.is-transferring)::before { content: "paused \00b7  " counter(rx) "% received"; }
+:root[data-design="lull"] .pbar[data-status="buffering"] .pbar__seek::before, :root[data-design="lull"] .pbar[data-status="finding"] .pbar__seek::before { content: "finding a source"; }
+:root[data-design="lull"] .pbar[data-status="failed"] .pbar__seek::before { content: "\26A0  no peer answered"; color: var(--heart); }
+:root[data-design="lull"] .pbar[data-status="failed"] .seek__track, :root[data-design="lull"] .mini[data-status="failed"] .seek__track {
+  background: repeating-linear-gradient(-45deg, color-mix(in srgb, var(--heart) 55%, transparent) 0 1.5px, transparent 1.5px 4.243px) 0 0 / 6px 6px;
+  box-shadow: inset 0 0 0 1px var(--heart);
+}
+@media (min-width: 1100px) {
+  :root[data-design="lull"] .pbar {
+    grid-template-columns: minmax(200px, 1fr) 40px auto minmax(240px, 1.35fr) 40px minmax(90px, 150px) 40px 12px repeat(4, 48px);
+    grid-template-areas: "now like ctl seek save vol more . t1 t2 t3 t4"; gap: 0 4px;
+  }
+  :root[data-design="lull"] .pbar > .region-title { grid-area: 1 / 1 / 2 / 8; }
+  :root[data-design="lull"] .pbar__centre, :root[data-design="lull"] .pbar__tools { display: contents; }
+  :root[data-design="lull"] .pbar__now { grid-area: now; }
+  :root[data-design="lull"] .pbar__controls { grid-area: ctl; padding: 0 14px 0 8px; }
+  :root[data-design="lull"] .pbar__seek { grid-area: seek; }
+  :root[data-design="lull"] .pbar__xfade { grid-area: seek; justify-self: end; align-self: start; margin-top: 9px; }
+  :root[data-design="lull"] .pbar [data-act="like"] { grid-area: like; }
+  :root[data-design="lull"] .pbar [data-act="save"] { grid-area: save; }
+  :root[data-design="lull"] .pbar .vol { grid-area: vol; min-width: 0; }
+  :root[data-design="lull"] .pbar .vol .seek { min-width: 0; }
+  :root[data-design="lull"] .pbar [data-act="player-more"] { grid-area: more; }
+  :root[data-design="lull"] .pbar [data-act="toggle-panel"].is-wide { grid-area: t1; }
+  :root[data-design="lull"] .pbar [data-act="toggle-panel"]:not(.is-wide) { grid-area: t2; }
+  :root[data-design="lull"] .pbar [data-act="classic"] { grid-area: t3; }
+  :root[data-design="lull"] .pbar [data-act="open-now"] { grid-area: t4; }
+  /* the four tray tiles: periwinkle squares; pressed = gloss */
+  :root[data-design="lull"] .pbar [data-act="toggle-panel"], :root[data-design="lull"] .pbar [data-act="classic"], :root[data-design="lull"] .pbar [data-act="open-now"] {
+    display: inline-grid; width: 48px; height: 48px; border-radius: 12px; border: 0; color: var(--l-tile-ink); background: var(--l-tile);
+    box-shadow: inset 0 1px 0 var(--l-tile-hi), 0 2px 0 rgba(0, 0, 0, .18);
+  }
+  :root[data-design="lull"] .pbar [data-act="toggle-panel"]:hover, :root[data-design="lull"] .pbar [data-act="classic"]:hover, :root[data-design="lull"] .pbar [data-act="open-now"]:hover { background: color-mix(in srgb, var(--l-tile) 82%, #fff); }
+  :root[data-design="lull"] .pbar [data-act="toggle-panel"][aria-pressed="true"], :root[data-design="lull"] .pbar [data-act="toggle-panel"].is-on {
+    background: var(--l-hi), var(--l-gloss); color: #fff; box-shadow: inset 0 -2px 4px var(--l-gloss-glow), 0 0 0 var(--stroke) var(--l-gloss-edge);
+  }
+  :root[data-design="lull"] .pbar [data-act="toggle-panel"] .ic, :root[data-design="lull"] .pbar [data-act="classic"] .ic, :root[data-design="lull"] .pbar [data-act="open-now"] .ic { width: 22px; height: 22px; }
+  :root[data-design="lull"] .pbar [data-act="toggle-panel"]:focus-visible, :root[data-design="lull"] .pbar [data-act="classic"]:focus-visible, :root[data-design="lull"] .pbar [data-act="open-now"]:focus-visible { outline-color: #fff9fe; outline-offset: 3px; }
+}
+/* narrow desks: the title and seek give up some room so the four tray tiles still fit inside the bar */
+@media (min-width: 1100px) and (max-width: 1199px) {
+  :root[data-design="lull"] .pbar { grid-template-columns: minmax(150px, 1fr) 40px auto minmax(200px, 1.35fr) 40px minmax(90px, 150px) 40px 4px repeat(4, 48px); }
+}
+@media (min-width: 640px) and (max-width: 1099px) {
+  :root[data-design="lull"] { --bar-h: 116px; }
+  :root[data-design="lull"] .pbar {
+    grid-template-columns: minmax(0, 1fr) auto auto; grid-template-rows: 1fr auto;
+    grid-template-areas: "now ctl tools" "seek seek seek"; gap: 0 8px; padding: 6px;
+  }
+  :root[data-design="lull"] .pbar__centre { display: contents; }
+  :root[data-design="lull"] .pbar__now { grid-area: now; padding: 4px 0 0 8px; }
+  :root[data-design="lull"] .pbar__controls { grid-area: ctl; padding-top: 4px; }
+  :root[data-design="lull"] .pbar__tools { grid-area: tools; padding: 4px 8px 0 0; }
+  :root[data-design="lull"] .pbar .vol { display: none; }
+  :root[data-design="lull"] .pbar__seek { grid-area: seek; grid-template-columns: auto auto minmax(0, 1fr) auto; padding: 0 16px 6px 14px; }
+  :root[data-design="lull"] .pbar__seek::before { grid-column: auto; margin: 0 6px 0 0; }
+}
+
+/* =====================================================================
+   Buttons, chips, badges (flat, outlined: img 01 / 05)
+   ===================================================================== */
+:root[data-design="lull"] .btn { min-height: 36px; padding: 0 15px; border-width: var(--stroke); font: 800 .875rem/1.1 var(--f-ui); background: var(--l-card); }
+:root[data-design="lull"] .btn:hover { background: var(--l-card-2); }
+:root[data-design="lull"] .btn--sm { min-height: 30px; padding: 0 12px; font-size: .8125rem; }
+:root[data-design="lull"] .btn--quiet { background: transparent; border-color: transparent; padding: 0 6px; }
+:root[data-design="lull"] .btn--quiet:hover { background: transparent; }
+:root[data-design="lull"] .btn--danger { background: var(--heart); border-color: var(--heart); color: var(--l-card); }
+:root[data-design="lull"] .btn-icon { width: 36px; height: 36px; border-width: var(--stroke); border-color: var(--l-rule); }
+:root[data-design="lull"] .btn-icon--bare { border-color: transparent; }
+:root[data-design="lull"] .btn-icon:hover { background: var(--l-card-2); }
+:root[data-design="lull"] .btn-icon[aria-pressed="true"] { color: var(--link); }
+:root[data-design="lull"] .btn-icon__badge { background: var(--pink); color: #2b2650; border-color: var(--l-card); }
+:root[data-design="lull"] .chip {
+  min-height: 26px; padding: 2px 11px; border: var(--stroke) solid var(--l-rule); background: var(--l-card); color: var(--link);
+  font: 700 .8125rem/1.2 var(--f-ui);
+}
+:root[data-design="lull"] button.chip:hover, :root[data-design="lull"] a.chip:hover { background: var(--l-card-2); border-color: var(--l-edge); }
+:root[data-design="lull"] .chip[aria-pressed="true"], :root[data-design="lull"] .chip.is-on { background: var(--l-tile); color: var(--l-tile-ink); border-color: var(--l-edge); }
+:root[data-design="lull"] .chip-reason {
+  padding: 4px 10px 4px 8px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--pink) 60%, transparent);
+  background: var(--reason-bg); color: var(--reason-fg); font: 700 .78125rem/1.3 var(--f-ui);
+}
+:root[data-design="lull"] .chip-reason__name, :root[data-design="lull"] .s-card .chip-reason__name { color: var(--reason-fg); font-weight: 900; text-decoration-color: color-mix(in srgb, var(--reason-fg) 55%, transparent); }
+:root[data-design="lull"] .chip-more { height: 24px; border-color: color-mix(in srgb, var(--pink) 60%, transparent); background: var(--reason-bg); color: var(--reason-fg); font-weight: 900; }
+:root[data-design="lull"] .pill-filter { min-height: 30px; padding: 0 13px; border: var(--stroke) solid var(--l-rule); background: var(--l-card); color: var(--link); font: 800 .8125rem/1 var(--f-ui); }
+:root[data-design="lull"] .pill-filter:hover { background: var(--l-card-2); border-color: var(--l-edge); }
+:root[data-design="lull"] .pill-filter[aria-pressed="true"] .lib-count { color: #fff; font-weight: 800; }
+:root[data-design="lull"] .badge { height: 21px; padding: 0 8px 0 5px; font: 800 .71875rem/1 var(--f-ui); border-width: var(--stroke); }
+:root[data-design="lull"] .badge .ic { width: 13px; height: 13px; stroke-width: 2.4; }
+:root[data-design="lull"] .badge-saved { background: var(--l-ribbon); border-color: var(--l-ribbon); color: #fff; }
+:root[data-design="lull"] .badge-slsk { border-color: var(--l-slsk); color: var(--l-muted); }
+:root[data-design="lull"] .badge-new { padding: 0; background: none; color: var(--reason-fg); font: 900 .75rem/1 var(--f-ui); letter-spacing: 0; }
+:root[data-design="lull"] .badge-new::before { content: "\2726\00a0"; }
+:root[data-design="lull"] .badge-count { background: var(--pink); color: #2b2650; }
+:root[data-design="lull"] .q-chip { height: 21px; padding: 0 6px; border-radius: 5px; border: var(--stroke) solid var(--l-rule); background: var(--l-card); color: var(--q-lossy); font: 900 .6875rem/1 var(--f-ui); letter-spacing: .02em; }
+:root[data-design="lull"] .q-chip--ll { color: var(--q-lossless); border-color: color-mix(in srgb, var(--q-lossless) 55%, var(--l-rule)); }
+:root[data-design="lull"] .q-chip--ll::before { width: 5px; height: 5px; margin-top: 0; }
+:root[data-design="lull"] .q-chip--solid.q-chip--ll, :root[data-design="lull"] .q-chip--solid.q-chip--ly { background: var(--l-card); color: var(--q-lossless); border-color: color-mix(in srgb, var(--q-lossless) 55%, var(--l-rule)); }
+:root[data-design="lull"] .kbd { min-width: 22px; height: 22px; padding: 0 6px; border-radius: 6px; background: var(--l-card); color: var(--link); border: var(--stroke) solid var(--l-rule); box-shadow: none; font: 900 .6875rem/1 var(--f-ui); }
+:root[data-design="lull"] .tooltip { background: var(--ink); color: #fff; border-radius: 8px; font: 800 .75rem/1.3 var(--f-ui); }
+:root[data-design="lull"][data-theme="night"] .tooltip { background: #f4efff; color: #2b2650; }
+/* phones have no hover, and a tooltip that a sheet's opening focus raises would float far from its button: the
+   accessible names already say it all */
+@media (max-width: 639px) { :root[data-design="lull"] .tooltip { display: none; } }
+:root[data-design="lull"] .dup-better { color: var(--reason-fg); }
+/* score meter: a hatched track and a solid fill, at least 3:1 apart in both themes */
+:root[data-design="lull"] .score { height: 7px; background: var(--l-received); box-shadow: inset 0 0 0 1px var(--l-rule); }
+:root[data-design="lull"] .score > i { background: var(--l-ribbon); }
+:root[data-design="lull"][data-theme="night"] .score { background: #454d97; box-shadow: none; }
+:root[data-design="lull"][data-theme="night"] .score > i { background: #cdc4f7; }
+:root[data-design="lull"] .resolve { font: 800 .75rem/1.3 var(--f-ui); }
+
+/* =====================================================================
+   Gloss (press only): play / like orbs, primary buttons, active pills, knobs
+   ===================================================================== */
+:root[data-design="lull"] .btn-gloss {
+  background: var(--l-gloss); border: var(--stroke) solid var(--l-gloss-edge); color: #fff;
+  box-shadow: inset 0 -2px 5px var(--l-gloss-glow), 0 2px 0 rgba(43, 38, 80, .18);
+}
+:root[data-design="lull"] .btn-gloss::before { left: 18%; right: 18%; top: 4%; height: 40%; background: linear-gradient(180deg, rgba(255, 244, 255, .9), rgba(255, 244, 255, .1)); }
+:root[data-design="lull"] .btn-gloss::after { display: none; }
+:root[data-design="lull"] .btn-gloss .ic { filter: drop-shadow(0 1px 0 rgba(40, 25, 110, .5)); }
+:root[data-design="lull"] .btn-gloss:active { box-shadow: inset 0 -1px 3px var(--l-gloss-glow); }
+:root[data-design="lull"] .btn-gloss.is-liked, :root[data-design="lull"] .btn-gloss[data-act="like"] { background: var(--l-pink-gloss); border-color: var(--l-pink-edge); color: #fff; }
+:root[data-design="lull"] .btn-gloss__spin { border-color: var(--l-gloss-edge); }
+:root[data-design="lull"] .btn--primary, :root[data-design="lull"] .pill-filter[aria-pressed="true"] {
+  background: var(--l-hi-sm), var(--l-gloss); color: #fff; border-color: var(--l-gloss-edge); text-shadow: 0 1px 0 rgba(40, 25, 110, .55);
+  box-shadow: inset 0 -2px 4px var(--l-gloss-glow); margin-bottom: 0;
+}
+:root[data-design="lull"] .btn--primary:hover { background: var(--l-hi), var(--l-gloss); filter: brightness(1.06); }
+:root[data-design="lull"] .btn--primary:active { transform: translateY(1px); box-shadow: inset 0 -1px 2px var(--l-gloss-glow); }
+:root[data-design="lull"] .btn--primary .ic { filter: drop-shadow(0 1px 0 rgba(40, 25, 110, .5)); }
+/* holographic foil (img 03's CD rainbow) on the lull pill and the chosen design: hovering turns a conic sheen across
+   it. Reduced motion: the sheen still shows, it just doesn't turn. */
+@property --l-foil { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+:root[data-design="lull"] .lull-wm, :root[data-design="lull"] .sys-design__pv::after {
+  --l-foil-bg: conic-gradient(from var(--l-foil) at 28% 130%, rgba(255, 196, 232, 0) 0deg, rgba(255, 196, 232, .5) 40deg, rgba(186, 236, 255, .5) 80deg,
+    rgba(255, 246, 196, .45) 115deg, rgba(206, 190, 255, .5) 150deg, rgba(255, 196, 232, 0) 190deg);
+  transition: --l-foil .9s var(--ease-out);
+}
+:root[data-design="lull"] [data-brand]:is(:hover, :focus-visible) .lull-wm { --l-foil: 150deg; background: var(--l-foil-bg), var(--l-hi), var(--l-gloss); }
+:root[data-design="lull"] .btn--primary.btn-save[data-state="saved"] { background: var(--l-card); color: var(--fg); border-color: var(--l-edge); text-shadow: none; box-shadow: none; }
+
+/* =====================================================================
+   Cards: white paper inside windows (img 05 content panel), section ribbons (img 05 bars)
+   ===================================================================== */
+:root[data-design="lull"] .s-card, :root[data-design="lull"] .card {
+  --bg: var(--l-card); --bg-2: var(--l-card-2); --bg-3: var(--sky-deep); --fg: var(--fg-panel); --fg-2: var(--fg-panel-2);
+  --link: var(--theme-link); --edge: var(--theme-edge); --focus: var(--theme-focus); --heart: var(--theme-heart); --accent-ui: var(--theme-accent);
+  --q-ll: var(--q-lossless); --q-ly: var(--q-lossy); --rsn-bg: var(--reason-bg); --rsn-fg: var(--reason-fg);
+  --seek-played: var(--theme-played); --seek-buffered: var(--theme-buffered); --seek-line: var(--theme-seek-line); --divider: var(--l-rule);
+}
+:root[data-design="lull"] .card { border: var(--stroke) solid var(--l-edge); border-radius: 14px; box-shadow: var(--l-win-stack); margin-bottom: 18px; padding: var(--card-pad); }
+:root[data-design="lull"] .inset { background: var(--l-card-2); border-radius: 12px; }
+:root[data-design="lull"] .label-rule::after { height: 7px; background: var(--l-hatch-bg); }
+:root[data-design="lull"] .label-rule > h2, :root[data-design="lull"] .label-rule > h3, :root[data-design="lull"] .label-rule__text { font: 800 1.0625rem/1.2 var(--f-ui); }
+:root[data-design="lull"] .label-rule--sm > h2, :root[data-design="lull"] .label-rule--sm > h3, :root[data-design="lull"] .label-rule--sm .label-rule__text { font: italic 800 .8125rem/1.2 var(--f-ui); color: var(--fg-2); }
+/* ribbon: slanted indigo tab, sparkle | label (img 05 section bar) */
+:root[data-design="lull"] .card > .label-rule.card-head > .card-head__title {
+  display: block; height: 28px; padding: 0 26px 0 40px; border-radius: 6px 0 0 6px;
+  background: var(--l-spark) 12px 50% / 13px 13px no-repeat, linear-gradient(rgba(255, 255, 255, .55), rgba(255, 255, 255, .55)) 32px 50% / 1px 14px no-repeat, var(--l-ribbon);
+  clip-path: polygon(0 0, 100% 0, calc(100% - 13px) 100%, 0 100%);
+  color: #fff; font: italic 800 .875rem/28px var(--f-ui); letter-spacing: .01em;
+}
+:root[data-design="lull"] .card > .label-rule.card-head > .card-head__title::first-letter { text-transform: uppercase; }
+:root[data-design="lull"] .card > .label-rule.card-head { gap: 12px; margin-bottom: 14px; }
+:root[data-design="lull"] .card > .label-rule.card-head > .btn--quiet, :root[data-design="lull"] .card > .label-rule.card-head > a { font-size: .8125rem; }
+
+/* =====================================================================
+   Tiles: tall stacked paper cards (img 01 stack, as on "For you")
+   ===================================================================== */
+:root[data-design="lull"] .shelf { padding: 2px 4px 16px 2px; gap: 16px; scrollbar-width: thin; scrollbar-color: var(--l-edge) transparent; }
+:root[data-design="lull"] .tile {
+  gap: 1px; padding: 8px 8px 11px; background: var(--l-card); border: var(--stroke) solid var(--l-edge); border-radius: 14px;
+  box-shadow: var(--l-card-stack); margin-bottom: 10px; transition: transform var(--dur-3) var(--ease-spring), box-shadow var(--dur-3) var(--ease-spring);
+}
+:root[data-design="lull"] .tile:hover { transform: translateY(-3px); box-shadow: 0 7px 0 -1.5px var(--stack-1), 0 7px 0 0 var(--l-edge), 0 13px 0 -1.5px var(--stack-2), 0 13px 0 0 var(--l-edge); }
+:root[data-design="lull"] .tile__art { margin-bottom: 8px; }
+:root[data-design="lull"] .tile__art .cover { border-radius: 10px; }
+:root[data-design="lull"] .tile__title, :root[data-design="lull"] .tile__by, :root[data-design="lull"] .tile__meta { padding: 0 2px; }
+:root[data-design="lull"] .tile__title { font: 800 .9375rem/1.25 var(--f-ui); }
+:root[data-design="lull"] .tile__by { font: 600 .8125rem/1.3 var(--f-ui); color: var(--link); }
+:root[data-design="lull"] .tile__meta { font: 700 .75rem/1.3 var(--f-ui); letter-spacing: 0; color: var(--l-muted); }
+:root[data-design="lull"] .tile__play, :root[data-design="lull"] .disc-pick__play {
+  right: 7px; bottom: 7px; width: 36px; height: 36px; color: #fff; background: var(--l-hi), var(--l-gloss); border: var(--stroke) solid var(--l-gloss-edge);
+  box-shadow: inset 0 -2px 4px var(--l-gloss-glow);
+}
+:root[data-design="lull"] .tile__play:hover { background: var(--l-hi), var(--l-gloss); filter: brightness(1.08); }
+:root[data-design="lull"] .tile__play .ic, :root[data-design="lull"] .disc-pick__play .ic { filter: drop-shadow(0 1px 0 rgba(40, 25, 110, .5)); }
+
+/* =====================================================================
+   Covers: the eight recipes redrawn in the lull palette (orb, dawn, night, stripes, dusk ring, pixel heart, arcs, aurora)
+   ===================================================================== */
+:root[data-design="lull"] .cover { border-width: var(--stroke); border-color: var(--l-edge); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .35); }
+:root[data-design="lull"] .c1 { --cv: radial-gradient(circle at 50% 56%, #fff 0 3%, #d7abff 9%, #cd95f7 20%, #a067bb 30%, #774a91 32.5%, transparent 33.5%), radial-gradient(circle at 50% 58%, rgba(205, 149, 247, .35) 0 44%, transparent 46%), linear-gradient(180deg, #e4def9, #cfc7ee); }
+:root[data-design="lull"] .c1::before { display: none; }
+:root[data-design="lull"] .c2 { --cv: radial-gradient(60% 60% at 72% 70%, #f9cee6 0 30%, transparent 72%), linear-gradient(160deg, #fce8f3 0%, #e4def9 50%, #b6c7f5 100%); }
+:root[data-design="lull"] .c2::before { display: none; }
+:root[data-design="lull"] .c3 { --cv: radial-gradient(circle at 66% 34%, transparent 0 13%, #f2e3d1 13.5% 20%, transparent 20.5%), linear-gradient(180deg, #856e74 0%, #b6969b 40%, #ecc6d8 78%, #fce8f3 100%); }
+:root[data-design="lull"] .c3::before { width: 20%; right: auto; left: 56%; bottom: auto; top: 24%; border: 0; background: #a68590; }
+:root[data-design="lull"] .c6 { --cv: repeating-linear-gradient(180deg, #b6c7f5 0 9%, #c9d6f8 9% 12%), #b6c7f5; }
+:root[data-design="lull"] .c6::before { inset: auto -10% -30%; height: 70%; border-radius: 50%; background: #91abd6; opacity: .8; }
+:root[data-design="lull"] .c7 { --cv: repeating-radial-gradient(circle at 50% 120%, #f2e3d1 0 7%, #c3c2e2 7% 8.5%, #f2e3d1 8.5% 15%, #91abd6 15% 16%), #f2e3d1; }
+:root[data-design="lull"] .c7::before { display: none; }
+:root[data-design="lull"] .c8 { --cv: conic-gradient(from 210deg at 30% 70%, #c3c2e2, #5a75b5, #b6c7f5, #e4def9, #c3c2e2); }
+:root[data-design="lull"] .c8::before { inset: 0; height: auto; background: radial-gradient(70% 70% at 70% 30%, rgba(255, 249, 254, .55), transparent 70%); }
+:root[data-design="lull"] .c5 { --cv: #fce8f3; background-image: linear-gradient(90deg, rgba(221, 159, 201, .2) 1px, transparent 1px), linear-gradient(0deg, rgba(221, 159, 201, .2) 1px, transparent 1px); background-size: 12.5% 12.5%; background-color: #fce8f3; }
+:root[data-design="lull"] .c5::before { background: #d98cc0; }
+/* alternates (coverArt slot, half the c1 / c6 / c5 albums): a CD with a rainbow sheen (img 03), a cassette, a
+   checker sticker, so neighbouring covers stop repeating */
+:root[data-design="lull"] .c1.lull-alt { --cv: radial-gradient(circle, #f7f4ff 0 7%, #7772b4 7.5% 9%, transparent 9.5%), radial-gradient(circle, transparent 0 40%, #7772b4 40.5% 41.5%, #e4def9 42%), conic-gradient(from 20deg, #fce8f3, #b6c7f5, #d6f0ea, #fdf1c7, #f6cee4, #cfc7ee, #fce8f3); }
+:root[data-design="lull"] .c6.lull-alt { --cv: radial-gradient(circle at 32% 54%, #fff9fe 0 5%, #856e74 5.5% 9%, #f2e3d1 9.5% 15%, transparent 15.5%), radial-gradient(circle at 68% 54%, #fff9fe 0 5%, #856e74 5.5% 9%, #f2e3d1 9.5% 15%, transparent 15.5%), linear-gradient(transparent 36%, #66535a 36% 72%, transparent 72%) 50% 0 / 62% 100% no-repeat, linear-gradient(#b6c7f5 0 20%, #f2e3d1 20% 80%, #856e74 80%); }
+:root[data-design="lull"] .c6.lull-alt::before { display: none; }
+:root[data-design="lull"] .c5.lull-alt { --cv: conic-gradient(#fce8f3 25%, #fbd9ec 0 50%, #fce8f3 0 75%, #fbd9ec 0) 0 0 / 25% 25%, #fce8f3; background: var(--cv); }
+:root[data-design="lull"] .c5.lull-alt::before { background: #c66fa8; transform: rotate(-8deg); filter: drop-shadow(1.5px 0 0 #fff) drop-shadow(-1.5px 0 0 #fff) drop-shadow(0 1.5px 0 #fff) drop-shadow(0 -1.5px 0 #fff); }
+/* stripes at pink dusk with a low sun; night with a crescent over a lavender horizon; night with a full moon */
+:root[data-design="lull"] .c6.lull-alt2 { --cv: radial-gradient(circle at 62% 62%, #fff4d6 0 13%, transparent 13.5%), repeating-linear-gradient(180deg, #f6cee4 0 9%, #fbe2ef 9% 12%), #f6cee4; }
+:root[data-design="lull"] .c6.lull-alt2::before { background: #c9a3dd; opacity: .9; }
+:root[data-design="lull"] .c4.lull-alt { --cv: radial-gradient(circle at 71% 27%, #262863 0 11%, transparent 11.5%), radial-gradient(circle at 65% 31%, #fff4d6 0 12%, transparent 12.5%), radial-gradient(120% 60% at 50% 115%, #b6a6ee 0 40%, transparent 41%), linear-gradient(180deg, #1f2150, #3c3a86 70%, #6e5ec8); }
+:root[data-design="lull"] .c4.lull-alt2 { --cv: radial-gradient(circle at 34% 38%, #fff9fe 0 11%, rgba(255, 249, 254, .25) 12% 17%, transparent 18%), linear-gradient(200deg, #2b3b80, #1d1f45 60%, #4a3c8c); }
+:root[data-design="lull"] .c4.lull-alt2::after { left: auto; right: 16%; top: 58%; width: 14%; }
+
+/* =====================================================================
+   Track rows, lists
+   ===================================================================== */
+:root[data-design="lull"] .trow { border-radius: 12px; min-height: 58px; padding: 5px 8px; }
+:root[data-design="lull"] .trow:hover, :root[data-design="lull"] .trow:focus-within { background: color-mix(in srgb, var(--l-tile) 26%, transparent); }
+:root[data-design="lull"] .trow.is-playing { background: color-mix(in srgb, var(--l-tile) 34%, transparent); }
+:root[data-design="lull"] .trow__title { font: 800 .9375rem/1.25 var(--f-ui); }
+:root[data-design="lull"] .trow__artist, :root[data-design="lull"] .trow__album, :root[data-design="lull"] .trow__added { font: 600 .8125rem/1.3 var(--f-ui); }
+:root[data-design="lull"] .trow__artist { color: var(--link); }
+:root[data-design="lull"] .trow__dur { font: 700 .8125rem/1 var(--f-ui); color: var(--l-muted); }
+:root[data-design="lull"] .trow__art .cover { border-radius: 8px; }
+:root[data-design="lull"] .trow .btn-icon { width: 34px; height: 34px; }
+:root[data-design="lull"] .eq { color: var(--link); }
+
+/* =====================================================================
+   Seek: hatched = not downloaded, pale = received, lavender = buffered, violet = played; glossy knob
+   ===================================================================== */
+:root[data-design="lull"] .seek__track { height: 8px; margin-top: -4px; border-radius: 9px; background: var(--l-hatch-bg); box-shadow: inset 0 0 0 1px var(--l-rule); }
+:root[data-design="lull"] .seek__xfer::before { left: 0; right: 0; background: var(--l-received); animation: none; }
+/* while bytes arrive the not-downloaded tape marches; it stops when the file is complete */
+@keyframes lull-march { to { background-position: 6px 0; } }
+:root[data-design="lull"] .seek.is-transferring .seek__track { animation: lull-march 1.6s linear infinite; }
+:root[data-design="lull"] .seek__buf { background: var(--seek-buffered); }
+:root[data-design="lull"] .seek__played { background: var(--seek-played); border-radius: 9px; }
+:root[data-design="lull"] .seek__knob { width: 16px; height: 16px; left: -8px; top: -8px; border: var(--stroke) solid var(--l-gloss-edge); background: var(--l-hi), var(--l-gloss); box-shadow: none; }
+:root[data-design="lull"] .seek--line .seek__track { height: 3px; border-radius: 0; box-shadow: none; }
+:root[data-design="lull"] .vol .seek__track { background: var(--l-rule); }
+:root[data-design="lull"] .seek-row__time { font: 800 .75rem/1 var(--f-ui); color: var(--l-muted); }
+:root[data-design="lull"] .seek__tip { background: var(--ink); color: #fff; border-radius: 8px; font: 800 .75rem/1.2 var(--f-ui); }
+:root[data-design="lull"][data-theme="night"] .seek__tip { background: #f4efff; color: #2b2650; }
+:root[data-design="lull"] .progress { height: 7px; border-radius: 9px; background: var(--l-hatch-bg); box-shadow: inset 0 0 0 1px var(--l-rule); }
+:root[data-design="lull"] .progress > i { background: var(--l-ribbon); border-radius: 9px; }
+/* save pipeline: each step names itself under its pill; nothing saved yet = one line in words, not five empty pills */
+:root[data-design="lull"] .pipeline { row-gap: 2px; }
+:root[data-design="lull"] .pipeline__seg { position: relative; margin-bottom: 16px; overflow: visible; }
+:root[data-design="lull"] .pipeline__seg::after { position: absolute; top: calc(100% + 3px); left: 0; right: 0; text-align: center; font: 800 .6875rem/1.1 var(--f-ui); color: var(--l-muted); }
+:root[data-design="lull"] .pipeline__seg:nth-child(1)::after { content: "transfer"; }
+:root[data-design="lull"] .pipeline__seg:nth-child(2)::after { content: "match"; }
+:root[data-design="lull"] .pipeline__seg:nth-child(3)::after { content: "cover"; }
+:root[data-design="lull"] .pipeline__seg:nth-child(4)::after { content: "tag"; }
+:root[data-design="lull"] .pipeline__seg:nth-child(5)::after { content: "rescan"; }
+:root[data-design="lull"] .pipeline-wrap:not(:has(.pipeline__seg[class*="is-"])) .pipeline { display: none; }
+:root[data-design="lull"] .pipeline-wrap:not(:has(.pipeline__seg[class*="is-"])) .pipeline__step::first-letter { text-transform: uppercase; }
+:root[data-design="lull"] .pipeline-wrap:not(:has(.pipeline__seg[class*="is-"])) .pipeline__label { display: inline; font: 700 .8125rem/1.3 var(--f-ui); color: var(--fg-2); }
+
+/* =====================================================================
+   Tabs, switches, inputs
+   ===================================================================== */
+:root[data-design="lull"] .seg { background: var(--l-frame); border: var(--stroke) solid var(--l-rule); padding: 3px; }
+:root[data-design="lull"] .seg__ind { background: var(--l-hi-sm), var(--l-gloss); box-shadow: inset 0 -2px 4px var(--l-gloss-glow), 0 0 0 var(--stroke) var(--l-gloss-edge); }
+:root[data-design="lull"] .seg__btn { min-height: 30px; font: 800 .8125rem/1 var(--f-ui); color: var(--link); }
+:root[data-design="lull"] .seg__btn[aria-selected="true"], :root[data-design="lull"] .seg__btn[aria-pressed="true"], :root[data-design="lull"] .seg__btn[aria-checked="true"] { color: #fff; text-shadow: 0 1px 0 rgba(40, 25, 110, .55); }
+:root[data-design="lull"] .switch { width: 40px; height: 24px; background: var(--l-card); border: var(--stroke) solid var(--l-edge); }
+:root[data-design="lull"] .switch::after { top: 2.5px; left: 3px; width: 16px; height: 16px; background: var(--l-edge); }
+:root[data-design="lull"] .switch[aria-checked="true"] { background: var(--l-switch); border-color: var(--l-switch); }
+:root[data-design="lull"] .switch[aria-checked="true"]::after { transform: translateX(15px); background: #fff; -webkit-mask: none; mask: none; }
+:root[data-design="lull"] .input { height: 40px; border-width: var(--stroke); border-color: var(--l-edge); background: var(--l-card); color: var(--fg-panel); font: 700 .9375rem/1 var(--f-ui); }
+:root[data-design="lull"] .s-card .input, :root[data-design="lull"] .card .input { background: var(--l-card); color: var(--fg); }
+:root[data-design="lull"] .search-field .input { padding-left: 42px; }
+:root[data-design="lull"] .search-field > .ic { left: 14px; color: var(--link); }
+:root[data-design="lull"] .range::-webkit-slider-runnable-track { height: 6px; border-radius: 9px; box-shadow: inset 0 0 0 1px var(--l-rule); background: linear-gradient(to right, var(--l-ribbon) var(--fill, 50%), var(--l-received) var(--fill, 50%)); }
+:root[data-design="lull"] .range::-webkit-slider-thumb { width: 16px; height: 16px; margin-top: -5px; background: var(--l-gloss); border: var(--stroke) solid var(--l-gloss-edge); box-shadow: none; }
+:root[data-design="lull"] .range::-moz-range-thumb { background: var(--l-gloss); border: var(--stroke) solid var(--l-gloss-edge); box-shadow: none; }
+:root[data-design="lull"] .range::-moz-range-progress { background: var(--l-ribbon); }
+
+/* =====================================================================
+   Overlays: sheets and dialogs are windows; popovers, menus and toasts are small paper panels
+   ===================================================================== */
+:root[data-design="lull"] .sheet, :root[data-design="lull"] .dialog { background: var(--sky); border: var(--stroke) solid var(--l-edge); padding: 4px; box-shadow: inset 0 0 0 4px var(--l-frame), var(--l-win-stack); }
+:root[data-design="lull"] .sheet { padding-bottom: calc(4px + env(safe-area-inset-bottom)); }
+/* desktop / tablet: a sheet is a centred window like a dialog; the frame closes at the bottom (img 05 bevel) */
+@media (min-width: 640px) {
+  :root[data-design="lull"] .sheet { top: 50%; bottom: auto; max-height: calc(100dvh - 48px); border-bottom: var(--stroke) solid var(--l-edge); border-radius: 14px; opacity: 0; transform: translate(-50%, calc(-50% + 14px)); transition: transform var(--dur-3) var(--ease-out), opacity var(--dur-2); }
+  :root[data-design="lull"] .sheet.is-open { opacity: 1; transform: translate(-50%, -50%); }
+  :root[data-design="lull"][data-motion="reduce"] .sheet { transform: translate(-50%, -50%); }
+  @media (prefers-reduced-motion: reduce) { :root[data-design="lull"]:not([data-motion="full"]) .sheet { transform: translate(-50%, -50%); } }
+}
+:root[data-design="lull"] .dialog { max-height: calc(100dvh - 48px); border-radius: 14px; }
+:root[data-design="lull"] .sheet__head {
+  min-height: 30px; padding: 0 4px 0 70px; border-radius: 10px 10px 4px 4px; gap: 8px;
+  background: var(--l-orbs), var(--l-bar-bg); box-shadow: inset 0 1px 0 var(--l-bar-line); color: var(--l-bar-ink);
+}
+:root[data-design="lull"] .sheet__title { font: 400 .8125rem/1.2 var(--f-disp); letter-spacing: .04em; text-transform: lowercase; color: var(--l-bar-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root[data-design="lull"] .sheet__head .btn-icon { width: 26px; height: 26px; color: var(--l-bar-ink); border-color: transparent; }
+:root[data-design="lull"] .sheet__head .btn-icon:hover { background: rgba(255, 255, 255, .35); }
+:root[data-design="lull"] .sheet__body, :root[data-design="lull"] .sheet__foot { background: none; }
+:root[data-design="lull"] .sheet__body { padding: 16px 20px 18px; }
+:root[data-design="lull"] .sheet__foot { border-top: 1px solid var(--l-rule); padding: 12px 16px 12px; }
+:root[data-design="lull"] .sheet__handle { background: var(--l-edge); margin: 2px auto 4px; }
+/* source details: the state glyph sits inline before its word */
+:root[data-design="lull"] .disc-kv dd > .sg { display: inline-block; width: 13px; height: 13px; margin-right: 4px; vertical-align: -1px; }
+/* install-on-iPhone steps: periwinkle tiles with tile ink (the base pairs --ink on --peri, which lull night lifts) */
+:root[data-design="lull"] .sys-ios__ic { background: var(--l-hi-sm), var(--l-tile); color: var(--l-tile-ink); border-color: var(--l-edge); }
+:root[data-design="lull"] .popover, :root[data-design="lull"] .menu { background: var(--l-card); border: var(--stroke) solid var(--l-edge); border-radius: 14px; box-shadow: var(--l-win-stack); }
+:root[data-design="lull"] .menu__item { border-radius: 9px; min-height: 40px; font: 700 .875rem/1.2 var(--f-ui); }
+:root[data-design="lull"] .menu__item:hover, :root[data-design="lull"] .menu__item:focus-visible { background: color-mix(in srgb, var(--l-tile) 30%, transparent); }
+:root[data-design="lull"] .menu__item .ic { color: var(--link); }
+:root[data-design="lull"] .popover__head { font: 800 1rem/1.2 var(--f-ui); }
+/* toasts: tiny lull windows (title bar with orbs, then the message and its actions) in a slot above the dock's right
+   end. While one shows, the window above that slot (the side window when docked, else the main one) lifts its foot
+   by the toasts' height, so a toast never covers a frame or a row. */
+@media (min-width: 640px) {
+  :root[data-design="lull"] .toast-region { left: auto; right: 16px; bottom: calc(var(--bar-h) + 26px); transform: none; width: min(var(--ctx), calc(100vw - 32px)); gap: 10px; }
+  :root[data-design="lull"]:has(#toasts > .toast) :is(.app[data-ctx="docked"] .ctx, .app:not([data-ctx="docked"]) .main) { margin-bottom: 104px; }
+  :root[data-design="lull"]:has(#toasts > .toast + .toast) :is(.app[data-ctx="docked"] .ctx, .app:not([data-ctx="docked"]) .main) { margin-bottom: 190px; }
+  :root[data-design="lull"]:has(#toasts > .toast + .toast + .toast) :is(.app[data-ctx="docked"] .ctx, .app:not([data-ctx="docked"]) .main) { margin-bottom: 276px; }
+}
+:root[data-design="lull"] .toast {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; column-gap: 10px; padding: 4px 8px 8px 4px;
+  background: var(--sky); border: var(--stroke) solid var(--l-edge); border-radius: 14px; box-shadow: inset 0 0 0 4px var(--l-frame), var(--l-win-stack);
+  font: 800 .875rem/1.35 var(--f-ui); color: var(--fg-panel);
+}
+:root[data-design="lull"] .toast::before {
+  content: "note"; grid-column: 1 / -1; display: flex; align-items: center; height: 24px; margin: 0 -4px 6px 0; padding-left: 62px; border-radius: 10px 10px 4px 4px;
+  background: var(--l-orbs), var(--l-bar-bg); background-position: 9px 50%, 9px 50%, 27px 50%, 27px 50%, 45px 50%, 45px 50%, 0 0;
+  box-shadow: inset 0 1px 0 var(--l-bar-line); color: var(--l-bar-ink); font: 400 .75rem/1 var(--f-disp); letter-spacing: .04em;
+}
+:root[data-design="lull"] .toast--ok::before { content: "done"; }
+:root[data-design="lull"] .toast--error::before { content: "oops"; }
+:root[data-design="lull"] .toast .toast__msg button, :root[data-design="lull"] .toast .toast__msg .btn { font-size: .8125rem; }
+:root[data-design="lull"] .toast > .ic {
+  width: 30px; height: 30px; margin-left: 8px; padding: 6px; border-radius: 50%; box-sizing: border-box;
+  color: #fff; background: var(--l-hi), var(--l-gloss); border: var(--stroke) solid var(--l-gloss-edge);
+}
+:root[data-design="lull"] .toast--error > .ic { background: var(--l-hi), var(--l-pink-gloss); border-color: var(--l-pink-edge); }
+/* a failed track has one owner on Now Playing: the pocket screen says it and offers retry / pick source; the dock's
+   state tab only mirrors the words, and the source window drops its duplicate buttons */
+@media (min-width: 640px) {
+  :root[data-design="lull"]:has(.pbar[data-status="failed"]) .now-srccard :is([data-act="retry-search"], [data-act="pick-source"]),
+  :root[data-design="lull"] .app[data-screen="now"] .pbar__state :is(button, a) { display: none; }
+}
+:root[data-design="lull"] .scrim { background: var(--scrim); }
+
+/* banners and the library's offline notice: mocha "warning tape" with hatched ends, a light glyph, a Retry pill */
+:root[data-design="lull"] .banner, :root[data-design="lull"] .lib-notice {
+  position: relative; display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 6px 30px 6px 34px; overflow: hidden;
+  background: var(--tray); color: #fff9fe; border: var(--stroke) solid var(--tray-edge); border-radius: 12px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
+  font: 700 .875rem/1.35 var(--f-ui);
+}
+:root[data-design="lull"] .banner::before, :root[data-design="lull"] .banner::after, :root[data-design="lull"] .lib-notice::before, :root[data-design="lull"] .lib-notice::after {
+  content: ""; position: absolute; top: 0; bottom: 0; width: 18px; background: repeating-linear-gradient(-45deg, #f6cee4 0 5px, var(--tray) 5px 10px);
+}
+:root[data-design="lull"] .banner::before, :root[data-design="lull"] .lib-notice::before { left: 0; }
+:root[data-design="lull"] .banner::after, :root[data-design="lull"] .lib-notice::after { right: 0; }
+:root[data-design="lull"] .banner > .ic, :root[data-design="lull"] .lib-notice .sg, :root[data-design="lull"] .banner .sg { color: #f6cee4; }
+:root[data-design="lull"] .lib-notice p, :root[data-design="lull"] .banner__msg { color: #fff9fe; font: 700 .875rem/1.35 var(--f-ui); }
+:root[data-design="lull"] .banner .btn, :root[data-design="lull"] .lib-notice .btn { border-color: #fff9fe; background: #fff9fe; color: #3d3491; border-radius: 999px; }
+/* check: #3d3491 on #fff9fe 4.5 */
+/* check: #f6cee4 on --tray 3 */
+:root[data-design="lull"] .banner .btn--quiet { background: none; border-color: transparent; color: #fff9fe; }
+:root[data-design="lull"] :is(.banner, .lib-notice) .btn:focus-visible { outline-color: #fff9fe; }
+/* check: #fff9fe on --tray 4.5 */
+/* three or more at once: slimmer tapes, two to a row, so a bad night costs the desk three rows instead of five */
+@media (min-width: 1100px) {
+  :root[data-design="lull"] .banner-slot:has(> .banner:nth-child(3)) { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }
+  :root[data-design="lull"] .banner-slot:has(> .banner:nth-child(3)) > .banner { min-height: 40px; padding-block: 3px; font-size: .8125rem; }
+  :root[data-design="lull"] .banner-slot:has(> .banner:nth-child(3)) .banner__msg { font-size: .8125rem; line-height: 1.25; }
+  :root[data-design="lull"] .banner-slot:has(> .banner:nth-child(3)) > .banner:last-child:nth-child(odd) { grid-column: 1 / -1; }
+}
+
+/* empty states sit flat on the window: the pocket illustration (emptyArt slot), the message, one gloss pill */
+:root[data-design="lull"] .empty { padding: 28px 16px 20px; }
+:root[data-design="lull"] .empty__art { width: 140px; height: 110px; color: var(--link); }
+:root[data-design="lull"] .empty__title { font: 900 1.25rem/1.2 var(--f-ui); }
+:root[data-design="lull"] .lull-empty .lull-empty__shell { fill: var(--l-tile); stroke: var(--l-edge); stroke-width: 1.5; }
+:root[data-design="lull"] .lull-empty .lull-empty__screen { fill: var(--screen); stroke: none; }
+:root[data-design="lull"] .lull-empty .lull-empty__glyph { stroke: #fff9fe; stroke-width: 1.8; stroke-dasharray: 3.2 2.6; fill: none; }
+:root[data-design="lull"] .lull-empty .lull-empty__key { fill: var(--l-card); stroke: var(--l-edge); stroke-width: 1.2; }
+:root[data-design="lull"] .lull-empty .lull-empty__play { fill: var(--l-ribbon); stroke: var(--l-gloss-edge); stroke-width: 1.2; }
+:root[data-design="lull"] .lull-empty .lull-empty__grill { fill: var(--l-edge); stroke: none; }
+:root[data-design="lull"] .skel::after { background: linear-gradient(90deg, transparent, var(--skel-hi), transparent); }
+
+/* =====================================================================
+   Window cards (desk and tablet): a card that stands on the desk (Now Playing) gets a frame + title bar; on a phone
+   the same cards are flat sections under ribbons. Recipe: sky body, 4px lavender frame painted as an inset shadow, the head becomes the bar.
+   ===================================================================== */
+@media (min-width: 640px) {
+  :root[data-design="lull"] .now .card {
+    background: var(--sky); border: var(--stroke) solid var(--l-edge); border-radius: 14px; padding: 4px 4px 14px;
+    box-shadow: inset 0 0 0 4px var(--l-frame), var(--l-win-stack); margin-bottom: 18px;
+  }
+  :root[data-design="lull"] .now .card > .card-head, :root[data-design="lull"] .now .card > .card-head--hidden {
+    display: flex; height: 30px; margin: 0 0 14px; padding: 0 12px 0 68px; border-radius: 10px 10px 4px 4px;
+    background: var(--l-orbs), var(--l-bar-bg); box-shadow: inset 0 1px 0 var(--l-bar-line), 0 4px 0 var(--l-frame);
+  }
+  :root[data-design="lull"] .now .card > .card-head::after { display: none; }
+  :root[data-design="lull"] .now .card > .card-head > .card-head__title, :root[data-design="lull"] .now .card > .card-head--hidden > .card-head__title {
+    display: block; height: auto; padding: 0; background: none; clip-path: none; border-radius: 0;
+    color: var(--l-bar-ink); font: 400 .8125rem/30px var(--f-disp); letter-spacing: .04em; text-transform: lowercase;
+  }
+  :root[data-design="lull"] .now .card > .card-head > .card-head__title::first-letter { text-transform: none; }
+  :root[data-design="lull"] .now .card > .card-head > .btn--quiet { margin-left: auto; color: var(--l-bar-ink); font-size: .75rem; min-height: 24px; }
+  :root[data-design="lull"] .now .card > :not(.card-head) { margin-left: 14px; margin-right: 14px; }
+}
+
+/* =====================================================================
+   Home (discover window): For you cards, new releases, radio starter pills, then the rest.
+   At 1440x900 those first three sections sit above the fold.
+   ===================================================================== */
+:root[data-design="lull"] .disc-home { display: flex; flex-direction: column; max-width: none; }
+:root[data-design="lull"] .disc-hello { order: 0; display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 12px; margin: 0 0 12px; padding-right: 0; }
+:root[data-design="lull"] .disc-home > .disc-card[data-region="picks"] { order: 1; }
+:root[data-design="lull"] .disc-home > .disc-duo:not(.disc-duo--even) { order: 2; }
+:root[data-design="lull"] .disc-home > .disc-duo--even { order: 3; }
+:root[data-design="lull"] .disc-hello h1 { margin: 0; font: 900 1.25rem/1.2 var(--f-ui); letter-spacing: -.01em; }
+:root[data-design="lull"] .disc-hello h1 .sparkle { display: none; }
+:root[data-design="lull"] .disc-hello__sum { font: 700 .8125rem/1.4 var(--f-ui); color: var(--fg-2); }
+:root[data-design="lull"] .disc-card, :root[data-design="lull"] .disc-search .card { background: transparent; border: 0; border-radius: 0; box-shadow: none; padding: 0; margin-bottom: 16px; }
+:root[data-design="lull"] .disc-card > .label-rule { margin-bottom: 10px; }
+:root[data-design="lull"] .disc-duo { grid-template-columns: minmax(0, 1fr); }
+
+/* For you: five tall paper cards in view (a sixth scrolls in; six in view on wide desks), art + title + artist +
+   the reason chip pinned to the foot */
+:root[data-design="lull"] .disc-home .disc-picks {
+  --picks: 5; grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: calc((100% - (var(--picks) - 1) * 16px) / var(--picks)); gap: 16px;
+  overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; padding: 2px 2px 14px; margin: 0 -2px;
+  scrollbar-width: thin; scrollbar-color: var(--l-edge) transparent;
+}
+:root[data-design="lull"] .disc-pick {
+  position: relative; display: flex; flex-direction: column; align-items: stretch; gap: 0; padding: 8px 8px 10px; scroll-snap-align: start;
+  background: var(--l-card); border: var(--stroke) solid var(--l-edge); border-radius: 14px; box-shadow: var(--l-card-stack); margin-bottom: 10px;
+  transition: transform var(--dur-3) var(--ease-spring), box-shadow var(--dur-3) var(--ease-spring);
+}
+:root[data-design="lull"] .disc-pick:hover, :root[data-design="lull"] .disc-pick:focus-within {
+  background: var(--l-card); transform: translateY(-3px);
+  box-shadow: 0 7px 0 -1.5px var(--stack-1), 0 7px 0 0 var(--l-edge), 0 13px 0 -1.5px var(--stack-2), 0 13px 0 0 var(--l-edge);
+}
+/* a ring around the whole card, plus a mark on the focused control: the title and artist get a focus-coloured
+   underline (an outline would be clipped by the title's two-line clamp), the buttons and reason chips their own ring */
+:root[data-design="lull"] .disc-pick:focus-within { outline: 2px solid var(--focus); outline-offset: 3px; }
+:root[data-design="lull"] .disc-pick :focus-visible { outline: none; }
+:root[data-design="lull"] .disc-pick :is(.disc-pick__title, .disc-pick__by):focus-visible { text-decoration: underline 2px var(--focus); text-underline-offset: 2px; }
+:root[data-design="lull"] .disc-pick :is(.disc-pick__play, .btn-icon):focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+:root[data-design="lull"] .disc-pick :is(.chip-reason, .chip-more):focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+:root[data-design="lull"] .disc-pick__art .cover { width: 100%; aspect-ratio: 4 / 3; border-radius: 10px; }
+:root[data-design="lull"] .disc-pick__main { padding: 8px 2px 0; }
+:root[data-design="lull"] .disc-pick__title { font: 800 .9375rem/1.25 var(--f-ui); max-width: 100%; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+:root[data-design="lull"] .disc-pick__by { font: 700 .8125rem/1.3 var(--f-ui); color: var(--link); }
+/* the reason is one pink sticker; "+1" rides inline at its end */
+:root[data-design="lull"] .disc-pick__why { margin-top: auto; padding-top: 8px; }
+:root[data-design="lull"] .disc-pick__why > .cluster:has(.chip-more) {
+  position: relative; display: flex; flex-wrap: nowrap; align-items: flex-end; gap: 0; width: fit-content; max-width: 100%;
+  border-radius: 10px; border: 1px solid color-mix(in srgb, var(--pink) 60%, transparent); background: var(--reason-bg);
+}
+:root[data-design="lull"] .disc-pick__why > :first-child { position: relative; transition: transform var(--dur-2) var(--ease-spring), box-shadow var(--dur-2) var(--ease-out); }
+:root[data-design="lull"] .disc-pick .cluster:has(.chip-more) > .chip-reason { border: 0; background: none; }
+:root[data-design="lull"] .disc-pick .chip-reason { gap: 4px; padding: 4px 8px 4px 6px; font-size: .75rem; text-transform: lowercase; hyphens: manual; overflow-wrap: normal; }
+:root[data-design="lull"] .disc-pick .chip-reason__name { text-transform: none; white-space: nowrap; text-decoration: none; }
+:root[data-design="lull"] .disc-pick .chip-reason:hover .chip-reason__name { text-decoration: underline; }
+:root[data-design="lull"] .disc-pick .chip-more { flex: none; height: 20px; min-width: 0; margin: 0 6px 4px -4px; padding: 0 6px; border: 0; border-radius: 999px; background: var(--l-card); font-size: .6875rem; }
+/* sticker peel on hover / focus: lifts, tilts, gets a white die-cut edge, and a sparkle pops once at its corner */
+@keyframes lull-pop { 0% { opacity: 0; transform: scale(.2) rotate(-30deg); } 55% { opacity: 1; transform: scale(1.15) rotate(10deg); } 100% { opacity: 0; transform: scale(.9) rotate(20deg); } }
+:root[data-design="lull"] .disc-pick__why > :first-child::after {
+  content: ""; position: absolute; top: -9px; right: -9px; width: 14px; height: 14px; opacity: 0; pointer-events: none;
+  background: var(--heart); -webkit-mask: var(--l-spark) center / contain no-repeat; mask: var(--l-spark) center / contain no-repeat;
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-design="lull"]:not([data-motion="reduce"]) .disc-pick:hover .disc-pick__why > :first-child, :root[data-design="lull"]:not([data-motion="reduce"]) .disc-pick:focus-within .disc-pick__why > :first-child {
+    transform: translateY(-2px) rotate(-2deg); box-shadow: 0 0 0 2px #fff, 0 4px 0 -1px color-mix(in srgb, var(--pink) 70%, transparent);
+  }
+  :root[data-design="lull"]:not([data-motion="reduce"]) .disc-pick:hover .disc-pick__why > :first-child::after, :root[data-design="lull"]:not([data-motion="reduce"]) .disc-pick:focus-within .disc-pick__why > :first-child::after {
+    animation: lull-pop .6s .08s var(--ease-out) both;
+  }
+}
+/* actions appear on hover / focus (a liked heart stays); touch screens always show them */
+:root[data-design="lull"] .disc-pick__play { opacity: 0; }
+:root[data-design="lull"] .disc-pick__end { position: absolute; top: 12px; right: 12px; margin: 0; gap: 4px; }
+:root[data-design="lull"] .disc-pick__end .btn-icon { width: 30px; height: 30px; background: color-mix(in srgb, var(--l-card) 90%, transparent); border: var(--stroke) solid var(--l-rule); opacity: 0; }
+:root[data-design="lull"] .disc-pick__end .btn-icon .ic { width: 16px; height: 16px; }
+:root[data-design="lull"] .disc-pick__end .btn-icon.is-liked { opacity: 1; color: var(--heart); }
+:root[data-design="lull"] .disc-pick:hover .disc-pick__play, :root[data-design="lull"] .disc-pick:focus-within .disc-pick__play,
+:root[data-design="lull"] .disc-pick:hover .disc-pick__end .btn-icon, :root[data-design="lull"] .disc-pick:focus-within .disc-pick__end .btn-icon { opacity: 1; }
+@media (hover: none) { :root[data-design="lull"] .disc-pick__play, :root[data-design="lull"] .disc-pick__end .btn-icon { opacity: 1; } }
+
+/* New releases: two-column list rows (art, title, artist, "Album, Oct 29 * new", play) */
+:root[data-design="lull"] .disc-home .disc-shelf {
+  display: grid; grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-columns: auto; gap: 2px 24px; overflow: visible; padding: 0;
+}
+:root[data-design="lull"] .disc-home .disc-shelf .tile {
+  position: relative; display: grid; grid-template-columns: 52px minmax(0, 1fr) 40px; grid-template-areas: "art title play" "art by play" "art meta play";
+  align-content: center; column-gap: 14px; row-gap: 0; min-height: 60px; padding: 4px 8px 4px 6px; margin: 0;
+  background: none; border: 0; border-radius: 12px; box-shadow: none; transform: none;
+}
+:root[data-design="lull"] .disc-home .disc-shelf .tile:hover, :root[data-design="lull"] .disc-home .disc-shelf .tile:focus-within { background: color-mix(in srgb, var(--l-tile) 26%, transparent); transform: none; box-shadow: none; }
+:root[data-design="lull"] .disc-home .disc-shelf .tile__art { display: contents; }
+:root[data-design="lull"] .disc-home .disc-shelf .tile__art > a { grid-area: art; align-self: center; }
+:root[data-design="lull"] .disc-home .disc-shelf .tile__art .cover { --cover-size: 52px; width: 52px; border-radius: 8px; }
+:root[data-design="lull"] .disc-home .disc-shelf .tile__title { grid-area: title; }
+:root[data-design="lull"] .disc-home .disc-shelf .tile__title :is(a, button) { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+:root[data-design="lull"] .disc-home .disc-shelf .tile__by { grid-area: by; }
+:root[data-design="lull"] .disc-home .disc-shelf .tile__meta { grid-area: meta; display: flex; flex-direction: row-reverse; justify-content: flex-end; gap: 8px; color: var(--fg); font-weight: 700; }
+:root[data-design="lull"] .disc-home .disc-shelf .tile__play {
+  grid-area: play; position: relative; align-self: center; width: 36px; height: 36px; opacity: 1; transform: none;
+  background: none; border: 0; box-shadow: none; color: var(--link);
+}
+:root[data-design="lull"] .disc-home .disc-shelf .tile__play .ic { filter: none; width: 18px; height: 18px; }
+:root[data-design="lull"] .disc-home .disc-shelf .tile__play:hover { background: color-mix(in srgb, var(--l-tile) 45%, transparent); filter: none; }
+:root[data-design="lull"] .disc-shelf { grid-auto-columns: minmax(148px, calc((100% - 5 * 16px) / 6)); }
+:root[data-design="lull"] .disc-tag { border-radius: 12px; }
+:root[data-design="lull"] .disc-tag:hover, :root[data-design="lull"] .disc-tag:focus-within { background: color-mix(in srgb, var(--l-tile) 26%, transparent); }
+
+/* radio starters = pills: sized to their words (name on one line, kind under it), a round art orb with
+   a gloss play badge; they wrap to a second row rather than squeeze a name onto three lines */
+:root[data-design="lull"] .disc-starters { display: flex; flex-wrap: wrap; gap: 10px 12px; }
+:root[data-design="lull"] .disc-starter {
+  position: relative; display: flex; align-items: center; gap: 10px; min-width: 0; max-width: 100%; min-height: 52px; padding: 5px 18px 5px 6px; border-radius: 999px;
+  background: var(--l-card); border: var(--stroke) solid var(--l-rule);
+}
+:root[data-design="lull"] .disc-starter:hover, :root[data-design="lull"] .disc-starter:focus-within { background: var(--l-card); border-color: var(--l-edge); }
+/* core sets --cover-size inline (48px); the pill's orb is smaller, so this one needs !important */
+:root[data-design="lull"] .disc-starter .cover { --cover-size: 40px !important; width: 40px; flex: none; }
+:root[data-design="lull"] .disc-starter__main { display: grid; min-width: 0; }
+:root[data-design="lull"] .disc-starter__title, :root[data-design="lull"] .disc-starter__sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root[data-design="lull"] .disc-starter__title { font: 800 .875rem/1.25 var(--f-ui); }
+:root[data-design="lull"] .disc-starter__sub { font: 700 .75rem/1.25 var(--f-ui); color: var(--l-muted); }
+/* the gloss play is a badge on the orb's lower right (img 02 widget buttons), so the name gets the width */
+:root[data-design="lull"] .disc-starter__play {
+  position: absolute; left: 28px; bottom: 2px; width: 26px; height: 26px; color: #fff;
+  background: var(--l-hi-sm), var(--l-gloss); border: var(--stroke) solid var(--l-gloss-edge); box-shadow: inset 0 -2px 3px var(--l-gloss-glow), 0 0 0 2px var(--l-card);
+}
+:root[data-design="lull"] .disc-starter__play:hover { background: var(--l-hi-sm), var(--l-gloss); filter: brightness(1.08); }
+:root[data-design="lull"] .disc-starter__play .ic { width: 12px; height: 12px; margin-left: 1px; }
+
+/* loading: skeletons shaped like the real content (tall picks, two-column release rows, starter pills) */
+:root[data-design="lull"] .disc-home .disc-picks-skel .skel-group { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: calc((100% - 4 * 16px) / 5); gap: 16px; overflow: hidden; padding: 2px 2px 14px; }
+:root[data-design="lull"] .disc-picks-skel .skel-row {
+  grid-template-columns: minmax(0, 1fr); align-items: start; gap: 10px; min-height: 0; padding: 8px 8px 12px; margin-bottom: 10px;
+  background: var(--l-card); border: var(--stroke) solid var(--l-rule); border-radius: 14px; box-shadow: var(--l-card-stack);
+}
+:root[data-design="lull"] .disc-picks-skel .skel--cover { width: 100%; height: auto; aspect-ratio: 4 / 3; border-radius: 10px; }
+:root[data-design="lull"] .disc-picks-skel .skel-row > .skel--text { width: 70%; height: 22px; border-radius: 10px; }
+:root[data-design="lull"] .disc-home .disc-skel-shelf .skel-group { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 24px; }
+:root[data-design="lull"] .disc-home .disc-skel-shelf .skel-tile { display: grid; grid-template-columns: 52px minmax(0, 1fr); align-content: center; gap: 8px 14px; min-height: 60px; padding: 4px 6px; }
+:root[data-design="lull"] .disc-home .disc-skel-shelf .skel--cover { grid-row: span 2; width: 52px; border-radius: 8px; }
+:root[data-design="lull"] .disc-home [data-region="radio"] .skel-group { display: grid; grid-template-columns: repeat(4, minmax(0, 220px)); gap: 12px; }
+:root[data-design="lull"] .disc-home [data-region="radio"] .skel-row { grid-template-columns: 40px minmax(0, 1fr); min-height: 52px; padding: 4px 10px 4px 4px; border-radius: 999px; border: var(--stroke) solid var(--l-rule); }
+:root[data-design="lull"] .disc-home [data-region="radio"] .skel-row > :nth-child(n+3) { display: none; }
+:root[data-design="lull"] .disc-home [data-region="radio"] .skel--cover { border-radius: 50%; }
+/* a failed shelf: one flat row on the window body (icon, message, Retry), no box */
+:root[data-design="lull"] .disc-card > .empty {
+  grid-template-columns: 44px minmax(0, 1fr) auto; grid-template-areas: "art title act" "art text act"; justify-items: start; align-items: center;
+  column-gap: 14px; row-gap: 2px; padding: 4px 6px; text-align: left; border: 0; background: none;
+}
+:root[data-design="lull"] .disc-card > .empty .empty__art { grid-area: art; width: 44px; height: 44px; margin: 0; }
+:root[data-design="lull"] .disc-card > .empty .empty__art svg { width: 44px; height: 44px; }
+:root[data-design="lull"] .disc-card > .empty .empty__art .sparkle { display: none; }
+:root[data-design="lull"] .disc-card > .empty .empty__title { grid-area: title; margin: 0; font: 900 .9375rem/1.25 var(--f-ui); }
+:root[data-design="lull"] .disc-card > .empty .empty__text { grid-area: text; margin: 0; font: 600 .8125rem/1.35 var(--f-ui); color: var(--fg-2); }
+:root[data-design="lull"] .disc-card > .empty .empty__actions { grid-area: act; margin: 0; }
+
+/* search results (desk): two columns, so the Soulseek side shows above the fold. Left: the top result as a compact
+   card, then the albums (Soulseek folders) and artists shelves; right: the songs list, without the album column */
+@media (min-width: 1100px) {
+  :root[data-design="lull"] .disc-results { display: grid; grid-template-columns: minmax(300px, .78fr) minmax(0, 1.4fr); column-gap: 28px; align-items: start; }
+  :root[data-design="lull"] .disc-results > :is(.disc-duo--results, .disc-duo--results2) { display: contents; }
+  :root[data-design="lull"] .disc-results .disc-card { grid-column: 1; min-width: 0; }
+  :root[data-design="lull"] .disc-results .disc-songs { grid-column: 2; grid-row: 1 / span 4; }
+  :root[data-design="lull"] .disc-top__body { grid-template-columns: 96px minmax(0, 1fr); gap: 16px; }
+  /* core sizes the top cover inline (112px) */
+  :root[data-design="lull"] .disc-top__body > .cover { --cover-size: 96px !important; }
+  :root[data-design="lull"] .disc-top__title { font-size: 1.375rem; }
+  :root[data-design="lull"] .disc-top__actions { margin-top: 12px; gap: 8px; }
+  :root[data-design="lull"] .disc-results .disc-shelf { grid-auto-columns: calc((100% - 16px) / 2); }
+  :root[data-design="lull"] .disc-results .disc-shelf--artists { grid-auto-columns: calc((100% - 32px) / 3); }
+  :root[data-design="lull"] .disc-songs .trow__album { display: none; }
+}
+
+/* the desktop board's still of Home (desktop/preview.js): the same flat discover window, big tall release cards */
+:root[data-design="lull"] .main:has(.pv-greeting)::before { content: "discover"; }
+:root[data-design="lull"] .view__inner:has(> .pv-greeting) { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 12px; }
+:root[data-design="lull"] .pv-greeting { margin: 0 0 12px; font: 900 1.25rem/1.2 var(--f-ui); letter-spacing: -.01em; }
+:root[data-design="lull"] .pv-summary { margin: 0; font: 700 .8125rem/1.4 var(--f-ui); }
+:root[data-design="lull"] .view__inner:has(> .pv-greeting) > .card { flex: 1 0 100%; background: none; border: 0; box-shadow: none; padding: 0; }
+:root[data-design="lull"] .view__inner:has(> .pv-greeting) .shelf { grid-auto-columns: calc((100% - 3 * 16px) / 4.25); }
+
+/* wide desks: six picks; releases in four columns, the other shelves in three */
+@media (min-width: 1880px) {
+  :root[data-design="lull"] .disc-home .disc-picks { --picks: 6; }
+  :root[data-design="lull"] .disc-home .disc-shelf, :root[data-design="lull"] .disc-home .disc-skel-shelf .skel-group { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  :root[data-design="lull"] .disc-home [data-region="new"] :is(.disc-shelf, .skel-group) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+/* =====================================================================
+   Desk widgets (homeLead slot, >= 1700 px): the discover window hands 300 px back to the wallpaper and three little
+   windows float there (img 02): a "today" sticker, the pocket mini (tilted 2 degrees), "up next"
+   ===================================================================== */
+:root[data-design="lull"] .disc-lead { display: none; }
+@media (min-width: 1700px) {
+  :root[data-design="lull"] { --l-desk-w: 290px; }
+  /* .disc-home's inline-size container would be the containing block of the fixed widgets and trap them in the
+     scroller; at this width nothing on Home uses its container queries (the lull grids are explicit) */
+  :root[data-design="lull"] .disc-home { container-type: normal; }
+  :root[data-design="lull"] .app[data-screen="home"] .main { margin-right: calc(var(--l-desk-w) + 22px); }
+  :root[data-design="lull"] .disc-lead { display: block; position: fixed; z-index: 1; top: 88px; right: 16px; width: var(--l-desk-w); }
+  :root[data-design="lull"] .app[data-ctx="docked"] .disc-lead { right: calc(var(--ctx) + 36px); }
+}
+:root[data-design="lull"] .lull-desk { display: grid; gap: 20px; }
+:root[data-design="lull"] .lull-desk__win {
+  padding: 4px 4px 10px; background: var(--sky); color: var(--fg-panel); border: var(--stroke) solid var(--l-edge); border-radius: 14px;
+  box-shadow: inset 0 0 0 4px var(--l-frame), var(--l-win-stack), 0 16px 28px -10px rgba(43, 38, 80, .28);
+}
+:root[data-design="lull"] .lull-desk__today { transform: rotate(-1.5deg); }
+:root[data-design="lull"] .lull-desk__date { display: flex; align-items: center; gap: 14px; margin: 0; padding: 10px 16px 2px; }
+:root[data-design="lull"] .lull-desk__date b { font: 400 3.25rem/1 var(--f-disp); color: var(--l-ribbon); }
+:root[data-design="lull"] .lull-desk__date span { font: 800 .9375rem/1.3 var(--f-ui); color: var(--fg-2); }
+:root[data-design="lull"] .lull-desk__pocket { transform: rotate(2deg); background: var(--l-shell); box-shadow: inset 0 0 0 4px var(--l-frame), inset 0 6px 0 var(--l-shell-hi), var(--l-card-stack), 0 18px 30px -10px rgba(43, 38, 80, .32); }
+:root[data-design="lull"] .lull-desk__screen {
+  display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 12px; margin: 10px 10px 0; padding: 10px;
+  border-radius: 10px 10px 22px 10px; background: var(--screen); color: var(--l-screen-ink); box-shadow: inset 0 2px 0 rgba(0, 0, 0, .2);
+}
+:root[data-design="lull"] .lull-desk__screen .cover { border-color: rgba(255, 255, 255, .4); }
+:root[data-design="lull"] .lull-desk__meta { display: grid; gap: 2px; min-width: 0; }
+:root[data-design="lull"] .lull-desk__meta b { font: 900 .9375rem/1.2 var(--f-ui); }
+:root[data-design="lull"] .lull-desk__meta span, :root[data-design="lull"] .lull-desk__meta small { font: 700 .75rem/1.3 var(--f-ui); }
+:root[data-design="lull"] .lull-desk__keys { display: flex; align-items: center; justify-content: center; gap: 16px; padding: 10px 0 0; }
+:root[data-design="lull"] .lull-desk__keys .btn-icon { width: 40px; height: 40px; border-radius: 50%; background: var(--l-card); border-color: var(--l-pink-edge); color: var(--l-pink-edge); }
+:root[data-design="lull"][data-theme="night"] .lull-desk__keys .btn-icon { background: var(--sky); color: #f6cee4; border-color: #f6cee4; }
+:root[data-design="lull"] .lull-desk__meta small {
+  justify-self: start; margin-top: 4px; padding: 3px 7px; border-radius: 5px; border: 1px solid rgba(255, 255, 255, .55); background: rgba(255, 255, 255, .1);
+}
+/* this week: two numbers, a 24-bar listening sparkline (peak hour in pink), a Stats pill */
+:root[data-design="lull"] .lull-desk__week { transform: rotate(-1deg); }
+:root[data-design="lull"] .lull-desk__nums { display: grid; gap: 2px; margin: 10px 14px 8px; }
+:root[data-design="lull"] .lull-desk__nums b { font: 900 1.375rem/1.1 var(--f-ui); color: var(--fg-panel); }
+:root[data-design="lull"] .lull-desk__nums span { font: 700 .8125rem/1.3 var(--f-ui); color: var(--fg-panel-2); }
+:root[data-design="lull"] .lull-desk__spark { display: flex; align-items: flex-end; gap: 3px; height: 56px; margin: 0 14px; padding: 6px 8px 0; border-radius: 10px 10px 4px 4px; background: var(--l-card-2); box-shadow: inset 0 -1.5px 0 var(--l-edge); }
+:root[data-design="lull"] .lull-desk__spark i { flex: 1; min-width: 0; height: calc(6% + var(--v) * 94%); border-radius: 3px 3px 0 0; background: var(--link); }
+:root[data-design="lull"] .lull-desk__spark i.is-peak { background: var(--heart); }
+:root[data-design="lull"] .lull-desk__axis { display: flex; justify-content: space-between; margin: 4px 14px 0; font: 800 .6875rem/1 var(--f-ui); color: var(--l-muted); }
+:root[data-design="lull"] .lull-desk__more { margin: 10px 14px 2px; }
+/* check: --link on --l-card-2 3 */
+/* check: --heart on --l-card-2 3 */
+
+/* =====================================================================
+   Now Playing (desktop): three windows fill the desk exactly: "now playing" (the lull pocket + title + actions),
+   "lyrics" over a slim "source" window, and the queue (ctx). Nothing peeks under the dock.
+   ===================================================================== */
+@media (min-width: 640px) {
+  :root[data-design="lull"] .main:has(.now) { background: none; border: 0; box-shadow: none; padding: 0; }
+  :root[data-design="lull"] .main:has(.now)::before, :root[data-design="lull"] .main:has(.now)::after { display: none; }
+  :root[data-design="lull"] .main:has(.now) > .view { margin: 0; padding: 0 2px 0 0; background: none; box-shadow: none; border-radius: 0; }
+  :root[data-design="lull"] .now { max-width: none; height: 100%; }
+  :root[data-design="lull"] .now > .now__top { display: none; }
+  :root[data-design="lull"] .now__grid {
+    position: relative; height: calc(100% - 10px); min-height: 660px; padding-top: 0;
+    --np-w: min(468px, 54%); grid-template-columns: var(--np-w) minmax(0, 1fr); column-gap: 16px; row-gap: 0;
+    grid-template-rows: auto auto minmax(auto, 1fr); grid-template-areas: "dev ly" "head ly" "acts ly";   /* the action row never overlaps the chips: a too-short window scrolls */
+  }
+  /* the left window's plate (frame + body) sits behind hero, head and actions */
+  :root[data-design="lull"] .now__grid::before {
+    content: ""; grid-area: 1 / 1 / 4 / 2; align-self: stretch; height: auto; z-index: 0;
+    background: var(--sky); border: var(--stroke) solid var(--l-edge); border-radius: 14px; box-shadow: inset 0 0 0 4px var(--l-frame), var(--l-win-stack);
+  }
+  :root[data-design="lull"] .now__dev, :root[data-design="lull"] .now-head, :root[data-design="lull"] .now__acts { position: relative; z-index: 1; min-width: 0; }
+  :root[data-design="lull"] .now__dev { margin: 4px 4px 0; }
+  :root[data-design="lull"] .now-head { padding: 14px 22px 0; }
+  :root[data-design="lull"] .now__acts { align-self: end; padding: 14px 22px 18px; }
+  :root[data-design="lull"] .now-acts { gap: 6px; flex-wrap: wrap; }
+  :root[data-design="lull"] .now-acts .btn { min-height: 34px; padding: 0 12px; font-size: .8125rem; }
+  :root[data-design="lull"] .now-acts__label { display: inline; }
+  :root[data-design="lull"] .now-acts__btn { width: auto; padding: 0 12px; }
+  /* tidy rows under the title: one row of chips (the from pill shrinks with an ellipsis, the first tag stays; the rest
+     are on the album and artist pages), then one row of actions; Add to playlist is icon-only (named + tooltip).
+     On a tall window the spare height takes a second row: up to three tags under the from pill */
+  :root[data-design="lull"] .now-head { flex-wrap: wrap; }
+  :root[data-design="lull"] .now-head .now-head__from { flex: 0 1 auto; min-width: 0; max-width: 100%; }
+  :root[data-design="lull"] .now-head .now-head__from > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  :root[data-design="lull"] .now-head__chips > .chip ~ .chip { display: none; }
+  :root[data-design="lull"] .now-head__chips > * { flex: none; }
+  @media (min-height: 860px) {
+    :root[data-design="lull"] .now-head::after { content: ""; order: 3; flex: 1 0 100%; height: 0; }
+    :root[data-design="lull"] .now-head .now-head__chips > * { order: 4; }
+    :root[data-design="lull"] .now-head__chips > .chip ~ .chip { display: inline-flex; }
+    :root[data-design="lull"] .now-head__chips > .chip:nth-child(n+4), :root[data-design="lull"] .now-head__chips > :not(.chip):nth-child(n+4) { display: none; }
+  }
+  /* a short window (the 1280x800 default): a smaller screen art keeps the action row above the fold */
+  @media (max-height: 859px) {
+    :root[data-design="lull"] .now__grid { min-height: 560px; }
+    :root[data-design="lull"] .lull-np .lull-np__screen { grid-template-columns: 132px minmax(0, 1fr); }
+    :root[data-design="lull"] .lull-np .lull-np__screen .wave { height: 40px; }
+  }
+  :root[data-design="lull"] .now-acts { flex-wrap: nowrap; }
+  :root[data-design="lull"] .now-acts__btn[data-act="add-to-playlist"] { width: 34px; padding: 0; justify-content: center; }
+  :root[data-design="lull"] .now-acts__btn[data-act="add-to-playlist"] .now-acts__label { display: none; }
+  /* Classic already has its tile in the dock */
+  :root[data-design="lull"] .now-acts__btn[data-act="classic"] { display: none; }
+  :root[data-design="lull"] .now__keys { display: none; }
+  /* the source window rides under the lyrics, pinned to the desk's bottom edge (it is not tied to the left rows) */
+  :root[data-design="lull"] .now .now-lycard { grid-area: ly; min-height: 0; margin-bottom: 154px; }
+  :root[data-design="lull"] .now .now-srccard { position: absolute; right: 0; bottom: 4px; left: calc(var(--np-w) + 16px); height: 138px; margin: 0; padding-bottom: 8px; overflow: hidden; }
+  :root[data-design="lull"] .now-srccard .source-card { padding: 0; border: 0; background: none; box-shadow: none; display: grid; gap: 6px; }
+  :root[data-design="lull"] .now-srccard .source-card__head { flex-wrap: wrap; row-gap: 4px; white-space: nowrap; font-size: .8125rem; }
+  :root[data-design="lull"] .now-srccard .pipeline-wrap { display: grid; grid-template-columns: 150px minmax(0, 1fr); align-items: center; gap: 12px; }
+  /* the slim source window: an 8 px step strip without its labels beside the step text */
+  :root[data-design="lull"] .now-srccard .pipeline__seg { height: 8px; margin-bottom: 0; }
+  :root[data-design="lull"] .now-srccard .pipeline__seg::after, :root[data-design="lull"] .now-srccard .pipeline__seg .ic { display: none; }
+  :root[data-design="lull"] .now-srccard .pipeline__text { flex-wrap: nowrap; min-width: 0; }
+  :root[data-design="lull"] .now-srccard .pipeline__label { display: none; }
+  :root[data-design="lull"] .now-srccard .pipeline-wrap:not(:has(.pipeline__seg[class*="is-"])) { grid-template-columns: minmax(0, 1fr); }
+  :root[data-design="lull"] .now-srccard .now-src__foot { margin: 0; }
+  :root[data-design="lull"] .now-srccard .now-src__foot > * { min-height: 28px; }
+  :root[data-design="lull"] .now-srccard .now-src__details:not([hidden]) { max-height: 180px; overflow: auto; }
+  :root[data-design="lull"] .now-next { display: none; }
+  :root[data-design="lull"] .now > .sparkle { display: none; }
+}
+
+/* the lull pocket (nowHero): bar, glossy periwinkle shell, mocha screen with big art, chunky transport, glyph pills */
+:root[data-design="lull"] .lull-np { display: grid; }
+:root[data-design="lull"] .lull-np__bar { justify-content: space-between; padding-right: 6px; }
+:root[data-design="lull"] .lull-np .device__led {
+  position: static; display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 9px; border-radius: 999px;
+  background: color-mix(in srgb, var(--l-card) 70%, transparent); border: 1px dashed var(--l-bar-ink); color: var(--l-bar-ink);
+  font: 800 .6875rem/1 var(--f-ui); letter-spacing: .02em; text-transform: none;
+}
+:root[data-design="lull"] .lull-np .device__led i { width: 6px; height: 6px; border-radius: 50%; background: var(--l-switch); box-shadow: none; }
+:root[data-design="lull"][data-theme="night"] .lull-np .device__led { background: rgba(23, 26, 54, .45); }
+:root[data-design="lull"] .lull-np__shell {
+  position: relative; margin: 12px 12px 0; padding: 12px 12px 10px; border: var(--stroke) solid var(--l-edge); border-radius: 18px 18px 46px 18px;
+  background: var(--l-shell); box-shadow: inset 0 1.5px 0 var(--l-shell-hi), 0 5px 0 -1.5px var(--stack-1), 0 5px 0 0 var(--l-edge), 0 10px 0 -1.5px var(--stack-2), 0 10px 0 0 var(--l-edge);
+  color: var(--l-tile-ink);
+}
+:root[data-design="lull"] .lull-np__screen {
+  --now-art: 0px;
+  display: grid; grid-template-columns: minmax(140px, 192px) minmax(0, 1fr); grid-template-areas: "art head" "art page" "wave wave" "times times";
+  grid-template-rows: auto 1fr auto auto; gap: 8px 14px; padding: 12px; min-height: 0; border-radius: 10px 10px 24px 10px;
+  box-shadow: inset 0 2px 0 rgba(0, 0, 0, .2), 0 0 0 var(--stroke) rgba(43, 38, 80, .5); color: var(--l-screen-ink);
+}
+:root[data-design="lull"] .lull-np__screen::after { background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, .13) 45%, transparent 60%) -200% 0 / 200% 100% no-repeat, repeating-linear-gradient(180deg, rgba(255, 255, 255, .025) 0 1px, transparent 1px 3px); }
+:root[data-design="lull"] .lull-np__art { grid-area: art; align-self: start; }
+:root[data-design="lull"] .lull-np__art .cover { width: 100%; border-radius: 8px; border-color: rgba(255, 255, 255, .4); box-shadow: 0 0 0 3px rgba(0, 0, 0, .12); }
+:root[data-design="lull"] .lull-np__art .now-dev__slot { display: block; aspect-ratio: 1; border-radius: 8px; border: var(--stroke) dashed rgba(255, 255, 255, .4); }
+/* the bar pill already says paused / streaming: the screen keeps only its page switch, drawn as three page dots and
+   a chevron (its label names the page: "Screen page: now. Show source page"; ::before is the core hit area) */
+:root[data-design="lull"] .lull-np .device__page-head { grid-area: head; justify-content: flex-end; font-size: 0; }
+:root[data-design="lull"] .lull-np .device__select {
+  --p1: rgba(255, 249, 254, .45); --p2: var(--p1); --p3: var(--p1);
+  height: 24px; gap: 4px; padding: 0 4px 0 10px; background: rgba(255, 255, 255, .14); border-color: rgba(255, 255, 255, .6); color: var(--l-screen-ink); font-size: 0;
+}
+:root[data-design="lull"] .lull-np .device__select::after {
+  content: ""; order: -1; width: 26px; height: 6px;
+  background: radial-gradient(circle, var(--p1) 2.6px, transparent 3px) 0 0 / 6px 6px no-repeat, radial-gradient(circle, var(--p2) 2.6px, transparent 3px) 10px 0 / 6px 6px no-repeat,
+    radial-gradient(circle, var(--p3) 2.6px, transparent 3px) 20px 0 / 6px 6px no-repeat;
+}
+:root[data-design="lull"] .lull-np .device__select[aria-label*="page: now"] { --p1: #fff9fe; }
+:root[data-design="lull"] .lull-np .device__select[aria-label*="page: source"] { --p2: #fff9fe; }
+:root[data-design="lull"] .lull-np .device__select[aria-label*="page: save"] { --p3: #fff9fe; }
+:root[data-design="lull"] .lull-np .device__select .ic { width: 15px; height: 15px; }
+:root[data-design="lull"] .lull-np [data-now="screen"], :root[data-design="lull"] .lull-np .now-slide { display: contents; }
+:root[data-design="lull"] .lull-np .now-dev__page { grid-area: page; height: auto; min-height: 0; align-content: start; }
+:root[data-design="lull"] .lull-np .device__now { grid-template-columns: minmax(0, 1fr); }
+:root[data-design="lull"] .lull-np .device__now > .cover { display: none; }
+:root[data-design="lull"] .lull-np .device__title { font: 900 1.1875rem/1.2 var(--f-ui); }
+:root[data-design="lull"] .lull-np .device__artist { font: 700 .8125rem/1.3 var(--f-ui); color: var(--l-screen-ink); opacity: 1; }
+:root[data-design="lull"] .lull-np .device__facts { margin-top: 10px; gap: 6px; flex-direction: column; align-items: flex-start; }
+:root[data-design="lull"] .lull-np .device__fact, :root[data-design="lull"] .lull-np .q-chip { height: 22px; padding: 0 8px; border-radius: 5px; border: 1px solid rgba(255, 255, 255, .55); background: rgba(255, 255, 255, .1); color: var(--l-screen-ink); font: 800 .75rem/1 var(--f-ui); }
+:root[data-design="lull"] .lull-np .q-chip--ll::before { background: var(--l-screen-ink); }
+:root[data-design="lull"] .lull-np .device__kv { font: 700 .8125rem/1.25 var(--f-ui); gap: 5px 12px; }
+:root[data-design="lull"] .lull-np .wave { grid-area: wave; height: 48px; margin-top: 2px; gap: 2px; }
+:root[data-design="lull"] .lull-np .wave__bar { flex: 1 1 0; min-width: 2px; }
+:root[data-design="lull"] .lull-np .wave-times { grid-area: times; margin-top: -2px; font: 800 .75rem/1 var(--f-ui); color: var(--l-screen-ink); }
+:root[data-design="lull"] .lull-np .wave-times b { color: var(--l-screen-ink); }
+:root[data-design="lull"] .lull-np .now-osd { z-index: 3; }
+/* transport: shuffle pill | prev, big gloss play, next | repeat pill */
+:root[data-design="lull"] .lull-np__deck { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 2px 2px; }
+:root[data-design="lull"] .lull-np__transport { display: flex; align-items: center; gap: 14px; }
+:root[data-design="lull"] :is(.lull-np, .dk-mini) .dpad__btn {
+  width: 42px; height: 42px; border-radius: 50%; border: var(--stroke) solid var(--l-edge); background: var(--l-card); color: var(--ink);
+  box-shadow: 0 2px 0 var(--l-edge);
+}
+:root[data-design="lull"] :is(.lull-np, .dk-mini) .dpad__btn:hover { background: var(--l-card-2); }
+:root[data-design="lull"] :is(.lull-np, .dk-mini) .dpad__btn:active { transform: translateY(2px); box-shadow: 0 0 0 var(--l-edge); }
+:root[data-design="lull"] :is(.lull-np, .dk-mini) .dpad__btn .ic { width: 18px; height: 18px; stroke-width: 2.2; }
+:root[data-design="lull"][data-theme="night"] :is(.lull-np, .dk-mini) .dpad__btn { background: var(--sky); color: #f4efff; }
+:root[data-design="lull"] :is(.lull-np, .dk-mini) .device__key { position: static; display: grid; justify-items: center; }
+:root[data-design="lull"] :is(.lull-np, .dk-mini) .device__key > span[data-now$="label"] { display: none; }
+:root[data-design="lull"] :is(.lull-np, .dk-mini) .device__key--a .btn-gloss { --size: 70px; }
+:root[data-design="lull"] :is(.lull-np, .dk-mini) .device__key--b .btn-gloss { --size: 46px; }
+:root[data-design="lull"] :is(.lull-np, .dk-mini) .device__key--b .btn-gloss:not(.is-liked) { background: var(--l-card); border-color: var(--l-pink-edge); color: var(--l-pink-edge); box-shadow: 0 2px 0 var(--l-pink-edge); }
+:root[data-design="lull"] :is(.lull-np, .dk-mini) .device__key--b .btn-gloss:not(.is-liked)::before { display: none; }
+:root[data-design="lull"][data-theme="night"] :is(.lull-np, .dk-mini) .device__key--b .btn-gloss:not(.is-liked) { background: var(--sky); color: #f6cee4; border-color: #f6cee4; }
+/* the like orb hangs beside the big title under the pocket */
+:root[data-design="lull"] .lull-np { position: relative; }
+:root[data-design="lull"] .lull-np__like { position: absolute; z-index: 2; right: 18px; top: calc(100% + 9px); }
+/* the title moment: big title, artist line, then the reason sticker and the tags on one row */
+:root[data-design="lull"] .now-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+:root[data-design="lull"] .now-head .now-head__title {
+  position: static; order: 0; flex: 1 0 100%; width: auto; height: auto; overflow: visible; clip-path: none; white-space: normal;
+  margin: 0; padding-right: 60px; font: 900 1.875rem/1.12 var(--f-ui); letter-spacing: -.02em; color: var(--fg-panel);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
+:root[data-design="lull"] .now-head .now-head__by { display: block; order: 1; flex: 1 0 100%; margin: -2px 0 4px; font: 700 .9375rem/1.35 var(--f-ui); color: var(--link); }
+:root[data-design="lull"] .now-head__by .link-plain { color: var(--fg); }
+:root[data-design="lull"] .now-head .now-head__from {
+  order: 2; display: inline-flex; gap: 5px; min-height: 26px; padding: 2px 11px 2px 8px; border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--pink) 70%, transparent); background: var(--reason-bg); color: var(--reason-fg); font: 700 .78125rem/1.2 var(--f-ui);
+}
+:root[data-design="lull"] .now-head__from b { color: var(--reason-fg); }
+:root[data-design="lull"] .now-head__from .ic { width: 14px; height: 14px; }
+:root[data-design="lull"] .now-head__chips { display: contents; }
+:root[data-design="lull"] .now-head__chips > * { order: 3; }
+/* foot: the "lull pocket" mark under the screen and the speaker grill */
+:root[data-design="lull"] .lull-np__foot { display: flex; align-items: center; gap: 8px; padding: 8px 6px 0 8px; }
+:root[data-design="lull"] .lull-np__state { display: none; }
+:root[data-design="lull"] :is(.lull-np, .dk-mini) .device__pill {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px 0 8px; border-radius: 999px; border: var(--stroke) solid var(--l-edge);
+  background: var(--l-card); color: var(--ink); font: 800 .75rem/1 var(--f-ui);
+}
+:root[data-design="lull"] :is(.lull-np, .dk-mini) .device__pill > i { width: 15px; height: 15px; border: 0; border-radius: 0; background: currentColor; box-shadow: none; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 7h3c4.5 0 6.5 10 11 10h4M3 17h3c4.5 0 6.5-10 11-10h4M18 4l3 3-3 3M18 14l3 3-3 3'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 7h3c4.5 0 6.5 10 11 10h4M3 17h3c4.5 0 6.5-10 11-10h4M18 4l3 3-3 3M18 14l3 3-3 3'/%3E%3C/svg%3E") center / contain no-repeat; }
+:root[data-design="lull"] :is(.lull-np, .dk-mini) .device__pill--repeat > i { -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 12V9.5A3.5 3.5 0 0 1 7.5 6H20M17 3l3 3-3 3M20 12v2.5a3.5 3.5 0 0 1-3.5 3.5H4M7 21l-3-3 3-3'/%3E%3C/svg%3E"); mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 12V9.5A3.5 3.5 0 0 1 7.5 6H20M17 3l3 3-3 3M20 12v2.5a3.5 3.5 0 0 1-3.5 3.5H4M7 21l-3-3 3-3'/%3E%3C/svg%3E"); }
+:root[data-design="lull"] :is(.lull-np, .dk-mini) .device__pill[aria-pressed="true"] { background: var(--l-hi), var(--l-gloss); color: #fff; border-color: var(--l-gloss-edge); text-shadow: 0 1px 0 rgba(40, 25, 110, .55); }
+:root[data-design="lull"] :is(.lull-np, .dk-mini) .device__pill[aria-pressed="true"] > i { background: #fff; box-shadow: none; }
+:root[data-design="lull"][data-theme="night"] :is(.lull-np, .dk-mini) .device__pill:not([aria-pressed="true"]) { background: var(--sky); color: #f4efff; }
+:root[data-design="lull"] .lull-np__mark { margin-right: auto; white-space: nowrap; font: italic 400 .9375rem/1 var(--f-disp); letter-spacing: .05em; color: #3d3491; }
+:root[data-design="lull"] .lull-np__mark em { color: #5544aa; }
+:root[data-design="lull"][data-theme="night"] .lull-np__mark { color: #fff9fe; }
+:root[data-design="lull"][data-theme="night"] .lull-np__mark em { color: #e4def9; }
+:root[data-design="lull"] .lull-np__grill { display: grid; grid-template-columns: repeat(5, 4px); gap: 4px; margin: 0 8px 0 4px; transform: rotate(-28deg); }
+:root[data-design="lull"] .lull-np__grill i { width: 4px; height: 4px; border-radius: 50%; background: rgba(43, 38, 80, .38); }
+:root[data-design="lull"][data-theme="night"] .lull-np__grill i { background: rgba(255, 249, 254, .35); }
+
+/* motion: the windows boot in a stagger, the screen powers on (a soft CRT glow), one glint crosses it */
+@keyframes lull-boot { from { opacity: 0; transform: translateY(10px) scale(.985); } to { opacity: 1; transform: none; } }
+@keyframes lull-glint { to { background-position: 200% 0, 0 0; } }
+@keyframes lull-power { 0% { filter: brightness(2.2) saturate(0); clip-path: inset(49% 0 49% 0 round 10px); } 40% { filter: brightness(1.6) saturate(.4); clip-path: inset(0 0 0 0 round 10px); } 100% { filter: none; clip-path: inset(0 0 0 0 round 10px); } }
+/* "backwards" fill: a kept end transform would make each window its own stacking context, and the title block would
+   then cover the like orb that hangs over it */
+:root[data-design="lull"] .now__grid::before, :root[data-design="lull"] .now__dev, :root[data-design="lull"] .now-head, :root[data-design="lull"] .now__acts { animation: lull-boot .5s cubic-bezier(.2, 1.3, .4, 1) backwards; }
+:root[data-design="lull"] .now-lycard { animation: lull-boot .5s .06s cubic-bezier(.2, 1.3, .4, 1) backwards; }
+:root[data-design="lull"] .now-srccard { animation: lull-boot .5s .12s cubic-bezier(.2, 1.3, .4, 1) backwards; }
+:root[data-design="lull"] .lull-np__screen { animation: lull-power .55s .18s ease-out both; }
+:root[data-design="lull"] .lull-np__screen::after { animation: lull-glint 1.1s .6s ease-out both; }
+/* cartridge load: on every track change the new art slides into the screen from the top and the waveform draws in */
+@keyframes lull-cart { from { transform: translateY(-104%); } 70% { transform: translateY(3%); } to { transform: none; } }
+@keyframes lull-draw { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+:root[data-design="lull"] .lull-np__art { overflow: hidden; border-radius: 8px; }
+:root[data-design="lull"] .lull-np__art > .cover { animation: lull-cart .45s .22s cubic-bezier(.2, 1.25, .4, 1) both; }
+:root[data-design="lull"] .lull-np .wave { animation: lull-draw .6s .4s ease-out both; }
+
+/* lyrics: lines flow freely on the window, with only a pink margin line and the sparkle. Past lines
+   lavender, upcoming indigo, the current one big with a gel-pen highlighter under it (word by word when the
+   lyrics have word timing). Every lyrics scroller (window, phone tab, side panel) is fully clear for 8 px at each
+   end and fades in over 48 px, so a half-scrolled line never shows its cut letters. */
+:root[data-design="lull"] .now-ly__scroll {
+  --l-ly-mask: linear-gradient(transparent 0 8px, #000 56px, #000 calc(100% - 56px), transparent calc(100% - 8px));
+  border-top: 0; -webkit-mask: var(--l-ly-mask); mask: var(--l-ly-mask);
+}
+:root[data-design="lull"] .now-ly__lines { padding-block: 48px; }
+:root[data-design="lull"] .now-lycard .now-ly__head .label-rule { display: none; }
+:root[data-design="lull"] .now-lycard .now-ly__head { position: absolute; top: 4px; right: 10px; z-index: 2; min-height: 30px; }
+:root[data-design="lull"] .now-ly__tag { border-radius: 5px; border-width: var(--stroke); font: 800 .6875rem/1 var(--f-ui); padding: 4px 7px; background: color-mix(in srgb, var(--l-card) 70%, transparent); }
+:root[data-design="lull"] .now-lycard { position: relative; }
+:root[data-design="lull"] .now-lycard .now-ly__view { margin: 0; }
+:root[data-design="lull"] :is(.now-lycard, .now-ly--panel) .now-ly__scroll {
+  padding: 0 24px 0 40px;
+  background: linear-gradient(90deg, transparent 21px, color-mix(in srgb, var(--pink) 55%, transparent) 21px 22.5px, transparent 22.5px) 0 0 / 100% 100% no-repeat;
+}
+:root[data-design="lull"] .now-ly--panel .now-ly__scroll { padding-right: 8px; }
+:root[data-design="lull"] .now-ly__lines { gap: 2px; }
+:root[data-design="lull"] .now-ly__line { padding: 4px 10px; font-weight: 800; line-height: 1.3; color: var(--fg-2); letter-spacing: -.005em; }
+:root[data-design="lull"] .now-ly__line.is-past { color: var(--l-ink-dim); font-weight: 700; }
+:root[data-design="lull"] .now-ly__line.is-current {
+  position: relative; box-shadow: none; padding-block: 6px; border-radius: 12px; font-weight: 900; font-size: calc(var(--ly-size) + .625rem); line-height: 1.2;
+  color: var(--l-ink-dim); letter-spacing: -.02em;
+}
+:root[data-design="lull"] .now-ly__line.is-current::before { content: ""; position: absolute; left: -22px; top: .45em; width: 16px; height: 16px; background: var(--heart); -webkit-mask: var(--l-spark) center / contain no-repeat; mask: var(--l-spark) center / contain no-repeat; }
+:root[data-design="lull"] .now-ly__line.is-current:not(:has(.now-ly__w)), :root[data-design="lull"] .now-ly__line.is-current .now-ly__w.is-sung {
+  background: none; color: var(--fg);
+  text-decoration: underline var(--l-hl) .42em; text-underline-offset: -.24em; text-decoration-skip-ink: none;
+}
+:root[data-design="lull"] .now-ly__foot { border-top-color: var(--l-rule); }
+/* a song that never started has no words to follow yet */
+:root[data-design="lull"]:has(.pbar[data-status="failed"]) .now-lycard :is(.now-ly__view, .now-ly__foot) { display: none; }
+:root[data-design="lull"]:has(.pbar[data-status="failed"]) .now-lycard .now-ly::after {
+  content: "Waiting for a source. The words come back as soon as a peer answers."; margin: auto; padding: 24px 40px;
+  text-align: center; color: var(--fg-panel-2); font: 700 1rem/1.4 var(--f-ui);
+}
+:root[data-design="lull"]:has(.pbar[data-status="failed"]) .lull-np .wave-times > span:not(:last-child) { visibility: hidden; }
+:root[data-design="lull"] .now-ly__gap i { background: var(--pink); }
+
+
+/* =====================================================================
+   Devices: the default handheld (mini-player window, desktop board) and the compact pocket (phone Lyrics / Queue /
+   Details tabs): the same periwinkle shell, mocha screen, lilac keys
+   ===================================================================== */
+:root[data-design="lull"] .device { background: var(--l-shell); border: var(--stroke) solid var(--l-edge); border-radius: 18px 18px 48px 18px; box-shadow: inset 0 1.5px 0 var(--l-shell-hi), var(--l-card-stack); color: var(--l-tile-ink); }
+:root[data-design="lull"] .device__bezel { background: color-mix(in srgb, var(--l-card) 30%, transparent); border: var(--stroke) solid color-mix(in srgb, var(--l-edge) 60%, transparent); border-radius: 12px 12px 30px 12px; }
+:root[data-design="lull"] .device__screen { border-radius: 9px; color: var(--l-screen-ink); }
+:root[data-design="lull"] .device__led, :root[data-design="lull"] .device__key, :root[data-design="lull"] .device__pill { color: var(--l-tile-ink); font: 800 .75rem/1 var(--f-ui); }
+:root[data-design="lull"] .device__led i { background: var(--l-switch); box-shadow: none; }
+:root[data-design="lull"] .dpad__btn, :root[data-design="lull"] .dpad__hub { background: var(--l-card); color: var(--ink); border-color: var(--l-edge); }
+:root[data-design="lull"] .dpad__btn:hover { background: var(--l-card-2); }
+:root[data-design="lull"] .dpad__hub::after { background: var(--l-rule); }
+:root[data-design="lull"][data-theme="night"] .dpad__btn, :root[data-design="lull"][data-theme="night"] .dpad__hub { background: #2a2e5a; color: #f4efff; }
+:root[data-design="lull"] .device__pill > i { border-color: var(--l-edge); }
+:root[data-design="lull"] .device__pill--shuffle > i { background: var(--l-card); }
+:root[data-design="lull"] .device__pill--repeat > i { background: var(--pink); }
+:root[data-design="lull"] .device__grill i { background: rgba(43, 38, 80, .35); }
+:root[data-design="lull"][data-theme="night"] .device__grill i { background: rgba(255, 249, 254, .35); }
+:root[data-design="lull"] .device__select { background: rgba(255, 255, 255, .12); border-color: rgba(255, 255, 255, .55); color: var(--l-screen-ink); font: 800 .6875rem/1 var(--f-ui); }
+
+
+:root[data-design="lull"] .device--compact { background: var(--l-shell); border: var(--stroke) solid var(--l-edge); border-radius: 18px 18px 40px 18px; box-shadow: inset 0 1.5px 0 var(--l-shell-hi), var(--l-card-stack); padding: 10px; margin-bottom: 14px; }
+:root[data-design="lull"] .device--compact .device__bezel { background: transparent; border: 0; padding: 0; min-height: 0; }
+:root[data-design="lull"] .device--compact .device__screen { border-radius: 10px 10px 18px 10px; color: var(--l-screen-ink); box-shadow: inset 0 2px 0 rgba(0, 0, 0, .18); }
+:root[data-design="lull"] .device--compact .cover { border-color: var(--l-edge); border-radius: 9px; }
+:root[data-design="lull"] .device--compact .device__key--b .btn-gloss:not(.is-liked), :root[data-design="lull"] .device--compact [data-now="cb"] .btn-gloss:not(.is-liked) { background: var(--l-card); border-color: var(--l-pink-edge); color: var(--l-pink-edge); }
+:root[data-design="lull"] .device--compact [data-now="cb"] .btn-gloss:not(.is-liked)::before { display: none; }
+/* desktop mini window: a small lull window, not a handheld (the handheld is skydeck's). Orb title bar, the pocket
+   screen, then the Now window's transport row (shuffle | prev, play, next | repeat) and a slim row (vol -, like, vol +) */
+:root[data-design="lull"] .dk-mini .device {
+  --device-w: 320px; display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto minmax(0, 1fr); align-items: center; gap: 12px 10px;
+  padding: 38px 10px 14px; border-radius: 14px; background: var(--sky); box-shadow: inset 0 0 0 4px var(--l-frame), var(--l-win-stack);
+}
+:root[data-design="lull"] .dk-mini .device::before {
+  content: "lull mini"; position: absolute; left: 4px; right: 4px; top: 4px; display: flex; align-items: center; height: 30px; padding: 0 12px 0 68px;
+  border-radius: 10px 10px 4px 4px; background: var(--l-orbs), var(--l-bar-bg); box-shadow: inset 0 1px 0 var(--l-bar-line), inset 0 -1px 0 rgba(43, 38, 80, .1);
+  color: var(--l-bar-ink); font: 400 .8125rem/1 var(--f-disp); letter-spacing: .04em; pointer-events: none;
+}
+:root[data-design="lull"] .dk-mini__head { z-index: 1; left: 150px; right: 10px; top: 5px; height: 28px; }
+:root[data-design="lull"] .dk-mini__led { display: none; }
+:root[data-design="lull"] .dk-mini__win { color: var(--l-bar-ink); }
+:root[data-design="lull"] .dk-mini__win:hover { background: color-mix(in srgb, var(--l-bar-ink) 14%, transparent); }
+:root[data-design="lull"] .dk-mini .device__bezel { grid-column: 1 / -1; min-width: 0; padding: 0; border: 0; background: none; }
+:root[data-design="lull"] .dk-mini .device__screen { border-radius: 10px; box-shadow: inset 0 2px 0 rgba(0, 0, 0, .18); }
+:root[data-design="lull"] .dk-mini :is(.device__brand, .device__grill, .dpad__hub) { display: none; }
+:root[data-design="lull"] .dk-mini :is(.device__controls, .dpad, .device__ab, .device__pills) { display: contents; }
+:root[data-design="lull"] .dk-mini .device__key { font-size: 0; }
+:root[data-design="lull"] .dk-mini .device__key [data-dk-play-label] { display: none; }
+:root[data-design="lull"] .dk-mini .device__pill--shuffle { grid-area: 2 / 1; justify-self: start; }
+:root[data-design="lull"] .dk-mini .dpad__btn--left { grid-area: 2 / 2; }
+:root[data-design="lull"] .dk-mini .device__key--a { grid-area: 2 / 3; }
+:root[data-design="lull"] .dk-mini .dpad__btn--right { grid-area: 2 / 4; }
+:root[data-design="lull"] .dk-mini .device__pill--repeat { grid-area: 2 / 5; justify-self: end; }
+:root[data-design="lull"] .dk-mini .dpad__btn--down { grid-area: 3 / 2; }
+:root[data-design="lull"] .dk-mini .device__key--b { grid-area: 3 / 3; }
+:root[data-design="lull"] .dk-mini .dpad__btn--up { grid-area: 3 / 4; }
+:root[data-design="lull"] .dk-mini .device__key--a .btn-gloss { --size: 60px; }
+:root[data-design="lull"] .dk-mini .device__key--b .btn-gloss { --size: 42px; }
+:root[data-design="lull"] .dk-mini .dpad__btn { border-radius: 50%; border: var(--stroke) solid var(--l-edge); }
+/* shuffle / repeat are icon pills here (named by their text, shown by aria-pressed) so the row fits 320 px */
+:root[data-design="lull"] .dk-mini .device__pill { width: 38px; height: 38px; padding: 0; justify-content: center; font-size: 0; }
+@media (max-width: 639px) {
+  :root[data-design="lull"] .now-ly--page { --ly-size: calc(1.0625rem + var(--ly-step, 0) * .125rem); }
+  :root[data-design="lull"] .now-ly__line.is-current { font-size: calc(var(--ly-size) + .375rem); }
+  :root[data-design="lull"] .lull-np__mark { font-size: .75rem; }
+}
+
+/* =====================================================================
+   Classic: the stage is one lull window on the wallpaper (the app does not show through): periwinkle title bar with
+   the three orbs (they act: exit, skins, help), a mocha screen for Webamp, the notice strip, and a "skins" window
+   ===================================================================== */
+:root[data-design="lull"] .cls-scrim { opacity: 1; }
+:root[data-design="lull"] .cls-crt { padding: 14px 16px 18px; gap: 0 16px; }
+@media (min-width: 1100px) { :root[data-design="lull"] .cls-root:not([data-drawer="closed"]) .cls-crt { grid-template: "bar drawer" auto "desk drawer" minmax(0, 1fr) "foot drawer" auto / minmax(0, 1fr) 400px; } }
+:root[data-design="lull"] .cls-crt::before {
+  content: ""; grid-area: 1 / 1 / 4 / 2; border: var(--stroke) solid var(--l-edge); border-radius: 14px; background: var(--sky);
+  box-shadow: inset 0 0 0 4px var(--l-frame), var(--l-win-stack);
+}
+:root[data-design="lull"] .cls-bar { border: 0; border-radius: 0; background: none; box-shadow: none; overflow: visible; margin: 4px 4px 0; }
+:root[data-design="lull"] .cls-bar .win__bar, :root[data-design="lull"] .cls-drawer > .win__bar {
+  height: 30px; gap: 10px; border-radius: 10px 10px 4px 4px; background: var(--l-bar-bg); box-shadow: inset 0 1px 0 var(--l-bar-line);
+}
+:root[data-design="lull"] .cls-bar .win__bar { padding: 0 8px; }
+:root[data-design="lull"] .cls-bar .win__orbs { gap: 6px; padding: 0; }
+:root[data-design="lull"] .win__title, :root[data-design="lull"] .cls-bar .win__title, :root[data-design="lull"] .cls-drawer .win__title {
+  flex: 1; display: flex; place-items: initial; justify-content: flex-start; height: 30px; padding: 0; border: 0; border-radius: 0; background: none; text-shadow: none;
+  color: var(--l-bar-ink); font: 400 .8125rem/30px var(--f-disp); letter-spacing: .04em; text-transform: lowercase;
+}
+:root[data-design="lull"] .orb { width: 13px; height: 13px; border: 1px solid rgba(43, 38, 80, .55); }
+:root[data-design="lull"] .orb::after { left: 22%; right: 22%; top: 6%; height: 42%; }
+:root[data-design="lull"] .orb--blue { --orb: var(--l-orb-3); } :root[data-design="lull"] .orb--lav { --orb: var(--l-orb-2); } :root[data-design="lull"] .orb--mag { --orb: var(--l-orb-1); }
+:root[data-design="lull"] .cls-desk { margin: 4px 4px 0; padding: 12px 12px 0; }
+:root[data-design="lull"] .cls-slot { border: 0; border-radius: 10px 10px 24px 10px; background: var(--screen); box-shadow: inset 0 2px 0 rgba(0, 0, 0, .2), 0 0 0 var(--stroke) rgba(43, 38, 80, .5); color: var(--l-screen-ink); }
+:root[data-design="lull"] .cls-shot--ghost { outline-color: rgba(255, 255, 255, .45); }
+:root[data-design="lull"] .cls-ghost__tag::before { border-top-color: rgba(255, 255, 255, .55); }
+:root[data-design="lull"] .cls-foot { margin: 0 4px 4px; padding: 10px 12px 12px; gap: 10px; }
+:root[data-design="lull"] .cls-notice, :root[data-design="lull"] .cls-exit { border-color: var(--l-rule); border-radius: 12px; background: var(--l-card); }
+:root[data-design="lull"] .cls-drawer { background: var(--sky); border: var(--stroke) solid var(--l-edge); border-radius: 14px; padding: 4px; box-shadow: inset 0 0 0 4px var(--l-frame), var(--l-win-stack); overflow: visible; margin: 0; }
+:root[data-design="lull"] .cls-drawer > .win__bar { padding: 0 4px 0 10px; }
+:root[data-design="lull"] .cls-drawer > .win__bar::before { content: ""; flex: none; width: 52px; height: 13px; background: var(--l-orbs); background-position: 0 50%, 0 50%, 19px 50%, 19px 50%, 38px 50%, 38px 50%; }
+:root[data-design="lull"] .cls-drawer__close { color: var(--l-bar-ink); }
+
+/* =====================================================================
+   Library pages: sections sit flat on the window body under ribbons (no nested frames); heroes rest on a paper stack
+   ===================================================================== */
+:root[data-design="lull"] .lib .card { background: transparent; border: 0; border-radius: 0; box-shadow: none; padding: 0; margin-bottom: 26px; }
+:root[data-design="lull"] .lib .lib-pl__head { padding: 6px 0 20px; background: none; border-radius: 0; }
+:root[data-design="lull"] .lib .lib-hero { padding: 6px 0 4px; }
+:root[data-design="lull"] .lib-kicker {
+  display: inline-block; width: fit-content; padding: 4px 11px 3px; border-radius: 999px; background: var(--l-ribbon); color: #fff;
+  font: italic 800 .75rem/1.2 var(--f-ui); letter-spacing: .01em;
+}
+:root[data-design="lull"] .lib-hero > .cover, :root[data-design="lull"] .lib-hero > .mosaic, :root[data-design="lull"] .lib-pl__head > .mosaic { box-shadow: var(--l-card-stack); margin-bottom: 10px; border-color: var(--l-edge); }
+:root[data-design="lull"] .lib-hero > .cover--round { box-shadow: 0 5px 0 -1.5px var(--stack-1), 0 5px 0 0 var(--l-edge); }
+/* playlist page: a mixtape J-card. The cover is a little pile of four stickers (img 01 offsets) beside the title
+   block, a cassette sits at the right (decorative), rows are 52 px and the column header steps aside (the
+   "Custom order" menu sorts) */
+@media (min-width: 640px) {
+  :root[data-design="lull"] .lib .lib-pl__head {
+    position: relative; grid-template-columns: 196px minmax(0, 1fr); gap: 26px; margin: 4px 0 18px; padding: 20px 268px 22px 24px;
+    background: linear-gradient(90deg, var(--l-ribbon) 0 8px, transparent 8px), var(--l-card); border: var(--stroke) solid var(--l-edge); border-radius: 14px; box-shadow: var(--l-card-stack);
+  }
+  :root[data-design="lull"] .lib-pl__head > .mosaic { position: relative; display: block; width: 190px; height: 176px; overflow: visible; margin: 0; background: none; border: 0; box-shadow: none; }
+  :root[data-design="lull"] .lib-pl__head > .mosaic > .cover {
+    position: absolute; width: 112px; height: 112px; border: var(--stroke) solid var(--l-edge); border-radius: 10px;
+    box-shadow: 0 0 0 3px #fff9fe, 0 4px 0 2px var(--l-edge);
+  }
+  :root[data-design="lull"] .lib-pl__head > .mosaic > .cover:nth-child(1) { left: 0; top: 4px; transform: rotate(-8deg); }
+  :root[data-design="lull"] .lib-pl__head > .mosaic > .cover:nth-child(2) { left: 74px; top: 0; transform: rotate(6deg); }
+  :root[data-design="lull"] .lib-pl__head > .mosaic > .cover:nth-child(3) { left: 12px; top: 62px; transform: rotate(3deg); }
+  :root[data-design="lull"] .lib-pl__head > .mosaic > .cover:nth-child(4) { left: 78px; top: 58px; transform: rotate(-5deg); }
+  :root[data-design="lull"] .lib-pl__head::after {
+    content: ""; position: absolute; right: 30px; top: 50%; width: 214px; height: 134px; margin-top: -67px; transform: rotate(-4deg); pointer-events: none;
+    border: var(--stroke) solid var(--l-edge); border-radius: 12px; box-shadow: var(--l-win-stack);
+    background:
+      radial-gradient(circle at 31% 60%, #fff9fe 0 6px, var(--screen) 6.5px 12px, #f2e3d1 12.5px 19px, transparent 19.5px),
+      radial-gradient(circle at 69% 60%, #fff9fe 0 6px, var(--screen) 6.5px 12px, #f2e3d1 12.5px 23px, transparent 23.5px),
+      linear-gradient(var(--screen), var(--screen)) 50% 60% / 64% 46px no-repeat,
+      repeating-linear-gradient(180deg, transparent 0 11px, var(--l-rule) 11px 12px) 50% 16px / 74% 24px no-repeat,
+      linear-gradient(#fce8f3, #fce8f3) 50% 46px / 86% 6px no-repeat,
+      linear-gradient(var(--l-card), var(--l-card)) 50% 10px / 86% 94px no-repeat,
+      linear-gradient(180deg, var(--l-tile-hi), var(--l-tile) 30%);
+  }
+  :root[data-design="lull"] .lib-pl__title { font: 900 2.25rem/1.05 var(--f-ui); letter-spacing: -.025em; }
+  :root[data-design="lull"] .lib-pl .lib-thead { display: none; }
+  :root[data-design="lull"] .lib-pl-list .trow { min-height: 52px; padding-block: 3px; }
+}
+@media (min-width: 640px) and (max-width: 1239px) {
+  :root[data-design="lull"] .lib .lib-pl__head { padding-right: 24px; }
+  :root[data-design="lull"] .lib-pl__head::after { display: none; }
+}
+/* library index: a ribbon would only repeat the active tab, so its label is kept for screen readers only and the
+   sort rides at the end of the filter or button row (with no such row, as on Artists, the link keeps its own line) */
+:root[data-design="lull"] .app[data-screen="library"] .card.lib-card > .label-rule.card-head > .card-head__title {
+  position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+:root[data-design="lull"] .app[data-screen="library"] .lib-card > .lib-rule::after { display: none; }
+:root[data-design="lull"] .app[data-screen="library"] .lib-card > .lib-rule { justify-content: flex-end; min-height: 0; margin: 0; }
+@media (min-width: 640px) {
+  :root[data-design="lull"] .app[data-screen="library"] .lib-card { position: relative; }
+  :root[data-design="lull"] .app[data-screen="library"] .lib-card > .lib-rule:has(+ :is(.lib-filters, .lib-bar)) { position: absolute; top: 0; right: 0; }
+  :root[data-design="lull"] .app[data-screen="library"] .lib-card > .lib-filters { min-height: 32px; margin-bottom: 16px; padding-right: 170px; }
+}
+/* artist page: the antenna glyph before each artist name already says "Soulseek", so the badge stops repeating it */
+:root[data-design="lull"] .app[data-screen="artist"] .trow .badge-slsk { display: none; }
+/* desk: a smaller orb hero, then top songs on the left and discography over "similar artists" (fans also play) on the
+   right, so the page reads as one spread instead of a short column and an empty corner */
+@media (min-width: 1100px) {
+  :root[data-design="lull"] .app[data-screen="artist"] .view__inner.lib { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); column-gap: 28px; align-items: start; }
+  :root[data-design="lull"] .app[data-screen="artist"] .view__inner.lib > .lib-page { grid-column: 1 / -1; }
+  :root[data-design="lull"] .app[data-screen="artist"] .lib-cols { display: contents; }
+  :root[data-design="lull"] .app[data-screen="artist"] .lib-cols > .lib-card:first-child { grid-column: 1; grid-row: 2 / span 2; }
+  :root[data-design="lull"] .app[data-screen="artist"] .view__inner.lib > .lib-card { grid-column: 2; }
+  :root[data-design="lull"] .app[data-screen="artist"] .lib-hero { --lib-art: 168px; }
+  :root[data-design="lull"] .app[data-screen="artist"] .lib-card .shelf { grid-auto-columns: calc((100% - 32px) / 3); }
+  /* discography as release rows (cover, title, artist, year and kind, play), like Home's new releases */
+  :root[data-design="lull"] .app[data-screen="artist"] .lib-cols > .lib-card:nth-child(2) .shelf { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr); gap: 2px; overflow: visible; padding: 0; }
+  :root[data-design="lull"] .app[data-screen="artist"] .lib-cols > .lib-card:nth-child(2) .tile {
+    position: relative; display: grid; grid-template-columns: 64px minmax(0, 1fr); grid-template-areas: "art title" "art by" "art meta";
+    align-content: center; column-gap: 14px; min-height: 76px; padding: 6px 52px 6px 6px; margin: 0; background: none; border: 0; border-radius: 12px; box-shadow: none; transform: none;
+  }
+  :root[data-design="lull"] .app[data-screen="artist"] .lib-cols > .lib-card:nth-child(2) .tile:is(:hover, :focus-within) { background: color-mix(in srgb, var(--l-tile) 26%, transparent); transform: none; box-shadow: none; }
+  :root[data-design="lull"] .app[data-screen="artist"] .lib-cols > .lib-card:nth-child(2) .tile__art { display: contents; }
+  :root[data-design="lull"] .app[data-screen="artist"] .lib-cols > .lib-card:nth-child(2) .tile__art > :first-child { grid-area: art; }
+  :root[data-design="lull"] .app[data-screen="artist"] .lib-cols > .lib-card:nth-child(2) .tile__art .cover { width: 64px; border-radius: 8px; }
+  :root[data-design="lull"] .app[data-screen="artist"] .lib-cols > .lib-card:nth-child(2) .tile__title { grid-area: title; }
+  :root[data-design="lull"] .app[data-screen="artist"] .lib-cols > .lib-card:nth-child(2) .tile__by { grid-area: by; }
+  :root[data-design="lull"] .app[data-screen="artist"] .lib-cols > .lib-card:nth-child(2) .tile__meta { grid-area: meta; }
+  :root[data-design="lull"] .app[data-screen="artist"] .lib-cols > .lib-card:nth-child(2) .tile__play { right: 10px; top: 50%; bottom: auto; margin-top: -18px; opacity: 1; transform: none; }
+}
+/* album page: the hero already shows the cover, artist, format and "in library", so rows keep the title and put the
+   file facts in the middle column; a source badge shows only when it is not "saved" */
+:root[data-design="lull"] [aria-labelledby="lib-album-title"] .trow { --art: 0px; }
+:root[data-design="lull"] [aria-labelledby="lib-album-title"] :is(.trow__art, .trow__album, .trow__artist, .badge-saved, .trow__badges .q-chip) { display: none; }
+:root[data-design="lull"] [aria-labelledby="lib-album-title"] .trow__main { display: contents; }
+:root[data-design="lull"] [aria-labelledby="lib-album-title"] .trow__title { grid-area: main; }
+@container tlist (min-width: 760px) {
+  :root[data-design="lull"] [aria-labelledby="lib-album-title"] .trow__fmt { display: block; grid-area: album; font: 700 .75rem/1.2 var(--f-ui); color: var(--l-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+}
+/* narrow lists (artist columns): keep the source badge, drop the quality chip so titles breathe */
+@container tlist (max-width: 640px) { :root[data-design="lull"] .trow__badges .q-chip { display: none; } }
+
+/* =====================================================================
+   Stats, settings, welcome
+   ===================================================================== */
+/* stats: the five numbers are little widget windows (img 02 side panels): the label is the title bar */
+:root[data-design="lull"] .sys-tile.card {
+  gap: 0; padding: 4px 4px 12px; background: var(--sky); border: var(--stroke) solid var(--l-edge); border-radius: 14px;
+  box-shadow: inset 0 0 0 4px var(--l-frame), var(--l-win-stack);
+}
+:root[data-design="lull"] .sys-tile__label {
+  height: 26px; margin-bottom: 8px; padding: 0 10px; gap: 6px; border-radius: 10px 10px 4px 4px; background: var(--l-bar-bg);
+  box-shadow: inset 0 1px 0 var(--l-bar-line); color: var(--l-bar-ink); font: 400 .75rem/1 var(--f-disp); letter-spacing: .04em; text-transform: lowercase;
+}
+:root[data-design="lull"] .sys-tile__label .ic { width: 14px; height: 14px; }
+:root[data-design="lull"] .sys-tile__value, :root[data-design="lull"] .sys-tile__sub { padding: 0 12px; }
+:root[data-design="lull"] .sys-tile__value { font: 900 1.875rem/1.1 var(--f-ui); color: var(--fg-panel); }
+:root[data-design="lull"] .sys-tile__sub { font: 700 .75rem/1.3 var(--f-ui); color: var(--l-muted); }
+:root[data-design="lull"] .sys-head { align-items: center; margin-bottom: 16px; }
+:root[data-design="lull"] .sys-lede { font: 700 .9375rem/1.45 var(--f-ui); }
+/* the lists and the clock sit flat on the window under ribbons; a dotted rule parts the two columns */
+:root[data-design="lull"] .sys-page .card.sys-card, :root[data-design="lull"] .sys-welcome__card.card, :root[data-design="lull"] .sys-empty-stats.card, :root[data-design="lull"] .sys-settings .sys-section.card { background: transparent; border: 0; border-radius: 0; box-shadow: none; padding: 0; margin-bottom: 22px; }
+:root[data-design="lull"] .sys-grid { column-gap: 0; margin-top: 18px; }
+@media (min-width: 1100px) {
+  :root[data-design="lull"] .sys-grid > .sys-card:not(.sys-span):nth-child(odd) { padding-right: 24px; }
+  :root[data-design="lull"] .sys-grid > .sys-card:not(.sys-span):nth-child(even) { padding-left: 24px; border-left: 2px dotted var(--l-rule); }
+  /* the whole stats spread fits one desk: 72 px number windows (value and note side by side), the top four of each
+     list in 44 px rows, and the listening clock above the fold */
+  :root[data-design="lull"] .sys-tile.card { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; padding-bottom: 8px; }
+  :root[data-design="lull"] .sys-tile__label { grid-column: 1 / -1; margin-bottom: 4px; }
+  :root[data-design="lull"] .sys-tile__value { padding-right: 0; font-size: 1.625rem; }
+  :root[data-design="lull"] .sys-tile__sub { padding-left: 8px; }
+  :root[data-design="lull"] .sys-stats .sys-grid { margin-top: 10px; }
+  :root[data-design="lull"] .sys-stats .sys-card { margin-bottom: 8px; }
+  :root[data-design="lull"] .sys-stats .sys-bars > :nth-child(n+5) { display: none; }
+  :root[data-design="lull"] .sys-stats .sys-bars { gap: 0; }
+  :root[data-design="lull"] .sys-stats .sys-bars__row { min-height: 36px; }
+  :root[data-design="lull"] .sys-stats .sys-head { margin-bottom: 10px; }
+  /* core sets the row cover size inline (40px) */
+  :root[data-design="lull"] .sys-stats .sys-bars__row .cover { --cover-size: 34px !important; width: 34px; }
+  :root[data-design="lull"] .sys-stats .sys-card__lede { max-width: none; margin: 0 0 6px; }
+  :root[data-design="lull"] .sys-stats .sys-heat { gap: 2px 3px; }
+  :root[data-design="lull"] .sys-stats .sys-heat__cell { aspect-ratio: auto; height: 13px; min-height: 0; }
+}
+
+/* settings: a control-panel list on lavender beside flat sections */
+:root[data-design="lull"] .sys-nav { background: var(--l-frame); border: 0; border-radius: 12px; box-shadow: inset 0 0 0 var(--stroke) var(--l-rule); }
+:root[data-design="lull"] .sys-nav__item:hover { background: color-mix(in srgb, var(--l-tile) 40%, transparent); }
+:root[data-design="lull"] .sys-nav__item[aria-current="page"] { background: linear-gradient(180deg, rgba(255, 244, 255, .6), rgba(255, 244, 255, 0)) 12px 2px / calc(100% - 24px) 4px no-repeat border-box, var(--l-gloss); color: #fff; box-shadow: inset 0 -2px 4px var(--l-gloss-glow), 0 0 0 var(--stroke) var(--l-gloss-edge); text-shadow: 0 1px 0 rgba(40, 25, 110, .55); }
+:root[data-design="lull"] .sys-nav__item[aria-current="page"] .sys-nav__desc, :root[data-design="lull"] .sys-nav__item[aria-current="page"] .ic { color: #fff; }
+
+/* design picker: five equal cards in one row on the desk; each preview is a real miniature of that design's Home
+   (a 1440x900 screenshot of the prototype at #/home?design=<name>&theme=day|night&switcher=0, its top-left 1152x720
+   scaled to a 320x200 WebP; re-bake them when a design's Home changes), swapped with the theme. The chosen one wears
+   a 3 px violet ring, an "in use" gloss tab on its top edge and a foil sheen on hover. */
+:root[data-design="lull"] .sys-designs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; padding-top: 12px; }
+@media (max-width: 1099px) { :root[data-design="lull"] .sys-designs { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+:root[data-design="lull"] .sys-design { position: relative; gap: 2px; padding: 6px 6px 10px; background: var(--l-card); border-color: var(--l-edge); }
+:root[data-design="lull"] .sys-design[aria-checked="true"] { background: var(--l-card); color: var(--fg-panel); box-shadow: 0 0 0 3px var(--l-ribbon), var(--l-card-stack); }
+:root[data-design="lull"] .sys-design[aria-checked="true"] .sys-design__desc { color: var(--fg-panel-2); }
+:root[data-design="lull"] .sys-design[aria-checked="true"]::before {
+  content: "in use"; position: absolute; z-index: 2; top: -13px; left: 50%; transform: translateX(-50%); padding: 4px 12px; border-radius: 999px;
+  background: var(--l-hi-sm), var(--l-gloss); border: var(--stroke) solid var(--l-gloss-edge); color: #fff; font: 900 .6875rem/1 var(--f-ui);
+  text-shadow: 0 1px 0 rgba(40, 25, 110, .55); white-space: nowrap;
+}
+:root[data-design="lull"] .sys-design__check { display: none; }
+:root[data-design="lull"] .sys-design__name { margin: 6px 4px 0; font-size: .9375rem; }
+:root[data-design="lull"] .sys-design__desc { font-size: .75rem; line-height: 1.35; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+:root[data-design="lull"] .sys-design__pv {
+  position: relative; display: block; height: auto; aspect-ratio: 16 / 10; padding: 0; border: var(--stroke) solid var(--l-edge); border-radius: 9px;
+}
+:root[data-design="lull"] .sys-design__pv::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; }
+:root[data-design="lull"] .sys-design[aria-checked="true"]:hover .sys-design__pv::after { --l-foil: 150deg; background: var(--l-foil-bg); }
+
+/* welcome: the steps sit flat under the ribbon */
+:root[data-design="lull"] .sys-welcome .sparkle { display: none; }
+
+/* =====================================================================
+   Tablet (640-1099): icon pills, the compact tray, a whole wordmark pill; four picks in view
+   ===================================================================== */
+@media (min-width: 640px) and (max-width: 1099px) {
+  :root[data-design="lull"] .header__brand .wordmark.lull-wm { font-size: 1.25rem; width: auto; height: 38px; padding: 0 16px 0 12px; }
+  :root[data-design="lull"] .header__brand .lull-wm .wordmark__spark { width: .55em; height: .55em; right: auto; top: -.42em; }
+  :root[data-design="lull"] .header__search .kbd { display: none; }
+  :root[data-design="lull"] .header__search:has(.input:placeholder-shown)::after { content: "Search"; }
+  :root[data-design="lull"] .disc-home .disc-picks { --picks: 4; }
+}
+@media (min-width: 640px) and (max-width: 1359px) {
+  :root[data-design="lull"] .nav-pill { width: 40px; padding: 0; justify-content: center; }
+}
+
+/* =====================================================================
+   Phone: mocha tray header, the view is one window sheet, glossy mini player, mocha tab tray
+   ===================================================================== */
+@media (max-width: 639px) {
+  :root[data-design="lull"] .header { margin: calc(8px + env(safe-area-inset-top)) 10px 10px; padding: 5px 6px 5px 5px; min-height: 50px; }
+  :root[data-design="lull"] .header .wordmark.lull-wm { height: 36px; font-size: 1.25rem; }
+  :root[data-design="lull"] .banner-slot { padding: 0 10px; }
+  :root[data-design="lull"] .main { margin: 0 10px 10px; }
+  :root[data-design="lull"] .view { padding: 16px 14px 24px; }
+  :root[data-design="lull"] .mini {
+    margin: 0 10px 8px; padding: 0 6px 0 4px; height: 64px; background: var(--sky); border: 5px solid var(--tray); border-radius: 16px;
+    box-shadow: 0 0 0 var(--stroke) var(--tray-edge);
+  }
+  :root[data-design="lull"] .mini .bezel-thumb .cover { --cover-size: 42px; border-radius: 8px; }
+  :root[data-design="lull"] .mini .btn-gloss { --size: 42px; }
+  :root[data-design="lull"] .mini .seek--line .seek__track { height: 3px; }
+  :root[data-design="lull"] .tabbar {
+    margin: 0 10px calc(10px + env(safe-area-inset-bottom)); padding: 5px; gap: 5px; height: 60px;
+    background: var(--tray); border: var(--stroke) solid var(--tray-edge); border-radius: 16px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22);
+  }
+  :root[data-design="lull"] .tab { border-radius: 11px; background: var(--l-tile); color: var(--l-tile-ink); box-shadow: inset 0 1px 0 var(--l-tile-hi); font: 800 .75rem/1 var(--f-ui); }
+  :root[data-design="lull"] .tab .ic, :root[data-design="lull"] .tab[aria-current="page"] .ic { width: 22px; height: 22px; padding: 0; background: none; box-shadow: none; color: inherit; }
+  :root[data-design="lull"] .tab[aria-current="page"] { background: var(--l-hi), var(--l-gloss); color: #fff; box-shadow: inset 0 -2px 4px var(--l-gloss-glow), 0 0 0 var(--stroke) var(--l-gloss-edge); text-shadow: 0 1px 0 rgba(40, 25, 110, .55); }
+  :root[data-design="lull"] .toast-region { bottom: calc(var(--mini-h) + var(--tab-h) + 40px + env(safe-area-inset-bottom)); }
+  /* Now Playing sheet: one "now playing" window; the collapse chevron rides in its title bar */
+  :root[data-design="lull"] .app[data-view="now"] .main { margin-top: calc(8px + env(safe-area-inset-top)); }
+  :root[data-design="lull"] .main:has(.now)::before { content: "now playing"; }
+  :root[data-design="lull"] .main:has(.now)::after { display: none; }
+  :root[data-design="lull"] .app[data-view="now"] .sheet-bar { position: absolute; top: 4px; right: 6px; z-index: 2; display: block; height: 30px; padding: 0; background: none; }
+  :root[data-design="lull"] .app[data-view="now"] .sheet-bar .sheet__handle { display: none; }
+  :root[data-design="lull"] .app[data-view="now"] .sheet-bar .btn-icon { width: 30px; height: 30px; color: var(--l-bar-ink); }
+  :root[data-design="lull"] .app[data-view="now"] .view { padding-top: 12px; }
+  :root[data-design="lull"] .now__top { margin: 0 0 8px; }
+  :root[data-design="lull"] .now__top .now-head__from { padding-left: 0; justify-content: flex-start; }
+  /* order: tabs, pocket, title, actions; the window's own sections are flat (ribbons, not windows) */
+  :root[data-design="lull"] .now__seg { order: 0; }
+  :root[data-design="lull"] .now__dev, :root[data-design="lull"] .now__devc { order: 1; }
+  :root[data-design="lull"] .now-head { order: 2; } :root[data-design="lull"] .now__acts { order: 3; }
+  :root[data-design="lull"] .now .card { background: none; border: 0; border-radius: 0; box-shadow: none; padding: 0; margin: 0; }
+  /* actions: five small labelled keys (icon over its label), Save in gloss */
+  :root[data-design="lull"] .now-acts { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+  :root[data-design="lull"] .now-acts .btn { flex-direction: column; justify-content: center; gap: 3px; width: auto; min-height: 56px; padding: 6px 2px; border-radius: 14px; font: 800 .6875rem/1.15 var(--f-ui); text-align: center; white-space: normal; }
+  :root[data-design="lull"] .now-acts .btn .ic { width: 18px; height: 18px; }
+  :root[data-design="lull"] .now-acts__label { display: block; }
+  :root[data-design="lull"] .lull-np__bar { display: none; }
+  /* the sheet's title bar is the page's, so the status pill ("paused", "stalled") sits on the pocket's foot instead */
+  :root[data-design="lull"] .lull-np__state { display: inline-flex; }
+  :root[data-design="lull"] .lull-np__shell { margin: 0; }
+  :root[data-design="lull"] .lull-np__screen { grid-template-columns: 112px minmax(0, 1fr); padding: 10px; gap: 6px 12px; }
+  :root[data-design="lull"] .lull-np .device__title { font-size: 1.0625rem; }
+  :root[data-design="lull"] .lull-np .device__facts { flex-direction: row; flex-wrap: wrap; }
+  :root[data-design="lull"] .lull-np .wave { height: 38px; }
+  :root[data-design="lull"] .lull-np__transport { gap: 10px; }
+  /* shuffle / repeat keep only their glyphs (the buttons keep their names) so the deck fits a phone */
+  :root[data-design="lull"] .lull-np .device__pill { width: 36px; height: 36px; padding: 0; justify-content: center; font-size: 0; }
+  /* Lyrics / Queue / Details: the compact pocket already carries the title */
+  :root[data-design="lull"] .now:not([data-tab="art"]) .now-head :is(.now-head__title, .now-head__by) { display: none; }
+  /* the sheet's top line already says where it plays from */
+  :root[data-design="lull"] .now-head .now-head__from { display: none; }
+  :root[data-design="lull"] .now-head { padding: 14px 2px 0; }
+  :root[data-design="lull"] .now-head .now-head__title { font-size: 1.625rem; }
+  :root[data-design="lull"] .lull-np__like { right: 6px; top: calc(100% + 8px); }
+  /* lyrics tab: the compact pocket keeps a two-line title */
+  :root[data-design="lull"] .device--compact .device__title { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.15; }
+  :root[data-design="lull"] .now-lycard .now-ly__scroll { padding: 0 12px 0 30px; }
+  :root[data-design="lull"] .now-lycard .now-ly__head { position: static; justify-content: flex-end; margin-bottom: 4px; }
+  /* mini player: a thin progress line along its foot and a stream chip beside the artist */
+  :root[data-design="lull"] .mini > .seek--line { top: auto; bottom: 3px; left: 12px; right: 12px; }
+  :root[data-design="lull"] .mini > .seek--line .seek__track { height: 3px; margin-top: 0; }
+  :root[data-design="lull"] .mini__text { grid-template-columns: auto minmax(0, 1fr); column-gap: 8px; align-items: center; }
+  :root[data-design="lull"] .mini__title { grid-column: 1 / -1; }
+  :root[data-design="lull"] .mini:has(.seek--line.is-transferring) .mini__text::after {
+    content: "streaming"; grid-row: 2; grid-column: 2; justify-self: start; padding: 1px 7px; border-radius: 999px; border: 1px dashed var(--l-slsk);
+    color: var(--l-muted); font: 800 .6875rem/1.3 var(--f-ui);
+  }
+  :root[data-design="lull"] .mini[data-playing="false"]:has(.seek--line.is-transferring) .mini__text::after { counter-reset: rx var(--rx); content: "paused \00b7  " counter(rx) "%"; }
+  /* home: two cards and a peek of the third; titles keep two lines' room so every card's rows line up, the reason
+     sticker (with "+1" inline at its end) sits on the foot; releases in one column */
+  :root[data-design="lull"] .disc-home .disc-picks, :root[data-design="lull"] .disc-home .disc-picks-skel .skel-group { grid-auto-columns: 150px; }
+  :root[data-design="lull"] .disc-pick__main { grid-template-rows: minmax(2.35rem, auto); }
+  :root[data-design="lull"] .disc-pick__title { align-self: start; }
+  /* "+1" rides on the sticker's corner like a count badge, so the reason keeps the sticker's whole width */
+  :root[data-design="lull"] .disc-pick .chip-more { position: absolute; top: -9px; right: -7px; margin: 0; box-shadow: 0 0 0 1.5px var(--reason-bg); }
+  :root[data-design="lull"] .disc-home .disc-shelf, :root[data-design="lull"] .disc-home .disc-skel-shelf .skel-group { grid-template-columns: minmax(0, 1fr); }
+  :root[data-design="lull"] .disc-home [data-region="radio"] .skel-group { grid-template-columns: minmax(0, 1fr); }
+  /* horizontal chip rows fade at the edge instead of cutting a chip in half */
+  :root[data-design="lull"] :is(.disc-filters, .lib-segs ul) { -webkit-mask: linear-gradient(90deg, #000 calc(100% - 28px), transparent); mask: linear-gradient(90deg, #000 calc(100% - 28px), transparent); }
+  /* rows: titles take two lines, "better than saved" drops to its own line so the artist stays whole */
+  :root[data-design="lull"] .trow__title, :root[data-design="lull"] .tile__title, :root[data-design="lull"] .tile__title a { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  :root[data-design="lull"] .trow__artist { flex-wrap: wrap; row-gap: 0; }
+  :root[data-design="lull"] .trow__artist .dup-better { flex-basis: 100%; }
+  /* stats: two number windows per row (the fifth spans) */
+  :root[data-design="lull"] .sys-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  :root[data-design="lull"] .sys-tiles > .sys-tile.card { grid-column: auto; }
+  :root[data-design="lull"] .sys-tiles > .sys-tile.card:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  :root[data-design="lull"] .sys-tile__value { font-size: 1.5rem; }
+  /* design picker: two cards per row */
+  :root[data-design="lull"] .sys-designs { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 10px; }
+  :root[data-design="lull"] .view::after { margin: 0 -14px -20px; height: 20px; bottom: -24px; }
+}
