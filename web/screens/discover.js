@@ -520,15 +520,26 @@
     var artists = R.artists.filter(function (a) { return !libOnly || M.albumsBy(a.id).some(function (al) { return al.saved !== 'none'; }); });
     return { songs: songs, albums: albums, artists: artists };
   }
+  /* the top result: an artist named exactly as typed, else the best song by the same ranking as the Songs list
+     (saved first, then Soulseek's order: peers sharing it, score). Matching the typed words only breaks a tie, so a
+     badly tagged single-peer file whose title happens to be the query never beats the song everyone shares. */
   function pickTop(F, q) {
     var n = String(q).toLowerCase().trim();
-    var exact = F.songs.filter(function (t) { return t.title.toLowerCase() === n; })[0];
-    if (exact) return { kind: 'track', item: exact };
-    var ar = F.artists.filter(function (a) { return a.name.toLowerCase().indexOf(n) === 0; })[0];
+    var ar = F.artists.filter(function (a) { return a.name.toLowerCase() === n; })[0];
     if (ar) return { kind: 'artist', item: ar };
+    var best = F.songs[0];
+    if (best) {
+      var tied = F.songs.filter(function (t) { return songRank(t) === songRank(best); });
+      var named = tied.filter(function (t) { return t.title.toLowerCase() === n; })[0];
+      return { kind: 'track', item: named || best };
+    }
     if (F.albums[0]) return { kind: 'album', item: F.albums[0] };
-    if (F.songs[0]) return { kind: 'track', item: F.songs[0] };
     return null;
+  }
+  /* equal for songs the list can't tell apart: saved, peers sharing it, best source's score */
+  function songRank(t) {
+    var row = S.peerSongs[t.id] || {};
+    return [App.isSaved(t.id) ? 1 : 0, row.sources || 0, row.best ? row.best.score : 0].join(':');
   }
   function slskOnly(t) { return !App.isSaved(t.id); }
 
