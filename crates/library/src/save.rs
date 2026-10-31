@@ -4,6 +4,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, PoisonError};
+use std::time::{Duration, Instant};
 
 use lull_core::ids::TrackId;
 use lull_core::model::Track;
@@ -21,6 +22,10 @@ use crate::tags::{self, Existing, TagSet};
 
 /// How long a written file may take to show up in Jellyfin before the job is marked pending.
 const PICKUP_WAIT_S: i64 = 5 * 60;
+/// Least time between two scans saves ask Jellyfin for.
+const SCAN_GAP: Duration = Duration::from_secs(30);
+/// How long a library refresh gets to bring a saved song in before the full scan.
+const FULL_SCAN_AFTER_S: i64 = 60;
 /// The embedded cover's size (Cover Art Archive thumbnail).
 const EMBED_SIZE: u32 = 1200;
 
@@ -85,7 +90,8 @@ async fn steps(svc: &Arc<Service>, job: &mut SaveJob) -> Result<(), Fail> {
         write(svc, job, set, cover).await?;
         enter(svc, job, 5).await;
     }
-    ask_jellyfin(svc, job).await;
+    // Step 5 is the sync loop's: it asks Jellyfin to scan and watches for the song.
+    svc.wake.notify_one();
     Ok(())
 }
 
@@ -366,47 +372,18 @@ fn kept_fields(existing: &Existing, known: Option<&Track>, ext: String) -> Field
     }
 }
 
-/// Step 5: ask Jellyfin to pick the file up. The sync loop marks the job done once the song is
-/// in the library; if Jellyfin can't be asked, the file stays saved and the job pending.
-async fn ask_jellyfin(svc: &Arc<Service>, job: &mut SaveJob) {
-    match notify_jellyfin(svc, job).await {
-        Ok(()) => {
-            job.rescan_asked = true;
-            job.waiting_since = Some(now());
-            svc.jobs.put(job).await;
-            svc.wake.notify_one();
-        }
-        Err(e) => {
-            job.status = Status::Pending;
-            job.error = Some(format!("Saved to disk. Jellyfin couldn't be asked to rescan: {e}"));
-            svc.jobs.put(job).await;
-        }
-    }
-}
-
-/// Just the new file's folder when lull knows where the music folder is in Jellyfin, else a
-/// full library scan.
-async fn notify_jellyfin(svc: &Service, job: &SaveJob) -> Result<()> {
-    let jellyfin = svc.jellyfin()?;
-    let root = svc.jellyfin_root.read().unwrap_or_else(PoisonError::into_inner).clone();
-    let music_dir = &svc.ctx.config.library.music_dir;
-    let path = root
-        .zip(job.dest.as_ref())
-        .and_then(|(root, dest)| sync::to_jellyfin(&root, music_dir, dest));
-    match path {
-        Some(path) => jellyfin.file_created(&path).await,
-        None => jellyfin.scan_library().await,
-    }
-}
-
-/// Called by the sync loop after each check: finishes jobs whose song is now in the library,
-/// re-asks for pending ones, and marks slow pickups pending.
+/// Step 5, run by the sync loop after each check: finishes saves whose song is now in the
+/// library, asks Jellyfin to scan for new ones, and marks slow pickups pending.
 pub async fn settle(svc: &Arc<Service>) {
+    let mut unasked = Vec::new();
+    let mut overdue = false;
+    let last_full = scans(svc).full_at;
     for mut job in svc.jobs.saves() {
         if job.step != 5 || !job.is_active() {
             continue;
         }
         let found = job.saved_id.as_ref().and_then(|id| svc.index().track(id));
+        let waited = job.waiting_since.map(|t| now() - t);
         if let Some(track) = found {
             job.status = Status::Done;
             job.pct = 100;
@@ -414,12 +391,89 @@ pub async fn settle(svc: &Arc<Service>) {
             remember_under_asked_id(svc, &job, track).await;
             svc.jobs.put(&job).await;
         } else if !job.rescan_asked {
-            ask_jellyfin(svc, &mut job).await;
-        } else if job.status == Status::Running && job.waiting_since.is_some_and(|t| now() - t > PICKUP_WAIT_S) {
+            unasked.push(job);
+        } else if job.status == Status::Running && waited.is_some_and(|w| w > PICKUP_WAIT_S) {
             job.status = Status::Pending;
-            job.error = Some("Saved to disk. Jellyfin hasn't shown it yet; checking every minute.".into());
+            job.error =
+                Some("Saved to disk. Jellyfin hasn't shown it yet; it appears with the next library read.".into());
             svc.jobs.put(&job).await;
+        } else if waited.is_some_and(|w| w > FULL_SCAN_AFTER_S) && last_full.is_none_or(|t| Some(t) < job.waiting_since)
+        {
+            overdue = true;
         }
+    }
+    if !unasked.is_empty() {
+        ask_jellyfin(svc, unasked).await;
+    }
+    if overdue {
+        scan_everything(svc).await;
+    }
+}
+
+/// When saves last asked Jellyfin to scan: the music library (to space scans out) and every
+/// library (the fallback).
+#[derive(Debug, Default)]
+pub struct Scans {
+    asked: Option<Instant>,
+    /// Unix seconds.
+    full_at: Option<i64>,
+}
+
+fn scans(svc: &Service) -> std::sync::MutexGuard<'_, Scans> {
+    svc.scans.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// One scan covers every file written before it starts, so saves landing together (an album)
+/// share scans instead of queueing one each.
+async fn ask_jellyfin(svc: &Service, jobs: Vec<SaveJob>) {
+    {
+        let mut scans = scans(svc);
+        if scans.asked.is_some_and(|t| t.elapsed() < SCAN_GAP) {
+            return;
+        }
+        scans.asked = Some(Instant::now());
+    }
+    let asked = scan_music(svc).await;
+    for mut job in jobs {
+        match &asked {
+            Ok(()) => {
+                job.rescan_asked = true;
+                job.waiting_since = Some(now());
+            }
+            Err(e) => {
+                job.status = Status::Pending;
+                job.error = Some(format!("Saved to disk. Jellyfin couldn't be asked to scan: {e}"));
+            }
+        }
+        svc.jobs.put(&job).await;
+    }
+}
+
+/// The music library over `LULL_MUSIC_DIR`. Jellyfin ignores file notifications on libraries
+/// without realtime monitoring, so lull asks for the library's own scan. When lull doesn't know
+/// which library that is, every library is scanned.
+async fn scan_music(svc: &Service) -> Result<()> {
+    let jellyfin = svc.jellyfin()?;
+    match svc.music() {
+        Some(music) => jellyfin.refresh_library(&music.library).await,
+        None => {
+            scans(svc).full_at = Some(now());
+            jellyfin.scan_library().await
+        }
+    }
+}
+
+/// The fallback when a library refresh didn't bring a saved song in: Jellyfin's full scan.
+/// Seen live: a music library that was never scanned has no folders to refresh yet, so its
+/// refresh finds nothing, while a full scan picks the file up in seconds.
+async fn scan_everything(svc: &Service) {
+    scans(svc).full_at = Some(now());
+    let scanned = match svc.jellyfin() {
+        Ok(jellyfin) => jellyfin.scan_library().await,
+        Err(e) => Err(e),
+    };
+    if let Err(e) = scanned {
+        tracing::warn!(error = %e, "Jellyfin's full scan couldn't be started for a save");
     }
 }
 
@@ -481,10 +535,10 @@ fn saved_file(svc: &Service, track: &TrackId) -> Result<PathBuf, Fail> {
     let saved = index
         .saved(track)
         .ok_or_else(|| Fail::new(FailKind::Write, "The copy to replace is no longer in the library."))?;
-    let root = svc.jellyfin_root.read().unwrap_or_else(PoisonError::into_inner).clone();
-    let local = root
+    let local = svc
+        .music()
         .zip(saved.path.as_deref())
-        .and_then(|(root, path)| sync::to_local(&root, &svc.ctx.config.library.music_dir, path))
+        .and_then(|(music, path)| sync::to_local(&music.root, &svc.ctx.config.library.music_dir, path))
         .filter(|p| p.exists());
     local.ok_or_else(|| {
         Fail::new(

@@ -8,8 +8,7 @@ use axum::http::HeaderValue;
 use lull_core::config;
 use lull_core::http::{self, Http};
 use lull_core::{Error, Result};
-use serde::{Deserialize, Deserializer, Serialize};
-use serde_json::json;
+use serde::{Deserialize, Deserializer};
 use tokio::sync::OnceCell;
 
 const SERVICE: &str = "jellyfin";
@@ -104,9 +103,17 @@ struct Policy {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-pub struct VirtualFolder {
-    pub collection_type: Option<String>,
+struct VirtualFolder {
+    item_id: Option<String>,
+    collection_type: Option<String>,
     #[serde(default, deserialize_with = "or_default")]
+    locations: Vec<String>,
+}
+
+/// A music library: the item to refresh, and the folders it covers.
+#[derive(Debug, Clone)]
+pub struct MusicLibrary {
+    pub item_id: String,
     pub locations: Vec<String>,
 }
 
@@ -122,13 +129,6 @@ struct Task {
 pub enum Scan {
     Idle,
     Running { pct: u8 },
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "PascalCase")]
-struct MediaUpdate<'a> {
-    path: &'a str,
-    update_type: &'static str,
 }
 
 impl Jellyfin {
@@ -203,13 +203,18 @@ impl Jellyfin {
         self.get_json("/Items", &query).await
     }
 
-    /// The folders of Jellyfin's music libraries, as Jellyfin sees them.
-    pub async fn music_locations(&self) -> Result<Vec<String>> {
+    /// Jellyfin's music libraries and their folders, as Jellyfin sees them.
+    pub async fn music_libraries(&self) -> Result<Vec<MusicLibrary>> {
         let folders: Vec<VirtualFolder> = self.get_json("/Library/VirtualFolders", &[]).await?;
         Ok(folders
             .into_iter()
             .filter(|f| f.collection_type.as_deref() == Some("music"))
-            .flat_map(|f| f.locations)
+            .filter_map(|f| {
+                Some(MusicLibrary {
+                    item_id: f.item_id?,
+                    locations: f.locations,
+                })
+            })
             .collect())
     }
 
@@ -254,16 +259,28 @@ impl Jellyfin {
             .await
     }
 
-    /// Tells Jellyfin a file appeared, so it scans just that folder.
-    pub async fn file_created(&self, jellyfin_path: &str) -> Result<()> {
-        let body = json!({ "Updates": [MediaUpdate { path: jellyfin_path, update_type: "Created" }] });
-        self.post(&format!("{}/Library/Media/Updated", self.url), Some(&body))
-            .await
+    /// Scans one library (a music library after a save) for new and changed files, as the
+    /// library's own "Scan library" does. Works whether or not realtime monitoring is on.
+    pub async fn refresh_library(&self, library_item: &str) -> Result<()> {
+        let url = format!("{}/Items/{library_item}/Refresh", self.url);
+        let resp = self
+            .http
+            .send(SERVICE, |c| {
+                self.authed(c.post(&url)).query(&[
+                    ("Recursive", "true"),
+                    ("MetadataRefreshMode", "Default"),
+                    ("ImageRefreshMode", "Default"),
+                    ("ReplaceAllMetadata", "false"),
+                    ("ReplaceAllImages", "false"),
+                ])
+            })
+            .await?;
+        http::ok(SERVICE, resp).map(|_| ())
     }
 
     /// Starts Jellyfin's "Scan media library" task (all libraries, as its own button does).
     pub async fn scan_library(&self) -> Result<()> {
-        self.post(&format!("{}/Library/Refresh", self.url), None).await
+        self.post(&format!("{}/Library/Refresh", self.url)).await
     }
 
     pub async fn scan_state(&self) -> Result<Scan> {
@@ -280,17 +297,8 @@ impl Jellyfin {
         })
     }
 
-    async fn post(&self, url: &str, body: Option<&serde_json::Value>) -> Result<()> {
-        let resp = self
-            .http
-            .send(SERVICE, |c| {
-                let req = self.authed(c.post(url));
-                match body {
-                    Some(b) => req.json(b),
-                    None => req,
-                }
-            })
-            .await?;
+    async fn post(&self, url: &str) -> Result<()> {
+        let resp = self.http.send(SERVICE, |c| self.authed(c.post(url))).await?;
         http::ok(SERVICE, resp).map(|_| ())
     }
 

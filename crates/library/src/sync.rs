@@ -14,7 +14,7 @@ use serde_json::json;
 
 use crate::Service;
 use crate::items::{Saved, saved_from};
-use crate::jellyfin::Scan;
+use crate::jellyfin::{MusicLibrary, Scan};
 use crate::jobs::RescanJob;
 use crate::save;
 
@@ -57,12 +57,7 @@ pub async fn run(svc: Arc<Service>) {
             Ok(()) => {
                 let songs = format!("Library online, {} songs", thousands(svc.index().len()));
                 // Without a music folder over LULL_MUSIC_DIR, saved files never show up in Jellyfin.
-                let (state, detail) = if svc
-                    .jellyfin_root
-                    .read()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .is_some()
-                {
+                let (state, detail) = if svc.music().is_some() {
                     (State::Ok, songs)
                 } else {
                     (
@@ -119,9 +114,9 @@ pub async fn full_read(svc: &Arc<Service>) -> Result<()> {
     let jellyfin = svc.jellyfin()?;
     let items: Vec<Saved> = jellyfin.all_audio().await?.into_iter().filter_map(saved_from).collect();
     svc.index_mut().replace(items.clone());
-    let locations = jellyfin.music_locations().await?;
-    let root = music_root(locations, &items, &svc.ctx.config.library.music_dir);
-    *svc.jellyfin_root.write().unwrap_or_else(PoisonError::into_inner) = root;
+    let libraries = jellyfin.music_libraries().await?;
+    let music = music_folder(libraries, &items, &svc.ctx.config.library.music_dir);
+    *svc.music.write().unwrap_or_else(PoisonError::into_inner) = music;
     persist(svc, items, true).await
 }
 
@@ -216,18 +211,36 @@ async fn persist(svc: &Service, items: Vec<Saved>, all: bool) -> Result<()> {
         .await
 }
 
-/// Which of Jellyfin's music folders is `LULL_MUSIC_DIR`: the only one, or the one whose files
-/// lull can see on its own disk.
-fn music_root(locations: Vec<String>, items: &[Saved], music_dir: &Path) -> Option<String> {
-    if let [only] = locations.as_slice() {
+/// `LULL_MUSIC_DIR` as Jellyfin knows it: one of its music libraries' folders.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MusicFolder {
+    /// The folder's path as Jellyfin sees it.
+    pub root: String,
+    /// The library's item, refreshed after a save.
+    pub library: String,
+}
+
+/// Which music library folder is `LULL_MUSIC_DIR`: the only one there is, or the one whose
+/// files lull can see on its own disk.
+fn music_folder(libraries: Vec<MusicLibrary>, items: &[Saved], music_dir: &Path) -> Option<MusicFolder> {
+    let folders: Vec<MusicFolder> = libraries
+        .into_iter()
+        .flat_map(|lib| {
+            lib.locations.into_iter().map(move |root| MusicFolder {
+                root,
+                library: lib.item_id.clone(),
+            })
+        })
+        .collect();
+    if let [only] = folders.as_slice() {
         return Some(only.clone());
     }
-    locations.into_iter().find(|root| {
+    folders.into_iter().find(|f| {
         items
             .iter()
             .filter_map(|s| s.path.as_deref())
-            .find(|p| p.starts_with(root.as_str()))
-            .and_then(|p| to_local(root, music_dir, p))
+            .find(|p| p.starts_with(f.root.as_str()))
+            .and_then(|p| to_local(&f.root, music_dir, p))
             .is_some_and(|local| local.exists())
     })
 }
@@ -240,16 +253,6 @@ pub fn to_local(root: &str, music_dir: &Path, jellyfin_path: &str) -> Option<Pat
     Some(rel.split('/').fold(music_dir.to_owned(), |p, part| p.join(part)))
 }
 
-/// A path under `LULL_MUSIC_DIR` as Jellyfin sees it.
-pub fn to_jellyfin(root: &str, music_dir: &Path, local: &Path) -> Option<String> {
-    let rel = local.strip_prefix(music_dir).ok()?;
-    let parts: Vec<String> = rel
-        .components()
-        .map(|c| c.as_os_str().to_string_lossy().into_owned())
-        .collect();
-    Some(format!("{}/{}", root.trim_end_matches('/'), parts.join("/")))
-}
-
 fn thousands(n: usize) -> String {
     let digits = n.to_string();
     let mut out = String::new();
@@ -260,4 +263,82 @@ fn thousands(n: usize) -> String {
         out.push(c);
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use lull_core::ids::{AlbumId, ArtistId, TrackId};
+    use lull_core::model::Track;
+
+    use super::*;
+
+    fn library(id: &str, locations: &[&str]) -> MusicLibrary {
+        MusicLibrary {
+            item_id: id.into(),
+            locations: locations.iter().map(|l| (*l).to_owned()).collect(),
+        }
+    }
+
+    fn saved_at(path: &str) -> Saved {
+        Saved {
+            item_id: "i-1".into(),
+            track: Track {
+                id: TrackId::of("Glass Harbour", "Lantern Season", "Rope & Tide"),
+                title: "Rope & Tide".into(),
+                artist_id: ArtistId::of("Glass Harbour"),
+                artist: "Glass Harbour".into(),
+                album_id: AlbumId::of("Glass Harbour", "Lantern Season"),
+                album: "Lantern Season".into(),
+                year: None,
+                no: None,
+                disc: None,
+                duration: None,
+                tags: vec![],
+                saved: true,
+                file: None,
+            },
+            album_artist: "Glass Harbour".into(),
+            path: Some(path.into()),
+            added: String::new(),
+            art: None,
+            mb_release: None,
+            mb_release_group: None,
+            mb_artist: None,
+        }
+    }
+
+    #[test]
+    fn saves_scan_the_music_library_lull_writes_into() -> std::io::Result<()> {
+        let music_dir = std::env::temp_dir().join(format!("lull-sync-{}", std::process::id()));
+        let album = music_dir.join("Glass Harbour").join("Lantern Season");
+        std::fs::create_dir_all(&album)?;
+        std::fs::write(album.join("03 - Rope & Tide.flac"), b"x")?;
+
+        // One music folder: it is LULL_MUSIC_DIR, even while empty (a fresh library).
+        let only = music_folder(vec![library("lib-music", &["/media/music"])], &[], &music_dir);
+        assert_eq!(only.map(|m| m.library), Some("lib-music".into()));
+
+        // Several: the one whose files lull can see.
+        let libraries = vec![
+            library("lib-old", &["/media/old-music"]),
+            library("lib-music", &["/media/vinyl", "/media/internal/music"]),
+        ];
+        let items = [
+            saved_at("/media/old-music/Someone/Else/01 - Other.flac"),
+            saved_at("/media/internal/music/Glass Harbour/Lantern Season/03 - Rope & Tide.flac"),
+        ];
+        let found = music_folder(libraries.clone(), &items, &music_dir);
+        assert_eq!(
+            found,
+            Some(MusicFolder {
+                root: "/media/internal/music".into(),
+                library: "lib-music".into(),
+            })
+        );
+
+        // None of them: unknown, so saves fall back to a full scan (and the status warns).
+        assert_eq!(music_folder(libraries, &items[..1], &music_dir), None);
+        assert_eq!(music_folder(vec![], &items, &music_dir), None);
+        std::fs::remove_dir_all(&music_dir)
+    }
 }

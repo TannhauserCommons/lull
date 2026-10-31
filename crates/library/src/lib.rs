@@ -16,7 +16,7 @@ mod sync;
 mod tags;
 
 use std::path::PathBuf;
-use std::sync::{Arc, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, Mutex, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use async_trait::async_trait;
 use axum::Router;
@@ -62,8 +62,10 @@ pub struct Service {
     /// `None` when Jellyfin isn't configured: nothing is saved, nothing can be.
     jellyfin: Option<Jellyfin>,
     index: RwLock<Index>,
-    /// Jellyfin's path for `LULL_MUSIC_DIR`, once known (sync.rs).
-    jellyfin_root: RwLock<Option<String>>,
+    /// The Jellyfin music library over `LULL_MUSIC_DIR`, once known (sync.rs).
+    music: RwLock<Option<sync::MusicFolder>>,
+    /// When saves last asked Jellyfin to scan (save.rs batches them).
+    scans: Mutex<save::Scans>,
     jobs: Arc<Jobs>,
     naming: Template,
     art_dir: PathBuf,
@@ -86,7 +88,8 @@ pub async fn start(ctx: &Ctx, transfers: Arc<dyn Transfers>) -> Result<Arc<Servi
         transfers,
         jellyfin,
         index: RwLock::new(Index::new(items, aliases)),
-        jellyfin_root: RwLock::new(None),
+        music: RwLock::new(None),
+        scans: Mutex::default(),
         jobs,
         naming,
         art_dir: ctx.config.data_dir.join("art"),
@@ -125,6 +128,10 @@ impl Service {
 
     fn index_mut(&self) -> RwLockWriteGuard<'_, Index> {
         self.index.write().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn music(&self) -> Option<sync::MusicFolder> {
+        self.music.read().unwrap_or_else(PoisonError::into_inner).clone()
     }
 
     fn jellyfin(&self) -> Result<&Jellyfin> {

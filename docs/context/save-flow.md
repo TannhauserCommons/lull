@@ -10,7 +10,7 @@
 | 2 Matching on MusicBrainz | Recording search, then scoring (below). Skipped when the listener already picked a release | `match`: no sure match. The release picker (`/releases`) or "keep existing tags" |
 | 3 Fetching cover art | Release lookup (tags) and the Cover Art Archive front, 1200 px: the release's, else the release group's | Never fails on art: no cover sets `nocover: true` and the save carries on. A failed release lookup is `match` |
 | 4 Tagging and writing | Copy, tag, rename into place (below) | `write`: unreadable file, no permission, disk full |
-| 5 Jellyfin rescan | Announce the file; the job is `done` once the song is in the library | Never fails: the file is saved, the job is `pending` (below) |
+| 5 Jellyfin rescan | Ask Jellyfin to scan the music library; the job is `done` once the song is in the library | Never fails: the file is saved, the job is `pending` (below) |
 
 ## Duplicates
 
@@ -85,11 +85,14 @@
 
 ## Jellyfin pick-up and `pending`
 
-- **Announcing the file.** Step 5 sends the file's path, as Jellyfin sees it, to `/Library/Media/Updated`, which scans just that folder. Jellyfin waits about a minute before scanning. Without the music folder mapping, lull starts a full library scan instead.
+- **Asking for a scan.** Step 5 refreshes the Music library over `LULL_MUSIC_DIR` (`/Items/{library}/Refresh?Recursive=true`, the library's own "Scan library"). Without the music folder mapping, lull starts a scan of every library instead.
+  - Not `/Library/Media/Updated`: Jellyfin ignores those notifications on libraries without realtime monitoring, which is off by default on many servers.
+  - **Batched.** Saves ask at most once every 30 s: one scan covers every file written before it starts, so an album's songs share a few scans instead of queueing one each.
+  - **Full scan as the fallback.** If the song isn't in the library 60 s after the library refresh, lull starts Jellyfin's full scan once ("Scan media library"). Seen live: a Music library that was never scanned has no folders to refresh yet, so its refresh finds nothing, while a full scan picked the file up in 3 s.
 - **Done.** The sync loop polls the newest items every 5 s. The job is `done` once a song with the saved id is in the library.
 - **`pending`** means the file is saved, Jellyfin hasn't got it yet, and it is retried by itself:
-  - **Jellyfin couldn't be asked** (down, refused): re-asked on the next check after Jellyfin is back, every minute.
-  - **Jellyfin was asked but doesn't show the file after 5 minutes:** checked every minute.
+  - **Jellyfin couldn't be asked** (down, refused): asked again by the first check after Jellyfin is back (checks run every minute).
+  - **Jellyfin was asked but doesn't show the file after 5 minutes:** the song appears with the next full library read (every 30 minutes, or after a rescan).
   - `POST /api/saves/{job}/retry` asks again now.
 
 ## Ids

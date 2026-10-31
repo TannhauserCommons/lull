@@ -13,7 +13,7 @@
   - `/Library/VirtualFolders` for the music folders;
   - `/Items/{id}/Images/Primary` for covers;
   - `/Audio/{id}/stream?static=true` for the original file;
-  - `/Library/Media/Updated` to announce a saved file;
+  - `/Items/{library}/Refresh?Recursive=true` to scan the music library after a save;
   - `/Library/Refresh` and `/ScheduledTasks` for a rescan and its progress.
 - **Status `jellyfin`.**
   - `off`: not configured.
@@ -72,6 +72,6 @@
 - **Why.** Jellyfin and lull may mount the music at different paths (`/media/music` in Jellyfin, `/music` in lull).
 - **How.** lull takes the music library's folder when Jellyfin has exactly one. With several, it takes the one whose files it can see under `LULL_MUSIC_DIR`.
 - **Uses.** The mapping:
-  - announces a saved file's own folder to Jellyfin;
+  - picks the music library a save asks Jellyfin to scan;
   - finds the old file for "replace if better".
 - **Without it,** saves ask for a full library scan instead, and the `jellyfin` status is `warn` ("no Music library over LULL_MUSIC_DIR"): saved songs can't show up until Jellyfin has a Music library over that folder.
