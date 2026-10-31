@@ -55,6 +55,8 @@ Topic → payload. Published on the bus and streamed to the browser. Owners add 
 | `like` | collection | `{ trackId, liked }`. Taste, other devices |
 | `follow` | collection | `{ kind: artist\|tag, id, followed }`. Discovery, other devices |
 | `settings` | collection | The stored settings (the editable part of `GET /api/settings`), at start-up and on every change. Collection starts after every other crate, so a receiver made in `start()` gets the start-up copy |
+| `scrobble` | lastfm | `{ playId, status: pending\|done\|short }`: queued, sent to Last.fm, or too short to count (History's scrobble column) |
+| `lastfm.history` | lastfm | `{ user, artists: [{ name, plays }] }`: the listener's Last.fm top artists, a taste signal for discovery; empty when off or disconnected |
 
 ## Soulseek (`crates/soulseek`)
 
@@ -90,15 +92,24 @@ All of these answer 503 `unavailable` when Jellyfin isn't configured. Lists and 
 
 ## Discovery (`crates/discovery`, `crates/lastfm`, `crates/lyrics`)
 
+Sources and limits: [discovery.md](discovery.md); taste: [taste.md](taste.md); Last.fm: [scrobbling.md](scrobbling.md).
+
 | Method + path | Returns |
 |---|---|
-| `GET /api/feed` | `MOCK.feed` shape (newReleases, picks with `reasons` + `via`, radioStarters, jumpBackIn, followedTags, coldStartTags, `updated` as unix time) + entities. A shelf that failed carries `errors: { shelf: message }` |
-| `GET /api/radio?kind=track\|artist\|tag&id=&steer=0..1&exclude=` | `{ items: [trackId], entities }`: the next tracks to top up the queue |
-| `GET /api/albums/{id}` · `GET /api/artists/{id}` · `GET /api/tags/{id}` | Album with tracks; artist with top tracks, discography, similar; tag with description, top artists, new releases, related. Saved state comes from the `Library` seam |
-| `POST /api/feedback { kind: more-like\|less-like\|hide-artist, id }` | 204 |
-| `POST /api/taste/reset` | 204 |
-| `GET /api/lastfm` · `GET /api/lastfm/connect` (redirect to Last.fm) · `GET /api/lastfm/callback` · `DELETE /api/lastfm` · `POST /api/lastfm/retry` | Connection state `{ connected, user, scrobbling, queued }` and the auth flow |
-| `GET /api/lyrics/{trackId}` | `{ kind: synced\|plain\|instrumental\|none, lines: [{ t, text }], plain?, source: "LRCLIB" }`, or 503 when rate-limited |
+| `GET /api/feed` | `{ updated, summary, newReleases: [albumId], picks: [{ trackId, reasons: [{ kind: like\|tag\|listeners\|fresh, name, ref? }], via }], radioStarters: [{ id, title, sub, seed: { kind: track\|artist\|tag, id } }], jumpBackIn: [{ kind: album\|artist, id }], followedTags, coldStartTags, errors?: { newReleases\|picks: message }, entities }`. `ref` is an artist id or a tag (absent for "listeners like you"); `via` names the source. The first call may take tens of seconds (the UI's loading state); afterwards it is instant |
+| `GET /api/radio?kind=track\|artist\|tag&id=&steer=0..1&exclude=id,id` | `{ items: [trackId], entities }`: 12 tracks to top up the queue. `steer` defaults to 0.4; 404 when the seed is unknown |
+| `GET /api/albums/{id}` | `{ album: Album (trackIds, duration, saved), entities }` (tracks with saved state) |
+| `GET /api/artists/{id}` | `{ artist: Artist (tags, listeners, bio), topTracks: [trackId], albums: [albumId] (newest first), similar: [artistId], errors?: { section: message }, entities }` |
+| `GET /api/tags/{id}` | `{ tag: { id, name, desc, related: [tag] }, artists: [artistId], newReleases: [albumId], errors?, entities }`. `id` is the tag name (URL-encoded); `newReleases` are the last 90 days |
+| `POST /api/feedback { kind: more-like\|less-like\|hide-artist, id }` | 204. `id` is a track or artist id; hiding applies to the feed at once |
+| `GET /api/taste` | `{ artists: [[artistId, weight]], tags: [[tag, weight]], entities }`: the Stats taste block, weights 0..1 |
+| `POST /api/taste/reset` | 204. Forgets learned signals; follows and hidden artists stay |
+| `GET /api/lastfm` | `{ configured, connected, user, scrobbling, useHistory, queued, error? }` |
+| `PATCH /api/lastfm { scrobbling?, useHistory? }` | The same object. The two Settings > Last.fm switches live here (409 when not connected) |
+| `GET /api/lastfm/connect` | A browser navigation: 303 to Last.fm's sign-in; Last.fm returns the browser to `/api/lastfm/callback`, which lands on `/#/settings/lastfm` |
+| `DELETE /api/lastfm` | 204. Disconnects and drops queued scrobbles |
+| `POST /api/lastfm/retry` | 204. Sends every waiting scrobble now |
+| `GET /api/lyrics/{trackId}` | `{ kind: synced\|plain\|instrumental\|none, lines: [{ t, text }], plain?, source: "LRCLIB" }` (`t` in seconds), 404 for an unknown track, or 503 while LRCLIB is failing or rate-limiting |
 
 ## Collection (`crates/collection`, `crates/skins`)
 
