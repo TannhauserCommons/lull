@@ -55,13 +55,27 @@ pub async fn run(svc: Arc<Service>) {
     loop {
         match tick(&svc, &mut last_full).await {
             Ok(()) => {
-                let songs = svc.index().len();
-                svc.ctx.status.set(
-                    "jellyfin",
-                    State::Ok,
-                    format!("Library online, {} songs", thousands(songs)),
-                    json!({ "songs": songs }),
-                );
+                let songs = format!("Library online, {} songs", thousands(svc.index().len()));
+                // Without a music folder over LULL_MUSIC_DIR, saved files never show up in Jellyfin.
+                let (state, detail) = if svc
+                    .jellyfin_root
+                    .read()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .is_some()
+                {
+                    (State::Ok, songs)
+                } else {
+                    (
+                        State::Warn,
+                        format!(
+                            "{songs}, but Jellyfin has no Music library over LULL_MUSIC_DIR, so saved songs won't \
+                             show up: add one in Jellyfin's dashboard"
+                        ),
+                    )
+                };
+                svc.ctx
+                    .status
+                    .set("jellyfin", state, detail, json!({ "songs": svc.index().len() }));
             }
             Err(e) => {
                 // Read everything again once it's back: anything may have changed meanwhile.
@@ -107,9 +121,6 @@ pub async fn full_read(svc: &Arc<Service>) -> Result<()> {
     svc.index_mut().replace(items.clone());
     let locations = jellyfin.music_locations().await?;
     let root = music_root(locations, &items, &svc.ctx.config.library.music_dir);
-    if root.is_none() {
-        tracing::warn!("LULL_MUSIC_DIR matches none of Jellyfin's music folders; saves will rescan the whole library");
-    }
     *svc.jellyfin_root.write().unwrap_or_else(PoisonError::into_inner) = root;
     persist(svc, items, true).await
 }

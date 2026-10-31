@@ -19,6 +19,7 @@
   - `off`: not configured.
   - `warn`: connecting, at start-up.
   - `ok`: "Library online, N songs", with `extra: { songs }`.
+  - `warn` after start-up: online, but no Music library over `LULL_MUSIC_DIR` ([below](#music-folder-mapping)).
   - `down`: the error, "showing the last known library".
 
 ## The index: lull's copy of the library
@@ -73,4 +74,4 @@
 - **Uses.** The mapping:
   - announces a saved file's own folder to Jellyfin;
   - finds the old file for "replace if better".
-- **Without it,** saves ask for a full library scan instead, with a warning in the log.
+- **Without it,** saves ask for a full library scan instead, and the `jellyfin` status is `warn` ("no Music library over LULL_MUSIC_DIR"): saved songs can't show up until Jellyfin has a Music library over that folder.
