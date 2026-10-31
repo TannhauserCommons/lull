@@ -1,13 +1,13 @@
 //! MusicBrainz (search and release lookups, one request per second for all of lull) and the
 //! Cover Art Archive. Shapes are the JSON web service's, trimmed to what lull reads.
 
-use lull_core::http::{self, Http, MUSICBRAINZ_PACE};
+use lull_core::http::{self, Http, MUSICBRAINZ, MUSICBRAINZ_PACE};
 use lull_core::{Error, Result};
 use serde::Deserialize;
 
 use crate::tags::{MbIds, TagSet};
 
-const SERVICE: &str = "musicbrainz";
+const SERVICE: &str = MUSICBRAINZ;
 const API: &str = "https://musicbrainz.org/ws/2";
 const CAA: &str = "https://coverartarchive.org";
 
