@@ -24,7 +24,7 @@ A self-hosted music player for one listener. It streams from Soulseek while the 
 | Run locally (settings in `.env`, see `deploy/.env.example`) | `mise run dev` |
 | Container image | `mise run image` |
 
-**On this Windows workstation:** set `CARGO_TARGET_DIR` to a folder outside `Desktop` (e.g. `%LOCALAPPDATA%\cargo-target\<your-worktree>`). C dependencies (bundled SQLite, TLS) fail to compile under `Desktop` with `D8050`. Use one target dir per worktree so parallel builds don't block each other.
+**On this Windows workstation:** set `CARGO_TARGET_DIR` to a folder outside `Desktop` (e.g. `%LOCALAPPDATA%\cargo-target\<your-worktree>`). C dependencies (bundled SQLite, TLS) fail to compile under `Desktop` with `D8050`. Use one target dir per worktree so parallel builds don't block each other; they still share compiled dependencies through the workstation's sccache (`~/.cargo/config.toml` `rustc-wrapper`), so only your own crates compile.
 
 ## Engineering rules
 
