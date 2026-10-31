@@ -2,7 +2,9 @@
 //! (honouring `Retry-After`) for failures that are worth retrying. Every crate calls the
 //! outside world through this, so no call can hang forever or hammer a service.
 
-use std::time::Duration;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
 use reqwest::{RequestBuilder, Response, StatusCode};
 use serde::de::DeserializeOwned;
@@ -20,9 +22,14 @@ pub const USER_AGENT: &str = concat!(
     " ( https://github.com/TannhauserCommons/lull )"
 );
 
+/// MusicBrainz allows one request per second per IP, whichever crate sends it (`Http::pace`).
+pub const MUSICBRAINZ_PACE: Duration = Duration::from_millis(1100);
+
 #[derive(Clone)]
 pub struct Http {
     client: reqwest::Client,
+    /// The next free slot per paced service, shared by every clone (every crate).
+    turns: Arc<Mutex<HashMap<&'static str, Instant>>>,
 }
 
 impl Http {
@@ -33,7 +40,23 @@ impl Http {
             .timeout(Duration::from_secs(20))
             .build()
             .map_err(|e| Error::internal(format!("http client: {e}")))?;
-        Ok(Http { client })
+        Ok(Http {
+            client,
+            turns: Arc::default(),
+        })
+    }
+
+    /// Waits for `service`'s next turn, so lull as a whole calls it at most once per `every`.
+    /// Call it before each request to a service with a published rate limit (MusicBrainz).
+    pub async fn pace(&self, service: &'static str, every: Duration) {
+        let wait = {
+            let mut turns = self.turns.lock().unwrap_or_else(PoisonError::into_inner);
+            let now = Instant::now();
+            let slot = turns.get(service).copied().filter(|t| *t > now).unwrap_or(now);
+            turns.insert(service, slot + every);
+            slot - now
+        };
+        tokio::time::sleep(wait).await;
     }
 
     /// The raw client, for building requests. Override the 20 s timeout per request with
