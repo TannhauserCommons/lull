@@ -13,7 +13,7 @@ Owner: Discovery session (`crates/lastfm`). Needs `LULL_LASTFM_API_KEY` and `LUL
 
 - **Signature:** `api_sig` is the md5 of every parameter, as `name+value` in name order, excluding `format` and `callback`, followed by the secret.
 - **Writes are POSTs.**
-- **Access token caveat:** with `LULL_ACCESS_TOKEN` set, the callback is a cross-site navigation. The `SameSite=Strict` token cookie isn't sent on it, so the gate answers 401. The integrator owns the gate: the callback needs to be exempt from it, which the `state` nonce makes safe, or the cookie needs to be `SameSite=Lax`.
+- **With `LULL_ACCESS_TOKEN` set:** the callback is a cross-site navigation from last.fm. The token cookie is `SameSite=Lax`, so it still reaches the gate.
 
 ## When a play scrobbles
 
