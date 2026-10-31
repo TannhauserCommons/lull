@@ -113,7 +113,9 @@ impl Config {
         let mut vars: BTreeMap<String, String> = BTreeMap::new();
         if let Ok(path) = std::env::var("LULL_CONFIG") {
             let text = std::fs::read_to_string(&path).map_err(|source| ConfigError::File { path, source })?;
-            vars.extend(parse_env_file(&text));
+            // The deploy kit's env file also holds settings for compose and slskd; only
+            // `LULL_*` lines are lull's, as with the environment.
+            vars.extend(parse_env_file(&text).filter(|(k, _)| k.starts_with("LULL_")));
         }
         vars.extend(std::env::vars().filter(|(k, _)| k.starts_with("LULL_")));
         vars.remove("LULL_CONFIG");
