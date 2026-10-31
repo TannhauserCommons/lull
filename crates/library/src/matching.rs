@@ -48,6 +48,8 @@ const SURE: f32 = 0.85;
 const LEAD: f32 = 0.08;
 /// Picker rows.
 const SHOWN: usize = 8;
+/// A part the file knows but MusicBrainz doesn't (a recording without a length).
+const UNKNOWN: f32 = 0.5;
 
 pub fn decide(wanted: &Wanted, recordings: &[Recording]) -> Decision {
     let ranked = rank(wanted, recordings);
@@ -96,20 +98,30 @@ fn score(wanted: &Wanted, rec: &Recording, rel: &RecordingRelease) -> (Candidate
     if let Some(album) = &wanted.album {
         parts.push((0.20, similarity(album, &rel.title)));
     }
-    if let (Some(want), Some(ms)) = (wanted.duration_s, rec.length) {
-        parts.push((0.20, length_agreement(want, ms as f64 / 1000.0)));
+    // Evidence the file has but MusicBrainz lacks counts as half agreement, never as a match:
+    // otherwise a recording with no known length outscores the one whose length agrees.
+    if let Some(want) = wanted.duration_s {
+        let agreement = rec
+            .length
+            .map_or(UNKNOWN, |ms| length_agreement(want, ms as f64 / 1000.0));
+        parts.push((0.20, agreement));
     }
-    let weight: f32 = parts.iter().map(|(w, _)| w).sum();
-    let mut score = parts.iter().map(|(w, s)| w * s).sum::<f32>() / weight;
-    let same_number = wanted.track.is_some_and(|n| {
-        rel.media
+    if let Some(n) = wanted.track {
+        let numbers = rel
+            .media
             .iter()
             .flat_map(|m| &m.tracks)
-            .any(|t| t.number.as_deref().and_then(|x| x.parse().ok()) == Some(n))
-    });
-    if same_number {
-        score = (score + 0.02).min(1.0);
+            .filter_map(|t| t.number.as_deref());
+        let numbers: Vec<u32> = numbers.filter_map(|x| x.parse().ok()).collect();
+        let agreement = if numbers.is_empty() {
+            UNKNOWN
+        } else {
+            f32::from(u8::from(numbers.contains(&n)))
+        };
+        parts.push((0.05, agreement));
     }
+    let weight: f32 = parts.iter().map(|(w, _)| w).sum();
+    let score = parts.iter().map(|(w, s)| w * s).sum::<f32>() / weight;
     let official = rel.status.as_deref() == Some("Official");
     let candidate = Candidate {
         mbid: rel.id.clone(),
@@ -322,6 +334,40 @@ mod tests {
             return Err(serde::de::Error::custom("the live album should match"));
         };
         assert_eq!(c.mbid, "rel-live");
+        Ok(())
+    }
+
+    #[test]
+    fn a_same_titled_ep_without_a_length_does_not_tie_the_album() -> Result<(), serde_json::Error> {
+        // Seen live: the album's recording on several pressings, and a self-titled EP whose
+        // recording MusicBrainz has no length for, where the song is another track number.
+        let mut ep = recording(
+            "rec-ep",
+            "Rope & Tide",
+            0,
+            vec![release("rel-ep", "Lantern Season", "rg-ep", "EP", "", "4")],
+        );
+        ep["length"] = Value::Null;
+        let found = parse(vec![
+            recording(
+                "rec-album",
+                "Rope & Tide",
+                242_707,
+                vec![
+                    release("rel-de", "Lantern Season", "rg-album", "Album", "2010-11-26", "3"),
+                    release("rel-us", "Lantern Season", "rg-album", "Album", "2009-10-13", "3"),
+                    release("rel-digital", "Lantern Season", "rg-album", "Album", "", "3"),
+                ],
+            ),
+            ep,
+        ])?;
+        let Decision::Sure(c) = decide(&wanted(Some("Lantern Season"), 242.0), &found) else {
+            return Err(serde::de::Error::custom(
+                "the album's length and track number settle it",
+            ));
+        };
+        // Among pressings of the album, the earliest official one.
+        assert_eq!((c.recording.as_str(), c.mbid.as_str()), ("rec-album", "rel-us"));
         Ok(())
     }
 

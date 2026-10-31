@@ -31,10 +31,12 @@
   | artist | 0.25 |
   | album | 0.20 |
   | length | 0.20 |
+  | track number | 0.05 |
 
   - **Names** are compared by edit distance after `ids::normalize`. A bracketed suffix ("[2024 FLAC]", "(Deluxe)") costs 8% instead of everything.
   - **Length** scores 1 within 2 s and 0 beyond 15 s. That is what tells a live take or an edit from the studio recording.
-  - **A matching track number** adds 0.02.
+  - **Track number** weighs 0.05: 1 when the release lists the song at the file's number, else 0.
+  - **What MusicBrainz doesn't know** counts as half agreement (0.5), never as a match. A recording without a length must not outscore the one whose length agrees.
 - **Sure** means the best score is at least 0.85 and leads every other release group by 0.08 or more.
   - Releases of the same album tie by design. Among them the official, earliest release wins, then the lowest id, so the choice is stable.
 - **Not sure** fails step 2 as `match` with up to 8 candidates, one per release, for the picker.
