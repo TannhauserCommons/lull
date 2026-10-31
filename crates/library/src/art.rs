@@ -52,7 +52,7 @@ pub async fn cover(svc: &Service, album: &AlbumId, size: u32) -> Result<Image> {
     if let Some(image) = cached(&path).await {
         return Ok(image);
     }
-    let none = svc.art_dir.join(format!("{album}-none"));
+    let none = svc.art_dir.join(format!("{album}-nocover"));
     if recently_written(&none).await {
         return Err(Error::NotFound(format!("no cover for {album}")));
     }
@@ -60,10 +60,22 @@ pub async fn cover(svc: &Service, album: &AlbumId, size: u32) -> Result<Image> {
     let found = match saved {
         Some((_, Some(group), _)) => fetch(svc, CoverOf::ReleaseGroup(&group), archive_size).await?,
         Some((_, None, Some(release))) => fetch(svc, CoverOf::Release(&release), archive_size).await?,
-        _ => match release_group_by_name(svc, album).await? {
-            Some(group) => fetch(svc, CoverOf::ReleaseGroup(&group), archive_size).await?,
-            None => None,
-        },
+        _ => {
+            let Some(groups) = release_groups_by_name(svc, album).await? else {
+                // Not "no cover": lull just doesn't know this album yet, so nothing is cached.
+                return Err(Error::NotFound(format!(
+                    "no cover for {album}: lull doesn't know this album"
+                )));
+            };
+            let mut found = None;
+            for group in &groups {
+                found = fetch(svc, CoverOf::ReleaseGroup(group), archive_size).await?;
+                if found.is_some() {
+                    break;
+                }
+            }
+            found
+        }
     };
     match found {
         Some(bytes) => store(&path, bytes).await,
@@ -81,16 +93,19 @@ async fn fetch(svc: &Service, of: CoverOf<'_>, size: u32) -> Result<Option<Vec<u
 }
 
 /// An album lull only knows by id (a search result, a recommendation): its artist and title
-/// come from the catalog, then MusicBrainz names the release group.
-async fn release_group_by_name(svc: &Service, album: &AlbumId) -> Result<Option<String>> {
+/// come from the catalog, then MusicBrainz names the release groups it may be. `None` when the
+/// catalog has no song on it.
+async fn release_groups_by_name(svc: &Service, album: &AlbumId) -> Result<Option<Vec<String>>> {
     let id = album.clone();
     let Some(track) = svc.ctx.db.call(move |c| catalog::track_on_album(c, &id)).await? else {
         return Ok(None);
     };
     if track.album.trim().is_empty() {
-        return Ok(None);
+        return Ok(Some(vec![]));
     }
-    musicbrainz::release_group(&svc.ctx.http, &track.artist, &track.album).await
+    musicbrainz::release_groups(&svc.ctx.http, &track.artist, &track.album)
+        .await
+        .map(Some)
 }
 
 async fn cached(path: &Path) -> Option<Image> {

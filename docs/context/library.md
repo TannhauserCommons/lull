@@ -57,8 +57,8 @@
 - **Saved albums.** The cover is Jellyfin's primary image for the album, else the track's embedded one. It is keyed by Jellyfin's image tag, so a changed cover is fetched again.
 - **When Jellyfin has no cover, or the album isn't saved**, it comes from the Cover Art Archive (front-250 for 96/256, front-500 for 512). lull finds the release group by:
   - its MusicBrainz id, when Jellyfin knows it;
-  - otherwise by name: `catalog::track_on_album` gives artist and album, then a MusicBrainz release-group search must score 90 or more.
-- **Disk cache.** Covers live in `<LULL_DATA_DIR>/art/`, one file per album, size and source. "No cover anywhere" is remembered for a week. A cover costs at most one outside call per album and size.
+  - otherwise by name: `catalog::track_on_album` gives artist and album, then a MusicBrainz release-group search. Hits scoring 90 or more are tried in turn, albums first, and the first with a cover wins. A self-titled EP or single scores as high as the album and often has no cover.
+- **Disk cache.** Covers live in `<LULL_DATA_DIR>/art/`, one file per album, size and source. "No cover anywhere" is remembered for a week, but only once every candidate was asked. An album the catalog doesn't know yet answers 404 without being remembered. A cover costs at most one MusicBrainz search per album and size.
 - **Ids are checked** (`al-` plus hex) before they become file names.
 
 ## Rescan and jobs
