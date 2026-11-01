@@ -35,6 +35,17 @@ pub struct Soulseek {
     /// Lowercase extensions, most preferred first.
     pub preferred_formats: Vec<String>,
     pub share: Share,
+    /// The `slskd.yml` lull owns when it runs this slskd (the desktop app's sidecar): lull writes
+    /// the Soulseek account into it. Unset: the account is configured where slskd runs.
+    pub config_file: Option<PathBuf>,
+    /// The Soulseek account, only ever set with `config_file` (ADR-0002).
+    pub account: Option<SoulseekAccount>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SoulseekAccount {
+    pub username: String,
+    pub password: Secret,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -181,6 +192,19 @@ impl Config {
             }
             (Some(other), _) => return Err(invalid("LULL_LIBRARY", format!("{other:?} is not folder or jellyfin"))),
         };
+        let config_file = v.opt("LULL_SLSKD_CONFIG_FILE").map(PathBuf::from);
+        let account = v
+            .pair("LULL_SOULSEEK_USERNAME", "LULL_SOULSEEK_PASSWORD")?
+            .map(|(username, password)| SoulseekAccount {
+                username,
+                password: Secret(password),
+            });
+        if account.is_some() && config_file.is_none() {
+            return Err(invalid(
+                "LULL_SOULSEEK_USERNAME",
+                "Soulseek is configured where slskd runs, not in lull".into(),
+            ));
+        }
         let config = Config {
             listen: v.parse("LULL_LISTEN", "0.0.0.0:8080")?,
             public_url: v.opt("LULL_PUBLIC_URL").map(|u| u.trim_end_matches('/').to_owned()),
@@ -202,6 +226,8 @@ impl Config {
                     "none" => Share::None,
                     other => return Err(invalid("LULL_SHARE", format!("{other:?} is not library or none"))),
                 },
+                config_file,
+                account,
             },
             cache: Cache {
                 max_bytes: {
@@ -348,6 +374,18 @@ mod tests {
             (&[("LULL_CACHE_MAX_GB", "0")][..], false),
             (&[("LULL_LIBRARY", "jellyfin")][..], false),
             (&[("LULL_LIBRARY", "navidrome")][..], false),
+            (
+                &[("LULL_SOULSEEK_USERNAME", "me"), ("LULL_SOULSEEK_PASSWORD", "pw")][..],
+                false,
+            ),
+            (
+                &[
+                    ("LULL_SLSKD_CONFIG_FILE", "/app/slskd.yml"),
+                    ("LULL_SOULSEEK_USERNAME", "me"),
+                    ("LULL_SOULSEEK_PASSWORD", "pw"),
+                ][..],
+                true,
+            ),
         ] {
             assert_eq!(Config::from_vars(vars(extra)).is_ok(), ok, "{extra:?}");
         }

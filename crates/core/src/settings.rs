@@ -9,9 +9,15 @@ use serde::Serialize;
 use crate::db::Db;
 use crate::error::{Error, Result};
 
-/// Keys only the environment may set: the hub needs them before the database is open, or (the
-/// setup code) they make no sense to set from a device that is already paired.
-pub const ENV_ONLY: &[&str] = &["LULL_DATA_DIR", "LULL_LISTEN", "LULL_LOG", "LULL_SETUP_CODE"];
+/// Keys only the environment may set: the hub needs them before the database is open, or they
+/// describe how lull is run (the setup code, the slskd.yml of an slskd the app runs).
+pub const ENV_ONLY: &[&str] = &[
+    "LULL_DATA_DIR",
+    "LULL_LISTEN",
+    "LULL_LOG",
+    "LULL_SETUP_CODE",
+    "LULL_SLSKD_CONFIG_FILE",
+];
 
 /// Every key the listener can set in the app, and whether it is a secret (the UI only learns
 /// whether a secret is set). With `ENV_ONLY`, these are all the keys `Config` reads.
@@ -22,6 +28,8 @@ pub const KEYS: &[Key] = &[
     Key::plain("LULL_TRANSFERS_DIR"),
     Key::plain("LULL_PREFERRED_FORMATS"),
     Key::plain("LULL_SHARE"),
+    Key::plain("LULL_SOULSEEK_USERNAME"),
+    Key::secret("LULL_SOULSEEK_PASSWORD"),
     Key::plain("LULL_CACHE_MAX_GB"),
     Key::plain("LULL_LIBRARY"),
     Key::plain("LULL_JELLYFIN_URL"),
