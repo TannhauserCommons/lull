@@ -735,6 +735,8 @@
           ${ui.labelRule('songs', { id: 'disc-h-songs' })}
           <ol class="tlist tlist--dense" data-ids="${shown.map(function (t) { return t.id; }).join(',')}" aria-label="Songs">${shown.map(songRow)}</ol>
           ${!S.showAll && tracks.length > 5 ? html`<button class="btn btn--quiet disc-more" data-act="disc-show-all">Show all ${plural(tracks.length, 'song')}</button>` : ''}
+        </section>` : C.pending.length ? html`<section class="card disc-card disc-songs" aria-labelledby="disc-h-songs" aria-busy="true">
+          ${ui.labelRule('songs', { id: 'disc-h-songs' })}<div class="disc-songs__wait">${ui.skeleton('row', 5)}</div>
         </section>` : ''}
       </div>
       ${artists.length ? html`<section class="card disc-card" aria-labelledby="disc-h-artists">${ui.labelRule('artists', { id: 'disc-h-artists' })}
