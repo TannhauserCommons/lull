@@ -13,8 +13,12 @@ COPY rust-toolchain.toml .
 RUN rustup toolchain install
 COPY . .
 COPY --from=web /src/web/vendor web/vendor
+# lull's own Last.fm app key is compiled in when the build passes it (core::config), so a listener
+# only clicks Connect. Optional: a build without these secrets just has no built-in key.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
+    --mount=type=secret,id=lastfm_key,env=LULL_LASTFM_API_KEY \
+    --mount=type=secret,id=lastfm_secret,env=LULL_LASTFM_API_SECRET \
     cargo build --release --locked --bin lull && cp target/release/lull /lull
 
 FROM gcr.io/distroless/cc-debian13:nonroot@sha256:3ee00291cf386ec52a552e6a858d555debd74776eb4bfa53fa3df2cd6677515e
