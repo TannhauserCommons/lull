@@ -1096,10 +1096,10 @@
       out.push({ id: 'sys-cache', sig: ca.state, kind: 'warn', icon: 'warning', text: ca.state === 'warn' ? 'Cache full and every item is in use, so playback may pause.' : 'Cache: ' + clause(ca.detail) + '.', action: { label: 'Cache settings', run: go('/settings/cache') } });
     }
     if (App.server.reachable === false) {
-      out.push({ id: 'sys-unreachable', sig: 'down', kind: 'down', icon: 'offline', dismissible: false, text: 'Can\'t reach your server. What has already loaded keeps playing.', action: { label: 'Retry now', run: checkHealth } });
+      out.push({ id: 'sys-unreachable', sig: 'down', kind: 'down', icon: 'offline', dismissible: false, text: 'Can\'t reach your hub. Downloaded songs still play, and changes wait on this device.', action: { label: 'Retry now', run: checkHealth } });
     }
     if (navigator.onLine === false) {
-      out.push({ id: 'sys-offline', sig: 'offline', kind: 'warn', icon: 'offline', text: 'You\'re offline. Saved and cached songs still play; search and streaming wait for the connection.' });
+      out.push({ id: 'sys-offline', sig: 'offline', kind: 'warn', icon: 'offline', text: 'You\'re offline. Downloaded songs still play; search and streaming wait for the connection.', action: { label: 'Downloads', run: go('/downloads') } });
     }
     return out;
   }

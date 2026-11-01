@@ -152,7 +152,8 @@
     if (s) return s.status === 'saved';
     var t = M.track(id); return !!(t && t.saved);
   };
-  /* likes and follows change at once and are sent to the server; a refusal puts them back and says why */
+  /* likes and follows change at once and are sent to the server (through the outbox while it can't be reached,
+     offline.js); a refusal puts them back and says why */
   App.toggleLike = function (id, force) {
     var on = force === undefined ? !state.liked[id] : !!force;
     setLiked([id], on);
@@ -165,7 +166,7 @@
     App.store.update('liked', function (l) { ids.forEach(function (id) { if (on) l[id] = true; else delete l[id]; }); });
     ids.forEach(function (id) { App.emit('like', { id: id, liked: on, track: M.track(id) }); });
     Promise.all(ids.map(function (id) {
-      return M.api('/api/likes/' + encodeURIComponent(id), { method: on ? 'PUT' : 'DELETE' });
+      return App.outbox.call('/api/likes/' + encodeURIComponent(id), { method: on ? 'PUT' : 'DELETE' }, { op: 'like', trackId: id, liked: on });
     })).catch(function (err) {
       App.store.update('liked', function (l) { ids.forEach(function (id) { if (on) delete l[id]; else l[id] = true; }); });
       ids.forEach(function (id) { App.emit('like', { id: id, liked: !on, track: M.track(id) }); });
@@ -181,7 +182,8 @@
     App.toast(on ? 'Following ' + name : 'Unfollowed ' + name, { icon: 'follow', action: 'Undo', onAction: function () { App.toggleFollow(id, !on); } });
     /* following an artist sends its name: the server derives the id from it and refuses a mismatch */
     var body = on && kind === 'artist' ? { name: name } : undefined;
-    M.api('/api/follows/' + kind + '/' + encodeURIComponent(id), { method: on ? 'PUT' : 'DELETE', body: body }).catch(function (err) {
+    App.outbox.call('/api/follows/' + kind + '/' + encodeURIComponent(id), { method: on ? 'PUT' : 'DELETE', body: body },
+      { op: 'follow', kind: kind, id: id, name: kind === 'artist' ? name : undefined, followed: on }).catch(function (err) {
       App.store.update('followed', function (f) { if (on) delete f[id]; else f[id] = true; });
       App.emit('follow', { id: id, followed: !on });
       App.toast('Couldn\'t ' + (on ? 'follow ' : 'unfollow ') + name + ': ' + err.message, { kind: 'error' });
@@ -519,7 +521,7 @@
       </div>
       <div class="trow__album"><a href="#/album/${track.albumId}" tabindex="-1">${track.album}</a></div>
       ${opts.added ? html`<div class="trow__added">${fmtDate(opts.added, true)}</div>` : ''}
-      <div class="trow__badges">${opts.badges || ''}${opts.dup === 'better' ? ui.dupBetter() : opts.dup ? ui.dupNote() : ''}${ui.sourceBadge(track)}${track.format ? ui.qualityChip(track.format) : ''}${opts.showSources && sourceCount(track) ? html`<button class="trow__sources" data-act="show-sources" data-id="${track.id}" tabindex="-1" aria-label="${sourceCount(track)} sources for ${track.title}. Pick a source" data-tip="Pick a source">${sourceCount(track)} sources</button>` : ''}</div>
+      <div class="trow__badges"><span class="dl-mark" data-dl-mark="${track.id}" ${App.downloads && App.downloads.has(track.id) ? raw('data-on') : ''}>${App.downloads && App.downloads.has(track.id) ? icon('downloaded', 'Downloaded', 'ic-16') : ''}</span>${opts.badges || ''}${opts.dup === 'better' ? ui.dupBetter() : opts.dup ? ui.dupNote() : ''}${ui.sourceBadge(track)}${track.format ? ui.qualityChip(track.format) : ''}${opts.showSources && sourceCount(track) ? html`<button class="trow__sources" data-act="show-sources" data-id="${track.id}" tabindex="-1" aria-label="${sourceCount(track)} sources for ${track.title}. Pick a source" data-tip="Pick a source">${sourceCount(track)} sources</button>` : ''}</div>
       <div class="trow__like">${ui.likeButton(track.id)}</div>
       <div class="trow__dur">${fmtTime(track.duration)}</div>
       <div class="trow__more">${opts.actions === false ? '' : html`<button class="btn-icon btn-icon--bare" data-act="track-menu" data-id="${track.id}" aria-haspopup="menu" aria-label="More actions for ${track.title}" data-tip="More">${icon('more')}</button>`}</div>
@@ -1634,21 +1636,24 @@
      recommended: started from radio or a feed pick (Stats hit rate);
      how: completed (ended by itself) | skipped (the listener moved on) | stopped (page closed).
      Also used by Classic mode, where Webamp plays. */
-  var playWarned = false;
+  var playWarned = false, OUTBOX = {};
   App.recordPlay = function (trackId, dur, recommended) {
-    var rec = { listened: 0, ended: false };
+    var rec = { listened: 0, ended: false }, startedAt = Math.floor(Date.now() / 1000);
     var body = { trackId: trackId, recommended: !!recommended };
     if (dur) body.duration = Math.round(dur);
-    var id = M.api('/api/plays', { method: 'POST', body: body })
+    /* out of the hub's reach the whole play goes to the outbox when it ends, with its real start time */
+    var id = App.outbox.offline() ? Promise.resolve(OUTBOX) : M.api('/api/plays', { method: 'POST', body: body })
       .then(function (r) { return r && r.playId; }, function (err) {
+        if (err.status === 0) return OUTBOX;
         if (!playWarned) { playWarned = true; App.toast('Listening history is off: ' + err.message, { kind: 'error' }); }
         return null;
       });
     rec.end = function (how) {
       if (rec.ended) return; rec.ended = true;
+      var end = { playedS: Math.round(rec.listened), completed: how === 'completed', skipped: how === 'skipped' };
       id.then(function (playId) {
-        if (playId) M.api('/api/plays/' + encodeURIComponent(playId), { method: 'PATCH', keepalive: true,
-          body: { playedS: Math.round(rec.listened), completed: how === 'completed', skipped: how === 'skipped' } }).catch(function () {});
+        if (playId === OUTBOX) App.outbox.add(Object.assign({ op: 'play', trackId: trackId, startedAt: startedAt }, end));
+        else if (playId) M.api('/api/plays/' + encodeURIComponent(playId), { method: 'PATCH', keepalive: true, body: end }).catch(function () {});
       });
     };
     return rec;
@@ -2151,7 +2156,7 @@
   /* default More sheet (phone 4th tab) */
   function defaultMoreSheet() {
     var links = [['#/playlists', 'playlists', 'Playlists'], ['#/liked', 'heart', 'Liked songs'], ['#/history', 'clock', 'History'],
-      ['#/following', 'follow', 'Following'], ['#/stats', 'stats', 'Stats'], ['#/settings', 'settings', 'Settings'], ['#/classic', 'classic', 'Classic mode']];
+      ['#/following', 'follow', 'Following'], ['#/downloads', 'download', 'Downloads'], ['#/stats', 'stats', 'Stats'], ['#/settings', 'settings', 'Settings'], ['#/classic', 'classic', 'Classic mode']];
     var d = App.openSheet({ title: 'more', body: html`<nav class="menu-list" aria-label="More">${links.map(function (l) {
       return html`<a class="menu__item" href="${l[0]}" data-close>${icon(l[1])}<span>${l[2]}</span></a>`;
     })}<button class="menu__item" data-act="open-activity" data-close>${icon('activity')}<span>Activity</span></button>
@@ -2193,14 +2198,50 @@
     return p;
   }
   App.loadPlaylists = loadPlaylists;
+  /* out of the hub's reach, playlist changes go to the outbox (offline.js) and show here at once. A playlist made
+     offline has a temporary id (pl-tmp-…) until the outbox delivers it; changes to it can only wait there. */
+  function isTemp(plId) { return /^pl-tmp-/.test(plId); }
+  function plOp(op, plId, fields) { var o = Object.assign({ op: op }, fields); o[isTemp(plId) ? 'tempId' : 'playlistId'] = plId; return o; }
+  function plSend(path, opts, op) { return isTemp(op.tempId || '') ? App.outbox.add(op) : App.outbox.call(path, opts, op); }
+  function localPlaylist(plId, patch) {
+    var p = M.playlist(plId), at = Math.floor(Date.now() / 1000); if (!p) return null;
+    var next = Object.assign({}, p, patch, { updated: at });
+    if (patch.trackIds) {
+      var added = {}; p.items.forEach(function (i) { added[i.trackId] = i.added; });
+      next.items = patch.trackIds.map(function (id) { return { trackId: id, added: added[id] || at }; }); delete next.trackIds;
+    }
+    return putPlaylist(next);
+  }
   App.createPlaylist = function (fields) {
+    var made = function () {
+      var at = Math.floor(Date.now() / 1000), tempId = 'pl-tmp-' + Date.now().toString(36);
+      var ids = fields.trackIds || [];
+      return App.outbox.add({ op: 'playlist.create', tempId: tempId, name: fields.name, desc: fields.desc || '', trackIds: ids }).then(function () {
+        return putPlaylist({ id: tempId, name: fields.name, desc: fields.desc || '', created: at, updated: at, items: ids.map(function (id) { return { trackId: id, added: at }; }) });
+      });
+    };
+    if (App.outbox.offline()) return made();
     return M.api('/api/playlists', { method: 'POST', body: fields }).then(putPlaylist, function (err) {
+      if (err.status === 0) return made();
       App.toast('Couldn\'t create the playlist: ' + err.message, { kind: 'error' }); return null;
     });
   };
   App.savePlaylistOrder = function (plId, trackIds) {
-    return M.api('/api/playlists/' + encodeURIComponent(plId) + '/tracks', { method: 'PUT', body: trackIds }).then(function (p) {
+    return plSend('/api/playlists/' + encodeURIComponent(plId) + '/tracks', { method: 'PUT', body: trackIds }, plOp('playlist.edit', plId, { trackIds: trackIds })).then(function (p) {
+      if (p && p.queued) return localPlaylist(plId, { trackIds: trackIds });
       if (p && p.id) return putPlaylist(p);
+      return loadPlaylists();
+    });
+  };
+  /* name and description: PATCH /api/playlists/{id} */
+  App.updatePlaylist = function (plId, fields) {
+    return plSend('/api/playlists/' + encodeURIComponent(plId), { method: 'PATCH', body: fields }, plOp('playlist.edit', plId, fields)).then(function (p) {
+      return p && p.queued ? localPlaylist(plId, fields) : loadPlaylists();
+    });
+  };
+  App.deletePlaylist = function (plId) {
+    return plSend('/api/playlists/' + encodeURIComponent(plId), { method: 'DELETE' }, plOp('playlist.delete', plId, {})).then(function (r) {
+      if (r && r.queued) { App.store.update('playlists', function (l) { return l.filter(function (x) { return x.id !== plId; }); }); return; }
       return loadPlaylists();
     });
   };
@@ -2315,6 +2356,8 @@
         { label: App.isSaved(id) ? 'In your library' : 'Save to library', icon: App.isSaved(id) ? 'saved' : 'save', run: function () { App.saves.start([id]); } },
         { label: 'Add to playlist', icon: 'playlists', run: function () { App.hooks.addToPlaylist([id]); } },
         { label: 'Start radio', icon: 'radio', run: function () { startRadio({ kind: 'track', id: id }); } },
+        App.downloads.has(id) ? { label: 'Remove download', icon: 'downloaded', run: function () { App.downloads.remove([id]); } }
+          : { label: 'Download', icon: 'download', run: function () { App.downloads.keep({ kind: 'track', id: id }, [id]); } },
         'sep',
         { label: 'Go to album', icon: 'library', run: function () { App.go('/album/' + t.albumId); } },
         { label: 'Go to artist', icon: 'peer', run: function () { App.go('/artist/' + t.artistId); } },
@@ -2630,6 +2673,7 @@
     App.setPlayback({ gapless: v(pb.gapless) !== false, crossfade: +v(pb.crossfade) || 0, normalisation: v(pb.normalisation) || 'off',
       loudnessTarget: +v(pb.loudnessTarget) || -14, radioWhenQueueEnds: v(pb.radioWhenQueueEnds) !== false, volumeStep: +v(pb.volumeStep) || 5 });
   }
+  App.reloadCollections = loadCollections;
   /* after a reconnect or a resync: everything the events would have told us */
   function refetchAll() {
     M.invalidate();

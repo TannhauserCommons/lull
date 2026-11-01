@@ -1,6 +1,7 @@
 /* lull service worker: keeps the app shell so the installed app starts offline.
    Network first for the UI's own files (they are served with ETags and no-cache, so online is always current),
-   the cache only when the network fails. /api and /health are never cached: they are live data.
+   the cache only when the network fails. /api and /health are never cached: they are live data. Covers of
+   downloaded songs (offline.js keeps them in the 'lull-downloads' cache) answer from there when the hub can't.
    One cache per server version (sw.js?v=<version>); the page lists what it loaded so the cache holds exactly
    the files the chosen design needs, and a new version waits until the listener accepts the update toast. */
 'use strict';
@@ -37,6 +38,12 @@ function shell(url) {
 
 self.addEventListener('fetch', function (e) {
   var req = e.request;
+  if (req.method === 'GET' && /\/api\/art\//.test(req.url)) {
+    e.respondWith(fetch(req).catch(function () {
+      return caches.open('lull-downloads').then(function (c) { return c.match(req); }).then(function (hit) { return hit || Response.error(); });
+    }));
+    return;
+  }
   if (req.method !== 'GET' || !shell(req.url)) return;
   e.respondWith(fetch(req).then(function (res) {
     if (res.ok && res.type === 'basic') {

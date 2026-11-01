@@ -207,7 +207,8 @@
     { id: 'liked', label: 'Liked', href: '#/liked' },
     { id: 'history', label: 'History', href: '#/history' },
     { id: 'playlists', label: 'Playlists', href: '#/playlists' },
-    { id: 'following', label: 'Following', href: '#/following' }
+    { id: 'following', label: 'Following', href: '#/following' },
+    { id: 'downloads', label: 'Downloads', href: '#/downloads' }
   ];
   /* the server's sort keys (an unknown one is a 400); artists sort by name, genres by song count (its defaults) */
   var ALBUM_SORTS = { recent: 'Recently saved', title: 'Title', artist: 'Artist', year: 'Release year' };
@@ -234,9 +235,9 @@
   /* `path` is the read the page shows (the notice's retry re-reads it); `stale` = served from the offline cache */
   function libraryFrame(seg, body, path, stale) {
     var tools = html`<button class="btn" data-act="lib-import">${icon('import')}Import playlist</button>
-      ${ui.iconButton('refresh', 'Rescan Jellyfin library', { 'data-act': 'jellyfin-rescan' })}`;
+      ${ui.iconButton('refresh', 'Rescan your library', { 'data-act': 'jellyfin-rescan' })}`;
     return html`<div class="view__inner lib">
-      ${pageHead('library', 'Songs you save from Soulseek are tagged, filed and added to Jellyfin.', tools)}
+      ${pageHead('library', 'Songs you save from Soulseek are tagged and filed in your library.', tools)}
       <nav class="lib-segs" aria-label="Library sections"><ul>${SEGMENTS.map(function (s) {
         return html`<li><a class="pill-filter" href="${s.href}" ${s.id === seg ? raw('aria-current="page"') : ''}>${s.label}</a></li>`;
       })}</ul></nav>
@@ -367,6 +368,7 @@
                 ${groupSaveButton(ids, 'album')}
                 <span class="lib-actions__icons">
                   ${likeAllButton(ids)}
+                  ${ui.downloadButton({ kind: 'album', id: a.id }, ids)}
                   ${ui.iconButton('playlists', 'Add album to playlist', { 'data-act': 'add-to-playlist', 'data-ids': ids.join(','), 'aria-haspopup': 'dialog' })}
                   ${ui.iconButton('radio', 'Start album radio', { 'data-act': 'start-radio', 'data-kind': 'album', 'data-id': a.id })}
                   ${ui.iconButton('more', 'More album actions', { 'data-act': 'lib-album-menu', 'data-id': a.id, 'aria-haspopup': 'menu' })}
@@ -512,6 +514,7 @@
             <button class="btn btn--primary" data-act="play-ids" data-ids="${ids.join(',')}">${icon('play', null, 'ic-play')}Play</button>
             <button class="btn" data-act="lib-shuffle-ids" data-ids="${ids.join(',')}">${icon('shuffle')}Shuffle</button>
             ${groupSaveButton(ids, 'liked')}
+            ${ui.downloadButton({ kind: 'liked' }, Object.keys(App.store.get('liked') || {}))}
           </div>
         </div>
       </div>
@@ -628,6 +631,86 @@
   }
 
   /* =====================================================================
+     6b. Downloads (/downloads): what this device keeps for offline (App.downloads, offline.js), with sizes,
+         the device's storage, and removal
+     ===================================================================== */
+  var DL_KIND = { album: 'album', playlist: 'playlist', liked: 'liked songs', track: 'song' };
+  function keptName(k) {
+    if (k.kind === 'liked') return 'Liked songs';
+    if (k.kind === 'album') { var a = M.album(k.id); return a ? a.title + ', ' + a.artist : 'An album'; }
+    if (k.kind === 'playlist') { var p = playlist(k.id); return p ? p.name : 'A playlist'; }
+    var t = M.track(k.id); return t ? t.title + ', ' + t.artist : 'A song';
+  }
+  function keptArt(k) {
+    if (k.kind === 'album' && M.album(k.id)) return ui.cover(M.album(k.id), 48);
+    if (k.kind === 'track' && M.track(k.id)) return ui.cover(M.track(k.id), 48);
+    if (k.kind === 'liked') return html`<span class="cover c5" style="--cover-size-base:48px" aria-hidden="true"></span>`;
+    return ui.mosaic(k.ids, 48, '');
+  }
+  function bytes(n) { return fmt.size((n || 0) / 1e6); }
+  function keptRow(k) {
+    var D = App.downloads, cov = D.coverage(k.ids), size = k.ids.reduce(function (n, id) { var r = D.state(id); return n + (r && r.state === 'done' ? r.sizeBytes || 0 : 0); }, 0);
+    var failed = k.ids.filter(function (id) { var r = D.state(id); return r && r.state === 'failed'; });
+    var line = cov.busy ? 'Downloading, ' + cov.done + ' of ' + cov.total : plural(cov.done, 'song') + ', ' + bytes(size);
+    return html`<li class="lib-kept__row">
+      <span class="lib-kept__art">${keptArt(k)}</span>
+      <span class="lib-kept__text"><span class="lib-kept__name">${keptName(k)}</span>
+        <span class="lib-kept__sub"><span class="lib-kept__kind">${DL_KIND[k.kind]}</span>${line}${failed.length ? html`, <span class="field__error">${failed.length} failed</span>` : ''}</span></span>
+      <span class="lib-kept__acts">${failed.length ? html`<button class="btn btn--sm" data-act="lib-dl-retry" data-ids="${failed.join(',')}">Retry</button>` : ''}
+        <button class="btn btn--sm" data-act="lib-dl-unkeep" data-id="${k.key}" aria-label="Remove ${keptName(k)} from this device">${icon('trash', null, 'ic-16')}Remove</button></span></li>`;
+  }
+  function downloadsBody() {
+    var D = App.downloads, why = D.unavailableReason();
+    var done = D.list().filter(function (r) { return r.state === 'done' && M.track(r.trackId); }).map(function (r) { return r.trackId; });
+    var kept = D.kept().filter(function (k) { return k.kind !== 'track'; });
+    if (!done.length && !D.list().length) {
+      return html`<section class="card lib-card" aria-label="Downloads">${why ? html`<p class="sys-note sys-note--warn">${icon('lock', null, 'ic-16')}<span>${why}</span></p>` : ''}
+        ${ui.emptyState({ art: 'wave', title: 'Nothing downloaded yet', text: 'Use Download on an album, a playlist, Liked songs or any song, and it plays here even when your hub can\'t be reached.', action: { label: 'Go to Liked songs', href: '#/liked' } })}</section>`;
+    }
+    return html`<section class="card lib-card" aria-labelledby="lib-dl-h">
+      <div class="lib-listhead">
+        <span class="cover c3 lib-listhead__art" style="--cover-size-base:96px" aria-hidden="true"></span>
+        <div class="lib-listhead__text">
+          <h2 class="lib-listhead__title" id="lib-dl-h">downloads</h2>
+          <p class="lib-facts px">${plural(done.length, 'song')}, ${bytes(D.usedBytes())} on this device</p>
+          <p class="lib-dl-storage" id="lib-dl-storage" aria-live="polite"></p>
+          <div class="lib-bar">
+            <button class="btn btn--primary" data-act="play-ids" data-ids="${done.join(',')}" ${done.length ? '' : raw('aria-disabled="true"')}>${icon('play', null, 'ic-play')}Play</button>
+            <button class="btn" data-act="lib-shuffle-ids" data-ids="${done.join(',')}">${icon('shuffle')}Shuffle</button>
+            <button class="btn btn--quiet" data-act="lib-dl-clear">${icon('trash')}Remove all</button>
+          </div>
+        </div>
+      </div>
+      ${why ? html`<p class="sys-note sys-note--warn">${icon('lock', null, 'ic-16')}<span>${why}</span></p>` : ''}
+      ${kept.length ? html`${ruleWith('kept on this device', 'lib-dl-kept-h', html`<span class="t-micro fg-2">follow their source while online</span>`)}
+        <ul class="lib-kept" aria-labelledby="lib-dl-kept-h">${kept.map(keptRow)}</ul>` : ''}
+      ${ruleWith('songs', 'lib-dl-songs-h', '')}
+      ${ui.trackList(done, { label: 'Downloaded songs' })}
+    </section>`;
+  }
+  function renderDownloads() { return libraryFrame('downloads', downloadsBody(), ''); }
+  /* the device's own storage: what the browser lets lull use (or the app's free space) */
+  function showStorage() {
+    App.downloads.estimate().then(function (e) {
+      var el = $('#lib-dl-storage'); if (!el || !e) return;
+      el.textContent = bytes(e.freeBytes) + ' free for downloads on this device';
+    });
+  }
+  function mountDownloads(ctx) {
+    showStorage();
+    var t = null;
+    ctx.onCleanup(App.on('downloads', function () { clearTimeout(t); t = setTimeout(function () { refreshKeepFocus(); showStorage(); }, 250); }));
+    liveOn(ctx, ['playlists']);
+  }
+  App.action('lib-dl-unkeep', function (el) { App.downloads.unkeep(el.getAttribute('data-id')).then(function () { App.toast('Removed from this device', { icon: 'trash' }); }); });
+  App.action('lib-dl-retry', function (el) { App.downloads.retry(el.getAttribute('data-ids').split(',')); });
+  App.action('lib-dl-clear', function () {
+    App.confirm({ title: 'remove every download?', text: 'All songs leave this device. They still play from your hub when it can be reached.', confirm: 'Remove all', danger: true }, function () {
+      App.downloads.remove(App.downloads.list().map(function (r) { return r.trackId; })).then(function () { App.toast('Downloads removed', { icon: 'trash' }); });
+    });
+  });
+
+  /* =====================================================================
      7. Playlists list (store `playlists`; `playlistsError` once a load failed, null once one succeeded)
      ===================================================================== */
   function playlistTile(p) {
@@ -742,6 +825,7 @@
           <button class="btn btn--primary" data-act="play-playlist" data-id="${p.id}" ${ids.length ? '' : raw('aria-disabled="true"')}>${icon('play', null, 'ic-play')}Play</button>
           ${ui.iconButton('shuffle', 'Shuffle play', { 'data-act': 'lib-shuffle-ids', 'data-ids': ids.join(',') })}
           ${ids.length && missing ? groupSaveButton(ids, 'playlist') : ''}
+          ${ids.length ? ui.downloadButton({ kind: 'playlist', id: p.id }, ids) : ''}
           ${ui.iconButton('edit', 'Edit name and description', { 'data-act': 'lib-pl-edit', 'data-id': p.id, 'aria-haspopup': 'dialog' })}
           ${ui.iconButton('export', 'Export as M3U', { 'data-act': 'lib-pl-export', 'data-id': p.id, 'aria-haspopup': 'dialog' })}
           ${ui.iconButton('more', 'More playlist actions', { 'data-act': 'lib-pl-menu', 'data-id': p.id, 'aria-haspopup': 'menu' })}
@@ -804,15 +888,12 @@
   function makePlaylist(name, desc, ids, imported) {
     return App.createPlaylist({ name: name, desc: desc || '', trackIds: ids, imported: imported });
   }
-  function saveDetails(p, name, desc) {
-    return M.api(playlistPath(p.id), { method: 'PATCH', body: { name: name, desc: desc } }).then(App.loadPlaylists);
-  }
+  function saveDetails(p, name, desc) { return App.updatePlaylist(p.id, { name: name, desc: desc }); }
   function deletePlaylist(p) {
     var ids = plIds(p);
-    M.api(playlistPath(p.id), { method: 'DELETE' }).then(function () {
+    App.deletePlaylist(p.id).then(function () {
       M.invalidate(playlistPath(p.id));
       if (App.current.path === '/playlist/' + p.id) App.go('/playlists');
-      App.loadPlaylists();
       /* undo makes it again from what it held (a new playlist, same name, description and songs) */
       App.toast('Deleted ' + p.name, { icon: 'trash', action: 'Undo', onAction: function () {
         makePlaylist(p.name, p.desc, ids).then(function (back) { if (back) App.go('/playlist/' + back.id); });
@@ -1236,6 +1317,7 @@
   App.route('/library/:segment?', { render: renderLibrary, mount: mountLibrary, nav: 'library',
     title: function (ctx) { var s = SEGMENTS.filter(function (x) { return x.id === ctx.params.segment; })[0]; return 'Library' + (s ? ': ' + s.label : ''); } });
   App.route('/liked', { render: renderLiked, mount: mountLiked, nav: 'library', title: 'Liked songs' });
+  App.route('/downloads', { render: renderDownloads, mount: mountDownloads, nav: 'library', title: 'Downloads' });
   App.route('/history', { render: renderHistory, mount: mountLibrary, nav: 'library', title: 'History' });
   App.route('/following', { render: renderFollowing, mount: mountLibrary, nav: 'library', title: 'Following' });
   App.route('/album/:id', { render: renderAlbum, mount: mountAlbum, nav: 'library', title: titleOf(M.album, 'Album'), meta: metaOf(M.album, albumMeta) });

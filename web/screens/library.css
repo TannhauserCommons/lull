@@ -282,3 +282,23 @@ button.lib-th:hover { color: var(--fg); background: var(--bg-2); }
   .lib-imp__main { grid-area: main; }
   .lib-imp__status { grid-area: status; justify-content: flex-start; }
 }
+
+/* ---------- downloads (offline.js, /downloads) ---------- */
+.dl-mark { display: inline-flex; color: var(--ok); }
+.dl-mark:empty { display: none; }
+.dl-btn.is-on { color: var(--ok); }
+.dl-btn .spin-ring { width: 18px; height: 18px; color: var(--fg-2); }
+.lib-dl-storage { margin: 2px 0 0; font: var(--t-meta); color: var(--fg-2); }
+.lib-dl-storage:empty { display: none; }
+.lib-kept { list-style: none; margin: 0 0 var(--sp-4); padding: 0; }
+.lib-kept__row { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center; gap: var(--sp-3); padding: var(--sp-2) 0; border-top: 1px solid var(--divider); }
+.lib-kept__row:first-child { border-top: 0; }
+.lib-kept__art .cover, .lib-kept__art .mosaic { --cover-size: 48px; }
+.lib-kept__text { display: grid; gap: 2px; min-width: 0; }
+.lib-kept__name { font: 800 .9375rem/1.3 var(--f-ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-kept__sub { font: var(--t-meta); color: var(--fg-2); }
+.lib-kept__sub .field__error { display: inline; }
+.lib-kept__kind { text-transform: capitalize; }
+.lib-kept__kind::after { content: ", "; }
+.lib-kept__acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--sp-2); }
+@media (max-width: 639px) { .lib-kept__row { grid-template-columns: 48px minmax(0, 1fr); } .lib-kept__acts { grid-column: 2; justify-content: flex-start; } }

@@ -10,7 +10,7 @@ from, how the player plays, and the rules screens follow. The endpoint contract 
 ```
 index.html   tokens.css base.css components.css screens/*.css desktop/desktop.css designs/<name>/design.css (last)
              designs/designs.js + the pre-paint script (design, theme, motion, text size)
-             icons.js data.js app.js connect.js screens/{discover,now,library,system,appearance,hub,setup,classic}.js desktop/desktop.js
+             icons.js data.js app.js connect.js offline.js screens/{discover,now,library,system,appearance,hub,setup,classic}.js desktop/desktop.js
 data.js      window.LullData = App.data: API client, entity cache, per-route reads, the event stream
 app.js       window.App: router, render helpers, overlays, save pipeline, player engine, shell, actions,
              keyboard, Media Session, drag and drop, server events + boot
@@ -197,8 +197,29 @@ Settings > Devices renders from it.
 
 ## Offline downloads and outbox
 
-ADR-0005. Screens use one interface, `App.downloads`, with two backends: the browser's (Cache Storage + IndexedDB)
-and, in the Android app, `window.LullNative.downloads`. The native backend's contract (Mobile session implements it):
+ADR-0005, `offline.js`. One IndexedDB database `lull` (stores `outbox`, `downloads`, `kept`).
+
+**Outbox** (`App.outbox`): likes, follows, plays and playlist changes go through `App.outbox.call(path, opts, op)`:
+sent at once when the hub answers, queued with a client uuid and `at` when it can't (`App.server.reachable` false,
+the browser offline, or a request that got no answer). The queue goes to `POST /api/sync` in order, 200 ops a batch,
+when the hub is reachable again (the `server` event, `resync`, the browser's `online`); applied and refused ops leave
+the queue, refusals are named in one toast, and collections reload. A play started offline is queued whole when it
+ends, with its real `startedAt`. A playlist made offline gets a `pl-tmp-…` id (`tempId` in its ops) until the hub
+answers with its real one (`playlists` in the sync answer).
+
+**Downloads** (`App.downloads`): `keep({ kind: track|album|playlist|liked, id }, ids)`, `unkeep(key)`,
+`remove(ids)`, `retry(ids)`, `has(id)`, `state(id)`, `coverage(ids)`, `localUrl(id)` (the engine's source for a
+downloaded song), `estimate()`. Two at a time; progress emits `downloads`. Kept collections follow their source
+while online (store `playlists` / `liked` changes): new songs download, dropped ones go unless another kept
+collection holds them. `ui.downloadButton(collection, ids)` is the icon button on albums, playlists and Liked;
+song menus have Download / Remove download; rows show a downloaded mark. The Downloads screen is the Library
+segment `/downloads`. Downloads need a secure context (HTTPS or localhost); elsewhere the button says why.
+
+- **Browser backend**: audio in Cache Storage `lull-downloads` under `downloads/audio/<trackId>`, covers under
+  their `/api/art/…?size=96|256|512` URLs (sw.js answers covers from there when the hub can't), the index (track and
+  album JSON, size, state) in IndexedDB; `navigator.storage.persist()` on the first download. A downloaded song
+  plays from a Blob URL.
+- **App backend**: `window.LullNative.downloads`, whose contract (Mobile session implements it) is:
 
 | Method | Does |
 |---|---|
