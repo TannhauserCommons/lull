@@ -112,6 +112,8 @@ pub struct Service {
     jobs: Arc<Jobs>,
     naming: Template,
     art_dir: PathBuf,
+    /// Cover lookups outside the library, running or recently failed (art.rs).
+    lookups: Arc<art::Lookups>,
     /// Wakes the sync loop early (a save waits for Jellyfin, a rescan finished).
     wake: Notify,
     /// Quick Connect attempts waiting for approval (connect.rs).
@@ -155,6 +157,7 @@ pub async fn start(ctx: &Ctx, transfers: Arc<dyn Transfers>) -> Result<Arc<Servi
         jobs,
         naming,
         art_dir: ctx.config.data_dir.join("art"),
+        lookups: Arc::default(),
         wake: Notify::new(),
         connects: connect::Pending::default(),
         switching: Arc::default(),

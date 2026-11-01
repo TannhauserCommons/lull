@@ -105,6 +105,7 @@
   - its MusicBrainz id, when Jellyfin knows it;
   - otherwise by name: `catalog::track_on_album` gives artist and album, then a MusicBrainz release-group search. Hits scoring 90 or more are tried in turn, albums first, and the first with a cover wins. A self-titled EP or single scores as high as the album and often has no cover.
 - **Disk cache.** Covers live in `<LULL_DATA_DIR>/art/`, one file per album, size and source. "No cover anywhere" is remembered for a week, but only once every candidate was asked. An album the catalog doesn't know yet answers 404 without being remembered. A cover costs at most one MusicBrainz search per album and size.
+- **Never a slow request.** A page asks for many covers at once, and a browser opens only six connections per host. So a request waits at most 3 s for MusicBrainz and the archive, then answers 404, and the lookup finishes in the background and caches its answer for the next request. Requests for the same cover share one lookup. A failed lookup (either service unreachable) caches nothing and pauses new lookups for a minute: during that time, uncached covers answer 404 at once.
 - **Ids are checked** (`al-` plus hex) before they become file names.
 
 ## Rescan and jobs

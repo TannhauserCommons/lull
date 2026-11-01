@@ -2,12 +2,20 @@
 //! music folder's image file or embedded picture), else the Cover Art Archive's. Every image is
 //! cached on disk under `<data_dir>/art`, and so is "the archive has none" (for a week), so a
 //! cover costs at most one outside call per album and size.
+//!
+//! The outside lookup (MusicBrainz, then the archive) never holds a request for long: a page asks
+//! for many covers at once, and browsers open only six connections per host. A request waits
+//! `WAIT` for it, then answers 404 while the lookup finishes in the background and caches its
+//! answer for the next request.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime};
+use std::sync::{Mutex, PoisonError};
+use std::time::{Duration, Instant, SystemTime};
 
 use lull_core::ids::AlbumId;
-use lull_core::{Error, Result, catalog};
+use lull_core::{Ctx, Error, Result, catalog};
+use tokio::sync::watch;
 
 use crate::items::Art;
 use crate::musicbrainz::{self, CoverOf};
@@ -15,6 +23,51 @@ use crate::{Service, tags};
 
 /// How long "no cover anywhere" is believed before asking again.
 const NONE_FOR: Duration = Duration::from_secs(7 * 24 * 3600);
+/// How long a request waits for an outside lookup before answering 404.
+const WAIT: Duration = Duration::from_secs(3);
+/// After a lookup fails (MusicBrainz or the archive unreachable), how long new lookups aren't
+/// started: a page of covers then asks once, not once per album.
+const DOWN_FOR: Duration = Duration::from_secs(60);
+
+/// Outside lookups running or recently failed. Shared with the background tasks.
+#[derive(Default)]
+pub struct Lookups {
+    /// Cache path → turns `true` when its lookup ends, so requests for the same cover share one.
+    running: Mutex<HashMap<PathBuf, watch::Receiver<bool>>>,
+    down_until: Mutex<Option<Instant>>,
+}
+
+impl Lookups {
+    fn down(&self) -> bool {
+        let until = self.down_until.lock().unwrap_or_else(PoisonError::into_inner);
+        until.is_some_and(|t| Instant::now() < t)
+    }
+
+    fn failed(&self) {
+        *self.down_until.lock().unwrap_or_else(PoisonError::into_inner) = Some(Instant::now() + DOWN_FOR);
+    }
+
+    /// Joins the lookup for `path`. The sender comes back when there was none: the caller starts it.
+    fn join(&self, path: &Path) -> (watch::Receiver<bool>, Option<watch::Sender<bool>>) {
+        let mut running = self.running.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(done) = running.get(path) {
+            return (done.clone(), None);
+        }
+        let (tx, rx) = watch::channel(false);
+        running.insert(path.to_owned(), rx.clone());
+        (rx, Some(tx))
+    }
+
+    fn end(&self, path: &Path) {
+        self.running.lock().unwrap_or_else(PoisonError::into_inner).remove(path);
+    }
+}
+
+/// The MusicBrainz ids a saved album carries, if any.
+struct Known {
+    release_group: Option<String>,
+    release: Option<String>,
+}
 
 pub struct Image {
     pub bytes: Vec<u8>,
@@ -73,20 +126,84 @@ pub async fn cover(svc: &Service, album: &AlbumId, size: u32) -> Result<Image> {
     if recently_written(&none).await {
         return Err(Error::NotFound(format!("no cover for {album}")));
     }
+    if svc.lookups.down() {
+        return Err(Error::NotFound(format!(
+            "no cover for {album} yet: cover lookups failed a moment ago"
+        )));
+    }
+    let known = saved.map(|(_, release_group, release)| Known { release_group, release });
+    let (mut done, start) = svc.lookups.join(&path);
+    if let Some(tx) = start {
+        let (ctx, lookups, album) = (svc.ctx.clone(), svc.lookups.clone(), album.clone());
+        let (path, none) = (path.clone(), none.clone());
+        svc.ctx.spawn(async move {
+            look_up(&ctx, &lookups, &album, known, size, &path, &none).await;
+            tx.send_replace(true);
+            lookups.end(&path);
+        });
+    }
+    if tokio::time::timeout(WAIT, done.wait_for(|ended| *ended)).await.is_ok()
+        && let Some(image) = cached(&path).await
+    {
+        return Ok(image);
+    }
+    Err(Error::NotFound(format!("no cover for {album} yet")))
+}
+
+/// Finds a cover outside and caches the answer: the image, or "none" when the archive has
+/// none. A failure caches nothing and pauses lookups for `DOWN_FOR`.
+async fn look_up(
+    ctx: &Ctx,
+    lookups: &Lookups,
+    album: &AlbumId,
+    known: Option<Known>,
+    size: u32,
+    path: &Path,
+    none: &Path,
+) {
+    // Queued behind a lookup that has since failed.
+    if lookups.down() {
+        return;
+    }
     let archive_size = if size <= 256 { 250 } else { 500 };
-    let found = match saved {
-        Some((_, Some(group), _)) => fetch(svc, CoverOf::ReleaseGroup(&group), archive_size).await?,
-        Some((_, None, Some(release))) => fetch(svc, CoverOf::Release(&release), archive_size).await?,
+    match find(ctx, album, known, archive_size).await {
+        Ok(Some(Some(bytes))) => {
+            if let Err(e) = write_atomic(path, bytes).await {
+                tracing::warn!(path = %path.display(), error = %e, "could not cache a cover");
+            }
+        }
+        Ok(Some(None)) => {
+            if let Err(e) = write_atomic(none, Vec::new()).await {
+                tracing::warn!(error = %e, "could not cache a missing cover");
+            }
+        }
+        // Not "no cover": lull just doesn't know this album yet, so nothing is cached.
+        Ok(None) => {}
+        Err(e) => {
+            lookups.failed();
+            tracing::info!(%album, error = %e, "cover lookup failed; pausing cover lookups for a minute");
+        }
+    }
+}
+
+/// The archive's cover (`Some(None)`: it has none), or `None` when lull doesn't know the album.
+async fn find(ctx: &Ctx, album: &AlbumId, known: Option<Known>, size: u32) -> Result<Option<Option<Vec<u8>>>> {
+    let http = &ctx.http;
+    let found = match known {
+        Some(Known {
+            release_group: Some(group),
+            ..
+        }) => musicbrainz::cover(http, CoverOf::ReleaseGroup(&group), size).await?,
+        Some(Known {
+            release: Some(release), ..
+        }) => musicbrainz::cover(http, CoverOf::Release(&release), size).await?,
         _ => {
-            let Some(groups) = release_groups_by_name(svc, album).await? else {
-                // Not "no cover": lull just doesn't know this album yet, so nothing is cached.
-                return Err(Error::NotFound(format!(
-                    "no cover for {album}: lull doesn't know this album"
-                )));
+            let Some(groups) = release_groups_by_name(ctx, album).await? else {
+                return Ok(None);
             };
             let mut found = None;
             for group in &groups {
-                found = fetch(svc, CoverOf::ReleaseGroup(group), archive_size).await?;
+                found = musicbrainz::cover(http, CoverOf::ReleaseGroup(group), size).await?;
                 if found.is_some() {
                     break;
                 }
@@ -94,15 +211,7 @@ pub async fn cover(svc: &Service, album: &AlbumId, size: u32) -> Result<Image> {
             found
         }
     };
-    match found {
-        Some(bytes) => store(&path, bytes).await,
-        None => {
-            if let Err(e) = write_atomic(&none, Vec::new()).await {
-                tracing::warn!(error = %e, "could not cache a missing cover");
-            }
-            Err(Error::NotFound(format!("no cover for {album}")))
-        }
-    }
+    Ok(Some(found))
 }
 
 /// A music-folder cover (an image file, or a song's embedded picture), scaled to fit `size`.
@@ -139,22 +248,18 @@ fn fit(bytes: Vec<u8>, size: u32) -> Vec<u8> {
     }
 }
 
-async fn fetch(svc: &Service, of: CoverOf<'_>, size: u32) -> Result<Option<Vec<u8>>> {
-    musicbrainz::cover(&svc.ctx.http, of, size).await
-}
-
 /// An album lull only knows by id (a search result, a recommendation): its artist and title
 /// come from the catalog, then MusicBrainz names the release groups it may be. `None` when the
 /// catalog has no song on it.
-async fn release_groups_by_name(svc: &Service, album: &AlbumId) -> Result<Option<Vec<String>>> {
+async fn release_groups_by_name(ctx: &Ctx, album: &AlbumId) -> Result<Option<Vec<String>>> {
     let id = album.clone();
-    let Some(track) = svc.ctx.db.call(move |c| catalog::track_on_album(c, &id)).await? else {
+    let Some(track) = ctx.db.call(move |c| catalog::track_on_album(c, &id)).await? else {
         return Ok(None);
     };
     if track.album.trim().is_empty() {
         return Ok(Some(vec![]));
     }
-    musicbrainz::release_groups(&svc.ctx.http, &track.artist, &track.album)
+    musicbrainz::release_groups(&ctx.http, &track.artist, &track.album)
         .await
         .map(Some)
 }
