@@ -46,10 +46,11 @@
       App.storage('layout', L);
       apply(); App.emit('layout', App.layout.get());
     },
+    /* Settings > Appearance "Reset layout": defaults at once, no reload; the screen re-renders (Home order, search) */
     reset: function () {
       L = sanitize(DEFAULTS);
       try { localStorage.removeItem('lull:layout'); } catch (e) { /* private mode */ }
-      apply(); App.emit('layout', App.layout.get());
+      apply(); App.emit('layout', App.layout.get()); App.refresh();
     },
     /* the main area's size class; at least(name) compares against it */
     size: function () { return size || 'compact'; },
@@ -96,6 +97,8 @@
     if (designCtx == null) designCtx = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--ctx'), 10) || LIMITS.panel[0];
     return designCtx;
   }
+  /* read again once the design's stylesheet is in (boot), and whenever the design changes */
+  App.on('ready', function () { designCtx = null; apply(); });
   App.on('design', function () { designCtx = null; apply(); });
 
   /* ---------- size classes: the main area's width and the window's height, as ResizeObserver reports them ---------- */
