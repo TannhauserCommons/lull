@@ -6,7 +6,7 @@ rust-version = "1.99"
 description = "lull desktop wrapper: hosts the web UI from your server, adds a tray and a mini player"
 publish = false
 
-# Its own workspace: the root workspace excludes desktop/, so Tauri's tree never slows the server build.
+# Its own workspace: the root workspace excludes app/, so Tauri's tree never slows the server build.
 [workspace]
 
 [[bin]]

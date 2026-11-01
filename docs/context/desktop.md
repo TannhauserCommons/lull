@@ -6,27 +6,27 @@ A Tauri v2 app in `desktop/` (its own Cargo workspace) that loads the web UI fro
 
 | Path | What |
 |---|---|
-| `desktop/src/main.rs` | Builder: plugins (single instance first, window state, autostart, global shortcut on Linux), commands, setup |
-| `desktop/src/main_window.rs` | `main`: launch probe, web UI or bundled page, runtime IPC grant for the server origin, close-to-tray |
-| `desktop/src/mini.rs` | Mini player windows `mini` (device) and `strip` |
-| `desktop/src/tray.rs` | Tray icon and native menu; player items become `tray` events |
-| `desktop/src/commands.rs` | The commands the pages call, checked at the boundary |
-| `desktop/src/server.rs` | `/health`, `/api/ping`, `/api/session` from Rust (ureq) |
-| `desktop/src/pages.rs` | URLs of the bundled page (`wrapper.html#view=…`) |
-| `desktop/src/settings.rs` | `settings.json` in the app config dir |
-| `desktop/src/platform/` | Windows taskbar theme (registry watch), Linux tray host, button layout, compositing, media keys |
-| `desktop/build.rs` | Stages the web files the bundled page needs into `desktop/dist/`, declares command permissions |
-| `desktop/capabilities/local.json` | IPC for the bundled page |
+| `app/src/main.rs` | Builder: plugins (single instance first, window state, autostart, global shortcut on Linux), commands, setup |
+| `app/src/main_window.rs` | `main`: launch probe, web UI or bundled page, runtime IPC grant for the server origin, close-to-tray |
+| `app/src/mini.rs` | Mini player windows `mini` (device) and `strip` |
+| `app/src/tray.rs` | Tray icon and native menu; player items become `tray` events |
+| `app/src/commands.rs` | The commands the pages call, checked at the boundary |
+| `app/src/server.rs` | `/health`, `/api/ping`, `/api/session` from Rust (ureq) |
+| `app/src/pages.rs` | URLs of the bundled page (`wrapper.html#view=…`) |
+| `app/src/settings.rs` | `settings.json` in the app config dir |
+| `app/src/platform/` | Windows taskbar theme (registry watch), Linux tray host, button layout, compositing, media keys |
+| `app/build.rs` | Stages the web files the bundled page needs into `app/dist/`, declares command permissions |
+| `app/capabilities/local.json` | IPC for the bundled page |
 | `web/desktop/wrapper.html` | The bundled page: connect, unreachable, mini player (view in the hash) |
 | `web/desktop/desktop.js`, `desktop.css` | The wrapper's UI; also loaded by the web UI (`index.html`), where it does nothing outside the wrapper |
 
 ## Run it
 
-- `cd desktop && cargo run` (set `CARGO_TARGET_DIR` outside `Desktop` on Windows). Point it at `mise run dev` (`http://127.0.0.1:8080`) on the connect page.
+- `cd app && cargo run` (set `CARGO_TARGET_DIR` outside `Desktop` on Windows). Point it at `mise run dev` (`http://127.0.0.1:8080`) on the connect page.
 - Pages in `web/desktop/` and the staged web files are embedded at compile time: rebuild after editing them. The web UI itself comes from the server, so its edits only need a reload.
 - **Inspecting the webviews:** start with `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333` and open `http://127.0.0.1:9333/json`; each window is a DevTools target.
 - Settings live in `%APPDATA%\io.github.tannhausercommons.lull\settings.json` (Linux: `~/.config/io.github.tannhausercommons.lull/`). WebView2 data, including the token cookie, is in `%LOCALAPPDATA%\io.github.tannhausercommons.lull\EBWebView`.
-- Bundles: `npm ci && npm run bundle` in `desktop/`. CI does this (`.github/workflows/desktop.yml`): a `v*` tag attaches the Windows installer and the Linux deb, rpm and AppImage to that tag's Release; a manual run keeps them as workflow artifacts.
+- Bundles: `npm ci && npm run bundle` in `app/`. CI does this (`.github/workflows/app.yml`): a `v*` tag attaches the Windows installer and the Linux deb, rpm and AppImage to that tag's Release; a manual run keeps them as workflow artifacts.
 
 ## Launch
 
