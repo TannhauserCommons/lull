@@ -65,6 +65,7 @@ It is done when every item passes end to end on the homelab hub and on the Windo
 | 2026-11-01 | OpenSubsonic API, and Spotify / Last.fm / ListenBrainz import | Existing native apps work with lull; new listeners start with their music and taste |
 | 2026-11-01 | Remote access through the listener's Tailscale; `tailscale serve` provides HTTPS | No relay to host; browsers need HTTPS to install the app |
 | 2026-11-01 | Layouts reveal more as the window grows; resizable, collapsible panels and a reorderable Home, remembered per device (ADR-0007) | User's wish: big and odd window sizes used well, not stretched cards |
+| 2026-11-01 | Search is a catalog search (Deezer, MusicBrainz, Last.fm, saved songs) with Soulseek behind it; Soulseek copies are picked by separate streaming and saving profiles with minimums, auto-upgrade and mid-song source switching (ADR-0008) | User's wish: Spotify-like search that never misses a niche track, and every source rule a setting |
 
 ## Open questions for the user
 

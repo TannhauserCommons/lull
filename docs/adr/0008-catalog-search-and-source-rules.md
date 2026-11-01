@@ -1,0 +1,77 @@
+# ADR-0008: Search the catalogs; pick Soulseek copies by the listener's rules
+
+- Status: accepted
+- Date: 2026-11-01
+
+## Context
+
+Search is Soulseek-first today.
+- It shows songs guessed from file paths, grouped by peer folder, after a search of up to 15 s.
+- The library half comes back separately.
+
+The listener wants search to work like Spotify's: artists, albums, singles and tracks with real art, quickly, and never missing a niche track. Pressing play should pick a Soulseek copy by rules they set. Saving should have its own rules, and every rule should be a setting (2026-11-01).
+
+Exploring the code found three gaps:
+- the stored Settings › Sources values were never applied;
+- song-to-file matching was exact-only, with no duration check;
+- a save with no known source failed instead of searching.
+
+## Decision
+
+**Search is a catalog search.** Discovery owns `/api/search` and merges four sources:
+- **Deezer** (no key; 50 requests per 5 s). It answers first, with art for artists, albums, singles and tracks, plus ISRCs and durations.
+- **MusicBrainz:** one search per query through the shared `Http::pace` budget. Covers come from the Cover Art Archive.
+- **Last.fm** (`track.search`, `artist.search`): independent and scrobble-known music, plus listener counts. It's never the art source.
+- **Saved songs** through the `Library` seam, badged as saved.
+
+**Merging and ranking:**
+- **One row per song:** matched by ISRC when both sides have one; otherwise by normalized artist and title (feat., version, remaster and edit tags stripped) with durations within ±3 s.
+- **Ids** stay content-derived (ADR-0001).
+- **Each merged row** keeps the best art and the most complete facts.
+- **Order:** exact matches first, then popularity (Deezer rank, Last.fm listeners), then the listener's follows and likes.
+- **One top result:** an artist, album or track.
+
+**Fast first, more later.**
+- The response carries what arrived within about 400 ms (Deezer and the library).
+- MusicBrainz and Last.fm additions follow as a `search.more` event, merged by the UI without moving rows the listener is reading.
+- Queries are debounced by the UI and cached by discovery for 10 minutes.
+
+**Soulseek behind the catalogs:**
+- **Nothing is missed.** A submitted query (3+ characters) still runs a Soulseek search. Songs no catalog knows come back as "Only on Soulseek" rows built from file tags.
+- **Instant play.** Discovery publishes `search.catalog { query, trackIds }` for the top tracks, and soulseek pre-warms their sources, paced.
+- **Raw files.** Folder and file results appear only in the source picker, unless Settings › Search › "Show file results" adds a Files tab.
+
+**Source rules: two profiles.** The types are `lull_core::quality::{StreamProfile, SaveProfile}`; collection stores them and publishes them in `settings` (ADR-0050).
+
+| Field | Meaning |
+|---|---|
+| `minimum` | `{ losslessOnly, kbps, formats }`. Lossless passes any lossy floor. A lossy file of unknown bitrate fails a floor. An empty `formats` means any |
+| `pick` | `fastest` (best score among copies that pass) or `highest` (best quality among copies that pass, speed breaking ties) |
+| `below` | Streaming: `playBest` (marked below the minimum), `keepLooking` or `ask`. Saving: `saveBestUpgrade`, `wait` or `ask` |
+| `autoUpgrade`, `upgradeEveryH` | Saving only: re-search saved songs below the minimum and replace them when a passing copy appears |
+
+- **Defaults:**
+  - streaming: 192 kbps or lossless, `fastest`, `playBest`;
+  - saving: 320 kbps or lossless, `highest`, `saveBestUpgrade`, auto-upgrade daily.
+- **Fallback:** a stalled or silent peer falls back to the next copy in the profile's order. The peer limits (maximum queue, stall timeout) are applied, not just stored.
+- **One quality rule:** `lull_core::quality::Quality::beats` (lossless over lossy, or at least a fifth more bitrate) replaces the separate rules in soulseek (`dup_kind`, +64 kbps) and library (`items.rs::Quality`).
+- **Matching:**
+  - fuzzy artist and title matching with the same normalization as merging;
+  - a duration check when the file reports a length;
+  - a looser second query when the first finds nothing.
+- **Saves search when no source is known,** as playback does.
+- **Upgrades** are paced (at most one re-search a minute) and replace files through the existing replace path, keeping tags, cover and Jellyfin entry. Each one shows in Activity.
+- **Switching source mid-song** reopens the stream from the chosen peer and seeks back to the current time.
+
+## Alternatives
+
+- **Spotify's Web API.** Since February 2026 development-mode apps need Premium and get capped search results, and its terms don't fit a downloader.
+- **Apple's iTunes Search API:** about 20 calls a minute, too slow for search as you type.
+- **MusicBrainz alone:** complete for released music, but 1 request a second, sparse art and no artist photos.
+- **Keeping Soulseek-first search:** slow, file-shaped results, and no art. It's what the listener asked to replace.
+
+## Consequences
+
+- **More upstreams.** Search depends on three outside services. Each one failing degrades to the others, and the status tray names it.
+- **Deezer's limit is per IP,** fine for one listener with debouncing and caching.
+- **Catalog entries now include albums and artists with art,** so `Entities` carries them for search results.
