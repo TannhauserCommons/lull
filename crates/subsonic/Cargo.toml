@@ -8,6 +8,21 @@ publish.workspace = true
 
 [dependencies]
 lull-core.workspace = true
+axum.workspace = true
+rusqlite.workspace = true
+serde_json.workspace = true
+# Subsonic token auth is md5(password + salt). Already in the tree.
+md-5 = "=0.10.6"
+# Repeated parameters (`id=a&id=b`) in the query and in form POSTs. Already in the tree through reqwest.
+form_urlencoded = "=1.2.2"
+# getRandomSongs and getAlbumList2?type=random. Already in the tree through lull-core.
+getrandom = "=0.4.3"
+
+[dev-dependencies]
+async-trait.workspace = true
+tokio.workspace = true
+# Driving the router in tests (`oneshot`). Already in the tree through axum.
+tower = { version = "=0.5.3", features = ["util"] }
 
 [lints]
 workspace = true

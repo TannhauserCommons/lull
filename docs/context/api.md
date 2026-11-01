@@ -192,4 +192,12 @@ ADR-0004; format and hooks: [themes.md](../themes.md) *(owner writes)*.
 
 ## Subsonic (`crates/subsonic`)
 
-OpenSubsonic at `/rest/*` (`.view` suffix accepted), JSON and XML per `f=`. Auth: `u=lull` with `p=` / `t=`+`s=` against an app password from `POST /api/devices/subsonic`, or OpenSubsonic `apiKey=`. Endpoints and gaps: [subsonic.md](subsonic.md) *(owner writes)*.
+OpenSubsonic (API 1.16.1) at `/rest/<endpoint>`, `.view` suffix accepted, by GET or form POST. XML by default, JSON with `f=json`. Auth on every call but `getOpenSubsonicExtensions`: `u=lull` with `p=` (plain or `enc:`) or `t=md5(password + salt)`+`s=`, against an app password from `POST /api/devices/subsonic`; or `apiKey=` with any paired device's token. Ids are lull's (`ar-`, `al-`, `t-`, `pl-`); cover art ids are album ids. Rules and spec gaps: [subsonic.md](subsonic.md).
+
+| Group | Endpoints |
+|---|---|
+| System | `ping`, `getLicense`, `getOpenSubsonicExtensions` (`apiKeyAuthentication`, `formPost`), `getMusicFolders` |
+| Browse | `getIndexes`, `getArtists`, `getArtist`, `getAlbum`, `getSong`, `getAlbumList2`, `getRandomSongs`, `getGenres` |
+| Search, media | `search3` (empty query lists all), `stream` and `download` (the saved file, Range honoured), `getCoverArt` (`size`) |
+| Likes, plays | `star`, `unstar` (songs only), `getStarred2`, `scrobble` (a submission becomes `Collection::record_play`) |
+| Playlists | `getPlaylists`, `getPlaylist`, `createPlaylist`, `updatePlaylist`, `deletePlaylist` (saved songs only; indexes count those) |

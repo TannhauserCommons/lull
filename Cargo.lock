@@ -1121,7 +1121,16 @@ dependencies = [
 name = "lull-subsonic"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "axum",
+ "form_urlencoded",
+ "getrandom 0.4.3",
  "lull-core",
+ "md-5",
+ "rusqlite",
+ "serde_json",
+ "tokio",
+ "tower",
 ]
 
 [[package]]
