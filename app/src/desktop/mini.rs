@@ -1,10 +1,10 @@
 //! Mini player windows (DESKTOP.md 3): the device (`mini`) or the strip (`strip`). A bundled page
 //! that mirrors `main`'s player over events; `main` hides while one is open.
 
-use crate::main_window;
-use crate::pages::{self, Mini};
-use crate::settings::MiniStyle;
-use crate::state::Desktop;
+use crate::desktop::main_window;
+use crate::desktop::pages::{self, Mini};
+use crate::desktop::settings::MiniStyle;
+use crate::desktop::state::Desktop;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 const LABELS: [&str; 2] = ["mini", "strip"];

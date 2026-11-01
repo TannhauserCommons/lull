@@ -1,7 +1,7 @@
-//! URLs of the pages bundled in the wrapper (`web/desktop/wrapper.html`). The page reads its view and
+//! URLs of the pages bundled in the app (`web/desktop/wrapper.html`). The page reads its view and
 //! data from the hash, and the design and theme the web UI last reported (DESKTOP.md 6.1).
 
-use crate::settings::Appearance;
+use crate::desktop::settings::Appearance;
 use tauri::Url;
 
 /// Where Tauri serves the embedded files: `http://tauri.localhost` on Windows (WebView2 can't use
@@ -16,13 +16,29 @@ pub fn is_local(url: &Url) -> bool {
     url.as_str().starts_with(BASE.trim_end_matches("desktop/wrapper.html"))
 }
 
-pub fn connect(server: Option<&Url>, appearance: &Appearance) -> tauri::Result<Url> {
-    let url = server.map(Url::as_str).unwrap_or_default();
-    page("connect", appearance, &[("url", url)])
+/// First run, and "Change hub…": this computer, or a hub elsewhere.
+pub fn welcome(appearance: &Appearance) -> tauri::Result<Url> {
+    page("welcome", appearance, &[])
+}
+
+/// Pair with a hub elsewhere: hubs found on the network, or an address, then a pair code.
+/// `unpaired`: this hub knew the app once and has since unpaired it.
+pub fn connect(hub: Option<&Url>, unpaired: bool, appearance: &Appearance) -> tauri::Result<Url> {
+    let url = hub.map(Url::as_str).unwrap_or_default();
+    page(
+        "connect",
+        appearance,
+        &[("url", url), ("unpaired", if unpaired { "1" } else { "" })],
+    )
+}
+
+/// The hub on this computer didn't start; `error` says why.
+pub fn hub_failed(error: &str, appearance: &Appearance) -> tauri::Result<Url> {
+    page("hub-error", appearance, &[("error", error)])
 }
 
 pub struct Unreachable<'a> {
-    pub server: &'a Url,
+    pub hub: &'a Url,
     pub error: &'a str,
     pub last_connected: Option<u64>,
 }
@@ -32,7 +48,7 @@ pub fn unreachable(o: Unreachable, appearance: &Appearance) -> tauri::Result<Url
     page(
         "offline",
         appearance,
-        &[("url", o.server.as_str()), ("error", o.error), ("last", &last)],
+        &[("url", o.hub.as_str()), ("error", o.error), ("last", &last)],
     )
 }
 

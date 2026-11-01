@@ -2,10 +2,11 @@
 //! handled here; player items are forwarded to the web UI as `tray` events, which it runs as its own
 //! actions. Labels follow `set_now_playing`.
 
-use crate::main_window::{self, report};
-use crate::mini;
-use crate::platform;
-use crate::state::NowPlaying;
+use crate::desktop::main_window::{self, report};
+use crate::desktop::mini;
+use crate::desktop::platform;
+use crate::desktop::state::NowPlaying;
+use crate::desktop::updater;
 use serde::Serialize;
 use tauri::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
@@ -13,6 +14,7 @@ use tauri::{AppHandle, Emitter, Wry};
 
 pub struct Tray {
     icon: TrayIcon,
+    menu: Menu<Wry>,
     now: MenuItem<Wry>,
     play: MenuItem<Wry>,
     next: MenuItem<Wry>,
@@ -73,6 +75,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<Tray> {
         .build(app)?;
     Ok(Tray {
         icon,
+        menu,
         now,
         play,
         next,
@@ -85,9 +88,9 @@ pub fn create(app: &AppHandle) -> tauri::Result<Tray> {
 
 impl Tray {
     /// Labels, check marks and tooltip for the current track. Player items are off while idle or
-    /// while the server can't be reached.
-    pub fn show(&self, now: &NowPlaying, on_server: bool) {
-        let connected = on_server && now.connected;
+    /// while the hub can't be reached.
+    pub fn show(&self, now: &NowPlaying, on_hub: bool) {
+        let connected = on_hub && now.connected;
         let idle = now.title.is_empty();
         let line = match () {
             _ if !connected => "Not connected".to_owned(),
@@ -117,6 +120,16 @@ impl Tray {
         report(result);
     }
 
+    /// A downloaded update: "Restart to update" goes first in the menu (updater.rs).
+    pub fn offer_update(&self, app: &AppHandle, version: &str) {
+        let offer = || -> tauri::Result<()> {
+            let text = format!("Restart to update to lull {version}");
+            let item = MenuItem::with_id(app, "update", text, true, None::<&str>)?;
+            self.menu.prepend_items(&[&item, &PredefinedMenuItem::separator(app)?])
+        };
+        report(offer());
+    }
+
     pub fn set_mini(&self, open: bool) {
         report(self.mini.set_checked(open));
     }
@@ -132,6 +145,12 @@ fn on_menu(app: &AppHandle, event: MenuEvent) {
     let result = match event.id().as_ref() {
         "show" => mini::close(app),
         "mini" => mini::toggle(app),
+        "update" => {
+            if let Err(e) = updater::install(app) {
+                eprintln!("lull: the update didn't install: {e}");
+            }
+            Ok(())
+        }
         "quit" => {
             app.exit(0);
             Ok(())

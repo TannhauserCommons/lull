@@ -1,13 +1,18 @@
 [package]
-name = "lull-desktop"
+name = "lull-app"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.99"
-description = "lull desktop wrapper: hosts the web UI from your server, adds a tray and a mini player"
+description = "The lull app for Windows, Linux and Android: the web UI, the hub in-process on desktop, a native player on Android"
 publish = false
 
 # Its own workspace: the root workspace excludes app/, so Tauri's tree never slows the server build.
 [workspace]
+
+# Tauri's mobile entry point needs the app as a library (staticlib/cdylib for Android, rlib for main.rs).
+[lib]
+name = "lull_app"
+crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
 name = "lull"
@@ -15,30 +20,59 @@ path = "src/main.rs"
 
 [build-dependencies]
 tauri-build = { version = "=2.7.4", features = [] }
+# build.rs fetches the slskd sidecar (pinned by sha256) and unpacks it from its release zip.
+ureq = { version = "=3.5.0", default-features = false, features = ["rustls"] }
+sha2 = "=0.11.1"
+zip = { version = "=9.2.1", default-features = false, features = ["deflate"] }
 
 [dependencies]
 # The webview shell itself; tray-icon + image-png for the tray glyphs.
 tauri = { version = "=2.12.5", features = ["tray-icon", "image-png"] }
+# Settings file and IPC payloads.
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+# Blocking HTTP to the hub from Rust: health probes, pairing, events. Rust has no mixed-content or
+# CORS rules, so a phone can use a hub at http://192.168.x.x. Platform verifier: trust exactly what
+# the webview trusts (home CAs included).
+ureq = { version = "=3.5.0", default-features = false, features = ["rustls", "platform-verifier", "json"] }
+# Hub discovery on the local network (_lull._tcp), and advertising the desktop's own hub.
+mdns-sd = "=0.21.6"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+# The hub itself, run in-process when this computer is the hub (ADR-0006).
+lull-server = { path = "../crates/server" }
+lull-core = { path = "../crates/core" }
+# The hub's runtime pieces: its shutdown signal, and its logs in a file next to the app's data.
+tokio = { version = "=1.54.1", features = ["sync"] }
+tracing-subscriber = { version = "=0.3.23", features = ["env-filter"] }
+# slskd's API key and web password, fresh each run. Same version as lull-core's.
+getrandom = "=0.4.3"
+# Logs of the in-process hub and its sidecar, written to a file (the hub logs through tracing).
+tracing = "=0.1.44"
 # Official plugins named in DESKTOP.md: window placement, one instance, launch at login.
 tauri-plugin-window-state = "=2.5.0"
 tauri-plugin-single-instance = "=2.5.5"
 tauri-plugin-autostart = "=2.7.0"
-# Settings file and IPC payloads.
-serde = { version = "=1.0.229", features = ["derive"] }
-serde_json = "=1.0.154"
-# Blocking HTTP for the connect test, the launch probe and the token hand-off (the webview can't read
-# a cross-origin /health). Platform verifier: trust exactly what the webview trusts (home CAs included).
-ureq = { version = "=3.5.0", default-features = false, features = ["rustls", "platform-verifier", "json"] }
+# Auto-update from GitHub Releases, signature-checked (ADR-0006).
+tauri-plugin-updater = "=2.14.1"
 
 [target.'cfg(windows)'.dependencies]
-# Taskbar theme for the tray glyph: read and watch HKCU\...\Themes\Personalize. Already in Tauri's tree.
-windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_System_Registry"] }
+# Taskbar theme for the tray glyph (registry), and a job object so slskd dies with the app.
+windows-sys = { version = "=0.61.2", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_System_JobObjects",
+  "Win32_System_Registry",
+  "Win32_System_Threading",
+] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # StatusNotifier host check, GNOME button-layout, compositing check. Same version as Tauri's.
 gtk = "=0.18.2"
 # Media-key fallback when WebKitGTK ships without Media Session (DESKTOP.md 5).
 tauri-plugin-global-shortcut = "=2.4.1"
+# prctl(PR_SET_PDEATHSIG): slskd stops when the app does, even after a crash. Already in Tauri's tree.
+libc = "=0.2.191"
 
 [profile.release]
 lto = true
@@ -46,7 +80,7 @@ codegen-units = 1
 strip = true
 
 [lints.rust]
-# Denied, not forbidden: the Windows taskbar watch (src/platform/windows.rs) calls the registry API.
+# Denied, not forbidden: the Windows taskbar watch and slskd's job object call the Win32 API.
 unsafe_code = "deny"
 
 [lints.clippy]

@@ -67,7 +67,7 @@
 :root[data-titlebar="gnome"] body { box-shadow: inset 0 0 0 1px var(--edge); }   /* undecorated Linux windows have no shadow */
 
 /* =====================================================================
-   2. Local pages bundled in the wrapper: first-run connect, server unreachable
+   2. Local pages bundled in the app: welcome, connect, hub unreachable, hub didn't start
    ===================================================================== */
 .dk-page {
   position: relative; z-index: 1; min-height: 100vh; min-height: 100dvh; display: grid; place-items: center;
@@ -82,13 +82,26 @@
 .dk-form .field__help { margin-top: -2px; }
 .dk-form .input { background: var(--panel); }
 .dk-form .input[aria-invalid="true"] { border-color: var(--down); box-shadow: inset 0 0 0 1px var(--down); }
-.dk-field-row { position: relative; }
-.dk-field-row .input { padding-right: 76px; }
-.dk-reveal { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); color: var(--theme-link); --focus: var(--theme-focus); }   /* sits on the input, not the card */
+.dk-code { font: var(--t-px); letter-spacing: .3em; text-transform: uppercase; }
 .dk-form .field__error { color: var(--down); }
 .dk-form .field__error[hidden] { display: none; }
 .dk-form .switch-row { min-height: 44px; }
 .dk-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--sp-3); }
+
+/* welcome: two big choices, then the status line once one is picked */
+.dk-choices { display: grid; gap: var(--sp-3); margin: var(--sp-5) 0 var(--sp-4); }
+.dk-choice {
+  display: grid; gap: var(--sp-1); padding: var(--sp-4); text-align: left; cursor: pointer;
+  border: var(--stroke) solid var(--line); border-radius: var(--r-panel); background: var(--panel); color: var(--fg);
+}
+.dk-choice:hover:not(:disabled) { background: var(--bg-2); }
+.dk-choice:disabled { opacity: .6; cursor: default; }
+.dk-choice__title { font: var(--t-row); }
+.dk-choice__text { font: var(--t-meta); color: var(--fg-2); }
+/* connect: hubs found on the network, as chips */
+.dk-hubs { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); min-height: 36px; }
+.dk-hubs > .spin-ring { margin-right: var(--sp-1); }
+.dk-hubs__host, .dk-hubs__none { font: var(--t-meta); color: var(--fg-2); }
 
 /* fixed-height status line: states swap inside it, nothing below moves */
 .dk-status {

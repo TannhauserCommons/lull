@@ -15,10 +15,15 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "deb", "rpm", "appimage"],
+    "targets": [
+      "nsis",
+      "deb",
+      "rpm",
+      "appimage"
+    ],
     "category": "Music",
     "shortDescription": "Self-hosted music player",
-    "longDescription": "lull plays music from your own server: Soulseek while it downloads, your Jellyfin library, discovery and Last.fm. The desktop app adds a tray, a mini player and media keys.",
+    "longDescription": "lull is a music app you host yourself: Soulseek while it downloads, your music folder or Jellyfin, discovery and Last.fm. On Windows and Linux this computer can be your hub; phones and other computers pair with it.",
     "icon": [
       "../web/assets/icons/icon-16.png",
       "../web/assets/icons/icon-24.png",
@@ -32,10 +37,25 @@
     ],
     "linux": {
       "deb": {
-        "files": { "/usr/share/icons/hicolor/scalable/apps/lull.svg": "../web/assets/app-icon.svg" }
+        "files": {
+          "/usr/share/icons/hicolor/scalable/apps/lull.svg": "../web/assets/app-icon.svg"
+        }
       },
       "rpm": {
-        "files": { "/usr/share/icons/hicolor/scalable/apps/lull.svg": "../web/assets/app-icon.svg" }
+        "files": {
+          "/usr/share/icons/hicolor/scalable/apps/lull.svg": "../web/assets/app-icon.svg"
+        }
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc0QTU2NERGRTlCQ0FCNEUKUldST3E3enAzMlNsZENQaVduZno1S2FEbWZ0NVBGWHdnYldNaWZwVm1qSDF1SHRMd1NsSUsvdjcK",
+      "endpoints": [
+        "https://github.com/TannhauserCommons/lull/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
       }
     }
   }

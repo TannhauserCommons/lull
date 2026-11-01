@@ -4,9 +4,11 @@
 mod linux;
 #[cfg(windows)]
 mod windows;
+#[cfg(windows)]
+pub use windows::kill_with_app;
 
-use crate::settings::Settings;
-use crate::state::Platform;
+use crate::desktop::settings::Settings;
+use crate::desktop::state::Platform;
 use tauri::AppHandle;
 use tauri::image::Image;
 
@@ -71,7 +73,7 @@ pub fn tray_icon(app: &AppHandle) -> tauri::Result<Image<'static>> {
     #[cfg(not(windows))]
     {
         let _ = app;
-        Image::from_bytes(include_bytes!("../../../web/assets/icons/tray-dark-32.png"))
+        Image::from_bytes(include_bytes!("../../../../web/assets/icons/tray-dark-32.png"))
     }
 }
 
@@ -80,7 +82,7 @@ fn windows_tray_png(light_taskbar: bool, scale: f64) -> &'static [u8] {
     macro_rules! png {
         ($theme:literal, $size:literal) => {
             include_bytes!(concat!(
-                "../../../web/assets/icons/tray-",
+                "../../../../web/assets/icons/tray-",
                 $theme,
                 "-",
                 $size,
@@ -105,7 +107,7 @@ fn windows_tray_png(light_taskbar: bool, scale: f64) -> &'static [u8] {
 pub fn follow_taskbar(app: &AppHandle) {
     #[cfg(windows)]
     {
-        use crate::state::Desktop;
+        use crate::desktop::state::Desktop;
         use tauri::Manager;
         let app = app.clone();
         windows::watch_taskbar(move || {

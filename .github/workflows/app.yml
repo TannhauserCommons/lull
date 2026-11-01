@@ -1,13 +1,14 @@
 name: app
-# The Tauri app (app/). A quick check whenever it or its web pieces change; Windows and
-# Linux bundles on a v* tag (attached to that tag's GitHub Release) or by hand (workflow artifacts).
+# The Tauri app (app/). A quick check whenever it, the hub it embeds or its web pieces change;
+# Windows and Linux bundles on a v* tag (attached to that tag's GitHub Release, with the signed
+# updater files and latest.json) or by hand (workflow artifacts, no updater files).
 on:
   push:
     branches: [main]
     tags: ["v*"]
-    paths: ["app/**", "web/desktop/**", "web/assets/icons/**", ".github/workflows/app.yml"]
+    paths: ["app/**", "crates/**", "web/desktop/**", "web/assets/icons/**", ".github/workflows/app.yml"]
   pull_request:
-    paths: ["app/**", "web/desktop/**", "web/assets/icons/**", ".github/workflows/app.yml"]
+    paths: ["app/**", "crates/**", "web/desktop/**", "web/assets/icons/**", ".github/workflows/app.yml"]
   workflow_dispatch:
 
 permissions:
@@ -70,17 +71,33 @@ jobs:
           node-version: "24.11"
       - working-directory: app
         run: npm ci --no-audit --no-fund
+      # A tag sets the version (v1.2.0 -> 1.2.0) and signs the updater files with the release key
+      # (it has no password). The in-process hub gets lull's own Last.fm key compiled in, as the
+      # image does (core::config, option_env!).
       - working-directory: app
-        run: npx tauri build --ci --bundles ${{ matrix.bundles }}
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          LULL_LASTFM_API_KEY: ${{ secrets.LULL_LASTFM_API_KEY }}
+          LULL_LASTFM_API_SECRET: ${{ secrets.LULL_LASTFM_API_SECRET }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            config="{\"version\":\"${GITHUB_REF_NAME#v}\",\"bundle\":{\"createUpdaterArtifacts\":true}}"
+          else
+            config='{}'
+          fi
+          npx tauri build --ci --bundles ${{ matrix.bundles }} --config "$config"
       - uses: actions/upload-artifact@v4
         with:
           name: lull-desktop-${{ runner.os }}
           if-no-files-found: error
           path: |
             app/target/release/bundle/nsis/*.exe
+            app/target/release/bundle/nsis/*.exe.sig
             app/target/release/bundle/deb/*.deb
             app/target/release/bundle/rpm/*.rpm
             app/target/release/bundle/appimage/*.AppImage
+            app/target/release/bundle/appimage/*.AppImage.sig
 
   release:
     needs: bundle
@@ -93,6 +110,20 @@ jobs:
         with:
           path: bundles
           merge-multiple: true
+      # latest.json is what the app's updater reads (tauri.conf.json plugins.updater.endpoints).
+      - name: Updater manifest
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
+          win=$(cd bundles && ls *-setup.exe)
+          appimage=$(cd bundles && ls *.AppImage)
+          jq -n --arg v "${TAG#v}" --arg base "$base" \
+            --arg win "$win" --rawfile winsig "bundles/$win.sig" \
+            --arg app "$appimage" --rawfile appsig "bundles/$appimage.sig" \
+            '{version: $v, pub_date: (now | todate), platforms: {
+               "windows-x86_64": {url: "\($base)/\($win)", signature: $winsig},
+               "linux-x86_64": {url: "\($base)/\($app)", signature: $appsig}}}' > bundles/latest.json
       - env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}

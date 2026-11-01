@@ -3,11 +3,13 @@
    the wrapper's own page (wrapper.html). Outside the wrapper it does nothing. Exposes window.LullDesktop:
      inWrapper                                       true inside the desktop app
      attachTitlebar(os, layout) / detachTitlebar()   Windows caption buttons or GNOME header-bar buttons
-     connectPage(opts) / offlinePage(opts)           bundled pages (first run, server unreachable)
+     welcomePage() / connectPage(opts)               bundled first-run pages: which hub, pairing
+     offlinePage(opts) / hubErrorPage(opts)          bundled pages: hub unreachable, hub didn't start
      miniDevice() / miniStrip()                      mini-player markup (the miniPlayer design slot)
      askClose()                                      one-time "keep playing in the tray?" dialog
      windowAction(action, detail)                    window operations (DESKTOP.md 4, window_action)
      settings() / setSettings(patch)                 Settings > App inside the wrapper (Promises)
+     tailscale() / tailscaleServe()                  Settings > App when this computer is the hub (Promises)
      openMini()                                      the player bar's Device view button
      mountPage()                                     wrapper.html: render the view named in the hash
    window.__LULL_DESKTOP__ ({ os, titlebar, layout }) is set by the wrapper before any page script runs. */
@@ -45,6 +47,9 @@
   D.settings = function () { return invoke('desktop_settings'); };
   D.setSettings = function (patch) { return invoke('set_desktop_settings', { patch: patch }); };
   D.openMini = function () { return D.windowAction('mini').catch(logFailure('mini player')); };
+  /* this computer is the hub: Tailscale's state, and serving the hub on the tailnet (only on the listener's click) */
+  D.tailscale = function () { return invoke('tailscale_status'); };
+  D.tailscaleServe = function () { return invoke('tailscale_serve'); };
 
   /* caption glyphs: OS-convention shapes, 10x10, 1 px (Windows draws these at 10 px) */
   var GLYPH = {
@@ -130,16 +135,9 @@
   })();
 
   /* =====================================================================
-     2. Bundled pages: first-run connect, server unreachable
+     2. Bundled pages: first run (welcome, connect), hub unreachable, hub didn't start
      ===================================================================== */
   function hostOf(url) { try { return new URL(url).host; } catch (e) { return url; } }
-  /* same rule as the wrapper (server.rs origin): "music.home.arpa" means https, paths are dropped */
-  function normalise(url) {
-    url = String(url || '').trim();
-    if (url && !/^[a-z]+:\/\//i.test(url)) url = 'https://' + url;
-    try { var u = new URL(url); if (!/^https?:$/.test(u.protocol) || !u.hostname || /\s/.test(url)) return null; return u.origin; }
-    catch (e) { return null; }
-  }
   /* the design's brand slot (designs/designs.js) when the page loads it, else the plain wordmark */
   function wordmark() {
     var plain = function () {
@@ -149,89 +147,106 @@
     return '<span class="brand-mark" role="img" aria-label="' + name + '">' +
       (window.Designs ? String(Designs.slot('brand', { where: 'desktop' }, Designs.brandMarkup)) : plain()) + '</span>';
   }
-  var SERVICE_NAMES = { soulseek: 'Soulseek', library: 'Library', lastfm: 'Last.fm' };
-  function answered(health) {
-    var names = Object.keys(SERVICE_NAMES).filter(function (k) {
-      var s = health.services && health.services[k]; return s && (s.state === 'ok' || s.state === 'warn');
-    }).map(function (k) { return SERVICE_NAMES[k]; });
-    if (!names.length) return '';
-    var list = names.length > 1 ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] : names[0];
-    return ' ' + list + ' answered.';
+  function page(inner) { return '<div class="dk-page"><div class="dk-page__inner">' + wordmark() + inner + '</div></div>'; }
+  function status(kind, text) {
+    var glyph = kind === 'busy' ? '<span class="spin-ring" aria-hidden="true"></span>'
+      : kind === 'ok' ? window.icon('status-ok', 'OK', 'sg sg--ok')
+      : kind === 'error' ? window.icon('status-down', 'Error', 'sg sg--down') : ic('info');
+    return glyph + '<span class="dk-status__text">' + text + '</span>';
   }
-  function statusMarkup(state, url, health) {
-    var host = esc(hostOf(url));
-    switch (state) {
-      case 'testing': return '<span class="spin-ring" aria-hidden="true"></span><span class="dk-status__text">Testing ' + host + '&hellip; <button type="button" class="btn btn--quiet" data-dk="cancel">Cancel</button></span>';
-      case 'ok': return window.icon('status-ok', 'OK', 'sg sg--ok') + '<span class="dk-status__text">Connected to lull ' + esc(health.version) + '.' + esc(answered(health)) + '</span>';
-      case 'unreachable': return window.icon('status-down', 'Error', 'sg sg--down') + '<span class="dk-status__text">Can&rsquo;t reach ' + host + '. Check the address and that this computer is on your home network or VPN.</span>';
-      case 'rejected': return window.icon('status-down', 'Error', 'sg sg--down') + '<span class="dk-status__text">The server answered but didn&rsquo;t accept this token.</span>';
-      case 'invalid': return ic('warning') + '<span class="dk-status__text">That doesn&rsquo;t look like an address yet.</span>';
-      default: return ic('info') + '<span class="dk-status__text">lull checks the address and token before saving.</span>';
-    }
+  function setStatus(card, kind, text) {
+    var st = $('.dk-status', card); st.setAttribute('data-state', kind === 'busy' ? 'testing' : kind === 'info' ? 'idle' : kind);
+    st.innerHTML = status(kind, text);
   }
-  function fieldError(id, key) {
-    return '<span class="field__error" id="' + id + '" data-err="' + key + '" hidden>' + ic('warning', 'ic-16') + '<span></span></span>';
+
+  /* Welcome: this computer is the hub, or a hub elsewhere (ADR-0006). */
+  D.welcomePage = function () {
+    return page('<section class="card dk-card" aria-labelledby="dk-w-title" data-dk-welcome>' +
+      '<h1 class="dk-card__title" id="dk-w-title">where does your music live?</h1>' +
+      '<p class="dk-card__lede">One computer is your hub: it keeps your library, finds music on Soulseek and remembers what you play. Your other devices pair with it.</p>' +
+      '<div class="dk-choices">' +
+      '<button type="button" class="dk-choice" data-dk="this-computer"><span class="dk-choice__title">This computer is my hub</span>' +
+      '<span class="dk-choice__text">lull runs here, with your music folder. Pick Soulseek and Last.fm next.</span></button>' +
+      '<button type="button" class="dk-choice" data-dk="connect"><span class="dk-choice__title">Connect to a hub</span>' +
+      '<span class="dk-choice__text">Your hub runs on another computer or a server. You&rsquo;ll need a pair code from it.</span></button>' +
+      '</div><div class="dk-status" role="status" data-state="idle" hidden></div></section>');
+  };
+  function useThisComputer(card) {
+    $$('.dk-choice', card).forEach(function (b) { b.disabled = true; });
+    var st = $('.dk-status', card); st.hidden = false;
+    setStatus(card, 'busy', 'Starting your hub&hellip;');
+    // on success the app loads the hub's own setup in this window; a failure shows the hub-error page
+    D.windowAction('this-computer').catch(function (err) {
+      $$('.dk-choice', card).forEach(function (b) { b.disabled = false; });
+      setStatus(card, 'error', esc(String(err)));
+    });
   }
+
+  /* Connect: hubs found on this network or an address, then a pair code from a paired device. */
   D.connectPage = function (o) {
     o = o || {};
-    var id = 'dk';
-    return '<div class="dk-page"><div class="dk-page__inner">' + wordmark() +
-      '<section class="card dk-card" aria-labelledby="' + id + '-title" data-dk-connect data-state="idle">' +
-      '<h1 class="dk-card__title" id="' + id + '-title">connect to your server</h1>' +
-      '<p class="dk-card__lede">lull plays from the server you run at home. You only do this once.</p>' +
+    return page('<section class="card dk-card" aria-labelledby="dk-c-title" data-dk-connect>' +
+      '<h1 class="dk-card__title" id="dk-c-title">connect to your hub</h1>' +
+      '<p class="dk-card__lede">' + (o.unpaired
+        ? 'This hub doesn&rsquo;t know this computer any more. Pair it again with a new code.'
+        : 'On a device that already uses your hub, open Settings &gt; Devices &gt; Pair a device for a code.') + '</p>' +
       '<form class="dk-form" novalidate>' +
-      '<div class="field"><label class="field__label" for="' + id + '-url">Server address</label>' +
-      '<input class="input" id="' + id + '-url" name="url" type="url" inputmode="url" autocomplete="url" spellcheck="false" placeholder="https://music.home.arpa" value="' + esc(o.url || '') + '" aria-describedby="' + id + '-url-help ' + id + '-url-err">' +
-      '<span class="field__help" id="' + id + '-url-help" data-help="url">The address you open lull at in a browser.</span>' + fieldError(id + '-url-err', 'url') + '</div>' +
-      '<div class="field"><label class="field__label" for="' + id + '-token">Access token</label>' +
-      '<div class="dk-field-row"><input class="input" id="' + id + '-token" name="token" type="password" autocomplete="off" spellcheck="false" aria-describedby="' + id + '-token-help ' + id + '-token-err">' +
-      '<button type="button" class="btn btn--quiet btn--sm dk-reveal" data-dk="reveal" aria-pressed="false" aria-controls="' + id + '-token">Show</button></div>' +
-      '<span class="field__help" id="' + id + '-token-help" data-help="token">Only if your server sets one. It&rsquo;s in the server&rsquo;s config.</span>' + fieldError(id + '-token-err', 'token') + '</div>' +
-      '<label class="switch-row"><span><span class="switch-row__label">Remember on this device</span><span class="switch-row__help">Kept by lull on this computer. Off: asked again next time.</span></span>' +
-      '<button type="button" class="switch" role="switch" aria-checked="true" data-dk="switch" name="remember"></button></label>' +
-      '<div class="dk-status" role="status" data-state="idle">' + statusMarkup('idle', '') + '</div>' +
-      '<div class="dk-actions"><button type="button" class="btn" data-dk="test">Test connection</button>' +
-      '<button type="submit" class="btn btn--primary">Connect</button></div>' +
-      '</form></section></div></div>';
+      '<div class="field"><span class="field__label" id="dk-found-label">On this network</span>' +
+      '<div class="dk-hubs" role="group" aria-labelledby="dk-found-label" data-dk-found>' + status('busy', 'Looking for hubs&hellip;') + '</div></div>' +
+      '<div class="field"><label class="field__label" for="dk-url">Hub address</label>' +
+      '<input class="input" id="dk-url" name="url" type="text" inputmode="url" autocomplete="url" spellcheck="false" placeholder="192.168.1.20:8484" value="' + esc(o.url || '') + '" aria-describedby="dk-url-help">' +
+      '<span class="field__help" id="dk-url-help">Or its Tailscale address, like https://hub.example.ts.net</span></div>' +
+      '<div class="field"><label class="field__label" for="dk-code">Pair code</label>' +
+      '<input class="input dk-code" id="dk-code" name="code" type="text" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" maxlength="6" placeholder="ABC123"></div>' +
+      '<div class="dk-status" role="status" data-state="idle">' + status('info', 'lull checks the hub before pairing.') + '</div>' +
+      '<div class="dk-actions"><button type="button" class="btn" data-dk="change-server">Back</button>' +
+      '<button type="submit" class="btn btn--primary">Pair</button></div>' +
+      '</form></section>');
   };
-  function setConnectState(card, state, url, health) {
-    card.setAttribute('data-state', state);
-    var st = $('.dk-status', card); st.setAttribute('data-state', state); st.innerHTML = statusMarkup(state, url, health);
-    var urlIn = $('[name="url"]', card), tokIn = $('[name="token"]', card);
-    var urlErr = state === 'unreachable' ? 'No answer from this address' : state === 'invalid' ? 'Enter a full address, like https://music.home.arpa' : '';
-    var tokErr = state === 'rejected' ? 'Token rejected' : '';
-    [[urlIn, 'url', urlErr], [tokIn, 'token', tokErr]].forEach(function (f) {   // the error takes the help line's place: no shift
-      var err = $('[data-err="' + f[1] + '"]', card), help = $('[data-help="' + f[1] + '"]', card);
-      if (f[2]) { f[0].setAttribute('aria-invalid', 'true'); err.lastChild.textContent = f[2]; }
-      else f[0].removeAttribute('aria-invalid');
-      err.hidden = !f[2]; help.hidden = !!f[2];
+  function discover(card) {
+    var box = $('[data-dk-found]', card);
+    box.innerHTML = status('busy', 'Looking for hubs&hellip;');
+    invoke('discover_hubs').then(function (hubs) {
+      box.innerHTML = (hubs.length ? hubs.map(function (h) {
+        return '<button type="button" class="chip" data-dk="pick-hub" data-url="' + esc(h.url) + '" aria-pressed="false">' + esc(h.name) + ' <span class="dk-hubs__host">' + esc(hostOf(h.url)) + '</span></button>';
+      }).join('') : '<span class="dk-hubs__none">None found. Type the address below.</span>') +
+        '<button type="button" class="btn btn--quiet btn--sm" data-dk="discover">Search again</button>';
+    }, function (err) {
+      box.innerHTML = '<span class="dk-hubs__none">' + esc(String(err)) + '</span>' +
+        '<button type="button" class="btn btn--quiet btn--sm" data-dk="discover">Search again</button>';
     });
   }
-  /* GET <url>/health, then /api/ping with the token, done by the wrapper (the page's origin can't read them) */
-  function runTest(card, thenConnect) {
-    var urlIn = $('[name="url"]', card), tokIn = $('[name="token"]', card);
-    var url = normalise(urlIn.value), token = tokIn.value.trim();
-    var run = card._dkRun = (card._dkRun || 0) + 1;        // Cancel and newer tests make older answers stale
-    if (!url) { setConnectState(card, 'invalid', urlIn.value); urlIn.focus(); return; }
-    urlIn.value = url;
-    setConnectState(card, 'testing', url);
-    invoke('test_server', { url: url, token: token }).then(function (r) {
+  function pair(card) {
+    var urlIn = $('[name="url"]', card), codeIn = $('[name="code"]', card);
+    var url = urlIn.value.trim(), code = codeIn.value.trim().toUpperCase();
+    if (!url) { setStatus(card, 'error', 'Pick a hub or type its address.'); return urlIn.focus(); }
+    if (code.length !== 6) { setStatus(card, 'error', 'The pair code has 6 characters.'); return codeIn.focus(); }
+    var run = card._dkRun = (card._dkRun || 0) + 1;
+    setStatus(card, 'busy', 'Checking ' + esc(hostOf(url) || url) + '&hellip;');
+    invoke('find_hub', { url: url }).then(function (r) {
       if (run !== card._dkRun) return;
-      setConnectState(card, r.state, url, r.health);
-      if (r.state === 'unreachable') urlIn.focus();
-      else if (r.state === 'rejected') tokIn.focus();
-      else if (thenConnect) connect(card, url, token);
-    }, function () {
-      if (run === card._dkRun) { setConnectState(card, 'invalid', url); urlIn.focus(); }
+      if (r.state !== 'ok') { setStatus(card, 'error', 'Can&rsquo;t reach that hub: ' + esc(r.error)); return urlIn.focus(); }
+      urlIn.value = r.url;
+      setStatus(card, 'busy', 'Pairing with lull ' + esc(r.health.version) + '&hellip;');
+      // on success the app loads the hub's web UI in this window
+      return D.windowAction('pair', { url: r.url, code: code }).catch(function (err) {
+        if (run === card._dkRun) { setStatus(card, 'error', esc(String(err))); codeIn.focus(); }
+      });
+    }, function (err) {
+      if (run === card._dkRun) { setStatus(card, 'error', esc(String(err))); urlIn.focus(); }
     });
   }
-  function connect(card, url, token) {
-    var remember = $('[name="remember"]', card).getAttribute('aria-checked') === 'true';
-    D.windowAction('connected', { url: url, token: token, remember: remember }).catch(function (err) {
-      setConnectState(card, 'unreachable', url);
-      $('.dk-status__text', card).textContent = String(err);
-    });
-  }
+
+  /* Hub didn't start (this computer is the hub): the reason, try again, or use another hub. */
+  D.hubErrorPage = function (o) {
+    o = o || {};
+    return page('<section class="card dk-card dk-offline" aria-labelledby="dk-e-title">' +
+      '<div class="empty__art" aria-hidden="true">' + STAR_ART + '<span class="sparkle"></span></div>' +
+      '<h1 class="empty__title" id="dk-e-title">Your hub didn&rsquo;t start</h1>' +
+      '<p class="dk-offline__text">' + esc(o.error || 'Something stopped it.') + '</p>' +
+      '<div class="dk-actions"><button type="button" class="btn" data-dk="change-server">Use another hub</button>' +
+      '<button type="button" class="btn btn--primary" data-dk="restart-hub">Try again</button></div></section>');
+  };
 
   var STAR_ART = '<svg viewBox="0 0 112 88"><path d="M56 10l9 20 22 3-16 15 4 22-19-10-19 10 4-22-16-15 22-3z"/><path d="M56 30l-4 12 6 4-5 12"/></svg>';
   var BACKOFF = [2, 4, 8, 16, 30];
@@ -245,11 +260,11 @@
     return '<div class="dk-page"><div class="dk-page__inner">' + wordmark() +
       '<section class="card dk-card dk-offline" aria-labelledby="dk-o-title" data-dk-offline data-attempt="1">' +
       '<div class="empty__art" aria-hidden="true">' + STAR_ART + '<span class="sparkle"></span></div>' +
-      '<h1 class="empty__title" id="dk-o-title">Can&rsquo;t reach your server</h1>' +
-      '<p class="dk-offline__text">' + esc(hostOf(o.url || '')) + ' didn&rsquo;t answer. Check that the server is running and that this computer is on your home network or VPN.</p>' +
+      '<h1 class="empty__title" id="dk-o-title">Can&rsquo;t reach your hub</h1>' +
+      '<p class="dk-offline__text">' + esc(hostOf(o.url || '')) + ' didn&rsquo;t answer. Check that your hub is running and that this computer is on its network or your Tailscale.</p>' +
       '<div class="dk-retry"><span class="dk-retry__label" aria-hidden="true"></span>' +
       '<div class="progress" aria-hidden="true"><i style="--p:0"></i></div><span class="vh" role="status" data-dk-retry-status></span></div>' +
-      '<div class="dk-actions"><button type="button" class="btn" data-dk="change-server">Change server</button>' +
+      '<div class="dk-actions"><button type="button" class="btn" data-dk="change-server">Change hub</button>' +
       '<button type="button" class="btn btn--primary" data-dk="retry">Retry now</button></div>' +
       '<details class="dk-details"><summary>' + ic('chevron-down') + 'Details</summary><dl class="dk-kv">' +
       '<dt>Address</dt><dd>' + esc(o.url || '') + '</dd><dt>Error</dt><dd data-dk-error>' + esc(o.error || '') + '</dd>' +
@@ -275,7 +290,7 @@
         attempt++; card.setAttribute('data-attempt', attempt);
         $('[data-dk-attempt]', card).textContent = attempt;
         $('[data-dk-error]', card).textContent = String(err);
-        status.textContent = 'Still can\'t reach the server. Attempt ' + attempt + '.';
+        status.textContent = 'Still can\'t reach your hub. Attempt ' + attempt + '.';
         arm(); card._dkTimer = setInterval(step, 1000);
       });
     }
@@ -488,14 +503,16 @@
     if (scope && MINI_ACTIONS.indexOf(act) >= 0) return toMain(act);
     var card = el.closest('[data-dk-connect]');
     switch (act) {
-      case 'minimize': case 'maximize': case 'close': case 'full': case 'mini-close': case 'change-server':
+      case 'minimize': case 'maximize': case 'close': case 'full': case 'mini-close': case 'change-server': case 'connect':
         return D.windowAction(act).catch(logFailure(act));
+      case 'restart-hub': return D.windowAction('retry').catch(logFailure('restart hub'));
+      case 'this-computer': return useThisComputer(el.closest('[data-dk-welcome]'));
+      case 'discover': return discover(card);
+      case 'pick-hub':
+        $$('[data-dk="pick-hub"]', card).forEach(function (b) { b.setAttribute('aria-pressed', String(b === el)); });
+        $('[name="url"]', card).value = el.getAttribute('data-url');
+        return $('[name="code"]', card).focus();
       case 'switch': el.setAttribute('aria-checked', String(el.getAttribute('aria-checked') !== 'true')); return;
-      case 'reveal':
-        var input = $('#' + el.getAttribute('aria-controls')), show = input.type === 'password';
-        input.type = show ? 'text' : 'password'; el.textContent = show ? 'Hide' : 'Show'; el.setAttribute('aria-pressed', String(show)); return;
-      case 'test': return runTest(card, false);
-      case 'cancel': card._dkRun++; setConnectState(card, 'idle', $('[name="url"]', card).value); return;
       case 'retry': var off = el.closest('[data-dk-offline]'); if (off && off._dkRetry) off._dkRetry(); return;
       case 'seek': return seekTo((e.clientX - el.getBoundingClientRect().left) / el.offsetWidth);
     }
@@ -503,9 +520,7 @@
   doc.addEventListener('submit', function (e) {
     var card = e.target.closest('[data-dk-connect]'); if (!card) return;
     e.preventDefault();
-    var url = normalise($('[name="url"]', card).value);
-    if (card.getAttribute('data-state') === 'ok' && url) connect(card, url, $('[name="token"]', card).value.trim());
-    else runTest(card, true);
+    pair(card);
   });
   doc.addEventListener('keydown', function (e) {
     var w = e.target.closest && e.target.closest('.wave[data-dk="seek"]'); if (!w || !S.duration) return;
@@ -513,10 +528,10 @@
     if (!step) return;
     e.preventDefault(); seekTo((S.pos + step) / S.duration);
   });
-  /* any typing in the connect form makes an earlier "ok" stale */
+  /* typing an address unpicks the hub chip that filled it */
   doc.addEventListener('input', function (e) {
     var card = e.target.closest && e.target.closest('[data-dk-connect]');
-    if (card && card.getAttribute('data-state') !== 'idle') { card._dkRun = (card._dkRun || 0) + 1; setConnectState(card, 'idle', ''); }
+    if (card && e.target.name === 'url') $$('[data-dk="pick-hub"]', card).forEach(function (b) { b.setAttribute('aria-pressed', 'false'); });
   });
 
   /* =====================================================================
@@ -544,13 +559,20 @@
      ===================================================================== */
   D.mountPage = function () {
     var q = new URLSearchParams(location.hash.slice(1)), view = q.get('view'), host = $('#dk-root');
-    if (view === 'connect' || view === 'offline') {
+    var pages = {
+      welcome: ['Welcome to lull', function () { return D.welcomePage(); }],
+      connect: ['Connect to your hub', function () { return D.connectPage({ url: q.get('url'), unpaired: !!q.get('unpaired') }); }],
+      offline: ['Can’t reach your hub', function () { return D.offlinePage({ url: q.get('url'), error: q.get('error'), last: q.get('last') }); }],
+      'hub-error': ['Your hub didn’t start', function () { return D.hubErrorPage({ error: q.get('error') }); }]
+    };
+    if (pages[view]) {
       $$('[data-dk-offline]').forEach(function (c) { clearInterval(c._dkTimer); });   // leaving the unreachable page
-      doc.title = view === 'connect' ? 'Connect to your server' : 'Can’t reach your server';
-      host.innerHTML = view === 'connect' ? D.connectPage({ url: q.get('url') }) : D.offlinePage({ url: q.get('url'), error: q.get('error'), last: q.get('last') });
+      doc.title = pages[view][0];
+      host.innerHTML = pages[view][1]();
       attachConfigured();
       $$('[data-dk-offline]').forEach(startRetry);
-      var first = $('[data-dk-connect] [name="url"]'); if (first) first.focus();
+      $$('[data-dk-connect]').forEach(discover);
+      var first = $('[data-dk-connect] [name="code"]') || $('.dk-choice'); if (first) first.focus();
     } else if (view === 'mini' || view === 'strip') {
       doc.title = 'lull mini player';
       miniOpts = { opaque: !!q.get('opaque') };
@@ -571,7 +593,7 @@
     }
   };
 
-  /* the wrapper moves between connect and unreachable by changing the hash: same document, so render again */
+  /* the app moves between its pages by changing the hash: same document, so render again */
   if ($('#dk-root')) window.addEventListener('hashchange', D.mountPage);
 
   /* =====================================================================

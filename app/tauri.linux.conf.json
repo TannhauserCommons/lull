@@ -1,0 +1,10 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "externalBin": ["binaries/slskd"],
+    "resources": {
+      "binaries/slskd-LICENSE.txt": "licenses/slskd-LICENSE.txt",
+      "licenses/THIRD-PARTY.md": "licenses/THIRD-PARTY.md"
+    }
+  }
+}

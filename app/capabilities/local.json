@@ -1,8 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "local",
-  "description": "The bundled pages (connect, server unreachable, mini player). The server's web UI gets its own capability at runtime (src/main_window.rs).",
-  "windows": ["main", "mini", "strip"],
+  "description": "The bundled pages (welcome, connect, hub unreachable, hub didn't start, mini player). The hub's web UI gets its own capability at runtime (src/desktop/main_window.rs).",
+  "windows": [
+    "main",
+    "mini",
+    "strip"
+  ],
   "permissions": [
     "core:window:default",
     "core:window:allow-minimize",
@@ -11,7 +15,8 @@
     "core:window:allow-close",
     "core:window:allow-start-dragging",
     "core:event:default",
-    "allow-test-server",
+    "allow-discover-hubs",
+    "allow-find-hub",
     "allow-window-action"
   ]
 }

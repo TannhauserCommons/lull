@@ -1,10 +1,12 @@
-//! The `main` window: the server's web UI, or a bundled page (connect, server unreachable) when
-//! there is no server yet or it doesn't answer. DESKTOP.md 1, 2 and 6.
+//! The `main` window: the hub's web UI, or a bundled page (welcome, connect, hub unreachable, hub
+//! didn't start) when there is no hub yet or it doesn't answer. DESKTOP.md 1, 2 and 6; ADR-0006.
 
-use crate::pages::{self, Unreachable};
-use crate::platform;
-use crate::server;
-use crate::state::Desktop;
+use crate::desktop::local_hub;
+use crate::desktop::pages::{self, Unreachable};
+use crate::desktop::platform;
+use crate::desktop::settings::HubChoice;
+use crate::desktop::state::{Desktop, lock};
+use crate::hub;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::ipc::CapabilityBuilder;
 use tauri::webview::PageLoadEvent;
@@ -12,8 +14,11 @@ use tauri::{AppHandle, Emitter, Manager, Url, WebviewUrl, WebviewWindow, Webview
 
 pub const LABEL: &str = "main";
 
-/// What the web UI on the server may call (DESKTOP.md 2.1 and 4). Granted to its origin only.
-const SERVER_PERMISSIONS: &[&str] = &[
+/// Where `main` starts while the device cookie is put in: the cookie needs a webview first.
+const BLANK: &str = "about:blank";
+
+/// What the web UI on the hub may call (DESKTOP.md 2.1 and 4). Granted to its origin only.
+const HUB_PERMISSIONS: &[&str] = &[
     "core:window:default",
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
@@ -25,40 +30,77 @@ const SERVER_PERMISSIONS: &[&str] = &[
     "allow-set-now-playing",
     "allow-desktop-settings",
     "allow-set-desktop-settings",
+    "allow-tailscale-status",
+    "allow-tailscale-serve",
 ];
 
-/// First window of the run: the web UI if the saved server answers, else the right bundled page.
-/// The probe runs off the main thread; `main` appears once its page has loaded.
+/// First window of the run. No hub chosen yet: the welcome page. Otherwise the hub is started or
+/// probed off the main thread, and `main` appears once its page has loaded.
 pub fn launch(app: &AppHandle) {
-    let desktop = app.state::<Desktop>();
-    let settings = desktop.settings();
-    let Some(origin) = settings.server.as_deref().and_then(|s| Url::parse(s).ok()) else {
-        let page = pages::connect(None, &settings.appearance);
-        return report(page.and_then(|url| create(app, url)));
-    };
-    let app = app.clone();
-    std::thread::spawn(move || {
-        let target = match server::health(&origin) {
-            Ok(_) => grant(&app, &origin).map(|()| origin),
-            Err(error) => pages::unreachable(
-                Unreachable {
-                    server: &origin,
-                    error: &error,
-                    last_connected: settings.last_connected,
-                },
-                &settings.appearance,
-            ),
-        };
-        report(target.and_then(|url| create(&app, url)));
-    });
+    let settings = app.state::<Desktop>().settings();
+    if settings.hub.is_none() {
+        return report(pages::welcome(&settings.appearance).and_then(|url| create(app, url).map(drop)));
+    }
+    report(open_chosen(app));
 }
 
-fn create(app: &AppHandle, url: Url) -> tauri::Result<()> {
+/// The chosen hub's web UI, or the page that says why not. Runs on its own thread: starting the
+/// hub or probing one takes a moment.
+pub fn open_chosen(app: &AppHandle) -> tauri::Result<()> {
+    let app = app.clone();
+    std::thread::Builder::new()
+        .name("open-hub".into())
+        .spawn(move || report(resolve(&app)))
+        .map(drop)
+        .map_err(tauri::Error::Io)
+}
+
+fn resolve(app: &AppHandle) -> tauri::Result<()> {
+    let desktop = app.state::<Desktop>();
+    let settings = desktop.settings();
+    match settings.hub {
+        None => navigate(app, pages::welcome(&settings.appearance)?),
+        Some(HubChoice::Local) => {
+            let _starting = lock(&desktop.starting);
+            if let Some(local) = desktop.local_hub() {
+                return open_hub(app, &local.origin, &local.token);
+            }
+            match local_hub::start(app) {
+                Ok(local) => {
+                    let (origin, token) = (local.origin.clone(), local.token.clone());
+                    desktop.set_local_hub(local);
+                    open_hub(app, &origin, &token)
+                }
+                Err(error) => navigate(app, pages::hub_failed(&error, &settings.appearance)?),
+            }
+        }
+        Some(HubChoice::Remote { origin }) => {
+            let origin = Url::parse(&origin).map_err(tauri::Error::InvalidUrl)?;
+            let token = settings.token.unwrap_or_default();
+            let unreachable = |error: &str| {
+                let page = Unreachable {
+                    hub: &origin,
+                    error,
+                    last_connected: settings.last_connected,
+                };
+                pages::unreachable(page, &settings.appearance)
+            };
+            match hub::health(&origin).and_then(|_| hub::paired(&origin, &token)) {
+                Ok(true) => open_hub(app, &origin, &token),
+                // Unpaired on the hub (or never paired): pair again with a new code.
+                Ok(false) => navigate(app, pages::connect(Some(&origin), true, &settings.appearance)?),
+                Err(error) => navigate(app, unreachable(&error)?),
+            }
+        }
+    }
+}
+
+fn create(app: &AppHandle, url: Url) -> tauri::Result<WebviewWindow> {
     let desktop = app.state::<Desktop>();
     let settings = desktop.settings();
     let titlebar = platform::titlebar(&settings, &desktop.platform);
     // Show once painted (no white flash), unless the tray holds a connected lull ("Start in the tray").
-    let reveal = !(settings.start_in_tray && desktop.has_tray() && settings.server.is_some());
+    let reveal = !(settings.start_in_tray && desktop.has_tray() && settings.hub.is_some());
     let reveal = std::sync::atomic::AtomicBool::new(reveal);
     WebviewWindowBuilder::new(app, LABEL, WebviewUrl::External(url))
         .title("lull")
@@ -72,7 +114,7 @@ fn create(app: &AppHandle, url: Url) -> tauri::Result<()> {
         .disable_drag_drop_handler()
         .initialization_script(platform::init_script(titlebar.as_ref()))
         .on_page_load(move |window, payload| {
-            if payload.event() != PageLoadEvent::Finished {
+            if payload.event() != PageLoadEvent::Finished || payload.url().as_str() == BLANK {
                 return;
             }
             loaded(&window, payload.url());
@@ -81,40 +123,42 @@ fn create(app: &AppHandle, url: Url) -> tauri::Result<()> {
             }
         })
         .build()
-        .map(drop)
 }
 
 /// Keeps "is the web UI up" true to the page actually loaded, whoever navigated there.
 fn loaded(window: &WebviewWindow, url: &Url) {
     let desktop = window.state::<Desktop>();
-    let on_server = !pages::is_local(url);
-    if on_server {
+    let on_hub = !pages::is_local(url);
+    if on_hub {
         let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
         desktop.update(|s| s.last_connected = Some(now));
     }
-    desktop.set_on_server(on_server);
+    desktop.set_on_hub(on_hub);
 }
 
-/// Load the web UI from `origin` in `main`.
-pub fn open_server(app: &AppHandle, origin: &Url) -> tauri::Result<()> {
+/// Load the hub's web UI in `main`, paired: the device cookie goes in before the first request.
+pub fn open_hub(app: &AppHandle, origin: &Url, token: &str) -> tauri::Result<()> {
+    let main = match app.get_webview_window(LABEL) {
+        Some(main) => main,
+        None => create(app, Url::parse(BLANK).map_err(tauri::Error::InvalidUrl)?)?,
+    };
+    main.set_cookie(hub::device_cookie(origin, token))?;
     grant(app, origin)?;
-    navigate(app, origin.clone())
+    main.navigate(origin.clone())
 }
 
-pub fn open_connect(app: &AppHandle) -> tauri::Result<()> {
-    let settings = app.state::<Desktop>().settings();
-    let server = settings.server.as_deref().and_then(|s| Url::parse(s).ok());
-    navigate(app, pages::connect(server.as_ref(), &settings.appearance)?)
+pub fn open_page(app: &AppHandle, url: tauri::Result<Url>) -> tauri::Result<()> {
+    navigate(app, url?)
 }
 
 fn navigate(app: &AppHandle, url: Url) -> tauri::Result<()> {
     match app.get_webview_window(LABEL) {
         Some(main) => main.navigate(url),
-        None => create(app, url),
+        None => create(app, url).map(drop),
     }
 }
 
-/// IPC for the server's origin, added at runtime because the user picks the server. An origin used
+/// IPC for the hub's origin, added at runtime because the listener picks the hub. An origin used
 /// earlier in this run keeps its grant until lull restarts (Tauri can't revoke a capability).
 fn grant(app: &AppHandle, origin: &Url) -> tauri::Result<()> {
     let origin = origin.origin().ascii_serialization();
@@ -125,8 +169,8 @@ fn grant(app: &AppHandle, origin: &Url) -> tauri::Result<()> {
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .collect();
-    let capability = SERVER_PERMISSIONS.iter().fold(
-        CapabilityBuilder::new(format!("server-{id}"))
+    let capability = HUB_PERMISSIONS.iter().fold(
+        CapabilityBuilder::new(format!("hub-{id}"))
             .remote(format!("{origin}/*"))
             .window(LABEL),
         |c, p| c.permission(*p),
@@ -154,7 +198,7 @@ pub fn toggle(app: &AppHandle) -> tauri::Result<()> {
 
 /// A second launch, or the tray: the open mini player if there is one, else `main`.
 pub fn reveal(app: &AppHandle) -> tauri::Result<()> {
-    match crate::mini::window(app) {
+    match crate::desktop::mini::window(app) {
         Some(mini) => {
             mini.show()?;
             mini.set_focus()
@@ -168,7 +212,7 @@ pub fn reveal(app: &AppHandle) -> tauri::Result<()> {
 pub fn close_requested(window: &tauri::Window, api: &tauri::CloseRequestApi) {
     let desktop = window.state::<Desktop>();
     let settings = desktop.settings();
-    if !desktop.on_server() || !desktop.has_tray() || !settings.close_to_tray {
+    if !desktop.on_hub() || !desktop.has_tray() || !settings.close_to_tray {
         return;
     }
     api.prevent_close();

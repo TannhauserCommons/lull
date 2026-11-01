@@ -3,4 +3,6 @@
 /gen
 /permissions
 /target
+# The slskd sidecar and its release zip, fetched by build.rs.
+/binaries
 /node_modules

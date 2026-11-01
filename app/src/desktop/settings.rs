@@ -1,5 +1,5 @@
-//! The wrapper's own settings, one JSON file in the app config dir. They matter before the web UI
-//! loads (which server, start in the tray, title bar), so they live here and not in the server.
+//! The app's own settings, one JSON file in the app config dir. They matter before the web UI
+//! loads (which hub, start in the tray, title bar), so they live here and not in the hub.
 //! Launch at login is not stored: the OS autostart entry is its only source of truth.
 
 use serde::{Deserialize, Serialize};
@@ -9,8 +9,10 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
-    /// Origin of the lull server, e.g. `https://lull.example.ts.net`. None until the first connect.
-    pub server: Option<String>,
+    /// Which hub this app uses. None until first run is answered.
+    pub hub: Option<HubChoice>,
+    /// This app's device token on that hub (ADR-0002). Changing the hub forgets it.
+    pub token: Option<String>,
     /// Unix seconds of the last successful load of the web UI, for the unreachable page's details.
     pub last_connected: Option<u64>,
     /// Design and theme the web UI last reported, passed to the bundled pages (DESKTOP.md 6.1).
@@ -30,7 +32,8 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Settings {
-            server: None,
+            hub: None,
+            token: None,
             last_connected: None,
             appearance: Appearance::default(),
             close_to_tray: true,
@@ -42,6 +45,15 @@ impl Default for Settings {
             wayland_hint_shown: false,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "mode", rename_all = "lowercase")]
+pub enum HubChoice {
+    /// "This computer is my hub": the app runs it (local_hub.rs).
+    Local,
+    /// A hub elsewhere, e.g. `http://192.168.1.20:8484` or `https://lull.example.ts.net`.
+    Remote { origin: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

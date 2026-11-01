@@ -1,8 +1,8 @@
 //! Linux: what the desktop session offers (DESKTOP.md 2.2, 3, 4, 5). Read on the main thread, where
 //! GTK lives.
 
-use crate::main_window::report;
-use crate::tray;
+use crate::desktop::main_window::report;
+use crate::desktop::tray;
 use gtk::gio::{self, prelude::*};
 use gtk::glib;
 use tauri::AppHandle;

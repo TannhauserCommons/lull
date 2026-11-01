@@ -1,7 +1,9 @@
-//! What the wrapper keeps while it runs: its settings, what the web UI says is playing, the tray.
+//! What the app keeps while it runs: its settings, what the web UI says is playing, the tray, and
+//! the hub when this computer is the hub.
 
-use crate::settings::{Settings, Store};
-use crate::tray::Tray;
+use crate::desktop::local_hub::LocalHub;
+use crate::desktop::settings::{Settings, Store};
+use crate::desktop::tray::Tray;
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -34,12 +36,16 @@ pub struct Desktop {
     store: Store,
     settings: Mutex<Settings>,
     now: Mutex<NowPlaying>,
-    /// `main` shows the server's web UI (not a bundled page).
-    on_server: AtomicBool,
-    /// Server origins already given their IPC capability this run.
+    /// `main` shows the hub's web UI (not a bundled page).
+    on_hub: AtomicBool,
+    /// Hub origins already given their IPC capability this run.
     granted: Mutex<HashSet<String>>,
     pub platform: Platform,
     pub tray: OnceLock<Tray>,
+    /// Set once the hub on this computer runs; it stops only when the app quits.
+    local: OnceLock<LocalHub>,
+    /// Held while the hub starts: a second "This computer" click waits, then opens the same hub.
+    pub starting: Mutex<()>,
 }
 
 impl Desktop {
@@ -49,10 +55,12 @@ impl Desktop {
             store,
             settings: Mutex::new(settings),
             now: Mutex::new(NowPlaying::default()),
-            on_server: AtomicBool::new(false),
+            on_hub: AtomicBool::new(false),
             granted: Mutex::new(HashSet::new()),
             platform,
             tray: OnceLock::new(),
+            local: OnceLock::new(),
+            starting: Mutex::new(()),
         }
     }
 
@@ -71,18 +79,27 @@ impl Desktop {
         self.tray.get().is_some()
     }
 
-    pub fn on_server(&self) -> bool {
-        self.on_server.load(Ordering::Relaxed)
+    pub fn on_hub(&self) -> bool {
+        self.on_hub.load(Ordering::Relaxed)
     }
 
-    pub fn set_on_server(&self, on: bool) {
-        self.on_server.store(on, Ordering::Relaxed);
+    pub fn set_on_hub(&self, on: bool) {
+        self.on_hub.store(on, Ordering::Relaxed);
         self.refresh_tray();
     }
 
     pub fn set_now_playing(&self, now: NowPlaying) {
         *lock(&self.now) = now;
         self.refresh_tray();
+    }
+
+    pub fn local_hub(&self) -> Option<&LocalHub> {
+        self.local.get()
+    }
+
+    /// Callers hold `starting`, so only one hub is ever started.
+    pub fn set_local_hub(&self, hub: LocalHub) {
+        let _ = self.local.set(hub);
     }
 
     /// True the first time an origin is seen, so its capability is added once.
@@ -92,12 +109,12 @@ impl Desktop {
 
     fn refresh_tray(&self) {
         if let Some(tray) = self.tray.get() {
-            tray.show(&lock(&self.now), self.on_server());
+            tray.show(&lock(&self.now), self.on_hub());
         }
     }
 }
 
 /// A poisoned lock only means another thread panicked mid-update; the data is still usable.
-fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+pub fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
 }
