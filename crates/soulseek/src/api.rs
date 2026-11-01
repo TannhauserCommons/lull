@@ -22,6 +22,7 @@ pub fn router(svc: Arc<Service>) -> Router {
         .route("/api/search", get(search))
         .route("/api/tracks/{id}/sources", get(sources))
         .route("/api/stream/{id}", get(stream).delete(stop))
+        .route("/api/soulseek/diagnostics", get(diagnostics))
         .route("/api/transfers", get(transfers))
         .route("/api/transfers/{job}", delete(cancel))
         .route("/api/transfers/{job}/retry", post(retry))
@@ -92,6 +93,22 @@ async fn stop(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Status
     svc.fetcher.stop_streaming(&TrackId(id));
     StatusCode::NO_CONTENT
 }
+
+/// What slskd itself sees, for when Soulseek misbehaves and slskd's own UI and logs are out of
+/// reach: its connection and network state, how recent searches ended, and its latest log lines.
+async fn diagnostics(State(svc): State<Arc<Service>>) -> Result<Json<Value>> {
+    let slskd = svc.slskd.state().await?;
+    let log = svc.slskd.recent_log().await?;
+    let skip = log.len().saturating_sub(DIAGNOSTIC_LOG_LINES);
+    Ok(Json(json!({
+        "slskd": slskd,
+        "searches": svc.searches.outcomes(),
+        "log": log.into_iter().skip(skip).collect::<Vec<_>>(),
+    })))
+}
+
+/// slskd keeps a few hundred lines; the latest ones tell the story.
+const DIAGNOSTIC_LOG_LINES: usize = 80;
 
 async fn transfers(State(svc): State<Arc<Service>>) -> Json<Value> {
     let items = svc.fetcher.rows();

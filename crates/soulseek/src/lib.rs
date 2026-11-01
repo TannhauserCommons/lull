@@ -69,6 +69,8 @@ const CHECK_OK: Duration = Duration::from_secs(15);
 const CHECK_DOWN: Duration = Duration::from_secs(5);
 /// How often the cache is measured and idle finished songs are let go.
 const HOUSEKEEPING: Duration = Duration::from_secs(60);
+/// This many searches in a row without a single answer turn the status to `warn`.
+const UNANSWERED: usize = 2;
 
 pub struct Service {
     ctx: Ctx,
@@ -201,6 +203,7 @@ async fn watch_connection(svc: Arc<Service>, layout: Arc<RwLock<Layout>>) {
                     ));
                 }
                 problems.extend(share::mismatch(&svc.slskd, config.share).await);
+                problems.extend(unanswered_searches(&svc).await);
                 let who = server.username.map(|u| format!(" as {u}")).unwrap_or_default();
                 match problems.is_empty() {
                     true => (State::Ok, format!("Connected{who}")),
@@ -221,6 +224,28 @@ async fn watch_connection(svc: Arc<Service>, layout: Arc<RwLock<Layout>>) {
         svc.ctx.status.set("soulseek", state, detail, Value::Null);
         tokio::time::sleep(if online { CHECK_OK } else { CHECK_DOWN }).await;
     }
+}
+
+/// Searches no peer answers, while slskd says it's logged in, mean the searches don't reach the
+/// network or the answers don't reach slskd. One silent search can be a rare query; several in
+/// a row are a problem, explained with slskd's own latest warning when it has one.
+async fn unanswered_searches(svc: &Service) -> Option<String> {
+    let n = svc.searches.unanswered();
+    if n < UNANSWERED {
+        return None;
+    }
+    let said = match svc.slskd.recent_log().await {
+        Ok(log) => log
+            .into_iter()
+            .rev()
+            .find(|l| l.is_problem())
+            .map(|l| format!("; slskd's latest warning: {}", l.message)),
+        Err(e) => Some(format!("; slskd's log can't be read: {e}")),
+    };
+    Some(format!(
+        "the last {n} searches got no answers from any peer{}",
+        said.unwrap_or_default()
+    ))
 }
 
 async fn housekeeping(svc: Arc<Service>) {

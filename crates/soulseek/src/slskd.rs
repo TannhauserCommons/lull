@@ -8,8 +8,8 @@ use lull_core::config::Secret;
 use lull_core::http::{self, Http};
 use lull_core::{Error, Result};
 use reqwest::{Method, StatusCode, Url};
-use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 const SERVICE: &str = "soulseek";
@@ -19,6 +19,22 @@ pub struct Slskd {
     http: Http,
     base: Url,
     key: Secret,
+}
+
+/// One of slskd's recent log lines.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogRecord {
+    pub timestamp: String,
+    pub level: String,
+    pub message: String,
+}
+
+impl LogRecord {
+    pub fn is_problem(&self) -> bool {
+        let l = self.level.to_ascii_lowercase();
+        l.starts_with("warn") || l.starts_with("err") || l.starts_with("fatal")
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -210,6 +226,32 @@ impl Slskd {
             username: app.user.and_then(|u| u.username),
             ..app.server
         })
+    }
+
+    /// slskd's own view, for diagnostics: the server connection, the distributed network (how
+    /// searches reach peers) and the reconnect watchdog, as slskd reports them.
+    pub async fn state(&self) -> Result<serde_json::Value> {
+        let app: serde_json::Value = self.get(&["application"]).await?;
+        let pick = [
+            "version",
+            "server",
+            "distributedNetwork",
+            "connectionWatchdog",
+            "pendingReconnect",
+        ];
+        Ok(pick
+            .iter()
+            .map(|k| (k.to_string(), app.get(*k).cloned().unwrap_or_default()))
+            .collect())
+    }
+
+    /// slskd's most recent log lines, oldest first. Needs the administrator role; empty without it.
+    pub async fn recent_log(&self) -> Result<Vec<LogRecord>> {
+        match self.get(&["logs", "live"]).await {
+            Ok(lines) => Ok(lines),
+            Err(Error::Upstream { reason, .. }) if reason.contains("403") => Ok(Vec::new()),
+            Err(e) => Err(e),
+        }
     }
 
     /// Needs an API key with the administrator role; `None` when the key isn't one.

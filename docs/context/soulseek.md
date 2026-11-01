@@ -19,7 +19,7 @@
 
 - **Auth and status.** Auth is `X-API-Key: LULL_SLSKD_API_KEY` against `/api/v0`. The `soulseek` status reads `GET /application` (any key may read it); `/server` and `/options` need the administrator role. States:
   - `ok`: logged in;
-  - `warn`: reconnecting, or connected with a problem (lull can't see slskd's folders, or shares don't match `LULL_SHARE`);
+  - `warn`: reconnecting, or connected with a problem: lull can't see slskd's folders, shares don't match `LULL_SHARE`, or the last 2+ searches got no answer from any peer (quoting slskd's latest warning). Silent searches while logged in mean searches don't reach the network or answers don't reach slskd; `GET /api/soulseek/diagnostics` shows slskd's own state, the searches' outcomes and its recent log;
   - `down`: slskd unreachable or the key rejected.
 - **State flags.** slskd sends state fields as comma-separated flag names (`Completed, Succeeded`, `Queued, Remotely`). A transfer slskd will retry itself still reads `Completed, Errored` while it waits, with `nextAttemptAt` set; lull treats that as queued. Only `Completed` without `nextAttemptAt` is final.
 - **Enqueue.** Downloads are queued with `POST /transfers/downloads/batches`, which returns the transfer ids. Queueing a file that is already running returns a failure, and lull reuses the running transfer.

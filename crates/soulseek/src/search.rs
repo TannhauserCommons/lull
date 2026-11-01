@@ -59,7 +59,24 @@ struct Inner {
     recent: VecDeque<Arc<Session>>,
     /// Searches run to find sources for one song, by query.
     resolving: HashMap<String, watch::Receiver<bool>>,
+    /// How the latest network searches ended, newest last.
+    outcomes: VecDeque<Outcome>,
 }
+
+/// How one network search ended: what the status and diagnostics report.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Outcome {
+    pub query: String,
+    /// slskd's final state, e.g. `Completed, TimedOut`.
+    pub state: String,
+    pub peers: u32,
+    pub files: u32,
+    pub at: i64,
+}
+
+/// Outcomes kept for diagnostics.
+const OUTCOMES: usize = 20;
 
 struct Session {
     id: String,
@@ -271,27 +288,61 @@ impl Searches {
         let search = self.slskd.start_search(text, INACTIVITY, RESPONSE_LIMIT).await?;
         let started = Instant::now();
         let mut stopping = false;
+        let mut last = search;
         loop {
             tokio::select! {
                 _ = tokio::time::sleep(POLL) => {}
                 _ = crate::fetch::stopped(stop) => {
-                    self.drop_search(&search.id, true).await;
+                    self.drop_search(&last.id, true).await;
                     return Ok(None);
                 }
             }
-            let state = self.slskd.search(&search.id).await?;
+            let state = self.slskd.search(&last.id).await?;
             progress(&state);
-            if state.is_complete() {
+            last = state;
+            if last.is_complete() {
                 break;
             }
             if !stopping && started.elapsed() >= DEADLINE {
                 stopping = true;
-                self.slskd.stop_search(&search.id).await?;
+                self.slskd.stop_search(&last.id).await?;
             }
         }
-        let responses = self.slskd.responses(&search.id).await;
-        self.drop_search(&search.id, false).await;
+        let responses = self.slskd.responses(&last.id).await;
+        self.drop_search(&last.id, false).await;
+        self.record(Outcome {
+            query: text.to_owned(),
+            state: last.state,
+            peers: last.response_count,
+            files: last.file_count,
+            at: lull_core::now(),
+        });
         responses.map(Some)
+    }
+
+    fn record(&self, outcome: Outcome) {
+        if let Ok(mut inner) = self.inner.lock() {
+            inner.outcomes.push_back(outcome);
+            while inner.outcomes.len() > OUTCOMES {
+                inner.outcomes.pop_front();
+            }
+        }
+    }
+
+    /// The latest network searches, newest last.
+    pub fn outcomes(&self) -> Vec<Outcome> {
+        self.inner
+            .lock()
+            .map(|i| i.outcomes.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// How many of the latest searches in a row no peer answered.
+    pub fn unanswered(&self) -> usize {
+        self.inner
+            .lock()
+            .map(|i| i.outcomes.iter().rev().take_while(|o| o.peers == 0).count())
+            .unwrap_or(0)
     }
 
     /// slskd stores every search; lull keeps what it needs and tidies up after itself.
