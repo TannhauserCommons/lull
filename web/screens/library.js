@@ -349,7 +349,7 @@
       discs = discs.filter(Boolean);
       return html`<div class="view__inner lib">
         ${jellyfinNotice(path)}
-        <article class="card lib-page" aria-labelledby="lib-album-title" data-meta="${albumMeta(a)}" data-tracks="${tracks.length}" data-duration="${a.duration}" data-size="${a.sizeMB}">
+        <article class="card lib-page lib-page--album" aria-labelledby="lib-album-title" data-meta="${albumMeta(a)}" data-tracks="${tracks.length}" data-duration="${a.duration}" data-size="${a.sizeMB}">
           <div class="lib-hero">
             ${ui.cover(a, 'var(--lib-art)', { label: 'Cover of ' + a.title })}
             <div class="lib-hero__info">
@@ -376,6 +376,7 @@
               </div>
             </div>
           </div>
+          <div class="lib-album__songs">
           ${discs.map(function (list, i) {
             return html`${discs.length > 1 ? html`<div class="label-rule label-rule--sm lib-disc"><h2>disc ${i + 1}</h2><span class="label-rule__end t-micro fg-2">${plural(list.length, 'song')}, ${fmt.length(sumDuration(list.map(function (t) { return t.id; })))}</span></div>` : ''}
             <ol class="tlist" data-ids="${ids.join(',')}" aria-label="${discs.length > 1 ? 'Disc ' + (i + 1) + ' of ' + a.title : 'Songs on ' + a.title}">${list.map(function (t, j) {
@@ -383,6 +384,7 @@
             })}</ol>`;
           })}
           <p class="lib-foot">${albumFoot(a)}</p>
+          </div>
         </article>
       </div>`;
     });
@@ -406,7 +408,7 @@
       var ar = pageEntity(d, 'artist', 'artists', M.artist); if (!ar) return null;
       var top = resolve(d.topTracks, M.track), topIds = top.map(function (t) { return t.id; });
       var albums = resolve(d.albums, M.album), similar = resolve(d.similar, M.artist).filter(function (x) { return x.id !== ar.id; });
-      return html`<div class="view__inner lib">
+      return html`<div class="view__inner lib lib-artist">
         ${jellyfinNotice(path)}
         <section class="card lib-page" aria-labelledby="lib-artist-title">
           <div class="lib-hero lib-hero--round">
@@ -415,7 +417,7 @@
               <p class="lib-kicker">artist${ar.listeners ? ', ' + ar.listeners.toLocaleString('en-US') + ' listeners' : ''}</p>
               <h1 class="t-display lib-title" id="lib-artist-title">${ar.name}</h1>
               <div class="lib-chips">${ar.tags.map(function (g) { return ui.tagChip(g); })}</div>
-              ${ar.bio ? html`<p class="lib-bio">${ar.bio}</p>` : ''}
+              ${ar.bio ? html`<p class="lib-bio" id="lib-bio">${ar.bio}</p><button class="btn btn--quiet btn--sm lib-bio__more" data-act="lib-bio-more" aria-expanded="false" aria-controls="lib-bio">More</button>` : ''}
               <div class="lib-actions">
                 <button class="btn btn--primary" data-act="start-radio" data-kind="artist" data-id="${ar.id}">${icon('radio')}Artist radio</button>
                 ${followButton(ar.id)}
@@ -425,6 +427,7 @@
             </div>
           </div>
         </section>
+        <div class="lib-artist__main">
         <div class="lib-cols">
           <section class="card lib-card" aria-labelledby="lib-top-h">
             ${ruleWith('top songs', 'lib-top-h', html`<span class="t-micro fg-2">by your plays</span>`)}
@@ -439,10 +442,17 @@
         </div>
         ${similar.length || sectionError(d, 'similar', path) ? html`<section class="card lib-card" aria-labelledby="lib-similar-h">${ruleWith('similar artists', 'lib-similar-h', html`<span class="t-micro fg-2">via Last.fm similar artists</span>`)}
           ${sectionError(d, 'similar', path) || html`<div class="shelf">${similar.map(artistTile)}</div>`}</section>` : ''}
+        </div>
       </div>`;
     });
   }
   function mountArtist(ctx) { liveSaveButtons(ctx); liveOn(ctx, ['followed', 'liked', 'services']); }
+  /* the bio is clamped beside the songs on a wide page (library.css); More shows all of it */
+  App.action('lib-bio-more', function (el) {
+    var open = el.getAttribute('aria-expanded') !== 'true', bio = document.getElementById('lib-bio');
+    if (bio) bio.classList.toggle('is-open', open);
+    el.setAttribute('aria-expanded', String(open)); el.textContent = open ? 'Less' : 'More';
+  });
 
   /* =====================================================================
      5. Genre / tag page: follow, tag radio, top artists, new releases
