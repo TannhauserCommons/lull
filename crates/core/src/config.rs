@@ -12,8 +12,6 @@ pub struct Config {
     pub listen: SocketAddr,
     /// Base URL the browser uses to reach lull; needed for the Last.fm auth callback.
     pub public_url: Option<String>,
-    /// When set, every API call needs it (header `Authorization: Bearer` or cookie `lull_token`).
-    pub access_token: Option<Secret>,
     /// Fixes the code that pairs the first device; without it the hub prints a random one while
     /// no device is paired (ADR-0002).
     pub setup_code: Option<Secret>,
@@ -186,7 +184,6 @@ impl Config {
         let config = Config {
             listen: v.parse("LULL_LISTEN", "0.0.0.0:8080")?,
             public_url: v.opt("LULL_PUBLIC_URL").map(|u| u.trim_end_matches('/').to_owned()),
-            access_token: v.opt("LULL_ACCESS_TOKEN").map(Secret),
             setup_code: v.opt("LULL_SETUP_CODE").map(Secret),
             data_dir: v.or("LULL_DATA_DIR", "/data").into(),
             log: v.or("LULL_LOG", "info"),

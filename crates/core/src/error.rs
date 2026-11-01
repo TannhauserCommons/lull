@@ -16,8 +16,8 @@ pub enum Error {
     BadRequest(String),
     #[error("{0}")]
     Conflict(String),
-    /// The access token is missing or wrong.
-    #[error("access token required")]
+    /// No paired device's token, or a wrong pairing code (ADR-0002).
+    #[error("this device isn't paired with the hub")]
     Unauthorized,
     /// A dependency is down or not configured (Jellyfin, slskd, Last.fm...).
     #[error("{service} is unavailable: {reason}")]

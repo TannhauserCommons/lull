@@ -158,7 +158,15 @@ mod tests {
     #[test]
     fn every_key_is_listed_documented_and_read() {
         let example = include_str!("../../../deploy/.env.example");
-        for name in KEYS.iter().map(|k| k.name).chain(ENV_ONLY.iter().copied()) {
+        let names: Vec<&str> = KEYS.iter().map(|k| k.name).chain(ENV_ONLY.iter().copied()).collect();
+        for line in example.lines().filter(|l| l.starts_with("LULL_")) {
+            let key = line.split('=').next().unwrap_or_default();
+            assert!(
+                names.contains(&key),
+                "{key} is documented but not listed in KEYS or ENV_ONLY"
+            );
+        }
+        for name in names {
             assert!(
                 example.contains(&format!("\n{name}=")),
                 "{name} is not in deploy/.env.example"
