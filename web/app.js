@@ -1016,10 +1016,10 @@
   }
 
   /* =====================================================================
-     8. Player engine. Two <audio> elements: the playing one and the next, preloaded for gapless and
-        crossfade. Saved songs come from /api/library/stream/{id}; Soulseek songs from /api/stream/{id},
-        which serves bytes while the transfer runs (`stream` events report finding, queued, stalled,
-        fallback). Loudness normalisation and crossfade go through Web Audio gains when switched on.
+     8. Player engine: the queue, radio, plays and streaming states. Sound comes from an output (8b: two
+        <audio> decks; in the Android app the native player). Saved songs come from /api/library/stream/{id},
+        downloaded ones from this device (App.downloads); Soulseek songs from /api/stream/{id}, which serves
+        bytes while the transfer runs (`stream` events report finding, queued, stalled, fallback).
      status: idle | finding | queued | buffering | streaming | stalled | failed | library | ended | jellyfin-error
      `playing` is separate: paused = playing false while streaming or library.
      Fractions (0-1) of the track: received (bytes transferred), buffered ranges [[from, to], ...].
@@ -1049,67 +1049,50 @@
     applyLevels();
   };
 
-  /* ---------- the two decks ---------- */
-  var decks = [makeDeck(), makeDeck()], cur = decks[0], nxt = decks[1];
-  function makeDeck() {
-    var d = { el: new Audio(), entry: null, url: null, soulseek: false, fade: 1, norm: 1, gain: null, analyser: null, attempt: 0 };
-    d.el.preload = 'auto';
-    ['playing', 'waiting', 'timeupdate', 'durationchange', 'progress', 'ended', 'error'].forEach(function (type) {
-      d.el.addEventListener(type, function () { onMedia(d, type); });
-    });
-    return d;
-  }
+  /* ---------- what the output plays: the playing queue entry (cur) and the one set to follow it (nxt) ----------
+     Entries carry their stream facts: url, soulseek, complete (the transfer finished), attempt (fallbacks seen). */
+  var cur = null, nxt = null, loadSeq = 0, sound = { playing: false, waiting: false };
+  /* sound comes from an output (docs/context/web.md#output-interface): <audio> here, the native player in the app */
+  var out = window.LullNative && window.LullNative.player ? nativeOutput(window.LullNative.player) : audioOutput();
   function streamUrl(t, source, forceSoulseek) {
     if (App.isSaved(t.id) && !forceSoulseek) return M.url('/api/library/stream/' + encodeURIComponent(t.id));
     var q = source ? '?peer=' + encodeURIComponent(source.peer) + '&path=' + encodeURIComponent(source.path) : '';
     return M.url('/api/stream/' + encodeURIComponent(t.id) + q);
   }
-  /* point a deck at a queue entry (no-op when it already holds it) */
-  function arm(d, entry, forceSoulseek) {
-    var t = M.track(entry.trackId), url = streamUrl(t, entry.source, forceSoulseek);
-    if (d.entry === entry && d.url === url) return;
-    release(d);
-    d.entry = entry; d.url = url; d.soulseek = url.indexOf('api/stream/') >= 0; d.attempt = 0; d.fade = 1; d.norm = 1; d.ms = 0; d.msN = 0;
-    d.el.src = url;
-    d.el.load();
+  /* ReplayGain in dB for Settings > Playback's mode, when the library supplies it (track.replayGain { track, album }) */
+  function replayGainDb(trackId) {
+    var t = M.track(trackId), rg = t && t.replayGain, mode = playback.normalisation;
+    if (!rg || mode.indexOf('replaygain') !== 0) return null;
+    return mode === 'replaygain-album' ? rg.album : rg.track;
   }
-  /* empty a deck; a Soulseek transfer nobody will listen to is cancelled (DELETE /api/stream/{id}) */
-  function release(d) {
-    if (d.entry && d.soulseek && !d.complete) {
-      var id = d.entry.trackId, other = d === cur ? nxt : cur;
-      if (!(other.entry && other.entry.trackId === id)) M.api('/api/stream/' + encodeURIComponent(id), { method: 'DELETE' }).catch(function () {});
-    }
-    d.entry = null; d.url = null; d.complete = false;
-    d.el.pause(); d.el.removeAttribute('src'); d.el.load();
+  /* the output's item for an entry (docs/context/web.md#output-interface). A downloaded song plays from this
+     device (App.downloads), otherwise from the hub; resolves to null when the track is unknown. */
+  function itemFor(e, forceSoulseek) {
+    var t = M.track(e.trackId); if (!t) return Promise.resolve(null);
+    var local = !forceSoulseek && App.downloads ? App.downloads.localUrl(t.id) : Promise.resolve(null);
+    return local.then(function (localUrl) {
+      var url = localUrl || streamUrl(t, e.source, forceSoulseek);
+      e.url = url; e.local = !!localUrl; e.soulseek = !localUrl && url.indexOf('api/stream/') >= 0;
+      if (!e.soulseek) e.complete = true;
+      return { key: e.uid, url: localUrl || new URL(url, location.href).href, trackId: t.id, title: t.title, artist: t.artist, album: t.album,
+        duration: t.duration || null, artwork: t.albumId ? new URL(App.artUrl(t.albumId, 512), location.href).href : null, gainDb: replayGainDb(t.id) };
+    });
   }
-
-  function onMedia(d, type) {
-    if (d !== cur) { if (type === 'error' && d.entry) d.entry.resolve = 'none'; return; }
-    var t = P.current(); if (!t) return;
-    switch (type) {
-      case 'playing':
-        ps.status = d.soulseek ? 'streaming' : 'library'; ps.error = null;
-        beginPlay(t);
-        break;
-      case 'waiting':
-        if (ps.playing && (ps.status === 'streaming' || ps.status === 'library')) ps.status = 'buffering';
-        break;
-      case 'timeupdate': trackListening(d); ps.pos = d.el.currentTime; return;
-      case 'durationchange':
-        if (isFinite(d.el.duration) && d.el.duration > 0) { duration = d.el.duration; ps.durationKnown = !d.soulseek || ps.received >= 1; }
-        break;
-      case 'progress': updateBuffered(); return;
-      case 'ended': onEnded(); return;
-      case 'error': onError(d); return;
-      default: return;
-    }
-    changed('status');
+  /* a Soulseek transfer nobody will listen to any more is cancelled (DELETE /api/stream/{id}) */
+  function letGo(e) {
+    if (!e || e === cur || e === nxt || !e.soulseek || e.complete) return;
+    if ((cur && cur.trackId === e.trackId) || (nxt && nxt.trackId === e.trackId)) return;
+    M.api('/api/stream/' + encodeURIComponent(e.trackId), { method: 'DELETE' }).catch(function () {});
+  }
+  function playRefused(err) {
+    if (err && err.name === 'NotAllowedError') { ps.playing = false; changed('play'); }   // autoplay blocked until a tap
   }
 
   /* ---------- load, play, pause ---------- */
   function resetTrackState() {
     ps.pos = 0; duration = 0; ps.fallback = null; ps.failedPeers = []; ps.error = null; ps.crossfade = false;
-    ps.peer = null; ps.peersFound = 0; ps.queuePos = 0; ps.durationKnown = false;
+    ps.peer = null; ps.peersFound = 0; ps.queuePos = 0; ps.durationKnown = false; lastRanges = [];
+    sound = { playing: false, waiting: false };
   }
   /* begin playing queue[index]: opts { autoplay (default true), at (seconds), reason (how the last song ended), forceSoulseek } */
   function load(index, opts) {
@@ -1117,36 +1100,40 @@
     endPlay(opts.reason || 'skipped');
     ps.index = clamp(index, 0, Math.max(0, ps.queue.length - 1));
     resetTrackState();
-    var entry = ps.queue[ps.index], t = P.current();
-    if (!t) { release(cur); release(nxt); ps.status = 'idle'; ps.playing = false; ps.source = null; changed('track'); return; }
-    if (nxt.entry === entry && !opts.forceSoulseek) { var s = cur; cur = nxt; nxt = s; }   // already preloaded
-    release(nxt);                                       // the other deck's song is not what plays now
-    arm(cur, entry, opts.forceSoulseek);
-    ps.source = entry.source || null;
-    if (cur.soulseek) { ps.status = 'finding'; ps.received = 0; ps.buffered = []; }
-    else { ps.status = 'library'; ps.received = 1; ps.buffered = []; ps.durationKnown = true; }
+    var was = [cur, nxt], e = ps.queue[ps.index], seq = ++loadSeq;
+    cur = e || null; nxt = null;
+    was.forEach(letGo);
+    if (!e || !M.track(e.trackId)) { out.pause(); out.setNext(null); ps.status = 'idle'; ps.playing = false; ps.source = null; changed('track'); return; }
+    e.attempt = 0; if (opts.forceSoulseek) e.complete = false;
+    ps.source = e.source || null;
     ps.playing = opts.autoplay !== false;
-    if (opts.at) cur.el.currentTime = ps.pos = opts.at;
-    if (ps.playing) start(cur);
-    applyLevels();
+    var library = App.isSaved(e.trackId) && !opts.forceSoulseek;
+    ps.status = library ? 'library' : 'finding'; ps.received = library ? 1 : 0; ps.buffered = []; ps.durationKnown = library;
+    if (opts.at) ps.pos = opts.at;
     changed('track');
+    itemFor(e, opts.forceSoulseek).then(function (it) {
+      if (seq !== loadSeq || !it) return;
+      if (!e.soulseek && ps.status === 'finding') { ps.status = 'library'; ps.received = 1; ps.durationKnown = true; changed('status'); }
+      out.load(it, { at: opts.at || 0, autoplay: ps.playing }).catch(playRefused);
+      applyLevels();
+      if (out.eagerNext) preloadNext();
+    });
     topUpRadio();
   }
-  function start(d) {
-    ensureGraph();
-    var p = d.el.play();
-    if (p && p.catch) p.catch(function (err) {
-      if (err.name === 'NotAllowedError') { ps.playing = false; changed('play'); }    // autoplay blocked until a tap
-    });
+  /* after a peer fallback cut the response: the same entry again, at the same time */
+  function reopen() {
+    var e = cur, at = ps.pos;
+    nxt = null;                                           // load drops the next one; preloading sets it again
+    itemFor(e).then(function (it) { if (it && cur === e) out.load(it, { at: at, autoplay: ps.playing }).catch(playRefused); });
   }
   P.play = function () {
     if (!ps.queue.length) { App.toast('Nothing queued. Search or pick something from Home.', { icon: 'info' }); return; }
     if (ps.status === 'ended') { load(0); return; }
     if (ps.status === 'failed' || ps.status === 'jellyfin-error') { P.retry(); return; }
-    if (!cur.entry) { load(ps.index, { at: App.isSaved(P.currentId()) ? ps.pos : 0 }); return; }   // restored after a reload
-    ps.playing = true; start(cur); changed('play');
+    if (!cur) { load(ps.index, { at: App.isSaved(P.currentId()) ? ps.pos : 0 }); return; }   // restored after a reload
+    ps.playing = true; out.play().catch(playRefused); changed('play');
   };
-  P.pause = function () { ps.playing = false; cur.el.pause(); if (ps.crossfade) finishCrossfade(); changed('play'); };
+  P.pause = function () { ps.playing = false; out.pause(); changed('play'); };
   P.toggle = function () { if (ps.playing) P.pause(); else P.play(); };
 
   /* the index the queue moves to next: repeat one (only when a song ends by itself), shuffle, wrap, or -1 */
@@ -1165,7 +1152,7 @@
   P.next = function (auto) {
     if (!ps.queue.length) return;
     var i = nextIndex(auto); shuffleNext = null;
-    if (i === ps.index && auto) { cur.el.currentTime = 0; endPlay('completed'); start(cur); return; }
+    if (i === ps.index && auto) { endPlay('completed'); out.seek(0); out.play().catch(playRefused); return; }
     if (i < 0) {                                        // the end: radio may still add songs
       topUpRadio().then(function (added) { if (added) load(ps.index + 1, { reason: auto ? 'completed' : 'skipped' }); else endQueue(auto); });
       return;
@@ -1174,7 +1161,7 @@
   };
   function endQueue(auto) {
     endPlay(auto ? 'completed' : 'skipped');
-    ps.status = 'ended'; ps.playing = false; ps.pos = P.duration(); cur.el.pause();
+    ps.status = 'ended'; ps.playing = false; ps.pos = P.duration(); out.pause();
     changed('ended');
   }
   P.prev = function () {
@@ -1185,7 +1172,7 @@
   /* ---------- seeking: only inside what has arrived ---------- */
   /* how far a seek may go (0-1): everything for saved songs, what the transfer delivered for Soulseek ones */
   function seekLimit() {
-    if (!cur.soulseek) return 1;
+    if (!cur || !cur.soulseek) return 1;
     var bufEnd = ps.buffered.reduce(function (m, r) { return Math.max(m, r[1]); }, 0);
     return Math.max(bufEnd, ps.received >= 1 ? 1 : ps.received - .01);
   }
@@ -1193,9 +1180,9 @@
   /* outside what arrived: snap to the furthest point that did, shake (seek bar) and return false */
   P.seekFraction = function (f) {
     f = clamp(f, 0, 1);
-    var dur = P.duration(); if (!dur || !cur.entry) return false;
+    var dur = P.duration(); if (!dur || !cur) return false;
     var ok = P.seekable(f), target = ok ? f : Math.max(0, seekLimit() - .004);
-    cur.el.currentTime = ps.pos = target * dur;
+    ps.pos = target * dur; out.seek(ps.pos);
     changed('seek');
     if (!ok) App.emit('seek-denied', { fraction: f, received: ps.received });
     return ok;
@@ -1204,7 +1191,7 @@
   P.seekBy = function (d) { return P.seek(ps.pos + d); };
 
   P.setShuffle = function (on) { ps.shuffle = on == null ? !ps.shuffle : !!on; shuffleNext = null; releaseNext(); changed('mode'); };
-  P.cycleRepeat = function () { ps.repeat = { off: 'all', all: 'one', one: 'off' }[ps.repeat]; releaseNext(); changed('mode'); };
+  P.cycleRepeat = function () { ps.repeat = { off: 'all', all: 'one', one: 'off' }[ps.repeat]; releaseNext(); applyLevels(); changed('mode'); };
   P.setVolume = function (v) { ps.volume = clamp(v, 0, 1); ps.muted = false; applyLevels(); changed('volume'); };
   P.toggleMute = function () { ps.muted = !ps.muted; applyLevels(); changed('volume'); };
 
@@ -1218,7 +1205,7 @@
   P.playList = function (ids, start, opts) {
     opts = opts || {};
     var group = opts.radio ? 'radio' : 'context', sources = opts.sources || {};
-    endPlay('skipped'); release(nxt);
+    endPlay('skipped'); releaseNext();
     ps.queue = ids.map(function (id) { return entry(id, group, sources[id]); });
     ps.radio = opts.radio || null;
     load(start || 0, { reason: 'skipped', at: opts.at, autoplay: opts.autoplay });
@@ -1348,170 +1335,297 @@
   }
 
   /* ---------- server `stream` events: the Soulseek side of the playing song ---------- */
-  function onStreamEvent(e) {
-    var q = ps.queue[ps.index], d = q && q.trackId === e.trackId ? cur : nxt.entry && nxt.entry.trackId === e.trackId ? nxt : null;
-    if (!d || !d.soulseek) return;
-    if (e.size && e.received >= e.size) d.complete = true;
+  function onStreamEvent(ev) {
+    var e = cur && cur.trackId === ev.trackId ? cur : nxt && nxt.trackId === ev.trackId ? nxt : null;
+    if (!e || !e.soulseek) return;
+    if (ev.size && ev.received >= ev.size) e.complete = true;
     /* a fallback to another peer ends the old response: reopen the stream and seek back to where we were */
-    if (e.attempt > d.attempt) { d.attempt = e.attempt; if (d === cur) reopen(d); }
-    if (d === nxt) { d.entry.resolve = e.status === 'failed' ? 'none' : e.status === 'streaming' ? 'ready' : 'resolving'; changed('queue'); return; }
+    if (ev.attempt > (e.attempt || 0)) { e.attempt = ev.attempt; if (e === cur) reopen(); }
+    if (e === nxt) { e.resolve = ev.status === 'failed' ? 'none' : ev.status === 'streaming' ? 'ready' : 'resolving'; changed('queue'); return; }
     var prevPeer = ps.peer && ps.peer.name, t = P.current();
-    ps.received = e.size ? clamp(e.received / e.size, 0, 1) : ps.received;
-    ps.peersFound = e.peersFound || ps.peersFound;
-    ps.queuePos = e.queuePos || 0;
-    ps.failedPeers = (e.failedPeers || []).map(function (f) { return typeof f === 'string' ? { peer: f, at: null } : f; });
-    if (e.peer) {
-      ps.peer = { name: e.peer, rank: ps.failedPeers.length + 1, of: ps.peersFound || null, speed: e.speed ? e.speed / 1e6 : (ps.peer && ps.peer.speed) || 0,
-        format: e.format || (ps.source && ps.source.format) || t.format, sizeMB: e.size ? e.size / 1e6 : t.sizeMB };
+    ps.received = ev.size ? clamp(ev.received / ev.size, 0, 1) : ps.received;
+    ps.peersFound = ev.peersFound || ps.peersFound;
+    ps.queuePos = ev.queuePos || 0;
+    ps.failedPeers = (ev.failedPeers || []).map(function (f) { return typeof f === 'string' ? { peer: f, at: null } : f; });
+    if (ev.peer) {
+      ps.peer = { name: ev.peer, rank: ps.failedPeers.length + 1, of: ps.peersFound || null, speed: ev.speed ? ev.speed / 1e6 : (ps.peer && ps.peer.speed) || 0,
+        format: ev.format || (ps.source && ps.source.format) || t.format, sizeMB: ev.size ? ev.size / 1e6 : t.sizeMB };
     }
-    var elPlaying = !cur.el.paused && cur.el.readyState >= 3;
-    switch (e.status) {
+    var heard = sound.playing && !sound.waiting;
+    switch (ev.status) {
       case 'finding': case 'queued': case 'stalled':
-        if (!elPlaying || e.status === 'stalled') ps.status = e.status; break;
-      case 'buffering': if (!elPlaying) ps.status = 'buffering'; break;
-      case 'streaming': ps.status = elPlaying || !ps.playing ? 'streaming' : 'buffering'; ps.fallback = null; break;
+        if (!heard || ev.status === 'stalled') ps.status = ev.status; break;
+      case 'buffering': if (!heard) ps.status = 'buffering'; break;
+      case 'streaming': ps.status = heard || !ps.playing ? 'streaming' : 'buffering'; ps.fallback = null; break;
       case 'fallback':
-        ps.fallback = { from: prevPeer, to: e.peer, n: ps.failedPeers.length + 1, of: ps.peersFound || null };
+        ps.fallback = { from: prevPeer, to: ev.peer, n: ps.failedPeers.length + 1, of: ps.peersFound || null };
         ps.status = 'buffering';
-        if (e.peer && e.peer !== prevPeer) App.toast('Now from ' + e.peer, { icon: 'soulseek', kind: 'ok' });
+        if (ev.peer && ev.peer !== prevPeer) App.toast('Now from ' + ev.peer, { icon: 'soulseek', kind: 'ok' });
         break;
       case 'failed':
-        ps.status = 'failed'; ps.playing = false; cur.el.pause();
-        ps.error = e.error || 'Couldn\'t play: no peer responded';
-        if (q) q.resolve = 'none';
+        ps.status = 'failed'; ps.playing = false; out.pause();
+        ps.error = ev.error || 'Couldn\'t play: no peer responded';
+        cur.resolve = 'none';
         break;
     }
-    if (ps.received >= 1 && isFinite(cur.el.duration)) ps.durationKnown = true;
+    if (ps.received >= 1 && duration) ps.durationKnown = true;
     updateBuffered();
-    changed(e.peer !== prevPeer ? 'source' : 'status');
+    changed(ev.peer !== prevPeer ? 'source' : 'status');
   }
 
-  /* buffered = what the element holds, cut to what the transfer delivered (both 0-1 of the song) */
+  /* buffered = what the output holds (seconds), cut to what the transfer delivered; both as 0-1 of the song */
+  var lastRanges = [];
   function updateBuffered() {
-    var el = cur.el, dur = P.duration(), out = [];
-    if (dur) for (var i = 0; i < el.buffered.length; i++) {
-      var a = el.buffered.start(i) / dur, b = Math.min(el.buffered.end(i) / dur, cur.soulseek ? ps.received || 1 : 1);
-      if (b > a) out.push([clamp(a, 0, 1), clamp(b, 0, 1)]);
-    }
-    ps.buffered = out;
-    if (cur.soulseek && !ps.received && out.length) ps.received = out[out.length - 1][1];   // until the first event
+    var dur = P.duration(), outR = [];
+    if (dur) lastRanges.forEach(function (r) {
+      var a = r[0] / dur, b = Math.min(r[1] / dur, cur && cur.soulseek ? ps.received || 1 : 1);
+      if (b > a) outR.push([clamp(a, 0, 1), clamp(b, 0, 1)]);
+    });
+    ps.buffered = outR;
+    if (cur && cur.soulseek && !ps.received && outR.length) ps.received = outR[outR.length - 1][1];   // until the first event
   }
-
-  /* reattach a deck to its stream at the same time position (after a peer fallback cut the response) */
-  function reopen(d) {
-    var at = d.el.currentTime || ps.pos;
-    d.el.src = d.url; d.el.load(); d.el.currentTime = at;
-    if (ps.playing) start(d);
-  }
-  /* the element failed: ask the server why (the body says it in a sentence), then show it */
-  function onError(d) {
+  /* the output failed: ask the hub why (the body says it in a sentence), then show it */
+  function onOutputError(e, msg) {
     var t = P.current();
-    fetch(d.url, { headers: { Range: 'bytes=0-0' }, credentials: 'same-origin' }).then(function (res) {
-      if (res.ok) return 'This file can\'t be played in this browser';
-      return res.json().then(function (b) { return b.message; }, function () { return 'The server answered ' + res.status; });
-    }, function () { return 'Can\'t reach the lull server'; }).then(function (msg) {
-      if (d !== cur || P.current() !== t) return;
-      ps.playing = false; ps.error = msg;
-      ps.status = d.soulseek ? 'failed' : 'jellyfin-error';
+    var why = e.local ? Promise.resolve(msg || 'The downloaded file can\'t be played')
+      : fetch(e.url, { headers: { Range: 'bytes=0-0' }, credentials: 'same-origin' }).then(function (res) {
+        if (res.ok) return msg || 'This file can\'t be played here';
+        return res.json().then(function (b) { return b.message; }, function () { return 'The server answered ' + res.status; });
+      }, function () { return 'Can\'t reach the lull server'; });
+    why.then(function (text) {
+      if (e !== cur || P.current() !== t) return;
+      ps.playing = false; ps.error = text;
+      ps.status = e.soulseek ? 'failed' : 'jellyfin-error';
       changed('status');
     });
   }
 
-  /* ---------- gapless hand-over, crossfade, preload ---------- */
-  function releaseNext() { if (nxt.entry) release(nxt); }
-  /* preload the next song once the playing one is close to its end (or its transfer is done) */
+  /* ---------- gapless and crossfade: the output continues into the entry set as next ---------- */
+  function releaseNext() { if (!nxt) return; var e = nxt; nxt = null; out.setNext(null); letGo(e); }
+  /* set the next song once the playing one is close to its end (or its transfer is done). The Android app's
+     output wants it at once (eagerNext): its page may be asleep when the song ends. */
   function preloadNext() {
     var i = nextIndex(true);
-    if (i < 0 || i === ps.index || !playback.gapless && !playback.crossfade) return;
+    if (i < 0 || i === ps.index || !playback.gapless && !playback.crossfade) { if (nxt) releaseNext(); return; }
     /* a Soulseek song still transferring gets the bandwidth to itself until its last half minute */
     var e = ps.queue[i], dur = P.duration(), lead = Math.max(30, (playback.crossfade || 0) + 15) + (cur.soulseek && ps.received < 1 ? 0 : 60);
-    if (!dur || dur - ps.pos > lead) return;
-    if (nxt.entry !== e) { arm(nxt, e); if (e.resolve === 'resolved') e.resolve = 'resolving'; changed('queue'); }
+    if (!out.eagerNext && (!dur || dur - ps.pos > lead)) return;
+    if (nxt === e) return;
+    var was = nxt; nxt = e; letGo(was);
+    if (e.resolve === 'resolved') { e.resolve = 'resolving'; changed('queue'); }
+    itemFor(e).then(function (it) { if (it && nxt === e) out.setNext(it); });
   }
-  function onEnded() {
-    if (ps.crossfade) { finishCrossfade(); return; }
+  /* the output moved on by itself into `next` (gapless or the end of a crossfade) */
+  function handOver(e) {
+    endPlay('completed'); shuffleNext = null;
+    var was = cur; cur = e; nxt = null;
+    ps.index = ps.queue.indexOf(e); resetTrackState();
+    ps.status = e.soulseek ? (e.complete ? 'streaming' : 'buffering') : 'library';
+    ps.received = e.soulseek && !e.complete ? 0 : 1; ps.durationKnown = !e.soulseek; ps.source = e.source || null;
+    letGo(was); applyLevels(); changed('track'); topUpRadio();
+    if (out.eagerNext) preloadNext();
+  }
+  function onEnded(next) {
+    if (next) { if (nxt && nxt.uid === next) handOver(nxt); return; }
     /* a Soulseek response that ends early is a fallback in progress, not the song's end: the `stream` event
        with the next attempt reopens it */
     if (cur.soulseek && !cur.complete && P.duration() - ps.pos > 2) { ps.status = 'buffering'; changed('status'); return; }
-    var i = nextIndex(true);
-    if (i >= 0 && i !== ps.index && nxt.entry === ps.queue[i]) {        // gapless: the next song is already loaded
-      endPlay('completed'); shuffleNext = null;
-      var s = cur; cur = nxt; nxt = s; release(nxt);
-      ps.index = i; resetTrackState();
-      ps.status = cur.soulseek ? 'buffering' : 'library'; ps.received = cur.soulseek && !cur.complete ? 0 : 1; ps.source = cur.entry.source || null;
-      start(cur); applyLevels(); changed('track'); topUpRadio();
-      return;
-    }
     P.next(true);
   }
-  function maybeCrossfade() {
-    var xf = playback.crossfade || 0, dur = P.duration(), i = nextIndex(true);
-    if (!xf || ps.crossfade || !ps.playing || i < 0 || i === ps.index || dur - ps.pos > xf || ps.repeat === 'one') return;
-    if (nxt.entry !== ps.queue[i] || nxt.el.readyState < 3) return;
-    ps.crossfade = true; xfStart = Date.now(); xfLen = Math.max(1, (dur - ps.pos) * 1000);
-    nxt.fade = 0; start(nxt);
-    changed('status');
+
+  /* ---------- output events (docs/context/web.md#output-interface) ---------- */
+  function isCur(key) { return cur && cur.uid === key; }
+  function onTime(d) {
+    if (!isCur(d.key)) return;
+    var was = ps.status;
+    if (d.duration > 0 && d.duration !== duration) { duration = d.duration; ps.durationKnown = !cur.soulseek || ps.received >= 1; changed('status'); }
+    trackListening(d.position, d.playing);
+    ps.pos = d.position;
+    sound = { playing: d.playing, waiting: d.waiting };
+    if (d.playing && !d.waiting && (ps.status === 'finding' || ps.status === 'queued' || ps.status === 'buffering' || ps.status === 'stalled' || ps.status === 'library' || ps.status === 'streaming')) {
+      ps.status = cur.soulseek ? 'streaming' : 'library'; ps.error = null;
+      beginPlay(P.current());
+    } else if (d.waiting && ps.playing && (ps.status === 'streaming' || ps.status === 'library')) ps.status = 'buffering';
+    if (ps.status !== was) changed('status');
   }
-  var xfStart = 0, xfLen = 0;
-  function stepCrossfade() {
-    if (!ps.crossfade) return;
-    var k = clamp((Date.now() - xfStart) / xfLen, 0, 1);
-    cur.fade = Math.cos(k * Math.PI / 2); nxt.fade = Math.sin(k * Math.PI / 2);   // equal-power
-    applyLevels();
-    if (k >= 1) finishCrossfade();
-  }
-  function finishCrossfade() {
-    if (!ps.crossfade) return;
-    ps.crossfade = false;
-    if (!ps.playing) { nxt.fade = 1; nxt.el.pause(); nxt.el.currentTime = 0; applyLevels(); changed('status'); return; }
-    endPlay('completed');
-    var i = nextIndex(true); shuffleNext = null;
-    var s = cur; cur = nxt; nxt = s; cur.fade = 1; release(nxt);
-    ps.index = i; resetTrackState(); ps.pos = cur.el.currentTime;
-    ps.status = cur.soulseek ? 'streaming' : 'library'; ps.received = cur.soulseek ? ps.received : 1; ps.source = cur.entry.source || null;
-    applyLevels(); changed('track'); topUpRadio();
+  out.on('time', onTime);
+  out.on('buffered', function (d) { if (isCur(d.key)) { lastRanges = d.ranges; updateBuffered(); } });
+  out.on('ended', function (d) { if (isCur(d.key)) onEnded(d.next); });
+  out.on('error', function (d) {
+    if (nxt && nxt.uid === d.key) { nxt.resolve = 'none'; changed('queue'); return; }
+    if (isCur(d.key)) onOutputError(cur, d.message);
+  });
+  out.on('crossfade', function (d) { if (isCur(d.key)) { ps.crossfade = !!d.next; changed('status'); } });
+  out.on('remote', function (d) { if (d.action === 'next') P.next(); else if (d.action === 'prev') P.prev(); });
+
+  /* volume (perceptual curve, mute) and crossfade length go to the output; repeat one never crossfades */
+  function applyLevels() {
+    out.setVolume(ps.muted ? 0 : ps.volume * ps.volume);
+    out.crossfade(ps.repeat === 'one' ? 0 : playback.crossfade || 0);
   }
 
-  /* ---------- levels: volume x crossfade x loudness normalisation ---------- */
-  var audioCtx = null, master = null;
-  function wantGraph() { return playback.normalisation && playback.normalisation !== 'off' || playback.crossfade > 0; }
-  /* Web Audio only when a feature needs it; built inside a user gesture (play), once */
-  function ensureGraph() {
-    if (audioCtx || !wantGraph() || !window.AudioContext) { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); return; }
-    audioCtx = new AudioContext();
-    master = audioCtx.createGain(); master.connect(audioCtx.destination);
-    decks.forEach(function (d) {
-      var src = audioCtx.createMediaElementSource(d.el);
-      d.gain = audioCtx.createGain(); d.analyser = audioCtx.createAnalyser(); d.analyser.fftSize = 2048;
-      src.connect(d.gain); d.gain.connect(master); src.connect(d.analyser);
-    });
-    applyLevels();
+  /* =====================================================================
+     8b. The browser's output: two <audio> decks, the playing one and the next, preloaded for gapless and
+         crossfade. Loudness normalisation and crossfade go through Web Audio gains when switched on.
+         The same contract as window.LullNative.player (docs/context/web.md#output-interface), plus the
+         optional `crossfade { key, next }` event (next null: the fade was abandoned).
+     ===================================================================== */
+  function audioOutput() {
+    var subs = {}, decks = [deck(), deck()], a = decks[0], b = decks[1], volume = 1, xfade = 0, fading = null;
+    function emit(type, detail) { (subs[type] || []).forEach(function (fn) { fn(detail); }); }
+    function deck() {
+      var d = { el: new Audio(), item: null, waiting: false, fade: 1, norm: 1, gain: null, analyser: null, ms: 0, msN: 0 };
+      d.el.preload = 'auto';
+      ['playing', 'waiting', 'pause', 'timeupdate', 'durationchange', 'ended', 'error'].forEach(function (type) {
+        d.el.addEventListener(type, function () { onEl(d, type); });
+      });
+      return d;
+    }
+    /* waiting: no sound yet for want of data, from the start until 'playing' */
+    function hold(d, it) {
+      d.item = it; d.waiting = true; d.fade = 1; d.norm = 1; d.ms = 0; d.msN = 0;
+      if (it) { d.el.src = it.url; d.el.load(); } else { d.el.pause(); d.el.removeAttribute('src'); d.el.load(); }
+    }
+    function key(d) { return d.item ? d.item.key : null; }
+    function dur(d) { return isFinite(d.el.duration) && d.el.duration > 0 ? d.el.duration : d.item && d.item.duration || 0; }
+    function time(d) {
+      emit('time', { key: key(d), position: d.el.currentTime || 0, duration: isFinite(d.el.duration) && d.el.duration > 0 ? d.el.duration : null,
+        playing: !d.el.paused, waiting: d.waiting });
+    }
+    function ranges(d) { var r = [], br = d.el.buffered; for (var i = 0; i < br.length; i++) r.push([br.start(i), br.end(i)]); return r; }
+    function start(d) {
+      ensureGraph();
+      if (d.el.readyState < 3) d.waiting = true;
+      var p = d.el.play();
+      return p && p.catch ? p : Promise.resolve();
+    }
+    function onEl(d, type) {
+      if (!d.item) return;
+      if (type === 'error') { emit('error', { key: key(d), message: null, status: null }); return; }
+      if (type === 'waiting') d.waiting = true;
+      else if (type === 'playing') d.waiting = false;
+      if (d !== a) return;                                   // the preloading deck reports only errors
+      if (type === 'ended') { if (fading) finishFade(); else ended(); return; }
+      time(d);
+    }
+    /* gapless: continue into the next deck only when the song really reached its end; an early end (a
+       Soulseek response cut by a fallback) is reported with next null and the next deck stays */
+    function ended() {
+      var from = key(a), d = dur(a);
+      if (b.item && (!d || d - a.el.currentTime <= 2)) { swap(); start(a).catch(function () {}); emit('ended', { key: from, next: key(a) }); time(a); return; }
+      emit('ended', { key: from, next: null });
+    }
+    function swap() { var s = a; a = b; b = s; hold(b, null); a.fade = 1; levels(); }
+
+    /* crossfade: the next deck starts under an equal-power fade over the playing song's last seconds */
+    function maybeFade() {
+      var d = dur(a);
+      if (!xfade || fading || a.el.paused || !b.item || !d || d - a.el.currentTime > xfade || b.el.readyState < 3) return;
+      fading = { start: Date.now(), len: Math.max(1, (d - a.el.currentTime) * 1000) };
+      b.fade = 0; start(b).catch(function () {}); levels();
+      emit('crossfade', { key: key(a), next: key(b) });
+    }
+    function stepFade() {
+      if (!fading) return;
+      var k = clamp((Date.now() - fading.start) / fading.len, 0, 1);
+      a.fade = Math.cos(k * Math.PI / 2); b.fade = Math.sin(k * Math.PI / 2);
+      levels();
+      if (k >= 1) finishFade();
+    }
+    function finishFade() { if (!fading) return; fading = null; var from = key(a); swap(); emit('ended', { key: from, next: key(a) }); time(a); }
+    function abandonFade() {
+      if (!fading) return;
+      fading = null; b.fade = 1; b.el.pause(); b.el.currentTime = 0; a.fade = 1; levels();
+      emit('crossfade', { key: key(a), next: null });
+    }
+
+    /* levels: volume x crossfade x loudness normalisation */
+    var ctx = null, master = null;
+    function wantGraph() { return playback.normalisation && playback.normalisation !== 'off' || playback.crossfade > 0; }
+    /* Web Audio only when a feature needs it; built inside a user gesture (play), once */
+    function ensureGraph() {
+      if (ctx || !wantGraph() || !window.AudioContext) { if (ctx && ctx.state === 'suspended') ctx.resume(); return; }
+      ctx = new AudioContext();
+      master = ctx.createGain(); master.connect(ctx.destination);
+      decks.forEach(function (d) {
+        var src = ctx.createMediaElementSource(d.el);
+        d.gain = ctx.createGain(); d.analyser = ctx.createAnalyser(); d.analyser.fftSize = 2048;
+        src.connect(d.gain); d.gain.connect(master); src.connect(d.analyser);
+      });
+      levels();
+    }
+    function levels() {
+      decks.forEach(function (d) {
+        var level = d.fade * (playback.normalisation === 'off' ? 1 : d.norm);
+        if (d.gain) { d.gain.gain.setTargetAtTime(level, ctx.currentTime, .05); d.el.volume = 1; }
+        else d.el.volume = clamp(volume * d.fade, 0, 1);
+      });
+      if (master) master.gain.setTargetAtTime(volume, ctx.currentTime, .05);
+    }
+    /* ReplayGain when the library supplies it, otherwise measured: mean loudness of what has played (unweighted
+       RMS, close enough to LUFS for levelling songs against each other), levelled toward Settings > Playback's
+       target (-18 / -14 / -11), within -12 to +6 dB */
+    function normalise(d) {
+      if (!d.gain || playback.normalisation === 'off' || !d.item) return;
+      var db = replayGainDb(d.item.trackId);
+      if (db != null) { d.norm = Math.pow(10, db / 20); return; }
+      if (d.el.paused || playback.normalisation !== 'loudness') return;
+      var buf = d.buf || (d.buf = new Float32Array(d.analyser.fftSize));
+      d.analyser.getFloatTimeDomainData(buf);
+      var sum = 0; for (var i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+      d.ms += sum / buf.length; d.msN += 1;
+      if (d.msN < 12) return;                                            // ~3 s of listening before adjusting
+      var rms = Math.sqrt(d.ms / d.msN); if (rms < 1e-4) return;
+      d.norm = clamp(Math.pow(10, playback.loudnessTarget / 20) / rms, Math.pow(10, -12 / 20), Math.pow(10, 6 / 20));
+    }
+    /* the deck clock: time at least 4 times a second while playing, buffered when it moved, normalisation, the fade */
+    var held = '';
+    setInterval(function () {
+      if (!a.item) return;
+      if (!a.el.paused) { normalise(a); if (fading) normalise(b); levels(); time(a); }
+      var r = ranges(a), k = key(a) + JSON.stringify(r);
+      if (k !== held) { held = k; emit('buffered', { key: key(a), ranges: r }); }
+      stepFade(); maybeFade();
+    }, 250);
+
+    return {
+      eagerNext: false,
+      on: function (type, fn) {
+        (subs[type] = subs[type] || []).push(fn);
+        return function () { subs[type] = subs[type].filter(function (f) { return f !== fn; }); };
+      },
+      load: function (it, o) {
+        o = o || {};
+        abandonFade();
+        if (b.item && b.item.key === it.key && b.item.url === it.url) { var s = a; a = b; b = s; a.fade = 1; }   // already preloaded
+        else hold(a, it);
+        hold(b, null);
+        if (o.at) a.el.currentTime = o.at;
+        levels();
+        if (o.autoplay === false) { a.el.pause(); return Promise.resolve(); }
+        return start(a);
+      },
+      play: function () { return start(a); },
+      pause: function () { a.el.pause(); abandonFade(); return Promise.resolve(); },
+      seek: function (sec) { a.el.currentTime = sec; time(a); return Promise.resolve(); },
+      setVolume: function (v) { volume = v; levels(); return Promise.resolve(); },
+      setNext: function (it) {
+        if (it && b.item && b.item.key === it.key && b.item.url === it.url) return Promise.resolve();
+        abandonFade(); hold(b, it);
+        return Promise.resolve();
+      },
+      crossfade: function (sec) { xfade = sec; if (!sec) abandonFade(); return Promise.resolve(); }
+    };
   }
-  function applyLevels() {
-    var vol = ps.muted ? 0 : ps.volume * ps.volume;                     // perceptual curve
-    decks.forEach(function (d) {
-      var level = d.fade * (playback.normalisation === 'off' ? 1 : d.norm);
-      if (d.gain) { d.gain.gain.setTargetAtTime(level, audioCtx.currentTime, .05); d.el.volume = 1; }
-      else d.el.volume = clamp(vol * d.fade, 0, 1);
-    });
-    if (master) master.gain.setTargetAtTime(vol, audioCtx.currentTime, .05);
-  }
-  /* ReplayGain from the track when the library supplies it (replayGain: { track, album } in dB), otherwise
-     measured: mean loudness of what has played (unweighted RMS, close enough to LUFS for levelling songs
-     against each other), levelled toward Settings > Playback's target (-18 / -14 / -11), within -12 to +6 dB */
-  function normalise(d) {
-    if (!d.gain || playback.normalisation === 'off' || !d.entry) return;
-    var t = M.track(d.entry.trackId), rg = t && t.replayGain;
-    var db = rg && (playback.normalisation === 'replaygain-album' ? rg.album : playback.normalisation.indexOf('replaygain') === 0 ? rg.track : null);
-    if (db != null) { d.norm = Math.pow(10, db / 20); return; }
-    if (d.el.paused) return;
-    var buf = d.buf || (d.buf = new Float32Array(d.analyser.fftSize));
-    d.analyser.getFloatTimeDomainData(buf);
-    var sum = 0; for (var i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
-    d.ms += sum / buf.length; d.msN += 1;
-    if (d.msN < 12) return;                                            // ~3 s of listening before adjusting
-    var rms = Math.sqrt(d.ms / d.msN); if (rms < 1e-4) return;
-    d.norm = clamp(Math.pow(10, playback.loudnessTarget / 20) / rms, Math.pow(10, -12 / 20), Math.pow(10, 6 / 20));
+  /* the Android app's native player: the same contract; it wants the next song as soon as one plays */
+  function nativeOutput(n) {
+    function call(name) {
+      return function () {
+        try { return Promise.resolve(n[name].apply(n, arguments)); } catch (e) { return Promise.reject(e); }
+      };
+    }
+    return { eagerNext: true, on: function (type, fn) { return n.on(type, fn); }, load: call('load'), play: call('play'), pause: call('pause'),
+      seek: call('seek'), setVolume: call('setVolume'), setNext: call('setNext'), crossfade: call('crossfade') };
   }
 
   /* ---------- plays: POST /api/plays when a song starts, PATCH when it ends (scrobbling, history, taste) ---------- */
@@ -1545,23 +1659,21 @@
     endPlay('skipped');
     play = { uid: e.uid, rec: App.recordPlay(t.id, P.duration(), e.group === 'radio'), last: null };
   }
-  function trackListening(d) {
+  function trackListening(now, playing) {
     if (!play) return;
-    var now = d.el.currentTime, dt = play.last == null ? 0 : now - play.last;
-    if (dt > 0 && dt < 1.5 && ps.playing) play.rec.listened += dt;
+    var dt = play.last == null ? 0 : now - play.last;
+    if (dt > 0 && dt < 1.5 && playing) play.rec.listened += dt;
     play.last = now;
   }
   function endPlay(how) { if (play) { play.rec.end(how); play = null; } }
   window.addEventListener('pagehide', function () { endPlay('stopped'); persist(); });
 
-  /* ---------- the clock: position, crossfade, preload, normalisation; 'tick' for screens ---------- */
+  /* ---------- the clock: preload, and 'tick' for screens (the output reports the position) ---------- */
   var TICK = 250;
   setInterval(function () {
-    if (!cur.entry) return;
-    if (ps.playing) { normalise(cur); if (ps.crossfade) normalise(nxt); }
-    stepCrossfade(); maybeCrossfade(); preloadNext();
+    if (!cur) return;
+    preloadNext();
     if (document.hidden) return;
-    ps.pos = cur.el.currentTime || ps.pos;
     updateBuffered();
     App.emit('tick', ps);
   }, TICK);
@@ -1597,14 +1709,14 @@
       case 'finding': return 'Finding a source' + (ps.peersFound ? ', ' + ps.peersFound + ' peers answered' : '');
       case 'queued': return 'Queued at peer ' + peer + (ps.queuePos ? ', position ' + ps.queuePos : '');
       case 'buffering':
-        if (!cur.soulseek) return 'Loading from your library';
+        if (cur && !cur.soulseek) return cur.local ? 'Loading from this device' : 'Loading from your library';
         return ps.fallback ? 'Switching to ' + ps.fallback.to + ' (' + ps.fallback.n + (ps.fallback.of ? ' of ' + ps.fallback.of : '') + ')' : 'Buffering from ' + peer;
       case 'stalled': return 'Peer stalled, switching to the next source (' + ((ps.peer ? ps.peer.rank : 1) + 1) + of + ')';
       case 'failed': return ps.error || 'Couldn\'t play: no peer responded';
       case 'jellyfin-error': return 'Library item unavailable' + (ps.error ? ': ' + ps.error : '');
       case 'ended': return 'End of queue';
       default:
-        if (ps.crossfade) { var n = M.track(nxt.entry ? nxt.entry.trackId : ''); return 'Crossfading into ' + (n ? n.title : 'the next song'); }
+        if (ps.crossfade) { var n = nxt && M.track(nxt.trackId); return 'Crossfading into ' + (n ? n.title : 'the next song'); }
         return null;
     }
   };

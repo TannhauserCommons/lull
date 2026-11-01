@@ -98,7 +98,8 @@ says the ping has answered.
 
 The state shape and methods are DESIGN.md 7.8; the insides:
 
-- **Two `<audio>` decks**: the playing one and the next. Saved songs play from `/api/library/stream/{id}`; Soulseek
+- **Sound comes from an output** (below): two `<audio>` decks in browsers and the desktop app, the native player in
+  the Android app. Saved songs play from `/api/library/stream/{id}`, downloaded ones from this device; Soulseek
   songs from `/api/stream/{id}` (`?peer=&path=` after a manual source pick, `P.useSource(trackId, source)` with a
   source row from `/api/tracks/{id}/sources`). Leaving a Soulseek song whose transfer hasn't finished sends
   `DELETE /api/stream/{id}`.
@@ -111,7 +112,8 @@ The state shape and methods are DESIGN.md 7.8; the insides:
 - **Peer fallback**: the server ends the old response and raises `attempt` in `stream` events; the engine reopens the
   stream URL and seeks back to the same time. A Soulseek response that ends before the song does (and before the
   transfer completed) is treated as that fallback in progress, never as the song's end.
-- **Gapless**: the next song is preloaded 30 s before the end (90 s when the current transfer is done) and handed
+- **Gapless**: the next song is preloaded 30 s before the end (90 s when the current transfer is done; at once for the
+  native output, whose page may sleep) and handed
   over on `ended`. Off when Settings > Playback turns gapless off.
 - **Crossfade** (`playback.crossfade` seconds): the next deck starts under an equal-power fade.
 - **Normalisation** (`off | replaygain-track | replaygain-album | loudness`): Web Audio gain per deck. ReplayGain uses
@@ -157,7 +159,7 @@ output with one contract and two implementations:
 | `play()` · `pause()` | |
 | `seek(seconds)` | The engine only seeks inside what has arrived (`P.seekable`); the output doesn't need to know about Soulseek |
 | `setVolume(v)` | `0..1`, the final level: the engine has already applied mute and its perceptual curve (`v = volume²`) |
-| `setNext(item \| null)` | Preload `item` and, when the current one ends, continue into it with no gap. `null` cancels. Called again whenever the queue, shuffle or repeat changes |
+| `setNext(item \| null)` | Preload `item` and, when the current one ends, continue into it with no gap. Continue only when the current one reached its end (within 2 s of its duration): an earlier end is a cut response, reported as `ended` with `next: null`, and the next item stays set. `null` cancels. Called again whenever the queue, shuffle or repeat changes |
 | `crossfade(seconds)` | `0` = off. Otherwise, with a next item set, fade equal-power from the current into the next over the current's last `seconds` |
 
 **Events.** `LullNative.player.on(type, fn)` returns a function that unsubscribes. `fn` gets one object.
@@ -168,6 +170,7 @@ output with one contract and two implementations:
 | `buffered` | `{ key, ranges: [[from, to]] }` | Seconds held by the player, when they change |
 | `ended` | `{ key, next }` | The item ended. `next` = the key it continued into (gapless or crossfade), else `null` and playback stopped. A response that ends before the song does is reported as `ended` too: the engine knows when that is a Soulseek fallback in progress and reopens with `load` |
 | `error` | `{ key, message, status }` | The item can't play. `status` = the HTTP status when the hub answered one (the engine fetches the hub's sentence), else `null` |
+| `crossfade` | `{ key, next }` | Optional: a fade into `next` started (the player bar shows it), or was abandoned (`next: null`, on pause) |
 | `remote` | `{ action: next \| prev }` | Lock screen, notification, Bluetooth or headset. The output itself applies play, pause and seek from those controls and reports them through `time`; next and prev need the queue, so the engine does them |
 
 Rules for the native side: playback must continue with the screen off (the WebView may be throttled, so `setNext` is
