@@ -1,13 +1,15 @@
 //! `GET /api/search?q=`: the catalog search (ADR-0008, docs/context/discovery.md#search).
 //!
-//! - **Sources** run side by side: Deezer and the saved library, then MusicBrainz (one recording
+//! - **Sources** run side by side: the fast catalog (`catalog`: Deezer, or iTunes plus Deezer's
+//!   artists where Deezer is closed) and the saved library, then MusicBrainz (one recording
 //!   search) and Last.fm. Their rows are merged and ranked by `merge`.
-//! - **Fast first:** the answer goes out once Deezer and the library are in, or after about
+//! - **Fast first:** the answer goes out once the fast sources are in, or after about
 //!   400 ms; what arrives later is announced as `search.more`, with only rows not shown yet.
 //! - **One run per query for 10 minutes:** the same words again answer at once, joining a run
 //!   that is still going. A run with a failed source isn't reused.
 //! - **`search.catalog`** names the best tracks once every source is in, for Soulseek.
 
+pub mod catalog;
 pub mod merge;
 #[cfg(test)]
 mod tests;
@@ -21,7 +23,6 @@ use axum::Json;
 use axum::extract::{Query as Params, State};
 use lull_core::ids::{AlbumId, ArtistId, TrackId};
 use lull_core::model::Track;
-use lull_core::status::State as Health;
 use lull_core::{Error, Result};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, Notify};
@@ -30,11 +31,12 @@ use tokio::time::Instant;
 use crate::Service;
 use crate::art::{self, Pictured};
 use crate::store::{self, entities};
+use catalog::Choice;
 use merge::{Fit, Found, Kind, Merged, Query, SongHit, Source, Touched};
 
 /// How long the first answer waits for Deezer and the library.
 const FIRST_ANSWER: Duration = Duration::from_millis(400);
-const FAST: [Source; 2] = [Source::Deezer, Source::Library];
+const FAST: [Source; 3] = [Source::Deezer, Source::Itunes, Source::Library];
 const KEEP: Duration = Duration::from_secs(600);
 const TRACKS: usize = 50;
 const ALBUMS: usize = 20;
@@ -188,10 +190,13 @@ impl Searches {
     }
 }
 
-/// The sources in use: for 3+ characters also MusicBrainz unless switched off, and Last.fm when
-/// configured and on.
+/// The sources in use: the fast catalog and the library; for 3+ characters also MusicBrainz
+/// unless switched off, and Last.fm when configured and on.
 fn sources(svc: &Service, query: &str) -> Vec<Source> {
     let mut sources = vec![Source::Deezer, Source::Library];
+    if svc.catalog.choice() == Choice::Itunes {
+        sources.push(Source::Itunes);
+    }
     let slow = query.chars().count() >= SLOW_SOURCES_FROM;
     if slow && svc.mb.switch.is_on() {
         sources.push(Source::MusicBrainz);
@@ -203,7 +208,7 @@ fn sources(svc: &Service, query: &str) -> Vec<Source> {
 }
 
 impl Run {
-    /// Returns once Deezer and the library are in, or at the first-answer deadline.
+    /// Returns once the fast sources are in, or at the first-answer deadline.
     async fn first_answer(&self) {
         let deadline = self.started + FIRST_ANSWER;
         loop {
@@ -222,15 +227,24 @@ impl Run {
 async fn fetch(svc: &Service, source: Source, q: &str) -> Result<Found> {
     match source {
         Source::Deezer => {
-            let found = svc.deezer.search(q).await;
-            let (state, detail) = match &found {
-                Ok(f) => match &f.problem {
-                    Some(p) => (Health::Warn, format!("Deezer: {p}")),
-                    None => (Health::Ok, "Deezer answers searches.".to_owned()),
-                },
-                Err(e) => (Health::Warn, format!("Search goes on without Deezer: {e}")),
+            let found = match svc.catalog.choice() {
+                Choice::Deezer => svc.deezer.search(q).await,
+                Choice::Itunes => svc.deezer.artists(q).await,
             };
-            svc.ctx.status.set("deezer", state, detail, serde_json::Value::Null);
+            catalog::report(
+                svc,
+                match &found {
+                    Ok(f) => f.problem.as_ref().map(|p| format!("Deezer {p}")),
+                    Err(e) => Some(format!("Search goes on without Deezer: {e}")),
+                },
+            );
+            found
+        }
+        Source::Itunes => {
+            let found = svc.itunes.search(q).await;
+            if let Err(e) = &found {
+                catalog::report(svc, Some(format!("Search goes on without iTunes: {e}")));
+            }
             found
         }
         Source::Library => Ok(Found {

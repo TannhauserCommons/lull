@@ -31,6 +31,7 @@ use tokio::sync::broadcast;
 
 use sources::cache::Cache;
 use sources::deezer::Deezer;
+use sources::itunes::Itunes;
 use sources::lastfm::LastFm;
 use sources::listenbrainz::ListenBrainz;
 use sources::musicbrainz::MusicBrainz;
@@ -96,6 +97,9 @@ pub struct Service {
     lb: ListenBrainz,
     mb: MusicBrainz,
     deezer: Deezer,
+    itunes: Itunes,
+    /// Deezer, or iTunes plus Deezer's artists where Deezer is closed.
+    catalog: search::catalog::Catalog,
     searches: search::Searches,
     /// Pictures fetched for `/api/catalog/art`.
     art_dir: std::path::PathBuf,
@@ -118,6 +122,12 @@ pub async fn start(ctx: &Ctx, library: Arc<dyn Library>) -> Result<Arc<Service>>
         ),
         mb: MusicBrainz::new(ctx.http.clone(), cache.clone()),
         deezer: Deezer::new(ctx.http.clone(), cache.clone()),
+        itunes: Itunes::new(
+            ctx.http.clone(),
+            cache.clone(),
+            ctx.config.discovery.catalog_country.clone(),
+        ),
+        catalog: search::catalog::Catalog::default(),
         searches: search::Searches::default(),
         art_dir: ctx.config.data_dir.join("catalog-art"),
         lastfm: ctx
@@ -131,6 +141,7 @@ pub async fn start(ctx: &Ctx, library: Arc<dyn Library>) -> Result<Arc<Service>>
     });
     ctx.spawn(listen(svc.clone(), ctx.bus.subscribe()));
     ctx.spawn(feed::keep_fresh(svc.clone()));
+    ctx.spawn(search::catalog::keep_choosing(svc.clone()));
     Ok(svc)
 }
 

@@ -79,6 +79,24 @@ impl Deezer {
             .await
     }
 
+    /// Artists only: where Deezer's catalog is closed, its artist search still answers.
+    pub async fn artists(&self, q: &str) -> Result<Found> {
+        self.cache
+            .get(format!("dz:artists:{q}"), KEEP_S, || async {
+                Ok(Found {
+                    artists: artists_of(self.get("search/artist", q, "10").await?)?,
+                    ..Found::default()
+                })
+            })
+            .await
+    }
+
+    /// Whether Deezer's catalog is open where lull runs (`/infos`).
+    pub async fn is_open(&self) -> Result<bool> {
+        self.wait_turn().await;
+        open(&self.http.json(SERVICE, |c| c.get(format!("{API}/infos"))).await?)
+    }
+
     /// The photo of the artist called `name` (exact name, ignoring case and a leading "the").
     pub async fn artist_image(&self, name: &str) -> Result<Option<String>> {
         self.cache
@@ -96,14 +114,18 @@ impl Deezer {
             .await
     }
 
+    async fn wait_turn(&self) {
+        let turn = self
+            .window
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .reserve(Instant::now());
+        tokio::time::sleep_until(turn).await;
+    }
+
     async fn get(&self, path: &str, q: &str, limit: &str) -> Result<Value> {
         for attempt in 0..2 {
-            let turn = self
-                .window
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .reserve(Instant::now());
-            tokio::time::sleep_until(turn).await;
+            self.wait_turn().await;
             let body: Value = self
                 .http
                 .json(SERVICE, |c| {
@@ -157,6 +179,13 @@ impl Window {
     pub fn close(&mut self, now: Instant) {
         self.closed_until = Some(now + WINDOW);
     }
+}
+
+/// `/infos`'s `open`: whether Deezer's catalog is available in the caller's country.
+pub fn open(infos: &Value) -> Result<bool> {
+    infos["open"]
+        .as_bool()
+        .ok_or_else(|| Error::upstream(SERVICE, "its /infos answer has no `open`"))
 }
 
 #[derive(Debug, PartialEq)]

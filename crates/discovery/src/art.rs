@@ -147,6 +147,8 @@ pub fn sized(source: &str, size: u32) -> String {
 async fn fetch(svc: &Service, url: &str) -> Result<Option<Vec<u8>>> {
     let service = if url.starts_with("https://coverartarchive.org/") {
         "Cover Art Archive"
+    } else if url.contains(".mzstatic.com/") {
+        "iTunes"
     } else {
         "Deezer"
     };

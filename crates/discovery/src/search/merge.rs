@@ -26,6 +26,7 @@ const TOP_LEAN: [f64; 3] = [0.15, 0.05, 0.0];
 #[serde(rename_all = "lowercase")]
 pub enum Source {
     Deezer,
+    Itunes,
     Library,
     MusicBrainz,
     LastFm,

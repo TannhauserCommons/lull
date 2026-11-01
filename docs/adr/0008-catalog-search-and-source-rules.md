@@ -66,7 +66,6 @@ Exploring the code found three gaps:
 ## Alternatives
 
 - **Spotify's Web API.** Since February 2026 development-mode apps need Premium and get capped search results, and its terms don't fit a downloader.
-- **Apple's iTunes Search API:** about 20 calls a minute, too slow for search as you type.
 - **MusicBrainz alone:** complete for released music, but 1 request a second, sparse art and no artist photos.
 - **Keeping Soulseek-first search:** slow, file-shaped results, and no art. It's what the listener asked to replace.
 
@@ -75,3 +74,13 @@ Exploring the code found three gaps:
 - **More upstreams.** Search depends on three outside services. Each one failing degrades to the others, and the status tray names it.
 - **Deezer's limit is per IP,** fine for one listener with debouncing and caching.
 - **Catalog entries now include albums and artists with art,** so `Entities` carries them for search results.
+
+## Update 2026-11-01: the fast catalog is chosen per hub
+
+- **Deezer is closed in some countries.** From the homelab, `/infos` says `open: false`, and track and album searches come back empty while still reporting a `total`. Artist search and lookups by id still work.
+- **So each hub asks Deezer's `/infos`** at start and daily:
+  - where Deezer is open, it answers tracks, albums and artists as above;
+  - where it is closed, **Apple's iTunes Search** answers tracks and albums (one `entity=song` call per query, albums derived from the songs, the store from `LULL_CATALOG_COUNTRY`, default US), and Deezer answers artists and their photos.
+- **iTunes' limit** (about 20 calls a minute) is kept by the 10-minute cache, the UI's debounce and a budget of 18 calls per rolling minute. Over budget, a search answers with the library and gets `search.more` from MusicBrainz and Last.fm: never an error.
+- **The choice shows** as the `catalog` status ("catalog: iTunes (US) + Deezer artists").
+- **Not chosen:** sending Deezer's calls through a proxy in another country.

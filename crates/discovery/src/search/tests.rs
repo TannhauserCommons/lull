@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use tokio::time::Instant;
 
 use super::merge::{self, AlbumHit, ArtistHit, Fit, Found, Kind, Merged, Query, SongHit};
-use crate::sources::{deezer, lastfm, musicbrainz};
+use crate::sources::{deezer, itunes, lastfm, musicbrainz};
 
 fn fixture(name: &str) -> Value {
     let text = match name {
@@ -19,6 +19,8 @@ fn fixture(name: &str) -> Value {
         "deezer-artist" => include_str!("fixtures/deezer-artist.json"),
         "deezer-quota" => include_str!("fixtures/deezer-quota.json"),
         "deezer-withheld" => include_str!("fixtures/deezer-withheld.json"),
+        "deezer-infos" => include_str!("fixtures/deezer-infos.json"),
+        "itunes-song" => include_str!("fixtures/itunes-song.json"),
         "musicbrainz-recording" => include_str!("fixtures/musicbrainz-recording.json"),
         _ => "null",
     };
@@ -357,4 +359,60 @@ fn last_fm_answers_become_rows_without_pictures() {
     assert!(found.songs.iter().all(|s| s.art.is_none() && s.album.is_empty()));
     assert_eq!(found.artists[0].name, "Radiohead");
     assert!(found.artists[0].image.is_none());
+}
+
+#[test]
+fn deezer_says_where_its_catalog_is_closed() {
+    assert_eq!(deezer::open(&fixture("deezer-infos")).ok(), Some(false));
+    assert!(deezer::open(&json!({})).is_err());
+}
+
+#[test]
+fn itunes_songs_bring_their_albums_with_kinds_and_sized_art() {
+    let found = itunes::songs(fixture("itunes-song")).unwrap_or_default();
+    assert_eq!(found.songs.len(), 6);
+    let acoustic = &found.songs[0];
+    assert_eq!(
+        (
+            acoustic.title.as_str(),
+            acoustic.album.as_str(),
+            acoustic.album_kind.as_deref()
+        ),
+        ("Creep (Acoustic)", "Creep", Some("EP")),
+        "\"Creep - EP\" is the EP called Creep"
+    );
+    assert_eq!(acoustic.duration, Some(258));
+    assert!(
+        acoustic
+            .art
+            .as_deref()
+            .is_some_and(|a| a.ends_with("/{size}x{size}bb.jpg"))
+    );
+    assert!(
+        found.songs[0].popularity > found.songs[5].popularity,
+        "Apple's order stands in"
+    );
+    assert_eq!(found.albums.len(), 6);
+    assert_eq!(found.albums[1].kind.as_deref(), Some("single"));
+    // Deezer's "Creep (Acoustic)" (258 s) and iTunes's are one row.
+    let mut m = Merged::default();
+    m.add(Found {
+        songs: deezer::songs(fixture("deezer-track")).unwrap_or_default(),
+        ..Found::default()
+    });
+    let before = m.songs.len();
+    m.add(Found {
+        songs: vec![acoustic.clone()],
+        ..Found::default()
+    });
+    assert_eq!(m.songs.len(), before);
+}
+
+#[test]
+fn the_itunes_budget_stays_under_twenty_a_minute() {
+    let mut b = itunes::Budget::default();
+    let t0 = Instant::now();
+    assert_eq!((0..25).filter(|_| b.take(t0)).count(), 18);
+    assert!(!b.take(t0 + Duration::from_secs(59)));
+    assert!(b.take(t0 + Duration::from_secs(60)));
 }
