@@ -182,6 +182,14 @@ pub fn is_lossless(codec_or_ext: &str) -> bool {
     )
 }
 
+/// The format a minimum's `formats` names for a lowercase extension: `.aif` is AIFF too.
+pub fn format_of(ext: &str) -> &str {
+    match ext {
+        "aif" => "aiff",
+        other => other,
+    }
+}
+
 /// The lowercase extension of a file path, or "".
 pub fn extension(path: &str) -> String {
     path.rsplit_once('.')
@@ -235,6 +243,12 @@ mod tests {
             "format list applies to lossless too"
         );
         assert_eq!(any320.to_string(), "320 kbps or lossless");
+        let aiff = Minimum {
+            lossless_only: true,
+            kbps: 0,
+            formats: vec!["aiff".into()],
+        };
+        assert!(q(true, 1400).meets(format_of("aif"), &aiff), ".aif is AIFF");
         assert_eq!(flac_only.to_string(), "lossless only, FLAC");
         assert!(!q(false, 320).meets(
             "flac",
