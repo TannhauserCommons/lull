@@ -11,6 +11,7 @@ mod plays;
 mod seam;
 mod settings;
 mod stats;
+mod sync;
 #[cfg(test)]
 mod testing;
 
@@ -70,6 +71,20 @@ pub const MIGRATIONS: Migrations = Migrations {
         r#"
         UPDATE collection_settings SET json = json_remove(json, '$.discovery.on.discogs');
     "#,
+        // /api/sync (ADR-0005): op ids already applied, so a resent op is acknowledged and not
+        // applied twice, and the playlists made for a device's tempIds. Both kept sync::RETENTION.
+        r#"
+        CREATE TABLE collection_sync_ops (
+            id          TEXT PRIMARY KEY,  -- the device's op id
+            applied_at  INTEGER NOT NULL
+        );
+        CREATE INDEX collection_sync_ops_at ON collection_sync_ops(applied_at);
+        CREATE TABLE collection_sync_playlists (
+            temp_id       TEXT PRIMARY KEY,
+            playlist_seq  INTEGER NOT NULL,
+            created_at    INTEGER NOT NULL
+        );
+    "#,
     ],
 };
 
@@ -88,7 +103,7 @@ pub async fn start(ctx: &Ctx, library: Arc<dyn Library>) -> Result<Arc<Service>>
     }))
 }
 
-/// `/api/likes`, `/api/follows`, `/api/plays`, `/api/history`, `/api/playlists/...`, `/api/stats`, `/api/settings`.
+/// `/api/likes`, `/api/follows`, `/api/plays`, `/api/history`, `/api/playlists/...`, `/api/stats`, `/api/settings`, `/api/sync`.
 pub fn router(svc: Arc<Service>) -> Router {
     Router::new()
         .merge(likes::routes())
@@ -97,6 +112,7 @@ pub fn router(svc: Arc<Service>) -> Router {
         .merge(playlists::routes())
         .merge(stats::routes())
         .merge(settings::routes())
+        .merge(sync::routes())
         .with_state(svc)
 }
 

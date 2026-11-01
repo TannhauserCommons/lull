@@ -16,6 +16,15 @@
 
 Every change runs in one transaction and publishes its events after the commit (`Service::write`). The routes, the `Collection` seam (`seam.rs`, for Subsonic) and `/api/sync` call the same functions, so each publishes the same events.
 
+## Sync (`POST /api/sync`, ADR-0005)
+
+- **Each op is its own transaction**, applied with a row in `collection_sync_ops` (the op id), so a crash never leaves an op applied but unrecorded, and a resend finds it.
+- **Rejected vs failed.** An op that is wrong (unknown track, bad shape, a `tempId` nothing made) is rejected with a message and the rest go on; the device drops it. A database failure fails the request: earlier ops are already applied and recorded, so the resend skips them.
+- **`tempId`s** live in `collection_sync_playlists`, so an edit in a later batch finds the playlist an earlier batch made. A resent create answers with the same playlist.
+- **Retention.** Op ids and `tempId`s are forgotten after 90 days (`sync::RETENTION`), pruned at the start of each sync. A device offline longer than that and resending the same op would apply it twice; an outbox is days old at worst.
+- **Times.** A play keeps its real `startedAt`; likes, follows and playlists are dated `at`. Neither may be in the future (a device clock ahead is clamped to now).
+- **A synced play** goes through the same `record` as the `Collection` seam: `play.ended` only, so lastfm scrobbles it at its real start.
+
 ## Plays and events
 
 - **Lifecycle.** The UI calls `POST /api/plays` when a song starts and `PATCH /api/plays/{id}` once when it stops. The row is written before the event goes out, so a reader can find it; lastfm itself takes everything from the event payload.
