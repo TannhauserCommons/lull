@@ -19,8 +19,6 @@
 @container disc (min-width: 980px) {
   .disc-duo { grid-template-columns: minmax(0, 1.55fr) minmax(300px, 1fr); }
   .disc-duo--even { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); }
-  .disc-duo--results { grid-template-columns: minmax(320px, .85fr) minmax(0, 1.5fr); }
-  .disc-duo--results2 { grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr); }
 }
 .disc-note { max-width: 60ch; font: var(--t-meta); color: var(--fg-2); }
 .disc-note .kbd { margin: 0 2px; }
@@ -165,6 +163,22 @@ button.disc-pick__title:hover { text-decoration: underline; text-underline-offse
 .app:is([data-size="wide"], [data-size="xwide"], [data-size="ultra"]) .disc-split { display: flex; }
 .disc-splitview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--sp-6); align-items: start; }
 .disc-splitview .label-rule--sm { margin-top: var(--sp-5); }
+/* catalog search (ADR-0008): each column is a `section` container. The top result sits beside the songs once there is
+   room; the songs show 5, 8 from 900 px and 10 from 1300 px until "Show all". */
+.disc-col { min-width: 0; container: section / inline-size; }
+.disc-cat__lead { display: grid; grid-template-columns: minmax(0, 1fr); column-gap: var(--sp-6); align-items: start; }
+@container section (min-width: 900px) { .disc-cat__lead { grid-template-columns: minmax(300px, .8fr) minmax(0, 1.5fr); } }
+.disc-songs:not(.is-all) .tlist > li:nth-child(n+6) { display: none; }
+@container section (min-width: 900px) {
+  .disc-songs:not(.is-all) .tlist > li:nth-child(-n+8) { display: grid; }
+  .disc-songs:not(:has(.tlist > li:nth-child(9))) .disc-more { display: none; }        /* every song already shows */
+}
+@container section (min-width: 1300px) {
+  .disc-songs:not(.is-all) .tlist > li:nth-child(-n+10) { display: grid; }
+  .disc-songs:not(:has(.tlist > li:nth-child(11))) .disc-more { display: none; }
+}
+.disc-pending { display: flex; align-items: center; gap: var(--sp-2); margin: 0 0 var(--sp-3); font: var(--t-meta); color: var(--fg-2); }
+.disc-tabs { width: max-content; margin-bottom: var(--sp-4); }
 @media (max-width: 639px) {      /* one scrolling row of pills on phone, bleeding to the screen edges */
   .disc-filters { flex-wrap: nowrap; overflow-x: auto; margin: 0 -16px var(--sp-4); padding: 6px 16px; scrollbar-width: none; }
   .disc-filters__group { flex-wrap: nowrap; }

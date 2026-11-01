@@ -386,7 +386,11 @@
   }
   var artMissing = {};          // albums whose art 404'd this session: not asked for again
   function artImg(key, size) {
-    if (!/^al-/.test(key) || artMissing[key]) return '';
+    if (artMissing[key]) return '';
+    /* an artist's photo is the catalog's image URL (same origin, ADR-0008) when the entity has one */
+    var ar = /^ar-/.test(key) && M.artist(key);
+    if (ar && ar.image) return '<img class="cover__img" loading="lazy" decoding="async" alt="" data-art="' + esc(key) + '" src="' + esc(ar.image) + '">';
+    if (!/^al-/.test(key)) return '';
     var px = parseInt(size, 10), want = /%$/.test(size) || !px ? 256 : px <= 96 ? 96 : px <= 256 ? 256 : 512;
     return '<img class="cover__img" loading="lazy" decoding="async" alt="" data-art="' + esc(key) + '" src="' + esc(App.artUrl(key, want)) + '">';
   }
