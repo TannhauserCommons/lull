@@ -1069,6 +1069,7 @@ name = "lull-server"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "getrandom 0.4.3",
  "lull-collection",
  "lull-core",
  "lull-discovery",
@@ -1081,9 +1082,12 @@ dependencies = [
  "lull-themes",
  "reqwest",
  "rust-embed",
+ "serde",
  "serde_json",
  "tokio",
  "tokio-stream",
+ "tokio-util",
+ "tower",
  "tracing",
  "tracing-subscriber",
 ]

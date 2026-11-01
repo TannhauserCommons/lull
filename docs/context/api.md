@@ -31,24 +31,26 @@ Between `web/` and the server, and between crates (events). It's derived from `d
 
 ## Hub (`crates/server`, `lull_core::{devices, settings}`)
 
-ADR-0002. A device token travels as the HttpOnly cookie `lull_device` (browsers, set by the hub) or `Authorization: Bearer <token>` (the app). Open without a token: `/health`, `GET /api/setup`, `POST /api/setup/claim`, `POST /api/pair`, the static UI.
+ADR-0002; how it works: [hub.md](hub.md). A device token travels as the HttpOnly cookie `lull_device` (browsers, set by the hub; the app's webview may carry it too) or `Authorization: Bearer <token>` (the app). Everything under `/api` needs it except `GET /api/setup`, `POST /api/setup/claim` and `POST /api/pair`; everything outside `/api` is open (the static UI, `/health`, and `/rest`, which checks Subsonic app passwords itself). Loopback gets no exemption. A Subsonic app password is refused under `/api`.
+
+**Codes** are typed by people: case, spaces and dashes don't matter. After 10 wrong codes in a minute, every code is refused (401) for the rest of that minute.
 
 | Method + path | Returns |
 |---|---|
 | `GET /health` (open) | `{ version, services: { soulseek, library, lastfm, cache: { state: ok\|warn\|down\|off, detail, extra } } }`. Always 200 while serving |
-| `GET /api/ping` | 204, or 401 without a valid device token (the UI then shows pairing) |
-| `GET /api/events` | Server-sent events, one per bus event: `event: <topic>`, `data: <json>`. `resync` means the client missed events and refetches what it shows. The connection also marks its device online (lull Connect) |
-| `GET /api/setup` (open) | `{ claimed: bool, steps: { library: bool, soulseek: bool, lastfm: bool } }`: what first run still needs |
-| `POST /api/setup/claim { code, name }` (open) | The first device: 200 `{ device }` + cookie when `code` is the setup code and no device is paired yet, else 401 |
-| `POST /api/pair/codes` | `{ code, url, expiresAt }`: a single-use pair code (10 min); `url` is `<hub url>/#/pair/<code>` for the QR |
-| `POST /api/pair { code, name, kind: browser\|app }` (open) | 200 `{ device, token? }`: browsers get the cookie, apps get `token` in the body; 401 for a wrong or used code |
-| `GET /api/devices` | `{ items: [Device + { online, state? }], me }`. Device `{ id, name, kind: browser\|app\|subsonic, createdAt, lastSeen }` |
-| `PATCH /api/devices/{id} { name }` / `DELETE /api/devices/{id}` | 204: rename / unpair (its token stops working at once) |
+| `GET /api/ping` | 204, or 401 without a valid device token (the UI then shows pairing). A cookie-carried token gets its cookie renewed (browsers cap a cookie at 400 days) |
+| `GET /api/events` | Server-sent events, one per bus event: `event: <topic>`, `data: <json>`. `resync` means the client missed events and refetches what it shows. The connection marks its device online (lull Connect). It ends when the hub restarts its crates (after `hub.restarting`; reconnect) or when its device is unpaired |
+| `GET /api/setup` (open) | `{ claimed: bool, steps: { library: bool, soulseek: bool, lastfm: bool } }`. `claimed`: a browser or app is paired. A step is `true` when done: that service reports `ok` or `warn` in `/health`; `false` means first run still needs it |
+| `POST /api/setup/claim { code, name, kind?: browser\|app }` (open) | The first device, with the setup code (printed in the hub's log while no browser or app is paired, or `LULL_SETUP_CODE`). Answers like `POST /api/pair`; 401 for a wrong code or once a device is paired |
+| `POST /api/pair/codes` | `{ code, url, expiresAt }`: a single-use 6-character pair code, valid 10 minutes; `url` is `<hub url>/#/pair/<code>` for the QR, from `LULL_PUBLIC_URL` or else the address the asking device used |
+| `POST /api/pair { code, name, kind?: browser\|app }` (open) | 200 `{ device }` plus the cookie for a browser (the default kind), `{ device, token }` for an app; 401 for a wrong, used or expired code; 400 without a name |
+| `GET /api/devices` | `{ items: [Device + { online, state? }], me }`. Device `{ id, name, kind: browser\|app\|subsonic, createdAt, lastSeen }`; `state` is the last `device.state` of an online device |
+| `PATCH /api/devices/{id} { name }` / `DELETE /api/devices/{id}` | 204: rename / unpair (its token stops working and its event streams end at once; unpairing the last browser or app arms a new setup code). 404 for an unknown id |
 | `POST /api/devices/subsonic { name }` | `{ device, username: "lull", password }`: an app password for a Subsonic client, shown once |
-| `POST /api/devices/me/state { trackId, position, playing, volume, queue: [trackId], queueIndex }` | 204; republished as `device.state` |
-| `POST /api/devices/{id}/command { action: play\|pause\|seek\|next\|prev\|volume\|takeover, value? }` | 204; forwarded to that device as `device.command`. `takeover`: the target sends its state to the caller and pauses |
-| `GET /api/config` | `{ items: [{ key, value, source: env\|stored\|default, secret: bool, restart: bool }] }`. Secrets report only whether they're set |
-| `PATCH /api/config { LULL_X: value\|null }` | 200 `{ items }` after validating with `Config::from_vars`; 400 names the bad key. Keys with `restart: true` restart the hub's crates (`hub.restart`) |
+| `POST /api/devices/me/state { trackId: string\|null, position, playing, volume, queue: [trackId], queueIndex: int\|null }` | 204; republished as `device.state`. `position` in seconds, `volume` 0-1 |
+| `POST /api/devices/{id}/command { action: play\|pause\|seek\|next\|prev\|volume\|takeover, value? }` | 204; forwarded as `device.command`. `seek` (seconds) and `volume` need `value`. 409 when that device has no open event stream. `takeover`: the target sends its state to the caller and pauses |
+| `GET /api/config` | `{ items: [{ key, value, set, source: env\|stored\|default, secret, restart }] }`, one per key the app can set (`lull_core::settings::KEYS`). `value` is `null` when unset and always for a secret; `set` says whether it has a value. `env` keys are locked. `restart` is `true` for every key: the crates read them all at start |
+| `PATCH /api/config { LULL_X: value\|null }` | 200 `{ items }`. `null` or `""` goes back to the default. The whole merged configuration is checked with `Config::from_vars` before anything is stored; a 400 names the key (unknown, environment-only, set in the environment, or invalid). Then the hub restarts its crates (`hub.restart`) |
 
 ## Events
 
@@ -70,11 +72,11 @@ Topic → payload. Published on the bus and streamed to the browser. Owners add 
 | `settings` | collection | The stored settings (the editable part of `GET /api/settings`), at start-up and on every change. Collection starts after every other crate, so a receiver made in `start()` gets the start-up copy |
 | `scrobble` | lastfm | `{ playId (string), status: pending\|done\|short }`: queued, sent to Last.fm, or short of Last.fm's rule (History's scrobble column). Nothing while Last.fm is off, disconnected or scrobbling is switched off |
 | `lastfm.history` | lastfm | `{ user, artists: [{ name, plays }] }`: the listener's Last.fm top artists, a taste signal for discovery; empty when off or disconnected |
-| `hub.restart` | any | `{ reason }`: asks the hub to restart its crates with the current settings (a setting changed). The hub publishes `hub.restarting` and the UI reconnects |
-| `hub.restarting` | hub | `{ reason }`: the hub's crates are restarting; SSE drops for about a second |
+| `hub.restart` | any | `{ reason }`: asks the hub to restart its crates with the current settings (a setting changed). The hub publishes `hub.restarting` and the UI reconnects. Requests made while one waits are covered by it |
+| `hub.restarting` | hub | `{ reason }`: the hub's crates are restarting. Every SSE stream ends right after it; requests meanwhile wait for the new crates (about a second) |
 | `device.state` | hub | `{ deviceId, trackId, position, playing, volume, queue, queueIndex, at }` |
 | `device.command` | hub | `{ deviceId, action, value, from }`: only the device named acts on it |
-| `device.online` | hub | `{ deviceId, online }` |
+| `device.online` | hub | `{ deviceId, online }`: the device's first event stream opened, or its last one closed (or it was unpaired) |
 | `theme.changed` | themes | `{ id }`: a stored theme's files changed; devices using it reload its CSS |
 | `library.source` | library | `{ mode: folder\|jellyfin, state: switching\|done\|failed, detail }` |
 

@@ -1,6 +1,6 @@
 [package]
 name = "lull-server"
-description = "The lull binary: configuration, wiring, health, events, the access token and the web UI"
+description = "The lull hub: wiring and in-process restarts, pairing, devices and Connect, settings, events and the web UI"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -26,9 +26,16 @@ lull-subsonic = { path = "../subsonic" }
 lull-themes = { path = "../themes" }
 axum.workspace = true
 reqwest.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+# Pair and setup codes.
+getrandom = "0.4.3"
+# Ctx::shutdown, which ends the SSE streams and the hub's own tasks on a restart.
+tokio-util = "0.7.20"
+# `oneshot`: requests go to the crates' router of the moment, which a restart swaps.
+tower = { version = "0.5.3", features = ["util"] }
 # JSON logs with a level filter from LULL_LOG.
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 # The web UI is compiled into the binary (read from disk in debug builds).
