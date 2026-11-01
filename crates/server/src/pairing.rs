@@ -125,9 +125,11 @@ pub fn router() -> Router<Arc<Hub>> {
         .route("/api/pair", post(pair))
 }
 
-/// `GET /api/setup` (open): whether the hub has its first device, and what first run still needs.
+/// `GET /api/setup` (open): whether the hub has its first device, what first run still needs,
+/// and whether the Soulseek account is set in lull (an slskd the app runs) or where slskd runs.
 async fn setup(State(hub): State<Arc<Hub>>) -> Result<Json<Value>> {
-    let services = hub.ctx().await.status.snapshot();
+    let ctx = hub.ctx().await;
+    let services = ctx.status.snapshot();
     let ready = |name: &str| {
         services
             .get(name)
@@ -135,6 +137,7 @@ async fn setup(State(hub): State<Arc<Hub>>) -> Result<Json<Value>> {
     };
     Ok(Json(json!({
         "claimed": hub.paired().await?,
+        "soulseekManaged": ctx.config.soulseek.config_file.is_some(),
         "steps": { "library": ready("library"), "soulseek": ready("soulseek"), "lastfm": ready("lastfm") },
     })))
 }

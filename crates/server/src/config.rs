@@ -145,6 +145,14 @@ mod tests {
         assert!(change(&[("LULL_SLSKD_URL", Some("http://x"))]).is_err_and(|e| e.contains("environment")));
         assert!(change(&[("LULL_JELLYFIN_URL", Some("http://jf"))]).is_err_and(|e| e.contains("together")));
         assert!(change(&[("LULL_LIBRARY", Some("folder"))]).is_err_and(|e| e.contains("/api/library/source")));
+        let account = [
+            ("LULL_SOULSEEK_USERNAME", Some("me")),
+            ("LULL_SOULSEEK_PASSWORD", Some("pw")),
+        ];
+        assert!(
+            change(&account).is_err_and(|e| e.contains("where slskd runs")),
+            "slskd isn't lull's"
+        );
         assert!(change(&[("LULL_DATA_DIR", Some("/x"))]).is_err_and(|e| e.contains("can't be set")));
         assert!(change(&[("LULL_CAHCE_MAX_GB", Some("5"))]).is_err_and(|e| e.contains("can't be set")));
     }

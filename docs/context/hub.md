@@ -26,8 +26,8 @@
 ## Settings and restart
 
 - Settings are `LULL_*` keys: environment, then stored (`core_config`), then `Config`'s defaults. An empty environment value counts as unset (the deploy kit passes every key of its env file).
-- `settings::KEYS` lists what the app may set and which are secrets; `ENV_ONLY` (`LULL_DATA_DIR`, `LULL_LISTEN`, `LULL_LOG`, `LULL_SETUP_CODE`) never appear in `/api/config`. A test keeps both lists, `Config` and `deploy/.env.example` in step.
-- `PATCH /api/config` validates the whole merged map with `Config::from_vars`, stores, then publishes `hub.restart`.
+- `settings::KEYS` lists what the app may set and which are secrets; `ENV_ONLY` (`LULL_DATA_DIR`, `LULL_LISTEN`, `LULL_LOG`, `LULL_SETUP_CODE`, `LULL_SLSKD_CONFIG_FILE`) never appear in `/api/config`. A test keeps both lists, `Config` and `deploy/.env.example` in step.
+- `PATCH /api/config` validates the whole merged map with `Config::from_vars`, stores, then publishes `hub.restart`. It refuses `LULL_LIBRARY`: `PUT /api/library/source` reconciles the library before it stores the mode.
 - **Restart** (`Hub::restart`, on any `hub.restart`):
   1. take the wiring's write lock, so requests wait;
   2. publish `hub.restarting` on the old bus, cancel the old `ctx.shutdown`;
@@ -44,7 +44,7 @@
 - `POST /api/devices/{id}/command` needs the target online and publishes `device.command` to every stream. Only the named device acts on it; `takeover` is played out by the two clients.
 - Unpairing cancels the device's streams at once.
 
-## Not here
+## Elsewhere
 
-- **Soulseek credentials.** slskd 0.26.2 can't take them over its API with an API key: the options overlay covers only the listen address and port, and `PUT /options/yaml` needs a JWT. The desktop app writes them into its sidecar's `slskd.yml`; in Docker they stay `SLSK_USERNAME`/`SLSK_PASSWORD` in the kit's `.env`.
+- **The Soulseek account** lives in the soulseek crate (`account.rs`). slskd 0.26.2 can't take it over its API with an API key: the options overlay covers only the listen address and port, and `PUT /options/yaml` needs a JWT. So with `LULL_SLSKD_CONFIG_FILE` set (the desktop app's sidecar; the app keeps folders, port and API key on slskd's command line), lull owns that `slskd.yml`. At every start it writes only the account into it. When that changed the file, it waits up to 60 s for slskd to reload (logged in: `pendingReconnect`; logged out: the username in `GET /options`), then logs in again. Without the key, the account is configured where slskd runs (`SLSK_USERNAME`/`SLSK_PASSWORD` in the Docker kit), and the hub refuses the account keys.
 - **The desktop app's own token** (ADR-0002): the app creates its device in-process with `core::devices::create` (kind `app`) and pairs its webview with that cookie.
