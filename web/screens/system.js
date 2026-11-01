@@ -806,11 +806,13 @@
       return html`<div class="status-row">${ui.statusGlyph(r[0], STATE_WORD[r[0]])}<div><span class="status-row__name">${r[1]}</span><span class="status-row__detail">${r[2]}</span></div></div>`;
     })}</div><p class="sys-card__lede sys-health__when">${checked ? 'Checked just now from ' : 'Kept current by the server, from '}<span class="px">/health</span></p>`;
   }
+  /* Settings > App's "Check now", and the status popover's "Check again" (catalog): the health rows show only on the page */
   App.action('sys-health', function (el) {
-    var out = $('#sys-health'); el.disabled = true; out.setAttribute('aria-busy', 'true');
+    var out = $('#sys-health'); el.disabled = true; if (out) out.setAttribute('aria-busy', 'true');
     checkHealth().then(function () {
-      el.disabled = false; out.removeAttribute('aria-busy');
-      repaint('#sys-health', healthRows(true)); App.announce('Health checked');
+      el.disabled = false;
+      if (out) { out.removeAttribute('aria-busy'); repaint('#sys-health', healthRows(true)); }
+      App.announce('Health checked');
     });
   });
   function serverAddress() { return location.href.split('#')[0].replace(/index\.html$/, ''); }
@@ -1120,6 +1122,10 @@
     }
     if (paired && jf.state === 'down') {
       out.push({ id: 'sys-jellyfin', sig: jf.state, kind: 'warn', icon: 'warning', text: 'Your library isn\'t responding. It\'s read-only, and saving waits until it\'s back.', action: { label: 'Retry', run: checkHealth } });
+    }
+    var cat = s.catalog;
+    if (paired && cat && cat.state === 'down') {
+      out.push({ id: 'sys-catalog', sig: cat.state, kind: 'warn', icon: 'search', text: 'Search can\'t reach the music catalogs: ' + clause(cat.detail) + '. Your library and Soulseek still answer.', action: { label: 'Check again', run: checkHealth } });
     }
     if (paired && lf.state === 'down') {
       out.push({ id: 'sys-lastfm', sig: lf.state, kind: 'warn', icon: 'warning', text: 'Last.fm is down.' + (lf.queued ? ' Scrobbles are queued (' + lf.queued + ') and will retry.' : ''), action: { label: 'Retry now', run: retryScrobbles } });

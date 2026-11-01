@@ -562,7 +562,7 @@
      peerSongs: trackId -> { trackId, sources, best, dup }, albums: albumId -> { albumId, trackIds, folders } (arrival
      order: peerOrder, albumOrder), onlySoulseek: the songs no catalog knew. */
   var SLSK_REST_MS = 1500, SONGS_MAX = 20;
-  var CATALOG = { deezer: 'Deezer', musicbrainz: 'MusicBrainz', lastfm: 'Last.fm' };
+  var CATALOG = { deezer: 'Deezer', itunes: 'iTunes', musicbrainz: 'MusicBrainz', lastfm: 'Last.fm', library: 'your library' };
   var S = { q: null, seq: 0, showAll: false, tab: 'all', loading: false, error: null, cat: null,
     slsk: false, slskStarted: false, slskTimer: null, slskMissing: false, searchId: null, files: 0, peers: 0, done: true, slskError: null,
     peerSongs: {}, peerOrder: [], albums: {}, albumOrder: [], onlySoulseek: [] };
@@ -623,6 +623,7 @@
     ['artists', 'albums', 'tracks'].forEach(function (k) {
       (e[k] || []).forEach(function (id) { if (S.cat[k].indexOf(id) < 0) S.cat[k].push(id); });
     });
+    if (e.errors) S.cat.errors = e.errors;          // every source that failed so far
     if (e.done) S.cat.pending = [];
     paint('results', resultsBody());
   });

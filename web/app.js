@@ -114,7 +114,7 @@
   };
 
   /* the four services the tray shows; /health and `service` events fill them in (state off = not reported) */
-  var SERVICE_LABELS = { soulseek: 'soulseek', library: 'library', lastfm: 'last.fm', cache: 'cache' };
+  var SERVICE_LABELS = { soulseek: 'soulseek', library: 'library', catalog: 'catalog', lastfm: 'last.fm', cache: 'cache' };
   function serviceDefaults() {
     var s = {};
     Object.keys(SERVICE_LABELS).forEach(function (k) { s[k] = { state: 'off', label: SERVICE_LABELS[k], detail: 'Waiting for the server' }; });
@@ -1921,9 +1921,9 @@
     return 'Service status: ' + parts.join('; ') + '. Open details';
   }
   /* the compact pill's status words: the worst service (down before warn, Soulseek first), else "all good" */
-  var TRAY_WARN = { soulseek: 'reconnecting', library: 'slow', cache: 'full', lastfm: 'queued' };
+  var TRAY_WARN = { soulseek: 'reconnecting', library: 'slow', catalog: 'limited', cache: 'full', lastfm: 'queued' };
   function trayWorst() {
-    var s = state.services, keys = ['soulseek', 'library', 'cache', 'lastfm'], i;
+    var s = state.services, keys = ['soulseek', 'library', 'catalog', 'cache', 'lastfm'], i;
     for (i = 0; i < keys.length; i++) if (s[keys[i]].state === 'down') return { state: 'down', word: s[keys[i]].label + ' down' };
     for (i = 0; i < keys.length; i++) if (s[keys[i]].state === 'warn') return { state: 'warn', word: s[keys[i]].label + ' ' + TRAY_WARN[keys[i]] };
     return { state: 'ok', word: 'all good' };
@@ -1950,7 +1950,8 @@
   }
   function statusPopover(anchor) {
     var s = state.services;
-    var actions = { soulseek: ['Settings', 'open-sources'], library: ['Rescan', 'jellyfin-rescan'], lastfm: ['Retry now', 'lastfm-retry'], cache: ['Manage', 'open-cache'] };
+    var actions = { soulseek: ['Settings', 'open-sources'], library: ['Rescan', 'jellyfin-rescan'], catalog: ['Check again', 'sys-health'],
+      lastfm: ['Retry now', 'lastfm-retry'], cache: ['Manage', 'open-cache'] };
     var body = html`<div class="popover__head">services</div><div class="status-list">${Object.keys(s).map(function (k) {
       var st = s[k].state;
       return html`<div class="status-row">${ui.statusGlyph(st, STATE_WORDS[st])}<div><span class="status-row__name">${s[k].label}</span><span class="status-row__detail">${s[k].detail}</span></div>
