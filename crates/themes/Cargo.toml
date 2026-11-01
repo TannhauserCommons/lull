@@ -13,6 +13,10 @@ serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+# .lulltheme import and export: deflate only
+zip = { version = "=9.2.1", default-features = false, features = ["deflate-flate2"] }
+# zip's deflate backend: flate2's default pure-Rust one (miniz_oxide), already in the tree
+flate2 = "=1.1.10"
 
 [lints]
 workspace = true

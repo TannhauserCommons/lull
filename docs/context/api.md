@@ -171,15 +171,18 @@ Details and rules: [collection.md](collection.md), [skins.md](skins.md).
 
 ## Themes (`crates/themes`)
 
-ADR-0004; format and hooks: [themes.md](../themes.md) *(owner writes)*.
+ADR-0004; format, hooks and slots: [themes.md](../themes.md). Built-in designs are static files of the UI (`/designs/<id>/`); these endpoints serve the listener's themes, stored in `<data_dir>/themes/<id>/`. A built-in id in a path is a 404.
 
 | Method + path | Returns |
 |---|---|
-| `GET /api/themes` | `{ items: [{ id, name, author, api, extends, shell, swatches, modes, builtIn }] }`: the five designs plus the listener's themes |
-| `GET /api/themes/{id}/{path}` | A file of a stored theme (`theme.css`, `slots/*.html`, `assets/*`), ETag'd |
-| `PUT /api/themes/{id}` (body: a `.lulltheme` zip) · `PUT /api/themes/{id}/{path}` (one file, from Theme Studio) | 200 manifest; 400 names what's wrong (missing `theme.json`, a script, an outside URL) |
+| `GET /api/themes` | `{ items: [{ id, name, author, api, extends, shell, swatches, modes, description, preview, slots, coverVariety, builtIn }] }`: the five designs, then the listener's themes (a folder whose `theme.json` no longer reads is left out and logged) |
+| `GET /api/themes/{id}/{path}` | A file of a stored theme (`theme.json`, `theme.css`, `slots/*.html`, `assets/*`), ETag'd, `no-cache`, served under a sandboxing CSP |
+| `POST /api/themes[?replace=true]` (body: a `.lulltheme` zip, up to 16 MB) | 200 manifest (with `builtIn: false`): stored under the id its `theme.json` names. 409 when that id exists, unless `replace` |
+| `PUT /api/themes/{id}` (body: a `.lulltheme`) or `PUT /api/themes/{id}/{path}` (one file, from Theme Studio) | 200 manifest. A new theme starts with its `theme.json` (it gets an empty `theme.css`). Every write is checked as the whole package it makes: 400 names what's wrong (missing `theme.json`, an unknown field, a newer `api`, a script or handler, an outside URL, a file with no place in a theme) |
 | `DELETE /api/themes/{id}` | 204 |
 | `GET /api/themes/{id}.lulltheme` | The package as a zip, for sharing |
+
+The hub derives a stored manifest's `slots` from `slots/`. Any change to a stored theme's files, by these endpoints or on disk, publishes `theme.changed` within a second.
 
 ## Subsonic (`crates/subsonic`)
 
