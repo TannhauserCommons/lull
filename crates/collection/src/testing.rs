@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use async_trait::async_trait;
 use lull_core::config::Config;
@@ -52,6 +53,7 @@ pub(crate) async fn service() -> Result<(Arc<Service>, Receiver<Event>)> {
     let svc = Arc::new(Service {
         ctx,
         library: Arc::new(NoLibrary),
+        importing: AtomicBool::new(false),
     });
     Ok((svc, rx))
 }

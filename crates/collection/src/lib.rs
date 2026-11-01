@@ -5,7 +5,10 @@
 mod exportify;
 mod follows;
 mod import;
+mod imported_plays;
+mod lastfm_import;
 mod likes;
+mod listenbrainz_import;
 mod m3u;
 mod playlists;
 mod plays;
@@ -17,6 +20,7 @@ mod sync;
 mod testing;
 
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use axum::Router;
 use axum::extract::rejection::{JsonRejection, QueryRejection};
@@ -86,12 +90,19 @@ pub const MIGRATIONS: Migrations = Migrations {
             created_at    INTEGER NOT NULL
         );
     "#,
+        // Plays imported from Last.fm or ListenBrainz: history and taste see them, but they
+        // never scrobble and no `play.*` event goes out for them.
+        r#"
+        ALTER TABLE collection_plays ADD COLUMN imported INTEGER NOT NULL DEFAULT 0;
+    "#,
     ],
 };
 
 pub struct Service {
     ctx: Ctx,
     library: Arc<dyn Library>,
+    /// A history import is running: one at a time, so a second tap can't double the load on Last.fm.
+    importing: AtomicBool,
 }
 
 pub async fn start(ctx: &Ctx, library: Arc<dyn Library>) -> Result<Arc<Service>> {
@@ -101,6 +112,7 @@ pub async fn start(ctx: &Ctx, library: Arc<dyn Library>) -> Result<Arc<Service>>
     Ok(Arc::new(Service {
         ctx: ctx.clone(),
         library,
+        importing: AtomicBool::new(false),
     }))
 }
 
@@ -115,6 +127,7 @@ pub fn router(svc: Arc<Service>) -> Router {
         .merge(settings::routes())
         .merge(sync::routes())
         .merge(exportify::routes())
+        .merge(imported_plays::routes())
         .with_state(svc)
 }
 

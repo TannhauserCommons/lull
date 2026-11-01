@@ -25,6 +25,16 @@ Every change runs in one transaction and publishes its events after the commit (
 - **Times.** A play keeps its real `startedAt`; likes, follows and playlists are dated `at`. Neither may be in the future (a device clock ahead is clamped to now).
 - **A synced play** goes through the same `record` as the `Collection` seam: `play.ended` only, so lastfm scrobbles it at its real start.
 
+## History imports (`POST /api/import/history`)
+
+- **Imported plays** are rows in `plays` with `collection_plays.imported = 1` and an end time already set. Nothing is published for them, so lastfm never sees them (no scrobble, and no echo of Last.fm's own history back to Last.fm) and no `play.*` event reaches other devices. They do join History, Stats and the taste model, which is the point: a new listener starts with their taste.
+- **A listen counts as heard** (`completed`), since that is what a scrobble means and the taste model reads. `played_s` is the duration when the source or the catalog knows it, else 0, so Stats minutes undercount imported listening.
+- **Ids** are `TrackId::of(artist, album, title)` as the source spells them, recorded in the catalog unless a richer record is there. Library matching is not tried per listen (a long history is tens of thousands of songs): a saved song whose album is spelled differently than in Last.fm gets another id, and shows as not saved.
+- **Duplicates.** A listen at the same second as a play with the same track id or the same title (case aside) is skipped. That is how a re-run adds nothing, and how the plays lull itself scrobbled are not counted twice.
+- **Last.fm** (`user.getRecentTracks`, 200 a page, paced at 300 ms). The first page is fetched before the 202, so an unknown user, a private profile or a missing server key is an answer, not a failed job. Listens are limited to those before the import began, so new scrobbles can't shift later pages. The song playing now has no time and is skipped.
+- **ListenBrainz** takes the export's JSON, JSON Lines, or the API's payload. Listens without `listened_at` are left out.
+- **One at a time** (409 otherwise), as a `job` row per batch of 500.
+
 ## Plays and events
 
 - **Lifecycle.** The UI calls `POST /api/plays` when a song starts and `PATCH /api/plays/{id}` once when it stops. The row is written before the event goes out, so a reader can find it; lastfm itself takes everything from the event payload.

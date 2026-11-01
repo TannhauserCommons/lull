@@ -171,12 +171,7 @@ Details and rules: [collection.md](collection.md), [skins.md](skins.md).
 | `GET /api/skins/favourites` · `PUT/DELETE /api/skins/favourites/{md5}` | `{ items: [skin] }`, newest first · 204 (404 for a skin the museum doesn't have) |
 | `POST /api/sync { ops: [{ id, at, op, ... }] }` | `{ applied: [id], rejected: [{ id, message }], playlists: { tempId: playlistId } }`. Ops apply in order, each in its own transaction, and are idempotent by `id` (a client-made uuid, 1-100 chars): a resent op is acknowledged, not applied again, and a resent `playlist.create` still reports its playlist. `at` (unix seconds) dates a like, follow or playlist change; a play uses its `startedAt`. A fault in one op (unknown track, bad shape, unknown `tempId`) rejects only that op; a missing `id` or more than 1000 ops is a 400 for the whole request. `op`: `play { trackId, startedAt, playedS, completed, skipped }`, `like { trackId, liked }`, `follow { kind, id, name?, followed }` (`name` required to follow an artist), `playlist.create { tempId, name, desc?, trackIds? }`, `playlist.edit { playlistId \| tempId, name?, desc?, trackIds? }`, `playlist.delete { playlistId \| tempId }`. A `tempId` resolves to the playlist an earlier `playlist.create` in any batch made. Publishes the same events as the matching routes (a synced play publishes `play.ended` only) |
 | `POST /api/import/exportify` (body: Exportify CSV, up to 16 MB) | The M3U import preview shape (`name: null`, `lines`, `counts`, `libraryChecked`, `entities`; `location` is the Spotify URI); the UI then `POST`s the playlist with the ids it keeps. 400 when the file lacks the `Track Name` and `Artist Name(s)` columns |
-
-**lull 2 additions** (ADR-0005; the owner turns each row into fact and drops this note):
-
-| Method + path | Returns |
-|---|---|
-| `POST /api/import/history { source: lastfm, user }` � `POST /api/import/history` (body: a ListenBrainz export JSON) | 202 `{ jobId }`: plays are added as imported (they never scrobble), progress as `job` rows |
+| `POST /api/import/history { source: "lastfm", user }` or `POST /api/import/history` (body: a ListenBrainz export, up to 128 MB) | 202 `{ jobId }`. The plays are added as imported: they join History, Stats and taste, never scrobble, and publish no `play.*` event. Progress is `job` rows `{ jobId, kind: import, name, state: running\|done\|failed, started, pct, added, duplicates, invalid, error }`. Last.fm needs the server's API key (503 without) and a public profile (400 for an unknown or private user, checked before the 202); ListenBrainz takes the listens as a JSON array, JSON Lines or the API's `{ payload: { listens } }` (400 for a zip or anything else). 409 while another history import runs |
 
 ## Themes (`crates/themes`)
 
