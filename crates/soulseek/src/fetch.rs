@@ -267,9 +267,11 @@ impl Fetcher {
     /// Transfers the song from `source` to the end and returns the finished file, joining a
     /// running fetch or reusing the cached file from that same source.
     pub async fn complete(&self, track: Track, source: SourceRef) -> Result<PathBuf> {
+        // Not one waiting for the listener's choice: the save already named its copy.
         let running = self.live(&track.id).filter(|f| {
             let p = f.now();
-            p.source.as_ref().is_none_or(|s| s.is(&source)) || p.status == Status::Finding
+            p.status != Status::Choosing
+                && (p.source.as_ref().is_none_or(|s| s.is(&source)) || p.status == Status::Finding)
         });
         let f = match running {
             Some(f) => f,
