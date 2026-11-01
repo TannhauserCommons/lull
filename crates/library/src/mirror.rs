@@ -8,7 +8,6 @@ use std::sync::Arc;
 
 use lull_core::events::Event;
 use lull_core::ids::TrackId;
-use lull_core::status::State;
 use lull_core::{Error, Result};
 use serde_json::Value;
 use tokio::sync::broadcast::error::RecvError;
@@ -48,14 +47,7 @@ pub async fn run(svc: Arc<Service>) {
 /// the index.
 async fn wait_for_library(svc: &Service) {
     let mut events = svc.ctx.bus.subscribe();
-    let ready = || {
-        svc.ctx
-            .status
-            .snapshot()
-            .get("jellyfin")
-            .is_some_and(|j| j.state == State::Ok)
-    };
-    while !ready() {
+    while !svc.online() {
         match events.recv().await {
             Ok(_) | Err(RecvError::Lagged(_)) => {}
             Err(RecvError::Closed) => return,

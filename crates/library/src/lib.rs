@@ -149,27 +149,11 @@ pub async fn start(ctx: &Ctx, transfers: Arc<dyn Transfers>) -> Result<Arc<Servi
     });
     match svc.mode {
         LibraryMode::Folder => {
-            ctx.status.set(
-                "jellyfin",
-                State::Off,
-                "Not used: the library is the music folder",
-                serde_json::Value::Null,
-            );
-            ctx.status.set(
-                "library",
-                State::Warn,
-                "Reading the music folder",
-                serde_json::Value::Null,
-            );
+            svc.report(State::Warn, "reading the music folder");
             ctx.spawn(folder::run(svc.clone()));
         }
         LibraryMode::Jellyfin => {
-            ctx.status.set(
-                "jellyfin",
-                State::Warn,
-                "Connecting to Jellyfin",
-                serde_json::Value::Null,
-            );
+            svc.report(State::Warn, "connecting");
             ctx.spawn(sync::run(svc.clone()));
         }
     }
@@ -198,6 +182,28 @@ impl Service {
 
     fn index_mut(&self) -> RwLockWriteGuard<'_, Index> {
         self.index.write().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The `library` status, one in both modes: the mode leads the detail ("Jellyfin: …",
+    /// "Folder: …"), and `extra` carries `{ mode, songs }`.
+    fn report(&self, state: State, detail: impl std::fmt::Display) {
+        let mode = match self.mode {
+            LibraryMode::Folder => "Folder",
+            LibraryMode::Jellyfin => "Jellyfin",
+        };
+        let extra = serde_json::json!({ "mode": self.mode.as_str(), "songs": self.index().len() });
+        self.ctx
+            .status
+            .set("library", state, format!("{mode}: {detail}"), extra);
+    }
+
+    /// The `library` status is `ok`: in Jellyfin mode, Jellyfin answered and was read.
+    fn online(&self) -> bool {
+        self.ctx
+            .status
+            .snapshot()
+            .get("library")
+            .is_some_and(|s| s.state == State::Ok)
     }
 
     fn music(&self) -> Option<sync::MusicFolder> {

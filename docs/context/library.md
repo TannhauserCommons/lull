@@ -8,7 +8,7 @@
 - **One index type** (`index.rs`) answers every read in both modes, keyed by track id. Each entry (`items::Saved`) has a `location`: a Jellyfin item (and its path as Jellyfin sees it), or a file path under `LULL_MUSIC_DIR`. Every `/api/library/*` route and the `Library` seam work the same in both modes.
 - **The mode is fixed for a run.** Switching stores the new mode and restarts the hub's crates ([below](#switching)).
 - **Background work ends with the crates.** The sync loop, the folder watcher loop, the mirror, the job listener, saves and rescans run under `Ctx::spawn`, so a hub restart stops them before the new crates start theirs. An interrupted save carries on from its step at the next start (`save::resume`); an interrupted rescan is marked failed ("Stopped by a restart"). A switch is not cancelled: it ends by asking for the restart itself.
-- **Status.** Folder mode reports `library` (`ok` "Music folder, N songs", `warn` when the folder can't be watched, `down` when `LULL_MUSIC_DIR` doesn't exist) and sets `jellyfin` to `off`. Jellyfin mode reports `jellyfin` ([below](#jellyfin)).
+- **Status.** One `library` status in both modes; the mode leads the detail ("Jellyfin: library online, 2 songs", "Folder: 2 songs") and `extra` is `{ mode, songs }`. Folder mode: `ok`, `warn` when the folder can't be watched, `down` when `LULL_MUSIC_DIR` doesn't exist. Jellyfin mode: [below](#jellyfin). Lists are `stale` in Jellyfin mode whenever it isn't `ok`.
 
 ## Folder mode (`folder.rs`, `files.rs`)
 
@@ -32,10 +32,9 @@
   - `/Audio/{id}/stream?static=true` for the original file;
   - `/Items/{library}/Refresh?Recursive=true` to scan the music library after a save;
   - `/Library/Refresh` and `/ScheduledTasks` for a rescan and its progress.
-- **Status `jellyfin`.**
-  - `off`: not configured.
+- **Status `library`** (detail prefixed "Jellyfin: ").
   - `warn`: connecting, at start-up.
-  - `ok`: "Library online, N songs", with `extra: { songs }`.
+  - `ok`: "library online, N songs".
   - `warn` after start-up: online, but no Music library over `LULL_MUSIC_DIR` ([below](#music-folder-mapping)).
   - `down`: the error, "showing the last known library".
 

@@ -10,7 +10,6 @@ use lull_core::db::Db;
 use lull_core::ids::TrackId;
 use lull_core::status::State;
 use lull_core::{Result, catalog};
-use serde_json::json;
 
 use crate::Service;
 use crate::items::{Location, Saved, saved_from};
@@ -64,7 +63,7 @@ pub async fn run(svc: Arc<Service>) {
     loop {
         match tick(&svc, &mut last_full).await {
             Ok(()) => {
-                let songs = format!("Library online, {} songs", thousands(svc.index().len()));
+                let songs = format!("library online, {} songs", thousands(svc.index().len()));
                 // Without a music folder over LULL_MUSIC_DIR, saved files never show up in Jellyfin.
                 let (state, detail) = if svc.music().is_some() {
                     (State::Ok, songs)
@@ -77,19 +76,12 @@ pub async fn run(svc: Arc<Service>) {
                         ),
                     )
                 };
-                svc.ctx
-                    .status
-                    .set("jellyfin", state, detail, json!({ "songs": svc.index().len() }));
+                svc.report(state, detail);
             }
             Err(e) => {
                 // Read everything again once it's back: anything may have changed meanwhile.
                 last_full = None;
-                svc.ctx.status.set(
-                    "jellyfin",
-                    State::Down,
-                    format!("{e}; showing the last known library"),
-                    json!({ "songs": svc.index().len() }),
-                );
+                svc.report(State::Down, format_args!("{e}; showing the last known library"));
                 save::jellyfin_down(&svc, &e.to_string()).await;
             }
         }

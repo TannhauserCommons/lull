@@ -14,7 +14,6 @@ use axum::{Json, Router};
 use lull_core::config::LibraryMode;
 use lull_core::ids::{AlbumId, TrackId};
 use lull_core::model::{Entities, SourceRef};
-use lull_core::status::State as ServiceState;
 use lull_core::{Error, Result, catalog};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -101,13 +100,7 @@ impl ListQuery {
 /// `{ items, total, entities, stale }`: `stale` while Jellyfin is down (Jellyfin mode) and the
 /// list is the last one read.
 fn list(svc: &Service, ids: Vec<Value>, total: usize, entities: Entities) -> Result<Json<Value>> {
-    let stale = svc.mode == LibraryMode::Jellyfin
-        && svc
-            .ctx
-            .status
-            .snapshot()
-            .get("jellyfin")
-            .is_none_or(|s| s.state != ServiceState::Ok);
+    let stale = svc.mode == LibraryMode::Jellyfin && !svc.online();
     Ok(Json(
         json!({ "items": ids, "total": total, "entities": entities, "stale": stale }),
     ))

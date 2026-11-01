@@ -12,7 +12,6 @@ use lull_core::db::Db;
 use lull_core::status::State;
 use lull_core::{Error, Result, catalog, now};
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use serde_json::json;
 use tokio::sync::mpsc;
 
 use crate::Service;
@@ -190,7 +189,6 @@ fn watch(svc: &Service, tx: mpsc::UnboundedSender<PathBuf>) {
 /// The `library` status in folder mode.
 fn report(svc: &Service) {
     let songs = svc.index().len();
-    let extra = json!({ "songs": songs });
     let root = svc.folder.root.display();
     let (state, detail) = if !svc.folder.root.is_dir() {
         (
@@ -200,12 +198,12 @@ fn report(svc: &Service) {
     } else if let Some(why) = lock(&svc.folder.watch_error).clone() {
         (
             State::Warn,
-            format!("Music folder, {songs} songs; not watching it for changes ({why}): rescan to pick up new files"),
+            format!("{songs} songs; not watching the music folder for changes ({why}): rescan to pick up new files"),
         )
     } else {
-        (State::Ok, format!("Music folder, {songs} songs"))
+        (State::Ok, format!("{songs} songs"))
     };
-    svc.ctx.status.set("library", state, detail, extra);
+    svc.report(state, detail);
 }
 
 /// Which paths to read again for a batch of watcher events: changed audio files, the folder of

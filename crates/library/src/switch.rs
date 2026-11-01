@@ -9,7 +9,6 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use lull_core::config::{self, LibraryMode, Secret};
 use lull_core::ids::TrackId;
-use lull_core::status::State;
 use lull_core::{Error, Result, settings};
 use serde_json::{Value, json};
 
@@ -21,12 +20,7 @@ use crate::{Service, sync};
 
 /// `GET /api/library/source`.
 pub fn describe(svc: &Service) -> Value {
-    let jellyfin_ok = svc
-        .ctx
-        .status
-        .snapshot()
-        .get("jellyfin")
-        .is_some_and(|s| s.state == State::Ok);
+    let jellyfin_ok = svc.mode == LibraryMode::Jellyfin && svc.online();
     let jellyfin = svc
         .ctx
         .config
