@@ -214,7 +214,7 @@ fn run(conn: &Connection, events: &mut Events, at: i64, op: Op) -> Result<Option
             if let Some(seq) = temp_playlist(conn, &temp_id)? {
                 return Err(Error::Conflict(format!("tempId {temp_id} already made pl-{seq}.")));
             }
-            let seq = playlists::make(conn, &name, &desc, &track_ids, at)?;
+            let seq = playlists::make(conn, events, &name, &desc, &track_ids, at)?;
             conn.execute(
                 "INSERT INTO collection_sync_playlists (temp_id, playlist_seq, created_at) VALUES (?1, ?2, ?3)",
                 params![temp_id, seq, lull_core::now()],
@@ -234,18 +234,13 @@ fn run(conn: &Connection, events: &mut Events, at: i64, op: Op) -> Result<Option
                 ));
             }
             let (seq, made) = target(conn, playlist_id, temp_id)?;
-            if name.is_some() || desc.is_some() {
-                playlists::rename(conn, seq, name.as_deref(), desc.as_deref())?;
-            }
-            if let Some(ids) = track_ids {
-                playlists::reorder(conn, seq, ids)?;
-            }
+            playlists::change(conn, events, seq, name.as_deref(), desc.as_deref(), track_ids)?;
             return Ok(made);
         }
         Op::PlaylistDelete { playlist_id, temp_id } => {
             let (seq, made) = target(conn, playlist_id, temp_id)?;
             // Already gone (deleted on another device) is what the listener wanted anyway.
-            playlists::delete(conn, seq)?;
+            playlists::delete(conn, events, seq)?;
             return Ok(made);
         }
     }
@@ -317,7 +312,7 @@ mod tests {
             { "id": "op-2", "at": started_at, "op": "playlist.create", "tempId": "tmp-a", "name": "Road", "trackIds": [song] },
         ]);
         let first = apply_all(&svc, batch(ops.clone())).await?;
-        let first_events = testing::published(&mut rx).len();
+        let first_events: Vec<String> = testing::published(&mut rx).into_iter().map(|e| e.topic).collect();
         let again = apply_all(&svc, batch(ops)).await?;
 
         assert_eq!(first["applied"], json!(["op-1", "op-2"]));
@@ -325,7 +320,11 @@ mod tests {
             again, first,
             "a resend answers as the first time, playlist ids included"
         );
-        assert_eq!(first_events, 1, "one play.ended");
+        assert_eq!(
+            first_events,
+            ["play.ended", "playlist"],
+            "no play.started for a finished play"
+        );
         assert!(testing::published(&mut rx).is_empty(), "a resend publishes nothing");
         assert_eq!(count(&svc, "SELECT COUNT(*) FROM plays").await?, 1);
         assert_eq!(count(&svc, "SELECT COUNT(*) FROM collection_playlists").await?, 1);

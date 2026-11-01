@@ -17,7 +17,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::{Page, Service, bad_json, bad_query, entities, import, m3u};
+use crate::{Events, Page, Service, bad_json, bad_query, entities, import, m3u};
 
 pub(crate) fn routes() -> Router<Arc<Service>> {
     Router::new()
@@ -99,8 +99,8 @@ async fn create(
     let Json(body) = body.map_err(bad_json)?;
     let now = lull_core::now();
     let (seq, playlist) = svc
-        .write(move |tx, _| {
-            let seq = make(tx, &body.name, &body.desc, &body.track_ids, now)?;
+        .write(move |tx, events| {
+            let seq = make(tx, events, &body.name, &body.desc, &body.track_ids, now)?;
             Ok((seq, respond(tx, seq)?))
         })
         .await?;
@@ -143,8 +143,8 @@ async fn edit(
 ) -> Result<Json<Value>> {
     let seq = seq_of(&id)?;
     let Json(body) = body.map_err(bad_json)?;
-    svc.write(move |tx, _| {
-        rename(tx, seq, body.name.as_deref(), body.desc.as_deref())?;
+    svc.write(move |tx, events| {
+        change(tx, events, seq, body.name.as_deref(), body.desc.as_deref(), None)?;
         respond(tx, seq)
     })
     .await
@@ -152,7 +152,7 @@ async fn edit(
 
 async fn remove(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Result<StatusCode> {
     let seq = seq_of(&id)?;
-    svc.write(move |tx, _| match delete(tx, seq)? {
+    svc.write(move |tx, events| match delete(tx, events, seq)? {
         true => Ok(StatusCode::NO_CONTENT),
         false => Err(not_found(seq)),
     })
@@ -166,15 +166,22 @@ async fn set_tracks(
 ) -> Result<Json<Value>> {
     let seq = seq_of(&id)?;
     let Json(ids) = body.map_err(bad_json)?;
-    svc.write(move |tx, _| {
-        reorder(tx, seq, ids)?;
+    svc.write(move |tx, events| {
+        change(tx, events, seq, None, None, Some(ids))?;
         respond(tx, seq)
     })
     .await
 }
 
 /// Creates a playlist at `at` and returns its seq.
-pub(crate) fn make(conn: &Connection, name: &str, desc: &str, ids: &[TrackId], at: i64) -> Result<i64> {
+pub(crate) fn make(
+    conn: &Connection,
+    events: &mut Events,
+    name: &str,
+    desc: &str,
+    ids: &[TrackId],
+    at: i64,
+) -> Result<i64> {
     let (name, desc) = (valid_name(name)?, valid_desc(desc)?);
     check_tracks(conn, ids)?;
     conn.execute(
@@ -183,11 +190,39 @@ pub(crate) fn make(conn: &Connection, name: &str, desc: &str, ids: &[TrackId], a
     )?;
     let seq = conn.last_insert_rowid();
     write_items(conn, seq, &ids.iter().map(|id| (id.clone(), at)).collect::<Vec<_>>())?;
+    announce(events, seq, false);
     Ok(seq)
 }
 
-/// Changes the name and/or description; `None` keeps what is there.
-pub(crate) fn rename(conn: &Connection, seq: i64, name: Option<&str>, desc: Option<&str>) -> Result<()> {
+/// Every change of a playlist publishes `playlist { playlistId, deleted }`, once per operation:
+/// library mirrors playlists into Jellyfin from it.
+fn announce(events: &mut Events, seq: i64, deleted: bool) {
+    events.push(
+        "playlist",
+        json!({ "playlistId": format!("pl-{seq}"), "deleted": deleted }),
+    );
+}
+
+/// Changes the name, the description and/or the songs (the whole new order, see `reorder_rows`);
+/// `None` keeps what is there.
+pub(crate) fn change(
+    conn: &Connection,
+    events: &mut Events,
+    seq: i64,
+    name: Option<&str>,
+    desc: Option<&str>,
+    ids: Option<Vec<TrackId>>,
+) -> Result<()> {
+    rename_row(conn, seq, name, desc)?;
+    if let Some(ids) = ids {
+        reorder_rows(conn, seq, ids)?;
+    }
+    announce(events, seq, false);
+    Ok(())
+}
+
+/// Sets the name and/or description; also checks that the playlist exists.
+fn rename_row(conn: &Connection, seq: i64, name: Option<&str>, desc: Option<&str>) -> Result<()> {
     let name = name.map(valid_name).transpose()?;
     let desc = desc.map(valid_desc).transpose()?;
     let changed = conn.execute(
@@ -202,17 +237,18 @@ pub(crate) fn rename(conn: &Connection, seq: i64, name: Option<&str>, desc: Opti
 }
 
 /// Deletes a playlist; false when there was none.
-pub(crate) fn delete(conn: &Connection, seq: i64) -> Result<bool> {
+pub(crate) fn delete(conn: &Connection, events: &mut Events, seq: i64) -> Result<bool> {
     if conn.execute("DELETE FROM collection_playlists WHERE seq = ?1", [seq])? == 0 {
         return Ok(false);
     }
     conn.execute("DELETE FROM collection_playlist_items WHERE playlist_seq = ?1", [seq])?;
+    announce(events, seq, true);
     Ok(true)
 }
 
 /// The whole new order: adds, removes and moves in one call. A song that stays keeps its
 /// `added` date (the n-th copy of a song keeps the n-th copy's date).
-pub(crate) fn reorder(conn: &Connection, seq: i64, ids: Vec<TrackId>) -> Result<()> {
+fn reorder_rows(conn: &Connection, seq: i64, ids: Vec<TrackId>) -> Result<()> {
     let Some(old) = items_of(conn, seq)? else {
         return Err(not_found(seq));
     };
@@ -234,9 +270,9 @@ pub(crate) fn reorder(conn: &Connection, seq: i64, ids: Vec<TrackId>) -> Result<
 
 /// The `Collection` seam's edit: removals are positions before the change, applied first;
 /// additions go to the end.
-pub(crate) fn edit_positions(conn: &Connection, seq: i64, edit: PlaylistEdit) -> Result<()> {
+pub(crate) fn edit_positions(conn: &Connection, events: &mut Events, seq: i64, edit: PlaylistEdit) -> Result<()> {
     if edit.name.is_some() || edit.description.is_some() {
-        rename(conn, seq, edit.name.as_deref(), edit.description.as_deref())?;
+        rename_row(conn, seq, edit.name.as_deref(), edit.description.as_deref())?;
     }
     let Some(old) = items_of(conn, seq)? else {
         return Err(not_found(seq));
@@ -256,7 +292,9 @@ pub(crate) fn edit_positions(conn: &Connection, seq: i64, edit: PlaylistEdit) ->
     if items.len() > MAX_ITEMS {
         return Err(too_many());
     }
-    replace_items(conn, seq, &items, now)
+    replace_items(conn, seq, &items, now)?;
+    announce(events, seq, false);
+    Ok(())
 }
 
 /// Every playlist for the `Collection` seam, most recently changed first.

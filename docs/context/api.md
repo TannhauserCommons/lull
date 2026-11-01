@@ -64,6 +64,7 @@ Topic → payload. Published on the bus and streamed to the browser. Owners add 
 | `job` | any | `{ jobId, kind: transfer\|save\|import\|rescan, started, ... }`: one Activity row, the same shape `GET /api/jobs` lists. Library's rows: save `{ trackId, step, stepState, pct, error, failKind, nocover }`, rescan `{ state: running\|done\|failed, pct, detail }`. Other crates publish their own rows here to appear in `/api/jobs` |
 | `play.started` | collection | `{ playId, trackId, at, duration, artist, title, album }`. lastfm now-playing, taste. The `plays` row is written first |
 | `play.ended` | collection | `{ playId, trackId, at, playedS, completed, skipped, duration, artist, title, album }`, exactly once per play. `at` is the play's **start** (Last.fm's timestamp). Scrobbling, taste |
+| `playlist` | collection | `{ playlistId, deleted }`: once per playlist create, rename or description change, track change and delete, from the routes, the `Collection` seam and `/api/sync` alike (a deleted playlist has `deleted: true`). Library mirrors playlists into Jellyfin from it; other devices refetch |
 | `like` | collection | `{ trackId, liked }`. Taste, other devices |
 | `follow` | collection | `{ kind: artist\|tag, id, followed }`. Discovery, other devices |
 | `settings` | collection | The stored settings (the editable part of `GET /api/settings`), at start-up and on every change. Collection starts after every other crate, so a receiver made in `start()` gets the start-up copy |

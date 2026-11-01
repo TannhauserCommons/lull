@@ -107,7 +107,7 @@ pub struct Service {
 
 pub async fn start(ctx: &Ctx, library: Arc<dyn Library>) -> Result<Arc<Service>> {
     // Subscribe before anything can publish, so no scrobble or save is missed.
-    tokio::spawn(record_events(ctx.clone(), ctx.bus.subscribe()));
+    ctx.spawn(record_events(ctx.clone(), ctx.bus.subscribe()));
     settings::announce(ctx).await?;
     Ok(Arc::new(Service {
         ctx: ctx.clone(),

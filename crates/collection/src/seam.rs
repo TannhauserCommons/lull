@@ -45,8 +45,8 @@ impl Collection for Service {
 
     async fn create_playlist(&self, name: &str, tracks: &[TrackId]) -> Result<Playlist> {
         let (name, tracks) = (name.to_owned(), tracks.to_vec());
-        self.write(move |tx, _| {
-            let seq = playlists::make(tx, &name, "", &tracks, lull_core::now())?;
+        self.write(move |tx, events| {
+            let seq = playlists::make(tx, events, &name, "", &tracks, lull_core::now())?;
             created(playlists::one(tx, seq)?)
         })
         .await
@@ -54,8 +54,8 @@ impl Collection for Service {
 
     async fn edit_playlist(&self, id: &str, edit: PlaylistEdit) -> Result<Playlist> {
         let seq = seq_of(id)?;
-        self.write(move |tx, _| {
-            playlists::edit_positions(tx, seq, edit)?;
+        self.write(move |tx, events| {
+            playlists::edit_positions(tx, events, seq, edit)?;
             created(playlists::one(tx, seq)?)
         })
         .await
@@ -63,7 +63,7 @@ impl Collection for Service {
 
     async fn delete_playlist(&self, id: &str) -> Result<()> {
         let seq = seq_of(id)?;
-        self.write(move |tx, _| match playlists::delete(tx, seq)? {
+        self.write(move |tx, events| match playlists::delete(tx, events, seq)? {
             true => Ok(()),
             false => Err(Error::NotFound(format!("No playlist pl-{seq}."))),
         })
@@ -91,6 +91,31 @@ fn created(p: Option<Playlist>) -> Result<Playlist> {
 mod tests {
     use super::*;
     use crate::testing;
+
+    #[tokio::test]
+    async fn every_playlist_change_publishes_one_playlist_event() -> Result<()> {
+        let (svc, mut rx) = testing::service().await?;
+        let song = testing::known_song(&svc, "Velvet Orchard", "Paper Moon Static").await?;
+        let playlist = svc.create_playlist("Road", &[]).await?;
+        svc.edit_playlist(
+            &playlist.id,
+            PlaylistEdit {
+                name: Some("Road trip".into()),
+                add: vec![song],
+                ..PlaylistEdit::default()
+            },
+        )
+        .await?;
+        svc.delete_playlist(&playlist.id).await?;
+        let events: Vec<_> = testing::published(&mut rx)
+            .into_iter()
+            .map(|e| (e.topic, e.data["playlistId"].clone(), e.data["deleted"].clone()))
+            .collect();
+        let id = serde_json::json!(playlist.id);
+        let event = |deleted| ("playlist".to_owned(), id.clone(), serde_json::json!(deleted));
+        assert_eq!(events, [event(false), event(false), event(true)]);
+        Ok(())
+    }
 
     #[tokio::test]
     async fn a_reported_play_ends_at_its_real_start_without_now_playing() -> Result<()> {
