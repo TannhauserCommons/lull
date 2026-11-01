@@ -1178,7 +1178,13 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 }
 @media (min-width: 640px) { .tray--compact { display: none; } }
 @media (min-width: 640px) and (max-width: 959px) { .tray--full { display: none; } .tray--compact { display: inline-flex; } }
-@media (max-width: 639px) { .tray--full { display: none; } }
+@media (max-width: 639px) {
+  .tray--full { display: none; }
+  /* a phone header has no room to spare: a long status word ("soulseek reconnecting") is cut, never widens the page */
+  .header__tools, .tray--compact, .tray--compact .tray__pill { min-width: 0; }
+  .tray--compact { flex: 0 1 auto; }
+  .tray__word { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+}
 
 /* =====================================================================
    Keyframes (loops pause when the document is hidden: :root.is-hidden)

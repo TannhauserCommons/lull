@@ -49,6 +49,7 @@
 .hub-pair__code { margin: 0 0 var(--sp-1); font-size: 2.75rem; letter-spacing: .2em; color: var(--fg); }
 .hub-pair__left { font: var(--t-meta); color: var(--fg-2); }
 .hub-pair__url { overflow-wrap: anywhere; font-size: 1rem; }
+.hub-pair__code { white-space: nowrap; }                /* the link may wrap, the code in it stays whole */
 .hub-qr { aspect-ratio: 1; display: grid; place-items: center; }
 .hub-qr__svg { display: block; width: 100%; height: auto; border-radius: var(--r-art); }
 /* scanners need dark modules on a light ground in every theme: ink on cream (14:1) */

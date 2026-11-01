@@ -395,7 +395,7 @@
         <p>On the new device, scan this with the camera, or open lull there and type this code:</p>
         <p class="hub-pair__code px" aria-label="Pair code ${c.code.split('').join(' ')}">${c.code}</p>
         <p class="hub-pair__left" id="hub-pair-left"></p>
-        <p class="sys-row__help">Or open <span class="px hub-pair__url">${c.url}</span> <button class="btn btn--quiet btn--sm" data-act="hub-copy" data-text="${c.url}">${icon('copy', null, 'ic-16')}Copy</button></p>
+        <p class="sys-row__help">Or open <span class="px hub-pair__url">${c.url.slice(0, c.url.lastIndexOf('/') + 1)}<span class="hub-pair__code">${c.url.slice(c.url.lastIndexOf('/') + 1)}</span></span> <button class="btn btn--quiet btn--sm" data-act="hub-copy" data-text="${c.url}">${icon('copy', null, 'ic-16')}Copy</button></p>
         ${httpsNote()}</div></div>`);
     tickCode(p);
     p.timer = setInterval(function () { tickCode(p); }, 1000);
