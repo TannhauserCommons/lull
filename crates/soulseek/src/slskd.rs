@@ -69,6 +69,9 @@ pub struct Search {
     pub state: String,
     pub response_count: u32,
     pub file_count: u32,
+    /// Set by slskd's last step, once the responses are written: `Completed` comes earlier.
+    #[serde(default)]
+    pub ended_at: Option<String>,
 }
 
 impl Search {

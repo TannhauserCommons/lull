@@ -55,11 +55,12 @@ Search is a catalog search owned by discovery (`/api/search`, ADR-0008); Soulsee
 
 - **slskd hides answers until a search ends.** It also only runs two searches at a time. So each query runs one network search that ends after 6 s with no new answers, or after 15 s in all, at which point lull stops it.
   - While it runs, `search.results` events carry only the counters (`files`, `peers`, `done: false`).
-  - The final event carries the merged `results` and `entities`.
+  - The final event carries the merged `results` and `entities`, or `error`.
+- **Waiting for slskd's last step.** slskd calls a search `Completed` before it writes the responses (that step sets `endedAt`), and deleting the search in between loses them: seen live as "Failed to finalize search … affected 0 row(s)" and an empty result after 300 peers answered. lull reads the responses until they appear or `endedAt` is set, for up to 5 s. If peers answered (or the search `Errored`) and still no responses come back, the final event carries `error` ("slskd found 8217 files from 300 peers but handed over none; search again"), not an empty success.
 - **Politeness:**
   - searches start at least 1 s apart;
   - a newer query stops the older one;
-  - the same words within 10 minutes reuse the earlier search (the answer's `soulseek` field replays it);
+  - the same words within 10 minutes reuse the earlier search (the answer's `soulseek` field replays it), but only one still running or one that ended with results: an empty or failed search, or one a newer query stopped, runs again;
   - queries under 3 characters don't search;
   - lull deletes its searches from slskd when done.
 - **Merging.** Songs merge across peers by `TrackId`. A peer folder holding 3 or more of the results becomes an album row; the same album on many peers is one row listing each folder, best first. Rows are capped at 200 songs and 40 albums. Every track handed out is recorded in `lull_core::catalog`.

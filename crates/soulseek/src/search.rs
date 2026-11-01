@@ -38,6 +38,9 @@ const REUSE_FOR: Duration = Duration::from_secs(10 * 60);
 const MIN_QUERY: usize = 3;
 /// A folder with at least this many matching songs is shown as an album.
 const ALBUM_MIN_TRACKS: usize = 3;
+/// How long a search that slskd calls `Completed` may take to hand over its responses.
+const FINALIZE_WAIT: Duration = Duration::from_secs(5);
+const FINALIZE_POLL: Duration = Duration::from_millis(250);
 const MAX_SONGS: usize = 200;
 const MAX_ALBUMS: usize = 40;
 
@@ -188,7 +191,7 @@ impl Searches {
             return (Arc::new(Session::new("s-0".into(), key)), true);
         };
         inner.recent.retain(|s| s.started.elapsed() < REUSE_FOR);
-        if let Some(s) = inner.recent.iter().rev().find(|s| s.key == key) {
+        if let Some(s) = inner.recent.iter().rev().find(|s| s.key == key && s.reusable()) {
             return (s.clone(), false);
         }
         if let Some(previous) = inner.recent.back() {
@@ -363,7 +366,7 @@ impl Searches {
                 self.slskd.stop_search(&last.id).await?;
             }
         }
-        let responses = self.slskd.responses(&last.id).await;
+        let responses = self.finished_responses(&mut last).await;
         self.drop_search(&last.id, false).await;
         self.record(Outcome {
             query: text.to_owned(),
@@ -373,6 +376,44 @@ impl Searches {
             at: lull_core::now(),
         });
         responses.map(Some)
+    }
+
+    /// The responses of a search slskd calls `Completed`. slskd says so before its last step
+    /// has written the responses (that step sets `endedAt`), and a search deleted in between
+    /// loses them: seen live as "Failed to finalize search … affected 0 row(s)" and an empty
+    /// result after 300 peers answered. So lull waits for `endedAt`, looks again while peers
+    /// answered but no responses came back, and calls a search that still has none an error.
+    async fn finished_responses(&self, last: &mut slskd::Search) -> Result<Vec<slskd::Response>> {
+        let deadline = Instant::now() + FINALIZE_WAIT;
+        loop {
+            // slskd writes them all at once, so any responses are all of them.
+            let responses = self.slskd.responses(&last.id).await?;
+            if !responses.is_empty() {
+                return Ok(responses);
+            }
+            let lost = last.response_count > 0 || last.state.contains("Errored");
+            if !lost && last.ended_at.is_some() {
+                return Ok(responses);
+            }
+            if Instant::now() >= deadline {
+                return match (lost, last.response_count) {
+                    (false, _) => Ok(responses),
+                    (true, 0) => Err(Error::upstream(
+                        "soulseek",
+                        format!("slskd's search ended with an error ({})", last.state),
+                    )),
+                    (true, peers) => Err(Error::upstream(
+                        "soulseek",
+                        format!(
+                            "slskd found {} files from {peers} peers but handed over none; search again",
+                            last.file_count
+                        ),
+                    )),
+                };
+            }
+            tokio::time::sleep(FINALIZE_POLL).await;
+            *last = self.slskd.search(&last.id).await?;
+        }
     }
 
     fn record(&self, outcome: Outcome) {
@@ -515,6 +556,24 @@ impl Session {
             latest: Mutex::new(None),
             songs: Mutex::default(),
             stop: watch::channel(false).0,
+        }
+    }
+
+    /// Worth handing out again for the same words: still running, or ended with results. An
+    /// empty or failed search, or one a newer query stopped, is searched afresh.
+    fn reusable(&self) -> bool {
+        if *self.stop.borrow() {
+            return false;
+        }
+        let Ok(latest) = self.latest.lock() else { return false };
+        match latest.as_ref() {
+            Some(v) if v.get("done") == Some(&Value::Bool(true)) => {
+                v.get("error").is_none_or(Value::is_null)
+                    && v.get("results")
+                        .and_then(Value::as_array)
+                        .is_some_and(|r| !r.is_empty())
+            }
+            _ => true,
         }
     }
 
@@ -777,4 +836,127 @@ fn albums(folders: HashMap<(String, String), Folder>, sources: &Sources) -> Vec<
     });
     hits.truncate(MAX_ALBUMS);
     hits
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    use axum::Router;
+    use axum::http::StatusCode;
+    use axum::routing::{get, post};
+
+    type Test = std::result::Result<(), Box<dyn std::error::Error>>;
+
+    /// slskd as seen live: it says `Completed` before its last step writes the responses. With
+    /// `finalizes` false that step never succeeds ("Failed to finalize search").
+    async fn searches(finalizes: bool) -> std::result::Result<Searches, Box<dyn std::error::Error>> {
+        let polls = Arc::new(AtomicU32::new(0));
+        let (p1, p2) = (polls.clone(), polls.clone());
+        let search = |ended: bool| {
+            json!({
+                "id": "s1", "state": "Completed, Succeeded", "responseCount": 300, "fileCount": 8217,
+                "endedAt": ended.then_some("2026-11-01T20:37:00Z"),
+            })
+        };
+        let app = Router::new()
+            .route(
+                "/api/v0/searches",
+                post(|| async {
+                    axum::Json(json!({ "id": "s1", "state": "InProgress", "responseCount": 0, "fileCount": 0 }))
+                }),
+            )
+            .route(
+                "/api/v0/searches/{id}",
+                get(move || {
+                    let n = p1.fetch_add(1, Ordering::SeqCst);
+                    async move { axum::Json(search(finalizes && n >= 3)) }
+                })
+                .put(|| async { StatusCode::NO_CONTENT })
+                .delete(|| async { StatusCode::NO_CONTENT }),
+            )
+            .route(
+                "/api/v0/searches/{id}/responses",
+                get(move || {
+                    let written = finalizes && p2.load(Ordering::SeqCst) >= 4;
+                    async move {
+                        axum::Json(match written {
+                            true => json!([{
+                                "username": "peer", "hasFreeUploadSlot": true, "queueLength": 0, "uploadSpeed": 2_000_000,
+                                "files": [{ "filename": "@@x\\Portishead\\Dummy (1994)\\09 - Glory Box.flac", "size": 30_000_000,
+                                            "bitRate": null, "bitDepth": 16, "sampleRate": 44100, "length": 306,
+                                            "isVariableBitRate": null }],
+                            }]),
+                            false => json!([]),
+                        })
+                    }
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let url = format!("http://{}", listener.local_addr()?);
+        tokio::spawn(async move { axum::serve(listener, app).await });
+        let slskd = Slskd::new(
+            lull_core::http::Http::new()?,
+            &url,
+            lull_core::config::Secret::new("key"),
+        )?;
+        let db = Db::memory()?;
+        db.migrate(&crate::MIGRATIONS)?;
+        let sources = Sources::new(crate::peers::Peers::load(db.clone()).await?, Vec::new());
+        Ok(Searches::new(slskd, Bus::new(), db, sources))
+    }
+
+    #[tokio::test]
+    async fn responses_written_after_completed_are_waited_for() -> Test {
+        let searches = searches(true).await?;
+        let (_keep, mut stop) = watch::channel(false);
+        let responses = searches
+            .network("portishead", &mut stop, |_| {})
+            .await?
+            .ok_or("stopped")?;
+        assert_eq!(
+            responses.len(),
+            1,
+            "not the empty list slskd shows before its last step"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn responses_slskd_lost_are_an_error_and_never_reused() -> Test {
+        let searches = searches(false).await?;
+        let mut events = searches.bus.subscribe();
+        let first = searches.start("portishead", true)?;
+        let last = loop {
+            let e = tokio::time::timeout(Duration::from_secs(20), events.recv()).await??;
+            if e.topic == "search.results" && e.data["done"] == true {
+                break e.data;
+            }
+        };
+        let error = last["error"].as_str().unwrap_or_default();
+        assert!(error.contains("8217 files from 300 peers"), "{last}");
+        let again = searches.start("portishead", true)?;
+        assert_ne!(again.search_id, first.search_id, "search again runs a fresh search");
+        Ok(())
+    }
+
+    #[test]
+    fn only_a_running_search_or_one_with_results_is_reused() {
+        let s = Session::new("s-1".into(), "q".into());
+        assert!(s.reusable(), "still running");
+        let set = |v: Value| {
+            if let Ok(mut l) = s.latest.lock() {
+                *l = Some(v);
+            }
+        };
+        set(json!({ "done": true, "results": [] }));
+        assert!(!s.reusable(), "empty");
+        set(json!({ "done": true, "results": [{ "kind": "track" }], "error": "x" }));
+        assert!(!s.reusable(), "failed");
+        set(json!({ "done": true, "results": [{ "kind": "track" }] }));
+        assert!(s.reusable());
+        s.stop.send_replace(true);
+        assert!(!s.reusable(), "stopped by a newer query, so it never finished");
+    }
 }
