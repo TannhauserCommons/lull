@@ -106,17 +106,73 @@ fn list(svc: &Service, ids: Vec<Value>, total: usize, entities: Entities) -> Res
     ))
 }
 
+/// Songs also carry `songs: { trackId: { addedAt, plays } }`, the list's own columns. Plays are
+/// per-listener state, so they stay out of the track entities.
 async fn songs(State(svc): Svc, Query(q): Query<ListQuery>) -> Result<Json<Value>> {
-    let (page, total, entities) = {
+    let (page, total, entities, added, ids) = {
         let index = svc.index();
         let (page, total) = q.page(index.songs(&q.sort, &q.filter)?)?;
         let mut entities = Entities::default();
         for t in &page {
             entities.tracks.insert(t.id.clone(), (*t).clone());
         }
-        (page.iter().map(|t| json!(t.id)).collect(), total, entities)
+        let added: Vec<String> = page
+            .iter()
+            .map(|t| index.saved(&t.id).map(|s| s.added.clone()).unwrap_or_default())
+            .collect();
+        let ids = played_as(index.aliases(), page.iter().map(|t| &t.id));
+        (
+            page.iter().map(|t| json!(t.id)).collect::<Vec<_>>(),
+            total,
+            entities,
+            added,
+            ids,
+        )
     };
-    list(&svc, page, total, entities)
+    let plays = svc.ctx.db.call(move |c| play_counts(c, &ids)).await?;
+    let columns: serde_json::Map<String, Value> = page
+        .iter()
+        .zip(added)
+        .zip(plays)
+        .filter_map(|((id, added_at), plays)| {
+            Some((id.as_str()?.to_owned(), json!({ "addedAt": added_at, "plays": plays })))
+        })
+        .collect();
+    let Json(mut body) = list(&svc, page, total, entities)?;
+    body["songs"] = Value::Object(columns);
+    Ok(Json(body))
+}
+
+/// Each song's id plus the old ids that alias it: plays recorded before a source switch still
+/// count for the song.
+fn played_as<'a>(aliases: &HashMap<TrackId, TrackId>, songs: impl Iterator<Item = &'a TrackId>) -> Vec<Vec<TrackId>> {
+    let mut ids: Vec<Vec<TrackId>> = songs.map(|id| vec![id.clone()]).collect();
+    let mut wanted: HashMap<TrackId, &mut Vec<TrackId>> = HashMap::new();
+    for song in &mut ids {
+        if let Some(own) = song.first().cloned() {
+            wanted.insert(own, song);
+        }
+    }
+    for (old, saved) in aliases {
+        if let Some(song) = wanted.get_mut(saved) {
+            song.push(old.clone());
+        }
+    }
+    ids
+}
+
+/// Plays per song from core's `plays` table, in `ids` order.
+fn play_counts(c: &rusqlite::Connection, ids: &[Vec<TrackId>]) -> Result<Vec<i64>> {
+    let mut stmt = c.prepare_cached("SELECT COUNT(*) FROM plays WHERE track_id = ?1")?;
+    let mut counts = Vec::with_capacity(ids.len());
+    for song in ids {
+        let mut n = 0;
+        for id in song {
+            n += stmt.query_row([&id.0], |r| r.get::<_, i64>(0))?;
+        }
+        counts.push(n);
+    }
+    Ok(counts)
 }
 
 async fn albums(State(svc): Svc, Query(q): Query<ListQuery>) -> Result<Json<Value>> {
@@ -490,6 +546,20 @@ mod tests {
             .await
             .map_err(|e| Error::internal(e.to_string()))?;
         Ok((parts.status, parts.headers, bytes))
+    }
+
+    #[test]
+    fn song_plays_include_plays_under_aliased_ids() -> Result<()> {
+        let c = rusqlite::Connection::open_in_memory()?;
+        c.execute_batch(
+            "CREATE TABLE plays (id INTEGER PRIMARY KEY, track_id TEXT NOT NULL);
+             INSERT INTO plays (track_id) VALUES ('new'), ('old'), ('old'), ('other');",
+        )?;
+        let id = |s: &str| TrackId(s.to_owned());
+        let aliases = HashMap::from([(id("old"), id("new")), (id("gone"), id("elsewhere"))]);
+        let songs = [id("new"), id("unplayed")];
+        assert_eq!(play_counts(&c, &played_as(&aliases, songs.iter()))?, vec![3, 0]);
+        Ok(())
     }
 
     #[tokio::test]
