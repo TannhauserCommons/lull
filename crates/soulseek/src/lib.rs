@@ -223,7 +223,7 @@ async fn watch_connection(svc: Arc<Service>, layout: Arc<RwLock<Layout>>) {
         let server = svc.slskd.server().await;
         // Only a logged-out slskd mid-transition can be stuck; anything else starts the count over.
         if !server.as_ref().is_ok_and(|s| s.is_transitioning && !s.is_logged_in) {
-            stuck = recover::Stuck::default();
+            stuck.settle();
         }
         let (state, detail) = match server {
             Ok(server) if server.is_logged_in => {
@@ -257,7 +257,8 @@ async fn watch_connection(svc: Arc<Service>, layout: Arc<RwLock<Layout>>) {
                 }
             }
             Ok(server) if server.is_transitioning => {
-                match recover::unstick(&svc.slskd, &server, &mut stuck, std::time::Instant::now()).await {
+                let login = config.web_login.as_ref();
+                match recover::unstick(&svc.slskd, login, &server, &mut stuck, std::time::Instant::now()).await {
                     Some((state, detail, why)) => {
                         extra = why;
                         (state, detail)

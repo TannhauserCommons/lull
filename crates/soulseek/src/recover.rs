@@ -5,12 +5,15 @@
 //!   transferring (a new login drops peer connections).
 //! - **Stuck:** slskd can stop halfway through a transition, logged out, with its own watchdog
 //!   off (seen live 2026-11-01: "Disconnecting" for 40 minutes after an exception). After
-//!   `STUCK_AFTER` lull forces a fresh login, backing off, and reports Soulseek down.
+//!   `STUCK_AFTER` lull forces fresh logins, backing off, then asks slskd to restart itself, and
+//!   reports Soulseek down meanwhile.
 
 use std::time::{Duration, Instant};
 
 use lull_core::status::State;
 use serde_json::{Value, json};
+
+use lull_core::config::SlskdWebLogin;
 
 use crate::slskd::{Server, Slskd};
 
@@ -32,15 +35,29 @@ pub const STUCK_AFTER: Duration = Duration::from_secs(60);
 const STUCK_RETRY: Duration = Duration::from_secs(2 * 60);
 /// ...up to this.
 const STUCK_RETRY_MAX: Duration = Duration::from_secs(15 * 60);
-/// After this many fresh logins that didn't help, the status says to restart slskd.
+/// Fresh logins that didn't help before lull escalates to restarting slskd.
 const RESTART_AFTER: u32 = 2;
+/// At most one restart this often: an slskd that wedges again soon needs a person.
+const RESTART_EVERY: Duration = Duration::from_secs(30 * 60);
 
-/// How long slskd has been stuck, and the fresh logins lull asked for meanwhile.
+/// How long slskd has been stuck, and what lull did about it. The last restart outlives the
+/// episode (slskd goes away while it restarts), so a repeat wedge isn't restarted in a loop.
 #[derive(Debug, Default)]
 pub struct Stuck {
     since: Option<(Instant, i64)>,
     tries: u32,
+    relogins: u32,
     last_try: Option<Instant>,
+    /// Why the last fresh login failed, if it did.
+    login_error: Option<String>,
+    restarted: Option<Restarted>,
+}
+
+#[derive(Debug, Clone)]
+struct Restarted {
+    at: Instant,
+    unix: i64,
+    error: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -49,16 +66,16 @@ pub enum Verdict {
     Fine,
     /// Mid-transition, briefly: slskd usually finishes by itself.
     Settling,
-    /// Stuck: force a fresh login now.
-    Relogin,
-    /// Stuck, and the last fresh login was recent: wait for the next.
+    /// Stuck: act now (a fresh login, or a restart).
+    Act,
+    /// Stuck, and lull acted recently: wait.
     Waiting,
 }
 
 impl Stuck {
     pub fn observe(&mut self, server: &Server, now: Instant) -> Verdict {
         if server.is_logged_in || !server.is_transitioning {
-            *self = Stuck::default();
+            self.settle();
             return Verdict::Fine;
         }
         let (since, _) = *self.since.get_or_insert((now, lull_core::now()));
@@ -72,7 +89,24 @@ impl Stuck {
         }
         self.tries += 1;
         self.last_try = Some(now);
-        Verdict::Relogin
+        Verdict::Act
+    }
+
+    /// The episode is over (or slskd went away to restart): only the last restart is kept.
+    pub fn settle(&mut self) {
+        *self = Stuck {
+            restarted: self.restarted.take(),
+            ..Stuck::default()
+        };
+    }
+
+    /// A restart is the next step: fresh logins didn't help and none was restarted lately.
+    fn restart_due(&self, now: Instant) -> bool {
+        self.relogins >= RESTART_AFTER
+            && self
+                .restarted
+                .as_ref()
+                .is_none_or(|r| now.duration_since(r.at) >= RESTART_EVERY)
     }
 }
 
@@ -82,40 +116,92 @@ fn retry_after(tries: u32) -> Duration {
         .min(STUCK_RETRY_MAX)
 }
 
-/// One look at a slskd caught mid-transition: forces a fresh login when one is due and says
-/// what the `soulseek` status should read. `None` while it isn't stuck (yet).
+/// One look at a slskd caught mid-transition: forces a fresh login, or once those didn't help
+/// and lull has slskd's web login, asks slskd to restart itself; and says what the `soulseek`
+/// status should read. `None` while it isn't stuck (yet).
 pub async fn unstick(
     slskd: &Slskd,
+    login: Option<&SlskdWebLogin>,
     server: &Server,
     stuck: &mut Stuck,
     now: Instant,
 ) -> Option<(State, String, Value)> {
-    let tried = match stuck.observe(server, now) {
+    match stuck.observe(server, now) {
         Verdict::Fine | Verdict::Settling => return None,
-        Verdict::Waiting => None,
-        Verdict::Relogin => Some(force_login(slskd).await),
-    };
+        Verdict::Waiting => {}
+        Verdict::Act => match login.filter(|_| stuck.restart_due(now)) {
+            Some(login) => {
+                tracing::warn!("slskd is still stuck after fresh logins; asking it to restart itself");
+                let error = slskd.restart(login).await.err().map(|e| e.to_string());
+                stuck.restarted = Some(Restarted {
+                    at: now,
+                    unix: lull_core::now(),
+                    error,
+                });
+            }
+            None => {
+                stuck.relogins += 1;
+                stuck.login_error = force_login(slskd).await.err().map(|e| e.to_string());
+            }
+        },
+    }
+    Some(report(server, stuck, login.is_some(), now))
+}
+
+/// The `soulseek` status for a stuck slskd: down, how long, what lull did, and whether a person
+/// (or the deploy) has to restart slskd (`extra.restartSlskd`).
+fn report(server: &Server, stuck: &Stuck, can_restart: bool, now: Instant) -> (State, String, Value) {
     let what = match server.state.trim() {
         "" => "between connecting and disconnecting".to_owned(),
         s => format!("at \"{s}\""),
     };
-    let (_, since) = stuck.since?;
-    let minutes = (lull_core::now() - since).max(0) / 60;
-    let restart = stuck.tries >= RESTART_AFTER;
+    let (since, since_unix) = stuck.since.unwrap_or((now, lull_core::now()));
+    let minutes = now.duration_since(since).as_secs() / 60;
     let mut detail = format!(
         "slskd has been stuck {what}, logged out, since {} ({minutes} min); lull asked it to log in again {} time{}",
-        clock(since),
-        stuck.tries,
-        if stuck.tries == 1 { "" } else { "s" },
+        clock(since_unix),
+        stuck.relogins,
+        if stuck.relogins == 1 { "" } else { "s" },
     );
-    if let Some(Err(e)) = &tried {
+    if let Some(e) = &stuck.login_error {
         detail.push_str(&format!(" (the last ask failed: {e})"));
     }
-    if restart {
-        detail.push_str(", which didn't help: restart slskd");
-    }
-    let extra = json!({ "stuck": server.state, "stuckSince": since, "relogins": stuck.tries, "restartSlskd": restart });
-    Some((State::Down, detail, extra))
+    let recent = stuck
+        .restarted
+        .as_ref()
+        .filter(|r| now.duration_since(r.at) < RESTART_EVERY);
+    let by_hand = match recent {
+        Some(Restarted { error: Some(e), .. }) => {
+            detail.push_str(&format!(", and restarting it failed ({e}): restart slskd"));
+            true
+        }
+        Some(r) if r.at < since => {
+            detail.push_str(&format!(
+                ", and it wedged again after lull restarted it at {}: restart slskd",
+                clock(r.unix)
+            ));
+            true
+        }
+        Some(r) => {
+            detail.push_str(&format!(", then asked it to restart itself at {}", clock(r.unix)));
+            false
+        }
+        None if stuck.relogins >= RESTART_AFTER && !can_restart => {
+            detail.push_str(
+                ", which didn't help: restart slskd (lull restarts it itself with LULL_SLSKD_WEB_USERNAME and LULL_SLSKD_WEB_PASSWORD)",
+            );
+            true
+        }
+        None => false,
+    };
+    let extra = json!({
+        "stuck": server.state,
+        "stuckSince": since_unix,
+        "relogins": stuck.relogins,
+        "restartedAt": stuck.restarted.as_ref().map(|r| r.unix),
+        "restartSlskd": by_hand,
+    });
+    (State::Down, detail, extra)
 }
 
 /// A wedged slskd may refuse the disconnect; the connect is what matters, so it runs anyway.
@@ -143,15 +229,31 @@ mod tests {
     use std::sync::atomic::{AtomicU32, Ordering};
 
     use axum::Router;
-    use axum::http::StatusCode;
-    use axum::routing::{get, put};
+    use axum::http::{HeaderMap, StatusCode};
+    use axum::routing::{get, post, put};
 
     const MIN: Duration = Duration::from_secs(60);
 
+    struct Fake {
+        slskd: Slskd,
+        deletes: Arc<AtomicU32>,
+        puts: Arc<AtomicU32>,
+        restarts: Arc<AtomicU32>,
+    }
+
+    impl Fake {
+        fn calls(&self) -> (u32, u32, u32) {
+            let n = |c: &Arc<AtomicU32>| c.load(Ordering::SeqCst);
+            (n(&self.deletes), n(&self.puts), n(&self.restarts))
+        }
+    }
+
     /// slskd wedged as seen live: logged out, "Disconnecting" forever, refusing the disconnect.
-    async fn wedged_slskd() -> Result<(Slskd, Arc<AtomicU32>, Arc<AtomicU32>), Box<dyn std::error::Error>> {
-        let (deletes, puts) = (Arc::new(AtomicU32::new(0)), Arc::new(AtomicU32::new(0)));
-        let (d, p) = (deletes.clone(), puts.clone());
+    /// Its web login is lull/secret; a restart needs that session's token, as in slskd 0.26.
+    async fn wedged_slskd() -> Result<Fake, Box<dyn std::error::Error>> {
+        let count = || Arc::new(AtomicU32::new(0));
+        let (deletes, puts, restarts) = (count(), count(), count());
+        let (d, p, r) = (deletes.clone(), puts.clone(), restarts.clone());
         let app = Router::new()
             .route(
                 "/api/v0/application",
@@ -160,6 +262,28 @@ mod tests {
                         "server": { "state": "Disconnecting", "isLoggedIn": false, "isTransitioning": true },
                         "user": { "username": "lull-test" }
                     }))
+                })
+                .put(move |headers: HeaderMap| {
+                    let ok = headers.get("authorization").is_some_and(|v| v == "Bearer jwt");
+                    if ok {
+                        r.fetch_add(1, Ordering::SeqCst);
+                    }
+                    async move {
+                        if ok {
+                            StatusCode::NO_CONTENT
+                        } else {
+                            StatusCode::UNAUTHORIZED
+                        }
+                    }
+                }),
+            )
+            .route(
+                "/api/v0/session",
+                post(|axum::Json(login): axum::Json<Value>| async move {
+                    match login == json!({ "username": "lull", "password": "secret" }) {
+                        true => Ok(axum::Json(json!({ "token": "jwt", "tokenType": "Bearer" }))),
+                        false => Err(StatusCode::UNAUTHORIZED),
+                    }
                 }),
             )
             .route(
@@ -181,54 +305,144 @@ mod tests {
             &url,
             lull_core::config::Secret::new("key"),
         )?;
-        Ok((slskd, deletes, puts))
+        Ok(Fake {
+            slskd,
+            deletes,
+            puts,
+            restarts,
+        })
+    }
+
+    fn login(password: &str) -> SlskdWebLogin {
+        SlskdWebLogin {
+            username: "lull".into(),
+            password: lull_core::config::Secret::new(password),
+        }
+    }
+
+    fn connected() -> Server {
+        Server {
+            is_logged_in: true,
+            is_transitioning: false,
+            state: "Connected, LoggedIn".into(),
+            username: None,
+        }
     }
 
     #[tokio::test]
     async fn a_slskd_stuck_disconnecting_gets_fresh_logins_with_backoff_and_reads_down()
     -> Result<(), Box<dyn std::error::Error>> {
-        let (slskd, deletes, puts) = wedged_slskd().await?;
-        let server = slskd.server().await?;
+        let fake = wedged_slskd().await?;
+        let server = fake.slskd.server().await?;
         assert_eq!(server.state, "Disconnecting");
-        let calls = || (deletes.load(Ordering::SeqCst), puts.load(Ordering::SeqCst));
         let mut stuck = Stuck::default();
         let t0 = Instant::now();
         let at = |s: u64| t0 + Duration::from_secs(s);
+        let mut look = async |s: u64| unstick(&fake.slskd, None, &server, &mut stuck, at(s)).await;
 
-        assert!(
-            unstick(&slskd, &server, &mut stuck, at(0)).await.is_none(),
-            "a transition takes a moment"
-        );
-        assert!(unstick(&slskd, &server, &mut stuck, at(59)).await.is_none());
-        assert_eq!(calls(), (0, 0));
+        assert!(look(0).await.is_none(), "a transition takes a moment");
+        assert!(look(59).await.is_none());
+        assert_eq!(fake.calls(), (0, 0, 0));
 
-        let (state, detail, extra) = unstick(&slskd, &server, &mut stuck, at(61)).await.ok_or("no verdict")?;
-        assert_eq!(calls(), (1, 1), "disconnect refused, connect asked anyway");
+        let (state, detail, extra) = look(61).await.ok_or("no verdict")?;
+        assert_eq!(fake.calls(), (1, 1, 0), "disconnect refused, connect asked anyway");
         assert_eq!(state, State::Down, "stuck is down, not 'reconnecting'");
         assert!(detail.contains("\"Disconnecting\""), "{detail}");
         assert_eq!(extra["restartSlskd"], false);
 
-        assert!(unstick(&slskd, &server, &mut stuck, at(61 + 119)).await.is_some());
-        assert_eq!(calls(), (1, 1), "the second try waits 2 minutes");
-        unstick(&slskd, &server, &mut stuck, at(61 + 120)).await;
-        assert_eq!(calls(), (2, 2));
-        unstick(&slskd, &server, &mut stuck, at(61 + 120 + 239)).await;
-        assert_eq!(calls(), (2, 2), "then 4 minutes");
-        let (_, detail, extra) = unstick(&slskd, &server, &mut stuck, at(61 + 120 + 240))
+        assert!(look(61 + 119).await.is_some());
+        assert_eq!(fake.calls(), (1, 1, 0), "the second try waits 2 minutes");
+        let (_, detail, extra) = look(61 + 120).await.ok_or("no verdict")?;
+        assert_eq!(fake.calls(), (2, 2, 0));
+        assert_eq!(extra["restartSlskd"], true, "no web login: a person restarts slskd");
+        assert!(detail.contains("LULL_SLSKD_WEB_USERNAME"), "{detail}");
+        look(61 + 120 + 240).await;
+        assert_eq!(fake.calls(), (3, 3, 0), "then 4 minutes, still fresh logins");
+
+        assert!(
+            unstick(&fake.slskd, None, &connected(), &mut stuck, at(1000))
+                .await
+                .is_none()
+        );
+        assert_eq!(stuck.tries, 0, "logged in again: the count starts over");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn after_two_fresh_logins_a_stuck_slskd_is_asked_to_restart_itself_once()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let fake = wedged_slskd().await?;
+        let server = fake.slskd.server().await?;
+        let login = login("secret");
+        let mut stuck = Stuck::default();
+        let t0 = Instant::now();
+        let at = |s: u64| t0 + Duration::from_secs(s);
+
+        unstick(&fake.slskd, Some(&login), &server, &mut stuck, at(0)).await;
+        unstick(&fake.slskd, Some(&login), &server, &mut stuck, at(61)).await;
+        let (_, _, extra) = unstick(&fake.slskd, Some(&login), &server, &mut stuck, at(181))
             .await
             .ok_or("no verdict")?;
-        assert_eq!(calls(), (3, 3));
-        assert_eq!(extra["restartSlskd"], true);
-        assert!(detail.ends_with("restart slskd"), "{detail}");
+        assert_eq!(fake.calls(), (2, 2, 0));
+        assert_eq!(extra["restartSlskd"], false, "lull can restart it itself");
+        let (_, detail, extra) = unstick(&fake.slskd, Some(&login), &server, &mut stuck, at(421))
+            .await
+            .ok_or("no verdict")?;
+        assert_eq!(
+            fake.calls(),
+            (2, 2, 1),
+            "the third step is a restart, with the web session"
+        );
+        assert!(detail.contains("asked it to restart itself"), "{detail}");
+        assert_eq!(extra["restartSlskd"], false);
 
-        let back = Server {
-            is_logged_in: true,
-            is_transitioning: false,
-            state: "Connected, LoggedIn".into(),
-            username: None,
-        };
-        assert!(unstick(&slskd, &back, &mut stuck, at(1000)).await.is_none());
-        assert_eq!(stuck.tries, 0, "logged in again: the count starts over");
+        // slskd goes away while it restarts, then comes back wedged again within 30 minutes.
+        stuck.settle();
+        unstick(&fake.slskd, Some(&login), &server, &mut stuck, at(600)).await;
+        unstick(&fake.slskd, Some(&login), &server, &mut stuck, at(661)).await;
+        unstick(&fake.slskd, Some(&login), &server, &mut stuck, at(781)).await;
+        let (_, detail, extra) = unstick(&fake.slskd, Some(&login), &server, &mut stuck, at(1021))
+            .await
+            .ok_or("no verdict")?;
+        assert_eq!(
+            fake.calls(),
+            (5, 5, 1),
+            "no second restart this soon: fresh logins only"
+        );
+        assert_eq!(extra["restartSlskd"], true, "{detail}");
+        assert!(detail.contains("wedged again"), "{detail}");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_refused_web_login_says_to_restart_slskd_by_hand() -> Result<(), Box<dyn std::error::Error>> {
+        let fake = wedged_slskd().await?;
+        let server = fake.slskd.server().await?;
+        let wrong = login("wrong");
+        let mut stuck = Stuck::default();
+        let t0 = Instant::now();
+        for s in [0, 61, 181, 421] {
+            unstick(
+                &fake.slskd,
+                Some(&wrong),
+                &server,
+                &mut stuck,
+                t0 + Duration::from_secs(s),
+            )
+            .await;
+        }
+        let (_, detail, extra) = unstick(
+            &fake.slskd,
+            Some(&wrong),
+            &server,
+            &mut stuck,
+            t0 + Duration::from_secs(425),
+        )
+        .await
+        .ok_or("no verdict")?;
+        assert_eq!(fake.calls().2, 0);
+        assert_eq!(extra["restartSlskd"], true);
+        assert!(detail.contains("restarting it failed"), "{detail}");
         Ok(())
     }
 

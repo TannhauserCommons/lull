@@ -9,6 +9,7 @@ One compose file (`deploy/compose.yaml`) and one env file (`.env`, copied from `
    - `MUSIC_DIR` (Jellyfin's music folder on the host);
    - `RUN_AS` (its owner, `id -u`:`id -g`);
    - `LULL_SLSKD_API_KEY` (16 to 255 random characters: `openssl rand -hex 24`);
+   - `LULL_SLSKD_WEB_USERNAME` and `LULL_SLSKD_WEB_PASSWORD` (slskd's web login, also a random password): lull restarts a stuck slskd with them ([soulseek.md](soulseek.md#stuck-transitions));
    - `LULL_PUBLIC_URL`, the Jellyfin keys, and Last.fm if wanted.
 3. `docker compose up -d`, then open `http://<host>:8080` (`PORT`).
 
@@ -44,6 +45,7 @@ Only lull and `init` start.
 - **`LULL_SLSKD_URL`:** your slskd's address as the lull container reaches it, e.g. `http://192.168.1.10:5030`, or the service name if it's in the same compose project.
 - **`LULL_SLSKD_API_KEY`:** an API key you add to slskd's `web.authentication.api_keys`, with role `administrator`.
   - **Why administrator:** lull reads slskd's folder names from `/options`. With a `readwrite` key lull assumes the folders are named `incomplete` and `complete`.
+- **`LULL_SLSKD_WEB_USERNAME`, `LULL_SLSKD_WEB_PASSWORD`** (optional): your slskd's `web.authentication` username and password. slskd lets only a web session restart it, so with these lull restarts an slskd stuck mid-connection; without them `/health` says when to restart it (`services.soulseek.extra.restartSlskd`).
 - **`TRANSFERS`:** the host folder holding slskd's incomplete and downloads folders. lull maps them by name: slskd's `/data/downloads` and `/data/incomplete` mean `TRANSFERS` is the host's `/data`. lull must be able to read it and delete in it; leave `RUN_AS` as its owner.
 - **Sharing:** whatever your slskd shares stays as it is. lull warns in its status tray when that doesn't match `LULL_SHARE`, and with `LULL_SHARE=library` asks slskd to rescan after saves.
 

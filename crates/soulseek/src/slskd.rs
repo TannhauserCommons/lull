@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use lull_core::config::Secret;
+use lull_core::config::{Secret, SlskdWebLogin};
 use lull_core::http::{self, Http};
 use lull_core::{Error, Result};
 use reqwest::{Method, StatusCode, Url};
@@ -270,6 +270,40 @@ impl Slskd {
     pub async fn relogin(&self, reason: &str) -> Result<()> {
         self.disconnect(reason).await?;
         self.connect().await
+    }
+
+    /// Asks slskd to restart itself (`PUT /application`). slskd 0.26 allows that to a web session
+    /// only, never to an API key, so lull logs in with slskd's web login first. A headless slskd
+    /// (the desktop app's) refuses web logins.
+    pub async fn restart(&self, login: &SlskdWebLogin) -> Result<()> {
+        #[derive(Deserialize)]
+        struct Session {
+            token: String,
+        }
+        let url = self.url(&["session"])?;
+        let body = json!({ "username": login.username, "password": login.password.expose() });
+        let resp = self.http.send(SERVICE, |c| c.post(url.clone()).json(&body)).await?;
+        let session: Session = match resp.status() {
+            StatusCode::UNAUTHORIZED => {
+                return Err(Error::unavailable(
+                    SERVICE,
+                    "slskd refused its web login; check LULL_SLSKD_WEB_USERNAME and LULL_SLSKD_WEB_PASSWORD",
+                ));
+            }
+            StatusCode::FORBIDDEN => {
+                return Err(Error::unavailable(
+                    SERVICE,
+                    "slskd runs headless, so it takes no web login",
+                ));
+            }
+            _ => decode(http::ok(SERVICE, resp)?).await?,
+        };
+        let url = self.url(&["application"])?;
+        let resp = self
+            .http
+            .send(SERVICE, |c| c.put(url.clone()).bearer_auth(&session.token))
+            .await?;
+        http::ok(SERVICE, resp).map(drop)
     }
 
     /// An intentional disconnect. Needs a readwrite or administrator key.

@@ -29,6 +29,10 @@ x-slskd: &slskd
     SLSKD_SLSK_PASSWORD: ${SLSK_PASSWORD:-}
     # The administrator key lull uses; the same value as lull's own setting.
     SLSKD_API_KEY: ${LULL_SLSKD_API_KEY:-}
+    # slskd's web login, which lull uses only to restart a stuck slskd (LULL_SLSKD_WEB_*).
+    # Unset, slskd keeps its built-in default and lull never restarts it.
+    SLSKD_USERNAME: ${LULL_SLSKD_WEB_USERNAME:-slskd}
+    SLSKD_PASSWORD: ${LULL_SLSKD_WEB_PASSWORD:-slskd}
     SLSKD_SLSK_LISTEN_PORT: ${SLSK_LISTEN_PORT:-50300}
     # slskd's web port stays inside this network, so plain HTTP is enough.
     SLSKD_NO_HTTPS: "true"
