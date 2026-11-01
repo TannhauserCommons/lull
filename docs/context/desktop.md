@@ -90,11 +90,10 @@ The server origin gets its capability at runtime, for `main` only, when the wrap
   - **Tray:** only with a StatusNotifier host on D-Bus; without one there's no tray and Close quits. The tray always gets `tray-dark-32.png`: Tauri hands AppIndicator a file, so a themed icon name can't be used.
   - **Title bar:** native by default. With **Use lull title bar** (`ownTitlebar`, restart), the window is undecorated and draws GNOME header-bar buttons in the order of `button-layout`.
   - **Mini player:** opaque `--sky` fallback without a compositor. On Wayland it shows a one-time note about Always on Top.
-  - **Media keys:** grabbed with global shortcuts only when the web UI reports no `navigator.mediaSession` (X11 only). Windows never grabs them: SMTC handles them through Media Session.
+  - **Media keys:** grabbed with global shortcuts only when the web UI reports no `navigator.mediaSession` (X11 only). Windows never grabs them: SMTC handles them through Media Session. That path works only while a media element plays: Chromium gives a page a system media session only then. Verified on Windows with a Jellyfin song: Play/Pause, Next, Previous and Stop all reach the web UI's own handlers.
 - **Window state:** the plugin restores size, position and maximised for `main`, `mini` and `strip`. Visibility and decorations are always the wrapper's choice.
 
 ## Known limits
 
 - The Snap Layouts flyout on the custom Maximise button doesn't appear (DESKTOP.md 2.1).
-- OS media keys reach the web UI only once its player plays real audio. Chromium gives a page a system media session only while a media element plays, and the web UI is still the prototype, with no `<audio>`.
 - Links to other sites (`target="_blank"`, other origins) aren't sent to the system browser yet, and nothing here checked what WebView2 does with them. Pages from other origins get no IPC.
