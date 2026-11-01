@@ -71,12 +71,13 @@
   });
 
   /* ---------- a track's Soulseek sources: ranked by the server, asked again until `done` ---------- */
-  function sourcesPath(id) { return '/api/tracks/' + encodeURIComponent(id) + '/sources'; }
+  /* the copies in the order the streaming profile takes them, or with forSave the saving one (ADR-0008) */
+  function sourcesPath(id, forSave) { return '/api/tracks/' + encodeURIComponent(id) + '/sources' + (forSave ? '?for=save' : ''); }
   /* onUpdate({ sources, done }) after each answer, or onUpdate({ error }); returns stop() */
-  function watchSources(id, onUpdate) {
+  function watchSources(id, onUpdate, forSave) {
     var timer = null, stopped = false;
     (function ask() {
-      M.api(sourcesPath(id)).then(function (res) {
+      M.api(sourcesPath(id, forSave)).then(function (res) {
         if (stopped) return;
         onUpdate({ sources: res.sources || [], done: !!res.done });
         if (!res.done) timer = setTimeout(ask, SOURCES_POLL_MS);
@@ -1055,11 +1056,13 @@
     }[pk.sort];
     return rows.sort(by);
   }
-  function srcRow(t, s, i, note, first) {
+  function srcRow(t, s, i, failed, first) {
     var f = fmt(s.format), x = s.factors;
+    /* what the profile says about the copy: below its minimum, or a peer queue longer than the limit (never auto-picked) */
+    var note = [failed, s.meets === false ? 'below minimum' : '', s.queueTooLong ? 'long queue' : ''].filter(Boolean).join(', ');
     var tip = x ? 'format ' + x.format + ' + speed ' + x.speed + ' + free slot ' + x.slot + ' + queue ' + x.queue +
       (x.stalled ? ' - stalled ' + Math.abs(x.stalled) : '') + ' = ' + s.score : 'score ' + s.score;
-    return html`<div class="src-row${note ? ' is-failed' : ''}${s.preferred ? ' is-preferred' : ''}" role="row">
+    return html`<div class="src-row${failed ? ' is-failed' : ''}${s.meets === false ? ' is-below' : ''}${s.preferred ? ' is-preferred' : ''}" role="row">
       <span class="disc-src__peer" role="cell"><button class="src-row__peer" data-act="disc-use-source" data-id="${t.id}" data-i="${i}" ${first ? raw('autofocus') : ''}
         aria-label="Play from ${s.peer}, ${f.label}, score ${s.score}${note ? ', ' + note : ''}${s.preferred ? ', preferred format' : ''}">${icon('peer')}<span class="ellipsis">${s.peer}</span></button>
         ${note ? html`<span class="disc-src__note">${note}</span>` : ''}</span>
@@ -1098,6 +1101,8 @@
   }
   function pickerBody(t, pk) {
     return html`${sheetHead(t, html`<span class="disc-shead__meta" data-region="srcmeta">${pickerMeta(pk)}</span>`)}
+      ${pk.choose ? html`<p class="disc-issue disc-picker__choose" role="status">${icon('warning')}<span>No copy meets your streaming minimum. Pick one to play it anyway, or skip this song.
+        <a href="#/settings/sources">Streaming rules</a></span></p>` : ''}
       <div class="disc-picker__bar">
         <span class="disc-picker__label" id="disc-sort-l">Sort by</span>
         <div class="cluster" role="group" aria-labelledby="disc-sort-l">${['score', 'quality', 'speed', 'size'].map(function (k) {
@@ -1107,11 +1112,12 @@
       <div data-region="srcrows">${pickerRows(t, pk)}</div>
       <p class="disc-note disc-picker__hint">Score weighs format, peer speed, a free upload slot and queue length. Hover or focus a score for the breakdown.</p>`;
   }
-  /* o.forSave: the pick answers a failed save's transfer (the job continues from that peer) instead of playing */
+  /* o.forSave: the pick answers a failed save's transfer (the job continues from that peer) instead of playing.
+     o.choose: the player is waiting for this pick (streaming `below: ask`), so the sheet offers Skip too */
   function openPicker(trackId, o) {
     var t = M.track(trackId); if (!t) return null;
-    var forSave = !!(o && o.forSave);
-    var pk = picker = { trackId: trackId, forSave: forSave, sources: null, done: false, error: null, sort: 'score', stop: null, closed: false };
+    var forSave = !!(o && o.forSave), choose = !!(o && o.choose);
+    var pk = picker = { trackId: trackId, forSave: forSave, choose: choose, sources: null, done: false, error: null, sort: 'score', stop: null, closed: false };
     var sheet;
     function repaint() {
       if (pk.closed) return;
@@ -1126,15 +1132,16 @@
         if (res.error) pk.error = res.error; else { pk.sources = res.sources; pk.done = res.done; }
         repaint();
         if (pk.done && !wasDone) App.announce('Search finished: ' + plural(pk.sources.length, 'source'));
-      });
+      }, forSave);
     };
     sheet = App.openSheet({ title: 'pick a source', wide: true, className: 'disc-sheet disc-picker', body: pickerBody(t, pk),
-      foot: html`<button class="btn" data-close>Cancel</button><button class="btn btn--primary" data-act="disc-play-best" data-id="${t.id}" data-close>${forSave ? html`${icon('refresh')}Retry with the best source` : html`${icon('play')}Play best source`}</button>`,
+      foot: html`${choose ? html`<button class="btn" data-act="disc-choose-skip" data-close>${icon('next')}Skip this song</button>` : html`<button class="btn" data-close>Cancel</button>`}<button class="btn btn--primary" data-act="disc-play-best" data-id="${t.id}" data-close>${forSave ? html`${icon('refresh')}Retry with the best source` : html`${icon('play')}Play best source`}</button>`,
       onClose: function () { pk.closed = true; if (pk.stop) pk.stop(); } });
     pk.watch();
     return sheet;
   }
-  App.hooks.sourcePicker = function (trackId) { openPicker(trackId); };
+  App.hooks.sourcePicker = function (trackId, o) { openPicker(trackId, o); };
+  App.action('disc-choose-skip', function () { P.next(); });
   App.action('disc-src-sort', function (el) {
     var pk = picker; if (!pk || pk.closed) return;
     pk.sort = el.getAttribute('data-value');
@@ -1307,7 +1314,7 @@
     var id = el.getAttribute('data-id'), t = M.track(id); if (!t) return;
     var fail = function (err) { App.toast('Couldn\'t offer a better copy of ' + t.title + ': ' + err.message, { kind: 'error' }); };
     var row = S.peerSongs[id];
-    (row && row.best ? Promise.resolve(row.best) : M.api(sourcesPath(id)).then(function (res) { return (res.sources || [])[0]; })).then(function (best) {
+    (row && row.best ? Promise.resolve(row.best) : M.api(sourcesPath(id, true)).then(function (res) { return (res.sources || [])[0]; })).then(function (best) {
       if (!best) { App.toast('No peer shares ' + t.title + ' right now', { icon: 'no-source' }); return; }
       var offered = { peer: best.peer, path: best.path, size: best.sizeBytes };
       savedCopy(id, offered).then(function (d) {

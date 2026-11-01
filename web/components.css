@@ -159,6 +159,9 @@ button.chip:hover, a.chip:hover { background: var(--lilac); }
 .badge .ic { width: 15px; height: 15px; }
 .badge-saved { background: var(--peri); color: var(--ink); border-color: var(--line); }
 .badge-slsk { background: transparent; color: var(--fg); border-style: dashed; }
+.badge-below { background: transparent; color: var(--fg); border-color: var(--warn); }
+.badge-below .ic { color: var(--warn); }
+.src-row.is-below .src-row__peer { color: var(--fg-2); }
 .badge-new { display: inline-block; padding: 3px 6px 2px; border-radius: var(--r-chip); background: var(--pink); color: var(--ink); font: var(--t-px); letter-spacing: var(--t-px-track); }
 .badge-count {
   display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--r-pill);

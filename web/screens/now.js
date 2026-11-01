@@ -65,7 +65,7 @@
   /* =====================================================================
      2. Device: screen pages (now / source / save), waveform, D-pad, A/B, pills, grill
      ===================================================================== */
-  var LED = { idle: 'off', finding: 'search', queued: 'queued', buffering: 'buffer', streaming: 'stream', stalled: 'stalled',
+  var LED = { idle: 'off', finding: 'search', choose: 'pick', queued: 'queued', buffering: 'buffer', streaming: 'stream', stalled: 'stalled',
     failed: 'error', library: 'library', ended: 'end', 'jellyfin-error': 'error' };
   function ledText() {
     if (!cur()) return 'off';
@@ -131,7 +131,7 @@
     if (App.isSaved(t.id)) return html`<p class="now-dev__note">${icon('saved')}in your library</p>${screenBtn('show album', 'go-album', t.id)}`;
     return html`<p class="now-dev__note">not saved yet</p>${screenBtn('save', 'save', t.id)}`;
   }
-  function factsLine() { var t = cur(); return t ? String(ui.sourceBadge(t)) + String(nowFacts(t)) : ''; }
+  function factsLine() { var t = cur(); return t ? String(ui.sourceBadge(t)) + String(nowFacts(t)) + (ps.belowMinimum ? String(ui.belowBadge()) : '') : ''; }
   function pageBody(t) { return view.page === 'source' ? pageSource(t) : view.page === 'save' ? pageSave(t) : pageNow(t); }
   function slide(t) {
     return html`<div class="now-slide"><div class="now-dev__page" data-now="page">${pageBody(t)}</div>
@@ -294,11 +294,12 @@
       case 'library': return html`${icon('saved')}<span>Playing from <b>your library</b></span>${ui.qualityChip(t.format, { solid: true })}<span class="source-card__stat">jellyfin</span>`;
       case 'jellyfin-error': return html`${icon('warning')}<span><b>Library item unavailable.</b> ${ps.error || 'Jellyfin can\'t find the file.'}</span><button class="btn btn--sm" data-act="try-soulseek" data-fk="src-try">Try Soulseek instead</button>`;
       case 'finding': return html`${icon('soulseek')}<span>Finding a source, <b>${ps.peersFound}</b> peers answered</span>`;
+      case 'choose': return html`${icon('warning')}<span><b>No copy meets your streaming minimum.</b> Pick one or skip.</span><button class="btn btn--sm" data-act="pick-source" data-fk="src-choose">Pick a copy</button>`;
       case 'queued': return html`${icon('clock')}<span>Queued at <b>${peerName()}</b>${ps.queuePos ? ', position ' + ps.queuePos : ''}</span>`;
       case 'failed': return html`${icon('warning')}<span><b>${P.statusText()}</b></span><button class="btn btn--sm" data-act="retry-search" data-fk="src-retry">Retry search</button>`;
       case 'stalled': return html`${icon('refresh')}<span><b>${peerName()}</b> stalled, switching to source ${rankOf(nextRank())}</span><button class="btn btn--sm" data-act="pick-source" data-fk="src-pick">Choose manually</button>`;
       case 'ended': return html`${icon('info')}<span>End of queue</span><button class="btn btn--sm" data-act="start-radio-current" data-fk="src-radio">Start radio</button>`;
-      default: return html`${icon('soulseek')}<span>Streaming from <b>${peerName()}</b></span>${ui.qualityChip(ps.peer && ps.peer.format || t.format, { solid: true })}<span class="source-card__stat">${mbps(ps.peer && ps.peer.speed)}</span><span class="source-card__stat"><span data-bind="received">${Math.round(ps.received * 100)}%</span> of ${App.fmt.size(size)}</span>`;
+      default: return html`${icon('soulseek')}<span>Streaming from <b>${peerName()}</b></span>${ui.qualityChip(ps.peer && ps.peer.format || t.format, { solid: true })}${ps.belowMinimum ? ui.belowBadge() : ''}<span class="source-card__stat">${mbps(ps.peer && ps.peer.speed)}</span><span class="source-card__stat"><span data-bind="received">${Math.round(ps.received * 100)}%</span> of ${App.fmt.size(size)}</span>`;
     }
   }
   function saveState(t) {
@@ -660,7 +661,7 @@
   /* =====================================================================
      6. Activity: transfers (hatched progress), saves (5 steps), imports, rescans; filters; All quiet
      ===================================================================== */
-  var SAVE_STATUS = { running: 'saving', done: 'saved', failed: 'failed', pending: 'pending' };   // save job stepState -> record status
+  var SAVE_STATUS = { running: 'saving', done: 'saved', failed: 'failed', pending: 'pending', waiting: 'waiting' };   // save job stepState -> record status
   /* Rows: transfers, imports and rescans from store 'activity'; saves from store 'saves' (the live record per song),
      plus the save jobs the server listed for songs this page holds no record for. */
   function jobs() {
@@ -669,13 +670,13 @@
       .map(function (j) { return j.kind === 'save' ? Object.assign({}, j, { status: SAVE_STATUS[j.stepState] || 'saving' }) : j; });
     Object.keys(saves).forEach(function (id) {
       var s = saves[id];
-      list.unshift({ id: s.jobId || 'save-' + id, jobId: s.jobId, kind: 'save', trackId: id, step: s.step, status: s.status, error: s.error });
+      list.unshift({ id: s.jobId || 'save-' + id, jobId: s.jobId, kind: 'save', trackId: id, step: s.step, status: s.status, error: s.error, upgrade: s.upgrade });
     });
     return list;
   }
   function jobState(j) {
     if (j.kind === 'transfer') return j.state === 'failed' ? 'failed' : ['transferring', 'queued', 'stalled'].indexOf(j.state) >= 0 ? 'active' : 'done';
-    if (j.kind === 'save') return j.status === 'saving' ? 'active' : j.status === 'failed' ? 'failed' : 'done';
+    if (j.kind === 'save') return j.status === 'saving' || j.status === 'waiting' ? 'active' : j.status === 'failed' ? 'failed' : 'done';
     return j.state === 'running' ? 'active' : j.state === 'failed' ? 'failed' : 'done';
   }
   function jobTitle(j) {
@@ -718,7 +719,7 @@
   function jobRow(j) {
     var t = j.trackId ? M.track(j.trackId) : null, st = jobState(j);
     var parts = j.kind === 'transfer' ? transferParts(j) : j.kind === 'save' ? saveParts(j, st) : otherParts(j, st);
-    var sub = t ? t.artist : j.kind === 'import' ? ('added' in j ? 'Listening history' : 'Playlist import') : j.kind === 'rescan' ? 'Library' : '';
+    var sub = t ? (j.upgrade ? 'Upgrade, ' : '') + t.artist : j.kind === 'import' ? ('added' in j ? 'Listening history' : 'Playlist import') : j.kind === 'rescan' ? 'Library' : '';
     var art = t ? ui.cover(t, 40) : html`<span class="now-act__glyph" aria-hidden="true">${icon(j.kind === 'import' ? 'import' : j.kind === 'rescan' ? 'refresh' : 'soulseek')}</span>`;
     return html`<li class="now-act__row is-${st}">
       <div class="now-act__art">${art}</div>

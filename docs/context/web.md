@@ -315,7 +315,14 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
 - **Switching source mid-song.** Now Playing's "Source" opens the source picker. For the playing song,
   `P.useSource` reopens the chosen peer's stream at the current time as the same play: `load()` gets `keepPlay`,
   so no skip is recorded.
-- **Not yet:** the below-minimum badge and the "ask" prompts, waiting for the `stream` and `save` event fields.
+- **Below the minimum.**
+  - **Badge:** `stream.belowMinimum` puts a "below minimum" badge (`ui.belowBadge`) in the player bar and Now Playing.
+  - **Choose:** `status: "choose"` (streaming `below: ask`) sets the player's `choose` status and opens the source
+    picker once per load, with a note and "Skip this song". Picking a copy plays it through `P.useSource`.
+  - **Picker rows:** each copy says when it is below the minimum or has a long queue (`meets`, `queueTooLong`). For
+    a save, the picker asks `/api/tracks/{id}/sources?for=save`, the saving profile's order.
+  - **Saves:** `waiting` (saving `below: wait`) shows the hub's sentence in the save pipeline and Activity. Saving
+    `ask` fails at step 1, and the existing recovery picks the copy. Activity marks `upgrade` jobs "Upgrade".
 
 ## Imports
 

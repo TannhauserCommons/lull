@@ -562,7 +562,7 @@
   /* ---------- sources (ADR-0008): a streaming and a saving profile, then the peer limits ----------
      sources.stream / sources.save = { minimum: { losslessOnly, kbps, formats }, pick, below } (+ autoUpgrade,
      upgradeEveryH for saving). A hub from before the profiles has neither: the section says so. */
-  var SOURCE_FORMATS = ['flac', 'wav', 'aiff', 'm4a', 'mp3', 'ogg', 'opus'];
+  var SOURCE_FORMATS = ['flac', 'wav', 'aiff', 'm4a', 'aac', 'mp3', 'ogg', 'opus'];
   var BELOW = {
     stream: [['playBest', 'Play the best one'], ['keepLooking', 'Keep looking'], ['ask', 'Ask me']],
     save: [['saveBestUpgrade', 'Save the best, upgrade later'], ['wait', 'Wait for one'], ['ask', 'Ask me']]

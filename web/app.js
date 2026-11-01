@@ -600,18 +600,24 @@
     else if (st === 'library') { label = 'In library'; ic = 'saved'; }
     else if (st === 'failed') { label = 'Retry'; ic = 'warning'; }
     else if (st === 'pending') { label = 'Saved, waiting for Jellyfin'; ic = 'clock'; }
+    else if (st === 'waiting') { label = 'Waiting for a good copy'; ic = 'clock'; }
     else { label = opts.label || 'Save'; ic = 'save'; }
     var act = st === 'library' ? 'go-album' : st === 'saved' ? 'noop-saved' : 'save';
     return html`<button class="btn btn-save ${opts.cls || ''}" data-state="${st}" data-save-btn="${trackId}" data-act="${act}" data-id="${trackId}"${raw(attrs)}>${icon(ic)}<span>${label}</span></button>`;
   };
-  /* 5-step pipeline. step = current step (1-5); status saving|failed|saved */
+  /* the copy playing (or saved) doesn't pass the listener's minimum (ADR-0008) */
+  ui.belowBadge = function () {
+    return html`<span class="badge badge-below" data-tip="Below your minimum in Settings > Sources">${icon('warning')}below minimum</span>`;
+  };
+  /* 5-step pipeline. step = current step (1-5); status saving|failed|saved|waiting */
   ui.pipeline = function (step, status, error) {
     var segs = [];
     for (var i = 1; i <= 5; i++) {
       var c = status === 'saved' || i < step ? 'is-done' : i === step ? (status === 'failed' ? 'is-failed' : 'is-current') : '';
       segs.push(html`<span class="pipeline__seg ${c}" aria-hidden="true">${c === 'is-done' ? icon('check') : c === 'is-failed' ? icon('close') : ''}</span>`);
     }
-    var text = status === 'saved' ? 'Saved to your library' : status === 'failed' ? (error || 'Step failed: ' + M.saveSteps[step - 1]) : M.saveSteps[step - 1];
+    var text = status === 'saved' ? 'Saved to your library' : status === 'failed' ? (error || 'Step failed: ' + M.saveSteps[step - 1])
+      : status === 'waiting' ? (error || 'No copy meets your saving minimum yet. Looking again by itself.') : M.saveSteps[step - 1];
     return html`<div class="pipeline-wrap" role="group" aria-label="Save progress"><div class="pipeline">${segs}</div>
       <div class="pipeline__text" aria-live="polite"><span class="pipeline__step">${status === 'saved' ? 'done' : 'step ' + step + ' of 5'}</span><span class="pipeline__label">${text}</span></div></div>`;
   };
@@ -972,7 +978,7 @@
     /* media keys / lock screen target: null = App.player; Classic mode sets { play, pause, prev, next, seek, seekBy } */
     media: null
   };
-  var SAVE_STATUS = { running: 'saving', done: 'saved', failed: 'failed', pending: 'pending' };
+  var SAVE_STATUS = { running: 'saving', done: 'saved', failed: 'failed', pending: 'pending', waiting: 'waiting' };
   App.saves = {
     get: function (id) { return state.saves[id]; },
     /* opts: { mode: 'separate'|'replace' (the duplicate dialog's answer: a saved song is saved again), source: { trackId: { peer, path, size } } } */
@@ -1020,10 +1026,11 @@
     App.emit('save', { id: id, save: rec });
     App.syncRows(); updateActivityBadge();
   }
-  /* `save` event: { jobId, trackId, step, status: running|done|failed|pending, pct, error, kind, nocover } */
+  /* `save` event: { jobId, trackId, step, status: running|done|failed|pending|waiting, pct, error, kind, nocover, upgrade }.
+     waiting: no copy passes the saving minimum yet (`below: wait`); the job searches again by itself */
   function onSaveEvent(e) {
     var was = state.saves[e.trackId], status = SAVE_STATUS[e.status] || 'saving';
-    setSave(e.trackId, { jobId: e.jobId, step: e.step, status: status, pct: e.pct || 0, error: e.error || null, kind: e.kind || null, nocover: !!e.nocover });
+    setSave(e.trackId, { jobId: e.jobId, step: e.step, status: status, pct: e.pct || 0, error: e.error || null, kind: e.kind || null, nocover: !!e.nocover, upgrade: !!e.upgrade });
     if (status !== 'saved' || (was && was.status === 'saved')) return;
     M.patchTrack(e.trackId, { saved: true });
     var t = M.track(e.trackId);
@@ -1037,7 +1044,7 @@
         <audio> decks; in the Android app the native player). Saved songs come from /api/library/stream/{id},
         downloaded ones from this device (App.downloads); Soulseek songs from /api/stream/{id}, which serves
         bytes while the transfer runs (`stream` events report finding, queued, stalled, fallback).
-     status: idle | finding | queued | buffering | streaming | stalled | failed | library | ended | jellyfin-error
+     status: idle | finding | choose | queued | buffering | streaming | stalled | failed | library | ended | jellyfin-error
      `playing` is separate: paused = playing false while streaming or library.
      Fractions (0-1) of the track: received (bytes transferred), buffered ranges [[from, to], ...].
      ===================================================================== */
@@ -1109,6 +1116,7 @@
   function resetTrackState() {
     ps.pos = 0; duration = 0; ps.fallback = null; ps.failedPeers = []; ps.error = null; ps.crossfade = false;
     ps.peer = null; ps.peersFound = 0; ps.queuePos = 0; ps.durationKnown = false; lastRanges = [];
+    ps.belowMinimum = false; ps.choices = null;
     sound = { playing: false, waiting: false };
   }
   /* begin playing queue[index]: opts { autoplay (default true), at (seconds), reason (how the last song ended), forceSoulseek } */
@@ -1370,8 +1378,14 @@
       ps.peer = { name: ev.peer, rank: ps.failedPeers.length + 1, of: ps.peersFound || null, speed: ev.speed ? ev.speed / 1e6 : (ps.peer && ps.peer.speed) || 0,
         format: ev.format || (ps.source && ps.source.format) || t.format, sizeMB: ev.size ? ev.size / 1e6 : t.sizeMB };
     }
+    ps.belowMinimum = !!ev.belowMinimum;
     var heard = sound.playing && !sound.waiting;
     switch (ev.status) {
+      /* streaming `below: ask`: no copy passes the minimum; the listener picks one of `choices` (or skips) */
+      case 'choose':
+        ps.status = 'choose'; ps.choices = ev.choices || [];
+        if (!e.asked) { e.asked = true; App.hooks.sourcePicker(e.trackId, { choose: true }); }
+        break;
       case 'finding': case 'queued': case 'stalled':
         if (!heard || ev.status === 'stalled') ps.status = ev.status; break;
       case 'buffering': if (!heard) ps.status = 'buffering'; break;
@@ -1734,6 +1748,7 @@
         if (cur && !cur.soulseek) return cur.local ? 'Loading from this device' : 'Loading from your library';
         return ps.fallback ? 'Switching to ' + ps.fallback.to + ' (' + ps.fallback.n + (ps.fallback.of ? ' of ' + ps.fallback.of : '') + ')' : 'Buffering from ' + peer;
       case 'stalled': return 'Peer stalled, switching to the next source (' + ((ps.peer ? ps.peer.rank : 1) + 1) + of + ')';
+      case 'choose': return 'No copy meets your streaming minimum: pick one or skip';
       case 'failed': return ps.error || 'Couldn\'t play: no peer responded';
       case 'jellyfin-error': return 'Library item unavailable' + (ps.error ? ': ' + ps.error : '');
       case 'ended': return 'End of queue';
@@ -2121,7 +2136,7 @@
         <div class="pbar__text">
           <div class="pbar__title"><a href="#/album/${t.albumId}">${t.title}</a></div>
           <div class="pbar__artist"><a href="#/artist/${t.artistId}">${t.artist}</a></div>
-          <div class="pbar__badges">${ui.sourceBadge(t)}${playingFormat(t) ? ui.qualityChip(playingFormat(t), { solid: true, button: true, id: t.id }) : ''}</div>
+          <div class="pbar__badges">${ui.sourceBadge(t)}${playingFormat(t) ? ui.qualityChip(playingFormat(t), { solid: true, button: true, id: t.id }) : ''}${ps.belowMinimum ? ui.belowBadge() : ''}</div>
         </div>`);
     }
     // state tab above the seek bar
