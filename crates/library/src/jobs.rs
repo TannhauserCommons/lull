@@ -356,7 +356,12 @@ async fn learn_others(jobs: Arc<Jobs>) {
                 let Some(id) = event.data.get("jobId").and_then(Value::as_str) else {
                     continue;
                 };
-                let ours = lock(&jobs.saves).contains_key(id) || lock(&jobs.rescans).contains_key(id);
+                // By kind, not by presence: a cancelled save is removed right after its last row
+                // goes out, and must not come back as someone else's job.
+                let kind = event.data.get("kind").and_then(Value::as_str);
+                let ours = matches!(kind, Some("save" | "rescan"))
+                    || lock(&jobs.saves).contains_key(id)
+                    || lock(&jobs.rescans).contains_key(id);
                 if !ours {
                     lock(&jobs.others).insert(id.to_owned(), event.data.clone());
                 }
