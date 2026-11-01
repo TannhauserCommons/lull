@@ -8,6 +8,7 @@ publish.workspace = true
 
 [dependencies]
 lull-core.workspace = true
+async-trait.workspace = true
 axum.workspace = true
 # Query strings for LRCLIB lookups.
 reqwest = { workspace = true, features = ["query"] }

@@ -9,14 +9,15 @@ mod lrclib;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use async_trait::async_trait;
 use axum::extract::{Path, State};
 use axum::routing::get;
 use axum::{Json, Router};
 use lull_core::db::Migrations;
 use lull_core::ids::TrackId;
-use lull_core::{Ctx, Error, Result, catalog};
+use lull_core::model::{Lyrics, LyricsKind};
+use lull_core::{Ctx, Error, Result, catalog, seams};
 use rusqlite::{OptionalExtension, params};
-use serde::{Deserialize, Serialize};
 
 pub const MIGRATIONS: Migrations = Migrations {
     owner: "lyrics",
@@ -32,43 +33,15 @@ pub const MIGRATIONS: Migrations = Migrations {
 /// After LRCLIB fails or rate-limits, lull leaves it alone this long.
 const COOLDOWN: Duration = Duration::from_secs(60);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Kind {
-    Synced,
-    Plain,
-    Instrumental,
-    None,
-}
-
-impl Kind {
-    /// How long an answer stays fresh. Synced and instrumental answers are final; a plain or
-    /// missing one is asked again later, since LRCLIB grows from its users' submissions.
-    fn ttl_secs(self) -> i64 {
-        const DAY: i64 = 86_400;
-        match self {
-            Kind::Synced | Kind::Instrumental => 365 * DAY,
-            Kind::Plain => 30 * DAY,
-            Kind::None => 7 * DAY,
-        }
+/// How long an answer stays fresh. Synced and instrumental answers are final; a plain or
+/// missing one is asked again later, since LRCLIB grows from its users' submissions.
+fn ttl_secs(kind: LyricsKind) -> i64 {
+    const DAY: i64 = 86_400;
+    match kind {
+        LyricsKind::Synced | LyricsKind::Instrumental => 365 * DAY,
+        LyricsKind::Plain => 30 * DAY,
+        LyricsKind::None => 7 * DAY,
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Line {
-    /// Seconds from the start of the track.
-    pub t: f64,
-    pub text: String,
-}
-
-/// The response body (docs/context/api.md#discovery).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Lyrics {
-    pub kind: Kind,
-    pub lines: Vec<Line>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub plain: Option<String>,
-    pub source: String,
 }
 
 pub struct Service {
@@ -92,11 +65,19 @@ pub fn router(svc: Arc<Service>) -> Router {
 }
 
 async fn lyrics(State(svc): State<Arc<Service>>, Path(track_id): Path<String>) -> Result<Json<Lyrics>> {
-    svc.lyrics(TrackId(track_id)).await.map(Json)
+    svc.lookup(TrackId(track_id)).await.map(Json)
+}
+
+/// The same answer as `/api/lyrics`, for Subsonic.
+#[async_trait]
+impl seams::Lyrics for Service {
+    async fn lyrics(&self, track: &TrackId) -> Result<Lyrics> {
+        self.lookup(track.clone()).await
+    }
 }
 
 impl Service {
-    async fn lyrics(&self, id: TrackId) -> Result<Lyrics> {
+    async fn lookup(&self, id: TrackId) -> Result<Lyrics> {
         let (track, cached) = self
             .ctx
             .db
@@ -108,7 +89,7 @@ impl Service {
         let track = track.ok_or_else(|| Error::NotFound(format!("Track {id} is unknown to lull.")))?;
 
         if let Some((lyrics, fetched_at)) = &cached
-            && lull_core::now() - fetched_at < lyrics.kind.ttl_secs()
+            && lull_core::now() - fetched_at < ttl_secs(lyrics.kind)
         {
             return Ok(lyrics.clone());
         }
@@ -172,7 +153,7 @@ fn cached(conn: &rusqlite::Connection, id: &TrackId) -> Result<Option<(Lyrics, i
 
 fn none() -> Lyrics {
     Lyrics {
-        kind: Kind::None,
+        kind: LyricsKind::None,
         lines: Vec::new(),
         plain: None,
         source: lrclib::SOURCE.to_owned(),

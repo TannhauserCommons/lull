@@ -4,12 +4,12 @@
 use std::time::Duration;
 
 use lull_core::http::{self, Http};
-use lull_core::model::Track;
+use lull_core::model::{Lyrics, LyricsKind, Track};
 use lull_core::{Error, Result};
 use reqwest::StatusCode;
 use serde::Deserialize;
 
-use crate::{Kind, Lyrics, lrc};
+use crate::lrc;
 
 pub const SOURCE: &str = "LRCLIB";
 const BASE: &str = "https://lrclib.net/api";
@@ -33,13 +33,13 @@ impl Record {
         let lines = self.synced_lyrics.as_deref().map(lrc::parse).unwrap_or_default();
         let plain = self.plain_lyrics.filter(|p| !p.trim().is_empty());
         let kind = if self.instrumental {
-            Kind::Instrumental
+            LyricsKind::Instrumental
         } else if !lines.is_empty() {
-            Kind::Synced
+            LyricsKind::Synced
         } else if plain.is_some() {
-            Kind::Plain
+            LyricsKind::Plain
         } else {
-            Kind::None
+            LyricsKind::None
         };
         Lyrics {
             kind,

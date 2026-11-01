@@ -1,16 +1,16 @@
 //! LRC text to timed lines. A line may carry several timestamps (`[00:12.40][01:10.00] chorus`);
 //! tag lines such as `[ar: …]` and malformed ones are dropped.
 
-use crate::Line;
+use lull_core::model::LyricLine;
 
-pub fn parse(text: &str) -> Vec<Line> {
-    let mut lines: Vec<Line> = text.lines().flat_map(timed).collect();
+pub fn parse(text: &str) -> Vec<LyricLine> {
+    let mut lines: Vec<LyricLine> = text.lines().flat_map(timed).collect();
     lines.sort_by(|a, b| a.t.total_cmp(&b.t));
     lines
 }
 
 /// One LRC line: every leading `[mm:ss.xx]` stamp gives the same text a time.
-fn timed(line: &str) -> Vec<Line> {
+fn timed(line: &str) -> Vec<LyricLine> {
     let mut stamps = Vec::new();
     let mut rest = line.trim_start();
     while let Some(inner) = rest.strip_prefix('[') {
@@ -24,7 +24,7 @@ fn timed(line: &str) -> Vec<Line> {
     let text = rest.trim();
     stamps
         .into_iter()
-        .map(|t| Line {
+        .map(|t| LyricLine {
             t,
             text: text.to_owned(),
         })
