@@ -66,6 +66,21 @@ pub struct Minimum {
     pub formats: Vec<String>,
 }
 
+/// "320 kbps or lossless", "lossless only, FLAC": for messages that name the listener's rule.
+impl std::fmt::Display for Minimum {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match (self.lossless_only, self.kbps) {
+            (true, _) => f.write_str("lossless only")?,
+            (false, 0) => f.write_str("any bitrate")?,
+            (false, k) => write!(f, "{k} kbps or lossless")?,
+        }
+        if !self.formats.is_empty() {
+            write!(f, ", {}", self.formats.join(" or ").to_ascii_uppercase())?;
+        }
+        Ok(())
+    }
+}
+
 /// Which passing copy to take first. Either way a copy that stalls or never starts falls back
 /// to the next one in the same order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -219,6 +234,8 @@ mod tests {
             !q(true, 900).meets("wav", &flac_only),
             "format list applies to lossless too"
         );
+        assert_eq!(any320.to_string(), "320 kbps or lossless");
+        assert_eq!(flac_only.to_string(), "lossless only, FLAC");
         assert!(!q(false, 320).meets(
             "flac",
             &Minimum {
