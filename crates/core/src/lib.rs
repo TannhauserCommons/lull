@@ -10,6 +10,7 @@ pub mod events;
 pub mod http;
 pub mod ids;
 pub mod model;
+pub mod quality;
 pub mod seams;
 pub mod settings;
 pub mod status;
