@@ -5,25 +5,30 @@
 //! no other source gets the Cover Art Archive's. Entities point at this route as `art` (albums)
 //! and `image` (artists) whenever a source is known.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path as FsPath, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 
+use axum::Json;
 use axum::extract::{Path, Query, State};
-use axum::http::header;
+use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use lull_core::ids::{AlbumId, ArtistId, TrackId};
 use lull_core::model::{Album, Artist, Entities, Track};
 use lull_core::{Error, Result, catalog};
 use serde::{Deserialize, Serialize};
+use tokio::sync::watch;
 
 use crate::Service;
 
 const SIZES: [u32; 3] = [96, 256, 512];
 const DEFAULT_SIZE: u32 = 256;
-/// One try per picture: a slow source isn't worth a long wait for a thumbnail.
-const FETCH_TIMEOUT: Duration = Duration::from_secs(6);
+/// How long a request waits for a picture lull doesn't have yet. The fetch goes on after it,
+/// and the next request is served from the cache.
+const WAIT: Duration = Duration::from_secs(3);
+/// One try per picture, in the background.
+const FETCH_TIMEOUT: Duration = Duration::from_secs(20);
 /// A fetched picture is used this long before it is fetched again.
 const KEEP: Duration = Duration::from_secs(30 * 24 * 3600);
 /// "The source has none" is believed this long.
@@ -136,20 +141,18 @@ pub async fn get(State(svc): State<Arc<Service>>, Path(id): Path<String>, Query(
         None if read_fresh(&none, NONE_FOR).await.is_some() => {
             return Err(Error::NotFound(format!("no picture for {id}")));
         }
-        None => match fetch(&svc, &sized(&source, q.size)).await? {
-            Some(bytes) => {
-                let size = q.size;
-                let bytes = tokio::task::spawn_blocking(move || fit(bytes, size))
-                    .await
-                    .map_err(|e| Error::internal(format!("picture scaling: {e}")))?;
-                write(&path, &bytes).await;
-                bytes
+        None => {
+            let mut done = fetching(&svc, sized(&source, q.size), q.size, path.clone(), none.clone());
+            // Ended (or the hub stopping) either way; what matters is what is on disk now.
+            let _ = tokio::time::timeout(WAIT, done.wait_for(|d| *d)).await;
+            match read_fresh(&path, KEEP).await {
+                Some(bytes) => bytes,
+                None if read_fresh(&none, NONE_FOR).await.is_some() => {
+                    return Err(Error::NotFound(format!("no picture for {id}")));
+                }
+                None => return Ok(not_yet(&id)),
             }
-            None => {
-                write(&none, &[]).await;
-                return Err(Error::NotFound(format!("no picture for {id}")));
-            }
-        },
+        }
     };
     Ok((
         [
@@ -159,6 +162,65 @@ pub async fn get(State(svc): State<Arc<Service>>, Path(id): Path<String>, Query(
         bytes,
     )
         .into_response())
+}
+
+/// Picture fetches under way, one per source URL and size, shared by every request for it.
+#[derive(Default)]
+pub struct Fetches(Mutex<HashMap<String, watch::Receiver<bool>>>);
+
+impl Fetches {
+    /// A receiver that turns `true` when the fetch of `key` ends; `start` begins one when none is
+    /// under way, and must call `finish` at its end.
+    pub fn join(&self, key: &str, start: impl FnOnce(watch::Sender<bool>)) -> watch::Receiver<bool> {
+        let mut map = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(done) = map.get(key) {
+            return done.clone();
+        }
+        let (tx, rx) = watch::channel(false);
+        map.insert(key.to_owned(), rx.clone());
+        drop(map);
+        start(tx);
+        rx
+    }
+
+    pub fn finish(&self, key: &str, done: watch::Sender<bool>) {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner).remove(key);
+        let _ = done.send(true);
+    }
+}
+
+/// Fetches `url` into the cache in the background (one fetch per URL and size): scaled to `size` at
+/// `path`, or "none" at `none` when the source has no picture. A failure leaves nothing, so the
+/// next request tries again.
+fn fetching(svc: &Arc<Service>, url: String, size: u32, path: PathBuf, none: PathBuf) -> watch::Receiver<bool> {
+    let key = format!("{size} {url}");
+    svc.art_fetches.join(&key.clone(), |done| {
+        let svc = svc.clone();
+        svc.ctx.clone().spawn(async move {
+            match fetch(&svc, &url).await {
+                Ok(Some(bytes)) => match tokio::task::spawn_blocking(move || fit(bytes, size)).await {
+                    Ok(bytes) => write(&path, &bytes).await,
+                    Err(e) => tracing::warn!(error = %e, "picture scaling failed"),
+                },
+                Ok(None) => write(&none, &[]).await,
+                Err(e) => tracing::info!(url, error = %e, "picture not fetched; asked again next time"),
+            }
+            svc.art_fetches.finish(&key, done);
+        });
+    })
+}
+
+/// 404 while the picture is still on its way: not to be cached, so the next look gets it.
+fn not_yet(id: &str) -> Response {
+    (
+        StatusCode::NOT_FOUND,
+        [(header::CACHE_CONTROL, "no-store")],
+        Json(serde_json::json!({
+            "error": "not_found",
+            "message": format!("The picture for {id} is still on its way."),
+        })),
+    )
+        .into_response()
 }
 
 /// The source URL at `size`. The Cover Art Archive only has its own sizes: the smallest that
@@ -262,7 +324,7 @@ mod tests {
     use lull_core::model::{Album, Entities, Saved};
     use lull_core::{Result, catalog};
 
-    use super::{fit, picture, sized};
+    use super::{Fetches, fit, picture, sized};
 
     fn album(title: &str, group: Option<&str>) -> Album {
         Album {
@@ -330,5 +392,21 @@ mod tests {
         assert_eq!(scaled, Some((72, 96)));
         let small = vec![1, 2, 3];
         assert_eq!(fit(small.clone(), 96), small, "what can't be read is served as it is");
+    }
+
+    #[tokio::test]
+    async fn requests_for_one_picture_share_one_fetch() {
+        // Live, a cold cover took 6 s and answered 503; now the fetch runs once in the background.
+        let fetches = Fetches::default();
+        let mut started = Vec::new();
+        let mut first = fetches.join("https://img.example/a", |done| started.push(done));
+        let second = fetches.join("https://img.example/a", |done| started.push(done));
+        assert_eq!(started.len(), 1, "the second request joins the first fetch");
+        let Some(done) = started.pop() else { return };
+        fetches.finish("https://img.example/a", done);
+        assert!(first.wait_for(|d| *d).await.is_ok());
+        assert!(*second.borrow());
+        let _again = fetches.join("https://img.example/a", |done| started.push(done));
+        assert_eq!(started.len(), 1, "after it ends, a new fetch can start");
     }
 }

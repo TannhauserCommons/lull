@@ -103,6 +103,7 @@ pub struct Service {
     searches: search::Searches,
     /// Pictures fetched for `/api/catalog/art`.
     art_dir: std::path::PathBuf,
+    art_fetches: art::Fetches,
     /// Only with Last.fm API credentials configured; read through `lastfm()`.
     lastfm: Option<LastFm>,
     feed: feed::Feeds,
@@ -130,6 +131,7 @@ pub async fn start(ctx: &Ctx, library: Arc<dyn Library>) -> Result<Arc<Service>>
         catalog: search::catalog::Catalog::default(),
         searches: search::Searches::default(),
         art_dir: ctx.config.data_dir.join("catalog-art"),
+        art_fetches: art::Fetches::default(),
         lastfm: ctx
             .config
             .lastfm
