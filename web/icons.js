@@ -1,6 +1,6 @@
 /* lull icon sprite: the single source of every icon.
    24x24 viewBox, outline, stroke = currentColor at var(--icon-stroke) (set by .ic in base.css).
-   Filled exceptions (meaning only): play, pause, heart-fill, saved, star-fill, status-ok, status-warn,
+   Filled exceptions (meaning only): play, pause, heart-fill, saved, downloaded, star-fill, status-ok, status-warn,
    quality-diamond, plus the dot glyphs (more, grip).
    Loading this file injects the sprite once into <body> and defines:
      icon(name, label?, cls?) -> '<svg class="ic ...">' markup string
@@ -77,6 +77,11 @@
     'link': '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
     'arrow-up': '<path d="M12 19V5M6 11l6-6 6 6"/>',
     'device': '<path d="M8 2.5h8a2 2 0 0 1 2 2V17a4.5 4.5 0 0 1-4.5 4.5H8a2 2 0 0 1-2-2v-15a2 2 0 0 1 2-2z"/><rect x="8.5" y="5" width="7" height="6" rx="1"/><path d="M9 15.5h3M10.5 14v3M15 15.5h.01"/>',
+    'connect': '<rect x="3" y="5" width="12" height="9" rx="1.5"/><path d="M6.5 18h5M9 14v4"/><rect x="16.5" y="7.5" width="5" height="12" rx="1.3"/><path d="M19 16.5h.01"/>',
+    'globe': '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.4 2.6 3.5 5.4 3.5 8.5s-1.1 5.9-3.5 8.5c-2.4-2.6-3.5-5.4-3.5-8.5s1.1-5.9 3.5-8.5z"/>',
+    'download': '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v8.5M8.6 12.6 12 16l3.4-3.4"/>',
+    'downloaded': 'F:<path fill-rule="evenodd" d="M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18zm-1 4.5v6.1l-2.3-2.3-1.4 1.4 4.7 4.7 4.7-4.7-1.4-1.4-2.3 2.3V7.5z"/>',
+    'copy': '<rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5v-2a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/>',
     'dash': '<path d="M7 12h10"/>',
     'no-source': '<circle cx="12" cy="12" r="7.5"/><path d="m6.7 17.3 10.6-10.6"/>',
     'status-ok': 'F:<circle cx="12" cy="12" r="6"/>',

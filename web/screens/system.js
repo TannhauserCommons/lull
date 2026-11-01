@@ -1,15 +1,15 @@
 /* screens/system.js.
-   Stats (/stats), Settings (/settings/:section?), first-run welcome (/welcome), the shortcuts overlay (?),
-   the command palette (Ctrl/Cmd+K), the token gate, PWA install / update, and the service banners.
-   Reads: GET /api/stats, GET + PATCH /api/settings, GET /api/lastfm, store `services` and App.server
-   (docs/context/web.md, docs/context/api.md).
+   Stats (/stats), Settings (/settings/:section?), the shortcuts overlay (?), the command palette (Ctrl/Cmd+K),
+   PWA install / update, and the service banners. First-run setup and pairing are screens/setup.js.
+   Reads: GET /api/stats, GET + PATCH /api/settings, GET + PATCH /api/config, GET /api/lastfm, store `services`
+   and App.server (docs/context/web.md, docs/context/api.md).
    Sections: 0 helpers + generic controls, 1 stats, 2 settings, 3 shortcuts overlay, 4 command palette,
-   5 welcome, 6 token gate, 7 PWA, 8 banners. */
+   7 PWA, 8 banners. */
 (function () {
   'use strict';
   var html = App.html, ui = App.ui, M = App.data, icon = App.icon, raw = App.raw, $ = App.$, $$ = App.$$;
   var P = App.player;
-  var SETTINGS = '/api/settings', LASTFM = '/api/lastfm', FEED = '/api/feed';
+  var SETTINGS = '/api/settings', CONFIG = '/api/config', LASTFM = '/api/lastfm';
 
   /* =====================================================================
      0. Helpers and generic controls
@@ -59,7 +59,79 @@
   }
   function settings() { return M.peek(SETTINGS); }
   function lookup(path) { return path.split('.').reduce(function (o, k) { return o == null ? o : o[k]; }, settings()); }
-  function locked(path) { return isConfig(lookup(path)); }
+  function locked(path) { return isCfg(path) ? cfgLocked(path.slice(7)) : isConfig(lookup(path)); }
+
+  /* ---------- hub config (ADR-0002): GET /api/config { items: [{ key, value, source: env|stored|default, secret,
+     restart }] }, changed with PATCH /api/config { KEY: value|null }. A control reads it by the path 'config.KEY'.
+     Keys the environment sets are read-only; secrets only say whether they are set and are never shown.
+     Until the hub answers /api/config, each key shows read-only from /api/settings (CFG_SETTING). ---------- */
+  var CFG_SETTING = { LULL_SHARE: 'sharing.mode', LULL_CACHE_MAX_GB: 'cache.capGB', LULL_MUSIC_DIR: 'library.musicFolder',
+    LULL_NAMING: 'library.naming', LULL_SLSKD_URL: 'sources.slskdUrl', LULL_SLSKD_API_KEY: 'sources.slskdApiKey',
+    LULL_JELLYFIN_URL: 'library.jellyfinUrl', LULL_JELLYFIN_USER: 'library.jellyfinUser', LULL_JELLYFIN_API_KEY: 'library.jellyfinApiKey',
+    LULL_LASTFM_API_KEY: 'lastfm.apiKey', LULL_LASTFM_API_SECRET: 'lastfm.apiSecret', LULL_LISTENBRAINZ_USER: 'discovery.listenbrainzUser' };
+  function isCfg(path) { return path.indexOf('config.') === 0; }
+  function cfgItem(key) { var c = M.peek(CONFIG); return c && (c.items || []).filter(function (i) { return i.key === key; })[0]; }
+  function cfgLocked(key) { var i = cfgItem(key); return i ? i.source === 'env' : true; }
+  function cfgValue(key) { var i = cfgItem(key); return i ? i.value : val(lookup(CFG_SETTING[key] || '')); }
+  /* PATCH one key; the answer is the whole list again. A refusal (400) names what is wrong in a sentence. */
+  function cfgSave(key, value) {
+    var body = {}; body[key] = value;
+    return M.api(CONFIG, { method: 'PATCH', body: body }).then(function (res) {
+      var c = M.peek(CONFIG); if (c && res && res.items) c.items = res.items;
+      var i = cfgItem(key);
+      if (i && i.restart) App.toast('Saved. lull restarts its services to use it, which takes a moment.', { kind: 'ok', icon: 'refresh' });
+      else App.announce('Saved');
+      App.emit('config', key);
+      return res;
+    });
+  }
+  /* what a locked or fallback key shows in place of its value */
+  function cfgText(key) {
+    var i = cfgItem(key);
+    if (!i) return configText(lookup(CFG_SETTING[key] || ''));
+    if (i.secret) return i.value ? 'set' : 'not set';
+    return i.value == null || i.value === '' ? 'not set' : String(i.value);
+  }
+  /* a section that edits hub config says once when the hub can't (an older hub, or /api/config failing) */
+  function cfgNotice() {
+    var r = M.get(CONFIG);
+    if (!r.error) return '';
+    return html`<p class="sys-note">${icon('lock', null, 'ic-16')}<span>These come from the hub's config and show read-only here: ${clause(r.error.message)}.</span></p>`;
+  }
+  /* a text, number or secret field for one config key: saved when it changes (Enter or leaving the field) */
+  function cfgField(key, label, help, o) {
+    o = o || {};
+    var r = M.get(CONFIG), i = cfgItem(key);
+    if (r.loading) return row(label, help, ui.skeleton('text', 1));
+    if (!i || i.source === 'env') {
+      var why = i ? 'Set in the hub\'s environment, so it can\'t change here.' : 'Read-only until the hub can change its config.';
+      return row(label, (help ? help + ' ' : '') + why, lockedValue(label, cfgText(key) + (o.unit && i && i.value != null ? ' ' + o.unit : '')), { cls: 'sys-row--locked' });
+    }
+    var id = App.uid('sys-cfg'), type = i.secret ? 'password' : o.type || 'text';
+    var restart = i.restart ? ' Changing it restarts lull\'s services for a moment.' : '';
+    return html`<div class="sys-row sys-row--cfg">
+      <div class="sys-row__text"><label class="sys-row__label" for="${id}">${label}</label>${help || restart ? html`<span class="sys-row__help" id="${id}-h">${help}${restart}</span>` : ''}</div>
+      <div class="sys-row__ctl"><span class="sys-cfg">${o.unit ? html`<span class="sys-cfg__unit">${o.unit}</span>` : ''}<input class="input" id="${id}" type="${type}" data-cfg="${key}" ${type === 'number' ? raw('inputmode="numeric" min="0"') : ''}
+          value="${i.secret || i.value == null ? '' : String(i.value)}" placeholder="${i.secret ? (i.value ? 'Set. Type a new one to replace it' : 'Not set') : o.placeholder || ''}"
+          autocomplete="${i.secret ? 'new-password' : 'off'}" spellcheck="false" aria-describedby="${id}-h ${id}-e"></span>
+        <span class="field__error" id="${id}-e" hidden>${icon('warning', null, 'ic-16')}<span data-msg></span></span></div></div>`;
+  }
+  function cfgError(input, msg) {
+    var e = document.getElementById(input.id + '-e'); if (!e) return;
+    $('[data-msg]', e).textContent = msg || ''; e.hidden = !msg;
+    input.setAttribute('aria-invalid', msg ? 'true' : 'false');
+  }
+  document.addEventListener('change', function (e) {
+    var input = e.target.closest && e.target.closest('[data-cfg]'); if (!input) return;
+    var key = input.getAttribute('data-cfg'), i = cfgItem(key), v = input.value.trim();
+    if (i && i.secret && !v) return;                       // an empty secret field means "keep what is set"
+    if (input.type === 'number' && v !== '') v = +v;
+    cfgError(input, ''); input.setAttribute('aria-busy', 'true');
+    cfgSave(key, v === '' ? null : v).then(function () {
+      input.removeAttribute('aria-busy');
+      if (i && i.secret) { input.value = ''; input.placeholder = 'Set. Type a new one to replace it'; }
+    }, function (err) { input.removeAttribute('aria-busy'); cfgError(input, err.message); });
+  });
 
   /* values that are not a plain server setting: per-device prefs (device.*) and derived ones; path -> { get, set } */
   var custom = {};
@@ -67,10 +139,12 @@
   var effects = {};
   var fmtRange = {};                              // path -> fn(value) -> visible text / aria-valuetext
 
-  function get(path) { var c = custom[path]; return c && c.get ? c.get() : val(lookup(path)); }
+  function get(path) { var c = custom[path]; return c && c.get ? c.get() : isCfg(path) ? cfgValue(path.slice(7)) : val(lookup(path)); }
   function setVal(path, v) {
     if (typeof get(path) === 'number') v = +v;
-    if (custom[path] && custom[path].set) custom[path].set(v); else save(one(path, v));
+    if (custom[path] && custom[path].set) custom[path].set(v);
+    else if (isCfg(path)) cfgSave(path.slice(7), v).catch(function (err) { App.toast('Couldn\'t change that: ' + err.message, { kind: 'error' }); App.refresh(); });
+    else save(one(path, v));
     if (effects[path]) effects[path](v);
   }
   function one(path, v) { var c = {}; c[path] = v; return c; }
@@ -124,6 +198,7 @@
   /* one-of-N choice: a segmented pill with role=radiogroup; arrows move and select */
   function choice(path, label, options, cls) {
     var cur = String(get(path)), i = options.map(function (o) { return String(o[0]); }).indexOf(cur);
+    if (isCfg(path) && M.get(CONFIG).loading) return ui.skeleton('chip', 1);
     if (locked(path)) return lockedValue(label, i < 0 ? cur : options[i][1]);
     return html`<div class="seg sys-seg ${cls || ''} ${i < 0 ? 'sys-seg--none' : ''}" role="radiogroup" aria-label="${label}" data-key="${path}" style="--n:${options.length};--i:${Math.max(0, i)}"><span class="seg__ind" aria-hidden="true"></span>${options.map(function (o, j) {
       return html`<button type="button" class="seg__btn" role="radio" aria-checked="${j === i ? 'true' : 'false'}" tabindex="${j === Math.max(0, i) ? '0' : '-1'}" data-value="${o[0]}">${o[1]}</button>`;
@@ -441,16 +516,19 @@
   /* Settings sections that live in their own file register here; they build with the same controls
      (screens/appearance.js, owned by the themes work: docs/context/workspace.md). */
   App.settingsSections = App.settingsSections || {};
-  App.settingsKit = { row: row, choice: choice, switchRow: switchRow, group: group, custom: custom, get: get };
+  App.settingsKit = { row: row, choice: choice, switchRow: switchRow, group: group, custom: custom, get: get, effects: effects,
+    statusLine: statusLine, spinnerLine: spinnerLine, lockedValue: lockedValue, readError: readError, repaint: repaint,
+    cfgField: cfgField, cfgNotice: cfgNotice, cfgItem: cfgItem, cfgSave: cfgSave, clause: clause };
 
   var SECTIONS = [
     ['playback', 'Playback', 'volume-2', 'Gapless, crossfade, loudness'],
     ['sources', 'Sources', 'soulseek', 'Formats, bitrate, fallback'],
     ['cache', 'Cache', 'grid', 'Size, usage, clear'],
-    ['library', 'Library and saving', 'library', 'Jellyfin, folder names, duplicates'],
+    ['library', 'Library and saving', 'library', 'Music folder or Jellyfin, names, duplicates'],
     ['sharing', 'Sharing', 'export', 'What Soulseek peers can download'],
     ['lastfm', 'Last.fm', 'radio', 'Scrobbling and history'],
     ['discovery', 'Discovery', 'sparkle', 'Sources, follows, adventurousness'],
+    ['devices', 'Devices', 'connect', 'Paired devices, add one, Subsonic apps'],
     ['appearance', 'Appearance', 'sun', 'Design, theme, motion, text size'],
     ['shortcuts', 'Shortcuts', 'keyboard', 'Every keyboard shortcut'],
     ['app', 'App', 'device', 'Install, version, server health']
@@ -506,8 +584,9 @@
       ${row('Stall timeout', 'If a peer stops sending for this long, switch to the next source.', range('sources.stallTimeout', 'Stall timeout, seconds', 5, 60, 5))}
       ${switchRow('sources.autoPick', 'Pick the best source automatically', 'Off: the source list opens every time you play something new.')}
       ${group('soulseek connection')}
-      ${configRow('slskd address', lookup('sources.slskdUrl'), 'lull reaches Soulseek through slskd, which holds your Soulseek account. Set in server config.')}
-      ${configRow('slskd API key', lookup('sources.slskdApiKey'))}`;
+      ${cfgNotice()}${App.hubKit.soulseekRows()}
+      ${cfgField('LULL_SLSKD_URL', 'slskd address', 'lull reaches Soulseek through slskd, which signs in with your Soulseek account.', { type: 'url' })}
+      ${cfgField('LULL_SLSKD_API_KEY', 'slskd API key')}`;
   }
 
   /* ---------- cache: size from server config, usage live from the soulseek crate. Nothing here clears it:
@@ -523,7 +602,7 @@
   }
   function secCache() {
     return html`<div class="sys-usage" id="sys-usage">${usageBar()}</div>
-      ${configRow('Cache size', get('cache.capGB') + ' GB', 'Streamed audio is kept up to this size so replays start instantly. Set in server config.')}
+      ${cfgNotice()}${cfgField('LULL_CACHE_MAX_GB', 'Cache size', 'Streamed audio is kept up to this size so replays start instantly.', { type: 'number', unit: 'GB' })}
       <p class="sys-note">${icon('info', null, 'ic-16')}<span>When the cache is full, the oldest audio that is not playing or queued goes first. Songs in your queue are always kept, and your saved library is never touched.</span></p>`;
   }
 
@@ -536,14 +615,6 @@
       : { artist: 'Artist', album: 'Album', year: 'Year', disc: '1', 'track:02': '01', track: '1', title: 'Title', ext: 'flac' };
     return tpl.replace(/\{([^}]*)\}/g, function (m, k) { return k in vals ? vals[k] : m; });
   }
-  function jellyfinStatus() { var st = App.store.get('services').jellyfin; return statusLine(st.state, st.detail); }
-  App.action('sys-jellyfin-test', function (el) {
-    el.disabled = true; repaint('#sys-jf-status', spinnerLine('Testing connection'));
-    checkHealth().then(function () {
-      el.disabled = false; repaint('#sys-jf-status', jellyfinStatus());
-      App.announce(App.store.get('services').jellyfin.state === 'ok' ? 'Jellyfin connected' : 'Jellyfin did not answer');
-    });
-  });
   /* the latest rescan, as the Activity list has it (POST /api/library/rescan, then `job` events) */
   function rescanStatus() {
     var job = (App.store.get('activity') || []).filter(function (j) { return j.kind === 'rescan'; })[0];
@@ -552,16 +623,18 @@
     if (job.state === 'done') return statusLine('ok', job.detail || 'Rescan finished');
     return spinnerLine(job.detail || 'Rescanning the library');
   }
+  function namingBox() {
+    var naming = get('config.LULL_NAMING'), folder = get('config.LULL_MUSIC_DIR');
+    return naming ? html`<div class="inset sys-preview"><span class="sys-preview__label">Saves as</span><span class="sys-preview__path">${folder || ''}/${namingPreview(naming)}</span></div>` : '';
+  }
+  /* the source switch (folder or Jellyfin) is screens/hub.js; saving rows read hub config */
   function secLibrary() {
-    var naming = get('library.naming'), folder = get('library.musicFolder');
-    return html`${row('Jellyfin', 'Where saved songs live and play from.', html`<div class="sys-inline"><span id="sys-jf-status" aria-live="polite">${jellyfinStatus()}</span><button class="btn btn--sm" data-act="sys-jellyfin-test">Test connection</button></div>`)}
-      ${configRow('Server URL', lookup('library.jellyfinUrl'))}
-      ${configRow('User', lookup('library.jellyfinUser'))}
-      ${configRow('API key', lookup('library.jellyfinApiKey'))}
-      ${configRow('Music folder', lookup('library.musicFolder'))}
+    return html`${App.hubKit.librarySource()}
       ${group('saving')}
-      ${configRow('Folder and file names', lookup('library.naming'), 'Saved songs are named from this template. Set in server config.')}
-      ${naming ? html`<div class="inset sys-preview"><span class="sys-preview__label">Saves as</span><span class="sys-preview__path">${folder || ''}/${namingPreview(naming)}</span></div>` : ''}
+      ${cfgNotice()}
+      ${cfgField('LULL_MUSIC_DIR', 'Music folder', 'Saved songs are written here, in either mode.')}
+      ${cfgField('LULL_NAMING', 'Folder and file names', 'Saved songs are named from this template: {artist}, {album}, {year}, {disc}, {track:02}, {title}, {ext}.')}
+      <div id="sys-naming">${namingBox()}</div>
       ${row('When a song is already saved', 'What Save does when the library has the same song.', choice('library.duplicatePolicy', 'Duplicate policy', [['ask', 'Ask each time'], ['keep', 'Keep existing'], ['replace', 'Replace if better']], 'sys-seg--wrap'))}
       ${row('Rescan library', 'Picks up files added to the music folder outside lull.', html`<div class="sys-inline sys-inline--col"><button class="btn" data-act="jellyfin-rescan">${icon('refresh')}Rescan library now</button><div id="sys-rescan" class="sys-rescan" aria-live="polite">${rescanStatus()}</div></div>`)}`;
   }
@@ -569,9 +642,9 @@
   /* ---------- sharing: what is shared is server config; slots and speed are stored ---------- */
   fmtRange['sharing.uploadLimitKBs'] = function (v) { return v ? num(v) + ' KB/s' : 'No limit'; };
   function secSharing() {
-    var on = get('sharing.mode') === 'library';
+    var on = get('config.LULL_SHARE') === 'library';
     return html`${row('Sharing now', '', on ? statusLine('ok', 'Sharing your saved library, read-only') : statusLine('warn', 'Sharing nothing'), { cls: 'sys-row--status' })}
-      ${row('Share with Soulseek peers', 'Your saved library, read-only, or nothing. Peers can download songs; they can never change or delete anything.', choice('sharing.mode', 'What to share', [['library', 'Saved library, read-only'], ['none', 'Nothing']], 'sys-seg--wrap'))}
+      ${row('Share with Soulseek peers', 'Your saved library, read-only, or nothing. Peers can download songs; they can never change or delete anything.', choice('config.LULL_SHARE', 'What to share', [['library', 'Saved library, read-only'], ['none', 'Nothing']], 'sys-seg--wrap'))}
       <p class="sys-note ${on ? '' : 'sys-note--warn'}">${icon(on ? 'info' : 'warning', null, 'ic-16')}<span>Soulseek expects sharing. Many peers queue or refuse people who share nothing, so finding sources gets slower${on ? '.' : ' while this is off.'}</span></p>
       <div class="${on ? '' : 'sys-off'}" ${on ? '' : raw('inert')}>
         ${row('Upload slots', 'How many peers can download from you at once.', stepper('sharing.uploadSlots', 'Upload slots', 1, 20, 1))}
@@ -637,7 +710,7 @@
   function secLastfm() {
     return html`<div id="sys-lastfm">${lastfmBox()}</div>
       ${group('app credentials')}
-      ${withSettings(function () { return html`${configRow('API key', lookup('lastfm.apiKey'))}${configRow('Shared secret', lookup('lastfm.apiSecret'))}`; })}`;
+      ${withSettings(function () { return html`${cfgNotice()}${cfgField('LULL_LASTFM_API_KEY', 'API key')}${cfgField('LULL_LASTFM_API_SECRET', 'Shared secret')}`; })}`;
   }
 
   /* ---------- discovery ---------- */
@@ -655,7 +728,7 @@
     return html`${row('Adventurousness', 'How far Home and radio stray from what you already play.', html`${range('discovery.adventurousness', 'Adventurousness', 0, 1, .05)}<span class="sys-range__ends" aria-hidden="true"><span>Familiar</span><span>Adventurous</span></span>`)}
       ${group('sources')}
       ${DSOURCES.map(function (s) { return switchRow('discovery.on.' + s[0], s[1], s[2]); })}
-      ${configRow('ListenBrainz user', lookup('discovery.listenbrainzUser'))}
+      ${cfgField('LULL_LISTENBRAINZ_USER', 'ListenBrainz user', 'Your public listens and similar listeners. Optional.')}
       ${group('following')}
       <div class="sys-row sys-row--stack"><div class="sys-row__text"><span class="sys-row__label">Tags</span><span class="sys-row__help">Followed tags feed Home with fresh releases. Tap to unfollow; follow more from any tag page.</span></div>
         <div class="sys-row__ctl">${tagIds.length ? html`<div class="cluster sys-chips">${tagIds.map(function (id) { return followChip(id, M.tag(id).name); })}</div>` : html`<p class="sys-row__help">No tags followed yet.</p>`}</div></div>
@@ -750,7 +823,7 @@
     if (inWrapper() && !desk) loadDesktop();
     return html`${row('Version', '', html`<span class="sys-inline"><span class="px sys-version" id="sys-version">${App.server.version || 'not reported yet'}</span><button class="btn btn--sm" data-act="sys-update-check">Check for updates</button></span>`)}
       ${row('Install app', 'Adds lull to your home screen or dock with lock-screen controls and its own window.', html`<div id="sys-install">${installBody()}</div>`)}
-      ${row('First-run steps', 'Connect Last.fm, follow a few tags, try a search.', html`<a class="btn" href="#/welcome">Show welcome steps</a>`)}
+      ${row('First-run setup', 'Your library, your Soulseek account and Last.fm, step by step.', html`<a class="btn" href="#/setup">Open setup</a>`)}
       ${group('server')}
       ${inWrapper() ? '' : configRow('Server address', serverAddress(), 'The address this page was loaded from.')}
       <div class="sys-row sys-row--stack"><div class="sys-row__text"><span class="sys-row__label">Server health</span><span class="sys-row__help">What the server reports about itself and its services.</span></div>
@@ -763,8 +836,9 @@
     cache: function () { return withSettings(secCache); }, library: function () { return withSettings(secLibrary); },
     sharing: function () { return withSettings(secSharing); }, lastfm: secLastfm,
     discovery: function () { return withSettings(secDiscovery); },
-    appearance: function () { return App.settingsSections.appearance(); }, shortcuts: secShortcuts, app: secApp
+    shortcuts: secShortcuts, app: secApp
   };
+  function sectionBody(id) { return BODY[id] ? BODY[id]() : App.settingsSections[id](); }
 
   function renderSettings(ctx) {
     var sec = ctx.params.section, cur = sectionOf(sec) ? sec : 'playback', s = sectionOf(cur);
@@ -777,7 +851,7 @@
         })}</ul></nav>
         <section class="sys-detail" aria-labelledby="sys-sec-title">
           <a class="btn btn--quiet sys-back" href="#/settings">${icon('chevron-left')}All settings</a>
-          <div class="card sys-card sys-section" id="sys-section">${ui.labelRule(s[1].toLowerCase(), { id: 'sys-sec-title' })}${BODY[cur]()}</div>
+          <div class="card sys-card sys-section" id="sys-section">${ui.labelRule(s[1].toLowerCase(), { id: 'sys-sec-title' })}${sectionBody(cur)}</div>
         </section>
       </div></div>`;
   }
@@ -788,14 +862,15 @@
         var p = App.prefs(); showChoice('device.theme', p.theme); showChoice('device.motion', p.motion); showChoice('device.design', p.design);
       }),
       App.store.subscribe(function (keys) {
-        if (keys.indexOf('services') >= 0) { repaint('#sys-jf-status', jellyfinStatus()); repaint('#sys-health', healthRows(false)); }
+        if (keys.indexOf('services') >= 0) repaint('#sys-health', healthRows(false));
         if (keys.indexOf('activity') >= 0) repaint('#sys-rescan', rescanStatus());
       }),
       App.on('server', function () {
         repaint('#sys-health', healthRows(false));
         var v = $('#sys-version'); if (v) v.textContent = App.server.version || 'not reported yet';
       }),
-      App.on('pwa', function () { repaint('#sys-install', installBody()); })
+      App.on('pwa', function () { repaint('#sys-install', installBody()); }),
+      App.on('config', function (key) { if (key === 'LULL_NAMING' || key === 'LULL_MUSIC_DIR') repaint('#sys-naming', namingBox()); })
     ];
     ctx.onCleanup(function () {
       offs.forEach(function (off) { off(); });
@@ -962,125 +1037,6 @@
   App.hooks.palette = function () { if ($('.sys-palette')) App.closeTop(); else openPalette(''); };
 
   /* =====================================================================
-     5. First-run welcome (/welcome): connect Last.fm, follow three things, try a search
-     ===================================================================== */
-  var welcome = { searched: false };
-  /* picks come from the feed: its cold-start tags, and the artists behind its picks */
-  function welcomePicks(feed) {
-    var tags = uniq((feed.coldStartTags || []).concat(feed.followedTags || [])).slice(0, 6);
-    var artistIds = uniq((feed.picks || []).map(function (p) { var t = M.track(p.trackId); return t && t.artistId; }));
-    return { tags: tags, artists: artistIds.map(M.artist).filter(Boolean).slice(0, 4) };
-  }
-  function welcomeLastfm() {
-    var r = M.get(LASTFM);
-    if (r.loading) return ui.skeleton('chip', 1);
-    if (r.error) return html`<p class="field__error">${icon('warning', null, 'ic-16')}${r.error.message}</p><button class="btn btn--sm" data-act="reload-read" data-id="${LASTFM}">Try again</button>`;
-    if (r.data.connected) return html`<p class="sys-step__done">${icon('check', null, 'ic-16')}Connected as <b>${r.data.user}</b></p>`;
-    if (!r.data.configured) return html`<p class="sys-row__help">Last.fm isn't set up in the server config yet. Skip this step for now.</p>`;
-    return html`${r.data.error ? html`<p class="field__error">${icon('warning', null, 'ic-16')}${r.data.error}</p>` : ''}<button class="btn btn--sm" data-act="sys-lfm-connect">${icon('external')}${r.data.error ? 'Try again' : 'Connect Last.fm'}</button>`;
-  }
-  function welcomeFollowCount() {
-    var feed = M.peek(FEED); if (!feed) return 0;
-    var p = welcomePicks(feed);
-    return p.tags.concat(p.artists.map(function (a) { return a.id; })).filter(App.isFollowed).length;
-  }
-  function stepState() { var l = M.peek(LASTFM); return [!!(l && l.connected), welcomeFollowCount() >= 3, welcome.searched]; }
-  function updateWelcomeProgress() {
-    var done = stepState();
-    $$('.sys-step').forEach(function (li, i) {
-      li.classList.toggle('is-done', done[i]);
-      $('.sys-step__n', li).innerHTML = String(done[i] ? html`${icon('check', null, 'ic-16')}<span class="vh">Done:</span>` : html`${i + 1}`);
-    });
-    var c = $('#sys-w-count'); if (c) c.textContent = done.filter(Boolean).length + ' of 3 done';
-    var f = $('#sys-w-follow-n'); if (f) f.textContent = Math.min(3, welcomeFollowCount()) + ' of 3';
-  }
-  App.action('sys-w-follow', function (el) { App.toggleFollow(el.getAttribute('data-id')); });
-  function welcomeFollow() {
-    var r = M.get(FEED);
-    if (r.loading) return ui.skeleton('chip', 6);
-    if (r.error) return html`<p class="field__error">${icon('warning', null, 'ic-16')}${r.error.message}</p><button class="btn btn--sm" data-act="reload-read" data-id="${FEED}">Try again</button>`;
-    var picks = welcomePicks(r.data);
-    return html`<div class="cluster sys-chips" role="group" aria-label="Tags">${picks.tags.map(function (id) { return followChip(id, M.tag(id).name, 'sys-w-follow'); })}</div>
-      <div class="sys-picks" role="group" aria-label="Artists">${picks.artists.map(function (a) {
-        return html`<button type="button" class="sys-pick" data-act="sys-w-follow" data-id="${a.id}" data-name="${a.name}" aria-pressed="${App.isFollowed(a.id) ? 'true' : 'false'}">${ui.cover(a, 44, { round: true })}<span>${a.name}</span><span class="sys-pick__state" aria-hidden="true">${icon('plus', null, 'ic-16 sys-pick__plus')}${icon('check', null, 'ic-16 sys-pick__check')}</span></button>`;
-      })}</div>`;
-  }
-  function renderWelcome() {
-    var done = stepState(), feed = M.peek(FEED), tries = feed ? welcomePicks(feed).tags.slice(0, 2) : [];
-    function n(i) { return done[i] ? html`${icon('check', null, 'ic-16')}<span class="vh">Done:</span>` : html`${i + 1}`; }
-    return html`<div class="sys-page sys-welcome">
-      ${ui.sparkle('--s:22px; right:6%; top:18px')}
-      <header class="sys-welcome__head"><h1 class="t-display">welcome to lull</h1>
-        <p class="sys-lede">Everything you play streams from Soulseek peers, and anything you save lands in your Jellyfin library. Three steps make Home yours.</p></header>
-      <section class="card sys-welcome__card" aria-labelledby="sys-w-h">
-        ${ui.labelRule('get started', { id: 'sys-w-h' })}
-        <ol class="sys-steps" id="sys-welcome-steps">
-          <li class="sys-step ${done[0] ? 'is-done' : ''}"><span class="sys-step__n">${n(0)}</span><div class="sys-step__body">
-            <h3 class="sys-step__title">Connect Last.fm</h3><p class="sys-step__text">Scrobble what you play here, and let years of history seed your recommendations.</p>
-            <div class="sys-step__act" id="sys-w-lastfm">${welcomeLastfm()}</div></div></li>
-          <li class="sys-step ${done[1] ? 'is-done' : ''}"><span class="sys-step__n">${n(1)}</span><div class="sys-step__body">
-            <h3 class="sys-step__title">Follow a few artists or tags <span class="sys-step__count num" id="sys-w-follow-n">${Math.min(3, welcomeFollowCount())} of 3</span></h3><p class="sys-step__text">Home fills with new releases and picks from what you follow.</p>
-            <div class="sys-step__act">${welcomeFollow()}</div></div></li>
-          <li class="sys-step ${done[2] ? 'is-done' : ''}"><span class="sys-step__n">${n(2)}</span><div class="sys-step__body">
-            <h3 class="sys-step__title">Try a search</h3><p class="sys-step__text">Searches cover your library and Soulseek at once. Results stream in as peers answer.</p>
-            <form class="sys-step__act sys-w-search" id="sys-w-search" role="search"><div class="search-field">${icon('search')}<label class="vh" for="sys-w-q">Search songs, albums, artists</label><input class="input" id="sys-w-q" type="search" placeholder="Try an artist or a song" autocomplete="off"></div><button class="btn btn--primary" type="submit">Search</button></form>
-            ${tries.length ? html`<p class="sys-step__try">Or try ${tries.map(function (s, i) { return html`${i ? ' or ' : ''}<button type="button" class="btn btn--quiet btn--sm" data-act="sys-w-try" data-q="${s}">${s}</button>`; })}</p>` : ''}</div></li>
-        </ol>
-        <footer class="sys-welcome__foot"><span class="fg-2" id="sys-w-count" aria-live="polite">${done.filter(Boolean).length} of 3 done</span><span class="spacer"></span>
-          <a class="btn btn--quiet" href="#/home">Skip for now</a><a class="btn btn--primary" href="#/home" data-act="sys-w-finish">Start listening</a></footer>
-      </section></div>`;
-  }
-  function welcomeSearch(q) { q = (q || '').trim(); if (!q) { $('#sys-w-q').focus(); return; } welcome.searched = true; App.go('/search?q=' + encodeURIComponent(q)); }
-  App.action('sys-w-try', function (el) { welcomeSearch(el.getAttribute('data-q')); });
-  App.action('sys-w-finish', function () { App.go('/home'); App.toast('The welcome steps live in Settings, App', { icon: 'info' }); });
-  App.route('/welcome', { render: renderWelcome, title: 'Welcome', nav: 'home', mount: function (ctx) {
-    $('#sys-w-search', ctx.el).addEventListener('submit', function (e) { e.preventDefault(); welcomeSearch($('#sys-w-q').value); });
-    /* follows change at once and roll back if the server refuses: mirror both on the picks and the progress */
-    ctx.onCleanup(App.on('follow', function (e) {
-      $$('[data-act="sys-w-follow"][data-id="' + e.id + '"]').forEach(function (b) { b.setAttribute('aria-pressed', e.followed ? 'true' : 'false'); });
-      updateWelcomeProgress();
-    }));
-  } });
-
-  /* =====================================================================
-     6. Token gate: opens when the server answers 401 (App.server.authorized = false);
-        POST /api/session sets the cookie, then App.start() connects
-     ===================================================================== */
-  var gate = null;
-  function openTokenGate() {
-    if (gate) return;
-    var titleId = App.uid('sys-gate-t');
-    gate = App.openDialog({ className: 'sys-gate', closable: false, dismissible: false, label: 'Unlock ' + App.product,
-      onClose: function () { gate = null; },
-      body: html`<form class="sys-gate__form" novalidate>
-        <div class="sys-gate__mark">${ui.wordmark('desktop')}</div>
-        <h2 class="sys-gate__title" id="${titleId}">this server needs a token</h2>
-        <p class="sys-gate__text">Ask whoever runs this server for the access token, or find it in the server config.</p>
-        <div class="field"><label class="field__label" for="sys-gate-token">Access token</label><input class="input" id="sys-gate-token" type="password" autocomplete="current-password" spellcheck="false" aria-describedby="sys-gate-err" autofocus><span class="field__error" id="sys-gate-err" hidden>${icon('warning', null, 'ic-16')}<span data-msg></span></span></div>
-        <div class="sys-gate__foot"><button type="submit" class="btn btn--primary btn--block">Unlock</button></div>
-      </form>`,
-      onMount: function (el, close) {
-        el.setAttribute('aria-labelledby', titleId); el.removeAttribute('aria-label');
-        var form = $('form', el), tok = $('#sys-gate-token', el), err = $('#sys-gate-err', el), submit = $('[type="submit"]', el);
-        function showErr(m) { $('[data-msg]', err).textContent = m; err.hidden = !m; tok.setAttribute('aria-invalid', m ? 'true' : 'false'); }
-        form.addEventListener('submit', function (e) {
-          e.preventDefault();
-          var token = tok.value.trim();
-          if (!token) { showErr('Enter the access token'); tok.focus(); return; }
-          showErr(''); submit.disabled = true;
-          M.api('/api/session', { method: 'POST', body: { token: token } }).then(function () {
-            close(); App.start();
-            App.toast('Unlocked', { kind: 'ok', icon: 'lock' });
-          }, function (e2) {
-            submit.disabled = false;
-            showErr(e2.status === 401 ? 'Token rejected. Check for spaces and try again.' : e2.message);
-            tok.select();
-          });
-        });
-      } });
-  }
-
-  /* =====================================================================
      7. PWA: install (button, one-time toast), iOS instructions sheet, update toast
      ===================================================================== */
   function openIosSheet() {
@@ -1176,7 +1132,6 @@
   }
   App.store.subscribe(function (keys) { if (keys.indexOf('services') >= 0) syncBanners(); });
   App.on('server', function (srv) {
-    if (srv.authorized === false) openTokenGate(); else if (gate) gate.close();
     syncBanners();
   });
   App.on('ready', syncBanners);

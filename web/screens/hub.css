@@ -1,0 +1,76 @@
+/* screens/hub.css: hub config fields, the library source, devices and pairing, first-run setup (hub.js, setup.js).
+   Built from the settings rows and components, so every design styles them through the same tokens. */
+
+/* ---------- hub config fields (system.js cfgField) ---------- */
+.sys-row--cfg .sys-row__ctl { display: grid; gap: 6px; justify-items: end; }
+.sys-cfg { display: flex; align-items: center; gap: var(--sp-2); width: min(340px, 100%); }
+.sys-cfg .input { flex: 1; min-width: 0; }
+.sys-cfg__unit { order: 2; font: var(--t-meta); color: var(--fg-2); }
+.sys-cfg .input[aria-busy="true"] { opacity: .6; }
+@container sys-card (max-width: 560px) {
+  .sys-row--cfg .sys-row__ctl { justify-items: stretch; }
+  .sys-cfg { width: 100%; }
+}
+
+/* ---------- library source ---------- */
+.hub-lib__progress { margin: 0 0 var(--sp-3); }
+.hub-lib__panel { padding-bottom: var(--sp-2); }
+.hub-lib__panel > .sys-row:first-child { border-top: 0; }
+.hub-lib .sys-connect { margin-top: var(--sp-2); }
+.hub-jf { display: grid; gap: var(--sp-3); }
+.hub-jf__label { margin: 0; font: 800 .875rem/1.2 var(--f-ui); }
+.hub-jf__server .px { margin-left: 6px; color: var(--fg-2); font-size: 1rem; }
+.hub-jf__actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); }
+.hub-jf__signin { display: grid; gap: var(--sp-3); }
+.hub-jf .field, .hub-jf__signin .field, .hub-slsk .field { width: 100%; max-width: 420px; }
+.hub-qc { display: grid; gap: var(--sp-3); justify-items: start; }
+.hub-qc__code { margin: 0; padding: var(--sp-3) var(--sp-5); border-radius: var(--r-input); background: var(--bg-2); color: var(--fg); font-size: 2.5rem; letter-spacing: .18em; }
+.hub-qc__steps { margin: 0; padding-left: 1.25em; font: var(--t-meta); color: var(--fg-2); }
+.hub-qc__steps b { color: var(--fg); }
+.hub-slsk { display: grid; gap: var(--sp-3); justify-items: start; width: 100%; }
+
+/* ---------- devices ---------- */
+.hub-devs { list-style: none; margin: 0 0 var(--sp-4); padding: 0; }
+.hub-dev { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; align-items: center; gap: var(--sp-3); min-height: var(--hit); padding: var(--sp-2) 0; border-top: 1px solid var(--divider); }
+.hub-dev:first-child { border-top: 0; }
+.hub-dev__ic { display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--r-thumb); background: var(--bg-2); color: var(--fg-2); }
+.hub-dev.is-online .hub-dev__ic { color: var(--fg); }
+.hub-dev__text { display: grid; gap: 2px; min-width: 0; }
+.hub-dev__name { font: 800 .9375rem/1.3 var(--f-ui); overflow-wrap: anywhere; }
+.hub-dev__name .badge-count { margin-left: 4px; vertical-align: 1px; }
+.hub-dev__sub { display: flex; align-items: center; gap: 6px; font: var(--t-meta); color: var(--fg-2); min-width: 0; }
+.hub-dev__sub > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hub-dev__sub .sg { flex: none; width: 12px; height: 12px; }
+
+/* ---------- add a device: QR code + code ---------- */
+.dialog.hub-pair { width: min(620px, calc(100% - 32px)); }
+.hub-pair__grid { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: var(--sp-5); align-items: start; }
+.hub-pair__text > p { margin: 0 0 var(--sp-3); }
+.hub-pair__code { margin: 0 0 var(--sp-1); font-size: 2.75rem; letter-spacing: .2em; color: var(--fg); }
+.hub-pair__left { font: var(--t-meta); color: var(--fg-2); }
+.hub-pair__url { overflow-wrap: anywhere; font-size: 1rem; }
+.hub-qr { aspect-ratio: 1; display: grid; place-items: center; }
+.hub-qr__svg { display: block; width: 100%; height: auto; border-radius: var(--r-art); }
+/* scanners need dark modules on a light ground in every theme: ink on cream (14:1) */
+.hub-qr__bg { fill: var(--cream); }
+.hub-qr__fg { fill: var(--ink); }
+@media (max-width: 559px) {
+  .hub-pair__grid { grid-template-columns: minmax(0, 1fr); }
+  .hub-qr { width: min(240px, 100%); justify-self: center; }
+  .hub-pair__code { font-size: 2.25rem; text-align: center; }
+}
+
+/* ---------- a credential shown once (Subsonic app password) ---------- */
+.hub-cred { display: grid; grid-template-columns: 7.5em minmax(0, 1fr) auto; align-items: center; gap: var(--sp-2); padding: var(--sp-2) 0; border-top: 1px solid var(--divider); }
+.hub-cred__label { font: var(--t-meta); color: var(--fg-2); }
+.hub-cred__val { overflow-wrap: anywhere; font-size: 1.125rem; }
+.hub-form { display: grid; gap: var(--sp-3); }
+
+/* ---------- pairing gate, first-run setup ---------- */
+.sys-gate .setup-code { font: var(--t-px); font-size: 1.5rem; letter-spacing: .2em; text-transform: uppercase; }
+.sys-gate .sys-note { margin: 0; }
+.setup-step__act { width: 100%; justify-items: stretch; container: sys-card / inline-size; }
+.setup-step__act > .btn, .setup-step__act > .sys-step__done, .setup-step__act .sys-step__act > .btn { justify-self: start; }
+.setup .hub-lib > .sys-row:first-child { padding-top: 0; border-top: 0; }
+.hub-lib .sys-connect__title .px { overflow-wrap: anywhere; }
+@container sys-card (max-width: 560px) { .hub-lib .sys-connect__actions { grid-column: 1 / -1; } .hub-lib .sys-connect__actions > .btn { max-width: 100%; white-space: normal; } }

@@ -1,7 +1,8 @@
 {
   "private": true,
-  "description": "Only Webamp: the UI itself is buildless. `mise run setup` copies the bundle into web/vendor/.",
+  "description": "Only vendored browser files (Webamp, the QR encoder): the UI itself is buildless. `mise run setup` copies them into web/vendor/.",
   "dependencies": {
+    "qrcode-generator": "1.4.4",
     "webamp": "2.3.1"
   }
 }

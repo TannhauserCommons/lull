@@ -2458,7 +2458,7 @@
   });
 
   /* =====================================================================
-     15. Server events and boot: token gate (GET /api/ping), /health, the event stream, collections,
+     15. Server events and boot: pairing (GET /api/ping), /health, the event stream, collections,
          service worker. Each source of truth is fetched once here and kept current by events.
      ===================================================================== */
   /* `service`, `stream`, `save`, `job`, `transfer` drive the engines here; every topic is also re-emitted as
@@ -2480,8 +2480,9 @@
     if (serverHandlers[topic]) serverHandlers[topic](payload);
     App.emit('server:' + topic, payload);
   }
-  /* App.server: { reachable, version, authorized } -- read by the banners, the gate and Settings > App */
-  App.server = { reachable: true, version: null, authorized: true };
+  /* App.server: { reachable, version, authorized, checked } -- read by the banners, the pairing gate (setup.js) and
+     Settings > App. `checked`: /api/ping has answered once, so `authorized` is known. */
+  App.server = { reachable: true, version: null, authorized: true, checked: false };
   function setServer(patch) { Object.assign(App.server, patch); App.emit('server', App.server); }
   M.onUnauthorized = function () { if (App.server.authorized) setServer({ authorized: false }); };
   M.onSettled = function () { if (booted) renderRoute(true); };
@@ -2531,19 +2532,26 @@
       setServer({ reachable: true });
     }, function () { loadHealth(); });
   }
-  /* the token gate (system.js) calls this once POST /api/session has set the cookie */
+  /* the pairing gate (setup.js) calls App.start once the hub has set this device's cookie */
   App.checkHealth = loadHealth;
   App.start = function () {
     var wasLocked = !App.server.authorized;
-    setServer({ authorized: true });
+    setServer({ authorized: true, checked: true });
     if (wasLocked) { M.invalidate(); renderRoute(true); }       // reads made behind the gate failed with 401
     connectEvents(); loadCollections();
   };
+  /* 204: paired. 401: not paired (or unpaired since), M.onUnauthorized opens the gate. Unreachable: start offline,
+     the shell, downloads and the cached UI still work. */
+  function checkPairing() {
+    return M.api('/api/ping').then(App.start, function (err) {
+      if (err.status === 401) { if (events) { events.close(); events = null; } setServer({ checked: true }); return; }
+      setServer({ reachable: false }); App.start();
+    });
+  }
+  App.checkPairing = checkPairing;
   function startServer() {
     loadHealth().then(registerWorker);
-    M.api('/api/ping').then(App.start, function (err) {
-      if (err.status !== 401) { setServer({ reachable: false }); App.start(); }   // offline start: the shell still works
-    });
+    checkPairing();
   }
 
   /* service worker (sw.js): the app shell for offline start; a new server version prompts a reload */

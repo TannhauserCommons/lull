@@ -10,13 +10,15 @@ from, how the player plays, and the rules screens follow. The endpoint contract 
 ```
 index.html   tokens.css base.css components.css screens/*.css desktop/desktop.css designs/<name>/design.css (last)
              designs/designs.js + the pre-paint script (design, theme, motion, text size)
-             icons.js data.js app.js screens/{discover,now,library,system,appearance,classic}.js desktop/desktop.js
+             icons.js data.js app.js screens/{discover,now,library,system,appearance,hub,setup,classic}.js desktop/desktop.js
 data.js      window.LullData = App.data: API client, entity cache, per-route reads, the event stream
 app.js       window.App: router, render helpers, overlays, save pipeline, player engine, shell, actions,
              keyboard, Media Session, drag and drop, server events + boot
 sw.js        service worker (app shell for offline start); manifest.webmanifest
-vendor/      Webamp bundle, copied by scripts/vendor-web.sh (`mise run setup`), gitignored
-desktop/     the desktop app's wrapper pages and bridge (`LullDesktop`), docs/context/desktop.md
+hub.js       the hub's own settings: library source (folder / Jellyfin), Soulseek account, Settings > Devices (App.hubKit)
+setup.js     the pairing gate, #/pair/<code>, first-run setup (/setup)
+vendor/      Webamp bundle and the QR encoder (qrcode-generator), copied by scripts/vendor-web.sh, gitignored
+desktop/     the desktop app's wrapper pages and bridge (`LullDesktop`), owned by the Apps session
 ```
 
 Designs: all five ship (`lull skydeck starlight petal glasshouse`), switchable live in Settings > Appearance; design,
@@ -73,9 +75,24 @@ refetches health, collections and the current route. A closed stream (401) check
 ### Boot
 
 `DOMContentLoaded` -> design ready -> shell + first route render (empty data shows skeletons) -> `GET /health`
-(services, version, then the service worker) and `GET /api/ping`: 204 starts events and loads collections; 401 sets
-`App.server.authorized = false` (system.js shows the token gate, `POST /api/session`, then calls `App.start()`); a
-network failure still starts, so the installed app opens offline with the cached shell and an "unreachable" banner.
+(services, version, then the service worker) and `GET /api/ping` (`App.checkPairing`): 204 starts events and loads
+collections; 401 sets `App.server.authorized = false`, and setup.js opens the pairing gate; a network failure still
+starts, so the installed app opens offline with the cached shell and an "unreachable" banner. `App.server.checked`
+says the ping has answered.
+
+### Pairing and first run (ADR-0002)
+
+- **The gate** (setup.js) asks `GET /api/setup`: an unclaimed hub takes its setup code (`POST /api/setup/claim`, then
+  `/setup`); a claimed one takes a pair code from a paired device (`POST /api/pair`, `kind: browser`). The QR code's
+  link `#/pair/<code>` fills the code in. Both set the device cookie, then `App.start()`. Any 401 later (this device
+  unpaired) opens the gate again.
+- **`/setup`**: library, Soulseek, Last.fm; each step is done when `GET /api/setup` `steps.<name>` is true. Last.fm's
+  callback lands on `#/settings/lastfm`, which returns to `/setup` while a setup connect is under way.
+- **Hub config in Settings**: any `config.LULL_*` path (system.js) reads `GET /api/config` and saves with
+  `PATCH /api/config`; keys set by the environment and every key until the hub answers show read-only. Secrets
+  only say whether they are set.
+- **Not on HTTPS** (`!isSecureContext`): the gate, Settings > Devices and the pair dialog say the app can't install or
+  keep downloads here, and point to `tailscale serve`.
 
 ## Player engine (`App.player`)
 
