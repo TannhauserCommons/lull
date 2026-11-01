@@ -83,6 +83,7 @@ async fn wire(ctx: &Ctx) -> Result<Router, Error> {
     let lastfm = lull_lastfm::start(ctx).await?;
     let lyrics = lull_lyrics::start(ctx).await?;
     let collection = lull_collection::start(ctx, library.clone()).await?;
+    let subsonic = lull_subsonic::start(ctx, library.clone(), collection.clone()).await?;
     let skins = lull_skins::start(ctx).await?;
     let themes = lull_themes::start(ctx).await?;
 
@@ -105,6 +106,8 @@ async fn wire(ctx: &Ctx) -> Result<Router, Error> {
     let status = ctx.status.clone();
     Ok(Router::new()
         .merge(api)
+        // Outside the gate: Subsonic apps sign in with an app password or API key (ADR-0002).
+        .merge(lull_subsonic::router(subsonic))
         .merge(gate::router(&ctx.config))
         .route("/health", get(move || async move { Json(health(&status)) }))
         .fallback(web::serve))
