@@ -322,7 +322,11 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
   - **Picker rows:** each copy says when it is below the minimum or has a long queue (`meets`, `queueTooLong`). For
     a save, the picker asks `/api/tracks/{id}/sources?for=save`, the saving profile's order.
   - **Saves:** `waiting` (saving `below: wait`) shows the hub's sentence in the save pipeline and Activity. Saving
-    `ask` fails at step 1, and the existing recovery picks the copy. Activity marks `upgrade` jobs "Upgrade".
+    `ask` fails at step 1, and the existing recovery picks the copy. Activity marks `upgrade` jobs "Upgrade" and
+    saves of a copy below the minimum (`belowMinimum`) with the badge.
+  - **Stopping a save:** `App.saves.cancel(id)` sends `DELETE /api/saves/{jobId}`; a `cancelled` event drops the
+    record. It's reached from "Stop waiting" (Activity, and the waiting save button's toast) and "Remove this save" on
+    a failed row. Skip in the choose prompt moves on, and the engine's `letGo` stops the transfer.
 
 ## Imports
 

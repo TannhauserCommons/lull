@@ -670,7 +670,7 @@
       .map(function (j) { return j.kind === 'save' ? Object.assign({}, j, { status: SAVE_STATUS[j.stepState] || 'saving' }) : j; });
     Object.keys(saves).forEach(function (id) {
       var s = saves[id];
-      list.unshift({ id: s.jobId || 'save-' + id, jobId: s.jobId, kind: 'save', trackId: id, step: s.step, status: s.status, error: s.error, upgrade: s.upgrade });
+      list.unshift({ id: s.jobId || 'save-' + id, jobId: s.jobId, kind: 'save', trackId: id, step: s.step, status: s.status, error: s.error, upgrade: s.upgrade, belowMinimum: s.belowMinimum });
     });
     return list;
   }
@@ -700,9 +700,10 @@
   }
   function saveParts(j, st) {
     var acts;
-    if (st === 'failed') acts = html`${App.discover ? actBtn('info', 'What went wrong', 'now-job-fix', j) : ''}${actBtn('refresh', 'Retry save', 'now-job-retry', j)}`;
+    if (st === 'failed') acts = html`${App.discover ? actBtn('info', 'What went wrong', 'now-job-fix', j) : ''}${actBtn('refresh', 'Retry save', 'now-job-retry', j)}${actBtn('close', 'Remove this save', 'now-job-cancel', j)}`;
+    else if (j.status === 'waiting') acts = actBtn('close', 'Stop waiting', 'now-job-cancel', j);
     else if (st === 'done') acts = actBtn('library', 'Show album', 'go-album', j, 'data-id="' + App.esc(j.trackId) + '"');
-    return { meta: '', extra: ui.pipeline(j.step || 1, j.status, j.error), acts: acts || '' };
+    return { meta: j.belowMinimum ? ui.belowBadge() : '', extra: ui.pipeline(j.step || 1, j.status, j.error), acts: acts || '' };
   }
   function otherParts(j, st) {
     if (st === 'failed') return { meta: html`${ui.statusGlyph('down', 'Failed')}<span>${j.error || 'Failed'}</span>`, extra: '', acts: '' };
@@ -1064,6 +1065,11 @@
     M.api('/api/transfers/' + encodeURIComponent(j.id) + '/retry', { method: 'POST' }).then(function () {
       App.toast('Retrying transfer: ' + jobTitle(j), { icon: 'soulseek' });
     }, toastError);
+  });
+  /* DELETE /api/saves/{jobId}: a waiting save stops looking, a failed one goes away */
+  App.action('now-job-cancel', function (el) {
+    var j = findJob(el.getAttribute('data-job')); if (!j) return;
+    adoptSave(j); App.saves.cancel(j.trackId);
   });
   App.action('now-job-fix', function (el) {              // the recovery sheet reads the live save record
     var j = findJob(el.getAttribute('data-job')); if (!j || !App.discover) return;

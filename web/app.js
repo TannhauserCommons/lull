@@ -602,7 +602,7 @@
     else if (st === 'pending') { label = 'Saved, waiting for Jellyfin'; ic = 'clock'; }
     else if (st === 'waiting') { label = 'Waiting for a good copy'; ic = 'clock'; }
     else { label = opts.label || 'Save'; ic = 'save'; }
-    var act = st === 'library' ? 'go-album' : st === 'saved' ? 'noop-saved' : 'save';
+    var act = st === 'library' ? 'go-album' : st === 'saved' ? 'noop-saved' : st === 'waiting' ? 'save-waiting' : 'save';
     return html`<button class="btn btn-save ${opts.cls || ''}" data-state="${st}" data-save-btn="${trackId}" data-act="${act}" data-id="${trackId}"${raw(attrs)}>${icon(ic)}<span>${label}</span></button>`;
   };
   /* the copy playing (or saved) doesn't pass the listener's minimum (ADR-0008) */
@@ -997,6 +997,15 @@
       M.api('/api/saves/' + encodeURIComponent(s.jobId) + '/retry', { method: 'POST', body: source ? { source: source } : undefined })
         .catch(function (err) { saveFailed([id], err); });
     },
+    /* DELETE /api/saves/{jobId}: stops a waiting (or failed) save; a `cancelled` event follows. 409 while it transfers or
+       writes: the hub's sentence says so */
+    cancel: function (id) {
+      var s = state.saves[id]; if (!s || !s.jobId) { setSave(id, null); return Promise.resolve(); }
+      return M.api('/api/saves/' + encodeURIComponent(s.jobId), { method: 'DELETE' }).then(function () {
+        setSave(id, null); var t = M.track(id);
+        App.toast('Stopped saving ' + (t ? t.title : 'the song'), { icon: 'close' });
+      }, function (err) { App.toast('Couldn\'t stop that save: ' + err.message, { kind: 'error' }); });
+    },
     set: function (id, rec) { setSave(id, rec); }
   };
   function startSaves(ids, opts) {
@@ -1026,11 +1035,14 @@
     App.emit('save', { id: id, save: rec });
     App.syncRows(); updateActivityBadge();
   }
-  /* `save` event: { jobId, trackId, step, status: running|done|failed|pending|waiting, pct, error, kind, nocover, upgrade }.
-     waiting: no copy passes the saving minimum yet (`below: wait`); the job searches again by itself */
+  /* `save` event: { jobId, trackId, step, status: running|done|failed|pending|waiting|cancelled, pct, error, kind, nocover,
+     upgrade, belowMinimum }. waiting: no copy passes the saving minimum yet (`below: wait`), and the job searches again
+     by itself; cancelled: the job is gone. belowMinimum: the copy saved (or saving) doesn't pass the saving minimum */
   function onSaveEvent(e) {
+    if (e.status === 'cancelled') { setSave(e.trackId, null); return; }
     var was = state.saves[e.trackId], status = SAVE_STATUS[e.status] || 'saving';
-    setSave(e.trackId, { jobId: e.jobId, step: e.step, status: status, pct: e.pct || 0, error: e.error || null, kind: e.kind || null, nocover: !!e.nocover, upgrade: !!e.upgrade });
+    setSave(e.trackId, { jobId: e.jobId, step: e.step, status: status, pct: e.pct || 0, error: e.error || null, kind: e.kind || null, nocover: !!e.nocover,
+      upgrade: !!e.upgrade, belowMinimum: !!e.belowMinimum });
     if (status !== 'saved' || (was && was.status === 'saved')) return;
     M.patchTrack(e.trackId, { saved: true });
     var t = M.track(e.trackId);
@@ -2015,7 +2027,7 @@
       rows.slice().reverse().forEach(function (j) {
         if (j.kind !== 'save' || !j.trackId || j.stepState === 'done') return;
         setSave(j.trackId, { jobId: j.jobId, step: j.step, status: SAVE_STATUS[j.stepState] || 'saving', pct: j.pct || 0,
-          error: j.error || null, kind: j.failKind || null, nocover: !!j.nocover });
+          error: j.error || null, kind: j.failKind || null, nocover: !!j.nocover, upgrade: !!j.upgrade, belowMinimum: !!j.belowMinimum });
       });
       App.store.set({ activity: rows, activityError: null });
     }, function (err) { App.store.set({ activity: [], activityError: err.message }); });
@@ -2445,6 +2457,11 @@
     'reload-read': function (el) { var path = el.getAttribute('data-id'); if (path) M.reload(path); else { M.invalidate(); App.refresh(); } },
     'toggle-panel': function (el) { App.togglePanel(el.getAttribute('data-tab')); },
     'close-panel': function () { App.closePanel(); },
+    /* a save waiting for a good enough copy: say so, and offer to stop it */
+    'save-waiting': function (el) {
+      var id = el.getAttribute('data-id'), s = App.saves.get(id);
+      App.toast((s && s.error) || 'Waiting for a copy that meets your saving minimum', { icon: 'clock', action: 'Stop waiting', onAction: function () { App.saves.cancel(id); } });
+    },
     'panel-expand': function (el) { App.openPanel(el.getAttribute('data-tab')); },
     'open-activity': function () { App.openPanel('activity'); },
     /* the player bar's Device view: the wrapper's mini player window inside the desktop app, Now Playing elsewhere */
