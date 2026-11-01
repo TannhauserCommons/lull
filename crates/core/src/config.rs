@@ -74,6 +74,28 @@ pub struct LastFm {
     pub api_secret: Secret,
 }
 
+impl LastFm {
+    /// lull's own Last.fm API account, compiled in from the build environment
+    /// (`LULL_LASTFM_API_KEY` and `LULL_LASTFM_API_SECRET` at `cargo build` time), so a
+    /// listener just presses Connect. Absent from builds made without them, such as a
+    /// contributor's. Settings that name a key override it.
+    fn built_in() -> Option<Self> {
+        Self::from_build(
+            option_env!("LULL_LASTFM_API_KEY"),
+            option_env!("LULL_LASTFM_API_SECRET"),
+        )
+    }
+
+    /// An empty value counts as unset: CI passes an empty variable when a secret is missing.
+    fn from_build(key: Option<&str>, secret: Option<&str>) -> Option<Self> {
+        let (key, secret) = (key.filter(|k| !k.is_empty())?, secret.filter(|s| !s.is_empty())?);
+        Some(LastFm {
+            api_key: Secret::new(key),
+            api_secret: Secret::new(secret),
+        })
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Discovery {
     pub listenbrainz_user: Option<String>,
@@ -175,7 +197,8 @@ impl Config {
                 .map(|(key, secret)| LastFm {
                     api_key: Secret(key),
                     api_secret: Secret(secret),
-                }),
+                })
+                .or_else(LastFm::built_in),
             discovery: Discovery {
                 listenbrainz_user: v.opt("LULL_LISTENBRAINZ_USER"),
                 listenbrainz_token: v.opt("LULL_LISTENBRAINZ_TOKEN").map(Secret),
@@ -260,6 +283,30 @@ mod tests {
             .chain(extra)
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect()
+    }
+
+    #[test]
+    fn the_built_in_last_fm_key_needs_both_halves_and_settings_override_it() {
+        assert!(LastFm::from_build(Some("k"), Some("s")).is_some());
+        for (key, secret) in [
+            (None, None),
+            (Some("k"), None),
+            (Some(""), Some("s")),
+            (Some("k"), Some("")),
+        ] {
+            assert!(LastFm::from_build(key, secret).is_none(), "{key:?} {secret:?}");
+        }
+        let config = Config::from_vars(vars(&[
+            ("LULL_LASTFM_API_KEY", "mine"),
+            ("LULL_LASTFM_API_SECRET", "mine-s"),
+        ]));
+        assert_eq!(
+            config
+                .ok()
+                .and_then(|c| c.lastfm)
+                .map(|l| l.api_key.expose().to_owned()),
+            Some("mine".to_owned())
+        );
     }
 
     #[test]
