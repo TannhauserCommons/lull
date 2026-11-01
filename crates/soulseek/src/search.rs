@@ -337,12 +337,26 @@ impl Searches {
             .unwrap_or_default()
     }
 
-    /// How many of the latest searches in a row no peer answered.
-    pub fn unanswered(&self) -> usize {
+    /// How many of the latest searches in a row no peer answered, counting only those that
+    /// ended after `since` (unix seconds): a fresh login starts the count again.
+    pub fn unanswered_since(&self, since: i64) -> usize {
         self.inner
             .lock()
-            .map(|i| i.outcomes.iter().rev().take_while(|o| o.peers == 0).count())
+            .map(|i| {
+                i.outcomes
+                    .iter()
+                    .rev()
+                    .take_while(|o| o.peers == 0 && o.at > since)
+                    .count()
+            })
             .unwrap_or(0)
+    }
+
+    /// Whether a search has been answered since `since` (unix seconds).
+    pub fn answered_since(&self, since: i64) -> bool {
+        self.inner
+            .lock()
+            .is_ok_and(|i| i.outcomes.iter().any(|o| o.peers > 0 && o.at > since))
     }
 
     /// slskd stores every search; lull keeps what it needs and tidies up after itself.

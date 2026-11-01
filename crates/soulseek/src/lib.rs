@@ -10,6 +10,7 @@ mod layout;
 mod peers;
 mod range;
 mod rank;
+mod recover;
 mod search;
 mod share;
 mod slskd;
@@ -69,8 +70,6 @@ const CHECK_OK: Duration = Duration::from_secs(15);
 const CHECK_DOWN: Duration = Duration::from_secs(5);
 /// How often the cache is measured and idle finished songs are let go.
 const HOUSEKEEPING: Duration = Duration::from_secs(60);
-/// This many searches in a row without a single answer turn the status to `warn`.
-const UNANSWERED: usize = 2;
 
 pub struct Service {
     ctx: Ctx,
@@ -80,6 +79,8 @@ pub struct Service {
     sources: Sources,
     fetcher: Fetcher,
     cache: Cache,
+    /// The last fresh login lull asked for: when (to space them out) and its unix time.
+    relogged: Mutex<Option<(std::time::Instant, i64)>>,
     /// Songs being saved: pinned in the cache until their save ends.
     saving: Mutex<HashMap<TrackId, Pin>>,
 }
@@ -114,6 +115,7 @@ pub async fn start(ctx: &Ctx) -> Result<Arc<Service>> {
         sources,
         fetcher,
         cache,
+        relogged: Mutex::default(),
         saving: Mutex::default(),
     });
     ctx.status
@@ -226,13 +228,40 @@ async fn watch_connection(svc: Arc<Service>, layout: Arc<RwLock<Layout>>) {
     }
 }
 
-/// Searches no peer answers, while slskd says it's logged in, mean the searches don't reach the
-/// network or the answers don't reach slskd. One silent search can be a rare query; several in
-/// a row are a problem, explained with slskd's own latest warning when it has one.
+/// Searches no peer answers while slskd says it's logged in: the searches don't reach the
+/// network, or the answers don't reach slskd. Seen live as a stale server session that a fresh
+/// login cures, so lull asks for one when it's due (`recover`), and otherwise says what's wrong,
+/// with slskd's own latest warning. After a fresh login, the status says so until a search is
+/// answered again.
 async fn unanswered_searches(svc: &Service) -> Option<String> {
-    let n = svc.searches.unanswered();
-    if n < UNANSWERED {
-        return None;
+    let last = svc.relogged.lock().ok().and_then(|l| *l);
+    let since = last.map_or(0, |(_, at)| at);
+    let n = svc.searches.unanswered_since(since);
+    if n < recover::UNANSWERED {
+        return match last {
+            Some((_, at)) if !svc.searches.answered_since(at) => Some(format!(
+                "logged in again at {} because searches got no answers; waiting for the next search",
+                recover::clock(at)
+            )),
+            _ => None,
+        };
+    }
+    let since_last = last.map(|(when, _)| when.elapsed());
+    if recover::reconnect_due(n, since_last, svc.fetcher.transferring()) {
+        let reason = format!("lull: the last {n} searches got no answers; logging in again");
+        tracing::warn!(
+            searches = n,
+            "Soulseek searches get no answers; asking slskd to log in again"
+        );
+        return Some(match svc.slskd.relogin(&reason).await {
+            Ok(()) => {
+                if let Ok(mut l) = svc.relogged.lock() {
+                    *l = Some((std::time::Instant::now(), lull_core::now()));
+                }
+                format!("the last {n} searches got no answers, so lull asked slskd to log in again")
+            }
+            Err(e) => format!("the last {n} searches got no answers, and logging in again failed: {e}"),
+        });
     }
     let said = match svc.slskd.recent_log().await {
         Ok(log) => log
@@ -242,8 +271,13 @@ async fn unanswered_searches(svc: &Service) -> Option<String> {
             .map(|l| format!("; slskd's latest warning: {}", l.message)),
         Err(e) => Some(format!("; slskd's log can't be read: {e}")),
     };
+    let wait = if svc.fetcher.transferring() {
+        "lull logs in again once nothing is transferring"
+    } else {
+        "lull logs in again at most every 15 minutes"
+    };
     Some(format!(
-        "the last {n} searches got no answers from any peer{}",
+        "the last {n} searches got no answers from any peer ({wait}){}",
         said.unwrap_or_default()
     ))
 }

@@ -13,16 +13,27 @@
 | `rank.rs` | The score and its factors |
 | `peers.rs` | Peers that stalled recently (`soulseek_peers`) |
 | `share.rs` | Sharing checks and rescans |
+| `recover.rs` | When to ask slskd for a fresh login (stale sessions) |
 | `lib.rs` | Start-up, the `soulseek` status, the `Transfers` seam |
 
 ## slskd
 
 - **Auth and status.** Auth is `X-API-Key: LULL_SLSKD_API_KEY` against `/api/v0`. The `soulseek` status reads `GET /application` (any key may read it); `/server` and `/options` need the administrator role. States:
   - `ok`: logged in;
-  - `warn`: reconnecting, or connected with a problem: lull can't see slskd's folders, shares don't match `LULL_SHARE`, or the last 2+ searches got no answer from any peer (quoting slskd's latest warning). Silent searches while logged in mean searches don't reach the network or answers don't reach slskd; `GET /api/soulseek/diagnostics` shows slskd's own state, the searches' outcomes and its recent log;
+  - `warn`: reconnecting, or connected with a problem: lull can't see slskd's folders, shares don't match `LULL_SHARE`, or searches get no answers (below);
   - `down`: slskd unreachable or the key rejected.
 - **State flags.** slskd sends state fields as comma-separated flag names (`Completed, Succeeded`, `Queued, Remotely`). A transfer slskd will retry itself still reads `Completed, Errored` while it waits, with `nextAttemptAt` set; lull treats that as queued. Only `Completed` without `nextAttemptAt` is final.
 - **Enqueue.** Downloads are queued with `POST /transfers/downloads/batches`, which returns the transfer ids. Queueing a file that is already running returns a failure, and lull reuses the running transfer.
+
+## Stale sessions
+
+The Soulseek server can keep a session that slskd reports as logged in while none of its searches reach peers; seen on the homelab on 2026-10-31, and cured by a fresh login (`recover.rs`).
+- **The trigger.** 3 searches in a row get no answer from any peer.
+- **The fix.** lull asks slskd for a fresh login (`DELETE /server`, then `PUT /server`, whose watchdog retries until it's in).
+- **Limits.** At most once per 15 minutes, never while a song is transferring (a new login drops peer connections), and logged as a warning.
+- **The status** says what happened ("logged in again at 04:05 UTC…") until a search is answered again. While a fresh login isn't due, it quotes slskd's latest warning instead.
+- **Diagnostics.** `GET /api/soulseek/diagnostics` shows slskd's own state, how recent searches ended, and its latest log lines.
+- **No setting needed.** slskd's connection watchdog has none: it starts by itself after an unexpected disconnect and stops once connected. It deliberately doesn't start after "another client logged in", so lull doesn't fight a second login either.
 
 ## Search
 

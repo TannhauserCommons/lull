@@ -309,6 +309,14 @@ impl Fetcher {
         rows
     }
 
+    /// Whether bytes are moving for any song right now.
+    pub fn transferring(&self) -> bool {
+        self.live.lock().is_ok_and(|l| {
+            l.values()
+                .any(|f| matches!(f.now().status, Status::Buffering | Status::Streaming | Status::Stalled))
+        })
+    }
+
     /// The source the song is (or was last) fetched from, while its fetch is live.
     pub fn current_source(&self, track: &TrackId) -> Option<SourceRef> {
         self.live(track)?.now().source.map(|s| s.source_ref())

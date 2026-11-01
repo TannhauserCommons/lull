@@ -254,6 +254,15 @@ impl Slskd {
         }
     }
 
+    /// A fresh login: an intentional disconnect, then slskd's watchdog connects again (and keeps
+    /// retrying until it's in). Needs a readwrite or administrator key.
+    pub async fn relogin(&self, reason: &str) -> Result<()> {
+        let resp = self.send(Method::DELETE, &["server"], Some(json!(reason))).await?;
+        http::ok(SERVICE, resp)?;
+        let resp = self.send(Method::PUT, &["server"], None).await?;
+        http::ok(SERVICE, resp).map(drop)
+    }
+
     /// Needs an API key with the administrator role; `None` when the key isn't one.
     pub async fn options(&self) -> Result<Option<Options>> {
         match self.get(&["options"]).await {
