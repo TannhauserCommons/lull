@@ -16,7 +16,7 @@ app.js       window.App: router, render helpers, overlays, save pipeline, player
              keyboard, Media Session, drag and drop, server events + boot
 sw.js        service worker (app shell for offline start); manifest.webmanifest
 vendor/      Webamp bundle, copied by scripts/vendor-web.sh (`mise run setup`), gitignored
-desktop/     owned by the Desktop session (web/desktop/ and the Tauri app)
+desktop/     the desktop app's wrapper pages and bridge (`LullDesktop`), docs/context/desktop.md
 ```
 
 Designs: all five ship (`lull skydeck starlight petal glasshouse`), switchable live in Settings > Appearance; design,
@@ -112,6 +112,68 @@ The state shape and methods are DESIGN.md 7.8; the insides:
 - **Media Session**: metadata with `/api/art/{albumId}?size=96|256|512` once the 96 px cover is known to exist (else
   `assets/fallback-art-*.png`), `playbackState`, position state on track change and seek, all handlers; `seekto`
   clamps like the seek bar.
+
+### Output interface (ADR-0006)
+
+The engine above decides *what* plays (queue, radio, plays, streaming states, seek limits). *Sound* comes from an
+output with one contract and two implementations:
+
+- **browser and desktop:** the two `<audio>` decks (gapless, crossfade and normalisation as described above);
+- **Android app:** `window.LullNative.player`, a Media3 player with a MediaSession service (Mobile session). The app
+  defines `window.LullNative` before the page's scripts run; the engine uses it whenever `LullNative.player` exists.
+
+**Item**, what the engine hands the output:
+
+| Field | Meaning |
+|---|---|
+| `key` | string, unique per queue entry (the same song queued twice has two keys); every event names it |
+| `url` | absolute. A hub stream (`/api/library/stream/{id}`, `/api/stream/{id}[?peer=&path=]`) or, for a download, the `fileUrl` from `downloads.list()`. The native side adds the device's `Authorization: Bearer` itself; the web never sees the token |
+| `trackId`, `title`, `artist`, `album`, `duration` | for the lock screen and notification; `duration` in seconds, may be `null` (Soulseek, not known yet) |
+| `artwork` | absolute `/api/art/{albumId}?size=512` URL or `null` (same auth rule as `url`) |
+| `gainDb` | normalisation to apply, in dB (ReplayGain track or album, per Settings > Playback); `null` = none |
+
+**Methods.** Each returns a Promise that rejects with an `Error` whose `message` the UI can show.
+
+| Method | Does |
+|---|---|
+| `load(item, { at = 0, autoplay = true })` | Replaces the current item (and drops any next one), starting at `at` seconds. Also used to reopen the same item after a peer fallback cut its response |
+| `play()` · `pause()` | |
+| `seek(seconds)` | The engine only seeks inside what has arrived (`P.seekable`); the output doesn't need to know about Soulseek |
+| `setVolume(v)` | `0..1`, the final level: the engine has already applied mute and its perceptual curve (`v = volume²`) |
+| `setNext(item \| null)` | Preload `item` and, when the current one ends, continue into it with no gap. `null` cancels. Called again whenever the queue, shuffle or repeat changes |
+| `crossfade(seconds)` | `0` = off. Otherwise, with a next item set, fade equal-power from the current into the next over the current's last `seconds` |
+
+**Events.** `LullNative.player.on(type, fn)` returns a function that unsubscribes. `fn` gets one object.
+
+| Event | Payload | When |
+|---|---|---|
+| `time` | `{ key, position, duration, playing, waiting }` | At least 4 times a second while playing, and on every change of `playing` (true while sound is meant to come out) or `waiting` (true while it stalls for data). `duration` is `null` until known |
+| `buffered` | `{ key, ranges: [[from, to]] }` | Seconds held by the player, when they change |
+| `ended` | `{ key, next }` | The item ended. `next` = the key it continued into (gapless or crossfade), else `null` and playback stopped. A response that ends before the song does is reported as `ended` too: the engine knows when that is a Soulseek fallback in progress and reopens with `load` |
+| `error` | `{ key, message, status }` | The item can't play. `status` = the HTTP status when the hub answered one (the engine fetches the hub's sentence), else `null` |
+| `remote` | `{ action: next \| prev }` | Lock screen, notification, Bluetooth or headset. The output itself applies play, pause and seek from those controls and reports them through `time`; next and prev need the queue, so the engine does them |
+
+Rules for the native side: playback must continue with the screen off (the WebView may be throttled, so `setNext` is
+always set one song ahead); one item plays at a time except during a crossfade; volume is the app's own stream
+level, not the system's.
+
+`window.LullNative.downloads` (offline downloads, ADR-0005) is in [Offline downloads](#offline-downloads-and-outbox).
+
+## Offline downloads and outbox
+
+ADR-0005. Screens use one interface, `App.downloads`, with two backends: the browser's (Cache Storage + IndexedDB)
+and, in the Android app, `window.LullNative.downloads`. The native backend's contract (Mobile session implements it):
+
+| Method | Does |
+|---|---|
+| `add({ trackId, url, artwork, meta })` | Queues a download of `url` (absolute hub stream URL, Bearer added natively) and `artwork` (`/api/art/…?size=512` or `null`) into app storage. `meta` is the Track JSON, kept with the file and given back by `list`. Resolves once queued; a track already kept resolves at once |
+| `remove(trackIds)` | Deletes those files; resolves when gone |
+| `list()` | Resolves to `[{ trackId, state: downloading \| done \| failed, fileUrl, artUrl, sizeBytes, meta, error }]`. `fileUrl` is what `player.load` takes; `artUrl` is a URL the WebView can show in an `<img>` (or `null`) |
+| `usage()` | Resolves to `{ usedBytes, freeBytes }` |
+
+Events (`LullNative.downloads.on(type, fn)`, returns an unsubscribe function): `progress { trackId, received, size }`,
+`done { trackId, fileUrl, artUrl, sizeBytes }`, `error { trackId, message }`. Downloads continue while the app is in
+the background.
 
 ## Rules for screens
 
