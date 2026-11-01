@@ -8,10 +8,13 @@ mod cache;
 mod fetch;
 mod files;
 mod layout;
+mod matching;
 mod peers;
+mod prewarm;
 mod range;
 mod rank;
 mod recover;
+mod rules;
 mod search;
 mod share;
 mod slskd;
@@ -29,6 +32,7 @@ use axum::Router;
 use lull_core::db::Migrations;
 use lull_core::ids::TrackId;
 use lull_core::model::{SourceRef, Track};
+use lull_core::quality::{Pick, SaveCandidate};
 use lull_core::seams::{Library, Transfers};
 use lull_core::status::State;
 use lull_core::{Ctx, Error, Result, catalog};
@@ -38,6 +42,7 @@ use crate::cache::{Cache, Pin};
 use crate::fetch::Fetcher;
 use crate::layout::Layout;
 use crate::peers::Peers;
+use crate::rules::{Current, Purpose};
 use crate::search::Searches;
 use crate::slskd::Slskd;
 use crate::sources::Sources;
@@ -80,6 +85,7 @@ pub struct Service {
     sources: Sources,
     fetcher: Fetcher,
     cache: Cache,
+    rules: Current,
     /// The last fresh login lull asked for: when (to space them out) and its unix time.
     relogged: Mutex<Option<(std::time::Instant, i64)>>,
     /// Songs being saved: pinned in the cache until their save ends.
@@ -94,6 +100,9 @@ pub async fn start(ctx: &Ctx) -> Result<Arc<Service>> {
     {
         ctx.spawn(account::apply(slskd.clone(), config.account.clone()));
     }
+    // Subscribed before collection starts, so its start-up `settings` arrives (ADR-0050).
+    let rules = Current::default();
+    ctx.spawn(rules.follow(&ctx.bus));
     let peers = Peers::load(ctx.db.clone()).await?;
     let sources = Sources::new(peers.clone(), config.preferred_formats.clone());
     let cache = Cache::new(
@@ -112,6 +121,7 @@ pub async fn start(ctx: &Ctx) -> Result<Arc<Service>> {
         sources.clone(),
         searches.clone(),
         ctx.bus.clone(),
+        rules.clone(),
     );
     let svc = Arc::new(Service {
         ctx: ctx.clone(),
@@ -121,6 +131,7 @@ pub async fn start(ctx: &Ctx) -> Result<Arc<Service>> {
         sources,
         fetcher,
         cache,
+        rules,
         relogged: Mutex::default(),
         saving: Mutex::default(),
     });
@@ -132,13 +143,14 @@ pub async fn start(ctx: &Ctx) -> Result<Arc<Service>> {
     ctx.spawn(watch_connection(svc.clone(), layout));
     ctx.spawn(housekeeping(svc.clone()));
     ctx.spawn(release_saves(svc.clone()));
+    ctx.spawn(prewarm::follow_catalog(svc.clone()));
     if config.share == lull_core::config::Share::Library {
         ctx.spawn(share::rescan_after_saves(slskd, ctx.bus.clone()));
     }
     Ok(svc)
 }
 
-/// `/api/search`, `/api/tracks/{id}/sources`, `/api/stream/{id}`, `/api/transfers/...`.
+/// `/api/soulseek/search`, `/api/tracks/{id}/sources`, `/api/stream/{id}`, `/api/transfers/...`.
 pub fn router(svc: Arc<Service>, library: Arc<dyn Library>) -> Router {
     svc.searches.set_library(library);
     api::router(svc)
@@ -166,19 +178,36 @@ impl Transfers for Service {
         Ok(path)
     }
 
-    async fn source_for(&self, track: &TrackId) -> Result<Option<SourceRef>> {
-        if let Some(s) = self.fetcher.current_source(track) {
-            return Ok(Some(s));
+    /// The saving profile's copy. The one already here (streamed, or in the cache) is reused
+    /// when it passes and the profile wouldn't rank another copy higher: no second transfer.
+    async fn save_candidate(&self, id: &TrackId, fresh: bool) -> Result<Option<SaveCandidate>> {
+        let track = self.track(id).await?;
+        if (fresh || !self.sources.known(id)) && self.online.load(Ordering::Relaxed) {
+            self.searches.resolve(&track).await?;
         }
-        if let Some(e) = self.cache.finished(track, None).await? {
-            return Ok(Some(e.source));
-        }
-        Ok(self
-            .sources
-            .ranked(track)
-            .into_iter()
-            .next()
-            .map(|r| r.source.source_ref()))
+        let rules = self.rules.get();
+        let ordered = self.sources.ordered(id, track.duration, &rules, Purpose::Save);
+        let mut picks = ordered.iter().filter(|r| !r.queue_too_long);
+        let best = picks.clone().next();
+        let here = match self.fetcher.current_source(id) {
+            Some(s) => Some(s),
+            None => self.cache.finished(id, None).await?.map(|e| e.source),
+        };
+        let reuse = here.and_then(|h| picks.find(|r| r.source.is(&h))).filter(|r| {
+            r.meets
+                && best.is_some_and(|b| match rules.save.pick {
+                    Pick::Fastest => true,
+                    Pick::Highest => !b
+                        .source
+                        .quality(track.duration)
+                        .beats(&r.source.quality(track.duration)),
+                })
+        });
+        Ok(reuse.or(best).map(|r| SaveCandidate {
+            source: r.source.source_ref(),
+            quality: r.source.quality(track.duration),
+            meets: r.meets,
+        }))
     }
 }
 

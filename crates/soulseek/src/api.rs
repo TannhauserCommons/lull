@@ -15,11 +15,12 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::Service;
+use crate::rules::Purpose;
 use crate::search::Started;
 
 pub fn router(svc: Arc<Service>) -> Router {
     Router::new()
-        .route("/api/search", get(search))
+        .route("/api/soulseek/search", get(search))
         .route("/api/tracks/{id}/sources", get(sources))
         .route("/api/stream/{id}", get(stream).delete(stop))
         .route("/api/soulseek/diagnostics", get(diagnostics))
@@ -36,14 +37,28 @@ struct SearchQuery {
 
 async fn search(State(svc): State<Arc<Service>>, Query(q): Query<SearchQuery>) -> Result<Json<Started>> {
     let online = svc.online.load(Ordering::Relaxed);
-    Ok(Json(svc.searches.start(&q.q, online).await?))
+    Ok(Json(svc.searches.start(&q.q, online)?))
 }
 
-/// Ranked sources. A song nothing is known about yet starts a search for it; the answer then
-/// says `done: false` and the picker asks again.
-async fn sources(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Result<Json<Value>> {
+#[derive(Deserialize)]
+struct For {
+    #[serde(rename = "for")]
+    purpose: Option<String>,
+}
+
+/// Sources in the order the streaming profile (or with `?for=save`, the saving one) takes
+/// them, each marked whether it passes the minimum. A song nothing is known about yet starts
+/// a search for it; the answer then says `done: false` and the picker asks again.
+async fn sources(State(svc): State<Arc<Service>>, Path(id): Path<String>, Query(q): Query<For>) -> Result<Json<Value>> {
+    let purpose = match q.purpose.as_deref() {
+        None | Some("stream") => Purpose::Stream,
+        Some("save") => Purpose::Save,
+        Some(other) => return Err(Error::BadRequest(format!("for={other}: stream or save"))),
+    };
     let track = svc.track(&TrackId(id)).await?;
-    let ranked = svc.sources.ranked(&track.id);
+    let ranked = svc
+        .sources
+        .ordered(&track.id, track.duration, &svc.rules.get(), purpose);
     let mut searching = svc.searches.searching_for(&track);
     if ranked.is_empty() && !searching && svc.online.load(Ordering::Relaxed) {
         let (searches, track) = (svc.searches.clone(), track.clone());
@@ -81,12 +96,17 @@ async fn stream(
 
 /// A picked source must be one a search reported: its size comes from there.
 fn known_source(svc: &Service, track: &TrackId, peer: String, path: String) -> Result<SourceRef> {
-    svc.sources
-        .ranked(track)
-        .into_iter()
-        .find(|r| r.peer == peer && r.path == path)
-        .map(|r| r.source.source_ref())
-        .ok_or_else(|| Error::NotFound(format!("{peer} is not a known source for this song; search again")))
+    let wanted = SourceRef {
+        user: peer,
+        path,
+        size: 0,
+    };
+    svc.sources.get(track, &wanted).map(|s| s.source_ref()).ok_or_else(|| {
+        Error::NotFound(format!(
+            "{} is not a known source for this song; search again",
+            wanted.user
+        ))
+    })
 }
 
 async fn stop(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> StatusCode {

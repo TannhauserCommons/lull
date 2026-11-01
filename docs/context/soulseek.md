@@ -8,8 +8,11 @@
 |---|---|
 | `slskd.rs` | The HTTP client and slskd 0.26's shapes (only the fields lull reads) |
 | `files.rs` | Song identity from a peer path, format facts from file attributes |
-| `search.rs` | Search sessions, merging, album folders, result rows |
-| `sources.rs` | Every known peer file per song, ranked on read |
+| `search.rs` | Search sessions, merging, album folders, result rows, resolve searches, `onlySoulseek` |
+| `matching.rs` | Whether a file is the song asked for (loose names, length) |
+| `prewarm.rs` | `search.catalog`: pre-warming the catalog's top tracks |
+| `rules.rs` | The streaming and saving profiles and peer limits, from the `settings` event |
+| `sources.rs` | Every known peer file per song, in a profile's order on read |
 | `rank.rs` | The score and its factors |
 | `peers.rs` | Peers that stalled recently (`soulseek_peers`) |
 | `share.rs` | Sharing checks and rescans |
@@ -38,7 +41,8 @@ The Soulseek server can keep a session that slskd reports as logged in while non
 
 ## Search
 
-- **Library first.** `GET /api/search` answers at once with library hits (`Library::search`, 4 s budget). If the library errs or is missing, the answer carries `libraryError` and search goes on.
+Search is a catalog search owned by discovery (`/api/search`, ADR-0008); Soulseek runs behind it at `GET /api/soulseek/search`.
+
 - **slskd hides answers until a search ends.** It also only runs two searches at a time. So each query runs one network search that ends after 6 s with no new answers, or after 15 s in all, at which point lull stops it.
   - While it runs, `search.results` events carry only the counters (`files`, `peers`, `done: false`).
   - The final event carries the merged `results` and `entities`.
@@ -46,11 +50,20 @@ The Soulseek server can keep a session that slskd reports as logged in while non
   - searches start at least 1 s apart;
   - a newer query stops the older one;
   - the same words within 10 minutes reuse the earlier search (the answer's `soulseek` field replays it);
-  - queries under 3 characters search the library only;
+  - queries under 3 characters don't search;
   - lull deletes its searches from slskd when done.
 - **Merging.** Songs merge across peers by `TrackId`. A peer folder holding 3 or more of the results becomes an album row; the same album on many peers is one row listing each folder, best first. Rows are capped at 200 songs and 40 albums. Every track handed out is recorded in `lull_core::catalog`.
-- **Duplicates.** Saved songs among the results come from `Library::saved`: the row gets `dup: note`, or `dup: better` when the Soulseek file is lossless and the saved one isn't, or is lossy by 64 kbps or more.
-- **Resolve searches.** A song nothing is known about (a queue item, a discovery pick) gets a search for `artist title`. Any file with the same artist and title counts, whatever its album. Sources and streams trigger it themselves.
+- **Duplicates.** Saved songs among the results come from `Library::saved`: the row gets `dup: note`, or `dup: better` when the Soulseek file clearly beats the saved one (`Quality::beats`: lossless over lossy, or at least a fifth more bitrate).
+- **Only on Soulseek.** Discovery publishes `search.catalog { query, trackIds }` for a query's top catalog tracks. The final results carry `onlySoulseek`: the unsaved result songs no catalog track matches (by `matching`). When the catalog arrives after the results, the final `search.results` is published again with it; before the catalog has answered it is `null`.
+- **Pre-warming** (`prewarm.rs`). The top 3 tracks of each `search.catalog` get a resolve search in the background, one at a time and at least 5 s apart, so pressing play finds copies waiting. A newer query replaces what an older one left queued; songs with known copies, saved songs and an offline Soulseek are skipped.
+- **Resolve searches.** A song nothing is known about (a queue item, a catalog pick, a save) gets a search for `artist title`. Files count as the song by [matching](#matching), whatever their album, and are kept under the song's id too. When the first search finds no copy, a looser second one runs: the title without its tags plus the artist's longest word. Sources, streams and saves trigger it themselves.
+
+## Matching
+
+`matching.rs`, ADR-0008. A file is the song asked for when:
+- **the titles match** after `ids::loose_title` (the catalog merge's normalization: feat., version, remaster, edit and live tags and bare years dropped, accents folded, "&" = "and"), allowing for spacing ("dont" / "don t") and one slip per 8 letters. Numbers must agree ("Part 1" isn't "Part 2"), and a word such as remix, acoustic, instrumental, demo or reprise on one side only makes another recording;
+- **the artists match** the same way (`loose_artist`), or one of several credited ("A, B & C", "A x B") does, or, when the path parser got the artist wrong (a compilation), the artist's name appears in the file's path;
+- **the lengths agree** within 6 s, when both the song and the file report one. An edit or a live take is another recording.
 
 ### Reading paths
 
@@ -75,6 +88,18 @@ The score runs from 0 to 100 and is the sum of four factors (`rank.rs`):
 | queue | 15 with a free slot, else 15 − 2 × queue length |
 
 A peer that stalled on lull in the last 7 days loses 25 points (`factors.stalled`) and is flagged `stalledBefore`; a finished transfer from it clears the record. `preferred` marks the first preferred format.
+
+## Source rules
+
+The listener's streaming and saving profiles (ADR-0008, `lull_core::quality`) arrive in the `settings` event (`rules.rs`, ADR-0050); until collection's start-up copy, the defaults apply. `Sources::ordered` lists a song's copies for one profile:
+
+1. **Gate.** A copy `meets` the profile's minimum by `Quality::meets` with the format from its extension. Its bitrate is the peer's, else worked out from size and length (the file's, else the song's); a lossy file of unknown bitrate fails a floor.
+2. **Order.** Copies that pass come first, then the rest, each by the profile's `pick`:
+   - `fastest`: the score, then speed;
+   - `highest`: lossless first (hi-res above CD), then bitrate; the score breaks ties.
+3. **Peer limit.** A busy peer (no free slot) with more people waiting than `maxPeerQueue` is marked `queueTooLong`, listed last and never picked automatically.
+
+Playing and fallback take copies in this order ([streaming.md](streaming.md#fetches)). A save takes the first one (`Transfers::save_candidate`), reusing the copy already streamed or cached when it passes and, under `highest`, nothing beats it. `GET /api/tracks/{id}/sources` returns the streaming order, or the saving one with `?for=save`.
 
 ## Sharing
 

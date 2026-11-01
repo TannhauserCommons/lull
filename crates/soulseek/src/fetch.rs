@@ -1,7 +1,9 @@
-//! Getting a song onto disk: one slskd transfer at a time from the best source, falling back
-//! to the next-best one when a peer doesn't answer, queues us too long or stalls. A fetch is
-//! shared by everyone who wants the song (the player streaming it, a save completing it), so
-//! the bytes come over the network once (docs/context/streaming.md).
+//! Getting a song onto disk: one slskd transfer at a time, from copies in the order the
+//! listener's streaming or saving profile sets (ADR-0008), falling back to the next one when a
+//! peer doesn't answer, queues us too long or stalls. When no copy passes the profile's minimum,
+//! its `below` rule decides. A fetch is shared by everyone who wants the song (the player
+//! streaming it, a save completing it), so the bytes come over the network once
+//! (docs/context/streaming.md).
 
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -20,10 +22,13 @@ use tokio::sync::watch;
 use crate::cache::{Cache, Entry, Pin};
 use crate::files;
 use crate::layout::Layout;
+use lull_core::quality::{SaveBelow, StreamBelow};
+
 use crate::peers::Peers;
+use crate::rules::{Current, Purpose, Rules};
 use crate::search::Searches;
 use crate::slskd::{Phase, Slskd, Transfer};
-use crate::sources::{Source, Sources};
+use crate::sources::{Ranked, Source, Sources};
 
 /// Received bytes after which a stream counts as playing rather than buffering.
 const BUFFERED: u64 = 256 * 1024;
@@ -32,11 +37,15 @@ const POLL: Duration = Duration::from_secs(1);
 const START_TIMEOUT: Duration = Duration::from_secs(20);
 /// Waiting in a peer's queue longer than this moves on to the next source.
 const QUEUE_TIMEOUT: Duration = Duration::from_secs(30);
-/// No new bytes for this long shows as stalled...
+/// No new bytes for this long shows as stalled; Settings › Sources' stall timeout falls back.
 const STALL_NOTICE: Duration = Duration::from_secs(5);
-/// ...and for this long falls back to the next source (Settings' "stall timeout").
-const STALL_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_ATTEMPTS: usize = 5;
+/// `keepLooking`: searches for a copy that passes the streaming minimum, this far apart.
+const KEEP_LOOKING_SEARCHES: u32 = 3;
+const KEEP_LOOKING_GAP: Duration = Duration::from_secs(20);
+/// `ask`: the copies offered, and how long the listener has to choose one.
+const CHOICES: usize = 8;
+const CHOOSE_WAIT: Duration = Duration::from_secs(10 * 60);
 /// A finished song nobody has read for this long is no longer "playing" (so it may be evicted).
 const IDLE: Duration = Duration::from_secs(30 * 60);
 const HISTORY: usize = 50;
@@ -44,6 +53,8 @@ const HISTORY: usize = 50;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
     Finding,
+    /// `ask`: no copy passes the streaming minimum; waiting for the listener to pick one.
+    Choosing,
     Queued,
     Buffering,
     Streaming,
@@ -78,9 +89,30 @@ pub struct Progress {
     pub error: Option<String>,
     pub failed_peers: Vec<FailedPeer>,
     pub peers_found: usize,
+    /// The source doesn't pass the streaming minimum (`playBest`, or the listener's pick).
+    pub below: bool,
+    /// What `ask` offers while `Choosing`.
+    pub choices: Vec<Ranked>,
 }
 
 impl Progress {
+    fn new(status: Status) -> Self {
+        Progress {
+            attempt: 0,
+            status,
+            source: None,
+            received: 0,
+            speed: 0,
+            queue_pos: None,
+            path: None,
+            error: None,
+            failed_peers: Vec::new(),
+            peers_found: 0,
+            below: false,
+            choices: Vec::new(),
+        }
+    }
+
     pub fn size(&self) -> u64 {
         self.source.as_ref().map_or(0, |s| s.size)
     }
@@ -100,6 +132,8 @@ impl Progress {
 pub struct Fetch {
     pub job_id: String,
     pub track: Track,
+    /// Whose profile orders the copies: the player's or a save's.
+    pub purpose: Purpose,
     pub started: i64,
     progress: watch::Sender<Progress>,
     stop: watch::Sender<bool>,
@@ -167,6 +201,7 @@ pub struct Fetcher {
     pub sources: Sources,
     pub searches: Searches,
     pub bus: Bus,
+    pub rules: Current,
     live: Arc<Mutex<HashMap<TrackId, Arc<Fetch>>>>,
     /// Ended fetches, newest last, for the Activity panel.
     ended: Arc<Mutex<VecDeque<serde_json::Value>>>,
@@ -183,6 +218,7 @@ impl Fetcher {
         sources: Sources,
         searches: Searches,
         bus: Bus,
+        rules: Current,
     ) -> Self {
         Fetcher {
             slskd,
@@ -192,6 +228,7 @@ impl Fetcher {
             sources,
             searches,
             bus,
+            rules,
             live: Arc::default(),
             ended: Arc::default(),
             next: Arc::default(),
@@ -206,7 +243,8 @@ impl Fetcher {
     }
 
     /// The fetch the player reads: the running one, the cached file, or a new transfer.
-    /// `pick` (the source picker's choice) replaces a running fetch from another peer.
+    /// `pick` (the source picker's choice, mid-song or answering `ask`) replaces a running fetch
+    /// from another peer.
     pub async fn stream(&self, track: Track, pick: Option<SourceRef>) -> Result<Arc<Fetch>> {
         if let Some(f) = self.live(&track.id) {
             let current = f.now().source.map(|s| s.source_ref());
@@ -215,12 +253,12 @@ impl Fetcher {
                 self.cache.touch(&track.id).await?;
                 return Ok(f);
             }
-            self.cancel_fetch(&f);
+            self.replace(&f);
         }
         let cached = self.cache.finished(&track.id, pick.as_ref()).await?;
         let f = match cached.filter(|e| pick.is_none() || pick.as_ref() == Some(&e.source)) {
             Some(entry) => self.cached(track, entry).await?,
-            None => self.start(track, pick),
+            None => self.start(track, pick, Purpose::Stream),
         };
         want(&f, |w| w.streaming = true);
         Ok(f)
@@ -237,7 +275,7 @@ impl Fetcher {
             Some(f) => f,
             None => match self.cache.finished(&track.id, Some(&source)).await? {
                 Some(e) if e.source == source => return Ok(e.path),
-                _ => self.start(track, Some(source)),
+                _ => self.start(track, Some(source), Purpose::Save),
             },
         };
         want(&f, |w| w.saving += 1);
@@ -252,6 +290,20 @@ impl Fetcher {
                 "soulseek",
                 p.error.unwrap_or_else(|| "the transfer failed".into()),
             )),
+        }
+    }
+
+    /// The player switched to another copy: the old fetch stops, unless a save is completing
+    /// it; then it runs on for the save, out of the player's way.
+    fn replace(&self, f: &Arc<Fetch>) {
+        let saving = want(f, |w| {
+            w.streaming = false;
+            w.saving
+        });
+        if saving == 0 {
+            self.cancel_fetch(f);
+        } else if let Ok(mut live) = self.live.lock() {
+            live.retain(|_, other| !Arc::ptr_eq(other, f));
         }
     }
 
@@ -287,7 +339,7 @@ impl Fetcher {
         let row = ended.ok_or_else(|| Error::NotFound(format!("no ended transfer {job_id}")))?;
         let track: Track =
             serde_json::from_value(row["track"].clone()).map_err(|e| Error::internal(format!("transfer row: {e}")))?;
-        Ok(self.start(track, None).job_id.clone())
+        Ok(self.start(track, None, Purpose::Stream).job_id.clone())
     }
 
     /// Activity rows: running transfers first, then recently ended ones.
@@ -346,10 +398,11 @@ impl Fetcher {
         }
     }
 
-    fn new_fetch(&self, track: Track, progress: Progress) -> Arc<Fetch> {
+    fn new_fetch(&self, track: Track, purpose: Purpose, progress: Progress) -> Arc<Fetch> {
         let n = self.next.fetch_add(1, Ordering::Relaxed);
         let f = Arc::new(Fetch {
             job_id: format!("job-{:x}{n}", lull_core::now()),
+            purpose,
             started: lull_core::now(),
             progress: watch::channel(progress).0,
             stop: watch::channel(false).0,
@@ -369,44 +422,27 @@ impl Fetcher {
         self.cache.touch(&track.id).await?;
         let source = self
             .sources
-            .ranked(&track.id)
-            .into_iter()
-            .map(|r| r.source)
-            .find(|s| s.is(&e.source))
+            .get(&track.id, &e.source)
             .or_else(|| bare_source(&e.source));
+        let below = source
+            .as_ref()
+            .is_some_and(|s| !s.meets(&self.rules.get().stream.minimum, track.duration));
         Ok(self.new_fetch(
             track,
+            Purpose::Stream,
             Progress {
                 attempt: 1,
-                status: Status::Done,
                 received: e.source.size,
                 source,
-                speed: 0,
-                queue_pos: None,
                 path: Some(e.path),
-                error: None,
-                failed_peers: Vec::new(),
-                peers_found: 0,
+                below,
+                ..Progress::new(Status::Done)
             },
         ))
     }
 
-    fn start(&self, track: Track, pick: Option<SourceRef>) -> Arc<Fetch> {
-        let f = self.new_fetch(
-            track,
-            Progress {
-                attempt: 0,
-                status: Status::Finding,
-                source: None,
-                received: 0,
-                speed: 0,
-                queue_pos: None,
-                path: None,
-                error: None,
-                failed_peers: Vec::new(),
-                peers_found: 0,
-            },
-        );
+    fn start(&self, track: Track, pick: Option<SourceRef>, purpose: Purpose) -> Arc<Fetch> {
+        let f = self.new_fetch(track, purpose, Progress::new(Status::Finding));
         let this = self.clone();
         let fetch = f.clone();
         tokio::spawn(async move { this.run(fetch, pick).await });
@@ -479,8 +515,9 @@ impl Fetcher {
         )))
     }
 
-    /// The listener's pick first, then the best-ranked source not yet tried. With nothing
-    /// known about the song, searches for it first ("finding").
+    /// The listener's pick first, then the first untried copy in the profile's order that
+    /// passes its minimum. With nothing known about the song, searches for it first
+    /// ("finding"). When copies exist but none passes, the profile's `below` rule decides.
     async fn next_source(
         &self,
         f: &Fetch,
@@ -488,38 +525,100 @@ impl Fetcher {
         tried: &[SourceRef],
         stop: &mut watch::Receiver<bool>,
     ) -> Result<Source, Stop> {
-        let untried = |sources: &Sources| -> Vec<Source> {
-            sources
-                .ranked(&f.track.id)
-                .into_iter()
-                .map(|r| r.source)
-                .filter(|s| !tried.iter().any(|t| s.is(t)))
-                .collect()
-        };
         if let Some(pick) = pick.filter(|p| !tried.contains(p)) {
-            let known = untried(&self.sources).into_iter().find(|s| s.is(pick));
-            return known
+            return self
+                .sources
+                .get(&f.track.id, pick)
                 .or_else(|| bare_source(pick))
                 .ok_or_else(|| Stop::Failed(format!("{} is not audio lull can play", pick.path)));
         }
-        let mut found = untried(&self.sources);
-        if found.is_empty() && tried.is_empty() {
-            self.update(f, |p| p.status = Status::Finding);
-            tokio::select! {
-                r = self.searches.resolve(&f.track) => r.map_err(|e| Stop::Failed(e.to_string()))?,
-                _ = stopped(stop) => return Err(Stop::Cancelled),
+        let rules = self.rules.get();
+        let mut searches = 0;
+        loop {
+            let (copies, queued_out) = self.untried(f, tried, &rules);
+            if copies.is_empty() && queued_out == 0 && tried.is_empty() && searches == 0 {
+                self.find(f, stop).await?;
+                searches += 1;
+                continue;
             }
-            found = untried(&self.sources);
+            let peers = copies.len() + tried.len();
+            self.update(f, |p| p.peers_found = peers);
+            if let Some(passing) = copies.iter().find(|r| r.meets) {
+                return Ok(passing.source.clone());
+            }
+            let Some(best) = copies.first() else {
+                return Err(Stop::Failed(match (queued_out, tried.is_empty()) {
+                    (0, true) => "no peer shares this song right now".into(),
+                    (0, false) => "no other peer shares this song right now".into(),
+                    (n, _) => format!(
+                        "{n} more peers share this song, each with more than {} people waiting",
+                        rules.max_peer_queue
+                    ),
+                }));
+            };
+            match below(f.purpose, &rules) {
+                Below::Take => return Ok(best.source.clone()),
+                Below::Search if searches < KEEP_LOOKING_SEARCHES => {
+                    if searches > 0 {
+                        tokio::select! {
+                            _ = tokio::time::sleep(KEEP_LOOKING_GAP) => {}
+                            _ = stopped(stop) => return Err(Stop::Cancelled),
+                        }
+                    }
+                    self.find(f, stop).await?;
+                    searches += 1;
+                }
+                Below::Search => {
+                    return Err(Stop::Failed(format!(
+                        "no copy meets your streaming minimum ({}) after {searches} searches",
+                        rules.stream.minimum
+                    )));
+                }
+                Below::Ask => return self.ask(f, copies, stop).await,
+                Below::Refuse => {
+                    return Err(Stop::Failed(format!(
+                        "no other copy meets your saving minimum ({})",
+                        rules.save.minimum
+                    )));
+                }
+            }
         }
-        let peers = found.len() + tried.len();
-        self.update(f, |p| p.peers_found = peers);
-        found.into_iter().next().ok_or_else(|| {
-            Stop::Failed(if tried.is_empty() {
-                "no peer shares this song right now".into()
-            } else {
-                "no other peer shares this song right now".into()
-            })
-        })
+    }
+
+    /// Untried copies in the profile's order, and how many were left out for a long queue.
+    fn untried(&self, f: &Fetch, tried: &[SourceRef], rules: &Rules) -> (Vec<Ranked>, usize) {
+        let (copies, queued_out): (Vec<Ranked>, Vec<Ranked>) = self
+            .sources
+            .ordered(&f.track.id, f.track.duration, rules, f.purpose)
+            .into_iter()
+            .filter(|r| !tried.iter().any(|t| r.source.is(t)))
+            .partition(|r| !r.queue_too_long);
+        (copies, queued_out.len())
+    }
+
+    /// Searches Soulseek for the song ("finding").
+    async fn find(&self, f: &Fetch, stop: &mut watch::Receiver<bool>) -> Result<(), Stop> {
+        self.update(f, |p| p.status = Status::Finding);
+        tokio::select! {
+            r = self.searches.resolve(&f.track) => r.map_err(|e| Stop::Failed(e.to_string())),
+            _ = stopped(stop) => Err(Stop::Cancelled),
+        }
+    }
+
+    /// `ask`: offers the copies found in the `stream` event. The listener answers by playing
+    /// one (`GET /api/stream/{id}?peer=&path=`), which replaces this fetch, or by skipping.
+    async fn ask(&self, f: &Fetch, copies: Vec<Ranked>, stop: &mut watch::Receiver<bool>) -> Result<Source, Stop> {
+        self.update(f, |p| {
+            p.status = Status::Choosing;
+            p.choices = copies.into_iter().take(CHOICES).collect();
+        });
+        tokio::select! {
+            _ = tokio::time::sleep(CHOOSE_WAIT) => Err(Stop::Failed(format!(
+                "no copy meets your streaming minimum ({}), and none was chosen",
+                self.rules.get().stream.minimum
+            ))),
+            _ = stopped(stop) => Err(Stop::Cancelled),
+        }
     }
 
     /// One transfer from one source, watched until it finishes, stalls or is stopped.
@@ -534,9 +633,13 @@ impl Fetcher {
             .make_room(source.size)
             .await
             .map_err(|e| Err(Stop::Failed(e.to_string())))?;
+        let rules = self.rules.get();
+        let below = !source.meets(&rules.stream.minimum, f.track.duration);
         self.update(f, |p| {
             p.attempt = attempt;
             p.source = Some(source.clone());
+            p.below = below;
+            p.choices.clear();
             p.status = Status::Queued;
             p.received = 0;
             p.speed = 0;
@@ -619,7 +722,7 @@ impl Fetcher {
                         .unwrap_or_default();
                     return Err(Ok(Skip::Unavailable(format!("{} kept us queued{pos}", source.user))));
                 }
-                Phase::InProgress if quiet > STALL_TIMEOUT => {
+                Phase::InProgress if quiet > rules.stall_timeout() => {
                     self.give_up(source, &t).await;
                     let pct = received.saturating_mul(100) / source.size.max(1);
                     return Err(Ok(Skip::Stalled(format!("{} stalled at {pct}%", source.user))));
@@ -733,6 +836,32 @@ impl Fetcher {
     }
 }
 
+/// What to do when copies exist but none passes the profile's minimum.
+enum Below {
+    /// Take the best of them (`playBest`, `saveBestUpgrade`).
+    Take,
+    /// Search again for a passing copy (`keepLooking`).
+    Search,
+    /// Offer them to the listener (`ask`).
+    Ask,
+    /// A save's fallback: library already applied `wait` or `ask` before it started.
+    Refuse,
+}
+
+fn below(purpose: Purpose, rules: &Rules) -> Below {
+    match purpose {
+        Purpose::Stream => match rules.stream.below {
+            StreamBelow::PlayBest => Below::Take,
+            StreamBelow::KeepLooking => Below::Search,
+            StreamBelow::Ask => Below::Ask,
+        },
+        Purpose::Save => match rules.save.below {
+            SaveBelow::SaveBestUpgrade => Below::Take,
+            SaveBelow::Wait | SaveBelow::Ask => Below::Refuse,
+        },
+    }
+}
+
 /// Resolves once `stop` is set (or its sender is gone).
 pub async fn stopped(stop: &mut watch::Receiver<bool>) {
     let _ = stop.wait_for(|s| *s).await;
@@ -757,6 +886,7 @@ fn bare_source(r: &SourceRef) -> Option<Source> {
         upload_speed: 0,
         free_slot: false,
         queue: 0,
+        length: None,
     })
 }
 
@@ -773,6 +903,7 @@ async fn on_disk(candidates: &[PathBuf]) -> Option<(PathBuf, u64)> {
 fn stream_status(s: Status) -> &'static str {
     match s {
         Status::Finding => "finding",
+        Status::Choosing => "choose",
         Status::Queued => "queued",
         Status::Buffering => "buffering",
         Status::Streaming | Status::Done => "streaming",
@@ -784,7 +915,7 @@ fn stream_status(s: Status) -> &'static str {
 
 fn transfer_state(s: Status) -> &'static str {
     match s {
-        Status::Finding | Status::Queued => "queued",
+        Status::Finding | Status::Choosing | Status::Queued => "queued",
         Status::Buffering | Status::Streaming => "transferring",
         Status::Stalled | Status::Fallback => "stalled",
         Status::Done => "done",
@@ -794,7 +925,7 @@ fn transfer_state(s: Status) -> &'static str {
 }
 
 pub fn stream_event(f: &Fetch, p: &Progress) -> serde_json::Value {
-    json!({
+    let mut event = json!({
         "trackId": f.track.id,
         "jobId": f.job_id,
         "status": stream_status(p.status),
@@ -807,7 +938,12 @@ pub fn stream_event(f: &Fetch, p: &Progress) -> serde_json::Value {
         "attempt": p.attempt,
         "failedPeers": p.failed_peers,
         "error": p.error,
-    })
+        "belowMinimum": p.below,
+    });
+    if p.status == Status::Choosing {
+        event["choices"] = json!(p.choices);
+    }
+    event
 }
 
 fn transfer_event(f: &Fetch, p: &Progress) -> serde_json::Value {

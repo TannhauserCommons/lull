@@ -1,15 +1,17 @@
-//! Search. The library answers at once through the `Library` seam; one Soulseek search then
-//! runs in slskd. slskd reveals a search's answers only once it ends, so lull publishes its
-//! counters live and the merged results when it ends (≤ `DEADLINE`): one row per song across
-//! peers, and folders grouped as albums (docs/context/soulseek.md#search).
+//! Soulseek search, behind discovery's catalog search (ADR-0008). One search runs in slskd per
+//! query; slskd reveals its answers only once it ends, so lull publishes its counters live and
+//! the merged results when it ends (≤ `DEADLINE`): one row per song across peers, and folders
+//! grouped as albums. Songs no catalog listed for the query are marked `onlySoulseek`. Resolve
+//! searches find copies of one song (docs/context/soulseek.md#search).
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use lull_core::events::Bus;
-use lull_core::ids::{AlbumId, ArtistId, TrackId, normalize, normalize_artist};
+use lull_core::ids::{AlbumId, ArtistId, TrackId, normalize};
 use lull_core::model::{Album, Entities, FileFacts, Saved, Track};
+use lull_core::quality::Quality;
 use lull_core::seams::Library;
 use lull_core::{Error, Result, catalog, db::Db};
 use serde::Serialize;
@@ -17,6 +19,7 @@ use serde_json::{Value, json};
 use tokio::sync::watch;
 
 use crate::files::{self, Attributes};
+use crate::matching::Wanted;
 use crate::slskd::{self, Slskd};
 use crate::sources::{Ranked, Source, Sources};
 
@@ -37,8 +40,6 @@ const MIN_QUERY: usize = 3;
 const ALBUM_MIN_TRACKS: usize = 3;
 const MAX_SONGS: usize = 200;
 const MAX_ALBUMS: usize = 40;
-const LIBRARY_LIMIT: usize = 50;
-const LIBRARY_WAIT: Duration = Duration::from_secs(4);
 
 #[derive(Clone)]
 pub struct Searches {
@@ -46,7 +47,7 @@ pub struct Searches {
     bus: Bus,
     db: Db,
     sources: Sources,
-    /// Handed over by `router` (server wires the library after soulseek starts).
+    /// Handed over by `router` (server wires the library after soulseek starts); duplicate notes.
     library: Arc<OnceLock<Arc<dyn Library>>>,
     inner: Arc<Mutex<Inner>>,
     last_start: Arc<tokio::sync::Mutex<Option<Instant>>>,
@@ -61,6 +62,8 @@ struct Inner {
     resolving: HashMap<String, watch::Receiver<bool>>,
     /// How the latest network searches ended, newest last.
     outcomes: VecDeque<Outcome>,
+    /// The catalog's top tracks per query key (`search.catalog`), for `onlySoulseek`.
+    catalog: HashMap<String, (Instant, Vec<Track>)>,
 }
 
 /// How one network search ended: what the status and diagnostics report.
@@ -84,17 +87,16 @@ struct Session {
     started: Instant,
     /// The latest `search.results` payload, for clients that ask again (`resync`, the same query).
     latest: Mutex<Option<Value>>,
+    /// The songs of the final results, to tell which ones no catalog listed.
+    songs: Mutex<Vec<Track>>,
     stop: watch::Sender<bool>,
 }
 
-/// `GET /api/search` answer.
+/// `GET /api/soulseek/search` answer.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Started {
     pub search_id: String,
-    pub library: Vec<TrackId>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub library_error: Option<String>,
     /// The latest Soulseek results when this query was searched moments ago.
     pub soulseek: Option<Value>,
     pub entities: Entities,
@@ -117,8 +119,8 @@ impl Searches {
         let _ = self.library.set(library);
     }
 
-    /// The listener typed a query: library hits now, Soulseek results as events.
-    pub async fn start(&self, query: &str, online: bool) -> Result<Started> {
+    /// The listener submitted a query: Soulseek results follow as events.
+    pub fn start(&self, query: &str, online: bool) -> Result<Started> {
         let query = query.trim();
         if query.is_empty() || query.chars().count() > 200 {
             return Err(Error::BadRequest("a search needs 1 to 200 characters".into()));
@@ -129,27 +131,53 @@ impl Searches {
             let (query, session) = (query.to_owned(), session.clone());
             tokio::spawn(async move { this.run(&session, &query, online).await });
         }
-        let (library_hits, library_error) = match self.library.get() {
-            None => (Vec::new(), Some("the library is not connected".to_owned())),
-            Some(library) => match tokio::time::timeout(LIBRARY_WAIT, library.search(query, LIBRARY_LIMIT)).await {
-                Ok(Ok(tracks)) => (tracks, None),
-                Ok(Err(e)) => (Vec::new(), Some(e.to_string())),
-                Err(_) => (Vec::new(), Some("the library took too long to answer".to_owned())),
-            },
-        };
-        let mut entities = Entities::default();
-        let ids = library_hits.iter().map(|t| t.id.clone()).collect();
-        for t in library_hits {
-            entities.tracks.insert(t.id.clone(), t);
-        }
         let soulseek = session.latest.lock().ok().and_then(|l| l.clone());
         Ok(Started {
             search_id: session.id.clone(),
-            library: ids,
-            library_error,
             soulseek,
-            entities,
+            entities: Entities::default(),
         })
+    }
+
+    /// Discovery's top catalog tracks for a query (`search.catalog`): the search's final
+    /// results get `onlySoulseek`, now if they are in, else when they arrive.
+    pub fn catalog(&self, query: &str, tracks: Vec<Track>) {
+        let key = normalize(query);
+        let session = {
+            let Ok(mut inner) = self.inner.lock() else { return };
+            inner.catalog.retain(|_, (at, _)| at.elapsed() < REUSE_FOR);
+            inner.catalog.insert(key.clone(), (Instant::now(), tracks));
+            inner.recent.iter().rev().find(|s| s.key == key).cloned()
+        };
+        let Some(session) = session.filter(|s| s.latest_done() == Some(true)) else {
+            return;
+        };
+        let Some(mut payload) = session.latest.lock().ok().and_then(|l| l.clone()) else {
+            return;
+        };
+        if payload.get("results").is_none() {
+            return;
+        }
+        payload["onlySoulseek"] = json!(self.only_soulseek(&session));
+        if let Ok(mut l) = session.latest.lock() {
+            *l = Some(payload.clone());
+        }
+        self.bus.publish("search.results", payload);
+    }
+
+    /// The result songs no catalog track for this query matches. `None` before the catalog
+    /// has answered.
+    fn only_soulseek(&self, session: &Session) -> Option<Vec<TrackId>> {
+        let catalog = self.inner.lock().ok()?.catalog.get(&session.key)?.1.clone();
+        let wanted: Vec<Wanted> = catalog.iter().map(Wanted::of).collect();
+        let songs = session.songs.lock().ok()?;
+        Some(
+            songs
+                .iter()
+                .filter(|t| !t.saved && !wanted.iter().any(|w| w.matches(t, t.duration, "")))
+                .map(|t| t.id.clone())
+                .collect(),
+        )
     }
 
     /// The session for a query: a recent one for the same words, or a new one that stops
@@ -222,19 +250,31 @@ impl Searches {
         let files = merged.files;
         let peers = responses.len();
         match self.results(merged).await {
-            Ok((results, entities)) => publish(with(json!({
-                "results": results, "files": files, "peers": peers, "done": true, "entities": entities,
-            }))),
+            Ok((results, entities)) => {
+                let songs = results
+                    .iter()
+                    .filter_map(Row::track_id)
+                    .filter_map(|id| entities.tracks.get(id));
+                if let Ok(mut s) = session.songs.lock() {
+                    *s = songs.cloned().collect();
+                }
+                publish(with(json!({
+                    "results": results, "files": files, "peers": peers, "done": true, "entities": entities,
+                    "onlySoulseek": self.only_soulseek(session),
+                })))
+            }
             Err(e) => publish(with(
                 json!({ "results": [], "files": files, "peers": peers, "done": true, "error": e.to_string() }),
             )),
         }
     }
 
-    /// Finds sources for one song (a queue item, a discovery pick) by searching its artist and
-    /// title. Concurrent asks for the same song share one search. Returns once it has ended.
+    /// Finds sources for one song (a queue item, a discovery pick, a save) by searching its
+    /// artist and title, then a looser query when that finds no copy. Files count as the song
+    /// by `matching` (loose names, length). Concurrent asks for the same song share one search.
+    /// Returns once it has ended.
     pub async fn resolve(&self, track: &Track) -> Result<()> {
-        let text = format!("{} {}", normalize_artist(&track.artist), normalize(&track.title));
+        let text = Wanted::query(track);
         let existing = self.inner.lock().ok().and_then(|i| i.resolving.get(&text).cloned());
         if let Some(mut done) = existing {
             let _ = done.wait_for(|d| *d).await;
@@ -244,22 +284,12 @@ impl Searches {
         if let Ok(mut inner) = self.inner.lock() {
             inner.resolving.insert(text.clone(), rx);
         }
-        let (_never, mut stop) = watch::channel(false);
-        let outcome = self.network(&text, &mut stop, |_| {}).await;
-        if let Ok(Some(responses)) = &outcome {
-            let mut merged = merge(responses);
-            // Same artist and title on any album counts: the song is what was asked for.
-            let wanted = (normalize_artist(&track.artist), normalize(&track.title));
-            let matching: Vec<Source> = merged
-                .songs
-                .values()
-                .filter(|s| (normalize_artist(&s.track.artist), normalize(&s.track.title)) == wanted)
-                .flat_map(|s| s.sources.iter().cloned())
-                .collect();
-            let mut found: HashMap<TrackId, Vec<Source>> =
-                merged.songs.drain().map(|(id, s)| (id, s.sources)).collect();
-            found.entry(track.id.clone()).or_default().extend(matching);
-            self.sources.add(found);
+        let wanted = Wanted::of(track);
+        let mut outcome = self.search_for(track, &wanted, &text).await;
+        if matches!(outcome, Ok(0))
+            && let Some(looser) = wanted.looser_query(&text)
+        {
+            outcome = self.search_for(track, &wanted, &looser).await;
         }
         if let Ok(mut inner) = self.inner.lock() {
             inner.resolving.remove(&text);
@@ -268,9 +298,34 @@ impl Searches {
         outcome.map(drop)
     }
 
+    /// One resolve search: everything it found is kept by song, and the files that are this
+    /// song also under its id. Returns how many files matched.
+    async fn search_for(&self, track: &Track, wanted: &Wanted, text: &str) -> Result<usize> {
+        let (_never, mut stop) = watch::channel(false);
+        let Some(responses) = self.network(text, &mut stop, |_| {}).await? else {
+            return Ok(0);
+        };
+        let mut merged = merge(&responses);
+        let matching: Vec<Source> = merged
+            .songs
+            .values()
+            .flat_map(|s| {
+                s.sources
+                    .iter()
+                    .filter(|src| wanted.matches(&s.track, src.length, &src.path))
+            })
+            .cloned()
+            .collect();
+        let n = matching.len();
+        let mut found: HashMap<TrackId, Vec<Source>> = merged.songs.drain().map(|(id, s)| (id, s.sources)).collect();
+        found.entry(track.id.clone()).or_default().extend(matching);
+        self.sources.add(found);
+        Ok(n)
+    }
+
     /// Whether a search that may still add sources for this song is running.
     pub fn searching_for(&self, track: &Track) -> bool {
-        let text = format!("{} {}", normalize_artist(&track.artist), normalize(&track.title));
+        let text = Wanted::query(track);
         self.inner.lock().is_ok_and(|i| {
             i.resolving.contains_key(&text) || i.recent.back().is_some_and(|s| s.latest_done() == Some(false))
         })
@@ -458,6 +513,7 @@ impl Session {
             key,
             started: Instant::now(),
             latest: Mutex::new(None),
+            songs: Mutex::default(),
             stop: watch::channel(false).0,
         }
     }
@@ -465,6 +521,15 @@ impl Session {
     fn latest_done(&self) -> Option<bool> {
         let latest = self.latest.lock().ok()?;
         Some(latest.as_ref()?.get("done")?.as_bool().unwrap_or(false))
+    }
+}
+
+impl Row {
+    fn track_id(&self) -> Option<&TrackId> {
+        match self {
+            Row::Track { track_id, .. } => Some(track_id),
+            Row::Album { .. } => None,
+        }
     }
 }
 
@@ -507,12 +572,9 @@ pub struct FolderView {
     pub cover: bool,
 }
 
-/// A saved song met again: is this file an upgrade over the saved one?
+/// A saved song met again: is this file an upgrade over the saved one (`Quality::beats`)?
 fn dup_kind(found: &FileFacts, saved: Option<&FileFacts>) -> &'static str {
-    let better = saved.is_some_and(|s| {
-        (found.lossless && !s.lossless)
-            || (!found.lossless && !s.lossless && found.kbps.unwrap_or(0) >= s.kbps.unwrap_or(0) + 64)
-    });
+    let better = saved.is_some_and(|s| Quality::of(Some(found)).beats(&Quality::of(Some(s))));
     if better { "better" } else { "note" }
 }
 
@@ -628,6 +690,7 @@ fn song_of(r: &slskd::Response, f: &slskd::File) -> Option<(Track, Source)> {
         upload_speed: r.upload_speed,
         free_slot: r.has_free_upload_slot,
         queue: u32::try_from(r.queue_length).unwrap_or(u32::MAX),
+        length: f.length.filter(|l| *l > 0),
     };
     Some((track, source))
 }

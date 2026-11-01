@@ -6,15 +6,22 @@ How `GET /api/stream/{trackId}` plays a song while slskd is still downloading it
 
 A **fetch** gets one song onto disk. There is at most one live fetch per track, shared by everyone who wants the song (the player streaming it, a save completing it), so the bytes cross the network once.
 
-1. **Pick a source.** The listener's pick (`?peer=&path=`) comes first, then the best-ranked untried source. With no known source the fetch searches for the song first (`finding`).
-2. **Make room** in the cache for the file ([cache.md](cache.md)), then queue it in slskd.
-3. **Watch it every second**, and give up on this peer when:
+1. **Pick a source.** The listener's pick (`?peer=&path=`) comes first, then the first untried copy that passes the profile's minimum, in its order ([soulseek.md](soulseek.md#source-rules)): the streaming profile when the player started the fetch, the saving one when a save did. With no known source the fetch searches for the song first (`finding`).
+2. **None passes.** When copies exist but none passes the minimum, the profile's `below` decides:
+   - `playBest`: the best of them plays; the `stream` event says `belowMinimum: true`, so the player can show a badge;
+   - `keepLooking`: search again, up to 3 searches 20 s apart, then fail with "no copy meets your streaming minimum";
+   - `ask`: the fetch waits as `choose`, with the copies found in the `stream` event's `choices` (up to 8). The listener answers by playing one (`?peer=&path=`), which replaces the fetch, or by skipping; after 10 minutes it fails;
+   - a save's fallback (`saveBestUpgrade`) takes the best one; under `wait` and `ask` library decided before starting ([save-flow.md](save-flow.md)), so the fetch fails rather than save a copy below the minimum.
+3. **Make room** in the cache for the file ([cache.md](cache.md)), then queue it in slskd.
+4. **Watch it every second**, and give up on this peer when:
    - it hasn't accepted the request within 20 s;
    - it has kept the transfer queued for 30 s;
-   - no new bytes have arrived for 15 s (shown as `stalled` after 5 s);
+   - no new bytes have arrived for Settings › Sources' stall timeout (`stallTimeout`, 15 s by default; shown as `stalled` after 5 s);
    - slskd reports the transfer failed.
-4. **Fall back** to the next source. A stall is remembered against the peer (ranking demotes it); an offline peer or a long queue is not. A fetch gives up after 5 peers.
-5. **Done:** slskd moves the file to its downloads folder. Its final path comes from slskd's `DownloadFileComplete` event; the cache records it, and slskd's transfer record is removed.
+5. **Fall back** to the next copy in the same order. A stall is remembered against the peer (ranking demotes it); an offline peer or a long queue is not. A fetch gives up after 5 peers. Peers whose queue is longer than `maxPeerQueue` are never picked automatically.
+6. **Done:** slskd moves the file to its downloads folder. Its final path comes from slskd's `DownloadFileComplete` event; the cache records it, and slskd's transfer record is removed.
+
+**Switching source mid-song.** `GET /api/stream/{id}?peer=&path=` with another copy than the one playing replaces the fetch: the old one is cancelled, unless a save is completing it; then it runs on for the save, out of the player's way (no more `stream` events). The old response ends; the player opens the new one and seeks back by time (ADR-0008).
 
 **Stopping.** `DELETE /api/stream/{id}` (skip, next) cancels the fetch unless a save still needs it. slskd keeps the partial file, and asking for the song again resumes it.
 
@@ -23,7 +30,7 @@ A **fetch** gets one song onto disk. There is at most one live fetch per track, 
 - `transfer`;
 - `job` (an Activity row).
 
-Stream status follows the fetch: `finding → queued → buffering` (under 256 KB received) `→ streaming`, with `stalled`, `fallback` and `failed`.
+Stream status follows the fetch: `finding → queued → buffering` (under 256 KB received) `→ streaming`, with `stalled`, `fallback`, `choose` and `failed`.
 
 ## Where the bytes are
 
