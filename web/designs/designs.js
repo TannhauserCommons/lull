@@ -10,8 +10,9 @@
      assets/      fonts and images, referenced relatively from theme.css
    A built-in's theme.json and slots also ship as one generated script, designs/<id>.js, which the pre-paint boot
    loads alongside the CSS: no request chain before first paint. The theme in use is per device ('lull:prefs'.design);
-   ?theme=safe always boots the default design. The listener's manifests seen last are cached ('lull:themes'), so the
-   boot knows their shell at once; only Settings > Appearance asks the hub for the list (Designs.refresh). */
+   ?theme=safe boots the default design and keeps it. The listener's manifests seen last are cached ('lull:themes'), so
+   the boot knows their shell at once and asks the hub only for that theme's theme.json, to learn whether it was deleted;
+   only Settings > Appearance asks the hub for the list (Designs.refresh). */
 (function () {
   'use strict';
   var D = window.Designs = {};
@@ -103,16 +104,12 @@
     }));
   }
 
-  function getJson(url) {
+  function getJson(url) { return get(url).then(function (r) { return r.json(); }); }
+  function getText(url) { return get(url).then(function (r) { return r.text(); }); }
+  function get(url) {
     return fetch(url, { credentials: 'same-origin' }).then(function (r) {
-      if (!r.ok) throw new Error(url + ': ' + r.status);
-      return r.json();
-    });
-  }
-  function getText(url) {
-    return fetch(url, { credentials: 'same-origin' }).then(function (r) {
-      if (!r.ok) throw new Error(url + ': ' + r.status);
-      return r.text();
+      if (!r.ok) { var e = new Error(url + ': ' + r.status); e.status = r.status; throw e; }
+      return r;
     });
   }
   function manifest(id) {
@@ -479,6 +476,7 @@
      uses its cached manifest; on its first visit the page stays hidden until it has one (base.css, :root[data-booting]). */
   var booting = null;
   D.boot = function () {
+    if (safe) pick(D.fallback);                     // so the next normal load doesn't bring the broken theme back
     var id = D.wanted(), m = D.list[id], design = designOf(id);
     D.current = id;
     if (design) { root.setAttribute('data-design', design); if (link) link.setAttribute('href', D.base + design + '/theme.css'); }
@@ -487,14 +485,27 @@
     else if (!m || !m.builtIn) root.setAttribute('data-booting', '');
     if (link && !design && m && m.shell) link.disabled = true;
     setUserCss(id);
+    if (m && !m.builtIn && m.shell) getJson(D.packageUrl(id) + 'theme.json').catch(function (e) { if (e.status === 404) forget(id); });
     booting = prepare(id).then(function () {
       applyAttrs(id); setUserCss(id);
       if (link) { var d = designOf(id); link.disabled = !d; if (d) link.setAttribute('href', D.base + d + '/theme.css'); }
     }, function (e) {
       console.error('Theme ' + id + ' failed to load, using ' + D.fallback, e);
+      if (e && e.status === 404) forget(id);
       return prepare(D.fallback).then(function () { applyAttrs(D.fallback); setUserCss(D.fallback); if (link) { link.disabled = false; link.setAttribute('href', D.base + D.fallback + '/theme.css'); } });
     }).then(function () { root.removeAttribute('data-booting'); });
   };
+  /* this device's theme ('lull:prefs'.design); app.js keeps the rest of the prefs */
+  function pick(id) {
+    var p = store('prefs') || {};
+    if (p.design !== id) { p.design = id; store('prefs', p); }
+  }
+  /* the hub says a cached theme is gone (deleted from another device): the next load neither shows it nor asks for it */
+  function forget(id) {
+    var c = store('themes') || {};
+    if (c[id]) { delete c[id]; store('themes', c); }
+    if ((store('prefs') || {}).design === id) pick(D.fallback);
+  }
   /* run fn once the current theme's slots and manifest are ready */
   D.ready = function (fn) { (booting || prepare(D.current || D.wanted())).then(fn, fn); };
 

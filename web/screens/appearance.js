@@ -129,8 +129,8 @@
   App.action('theme-delete', function (el) {
     var id = el.getAttribute('data-id'), d = App.designs[id];
     App.confirm({ title: 'Delete ' + d.label + '?', text: 'It goes from your hub and from every device using it (they switch to ' + App.designs[Designs.fallback].label + '). Export it first to keep a copy.', confirm: 'Delete', danger: true }, function () {
+      if (Designs.current === id) App.setDesign(Designs.fallback);     // first, so nothing asks for its files once they're gone
       M.api('/api/themes/' + encodeURIComponent(id), { method: 'DELETE' }).then(function () {
-        if (Designs.current === id) App.setPref('design', Designs.fallback);
         App.toast('Deleted ' + d.label, { icon: 'trash' });
         return Designs.refresh().then(function () { if (onAppearance()) App.refresh(); });
       }).catch(function (err) { App.toast('Couldn\'t delete ' + d.label + ': ' + err.message, { kind: 'error' }); });

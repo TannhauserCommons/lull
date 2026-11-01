@@ -41,7 +41,7 @@ A folder, or a `.lulltheme` file (a zip of that folder):
 
 **Installing one:** drop the `.lulltheme` on Settings › Appearance › Your themes, or make it in Theme Studio there. Both store it on your hub in `<data dir>/themes/<id>/`, so every device can pick it. You can also edit the files in that folder directly: open devices reload the theme within a second.
 
-**Safe mode:** add `?theme=safe` to the address (`https://your-hub/?theme=safe`) to boot the default design, whatever this device had picked.
+**Safe mode:** add `?theme=safe` to the address (`https://your-hub/?theme=safe`) to boot the default design, whatever this device had picked. The device keeps it from then on, so a theme that broke the app stays away until you pick it again. Deleting a theme moves every device using it back to the default too, including one that was off at the time (at its next start).
 
 ## 2. Your first theme: tokens only
 
