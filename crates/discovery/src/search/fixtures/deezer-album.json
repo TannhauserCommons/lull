@@ -1,0 +1,33 @@
+{
+ "data": [
+  {
+   "id": 423524437,
+   "title": "Creep EP",
+   "link": "https://www.deezer.com/album/423524437",
+   "cover": "https://api.deezer.com/album/423524437/image",
+   "cover_small": "https://cdn-images.dzcdn.net/images/cover/d06ea246e25c65b3004627ff75e87eb8/56x56-000000-80-0-0.jpg",
+   "cover_medium": "https://cdn-images.dzcdn.net/images/cover/d06ea246e25c65b3004627ff75e87eb8/250x250-000000-80-0-0.jpg",
+   "cover_big": "https://cdn-images.dzcdn.net/images/cover/d06ea246e25c65b3004627ff75e87eb8/500x500-000000-80-0-0.jpg",
+   "cover_xl": "https://cdn-images.dzcdn.net/images/cover/d06ea246e25c65b3004627ff75e87eb8/1000x1000-000000-80-0-0.jpg",
+   "md5_image": "d06ea246e25c65b3004627ff75e87eb8",
+   "genre_id": 85,
+   "nb_tracks": 6,
+   "record_type": "ep",
+   "tracklist": "https://api.deezer.com/album/423524437/tracks",
+   "explicit_lyrics": true,
+   "type": "album",
+   "artist": {
+    "id": 399,
+    "name": "Radiohead",
+    "picture": "https://api.deezer.com/artist/399/image",
+    "picture_small": "https://cdn-images.dzcdn.net/images/artist/0d58cfbc90f2e776608bcdc0c45a4711/56x56-000000-80-0-0.jpg",
+    "picture_medium": "https://cdn-images.dzcdn.net/images/artist/0d58cfbc90f2e776608bcdc0c45a4711/250x250-000000-80-0-0.jpg",
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/0d58cfbc90f2e776608bcdc0c45a4711/500x500-000000-80-0-0.jpg",
+    "picture_xl": "https://cdn-images.dzcdn.net/images/artist/0d58cfbc90f2e776608bcdc0c45a4711/1000x1000-000000-80-0-0.jpg",
+    "tracklist": "https://api.deezer.com/artist/399/top?limit=50",
+    "type": "artist"
+   }
+  }
+ ],
+ "total": 1
+}

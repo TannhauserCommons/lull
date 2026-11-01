@@ -12,6 +12,7 @@ use serde::de::DeserializeOwned;
 
 use super::cache::{Cache, DAY, HOUR};
 use super::{ArtistInfo, Release, Song, Switch, top_tags, year};
+use crate::search::merge::{AlbumHit, ArtistHit, Found, SongHit};
 
 const SERVICE: &str = "MusicBrainz";
 const WS: &str = "https://musicbrainz.org/ws/2";
@@ -334,6 +335,26 @@ impl MusicBrainz {
             .await
     }
 
+    /// Catalog search (ADR-0008): one recording search per query, for its songs and the release
+    /// groups and artists they name. Recordings where artist and title together hold the words
+    /// score highest; a title or an artist that is the whole query also counts.
+    pub async fn search(&self, q: &str) -> Result<Found> {
+        self.switch.check()?;
+        // Letters and digits only, so nothing in it is Lucene syntax.
+        let words = normalize(q);
+        if words.is_empty() {
+            return Ok(Found::default());
+        }
+        self.cache
+            .get(format!("mb:search:{words}"), DAY, || async {
+                let query = format!(
+                    "(recording:({words}) AND artist:({words})) OR recording:\"{words}\" OR artist:\"{words}\""
+                );
+                recordings(self.get("recording", &[("query", &query), ("limit", "25")]).await?)
+            })
+            .await
+    }
+
     async fn get<T: DeserializeOwned>(&self, path: &str, query: &[(&str, &str)]) -> Result<T> {
         self.http.pace(http::MUSICBRAINZ, http::MUSICBRAINZ_PACE).await;
         self.http
@@ -346,4 +367,121 @@ impl MusicBrainz {
                 e => e,
             })
     }
+}
+
+/// A recording search's answer as catalog rows. Each song is placed on its first official album
+/// (else EP or single, else any release); covers come from the Cover Art Archive.
+pub fn recordings(body: serde_json::Value) -> Result<Found> {
+    #[derive(Deserialize)]
+    struct Found_ {
+        recordings: Vec<Recording>,
+    }
+    #[derive(Deserialize)]
+    #[serde(rename_all = "kebab-case")]
+    struct Recording {
+        id: String,
+        title: String,
+        length: Option<u64>,
+        #[serde(default)]
+        artist_credit: Vec<Credit>,
+        #[serde(default)]
+        isrcs: Vec<String>,
+        #[serde(default)]
+        releases: Vec<RawRelease>,
+    }
+    #[derive(Deserialize)]
+    #[serde(rename_all = "kebab-case")]
+    struct RawRelease {
+        title: String,
+        status: Option<String>,
+        date: Option<String>,
+        #[serde(default)]
+        artist_credit: Vec<Credit>,
+        release_group: Option<Group>,
+    }
+    #[derive(Deserialize)]
+    #[serde(rename_all = "kebab-case")]
+    struct Group {
+        id: String,
+        primary_type: Option<String>,
+        #[serde(default)]
+        secondary_types: Vec<String>,
+    }
+    /// Lower is a better home for a song: an official studio album first.
+    fn preference(r: &RawRelease) -> (u8, String) {
+        let official = r.status.as_deref() == Some("Official");
+        let class = match &r.release_group {
+            Some(g) if g.secondary_types.is_empty() => match g.primary_type.as_deref() {
+                Some("Album") => 0,
+                Some("EP" | "Single") => 1,
+                _ => 2,
+            },
+            _ => 3,
+        };
+        let date = r
+            .date
+            .clone()
+            .filter(|d| !d.is_empty())
+            .unwrap_or_else(|| "9999".into());
+        (class + if official { 0 } else { 4 }, date)
+    }
+    fn kind(g: &Group) -> Option<String> {
+        if g.secondary_types.iter().any(|t| t == "Compilation") {
+            return Some("compilation".into());
+        }
+        g.primary_type.as_deref().map(|t| match t {
+            "EP" => "EP".to_owned(),
+            other => other.to_lowercase(),
+        })
+    }
+
+    let found: Found_ =
+        serde_json::from_value(body).map_err(|e| Error::upstream(SERVICE, format!("unexpected search answer: {e}")))?;
+    let mut out = Found::default();
+    for r in found.recordings {
+        let Some((artist, artist_mbid)) = credited(&r.artist_credit) else {
+            continue;
+        };
+        let home = r.releases.iter().min_by_key(|rel| preference(rel));
+        let group = home.and_then(|h| h.release_group.as_ref());
+        let art = group.map(|g| format!("https://coverartarchive.org/release-group/{}/front-{{size}}", g.id));
+        let album_artist = home
+            .and_then(|h| credited(&h.artist_credit))
+            .map(|(name, _)| name)
+            .filter(|name| *name != artist);
+        if let (Some(home), Some(group)) = (home, group) {
+            out.albums.push(AlbumHit {
+                title: home.title.clone(),
+                artist: album_artist.clone().unwrap_or_else(|| artist.clone()),
+                kind: kind(group),
+                date: home.date.clone().filter(|d| !d.is_empty()),
+                mbid: Some(group.id.clone()),
+                popularity: 0.0,
+                art: art.clone(),
+            });
+        }
+        if !out.artists.iter().any(|a| a.mbid == artist_mbid) {
+            out.artists.push(ArtistHit {
+                name: artist.clone(),
+                mbid: artist_mbid,
+                popularity: 0.0,
+                image: None,
+            });
+        }
+        out.songs.push(SongHit {
+            saved: None,
+            title: r.title,
+            album: home.map(|h| h.title.clone()).unwrap_or_default(),
+            album_kind: group.and_then(kind),
+            year: home.and_then(|h| h.date.as_deref()).and_then(year),
+            duration: r.length.map(|ms| (ms / 1000) as u32).filter(|s| *s > 0),
+            isrcs: r.isrcs,
+            mbid: Some(r.id),
+            popularity: 0.0,
+            art,
+            artist,
+            album_artist,
+        });
+    }
+    Ok(out)
 }

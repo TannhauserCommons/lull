@@ -13,6 +13,7 @@ use lull_core::model::{Album, Artist, Entities};
 use lull_core::{Error, Result};
 use serde::Serialize;
 
+use crate::art::{self, Pictured, PicturedArtist};
 use crate::sources::listenbrainz::Mode;
 use crate::sources::{ArtistInfo, Release, Song, top_tags};
 use crate::store::{self, entities};
@@ -30,7 +31,7 @@ type Errors = BTreeMap<&'static str, String>;
 #[derive(Serialize)]
 pub struct AlbumPage {
     album: Album,
-    entities: Entities,
+    entities: Pictured,
 }
 
 pub async fn album(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Result<Json<AlbumPage>> {
@@ -64,7 +65,7 @@ pub async fn album(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> R
         })])
         .await?;
     Ok(Json(AlbumPage {
-        entities: entities(tracks, vec![album.clone()], artist),
+        entities: art::pictured(&svc, entities(tracks, vec![album.clone()], artist)).await?,
         album,
     }))
 }
@@ -83,13 +84,13 @@ async fn from_musicbrainz(svc: &Service, known: &Album) -> Result<Option<(Album,
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ArtistPage {
-    artist: Artist,
+    artist: PicturedArtist,
     top_tracks: Vec<TrackId>,
     albums: Vec<AlbumId>,
     similar: Vec<ArtistId>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     errors: Errors,
-    entities: Entities,
+    entities: Pictured,
 }
 
 pub async fn artist(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Result<Json<ArtistPage>> {
@@ -137,15 +138,49 @@ pub async fn artist(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> 
 
     artist.id = id;
     let mut all_artists = svc.store.artists(vec![artist.clone()]).await?;
+    remember_photo(&svc, &artist).await;
     all_artists.extend(similar.iter().cloned());
+    let top_tracks = tracks.iter().map(|t| t.id.clone()).collect();
+    let album_ids = albums.iter().map(|a| a.id.clone()).collect();
+    let similar = similar.iter().map(|a| a.id.clone()).collect();
+    let entities = art::pictured(&svc, entities(tracks, albums, all_artists)).await?;
     Ok(Json(ArtistPage {
-        top_tracks: tracks.iter().map(|t| t.id.clone()).collect(),
-        albums: albums.iter().map(|a| a.id.clone()).collect(),
-        similar: similar.iter().map(|a| a.id.clone()).collect(),
-        artist,
+        top_tracks,
+        albums: album_ids,
+        similar,
+        artist: entities
+            .artists
+            .get(&artist.id)
+            .cloned()
+            .unwrap_or(PicturedArtist { artist, image: None }),
         errors,
-        entities: entities(tracks, albums, all_artists),
+        entities,
     }))
+}
+
+/// The artist's Deezer photo, found by name once and kept in the catalog. Pages show without one
+/// when Deezer can't be asked.
+async fn remember_photo(svc: &Service, artist: &Artist) {
+    let id = artist.id.clone();
+    let known = svc.ctx.db.call(move |c| lull_core::catalog::artist_image(c, &id)).await;
+    if !matches!(known, Ok(None)) {
+        return;
+    }
+    let image = match svc.deezer.artist_image(&artist.name).await {
+        Ok(Some(image)) => image,
+        Ok(None) => return,
+        Err(e) => {
+            tracing::info!(artist = %artist.name, error = %e, "no artist photo from Deezer");
+            return;
+        }
+    };
+    if let Err(e) = svc
+        .store
+        .remember_pictures(Vec::new(), vec![(artist.clone(), Some(image))])
+        .await
+    {
+        tracing::warn!(error = %e, "could not record an artist photo");
+    }
 }
 
 /// The artist's most played recordings on ListenBrainz (artist radio with no similar artists).

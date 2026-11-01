@@ -7,19 +7,23 @@ use std::time::Duration;
 
 use lull_core::config::Secret;
 use lull_core::http::Http;
-use lull_core::ids::normalize_artist;
+use lull_core::ids::{normalize, normalize_artist};
 use lull_core::{Error, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::cache::{Cache, DAY};
 use super::{ArtistInfo, Switch, top_tags};
+use crate::search::merge::{ArtistHit, Found, SongHit, popularity};
 
 const SERVICE: &str = "Last.fm";
 const ROOT: &str = "https://ws.audioscrobbler.com/2.0/";
 /// "The artist you supplied could not be found" and the like: an answer, not a failure.
 const NOT_FOUND: u64 = 6;
 const PACE: Duration = Duration::from_millis(500);
+/// Listeners that score 1 on `popularity`'s scale, for a track and for an artist.
+const FULL_TRACK: f64 = 5e6;
+const FULL_ARTIST: f64 = 1e7;
 
 pub struct LastFm {
     pub switch: Arc<Switch>,
@@ -76,6 +80,18 @@ impl LastFm {
                     )
                     .await?;
                 Ok(artists(&body["similarartists"]["artist"]))
+            })
+            .await
+    }
+
+    /// Catalog search (ADR-0008): `track.search` and `artist.search`, for independent and
+    /// scrobble-known music and listener counts. Never a source of art.
+    pub async fn search(&self, q: &str) -> Result<Found> {
+        self.cache
+            .get(format!("lfm:search:{}", normalize(q)), DAY, || async {
+                let tracks = self.call("track.search", &[("track", q), ("limit", "20")]).await?;
+                let artists = self.call("artist.search", &[("artist", q), ("limit", "10")]).await?;
+                Ok(found(&tracks, &artists))
             })
             .await
     }
@@ -159,6 +175,39 @@ fn artists(v: &Value) -> Vec<ArtistInfo> {
             })
         })
         .collect()
+}
+
+/// `track.search` and `artist.search` answers as catalog rows.
+pub fn found(tracks: &Value, artists: &Value) -> Found {
+    let count = |v: &Value| v["listeners"].as_str().and_then(|n| n.parse::<u64>().ok());
+    let mbid = |v: &Value| v["mbid"].as_str().filter(|m| !m.is_empty()).map(str::to_owned);
+    Found {
+        songs: list(&tracks["results"]["trackmatches"]["track"])
+            .iter()
+            .filter_map(|t| {
+                Some(SongHit {
+                    title: t["name"].as_str()?.to_owned(),
+                    artist: t["artist"].as_str()?.to_owned(),
+                    mbid: mbid(t),
+                    popularity: count(t).map_or(0.0, |n| popularity(n, FULL_TRACK)),
+                    ..SongHit::default()
+                })
+            })
+            .collect(),
+        artists: list(&artists["results"]["artistmatches"]["artist"])
+            .iter()
+            .filter_map(|a| {
+                Some(ArtistHit {
+                    name: a["name"].as_str()?.to_owned(),
+                    mbid: mbid(a),
+                    popularity: count(a).map_or(0.0, |n| popularity(n, FULL_ARTIST)),
+                    image: None,
+                })
+            })
+            .collect(),
+        albums: Vec::new(),
+        problem: None,
+    }
 }
 
 /// Last.fm summaries are HTML ending in a "Read more on Last.fm" link: keep the prose.

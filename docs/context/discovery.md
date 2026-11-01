@@ -9,7 +9,9 @@ Owner: Discovery session (`crates/discovery`). Source choice and why: [ADR-0030]
 | ListenBrainz `api.listenbrainz.org/1` | fresh releases, CF recommendations, tag radio, artist radio, recording metadata | 1 call/s (server allows 30 per 10 s per IP; 429 beyond) | fresh releases 6 h; radio and recommendations 1 day; recording metadata 30 days | none; `LULL_LISTENBRAINZ_TOKEN` sent when set; `LULL_LISTENBRAINZ_USER` enables recommendations |
 | ListenBrainz labs `labs.api.listenbrainz.org` | similar artists | same pace | 7 days | none |
 | MusicBrainz `musicbrainz.org/ws/2` | finding artists and release groups by name, discographies, tracklists, tags, tag + date search | 1.1 s between calls (1/s per IP average; going over gets every call a 503). Other lull crates share the IP | lookups 30 days; discographies 7 days; tag searches 12 h | none; User-Agent `lull/<ver> ( repo URL )` from `lull_core::http` |
-| Last.fm `ws.audioscrobbler.com/2.0` | artist bio and listeners, similar artists (artist pages), tag description, tag top artists, similar tags | 0.5 s between calls (no published number; "several per second" risks suspension) | 7 days (tag text 30) | `LULL_LASTFM_API_KEY`; off without it |
+| Last.fm `ws.audioscrobbler.com/2.0` | artist bio and listeners, similar artists (artist pages), tag description, tag top artists, similar tags; `track.search` and `artist.search` (catalog search) | 0.5 s between calls (no published number; "several per second" risks suspension) | 7 days (tag text 30); searches 1 day | `LULL_LASTFM_API_KEY` or the built-in key; off without one |
+| Deezer `api.deezer.com` | catalog search (tracks, albums, artists, with covers, photos and popularity); artist photos for artist pages | 50 calls per 5 s, kept by a sliding window in `sources/deezer.rs`. A quota error arrives as HTTP 200 with `error.code` 4: the window closes for 5 s and the call is tried once more | searches 10 min | none |
+| Cover Art Archive `coverartarchive.org` | covers of albums MusicBrainz found (`front-250/500/1200`) | none published; one fetch per album and size, cached | pictures 30 days | none |
 
 - **Pacing** goes through `Http::pace`, shared with every lull crate. MusicBrainz uses core's `MUSICBRAINZ_PACE`, because library calls it from the same IP.
 - **Caching:** rows unused for 90 days are pruned at start-up. When a source fails, the expired answer is served (`sources/cache.rs`).
@@ -67,6 +69,35 @@ Umbrella genres (rock, pop, electronic, hip hop, indie…: `taste::UMBRELLA_TAGS
 | **Tag** | MusicBrainz releases tagged it in the last 90 days; Last.fm description, top artists and similar tags. Without Last.fm: artists from tag radio, and related tags from tag co-occurrence on the releases |
 
 A section whose source failed is empty and named in `errors`.
+
+## Search (`GET /api/search`, ADR-0008)
+
+Code: `src/search/` (`mod.rs` runs a query, `merge.rs` merges and ranks), `src/art.rs` (pictures).
+
+- **Sources, side by side:**
+  - Deezer: tracks (25), albums (15), artists (10);
+  - saved songs through the `Library` seam (25);
+  - MusicBrainz: **one** recording search per query, `(recording:(w) AND artist:(w)) OR recording:"w" OR artist:"w"` on the normalized words. Its release groups and credited artists become album and artist rows. Rows that don't hold the typed words are dropped (the query is broad);
+  - Last.fm `track.search` and `artist.search`, when a key is configured and the switch is on.
+
+  MusicBrainz and Last.fm are asked only for 3+ characters: MusicBrainz's one call a second is shared with every lull crate.
+- **Timing:** the answer goes out once Deezer and the library are in, or at 400 ms. The rest arrives as `search.more` with only rows not shown yet, plus entities of shown rows that gained facts (art, length). The log line `search answered` has the milliseconds.
+- **Runs:** one per query (lowercase, single spaces) for 10 minutes, shared by every request in that time, so a repeat answers at once. A run where a source failed isn't reused.
+- **Merging** (`merge.rs`): one song per shared ISRC, or per `ids::loose_artist` + `ids::loose_title` (feat., remaster, version, edit and live tags dropped; the same normalization Soulseek matches files with) with lengths within 3 s or unknown. A different ISRC doesn't keep rows apart: remasters and compilations get new ones. Albums merge by loose artist and title, artists by loose name.
+- **A row keeps** the identity (and so the id) of its first source, and gains the others' facts. Before the first answer, a saved copy lends its id, and a row without a release takes the first named one.
+- **Ranking:** fit (exact title or name, or artist and title together; else every typed word starts a word of the row; else loose), then popularity in tenths, then the listener's own (saved, liked, a followed artist), then exact popularity. Popularity is a log scale per source: Deezer rank (1e6 = 1), Deezer fans (1e7), Last.fm listeners (tracks 5e6, artists 1e7). Deezer albums have no count, so their order stands in. MusicBrainz rows have none.
+- **Top result:** the best of the first artist, album and track by fit, then popularity, with artists leaning +0.15 and albums +0.05 ("radiohed" is Radiohead, "creep" is the song).
+- **`search.catalog`** names the 50 best tracks once every source is in (at the answer when all were in by then).
+- **Status:** `deezer` in `/health` and the status tray: `warn` when Deezer fails or withholds part of an answer.
+
+**Deezer withholds its catalog where it isn't open.** From the homelab's IP, `/search/track` and `/search/album` answer `data: []` with `total` above zero, and `/infos` says `open: false`. Only `/search/artist` and lookups by id work. That case is named in `errors.deezer` ("isn't open in this country") rather than taken as "nothing found". The tracks and albums then come from MusicBrainz and Last.fm (through `search.more`) and the library.
+
+## Pictures (`GET /api/catalog/art/{id}?size=96|256|512`)
+
+- **Sources:** Deezer covers and artist photos (any size, from `md5_image` / `picture_xl`), and Cover Art Archive covers for MusicBrainz albums (the next archive size up). Last.fm is never a picture source.
+- **Where each picture comes from** is `lull_core::catalog` (`catalog_albums.art`, `catalog_artists.image`, a URL with `{size}`). Search records it, and the artist page looks the photo up on Deezer by exact name once.
+- **Entities:** albums carry `art` and artists `image`, `api/catalog/art/<id>` relative to the page (the UI adds `?size=`), only when a source is known. Albums without one use library's `/api/art/{albumId}`.
+- **Cache:** `<data dir>/catalog-art/<id>-<size>`, 30 days; "the source has none" for a day.
 
 ## Ids
 

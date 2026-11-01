@@ -1,10 +1,13 @@
 //! The home feed (new releases, picks with reasons, radio starters), radio, album / artist / tag
-//! pages and the recency-weighted taste model (docs/context/discovery.md, docs/context/taste.md).
+//! pages, catalog search with its pictures, and the recency-weighted taste model
+//! (docs/context/discovery.md, docs/context/taste.md).
 
+mod art;
 mod feed;
 mod mix;
 mod pages;
 mod radio;
+mod search;
 mod sources;
 mod store;
 mod taste;
@@ -27,6 +30,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
 use sources::cache::Cache;
+use sources::deezer::Deezer;
 use sources::lastfm::LastFm;
 use sources::listenbrainz::ListenBrainz;
 use sources::musicbrainz::MusicBrainz;
@@ -91,6 +95,10 @@ pub struct Service {
     store: Store,
     lb: ListenBrainz,
     mb: MusicBrainz,
+    deezer: Deezer,
+    searches: search::Searches,
+    /// Pictures fetched for `/api/catalog/art`.
+    art_dir: std::path::PathBuf,
     /// Only with Last.fm API credentials configured; read through `lastfm()`.
     lastfm: Option<LastFm>,
     feed: feed::Feeds,
@@ -109,6 +117,9 @@ pub async fn start(ctx: &Ctx, library: Arc<dyn Library>) -> Result<Arc<Service>>
             ctx.config.discovery.listenbrainz_token.clone(),
         ),
         mb: MusicBrainz::new(ctx.http.clone(), cache.clone()),
+        deezer: Deezer::new(ctx.http.clone(), cache.clone()),
+        searches: search::Searches::default(),
+        art_dir: ctx.config.data_dir.join("catalog-art"),
         lastfm: ctx
             .config
             .lastfm
@@ -123,9 +134,12 @@ pub async fn start(ctx: &Ctx, library: Arc<dyn Library>) -> Result<Arc<Service>>
     Ok(svc)
 }
 
-/// `/api/feed`, `/api/radio`, `/api/albums|artists|tags/{id}`, `/api/feedback`, `/api/taste`.
+/// `/api/search`, `/api/catalog/art/{id}`, `/api/feed`, `/api/radio`,
+/// `/api/albums|artists|tags/{id}`, `/api/feedback`, `/api/taste`.
 pub fn router(svc: Arc<Service>) -> Router {
     Router::new()
+        .route("/api/search", get(search::search))
+        .route("/api/catalog/art/{id}", get(art::get))
         .route("/api/feed", get(feed::get))
         .route("/api/radio", get(radio_tracks))
         .route("/api/albums/{id}", get(pages::album))

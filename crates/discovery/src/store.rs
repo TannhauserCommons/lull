@@ -153,6 +153,42 @@ impl Store {
         Ok(tracks)
     }
 
+    /// Saved songs matching free text (the `Library` seam).
+    pub async fn search_saved(&self, q: &str, limit: usize) -> Result<Vec<Track>> {
+        self.library.search(q, limit).await
+    }
+
+    /// What is the listener's own, for ranking search results: liked tracks, followed artists.
+    pub async fn own(&self) -> Result<(HashSet<TrackId>, HashSet<ArtistId>)> {
+        self.db
+            .call(|c| {
+                let liked = rows(c, "SELECT track_id FROM likes", [], |r| Ok(TrackId(r.get(0)?)))?;
+                let followed = followed_artists(c)?.into_iter().map(|(id, _)| id).collect();
+                Ok((liked.into_iter().collect(), followed))
+            })
+            .await
+    }
+
+    /// Records where search found pictures for albums and artists (`catalog`), with the albums
+    /// and artists themselves, so the art route and other crates can resolve their ids.
+    pub async fn remember_pictures(
+        &self,
+        albums: Vec<(Album, Option<String>)>,
+        artists: Vec<(Artist, Option<String>)>,
+    ) -> Result<()> {
+        self.db
+            .call(move |c| {
+                for (album, art) in &albums {
+                    catalog::remember_album(c, album, art.as_deref())?;
+                }
+                for (artist, image) in &artists {
+                    catalog::remember_artist(c, artist, image.as_deref())?;
+                }
+                Ok(())
+            })
+            .await
+    }
+
     pub async fn track(&self, id: TrackId) -> Result<Option<Track>> {
         self.db.call(move |c| catalog::track(c, &id)).await
     }

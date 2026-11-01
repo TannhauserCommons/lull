@@ -1,9 +1,11 @@
 //! The outside sources discovery reads (docs/context/discovery.md, ADR-0030): ListenBrainz for
 //! recommendations, radio, similar artists and fresh releases; MusicBrainz for releases,
 //! tracklists and tags; Last.fm (when configured) for bios, listener counts, tag descriptions
-//! and tag charts. All of it is cached (`cache`) and paced (`Http::pace`).
+//! and tag charts; Deezer for catalog search and pictures. All of it is cached (`cache`) and
+//! paced (`Http::pace`, Deezer's own window).
 
 pub mod cache;
+pub mod deezer;
 pub mod lastfm;
 pub mod listenbrainz;
 pub mod musicbrainz;
