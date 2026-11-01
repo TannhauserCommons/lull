@@ -303,7 +303,8 @@ pub enum Fit {
     Loose,
     /// Every word typed starts a word of its artist, title or album.
     Words,
-    /// The title or name is the query, or artist and title together are.
+    /// The title or name is the query, or the artist is (an artist's songs and albums), or
+    /// artist and title together are.
     Exact,
 }
 
@@ -350,13 +351,13 @@ impl Query {
 
     pub fn song(&self, s: &SongHit) -> Fit {
         let (artist, title) = (loose_artist(&s.artist), loose_title(&s.title));
-        let exact = [title.clone(), format!("{artist} {title}"), format!("{title} {artist}")];
+        let exact = [format!("{artist} {title}"), format!("{title} {artist}"), title, artist];
         self.fit(&exact, &[&s.artist, &s.title, &s.album])
     }
 
     pub fn album(&self, a: &AlbumHit) -> Fit {
         let (artist, title) = (loose_artist(&a.artist), loose_title(&a.title));
-        let exact = [title.clone(), format!("{artist} {title}"), format!("{title} {artist}")];
+        let exact = [format!("{artist} {title}"), format!("{title} {artist}"), title, artist];
         self.fit(&exact, &[&a.artist, &a.title])
     }
 

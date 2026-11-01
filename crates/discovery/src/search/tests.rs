@@ -416,3 +416,23 @@ fn the_itunes_budget_stays_under_twenty_a_minute() {
     assert!(!b.take(t0 + Duration::from_secs(59)));
     assert!(b.take(t0 + Duration::from_secs(60)));
 }
+
+#[test]
+fn an_artists_own_songs_match_their_name_as_well_as_a_song_called_that() {
+    // Live, "the national" put Hannah Georgas's song "The National" above The National's own.
+    let q = Query::new("the national");
+    let called_that = SongHit {
+        popularity: 0.7,
+        ..song("Hannah Georgas", "The National", "Hannah Georgas", None)
+    };
+    let theirs = SongHit {
+        popularity: 0.9,
+        ..song("The National", "Fake Empire", "Boxer", None)
+    };
+    assert_eq!((q.song(&called_that), q.song(&theirs)), (Fit::Exact, Fit::Exact));
+    let rows = [
+        (q.song(&called_that), called_that.popularity),
+        (q.song(&theirs), theirs.popularity),
+    ];
+    assert_eq!(merge::rank(&rows, |_| false), [1, 0], "then popularity decides");
+}
