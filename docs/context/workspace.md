@@ -8,7 +8,7 @@ Each area has one owner at a time. Edit only what your brief says you own.
 
 | Area | What it is | Owner |
 |---|---|---|
-| `crates/core` | Shared contracts: config, settings store, devices, db + migrations, `catalog`, HTTP client, event bus, service status, ids, models, seams | integrator; Hub session owns `settings.rs` and `devices.rs`. Others: **additive** changes only, as their own `feat(core): …` commit |
+| `crates/core` | Shared contracts: config, settings store, devices, db + migrations, `catalog`, HTTP client, event bus, service status, ids, models, seams | integrator; Hub session owns `settings.rs` and `devices.rs`. Others: **additive** changes only, as their own `feat(core): â€¦` commit |
 | `crates/server` | The hub: `lib.rs` (`run`, wiring), gate and pairing, `/health`, `/api/events`, devices and Connect, `/api/config`, setup | Hub session; `src/web.rs` is the Quality session's; the Subsonic session adds its own wiring lines in `lib.rs` |
 | `crates/soulseek` | slskd client, search + ranking, transfers, progressive streaming, stream cache, sharing | Soulseek session (idle) |
 | `crates/library` | Library sources (folder, Jellyfin), switching and reconciliation, Quick Connect, the Jellyfin mirror, saved-track streaming, save pipeline | Library session |

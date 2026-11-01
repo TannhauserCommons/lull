@@ -121,7 +121,7 @@ All of these answer 503 `unavailable` when Jellyfin isn't configured. Lists and 
 | `GET /api/library/source` | `{ mode: folder\|jellyfin, musicDir, jellyfin: { url, user, connected } \| null, files?, lastScan? }` |
 | `PUT /api/library/source { mode, jellyfin?: { url } }` | 202. Stores `LULL_LIBRARY` (and the Jellyfin URL) through `core::settings`, reconciles by path, asks for `hub.restart`; progress as `library.source` events |
 | `GET /api/jellyfin/discover` | `{ items: [{ name, url, version }] }`: Jellyfin servers answering on the local network (UDP 7359) |
-| `POST /api/jellyfin/quickconnect { url }` | `{ code, secret }`: show `code`; the listener approves it in Jellyfin › Quick Connect |
+| `POST /api/jellyfin/quickconnect { url }` | `{ code, secret }`: show `code`; the listener approves it in Jellyfin â€º Quick Connect |
 | `GET /api/jellyfin/quickconnect/{secret}` | `{ state: waiting\|approved\|expired }`. On `approved` the token is stored as `LULL_JELLYFIN_API_KEY` and the hub restarts into Jellyfin mode |
 | `POST /api/jellyfin/signin { url, username, password }` | 204: the fallback when Quick Connect is off on that server; the password is used once and never stored |
 
@@ -184,7 +184,7 @@ ADR-0004; format and hooks: [themes.md](../themes.md) *(owner writes)*.
 |---|---|
 | `GET /api/themes` | `{ items: [{ id, name, author, api, extends, shell, swatches, modes, builtIn }] }`: the five designs plus the listener's themes |
 | `GET /api/themes/{id}/{path}` | A file of a stored theme (`theme.css`, `slots/*.html`, `assets/*`), ETag'd |
-| `PUT /api/themes/{id}` (body: a `.lulltheme` zip) · `PUT /api/themes/{id}/{path}` (one file, from Theme Studio) | 200 manifest; 400 names what's wrong (missing `theme.json`, a script, an outside URL) |
+| `PUT /api/themes/{id}` (body: a `.lulltheme` zip) Â· `PUT /api/themes/{id}/{path}` (one file, from Theme Studio) | 200 manifest; 400 names what's wrong (missing `theme.json`, a script, an outside URL) |
 | `DELETE /api/themes/{id}` | 204 |
 | `GET /api/themes/{id}.lulltheme` | The package as a zip, for sharing |
 
