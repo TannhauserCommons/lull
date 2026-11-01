@@ -2,9 +2,7 @@
 //! groups by name, discographies, tracklists, tags, and recent releases by tag. The limit is
 //! one request per second per IP on average; going over gets every request a 503.
 
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
-use std::time::{Duration, Instant};
+use std::sync::Arc;
 
 use lull_core::http::{self, Http};
 use lull_core::ids::{normalize, normalize_artist};
@@ -13,7 +11,7 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
 use super::cache::{Cache, DAY, HOUR};
-use super::{ArtistInfo, Release, Song, Switch, top_tags, year};
+use super::{ArtistInfo, Breaker, CALL_TIMEOUT, Release, Song, Switch, top_tags, year};
 use crate::search::merge::{AlbumHit, ArtistHit, Found, SongHit};
 
 const SERVICE: &str = "MusicBrainz";
@@ -21,19 +19,11 @@ const WS: &str = "https://musicbrainz.org/ws/2";
 /// Search scores below this are a different artist or release.
 const MIN_SCORE: u8 = 90;
 
-/// Each call gets this long (Http retries a timed-out call, so at most about 17 s in all).
-const CALL_TIMEOUT: Duration = Duration::from_secs(5);
-/// After this many failed calls in a row, MusicBrainz is left alone for `REST`: nothing in
-/// lull's discovery waits on a server that isn't answering.
-const FAILURES_BEFORE_REST: u32 = 2;
-const REST: Duration = Duration::from_secs(60);
-
 pub struct MusicBrainz {
     pub switch: Arc<Switch>,
     http: Http,
     cache: Cache,
-    failures: AtomicU32,
-    resting_until: Mutex<Option<Instant>>,
+    breaker: Breaker,
 }
 
 #[derive(Deserialize)]
@@ -114,8 +104,7 @@ impl MusicBrainz {
             switch: Switch::new(SERVICE),
             http,
             cache,
-            failures: AtomicU32::new(0),
-            resting_until: Mutex::new(None),
+            breaker: Breaker::new(SERVICE),
         }
     }
 
@@ -385,17 +374,7 @@ impl MusicBrainz {
     }
 
     async fn get<T: DeserializeOwned>(&self, path: &str, query: &[(&str, &str)]) -> Result<T> {
-        let resting = self
-            .resting_until
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .is_some_and(|until| Instant::now() < until);
-        if resting {
-            return Err(Error::unavailable(
-                SERVICE,
-                "isn't answering; lull asks again in a minute",
-            ));
-        }
+        let call = self.breaker.call()?;
         self.http.pace(http::MUSICBRAINZ, http::MUSICBRAINZ_PACE).await;
         let answer = self
             .http
@@ -406,17 +385,7 @@ impl MusicBrainz {
                     .timeout(CALL_TIMEOUT)
             })
             .await;
-        match &answer {
-            Err(Error::Unavailable { .. } | Error::Upstream { .. }) => {
-                if self.failures.fetch_add(1, Ordering::Relaxed) + 1 >= FAILURES_BEFORE_REST {
-                    self.failures.store(0, Ordering::Relaxed);
-                    *self.resting_until.lock().unwrap_or_else(PoisonError::into_inner) = Some(Instant::now() + REST);
-                    tracing::info!("MusicBrainz keeps failing; leaving it alone for a minute");
-                }
-            }
-            _ => self.failures.store(0, Ordering::Relaxed),
-        }
-        answer.map_err(|e| match e {
+        call.end(answer).map_err(|e| match e {
             Error::NotFound(_) => Error::NotFound("MusicBrainz doesn't know it".into()),
             e => e,
         })

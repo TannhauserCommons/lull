@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::cache::{Cache, DAY, HOUR};
-use super::{Release, Song, Switch, top_tags};
+use super::{Breaker, CALL_TIMEOUT, Release, Song, Switch, top_tags};
 
 const SERVICE: &str = "ListenBrainz";
 const API: &str = "https://api.listenbrainz.org/1";
@@ -33,6 +33,7 @@ pub struct ListenBrainz {
     http: Http,
     cache: Cache,
     token: Option<Secret>,
+    breaker: Breaker,
 }
 
 /// How far LB Radio strays from the seed: ListenBrainz's own easy / medium / hard.
@@ -73,6 +74,7 @@ impl ListenBrainz {
             http,
             cache,
             token,
+            breaker: Breaker::new(SERVICE),
         }
     }
 
@@ -288,21 +290,26 @@ impl ListenBrainz {
 
     /// One paced GET; `None` for 204 (ListenBrainz's "nothing computed yet").
     async fn get<T: DeserializeOwned>(&self, url: String, query: &[(&str, &str)]) -> Result<Option<T>> {
-        self.http.pace(SERVICE, PACE).await;
-        let resp = self
-            .http
-            .send(SERVICE, |c| {
-                let req = c.get(&url).query(query);
-                match &self.token {
-                    Some(t) => req.header("Authorization", format!("Token {}", t.expose())),
-                    None => req,
-                }
-            })
-            .await?;
-        if resp.status() == StatusCode::NO_CONTENT {
-            return Ok(None);
+        let call = self.breaker.call()?;
+        let answer = async {
+            self.http.pace(SERVICE, PACE).await;
+            let resp = self
+                .http
+                .send(SERVICE, |c| {
+                    let req = c.get(&url).query(query).timeout(CALL_TIMEOUT);
+                    match &self.token {
+                        Some(t) => req.header("Authorization", format!("Token {}", t.expose())),
+                        None => req,
+                    }
+                })
+                .await?;
+            if resp.status() == StatusCode::NO_CONTENT {
+                return Ok(None);
+            }
+            http::ok(SERVICE, resp)?.json().await.map(Some).map_err(bad)
         }
-        http::ok(SERVICE, resp)?.json().await.map(Some).map_err(bad)
+        .await;
+        call.end(answer)
     }
 }
 

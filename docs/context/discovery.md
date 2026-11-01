@@ -15,7 +15,7 @@ Owner: Discovery session (`crates/discovery`). Source choice and why: [ADR-0030]
 | Cover Art Archive `coverartarchive.org` | covers of albums MusicBrainz found (`front-250/500/1200`) | none published; one fetch per album and size, cached | pictures 30 days | none |
 
 - **Pacing** goes through `Http::pace`, shared with every lull crate. MusicBrainz uses core's `MUSICBRAINZ_PACE`, because library calls it from the same IP.
-- **MusicBrainz is bounded:** each call times out after 5 s (`Http` retries a timeout, so about 17 s at most), and after two failed calls in a row discovery leaves it alone for a minute (calls fail at once with "isn't answering").
+- **MusicBrainz, ListenBrainz and Last.fm are bounded** (`sources::Breaker`): each call times out after 5 s (`Http` retries a timeout, so about 17 s at most). After two failed calls in a row the service is left alone for a minute: calls fail at once with "isn't answering". A call abandoned before it answered (a radio or search out of time) counts as failed.
 - **Search sources are capped at 8 s:** one that hasn't answered by then is named in `errors`, so every run ends with `search.more { done: true }`.
 - **Caching:** rows unused for 90 days are pruned at start-up. When a source fails, the expired answer is served (`sources/cache.rs`).
 - **Switches (Settings > Discovery):** collection's `settings` event carries `discovery.on.{listenbrainz,musicbrainz,lastfm}`. A source switched off is not used at all, cached answers included. Its calls fail with "switched off in Settings > Discovery", which shows up in `errors`, and the feed rebuilds.
@@ -56,7 +56,10 @@ The four pick pools:
 - **Seed `artist`:** artist radio (15 similar artists, 4 recordings each).
 - **Seed `track`:** its artist's radio plus its first specific tag's radio.
 - **Finding the artist** (`radio.rs`): a credit is tried whole, then without its featured part, then artist by artist (split on "&", "," and "x"), then the featured artists ("Shawn Chrystopher feat. Cults & Ashly" → Shawn Chrystopher). Each name goes through what lull remembers, then MusicBrainz (an unavailable or bad answer retried once; after that MusicBrainz isn't asked for the other names), then Last.fm's `artist.getInfo` MBID.
-- **Without an MBID**, or when ListenBrainz has no artist radio for it, the radio comes from the artist radio of Last.fm's most similar artist with an MBID, plus tag radio for the first specific tag of the seed or the artist's Last.fm tags. Only when all of that is empty does the call fail: with MusicBrainz's or ListenBrainz's error if one failed, else 404.
+- **Without an MBID**, or when ListenBrainz has no artist radio for it, ListenBrainz is asked for the artist radio of Last.fm's most similar artist with an MBID, plus tag radio for the first specific tag of the seed or the artist's Last.fm tags.
+- **When ListenBrainz gives nothing** (down, slower than 5 s, or empty), Last.fm fills the radio: `track.getSimilar` for a track seed; the artist's top tracks plus those of three similar artists (further down Last.fm's list as `steer` rises) for an artist seed or when a track has no similar tracks; `tag.getTopTracks` for a tag. These songs name no release.
+- **Then the saved library:** songs matching the artist (without its featured part) or the tag.
+- **8 s at most** for the whole call. It fails only when no source gave tracks: 503 with the reason when none answered at all, else 404.
 
 Umbrella genres (rock, pop, electronic, hip hop, indie…: `taste::UMBRELLA_TAGS`) are never dug into: they lead to charts, not niches. They stay in the taste profile.
 - **`steer` (0 familiar … 1 adventurous, in quarter steps so answers are shared):**

@@ -506,3 +506,23 @@ fn a_bandcamp_only_ep_is_found_by_its_title() {
             .is_some_and(|a| a.starts_with("https://coverartarchive.org/release-group/"))
     );
 }
+
+#[test]
+fn last_fm_track_lists_become_songs_without_a_release() {
+    // track.getSimilar gives an artist object and seconds as a number; tag.getTopTracks a string.
+    let similar = json!([
+        { "name": "Teardrop", "duration": 330, "mbid": "", "artist": { "name": "Massive Attack", "mbid": "10adbe5e-a2c0-4bf3-8249-2b4cbf6e6ca8" } },
+        { "name": "Glory Box", "duration": "0", "artist": { "name": "Portishead" } }
+    ]);
+    let songs = lastfm::songs(&similar);
+    assert_eq!(songs.len(), 2);
+    assert_eq!((songs[0].duration_s, songs[0].album.as_str()), (Some(330), ""));
+    assert!(songs[0].mbid.is_none() && songs[0].artist_mbid.is_some());
+    assert_eq!(songs[1].duration_s, None, "0 is unknown");
+    let one = json!({ "name": "Roads", "duration": "305", "artist": { "name": "Portishead" } });
+    assert_eq!(
+        lastfm::songs(&one)[0].duration_s,
+        Some(305),
+        "a single track comes as an object"
+    );
+}

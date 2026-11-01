@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::cache::{Cache, DAY};
-use super::{ArtistInfo, Switch, top_tags};
+use super::{ArtistInfo, Breaker, CALL_TIMEOUT, Song, Switch, top_tags};
 use crate::search::merge::{ArtistHit, Found, SongHit, popularity};
 
 const SERVICE: &str = "Last.fm";
@@ -30,6 +30,7 @@ pub struct LastFm {
     http: Http,
     cache: Cache,
     api_key: Secret,
+    breaker: Breaker,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -50,6 +51,7 @@ impl LastFm {
             http,
             cache,
             api_key,
+            breaker: Breaker::new(SERVICE),
         }
     }
 
@@ -101,6 +103,56 @@ impl LastFm {
             .await
     }
 
+    /// Radio without ListenBrainz: tracks listened to alongside this one.
+    pub async fn similar_tracks(&self, artist: &str, title: &str) -> Result<Vec<Song>> {
+        let key = format!("lfm:similar-tracks:{}:{}", normalize_artist(artist), normalize(title));
+        self.cache
+            .get(key, 7 * DAY, || async {
+                let body = self
+                    .call(
+                        "track.getSimilar",
+                        &[
+                            ("artist", artist),
+                            ("track", title),
+                            ("autocorrect", "1"),
+                            ("limit", "50"),
+                        ],
+                    )
+                    .await?;
+                Ok(songs(&body["similartracks"]["track"]))
+            })
+            .await
+    }
+
+    /// Radio without ListenBrainz: an artist's most played tracks.
+    pub async fn artist_top_tracks(&self, name: &str) -> Result<Vec<Song>> {
+        self.cache
+            .get(
+                format!("lfm:top-tracks:{}", normalize_artist(name)),
+                7 * DAY,
+                || async {
+                    let body = self
+                        .call(
+                            "artist.getTopTracks",
+                            &[("artist", name), ("autocorrect", "1"), ("limit", "10")],
+                        )
+                        .await?;
+                    Ok(songs(&body["toptracks"]["track"]))
+                },
+            )
+            .await
+    }
+
+    /// Radio without ListenBrainz: a tag's most played tracks.
+    pub async fn tag_top_tracks(&self, tag: &str) -> Result<Vec<Song>> {
+        self.cache
+            .get(format!("lfm:tag-tracks:{tag}"), DAY, || async {
+                let body = self.call("tag.getTopTracks", &[("tag", tag), ("limit", "50")]).await?;
+                Ok(songs(&body["tracks"]["track"]))
+            })
+            .await
+    }
+
     /// The tag's wiki summary, as plain text.
     pub async fn tag_description(&self, tag: &str) -> Result<Option<String>> {
         self.cache
@@ -134,30 +186,36 @@ impl LastFm {
 
     /// A paced read. "Not found" comes back as an empty object, so callers see no data.
     async fn call(&self, method: &str, params: &[(&str, &str)]) -> Result<Value> {
-        self.http.pace(SERVICE, PACE).await;
-        let resp = self
-            .http
-            .send(SERVICE, |c| {
-                c.get(ROOT)
-                    .query(&[
-                        ("method", method),
-                        ("api_key", self.api_key.expose()),
-                        ("format", "json"),
-                    ])
-                    .query(params)
-            })
-            .await?;
-        let status = resp.status();
-        let body: Value = resp.json().await.unwrap_or(Value::Null);
-        match body["error"].as_u64() {
-            Some(NOT_FOUND) => Ok(Value::Object(Default::default())),
-            Some(code) => Err(Error::upstream(
-                SERVICE,
-                format!("error {code}: {}", body["message"].as_str().unwrap_or("no message")),
-            )),
-            None if status.is_success() => Ok(body),
-            None => Err(Error::upstream(SERVICE, format!("answered {status}"))),
+        let call = self.breaker.call()?;
+        let answer = async {
+            self.http.pace(SERVICE, PACE).await;
+            let resp = self
+                .http
+                .send(SERVICE, |c| {
+                    c.get(ROOT)
+                        .query(&[
+                            ("method", method),
+                            ("api_key", self.api_key.expose()),
+                            ("format", "json"),
+                        ])
+                        .query(params)
+                        .timeout(CALL_TIMEOUT)
+                })
+                .await?;
+            let status = resp.status();
+            let body: Value = resp.json().await.unwrap_or(Value::Null);
+            match body["error"].as_u64() {
+                Some(NOT_FOUND) => Ok(Value::Object(Default::default())),
+                Some(code) => Err(Error::upstream(
+                    SERVICE,
+                    format!("error {code}: {}", body["message"].as_str().unwrap_or("no message")),
+                )),
+                None if status.is_success() => Ok(body),
+                None => Err(Error::upstream(SERVICE, format!("answered {status}"))),
+            }
         }
+        .await;
+        call.end(answer)
     }
 }
 
@@ -177,6 +235,37 @@ fn artists(v: &Value) -> Vec<ArtistInfo> {
             Some(ArtistInfo {
                 name: a["name"].as_str()?.to_owned(),
                 mbid: a["mbid"].as_str().filter(|m| !m.is_empty()).map(str::to_owned),
+            })
+        })
+        .collect()
+}
+
+/// Track lists (similar, top) as songs. Last.fm names no release, so `album` is empty.
+pub fn songs(v: &Value) -> Vec<Song> {
+    list(v)
+        .iter()
+        .filter_map(|t| {
+            let artist = t["artist"]["name"].as_str().or(t["artist"].as_str())?.to_owned();
+            let seconds = t["duration"]
+                .as_u64()
+                .or_else(|| t["duration"].as_str().and_then(|d| d.parse().ok()))
+                .filter(|d| *d > 0);
+            Some(Song {
+                mbid: t["mbid"].as_str().filter(|m| !m.is_empty()).map(str::to_owned),
+                title: t["name"].as_str()?.to_owned(),
+                artist_mbid: t["artist"]["mbid"]
+                    .as_str()
+                    .filter(|m| !m.is_empty())
+                    .map(str::to_owned),
+                artist,
+                album: String::new(),
+                album_artist: None,
+                album_mbid: None,
+                year: None,
+                no: None,
+                disc: None,
+                duration_s: seconds.map(|d| d as u32),
+                tags: Vec::new(),
             })
         })
         .collect()
