@@ -4,7 +4,7 @@
    server; activity from the store ('activity', 'saves', 'activityError').
 
    Sections: 1 state + helpers, 2 device (full + compact), 3 info stack + source card,
-   4 lyrics, 5 queue, 6 activity, 7 route + live updates, 8 actions, 9 panels. */
+   4 lyrics, 5 queue, 6 activity, 7 route + live updates, 8 actions, 9 panels, 10 the Now Playing column. */
 (function () {
   'use strict';
   var html = App.html, raw = App.raw, ui = App.ui, M = App.data, icon = App.icon, $ = App.$, $$ = App.$$;
@@ -335,7 +335,7 @@
   }
   function sourcesRead(id) { return sources[id] || loadSources(id); }
   function sourceList(id) { var r = sources[id]; return r && r.data && r.data.sources || []; }
-  function refreshSourceCard() { swap($('[data-now="src"]'), sourceCard()); }
+  function refreshSourceCard() { swap($('[data-now="src"]'), sourceCard()); swap($('[data-nowcol="src"]'), sourceCard()); }
   function sourcesTable(id) {
     var t = M.track(id), r = sourcesRead(id);
     var head = t && id !== P.currentId() ? html`<p class="now-src__line">${icon('info')}<span>Sources for <b>${t.title}</b>, ${t.artist}</span></p>` : '';
@@ -452,6 +452,7 @@
   }
   function refreshLyrics() {
     var c = $('[data-now="lyrics"]'); if (c) swap(c, lyricsBlock('page'));
+    swap($('[data-nowcol="lyrics"]'), lyricsBlock('col'));
     if (App.store.get('ctxTab') === 'lyrics') App.refreshPanel();
     lyMountAll();
   }
@@ -1094,6 +1095,31 @@
     render: function (body) { rememberFocus(body); return activityBlock(); },
     mount: function (body) { restoreFocus(body); }
   });
+
+  /* =====================================================================
+     10. The Now Playing column (layout.js, ADR-0007): art, the transfer state and synced lyrics beside any screen
+     ===================================================================== */
+  function colOpen() { return $('#app').getAttribute('data-nowcol') === 'open'; }
+  function colBody() {
+    var t = cur();
+    if (!t) return ui.emptyState({ art: 'wave', title: 'Nothing playing', text: 'Pick something from Home and it shows here.' });
+    return html`<div class="nowcol__art">${ui.cover(t, '100%', { label: t.album })}</div>
+      <div class="nowcol__info">
+        <a class="nowcol__song" href="#/album/${t.albumId}">${t.title}</a>
+        <a class="nowcol__artist" href="#/artist/${t.artistId}">${t.artist}</a>
+      </div>
+      <section class="nowcol__src" data-nowcol="src" aria-label="Source">${sourceCard()}</section>
+      <section class="nowcol__ly" data-nowcol="lyrics" aria-label="Lyrics">${lyricsBlock('col')}</section>`;
+  }
+  App.nowColumn = {
+    render: function (host) { if (!host) return; swap(host, colBody()); lyMountAll(); }
+  };
+  App.on('player', function (kind) {
+    if (!colOpen()) return;
+    if (kind === 'track') App.nowColumn.render($('#nowcol-body'));
+    else if (kind === 'status' || kind === 'source' || kind === 'ended' || kind === 'state') swap($('[data-nowcol="src"]'), sourceCard());
+  });
+  App.on('save', function (d) { if (colOpen() && d.id === P.currentId()) swap($('[data-nowcol="src"]'), sourceCard()); });
 
   App.route('/now', { render: render, mount: mount, title: function () { var t = cur(); return t ? t.title + ', Now Playing' : 'Now Playing'; }, view: 'now', nav: null,
     meta: function () { return App.fmt.formatLine(cur()); } });

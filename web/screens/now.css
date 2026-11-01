@@ -144,8 +144,8 @@
 .now-srccard { padding: 16px; }
 .now-srccard .source-card { padding: 14px 16px; }
 .now-src__foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px var(--sp-3); margin: 6px 4px -8px; }
-.now-srccard .source-card__head > span { min-width: 0; }
-.now-srccard .source-card__head .btn { margin-left: auto; }
+:is(.now-srccard, .nowcol__src) .source-card__head > span { min-width: 0; }
+:is(.now-srccard, .nowcol__src) .source-card__head .btn { margin-left: auto; }
 .now-src__line { display: flex; align-items: flex-start; gap: 8px; margin: 0; font: var(--t-meta); color: var(--fg-2); }
 .now-src__line .ic { flex: none; width: 18px; height: 18px; color: var(--fg-2); }
 .now-src__line b { color: var(--fg); }
@@ -217,6 +217,17 @@
 .now-ly--panel { --ly-size: calc(1.125rem + var(--ly-step, 0) * .125rem); height: 100%; }
 .now-ly--panel .now-ly__view { min-height: 0; margin: 4px -8px 0; }
 .now-ly--panel .now-ly__state { min-height: 0; }
+/* Now Playing column (layout.js): art at the column's width, the song, the transfer state, lyrics in a bounded scroller */
+.nowcol__art { display: block; }
+.nowcol__art .cover { width: 100%; --cover-size: 100%; border-radius: var(--r-card); }
+.nowcol__info { display: grid; gap: 2px; margin: var(--sp-3) 0 var(--sp-4); min-width: 0; }
+.nowcol__song { font: var(--t-row); font-size: 1.125rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nowcol__artist { font: var(--t-meta); color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nowcol__song:hover, .nowcol__artist:hover { text-decoration: underline; text-underline-offset: 3px; }
+.nowcol__src { margin-bottom: var(--sp-4); }
+.now-ly--col { --ly-size: calc(1.0625rem + var(--ly-step, 0) * .125rem); display: flex; flex-direction: column; height: min(62vh, 640px); }
+.now-ly--col .now-ly__view { min-height: 0; margin: 4px -8px 0; }
+.now-ly--col .now-ly__state { min-height: 0; }
 
 /* =====================================================================
    Queue (context panel tab, phone Queue tab, up-next preview)

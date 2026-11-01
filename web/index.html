@@ -106,14 +106,32 @@
     <main class="view" id="view" tabindex="-1"></main>
   </div>
 
+  <!-- Now Playing column (ADR-0007, from wide): beside the main area in its grid cell; layout.js shows it, now.js fills it -->
+  <aside class="nowcol s-panel" id="nowcol" aria-label="Now Playing column" data-region="nowcol">
+    <div class="col-resize" data-resize="now" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Resize the Now Playing column" data-tip="Drag or use the arrow keys"></div>
+    <div class="nowcol__head">
+      <span class="nowcol__title">now playing</span>
+      <button class="btn-icon btn-icon--bare" data-act="nowcol-collapse" aria-label="Collapse the Now Playing column" data-tip="Collapse"><svg class="ic" aria-hidden="true"><use href="#i-chevron-right"/></svg></button>
+      <button class="btn-icon btn-icon--bare" data-act="now-column" aria-label="Close the Now Playing column" data-tip="Close"><svg class="ic" aria-hidden="true"><use href="#i-close"/></svg></button>
+    </div>
+    <div class="nowcol__body" id="nowcol-body"></div>
+    <div class="nowcol__strip"><button class="btn-icon btn-icon--bare" data-act="nowcol-expand" aria-label="Expand the Now Playing column" data-tip="Now Playing"><svg class="ic" aria-hidden="true"><use href="#i-chevron-left"/></svg></button></div>
+  </aside>
+
   <!-- context panel: docked >= 1360, overlay 1100-1359, drawer on tablet, sheet on phone -->
   <aside class="ctx s-panel" id="ctx" aria-label="Queue, lyrics and activity" data-region="ctx">
+    <div class="col-resize" data-resize="panel" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Resize the panel" data-tip="Drag or use the arrow keys"></div>
     <span class="region-title" aria-hidden="true" id="ctx-title">queue</span><span class="region-meta" aria-hidden="true" id="ctx-meta"></span>
     <div class="ctx__head">
       <div class="seg" role="tablist" id="ctx-tabs" aria-label="Panel"></div>
+      <button class="btn-icon btn-icon--bare ctx__split" data-act="panel-split" aria-pressed="false" aria-label="Queue and lyrics side by side" data-tip="Queue and lyrics together"><svg class="ic" aria-hidden="true"><use href="#i-split"/></svg></button>
       <button class="btn-icon btn-icon--bare" data-act="close-panel" aria-label="Close panel" data-tip="Close panel (Esc)"><svg class="ic" aria-hidden="true"><use href="#i-close"/></svg></button>
     </div>
-    <div class="ctx__body" id="ctx-body" role="tabpanel" tabindex="-1" data-drop="queue"></div>
+    <div class="ctx__panes">
+      <div class="ctx__body" id="ctx-body" role="tabpanel" tabindex="-1" data-drop="queue"></div>
+      <div class="ctx__body ctx__body--2" id="ctx-body-2" aria-label="Lyrics" role="region" tabindex="-1" hidden></div>
+    </div>
+    <div class="ctx__strip" id="ctx-strip" role="toolbar" aria-orientation="vertical" aria-label="Panel"></div>
   </aside>
   <div class="ctx-scrim" id="ctx-scrim" aria-hidden="true"></div>
 
@@ -149,6 +167,7 @@
       <button class="btn-icon btn-icon--bare is-wide" data-act="classic" aria-label="Classic mode" data-tip="Classic mode (W)"><svg class="ic" aria-hidden="true"><use href="#i-classic"/></svg></button>
       <button class="btn-icon btn-icon--bare" data-act="connect" aria-haspopup="dialog" aria-expanded="false" aria-label="Play on another device" data-tip="Devices"><svg class="ic" aria-hidden="true"><use href="#i-connect"/></svg></button>
       <button class="btn-icon btn-icon--bare is-wide" data-act="open-now" aria-label="Device view" data-tip="Device view"><svg class="ic" aria-hidden="true"><use href="#i-device"/></svg></button>
+      <button class="btn-icon btn-icon--bare pbar__nowcol" data-act="now-column" aria-pressed="false" aria-label="Now Playing column" data-tip="Now Playing column"><svg class="ic" aria-hidden="true"><use href="#i-sidebar"/></svg></button>
       <div class="vol">
         <button class="btn-icon btn-icon--bare" data-act="mute" data-bind="mute" aria-pressed="false" aria-label="Mute (M)" data-tip="Mute (M)"><svg class="ic" aria-hidden="true"><use href="#i-volume-2"/></svg></button>
         <div class="seek" data-seek="volume" role="slider" tabindex="0" aria-label="Volume" aria-valuemin="0" aria-valuemax="100" aria-valuenow="70">
@@ -186,6 +205,7 @@
 <script src="icons.js"></script>
 <script src="data.js"></script>
 <script src="app.js"></script>
+<script src="layout.js"></script>
 <script src="connect.js"></script>
 <script src="offline.js"></script>
 <script src="screens/discover.js"></script>

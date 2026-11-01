@@ -1996,44 +1996,68 @@
   }
   App.activeJobs = activeJobs;
 
-  /* context panel: App.panel(id, { label, render(el) -> markup, mount(el) }) registers a tab (queue, lyrics, activity) */
-  var panels = {}, panelOrder = ['queue', 'lyrics', 'activity'];
+  /* context panel: App.panel(id, { label, render(el) -> markup, mount(el) }) registers a tab (queue, lyrics, activity).
+     From 1360 px it is docked: closing it collapses it to an icon strip (layout.js, ADR-0007), which stays. Below, it
+     opens over the page. From `xwide`, Queue and Lyrics can show as two panes at once (layout panelSplit). */
+  var panels = {}, panelOrder = ['queue', 'lyrics', 'activity'], SPLIT = ['queue', 'lyrics'];
   App.panel = function (id, def) { panels[id] = def; if (panelOrder.indexOf(id) < 0) panelOrder.push(id); renderCtx(); };
+  function panelOpen() {
+    var mode = $('#app').getAttribute('data-ctx');
+    return mode === 'open' || mode === 'docked' && !App.layout.get().panelCollapsed;
+  }
   App.openPanel = function (tab) {
     if (tab) state.ctxTab = tab;
     var app = $('#app');
-    if (window.innerWidth >= 1360) { storage('ctxCollapsed', false); app.setAttribute('data-ctx', 'docked'); }
+    if (window.innerWidth >= 1360) { app.setAttribute('data-ctx', 'docked'); App.layout.set({ panelCollapsed: false }); }
     else app.setAttribute('data-ctx', 'open');
     renderCtx();
     var body = $('#ctx-body'); if (body && app.getAttribute('data-ctx') === 'open') setTimeout(function () { var t = $('.seg__btn[aria-selected="true"]', $('#ctx')); if (t) t.focus(); }, 60);
   };
   App.closePanel = function () {
     var app = $('#app');
-    if (app.getAttribute('data-ctx') === 'docked') storage('ctxCollapsed', true);
-    app.setAttribute('data-ctx', 'closed'); updatePanelButtons();
+    if (app.getAttribute('data-ctx') === 'docked') App.layout.set({ panelCollapsed: true });
+    else app.setAttribute('data-ctx', 'closed');
+    updatePanelButtons();
   };
   App.togglePanel = function (tab) {
-    var mode = $('#app').getAttribute('data-ctx'), open = mode === 'docked' || mode === 'open';
-    if (open && (!tab || tab === state.ctxTab)) App.closePanel(); else App.openPanel(tab);
+    if (panelOpen() && (!tab || tab === state.ctxTab || split() && SPLIT.indexOf(tab) >= 0 && SPLIT.indexOf(state.ctxTab) >= 0)) App.closePanel();
+    else App.openPanel(tab);
   };
+  /* Queue and Lyrics side by side (or stacked, in a narrow panel) */
+  function split() { return $('#app').hasAttribute('data-panel-split') && SPLIT.every(function (id) { return panels[id]; }); }
   App.refreshPanel = function () { renderCtx(); };
   function renderCtx() {
     var host = $('#ctx'); if (!host) return;
-    var tabs = panelOrder.filter(function (id) { return panels[id]; });
+    var two = split(), tabs = panelOrder.filter(function (id) { return panels[id] && !(two && id === 'lyrics'); });
+    if (two && state.ctxTab === 'lyrics') state.ctxTab = 'queue';
     if (tabs.indexOf(state.ctxTab) < 0) state.ctxTab = tabs[0];
     var i = tabs.indexOf(state.ctxTab);
     $('#ctx-tabs').style.setProperty('--n', tabs.length); $('#ctx-tabs').style.setProperty('--i', i);
     $('#ctx-tabs').innerHTML = '<span class="seg__ind" aria-hidden="true"></span>' + tabs.map(function (id) {
-      var on = id === state.ctxTab;
-      return '<button class="seg__btn" role="tab" id="ctx-tab-' + id + '" aria-controls="ctx-body" aria-selected="' + on + '" tabindex="' + (on ? 0 : -1) + '" data-ctx-tab="' + id + '">' + esc(panels[id].label) + (id === 'activity' && activeJobs() ? ' <span class="badge-count">' + activeJobs() + '</span>' : '') + '</button>';
+      var on = id === state.ctxTab, label = two && id === 'queue' ? panels.queue.label + ' + ' + panels.lyrics.label : panels[id].label;
+      return '<button class="seg__btn" role="tab" id="ctx-tab-' + id + '" aria-controls="ctx-body" aria-selected="' + on + '" tabindex="' + (on ? 0 : -1) + '" data-ctx-tab="' + id + '">' + esc(label) + (id === 'activity' && activeJobs() ? ' <span class="badge-count">' + activeJobs() + '</span>' : '') + '</button>';
     }).join('');
-    var body = $('#ctx-body'), p = panels[state.ctxTab];
+    var body = $('#ctx-body'), body2 = $('#ctx-body-2'), p = panels[state.ctxTab], second = two && state.ctxTab === 'queue' ? panels.lyrics : null;
     var title = $('#ctx-title'); if (title) title.textContent = p ? p.label.toLowerCase() : '';
     updateCtxMeta();
+    host.toggleAttribute('data-two', !!second);
     body.setAttribute('aria-labelledby', 'ctx-tab-' + state.ctxTab);
     body.innerHTML = p ? String(p.render(body) || '') : '';
+    body2.hidden = !second;
+    body2.innerHTML = second ? String(second.render(body2) || '') : '';
     if (p && p.mount) p.mount(body);
+    if (second && second.mount) second.mount(body2);
+    renderStrip();
     updatePanelButtons();
+  }
+  /* the collapsed panel's icon strip: one button per tab, each opens the panel there */
+  var STRIP_ICONS = { queue: 'queue', lyrics: 'lyrics', activity: 'activity' };
+  function renderStrip() {
+    var strip = $('#ctx-strip'); if (!strip) return;
+    strip.innerHTML = panelOrder.filter(function (id) { return panels[id]; }).map(function (id) {
+      var n = id === 'activity' ? activeJobs() : 0;
+      return String(html`<button class="btn-icon btn-icon--bare" data-act="panel-expand" data-tab="${id}" aria-label="${panels[id].label}${n ? ', ' + n + ' running' : ''}" data-tip="${panels[id].label}">${icon(STRIP_ICONS[id] || 'expand')}${n ? html`<span class="btn-icon__badge">${n}</span>` : ''}</button>`);
+    }).join('');
   }
   /* the panel's meta line: #ctx[data-meta] + .region-meta (panel def meta(), e.g. queue "14 songs, 52 min") */
   function updateCtxMeta() {
@@ -2042,12 +2066,15 @@
     var el = $('#ctx-meta'); if (el) el.textContent = m;
   }
   function updatePanelButtons() {
-    var mode = $('#app').getAttribute('data-ctx'), open = mode === 'docked' || mode === 'open';
+    var open = panelOpen(), two = split();
     $$('[data-act="toggle-panel"]').forEach(function (b) {
-      b.setAttribute('aria-pressed', String(open && b.getAttribute('data-tab') === state.ctxTab));
+      var tab = b.getAttribute('data-tab');
+      b.setAttribute('aria-pressed', String(open && (tab === state.ctxTab || two && state.ctxTab === 'queue' && SPLIT.indexOf(tab) >= 0)));
       b.setAttribute('aria-expanded', String(open));
     });
   }
+  App.on('layout', function () { if (split() !== $('#ctx').hasAttribute('data-two') && state.ctxTab !== 'activity') renderCtx(); else updatePanelButtons(); });
+  App.on('layout:size', function () { if (split() !== $('#ctx').hasAttribute('data-two') && state.ctxTab !== 'activity') renderCtx(); });
   document.addEventListener('click', function (e) {
     var t = e.target.closest('[data-ctx-tab]'); if (!t) return;
     state.ctxTab = t.getAttribute('data-ctx-tab'); renderCtx();
@@ -2056,7 +2083,7 @@
   App.on('player', function (k) { if (k === 'queue' || k === 'track') { if (state.ctxTab === 'queue' || state.ctxTab === 'lyrics') renderCtx(); } });
   function layoutCtx() {
     var app = $('#app'), mode = app.getAttribute('data-ctx'), w = window.innerWidth;
-    if (w >= 1360 && !storage('ctxCollapsed') && mode !== 'docked') app.setAttribute('data-ctx', 'docked');
+    if (w >= 1360 && mode !== 'docked') app.setAttribute('data-ctx', 'docked');
     else if (w < 1360 && mode === 'docked') app.setAttribute('data-ctx', 'closed');
     if (!app.getAttribute('data-ctx')) app.setAttribute('data-ctx', 'closed');
     updatePanelButtons();
@@ -2386,6 +2413,7 @@
     'reload-read': function (el) { var path = el.getAttribute('data-id'); if (path) M.reload(path); else { M.invalidate(); App.refresh(); } },
     'toggle-panel': function (el) { App.togglePanel(el.getAttribute('data-tab')); },
     'close-panel': function () { App.closePanel(); },
+    'panel-expand': function (el) { App.openPanel(el.getAttribute('data-tab')); },
     'open-activity': function () { App.openPanel('activity'); },
     /* the player bar's Device view: the wrapper's mini player window inside the desktop app, Now Playing elsewhere */
     'open-now': function () { if (window.LullDesktop && LullDesktop.inWrapper) LullDesktop.openMini(); else App.go('/now'); },
@@ -2802,7 +2830,7 @@
       if (!e.target.closest('#ctx, [data-act="toggle-panel"], [data-act="open-activity"], .popover, .menu, .sheet, .dialog, .toast')) App.closePanel();
     });
     window.addEventListener('hashchange', function () { renderRoute(); });
-    App.on('store', function (k) { if (k.indexOf('saves') >= 0 || k.indexOf('activity') >= 0) { updateActivityBadge(); if (state.ctxTab === 'activity') renderCtx(); } });
+    App.on('store', function (k) { if (k.indexOf('saves') >= 0 || k.indexOf('activity') >= 0) { updateActivityBadge(); renderStrip(); if (state.ctxTab === 'activity') renderCtx(); } });
     booted = true;
     renderRoute();
     startServer();

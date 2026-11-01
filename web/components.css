@@ -949,8 +949,9 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 .rail__foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 18px 12px; border-top: 1px solid var(--divider); font: var(--t-micro); color: var(--fg-2); }
 .rail__foot button:hover { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; }
 
-/* main column: header + scrolling view */
-.main { grid-area: main; position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+/* main column: header + scrolling view. .main is the `main` size container (ADR-0007): screens lay out from its width,
+   never the window's, so a docked panel or the Now Playing column changes what they show */
+.main { grid-area: main; position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; container: main / inline-size; }
 .header { grid-area: head; display: flex; align-items: center; gap: var(--sp-3); min-width: 0; padding: 0 0 12px 16px; }
 .header__search { flex: 1 1 360px; max-width: 520px; min-width: 220px; }
 .header__brand { display: none; }
@@ -964,17 +965,69 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
   position: relative; flex: 1; min-height: 0; overflow: auto; overflow-x: hidden; scroll-padding-top: 16px;
   padding: 8px 16px 40px; outline: none;
 }
-.view > .view__inner { max-width: 1280px; }
 .sheet-bar { display: none; }
 
-/* context panel (Queue / Lyrics / Activity) */
+/* context panel (Queue / Lyrics / Activity): the `panel` size container */
 .ctx {
-  grid-area: ctx; display: flex; flex-direction: column; min-height: 0; width: var(--ctx);
+  grid-area: ctx; position: relative; display: flex; flex-direction: column; min-height: 0; width: var(--ctx); container: panel / inline-size;
   border: var(--stroke) solid var(--edge); border-radius: var(--r-panel); box-shadow: var(--stack-1l); margin-bottom: 21px;
 }
 .ctx__head { display: flex; align-items: center; gap: var(--sp-2); padding: 12px 12px 8px; flex: none; }
 .ctx__head .seg { flex: 1; }
+.ctx__panes { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .ctx__body { flex: 1; min-height: 0; overflow: auto; padding: 4px 12px 16px; overscroll-behavior: contain; }
+/* Queue + Lyrics (ADR-0007, from xwide): stacked in a narrow panel, side by side in a wide one */
+.ctx[data-two] .ctx__body { flex: 1 1 0; }
+.ctx[data-two] .ctx__body--2 { border-top: 1px solid var(--divider); }
+@container panel (min-width: 600px) {
+  .ctx[data-two] .ctx__panes { flex-direction: row; }
+  .ctx[data-two] .ctx__body--2 { border-top: 0; border-left: 1px solid var(--divider); }
+}
+.ctx__split { display: none; }
+.app:is([data-size="xwide"], [data-size="ultra"]) .ctx__split { display: inline-grid; }
+/* collapsed while docked: an icon strip (one button per tab), the rest of the panel hidden. Layout states that must
+   hold whatever a design draws are !important here: a components-layer !important wins over the design layer */
+.ctx__strip { display: none; }
+.app[data-panel="strip"] .ctx > :not(.ctx__strip) { display: none !important; }
+.app[data-panel="strip"] .ctx__strip { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); padding: 12px 0; }
+.ctx__strip .btn-icon { position: relative; }
+
+/* column resize handle (layout.js): the left edge of the panel and of the Now Playing column */
+.col-resize {
+  position: absolute; z-index: 2; left: -9px; top: 16px; bottom: 16px; width: 12px; cursor: col-resize; touch-action: none;
+  border-radius: var(--r-pill);
+}
+.col-resize::after {
+  content: ""; position: absolute; left: 4px; top: 50%; width: 4px; height: 44px; margin-top: -22px; border-radius: 2px;
+  background: var(--line); opacity: 0; transition: opacity var(--dur-1);
+}
+.col-resize:hover::after, .col-resize:focus-visible::after, .app.is-resizing .col-resize::after { opacity: .7; }
+.col-resize:focus-visible { outline-offset: 0; }
+.app:not([data-ctx="docked"]) .ctx > .col-resize { display: none; }
+.app.is-resizing { cursor: col-resize; user-select: none; }
+.app.is-resizing :is(.main, .ctx, .nowcol) { transition: none; }
+
+/* Now Playing column (ADR-0007, from wide): shares the main grid cell, the main area gives it room */
+.nowcol {
+  grid-area: main; justify-self: end; position: relative; z-index: 1; display: none; flex-direction: column; min-height: 0;
+  width: var(--now-w); margin-bottom: 21px; container: nowcol / inline-size;
+  border: var(--stroke) solid var(--edge); border-radius: var(--r-panel); box-shadow: var(--stack-1l);
+}
+.app:is([data-nowcol="open"], [data-nowcol="strip"]) .nowcol { display: flex; }
+.app:is([data-nowcol="open"], [data-nowcol="strip"]) .main { margin-right: calc(var(--now-w) + 16px) !important; }
+.nowcol__head { display: flex; align-items: center; gap: var(--sp-2); padding: 12px 12px 4px 18px; flex: none; }
+.nowcol__title { flex: 1; font: var(--t-micro); color: var(--fg-2); }
+.nowcol__body { flex: 1; min-height: 0; overflow: auto; padding: 4px 14px 16px; overscroll-behavior: contain; }
+.nowcol__strip { display: none; }
+.app[data-nowcol="strip"] .nowcol > :not(.nowcol__strip) { display: none !important; }
+.app[data-nowcol="strip"] .nowcol__strip { display: flex; flex-direction: column; align-items: center; padding: 12px 0; }
+.pbar__nowcol { display: none; }
+.app[data-nowcol-ok] .pbar__nowcol { display: inline-grid; }
+
+/* short windows (data-height="short", under 760 px): tighter chrome, the same content */
+.app[data-height="short"] { padding-top: 8px; }
+.app[data-height="short"] .header { padding-bottom: 8px; }
+.app[data-height="short"] :is(.rail, .ctx, .nowcol, .pbar) { margin-bottom: 10px; }
 .app:not([data-ctx="docked"]) .ctx {
   position: fixed; z-index: var(--z-panel); right: 16px; top: 76px; bottom: calc(var(--bar-h) + 40px); margin: 0;
   max-width: calc(100vw - 32px); transform: translateX(calc(100% + 40px)); visibility: hidden;
