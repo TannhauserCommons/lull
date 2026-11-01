@@ -4,12 +4,14 @@
 pub mod catalog;
 pub mod config;
 pub mod db;
+pub mod devices;
 pub mod error;
 pub mod events;
 pub mod http;
 pub mod ids;
 pub mod model;
 pub mod seams;
+pub mod settings;
 pub mod status;
 
 use std::sync::Arc;

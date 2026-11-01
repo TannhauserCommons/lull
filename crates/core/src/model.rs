@@ -102,3 +102,41 @@ pub struct Entities {
     #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty", default)]
     pub artists: std::collections::BTreeMap<ArtistId, Artist>,
 }
+
+/// A playlist as the `Collection` seam hands it out (ADR-0002).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Playlist {
+    /// `pl-<n>`, never reused.
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub track_ids: Vec<TrackId>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+/// One change to a playlist; `None` fields stay as they are. Removals are positions in the
+/// playlist before the change, applied before additions, which go to the end.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaylistEdit {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    #[serde(default)]
+    pub remove_positions: Vec<usize>,
+    #[serde(default)]
+    pub add: Vec<TrackId>,
+}
+
+/// A finished or abandoned play reported by something other than the web player (Subsonic
+/// scrobbles, the offline outbox).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayReport {
+    pub track_id: TrackId,
+    /// Unix seconds.
+    pub started_at: i64,
+    pub played_s: u32,
+    pub completed: bool,
+}

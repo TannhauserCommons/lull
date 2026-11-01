@@ -82,6 +82,10 @@ pub struct Discovery {
 pub struct Secret(String);
 
 impl Secret {
+    pub fn new(value: impl Into<String>) -> Self {
+        Secret(value.into())
+    }
+
     pub fn expose(&self) -> &str {
         &self.0
     }
@@ -110,16 +114,7 @@ pub enum ConfigError {
 impl Config {
     /// Reads the process environment (and `LULL_CONFIG` if set).
     pub fn from_env() -> Result<Self, ConfigError> {
-        let mut vars: BTreeMap<String, String> = BTreeMap::new();
-        if let Ok(path) = std::env::var("LULL_CONFIG") {
-            let text = std::fs::read_to_string(&path).map_err(|source| ConfigError::File { path, source })?;
-            // The deploy kit's env file also holds settings for compose and slskd; only
-            // `LULL_*` lines are lull's, as with the environment.
-            vars.extend(parse_env_file(&text).filter(|(k, _)| k.starts_with("LULL_")));
-        }
-        vars.extend(std::env::vars().filter(|(k, _)| k.starts_with("LULL_")));
-        vars.remove("LULL_CONFIG");
-        Self::from_vars(vars)
+        Self::from_vars(env_vars()?)
     }
 
     pub fn from_vars(vars: BTreeMap<String, String>) -> Result<Self, ConfigError> {
@@ -187,6 +182,21 @@ impl Config {
             None => Ok(config),
         }
     }
+}
+
+/// The `LULL_*` settings from `LULL_CONFIG` (if set) and the process environment, which wins.
+/// The hub merges these over the settings stored in the app (`settings::merge`).
+pub fn env_vars() -> Result<BTreeMap<String, String>, ConfigError> {
+    let mut vars: BTreeMap<String, String> = BTreeMap::new();
+    if let Ok(path) = std::env::var("LULL_CONFIG") {
+        let text = std::fs::read_to_string(&path).map_err(|source| ConfigError::File { path, source })?;
+        // The deploy kit's env file also holds settings for compose and slskd; only
+        // `LULL_*` lines are lull's, as with the environment.
+        vars.extend(parse_env_file(&text).filter(|(k, _)| k.starts_with("LULL_")));
+    }
+    vars.extend(std::env::vars().filter(|(k, _)| k.starts_with("LULL_")));
+    vars.remove("LULL_CONFIG");
+    Ok(vars)
 }
 
 fn invalid(key: &'static str, reason: String) -> ConfigError {

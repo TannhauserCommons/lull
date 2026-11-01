@@ -1,0 +1,203 @@
+//! Paired devices (ADR-0002). Every call to the hub carries a device's token; the hub keeps only
+//! its sha256. A Subsonic app password is the exception: the Subsonic token scheme
+//! (`md5(password + salt)`) needs the password itself, so it is kept as given.
+
+use serde::Serialize;
+use sha2::{Digest, Sha256};
+
+use crate::config::Secret;
+use crate::db::Db;
+use crate::error::{Error, Result};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Kind {
+    /// A browser or the installed web app.
+    Browser,
+    /// The lull app on Windows, Linux or Android.
+    App,
+    /// A Subsonic client, signing in with an app password.
+    Subsonic,
+}
+
+impl Kind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Kind::Browser => "browser",
+            Kind::App => "app",
+            Kind::Subsonic => "subsonic",
+        }
+    }
+
+    fn parse(s: &str) -> Kind {
+        match s {
+            "app" => Kind::App,
+            "subsonic" => Kind::Subsonic,
+            _ => Kind::Browser,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Device {
+    pub id: String,
+    pub name: String,
+    pub kind: Kind,
+    pub created_at: i64,
+    pub last_seen: Option<i64>,
+}
+
+/// Pairs a new device and returns it with its token, which is shown or handed over once.
+pub async fn create(db: &Db, name: &str, kind: Kind) -> Result<(Device, Secret)> {
+    let id = format!("d-{}", hex(&random::<8>()?));
+    let token = hex(&random::<32>()?);
+    let device = Device {
+        id,
+        name: name.trim().chars().take(64).collect(),
+        kind,
+        created_at: crate::now(),
+        last_seen: None,
+    };
+    let (d, hash) = (device.clone(), digest(&token));
+    let secret = (kind == Kind::Subsonic).then(|| token.clone());
+    db.call(move |conn| {
+        conn.execute(
+            "INSERT INTO core_devices (id, name, kind, token_hash, secret, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![d.id, d.name, d.kind.as_str(), hash, secret, d.created_at],
+        )?;
+        Ok(())
+    })
+    .await?;
+    Ok((device, Secret::new(token)))
+}
+
+/// The device a token belongs to, if it is still paired. Marks it seen, at most once a minute.
+pub async fn verify(db: &Db, token: &str) -> Result<Option<Device>> {
+    let hash = digest(token);
+    let now = crate::now();
+    db.call(move |conn| {
+        let device = conn
+            .query_row(&format!("{SELECT} WHERE token_hash = ?1"), [&hash], row)
+            .map(Some)
+            .or_else(none_if_missing)?;
+        if let Some(d) = &device
+            && d.last_seen.is_none_or(|t| now - t >= 60)
+        {
+            conn.execute(
+                "UPDATE core_devices SET last_seen = ?1 WHERE id = ?2",
+                rusqlite::params![now, d.id],
+            )?;
+        }
+        Ok(device)
+    })
+    .await
+}
+
+/// Every paired Subsonic client with its app password, for checking `md5(password + salt)`.
+pub async fn subsonic(db: &Db) -> Result<Vec<(Device, Secret)>> {
+    db.call(|conn| {
+        let mut stmt = conn.prepare(
+            "SELECT id, name, kind, created_at, last_seen, secret FROM core_devices WHERE kind = 'subsonic'",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((row(r)?, Secret::new(r.get::<_, String>(5)?))))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    })
+    .await
+}
+
+pub async fn list(db: &Db) -> Result<Vec<Device>> {
+    db.call(|conn| {
+        let mut stmt = conn.prepare(&format!("{SELECT} ORDER BY created_at"))?;
+        let rows = stmt.query_map([], row)?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    })
+    .await
+}
+
+/// Whether any device is paired yet; before that, the hub is waiting for its setup code.
+pub async fn any(db: &Db) -> Result<bool> {
+    db.call(|conn| Ok(conn.query_row("SELECT EXISTS (SELECT 1 FROM core_devices)", [], |r| r.get(0))?))
+        .await
+}
+
+pub async fn rename(db: &Db, id: &str, name: &str) -> Result<()> {
+    let (id, name) = (id.to_owned(), name.trim().chars().take(64).collect::<String>());
+    changed(
+        db.call(move |conn| Ok(conn.execute("UPDATE core_devices SET name = ?1 WHERE id = ?2", [&name, &id])?))
+            .await?,
+    )
+}
+
+/// Unpairs a device: its token stops working at once.
+pub async fn revoke(db: &Db, id: &str) -> Result<()> {
+    let id = id.to_owned();
+    changed(
+        db.call(move |conn| Ok(conn.execute("DELETE FROM core_devices WHERE id = ?1", [&id])?))
+            .await?,
+    )
+}
+
+const SELECT: &str = "SELECT id, name, kind, created_at, last_seen FROM core_devices";
+
+fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Device> {
+    Ok(Device {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        kind: Kind::parse(&r.get::<_, String>(2)?),
+        created_at: r.get(3)?,
+        last_seen: r.get(4)?,
+    })
+}
+
+fn none_if_missing<T>(e: rusqlite::Error) -> rusqlite::Result<Option<T>> {
+    match e {
+        rusqlite::Error::QueryReturnedNoRows => Ok(None),
+        e => Err(e),
+    }
+}
+
+fn changed(rows: usize) -> Result<()> {
+    if rows == 0 {
+        Err(Error::NotFound("no such device".into()))
+    } else {
+        Ok(())
+    }
+}
+
+fn random<const N: usize>() -> Result<[u8; N]> {
+    let mut buf = [0u8; N];
+    getrandom::fill(&mut buf).map_err(|e| Error::internal(format!("random: {e}")))?;
+    Ok(buf)
+}
+
+fn digest(token: &str) -> String {
+    hex(&Sha256::digest(token.as_bytes()))
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_token_works_until_its_device_is_revoked() -> Result<()> {
+        let db = Db::memory()?;
+        db.migrate(&crate::db::CORE)?;
+        assert!(!any(&db).await?);
+        let (phone, token) = create(&db, "Pixel", Kind::App).await?;
+        assert_eq!(verify(&db, token.expose()).await?.map(|d| d.id), Some(phone.id.clone()));
+        assert!(verify(&db, "not-a-token").await?.is_none());
+        let (_, password) = create(&db, "Symfonium", Kind::Subsonic).await?;
+        assert_eq!(
+            subsonic(&db).await?.first().map(|(_, p)| p.expose().to_owned()),
+            Some(password.expose().to_owned())
+        );
+        revoke(&db, &phone.id).await?;
+        assert!(verify(&db, token.expose()).await?.is_none());
+        Ok(())
+    }
+}

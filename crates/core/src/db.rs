@@ -18,10 +18,12 @@ pub struct Migrations {
     pub steps: &'static [&'static str],
 }
 
-/// Tables every crate may read. Writers: `plays` and `likes`/`follows` are written by `collection`.
+/// Tables every crate may read. Writers: `plays` and `likes`/`follows` are written by `collection`;
+/// `core_config` and `core_devices` only through `settings` and `devices`.
 pub const CORE: Migrations = Migrations {
     owner: "core",
-    steps: &[r#"
+    steps: &[
+        r#"
         CREATE TABLE plays (
             id          INTEGER PRIMARY KEY,
             track_id    TEXT NOT NULL,
@@ -50,7 +52,25 @@ pub const CORE: Migrations = Migrations {
             followed_at INTEGER NOT NULL,
             PRIMARY KEY (kind, id)
         );
-    "#],
+    "#,
+        // ADR-0002: settings changed in the app, and paired devices.
+        r#"
+        CREATE TABLE core_config (
+            key         TEXT PRIMARY KEY,   -- a LULL_* key, as in the environment
+            value       TEXT NOT NULL,
+            updated_at  INTEGER NOT NULL
+        );
+        CREATE TABLE core_devices (
+            id          TEXT PRIMARY KEY,   -- "d-<16 hex>"
+            name        TEXT NOT NULL,
+            kind        TEXT NOT NULL CHECK (kind IN ('browser', 'app', 'subsonic')),
+            token_hash  TEXT NOT NULL UNIQUE,  -- sha256 of the token, hex
+            secret      TEXT,               -- subsonic only: the app password itself
+            created_at  INTEGER NOT NULL,
+            last_seen   INTEGER
+        );
+    "#,
+    ],
 };
 
 impl Db {

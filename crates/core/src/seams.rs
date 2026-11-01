@@ -4,18 +4,66 @@
 use std::path::PathBuf;
 
 use async_trait::async_trait;
+use axum::http::HeaderValue;
+use axum::response::Response;
 
-use crate::error::Result;
-use crate::ids::TrackId;
-use crate::model::{SourceRef, Track};
+use crate::error::{Error, Result};
+use crate::ids::{AlbumId, ArtistId, TrackId};
+use crate::model::{Album, Artist, PlayReport, Playlist, PlaylistEdit, SourceRef, Track};
 
-/// The saved library. Implemented by `library` (Jellyfin).
+/// The saved library. Implemented by `library`, from a music folder or Jellyfin (ADR-0003).
 #[async_trait]
 pub trait Library: Send + Sync {
     /// Saved tracks matching free text: the instant half of search.
     async fn search(&self, query: &str, limit: usize) -> Result<Vec<Track>>;
     /// The saved tracks among `ids` (duplicate notes, "saved" badges on non-library results).
     async fn saved(&self, ids: &[TrackId]) -> Result<Vec<Track>>;
+
+    // Browsing and streaming, for the Subsonic API (ADR-0003). Defaults until `library` has them.
+
+    /// Every artist with saved music, by name.
+    async fn artists(&self) -> Result<Vec<Artist>> {
+        Err(Error::unavailable("library", "browsing is not built yet"))
+    }
+    /// Saved albums, all or one artist's, by artist then year.
+    async fn albums(&self, _artist: Option<&ArtistId>) -> Result<Vec<Album>> {
+        Err(Error::unavailable("library", "browsing is not built yet"))
+    }
+    /// One saved album and its tracks in order.
+    async fn album(&self, _id: &AlbumId) -> Result<Option<(Album, Vec<Track>)>> {
+        Err(Error::unavailable("library", "browsing is not built yet"))
+    }
+    /// A saved track's audio, honouring `range` (the request's Range header): 200 or 206.
+    async fn stream(&self, _id: &TrackId, _range: Option<HeaderValue>) -> Result<Response> {
+        Err(Error::unavailable(
+            "library",
+            "streaming through the seam is not built yet",
+        ))
+    }
+    /// An album's cover, scaled to fit `size` pixels when given.
+    async fn cover(&self, _id: &AlbumId, _size: Option<u32>) -> Result<Response> {
+        Err(Error::unavailable(
+            "library",
+            "covers through the seam are not built yet",
+        ))
+    }
+}
+
+/// The listener's collection: likes, playlists and plays. Implemented by `collection`, for
+/// crates that act on it outside the web UI's own endpoints (Subsonic, ADR-0002).
+#[async_trait]
+pub trait Collection: Send + Sync {
+    /// Liked tracks, newest first.
+    async fn liked(&self) -> Result<Vec<TrackId>>;
+    /// Likes or unlikes; the same `like` events go out as from the web UI.
+    async fn set_liked(&self, track: &TrackId, liked: bool) -> Result<()>;
+    async fn playlists(&self) -> Result<Vec<Playlist>>;
+    async fn playlist(&self, id: &str) -> Result<Option<Playlist>>;
+    async fn create_playlist(&self, name: &str, tracks: &[TrackId]) -> Result<Playlist>;
+    async fn edit_playlist(&self, id: &str, edit: PlaylistEdit) -> Result<Playlist>;
+    async fn delete_playlist(&self, id: &str) -> Result<()>;
+    /// Records a play as if the web player had reported it (history, taste, scrobbling).
+    async fn record_play(&self, play: PlayReport) -> Result<()>;
 }
 
 /// Soulseek transfers. Implemented by `soulseek`.
