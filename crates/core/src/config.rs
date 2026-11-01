@@ -62,10 +62,29 @@ pub struct Jellyfin {
 
 #[derive(Debug, Clone)]
 pub struct Library {
-    /// Jellyfin's music folder as lull sees it; saved files are written here.
+    /// Where the saved library comes from (ADR-0003).
+    pub mode: LibraryMode,
+    /// The music folder as lull sees it: indexed in folder mode, Jellyfin's music library in
+    /// Jellyfin mode. Saved files are written here in both.
     pub music_dir: PathBuf,
     /// Path template for saved files, relative to `music_dir`.
     pub naming: String,
+}
+
+/// `LULL_LIBRARY`: `jellyfin` when Jellyfin is configured, else `folder`, unless set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LibraryMode {
+    Folder,
+    Jellyfin,
+}
+
+impl LibraryMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            LibraryMode::Folder => "folder",
+            LibraryMode::Jellyfin => "jellyfin",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -144,6 +163,26 @@ impl Config {
 
     pub fn from_vars(vars: BTreeMap<String, String>) -> Result<Self, ConfigError> {
         let mut v = Vars(vars);
+        let jellyfin = {
+            let user = v.opt("LULL_JELLYFIN_USER");
+            v.pair("LULL_JELLYFIN_URL", "LULL_JELLYFIN_API_KEY")?
+                .map(|(url, key)| Jellyfin {
+                    url: url.trim_end_matches('/').to_owned(),
+                    api_key: Secret(key),
+                    user,
+                })
+        };
+        let mode = match (v.opt("LULL_LIBRARY").as_deref(), &jellyfin) {
+            (None, Some(_)) | (Some("jellyfin"), Some(_)) => LibraryMode::Jellyfin,
+            (None, None) | (Some("folder"), _) => LibraryMode::Folder,
+            (Some("jellyfin"), None) => {
+                return Err(invalid(
+                    "LULL_LIBRARY",
+                    "jellyfin needs LULL_JELLYFIN_URL and LULL_JELLYFIN_API_KEY".into(),
+                ));
+            }
+            (Some(other), _) => return Err(invalid("LULL_LIBRARY", format!("{other:?} is not folder or jellyfin"))),
+        };
         let config = Config {
             listen: v.parse("LULL_LISTEN", "0.0.0.0:8080")?,
             public_url: v.opt("LULL_PUBLIC_URL").map(|u| u.trim_end_matches('/').to_owned()),
@@ -176,16 +215,9 @@ impl Config {
                     (gb * 1_000_000_000.0) as u64
                 },
             },
-            jellyfin: {
-                let user = v.opt("LULL_JELLYFIN_USER");
-                v.pair("LULL_JELLYFIN_URL", "LULL_JELLYFIN_API_KEY")?
-                    .map(|(url, key)| Jellyfin {
-                        url: url.trim_end_matches('/').to_owned(),
-                        api_key: Secret(key),
-                        user,
-                    })
-            },
+            jellyfin,
             library: Library {
+                mode,
                 music_dir: v.or("LULL_MUSIC_DIR", "/music").into(),
                 naming: v.or(
                     "LULL_NAMING",
@@ -317,8 +349,20 @@ mod tests {
             (&[("LULL_JELLYFIN_URL", "http://jf")][..], false),
             (&[("LULL_SHARE", "everything")][..], false),
             (&[("LULL_CACHE_MAX_GB", "0")][..], false),
+            (&[("LULL_LIBRARY", "jellyfin")][..], false),
+            (&[("LULL_LIBRARY", "navidrome")][..], false),
         ] {
             assert_eq!(Config::from_vars(vars(extra)).is_ok(), ok, "{extra:?}");
         }
+    }
+
+    #[test]
+    fn library_mode_follows_jellyfin_unless_set() -> Result<(), ConfigError> {
+        let jf = [("LULL_JELLYFIN_URL", "http://jf"), ("LULL_JELLYFIN_API_KEY", "k")];
+        let mode = |extra: &[(&str, &str)]| Config::from_vars(vars(extra)).map(|c| c.library.mode);
+        assert_eq!(mode(&[])?, LibraryMode::Folder);
+        assert_eq!(mode(&jf)?, LibraryMode::Jellyfin);
+        assert_eq!(mode(&[jf[0], jf[1], ("LULL_LIBRARY", "folder")])?, LibraryMode::Folder);
+        Ok(())
     }
 }

@@ -23,6 +23,7 @@ pub const KEYS: &[Key] = &[
     Key::plain("LULL_PREFERRED_FORMATS"),
     Key::plain("LULL_SHARE"),
     Key::plain("LULL_CACHE_MAX_GB"),
+    Key::plain("LULL_LIBRARY"),
     Key::plain("LULL_JELLYFIN_URL"),
     Key::secret("LULL_JELLYFIN_API_KEY"),
     Key::plain("LULL_JELLYFIN_USER"),
