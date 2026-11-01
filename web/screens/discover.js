@@ -803,7 +803,8 @@
       ${ui.labelRule('only on soulseek', { id: 'disc-h-only' })}
       ${scanLine()}
       ${only.length ? html`<ol class="tlist tlist--dense" data-ids="${only.map(function (t) { return t.id; }).join(',')}" aria-label="Only on Soulseek">${only.map(songRow)}</ol>`
-        : S.done && S.slskStarted && !S.slskError && !S.slskMissing ? html`<p class="disc-note">Every song peers share here is in the catalogs above.</p>` : ''}
+        : S.done && S.slskStarted && !S.slskError && !S.slskMissing ? html`<p class="disc-note">${S.peerOrder.length
+          ? 'Every song peers share here is in the catalogs above.' : 'Soulseek found nothing for these words.'}</p>` : ''}
       ${streaming() ? ui.skeleton('row', 2) : ''}
     </section>`;
   }
