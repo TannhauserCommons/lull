@@ -9,8 +9,45 @@ use serde::Serialize;
 use crate::db::Db;
 use crate::error::{Error, Result};
 
-/// Keys only the environment may set: the hub needs them before the database is open.
-pub const ENV_ONLY: &[&str] = &["LULL_DATA_DIR", "LULL_LISTEN", "LULL_LOG"];
+/// Keys only the environment may set: the hub needs them before the database is open, or (the
+/// setup code) they make no sense to set from a device that is already paired.
+pub const ENV_ONLY: &[&str] = &["LULL_DATA_DIR", "LULL_LISTEN", "LULL_LOG", "LULL_SETUP_CODE"];
+
+/// Every key the listener can set in the app, and whether it is a secret (the UI only learns
+/// whether a secret is set). With `ENV_ONLY`, these are all the keys `Config` reads.
+pub const KEYS: &[Key] = &[
+    Key::plain("LULL_PUBLIC_URL"),
+    Key::plain("LULL_SLSKD_URL"),
+    Key::secret("LULL_SLSKD_API_KEY"),
+    Key::plain("LULL_TRANSFERS_DIR"),
+    Key::plain("LULL_PREFERRED_FORMATS"),
+    Key::plain("LULL_SHARE"),
+    Key::plain("LULL_CACHE_MAX_GB"),
+    Key::plain("LULL_JELLYFIN_URL"),
+    Key::secret("LULL_JELLYFIN_API_KEY"),
+    Key::plain("LULL_JELLYFIN_USER"),
+    Key::plain("LULL_MUSIC_DIR"),
+    Key::plain("LULL_NAMING"),
+    Key::secret("LULL_LASTFM_API_KEY"),
+    Key::secret("LULL_LASTFM_API_SECRET"),
+    Key::plain("LULL_LISTENBRAINZ_USER"),
+    Key::secret("LULL_LISTENBRAINZ_TOKEN"),
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Key {
+    pub name: &'static str,
+    pub secret: bool,
+}
+
+impl Key {
+    const fn plain(name: &'static str) -> Key {
+        Key { name, secret: false }
+    }
+    const fn secret(name: &'static str) -> Key {
+        Key { name, secret: true }
+    }
+}
 
 /// Where a key's value comes from, for the UI: an `Env` key is shown locked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -18,6 +55,8 @@ pub const ENV_ONLY: &[&str] = &["LULL_DATA_DIR", "LULL_LISTEN", "LULL_LOG"];
 pub enum Source {
     Env,
     Stored,
+    /// Neither set: `Config` uses its default.
+    Default,
 }
 
 /// Every stored key and its value.
@@ -32,10 +71,7 @@ pub async fn stored(db: &Db) -> Result<BTreeMap<String, String>> {
 
 /// Applies `changes` in one transaction: `Some` sets a key, `None` removes it (back to default).
 pub async fn store(db: &Db, changes: BTreeMap<String, Option<String>>) -> Result<()> {
-    if let Some(key) = changes
-        .keys()
-        .find(|k| !k.starts_with("LULL_") || ENV_ONLY.contains(&k.as_str()))
-    {
+    if let Some(key) = changes.keys().find(|k| !KEYS.iter().any(|key| key.name == k.as_str())) {
         return Err(Error::BadRequest(format!("{key} can't be set in the app")));
     }
     let now = crate::now();
@@ -68,7 +104,8 @@ pub fn merge(
         vars.insert(k.clone(), v.clone());
         sources.insert(k.clone(), Source::Stored);
     }
-    for (k, v) in env {
+    // An empty variable is unset: the deploy kit passes every key in its env file, empty or not.
+    for (k, v) in env.iter().filter(|(_, v)| !v.is_empty()) {
         vars.insert(k.clone(), v.clone());
         sources.insert(k.clone(), Source::Env);
     }
@@ -80,7 +117,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn env_wins_and_bootstrap_keys_stay_env_only() -> Result<()> {
+    async fn env_wins_unless_empty_and_bootstrap_keys_stay_env_only() -> Result<()> {
         let db = Db::memory()?;
         db.migrate(&crate::db::CORE)?;
         assert!(
@@ -98,11 +135,41 @@ mod tests {
         )
         .await?;
         store(&db, [("LULL_NAMING".into(), None)].into()).await?;
-        let env = [("LULL_MUSIC_DIR".to_string(), "/env".to_string())].into();
+        store(&db, [("LULL_SHARE".into(), Some("none".into()))].into()).await?;
+        let env = [
+            ("LULL_MUSIC_DIR".to_string(), "/env".to_string()),
+            ("LULL_SHARE".to_string(), String::new()),
+        ]
+        .into();
         let (vars, sources) = merge(&env, &stored(&db).await?);
         assert_eq!(vars.get("LULL_MUSIC_DIR").map(String::as_str), Some("/env"));
         assert_eq!(sources.get("LULL_MUSIC_DIR"), Some(&Source::Env));
         assert!(!vars.contains_key("LULL_NAMING"));
+        assert_eq!(
+            sources.get("LULL_SHARE"),
+            Some(&Source::Stored),
+            "an empty env value is unset"
+        );
         Ok(())
+    }
+
+    /// The key lists, `Config` and `deploy/.env.example` describe the same settings.
+    #[test]
+    fn every_key_is_listed_documented_and_read() {
+        let example = include_str!("../../../deploy/.env.example");
+        for name in KEYS.iter().map(|k| k.name).chain(ENV_ONLY.iter().copied()) {
+            assert!(
+                example.contains(&format!("\n{name}=")),
+                "{name} is not in deploy/.env.example"
+            );
+            // An empty value means "use the default", so only an unknown key can fail here.
+            let mut vars: BTreeMap<String, String> = [
+                ("LULL_SLSKD_URL".into(), "http://slskd:5030".into()),
+                ("LULL_SLSKD_API_KEY".into(), "k".into()),
+            ]
+            .into();
+            vars.entry(name.into()).or_default();
+            assert!(crate::config::Config::from_vars(vars).is_ok(), "Config rejects {name}");
+        }
     }
 }

@@ -18,6 +18,8 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+# `Ctx::shutdown`: background tasks end when the hub restarts or stops its crates.
+tokio-util = "0.7.20"
 tracing.workspace = true
 
 [lints]

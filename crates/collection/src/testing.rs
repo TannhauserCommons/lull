@@ -47,6 +47,7 @@ pub(crate) async fn service() -> Result<(Arc<Service>, Receiver<Event>)> {
         http: Http::new()?,
         status: Status::new(bus.clone()),
         bus,
+        shutdown: Default::default(),
     };
     let svc = Arc::new(Service {
         ctx,

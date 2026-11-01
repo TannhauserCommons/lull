@@ -55,6 +55,7 @@ fn context(config: Config, db: Db) -> Result<Ctx, Error> {
         status: Status::new(bus.clone()),
         bus,
         config: Arc::new(config),
+        shutdown: Default::default(),
     })
 }
 

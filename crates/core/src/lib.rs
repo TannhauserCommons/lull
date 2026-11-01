@@ -26,6 +26,24 @@ pub struct Ctx {
     pub http: http::Http,
     pub bus: events::Bus,
     pub status: status::Status,
+    /// Cancelled when the hub stops this set of crates: on exit, and before an in-process restart
+    /// rewires them with new settings (ADR-0002). Background tasks end on it; see `Ctx::spawn`.
+    pub shutdown: tokio_util::sync::CancellationToken,
+}
+
+impl Ctx {
+    /// Runs a background task until it finishes or the hub stops this set of crates, so a
+    /// restart never leaves the old crates' loops running beside the new ones.
+    pub fn spawn<F>(&self, task: F)
+    where
+        F: std::future::Future + Send + 'static,
+        F::Output: Send,
+    {
+        let shutdown = self.shutdown.clone();
+        tokio::spawn(async move {
+            shutdown.run_until_cancelled(task).await;
+        });
+    }
 }
 
 /// Unix seconds now.
