@@ -116,6 +116,8 @@ async fn wire(ctx: &Ctx) -> Result<Router, Error> {
     let lastfm = lull_lastfm::start(ctx).await?;
     let lyrics = lull_lyrics::start(ctx).await?;
     let collection = lull_collection::start(ctx, library.clone()).await?;
+    // Library mirrors likes and playlists into Jellyfin; collection starts after it (ADR-0003).
+    lull_library::attach_collection(&library, collection.clone());
     let subsonic = lull_subsonic::start(ctx, library.clone(), collection.clone(), lyrics.clone()).await?;
     let skins = lull_skins::start(ctx).await?;
     let themes = lull_themes::start(ctx).await?;
