@@ -273,6 +273,7 @@
       ${ui.saveButton(t.id, { cls: 'btn--primary', label: 'Save to library' })}
       ${actBtn2('plus', 'Add to playlist', 'add-to-playlist', 'data-id="' + t.id + '" aria-haspopup="menu"')}
       ${actBtn2('radio', 'Start radio', 'start-radio', 'data-kind="track" data-id="' + t.id + '"')}
+      ${actBtn2('soulseek', 'Choose another source', 'pick-source', 'aria-haspopup="dialog"', 'Source')}
       ${actBtn2(following ? 'check' : 'follow', following ? 'Following ' + t.artist : 'Follow ' + t.artist, 'follow', 'data-id="' + t.artistId + '" aria-pressed="' + following + '"', following ? 'Following' : 'Follow')}
       ${actBtn2('connect', 'Play on another device', 'connect', 'aria-haspopup="dialog"', 'Devices')}
       ${actBtn2('classic', 'Classic mode', 'classic', '', 'Classic')}

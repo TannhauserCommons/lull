@@ -1107,7 +1107,7 @@
   /* begin playing queue[index]: opts { autoplay (default true), at (seconds), reason (how the last song ended), forceSoulseek } */
   function load(index, opts) {
     opts = opts || {};
-    endPlay(opts.reason || 'skipped');
+    if (!opts.keepPlay) endPlay(opts.reason || 'skipped');          // a new source for the same song is the same play
     ps.index = clamp(index, 0, Math.max(0, ps.queue.length - 1));
     resetTrackState();
     var was = [cur, nxt], e = ps.queue[ps.index], seq = ++loadSeq;
@@ -1264,12 +1264,14 @@
     ps.queue = playingEntry ? [playingEntry] : []; ps.index = 0; queueChanged();
     App.toast('Queue cleared', { icon: 'trash', action: 'Undo', onAction: function () { ps.queue = before; ps.index = beforeIndex; queueChanged(); } });
   };
-  /* manual source choice (source picker): useSource(trackId, { peer, path, format, sizeBytes, speed }) */
+  /* manual source choice (source picker): useSource(trackId, { peer, path, format, sizeBytes, speed }). The playing
+     song switches mid-song (ADR-0008): the chosen peer's stream reopens at the same time, as the same play. */
   P.useSource = function (trackId, source) {
     var i = ps.queue.findIndex(function (q) { return q.trackId === trackId; });
+    var current = i >= 0 && i === ps.index && !!cur && ps.status !== 'ended';
     if (i < 0) { i = ps.queue.length ? ps.index + 1 : 0; ps.queue.splice(i, 0, entry(trackId, 'next', source)); }
     else ps.queue[i].source = source;
-    load(i, { forceSoulseek: true });
+    load(i, current ? { forceSoulseek: true, at: ps.pos, autoplay: ps.playing, keepPlay: true } : { forceSoulseek: true });
     queueChanged();
   };
   P.retry = function () { load(ps.index, { at: ps.status === 'failed' ? 0 : ps.pos }); };
