@@ -1,8 +1,8 @@
 /* lull Connect (ADR-0005): every paired device sees the others, reports what it plays, and can be controlled.
    - The device list lives in the store as `devices` { items, me, loading, error } (GET /api/devices), kept current
      by `device.online` and `device.state` events. Settings > Devices (hub.js) reads it too.
-   - This device reports its state to POST /api/devices/me/state, at most once a second and at once on a new
-     song, play or pause; a slow heartbeat keeps the position honest.
+   - This device reports its state to POST /api/devices/me/state when it changes: at once on a new song, play or
+     pause, otherwise at most once a second; an unchanged state is sent again only as the slow heartbeat.
    - `device.command` events for this device drive the engine; `takeover` reports at once and pauses.
    - The picker (App.connect.open(anchor)): the devices, a remote's controls, and "Play here" (takeover). */
 (function () {
@@ -45,14 +45,18 @@
   };
 
   /* ---------- reporting this device's state ---------- */
-  var sendTimer = null, lastSent = 0, reporting = true;
+  var HEARTBEAT = 30000, sendTimer = null, lastSent = 0, lastBody = null, reporting = true;
   function stateBody() {
     return { trackId: P.currentId(), position: Math.round(ps.pos * 10) / 10, playing: ps.playing, volume: ps.muted ? 0 : ps.volume,
       queue: ps.queue.map(function (q) { return q.trackId; }), queueIndex: ps.index };
   }
-  function send() {
-    clearTimeout(sendTimer); sendTimer = null; lastSent = Date.now();
-    M.api(DEVICES + '/me/state', { method: 'POST', body: stateBody() }).catch(function (err) {
+  /* force: a takeover waits for this device's state event, so it is sent even when unchanged */
+  function send(force) {
+    clearTimeout(sendTimer); sendTimer = null;
+    var body = stateBody(), key = JSON.stringify(body);
+    if (!force && key === lastBody && Date.now() - lastSent < HEARTBEAT - 1000) return;   // nothing new since the last report
+    lastSent = Date.now(); lastBody = key;
+    M.api(DEVICES + '/me/state', { method: 'POST', body: body }).catch(function (err) {
       if (err.status === 404) reporting = false;           // a hub without Connect: stop asking until it restarts
     });
   }
@@ -65,7 +69,7 @@
     if (kind === 'track' || kind === 'play' || kind === 'ended') report(true);
     else if (kind === 'seek' || kind === 'volume' || kind === 'queue') report(false);
   });
-  setInterval(function () { if (ps.playing) report(false); }, 30000);
+  setInterval(function () { if (ps.playing) report(false); }, HEARTBEAT);
 
   /* ---------- commands for this device ---------- */
   App.on('server:device.command', function (e) {
@@ -79,14 +83,20 @@
       case 'seek': P.seek(+e.value || 0); break;
       case 'volume': P.setVolume(+e.value); break;
       case 'takeover':
-        send(); P.pause();
+        send(true); P.pause();
         App.toast(name + ' took over the music', { icon: 'connect' });
         break;
     }
   });
 
-  /* when this device is paired (again), and after every reconnect: read the list, report, accept reports again */
-  function start() { reporting = true; C.reload().then(function () { report(true); }); }
+  /* when this device is paired (again), and after every reconnect: read the list, report, accept reports again.
+     `server` fires several times while the list loads, so one start runs at a time; a reconnect reports afresh. */
+  var starting = null;
+  function start() {
+    if (starting) return;
+    reporting = true; lastBody = null;
+    starting = C.reload().then(function () { starting = null; report(true); });
+  }
   App.on('server', function (srv) { if (srv.authorized && srv.checked && devices().loading) start(); });
   App.on('server:resync', start);
   App.on('server:hub.restarting', function () { reporting = true; });

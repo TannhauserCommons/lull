@@ -189,8 +189,10 @@ level, not the system's.
 Settings > Devices renders from it.
 
 - **Reporting**: `POST /api/devices/me/state` at once on a new song, play, pause or end; at most once a second for
-  seeks, volume and queue changes; every 30 s while playing. A 404 (a hub without Connect) stops it until the next
-  resync or hub restart.
+  seeks, volume and queue changes; every 30 s while playing. A state identical to the last one sent is skipped
+  (except the heartbeat, a takeover and the first report after a reconnect). One start runs at a time, however
+  often `server` fires while the device list loads. A 404 (a hub without Connect) stops it until the next resync or
+  hub restart.
 - **Commands**: `device.command` for this device runs `play pause next prev seek volume`; `takeover` reports
   at once, pauses and says who took over.
 - **Picker** (`data-act="connect"`: the player bar, Now's action row): a popover, a sheet on phones. Picking a
