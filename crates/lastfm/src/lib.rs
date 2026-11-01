@@ -87,9 +87,9 @@ pub async fn start(ctx: &Ctx) -> Result<Arc<Service>> {
     });
     svc.report().await;
     if svc.client.is_some() {
-        tokio::spawn(listen(svc.clone(), ctx.bus.subscribe()));
-        tokio::spawn(scrobbler(svc.clone()));
-        tokio::spawn(history(svc.clone()));
+        ctx.spawn(listen(svc.clone(), ctx.bus.subscribe()));
+        ctx.spawn(scrobbler(svc.clone()));
+        ctx.spawn(history(svc.clone()));
     }
     Ok(svc)
 }

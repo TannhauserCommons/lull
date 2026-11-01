@@ -101,8 +101,9 @@ async fn switches(State(svc): State<Arc<Service>>, Json(body): Json<Switches>) -
         return Err(Error::Conflict("Last.fm is not connected".into()));
     }
     if body.use_history.is_some() {
+        let ctx = svc.ctx.clone();
         let svc = svc.clone();
-        tokio::spawn(async move { svc.share_history().await });
+        ctx.spawn(async move { svc.share_history().await });
     }
     svc.report().await;
     state(State(svc)).await
@@ -170,8 +171,9 @@ async fn sign_in(svc: &Arc<Service>, q: Callback) -> Result<()> {
         *out = false;
     }
     svc.wake.notify_one();
+    let ctx = svc.ctx.clone();
     let svc = svc.clone();
-    tokio::spawn(async move { svc.share_history().await });
+    ctx.spawn(async move { svc.share_history().await });
     Ok(())
 }
 
