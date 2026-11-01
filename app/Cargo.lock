@@ -2757,11 +2757,13 @@ name = "lull-themes"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "flate2",
  "lull-core",
  "serde",
  "serde_json",
  "tokio",
  "tracing",
+ "zip",
 ]
 
 [[package]]
