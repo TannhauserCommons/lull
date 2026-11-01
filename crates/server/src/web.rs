@@ -17,9 +17,11 @@ struct Web;
 /// report to anywhere else. Inline scripts are the pre-paint ones in index.html and the desktop
 /// wrapper; inline styles are style="" attributes and the layered `<style>@import` lines; images
 /// also come from the Winamp Skin Museum's CDN (skin screenshots); Theme Studio frames the app itself.
+/// Inside the lull app (ADR-0006), downloaded covers come over Tauri's asset protocol and the page
+/// talks to the app over its IPC; in a browser those `*.localhost` sources reach nothing.
 const CSP: &str = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; \
-    img-src 'self' data: blob: https://r2.webampskins.org; font-src 'self' data:; media-src 'self' blob:; \
-    connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-src 'self'; frame-ancestors 'self'; \
+    img-src 'self' data: blob: https://r2.webampskins.org https://asset.localhost; font-src 'self' data:; media-src 'self' blob:; \
+    connect-src 'self' ipc: http://ipc.localhost; worker-src 'self'; manifest-src 'self'; frame-src 'self'; frame-ancestors 'self'; \
     object-src 'none'; base-uri 'self'; form-action 'self'";
 
 pub async fn serve(uri: Uri, headers: axum::http::HeaderMap) -> Response {
