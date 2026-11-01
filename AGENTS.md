@@ -1,10 +1,10 @@
 # lull
 
-A self-hosted music player for one listener. It streams from Soulseek while the transfer is still running, saves songs into a Jellyfin library, recommends music, scrobbles to Last.fm and has a Winamp Classic mode.
-- **Server:** one Rust binary (`crates/server`) wiring domain crates.
+A music app for one listener who hosts it themselves (PROJECT.md). It streams from Soulseek while the transfer is still running, saves songs into a music folder or Jellyfin, recommends music, scrobbles to Last.fm and has a Winamp Classic mode. Devices pair with the listener's hub; there are no accounts.
+- **Hub:** the Rust server (`crates/server`, a library plus the `lull` binary) wiring domain crates.
 - **Soulseek:** reached through an [slskd](https://github.com/slskd/slskd) sidecar.
 - **Web UI:** buildless (`web/`), served by the binary, installable as a PWA.
-- **Desktop wrapper:** Tauri (`desktop/`).
+- **Apps:** one Tauri v2 project (`app/`) for Windows, Linux and Android (ADR-0006).
 - **Shipping:** a container image, `ghcr.io/tannhausercommons/lull`, plus a compose kit in `deploy/`.
 
 ## Start here
@@ -40,7 +40,7 @@ A self-hosted music player for one listener. It streams from Soulseek while the 
 
 ## Changes
 
-- **Git history is the changelog.** Commit as `type(scope): summary`, where scope is the crate or area (`soulseek`, `web`, `desktop`, `deploy`, `docs`). The body says why and how it was verified. No change logs, session notes or handoff files.
+- **Git history is the changelog.** Commit as `type(scope): summary`, where scope is the crate or area (`soulseek`, `web`, `app`, `deploy`, `docs`). The body says why and how it was verified. No change logs, session notes or handoff files.
 - **Small commits, straight to `main`.** Rebase on `origin/main`, run `mise run check`, then push. Never push red; if you break `main`, fix or revert at once.
 - **Stage only the files you changed.** Other agents may have uncommitted work here.
 - **Keep docs current.** A change that makes a `docs/context/` page wrong updates that page in the same commit.
