@@ -173,6 +173,14 @@ struct TransferDirectory {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Options {
     pub directories: Directories,
+    #[serde(default)]
+    pub soulseek: SoulseekOptions,
+}
+
+/// The Soulseek account slskd's options hold (the password comes back redacted).
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct SoulseekOptions {
+    pub username: Option<String>,
 }
 
 /// slskd's own paths, as slskd sees them.
@@ -257,10 +265,30 @@ impl Slskd {
     /// A fresh login: an intentional disconnect, then slskd's watchdog connects again (and keeps
     /// retrying until it's in). Needs a readwrite or administrator key.
     pub async fn relogin(&self, reason: &str) -> Result<()> {
+        self.disconnect(reason).await?;
+        self.connect().await
+    }
+
+    /// An intentional disconnect. Needs a readwrite or administrator key.
+    pub async fn disconnect(&self, reason: &str) -> Result<()> {
         let resp = self.send(Method::DELETE, &["server"], Some(json!(reason))).await?;
-        http::ok(SERVICE, resp)?;
+        http::ok(SERVICE, resp).map(drop)
+    }
+
+    /// Connects and logs in with the account slskd has now. Needs a readwrite or administrator key.
+    pub async fn connect(&self) -> Result<()> {
         let resp = self.send(Method::PUT, &["server"], None).await?;
         http::ok(SERVICE, resp).map(drop)
+    }
+
+    /// slskd reloaded a changed Soulseek account while logged in, and waits for a reconnect to
+    /// use it.
+    pub async fn pending_reconnect(&self) -> Result<bool> {
+        let app: serde_json::Value = self.get(&["application"]).await?;
+        Ok(app
+            .get("pendingReconnect")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false))
     }
 
     /// Needs an API key with the administrator role; `None` when the key isn't one.

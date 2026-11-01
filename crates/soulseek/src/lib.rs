@@ -2,6 +2,7 @@
 //! streaming from growing files and the size-capped stream cache. This crate is the only code
 //! that talks to slskd (docs/context/soulseek.md).
 
+mod account;
 mod api;
 mod cache;
 mod fetch;
@@ -88,6 +89,11 @@ pub struct Service {
 pub async fn start(ctx: &Ctx) -> Result<Arc<Service>> {
     let config = &ctx.config.soulseek;
     let slskd = Slskd::new(ctx.http.clone(), &config.slskd_url, config.slskd_api_key.clone())?;
+    if let Some(file) = &config.config_file
+        && account::write(file, config.account.as_ref()).await?
+    {
+        ctx.spawn(account::apply(slskd.clone(), config.account.clone()));
+    }
     let peers = Peers::load(ctx.db.clone()).await?;
     let sources = Sources::new(peers.clone(), config.preferred_formats.clone());
     let cache = Cache::new(
