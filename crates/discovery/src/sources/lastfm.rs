@@ -34,6 +34,10 @@ pub struct LastFm {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Profile {
+    /// The artist's MBID as Last.fm has it: radio's way to ListenBrainz when MusicBrainz can't
+    /// answer.
+    #[serde(default)]
+    pub mbid: Option<String>,
     pub listeners: Option<u64>,
     pub bio: Option<String>,
     pub tags: Vec<String>,
@@ -61,6 +65,7 @@ impl LastFm {
                     .filter_map(|t| Some((t["name"].as_str()?.to_owned(), 0)))
                     .collect();
                 Ok(Profile {
+                    mbid: a["mbid"].as_str().filter(|m| !m.is_empty()).map(str::to_owned),
                     listeners: a["stats"]["listeners"].as_str().and_then(|n| n.parse().ok()),
                     bio: a["bio"]["summary"].as_str().and_then(plain_text),
                     // Last.fm lists them most used first already; the stable sort keeps that.

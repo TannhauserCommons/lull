@@ -53,6 +53,8 @@ The four pick pools:
 - **Seed `tag`:** ListenBrainz tag radio.
 - **Seed `artist`:** artist radio (15 similar artists, 4 recordings each).
 - **Seed `track`:** its artist's radio plus its first specific tag's radio.
+- **Finding the artist** (`radio.rs`): a credit is tried whole, then without its featured part, then artist by artist (split on "&", "," and "x"), then the featured artists ("Shawn Chrystopher feat. Cults & Ashly" → Shawn Chrystopher). Each name goes through what lull remembers, then MusicBrainz (an unavailable or bad answer retried once; after that MusicBrainz isn't asked for the other names), then Last.fm's `artist.getInfo` MBID.
+- **Without an MBID**, or when ListenBrainz has no artist radio for it, the radio comes from the artist radio of Last.fm's most similar artist with an MBID, plus tag radio for the first specific tag of the seed or the artist's Last.fm tags. Only when all of that is empty does the call fail: with MusicBrainz's or ListenBrainz's error if one failed, else 404.
 
 Umbrella genres (rock, pop, electronic, hip hop, indie…: `taste::UMBRELLA_TAGS`) are never dug into: they lead to charts, not niches. They stay in the taste profile.
 - **`steer` (0 familiar … 1 adventurous, in quarter steps so answers are shared):**
