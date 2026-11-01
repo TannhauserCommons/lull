@@ -41,6 +41,7 @@ pub const KEYS: &[Key] = &[
     Key::secret("LULL_LASTFM_API_SECRET"),
     Key::plain("LULL_LISTENBRAINZ_USER"),
     Key::secret("LULL_LISTENBRAINZ_TOKEN"),
+    Key::plain("LULL_CATALOG_COUNTRY"),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

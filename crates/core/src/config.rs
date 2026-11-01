@@ -128,6 +128,9 @@ impl LastFm {
 pub struct Discovery {
     pub listenbrainz_user: Option<String>,
     pub listenbrainz_token: Option<Secret>,
+    /// The iTunes storefront catalog search reads where Deezer's catalog is closed (ADR-0008):
+    /// two uppercase letters, `US` by default.
+    pub catalog_country: String,
 }
 
 /// A credential: never printed, never sent to the UI.
@@ -257,6 +260,7 @@ impl Config {
             discovery: Discovery {
                 listenbrainz_user: v.opt("LULL_LISTENBRAINZ_USER"),
                 listenbrainz_token: v.opt("LULL_LISTENBRAINZ_TOKEN").map(Secret),
+                catalog_country: country(v.or("LULL_CATALOG_COUNTRY", "US"))?,
             },
         };
         match v.0.into_keys().next() {
@@ -279,6 +283,19 @@ pub fn env_vars() -> Result<BTreeMap<String, String>, ConfigError> {
     vars.extend(std::env::vars().filter(|(k, _)| k.starts_with("LULL_")));
     vars.remove("LULL_CONFIG");
     Ok(vars)
+}
+
+/// An ISO 3166 country code ("us" → "US").
+fn country(code: String) -> Result<String, ConfigError> {
+    let code = code.trim().to_ascii_uppercase();
+    if code.len() == 2 && code.bytes().all(|b| b.is_ascii_uppercase()) {
+        Ok(code)
+    } else {
+        Err(invalid(
+            "LULL_CATALOG_COUNTRY",
+            format!("{code:?} is not a two-letter country code such as US or GB"),
+        ))
+    }
 }
 
 fn invalid(key: &'static str, reason: String) -> ConfigError {
