@@ -190,7 +190,7 @@
 /* =====================================================================
    Surfaces. Cream trays everywhere content lives (both themes), on the two-layer stack.
    ===================================================================== */
-:root[data-design="starlight"] :is(.s-card, .card, .pbar, .ctx, .mini, .sl-hero, .now-head, .now__acts, .sys-nav, .cls-drawer, .cls-bar, .sl-mini__card, .dk-strip) {
+:root[data-design="starlight"] :is(.s-card, .card, .pbar, .ctx, .nowcol, .mini, .sl-hero, .now-head, .now__acts, .sys-nav, .cls-drawer, .cls-bar, .sl-mini__card, .dk-strip) {
   --bg: var(--cream); --bg-2: var(--cream-2); --bg-3: var(--cream-3);
   --fg: var(--ink); --fg-2: var(--ink-2);
   --link: var(--link-on-cream); --edge: var(--line); --focus: var(--indigo);
@@ -203,14 +203,14 @@
 :root[data-design="starlight"] .card { border-width: var(--stroke); border-radius: var(--r-card); }
 /* a field error is an error, not a hint: the danger ink, not the periwinkle link */
 :root[data-design="starlight"] .field__error { color: var(--sl-down); }
-:root[data-design="starlight"] :is(.pbar, .ctx, .sl-hero, .sys-nav, .cls-drawer, .sl-mini__card) {
+:root[data-design="starlight"] :is(.pbar, .ctx, .nowcol, .sl-hero, .sys-nav, .cls-drawer, .sl-mini__card) {
   border: var(--stroke) solid var(--line); box-shadow: var(--sl-stack);
 }
-:root[data-design="starlight"] :is(.pbar, .ctx) { border-radius: var(--r-panel); }
-:root[data-design="starlight"] .ctx { margin-bottom: 30px; }
+:root[data-design="starlight"] :is(.pbar, .ctx, .nowcol) { border-radius: var(--r-panel); }
+:root[data-design="starlight"] :is(.ctx, .nowcol) { margin-bottom: 30px; }
 :root[data-design="starlight"] .pbar { margin-bottom: 26px; }
 /* --sl-stack is declared on each tray (not on :root) so a tray's own --sl-o1 / --sl-o2 move its layers */
-:root[data-design="starlight"] :is(.pbar, .ctx, .sl-hero, .sys-nav, .cls-drawer, .sl-mini__card, .card[data-region], .sys-design) {
+:root[data-design="starlight"] :is(.pbar, .ctx, .nowcol, .sl-hero, .sys-nav, .cls-drawer, .sl-mini__card, .card[data-region], .sys-design) {
   --sl-stack: 0 var(--sl-o1) 0 -2px var(--stack-1), 0 var(--sl-o1) 0 0 var(--line), 0 var(--sl-o2) 0 -2px var(--stack-2), 0 var(--sl-o2) 0 0 var(--line);
 }
 /* the stack is physical: a tray under the pointer sinks 3 px onto its lavender layer, the periwinkle layer peeks out */
@@ -225,7 +225,7 @@
 :root[data-design="starlight"] .card[data-region] { box-shadow: var(--sl-stack); }
 
 /* line icons are thin periwinkle on cream */
-:root[data-design="starlight"] :is(.card, .s-card, .pbar, .ctx, .mini) .btn-icon { color: var(--sl-icon); }
+:root[data-design="starlight"] :is(.card, .s-card, .pbar, .ctx, .nowcol, .mini) .btn-icon { color: var(--sl-icon); }
 :root[data-design="starlight"] .btn-icon:is(.is-liked, [aria-pressed="true"]) { color: var(--heart); }
 
 /* =====================================================================
@@ -490,7 +490,7 @@
 :root[data-design="starlight"] .ctx__head { padding: 14px 14px 8px; }
 :root[data-design="starlight"] .ctx__body { padding: 4px 14px 16px; }
 :root[data-design="starlight"] .ctx .label-rule :is(> h2, > h3) { font-size: .9375rem; }
-:root[data-design="starlight"] .ctx:has(#ctx-tab-queue[aria-selected="true"])[data-meta]:not([data-meta=""])::after {
+:root[data-design="starlight"] .app:not([data-panel="strip"]) .ctx:has(#ctx-tab-queue[aria-selected="true"])[data-meta]:not([data-meta=""])::after {
   content: "in the queue: " attr(data-meta); flex: none; margin: 0 16px; padding: 9px 2px 14px; border-top: 1.5px solid var(--sl-rule);
   font: 400 .875rem/1.2 var(--f-ui); color: var(--fg-2);
 }
@@ -675,12 +675,7 @@
    then the newest release as img 01's top card, then "picked for you" as img 01's lower card, then radio and the rest.
    ===================================================================== */
 :root[data-design="starlight"] .disc-home { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 28px; }
-:root[data-design="starlight"] .disc-home > *, :root[data-design="starlight"] .disc-home > .disc-duo > * { grid-column: 1 / -1; }
-:root[data-design="starlight"] .disc-home > .disc-duo:not(.disc-duo--even) { display: contents; }
-:root[data-design="starlight"] .disc-home [data-region="new"] { order: 1; }
-:root[data-design="starlight"] .disc-home > [data-region="picks"] { order: 2; }
-:root[data-design="starlight"] .disc-home [data-region="radio"] { order: 3; }
-:root[data-design="starlight"] .disc-home > .disc-duo--even { order: 4; }
+:root[data-design="starlight"] .disc-home > * { grid-column: 1 / -1; }
 :root[data-design="starlight"] .disc-home > .disc-hello { display: contents; }
 :root[data-design="starlight"] .disc-home > .disc-hello > * { grid-column: 1 / -1; }
 :root[data-design="starlight"] .disc-home > .disc-hello h1 {
@@ -1051,5 +1046,12 @@
   }
   :root[data-design="starlight"] .now-srccard { border-top: var(--stroke) solid var(--line); border-radius: var(--r-card); padding: 16px; }
 }
+
+/* =====================================================================
+   Wide screens (ADR-0007): the Now Playing column is one more cream card on the sky (above), its label set like the
+   cards' small caps rule
+   ===================================================================== */
+:root[data-design="starlight"] .nowcol__head { padding: 14px 10px 6px 18px; }
+:root[data-design="starlight"] .nowcol__title { font: 400 .9375rem/1.2 var(--f-ui); color: var(--fg); }
 
 }

@@ -107,6 +107,19 @@ Go beyond tokens with any selector. These hooks are the theme API: they stay put
 | `#pbar` / `#mini` `[data-status]`, `[data-playing]` | player state (`idle`, `streaming`, `buffering`, `failed`...) |
 | Classes | the BEM blocks: `.card` (`.card-head`, `.card-head__title`), `.btn` (`--primary`, `--quiet`, `--sm`), `.btn-icon`, `.btn-gloss`, `.cover` (`.c1`-`.c8` recipes, `.has-art`), `.trow`, `.tile`, `.chip`, `.pill-filter`, `.seg`, `.input`, `.seek`, `.wave`, `.device`, `.empty`, `.sheet`, `.dialog`, `.toast`, `.banner`, `.nav-item`, `.nav-pill`, `.tab`, `.region-title` (hidden window titles you can show) |
 
+**Wide screens (ADR-0007).** A bigger window reveals more (more columns, more tiles); nothing is stretched. Your theme can add its own touches per size:
+
+| Hook | Values |
+|---|---|
+| `.app[data-size]` | the main area's width class: `compact` (under 640 px), `regular` (to 1099), `wide` (to 1599), `xwide` (to 2199), `ultra` |
+| `.app[data-height]` | `short` (under 760 px) or `tall` |
+| Containers | `main` (`.main`), `panel` (`.ctx`), `nowcol` (the Now Playing column), `section` (a Home module), `tlist` (a song list), `libpl` (the playlist table): `@container main (min-width: 1600px) { ... }` |
+| `.app[data-panel="strip"]`, `.ctx__strip` | the side panel collapsed to an icon strip |
+| `.nowcol`, `.nowcol__head`, `.nowcol__title`, `.nowcol__body`, `.app[data-nowcol="open\|strip"]` | the Now Playing column beside the main area |
+| `.disc-modules > .disc-mod > .card[data-region]` | Home's modules (`new`, `radio`, `picks`, `jump`, `tags`), in the order the listener chose |
+
+Prefer `@container main` to `@media`: it follows the main area, so it stays right when a panel opens. Layout states that must hold whatever a theme draws (the strips, the room the column takes) are `!important` in lull's own CSS: style them, don't fight them. The widths the listener drags are custom properties (`--ctx`, `--now-w`); read them, don't set them.
+
 `design/DESIGN.md` section 3.4 lists more state hooks (tray pills, track row file facts). Pseudo-elements are free for ornaments; keep them decorative.
 
 **Cover variety:** with `"coverVariety": true` every cover gets stable per-item hooks, so two albums that share a generated cover still differ: `data-look="0"`-`"5"` (pick one of 2, 3 or 6 looks with `[data-look="1"], [data-look="3"], [data-look="5"]`, ...) and `--cover-flip` (1 or -1), `--cover-hue` (-28deg to 28deg), `--cover-zoom` (1 to 1.45), `--cover-dx`, `--cover-dy`.

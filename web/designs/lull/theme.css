@@ -180,15 +180,15 @@
 }
 /* three title-bar orbs (img 05), drawn as background layers, decorative. Declared again on the two desk windows so
    a window without focus can swap in quiet orbs, like an inactive window on a real desktop */
-:root[data-design="lull"], :root[data-design="lull"] :is(.main, .ctx) {
+:root[data-design="lull"], :root[data-design="lull"] :is(.main, .ctx, .nowcol) {
   --l-orbs:
     var(--l-orb-shine) 11px 50% / 13px 13px no-repeat, radial-gradient(circle, var(--l-orb-3) 0 5.4px, rgba(43, 38, 80, .55) 5.6px 6.4px, transparent 6.8px) 11px 50% / 13px 13px no-repeat,
     var(--l-orb-shine) 30px 50% / 13px 13px no-repeat, radial-gradient(circle, var(--l-orb-2) 0 5.4px, rgba(43, 38, 80, .55) 5.6px 6.4px, transparent 6.8px) 30px 50% / 13px 13px no-repeat,
     var(--l-orb-shine) 49px 50% / 13px 13px no-repeat, radial-gradient(circle, var(--l-orb-1) 0 5.4px, rgba(43, 38, 80, .55) 5.6px 6.4px, transparent 6.8px) 49px 50% / 13px 13px no-repeat;
 }
 /* the main window is the active one unless focus is in the side window */
-:root[data-design="lull"] .ctx:not(:focus-within), :root[data-design="lull"] .app:has(.ctx:focus-within) .main { --l-orb-1: #b4bbdc; --l-orb-2: #c0b8de; --l-orb-3: #d2bcd0; }
-:root[data-design="lull"][data-theme="night"] .ctx:not(:focus-within), :root[data-design="lull"][data-theme="night"] .app:has(.ctx:focus-within) .main { --l-orb-1: #7d84b8; --l-orb-2: #8a83bd; --l-orb-3: #a58ab4; }
+:root[data-design="lull"] :is(.ctx, .nowcol):not(:focus-within), :root[data-design="lull"] .app:has(:is(.ctx, .nowcol):focus-within) .main { --l-orb-1: #b4bbdc; --l-orb-2: #c0b8de; --l-orb-3: #d2bcd0; }
+:root[data-design="lull"][data-theme="night"] :is(.ctx, .nowcol):not(:focus-within), :root[data-design="lull"][data-theme="night"] .app:has(:is(.ctx, .nowcol):focus-within) .main { --l-orb-1: #7d84b8; --l-orb-2: #8a83bd; --l-orb-3: #a58ab4; }
 
 /* =====================================================================
    Desk: wallpaper (img 02 pastel / night: violet sky with stars)
@@ -903,15 +903,11 @@
    ===================================================================== */
 :root[data-design="lull"] .disc-home { display: flex; flex-direction: column; max-width: none; }
 :root[data-design="lull"] .disc-hello { order: 0; display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 12px; margin: 0 0 12px; padding-right: 0; }
-:root[data-design="lull"] .disc-home > .disc-card[data-region="picks"] { order: 1; }
-:root[data-design="lull"] .disc-home > .disc-duo:not(.disc-duo--even) { order: 2; }
-:root[data-design="lull"] .disc-home > .disc-duo--even { order: 3; }
 :root[data-design="lull"] .disc-hello h1 { margin: 0; font: 900 1.25rem/1.2 var(--f-ui); letter-spacing: -.01em; }
 :root[data-design="lull"] .disc-hello h1 .sparkle { display: none; }
 :root[data-design="lull"] .disc-hello__sum { font: 700 .8125rem/1.4 var(--f-ui); color: var(--fg-2); }
 :root[data-design="lull"] .disc-card, :root[data-design="lull"] .disc-search .card { background: transparent; border: 0; border-radius: 0; box-shadow: none; padding: 0; margin-bottom: 16px; }
 :root[data-design="lull"] .disc-card > .label-rule { margin-bottom: 10px; }
-:root[data-design="lull"] .disc-duo { grid-template-columns: minmax(0, 1fr); }
 
 /* For you: five tall paper cards in view (a sixth scrolls in; six in view on wide desks), art + title + artist +
    the reason chip pinned to the foot */
@@ -1083,12 +1079,14 @@
 :root[data-design="lull"] .disc-lead { display: none; }
 @media (min-width: 1700px) {
   :root[data-design="lull"] { --l-desk-w: 290px; }
-  /* .disc-home's inline-size container would be the containing block of the fixed widgets and trap them in the
-     scroller; at this width nothing on Home uses its container queries (the lull grids are explicit) */
+  /* .disc-home's inline-size container would be the widgets' containing block; at this width nothing on Home uses
+     its container queries (the lull grids are explicit) */
   :root[data-design="lull"] .disc-home { container-type: normal; }
-  :root[data-design="lull"] .app[data-screen="home"] .main { margin-right: calc(var(--l-desk-w) + 22px); }
-  :root[data-design="lull"] .disc-lead { display: block; position: fixed; z-index: 1; top: 88px; right: 16px; width: var(--l-desk-w); }
-  :root[data-design="lull"] .app[data-ctx="docked"] .disc-lead { right: calc(var(--ctx) + 36px); }
+  /* the widgets hang off the discover window's edge, in the room it hands back: placed against .main, with the view
+     static so neither its scroll nor its clip applies. The Now Playing column takes that room when it is open. */
+  :root[data-design="lull"] .app[data-screen="home"]:not([data-nowcol]) .main { margin-right: calc(var(--l-desk-w) + 22px); }
+  :root[data-design="lull"] .app[data-screen="home"]:not([data-nowcol]) #view { position: static; }
+  :root[data-design="lull"] .app:not([data-nowcol]) .disc-lead { display: block; position: absolute; z-index: 1; top: 8px; left: calc(100% + 22px); width: var(--l-desk-w); }
 }
 :root[data-design="lull"] .lull-desk { display: grid; gap: 20px; }
 :root[data-design="lull"] .lull-desk__win {
@@ -1537,14 +1535,8 @@
 }
 /* artist page: the antenna glyph before each artist name already says "Soulseek", so the badge stops repeating it */
 :root[data-design="lull"] .app[data-screen="artist"] .trow .badge-slsk { display: none; }
-/* desk: a smaller orb hero, then top songs on the left and discography over "similar artists" (fans also play) on the
-   right, so the page reads as one spread instead of a short column and an empty corner */
-@media (min-width: 1100px) {
-  :root[data-design="lull"] .app[data-screen="artist"] .view__inner.lib { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); column-gap: 28px; align-items: start; }
-  :root[data-design="lull"] .app[data-screen="artist"] .view__inner.lib > .lib-page { grid-column: 1 / -1; }
-  :root[data-design="lull"] .app[data-screen="artist"] .lib-cols { display: contents; }
-  :root[data-design="lull"] .app[data-screen="artist"] .lib-cols > .lib-card:first-child { grid-column: 1; grid-row: 2 / span 2; }
-  :root[data-design="lull"] .app[data-screen="artist"] .view__inner.lib > .lib-card { grid-column: 2; }
+/* wide (the shared two-column artist page, ADR-0007): a smaller orb hero, and the discography as release rows */
+@container main (min-width: 1100px) {
   :root[data-design="lull"] .app[data-screen="artist"] .lib-hero { --lib-art: 168px; }
   :root[data-design="lull"] .app[data-screen="artist"] .lib-card .shelf { grid-auto-columns: calc((100% - 32px) / 3); }
   /* discography as release rows (cover, title, artist, year and kind, play), like Home's new releases */
@@ -1763,5 +1755,22 @@
   :root[data-design="lull"] .sys-designs { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 10px; }
   :root[data-design="lull"] .view::after { margin: 0 -14px -20px; height: 20px; bottom: -24px; }
 }
+
+/* =====================================================================
+   Wide screens (ADR-0007): the shared layout reveals more; lull keeps its look. The Now Playing column is one more
+   window (orb title bar, sky body), its orbs dimmed like the side window's while focus is elsewhere. The collapsed
+   side window keeps its frame as a slim window edge.
+   ===================================================================== */
+:root[data-design="lull"] .nowcol { background: var(--l-frame); border: var(--stroke) solid var(--l-edge); border-radius: 14px; padding: 4px; box-shadow: var(--l-win-stack); }
+:root[data-design="lull"] .nowcol__head {
+  height: 30px; padding: 0 4px 0 68px; border-radius: 10px 10px 4px 4px;
+  background: var(--l-orbs), var(--l-bar-bg); box-shadow: inset 0 1px 0 var(--l-bar-line), inset 0 -1px 0 rgba(43, 38, 80, .1);
+}
+:root[data-design="lull"] .nowcol__title { color: var(--l-bar-ink); font: 400 .8125rem/1 var(--f-disp); letter-spacing: .04em; text-transform: lowercase; }
+:root[data-design="lull"] .nowcol__head .btn-icon { width: 26px; height: 26px; color: var(--l-bar-ink); }
+:root[data-design="lull"] .nowcol__body { margin-top: 4px; border-radius: 4px 4px 10px 10px; background: var(--sky); padding: 14px; }
+:root[data-design="lull"] .nowcol__strip { border-radius: 10px; background: var(--l-bar-bg); }
+/* ultra: the desk widgets get a little more room on the wallpaper */
+@media (min-width: 2400px) { :root[data-design="lull"] { --l-desk-w: 330px; } }
 
 }

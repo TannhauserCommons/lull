@@ -1,5 +1,5 @@
 /* screens/appearance.js.
-   Settings > Appearance: design, theme, motion, text size and Classic mode's skin settings, all per device
+   Settings > Appearance: design, theme, motion, text size, the layout's reset and Classic mode's skin settings, all per device
    (App.setPref, and App.storage for Classic mode's two); the listener's own themes (import by drag and drop, export,
    delete) and the way into Theme Studio (designs/studio.js, ADR-0004, docs/themes.md). Live reload of a stored theme
    runs here too.
@@ -68,6 +68,8 @@
       ${row('Theme', 'Match system follows your device. T switches day and night anywhere.', choice('device.theme', 'Theme', [['system', 'Match system'], ['day', 'Day'], ['night', 'Night']]))}
       ${row('Motion', 'Reduced swaps slides and loops for quick fades. Full ignores the system setting.', choice('device.motion', 'Motion', [['system', 'Match system'], ['reduce', 'Reduced'], ['full', 'Full']]))}
       ${row('Text size', 'Scales all text and spacing on this device.', choice('device.textSize', 'Text size', [[90, 'Smaller'], [100, 'Default'], [112, 'Larger'], [125, 'Largest']], 'sys-seg--4'))}
+      ${group('layout')}
+      ${row('Reset layout', 'Puts the side panel, the Now Playing column, side-by-side search and Home\'s sections back as they came. This device only.', html`<button class="btn btn--sm" data-act="layout-reset">${icon('undo', null, 'ic-16')}Reset layout</button>`)}
       ${group('themes')}
       ${myThemes()}
       ${group('classic mode')}
@@ -145,6 +147,13 @@
     }))).then(function () { App.themeStudio(id); }, function (err) { App.toast('Couldn\'t open Theme Studio: ' + err.message, { kind: 'error' }); });
   }
   App.action('theme-studio', function () { openStudio(null); });
+  /* Settings > Appearance > Layout: the stored layout (ADR-0007, layout.js) back to its defaults */
+  App.action('layout-reset', function () {
+    App.confirm({ title: 'Reset the layout?', text: 'The side panel and the Now Playing column go back to their widths, search to one list and Home to its first order, all sections shown. Only on this device.', confirm: 'Reset' }, function () {
+      App.layout.reset();
+      App.toast('Layout reset', { icon: 'undo' });
+    });
+  });
   App.action('theme-edit', function (el) { openStudio(el.getAttribute('data-id')); });
 
 

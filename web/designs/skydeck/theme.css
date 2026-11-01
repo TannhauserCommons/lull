@@ -397,14 +397,6 @@
 /* home with the queue docked (main column 700-979 px): new releases beside radio starters as a list, so
    "picked for you" starts above the fold; the shelf shows 2.5 covers and fades at its edge to say it scrolls */
 @container disc (min-width: 700px) and (max-width: 979px) {
-  :root[data-design="skydeck"] .disc-home > .disc-duo:first-of-type { grid-template-columns: minmax(0, 1fr) 300px; column-gap: var(--sp-5); }
-  :root[data-design="skydeck"] .disc-home > .disc-duo:first-of-type .disc-shelf {
-    grid-auto-columns: 150px;
-    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
-    mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
-  }
-  :root[data-design="skydeck"] .disc-home > .disc-duo:first-of-type > .card:last-child { padding-inline: 18px 14px; }
-  :root[data-design="skydeck"] .disc-home > .disc-duo:first-of-type .disc-starters { grid-template-columns: minmax(0, 1fr); }
   :root[data-design="skydeck"] .disc-home .disc-starter { grid-template-columns: 40px minmax(0, 1fr) 36px; min-height: 56px; gap: 10px; padding: 4px 4px 4px 2px; }
   :root[data-design="skydeck"] .disc-home .disc-starter > .cover { --cover-size: 40px !important; }   /* inline --cover-size from the markup */
   :root[data-design="skydeck"] .disc-home .disc-starter__title { font-size: .9375rem; }
@@ -793,7 +785,9 @@
   :root[data-design="skydeck"] .now-acts__btn:active > .ic { transform: translateY(2px); box-shadow: 0 1px 0 0 var(--line); }
   :root[data-design="skydeck"] .now-acts__btn[aria-pressed="true"] > .ic { background: var(--peri); color: var(--ink); }
   :root[data-design="skydeck"] .now-acts__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  :root[data-design="skydeck"] .now-acts__btn::after { content: "add"; color: var(--fg-sky); }
+  :root[data-design="skydeck"] .now-acts__btn::after { color: var(--fg-sky); }
+  :root[data-design="skydeck"] .now-acts__btn[data-act="add-to-playlist"]::after { content: "add"; }
+  :root[data-design="skydeck"] .now-acts__btn[data-act="connect"]::after { content: "devices"; }
   :root[data-design="skydeck"] .now-acts__btn[data-act="start-radio"]::after { content: "radio"; }
   :root[data-design="skydeck"] .now-acts__btn[data-act="follow"]::after { content: "follow"; }
   :root[data-design="skydeck"] .now-acts__btn[data-act="classic"]::after { content: "classic"; }
@@ -856,5 +850,10 @@
 :root[data-design="skydeck"] .cls-drawer > .win__bar { background: var(--sd-band); border-bottom: var(--stroke) solid var(--line); box-shadow: inset 0 1.5px 0 #ffffff55; }
 :root[data-design="skydeck"] .cls-drawer .win__title { background: none; border: 0; color: var(--sd-band-ink); font: italic 900 1.125rem/1 var(--f-ui); }
 :root[data-design="skydeck"] .cls-drawer .cls-drawer__close { color: var(--sd-band-ink); }
+
+/* =====================================================================
+   Wide screens (ADR-0007): the Now Playing column is a tray like the side panel, edged the same
+   ===================================================================== */
+:root[data-design="skydeck"] .nowcol { border-color: var(--sd-panel-edge); }
 
 }

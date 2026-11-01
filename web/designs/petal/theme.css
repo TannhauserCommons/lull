@@ -466,15 +466,15 @@
 }
 
 /* gloss title bar shared by the context panel and every petal window: orbs left, the real controls right */
-:root[data-design="petal"] :is(.ctx > .region-title, .pt-win__bar) {
+:root[data-design="petal"] :is(.ctx > .region-title, .pt-win__bar, .nowcol__head) {
   display: flex; align-items: center; gap: 10px; flex: none; height: 36px; padding: 0 10px 0 12px;
   border-bottom: 1px solid var(--pt-bar-line); border-radius: 5px 5px 0 0; color: var(--fg-sky);
   background: linear-gradient(180deg, var(--pt-bar-1) 0%, var(--pt-bar-2) 46%, var(--pt-bar-3) 47%, var(--pt-bar-4) 100%);
   box-shadow: inset 0 1px 0 color-mix(in srgb, #ffffff 70%, transparent);
   font: var(--t-label); text-transform: uppercase; letter-spacing: .16em;
 }
-:root[data-design="petal"] .ctx > .region-title::before, :root[data-design="petal"] .pt-win__dots { content: ""; flex: none; width: 46px; height: 12px; background: var(--pt-orbs); }
-:root[data-design="petal"] .ctx { border: 1.5px solid var(--pt-frame); box-shadow: var(--stack-1l); }
+:root[data-design="petal"] .ctx > .region-title::before, :root[data-design="petal"] .nowcol__head::before, :root[data-design="petal"] .pt-win__dots { content: ""; flex: none; width: 46px; height: 12px; background: var(--pt-orbs); }
+:root[data-design="petal"] :is(.ctx, .nowcol) { border: 1.5px solid var(--pt-frame); box-shadow: var(--stack-1l); }
 :root[data-design="petal"] .app[data-ctx="docked"] .ctx { position: relative; }
 :root[data-design="petal"] .ctx > .region-title { font-size: 0; letter-spacing: 0; }   /* the tabs below name the panel */
 :root[data-design="petal"] .ctx > .region-meta {
@@ -925,5 +925,13 @@
 :root[data-design="petal"] .sys-stats .sys-lede { max-width: 40ch; }
 @media (max-width: 639px) { :root[data-design="petal"] .sys-tile__value { font-size: 1.75rem; white-space: nowrap; } }
 :root[data-design="petal"] .sys-welcome__card { max-width: none; }
+
+/* =====================================================================
+   Wide screens (ADR-0007): the Now Playing column is a petal window: the gloss bar with orbs (above), its name in the
+   bar's small caps, the window keys at the right
+   ===================================================================== */
+:root[data-design="petal"] .nowcol { border-radius: 6px; }
+:root[data-design="petal"] .nowcol__title { font: inherit; color: inherit; letter-spacing: inherit; }
+:root[data-design="petal"] .nowcol__head .btn-icon { width: 28px; height: 28px; }
 
 }

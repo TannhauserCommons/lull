@@ -290,14 +290,14 @@
    Windows: shell panels (smoky glass) and windows (frosted silver) with aero title bars and beads.
    Solid token fills by default; translucency, blur and the diagonal specular sweep only under @supports.
    ===================================================================== */
-:root[data-design="glasshouse"] :is(.rail, .ctx, .pbar, .mini, .tabbar, .header) {
+:root[data-design="glasshouse"] :is(.rail, .ctx, .nowcol, .pbar, .mini, .tabbar, .header) {
   border: 1px solid var(--gh-frame);
   box-shadow: inset 0 1px 0 var(--gh-rim), inset 0 0 0 1px color-mix(in srgb, var(--gh-rim) 22%, transparent), var(--stack-1l);
 }
 /* the header strip has no blur (backdrop-filter would trap the fixed status gadget): a near-solid smoky fill */
 :root[data-design="glasshouse"] .header { background: linear-gradient(128deg, var(--gh-sheen-panel) 0%, transparent 30%), color-mix(in srgb, var(--panel) 90%, transparent); }
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  :root[data-design="glasshouse"] :is(.ctx, .pbar, .mini, .tabbar) {
+  :root[data-design="glasshouse"] :is(.ctx, .nowcol, .pbar, .mini, .tabbar) {
     background: linear-gradient(128deg, var(--gh-sheen-panel) 0%, transparent 30%), var(--gh-glass-panel);
     -webkit-backdrop-filter: var(--gh-blur); backdrop-filter: var(--gh-blur);
   }
@@ -319,7 +319,7 @@
 }
 :root[data-design="glasshouse"] .card--flush { padding-top: var(--gh-barh); }
 /* one title-bar recipe for windows, sheets, gadgets and the queue */
-:root[data-design="glasshouse"] :is(.card > .card-head, .sheet__head, .ctx > .region-title, .sys-tile__label, .win__bar) {
+:root[data-design="glasshouse"] :is(.card > .card-head, .sheet__head, .ctx > .region-title, .nowcol__head, .sys-tile__label, .win__bar) {
   color: var(--gh-bar-ink); border-bottom: 1px solid var(--gh-frame); background: var(--gh-bar);
   box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 65%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--gh-bar-1) 45%, transparent);
   text-shadow: 0 1px 0 var(--gh-bar-shadow);
@@ -341,7 +341,7 @@
   flex: 1 0 auto; max-width: calc(100% - 64px); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font: 600 .8125rem/1 var(--f-px); letter-spacing: .03em; color: var(--gh-bar-ink); text-transform: lowercase;
 }
-:root[data-design="glasshouse"] :is(.card-head__title, .sheet__title, .ctx > .region-title, .win__title)::before { content: "::\00a0"; color: var(--gh-bar-ink-2); }
+:root[data-design="glasshouse"] :is(.card-head__title, .sheet__title, .ctx > .region-title, .nowcol__title, .win__title)::before { content: "::\00a0"; color: var(--gh-bar-ink-2); }
 :root[data-design="glasshouse"] .card-head__meta { order: 2; flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; font: 500 .75rem/1 var(--f-px); color: var(--gh-bar-ink-2); }
 :root[data-design="glasshouse"] .card-head:has(> .btn--quiet, > a, > .label-rule__end) > .card-head__meta { display: none; }
 :root[data-design="glasshouse"] .card > .card-head::after {      /* three glossy beads (decorative) */
@@ -644,7 +644,7 @@
 }
 
 /* queue gadget (img 03's right half): smoky glass with a title bar, AIMP strips for now / next / then, blush current row */
-:root[data-design="glasshouse"] .ctx { border-radius: var(--r-panel); overflow: hidden; margin-bottom: 14px; }
+:root[data-design="glasshouse"] :is(.ctx, .nowcol) { border-radius: var(--r-panel); overflow: hidden; margin-bottom: 14px; }
 :root[data-design="glasshouse"] .app[data-ctx="docked"] .ctx { position: relative; }     /* the overlay panel is already fixed */
 :root[data-design="glasshouse"] .ctx > .region-title {
   display: flex; align-items: center; height: var(--gh-barh); flex: none; padding: 0 10px 0 12px;
@@ -865,14 +865,8 @@
 @keyframes gh-tick { to { transform: translateX(-50%); } }
 :root[data-design="glasshouse"] .gh-aimp__ticker { grid-area: tick; }
 
-/* new releases | radio starters (two half windows), picks */
-@container disc (min-width: 820px) {
-  :root[data-design="glasshouse"] .disc-home > .disc-duo:not(.disc-duo--even) { grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr); align-items: stretch; }
-  :root[data-design="glasshouse"] .disc-home > .disc-duo:not(.disc-duo--even) .disc-shelf { grid-auto-columns: calc((100% - 2 * var(--sp-5) - 10px) / 3); }
-  :root[data-design="glasshouse"] .disc-home .disc-duo--even { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); align-items: stretch; }
-}
 /* radio starters: the orb is the play button (a rose ring and a glyph on hover / focus, always on touch); two-line text */
-:root[data-design="glasshouse"] .disc-duo .disc-starters { grid-template-columns: minmax(0, 1fr); }
+:root[data-design="glasshouse"] [data-region="radio"] .disc-starters { grid-template-columns: minmax(0, 1fr); }
 :root[data-design="glasshouse"] .disc-starter { position: relative; grid-template-columns: 48px minmax(0, 1fr); border-radius: 8px; }
 :root[data-design="glasshouse"] .disc-starter__play {
   position: absolute; left: 8px; top: 50%; width: 48px; height: 48px; margin-top: -24px; border-radius: 50%;
@@ -1262,5 +1256,14 @@
 :root[data-design="glasshouse"] .view .card:nth-of-type(2) { animation-delay: 40ms; }
 :root[data-design="glasshouse"] .view .card:nth-of-type(3) { animation-delay: 80ms; }
 @keyframes gh-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* =====================================================================
+   Wide screens (ADR-0007): the Now Playing column is a smoky-glass gadget like the queue (above): an aero title bar
+   with "::" and beads, its keys on the bar
+   ===================================================================== */
+:root[data-design="glasshouse"] .nowcol__head { height: var(--gh-barh); padding: 0 6px 0 12px; }
+:root[data-design="glasshouse"] .nowcol__title { font: 600 .8125rem/1 var(--f-px); letter-spacing: .03em; color: var(--gh-bar-ink); }
+:root[data-design="glasshouse"] .nowcol__head::after { content: ""; order: 1; flex: none; width: 41px; height: 11px; margin-left: 4px; background: var(--gh-beads) right center / 41px 11px no-repeat; }
+:root[data-design="glasshouse"] .nowcol__head .btn-icon { width: 24px; height: 24px; color: var(--gh-bar-ink); }
 
 }
