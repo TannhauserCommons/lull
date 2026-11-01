@@ -64,6 +64,7 @@ Each area has one owner at a time. Edit only what your brief says you own.
 
 ## Local development
 
-- **Windows:** set `CARGO_TARGET_DIR` outside `Desktop` (see AGENTS.md), one per worktree.
-- **`mise run dev`** reads `.env` (copy `deploy/.env.example`). In debug builds the UI is served from `web/` on disk, so a page reload picks up edits.
-- **Soulseek allows one login per account.** Develop with the dev account, never the one the homelab uses.
+- **Live testing happens on the homelab instance** (`https://lull.<tailnet>.ts.net`), the user's choice: push, let CI publish the image, and the integrator bumps the homelab pin. On this workstation the only local builds are `mise run check` and the Windows desktop wrapper; don't run a local server or slskd.
+- **Windows:** set `CARGO_TARGET_DIR` outside `Desktop` (see AGENTS.md), one per worktree, and reuse it.
+- **`mise run dev`** (for contributors elsewhere) reads `.env` (copy `deploy/.env.example`). In debug builds the UI is served from `web/` on disk, so a page reload picks up edits.
+- **Soulseek allows one login per account.** A local slskd with the homelab's account logs the homelab out.
