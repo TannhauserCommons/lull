@@ -374,12 +374,13 @@ button.trow__title:hover { text-decoration: underline; text-underline-offset: 3p
   .tlist--plays .trow__plays { display: inline; margin-left: auto; }
 }
 @container tlist (min-width: 1240px) {
-  .trow { grid-template-columns: 32px var(--art) minmax(0, 1.3fr) minmax(0, 1fr) 300px auto 52px 40px; }
-  .tlist--dated .trow { grid-template-columns: 32px var(--art) minmax(0, 1.3fr) minmax(0, 1fr) 112px 300px auto 52px 40px; }
-  .trow__badges { justify-content: flex-start; }
-  .trow__rate { display: inline; margin-left: auto; }
-  .tlist--plays .trow { grid-template-columns: 32px var(--art) minmax(0, 1.3fr) minmax(0, 1fr) 380px auto 52px 40px; }
-  .tlist--plays.tlist--dated .trow { grid-template-columns: 32px var(--art) minmax(0, 1.3fr) minmax(0, 1fr) 112px 380px auto 52px 40px; }
+  .trow { grid-template-columns: 32px var(--art) minmax(0, 1.3fr) minmax(0, 1fr) 340px auto 52px 40px; }
+  .tlist--dated .trow { grid-template-columns: 32px var(--art) minmax(0, 1.3fr) minmax(0, 1fr) 112px 340px auto 52px 40px; }
+  /* the cell keeps its width whatever a design's badges measure: the rate gives way, never the like button */
+  .trow__badges { justify-content: flex-start; min-width: 0; overflow: hidden; }
+  .trow__rate { display: inline; margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .tlist--plays .trow { grid-template-columns: 32px var(--art) minmax(0, 1.3fr) minmax(0, 1fr) 420px auto 52px 40px; }
+  .tlist--plays.tlist--dated .trow { grid-template-columns: 32px var(--art) minmax(0, 1.3fr) minmax(0, 1fr) 112px 420px auto 52px 40px; }
   .tlist--plays .trow__rate { margin-left: var(--sp-4); min-width: 9.5rem; }
 }
 @container tlist (max-width: 520px) {

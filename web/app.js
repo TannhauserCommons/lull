@@ -533,7 +533,7 @@
       ${opts.added ? html`<div class="trow__added">${fmtDate(opts.added, true)}</div>` : ''}
       <div class="trow__badges"><span class="dl-mark" data-dl-mark="${track.id}" ${App.downloads && App.downloads.has(track.id) ? raw('data-on') : ''}>${App.downloads && App.downloads.has(track.id) ? icon('downloaded', 'Downloaded', 'ic-16') : ''}</span>${opts.badges || ''}${opts.dup === 'better' ? ui.dupBetter() : opts.dup ? ui.dupNote() : ''}${ui.sourceBadge(track)}${track.format ? ui.qualityChip(track.format) : ''}${opts.showSources && sourceCount(track) ? html`<button class="trow__sources" data-act="show-sources" data-id="${track.id}" tabindex="-1" aria-label="${sourceCount(track)} sources for ${track.title}. Pick a source" data-tip="Pick a source">${sourceCount(track)} sources</button>` : ''}${opts.plays != null ? html`<span class="trow__plays">${opts.plays === 1 ? '1 play' : opts.plays + ' plays'}</span>` : ''}<span class="trow__rate">${rateLine(track)}</span></div>
       <div class="trow__like">${ui.likeButton(track.id)}</div>
-      <div class="trow__dur">${fmtTime(track.duration)}</div>
+      <div class="trow__dur">${track.duration ? fmtTime(track.duration) : '–'}</div>
       <div class="trow__more">${opts.actions === false ? '' : html`<button class="btn-icon btn-icon--bare" data-act="track-menu" data-id="${track.id}" aria-haspopup="menu" aria-label="More actions for ${track.title}" data-tip="More">${icon('more')}</button>`}</div>
     </li>`;
   };
@@ -1374,6 +1374,13 @@
     return topping;
   }
 
+  /* radio paused by an unreachable hub (or an error) tries again once the hub answers */
+  App.on('server', function (srv) {
+    if (!srv.reachable || !ps.radio || !ps.radio.error || topping) return;
+    ps.radio = Object.assign({}, ps.radio, { error: null }); changed('queue');
+    topUpRadio();
+  });
+
   /* ---------- server `stream` events: the Soulseek side of the playing song ---------- */
   function onStreamEvent(ev) {
     var e = cur && cur.trackId === ev.trackId ? cur : nxt && nxt.trackId === ev.trackId ? nxt : null;
@@ -1433,7 +1440,10 @@
   /* the output failed: ask the hub why (the body says it in a sentence), then show it */
   function onOutputError(e, msg) {
     var t = P.current();
+    /* a Soulseek stream's own `stream` events carry the hub's sentence (a failed event sets ps.error); asking the stream
+       URL again would start another transfer and answer about that one instead (409) */
     var why = e.local ? Promise.resolve(msg || 'The downloaded file can\'t be played')
+      : e.soulseek ? Promise.resolve(ps.error || msg || 'No peer delivered this song')
       : fetch(e.url, { headers: { Range: 'bytes=0-0' }, credentials: 'same-origin' }).then(function (res) {
         if (res.ok) return msg || 'This file can\'t be played here';
         return res.json().then(function (b) { return b.message; }, function () { return 'The server answered ' + res.status; });
@@ -1742,7 +1752,7 @@
     ps.queue = saved0.queue.filter(function (q) { return M.track(q.trackId); }).map(function (q) { return entry(q.trackId, q.group, q.source); });
     if (!ps.queue.length) return;
     ps.index = clamp(saved0.index || 0, 0, ps.queue.length - 1);
-    ps.radio = saved0.radio || null;
+    ps.radio = saved0.radio ? Object.assign({}, saved0.radio, { error: null }) : null;    // an old error was that session's
     ps.pos = saved0.pos || 0;
     var t = P.current();
     ps.status = App.isSaved(t.id) ? 'library' : 'streaming';
@@ -2351,9 +2361,11 @@
     });
   }
   /* an album's songs, fetched when only the album head is known yet (shelf tiles) */
+  /* an album's songs, known to the cache: a list's album entity carries trackIds without the tracks, and the player can't
+     load a song it doesn't know, so the album is read whenever any of them is missing */
   function albumTracks(id) {
     var a = M.album(id);
-    if (a && a.trackIds.length) return Promise.resolve(a.trackIds);
+    if (a && a.trackIds.length && a.trackIds.every(function (t) { return M.track(t); })) return Promise.resolve(a.trackIds);
     return M.api('/api/albums/' + encodeURIComponent(id)).then(function () { var x = M.album(id); return x ? x.trackIds : []; });
   }
   App.albumTracks = albumTracks;
