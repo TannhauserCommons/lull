@@ -220,6 +220,10 @@ impl Merged {
         touched
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.songs.is_empty() && self.albums.is_empty() && self.artists.is_empty()
+    }
+
     /// Every row so far has been shown: none may change id any more.
     pub fn freeze(&mut self) {
         self.shown_songs = self.songs.len();

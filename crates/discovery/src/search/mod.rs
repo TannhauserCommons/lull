@@ -3,8 +3,10 @@
 //! - **Sources** run side by side: the fast catalog (`catalog`: Deezer, or iTunes plus Deezer's
 //!   artists where Deezer is closed) and the saved library, then MusicBrainz (one recording
 //!   search) and Last.fm. Their rows are merged and ranked by `merge`.
-//! - **Fast first:** the answer goes out once the fast sources are in, or after about
-//!   400 ms; what arrives later is announced as `search.more`, with only rows not shown yet.
+//! - **Fast first:** the answer goes out once the fast sources are in, or after about 400 ms
+//!   when it has rows by then. An answer with nothing yet waits for the fast sources up to
+//!   1.5 s (iTunes and Deezer take 0.6-1 s from the homelab), so it has a top result and ranked rows.
+//!   What arrives later is announced as `search.more`, with only rows not shown yet.
 //! - **One run per query for 10 minutes:** the same words again answer at once, joining a run
 //!   that is still going. A run with a failed source isn't reused.
 //! - **`search.catalog`** names the best tracks once every source is in, for Soulseek.
@@ -34,8 +36,10 @@ use crate::store::{self, entities};
 use catalog::Choice;
 use merge::{Fit, Found, Kind, Merged, Query, SongHit, Source, Touched};
 
-/// How long the first answer waits for Deezer and the library.
+/// How long the first answer waits for the fast sources when it has rows.
 const FIRST_ANSWER: Duration = Duration::from_millis(400);
+/// How long it waits for them while it has none.
+const FIRST_ANSWER_EMPTY: Duration = Duration::from_millis(1500);
 const FAST: [Source; 3] = [Source::Deezer, Source::Itunes, Source::Library];
 const KEEP: Duration = Duration::from_secs(600);
 const TRACKS: usize = 50;
@@ -208,16 +212,31 @@ fn sources(svc: &Service, query: &str) -> Vec<Source> {
 }
 
 impl Run {
-    /// Returns once the fast sources are in, or at the first-answer deadline.
+    /// Returns once the fast sources are in, or at 400 ms if there are rows by then; with none by
+    /// then, once the fast sources are in or at 1.5 s.
     async fn first_answer(&self) {
-        let deadline = self.started + FIRST_ANSWER;
+        let early = self.started + FIRST_ANSWER;
+        // Set when 400 ms passed with no rows: then every fast source is waited for.
+        let mut patient = false;
         loop {
             // Made before the check, so an arrival in between still wakes it.
             let arrived = self.arrived.notified();
-            if !self.state.lock().await.pending.iter().any(|s| FAST.contains(s)) {
+            let (waiting, has_rows) = {
+                let st = self.state.lock().await;
+                (st.pending.iter().any(|s| FAST.contains(s)), !st.merged.is_empty())
+            };
+            if !waiting {
                 return;
             }
-            if tokio::time::timeout_at(deadline, arrived).await.is_err() {
+            let until = if Instant::now() < early {
+                early
+            } else if has_rows && !patient {
+                return;
+            } else {
+                patient = true;
+                self.started + FIRST_ANSWER_EMPTY
+            };
+            if tokio::time::timeout_at(until, arrived).await.is_err() && until > early {
                 return;
             }
         }
