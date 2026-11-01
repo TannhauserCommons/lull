@@ -7,7 +7,7 @@ Between `web/` and the server, and between crates (events). It's derived from `d
 
 ## Conventions
 
-- **Paths and auth.** JSON over HTTPS, everything under `/api`, same origin as the UI. With `LULL_ACCESS_TOKEN` set, every `/api` call needs the token (see Server).
+- **Paths and auth.** JSON, everything under `/api` (Subsonic under `/rest`), same origin as the UI. Every call needs a paired device's token (ADR-0002, see Hub) except the few the Hub section marks open.
 - **Field names.** camelCase in JSON. Ids are strings:
   - `t-…` track, `al-…` album, `ar-…` artist, from `lull_core::ids`: one id per song, whatever its source;
   - `pl-…` playlist, `job-…` job;
@@ -29,14 +29,26 @@ Between `web/` and the server, and between crates (events). It's derived from `d
 - **Lists** take `?limit=&offset=` and return `{ items, total, entities }`.
 - **Time.** Durations are in seconds. Timestamps are unix seconds (`at`), and the UI formats them.
 
-## Server (integrator)
+## Hub (`crates/server`, `lull_core::{devices, settings}`)
+
+ADR-0002. A device token travels as the HttpOnly cookie `lull_device` (browsers, set by the hub) or `Authorization: Bearer <token>` (the app). Open without a token: `/health`, `GET /api/setup`, `POST /api/setup/claim`, `POST /api/pair`, the static UI.
 
 | Method + path | Returns |
 |---|---|
-| `GET /health` (no token needed) | `{ version, services: { soulseek, jellyfin, lastfm, cache: { state: ok\|warn\|down\|off, detail, extra } } }`. Always 200 while serving. `extra`: cache `{ usedBytes, capBytes }`, lastfm `{ queued }` |
-| `GET /api/ping` | 204, or 401 when the token is missing or wrong (the UI's token gate) |
-| `POST /api/session { token }` | 204 + HttpOnly cookie `lull_token`, or 401 |
-| `GET /api/events` | Server-sent events, one per bus event: `event: <topic>`, `data: <json>`. `resync` means the client missed events and refetches what it shows |
+| `GET /health` (open) | `{ version, services: { soulseek, library, lastfm, cache: { state: ok\|warn\|down\|off, detail, extra } } }`. Always 200 while serving |
+| `GET /api/ping` | 204, or 401 without a valid device token (the UI then shows pairing) |
+| `GET /api/events` | Server-sent events, one per bus event: `event: <topic>`, `data: <json>`. `resync` means the client missed events and refetches what it shows. The connection also marks its device online (lull Connect) |
+| `GET /api/setup` (open) | `{ claimed: bool, steps: { library: bool, soulseek: bool, lastfm: bool } }`: what first run still needs |
+| `POST /api/setup/claim { code, name }` (open) | The first device: 200 `{ device }` + cookie when `code` is the setup code and no device is paired yet, else 401 |
+| `POST /api/pair/codes` | `{ code, url, expiresAt }`: a single-use pair code (10 min); `url` is `<hub url>/#/pair/<code>` for the QR |
+| `POST /api/pair { code, name, kind: browser\|app }` (open) | 200 `{ device, token? }`: browsers get the cookie, apps get `token` in the body; 401 for a wrong or used code |
+| `GET /api/devices` | `{ items: [Device + { online, state? }], me }`. Device `{ id, name, kind: browser\|app\|subsonic, createdAt, lastSeen }` |
+| `PATCH /api/devices/{id} { name }` / `DELETE /api/devices/{id}` | 204: rename / unpair (its token stops working at once) |
+| `POST /api/devices/subsonic { name }` | `{ device, username: "lull", password }`: an app password for a Subsonic client, shown once |
+| `POST /api/devices/me/state { trackId, position, playing, volume, queue: [trackId], queueIndex }` | 204; republished as `device.state` |
+| `POST /api/devices/{id}/command { action: play\|pause\|seek\|next\|prev\|volume\|takeover, value? }` | 204; forwarded to that device as `device.command`. `takeover`: the target sends its state to the caller and pauses |
+| `GET /api/config` | `{ items: [{ key, value, source: env\|stored\|default, secret: bool, restart: bool }] }`. Secrets report only whether they're set |
+| `PATCH /api/config { LULL_X: value\|null }` | 200 `{ items }` after validating with `Config::from_vars`; 400 names the bad key. Keys with `restart: true` restart the hub's crates (`hub.restart`) |
 
 ## Events
 
@@ -57,6 +69,13 @@ Topic → payload. Published on the bus and streamed to the browser. Owners add 
 | `settings` | collection | The stored settings (the editable part of `GET /api/settings`), at start-up and on every change. Collection starts after every other crate, so a receiver made in `start()` gets the start-up copy |
 | `scrobble` | lastfm | `{ playId (string), status: pending\|done\|short }`: queued, sent to Last.fm, or short of Last.fm's rule (History's scrobble column). Nothing while Last.fm is off, disconnected or scrobbling is switched off |
 | `lastfm.history` | lastfm | `{ user, artists: [{ name, plays }] }`: the listener's Last.fm top artists, a taste signal for discovery; empty when off or disconnected |
+| `hub.restart` | any | `{ reason }`: asks the hub to restart its crates with the current settings (a setting changed). The hub publishes `hub.restarting` and the UI reconnects |
+| `hub.restarting` | hub | `{ reason }`: the hub's crates are restarting; SSE drops for about a second |
+| `device.state` | hub | `{ deviceId, trackId, position, playing, volume, queue, queueIndex, at }` |
+| `device.command` | hub | `{ deviceId, action, value, from }`: only the device named acts on it |
+| `device.online` | hub | `{ deviceId, online }` |
+| `theme.changed` | themes | `{ id }`: a stored theme's files changed; devices using it reload its CSS |
+| `library.source` | library | `{ mode: folder\|jellyfin, state: switching\|done\|failed, detail }` |
 
 ## Soulseek (`crates/soulseek`)
 
@@ -91,6 +110,19 @@ All of these answer 503 `unavailable` when Jellyfin isn't configured. Lists and 
 | `POST /api/saves/{jobId}/retry [{ source }]` | `{ jobId, step, status }`. Restarts a failed save from its failed step (a new `source` for a transfer failure), or asks Jellyfin again for a pending one. 409 otherwise |
 | `GET /api/jobs` · `DELETE /api/jobs` | `{ items: [row] }`, newest first: library's save and rescan jobs plus the latest `job` event of every other job. `DELETE` clears finished rows (failed saves stay) → 204 |
 | `POST /api/library/rescan` | 202 `{ jobId }`: runs Jellyfin's library scan; the rescan job follows its progress and ends with "Jellyfin found N new songs" |
+
+**lull 2 additions** (ADR-0003; the owner turns each row into fact and drops this note):
+
+| Method + path | Returns |
+|---|---|
+| `GET /api/library/source` | `{ mode: folder\|jellyfin, musicDir, jellyfin: { url, user, connected } \| null, files?, lastScan? }` |
+| `PUT /api/library/source { mode, jellyfin?: { url } }` | 202. Stores `LULL_LIBRARY` (and the Jellyfin URL) through `core::settings`, reconciles by path, asks for `hub.restart`; progress as `library.source` events |
+| `GET /api/jellyfin/discover` | `{ items: [{ name, url, version }] }`: Jellyfin servers answering on the local network (UDP 7359) |
+| `POST /api/jellyfin/quickconnect { url }` | `{ code, secret }`: show `code`; the listener approves it in Jellyfin � Quick Connect |
+| `GET /api/jellyfin/quickconnect/{secret}` | `{ state: waiting\|approved\|expired }`. On `approved` the token is stored as `LULL_JELLYFIN_API_KEY` and the hub restarts into Jellyfin mode |
+| `POST /api/jellyfin/signin { url, username, password }` | 204: the fallback when Quick Connect is off on that server; the password is used once and never stored |
+
+In folder mode every list above works from the folder index, `stream` serves the file, and `rescan` rescans the folder. Saved-only routes answer 503 only when neither source is usable.
 
 ## Discovery (`crates/discovery`, `crates/lastfm`, `crates/lyrics`)
 
@@ -137,3 +169,27 @@ Details and rules: [collection.md](collection.md), [skins.md](skins.md).
 | `GET /api/skins?q=&offset=&nsfw=` | `{ items: [{ md5, name, file, screenshotUrl, museumUrl, nsfw, favourite, downloaded }], more }`, 30 a page. Empty `q` = the museum's own order. NSFW hidden unless `nsfw=true` (the per-device setting). Screenshots load straight from the museum's CDN |
 | `GET /api/skins/{md5}.wsz` | The skin file: downloaded once, validated (a zip with `main.bmp`), cached, same origin, `immutable` |
 | `GET /api/skins/favourites` · `PUT/DELETE /api/skins/favourites/{md5}` | `{ items: [skin] }`, newest first · 204 (404 for a skin the museum doesn't have) |
+
+**lull 2 additions** (ADR-0005; the owner turns each row into fact and drops this note):
+
+| Method + path | Returns |
+|---|---|
+| `POST /api/sync { ops: [{ id, at, op, ... }] }` | `{ applied: [id], rejected: [{ id, message }] }`, in order, idempotent by `id` (a client-made uuid). `op`: `play { trackId, startedAt, playedS, completed, skipped }`, `like { trackId, liked }`, `follow { kind, id, name, followed }`, `playlist.create { tempId, name, trackIds }`, `playlist.edit { playlistId \| tempId, name?, desc?, trackIds? }`, `playlist.delete { playlistId }`. A `tempId` resolves to the playlist an earlier `playlist.create` in any batch made |
+| `POST /api/import/exportify` (body: Exportify CSV) | The M3U import preview shape (`lines`, `counts`, `entities`); the UI then `POST`s the playlist |
+| `POST /api/import/history { source: lastfm, user }` � `POST /api/import/history` (body: a ListenBrainz export JSON) | 202 `{ jobId }`: plays are added as imported (they never scrobble), progress as `job` rows |
+
+## Themes (`crates/themes`)
+
+ADR-0004; format and hooks: [themes.md](../themes.md) *(owner writes)*.
+
+| Method + path | Returns |
+|---|---|
+| `GET /api/themes` | `{ items: [{ id, name, author, api, extends, shell, swatches, modes, builtIn }] }`: the five designs plus the listener's themes |
+| `GET /api/themes/{id}/{path}` | A file of a stored theme (`theme.css`, `slots/*.html`, `assets/*`), ETag'd |
+| `PUT /api/themes/{id}` (body: a `.lulltheme` zip) � `PUT /api/themes/{id}/{path}` (one file, from Theme Studio) | 200 manifest; 400 names what's wrong (missing `theme.json`, a script, an outside URL) |
+| `DELETE /api/themes/{id}` | 204 |
+| `GET /api/themes/{id}.lulltheme` | The package as a zip, for sharing |
+
+## Subsonic (`crates/subsonic`)
+
+OpenSubsonic at `/rest/*` (`.view` suffix accepted), JSON and XML per `f=`. Auth: `u=lull` with `p=` / `t=`+`s=` against an app password from `POST /api/devices/subsonic`, or OpenSubsonic `apiKey=`. Endpoints and gaps: [subsonic.md](subsonic.md) *(owner writes)*.

@@ -8,26 +8,32 @@ Each area has one owner at a time. Edit only what your brief says you own.
 
 | Area | What it is | Owner |
 |---|---|---|
-| `crates/core` | Shared contracts: config, db + migrations, `catalog`, HTTP client, event bus, service status, ids, models, seams | integrator. Others: **additive** changes only, as their own `feat(core): …` commit |
-| `crates/server` | `main`, wiring, `/health`, `/api/events`, token gate, static web | integrator |
-| `crates/soulseek` | slskd client, search + ranking, transfers, progressive streaming, stream cache, sharing | Soulseek session |
-| `crates/library` | Jellyfin reads, saved-track streaming, track lookup, save pipeline (MusicBrainz, Cover Art Archive, tags, rescan) | Library session |
-| `crates/discovery` | Feed, new releases, radio, album/artist/tag pages, taste model | Discovery session |
-| `crates/lastfm` | Last.fm auth, now playing, scrobbles + retry queue | Discovery session |
-| `crates/lyrics` | LRCLIB lyrics + cache | Discovery session |
-| `crates/collection` | Likes, follows, plays/history, playlists + M3U, stats, settings | Collection session |
+| `crates/core` | Shared contracts: config, settings store, devices, db + migrations, `catalog`, HTTP client, event bus, service status, ids, models, seams | integrator; Hub session owns `settings.rs` and `devices.rs`. Others: **additive** changes only, as their own `feat(core): �` commit |
+| `crates/server` | The hub: `lib.rs` (`run`, wiring), gate and pairing, `/health`, `/api/events`, devices and Connect, `/api/config`, setup | Hub session; `src/web.rs` is the Quality session's; the Subsonic session adds its own wiring lines in `lib.rs` |
+| `crates/soulseek` | slskd client, search + ranking, transfers, progressive streaming, stream cache, sharing | Soulseek session (idle) |
+| `crates/library` | Library sources (folder, Jellyfin), switching and reconciliation, Quick Connect, the Jellyfin mirror, saved-track streaming, save pipeline | Library session |
+| `crates/discovery` | Feed, new releases, radio, album/artist/tag pages, taste model | Discovery session (idle) |
+| `crates/lastfm` | Last.fm auth, now playing, scrobbles + retry queue, the built-in app key | Collection session |
+| `crates/lyrics` | LRCLIB lyrics + cache | Discovery session (idle) |
+| `crates/collection` | Likes, follows, plays/history, playlists + M3U, stats, settings, the `Collection` seam, `/api/sync`, imports | Collection session |
 | `crates/skins` | Winamp Skin Museum proxy, `.wsz` cache, favourites | Collection session |
-| `web/` (except `web/desktop/`) | The web UI, ported from `design/prototype` | Web session |
-| `web/desktop/`, `desktop/`, `.github/workflows/desktop.yml` | Wrapper UI pieces and the Tauri app | Desktop session |
+| `crates/subsonic` | OpenSubsonic API over the seams | Subsonic session |
+| `crates/themes` | Stored theme packages, import/export, live reload | Themes session |
+| `web/designs/`, `web/tokens.css`, `web/base.css`, `web/screens/appearance.js`, `docs/themes.md` | Theme packages, cascade layers, the five designs, Theme Studio | Themes session |
+| `web/` (everything else, including `web/desktop/`) | The web UI: setup, pairing, devices and Connect, offline downloads + outbox, library source, imports, the player's output interface | Web session |
+| `app/src/desktop/`, the desktop entries of `app/` config, desktop jobs in `.github/workflows/app.yml` | Windows and Linux app: hub in-process, bundled slskd, tray, mini player, updater, Tailscale serve | Desktop session |
+| `app/src/mobile/`, `app/plugins/player/`, `app/gen/android/`, `app/tauri.android.conf.json`, Android jobs in `app.yml` | Android app: native player plugin, downloads, pairing | Mobile session |
+| `app/src/` shared files (`lib.rs`, `main.rs`, pairing, discovery), `app/Cargo.toml`, `app/tauri.conf.json` | Shared app code and manifests | Desktop session; Mobile adds only under `[target.'cfg(target_os = "android")'.dependencies]` and its own modules' `mod` lines |
+| `tests/ui/`, `.github/workflows/ui.yml`, the Dockerfile web stage | Minify + compression, fixture library, visual matrix, Lighthouse budgets | Quality session |
 | `deploy/` | Compose kit (plain, VPN, existing slskd). `deploy/.env.example` keys mirror `core::config` | Soulseek session (env keys: whoever adds the key in core) |
-| `Cargo.toml` (root), `Dockerfile`, `.github/workflows/ci.yml`, `mise.toml`, `AGENTS.md`, `PROJECT.md`, `README.md`, `docs/context/{INDEX,workspace,api}.md` (except your own api.md section) | Shared files | integrator |
+| `Cargo.toml` (root), `Dockerfile` (except its web stage), `.github/workflows/ci.yml`, `mise.toml`, `AGENTS.md`, `PROJECT.md`, `README.md`, `docs/context/{INDEX,workspace,api}.md` (except your own api.md section) | Shared files | integrator |
 | `design/` | Frozen design reference | nobody (read only) |
 
 `docs/context/<page>.md` belongs to the area it describes (see INDEX.md). Each backend owner edits only its own section of `api.md`.
 
 ## How crates meet
 
-- **Domain crates depend on `lull-core` only, never on each other.** `server` builds them in order and hands each the seams it needs:
+- **Domain crates depend on `lull-core` only, never on each other.** `server` builds them in order and hands each the seams it needs (lull 2 adds `Collection`, implemented by `collection`, for `subsonic`; and `Library` browse/stream/cover):
   - `Transfers` (implemented by `soulseek`) goes to `library`, for completing a transfer before a save;
   - `Library` (implemented by `library`) goes to `soulseek`, `discovery` and `collection`, for saved badges, duplicates, the library half of search and M3U matching.
 - **The event bus** (`ctx.bus`) carries everything else between crates. Every event also reaches the browser over SSE. Topics are listed in `api.md#events`. Example: `collection` publishes `play.started` / `play.ended`, and `lastfm` and `discovery` subscribe.
@@ -37,7 +43,7 @@ Each area has one owner at a time. Edit only what your brief says you own.
   - `async fn start(ctx, seams…) -> Result<Arc<Service>>`;
   - `fn router(svc…) -> axum::Router` with full paths (`/api/...`).
 
-  `server/src/main.rs` already calls all of them, so you never edit it.
+  `server/src/lib.rs` calls all of them (`subsonic` is wired by its own session once `collection` implements the `Collection` seam).
 - **A crate reports its outside dependency** with `ctx.status.set(name, state, detail, extra)`. That drives `/health`, the `service` event and the UI's status tray.
 
 ## Working in parallel
@@ -57,7 +63,11 @@ Each area has one owner at a time. Edit only what your brief says you own.
    | 0030-0039 | discovery, lastfm, lyrics |
    | 0040-0049 | web |
    | 0050-0059 | collection, skins |
-   | 0060-0069 | desktop |
+   | 0060-0069 | app (desktop, mobile) |
+   | 0070-0079 | subsonic |
+   | 0080-0089 | themes |
+   | 0090-0094 | hub |
+   | 0095-0099 | quality |
 
 7. **Never push red.** If `main` is red because of you, fix or revert at once. If it's red because of someone else, rebase again later; don't fix their area.
 8. **Something you need is in another owner's area?** Use what exists (the seams, events, api.md). If it truly needs changing, stop and ask; don't edit it.
