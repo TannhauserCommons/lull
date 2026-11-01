@@ -6,6 +6,8 @@ How `GET /api/stream/{trackId}` plays a song while slskd is still downloading it
 
 A **fetch** gets one song onto disk. There is at most one live fetch per track, shared by everyone who wants the song (the player streaming it, a save completing it), so the bytes cross the network once.
 
+A finished copy already in the stream cache plays at once, whatever the `below` rule, with one `stream` event (`streaming`, and `belowMinimum` when it doesn't pass the streaming minimum). Otherwise:
+
 1. **Pick a source.** The listener's pick (`?peer=&path=`) comes first, then the first untried copy that passes the profile's minimum, in its order ([soulseek.md](soulseek.md#source-rules)): the streaming profile when the player started the fetch, the saving one when a save did. With no known source the fetch searches for the song first (`finding`).
 2. **None passes.** When copies exist but none passes the minimum, the profile's `below` decides:
    - `playBest`: the best of them plays; the `stream` event says `belowMinimum: true`, so the player can show a badge;

@@ -257,7 +257,14 @@ impl Fetcher {
         }
         let cached = self.cache.finished(&track.id, pick.as_ref()).await?;
         let f = match cached.filter(|e| pick.is_none() || pick.as_ref() == Some(&e.source)) {
-            Some(entry) => self.cached(track, entry).await?,
+            // The bytes are here, so the profile's `below` rule doesn't hold them back; the
+            // player still learns which copy it is, and whether it's below the minimum.
+            Some(entry) => {
+                let f = self.cached(track, entry).await?;
+                want(&f, |w| w.streaming = true);
+                self.bus.publish("stream", stream_event(&f, &f.now()));
+                return Ok(f);
+            }
             None => self.start(track, pick, Purpose::Stream),
         };
         want(&f, |w| w.streaming = true);
