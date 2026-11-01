@@ -64,7 +64,12 @@
     var r = M.get(SOURCE);
     if (r.loading) return ui.skeleton('text', 3);
     if (r.error) return K.readError(r.error, SOURCE, 'Couldn\'t read where your library lives');
-    var src = r.data, pick = lib.pick || src.mode;
+    var src = r.data, pick = lib.pick || src.mode, env = K.cfgItem('LULL_LIBRARY');
+    if (!lib.progress && src.switching) lib.progress = { mode: src.mode, state: 'switching', detail: null };
+    if (env && env.source === 'env') {
+      return html`${K.row('Library', 'Set in the hub\'s environment (LULL_LIBRARY), so it can\'t switch here.', K.lockedValue('Library', src.mode === 'jellyfin' ? 'Jellyfin' : 'Music folder'), { cls: 'sys-row--locked' })}
+        <div class="hub-lib__panel">${src.mode === 'folder' ? folderPanel(src) : jellyfinPanel(src)}</div>`;
+    }
     return html`${K.row('Library', 'Where your saved music lives and plays from. Switching keeps your likes, playlists and history.',
         K.choice('hub.library', 'Library', [['folder', 'Music folder'], ['jellyfin', 'Jellyfin']]))}
       ${progressLine()}
@@ -94,7 +99,7 @@
       return html`<div class="inset sys-connect sys-connect--ok">${ui.statusGlyph('ok', 'Connected')}
         <div><p class="sys-connect__title">Connected to <span class="px">${jf.url}</span>${jf.user ? html` as <b>${jf.user}</b>` : ''}</p>
           <p class="sys-connect__text">${using ? 'Saved songs play from Jellyfin, and your likes and playlists show up in its apps.' : 'Jellyfin is connected but not in use.'}</p></div>
-        <div class="sys-connect__actions">${using ? '' : html`<button class="btn btn--primary" data-act="hub-use-jellyfin" data-url="${jf.url}" ${lib.busy ? raw('disabled') : ''}>Use Jellyfin</button>`}
+        <div class="sys-connect__actions">${using ? '' : html`<button class="btn btn--primary" data-act="hub-use-jellyfin" ${lib.busy ? raw('disabled') : ''}>Use Jellyfin</button>`}
           <button class="btn" data-act="hub-jf-another">Connect another server</button></div></div>${fieldError(lib.error)}`;
     }
     if (!lib.url && jf && jf.url) lib.url = jf.url;
@@ -156,7 +161,7 @@
     }, function (err) { busy(false, err); });
   }
   App.action('hub-use-folder', function () { switchTo({ mode: 'folder' }); });
-  App.action('hub-use-jellyfin', function (el) { switchTo({ mode: 'jellyfin', jellyfin: { url: el.getAttribute('data-url') } }); });
+  App.action('hub-use-jellyfin', function () { switchTo({ mode: 'jellyfin' }); });
   App.action('hub-jf-another', function () { lib.another = true; lib.stage = 'choose'; lib.error = null; repaintLib(); });
   App.action('hub-jf-cancel', function () { lib.another = false; lib.error = null; repaintLib(); });
   App.action('hub-jf-server', function (el) { lib.url = el.getAttribute('data-url'); lib.error = null; repaintLib(); });
@@ -168,7 +173,7 @@
     M.api('/api/jellyfin/quickconnect', { method: 'POST', body: { url: url } }).then(function (res) {
       lib.busy = false; lib.stage = 'quick'; lib.qc = { code: res.code, secret: res.secret, state: 'waiting' };
       repaintLib(); pollQuick(lib.qc);
-    }, function (err) { lib.stage = 'choose'; busy(false, err); });
+    }, function (err) { lib.stage = err.status === 409 ? 'signin' : 'choose'; busy(false, err); });   // 409: Quick Connect is off there
   });
   /* ask every two seconds while this code is the one showing */
   function pollQuick(q) {
@@ -180,7 +185,11 @@
         if (res.state === 'waiting') { pollQuick(q); return; }
         if (res.state === 'approved') { lib.another = false; lib.progress = { mode: 'jellyfin', state: 'switching', detail: 'Connected. Switching your library to Jellyfin' }; }
         repaintLib();
-      }, function (err) { if (lib.qc === q) { lib.stage = 'choose'; lib.qc = null; busy(false, err); } });
+      }, function (err) {
+        if (lib.qc !== q) return;
+        if (err.status === 404) { q.state = 'expired'; repaintLib(); return; }   // the hub forgot the code: start again
+        lib.stage = 'choose'; lib.qc = null; busy(false, err);
+      });
     }, 2000);
   }
   document.addEventListener('submit', function (e) {
