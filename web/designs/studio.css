@@ -1,0 +1,84 @@
+/* Settings > Appearance: "Your themes" and Theme Studio (screens/appearance.js). Loaded by that screen into the
+   `screens` layer, so every design restyles it like any screen. Built from the shared components (.sheet, .card,
+   .btn, .input, .seg, .range) and tokens only, so it takes each design's look as it is. */
+
+/* ---------- your themes ---------- */
+.sys-themes.is-drop { outline: var(--stroke) dashed var(--focus); outline-offset: 6px; border-radius: var(--r-panel); }
+.sys-themes__list { display: grid; gap: var(--sp-2); width: 100%; margin-bottom: var(--sp-3); }
+.sys-themes__item {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3); border: var(--stroke-thin) solid var(--divider); border-radius: var(--r-art);
+}
+.sys-themes__name { font: var(--t-row); }
+.sys-themes__meta { grid-column: 1; font: var(--t-meta); color: var(--fg-2); }
+.sys-themes__acts { grid-column: 2; grid-row: 1 / span 2; display: flex; align-items: center; gap: var(--sp-1); }
+
+/* ---------- Theme Studio: a wide sheet, controls left, the two previews right ---------- */
+.sheet.studio-sheet { display: flex; flex-direction: column; }   /* its size is set inline: a design's .sheet--wide never caps it */
+.studio-sheet .sheet__body { flex: 1; min-height: 0; overflow: hidden; padding-bottom: 0; }
+.studio-sheet .sheet__foot { align-items: center; }
+.studio { display: grid; grid-template-columns: minmax(320px, 400px) minmax(0, 1fr); gap: var(--sp-5); height: 100%; min-height: 0; }
+.studio__side { display: flex; flex-direction: column; gap: var(--sp-4); min-height: 0; overflow: auto; padding: 2px 4px var(--sp-4) 2px; }
+.studio__meta { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
+.studio__meta .field:first-child { grid-column: 1 / -1; }
+.studio__meta .field:nth-child(n + 3) { grid-column: 1 / -1; }
+.studio__tabs { width: 100%; }
+.studio__h { margin: 0 0 var(--sp-2); font: italic 800 .875rem/1.2 var(--f-ui); color: var(--fg-2); }
+.studio__state { margin-right: auto; font: var(--t-meta); color: var(--fg-2); }
+
+.studio__tokens { display: grid; gap: var(--sp-5); }
+.studio__cat { display: grid; gap: 2px; }
+.studio__row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); min-height: 40px; }
+.studio__row--wide { flex-wrap: wrap; }
+.studio__row--wide .input { flex: 1 1 100%; }
+.studio__tok { display: inline-flex; align-items: center; gap: var(--sp-1); min-width: 0; }
+.studio__tok code, .studio__warn code { font: 600 .8125rem/1.2 ui-monospace, "Cascadia Mono", Menlo, monospace; overflow-wrap: anywhere; }
+.studio__pair { display: inline-flex; gap: var(--sp-2); }
+.studio__swatch {
+  width: 44px; height: 32px; padding: 2px; border: var(--stroke-thin) solid var(--edge); border-radius: var(--r-chip);
+  background: var(--bg-2); cursor: pointer;
+}
+.studio__swatch::-webkit-color-swatch-wrapper { padding: 0; }
+.studio__swatch::-webkit-color-swatch, .studio__swatch::-moz-color-swatch { border: 0; border-radius: calc(var(--r-chip) - 2px); }
+.studio__range { display: inline-flex; align-items: center; gap: var(--sp-2); width: 200px; }
+.studio__range output { min-width: 52px; text-align: right; font: var(--t-meta); }
+
+.studio__editor {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); height: min(56vh, 520px);
+  border: var(--stroke-thin) solid var(--edge); border-radius: var(--r-art); background: var(--bg-2); overflow: hidden;
+}
+.studio__lines, .studio__css { margin: 0; padding: var(--sp-3); font: 500 .8125rem/1.6 ui-monospace, "Cascadia Mono", Menlo, monospace; tab-size: 2; }
+.studio__lines { overflow: hidden; text-align: right; color: var(--fg-2); user-select: none; border-right: var(--stroke-thin) solid var(--divider); }
+.studio__css { width: 100%; height: 100%; resize: none; border: 0; background: transparent; color: var(--fg); white-space: pre; overflow: auto; }
+.studio__css:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--focus); }
+
+.studio__warnings { display: grid; gap: var(--sp-2); }
+.studio__warn, .studio__ok { display: flex; gap: var(--sp-2); align-items: flex-start; font: var(--t-meta); }
+.studio__warn .ic { color: var(--rsn-fg); margin-top: 2px; }
+.studio__ok .ic { color: var(--ok); margin-top: 2px; }
+
+/* the previews: the real app at 1280 x 800 (or 390 x 844), scaled to fit side by side */
+.studio__stage { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; min-height: 0; }
+.studio__bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); }
+.studio__route { width: 200px; }
+.studio__frames { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); align-content: start; overflow: auto; }
+.studio__frame { margin: 0; display: grid; gap: var(--sp-1); container-type: inline-size; }
+.studio__cap { font: italic 800 .875rem/1.2 var(--f-ui); color: var(--fg-2); }
+.studio__view { --w: 1280; --h: 800; position: relative; aspect-ratio: 1280 / 800; overflow: hidden; border: var(--stroke-thin) solid var(--edge); border-radius: var(--r-art); }
+.studio__frame.is-phone { justify-items: center; }
+.studio__frame.is-phone .studio__view { --w: 390; --h: 844; aspect-ratio: 390 / 844; width: min(100%, 300px); }
+.studio__view iframe {
+  position: absolute; top: 0; left: 0; width: calc(var(--w) * 1px); height: calc(var(--h) * 1px); border: 0;
+  transform: scale(calc(100cqw / (var(--w) * 1px))); transform-origin: 0 0;
+}
+.studio__frame.is-phone .studio__view iframe { transform: scale(calc(min(100cqw, 300px) / (var(--w) * 1px))); }
+
+@media (max-width: 1099px) {
+  .studio { grid-template-columns: 1fr; overflow: auto; }
+  .studio__side { overflow: visible; }
+  .studio-sheet .sheet__body { overflow: auto; }
+}
+@media (max-width: 639px) {
+  .studio__frames { grid-template-columns: 1fr; }
+  .studio__meta { grid-template-columns: 1fr; }
+}

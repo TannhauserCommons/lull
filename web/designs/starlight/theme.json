@@ -1,0 +1,29 @@
+{
+  "id": "starlight",
+  "name": "Starlight",
+  "author": "lull",
+  "api": 1,
+  "extends": null,
+  "shell": "rail",
+  "swatches": [
+    "#414759",
+    "#f2e3d1",
+    "#5a75b5",
+    "#4a0f1c"
+  ],
+  "modes": [
+    "day",
+    "night"
+  ],
+  "description": "A starry-night poster: cream trays stacked on lavender and periwinkle, burgundy caps titles.",
+  "preview": true,
+  "slots": [
+    "brand",
+    "emptyArt",
+    "homeLead.playing",
+    "miniPlayer.device",
+    "nowHero.compact",
+    "nowHero.full"
+  ],
+  "coverVariety": true
+}

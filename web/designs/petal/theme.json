@@ -1,0 +1,28 @@
+{
+  "id": "petal",
+  "name": "Petal",
+  "author": "lull",
+  "api": 1,
+  "extends": null,
+  "shell": "topnav",
+  "swatches": [
+    "#fce8f3",
+    "#fffbfd",
+    "#dd9fc9",
+    "#4a3542"
+  ],
+  "modes": [
+    "day",
+    "night"
+  ],
+  "description": "Pink pixel playlist pages with a glossy pink player window.",
+  "preview": true,
+  "slots": [
+    "brand",
+    "emptyArt",
+    "miniPlayer.device",
+    "nowHero.compact",
+    "nowHero.full"
+  ],
+  "coverVariety": true
+}

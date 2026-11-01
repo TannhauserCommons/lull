@@ -1,167 +1,173 @@
 /* lull base: fonts, reset, surface scopes, type, focus, reduced motion, sky, utilities.
-   Load order: tokens.css, base.css, components.css. */
+   Load order: tokens.css, base.css, components.css. The reset is the `reset` layer, the rest `base` (tokens.css). */
 
-/* ---------- fonts (self-hosted, Latin subset, SIL OFL 1.1; licences in fonts/) ---------- */
-@font-face {
-  font-family: "Nunito"; font-style: normal; font-weight: 200 1000; font-display: swap;
-  src: url("fonts/nunito-latin.woff2") format("woff2");
-}
-@font-face {
-  font-family: "Nunito"; font-style: italic; font-weight: 200 1000; font-display: swap;
-  src: url("fonts/nunito-italic-latin.woff2") format("woff2");
-}
-@font-face {
-  font-family: "Jersey 10"; font-style: normal; font-weight: 400; font-display: swap;
-  src: url("fonts/jersey10-latin.woff2") format("woff2");
-}
-
-/* ---------- reset ---------- */
-*, *::before, *::after { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
-body, h1, h2, h3, h4, p, ul, ol, figure, blockquote, dl, dd { margin: 0; }
-ul[role="list"], ol[role="list"] { list-style: none; padding: 0; margin: 0; }
-img, svg, video, canvas { display: block; max-width: 100%; }
-input, button, textarea, select { font: inherit; color: inherit; }
-button { background: none; border: 0; padding: 0; cursor: pointer; text-align: inherit; }
-button:disabled, [aria-disabled="true"] { cursor: not-allowed; }
-a { color: inherit; text-decoration: none; }
-table { border-collapse: collapse; }
-[hidden] { display: none !important; }
-
-/* ---------- surface scopes (4.3): components read only these semantic tokens ----------
-   --bg --bg-2 (hover) --bg-3 (pressed) --fg --fg-2 --link --edge --focus --heart --accent-ui
-   --q-ll --q-ly --rsn-bg --rsn-fg --divider (and the --seek-* trio).
-   The theme values are captured once on :root as --theme-*, so a .s-panel or .s-sky nested
-   inside a .s-card gets the theme values back instead of the card's. */
-:root {
-  --theme-link: var(--link); --theme-edge: var(--edge); --theme-focus: var(--focus);
-  --theme-heart: var(--heart); --theme-accent: var(--accent-ui);
-  --theme-played: var(--seek-played); --theme-buffered: var(--seek-buffered); --theme-seek-line: var(--seek-line);
-  --bg: var(--sky); --bg-2: var(--sky-deep); --bg-3: var(--panel-2);
-  --fg: var(--fg-sky); --fg-2: var(--fg-sky-2);
-  --q-ll: var(--q-lossless); --q-ly: var(--q-lossy); --rsn-bg: var(--reason-bg); --rsn-fg: var(--reason-fg);
-  --divider: var(--panel-2);
-}
-.s-sky, .s-panel {
-  --link: var(--theme-link); --edge: var(--theme-edge); --focus: var(--theme-focus);
-  --heart: var(--theme-heart); --accent-ui: var(--theme-accent);
-  --seek-played: var(--theme-played); --seek-buffered: var(--theme-buffered); --seek-line: var(--theme-seek-line);
-  --q-ll: var(--q-lossless); --q-ly: var(--q-lossy); --rsn-bg: var(--reason-bg); --rsn-fg: var(--reason-fg);
-  --divider: var(--panel-2);
-}
-.s-sky {
-  --bg: var(--sky); --bg-2: var(--sky-deep); --bg-3: var(--panel-2);
-  --fg: var(--fg-sky); --fg-2: var(--fg-sky-2);
-  background: var(--bg); color: var(--fg);
-}
-.s-panel {
-  --bg: var(--panel); --bg-2: var(--panel-2); --bg-3: var(--sky-deep);
-  --fg: var(--fg-panel); --fg-2: var(--fg-panel-2);
-  background: var(--bg); color: var(--fg);
-}
-.s-card, .card {
-  --bg: var(--cream); --bg-2: var(--cream-2); --bg-3: var(--cream-3);
-  --fg: var(--ink); --fg-2: var(--ink-2);
-  --link: var(--link-on-cream); --edge: var(--line); --focus: var(--indigo);
-  --heart: var(--pink-ink); --accent-ui: var(--link-on-cream);
-  --q-ll: var(--indigo); --q-ly: var(--ink-2); --rsn-bg: var(--pink-soft); --rsn-fg: var(--pink-ink);
-  --seek-played: var(--card-seek-played); --seek-buffered: var(--card-seek-buffered); --seek-line: var(--line);
-  --divider: var(--lav);
-  background: var(--bg); color: var(--fg);
-}
-.s-screen {
-  --bg: var(--screen); --bg-2: var(--mocha); --bg-3: var(--mocha-edge);
-  --fg: var(--lilac); --fg-2: var(--lavender);
-  --link: var(--pink-light); --edge: var(--lavender); --focus: var(--star);
-  --accent-ui: var(--peri); --divider: var(--mocha);
-  background: var(--bg); color: var(--fg);
+@layer reset {
+  /* ---------- reset ---------- */
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  body, h1, h2, h3, h4, p, ul, ol, figure, blockquote, dl, dd { margin: 0; }
+  ul[role="list"], ol[role="list"] { list-style: none; padding: 0; margin: 0; }
+  img, svg, video, canvas { display: block; max-width: 100%; }
+  input, button, textarea, select { font: inherit; color: inherit; }
+  button { background: none; border: 0; padding: 0; cursor: pointer; text-align: inherit; }
+  button:disabled, [aria-disabled="true"] { cursor: not-allowed; }
+  a { color: inherit; text-decoration: none; }
+  table { border-collapse: collapse; }
+  [hidden] { display: none !important; }
 }
 
-/* ---------- page ---------- */
-html { background: var(--sky); }
-body {
-  min-height: 100vh; min-height: 100dvh;
-  font: var(--t-body); color: var(--fg-sky); background: var(--sky);
-  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
-}
+@layer base {
+  /* ---------- fonts (self-hosted, Latin subset, SIL OFL 1.1; licences in fonts/) ---------- */
+  @font-face {
+    font-family: "Nunito"; font-style: normal; font-weight: 200 1000; font-display: swap;
+    src: url("fonts/nunito-latin.woff2") format("woff2");
+  }
+  @font-face {
+    font-family: "Nunito"; font-style: italic; font-weight: 200 1000; font-display: swap;
+    src: url("fonts/nunito-italic-latin.woff2") format("woff2");
+  }
+  @font-face {
+    font-family: "Jersey 10"; font-style: normal; font-weight: 400; font-display: swap;
+    src: url("fonts/jersey10-latin.woff2") format("woff2");
+  }
 
-/* night sky / day sky: a few CSS star specks, no images */
-.sky-specks { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
-.sky-specks::before {
-  content: ""; position: absolute; inset: 0;
-  background-image:
-    radial-gradient(1.4px 1.4px at 12% 18%, var(--speck) 50%, transparent 51%),
-    radial-gradient(1px 1px at 37% 72%, var(--speck) 50%, transparent 51%),
-    radial-gradient(1.6px 1.6px at 68% 34%, var(--speck) 50%, transparent 51%),
-    radial-gradient(1px 1px at 84% 81%, var(--speck) 50%, transparent 51%),
-    radial-gradient(1.2px 1.2px at 55% 9%, var(--speck) 50%, transparent 51%),
-    radial-gradient(1px 1px at 23% 47%, var(--speck) 50%, transparent 51%),
-    radial-gradient(1.3px 1.3px at 93% 52%, var(--speck) 50%, transparent 51%);
-  background-size: 310px 290px, 230px 270px, 410px 330px, 190px 210px, 370px 250px, 270px 350px, 330px 390px;
-  opacity: .9;
-}
+  /* ---------- surface scopes (4.3): components read only these semantic tokens ----------
+     --bg --bg-2 (hover) --bg-3 (pressed) --fg --fg-2 --link --edge --focus --heart --accent-ui
+     --q-ll --q-ly --rsn-bg --rsn-fg --divider (and the --seek-* trio).
+     The theme values are captured once on :root as --theme-*, so a .s-panel or .s-sky nested
+     inside a .s-card gets the theme values back instead of the card's. */
+  :root {
+    --theme-link: var(--link); --theme-edge: var(--edge); --theme-focus: var(--focus);
+    --theme-heart: var(--heart); --theme-accent: var(--accent-ui);
+    --theme-played: var(--seek-played); --theme-buffered: var(--seek-buffered); --theme-seek-line: var(--seek-line);
+    --bg: var(--sky); --bg-2: var(--sky-deep); --bg-3: var(--panel-2);
+    --fg: var(--fg-sky); --fg-2: var(--fg-sky-2);
+    --q-ll: var(--q-lossless); --q-ly: var(--q-lossy); --rsn-bg: var(--reason-bg); --rsn-fg: var(--reason-fg);
+    --divider: var(--panel-2);
+  }
+  .s-sky, .s-panel {
+    --link: var(--theme-link); --edge: var(--theme-edge); --focus: var(--theme-focus);
+    --heart: var(--theme-heart); --accent-ui: var(--theme-accent);
+    --seek-played: var(--theme-played); --seek-buffered: var(--theme-buffered); --seek-line: var(--theme-seek-line);
+    --q-ll: var(--q-lossless); --q-ly: var(--q-lossy); --rsn-bg: var(--reason-bg); --rsn-fg: var(--reason-fg);
+    --divider: var(--panel-2);
+  }
+  .s-sky {
+    --bg: var(--sky); --bg-2: var(--sky-deep); --bg-3: var(--panel-2);
+    --fg: var(--fg-sky); --fg-2: var(--fg-sky-2);
+    background: var(--bg); color: var(--fg);
+  }
+  .s-panel {
+    --bg: var(--panel); --bg-2: var(--panel-2); --bg-3: var(--sky-deep);
+    --fg: var(--fg-panel); --fg-2: var(--fg-panel-2);
+    background: var(--bg); color: var(--fg);
+  }
+  .s-card, .card {
+    --bg: var(--cream); --bg-2: var(--cream-2); --bg-3: var(--cream-3);
+    --fg: var(--ink); --fg-2: var(--ink-2);
+    --link: var(--link-on-cream); --edge: var(--line); --focus: var(--indigo);
+    --heart: var(--pink-ink); --accent-ui: var(--link-on-cream);
+    --q-ll: var(--indigo); --q-ly: var(--ink-2); --rsn-bg: var(--pink-soft); --rsn-fg: var(--pink-ink);
+    --seek-played: var(--card-seek-played); --seek-buffered: var(--card-seek-buffered); --seek-line: var(--line);
+    --divider: var(--lav);
+    background: var(--bg); color: var(--fg);
+  }
+  .s-screen {
+    --bg: var(--screen); --bg-2: var(--mocha); --bg-3: var(--mocha-edge);
+    --fg: var(--lilac); --fg-2: var(--lavender);
+    --link: var(--pink-light); --edge: var(--lavender); --focus: var(--star);
+    --accent-ui: var(--peri); --divider: var(--mocha);
+    background: var(--bg); color: var(--fg);
+  }
 
-/* ---------- type scale (6) ---------- */
-.t-display { font: var(--t-display); letter-spacing: var(--t-display-track); }
-.t-title-xl { font: var(--t-title-xl); letter-spacing: var(--t-title-xl-track); }
-.t-h2 { font: var(--t-h2); letter-spacing: var(--t-h2-track); }
-.t-row { font: var(--t-row); }
-.t-body { font: var(--t-body); }
-.t-meta { font: var(--t-meta); letter-spacing: var(--t-meta-track); }
-.t-micro { font: var(--t-micro); letter-spacing: var(--t-micro-track); }
-.t-px, .px { font: var(--t-px); letter-spacing: var(--t-px-track); }
-.t-lyric { font: var(--t-lyric); }
-.fg-2 { color: var(--fg-2); }
-.num { font-variant-numeric: tabular-nums; }
-.prose { max-width: 72ch; }
-.ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-@media (max-width: 639px) {
-  .t-display { font-size: 2rem; }
-  .t-title-xl { font-size: 1.625rem; }
-}
+  /* ---------- page ---------- */
+  /* first visit only: nothing shows until the theme's manifest says which shell to draw (designs/designs.js boot) */
+  :root[data-booting] body { visibility: hidden; }
+  html { background: var(--sky); }
+  body {
+    min-height: 100vh; min-height: 100dvh;
+    font: var(--t-body); color: var(--fg-sky); background: var(--sky);
+    -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
 
-/* ---------- icons ---------- */
-.ic {
-  width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor;
-  stroke-width: var(--icon-stroke); stroke-linecap: round; stroke-linejoin: round;
-  overflow: visible;
-}
-.ic-16 { width: 16px; height: 16px; }
-.ic-24 { width: 24px; height: 24px; }
+  /* night sky / day sky: a few CSS star specks, no images */
+  .sky-specks { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+  .sky-specks::before {
+    content: ""; position: absolute; inset: 0;
+    background-image:
+      radial-gradient(1.4px 1.4px at 12% 18%, var(--speck) 50%, transparent 51%),
+      radial-gradient(1px 1px at 37% 72%, var(--speck) 50%, transparent 51%),
+      radial-gradient(1.6px 1.6px at 68% 34%, var(--speck) 50%, transparent 51%),
+      radial-gradient(1px 1px at 84% 81%, var(--speck) 50%, transparent 51%),
+      radial-gradient(1.2px 1.2px at 55% 9%, var(--speck) 50%, transparent 51%),
+      radial-gradient(1px 1px at 23% 47%, var(--speck) 50%, transparent 51%),
+      radial-gradient(1.3px 1.3px at 93% 52%, var(--speck) 50%, transparent 51%);
+    background-size: 310px 290px, 230px 270px, 410px 330px, 190px 210px, 370px 250px, 270px 350px, 330px 390px;
+    opacity: .9;
+  }
 
-/* ---------- focus: visible on every control, never removed ---------- */
-:focus { outline: none; }
-:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  /* ---------- type scale (6) ---------- */
+  .t-display { font: var(--t-display); letter-spacing: var(--t-display-track); }
+  .t-title-xl { font: var(--t-title-xl); letter-spacing: var(--t-title-xl-track); }
+  .t-h2 { font: var(--t-h2); letter-spacing: var(--t-h2-track); }
+  .t-row { font: var(--t-row); }
+  .t-body { font: var(--t-body); }
+  .t-meta { font: var(--t-meta); letter-spacing: var(--t-meta-track); }
+  .t-micro { font: var(--t-micro); letter-spacing: var(--t-micro-track); }
+  .t-px, .px { font: var(--t-px); letter-spacing: var(--t-px-track); }
+  .t-lyric { font: var(--t-lyric); }
+  .fg-2 { color: var(--fg-2); }
+  .num { font-variant-numeric: tabular-nums; }
+  .prose { max-width: 72ch; }
+  .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  @media (max-width: 639px) {
+    .t-display { font-size: 2rem; }
+    .t-title-xl { font-size: 1.625rem; }
+  }
 
-/* ---------- links ---------- */
-.link { color: var(--link); font-weight: 800; }
-.link:hover { text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
-.link-plain:hover { text-decoration: underline; text-underline-offset: 3px; }
+  /* ---------- icons ---------- */
+  .ic {
+    width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor;
+    stroke-width: var(--icon-stroke); stroke-linecap: round; stroke-linejoin: round;
+    overflow: visible;
+  }
+  .ic-16 { width: 16px; height: 16px; }
+  .ic-24 { width: 24px; height: 24px; }
 
-/* ---------- utilities ---------- */
-.vh {
-  position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
-  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0;
-}
-.stacked { box-shadow: var(--stack); margin-bottom: var(--stack-reserve); }
-.flow > * + * { margin-top: var(--sp-4); }
-.cluster { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
-.spacer { flex: 1; }
+  /* ---------- focus: visible on every control, never removed ---------- */
+  :focus { outline: none; }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
-/* ---------- reduced motion: OS setting or :root[data-motion="reduce"] ----------
-   Loops stop; transitions keep only colour/opacity fades (no translate/scale travel).
-   The two blocks are identical on purpose: CSS cannot join a media query and a selector in one rule,
-   and the OS block must step aside for data-motion="full" (the user's explicit choice). */
-@media (prefers-reduced-motion: reduce) {
-  :root:not([data-motion="full"]) *, :root:not([data-motion="full"]) *::before, :root:not([data-motion="full"]) *::after {
+  /* ---------- links ---------- */
+  .link { color: var(--link); font-weight: 800; }
+  .link:hover { text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
+  .link-plain:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+  /* ---------- utilities ---------- */
+  .vh {
+    position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0;
+  }
+  .stacked { box-shadow: var(--stack); margin-bottom: var(--stack-reserve); }
+  .flow > * + * { margin-top: var(--sp-4); }
+  .cluster { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+  .spacer { flex: 1; }
+
+  /* ---------- reduced motion: OS setting or :root[data-motion="reduce"] ----------
+     Loops stop; transitions keep only colour/opacity fades (no translate/scale travel).
+     The two blocks are identical on purpose: CSS cannot join a media query and a selector in one rule,
+     and the OS block must step aside for data-motion="full" (the user's explicit choice). */
+  @media (prefers-reduced-motion: reduce) {
+    :root:not([data-motion="full"]) *, :root:not([data-motion="full"]) *::before, :root:not([data-motion="full"]) *::after {
+      animation: none !important; scroll-behavior: auto !important;
+      transition-property: opacity, color, background-color, border-color, outline-color, box-shadow !important;
+      transition-duration: 120ms !important;
+    }
+  }
+  :root[data-motion="reduce"] *, :root[data-motion="reduce"] *::before, :root[data-motion="reduce"] *::after {
     animation: none !important; scroll-behavior: auto !important;
     transition-property: opacity, color, background-color, border-color, outline-color, box-shadow !important;
     transition-duration: 120ms !important;
   }
-}
-:root[data-motion="reduce"] *, :root[data-motion="reduce"] *::before, :root[data-motion="reduce"] *::after {
-  animation: none !important; scroll-behavior: auto !important;
-  transition-property: opacity, color, background-color, border-color, outline-color, box-shadow !important;
-  transition-duration: 120ms !important;
 }

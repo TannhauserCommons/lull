@@ -4,10 +4,14 @@
    plain grid-aligned rects, edit them by hand). Every rule is scoped under :root[data-design="petal"].
    Order: fonts, tokens (day, night), contrast checks, page + type, components, shell, screens. */
 
+/* The whole file is the `design` cascade layer (ADR-0004); a listener's theme in `user` wins over it. */
+@layer design {
+
+
 /* ---------- fonts (SIL OFL 1.1, licence in fonts/) ---------- */
 @font-face {
   font-family: "Nunito Sans"; font-style: normal; font-weight: 200 1000; font-display: swap;
-  src: url("fonts/nunito-sans-latin.woff2") format("woff2");
+  src: url("assets/fonts/nunito-sans-latin.woff2") format("woff2");
 }
 
 /* ---------- tokens: day + everything theme-invariant ---------- */
@@ -51,7 +55,7 @@
   /* pixel-art pinks and plums, theme-invariant (art/*.svg uses the same set) */
   --pc-1: #fff4fa; --pc-2: #fde4f1; --pc-3: #f6cee4; --pc-4: #eab2d4; --pc-5: #e58fc0; --pc-6: #8e4a7e; --pc-7: #4a2342; --pc-8: #2c1428;
   --dusk: #5a2e50; --dusk-deep: #3a1d33;
-  /* window mascot sprite inks (design.js) */
+  /* window mascot sprite inks (slots) */
   --pt-px-line: #9c3f7e; --pt-px-fill: #ffffff; --pt-px-ear: #f6cee4; --pt-px-cheek: #eab2d4; --pt-px-eye: #2c1428;
 
   /* palette (day) */
@@ -89,9 +93,9 @@
   --pt-dot: #f5d2e5;      /* page dot grid */
   --pt-bar-1: #ffffff; --pt-bar-2: #fff7fb; --pt-bar-3: #f8d8e9; --pt-bar-4: #fdeaf4; --pt-bar-line: #eebbd7;   /* gloss title bar */
   --pt-lcd: #fbe6f1; --pt-lcd-ink: #6e2c5c; --pt-lcd-dim: #eecadc;
-  --pt-sky-art: url("art/sky.svg");
-  --pt-hero: url("art/hero.svg"); --pt-hero-sleep: url("art/hero-sleep.svg");
-  --pt-clouds: url("art/clouds.svg");
+  --pt-sky-art: url("assets/art/sky.svg");
+  --pt-hero: url("assets/art/hero.svg"); --pt-hero-sleep: url("assets/art/hero-sleep.svg");
+  --pt-clouds: url("assets/art/clouds.svg");
   color-scheme: light;
 }
 
@@ -121,9 +125,9 @@
   --pt-bar-1: #73406a; --pt-bar-2: #5c3354; --pt-bar-3: #44273f; --pt-bar-4: #4d2c47; --pt-bar-line: #8c4a7a;
   --pt-lcd: #24121f; --pt-lcd-ink: #f6cee4; --pt-lcd-dim: #4a2b44;
   --pt-px-line: #e58fc0;
-  --pt-sky-art: url("art/sky-night.svg");
-  --pt-hero: url("art/hero-night.svg"); --pt-hero-sleep: url("art/hero-night-sleep.svg");
-  --pt-clouds: url("art/clouds-night.svg");
+  --pt-sky-art: url("assets/art/sky-night.svg");
+  --pt-hero: url("assets/art/hero-night.svg"); --pt-hero-sleep: url("assets/art/hero-night-sleep.svg");
+  --pt-clouds: url("assets/art/clouds-night.svg");
   color-scheme: dark;
 }
 /* the header scene sleeps (ears down, z z) unless something is playing; the same in both themes */
@@ -264,7 +268,7 @@
 
 /* =====================================================================
    Covers: 24x24 pixel scenes (art/c1-c8.svg), the same in both themes: rainbow cloud, striped sun, heart balloon,
-   paper moon, strawberry milk, cherries, bunny, cassette. design.js mirrors half of them (by id) so repeats differ,
+   paper moon, strawberry milk, cherries, bunny, cassette. coverVariety mirrors half of them (data-look) so repeats differ,
    and gives round covers (artists, radio starters) one of six pixel characters (art/p1-p6.svg) in a square frame.
    ===================================================================== */
 :root[data-design="petal"] .cover {
@@ -272,23 +276,23 @@
 }
 :root[data-design="petal"] .cover--xs { border-width: 1px; }
 :root[data-design="petal"] .cover::before, :root[data-design="petal"] .cover::after { display: none; }
-:root[data-design="petal"] .cover.pv-flip:not(.has-art) { transform: scaleX(-1); }   /* mirror the pixel scenes, never real art */
+:root[data-design="petal"] .cover:not(.cover--round, .has-art):is([data-look="1"], [data-look="3"], [data-look="5"]) { transform: scaleX(-1); }   /* mirror the pixel scenes, never real art */
 :root[data-design="petal"] .cover__img { image-rendering: auto; }
-:root[data-design="petal"] .c1 { background-image: url("art/c1.svg"); }
-:root[data-design="petal"] .c2 { background-image: url("art/c2.svg"); }
-:root[data-design="petal"] .c3 { background-image: url("art/c3.svg"); }
-:root[data-design="petal"] .c4 { background-image: url("art/c4.svg"); }
-:root[data-design="petal"] .c5 { background-image: url("art/c5.svg"); }
-:root[data-design="petal"] .c6 { background-image: url("art/c6.svg"); }
-:root[data-design="petal"] .c7 { background-image: url("art/c7.svg"); }
-:root[data-design="petal"] .c8 { background-image: url("art/c8.svg"); }
+:root[data-design="petal"] .c1 { background-image: url("assets/art/c1.svg"); }
+:root[data-design="petal"] .c2 { background-image: url("assets/art/c2.svg"); }
+:root[data-design="petal"] .c3 { background-image: url("assets/art/c3.svg"); }
+:root[data-design="petal"] .c4 { background-image: url("assets/art/c4.svg"); }
+:root[data-design="petal"] .c5 { background-image: url("assets/art/c5.svg"); }
+:root[data-design="petal"] .c6 { background-image: url("assets/art/c6.svg"); }
+:root[data-design="petal"] .c7 { background-image: url("assets/art/c7.svg"); }
+:root[data-design="petal"] .c8 { background-image: url("assets/art/c8.svg"); }
 :root[data-design="petal"] .cover--round { border-radius: 4px; }
-:root[data-design="petal"] .cover--round.pt-face-1 { background-image: url("art/p1.svg"); }   /* bunny */
-:root[data-design="petal"] .cover--round.pt-face-2 { background-image: url("art/p2.svg"); }   /* cat */
-:root[data-design="petal"] .cover--round.pt-face-3 { background-image: url("art/p3.svg"); }   /* bear */
-:root[data-design="petal"] .cover--round.pt-face-4 { background-image: url("art/p4.svg"); }   /* moon face */
-:root[data-design="petal"] .cover--round.pt-face-5 { background-image: url("art/p5.svg"); }   /* cloud */
-:root[data-design="petal"] .cover--round.pt-face-6 { background-image: url("art/p6.svg"); }   /* strawberry */
+:root[data-design="petal"] .cover--round[data-look="0"] { background-image: url("assets/art/p1.svg"); }   /* bunny */
+:root[data-design="petal"] .cover--round[data-look="1"] { background-image: url("assets/art/p2.svg"); }   /* cat */
+:root[data-design="petal"] .cover--round[data-look="2"] { background-image: url("assets/art/p3.svg"); }   /* bear */
+:root[data-design="petal"] .cover--round[data-look="3"] { background-image: url("assets/art/p4.svg"); }   /* moon face */
+:root[data-design="petal"] .cover--round[data-look="4"] { background-image: url("assets/art/p5.svg"); }   /* cloud */
+:root[data-design="petal"] .cover--round[data-look="5"] { background-image: url("assets/art/p6.svg"); }   /* strawberry */
 :root[data-design="petal"] .mosaic { border: 2px solid var(--pt-frame); border-radius: 3px; background: var(--pt-frame); gap: 2px; }
 :root[data-design="petal"] .mosaic .cover { border: 0; }
 /* skeleton covers are pale pixel checkerboards */
@@ -389,10 +393,11 @@
 
 /* empty and error states: 28x22 pixel scenes (bunny asleep on a cloud, tangled cassette, star with a ?, flat EQ) */
 :root[data-design="petal"] .empty__art { width: 112px; height: 88px; border: 1.5px solid var(--pt-frame); border-radius: 4px; box-shadow: var(--stack-sm); overflow: hidden; }
-:root[data-design="petal"] .pt-empty { display: block; width: 100%; height: 100%; background: var(--pc-2) url("art/empty-moon.svg") center / 100% 100% no-repeat; image-rendering: pixelated; }
-:root[data-design="petal"] .pt-empty--slot { background-image: url("art/empty-slot.svg"); }
-:root[data-design="petal"] .pt-empty--star { background-image: url("art/empty-star.svg"); }
-:root[data-design="petal"] .pt-empty--wave { background-image: url("art/empty-wave.svg"); }
+:root[data-design="petal"] .pt-empty { display: block; width: 100%; height: 100%; background: var(--pc-2) url("assets/art/empty-moon.svg") center / 100% 100% no-repeat; image-rendering: pixelated; }
+:root[data-design="petal"] .pt-empty--slot { background-image: url("assets/art/empty-slot.svg"); }
+:root[data-design="petal"] .pt-empty--star { background-image: url("assets/art/empty-star.svg"); }
+:root[data-design="petal"] .pt-empty--wave { background-image: url("assets/art/empty-wave.svg"); }
+:root[data-design="petal"] .pt-empty:is([data-title*="couldn" i], [data-title*="could not" i], [data-title*="failed" i], [data-title*="error" i], [data-title*="went wrong" i], [data-title*="unreachable" i]) { background-image: url("assets/art/empty-slot.svg"); }   /* errors: the tangled cassette */
 
 /* =====================================================================
    Shell: top strip with img 03 tabs, the context panel as a window, the img 04 player bar
@@ -596,7 +601,7 @@
 :root[data-design="petal"] .disc-card[data-region="radio"] { position: relative; }
 :root[data-design="petal"] .disc-card[data-region="radio"]::before {
   content: ""; position: absolute; right: 24px; top: -29px; width: 32px; height: 32px; z-index: 1; pointer-events: none;
-  background: url("art/peek.svg") center / 100% 100% no-repeat; image-rendering: pixelated;
+  background: url("assets/art/peek.svg") center / 100% 100% no-repeat; image-rendering: pixelated;
 }
 @media (max-width: 1099px) { :root[data-design="petal"] .disc-card[data-region="radio"]::before { display: none; } }
 
@@ -651,7 +656,7 @@
 }
 
 /* =====================================================================
-   Now Playing: the petal player window (design.js nowHero)
+   Now Playing: the petal player window (slots/nowHero)
    ===================================================================== */
 :root[data-design="petal"] .pt-win {
   --bg: var(--cream); --bg-2: var(--cream-2); --bg-3: var(--cream-3); --fg: var(--ink); --fg-2: var(--ink-2);
@@ -865,10 +870,11 @@
 :root[data-design="petal"] .device { border: 1.5px solid var(--pt-frame); box-shadow: var(--stack-sm); }
 :root[data-design="petal"] .device__bezel { border-width: 1.5px; }
 
-/* desktop mini window: a tiny petal player (design.js miniPlayer) */
+/* desktop mini window: a tiny petal player (slots/miniPlayer) */
 :root[data-design="petal"] .pt-mini { padding: 10px; }
 :root[data-design="petal"] .pt-mini .pt-win { height: 100%; }
 :root[data-design="petal"] .pt-mini .pt-bun { display: block; }
+:root[data-design="petal"] .pt-mini[data-playing="true"] .pt-bun--down, :root[data-design="petal"] .pt-mini[data-playing="false"] .pt-bun--up { display: none; }
 :root[data-design="petal"] .pt-mini__win { display: inline-flex; gap: 2px; }
 :root[data-design="petal"] .pt-mini__win .pt-win__key { width: 26px; height: 26px; border: 0; background: transparent; }
 :root[data-design="petal"] .pt-mini__screen { flex: 1; display: grid; grid-template-rows: auto auto minmax(56px, 1fr) auto; gap: 12px; padding: 12px 14px; }
@@ -919,3 +925,5 @@
 :root[data-design="petal"] .sys-stats .sys-lede { max-width: 40ch; }
 @media (max-width: 639px) { :root[data-design="petal"] .sys-tile__value { font-size: 1.75rem; white-space: nowrap; } }
 :root[data-design="petal"] .sys-welcome__card { max-width: none; }
+
+}

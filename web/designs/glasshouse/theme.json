@@ -1,0 +1,26 @@
+{
+  "id": "glasshouse",
+  "name": "Glasshouse",
+  "author": "lull",
+  "api": 1,
+  "extends": null,
+  "shell": "dock",
+  "swatches": [
+    "#3d4152",
+    "#c9ccd8",
+    "#93b8ce",
+    "#8e3f58"
+  ],
+  "modes": [
+    "day",
+    "night"
+  ],
+  "description": "Frosted silver media windows on a misty midnight desktop.",
+  "preview": true,
+  "slots": [
+    "brand",
+    "emptyArt",
+    "homeLead.playing",
+    "nowHero.full"
+  ]
+}

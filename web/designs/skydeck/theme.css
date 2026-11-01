@@ -8,6 +8,10 @@
    Ornaments live next to this file as readable SVG (sky-day.svg, sky-night.svg, sparkle-*.svg).
    Fonts: base only (Nunito + Jersey 10). Every rule is scoped to :root[data-design="skydeck"]. */
 
+/* The whole file is the `design` cascade layer (ADR-0004); a listener's theme in `user` wins over it. */
+@layer design {
+
+
 /* =====================================================================
    1. Tokens
    ===================================================================== */
@@ -39,9 +43,9 @@
     radial-gradient(26% 16% at 96% 96%, #ffffffa6 0%, #ffffff00 70%),
     radial-gradient(34% 26% at 80% 6%, #fff9fea6 0%, #fff9fe00 70%),
     linear-gradient(180deg, #e4def9 0%, #e6dff9 52%, #eee0f5 74%, #f6e1ee 100%);
-  --sd-moon: url("sky-day.svg");
-  --sd-spark: url("sparkle-pink.svg");
-  --sd-spark-c: url("sparkle-cream.svg");
+  --sd-moon: url("assets/sky-day.svg");
+  --sd-spark: url("assets/sparkle-pink.svg");
+  --sd-spark-c: url("assets/sparkle-cream.svg");
 }
 :root[data-design="skydeck"][data-theme="night"] {
   --sky: #414759; --sky-deep: #2a2f40;
@@ -70,8 +74,8 @@
     radial-gradient(22% 18% at 92% 30%, #535a708c 0%, #535a7000 70%),
     radial-gradient(20% 16% at 44% 40%, #20263a8c 0%, #20263a00 70%),
     linear-gradient(180deg, #2f3446 0%, #393f53 35%, #414759 70%, #4a4a63 100%);
-  --sd-moon: url("sky-night.svg");
-  --sd-spark: url("sparkle-star.svg");
+  --sd-moon: url("assets/sky-night.svg");
+  --sd-spark: url("assets/sparkle-star.svg");
 }
 /* Contrast pairs the script cannot derive (gradients, local tokens):
    sky stops (text sits on the sky):
@@ -144,7 +148,7 @@
 :root.is-hidden[data-design="skydeck"] .sky-specks::after,
 :root.is-hidden[data-design="skydeck"] .tray .sg--down,
 :root.is-hidden[data-design="skydeck"] .sd-empty__cursor,
-:root.is-hidden[data-design="skydeck"] .sd-empty--nosignal .sd-empty__lcd::before { animation-play-state: paused; }   /* loops rest in hidden tabs */
+:root.is-hidden[data-design="skydeck"] .sd-empty:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i]) .sd-empty__lcd::before { animation-play-state: paused; }   /* loops rest in hidden tabs */
 @keyframes sd-twinkle { from { opacity: .6; } to { opacity: 1; } }
 
 /* moon (night) or pearl sun + clouds (day) with a constellation, in the empty top-right of the page;
@@ -501,7 +505,7 @@
 :root[data-design="skydeck"] .toast--ok > .ic { color: #b9e6c9; }
 
 /* =====================================================================
-   9. Empty and error states: a little handheld asking for a cartridge (design.js emptyArt slot)
+   9. Empty and error states: a little handheld asking for a cartridge (slots/emptyArt)
    ===================================================================== */
 :root[data-design="skydeck"] .empty__art:has(.sd-empty) { width: 132px; height: auto; display: grid; place-items: center; }
 :root[data-design="skydeck"] .sd-empty {
@@ -516,6 +520,15 @@
   font: 400 1.125rem/.95 var(--f-px); letter-spacing: .04em; text-transform: uppercase;
   box-shadow: inset 0 0 0 1.5px var(--mocha-edge), inset 0 3px 0 #00000024, var(--sd-lcd-glow);
 }
+/* the LCD line: the first that fits wins (no signal, no songs, press play, then by art); errors drop the cursor */
+:root[data-design="skydeck"] .sd-lcd { display: none; }
+:root[data-design="skydeck"] .sd-empty:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i]) .sd-lcd--fail,
+:root[data-design="skydeck"] .sd-empty:not(:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i])):is([data-title*="drag songs" i], [data-title*="drop to add" i], [data-title*="no songs yet" i]) .sd-lcd--drop,
+:root[data-design="skydeck"] .sd-empty:not(:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i]), :is([data-title*="drag songs" i], [data-title*="drop to add" i], [data-title*="no songs yet" i])):is([data-title*="playing" i], [data-title*="played" i], [data-title*="listening" i], [data-title*="queued" i], [data-title*="instrumental" i]) .sd-lcd--play,
+:root[data-design="skydeck"] .sd-empty:not(:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i]), :is([data-title*="drag songs" i], [data-title*="drop to add" i], [data-title*="no songs yet" i]), :is([data-title*="playing" i], [data-title*="played" i], [data-title*="listening" i], [data-title*="queued" i], [data-title*="instrumental" i]))[data-art="slot"] .sd-lcd--slot,
+:root[data-design="skydeck"] .sd-empty:not(:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i]), :is([data-title*="drag songs" i], [data-title*="drop to add" i], [data-title*="no songs yet" i]), :is([data-title*="playing" i], [data-title*="played" i], [data-title*="listening" i], [data-title*="queued" i], [data-title*="instrumental" i]))[data-art="moon"] .sd-lcd--moon,
+:root[data-design="skydeck"] .sd-empty:not(:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i]), :is([data-title*="drag songs" i], [data-title*="drop to add" i], [data-title*="no songs yet" i]), :is([data-title*="playing" i], [data-title*="played" i], [data-title*="listening" i], [data-title*="queued" i], [data-title*="instrumental" i]), [data-art="slot"], [data-art="moon"]) .sd-lcd--empty { display: inline; }
+:root[data-design="skydeck"] .sd-empty:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i]) .sd-empty__cursor { display: none; }
 :root[data-design="skydeck"] .sd-empty__cursor { display: inline-block; width: .5em; height: 2px; margin-left: 2px; background: currentColor; vertical-align: baseline; animation: sd-blink 1.1s steps(1) infinite; }
 @keyframes sd-blink { 50% { opacity: 0; } }
 :root[data-design="skydeck"] .sd-empty__keys { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 12px 6px 0; }
@@ -528,8 +541,8 @@
 :root[data-design="skydeck"] .sd-empty__ab i { width: 14px; height: 14px; border-radius: 50%; background: var(--mocha); box-shadow: inset 0 1.5px 0 #a48a93; }
 :root[data-design="skydeck"] .sd-empty__ab i + i { background: var(--pink); box-shadow: inset 0 1.5px 0 #f6cee4; }
 /* no signal: analogue static on the LCD, two frames */
-:root[data-design="skydeck"] .sd-empty--nosignal .sd-empty__lcd { color: #f9dcec; }
-:root[data-design="skydeck"] .sd-empty--nosignal .sd-empty__lcd::before {
+:root[data-design="skydeck"] .sd-empty:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i]) .sd-empty__lcd { color: #f9dcec; }
+:root[data-design="skydeck"] .sd-empty:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i]) .sd-empty__lcd::before {
   content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .35;
   background: repeating-linear-gradient(0deg, #fff9fe33 0 1px, transparent 1px 3px), repeating-linear-gradient(90deg, #00000026 0 2px, transparent 2px 5px);
   animation: sd-static .24s steps(2) infinite;
@@ -698,7 +711,7 @@
 :root[data-design="skydeck"] .app:has(.pbar[data-status="failed"]) .now-dev .wave__rail { visibility: hidden; }
 :root[data-design="skydeck"] .app:has(.pbar[data-status="failed"]) .now-dev .wave__bar { height: 1px !important; min-height: 0; background: var(--lavender); }   /* bar heights are inline */
 
-/* the cartridge seated in the top slot (design.js nowHero): grey-lilac plastic, grip ridges, notch, cream label with
+/* the cartridge seated in the top slot (slots/nowHero): grey-lilac plastic, grip ridges, notch, cream label with
    the live cover + title; it lifts and reseats on track change */
 :root[data-design="skydeck"] .now { isolation: isolate; max-width: 1320px; }
 :root[data-design="skydeck"] .now__dev { position: relative; padding-top: 50px; }
@@ -843,3 +856,5 @@
 :root[data-design="skydeck"] .cls-drawer > .win__bar { background: var(--sd-band); border-bottom: var(--stroke) solid var(--line); box-shadow: inset 0 1.5px 0 #ffffff55; }
 :root[data-design="skydeck"] .cls-drawer .win__title { background: none; border: 0; color: var(--sd-band-ink); font: italic 900 1.125rem/1 var(--f-ui); }
 :root[data-design="skydeck"] .cls-drawer .cls-drawer__close { color: var(--sd-band-ink); }
+
+}

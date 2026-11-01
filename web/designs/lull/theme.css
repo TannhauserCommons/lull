@@ -1,11 +1,15 @@
 /* lull: a Y2K pastel desktop. Every view is a titled window with a
    glossy title bar and three orbs, framed by mocha trays top and bottom. Gloss only on things you press.
    Day is home; night is a lavender-indigo Y2K night with the same windows.
-   Layer over the base (tokens.css, base.css, components.css, screens). API: DESIGN.md section 3. */
+   Layer over the base (tokens.css, base.css, components.css, screens). API: docs/themes.md. */
+
+/* The whole file is the `design` cascade layer (ADR-0004); a listener's theme in `user` wins over it. */
+@layer design {
+
 
 @font-face {
   font-family: "Audiowide"; font-style: normal; font-weight: 400; font-display: swap;
-  src: url("fonts/audiowide-latin.woff2") format("woff2");
+  src: url("assets/fonts/audiowide-latin.woff2") format("woff2");
 }
 
 /* =====================================================================
@@ -556,6 +560,8 @@
 :root[data-design="lull"] .chip-more { height: 24px; border-color: color-mix(in srgb, var(--pink) 60%, transparent); background: var(--reason-bg); color: var(--reason-fg); font-weight: 900; }
 :root[data-design="lull"] .pill-filter { min-height: 30px; padding: 0 13px; border: var(--stroke) solid var(--l-rule); background: var(--l-card); color: var(--link); font: 800 .8125rem/1 var(--f-ui); }
 :root[data-design="lull"] .pill-filter:hover { background: var(--l-card-2); border-color: var(--l-edge); }
+/* the current Library segment keeps the screens' selected pill (that rule out-ranked the one above before cascade layers) */
+:root[data-design="lull"] .lib-segs a.pill-filter[aria-current="page"] { background: var(--peri); color: var(--ink); border-color: var(--line); }
 :root[data-design="lull"] .pill-filter[aria-pressed="true"] .lib-count { color: #fff; font-weight: 800; }
 :root[data-design="lull"] .badge { height: 21px; padding: 0 8px 0 5px; font: 800 .71875rem/1 var(--f-ui); border-width: var(--stroke); }
 :root[data-design="lull"] .badge .ic { width: 13px; height: 13px; stroke-width: 2.4; }
@@ -678,19 +684,19 @@
 :root[data-design="lull"] .c8::before { inset: 0; height: auto; background: radial-gradient(70% 70% at 70% 30%, rgba(255, 249, 254, .55), transparent 70%); }
 :root[data-design="lull"] .c5 { --cv: #fce8f3; background-image: linear-gradient(90deg, rgba(221, 159, 201, .2) 1px, transparent 1px), linear-gradient(0deg, rgba(221, 159, 201, .2) 1px, transparent 1px); background-size: 12.5% 12.5%; background-color: #fce8f3; }
 :root[data-design="lull"] .c5::before { background: #d98cc0; }
-/* alternates (coverArt slot, half the c1 / c6 / c5 albums): a CD with a rainbow sheen (img 03), a cassette, a
+/* alternates (coverVariety data-look, half the c1 / c6 / c5 albums): a CD with a rainbow sheen (img 03), a cassette, a
    checker sticker, so neighbouring covers stop repeating */
-:root[data-design="lull"] .c1.lull-alt { --cv: radial-gradient(circle, #f7f4ff 0 7%, #7772b4 7.5% 9%, transparent 9.5%), radial-gradient(circle, transparent 0 40%, #7772b4 40.5% 41.5%, #e4def9 42%), conic-gradient(from 20deg, #fce8f3, #b6c7f5, #d6f0ea, #fdf1c7, #f6cee4, #cfc7ee, #fce8f3); }
-:root[data-design="lull"] .c6.lull-alt { --cv: radial-gradient(circle at 32% 54%, #fff9fe 0 5%, #856e74 5.5% 9%, #f2e3d1 9.5% 15%, transparent 15.5%), radial-gradient(circle at 68% 54%, #fff9fe 0 5%, #856e74 5.5% 9%, #f2e3d1 9.5% 15%, transparent 15.5%), linear-gradient(transparent 36%, #66535a 36% 72%, transparent 72%) 50% 0 / 62% 100% no-repeat, linear-gradient(#b6c7f5 0 20%, #f2e3d1 20% 80%, #856e74 80%); }
-:root[data-design="lull"] .c6.lull-alt::before { display: none; }
-:root[data-design="lull"] .c5.lull-alt { --cv: conic-gradient(#fce8f3 25%, #fbd9ec 0 50%, #fce8f3 0 75%, #fbd9ec 0) 0 0 / 25% 25%, #fce8f3; background: var(--cv); }
-:root[data-design="lull"] .c5.lull-alt::before { background: #c66fa8; transform: rotate(-8deg); filter: drop-shadow(1.5px 0 0 #fff) drop-shadow(-1.5px 0 0 #fff) drop-shadow(0 1.5px 0 #fff) drop-shadow(0 -1.5px 0 #fff); }
+:root[data-design="lull"] .c1:is([data-look="1"], [data-look="3"], [data-look="5"]) { --cv: radial-gradient(circle, #f7f4ff 0 7%, #7772b4 7.5% 9%, transparent 9.5%), radial-gradient(circle, transparent 0 40%, #7772b4 40.5% 41.5%, #e4def9 42%), conic-gradient(from 20deg, #fce8f3, #b6c7f5, #d6f0ea, #fdf1c7, #f6cee4, #cfc7ee, #fce8f3); }
+:root[data-design="lull"] .c6:is([data-look="1"], [data-look="4"]) { --cv: radial-gradient(circle at 32% 54%, #fff9fe 0 5%, #856e74 5.5% 9%, #f2e3d1 9.5% 15%, transparent 15.5%), radial-gradient(circle at 68% 54%, #fff9fe 0 5%, #856e74 5.5% 9%, #f2e3d1 9.5% 15%, transparent 15.5%), linear-gradient(transparent 36%, #66535a 36% 72%, transparent 72%) 50% 0 / 62% 100% no-repeat, linear-gradient(#b6c7f5 0 20%, #f2e3d1 20% 80%, #856e74 80%); }
+:root[data-design="lull"] .c6:is([data-look="1"], [data-look="4"])::before { display: none; }
+:root[data-design="lull"] .c5:is([data-look="1"], [data-look="3"], [data-look="5"]) { --cv: conic-gradient(#fce8f3 25%, #fbd9ec 0 50%, #fce8f3 0 75%, #fbd9ec 0) 0 0 / 25% 25%, #fce8f3; background: var(--cv); }
+:root[data-design="lull"] .c5:is([data-look="1"], [data-look="3"], [data-look="5"])::before { background: #c66fa8; transform: rotate(-8deg); filter: drop-shadow(1.5px 0 0 #fff) drop-shadow(-1.5px 0 0 #fff) drop-shadow(0 1.5px 0 #fff) drop-shadow(0 -1.5px 0 #fff); }
 /* stripes at pink dusk with a low sun; night with a crescent over a lavender horizon; night with a full moon */
-:root[data-design="lull"] .c6.lull-alt2 { --cv: radial-gradient(circle at 62% 62%, #fff4d6 0 13%, transparent 13.5%), repeating-linear-gradient(180deg, #f6cee4 0 9%, #fbe2ef 9% 12%), #f6cee4; }
-:root[data-design="lull"] .c6.lull-alt2::before { background: #c9a3dd; opacity: .9; }
-:root[data-design="lull"] .c4.lull-alt { --cv: radial-gradient(circle at 71% 27%, #262863 0 11%, transparent 11.5%), radial-gradient(circle at 65% 31%, #fff4d6 0 12%, transparent 12.5%), radial-gradient(120% 60% at 50% 115%, #b6a6ee 0 40%, transparent 41%), linear-gradient(180deg, #1f2150, #3c3a86 70%, #6e5ec8); }
-:root[data-design="lull"] .c4.lull-alt2 { --cv: radial-gradient(circle at 34% 38%, #fff9fe 0 11%, rgba(255, 249, 254, .25) 12% 17%, transparent 18%), linear-gradient(200deg, #2b3b80, #1d1f45 60%, #4a3c8c); }
-:root[data-design="lull"] .c4.lull-alt2::after { left: auto; right: 16%; top: 58%; width: 14%; }
+:root[data-design="lull"] .c6:is([data-look="2"], [data-look="5"]) { --cv: radial-gradient(circle at 62% 62%, #fff4d6 0 13%, transparent 13.5%), repeating-linear-gradient(180deg, #f6cee4 0 9%, #fbe2ef 9% 12%), #f6cee4; }
+:root[data-design="lull"] .c6:is([data-look="2"], [data-look="5"])::before { background: #c9a3dd; opacity: .9; }
+:root[data-design="lull"] .c4:is([data-look="1"], [data-look="4"]) { --cv: radial-gradient(circle at 71% 27%, #262863 0 11%, transparent 11.5%), radial-gradient(circle at 65% 31%, #fff4d6 0 12%, transparent 12.5%), radial-gradient(120% 60% at 50% 115%, #b6a6ee 0 40%, transparent 41%), linear-gradient(180deg, #1f2150, #3c3a86 70%, #6e5ec8); }
+:root[data-design="lull"] .c4:is([data-look="2"], [data-look="5"]) { --cv: radial-gradient(circle at 34% 38%, #fff9fe 0 11%, rgba(255, 249, 254, .25) 12% 17%, transparent 18%), linear-gradient(200deg, #2b3b80, #1d1f45 60%, #4a3c8c); }
+:root[data-design="lull"] .c4:is([data-look="2"], [data-look="5"])::after { left: auto; right: 16%; top: 58%; width: 14%; }
 
 /* =====================================================================
    Track rows, lists
@@ -859,6 +865,10 @@
 :root[data-design="lull"] .lull-empty .lull-empty__shell { fill: var(--l-tile); stroke: var(--l-edge); stroke-width: 1.5; }
 :root[data-design="lull"] .lull-empty .lull-empty__screen { fill: var(--screen); stroke: none; }
 :root[data-design="lull"] .lull-empty .lull-empty__glyph { stroke: #fff9fe; stroke-width: 1.8; stroke-dasharray: 3.2 2.6; fill: none; }
+:root[data-design="lull"] .lull-empty:not([data-art="moon"]) .lull-empty__glyph--moon,
+:root[data-design="lull"] .lull-empty:not([data-art="slot"]) .lull-empty__glyph--slot,
+:root[data-design="lull"] .lull-empty:not([data-art="star"]) .lull-empty__glyph--star,
+:root[data-design="lull"] .lull-empty:not([data-art="wave"]) .lull-empty__glyph--wave { display: none; }
 :root[data-design="lull"] .lull-empty .lull-empty__key { fill: var(--l-card); stroke: var(--l-edge); stroke-width: 1.2; }
 :root[data-design="lull"] .lull-empty .lull-empty__play { fill: var(--l-ribbon); stroke: var(--l-gloss-edge); stroke-width: 1.2; }
 :root[data-design="lull"] .lull-empty .lull-empty__grill { fill: var(--l-edge); stroke: none; }
@@ -1106,6 +1116,7 @@
 }
 /* this week: two numbers, a 24-bar listening sparkline (peak hour in pink), a Stats pill */
 :root[data-design="lull"] .lull-desk__week { transform: rotate(-1deg); }
+:root[data-design="lull"] .lull-desk__week[data-week="false"], :root[data-design="lull"] .lull-desk__meta small:empty { display: none; }
 :root[data-design="lull"] .lull-desk__nums { display: grid; gap: 2px; margin: 10px 14px 8px; }
 :root[data-design="lull"] .lull-desk__nums b { font: 900 1.375rem/1.1 var(--f-ui); color: var(--fg-panel); }
 :root[data-design="lull"] .lull-desk__nums span { font: 700 .8125rem/1.3 var(--f-ui); color: var(--fg-panel-2); }
@@ -1751,4 +1762,6 @@
   /* design picker: two cards per row */
   :root[data-design="lull"] .sys-designs { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 10px; }
   :root[data-design="lull"] .view::after { margin: 0 -14px -20px; height: 20px; bottom: -24px; }
+}
+
 }

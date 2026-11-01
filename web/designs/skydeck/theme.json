@@ -1,0 +1,24 @@
+{
+  "id": "skydeck",
+  "name": "Skydeck",
+  "author": "lull",
+  "api": 1,
+  "extends": null,
+  "shell": "rail",
+  "swatches": [
+    "#414759",
+    "#f2e3d1",
+    "#b6c7f5",
+    "#856e74"
+  ],
+  "modes": [
+    "day",
+    "night"
+  ],
+  "description": "A pocket handheld under a moonlit dusk sky, with cream trays.",
+  "preview": true,
+  "slots": [
+    "emptyArt",
+    "nowHero.full"
+  ]
+}

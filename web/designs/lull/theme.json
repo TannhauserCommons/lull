@@ -1,0 +1,28 @@
+{
+  "id": "lull",
+  "name": "Lull",
+  "author": "lull",
+  "api": 1,
+  "extends": null,
+  "shell": "topnav",
+  "swatches": [
+    "#e4def9",
+    "#f7f4ff",
+    "#5544aa",
+    "#2b2650"
+  ],
+  "modes": [
+    "day",
+    "night"
+  ],
+  "description": "Glossy lavender windows, pill navigation and orb title bars.",
+  "preview": true,
+  "slots": [
+    "brand",
+    "emptyArt",
+    "homeLead.idle",
+    "homeLead.playing",
+    "nowHero.full"
+  ],
+  "coverVariety": true
+}

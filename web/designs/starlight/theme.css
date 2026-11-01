@@ -8,10 +8,14 @@
    Art lives in art/*.svg (hand-editable SVG: sky paper, star fields, sparkles, eight cover scenes).
    !important appears only where the base sets the value inline (sky sparkle positions, --cover-size). */
 
-@font-face { font-family: "Jost"; font-style: normal; font-weight: 300 800; font-display: swap; src: url("fonts/jost-latin.woff2") format("woff2"); }
-@font-face { font-family: "Jost"; font-style: italic; font-weight: 300 800; font-display: swap; src: url("fonts/jost-italic-latin.woff2") format("woff2"); }
-@font-face { font-family: "DM Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url("fonts/dmmono-400-latin.woff2") format("woff2"); }
-@font-face { font-family: "DM Mono"; font-style: normal; font-weight: 500; font-display: swap; src: url("fonts/dmmono-500-latin.woff2") format("woff2"); }
+/* The whole file is the `design` cascade layer (ADR-0004); a listener's theme in `user` wins over it. */
+@layer design {
+
+
+@font-face { font-family: "Jost"; font-style: normal; font-weight: 300 800; font-display: swap; src: url("assets/fonts/jost-latin.woff2") format("woff2"); }
+@font-face { font-family: "Jost"; font-style: italic; font-weight: 300 800; font-display: swap; src: url("assets/fonts/jost-italic-latin.woff2") format("woff2"); }
+@font-face { font-family: "DM Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url("assets/fonts/dmmono-400-latin.woff2") format("woff2"); }
+@font-face { font-family: "DM Mono"; font-style: normal; font-weight: 500; font-display: swap; src: url("assets/fonts/dmmono-500-latin.woff2") format("woff2"); }
 
 /* animatable lengths: the scroll fade of the rail and the queue, the hero stack dealing in */
 @property --sl-fade { syntax: "<length>"; inherits: false; initial-value: 0px; }
@@ -64,9 +68,9 @@
   --sl-sleeves: 7px 7px 0 -1.5px var(--stack-1), 7px 7px 0 0 var(--sl-frame), 14px 14px 0 -1.5px var(--stack-2), 14px 14px 0 0 var(--sl-frame);
 
   /* art */
-  --sl-paper: url("art/paper-dawn.svg");
-  --sl-stars: url("art/stars-dawn.svg");
-  --sl-spark-img: url("art/spark-dawn.svg");
+  --sl-paper: url("assets/art/paper-dawn.svg");
+  --sl-stars: url("assets/art/stars-dawn.svg");
+  --sl-spark-img: url("assets/art/spark-dawn.svg");
   --sl-streak: #f6cee4;
 
   /* dawn theme: lavender sky that warms to a peach horizon */
@@ -91,9 +95,9 @@
   color-scheme: light;
 }
 :root[data-design="starlight"][data-theme="night"] {
-  --sl-paper: url("art/paper-night.svg");
-  --sl-stars: url("art/stars-night.svg");
-  --sl-spark-img: url("art/spark-night.svg");
+  --sl-paper: url("assets/art/paper-night.svg");
+  --sl-stars: url("assets/art/stars-night.svg");
+  --sl-spark-img: url("assets/art/spark-night.svg");
   --sl-streak: #fff9fe;
   --sky: #414759; --sky-deep: #2a2f40;
   --panel: #2a2f40; --panel-2: #353b50;
@@ -316,7 +320,7 @@
 
 /* =====================================================================
    Covers: eight watercolour scenes (art/c1-c8.svg) drawn on ::before, a paper grain and a light inner frame line on
-   ::after. design.js seeds a variant per cover key (mirror, hue shift, crop), so albums sharing a scene still differ.
+   ::after. coverVariety seeds a variant per cover key (--cover-flip, --cover-hue, --cover-zoom, --cover-dx, --cover-dy), so albums sharing a scene still differ.
    ===================================================================== */
 :root[data-design="starlight"] .cover { border: var(--stroke) solid var(--sl-frame); border-radius: var(--r-art); background: #8fa6d6; }
 :root[data-design="starlight"] .cover::before, :root[data-design="starlight"] .cover::after {
@@ -324,20 +328,20 @@
 }
 :root[data-design="starlight"] .cover::before {
   background: var(--sl-scene) center / cover no-repeat;
-  transform: scaleX(var(--sl-flip, 1)) translate(var(--sl-dx, 0), var(--sl-dy, 0)) scale(var(--sl-zoom, 1));
-  filter: hue-rotate(var(--sl-hue, 0deg));
+  transform: scaleX(var(--cover-flip, 1)) translate(var(--cover-dx, 0), var(--cover-dy, 0)) scale(var(--cover-zoom, 1));
+  filter: hue-rotate(var(--cover-hue, 0deg));
 }
 :root[data-design="starlight"] .cover::after {
-  background: url("art/grain.svg") 0 0 / 160px 160px; border-radius: inherit; box-shadow: inset 0 0 0 1px rgba(255, 250, 246, .45);
+  background: url("assets/art/grain.svg") 0 0 / 160px 160px; border-radius: inherit; box-shadow: inset 0 0 0 1px rgba(255, 250, 246, .45);
 }
-:root[data-design="starlight"] .c1 { --sl-scene: url("art/c1.svg"); }
-:root[data-design="starlight"] .c2 { --sl-scene: url("art/c2.svg"); }
-:root[data-design="starlight"] .c3 { --sl-scene: url("art/c3.svg"); }
-:root[data-design="starlight"] .c4 { --sl-scene: url("art/c4.svg"); }
-:root[data-design="starlight"] .c5 { --sl-scene: url("art/c5.svg"); }
-:root[data-design="starlight"] .c6 { --sl-scene: url("art/c6.svg"); }
-:root[data-design="starlight"] .c7 { --sl-scene: url("art/c7.svg"); }
-:root[data-design="starlight"] .c8 { --sl-scene: url("art/c8.svg"); }
+:root[data-design="starlight"] .c1 { --sl-scene: url("assets/art/c1.svg"); }
+:root[data-design="starlight"] .c2 { --sl-scene: url("assets/art/c2.svg"); }
+:root[data-design="starlight"] .c3 { --sl-scene: url("assets/art/c3.svg"); }
+:root[data-design="starlight"] .c4 { --sl-scene: url("assets/art/c4.svg"); }
+:root[data-design="starlight"] .c5 { --sl-scene: url("assets/art/c5.svg"); }
+:root[data-design="starlight"] .c6 { --sl-scene: url("assets/art/c6.svg"); }
+:root[data-design="starlight"] .c7 { --sl-scene: url("assets/art/c7.svg"); }
+:root[data-design="starlight"] .c8 { --sl-scene: url("assets/art/c8.svg"); }
 :root[data-design="starlight"] .mosaic { border: var(--stroke) solid var(--sl-frame); border-radius: var(--r-thumb); }
 :root[data-design="starlight"] .mosaic .cover { border: 0; border-radius: 0; }
 :root[data-design="starlight"] .mosaic .cover::after { box-shadow: none; }
@@ -443,7 +447,7 @@
   :root[data-design="starlight"] .rail__foot .kbd { font-size: .75rem; }
 }
 
-/* wordmark: sparkle + "LULL" baked from Poiret One caps, a small second sparkle above the last L (design.js) */
+/* wordmark: sparkle + "LULL" baked from Poiret One caps, a small second sparkle above the last L (slots/brand.html) */
 :root[data-design="starlight"] .sl-mark { display: inline-flex; align-items: center; gap: .5em; padding: 0 .3em 0 0; font-size: 1.75rem; color: var(--fg-sky); }
 :root[data-design="starlight"] .sl-mark svg { display: block; fill: currentColor; overflow: visible; }
 :root[data-design="starlight"] .sl-mark__spark { width: .7em; height: .7em; fill: var(--sparkle); }
@@ -522,7 +526,7 @@
 :root[data-design="starlight"] .app:has(#view .sl-hero) .pbar__state { display: none; }
 
 /* =====================================================================
-   Now Playing hero (design.js nowHero): the top card of img 01
+   Now Playing hero (slots/nowHero): the top card of img 01
    ===================================================================== */
 :root[data-design="starlight"] .sl-hero {
   position: relative; max-width: none; width: 100%;
@@ -689,19 +693,19 @@
 :root[data-design="starlight"] .disc-home > .disc-hello h1 .sparkle { display: none; }
 :root[data-design="starlight"] .disc-home > .disc-hello .disc-hello__sum { grid-row: 2; margin: 4px 0 22px; font: 400 1rem/1.45 var(--f-ui); color: var(--fg-sky-2); }
 :root[data-design="starlight"] .disc-home:has(> .disc-lead) > .disc-hello > h1 { grid-column: 1; }
-/* your queue as a constellation (design.js homeLead): beside the greeting on the sky, decorative (the queue panel
+/* your queue as a constellation (slots/homeLead): beside the greeting on the sky, decorative (the queue panel
    lists the same songs); the dashed line matches the constellation cover, the playing song is the 4-point sparkle */
 :root[data-design="starlight"] .disc-home > .disc-lead { grid-column: 2; grid-row: 1; align-self: center; height: 34px; margin: 0 8px -12px 0; }
 :root[data-design="starlight"] .sl-sky { display: flex; align-items: center; gap: 18px; height: 100%; }
 :root[data-design="starlight"] .sl-sky__map { position: relative; flex: 1; align-self: stretch; }
-:root[data-design="starlight"] .sl-sky__line { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-:root[data-design="starlight"] .sl-sky__line polyline { fill: none; stroke: var(--fg-sky-2); stroke-width: 1.25; stroke-dasharray: 3 5; stroke-linecap: round; opacity: .8; }
-:root[data-design="starlight"] .sl-sky__star {
+:root[data-design="starlight"] .sky-line { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+:root[data-design="starlight"] .sky-line polyline { fill: none; stroke: var(--fg-sky-2); stroke-width: 1.25; stroke-dasharray: 3 5; stroke-linecap: round; opacity: .8; }
+:root[data-design="starlight"] .sky-star {
   position: absolute; width: 7px; height: 7px; margin: -3.5px; border-radius: 50%; background: var(--sparkle);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--sparkle) 22%, transparent);
   animation: sl-twinkle 2.6s var(--ease-in-out) calc(var(--i) * -.45s) infinite alternate;
 }
-:root[data-design="starlight"] .sl-sky__star--now { width: 30px; height: 30px; margin: -15px; border-radius: 0; box-shadow: none; animation: none; background: var(--sl-spark-img) center / contain no-repeat; }
+:root[data-design="starlight"] .sky-star--now { width: 30px; height: 30px; margin: -15px; border-radius: 0; box-shadow: none; animation: none; background: var(--sl-spark-img) center / contain no-repeat; }
 @keyframes sl-twinkle { from { opacity: .55; transform: scale(.8); } to { opacity: 1; transform: none; } }
 :root[data-design="starlight"] .sl-sky__label { flex: none; display: flex; align-items: center; gap: 10px; font: 400 .9375rem/1 var(--f-ui); color: var(--fg-sky-2); }
 /* the release card: the first album is the feature (giant caps title, caps artist; play ring, Save and Radio on one row
@@ -875,8 +879,16 @@
 :root[data-design="starlight"] .banner { font: 500 .9375rem/1.35 var(--f-ui); border-width: var(--stroke); border-radius: 18px; }
 :root[data-design="starlight"] .tooltip { font: 500 .8125rem/1.3 var(--f-ui); }
 :root[data-design="starlight"] .empty__title { font: 500 1.125rem/1.25 var(--f-ui); }
-/* empty states: a small dotted constellation (design.js emptyArt) */
+/* empty states: a small dotted constellation (slots/emptyArt) */
 :root[data-design="starlight"] .empty__art .sl-empty { stroke: none; }
+/* one constellation per empty state: a heart when the title is about liked songs, else the one for its art */
+:root[data-design="starlight"] .sl-empty { display: none; }
+:root[data-design="starlight"] .sl-empty--heart[data-title*="liked" i],
+:root[data-design="starlight"] .sl-empty--moon:not([data-title*="liked" i], [data-art="slot"], [data-art="wave"], [data-art="star"]),
+:root[data-design="starlight"] .sl-empty--slot[data-art="slot"]:not([data-title*="liked" i]),
+:root[data-design="starlight"] .sl-empty--wave[data-art="wave"]:not([data-title*="liked" i]),
+:root[data-design="starlight"] .sl-empty--star[data-art="star"]:not([data-title*="liked" i]) { display: block; }
+:root[data-design="starlight"] .sl-hero__facts[data-track=""] { display: none; }
 :root[data-design="starlight"] .sl-empty__line { fill: none; stroke: var(--sl-rule); stroke-width: 1.4; stroke-dasharray: 2.5 3.5; }
 :root[data-design="starlight"] .sl-empty__stars { fill: var(--sl-icon); }
 :root[data-design="starlight"] .sl-empty__spark { fill: var(--sl-accent); }
@@ -913,7 +925,7 @@
 :root[data-design="starlight"] :is(.cls-notice, .cls-exit) { box-shadow: var(--sl-layer); margin-bottom: 5px; }
 
 /* =====================================================================
-   Desktop pages: first-run connect fields are cream wells; the mini player (design.js miniPlayer) and the strip
+   Desktop pages: first-run connect fields are cream wells; the mini player (slots/miniPlayer) and the strip
    ===================================================================== */
 :root[data-design="starlight"] .dk-form .input { background: var(--cream-2); color: var(--ink); border-color: var(--line); }
 :root[data-design="starlight"] .dk-form .input::placeholder { color: var(--ink-2); }
@@ -1038,4 +1050,6 @@
     border-radius: 0 0 var(--r-card) var(--r-card); box-shadow: var(--stack-sm); margin-bottom: 12px;
   }
   :root[data-design="starlight"] .now-srccard { border-top: var(--stroke) solid var(--line); border-radius: var(--r-card); padding: 16px; }
+}
+
 }

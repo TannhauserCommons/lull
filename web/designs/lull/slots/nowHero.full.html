@@ -1,0 +1,21 @@
+<!-- "lull pocket": a glossy media-player window built from the default device's own live parts (screen, LED, A/B keys,
+     prev/next keys, pills), so every data-now / data-act hook keeps working. The D-pad's volume keys stay with the mini
+     player (the dock has the volume). The compact variant is the default device. -->
+<div class="lull-np" role="group" aria-label="Player">
+  <div class="lull-win__bar lull-np__bar"><span aria-hidden="true">now playing</span><lull-part name="device" pick=".device__led"></lull-part></div>
+  <div class="lull-np__shell">
+    <div class="lull-np__screen device__screen s-screen">
+      <span class="lull-np__art" data-now="c-art"><lull-part name="cover" size="100%"></lull-part></span>
+      <lull-part name="device" pick=".device__page-head"></lull-part><lull-part name="device" pick='[data-now="screen"]'></lull-part><lull-part name="device" pick='[data-now="osd"]'></lull-part>
+    </div>
+    <div class="lull-np__foot">
+      <span class="lull-np__mark" aria-hidden="true">{{product}} <em>pocket</em></span>
+      <!-- phone: the title bar's status pill moves here -->
+      <span class="lull-np__state"><lull-part name="device" pick=".device__led"></lull-part></span>
+      <span class="lull-np__grill" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+    </div>
+    <div class="lull-np__deck"><lull-part name="device" pick=".device__pill--shuffle"></lull-part><span class="lull-np__transport"><lull-part name="device" pick=".dpad__btn--left"></lull-part><lull-part name="device" pick=".device__key--a"></lull-part><lull-part name="device" pick=".dpad__btn--right"></lull-part></span><lull-part name="device" pick=".device__pill--repeat"></lull-part></div>
+  </div>
+  <!-- the like orb sits beside the big title under the pocket, placed there by theme.css -->
+  <span class="lull-np__like"><lull-part name="device" pick=".device__key--b"></lull-part></span>
+</div>
