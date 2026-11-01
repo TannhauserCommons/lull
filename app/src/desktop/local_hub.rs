@@ -25,6 +25,11 @@ pub const PORT: u16 = 8484;
 /// How long the hub may take from start to answering.
 const START_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// How often the app reads the hub's `/health` for a wedged slskd, and how often at most it
+/// restarts slskd for that (as the hub itself would with a web login, docs/context/soulseek.md).
+const WEDGE_CHECK: Duration = Duration::from_secs(60);
+const WEDGE_RESTART_EVERY: Duration = Duration::from_secs(30 * 60);
+
 pub struct LocalHub {
     pub origin: Url,
     pub token: String,
@@ -95,6 +100,7 @@ pub fn start(app: &AppHandle) -> Result<LocalHub, String> {
 
     let origin = Url::parse(&format!("http://127.0.0.1:{PORT}")).map_err(|e| e.to_string())?;
     follow_restarts(origin.clone(), token.clone(), db, watch_env, sidecar.clone());
+    restart_when_wedged(origin.clone(), sidecar.clone());
     let advert = discovery::advertise(&hub::device_name(), PORT)
         .map_err(|e| tracing::warn!("no mDNS on this network: {e}"))
         .ok();
@@ -258,6 +264,35 @@ fn follow_restarts(origin: Url, token: String, db: Db, env: BTreeMap<String, Str
     };
     if let Err(e) = std::thread::Builder::new().name("hub-events".into()).spawn(watch) {
         tracing::warn!("slskd won't follow setting changes until lull restarts: {e}");
+    }
+}
+
+/// The hub tells a wedged slskd that fresh logins didn't cure by `/health`
+/// `services.soulseek.extra.restartSlskd`. The bundled slskd is headless and refuses the web login
+/// the hub would restart it with, so the app restarts the process, at most once per 30 minutes.
+fn restart_when_wedged(origin: Url, sidecar: Sidecar) {
+    let watch = move || {
+        let mut restarted: Option<Instant> = None;
+        loop {
+            std::thread::sleep(WEDGE_CHECK);
+            let wedged = match hub::health(&origin) {
+                Ok(health) => health
+                    .services
+                    .get("soulseek")
+                    .is_some_and(|s| s.extra["restartSlskd"] == true),
+                Err(e) => {
+                    tracing::debug!("hub health: {e}");
+                    false
+                }
+            };
+            if wedged && restarted.is_none_or(|at| at.elapsed() >= WEDGE_RESTART_EVERY) {
+                restarted = Some(Instant::now());
+                sidecar.restart();
+            }
+        }
+    };
+    if let Err(e) = std::thread::Builder::new().name("slskd-wedge".into()).spawn(watch) {
+        tracing::warn!("a wedged slskd needs restarting lull: {e}");
     }
 }
 

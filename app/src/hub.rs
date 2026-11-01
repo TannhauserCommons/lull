@@ -73,6 +73,9 @@ pub struct Health {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Service {
     pub state: String,
+    /// The service's own details (api.md); the desktop app reads `soulseek.extra.restartSlskd`.
+    #[serde(default)]
+    pub extra: serde_json::Value,
 }
 
 pub fn health(origin: &Url) -> Result<Health, String> {

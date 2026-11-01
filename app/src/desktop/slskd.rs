@@ -1,18 +1,26 @@
 //! The bundled slskd (ADR-0006, ADR-0010): a pinned release binary next to the app's own, which
-//! `build.rs` fetched. The app owns its lifecycle, folders, port and API key, and restarts it when
-//! what it shares changes. The hub writes the Soulseek account into its `slskd.yml`
+//! `build.rs` fetched. The app owns its lifecycle, folders, port and API key. It restarts slskd when
+//! what it shares changes, when it exits by itself (with backoff), and when the hub says it's
+//! wedged (`restartSlskd`: headless slskd refuses the web login the hub would restart it with). The hub writes the Soulseek account into its `slskd.yml`
 //! (`LULL_SLSKD_CONFIG_FILE`, docs/context/soulseek.md). slskd's web UI stays off: lull is the UI.
 //!
 //! slskd reads, lowest first: env, `slskd.yml`, the command line. Fixed things go on the command
 //! line, secrets in env (not in the process list).
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// How often the supervisor looks whether slskd is still running.
 const WATCH: Duration = Duration::from_secs(5);
+
+/// The wait before starting slskd again after it stopped by itself; doubles while it keeps stopping.
+const RETRY_FIRST: Duration = Duration::from_secs(5);
+const RETRY_MAX: Duration = Duration::from_secs(5 * 60);
+
+/// slskd that ran this long before stopping counts as a fresh failure: the wait starts over.
+const RAN_FINE: Duration = Duration::from_secs(10 * 60);
 
 /// What slskd runs with for the whole life of the app's hub. The hub was started with this port and
 /// key, so a restarted slskd keeps them.
@@ -48,6 +56,7 @@ impl Fixed {
 
 enum Order {
     Apply(Launch),
+    Restart,
     Stop(mpsc::Sender<()>),
 }
 
@@ -76,6 +85,11 @@ impl Sidecar {
         let _ = self.tx.send(Order::Apply(launch));
     }
 
+    /// Restarts slskd whatever it runs with: the hub found it wedged.
+    pub fn restart(&self) {
+        let _ = self.tx.send(Order::Restart);
+    }
+
     /// Stops slskd and waits until it has exited.
     pub fn stop(&self) {
         let (done, wait) = mpsc::channel();
@@ -91,10 +105,10 @@ fn supervise(
     rx: &mpsc::Receiver<Order>,
     started: &mpsc::Sender<Result<(), String>>,
 ) {
-    let mut child = match spawn(fixed, &launch) {
+    let mut slskd = match spawn(fixed, &launch) {
         Ok(child) => {
             let _ = started.send(Ok(()));
-            Some(child)
+            Process::running(child)
         }
         Err(e) => {
             let _ = started.send(Err(e));
@@ -103,35 +117,100 @@ fn supervise(
     };
     loop {
         match rx.recv_timeout(WATCH) {
-            Err(mpsc::RecvTimeoutError::Timeout) => report_exit(&mut child, &fixed.app_dir),
+            Err(mpsc::RecvTimeoutError::Timeout) => slskd.watch(fixed, &launch),
             Ok(Order::Apply(next)) if next != launch => {
-                kill(&mut child);
                 tracing::info!(?next, "restarting slskd with new settings");
                 launch = next;
-                child = spawn(fixed, &launch)
-                    .map_err(|e| tracing::error!("slskd didn't restart: {e}"))
-                    .ok();
+                slskd.restart(fixed, &launch);
             }
             Ok(Order::Apply(_)) => {}
+            Ok(Order::Restart) => {
+                tracing::warn!("the hub found slskd wedged; restarting it");
+                slskd.restart(fixed, &launch);
+            }
             Ok(Order::Stop(done)) => {
-                kill(&mut child);
+                slskd.kill();
                 let _ = done.send(());
                 return;
             }
-            Err(mpsc::RecvTimeoutError::Disconnected) => return kill(&mut child),
+            Err(mpsc::RecvTimeoutError::Disconnected) => return slskd.kill(),
         }
     }
 }
 
-/// slskd stopping by itself is logged once, with where its own log is. lull's Soulseek status
-/// already shows it down; the next settings change or launch starts it again.
-fn report_exit(child: &mut Option<Child>, app_dir: &Path) {
-    let Some(c) = child else { return };
-    if let Ok(Some(status)) = c.try_wait() {
-        let logs = app_dir.join("logs");
-        tracing::error!(%status, logs = %logs.display(), "slskd stopped by itself");
-        *child = None;
+/// The slskd process, or when to try starting it again.
+struct Process {
+    child: Option<Child>,
+    started: Instant,
+    retry_at: Option<Instant>,
+    /// The wait after its next stop.
+    wait: Duration,
+}
+
+impl Process {
+    fn running(child: Child) -> Self {
+        Process {
+            child: Some(child),
+            started: Instant::now(),
+            retry_at: None,
+            wait: RETRY_FIRST,
+        }
     }
+
+    /// slskd stopping by itself is logged, with where its own log is, and it starts again after a
+    /// wait that doubles while it keeps stopping. Meanwhile lull's Soulseek status shows it down.
+    fn watch(&mut self, fixed: &Fixed, launch: &Launch) {
+        if let Some(c) = &mut self.child
+            && let Ok(Some(status)) = c.try_wait()
+        {
+            self.child = None;
+            let wait = retry_wait(self.wait, self.started.elapsed());
+            let logs = fixed.app_dir.join("logs");
+            tracing::error!(%status, logs = %logs.display(), "slskd stopped by itself; starting it again in {} s", wait.as_secs());
+            self.schedule(wait);
+        }
+        if self.retry_at.is_some_and(|at| Instant::now() >= at) {
+            self.start(fixed, launch);
+        }
+    }
+
+    fn restart(&mut self, fixed: &Fixed, launch: &Launch) {
+        self.kill();
+        self.wait = RETRY_FIRST;
+        self.start(fixed, launch);
+    }
+
+    fn start(&mut self, fixed: &Fixed, launch: &Launch) {
+        self.retry_at = None;
+        match spawn(fixed, launch) {
+            Ok(child) => {
+                self.child = Some(child);
+                self.started = Instant::now();
+            }
+            Err(e) => {
+                tracing::error!("slskd didn't start: {e}; trying again in {} s", self.wait.as_secs());
+                self.schedule(self.wait);
+            }
+        }
+    }
+
+    fn schedule(&mut self, wait: Duration) {
+        self.retry_at = Some(Instant::now() + wait);
+        self.wait = (wait * 2).min(RETRY_MAX);
+    }
+
+    fn kill(&mut self) {
+        self.retry_at = None;
+        if let Some(mut c) = self.child.take() {
+            let _ = c.kill();
+            let _ = c.wait();
+        }
+    }
+}
+
+/// How long to wait before starting slskd again: `wait`, unless it ran fine for a while first.
+fn retry_wait(wait: Duration, ran: Duration) -> Duration {
+    if ran >= RAN_FINE { RETRY_FIRST } else { wait }
 }
 
 fn spawn(fixed: &Fixed, launch: &Launch) -> Result<Child, String> {
@@ -180,13 +259,6 @@ fn spawn(fixed: &Fixed, launch: &Launch) -> Result<Child, String> {
     die_with_app::adopt(&child);
     tracing::info!(pid = child.id(), port = fixed.port, "slskd started");
     Ok(child)
-}
-
-fn kill(child: &mut Option<Child>) {
-    if let Some(mut c) = child.take() {
-        let _ = c.kill();
-        let _ = c.wait();
-    }
 }
 
 /// slskd must never outlive the app, or it would keep the Soulseek login after a crash and log the

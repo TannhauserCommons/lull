@@ -14,7 +14,7 @@ The Tauri v2 project in `app/` (its own Cargo workspace; ADR-0006) shows the hub
 | `app/src/store.rs` | Shared: `settings.json` in the app config dir, written atomically |
 | `app/src/desktop/mod.rs` | Builder: plugins (single instance first, window state, autostart, updater, global shortcut on Linux), commands, setup, exit |
 | `app/src/desktop/local_hub.rs` | This computer is the hub: `lull_server::run` in-process, its env, the app's own device token, following `hub.restarting` |
-| `app/src/desktop/slskd.rs` | The bundled slskd: one supervisor thread, its folders, port and API key, restart when its share changes |
+| `app/src/desktop/slskd.rs` | The bundled slskd: one supervisor thread, its folders, port and API key, restart when its share changes, when it stops by itself and when the hub finds it wedged |
 | `app/src/desktop/main_window.rs` | `main`: welcome page, local hub or remote probe, device cookie, runtime IPC grant for the hub origin, close-to-tray |
 | `app/src/desktop/commands.rs` | The commands the pages call, checked at the boundary |
 | `app/src/desktop/tailscale.rs` | `tailscale serve --bg <port>` for the hub, and its status |
@@ -74,6 +74,7 @@ The Tauri v2 project in `app/` (its own Cargo workspace; ADR-0006) shows the hub
 - **Env** (not in the process list): `SLSKD_API_KEY`, and slskd's own web login (`lull` and a random password, never the default).
 - **`slskd.yml`** in its app dir (created empty before slskd's first start, so its watcher follows it) belongs to the hub: the app passes it as `LULL_SLSKD_CONFIG_FILE`, and the soulseek crate writes the account from `LULL_SOULSEEK_USERNAME`/`PASSWORD` into it and logs slskd in again (docs/context/soulseek.md). slskd reads env < yml < command line and reloads the file by itself.
 - **One supervisor thread** owns the process and does every spawn. slskd never outlives the app: on Windows it sits in a kill-on-close job object, on Linux it gets `PR_SET_PDEATHSIG` (tied to the spawning thread, hence the one thread). Quitting stops it; so does an update.
+- **Restarts:** slskd that stops by itself starts again after 5 s, then 10, 20 and so on up to 5 minutes while it keeps stopping; after 10 minutes of running the wait starts over at 5 s. A failed start is retried the same way. When the hub finds slskd wedged and fresh logins didn't help, `/health` says `services.soulseek.extra.restartSlskd` (docs/context/soulseek.md). Headless slskd refuses the web login the hub would restart it with, so a thread reads `/health` every minute and restarts the process, at most once per 30 minutes. Same port and API key each time, so the hub keeps its URL.
 - **Licence:** AGPL-3.0, unmodified. `licenses/THIRD-PARTY.md` and slskd's `LICENSE` ship next to the app.
 
 **Tailscale** (`tailscale.rs`): when this computer is the hub, Settings > App can show `LullDesktop.tailscale()`: `{ installed, running, url, serving }` from `tailscale status --json` and `tailscale serve status --json` (read-only). The listener's click on **Use Tailscale** calls `LullDesktop.tailscaleServe()`, which runs `tailscale serve --bg 8484` (20 s at most: it waits when HTTPS is off in the tailnet) and then stores the https address as `LULL_PUBLIC_URL` through `PATCH /api/config`, so pair codes carry it.
