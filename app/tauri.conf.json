@@ -5,7 +5,7 @@
   "identifier": "io.github.tannhausercommons.lull",
   "build": {
     "frontendDist": "dist",
-    "beforeBuildCommand": "node -e \"require('fs').mkdirSync('dist',{recursive:true})\""
+    "beforeBuildCommand": "npm run dist"
   },
   "app": {
     "withGlobalTauri": true,

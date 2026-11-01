@@ -3,7 +3,8 @@
   "description": "Only the Tauri CLI, for bundling (npm run bundle) and for the Android build, whose Gradle task calls `npm run tauri`. The app itself builds with plain cargo.",
   "scripts": {
     "tauri": "tauri",
-    "bundle": "tauri build"
+    "bundle": "tauri build",
+    "dist": "node -e \"require('fs').mkdirSync('dist',{recursive:true})\""
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.12.4"
