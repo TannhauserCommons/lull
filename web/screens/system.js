@@ -1086,16 +1086,18 @@
   function wantedBanners() {
     var s = App.store.get('services'), out = [];
     var sk = s.soulseek, jf = s.library, lf = s.lastfm, ca = s.cache;
-    if (sk.state === 'down' || sk.state === 'warn') {
+    /* the hub's services are the paired listener's business: behind the pairing gate only reachability shows */
+    var paired = App.server.authorized !== false;
+    if (paired && (sk.state === 'down' || sk.state === 'warn')) {
       out.push({ id: 'sys-soulseek', sig: sk.state, kind: sk.state, icon: 'soulseek', text: 'Soulseek: ' + clause(sk.detail) + '. Saved songs still play.', action: { label: 'Check again', run: checkHealth } });
     }
-    if (jf.state === 'down') {
+    if (paired && jf.state === 'down') {
       out.push({ id: 'sys-jellyfin', sig: jf.state, kind: 'warn', icon: 'warning', text: 'Your library isn\'t responding. It\'s read-only, and saving waits until it\'s back.', action: { label: 'Retry', run: checkHealth } });
     }
-    if (lf.state === 'down') {
+    if (paired && lf.state === 'down') {
       out.push({ id: 'sys-lastfm', sig: lf.state, kind: 'warn', icon: 'warning', text: 'Last.fm is down.' + (lf.queued ? ' Scrobbles are queued (' + lf.queued + ') and will retry.' : ''), action: { label: 'Retry now', run: retryScrobbles } });
     }
-    if (ca.state === 'warn' || ca.state === 'down') {
+    if (paired && (ca.state === 'warn' || ca.state === 'down')) {
       out.push({ id: 'sys-cache', sig: ca.state, kind: 'warn', icon: 'warning', text: ca.state === 'warn' ? 'Cache full and every item is in use, so playback may pause.' : 'Cache: ' + clause(ca.detail) + '.', action: { label: 'Cache settings', run: go('/settings/cache') } });
     }
     if (App.server.reachable === false) {

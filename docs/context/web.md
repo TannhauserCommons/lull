@@ -76,7 +76,8 @@ refetches health, collections and the current route. A closed stream (401) check
 
 `DOMContentLoaded` -> design ready -> shell + first route render (empty data shows skeletons) -> `GET /health`
 (services, version, then the service worker) and `GET /api/ping` (`App.checkPairing`): 204 starts events and loads
-collections; 401 sets `App.server.authorized = false`, and setup.js opens the pairing gate; a network failure still
+collections; 401 sets `App.server.authorized = false`, and setup.js opens the pairing gate (behind it, service
+banners stay hidden: only "unreachable" and "offline" show); a network failure still
 starts, so the installed app opens offline with the cached shell and an "unreachable" banner. `App.server.checked`
 says the ping has answered.
 
