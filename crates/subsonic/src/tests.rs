@@ -273,6 +273,23 @@ async fn token_and_salt_auth_accepts_only_a_paired_app_password() -> Result<()> 
     Ok(())
 }
 
+/// Feishin signs in with `getUser` for the name it was given and refuses the server on any error.
+#[tokio::test]
+async fn get_user_answers_for_the_one_user_clients_sign_in_as() -> Result<()> {
+    let hub = hub().await?;
+    let me = hub
+        .json(&format!("/rest/getUser?{}&username=lull&f=json", hub.auth()))
+        .await;
+    assert_eq!(me["user"]["username"], "lull");
+    assert_eq!(me["user"]["streamRole"], true);
+    assert_eq!(me["user"]["folder"], json!([1]));
+    let other = hub
+        .json(&format!("/rest/getUser?{}&username=admin&f=json", hub.auth()))
+        .await;
+    assert_eq!(other["error"]["code"], 70);
+    Ok(())
+}
+
 #[tokio::test]
 async fn envelopes_carry_the_same_body_in_json_and_xml() -> Result<()> {
     let hub = hub().await?;

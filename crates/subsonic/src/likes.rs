@@ -24,7 +24,8 @@ pub async fn star(svc: &Service, p: &Params, liked: bool) -> Result<Reply, Fail>
     Ok(Reply::empty())
 }
 
-pub async fn starred(svc: &Service) -> Result<Reply, Fail> {
+/// `getStarred2`, or `getStarred` under `key`: with only songs starred, the two are the same.
+pub async fn starred(svc: &Service, key: &str) -> Result<Reply, Fail> {
     let liked = svc.liked().await?;
     let ids: Vec<TrackId> = liked.iter().map(|(id, _)| id.clone()).collect();
     let starred = liked.into_iter().collect();
@@ -34,10 +35,7 @@ pub async fn starred(svc: &Service) -> Result<Reply, Fail> {
         .iter()
         .map(|t| shape::song(t, &starred))
         .collect();
-    Ok(Reply::of(
-        "starred2",
-        json!({ "artist": [], "album": [], "song": song }),
-    ))
+    Ok(Reply::of(key, json!({ "artist": [], "album": [], "song": song })))
 }
 
 /// A submission is a song the client played to its scrobble point: recorded as a completed

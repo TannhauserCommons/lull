@@ -8,11 +8,43 @@ use lull_core::db::Db;
 use lull_core::devices;
 use md5::{Digest, Md5};
 
+use serde_json::json;
+
+use crate::Reply;
 use crate::params::Params;
 use crate::response::Fail;
 
 /// The one username, as `POST /api/devices/subsonic` hands it out.
 pub const USER: &str = "lull";
+
+/// `getUser`: the one user, allowed what lull can do through Subsonic (listen, download,
+/// playlists, scrobbles) and nothing it can't. Clients such as Feishin sign in with this call.
+pub fn user(params: &Params) -> Result<Reply, Fail> {
+    let name = params.required("username")?;
+    if name != USER {
+        return Err(Fail::not_found(format!("no user {name}; lull's one user is {USER}")));
+    }
+    Ok(Reply::of(
+        "user",
+        json!({
+            "username": USER,
+            "scrobblingEnabled": true,
+            "adminRole": false,
+            "settingsRole": false,
+            "downloadRole": true,
+            "uploadRole": false,
+            "playlistRole": true,
+            "coverArtRole": false,
+            "commentRole": false,
+            "podcastRole": false,
+            "streamRole": true,
+            "jukeboxRole": false,
+            "shareRole": false,
+            "videoConversionRole": false,
+            "folder": [1],
+        }),
+    ))
+}
 
 pub async fn check(db: &Db, params: &Params) -> Result<(), Fail> {
     if let Some(key) = params.get("apiKey") {

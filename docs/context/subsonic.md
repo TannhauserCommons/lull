@@ -15,6 +15,7 @@ OpenSubsonic at `/rest/*`, so existing apps (Feishin, Symfonium, DSub, play:Subâ
 - The hub's gate leaves `/rest/*` to `auth.rs`. Every endpoint but `getOpenSubsonicExtensions` needs one of:
   - `u=lull` plus `p=` (plain or `enc:` hex) or `t=md5(password + salt)` with `s=`, where the password is an app password from `POST /api/devices/subsonic` (`devices::subsonic`);
   - `apiKey=`: any paired device's token (`devices::verify`), an app password included.
+- **`getUser`** answers for `lull` only (70 for any other name), with the roles lull can honour: stream, download, playlists, scrobbling. Clients like Feishin sign in through it.
 - **Errors** follow the spec: 10 missing parameter, 40 wrong credentials, 43 `apiKey` with `u`/`p`/`t`/`s` or `p` with `t`, 44 bad API key, 70 not found, 0 anything else. Like every Subsonic server, failures are HTTP 200 with `status="failed"`.
 
 ## Responses
@@ -30,11 +31,14 @@ OpenSubsonic at `/rest/*`, so existing apps (Feishin, Symfonium, DSub, play:Subâ
 - **Songs only can be starred:** `star`/`unstar` with `albumId` or `artistId` fail with code 0; `getStarred2` has no albums or artists; album lists `starred` and `highest` (no ratings) are empty.
 - **No "added" date:** album list `newest` orders by release date then year; `AlbumID3.created` is left out.
 - **Now playing:** `scrobble?submission=false` is accepted without effect (no seam yet). A submission is recorded as a completed play of the song's length starting at `time`, or one song length ago.
-- **Genres are album tags;** `getRandomSongs` filters by the song's album (genre, year).
+- **Genres are album tags;** `getRandomSongs` and `getSongsByGenre` go by the song's album (genre, year).
 - **Lyrics:** one `structuredLyrics` entry, `lang: und` (LRCLIB doesn't say); synced lines carry `start` in ms, plain lyrics are untimed lines, instrumental songs and misses an empty list. The legacy `getLyrics` (by artist and title) isn't offered.
-- **Not built:** bookmarks, play queue, shares, podcasts, internet radio, users, chat, folder browsing (`getMusicDirectory`), the non-ID3 `getAlbumList`/`getStarred`/`search2`.
+- **Not built:** bookmarks, play queue, shares, podcasts, internet radio, user management, chat, scan status, artist and album info, top and similar songs, ratings, folder browsing (`getMusicDirectory`), the non-ID3 `getAlbumList`/`search2`. `getStarred` is `getStarred2` under the old key.
 - App passwords signing in by token don't update the device's `lastSeen`; `apiKey` sign-ins do.
 
 ## Clients tested
 
-None live yet: the crate is unit-tested through its router against fakes of both seams (token auth, JSON/XML envelope, range streaming, playlist index mapping, scrobble, lyrics). Record each client tried against the homelab here, with what didn't work.
+The crate is unit-tested through its router against fakes of the seams (token auth, `getUser`, JSON/XML envelope, range streaming, playlist index mapping, scrobble, lyrics). Record each client tried against the homelab here, with what didn't work.
+
+- **curl, 2026-11-01** (homelab at 00d3452, a two-album library): every endpoint then built (all above but `getUser`, `getStarred`, `getSongsByGenre`) answered as documented. Covered: token, plain, `enc:` and `apiKey` sign-ins with errors 10/40/43/44/70; browse and every album list type; `search3` with and without a query; `stream`/`download` Range (206, right `Content-Range` at both ends of a FLAC); covers by album and song id; star/unstar round trip; a playlist created, renamed, edited by index, replaced and deleted; `scrobble?submission=false`; synced lyrics. A submission (`submission=true`) wasn't sent, so as not to put a test play in the listener's history and Last.fm.
+- **Feishin** (read from its source, `development` branch, not run): it signs in with `getUser`, which this check added, and uses only ID3 calls plus `getStarred` for favourites (also added). What it misses on lull: an artist page's top songs (`getTopSongs`) and similar songs show an error section, and artist info is empty. It reads `contentType` without a null check, so a song whose codec library doesn't know would break a list.

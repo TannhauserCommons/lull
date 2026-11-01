@@ -1,5 +1,5 @@
-//! Browsing by ID3 tags: artists, albums, songs, album lists, random songs and genres. lull has
-//! one library, so one music folder.
+//! Browsing by ID3 tags: artists, albums, songs, album lists, random songs, and genres with their
+//! songs. lull has one library, so one music folder.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -211,6 +211,30 @@ pub async fn random_songs(svc: &Service, p: &Params) -> Result<Reply, Fail> {
         .map(|t| shape::song(t, &starred))
         .collect();
     Ok(Reply::of("randomSongs", json!({ "song": songs })))
+}
+
+/// `getSongsByGenre`: the songs of albums tagged `genre`, in library order, paged.
+pub async fn songs_by_genre(svc: &Service, p: &Params) -> Result<Reply, Fail> {
+    let genre = p.required("genre")?;
+    let (count, offset) = p.page("count", "offset", 10, 500)?;
+    let ids: Vec<_> = svc
+        .library
+        .albums(None)
+        .await?
+        .into_iter()
+        .filter(|a| has_genre(a, genre))
+        .flat_map(|a| a.track_ids)
+        .skip(offset)
+        .take(count)
+        .collect();
+    let starred = svc.starred().await?;
+    let songs: Vec<Value> = svc
+        .tracks(&ids)
+        .await?
+        .iter()
+        .map(|t| shape::song(t, &starred))
+        .collect();
+    Ok(Reply::of("songsByGenre", json!({ "song": songs })))
 }
 
 /// Album tags are lull's genres.

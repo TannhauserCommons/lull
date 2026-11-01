@@ -190,9 +190,9 @@ OpenSubsonic (API 1.16.1) at `/rest/<endpoint>`, `.view` suffix accepted, by GET
 
 | Group | Endpoints |
 |---|---|
-| System | `ping`, `getLicense`, `getOpenSubsonicExtensions` (`apiKeyAuthentication`, `formPost`, `songLyrics`), `getMusicFolders` |
-| Browse | `getIndexes`, `getArtists`, `getArtist`, `getAlbum`, `getSong`, `getAlbumList2`, `getRandomSongs`, `getGenres` |
+| System | `ping`, `getLicense`, `getOpenSubsonicExtensions` (`apiKeyAuthentication`, `formPost`, `songLyrics`), `getMusicFolders`, `getUser` (only `lull`) |
+| Browse | `getIndexes`, `getArtists`, `getArtist`, `getAlbum`, `getSong`, `getAlbumList2`, `getRandomSongs`, `getGenres`, `getSongsByGenre` |
 | Search, media | `search3` (empty query lists all), `stream` and `download` (the saved file, Range honoured), `getCoverArt` (`size`) |
-| Likes, plays | `star`, `unstar` (songs only), `getStarred2`, `scrobble` (a submission becomes `Collection::record_play`) |
+| Likes, plays | `star`, `unstar` (songs only), `getStarred2` and `getStarred`, `scrobble` (a submission becomes `Collection::record_play`) |
 | Playlists | `getPlaylists`, `getPlaylist`, `createPlaylist`, `updatePlaylist`, `deletePlaylist` (saved songs only; indexes count those) |
 | Lyrics | `getLyricsBySongId` (through the `Lyrics` seam: synced lines in ms, plain lines untimed, none for instrumentals) |
