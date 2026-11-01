@@ -234,7 +234,7 @@
 
   /* `path` is the read the page shows (the notice's retry re-reads it); `stale` = served from the offline cache */
   function libraryFrame(seg, body, path, stale) {
-    var tools = html`<button class="btn" data-act="lib-import">${icon('import')}Import playlist</button>
+    var tools = html`<button class="btn" data-act="lib-import">${icon('import')}Import</button>
       ${ui.iconButton('refresh', 'Rescan your library', { 'data-act': 'jellyfin-rescan' })}`;
     return html`<div class="view__inner lib">
       ${pageHead('library', 'Songs you save from Soulseek are tagged and filed in your library.', tools)}
@@ -726,7 +726,7 @@
   function dropZone() {
     return html`<div class="lib-dropzone" data-lib-dropzone>
       ${icon('import', null, 'ic-24')}
-      <p><b>Drop an .m3u or .m3u8 file</b> anywhere in the window to import it.</p>
+      <p><b>Drop an .m3u, .m3u8 or Exportify .csv file</b> anywhere in the window to import it.</p>
       <button class="btn btn--sm" data-act="lib-import-pick">Choose file</button>
     </div>`;
   }
@@ -734,7 +734,7 @@
     var list = playlists(), err = App.store.get('playlistsError');
     var songs = list.reduce(function (n, p) { return n + plIds(p).length; }, 0);
     var tools = html`<button class="btn btn--primary" data-act="lib-pl-new">${icon('plus')}New playlist</button>
-      <button class="btn" data-act="lib-import">${icon('import')}Import M3U</button>`;
+      <button class="btn" data-act="lib-import">${icon('import')}Import playlist</button>`;
     var body;
     if (err) body = ui.emptyState({ art: 'star', title: 'Couldn\'t load your playlists', text: err, action: { label: 'Try again', act: 'lib-pl-reload' } });
     else if (err === undefined) body = gridSkeleton(4);      // the first load hasn't answered yet
@@ -745,7 +745,7 @@
       </div>`;
     } else {
       body = ui.emptyState({ art: 'slot', title: 'No playlists yet', text: 'Make a playlist and drag songs into it, or import an M3U from another player.',
-        action: { label: 'New playlist', act: 'lib-pl-new' }, secondary: { label: 'Import M3U', act: 'lib-import' } });
+        action: { label: 'New playlist', act: 'lib-pl-new' }, secondary: { label: 'Import a playlist', act: 'lib-import' } });
     }
     return html`<div class="view__inner lib">
       ${pageHead('playlists', list.length ? plural(list.length, 'playlist') + ', ' + plural(songs, 'song') + '. Drag songs onto a playlist to add them.' : 'Make one, or bring one over from another player.', tools)}
@@ -807,7 +807,7 @@
       </div>`
       : html`<div class="lib-dropzone lib-dropzone--songs" data-drop="playlist:${p.id}">
           ${ui.emptyState({ art: 'slot', title: 'Drag songs here',
-            text: 'Drop songs from search, an album or the queue, or use Add to playlist on any song.', action: { label: 'Find songs', href: '#/search' }, secondary: { label: 'Import M3U', act: 'lib-import' } })}
+            text: 'Drop songs from search, an album or the queue, or use Add to playlist on any song.', action: { label: 'Find songs', href: '#/search' }, secondary: { label: 'Import a playlist', act: 'lib-import' } })}
         </div>`;
     return html`<div class="view__inner lib">
       ${jellyfinNotice(path)}
@@ -1076,21 +1076,54 @@
   App.hooks.addToPlaylist = function (ids) { openPicker(ids); };
 
   /* =====================================================================
-     10. M3U import (App.hooks.importFile + the Import buttons): the server matches each line
-         (POST /api/playlists/import -> library | will-search | not-found; it creates nothing), the preview shows it,
-         importing POSTs a playlist of every line with a song id (will-search songs are found on Soulseek when played)
+     10. Imports (App.hooks.importFile + the Import buttons).
+         Playlists: an M3U (POST /api/playlists/import) or a Spotify playlist exported by Exportify (POST
+         /api/import/exportify) gives the same preview (library | will-search | not-found; it creates nothing);
+         importing POSTs a playlist of every line with a song id (will-search songs are found on Soulseek when played).
+         Listening history: Last.fm by user name, or a ListenBrainz export file (POST /api/import/history); the plays
+         arrive as a `job` row in Activity.
      ===================================================================== */
+  var PLAYLIST_FILE = /\.(m3u8?|csv)$/i;
   function openImportStart() {
+    var lf = M.peek('/api/lastfm'), userId = App.uid('lib-lfu');
     App.openDialog({
-      title: 'import a playlist',
-      body: html`<div class="lib-form">${dropZone()}
-        <p class="lib-help">Each line is matched to your library first, then searched on Soulseek. Nothing downloads until you play or save it.</p></div>`
+      title: 'import', wide: true, className: 'lib-import',
+      body: html`<div class="lib-form">
+        ${ui.labelRule('a playlist', { level: 'h3', sm: true })}
+        ${dropZone()}
+        <p class="lib-help">Each song is matched to your library first, then searched on Soulseek. Nothing downloads until you play or save it. From Spotify, export a playlist with Exportify and drop the .csv here.</p>
+        ${ui.labelRule('listening history', { level: 'h3', sm: true })}
+        <p class="lib-help">Past plays join History, Stats and your taste profile. They never scrobble.</p>
+        <form class="lib-hist" data-form="lib-lastfm-import">
+          <div class="field"><label class="field__label" for="${userId}">Last.fm user</label>
+            <input class="input" id="${userId}" value="${lf && lf.user || ''}" autocomplete="off" spellcheck="false" placeholder="Your Last.fm user name"><span class="field__help">The profile has to be public.</span></div>
+          <button class="btn" type="submit">${icon('radio')}Import from Last.fm</button>
+        </form>
+        <div class="lib-hist"><div class="field"><span class="field__label">ListenBrainz</span><span class="field__help">An export from your ListenBrainz settings (listens as JSON).</span></div>
+          <button class="btn" type="button" data-act="lib-lb-pick">${icon('import')}Choose export file</button></div>
+      </div>`,
+      onMount: function (el, close) {
+        $('[data-form="lib-lastfm-import"]', el).addEventListener('submit', function (e) {
+          e.preventDefault();
+          var user = $('#' + userId, el).value.trim();
+          if (!user) { $('#' + userId, el).focus(); return; }
+          importHistory({ source: 'lastfm', user: user }, 'Last.fm', close);
+        });
+      }
     });
   }
-  function pickFile() {
+  /* POST /api/import/history: 202 { jobId }; Activity follows the job */
+  function importHistory(body, from, close) {
+    M.api('/api/import/history', { method: 'POST', body: body }).then(function () {
+      if (close) close();
+      App.toast('Importing your ' + from + ' history. Activity shows how it goes.', { icon: 'import', action: 'Activity', onAction: function () { App.openPanel('activity'); } });
+      App.loadJobs();
+    }, function (err) { App.toast('Couldn\'t import from ' + from + ': ' + err.message, { kind: 'error' }); });
+  }
+  function pickFile(accept, then) {
     var input = document.createElement('input');
-    input.type = 'file'; input.accept = '.m3u,.m3u8,audio/x-mpegurl'; input.hidden = true;
-    input.addEventListener('change', function () { if (input.files[0]) App.hooks.importFile(input.files[0]); input.remove(); });
+    input.type = 'file'; input.accept = accept || '.m3u,.m3u8,.csv,audio/x-mpegurl,text/csv'; input.hidden = true;
+    input.addEventListener('change', function () { if (input.files[0]) (then || App.hooks.importFile)(input.files[0]); input.remove(); });
     document.body.appendChild(input); input.click();
   }
   var IMPORT_LABEL = { library: 'In your library', 'will-search': 'Searched on Soulseek when played', 'not-found': 'Not found' };
@@ -1116,13 +1149,14 @@
   }
   function openImportPreview(fileName, text) {
     if (!/^[ \t]*[^#\s]/m.test(text)) { App.toast(fileName + ' has no songs in it', { kind: 'error', icon: 'warning' }); return; }
+    var endpoint = /\.csv$/i.test(fileName) ? '/api/import/exportify' : '/api/playlists/import';
     var cancelled = false;
     var wait = App.openDialog({
       title: 'import ' + fileName, wide: true, className: 'lib-import',
       body: html`<div class="lib-form"><p class="lib-help">Matching each line to your library and Soulseek.</p>${ui.skeleton('row', 4)}</div>`,
       onClose: function () { cancelled = true; }
     });
-    M.api('/api/playlists/import', { method: 'POST', body: String(text) }).then(checkPreview).then(function (preview) {
+    M.api(endpoint, { method: 'POST', body: String(text) }).then(checkPreview).then(function (preview) {
       if (!cancelled) showImportPreview(fileName, preview);
     }, function (err) {
       if (cancelled) return;
@@ -1135,7 +1169,7 @@
     var tally = { all: lines.length, library: counts.library, 'will-search': counts.willSearch, 'not-found': counts.notFound };
     var usable = lines.filter(function (l) { return l.trackId; });
     var searchIds = usable.filter(function (l) { return l.status === 'will-search'; }).map(function (l) { return l.trackId; });
-    var nameId = App.uid('lib-imp'), base = preview.name || fileName.replace(/\.m3u8?$/i, '');
+    var nameId = App.uid('lib-imp'), base = preview.name || fileName.replace(PLAYLIST_FILE, '');
     function filterPill(key, label, ic) {
       return html`<button class="pill-filter" data-imp-filter="${key}" aria-pressed="${key === 'all' ? 'true' : 'false'}">${ic ? icon(ic) : ''}${label}<span class="lib-count">${tally[key]}</span></button>`;
     }
@@ -1183,7 +1217,7 @@
     });
   }
   App.hooks.importFile = function (file) {
-    if (!/\.m3u8?$/i.test(file.name)) { App.toast('Can\'t import ' + file.name + ': only .m3u and .m3u8 playlists', { kind: 'error', icon: 'warning' }); return; }
+    if (!PLAYLIST_FILE.test(file.name)) { App.toast('Can\'t import ' + file.name + ': only .m3u, .m3u8 and Exportify .csv playlists', { kind: 'error', icon: 'warning' }); return; }
     var reader = new FileReader();
     reader.onload = function () { openImportPreview(file.name, String(reader.result)); };
     reader.onerror = function () { App.toast('Couldn\'t read ' + file.name, { kind: 'error', icon: 'warning' }); };
@@ -1251,6 +1285,9 @@
   });
   App.action('lib-import', function () { openImportStart(); });
   App.action('lib-import-pick', function () { pickFile(); });
+  App.action('lib-lb-pick', function () {
+    pickFile('.json,.jsonl,.txt,application/json', function (file) { App.closeTop(); importHistory(file, 'ListenBrainz'); });
+  });
   App.action('lib-pl-reload', function () { App.loadPlaylists(); });
   App.action('lib-pl-new', function () { openEdit(null); });
   App.action('lib-pl-edit', function (el) { var p = playlistOf(el.getAttribute('data-id')); if (p) openEdit(p); });

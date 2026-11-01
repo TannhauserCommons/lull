@@ -302,3 +302,7 @@ button.lib-th:hover { color: var(--fg); background: var(--bg-2); }
 .lib-kept__kind::after { content: ", "; }
 .lib-kept__acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--sp-2); }
 @media (max-width: 639px) { .lib-kept__row { grid-template-columns: 48px minmax(0, 1fr); } .lib-kept__acts { grid-column: 2; justify-content: flex-start; } }
+
+/* ---------- import dialog: listening history ---------- */
+.lib-hist { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-3); }
+.lib-hist .field { flex: 1 1 240px; min-width: 0; }

@@ -86,8 +86,9 @@ window.LullData = (function () {
     o = o || {};
     var init = { method: o.method || 'GET', headers: {}, credentials: 'same-origin', keepalive: !!o.keepalive };
     if (o.body !== undefined) {
-      init.body = typeof o.body === 'string' ? o.body : JSON.stringify(o.body);
-      init.headers['Content-Type'] = typeof o.body === 'string' ? 'text/plain' : 'application/json';
+      var file = typeof Blob !== 'undefined' && o.body instanceof Blob;     // a file goes as it is (imports)
+      init.body = typeof o.body === 'string' || file ? o.body : JSON.stringify(o.body);
+      init.headers['Content-Type'] = file ? o.body.type || 'application/octet-stream' : typeof o.body === 'string' ? 'text/plain' : 'application/json';
     }
     return fetch(M.url(path), init).then(function (res) {
       if (res.status === 204) return null;

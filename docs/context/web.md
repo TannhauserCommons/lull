@@ -232,6 +232,14 @@ Events (`LullNative.downloads.on(type, fn)`, returns an unsubscribe function): `
 `done { trackId, fileUrl, artUrl, sizeBytes }`, `error { trackId, message }`. Downloads continue while the app is in
 the background.
 
+## Imports
+
+Library's Import dialog (`lib-import`, library.js section 10): a playlist file dropped anywhere or chosen there,
+`.m3u`/`.m3u8` to `POST /api/playlists/import`, an Exportify `.csv` to `POST /api/import/exportify`; both give the
+same preview and the playlist is `POST`ed with the ids kept. Listening history: Last.fm by user name
+(`POST /api/import/history { source: lastfm, user }`) or a ListenBrainz export file sent as the body; the job shows
+in Activity ("Listening history", plays added and duplicates).
+
 ## Rules for screens
 
 - No `PROTO`, no state switcher, no `ctx.state`, no simulated delays, no sample data.

@@ -953,7 +953,7 @@
     addToPlaylist: function (ids, anchor) { defaultAddToPlaylist(ids, anchor); },
     shortcuts: function () { defaultShortcutsDialog(); },
     palette: function () { var s = $('#header-search'); if (s && s.offsetParent) s.focus(); else App.go('/search'); },
-    importFile: function (file) { App.toast('Only M3U playlists can be dropped here, not ' + file.name, { kind: 'error' }); },
+    importFile: function (file) { App.toast('Only playlists (.m3u, .m3u8, Exportify .csv) can be dropped here, not ' + file.name, { kind: 'error' }); },
     moreSheet: function () { defaultMoreSheet(); },
     /* media keys / lock screen target: null = App.player; Classic mode sets { play, pause, prev, next, seek, seekBy } */
     media: null
@@ -2585,7 +2585,7 @@
   document.addEventListener('dragenter', function (e) {
     if (isFileDrag(e)) {
       fileDepth++; var o = $('#drop-overlay');
-      $('.drop-overlay__label', o).textContent = App.current.path === '/classic' ? 'Drop .wsz to apply skin' : 'Drop M3U to import';
+      $('.drop-overlay__label', o).textContent = App.current.path === '/classic' ? 'Drop .wsz to apply skin' : 'Drop a playlist to import';
       o.classList.add('is-on'); o.hidden = false;
     }
   });

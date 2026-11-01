@@ -703,7 +703,10 @@
   }
   function otherParts(j, st) {
     if (st === 'failed') return { meta: html`${ui.statusGlyph('down', 'Failed')}<span>${j.error || 'Failed'}</span>`, extra: '', acts: '' };
-    if (st === 'active') return { meta: html`<span class="spin-ring" aria-hidden="true"></span><span>${j.detail || 'Running'}</span>`, extra: '', acts: '' };
+    if (st === 'active') return { meta: html`<span class="spin-ring" aria-hidden="true"></span><span>${j.detail || (j.pct != null ? 'Importing, ' + Math.round(j.pct * (j.pct <= 1 ? 100 : 1)) + '%' : 'Running')}</span>`, extra: '', acts: '' };
+    if (j.kind === 'import' && 'added' in j) {        // listening history (POST /api/import/history)
+      return { meta: html`${ui.statusGlyph('ok', 'Done')}<span>${j.added || 0} plays added${j.duplicates ? ', ' + j.duplicates + ' already there' : ''}${j.invalid ? ', ' + j.invalid + ' unreadable' : ''}</span>`, extra: '', acts: '' };
+    }
     if (j.kind === 'import') {
       return { meta: html`${ui.statusGlyph('ok', 'Done')}<span>${j.matched || 0} matched, ${j.search || 0} searching, ${j.notFound || 0} not found</span>`, extra: '',
         acts: html`<button class="btn btn--sm btn--quiet" data-act="now-job-review" data-fk="review-${j.id}">Review</button>` };
@@ -713,7 +716,7 @@
   function jobRow(j) {
     var t = j.trackId ? M.track(j.trackId) : null, st = jobState(j);
     var parts = j.kind === 'transfer' ? transferParts(j) : j.kind === 'save' ? saveParts(j, st) : otherParts(j, st);
-    var sub = t ? t.artist : j.kind === 'import' ? 'Playlist import' : j.kind === 'rescan' ? 'Library' : '';
+    var sub = t ? t.artist : j.kind === 'import' ? ('added' in j ? 'Listening history' : 'Playlist import') : j.kind === 'rescan' ? 'Library' : '';
     var art = t ? ui.cover(t, 40) : html`<span class="now-act__glyph" aria-hidden="true">${icon(j.kind === 'import' ? 'import' : j.kind === 'rescan' ? 'refresh' : 'soulseek')}</span>`;
     return html`<li class="now-act__row is-${st}">
       <div class="now-act__art">${art}</div>
