@@ -140,12 +140,12 @@ pub struct RescanJob {
 }
 
 impl RescanJob {
-    pub fn new() -> Self {
+    pub fn new(detail: &str) -> Self {
         RescanJob {
             id: new_id(),
             state: "running".into(),
             pct: 0,
-            detail: "Asking Jellyfin to scan".into(),
+            detail: detail.into(),
             started: now(),
         }
     }
@@ -204,6 +204,17 @@ impl Jobs {
             rescans: Mutex::new(rescans),
             others: Mutex::default(),
         });
+        // A restart stops a running rescan (`Ctx::spawn`); it would otherwise show as running forever.
+        let interrupted: Vec<RescanJob> = lock(&jobs.rescans)
+            .values()
+            .filter(|j| j.state == "running")
+            .cloned()
+            .collect();
+        for mut job in interrupted {
+            job.state = "failed".into();
+            job.detail = "Stopped by a restart: rescan again".into();
+            jobs.put_rescan(&job).await;
+        }
         Ok(jobs)
     }
 

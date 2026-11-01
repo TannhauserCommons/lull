@@ -255,13 +255,16 @@ pub async fn cover_response(svc: &Service, id: &AlbumId, size: u32) -> Result<Re
 // ---------- rescan and duplicates ----------
 
 async fn rescan(State(svc): Svc) -> Result<(StatusCode, Json<Value>)> {
-    let job = RescanJob::new();
+    let job = RescanJob::new(match svc.mode {
+        LibraryMode::Jellyfin => "Asking Jellyfin to scan",
+        LibraryMode::Folder => "Reading the music folder",
+    });
     svc.jobs.put_rescan(&job).await;
     let id = job.id.clone();
     match svc.mode {
-        LibraryMode::Jellyfin => tokio::spawn(sync::rescan(svc.clone(), job)),
-        LibraryMode::Folder => tokio::spawn(folder::rescan(svc.clone(), job)),
-    };
+        LibraryMode::Jellyfin => svc.ctx.spawn(sync::rescan(svc.clone(), job)),
+        LibraryMode::Folder => svc.ctx.spawn(folder::rescan(svc.clone(), job)),
+    }
     Ok((StatusCode::ACCEPTED, Json(json!({ "jobId": id }))))
 }
 

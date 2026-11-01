@@ -47,10 +47,10 @@ impl Fail {
     }
 }
 
-/// Starts (or continues) a job in the background.
+/// Starts (or continues) a job in the background. A hub restart stops it; `resume` carries on
+/// from the step it reached at the next start.
 pub fn spawn(svc: &Arc<Service>, job: SaveJob) {
-    let svc = svc.clone();
-    tokio::spawn(async move { run(svc, job).await });
+    svc.ctx.spawn(run(svc.clone(), job));
 }
 
 /// At start-up: carry on with every job a restart interrupted. In Jellyfin mode, jobs waiting
@@ -159,14 +159,18 @@ async fn transfer(svc: &Arc<Service>, job: &mut SaveJob) -> Result<(), Fail> {
             "No Soulseek peer is known to share this song. Pick a source and retry.",
         )
     })?;
-    let watcher = tokio::spawn(follow_transfer(svc.clone(), job.id.clone(), job.track_id.clone()));
-    let result = svc.transfers.complete(&job.track_id, &source).await;
-    watcher.abort();
+    // Progress is followed for as long as the transfer runs; `follow_transfer` never ends itself.
+    let result = tokio::select! {
+        result = svc.transfers.complete(&job.track_id, &source) => result,
+        () = follow_transfer(svc, &job.id, &job.track_id) => {
+            Err(lull_core::Error::internal("the event bus closed during the transfer"))
+        }
+    };
     job.file = Some(result.map_err(|e| Fail::new(FailKind::Transfer, e.to_string()))?);
     Ok(())
 }
 
-async fn follow_transfer(svc: Arc<Service>, job: String, track: TrackId) {
+async fn follow_transfer(svc: &Service, job: &str, track: &TrackId) {
     let mut rx = svc.ctx.bus.subscribe();
     while let Ok(event) = rx.recv().await {
         let d = &event.data;
@@ -178,7 +182,7 @@ async fn follow_transfer(svc: Arc<Service>, job: String, track: TrackId) {
             d.get("size").and_then(Value::as_u64),
         );
         if let (Some(received), Some(size)) = (received, size.filter(|s| *s > 0)) {
-            svc.jobs.progress(&job, (received * 100 / size).min(100) as u8);
+            svc.jobs.progress(job, (received * 100 / size).min(100) as u8);
         }
     }
 }

@@ -7,7 +7,7 @@
 - **`LULL_LIBRARY`** = `folder` | `jellyfin` (`config.library.mode`). Unset, it is `jellyfin` when `LULL_JELLYFIN_URL` is set, else `folder`. `jellyfin` without Jellyfin configured stops lull at start-up.
 - **One index type** (`index.rs`) answers every read in both modes, keyed by track id. Each entry (`items::Saved`) has a `location`: a Jellyfin item (and its path as Jellyfin sees it), or a file path under `LULL_MUSIC_DIR`. Every `/api/library/*` route and the `Library` seam work the same in both modes.
 - **The mode is fixed for a run.** Switching stores the new mode and restarts the hub's crates ([below](#switching)).
-- **Background work ends with the crates.** The sync loop, the folder watcher loop, the mirror and the job listener run under `Ctx::spawn`, so a hub restart stops them before the new crates start theirs.
+- **Background work ends with the crates.** The sync loop, the folder watcher loop, the mirror, the job listener, saves and rescans run under `Ctx::spawn`, so a hub restart stops them before the new crates start theirs. An interrupted save carries on from its step at the next start (`save::resume`); an interrupted rescan is marked failed ("Stopped by a restart"). A switch is not cancelled: it ends by asking for the restart itself.
 - **Status.** Folder mode reports `library` (`ok` "Music folder, N songs", `warn` when the folder can't be watched, `down` when `LULL_MUSIC_DIR` doesn't exist) and sets `jellyfin` to `off`. Jellyfin mode reports `jellyfin` ([below](#jellyfin)).
 
 ## Folder mode (`folder.rs`, `files.rs`)
