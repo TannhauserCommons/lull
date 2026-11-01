@@ -4,7 +4,7 @@ OpenSubsonic at `/rest/*`, so existing apps (Feishin, Symfonium, DSub, play:Subâ
 
 ## How it fits
 
-- **Over the seams only.** Browsing, audio and covers come from `Library` (`artists`, `albums`, `album`, `saved`, `search`, `stream`, `cover`); likes, playlists and plays go through `Collection`, so the web UI, history, taste and Last.fm see them as if the web player had made them.
+- **Over the seams only.** Browsing, audio and covers come from `Library` (`artists`, `albums`, `album`, `saved`, `search`, `stream`, `cover`); likes, playlists and plays go through `Collection`, so the web UI, history, taste and Last.fm see them as if the web player had made them; lyrics come from `Lyrics`, the same answer as `/api/lyrics`.
 - **Reads two core tables directly:** `likes` (when each song was liked: Subsonic's `starred`) and `plays` joined to `catalog_tracks` (album lists `frequent` and `recent`). No tables of its own.
 - **Ids are lull's ids** (`ar-`, `al-`, `t-`, `pl-`). An album id is also the cover art id of the album and its songs; an artist's `coverArt` is one of its albums.
 - **Only saved songs.** A client can only stream what the library has, so playlists and stars list their saved songs. `updatePlaylist`'s `songIndexToRemove` counts those and is mapped back to positions in the whole playlist.
@@ -22,7 +22,7 @@ OpenSubsonic at `/rest/*`, so existing apps (Feishin, Symfonium, DSub, play:Subâ
 - `f=json` gives JSON; anything else (default) gives XML. JSONP is not offered.
 - Bodies are built once as JSON and turned into XML by the usual convention: scalars are attributes, objects child elements, arrays repeated elements, a `value` key is the element's text. Unknown facts are left out, never `null`.
 - The envelope carries `type: "lull"`, `serverVersion`, `openSubsonic: true`, API version `1.16.1`.
-- Parameters come from the query and, for `application/x-www-form-urlencoded` POSTs, the body (OpenSubsonic `formPost`). Extensions advertised: `apiKeyAuthentication`, `formPost`.
+- Parameters come from the query and, for `application/x-www-form-urlencoded` POSTs, the body (OpenSubsonic `formPost`). Extensions advertised: `apiKeyAuthentication`, `formPost`, `songLyrics`.
 
 ## Spec gaps (deliberate, until lull has the facts)
 
@@ -31,9 +31,10 @@ OpenSubsonic at `/rest/*`, so existing apps (Feishin, Symfonium, DSub, play:Subâ
 - **No "added" date:** album list `newest` orders by release date then year; `AlbumID3.created` is left out.
 - **Now playing:** `scrobble?submission=false` is accepted without effect (no seam yet). A submission is recorded as a completed play of the song's length starting at `time`, or one song length ago.
 - **Genres are album tags;** `getRandomSongs` filters by the song's album (genre, year).
-- **Not built:** `getLyricsBySongId` (waits on a lyrics seam), bookmarks, play queue, shares, podcasts, internet radio, users, chat, folder browsing (`getMusicDirectory`), the non-ID3 `getAlbumList`/`getStarred`/`search2`.
+- **Lyrics:** one `structuredLyrics` entry, `lang: und` (LRCLIB doesn't say); synced lines carry `start` in ms, plain lyrics are untimed lines, instrumental songs and misses an empty list. The legacy `getLyrics` (by artist and title) isn't offered.
+- **Not built:** bookmarks, play queue, shares, podcasts, internet radio, users, chat, folder browsing (`getMusicDirectory`), the non-ID3 `getAlbumList`/`getStarred`/`search2`.
 - App passwords signing in by token don't update the device's `lastSeen`; `apiKey` sign-ins do.
 
 ## Clients tested
 
-None live yet: the crate is unit-tested through its router against fakes of both seams (token auth, JSON/XML envelope, range streaming, playlist index mapping, scrobble). Record each client tried against the homelab here, with what didn't work.
+None live yet: the crate is unit-tested through its router against fakes of both seams (token auth, JSON/XML envelope, range streaming, playlist index mapping, scrobble, lyrics). Record each client tried against the homelab here, with what didn't work.

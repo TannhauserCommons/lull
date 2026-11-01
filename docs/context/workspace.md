@@ -33,9 +33,10 @@ Each area has one owner at a time. Edit only what your brief says you own.
 
 ## How crates meet
 
-- **Domain crates depend on `lull-core` only, never on each other.** `server` builds them in order and hands each the seams it needs (lull 2 adds `Collection`, implemented by `collection`, for `subsonic`; and `Library` browse/stream/cover):
+- **Domain crates depend on `lull-core` only, never on each other.** `server` builds them in order and hands each the seams it needs:
   - `Transfers` (implemented by `soulseek`) goes to `library`, for completing a transfer before a save;
-  - `Library` (implemented by `library`) goes to `soulseek`, `discovery` and `collection`, for saved badges, duplicates, the library half of search and M3U matching.
+  - `Library` (implemented by `library`) goes to `soulseek`, `discovery`, `collection` and `subsonic`, for saved badges, duplicates, the library half of search, M3U matching and Subsonic's browsing, streaming and covers;
+  - `Collection` (implemented by `collection`) and `Lyrics` (implemented by `lyrics`) go to `subsonic`, so Subsonic apps like, scrobble, edit playlists and read lyrics as the web UI does.
 - **The event bus** (`ctx.bus`) carries everything else between crates. Every event also reaches the browser over SSE. Topics are listed in `api.md#events`. Example: `collection` publishes `play.started` / `play.ended`, and `lastfm` and `discovery` subscribe.
 - **The catalog** (`lull_core::catalog`) resolves any track id. Whoever hands a track to the UI records it there.
 - **Each crate exposes the same three things:**
@@ -43,7 +44,7 @@ Each area has one owner at a time. Edit only what your brief says you own.
   - `async fn start(ctx, seams…) -> Result<Arc<Service>>`;
   - `fn router(svc…) -> axum::Router` with full paths (`/api/...`).
 
-  `server/src/lib.rs` calls all of them (`subsonic` is wired by its own session once `collection` implements the `Collection` seam).
+  `server/src/lib.rs` calls all of them.
 - **A crate reports its outside dependency** with `ctx.status.set(name, state, detail, extra)`. That drives `/health`, the `service` event and the UI's status tray.
 
 ## Working in parallel

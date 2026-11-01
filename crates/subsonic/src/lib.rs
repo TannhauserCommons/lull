@@ -1,4 +1,4 @@
-//! The OpenSubsonic API at `/rest/*`, over the `Library` and `Collection` seams, so existing
+//! The OpenSubsonic API at `/rest/*`, over the `Library`, `Collection` and `Lyrics` seams, so existing
 //! Subsonic apps work with lull (docs/context/subsonic.md, ADR-0002 for app passwords).
 //! Every call is `/rest/<endpoint>` (`.view` optional), by GET or form POST; the hub's gate
 //! leaves these paths to `auth`.
@@ -6,6 +6,7 @@
 mod auth;
 mod browse;
 mod likes;
+mod lyrics;
 mod media;
 mod params;
 mod playlists;
@@ -25,7 +26,7 @@ use axum::routing::get;
 use lull_core::db::{Db, Migrations};
 use lull_core::ids::TrackId;
 use lull_core::model::Track;
-use lull_core::seams::{Collection, Library};
+use lull_core::seams::{Collection, Library, Lyrics};
 use lull_core::{Ctx, Result};
 use serde_json::{Map, Value, json};
 
@@ -41,13 +42,20 @@ pub struct Service {
     db: Db,
     library: Arc<dyn Library>,
     collection: Arc<dyn Collection>,
+    lyrics: Arc<dyn Lyrics>,
 }
 
-pub async fn start(ctx: &Ctx, library: Arc<dyn Library>, collection: Arc<dyn Collection>) -> Result<Arc<Service>> {
+pub async fn start(
+    ctx: &Ctx,
+    library: Arc<dyn Library>,
+    collection: Arc<dyn Collection>,
+    lyrics: Arc<dyn Lyrics>,
+) -> Result<Arc<Service>> {
     Ok(Arc::new(Service {
         db: ctx.db.clone(),
         library,
         collection,
+        lyrics,
     }))
 }
 
@@ -130,6 +138,7 @@ impl Service {
             "createPlaylist" => playlists::create(self, p).await,
             "updatePlaylist" => playlists::update(self, p).await,
             "deletePlaylist" => playlists::delete(self, p).await,
+            "getLyricsBySongId" => lyrics::by_song(self, p).await,
             other => Err(Fail::not_found(format!("lull has no {other} endpoint"))),
         }
     }
@@ -180,6 +189,7 @@ fn extensions() -> Reply {
         json!([
             { "name": "apiKeyAuthentication", "versions": [1] },
             { "name": "formPost", "versions": [1] },
+            { "name": "songLyrics", "versions": [1] },
         ]),
     )
 }

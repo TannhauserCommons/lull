@@ -10,8 +10,10 @@ use axum::response::{IntoResponse, Response};
 use lull_core::db::{self, Db};
 use lull_core::devices::{self, Kind};
 use lull_core::ids::{AlbumId, ArtistId, TrackId};
-use lull_core::model::{Album, Artist, PlayReport, Playlist, PlaylistEdit, Saved, Track};
-use lull_core::seams::{Collection, Library};
+use lull_core::model::{
+    Album, Artist, LyricLine, Lyrics as Words, LyricsKind, PlayReport, Playlist, PlaylistEdit, Saved, Track,
+};
+use lull_core::seams::{Collection, Library, Lyrics};
 use lull_core::{Error, Result};
 use serde_json::Value;
 use tower::ServiceExt;
@@ -147,6 +149,22 @@ impl Collection for FakeCollection {
     }
 }
 
+/// Every song has the same two synced lines.
+struct FakeLyrics;
+
+#[async_trait]
+impl Lyrics for FakeLyrics {
+    async fn lyrics(&self, _track: &TrackId) -> Result<Words> {
+        let line = |t, text: &str| LyricLine { t, text: text.into() };
+        Ok(Words {
+            kind: LyricsKind::Synced,
+            lines: vec![line(12.4, "Paper moon"), line(15.0, "Static & hum")],
+            plain: None,
+            source: "LRCLIB".into(),
+        })
+    }
+}
+
 struct Hub {
     app: Router,
     library: Arc<FakeLibrary>,
@@ -167,6 +185,7 @@ async fn hub() -> Result<Hub> {
         db,
         library: library.clone(),
         collection: collection.clone(),
+        lyrics: Arc::new(FakeLyrics),
     });
     Ok(Hub {
         app: router(svc),
@@ -374,5 +393,26 @@ async fn a_scrobble_submission_is_a_completed_play_from_its_time() -> Result<()>
             completed: true,
         }]
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn synced_lyrics_are_timed_lines_in_milliseconds() -> Result<()> {
+    let hub = hub().await?;
+    let id = TrackId::of(ARTIST, ALBUM, "Paper Moon Static");
+
+    let json = hub
+        .json(&format!("/rest/getLyricsBySongId?{}&id={id}&f=json", hub.auth()))
+        .await;
+    let lyrics = &json["lyricsList"]["structuredLyrics"][0];
+    assert_eq!(lyrics["synced"], true);
+    assert_eq!(lyrics["displayTitle"], "Paper Moon Static");
+    assert_eq!(lyrics["line"][0]["start"], 12_400);
+    assert_eq!(lyrics["line"][1]["value"], "Static & hum");
+
+    let (_, _, xml) = hub
+        .get(&format!("/rest/getLyricsBySongId?{}&id={id}", hub.auth()), &[])
+        .await;
+    assert!(xml.contains(r#"<line start="15000">Static &amp; hum</line>"#));
     Ok(())
 }
