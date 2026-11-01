@@ -11,8 +11,9 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use lull_core::ids::TrackId;
+use lull_core::model::PlaylistEdit;
 use lull_core::{Error, Result};
-use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -96,26 +97,11 @@ async fn create(
     body: Result<Json<CreateBody>, JsonRejection>,
 ) -> Result<(StatusCode, Json<Value>)> {
     let Json(body) = body.map_err(bad_json)?;
-    let (name, desc) = (valid_name(&body.name)?, valid_desc(&body.desc)?);
     let now = lull_core::now();
     let (seq, playlist) = svc
-        .ctx
-        .db
-        .call(move |conn| {
-            let tx = conn.transaction()?;
-            check_tracks(&tx, &body.track_ids)?;
-            tx.execute(
-                "INSERT INTO collection_playlists (name, description, created_at, updated_at) VALUES (?1, ?2, ?3, ?3)",
-                params![name, desc, now],
-            )?;
-            let seq = tx.last_insert_rowid();
-            write_items(
-                &tx,
-                seq,
-                &body.track_ids.into_iter().map(|id| (id, now)).collect::<Vec<_>>(),
-            )?;
-            tx.commit()?;
-            Ok((seq, respond(conn, seq)?))
+        .write(move |tx, _| {
+            let seq = make(tx, &body.name, &body.desc, &body.track_ids, now)?;
+            Ok((seq, respond(tx, seq)?))
         })
         .await?;
     if let Some(i) = body.imported {
@@ -157,42 +143,22 @@ async fn edit(
 ) -> Result<Json<Value>> {
     let seq = seq_of(&id)?;
     let Json(body) = body.map_err(bad_json)?;
-    let name = body.name.as_deref().map(valid_name).transpose()?;
-    let desc = body.desc.as_deref().map(valid_desc).transpose()?;
-    svc.ctx
-        .db
-        .call(move |conn| {
-            let changed = conn.execute(
-                "UPDATE collection_playlists SET name = COALESCE(?2, name), description = COALESCE(?3, description),
-                 updated_at = ?4 WHERE seq = ?1",
-                params![seq, name, desc, lull_core::now()],
-            )?;
-            if changed == 0 {
-                return Err(not_found(seq));
-            }
-            respond(conn, seq)
-        })
-        .await
+    svc.write(move |tx, _| {
+        rename(tx, seq, body.name.as_deref(), body.desc.as_deref())?;
+        respond(tx, seq)
+    })
+    .await
 }
 
 async fn remove(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Result<StatusCode> {
     let seq = seq_of(&id)?;
-    svc.ctx
-        .db
-        .call(move |conn| {
-            let tx = conn.transaction()?;
-            if tx.execute("DELETE FROM collection_playlists WHERE seq = ?1", [seq])? == 0 {
-                return Err(not_found(seq));
-            }
-            tx.execute("DELETE FROM collection_playlist_items WHERE playlist_seq = ?1", [seq])?;
-            tx.commit()?;
-            Ok(StatusCode::NO_CONTENT)
-        })
-        .await
+    svc.write(move |tx, _| match delete(tx, seq)? {
+        true => Ok(StatusCode::NO_CONTENT),
+        false => Err(not_found(seq)),
+    })
+    .await
 }
 
-/// The whole new order: adds, removes and moves in one call. A song that stays keeps its
-/// `added` date (the n-th copy of a song keeps the n-th copy's date).
 async fn set_tracks(
     State(svc): State<Arc<Service>>,
     Path(id): Path<String>,
@@ -200,36 +166,122 @@ async fn set_tracks(
 ) -> Result<Json<Value>> {
     let seq = seq_of(&id)?;
     let Json(ids) = body.map_err(bad_json)?;
-    svc.ctx
-        .db
-        .call(move |conn| {
-            let tx = conn.transaction()?;
-            let Some(old) = items_of(&tx, seq)? else {
-                return Err(not_found(seq));
-            };
-            check_tracks(&tx, &ids)?;
-            let now = lull_core::now();
-            let mut old: Vec<Option<Item>> = old.into_iter().map(Some).collect();
-            let items: Vec<(TrackId, i64)> = ids
-                .into_iter()
-                .map(|id| {
-                    let kept = old
-                        .iter_mut()
-                        .find(|o| o.as_ref().is_some_and(|o| o.track_id == id))
-                        .and_then(Option::take);
-                    (id, kept.map_or(now, |o| o.added))
-                })
-                .collect();
-            tx.execute("DELETE FROM collection_playlist_items WHERE playlist_seq = ?1", [seq])?;
-            write_items(&tx, seq, &items)?;
-            tx.execute(
-                "UPDATE collection_playlists SET updated_at = ?2 WHERE seq = ?1",
-                params![seq, now],
-            )?;
-            tx.commit()?;
-            respond(conn, seq)
+    svc.write(move |tx, _| {
+        reorder(tx, seq, ids)?;
+        respond(tx, seq)
+    })
+    .await
+}
+
+/// Creates a playlist at `at` and returns its seq.
+pub(crate) fn make(conn: &Connection, name: &str, desc: &str, ids: &[TrackId], at: i64) -> Result<i64> {
+    let (name, desc) = (valid_name(name)?, valid_desc(desc)?);
+    check_tracks(conn, ids)?;
+    conn.execute(
+        "INSERT INTO collection_playlists (name, description, created_at, updated_at) VALUES (?1, ?2, ?3, ?3)",
+        params![name, desc, at],
+    )?;
+    let seq = conn.last_insert_rowid();
+    write_items(conn, seq, &ids.iter().map(|id| (id.clone(), at)).collect::<Vec<_>>())?;
+    Ok(seq)
+}
+
+/// Changes the name and/or description; `None` keeps what is there.
+pub(crate) fn rename(conn: &Connection, seq: i64, name: Option<&str>, desc: Option<&str>) -> Result<()> {
+    let name = name.map(valid_name).transpose()?;
+    let desc = desc.map(valid_desc).transpose()?;
+    let changed = conn.execute(
+        "UPDATE collection_playlists SET name = COALESCE(?2, name), description = COALESCE(?3, description),
+         updated_at = ?4 WHERE seq = ?1",
+        params![seq, name, desc, lull_core::now()],
+    )?;
+    if changed == 0 {
+        return Err(not_found(seq));
+    }
+    Ok(())
+}
+
+/// Deletes a playlist; false when there was none.
+pub(crate) fn delete(conn: &Connection, seq: i64) -> Result<bool> {
+    if conn.execute("DELETE FROM collection_playlists WHERE seq = ?1", [seq])? == 0 {
+        return Ok(false);
+    }
+    conn.execute("DELETE FROM collection_playlist_items WHERE playlist_seq = ?1", [seq])?;
+    Ok(true)
+}
+
+/// The whole new order: adds, removes and moves in one call. A song that stays keeps its
+/// `added` date (the n-th copy of a song keeps the n-th copy's date).
+pub(crate) fn reorder(conn: &Connection, seq: i64, ids: Vec<TrackId>) -> Result<()> {
+    let Some(old) = items_of(conn, seq)? else {
+        return Err(not_found(seq));
+    };
+    check_tracks(conn, &ids)?;
+    let now = lull_core::now();
+    let mut old: Vec<Option<Item>> = old.into_iter().map(Some).collect();
+    let items: Vec<(TrackId, i64)> = ids
+        .into_iter()
+        .map(|id| {
+            let kept = old
+                .iter_mut()
+                .find(|o| o.as_ref().is_some_and(|o| o.track_id == id))
+                .and_then(Option::take);
+            (id, kept.map_or(now, |o| o.added))
         })
-        .await
+        .collect();
+    replace_items(conn, seq, &items, now)
+}
+
+/// The `Collection` seam's edit: removals are positions before the change, applied first;
+/// additions go to the end.
+pub(crate) fn edit_positions(conn: &Connection, seq: i64, edit: PlaylistEdit) -> Result<()> {
+    if edit.name.is_some() || edit.description.is_some() {
+        rename(conn, seq, edit.name.as_deref(), edit.description.as_deref())?;
+    }
+    let Some(old) = items_of(conn, seq)? else {
+        return Err(not_found(seq));
+    };
+    if let Some(p) = edit.remove_positions.iter().find(|p| **p >= old.len()) {
+        return Err(Error::BadRequest(format!("Playlist pl-{seq} has no position {p}.")));
+    }
+    check_tracks(conn, &edit.add)?;
+    let now = lull_core::now();
+    let items: Vec<(TrackId, i64)> = old
+        .into_iter()
+        .enumerate()
+        .filter(|(pos, _)| !edit.remove_positions.contains(pos))
+        .map(|(_, i)| (i.track_id, i.added))
+        .chain(edit.add.into_iter().map(|id| (id, now)))
+        .collect();
+    if items.len() > MAX_ITEMS {
+        return Err(too_many());
+    }
+    replace_items(conn, seq, &items, now)
+}
+
+/// Every playlist for the `Collection` seam, most recently changed first.
+pub(crate) fn all(conn: &Connection) -> Result<Vec<lull_core::model::Playlist>> {
+    let seqs = conn
+        .prepare("SELECT seq FROM collection_playlists ORDER BY updated_at DESC, seq DESC")?
+        .query_map([], |r| r.get(0))?
+        .collect::<rusqlite::Result<Vec<i64>>>()?;
+    let mut out = Vec::with_capacity(seqs.len());
+    for seq in seqs {
+        out.extend(one(conn, seq)?);
+    }
+    Ok(out)
+}
+
+/// One playlist in the `Collection` seam's shape.
+pub(crate) fn one(conn: &Connection, seq: i64) -> Result<Option<lull_core::model::Playlist>> {
+    Ok(load(conn, seq)?.map(|p| lull_core::model::Playlist {
+        id: p.id,
+        name: p.name,
+        description: p.desc,
+        track_ids: p.items.into_iter().map(|i| i.track_id).collect(),
+        created_at: p.created,
+        updated_at: p.updated,
+    }))
 }
 
 /// The M3U file is the request body; the answer previews each line (see `import`).
@@ -347,8 +399,18 @@ fn items_of(conn: &Connection, seq: i64) -> Result<Option<Vec<Item>>> {
     Ok(Some(items))
 }
 
-fn write_items(tx: &Transaction, seq: i64, items: &[(TrackId, i64)]) -> Result<()> {
-    let mut stmt = tx.prepare_cached(
+fn replace_items(conn: &Connection, seq: i64, items: &[(TrackId, i64)], now: i64) -> Result<()> {
+    conn.execute("DELETE FROM collection_playlist_items WHERE playlist_seq = ?1", [seq])?;
+    write_items(conn, seq, items)?;
+    conn.execute(
+        "UPDATE collection_playlists SET updated_at = ?2 WHERE seq = ?1",
+        params![seq, now],
+    )?;
+    Ok(())
+}
+
+fn write_items(conn: &Connection, seq: i64, items: &[(TrackId, i64)]) -> Result<()> {
+    let mut stmt = conn.prepare_cached(
         "INSERT INTO collection_playlist_items (playlist_seq, pos, track_id, added_at) VALUES (?1, ?2, ?3, ?4)",
     )?;
     for (pos, (id, added)) in items.iter().enumerate() {
@@ -360,9 +422,7 @@ fn write_items(tx: &Transaction, seq: i64, items: &[(TrackId, i64)]) -> Result<(
 /// Every id must resolve, so a playlist never holds a song the UI can't show.
 fn check_tracks(conn: &Connection, ids: &[TrackId]) -> Result<()> {
     if ids.len() > MAX_ITEMS {
-        return Err(Error::BadRequest(format!(
-            "A playlist holds at most {MAX_ITEMS} songs."
-        )));
+        return Err(too_many());
     }
     for id in ids {
         if lull_core::catalog::track(conn, id)?.is_none() {
@@ -372,7 +432,11 @@ fn check_tracks(conn: &Connection, ids: &[TrackId]) -> Result<()> {
     Ok(())
 }
 
-fn seq_of(id: &str) -> Result<i64> {
+fn too_many() -> Error {
+    Error::BadRequest(format!("A playlist holds at most {MAX_ITEMS} songs."))
+}
+
+pub(crate) fn seq_of(id: &str) -> Result<i64> {
     id.strip_prefix("pl-")
         .and_then(|n| n.parse().ok())
         .ok_or_else(|| Error::NotFound(format!("No playlist {id}.")))

@@ -12,11 +12,17 @@
 | `collection_playlists`, `collection_playlist_items` | collection | `pl-<seq>` ids from an AUTOINCREMENT column, so a deleted playlist's id is never reused. Items are keyed by position, so a song can appear twice |
 | `collection_settings` | collection | One JSON row of the editable settings |
 
+## Writes and events
+
+Every change runs in one transaction and publishes its events after the commit (`Service::write`). The routes, the `Collection` seam (`seam.rs`, for Subsonic) and `/api/sync` call the same functions, so each publishes the same events.
+
 ## Plays and events
 
 - **Lifecycle.** The UI calls `POST /api/plays` when a song starts and `PATCH /api/plays/{id}` once when it stops. The row is written before the event goes out, so a reader can find it; lastfm itself takes everything from the event payload.
 - **`play.ended` goes out exactly once.** A second `PATCH` is 409, because otherwise a play would scrobble twice. A play the UI never ends (tab killed without `keepalive`) stays open: it shows in history and stats with `playedS: 0` and is never scrobbled. lull doesn't guess how much was heard.
 - **`at` is always the start time**, in both events and history, since Last.fm's timestamp is the start.
+- **Plays from elsewhere.** The `Collection` seam's `record_play` (Subsonic) records a finished play at its real start and publishes only `play.ended`: "now playing" for a song that already finished would be wrong.
+- **History is in order of start** (`started_at`, then id), not of arrival, since plays can arrive late. `next` is still a play id.
 - **Scrobble status.** lastfm owns the scrobble rules. It publishes `scrobble { playId, status: pending|done|short }` (api.md#events), and collection stores the latest status per play. `short` = Last.fm's rule failed (track of 30 s or less, or less than half and less than 4 min heard); a skip after the half still scrobbles. `null` in history means lastfm never reported: not connected, or scrobbling off.
 - **History and stats need the listener's timezone** (`?tz=`, minutes east of UTC). The server has no other way to know where a day ends.
 

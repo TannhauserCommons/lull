@@ -8,8 +8,11 @@ mod likes;
 mod m3u;
 mod playlists;
 mod plays;
+mod seam;
 mod settings;
 mod stats;
+#[cfg(test)]
+mod testing;
 
 use std::sync::Arc;
 
@@ -21,8 +24,9 @@ use lull_core::ids::TrackId;
 use lull_core::model::Entities;
 use lull_core::seams::Library;
 use lull_core::{Ctx, Error, Result, catalog};
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, Transaction, params};
 use serde::Deserialize;
+use serde_json::Value;
 use tokio::sync::broadcast::error::RecvError;
 
 pub const MIGRATIONS: Migrations = Migrations {
@@ -94,6 +98,43 @@ pub fn router(svc: Arc<Service>) -> Router {
         .merge(stats::routes())
         .merge(settings::routes())
         .with_state(svc)
+}
+
+impl Service {
+    /// Runs `change` in one transaction, then publishes the events it collected: a change and
+    /// its events are one unit for the routes, the `Collection` seam and `/api/sync` alike, and
+    /// a reader of an event always finds the rows.
+    async fn write<T, F>(&self, change: F) -> Result<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(&Transaction, &mut Events) -> Result<T> + Send + 'static,
+    {
+        let (value, events) = self
+            .ctx
+            .db
+            .call(move |conn| {
+                let tx = conn.transaction()?;
+                let mut events = Events::default();
+                let value = change(&tx, &mut events)?;
+                tx.commit()?;
+                Ok((value, events))
+            })
+            .await?;
+        for (topic, data) in events.0 {
+            self.ctx.bus.publish(topic, data);
+        }
+        Ok(value)
+    }
+}
+
+/// Events a change will publish once it is committed (`Service::write`).
+#[derive(Default)]
+struct Events(Vec<(&'static str, Value)>);
+
+impl Events {
+    fn push(&mut self, topic: &'static str, data: Value) {
+        self.0.push((topic, data));
+    }
 }
 
 /// What other crates tell collection: scrobble status per play (lastfm) and finished saves (library).

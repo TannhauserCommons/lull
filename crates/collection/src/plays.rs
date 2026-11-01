@@ -9,12 +9,13 @@ use axum::extract::{Path, Query, State};
 use axum::routing::{get, patch, post};
 use axum::{Json, Router};
 use lull_core::ids::TrackId;
+use lull_core::model::Track;
 use lull_core::{Error, Result};
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::{Service, bad_json, bad_query, entities, known_track};
+use crate::{Events, Service, bad_json, bad_query, entities, known_track};
 
 pub(crate) fn routes() -> Router<Arc<Service>> {
     Router::new()
@@ -58,126 +59,199 @@ struct StartBody {
 
 async fn start(State(svc): State<Arc<Service>>, body: Result<Json<StartBody>, JsonRejection>) -> Result<Json<Value>> {
     let Json(body) = body.map_err(bad_json)?;
-    if body.duration.is_some_and(|d| d > MAX_SECONDS) {
-        return Err(Error::BadRequest("duration is longer than a day.".into()));
-    }
-    let at = lull_core::now();
-    let (play_id, track, duration) = svc
-        .ctx
-        .db
-        .call(move |conn| {
-            let track = known_track(conn, &body.track_id)?;
-            let duration = body.duration.or(track.duration).unwrap_or(0);
-            let tx = conn.transaction()?;
-            tx.execute(
-                "INSERT INTO plays (track_id, artist, title, album, duration_s, started_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                params![track.id.as_str(), track.artist, track.title, track.album, duration, at],
-            )?;
-            let play_id = tx.last_insert_rowid();
-            tx.execute(
-                "INSERT INTO collection_plays (play_id, recommended) VALUES (?1, ?2)",
-                params![play_id, body.recommended],
-            )?;
-            tx.commit()?;
-            Ok((play_id.to_string(), track, duration))
+    let play_id = svc
+        .write(move |tx, events| {
+            begin(
+                tx,
+                events,
+                &body.track_id,
+                body.duration,
+                body.recommended,
+                lull_core::now(),
+            )
         })
         .await?;
-    svc.ctx.bus.publish(
-        "play.started",
-        json!({
-            "playId": play_id, "trackId": track.id, "at": at, "duration": duration,
-            "artist": track.artist, "title": track.title, "album": track.album,
-        }),
-    );
-    Ok(Json(json!({ "playId": play_id })))
+    Ok(Json(json!({ "playId": play_id.to_string() })))
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EndBody {
-    played_s: u32,
-    completed: bool,
-    skipped: bool,
+pub(crate) struct EndBody {
+    pub(crate) played_s: u32,
+    pub(crate) completed: bool,
+    pub(crate) skipped: bool,
 }
 
-/// Ends a play, once: a second end would scrobble twice, so it is a conflict.
 async fn end(
     State(svc): State<Arc<Service>>,
     Path(play_id): Path<String>,
     body: Result<Json<EndBody>, JsonRejection>,
 ) -> Result<Json<Value>> {
     let Json(body) = body.map_err(bad_json)?;
+    let id: i64 = play_id
+        .parse()
+        .map_err(|_| Error::NotFound(format!("No play {play_id}.")))?;
+    svc.write(move |tx, events| finish(tx, events, id, &body)).await?;
+    Ok(Json(json!({ "playId": play_id })))
+}
+
+/// Starts a play at `at` and publishes `play.started`. `duration` defaults to the catalog's.
+fn begin(
+    conn: &Connection,
+    events: &mut Events,
+    track_id: &TrackId,
+    duration: Option<u32>,
+    recommended: bool,
+    at: i64,
+) -> Result<i64> {
+    if duration.is_some_and(|d| d > MAX_SECONDS) {
+        return Err(Error::BadRequest("duration is longer than a day.".into()));
+    }
+    let track = known_track(conn, track_id)?;
+    let duration = duration.or(track.duration).unwrap_or(0);
+    let play_id = insert(conn, &track, duration, at)?;
+    conn.execute(
+        "INSERT INTO collection_plays (play_id, recommended) VALUES (?1, ?2)",
+        params![play_id, recommended],
+    )?;
+    events.push(
+        "play.started",
+        json!({
+            "playId": play_id.to_string(), "trackId": track.id, "at": at, "duration": duration,
+            "artist": track.artist, "title": track.title, "album": track.album,
+        }),
+    );
+    Ok(play_id)
+}
+
+/// Ends a play, once: a second end would scrobble twice, so it is a conflict.
+fn finish(conn: &Connection, events: &mut Events, id: i64, body: &EndBody) -> Result<()> {
+    check_end(body)?;
+    let play = conn
+        .query_row(
+            "SELECT p.track_id, p.artist, p.title, p.album, p.duration_s, p.started_at, c.ended_at
+             FROM plays p JOIN collection_plays c ON c.play_id = p.id WHERE p.id = ?1",
+            [id],
+            |r| {
+                Ok((
+                    Ended {
+                        play_id: id.to_string(),
+                        track_id: TrackId(r.get(0)?),
+                        artist: r.get(1)?,
+                        title: r.get(2)?,
+                        album: r.get(3)?,
+                        duration: r.get(4)?,
+                        at: r.get(5)?,
+                        played_s: body.played_s,
+                        completed: body.completed,
+                        skipped: body.skipped,
+                    },
+                    r.get::<_, Option<i64>>(6)?.is_some(),
+                ))
+            },
+        )
+        .optional()?;
+    let Some((play, ended)) = play else {
+        return Err(Error::NotFound(format!("No play {id}.")));
+    };
+    if ended {
+        return Err(Error::Conflict(format!("Play {id} has already ended.")));
+    }
+    conn.execute(
+        "UPDATE plays SET played_s = ?2, completed = ?3, skipped = ?4 WHERE id = ?1",
+        params![id, body.played_s, body.completed, body.skipped],
+    )?;
+    conn.execute(
+        "UPDATE collection_plays SET ended_at = ?2 WHERE play_id = ?1",
+        params![id, lull_core::now()],
+    )?;
+    events.push("play.ended", json!(play));
+    Ok(())
+}
+
+/// Records a play that already happened elsewhere (the offline outbox, a Subsonic app): history,
+/// taste and scrobbling see it as the web player's own, timed by its real start. Only
+/// `play.ended` goes out: "now playing" for a song that already finished would be wrong.
+pub(crate) fn record(
+    conn: &Connection,
+    events: &mut Events,
+    track_id: &TrackId,
+    started_at: i64,
+    body: &EndBody,
+) -> Result<i64> {
+    check_end(body)?;
+    let now = lull_core::now();
+    if started_at <= 0 {
+        return Err(Error::BadRequest("startedAt is not a time.".into()));
+    }
+    // A device clock a little ahead must not put a play in the future.
+    let at = started_at.min(now);
+    let track = known_track(conn, track_id)?;
+    let duration = track.duration.unwrap_or(0);
+    let play_id = insert(conn, &track, duration, at)?;
+    conn.execute(
+        "UPDATE plays SET played_s = ?2, completed = ?3, skipped = ?4 WHERE id = ?1",
+        params![play_id, body.played_s, body.completed, body.skipped],
+    )?;
+    conn.execute(
+        "INSERT INTO collection_plays (play_id, ended_at) VALUES (?1, ?2)",
+        params![play_id, now],
+    )?;
+    let ended = Ended {
+        play_id: play_id.to_string(),
+        track_id: track.id,
+        at,
+        played_s: body.played_s,
+        completed: body.completed,
+        skipped: body.skipped,
+        duration: i64::from(duration),
+        artist: track.artist,
+        title: track.title,
+        album: track.album,
+    };
+    events.push("play.ended", json!(ended));
+    Ok(play_id)
+}
+
+fn insert(conn: &Connection, track: &Track, duration: u32, at: i64) -> Result<i64> {
+    conn.execute(
+        "INSERT INTO plays (track_id, artist, title, album, duration_s, started_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![track.id.as_str(), track.artist, track.title, track.album, duration, at],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+fn check_end(body: &EndBody) -> Result<()> {
     if body.played_s > MAX_SECONDS {
         return Err(Error::BadRequest("playedS is longer than a day.".into()));
     }
     if body.completed && body.skipped {
         return Err(Error::BadRequest("A play can't be both completed and skipped.".into()));
     }
-    let id: i64 = play_id
-        .parse()
-        .map_err(|_| Error::NotFound(format!("No play {play_id}.")))?;
-    let ended = svc
-        .ctx
-        .db
-        .call(move |conn| {
-            let tx = conn.transaction()?;
-            let play = tx
-                .query_row(
-                    "SELECT p.track_id, p.artist, p.title, p.album, p.duration_s, p.started_at, c.ended_at
-                     FROM plays p JOIN collection_plays c ON c.play_id = p.id WHERE p.id = ?1",
-                    [id],
-                    |r| {
-                        Ok(OpenPlay {
-                            track_id: r.get(0)?,
-                            artist: r.get(1)?,
-                            title: r.get(2)?,
-                            album: r.get(3)?,
-                            duration: r.get(4)?,
-                            at: r.get(5)?,
-                            ended: r.get::<_, Option<i64>>(6)?.is_some(),
-                        })
-                    },
-                )
-                .optional()?
-                .ok_or_else(|| Error::NotFound(format!("No play {id}.")))?;
-            if play.ended {
-                return Err(Error::Conflict(format!("Play {id} has already ended.")));
-            }
-            tx.execute(
-                "UPDATE plays SET played_s = ?2, completed = ?3, skipped = ?4 WHERE id = ?1",
-                params![id, body.played_s, body.completed, body.skipped],
-            )?;
-            tx.execute(
-                "UPDATE collection_plays SET ended_at = ?2 WHERE play_id = ?1",
-                params![id, lull_core::now()],
-            )?;
-            tx.commit()?;
-            Ok(json!({
-                "playId": id.to_string(), "trackId": play.track_id, "at": play.at,
-                "playedS": body.played_s, "completed": body.completed, "skipped": body.skipped,
-                "duration": play.duration, "artist": play.artist, "title": play.title, "album": play.album,
-            }))
-        })
-        .await?;
-    svc.ctx.bus.publish("play.ended", &ended);
-    Ok(Json(json!({ "playId": play_id })))
+    Ok(())
 }
 
-/// A play as `end` finds it.
-struct OpenPlay {
-    track_id: String,
+/// The `play.ended` payload (api.md#events); `at` is the play's start, Last.fm's timestamp.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Ended {
+    play_id: String,
+    track_id: TrackId,
+    at: i64,
+    played_s: u32,
+    completed: bool,
+    skipped: bool,
+    duration: i64,
     artist: String,
     title: String,
     album: String,
-    duration: i64,
-    at: i64,
-    ended: bool,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct HistoryQuery {
-    /// Cursor: plays older than this play id (the previous page's `next`).
+    /// Cursor: plays that started before this play (the previous page's `next`). History is in
+    /// order of start, not of arrival: synced and imported plays arrive late.
     before: Option<i64>,
     limit: Option<u32>,
     /// The listener's offset from UTC in minutes (east positive), so days split at their midnight.
@@ -216,9 +290,10 @@ async fn history(
                 .prepare(
                     "SELECT p.id, p.track_id, p.started_at, p.played_s, p.completed, p.skipped, c.scrobble
                      FROM plays p LEFT JOIN collection_plays c ON c.play_id = p.id
-                     WHERE p.id < ?1 ORDER BY p.id DESC LIMIT ?2",
+                     WHERE ?1 IS NULL OR (p.started_at, p.id) < (SELECT started_at, id FROM plays WHERE id = ?1)
+                     ORDER BY p.started_at DESC, p.id DESC LIMIT ?2",
                 )?
-                .query_map(params![q.before.unwrap_or(i64::MAX), limit], |r| {
+                .query_map(params![q.before, limit], |r| {
                     Ok(HistoryItem {
                         play_id: r.get::<_, i64>(0)?.to_string(),
                         track_id: TrackId(r.get(1)?),

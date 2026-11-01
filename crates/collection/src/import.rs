@@ -188,7 +188,7 @@ fn library_unreachable(ok: &AtomicBool, e: &Error) {
     }
 }
 
-fn unsaved_track(artist: &str, album: &str, title: &str, duration: Option<u32>) -> Track {
+pub(crate) fn unsaved_track(artist: &str, album: &str, title: &str, duration: Option<u32>) -> Track {
     Track {
         id: TrackId::of(artist, album, title),
         title: title.to_owned(),

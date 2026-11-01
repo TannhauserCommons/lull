@@ -11,11 +11,11 @@ use axum::{Json, Router};
 use lull_core::ids::ArtistId;
 use lull_core::model::{Artist, Entities};
 use lull_core::{Error, Result};
-use rusqlite::params;
+use rusqlite::{Connection, params};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::Service;
+use crate::{Events, Service};
 
 pub(crate) fn routes() -> Router<Arc<Service>> {
     Router::new()
@@ -61,8 +61,7 @@ pub(crate) fn named_artist(id: ArtistId, name: String) -> Artist {
     }
 }
 
-/// `PUT /api/follows/artist/{id} { name }` or `PUT /api/follows/tag/{name}`. An artist id is
-/// derived from its name, so the name is checked against the id rather than trusted.
+/// `PUT /api/follows/artist/{id} { name }` or `PUT /api/follows/tag/{name}`.
 async fn follow(
     State(svc): State<Arc<Service>>,
     Path((kind, id)): Path<(String, String)>,
@@ -70,54 +69,65 @@ async fn follow(
 ) -> Result<StatusCode> {
     let kind = Kind::parse(&kind)?;
     let name = match kind {
-        Kind::Tag => tag_name(&id)?,
-        Kind::Artist => artist_name(&id, &body)?,
+        Kind::Tag => None,
+        Kind::Artist => Some(artist_body(&body)?),
     };
-    let (row_id, row_name) = (id.clone(), name);
-    svc.ctx
-        .db
-        .call(move |conn| {
-            conn.execute(
-                "INSERT INTO follows (kind, id, name, followed_at) VALUES (?1, ?2, ?3, ?4)
-                 ON CONFLICT(kind, id) DO NOTHING",
-                params![kind.as_str(), row_id, row_name, lull_core::now()],
-            )?;
-            Ok(())
-        })
+    svc.write(move |tx, events| set(tx, events, kind, &id, name.as_deref(), true, lull_core::now()))
         .await?;
-    svc.ctx
-        .bus
-        .publish("follow", json!({ "kind": kind.as_str(), "id": id, "followed": true }));
     Ok(StatusCode::NO_CONTENT)
 }
 
 async fn unfollow(State(svc): State<Arc<Service>>, Path((kind, id)): Path<(String, String)>) -> Result<StatusCode> {
     let kind = Kind::parse(&kind)?;
-    let row_id = id.clone();
-    svc.ctx
-        .db
-        .call(move |conn| {
-            conn.execute(
-                "DELETE FROM follows WHERE kind = ?1 AND id = ?2",
-                params![kind.as_str(), row_id],
-            )?;
-            Ok(())
-        })
+    svc.write(move |tx, events| set(tx, events, kind, &id, None, false, lull_core::now()))
         .await?;
-    svc.ctx
-        .bus
-        .publish("follow", json!({ "kind": kind.as_str(), "id": id, "followed": false }));
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[derive(Clone, Copy)]
-enum Kind {
+/// Follows (dated `at`) or unfollows an artist or tag, idempotently. Following an artist needs
+/// its name, which is checked against the id rather than trusted: an artist id is derived from
+/// its name.
+pub(crate) fn set(
+    conn: &Connection,
+    events: &mut Events,
+    kind: Kind,
+    id: &str,
+    name: Option<&str>,
+    followed: bool,
+    at: i64,
+) -> Result<()> {
+    if followed {
+        let name = match kind {
+            Kind::Tag => tag_name(id)?,
+            Kind::Artist => artist_name(id, name)?,
+        };
+        conn.execute(
+            "INSERT INTO follows (kind, id, name, followed_at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(kind, id) DO NOTHING",
+            params![kind.as_str(), id, name, at],
+        )?;
+    } else {
+        conn.execute(
+            "DELETE FROM follows WHERE kind = ?1 AND id = ?2",
+            params![kind.as_str(), id],
+        )?;
+    }
+    events.push(
+        "follow",
+        json!({ "kind": kind.as_str(), "id": id, "followed": followed }),
+    );
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Kind {
     Artist,
     Tag,
 }
 
 impl Kind {
-    fn parse(s: &str) -> Result<Self> {
+    pub(crate) fn parse(s: &str) -> Result<Self> {
         match s {
             "artist" => Ok(Kind::Artist),
             "tag" => Ok(Kind::Tag),
@@ -144,7 +154,8 @@ fn tag_name(id: &str) -> Result<String> {
     Ok(name.to_owned())
 }
 
-fn artist_name(id: &str, body: &[u8]) -> Result<String> {
+/// `{ name }` from a follow request's body.
+fn artist_body(body: &[u8]) -> Result<String> {
     #[derive(Deserialize)]
     #[serde(deny_unknown_fields)]
     struct Body {
@@ -152,9 +163,15 @@ fn artist_name(id: &str, body: &[u8]) -> Result<String> {
     }
     let Body { name } = serde_json::from_slice(body)
         .map_err(|e| Error::BadRequest(format!("Following an artist needs {{ \"name\" }}: {e}.")))?;
-    let name = name.trim().to_owned();
-    if ArtistId::of(&name).as_str() != id {
+    Ok(name)
+}
+
+fn artist_name(id: &str, name: Option<&str>) -> Result<String> {
+    let name = name
+        .map(str::trim)
+        .ok_or_else(|| Error::BadRequest(format!("Following the artist {id} needs its name.")))?;
+    if ArtistId::of(name).as_str() != id {
         return Err(Error::BadRequest(format!("{name:?} is not the artist {id}.")));
     }
-    Ok(name)
+    Ok(name.to_owned())
 }
