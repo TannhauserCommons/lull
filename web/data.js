@@ -155,7 +155,7 @@ window.LullData = (function () {
   /* ---------- server events ---------- */
   /* one EventSource for the whole app; onEvent(topic, payload). Reconnects by itself (EventSource does);
      onOpen runs on every (re)connect so the app can refetch what it may have missed. */
-  var TOPICS = ['service', 'search.results', 'transfer', 'stream', 'save', 'job', 'like', 'follow', 'settings', 'resync'];
+  var TOPICS = ['service', 'search.results', 'transfer', 'stream', 'save', 'job', 'like', 'follow', 'settings', 'resync', 'theme.changed'];
   M.connect = function (onEvent, onOpen, onDown) {
     var es = new EventSource(M.url('/api/events'));
     TOPICS.forEach(function (topic) {
