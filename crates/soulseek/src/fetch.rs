@@ -609,7 +609,7 @@ impl Fetcher {
     async fn find(&self, f: &Fetch, stop: &mut watch::Receiver<bool>) -> Result<(), Stop> {
         self.update(f, |p| p.status = Status::Finding);
         tokio::select! {
-            r = self.searches.resolve(&f.track) => r.map_err(|e| Stop::Failed(e.to_string())),
+            r = self.searches.resolve(&f.track) => r.map_err(|e| Stop::Failed(reason(&e))),
             _ = stopped(stop) => Err(Stop::Cancelled),
         }
     }
@@ -641,7 +641,7 @@ impl Fetcher {
         self.cache
             .make_room(source.size)
             .await
-            .map_err(|e| Err(Stop::Failed(e.to_string())))?;
+            .map_err(|e| Err(Stop::Failed(reason(&e))))?;
         let rules = self.rules.get();
         let below = !source.meets(&rules.stream.minimum, f.track.duration);
         self.update(f, |p| {
@@ -658,8 +658,8 @@ impl Fetcher {
         });
         let transfer = match self.slskd.enqueue(&source.user, &source.path, source.size).await {
             Ok(t) => t,
-            Err(e @ Error::Unavailable { .. }) => return Err(Err(Stop::Failed(e.to_string()))),
-            Err(e) => return Err(Ok(Skip::Unavailable(e.to_string()))),
+            Err(e @ Error::Unavailable { .. }) => return Err(Err(Stop::Failed(reason(&e)))),
+            Err(e) => return Err(Ok(Skip::Unavailable(format!("{}: {}", source.user, reason(&e))))),
         };
         let candidates = self
             .layout
@@ -686,7 +686,7 @@ impl Fetcher {
                     if let Ok(t) = self.slskd.download(&source.user, &transfer.id).await
                         && t.phase() == Phase::Succeeded
                     {
-                        return self.finish(f, source, &t).await.map_err(|e| Err(Stop::Failed(e.to_string())));
+                        return self.finish(f, source, &t).await.map_err(|e| Err(Stop::Failed(reason(&e))));
                     }
                     if let Err(e) = self.slskd.cancel(&source.user, &transfer.id).await {
                         tracing::warn!(error = %e, "cancelling a transfer in slskd");
@@ -696,8 +696,8 @@ impl Fetcher {
             }
             let t = match self.slskd.download(&source.user, &transfer.id).await {
                 Ok(t) => t,
-                Err(e @ Error::Unavailable { .. }) => return Err(Err(Stop::Failed(e.to_string()))),
-                Err(e) => return Err(Ok(Skip::Unavailable(e.to_string()))),
+                Err(e @ Error::Unavailable { .. }) => return Err(Err(Stop::Failed(reason(&e)))),
+                Err(e) => return Err(Ok(Skip::Unavailable(format!("{}: {}", source.user, reason(&e))))),
             };
             let on_disk = on_disk(&candidates).await;
             // Recorded once slskd has written it, so even a partial left by a cancel is evictable.
@@ -705,7 +705,7 @@ impl Fetcher {
                 self.cache
                     .record(record(path.clone(), false))
                     .await
-                    .map_err(|e| Err(Stop::Failed(e.to_string())))?;
+                    .map_err(|e| Err(Stop::Failed(reason(&e))))?;
                 recorded = true;
             }
             let received = on_disk.as_ref().map_or(t.bytes_transferred, |(_, len)| *len);
@@ -744,7 +744,7 @@ impl Fetcher {
                     return self
                         .finish(f, source, &t)
                         .await
-                        .map_err(|e| Err(Stop::Failed(e.to_string())));
+                        .map_err(|e| Err(Stop::Failed(reason(&e))));
                 }
                 phase => self.update(f, |p| {
                     p.received = received;
@@ -871,6 +871,15 @@ fn below(purpose: Purpose, rules: &Rules) -> Below {
     }
 }
 
+/// An error as the fetch's `error`: the bare reason. "soulseek failed: " is added once, where
+/// the error leaves this crate (the stream response, a save), never twice.
+fn reason(e: &Error) -> String {
+    match e {
+        Error::Upstream { reason, .. } | Error::Unavailable { reason, .. } => reason.clone(),
+        other => other.to_string(),
+    }
+}
+
 /// Resolves once `stop` is set (or its sender is gone).
 pub async fn stopped(stop: &mut watch::Receiver<bool>) {
     let _ = stop.wait_for(|s| *s).await;
@@ -983,4 +992,18 @@ fn job_row(f: &Fetch, p: &Progress) -> serde_json::Value {
         "started": f.started,
         "error": p.error,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_failed_stream_reads_as_one_sentence() {
+        let inner = Error::upstream("soulseek", "answered 500 Internal Server Error");
+        let shown = Error::upstream("soulseek", reason(&inner)).to_string();
+        assert_eq!(shown, "soulseek failed: answered 500 Internal Server Error");
+        let disk = Error::unavailable("soulseek", "the transfers disk is full");
+        assert_eq!(reason(&disk), "the transfers disk is full");
+    }
 }
