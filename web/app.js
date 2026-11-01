@@ -385,15 +385,18 @@
     return '<span class="' + c.cls + '" style="--cover-size-base:' + c.size + '"' + c.attrs + '>' + artImg(c.key, c.size) + '</span>';
   }
   var artMissing = {};          // albums whose art 404'd this session: not asked for again
+  /* the picture for an album or artist key: a catalog entity's own URL (album `art`, artist `image`, same origin through
+     /api/catalog/art, ADR-0008) at the size wanted, else the library's /api/art for albums */
   function artImg(key, size) {
     if (artMissing[key]) return '';
-    /* an artist's photo is the catalog's image URL (same origin, ADR-0008) when the entity has one */
-    var ar = /^ar-/.test(key) && M.artist(key);
-    if (ar && ar.image) return '<img class="cover__img" loading="lazy" decoding="async" alt="" data-art="' + esc(key) + '" src="' + esc(ar.image) + '">';
-    if (!/^al-/.test(key)) return '';
     var px = parseInt(size, 10), want = /%$/.test(size) || !px ? 256 : px <= 96 ? 96 : px <= 256 ? 256 : 512;
-    return '<img class="cover__img" loading="lazy" decoding="async" alt="" data-art="' + esc(key) + '" src="' + esc(App.artUrl(key, want)) + '">';
+    var e = /^ar-/.test(key) ? M.artist(key) : /^al-/.test(key) ? M.album(key) : null;
+    var own = e && (e.art || e.image);
+    if (!own && !/^al-/.test(key)) return '';
+    var src = own ? sized(own, want) : App.artUrl(key, want);
+    return '<img class="cover__img" loading="lazy" decoding="async" alt="" data-art="' + esc(key) + '" src="' + esc(src) + '">';
   }
+  function sized(url, px) { return /[?&]size=/.test(url) ? url.replace(/([?&]size=)\d+/, '$1' + px) : url + (url.indexOf('?') < 0 ? '?' : '&') + 'size=' + px; }
   App.artUrl = function (albumId, size) { return M.url('/api/art/' + encodeURIComponent(albumId) + '?size=' + size); };
   document.addEventListener('load', function (e) {
     var img = e.target; if (img.tagName === 'IMG' && img.classList.contains('cover__img')) img.parentNode.classList.add('has-art');
