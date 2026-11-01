@@ -10,6 +10,7 @@ use axum::response::Response;
 use crate::error::{Error, Result};
 use crate::ids::{AlbumId, ArtistId, TrackId};
 use crate::model::{self, Album, Artist, PlayReport, Playlist, PlaylistEdit, SourceRef, Track};
+use crate::quality::SaveCandidate;
 
 /// The saved library. Implemented by `library`, from a music folder or Jellyfin (ADR-0003).
 #[async_trait]
@@ -85,6 +86,14 @@ pub trait Transfers: Send + Sync {
     /// The source to `complete` when the listener picked none: the one the song streamed
     /// from, else the best-ranked known one. `None` when no peer is known to share it.
     async fn source_for(&self, _track: &TrackId) -> Result<Option<SourceRef>> {
+        Ok(None)
+    }
+
+    /// The copy to save by the listener's saving profile (ADR-0008): the best by its `pick`
+    /// among copies that pass its minimum, else the best of the rest, marked `meets: false`.
+    /// Searches Soulseek when no copy is known, and always when `fresh` (auto-upgrade).
+    /// `None` when no peer shares the song.
+    async fn save_candidate(&self, _track: &TrackId, _fresh: bool) -> Result<Option<SaveCandidate>> {
         Ok(None)
     }
 }

@@ -4,10 +4,11 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::model::FileFacts;
+use crate::model::{FileFacts, SourceRef};
 
-/// How good a file is, as far as lull can tell.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// How good a file is, as far as lull can tell. Ordered lossless first, then by bitrate; use
+/// `beats` to decide an upgrade, since a few kbps more is no better.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct Quality {
     pub lossless: bool,
     /// 0 when unknown.
@@ -148,6 +149,15 @@ impl Default for SaveProfile {
             upgrade_every_h: 24,
         }
     }
+}
+
+/// The copy the saving profile picks for a song (`Transfers::save_candidate`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SaveCandidate {
+    pub source: SourceRef,
+    pub quality: Quality,
+    /// Whether it passes the saving minimum; when not, the profile's `below` decides.
+    pub meets: bool,
 }
 
 pub fn is_lossless(codec_or_ext: &str) -> bool {
