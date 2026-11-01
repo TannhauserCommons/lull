@@ -2,6 +2,7 @@
 //! export, stats and settings. Publishes `play` events that Last.fm and the taste model consume
 //! (docs/context/collection.md).
 
+mod exportify;
 mod follows;
 mod import;
 mod likes;
@@ -113,6 +114,7 @@ pub fn router(svc: Arc<Service>) -> Router {
         .merge(stats::routes())
         .merge(settings::routes())
         .merge(sync::routes())
+        .merge(exportify::routes())
         .with_state(svc)
 }
 

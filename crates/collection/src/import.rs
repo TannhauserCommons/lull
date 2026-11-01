@@ -1,6 +1,6 @@
-//! M3U import preview: each line matched to the library first, else to a song Soulseek will be
-//! searched for when it is played, else not found. Nothing is created; the UI makes the
-//! playlist from the ids it keeps (`POST /api/playlists`).
+//! Import preview, for M3U files and Exportify CSVs alike: each entry matched to the library
+//! first, else to a song Soulseek will be searched for when it is played, else not found.
+//! Nothing is created; the UI makes the playlist from the ids it keeps (`POST /api/playlists`).
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -42,15 +42,20 @@ struct Line {
 /// `{ name, lines: [{ n, location, artist, title, status, trackId }], counts, libraryChecked, entities }`.
 pub(crate) async fn preview(svc: &Service, body: &[u8]) -> Result<Value> {
     let playlist = m3u::parse(&m3u::decode(body));
-    if playlist.entries.is_empty() {
+    preview_entries(svc, playlist.name, playlist.entries).await
+}
+
+/// The preview of already-read entries (`name` is the playlist's own, when the file has one).
+pub(crate) async fn preview_entries(svc: &Service, name: Option<String>, entries: Vec<Entry>) -> Result<Value> {
+    if entries.is_empty() {
         return Err(Error::BadRequest("This file has no songs in it.".into()));
     }
-    if playlist.entries.len() > MAX_LINES {
+    if entries.len() > MAX_LINES {
         return Err(Error::BadRequest(format!("This file has more than {MAX_LINES} songs.")));
     }
 
     let library_ok = Arc::new(AtomicBool::new(true));
-    let matches: Vec<(Entry, Match)> = stream::iter(playlist.entries)
+    let matches: Vec<(Entry, Match)> = stream::iter(entries)
         .map(|entry| {
             let (library, library_ok) = (svc.library.clone(), library_ok.clone());
             async move {
@@ -99,7 +104,7 @@ pub(crate) async fn preview(svc: &Service, body: &[u8]) -> Result<Value> {
             }
             let entities = entities(conn, lines.iter().filter_map(|l| l.track_id.as_ref()))?;
             Ok(json!({
-                "name": playlist.name,
+                "name": name,
                 "lines": lines,
                 "counts": { "library": counts[0], "willSearch": counts[1], "notFound": counts[2] },
                 "libraryChecked": library_checked,

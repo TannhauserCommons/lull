@@ -51,6 +51,7 @@ Every change runs in one transaction and publishes its events after the commit (
   Known limit: a title that starts with a number ("99 Luftballons") loses it when it comes from the file name.
 - **Encodings.** A BOM wins (UTF-8/UTF-16). Otherwise the file is read as UTF-8 if it is valid, else as Windows-1252, which is what old players write in `.m3u`.
 - **The library is optional.** If a library call fails once, the rest of the file is matched without it and the response says `libraryChecked: false`; the import doesn't fail.
+- **Exportify CSV** (`POST /api/import/exportify`) is read into the same entries and goes through the same preview. Columns are found by header, so order and extra columns don't matter. A song's first artist (Spotify joins them with `;`) is its artist, which is what the id and the library match use. Rows without a title or artist are dropped.
 - **Export writes stream links only.** The design also offers "library paths", but the `Library` seam doesn't expose file paths. Guessing them from `LULL_NAMING` would be wrong after MusicBrainz retagging, so library paths are not offered. With `LULL_ACCESS_TOKEN` set, outside players can't fetch the links.
 - **Activity.** A playlist created with `imported: { file, library, willSearch, notFound }` publishes an import `job` event, and library's `/api/jobs` lists it.
 
