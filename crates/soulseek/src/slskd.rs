@@ -56,6 +56,9 @@ pub struct Server {
     pub is_logged_in: bool,
     /// Connecting, logging in or disconnecting right now.
     pub is_transitioning: bool,
+    /// slskd's state flags, e.g. `Connected, LoggedIn` or `Disconnecting`.
+    #[serde(default)]
+    pub state: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]

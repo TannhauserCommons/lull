@@ -217,8 +217,15 @@ impl Transfers for Service {
 async fn watch_connection(svc: Arc<Service>, layout: Arc<RwLock<Layout>>) {
     let config = &svc.ctx.config.soulseek;
     let mut was_online = false;
+    let mut stuck = recover::Stuck::default();
     loop {
-        let (state, detail) = match svc.slskd.server().await {
+        let mut extra = Value::Null;
+        let server = svc.slskd.server().await;
+        // Only a logged-out slskd mid-transition can be stuck; anything else starts the count over.
+        if !server.as_ref().is_ok_and(|s| s.is_transitioning && !s.is_logged_in) {
+            stuck = recover::Stuck::default();
+        }
+        let (state, detail) = match server {
             Ok(server) if server.is_logged_in => {
                 let mut problems = Vec::new();
                 if !was_online {
@@ -249,7 +256,15 @@ async fn watch_connection(svc: Arc<Service>, layout: Arc<RwLock<Layout>>) {
                     false => (State::Warn, format!("Connected{who}, but {}", problems.join("; "))),
                 }
             }
-            Ok(server) if server.is_transitioning => (State::Warn, "Reconnecting to Soulseek".to_owned()),
+            Ok(server) if server.is_transitioning => {
+                match recover::unstick(&svc.slskd, &server, &mut stuck, std::time::Instant::now()).await {
+                    Some((state, detail, why)) => {
+                        extra = why;
+                        (state, detail)
+                    }
+                    None => (State::Warn, "Reconnecting to Soulseek".to_owned()),
+                }
+            }
             Ok(_) => (
                 State::Down,
                 "slskd is not connected to Soulseek; it retries by itself, so if this lasts check its Soulseek login"
@@ -260,7 +275,7 @@ async fn watch_connection(svc: Arc<Service>, layout: Arc<RwLock<Layout>>) {
         let online = state != State::Down && detail.starts_with("Connected");
         svc.online.store(online, Ordering::Relaxed);
         was_online = online;
-        svc.ctx.status.set("soulseek", state, detail, Value::Null);
+        svc.ctx.status.set("soulseek", state, detail, extra);
         tokio::time::sleep(if online { CHECK_OK } else { CHECK_DOWN }).await;
     }
 }

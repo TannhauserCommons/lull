@@ -24,7 +24,7 @@
 - **Auth and status.** Auth is `X-API-Key: LULL_SLSKD_API_KEY` against `/api/v0`. The `soulseek` status reads `GET /application` (any key may read it); `/server` and `/options` need the administrator role. States:
   - `ok`: logged in;
   - `warn`: reconnecting, or connected with a problem: lull can't see slskd's folders, shares don't match `LULL_SHARE`, or searches get no answers (below);
-  - `down`: slskd unreachable or the key rejected.
+  - `down`: slskd unreachable, the key rejected, or slskd [stuck mid-transition](#stuck-transitions).
 - **The account of an slskd lull runs** (`account.rs`, ADR-0002). With `LULL_SLSKD_CONFIG_FILE` (the desktop app's sidecar), every start writes `LULL_SOULSEEK_USERNAME`/`PASSWORD` into that `slskd.yml`, which holds nothing else. When the file changed, lull waits up to 60 s for slskd to reload it, then logs in again (or out, when the account was removed). Details: [hub.md](hub.md).
 - **State flags.** slskd sends state fields as comma-separated flag names (`Completed, Succeeded`, `Queued, Remotely`). A transfer slskd will retry itself still reads `Completed, Errored` while it waits, with `nextAttemptAt` set; lull treats that as queued. Only `Completed` without `nextAttemptAt` is final.
 - **Enqueue.** Downloads are queued with `POST /transfers/downloads/batches`, which returns the transfer ids. Queueing a file that is already running returns a failure, and lull reuses the running transfer.
@@ -38,6 +38,15 @@ The Soulseek server can keep a session that slskd reports as logged in while non
 - **The status** says what happened ("logged in again at 04:05 UTC…") until a search is answered again. While a fresh login isn't due, it quotes slskd's latest warning instead.
 - **Diagnostics.** `GET /api/soulseek/diagnostics` shows slskd's own state, how recent searches ended, and its latest log lines.
 - **No setting needed.** slskd's connection watchdog has none: it starts by itself after an unexpected disconnect and stops once connected. It deliberately doesn't start after "another client logged in", so lull doesn't fight a second login either.
+
+## Stuck transitions
+
+slskd can stop halfway through connecting or disconnecting, logged out, with its own connection watchdog off. Seen live on 2026-11-01: `Disconnecting` for over 40 minutes after a `Sequence contains no elements` exception, while every stream failed (`recover.rs`).
+
+- **The trigger.** `/application` says logged out and transitioning for 60 s. Shorter transitions are normal; plainly logged out (not transitioning) is left to slskd's watchdog, as before.
+- **The fix.** lull asks for a fresh login: `DELETE /server` (a wedged slskd may refuse it), then `PUT /server` regardless. Again 2 minutes later if still stuck, then 4, 8, and every 15 minutes at most. Logging in again resets the count.
+- **The status** turns `down` from 60 s on, saying for how long and how many fresh logins were asked: "slskd has been stuck at "Disconnecting", logged out, since 19:24 UTC (41 min); lull asked it to log in again 3 times, which didn't help: restart slskd". `extra` carries `{ stuck, stuckSince, relogins, restartSlskd }`.
+- **Restarting slskd** is the deploy's job: lull has no access to the container runtime, and Docker doesn't restart a container for a failing healthcheck by itself. After two fresh logins that didn't help, `/health` (open) shows `services.soulseek.extra.restartSlskd: true`; a watcher that can restart containers (the homelab's tooling, an autoheal-style container) keys on it. The desktop app's sidecar is its own owner's to restart.
 
 ## Search
 

@@ -21,5 +21,9 @@ fs4 = "=1.1.0"
 # Stream combinators for the response body that follows a growing file.
 futures-util = "=0.3.34"
 
+[dev-dependencies]
+# A fake slskd on a local port (recover.rs tests).
+tokio = { workspace = true, features = ["net"] }
+
 [lints]
 workspace = true
