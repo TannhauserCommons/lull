@@ -2,7 +2,7 @@
 //! stays per device in the browser). Editable values are stored here; values from server
 //! config come back read-only as `{ value, source: "config" }`, and secrets only say whether
 //! they are set. Every change, and start-up, publishes a `settings` event for the crates that
-//! honour them (soulseek: sources and sharing; discovery: discovery). Last.fm's switches live in
+//! honour them (soulseek: sources and sharing; library: the saving profile; discovery: discovery). Last.fm's switches live in
 //! lastfm (`/api/lastfm`), so they are not repeated here.
 
 use std::sync::Arc;
@@ -12,6 +12,7 @@ use axum::extract::rejection::JsonRejection;
 use axum::routing::get;
 use axum::{Json, Router};
 use lull_core::config::Config;
+use lull_core::quality::{Minimum, SaveProfile, StreamProfile};
 use lull_core::{Ctx, Error, Result};
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -29,6 +30,7 @@ pub(crate) fn routes() -> Router<Arc<Service>> {
 pub(crate) struct Prefs {
     playback: Playback,
     sources: Sources,
+    search: SearchPrefs,
     library: LibraryPrefs,
     sharing: SharingPrefs,
     discovery: DiscoveryPrefs,
@@ -70,37 +72,35 @@ enum Normalisation {
     Loudness,
 }
 
+/// Which Soulseek copy to play and to save (ADR-0008); soulseek and library read them from the
+/// `settings` event.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 struct Sources {
-    format_preset: FormatPreset,
-    /// kbps: 128, 192, 256 or 320. Lossy files below it are ignored.
-    min_bitrate: u32,
+    stream: StreamProfile,
+    save: SaveProfile,
     /// Peers with a longer upload queue are skipped.
     max_peer_queue: u32,
     /// Seconds without data before falling back to the next peer, 5-60.
     stall_timeout: u32,
-    auto_pick: bool,
 }
 
 impl Default for Sources {
     fn default() -> Self {
         Sources {
-            format_preset: FormatPreset::Lossless,
-            min_bitrate: 256,
+            stream: StreamProfile::default(),
+            save: SaveProfile::default(),
             max_peer_queue: 20,
             stall_timeout: 15,
-            auto_pick: true,
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-enum FormatPreset {
-    Lossless,
-    Bitrate,
-    Small,
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields, rename_all = "camelCase")]
+struct SearchPrefs {
+    /// Search shows a Files tab with Soulseek's folder and file results.
+    show_files: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -171,10 +171,14 @@ impl Default for DiscoverySources {
     }
 }
 
+/// What `sources.*.minimum.formats` may name: the extensions soulseek can play.
+const FORMATS: [&str; 9] = ["flac", "wav", "aif", "aiff", "m4a", "aac", "mp3", "ogg", "opus"];
+
 impl Prefs {
     /// Ranges and choices serde's types can't say.
     fn validate(&self) -> Result<()> {
-        let checks: [(&str, bool, &str); 9] = [
+        let s = &self.sources;
+        let checks: Vec<(&str, bool, &str)> = vec![
             ("playback.crossfade", self.playback.crossfade <= 12, "0 to 12 seconds"),
             (
                 "playback.loudnessTarget",
@@ -186,15 +190,27 @@ impl Prefs {
                 [2, 5, 10].contains(&self.playback.volume_step),
                 "2, 5 or 10",
             ),
+            ("sources.stream.minimum.kbps", s.stream.minimum.kbps <= 320, "0 to 320"),
             (
-                "sources.minBitrate",
-                [128, 192, 256, 320].contains(&self.sources.min_bitrate),
-                "128, 192, 256 or 320",
+                "sources.stream.minimum.formats",
+                minimum_can_pass(&s.stream.minimum),
+                "known formats (flac, wav, aif, aiff, m4a, aac, mp3, ogg, opus), including a lossless one when lossless only is on",
             ),
-            ("sources.maxPeerQueue", self.sources.max_peer_queue <= 1000, "0 to 1000"),
+            ("sources.save.minimum.kbps", s.save.minimum.kbps <= 320, "0 to 320"),
+            (
+                "sources.save.minimum.formats",
+                minimum_can_pass(&s.save.minimum),
+                "known formats (flac, wav, aif, aiff, m4a, aac, mp3, ogg, opus), including a lossless one when lossless only is on",
+            ),
+            (
+                "sources.save.upgradeEveryH",
+                (1..=720).contains(&s.save.upgrade_every_h),
+                "1 to 720 hours",
+            ),
+            ("sources.maxPeerQueue", s.max_peer_queue <= 1000, "0 to 1000"),
             (
                 "sources.stallTimeout",
-                (5..=60).contains(&self.sources.stall_timeout),
+                (5..=60).contains(&s.stall_timeout),
                 "5 to 60 seconds",
             ),
             (
@@ -220,6 +236,57 @@ impl Prefs {
     }
 }
 
+/// Known formats only, and not a minimum nothing can pass (lossless only, lossy formats only).
+fn minimum_can_pass(min: &Minimum) -> bool {
+    min.formats.iter().all(|f| FORMATS.contains(&f.as_str()))
+        && (!min.lossless_only
+            || min.formats.is_empty()
+            || min
+                .formats
+                .iter()
+                .any(|f| lull_core::quality::is_lossless(f) || f == "m4a"))
+}
+
+/// The minimum bitrate settings stored before ADR-0008 started with.
+const OLD_MIN_BITRATE: u64 = 256;
+
+/// Settings from before ADR-0008 had `sources { formatPreset, minBitrate, autoPick }`, stored but
+/// never applied. A minimum bitrate the listener changed becomes the streaming minimum, and
+/// "pick automatically" switched off becomes `ask` in both profiles; the format preset's job is
+/// now `pick`, so it goes. `explicit` is a `PATCH` from an older UI, where even the old default
+/// was the listener's choice; stored values keep the new defaults unless they were changed.
+fn migrate(v: &mut Value, explicit: bool) {
+    let Some(sources) = v.get_mut("sources").and_then(Value::as_object_mut) else {
+        return;
+    };
+    sources.remove("formatPreset");
+    if let Some(kbps) = sources.remove("minBitrate").and_then(|k| k.as_u64())
+        && (explicit || kbps != OLD_MIN_BITRATE)
+    {
+        set_path(sources, &["stream", "minimum", "kbps"], json!(kbps));
+    }
+    if sources.remove("autoPick") == Some(Value::Bool(false)) {
+        set_path(sources, &["stream", "below"], json!("ask"));
+        set_path(sources, &["save", "below"], json!("ask"));
+    }
+}
+
+fn set_path(map: &mut Map<String, Value>, path: &[&str], value: Value) {
+    let Some((last, parents)) = path.split_last() else {
+        return;
+    };
+    let mut at = map;
+    for key in parents {
+        let next = at.entry(*key).or_insert_with(|| Value::Object(Map::new()));
+        if !next.is_object() {
+            *next = Value::Object(Map::new());
+        }
+        let Value::Object(next) = next else { return };
+        at = next;
+    }
+    at.insert((*last).to_owned(), value);
+}
+
 /// Publishes the stored settings at start-up. Collection starts after every other crate
 /// (server/src/main.rs), so a crate that subscribed in its own `start` receives this.
 pub(crate) async fn announce(ctx: &Ctx) -> Result<()> {
@@ -239,6 +306,11 @@ async fn change(State(svc): State<Arc<Service>>, body: Result<Json<Value>, JsonR
     let Json(patch) = body.map_err(bad_json)?;
     let Value::Object(patch) = patch else {
         return Err(Error::BadRequest("Settings are changed with a JSON object.".into()));
+    };
+    let mut patch = Value::Object(patch);
+    migrate(&mut patch, true);
+    let Value::Object(patch) = patch else {
+        return Err(Error::internal("settings patch"));
     };
     refuse_config_keys(&patch, &config_entries(&svc.ctx))?;
     let prefs = svc
@@ -268,10 +340,16 @@ fn load(conn: &Connection) -> Result<Prefs> {
     let json: Option<String> = conn
         .query_row("SELECT json FROM collection_settings WHERE id = 1", [], |r| r.get(0))
         .optional()?;
-    match json {
-        Some(json) => serde_json::from_str(&json).map_err(|e| Error::internal(format!("stored settings: {e}"))),
-        None => Ok(Prefs::default()),
-    }
+    let Some(json) = json else {
+        return Ok(Prefs::default());
+    };
+    let mut stored: Value =
+        serde_json::from_str(&json).map_err(|e| Error::internal(format!("stored settings: {e}")))?;
+    migrate(&mut stored, false);
+    // Over the defaults: a profile written in part (by `migrate`) is completed by them.
+    let mut full = to_value(&Prefs::default())?;
+    merge(&mut full, stored);
+    serde_json::from_value(full).map_err(|e| Error::internal(format!("stored settings: {e}")))
 }
 
 /// Stored settings plus the read-only facts from config and live status, per section.
@@ -399,6 +477,7 @@ fn to_value(prefs: &Prefs) -> Result<Value> {
 mod tests {
     use super::*;
     use lull_core::db::{Db, Migrations};
+    use lull_core::quality::{SaveBelow, StreamBelow};
 
     #[tokio::test]
     async fn settings_stored_by_an_older_build_still_load() -> Result<()> {
@@ -419,5 +498,65 @@ mod tests {
         assert_eq!(prefs.discovery.adventurousness, 0.7);
         assert!(!prefs.discovery.on.lastfm);
         Ok(())
+    }
+
+    async fn stored(old: &'static str) -> Result<Prefs> {
+        let db = Db::memory()?;
+        db.migrate(&crate::MIGRATIONS)?;
+        db.call(move |conn| {
+            conn.execute("INSERT INTO collection_settings (id, json) VALUES (1, ?1)", [old])?;
+            load(conn)
+        })
+        .await
+    }
+
+    #[tokio::test]
+    async fn sources_from_before_the_profiles_migrate_to_them() -> Result<()> {
+        let untouched = stored(
+            r#"{"sources":{"formatPreset":"lossless","minBitrate":256,"maxPeerQueue":20,"stallTimeout":15,"autoPick":true}}"#,
+        )
+        .await?;
+        assert_eq!(
+            untouched.sources,
+            Sources::default(),
+            "old defaults give the new defaults"
+        );
+
+        let changed = stored(
+            r#"{"sources":{"formatPreset":"small","minBitrate":320,"maxPeerQueue":5,"stallTimeout":30,"autoPick":false}}"#,
+        )
+        .await?;
+        let s = &changed.sources;
+        assert_eq!(
+            s.stream.minimum.kbps, 320,
+            "a changed minimum becomes the streaming one"
+        );
+        assert_eq!(s.stream.below, StreamBelow::Ask);
+        assert_eq!(s.save.below, SaveBelow::Ask, "auto-pick off asks for saves too");
+        assert_eq!(s.save.minimum, SaveProfile::default().minimum);
+        assert_eq!((s.max_peer_queue, s.stall_timeout), (5, 30));
+        Ok(())
+    }
+
+    #[test]
+    fn an_older_ui_patch_still_lands_and_bad_minimums_are_refused() {
+        let mut patch = json!({ "sources": { "minBitrate": 256 } });
+        migrate(&mut patch, true);
+        assert_eq!(
+            patch,
+            json!({ "sources": { "stream": { "minimum": { "kbps": 256 } } } })
+        );
+
+        let mut prefs = Prefs::default();
+        assert!(prefs.validate().is_ok());
+        prefs.sources.save.minimum = Minimum {
+            lossless_only: true,
+            kbps: 0,
+            formats: vec!["mp3".into()],
+        };
+        assert!(prefs.validate().is_err(), "nothing could ever pass");
+        prefs.sources.save.minimum.formats = vec!["wma".into()];
+        prefs.sources.save.minimum.lossless_only = false;
+        assert!(prefs.validate().is_err(), "unknown format");
     }
 }
