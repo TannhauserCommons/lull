@@ -50,7 +50,7 @@ ADR-0002; how it works: [hub.md](hub.md). A device token travels as the HttpOnly
 | `POST /api/devices/me/state { trackId: string\|null, position, playing, volume, queue: [trackId], queueIndex: int\|null }` | 204; republished as `device.state`. `position` in seconds, `volume` 0-1 |
 | `POST /api/devices/{id}/command { action: play\|pause\|seek\|next\|prev\|volume\|takeover, value? }` | 204; forwarded as `device.command`. `seek` (seconds) and `volume` need `value`. 409 when that device has no open event stream. `takeover`: the target sends its state to the caller and pauses |
 | `GET /api/config` | `{ items: [{ key, value, set, source: env\|stored\|default, secret, restart }] }`, one per key the app can set (`lull_core::settings::KEYS`). `value` is `null` when unset and always for a secret; `set` says whether it has a value. `env` keys are locked. `restart` is `true` for every key: the crates read them all at start |
-| `PATCH /api/config { LULL_X: value\|null }` | 200 `{ items }`. `null` or `""` goes back to the default. The whole merged configuration is checked with `Config::from_vars` before anything is stored; a 400 names the key (unknown, environment-only, set in the environment, or invalid). Then the hub restarts its crates (`hub.restart`) |
+| `PATCH /api/config { LULL_X: value\|null }` | 200 `{ items }`. `null` or `""` goes back to the default. The whole merged configuration is checked with `Config::from_vars` before anything is stored; a 400 names the key (unknown, environment-only, set in the environment, or invalid). `LULL_LIBRARY` is refused: switch with `PUT /api/library/source`, which reconciles the library first. Then the hub restarts its crates (`hub.restart`) |
 
 ## Events
 

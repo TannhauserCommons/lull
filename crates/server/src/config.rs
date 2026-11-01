@@ -72,6 +72,9 @@ fn validate(
         if !KEYS.iter().any(|k| k.name == key) {
             return Err(Error::BadRequest(format!("{key} can't be set in the app.")));
         }
+        if let Some(endpoint) = changed_elsewhere(key) {
+            return Err(Error::BadRequest(format!("Change {key} with {endpoint}.")));
+        }
         if env.get(key).is_some_and(|v| !v.is_empty()) {
             return Err(Error::BadRequest(format!(
                 "{key} is set in the hub's environment; change it there."
@@ -85,6 +88,15 @@ fn validate(
     let (vars, _) = settings::merge(env, &next);
     Config::from_vars(vars).map_err(|e| Error::BadRequest(format!("{e}.")))?;
     Ok(())
+}
+
+/// Keys whose owner does more than store them: switching the library source reconciles the
+/// library before the restart.
+fn changed_elsewhere(key: &str) -> Option<&'static str> {
+    match key {
+        "LULL_LIBRARY" => Some("PUT /api/library/source"),
+        _ => None,
+    }
 }
 
 async fn items(hub: &Hub) -> Result<Vec<Item>> {
@@ -132,6 +144,7 @@ mod tests {
         assert!(change(&[("LULL_SLSKD_API_KEY", None)]).is_err_and(|e| e.contains("LULL_SLSKD_API_KEY")));
         assert!(change(&[("LULL_SLSKD_URL", Some("http://x"))]).is_err_and(|e| e.contains("environment")));
         assert!(change(&[("LULL_JELLYFIN_URL", Some("http://jf"))]).is_err_and(|e| e.contains("together")));
+        assert!(change(&[("LULL_LIBRARY", Some("folder"))]).is_err_and(|e| e.contains("/api/library/source")));
         assert!(change(&[("LULL_DATA_DIR", Some("/x"))]).is_err_and(|e| e.contains("can't be set")));
         assert!(change(&[("LULL_CAHCE_MAX_GB", Some("5"))]).is_err_and(|e| e.contains("can't be set")));
     }
