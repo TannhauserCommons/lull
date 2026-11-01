@@ -73,7 +73,9 @@
   function isCfg(path) { return path.indexOf('config.') === 0; }
   function cfgItem(key) { var c = M.peek(CONFIG); return c && (c.items || []).filter(function (i) { return i.key === key; })[0]; }
   function cfgLocked(key) { var i = cfgItem(key); return i ? i.source === 'env' : true; }
-  function cfgValue(key) { var i = cfgItem(key); return i ? i.value : val(lookup(CFG_SETTING[key] || '')); }
+  /* an unset key (value null) runs on its default, which /api/settings reports as the value in effect */
+  function cfgDefault(key) { var v = val(lookup(CFG_SETTING[key] || '')); return v == null || v === '' ? null : v; }
+  function cfgValue(key) { var i = cfgItem(key); return i && i.value != null ? i.value : cfgDefault(key); }
   /* PATCH one key; the answer is the whole list again. A refusal (400) names what is wrong in a sentence. */
   function cfgSave(key, value) {
     var body = {}; body[key] = value;
@@ -91,7 +93,8 @@
     var i = cfgItem(key);
     if (!i) return configText(lookup(CFG_SETTING[key] || ''));
     if (i.secret) return i.set ? 'set' : 'not set';
-    return i.value == null || i.value === '' ? 'not set' : String(i.value);
+    var v = i.value == null || i.value === '' ? cfgDefault(key) : i.value;
+    return v == null ? 'not set' : String(v);
   }
   /* a section that edits hub config says once when the hub can't (an older hub, or /api/config failing) */
   function cfgNotice() {
@@ -113,7 +116,7 @@
     return html`<div class="sys-row sys-row--cfg">
       <div class="sys-row__text"><label class="sys-row__label" for="${id}">${label}</label>${help || restart ? html`<span class="sys-row__help" id="${id}-h">${help}${restart}</span>` : ''}</div>
       <div class="sys-row__ctl"><span class="sys-cfg">${o.unit ? html`<span class="sys-cfg__unit">${o.unit}</span>` : ''}<input class="input" id="${id}" type="${type}" data-cfg="${key}" ${type === 'number' ? raw('inputmode="numeric" min="0"') : ''}
-          value="${i.secret || i.value == null ? '' : String(i.value)}" placeholder="${i.secret ? (i.set ? 'Set. Type a new one to replace it' : 'Not set') : o.placeholder || ''}"
+          value="${i.secret || i.value == null ? '' : String(i.value)}" placeholder="${i.secret ? (i.set ? 'Set. Type a new one to replace it' : 'Not set') : cfgDefault(key) != null ? String(cfgDefault(key)) : o.placeholder || ''}"
           autocomplete="${i.secret ? 'new-password' : 'off'}" spellcheck="false" aria-describedby="${id}-h ${id}-e"></span>
         <span class="field__error" id="${id}-e" hidden>${icon('warning', null, 'ic-16')}<span data-msg></span></span></div></div>`;
   }
