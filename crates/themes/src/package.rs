@@ -555,6 +555,58 @@ mod tests {
         }
     }
 
+    /// `web/designs/<id>.js`: a built-in's manifest and slot templates in one script, so a page gets
+    /// its design in one request at once, with no theme.json -> slots chain. Generated from the
+    /// package files: `LULL_WRITE_PACKAGES=1 cargo test -p lull-themes` writes them.
+    #[test]
+    fn each_built_in_package_script_matches_its_files() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../web/designs");
+        for id in BUILT_IN {
+            let dir = root.join(id);
+            let manifest: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(dir.join("theme.json")).unwrap_or_default()).unwrap_or_default();
+            let mut slots = BTreeMap::new();
+            for e in std::fs::read_dir(dir.join("slots")).into_iter().flatten().flatten() {
+                let name = e.file_name().to_string_lossy().trim_end_matches(".html").to_owned();
+                slots.insert(name, compact(&std::fs::read_to_string(e.path()).unwrap_or_default()));
+            }
+            let want = format!(
+                "/* {id}: theme.json and slots/ in one script (designs.js loads it). Generated: edit those files, then\n   LULL_WRITE_PACKAGES=1 cargo test -p lull-themes */\nDesigns.add({}, {});\n",
+                serde_json::to_string(&manifest).unwrap_or_default(),
+                serde_json::to_string(&slots).unwrap_or_default()
+            );
+            let path = root.join(format!("{id}.js"));
+            if std::env::var_os("LULL_WRITE_PACKAGES").is_some() {
+                assert!(std::fs::write(&path, &want).is_ok(), "write {}", path.display());
+            }
+            let have = std::fs::read_to_string(&path).unwrap_or_default();
+            assert!(
+                have == want,
+                "web/designs/{id}.js is stale: run LULL_WRITE_PACKAGES=1 cargo test -p lull-themes"
+            );
+        }
+    }
+
+    /// What designs.js does to a template before it renders: comments out, line breaks between tags out.
+    fn compact(html: &str) -> String {
+        let mut out = String::new();
+        let mut rest = html;
+        while let Some(a) = rest.find("<!--") {
+            out.push_str(&rest[..a]);
+            rest = rest[a..].find("-->").map_or("", |b| &rest[a + b + 3..]);
+        }
+        out.push_str(rest);
+        let mut joined = String::new();
+        for line in out.lines().map(str::trim).filter(|l| !l.is_empty()) {
+            let glue = !joined.is_empty() && !(joined.ends_with('>') && line.starts_with('<'));
+            if glue {
+                joined.push('\n');
+            }
+            joined.push_str(line);
+        }
+        joined
+    }
+
     #[test]
     fn a_token_only_theme_with_its_own_assets_passes_and_lists_its_slots() {
         let css = r##":root { --sky: #102030; background: url("assets/paper.png") }

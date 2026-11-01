@@ -5,11 +5,13 @@
      theme.json   manifest: id, name, author, api, extends, shell, swatches, modes, description, slots, coverVariety
      theme.css    a built-in design's CSS is the `design` cascade layer (it says so itself); a listener's theme is
                   imported into the `user` layer, after the design it extends
-     slots/*.html slot templates: static markup with {{field}} placeholders and <lull-part> elements for live parts,
-                  sanitized with the vendored DOMPurify (purify.min.js, 3.4.17) before anything reaches the page
+     slots/*.html slot templates: static markup with {{field}} placeholders and <lull-part> elements for live parts;
+                  a listener's are sanitized with the vendored DOMPurify (purify.min.js, 3.4.17, loaded only for them)
      assets/      fonts and images, referenced relatively from theme.css
-   The theme in use is per device (localStorage 'lull:prefs'.design). ?theme=safe always boots the default design.
-   The manifests seen last are cached ('lull:themes'), so the pre-paint boot knows the shell without a request. */
+   A built-in's theme.json and slots also ship as one generated script, designs/<id>.js, which the pre-paint boot
+   loads alongside the CSS: no request chain before first paint. The theme in use is per device ('lull:prefs'.design);
+   ?theme=safe always boots the default design. The listener's manifests seen last are cached ('lull:themes'), so the
+   boot knows their shell at once; only Settings > Appearance asks the hub for the list (Designs.refresh). */
 (function () {
   'use strict';
   var D = window.Designs = {};
@@ -66,20 +68,40 @@
     D.order.splice.apply(D.order, [0, D.order.length].concat(D.builtIn, mine));
   }
   function cacheList() {
-    var all = {};
-    Object.keys(D.list).forEach(function (id) { var m = D.list[id]; if (m.shell) all[id] = raw(m); });
-    store('themes', all);
+    var mine = {};
+    Object.keys(D.list).forEach(function (id) { var m = D.list[id]; if (!m.builtIn && m.shell) mine[id] = raw(m); });
+    store('themes', mine);
   }
   function raw(m) {
     return { id: m.id, name: m.label, description: m.description, author: m.author, api: m.api, extends: m.extends,
-      shell: m.shell, swatches: m.swatches, modes: m.modes, preview: m.preview, slots: m.slots, coverVariety: m.coverVariety,
-      builtIn: m.builtIn };
+      shell: m.shell, swatches: m.swatches, modes: m.modes, preview: m.preview, slots: m.slots, coverVariety: m.coverVariety };
   }
-  /* the built-ins are always known by name (their manifests arrive with the cache or the first fetch) */
+  /* the built-ins are always known by name (each manifest arrives with its designs/<id>.js) */
   D.builtIn.forEach(function (id) { D.list[id] = { id: id, builtIn: true, label: id, swatches: [], slots: [] }; });
   var cached = store('themes') || {};
-  Object.keys(cached).forEach(function (id) { absorb(cached[id], D.builtIn.indexOf(id) >= 0 && cached[id].builtIn !== false); });
+  Object.keys(cached).forEach(function (id) { absorb(cached[id], false); });
   sortOrder();
+
+  /* designs/<id>.js calls this with the built-in's theme.json and its slot templates (trusted: they ship with lull) */
+  var waiting = {};                        // built-in id -> resolve, while its script loads
+  D.add = function (manifest, slots) {
+    var m = absorb(manifest, true);
+    if (!m) return;
+    templates[m.id] = slots; trusted[m.id] = true;
+    sortOrder();
+    if (waiting[m.id]) waiting[m.id]();
+  };
+  var scripts = {};
+  function builtInScript(id, blocking) {
+    return scripts[id] || (scripts[id] = new Promise(function (ok, fail) {
+      waiting[id] = ok;
+      var s = document.createElement('script');
+      s.src = D.base + id + '.js';
+      if (blocking) s.setAttribute('blocking', 'render');     // no first paint without the shell (Chromium; else a frame)
+      s.onerror = function () { delete scripts[id]; fail(new Error(s.src + ' failed to load')); };
+      document.head.appendChild(s);
+    }));
+  }
 
   function getJson(url) {
     return fetch(url, { credentials: 'same-origin' }).then(function (r) {
@@ -95,20 +117,18 @@
   }
   function manifest(id) {
     var m = D.list[id];
+    if (D.builtIn.indexOf(id) >= 0) return templates[id] ? Promise.resolve(m) : builtInScript(id).then(function () { return D.list[id]; });
     if (m && m.shell) return Promise.resolve(m);
     return getJson(D.packageUrl(id) + 'theme.json').then(function (j) {
-      var got = absorb(j, D.builtIn.indexOf(id) >= 0);
+      var got = absorb(j, false);
       if (!got) throw new Error('Invalid theme.json for ' + id);
       sortOrder(); cacheList();
       return got;
     });
   }
-  /* GET /api/themes: every manifest (the built-ins plus the listener's). Resolves to D.list. Without the hub (offline, a
-     desktop page) the built-ins still come from their own theme.json, so the picker stays whole. */
+  /* GET /api/themes: every manifest (the built-ins plus the listener's), for Settings > Appearance. Resolves to D.list. */
   D.refresh = function () {
-    return getJson(API.replace(/\/$/, '')).catch(function (e) {
-      return Promise.all(D.builtIn.map(function (id) { return manifest(id); })).then(function () { throw e; });
-    }).then(function (j) {
+    return getJson(API.replace(/\/$/, '')).then(function (j) {
       var seen = {};
       (j.items || []).forEach(function (it) { var m = absorb(it, !!it.builtIn); if (m) seen[m.id] = true; });
       Object.keys(D.list).forEach(function (id) { if (!D.list[id].builtIn && !seen[id]) delete D.list[id]; });
@@ -163,12 +183,13 @@
      it extends. An empty template renders nothing. coverArt has no template: the manifest's coverVariety adds the
      per-item hooks to the default cover instead (it runs for every cover, so it stays a string edit). */
   var templates = {};                      // theme id -> { 'nowHero.full': '<markup>' }
+  var trusted = {};                        // theme id -> true for the built-ins (no sanitizer needed)
   D.slot = function (name, ctx, fallback) {
     ctx = ctx || {};
     if (name === 'coverArt') return coverArt(ctx, fallback);
     var tpl = template(name, VARIANT[name] ? VARIANT[name](ctx) : '');
     if (tpl == null) return fallback(ctx);
-    try { return renderSlot(name, tpl, ctx); } catch (e) { console.error('[theme slot ' + name + ']', e); }
+    try { return renderSlot(name, tpl.text, ctx, tpl.trusted); } catch (e) { console.error('[theme slot ' + name + ']', e); }
     return fallback(ctx);
   };
   var VARIANT = {
@@ -184,9 +205,8 @@
   function template(name, variant) {
     var ids = chain(D.current);
     for (var i = 0; i < ids.length; i++) {
-      var t = templates[ids[i]] || {};
-      if (variant && t[name + '.' + variant] != null) return t[name + '.' + variant];
-      if (t[name] != null) return t[name];
+      var t = templates[ids[i]] || {}, k = variant && t[name + '.' + variant] != null ? name + '.' + variant : name;
+      if (t[k] != null) return { text: t[k], trusted: !!trusted[ids[i]] };
     }
     return null;
   }
@@ -197,7 +217,6 @@
       return getText(D.packageUrl(id) + 'slots/' + s + '.html').then(function (t) { got[s] = t; });
     })).then(function () { templates[id] = got; });
   }
-  D.forget = function (id) { delete templates[id]; };
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; });
@@ -223,17 +242,19 @@
     }
     return P.sanitize(markup, PURIFY);
   };
+  function parsed(markup) { var b = document.createElement('div'); b.innerHTML = markup; return b; }
   /* fields fill {{name}} (always escaped, so a song title can never become markup); then the sanitizer; then every
      <lull-part name="..."> becomes the live markup the app hands the slot (ctx.parts), which is the app's own */
-  function renderSlot(name, tpl, ctx) {
+  function renderSlot(name, tpl, ctx, isTrusted) {
     tpl = tpl.replace(/<!--[\s\S]*?-->/g, '').replace(/>\s*\n\s*</g, '><').trim();   // indent freely: line breaks between tags go
     if (!tpl) return '';
     var f = FIELDS[name] ? FIELDS[name](ctx) : {};
     f.product = D.product;
-    var body = D.sanitize(tpl.replace(/\{\{\s*([a-zA-Z][a-zA-Z0-9]*)\s*\}\}/g, function (all, k) {
+    var filled = tpl.replace(/\{\{\s*([a-zA-Z][a-zA-Z0-9]*)\s*\}\}/g, function (all, k) {
       if (!Object.prototype.hasOwnProperty.call(f, k)) { console.warn('[theme slot ' + name + '] unknown field', k); return ''; }
       return esc(f[k]);
-    }));
+    });
+    var body = isTrusted ? parsed(filled) : D.sanitize(filled);
     var parts = body.querySelectorAll('lull-part'), made = {};
     for (var i = 0; i < parts.length; i++) parts[i].outerHTML = part(name, parts[i], ctx, made);
     return body.innerHTML;
@@ -447,20 +468,24 @@
   function prepare(id) {
     return manifest(id).then(function (m) {
       return (m.extends && D.list[m.extends] ? manifest(m.extends) : Promise.resolve()).then(function () {
-        var ids = chain(id), slots = ids.some(function (x) { return D.list[x].slots.length; });
-        return (slots ? loadPurify() : Promise.resolve()).then(function () { return Promise.all(ids.map(loadTemplates)); });
+        var ids = chain(id), untrusted = ids.some(function (x) { return !trusted[x] && D.list[x].slots.length; });
+        return (untrusted ? loadPurify() : Promise.resolve()).then(function () { return Promise.all(ids.map(loadTemplates)); });
       });
     });
   }
 
-  /* before first paint (inline script in <head>): attributes and stylesheets from the cached manifest, then the rest.
-     Without a cached manifest (first visit) the page stays hidden until it has one (base.css, :root[data-booting]). */
+  /* before first paint (inline script in <head>): the design's stylesheet and its designs/<id>.js start loading side by
+     side (the script blocks rendering like the stylesheet, so the shell is right on the first frame). A listener's theme
+     uses its cached manifest; on its first visit the page stays hidden until it has one (base.css, :root[data-booting]). */
   var booting = null;
   D.boot = function () {
     var id = D.wanted(), m = D.list[id], design = designOf(id);
-    if (m && m.shell) applyAttrs(id); else { D.current = id; root.setAttribute('data-booting', ''); }
-    if (link && design) link.setAttribute('href', D.base + design + '/theme.css');
-    if (link && !design && D.list[id] && D.list[id].shell) link.disabled = true;
+    D.current = id;
+    if (design) { root.setAttribute('data-design', design); if (link) link.setAttribute('href', D.base + design + '/theme.css'); }
+    if (design) builtInScript(design, true);
+    if (m && m.shell) applyAttrs(id);
+    else if (!m || !m.builtIn) root.setAttribute('data-booting', '');
+    if (link && !design && m && m.shell) link.disabled = true;
     setUserCss(id);
     booting = prepare(id).then(function () {
       applyAttrs(id); setUserCss(id);
@@ -468,10 +493,7 @@
     }, function (e) {
       console.error('Theme ' + id + ' failed to load, using ' + D.fallback, e);
       return prepare(D.fallback).then(function () { applyAttrs(D.fallback); setUserCss(D.fallback); if (link) { link.disabled = false; link.setAttribute('href', D.base + D.fallback + '/theme.css'); } });
-    }).then(function () {
-      root.removeAttribute('data-booting');
-      if (!safe) D.refresh().catch(function () {});        // the listener's themes, for the picker; offline is fine
-    });
+    }).then(function () { root.removeAttribute('data-booting'); });
   };
   /* run fn once the current theme's slots and manifest are ready */
   D.ready = function (fn) { (booting || prepare(D.current || D.wanted())).then(fn, fn); };

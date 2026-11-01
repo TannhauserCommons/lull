@@ -4,6 +4,8 @@ A theme restyles lull on every device that picks it. It is plain CSS, plus optio
 
 Ten minutes from here you can write one. The decision behind it is ADR-0004.
 
+(Editing a built-in design? Each also ships as one generated script, `web/designs/<name>.js`, so a page loads it in a single request. After changing its `theme.json` or `slots/`, run `LULL_WRITE_PACKAGES=1 cargo test -p lull-themes`; the test fails while it is stale.)
+
 ## 1. What a theme is
 
 A folder, or a `.lulltheme` file (a zip of that folder):
