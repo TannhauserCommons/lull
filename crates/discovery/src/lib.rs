@@ -118,8 +118,8 @@ pub async fn start(ctx: &Ctx, library: Arc<dyn Library>) -> Result<Arc<Service>>
         adventurousness: RwLock::new(DEFAULT_STEER),
         ctx: ctx.clone(),
     });
-    tokio::spawn(listen(svc.clone(), ctx.bus.subscribe()));
-    tokio::spawn(feed::keep_fresh(svc.clone()));
+    ctx.spawn(listen(svc.clone(), ctx.bus.subscribe()));
+    ctx.spawn(feed::keep_fresh(svc.clone()));
     Ok(svc)
 }
 

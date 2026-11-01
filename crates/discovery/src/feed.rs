@@ -170,7 +170,8 @@ pub fn refresh_soon(svc: &Arc<Service>) {
         return;
     }
     let svc = svc.clone();
-    tokio::spawn(async move {
+    // A rebuild makes paced outside calls for a while; it stops with the crates on a restart.
+    svc.ctx.clone().spawn(async move {
         let _building = svc.feed.building.lock().await;
         svc.feed.queued.store(false, Ordering::SeqCst);
         if let Err(e) = rebuild(&svc).await {
