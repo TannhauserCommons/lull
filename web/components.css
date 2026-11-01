@@ -361,13 +361,23 @@ button.trow__title:hover { text-decoration: underline; text-underline-offset: 3p
           grid-template-areas: "num art main album added badges like dur more"; }
   .tlist--dated .trow__added { display: block; }
 }
-/* a wide list adds the file's bitrate and sample rate: the badge cell takes a fixed width, so it reads as a column */
-.trow__rate { display: none; font: var(--t-meta); color: var(--fg-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* a wide list adds columns inside the badge cell, which takes a fixed width so they read as columns: play counts
+   (lists that have them, from 1100 px), then the file's bitrate and sample rate (from 1240 px) */
+.trow__plays, .trow__rate { display: none; font: var(--t-meta); color: var(--fg-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+@container tlist (min-width: 1100px) {
+  .tlist--plays .trow { grid-template-columns: 32px var(--art) minmax(0, 1.3fr) minmax(0, 1fr) 200px auto 52px 40px; }
+  .tlist--plays.tlist--dated .trow { grid-template-columns: 32px var(--art) minmax(0, 1.3fr) minmax(0, 1fr) 112px 200px auto 52px 40px; }
+  .tlist--plays .trow__badges { justify-content: flex-start; }
+  .tlist--plays .trow__plays { display: inline; margin-left: auto; }
+}
 @container tlist (min-width: 1240px) {
   .trow { grid-template-columns: 32px var(--art) minmax(0, 1.3fr) minmax(0, 1fr) 300px auto 52px 40px; }
   .tlist--dated .trow { grid-template-columns: 32px var(--art) minmax(0, 1.3fr) minmax(0, 1fr) 112px 300px auto 52px 40px; }
   .trow__badges { justify-content: flex-start; }
   .trow__rate { display: inline; margin-left: auto; }
+  .tlist--plays .trow { grid-template-columns: 32px var(--art) minmax(0, 1.3fr) minmax(0, 1fr) 380px auto 52px 40px; }
+  .tlist--plays.tlist--dated .trow { grid-template-columns: 32px var(--art) minmax(0, 1.3fr) minmax(0, 1fr) 112px 380px auto 52px 40px; }
+  .tlist--plays .trow__rate { margin-left: var(--sp-4); min-width: 9.5rem; }
 }
 @container tlist (max-width: 520px) {
   .trow { grid-template-columns: var(--art) minmax(0, 1fr) auto 40px; grid-template-areas: "art main like more"; column-gap: var(--sp-3); }

@@ -527,7 +527,7 @@
       </div>
       <div class="trow__album"><a href="#/album/${track.albumId}" tabindex="-1">${track.album}</a></div>
       ${opts.added ? html`<div class="trow__added">${fmtDate(opts.added, true)}</div>` : ''}
-      <div class="trow__badges"><span class="dl-mark" data-dl-mark="${track.id}" ${App.downloads && App.downloads.has(track.id) ? raw('data-on') : ''}>${App.downloads && App.downloads.has(track.id) ? icon('downloaded', 'Downloaded', 'ic-16') : ''}</span>${opts.badges || ''}${opts.dup === 'better' ? ui.dupBetter() : opts.dup ? ui.dupNote() : ''}${ui.sourceBadge(track)}${track.format ? ui.qualityChip(track.format) : ''}${opts.showSources && sourceCount(track) ? html`<button class="trow__sources" data-act="show-sources" data-id="${track.id}" tabindex="-1" aria-label="${sourceCount(track)} sources for ${track.title}. Pick a source" data-tip="Pick a source">${sourceCount(track)} sources</button>` : ''}<span class="trow__rate">${rateLine(track)}</span></div>
+      <div class="trow__badges"><span class="dl-mark" data-dl-mark="${track.id}" ${App.downloads && App.downloads.has(track.id) ? raw('data-on') : ''}>${App.downloads && App.downloads.has(track.id) ? icon('downloaded', 'Downloaded', 'ic-16') : ''}</span>${opts.badges || ''}${opts.dup === 'better' ? ui.dupBetter() : opts.dup ? ui.dupNote() : ''}${ui.sourceBadge(track)}${track.format ? ui.qualityChip(track.format) : ''}${opts.showSources && sourceCount(track) ? html`<button class="trow__sources" data-act="show-sources" data-id="${track.id}" tabindex="-1" aria-label="${sourceCount(track)} sources for ${track.title}. Pick a source" data-tip="Pick a source">${sourceCount(track)} sources</button>` : ''}${opts.plays != null ? html`<span class="trow__plays">${opts.plays === 1 ? '1 play' : opts.plays + ' plays'}</span>` : ''}<span class="trow__rate">${rateLine(track)}</span></div>
       <div class="trow__like">${ui.likeButton(track.id)}</div>
       <div class="trow__dur">${fmtTime(track.duration)}</div>
       <div class="trow__more">${opts.actions === false ? '' : html`<button class="btn-icon btn-icon--bare" data-act="track-menu" data-id="${track.id}" aria-haspopup="menu" aria-label="More actions for ${track.title}" data-tip="More">${icon('more')}</button>`}</div>
@@ -544,8 +544,8 @@
   ui.trackList = function (tracks, opts) {
     opts = opts || {};
     tracks = tracks.map(function (t) { return typeof t === 'string' ? M.track(t) : t; }).filter(Boolean);
-    return html`<ol class="tlist${opts.dense ? ' tlist--dense' : ''}${opts.dated ? ' tlist--dated' : ''}" data-ids="${tracks.map(function (t) { return t.id; }).join(',')}" ${opts.label ? raw('aria-label="' + esc(opts.label) + '"') : ''}>${tracks.map(function (t, i) {
-      return ui.trackRow(t, Object.assign({}, opts, { index: opts.numbered === false ? t.no : i + 1, added: opts.added ? opts.added[i] : null }));
+    return html`<ol class="tlist${opts.dense ? ' tlist--dense' : ''}${opts.dated ? ' tlist--dated' : ''}${opts.plays ? ' tlist--plays' : ''}" data-ids="${tracks.map(function (t) { return t.id; }).join(',')}" ${opts.label ? raw('aria-label="' + esc(opts.label) + '"') : ''}>${tracks.map(function (t, i) {
+      return ui.trackRow(t, Object.assign({}, opts, { index: opts.numbered === false ? t.no : i + 1, added: opts.added ? opts.added[i] : null, plays: opts.plays ? opts.plays[i] : null }));
     })}</ol>`;
   };
 

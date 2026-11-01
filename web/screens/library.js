@@ -279,6 +279,13 @@
       })}
     </section>`;
   }
+  /* date added and plays for a wide list (ADR-0007): GET /api/library/songs sends them per song, outside the entity */
+  function songFacts(list, songs) {
+    if (!songs) return {};
+    function fact(t) { return songs[t.id] || {}; }
+    return { dated: true, added: list.map(function (t) { return fact(t).addedAt ? String(fact(t).addedAt).slice(0, 10) : null; }),
+      plays: list.map(function (t) { return fact(t).plays != null ? fact(t).plays : null; }) };
+  }
   function songsSegment(r, path) {
     return html`<section class="card lib-card" aria-labelledby="lib-songs-h">
       ${ruleWith('saved songs', 'lib-songs-h', sortButton('lib-song-sort', SONG_SORTS[prefs.songSort]))}
@@ -289,7 +296,7 @@
           <button class="btn" data-act="lib-shuffle-ids" data-ids="${ids.join(',')}">${icon('shuffle')}Shuffle</button>
           <span class="lib-facts px">${plural(ids.length, 'song')}, ${fmt.length(sumDuration(ids))}</span>
         </div>
-        ${ui.trackList(list, { label: 'Saved songs', unavailable: jellyfinDown() || !!d.stale })}
+        ${ui.trackList(list, Object.assign({ label: 'Saved songs', unavailable: jellyfinDown() || !!d.stale }, songFacts(list, d.songs)))}
         ${showAll('songs', d, 'song')}`;
       })}
     </section>`;
