@@ -1,7 +1,8 @@
 /* screens/hub.js.
    The hub's own settings (ADR-0002, ADR-0003), built with the settings kit (system.js):
    - the library source: a music folder or Jellyfin (found on the network, connected by Quick Connect or a password);
-   - the Soulseek account slskd signs in with (hub config);
+   - the Soulseek account slskd signs in with: hub config when the hub manages its own slskd (the desktop app,
+     GET /api/setup `soulseekManaged`), otherwise only slskd's state (the login is set where slskd runs);
    - Settings > Devices: paired devices (online, rename, unpair), adding one by QR code, Subsonic app passwords.
    First-run setup (setup.js) is built from the same parts: App.hubKit.
    Reads: GET /api/library/source, GET /api/jellyfin/discover, GET /api/devices, `library.source` and `device.*` events. */
@@ -11,8 +12,10 @@
   var K = App.settingsKit;
   var SOURCE = '/api/library/source', DISCOVER = '/api/jellyfin/discover', DEVICES = '/api/devices', CONFIG = '/api/config';
   var C = App.connect;
-  /* the hub config keys holding the Soulseek account */
-  var SLSK_USER = 'LULL_SOULSEEK_USERNAME', SLSK_PASS = 'LULL_SOULSEEK_PASSWORD';
+  /* the hub config keys holding the Soulseek account, used only when the hub runs its own slskd */
+  var SLSK_USER = 'LULL_SOULSEEK_USERNAME', SLSK_PASS = 'LULL_SOULSEEK_PASSWORD', SETUP = '/api/setup';
+  function soulseekManaged() { var s = M.peek(SETUP); return !!(s && s.soulseekManaged); }
+  var ELSEWHERE = 'Your Soulseek login is set where slskd runs (its own settings, or the deploy kit\'s .env).';
 
   function errText(err) { return err && err.message || String(err); }
   function fieldError(msg) { return msg ? html`<p class="field__error" role="alert">${icon('warning', null, 'ic-16')}<span>${msg}</span></p>` : ''; }
@@ -222,20 +225,22 @@
   }
   /* Settings > Sources: the two keys as config fields, with slskd's own status */
   function soulseekRows() {
-    return html`${K.row('Soulseek', 'The account slskd signs in with. Soulseek allows one sign-in per account at a time.', html`<span id="hub-slsk-status">${soulseekStatus()}</span>`)}
-      ${K.cfgField(SLSK_USER, 'Soulseek user name')}${K.cfgField(SLSK_PASS, 'Soulseek password')}`;
+    var r = M.get(SETUP), managed = soulseekManaged();
+    return html`${K.row('Soulseek', managed ? 'The account slskd signs in with. Soulseek allows one sign-in per account at a time.' : ELSEWHERE, html`<span id="hub-slsk-status">${soulseekStatus()}</span>`)}
+      ${!r.loading && managed ? html`${K.cfgField(SLSK_USER, 'Soulseek user name')}${K.cfgField(SLSK_PASS, 'Soulseek password')}` : ''}`;
   }
   /* first-run setup: both keys in one form, one restart */
   var slsk = { busy: false, error: null, sent: false };
   function soulseekForm() {
+    var st = App.store.get('services').soulseek;
+    if (!soulseekManaged()) return html`<p class="sys-row__help">${ELSEWHERE}</p>${soulseekStatus()}`;
     var r = M.get(CONFIG), user = K.cfgItem(SLSK_USER), pass = K.cfgItem(SLSK_PASS);
     if (r.loading) return ui.skeleton('text', 2);
     if (r.error) return html`${fieldError(r.error.message)}<button class="btn btn--sm" data-act="reload-read" data-id="${CONFIG}">Try again</button>`;
-    var st = App.store.get('services').soulseek;
     if (!user || !pass || user.source === 'env') {
       return html`<p class="sys-row__help">${user && user.value ? html`Signed in as <b>${user.value}</b>. ` : ''}The hub's environment sets this account.</p>${soulseekStatus()}`;
     }
-    if (user.value && pass.value && !slsk.editing) {
+    if (user.value && pass.set && !slsk.editing) {
       return html`<p class="sys-step__done">${st.state === 'ok' ? icon('check', null, 'ic-16') : ''}${st.state === 'ok' ? html`Signed in as <b>${user.value}</b>` : html`<span>${user.value}</span>`}</p>
         ${st.state === 'ok' ? '' : soulseekStatus()}<button class="btn btn--sm btn--quiet" data-act="hub-slsk-edit">Use another account</button>`;
     }

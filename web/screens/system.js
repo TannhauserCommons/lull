@@ -61,8 +61,9 @@
   function lookup(path) { return path.split('.').reduce(function (o, k) { return o == null ? o : o[k]; }, settings()); }
   function locked(path) { return isCfg(path) ? cfgLocked(path.slice(7)) : isConfig(lookup(path)); }
 
-  /* ---------- hub config (ADR-0002): GET /api/config { items: [{ key, value, source: env|stored|default, secret,
-     restart }] }, changed with PATCH /api/config { KEY: value|null }. A control reads it by the path 'config.KEY'.
+  /* ---------- hub config (ADR-0002): GET /api/config { items: [{ key, value, set, source: env|stored|default, secret,
+     restart }] } (a secret's value is always null: `set` says whether it has one), changed with
+     PATCH /api/config { KEY: "value"|null } (values are strings). A control reads it by the path 'config.KEY'.
      Keys the environment sets are read-only; secrets only say whether they are set and are never shown.
      Until the hub answers /api/config, each key shows read-only from /api/settings (CFG_SETTING). ---------- */
   var CFG_SETTING = { LULL_SHARE: 'sharing.mode', LULL_CACHE_MAX_GB: 'cache.capGB', LULL_MUSIC_DIR: 'library.musicFolder',
@@ -89,7 +90,7 @@
   function cfgText(key) {
     var i = cfgItem(key);
     if (!i) return configText(lookup(CFG_SETTING[key] || ''));
-    if (i.secret) return i.value ? 'set' : 'not set';
+    if (i.secret) return i.set ? 'set' : 'not set';
     return i.value == null || i.value === '' ? 'not set' : String(i.value);
   }
   /* a section that edits hub config says once when the hub can't (an older hub, or /api/config failing) */
@@ -112,7 +113,7 @@
     return html`<div class="sys-row sys-row--cfg">
       <div class="sys-row__text"><label class="sys-row__label" for="${id}">${label}</label>${help || restart ? html`<span class="sys-row__help" id="${id}-h">${help}${restart}</span>` : ''}</div>
       <div class="sys-row__ctl"><span class="sys-cfg">${o.unit ? html`<span class="sys-cfg__unit">${o.unit}</span>` : ''}<input class="input" id="${id}" type="${type}" data-cfg="${key}" ${type === 'number' ? raw('inputmode="numeric" min="0"') : ''}
-          value="${i.secret || i.value == null ? '' : String(i.value)}" placeholder="${i.secret ? (i.value ? 'Set. Type a new one to replace it' : 'Not set') : o.placeholder || ''}"
+          value="${i.secret || i.value == null ? '' : String(i.value)}" placeholder="${i.secret ? (i.set ? 'Set. Type a new one to replace it' : 'Not set') : o.placeholder || ''}"
           autocomplete="${i.secret ? 'new-password' : 'off'}" spellcheck="false" aria-describedby="${id}-h ${id}-e"></span>
         <span class="field__error" id="${id}-e" hidden>${icon('warning', null, 'ic-16')}<span data-msg></span></span></div></div>`;
   }
@@ -125,7 +126,6 @@
     var input = e.target.closest && e.target.closest('[data-cfg]'); if (!input) return;
     var key = input.getAttribute('data-cfg'), i = cfgItem(key), v = input.value.trim();
     if (i && i.secret && !v) return;                       // an empty secret field means "keep what is set"
-    if (input.type === 'number' && v !== '') v = +v;
     cfgError(input, ''); input.setAttribute('aria-busy', 'true');
     cfgSave(key, v === '' ? null : v).then(function () {
       input.removeAttribute('aria-busy');
@@ -143,7 +143,7 @@
   function setVal(path, v) {
     if (typeof get(path) === 'number') v = +v;
     if (custom[path] && custom[path].set) custom[path].set(v);
-    else if (isCfg(path)) cfgSave(path.slice(7), v).catch(function (err) { App.toast('Couldn\'t change that: ' + err.message, { kind: 'error' }); App.refresh(); });
+    else if (isCfg(path)) cfgSave(path.slice(7), String(v)).catch(function (err) { App.toast('Couldn\'t change that: ' + err.message, { kind: 'error' }); App.refresh(); });
     else save(one(path, v));
     if (effects[path]) effects[path](v);
   }
