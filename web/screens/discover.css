@@ -3,7 +3,7 @@
    column through container queries (the context panel changes the width, not the viewport). */
 
 /* ---------- page head: greeting / title on the sky ---------- */
-.disc-home, .disc-search { container: disc / inline-size; max-width: 1280px; }
+.disc-home, .disc-search { container: disc / inline-size; }
 .disc-hello { margin: var(--sp-2) 0 var(--sp-6); padding-right: var(--sp-10); }
 .disc-hello h1 { position: relative; display: inline-block; margin: 0 0 var(--sp-2); }
 .disc-hello h1 .sparkle { right: -30px; top: 0; }
@@ -25,9 +25,35 @@
 .disc-note { max-width: 60ch; font: var(--t-meta); color: var(--fg-2); }
 .disc-note .kbd { margin: 0 2px; }
 
-/* shelves inside cards: keep the scrollbar off the stack edge */
-.disc-shelf { padding: 0 10px var(--sp-2) 0; grid-auto-columns: minmax(148px, calc((100% - 3 * var(--sp-5) - 10px) / 4)); }
-.disc-shelf--sm { grid-auto-columns: minmax(136px, calc((100% - 3 * var(--sp-5) - 10px) / 4)); }
+/* Home modules (ADR-0007): one column below wide, two at wide, three from xwide; every module is a `section`
+   container. Columns, not a grid: modules stack down each column in their order (the reading order too), so a short
+   module never leaves a hole beside a tall one. */
+.disc-hello { position: relative; }
+.disc-hello__edit { position: absolute; right: 0; top: 4px; }
+.disc-modules { column-gap: var(--sp-6); }
+@container main (min-width: 1100px) { .disc-modules { column-count: 2; } }
+@container main (min-width: 1600px) { .disc-modules { column-count: 3; } }
+.disc-mod { min-width: 0; break-inside: avoid; container: section / inline-size; }
+/* nothing to show: the module is one line (name, why, maybe a link) */
+.disc-card:has(> .disc-empty) { padding-block: var(--sp-3); }
+.disc-empty { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-1) var(--sp-3); }
+.disc-empty h2 { margin: 0; font: var(--t-h2); letter-spacing: var(--t-h2-track); color: var(--fg); }
+.disc-empty p { flex: 1 1 16ch; margin: 0; font: var(--t-meta); color: var(--fg-2); }
+.disc-empty .btn { align-self: center; }
+/* Edit Home: a bar of its own, each module a handle, arrows and a hide switch above its card */
+.disc-editbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-5); padding: var(--sp-3) var(--sp-4); }
+.disc-editbar p { display: flex; align-items: center; gap: var(--sp-2); flex: 1 1 30ch; margin: 0; font: var(--t-meta); color: var(--fg-2); }
+.disc-mod__tools { display: flex; align-items: center; gap: var(--sp-1); margin-bottom: var(--sp-2); padding: 2px 4px 2px 8px; border-radius: var(--r-pill); background: var(--bg-2); }
+.disc-mod__grip { display: grid; cursor: grab; color: var(--fg-2); }
+.disc-mod__name { flex: 1; min-width: 0; font: 800 .875rem/1.2 var(--f-ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.disc-home.is-editing .disc-mod > .card { pointer-events: none; }        /* while editing, the cards are previews */
+.disc-mod.is-hidden > .card { opacity: .45; }
+.disc-mod.is-dragging { opacity: .5; }
+.disc-mod.is-drop-target > .card { box-shadow: 0 0 0 3px var(--focus), var(--stack); }
+
+/* shelves inside cards: tiles keep their size, a wider module shows more of them; the scrollbar stays off the edge */
+.disc-shelf { padding: 0 10px var(--sp-2) 0; grid-auto-columns: 168px; }
+.disc-shelf--sm { grid-auto-columns: 152px; }
 .disc-shelf--artists { grid-auto-columns: 132px; }
 @media (max-width: 639px) { .disc-shelf, .disc-shelf--sm { grid-auto-columns: 148px; } .disc-shelf--artists { grid-auto-columns: 128px; } }
 .disc-skel-shelf .skel-group { display: grid; grid-auto-flow: column; grid-auto-columns: 168px; gap: var(--sp-5); overflow: hidden; }
@@ -47,9 +73,11 @@
 .disc-starter__play .ic { width: 18px; height: 18px; margin-left: 2px; }
 
 /* ---------- picked for you: grid of rows with reason chips ---------- */
-.disc-picks { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-2) var(--sp-5); margin: 0; padding: 0; list-style: none; }
-@container disc (min-width: 600px) { .disc-picks { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@container disc (min-width: 1040px) { .disc-picks { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+/* columns of picks as the module allows, about three rows of them: 6 picks, 9 from 900 px, 12 from 1200 px */
+.disc-picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); gap: var(--sp-2) var(--sp-5); margin: 0; padding: 0; list-style: none; }
+.disc-picks > li:nth-child(n+7) { display: none; }
+@container section (min-width: 900px) { .disc-picks > li:nth-child(-n+9) { display: grid; } }
+@container section (min-width: 1200px) { .disc-picks > li:nth-child(-n+12) { display: grid; } }
 .disc-pick {
   display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; grid-template-areas: "art main end" "art why why";
   align-items: start; align-content: start; gap: 0 var(--sp-3); padding: 8px; border-radius: 16px; transition: background-color var(--dur-1);
@@ -77,8 +105,7 @@ button.disc-pick__title:hover { text-decoration: underline; text-underline-offse
 .disc-pick__nosrc { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); margin-top: var(--sp-2); }
 .disc-pick__nosrc .resolve { font: 700 .875rem/1.2 var(--f-ui); color: var(--fg-2); }
 .disc-picks-skel .skel-group { display: grid; grid-template-columns: minmax(0, 1fr); column-gap: var(--sp-5); }
-@container disc (min-width: 600px) { .disc-picks-skel .skel-group { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@container disc (min-width: 1040px) { .disc-picks-skel .skel-group { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.disc-picks-skel .skel-group { grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); }
 
 /* ---------- jump back in / artist tiles: round art for artists ---------- */
 .disc-jump--round .tile__art .cover { border-radius: 50%; }
