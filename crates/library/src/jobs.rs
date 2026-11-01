@@ -204,8 +204,12 @@ impl Jobs {
             rescans: Mutex::new(rescans),
             others: Mutex::default(),
         });
-        tokio::spawn(learn_others(jobs.clone()));
         Ok(jobs)
+    }
+
+    /// Learns other crates' jobs from their `job` events, until the hub stops the crates.
+    pub fn follow(self: &Arc<Self>, ctx: &lull_core::Ctx) {
+        ctx.spawn(learn_others(self.clone()));
     }
 
     pub fn get(&self, id: &str) -> Option<SaveJob> {

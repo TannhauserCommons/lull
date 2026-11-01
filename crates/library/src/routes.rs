@@ -6,10 +6,12 @@ use std::sync::Arc;
 
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, Query, State};
+use axum::http::HeaderValue;
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use lull_core::config::LibraryMode;
 use lull_core::ids::{AlbumId, TrackId};
 use lull_core::model::{Entities, SourceRef};
 use lull_core::status::State as ServiceState;
@@ -17,9 +19,9 @@ use lull_core::{Error, Result, catalog};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::items::Quality;
+use crate::items::{Location, Quality};
 use crate::jobs::{Duplicate, RescanJob, SaveJob, Status};
-use crate::{Service, art, save, sync};
+use crate::{Service, art, connect, folder, save, switch, sync};
 
 type Svc = State<Arc<Service>>;
 
@@ -32,6 +34,11 @@ pub fn router(svc: Arc<Service>) -> Router {
         .route("/api/library/genres", get(genres))
         .route("/api/library/stream/{id}", get(stream))
         .route("/api/library/rescan", post(rescan))
+        .route("/api/library/source", get(source).put(set_source))
+        .route("/api/jellyfin/discover", get(discover))
+        .route("/api/jellyfin/quickconnect", post(quick_connect))
+        .route("/api/jellyfin/quickconnect/{secret}", get(quick_connect_state))
+        .route("/api/jellyfin/signin", post(sign_in))
         .route("/api/library/duplicates", post(duplicates))
         .route("/api/art/{id}", get(cover))
         .route("/api/saves", post(start_saves))
@@ -91,16 +98,16 @@ impl ListQuery {
     }
 }
 
-/// `{ items, total, entities, stale }`: `stale` while Jellyfin is down and the list is the last
-/// one read.
+/// `{ items, total, entities, stale }`: `stale` while Jellyfin is down (Jellyfin mode) and the
+/// list is the last one read.
 fn list(svc: &Service, ids: Vec<Value>, total: usize, entities: Entities) -> Result<Json<Value>> {
-    svc.jellyfin()?;
-    let stale = svc
-        .ctx
-        .status
-        .snapshot()
-        .get("jellyfin")
-        .is_none_or(|s| s.state != ServiceState::Ok);
+    let stale = svc.mode == LibraryMode::Jellyfin
+        && svc
+            .ctx
+            .status
+            .snapshot()
+            .get("jellyfin")
+            .is_none_or(|s| s.state != ServiceState::Ok);
     Ok(Json(
         json!({ "items": ids, "total": total, "entities": entities, "stale": stale }),
     ))
@@ -162,18 +169,46 @@ async fn genres(State(svc): Svc, Query(q): Query<ListQuery>) -> Result<Json<Valu
 
 // ---------- audio and art ----------
 
-/// Saved-track audio from Jellyfin, Range passed through and the body streamed as it comes.
 async fn stream(State(svc): Svc, Path(id): Path<String>, headers: HeaderMap) -> Result<Response> {
-    let id = track_id(id)?;
-    let item = svc
+    stream_saved(&svc, &track_id(id)?, headers.get(header::RANGE).cloned()).await
+}
+
+/// A saved track's audio with Range support: the file itself in folder mode (`ServeFile`), or
+/// Jellyfin's original file with Range passed through and the body streamed as it comes.
+pub async fn stream_saved(svc: &Service, id: &TrackId, range: Option<HeaderValue>) -> Result<Response> {
+    let location = svc
         .index()
-        .saved(&id)
-        .map(|s| s.item_id.clone())
+        .saved(id)
+        .map(|s| s.location.clone())
         .ok_or_else(|| Error::NotFound(format!("{id} is not saved")))?;
-    let upstream = svc
-        .jellyfin()?
-        .stream(&item, headers.get(header::RANGE).cloned())
-        .await?;
+    match location {
+        Location::File { path } => serve_file(svc.folder.file(&path), range).await,
+        Location::Jellyfin { item, .. } => proxy_jellyfin(svc, &item, range).await,
+    }
+}
+
+/// tower-http's file serving: 200, 206 for one range, 416 past the end; ETag and Last-Modified.
+pub async fn serve_file(file: std::path::PathBuf, range: Option<HeaderValue>) -> Result<Response> {
+    use tower::ServiceExt;
+    if !tokio::fs::try_exists(&file).await.unwrap_or(false) {
+        return Err(Error::NotFound(format!(
+            "{} is gone from the music folder",
+            file.display()
+        )));
+    }
+    let mut request = axum::http::Request::new(Body::empty());
+    if let Some(range) = range {
+        request.headers_mut().insert(header::RANGE, range);
+    }
+    let response = match tower_http::services::ServeFile::new(file).oneshot(request).await {
+        Ok(r) => r,
+        Err(never) => match never {},
+    };
+    Ok(response.map(Body::new))
+}
+
+async fn proxy_jellyfin(svc: &Service, item: &str, range: Option<HeaderValue>) -> Result<Response> {
+    let upstream = svc.jellyfin()?.stream(item, range).await?;
     let status = upstream.status();
     if !(status.is_success() || status == StatusCode::RANGE_NOT_SATISFIABLE) {
         return Err(Error::upstream("jellyfin", format!("answered {status} for the audio")));
@@ -202,7 +237,11 @@ struct ArtQuery {
 }
 
 async fn cover(State(svc): Svc, Path(id): Path<String>, Query(q): Query<ArtQuery>) -> Result<Response> {
-    let image = art::cover(&svc, &AlbumId(id), q.size.unwrap_or(256)).await?;
+    cover_response(&svc, &AlbumId(id), q.size.unwrap_or(256)).await
+}
+
+pub async fn cover_response(svc: &Service, id: &AlbumId, size: u32) -> Result<Response> {
+    let image = art::cover(svc, id, size).await?;
     Ok((
         [
             (header::CONTENT_TYPE, image.content_type),
@@ -216,12 +255,71 @@ async fn cover(State(svc): Svc, Path(id): Path<String>, Query(q): Query<ArtQuery
 // ---------- rescan and duplicates ----------
 
 async fn rescan(State(svc): Svc) -> Result<(StatusCode, Json<Value>)> {
-    svc.jellyfin()?;
     let job = RescanJob::new();
     svc.jobs.put_rescan(&job).await;
     let id = job.id.clone();
-    tokio::spawn(sync::rescan(svc.clone(), job));
+    match svc.mode {
+        LibraryMode::Jellyfin => tokio::spawn(sync::rescan(svc.clone(), job)),
+        LibraryMode::Folder => tokio::spawn(folder::rescan(svc.clone(), job)),
+    };
     Ok((StatusCode::ACCEPTED, Json(json!({ "jobId": id }))))
+}
+
+// ---------- source and Jellyfin connect ----------
+
+async fn source(State(svc): Svc) -> Json<Value> {
+    Json(switch::describe(&svc))
+}
+
+#[derive(Deserialize)]
+struct SourceBody {
+    mode: String,
+}
+
+async fn set_source(State(svc): Svc, Json(body): Json<SourceBody>) -> Result<(StatusCode, Json<Value>)> {
+    let mode = match body.mode.as_str() {
+        "folder" => LibraryMode::Folder,
+        "jellyfin" => LibraryMode::Jellyfin,
+        other => return Err(Error::BadRequest(format!("mode {other:?} is not folder or jellyfin"))),
+    };
+    switch::to_mode(&svc, mode)?;
+    Ok((StatusCode::ACCEPTED, Json(json!({}))))
+}
+
+async fn discover(State(svc): Svc) -> Result<Json<Value>> {
+    Ok(Json(json!({ "items": connect::discover(&svc.ctx.http).await? })))
+}
+
+#[derive(Deserialize)]
+struct UrlBody {
+    url: String,
+}
+
+async fn quick_connect(State(svc): Svc, Json(body): Json<UrlBody>) -> Result<Json<Value>> {
+    let url = connect::server_url(&body.url)?;
+    let started = connect::initiate(&svc.ctx.http, &url).await?;
+    svc.connects.add(&started.secret, url);
+    Ok(Json(json!({ "code": started.code, "secret": started.secret })))
+}
+
+async fn quick_connect_state(State(svc): Svc, Path(secret): Path<String>) -> Result<Json<Value>> {
+    let state = connect::poll(&svc, &secret).await?;
+    Ok(Json(json!({ "state": state })))
+}
+
+#[derive(Deserialize)]
+struct SignInBody {
+    url: String,
+    username: String,
+    password: String,
+}
+
+/// The fallback when Quick Connect is off: the password is sent to Jellyfin once and dropped.
+async fn sign_in(State(svc): Svc, Json(body): Json<SignInBody>) -> Result<StatusCode> {
+    let url = connect::server_url(&body.url)?;
+    let token = connect::sign_in(&svc.ctx.http, &url, &body.username, &body.password).await?;
+    switch::to_jellyfin(&svc, url, token)?;
+    Ok(StatusCode::ACCEPTED)
 }
 
 /// A Soulseek file as the UI names it (`GET /api/tracks/{id}/sources` rows).
@@ -283,7 +381,6 @@ struct SavesBody {
 }
 
 async fn start_saves(State(svc): Svc, Json(mut body): Json<SavesBody>) -> Result<Json<Value>> {
-    svc.jellyfin()?;
     if body.ids.is_empty() {
         return Err(Error::BadRequest("ids is empty".into()));
     }
@@ -383,5 +480,57 @@ fn track_id(raw: String) -> Result<TrackId> {
         Ok(TrackId(raw))
     } else {
         Err(Error::BadRequest(format!("{raw:?} is not a track id")))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn get(file: &std::path::Path, range: Option<&'static str>) -> Result<(StatusCode, HeaderMap, Bytes)> {
+        let response = serve_file(file.to_owned(), range.map(HeaderValue::from_static)).await?;
+        let (parts, body) = response.into_parts();
+        let bytes = axum::body::to_bytes(body, usize::MAX)
+            .await
+            .map_err(|e| Error::internal(e.to_string()))?;
+        Ok((parts.status, parts.headers, bytes))
+    }
+
+    #[tokio::test]
+    async fn folder_files_are_served_with_ranges_for_seeking() -> Result<()> {
+        let dir = std::env::temp_dir().join(format!("lull-serve-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).map_err(|e| Error::internal(e.to_string()))?;
+        let file = dir.join("song.flac");
+        let audio: Vec<u8> = (0..1000u32).map(|i| (i % 251) as u8).collect();
+        std::fs::write(&file, &audio).map_err(|e| Error::internal(e.to_string()))?;
+
+        let (status, headers, body) = get(&file, None).await?;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body.len(), 1000);
+        assert_eq!(
+            headers.get(header::ACCEPT_RANGES).map(|v| v.as_bytes()),
+            Some(&b"bytes"[..])
+        );
+
+        let (status, headers, body) = get(&file, Some("bytes=100-199")).await?;
+        assert_eq!(status, StatusCode::PARTIAL_CONTENT);
+        assert_eq!(
+            headers.get(header::CONTENT_RANGE).map(|v| v.as_bytes()),
+            Some(&b"bytes 100-199/1000"[..])
+        );
+        assert_eq!(&body[..], &audio[100..200]);
+
+        let (status, _, body) = get(&file, Some("bytes=900-")).await?;
+        assert_eq!((status, &body[..]), (StatusCode::PARTIAL_CONTENT, &audio[900..]));
+
+        let (status, ..) = get(&file, Some("bytes=5000-")).await?;
+        assert_eq!(status, StatusCode::RANGE_NOT_SATISFIABLE);
+
+        std::fs::remove_dir_all(&dir).map_err(|e| Error::internal(e.to_string()))?;
+        assert!(
+            matches!(get(&file, None).await, Err(Error::NotFound(_))),
+            "a vanished file is 404"
+        );
+        Ok(())
     }
 }

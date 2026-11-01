@@ -83,6 +83,18 @@ pub fn read(path: &Path) -> Result<Existing, String> {
     Ok(out)
 }
 
+/// The file's embedded cover: its front cover, else its first picture.
+pub fn picture(path: &Path) -> Result<Option<Vec<u8>>, String> {
+    let file = lofty::read_from_path(path).map_err(|e| format!("can't read the file's tags: {e}"))?;
+    let Some(tag) = file.primary_tag().or_else(|| file.first_tag()) else {
+        return Ok(None);
+    };
+    let picture = tag
+        .get_picture_type(PictureType::CoverFront)
+        .or_else(|| tag.pictures().first());
+    Ok(picture.map(|p| p.data().to_vec()))
+}
+
 /// Writes a matched release's tags (and the cover, when there is one) into the file's primary
 /// tag, and drops the file's other tags so no stale ID3v1 or APE values contradict them.
 pub fn write(path: &Path, set: &TagSet, cover: Option<&[u8]>) -> Result<(), String> {
@@ -167,11 +179,11 @@ pub fn mime(bytes: &[u8]) -> MimeType {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// A FLAC file with only its STREAMINFO block: one second of 16-bit stereo at 44.1 kHz.
-    fn tiny_flac() -> Vec<u8> {
+    pub fn tiny_flac() -> Vec<u8> {
         let mut f = b"fLaC".to_vec();
         f.extend([0x80, 0x00, 0x00, 0x22]); // last block, STREAMINFO, 34 bytes
         f.extend(4096u16.to_be_bytes()); // min block size
@@ -184,7 +196,7 @@ mod tests {
     }
 
     /// Ten silent MPEG-1 Layer III frames, 128 kbps at 44.1 kHz.
-    fn tiny_mp3() -> Vec<u8> {
+    pub fn tiny_mp3() -> Vec<u8> {
         let mut frame = vec![0xFF, 0xFB, 0x90, 0x00];
         frame.resize(417, 0);
         frame.repeat(10)

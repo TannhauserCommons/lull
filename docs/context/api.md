@@ -78,7 +78,7 @@ Topic → payload. Published on the bus and streamed to the browser. Owners add 
 | `device.command` | hub | `{ deviceId, action, value, from }`: only the device named acts on it |
 | `device.online` | hub | `{ deviceId, online }`: the device's first event stream opened, or its last one closed (or it was unpaired) |
 | `theme.changed` | themes | `{ id }`: a stored theme's files changed; devices using it reload its CSS |
-| `library.source` | library | `{ mode: folder\|jellyfin, state: switching\|done\|failed, detail }` |
+| `library.source` | library | `{ mode: folder\|jellyfin, state: switching\|done\|failed, detail }`: a switch of the library source (`mode` is the target). `done` is followed by `hub.restart` |
 
 ## Soulseek (`crates/soulseek`)
 
@@ -94,7 +94,7 @@ Topic → payload. Published on the bus and streamed to the browser. Owners add 
 
 ## Library (`crates/library`)
 
-All of these answer 503 `unavailable` when Jellyfin isn't configured. Lists and lookups come from lull's copy of the library, so they keep working while Jellyfin is down.
+The library is the music folder or Jellyfin (`LULL_LIBRARY`, ADR-0003); every route below works in both modes. Lists and lookups come from lull's index of the library, so in Jellyfin mode they keep working while Jellyfin is down. Details: [library.md](library.md).
 
 | Method + path | Returns |
 |---|---|
@@ -103,29 +103,22 @@ All of these answer 503 `unavailable` when Jellyfin isn't configured. Lists and 
 | `GET /api/library/albums?sort=recent\|title\|artist\|year` | `{ items: [albumId], total, entities: { albums }, stale }`. Library albums are `saved: "all"` |
 | `GET /api/library/artists?sort=name` | `{ items: [artistId], total, entities: { artists }, stale }` |
 | `GET /api/library/genres?sort=songs\|name` | `{ items: [{ id, name, artists, songs, trackIds }], total, entities: { tracks }, stale }` (`trackIds`: a few, for the mosaic) |
-| ↳ every list | Also `filter=` (words in title, artist or album), `limit=` (default 200, max 5000), `offset=`. An unknown `sort` is 400. `stale: true` while Jellyfin is down and the list is the last one read |
-| `GET /api/library/stream/{trackId}` | The saved file from Jellyfin. `Range` is passed through (206 + `Content-Range`), the body streams through without buffering. 404 if not saved |
-| `GET /api/art/{albumId}?size=96\|256\|512` | The cover image (`Cache-Control: private, max-age=86400`). Jellyfin's for saved albums, else the Cover Art Archive's (found through the catalog and MusicBrainz for albums that aren't saved). Cached on disk; 404 when there is none |
+| ↳ every list | Also `filter=` (words in title, artist or album), `limit=` (default 200, max 5000), `offset=`. An unknown `sort` is 400. `stale: true` while Jellyfin is down (Jellyfin mode) and the list is the last one read |
+| `GET /api/library/stream/{trackId}` | The saved file with Range support (200, 206 + `Content-Range`, 416). Folder mode serves the file; Jellyfin mode passes `Range` through and streams the body without buffering. 404 if not saved |
+| `GET /api/art/{albumId}?size=96\|256\|512` | The cover image (`Cache-Control: private, max-age=86400`). For saved albums the library's (Jellyfin's image, or the folder's `cover.jpg`/`folder.jpg` or embedded picture, scaled), else the Cover Art Archive's (found through the catalog and MusicBrainz for albums that aren't saved). Cached on disk; 404 when there is none |
 | `POST /api/library/duplicates { ids, source?: { trackId: { peer, path, size } } }` | `{ items: [{ trackId, existing: Track, better }] }` for the ids that are saved already. `better`: the offered file is clearly better (lossless over lossy, or a fifth more bitrate) |
 | `POST /api/saves { ids, source?: { trackId: { peer, path, size } }, duplicate?: { trackId: separate\|replace } }` | `{ jobs: [jobId], skipped: [trackId] }`. One job per id; progress as `save` events. `source` is a row of `/api/tracks/{id}/sources` (`sizeBytes` is accepted for `size`); without one, Soulseek's `source_for` picks (the peer it streamed from, else the best known), and with none known the job fails at step 1 (`kind: transfer`). An id already saved is skipped unless `duplicate` says what to do (the duplicate dialog's answer; "keep" = don't send it). An id already saving returns its running job |
 | `GET /api/saves/{jobId}/releases` | `{ items: [{ mbid, recording, releaseGroup, title, artist, kind, date, country, tracks, score }], track }`: the release picker after a `match` failure, best first (`kind`: "album, CD"); `track` is what lull knows of the file |
 | `POST /api/saves/{jobId}/release { mbid } \| { keepTags: true }` | `{ jobId }`. Continues the save with that release, or with the file's own tags. 409 if the job isn't waiting for a release |
-| `POST /api/saves/{jobId}/retry [{ source }]` | `{ jobId, step, status }`. Restarts a failed save from its failed step (a new `source` for a transfer failure), or asks Jellyfin again for a pending one. 409 otherwise |
+| `POST /api/saves/{jobId}/retry [{ source }]` | `{ jobId, step, status }`. Restarts a failed save from its failed step (a new `source` for a transfer failure), or picks up a pending one again. 409 otherwise |
 | `GET /api/jobs` · `DELETE /api/jobs` | `{ items: [row] }`, newest first: library's save and rescan jobs plus the latest `job` event of every other job. `DELETE` clears finished rows (failed saves stay) → 204 |
-| `POST /api/library/rescan` | 202 `{ jobId }`: runs Jellyfin's library scan; the rescan job follows its progress and ends with "Jellyfin found N new songs" |
-
-**lull 2 additions** (ADR-0003; the owner turns each row into fact and drops this note):
-
-| Method + path | Returns |
-|---|---|
-| `GET /api/library/source` | `{ mode: folder\|jellyfin, musicDir, jellyfin: { url, user, connected } \| null, files?, lastScan? }` |
-| `PUT /api/library/source { mode, jellyfin?: { url } }` | 202. Stores `LULL_LIBRARY` (and the Jellyfin URL) through `core::settings`, reconciles by path, asks for `hub.restart`; progress as `library.source` events |
-| `GET /api/jellyfin/discover` | `{ items: [{ name, url, version }] }`: Jellyfin servers answering on the local network (UDP 7359) |
-| `POST /api/jellyfin/quickconnect { url }` | `{ code, secret }`: show `code`; the listener approves it in Jellyfin › Quick Connect |
-| `GET /api/jellyfin/quickconnect/{secret}` | `{ state: waiting\|approved\|expired }`. On `approved` the token is stored as `LULL_JELLYFIN_API_KEY` and the hub restarts into Jellyfin mode |
-| `POST /api/jellyfin/signin { url, username, password }` | 204: the fallback when Quick Connect is off on that server; the password is used once and never stored |
-
-In folder mode every list above works from the folder index, `stream` serves the file, and `rescan` rescans the folder. Saved-only routes answer 503 only when neither source is usable.
+| `POST /api/library/rescan` | 202 `{ jobId }`. Jellyfin mode: runs Jellyfin's library scan; the rescan job follows its progress and ends with "Jellyfin found N new songs". Folder mode: walks the music folder again ("Found N new songs in the music folder") |
+| `GET /api/library/source` | `{ mode: folder\|jellyfin, musicDir, jellyfin: { url, user, connected } \| null, files, lastScan, switching }`. `jellyfin` is null when it isn't configured; `connected`: lull reads it right now (Jellyfin mode, status `ok`). `files`: songs in the folder index (folder mode, else null); `lastScan`: unix time of the last whole-folder walk, or null |
+| `PUT /api/library/source { mode }` | 202. Switches in the background: reads the other source, reconciles by path into `library_aliases`, stores `LULL_LIBRARY` through `core::settings`, then publishes `hub.restart`; progress as `library.source` events. 409 when already in that mode, while a switch runs, or when the environment sets `LULL_LIBRARY`; 400 for `jellyfin` before Jellyfin is connected |
+| `GET /api/jellyfin/discover` | `{ items: [{ name, url, version }] }`: Jellyfin servers answering on the local network (UDP 7359; empty from inside a bridge-networked container) |
+| `POST /api/jellyfin/quickconnect { url }` | `{ code, secret }`: show `code`; the listener approves it in Jellyfin › Quick Connect. 409 when Quick Connect is off on that server (use sign-in) |
+| `GET /api/jellyfin/quickconnect/{secret}` | `{ state: waiting\|approved\|expired }`. On `approved` lull stores `LULL_JELLYFIN_URL`, `LULL_JELLYFIN_API_KEY` (the token) and `LULL_JELLYFIN_USER`, and switches to Jellyfin mode like `PUT /api/library/source`. 404 for a secret lull doesn't know (start again) |
+| `POST /api/jellyfin/signin { url, username, password }` | 202, then the same switch: the fallback when Quick Connect is off. The password is sent to Jellyfin once and never stored. 400 when Jellyfin refuses it |
 
 ## Discovery (`crates/discovery`, `crates/lastfm`, `crates/lyrics`)
 

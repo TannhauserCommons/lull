@@ -1,6 +1,7 @@
-//! `GET /api/art/{albumId}`: Jellyfin's cover for saved albums, else the Cover Art Archive's.
-//! Every image is cached on disk under `<data_dir>/art`, and so is "the archive has none" (for a
-//! week), so a cover costs at most one outside call per album and size.
+//! `GET /api/art/{albumId}`: the library's cover for saved albums (Jellyfin's image, or the
+//! music folder's image file or embedded picture), else the Cover Art Archive's. Every image is
+//! cached on disk under `<data_dir>/art`, and so is "the archive has none" (for a week), so a
+//! cover costs at most one outside call per album and size.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
@@ -8,8 +9,9 @@ use std::time::{Duration, SystemTime};
 use lull_core::ids::AlbumId;
 use lull_core::{Error, Result, catalog};
 
-use crate::Service;
+use crate::items::Art;
 use crate::musicbrainz::{self, CoverOf};
+use crate::{Service, tags};
 
 /// How long "no cover anywhere" is believed before asking again.
 const NONE_FOR: Duration = Duration::from_secs(7 * 24 * 3600);
@@ -36,17 +38,32 @@ pub async fn cover(svc: &Service, album: &AlbumId, size: u32) -> Result<Image> {
             )
         })
     };
-    if let Some((Some((item, tag)), _, _)) = &saved {
-        let path = svc.art_dir.join(format!("{album}-{size}-jf-{tag}"));
-        if let Some(image) = cached(&path).await {
-            return Ok(image);
+    match saved.as_ref().and_then(|(art, ..)| art.as_ref()) {
+        Some(Art::Jellyfin { item, tag }) => {
+            let path = svc.art_dir.join(format!("{album}-{size}-jf-{tag}"));
+            if let Some(image) = cached(&path).await {
+                return Ok(image);
+            }
+            match svc.jellyfin()?.image(item, size).await {
+                Ok(Some(bytes)) => return store(&path, bytes).await,
+                Ok(None) => {}
+                // Jellyfin down: the archive may still have it.
+                Err(e) => tracing::debug!(%album, error = %e, "Jellyfin cover unavailable"),
+            }
         }
-        match svc.jellyfin()?.image(item, size).await {
-            Ok(Some(bytes)) => return store(&path, bytes).await,
-            Ok(None) => {}
-            // Jellyfin down: the archive may still have it.
-            Err(e) => tracing::debug!(%album, error = %e, "Jellyfin cover unavailable"),
+        Some(Art::File { path, embedded, stamp }) => {
+            let cache = svc.art_dir.join(format!("{album}-{size}-file-{stamp}"));
+            if let Some(image) = cached(&cache).await {
+                return Ok(image);
+            }
+            match file_cover(svc.folder.file(path), *embedded, size).await {
+                Ok(Some(bytes)) => return store(&cache, bytes).await,
+                Ok(None) => {}
+                // Changed since it was indexed: the watcher catches up; the archive may have it.
+                Err(e) => tracing::debug!(%album, error = e, "folder cover unreadable"),
+            }
         }
+        None => {}
     }
     let path = svc.art_dir.join(format!("{album}-{size}-caa"));
     if let Some(image) = cached(&path).await {
@@ -84,6 +101,40 @@ pub async fn cover(svc: &Service, album: &AlbumId, size: u32) -> Result<Image> {
                 tracing::warn!(error = %e, "could not cache a missing cover");
             }
             Err(Error::NotFound(format!("no cover for {album}")))
+        }
+    }
+}
+
+/// A music-folder cover (an image file, or a song's embedded picture), scaled to fit `size`.
+async fn file_cover(file: PathBuf, embedded: bool, size: u32) -> Result<Option<Vec<u8>>, String> {
+    tokio::task::spawn_blocking(move || {
+        let bytes = if embedded {
+            tags::picture(&file)?
+        } else {
+            Some(std::fs::read(&file).map_err(|e| format!("{}: {e}", file.display()))?)
+        };
+        Ok(bytes.map(|b| fit(b, size)))
+    })
+    .await
+    .map_err(|e| format!("cover task: {e}"))?
+}
+
+/// Scales an image down to fit `size` × `size` (JPEG), so a 96 px thumbnail isn't a 3 MB
+/// scan. Images already small enough, and formats lull doesn't decode, are kept as they are.
+fn fit(bytes: Vec<u8>, size: u32) -> Vec<u8> {
+    let Ok(image) = image::load_from_memory(&bytes) else {
+        return bytes;
+    };
+    if image.width() <= size && image.height() <= size {
+        return bytes;
+    }
+    let mut out = Vec::new();
+    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 88);
+    match image.thumbnail(size, size).to_rgb8().write_with_encoder(encoder) {
+        Ok(()) => out,
+        Err(e) => {
+            tracing::debug!(error = %e, "cover could not be scaled; serving it whole");
+            bytes
         }
     }
 }

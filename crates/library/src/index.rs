@@ -1,6 +1,7 @@
-//! The saved library in memory. Every lookup, list and search (the UI's and other crates', through
-//! the `Library` seam) is answered from here, never by a Jellyfin call per request. `sync`
-//! refreshes it from Jellyfin and persists it, so lists keep working while Jellyfin is down.
+//! The saved library in memory, keyed by track id whichever source it comes from (ADR-0003).
+//! Every lookup, list and search (the UI's and other crates', through the `Library` seam) is
+//! answered from here, never by a call to the source per request. `sync` (Jellyfin) and
+//! `folder` (the music folder) refresh it and persist it.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -9,17 +10,18 @@ use lull_core::model::{Album, Artist, Saved as SavedState, Track};
 use lull_core::{Error, Result};
 use serde::Serialize;
 
-use crate::items::{Quality, Saved};
+use crate::items::{Art, Quality, Saved};
 
 #[derive(Default)]
 pub struct Index {
-    /// By Jellyfin item id: the source of truth everything else is derived from.
+    /// By location key (Jellyfin item id or file path): what everything else is derived from.
     items: HashMap<String, Saved>,
-    /// Content id → item id of its best copy (a song saved twice is one song).
+    /// Content id → location key of its best copy (a song saved twice is one song).
     best: HashMap<TrackId, String>,
     albums: BTreeMap<AlbumId, AlbumEntry>,
     artists: BTreeMap<ArtistId, Artist>,
-    /// Ids a save was asked under → the id its tags gave (docs/context/save-flow.md#ids).
+    /// Ids that name a song by another id: a save's asked id (docs/context/save-flow.md#ids), or
+    /// the other source's id for the same file (docs/context/library.md#switching).
     aliases: HashMap<TrackId, TrackId>,
 }
 
@@ -27,8 +29,7 @@ pub struct AlbumEntry {
     pub album: Album,
     /// Newest file's date added (ISO 8601).
     pub added: String,
-    /// (item id, image tag) of the cover Jellyfin has.
-    pub art: Option<(String, String)>,
+    pub art: Option<Art>,
     pub mb_release_group: Option<String>,
 }
 
@@ -54,9 +55,9 @@ impl Index {
         index
     }
 
-    /// The whole library, as a full read from Jellyfin found it.
+    /// The whole library, as a full read of the source found it.
     pub fn replace(&mut self, items: Vec<Saved>) {
-        self.items = items.into_iter().map(|s| (s.item_id.clone(), s)).collect();
+        self.items = items.into_iter().map(|s| (s.location.key().to_owned(), s)).collect();
         self.rebuild();
     }
 
@@ -64,19 +65,40 @@ impl Index {
     pub fn merge(&mut self, items: Vec<Saved>) -> Vec<Saved> {
         let changed: Vec<Saved> = items
             .into_iter()
-            .filter(|s| {
-                self.items
-                    .get(&s.item_id)
-                    .is_none_or(|old| serde_json::to_value(old).ok() != serde_json::to_value(s).ok())
-            })
+            .filter(|s| self.items.get(s.location.key()) != Some(s))
             .collect();
         if !changed.is_empty() {
             for s in &changed {
-                self.items.insert(s.item_id.clone(), s.clone());
+                self.items.insert(s.location.key().to_owned(), s.clone());
             }
             self.rebuild();
         }
         changed
+    }
+
+    /// Drops items by location key (files gone from the music folder).
+    pub fn remove(&mut self, keys: &[String]) {
+        let before = self.items.len();
+        for key in keys {
+            self.items.remove(key);
+        }
+        if self.items.len() != before {
+            self.rebuild();
+        }
+    }
+
+    /// An item by location key.
+    pub fn item(&self, key: &str) -> Option<&Saved> {
+        self.items.get(key)
+    }
+
+    /// Every item, best copies or not: what reconciliation matches by path.
+    pub fn items(&self) -> impl Iterator<Item = &Saved> {
+        self.items.values()
+    }
+
+    pub fn aliases(&self) -> &HashMap<TrackId, TrackId> {
+        &self.aliases
     }
 
     pub fn alias(&mut self, asked: TrackId, saved: TrackId) {
@@ -87,10 +109,11 @@ impl Index {
         self.best.len()
     }
 
-    /// The saved copy of a song, by its own id or an id it was saved under.
+    /// The saved copy of a song, by its own id or an alias. A song's own id wins over an alias
+    /// from it, so switching back to a source finds its songs under their ids.
     pub fn saved(&self, id: &TrackId) -> Option<&Saved> {
-        let id = self.aliases.get(id).unwrap_or(id);
-        self.items.get(self.best.get(id)?)
+        let key = self.best.get(id).or_else(|| self.best.get(self.aliases.get(id)?))?;
+        self.items.get(key)
     }
 
     /// The saved track under the id it was asked by, so callers can match their own ids.
@@ -225,7 +248,10 @@ impl Index {
         }
         self.albums = albums.into_iter().map(|(id, songs)| (id, album_entry(songs))).collect();
         self.artists = artists(best.values().copied());
-        self.best = best.into_iter().map(|(id, s)| (id, s.item_id.clone())).collect();
+        self.best = best
+            .into_iter()
+            .map(|(id, s)| (id, s.location.key().to_owned()))
+            .collect();
     }
 }
 

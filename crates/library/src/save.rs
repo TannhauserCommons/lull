@@ -1,18 +1,21 @@
 //! The save pipeline (docs/context/save-flow.md): 1 complete the transfer, 2 match on
-//! MusicBrainz, 3 fetch cover art, 4 tag and write into the music folder, 5 ask Jellyfin to
-//! pick it up. Each step's result is kept on the job, so a restart or a retry resumes there.
+//! MusicBrainz, 3 fetch cover art, 4 tag and write into the music folder, 5 the library picks it
+//! up (Jellyfin scans it, or the folder index reads it). Each step's result is kept on the job,
+//! so a restart or a retry resumes there.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, PoisonError};
 use std::time::{Duration, Instant};
 
+use lull_core::config::LibraryMode;
 use lull_core::ids::TrackId;
 use lull_core::model::Track;
 use lull_core::{Error, Result, catalog, now};
 use serde_json::Value;
 
 use crate::Service;
-use crate::items;
+use crate::folder;
+use crate::items::{self, Location};
 use crate::jobs::{Duplicate, FailKind, Release, SaveJob, Status};
 use crate::matching::{self, Decision, Wanted};
 use crate::musicbrainz::{self, CoverOf};
@@ -50,11 +53,12 @@ pub fn spawn(svc: &Arc<Service>, job: SaveJob) {
     tokio::spawn(async move { run(svc, job).await });
 }
 
-/// At start-up: carry on with every job a restart interrupted. Jobs waiting for Jellyfin are
-/// the sync loop's.
+/// At start-up: carry on with every job a restart interrupted. In Jellyfin mode, jobs waiting
+/// for Jellyfin are the sync loop's; in folder mode, step 5 is read straight from disk.
 pub fn resume(svc: &Arc<Service>) {
     for mut job in svc.jobs.saves() {
-        if job.status == Status::Running && job.step < 5 {
+        let picked_up_here = svc.mode == LibraryMode::Folder && job.step == 5 && job.is_active();
+        if (job.status == Status::Running && job.step < 5) || picked_up_here {
             // Cover bytes aren't kept, so an interrupted write starts again at the cover.
             if job.step == 4 {
                 job.step = 3;
@@ -90,9 +94,44 @@ async fn steps(svc: &Arc<Service>, job: &mut SaveJob) -> Result<(), Fail> {
         write(svc, job, set, cover).await?;
         enter(svc, job, 5).await;
     }
-    // Step 5 is the sync loop's: it asks Jellyfin to scan and watches for the song.
-    svc.wake.notify_one();
+    match svc.mode {
+        // Step 5 is the sync loop's: it asks Jellyfin to scan and watches for the song.
+        LibraryMode::Jellyfin => svc.wake.notify_one(),
+        LibraryMode::Folder => pick_up(svc, job).await?,
+    }
     Ok(())
+}
+
+/// Step 5 in folder mode: the written file joins the index at once.
+async fn pick_up(svc: &Arc<Service>, job: &mut SaveJob) -> Result<(), Fail> {
+    let dest = job
+        .dest
+        .clone()
+        .ok_or_else(|| Fail::new(FailKind::Write, "The save has no written file to pick up."))?;
+    folder::pick_up(svc, &dest)
+        .await
+        .map_err(|e| Fail::new(FailKind::Write, format!("Saved to disk, but it can't be indexed: {e}")))?;
+    let found = job.saved_id.as_ref().and_then(|id| svc.index().track(id));
+    let track = found.ok_or_else(|| {
+        Fail::new(
+            FailKind::Write,
+            format!(
+                "Saved to {}, but its tags don't read back as this song.",
+                dest.display()
+            ),
+        )
+    })?;
+    finish(svc, job, track).await;
+    Ok(())
+}
+
+/// The song is in the library: the save is done.
+async fn finish(svc: &Service, job: &mut SaveJob, track: Track) {
+    job.status = Status::Done;
+    job.pct = 100;
+    job.error = None;
+    remember_under_asked_id(svc, job, track).await;
+    svc.jobs.put(job).await;
 }
 
 async fn enter(svc: &Service, job: &mut SaveJob, step: u8) {
@@ -385,11 +424,7 @@ pub async fn settle(svc: &Arc<Service>) {
         let found = job.saved_id.as_ref().and_then(|id| svc.index().track(id));
         let waited = job.waiting_since.map(|t| now() - t);
         if let Some(track) = found {
-            job.status = Status::Done;
-            job.pct = 100;
-            job.error = None;
-            remember_under_asked_id(svc, &job, track).await;
-            svc.jobs.put(&job).await;
+            finish(svc, &mut job, track).await;
         } else if !job.rescan_asked {
             unasked.push(job);
         } else if job.status == Status::Running && waited.is_some_and(|w| w > PICKUP_WAIT_S) {
@@ -535,17 +570,19 @@ fn saved_file(svc: &Service, track: &TrackId) -> Result<PathBuf, Fail> {
     let saved = index
         .saved(track)
         .ok_or_else(|| Fail::new(FailKind::Write, "The copy to replace is no longer in the library."))?;
-    let local = svc
-        .music()
-        .zip(saved.path.as_deref())
-        .and_then(|(music, path)| sync::to_local(&music.root, &svc.ctx.config.library.music_dir, path))
-        .filter(|p| p.exists());
-    local.ok_or_else(|| {
+    let local = match &saved.location {
+        Location::File { path } => Some(svc.folder.file(path)),
+        Location::Jellyfin { path, .. } => svc
+            .music()
+            .zip(path.as_deref())
+            .and_then(|(music, path)| sync::to_local(&music.root, &svc.ctx.config.library.music_dir, path)),
+    };
+    local.filter(|p| p.exists()).ok_or_else(|| {
         Fail::new(
             FailKind::Write,
             format!(
                 "Can't find the saved copy ({}) under LULL_MUSIC_DIR to replace it.",
-                saved.path.as_deref().unwrap_or("no path")
+                sync::jellyfin_path(saved).unwrap_or(saved.location.key())
             ),
         )
     })
@@ -587,6 +624,8 @@ pub async fn retry(svc: &Arc<Service>, mut job: SaveJob) -> Result<SaveJob> {
             job.rescan_asked = false;
             5
         }
+        // The file is written; only picking it up failed (folder mode).
+        (Status::Failed, _) if job.step == 5 => 5,
         (Status::Failed, Some(FailKind::Transfer)) => 1,
         (Status::Failed, Some(FailKind::Match)) => 2,
         (Status::Failed, _) => 3,
@@ -638,7 +677,7 @@ async fn restart(svc: &Arc<Service>, mut job: SaveJob) -> Result<SaveJob> {
     job.fail_kind = None;
     job.pct = 0;
     svc.jobs.put(&job).await;
-    if job.step == 5 {
+    if job.step == 5 && svc.mode == LibraryMode::Jellyfin {
         svc.wake.notify_one();
     } else {
         spawn(svc, job.clone());

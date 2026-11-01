@@ -1,5 +1,5 @@
-//! Keeps the index in step with Jellyfin: a full read at start-up and every half hour, the
-//! newest items while a save waits for its rescan, and the `jellyfin` service status.
+//! Jellyfin mode: keeps the index in step with Jellyfin. A full read at start-up and every half
+//! hour, the newest items while a save waits for its rescan, and the `jellyfin` service status.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -13,8 +13,8 @@ use lull_core::{Result, catalog};
 use serde_json::json;
 
 use crate::Service;
-use crate::items::{Saved, saved_from};
-use crate::jellyfin::{MusicLibrary, Scan};
+use crate::items::{Location, Saved, saved_from};
+use crate::jellyfin::{Jellyfin, MusicLibrary, Scan};
 use crate::jobs::RescanJob;
 use crate::save;
 
@@ -25,8 +25,8 @@ const WAITING_TICK: Duration = Duration::from_secs(5);
 /// Newest items read per check while waiting: more than any one album.
 const LATEST: usize = 200;
 
-/// The persisted library and aliases, for start-up.
-pub async fn load(db: &Db) -> Result<(Vec<Saved>, HashMap<TrackId, TrackId>)> {
+/// The last full read of Jellyfin, for start-up in Jellyfin mode.
+pub async fn load_items(db: &Db) -> Result<Vec<Saved>> {
     db.call(|c| {
         let mut stmt = c.prepare("SELECT json FROM library_items")?;
         let items = stmt
@@ -41,15 +41,24 @@ pub async fn load(db: &Db) -> Result<(Vec<Saved>, HashMap<TrackId, TrackId>)> {
                 Err(e) => Some(Err(e)),
             })
             .collect::<rusqlite::Result<Vec<_>>>()?;
-        let mut stmt = c.prepare("SELECT from_id, to_id FROM library_aliases")?;
-        let aliases = stmt
-            .query_map([], |r| Ok((TrackId(r.get(0)?), TrackId(r.get(1)?))))?
-            .collect::<rusqlite::Result<HashMap<_, _>>>()?;
-        Ok((items, aliases))
+        Ok(items)
     })
     .await
 }
 
+/// Every alias (docs/context/save-flow.md#ids, docs/context/library.md#switching).
+pub async fn load_aliases(db: &Db) -> Result<HashMap<TrackId, TrackId>> {
+    db.call(|c| {
+        let mut stmt = c.prepare("SELECT from_id, to_id FROM library_aliases")?;
+        let aliases = stmt
+            .query_map([], |r| Ok((TrackId(r.get(0)?), TrackId(r.get(1)?))))?
+            .collect::<rusqlite::Result<HashMap<_, _>>>()?;
+        Ok(aliases)
+    })
+    .await
+}
+
+/// Runs until the hub stops the crates (`Ctx::spawn`).
 pub async fn run(svc: Arc<Service>) {
     let mut last_full: Option<Instant> = None;
     loop {
@@ -103,7 +112,7 @@ async fn tick(svc: &Arc<Service>, last_full: &mut Option<Instant>) -> Result<()>
         let changed = svc
             .index_mut()
             .merge(latest.into_iter().filter_map(saved_from).collect());
-        persist(svc, changed, false).await?;
+        persist(&svc.ctx.db, changed, false).await?;
     }
     save::settle(svc).await;
     Ok(())
@@ -111,13 +120,18 @@ async fn tick(svc: &Arc<Service>, last_full: &mut Option<Instant>) -> Result<()>
 
 /// Reads the whole library, replaces the index and works out where the music folder is.
 pub async fn full_read(svc: &Arc<Service>) -> Result<()> {
-    let jellyfin = svc.jellyfin()?;
-    let items: Vec<Saved> = jellyfin.all_audio().await?.into_iter().filter_map(saved_from).collect();
+    let (items, music) = read_all(svc.jellyfin()?, &svc.ctx.config.library.music_dir).await?;
     svc.index_mut().replace(items.clone());
-    let libraries = jellyfin.music_libraries().await?;
-    let music = music_folder(libraries, &items, &svc.ctx.config.library.music_dir);
     *svc.music.write().unwrap_or_else(PoisonError::into_inner) = music;
-    persist(svc, items, true).await
+    persist(&svc.ctx.db, items, true).await
+}
+
+/// Every audio item of a Jellyfin, and its music folder over `music_dir` (also for switching to
+/// a Jellyfin lull doesn't read yet).
+pub async fn read_all(jellyfin: &Jellyfin, music_dir: &Path) -> Result<(Vec<Saved>, Option<MusicFolder>)> {
+    let items: Vec<Saved> = jellyfin.all_audio().await?.into_iter().filter_map(saved_from).collect();
+    let music = music_folder(jellyfin.music_libraries().await?, &items, music_dir);
+    Ok((items, music))
 }
 
 /// `POST /api/library/rescan`: runs Jellyfin's library scan, following its progress, then reads
@@ -181,34 +195,32 @@ fn fail(job: &mut RescanJob, e: &lull_core::Error) {
 }
 
 /// Stores items (all of them, or the changed ones) and records them in the catalog.
-async fn persist(svc: &Service, items: Vec<Saved>, all: bool) -> Result<()> {
+pub async fn persist(db: &Db, items: Vec<Saved>, all: bool) -> Result<()> {
     if items.is_empty() && !all {
         return Ok(());
     }
-    svc.ctx
-        .db
-        .call(move |c| {
-            let tx = c.transaction()?;
-            if all {
-                tx.execute("DELETE FROM library_items", [])?;
-            }
-            {
-                let mut stmt = tx.prepare_cached(
-                    "INSERT INTO library_items (item_id, json) VALUES (?1, ?2)
+    db.call(move |c| {
+        let tx = c.transaction()?;
+        if all {
+            tx.execute("DELETE FROM library_items", [])?;
+        }
+        {
+            let mut stmt = tx.prepare_cached(
+                "INSERT INTO library_items (item_id, json) VALUES (?1, ?2)
                      ON CONFLICT(item_id) DO UPDATE SET json = excluded.json",
-                )?;
-                for s in &items {
-                    let json =
-                        serde_json::to_string(s).map_err(|e| lull_core::Error::internal(format!("item json: {e}")))?;
-                    stmt.execute(rusqlite::params![s.item_id, json])?;
-                }
+            )?;
+            for s in &items {
+                let json =
+                    serde_json::to_string(s).map_err(|e| lull_core::Error::internal(format!("item json: {e}")))?;
+                stmt.execute(rusqlite::params![s.location.key(), json])?;
             }
-            let tracks: Vec<_> = items.into_iter().map(|s| s.track).collect();
-            catalog::remember(&tx, &tracks)?;
-            tx.commit()?;
-            Ok(())
-        })
-        .await
+        }
+        let tracks: Vec<_> = items.into_iter().map(|s| s.track).collect();
+        catalog::remember(&tx, &tracks)?;
+        tx.commit()?;
+        Ok(())
+    })
+    .await
 }
 
 /// `LULL_MUSIC_DIR` as Jellyfin knows it: one of its music libraries' folders.
@@ -238,7 +250,7 @@ fn music_folder(libraries: Vec<MusicLibrary>, items: &[Saved], music_dir: &Path)
     folders.into_iter().find(|f| {
         items
             .iter()
-            .filter_map(|s| s.path.as_deref())
+            .filter_map(jellyfin_path)
             .find(|p| p.starts_with(f.root.as_str()))
             .and_then(|p| to_local(&f.root, music_dir, p))
             .is_some_and(|local| local.exists())
@@ -247,10 +259,27 @@ fn music_folder(libraries: Vec<MusicLibrary>, items: &[Saved], music_dir: &Path)
 
 /// A Jellyfin path as lull sees it.
 pub fn to_local(root: &str, music_dir: &Path, jellyfin_path: &str) -> Option<PathBuf> {
-    let rel = jellyfin_path
+    Some(
+        to_rel(root, jellyfin_path)?
+            .split('/')
+            .fold(music_dir.to_owned(), |p, part| p.join(part)),
+    )
+}
+
+/// A Jellyfin path under the music folder `root`, `/`-separated: the folder index's key for the
+/// same file.
+pub fn to_rel<'a>(root: &str, jellyfin_path: &'a str) -> Option<&'a str> {
+    jellyfin_path
         .strip_prefix(root.trim_end_matches('/'))?
-        .strip_prefix('/')?;
-    Some(rel.split('/').fold(music_dir.to_owned(), |p, part| p.join(part)))
+        .strip_prefix('/')
+}
+
+/// The file's path as Jellyfin sees it.
+pub fn jellyfin_path(saved: &Saved) -> Option<&str> {
+    match &saved.location {
+        Location::Jellyfin { path, .. } => path.as_deref(),
+        Location::File { .. } => None,
+    }
 }
 
 fn thousands(n: usize) -> String {
@@ -281,7 +310,6 @@ mod tests {
 
     fn saved_at(path: &str) -> Saved {
         Saved {
-            item_id: "i-1".into(),
             track: Track {
                 id: TrackId::of("Glass Harbour", "Lantern Season", "Rope & Tide"),
                 title: "Rope & Tide".into(),
@@ -298,7 +326,10 @@ mod tests {
                 file: None,
             },
             album_artist: "Glass Harbour".into(),
-            path: Some(path.into()),
+            location: Location::Jellyfin {
+                item: "i-1".into(),
+                path: Some(path.into()),
+            },
             added: String::new(),
             art: None,
             mb_release: None,

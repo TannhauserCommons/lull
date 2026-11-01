@@ -2,7 +2,7 @@
 
 `crates/library/src/save.rs`. Endpoints and events: [api.md](api.md#library-crateslibrary).
 
-**What a save does.** It turns a Soulseek song into a properly tagged file in Jellyfin's music folder. It is one job with five steps. Each step's result is stored on the job (`library_jobs`), so a restart or a retry carries on from where it stopped. Every change is published as a `save` event and a `job` row.
+**What a save does.** It turns a Soulseek song into a properly tagged file in the music folder (`LULL_MUSIC_DIR`), in both library modes. It is one job with five steps. Each step's result is stored on the job (`library_jobs`), so a restart or a retry carries on from where it stopped. Every change is published as a `save` event and a `job` row.
 
 | Step | What | Fails as |
 |---|---|---|
@@ -10,7 +10,7 @@
 | 2 Matching on MusicBrainz | Recording search, then scoring (below). Skipped when the listener already picked a release | `match`: no sure match. The release picker (`/releases`) or "keep existing tags" |
 | 3 Fetching cover art | Release lookup (tags) and the Cover Art Archive front, 1200 px: the release's, else the release group's | Never fails on art: no cover sets `nocover: true` and the save carries on. A failed release lookup is `match` |
 | 4 Tagging and writing | Copy, tag, rename into place (below) | `write`: unreadable file, no permission, disk full |
-| 5 Jellyfin rescan | Ask Jellyfin to scan the music library; the job is `done` once the song is in the library | Never fails: the file is saved, the job is `pending` (below) |
+| 5 Pick-up | Jellyfin mode: ask Jellyfin to scan the music library; the job is `done` once the song is in the library. Folder mode: the folder index reads the file at once | Jellyfin mode never fails: the file is saved, the job is `pending` (below). Folder mode: `write` if the file can't be read back as the song; a retry only reads it again |
 
 ## Duplicates
 
@@ -18,7 +18,7 @@
 - **Keep** means the id isn't sent. A saved id sent without an answer is skipped (`skipped`).
 - **`better`** means lossless over lossy, or at least a fifth more bitrate of the same kind. The offered file's bitrate is worked out from its size and the song's length. The margin keeps two rips of the same CD from counting as an upgrade.
 - **`separate`** writes a second file. If the name is taken, it gets " (2)".
-- **`replace`** removes the saved copy once the new file is in place, or overwrites it when both have the same path. The old file is found through the music folder mapping ([library.md](library.md#music-folder-mapping)). If it can't be found, the save fails as `write` and nothing is removed.
+- **`replace`** removes the saved copy once the new file is in place, or overwrites it when both have the same path. The old file is the index entry's own path in folder mode, and found through the music folder mapping in Jellyfin mode ([library.md](library.md#music-folder-mapping)). If it can't be found, the save fails as `write` and nothing is removed.
 
 ## Matching
 
@@ -59,7 +59,7 @@
 - Other keys in the old tag stay (ReplayGain, lyrics, ...).
 - Other tag types are removed (ID3v1, APE on MP3), so nothing contradicts the new values.
 
-**"Keep existing tags"** leaves the tags alone. Only a missing title, artist or album is filled from the search result, so Jellyfin lists the song under the name it was saved as. No MusicBrainz call, no cover: `nocover` unless the file already embeds one.
+**"Keep existing tags"** leaves the tags alone. Only a missing title, artist or album is filled from the search result, so the library lists the song under the name it was saved as. No MusicBrainz call, no cover: `nocover` unless the file already embeds one.
 
 ## Naming
 
@@ -83,6 +83,11 @@
 - **No overwrite surprises.** An existing file is never overwritten, except by "replace" at the same path. Otherwise the new file gets " (2)", " (3)"...
 - **Writing.** The transfer is copied next to its destination as a hidden `.lull-<job>.<ext>`, which Jellyfin ignores. lull tags the copy, then renames it into place: Jellyfin never sees a half-written or untagged file. The transfer itself stays with Soulseek's stream cache.
 
+## Folder pick-up
+
+- **Step 5 in folder mode** reads the written file into the index straight away (`folder::pick_up`), without waiting for the watcher, and the job is `done`. The watcher sees the same file a moment later; reading it again changes nothing.
+- **A restart during step 5,** and saves left `pending` by Jellyfin mode before a switch, are picked up from disk at start-up.
+
 ## Jellyfin pick-up and `pending`
 
 - **Asking for a scan.** Step 5 refreshes the Music library over `LULL_MUSIC_DIR` (`/Items/{library}/Refresh?Recursive=true`, the library's own "Scan library"). Without the music folder mapping, lull starts a scan of every library instead.
@@ -100,7 +105,7 @@
 - **Why a save can change a song's id.** Tagging may change artist, album or title ("OK Computer [1997 FLAC]" → "OK Computer"), and with them the content-derived id.
 - **What lull records** when the saved id differs from the requested one (`library_aliases`):
   - the alias (asked id → saved id);
-  - once the song is in Jellyfin, the saved track under the asked id in the catalog.
+  - once the song is in the library, the saved track under the asked id in the catalog.
 - **Effect.** `Library::saved([asked])`, `/api/tracks/{asked}` and `/api/library/stream/{asked}` answer with the saved song, under the asked id. The badge flips in place, and likes, plays and playlists on the old id keep working.
 
 ## Album and queue saves

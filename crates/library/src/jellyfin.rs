@@ -89,6 +89,18 @@ struct Page {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
+struct Created {
+    id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct ServerInfo {
+    id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
 struct User {
     id: String,
     name: String,
@@ -151,6 +163,100 @@ impl Jellyfin {
             })
             .await
             .map(String::as_str)
+    }
+
+    /// The server's own id: the Jellyfin mirror imports once per server.
+    pub async fn server_id(&self) -> Result<String> {
+        let info: ServerInfo = self.get_json("/System/Info", &[]).await?;
+        Ok(info.id)
+    }
+
+    /// Ids of the audio items the user marked as favourites.
+    pub async fn favourite_audio(&self) -> Result<Vec<String>> {
+        let page: Page = self.items(&[("Filters", "IsFavorite")]).await?;
+        Ok(page.items.into_iter().map(|i| i.id).collect())
+    }
+
+    /// The user's audio playlists: (id, name).
+    pub async fn playlists(&self) -> Result<Vec<(String, String)>> {
+        let user = self.user_id().await?.to_owned();
+        let page: Page = self
+            .get_json(
+                "/Items",
+                &[
+                    ("userId", user.as_str()),
+                    ("IncludeItemTypes", "Playlist"),
+                    ("MediaTypes", "Audio"),
+                    ("Recursive", "true"),
+                ],
+            )
+            .await?;
+        Ok(page
+            .items
+            .into_iter()
+            .map(|i| (i.id, i.name.unwrap_or_default()))
+            .collect())
+    }
+
+    /// A playlist's item ids, in order.
+    pub async fn playlist_items(&self, playlist: &str) -> Result<Vec<String>> {
+        let user = self.user_id().await?.to_owned();
+        let page: Page = self
+            .get_json(&format!("/Playlists/{playlist}/Items"), &[("userId", user.as_str())])
+            .await?;
+        Ok(page.items.into_iter().map(|i| i.id).collect())
+    }
+
+    /// Marks or unmarks an item as the user's favourite.
+    pub async fn set_favourite(&self, item: &str, favourite: bool) -> Result<()> {
+        let user = self.user_id().await?.to_owned();
+        let url = format!("{}/UserFavoriteItems/{item}", self.url);
+        let resp = self
+            .http
+            .send(SERVICE, |c| {
+                let req = if favourite { c.post(&url) } else { c.delete(&url) };
+                self.authed(req).query(&[("userId", user.as_str())])
+            })
+            .await?;
+        http::ok(SERVICE, resp).map(|_| ())
+    }
+
+    /// Makes an audio playlist of `items` for the user; returns its id.
+    pub async fn create_playlist(&self, name: &str, items: &[String]) -> Result<String> {
+        let user = self.user_id().await?.to_owned();
+        let body = serde_json::json!({ "Name": name, "Ids": items, "UserId": user, "MediaType": "Audio" });
+        let resp = self
+            .http
+            .send(SERVICE, |c| {
+                self.authed(c.post(format!("{}/Playlists", self.url))).json(&body)
+            })
+            .await?;
+        let made: Created = http::ok(SERVICE, resp)?
+            .json()
+            .await
+            .map_err(|e| Error::upstream(SERVICE, format!("bad playlist answer: {e}")))?;
+        Ok(made.id)
+    }
+
+    /// Renames a playlist and replaces its items (Jellyfin 10.9's UpdatePlaylist).
+    pub async fn update_playlist(&self, playlist: &str, name: &str, items: &[String]) -> Result<()> {
+        let body = serde_json::json!({ "Name": name, "Ids": items });
+        let url = format!("{}/Playlists/{playlist}", self.url);
+        let resp = self
+            .http
+            .send(SERVICE, |c| self.authed(c.post(&url)).json(&body))
+            .await?;
+        http::ok(SERVICE, resp).map(|_| ())
+    }
+
+    /// Deletes an item (a mirrored playlist). One that is already gone counts as deleted.
+    pub async fn delete_item(&self, item: &str) -> Result<()> {
+        let url = format!("{}/Items/{item}", self.url);
+        let resp = self.http.send(SERVICE, |c| self.authed(c.delete(&url))).await?;
+        match http::ok(SERVICE, resp) {
+            Ok(_) | Err(Error::NotFound(_)) => Ok(()),
+            Err(e) => Err(e),
+        }
     }
 
     /// Cheap authenticated call: proves Jellyfin is up and the key works.

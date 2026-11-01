@@ -1,33 +1,43 @@
-//! The saved library: Jellyfin reads and streaming for saved tracks, and the save pipeline
-//! (complete transfer, MusicBrainz match, Cover Art Archive, tags, write, rescan)
-//! (docs/context/library.md, docs/context/save-flow.md).
+//! The saved library, from a music folder or Jellyfin (ADR-0003): one index keyed by track id,
+//! streaming and covers for saved tracks, switching between the sources, connecting and
+//! mirroring Jellyfin, and the save pipeline (complete transfer, MusicBrainz match, Cover Art
+//! Archive, tags, write, pick-up) (docs/context/library.md, docs/context/save-flow.md).
 
 mod art;
+mod connect;
+mod files;
+mod folder;
 mod index;
 mod items;
 mod jellyfin;
 mod jobs;
 mod matching;
+mod mirror;
 mod musicbrainz;
 mod naming;
 mod routes;
 mod save;
+mod switch;
 mod sync;
 mod tags;
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use async_trait::async_trait;
 use axum::Router;
+use axum::http::HeaderValue;
+use axum::response::Response;
+use lull_core::config::LibraryMode;
 use lull_core::db::Migrations;
-use lull_core::ids::TrackId;
-use lull_core::model::Track;
-use lull_core::seams::{self, Transfers};
+use lull_core::ids::{AlbumId, ArtistId, TrackId};
+use lull_core::model::{Album, Artist, Track};
+use lull_core::seams::{self, Collection, Transfers};
 use lull_core::status::State;
 use lull_core::{Ctx, Error, Result};
 use tokio::sync::Notify;
 
+use crate::folder::Folder;
 use crate::index::Index;
 use crate::jellyfin::Jellyfin;
 use crate::jobs::Jobs;
@@ -35,7 +45,8 @@ use crate::naming::Template;
 
 pub const MIGRATIONS: Migrations = Migrations {
     owner: "library",
-    steps: &[r#"
+    steps: &[
+        r#"
         -- The last full read of Jellyfin, so the library lists while Jellyfin is down.
         CREATE TABLE library_items (
             item_id  TEXT PRIMARY KEY,
@@ -53,14 +64,35 @@ pub const MIGRATIONS: Migrations = Migrations {
             finished    INTEGER NOT NULL,       -- 1 = nothing left to do
             updated_at  INTEGER NOT NULL
         );
-    "#],
+    "#,
+        r#"
+        -- The music folder's index (folder mode): an unchanged file isn't read again.
+        CREATE TABLE library_files (
+            path      TEXT PRIMARY KEY,         -- under LULL_MUSIC_DIR, '/'-separated
+            modified  INTEGER NOT NULL,         -- unix seconds
+            size      INTEGER NOT NULL,
+            picture   INTEGER NOT NULL,         -- 1 = the file embeds a picture
+            json      TEXT NOT NULL
+        );
+        -- The Jellyfin mirror (docs/context/library.md#jellyfin-mirror): what was imported once,
+        -- and which Jellyfin playlist mirrors which lull playlist.
+        CREATE TABLE library_mirror (
+            key    TEXT PRIMARY KEY,
+            value  TEXT NOT NULL
+        );
+    "#,
+    ],
 };
 
 pub struct Service {
     ctx: Ctx,
     transfers: Arc<dyn Transfers>,
-    /// `None` when Jellyfin isn't configured: nothing is saved, nothing can be.
+    /// Where the index comes from; switching restarts the hub's crates (switch.rs).
+    mode: LibraryMode,
+    /// Configured Jellyfin, in either mode: read in Jellyfin mode, and for switching to it.
     jellyfin: Option<Jellyfin>,
+    /// `LULL_MUSIC_DIR`: indexed and watched in folder mode, read for switching in Jellyfin mode.
+    folder: Folder,
     index: RwLock<Index>,
     /// The Jellyfin music library over `LULL_MUSIC_DIR`, once known (sync.rs).
     music: RwLock<Option<sync::MusicFolder>>,
@@ -71,22 +103,39 @@ pub struct Service {
     art_dir: PathBuf,
     /// Wakes the sync loop early (a save waits for Jellyfin, a rescan finished).
     wake: Notify,
+    /// Quick Connect attempts waiting for approval (connect.rs).
+    connects: connect::Pending,
+    /// Set while a switch runs, so two can't overlap.
+    switching: Arc<Mutex<bool>>,
+    /// The listener's likes and playlists, for the Jellyfin mirror. Collection starts after
+    /// library, so the hub hands it over later (`attach_collection`).
+    collection: OnceLock<Arc<dyn Collection>>,
 }
 
 pub async fn start(ctx: &Ctx, transfers: Arc<dyn Transfers>) -> Result<Arc<Service>> {
-    let naming =
-        Template::parse(&ctx.config.library.naming).map_err(|e| Error::internal(format!("LULL_NAMING {e}")))?;
-    let (items, aliases) = sync::load(&ctx.db).await?;
+    let library = &ctx.config.library;
+    let naming = Template::parse(&library.naming).map_err(|e| Error::internal(format!("LULL_NAMING {e}")))?;
+    let aliases = sync::load_aliases(&ctx.db).await?;
+    let (folder, items) = match library.mode {
+        LibraryMode::Folder => {
+            let rows = folder::load(&ctx.db).await?;
+            let items = rows.iter().map(|r| r.saved.clone()).collect();
+            (Folder::with(library.music_dir.clone(), &rows), items)
+        }
+        LibraryMode::Jellyfin => (Folder::new(library.music_dir.clone()), sync::load_items(&ctx.db).await?),
+    };
     let jobs = Jobs::load(ctx.db.clone(), ctx.bus.clone()).await?;
-    let jellyfin = ctx
-        .config
-        .jellyfin
-        .as_ref()
-        .map(|cfg| Jellyfin::new(ctx.http.clone(), cfg));
+    jobs.follow(ctx);
     let svc = Arc::new(Service {
         ctx: ctx.clone(),
         transfers,
-        jellyfin,
+        mode: library.mode,
+        jellyfin: ctx
+            .config
+            .jellyfin
+            .as_ref()
+            .map(|cfg| Jellyfin::new(ctx.http.clone(), cfg)),
+        folder,
         index: RwLock::new(Index::new(items, aliases)),
         music: RwLock::new(None),
         scans: Mutex::default(),
@@ -94,31 +143,52 @@ pub async fn start(ctx: &Ctx, transfers: Arc<dyn Transfers>) -> Result<Arc<Servi
         naming,
         art_dir: ctx.config.data_dir.join("art"),
         wake: Notify::new(),
+        connects: connect::Pending::default(),
+        switching: Arc::default(),
+        collection: OnceLock::new(),
     });
-    match &svc.jellyfin {
-        None => ctx.status.set(
-            "jellyfin",
-            State::Off,
-            "Not set up: set LULL_JELLYFIN_URL and LULL_JELLYFIN_API_KEY to save songs",
-            serde_json::Value::Null,
-        ),
-        Some(_) => {
+    match svc.mode {
+        LibraryMode::Folder => {
+            ctx.status.set(
+                "jellyfin",
+                State::Off,
+                "Not used: the library is the music folder",
+                serde_json::Value::Null,
+            );
+            ctx.status.set(
+                "library",
+                State::Warn,
+                "Reading the music folder",
+                serde_json::Value::Null,
+            );
+            ctx.spawn(folder::run(svc.clone()));
+        }
+        LibraryMode::Jellyfin => {
             ctx.status.set(
                 "jellyfin",
                 State::Warn,
                 "Connecting to Jellyfin",
                 serde_json::Value::Null,
             );
-            tokio::spawn(sync::run(svc.clone()));
-            save::resume(&svc);
+            ctx.spawn(sync::run(svc.clone()));
         }
     }
+    save::resume(&svc);
     Ok(svc)
 }
 
-/// `/api/tracks/{id}`, `/api/library/...`, `/api/art/{id}`, `/api/saves/...`, `/api/jobs`.
+/// `/api/tracks/{id}`, `/api/library/...`, `/api/jellyfin/...`, `/api/art/{id}`, `/api/saves/...`,
+/// `/api/jobs`.
 pub fn router(svc: Arc<Service>) -> Router {
     routes::router(svc)
+}
+
+/// Hands library the listener's collection once `collection` has started, which starts the
+/// Jellyfin mirror in Jellyfin mode (docs/context/library.md#jellyfin-mirror).
+pub fn attach_collection(svc: &Arc<Service>, collection: Arc<dyn Collection>) {
+    if svc.collection.set(collection).is_ok() && svc.mode == LibraryMode::Jellyfin {
+        svc.ctx.spawn(mirror::run(svc.clone()));
+    }
 }
 
 impl Service {
@@ -153,5 +223,40 @@ impl seams::Library for Service {
     async fn saved(&self, ids: &[TrackId]) -> Result<Vec<Track>> {
         let index = self.index();
         Ok(ids.iter().filter_map(|id| index.track(id)).collect())
+    }
+
+    async fn artists(&self) -> Result<Vec<Artist>> {
+        Ok(self.index().artists("name", "")?.into_iter().cloned().collect())
+    }
+
+    async fn albums(&self, artist: Option<&ArtistId>) -> Result<Vec<Album>> {
+        let index = self.index();
+        Ok(index
+            .albums("artist", "")?
+            .into_iter()
+            .filter(|e| artist.is_none_or(|a| e.album.artist_id == *a))
+            .map(|e| e.album.clone())
+            .collect())
+    }
+
+    async fn album(&self, id: &AlbumId) -> Result<Option<(Album, Vec<Track>)>> {
+        let index = self.index();
+        Ok(index.album(id).map(|e| {
+            let tracks = e.album.track_ids.iter().filter_map(|t| index.track(t)).collect();
+            (e.album.clone(), tracks)
+        }))
+    }
+
+    async fn stream(&self, id: &TrackId, range: Option<HeaderValue>) -> Result<Response> {
+        routes::stream_saved(self, id, range).await
+    }
+
+    async fn cover(&self, id: &AlbumId, size: Option<u32>) -> Result<Response> {
+        let size = match size {
+            Some(s) if s <= 96 => 96,
+            Some(s) if s <= 256 => 256,
+            _ => 512,
+        };
+        routes::cover_response(self, id, size).await
     }
 }
