@@ -301,7 +301,8 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
     list, never reordering.
   - Soulseek is asked for 3+ characters once the query is submitted: Enter in either field, "Ask now", or 1.5 s
     without typing. The call is `GET /api/soulseek/search`, with rows as `search.results`. Its `onlySoulseek` songs
-    are "Only on Soulseek".
+    are "Only on Soulseek". The same moment asks `/api/search?q=…&submitted=1`, which adds MusicBrainz release groups
+    by title to the catalog run; its answer merges like `search.more`.
   - The Files tab lists the raw songs and folders. It appears only when `settings.search.showFiles` is on.
   - Older hubs: an old-shape answer from `/api/search` shows "Search needs a newer hub". So does a 404 from
     `/api/soulseek/search`.

@@ -563,7 +563,7 @@
      peerSongs: trackId -> { trackId, sources, best, dup }, albums: albumId -> { albumId, trackIds, folders } (arrival
      order: peerOrder, albumOrder), onlySoulseek: the songs no catalog knew. */
   var SLSK_REST_MS = 1500, SONGS_MAX = 20;
-  var CATALOG = { deezer: 'Deezer', itunes: 'iTunes', musicbrainz: 'MusicBrainz', lastfm: 'Last.fm', library: 'your library' };
+  var CATALOG = { deezer: 'Deezer', itunes: 'iTunes', musicbrainz: 'MusicBrainz', 'musicbrainz-albums': 'MusicBrainz', lastfm: 'Last.fm', library: 'your library' };
   var S = { q: null, seq: 0, showAll: false, tab: 'all', loading: false, error: null, cat: null,
     slsk: false, slskStarted: false, slskTimer: null, slskMissing: false, searchId: null, files: 0, peers: 0, done: true, slskError: null,
     peerSongs: {}, peerOrder: [], albums: {}, albumOrder: [], onlySoulseek: [] };
@@ -599,6 +599,11 @@
     clearTimeout(S.slskTimer);
     if (slskDown()) { paint('results', resultsBody()); return; }
     S.slskStarted = true; S.done = false;
+    /* submitted words also widen the catalog run (MusicBrainz release groups by title, which finds Bandcamp-only EPs);
+       the answer merges like search.more */
+    M.api('/api/search?q=' + encodeURIComponent(S.q) + '&submitted=1').then(function (res) {
+      if (mine === S.seq && S.cat) { mergeCatalog(res); if (res.pending) S.cat.pending = res.pending.slice(); paint('results', resultsBody()); }
+    }, function (err) { console.warn('Submitted catalog search failed:', err.message); });
     M.api('/api/soulseek/search?q=' + encodeURIComponent(S.q)).then(function (res) {
       if (mine !== S.seq) return;
       S.searchId = res.searchId;
@@ -618,13 +623,18 @@
     paint('results', resultsBody());
   });
   /* catalog additions: appended to each list, so nothing the listener is reading moves */
-  function sameQuery(a, b) { return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase(); }
-  App.on('server:search.more', function (e) {
-    if (!e || !S.cat || !sameQuery(e.query, S.q)) return;
+  /* the hub's `query` is the words lowercased with single spaces */
+  function words(q) { return String(q || '').trim().toLowerCase().replace(/\s+/g, ' '); }
+  function sameQuery(a, b) { return words(a) === words(b); }
+  function mergeCatalog(e) {
     ['artists', 'albums', 'tracks'].forEach(function (k) {
       (e[k] || []).forEach(function (id) { if (S.cat[k].indexOf(id) < 0) S.cat[k].push(id); });
     });
     if (e.errors) S.cat.errors = e.errors;          // every source that failed so far
+  }
+  App.on('server:search.more', function (e) {
+    if (!e || !S.cat || !sameQuery(e.query, S.q)) return;
+    mergeCatalog(e);
     if (e.done) S.cat.pending = [];
     paint('results', resultsBody());
   });
@@ -747,9 +757,9 @@
   }
   /* catalogs still answering: a quiet line; their additions arrive in place */
   function pendingLine() {
-    var p = S.cat ? S.cat.pending.filter(function (k) { return CATALOG[k]; }) : [];
-    if (!p.length) return '';
-    return html`<p class="disc-pending" role="status"><span class="spin-ring" aria-hidden="true"></span>Still asking ${p.map(function (k) { return CATALOG[k]; }).join(' and ')}</p>`;
+    var names = unique((S.cat ? S.cat.pending : []).map(function (k) { return CATALOG[k]; }).filter(Boolean));
+    if (!names.length) return '';
+    return html`<p class="disc-pending" role="status"><span class="spin-ring" aria-hidden="true"></span>Still asking ${names.join(' and ')}</p>`;
   }
   function catalogErrors() {
     var e = S.cat.errors, keys = Object.keys(e);
