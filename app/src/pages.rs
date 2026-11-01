@@ -1,22 +1,27 @@
 //! URLs of the pages bundled in the app (`web/desktop/wrapper.html`). The page reads its view and
 //! data from the hash, and the design and theme the web UI last reported (DESKTOP.md 6.1).
 
-use crate::desktop::settings::Appearance;
+use serde::{Deserialize, Serialize};
 use tauri::Url;
 
 /// Where Tauri serves the embedded files: `http://tauri.localhost` on Windows (WebView2 can't use
-/// custom schemes), `tauri://localhost` elsewhere.
+/// custom schemes), `https://tauri.localhost` on Android (the app uses the https scheme there, so
+/// downloaded covers load on an https hub's page), `tauri://localhost` on Linux.
 const BASE: &str = if cfg!(windows) {
     "http://tauri.localhost/desktop/wrapper.html"
+} else if cfg!(target_os = "android") {
+    "https://tauri.localhost/desktop/wrapper.html"
 } else {
     "tauri://localhost/desktop/wrapper.html"
 };
 
+#[cfg(desktop)]
 pub fn is_local(url: &Url) -> bool {
     url.as_str().starts_with(BASE.trim_end_matches("desktop/wrapper.html"))
 }
 
 /// First run, and "Change hub…": this computer, or a hub elsewhere.
+#[cfg(desktop)]
 pub fn welcome(appearance: &Appearance) -> tauri::Result<Url> {
     page("welcome", appearance, &[])
 }
@@ -33,6 +38,7 @@ pub fn connect(hub: Option<&Url>, unpaired: bool, appearance: &Appearance) -> ta
 }
 
 /// The hub on this computer didn't start; `error` says why.
+#[cfg(desktop)]
 pub fn hub_failed(error: &str, appearance: &Appearance) -> tauri::Result<Url> {
     page("hub-error", appearance, &[("error", error)])
 }
@@ -52,12 +58,14 @@ pub fn unreachable(o: Unreachable, appearance: &Appearance) -> tauri::Result<Url
     )
 }
 
+#[cfg(desktop)]
 pub struct Mini {
     pub view: &'static str,
     pub opaque: bool,
     pub wayland_hint: bool,
 }
 
+#[cfg(desktop)]
 pub fn mini(o: Mini, appearance: &Appearance) -> tauri::Result<Url> {
     let flag = |on: bool| if on { "1" } else { "" };
     page(
@@ -65,6 +73,67 @@ pub fn mini(o: Mini, appearance: &Appearance) -> tauri::Result<Url> {
         appearance,
         &[("opaque", flag(o.opaque)), ("wayland", flag(o.wayland_hint))],
     )
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Appearance {
+    pub design: Design,
+    pub theme: Theme,
+}
+
+impl Default for Appearance {
+    fn default() -> Self {
+        Appearance {
+            design: Design("lull".into()),
+            theme: Theme::System,
+        }
+    }
+}
+
+/// A design name as the web UI reports it. Only its shape is checked here (it goes into a URL
+/// hash); `Designs.wanted()` on the page decides whether it names a real design.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "String")]
+pub struct Design(String);
+
+impl TryFrom<String> for Design {
+    type Error = String;
+    fn try_from(name: String) -> Result<Self, String> {
+        let shaped = !name.is_empty()
+            && name.len() <= 32
+            && name
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+        if shaped {
+            Ok(Design(name))
+        } else {
+            Err(format!("not a design name: {name:?}"))
+        }
+    }
+}
+
+impl Design {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Theme {
+    Day,
+    Night,
+    System,
+}
+
+impl Theme {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Theme::Day => "day",
+            Theme::Night => "night",
+            Theme::System => "system",
+        }
+    }
 }
 
 fn page(view: &str, appearance: &Appearance, data: &[(&str, &str)]) -> tauri::Result<Url> {

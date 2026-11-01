@@ -2,11 +2,11 @@
 //! didn't start) when there is no hub yet or it doesn't answer. DESKTOP.md 1, 2 and 6; ADR-0006.
 
 use crate::desktop::local_hub;
-use crate::desktop::pages::{self, Unreachable};
 use crate::desktop::platform;
 use crate::desktop::settings::HubChoice;
 use crate::desktop::state::{Desktop, lock};
 use crate::hub;
+use crate::pages::{self, Unreachable};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::ipc::CapabilityBuilder;
 use tauri::webview::PageLoadEvent;

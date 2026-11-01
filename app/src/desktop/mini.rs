@@ -2,9 +2,9 @@
 //! that mirrors `main`'s player over events; `main` hides while one is open.
 
 use crate::desktop::main_window;
-use crate::desktop::pages::{self, Mini};
 use crate::desktop::settings::MiniStyle;
 use crate::desktop::state::Desktop;
+use crate::pages::{self, Mini};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 const LABELS: [&str; 2] = ["mini", "strip"];

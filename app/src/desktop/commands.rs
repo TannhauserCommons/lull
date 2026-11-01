@@ -4,51 +4,16 @@
 use crate::desktop::local_hub::{self, PORT};
 use crate::desktop::main_window;
 use crate::desktop::mini;
-use crate::desktop::pages;
 use crate::desktop::platform;
 use crate::desktop::settings::{HubChoice, MiniStyle};
 use crate::desktop::state::{Desktop, NowPlaying};
 use crate::desktop::tailscale::{self, Status};
-use crate::discovery::{self, Found};
-use crate::hub::{self, Health};
+use crate::hub;
+use crate::pages;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 use tauri::async_runtime::spawn_blocking;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_autostart::ManagerExt;
-
-/// How long "Connect to a hub" listens for hubs on the network.
-const DISCOVERY_WINDOW: Duration = Duration::from_secs(3);
-
-/// Connect page: the lull hubs on this network.
-#[tauri::command]
-pub async fn discover_hubs() -> Result<Vec<Found>, String> {
-    spawn_blocking(|| discovery::browse(DISCOVERY_WINDOW))
-        .await
-        .map_err(|e| e.to_string())?
-}
-
-#[derive(Debug, Serialize)]
-#[serde(tag = "state", rename_all = "lowercase")]
-pub enum FindResult {
-    Ok { url: String, health: Health },
-    Unreachable { error: String },
-}
-
-/// Connect page: is there a lull hub at what the listener typed. An invalid address is an error.
-#[tauri::command]
-pub async fn find_hub(url: String) -> Result<FindResult, String> {
-    let origin = hub::origin(&url)?;
-    spawn_blocking(move || match hub::health(&origin) {
-        Ok(health) => FindResult::Ok {
-            url: origin.to_string(),
-            health,
-        },
-        Err(error) => FindResult::Unreachable { error },
-    })
-    .await
-    .map_err(|e| e.to_string())
-}
 
 #[derive(Debug, Deserialize)]
 #[serde(

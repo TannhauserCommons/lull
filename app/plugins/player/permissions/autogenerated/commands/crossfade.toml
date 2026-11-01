@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-crossfade"
+description = "Enables the crossfade command without any pre-configured scope."
+commands.allow = ["crossfade"]
+
+[[permission]]
+identifier = "deny-crossfade"
+description = "Denies the crossfade command without any pre-configured scope."
+commands.deny = ["crossfade"]

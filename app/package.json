@@ -1,7 +1,8 @@
 {
   "private": true,
-  "description": "Only the Tauri CLI, for bundling (npm run bundle). The wrapper itself builds with plain cargo.",
+  "description": "Only the Tauri CLI, for bundling (npm run bundle) and for the Android build, whose Gradle task calls `npm run tauri`. The app itself builds with plain cargo.",
   "scripts": {
+    "tauri": "tauri",
     "bundle": "tauri build"
   },
   "devDependencies": {

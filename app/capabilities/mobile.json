@@ -1,0 +1,20 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "local-mobile",
+  "description": "The bundled pages on Android (connect, hub unreachable). The hub's web UI gets its own capability at runtime (src/mobile/mod.rs).",
+  "platforms": [
+    "android"
+  ],
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "allow-discover-hubs",
+    "allow-find-hub",
+    "allow-window-action",
+    "barcode-scanner:allow-scan",
+    "barcode-scanner:allow-cancel",
+    "barcode-scanner:allow-check-permissions",
+    "barcode-scanner:allow-request-permissions"
+  ]
+}

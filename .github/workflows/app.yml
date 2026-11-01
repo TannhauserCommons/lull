@@ -99,8 +99,60 @@ jobs:
             app/target/release/bundle/appimage/*.AppImage
             app/target/release/bundle/appimage/*.AppImage.sig
 
+  # Android: an APK for arm64 phones. A debug build checks every change (Rust for Android and the
+  # Kotlin player); a v* tag builds the release APK signed with the release keystore.
+  android:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - run: rustup toolchain install && rustup target add aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app
+          key: android
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24.11"
+      - working-directory: app
+        run: npm ci --no-audit --no-fund
+      # The runner image ships the SDK and NDKs; Tauri needs NDK_HOME.
+      - run: echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+      - name: Release keystore
+        if: github.ref_type == 'tag'
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          cat > app/gen/android/keystore.properties <<EOF
+          storeFile=$RUNNER_TEMP/release.jks
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          keyPassword=$ANDROID_KEY_PASSWORD
+          EOF
+      - working-directory: app
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            npx tauri android build --ci --apk --target aarch64 --config "{\"version\":\"${GITHUB_REF_NAME#v}\"}"
+            cp gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk "lull-${GITHUB_REF_NAME#v}-android-arm64.apk"
+          else
+            npx tauri android build --ci --apk --target aarch64 --debug
+            cp gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk lull-android-arm64-debug.apk
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lull-android
+          if-no-files-found: error
+          path: app/lull-*.apk
+
   release:
-    needs: bundle
+    needs: [bundle, android]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-24.04
     permissions:

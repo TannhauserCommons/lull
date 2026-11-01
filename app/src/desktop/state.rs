@@ -2,8 +2,9 @@
 //! the hub when this computer is the hub.
 
 use crate::desktop::local_hub::LocalHub;
-use crate::desktop::settings::{Settings, Store};
+use crate::desktop::settings::Settings;
 use crate::desktop::tray::Tray;
+use crate::store::Store;
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -33,7 +34,7 @@ pub struct Platform {
 }
 
 pub struct Desktop {
-    store: Store,
+    store: Store<Settings>,
     settings: Mutex<Settings>,
     now: Mutex<NowPlaying>,
     /// `main` shows the hub's web UI (not a bundled page).
@@ -49,7 +50,7 @@ pub struct Desktop {
 }
 
 impl Desktop {
-    pub fn new(store: Store, platform: Platform) -> Self {
+    pub fn new(store: Store<Settings>, platform: Platform) -> Self {
         let settings = store.load();
         Desktop {
             store,

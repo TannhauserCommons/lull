@@ -1,0 +1,19 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = "Everything the web UI's native player and downloads use (docs/context/web.md, output interface)."
+permissions = [
+  "allow-load",
+  "allow-play",
+  "allow-pause",
+  "allow-seek",
+  "allow-set-volume",
+  "allow-set-next",
+  "allow-crossfade",
+  "allow-download-add",
+  "allow-download-remove",
+  "allow-download-list",
+  "allow-download-usage",
+  "allow-registerListener",
+  "allow-remove-listener",
+]

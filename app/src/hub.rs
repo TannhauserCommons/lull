@@ -9,8 +9,6 @@ use std::net::IpAddr;
 use std::sync::LazyLock;
 use std::time::Duration;
 use tauri::Url;
-use tauri::webview::Cookie;
-use tauri::webview::cookie::SameSite;
 use ureq::Agent;
 use ureq::http::StatusCode;
 use ureq::tls::{RootCerts, TlsConfig};
@@ -18,7 +16,8 @@ use ureq::tls::{RootCerts, TlsConfig};
 /// DESKTOP.md 6: every probe gives the hub 10 s.
 const TIMEOUT: Duration = Duration::from_secs(10);
 
-/// The hub's device cookie (api.md, Hub).
+/// The hub's device cookie (api.md, Hub). Android sets it in Kotlin.
+#[cfg(desktop)]
 const COOKIE: &str = "lull_device";
 
 static AGENT: LazyLock<Agent> = LazyLock::new(|| {
@@ -176,8 +175,12 @@ pub fn events(origin: &Url, token: &str, mut on_event: impl FnMut(&str)) -> Resu
 }
 
 /// The hub's own device cookie, so the web UI is paired from its first request. A session cookie:
-/// the app sets it again from its stored token at every launch.
-pub fn device_cookie(origin: &Url, token: &str) -> Cookie<'static> {
+/// the app sets it again from its stored token at every launch. (Android sets it in Kotlin: Tauri
+/// can't set cookies there.)
+#[cfg(desktop)]
+pub fn device_cookie(origin: &Url, token: &str) -> tauri::webview::Cookie<'static> {
+    use tauri::webview::Cookie;
+    use tauri::webview::cookie::SameSite;
     Cookie::build((COOKIE, token.to_owned()))
         .domain(origin.host_str().unwrap_or_default().to_owned())
         .path("/")
@@ -188,6 +191,13 @@ pub fn device_cookie(origin: &Url, token: &str) -> Cookie<'static> {
 }
 
 /// This device's name on the hub's Devices screen.
+#[cfg(target_os = "android")]
+pub fn device_name() -> String {
+    "lull on Android".to_owned()
+}
+
+/// This device's name on the hub's Devices screen.
+#[cfg(not(target_os = "android"))]
 pub fn device_name() -> String {
     let host = std::env::var("COMPUTERNAME")
         .or_else(|_| std::env::var("HOSTNAME"))

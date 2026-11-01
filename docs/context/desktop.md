@@ -9,6 +9,9 @@ The Tauri v2 project in `app/` (its own Cargo workspace; ADR-0006) shows the hub
 | `app/src/main.rs`, `app/src/lib.rs` | Entry points: `lull_app::run()` (Tauri's mobile entry point needs a library) |
 | `app/src/hub.rs` | Shared: talking to a hub from Rust (ureq): `/health`, `/api/ping`, `POST /api/pair`, `PATCH /api/config`, `/api/events`, the `lull_device` cookie |
 | `app/src/discovery.rs` | Shared: mDNS `_lull._tcp`, browsing for hubs and advertising this computer's |
+| `app/src/pairing.rs` | Shared: the connect page's `discover_hubs` and `find_hub` |
+| `app/src/pages.rs` | Shared: URLs of the bundled page (`wrapper.html#view=…`), with the design and theme they open in |
+| `app/src/store.rs` | Shared: `settings.json` in the app config dir, written atomically |
 | `app/src/desktop/mod.rs` | Builder: plugins (single instance first, window state, autostart, updater, global shortcut on Linux), commands, setup, exit |
 | `app/src/desktop/local_hub.rs` | This computer is the hub: `lull_server::run` in-process, its env, the app's own device token, following `hub.restarting` |
 | `app/src/desktop/slskd.rs` | The bundled slskd: one supervisor thread, its folders, port and API key, restart when its share changes |
@@ -18,8 +21,7 @@ The Tauri v2 project in `app/` (its own Cargo workspace; ADR-0006) shows the hub
 | `app/src/desktop/updater.rs` | Update check at launch, download, "Restart to update" in the tray |
 | `app/src/desktop/mini.rs` | Mini player windows `mini` (device) and `strip` |
 | `app/src/desktop/tray.rs` | Tray icon and native menu; player items become `tray` events |
-| `app/src/desktop/pages.rs` | URLs of the bundled page (`wrapper.html#view=…`) |
-| `app/src/desktop/settings.rs` | `settings.json` in the app config dir: the hub choice and this app's token, window options |
+| `app/src/desktop/settings.rs` | The desktop's settings: the hub choice and this app's token, window options |
 | `app/src/desktop/platform/` | Windows taskbar theme (registry watch) and slskd's job object; Linux tray host, button layout, compositing, media keys |
 | `app/build.rs` | Stages the web files the bundled page needs into `app/dist/`; fetches slskd (sha256-pinned) into `app/binaries/`; declares command permissions |
 | `app/tauri.conf.json`, `tauri.windows.conf.json`, `tauri.linux.conf.json` | Shared config (updater key and endpoint, the asset protocol Android's download covers use, scoped to `**/lull-art/*`); the desktop configs add the slskd sidecar and its licence |

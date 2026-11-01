@@ -1,6 +1,7 @@
 # Build outputs: the staged web files build.rs copies, Tauri's generated schemas and command permissions.
+# gen/android is tracked: Tauri generated it, lull changed it (docs/context/android.md).
 /dist
-/gen
+/gen/schemas
 /permissions
 /target
 # The slskd sidecar and its release zip, fetched by build.rs.

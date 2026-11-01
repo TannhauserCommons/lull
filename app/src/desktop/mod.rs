@@ -6,7 +6,6 @@ mod commands;
 mod local_hub;
 mod main_window;
 mod mini;
-mod pages;
 mod platform;
 mod settings;
 mod slskd;
@@ -16,8 +15,10 @@ mod tray;
 mod updater;
 
 use crate::desktop::main_window::report;
-use crate::desktop::settings::{Appearance, Store};
 use crate::desktop::state::Desktop;
+use crate::pages::Appearance;
+use crate::pairing;
+use crate::store::Store;
 use tauri::{App, AppHandle, Listener, Manager, RunEvent, Window, WindowEvent};
 use tauri_plugin_window_state::StateFlags;
 
@@ -39,8 +40,8 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
     let app = builder
         .invoke_handler(tauri::generate_handler![
-            commands::discover_hubs,
-            commands::find_hub,
+            pairing::discover_hubs,
+            pairing::find_hub,
             commands::window_action,
             commands::set_now_playing,
             commands::desktop_settings,

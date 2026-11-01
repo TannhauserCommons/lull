@@ -19,7 +19,8 @@
   var doc = document, root = doc.documentElement;
   var T = window.__TAURI__ || null;
   var W = window.__LULL_DESKTOP__ || null;      // only in the wrapper's main window
-  D.inWrapper = !!T;
+  // The Android app also has Tauri, but none of the desktop's windows; it brings window.LullNative instead.
+  D.inWrapper = !!T && !window.LullNative;
 
   function $(sel, el) { return (el || doc).querySelector(sel); }
   function $$(sel, el) { return Array.prototype.slice.call((el || doc).querySelectorAll(sel)); }
@@ -199,7 +200,9 @@
       '<div class="field"><label class="field__label" for="dk-code">Pair code</label>' +
       '<input class="input dk-code" id="dk-code" name="code" type="text" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" maxlength="6" placeholder="ABC123"></div>' +
       '<div class="dk-status" role="status" data-state="idle">' + status('info', 'lull checks the hub before pairing.') + '</div>' +
-      '<div class="dk-actions"><button type="button" class="btn" data-dk="change-server">Back</button>' +
+      '<div class="dk-actions">' + (o.phone
+        ? '<button type="button" class="btn" data-dk="scan">Scan the QR code</button>'     // phones can't be hubs: no way back to the welcome page
+        : '<button type="button" class="btn" data-dk="change-server">Back</button>') +
       '<button type="submit" class="btn btn--primary">Pair</button></div>' +
       '</form></section>');
   };
@@ -215,6 +218,16 @@
       box.innerHTML = '<span class="dk-hubs__none">' + esc(String(err)) + '</span>' +
         '<button type="button" class="btn btn--quiet btn--sm" data-dk="discover">Search again</button>';
     });
+  }
+  /* phone: the hub's pairing QR code is <hub url>/#/pair/<code> */
+  function scan(card) {
+    invoke('plugin:barcode-scanner|scan', { formats: ['QR_CODE'], windowed: false }).then(function (r) {
+      var m = /^(https?:\/\/[^/#?]+)[^#]*#\/pair\/([A-Za-z0-9]{6})$/.exec(String(r.content || '').trim());
+      if (!m) return setStatus(card, 'error', 'That QR code isn&rsquo;t a lull pair code.');
+      $('[name="url"]', card).value = m[1];
+      $('[name="code"]', card).value = m[2].toUpperCase();
+      pair(card);
+    }, function (err) { setStatus(card, 'error', esc(String(err))); });
   }
   function pair(card) {
     var urlIn = $('[name="url"]', card), codeIn = $('[name="code"]', card);
@@ -508,6 +521,7 @@
       case 'restart-hub': return D.windowAction('retry').catch(logFailure('restart hub'));
       case 'this-computer': return useThisComputer(el.closest('[data-dk-welcome]'));
       case 'discover': return discover(card);
+      case 'scan': return scan(card);
       case 'pick-hub':
         $$('[data-dk="pick-hub"]', card).forEach(function (b) { b.setAttribute('aria-pressed', String(b === el)); });
         $('[name="url"]', card).value = el.getAttribute('data-url');
@@ -561,7 +575,7 @@
     var q = new URLSearchParams(location.hash.slice(1)), view = q.get('view'), host = $('#dk-root');
     var pages = {
       welcome: ['Welcome to lull', function () { return D.welcomePage(); }],
-      connect: ['Connect to your hub', function () { return D.connectPage({ url: q.get('url'), unpaired: !!q.get('unpaired') }); }],
+      connect: ['Connect to your hub', function () { return D.connectPage({ url: q.get('url'), unpaired: !!q.get('unpaired'), phone: !!q.get('phone') }); }],
       offline: ['Can’t reach your hub', function () { return D.offlinePage({ url: q.get('url'), error: q.get('error'), last: q.get('last') }); }],
       'hub-error': ['Your hub didn’t start', function () { return D.hubErrorPage({ error: q.get('error') }); }]
     };
@@ -601,7 +615,7 @@
         the web UI's own actions; set_now_playing keeps the tray current; 'player' snapshots feed the mini
         player; 'appearance' tells the wrapper which design and theme its own pages should use.
      ===================================================================== */
-  if (window.App && App.player && T) {
+  if (window.App && App.player && D.inWrapper) {
     var P = App.player;
     var run = function (a, detail) {
       var id = P.currentId(), ps = P.state;
