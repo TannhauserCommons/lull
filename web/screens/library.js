@@ -20,7 +20,7 @@
   function playlists() { return App.store.get('playlists') || []; }
   function playlist(id) { return playlists().filter(function (p) { return p.id === id; })[0] || null; }
   function plIds(p) { return (p.items || []).map(function (i) { return i.trackId; }); }
-  function jellyfinDown() { var s = App.store.get('services'); return !!(s && s.jellyfin && s.jellyfin.state === 'down'); }
+  function jellyfinDown() { var s = App.store.get('services'); return !!(s && s.library && s.library.state === 'down'); }
   /* lists name entities by id (or by an object carrying one); ids the cache can't describe are left out */
   function idList(items) { return (items || []).map(function (v) { return typeof v === 'string' ? v : v && v.id; }).filter(Boolean); }
   function resolve(items, lookup) { return idList(items).map(lookup).filter(Boolean); }

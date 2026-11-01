@@ -149,7 +149,7 @@
     return '<span class="brand-mark" role="img" aria-label="' + name + '">' +
       (window.Designs ? String(Designs.slot('brand', { where: 'desktop' }, Designs.brandMarkup)) : plain()) + '</span>';
   }
-  var SERVICE_NAMES = { soulseek: 'Soulseek', jellyfin: 'Jellyfin', lastfm: 'Last.fm' };
+  var SERVICE_NAMES = { soulseek: 'Soulseek', library: 'Library', lastfm: 'Last.fm' };
   function answered(health) {
     var names = Object.keys(SERVICE_NAMES).filter(function (k) {
       var s = health.services && health.services[k]; return s && (s.state === 'ok' || s.state === 'warn');

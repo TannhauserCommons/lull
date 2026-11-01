@@ -387,7 +387,7 @@
 :root[data-design="lull"] .header .tray--full .tray__pill:not(.tray__pill--cache) { font-size: 0; }
 :root[data-design="lull"] .header .tray--full .tray__pill > .sg { order: -1; }
 :root[data-design="lull"] .header .tray--full .tray__pill[data-svc="soulseek"]::before { content: "Soulseek"; font-size: .8125rem; }
-:root[data-design="lull"] .header .tray--full .tray__pill[data-svc="jellyfin"]::before { content: "Jellyfin"; font-size: .8125rem; }
+:root[data-design="lull"] .header .tray--full .tray__pill[data-svc="library"]::before { content: "Library"; font-size: .8125rem; }
 :root[data-design="lull"] .header .tray--full .tray__pill[data-svc="lastfm"]::before { content: "Last.fm"; font-size: .8125rem; }
 :root[data-design="lull"] .header .tray--full .tray__pill:first-child { border-radius: 10px 0 0 10px; padding-left: 11px; }
 :root[data-design="lull"] .header .tray--full .tray__pill:nth-child(2) { border-radius: 0; }
