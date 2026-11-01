@@ -11,9 +11,12 @@ members = [
   "crates/lyrics",
   "crates/collection",
   "crates/skins",
+  "crates/subsonic",
+  "crates/themes",
 ]
-# The Tauri wrapper is its own workspace: it shares no code with the server.
-exclude = ["desktop"]
+# The Tauri app is its own workspace (its dependency tree is large); it uses the hub as a path
+# dependency on `crates/server` (ADR-0006).
+exclude = ["app"]
 
 [workspace.package]
 version = "0.1.0"

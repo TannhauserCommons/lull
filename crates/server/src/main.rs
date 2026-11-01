@@ -1,21 +1,9 @@
-//! lull: start-up and wiring. Domain logic lives in the domain crates; this binary builds them
-//! in dependency order and merges their routes (docs/context/workspace.md).
-
-mod events;
-mod gate;
-mod web;
+//! The `lull` binary: the headless hub (Docker, servers) and the container healthcheck.
 
 use std::process::ExitCode;
-use std::sync::Arc;
 
-use axum::routing::get;
-use axum::{Json, Router};
-use lull_core::config::Config;
-use lull_core::db::{self, Db};
-use lull_core::events::Bus;
-use lull_core::http::Http;
-use lull_core::status::Status;
-use lull_core::{Ctx, Error};
+use lull_core::config::env_vars;
+use lull_server::BoxError;
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -33,80 +21,10 @@ async fn main() -> ExitCode {
     }
 }
 
-type BoxError = Box<dyn std::error::Error>;
-
 async fn serve() -> Result<(), BoxError> {
-    let config = Config::from_env()?;
-    init_logs(&config.log)?;
-    let ctx = context(config)?;
-    let app = wire(&ctx).await?;
-    let listener = tokio::net::TcpListener::bind(ctx.config.listen).await?;
-    tracing::info!(listen = %ctx.config.listen, version = env!("CARGO_PKG_VERSION"), "lull is up");
-    axum::serve(listener, app).with_graceful_shutdown(shutdown()).await?;
-    Ok(())
-}
-
-fn context(config: Config) -> Result<Ctx, Error> {
-    let bus = Bus::new();
-    Ok(Ctx {
-        db: Db::open(&config.data_dir)?,
-        http: Http::new()?,
-        status: Status::new(bus.clone()),
-        bus,
-        config: Arc::new(config),
-    })
-}
-
-/// Builds every crate (seam providers first) and merges their routes. The only place crates meet.
-async fn wire(ctx: &Ctx) -> Result<Router, Error> {
-    for m in [
-        &db::CORE,
-        &lull_core::catalog::MIGRATIONS,
-        &lull_soulseek::MIGRATIONS,
-        &lull_library::MIGRATIONS,
-        &lull_discovery::MIGRATIONS,
-        &lull_lastfm::MIGRATIONS,
-        &lull_lyrics::MIGRATIONS,
-        &lull_collection::MIGRATIONS,
-        &lull_skins::MIGRATIONS,
-    ] {
-        ctx.db.migrate(m)?;
-    }
-
-    let soulseek = lull_soulseek::start(ctx).await?;
-    let library = lull_library::start(ctx, soulseek.clone()).await?;
-    let discovery = lull_discovery::start(ctx, library.clone()).await?;
-    let lastfm = lull_lastfm::start(ctx).await?;
-    let lyrics = lull_lyrics::start(ctx).await?;
-    let collection = lull_collection::start(ctx, library.clone()).await?;
-    let skins = lull_skins::start(ctx).await?;
-
-    let api = Router::new()
-        .merge(lull_soulseek::router(soulseek, library.clone()))
-        .merge(lull_library::router(library))
-        .merge(lull_discovery::router(discovery))
-        .merge(lull_lastfm::router(lastfm))
-        .merge(lull_lyrics::router(lyrics))
-        .merge(lull_collection::router(collection))
-        .merge(lull_skins::router(skins))
-        .merge(events::router(ctx.bus.clone()))
-        .route("/api/ping", get(|| async { axum::http::StatusCode::NO_CONTENT }))
-        .layer(axum::middleware::from_fn_with_state(
-            gate::Gate::new(&ctx.config),
-            gate::require,
-        ));
-
-    let status = ctx.status.clone();
-    Ok(Router::new()
-        .merge(api)
-        .merge(gate::router(&ctx.config))
-        .route("/health", get(move || async move { Json(health(&status)) }))
-        .fallback(web::serve))
-}
-
-/// Always 200 while the process serves: a dependency being down is reported, not fatal.
-fn health(status: &Status) -> serde_json::Value {
-    serde_json::json!({ "version": env!("CARGO_PKG_VERSION"), "services": status.snapshot() })
+    let env = env_vars()?;
+    init_logs(env.get("LULL_LOG").map_or("info", String::as_str))?;
+    lull_server::run(env, shutdown()).await
 }
 
 fn init_logs(filter: &str) -> Result<(), BoxError> {

@@ -1,0 +1,13 @@
+[package]
+name = "lull-subsonic"
+description = "OpenSubsonic API, so existing music apps can browse, stream and scrobble"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+lull-core.workspace = true
+
+[lints]
+workspace = true
