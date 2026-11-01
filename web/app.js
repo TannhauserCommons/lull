@@ -81,10 +81,12 @@
   }
   /* one line of file facts for a track (or a source { format, sizeMB }):
      formatLine(t) -> "FLAC :: 44.1 kHz, 1040 kbps, 30.2 MB"; { bits: true } adds "16-bit, " before the rate */
+  /* the hub's sample rate is a float (44.099998...): one decimal at most */
+  function kHz(v) { return v ? Math.round(v * 10) / 10 : v; }
   function formatLine(t, opts) {
     if (!t) return '';
     var f = M.formats[t.format] || {}, o = opts || {}, parts = [];
-    var khz = t.khz || f.khz, kbps = t.kbps || f.kbps, bits = t.bits !== undefined ? t.bits : f.bits;
+    var khz = kHz(t.khz || f.khz), kbps = t.kbps || f.kbps, bits = t.bits !== undefined ? t.bits : f.bits;
     if (khz) parts.push((o.bits && bits ? bits + '-bit, ' : '') + khz + ' kHz');
     if (kbps) parts.push(kbps + ' kbps');
     if (t.sizeMB) parts.push(fmtSize(t.sizeMB));
@@ -510,7 +512,7 @@
     var drag = opts.draggable === false ? '' : ' draggable="true"';
     var n = opts.index != null ? opts.index : track.no;
     /* file facts as data (data-khz / data-kbps / data-bits / data-size in MB) + a hidden .trow__fmt line a design may show */
-    var facts = raw(' data-khz="' + (track.khz || '') + '" data-kbps="' + (track.kbps || '') + '" data-bits="' + (track.bits || '') + '" data-size="' + (track.sizeMB || '') + '"');
+    var facts = raw(' data-khz="' + (kHz(track.khz) || '') + '" data-kbps="' + (track.kbps || '') + '" data-bits="' + (track.bits || '') + '" data-size="' + (track.sizeMB || '') + '"');
     return html`<li class="${cls}" data-track-id="${track.id}" ${opts.queueIndex != null ? raw('data-queue-index="' + opts.queueIndex + '"') : ''}${facts} tabindex="0"${raw(drag)} aria-label="${track.title} by ${track.artist}">
       <div class="trow__num"><span class="trow__n">${n}</span><span class="trow__grip" aria-hidden="true">${icon('grip', null, 'ic-16')}</span><span class="eq" aria-hidden="true"><i></i><i></i><i></i></span></div>
       <div class="trow__art">${ui.cover(track, opts.dense ? 40 : 48)}</div>
@@ -529,7 +531,7 @@
   };
   /* bitrate and sample rate, the format column of a wide list ("1040 kbps, 44.1 kHz") */
   function rateLine(t) {
-    var f = M.formats[t.format] || {}, kbps = t.kbps || f.kbps, khz = t.khz || f.khz;
+    var f = M.formats[t.format] || {}, kbps = t.kbps || f.kbps, khz = kHz(t.khz || f.khz);
     return [kbps ? kbps + ' kbps' : '', khz ? khz + ' kHz' : ''].filter(Boolean).join(', ');
   }
   /* how many peers offer a track: a search result's count, or the length of a fetched source list */

@@ -160,6 +160,11 @@ button.disc-pick__title:hover { text-decoration: underline; text-underline-offse
 .disc-filters__group { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 .disc-filters__sep { width: 1.5px; height: 24px; background: var(--edge); flex: none; }
 .disc-filters .pill-filter { flex: none; }
+/* side by side (ADR-0007): offered from wide; library left, Soulseek right */
+.disc-split { display: none; margin-left: auto; }
+.app:is([data-size="wide"], [data-size="xwide"], [data-size="ultra"]) .disc-split { display: flex; }
+.disc-splitview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--sp-6); align-items: start; }
+.disc-splitview .label-rule--sm { margin-top: var(--sp-5); }
 @media (max-width: 639px) {      /* one scrolling row of pills on phone, bleeding to the screen edges */
   .disc-filters { flex-wrap: nowrap; overflow-x: auto; margin: 0 -16px var(--sp-4); padding: 6px 16px; scrollbar-width: none; }
   .disc-filters__group { flex-wrap: nowrap; }
