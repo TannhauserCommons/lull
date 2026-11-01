@@ -13,6 +13,15 @@ use rust_embed::RustEmbed;
 #[exclude = "package-lock.json"]
 struct Web;
 
+/// What a page may load (ADR-0004): everything from the hub, so a shared theme can't fetch from or
+/// report to anywhere else. Inline scripts are the pre-paint ones in index.html and the desktop
+/// wrapper; inline styles are style="" attributes and the layered `<style>@import` lines; images
+/// also come from the Winamp Skin Museum's CDN (skin screenshots); Theme Studio frames the app itself.
+const CSP: &str = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; \
+    img-src 'self' data: blob: https://r2.webampskins.org; font-src 'self' data:; media-src 'self' blob:; \
+    connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-src 'self'; frame-ancestors 'self'; \
+    object-src 'none'; base-uri 'self'; form-action 'self'";
+
 pub async fn serve(uri: Uri, headers: axum::http::HeaderMap) -> Response {
     let path = uri.path().trim_start_matches('/');
     if path == "api" || path.starts_with("api/") {
@@ -31,6 +40,7 @@ pub async fn serve(uri: Uri, headers: axum::http::HeaderMap) -> Response {
             (header::CONTENT_TYPE, file.metadata.mimetype().to_owned()),
             (header::ETAG, etag),
             (header::CACHE_CONTROL, "no-cache".to_owned()),
+            (header::CONTENT_SECURITY_POLICY, CSP.to_owned()),
         ],
         file.data,
     )
