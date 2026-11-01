@@ -10,7 +10,7 @@ from, how the player plays, and the rules screens follow. The endpoint contract 
 ```
 index.html   tokens.css base.css components.css screens/*.css desktop/desktop.css designs/<name>/design.css (last)
              designs/designs.js + the pre-paint script (design, theme, motion, text size)
-             icons.js data.js app.js screens/{discover,now,library,system,appearance,hub,setup,classic}.js desktop/desktop.js
+             icons.js data.js app.js connect.js screens/{discover,now,library,system,appearance,hub,setup,classic}.js desktop/desktop.js
 data.js      window.LullData = App.data: API client, entity cache, per-route reads, the event stream
 app.js       window.App: router, render helpers, overlays, save pipeline, player engine, shell, actions,
              keyboard, Media Session, drag and drop, server events + boot
@@ -178,6 +178,22 @@ always set one song ahead); one item plays at a time except during a crossfade; 
 level, not the system's.
 
 `window.LullNative.downloads` (offline downloads, ADR-0005) is in [Offline downloads](#offline-downloads-and-outbox).
+
+## lull Connect (ADR-0005)
+
+`connect.js` (`App.connect`) owns the device list: store `devices` `{ items, me, loading, error }` from
+`GET /api/devices`, kept current by `device.online` / `device.state` (an unknown device id rereads the list).
+Settings > Devices renders from it.
+
+- **Reporting**: `POST /api/devices/me/state` at once on a new song, play, pause or end; at most once a second for
+  seeks, volume and queue changes; every 30 s while playing. A 404 (a hub without Connect) stops it until the next
+  resync or hub restart.
+- **Commands**: `device.command` for this device runs `play pause next prev seek volume`; `takeover` reports
+  at once, pauses and says who took over.
+- **Picker** (`data-act="connect"`: the player bar, Now's action row): a popover, a sheet on phones. Picking a
+  device opens its controls (play/pause, skip, seek, volume; positions move by the time since its report).
+  **Play here** sends `takeover`, waits up to 3 s for the fresh `device.state`, reads tracks this device hasn't
+  seen (`GET /api/tracks/{id}`), and plays that queue here from the same position.
 
 ## Offline downloads and outbox
 

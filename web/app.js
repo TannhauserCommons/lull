@@ -775,7 +775,8 @@
     else if (!el.contains(document.activeElement)) { e.preventDefault(); f[0].focus(); }
   });
 
-  /* popover anchored to an element: App.popover(anchor, markup, { label, className, onMount(el, close), role }) */
+  /* popover anchored to an element: App.popover(anchor, markup, { label, className, onMount(el, close), role })
+     -> { el, close, place } (place: position it again after its content changed size) */
   var openPop = null;
   function placeNear(el, anchor) {
     var r = anchor.getBoundingClientRect(), w = el.offsetWidth, h = el.offsetHeight;
@@ -809,7 +810,7 @@
     var close = function () { App.closePopover(true); };
     if (o.onMount) o.onMount(el, close);
     var f = focusables(el)[0]; if (f) f.focus();
-    return { el: el, close: close };
+    return { el: el, close: close, place: function () { placeNear(el, anchor); } };
   };
   /* menu: App.menu(anchor, [{ label, icon, run, danger } | 'sep'], { label }) with arrow-key navigation */
   App.menu = function (anchor, items, o) {

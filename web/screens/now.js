@@ -267,13 +267,14 @@
   }
   function actionRow() {
     var t = cur();
-    if (!t) return html`<div class="now-acts"><a class="btn btn--primary" href="#/home">${icon('home')}Go home</a><a class="btn" href="#/search">${icon('search')}Search</a></div>`;
+    if (!t) return html`<div class="now-acts"><a class="btn btn--primary" href="#/home">${icon('home')}Go home</a><a class="btn" href="#/search">${icon('search')}Search</a>${actBtn2('connect', 'Play on another device', 'connect', 'aria-haspopup="dialog"', 'Devices')}</div>`;
     var following = App.isFollowed(t.artistId);
     return html`<div class="now-acts">
       ${ui.saveButton(t.id, { cls: 'btn--primary', label: 'Save to library' })}
       ${actBtn2('plus', 'Add to playlist', 'add-to-playlist', 'data-id="' + t.id + '" aria-haspopup="menu"')}
       ${actBtn2('radio', 'Start radio', 'start-radio', 'data-kind="track" data-id="' + t.id + '"')}
       ${actBtn2(following ? 'check' : 'follow', following ? 'Following ' + t.artist : 'Follow ' + t.artist, 'follow', 'data-id="' + t.artistId + '" aria-pressed="' + following + '"', following ? 'Following' : 'Follow')}
+      ${actBtn2('connect', 'Play on another device', 'connect', 'aria-haspopup="dialog"', 'Devices')}
       ${actBtn2('classic', 'Classic mode', 'classic', '', 'Classic')}
     </div>`;
   }

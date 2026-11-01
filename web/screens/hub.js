@@ -10,6 +10,7 @@
   var html = App.html, ui = App.ui, M = App.data, icon = App.icon, raw = App.raw, $ = App.$, $$ = App.$$;
   var K = App.settingsKit;
   var SOURCE = '/api/library/source', DISCOVER = '/api/jellyfin/discover', DEVICES = '/api/devices', CONFIG = '/api/config';
+  var C = App.connect;
   /* the hub config keys holding the Soulseek account */
   var SLSK_USER = 'LULL_SOULSEEK_USERNAME', SLSK_PASS = 'LULL_SOULSEEK_PASSWORD';
 
@@ -265,10 +266,10 @@
   });
 
   /* =====================================================================
-     3. Settings > Devices: GET /api/devices { items: [Device + { online, state? }], me }
+     3. Settings > Devices: the store's `devices` (connect.js keeps it: GET /api/devices and device events)
      ===================================================================== */
   var KIND_ICON = { browser: 'globe', app: 'device', subsonic: 'link' };
-  function devices() { var d = M.peek(DEVICES); return d ? d.items : []; }
+  function devices() { return App.store.get('devices').items; }
   function secDevices() {
     return html`${httpsNote()}
       <p class="sys-card__lede">Every device you pair shares this hub's library, likes, playlists and history. Unpairing one stops it at once.</p>
@@ -280,18 +281,18 @@
       <p><button class="btn" data-act="hub-subsonic-new">${icon('plus')}Make an app password</button></p>`;
   }
   function devicesBody() {
-    var r = M.get(DEVICES);
-    if (r.loading) return ui.skeleton('row', 2);
-    if (r.error) return K.readError(r.error, DEVICES, 'Couldn\'t list your devices');
-    var list = r.data.items.filter(function (d) { return d.kind !== 'subsonic'; });
-    return html`<ul class="hub-devs">${list.map(function (d) { return deviceRow(d, r.data.me); })}</ul>`;
+    var s = App.store.get('devices');
+    if (s.loading) return ui.skeleton('row', 2);
+    if (s.error) return ui.emptyState({ art: 'star', title: 'Couldn\'t list your devices', text: s.error.message, action: { label: 'Try again', act: 'cx-reload' } });
+    var list = s.items.filter(function (d) { return d.kind !== 'subsonic'; });
+    return html`<ul class="hub-devs">${list.map(function (d) { return deviceRow(d, s.me); })}</ul>`;
   }
   function subsonicBody() {
-    var r = M.get(DEVICES);
-    if (r.loading || r.error) return '';
-    var list = r.data.items.filter(function (d) { return d.kind === 'subsonic'; });
+    var s = App.store.get('devices');
+    if (s.loading || s.error) return '';
+    var list = s.items.filter(function (d) { return d.kind === 'subsonic'; });
     if (!list.length) return html`<p class="sys-row__help">No app passwords yet.</p>`;
-    return html`<ul class="hub-devs">${list.map(function (d) { return deviceRow(d, r.data.me); })}</ul>`;
+    return html`<ul class="hub-devs">${list.map(function (d) { return deviceRow(d, s.me); })}</ul>`;
   }
   function deviceRow(d, me) {
     var t = d.state && d.state.trackId && M.track(d.state.trackId);
@@ -304,11 +305,11 @@
       <button class="btn-icon btn-icon--bare" data-act="hub-dev-more" data-id="${d.id}" aria-haspopup="menu" aria-label="More for ${d.name}" data-tip="More">${icon('more')}</button></li>`;
   }
   function repaintDevices() { K.repaint('#hub-devices', devicesBody()); K.repaint('#hub-subsonic', subsonicBody()); }
-  function deviceById(id) { return devices().filter(function (d) { return d.id === id; })[0]; }
+  function deviceById(id) { return C.byId(id); }
 
   App.action('hub-dev-more', function (el) {
     var d = deviceById(el.getAttribute('data-id')); if (!d) return;
-    var me = (M.peek(DEVICES) || {}).me === d.id;
+    var me = App.store.get('devices').me === d.id;
     App.menu(el, [
       { label: 'Rename', icon: 'edit', run: function () { renameDevice(d); } },
       { label: me ? 'Unpair this device' : d.kind === 'subsonic' ? 'Revoke password' : 'Unpair', icon: 'trash', danger: true, run: function () { unpairDevice(d, me); } }
@@ -323,7 +324,7 @@
       var name = $('#hub-rename-name', dlg.el).value.trim(), err = $('#hub-rename-err', dlg.el);
       if (!name) return;
       M.api(DEVICES + '/' + encodeURIComponent(d.id), { method: 'PATCH', body: { name: name } }).then(function () {
-        d.name = name; dlg.close(); repaintDevices(); App.announce('Renamed to ' + name);
+        dlg.close(); C.reload(); App.announce('Renamed to ' + name);
       }, function (e2) { err.textContent = e2.message; err.hidden = false; });
     });
   }
@@ -334,7 +335,7 @@
       confirm: d.kind === 'subsonic' ? 'Revoke' : 'Unpair', danger: true }, function () {
       M.api(DEVICES + '/' + encodeURIComponent(d.id), { method: 'DELETE' }).then(function () {
         if (me) { App.checkPairing(); return; }
-        M.reload(DEVICES); App.toast(d.name + (d.kind === 'subsonic' ? ': password revoked' : ' unpaired'), { icon: 'trash' });
+        C.reload(); App.toast(d.name + (d.kind === 'subsonic' ? ': password revoked' : ' unpaired'), { icon: 'trash' });
       }, function (err) { App.toast('Couldn\'t unpair ' + d.name + ': ' + err.message, { kind: 'error' }); });
     });
   }
@@ -365,7 +366,7 @@
     var known = devices().map(function (d) { return d.id; });
     var dlg = App.openDialog({ title: 'add a device', className: 'hub-pair', body: html`<div id="hub-pair-body" aria-live="polite">${ui.skeleton('text', 3)}</div>`,
       foot: html`<button class="btn" data-close>Done</button>`,
-      onClose: function () { if (pairing) clearInterval(pairing.timer); pairing = null; M.reload(DEVICES); } });
+      onClose: function () { if (pairing) clearInterval(pairing.timer); pairing = null; C.reload(); } });
     pairing = { dlg: dlg, timer: null, known: known };
     newCode();
   }
@@ -419,7 +420,7 @@
       var name = $('#hub-ss-name', dlg.el).value.trim(), err = $('#hub-ss-err', dlg.el);
       if (!name) return;
       M.api('/api/devices/subsonic', { method: 'POST', body: { name: name } }).then(function (res) {
-        dlg.close(); M.reload(DEVICES); showAppPassword(res);
+        dlg.close(); C.reload(); showAppPassword(res);
       }, function (e2) { err.textContent = e2.message; err.hidden = false; });
     });
   });
@@ -434,20 +435,14 @@
       foot: html`<button class="btn btn--primary" data-close>I've entered it</button>` });
   }
 
-  /* live: devices come online, change name or state on other screens */
-  function onDeviceEvent(e) {
-    var d = deviceById(e.deviceId);
-    if (pairing && pairing.known.indexOf(e.deviceId) < 0 && e.online) {
+  /* live: the list changes (devices online, playing, paired); a new device while the pair dialog is open paired with it */
+  App.store.subscribe(function (keys) {
+    if (keys.indexOf('devices') < 0) return;
+    if (pairing && devices().some(function (d) { return pairing.known.indexOf(d.id) < 0; })) {
       pairing.dlg.close(); App.toast('Paired a new device', { kind: 'ok', icon: 'connect' });
-      return;
     }
-    if (!d) { if (M.peek(DEVICES)) M.reload(DEVICES); return; }
-    if ('online' in e) d.online = e.online;
-    if (e.trackId !== undefined) d.state = e;
     if ($('#hub-devices')) repaintDevices();
-  }
-  App.on('server:device.online', onDeviceEvent);
-  App.on('server:device.state', onDeviceEvent);
+  });
 
   App.settingsSections.devices = secDevices;
   App.hubKit = { librarySource: librarySource, soulseekRows: soulseekRows, soulseekForm: function () { return html`<div id="hub-slsk">${soulseekForm()}</div>`; },
