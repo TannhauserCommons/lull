@@ -10,10 +10,11 @@ from, how the player plays, and the rules screens follow. The endpoint contract 
 ```
 index.html   tokens.css base.css components.css screens/*.css desktop/desktop.css designs/<name>/design.css (last)
              designs/designs.js + the pre-paint script (design, theme, motion, text size)
-             icons.js data.js app.js connect.js offline.js screens/{discover,now,library,system,appearance,hub,setup,classic}.js desktop/desktop.js
+             icons.js data.js app.js layout.js connect.js offline.js screens/{discover,now,library,system,appearance,hub,setup,classic}.js desktop/desktop.js
 data.js      window.LullData = App.data: API client, entity cache, per-route reads, the event stream
 app.js       window.App: router, render helpers, overlays, save pipeline, player engine, shell, actions,
              keyboard, Media Session, drag and drop, server events + boot
+layout.js    ADR-0007: size classes, App.layout (lull:layout), resize handles, the Now Playing column host
 sw.js        service worker (app shell for offline start); manifest.webmanifest
 hub.js       the hub's own settings: library source (folder / Jellyfin), Soulseek account, Settings > Devices (App.hubKit)
 setup.js     the pairing gate, #/pair/<code>, first-run setup (/setup)
@@ -239,6 +240,56 @@ segment `/downloads`. Downloads need a secure context (HTTPS or localhost); else
 Events (`LullNative.downloads.on(type, fn)`, returns an unsubscribe function): `progress { trackId, received, size }`,
 `done { trackId, fileUrl, artUrl, sizeBytes }`, `error { trackId, message }`. Downloads continue while the app is in
 the background.
+
+## Layout (ADR-0007)
+
+A bigger window reveals more; nothing is stretched. Layout is CSS: container queries plus custom properties.
+
+- **Size classes.** `.main` is the `main` container. layout.js mirrors its width class onto `.app[data-size]`:
+  `compact` below 640, `regular` to 1099, `wide` to 1599, `xwide` to 2199, `ultra` above. It also sets
+  `.app[data-height]` (`short` under 760 px). A ResizeObserver feeds both; nothing is measured in a resize loop.
+  `App.layout.size()` and `App.layout.at(name)` read the class, and `layout:size` fires when it changes.
+- **Containers.** `main` (`.main`), `panel` (`.ctx`), `nowcol` (`.nowcol`), `section` (a Home module) and `tlist`
+  (a song list; the playlist table is `libpl`). A container is the containing block of `position: fixed`
+  descendants, so a design's fixed widget inside `.main` is placed against `.main`, not the window.
+- **Stored choices.** `App.layout.get()` / `set(patch)` (emits `layout`) / `reset()`. They're kept in
+  `localStorage['lull:layout']` as `{ panelWidth, panelCollapsed, nowColumn, nowWidth, searchSplit, panelSplit,
+  homeOrder, homeHidden }`, per device. Unknown or out-of-range values fall back to defaults. `reset()` is the hook
+  for "Reset layout" in Settings > Appearance.
+- **Side panel.**
+  - At 1360 px and wider it's docked. Closing it there collapses it to an icon strip (`.app[data-panel="strip"]`),
+    one button per tab. Below 1360 px it opens over the page.
+  - Its left edge is a resize handle (`[data-resize="panel"]`, 280 to 560 px, on `--ctx`).
+  - From `xwide`, a switch shows Queue and Lyrics as two panes (`.app[data-panel-split]`, `.ctx[data-two]`): stacked
+    in a narrow panel, side by side once the panel is 600 px wide.
+- **Now Playing column.**
+  - It's `.nowcol`, in the main grid cell; `.main` gives it room with a right margin. Contents: art, transfer state
+    and synced lyrics (`App.nowColumn`, now.js).
+  - A player bar button opens it from `wide` (`.app[data-nowcol-ok]`). It counts as offered when the main area
+    would stay `wide` with it open, so opening it can't take the button away.
+  - `.app[data-nowcol="open|strip"]` shows it; it's hidden on `/now`. Resizable from 300 to 560 px (`--now-w`) and
+    collapsible to a strip.
+- **Resize handles.**
+  - Pointer: a drag, throttled to animation frames and saved when it ends; double-click restores the default.
+  - Keyboard: arrows (Shift for bigger steps), Home and End for the limits.
+- **Screens.**
+  - **Home:** modules in 1, 2 or 3 CSS columns (`main` at 1100 and 1600). Each module is a `section` container.
+    "Picked for you" shows 6, 9 or 12 picks as its module widens. An empty module is one line.
+  - **Edit Home:** reorders by drag or arrow buttons and hides with an eye switch.
+  - **Shelves:** fixed tile widths, so a wider shelf shows more tiles.
+  - **Song lists:** album at 760 px. From 1240 px, the bitrate and sample rate sit in the badge cell, which gets a
+    fixed width (the playlist table does this from 1300 px).
+  - **Album and artist pages:** two columns from `wide`. The header is sticky in tall windows, and the artist bio
+    clamps to six lines with More.
+  - **Search:** "Side by side" from `wide`.
+  - **Short windows:** tighter chrome.
+- **Designs.**
+  - Layout states that must hold whatever a design draws (the strips, the column's margin) are `!important` in the
+    components layer.
+  - Each design adds its own wide-screen touches in its `design` layer, using the same `data-size` and container
+    names.
+- **Not yet:** date added for saved songs and play counts as song list columns. `/api/library/songs` returns bare
+  ids, and Track carries neither.
 
 ## Imports
 
