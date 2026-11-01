@@ -25,6 +25,8 @@ pub const KEYS: &[Key] = &[
     Key::plain("LULL_PUBLIC_URL"),
     Key::plain("LULL_SLSKD_URL"),
     Key::secret("LULL_SLSKD_API_KEY"),
+    Key::plain("LULL_SLSKD_WEB_USERNAME"),
+    Key::secret("LULL_SLSKD_WEB_PASSWORD"),
     Key::plain("LULL_TRANSFERS_DIR"),
     Key::plain("LULL_PREFERRED_FORMATS"),
     Key::plain("LULL_SHARE"),

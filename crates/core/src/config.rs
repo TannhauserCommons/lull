@@ -40,6 +40,15 @@ pub struct Soulseek {
     pub config_file: Option<PathBuf>,
     /// The Soulseek account, only ever set with `config_file` (ADR-0002).
     pub account: Option<SoulseekAccount>,
+    /// slskd's own web login. slskd lets a web session restart it, never an API key, so lull
+    /// needs this only to restart an slskd stuck mid-transition (docs/context/soulseek.md).
+    pub web_login: Option<SlskdWebLogin>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SlskdWebLogin {
+    pub username: String,
+    pub password: Secret,
 }
 
 #[derive(Debug, Clone)]
@@ -231,6 +240,12 @@ impl Config {
                 },
                 config_file,
                 account,
+                web_login: v
+                    .pair("LULL_SLSKD_WEB_USERNAME", "LULL_SLSKD_WEB_PASSWORD")?
+                    .map(|(username, password)| SlskdWebLogin {
+                        username,
+                        password: Secret(password),
+                    }),
             },
             cache: Cache {
                 max_bytes: {
