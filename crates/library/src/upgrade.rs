@@ -126,12 +126,15 @@ pub async fn consider(svc: &Service, job: &SaveJob, saved: &Track) {
     }
 }
 
-/// Every minute, the most overdue watched song gets its search, while auto-upgrade is on.
+/// Every minute, the most overdue watched song gets its search, while auto-upgrade is on and
+/// the library is readable.
 pub async fn run(svc: Arc<Service>) {
     loop {
         tokio::time::sleep(TICK).await;
         let profile = svc.upgrades.profile();
-        if !profile.auto_upgrade {
+        // Before the library is read (Jellyfin down, the folder loading) every song would look
+        // unsaved, and be forgotten.
+        if !profile.auto_upgrade || !svc.online() {
             continue;
         }
         let at = now();
