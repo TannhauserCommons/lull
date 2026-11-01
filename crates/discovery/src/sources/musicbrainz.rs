@@ -355,6 +355,22 @@ impl MusicBrainz {
             .await
     }
 
+    /// Catalog search for a submitted query: release groups by title, so EPs and albums only
+    /// MusicBrainz knows (Bandcamp releases) are found by name. Paced after the recording search.
+    pub async fn search_releases(&self, q: &str) -> Result<Found> {
+        self.switch.check()?;
+        let words = normalize(q);
+        if words.is_empty() {
+            return Ok(Found::default());
+        }
+        self.cache
+            .get(format!("mb:search-releases:{words}"), DAY, || async {
+                let query = format!("releasegroup:\"{words}\" OR releasegroup:({words})");
+                release_groups(self.get("release-group", &[("query", &query), ("limit", "15")]).await?)
+            })
+            .await
+    }
+
     async fn get<T: DeserializeOwned>(&self, path: &str, query: &[(&str, &str)]) -> Result<T> {
         self.http.pace(http::MUSICBRAINZ, http::MUSICBRAINZ_PACE).await;
         self.http
@@ -367,6 +383,62 @@ impl MusicBrainz {
                 e => e,
             })
     }
+}
+
+/// "album", "EP", "single", "compilation" from a release group's types.
+fn release_kind(primary: Option<&str>, secondary: &[String]) -> Option<String> {
+    if secondary.iter().any(|t| t == "Compilation") {
+        return Some("compilation".into());
+    }
+    primary.map(|t| match t {
+        "EP" => "EP".to_owned(),
+        other => other.to_lowercase(),
+    })
+}
+
+/// A release-group search's answer as album rows, with Cover Art Archive covers.
+pub fn release_groups(body: serde_json::Value) -> Result<Found> {
+    #[derive(Deserialize)]
+    struct Found_ {
+        #[serde(rename = "release-groups")]
+        groups: Vec<Group>,
+    }
+    #[derive(Deserialize)]
+    #[serde(rename_all = "kebab-case")]
+    struct Group {
+        id: String,
+        title: String,
+        primary_type: Option<String>,
+        #[serde(default)]
+        secondary_types: Vec<String>,
+        first_release_date: Option<String>,
+        #[serde(default)]
+        artist_credit: Vec<Credit>,
+    }
+    let found: Found_ =
+        serde_json::from_value(body).map_err(|e| Error::upstream(SERVICE, format!("unexpected search answer: {e}")))?;
+    Ok(Found {
+        albums: found
+            .groups
+            .into_iter()
+            .filter_map(|g| {
+                let (artist, _) = credited(&g.artist_credit)?;
+                Some(AlbumHit {
+                    kind: release_kind(g.primary_type.as_deref(), &g.secondary_types),
+                    date: g.first_release_date.filter(|d| !d.is_empty()),
+                    art: Some(format!(
+                        "https://coverartarchive.org/release-group/{}/front-{{size}}",
+                        g.id
+                    )),
+                    mbid: Some(g.id),
+                    title: g.title,
+                    artist,
+                    popularity: 0.0,
+                })
+            })
+            .collect(),
+        ..Found::default()
+    })
 }
 
 /// A recording search's answer as catalog rows. Each song is placed on its first official album
@@ -426,13 +498,7 @@ pub fn recordings(body: serde_json::Value) -> Result<Found> {
         (class + if official { 0 } else { 4 }, date)
     }
     fn kind(g: &Group) -> Option<String> {
-        if g.secondary_types.iter().any(|t| t == "Compilation") {
-            return Some("compilation".into());
-        }
-        g.primary_type.as_deref().map(|t| match t {
-            "EP" => "EP".to_owned(),
-            other => other.to_lowercase(),
-        })
+        release_kind(g.primary_type.as_deref(), &g.secondary_types)
     }
 
     let found: Found_ =
@@ -466,6 +532,8 @@ pub fn recordings(body: serde_json::Value) -> Result<Found> {
                 mbid: artist_mbid,
                 popularity: 0.0,
                 image: None,
+                audience: None,
+                lastfm_only: false,
             });
         }
         out.songs.push(SongHit {
@@ -479,6 +547,7 @@ pub fn recordings(body: serde_json::Value) -> Result<Found> {
             mbid: Some(r.id),
             popularity: 0.0,
             art,
+            lastfm_only: false,
             artist,
             album_artist,
         });

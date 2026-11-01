@@ -190,6 +190,7 @@ pub fn found(tracks: &Value, artists: &Value) -> Found {
                     artist: t["artist"].as_str()?.to_owned(),
                     mbid: mbid(t),
                     popularity: count(t).map_or(0.0, |n| popularity(n, FULL_TRACK)),
+                    lastfm_only: true,
                     ..SongHit::default()
                 })
             })
@@ -202,6 +203,8 @@ pub fn found(tracks: &Value, artists: &Value) -> Found {
                     mbid: mbid(a),
                     popularity: count(a).map_or(0.0, |n| popularity(n, FULL_ARTIST)),
                     image: None,
+                    audience: count(a),
+                    lastfm_only: true,
                 })
             })
             .collect(),

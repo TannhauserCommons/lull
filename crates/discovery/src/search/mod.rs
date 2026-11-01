@@ -9,6 +9,8 @@
 //!   What arrives later is announced as `search.more`, with only rows not shown yet.
 //! - **One run per query for 10 minutes:** the same words again answer at once, joining a run
 //!   that is still going. A run with a failed source isn't reused.
+//! - **A submitted query** (`submitted=1`: Enter, or the rest that starts Soulseek) also asks
+//!   MusicBrainz for release groups by title, so Bandcamp-only EPs and albums are found.
 //! - **`search.catalog`** names the best tracks once every source is in, for Soulseek.
 
 pub mod catalog;
@@ -34,7 +36,7 @@ use crate::Service;
 use crate::art::{self, Pictured};
 use crate::store::{self, entities};
 use catalog::Choice;
-use merge::{Fit, Found, Kind, Merged, Query, SongHit, Source, Touched};
+use merge::{Fit, Found, Kind, Merged, Query, Score, SongHit, Source, Touched};
 
 /// How long the first answer waits for the fast sources when it has rows.
 const FIRST_ANSWER: Duration = Duration::from_millis(400);
@@ -63,6 +65,8 @@ struct Run {
     state: Mutex<RunState>,
     arrived: Notify,
     failed: AtomicBool,
+    /// The release-group search has been started (`submitted`).
+    albums_asked: AtomicBool,
 }
 
 #[derive(Default)]
@@ -85,6 +89,8 @@ struct Shown {
 #[derive(Deserialize)]
 pub struct SearchParams {
     q: String,
+    /// `1` when the listener submitted the words (not just typed them).
+    submitted: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -131,6 +137,9 @@ pub async fn search(State(svc): State<Arc<Service>>, Params(p): Params<SearchPar
         return Err(Error::BadRequest("Type something to search for.".into()));
     }
     let run = svc.searches.run(&svc, query);
+    if p.submitted.as_deref().is_some_and(|s| s == "1" || s == "true") {
+        run.ask_albums(&svc).await;
+    }
     run.first_answer().await;
     let mut st = run.state.lock().await;
     let view = view(&svc, &run.query, &mut st, None).await?;
@@ -180,18 +189,23 @@ impl Searches {
             }),
             arrived: Notify::new(),
             failed: AtomicBool::new(false),
+            albums_asked: AtomicBool::new(false),
         });
         runs.insert(query, run.clone());
         drop(runs);
         for source in sources {
-            let (svc, run) = (svc.clone(), run.clone());
-            svc.ctx.clone().spawn(async move {
-                let found = fetch(&svc, source, &run.query).await;
-                arrive(&svc, &run, source, found).await;
-            });
+            start(svc, &run, source);
         }
         run
     }
+}
+
+fn start(svc: &Arc<Service>, run: &Arc<Run>, source: Source) {
+    let (svc, run) = (svc.clone(), run.clone());
+    svc.ctx.clone().spawn(async move {
+        let found = fetch(&svc, source, &run.query).await;
+        arrive(&svc, &run, source, found).await;
+    });
 }
 
 /// The sources in use: the fast catalog and the library; for 3+ characters also MusicBrainz
@@ -212,6 +226,16 @@ fn sources(svc: &Service, query: &str) -> Vec<Source> {
 }
 
 impl Run {
+    /// Adds MusicBrainz's release groups by title to the run, once.
+    async fn ask_albums(self: &Arc<Self>, svc: &Arc<Service>) {
+        let worth_it = self.query.chars().count() >= SLOW_SOURCES_FROM && svc.mb.switch.is_on();
+        if !worth_it || self.albums_asked.swap(true, Ordering::Relaxed) {
+            return;
+        }
+        self.state.lock().await.pending.insert(Source::MusicBrainzAlbums);
+        start(svc, self, Source::MusicBrainzAlbums);
+    }
+
     /// Returns once the fast sources are in, or at 400 ms if there are rows by then; with none by
     /// then, once the fast sources are in or at 1.5 s.
     async fn first_answer(&self) {
@@ -279,6 +303,12 @@ async fn fetch(svc: &Service, source: Source, q: &str) -> Result<Found> {
             found.artists.retain(|a| query.artist(a) > Fit::Loose);
             Ok(found)
         }
+        Source::MusicBrainzAlbums => {
+            let mut found = svc.mb.search_releases(q).await?;
+            let query = Query::new(q);
+            found.albums.retain(|a| query.album(a) > Fit::Loose);
+            Ok(found)
+        }
         Source::LastFm => match svc.lastfm() {
             Some(lastfm) => lastfm.search(q).await,
             None => Ok(Found::default()),
@@ -344,7 +374,7 @@ async fn arrive(svc: &Service, run: &Run, source: Source, found: Result<Found>) 
 /// `search.catalog`: the query's best tracks, for Soulseek's pre-warming.
 fn publish_catalog(svc: &Service, query: &str, merged: &Merged) {
     let q = Query::new(query);
-    let fits: Vec<(Fit, f64)> = merged.songs.iter().map(|s| (q.song(s), s.popularity)).collect();
+    let fits: Vec<Score> = merged.songs.iter().map(|s| Score::song(&q, s)).collect();
     let track_ids = merge::rank(&fits, |i| merged.songs[i].saved.is_some())
         .into_iter()
         .take(CATALOG_TRACKS)
@@ -370,17 +400,19 @@ async fn view(svc: &Service, query: &str, st: &mut RunState, touched: Option<&To
     let m = &st.merged;
 
     let song_ids: Vec<TrackId> = m.songs.iter().map(SongHit::id).collect();
-    let fits: Vec<(Fit, f64)> = m.songs.iter().map(|s| (q.song(s), s.popularity)).collect();
+    let fits: Vec<Score> = m.songs.iter().map(|s| Score::song(&q, s)).collect();
     let songs = merge::rank(&fits, |i| {
         let s = &m.songs[i];
         s.saved.is_some() || liked.contains(&song_ids[i]) || followed.contains(&ArtistId::of(&s.artist))
     });
     let album_ids: Vec<AlbumId> = m.albums.iter().map(merge::AlbumHit::id).collect();
-    let album_fits: Vec<(Fit, f64)> = m.albums.iter().map(|a| (q.album(a), a.popularity)).collect();
+    let album_fits: Vec<Score> = m.albums.iter().map(|a| Score::album(&q, a)).collect();
     let albums = merge::rank(&album_fits, |i| followed.contains(&ArtistId::of(&m.albums[i].artist)));
     let artist_ids: Vec<ArtistId> = m.artists.iter().map(merge::ArtistHit::id).collect();
-    let artist_fits: Vec<(Fit, f64)> = m.artists.iter().map(|a| (q.artist(a), a.popularity)).collect();
-    let artists = merge::rank(&artist_fits, |i| followed.contains(&artist_ids[i]));
+    let artist_fits: Vec<Score> = m.artists.iter().map(|a| Score::artist(&q, a)).collect();
+    let misspelt = merge::misspelt(&m.artists);
+    let mut artists = merge::rank(&artist_fits, |i| followed.contains(&artist_ids[i]));
+    artists.retain(|&i| !misspelt[i]);
 
     let top = match touched {
         Some(_) => None,

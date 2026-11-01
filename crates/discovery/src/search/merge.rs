@@ -4,8 +4,11 @@
 //!   remaster, version, edit and live tags dropped) with lengths within 3 s. A differing ISRC
 //!   doesn't keep two rows apart: remasters and compilations get new ones.
 //! - **A row keeps** the identity it was first shown with, and gains the facts others add.
-//! - **Order:** how well the row matches the query, then popularity (in tenths), then the
-//!   listener's own (saved, liked, followed), then exact popularity.
+//! - **Order:** rows another source confirms before Last.fm-only ones (scrobbles carry
+//!   misspellings), then how well the row matches the query, then popularity (in tenths), then
+//!   the listener's own (saved, liked, followed), then exact popularity.
+//! - **Misspelt artists:** a Last.fm-only artist a typo away from a confirmed one, with under 1%
+//!   of its audience, is dropped ("Radiohed" next to Radiohead).
 
 use std::cmp::Ordering;
 
@@ -21,6 +24,8 @@ const SAME_LENGTH_S: u32 = 3;
 /// How far the top result leans toward an artist, then an album, over a track of about the
 /// same popularity ("radiohed" is Radiohead, not their best known song).
 const TOP_LEAN: [f64; 3] = [0.15, 0.05, 0.0];
+/// A Last.fm-only artist with less than this share of a near-namesake's audience is a typo.
+const MISSPELT_SHARE: u64 = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -29,6 +34,9 @@ pub enum Source {
     Itunes,
     Library,
     MusicBrainz,
+    /// MusicBrainz's release groups by title, for submitted queries.
+    #[serde(rename = "musicbrainz-albums")]
+    MusicBrainzAlbums,
     LastFm,
 }
 
@@ -62,6 +70,9 @@ pub struct SongHit {
     pub popularity: f64,
     /// The album's cover: an outside URL where `{size}` is the size in pixels.
     pub art: Option<String>,
+    /// Only Last.fm knows it so far.
+    #[serde(default)]
+    pub lastfm_only: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -85,6 +96,12 @@ pub struct ArtistHit {
     pub popularity: f64,
     /// A photo: an outside URL where `{size}` is the size in pixels.
     pub image: Option<String>,
+    /// Fans or listeners, the larger known.
+    #[serde(default)]
+    pub audience: Option<u64>,
+    /// Only Last.fm knows it so far.
+    #[serde(default)]
+    pub lastfm_only: bool,
 }
 
 /// A count (fans, listeners, Deezer rank) on a 0..1 log scale where `full` reaches 1.
@@ -270,6 +287,7 @@ fn fill_song(row: &mut SongHit, hit: SongHit, may_rename: bool) -> bool {
     row.mbid = row.mbid.take().or(hit.mbid);
     row.art = row.art.take().or(hit.art);
     row.popularity = row.popularity.max(hit.popularity);
+    row.lastfm_only &= hit.lastfm_only;
     for isrc in hit.isrcs {
         if !row.isrcs.contains(&isrc) {
             row.isrcs.push(isrc);
@@ -293,6 +311,8 @@ fn fill_artist(row: &mut ArtistHit, hit: ArtistHit) -> bool {
     row.mbid = row.mbid.take().or(hit.mbid);
     row.image = row.image.take().or(hit.image);
     row.popularity = row.popularity.max(hit.popularity);
+    row.audience = row.audience.max(hit.audience);
+    row.lastfm_only &= hit.lastfm_only;
     *row != before
 }
 
@@ -366,17 +386,101 @@ impl Query {
     }
 }
 
+/// What a row is ranked by.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Score {
+    /// A source other than Last.fm knows it.
+    pub confirmed: bool,
+    pub fit: Fit,
+    pub popularity: f64,
+}
+
+impl Score {
+    pub fn song(q: &Query, s: &SongHit) -> Self {
+        Score {
+            confirmed: !s.lastfm_only,
+            fit: q.song(s),
+            popularity: s.popularity,
+        }
+    }
+
+    pub fn album(q: &Query, a: &AlbumHit) -> Self {
+        Score {
+            confirmed: true,
+            fit: q.album(a),
+            popularity: a.popularity,
+        }
+    }
+
+    pub fn artist(q: &Query, a: &ArtistHit) -> Self {
+        Score {
+            confirmed: !a.lastfm_only,
+            fit: q.artist(a),
+            popularity: a.popularity,
+        }
+    }
+}
+
 /// Positions of `rows` best first. `own` says whether a row is the listener's (saved, liked,
 /// a followed artist's).
-pub fn rank(rows: &[(Fit, f64)], own: impl Fn(usize) -> bool) -> Vec<usize> {
+pub fn rank(rows: &[Score], own: impl Fn(usize) -> bool) -> Vec<usize> {
     let mut order: Vec<usize> = (0..rows.len()).collect();
-    let key = |i: usize| (rows[i].0, (rows[i].1 * 10.0).floor() as i64, own(i));
+    let key = |i: usize| {
+        let r = rows[i];
+        (r.confirmed, r.fit, (r.popularity * 10.0).floor() as i64, own(i))
+    };
     order.sort_by(|&a, &b| {
-        key(b)
-            .cmp(&key(a))
-            .then_with(|| rows[b].1.partial_cmp(&rows[a].1).unwrap_or(Ordering::Equal))
+        key(b).cmp(&key(a)).then_with(|| {
+            rows[b]
+                .popularity
+                .partial_cmp(&rows[a].popularity)
+                .unwrap_or(Ordering::Equal)
+        })
     });
     order
+}
+
+/// Which artists are misspellings: Last.fm-only, a typo away from a confirmed artist, and with
+/// under 1% of its audience.
+pub fn misspelt(artists: &[ArtistHit]) -> Vec<bool> {
+    let names: Vec<String> = artists.iter().map(|a| loose_artist(&a.name)).collect();
+    artists
+        .iter()
+        .enumerate()
+        .map(|(i, a)| {
+            a.lastfm_only
+                && artists.iter().enumerate().any(|(j, c)| {
+                    !c.lastfm_only
+                        && typo_apart(&names[i], &names[j])
+                        && match (a.audience, c.audience) {
+                            (Some(small), Some(big)) => small.saturating_mul(MISSPELT_SHARE) < big,
+                            _ => false,
+                        }
+                })
+        })
+        .collect()
+}
+
+/// One or two edits apart, and no more than one per four letters ("radiohed", "radiohead").
+fn typo_apart(a: &str, b: &str) -> bool {
+    let d = edits(a, b);
+    d > 0 && d <= 2 && d * 4 <= a.chars().count().max(b.chars().count())
+}
+
+/// Levenshtein distance.
+fn edits(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.chars().enumerate() {
+        let mut prev = row[0];
+        row[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let next = (prev + usize::from(ca != *cb)).min(row[j] + 1).min(row[j + 1] + 1);
+            prev = row[j + 1];
+            row[j + 1] = next;
+        }
+    }
+    row[b.len()]
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -386,10 +490,10 @@ pub enum Kind {
     Track,
 }
 
-/// The one top result among the best artist, album and track (each `(Fit, popularity)`): the
-/// best fit, then the most popular, leaning toward artists and albums.
-pub fn top(artist: Option<(Fit, f64)>, album: Option<(Fit, f64)>, track: Option<(Fit, f64)>) -> Option<Kind> {
-    let better = |a: &(Kind, Fit, f64), b: &(Kind, Fit, f64)| {
+/// The one top result among the best artist, album and track: a confirmed row before a
+/// Last.fm-only one, then the best fit, then the most popular, leaning toward artists and albums.
+pub fn top(artist: Option<Score>, album: Option<Score>, track: Option<Score>) -> Option<Kind> {
+    let better = |a: &(Kind, (bool, Fit), f64), b: &(Kind, (bool, Fit), f64)| {
         a.1.cmp(&b.1)
             .then_with(|| a.2.partial_cmp(&b.2).unwrap_or(Ordering::Equal))
             == Ordering::Greater
@@ -397,7 +501,7 @@ pub fn top(artist: Option<(Fit, f64)>, album: Option<(Fit, f64)>, track: Option<
     [(Kind::Artist, artist), (Kind::Album, album), (Kind::Track, track)]
         .into_iter()
         .zip(TOP_LEAN)
-        .filter_map(|((kind, row), lean)| row.map(|(fit, pop)| (kind, fit, pop + lean)))
+        .filter_map(|((kind, row), lean)| row.map(|r| (kind, (r.confirmed, r.fit), r.popularity + lean)))
         .fold(None, |best, c| match best {
             Some(b) if !better(&c, &b) => Some(b),
             _ => Some(c),

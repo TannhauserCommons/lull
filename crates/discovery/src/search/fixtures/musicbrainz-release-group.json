@@ -1,0 +1,495 @@
+{
+ "created": "2026-11-01T17:40:50.129Z",
+ "count": 708961,
+ "offset": 0,
+ "release-groups": [
+  {
+   "id": "1124e97d-660d-4d02-b007-9a719d2df1ad",
+   "type-id": "6d0c5bf6-7a33-3420-a519-44fc63eedebf",
+   "score": 100,
+   "primary-type-id": "6d0c5bf6-7a33-3420-a519-44fc63eedebf",
+   "artist-credit-id": "8875262b-deb4-4fff-a125-6da52eb8b06c",
+   "count": 1,
+   "title": "Skronk of the Times",
+   "first-release-date": "2021-10-01",
+   "primary-type": "EP",
+   "artist-credit": [
+    {
+     "name": "HAIRY BABIES",
+     "artist": {
+      "id": "90a29e5d-ea73-480b-b0ba-e2380af06854",
+      "name": "HAIRY BABIES",
+      "sort-name": "HAIRY BABIES",
+      "disambiguation": "SKRONK!"
+     }
+    }
+   ],
+   "releases": [
+    {
+     "id": "f6d3d0a2-1e6a-4ab3-90d2-eadeb8316c9a",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "title": "Skronk of the Times",
+     "status": "Official"
+    }
+   ],
+   "tags": [
+    {
+     "count": 1,
+     "name": "punk"
+    },
+    {
+     "count": 1,
+     "name": "free jazz"
+    },
+    {
+     "count": 1,
+     "name": "non-music"
+    }
+   ]
+  },
+  {
+   "id": "77d50051-be7b-39ea-8b23-782b783f67f1",
+   "type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+   "score": 47,
+   "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+   "artist-credit-id": "55cf81e2-ac1b-3db7-a047-8b7828aa9432",
+   "count": 1,
+   "title": "Heartbeat of the Times",
+   "first-release-date": "2008-02-05",
+   "primary-type": "Album",
+   "artist-credit": [
+    {
+     "name": "In Irons",
+     "artist": {
+      "id": "b0052fa9-e98e-4c11-9a3c-510760a0e706",
+      "name": "In Irons",
+      "sort-name": "In Irons"
+     }
+    }
+   ],
+   "releases": [
+    {
+     "id": "86494d9f-cd9e-419d-b626-8b76daa87464",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "title": "Heartbeat of the Times",
+     "status": "Official"
+    }
+   ]
+  },
+  {
+   "id": "1993d825-126e-3979-90af-eb19a8ed699a",
+   "score": 47,
+   "artist-credit-id": "9547f7d0-ca1d-3585-b02d-4340414c4915",
+   "count": 1,
+   "title": "Sign of the Times",
+   "first-release-date": "2003",
+   "artist-credit": [
+    {
+     "name": "Son of Skam",
+     "artist": {
+      "id": "b957c7a7-7185-4f24-9fcb-498026f774bf",
+      "name": "Son of Skam",
+      "sort-name": "Son of Skam"
+     }
+    }
+   ],
+   "releases": [
+    {
+     "id": "1d6dc2c8-e54c-429b-9367-89b199bc07c4",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "title": "Sign of the Times",
+     "status": "Official"
+    }
+   ]
+  },
+  {
+   "id": "2a0a1cac-cce8-3fdb-88bb-658deba18ea1",
+   "score": 47,
+   "artist-credit-id": "85d21222-882a-314d-a6a3-fb28eae49e3a",
+   "count": 1,
+   "title": "Sign of the Times",
+   "artist-credit": [
+    {
+     "name": "Kelly Simonz's Blind Faith",
+     "artist": {
+      "id": "7c10b281-a97b-45c2-aba8-7f1644dec7b5",
+      "name": "Kelly Simonz’s Blind Faith",
+      "sort-name": "Simonz, Kelly, Blind Faith",
+      "aliases": [
+       {
+        "sort-name": "Kelly Simonz's BLINDFAITH",
+        "name": "Kelly Simonz's BLINDFAITH",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       }
+      ]
+     }
+    }
+   ],
+   "releases": [
+    {
+     "id": "93034c3e-cf5c-4a3d-829f-c5600444b932",
+     "title": "Sign of the Times"
+    }
+   ]
+  },
+  {
+   "id": "23caf2c5-a313-3b4e-86bd-92daae595c77",
+   "type-id": "d6038452-8ee0-3f68-affc-2de9a1ede0b9",
+   "score": 47,
+   "primary-type-id": "d6038452-8ee0-3f68-affc-2de9a1ede0b9",
+   "artist-credit-id": "3f9ba088-4112-3ac6-8c73-6b1eab4b01f3",
+   "count": 2,
+   "title": "Sign of the Times",
+   "first-release-date": "1997",
+   "primary-type": "Single",
+   "artist-credit": [
+    {
+     "name": "Queensrÿche",
+     "artist": {
+      "id": "deeea939-7f89-4762-b09f-79269cd70d3b",
+      "name": "Queensrÿche",
+      "sort-name": "Queensrÿche",
+      "aliases": [
+       {
+        "sort-name": "Queensrüche",
+        "name": "Queensrüche",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "Queensrche",
+        "name": "Queensrche",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "Queensryche",
+        "name": "Queensryche",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       }
+      ]
+     }
+    }
+   ],
+   "releases": [
+    {
+     "id": "8c704c45-9b45-4536-b5a0-e31e0317327d",
+     "status-id": "518ffc83-5cde-34df-8627-81bff5093d92",
+     "title": "Sign of the Times",
+     "status": "Promotion"
+    },
+    {
+     "id": "484a06a9-8370-4361-8757-5b13484247da",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "title": "Sign of the Times",
+     "status": "Official"
+    }
+   ]
+  },
+  {
+   "id": "ab4abbea-a997-3e86-bfb5-1df44fe08717",
+   "type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+   "score": 47,
+   "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+   "artist-credit-id": "d861217e-07c8-3dca-bdbf-edfd9ca288eb",
+   "count": 3,
+   "title": "Signs of the Times",
+   "first-release-date": "1986",
+   "primary-type": "Album",
+   "artist-credit": [
+    {
+     "joinphrase": " & ",
+     "name": "John McCutcheon",
+     "artist": {
+      "id": "1cd4d43c-68bb-4e91-9de8-596470e413ed",
+      "name": "John McCutcheon",
+      "sort-name": "McCutcheon, John",
+      "disambiguation": "singer-songwriter / multi-instrumentalist",
+      "aliases": [
+       {
+        "sort-name": "McCutcheon, John Michael",
+        "type-id": "d4dcd0c0-b341-3612-a332-c0ce797b25cf",
+        "name": "John Michael McCutcheon",
+        "locale": null,
+        "type": "Legal name",
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       }
+      ]
+     }
+    },
+    {
+     "name": "Si Kahn",
+     "artist": {
+      "id": "91b5b560-6e45-4bdb-911d-fd7fc001a3c2",
+      "name": "Si Kahn",
+      "sort-name": "Kahn, Si",
+      "aliases": [
+       {
+        "sort-name": "Khan, Si",
+        "name": "Si Khan",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       }
+      ]
+     }
+    }
+   ],
+   "releases": [
+    {
+     "id": "99f0f32d-de3d-4328-adfd-ead0203fdd89",
+     "title": "Signs of the Times"
+    },
+    {
+     "id": "f63ca5fd-208e-49c3-b9ff-b4b9e188b88e",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "title": "Signs of the Times",
+     "status": "Official"
+    },
+    {
+     "id": "0d156fad-18bf-431f-a20f-5a46f1838b1d",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "title": "Signs of the Times",
+     "status": "Official"
+    }
+   ],
+   "tags": [
+    {
+     "count": 2,
+     "name": "folk"
+    }
+   ]
+  },
+  {
+   "id": "2ca1cb39-6c93-39b9-bc59-fd6f17a83e44",
+   "type-id": "dd2a21e1-0c00-3729-a7a0-de60b84eb5d1",
+   "score": 47,
+   "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+   "artist-credit-id": "8f4192c3-0301-3dee-9833-2c89baf39eb8",
+   "count": 1,
+   "title": "Sign of the Times",
+   "first-release-date": "1994",
+   "primary-type": "Album",
+   "secondary-types": [
+    "Compilation"
+   ],
+   "secondary-type-ids": [
+    "dd2a21e1-0c00-3729-a7a0-de60b84eb5d1"
+   ],
+   "artist-credit": [
+    {
+     "name": "Kevin Coyne",
+     "artist": {
+      "id": "ec1f195c-2238-417a-b177-89f121cd5b2b",
+      "name": "Kevin Coyne",
+      "sort-name": "Coyne, Kevin",
+      "aliases": [
+       {
+        "sort-name": "Coyne, Kevin William",
+        "type-id": "d4dcd0c0-b341-3612-a332-c0ce797b25cf",
+        "name": "Kevin William Coyne",
+        "locale": "en",
+        "type": "Legal name",
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       }
+      ]
+     }
+    }
+   ],
+   "releases": [
+    {
+     "id": "561e983b-21fe-47d4-b63a-f2f9382941be",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "title": "Sign of the Times",
+     "status": "Official"
+    }
+   ]
+  },
+  {
+   "id": "eedcc56e-729f-45dc-9f94-f29e745fe9ef",
+   "type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+   "score": 47,
+   "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+   "artist-credit-id": "f9e731cf-5424-3e99-be53-6c785b14d52f",
+   "count": 2,
+   "title": "Sign of the Times",
+   "first-release-date": "1976",
+   "primary-type": "Album",
+   "artist-credit": [
+    {
+     "name": "The Rubettes",
+     "artist": {
+      "id": "af64d87b-4114-48e8-8c9a-b61b314a4bd4",
+      "name": "The Rubettes",
+      "sort-name": "Rubettes, The",
+      "aliases": [
+       {
+        "sort-name": "Rubettes",
+        "name": "Rubettes",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "Rubetts",
+        "name": "Rubetts",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "The Rubbettes",
+        "name": "The Rubbettes",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       }
+      ]
+     }
+    }
+   ],
+   "releases": [
+    {
+     "id": "02d4d1ea-dc61-43f3-9fec-f8968ec835c8",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "title": "Sign of the Times",
+     "status": "Official"
+    },
+    {
+     "id": "175094f6-b498-4345-98a7-a3a0c9645fb9",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "title": "Sign of the Times",
+     "status": "Official"
+    }
+   ],
+   "tags": [
+    {
+     "count": 1,
+     "name": "rock"
+    },
+    {
+     "count": 1,
+     "name": "pop"
+    },
+    {
+     "count": 1,
+     "name": "pop rock"
+    }
+   ]
+  },
+  {
+   "id": "ffb5f780-1248-3753-888b-82d05898beed",
+   "type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+   "score": 47,
+   "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+   "artist-credit-id": "43a7b676-ccf2-35bc-bf39-7d4e3d3bd3d6",
+   "count": 1,
+   "title": "Signs of the Times",
+   "first-release-date": "2003",
+   "primary-type": "Album",
+   "artist-credit": [
+    {
+     "name": "Rickey Lee Phelps",
+     "artist": {
+      "id": "7c77b783-761a-43be-8812-4599028ea9ad",
+      "name": "Rickey Lee Phelps",
+      "sort-name": "Phelps, Rickey Lee"
+     }
+    }
+   ],
+   "releases": [
+    {
+     "id": "6263753e-fb22-4417-b3d5-902d267bceb7",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "title": "Signs of the Times",
+     "status": "Official"
+    }
+   ]
+  },
+  {
+   "id": "783ada57-04ed-467f-9bf2-85fa18bfa90e",
+   "type-id": "d6038452-8ee0-3f68-affc-2de9a1ede0b9",
+   "score": 47,
+   "primary-type-id": "d6038452-8ee0-3f68-affc-2de9a1ede0b9",
+   "artist-credit-id": "68f18788-786a-39eb-997d-8178a79ea293",
+   "count": 1,
+   "title": "Sign of the Times",
+   "first-release-date": "1978",
+   "primary-type": "Single",
+   "artist-credit": [
+    {
+     "name": "Bryan Ferry",
+     "artist": {
+      "id": "4ef7a9e2-2cf5-483a-8616-ef7791a98026",
+      "name": "Bryan Ferry",
+      "sort-name": "Ferry, Bryan",
+      "aliases": [
+       {
+        "sort-name": "B. Ferry",
+        "name": "B. Ferry",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "Brian Ferry",
+        "name": "Brian Ferry",
+        "locale": null,
+        "type": null,
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       }
+      ]
+     }
+    }
+   ],
+   "releases": [
+    {
+     "id": "3c9dfb6b-6200-4652-9e32-c3f15c6e47b4",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "title": "Sign of the Times",
+     "status": "Official"
+    }
+   ],
+   "tags": [
+    {
+     "count": 1,
+     "name": "rock"
+    },
+    {
+     "count": 1,
+     "name": "pop rock"
+    }
+   ]
+  }
+ ]
+}

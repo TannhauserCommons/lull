@@ -9,7 +9,7 @@ use lull_core::model::Track;
 use serde_json::{Value, json};
 use tokio::time::Instant;
 
-use super::merge::{self, AlbumHit, ArtistHit, Fit, Found, Kind, Merged, Query, SongHit};
+use super::merge::{self, AlbumHit, ArtistHit, Fit, Found, Kind, Merged, Query, Score, SongHit};
 use crate::sources::{deezer, itunes, lastfm, musicbrainz};
 
 fn fixture(name: &str) -> Value {
@@ -22,6 +22,7 @@ fn fixture(name: &str) -> Value {
         "deezer-infos" => include_str!("fixtures/deezer-infos.json"),
         "itunes-song" => include_str!("fixtures/itunes-song.json"),
         "musicbrainz-recording" => include_str!("fixtures/musicbrainz-recording.json"),
+        "musicbrainz-release-group" => include_str!("fixtures/musicbrainz-release-group.json"),
         _ => "null",
     };
     serde_json::from_str(text).unwrap_or(Value::Null)
@@ -34,6 +35,15 @@ fn song(artist: &str, title: &str, album: &str, duration: Option<u32>) -> SongHi
         album: album.into(),
         duration,
         ..SongHit::default()
+    }
+}
+
+/// A row another source than Last.fm confirms.
+fn score(fit: Fit, popularity: f64) -> Score {
+    Score {
+        confirmed: true,
+        fit,
+        popularity,
     }
 }
 
@@ -219,14 +229,18 @@ fn a_saved_copy_lends_its_id_before_the_row_is_shown() {
 #[test]
 fn ranking_puts_exact_matches_first_then_popularity_then_the_listeners_own() {
     let rows = [
-        (Fit::Words, 0.95), // 0: popular, but only holds the words
-        (Fit::Exact, 0.31), // 1: exact, less popular
-        (Fit::Exact, 0.82), // 2: exact, popular
-        (Fit::Exact, 0.36), // 3: exact, as popular as 1 in tenths, and liked
-        (Fit::Loose, 0.99), // 4: a fuzzy hit
+        score(Fit::Words, 0.95), // 0: popular, but only holds the words
+        score(Fit::Exact, 0.31), // 1: exact, less popular
+        score(Fit::Exact, 0.82), // 2: exact, popular
+        score(Fit::Exact, 0.36), // 3: exact, as popular as 1 in tenths, and liked
+        score(Fit::Loose, 0.99), // 4: a fuzzy hit
+        Score {
+            confirmed: false,
+            ..score(Fit::Exact, 0.9)
+        }, // 5: only Last.fm knows it
     ];
     let order = merge::rank(&rows, |i| i == 3);
-    assert_eq!(order, [2, 3, 1, 0, 4]);
+    assert_eq!(order, [2, 3, 1, 0, 4, 5]);
 }
 
 #[test]
@@ -238,12 +252,12 @@ fn the_top_result_is_the_best_fit_leaning_toward_artists() {
     assert_eq!(artists[0].name, "Radiohead");
     let best_track = tracks
         .iter()
-        .map(|s| (q.song(s), s.popularity))
-        .fold(None, |b: Option<(Fit, f64)>, t| {
-            Some(b.map_or(t, |b| if t.1 > b.1 { t } else { b }))
+        .map(|s| Score::song(&q, s))
+        .fold(None, |b: Option<Score>, t| {
+            Some(b.map_or(t, |b| if t.popularity > b.popularity { t } else { b }))
         });
     assert_eq!(
-        merge::top(Some((q.artist(&artists[0]), artists[0].popularity)), None, best_track),
+        merge::top(Some(Score::artist(&q, &artists[0])), None, best_track),
         Some(Kind::Artist)
     );
     // "creep": a popular song called that beats a small band called that.
@@ -255,11 +269,7 @@ fn the_top_result_is_the_best_fit_leaning_toward_artists() {
     };
     let song = &tracks[0];
     assert_eq!(
-        merge::top(
-            Some((q.artist(&band), band.popularity)),
-            None,
-            Some((q.song(song), song.popularity))
-        ),
+        merge::top(Some(Score::artist(&q, &band)), None, Some(Score::song(&q, song))),
         Some(Kind::Track)
     );
     // An album named exactly what was typed beats a song that only holds the words.
@@ -270,7 +280,7 @@ fn the_top_result_is_the_best_fit_leaning_toward_artists() {
         ..AlbumHit::default()
     };
     assert_eq!(
-        merge::top(None, Some((q.album(&ep), 0.1)), Some((Fit::Words, 0.99))),
+        merge::top(None, Some(score(q.album(&ep), 0.1)), Some(score(Fit::Words, 0.99))),
         Some(Kind::Album)
     );
 }
@@ -430,9 +440,69 @@ fn an_artists_own_songs_match_their_name_as_well_as_a_song_called_that() {
         ..song("The National", "Fake Empire", "Boxer", None)
     };
     assert_eq!((q.song(&called_that), q.song(&theirs)), (Fit::Exact, Fit::Exact));
-    let rows = [
-        (q.song(&called_that), called_that.popularity),
-        (q.song(&theirs), theirs.popularity),
-    ];
+    let rows = [Score::song(&q, &called_that), Score::song(&q, &theirs)];
     assert_eq!(merge::rank(&rows, |_| false), [1, 0], "then popularity decides");
+}
+
+#[test]
+fn last_fm_only_rows_never_lead_and_its_misspelt_artists_go() {
+    // Live, warm "radiohed" put Last.fm's "Radiohed" above Radiohead.
+    let q = Query::new("radiohed");
+    let deezer = deezer::artists_of(fixture("deezer-artist")).unwrap_or_default();
+    let lastfm = lastfm::found(
+        &json!({ "results": { "trackmatches": { "track": [
+            { "name": "Creep", "artist": "Radiohed", "listeners": "4100", "mbid": "" }
+        ] } } }),
+        &json!({ "results": { "artistmatches": { "artist": [
+            { "name": "Radiohed", "listeners": "3900", "mbid": "" },
+            { "name": "Radiohead", "listeners": "7350000", "mbid": "" },
+            { "name": "Radiohedz", "listeners": "900000", "mbid": "" }
+        ] } } }),
+    );
+    let mut m = Merged::default();
+    m.add(Found {
+        artists: deezer,
+        ..Found::default()
+    });
+    m.add(lastfm.clone());
+    let names = |is: &[usize]| is.iter().map(|&i| m.artists[i].name.clone()).collect::<Vec<_>>();
+    let misspelt = merge::misspelt(&m.artists);
+    let shown: Vec<usize> = (0..m.artists.len()).filter(|&i| !misspelt[i]).collect();
+    assert!(
+        !names(&shown).contains(&"Radiohed".to_owned()),
+        "under 1% of Radiohead's fans, a letter away"
+    );
+    assert!(
+        names(&shown).contains(&"Radiohedz".to_owned()),
+        "a big audience of its own stays"
+    );
+    let scores: Vec<Score> = m.artists.iter().map(|a| Score::artist(&q, a)).collect();
+    let order = merge::rank(&scores, |_| false);
+    assert_eq!(
+        m.artists[order[0]].name, "Radiohead",
+        "confirmed by Deezer, though only a loose fit"
+    );
+    // A Last.fm-only song never takes the top from a confirmed artist.
+    let only = Score::song(&q, &lastfm.songs[0]);
+    assert!(!only.confirmed);
+    assert_eq!(merge::top(Some(scores[order[0]]), None, Some(only)), Some(Kind::Artist));
+}
+
+#[test]
+fn a_bandcamp_only_ep_is_found_by_its_title() {
+    // Live, "skronk of the times" never showed Hairy Babies' EP: recordings don't match titles.
+    let q = Query::new("skronk of the times");
+    let found = musicbrainz::release_groups(fixture("musicbrainz-release-group")).unwrap_or_default();
+    let kept: Vec<&AlbumHit> = found.albums.iter().filter(|a| q.album(a) > Fit::Loose).collect();
+    assert_eq!(kept.len(), 1, "\"Sign of the Times\" and the like are someone else's");
+    assert_eq!(
+        (kept[0].title.as_str(), kept[0].artist.as_str(), kept[0].kind.as_deref()),
+        ("Skronk of the Times", "HAIRY BABIES", Some("EP"))
+    );
+    assert!(
+        kept[0]
+            .art
+            .as_deref()
+            .is_some_and(|a| a.starts_with("https://coverartarchive.org/release-group/"))
+    );
 }
