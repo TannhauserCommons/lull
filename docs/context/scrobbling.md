@@ -1,6 +1,15 @@
 # Scrobbling and Last.fm auth
 
-Owner: Discovery session (`crates/lastfm`). Needs `LULL_LASTFM_API_KEY` and `LULL_LASTFM_API_SECRET` (an API account from last.fm/api/account/create); without them the `lastfm` service is `off` and every endpoint answers 503.
+Owner: Collection session (`crates/lastfm`).
+
+## The API key
+
+lull signs in to Last.fm with an API account (key and secret). Where it comes from, first match wins:
+1. **The listener's own** `LULL_LASTFM_API_KEY` and `LULL_LASTFM_API_SECRET` (environment or Settings); both or neither.
+2. **The project's, compiled in** (`core::config::LastFm::built_in`, `option_env!`): the same two variables read when `cargo build` runs, so release builds (the image, the apps) carry it and a listener just presses Connect. Empty values count as unset. A contributor's own build has none.
+3. **None:** the `lastfm` service is `off` and every endpoint answers 503.
+
+The compiled-in secret can be read out of the binary, as with any desktop app's API secret. It only lets someone sign in to Last.fm as lull, with a listener's own approval, and the project can rotate it. Releases pass it from CI secrets; it is never committed.
 
 ## Sign-in (web auth)
 
