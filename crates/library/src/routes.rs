@@ -18,7 +18,9 @@ use lull_core::{Error, Result, catalog};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::items::{Location, Quality};
+use lull_core::quality::Quality;
+
+use crate::items::Location;
 use crate::jobs::{Duplicate, RescanJob, SaveJob, Status};
 use crate::{Service, art, connect, folder, save, switch, sync};
 

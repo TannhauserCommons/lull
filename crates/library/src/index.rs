@@ -10,7 +10,9 @@ use lull_core::model::{Album, Artist, Saved as SavedState, Track};
 use lull_core::{Error, Result};
 use serde::Serialize;
 
-use crate::items::{Art, Quality, Saved};
+use lull_core::quality::Quality;
+
+use crate::items::{Art, Saved};
 
 #[derive(Default)]
 pub struct Index {

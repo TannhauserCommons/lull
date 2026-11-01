@@ -9,7 +9,8 @@ use std::time::{Duration, Instant};
 
 use lull_core::config::LibraryMode;
 use lull_core::ids::TrackId;
-use lull_core::model::Track;
+use lull_core::model::{SourceRef, Track};
+use lull_core::quality::SaveBelow;
 use lull_core::{Error, Result, catalog, now};
 use serde_json::Value;
 
@@ -22,6 +23,7 @@ use crate::musicbrainz::{self, CoverOf};
 use crate::naming::{self, Fields};
 use crate::sync;
 use crate::tags::{self, Existing, TagSet};
+use crate::upgrade;
 
 /// How long a written file may take to show up in Jellyfin before the job is marked pending.
 const PICKUP_WAIT_S: i64 = 5 * 60;
@@ -31,6 +33,8 @@ const SCAN_GAP: Duration = Duration::from_secs(30);
 const FULL_SCAN_AFTER_S: i64 = 60;
 /// The embedded cover's size (Cover Art Archive thumbnail).
 const EMBED_SIZE: u32 = 1200;
+/// `wait`: how long a save waits between searches for a copy that passes the minimum.
+const WAIT_AGAIN: Duration = Duration::from_secs(30 * 60);
 
 /// A step that failed, and which recovery the UI should offer.
 struct Fail {
@@ -58,7 +62,8 @@ pub fn spawn(svc: &Arc<Service>, job: SaveJob) {
 pub fn resume(svc: &Arc<Service>) {
     for mut job in svc.jobs.saves() {
         let picked_up_here = svc.mode == LibraryMode::Folder && job.step == 5 && job.is_active();
-        if (job.status == Status::Running && job.step < 5) || picked_up_here {
+        let interrupted = matches!(job.status, Status::Running | Status::Waiting) && job.step < 5;
+        if interrupted || picked_up_here {
             // Cover bytes aren't kept, so an interrupted write starts again at the cover.
             if job.step == 4 {
                 job.step = 3;
@@ -125,11 +130,13 @@ async fn pick_up(svc: &Arc<Service>, job: &mut SaveJob) -> Result<(), Fail> {
     Ok(())
 }
 
-/// The song is in the library: the save is done.
+/// The song is in the library: the save is done. A copy below the saving minimum is watched
+/// for an upgrade.
 async fn finish(svc: &Service, job: &mut SaveJob, track: Track) {
     job.status = Status::Done;
     job.pct = 100;
     job.error = None;
+    upgrade::consider(svc, job, &track).await;
     remember_under_asked_id(svc, job, track).await;
     svc.jobs.put(job).await;
 }
@@ -143,22 +150,22 @@ async fn enter(svc: &Service, job: &mut SaveJob, step: u8) {
     svc.jobs.put(job).await;
 }
 
-/// Step 1, from the listener's source, else the one Soulseek streamed or ranks best. Soulseek
+/// Step 1, from the listener's source, else the copy the saving profile picks. Soulseek
 /// reports progress as `transfer` events; they become this job's percentage.
 async fn transfer(svc: &Arc<Service>, job: &mut SaveJob) -> Result<(), Fail> {
-    if job.source.is_none() {
-        job.source = svc
-            .transfers
-            .source_for(&job.track_id)
-            .await
-            .map_err(|e| Fail::new(FailKind::Transfer, e.to_string()))?;
-    }
-    let source = job.source.clone().ok_or_else(|| {
-        Fail::new(
-            FailKind::Transfer,
-            "No Soulseek peer is known to share this song. Pick a source and retry.",
-        )
-    })?;
+    let source = match job.source.clone() {
+        Some(source) => source,
+        None => {
+            let source = pick_source(svc, job).await?;
+            job.source = Some(source.clone());
+            if job.status == Status::Waiting {
+                job.status = Status::Running;
+                job.error = None;
+                svc.jobs.put(job).await;
+            }
+            source
+        }
+    };
     // Progress is followed for as long as the transfer runs; `follow_transfer` never ends itself.
     let result = tokio::select! {
         result = svc.transfers.complete(&job.track_id, &source) => result,
@@ -168,6 +175,43 @@ async fn transfer(svc: &Arc<Service>, job: &mut SaveJob) -> Result<(), Fail> {
     };
     job.file = Some(result.map_err(|e| Fail::new(FailKind::Transfer, e.to_string()))?);
     Ok(())
+}
+
+/// The saving profile's copy (ADR-0008); Soulseek searches when it knows none. When no copy
+/// passes the minimum, the profile's `below` decides: save the best now (auto-upgrade replaces
+/// it later), wait and search again, or ask the listener to pick.
+async fn pick_source(svc: &Service, job: &mut SaveJob) -> Result<SourceRef, Fail> {
+    let mut fresh = false;
+    loop {
+        let found = svc
+            .transfers
+            .save_candidate(&job.track_id, fresh)
+            .await
+            .map_err(|e| Fail::new(FailKind::Transfer, e.to_string()))?;
+        let profile = svc.upgrades.profile();
+        let message = match found {
+            Some(c) if c.meets || profile.below == SaveBelow::SaveBestUpgrade => return Ok(c.source),
+            Some(_) => format!("No copy meets your saving minimum ({}).", profile.minimum),
+            None => "No Soulseek peer shares this song right now.".to_owned(),
+        };
+        if profile.below != SaveBelow::Wait {
+            return Err(Fail::new(
+                FailKind::Transfer,
+                format!("{message} Pick a source and retry."),
+            ));
+        }
+        if job.status != Status::Waiting {
+            job.status = Status::Waiting;
+            job.error = Some(format!(
+                "{message} Waiting for one that does; lull searches again every {} minutes.",
+                WAIT_AGAIN.as_secs() / 60
+            ));
+            svc.jobs.put(job).await;
+        }
+        tokio::time::sleep(WAIT_AGAIN).await;
+        svc.upgrades.pace().await;
+        fresh = true;
+    }
 }
 
 async fn follow_transfer(svc: &Service, job: &str, track: &TrackId) {

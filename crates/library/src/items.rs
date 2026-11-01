@@ -2,6 +2,7 @@
 
 use lull_core::ids::{AlbumId, ArtistId, TrackId, normalize_artist};
 use lull_core::model::{FileFacts, Track};
+pub use lull_core::quality::is_lossless;
 use serde::{Deserialize, Serialize};
 
 use crate::jellyfin::Item;
@@ -182,13 +183,6 @@ fn file_facts(item: &Item) -> Option<FileFacts> {
     })
 }
 
-pub fn is_lossless(codec_or_ext: &str) -> bool {
-    matches!(
-        codec_or_ext,
-        "flac" | "alac" | "wav" | "aiff" | "aif" | "ape" | "wavpack" | "wv" | "tta"
-    )
-}
-
 /// The UI's short label: "FLAC 16/44.1", "FLAC 24/96", "MP3 320", "OPUS 160".
 pub fn format_label(codec: &str, lossless: bool, bits: Option<u8>, khz: Option<f32>, kbps: Option<u32>) -> String {
     let name = codec.to_ascii_uppercase();
@@ -207,80 +201,9 @@ fn round_bitrate(kbps: u32) -> u32 {
     NOMINAL.into_iter().find(|n| kbps.abs_diff(*n) <= 4).unwrap_or(kbps)
 }
 
-/// How good a file is, for picking between copies of one song.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Quality {
-    pub lossless: bool,
-    pub kbps: u32,
-}
-
-impl Quality {
-    pub fn of(facts: Option<&FileFacts>) -> Self {
-        Quality {
-            lossless: facts.is_some_and(|f| f.lossless),
-            kbps: facts.and_then(|f| f.kbps).unwrap_or(0),
-        }
-    }
-
-    /// A candidate file known only by its name, size and the song's length (a Soulseek source).
-    pub fn of_file(path: &str, size: u64, duration_s: Option<u32>) -> Self {
-        let ext = path
-            .rsplit_once('.')
-            .map(|(_, e)| e.to_ascii_lowercase())
-            .unwrap_or_default();
-        Quality {
-            lossless: is_lossless(&ext),
-            kbps: duration_s
-                .filter(|d| *d > 0)
-                .map(|d| (size * 8 / 1000 / u64::from(d)) as u32)
-                .unwrap_or(0),
-        }
-    }
-
-    /// Clearly better: lossless over lossy, or at least a fifth more bitrate of the same kind.
-    /// The margin keeps a re-encode or a slightly different rip from counting as an upgrade.
-    pub fn beats(&self, other: &Quality) -> bool {
-        match (self.lossless, other.lossless) {
-            (true, false) => true,
-            (false, true) => false,
-            _ => other.kbps > 0 && u64::from(self.kbps) * 5 > u64::from(other.kbps) * 6,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn q(lossless: bool, kbps: u32) -> Quality {
-        Quality { lossless, kbps }
-    }
-
-    #[test]
-    fn upgrade_needs_a_clear_quality_step() {
-        assert!(q(true, 900).beats(&q(false, 320)), "lossless beats any lossy");
-        assert!(!q(false, 320).beats(&q(true, 700)), "lossy never beats lossless");
-        assert!(q(false, 320).beats(&q(false, 192)));
-        assert!(
-            !q(false, 330).beats(&q(false, 320)),
-            "a few kbps is noise, not an upgrade"
-        );
-        assert!(q(true, 2800).beats(&q(true, 1000)), "24/96 over 16/44.1");
-        assert!(!q(true, 1050).beats(&q(true, 1000)), "two rips of the same CD");
-        assert!(
-            !q(false, 320).beats(&q(false, 0)),
-            "unknown bitrate is never beaten blindly"
-        );
-    }
-
-    #[test]
-    fn a_soulseek_file_is_judged_by_extension_size_and_length() {
-        let flac = Quality::of_file("Music\\Artist\\Album\\01 - Song.FLAC", 30_000_000, Some(240));
-        assert_eq!(flac, q(true, 1000));
-        let mp3 = Quality::of_file("01 - Song.mp3", 9_600_000, Some(240));
-        assert_eq!(mp3, q(false, 320));
-        assert!(flac.beats(&mp3));
-    }
 
     #[test]
     fn compilations_credit_the_track_artist_but_stay_one_album() {

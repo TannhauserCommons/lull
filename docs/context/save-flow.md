@@ -6,17 +6,36 @@
 
 | Step | What | Fails as |
 |---|---|---|
-| 1 Completing transfer | `Transfers::complete(track, source)`. The source is the listener's pick, else `Transfers::source_for` (the peer it streamed from, else the best known). Soulseek's `transfer` events for the track become the job's `pct` | `transfer`: no peer known, or the transfer failed. Retry with another `source` |
+| 1 Completing transfer | `Transfers::complete(track, source)`. The source is the listener's pick, else the saving profile's ([below](#picking-the-copy)). Soulseek's `transfer` events for the track become the job's `pct` | `transfer`: no peer shares it, no copy passes the minimum under `ask`, or the transfer failed. Retry with another `source` |
 | 2 Matching on MusicBrainz | Recording search, then scoring (below). Skipped when the listener already picked a release | `match`: no sure match. The release picker (`/releases`) or "keep existing tags" |
 | 3 Fetching cover art | Release lookup (tags) and the Cover Art Archive front, 1200 px: the release's, else the release group's | Never fails on art: no cover sets `nocover: true` and the save carries on. A failed release lookup is `match` |
 | 4 Tagging and writing | Copy, tag, rename into place (below) | `write`: unreadable file, no permission, disk full |
 | 5 Pick-up | Jellyfin mode: ask Jellyfin to scan the music library; the job is `done` once the song is in the library. Folder mode: the folder index reads the file at once | Jellyfin mode never fails: the file is saved, the job is `pending` (below). Folder mode: `write` if the file can't be read back as the song; a retry only reads it again |
 
+## Picking the copy
+
+Without the listener's pick, step 1 asks Soulseek for the saving profile's copy (`Transfers::save_candidate`, ADR-0008). Soulseek searches when it knows no copy, and reuses the one the song streamed from when that passes ([soulseek.md](soulseek.md#source-rules)). When no copy passes the saving minimum, the profile's `below` decides:
+
+- **`saveBestUpgrade`** (default): the best copy is saved now and watched for an upgrade.
+- **`wait`**: the job is `waiting` at step 1 and searches again every 30 minutes (paced with auto-upgrade, at most one search a minute) until a copy passes. A restart carries on waiting.
+- **`ask`**: step 1 fails as `transfer` ("No copy meets your saving minimum (320 kbps or lossless). Pick a source and retry."); the picker lists the copies with `GET /api/tracks/{id}/sources?for=save`.
+
+With no peer sharing the song at all, `wait` waits too; the others fail as `transfer`.
+
+## Auto-upgrade
+
+`upgrade.rs`, ADR-0008.
+
+- **What is watched.** A save that finishes with a file below the saving minimum is recorded in `library_upgrades`, with its extension and the release it was tagged from. One that passes is forgotten. Songs lull didn't save are never touched.
+- **Searching again.** While `autoUpgrade` is on, every minute the most overdue song is checked: still saved, still below the minimum, no save of it running. Each song is searched every `upgradeEveryH` hours (24 by default), and all upgrade and `wait` searches share one pacer: at most one a minute.
+- **Replacing.** A copy that passes the minimum and clearly beats the saved file (`Quality::beats`) starts a save job with `upgrade: true` (an Activity row like any save) and `duplicate: replace`. It keeps the saved release, so matching is skipped and the tags and cover come from the same release; "keep existing tags" saves fill blanks from the saved song. At the same path the file is overwritten, so Jellyfin keeps its entry; another extension writes a new file and removes the old one.
+- **After the upgrade** the song is judged again: forgotten when it now passes, else searched again later.
+
 ## Duplicates
 
 - **Before saving,** the UI asks `POST /api/library/duplicates`. The duplicate dialog's answer comes back in `POST /api/saves` as `duplicate: { id: separate | replace }`.
 - **Keep** means the id isn't sent. A saved id sent without an answer is skipped (`skipped`).
-- **`better`** means lossless over lossy, or at least a fifth more bitrate of the same kind. The offered file's bitrate is worked out from its size and the song's length. The margin keeps two rips of the same CD from counting as an upgrade.
+- **`better`** means lossless over lossy, or at least a fifth more bitrate of the same kind (`lull_core::quality::Quality::beats`, the one rule soulseek and auto-upgrade use too). The offered file's bitrate is worked out from its size and the song's length. The margin keeps two rips of the same CD from counting as an upgrade.
 - **`separate`** writes a second file. If the name is taken, it gets " (2)".
 - **`replace`** removes the saved copy once the new file is in place, or overwrites it when both have the same path. The old file is the index entry's own path in folder mode, and found through the music folder mapping in Jellyfin mode ([library.md](library.md#music-folder-mapping)). If it can't be found, the save fails as `write` and nothing is removed.
 

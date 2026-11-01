@@ -1,7 +1,8 @@
 //! The saved library, from a music folder or Jellyfin (ADR-0003): one index keyed by track id,
 //! streaming and covers for saved tracks, switching between the sources, connecting and
 //! mirroring Jellyfin, and the save pipeline (complete transfer, MusicBrainz match, Cover Art
-//! Archive, tags, write, pick-up) (docs/context/library.md, docs/context/save-flow.md).
+//! Archive, tags, write, pick-up), and auto-upgrade of songs saved below the saving minimum
+//! (docs/context/library.md, docs/context/save-flow.md).
 
 mod art;
 mod connect;
@@ -20,6 +21,7 @@ mod save;
 mod switch;
 mod sync;
 mod tags;
+mod upgrade;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -81,6 +83,15 @@ pub const MIGRATIONS: Migrations = Migrations {
             value  TEXT NOT NULL
         );
     "#,
+        r#"
+        -- Songs saved below the saving minimum, searched again for an upgrade (upgrade.rs).
+        CREATE TABLE library_upgrades (
+            track_id  TEXT PRIMARY KEY,     -- the id the save was asked by
+            ext       TEXT NOT NULL,        -- the saved file's extension, for the format list
+            release   TEXT,                 -- the save's release (jobs::Release JSON)
+            next_at   INTEGER NOT NULL      -- unix seconds of the next search
+        );
+    "#,
     ],
 };
 
@@ -110,6 +121,8 @@ pub struct Service {
     /// The listener's likes and playlists, for the Jellyfin mirror. Collection starts after
     /// library, so the hub hands it over later (`attach_collection`).
     collection: OnceLock<Arc<dyn Collection>>,
+    /// The saving profile and the auto-upgrade pacer (upgrade.rs).
+    upgrades: upgrade::Upgrades,
 }
 
 pub async fn start(ctx: &Ctx, transfers: Arc<dyn Transfers>) -> Result<Arc<Service>> {
@@ -146,7 +159,11 @@ pub async fn start(ctx: &Ctx, transfers: Arc<dyn Transfers>) -> Result<Arc<Servi
         connects: connect::Pending::default(),
         switching: Arc::default(),
         collection: OnceLock::new(),
+        upgrades: upgrade::Upgrades::default(),
     });
+    // Before collection starts, so its start-up `settings` arrives (ADR-0050).
+    ctx.spawn(upgrade::follow_settings(&svc));
+    ctx.spawn(upgrade::run(svc.clone()));
     match svc.mode {
         LibraryMode::Folder => {
             svc.report(State::Warn, "reading the music folder");

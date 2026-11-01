@@ -28,6 +28,9 @@ pub enum Status {
     Failed,
     /// Written to disk; waiting for Jellyfin to pick it up.
     Pending,
+    /// No copy passes the saving minimum and the profile says `wait`: searched again in the
+    /// background until one does (ADR-0008).
+    Waiting,
 }
 
 /// Which recovery the UI offers for a failure.
@@ -80,6 +83,9 @@ pub struct SaveJob {
     pub rescan_asked: bool,
     pub waiting_since: Option<i64>,
     pub started: i64,
+    /// Started by auto-upgrade, replacing a saved copy below the saving minimum.
+    #[serde(default)]
+    pub upgrade: bool,
 }
 
 impl SaveJob {
@@ -103,11 +109,12 @@ impl SaveJob {
             rescan_asked: false,
             waiting_since: None,
             started: now(),
+            upgrade: false,
         }
     }
 
     pub fn is_active(&self) -> bool {
-        matches!(self.status, Status::Running | Status::Pending)
+        matches!(self.status, Status::Running | Status::Pending | Status::Waiting)
     }
 
     /// The `save` event (api.md#events).
@@ -115,6 +122,7 @@ impl SaveJob {
         json!({
             "jobId": self.id, "trackId": self.track_id, "step": self.step, "status": self.status,
             "pct": self.pct, "error": self.error, "kind": self.fail_kind, "nocover": self.nocover,
+            "upgrade": self.upgrade,
         })
     }
 
@@ -123,7 +131,7 @@ impl SaveJob {
         json!({
             "jobId": self.id, "kind": "save", "trackId": self.track_id, "step": self.step,
             "stepState": self.status, "pct": self.pct, "error": self.error, "failKind": self.fail_kind,
-            "nocover": self.nocover, "started": self.started,
+            "nocover": self.nocover, "started": self.started, "upgrade": self.upgrade,
         })
     }
 }
