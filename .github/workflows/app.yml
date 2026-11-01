@@ -14,8 +14,10 @@ on:
 permissions:
   contents: read
 
+# A new push supersedes the previous push's run; a manual run (installers to test) is in its own
+# group, so other pushes to main don't cancel it.
 concurrency:
-  group: app-${{ github.ref }}
+  group: app-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 env:
