@@ -4,7 +4,8 @@
   "mainBinaryName": "lull",
   "identifier": "io.github.tannhausercommons.lull",
   "build": {
-    "frontendDist": "dist"
+    "frontendDist": "dist",
+    "beforeBuildCommand": "node -e \"require('fs').mkdirSync('dist',{recursive:true})\""
   },
   "app": {
     "withGlobalTauri": true,
