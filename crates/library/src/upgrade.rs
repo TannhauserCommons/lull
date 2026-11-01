@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use lull_core::db::Db;
 use lull_core::ids::TrackId;
 use lull_core::model::Track;
-use lull_core::quality::{Quality, SaveProfile, extension};
+use lull_core::quality::{Quality, SaveProfile, extension, format_of};
 use lull_core::{Result, now};
 use rusqlite::OptionalExtension;
 use serde_json::Value;
@@ -107,7 +107,7 @@ pub async fn consider(svc: &Service, job: &SaveJob, saved: &Track) -> bool {
         .map(|p| extension(&p))
         .unwrap_or_default();
     let profile = svc.upgrades.profile();
-    let below = !Quality::of(saved.file.as_ref()).meets(&ext, &profile.minimum);
+    let below = !Quality::of(saved.file.as_ref()).meets(format_of(&ext), &profile.minimum);
     let watched = Watched {
         track: job.track_id.clone(),
         ext,
@@ -155,7 +155,7 @@ async fn check(svc: &Arc<Service>, w: Watched, profile: &SaveProfile) {
         return forget_logged(&svc.ctx.db, w.track).await;
     };
     let current = Quality::of(saved.file.as_ref());
-    if current.meets(&w.ext, &profile.minimum) {
+    if current.meets(format_of(&w.ext), &profile.minimum) {
         return forget_logged(&svc.ctx.db, w.track).await;
     }
     let next = now() + every(profile);

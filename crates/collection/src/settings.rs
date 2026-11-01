@@ -171,8 +171,8 @@ impl Default for DiscoverySources {
     }
 }
 
-/// What `sources.*.minimum.formats` may name: the extensions soulseek can play.
-const FORMATS: [&str; 9] = ["flac", "wav", "aif", "aiff", "m4a", "aac", "mp3", "ogg", "opus"];
+/// What `sources.*.minimum.formats` may name: the formats soulseek can play (`.aif` counts as aiff).
+const FORMATS: [&str; 8] = ["flac", "wav", "aiff", "m4a", "aac", "mp3", "ogg", "opus"];
 
 impl Prefs {
     /// Ranges and choices serde's types can't say.
@@ -194,13 +194,13 @@ impl Prefs {
             (
                 "sources.stream.minimum.formats",
                 minimum_can_pass(&s.stream.minimum),
-                "known formats (flac, wav, aif, aiff, m4a, aac, mp3, ogg, opus), including a lossless one when lossless only is on",
+                "known formats (flac, wav, aiff, m4a, aac, mp3, ogg, opus), including a lossless one when lossless only is on",
             ),
             ("sources.save.minimum.kbps", s.save.minimum.kbps <= 320, "0 to 320"),
             (
                 "sources.save.minimum.formats",
                 minimum_can_pass(&s.save.minimum),
-                "known formats (flac, wav, aif, aiff, m4a, aac, mp3, ogg, opus), including a lossless one when lossless only is on",
+                "known formats (flac, wav, aiff, m4a, aac, mp3, ogg, opus), including a lossless one when lossless only is on",
             ),
             (
                 "sources.save.upgradeEveryH",

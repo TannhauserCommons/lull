@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use lull_core::ids::TrackId;
 use lull_core::model::{FileFacts, SourceRef};
-use lull_core::quality::{Minimum, Pick, Quality};
+use lull_core::quality::{Minimum, Pick, Quality, format_of};
 use serde::Serialize;
 
 use crate::peers::Peers;
@@ -56,7 +56,7 @@ impl Source {
     }
 
     pub fn meets(&self, min: &Minimum, duration: Option<u32>) -> bool {
-        self.quality(duration).meets(&self.ext, min)
+        self.quality(duration).meets(format_of(&self.ext), min)
     }
 
     /// The order `highest` sorts by: lossless first, hi-res lossless above CD, then bitrate.

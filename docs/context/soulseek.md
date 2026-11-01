@@ -93,7 +93,7 @@ A peer that stalled on lull in the last 7 days loses 25 points (`factors.stalled
 
 The listener's streaming and saving profiles (ADR-0008, `lull_core::quality`) arrive in the `settings` event (`rules.rs`, ADR-0050); until collection's start-up copy, the defaults apply. `Sources::ordered` lists a song's copies for one profile:
 
-1. **Gate.** A copy `meets` the profile's minimum by `Quality::meets` with the format from its extension. Its bitrate is the peer's, else worked out from size and length (the file's, else the song's); a lossy file of unknown bitrate fails a floor.
+1. **Gate.** A copy `meets` the profile's minimum by `Quality::meets` with the format from its extension (`quality::format_of`: `.aif` is AIFF). Its bitrate is the peer's, else worked out from size and length (the file's, else the song's); a lossy file of unknown bitrate fails a floor.
 2. **Order.** Copies that pass come first, then the rest, each by the profile's `pick`:
    - `fastest`: the score, then speed;
    - `highest`: lossless first (hi-res above CD), then bitrate; the score breaks ties.
