@@ -104,6 +104,7 @@
      ===================================================================== */
   var listeners = {};
   App.on = function (name, fn) {
+    if (name.indexOf('server:') === 0) M.listen(name.slice(7));     // the event stream carries what someone listens for
     (listeners[name] = listeners[name] || []).push(fn);
     return function off() { listeners[name] = (listeners[name] || []).filter(function (f) { return f !== fn; }); };
   };
@@ -2708,6 +2709,7 @@
     settings: function (s) { applyPlaybackSettings(s); },
     resync: function () { refetchAll(); }
   };
+  Object.keys(serverHandlers).forEach(M.listen);
   function onServerEvent(topic, payload) {
     if (payload && payload.entities) M.absorb(payload.entities);
     if (serverHandlers[topic]) serverHandlers[topic](payload);

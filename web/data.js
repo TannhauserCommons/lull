@@ -154,17 +154,26 @@ window.LullData = (function () {
 
   /* ---------- server events ---------- */
   /* one EventSource for the whole app; onEvent(topic, payload). Reconnects by itself (EventSource does);
-     onOpen runs on every (re)connect so the app can refetch what it may have missed. */
-  var TOPICS = ['service', 'search.results', 'search.more', 'transfer', 'stream', 'save', 'job', 'like', 'follow', 'settings', 'resync', 'theme.changed'];
-  M.connect = function (onEvent, onOpen, onDown) {
-    var es = new EventSource(M.url('/api/events'));
-    TOPICS.forEach(function (topic) {
-      es.addEventListener(topic, function (e) {
-        var data = null;
-        try { data = JSON.parse(e.data); } catch (err) { console.error('Bad ' + topic + ' event', e.data); return; }
-        onEvent(topic, data);
-      });
+     onOpen runs on every (re)connect so the app can refetch what it may have missed.
+     The topics are the ones the app listens for: M.listen(topic), which App.on('server:<topic>') and the engine's own
+     handlers call, so a screen's subscription always reaches the stream (named SSE events need one listener each). */
+  var topics = {}, live = null, deliver = null;
+  function attach(es, topic) {
+    es.addEventListener(topic, function (e) {
+      var data = null;
+      try { data = JSON.parse(e.data); } catch (err) { console.error('Bad ' + topic + ' event', e.data); return; }
+      if (deliver) deliver(topic, data);
     });
+  }
+  M.listen = function (topic) {
+    if (topics[topic]) return;
+    topics[topic] = true;
+    if (live) attach(live, topic);
+  };
+  M.connect = function (onEvent, onOpen, onDown) {
+    var es = live = new EventSource(M.url('/api/events'));
+    deliver = onEvent;
+    Object.keys(topics).forEach(function (topic) { attach(es, topic); });
     es.onopen = onOpen;
     es.onerror = onDown;
     return es;
