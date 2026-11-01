@@ -164,10 +164,6 @@ label.sys-row { cursor: pointer; }
 .sys-locked .ic { flex: none; }
 
 /* preferred formats: an ordered list with move buttons */
-.sys-order { list-style: none; margin: var(--sp-3) 0 0; padding: 0; display: grid; gap: 4px; }
-.sys-order__item { display: grid; grid-template-columns: 20px auto minmax(0, 1fr) auto; align-items: center; gap: var(--sp-3); min-height: 48px; padding: 2px 4px 2px 12px; border-radius: 12px; background: var(--bg-2); }
-.sys-order__n { font: 800 .875rem/1 var(--f-ui); color: var(--fg-2); }
-.sys-order__note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--t-meta); color: var(--fg-2); }
 
 /* cache usage */
 .sys-usage { padding-bottom: var(--sp-2); }

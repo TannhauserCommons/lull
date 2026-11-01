@@ -525,7 +525,8 @@
 
   var SECTIONS = [
     ['playback', 'Playback', 'volume-2', 'Gapless, crossfade, loudness'],
-    ['sources', 'Sources', 'soulseek', 'Formats, bitrate, fallback'],
+    ['sources', 'Sources', 'soulseek', 'Streaming and saving rules, peers'],
+    ['search', 'Search', 'search', 'File results'],
     ['cache', 'Cache', 'grid', 'Size, usage, clear'],
     ['library', 'Library and saving', 'library', 'Music folder or Jellyfin, names, duplicates'],
     ['sharing', 'Sharing', 'export', 'What Soulseek peers can download'],
@@ -558,38 +559,63 @@
       ${switchRow('playback.radioWhenQueueEnds', 'Continue with radio when the queue ends', 'Starts a radio from the last song so the music keeps going.')}`;
   }
 
-  /* ---------- sources ---------- */
-  /* the format classes the source picker ranks: label -> [what it is, typical kbps for the size estimate] */
-  var FORMATS = { 'FLAC 16/44.1': ['16-bit, 44.1 kHz', 1040], 'FLAC 24/96': ['24-bit, 96 kHz', 2800], 'MP3 320': ['320 kbps CBR', 320], 'MP3 V0': ['~245 kbps VBR', 245], 'OPUS 160': ['160 kbps', 160] };
-  /* sources.formatPreset -> the order the picker tries formats in */
-  var PRESETS = {
-    lossless: ['FLAC 16/44.1', 'FLAC 24/96', 'MP3 320', 'MP3 V0', 'OPUS 160'],
-    bitrate: ['MP3 320', 'MP3 V0', 'OPUS 160', 'FLAC 16/44.1', 'FLAC 24/96'],
-    small: ['OPUS 160', 'MP3 V0', 'MP3 320', 'FLAC 16/44.1', 'FLAC 24/96']
+  /* ---------- sources (ADR-0008): a streaming and a saving profile, then the peer limits ----------
+     sources.stream / sources.save = { minimum: { losslessOnly, kbps, formats }, pick, below } (+ autoUpgrade,
+     upgradeEveryH for saving). A hub from before the profiles has neither: the section says so. */
+  var SOURCE_FORMATS = ['flac', 'wav', 'aiff', 'm4a', 'mp3', 'ogg', 'opus'];
+  var BELOW = {
+    stream: [['playBest', 'Play the best one'], ['keepLooking', 'Keep looking'], ['ask', 'Ask me']],
+    save: [['saveBestUpgrade', 'Save the best, upgrade later'], ['wait', 'Wait for one'], ['ask', 'Ask me']]
   };
   fmtRange['sources.stallTimeout'] = function (v) { return v + ' s'; };
-  effects['sources.formatPreset'] = function () { repaint('#sys-order', formatItems()); };
-  effects['sources.autoPick'] = function (v) { App.announce(v ? 'Best source is picked automatically' : 'You will choose the source each time'); };
-  function formatItems() {
-    return html`${PRESETS[get('sources.formatPreset')].map(function (f, i) {
-      var fm = FORMATS[f];
-      return html`<li class="sys-order__item" data-format="${f}"><span class="sys-order__n num">${i + 1}</span>${ui.qualityChip(f)}<span class="sys-order__note">${fm[0]}, about ${Math.round(fm[1] * .03)} MB a song</span></li>`;
-    })}`;
+  ['stream', 'save'].forEach(function (kind) {
+    effects['sources.' + kind + '.minimum.losslessOnly'] = function (v) { $$('[data-when="' + kind + '-kbps"]').forEach(function (r) { r.hidden = !!v; }); };
+  });
+  effects['sources.save.autoUpgrade'] = function (v) { $$('[data-when="upgrade"]').forEach(function (r) { r.hidden = !v; }); };
+  /* formats as toggle chips: none pressed means any format */
+  function formatChips(path) {
+    var on = get(path) || [];
+    return html`<div class="cluster sys-formats" role="group" aria-label="Formats that count" data-formats="${path}">${SOURCE_FORMATS.map(function (f) {
+      return html`<button type="button" class="chip" aria-pressed="${on.indexOf(f) >= 0 ? 'true' : 'false'}" data-format="${f}">${icon('check', null, 'chip__check')}${f.toUpperCase()}</button>`;
+    })}</div>`;
+  }
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-formats] [data-format]'); if (!b) return;
+    var g = b.closest('[data-formats]'), path = g.getAttribute('data-formats');
+    b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+    setVal(path, $$('[data-format][aria-pressed="true"]', g).map(function (x) { return x.getAttribute('data-format'); }));
+  });
+  function profileRows(kind) {
+    var base = 'sources.' + kind, ll = !!get(base + '.minimum.losslessOnly');
+    return html`
+      ${switchRow(base + '.minimum.losslessOnly', 'Lossless only', 'Only FLAC and other lossless files are good enough.')}
+      ${row('Minimum bitrate', 'Lossy files below this aren\'t good enough. Lossless always is.', choice(base + '.minimum.kbps', 'Minimum bitrate', [[128, '128'], [192, '192'], [256, '256'], [320, '320']]), { when: kind + '-kbps', hidden: ll, cls: 'sys-row--sub' })}
+      ${row('Formats', 'Only these count. With none picked, any format does.', formatChips(base + '.minimum.formats'), { cls: 'sys-row--stack' })}
+      ${row('Which copy', 'Among the copies that are good enough.', choice(base + '.pick', 'Which copy', [['fastest', 'Fastest'], ['highest', 'Highest quality']]))}
+      ${row('If none is good enough', kind === 'stream' ? 'Playing the best one marks it as below your minimum.' : 'Saving the best one marks it, and auto-upgrade replaces it later.',
+        choice(base + '.below', 'If none is good enough', BELOW[kind], 'sys-seg--wrap'), { cls: 'sys-row--stack' })}`;
   }
   function secSources() {
+    var profiles = lookup('sources.stream') && lookup('sources.save');
     return html`
-      <div class="sys-row sys-row--stack">
-        <div class="sys-row__text"><span class="sys-row__label" id="sys-order-l">Preferred formats</span><span class="sys-row__help">The source picker tries these in order, then weighs peer speed, free slots and queue length.</span></div>
-        <div class="sys-row__ctl">${choice('sources.formatPreset', 'Format preset', [['lossless', 'Lossless first'], ['bitrate', 'High bitrate first'], ['small', 'Smallest first']], 'sys-seg--wrap')}
-          <ol class="sys-order" id="sys-order" aria-labelledby="sys-order-l">${formatItems()}</ol></div></div>
-      ${row('Minimum bitrate', 'Lossy files below this are ignored, kbps.', choice('sources.minBitrate', 'Minimum bitrate', [[128, '128'], [192, '192'], [256, '256'], [320, '320']]))}
+      ${profiles ? html`${group('streaming')}${profileRows('stream')}
+        ${group('saving')}${profileRows('save')}
+        ${switchRow('sources.save.autoUpgrade', 'Upgrade saved songs', 'Look again for saved songs below your minimum, and replace them when a good enough copy turns up. One search a minute at most.')}
+        ${row('Look again every', 'How long to wait before searching for the same song again.', choice('sources.save.upgradeEveryH', 'Look again every', [[6, '6 h'], [12, '12 h'], [24, 'Day'], [168, 'Week']]), { when: 'upgrade', hidden: !get('sources.save.autoUpgrade'), cls: 'sys-row--sub' })}`
+      : html`<p class="sys-note">${icon('info', null, 'ic-16')}<span>Streaming and saving rules need a newer hub. Update lull on the server and they show up here.</span></p>`}
+      ${group('peers')}
       ${row('Longest peer queue', 'Skip peers with more people waiting than this.', stepper('sources.maxPeerQueue', 'Longest peer queue', 0, 50, 5, 'waiting'))}
-      ${row('Stall timeout', 'If a peer stops sending for this long, switch to the next source.', range('sources.stallTimeout', 'Stall timeout, seconds', 5, 60, 5))}
-      ${switchRow('sources.autoPick', 'Pick the best source automatically', 'Off: the source list opens every time you play something new.')}
+      ${row('Stall timeout', 'If a peer stops sending for this long, switch to the next copy.', range('sources.stallTimeout', 'Stall timeout, seconds', 5, 60, 5))}
       ${group('soulseek connection')}
       ${cfgNotice()}${App.hubKit.soulseekRows()}
       ${cfgField('LULL_SLSKD_URL', 'slskd address', 'lull reaches Soulseek through slskd, which signs in with your Soulseek account.', { type: 'url' })}
       ${cfgField('LULL_SLSKD_API_KEY', 'slskd API key')}`;
+  }
+
+  /* ---------- search (ADR-0008): Soulseek's raw files stay in the source picker unless this adds a Files tab ---------- */
+  function secSearch() {
+    if (!lookup('search')) return html`<p class="sys-note">${icon('info', null, 'ic-16')}<span>Search settings need a newer hub. Update lull on the server and they show up here.</span></p>`;
+    return switchRow('search.showFiles', 'Show file results', 'Adds a Files tab to search: the Soulseek folders and files behind the songs.');
   }
 
   /* ---------- cache: size from server config, usage live from the soulseek crate. Nothing here clears it:
@@ -836,6 +862,7 @@
 
   var BODY = {
     playback: function () { return withSettings(secPlayback); }, sources: function () { return withSettings(secSources); },
+    search: function () { return withSettings(secSearch); },
     cache: function () { return withSettings(secCache); }, library: function () { return withSettings(secLibrary); },
     sharing: function () { return withSettings(secSharing); }, lastfm: secLastfm,
     discovery: function () { return withSettings(secDiscovery); },
