@@ -121,11 +121,13 @@ pub async fn start(ctx: &Ctx) -> Result<Arc<Service>> {
     ctx.status
         .set("soulseek", State::Down, "Connecting to slskd", Value::Null);
     svc.cache.report().await?;
-    tokio::spawn(watch_connection(svc.clone(), layout));
-    tokio::spawn(housekeeping(svc.clone()));
-    tokio::spawn(release_saves(svc.clone()));
+    // These loops end when the hub stops this set of crates; searches and fetches finish on
+    // their own, so a stream playing across a restart isn't cut.
+    ctx.spawn(watch_connection(svc.clone(), layout));
+    ctx.spawn(housekeeping(svc.clone()));
+    ctx.spawn(release_saves(svc.clone()));
     if config.share == lull_core::config::Share::Library {
-        tokio::spawn(share::rescan_after_saves(slskd, ctx.bus.clone()));
+        ctx.spawn(share::rescan_after_saves(slskd, ctx.bus.clone()));
     }
     Ok(svc)
 }
