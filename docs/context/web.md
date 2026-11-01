@@ -277,19 +277,45 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
     "Picked for you" shows 6, 9 or 12 picks as its module widens. An empty module is one line.
   - **Edit Home:** reorders by drag or arrow buttons and hides with an eye switch.
   - **Shelves:** fixed tile widths, so a wider shelf shows more tiles.
-  - **Song lists:** album at 760 px. From 1240 px, the bitrate and sample rate sit in the badge cell, which gets a
-    fixed width (the playlist table does this from 1300 px).
+  - **Song lists:** album at 760 px, and date added where the list has dates. From 1100 px, play counts (lists that
+    have them); from 1240 px, the bitrate and sample rate. Both go in the badge cell, which gets a fixed width so a
+    design's grid can't misplace them; the playlist table shows the bitrate from 1300 px. The saved songs list gets
+    dates and plays from the `songs` map of `/api/library/songs`.
   - **Album and artist pages:** two columns from `wide`. The header is sticky in tall windows, and the artist bio
     clamps to six lines with More.
-  - **Search:** "Side by side" from `wide`.
+  - **Search:** "Side by side" from `wide`: catalogs on the left, Soulseek on the right.
   - **Short windows:** tighter chrome.
 - **Designs.**
   - Layout states that must hold whatever a design draws (the strips, the column's margin) are `!important` in the
     components layer.
   - Each design adds its own wide-screen touches in its `design` layer, using the same `data-size` and container
     names.
-- **Not yet:** date added for saved songs and play counts as song list columns. `/api/library/songs` returns bare
-  ids, and Track carries neither.
+
+## Search and source rules (ADR-0008)
+
+- **Search** (discover.js section 2).
+  - The catalog answer comes first from `GET /api/search`. It holds the top result card, songs (beside it once the
+    column passes 900 px), artists (round photos from the entity's `image`) and releases (with their `type`: album,
+    EP, single).
+  - While `pending` names catalogs still searching, a quiet line says so. `search.more` appends its ids to each
+    list, never reordering.
+  - Soulseek is asked for 3+ characters once the query is submitted: Enter in either field, "Ask now", or 1.5 s
+    without typing. The call is `GET /api/soulseek/search`, with rows as `search.results`. Its `onlySoulseek` songs
+    are "Only on Soulseek".
+  - The Files tab lists the raw songs and folders. It appears only when `settings.search.showFiles` is on.
+  - Older hubs: an old-shape answer from `/api/search` shows "Search needs a newer hub". So does a 404 from
+    `/api/soulseek/search`.
+- **Settings > Sources.**
+  - Two profiles, `sources.stream` and `sources.save`. Each has: lossless only or a minimum bitrate, format chips
+    (none means any), which copy, and what to do if none is good enough.
+  - Saving adds `autoUpgrade` and `upgradeEveryH`. Then come the peer limits.
+  - Each control PATCHes only its own key, and the hub merges objects.
+  - A hub without the profiles shows a sentence instead.
+  - Settings > Search has "Show file results".
+- **Switching source mid-song.** Now Playing's "Source" opens the source picker. For the playing song,
+  `P.useSource` reopens the chosen peer's stream at the current time as the same play: `load()` gets `keepPlay`,
+  so no skip is recorded.
+- **Not yet:** the below-minimum badge and the "ask" prompts, waiting for the `stream` and `save` event fields.
 
 ## Imports
 
