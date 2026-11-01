@@ -562,7 +562,7 @@
      has rested a moment; while it runs only the files / peers counters move, and its last event carries the rows:
      peerSongs: trackId -> { trackId, sources, best, dup }, albums: albumId -> { albumId, trackIds, folders } (arrival
      order: peerOrder, albumOrder), onlySoulseek: the songs no catalog knew. */
-  var SLSK_REST_MS = 1500, SONGS_MAX = 20;
+  var SLSK_REST_MS = 1500, SONGS_MAX = 20, PENDING_MAX_MS = 20000;
   var CATALOG = { deezer: 'Deezer', itunes: 'iTunes', musicbrainz: 'MusicBrainz', 'musicbrainz-albums': 'MusicBrainz', lastfm: 'Last.fm', library: 'your library' };
   var S = { q: null, seq: 0, showAll: false, tab: 'all', loading: false, error: null, cat: null,
     slsk: false, slskStarted: false, slskTimer: null, slskMissing: false, searchId: null, files: 0, peers: 0, done: true, slskError: null,
@@ -584,7 +584,8 @@
         S.error = { status: 0, message: 'This hub still searches the old way. Update lull on the server for catalog search.' };
       } else {
         S.cat = { top: res.top || null, artists: res.artists.slice(), albums: res.albums.slice(), tracks: res.tracks.slice(),
-          pending: (res.pending || []).slice(), errors: res.errors || {} };
+          pending: [], errors: {} };
+        mergeCatalog(res); setPending(res.pending, mine);
       }
       paint('results', resultsBody());
     }, function (err) {
@@ -602,7 +603,7 @@
     /* submitted words also widen the catalog run (MusicBrainz release groups by title, which finds Bandcamp-only EPs);
        the answer merges like search.more */
     M.api('/api/search?q=' + encodeURIComponent(S.q) + '&submitted=1').then(function (res) {
-      if (mine === S.seq && S.cat) { mergeCatalog(res); if (res.pending) S.cat.pending = res.pending.slice(); paint('results', resultsBody()); }
+      if (mine === S.seq && S.cat) { mergeCatalog(res); setPending(res.pending, mine); paint('results', resultsBody()); }
     }, function (err) { console.warn('Submitted catalog search failed:', err.message); });
     M.api('/api/soulseek/search?q=' + encodeURIComponent(S.q)).then(function (res) {
       if (mine !== S.seq) return;
@@ -617,8 +618,12 @@
       paint('results', resultsBody());
     });
   }
+  /* app.js has already absorbed e.entities. An event can beat the HTTP answer that names the search (a Soulseek that is
+     down answers with its final event at once): the same words while one runs count as this search */
   App.on('server:search.results', function (e) {
-    if (!e || !S.searchId || e.searchId !== S.searchId) return;     // app.js has already absorbed e.entities
+    if (!e) return;
+    if (!S.searchId && S.slskStarted && !S.done && sameQuery(e.query, S.q)) S.searchId = e.searchId;
+    if (!S.searchId || e.searchId !== S.searchId) return;
     applyResults(e);
     paint('results', resultsBody());
   });
@@ -630,12 +635,26 @@
     ['artists', 'albums', 'tracks'].forEach(function (k) {
       (e[k] || []).forEach(function (id) { if (S.cat[k].indexOf(id) < 0) S.cat[k].push(id); });
     });
-    if (e.errors) S.cat.errors = e.errors;          // every source that failed so far
+    if (e.errors) S.cat.errors = Object.assign({}, S.cat.errors, e.errors);     // every source that failed so far
+    S.cat.pending = S.cat.pending.filter(function (k) { return !S.cat.errors[k]; });   // a failed source isn't coming
+  }
+  /* the sources still searching; one that hasn't answered within PENDING_MAX_MS is noted as not answering */
+  var pendingTimer = null;
+  function setPending(list, mine) {
+    S.cat.pending = (list || []).filter(function (k) { return !S.cat.errors[k]; });
+    clearTimeout(pendingTimer);
+    if (!S.cat.pending.length) return;
+    pendingTimer = setTimeout(function () {
+      if (mine !== S.seq || !S.cat || !S.cat.pending.length) return;
+      S.cat.pending.forEach(function (k) { S.cat.errors[k] = 'no answer in time'; });
+      S.cat.pending = [];
+      paint('results', resultsBody());
+    }, PENDING_MAX_MS);
   }
   App.on('server:search.more', function (e) {
     if (!e || !S.cat || !sameQuery(e.query, S.q)) return;
     mergeCatalog(e);
-    if (e.done) S.cat.pending = [];
+    if (e.done) { S.cat.pending = []; clearTimeout(pendingTimer); }
     paint('results', resultsBody());
   });
   function applyResults(e) {
@@ -761,9 +780,11 @@
     if (!names.length) return '';
     return html`<p class="disc-pending" role="status"><span class="spin-ring" aria-hidden="true"></span>Still asking ${names.join(' and ')}</p>`;
   }
+  /* a quiet line: which catalogs didn't answer (their own sentences as a tooltip) */
   function catalogErrors() {
-    var e = S.cat.errors, keys = Object.keys(e);
-    return keys.length ? html`<p class="disc-note">${keys.map(function (k) { return (CATALOG[k] || k) + ' didn\'t answer: ' + e[k] + '. '; })}The other catalogs' results are here.</p>` : '';
+    var e = S.cat.errors, keys = Object.keys(e), names = unique(keys.map(function (k) { return CATALOG[k] || k; }));
+    if (!names.length) return '';
+    return html`<p class="disc-note" title="${keys.map(function (k) { return (CATALOG[k] || k) + ': ' + e[k]; }).join('\n')}">${names.join(' and ')} didn't answer, so ${names.length > 1 ? 'their' : 'its'} results are missing.</p>`;
   }
   function songRow(t, i) {
     var row = S.peerSongs[t.id], saved = App.isSaved(t.id);
