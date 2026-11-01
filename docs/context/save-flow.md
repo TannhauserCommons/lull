@@ -16,8 +16,8 @@
 
 Without the listener's pick, step 1 asks Soulseek for the saving profile's copy (`Transfers::save_candidate`, ADR-0008). Soulseek searches when it knows no copy, and reuses the one the song streamed from when that passes ([soulseek.md](soulseek.md#source-rules)). When no copy passes the saving minimum, the profile's `below` decides:
 
-- **`saveBestUpgrade`** (default): the best copy is saved now and watched for an upgrade.
-- **`wait`**: the job is `waiting` at step 1 and searches again every 30 minutes (paced with auto-upgrade, at most one search a minute) until a copy passes. A restart carries on waiting.
+- **`saveBestUpgrade`** (default): the best copy is saved now, the job says `belowMinimum`, and the song is watched for an upgrade.
+- **`wait`**: the job is `waiting` at step 1 and searches again every 30 minutes (paced with auto-upgrade, at most one search a minute) until a copy passes. A restart carries on waiting. `DELETE /api/saves/{jobId}` gives up on it (and on a failed save): one `cancelled` event, then the job is gone.
 - **`ask`**: step 1 fails as `transfer` ("No copy meets your saving minimum (320 kbps or lossless). Pick a source and retry."); the picker lists the copies with `GET /api/tracks/{id}/sources?for=save`.
 
 With no peer sharing the song at all, `wait` waits too; the others fail as `transfer`.

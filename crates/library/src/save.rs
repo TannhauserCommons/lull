@@ -75,6 +75,10 @@ pub fn resume(svc: &Arc<Service>) {
 
 async fn run(svc: Arc<Service>, mut job: SaveJob) {
     if let Err(fail) = steps(&svc, &mut job).await {
+        // Cancelled while it waited: nothing to report.
+        if svc.jobs.get(&job.id).is_none() {
+            return;
+        }
         tracing::info!(job = job.id, step = job.step, error = fail.message, "save failed");
         job.status = Status::Failed;
         job.fail_kind = Some(fail.kind);
@@ -136,7 +140,7 @@ async fn finish(svc: &Service, job: &mut SaveJob, track: Track) {
     job.status = Status::Done;
     job.pct = 100;
     job.error = None;
-    upgrade::consider(svc, job, &track).await;
+    job.below_minimum = upgrade::consider(svc, job, &track).await;
     remember_under_asked_id(svc, job, track).await;
     svc.jobs.put(job).await;
 }
@@ -190,7 +194,10 @@ async fn pick_source(svc: &Service, job: &mut SaveJob) -> Result<SourceRef, Fail
             .map_err(|e| Fail::new(FailKind::Transfer, e.to_string()))?;
         let profile = svc.upgrades.profile();
         let message = match found {
-            Some(c) if c.meets || profile.below == SaveBelow::SaveBestUpgrade => return Ok(c.source),
+            Some(c) if c.meets || profile.below == SaveBelow::SaveBestUpgrade => {
+                job.below_minimum = !c.meets;
+                return Ok(c.source);
+            }
             Some(_) => format!("No copy meets your saving minimum ({}).", profile.minimum),
             None => "No Soulseek peer shares this song right now.".to_owned(),
         };
@@ -209,6 +216,9 @@ async fn pick_source(svc: &Service, job: &mut SaveJob) -> Result<SourceRef, Fail
             svc.jobs.put(job).await;
         }
         tokio::time::sleep(WAIT_AGAIN).await;
+        if svc.jobs.get(&job.id).is_none() {
+            return Err(Fail::new(FailKind::Transfer, "The save was cancelled."));
+        }
         svc.upgrades.pace().await;
         fresh = true;
     }
@@ -711,6 +721,21 @@ pub async fn choose(svc: &Arc<Service>, mut job: SaveJob, mbid: Option<String>) 
     job.release = Some(release);
     job.step = 3;
     restart(svc, job).await
+}
+
+/// The listener gave up on a save that is waiting for a good copy, or failed: it is published
+/// as `cancelled` once and removed. A save that is transferring or writing can't be cancelled.
+pub async fn cancel(svc: &Service, mut job: SaveJob) -> Result<()> {
+    if !matches!(job.status, Status::Waiting | Status::Failed) {
+        return Err(Error::Conflict(
+            "Only a save that is waiting for a copy, or failed, can be cancelled.".into(),
+        ));
+    }
+    job.status = Status::Cancelled;
+    job.error = None;
+    svc.jobs.put(&job).await;
+    svc.jobs.remove(&job.id).await;
+    Ok(())
 }
 
 async fn restart(svc: &Arc<Service>, mut job: SaveJob) -> Result<SaveJob> {

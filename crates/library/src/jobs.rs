@@ -31,6 +31,8 @@ pub enum Status {
     /// No copy passes the saving minimum and the profile says `wait`: searched again in the
     /// background until one does (ADR-0008).
     Waiting,
+    /// The listener cancelled it (`DELETE /api/saves/{id}`); published once, then removed.
+    Cancelled,
 }
 
 /// Which recovery the UI offers for a failure.
@@ -86,6 +88,9 @@ pub struct SaveJob {
     /// Started by auto-upgrade, replacing a saved copy below the saving minimum.
     #[serde(default)]
     pub upgrade: bool,
+    /// The copy saved doesn't pass the saving minimum (`saveBestUpgrade`, or the listener's pick).
+    #[serde(default)]
+    pub below_minimum: bool,
 }
 
 impl SaveJob {
@@ -110,6 +115,7 @@ impl SaveJob {
             waiting_since: None,
             started: now(),
             upgrade: false,
+            below_minimum: false,
         }
     }
 
@@ -122,7 +128,7 @@ impl SaveJob {
         json!({
             "jobId": self.id, "trackId": self.track_id, "step": self.step, "status": self.status,
             "pct": self.pct, "error": self.error, "kind": self.fail_kind, "nocover": self.nocover,
-            "upgrade": self.upgrade,
+            "upgrade": self.upgrade, "belowMinimum": self.below_minimum,
         })
     }
 
@@ -131,7 +137,7 @@ impl SaveJob {
         json!({
             "jobId": self.id, "kind": "save", "trackId": self.track_id, "step": self.step,
             "stepState": self.status, "pct": self.pct, "error": self.error, "failKind": self.fail_kind,
-            "nocover": self.nocover, "started": self.started, "upgrade": self.upgrade,
+            "nocover": self.nocover, "started": self.started, "upgrade": self.upgrade, "belowMinimum": self.below_minimum,
         })
     }
 }

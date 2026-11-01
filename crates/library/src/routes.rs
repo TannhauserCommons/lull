@@ -9,7 +9,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::HeaderValue;
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use lull_core::config::LibraryMode;
 use lull_core::ids::{AlbumId, TrackId};
@@ -45,6 +45,7 @@ pub fn router(svc: Arc<Service>) -> Router {
         .route("/api/saves", post(start_saves))
         .route("/api/saves/{id}/releases", get(releases))
         .route("/api/saves/{id}/release", post(choose_release))
+        .route("/api/saves/{id}", delete(cancel_save))
         .route("/api/saves/{id}/retry", post(retry))
         .route("/api/jobs", get(jobs).delete(clear_jobs))
         .with_state(svc)
@@ -516,6 +517,11 @@ async fn retry(State(svc): Svc, Path(id): Path<String>, body: Bytes) -> Result<J
     Ok(Json(
         json!({ "jobId": job.id, "step": job.step, "status": Status::Running }),
     ))
+}
+
+async fn cancel_save(State(svc): Svc, Path(id): Path<String>) -> Result<StatusCode> {
+    save::cancel(&svc, save_job(&svc, &id)?).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // ---------- jobs ----------

@@ -98,7 +98,8 @@ pub fn follow_settings(svc: &Arc<Service>) -> impl Future<Output = ()> + Send + 
 }
 
 /// A save finished: watch the song while its file is below the saving minimum, else stop.
-pub async fn consider(svc: &Service, job: &SaveJob, saved: &Track) {
+/// Returns whether it is below.
+pub async fn consider(svc: &Service, job: &SaveJob, saved: &Track) -> bool {
     let ext = job
         .dest
         .as_deref()
@@ -124,6 +125,7 @@ pub async fn consider(svc: &Service, job: &SaveJob, saved: &Track) {
     if let Err(e) = stored {
         tracing::warn!(error = %e, "could not record a song for auto-upgrade");
     }
+    below
 }
 
 /// Every minute, the most overdue watched song gets its search, while auto-upgrade is on and
