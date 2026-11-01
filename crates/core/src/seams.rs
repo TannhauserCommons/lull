@@ -9,7 +9,7 @@ use axum::response::Response;
 
 use crate::error::{Error, Result};
 use crate::ids::{AlbumId, ArtistId, TrackId};
-use crate::model::{Album, Artist, PlayReport, Playlist, PlaylistEdit, SourceRef, Track};
+use crate::model::{self, Album, Artist, PlayReport, Playlist, PlaylistEdit, SourceRef, Track};
 
 /// The saved library. Implemented by `library`, from a music folder or Jellyfin (ADR-0003).
 #[async_trait]
@@ -64,6 +64,14 @@ pub trait Collection: Send + Sync {
     async fn delete_playlist(&self, id: &str) -> Result<()>;
     /// Records a play as if the web player had reported it (history, taste, scrobbling).
     async fn record_play(&self, play: PlayReport) -> Result<()>;
+}
+
+/// Lyrics. Implemented by `lyrics`, for Subsonic's `getLyricsBySongId`.
+#[async_trait]
+pub trait Lyrics: Send + Sync {
+    /// The track's lyrics, `kind: none` when there are none: `NotFound` for a track lull doesn't
+    /// know, `Unavailable` while the lyrics source is failing and nothing is cached.
+    async fn lyrics(&self, track: &TrackId) -> Result<model::Lyrics>;
 }
 
 /// Soulseek transfers. Implemented by `soulseek`.

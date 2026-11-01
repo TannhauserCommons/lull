@@ -140,3 +140,32 @@ pub struct PlayReport {
     pub played_s: u32,
     pub completed: bool,
 }
+
+/// A song's lyrics, as `GET /api/lyrics/{trackId}` serves them and the `Lyrics` seam hands
+/// them out.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Lyrics {
+    pub kind: LyricsKind,
+    /// Timed lines; empty unless `kind` is `synced`.
+    pub lines: Vec<LyricLine>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plain: Option<String>,
+    /// Where they came from ("LRCLIB").
+    pub source: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LyricsKind {
+    Synced,
+    Plain,
+    Instrumental,
+    None,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LyricLine {
+    /// Seconds from the start of the track.
+    pub t: f64,
+    pub text: String,
+}
