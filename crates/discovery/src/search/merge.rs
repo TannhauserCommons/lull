@@ -40,6 +40,19 @@ pub enum Source {
     LastFm,
 }
 
+impl Source {
+    /// Its name in messages.
+    pub fn service(self) -> &'static str {
+        match self {
+            Source::Deezer => "Deezer",
+            Source::Itunes => "iTunes",
+            Source::Library => "The library",
+            Source::MusicBrainz | Source::MusicBrainzAlbums => "MusicBrainz",
+            Source::LastFm => "Last.fm",
+        }
+    }
+}
+
 /// One source's answer.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Found {

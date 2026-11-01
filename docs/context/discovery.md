@@ -15,6 +15,8 @@ Owner: Discovery session (`crates/discovery`). Source choice and why: [ADR-0030]
 | Cover Art Archive `coverartarchive.org` | covers of albums MusicBrainz found (`front-250/500/1200`) | none published; one fetch per album and size, cached | pictures 30 days | none |
 
 - **Pacing** goes through `Http::pace`, shared with every lull crate. MusicBrainz uses core's `MUSICBRAINZ_PACE`, because library calls it from the same IP.
+- **MusicBrainz is bounded:** each call times out after 5 s (`Http` retries a timeout, so about 17 s at most), and after two failed calls in a row discovery leaves it alone for a minute (calls fail at once with "isn't answering").
+- **Search sources are capped at 8 s:** one that hasn't answered by then is named in `errors`, so every run ends with `search.more { done: true }`.
 - **Caching:** rows unused for 90 days are pruned at start-up. When a source fails, the expired answer is served (`sources/cache.rs`).
 - **Switches (Settings > Discovery):** collection's `settings` event carries `discovery.on.{listenbrainz,musicbrainz,lastfm}`. A source switched off is not used at all, cached answers included. Its calls fail with "switched off in Settings > Discovery", which shows up in `errors`, and the feed rebuilds.
 - **Adventurousness:** `discovery.adventurousness` from the same event is radio's `steer` when the UI sends none (0.4 until then).
@@ -103,7 +105,9 @@ Code: `src/search/` (`mod.rs` runs a query, `merge.rs` merges and ranks), `src/a
 
 ## Pictures (`GET /api/catalog/art/{id}?size=96|256|512`)
 
-- **Sources:** Deezer covers and artist photos (any size, from `md5_image` / `picture_xl`), iTunes covers (any size, from `artworkUrl100`), and Cover Art Archive covers for MusicBrainz albums (the next archive size up). Last.fm is never a picture source.
+- **Sources:** Deezer covers and artist photos (any size, from `md5_image` / `picture_xl`), iTunes covers (any size, from `artworkUrl100`), and Cover Art Archive covers for MusicBrainz albums. Last.fm is never a picture source.
+- **Every album discovery hands out** (search, feed, album, artist and tag pages) with a release-group MBID and no other source gets the Cover Art Archive's (`art::picture`), so new releases have covers.
+- **Fetching:** one try with a 6 s timeout. The archive is asked for its smallest size that covers the request (250 for 96 and 256, 500 for 512), and every picture is scaled down to the size asked for (JPEG). `size` defaults to 256.
 - **Where each picture comes from** is `lull_core::catalog` (`catalog_albums.art`, `catalog_artists.image`, a URL with `{size}`). Search records it, and the artist page looks the photo up on Deezer by exact name once.
 - **Entities:** albums carry `art` and artists `image`, `api/catalog/art/<id>` relative to the page (the UI adds `?size=`), only when a source is known. Albums without one use library's `/api/art/{albumId}`.
 - **Cache:** `<data dir>/catalog-art/<id>-<size>`, 30 days; "the source has none" for a day.

@@ -9,7 +9,7 @@ use std::sync::Arc;
 use axum::Json;
 use axum::extract::{Path, State};
 use lull_core::ids::{AlbumId, ArtistId, TrackId};
-use lull_core::model::{Album, Artist, Entities};
+use lull_core::model::{Album, Artist};
 use lull_core::{Error, Result};
 use serde::Serialize;
 
@@ -227,7 +227,7 @@ pub struct TagPage {
     new_releases: Vec<AlbumId>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     errors: Errors,
-    entities: Entities,
+    entities: Pictured,
 }
 
 pub async fn tag(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Result<Json<TagPage>> {
@@ -271,7 +271,7 @@ pub async fn tag(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Res
         artists: artists.iter().map(|a| a.id.clone()).collect(),
         new_releases: albums.iter().map(|a| a.id.clone()).collect(),
         errors,
-        entities: entities(Vec::new(), albums, artists),
+        entities: art::pictured(&svc, entities(Vec::new(), albums, artists)).await?,
     }))
 }
 

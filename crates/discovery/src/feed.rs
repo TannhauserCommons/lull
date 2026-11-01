@@ -21,7 +21,7 @@ use crate::sources::listenbrainz::Mode;
 use crate::sources::{ArtistInfo, Release, Song};
 use crate::store::{self, entities};
 use crate::taste::{self, Taste};
-use crate::{Service, mix};
+use crate::{Service, art, mix};
 
 const STALE_AFTER_S: i64 = 6 * 3600;
 const NEW_RELEASES: usize = 12;
@@ -133,7 +133,8 @@ pub struct Feeds {
     queued: AtomicBool,
 }
 
-pub async fn get(State(svc): State<Arc<Service>>) -> Result<Json<Feed>> {
+/// The feed, its albums and artists with their pictures (`art::pictured`).
+pub async fn get(State(svc): State<Arc<Service>>) -> Result<Json<serde_json::Value>> {
     let built = match current(&svc).await? {
         Some(built) => built,
         None => build_now(&svc).await?,
@@ -161,7 +162,10 @@ pub async fn get(State(svc): State<Arc<Service>>) -> Result<Json<Feed>> {
             .get(id)
             .is_none_or(|a| !hidden.contains(&a.artist_id))
     });
-    Ok(Json(feed))
+    let entities = art::pictured(&svc, std::mem::take(&mut feed.entities)).await?;
+    let mut answer = serde_json::to_value(feed).map_err(|e| Error::internal(format!("feed json: {e}")))?;
+    answer["entities"] = serde_json::to_value(entities).map_err(|e| Error::internal(format!("feed json: {e}")))?;
+    Ok(Json(answer))
 }
 
 /// Rebuilds in the background (once, however often it is asked while one is queued).

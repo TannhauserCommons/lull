@@ -16,6 +16,8 @@ serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+# Scales catalog covers to the sizes the UI asks for (the same build as library's).
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
 
 [lints]
 workspace = true

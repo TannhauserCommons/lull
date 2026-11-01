@@ -1097,6 +1097,7 @@ name = "lull-discovery"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "image",
  "lull-core",
  "reqwest",
  "rusqlite",

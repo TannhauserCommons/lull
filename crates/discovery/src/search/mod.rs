@@ -44,6 +44,8 @@ const FIRST_ANSWER: Duration = Duration::from_millis(400);
 const FIRST_ANSWER_EMPTY: Duration = Duration::from_millis(1500);
 const FAST: [Source; 3] = [Source::Deezer, Source::Itunes, Source::Library];
 const KEEP: Duration = Duration::from_secs(600);
+/// The longest any one source is waited for.
+const SOURCE_LIMIT: Duration = Duration::from_secs(8);
 const TRACKS: usize = 50;
 const ALBUMS: usize = 20;
 const ARTISTS: usize = 20;
@@ -200,10 +202,19 @@ impl Searches {
     }
 }
 
+/// Runs one source for the run. One that hasn't answered within `SOURCE_LIMIT` counts as failed,
+/// so every run ends with `done: true`.
 fn start(svc: &Arc<Service>, run: &Arc<Run>, source: Source) {
     let (svc, run) = (svc.clone(), run.clone());
     svc.ctx.clone().spawn(async move {
-        let found = fetch(&svc, source, &run.query).await;
+        let found = tokio::time::timeout(SOURCE_LIMIT, fetch(&svc, source, &run.query))
+            .await
+            .unwrap_or_else(|_| {
+                Err(Error::unavailable(
+                    source.service(),
+                    format!("didn't answer within {} s", SOURCE_LIMIT.as_secs()),
+                ))
+            });
         arrive(&svc, &run, source, found).await;
     });
 }
