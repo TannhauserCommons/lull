@@ -522,11 +522,13 @@
 
   ui.savedBadge = function () { return html`<span class="badge badge-saved">${icon('saved')}Saved</span>`; };
   ui.soulseekBadge = function () { return html`<span class="badge badge-slsk">${icon('soulseek')}Soulseek</span>`; };
-  /* Saved / Soulseek badge for a track; flips in place when a save completes (App.syncRows) */
-  ui.sourceBadge = function (trackOrId) {
+  /* Saved / Soulseek badge for a track; flips in place when a save completes (App.syncRows).
+     { button: true } (the player bar) opens source details, as the quality chip beside it does */
+  ui.sourceBadge = function (trackOrId, opts) {
     var id = typeof trackOrId === 'string' ? trackOrId : trackOrId.id;
-    var saved = App.isSaved(id);
-    return html`<span class="src-badge" data-src-badge="${id}" data-was="${saved ? 'saved' : 'slsk'}">${saved ? ui.savedBadge() : ui.soulseekBadge()}</span>`;
+    var saved = App.isSaved(id), inner = saved ? ui.savedBadge() : ui.soulseekBadge();
+    if (opts && opts.button) return html`<button class="src-badge" data-act="source-details" data-src-badge="${id}" data-was="${saved ? 'saved' : 'slsk'}" aria-label="${saved ? 'Saved' : 'From Soulseek'}. Show source details" data-tip="Source details">${inner}</button>`;
+    return html`<span class="src-badge" data-src-badge="${id}" data-was="${saved ? 'saved' : 'slsk'}">${inner}</span>`;
   };
   /* quality chip: outlined by default; { solid: true } for player bar / device; { button: true } opens source details */
   ui.qualityChip = function (fmt, opts) {
@@ -2373,7 +2375,7 @@
         <div class="pbar__text">
           <div class="pbar__title"><a href="#/album/${t.albumId}">${t.title}</a></div>
           <div class="pbar__artist"><a href="#/artist/${t.artistId}">${t.artist}</a></div>
-          <div class="pbar__badges">${playingYoutube() ? '' : ui.sourceBadge(t)}${playingFormat(t) ? ui.qualityChip(playingFormat(t), { solid: true, button: true, id: t.id }) : ''}${ps.belowMinimum ? ui.belowBadge() : ''}</div>
+          <div class="pbar__badges">${playingYoutube() ? '' : ui.sourceBadge(t, { button: true })}${playingFormat(t) ? ui.qualityChip(playingFormat(t), { solid: true, button: true, id: t.id }) : ''}${ps.belowMinimum ? ui.belowBadge() : ''}</div>
         </div>`);
     }
     // state tab above the seek bar
