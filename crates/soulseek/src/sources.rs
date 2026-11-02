@@ -97,6 +97,9 @@ pub struct Ranked {
     pub meets: bool,
     /// More people waiting than Settings › Sources allows: listed, never picked automatically.
     pub queue_too_long: bool,
+    /// Above the streaming cap (`maxKbps`; lossless is above any cap): taken only after every
+    /// copy within it. Always false in the saving order.
+    pub above_max: bool,
     #[serde(skip)]
     pub source: Source,
 }
@@ -197,23 +200,31 @@ impl Sources {
             stalled_before,
             meets: true,
             queue_too_long: false,
+            above_max: false,
             source: s,
         }
     }
 }
 
-/// Sorts ranked sources for a profile and marks which pass its minimum.
+/// Sorts ranked sources for a profile and marks which pass its minimum. Streaming also puts
+/// copies within its bitrate cap before those above it, among passing copies and among the rest.
 pub fn order(mut ranked: Vec<Ranked>, duration: Option<u32>, rules: &Rules, purpose: Purpose) -> Vec<Ranked> {
     let min = rules.minimum(purpose);
+    let cap = match purpose {
+        Purpose::Stream => rules.stream.max_kbps,
+        Purpose::Save => 0,
+    };
     for r in &mut ranked {
         r.meets = r.source.meets(min, duration);
         r.queue_too_long = r.source.queue_too_long(rules.max_peer_queue);
+        r.above_max = !r.source.quality(duration).within(cap);
     }
     let fastest = |a: &Ranked, b: &Ranked| b.score.cmp(&a.score).then(b.speed.total_cmp(&a.speed));
     ranked.sort_by(|a, b| {
         a.queue_too_long
             .cmp(&b.queue_too_long)
             .then(b.meets.cmp(&a.meets))
+            .then(a.above_max.cmp(&b.above_max))
             .then_with(|| match rules.pick(purpose) {
                 Pick::Fastest => fastest(a, b),
                 Pick::Highest => b
@@ -281,6 +292,7 @@ mod tests {
             stalled_before: false,
             meets: true,
             queue_too_long: false,
+            above_max: false,
             source,
         }
     }
@@ -346,6 +358,29 @@ mod tests {
             let last_passing = list.iter().rposition(|r| r.meets && !r.queue_too_long);
             assert!(first_below > last_passing, "{:?}", users(list));
         }
+    }
+
+    #[test]
+    fn a_streaming_cap_takes_copies_within_it_first_and_leaves_saving_alone() {
+        let mut capped = rules(192, Pick::Highest);
+        capped.stream.max_kbps = 256;
+        let ordered = order(peers(), Some(240), &capped, Purpose::Stream);
+        let passing: Vec<&str> = ordered
+            .iter()
+            .filter(|r| r.meets && !r.queue_too_long)
+            .map(|r| r.peer.as_str())
+            .collect();
+        assert_eq!(
+            passing,
+            ["mid-256", "slow-flac", "unknown-mp3", "fast-320"],
+            "within the cap by quality, then lossless and 320 kbps above it"
+        );
+        assert!(ordered.iter().any(|r| r.peer == "fast-320" && r.above_max));
+        assert!(ordered.iter().any(|r| r.peer == "fast-128" && !r.meets && !r.above_max));
+
+        let save = order(peers(), Some(240), &capped, Purpose::Save);
+        assert_eq!(save[0].peer, "slow-flac", "the saving order has no cap");
+        assert!(save.iter().all(|r| !r.above_max));
     }
 
     #[test]
