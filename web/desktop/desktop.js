@@ -196,7 +196,7 @@
       '<div class="dk-hubs" role="group" aria-labelledby="dk-found-label" data-dk-found>' + status('busy', 'Looking for hubs&hellip;') + '</div></div>' +
       '<div class="field"><label class="field__label" for="dk-url">Hub address</label>' +
       '<input class="input" id="dk-url" name="url" type="text" inputmode="url" autocomplete="url" spellcheck="false" placeholder="192.168.1.20:8484" value="' + esc(o.url || '') + '" aria-describedby="dk-url-help">' +
-      '<span class="field__help" id="dk-url-help">Or its Tailscale address, like https://hub.example.ts.net</span></div>' +
+      '<span class="field__help" id="dk-url-help">Where lull runs, not Jellyfin: the hub reaches Jellyfin for you. Or its Tailscale address, like https://lull.example.ts.net</span></div>' +
       '<div class="field"><label class="field__label" for="dk-code">Pair code</label>' +
       '<input class="input dk-code" id="dk-code" name="code" type="text" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" maxlength="6" placeholder="ABC123"></div>' +
       '<div class="dk-status" role="status" data-state="idle">' + status('info', 'lull checks the hub before pairing.') + '</div>' +
