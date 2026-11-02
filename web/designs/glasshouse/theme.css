@@ -689,12 +689,11 @@
 :root[data-design="glasshouse"] .pbar__controls .btn-icon:not(.btn-gloss) {
   border: 1px solid var(--gh-key-edge); color: var(--gh-key-ink); background: var(--gh-keyg); box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 45%, transparent);
 }
-/* the state line is an LCD tab docked on the bar's top edge; the content area makes room for it, so it never covers a window */
+/* the state line is an LCD tab docked on the bar's top edge, over the content area's bottom edge (making room for it moved every window up and down with each Soulseek start) */
 :root[data-design="glasshouse"] .pbar__state { max-width: min(820px, 76%); border-radius: 8px 8px 0 0; border-bottom: 0; font: 500 .75rem/1.2 var(--f-px); letter-spacing: 0; }
 :root[data-design="glasshouse"] .pbar__state > .ic,
 :root[data-design="glasshouse"] .pbar__state .btn--quiet { color: #f3c1cf; }
 :root[data-design="glasshouse"] .pbar__state .btn--quiet { min-height: 24px; font-family: var(--f-px); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
-@media (min-width: 640px) { :root[data-design="glasshouse"] .app:has(.pbar__state:not([hidden])) .main { margin-bottom: 30px; } }
 :root[data-design="glasshouse"] .bezel-thumb { padding: 3px; border-radius: 8px; border: 1px solid var(--gh-frame);
   background: linear-gradient(180deg, #e9ebf3, #b9bfd1); box-shadow: inset 0 1px 0 #fff; }
 :root[data-design="glasshouse"] .bezel-thumb .cover { border-radius: 5px; }

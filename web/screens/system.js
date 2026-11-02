@@ -29,7 +29,12 @@
   function uniq(list) { return list.filter(function (x, i) { return x != null && list.indexOf(x) === i; }); }
   function isArtistId(id) { return /^ar-/.test(id); }
   /* the server's own sentence, without a trailing full stop, so it can sit inside ours */
-  function clause(text) { return String(text || '').replace(/\.\s*$/, ''); }
+  /* a service's detail as one clause of a banner: its first line, at most about 200 characters (the hub already keeps
+     it short; an older hub pasted slskd's stack traces, which filled a phone's screen) */
+  function clause(text) {
+    var t = String(text || '').split('\n')[0].replace(/\.\s*$/, '');
+    return t.length > 200 ? t.slice(0, 200).replace(/\s+\S*$/, '') + '…' : t;
+  }
   /* replace a part of the page and put focus back on an equivalent control */
   function repaint(sel, markup, focusSel) {
     var el = $(sel); if (!el) return;

@@ -172,6 +172,9 @@ button.disc-pick__title:hover { text-decoration: underline; text-underline-offse
   .disc-filters__group { flex-wrap: nowrap; }
 }
 
+/* the last answer, dimmed, while the next query's comes (no skeleton per keystroke) */
+.disc-col.is-stale { opacity: .55; transition: opacity var(--dur-2, .2s); pointer-events: none; }
+
 /* Soulseek progress line: live counters + a bar that drifts until the search is done */
 .disc-scan {
   display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 6px var(--sp-2);

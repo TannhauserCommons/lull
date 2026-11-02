@@ -537,7 +537,7 @@
     var st = q.resolve;
     if (st === 'none') return html`<span class="resolve now-q__mark is-none">${icon('no-source', null, 'ic-16')}no source</span>`;
     if (st === 'resolving') return html`<span class="resolve now-q__mark"><span class="spin-ring" aria-hidden="true"></span>finding</span>`;
-    if (i === ps.index + 1) return html`<span class="resolve now-q__mark is-ready">${icon('check', null, 'ic-16')}ready</span>`;
+    if (i === ps.index + 1 && (App.isSaved(q.trackId) || P.isPreloaded(q.trackId))) return html`<span class="resolve now-q__mark is-ready">${icon('check', null, 'ic-16')}ready</span>`;
     return '';
   }
   function qRow(q, i, opts) {

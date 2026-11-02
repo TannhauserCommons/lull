@@ -1205,6 +1205,17 @@
     }
     load(i, { reason: auto ? 'completed' : 'skipped' });
   };
+  /* a Soulseek song no peer delivers while the music was playing gives way to the next one after a beat, as an
+     unavailable song does on Spotify; the toast says which and why. Paused, or at the end of the queue, it waits. */
+  function skipFailed(e) {
+    setTimeout(function () {
+      if (cur !== e || ps.status !== 'failed') return;
+      var i = nextIndex(false); if (i < 0 || i === ps.index) return;
+      var t = M.track(e.trackId);
+      App.toast('Skipped ' + (t ? t.title : 'a song') + ': ' + (ps.error || 'no peer shares it right now'), { icon: 'soulseek' });
+      P.next();
+    }, 2500);
+  }
   function endQueue(auto) {
     endPlay(auto ? 'completed' : 'skipped');
     ps.status = 'ended'; ps.playing = false; ps.pos = P.duration(); out.pause();
@@ -1298,7 +1309,12 @@
   P.move = function (from, to) {
     if (from === to || from < 0 || to < 0 || from >= ps.queue.length || to >= ps.queue.length) return;
     var playingEntry = ps.queue[ps.index], item = ps.queue.splice(from, 1)[0];
-    ps.queue.splice(to, 0, item); ps.index = ps.queue.indexOf(playingEntry); queueChanged();
+    ps.queue.splice(to, 0, item); ps.index = ps.queue.indexOf(playingEntry);
+    /* the queue lists its groups (next up, then, radio) in that order, each in one run: a song moved past a group's
+       edge joins the group it now sits in, so the list shows the order it plays in */
+    var before = to - 1 > ps.index ? ps.queue[to - 1] : null, after = ps.queue[to + 1];
+    if (to > ps.index && (before || after)) item.group = (before || after).group;
+    queueChanged();
   };
   P.clear = function () {
     var before = ps.queue.slice(), beforeIndex = ps.index, playingEntry = ps.queue[ps.index];
@@ -1445,6 +1461,7 @@
         if (ev.peer && ev.peer !== prevPeer) App.toast('Now from ' + ev.peer, { icon: 'soulseek', kind: 'ok' });
         break;
       case 'failed':
+        if (ps.playing) skipFailed(cur);
         ps.status = 'failed'; ps.playing = false; out.pause();
         ps.error = ev.error || 'Couldn\'t play: no peer responded';
         cur.resolve = 'none';
@@ -1758,11 +1775,18 @@
 
   /* ---------- the clock: preload, and 'tick' for screens (the output reports the position) ---------- */
   var TICK = 250;
+  /* a paused song changes nothing on screen: the tick goes out only when what it shows moved (the waiting states
+     count seconds), instead of rewriting the seek bars and times four times a second */
+  var tickWas = '';
   setInterval(function () {
     if (!cur) return;
     preloadNext();
     if (document.hidden) return;
     updateBuffered();
+    var waiting = /^(finding|queued|buffering|stalled)$/.test(ps.status) ? Math.floor(Date.now() / 1000) : 0;
+    var sig = [ps.playing, ps.pos.toFixed(2), ps.received.toFixed(3), bufKey(ps.buffered), ps.status, waiting].join('|');
+    if (sig === tickWas) return;
+    tickWas = sig;
     App.emit('tick', ps);
   }, TICK);
 
@@ -1806,20 +1830,24 @@
     if (!ps.queue.length) return;
     ps.index = clamp(saved0.index || 0, 0, ps.queue.length - 1);
     ps.radio = saved0.radio ? Object.assign({}, saved0.radio, { error: null }) : null;    // an old error was that session's
-    ps.pos = saved0.pos || 0;
     var t = P.current();
+    ps.pos = App.isSaved(t.id) ? saved0.pos || 0 : 0;   // an unsaved song starts again from 0:00 (P.play)
     ps.status = App.isSaved(t.id) ? 'library' : 'streaming';
     ps.received = App.isSaved(t.id) ? 1 : 0;
   }
   restore();
 
+  /* how long the song has waited in this state, once that is long enough to wonder (5 s) */
+  var statusWas = null, statusSince = 0;
+  App.on('player', function () { if (ps.status !== statusWas) { statusWas = ps.status; statusSince = Date.now(); } });
+  function waited() { var sec = Math.floor((Date.now() - statusSince) / 1000); return sec >= 5 ? ', ' + sec + ' s' : ''; }
   /* one line describing the current status (player bar state tab, mini-player sub line, aria) */
   P.statusText = function () {
     var peer = ps.peer ? ps.peer.name : 'a peer', of = ps.peer && ps.peer.of ? ' of ' + ps.peer.of : '';
     switch (ps.status) {
       case 'idle': return 'Search or pick something from Home';
-      case 'finding': return 'Finding a source' + (ps.peersFound ? ', ' + ps.peersFound + ' peers answered' : '');
-      case 'queued': return 'Queued at peer ' + peer + (ps.queuePos ? ', position ' + ps.queuePos : '');
+      case 'finding': return 'Finding a source' + (ps.peersFound ? ', ' + ps.peersFound + ' peers answered' : '') + waited();
+      case 'queued': return 'Queued at peer ' + peer + (ps.queuePos ? ', position ' + ps.queuePos : '') + waited();
       case 'buffering':
         if (cur && !cur.soulseek) return cur.local ? 'Loading from this device' : 'Loading from your library';
         return ps.fallback ? 'Switching to ' + ps.fallback.to + ' (' + ps.fallback.n + (ps.fallback.of ? ' of ' + ps.fallback.of : '') + ')' : 'Buffering from ' + peer;
@@ -2080,6 +2108,11 @@
     });
   }
   function onJobEvent(e) { upsertJob(Object.assign({}, e, { id: e.jobId })); }
+  /* the next song can start at once: the player has it loaded, or the hub has bytes of it on disk (a preload) */
+  P.isPreloaded = function (id) {
+    if (nxt && nxt.trackId === id) return true;
+    return state.activity.some(function (j) { return j.kind === 'transfer' && j.trackId === id && (j.state === 'done' || j.state === 'transferring' && j.pct > 0); });
+  };
   function onTransferEvent(e) {
     upsertJob({ id: e.jobId, kind: 'transfer', trackId: e.trackId, peer: e.peer, state: e.state, queuePos: e.queuePos,
       pct: e.size ? Math.round(e.received / e.size * 100) : 0, speed: e.speed ? e.speed / 1e6 : 0, error: e.error || null });
@@ -2543,7 +2576,7 @@
     'jellyfin-rescan': function () { serverAction('/api/library/rescan', 'Jellyfin rescan started'); },
     'lastfm-retry': function () { serverAction('/api/lastfm/retry', 'Sending queued scrobbles to Last.fm'); },
     'open-cache': function () { App.closePopover(); App.go('/settings/cache'); },
-    'clear-search': function () { var i = $('#header-search'); i.value = ''; i.focus(); toggleClear(); },
+    'clear-search': function () { var i = $('#header-search'); i.value = ''; i.focus(); toggleClear(); clearedSearch(); },
     'back': function () { App.back(); },
     'skip': function () { $('#view').focus(); }
   });
@@ -2895,6 +2928,8 @@
     }
   };
 
+  /* clearing the header field on the search page clears the search too, as the page's own field does */
+  function clearedSearch() { if (App.current.path === '/search' && App.current.query.q) App.go('/search'); }
   function toggleClear() { var i = $('#header-search'), c = $('#header-search-clear'); if (c) c.hidden = !i.value; }
   function wireHeader() {
     var input = $('#header-search'); if (!input) return;
@@ -2904,11 +2939,11 @@
       t = setTimeout(function () {
         var q = input.value.trim(), target = '/search' + (q ? '?q=' + encodeURIComponent(q) : '');
         if (App.current.path === '/search') { history.replaceState(null, '', '#' + target); renderRoute(true); } else App.go(target);
-      }, 220);
+      }, 350);   // discover.js TYPE_PAUSE_MS
     });
     input.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') { e.preventDefault(); clearTimeout(t); var q = input.value.trim(); App.go('/search' + (q ? '?q=' + encodeURIComponent(q) : '')); }
-      if (e.key === 'Escape') { input.value = ''; toggleClear(); input.blur(); }
+      if (e.key === 'Escape') { clearTimeout(t); input.value = ''; toggleClear(); input.blur(); clearedSearch(); }
     });
     App.on('route', function (r) { if (r.path === '/search' && document.activeElement !== input) { input.value = r.query.q || ''; toggleClear(); } });
   }

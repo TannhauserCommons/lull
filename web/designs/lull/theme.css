@@ -444,21 +444,16 @@
 }
 :root[data-design="lull"][data-theme="night"] .pbar > .region-title { box-shadow: inset 0 0 0 1px rgba(195, 194, 226, .12), 0 0 0 var(--stroke) var(--tray-edge); }
 :root[data-design="lull"] .pbar > :not(.region-title):not(.pbar__state) { position: relative; z-index: 1; }
-/* the state line (failed / stalled): the tray grows a shelf on top and the line sits there as a little lavender
-   strip with its actions, so it never covers a window frame */
+/* the state line (finding, queued, stalled, failed): a little lavender strip with its actions, floating just above
+   the tray. It used to grow the tray a shelf, which pushed every window up 40 px each time a Soulseek song started
+   and back down when it played; floating, nothing else moves. */
 @media (min-width: 640px) {
-  :root[data-design="lull"] .app:has(#pbar-state:not([hidden])) { --bar-h: 120px; }
-  :root[data-design="lull"] .pbar:has(#pbar-state:not([hidden])) { padding-top: 46px; }
   :root[data-design="lull"] .pbar__state {
-    top: 7px; bottom: auto; left: calc(50% - 116px); max-width: min(720px, 70%); height: 32px; padding: 0 8px 0 10px; gap: 10px;
+    bottom: calc(100% + 6px); max-width: min(720px, 70%); height: 32px; padding: 0 8px 0 10px; gap: 10px;
     border: var(--stroke) solid var(--tray-edge); border-radius: 10px; background: var(--sky); color: var(--fg-panel);
-    box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 55%, transparent); font: 800 .8125rem/1 var(--f-ui);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 55%, transparent), 0 4px 14px rgba(0, 0, 0, .28); font: 800 .8125rem/1 var(--f-ui);
   }
   :root[data-design="lull"] .pbar__state .btn--quiet { color: var(--link); }
-}
-@media (min-width: 640px) and (max-width: 1099px) {
-  :root[data-design="lull"] .app:has(#pbar-state:not([hidden])) { --bar-h: 156px; }
-  :root[data-design="lull"] .pbar__state { left: 50%; }
 }
 :root[data-design="lull"] .pbar__now { gap: 12px; padding-left: 6px; }
 :root[data-design="lull"] .bezel-thumb { padding: 0; background: none; border: 0; border-radius: 10px; }
@@ -1187,7 +1182,8 @@
     :root[data-design="lull"] .lull-np .lull-np__screen { grid-template-columns: 132px minmax(0, 1fr); }
     :root[data-design="lull"] .lull-np .lull-np__screen .wave { height: 40px; }
   }
-  :root[data-design="lull"] .now-acts { flex-wrap: nowrap; }
+  /* buttons keep their labels whole ("In library" was squeezed to "libr"); a row too narrow for them all wraps */
+  :root[data-design="lull"] .now-acts > .btn { flex-shrink: 0; }
   :root[data-design="lull"] .now-acts__btn[data-act="add-to-playlist"] { width: 34px; padding: 0; justify-content: center; }
   :root[data-design="lull"] .now-acts__btn[data-act="add-to-playlist"] .now-acts__label { display: none; }
   /* Classic already has its tile in the dock */

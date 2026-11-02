@@ -32,7 +32,7 @@
   function mbps(v) { return (Math.round((v || 0) * 10) / 10) + ' MB/s'; }
   function plural(n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')); }
   function isPhone() { return window.innerWidth < 640; }
-  function thousands(n) { return n >= 1000 ? (Math.round(n / 100) / 10) + 'k' : String(n); }
+  function thousands(n) { return n >= 1e6 ? (Math.round(n / 1e5) / 10) + 'M' : n >= 1000 ? (Math.round(n / 100) / 10) + 'k' : String(n); }
   function unique(list) { return list.filter(function (x, i) { return list.indexOf(x) === i; }); }
   /* unix seconds -> "just now", "6 min ago", "3 h ago", "Oct 29" */
   function ago(at) {
@@ -468,7 +468,9 @@
      has rested a moment; while it runs only the files / peers counters move, and its last event carries the rows:
      peerSongs: trackId -> { trackId, sources, best, dup }, albums: albumId -> { albumId, trackIds, folders } (arrival
      order: peerOrder, albumOrder), onlySoulseek: the songs no catalog knew. */
-  var SLSK_REST_MS = 1500, SONGS_MAX = 20, PENDING_MAX_MS = 20000;
+  /* TYPE_PAUSE_MS: a search goes out once typing pauses this long (each one spends the catalogs' budgets: iTunes about
+     18 a minute); the header field uses the same pause */
+  var SLSK_REST_MS = 1500, SONGS_MAX = 20, PENDING_MAX_MS = 20000, TYPE_PAUSE_MS = 350;
   var CATALOG = { deezer: 'Deezer', itunes: 'iTunes', musicbrainz: 'MusicBrainz', 'musicbrainz-albums': 'MusicBrainz', lastfm: 'Last.fm', library: 'your library' };
   var S = { q: null, seq: 0, showAll: false, tab: 'all', loading: false, error: null, cat: null,
     slsk: false, slskStarted: false, slskTimer: null, slskMissing: false, searchId: null, files: 0, peers: 0, done: true, slskError: null,
@@ -479,7 +481,9 @@
   function search(q) {
     var mine = S.seq += 1;
     clearTimeout(S.slskTimer);
-    Object.assign(S, { q: q, showAll: false, loading: !!q, error: null, cat: null, slsk: q.length >= 3, slskStarted: false, slskMissing: false,
+    /* while the next answer comes, the last one stays on screen, dimmed, instead of a skeleton per keystroke */
+    var stale = q ? (S.cat && !S.loading ? S.cat : S.stale) : null;
+    Object.assign(S, { stale: stale, q: q, showAll: false, loading: !!q, error: null, cat: null, slsk: q.length >= 3, slskStarted: false, slskMissing: false,
       searchId: null, files: 0, peers: 0, done: true, slskError: null, peerSongs: {}, peerOrder: [], albums: {}, albumOrder: [], onlySoulseek: [] });
     if (!q) return;
     M.api('/api/search?q=' + encodeURIComponent(q)).then(function (res) {
@@ -602,7 +606,7 @@
       <div class="disc-q search-field" role="search">
         ${icon('search')}
         <label class="vh" for="disc-q">Search artists, albums and songs</label>
-        <input class="input" id="disc-q" type="search" value="${q}" placeholder="Artists, albums, songs" autocomplete="off" spellcheck="false" enterkeyhint="search">
+        <input class="input" id="disc-q" type="search" maxlength="200" value="${q}" placeholder="Artists, albums, songs" autocomplete="off" spellcheck="false" enterkeyhint="search">
       </div>
       <div class="disc-filters" role="group" aria-label="Search view" data-filters ${q ? '' : raw('hidden')}>
         <span class="disc-split">${ui.filterPill('Side by side', { act: 'disc-split', pressed: App.layout.get().searchSplit, icon: 'split' })}</span>
@@ -636,6 +640,11 @@
   }
 
   function resultsBody() {
+    if (S.loading && S.stale) {
+      var fresh = S.cat; S.cat = S.stale;
+      var dim = html`<div class="disc-col is-stale" aria-busy="true">${catalogBody()}</div>`;
+      S.cat = fresh; return dim;
+    }
     if (S.loading) return html`<section class="card disc-card">${ui.labelRule('songs')}${ui.skeleton('row', 4)}</section>`;
     if (S.error) {
       var gone = S.error.status === 404 || S.error.status === 0;
@@ -868,7 +877,7 @@
   function mountSearch(ctx) {
     var input = $('#disc-q'), t = null;
     if (input) {
-      input.addEventListener('input', function () { clearTimeout(t); t = setTimeout(function () { setQuery(input.value); }, 220); });
+      input.addEventListener('input', function () { clearTimeout(t); t = setTimeout(function () { setQuery(input.value); }, TYPE_PAUSE_MS); });
       input.addEventListener('keydown', function (e) {
         if (e.key === 'Enter') { clearTimeout(t); setQuery(input.value); startSoulseek(S.seq); input.blur(); }
         if (e.key === 'Escape' && input.value) { e.stopPropagation(); input.value = ''; setQuery(''); }
