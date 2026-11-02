@@ -2,7 +2,7 @@
 //! GTK lives.
 
 use crate::desktop::main_window::report;
-use crate::desktop::tray;
+use crate::desktop::player;
 use gtk::gio::{self, prelude::*};
 use gtk::glib;
 use tauri::AppHandle;
@@ -66,7 +66,7 @@ pub fn media_keys(app: &AppHandle) -> Result<(), String> {
         shortcuts
             .on_shortcut(key, move |app, _, event| {
                 if event.state == ShortcutState::Pressed {
-                    report(tray::forward(app, action));
+                    report(player::forward(app, action));
                 }
             })
             .map_err(|e| e.to_string())?;

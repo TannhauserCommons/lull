@@ -1,10 +1,13 @@
 //! The commands the pages call (DESKTOP.md 4). Arguments are checked here, at the boundary; anything
 //! unknown is refused with a message the caller logs.
 
+use crate::desktop::classic::{self, Handoff};
+use crate::desktop::discord::Presence;
 use crate::desktop::local_hub::{self, PORT};
 use crate::desktop::main_window;
 use crate::desktop::mini;
 use crate::desktop::platform;
+use crate::desktop::player;
 use crate::desktop::settings::{HubChoice, MiniStyle};
 use crate::desktop::state::{Desktop, NowPlaying};
 use crate::desktop::tailscale::{self, Status};
@@ -43,6 +46,8 @@ pub enum WindowAction {
     CloseChoice { keep: bool, remember: bool },
     /// Web UI without Media Session (some WebKitGTK builds): grab the media keys instead.
     MediaKeys,
+    /// The Classic window's page handed the queue back to `main`: close it, wake `main`.
+    ClassicDone,
 }
 
 #[tauri::command]
@@ -61,6 +66,7 @@ pub async fn window_action(app: AppHandle, request: WindowAction) -> Result<(), 
         WindowAction::Retry => main_window::open_chosen(&app),
         WindowAction::CloseChoice { keep, remember } => main_window::close_choice(&app, keep, remember),
         WindowAction::MediaKeys => return platform::media_keys(&app),
+        WindowAction::ClassicDone => classic::done(&app),
     };
     done.map_err(|e| e.to_string())
 }
@@ -96,9 +102,23 @@ fn choose(app: &AppHandle, choice: HubChoice, token: Option<String>) {
     });
 }
 
+/// The web UI opens Classic mode: Webamp in its own window takes over the queue (classic.rs).
+/// Async: a window built from a sync command, which runs on the UI thread, deadlocks on Windows.
+#[tauri::command]
+pub async fn classic_open(app: AppHandle, handoff: Handoff) -> Result<(), String> {
+    classic::open(&app, handoff)
+}
+
+/// The Classic window's page, once it runs: the queue to play. Null if it was taken already.
+#[tauri::command]
+pub fn classic_handoff(app: AppHandle) -> Option<Handoff> {
+    classic::take_handoff(&app)
+}
+
 #[tauri::command]
 pub fn set_now_playing(app: AppHandle, now: NowPlaying) {
     app.state::<Desktop>().set_now_playing(now);
+    player::refresh(&app);
 }
 
 /// Settings > App inside the app (DESKTOP.md 7).
@@ -118,6 +138,8 @@ pub struct DesktopSettings {
     mini_on_top: bool,
     /// None where the setting doesn't exist (only Linux has it).
     own_titlebar: Option<bool>,
+    /// None while this build has no Discord application (discord.rs).
+    discord_presence: Option<bool>,
 }
 
 #[tauri::command]
@@ -139,6 +161,7 @@ pub fn desktop_settings(app: AppHandle) -> Result<DesktopSettings, String> {
         mini_style: s.mini_style,
         mini_on_top: s.mini_on_top,
         own_titlebar: cfg!(target_os = "linux").then_some(s.own_titlebar),
+        discord_presence: Presence::available().then_some(s.discord_presence),
     })
 }
 
@@ -151,6 +174,7 @@ pub struct SettingsPatch {
     mini_style: Option<MiniStyle>,
     mini_on_top: Option<bool>,
     own_titlebar: Option<bool>,
+    discord_presence: Option<bool>,
 }
 
 #[tauri::command]
@@ -161,6 +185,9 @@ pub fn set_desktop_settings(app: AppHandle, patch: SettingsPatch) -> Result<(), 
     }
     if let Some(on) = patch.mini_on_top {
         mini::set_on_top(&app, on).map_err(|e| e.to_string())?;
+    }
+    if patch.discord_presence.is_some() && !Presence::available() {
+        return Err("This build of lull has no Discord application".into());
     }
     app.state::<Desktop>().update(|s| {
         if let Some(on) = patch.close_to_tray {
@@ -179,7 +206,13 @@ pub fn set_desktop_settings(app: AppHandle, patch: SettingsPatch) -> Result<(), 
         if let Some(on) = patch.own_titlebar {
             s.own_titlebar = on;
         }
+        if let Some(on) = patch.discord_presence {
+            s.discord_presence = on;
+        }
     });
+    if patch.discord_presence.is_some() {
+        player::refresh(&app);
+    }
     Ok(())
 }
 

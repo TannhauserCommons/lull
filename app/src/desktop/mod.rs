@@ -2,12 +2,17 @@
 //! with a tray, a mini player and the first-run choice. When this computer is the hub, the app runs
 //! it in-process with its bundled slskd. Every player action runs in the web UI.
 
+mod classic;
 mod commands;
+mod discord;
+mod links;
 mod local_hub;
 mod main_window;
 mod mini;
 mod platform;
+mod player;
 mod settings;
+mod signin;
 mod slskd;
 mod state;
 mod tailscale;
@@ -48,6 +53,8 @@ pub fn run() {
             commands::set_desktop_settings,
             commands::tailscale_status,
             commands::tailscale_serve,
+            commands::classic_open,
+            commands::classic_handoff,
         ])
         .setup(setup)
         .on_window_event(on_window_event)
@@ -107,6 +114,10 @@ fn on_window_event(window: &Window, event: &WindowEvent) {
         // Alt+F4 on the mini player works like its own close button.
         api.prevent_close();
         report(mini::close(window.app_handle()));
+    } else if window.label() == classic::LABEL {
+        // Alt+F4 on Webamp works like its own close button: the queue goes back to lull first.
+        api.prevent_close();
+        report(classic::close(window.app_handle()));
     }
 }
 

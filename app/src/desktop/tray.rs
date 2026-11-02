@@ -2,15 +2,16 @@
 //! handled here; player items are forwarded to the web UI as `tray` events, which it runs as its own
 //! actions. Labels follow `set_now_playing`.
 
+use crate::desktop::classic;
 use crate::desktop::main_window::{self, report};
 use crate::desktop::mini;
 use crate::desktop::platform;
+use crate::desktop::player::forward;
 use crate::desktop::state::NowPlaying;
 use crate::desktop::updater;
-use serde::Serialize;
 use tauri::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Wry};
+use tauri::{AppHandle, Wry};
 
 pub struct Tray {
     icon: TrayIcon,
@@ -22,12 +23,6 @@ pub struct Tray {
     like: CheckMenuItem<Wry>,
     save: MenuItem<Wry>,
     mini: CheckMenuItem<Wry>,
-}
-
-/// Payload of the `tray` event the web UI listens to.
-#[derive(Clone, Serialize)]
-pub struct Action {
-    pub action: &'static str,
 }
 
 pub fn create(app: &AppHandle) -> tauri::Result<Tray> {
@@ -88,9 +83,8 @@ pub fn create(app: &AppHandle) -> tauri::Result<Tray> {
 
 impl Tray {
     /// Labels, check marks and tooltip for the current track. Player items are off while idle or
-    /// while the hub can't be reached.
-    pub fn show(&self, now: &NowPlaying, on_hub: bool) {
-        let connected = on_hub && now.connected;
+    /// while the hub can't be reached (player.rs).
+    pub fn show(&self, now: &NowPlaying, connected: bool) {
         let idle = now.title.is_empty();
         let line = match () {
             _ if !connected => "Not connected".to_owned(),
@@ -143,6 +137,8 @@ impl Tray {
 
 fn on_menu(app: &AppHandle, event: MenuEvent) {
     let result = match event.id().as_ref() {
+        // Back to lull: from Classic mode with the queue handed back, else from the mini player.
+        "show" if classic::window(app).is_some() => classic::close(app),
         "show" => mini::close(app),
         "mini" => mini::toggle(app),
         "update" => {
@@ -155,7 +151,8 @@ fn on_menu(app: &AppHandle, event: MenuEvent) {
             app.exit(0);
             Ok(())
         }
-        // Classic mode is a screen of the web UI: show it first, then let the web UI open it.
+        "classic" if classic::window(app).is_some() => main_window::reveal(app),
+        // The web UI hands its queue to Classic mode: show it first, then let it open Classic.
         "classic" => mini::close(app).and_then(|()| forward(app, "classic")),
         "play-pause" => forward(app, "play-pause"),
         "next" => forward(app, "next"),
@@ -176,9 +173,4 @@ fn on_click(icon: &TrayIcon, event: TrayIconEvent) {
     {
         report(main_window::toggle(icon.app_handle()));
     }
-}
-
-/// Run a player action in the web UI.
-pub fn forward(app: &AppHandle, action: &'static str) -> tauri::Result<()> {
-    app.emit_to(main_window::LABEL, "tray", Action { action })
 }

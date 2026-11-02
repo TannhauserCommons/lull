@@ -26,6 +26,8 @@ pub struct Settings {
     pub own_titlebar: bool,
     /// Wayland ignores keep-above; the mini player says so once.
     pub wayland_hint_shown: bool,
+    /// "Show what I'm playing on Discord" (discord.rs).
+    pub discord_presence: bool,
 }
 
 impl Default for Settings {
@@ -42,6 +44,7 @@ impl Default for Settings {
             mini_on_top: true,
             own_titlebar: false,
             wayland_hint_shown: false,
+            discord_presence: false,
         }
     }
 }

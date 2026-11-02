@@ -1,7 +1,12 @@
-//! Where Windows and Linux differ: title bar, tray glyph, transparency, media keys.
+//! Where Windows and Linux differ: title bar, tray glyph, transparency, media keys, taskbar
+//! buttons, a sleeping webview, opening links.
 
+#[cfg(windows)]
+mod glyphs;
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(windows)]
+mod taskbar;
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
@@ -9,8 +14,56 @@ pub use windows::kill_with_app;
 
 use crate::desktop::settings::Settings;
 use crate::desktop::state::Platform;
-use tauri::AppHandle;
 use tauri::image::Image;
+use tauri::{AppHandle, Url, WebviewWindow};
+
+/// What the taskbar's thumbnail buttons show (player.rs).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ThumbButtons {
+    /// Play/Pause shows Pause.
+    pub playing: bool,
+    /// Something is loaded and the hub answers: the buttons work.
+    pub usable: bool,
+}
+
+/// Windows: Previous, Play/Pause and Next under the window's taskbar thumbnail. Linux has none.
+pub fn add_thumb_buttons(window: &WebviewWindow) {
+    #[cfg(windows)]
+    taskbar::attach(window);
+    #[cfg(not(windows))]
+    let _ = window;
+}
+
+pub fn show_thumb_buttons(app: &AppHandle, buttons: ThumbButtons) {
+    #[cfg(windows)]
+    taskbar::show(app, buttons);
+    #[cfg(not(windows))]
+    let _ = (app, buttons);
+}
+
+/// A hidden `main` while Classic mode plays (main_window::sleep). On Linux, WebKitGTK already
+/// stops drawing a hidden window.
+pub fn set_webview_awake(window: &WebviewWindow, awake: bool) -> tauri::Result<()> {
+    #[cfg(windows)]
+    return windows::set_webview_awake(window, awake);
+    #[cfg(not(windows))]
+    {
+        let _ = (window, awake);
+        Ok(())
+    }
+}
+
+/// The listener's default browser (links.rs).
+pub fn open_in_browser(url: &Url) -> Result<(), String> {
+    #[cfg(windows)]
+    return windows::open_in_browser(url);
+    #[cfg(not(windows))]
+    std::process::Command::new("xdg-open")
+        .arg(url.as_str())
+        .spawn()
+        .map(drop)
+        .map_err(|e| format!("xdg-open: {e}"))
+}
 
 /// Read once at startup, on the main thread.
 pub fn detect() -> Platform {

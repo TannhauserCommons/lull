@@ -1,5 +1,5 @@
-//! Windows: the tray glyph follows the taskbar's theme, not the app's (DESKTOP.md 4), and the
-//! sidecar dies with the app.
+//! Windows: the tray glyph follows the taskbar's theme, not the app's (DESKTOP.md 4), the sidecar
+//! dies with the app, a hidden `main` tells WebView2 so, and links open in the browser.
 //! `SystemUsesLightTheme` is that theme; Tauri's ThemeChanged follows the app theme instead, so a
 //! thread waits on the registry key and swaps the glyph when it changes.
 #![allow(unsafe_code)]
@@ -94,4 +94,49 @@ pub fn kill_with_app(child: &std::process::Child) -> Result<(), String> {
         return Err(std::io::Error::last_os_error().to_string());
     }
     Ok(())
+}
+
+/// A hidden webview still renders and keeps its memory unless WebView2 is told: not visible means
+/// no frames and throttled timers; the low memory target lets it trim caches. Shown again: normal.
+pub fn set_webview_awake(window: &tauri::WebviewWindow, awake: bool) -> tauri::Result<()> {
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW, COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL, ICoreWebView2_19,
+    };
+    use windows::core::Interface;
+    window.with_webview(move |webview| {
+        let controller = webview.controller();
+        let level = if awake {
+            COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL
+        } else {
+            COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW
+        };
+        // SAFETY: the controller and its webview are live; Tauri runs this on their UI thread.
+        let result = unsafe {
+            controller.SetIsVisible(awake).and_then(|()| {
+                controller
+                    .CoreWebView2()?
+                    .cast::<ICoreWebView2_19>()?
+                    .SetMemoryUsageTargetLevel(level)
+            })
+        };
+        if let Err(e) = result {
+            eprintln!("lull: webview {}: {e}", if awake { "wake" } else { "sleep" });
+        }
+    })
+}
+
+/// The listener's default browser. Only http(s) addresses reach here (links.rs).
+pub fn open_in_browser(url: &tauri::Url) -> Result<(), String> {
+    use windows::Win32::UI::Shell::ShellExecuteW;
+    use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+    use windows::core::HSTRING;
+    let target = HSTRING::from(url.as_str());
+    // SAFETY: null-terminated strings that outlive the call.
+    let result = unsafe { ShellExecuteW(None, windows::core::w!("open"), &target, None, None, SW_SHOWNORMAL) };
+    // ShellExecute returns a number above 32 on success.
+    if result.0 as usize > 32 {
+        Ok(())
+    } else {
+        Err(format!("Windows couldn't open it (error {})", result.0 as usize))
+    }
 }

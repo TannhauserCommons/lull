@@ -1,8 +1,11 @@
 //! The `main` window: the hub's web UI, or a bundled page (welcome, connect, hub unreachable, hub
 //! didn't start) when there is no hub yet or it doesn't answer. DESKTOP.md 1, 2 and 6; ADR-0006.
 
+use crate::desktop::classic;
+use crate::desktop::links;
 use crate::desktop::local_hub;
 use crate::desktop::platform;
+use crate::desktop::player;
 use crate::desktop::settings::HubChoice;
 use crate::desktop::state::{Desktop, lock};
 use crate::hub;
@@ -32,6 +35,21 @@ const HUB_PERMISSIONS: &[&str] = &[
     "allow-set-desktop-settings",
     "allow-tailscale-status",
     "allow-tailscale-serve",
+    "allow-classic-open",
+];
+
+/// What Webamp's page in the Classic window may call (classic.rs): fit and show its window, move it
+/// by Webamp's title bars, take the handoff, and talk to `main`.
+const CLASSIC_PERMISSIONS: &[&str] = &[
+    "core:window:default",
+    "core:window:allow-set-size",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "core:window:allow-minimize",
+    "core:window:allow-start-dragging",
+    "core:event:default",
+    "allow-window-action",
+    "allow-classic-handoff",
 ];
 
 /// First window of the run. No hub chosen yet: the welcome page. Otherwise the hub is started or
@@ -102,7 +120,7 @@ fn create(app: &AppHandle, url: Url) -> tauri::Result<WebviewWindow> {
     // Show once painted (no white flash), unless the tray holds a connected lull ("Start in the tray").
     let reveal = !(settings.start_in_tray && desktop.has_tray() && settings.hub.is_some());
     let reveal = std::sync::atomic::AtomicBool::new(reveal);
-    WebviewWindowBuilder::new(app, LABEL, WebviewUrl::External(url))
+    let main = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::External(url))
         .title("lull")
         .inner_size(1280.0, 800.0)
         .min_inner_size(480.0, 600.0)
@@ -113,6 +131,8 @@ fn create(app: &AppHandle, url: Url) -> tauri::Result<WebviewWindow> {
         // The web UI needs HTML5 drag and drop (rows, M3U and .wsz drops); the native handler blocks it.
         .disable_drag_drop_handler()
         .initialization_script(platform::init_script(titlebar.as_ref()))
+        .on_navigation(links::on_navigation(app))
+        .on_new_window(links::on_new_window(app))
         .on_page_load(move |window, payload| {
             if payload.event() != PageLoadEvent::Finished || payload.url().as_str() == BLANK {
                 return;
@@ -122,7 +142,9 @@ fn create(app: &AppHandle, url: Url) -> tauri::Result<WebviewWindow> {
                 report(show(window.app_handle()));
             }
         })
-        .build()
+        .build()?;
+    platform::add_thumb_buttons(&main);
+    Ok(main)
 }
 
 /// Keeps "is the web UI up" true to the page actually loaded, whoever navigated there.
@@ -134,6 +156,7 @@ fn loaded(window: &WebviewWindow, url: &Url) {
         desktop.update(|s| s.last_connected = Some(now));
     }
     desktop.set_on_hub(on_hub);
+    player::refresh(window.app_handle());
 }
 
 /// Load the hub's web UI in `main`, paired: the device cookie goes in before the first request.
@@ -158,8 +181,9 @@ fn navigate(app: &AppHandle, url: Url) -> tauri::Result<()> {
     }
 }
 
-/// IPC for the hub's origin, added at runtime because the listener picks the hub. An origin used
-/// earlier in this run keeps its grant until lull restarts (Tauri can't revoke a capability).
+/// IPC for the hub's origin, added at runtime because the listener picks the hub: the web UI in
+/// `main`, and Webamp's page in the Classic window. An origin used earlier in this run keeps its
+/// grant until lull restarts (Tauri can't revoke a capability).
 fn grant(app: &AppHandle, origin: &Url) -> tauri::Result<()> {
     let origin = origin.origin().ascii_serialization();
     if !app.state::<Desktop>().first_grant(&origin) {
@@ -169,13 +193,16 @@ fn grant(app: &AppHandle, origin: &Url) -> tauri::Result<()> {
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .collect();
-    let capability = HUB_PERMISSIONS.iter().fold(
-        CapabilityBuilder::new(format!("hub-{id}"))
-            .remote(format!("{origin}/*"))
-            .window(LABEL),
-        |c, p| c.permission(*p),
-    );
-    app.add_capability(capability)
+    let capability = |name: String, window: &str, permissions: &[&str]| {
+        permissions.iter().fold(
+            CapabilityBuilder::new(name)
+                .remote(format!("{origin}/*"))
+                .window(window),
+            |c, p| c.permission(*p),
+        )
+    };
+    app.add_capability(capability(format!("hub-{id}"), LABEL, HUB_PERMISSIONS))?;
+    app.add_capability(capability(format!("classic-{id}"), classic::LABEL, CLASSIC_PERMISSIONS))
 }
 
 /// Show `main`, un-minimised and focused.
@@ -196,15 +223,34 @@ pub fn toggle(app: &AppHandle) -> tauri::Result<()> {
     }
 }
 
-/// A second launch, or the tray: the open mini player if there is one, else `main`.
+/// A second launch, or the tray: the open Classic window or mini player if there is one, else `main`.
 pub fn reveal(app: &AppHandle) -> tauri::Result<()> {
-    match crate::desktop::mini::window(app) {
-        Some(mini) => {
-            mini.show()?;
-            mini.set_focus()
+    match classic::window(app).or_else(|| crate::desktop::mini::window(app)) {
+        Some(other) => {
+            other.show()?;
+            other.unminimize()?;
+            other.set_focus()
         }
         None => show(app),
     }
+}
+
+/// While Classic mode plays: `main` hides, tells WebView2 it isn't visible (no frames, throttled
+/// timers) and asks it to use little memory. Its page keeps running for what Webamp hands back.
+pub fn sleep(app: &AppHandle) -> tauri::Result<()> {
+    let Some(main) = app.get_webview_window(LABEL) else {
+        return Ok(());
+    };
+    main.hide()?;
+    platform::set_webview_awake(&main, false)
+}
+
+/// Classic mode closed: `main` as it was, in front.
+pub fn wake(app: &AppHandle) -> tauri::Result<()> {
+    if let Some(main) = app.get_webview_window(LABEL) {
+        platform::set_webview_awake(&main, true)?;
+    }
+    show(app)
 }
 
 /// The close button (ours or the OS's). With a tray, the web UI keeps playing hidden; the first

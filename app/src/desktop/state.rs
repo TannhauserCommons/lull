@@ -1,17 +1,22 @@
 //! What the app keeps while it runs: its settings, what the web UI says is playing, the tray, and
 //! the hub when this computer is the hub.
 
+use crate::desktop::classic::Handoff;
+use crate::desktop::discord::Presence;
 use crate::desktop::local_hub::LocalHub;
-use crate::desktop::settings::Settings;
+use crate::desktop::settings::{HubChoice, Settings};
 use crate::desktop::tray::Tray;
 use crate::store::Store;
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
+use tauri::Url;
 
-/// `set_now_playing` from the web UI (DESKTOP.md 4): drives the tray's labels and tooltip.
+/// `set_now_playing` from the web UI (DESKTOP.md 4): drives the tray, the taskbar's buttons and
+/// Discord (player.rs). Idle: every text is empty.
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NowPlaying {
     pub title: String,
     pub artist: String,
@@ -20,6 +25,16 @@ pub struct NowPlaying {
     pub saved: bool,
     /// False while the web UI shows its "Can't reach your server" banner.
     pub connected: bool,
+    /// The song's id on the hub (its share link) and its album.
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub album: String,
+    /// Seconds into the song when this was sent, and its length (0 while unknown).
+    #[serde(default)]
+    pub position: f64,
+    #[serde(default)]
+    pub duration: f64,
 }
 
 /// Facts about the desktop session, read once at startup on the main thread (GTK needs it).
@@ -47,6 +62,10 @@ pub struct Desktop {
     local: OnceLock<LocalHub>,
     /// Held while the hub starts: a second "This computer" click waits, then opens the same hub.
     pub starting: Mutex<()>,
+    /// What `main` hands the Classic window, until its page takes it (classic.rs).
+    pub classic: Mutex<Option<Handoff>>,
+    /// Discord Rich Presence (discord.rs).
+    pub discord: Presence,
 }
 
 impl Desktop {
@@ -62,6 +81,8 @@ impl Desktop {
             tray: OnceLock::new(),
             local: OnceLock::new(),
             starting: Mutex::new(()),
+            classic: Mutex::new(None),
+            discord: Presence::start(),
         }
     }
 
@@ -84,14 +105,30 @@ impl Desktop {
         self.on_hub.load(Ordering::Relaxed)
     }
 
+    /// Callers then call `player::refresh`, which shows the change.
     pub fn set_on_hub(&self, on: bool) {
         self.on_hub.store(on, Ordering::Relaxed);
-        self.refresh_tray();
     }
 
+    /// Callers then call `player::refresh`, which shows the change.
     pub fn set_now_playing(&self, now: NowPlaying) {
         *lock(&self.now) = now;
-        self.refresh_tray();
+    }
+
+    pub fn now_playing(&self) -> NowPlaying {
+        lock(&self.now).clone()
+    }
+
+    /// The hub in use and this app's token there: what Rust needs to call its API.
+    pub fn hub_access(&self) -> Option<(Url, String)> {
+        if let Some(local) = self.local_hub() {
+            return Some((local.origin.clone(), local.token.clone()));
+        }
+        let settings = self.settings();
+        match (settings.hub, settings.token) {
+            (Some(HubChoice::Remote { origin }), Some(token)) => Url::parse(&origin).ok().map(|o| (o, token)),
+            _ => None,
+        }
     }
 
     pub fn local_hub(&self) -> Option<&LocalHub> {
@@ -108,10 +145,9 @@ impl Desktop {
         lock(&self.granted).insert(origin.to_owned())
     }
 
-    fn refresh_tray(&self) {
-        if let Some(tray) = self.tray.get() {
-            tray.show(&lock(&self.now), self.on_hub());
-        }
+    /// A hub origin the app opened this run (and granted IPC): its pages belong in lull's windows.
+    pub fn is_hub(&self, origin: &str) -> bool {
+        lock(&self.granted).contains(origin)
     }
 }
 

@@ -64,6 +64,8 @@ fn main() -> io::Result<()> {
             "set_desktop_settings",
             "tailscale_status",
             "tailscale_serve",
+            "classic_open",
+            "classic_handoff",
         ]),
     ))
     .map_err(io::Error::other)

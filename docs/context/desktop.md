@@ -21,14 +21,20 @@ The Tauri v2 project in `app/` (its own Cargo workspace; ADR-0006) shows the hub
 | `app/src/desktop/updater.rs` | Update check at launch, download, "Restart to update" in the tray |
 | `app/src/desktop/mini.rs` | Mini player windows `mini` (device) and `strip` |
 | `app/src/desktop/tray.rs` | Tray icon and native menu; player items become `tray` events |
+| `app/src/desktop/player.rs` | Which window plays (`main`, or the Classic window), and showing `set_now_playing` in the tray, the taskbar buttons and Discord |
+| `app/src/desktop/classic.rs` | Classic mode's own window: Webamp alone (`web/desktop/winamp.html`), `main` asleep meanwhile |
+| `app/src/desktop/links.rs`, `signin.rs` | Other sites open in the browser; Last.fm's sign-in goes there and comes back through a one-time listener |
+| `app/src/desktop/discord.rs` | Discord Rich Presence over Discord's IPC pipe; `APPLICATION_ID` is lull's Discord application |
 | `app/src/desktop/settings.rs` | The desktop's settings: the hub choice and this app's token, window options |
-| `app/src/desktop/platform/` | Windows taskbar theme (registry watch) and slskd's job object; Linux tray host, button layout, compositing, media keys |
+| `app/src/desktop/platform/` | Windows taskbar theme (registry watch), slskd's job object, the taskbar's thumbnail buttons (`taskbar.rs`, glyphs drawn in `glyphs.rs`), a sleeping webview, the browser; Linux tray host, button layout, compositing, media keys |
 | `app/build.rs` | Stages the web files the bundled page needs into `app/dist/`; fetches slskd (sha256-pinned) into `app/binaries/`; declares command permissions |
 | `app/tauri.conf.json`, `tauri.windows.conf.json`, `tauri.linux.conf.json` | Shared config (updater key and endpoint, the asset protocol Android's download covers use, scoped to `**/lull-art/*`, and the bundled pages' CSP: Tauri leaves its `style-src` alone, since a nonce it adds would make browsers ignore `'unsafe-inline'` and drop every `style="…"` the pages render); the desktop configs add the slskd sidecar and its licence |
 | `app/licenses/THIRD-PARTY.md` | slskd's AGPL notice, shipped next to the app with slskd's `LICENSE` |
 | `app/capabilities/local.json` | IPC for the bundled page |
 | `web/desktop/wrapper.html` | The bundled page: welcome, connect, hub unreachable, hub didn't start, mini player (view in the hash) |
 | `web/desktop/desktop.js`, `desktop.css` | The app's UI; also loaded by the web UI (`index.html`), where it does nothing outside the app |
+| `web/desktop/winamp.html`, `winamp.js` | Served by the hub: the Classic window's page (Webamp alone) |
+| `web/desktop/webamp-session.js` | One Webamp playing lull's queue (hand-in, hand-back, listening), shared by the Classic window and the browser's Classic stage (`web/screens/classic.js`) |
 
 ## Run it
 
@@ -91,32 +97,37 @@ The web UI never calls Tauri directly. It uses `window.LullDesktop` from `deskto
 
 **What the web UI calls (`LullDesktop`):**
 - `inWrapper`: show Settings > App's desktop rows only when true.
-- `settings()` resolves to `{ server, hub, tray, closeToTray, launchAtLogin, startInTray, miniStyle, miniOnTop, ownTitlebar }`. `server` is the hub's address (`http://127.0.0.1:8484/` when this computer is the hub); `hub` is `local`, `remote` or null. `ownTitlebar` is null off Linux; without a tray, Close always quits.
+- `settings()` resolves to `{ server, hub, tray, closeToTray, launchAtLogin, startInTray, miniStyle, miniOnTop, ownTitlebar, discordPresence }`. `server` is the hub's address (`http://127.0.0.1:8484/` when this computer is the hub); `hub` is `local`, `remote` or null. `ownTitlebar` is null off Linux; `discordPresence` is null while the build has no Discord application; without a tray, Close always quits.
 - `setSettings(patch)` takes any of those keys except `server`, `hub` and `tray`. Unknown keys are refused.
 - `openMini()`: the player bar's Device view button.
+- `openClassic(handoff)` and `onClassic(fn)`: Classic mode (`web/screens/classic.js`), see below. An app older than the page rejects `openClassic`, and the page shows Webamp on its own stage instead.
 - `windowAction('change-server')`: Settings > App, "Change hub…" (the welcome page).
 - `tailscale()` and `tailscaleServe()`, only when `hub` is `local`: Settings > App's "Reach this hub from anywhere" row (see Tailscale above). Both resolve to `{ installed, running, url, serving }`; `tailscaleServe()` rejects with Tailscale's own message. Call `tailscaleServe()` only from the listener's click: it changes their Tailscale.
 
-`desktop.js` does the rest itself in the wrapper: title bar, Ctrl+Shift+M, the close dialog, tray and mini-player actions, `set_now_playing`, and design and theme reports.
+`desktop.js` does the rest itself in the wrapper: title bar, Ctrl+Shift+M, the close dialog, tray and mini-player actions, `set_now_playing`, and design and theme reports. It sends `set_now_playing` on player events, not as the song plays: a new position goes out only when it jumped.
 
 **Commands** (`allow-<name>` permissions, from `build.rs`):
 
 | Command | Args | Who may call |
 |---|---|---|
-| `window_action` | `{ request: { action, … } }`, where `action` is one of `full`, `mini-close`, `mini`, `this-computer`, `connect`, `pair {url, code}`, `change-server`, `retry`, `close-choice {keep, remember}`, `media-keys` | bundled page, hub origin |
+| `window_action` | `{ request: { action, … } }`, where `action` is one of `full`, `mini-close`, `mini`, `this-computer`, `connect`, `pair {url, code}`, `change-server`, `retry`, `close-choice {keep, remember}`, `media-keys`, `classic-done` | bundled page, hub origin |
 | `discover_hubs` | → `[{ name, url }]`, the hubs that answered mDNS within 3 s | bundled page |
 | `find_hub` | `{ url }` → `{ state: ok, url, health } \| { state: unreachable, error }`, or an error for an invalid address | bundled page |
-| `set_now_playing` | `{ now: { title, artist, playing, liked, saved, connected } }` | hub origin |
+| `set_now_playing` | `{ now: { title, artist, playing, liked, saved, connected, id, album, position, duration } }` (the last four optional; seconds) | hub origin |
+| `classic_open` | `{ handoff: { tracks: [{ id, url, title, artist, album, duration, art }], index, pos, playing, shuffle, repeat, volume, skin, skins } }`; every URL on the hub `main` shows | hub origin (`main`) |
+| `classic_handoff` | → the handoff, once; null after | hub origin (Classic window) |
 | `desktop_settings`, `set_desktop_settings` | `{ patch }` | hub origin |
 | `tailscale_status`, `tailscale_serve` | → `{ installed, running, url, serving }`; an error when this computer isn't the hub | hub origin |
 
-The hub origin gets its capability at runtime, for `main` only, when the app first loads it. An origin used earlier in the same run keeps its grant until restart (Tauri can't revoke one).
+The hub origin gets its capabilities at runtime when the app first loads it: one for `main`, a smaller one for the Classic window (`core:window` show, size, focus, minimise, drag; events; `window_action`, `classic_handoff`). An origin used earlier in the same run keeps its grant until restart (Tauri can't revoke one).
 
 **Events:**
 
 | Event | From → to | Payload |
 |---|---|---|
-| `tray` | Rust → `main` | `{ action: play-pause \| next \| previous \| like \| save \| classic \| stop }` (`stop` comes from the Linux media-key fallback) |
+| `tray` | Rust → the playing window (`main`, or the Classic window while open) | `{ action: play-pause \| next \| previous \| like \| save \| classic \| stop }` (`stop` comes from the Linux media-key fallback); also the taskbar buttons |
+| `classic` | Classic window → `main` | `{ type: now, id, playing, pos, duration }`, `{ type: listen, id, duration }`, `{ type: listened, how, seconds }`, `{ type: action, action: like \| save, id }`, `{ type: back, back: { ids, index, pos, playing, shuffle, repeat, local } \| null }`, `{ type: failed, message }` |
+| `classic-close` | Rust → Classic window | none: hand the queue back, then `classic-done` |
 | `mini` | mini window → `main` | `{ action: play-pause \| previous \| next \| like \| shuffle \| repeat \| vol-up \| vol-down \| seek \| hello, fraction? }` |
 | `player` | `main` → all | snapshot `{ track, art, playing, liked, pos, duration, durationKnown, buffered, received, shuffle, repeat, volume }`, sent on change and in answer to `hello` |
 | `appearance` | `main` → Rust and the mini player | `{ design, theme }`; stored and passed in the hash of every bundled page |
@@ -132,15 +143,21 @@ The hub origin gets its capability at runtime, for `main` only, when the app fir
   - opening it hides `main`; closing it (button, Alt+F4, tray) shows `main` again;
   - **Show lull** and **Classic mode** in the tray close it first;
   - a second launch focuses the mini player if one is open.
+- **Taskbar buttons (Windows):** Previous, Play/Pause and Next under the thumbnail of `main` and of the Classic window (`ITaskbarList3`). They are added when Windows reports the window's taskbar button (`TaskbarButtonCreated`), show the latest `set_now_playing` (Play or Pause; greyed while idle or not connected), and click through `player::forward`. The glyphs are drawn at the display's small-icon size, dark on a light taskbar, white on a dark one.
+- **System media overlay (Windows):** WebView2 gives the playing page a system media session from its `navigator.mediaSession`: title, artist, cover and Previous/Play/Pause/Next all work (checked through `GlobalSystemMediaTransportControlsSessionManager`). Windows names the session after `msedgewebview2.exe`, not lull, and Chromium passes no album. In Classic mode, `winamp.js` sets the session from the hand-off's titles and covers.
+- **Classic mode:** the web UI's `/classic` hands the queue to `classic_open` and goes back to the page it came from. The Classic window (borderless, transparent, not resizable) loads `<hub>/desktop/winamp.html`, takes the handoff, starts Webamp where the app was, fits itself to Webamp's three windows, and moves by their title bars (`startDragging`). `main` hides and sleeps: WebView2's `IsVisible` off and its low memory target. Measured with a song paused: `main`'s renderer went from 2.4 s of CPU per 20 s (visible, its design's animations) to 0.18 s, its page tasks from 1.2 s to 0.005 s. Its page keeps running, so the listening history, Like and Save stay the web UI's. Closing Webamp, Alt+F4 or the tray's **Show lull** hands the queue, song, second, shuffle and repeat back; the tray's **Classic mode** brings the window forward.
+- **Links:** every window's navigations and new-window requests go through `links.rs`: anything http(s) that isn't a bundled page or a hub this run opened opens in the default browser, redirects included. Last.fm's sign-in (`last.fm/api/auth`, reached by the hub's redirect) opens in the browser with its `cb` pointed at `http://127.0.0.1:<port>/lastfm`; when Last.fm sends the browser there, `main` loads the hub's own callback with that token and its cookie. A sign-in never finished keeps that listener's thread waiting until lull quits.
+- **Discord:** with **Show what I'm playing on Discord** on, a thread speaks Discord's IPC (`discord-ipc-0..9`): a "Listening to" activity (type 2) with the title, artist, album (hover), start and end times (the progress bar), the hub's share `artwork` or lull's icon, and one button to the share `url` (`GET /api/share/track/{id}`, remembered per song for the run). Pause clears it. Without Discord it looks again every 20 s while a song plays. `APPLICATION_ID` in `discord.rs` is lull's Discord application; while it is None, the switch doesn't show.
 - **Tray glyph (Windows):** follows the taskbar theme (`SystemUsesLightTheme`), not the app theme. A thread waits on the registry key, because Tauri's ThemeChanged only tracks the app theme. Its size follows the primary monitor's scale.
 - **Linux:**
   - **Tray:** only with a StatusNotifier host on D-Bus; without one there's no tray and Close quits. The tray always gets `tray-dark-32.png`: Tauri hands AppIndicator a file, so a themed icon name can't be used.
   - **Title bar:** native by default. With **Use lull title bar** (`ownTitlebar`, restart), the window is undecorated and draws GNOME header-bar buttons in the order of `button-layout`.
   - **Mini player:** opaque `--sky` fallback without a compositor. On Wayland it shows a one-time note about Always on Top.
   - **Media keys:** grabbed with global shortcuts only when the web UI reports no `navigator.mediaSession` (X11 only). Windows never grabs them: SMTC handles them through Media Session. That path works only while a media element plays: Chromium gives a page a system media session only then. Verified on Windows with a Jellyfin song: Play/Pause, Next, Previous and Stop all reach the web UI's own handlers.
-- **Window state:** the plugin restores size, position and maximised for `main`, `mini` and `strip`. Visibility and decorations are always the wrapper's choice.
+- **Window state:** the plugin restores size, position and maximised for `main`, `mini`, `strip` and `classic` (whose page then fits its size). Visibility and decorations are always the wrapper's choice.
 
 ## Known limits
 
 - The Snap Layouts flyout on the custom Maximise button doesn't appear (DESKTOP.md 2.1).
-- Links to other sites (`target="_blank"`, other origins) aren't sent to the system browser yet, and nothing here checked what WebView2 does with them. Pages from other origins get no IPC.
+- Pages from other origins get no IPC.
+- In the Classic window Webamp's windows stay docked together (the window moves instead), and its double-click on a title bar (window shade) is lost to the drag. The skin drawer is the browser stage's; the window has Webamp's own Skins menu (favourites) and takes dropped `.wsz` files.

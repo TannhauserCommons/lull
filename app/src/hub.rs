@@ -144,6 +144,48 @@ pub fn patch_config(origin: &Url, token: &str, changes: serde_json::Value) -> Re
     }
 }
 
+/// `GET /api/share/{kind}/{id}`: a public link for a track, album or artist (song.link, else
+/// Last.fm) and, when known, public cover art.
+#[cfg(desktop)]
+#[derive(Debug, Clone, Deserialize)]
+pub struct Share {
+    pub url: String,
+    pub source: ShareSource,
+    pub artwork: Option<String>,
+}
+
+#[cfg(desktop)]
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ShareSource {
+    Songlink,
+    Lastfm,
+}
+
+/// None: the hub doesn't know that id (404). An error: it can't resolve one now (503), or another
+/// failure; worth asking again later.
+#[cfg(desktop)]
+pub fn share(origin: &Url, token: &str, kind: &str, id: &str) -> Result<Option<Share>, String> {
+    let mut url = endpoint(origin, "api/share")?;
+    url.path_segments_mut()
+        .map_err(|()| "The hub's address can't take a path".to_owned())?
+        .extend([kind, id]);
+    let mut response = AGENT
+        .get(url.as_str())
+        .header("Authorization", format!("Bearer {token}"))
+        .call()
+        .map_err(describe)?;
+    match response.status() {
+        StatusCode::OK => response
+            .body_mut()
+            .read_json::<Share>()
+            .map(Some)
+            .map_err(|e| format!("The hub's share link didn't read: {e}")),
+        StatusCode::NOT_FOUND => Ok(None),
+        s => Err(format!("The hub answered {s}")),
+    }
+}
+
 /// Follows `GET /api/events` and calls `on_event` with each event's topic until the stream ends.
 /// Its own agent: the stream stays open, so only connecting has a time limit.
 #[cfg(desktop)]
