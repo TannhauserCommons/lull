@@ -117,6 +117,14 @@ jobs:
             node ../scripts/updater-manifest.mjs entries ${{ matrix.updater }} target/release/bundle \
               > target/release/bundle/updater-${{ matrix.updater }}.json
           fi
+      # The hub's sidecars (app/build.rs fetched this target's own) run on this architecture, as
+      # the image runs its yt-dlp and Deno before it ships them.
+      - working-directory: app/binaries
+        shell: bash
+        run: |
+          target=$(rustc -vV | sed -n 's/^host: //p')
+          exe=$([ "$RUNNER_OS" = Windows ] && echo .exe || true)
+          for tool in slskd yt-dlp deno; do "./$tool-$target$exe" --version; done
       - uses: actions/upload-artifact@v4
         with:
           name: lull-desktop-${{ runner.os }}-${{ matrix.arch }}
