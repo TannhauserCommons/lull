@@ -38,3 +38,7 @@ run = [
 [tasks."ui:update"]
 description = "Recapture the visual goldens on CI's image and download them into tests/ui/goldens"
 run = "sh tests/ui/update-goldens.sh"
+
+[tasks.release]
+description = "Set lull's version, commit and tag vX.Y.Z on main; pushing the tag publishes the apps: release X.Y.Z"
+run = "sh scripts/release.sh {{arg(i=0)}}"

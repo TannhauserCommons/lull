@@ -108,6 +108,10 @@ ADR-0012, [youtube.md](youtube.md). Its copies play through `GET /api/stream/{tr
 | `GET /api/youtube` | `{ state: ok\|warn\|down\|off, detail, mode, ytdlp: { version, updated, pinnedVersion, latest, checkedAt, error }, backoffUntil }`. `state` and `detail` are the `youtube` status (`off` while the mode is off; `warn` while backing off, with a plain sentence such as "YouTube is asking for a sign-in check, try later"; `down` when yt-dlp won't run). `version` is the yt-dlp in use, `updated` whether the hub fetched it, `latest` and `checkedAt` (unix s) the last update check, `error` why it failed. `backoffUntil`: unix s, or null |
 | `POST /api/youtube/update` | The same body, after checking for a newer yt-dlp now (and installing it). 409 while `sources.youtube.autoUpdate` is off |
 
+## App releases (`latest.json`)
+
+Not the hub's: the apps read `https://github.com/TannhauserCommons/lull/releases/latest/download/latest.json` (`plugins.updater.endpoints` in `app/tauri.conf.json`), which the release job in `.github/workflows/app.yml` writes for each `v*` tag. Tauri's static format plus one field of lull's: `{ version, pub_date, platforms: { windows-x86_64, linux-x86_64 (AppImage), linux-x86_64-deb, linux-x86_64-rpm: { url, signature } }, android: { url } }`. The desktop updater ignores `android`; Android reads only `version` and `android.url` (android.md, Updates). The desktop app picks `linux-x86_64-<deb|rpm>` when it was installed from that package, else `linux-x86_64`.
+
 ## Library (`crates/library`)
 
 The library is the music folder or Jellyfin (`LULL_LIBRARY`, ADR-0003); every route below works in both modes. Lists and lookups come from lull's index of the library, so in Jellyfin mode they keep working while Jellyfin is down. Details: [library.md](library.md).
