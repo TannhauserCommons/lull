@@ -520,9 +520,11 @@
   :root[data-design="lull"] .pbar [data-act="toggle-panel"] .ic, :root[data-design="lull"] .pbar [data-act="classic"] .ic, :root[data-design="lull"] .pbar [data-act="open-now"] .ic { width: 22px; height: 22px; }
   :root[data-design="lull"] .pbar [data-act="toggle-panel"]:focus-visible, :root[data-design="lull"] .pbar [data-act="classic"]:focus-visible, :root[data-design="lull"] .pbar [data-act="open-now"]:focus-visible { outline-color: #fff9fe; outline-offset: 3px; }
 }
-/* narrow desks: the title and seek give up some room so the four tray tiles still fit inside the bar */
-@media (min-width: 1100px) and (max-width: 1199px) {
-  :root[data-design="lull"] .pbar { grid-template-columns: minmax(150px, 1fr) 40px auto minmax(200px, 1.35fr) 40px minmax(90px, 150px) 40px auto auto 4px repeat(4, 48px); }
+/* narrow desks: the title, seek and volume give up room so the window and the four tray tiles fit inside the bar.
+   The full grid's minimums add up to about 1,220 px, more than the bar has below a 1,280 px window: the last tray
+   tile was cut off and the device picker crowded against it. Below 1,280 they add up to about 1,000 px. */
+@media (min-width: 1100px) and (max-width: 1279px) {
+  :root[data-design="lull"] .pbar { grid-template-columns: minmax(140px, 1fr) 40px auto minmax(140px, 1.35fr) 40px minmax(40px, 110px) 40px auto auto 4px repeat(4, 48px); }
 }
 @media (min-width: 640px) and (max-width: 1099px) {
   :root[data-design="lull"] { --bar-h: 116px; }
