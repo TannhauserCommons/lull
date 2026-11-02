@@ -30,7 +30,7 @@ OpenSubsonic at `/rest/*`, so existing apps (Feishin, Symfonium, DSub, play:Subâ
 - **No transcoding:** `stream` and `download` both send the saved file through `Library::stream` (Range honoured, 200 or 206); `maxBitRate`, `format` and `timeOffset` are ignored.
 - **Songs only can be starred:** `star`/`unstar` with `albumId` or `artistId` fail with code 0; `getStarred2` has no albums or artists; album lists `starred` and `highest` (no ratings) are empty.
 - **No "added" date:** album list `newest` orders by release date then year; `AlbumID3.created` is left out.
-- **Now playing:** `scrobble?submission=false` is accepted without effect (no seam yet). A submission is recorded as a completed play of the song's length starting at `time`, or one song length ago.
+- **Now playing:** `scrobble?submission=false` is accepted without effect (no seam yet). A submission is recorded as a completed play of the song's length starting at `time`, or one song length ago, unless the app's device is in private listening (collection.md), which records nothing.
 - **Genres are album tags;** `getRandomSongs` and `getSongsByGenre` go by the song's album (genre, year).
 - **Lyrics:** one `structuredLyrics` entry, `lang: und` (LRCLIB doesn't say); synced lines carry `start` in ms, plain lyrics are untimed lines, instrumental songs and misses an empty list. The legacy `getLyrics` (by artist and title) isn't offered.
 - **Not built:** bookmarks, play queue, shares, podcasts, internet radio, user management, chat, scan status, artist and album info, top and similar songs, ratings, folder browsing (`getMusicDirectory`), the non-ID3 `getAlbumList`/`search2`. `getStarred` is `getStarred2` under the old key.

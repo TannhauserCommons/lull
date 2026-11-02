@@ -62,6 +62,7 @@ data, ever.
 | activity | `GET /api/jobs` -> store `activity` (rows keyed `id` = jobId) | `job`, `transfer` events |
 | services | `GET /health` -> store `services` (`state ok|warn|down|off`, `label`, `detail`, `queued`, `usedGB`, `capGB`) | `service` events |
 | server reachability, auth, version | `App.server { reachable, authorized, version }`, event `server` | `/api/ping`, `/health`, event stream errors |
+| private listening | `GET /api/devices` (`me`'s `private`) -> store `privateListening` | Settings > Privacy (`App.setPrivateListening` = `PATCH /api/devices/me`); `POST /api/plays` answering `private: true`. Shown as a "Private" tag with the track in the player bar and in the phone mini player; History hides "Send to Last.fm" while it is on |
 | playback settings | `GET /api/settings` playback -> `App.setPlayback(patch)` | Settings > Playback calls `App.setPlayback` after a PATCH; `settings` events |
 | recent searches | store `recentSearches`, this device only (`localStorage`) | discover.js |
 | queue, volume, shuffle, repeat | `App.player.state`, saved per device so a reload keeps the queue | the engine |

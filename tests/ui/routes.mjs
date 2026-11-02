@@ -25,7 +25,7 @@ export const layoutRoutes = /^(home|search|library-albums|library-songs|now|albu
 
 const library = JSON.parse(readFileSync(join(here, 'fixtures/library.json'), 'utf8'));
 const settingsSections = [
-  'playback', 'sources', 'cache', 'library', 'sharing', 'lastfm', 'discovery', 'appearance', 'shortcuts', 'app',
+  'playback', 'sources', 'cache', 'library', 'sharing', 'lastfm', 'discovery', 'privacy', 'appearance', 'shortcuts', 'app',
 ];
 
 export const fixedRoutes = [

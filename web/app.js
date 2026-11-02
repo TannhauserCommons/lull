@@ -202,7 +202,8 @@
     recentSearches: storage('recentSearches') || [],   // this device only
     hiddenArtists: {},
     ctxTab: 'queue',
-    crossfadeSec: 0
+    crossfadeSec: 0,
+    privateListening: false        // this device's switch on the hub (PATCH /api/devices/me): its plays are recorded nowhere
   };
   /* App.store: get(key), set(key, value) or set({ key: value }), update(key, fn), subscribe(fn(keys)) -> unsubscribe */
   App.store = {
@@ -1855,7 +1856,11 @@
     if (dur) body.duration = Math.round(dur);
     /* out of the hub's reach the whole play goes to the outbox when it ends, with its real start time */
     var id = App.outbox.offline() ? Promise.resolve(OUTBOX) : M.api('/api/plays', { method: 'POST', body: body })
-      .then(function (r) { return r && r.playId; }, function (err) {
+      .then(function (r) {
+        /* the hub says this device listens privately: nothing was recorded, so there is no play to end */
+        if (r && r.private && !state.privateListening) App.store.set('privateListening', true);
+        return r && r.playId;
+      }, function (err) {
         if (err.status === 0) return OUTBOX;
         if (!playWarned) { playWarned = true; App.toast('Listening history is off: ' + err.message, { kind: 'error' }); }
         return null;
@@ -2376,14 +2381,16 @@
     bar.setAttribute('data-status', idle ? 'idle' : st);
     mini.setAttribute('data-status', idle ? 'idle' : st);
     var now = $('#pbar-now');
+    /* private listening shows with the track, wherever the design puts it: the bar's tools are laid out per design */
+    var priv = state.privateListening ? html`<a class="pbar__private" href="#/settings/privacy" aria-label="Private listening is on. Open its setting" data-tip="Private listening: nothing you play here is recorded or scrobbled">${icon('eye-off')}Private</a>` : '';
     if (idle) {
-      patch(now, html`<span class="bezel-thumb bezel-thumb--empty" aria-hidden="true"><span></span></span><div class="pbar__idle">${icon('sparkle')}<span>Search or pick something from Home</span></div>`);
+      patch(now, html`<span class="bezel-thumb bezel-thumb--empty" aria-hidden="true"><span></span></span><div class="pbar__idle">${priv || html`${icon('sparkle')}<span>Search or pick something from Home</span>`}</div>`);
     } else {
       patch(now, html`<a class="bezel-thumb" href="#/now" aria-label="Open Now Playing: ${t.title}" data-tip="Now Playing">${ui.cover(t, 52)}</a>
         <div class="pbar__text">
           <div class="pbar__title"><a href="#/album/${t.albumId}">${t.title}</a></div>
           <div class="pbar__artist"><a href="#/artist/${t.artistId}">${t.artist}</a></div>
-          <div class="pbar__badges">${playingYoutube() ? '' : ui.sourceBadge(t, { button: true })}${playingFormat(t) ? ui.qualityChip(playingFormat(t), { solid: true, button: true, id: t.id }) : ''}${ps.belowMinimum ? ui.belowBadge() : ''}</div>
+          <div class="pbar__badges">${playingYoutube() ? '' : ui.sourceBadge(t, { button: true })}${playingFormat(t) ? ui.qualityChip(playingFormat(t), { solid: true, button: true, id: t.id }) : ''}${ps.belowMinimum ? ui.belowBadge() : ''}${priv}</div>
         </div>`);
     }
     // state tab above the seek bar
@@ -3010,9 +3017,24 @@
       M.api('/api/follows').then(function (r) {
         var f = {}; (r.artists || []).concat(r.tags || []).forEach(function (id) { f[id] = true; }); App.store.set('followed', f);
       }, function (err) { console.warn('Follows unavailable:', err.message); }),
-      loadPlaylists(), loadJobs(), loadSettings()
+      loadPlaylists(), loadJobs(), loadSettings(), loadPrivacy()
     ]).then(function () { App.syncRows(); });
   }
+  /* private listening is kept by the hub per device (GET /api/devices: `me` and each device's `private`), so it
+     survives reloads and the hub enforces it; this reads it, and App.setPrivateListening changes it */
+  function loadPrivacy() {
+    return M.api('/api/devices').then(function (r) {
+      var me = (r.items || []).filter(function (d) { return d.id === r.me; })[0];
+      App.store.set('privateListening', !!(me && me.private));
+    }, function (err) { console.warn('Private listening unknown:', err.message); });
+  }
+  App.setPrivateListening = function (on) {
+    return M.api('/api/devices/me', { method: 'PATCH', body: { private: !!on } }).then(function () {
+      App.store.set('privateListening', !!on);
+      App.announce(on ? 'Private listening on' : 'Private listening off');
+    });
+  };
+  function renderPrivate() { $$('#mini [data-bind="private"]').forEach(function (el) { el.hidden = !state.privateListening; }); }
   /* Settings > Playback values the engine needs; a value may come back as { value, source: 'config' } */
   function loadSettings() {
     return M.api('/api/settings').then(applyPlaybackSettings, function (err) { console.warn('Settings unavailable, playback uses defaults:', err.message); });
@@ -3154,6 +3176,8 @@
       if (!e.target.closest('#ctx, [data-act="toggle-panel"], [data-act="open-activity"], .popover, .menu, .sheet, .dialog, .toast')) App.closePanel();
     });
     window.addEventListener('hashchange', function () { renderRoute(); });
+    App.on('store', function (k) { if (k.indexOf('privateListening') >= 0) { renderPrivate(); renderBar(); } });
+    renderPrivate();
     App.on('store', function (k) { if (k.indexOf('saves') >= 0 || k.indexOf('activity') >= 0) { updateActivityBadge(); renderStrip(); if (state.ctxTab === 'activity') renderCtx(); } });
     booted = true;
     renderRoute();

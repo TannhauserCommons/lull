@@ -38,6 +38,19 @@ The rules are Last.fm's own (`rules.rs`, tested):
 - Each play publishes `scrobble { playId, status: pending | short }`, and `done` once sent. History uses the same words. `short` means Last.fm's rule failed: a skip after the half still scrobbles.
 - **A play that ends while Last.fm isn't listening is dropped, not kept:** not connected yet, disconnected, the "scrobble what I play" switch off, or no API key on the server. Nothing is queued or published for it, and connecting later doesn't send it. History shows it with `scrobble: null` (tested in `lib.rs`).
 
+## Send to Last.fm after the fact
+
+A play that ended while Last.fm wasn't listening is dropped and shows `scrobble: null`. History offers those a **Send to Last.fm** action (`POST /api/history/lastfm`, api.md). The hub decides, not the button. Collection holds the plays, so it checks what it owns and asks lastfm (the `Scrobbles` seam in core) for Last.fm's side:
+- **Collection:** the play was recorded by lull itself (never an imported one), has ended, has no verdict yet, and the caller isn't in private listening. At most 25 plays a request and 100 an hour (memory only: a restart forgets the count).
+- **lastfm:** connected with "scrobble what I play" on; the play passes `rules.rs` on its stored `playedS` and duration; its start is at most 14 days old (what Last.fm accepts); and the queue never held it. `lastfm_queue` is keyed by play id, so a repeated or concurrent send finds the row and is refused.
+- **All or none.** One bad play refuses the batch and queues nothing, in one transaction.
+- **The timestamp is the play's stored start.** The request carries only ids.
+- **A send is a normal queued scrobble:** it waits and retries like any, and publishes `scrobble { pending }`, then `done`. A play that was sent and delivered has a verdict, so it can't be offered again.
+
+## Private listening
+
+A device in private listening (collection.md) never reaches lastfm: its plays publish no `play.started`, so no now-playing, and no `play.ended`, so no scrobble.
+
 ## The queue (`queue.rs`, tested)
 
 - **`lastfm_queue`, one row per play (`play_id` primary key).** A repeated `play.ended` is ignored.

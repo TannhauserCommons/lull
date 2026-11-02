@@ -674,6 +674,44 @@
     if (lastfmOff()) return null;
     return item.scrobble === 'pending' && lf && lf.state === 'ok' && !lf.queued ? 'done' : item.scrobble;
   }
+  /* "Send to Last.fm": the hub says which plays it would take (`sendable`: lull's own, finished, never reported,
+     inside Last.fm's rule and 14 days); the button also needs Last.fm connected with scrobbling on and this device
+     not private, which the hub re-checks on every send */
+  var SEND_MAX = 25;
+  function canSend() {
+    var lf = M.get('/api/lastfm').data;
+    return !!lf && lf.connected && lf.scrobbling && !App.store.get('privateListening');
+  }
+  function sendBadge(i) {
+    return html`<button type="button" class="btn btn--quiet btn--sm lib-send" data-act="lib-history-send" data-id="${i.playId}" aria-label="Send this play to Last.fm" data-tip="Never reached Last.fm. Send it, once">${icon('radio', null, 'ic-16')}Send to Last.fm</button>`;
+  }
+  /* the cached history pages hold the rows; a play's verdict is changed in them in place */
+  function historyCached() {
+    return [historyPath()].concat(historyPages.map(historyPath)).map(function (p) { return M.peek(p); }).filter(Boolean);
+  }
+  function setVerdict(playId, status) {
+    var found = false;
+    historyCached().forEach(function (page) {
+      (page.days || []).forEach(function (day) {
+        day.items.forEach(function (i) { if (i.playId === playId) { i.scrobble = status; i.sendable = false; found = true; } });
+      });
+    });
+    return found;
+  }
+  App.on('server:scrobble', function (e) {
+    if (setVerdict(String(e.playId), e.status) && App.current.path === '/history') refreshKeepFocus();
+  });
+  function sendToLastfm(ids, el) {
+    if (el) el.disabled = true;
+    return M.api('/api/history/lastfm', { method: 'POST', body: { playIds: ids } }).then(function () {
+      ids.forEach(function (id) { setVerdict(id, 'pending'); });
+      App.toast(plural(ids.length, 'play') + ' sent to Last.fm', { kind: 'ok', icon: 'check' });
+      refreshKeepFocus();
+    }, function (err) {
+      if (el) el.disabled = false;
+      App.toast('Not sent: ' + err.message, { kind: 'error' });
+    });
+  }
   function two(n) { return String(n).padStart(2, '0'); }
   function clockOf(at) { var d = new Date(at * 1000); return two(d.getHours()) + ':' + two(d.getMinutes()); }
   /* "Today" / "Yesterday" / "Wed 28 Oct" for a YYYY-MM-DD day (already split at the listener's midnight) */
@@ -695,16 +733,20 @@
       : waiting
       ? html`${ui.statusGlyph('warn', 'Waiting')}<p><b>${plural(waiting, 'scrobble')} waiting for Last.fm.</b> They stay queued and retry on their own.</p><button class="btn btn--sm" data-act="lastfm-retry">${icon('refresh')}Retry now</button>`
       : html`${ui.statusGlyph('ok', 'Up to date')}<p><b>Every eligible play is scrobbled.</b> Songs under 30 seconds are skipped, as Last.fm asks.</p>`;
+    var offer = !off && canSend() ? days.reduce(function (all, day) { return all.concat(day.items.filter(function (i) { return i.sendable; })); }, []) : [];
+    var late = offer.length ? html`<div class="lib-status inset">${ui.statusGlyph('warn', 'Not sent')}<p><b>${plural(offer.length, 'play')} never reached Last.fm.</b> They ended before it was connected. Each can be sent once, with its own time.</p>
+      <button class="btn btn--sm" data-act="lib-history-send-all" data-ids="${offer.slice(0, SEND_MAX).map(function (i) { return i.playId; }).join(',')}">${icon('radio', null, 'ic-16')}Send ${offer.length > SEND_MAX ? 'the newest ' + SEND_MAX : offer.length === 1 ? 'it' : 'all ' + offer.length}</button></div>` : '';
     return html`<section class="card lib-card" aria-labelledby="lib-history-h">
       ${ruleWith('history', 'lib-history-h', off ? '' : html`<ul class="lib-legend" aria-label="Scrobble status key">
         <li>${icon('check', null, 'ic-16')}scrobbled</li><li>${icon('clock', null, 'ic-16')}pending</li><li>${icon('dash', null, 'ic-16')}too short</li></ul>`)}
       <div class="lib-status inset">${status}</div>
+      ${late}
       ${days.map(function (day) {
         var label = dayLabel(day.day), ids = day.items.map(function (i) { return i.trackId; });
         return html`<div class="lib-day">${ui.labelRule(label, { level: 'h3', sm: true })}
           <ol class="tlist lib-history" data-ids="${ids.join(',')}" aria-label="Played ${label}">${day.items.map(function (i) {
             var sc = scrobbleOf(i);
-            return ui.trackRow(i.trackId, { index: clockOf(i.at), draggable: false, unavailable: jellyfinDown() && isSaved(i.trackId), badges: sc ? ui.scrobble(sc) : '' });
+            return ui.trackRow(i.trackId, { index: clockOf(i.at), draggable: false, unavailable: jellyfinDown() && isSaved(i.trackId), badges: sc ? ui.scrobble(sc) : off || !i.sendable || !canSend() ? '' : sendBadge(i) });
           })}</ol></div>`;
       })}
       ${h.tail}
@@ -1370,6 +1412,8 @@
     App.toast(on ? 'Liked ' + plural(changed.length, 'song') : 'Removed ' + plural(changed.length, 'like'), { icon: on ? 'heart-fill' : 'heart', action: 'Undo',
       onAction: function () { App.setLiked(changed, !on); } });
   });
+  App.action('lib-history-send', function (el) { sendToLastfm([el.getAttribute('data-id')], el); });
+  App.action('lib-history-send-all', function (el) { sendToLastfm(el.getAttribute('data-ids').split(','), el); });
   App.action('lib-history-older', function (el) { historyPages.push(el.getAttribute('data-id')); refreshKeepFocus(); });
   App.action('lib-show-all', function (el) { limits[el.getAttribute('data-id')] = +el.getAttribute('data-value'); App.refresh(); });
   function sortMenu(el, table, key, store) {

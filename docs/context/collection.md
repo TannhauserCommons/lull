@@ -35,6 +35,17 @@ Every change runs in one transaction and publishes its events after the commit (
 - **ListenBrainz** takes the export's JSON, JSON Lines, or the API's payload. Listens without `listened_at` are left out.
 - **One at a time** (409 otherwise), as a `job` row per batch of 500.
 
+## Private listening
+
+Spotify's Private Session, per paired device: `core_devices.private`, switched with `PATCH /api/devices/{id|me} { private }` and shown on `GET /api/devices`. The hub enforces it, so it holds whatever the device's UI does or doesn't.
+- **The device that sends the play decides**, read inside the transaction that would record it. Every path that records a play asks (`devices::is_private`): `POST /api/plays`, `PATCH /api/plays/{id}`, `/api/sync` play ops (the outbox of a device that switched on later), and the `Collection` seam's `record_play` (Subsonic `scrobble`, which names the device that signed in). `PlayReport` carries the device for that.
+- **A private play leaves nothing:** no `plays` row, so no History, Stats or taste, and no `play.*` event, so nothing for lastfm (now-playing or scrobble) or discovery. Playback is unchanged.
+- **Answers stay ordinary** so clients don't break: `POST /api/plays` gives `{ playId: null, private: true }`, the others succeed and do nothing; a synced play counts as applied, so the device's outbox drops it.
+- **A play started before the switch stays as it was:** it is open (`playedS: 0`, never ended) and its end is ignored. Nothing already recorded is deleted.
+- **A device that isn't paired (any more) counts as private.**
+- **Not covered:** history imports (a listener's own action, not listening) and Subsonic's `submission=false`, which has no effect anyway.
+- **Send to Last.fm** is refused from a private device (scrobbling.md).
+
 ## Plays and events
 
 - **Lifecycle.** The UI calls `POST /api/plays` when a song starts and `PATCH /api/plays/{id}` once when it stops. The row is written before the event goes out, so a reader can find it; lastfm itself takes everything from the event payload.

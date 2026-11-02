@@ -1114,6 +1114,9 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 .pbar__state > .ic { width: 16px; height: 16px; color: var(--fg-2); flex: none; }
 .pbar__state.is-error > .ic { color: var(--heart); }
 .pbar__xfade { display: inline-flex; align-items: center; gap: 4px; font: var(--t-px); color: var(--fg-2); }
+.pbar__private, .mini__private { display: inline-flex; align-items: center; gap: 4px; flex: none; padding: 2px 8px 2px 6px; border: 1px solid var(--accent-ui); border-radius: 999px; background: var(--panel); color: var(--fg-panel); font: var(--t-px); text-decoration: none; white-space: nowrap; }
+.pbar__private { align-self: center; }
+.pbar__private .ic, .mini__private .ic { flex: none; width: 14px; min-width: 14px; height: 14px; color: var(--accent-ui); }
 .pbar__xfade i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-ui); }
 .pbar__idle { display: flex; align-items: center; gap: var(--sp-3); color: var(--fg-2); font: var(--t-meta); }
 .pbar[data-status="idle"] .pbar__seek, .pbar[data-status="idle"] .pbar__badges { visibility: hidden; }

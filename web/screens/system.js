@@ -538,6 +538,7 @@
     ['sharing', 'Sharing', 'export', 'What Soulseek peers can download'],
     ['lastfm', 'Last.fm', 'radio', 'Scrobbling and history'],
     ['discovery', 'Discovery', 'sparkle', 'Sources, follows, adventurousness'],
+    ['privacy', 'Privacy', 'eye-off', 'Private listening on this device'],
     ['devices', 'Devices', 'connect', 'Paired devices, add one, Subsonic apps'],
     ['appearance', 'Appearance', 'sun', 'Design, theme, motion, text size'],
     ['shortcuts', 'Shortcuts', 'keyboard', 'Every keyboard shortcut'],
@@ -826,6 +827,19 @@
       ${withSettings(function () { return html`${cfgNotice()}${cfgField('LULL_LASTFM_API_KEY', 'API key')}${cfgField('LULL_LASTFM_API_SECRET', 'Shared secret')}`; })}`;
   }
 
+  /* ---------- privacy: private listening is this device's switch on the hub (PATCH /api/devices/me), so it
+     survives reloads and is enforced by the server: nothing played here is recorded or sent anywhere ---------- */
+  custom['device.private'] = { get: function () { return !!App.store.get('privateListening'); }, set: function (v) {
+    App.setPrivateListening(v).then(null, function (err) {
+      App.toast('Couldn\'t change private listening: ' + err.message, { kind: 'error' });
+      App.refresh();
+    });
+  } };
+  function secPrivacy() {
+    return html`${switchRow('device.private', 'Private listening on this device', 'While it is on, what you play here leaves no trace: it isn\'t added to History or Stats, doesn\'t shape recommendations, and nothing goes to Last.fm, not even what is playing now. Playback is unchanged. Other devices keep their own switch, and a song already playing when you turn it on stays as it was.')}
+      <p class="sys-card__lede">A small <b>Private</b> tag shows beside the player while it is on, so it never stays on by accident.</p>`;
+  }
+
   /* ---------- discovery ---------- */
   var DSOURCES = [
     ['listenbrainz', 'ListenBrainz', 'Similar artists and what listeners like you play. No account needed.'],
@@ -1022,7 +1036,7 @@
     search: function () { return withSettings(secSearch); },
     cache: function () { return withSettings(secCache); }, library: function () { return withSettings(secLibrary); },
     sharing: function () { return withSettings(secSharing); }, lastfm: secLastfm,
-    discovery: function () { return withSettings(secDiscovery); },
+    discovery: function () { return withSettings(secDiscovery); }, privacy: secPrivacy,
     shortcuts: secShortcuts, app: secApp
   };
   function sectionBody(id) { return BODY[id] ? BODY[id]() : App.settingsSections[id](); }
