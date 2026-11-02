@@ -514,6 +514,11 @@
 :root[data-design="starlight"] .pbar__title { font-size: 1.0625rem; }
 :root[data-design="starlight"] .pbar__controls .btn-icon .ic { width: 22px; height: 22px; }
 :root[data-design="starlight"] .pbar__tools { gap: 0; }
+/* below 1,360 the tools column is as wide as its buttons (like, save, panels, device, volume, more: about 460 px) and
+   the centre takes the rest. Three equal-ish columns left the tools 295 px at 1,100 and they ran left over Repeat. */
+@media (min-width: 1100px) and (max-width: 1359px) {
+  :root[data-design="starlight"] .pbar { grid-template-columns: minmax(220px, 1fr) minmax(300px, 1.1fr) auto; }
+}
 /* the state line rides the bar's top edge as a slim tab of night sky (cream words), so it never hides a cream card's text;
    on Now Playing the hero says it instead */
 :root[data-design="starlight"] .pbar__state {
