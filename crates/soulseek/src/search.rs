@@ -18,6 +18,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::sync::watch;
 
+use crate::budget::{Budget, LANES, Lane, Priority};
 use crate::files::{self, Attributes};
 use crate::matching::Wanted;
 use crate::slskd::{self, Slskd};
@@ -30,8 +31,6 @@ const DEADLINE: Duration = Duration::from_secs(15);
 /// Popular queries saturate quickly; past this many peers more answers add nothing.
 const RESPONSE_LIMIT: u32 = 300;
 const POLL: Duration = Duration::from_millis(700);
-/// Searches start at least this far apart: the Soulseek server throttles clients that flood it.
-const SPACING: Duration = Duration::from_secs(1);
 /// The same query again within this window reuses the earlier search instead of asking the network.
 const REUSE_FOR: Duration = Duration::from_secs(10 * 60);
 /// Shorter queries match half the network; they search the library only.
@@ -112,21 +111,16 @@ pub struct Searches {
     /// Handed over by `router` (server wires the library after soulseek starts); duplicate notes.
     library: Arc<OnceLock<Arc<dyn Library>>>,
     inner: Arc<Mutex<Inner>>,
-    last_start: Arc<tokio::sync::Mutex<Option<Instant>>>,
-    /// Network searches running now, by `Lane`.
+    /// Every network search's turn and rate (`budget.rs`).
+    budget: Budget,
+    /// Network searches running now, by `Lane`: slskd runs two at a time, so a resolve search
+    /// of a lower lane also waits until none of a higher one runs.
     running: Arc<watch::Sender<[u32; LANES]>>,
 }
 
-/// Who a search is for. slskd runs two searches at a time, so a lower lane waits until no
-/// search of a higher one runs: playing (and the listener's own search) first, then preloading
-/// queued songs and pre-warming search results.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Lane {
-    Play = 0,
-    Prefetch = 1,
-}
-
-const LANES: usize = 2;
+/// A search no peer answered tells nothing about an album when no search was answered in this
+/// long either: the session may be stale (`recover`), so nothing is remembered.
+const ANSWERED_LATELY_S: i64 = 10 * 60;
 
 /// Counts a search as running in its lane while it lives.
 struct Running {
@@ -153,8 +147,9 @@ struct Inner {
     next: u64,
     /// The listener's searches, newest last; the newest one supersedes a still-running older one.
     recent: VecDeque<Arc<Session>>,
-    /// Searches run to find sources for one song, by query; `Some` once ended.
-    resolving: HashMap<String, watch::Receiver<Option<Ended>>>,
+    /// Searches run to find sources for one song, by query; `Some` once ended. Its priority
+    /// rises when a caller of a higher lane joins it.
+    resolving: HashMap<String, (watch::Receiver<Option<Ended>>, Priority)>,
     /// How the latest network searches ended, newest last.
     outcomes: VecDeque<Outcome>,
     /// The catalog's top tracks per query key (`search.catalog`), for `onlySoulseek`.
@@ -206,7 +201,7 @@ impl Searches {
             sources,
             library: Arc::default(),
             inner: Arc::default(),
-            last_start: Arc::default(),
+            budget: Budget::default(),
             running: Arc::new(watch::Sender::new([0; LANES])),
         }
     }
@@ -353,8 +348,12 @@ impl Searches {
             )
         };
         let mut stop = session.stop.subscribe();
-        let running = self.running(Lane::Play);
-        let responses = match self.network(query, Until::Settled, &mut stop, progress).await {
+        let running = self.running(Lane::Listener);
+        let priority = Priority::new(Lane::Listener);
+        let responses = match self
+            .network(query, Until::Settled, &priority, &mut stop, progress)
+            .await
+        {
             Ok(Some(r)) => r,
             Ok(None) => return, // superseded by a newer search
             Err(e) => {
@@ -398,7 +397,8 @@ impl Searches {
     /// Finds sources for one song by searching its artist and title, then a looser query when
     /// that finds no copy. Files count as the song by `matching` (loose names, length).
     /// Concurrent asks for the same song share one search. A lower `lane` first waits its turn,
-    /// and skips the search when a higher one found the song meanwhile. Returns once it ended.
+    /// and skips the search when a higher one found the song meanwhile; a paused lane
+    /// (`budget.rs`) finds nothing. Returns once it ended.
     pub async fn resolve_in(&self, track: &Track, lane: Lane) -> Result<()> {
         if lane != Lane::Play {
             self.turn(lane).await;
@@ -423,17 +423,19 @@ impl Searches {
     fn shared_search(&self, track: &Track, lane: Lane) -> watch::Receiver<Option<Ended>> {
         let text = Wanted::query(track);
         let (tx, rx) = watch::channel(None);
+        let priority = Priority::new(lane);
         if let Ok(mut inner) = self.inner.lock() {
-            if let Some(running) = inner.resolving.get(&text) {
+            if let Some((running, priority)) = inner.resolving.get(&text) {
+                priority.raise(lane);
                 return running.clone();
             }
-            inner.resolving.insert(text.clone(), rx.clone());
+            inner.resolving.insert(text.clone(), (rx.clone(), priority.clone()));
         }
         let (this, track) = (self.clone(), track.clone());
         tokio::spawn(async move {
             let ended = {
                 let _running = this.running(lane);
-                match this.find_song(&track, &text).await {
+                match this.find_song(&track, &text, &priority).await {
                     Ok(()) => Ended::Done,
                     Err(e) => Ended::Failed {
                         unavailable: matches!(e, Error::Unavailable { .. }),
@@ -449,22 +451,22 @@ impl Searches {
         rx
     }
 
-    async fn find_song(&self, track: &Track, text: &str) -> Result<()> {
+    async fn find_song(&self, track: &Track, text: &str, priority: &Priority) -> Result<()> {
         let wanted = Wanted::of(track);
-        let mut outcome = self.search_for(track, &wanted, text).await;
+        let mut outcome = self.search_for(track, &wanted, text, priority).await;
         if matches!(outcome, Ok(0))
             && let Some(looser) = wanted.looser_query(text)
         {
-            outcome = self.search_for(track, &wanted, &looser).await;
+            outcome = self.search_for(track, &wanted, &looser, priority).await;
         }
         outcome.map(drop)
     }
 
     /// One resolve search: everything it found is kept by song, and the files that are this
     /// song also under its id. Returns how many files matched.
-    async fn search_for(&self, track: &Track, wanted: &Wanted, text: &str) -> Result<usize> {
+    async fn search_for(&self, track: &Track, wanted: &Wanted, text: &str, priority: &Priority) -> Result<usize> {
         let (_never, mut stop) = watch::channel(false);
-        let Some(responses) = self.network(text, Until::Enough, &mut stop, |_| {}).await? else {
+        let Some(responses) = self.network(text, Until::Enough, priority, &mut stop, |_| {}).await? else {
             return Ok(0);
         };
         let mut merged = merge(&responses);
@@ -485,6 +487,36 @@ impl Searches {
         Ok(n)
     }
 
+    /// Whether peers share an album: one early-stopped search for `artist album`, in the
+    /// availability lane, true when a peer folder is the album by `matching`. Everything found
+    /// is kept as sources too. `None` when the answer says nothing (the lane is paused, slskd
+    /// lost the answers, or nobody answered while no search has been answered lately either).
+    pub async fn album_shared(&self, artist: &str, album: &str) -> Result<Option<bool>> {
+        self.turn(Lane::Availability).await;
+        let text = Wanted::album_query(artist, album);
+        let responses = {
+            let _running = self.running(Lane::Availability);
+            let (_never, mut stop) = watch::channel(false);
+            let priority = Priority::new(Lane::Availability);
+            match self.network(&text, Until::Enough, &priority, &mut stop, |_| {}).await? {
+                Some(r) => r,
+                None => return Ok(None),
+            }
+        };
+        if responses.is_empty() && !self.answered_since(lull_core::now() - ANSWERED_LATELY_S) {
+            return Ok(None);
+        }
+        let mut merged = merge(&responses);
+        let wanted = Wanted::album(artist, album);
+        let shared = merged
+            .folders
+            .values()
+            .any(|f| wanted.matches_album(&f.album.title, &f.album.artist, &f.path));
+        self.sources
+            .add(merged.songs.drain().map(|(id, s)| (id, s.sources)).collect());
+        Ok(Some(shared))
+    }
+
     /// Whether a search that may still add sources for this song is running.
     pub fn searching_for(&self, track: &Track) -> bool {
         let text = Wanted::query(track);
@@ -493,16 +525,20 @@ impl Searches {
         })
     }
 
-    /// Runs one network search until it has heard enough (`until`), then reads its answers.
-    /// `None` when `stop` fired first (the search is stopped and dropped in slskd too).
+    /// Runs one network search, when the budget gives it a turn, until it has heard enough
+    /// (`until`), then reads its answers. `None` when its lane is paused, or `stop` fired first
+    /// (the search is stopped and dropped in slskd too).
     async fn network(
         &self,
         text: &str,
         until: Until,
+        priority: &Priority,
         stop: &mut watch::Receiver<bool>,
         progress: impl Fn(&slskd::Search),
     ) -> Result<Option<Vec<slskd::Response>>> {
-        self.space_out().await;
+        if !self.budget.admit(priority, || self.unanswered_since(0)).await {
+            return Ok(None);
+        }
         let search = self.slskd.start_search(text, INACTIVITY, RESPONSE_LIMIT).await?;
         let mut hearing = Hearing::new(Instant::now());
         let poll = match until {
@@ -635,14 +671,6 @@ impl Searches {
         if let Err(e) = self.slskd.delete_search(id).await {
             tracing::debug!(error = %e, "deleting a finished search from slskd");
         }
-    }
-
-    async fn space_out(&self) {
-        let mut last = self.last_start.lock().await;
-        if let Some(at) = *last {
-            tokio::time::sleep(SPACING.saturating_sub(at.elapsed())).await;
-        }
-        *last = Some(Instant::now());
     }
 
     /// Ranks and caps the merged answers, notes duplicates of saved songs, records every track
@@ -1084,7 +1112,13 @@ mod tests {
         let searches = searches(true).await?;
         let (_keep, mut stop) = watch::channel(false);
         let responses = searches
-            .network("portishead", Until::Settled, &mut stop, |_| {})
+            .network(
+                "portishead",
+                Until::Settled,
+                &Priority::new(Lane::Play),
+                &mut stop,
+                |_| {},
+            )
             .await?
             .ok_or("stopped")?;
         assert_eq!(
@@ -1137,6 +1171,19 @@ mod tests {
             trickle.heard(i as u32 + 1, at(ms as u64));
         }
         assert!(trickle.enough(at(8000)), "a trickle is cut off at the deadline");
+    }
+
+    #[tokio::test]
+    async fn an_album_is_shared_when_a_peer_folder_is_that_album() -> Test {
+        let dummy = searches(true).await?;
+        assert_eq!(dummy.album_shared("Portishead", "Dummy").await?, Some(true));
+        let third = searches(true).await?;
+        assert_eq!(
+            third.album_shared("Portishead", "Third").await?,
+            Some(false),
+            "Glory Box is on Dummy, not Third"
+        );
+        Ok(())
     }
 
     #[test]

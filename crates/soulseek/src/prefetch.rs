@@ -13,9 +13,9 @@ use lull_core::{Error, Result};
 use tokio::sync::watch;
 
 use crate::Service;
+use crate::budget::Lane;
 use crate::fetch::Status;
 use crate::rules::Purpose;
-use crate::search::Lane;
 
 /// The most tracks one device may list: the next few in its queue.
 pub const MAX_TRACKS: usize = 3;

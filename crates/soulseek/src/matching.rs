@@ -44,6 +44,30 @@ impl Wanted {
         }
     }
 
+    /// An album asked for by its artist and title (`album_available`): names only.
+    pub fn album(artist: &str, title: &str) -> Self {
+        Wanted {
+            artist: loose_artist(artist),
+            title: loose_title(title),
+            duration: None,
+        }
+    }
+
+    /// The words to search for an album: its artist and title as written.
+    pub fn album_query(artist: &str, title: &str) -> String {
+        format!(
+            "{} {}",
+            lull_core::ids::normalize_artist(artist),
+            lull_core::ids::normalize(title)
+        )
+    }
+
+    /// Whether a peer folder holding `album` by `artist` (parsed from `path`) is this album:
+    /// the same rules as a song's title and artist.
+    pub fn matches_album(&self, album: &str, artist: &str, path: &str) -> bool {
+        self.title_matches(&loose_title(album)) && self.artist_matches(artist, path)
+    }
+
     /// The first search's words: the artist and the title as written.
     pub fn query(track: &Track) -> String {
         format!(
@@ -233,6 +257,23 @@ mod tests {
         assert!(
             !w.matches(&live, Some(301), "x"),
             "the live tag is dropped, the length isn't"
+        );
+    }
+
+    #[test]
+    fn an_album_matches_its_folders_and_not_other_editions_or_artists() {
+        let w = Wanted::album("Sigur Rós", "Ágætis byrjun");
+        assert!(w.matches_album("Agaetis Byrjun", "Sigur Ros", "x"));
+        assert!(w.matches_album("Ágætis byrjun (Remastered)", "Sigur Rós", "x"));
+        assert!(
+            !w.matches_album("Ágætis byrjun (Remixes)", "Sigur Rós", "x"),
+            "another record"
+        );
+        assert!(!w.matches_album("Ágætis byrjun", "Amiina", "x"));
+        let vol = Wanted::album("Ana Lua", "Night Tapes Vol. 2");
+        assert!(
+            !vol.matches_album("Night Tapes Vol. 1", "Ana Lua", "x"),
+            "numbers must agree"
         );
     }
 

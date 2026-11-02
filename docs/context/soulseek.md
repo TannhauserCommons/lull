@@ -12,6 +12,8 @@
 | `matching.rs` | Whether a file is the song asked for (loose names, length) |
 | `prewarm.rs` | `search.catalog`: pre-warming the catalog's top tracks |
 | `prefetch.rs` | Preloading the songs queued next (`PUT /api/stream/prefetch`) |
+| `budget.rs` | One search budget: priorities, rate, pausing while no peer answers |
+| `albums.rs` | `Transfers::album_available`: whether peers share an album, remembered |
 | `rules.rs` | The streaming and saving profiles and peer limits, from the `settings` event |
 | `sources.rs` | Every known peer file per song, in a profile's order on read |
 | `rank.rs` | The score and its factors |
@@ -59,8 +61,8 @@ Search is a catalog search owned by discovery (`/api/search`, ADR-0008); Soulsee
   - The final event carries the merged `results` and `entities`, or `error`.
 - **Waiting for slskd's last step.** slskd calls a search `Completed` before it writes the responses (that step sets `endedAt`), and deleting the search in between loses them: seen live as "Failed to finalize search … affected 0 row(s)" and an empty result after 300 peers answered. lull reads the responses until they appear or `endedAt` is set, for up to 5 s. If peers answered (or the search `Errored`) and still no responses come back, the final event carries `error` ("slskd found 8217 files from 300 peers but handed over none; search again"), not an empty success.
 - **Politeness:**
-  - searches start at least 1 s apart;
-  - searches take turns by lane (`search::Lane`), since slskd runs two at a time: a preload's or pre-warm's search waits until no search for the player (a song playing or saved, the listener's own search) is running, and is skipped if that one found the song;
+  - every search goes through one [budget](#search-budget): at least 1 s apart, at most 30 a minute, by priority;
+  - since slskd runs two searches at a time, a resolve search of a lower lane also waits until no search of a higher one is running (the listener's own search never waits for this), and is skipped if that one found the song;
   - a newer query stops the older one;
   - the same words within 10 minutes reuse the earlier search (the answer's `soulseek` field replays it), but only one still running or one that ended with results: an empty or failed search, or one a newer query stopped, runs again;
   - queries under 3 characters don't search;
@@ -68,7 +70,7 @@ Search is a catalog search owned by discovery (`/api/search`, ADR-0008); Soulsee
 - **Merging.** Songs merge across peers by `TrackId`. A peer folder holding 3 or more of the results becomes an album row; the same album on many peers is one row listing each folder, best first. Rows are capped at 200 songs and 40 albums. Every track handed out is recorded in `lull_core::catalog`.
 - **Duplicates.** Saved songs among the results come from `Library::saved`: the row gets `dup: note`, or `dup: better` when the Soulseek file clearly beats the saved one (`Quality::beats`: lossless over lossy, or at least a fifth more bitrate).
 - **Only on Soulseek.** Discovery publishes `search.catalog { query, trackIds }` for a query's top catalog tracks. The final results carry `onlySoulseek`: the unsaved result songs no catalog track matches (by `matching`). When the catalog arrives after the results, the final `search.results` is published again with it; before the catalog has answered it is `null`.
-- **Pre-warming** (`prewarm.rs`). The top 3 tracks of each `search.catalog` get a resolve search in the background (the preload lane), one at a time and at least 5 s apart, so pressing play finds copies waiting. A newer query replaces what an older one left queued; songs with known copies, saved songs and an offline Soulseek are skipped.
+- **Pre-warming** (`prewarm.rs`). The top 3 tracks of each `search.catalog` get a resolve search in the background (the `Prewarm` lane of the [budget](#search-budget)), one at a time and at least 5 s apart, so pressing play finds copies waiting. A newer query replaces what an older one left queued; songs with known copies, saved songs and an offline Soulseek are skipped.
 - **Resolve searches.** A song nothing is known about (a queue item, a catalog pick, a save) gets a search for `artist title`. Files count as the song by [matching](#matching), whatever their album, and are kept under the song's id too. When the first search finds no copy, a looser second one runs: the title without its tags plus the artist's longest word. Sources, streams and saves trigger it themselves.
 - **Resolve searches stop early.** They want a few good copies, not every answer, so lull stops one (slskd's stop call keeps what arrived; then the usual wait for slskd's last step) as soon as:
   - 15 peers have answered and it has run 2 s;
@@ -77,6 +79,30 @@ Search is a catalog search owned by discovery (`/api/search`, ADR-0008); Soulsee
   - or 8 s have passed.
 
   A cold song typically has its copies in 2-4 s instead of 7-21 s. The listener's own search still takes every answer, since it fills a results page.
+
+## Search budget
+
+The Soulseek server throttles an account that searches too often: seen live on 2026-11-02, when several players, preloads and pre-warming searched about once every 5 s, after which no peer answered and peers' addresses timed out (`GetUserEndPoint … timed out`). So every network search asks `budget.rs` for a turn first.
+
+| Lane, highest priority first | Waits while the searches started in the last minute number | Paused after this many unanswered searches in a row |
+|---|---|---|
+| `Play`: the song playing, being saved, or whose copies the picker lists | 30 | never |
+| `Prefetch`: songs queued next ([streaming.md](streaming.md#preloading)) | 24 | 3 |
+| `Listener`: the listener's own search | 24 | never |
+| `Prewarm`: the catalog's top results | 12 | 2 |
+| `Availability`: whether peers share an album | 6 | 2 |
+
+- **Rate.** Searches start at least 1 s apart and at most 30 in any minute, all lanes together; a lane waits once the minute's count reaches its ceiling, so the gap is kept for the lanes above it.
+- **Order.** A search waits while one of a higher lane waits. A search a higher lane joins (the player asking for a song a preload is searching) takes that lane.
+- **Pausing.** Once the latest searches got no answer from any peer, the background lanes don't search (the song is skipped, availability answers `None`) until a search is answered again; the player and the listener always search, and those are what show the server answering again (and what [stale-session recovery](#stale-sessions) counts).
+
+## Albums
+
+`Transfers::album_available(artist, album)` (`albums.rs`) tells discovery whether peers share an album, so new releases nobody shares can be hidden.
+- **Remembered** in `soulseek_albums` by loose artist and title (`ids::loose_*`): found for 7 days, not found for 1 (fresh releases appear on Soulseek within days). A remembered answer comes back at once, even while Soulseek is offline.
+- **Otherwise one search** for `artist album` in the `Availability` lane, early-stopped like a resolve search, one album at a time. Shared means a peer folder ([merged](#search) as for album rows) whose album and artist [match](#matching) by the same rules as a song's title and artist; one file of it is enough (singles and EPs are albums too). What it finds is kept as sources.
+- **`None`** while Soulseek is offline, while the lane is paused, when slskd lost the answers, or when nobody answered and no search has been answered in the last 10 minutes either (a stale session, not an answer). None of these is remembered.
+- **Slow when cold.** An unremembered album takes a search, a few seconds, queued behind every other kind of search; callers should not hold a page for it.
 
 ## Matching
 
@@ -133,3 +159,4 @@ slskd's shares come from its start-up settings: the kit sets `SLSKD_SHARED_DIR=/
 
 - `soulseek_files`: every file lull asked slskd for (the cache index; see [cache.md](cache.md)).
 - `soulseek_peers`: stall memory.
+- `soulseek_albums`: remembered album availability.

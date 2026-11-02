@@ -3,7 +3,9 @@
 //! that talks to slskd (docs/context/soulseek.md).
 
 mod account;
+mod albums;
 mod api;
+mod budget;
 mod cache;
 mod fetch;
 mod files;
@@ -50,7 +52,8 @@ use crate::sources::Sources;
 
 pub const MIGRATIONS: Migrations = Migrations {
     owner: "soulseek",
-    steps: &[r#"
+    steps: &[
+        r#"
         -- Every file lull asked slskd for: the stream cache's index. Only these are ever evicted.
         CREATE TABLE soulseek_files (
             track_id    TEXT NOT NULL,
@@ -69,7 +72,19 @@ pub const MIGRATIONS: Migrations = Migrations {
             stalls      INTEGER NOT NULL,
             stalled_at  INTEGER NOT NULL
         );
-    "#],
+    "#,
+        r#"
+        -- Whether peers share an album (Transfers::album_available), by loose artist and title:
+        -- found answers are used for 7 days, not found for 1.
+        CREATE TABLE soulseek_albums (
+            artist      TEXT NOT NULL,
+            album       TEXT NOT NULL,
+            available   INTEGER NOT NULL,
+            checked_at  INTEGER NOT NULL,          -- unix seconds
+            PRIMARY KEY (artist, album)
+        );
+    "#,
+    ],
 };
 
 /// How often the connection is checked while it's healthy, and while it isn't.
@@ -93,6 +108,8 @@ pub struct Service {
     saving: Mutex<HashMap<TrackId, Pin>>,
     /// The songs devices asked to preload (`PUT /api/stream/prefetch`).
     prefetch: prefetch::Lists,
+    /// Album availability is checked one album at a time.
+    album_checks: tokio::sync::Mutex<()>,
 }
 
 pub async fn start(ctx: &Ctx) -> Result<Arc<Service>> {
@@ -138,6 +155,7 @@ pub async fn start(ctx: &Ctx) -> Result<Arc<Service>> {
         relogged: Mutex::default(),
         saving: Mutex::default(),
         prefetch: prefetch::Lists::default(),
+        album_checks: tokio::sync::Mutex::new(()),
     });
     ctx.status
         .set("soulseek", State::Down, "Connecting to slskd", Value::Null);
@@ -217,6 +235,10 @@ impl Transfers for Service {
             quality: r.source.quality(track.duration),
             meets: r.meets,
         }))
+    }
+
+    async fn album_available(&self, artist: &str, album: &str) -> Result<Option<bool>> {
+        albums::available(self, artist, album).await
     }
 }
 

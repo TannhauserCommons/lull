@@ -1,7 +1,7 @@
 //! Instant play from catalog search (ADR-0008). Discovery publishes `search.catalog` with the
 //! top tracks of a query; their Soulseek copies are looked up in the background, one search at
-//! a time and behind the player's searches, so pressing play finds sources waiting. The same tracks tell search which Soulseek
-//! songs no catalog listed (`onlySoulseek`).
+//! a time and in the search budget's `Prewarm` lane, so pressing play finds sources waiting.
+//! The same tracks tell search which Soulseek songs no catalog listed (`onlySoulseek`).
 
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -14,7 +14,7 @@ use serde::Deserialize;
 use tokio::sync::{Mutex, Notify};
 
 use crate::Service;
-use crate::search::Lane;
+use crate::budget::Lane;
 
 /// Only the top of a query is pre-warmed: each lookup is a full network search.
 const TOP: usize = 3;
@@ -86,7 +86,7 @@ async fn warm(svc: Arc<Service>, queue: Arc<Mutex<VecDeque<Track>>>, wake: Arc<N
         if !online || track.saved || svc.sources.known(&track.id) {
             continue;
         }
-        if let Err(e) = svc.searches.resolve_in(&track, Lane::Prefetch).await {
+        if let Err(e) = svc.searches.resolve_in(&track, Lane::Prewarm).await {
             tracing::debug!(error = %e, track = %track.id, "pre-warming a song's sources");
         }
         tokio::time::sleep(GAP).await;
