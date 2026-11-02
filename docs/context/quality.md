@@ -29,8 +29,8 @@ The rest is the Webamp bundle, fonts, SVG and images. Brotli over the old raw tr
 `tests/ui/` (Playwright, pinned; `mise` is not needed, `npm ci` in that folder). `matrix.spec.mjs` makes one test per picture:
 - **Routes** (`routes.mjs`): every fixed route, every Settings section, plus an album, artist, tag and playlist page found in the hub's library by `global-setup.mjs` once there is one. Add a route there when a screen registers one.
 - **Designs and themes:** `lull skydeck starlight petal glasshouse` × `day night`, set through the `lull:prefs` the UI reads before first paint.
-- **Viewports:** `phone` 390×844 (mobile, touch) and `desktop` 1440×900.
-- **Per picture it asserts:** no horizontal overflow (names the widest element), no console error or uncaught exception, no failed or 4xx/5xx request, then compares the viewport screenshot (animations disabled, caret hidden, fixed clock and timezone, 0.2% of pixels tolerated).
+- **Viewports:** `phone` 390×844 (mobile, touch) and `desktop` 1440×900 for every route; `laptop` 1366×768, `xwide` 1920×1080 and `ultra` 2560×1440 (ADR-0007's sizes) only for the screens whose layout follows the window (`layoutRoutes` in `routes.mjs`: Home, Search, Library albums and songs, Now Playing, album, artist, playlist), so the run stays within its hour.
+- **Per picture it asserts:** no horizontal overflow (names the widest element), no title squeezed under 48 px (a grid counting its columns from the window instead of its own width), no console error or uncaught exception, no failed or 4xx/5xx request, then compares the viewport screenshot (animations disabled, caret hidden, fixed clock and timezone, 0.2% of pixels tolerated).
 - **Tolerated requests** are listed with their reason in `expected-failures.json`. Delete an entry when its cause lands; don't add one to get green.
 
 **The CI hub.** `run-hub.sh` runs the built image (`lull:ui`) on host networking next to:

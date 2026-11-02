@@ -10,8 +10,18 @@ const here = dirname(fileURLToPath(import.meta.url));
 
 export const designs = ['lull', 'skydeck', 'starlight', 'petal', 'glasshouse'];
 export const themes = ['day', 'night'];
-// Pixel sizes of the design package's two reference layouts.
-export const viewports = { phone: { width: 390, height: 844 }, desktop: { width: 1440, height: 900 } };
+// Pixel sizes of the design package's two reference layouts, then the window sizes ADR-0007 adapts to:
+// a short laptop screen and the xwide and ultra classes.
+export const viewports = {
+  phone: { width: 390, height: 844 },
+  desktop: { width: 1440, height: 900 },
+  laptop: { width: 1366, height: 768 },
+  xwide: { width: 1920, height: 1080 },
+  ultra: { width: 2560, height: 1440 },
+};
+// The extra sizes take only the screens whose layout changes with the window (ADR-0007), so the run stays
+// within its hour: test titles start with the route's slug.
+export const layoutRoutes = /^(home|search|library-albums|library-songs|now|album-|artist-|playlist-)/;
 
 const library = JSON.parse(readFileSync(join(here, 'fixtures/library.json'), 'utf8'));
 const settingsSections = [

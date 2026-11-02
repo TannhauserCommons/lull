@@ -28,6 +28,7 @@ for (const route of [...fixedRoutes, ...detailRoutes()]) {
         await settle(page, problems);
 
         expect.soft(await overflow(page), 'content wider than the viewport').toBeNull();
+        expect.soft(await squeezed(page), 'a title squeezed to a few letters').toBeNull();
         expect.soft(problems.console, 'console errors').toEqual([]);
         expect.soft(problems.requests, 'failed requests').toEqual([]);
         await expect(page).toHaveScreenshot(`${slug(route)}-${design}-${theme}.png`);
@@ -92,6 +93,21 @@ async function settle(page, problems) {
       new Promise((resolve) => setTimeout(resolve, 3000)),
     ]),
   );
+}
+
+// Null when every visible title has room for a word; else the narrowest. Tiles keep their size and
+// grids gain columns (ADR-0007), so a sliver of a title means a grid counted its columns from the
+// window rather than from its own width.
+function squeezed(page) {
+  return page.evaluate(() => {
+    const titles = document.querySelectorAll('.tile__title, .disc-pick__title, .trow__title, .disc-starter__title');
+    const narrow = [...titles]
+      .filter((el) => el.offsetParent && el.textContent.trim())
+      .map((el) => ({ el, width: el.getBoundingClientRect().width }))
+      .filter((x) => x.width < 48)
+      .sort((a, b) => a.width - b.width)[0];
+    return narrow ? `.${[...narrow.el.classList].join('.')} "${narrow.el.textContent.trim().slice(0, 30)}" is ${Math.round(narrow.width)}px wide` : null;
+  });
 }
 
 // Null when nothing sticks out sideways; else the widest offender, to name it in the failure.

@@ -2,7 +2,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from '@playwright/test';
-import { viewports } from './routes.mjs';
+import { layoutRoutes, viewports } from './routes.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const goldens = join(here, 'goldens');
@@ -45,5 +45,6 @@ export default defineConfig({
   projects: [
     { name: 'phone', use: { viewport: viewports.phone, isMobile: true, hasTouch: true } },
     { name: 'desktop', use: { viewport: viewports.desktop } },
+    ...['laptop', 'xwide', 'ultra'].map((name) => ({ name, grep: layoutRoutes, use: { viewport: viewports[name] } })),
   ],
 });
