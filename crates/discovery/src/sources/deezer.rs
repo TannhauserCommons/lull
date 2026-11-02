@@ -16,6 +16,7 @@ use serde_json::Value;
 use tokio::time::Instant;
 
 use super::cache::{Cache, DAY};
+use super::{AlbumSource, Song};
 use crate::search::merge::{AlbumHit, ArtistHit, Found, SongHit, popularity};
 
 const SERVICE: &str = "Deezer";
@@ -29,6 +30,8 @@ const QUOTA: u64 = 4;
 const NO_DATA: u64 = 800;
 /// Search answers are kept this long (seconds), and served stale when Deezer fails.
 const KEEP_S: i64 = 600;
+/// Tracklists are kept this long (seconds).
+const KEEP_TRACKLIST_S: i64 = 7 * DAY;
 /// Rank, fans: the counts that score 1 on `popularity`'s scale.
 const FULL_RANK: f64 = 1e6;
 const FULL_FANS: f64 = 1e7;
@@ -53,10 +56,15 @@ impl Deezer {
     pub async fn search(&self, q: &str) -> Result<Found> {
         self.cache
             .get(format!("dz:search:{q}"), KEEP_S, || async {
+                let (track_q, album_q, artist_q) = (
+                    [("q", q), ("limit", "25")],
+                    [("q", q), ("limit", "15")],
+                    [("q", q), ("limit", "10")],
+                );
                 let (tracks, albums, artists) = tokio::join!(
-                    self.get("search/track", q, "25"),
-                    self.get("search/album", q, "15"),
-                    self.get("search/artist", q, "10"),
+                    self.get("search/track", &track_q),
+                    self.get("search/album", &album_q),
+                    self.get("search/artist", &artist_q),
                 );
                 let tracks = tracks.and_then(songs);
                 let albums = albums.and_then(albums_of);
@@ -84,7 +92,7 @@ impl Deezer {
         self.cache
             .get(format!("dz:artists:{q}"), KEEP_S, || async {
                 Ok(Found {
-                    artists: artists_of(self.get("search/artist", q, "10").await?)?,
+                    artists: artists_of(self.get("search/artist", &[("q", q), ("limit", "10")]).await?)?,
                     ..Found::default()
                 })
             })
@@ -104,13 +112,23 @@ impl Deezer {
                 format!("dz:artist-image:{}", normalize_artist(name)),
                 7 * DAY,
                 || async {
-                    let found = artists_of(self.get("search/artist", name, "5").await?)?;
+                    let found = artists_of(self.get("search/artist", &[("q", name), ("limit", "5")]).await?)?;
                     Ok(found
                         .into_iter()
                         .find(|a| normalize_artist(&a.name) == normalize_artist(name))
                         .and_then(|a| a.image))
                 },
             )
+            .await
+    }
+
+    /// The songs of an album, in order: one call, kept a week. A lookup by id answers even
+    /// where Deezer's catalog is closed.
+    pub async fn tracklist(&self, album: u64) -> Result<Vec<Song>> {
+        self.cache
+            .get(format!("dz:tracklist:{album}"), KEEP_TRACKLIST_S, || async {
+                tracklist(self.get(&format!("album/{album}/tracks"), &[("limit", "200")]).await?)
+            })
             .await
     }
 
@@ -123,14 +141,12 @@ impl Deezer {
         tokio::time::sleep_until(turn).await;
     }
 
-    async fn get(&self, path: &str, q: &str, limit: &str) -> Result<Value> {
+    async fn get(&self, path: &str, query: &[(&str, &str)]) -> Result<Value> {
         for attempt in 0..2 {
             self.wait_turn().await;
             let body: Value = self
                 .http
-                .json(SERVICE, |c| {
-                    c.get(format!("{API}/{path}")).query(&[("q", q), ("limit", limit)])
-                })
+                .json(SERVICE, |c| c.get(format!("{API}/{path}")).query(query))
                 .await?;
             match answer(body) {
                 Err(Refusal::Quota) if attempt == 0 => {
@@ -249,12 +265,14 @@ struct RawTrack {
 
 #[derive(Deserialize)]
 struct RawTrackAlbum {
+    id: Option<u64>,
     title: String,
     md5_image: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct RawAlbum {
+    id: Option<u64>,
     title: String,
     record_type: Option<String>,
     md5_image: Option<String>,
@@ -279,9 +297,44 @@ pub fn songs(body: Value) -> Result<Vec<SongHit>> {
             isrcs: t.isrc.into_iter().collect(),
             popularity: t.rank.map_or(0.0, |r| popularity(r, FULL_RANK)),
             art: t.album.md5_image.as_deref().and_then(|m| picture("cover", m)),
+            album_source: t.album.id.map(AlbumSource::Deezer),
             ..SongHit::default()
         })
         .collect())
+}
+
+/// An `album/{id}/tracks` answer as the album's songs, in order. The album's own name and
+/// artist are the page's to set.
+pub fn tracklist(body: Value) -> Result<Vec<Song>> {
+    #[derive(Deserialize)]
+    struct Raw {
+        title: String,
+        duration: Option<u32>,
+        track_position: Option<u32>,
+        disk_number: Option<u32>,
+        artist: Named,
+    }
+    let raw = Page::<Raw>::of(body, "album tracks")?;
+    let discs = raw.iter().any(|t| t.disk_number.is_some_and(|d| d > 1));
+    let mut songs: Vec<Song> = raw
+        .into_iter()
+        .map(|t| Song {
+            mbid: None,
+            title: t.title,
+            artist: t.artist.name,
+            artist_mbid: None,
+            album: String::new(),
+            album_artist: None,
+            album_mbid: None,
+            year: None,
+            no: t.track_position,
+            disc: t.disk_number.filter(|_| discs),
+            duration_s: t.duration.filter(|d| *d > 0),
+            tags: Vec::new(),
+        })
+        .collect();
+    songs.sort_by_key(|s| (s.disc.unwrap_or(1), s.no.unwrap_or(u32::MAX)));
+    Ok(songs)
 }
 
 pub fn albums_of(body: Value) -> Result<Vec<AlbumHit>> {
@@ -297,6 +350,7 @@ pub fn albums_of(body: Value) -> Result<Vec<AlbumHit>> {
             kind: a.record_type.as_deref().map(kind),
             popularity: 0.6 * (1.0 - i as f64 / n),
             art: a.md5_image.as_deref().and_then(|m| picture("cover", m)),
+            source: a.id.map(AlbumSource::Deezer),
             ..AlbumHit::default()
         })
         .collect())

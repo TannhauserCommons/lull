@@ -40,7 +40,8 @@ use taste::Taste;
 
 pub const MIGRATIONS: Migrations = Migrations {
     owner: "discovery",
-    steps: &[r#"
+    steps: &[
+        r#"
         -- Answers from outside sources, kept for a source-specific time (sources/cache.rs).
         CREATE TABLE discovery_cache (
             key         TEXT PRIMARY KEY,
@@ -85,7 +86,17 @@ pub const MIGRATIONS: Migrations = Migrations {
             key    TEXT PRIMARY KEY,
             value  TEXT NOT NULL
         );
-    "#],
+    "#,
+        r#"
+        -- The catalog album (iTunes, Deezer) behind an album id, so its page asks that catalog
+        -- for the tracklist (sources::AlbumSource as JSON).
+        CREATE TABLE discovery_album_sources (
+            album_id    TEXT PRIMARY KEY,
+            json        TEXT NOT NULL,
+            updated_at  INTEGER NOT NULL
+        );
+    "#,
+    ],
 };
 
 /// Radio's steer until the listener's settings arrive.

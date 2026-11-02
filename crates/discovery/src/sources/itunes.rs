@@ -16,12 +16,15 @@ use serde::Deserialize;
 use serde_json::Value;
 use tokio::time::Instant;
 
-use super::cache::Cache;
-use super::year;
+use super::cache::{Cache, DAY};
+use super::{AlbumSource, Song, year};
 use crate::search::merge::{AlbumHit, Found, SongHit};
 
 const SERVICE: &str = "iTunes";
 const API: &str = "https://itunes.apple.com/search";
+const LOOKUP: &str = "https://itunes.apple.com/lookup";
+/// Tracklists are kept this long (seconds).
+const KEEP_TRACKLIST_S: i64 = 7 * DAY;
 const BUDGET: usize = 18;
 /// Calls of the budget album searches leave to songs.
 const SONGS_RESERVE: usize = 6;
@@ -107,6 +110,39 @@ impl Itunes {
     }
 }
 
+impl Itunes {
+    /// The songs of an album (`collectionId`) in order: one `lookup` call, kept a week. Fails
+    /// while the budget is spent, so the album page asks MusicBrainz instead.
+    pub async fn tracklist(&self, collection: u64) -> Result<Vec<Song>> {
+        let key = format!("it:tracklist:{}:{collection}", self.country);
+        self.cache
+            .get(key, KEEP_TRACKLIST_S, || async {
+                if !self
+                    .budget
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .take(Instant::now())
+                {
+                    return Err(Error::unavailable(SERVICE, "lull's calls for this minute are spent"));
+                }
+                let id = collection.to_string();
+                let body: Value = self
+                    .http
+                    .json(SERVICE, |c| {
+                        c.get(LOOKUP).query(&[
+                            ("id", id.as_str()),
+                            ("entity", "song"),
+                            ("limit", "200"),
+                            ("country", self.country.as_str()),
+                        ])
+                    })
+                    .await?;
+                tracklist(body)
+            })
+            .await
+    }
+}
+
 #[derive(Clone, Copy)]
 enum Entity {
     Song,
@@ -145,18 +181,24 @@ impl Budget {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Raw {
+    wrapper_type: Option<String>,
     track_name: Option<String>,
     artist_name: Option<String>,
+    collection_id: Option<u64>,
     collection_name: Option<String>,
     collection_artist_name: Option<String>,
     track_time_millis: Option<u64>,
     release_date: Option<String>,
     artwork_url100: Option<String>,
+    track_number: Option<u32>,
+    disc_number: Option<u32>,
+    disc_count: Option<u32>,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RawAlbum {
+    collection_id: Option<u64>,
     collection_name: Option<String>,
     artist_name: Option<String>,
     release_date: Option<String>,
@@ -188,6 +230,7 @@ pub fn songs(body: Value) -> Result<Found> {
         let art = r.artwork_url100.as_deref().and_then(sized);
         let date = r.release_date.as_deref().and_then(|d| d.get(..10)).map(str::to_owned);
         let popularity = 0.7 * (1.0 - i as f64 / n);
+        let source = r.collection_id.map(AlbumSource::Itunes);
         if !album.is_empty() {
             found.albums.push(AlbumHit {
                 title: album.clone(),
@@ -197,6 +240,7 @@ pub fn songs(body: Value) -> Result<Found> {
                 mbid: None,
                 popularity: popularity * 0.5,
                 art: art.clone(),
+                source,
             });
         }
         found.songs.push(SongHit {
@@ -209,10 +253,42 @@ pub fn songs(body: Value) -> Result<Found> {
             duration: r.track_time_millis.map(|ms| (ms / 1000) as u32).filter(|s| *s > 0),
             popularity,
             art,
+            album_source: source,
             ..SongHit::default()
         });
     }
     Ok(found)
+}
+
+/// A `lookup?entity=song` answer as the album's songs, in order. The album's own name and artist
+/// are the page's to set: these are Apple's.
+pub fn tracklist(body: Value) -> Result<Vec<Song>> {
+    let page: Page =
+        serde_json::from_value(body).map_err(|e| Error::upstream(SERVICE, format!("unexpected answer: {e}")))?;
+    let mut songs: Vec<Song> = page
+        .results
+        .into_iter()
+        .filter(|r| r.wrapper_type.as_deref() == Some("track"))
+        .filter_map(|r| {
+            let (album, _) = release(r.collection_name.as_deref().unwrap_or_default());
+            Some(Song {
+                mbid: None,
+                title: r.track_name?,
+                album_artist: r.collection_artist_name,
+                artist: r.artist_name?,
+                artist_mbid: None,
+                album,
+                album_mbid: None,
+                year: r.release_date.as_deref().and_then(year),
+                no: r.track_number,
+                disc: r.disc_number.filter(|_| r.disc_count.is_some_and(|n| n > 1)),
+                duration_s: r.track_time_millis.map(|ms| (ms / 1000) as u32).filter(|s| *s > 0),
+                tags: Vec::new(),
+            })
+        })
+        .collect();
+    songs.sort_by_key(|s| (s.disc.unwrap_or(1), s.no.unwrap_or(u32::MAX)));
+    Ok(songs)
 }
 
 /// An `entity=album` answer as rows. Apple orders by relevance and gives no counts, so the
@@ -245,6 +321,7 @@ pub fn albums(body: Value) -> Result<Found> {
                 mbid: None,
                 popularity: 0.6 * (1.0 - i as f64 / n),
                 art: r.artwork_url100.as_deref().and_then(sized),
+                source: r.collection_id.map(AlbumSource::Itunes),
                 artist,
             })
         })

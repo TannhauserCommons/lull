@@ -504,6 +504,15 @@ async fn describe(svc: &Service, m: &Merged, songs: &[usize], albums: &[usize], 
         .store
         .albums(album_hits.iter().map(merge::AlbumHit::release).collect())
         .await?;
+    svc.store
+        .remember_sources(
+            album_rows
+                .iter()
+                .zip(&album_hits)
+                .filter_map(|(row, hit)| Some((row.id.clone(), hit.source?)))
+                .collect(),
+        )
+        .await?;
     let artist_hits: Vec<_> = artists.iter().map(|&i| m.artists[i].clone()).collect();
     let artist_rows = svc
         .store

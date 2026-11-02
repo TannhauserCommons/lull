@@ -19,7 +19,7 @@ use lull_core::ids::{AlbumId, ArtistId, TrackId, loose_artist, loose_title, norm
 use lull_core::model::Track;
 use serde::{Deserialize, Serialize};
 
-use crate::sources::{ArtistInfo, Release, Song};
+use crate::sources::{AlbumSource, ArtistInfo, Release, Song};
 use crate::store;
 
 /// Lengths within this many seconds are the same recording.
@@ -92,6 +92,9 @@ pub struct SongHit {
     pub popularity: f64,
     /// The album's cover: an outside URL where `{size}` is the size in pixels.
     pub art: Option<String>,
+    /// The album in the catalog that found the song, for its tracklist.
+    #[serde(default)]
+    pub album_source: Option<AlbumSource>,
     /// Only Last.fm knows it so far.
     #[serde(default)]
     pub lastfm_only: bool,
@@ -109,6 +112,9 @@ pub struct AlbumHit {
     pub mbid: Option<String>,
     pub popularity: f64,
     pub art: Option<String>,
+    /// The album in the catalog that found it, for its tracklist.
+    #[serde(default)]
+    pub source: Option<AlbumSource>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -167,6 +173,7 @@ impl SongHit {
             mbid: None,
             popularity: 0.0,
             art: self.art.clone(),
+            source: self.album_source,
         })
     }
 }
@@ -292,6 +299,10 @@ fn same_artist(a: &ArtistHit, b: &ArtistHit) -> bool {
 /// hasn't been shown, a saved copy or a named release replaces its identity.
 fn fill_song(row: &mut SongHit, hit: SongHit, may_rename: bool) -> bool {
     let before = row.clone();
+    // The catalog's album id goes with the release it names.
+    if row.album_source.is_none() && loose_title(&row.album) == loose_title(&hit.album) {
+        row.album_source = hit.album_source;
+    }
     if may_rename && row.saved.is_none() && hit.saved.is_some() {
         row.saved = hit.saved;
         row.title = hit.title;
@@ -302,6 +313,7 @@ fn fill_song(row: &mut SongHit, hit: SongHit, may_rename: bool) -> bool {
         row.album = hit.album;
         row.album_artist = hit.album_artist;
         row.album_kind = hit.album_kind.clone();
+        row.album_source = hit.album_source;
     }
     row.album_kind = row.album_kind.take().or(hit.album_kind);
     row.year = row.year.or(hit.year);
@@ -324,6 +336,7 @@ fn fill_album(row: &mut AlbumHit, hit: AlbumHit) -> bool {
     row.date = row.date.take().or(hit.date);
     row.mbid = row.mbid.take().or(hit.mbid);
     row.art = row.art.take().or(hit.art);
+    row.source = row.source.or(hit.source);
     row.popularity = row.popularity.max(hit.popularity);
     *row != before
 }

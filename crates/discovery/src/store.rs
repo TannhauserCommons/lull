@@ -16,7 +16,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use crate::sources::{ArtistInfo, Release, Song, year};
+use crate::sources::{AlbumSource, ArtistInfo, Release, Song, year};
 use crate::taste::{Feedback, Mark, Play, Signals};
 
 /// Plays older than this no longer count (at a 45-day half-life they weigh under 0.4%).
@@ -69,17 +69,71 @@ impl Store {
     }
 
     /// An album whose tracks are known: remembered with them and its saved state.
-    pub async fn full_album(&self, mut album: Album, tracks: &[Track]) -> Result<Album> {
-        album.track_ids = tracks.iter().map(|t| t.id.clone()).collect();
-        let total: u32 = tracks.iter().filter_map(|t| t.duration).sum();
-        album.duration = (total > 0).then_some(total);
-        let saved: HashSet<TrackId> = tracks.iter().filter(|t| t.saved).map(|t| t.id.clone()).collect();
-        album.saved = album_saved(&album, &album.track_ids, &saved);
+    pub async fn full_album(&self, album: Album, tracks: &[Track]) -> Result<Album> {
+        let album = with_tracks(album, tracks);
         let stored = album.clone();
         self.db
             .call(move |c| merge_put(c, "discovery_albums", vec![stored], |a| &a.id.0, |_, new| new))
             .await?;
         Ok(album)
+    }
+
+    /// What MusicBrainz knows of a remembered album (its MBID, tags, type, date) fills its gaps.
+    pub async fn enrich_album(&self, id: AlbumId, group: Release) -> Result<()> {
+        self.db
+            .call(move |c| {
+                let Some(mut known) = get::<Album>(c, "discovery_albums", &id.0)? else {
+                    return Ok(());
+                };
+                let found = album(group);
+                known.musicbrainz_id = known.musicbrainz_id.or(found.musicbrainz_id);
+                if known.tags.is_empty() {
+                    known.tags = found.tags;
+                }
+                known.kind = known.kind.or(found.kind);
+                known.released = known.released.or(found.released);
+                known.year = known.year.or(found.year);
+                merge_put(c, "discovery_albums", vec![known], |a| &a.id.0, |_, new| new)?;
+                Ok(())
+            })
+            .await
+    }
+
+    /// Remembers which catalog album each album id came from (the latest finder wins).
+    pub async fn remember_sources(&self, sources: Vec<(AlbumId, AlbumSource)>) -> Result<()> {
+        if sources.is_empty() {
+            return Ok(());
+        }
+        self.db
+            .call(move |c| {
+                let mut put = c.prepare_cached(
+                    "INSERT INTO discovery_album_sources (album_id, json, updated_at) VALUES (?1, ?2, ?3)
+                     ON CONFLICT(album_id) DO UPDATE SET json = excluded.json, updated_at = excluded.updated_at",
+                )?;
+                for (id, source) in &sources {
+                    let json = serde_json::to_string(source)
+                        .map_err(|e| Error::internal(format!("album source json: {e}")))?;
+                    put.execute(params![id.as_str(), json, lull_core::now()])?;
+                }
+                Ok(())
+            })
+            .await
+    }
+
+    /// The catalog album behind an album id, when a catalog found it.
+    pub async fn album_source(&self, id: AlbumId) -> Result<Option<AlbumSource>> {
+        let json: Option<String> = self
+            .db
+            .call(move |c| {
+                Ok(c.query_row(
+                    "SELECT json FROM discovery_album_sources WHERE album_id = ?1",
+                    [id.as_str()],
+                    |r| r.get(0),
+                )
+                .optional()?)
+            })
+            .await?;
+        Ok(json.and_then(|j| serde_json::from_str(&j).ok()))
     }
 
     /// Artists, remembered so their ids resolve later; what is known already fills gaps.
@@ -264,6 +318,16 @@ pub fn artist(a: ArtistInfo) -> Artist {
         bio: None,
         musicbrainz_id: a.mbid,
     }
+}
+
+/// The album with its tracks: their ids, total length and saved state.
+pub fn with_tracks(mut album: Album, tracks: &[Track]) -> Album {
+    album.track_ids = tracks.iter().map(|t| t.id.clone()).collect();
+    let total: u32 = tracks.iter().filter_map(|t| t.duration).sum();
+    album.duration = (total > 0).then_some(total);
+    let saved: HashSet<TrackId> = tracks.iter().filter(|t| t.saved).map(|t| t.id.clone()).collect();
+    album.saved = album_saved(&album, &album.track_ids, &saved);
+    album
 }
 
 /// All of the album's tracks saved, some, or none (as far as lull knows its tracks).

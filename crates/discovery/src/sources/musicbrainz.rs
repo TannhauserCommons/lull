@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use lull_core::http::{self, Http};
-use lull_core::ids::{normalize, normalize_artist};
+use lull_core::ids::{loose_title, normalize, normalize_artist};
 use lull_core::{Error, Result};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -188,7 +188,9 @@ impl MusicBrainz {
         Ok(releases)
     }
 
-    /// The release group `title` by `artist`, when MusicBrainz is sure enough.
+    /// The release group `title` by `artist`, when MusicBrainz is sure enough. Version tags
+    /// don't count ("OK Computer (Remastered)" is "OK Computer"). Not finding it is kept a day,
+    /// not a month: a new release reaches MusicBrainz after the catalogs.
     pub async fn find_release(&self, artist: &str, title: &str) -> Result<Option<Release>> {
         self.switch.check()?;
         #[derive(Deserialize)]
@@ -197,16 +199,19 @@ impl MusicBrainz {
             groups: Vec<RawGroup>,
         }
         let key = format!("mb:find-release:{}:{}", normalize_artist(artist), normalize(title));
+        let ttl = |found: &Option<Release>| if found.is_some() { 30 * DAY } else { DAY };
         self.cache
-            .get(key, 30 * DAY, || async {
+            .get_with(key, ttl, || async {
                 let query = format!("releasegroup:{} AND artist:{}", phrase(title), phrase(artist));
                 let found: Found = self.get("release-group", &[("query", &query), ("limit", "5")]).await?;
-                Ok(found
+                let sure: Vec<RawGroup> = found
                     .groups
                     .into_iter()
-                    .filter(|g| g.score.unwrap_or(0) >= MIN_SCORE && normalize(&g.title) == normalize(title))
-                    .map(|g| g.into_release(None))
-                    .next())
+                    .filter(|g| g.score.unwrap_or(0) >= MIN_SCORE)
+                    .collect();
+                let exact = sure.iter().position(|g| normalize(&g.title) == normalize(title));
+                let at = exact.or_else(|| sure.iter().position(|g| loose_title(&g.title) == loose_title(title)));
+                Ok(at.and_then(|i| sure.into_iter().nth(i)).map(|g| g.into_release(None)))
             })
             .await
     }
@@ -438,6 +443,7 @@ pub fn release_groups(body: serde_json::Value) -> Result<Found> {
                     title: g.title,
                     artist,
                     popularity: 0.0,
+                    source: None,
                 })
             })
             .collect(),
@@ -534,6 +540,7 @@ pub fn recordings(body: serde_json::Value) -> Result<Found> {
                 mbid: Some(group.id.clone()),
                 popularity: 0.0,
                 art: art.clone(),
+                source: None,
             });
         }
         if !out.artists.iter().any(|a| a.mbid == artist_mbid) {
@@ -557,6 +564,7 @@ pub fn recordings(body: serde_json::Value) -> Result<Found> {
             mbid: Some(r.id),
             popularity: 0.0,
             art,
+            album_source: None,
             lastfm_only: false,
             artist,
             album_artist,

@@ -2,20 +2,29 @@
 //! what discovery has shown before or the catalog; the page is then filled from MusicBrainz,
 //! ListenBrainz and (when configured) Last.fm. A section whose source failed is empty and named
 //! in `errors`, so the rest of the page still shows.
+//!
+//! An album a catalog found (iTunes, Deezer) takes its tracklist from that catalog in one call;
+//! MusicBrainz, paced and shared with every lull crate, then only adds its facts in the
+//! background. The album page answers within `ALBUM_DEADLINE` with what lull has, and
+//! announces the full tracklist as `album.updated` when it arrives later.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::Json;
 use axum::extract::{Path, State};
 use lull_core::ids::{AlbumId, ArtistId, TrackId};
+use lull_core::model::Track;
 use lull_core::model::{Album, Artist};
 use lull_core::{Error, Result};
 use serde::Serialize;
+use tokio::sync::oneshot;
+use tokio::time::Instant;
 
 use crate::art::{self, Pictured, PicturedArtist};
 use crate::sources::listenbrainz::Mode;
-use crate::sources::{ArtistInfo, Release, Song, top_tags};
+use crate::sources::{AlbumSource, ArtistInfo, Release, Song, top_tags};
 use crate::store::{self, entities};
 use crate::{Service, taste};
 
@@ -26,23 +35,106 @@ const TAG_RELEASES: usize = 12;
 /// "New" on a tag page: first released within this many days.
 const TAG_NEW_DAYS: i64 = 90;
 
+/// How long the album page waits for its tracklist before answering with what lull has.
+const ALBUM_DEADLINE: Duration = Duration::from_secs(3);
+
 type Errors = BTreeMap<&'static str, String>;
 
 #[derive(Serialize)]
 pub struct AlbumPage {
     album: Album,
+    /// The tracklist wasn't in by the deadline: the tracks lull had are shown, and
+    /// `album.updated` follows when the rest arrives.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    partial: bool,
     entities: Pictured,
+}
+
+/// An album with its tracklist, and whether a catalog (not MusicBrainz) gave it.
+struct Filled {
+    album: Album,
+    tracks: Vec<Track>,
+    from_catalog: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AlbumUpdated {
+    album_id: AlbumId,
 }
 
 pub async fn album(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Result<Json<AlbumPage>> {
     let id = AlbumId(checked(id, AlbumId::PREFIX)?);
-    let known = svc
+    let mut known = svc
         .store
         .album_ref(id.clone())
         .await?
         .ok_or_else(|| Error::NotFound(format!("Album {id} is unknown to lull.")))?;
+    known.id = id.clone();
 
-    let (mut album, songs) = match from_musicbrainz(&svc, &known).await {
+    // Filled in a task of its own, so a tracklist that misses the deadline is still fetched,
+    // remembered and announced.
+    let started = Instant::now();
+    let (tx, rx) = oneshot::channel();
+    let task = (svc.clone(), known.clone());
+    svc.ctx.spawn(async move {
+        let (svc, known) = task;
+        let filled = fill(&svc, known).await;
+        let to_enrich = filled.as_ref().ok().filter(|f| f.from_catalog).map(|f| f.album.clone());
+        if let Err(Ok(late)) = tx.send(filled) {
+            tracing::info!(album = %late.album.id, ms = started.elapsed().as_millis() as u64, "album tracklist arrived after the page");
+            svc.ctx.bus.publish("album.updated", AlbumUpdated { album_id: late.album.id });
+        }
+        if let Some(album) = to_enrich {
+            enrich(&svc, album).await;
+        }
+    });
+    let (album, tracks, partial) = match tokio::time::timeout(ALBUM_DEADLINE, rx).await {
+        Ok(Ok(filled)) => {
+            let f = filled?;
+            (f.album, f.tracks, false)
+        }
+        Ok(Err(_)) => return Err(Error::unavailable("discovery", "is restarting")),
+        Err(_) => {
+            let tracks = svc.store.catalog_album_tracks(id.clone()).await?;
+            (store::with_tracks(known, &tracks), tracks, true)
+        }
+    };
+    tracing::info!(album = %id, ms = started.elapsed().as_millis() as u64, partial, "album page answered");
+    let artist = svc
+        .store
+        .artists(vec![store::artist(ArtistInfo {
+            mbid: None,
+            name: album.artist.clone(),
+        })])
+        .await?;
+    Ok(Json(AlbumPage {
+        entities: art::pictured(&svc, entities(tracks, vec![album.clone()], artist)).await?,
+        partial,
+        album,
+    }))
+}
+
+/// The album's tracklist, remembered with it: from the catalog that found it, else from
+/// MusicBrainz, else the catalog tracks lull already has of it.
+async fn fill(svc: &Service, known: Album) -> Result<Filled> {
+    let id = known.id.clone();
+    if let Some(source) = svc.store.album_source(id.clone()).await? {
+        match from_catalog(svc, source, &known).await {
+            Ok(songs) if !songs.is_empty() => {
+                let tracks = svc.store.tracks(songs).await?;
+                let album = svc.store.full_album(known, &tracks).await?;
+                return Ok(Filled {
+                    album,
+                    tracks,
+                    from_catalog: true,
+                });
+            }
+            Ok(_) => tracing::info!(album = %id, ?source, "the catalog lists no tracks for it"),
+            Err(e) => tracing::info!(error = %e, album = %id, ?source, "album tracklist from MusicBrainz instead"),
+        }
+    }
+    let (mut album, songs) = match from_musicbrainz(svc, &known).await {
         Ok(Some(found)) => found,
         Ok(None) => (known, Vec::new()),
         Err(e) => {
@@ -56,18 +148,50 @@ pub async fn album(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> R
     } else {
         svc.store.tracks(songs).await?
     };
-    let album = svc.store.full_album(album, &tracks).await?;
-    let artist = svc
-        .store
-        .artists(vec![store::artist(ArtistInfo {
-            mbid: None,
-            name: album.artist.clone(),
-        })])
-        .await?;
-    Ok(Json(AlbumPage {
-        entities: art::pictured(&svc, entities(tracks, vec![album.clone()], artist)).await?,
-        album,
-    }))
+    Ok(Filled {
+        album: svc.store.full_album(album, &tracks).await?,
+        tracks,
+        from_catalog: false,
+    })
+}
+
+/// The tracklist of the catalog album behind `known`, as songs of `known` (its title and artist,
+/// so the tracks carry its id).
+async fn from_catalog(svc: &Service, source: AlbumSource, known: &Album) -> Result<Vec<Song>> {
+    let songs = match source {
+        AlbumSource::Itunes(id) => svc.itunes.tracklist(id).await?,
+        AlbumSource::Deezer(id) => svc.deezer.tracklist(id).await?,
+    };
+    Ok(songs
+        .into_iter()
+        .map(|s| Song {
+            album: known.title.clone(),
+            album_artist: Some(known.artist.clone()),
+            album_mbid: known.musicbrainz_id.clone(),
+            year: known.year.or(s.year),
+            tags: known.tags.clone(),
+            ..s
+        })
+        .collect())
+}
+
+/// Adds what MusicBrainz knows of an album a catalog gave (its MBID, tags, type, date).
+async fn enrich(svc: &Service, album: Album) {
+    if !svc.mb.switch.is_on() {
+        return;
+    }
+    let group = match &album.musicbrainz_id {
+        Some(mbid) => svc.mb.release(mbid).await.map(Some),
+        None => svc.mb.find_release(&album.artist, &album.title).await,
+    };
+    let outcome = match group {
+        Ok(Some(group)) => svc.store.enrich_album(album.id.clone(), group).await,
+        Ok(None) => Ok(()),
+        Err(e) => Err(e),
+    };
+    if let Err(e) = outcome {
+        tracing::info!(error = %e, album = %album.id, "album not enriched from MusicBrainz");
+    }
 }
 
 /// The album's release group and tracklist, when MusicBrainz knows it.

@@ -43,11 +43,22 @@ impl Cache {
         T: Serialize + DeserializeOwned + Send + 'static,
         F: Future<Output = Result<T>>,
     {
+        self.get_with(key, |_| ttl, fetch).await
+    }
+
+    /// `get`, keeping each answer for `ttl(answer)` seconds: "not found" can be kept shorter
+    /// than a find, so a source that learns of it later is asked again.
+    pub async fn get_with<T, F>(&self, key: String, ttl: impl Fn(&T) -> i64, fetch: impl FnOnce() -> F) -> Result<T>
+    where
+        T: Serialize + DeserializeOwned + Send + 'static,
+        F: Future<Output = Result<T>>,
+    {
         let stored = self.read(key.clone()).await?;
         if let Some((value, at)) = &stored
-            && lull_core::now() - at < ttl
+            && let Ok(answer) = serde_json::from_value::<T>(value.clone())
+            && lull_core::now() - at < ttl(&answer)
         {
-            return serde_json::from_value(value.clone()).map_err(|e| Error::internal(format!("cache {key}: {e}")));
+            return Ok(answer);
         }
         match fetch().await {
             Ok(fresh) => {
@@ -106,5 +117,50 @@ impl Cache {
                 Ok(())
             })
             .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    use lull_core::Result;
+    use lull_core::db::Db;
+
+    use super::{Cache, DAY};
+
+    #[tokio::test]
+    async fn not_finding_is_kept_shorter_than_finding() -> Result<()> {
+        // Live, an album MusicBrainz didn't have yet stayed "not found" for 30 days.
+        let db = Db::memory()?;
+        db.migrate(&crate::MIGRATIONS)?;
+        let cache = Cache::new(db.clone());
+        let asked = AtomicU32::new(0);
+        let ttl = |found: &Option<String>| if found.is_some() { 30 * DAY } else { DAY };
+        let lookup = |answer: Option<&'static str>| {
+            let asked = &asked;
+            move || async move {
+                asked.fetch_add(1, Ordering::Relaxed);
+                Ok(answer.map(str::to_owned))
+            }
+        };
+        let age = |days: i64| {
+            let db = db.clone();
+            async move {
+                db.call(move |c| {
+                    c.execute("UPDATE discovery_cache SET fetched_at = fetched_at - ?1", [days * DAY])?;
+                    Ok(())
+                })
+                .await
+            }
+        };
+        cache.get_with("missing".into(), ttl, lookup(None)).await?;
+        age(2).await?;
+        let again = cache.get_with("missing".into(), ttl, lookup(Some("found"))).await?;
+        assert_eq!(again.as_deref(), Some("found"), "asked again after a day");
+        age(2).await?;
+        cache.get_with("missing".into(), ttl, lookup(None)).await?;
+        assert_eq!(asked.load(Ordering::Relaxed), 2, "a find is kept a month");
+        Ok(())
     }
 }

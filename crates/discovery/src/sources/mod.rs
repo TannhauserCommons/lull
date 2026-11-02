@@ -52,6 +52,17 @@ pub struct Release {
     pub tags: Vec<String>,
 }
 
+/// Where a catalog album came from, so its page asks that catalog for the tracklist (one fast
+/// call) instead of MusicBrainz (two paced ones).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase", tag = "source", content = "id")]
+pub enum AlbumSource {
+    /// Apple's `collectionId`.
+    Itunes(u64),
+    /// Deezer's album id.
+    Deezer(u64),
+}
+
 /// An artist as the sources describe it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ArtistInfo {

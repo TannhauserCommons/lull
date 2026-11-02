@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use tokio::time::Instant;
 
 use super::merge::{self, AlbumHit, ArtistHit, Fit, Found, Kind, Merged, Query, Score, SongHit};
-use crate::sources::{deezer, itunes, lastfm, musicbrainz};
+use crate::sources::{AlbumSource, deezer, itunes, lastfm, musicbrainz};
 
 fn fixture(name: &str) -> Value {
     let text = match name {
@@ -24,6 +24,9 @@ fn fixture(name: &str) -> Value {
         // "cyberpunk edgerunners season 2", recorded 2026-11-02 (US store).
         "itunes-song-soundtrack" => include_str!("fixtures/itunes-song-soundtrack.json"),
         "itunes-album-soundtrack" => include_str!("fixtures/itunes-album-soundtrack.json"),
+        "itunes-lookup-soundtrack" => include_str!("fixtures/itunes-lookup-soundtrack.json"),
+        // Daft Punk's Discovery, `album/302127/tracks?limit=3`.
+        "deezer-album-tracks" => include_str!("fixtures/deezer-album-tracks.json"),
         // Dawid Podsiadło's "Let You Down": a single, his album and the Edgerunners soundtrack.
         "musicbrainz-recording-soundtrack" => include_str!("fixtures/musicbrainz-recording-soundtrack.json"),
         "musicbrainz-recording" => include_str!("fixtures/musicbrainz-recording.json"),
@@ -619,4 +622,77 @@ fn last_fm_track_lists_become_songs_without_a_release() {
         Some(305),
         "a single track comes as an object"
     );
+}
+
+#[test]
+fn catalog_albums_keep_their_catalog_id_for_the_tracklist() {
+    // Live, "Go to album" asked MusicBrainz twice behind its 1.1 s pace (up to 17 s a call),
+    // then showed one track when it had no exact title. The catalog's own id is one fast call.
+    let ost = Some(AlbumSource::Itunes(6823237344));
+    let mut m = Merged::default();
+    m.add(itunes::songs(fixture("itunes-song-soundtrack")).unwrap_or_default());
+    let worth_it = m
+        .songs
+        .iter()
+        .find(|s| s.title == "Worth It")
+        .cloned()
+        .unwrap_or_default();
+    assert_eq!(
+        worth_it.album_hit().and_then(|a| a.source),
+        ost,
+        "an album known from its song"
+    );
+    m.add(itunes::albums(fixture("itunes-album-soundtrack")).unwrap_or_default());
+    let row = m
+        .albums
+        .iter()
+        .find(|a| a.title.starts_with("Cyberpunk: Edgerunners 2"));
+    assert_eq!(row.and_then(|a| a.source), ost, "one row, the id kept");
+    let deezer = deezer::songs(fixture("deezer-track")).unwrap_or_default();
+    assert!(
+        deezer
+            .iter()
+            .all(|s| matches!(s.album_source, Some(AlbumSource::Deezer(_))))
+    );
+    let deezer = deezer::albums_of(fixture("deezer-album")).unwrap_or_default();
+    assert!(matches!(deezer[0].source, Some(AlbumSource::Deezer(_))));
+}
+
+#[test]
+fn an_itunes_lookup_is_the_albums_tracklist_in_order() {
+    let songs = itunes::tracklist(fixture("itunes-lookup-soundtrack")).unwrap_or_default();
+    assert_eq!(songs.len(), 8, "the collection row itself is not a song");
+    let first = &songs[0];
+    assert_eq!(
+        (
+            first.title.as_str(),
+            first.artist.as_str(),
+            first.no,
+            first.disc,
+            first.duration_s
+        ),
+        ("Watson (feat. Oslo Green)", "Petite Meller", Some(1), None, Some(202))
+    );
+    assert_eq!(first.album_artist.as_deref(), Some("Various Artists"));
+    assert_eq!(
+        songs.iter().filter_map(|s| s.no).collect::<Vec<_>>(),
+        (1..=8).collect::<Vec<_>>()
+    );
+    assert_eq!(songs[1].title, "You Can't Run From Me");
+}
+
+#[test]
+fn a_deezer_album_answer_is_its_tracklist_in_order() {
+    let songs = deezer::tracklist(fixture("deezer-album-tracks")).unwrap_or_default();
+    let got: Vec<(&str, Option<u32>, Option<u32>)> =
+        songs.iter().map(|s| (s.title.as_str(), s.no, s.duration_s)).collect();
+    assert_eq!(
+        got,
+        [
+            ("One More Time", Some(1), Some(320)),
+            ("Aerodynamic", Some(2), Some(212)),
+            ("Digital Love", Some(3), Some(301))
+        ]
+    );
+    assert!(songs.iter().all(|s| s.artist == "Daft Punk" && s.disc.is_none()));
 }
