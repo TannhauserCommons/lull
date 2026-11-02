@@ -363,7 +363,7 @@
     return entityPage('album', path, function (d) {
       var a = pageEntity(d, 'album', 'albums', M.album); if (!a) return null;
       whole[a.id] = true;                               // this page has the album's full tracklist
-      var ids = a.trackIds, tracks = ids.map(M.track).filter(Boolean), down = jellyfinDown(), noTracks = !ids.length;
+      var ids = a.trackIds, tracks = ids.map(M.track).filter(Boolean), down = jellyfinDown(), noTracks = !ids.length, gettingList = noTracks && !!d.partial;
       var discs = []; tracks.forEach(function (t) { var n = (t.disc || 1) - 1; (discs[n] = discs[n] || []).push(t); });
       discs = discs.filter(Boolean);
       return html`<div class="view__inner lib">
@@ -396,7 +396,8 @@
             </div>
           </div>
           <div class="lib-album__songs">
-          ${noTracks ? ui.emptyState({ art: 'moon', title: 'No tracklist found yet', text: 'lull hasn\'t found the songs on this release yet. Soulseek may have them.',
+          ${gettingList ? ui.emptyState({ art: 'wave', title: 'Getting the tracklist…', text: 'The songs show up here as soon as they arrive.' })
+            : noTracks ? ui.emptyState({ art: 'moon', title: 'No tracklist found yet', text: 'lull hasn\'t found the songs on this release yet. Soulseek may have them.',
             action: { label: 'Search Soulseek', href: '#/search?q=' + encodeURIComponent(a.artist + ' ' + a.title) } }) : ''}
           ${discs.map(function (list, i) {
             return html`${discs.length > 1 ? html`<div class="label-rule label-rule--sm lib-disc"><h2>disc ${i + 1}</h2><span class="label-rule__end t-micro fg-2">${plural(list.length, 'song')}, ${fmt.length(sumDuration(list.map(function (t) { return t.id; })))}</span></div>` : ''}
@@ -417,7 +418,11 @@
       savedState(a).state !== 'none' ? 'saved songs are in Jellyfin' : 'streaming from Soulseek until you save it'].filter(Boolean).join(', ');
     return (released ? released + ' ' : '') + rest.charAt(0).toUpperCase() + rest.slice(1) + '.';
   }
-  function mountAlbum(ctx) { liveSaveButtons(ctx); liveOn(ctx, ['liked', 'services']); }
+  /* an album page that answered `partial: true` gets `album.updated` once the full tracklist is stored: read it again */
+  function mountAlbum(ctx) {
+    liveSaveButtons(ctx); liveOn(ctx, ['liked', 'services']);
+    ctx.onCleanup(App.on('server:album.updated', function (e) { if (e.albumId === ctx.params.id) M.reload(albumPath(e.albumId)); }));
+  }
 
   /* =====================================================================
      4. Artist page: round art, follow, radio, top songs, discography, similar
