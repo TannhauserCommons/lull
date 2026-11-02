@@ -26,8 +26,6 @@
 /* Home modules (ADR-0007): one column below wide, two at wide, three from xwide; every module is a `section`
    container. Columns, not a grid: modules stack down each column in their order (the reading order too), so a short
    module never leaves a hole beside a tall one. */
-.disc-hello { position: relative; }
-.disc-hello__edit { position: absolute; right: 0; top: 4px; }
 .disc-modules { column-gap: var(--sp-6); }
 @container main (min-width: 1100px) { .disc-modules { column-count: 2; } }
 @container main (min-width: 1600px) { .disc-modules { column-count: 3; } }
@@ -38,16 +36,6 @@
 .disc-empty h2 { margin: 0; font: var(--t-h2); letter-spacing: var(--t-h2-track); color: var(--fg); }
 .disc-empty p { flex: 1 1 16ch; margin: 0; font: var(--t-meta); color: var(--fg-2); }
 .disc-empty .btn { align-self: center; }
-/* Edit Home: a bar of its own, each module a handle, arrows and a hide switch above its card */
-.disc-editbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-5); padding: var(--sp-3) var(--sp-4); }
-.disc-editbar p { display: flex; align-items: center; gap: var(--sp-2); flex: 1 1 30ch; margin: 0; font: var(--t-meta); color: var(--fg-2); }
-.disc-mod__tools { display: flex; align-items: center; gap: var(--sp-1); margin-bottom: var(--sp-2); padding: 2px 4px 2px 8px; border-radius: var(--r-pill); background: var(--bg-2); }
-.disc-mod__grip { display: grid; cursor: grab; color: var(--fg-2); }
-.disc-mod__name { flex: 1; min-width: 0; font: 800 .875rem/1.2 var(--f-ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.disc-home.is-editing .disc-mod > .card { pointer-events: none; }        /* while editing, the cards are previews */
-.disc-mod.is-hidden > .card { opacity: .45; }
-.disc-mod.is-dragging { opacity: .5; }
-.disc-mod.is-drop-target > .card { box-shadow: 0 0 0 3px var(--focus), var(--stack); }
 
 /* shelves inside cards: tiles keep their size, a wider module shows more of them; the scrollbar stays off the edge */
 .disc-shelf { padding: 0 10px var(--sp-2) 0; grid-auto-columns: 168px; }

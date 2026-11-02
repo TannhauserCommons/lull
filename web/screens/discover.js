@@ -100,17 +100,16 @@
      ===================================================================== */
   /* view state: picks dismissed this session, cold-start choices, "search again" on picks with no source,
      the cold-start follows in flight, and the shelves showing skeletons while the feed reloads */
-  var H = { dismissed: {}, coldPicks: {}, finding: null, found: {}, building: false, reloading: null, editing: false };
+  var H = { dismissed: {}, coldPicks: {}, finding: null, found: {}, building: false, reloading: null };
   function list(feed, key) { return (feed && feed[key]) || []; }
   function greeting() {
     var h = new Date().getHours();
     return h >= 5 && h < 12 ? 'good morning' : h >= 12 && h < 18 ? 'good afternoon' : 'good evening';
   }
-  function hello(sum, editable) {
+  function hello(sum) {
     return html`<header class="disc-hello">
         <h1 class="t-display">${greeting()}${ui.sparkle('--s:18px')}</h1>
         <p class="disc-hello__sum">${sum || ''}</p>
-        ${editable && !H.editing ? html`<button class="btn btn--quiet btn--sm disc-hello__edit" data-act="disc-edit" aria-pressed="false">${icon('edit')}Edit Home</button>` : ''}
       </header>`;
   }
 
@@ -122,117 +121,29 @@
       return html`<div class="disc-home">${hello('')}${App.errorCard(r.error, { path: FEED, title: 'Couldn\'t load your feed' })}</div>`;
     }
     if (feed && isCold(feed)) return renderCold(feed);
-    var hidden = App.layout.get().homeHidden, order = moduleOrder();
-    return html`<div class="disc-home${H.editing ? ' is-editing' : ''}">
-      ${hello(feed ? feed.summary : 'Gathering new releases and picks for you.', true)}
+    return html`<div class="disc-home">
+      ${hello(feed ? feed.summary : 'Gathering new releases and picks for you.')}
       ${feed && r.error ? App.errorCard(r.error, { path: FEED, title: 'Couldn\'t refresh your feed' }) : ''}
-      ${feed && !H.editing ? homeLead() : ''}
-      ${H.editing ? editBar() : ''}
-      <div class="disc-modules">${order.filter(function (id) { return H.editing || hidden.indexOf(id) < 0; }).map(function (id, i, shown) {
-        return homeModule(id, feed, i, shown.length, hidden.indexOf(id) >= 0);
-      })}</div>
+      ${feed ? homeLead() : ''}
+      <div class="disc-modules">${MODULE_IDS.map(function (id) { return homeModule(id, feed); })}</div>
     </div>`;
   }
 
   /* ---------- Home modules (ADR-0007): a grid of one, two or three columns as the main area grows; each module is
-     the `section` container, so its contents reveal more as it widens. "Edit Home" reorders (drag, or the arrow
-     buttons) and hides them; the order and the hidden ones are App.layout's homeOrder and homeHidden. ---------- */
+     the `section` container, so its contents reveal more as it widens. ---------- */
   var MODULES = {
-    new: { label: 'new releases', body: newReleasesBody, meta: function (feed) { return feed ? plural(list(feed, 'newReleases').length, 'release') : ''; } },
-    radio: { label: 'radio starters', body: radioBody },
-    picks: { label: 'picked for you', body: picksBody, meta: function (feed) { return feed && feed.updated ? 'updated ' + ago(feed.updated) : ''; } },
-    jump: { label: 'jump back in', body: jumpBody },
-    tags: { label: 'tags you follow', body: tagsBody }
+    new: { body: newReleasesBody, meta: function (feed) { return feed ? plural(list(feed, 'newReleases').length, 'release') : ''; } },
+    radio: { body: radioBody },
+    picks: { body: picksBody, meta: function (feed) { return feed && feed.updated ? 'updated ' + ago(feed.updated) : ''; } },
+    jump: { body: jumpBody },
+    tags: { body: tagsBody }
   };
   var MODULE_IDS = ['new', 'radio', 'picks', 'jump', 'tags'];
-  function moduleOrder() {
-    var order = (App.layout.get().homeOrder || []).filter(function (id) { return MODULES[id]; });
-    MODULE_IDS.forEach(function (id) { if (order.indexOf(id) < 0) order.push(id); });
-    return order;
-  }
-  function homeModule(id, feed, i, n, hidden) {
+  function homeModule(id, feed) {
     var m = MODULES[id];
     var card = html`<section class="card disc-card" aria-labelledby="disc-h-${id}" data-region="${id}" data-meta="${m.meta ? m.meta(feed) : ''}">${m.body(feed)}</section>`;
-    if (!H.editing) return html`<div class="disc-mod" data-module="${id}">${card}</div>`;
-    return html`<div class="disc-mod${hidden ? ' is-hidden' : ''}" data-module="${id}" draggable="true">
-      <div class="disc-mod__tools">
-        <span class="disc-mod__grip" aria-hidden="true">${icon('grip', null, 'ic-16')}</span>
-        <span class="disc-mod__name">${m.label}${hidden ? ' (hidden)' : ''}</span>
-        <button class="btn-icon btn-icon--bare btn-icon--sm" data-act="disc-mod-move" data-id="${id}" data-dir="-1" aria-label="Move ${m.label} earlier" data-tip="Earlier" ${i === 0 ? raw('disabled') : ''}>${icon('chevron-up', null, 'ic-16')}</button>
-        <button class="btn-icon btn-icon--bare btn-icon--sm" data-act="disc-mod-move" data-id="${id}" data-dir="1" aria-label="Move ${m.label} later" data-tip="Later" ${i === n - 1 ? raw('disabled') : ''}>${icon('chevron-down', null, 'ic-16')}</button>
-        <button class="btn-icon btn-icon--bare btn-icon--sm" data-act="disc-mod-hide" data-id="${id}" aria-pressed="${String(hidden)}" aria-label="${hidden ? 'Show' : 'Hide'} ${m.label}" data-tip="${hidden ? 'Show' : 'Hide'}">${icon(hidden ? 'eye-off' : 'eye', null, 'ic-16')}</button>
-      </div>
-      ${card}
-    </div>`;
+    return html`<div class="disc-mod" data-module="${id}">${card}</div>`;
   }
-  function editBar() {
-    return html`<div class="disc-editbar s-card" role="region" aria-label="Edit Home">
-      <p>${icon('edit')}<span>Drag sections, or use their arrows. Hidden sections wait here until you show them.</span></p>
-      <button class="btn btn--sm" data-act="disc-edit-reset">${icon('undo')}Reset Home</button>
-      <button class="btn btn--primary btn--sm" data-act="disc-edit" aria-pressed="true">Done</button>
-    </div>`;
-  }
-  /* the module's own button, or its neighbour when that one is now disabled, keeps focus across the re-render */
-  function refreshHomeKeeping(sel) {
-    App.refresh();
-    var el = sel && $(sel);
-    if (el && el.disabled) el = el.parentNode.querySelector('[data-act="disc-mod-move"]:not([disabled])');
-    if (el) el.focus();
-  }
-  function moveModule(id, to) {
-    var order = moduleOrder(), from = order.indexOf(id);
-    if (from < 0 || to < 0 || to >= order.length || to === from) return false;
-    order.splice(from, 1); order.splice(to, 0, id);
-    App.layout.set({ homeOrder: order });
-    return true;
-  }
-  App.action('disc-edit', function () {
-    H.editing = !H.editing;
-    refreshHomeKeeping(H.editing ? '[data-act="disc-mod-move"]:not([disabled])' : '.disc-hello__edit');
-    App.announce(H.editing ? 'Editing Home' : 'Home saved');
-  });
-  App.action('disc-edit-reset', function () {
-    App.layout.set({ homeOrder: null, homeHidden: [] });
-    refreshHomeKeeping('[data-act="disc-edit-reset"]');
-    App.announce('Home back to its usual order');
-  });
-  App.action('disc-mod-move', function (el) {
-    var id = el.getAttribute('data-id'), dir = +el.getAttribute('data-dir'), order = moduleOrder();
-    if (!moveModule(id, order.indexOf(id) + dir)) return;
-    refreshHomeKeeping('[data-act="disc-mod-move"][data-id="' + id + '"][data-dir="' + dir + '"]');
-    App.announce(MODULES[id].label + ', position ' + (moduleOrder().indexOf(id) + 1) + ' of ' + MODULE_IDS.length);
-  });
-  App.action('disc-mod-hide', function (el) {
-    var id = el.getAttribute('data-id'), hidden = App.layout.get().homeHidden, was = hidden.indexOf(id) >= 0;
-    App.layout.set({ homeHidden: was ? hidden.filter(function (x) { return x !== id; }) : hidden.concat(id) });
-    refreshHomeKeeping('[data-act="disc-mod-hide"][data-id="' + id + '"]');
-    App.announce(MODULES[id].label + (was ? ' shown' : ' hidden'));
-  });
-  /* drag a module onto another: it takes that one's place */
-  var dragMod = null;
-  document.addEventListener('dragstart', function (e) {
-    var m = H.editing && e.target.closest && e.target.closest('.disc-mod[draggable="true"]'); if (!m) return;
-    dragMod = m.getAttribute('data-module');
-    e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', dragMod);
-    m.classList.add('is-dragging');
-  });
-  document.addEventListener('dragover', function (e) {
-    if (!dragMod) return;
-    var t = e.target.closest && e.target.closest('.disc-mod'); if (!t) return;
-    e.preventDefault(); e.dataTransfer.dropEffect = 'move';
-    $$('.disc-mod.is-drop-target').forEach(function (n) { if (n !== t) n.classList.remove('is-drop-target'); });
-    if (t.getAttribute('data-module') !== dragMod) t.classList.add('is-drop-target');
-  });
-  document.addEventListener('drop', function (e) {
-    if (!dragMod) return;
-    var t = e.target.closest && e.target.closest('.disc-mod'); if (!t) return;
-    e.preventDefault();
-    var id = dragMod; dragMod = null;
-    if (moveModule(id, moduleOrder().indexOf(t.getAttribute('data-module')))) refreshHomeKeeping('[data-act="disc-mod-move"][data-id="' + id + '"]');
-  });
-  document.addEventListener('dragend', function () {
-    dragMod = null; $$('.disc-mod.is-dragging, .disc-mod.is-drop-target').forEach(function (n) { n.classList.remove('is-dragging', 'is-drop-target'); });
-  });
 
   /* homeLead slot: a design's own first object on Home (a media window, a widget), between the greeting and the
      shelves. Default: nothing. ctx = { track, player, queue: next tracks (up to 8), parts: { cover(t, size),
@@ -511,11 +422,6 @@
   });
 
   function mountHome(ctx) {
-    /* Escape ends Edit Home; leaving Home ends it too (a refresh of Home runs these cleanups as well, and keeps it) */
-    ctx.onCleanup(function () { if (['', '/', '/home'].indexOf(location.hash.replace(/^#/, '').split('?')[0]) < 0) H.editing = false; });
-    function onKey(e) { if (e.key === 'Escape' && H.editing && !e.defaultPrevented && !document.querySelector('.popover, .menu')) { H.editing = false; refreshHomeKeeping('.disc-hello__edit'); } }
-    document.addEventListener('keydown', onKey);
-    ctx.onCleanup(function () { document.removeEventListener('keydown', onKey); });
     ctx.onCleanup(App.on('store', function (keys) {
       var feed = M.peek(FEED);
       if (!feed || H.building || isCold(feed)) return;

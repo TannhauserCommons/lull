@@ -3,7 +3,7 @@
      A ResizeObserver mirrors the class onto .app[data-size] (compact | regular | wide | xwide | ultra) and the window's
      height onto .app[data-height] (short below 760 px), for scripts and designs. No layout is read in a resize loop.
    - App.layout holds the listener's choices, per device: localStorage 'lull:layout' = { panelWidth, panelCollapsed,
-     nowColumn, nowWidth, searchSplit, panelSplit, homeOrder, homeHidden }. get(), set(patch) (emits 'layout'), reset(),
+     nowColumn, nowWidth, searchSplit, panelSplit }. get(), set(patch) (emits 'layout'), reset(),
      size(). Widths ride on custom properties of .app (--ctx, --now-w), so the columns resize with CSS alone.
    - Resize handles [data-resize="panel|now"] (role separator): a pointer drag throttled to animation frames, arrow
      keys (Shift for bigger steps), Home / End for the limits, double-click for the default. Saved when the drag ends.
@@ -15,22 +15,19 @@
   var $ = App.$, $$ = App.$$, clamp = App.clamp;
   var SIZES = [['ultra', 2200], ['xwide', 1600], ['wide', 1100], ['regular', 640], ['compact', 0]];
   var SHORT = 760;
-  var DEFAULTS = { panelWidth: null, panelCollapsed: false, nowColumn: false, nowWidth: null, searchSplit: false, panelSplit: false,
-    homeOrder: null, homeHidden: [] };
+  var DEFAULTS = { panelWidth: null, panelCollapsed: false, nowColumn: false, nowWidth: null, searchSplit: false, panelSplit: false };
   var LIMITS = { panel: [280, 560], now: [300, 560] };
   var NOW_DEFAULT = 360, STRIP = 60, GAP = 16, KEY_STEP = 16;
   var app = $('#app'), main = $('.main');
 
   /* ---------- the stored choices: anything unknown or out of range falls back to the default ---------- */
   function width(v, kind) { return typeof v === 'number' && isFinite(v) ? clamp(Math.round(v), LIMITS[kind][0], LIMITS[kind][1]) : null; }
-  function ids(v) { return Array.isArray(v) ? v.filter(function (x) { return typeof x === 'string'; }) : null; }
   function sanitize(s) {
     s = s && typeof s === 'object' ? s : {};
     return {
       panelWidth: width(s.panelWidth, 'panel'), panelCollapsed: s.panelCollapsed === true,
       nowColumn: s.nowColumn === 'open' || s.nowColumn === 'strip' ? s.nowColumn : false, nowWidth: width(s.nowWidth, 'now'),
-      searchSplit: s.searchSplit === true, panelSplit: s.panelSplit === true,
-      homeOrder: ids(s.homeOrder), homeHidden: ids(s.homeHidden) || []
+      searchSplit: s.searchSplit === true, panelSplit: s.panelSplit === true
     };
   }
   var stored = App.storage('layout');
@@ -40,7 +37,7 @@
 
   var size = null, mainW = 0, short = false;
   App.layout = {
-    get: function () { return Object.assign({}, L, { homeHidden: L.homeHidden.slice(), homeOrder: L.homeOrder && L.homeOrder.slice() }); },
+    get: function () { return Object.assign({}, L); },
     set: function (patch) {
       L = sanitize(Object.assign({}, L, patch));
       App.storage('layout', L);

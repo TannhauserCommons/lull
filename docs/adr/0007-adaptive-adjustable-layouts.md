@@ -47,8 +47,8 @@ The design package draws two sizes: phone (390 px) and desktop (1440 px). On a 2
   - resizable by dragging their edge, between set minimum and maximum widths;
   - also resizable with the keyboard: arrow keys on the focused handle, Home and End for the limits;
   - collapsible to an icon strip.
-- **Home sections:** reordered or hidden in an "Edit Home" mode, by drag or by keyboard.
-- **Where it's stored:** `localStorage` key `lull:layout` = `{ panelWidth, panelCollapsed, nowColumn, nowWidth, searchSplit, panelSplit, homeOrder, homeHidden }`. As with appearance, this is per device and not synced. Settings › Appearance › Layout has "Reset layout".
+- **Home sections:** ~~reordered or hidden in an "Edit Home" mode~~. Removed 2026-11-02: it didn't work well and the listener didn't want it; Home's sections keep one order.
+- **Where it's stored:** `localStorage` key `lull:layout` = `{ panelWidth, panelCollapsed, nowColumn, nowWidth, searchSplit, panelSplit }`. As with appearance, this is per device and not synced. Settings › Appearance › Layout has "Reset layout".
 
 **One layout system, five designs.**
 - Layout lives in the shared component and screen CSS.

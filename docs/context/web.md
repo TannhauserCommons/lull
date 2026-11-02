@@ -253,8 +253,8 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
   (a song list; the playlist table is `libpl`). A container is the containing block of `position: fixed`
   descendants, so a design's fixed widget inside `.main` is placed against `.main`, not the window.
 - **Stored choices.** `App.layout.get()` / `set(patch)` (emits `layout`) / `reset()`. They're kept in
-  `localStorage['lull:layout']` as `{ panelWidth, panelCollapsed, nowColumn, nowWidth, searchSplit, panelSplit,
-  homeOrder, homeHidden }`, per device. Unknown or out-of-range values fall back to defaults. `reset()` is the hook
+  `localStorage['lull:layout']` as `{ panelWidth, panelCollapsed, nowColumn, nowWidth, searchSplit, panelSplit }`,
+  per device. Unknown or out-of-range values fall back to defaults. `reset()` is the hook
   for "Reset layout" in Settings > Appearance.
 - **Side panel.**
   - At 1360 px and wider it's docked. Closing it there collapses it to an icon strip (`.app[data-panel="strip"]`),
@@ -275,7 +275,6 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
 - **Screens.**
   - **Home:** modules in 1, 2 or 3 CSS columns (`main` at 1100 and 1600). Each module is a `section` container.
     "Picked for you" shows 6, 9 or 12 picks as its module widens. An empty module is one line.
-  - **Edit Home:** reorders by drag or arrow buttons and hides with an eye switch.
   - **Shelves:** fixed tile widths, so a wider shelf shows more tiles.
   - **Song lists:** album at 760 px, and date added where the list has dates. From 1100 px, play counts (lists that
     have them); from 1240 px, the bitrate and sample rate. Both go in the badge cell, which gets a fixed width so a
