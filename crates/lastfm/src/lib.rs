@@ -373,3 +373,102 @@ fn account(conn: &Connection) -> Result<Option<Account>> {
         )
         .optional()?)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use lull_core::config::Config;
+    use lull_core::db::Db;
+    use lull_core::events::Bus;
+    use lull_core::http::Http;
+    use lull_core::status::Status;
+    use rusqlite::params;
+
+    use super::*;
+
+    fn service() -> Result<Arc<Service>> {
+        let vars: BTreeMap<String, String> = [("LULL_SLSKD_URL", "http://slskd"), ("LULL_SLSKD_API_KEY", "k")]
+            .into_iter()
+            .map(|(k, v)| (k.to_owned(), v.to_owned()))
+            .collect();
+        let config = Config::from_vars(vars).map_err(|e| lull_core::Error::internal(e.to_string()))?;
+        let db = Db::memory()?;
+        db.migrate(&MIGRATIONS)?;
+        let bus = Bus::new();
+        Ok(Arc::new(Service {
+            ctx: Ctx {
+                config: Arc::new(config),
+                db,
+                http: Http::new()?,
+                status: Status::new(bus.clone()),
+                bus,
+                shutdown: Default::default(),
+            },
+            client: None,
+            wake: Notify::new(),
+            pending_auth: Mutex::new(None),
+            signed_out: Mutex::new(false),
+            auth_error: Mutex::new(None),
+        }))
+    }
+
+    async fn connect(svc: &Service, scrobbling: bool) -> Result<()> {
+        svc.ctx
+            .db
+            .call(move |c| {
+                c.execute(
+                    "INSERT OR REPLACE INTO lastfm_session (id, user, session_key, scrobbling, connected_at)
+                     VALUES (1, 'listener', 'sk', ?1, 0)",
+                    params![scrobbling],
+                )?;
+                Ok(())
+            })
+            .await
+    }
+
+    /// Ends play `id` from the `play.ended` payload collection publishes (api.md#events).
+    async fn end(svc: &Service, id: i64, played_s: u32) -> Result<()> {
+        let p: PlayEvent = serde_json::from_value(json!({
+            "playId": id.to_string(), "trackId": "deezer:1", "at": 1_000, "playedS": played_s,
+            "completed": played_s == 254, "skipped": false, "duration": 254,
+            "artist": "Piernikowski", "title": "Daj Mi Jeszcze Jedna Szanse", "album": "",
+        }))
+        .map_err(|e| lull_core::Error::internal(e.to_string()))?;
+        svc.ended(id, p.play(), p.played_s).await
+    }
+
+    fn verdicts(rx: &mut broadcast::Receiver<Event>) -> Vec<String> {
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .filter(|e| e.topic == "scrobble")
+            .map(|e| {
+                format!(
+                    "{} {}",
+                    e.data["playId"].as_str().unwrap_or("?"),
+                    e.data["status"].as_str().unwrap_or("?")
+                )
+            })
+            .collect()
+    }
+
+    /// History's `scrobble: null` on a full play means Last.fm wasn't listening when it ended:
+    /// such a play is dropped, not kept for a later connect.
+    #[tokio::test]
+    async fn only_plays_ended_while_connected_and_scrobbling_get_a_verdict() -> Result<()> {
+        let svc = service()?;
+        let mut rx = svc.ctx.bus.subscribe();
+
+        end(&svc, 1, 254).await?; // not connected yet
+        connect(&svc, false).await?;
+        end(&svc, 2, 254).await?; // scrobbling switched off
+        assert!(verdicts(&mut rx).is_empty());
+
+        connect(&svc, true).await?;
+        end(&svc, 3, 254).await?;
+        end(&svc, 4, 20).await?;
+        assert_eq!(verdicts(&mut rx), ["3 pending", "4 short"]);
+        let queued = svc.ctx.db.call(|c| queue::summary(c)).await?.0;
+        assert_eq!(queued, 1, "only play 3 waits to be sent; plays 1 and 2 are gone");
+        Ok(())
+    }
+}

@@ -36,7 +36,7 @@ The rules are Last.fm's own (`rules.rs`, tested):
 - `play.ended { playId, at, playedS, duration, artist, title, album }` is judged by the rules. Collection's `at` is the play's start, Last.fm's timestamp.
 - An eligible play is queued with `timestamp = at`.
 - Each play publishes `scrobble { playId, status: pending | short }`, and `done` once sent. History uses the same words. `short` means Last.fm's rule failed: a skip after the half still scrobbles.
-- With the "scrobble what I play" switch off, nothing is queued or published.
+- **A play that ends while Last.fm isn't listening is dropped, not kept:** not connected yet, disconnected, the "scrobble what I play" switch off, or no API key on the server. Nothing is queued or published for it, and connecting later doesn't send it. History shows it with `scrobble: null` (tested in `lib.rs`).
 
 ## The queue (`queue.rs`, tested)
 
