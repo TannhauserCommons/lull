@@ -53,7 +53,7 @@ slskd can stop halfway through connecting or disconnecting, logged out, with its
 
 Search is a catalog search owned by discovery (`/api/search`, ADR-0008); Soulseek runs behind it at `GET /api/soulseek/search`.
 
-- **slskd hides answers until a search ends.** It also only runs two searches at a time. So each query runs one network search that ends after 6 s with no new answers, or after 15 s in all, at which point lull stops it.
+- **slskd hides answers until a search ends.** It also only runs two searches at a time. So each query runs one network search that ends after 6 s with no new answers, or after 15 s in all, at which point lull stops it (resolve searches stop sooner, below).
   - While it runs, `search.results` events carry only the counters (`files`, `peers`, `done: false`).
   - The final event carries the merged `results` and `entities`, or `error`.
 - **Waiting for slskd's last step.** slskd calls a search `Completed` before it writes the responses (that step sets `endedAt`), and deleting the search in between loses them: seen live as "Failed to finalize search … affected 0 row(s)" and an empty result after 300 peers answered. lull reads the responses until they appear or `endedAt` is set, for up to 5 s. If peers answered (or the search `Errored`) and still no responses come back, the final event carries `error` ("slskd found 8217 files from 300 peers but handed over none; search again"), not an empty success.
@@ -68,6 +68,13 @@ Search is a catalog search owned by discovery (`/api/search`, ADR-0008); Soulsee
 - **Only on Soulseek.** Discovery publishes `search.catalog { query, trackIds }` for a query's top catalog tracks. The final results carry `onlySoulseek`: the unsaved result songs no catalog track matches (by `matching`). When the catalog arrives after the results, the final `search.results` is published again with it; before the catalog has answered it is `null`.
 - **Pre-warming** (`prewarm.rs`). The top 3 tracks of each `search.catalog` get a resolve search in the background, one at a time and at least 5 s apart, so pressing play finds copies waiting. A newer query replaces what an older one left queued; songs with known copies, saved songs and an offline Soulseek are skipped.
 - **Resolve searches.** A song nothing is known about (a queue item, a catalog pick, a save) gets a search for `artist title`. Files count as the song by [matching](#matching), whatever their album, and are kept under the song's id too. When the first search finds no copy, a looser second one runs: the title without its tags plus the artist's longest word. Sources, streams and saves trigger it themselves.
+- **Resolve searches stop early.** They want a few good copies, not every answer, so lull stops one (slskd's stop call keeps what arrived; then the usual wait for slskd's last step) as soon as:
+  - 15 peers have answered and it has run 2 s;
+  - answers have been quiet for 1.5 s after the first ones;
+  - nobody has answered within 4 s (the looser search goes next);
+  - or 8 s have passed.
+
+  A cold song typically has its copies in 2-4 s instead of 7-21 s. The listener's own search still takes every answer, since it fills a results page.
 
 ## Matching
 

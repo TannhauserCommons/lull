@@ -41,6 +41,65 @@ const ALBUM_MIN_TRACKS: usize = 3;
 /// How long a search that slskd calls `Completed` may take to hand over its responses.
 const FINALIZE_WAIT: Duration = Duration::from_secs(5);
 const FINALIZE_POLL: Duration = Duration::from_millis(250);
+
+// A resolve search wants a handful of good copies of one song, not every answer: waiting for
+// the whole search cost 7-21 s before a cold song could even queue. Peers that share the song
+// answer within a second or two, so these stop it as soon as more answers would add little.
+
+/// This many peers answering is plenty to pick from and fall back through...
+const ENOUGH_PEERS: u32 = 15;
+/// ...once the search has run this long, so the fastest answers aren't the only ones.
+const MIN_RUN: Duration = Duration::from_secs(2);
+/// After the first answers, this long with no new one means the rest are stragglers.
+const QUIET: Duration = Duration::from_millis(1500);
+/// Nobody answering by now almost always means nobody will; the looser search goes next.
+const NO_ANSWERS: Duration = Duration::from_secs(4);
+/// The longest a resolve search runs, however answers trickle in.
+const RESOLVE_DEADLINE: Duration = Duration::from_secs(8);
+/// Resolve searches publish nothing while they run, so they can look closely at the counters.
+const RESOLVE_POLL: Duration = Duration::from_millis(250);
+
+/// How a network search decides it has heard enough.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Until {
+    /// The listener's search: every answer, ending after `INACTIVITY` without one or `DEADLINE`.
+    Settled,
+    /// A resolve search: stopped early by [`Hearing::enough`].
+    Enough,
+}
+
+/// What a running resolve search has heard so far, to tell when to stop it.
+struct Hearing {
+    started: Instant,
+    peers: u32,
+    changed: Instant,
+}
+
+impl Hearing {
+    fn new(now: Instant) -> Self {
+        Hearing {
+            started: now,
+            peers: 0,
+            changed: now,
+        }
+    }
+
+    fn heard(&mut self, peers: u32, now: Instant) {
+        if peers != self.peers {
+            self.peers = peers;
+            self.changed = now;
+        }
+    }
+
+    /// Enough peers answered, the answers went quiet, nobody answered, or time is up.
+    fn enough(&self, now: Instant) -> bool {
+        let ran = now.duration_since(self.started);
+        (self.peers >= ENOUGH_PEERS && ran >= MIN_RUN)
+            || (self.peers > 0 && now.duration_since(self.changed) >= QUIET)
+            || (self.peers == 0 && ran >= NO_ANSWERS)
+            || ran >= RESOLVE_DEADLINE
+    }
+}
 const MAX_SONGS: usize = 200;
 const MAX_ALBUMS: usize = 40;
 
@@ -238,7 +297,7 @@ impl Searches {
             )
         };
         let mut stop = session.stop.subscribe();
-        let responses = match self.network(query, &mut stop, progress).await {
+        let responses = match self.network(query, Until::Settled, &mut stop, progress).await {
             Ok(Some(r)) => r,
             Ok(None) => return, // superseded by a newer search
             Err(e) => {
@@ -305,7 +364,7 @@ impl Searches {
     /// song also under its id. Returns how many files matched.
     async fn search_for(&self, track: &Track, wanted: &Wanted, text: &str) -> Result<usize> {
         let (_never, mut stop) = watch::channel(false);
-        let Some(responses) = self.network(text, &mut stop, |_| {}).await? else {
+        let Some(responses) = self.network(text, Until::Enough, &mut stop, |_| {}).await? else {
             return Ok(0);
         };
         let mut merged = merge(&responses);
@@ -334,22 +393,27 @@ impl Searches {
         })
     }
 
-    /// Runs one network search to its end. `None` when `stop` fired first (the search is
-    /// stopped and dropped in slskd too).
+    /// Runs one network search until it has heard enough (`until`), then reads its answers.
+    /// `None` when `stop` fired first (the search is stopped and dropped in slskd too).
     async fn network(
         &self,
         text: &str,
+        until: Until,
         stop: &mut watch::Receiver<bool>,
         progress: impl Fn(&slskd::Search),
     ) -> Result<Option<Vec<slskd::Response>>> {
         self.space_out().await;
         let search = self.slskd.start_search(text, INACTIVITY, RESPONSE_LIMIT).await?;
-        let started = Instant::now();
+        let mut hearing = Hearing::new(Instant::now());
+        let poll = match until {
+            Until::Settled => POLL,
+            Until::Enough => RESOLVE_POLL,
+        };
         let mut stopping = false;
         let mut last = search;
         loop {
             tokio::select! {
-                _ = tokio::time::sleep(POLL) => {}
+                _ = tokio::time::sleep(poll) => {}
                 _ = crate::fetch::stopped(stop) => {
                     self.drop_search(&last.id, true).await;
                     return Ok(None);
@@ -361,7 +425,15 @@ impl Searches {
             if last.is_complete() {
                 break;
             }
-            if !stopping && started.elapsed() >= DEADLINE {
+            let now = Instant::now();
+            hearing.heard(last.response_count, now);
+            let heard_enough = match until {
+                Until::Settled => now.duration_since(hearing.started) >= DEADLINE,
+                Until::Enough => hearing.enough(now),
+            };
+            // Stopping keeps what has arrived; slskd then finishes the search as usual, and
+            // `finished_responses` waits for its last step before reading.
+            if !stopping && heard_enough {
                 stopping = true;
                 self.slskd.stop_search(&last.id).await?;
             }
@@ -912,7 +984,7 @@ mod tests {
         let searches = searches(true).await?;
         let (_keep, mut stop) = watch::channel(false);
         let responses = searches
-            .network("portishead", &mut stop, |_| {})
+            .network("portishead", Until::Settled, &mut stop, |_| {})
             .await?
             .ok_or("stopped")?;
         assert_eq!(
@@ -939,6 +1011,32 @@ mod tests {
         let again = searches.start("portishead", true)?;
         assert_ne!(again.search_id, first.search_id, "search again runs a fresh search");
         Ok(())
+    }
+
+    #[test]
+    fn a_resolve_search_stops_once_it_has_heard_enough() {
+        let t0 = Instant::now();
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+        let mut busy = Hearing::new(t0);
+        busy.heard(20, at(800));
+        assert!(!busy.enough(at(1000)), "20 peers at 1 s: give slower peers a moment");
+        busy.heard(24, at(1900));
+        assert!(busy.enough(at(2000)), "plenty of peers after 2 s");
+
+        let mut few = Hearing::new(t0);
+        few.heard(3, at(1200));
+        assert!(!few.enough(at(2500)), "answers still arriving");
+        assert!(few.enough(at(2700)), "quiet for 1.5 s after the first answers");
+
+        let none = Hearing::new(t0);
+        assert!(!none.enough(at(3000)));
+        assert!(none.enough(at(4000)), "nobody answered: the looser search goes next");
+
+        let mut trickle = Hearing::new(t0);
+        for (i, ms) in (500..8000).step_by(1000).enumerate() {
+            trickle.heard(i as u32 + 1, at(ms as u64));
+        }
+        assert!(trickle.enough(at(8000)), "a trickle is cut off at the deadline");
     }
 
     #[test]
