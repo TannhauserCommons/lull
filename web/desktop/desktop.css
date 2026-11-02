@@ -152,9 +152,10 @@
 /* =====================================================================
    4. Mini player windows (frameless, transparent, always on top)
    ===================================================================== */
-/* outranks every design's wallpaper (:root[data-design="x"] body): the device silhouette is the window's shape */
-:root.dk-transparent[data-design], :root.dk-transparent[data-design] body { background: transparent; }
-:root.dk-transparent, :root.dk-transparent[data-theme] { color-scheme: normal; }   /* an iframe/webview whose scheme differs from its host is painted opaque */
+/* the transparent page itself (no wallpaper) is in wrapper.html: it has to outrank every design's unlayered CSS */
+/* the player's root is the window's frame (desktop.js fits the window to it), and clips like the main UI's frames do:
+   the wave's seek rail is the wave's width moved by --pos, so it always reaches past the wave's right edge */
+[data-dk-player] { overflow: clip; }
 .dk-mini { display: grid; place-items: start center; padding: 8px 10px 0; }
 .dk-mini--opaque { background: var(--sky); min-height: 100vh; min-height: 100dvh; padding-top: 10px; }
 
@@ -198,7 +199,7 @@
 .dk-mini__note.is-on { opacity: 1; }
 
 /* strip: one slim bar */
-.dk-strip-wrap { padding: 8px 10px 0; }
+.dk-strip-wrap { padding: 8px 10px 18px; }                /* the window fits this box (desktop.js): room below for the deepest design shadow, glasshouse's 18 px */
 .dk-strip {
   position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--sp-3);
   width: 520px; height: 64px; padding: 0 8px 0 6px; border: var(--stroke) solid var(--edge); border-radius: var(--r-panel);

@@ -608,6 +608,7 @@
       var render = function () {
         host.innerHTML = view === 'strip' ? D.miniStrip() : D.miniDevice();
         receive(doc, S, true);
+        fitWindow($('[data-dk-player]', host));
       };
       Designs.ready(render);
       T.event.listen('player', function (e) { receive(doc, e.payload, false); });
@@ -621,6 +622,19 @@
       }, 400);
     }
   };
+
+  /* the mini window is as tall as its design's player, which may differ from the window's opening size (mini.rs);
+     its width is the design's own. Follows the player as it changes (a title on two lines, a design switch). */
+  var fitting = null;
+  function fitWindow(el) {
+    if (fitting) fitting.disconnect();
+    var w = currentWindow(), LogicalSize = (T.dpi || T.window).LogicalSize;
+    fitting = new ResizeObserver(function () {
+      var h = Math.ceil(el.getBoundingClientRect().height);
+      if (h && h !== innerHeight) w.setSize(new LogicalSize(innerWidth, h)).catch(logFailure('mini player size'));
+    });
+    fitting.observe(el);
+  }
 
   /* the app moves between its pages by changing the hash: same document, so render again */
   if ($('#dk-root')) window.addEventListener('hashchange', D.mountPage);

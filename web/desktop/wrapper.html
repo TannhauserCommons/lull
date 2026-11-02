@@ -12,6 +12,12 @@
 <style>@import url(../components.css) layer(components);</style>
 <style>@import url(desktop.css) layer(screens);</style>
 <link rel="stylesheet" id="design-css" href="../designs/lull/theme.css">
+<!-- The mini player's window is transparent: the device silhouette is its shape. Unlayered and important, because a
+     design's or a user theme's wallpaper (:root[data-design="x"] body) is unlayered CSS too, and beats any layer. -->
+<style>
+  :root.dk-transparent, :root.dk-transparent body { background: transparent !important; }
+  :root.dk-transparent, :root.dk-transparent[data-theme] { color-scheme: normal; }   /* a webview whose scheme differs from its host is painted opaque */
+</style>
 <script src="../designs/designs.js"></script>
 <script>
   (function () {   /* design, theme and transparency before first paint */

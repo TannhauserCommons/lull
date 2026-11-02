@@ -38,6 +38,7 @@ pub fn open(app: &AppHandle) -> tauri::Result<()> {
         },
         &settings.appearance,
     )?;
+    // The opening size: the page then fits the height to its design's player (desktop.js, fitWindow).
     let (width, height) = match style {
         MiniStyle::Device => (340.0, 560.0),
         MiniStyle::Strip => (540.0, 90.0),
