@@ -3,6 +3,8 @@
 //! (docs/context/workspace.md, docs/context/hub.md). The `lull` binary and the desktop app both
 //! start the hub through `run` (ADR-0002).
 
+mod compress;
+mod conditional;
 mod config;
 mod devices;
 mod events;
@@ -89,6 +91,8 @@ fn router(hub: Arc<Hub>) -> Router {
         .merge(config::router())
         .fallback(crates)
         .layer(axum::middleware::from_fn_with_state(hub.clone(), gate::require))
+        .layer(axum::middleware::from_fn(conditional::not_modified))
+        .layer(compress::layer())
         .with_state(hub)
 }
 

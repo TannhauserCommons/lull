@@ -12,7 +12,7 @@ Owned by the Quality session. Files: `scripts/web-dist/`, `crates/server/src/web
 `web.rs` serves from the embedded files:
 - It picks the first of `br`, `gzip` that `Accept-Encoding` allows (a `q=0` refuses it) and has a variant file, and answers with `Content-Encoding`. Without a variant, or in a checkout, it serves the plain file.
 - Every answer carries `Vary: Accept-Encoding`, `Cache-Control: no-cache` and an ETag of the bytes sent, so each encoding has its own tag; `If-None-Match` gets a bodyless 304 with the same headers.
-- `rust-embed` reads `web/` from disk in debug builds, so the variants don't exist there and nothing is compressed on the fly.
+- `rust-embed` reads `web/` from disk in debug builds, so the variants don't exist there; the hub's compression layer (`compress.rs`, hub.md) then compresses those text files per request, as it does every JSON answer.
 
 **Sizes** (`web/` at `a324215`, 144 files; the hub sent everything uncompressed before):
 

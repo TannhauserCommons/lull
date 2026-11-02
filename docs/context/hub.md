@@ -14,6 +14,8 @@
 | `events.rs` | `GET /api/events` (SSE) |
 | `config.rs` | `GET`/`PATCH /api/config` |
 | `web.rs` | The static UI (Quality session's) |
+| `conditional.rs` | `If-None-Match` for every route: an answer whose `ETag` matches goes out as a bodyless 304 with its caching headers. Routes only set the tag (`lull_core::etag::of`) |
+| `compress.rs` | Every text answer over 1 KB (JSON, Subsonic's XML) goes out brotli or gzip (level 5) when `Accept-Encoding` allows; audio, pictures, `text/event-stream` and answers that already carry `Content-Encoding` (the UI's pre-compressed files) pass as they are |
 
 ## Invariants
 

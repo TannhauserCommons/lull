@@ -271,3 +271,32 @@ async fn a_settings_change_rewires_the_crates_behind_the_same_listener() -> Resu
     let _ = std::fs::remove_dir_all(dir);
     Ok(())
 }
+
+#[tokio::test]
+async fn json_goes_out_compressed_and_the_event_stream_as_it_is() -> Result<(), BoxError> {
+    let (hub, dir) = test_hub().await?;
+    let claim = json!({ "code": SETUP_CODE, "name": "Phone" });
+    let (_, cookie, _) = call(&hub, send("POST", "/api/setup/claim", Auth::None, claim)?).await?;
+    let token = cookie_token(cookie);
+    let encoding = |path: &str| -> Result<Request<Body>, BoxError> {
+        Ok(Auth::Cookie(&token)
+            .apply(Request::get(path))
+            .header(header::ACCEPT_ENCODING, "br, gzip")
+            .body(Body::empty())?)
+    };
+    let config = router(hub.clone()).oneshot(encoding("/api/config")?).await?;
+    assert_eq!(config.status(), StatusCode::OK);
+    assert_eq!(
+        config
+            .headers()
+            .get(header::CONTENT_ENCODING)
+            .and_then(|v| v.to_str().ok()),
+        Some("br")
+    );
+    let events = router(hub.clone()).oneshot(encoding("/api/events")?).await?;
+    assert_eq!(events.status(), StatusCode::OK);
+    assert!(events.headers().get(header::CONTENT_ENCODING).is_none());
+    drop(events);
+    let _ = std::fs::remove_dir_all(dir);
+    Ok(())
+}

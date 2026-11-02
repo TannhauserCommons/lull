@@ -40,6 +40,8 @@ tower = { version = "0.5.3", features = ["util"] }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 # The web UI is compiled into the binary (read from disk in debug builds).
 rust-embed = { version = "8.13.0", features = ["mime-guess", "include-exclude"] }
+# Compresses JSON and other text answers (compress.rs); the same tower-http library uses.
+tower-http = { version = "0.6.11", features = ["compression-br", "compression-gzip"] }
 # SSE: a broadcast receiver as a stream.
 tokio-stream = { version = "0.1.19", features = ["sync"] }
 
