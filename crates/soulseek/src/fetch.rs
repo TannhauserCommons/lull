@@ -48,6 +48,9 @@ const CHOICES: usize = 8;
 const CHOOSE_WAIT: Duration = Duration::from_secs(10 * 60);
 /// A finished song nobody has read for this long is no longer "playing" (so it may be evicted).
 const IDLE: Duration = Duration::from_secs(30 * 60);
+/// A preload no device lists any more is cancelled after this long, so a player that opens the
+/// song just before (or just after) sending its new list still finds it running.
+const UNLIST_GRACE: Duration = Duration::from_secs(10);
 const HISTORY: usize = 50;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -147,6 +150,19 @@ pub struct Fetch {
 struct Want {
     streaming: bool,
     saving: u32,
+    /// A device lists the song to preload (`PUT /api/stream/prefetch`).
+    prefetch: bool,
+}
+
+impl Want {
+    /// Only preloading: no `stream` events, never `choose`, evictable once finished.
+    fn prefetch_only(&self) -> bool {
+        self.prefetch && !self.streaming && self.saving == 0
+    }
+
+    fn unwanted(&self) -> bool {
+        !self.prefetch && !self.streaming && self.saving == 0
+    }
 }
 
 impl Fetch {
@@ -249,8 +265,12 @@ impl Fetcher {
         if let Some(f) = self.live(&track.id) {
             let current = f.now().source.map(|s| s.source_ref());
             if pick.is_none() || pick == current {
-                want(&f, |w| w.streaming = true);
+                let joined = !want(&f, |w| std::mem::replace(&mut w.streaming, true));
                 self.cache.touch(&track.id).await?;
+                // A preload (or a save) the player joins: it learns where the song stands now.
+                if joined {
+                    self.bus.publish("stream", stream_event(&f, &f.now()));
+                }
                 return Ok(f);
             }
             self.replace(&f);
@@ -265,10 +285,63 @@ impl Fetcher {
                 self.bus.publish("stream", stream_event(&f, &f.now()));
                 return Ok(f);
             }
-            None => self.start(track, pick, Purpose::Stream),
+            None => self.start(track, pick, Purpose::Stream, Want::default()),
         };
         want(&f, |w| w.streaming = true);
         Ok(f)
+    }
+
+    /// Preloads a song a device listed: a fetch that publishes no `stream` events and leaves
+    /// once finished, so its file is evictable like any other. A live fetch is just marked.
+    pub fn prefetch(&self, track: Track) -> Arc<Fetch> {
+        if let Some(f) = self.live(&track.id) {
+            want(&f, |w| w.prefetch = true);
+            return f;
+        }
+        let listed = Want {
+            prefetch: true,
+            ..Want::default()
+        };
+        self.start(track, None, Purpose::Stream, listed)
+    }
+
+    /// Whether the song has a live fetch; if so it is marked as listed for preloading.
+    pub fn list_live(&self, track: &TrackId) -> bool {
+        self.live(track).inspect(|f| want(f, |w| w.prefetch = true)).is_some()
+    }
+
+    /// Preloads no device lists any more (not in `keep`) are cancelled after a grace period,
+    /// unless by then the player streams them, a save needs them or a device lists them again.
+    pub fn unlist(&self, keep: &std::collections::HashSet<TrackId>) {
+        let dropped: Vec<Arc<Fetch>> = match self.live.lock() {
+            Ok(live) => live
+                .values()
+                .filter(|f| !keep.contains(&f.track.id) && want(f, |w| std::mem::take(&mut w.prefetch)))
+                .cloned()
+                .collect(),
+            Err(_) => return,
+        };
+        if dropped.is_empty() {
+            return;
+        }
+        let this = self.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(UNLIST_GRACE).await;
+            for f in dropped.iter().filter(|f| want(f, |w| w.unwanted())) {
+                this.cancel_fetch(f);
+            }
+        });
+    }
+
+    /// Whether the player's song is still being found or waiting for its first bytes:
+    /// preloads hold back until it plays.
+    pub fn player_waiting(&self) -> bool {
+        self.live.lock().is_ok_and(|l| {
+            l.values().any(|f| {
+                want(f, |w| w.streaming)
+                    && matches!(f.now().status, Status::Finding | Status::Queued | Status::Fallback)
+            })
+        })
     }
 
     /// Transfers the song from `source` to the end and returns the finished file, joining a
@@ -284,7 +357,7 @@ impl Fetcher {
             Some(f) => f,
             None => match self.cache.finished(&track.id, Some(&source)).await? {
                 Some(e) if e.source == source => return Ok(e.path),
-                _ => self.start(track, Some(source), Purpose::Save),
+                _ => self.start(track, Some(source), Purpose::Save, Want::default()),
             },
         };
         want(&f, |w| w.saving += 1);
@@ -316,16 +389,17 @@ impl Fetcher {
         }
     }
 
-    /// The player moved on (skip, next): cancel unless a save still needs the song.
+    /// The player moved on (skip, next): cancel unless a save still needs the song or a
+    /// device lists it to preload.
     pub fn stop_streaming(&self, track: &TrackId) {
         let Some(f) = self.live.lock().ok().and_then(|l| l.get(track).cloned()) else {
             return;
         };
-        let saving = want(&f, |w| {
+        let unwanted = want(&f, |w| {
             w.streaming = false;
-            w.saving
+            w.unwanted()
         });
-        if saving == 0 {
+        if unwanted {
             self.cancel_fetch(&f);
         }
     }
@@ -348,7 +422,7 @@ impl Fetcher {
         let row = ended.ok_or_else(|| Error::NotFound(format!("no ended transfer {job_id}")))?;
         let track: Track =
             serde_json::from_value(row["track"].clone()).map_err(|e| Error::internal(format!("transfer row: {e}")))?;
-        Ok(self.start(track, None, Purpose::Stream).job_id.clone())
+        Ok(self.start(track, None, Purpose::Stream, Want::default()).job_id.clone())
     }
 
     /// Activity rows: running transfers first, then recently ended ones.
@@ -407,7 +481,7 @@ impl Fetcher {
         }
     }
 
-    fn new_fetch(&self, track: Track, purpose: Purpose, progress: Progress) -> Arc<Fetch> {
+    fn new_fetch(&self, track: Track, purpose: Purpose, progress: Progress, wanted: Want) -> Arc<Fetch> {
         let n = self.next.fetch_add(1, Ordering::Relaxed);
         let f = Arc::new(Fetch {
             job_id: format!("job-{:x}{n}", lull_core::now()),
@@ -415,7 +489,7 @@ impl Fetcher {
             started: lull_core::now(),
             progress: watch::channel(progress).0,
             stop: watch::channel(false).0,
-            want: Mutex::default(),
+            want: Mutex::new(wanted),
             readers: AtomicUsize::new(0),
             last_read: Mutex::new(Instant::now()),
             _pin: self.cache.pin(&track.id),
@@ -447,11 +521,12 @@ impl Fetcher {
                 below,
                 ..Progress::new(Status::Done)
             },
+            Want::default(),
         ))
     }
 
-    fn start(&self, track: Track, pick: Option<SourceRef>, purpose: Purpose) -> Arc<Fetch> {
-        let f = self.new_fetch(track, purpose, Progress::new(Status::Finding));
+    fn start(&self, track: Track, pick: Option<SourceRef>, purpose: Purpose, wanted: Want) -> Arc<Fetch> {
+        let f = self.new_fetch(track, purpose, Progress::new(Status::Finding), wanted);
         let this = self.clone();
         let fetch = f.clone();
         tokio::spawn(async move { this.run(fetch, pick).await });
@@ -482,8 +557,11 @@ impl Fetcher {
             }
         }
         // A stopped fetch leaves even when it finished at the last moment: nobody is playing it.
+        // So does a finished one nobody plays or saves (a preload): its file stays in the
+        // cache, unpinned, and playing it later starts from there at once.
         let stopped = *f.stop.borrow();
-        if (p.status != Status::Done || stopped)
+        let idle = want(&f, |w| !w.streaming && w.saving == 0);
+        if (p.status != Status::Done || stopped || idle)
             && let Ok(mut live) = self.live.lock()
         {
             live.retain(|_, other| !Arc::ptr_eq(other, &f));
@@ -565,7 +643,8 @@ impl Fetcher {
                     ),
                 }));
             };
-            match below(f.purpose, &rules) {
+            let prefetch_only = want(f, |w| w.prefetch_only());
+            match below(f.purpose, &rules, prefetch_only) {
                 Below::Take => return Ok(best.source.clone()),
                 Below::Search if searches < KEEP_LOOKING_SEARCHES => {
                     if searches > 0 {
@@ -588,6 +667,12 @@ impl Fetcher {
                     return Err(Stop::Failed(format!(
                         "no other copy meets your saving minimum ({})",
                         rules.save.minimum
+                    )));
+                }
+                Below::Later => {
+                    return Err(Stop::Failed(format!(
+                        "no copy meets your streaming minimum ({}); it is looked for again when it plays",
+                        rules.stream.minimum
                     )));
                 }
             }
@@ -855,9 +940,18 @@ enum Below {
     Ask,
     /// A save's fallback: library already applied `wait` or `ask` before it started.
     Refuse,
+    /// A preload under `keepLooking` or `ask`: don't search on or wait for an answer nobody is
+    /// there to give; the player's own fetch applies the rule when the song plays.
+    Later,
 }
 
-fn below(purpose: Purpose, rules: &Rules) -> Below {
+fn below(purpose: Purpose, rules: &Rules, prefetch_only: bool) -> Below {
+    if prefetch_only && purpose == Purpose::Stream {
+        return match rules.stream.below {
+            StreamBelow::PlayBest => Below::Take,
+            StreamBelow::KeepLooking | StreamBelow::Ask => Below::Later,
+        };
+    }
     match purpose {
         Purpose::Stream => match rules.stream.below {
             StreamBelow::PlayBest => Below::Take,
@@ -873,7 +967,7 @@ fn below(purpose: Purpose, rules: &Rules) -> Below {
 
 /// An error as the fetch's `error`: the bare reason. "soulseek failed: " is added once, where
 /// the error leaves this crate (the stream response, a save), never twice.
-fn reason(e: &Error) -> String {
+pub(crate) fn reason(e: &Error) -> String {
     match e {
         Error::Upstream { reason, .. } | Error::Unavailable { reason, .. } => reason.clone(),
         other => other.to_string(),
@@ -1005,5 +1099,20 @@ mod tests {
         assert_eq!(shown, "soulseek failed: answered 500 Internal Server Error");
         let disk = Error::unavailable("soulseek", "the transfers disk is full");
         assert_eq!(reason(&disk), "the transfers disk is full");
+    }
+
+    #[test]
+    fn a_preload_never_waits_for_a_choice_or_keeps_searching() {
+        let mut rules = Rules::default();
+        rules.stream.below = StreamBelow::PlayBest;
+        assert!(matches!(below(Purpose::Stream, &rules, true), Below::Take));
+        rules.stream.below = StreamBelow::KeepLooking;
+        assert!(matches!(below(Purpose::Stream, &rules, true), Below::Later));
+        rules.stream.below = StreamBelow::Ask;
+        assert!(matches!(below(Purpose::Stream, &rules, true), Below::Later));
+        assert!(
+            matches!(below(Purpose::Stream, &rules, false), Below::Ask),
+            "once the player streams it, the listener is asked"
+        );
     }
 }

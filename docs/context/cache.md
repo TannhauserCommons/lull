@@ -16,6 +16,7 @@ Before each transfer and every 60 s, `make_room(incoming)` evicts least recently
 
 **Pinned files are never evicted.** A track is pinned while:
 - **it's playing:** its fetch is live. A finished song stays live until nobody has read it for 30 minutes, or until the player skips it;
+- **it's preloading:** a preload ([streaming.md](streaming.md#preloading)) is pinned while it transfers. Once finished it is unpinned at once, like any file nobody plays;
 - **it's being saved:** from `Transfers::complete` until that track's `save` event reports `failed` or `pending`, or `done` at step 5.
 
 Pinned files may hold the cache over its cap; it reports `warn` rather than cut off the song that's playing.

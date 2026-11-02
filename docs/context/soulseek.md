@@ -11,6 +11,7 @@
 | `search.rs` | Search sessions, merging, album folders, result rows, resolve searches, `onlySoulseek` |
 | `matching.rs` | Whether a file is the song asked for (loose names, length) |
 | `prewarm.rs` | `search.catalog`: pre-warming the catalog's top tracks |
+| `prefetch.rs` | Preloading the songs queued next (`PUT /api/stream/prefetch`) |
 | `rules.rs` | The streaming and saving profiles and peer limits, from the `settings` event |
 | `sources.rs` | Every known peer file per song, in a profile's order on read |
 | `rank.rs` | The score and its factors |
@@ -59,6 +60,7 @@ Search is a catalog search owned by discovery (`/api/search`, ADR-0008); Soulsee
 - **Waiting for slskd's last step.** slskd calls a search `Completed` before it writes the responses (that step sets `endedAt`), and deleting the search in between loses them: seen live as "Failed to finalize search … affected 0 row(s)" and an empty result after 300 peers answered. lull reads the responses until they appear or `endedAt` is set, for up to 5 s. If peers answered (or the search `Errored`) and still no responses come back, the final event carries `error` ("slskd found 8217 files from 300 peers but handed over none; search again"), not an empty success.
 - **Politeness:**
   - searches start at least 1 s apart;
+  - searches take turns by lane (`search::Lane`), since slskd runs two at a time: a preload's or pre-warm's search waits until no search for the player (a song playing or saved, the listener's own search) is running, and is skipped if that one found the song;
   - a newer query stops the older one;
   - the same words within 10 minutes reuse the earlier search (the answer's `soulseek` field replays it), but only one still running or one that ended with results: an empty or failed search, or one a newer query stopped, runs again;
   - queries under 3 characters don't search;
@@ -66,7 +68,7 @@ Search is a catalog search owned by discovery (`/api/search`, ADR-0008); Soulsee
 - **Merging.** Songs merge across peers by `TrackId`. A peer folder holding 3 or more of the results becomes an album row; the same album on many peers is one row listing each folder, best first. Rows are capped at 200 songs and 40 albums. Every track handed out is recorded in `lull_core::catalog`.
 - **Duplicates.** Saved songs among the results come from `Library::saved`: the row gets `dup: note`, or `dup: better` when the Soulseek file clearly beats the saved one (`Quality::beats`: lossless over lossy, or at least a fifth more bitrate).
 - **Only on Soulseek.** Discovery publishes `search.catalog { query, trackIds }` for a query's top catalog tracks. The final results carry `onlySoulseek`: the unsaved result songs no catalog track matches (by `matching`). When the catalog arrives after the results, the final `search.results` is published again with it; before the catalog has answered it is `null`.
-- **Pre-warming** (`prewarm.rs`). The top 3 tracks of each `search.catalog` get a resolve search in the background, one at a time and at least 5 s apart, so pressing play finds copies waiting. A newer query replaces what an older one left queued; songs with known copies, saved songs and an offline Soulseek are skipped.
+- **Pre-warming** (`prewarm.rs`). The top 3 tracks of each `search.catalog` get a resolve search in the background (the preload lane), one at a time and at least 5 s apart, so pressing play finds copies waiting. A newer query replaces what an older one left queued; songs with known copies, saved songs and an offline Soulseek are skipped.
 - **Resolve searches.** A song nothing is known about (a queue item, a catalog pick, a save) gets a search for `artist title`. Files count as the song by [matching](#matching), whatever their album, and are kept under the song's id too. When the first search finds no copy, a looser second one runs: the title without its tags plus the artist's longest word. Sources, streams and saves trigger it themselves.
 - **Resolve searches stop early.** They want a few good copies, not every answer, so lull stops one (slskd's stop call keeps what arrived; then the usual wait for slskd's last step) as soon as:
   - 15 peers have answered and it has run 2 s;

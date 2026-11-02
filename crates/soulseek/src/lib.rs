@@ -10,6 +10,7 @@ mod files;
 mod layout;
 mod matching;
 mod peers;
+mod prefetch;
 mod prewarm;
 mod range;
 mod rank;
@@ -90,6 +91,8 @@ pub struct Service {
     relogged: Mutex<Option<(std::time::Instant, i64)>>,
     /// Songs being saved: pinned in the cache until their save ends.
     saving: Mutex<HashMap<TrackId, Pin>>,
+    /// The songs devices asked to preload (`PUT /api/stream/prefetch`).
+    prefetch: prefetch::Lists,
 }
 
 pub async fn start(ctx: &Ctx) -> Result<Arc<Service>> {
@@ -134,6 +137,7 @@ pub async fn start(ctx: &Ctx) -> Result<Arc<Service>> {
         rules,
         relogged: Mutex::default(),
         saving: Mutex::default(),
+        prefetch: prefetch::Lists::default(),
     });
     ctx.status
         .set("soulseek", State::Down, "Connecting to slskd", Value::Null);
@@ -144,6 +148,7 @@ pub async fn start(ctx: &Ctx) -> Result<Arc<Service>> {
     ctx.spawn(housekeeping(svc.clone()));
     ctx.spawn(release_saves(svc.clone()));
     ctx.spawn(prewarm::follow_catalog(svc.clone()));
+    ctx.spawn(prefetch::run(svc.clone()));
     if config.share == lull_core::config::Share::Library {
         ctx.spawn(share::rescan_after_saves(slskd, ctx.bus.clone()));
     }
@@ -157,6 +162,10 @@ pub fn router(svc: Arc<Service>, library: Arc<dyn Library>) -> Router {
 }
 
 impl Service {
+    fn online(&self) -> bool {
+        self.online.load(Ordering::Relaxed)
+    }
+
     async fn track(&self, id: &TrackId) -> Result<Track> {
         let lookup = id.clone();
         self.ctx

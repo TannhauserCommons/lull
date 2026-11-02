@@ -3,11 +3,14 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use axum::Extension;
+use axum::extract::rejection::JsonRejection;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
+use lull_core::devices::Device;
 use lull_core::ids::TrackId;
 use lull_core::model::SourceRef;
 use lull_core::{Error, Result};
@@ -19,15 +22,19 @@ use crate::rules::Purpose;
 use crate::search::Started;
 
 pub fn router(svc: Arc<Service>) -> Router {
+    routes().with_state(svc)
+}
+
+fn routes() -> Router<Arc<Service>> {
     Router::new()
         .route("/api/soulseek/search", get(search))
         .route("/api/tracks/{id}/sources", get(sources))
+        .route("/api/stream/prefetch", put(prefetch))
         .route("/api/stream/{id}", get(stream).delete(stop))
         .route("/api/soulseek/diagnostics", get(diagnostics))
         .route("/api/transfers", get(transfers))
         .route("/api/transfers/{job}", delete(cancel))
         .route("/api/transfers/{job}/retry", post(retry))
-        .with_state(svc)
 }
 
 #[derive(Deserialize)]
@@ -109,6 +116,25 @@ fn known_source(svc: &Service, track: &TrackId, peer: String, path: String) -> R
     })
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Prefetch {
+    tracks: Vec<TrackId>,
+}
+
+/// The calling device's songs to preload, in queue order (at most 3): replaces its list.
+/// Requests without a device (the gate always names one) share a list.
+async fn prefetch(
+    State(svc): State<Arc<Service>>,
+    device: Option<Extension<Device>>,
+    body: std::result::Result<Json<Prefetch>, JsonRejection>,
+) -> Result<StatusCode> {
+    let Json(body) = body.map_err(|e| Error::BadRequest(e.body_text()))?;
+    let device = device.map(|Extension(d)| d.id).unwrap_or_default();
+    crate::prefetch::listed(&svc, device, body.tracks)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn stop(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> StatusCode {
     svc.fetcher.stop_streaming(&TrackId(id));
     StatusCode::NO_CONTENT
@@ -143,4 +169,13 @@ async fn cancel(State(svc): State<Arc<Service>>, Path(job): Path<String>) -> Res
 async fn retry(State(svc): State<Arc<Service>>, Path(job): Path<String>) -> Result<Json<Value>> {
     let job = svc.fetcher.retry(&job)?;
     Ok(Json(json!({ "jobId": job })))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn the_preload_route_sits_beside_the_stream_route() {
+        // axum refuses conflicting routes by panicking when they're added, at hub start-up.
+        let _ = super::routes();
+    }
 }

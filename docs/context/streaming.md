@@ -4,7 +4,7 @@ How `GET /api/stream/{trackId}` plays a song while slskd is still downloading it
 
 ## Fetches
 
-A **fetch** gets one song onto disk. There is at most one live fetch per track, shared by everyone who wants the song (the player streaming it, a save completing it), so the bytes cross the network once.
+A **fetch** gets one song onto disk. There is at most one live fetch per track, shared by everyone who wants the song (the player streaming it, a save completing it, a [preload](#preloading)), so the bytes cross the network once.
 
 A finished copy already in the stream cache plays at once, whatever the `below` rule, with one `stream` event (`streaming`, and `belowMinimum` when it doesn't pass the streaming minimum). Otherwise:
 
@@ -25,7 +25,7 @@ A finished copy already in the stream cache plays at once, whatever the `below` 
 
 **Switching source mid-song.** `GET /api/stream/{id}?peer=&path=` with another copy than the one playing replaces the fetch: the old one is cancelled, unless a save is completing it; then it runs on for the save, out of the player's way (no more `stream` events). The old response ends; the player opens the new one and seeks back by time (ADR-0008).
 
-**Stopping.** `DELETE /api/stream/{id}` (skip, next) cancels the fetch unless a save still needs it. slskd keeps the partial file, and asking for the song again resumes it.
+**Stopping.** `DELETE /api/stream/{id}` (skip, next) cancels the fetch unless a save still needs it or a device lists it to preload. slskd keeps the partial file, and asking for the song again resumes it.
 
 **Events.** Each change publishes:
 - `stream` (to the player, only while it streams);
@@ -33,6 +33,15 @@ A finished copy already in the stream cache plays at once, whatever the `below` 
 - `job` (an Activity row).
 
 Stream status follows the fetch: `finding → queued → buffering` (under 256 KB received) `→ streaming`, with `stalled`, `fallback`, `choose` and `failed`.
+
+## Preloading
+
+So that next plays at once, the player lists the songs queued after the current one with `PUT /api/stream/prefetch { tracks }` (`prefetch.rs`): at most 3, in queue order, as many as `playback.prefetchCount` (0-3, default 2). Each call replaces the calling device's list (the gate's device id; requests without one share a list).
+
+- **What starts.** In order, each listed song that isn't saved, finished in the cache or already fetching gets a fetch. Its search runs in the preload lane, behind the player's searches ([soulseek.md](soulseek.md#search)), and is skipped when one already found copies. The fetch then waits (up to 30 s) while the playing song is still finding a copy or waiting for its first bytes, and the next song waits until this one's bytes flow (up to 30 s), so one peer at a time is asked.
+- **Quietly.** A preload publishes no `stream` events (`transfer` and `job` as usual) and never waits as `choose`. When no copy passes the streaming minimum it starts only under `playBest`; under `keepLooking` or `ask` it doesn't start (or, after fallbacks, fails), and the player's own fetch applies the rule when the song plays. Songs no peer shares are left to the player too.
+- **Let go.** A song no device lists any more is cancelled after 10 s, unless by then the player streams it, a save needs it or a device lists it again; the grace lets the player open the next song before or after sending its new list. A finished preload leaves the live fetches at once, so its file is an ordinary unpinned cache entry ([cache.md](cache.md)), newest in the eviction order.
+- **Playing it.** `GET /api/stream/{id}` joins a running preload, with one `stream` event saying where it stands, and from then on it is the player's fetch (`below` rules included). A finished one plays from the cache at once.
 
 ## Where the bytes are
 

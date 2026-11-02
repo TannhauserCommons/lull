@@ -113,6 +113,39 @@ pub struct Searches {
     library: Arc<OnceLock<Arc<dyn Library>>>,
     inner: Arc<Mutex<Inner>>,
     last_start: Arc<tokio::sync::Mutex<Option<Instant>>>,
+    /// Network searches running now, by `Lane`.
+    running: Arc<watch::Sender<[u32; LANES]>>,
+}
+
+/// Who a search is for. slskd runs two searches at a time, so a lower lane waits until no
+/// search of a higher one runs: playing (and the listener's own search) first, then preloading
+/// queued songs and pre-warming search results.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Lane {
+    Play = 0,
+    Prefetch = 1,
+}
+
+const LANES: usize = 2;
+
+/// Counts a search as running in its lane while it lives.
+struct Running {
+    counts: Arc<watch::Sender<[u32; LANES]>>,
+    lane: usize,
+}
+
+impl Drop for Running {
+    fn drop(&mut self) {
+        self.counts
+            .send_modify(|c| c[self.lane] = c[self.lane].saturating_sub(1));
+    }
+}
+
+/// How a shared resolve search ended, for everyone waiting on it.
+#[derive(Debug, Clone)]
+enum Ended {
+    Done,
+    Failed { unavailable: bool, reason: String },
 }
 
 #[derive(Default)]
@@ -120,8 +153,8 @@ struct Inner {
     next: u64,
     /// The listener's searches, newest last; the newest one supersedes a still-running older one.
     recent: VecDeque<Arc<Session>>,
-    /// Searches run to find sources for one song, by query.
-    resolving: HashMap<String, watch::Receiver<bool>>,
+    /// Searches run to find sources for one song, by query; `Some` once ended.
+    resolving: HashMap<String, watch::Receiver<Option<Ended>>>,
     /// How the latest network searches ended, newest last.
     outcomes: VecDeque<Outcome>,
     /// The catalog's top tracks per query key (`search.catalog`), for `onlySoulseek`.
@@ -174,7 +207,30 @@ impl Searches {
             library: Arc::default(),
             inner: Arc::default(),
             last_start: Arc::default(),
+            running: Arc::new(watch::Sender::new([0; LANES])),
         }
+    }
+
+    /// Whether the song is saved (`Library::saved`); false while the library can't say.
+    pub async fn saved(&self, id: &TrackId) -> bool {
+        match self.library.get() {
+            Some(l) => l.saved(std::slice::from_ref(id)).await.is_ok_and(|s| !s.is_empty()),
+            None => false,
+        }
+    }
+
+    fn running(&self, lane: Lane) -> Running {
+        self.running.send_modify(|c| c[lane as usize] += 1);
+        Running {
+            counts: self.running.clone(),
+            lane: lane as usize,
+        }
+    }
+
+    /// Waits until no search of a higher lane than `lane` is running.
+    pub async fn turn(&self, lane: Lane) {
+        let mut rx = self.running.subscribe();
+        let _ = rx.wait_for(|c| c[..lane as usize].iter().all(|n| *n == 0)).await;
     }
 
     pub fn set_library(&self, library: Arc<dyn Library>) {
@@ -297,6 +353,7 @@ impl Searches {
             )
         };
         let mut stop = session.stop.subscribe();
+        let running = self.running(Lane::Play);
         let responses = match self.network(query, Until::Settled, &mut stop, progress).await {
             Ok(Some(r)) => r,
             Ok(None) => return, // superseded by a newer search
@@ -308,6 +365,7 @@ impl Searches {
                 return;
             }
         };
+        drop(running);
         let merged = merge(&responses);
         let files = merged.files;
         let peers = responses.len();
@@ -331,32 +389,74 @@ impl Searches {
         }
     }
 
-    /// Finds sources for one song (a queue item, a discovery pick, a save) by searching its
-    /// artist and title, then a looser query when that finds no copy. Files count as the song
-    /// by `matching` (loose names, length). Concurrent asks for the same song share one search.
-    /// Returns once it has ended.
+    /// Finds sources for one song for the player (a queue item, a discovery pick, a save):
+    /// `resolve_in` the play lane.
     pub async fn resolve(&self, track: &Track) -> Result<()> {
+        self.resolve_in(track, Lane::Play).await
+    }
+
+    /// Finds sources for one song by searching its artist and title, then a looser query when
+    /// that finds no copy. Files count as the song by `matching` (loose names, length).
+    /// Concurrent asks for the same song share one search. A lower `lane` first waits its turn,
+    /// and skips the search when a higher one found the song meanwhile. Returns once it ended.
+    pub async fn resolve_in(&self, track: &Track, lane: Lane) -> Result<()> {
+        if lane != Lane::Play {
+            self.turn(lane).await;
+            if self.sources.known(&track.id) {
+                return Ok(());
+            }
+        }
+        let mut done = self.shared_search(track, lane);
+        let ended = done.wait_for(Option::is_some).await.ok().and_then(|e| e.clone());
+        match ended {
+            Some(Ended::Failed {
+                unavailable: true,
+                reason,
+            }) => Err(Error::unavailable("soulseek", reason)),
+            Some(Ended::Failed { reason, .. }) => Err(Error::upstream("soulseek", reason)),
+            Some(Ended::Done) | None => Ok(()),
+        }
+    }
+
+    /// The running search for this song's words, or a new one. It runs in its own task, so a
+    /// caller that gives up (a skipped song) never leaves it half-done or registered forever.
+    fn shared_search(&self, track: &Track, lane: Lane) -> watch::Receiver<Option<Ended>> {
         let text = Wanted::query(track);
-        let existing = self.inner.lock().ok().and_then(|i| i.resolving.get(&text).cloned());
-        if let Some(mut done) = existing {
-            let _ = done.wait_for(|d| *d).await;
-            return Ok(());
-        }
-        let (tx, rx) = watch::channel(false);
+        let (tx, rx) = watch::channel(None);
         if let Ok(mut inner) = self.inner.lock() {
-            inner.resolving.insert(text.clone(), rx);
+            if let Some(running) = inner.resolving.get(&text) {
+                return running.clone();
+            }
+            inner.resolving.insert(text.clone(), rx.clone());
         }
+        let (this, track) = (self.clone(), track.clone());
+        tokio::spawn(async move {
+            let ended = {
+                let _running = this.running(lane);
+                match this.find_song(&track, &text).await {
+                    Ok(()) => Ended::Done,
+                    Err(e) => Ended::Failed {
+                        unavailable: matches!(e, Error::Unavailable { .. }),
+                        reason: crate::fetch::reason(&e),
+                    },
+                }
+            };
+            if let Ok(mut inner) = this.inner.lock() {
+                inner.resolving.remove(&text);
+            }
+            tx.send_replace(Some(ended));
+        });
+        rx
+    }
+
+    async fn find_song(&self, track: &Track, text: &str) -> Result<()> {
         let wanted = Wanted::of(track);
-        let mut outcome = self.search_for(track, &wanted, &text).await;
+        let mut outcome = self.search_for(track, &wanted, text).await;
         if matches!(outcome, Ok(0))
-            && let Some(looser) = wanted.looser_query(&text)
+            && let Some(looser) = wanted.looser_query(text)
         {
             outcome = self.search_for(track, &wanted, &looser).await;
         }
-        if let Ok(mut inner) = self.inner.lock() {
-            inner.resolving.remove(&text);
-        }
-        tx.send_replace(true);
         outcome.map(drop)
     }
 
