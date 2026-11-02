@@ -1246,7 +1246,12 @@
     quSeq += 1;
     return { uid: 'q' + quSeq, trackId: id, group: group || 'context', resolve: App.isSaved(id) ? 'ready' : 'resolved', source: source || null };
   }
-  function queueChanged() { shuffleNext = null; releaseNext(); changed('queue'); }
+  /* the song set as next stays loaded when it is still next (a reorder elsewhere in the queue, an append) */
+  function queueChanged() {
+    shuffleNext = null;
+    if (nxt && (ps.shuffle || ps.queue[nextIndex(true)] !== nxt)) releaseNext();
+    changed('queue');
+  }
   /* replace the queue and start: playList(ids, startIndex, { radio, sources: { trackId: source }, at, autoplay }) */
   P.playList = function (ids, start, opts) {
     opts = opts || {};

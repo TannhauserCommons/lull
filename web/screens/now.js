@@ -547,7 +547,7 @@
     var where = playing ? 'now playing' : 'position ' + (i - ps.index) + ' in the queue';
     var markLabel = q.resolve === 'none' ? ', no source found' : q.resolve === 'resolving' ? ', finding a source' : i === ps.index + 1 ? ', ready' : '';
     return html`<li class="trow trow--dense now-q__row${playing ? ' is-playing' : ''}${playing && ps.playing ? ' is-playing-now' : ''}${q.resolve === 'none' && !playing ? ' is-unavailable' : ''}"
-        data-track-id="${t.id}" data-qi="${i}" data-uid="${q.uid}" tabindex="0" ${opts.preview || playing ? '' : raw('draggable="true"')} data-fk="row-${q.uid}"
+        data-track-id="${t.id}" data-qi="${i}" data-uid="${q.uid}" tabindex="0" ${opts.preview || playing ? '' : raw('data-sortable')} data-fk="row-${q.uid}"
         aria-label="${t.title} by ${t.artist}, ${where}${markLabel}">
       <div class="trow__art">${ui.cover(t, 40)}${playing ? html`<span class="eq now-q__eq" aria-hidden="true"><i></i><i></i><i></i></span>` : ''}</div>
       <div class="trow__main">
@@ -624,39 +624,80 @@
     var row = e.target.closest && e.target.closest('.now-q__row');
     if (row && e.target === row && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); jumpTo(+row.getAttribute('data-qi')); }
   }, true);
-  /* drag to reorder inside the queue: insertion line between rows (drops from other lists still append) */
-  var qDrag = null;
-  document.addEventListener('dragstart', function (e) {
-    var row = e.target.closest && e.target.closest('.now-q__row[draggable="true"]');
-    qDrag = row ? { from: +row.getAttribute('data-qi') } : null;
+  /* drag to reorder inside the queue, with pointer events rather than native drag and drop: the row follows the
+     pointer and the rows it passes slide out of its way, all by transforms, so nothing is laid out again until the
+     drop. Mouse: press anywhere on a row (not its buttons) and move 5 px. Touch: the cover is the handle (it takes no
+     scrolling), so the list still scrolls under a finger. Positions are measured once, when the drag starts. */
+  var qd = null, qDropped = 0;
+  /* a drag is not a click: the click that ends one doesn't jump to the song */
+  document.addEventListener('click', function (e) { if (Date.now() - qDropped < 300) { e.stopPropagation(); e.preventDefault(); } }, true);
+  function qRows(list) { return $$('.now-q__row', list); }
+  document.addEventListener('pointerdown', function (e) {
+    if (e.button !== 0 || qd) return;
+    var row = e.target.closest && e.target.closest('.now-q__row[data-sortable]');
+    if (!row || e.target.closest('.trow__more')) return;
+    if (e.pointerType === 'touch' && !e.target.closest('.trow__art')) return;
+    qd = { row: row, list: row.closest('[data-now-qlist]'), id: e.pointerId, y0: e.clientY, live: false, frame: 0, y: e.clientY };
+    if (!qd.list) qd = null;
   });
-  document.addEventListener('dragend', function () { qDrag = null; clearDropLine(); });
-  function clearDropLine() { $$('.now-q__row.is-drop-before, .now-q__row.is-drop-after').forEach(function (r) { r.classList.remove('is-drop-before', 'is-drop-after'); }); }
-  function qTarget(e) {   // the row under the pointer, or 'end' anywhere else in the queue
-    var host = e.target.closest && e.target.closest('.now-q, #ctx-body'); if (!host) return null;
-    var row = e.target.closest('.now-q__row');
-    return row && row.closest('[data-now-qlist]') ? row : 'end';
+  /* the first nearly opaque background behind the list, so the lifted row hides the rows it passes over */
+  function solidBehind(el) {
+    for (; el && el !== document.documentElement; el = el.parentElement) {
+      var c = getComputedStyle(el).backgroundColor, m = /rgba?\(([^)]+)\)|\/\s*([\d.]+)\s*\)$/.exec(c) || [];
+      var alpha = m[2] != null ? +m[2] : m[1] ? (m[1].split(',')[3] != null ? +m[1].split(',')[3] : 1) : 1;
+      if (c !== 'transparent' && alpha >= .95) return c;
+    }
+    return '';
   }
-  document.addEventListener('dragover', function (e) {
-    if (!qDrag) return;
-    var row = qTarget(e); if (!row) return;
-    e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move';
-    clearDropLine(); if (row === 'end') return;
-    var r = row.getBoundingClientRect(), after = e.clientY > r.top + r.height / 2;
-    row.classList.add(after ? 'is-drop-after' : 'is-drop-before');
-  }, true);
-  document.addEventListener('drop', function (e) {
-    if (!qDrag) return;
-    var row = qTarget(e); if (!row) return;
-    e.preventDefault(); e.stopPropagation();
-    var to = ps.queue.length;
-    if (row !== 'end') { var r = row.getBoundingClientRect(); to = +row.getAttribute('data-qi') + (e.clientY > r.top + r.height / 2 ? 1 : 0); }
-    var from = qDrag.from; if (to > from) to -= 1;
-    clearDropLine(); qDrag = null;
-    if (from === ps.index) { App.toast('That song is playing. Move the others around it.', { icon: 'info' }); return; }
-    to = Math.max(to, ps.index + 1);
+  function qStart() {
+    var rows = qRows(qd.list), r0 = qd.row.getBoundingClientRect();
+    qd.live = true; qd.from = rows.indexOf(qd.row); qd.to = qd.from;
+    qd.mids = rows.map(function (r) { var b = r.getBoundingClientRect(); return b.top + b.height / 2; });
+    qd.rows = rows; qd.step = r0.height + 2;   // .now-q__list's 2 px gap
+    qd.scroller = qd.list.closest('.ctx__body, #ctx-body, .main') || document.scrollingElement; qd.s0 = qd.scroller.scrollTop;
+    try { qd.row.setPointerCapture(qd.id); } catch (err) { /* already released */ }
+    var bg = solidBehind(qd.list); if (bg) qd.row.style.setProperty('--lift-bg', bg);
+    qd.list.classList.add('is-sorting'); qd.row.classList.add('is-lifted');
+  }
+  function qPaint() {
+    qd.frame = 0;
+    if (!qd.row.isConnected) { qEnd(false); return; }   // the queue re-rendered under the drag
+    var box = qd.scroller.getBoundingClientRect ? qd.scroller.getBoundingClientRect() : { top: 0, bottom: innerHeight };
+    /* near an edge of the scrolling list, it scrolls: faster the closer the pointer gets */
+    var edge = Math.min(qd.y - box.top, box.bottom - qd.y), speed = edge < 32 ? Math.ceil((32 - Math.max(edge, 0)) / 3) : 0;
+    if (speed) qd.scroller.scrollTop += qd.y - box.top < box.bottom - qd.y ? -speed : speed;
+    var scrolled = qd.scroller.scrollTop - qd.s0, dy = qd.y - qd.y0 + scrolled, mid = qd.mids[qd.from] + dy, to = qd.from;
+    while (to < qd.mids.length - 1 && mid > qd.mids[to + 1]) to++;
+    while (to > 0 && mid < qd.mids[to - 1]) to--;
+    qd.to = to;
+    qd.rows.forEach(function (r, k) {
+      var shift = k === qd.from ? dy : k > qd.from && k <= to ? -qd.step : k < qd.from && k >= to ? qd.step : 0;
+      r.style.transform = shift ? 'translateY(' + shift + 'px)' : '';
+    });
+    if (speed) qd.frame = requestAnimationFrame(qPaint);
+  }
+  document.addEventListener('pointermove', function (e) {
+    if (!qd || e.pointerId !== qd.id) return;
+    qd.y = e.clientY;
+    if (!qd.live) { if (Math.abs(qd.y - qd.y0) < 5) return; qStart(); }
+    e.preventDefault();
+    if (!qd.frame) qd.frame = requestAnimationFrame(qPaint);
+  });
+  function qEnd(drop) {
+    var d = qd; qd = null; if (!d) return;
+    if (d.frame) cancelAnimationFrame(d.frame);
+    if (!d.live) return;
+    d.list.classList.remove('is-sorting'); d.row.classList.remove('is-lifted');
+    (d.rows || []).forEach(function (r) { r.style.transform = ''; }); d.row.style.removeProperty('--lift-bg');
+    qDropped = Date.now();
+    if (!drop || d.to === d.from || !d.row.isConnected) return;
+    var from = +d.row.getAttribute('data-qi'), to = +d.rows[d.to].getAttribute('data-qi');
+    if (to <= ps.index) to = ps.index + 1;
     if (to !== from) { var t = M.track(ps.queue[from].trackId); P.move(from, to); App.announce('Moved ' + (t ? t.title : 'the song')); }
-  }, true);
+  }
+  document.addEventListener('pointerup', function (e) { if (qd && e.pointerId === qd.id) qEnd(true); });
+  document.addEventListener('pointercancel', function (e) { if (qd && e.pointerId === qd.id) qEnd(false); });
+  document.addEventListener('keydown', function (e) { if (qd && qd.live && e.key === 'Escape') { e.preventDefault(); qEnd(false); } }, true);
 
   /* =====================================================================
      6. Activity: transfers (hatched progress), saves (5 steps), imports, rescans; filters; All quiet
