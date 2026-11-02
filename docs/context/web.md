@@ -289,8 +289,12 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
     have them); from 1240 px, the bitrate and sample rate. Both go in the badge cell, which gets a fixed width so a
     design's grid can't misplace them; the playlist table shows the bitrate from 1300 px. The saved songs list gets
     dates and plays from the `songs` map of `/api/library/songs`.
-  - **Album and artist pages:** two columns from `wide`. The header is sticky in tall windows, and the artist bio
-    clamps to six lines with More.
+  - **Album pages:** two columns from `wide`; the header is sticky in tall windows.
+  - **Artist pages:** a hero across the page (photo, name, Last.fm listeners, Play, Shuffle, Follow, Radio; a real
+    photo also glows behind it), then Popular (5 rows, See more for 10, with Last.fm plays at any width) beside About
+    (from 960 px of the page), the discography with a filter pill per group (albums, singles and EPs, compilations),
+    Appears on and Fans also like. A section the hub names in `pending` shows its skeleton in the same place, and
+    `artist.updated` reads the page again, patched in place.
   - **Search:** "Side by side" from `wide`: catalogs on the left, Soulseek on the right.
   - **Short windows:** tighter chrome.
 - **Designs.**

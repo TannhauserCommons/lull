@@ -464,9 +464,17 @@
      again (another screen, a new row) shows its art at once instead of fading in over the recipe each time */
   var artReady = new Set();
   function coverSpan(cls, attrs, key, size) {
-    var src = artSrc(key, size), ready = artReady.has(src);
-    return '<span class="' + cls + (ready ? ' has-art' : '') + '"' + attrs + '>' + (src ? '<img class="cover__img"' +
+    var src = artSrc(key, size), ready = artReady.has(src), mono = monogram(key);
+    return '<span class="' + cls + (mono ? ' cover--artist' : '') + (ready ? ' has-art' : '') + '"' + attrs + '>' +
+      (mono ? '<span class="cover__mono" aria-hidden="true">' + esc(mono) + '</span>' : '') + (src ? '<img class="cover__img"' +
       (ready ? '' : ' loading="lazy" decoding="async"') + ' alt="" data-art="' + esc(key) + '" src="' + esc(src) + '">' : '') + '</span>';
+  }
+  /* an artist's initial: what an artist without a photo shows, set in the design's display face over its recipe
+     (never an album cover standing in for a photo); hidden once a photo loads */
+  function monogram(key) {
+    if (!/^ar-/.test(key)) return '';
+    var a = M.artist(key), name = a && a.name ? a.name.trim().replace(/^the\s+/i, '') : '';
+    return (Array.from(name)[0] || '').toLocaleUpperCase();
   }
   /* albums whose art 404'd twice: not asked for again for ART_AGAIN. The hub answers 404 while it is still fetching a
      cover from outside (api.md /api/art), so one 404 gets one retry, and a miss is never final for the session */

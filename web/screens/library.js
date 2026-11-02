@@ -425,59 +425,137 @@
   }
 
   /* =====================================================================
-     4. Artist page: round art, follow, radio, top songs, discography, similar
-        (GET /api/artists/{id} -> { artist, topTracks, albums (newest first), similar, errors? })
+     4. Artist page, laid out like a streaming service's: the hero (photo, or the design's monogram; name, Last.fm
+        listeners, play, shuffle, follow, radio), Popular (5 rows, See more for 10, with Last.fm plays), About, the
+        discography by group, Appears on, Fans also like.
+        (GET /api/artists/{id} -> { artist, topTracks, counts, popularVia, albums, discography: { albums, singles,
+        compilations, appearsOn }, similar, pending, errors }). A section named in `pending` shows its skeleton until
+        `artist.updated`, when the page is read again and patched in place.
      ===================================================================== */
+  var POPULAR_SHOWN = 5;
+  var DISCO_GROUPS = [['albums', 'Albums'], ['singles', 'Singles and EPs'], ['compilations', 'Compilations']];
+  var POPULAR_VIA = { lastfm: 'by Last.fm plays', deezer: 'by Deezer rank', itunes: 'by Apple Music', listenbrainz: 'by ListenBrainz listens' };
+  var artistView = {};                      // artistId -> { more, group }: See more and the discography group, this session
   function renderArtist(ctx) {
     var path = artistPath(ctx.params.id);
     return entityPage('artist', path, function (d) {
       var ar = pageEntity(d, 'artist', 'artists', M.artist); if (!ar) return null;
-      var top = resolve(d.topTracks, M.track), topIds = top.map(function (t) { return t.id; });
-      var albums = resolve(d.albums, M.album), similar = resolve(d.similar, M.artist).filter(function (x) { return x.id !== ar.id; });
+      var view = artistView[ar.id] = artistView[ar.id] || { more: false, group: null };
+      var pending = d.pending || [], top = resolve(d.topTracks, M.track);
+      var disco = d.discography || { albums: d.albums || [] };
+      var groups = DISCO_GROUPS.map(function (g) { return { id: g[0], label: g[1], items: resolve(disco[g[0]], M.album) }; })
+        .filter(function (g) { return g.items.length; });
+      var appears = resolve(disco.appearsOn, M.album);
+      var similar = resolve(d.similar, M.artist).filter(function (x) { return x.id !== ar.id; });
       return html`<div class="view__inner lib lib-artist">
         ${jellyfinNotice(path)}
-        <section class="card lib-page" aria-labelledby="lib-artist-title">
-          <div class="lib-hero lib-hero--round">
-            ${ui.cover(ar, 'var(--lib-art)', { round: true, label: ar.name })}
-            <div class="lib-hero__info">
-              <p class="lib-kicker">artist${ar.listeners ? ', ' + ar.listeners.toLocaleString('en-US') + ' listeners' : ''}</p>
-              <h1 class="t-display lib-title" id="lib-artist-title">${ar.name}</h1>
-              <div class="lib-chips">${ar.tags.map(function (g) { return ui.tagChip(g); })}</div>
-              ${ar.bio ? html`<p class="lib-bio" id="lib-bio">${ar.bio}</p><button class="btn btn--quiet btn--sm lib-bio__more" data-act="lib-bio-more" aria-expanded="false" aria-controls="lib-bio">More</button>` : ''}
-              <div class="lib-actions">
-                <button class="btn btn--primary" data-act="start-radio" data-kind="artist" data-id="${ar.id}">${icon('radio')}Artist radio</button>
-                ${followButton(ar.id)}
-                ${topIds.length ? html`<button class="btn" data-act="play-ids" data-ids="${topIds.join(',')}">${icon('play', null, 'ic-play')}Play top songs</button>` : ''}
-                <span class="lib-actions__icons">${ui.iconButton('more', 'More artist actions', { 'data-act': 'lib-artist-menu', 'data-id': ar.id, 'data-ids': topIds.join(','), 'aria-haspopup': 'menu' })}</span>
-              </div>
-            </div>
-          </div>
-        </section>
-        <div class="lib-artist__main">
-        <div class="lib-cols">
-          <section class="card lib-card" aria-labelledby="lib-top-h">
-            ${ruleWith('top songs', 'lib-top-h', html`<span class="t-micro fg-2">by your plays</span>`)}
-            ${sectionError(d, 'topTracks', path) || (top.length ? ui.trackList(top, { label: 'Top songs by ' + ar.name, unavailable: jellyfinDown() })
-              : ui.emptyState({ art: 'wave', title: 'No top songs yet', text: 'Play some ' + ar.name + ' and the songs you come back to show up here.' }))}
-          </section>
-          <section class="card lib-card" aria-labelledby="lib-disco-h">
-            ${ruleWith('discography', 'lib-disco-h', html`<span class="t-micro fg-2">${plural(albums.length, 'release')}</span>`)}
-            ${sectionError(d, 'albums', path) || (albums.length ? html`<div class="shelf">${albums.map(albumTile)}</div>`
-              : ui.emptyState({ art: 'moon', title: 'No releases found', text: 'Artist radio still finds their songs on Soulseek.' }))}
-          </section>
+        ${artistHero(ar, top, ownReleases(d), pending.indexOf('topTracks') >= 0)}
+        <div class="lib-cols lib-artist__top">
+          ${popularCard(ar, d, top, view, pending.indexOf('topTracks') >= 0, path)}
+          ${aboutCard(ar, pending.indexOf('bio') >= 0)}
         </div>
-        ${similar.length || sectionError(d, 'similar', path) ? html`<section class="card lib-card" aria-labelledby="lib-similar-h">${ruleWith('similar artists', 'lib-similar-h', html`<span class="t-micro fg-2">via Last.fm similar artists</span>`)}
-          ${sectionError(d, 'similar', path) || html`<div class="shelf">${similar.map(artistTile)}</div>`}</section>` : ''}
-        </div>
+        ${discographyCard(ar, groups, view, pending.indexOf('albums') >= 0, d, path)}
+        ${appears.length ? html`<section class="card lib-card" aria-labelledby="lib-appears-h">${ruleWith('appears on', 'lib-appears-h', html`<span class="t-micro fg-2">${plural(appears.length, 'release')}</span>`)}
+          <div class="shelf">${appears.map(albumTile)}</div></section>` : ''}
+        ${similar.length || pending.indexOf('similar') >= 0 || sectionError(d, 'similar', path) ? html`<section class="card lib-card" aria-labelledby="lib-similar-h">${ruleWith('fans also like', 'lib-similar-h', html`<span class="t-micro fg-2">via Last.fm similar artists</span>`)}
+          ${sectionError(d, 'similar', path) || (similar.length ? html`<div class="shelf">${similar.map(artistTile)}</div>` : shelfSkeleton())}</section>` : ''}
       </div>`;
     });
   }
-  function mountArtist(ctx) { liveSaveButtons(ctx); liveOn(ctx, ['followed', 'liked', 'services']); }
-  /* the bio is clamped beside the songs on a wide page (library.css); More shows all of it */
-  App.action('lib-bio-more', function (el) {
-    var open = el.getAttribute('aria-expanded') !== 'true', bio = document.getElementById('lib-bio');
-    if (bio) bio.classList.toggle('is-open', open);
-    el.setAttribute('aria-expanded', String(open)); el.textContent = open ? 'Less' : 'More';
+  /* the hero: a soft glow of the photo behind it (only a real photo; without one the cover is the design's monogram) */
+  function artistHero(ar, top, releases, gettingSongs) {
+    var ids = top.map(function (t) { return t.id; }).join(',');
+    var facts = [ar.listeners ? html`<span><b>${ar.listeners.toLocaleString('en-US')}</b> Last.fm listeners</span>` : '',
+      releases ? html`<span>${plural(releases, 'release')}</span>` : ''].filter(String);
+    return html`<section class="card lib-page lib-ahero${ar.image ? ' has-photo' : ''}" aria-labelledby="lib-artist-title">
+      ${ar.image ? html`<div class="lib-ahero__glow" aria-hidden="true">${ui.cover(ar, '100%')}</div>` : ''}
+      <div class="lib-hero lib-hero--round">
+        ${ui.cover(ar, 'var(--lib-art)', { round: true, label: ar.image ? 'Photo of ' + ar.name : ar.name })}
+        <div class="lib-hero__info">
+          <p class="lib-kicker">artist</p>
+          <h1 class="t-display lib-title" id="lib-artist-title">${ar.name}</h1>
+          ${facts.length ? html`<p class="lib-ahero__facts">${facts}</p>` : ''}
+          ${ar.tags.length ? html`<div class="lib-chips">${ar.tags.map(function (g) { return ui.tagChip(g); })}</div>` : ''}
+          <div class="lib-actions">
+            ${ids || gettingSongs ? html`<button class="btn btn--primary" data-act="play-ids" data-ids="${ids}" ${ids ? '' : raw('disabled')}>${icon('play', null, 'ic-play')}Play</button>
+            <button class="btn" data-act="lib-shuffle-ids" data-ids="${ids}" ${ids ? '' : raw('disabled')}>${icon('shuffle')}Shuffle</button>` : ''}
+            ${followButton(ar.id)}
+            <button class="btn${ids || gettingSongs ? '' : ' btn--primary'}" data-act="start-radio" data-kind="artist" data-id="${ar.id}">${icon('radio')}Radio</button>
+            <span class="lib-actions__icons">${ui.iconButton('more', 'More artist actions', { 'data-act': 'lib-artist-menu', 'data-id': ar.id, 'data-ids': ids, 'aria-haspopup': 'menu' })}</span>
+          </div>
+        </div>
+      </div>
+    </section>`;
+  }
+  /* the world's most played songs (Last.fm's plays on the catalog's songs): five, See more shows ten */
+  function popularCard(ar, d, top, view, pending, path) {
+    var counts = d.counts || {}, shown = view.more ? top : top.slice(0, POPULAR_SHOWN);
+    var plays = shown.some(function (t) { return counts[t.id] && counts[t.id].plays != null; })
+      ? shown.map(function (t) { var n = counts[t.id] && counts[t.id].plays; return n == null ? null : n === 1 ? 1 : n.toLocaleString('en-US'); }) : null;
+    var body = top.length ? html`${ui.trackList(shown, { label: 'Popular songs by ' + ar.name, unavailable: jellyfinDown(), plays: plays })}
+        ${top.length > POPULAR_SHOWN ? html`<button class="btn btn--quiet btn--sm lib-popular__more" data-act="lib-popular-more" data-id="${ar.id}" aria-expanded="${view.more ? 'true' : 'false'}">${view.more ? 'Show less' : 'See more'}</button>` : ''}`
+      : pending ? ui.skeleton('row', POPULAR_SHOWN)
+      : sectionError(d, 'albums', path) || ui.emptyState({ art: 'wave', title: 'No popular songs found', text: 'Artist radio still finds ' + ar.name + ' on Soulseek.' });
+    return html`<section class="card lib-card lib-popular" aria-labelledby="lib-top-h">
+      ${ruleWith('popular', 'lib-top-h', d.popularVia ? html`<span class="t-micro fg-2">${POPULAR_VIA[d.popularVia] || ''}</span>` : '')}
+      ${body}
+    </section>`;
+  }
+  /* About: the listener count and the bio (Last.fm's), only when there is something to say */
+  function aboutCard(ar, pending) {
+    if (!ar.bio && !pending) return '';
+    return html`<section class="card lib-card lib-about" aria-labelledby="lib-about-h">
+      ${ruleWith('about', 'lib-about-h')}
+      ${ar.bio ? html`<p class="lib-bio" id="lib-bio">${ar.bio}</p>` : ui.skeleton('text', 4)}
+    </section>`;
+  }
+  /* releases by group (albums, singles and EPs, compilations), the group picked by a filter pill */
+  function discographyCard(ar, groups, view, pending, d, path) {
+    var group = groups.filter(function (g) { return g.id === view.group; })[0] || groups[0];
+    var total = groups.reduce(function (n, g) { return n + g.items.length; }, 0);
+    var body = group ? html`${groups.length > 1 ? html`<div class="lib-disco__groups" role="group" aria-label="Show">${groups.map(function (g) {
+          return html`<button class="pill-filter" data-act="lib-disco-group" data-id="${ar.id}" data-group="${g.id}" aria-pressed="${g === group ? 'true' : 'false'}">${g.label}<span class="lib-count">${g.items.length}</span></button>`;
+        })}</div>` : ''}
+        <div class="shelf" data-key="disco-${group.id}" aria-label="${group.label}">${group.items.map(discoTile)}</div>`
+      : pending ? shelfSkeleton()
+      : sectionError(d, 'albums', path) || ui.emptyState({ art: 'moon', title: 'No releases found', text: 'Artist radio still finds their songs on Soulseek.' });
+    return html`<section class="card lib-card lib-disco" aria-labelledby="lib-disco-h">
+      ${ruleWith('discography', 'lib-disco-h', total ? html`<span class="t-micro fg-2">${plural(total, 'release')}</span>` : '')}
+      ${body}
+    </section>`;
+  }
+  /* a release on its artist's page: the year and kind instead of the artist's name */
+  function discoTile(a) {
+    var kind = a.type.toLowerCase();
+    return html`<div class="tile lib-tile" data-album-id="${a.id}" draggable="true">
+      <div class="tile__art"><a href="#/album/${a.id}" aria-label="${a.title}, ${kind}${a.year ? ' from ' + a.year : ''}">${ui.cover(a, '100%')}</a>
+        <button class="tile__play" data-act="play-album" data-id="${a.id}" aria-label="Play ${a.title}" data-tip="Play">${icon('play')}</button></div>
+      <div class="tile__title"><a href="#/album/${a.id}">${a.title}</a></div>
+      <div class="tile__by">${[a.year, kind === 'ep' ? 'EP' : kind].filter(Boolean).join(', ')}</div>
+      <div class="lib-tile__meta"><span data-lib-album-status="${a.id}">${albumStatus(a)}</span></div>
+    </div>`;
+  }
+  /* the artist's own releases (appears-on ones aside), as the discography counts them */
+  function ownReleases(d) {
+    var disco = d.discography; if (!disco) return (d.albums || []).length;
+    return ['albums', 'singles', 'compilations'].reduce(function (n, g) { return n + (disco[g] || []).length; }, 0);
+  }
+  function shelfSkeleton() { return html`<div class="lib-skel-shelf">${ui.skeleton('tile', 6)}</div>`; }
+  function mountArtist(ctx) {
+    liveSaveButtons(ctx); liveOn(ctx, ['followed', 'liked', 'services']);
+    ctx.onCleanup(App.on('server:artist.updated', function (e) { if (e.artistId === ctx.params.id) M.reload(artistPath(e.artistId)); }));
+  }
+  App.action('lib-popular-more', function (el) {
+    var v = artistView[el.getAttribute('data-id')]; if (!v) return;
+    v.more = !v.more; refreshKeepFocus();
+  });
+  App.action('lib-disco-group', function (el) {
+    var v = artistView[el.getAttribute('data-id')]; if (!v) return;
+    v.group = el.getAttribute('data-group'); refreshKeepFocus();
+  });
+  App.action('lib-shuffle-ids', function (el) {
+    var list = (el.getAttribute('data-ids') || '').split(',').filter(Boolean); if (!list.length) return;
+    App.player.setShuffle(true); App.player.playList(list, Math.floor(Math.random() * list.length));
   });
 
   /* =====================================================================
@@ -1399,7 +1477,7 @@
   function titleOf(fn, kind) { return function (ctx) { var x = fn(ctx.params.id); return x ? (x.title || x.name) : kind; }; }
   function artistMetaLine(ctx) {
     var d = M.peek(artistPath(ctx.params.id));
-    return d && d.albums ? plural(d.albums.length, 'release') : '';
+    return d && d.albums && (d.pending || []).indexOf('albums') < 0 ? plural(ownReleases(d), 'release') : '';
   }
   App.route('/library/:segment?', { render: renderLibrary, mount: mountLibrary, nav: 'library',
     title: function (ctx) { var s = SEGMENTS.filter(function (x) { return x.id === ctx.params.segment; })[0]; return 'Library' + (s ? ': ' + s.label : ''); } });

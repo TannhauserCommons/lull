@@ -255,30 +255,45 @@ button.lib-th:hover { color: var(--fg); background: var(--bg-2); }
 .lib-pick-new[hidden] { display: none; }
 .lib-pick-none { font: var(--t-meta); color: var(--fg-2); padding: 0 8px; }
 
+/* ---------- artist page: a hero across the page (the photo large, its glow behind), then Popular beside About, the
+   discography by group, Appears on, Fans also like. Designs style .lib-ahero and the round cover as their own ---------- */
+.lib-ahero { position: relative; overflow: hidden; isolation: isolate; }
+.lib-ahero .lib-hero { --lib-art: 248px; margin-bottom: 0; }
+.lib-ahero__glow { position: absolute; inset: 0; z-index: -1; pointer-events: none; opacity: var(--ahero-glow, .45);
+  -webkit-mask: radial-gradient(farthest-side at 18% 50%, #000 0, transparent 100%); mask: radial-gradient(farthest-side at 18% 50%, #000 0, transparent 100%); }
+.lib-ahero__glow > .cover { filter: blur(48px) saturate(1.4); transform: scale(1.2); }
+.lib-ahero__glow > .cover { width: 100%; height: 100%; aspect-ratio: auto; border: 0; border-radius: 0; }
+.lib-ahero .lib-title { font-size: clamp(2.25rem, 1rem + 4.5cqi, 4.5rem); }
+.lib-ahero__facts { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-4); font: var(--t-meta); color: var(--fg-2); }
+.lib-ahero__facts b { color: var(--fg); font-variant-numeric: tabular-nums; }
+.lib-artist__top { margin: 0; }
+.lib-artist__top:not(:has(> .lib-about)) { grid-template-columns: minmax(0, 1fr); }
+.lib-popular__more { margin-top: var(--sp-3); }
+.lib-popular .trow__plays { display: inline; margin-left: auto; }   /* Last.fm plays, at any width */
+@container tlist (max-width: 520px) {         /* compact rows drop the badge cell: Popular keeps only its count */
+  .lib-popular .tlist--plays .trow { grid-template-columns: var(--art) minmax(0, 1fr) auto auto 40px; grid-template-areas: "art main badges like more"; }
+  .lib-popular .tlist--plays .trow__badges { display: flex; }
+  .lib-popular .tlist--plays .trow__badges > :not(.trow__plays) { display: none; }
+}
+.lib-about .lib-bio { max-width: none; }
+.lib-disco__groups { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-4); }
+.lib-skel-shelf .skel-group { display: grid; grid-auto-flow: column; grid-auto-columns: 168px; gap: var(--sp-5); overflow: hidden; }
+@container lib (max-width: 960px) { .lib-ahero .lib-hero { --lib-art: 200px; } }
+
 /* ---------- tablet + phone ---------- */
 @container lib (max-width: 960px) { .lib-cols { grid-template-columns: minmax(0, 1fr); gap: var(--sp-5); } }
 
-/* album and artist pages from wide (ADR-0007): the header and details stay on the left while the songs scroll on the
-   right. The left column keeps the designed art size; it only stacks the art over the details. */
-/* the bio's More button only matters where the bio is clamped */
-.lib-bio__more { display: none; }
+/* album pages from wide (ADR-0007): the header and details stay on the left while the songs scroll on the right. The
+   left column keeps the designed art size; it only stacks the art over the details. */
 @container main (min-width: 1100px) {
   .lib-page--album { display: grid; grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); column-gap: var(--sp-8); align-items: start; }
   /* a flex column, so the header stacks whichever grid columns a design gives its parts */
-  .lib-page--album > .lib-hero, .lib-artist .lib-hero { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-4); }
-  .lib-artist { grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); column-gap: var(--sp-6); align-items: start; }
-  .lib-artist > .lib-page { grid-column: 1; margin-bottom: 0; }
-  .lib-artist > .lib-artist__main { grid-column: 2; min-width: 0; }
-  .lib-artist > :not(.lib-page, .lib-artist__main) { grid-column: 1 / -1; }        /* the library notice spans both */
-  .lib-artist .lib-cols { grid-template-columns: minmax(0, 1fr); gap: var(--sp-5); }
-  .lib-artist .lib-bio:not(.is-open) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; line-clamp: 6; overflow: hidden; }
-  .lib-artist .lib-bio__more { display: inline-flex; margin-top: calc(-1 * var(--sp-3)); }
+  .lib-page--album > .lib-hero { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-4); }
 }
 /* the header stays in view while the songs scroll, when the window is tall enough to hold it */
 @container main (min-width: 1100px) {
-  .app[data-height="tall"] :is(.lib-page--album > .lib-hero, .lib-artist > .lib-page) { position: sticky; top: 0; }
+  .app[data-height="tall"] .lib-page--album > .lib-hero { position: sticky; top: 0; }
 }
-@container main (min-width: 1600px) { .lib-artist .lib-cols { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: var(--sp-6); } }
 @media (max-width: 1099px) {
   .lib { --lib-art: 188px; }
   .lib-hero, .lib-pl__head { gap: var(--sp-6); }
@@ -291,6 +306,7 @@ button.lib-th:hover { color: var(--fg); background: var(--bg-2); }
   .lib-segs ul { padding: 4px 16px 6px; }
   .lib-hero, .lib-pl__head { grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); align-items: start; }
   .lib-hero { margin-bottom: var(--sp-5); }
+  .lib-ahero .lib-hero { --lib-art: 168px; }
   .lib-pl__bar { gap: var(--sp-2); }
   .lib-pl__bar [data-act="lib-pl-edit"], .lib-pl__bar [data-act="lib-pl-export"] { display: none; }   /* both are in the more menu */
   .lib-pl__bar .btn-save { padding: 0 12px; }

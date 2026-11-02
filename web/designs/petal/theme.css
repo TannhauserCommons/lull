@@ -293,6 +293,9 @@
 :root[data-design="petal"] .cover--round[data-look="3"] { background-image: url("assets/art/p4.svg"); }   /* moon face */
 :root[data-design="petal"] .cover--round[data-look="4"] { background-image: url("assets/art/p5.svg"); }   /* cloud */
 :root[data-design="petal"] .cover--round[data-look="5"] { background-image: url("assets/art/p6.svg"); }   /* strawberry */
+/* an artist without a photo: its initial in the pixel face on a soft checkerboard, never a stand-in picture */
+:root[data-design="petal"] .cover--artist:not(.has-art) { background-image: conic-gradient(var(--pc-2) 25%, var(--pc-3) 0 50%, var(--pc-2) 0 75%, var(--pc-3) 0); background-size: 25% 25%; }
+:root[data-design="petal"] .cover__mono { font: var(--t-pixel); font-size: 62cqi; line-height: 1; color: var(--pc-6); text-shadow: .06em .06em 0 var(--pc-4); }
 :root[data-design="petal"] .mosaic { border: 2px solid var(--pt-frame); border-radius: 3px; background: var(--pt-frame); gap: 2px; }
 :root[data-design="petal"] .mosaic .cover { border: 0; }
 /* skeleton covers are pale pixel checkerboards */
