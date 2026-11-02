@@ -2,6 +2,7 @@
 //! loads (which hub, start in the tray, title bar), so they live here and not in the hub.
 //! Launch at login is not stored: the OS autostart entry is its only source of truth.
 
+use crate::desktop::discord::Look;
 use crate::pages::Appearance;
 use serde::{Deserialize, Serialize};
 
@@ -26,8 +27,9 @@ pub struct Settings {
     pub own_titlebar: bool,
     /// Wayland ignores keep-above; the mini player says so once.
     pub wayland_hint_shown: bool,
-    /// "Show what I'm playing on Discord" (discord.rs).
+    /// "Show what I'm playing on Discord" (discord.rs), and how it looks.
     pub discord_presence: bool,
+    pub discord: Look,
 }
 
 impl Default for Settings {
@@ -45,6 +47,7 @@ impl Default for Settings {
             own_titlebar: false,
             wayland_hint_shown: false,
             discord_presence: false,
+            discord: Look::default(),
         }
     }
 }

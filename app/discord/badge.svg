@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- lull's Discord badge: the lull star in a glossy sky-and-aqua glass orb (Frutiger Aero). Discord crops it to a
+       circle and shows it at about 32 px, so the star is large and white. render.py makes badge.png. -->
+  <defs>
+    <radialGradient id="glass" cx="50%" cy="36%" r="64%">
+      <stop offset="0" stop-color="#f2fdff"/>
+      <stop offset=".3" stop-color="#9ee9ff"/>
+      <stop offset=".66" stop-color="#2ba9ea"/>
+      <stop offset="1" stop-color="#0757ad"/>
+    </radialGradient>
+    <radialGradient id="caustic" cx="50%" cy="96%" r="52%">
+      <stop offset="0" stop-color="#b8fff0" stop-opacity=".95"/>
+      <stop offset=".55" stop-color="#5ff2e0" stop-opacity=".35"/>
+      <stop offset="1" stop-color="#5ff2e0" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="rim" cx="50%" cy="50%" r="50%">
+      <stop offset=".84" stop-color="#03407f" stop-opacity="0"/>
+      <stop offset="1" stop-color="#03407f" stop-opacity=".55"/>
+    </radialGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity=".95"/>
+      <stop offset=".75" stop-color="#fff" stop-opacity=".12"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="bubble" cx="50%" cy="50%" r="50%">
+      <stop offset=".6" stop-color="#fff" stop-opacity=".05"/>
+      <stop offset=".92" stop-color="#fff" stop-opacity=".55"/>
+      <stop offset="1" stop-color="#fff" stop-opacity=".9"/>
+    </radialGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+    <path id="star" d="M256 128.32C263.52 211.08 323.72 271.28 406.48 278.8C323.72 286.32 263.52 346.52 256 429.28C248.48 346.52 188.28 286.32 105.52 278.8C188.28 271.28 248.48 211.08 256 128.32Z"/>
+  </defs>
+  <circle cx="256" cy="256" r="256" fill="url(#glass)"/>
+  <circle cx="256" cy="256" r="256" fill="url(#caustic)"/>
+  <circle cx="256" cy="256" r="256" fill="url(#rim)"/>
+  <g>
+    <circle cx="118" cy="372" r="30" fill="url(#bubble)"/>
+    <ellipse cx="108" cy="361" rx="9" ry="6" fill="#fff" fill-opacity=".85" transform="rotate(-35 108 361)"/>
+    <circle cx="400" cy="398" r="20" fill="url(#bubble)"/>
+    <ellipse cx="393" cy="391" rx="6" ry="4" fill="#fff" fill-opacity=".85" transform="rotate(-35 393 391)"/>
+    <circle cx="160" cy="438" r="12" fill="url(#bubble)"/>
+  </g>
+  <g transform="translate(256 270) scale(.96) translate(-256 -278.8)">
+    <use href="#star" fill="#c9fbff" filter="url(#glow)"/>
+    <use href="#star" fill="#0a4f96" fill-opacity=".28" transform="translate(0 9)"/>
+    <use href="#star" fill="#fff"/>
+  </g>
+  <path d="M378 96c1.6 17.6 14.4 30.4 32 32-17.6 1.6-30.4 14.4-32 32-1.6-17.6-14.4-30.4-32-32 17.6-1.6 30.4-14.4 32-32Z" fill="#ffd2ef"/>
+  <ellipse cx="256" cy="128" rx="196" ry="100" fill="url(#shine)" fill-opacity=".8"/>
+</svg>

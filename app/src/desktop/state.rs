@@ -25,9 +25,13 @@ pub struct NowPlaying {
     pub saved: bool,
     /// False while the web UI shows its "Can't reach your server" banner.
     pub connected: bool,
-    /// The song's id on the hub (its share link) and its album.
+    /// The song's id on the hub, its artist's and its album's (their share links), and its album.
     #[serde(default)]
     pub id: String,
+    #[serde(default)]
+    pub artist_id: String,
+    #[serde(default)]
+    pub album_id: String,
     #[serde(default)]
     pub album: String,
     /// Seconds into the song when this was sent, and its length (0 while unknown).

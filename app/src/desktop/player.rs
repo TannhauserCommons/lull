@@ -45,9 +45,8 @@ pub fn refresh(app: &AppHandle) {
             usable,
         },
     );
-    let enabled = desktop.settings().discord_presence;
-    // Paused or idle clears the activity: Discord has no paused state for "Listening to".
-    let listening = (usable && now.playing).then(|| {
+    let settings = desktop.settings();
+    let listening = usable.then(|| {
         // Discord draws the progress bar from when the song started and when it ends.
         let now_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -55,12 +54,20 @@ pub fn refresh(app: &AppHandle) {
         let start = now_ms - (now.position * 1000.0) as i64;
         Listening {
             id: now.id.clone(),
+            artist_id: now.artist_id.clone(),
+            album_id: now.album_id.clone(),
             title: now.title.clone(),
             artist: now.artist.clone(),
             album: now.album.clone(),
+            playing: now.playing,
             start_ms: start,
             end_ms: (now.duration > 0.0).then(|| start + (now.duration * 1000.0) as i64),
         }
     });
-    desktop.discord.show(enabled, listening, desktop.hub_access());
+    desktop.discord.show(
+        settings.discord_presence,
+        settings.discord,
+        listening,
+        desktop.hub_access(),
+    );
 }

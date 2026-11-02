@@ -2,7 +2,7 @@
 //! unknown is refused with a message the caller logs.
 
 use crate::desktop::classic::{self, Handoff};
-use crate::desktop::discord::Presence;
+use crate::desktop::discord::{Presence, StatusLine, WhenPaused};
 use crate::desktop::local_hub::{self, PORT};
 use crate::desktop::main_window;
 use crate::desktop::mini;
@@ -138,8 +138,13 @@ pub struct DesktopSettings {
     mini_on_top: bool,
     /// None where the setting doesn't exist (only Linux has it).
     own_titlebar: Option<bool>,
-    /// None while this build has no Discord application (discord.rs).
+    /// None while this build has no Discord application (discord.rs), and so is its look:
+    /// the member list's words, the album cover, the buttons, and what a pause does.
     discord_presence: Option<bool>,
+    discord_status: Option<StatusLine>,
+    discord_cover: Option<bool>,
+    discord_buttons: Option<bool>,
+    discord_paused: Option<WhenPaused>,
 }
 
 #[tauri::command]
@@ -162,6 +167,10 @@ pub fn desktop_settings(app: AppHandle) -> Result<DesktopSettings, String> {
         mini_on_top: s.mini_on_top,
         own_titlebar: cfg!(target_os = "linux").then_some(s.own_titlebar),
         discord_presence: Presence::available().then_some(s.discord_presence),
+        discord_status: Presence::available().then_some(s.discord.status),
+        discord_cover: Presence::available().then_some(s.discord.cover),
+        discord_buttons: Presence::available().then_some(s.discord.buttons),
+        discord_paused: Presence::available().then_some(s.discord.paused),
     })
 }
 
@@ -175,6 +184,20 @@ pub struct SettingsPatch {
     mini_on_top: Option<bool>,
     own_titlebar: Option<bool>,
     discord_presence: Option<bool>,
+    discord_status: Option<StatusLine>,
+    discord_cover: Option<bool>,
+    discord_buttons: Option<bool>,
+    discord_paused: Option<WhenPaused>,
+}
+
+impl SettingsPatch {
+    fn touches_discord(&self) -> bool {
+        self.discord_presence.is_some()
+            || self.discord_status.is_some()
+            || self.discord_cover.is_some()
+            || self.discord_buttons.is_some()
+            || self.discord_paused.is_some()
+    }
 }
 
 #[tauri::command]
@@ -186,7 +209,7 @@ pub fn set_desktop_settings(app: AppHandle, patch: SettingsPatch) -> Result<(), 
     if let Some(on) = patch.mini_on_top {
         mini::set_on_top(&app, on).map_err(|e| e.to_string())?;
     }
-    if patch.discord_presence.is_some() && !Presence::available() {
+    if patch.touches_discord() && !Presence::available() {
         return Err("This build of lull has no Discord application".into());
     }
     app.state::<Desktop>().update(|s| {
@@ -209,8 +232,20 @@ pub fn set_desktop_settings(app: AppHandle, patch: SettingsPatch) -> Result<(), 
         if let Some(on) = patch.discord_presence {
             s.discord_presence = on;
         }
+        if let Some(status) = patch.discord_status {
+            s.discord.status = status;
+        }
+        if let Some(on) = patch.discord_cover {
+            s.discord.cover = on;
+        }
+        if let Some(on) = patch.discord_buttons {
+            s.discord.buttons = on;
+        }
+        if let Some(paused) = patch.discord_paused {
+            s.discord.paused = paused;
+        }
     });
-    if patch.discord_presence.is_some() {
+    if patch.touches_discord() {
         player::refresh(&app);
     }
     Ok(())

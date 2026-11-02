@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- lull's Discord badge while paused: badge.svg's orb in a calmer, cooler glass, with white pause bars over a faint
+       star. render.py makes badge-paused.png. -->
+  <defs>
+    <radialGradient id="glass" cx="50%" cy="36%" r="64%">
+      <stop offset="0" stop-color="#f4fbff"/>
+      <stop offset=".3" stop-color="#c3e2f2"/>
+      <stop offset=".66" stop-color="#6aa3c9"/>
+      <stop offset="1" stop-color="#2a5684"/>
+    </radialGradient>
+    <radialGradient id="caustic" cx="50%" cy="96%" r="52%">
+      <stop offset="0" stop-color="#d6fff7" stop-opacity=".8"/>
+      <stop offset=".55" stop-color="#9ff0e6" stop-opacity=".25"/>
+      <stop offset="1" stop-color="#9ff0e6" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="rim" cx="50%" cy="50%" r="50%">
+      <stop offset=".84" stop-color="#1d3d5f" stop-opacity="0"/>
+      <stop offset="1" stop-color="#1d3d5f" stop-opacity=".55"/>
+    </radialGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity=".95"/>
+      <stop offset=".75" stop-color="#fff" stop-opacity=".12"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="12"/>
+    </filter>
+    <path id="star" d="M256 128.32C263.52 211.08 323.72 271.28 406.48 278.8C323.72 286.32 263.52 346.52 256 429.28C248.48 346.52 188.28 286.32 105.52 278.8C188.28 271.28 248.48 211.08 256 128.32Z"/>
+    <g id="bars">
+      <rect x="170" y="166" width="62" height="200" rx="22"/>
+      <rect x="280" y="166" width="62" height="200" rx="22"/>
+    </g>
+  </defs>
+  <circle cx="256" cy="256" r="256" fill="url(#glass)"/>
+  <circle cx="256" cy="256" r="256" fill="url(#caustic)"/>
+  <circle cx="256" cy="256" r="256" fill="url(#rim)"/>
+  <use href="#star" fill="#fff" fill-opacity=".22" transform="translate(256 270) scale(.96) translate(-256 -278.8)"/>
+  <g transform="translate(0 4)">
+    <use href="#bars" fill="#e6f7ff" filter="url(#glow)"/>
+    <use href="#bars" fill="#1f4670" fill-opacity=".25" transform="translate(0 8)"/>
+    <use href="#bars" fill="#fff"/>
+  </g>
+  <ellipse cx="256" cy="128" rx="196" ry="100" fill="url(#shine)" fill-opacity=".8"/>
+</svg>
