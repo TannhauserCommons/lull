@@ -396,6 +396,7 @@
     var e = /^ar-/.test(key) ? M.artist(key) : /^al-/.test(key) ? M.album(key) : null;
     var own = e && (e.art || e.image);
     if (!own && !/^al-/.test(key)) return '';
+    if (!own && e && e.saved === 'none') return '';   // library art exists only for saved albums: asking would 404
     var src = own ? sized(own, want) : App.artUrl(key, want);
     return '<img class="cover__img" loading="lazy" decoding="async" alt="" data-art="' + esc(key) + '" src="' + esc(src) + '">';
   }

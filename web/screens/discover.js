@@ -422,6 +422,8 @@
   });
 
   function mountHome(ctx) {
+    /* the hub rebuilt the feed, or a shelf filled in later (new releases once Soulseek has answered): fetch it again */
+    ctx.onCleanup(App.on('server:feed.updated', function () { if (!H.building) M.reload(FEED); }));   // old shelves stay until it answers
     ctx.onCleanup(App.on('store', function (keys) {
       var feed = M.peek(FEED);
       if (!feed || H.building || isCold(feed)) return;
