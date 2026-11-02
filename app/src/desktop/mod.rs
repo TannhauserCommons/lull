@@ -55,6 +55,9 @@ pub fn run() {
             commands::tailscale_serve,
             commands::classic_open,
             commands::classic_handoff,
+            commands::app_update,
+            commands::app_update_check,
+            commands::app_update_install,
         ])
         .setup(setup)
         .on_window_event(on_window_event)
@@ -86,7 +89,7 @@ fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     }
     remember_appearance(handle);
     main_window::launch(handle);
-    updater::check(handle);
+    updater::start(handle);
     Ok(())
 }
 

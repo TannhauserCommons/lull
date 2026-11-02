@@ -11,8 +11,9 @@
     if (!t) throw new Error('The lull app bridge is not ready');
     return t;
   }
-  function call(cmd, args) {
-    return new Promise(function (resolve) { resolve(core().invoke(PLUGIN + cmd, args || {})); })
+  function call(cmd, args) { return command(PLUGIN + cmd, args); }
+  function command(cmd, args) {
+    return new Promise(function (resolve) { resolve(core().invoke(cmd, args || {})); })
       .catch(function (e) { throw e instanceof Error ? e : new Error(String(e)); });
   }
   /* events: a Channel registered with the plugin; the returned function unsubscribes */
@@ -52,6 +53,12 @@
       on: function (type, fn) {
         return on('download-' + type, type === 'done' ? function (d) { fn(withArt(d)); } : fn);
       }
+    }),
+    /* this app's own updates (src/mobile/update.rs): a newer release's APK opens in the browser */
+    updates: Object.freeze({
+      status: function () { return command('app_update'); },
+      check: function () { return command('app_update_check'); },
+      install: function () { return command('app_update_install'); }
     })
   });
 })();

@@ -15,7 +15,6 @@ use tauri::{AppHandle, Wry};
 
 pub struct Tray {
     icon: TrayIcon,
-    menu: Menu<Wry>,
     now: MenuItem<Wry>,
     play: MenuItem<Wry>,
     next: MenuItem<Wry>,
@@ -23,6 +22,7 @@ pub struct Tray {
     like: CheckMenuItem<Wry>,
     save: MenuItem<Wry>,
     mini: CheckMenuItem<Wry>,
+    update: MenuItem<Wry>,
 }
 
 pub fn create(app: &AppHandle) -> tauri::Result<Tray> {
@@ -38,6 +38,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<Tray> {
     let show = MenuItem::with_id(app, "show", "Show lull", true, None::<&str>)?;
     let mini = CheckMenuItem::with_id(app, "mini", "Mini player", true, false, None::<&str>)?;
     let classic = MenuItem::with_id(app, "classic", "Classic mode", true, None::<&str>)?;
+    let update = MenuItem::with_id(app, "update", "Check for updates", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit lull", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
@@ -55,6 +56,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<Tray> {
             &mini,
             &classic,
             &sep()?,
+            &update,
             &quit,
         ],
     )?;
@@ -70,7 +72,6 @@ pub fn create(app: &AppHandle) -> tauri::Result<Tray> {
         .build(app)?;
     Ok(Tray {
         icon,
-        menu,
         now,
         play,
         next,
@@ -78,6 +79,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<Tray> {
         like,
         save,
         mini,
+        update,
     })
 }
 
@@ -114,14 +116,14 @@ impl Tray {
         report(result);
     }
 
-    /// A downloaded update: "Restart to update" goes first in the menu (updater.rs).
-    pub fn offer_update(&self, app: &AppHandle, version: &str) {
-        let offer = || -> tauri::Result<()> {
-            let text = format!("Restart to update to lull {version}");
-            let item = MenuItem::with_id(app, "update", text, true, None::<&str>)?;
-            self.menu.prepend_items(&[&item, &PredefinedMenuItem::separator(app)?])
-        };
-        report(offer());
+    /// The update item follows the check: "Check for updates", its progress, then "Restart to
+    /// update" (updater.rs).
+    pub fn show_update(&self, (text, enabled): &(String, bool)) {
+        report(
+            self.update
+                .set_text(text)
+                .and_then(|()| self.update.set_enabled(*enabled)),
+        );
     }
 
     pub fn set_mini(&self, open: bool) {
@@ -142,9 +144,7 @@ fn on_menu(app: &AppHandle, event: MenuEvent) {
         "show" => mini::close(app),
         "mini" => mini::toggle(app),
         "update" => {
-            if let Err(e) = updater::install(app) {
-                eprintln!("lull: the update didn't install: {e}");
-            }
+            updater::clicked(app);
             Ok(())
         }
         "quit" => {

@@ -10,6 +10,8 @@
      windowAction(action, detail)                    window operations (DESKTOP.md 4, window_action)
      settings() / setSettings(patch)                 Settings > App inside the wrapper (Promises)
      tailscale() / tailscaleServe()                  Settings > App when this computer is the hub (Promises)
+     updates                                         this app's own updates: status(), check(), install() (Promises of
+                                                     { current, state, ... }) and on(fn), which hears every change
      openMini()                                      the player bar's Device view button
      openClassic(handoff) / onClassic(fn)            Classic mode's own window (screens/classic.js): open it with the
                                                      queue; fn(message) hears what Webamp's window reports
@@ -57,6 +59,13 @@
   /* this computer is the hub: Tailscale's state, and serving the hub on the tailnet (only on the listener's click) */
   D.tailscale = function () { return invoke('tailscale_status'); };
   D.tailscaleServe = function () { return invoke('tailscale_serve'); };
+  /* this app's own updates (app/src/desktop/updater.rs): the check runs in Rust, a download goes on in the background */
+  D.updates = D.inWrapper ? {
+    status: function () { return invoke('app_update'); },
+    check: function () { return invoke('app_update_check'); },
+    install: function () { return invoke('app_update_install'); },
+    on: function (fn) { T.event.listen('app-update', function (e) { fn(e.payload); }).catch(logFailure('update events')); }
+  } : null;
 
   /* caption glyphs: OS-convention shapes, 10x10, 1 px (Windows draws these at 10 px) */
   var GLYPH = {

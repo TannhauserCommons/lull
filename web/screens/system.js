@@ -947,16 +947,74 @@
         ${row('When paused', '', choice('desktop.discordPaused', 'When paused', [['clear', 'Hide it'], ['show', 'Show it as paused']]))}
       </div>`;
   }
+  /* ---------- this app's own version and updates: LullDesktop.updates (desktop) or LullNative.updates (Android) ---------- */
+  function appUpdates() {
+    return (inWrapper() && window.LullDesktop.updates) || (window.LullNative && window.LullNative.updates) || null;
+  }
+  var upd = null, updHeard = false;                // the app's report { current, state, version, received, total, error }
+  function showUpdate(r) { upd = r; repaint('#sys-app-update', updateBody()); }
+  function loadUpdate() {
+    var u = appUpdates();
+    upd = { loading: true };
+    u.status().then(showUpdate, function (err) { showUpdate({ askError: errText(err) }); });
+    if (u.on && !updHeard) { updHeard = true; u.on(function (r) { if (upd) showUpdate(r); }); }
+  }
+  App.action('sys-app-update-check', function (el) {
+    el.disabled = true;
+    appUpdates().check().then(function (r) {
+      showUpdate(r);
+      if (r.state === 'current') App.announce(App.product + ' ' + r.current + ' is the newest version');
+    }, function (err) { el.disabled = false; App.toast('Couldn\'t check for updates: ' + errText(err), { kind: 'error' }); });
+  });
+  App.action('sys-app-update-install', function (el) {
+    el.disabled = true;
+    appUpdates().install().then(function () {
+      el.disabled = false;
+      if (window.LullNative) App.toast('Your browser is downloading ' + App.product + ' ' + upd.version + '. Open the file to install it.', { icon: 'check' });
+    }, function (err) { el.disabled = false; App.toast('Couldn\'t update: ' + errText(err), { kind: 'error' }); });
+  });
+  function updateBody() {
+    var u = upd;
+    if (!u || u.loading) return spinnerLine('Asking the app');
+    if (u.askError) return statusLine('down', u.askError);
+    var name = function (v) { return App.product + ' ' + v; };
+    var button = function (act, label, primary) {
+      return html`<button class="btn btn--sm ${primary ? 'btn--primary' : ''}" data-act="${act}">${primary ? '' : icon('refresh')}${label}</button>`;
+    };
+    var check = button('sys-app-update-check', u.state === 'failed' ? 'Try again' : 'Check for updates');
+    var state = {
+      idle: function () { return html`<span class="sys-row__help">Checks GitHub for a newer release.</span>${check}`; },
+      checking: function () { return spinnerLine('Checking for updates'); },
+      current: function () { return html`${statusLine('ok', name(u.current) + ' is the newest version')}${check}`; },
+      downloading: function () {
+        var pct = u.total ? Math.floor(u.received * 100 / u.total) : null;
+        return html`${spinnerLine('Downloading ' + name(u.version) + (pct == null ? '' : ': ' + pct + '%'))}${pct == null ? '' : html`<progress max="100" value="${pct}" aria-label="Download progress"></progress>`}`;
+      },
+      ready: function () { return html`${statusLine('ok', name(u.version) + ' is downloaded')}${button('sys-app-update-install', 'Restart to update', true)}`; },
+      available: function () {
+        return html`${statusLine('ok', name(u.version) + ' is available')}<span class="sys-row__help">Your browser downloads it; open the file to install it over this version.</span>${button('sys-app-update-install', 'Download', true)}`;
+      },
+      failed: function () { return html`${statusLine('down', 'Couldn\'t check for updates. ' + u.error)}${check}`; }
+    }[u.state];
+    if (!state) return statusLine('down', 'Unknown update state ' + u.state);
+    return html`<span class="px sys-version">${name(u.current)}</span>${state()}`;
+  }
+  function appVersionRow() {
+    if (!upd) loadUpdate();
+    return row('App version', 'This app\'s own version. It updates from lull\'s releases on GitHub.', html`<div class="sys-inline sys-inline--col" id="sys-app-update" aria-live="polite">${updateBody()}</div>`);
+  }
   function secApp() {
     if (inWrapper() && !desk) loadDesktop();
-    return html`${row('Version', '', html`<span class="sys-inline"><span class="px sys-version" id="sys-version">${App.server.version || 'not reported yet'}</span><button class="btn btn--sm" data-act="sys-update-check">Check for updates</button></span>`)}
+    var app = appUpdates();
+    return html`${row(app ? 'Server version' : 'Version', '', html`<span class="sys-inline"><span class="px sys-version" id="sys-version">${App.server.version || 'not reported yet'}</span><button class="btn btn--sm" data-act="sys-update-check">Check for updates</button></span>`)}
       ${row('Install app', 'Adds lull to your home screen or dock with lock-screen controls and its own window.', html`<div id="sys-install">${installBody()}</div>`)}
       ${row('First-run setup', 'Your library, your Soulseek account and Last.fm, step by step.', html`<a class="btn" href="#/setup">Open setup</a>`)}
       ${group('server')}
       ${inWrapper() ? '' : configRow('Server address', serverAddress(), 'The address this page was loaded from.')}
       <div class="sys-row sys-row--stack"><div class="sys-row__text"><span class="sys-row__label">Server health</span><span class="sys-row__help">What the server reports about itself and its services.</span></div>
         <div class="sys-row__ctl"><div id="sys-health" aria-live="polite">${healthRows(false)}</div><button class="btn btn--sm" data-act="sys-health">${icon('refresh')}Check now</button></div></div>
-      ${inWrapper() ? html`${group('desktop app')}<div id="sys-desktop">${desktopRows()}</div>` : ''}`;
+      ${inWrapper() ? html`${group('desktop app')}${appVersionRow()}<div id="sys-desktop">${desktopRows()}</div>` : ''}
+      ${app && !inWrapper() ? html`${group('android app')}${appVersionRow()}` : ''}`;
   }
 
   var BODY = {

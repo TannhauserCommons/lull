@@ -2,6 +2,8 @@
 //! native player for background playback and the lock screen, and downloads to app storage. A phone
 //! is never a hub: it pairs with one by QR code or pair code.
 
+mod update;
+
 use crate::hub;
 use crate::pages::{self, Appearance, Unreachable};
 use crate::pairing;
@@ -19,8 +21,14 @@ const LABEL: &str = "main";
 /// `window.LullNative`, defined before the web UI's scripts run (docs/context/web.md).
 const NATIVE: &str = include_str!("native.js");
 
-/// What the web UI on the hub may call: the native player and downloads. Granted to its origin only.
-const HUB_PERMISSIONS: &[&str] = &["lull-player:default"];
+/// What the web UI on the hub may call: the native player, downloads and this app's updates. Granted to
+/// its origin only.
+const HUB_PERMISSIONS: &[&str] = &[
+    "lull-player:default",
+    "allow-app-update",
+    "allow-app-update-check",
+    "allow-app-update-install",
+];
 
 /// The phone's own settings: which hub, and its device token there (ADR-0002).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -53,10 +61,15 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_barcode_scanner::init())
         .plugin(tauri_plugin_lull_player::init())
+        .plugin(tauri_plugin_opener::init())
+        .manage(update::Updates::default())
         .invoke_handler(tauri::generate_handler![
             pairing::discover_hubs,
             pairing::find_hub,
-            window_action
+            window_action,
+            update::app_update,
+            update::app_update_check,
+            update::app_update_install
         ])
         .setup(setup)
         .build(tauri::generate_context!());

@@ -36,6 +36,9 @@ const HUB_PERMISSIONS: &[&str] = &[
     "allow-tailscale-status",
     "allow-tailscale-serve",
     "allow-classic-open",
+    "allow-app-update",
+    "allow-app-update-check",
+    "allow-app-update-install",
 ];
 
 /// What Webamp's page in the Classic window may call (classic.rs): fit and show its window, move it

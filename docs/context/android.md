@@ -7,7 +7,8 @@ The same Tauri v2 project as the desktop app (`app/`, ADR-0006), built for Andro
 | Path | What |
 |---|---|
 | `app/src/mobile/mod.rs` | Builder (barcode scanner, player plugin), the phone's settings (hub and token), launch, pairing, the runtime IPC grant for the hub origin |
-| `app/src/mobile/native.js` | `window.LullNative.player` and `.downloads`, injected before the page's scripts; every call is `plugin:lull-player|<command>` |
+| `app/src/mobile/native.js` | `window.LullNative.player`, `.downloads` and `.updates`, injected before the page's scripts; the player's and downloads' calls are `plugin:lull-player|<command>` |
+| `app/src/mobile/update.rs` | Updates: the newest release against this build, and its APK opened in the browser (`tauri-plugin-opener`) |
 | `app/src/hub.rs`, `discovery.rs`, `pairing.rs`, `pages.rs`, `store.rs` | Shared with desktop: hub client, mDNS, `discover_hubs`/`find_hub`, bundled page URLs, `settings.json` |
 | `app/plugins/player/` | The native player plugin: `src/lib.rs` registers the Kotlin plugin and offers `configure` and `multicast` to Rust; `build.rs` lists the commands (one permission each) |
 | `app/plugins/player/android/.../Engine.kt` | The output contract on two Media3 ExoPlayer decks |
@@ -20,7 +21,7 @@ The same Tauri v2 project as the desktop app (`app/`, ADR-0006), built for Andro
 
 ## Build it
 
-- **CI** (`.github/workflows/app.yml`, job `android`): every change to `app/`, `crates/` or `web/desktop/` builds a debug APK for arm64 (a workflow artifact). A `v*` tag builds the release APK, signed with the release keystore, and attaches `lull-<version>-android-arm64.apk` to the tag's Release. Obtainium can follow those releases.
+- **CI** (`.github/workflows/app.yml`, job `android`): every change to `app/`, `crates/` or `web/desktop/` builds a debug APK for arm64 (a workflow artifact). A `v*` tag builds the release APK, signed with the release keystore, and attaches `lull-<version>-android-arm64.apk` to the tag's Release; `latest.json` points at it (`android.url`). Obtainium can follow those releases too.
 - **Locally:** the Android SDK, NDK (`NDK_HOME`) and JDK 17, then `npx tauri android build --apk --target aarch64` in `app/` (or `npx tauri android dev` with a phone attached). Gradle's Rust task calls `npm run tauri`, hence that script in `app/package.json`. This workstation has no NDK on purpose (disk): Android builds in CI only.
 - **Release signing** reads `app/gen/android/keystore.properties` (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`). CI writes it from the secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. Never commit it.
 
@@ -57,6 +58,13 @@ The app uses the https scheme for its own pages (`https://tauri.localhost`), so 
 - **Cover and JSON:** the cover (`/api/art/…?size=512`) goes to `files/lull-art/`, and the track JSON to `downloads/index.json` with the download's id and state.
 - **Progress:** polled from DownloadManager once a second while anything downloads, sent as `progress`, then `done` or `error`. Kotlin names them `download-progress`/`-done`/`-error`; `native.js` maps them back.
 - **`list()`:** reads DownloadManager again first, so downloads that finished while lull was closed show as done. `fileUrl` is a `file://` URL for `player.load`. `artUrl` is the cover through Tauri's asset protocol (scope `**/lull-art/*`).
+
+## Updates
+
+Tauri's updater doesn't run on Android, so Settings > App's **App version** row (`window.LullNative.updates`, the desktop's calls without `on`; desktop.md) does it by hand, only on the listener's click:
+1. **Check for updates** (`app_update_check`) reads `latest.json` from `plugins.updater.endpoints[0]` in `tauri.conf.json`, the desktop's address (20 s). A 404 means no release yet; no answer means offline.
+2. Its `version` against this build's (semver): not newer means **lull 0.1.0 is the newest version**. Newer means **lull X is available**, with the APK from the manifest's `android.url` (https only; a newer release without one is an error).
+3. **Download** (`app_update_install`) opens that URL in the browser, which downloads the APK; opening it installs it over this version, since both are signed with the release key. Android asks once to allow installs from the browser. The page never passes a URL: Rust opens the one it found.
 
 ## Known limits
 

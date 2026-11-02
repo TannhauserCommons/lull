@@ -11,8 +11,10 @@ use crate::desktop::player;
 use crate::desktop::settings::{HubChoice, MiniStyle};
 use crate::desktop::state::{Desktop, NowPlaying};
 use crate::desktop::tailscale::{self, Status};
+use crate::desktop::updater;
 use crate::hub;
 use crate::pages;
+use crate::updates::Report;
 use serde::{Deserialize, Serialize};
 use tauri::async_runtime::spawn_blocking;
 use tauri::{AppHandle, Manager};
@@ -283,4 +285,25 @@ fn local_only(app: &AppHandle) -> Result<(tauri::Url, String), String> {
         .local_hub()
         .map(|h| (h.origin.clone(), h.token.clone()))
         .ok_or_else(|| "This computer isn't your hub".to_owned())
+}
+
+/// Settings > App: this build's version and where the update check stands (updater.rs). Changes
+/// arrive as `app-update` events.
+#[tauri::command]
+pub fn app_update(app: AppHandle) -> Report {
+    updater::report(&app)
+}
+
+/// Settings > App's "Check for updates": answers once GitHub has; a download goes on meanwhile.
+#[tauri::command]
+pub async fn app_update_check(app: AppHandle) -> Report {
+    updater::check(&app).await
+}
+
+/// Settings > App's "Restart to update". Returns only when the install failed.
+#[tauri::command]
+pub async fn app_update_install(app: AppHandle) -> Result<(), String> {
+    spawn_blocking(move || updater::install(&app))
+        .await
+        .map_err(|e| e.to_string())?
 }

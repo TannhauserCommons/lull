@@ -192,7 +192,7 @@ Rules for the native side: playback must continue with the screen off (the WebVi
 always set one song ahead); one item plays at a time except during a crossfade; volume is the app's own stream
 level, not the system's.
 
-`window.LullNative.downloads` (offline downloads, ADR-0005) is in [Offline downloads](#offline-downloads-and-outbox).
+`window.LullNative.downloads` (offline downloads, ADR-0005) is in [Offline downloads](#offline-downloads-and-outbox). `window.LullNative.updates` (`status`, `check`, `install`: the app's own version and the newest release's APK) is in [android.md](android.md#updates); Settings > App shows it as the app's version row, as it does `LullDesktop.updates` in the desktop app.
 
 ## lull Connect (ADR-0005)
 

@@ -8,6 +8,7 @@ mod hub;
 mod pages;
 mod pairing;
 mod store;
+mod updates;
 
 #[cfg(desktop)]
 mod desktop;

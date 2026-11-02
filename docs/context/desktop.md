@@ -12,13 +12,14 @@ The Tauri v2 project in `app/` (its own Cargo workspace; ADR-0006) shows the hub
 | `app/src/pairing.rs` | Shared: the connect page's `discover_hubs` and `find_hub` |
 | `app/src/pages.rs` | Shared: URLs of the bundled page (`wrapper.html#view=…`), with the design and theme they open in |
 | `app/src/store.rs` | Shared: `settings.json` in the app config dir, written atomically |
+| `app/src/updates.rs` | Shared: the update check's `Status` that Settings > App shows, and Android's reading of `latest.json` |
 | `app/src/desktop/mod.rs` | Builder: plugins (single instance first, window state, autostart, updater, global shortcut on Linux), commands, setup, exit |
 | `app/src/desktop/local_hub.rs` | This computer is the hub: `lull_server::run` in-process, its env, the app's own device token, following `hub.restarting` |
 | `app/src/desktop/slskd.rs` | The bundled slskd: one supervisor thread, its folders, port and API key, restart when its share changes, when it stops by itself and when the hub finds it wedged |
 | `app/src/desktop/main_window.rs` | `main`: welcome page, local hub or remote probe, device cookie, runtime IPC grant for the hub origin, close-to-tray |
 | `app/src/desktop/commands.rs` | The commands the pages call, checked at the boundary |
 | `app/src/desktop/tailscale.rs` | `tailscale serve --bg <port>` for the hub, and its status |
-| `app/src/desktop/updater.rs` | Update check at launch, download, "Restart to update" in the tray |
+| `app/src/desktop/updater.rs` | Update checks (at launch, every 6 hours, on request), the download with its progress, the install; the tray's update item |
 | `app/src/desktop/mini.rs` | Mini player windows `mini` (device) and `strip` |
 | `app/src/desktop/tray.rs` | Tray icon and native menu; player items become `tray` events |
 | `app/src/desktop/player.rs` | Which window plays (`main`, or the Classic window), and showing `set_now_playing` in the tray, the taskbar buttons and Discord |
@@ -88,7 +89,9 @@ The Tauri v2 project in `app/` (its own Cargo workspace; ADR-0006) shows the hub
 
 **Tailscale** (`tailscale.rs`): when this computer is the hub, Settings > App can show `LullDesktop.tailscale()`: `{ installed, running, url, serving }` from `tailscale status --json` and `tailscale serve status --json` (read-only). The listener's click on **Use Tailscale** calls `LullDesktop.tailscaleServe()`, which runs `tailscale serve --bg 8484` (20 s at most: it waits when HTTPS is off in the tailnet) and then stores the https address as `LULL_PUBLIC_URL` through `PATCH /api/config`, so pair codes carry it.
 
-**Updates** (`updater.rs`): at launch the app reads `latest.json` from the newest GitHub Release, checks the build's signature against `plugins.updater.pubkey` and downloads it in the background. The tray then offers **Restart to update to lull X** first in its menu. Windows runs the NSIS installer passively and restarts lull; Linux replaces the AppImage and restarts. While the repo is private, the check fails quietly (GitHub answers 404 to anonymous requests).
+**Updates** (`updater.rs`): the app reads `latest.json` from the newest GitHub Release (`plugins.updater.endpoints`) at launch, every 6 hours while it runs, and when the listener asks. Background checks are silent: they only change Settings and the tray. A newer build downloads in the background and its signature is checked against `plugins.updater.pubkey`; nothing installs before the listener's **Restart to update**. Windows runs the NSIS installer passively and restarts lull; Linux replaces the AppImage, or installs the .deb or .rpm the app came from (after the system's password prompt), and restarts. GitHub gets 30 s to connect and to send each part of an answer.
+- **States** (`updates::Status`, the same in Settings > App and the tray's update item above **Quit lull**): not checked yet (**Check for updates**); checking; up to date (**lull 0.1.0 is up to date**, a click checks again); downloading, with its percentage; ready (**Restart to update to lull X**); failed, in plain words where the cause is plain ("Couldn't reach GitHub. Are you offline?", "No lull release has been published yet"), else the updater's own message.
+- A check while one runs, while an update downloads or while one waits returns the current state instead of starting another.
 
 ## The seam with the web UI
 
@@ -105,6 +108,7 @@ The web UI never calls Tauri directly. It uses `window.LullDesktop` from `deskto
 - `openMini()`: the player bar's Device view button.
 - `openClassic(handoff)` and `onClassic(fn)`: Classic mode (`web/screens/classic.js`), see below. An app older than the page rejects `openClassic`, and the page shows Webamp on its own stage instead.
 - `windowAction('change-server')`: Settings > App, "Change hub…" (the welcome page).
+- `updates`: this app's own version and updates (Settings > App, "App version"). `status()`, `check()` and `install()` resolve to `{ current, state: idle | checking | current | downloading | ready | failed, version?, received?, total?, error? }` (`install()` resolves to nothing: the app restarts; it rejects when the install failed); `on(fn)` hears every change. `check()` resolves once GitHub has answered; a download goes on, reported through `on`. Android's `window.LullNative.updates` has the same calls without `on` (android.md).
 - `tailscale()` and `tailscaleServe()`, only when `hub` is `local`: Settings > App's "Reach this hub from anywhere" row (see Tailscale above). Both resolve to `{ installed, running, url, serving }`; `tailscaleServe()` rejects with Tailscale's own message. Call `tailscaleServe()` only from the listener's click: it changes their Tailscale.
 
 `desktop.js` does the rest itself in the wrapper: title bar, Ctrl+Shift+M, the close dialog, tray and mini-player actions, `set_now_playing`, and design and theme reports. It sends `set_now_playing` on player events, not as the song plays: a new position goes out only when it jumped.
@@ -121,6 +125,7 @@ The web UI never calls Tauri directly. It uses `window.LullDesktop` from `deskto
 | `classic_handoff` | → the handoff, once; null after | hub origin (Classic window) |
 | `desktop_settings`, `set_desktop_settings` | `{ patch }` | hub origin |
 | `tailscale_status`, `tailscale_serve` | → `{ installed, running, url, serving }`; an error when this computer isn't the hub | hub origin |
+| `app_update`, `app_update_check`, `app_update_install` | → the update report above; install → nothing (restarts) or an error | hub origin (`main`) |
 
 The hub origin gets its capabilities at runtime when the app first loads it: one for `main`, a smaller one for the Classic window (`core:window` show, size, focus, minimise, drag; events; `window_action`, `classic_handoff`). An origin used earlier in the same run keeps its grant until restart (Tauri can't revoke one).
 
@@ -135,6 +140,7 @@ The hub origin gets its capabilities at runtime when the app first loads it: one
 | `player` | `main` → all | snapshot `{ track, art, playing, liked, pos, duration, durationKnown, buffered, received, shuffle, repeat, volume }`, sent on change and in answer to `hello` |
 | `appearance` | `main` → Rust and the mini player | `{ design, theme }`; stored and passed in the hash of every bundled page |
 | `ask-close` | Rust → `main` | none: show "keep playing in the tray?" |
+| `app-update` | Rust → all | the update report, on every change of the check (progress per whole percent) |
 
 ## Behaviour worth knowing
 
