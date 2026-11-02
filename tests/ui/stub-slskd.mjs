@@ -1,13 +1,31 @@
 // A stand-in for slskd's REST API (v0), so the hub under test has a Soulseek that is logged in,
-// shares its library and finds nothing: `node stub-slskd.mjs [port] [api key]`. The visual tests
-// need a connected `soulseek` status and deterministic searches, never the real network.
-// Only what crates/soulseek/src/slskd.rs calls is answered; anything else is a loud 404.
+// shares its library and gets one fixed answer to every search: `node stub-slskd.mjs [port] [api key]`.
+// The visual tests need a connected `soulseek` status and deterministic searches, never the real
+// network. A search nobody answers is how lull spots a wedged slskd (crates/soulseek/src/recover.rs),
+// so a stub that found nothing would put a "searches got no answers" banner over every page after a
+// few searches. Only what crates/soulseek/src/slskd.rs calls is answered; anything else is a loud 404.
 
 import { createServer } from 'node:http';
 
 const port = Number(process.argv[2] ?? 5030);
 const key = process.argv[3] ?? 'ui-test-key';
-const SEARCH = { id: '00000000-0000-4000-8000-000000000001', state: 'Completed, TimedOut', responseCount: 0, fileCount: 0 };
+const SEARCH = {
+  id: '00000000-0000-4000-8000-000000000001',
+  state: 'Completed, ResponseLimitReached',
+  responseCount: 1,
+  fileCount: 1,
+  endedAt: '2026-11-01T12:00:00Z',
+};
+// One peer with one song, the same for every query.
+const RESPONSES = [
+  {
+    username: 'ui-peer',
+    hasFreeUploadSlot: true,
+    queueLength: 0,
+    uploadSpeed: 2_000_000,
+    files: [{ filename: '@@ui\\Music\\Quiet Harbour\\Tidewater (2019)\\01 - Low Tide.mp3', size: 9_600_000, bitRate: 320, length: 240 }],
+  },
+];
 
 const routes = {
   'GET /application': () => ({
@@ -21,7 +39,7 @@ const routes = {
   'GET /logs/live': () => [],
   'GET /events': () => [],
   'POST /searches': () => SEARCH,
-  'GET /searches/*': (parts) => (parts[2] === 'responses' ? [] : SEARCH),
+  'GET /searches/*': (parts) => (parts[2] === 'responses' ? RESPONSES : SEARCH),
   'PUT /searches/*': () => null,
   'DELETE /searches/*': () => null,
   'GET /transfers/downloads/*': () => ({ username: '', directories: [] }),
