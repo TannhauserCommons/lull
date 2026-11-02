@@ -1177,7 +1177,10 @@
     if (!ps.queue.length) { App.toast('Nothing queued. Search or pick something from Home.', { icon: 'info' }); return; }
     if (ps.status === 'ended') { load(0); return; }
     if (ps.status === 'failed' || ps.status === 'jellyfin-error') { P.retry(); return; }
-    if (!cur) { load(ps.index, { at: App.isSaved(P.currentId()) ? ps.pos : 0 }); return; }   // restored after a reload
+    /* restored after a reload: resume where it was. A Soulseek song may no longer be on the hub at that point (the
+       cache evicted it, or only its start arrived before): if the resumed stream fails before it plays, it starts
+       again from 0:00 (onOutputError) */
+    if (!cur) { ps.queue[ps.index].resumeAt = ps.pos; load(ps.index, { at: ps.pos }); return; }
     ps.playing = true; out.play().catch(playRefused); changed('play');
   };
   P.pause = function () { ps.playing = false; out.pause(); changed('play'); };
@@ -1486,6 +1489,7 @@
   }
   /* the output failed: ask the hub why (the body says it in a sentence), then show it */
   function onOutputError(e, msg) {
+    if (e.resumeAt && e === cur) { e.resumeAt = 0; ps.pos = 0; load(ps.index, { at: 0 }); return; }   // see P.play
     var t = P.current();
     /* a Soulseek stream's own `stream` events carry the hub's sentence (a failed event sets ps.error); asking the stream
        URL again would start another transfer and answer about that one instead (409) */
@@ -1781,6 +1785,7 @@
   var tickWas = '';
   setInterval(function () {
     if (!cur) return;
+    if (cur.resumeAt && ps.playing && ps.pos > cur.resumeAt + 1) cur.resumeAt = 0;   // the resume worked
     preloadNext();
     if (document.hidden) return;
     updateBuffered();
@@ -1831,8 +1836,8 @@
     if (!ps.queue.length) return;
     ps.index = clamp(saved0.index || 0, 0, ps.queue.length - 1);
     ps.radio = saved0.radio ? Object.assign({}, saved0.radio, { error: null }) : null;    // an old error was that session's
+    ps.pos = saved0.pos || 0;
     var t = P.current();
-    ps.pos = App.isSaved(t.id) ? saved0.pos || 0 : 0;   // an unsaved song starts again from 0:00 (P.play)
     ps.status = App.isSaved(t.id) ? 'library' : 'streaming';
     ps.received = App.isSaved(t.id) ? 1 : 0;
   }
