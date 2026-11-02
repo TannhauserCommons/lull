@@ -528,6 +528,13 @@
 @media (min-width: 1100px) and (max-width: 1279px) {
   :root[data-design="lull"] .pbar { grid-template-columns: minmax(140px, 1fr) 40px auto minmax(140px, 1.35fr) 40px minmax(40px, 110px) 40px auto auto 4px repeat(4, 48px); }
 }
+/* the idle hint ("Search or pick something from Home") wrapped to five lines in the 140 to 200 px title column and
+   ran out of the bar: no sparkle, three lines at most */
+@media (min-width: 1100px) and (max-width: 1279px) {
+  :root[data-design="lull"] .pbar__idle { gap: 0; }
+  :root[data-design="lull"] .pbar__idle > .ic { display: none; }
+  :root[data-design="lull"] .pbar__idle > span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+}
 @media (min-width: 640px) and (max-width: 1099px) {
   :root[data-design="lull"] { --bar-h: 116px; }
   :root[data-design="lull"] .pbar {
