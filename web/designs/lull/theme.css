@@ -142,7 +142,9 @@
 /* check: #1a1b3a on #b6c7f5 4.5 */
 
 /* Night falls: the surface tokens are registered colours, so flipping data-theme animates the desk instead of
-   cutting: title bars and tiles dusk first, then the windows, then the wallpaper. Reduced motion: instant. */
+   cutting: title bars and tiles dusk first, then the windows, then the wallpaper. Only while data-theme-fade is set
+   (Designs.applyTheme, for a flip the listener sees), so a page that loads into its theme never fades. Reduced
+   motion: instant. */
 @property --l-wall { syntax: "<color>"; inherits: true; initial-value: #e4def9; }
 @property --l-wall-2 { syntax: "<color>"; inherits: true; initial-value: #fce8f3; }
 @property --l-wall-3 { syntax: "<color>"; inherits: true; initial-value: #b6c7f5; }
@@ -155,7 +157,7 @@
 @property --l-win { syntax: "<color>"; inherits: true; initial-value: #f7f4ff; }
 @property --l-card { syntax: "<color>"; inherits: true; initial-value: #fdfcff; }
 @property --l-card-2 { syntax: "<color>"; inherits: true; initial-value: #f1edfd; }
-:root[data-design="lull"] {
+:root[data-design="lull"][data-theme-fade] {
   transition: --l-bar .5s ease, --l-bar-hi .5s ease, --l-tile .5s ease, --l-tray .6s ease,
     --l-frame .7s .1s ease, --l-win .7s .1s ease, --l-card .7s .1s ease, --l-card-2 .7s .1s ease,
     --l-wall .9s .2s ease, --l-wall-2 .9s .25s ease, --l-wall-3 .9s .3s ease, --l-wall-4 .9s .35s ease;

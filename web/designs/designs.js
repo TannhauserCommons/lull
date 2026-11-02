@@ -151,13 +151,22 @@
      'system' is resolved from the OS (prefers-color-scheme) here and again whenever the OS flips, so CSS only
      ever sees :root[data-theme="day"] or [data-theme="night"] and needs no prefers-color-scheme copy.
      A theme with a single mode keeps that mode. :root[data-theme-pref] keeps the choice. */
-  var themePref = 'system';
+  /* A design may animate a flip (lull's dusk) under :root[data-theme-fade]. It is set only for a flip the listener can
+     watch: after the page has loaded and while it is visible. A page loading into its theme, or one the OS flips in the
+     background, cuts straight to it, and the attribute's removal ends a fade a hidden page never ran. */
+  var themePref = 'system', fadeTimer = 0, settled = false;
   var darkOs = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+  window.addEventListener('load', function () { setTimeout(function () { settled = true; }, 1000); });
   D.applyTheme = function (pref) {
     themePref = pref === 'day' || pref === 'night' ? pref : 'system';
     var t = themePref !== 'system' ? themePref : darkOs && darkOs.matches ? 'night' : 'day';
     var modes = D.current && D.list[D.current] && D.list[D.current].modes;
     if (modes && modes.length === 1) t = modes[0];
+    if (settled && document.visibilityState === 'visible' && root.getAttribute('data-theme') !== t) {
+      root.setAttribute('data-theme-fade', '');
+      clearTimeout(fadeTimer);
+      fadeTimer = setTimeout(function () { root.removeAttribute('data-theme-fade'); }, 1400);
+    }
     root.setAttribute('data-theme', t);
     root.setAttribute('data-theme-pref', themePref);
     return t;
