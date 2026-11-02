@@ -668,10 +668,15 @@
     return html`<div>${statusLine(d.state, d.detail)}</div><span class="sys-row__help">${using}${checked}${y.error ? ' ' + y.error : ''}</span>`;
   }
   App.action('sys-ytdlp-update', function (el) {
+    var before = yt && yt.data && yt.data.ytdlp ? yt.data.ytdlp.version : null;
     el.disabled = true;
     M.api(YOUTUBE + '/update', { method: 'POST' }).then(function (d) {
       el.disabled = false; yt = { data: d }; repaint('#sys-youtube', youtubeState());
-      App.announce('Checked for a new yt-dlp');
+      var y = d.ytdlp || {};
+      if (y.error) App.toast('Couldn\'t update yt-dlp: ' + y.error, { kind: 'error' });
+      else if (y.version && y.version !== before) App.toast('Updated yt-dlp to ' + y.version, { icon: 'check' });
+      else if (y.latest && y.latest !== y.version) App.toast('Using yt-dlp ' + y.version + '; the newest is ' + y.latest, { icon: 'info' });
+      else App.toast('yt-dlp ' + y.version + ' is the newest', { icon: 'check' });
     }, function (err) { el.disabled = false; App.toast('Couldn\'t check: ' + err.message, { kind: 'error' }); });
   });
   function youtubeRows() {
