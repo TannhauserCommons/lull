@@ -397,6 +397,18 @@ impl MusicBrainz {
     }
 }
 
+/// Release groups that aren't music to play: broadcasts, interviews, spoken word ("Interview
+/// CD", radio sessions). Search leaves them out.
+fn is_talk(primary: Option<&str>, secondary: &[String]) -> bool {
+    matches!(primary, Some("Broadcast" | "Other"))
+        || secondary.iter().any(|t| {
+            matches!(
+                t.as_str(),
+                "Interview" | "Spokenword" | "Audiobook" | "Audio drama" | "Field recording"
+            )
+        })
+}
+
 /// "album", "EP", "single", "compilation" from a release group's types.
 fn release_kind(primary: Option<&str>, secondary: &[String]) -> Option<String> {
     if secondary.iter().any(|t| t == "Compilation") {
@@ -433,6 +445,7 @@ pub fn release_groups(body: serde_json::Value) -> Result<Found> {
         albums: found
             .groups
             .into_iter()
+            .filter(|g| !is_talk(g.primary_type.as_deref(), &g.secondary_types))
             .filter_map(|g| {
                 let (artist, _) = credited(&g.artist_credit)?;
                 Some(AlbumHit {
@@ -452,7 +465,9 @@ pub fn release_groups(body: serde_json::Value) -> Result<Found> {
 }
 
 /// A recording search's answer as catalog rows. Each song is placed on its first official album
-/// (else EP or single, else any release); covers come from the Cover Art Archive.
+/// (else EP or single, else any release); covers come from the Cover Art Archive. Bootlegs,
+/// broadcasts and interviews don't count, and a recording only on those is left out. Each
+/// credited artist is an artist row of its own ("A feat. B" is A and B).
 pub fn recordings(body: serde_json::Value) -> Result<Found> {
     #[derive(Deserialize)]
     struct Found_ {
@@ -520,10 +535,21 @@ pub fn recordings(body: serde_json::Value) -> Result<Found> {
     let found: Found_ =
         serde_json::from_value(body).map_err(|e| Error::upstream(SERVICE, format!("unexpected search answer: {e}")))?;
     let mut out = Found::default();
-    for r in found.recordings {
-        let Some((artist, artist_mbid)) = credited(&r.artist_credit) else {
+    for mut r in found.recordings {
+        let Some((artist, _)) = credited(&r.artist_credit) else {
             continue;
         };
+        let released = !r.releases.is_empty();
+        r.releases.retain(|rel| {
+            rel.status.as_deref() != Some("Bootleg")
+                && !rel
+                    .release_group
+                    .as_ref()
+                    .is_some_and(|g| is_talk(g.primary_type.as_deref(), &g.secondary_types))
+        });
+        if released && r.releases.is_empty() {
+            continue;
+        }
         let home = r.releases.iter().min_by_key(|rel| preference(rel));
         let group = home.and_then(|h| h.release_group.as_ref());
         let art = group.map(|g| crate::art::cover_archive(&g.id));
@@ -543,15 +569,21 @@ pub fn recordings(body: serde_json::Value) -> Result<Found> {
                 source: None,
             });
         }
-        if !out.artists.iter().any(|a| a.mbid == artist_mbid) {
-            out.artists.push(ArtistHit {
-                name: artist.clone(),
-                mbid: artist_mbid,
-                popularity: 0.0,
-                image: None,
-                audience: None,
-                lastfm_only: false,
-            });
+        for c in &r.artist_credit {
+            if !out
+                .artists
+                .iter()
+                .any(|a| a.mbid.as_deref() == Some(c.artist.id.as_str()))
+            {
+                out.artists.push(ArtistHit {
+                    name: c.name.clone(),
+                    mbid: Some(c.artist.id.clone()),
+                    popularity: 0.0,
+                    image: None,
+                    audience: None,
+                    lastfm_only: false,
+                });
+            }
         }
         out.songs.push(SongHit {
             saved: None,

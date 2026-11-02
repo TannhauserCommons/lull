@@ -31,7 +31,7 @@ const SONGS_RESERVE: usize = 6;
 const BUDGET_WINDOW: Duration = Duration::from_secs(60);
 /// Songs and albums asked for per query.
 const SONGS: &str = "25";
-const ALBUMS: &str = "15";
+const ALBUMS: &str = "25";
 /// Answers are kept this long (seconds).
 const KEEP_S: i64 = 600;
 

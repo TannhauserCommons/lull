@@ -10,8 +10,12 @@
 //! - **Fit:** exact, then every word typed, then most of them (a soundtrack named without the
 //!   "season" the listener typed), then loose. Words found only in a "(from …)" note count as
 //!   most: such a song is from the work the query names, not that work.
-//! - **Misspelt artists:** a Last.fm-only artist a typo away from a confirmed one, with under 1%
-//!   of its audience, is dropped ("Radiohed" next to Radiohead).
+//! - **Misspelt and borrowed artists:** a Last.fm-only artist a typo away from a confirmed one,
+//!   or any artist whose name holds a confirmed one's ("Radiohead - Topic", "SZA with Kendrick
+//!   Lamar"), with under 1% of its audience (or Last.fm-only), is dropped.
+//! - **Famous near matches:** an artist with under a tenth of the audience of a confirmed artist
+//!   that holds every word typed (or is a typo away) ranks by popularity with it, its better fit
+//!   aside: "mozart" is Wolfgang Amadeus Mozart before a pop act called Mozart.
 
 use std::cmp::Ordering;
 
@@ -33,8 +37,10 @@ const LEAN_RELEASE: f64 = 0.05;
 /// Words shorter than this (but not numbers) don't count toward "most of the words": "of" and
 /// "the" make "Sign of the Times" no answer to "skronk of the times".
 const SIGNIFICANT_LETTERS: usize = 4;
-/// A Last.fm-only artist with less than this share of a near-namesake's audience is a typo.
+/// An artist with less than 1/this of a near-namesake's audience is a typo or a borrowed name.
 const MISSPELT_SHARE: u64 = 100;
+/// An artist with less than 1/this of a famous near match's audience ranks with it.
+const OVERSHADOWED_SHARE: u64 = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -266,10 +272,6 @@ impl Merged {
         touched
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.songs.is_empty() && self.albums.is_empty() && self.artists.is_empty()
-    }
-
     /// Every row so far has been shown: none may change id any more.
     pub fn freeze(&mut self) {
         self.shown_songs = self.songs.len();
@@ -384,8 +386,11 @@ impl Query {
         }
     }
 
+    /// The query is `s`, a leading "the" aside on either side ("dark side of the moon" is
+    /// "The Dark Side of the Moon").
     fn is(&self, s: &str) -> bool {
-        self.loose.iter().any(|l| l == s)
+        let bare = s.strip_prefix("the ").unwrap_or(s);
+        self.loose.iter().any(|l| l == s || l == bare)
     }
 
     fn fit(&self, exact: &[String], text: &[&str]) -> Fit {
@@ -520,25 +525,55 @@ pub fn rank(rows: &[Score], own: impl Fn(usize) -> bool) -> Vec<usize> {
     order
 }
 
-/// Which artists are misspellings: Last.fm-only, a typo away from a confirmed artist, and with
-/// under 1% of its audience.
+/// Which artists to leave out: a Last.fm-only typo of a confirmed artist ("Radiohed"), or a name
+/// holding a confirmed artist's ("Radiohead - Topic", "We Love Taylor Swift", "Radiohead &
+/// Portishead"), with under 1% of its audience. A Last.fm-only artist holding the name needs no
+/// count: it is a scrobble's credit string, not an artist with releases of its own. (A confirmed
+/// typo stays, ranked by `overshadow`: it may be the band typed.)
 pub fn misspelt(artists: &[ArtistHit]) -> Vec<bool> {
     let names: Vec<String> = artists.iter().map(|a| loose_artist(&a.name)).collect();
     artists
         .iter()
         .enumerate()
         .map(|(i, a)| {
-            a.lastfm_only
-                && artists.iter().enumerate().any(|(j, c)| {
-                    !c.lastfm_only
-                        && typo_apart(&names[i], &names[j])
-                        && match (a.audience, c.audience) {
-                            (Some(small), Some(big)) => small.saturating_mul(MISSPELT_SHARE) < big,
-                            _ => false,
-                        }
-                })
+            artists.iter().enumerate().any(|(j, c)| {
+                let smaller = smaller_than(a, c, MISSPELT_SHARE);
+                i != j
+                    && !c.lastfm_only
+                    && ((a.lastfm_only && smaller && typo_apart(&names[i], &names[j]))
+                        || ((smaller || a.lastfm_only) && holds_name(&names[i], &names[j])))
+            })
         })
         .collect()
+}
+
+/// Lowers each artist's fit to that of a confirmed artist with ten times its audience that holds
+/// every word typed or is a typo away, so popularity decides between them.
+pub fn overshadow(artists: &[ArtistHit], scores: &mut [Score]) {
+    let names: Vec<String> = artists.iter().map(|a| loose_artist(&a.name)).collect();
+    let fits: Vec<Fit> = scores.iter().map(|s| s.fit).collect();
+    for (i, a) in artists.iter().enumerate() {
+        let near = artists.iter().enumerate().filter(|&(j, c)| {
+            i != j
+                && !c.lastfm_only
+                && (fits[j] >= Fit::Words || typo_apart(&names[i], &names[j]))
+                && smaller_than(a, c, OVERSHADOWED_SHARE)
+        });
+        if let Some(lowest) = near.map(|(j, _)| fits[j]).min() {
+            scores[i].fit = scores[i].fit.min(lowest);
+        }
+    }
+}
+
+/// `a`'s audience (none known counts as none) is under 1/`share` of `c`'s.
+fn smaller_than(a: &ArtistHit, c: &ArtistHit, share: u64) -> bool {
+    c.audience
+        .is_some_and(|big| a.audience.unwrap_or(0).saturating_mul(share) < big)
+}
+
+/// `name` holds `other` as whole words, and more: "radiohead topic" holds "radiohead".
+fn holds_name(name: &str, other: &str) -> bool {
+    !other.is_empty() && name != other && format!(" {name} ").contains(&format!(" {other} "))
 }
 
 /// One or two edits apart, and no more than one per four letters ("radiohed", "radiohead").

@@ -3,9 +3,8 @@
 //! - **Sources** run side by side: the fast catalog (`catalog`: Deezer, or iTunes plus Deezer's
 //!   artists where Deezer is closed) and the saved library, then MusicBrainz (one recording
 //!   search) and Last.fm. Their rows are merged and ranked by `merge`.
-//! - **Fast first:** the answer goes out once the fast sources are in, or after about 400 ms
-//!   when it has rows by then. An answer with nothing yet waits for the fast sources up to
-//!   1.5 s (iTunes and Deezer take 0.6-1 s from the homelab), so it has a top result and ranked rows.
+//! - **Fast first:** the answer goes out once every fast source is in, or at 1.5 s (iTunes and
+//!   Deezer take 0.6-1 s from the homelab), so its top result and order come from all of them.
 //!   What arrives later is announced as `search.more`, with only rows not shown yet.
 //! - **One run per query for 10 minutes:** the same words again answer at once, joining a run
 //!   that is still going. A run with a failed source isn't reused.
@@ -38,10 +37,8 @@ use crate::store::{self, entities};
 use catalog::Choice;
 use merge::{Fit, Found, Kind, Merged, Query, Score, SongHit, Source, Touched};
 
-/// How long the first answer waits for the fast sources when it has rows.
-const FIRST_ANSWER: Duration = Duration::from_millis(400);
-/// How long it waits for them while it has none.
-const FIRST_ANSWER_EMPTY: Duration = Duration::from_millis(1500);
+/// The longest the first answer waits for the fast sources.
+const FIRST_ANSWER: Duration = Duration::from_millis(1500);
 const FAST: [Source; 3] = [Source::Deezer, Source::Itunes, Source::Library];
 const KEEP: Duration = Duration::from_secs(600);
 /// The longest any one source is waited for.
@@ -247,31 +244,16 @@ impl Run {
         start(svc, self, Source::MusicBrainzAlbums);
     }
 
-    /// Returns once the fast sources are in, or at 400 ms if there are rows by then; with none by
-    /// then, once the fast sources are in or at 1.5 s.
+    /// Returns once every fast source is in, or at 1.5 s. Not sooner: an answer with only
+    /// Deezer's artists in fixes the order and the top result before iTunes's songs and albums
+    /// arrive ("blinding lights" led with a small artist of that name).
     async fn first_answer(&self) {
-        let early = self.started + FIRST_ANSWER;
-        // Set when 400 ms passed with no rows: then every fast source is waited for.
-        let mut patient = false;
+        let until = self.started + FIRST_ANSWER;
         loop {
             // Made before the check, so an arrival in between still wakes it.
             let arrived = self.arrived.notified();
-            let (waiting, has_rows) = {
-                let st = self.state.lock().await;
-                (st.pending.iter().any(|s| FAST.contains(s)), !st.merged.is_empty())
-            };
-            if !waiting {
-                return;
-            }
-            let until = if Instant::now() < early {
-                early
-            } else if has_rows && !patient {
-                return;
-            } else {
-                patient = true;
-                self.started + FIRST_ANSWER_EMPTY
-            };
-            if tokio::time::timeout_at(until, arrived).await.is_err() && until > early {
+            let waiting = self.state.lock().await.pending.iter().any(|s| FAST.contains(s));
+            if !waiting || tokio::time::timeout_at(until, arrived).await.is_err() {
                 return;
             }
         }
@@ -421,7 +403,8 @@ async fn view(svc: &Service, query: &str, st: &mut RunState, touched: Option<&To
     let album_fits: Vec<Score> = m.albums.iter().map(|a| Score::album(&q, a)).collect();
     let albums = merge::rank(&album_fits, |i| followed.contains(&ArtistId::of(&m.albums[i].artist)));
     let artist_ids: Vec<ArtistId> = m.artists.iter().map(merge::ArtistHit::id).collect();
-    let artist_fits: Vec<Score> = m.artists.iter().map(|a| Score::artist(&q, a)).collect();
+    let mut artist_fits: Vec<Score> = m.artists.iter().map(|a| Score::artist(&q, a)).collect();
+    merge::overshadow(&m.artists, &mut artist_fits);
     let misspelt = merge::misspelt(&m.artists);
     let mut artists = merge::rank(&artist_fits, |i| followed.contains(&artist_ids[i]));
     artists.retain(|&i| !misspelt[i]);

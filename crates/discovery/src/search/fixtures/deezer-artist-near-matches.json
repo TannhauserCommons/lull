@@ -1,0 +1,92 @@
+{
+ "mozart": {
+  "data": [
+   {
+    "name": "Moz-art",
+    "nb_fan": 69,
+    "picture_xl": "https://cdn-images.dzcdn.net/images/artist/82103d7981bfb5ffe5012bfa432c7a49/1000x1000-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Wolfgang Amadeus Mozart",
+    "nb_fan": 1578257,
+    "picture_xl": "https://cdn-images.dzcdn.net/images/artist/41811848bbce380a4753bcb71fa84394/1000x1000-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Mozart",
+    "nb_fan": 22488,
+    "picture_xl": "https://cdn-images.dzcdn.net/images/artist/cfdbca8ae0d0e5c13c3d2c959247f377/1000x1000-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Mozart & DJ Ms",
+    "nb_fan": 207,
+    "picture_xl": "https://cdn-images.dzcdn.net/images/artist/fda94738234af1da1cbc1c9a406347d3/1000x1000-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Mozart Opera Rock",
+    "nb_fan": 95127,
+    "picture_xl": "https://cdn-images.dzcdn.net/images/artist/c6f1d48b664a19c988d0bf1e73d7c898/1000x1000-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Mozart Mz",
+    "nb_fan": 1127,
+    "picture_xl": "https://cdn-images.dzcdn.net/images/artist/684ddfaff4d33ba78beac4128b6e4b1f/1000x1000-000000-80-0-0.jpg"
+   }
+  ],
+  "total": 100
+ },
+ "dark_side_of_the_moon": {
+  "data": [
+   {
+    "name": "The Dark Side of the Moon",
+    "nb_fan": 2951,
+    "picture_xl": "https://cdn-images.dzcdn.net/images/artist/b11327890ca017011923d7134550b961/1000x1000-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Dark Side of the Moon",
+    "nb_fan": 1801,
+    "picture_xl": "https://cdn-images.dzcdn.net/images/artist/2308de279da0f51da8dde9f86e3e6ede/1000x1000-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Dark Side of the Moon A Cappella",
+    "nb_fan": 35,
+    "picture_xl": "https://cdn-images.dzcdn.net/images/artist//1000x1000-000000-80-0-0.jpg"
+   }
+  ],
+  "total": 3
+ },
+ "blinding_lights": {
+  "data": [
+   {
+    "name": "Blinding Lights",
+    "nb_fan": 1444,
+    "picture_xl": "https://cdn-images.dzcdn.net/images/artist/63f4fa56ea2d24a39e1437c29cb7fc91/1000x1000-000000-80-0-0.jpg"
+   },
+   {
+    "name": "The Blinding Lights",
+    "nb_fan": 174,
+    "picture_xl": "https://cdn-images.dzcdn.net/images/artist/5d2947afb34954d217b2143aabb0153a/1000x1000-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Blinding Lights Noises",
+    "nb_fan": 0,
+    "picture_xl": "https://cdn-images.dzcdn.net/images/artist//1000x1000-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Bending Lights",
+    "nb_fan": 4,
+    "picture_xl": "https://cdn-images.dzcdn.net/images/artist/4b274da897bfa93c1c06061fce8d34dd/1000x1000-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Light Blending In",
+    "nb_fan": 39,
+    "picture_xl": "https://cdn-images.dzcdn.net/images/artist/3c39dba726c869e342bdb5dd01286a8b/1000x1000-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Weird Blinking Lights",
+    "nb_fan": 0,
+    "picture_xl": "https://cdn-images.dzcdn.net/images/artist/9f856c1ff615be6d0b95a03d1f9ea450/1000x1000-000000-80-0-0.jpg"
+   }
+  ],
+  "total": 10
+ }
+}

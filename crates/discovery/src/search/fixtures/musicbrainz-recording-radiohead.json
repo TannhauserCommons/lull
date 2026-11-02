@@ -1,0 +1,338 @@
+{
+ "recordings": [
+  {
+   "id": "b5d78cb1-7a3a-4e96-a265-a1d14a0cb67c",
+   "title": "Clawing at the Walls (Radiohead Beatstrumental)",
+   "length": 196861,
+   "artist-credit": [
+    {
+     "name": "Radiohead",
+     "joinphrase": "",
+     "artist": {
+      "id": "a74b1b7f-71a5-4011-9441-d0b5e4122711"
+     }
+    }
+   ],
+   "isrcs": [],
+   "releases": [
+    {
+     "title": "Raremix, Vol. II: 2010–2011",
+     "artist-credit": [
+      {
+       "name": "Raremix",
+       "joinphrase": "",
+       "artist": {
+        "id": "1215a654-6054-4656-af43-07bff6b7f8cc"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "b3d19306-24fa-4066-b876-4765ccbcbc02",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation",
+       "Remix"
+      ]
+     },
+     "status": "Official",
+     "date": "2012-07-06"
+    }
+   ]
+  },
+  {
+   "id": "be7e02e3-8af4-46a0-bca6-ab3e35d351e3",
+   "title": "Interview: There Must Be Another Radiohead",
+   "length": 162000,
+   "artist-credit": [
+    {
+     "name": "Radiohead",
+     "joinphrase": "",
+     "artist": {
+      "id": "a74b1b7f-71a5-4011-9441-d0b5e4122711"
+     }
+    }
+   ],
+   "isrcs": [],
+   "releases": [
+    {
+     "title": "1995‐08‐08: Galei Tzahal (Israel Army Radio), Tel Aviv, Israel",
+     "artist-credit": [
+      {
+       "name": "Radiohead",
+       "joinphrase": "",
+       "artist": {
+        "id": "a74b1b7f-71a5-4011-9441-d0b5e4122711"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "5d419572-286d-4c41-a4ba-ec40bcd653cb",
+      "primary-type": "Broadcast",
+      "secondary-types": [
+       "Live"
+      ]
+     },
+     "status": "Bootleg",
+     "date": "1995-08-08"
+    }
+   ]
+  },
+  {
+   "id": "3cbcebb6-7196-4f00-ab32-d769f66f9c16",
+   "title": "Radiohead Q&A at Maida Vale Studios Part 2",
+   "length": 214000,
+   "artist-credit": [
+    {
+     "name": "Radiohead",
+     "joinphrase": "",
+     "artist": {
+      "id": "a74b1b7f-71a5-4011-9441-d0b5e4122711"
+     }
+    }
+   ],
+   "isrcs": [],
+   "releases": [
+    {
+     "title": "2003-12-08: Maida Vale Studios, London, UK",
+     "artist-credit": [
+      {
+       "name": "Radiohead",
+       "joinphrase": "",
+       "artist": {
+        "id": "a74b1b7f-71a5-4011-9441-d0b5e4122711"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "0d65fb5e-8fdb-4108-bc48-c8496a229398",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Live"
+      ]
+     },
+     "status": "Bootleg"
+    }
+   ]
+  },
+  {
+   "id": "5d9b8ca3-419b-46f4-a7e0-59cd93efe477",
+   "title": "Radiohead Q&A at Maida Vale Studios Part 3",
+   "length": 333000,
+   "artist-credit": [
+    {
+     "name": "Radiohead",
+     "joinphrase": "",
+     "artist": {
+      "id": "a74b1b7f-71a5-4011-9441-d0b5e4122711"
+     }
+    }
+   ],
+   "isrcs": [],
+   "releases": [
+    {
+     "title": "2003-12-08: Maida Vale Studios, London, UK",
+     "artist-credit": [
+      {
+       "name": "Radiohead",
+       "joinphrase": "",
+       "artist": {
+        "id": "a74b1b7f-71a5-4011-9441-d0b5e4122711"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "0d65fb5e-8fdb-4108-bc48-c8496a229398",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Live"
+      ]
+     },
+     "status": "Bootleg"
+    }
+   ]
+  },
+  {
+   "id": "395ac6a6-00da-4a14-83cc-61bb64cbf4e1",
+   "title": "Radiohead Q&A at Maida Vale Studios Part 1",
+   "length": 275000,
+   "artist-credit": [
+    {
+     "name": "Radiohead",
+     "joinphrase": "",
+     "artist": {
+      "id": "a74b1b7f-71a5-4011-9441-d0b5e4122711"
+     }
+    }
+   ],
+   "isrcs": [],
+   "releases": [
+    {
+     "title": "2003-12-08: Maida Vale Studios, London, UK",
+     "artist-credit": [
+      {
+       "name": "Radiohead",
+       "joinphrase": "",
+       "artist": {
+        "id": "a74b1b7f-71a5-4011-9441-d0b5e4122711"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "0d65fb5e-8fdb-4108-bc48-c8496a229398",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Live"
+      ]
+     },
+     "status": "Bootleg"
+    }
+   ]
+  },
+  {
+   "id": "37d5c117-d0ac-4323-a4a5-ece492b6584c",
+   "title": "“Track #9 There There is next; and it’s a single, unusual indeed for Radiohead…”",
+   "length": 223960,
+   "artist-credit": [
+    {
+     "name": "Radiohead",
+     "joinphrase": "",
+     "artist": {
+      "id": "a74b1b7f-71a5-4011-9441-d0b5e4122711"
+     }
+    }
+   ],
+   "isrcs": [],
+   "releases": [
+    {
+     "title": "Interview CD",
+     "artist-credit": [
+      {
+       "name": "Radiohead",
+       "joinphrase": "",
+       "artist": {
+        "id": "a74b1b7f-71a5-4011-9441-d0b5e4122711"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "e83bcc2d-5498-36ba-a0c0-8bc05317f323",
+      "primary-type": "Other",
+      "secondary-types": [
+       "Interview"
+      ]
+     },
+     "status": "Promotion",
+     "date": "2003-05"
+    }
+   ]
+  },
+  {
+   "id": "55f9e27a-8535-42c6-8928-18466f34c568",
+   "title": "“Here’s a change (irony!) as a definition of a Radiohead song…Track #4 Backdrifts seems a pretty desolate vision.”",
+   "length": 157666,
+   "artist-credit": [
+    {
+     "name": "Radiohead",
+     "joinphrase": "",
+     "artist": {
+      "id": "a74b1b7f-71a5-4011-9441-d0b5e4122711"
+     }
+    }
+   ],
+   "isrcs": [],
+   "releases": [
+    {
+     "title": "Interview CD",
+     "artist-credit": [
+      {
+       "name": "Radiohead",
+       "joinphrase": "",
+       "artist": {
+        "id": "a74b1b7f-71a5-4011-9441-d0b5e4122711"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "e83bcc2d-5498-36ba-a0c0-8bc05317f323",
+      "primary-type": "Other",
+      "secondary-types": [
+       "Interview"
+      ]
+     },
+     "status": "Promotion",
+     "date": "2003-05"
+    }
+   ]
+  },
+  {
+   "id": "64c51903-1074-41d4-a6bc-7d5aff703d58",
+   "title": "Radiohead",
+   "length": 338000,
+   "artist-credit": [
+    {
+     "name": "Wolfgang Muthspiel 4tet",
+     "joinphrase": "",
+     "artist": {
+      "id": "5ca0b194-69e9-47be-bd75-15f7af836d0e"
+     }
+    }
+   ],
+   "isrcs": [],
+   "releases": [
+    {
+     "title": "Earth Mountain",
+     "artist-credit": [
+      {
+       "name": "Wolfgang Muthspiel 4tet",
+       "joinphrase": "",
+       "artist": {
+        "id": "5ca0b194-69e9-47be-bd75-15f7af836d0e"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "63fc9281-e42c-3f0a-ae24-ec8d59f1dfac",
+      "primary-type": "Album"
+     },
+     "status": "Official",
+     "date": "2008-04-08"
+    }
+   ]
+  },
+  {
+   "id": "bf62e3d5-702d-422f-839c-86a596776b67",
+   "title": "RADIOHEAD",
+   "length": 217000,
+   "artist-credit": [
+    {
+     "name": "SALUKI",
+     "joinphrase": "",
+     "artist": {
+      "id": "b43a3653-d3ef-427b-8488-50b8c1a0411d"
+     }
+    }
+   ],
+   "isrcs": [],
+   "releases": [
+    {
+     "title": "BOLSHIE KURTKI",
+     "artist-credit": [
+      {
+       "name": "SALUKI",
+       "joinphrase": "",
+       "artist": {
+        "id": "b43a3653-d3ef-427b-8488-50b8c1a0411d"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "e56baedf-2909-4472-9929-a9b79942a749",
+      "primary-type": "Album"
+     },
+     "status": "Official",
+     "date": "2024-11-15"
+    }
+   ]
+  }
+ ]
+}

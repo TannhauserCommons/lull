@@ -29,6 +29,11 @@ fn fixture(name: &str) -> Value {
         "deezer-album-tracks" => include_str!("fixtures/deezer-album-tracks.json"),
         // Dawid Podsiadło's "Let You Down": a single, his album and the Edgerunners soundtrack.
         "musicbrainz-recording-soundtrack" => include_str!("fixtures/musicbrainz-recording-soundtrack.json"),
+        // "radiohead", recorded 2026-11-02: interviews, bootleg sessions, others' songs.
+        "musicbrainz-recording-radiohead" => include_str!("fixtures/musicbrainz-recording-radiohead.json"),
+        "itunes-album-radiohead" => include_str!("fixtures/itunes-album-radiohead.json"),
+        // Deezer's artist search for "mozart", "dark side of the moon", "blinding lights".
+        "deezer-artist-near-matches" => include_str!("fixtures/deezer-artist-near-matches.json"),
         "musicbrainz-recording" => include_str!("fixtures/musicbrainz-recording.json"),
         "musicbrainz-release-group" => include_str!("fixtures/musicbrainz-release-group.json"),
         _ => "null",
@@ -695,4 +700,142 @@ fn a_deezer_album_answer_is_its_tracklist_in_order() {
         ]
     );
     assert!(songs.iter().all(|s| s.artist == "Daft Punk" && s.disc.is_none()));
+}
+
+/// Deezer's artists for one of the recorded near-match queries.
+fn deezer_artists(query: &str) -> Vec<ArtistHit> {
+    deezer::artists_of(fixture("deezer-artist-near-matches")[query].clone()).unwrap_or_default()
+}
+
+/// The top result once every fast source is in.
+fn top_of(q: &Query, m: &Merged) -> Option<Kind> {
+    let best = |scores: Vec<Score>| merge::rank(&scores, |_| false).first().map(|&i| scores[i]);
+    let mut artist_scores: Vec<Score> = m.artists.iter().map(|a| Score::artist(q, a)).collect();
+    merge::overshadow(&m.artists, &mut artist_scores);
+    merge::top(
+        best(artist_scores),
+        best(m.albums.iter().map(|a| Score::album(q, a)).collect()),
+        best(m.songs.iter().map(|s| Score::song(q, s)).collect()),
+    )
+}
+
+#[test]
+fn a_famous_near_match_beats_a_small_exact_namesake() {
+    // Live, "mozart" led with a pop act called Mozart (22k fans) over Wolfgang Amadeus Mozart.
+    let q = Query::new("mozart");
+    let artists = deezer_artists("mozart");
+    let mut scores: Vec<Score> = artists.iter().map(|a| Score::artist(&q, a)).collect();
+    merge::overshadow(&artists, &mut scores);
+    let order = merge::rank(&scores, |_| false);
+    assert_eq!(artists[order[0]].name, "Wolfgang Amadeus Mozart");
+    // "radiohed": a namesake MusicBrainz knows (no audience) ranks below Radiohead.
+    let q = Query::new("radiohed");
+    let artists = vec![
+        ArtistHit {
+            name: "Radiohed".into(),
+            ..ArtistHit::default()
+        },
+        deezer::artists_of(fixture("deezer-artist"))
+            .unwrap_or_default()
+            .remove(0),
+    ];
+    let mut scores: Vec<Score> = artists.iter().map(|a| Score::artist(&q, a)).collect();
+    merge::overshadow(&artists, &mut scores);
+    assert_eq!(merge::rank(&scores, |_| false), [1, 0]);
+}
+
+#[test]
+fn an_album_or_song_named_like_a_small_artist_is_the_top_result() {
+    // Live, the tops were small artists named "The Dark Side of the Moon" and "Blinding Lights".
+    let q = Query::new("dark side of the moon");
+    let mut m = Merged::default();
+    m.add(Found {
+        artists: deezer_artists("dark_side_of_the_moon"),
+        albums: vec![AlbumHit {
+            title: "The Dark Side of the Moon".into(),
+            artist: "Pink Floyd".into(),
+            kind: Some("album".into()),
+            popularity: 0.6,
+            ..AlbumHit::default()
+        }],
+        ..Found::default()
+    });
+    assert_eq!(q.album(&m.albums[0]), Fit::Exact, "a leading \"the\" aside");
+    assert_eq!(top_of(&q, &m), Some(Kind::Album));
+    let q = Query::new("blinding lights");
+    let mut m = Merged::default();
+    m.add(Found {
+        artists: deezer_artists("blinding_lights"),
+        songs: vec![SongHit {
+            popularity: 0.7,
+            ..song("The Weeknd", "Blinding Lights", "After Hours", Some(200))
+        }],
+        ..Found::default()
+    });
+    assert_eq!(top_of(&q, &m), Some(Kind::Track));
+}
+
+#[test]
+fn musicbrainz_interviews_and_bootlegs_are_not_search_results() {
+    // Live, "radiohead" listed "Interview CD" and Maida Vale Q&A sessions among its albums.
+    let found = musicbrainz::recordings(fixture("musicbrainz-recording-radiohead")).unwrap_or_default();
+    let titles: Vec<&str> = found.songs.iter().map(|s| s.title.as_str()).collect();
+    assert!(
+        titles
+            .iter()
+            .all(|t| !t.contains("Interview") && !t.contains("Q&A") && !t.contains("Track #")),
+        "{titles:?}"
+    );
+    assert!(titles.contains(&"Clawing at the Walls (Radiohead Beatstrumental)"));
+    assert!(found.albums.iter().all(|a| a.title != "Interview CD"));
+    // Apple's album search brings the studio albums the recordings never named.
+    let albums = itunes::albums(fixture("itunes-album-radiohead"))
+        .unwrap_or_default()
+        .albums;
+    for title in ["OK Computer", "Amnesiac", "The King of Limbs"] {
+        assert!(
+            albums.iter().any(|a| a.title == title && a.artist == "Radiohead"),
+            "{title}"
+        );
+    }
+}
+
+#[test]
+fn credit_strings_are_not_artists() {
+    // Live, the artists row held "SZA with Kendrick Lamar", "Radiohead - Topic" and the like.
+    let credits = json!({ "recordings": [{
+        "id": "r1", "title": "Gentle Ghost", "artist-credit": [
+            { "name": "Radiohead", "joinphrase": " & ", "artist": { "id": "a74b1b7f" } },
+            { "name": "Portishead", "joinphrase": "", "artist": { "id": "8f6bd1e4" } }
+        ], "releases": []
+    }] });
+    let found = musicbrainz::recordings(credits).unwrap_or_default();
+    let names: Vec<&str> = found.artists.iter().map(|a| a.name.as_str()).collect();
+    assert_eq!(names, ["Radiohead", "Portishead"], "one row per credited artist");
+
+    let lastfm = |name: &str, listeners: u64| ArtistHit {
+        name: name.into(),
+        audience: Some(listeners),
+        lastfm_only: true,
+        ..ArtistHit::default()
+    };
+    let mut artists = deezer::artists_of(fixture("deezer-artist")).unwrap_or_default();
+    artists.truncate(1);
+    artists.extend([
+        lastfm("Radiohead - Topic", 120_000),
+        lastfm("Radiohead • Lossless", 900),
+        ArtistHit {
+            name: "Radiohead & Portishead".into(),
+            ..ArtistHit::default()
+        },
+        lastfm("Radiodread", 50_000),
+    ]);
+    let hidden = merge::misspelt(&artists);
+    let kept: Vec<&str> = artists
+        .iter()
+        .zip(&hidden)
+        .filter(|(_, h)| !**h)
+        .map(|(a, _)| a.name.as_str())
+        .collect();
+    assert_eq!(kept, ["Radiohead", "Radiodread"]);
 }
