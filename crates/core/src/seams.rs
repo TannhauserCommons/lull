@@ -96,4 +96,11 @@ pub trait Transfers: Send + Sync {
     async fn save_candidate(&self, _track: &TrackId, _fresh: bool) -> Result<Option<SaveCandidate>> {
         Ok(None)
     }
+
+    /// Whether Soulseek peers share an album, by its artist and title, for shelves that should
+    /// only show what can play (new releases). A remembered answer comes back at once; otherwise
+    /// this searches. `None` when Soulseek can't answer now (offline, or not checked yet).
+    async fn album_available(&self, _artist: &str, _album: &str) -> Result<Option<bool>> {
+        Ok(None)
+    }
 }
