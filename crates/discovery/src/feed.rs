@@ -214,10 +214,25 @@ pub async fn get(State(svc): State<Arc<Service>>) -> Result<Json<serde_json::Val
             .get(id)
             .is_none_or(|a| !hidden.contains(&a.artist_id))
     });
+    keep_named_albums(&mut feed);
     let entities = art::pictured(&svc, std::mem::take(&mut feed.entities)).await?;
     let mut answer = serde_json::to_value(feed).map_err(|e| Error::internal(format!("feed json: {e}")))?;
     answer["entities"] = serde_json::to_value(entities).map_err(|e| Error::internal(format!("feed json: {e}")))?;
     Ok(Json(answer))
+}
+
+/// Drops the albums the feed doesn't name: the shelf's other candidates (more than half the
+/// feed's bytes) stay in the stored feed, for when Soulseek's answers put them on the shelf.
+fn keep_named_albums(feed: &mut Feed) {
+    let jumps = feed.jump_back_in.iter().filter(|j| j.kind == "album");
+    let named: HashSet<AlbumId> = feed
+        .new_releases
+        .iter()
+        .cloned()
+        .chain(jumps.map(|j| AlbumId(j.id.clone())))
+        .chain(feed.entities.tracks.values().map(|t| t.album_id.clone()))
+        .collect();
+    feed.entities.albums.retain(|id, _| named.contains(id));
 }
 
 /// Rebuilds in the background (once, however often it is asked while one is queued).

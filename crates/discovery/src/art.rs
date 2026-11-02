@@ -182,8 +182,9 @@ pub async fn get(State(svc): State<Arc<Service>>, Path(id): Path<String>, Query(
     };
     Ok((
         [
-            (header::CONTENT_TYPE, content_type(&bytes)),
-            (header::CACHE_CONTROL, "private, max-age=86400"),
+            (header::CONTENT_TYPE, content_type(&bytes).to_owned()),
+            (header::CACHE_CONTROL, "private, max-age=86400".to_owned()),
+            (header::ETAG, lull_core::etag::of(&bytes)),
         ],
         bytes,
     )
