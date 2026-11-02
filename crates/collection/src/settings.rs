@@ -2,7 +2,8 @@
 //! stays per device in the browser). Editable values are stored here; values from server
 //! config come back read-only as `{ value, source: "config" }`, and secrets only say whether
 //! they are set. Every change, and start-up, publishes a `settings` event for the crates that
-//! honour them (soulseek: sources and sharing; library: the saving profile; discovery: discovery). Last.fm's switches live in
+//! honour them (soulseek: sources and sharing; library: the saving profile; discovery: discovery;
+//! youtube: `sources.youtube`). Last.fm's switches live in
 //! lastfm (`/api/lastfm`), so they are not repeated here.
 
 use std::sync::Arc;
@@ -13,7 +14,7 @@ use axum::routing::get;
 use axum::{Json, Router};
 use lull_core::config::Config;
 use lull_core::quality::{Minimum, SaveProfile, StreamProfile};
-use lull_core::{Ctx, Error, Result};
+use lull_core::{Ctx, Error, Result, youtube};
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -86,6 +87,8 @@ struct Sources {
     max_peer_queue: u32,
     /// Seconds without data before falling back to the next peer, 5-60.
     stall_timeout: u32,
+    /// YouTube as a second source; soulseek and youtube read it (docs/context/youtube.md).
+    youtube: youtube::Settings,
 }
 
 impl Default for Sources {
@@ -95,6 +98,7 @@ impl Default for Sources {
             save: SaveProfile::default(),
             max_peer_queue: 20,
             stall_timeout: 15,
+            youtube: youtube::Settings::default(),
         }
     }
 }
@@ -226,6 +230,11 @@ impl Prefs {
                 "sources.stallTimeout",
                 (5..=60).contains(&s.stall_timeout),
                 "5 to 60 seconds",
+            ),
+            (
+                "sources.youtube.waitS",
+                (5..=120).contains(&s.youtube.wait_s),
+                "5 to 120 seconds",
             ),
             (
                 "sharing.uploadSlots",
@@ -588,5 +597,28 @@ mod tests {
         prefs.sources.stream.max_kbps = 0;
         prefs.playback.prefetch_count = 4;
         assert!(prefs.validate().is_err(), "at most 3 songs ahead");
+    }
+
+    #[tokio::test]
+    async fn youtube_starts_off_and_its_settings_are_checked() -> Result<()> {
+        let fresh = stored(r#"{"sources":{"maxPeerQueue":5}}"#).await?;
+        assert_eq!(
+            fresh.sources.youtube,
+            youtube::Settings::default(),
+            "stored before YouTube"
+        );
+        assert_eq!(fresh.sources.youtube.mode, youtube::Mode::Off);
+
+        let mut prefs = Prefs::default();
+        prefs.sources.youtube.wait_s = 3;
+        assert!(prefs.validate().is_err(), "too short a wait for Soulseek");
+        let patch = json!({ "sources": { "youtube": { "mode": "sometimes" } } });
+        let mut merged = to_value(&Prefs::default())?;
+        merge(&mut merged, patch);
+        assert!(
+            serde_json::from_value::<Prefs>(merged).is_err(),
+            "an unknown mode is refused"
+        );
+        Ok(())
     }
 }
