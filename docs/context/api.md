@@ -111,7 +111,7 @@ ADR-0012, [youtube.md](youtube.md). Its copies play through `GET /api/stream/{tr
 
 ## App releases (`latest.json`)
 
-Not the hub's: the apps read `https://github.com/TannhauserCommons/lull/releases/latest/download/latest.json` (`plugins.updater.endpoints` in `app/tauri.conf.json`), which the release job in `.github/workflows/app.yml` writes for each `v*` tag. Tauri's static format plus one field of lull's: `{ version, pub_date, platforms: { windows-x86_64, linux-x86_64 (AppImage), linux-x86_64-deb, linux-x86_64-rpm: { url, signature } }, android: { url } }`. The desktop updater ignores `android`; Android reads only `version` and `android.url` (android.md, Updates). The desktop app picks `linux-x86_64-<deb|rpm>` when it was installed from that package, else `linux-x86_64`.
+Not the hub's: the apps read `https://github.com/TannhauserCommons/lull/releases/latest/download/latest.json` (`plugins.updater.endpoints` in `app/tauri.conf.json`), which the release job in `.github/workflows/app.yml` writes for each `v*` tag. Tauri's static format plus one field of lull's: `{ version, pub_date, platforms: { <platform>: { url, signature } }, android: { url } }`, where the platforms are `windows-x86_64` and `windows-aarch64` (the NSIS installer), and `linux-x86_64` and `linux-aarch64` (the AppImage) each with `-deb` and `-rpm`. Each bundle job writes its own entries and the release job merges them (`scripts/updater-manifest.mjs`, which refuses a release missing any of them). The desktop updater ignores `android`; Android reads only `version` and `android.url` (android.md, Updates). Each app finds its own build: Tauri looks up `<os>-<arch>-<deb|rpm>` when it was installed from that package, else `<os>-<arch>`.
 
 ## Library (`crates/library`)
 

@@ -39,6 +39,16 @@ const SLSKD: &[Sidecar] = &[
         asset: "linux-x64",
         sha256: "53102e91e0123f62d17627d5e02a24d9dcd08a165e75182c0f1d76d087510f37",
     },
+    Sidecar {
+        target: "aarch64-pc-windows-msvc",
+        asset: "win-arm64",
+        sha256: "9ec6903048fa6484cbda1a428302b326be163a0d901eed17988507e53a39e9cc",
+    },
+    Sidecar {
+        target: "aarch64-unknown-linux-gnu",
+        asset: "linux-arm64",
+        sha256: "b8acb302df08f7751f2068c779380dec136882adb5af82a081cd0ead8f028a51",
+    },
 ];
 const BINARIES: &str = "binaries";
 
@@ -80,6 +90,34 @@ const YOUTUBE: &[Tool] = &[
         target: "x86_64-unknown-linux-gnu",
         asset: "deno-x86_64-unknown-linux-gnu.zip",
         sha256: "e890975bc2549807bbcc0b584ffafda72cc7c93349dd99c80483dd784f6c4609",
+        zipped: Some("deno"),
+    },
+    Tool {
+        name: "yt-dlp",
+        target: "aarch64-pc-windows-msvc",
+        asset: "yt-dlp_arm64.exe",
+        sha256: "0066dbac3c124028e2dcae2a197fccee33cd91f456313d24f7af89fd54590e98",
+        zipped: None,
+    },
+    Tool {
+        name: "yt-dlp",
+        target: "aarch64-unknown-linux-gnu",
+        asset: "yt-dlp_linux_aarch64",
+        sha256: "e87e9533e89fe5889abaa21f5114dfe7756d6aa6219b83551add04d48b18e483",
+        zipped: None,
+    },
+    Tool {
+        name: "deno",
+        target: "aarch64-pc-windows-msvc",
+        asset: "deno-aarch64-pc-windows-msvc.zip",
+        sha256: "b413b92b735b50c198e8fe3b85af1aa50e29d5f72e229aab701d132286e14cef",
+        zipped: Some("deno.exe"),
+    },
+    Tool {
+        name: "deno",
+        target: "aarch64-unknown-linux-gnu",
+        asset: "deno-aarch64-unknown-linux-gnu.zip",
+        sha256: "d49596c20b9788cf8f5d8ddf644103d4bde56ed239753f0bdb92ba9361d51905",
         zipped: Some("deno"),
     },
 ];

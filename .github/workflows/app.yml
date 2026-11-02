@@ -1,6 +1,6 @@
 name: app
 # The Tauri app (app/). A quick check whenever it, the hub it embeds or its web pieces change;
-# Windows and Linux bundles and the Android APK on a v* tag (attached to that tag's GitHub Release,
+# Windows and Linux bundles (x64 and arm64) and the Android APK on a v* tag (attached to the tag's Release,
 # with the signed updater files and latest.json) or by hand (workflow artifacts, no updater files).
 # `mise run release X.Y.Z` makes the tag (scripts/release.sh). Path filters don't apply to tags.
 on:
@@ -54,12 +54,27 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Each build runs natively on its own architecture (GitHub's arm64 runners), so the bundled
+        # slskd, yt-dlp and Deno are each target's own (app/build.rs). `updater` is Tauri's platform
+        # key for latest.json (scripts/updater-manifest.mjs).
         include:
           # 22.04: the oldest supported glibc, so the AppImage and .deb run on older distros too.
           - os: ubuntu-22.04
+            arch: x64
             bundles: deb,rpm,appimage
+            updater: linux-x86_64
+          - os: ubuntu-22.04-arm
+            arch: arm64
+            bundles: deb,rpm,appimage
+            updater: linux-aarch64
           - os: windows-latest
+            arch: x64
             bundles: nsis
+            updater: windows-x86_64
+          - os: windows-11-arm
+            arch: arm64
+            bundles: nsis
+            updater: windows-aarch64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -97,9 +112,14 @@ jobs:
               [ -f "$f.sig" ] || npx tauri signer sign --password "" "$f"
             done
           fi
+          # This build's entries in latest.json; the release job merges every build's.
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            node ../scripts/updater-manifest.mjs entries ${{ matrix.updater }} target/release/bundle \
+              > target/release/bundle/updater-${{ matrix.updater }}.json
+          fi
       - uses: actions/upload-artifact@v4
         with:
-          name: lull-desktop-${{ runner.os }}
+          name: lull-desktop-${{ runner.os }}-${{ matrix.arch }}
           if-no-files-found: error
           path: |
             app/target/release/bundle/nsis/*.exe
@@ -110,6 +130,7 @@ jobs:
             app/target/release/bundle/rpm/*.rpm.sig
             app/target/release/bundle/appimage/*.AppImage
             app/target/release/bundle/appimage/*.AppImage.sig
+            app/target/release/bundle/updater-*.json
 
   # Android: an APK for arm64 phones. A debug build checks every change (Rust for Android and the
   # Kotlin player); a v* tag builds the release APK signed with the release keystore.
@@ -170,6 +191,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: scripts
       - uses: actions/download-artifact@v4
         with:
           path: bundles
@@ -177,27 +201,14 @@ jobs:
       # Each artifact keeps the bundler's folders (nsis/, deb/, appimage/...): the Release takes the
       # files alone.
       - run: find bundles -mindepth 2 -type f -exec mv -t bundles {} + && find bundles -mindepth 1 -type d -delete
-      # latest.json is what the app's updater reads (tauri.conf.json plugins.updater.endpoints): the
-      # installer for Windows, the AppImage, .deb or .rpm for Linux (whichever this install came
-      # from), and for Android, which has no Tauri updater, the APK (app/src/mobile/update.rs).
+      # latest.json is what the app's updater reads (tauri.conf.json plugins.updater.endpoints): for
+      # each Windows and Linux architecture its installer, and its AppImage, .deb or .rpm (whichever
+      # this install came from); for Android, which has no Tauri updater, the APK
+      # (app/src/mobile/update.rs). It fails unless every platform is there.
       - name: Updater manifest
         env:
           TAG: ${{ github.ref_name }}
-        run: |
-          cd bundles
-          base="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
-          win=$(ls *-setup.exe) appimage=$(ls *.AppImage) deb=$(ls *.deb) rpm=$(ls *.rpm) apk=$(ls *-android-arm64.apk)
-          jq -n --arg v "${TAG#v}" --arg base "$base" --arg apk "$apk" \
-            --arg win "$win" --rawfile winsig "$win.sig" \
-            --arg app "$appimage" --rawfile appsig "$appimage.sig" \
-            --arg deb "$deb" --rawfile debsig "$deb.sig" \
-            --arg rpm "$rpm" --rawfile rpmsig "$rpm.sig" \
-            '{version: $v, pub_date: (now | todate), platforms: {
-               "windows-x86_64": {url: "\($base)/\($win)", signature: $winsig},
-               "linux-x86_64": {url: "\($base)/\($app)", signature: $appsig},
-               "linux-x86_64-deb": {url: "\($base)/\($deb)", signature: $debsig},
-               "linux-x86_64-rpm": {url: "\($base)/\($rpm)", signature: $rpmsig}},
-             android: {url: "\($base)/\($apk)"}}' > latest.json
+        run: node scripts/updater-manifest.mjs manifest "${TAG#v}" "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG" bundles
       - env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}

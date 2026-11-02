@@ -66,7 +66,7 @@ You need Docker with Compose, a Jellyfin server with a music library, and a Soul
 
 The details of each setup are in [docs/context/deploy.md](docs/context/deploy.md).
 
-**Apps:** tagged releases attach a Windows installer, Linux deb, rpm and AppImage packages, and an Android APK. On first launch, choose this computer as your hub or pair with one. The apps check for newer releases themselves (Settings > App); maintainers cut one with `mise run release X.Y.Z`.
+**Apps:** tagged releases attach Windows installers and Linux deb, rpm and AppImage packages, each for x64 and ARM64, and an Android APK. On first launch, choose this computer as your hub or pair with one. The apps check for newer releases themselves (Settings > App); maintainers cut one with `mise run release X.Y.Z`.
 
 ## For contributors
 
