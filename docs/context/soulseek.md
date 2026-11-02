@@ -148,7 +148,7 @@ The listener's streaming and saving profiles (ADR-0008, `lull_core::quality`) ar
    **Streaming cap.** With `stream.maxKbps` set (128, 192, 256 or 320; 0 = none), streaming takes copies within the cap before copies above it, among passing copies and among the rest; lossless counts as above any cap, and a lossy copy of unknown bitrate as within it (`Quality::within`). Copies above it are marked `aboveMax`. It is a preference, not a gate: when only copies above the cap pass, one of them plays. Saving has no cap.
 3. **Peer limit.** A busy peer (no free slot) with more people waiting than `maxPeerQueue` is marked `queueTooLong`, listed last and never picked automatically.
 
-Playing and fallback take copies in this order ([streaming.md](streaming.md#fetches)). A save takes the first one (`Transfers::save_candidate`), reusing the copy already streamed or cached when it passes and, under `highest`, nothing beats it. `GET /api/tracks/{id}/sources` returns the streaming order, or the saving one with `?for=save`.
+Playing and fallback take copies in this order ([streaming.md](streaming.md#fetches)). A save takes the first one (`Transfers::save_candidate`), reusing the copy already streamed or cached when it passes and, under `highest`, nothing beats it. A YouTube copy is never reused for a save; only when no peer's copy is known and Settings › Sources › YouTube allows saves does it name YouTube's ([youtube.md](youtube.md#modes)). `GET /api/tracks/{id}/sources` returns the streaming order, or the saving one with `?for=save`.
 
 ## Sharing
 

@@ -1,4 +1,4 @@
-//! The stream cache: every file lull asked slskd for, capped at `LULL_CACHE_MAX_GB`. The least
+//! The stream cache: every file lull asked slskd (or YouTube) for, capped at `LULL_CACHE_MAX_GB`. The least
 //! recently used files go first; a file being played or saved is pinned and never evicted.
 //! Only files lull itself requested are ever deleted, so an existing slskd's other downloads
 //! are safe (docs/context/cache.md).
@@ -11,7 +11,7 @@ use lull_core::db::Db;
 use lull_core::ids::TrackId;
 use lull_core::model::SourceRef;
 use lull_core::status::{State, Status};
-use lull_core::{Error, Result};
+use lull_core::{Error, Result, youtube};
 use rusqlite::params;
 use serde_json::json;
 
@@ -125,12 +125,23 @@ impl Cache {
             .await
     }
 
-    /// A finished file for the track that is still on disk, preferring `source` when given.
+    /// A finished file for the track that is still on disk, preferring `source` when given, then
+    /// a Soulseek copy over a YouTube one.
     pub async fn finished(&self, track: &TrackId, source: Option<&SourceRef>) -> Result<Option<Entry>> {
         let mut found = self.entries_for(track).await?;
         found.retain(|e| e.complete && e.path.is_file());
-        found.sort_by_key(|e| (source != Some(&e.source), -e.used_at));
+        found.sort_by_key(|e| (source != Some(&e.source), youtube::is_youtube(&e.source), -e.used_at));
         Ok(found.into_iter().next())
+    }
+
+    /// Where a YouTube copy is written: a `youtube` folder beside slskd's, so it counts against
+    /// the same cap and disk and is evicted the same way.
+    pub async fn youtube_file(&self, copy: &youtube::Copy) -> Result<PathBuf> {
+        let dir = self.root.join("youtube");
+        tokio::fs::create_dir_all(&dir)
+            .await
+            .map_err(|e| Error::unavailable("cache", format!("can't create {}: {e}", dir.display())))?;
+        Ok(dir.join(format!("{}.{}.{}", copy.video, copy.format, copy.ext)))
     }
 
     async fn entries_for(&self, track: &TrackId) -> Result<Vec<Entry>> {
@@ -364,6 +375,48 @@ mod tests {
         // cutting off the song that's playing.
         assert_eq!(tracks(&p), ["t-2"]);
         assert_eq!(p.used_after, 50 * MB);
+    }
+
+    #[tokio::test]
+    async fn a_cached_soulseek_copy_plays_before_a_newer_youtube_one() -> Result<()> {
+        let dir = std::env::temp_dir().join(format!("lull-cache-youtube-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).map_err(|e| Error::internal(e.to_string()))?;
+        let db = lull_core::db::Db::memory()?;
+        db.migrate(&crate::MIGRATIONS)?;
+        let cache = Cache::new(db, Status::new(lull_core::events::Bus::new()), dir.clone(), PLENTY);
+        let track = TrackId("t".into());
+        let peer = SourceRef {
+            user: "peer".into(),
+            path: "Music\\A\\01 - Song.mp3".into(),
+            size: 3,
+        };
+        let copy = youtube::Copy {
+            video: "LUjGtyYEi90".into(),
+            format: "251".into(),
+            ext: "webm".into(),
+        };
+        let yt = copy.source_ref(3);
+        for (source, path, used_at) in [
+            (&peer, dir.join("song.mp3"), 100),
+            (&yt, cache.youtube_file(&copy).await?, 200),
+        ] {
+            std::fs::write(&path, b"abc").map_err(|e| Error::internal(e.to_string()))?;
+            cache
+                .record(Entry {
+                    track: track.clone(),
+                    source: source.clone(),
+                    path,
+                    complete: true,
+                    used_at,
+                })
+                .await?;
+        }
+        let played = cache.finished(&track, None).await?.map(|e| e.source);
+        let asked = cache.finished(&track, Some(&yt)).await?.map(|e| e.source);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(played, Some(peer), "Soulseek's copy, though YouTube's was used last");
+        assert_eq!(asked, Some(yt), "unless the YouTube copy is asked for");
+        Ok(())
     }
 
     #[test]

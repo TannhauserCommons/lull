@@ -26,26 +26,33 @@ const TICK: Duration = Duration::from_millis(250);
 
 pub async fn serve(fetch: Arc<Fetch>, headers: &HeaderMap) -> Result<Response> {
     let mut rx = fetch.progress();
-    // The source decides the size and type; it may change through fallbacks until bytes flow.
-    let p = wait(&mut rx, |p| p.source.is_some() && p.path.is_some(), None).await?;
     let requested = headers.get(header::RANGE).and_then(|v| v.to_str().ok());
-    let ask = range::ask(requested, p.size());
-    let span = match ask {
-        Ask::Whole(s) | Ask::Part(s) => s,
-        Ask::Unsatisfiable => return Ok(unsatisfiable(p.size())),
-    };
-    let seeking = span.start > 0;
-    let p = wait(
-        &mut rx,
-        |p| p.path.is_some() && p.received > span.start,
-        seeking.then_some(SEEK_WAIT),
-    )
-    .await;
-    let p = match p {
-        Ok(p) if p.received > span.start || span.len() == 0 => p,
-        // The bytes didn't arrive in time, or the fetch ended without them.
-        Ok(p) if p.status == crate::fetch::Status::Failed => return Err(failed(&p)),
-        _ => return Ok(unsatisfiable(p_size(&rx))),
+    let (ask, span, p) = loop {
+        // The source decides the size and type; it may change through fallbacks until bytes flow.
+        let first = wait(&mut rx, |p| p.source.is_some() && p.path.is_some(), None).await?;
+        let ask = range::ask(requested, first.size());
+        let span = match ask {
+            Ask::Whole(s) | Ask::Part(s) => s,
+            Ask::Unsatisfiable => return Ok(unsatisfiable(first.size())),
+        };
+        let seeking = span.start > 0;
+        let p = wait(
+            &mut rx,
+            |p| p.path.is_some() && p.received > span.start,
+            seeking.then_some(SEEK_WAIT),
+        )
+        .await;
+        let p = match p {
+            Ok(p) if p.received > span.start || span.len() == 0 => p,
+            // The bytes didn't arrive in time, or the fetch ended without them.
+            Ok(p) if p.status == crate::fetch::Status::Failed => return Err(failed(&p)),
+            _ => return Ok(unsatisfiable(p_size(&rx))),
+        };
+        // Another source took over in between (a peer fell back, YouTube stepped in): its size
+        // and type may differ, so the answer is worked out again.
+        if p.attempt == first.attempt {
+            break (ask, span, p);
+        }
     };
     let source = p
         .source
@@ -124,6 +131,8 @@ fn content_type(ext: &str) -> &'static str {
         "mp3" => "audio/mpeg",
         "ogg" | "opus" => "audio/ogg",
         "m4a" | "aac" => "audio/mp4",
+        // YouTube's Opus stream, as YouTube serves it.
+        "webm" => "audio/webm",
         "wav" => "audio/wav",
         "aif" | "aiff" => "audio/aiff",
         _ => "application/octet-stream",

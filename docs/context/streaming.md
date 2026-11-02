@@ -23,6 +23,8 @@ A finished copy already in the stream cache plays at once, whatever the `below` 
 5. **Fall back** to the next copy in the same order. A stall is remembered against the peer (ranking demotes it); an offline peer or a long queue is not. A fetch gives up after 5 peers. Peers whose queue is longer than `maxPeerQueue` are never picked automatically.
 6. **Done:** slskd moves the file to its downloads folder. Its final path comes from slskd's `DownloadFileComplete` event; the cache records it, and slskd's transfer record is removed.
 
+**YouTube.** With Settings › Sources › YouTube on, the player's fetch (and a preload) turns to YouTube when no peer delivers, or none starts within `waitS` (`fallback`), or starts with YouTube while an upgrade fetch gets Soulseek's best copy beside it (`startFast`). The YouTube copy is one more attempt (`attempt` goes up), written into the cache and served the same way: [youtube.md](youtube.md#modes).
+
 **Switching source mid-song.** `GET /api/stream/{id}?peer=&path=` with another copy than the one playing replaces the fetch: the old one is cancelled, unless a save is completing it; then it runs on for the save, out of the player's way (no more `stream` events). The old response ends; the player opens the new one and seeks back by time (ADR-0008).
 
 **Stopping.** `DELETE /api/stream/{id}` (skip, next) cancels the fetch unless a save still needs it or a device lists it to preload. slskd keeps the partial file, and asking for the song again resumes it.
@@ -52,7 +54,7 @@ So that next plays at once, the player lists the songs queued after the current 
 
 ## Serving bytes
 
-- **Before answering.** The response waits until the fetch has a source (which gives the size and type) and bytes cover the requested start. A request from byte 0 waits as long as the fetch keeps trying. A seek past what has arrived waits 8 s, then answers 416 (`Content-Range: bytes */size`).
+- **Before answering.** The response waits until the fetch has a source (which gives the size and type) and bytes cover the requested start. A request from byte 0 waits as long as the fetch keeps trying. A seek past what has arrived waits 8 s, then answers 416 (`Content-Range: bytes */size`). When another source took over meanwhile (a fallback, YouTube), the size and type are worked out again before answering.
 - **Ranges.** They resolve against the file's full size from the search (`range.rs`): 200 for no range, 206 for one range, and suffix ranges are supported. Multi-range and malformed headers get the whole file.
 - **The body.** It reads at most 64 KiB at a time, never past the file's current length on disk (`range::sendable`), then waits for slskd to write more. Memory per response is one chunk; nothing is copied to a second file.
 - **When the file moves or is recreated.** slskd moves the finished file, and may recreate the incomplete one when it retries a peer. Whenever the fetch sees more bytes at its path than the open handle shows, or the handle fails while the transfer runs, the reader reopens by path at the same position (on a Windows host, Docker Desktop leaves old handles on the old copy).

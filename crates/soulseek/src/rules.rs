@@ -1,5 +1,5 @@
-//! The listener's source rules (ADR-0008): the streaming and saving profiles and the peer limits
-//! from Settings › Sources. Collection publishes them in the `settings` event (ADR-0050); until
+//! The listener's source rules (ADR-0008): the streaming and saving profiles, the peer limits and
+//! when YouTube plays, from Settings › Sources. Collection publishes them in the `settings` event (ADR-0050); until
 //! the first one arrives, the defaults apply.
 
 use std::sync::{Arc, RwLock};
@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use lull_core::events::Bus;
 use lull_core::quality::{Minimum, Pick, SaveProfile, StreamProfile};
+use lull_core::youtube;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -19,6 +20,9 @@ pub struct Rules {
     pub max_peer_queue: u32,
     /// Seconds without new bytes before falling back to the next copy.
     pub stall_timeout: u32,
+    /// When YouTube plays instead of, or before, a Soulseek copy (docs/context/youtube.md).
+    #[serde(default)]
+    pub youtube: youtube::Settings,
 }
 
 impl Default for Rules {
@@ -28,6 +32,7 @@ impl Default for Rules {
             save: SaveProfile::default(),
             max_peer_queue: 20,
             stall_timeout: 15,
+            youtube: youtube::Settings::default(),
         }
     }
 }

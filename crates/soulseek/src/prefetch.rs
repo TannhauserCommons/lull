@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use lull_core::ids::TrackId;
 use lull_core::quality::StreamBelow;
+use lull_core::youtube::{Mode, is_youtube};
 use lull_core::{Error, Result};
 use tokio::sync::watch;
 
@@ -115,17 +116,32 @@ pub async fn run(svc: Arc<Service>) {
 /// this waits for the preload's bytes to flow before the next one starts, so one peer at a
 /// time is asked.
 async fn preload(svc: &Service, id: &TrackId) -> Result<()> {
-    if !svc.online() || svc.fetcher.list_live(id) {
+    // With YouTube on, a song Soulseek can't give is preloaded from YouTube by the fetch itself.
+    let mode = svc.rules.get().youtube.mode;
+    if (!svc.online() && mode == Mode::Off) || svc.fetcher.list_live(id) {
         return Ok(());
     }
     let track = svc.track(id).await?;
-    if svc.searches.saved(id).await || svc.cache.finished(id, None).await?.is_some() {
+    let cached = svc.cache.finished(id, None).await?;
+    if svc.searches.saved(id).await
+        || cached
+            .as_ref()
+            .is_some_and(|e| mode != Mode::Off || !is_youtube(&e.source))
+    {
         return Ok(());
     }
-    if !svc.sources.known(id) {
-        svc.searches.resolve_in(&track, Lane::Prefetch).await?;
+    // Start fast: the YouTube match and its extraction are made ready, so the song starts at
+    // once even when Soulseek's copy isn't here yet.
+    if mode == Mode::StartFast {
+        svc.fetcher.warm(track.clone());
     }
-    if !worth_starting(svc, &track) {
+    if svc.online() && !svc.sources.known(id) {
+        let searched = svc.searches.resolve_in(&track, Lane::Prefetch).await;
+        if mode == Mode::Off {
+            searched?;
+        }
+    }
+    if mode == Mode::Off && !worth_starting(svc, &track) {
         return Ok(());
     }
     let started = tokio::time::Instant::now();

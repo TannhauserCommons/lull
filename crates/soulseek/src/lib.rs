@@ -35,9 +35,10 @@ use axum::Router;
 use lull_core::db::Migrations;
 use lull_core::ids::TrackId;
 use lull_core::model::{SourceRef, Track};
-use lull_core::quality::{Pick, SaveCandidate};
-use lull_core::seams::{Library, Transfers};
+use lull_core::quality::{Pick, Quality, SaveCandidate};
+use lull_core::seams::{Library, Transfers, Youtube};
 use lull_core::status::State;
+use lull_core::youtube::{self, Mode, Want as YoutubeWant};
 use lull_core::{Ctx, Error, Result, catalog};
 use serde_json::Value;
 
@@ -112,7 +113,8 @@ pub struct Service {
     album_checks: tokio::sync::Mutex<()>,
 }
 
-pub async fn start(ctx: &Ctx) -> Result<Arc<Service>> {
+/// `youtube` is the second source: fetches turn to it by the listener's mode (docs/context/youtube.md).
+pub async fn start(ctx: &Ctx, youtube: Arc<dyn Youtube>) -> Result<Arc<Service>> {
     let config = &ctx.config.soulseek;
     let slskd = Slskd::new(ctx.http.clone(), &config.slskd_url, config.slskd_api_key.clone())?;
     if let Some(file) = &config.config_file
@@ -142,6 +144,7 @@ pub async fn start(ctx: &Ctx) -> Result<Arc<Service>> {
         searches.clone(),
         ctx.bus.clone(),
         rules.clone(),
+        youtube,
     );
     let svc = Arc::new(Service {
         ctx: ctx.clone(),
@@ -182,6 +185,30 @@ pub fn router(svc: Arc<Service>, library: Arc<dyn Library>) -> Router {
 impl Service {
     fn online(&self) -> bool {
         self.online.load(Ordering::Relaxed)
+    }
+
+    /// No Soulseek peer shares the song: a YouTube copy (AAC, which the save pipeline can tag),
+    /// when the listener lets saves use YouTube. It counts as meeting the saving minimum, which
+    /// is about Soulseek copies; auto-upgrade still replaces it once a peer has a good copy.
+    async fn youtube_save(&self, track: &Track) -> Result<Option<SaveCandidate>> {
+        let settings = self.rules.get().youtube;
+        if !settings.saves || settings.mode == Mode::Off {
+            return Ok(None);
+        }
+        let found = match self.fetcher.youtube.find(track, YoutubeWant::Save).await {
+            Ok(Some(found)) => found,
+            Ok(None) => return Ok(None),
+            Err(e) => {
+                tracing::info!(error = %e, track = %track.id, "no YouTube copy to save");
+                return Ok(None);
+            }
+        };
+        let kbps = youtube::Copy::of(&found.source).map_or(0, |c| c.kbps(found.source.size, track.duration));
+        Ok(Some(SaveCandidate {
+            source: found.source,
+            quality: Quality { lossless: false, kbps },
+            meets: true,
+        }))
     }
 
     async fn track(&self, id: &TrackId) -> Result<Track> {
@@ -230,11 +257,14 @@ impl Transfers for Service {
                         .beats(&r.source.quality(track.duration)),
                 })
         });
-        Ok(reuse.or(best).map(|r| SaveCandidate {
-            source: r.source.source_ref(),
-            quality: r.source.quality(track.duration),
-            meets: r.meets,
-        }))
+        if let Some(r) = reuse.or(best) {
+            return Ok(Some(SaveCandidate {
+                source: r.source.source_ref(),
+                quality: r.source.quality(track.duration),
+                meets: r.meets,
+            }));
+        }
+        self.youtube_save(&track).await
     }
 
     async fn album_available(&self, artist: &str, album: &str) -> Result<Option<bool>> {

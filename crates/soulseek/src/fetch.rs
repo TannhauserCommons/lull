@@ -4,16 +4,23 @@
 //! its `below` rule decides. A fetch is shared by everyone who wants the song (the player
 //! streaming it, a save completing it), so the bytes come over the network once
 //! (docs/context/streaming.md).
+//!
+//! YouTube is the second source (docs/context/youtube.md): with `fallback` it plays when no
+//! Soulseek copy does in time; with `startFast` it starts the song at once while an upgrade fetch
+//! gets Soulseek's best copy for later plays and saves. Its audio lands in the same cache, so
+//! everything downstream (ranges, preloading, pins, eviction) is unchanged.
 
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use lull_core::events::Bus;
 use lull_core::ids::TrackId;
 use lull_core::model::{SourceRef, Track};
+use lull_core::seams::Youtube;
+use lull_core::youtube::{self, Mode, Want as YoutubeWant};
 use lull_core::{Error, Result};
 use serde::Serialize;
 use serde_json::json;
@@ -52,6 +59,10 @@ const IDLE: Duration = Duration::from_secs(30 * 60);
 /// song just before (or just after) sending its new list still finds it running.
 const UNLIST_GRACE: Duration = Duration::from_secs(10);
 const HISTORY: usize = 50;
+/// A YouTube download is looked at this often: it arrives in a second or two.
+const YOUTUBE_POLL: Duration = Duration::from_millis(250);
+/// yt-dlp may extract the upload again before its first byte; silence counts after this.
+const YOUTUBE_START: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
@@ -143,6 +154,8 @@ pub struct Fetch {
     want: Mutex<Want>,
     readers: AtomicUsize,
     last_read: Mutex<Instant>,
+    /// It has turned to YouTube (finding or fetching a YouTube copy).
+    on_youtube: AtomicBool,
     _pin: Pin,
 }
 
@@ -218,10 +231,22 @@ pub struct Fetcher {
     pub searches: Searches,
     pub bus: Bus,
     pub rules: Current,
+    pub youtube: Arc<dyn Youtube>,
+    /// What the player reads (or preloads, or a save completes): one fetch per song.
     live: Arc<Mutex<HashMap<TrackId, Arc<Fetch>>>>,
+    /// Start fast's background fetches of Soulseek's best copy while YouTube plays the song, and
+    /// saves started while YouTube plays it: out of the player's way, so its song never jumps.
+    upgrades: Arc<Mutex<HashMap<TrackId, Arc<Fetch>>>>,
     /// Ended fetches, newest last, for the Activity panel.
     ended: Arc<Mutex<VecDeque<serde_json::Value>>>,
     next: Arc<AtomicU64>,
+}
+
+/// Which map a new fetch goes in.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Slot {
+    Live,
+    Upgrade,
 }
 
 impl Fetcher {
@@ -235,6 +260,7 @@ impl Fetcher {
         searches: Searches,
         bus: Bus,
         rules: Current,
+        youtube: Arc<dyn Youtube>,
     ) -> Self {
         Fetcher {
             slskd,
@@ -245,69 +271,187 @@ impl Fetcher {
             searches,
             bus,
             rules,
+            youtube,
             live: Arc::default(),
+            upgrades: Arc::default(),
             ended: Arc::default(),
             next: Arc::default(),
         }
     }
 
     fn live(&self, track: &TrackId) -> Option<Arc<Fetch>> {
-        let live = self.live.lock().ok()?;
-        live.get(track)
-            .filter(|f| !matches!(f.now().status, Status::Failed | Status::Cancelled))
-            .cloned()
+        running(&self.live, track)
+    }
+
+    fn upgrade(&self, track: &TrackId) -> Option<Arc<Fetch>> {
+        running(&self.upgrades, track)
+    }
+
+    /// Every fetch in both maps.
+    fn all(&self) -> Vec<Arc<Fetch>> {
+        [&self.live, &self.upgrades]
+            .iter()
+            .filter_map(|m| m.lock().ok().map(|m| m.values().cloned().collect::<Vec<_>>()))
+            .flatten()
+            .collect()
+    }
+
+    fn forget(&self, f: &Arc<Fetch>) {
+        for map in [&self.live, &self.upgrades] {
+            if let Ok(mut m) = map.lock() {
+                m.retain(|_, other| !Arc::ptr_eq(other, f));
+            }
+        }
     }
 
     /// The fetch the player reads: the running one, the cached file, or a new transfer.
     /// `pick` (the source picker's choice, mid-song or answering `ask`) replaces a running fetch
     /// from another peer.
     pub async fn stream(&self, track: Track, pick: Option<SourceRef>) -> Result<Arc<Fetch>> {
-        if let Some(f) = self.live(&track.id) {
+        let mode = self.rules.get().youtube.mode;
+        let live = match self.live(&track.id) {
+            Some(f) if pick.is_none() && self.superseded(&f).await? => {
+                self.forget(&f);
+                None
+            }
+            other => other,
+        };
+        if let Some(f) = live {
             let current = f.now().source.map(|s| s.source_ref());
             if pick.is_none() || pick == current {
-                let joined = !want(&f, |w| std::mem::replace(&mut w.streaming, true));
-                self.cache.touch(&track.id).await?;
-                // A preload (or a save) the player joins: it learns where the song stands now.
-                if joined {
-                    self.bus.publish("stream", stream_event(&f, &f.now()));
+                // Start fast: a preload still waiting for a peer becomes the upgrade, and
+                // YouTube starts the song below.
+                if !(pick.is_none() && mode == Mode::StartFast && self.make_way(&f)) {
+                    let joined = !want(&f, |w| std::mem::replace(&mut w.streaming, true));
+                    self.cache.touch(&track.id).await?;
+                    // A preload (or a save) the player joins: it learns where the song stands now.
+                    if joined {
+                        self.bus.publish("stream", stream_event(&f, &f.now()));
+                    }
+                    return Ok(f);
                 }
-                return Ok(f);
+            } else {
+                self.replace(&f);
             }
-            self.replace(&f);
         }
-        let cached = self.cache.finished(&track.id, pick.as_ref()).await?;
+        let cached = self
+            .cache
+            .finished(&track.id, pick.as_ref())
+            .await?
+            .filter(|e| mode != Mode::Off || !youtube::is_youtube(&e.source));
         let f = match cached.filter(|e| pick.is_none() || pick.as_ref() == Some(&e.source)) {
             // The bytes are here, so the profile's `below` rule doesn't hold them back; the
             // player still learns which copy it is, and whether it's below the minimum.
             Some(entry) => {
-                let f = self.cached(track, entry).await?;
+                let on_youtube = youtube::is_youtube(&entry.source);
+                let f = self.cached(track.clone(), entry).await?;
                 want(&f, |w| w.streaming = true);
                 self.bus.publish("stream", stream_event(&f, &f.now()));
+                if on_youtube && mode == Mode::StartFast {
+                    self.upgrade_later(track).await?;
+                }
                 return Ok(f);
             }
-            None => self.start(track, pick, Purpose::Stream, Want::default()),
+            None => self.start(track, pick, Purpose::Stream, Want::default(), Slot::Live),
         };
         want(&f, |w| w.streaming = true);
         Ok(f)
     }
 
+    /// A YouTube copy that has played through while Soulseek's copy arrived: asking for the song
+    /// now is a later play, which takes Soulseek's. Within the song's length (and a minute) it is
+    /// the same play seeking, which never jumps to another file.
+    async fn superseded(&self, f: &Arc<Fetch>) -> Result<bool> {
+        let length = i64::from(f.track.duration.unwrap_or(600));
+        let played_out = f.on_youtube.load(Ordering::Relaxed)
+            && f.now().status == Status::Done
+            && f.readers.load(Ordering::Relaxed) == 0
+            && lull_core::now() - f.started > length + 60
+            && want(f, |w| w.saving == 0);
+        if !played_out {
+            return Ok(false);
+        }
+        let cached = self.cache.finished(&f.track.id, None).await?;
+        Ok(cached.is_some_and(|e| !youtube::is_youtube(&e.source)))
+    }
+
+    /// Start fast: a preload still waiting for a Soulseek peer steps out of the player's way
+    /// and carries on as the song's upgrade. False when it has bytes coming, is on YouTube
+    /// already, or someone else needs it.
+    fn make_way(&self, f: &Arc<Fetch>) -> bool {
+        let waiting = matches!(f.now().status, Status::Finding | Status::Queued | Status::Fallback);
+        let aside = waiting
+            && f.purpose == Purpose::Stream
+            && !f.on_youtube.load(Ordering::Relaxed)
+            && want(f, |w| w.prefetch_only());
+        if !aside || self.upgrade(&f.track.id).is_some() {
+            return false;
+        }
+        if let (Ok(mut live), Ok(mut upgrades)) = (self.live.lock(), self.upgrades.lock()) {
+            live.retain(|_, other| !Arc::ptr_eq(other, f));
+            upgrades.insert(f.track.id.clone(), f.clone());
+            return true;
+        }
+        false
+    }
+
+    /// Start fast: fetches Soulseek's best copy (the saving profile's) in the background, for
+    /// later plays and saves, unless one is running or a Soulseek copy is already cached.
+    async fn upgrade_later(&self, track: Track) -> Result<()> {
+        if self.upgrade(&track.id).is_some() {
+            return Ok(());
+        }
+        let cached = self.cache.finished(&track.id, None).await?;
+        if cached.is_some_and(|e| !youtube::is_youtube(&e.source)) {
+            return Ok(());
+        }
+        let f = self.start(track, None, Purpose::Save, Want::default(), Slot::Upgrade);
+        tracing::info!(track = %f.track.id, job = f.job_id, "fetching Soulseek's copy while YouTube plays");
+        Ok(())
+    }
+
+    /// The upgrade is no longer wanted (YouTube didn't start the song after all, and the
+    /// player's fetch looks for a Soulseek copy itself), unless a save is completing it.
+    fn drop_upgrade(&self, track: &TrackId) {
+        if let Some(f) = self.upgrade(track)
+            && want(&f, |w| w.saving == 0)
+        {
+            self.cancel_fetch(&f);
+        }
+    }
+
+    /// Warms a song's YouTube copy (the match and its extraction), so start fast starts it at once.
+    pub fn warm(&self, track: Track) {
+        let (youtube, max_kbps) = (self.youtube.clone(), self.rules.get().stream.max_kbps);
+        tokio::spawn(async move {
+            if let Err(e) = youtube.find(&track, YoutubeWant::Stream { max_kbps }).await {
+                tracing::debug!(error = %e, track = %track.id, "warming a YouTube copy");
+            }
+        });
+    }
+
     /// Preloads a song a device listed: a fetch that publishes no `stream` events and leaves
-    /// once finished, so its file is evictable like any other. A live fetch is just marked.
+    /// once finished, so its file is evictable like any other. A live fetch is just marked; a
+    /// running upgrade is the preload.
     pub fn prefetch(&self, track: Track) -> Arc<Fetch> {
         if let Some(f) = self.live(&track.id) {
             want(&f, |w| w.prefetch = true);
+            return f;
+        }
+        if let Some(f) = self.upgrade(&track.id) {
             return f;
         }
         let listed = Want {
             prefetch: true,
             ..Want::default()
         };
-        self.start(track, None, Purpose::Stream, listed)
+        self.start(track, None, Purpose::Stream, listed, Slot::Live)
     }
 
-    /// Whether the song has a live fetch; if so it is marked as listed for preloading.
+    /// Whether the song has a live fetch (or an upgrade); a live one is marked as listed for
+    /// preloading.
     pub fn list_live(&self, track: &TrackId) -> bool {
-        self.live(track).inspect(|f| want(f, |w| w.prefetch = true)).is_some()
+        self.live(track).inspect(|f| want(f, |w| w.prefetch = true)).is_some() || self.upgrade(track).is_some()
     }
 
     /// Preloads no device lists any more (not in `keep`) are cancelled after a grace period,
@@ -347,26 +491,54 @@ impl Fetcher {
     /// Transfers the song from `source` to the end and returns the finished file, joining a
     /// running fetch or reusing the cached file from that same source.
     pub async fn complete(&self, track: Track, source: SourceRef) -> Result<PathBuf> {
-        // Not one waiting for the listener's choice: the save already named its copy.
-        let running = self.live(&track.id).filter(|f| {
+        let from_youtube = youtube::is_youtube(&source);
+        // Not one waiting for the listener's choice: the save already named its copy. One still
+        // finding may be joined, unless it is on YouTube while the save wants a peer's file.
+        let joinable = |f: &Arc<Fetch>| {
             let p = f.now();
             p.status != Status::Choosing
-                && (p.source.as_ref().is_none_or(|s| s.is(&source)) || p.status == Status::Finding)
-        });
+                && (p.source.as_ref().is_some_and(|s| s.is(&source))
+                    || (p.status == Status::Finding && f.on_youtube.load(Ordering::Relaxed) == from_youtube))
+        };
+        let running = self
+            .live(&track.id)
+            .filter(joinable)
+            .or_else(|| self.upgrade(&track.id).filter(joinable));
         let f = match running {
             Some(f) => f,
             None => match self.cache.finished(&track.id, Some(&source)).await? {
                 Some(e) if e.source == source => return Ok(e.path),
-                _ => self.start(track, Some(source), Purpose::Save, Want::default()),
+                _ => self.start_save(track.clone(), source.clone()),
             },
         };
-        want(&f, |w| w.saving += 1);
+        let (path, got) = self.wait_saving(&f).await?;
+        // A fetch that was still finding may have ended on the other kind of copy: a save never
+        // takes a YouTube copy it didn't ask for, so it fetches its own.
+        if got.is_some_and(|g| youtube::is_youtube(&g) != from_youtube) {
+            let own = self.start_save(track, source);
+            return self.wait_saving(&own).await.map(|(path, _)| path);
+        }
+        Ok(path)
+    }
+
+    /// A save's own fetch: out of the player's way when the player is streaming something else.
+    fn start_save(&self, track: Track, source: SourceRef) -> Arc<Fetch> {
+        let slot = match self.live(&track.id) {
+            Some(_) => Slot::Upgrade,
+            None => Slot::Live,
+        };
+        self.start(track, Some(source), Purpose::Save, Want::default(), slot)
+    }
+
+    /// Holds the fetch for a save until it ends: its file and the copy it came from.
+    async fn wait_saving(&self, f: &Arc<Fetch>) -> Result<(PathBuf, Option<SourceRef>)> {
+        want(f, |w| w.saving += 1);
         let mut rx = f.progress();
         let ended = rx.wait_for(Progress::ended).await.map(|p| p.clone());
-        want(&f, |w| w.saving -= 1);
+        want(f, |w| w.saving -= 1);
         let p = ended.map_err(|_| Error::internal("transfer ended without a result"))?;
         match (p.status, p.path) {
-            (Status::Done, Some(path)) => Ok(path),
+            (Status::Done, Some(path)) => Ok((path, p.source.map(|s| s.source_ref()))),
             (Status::Cancelled, _) => Err(Error::Conflict("the transfer was cancelled".into())),
             _ => Err(Error::upstream(
                 "soulseek",
@@ -390,7 +562,7 @@ impl Fetcher {
     }
 
     /// The player moved on (skip, next): cancel unless a save still needs the song or a
-    /// device lists it to preload.
+    /// device lists it to preload. An upgrade runs on: it is for later plays and saves.
     pub fn stop_streaming(&self, track: &TrackId) {
         let Some(f) = self.live.lock().ok().and_then(|l| l.get(track).cloned()) else {
             return;
@@ -422,16 +594,15 @@ impl Fetcher {
         let row = ended.ok_or_else(|| Error::NotFound(format!("no ended transfer {job_id}")))?;
         let track: Track =
             serde_json::from_value(row["track"].clone()).map_err(|e| Error::internal(format!("transfer row: {e}")))?;
-        Ok(self.start(track, None, Purpose::Stream, Want::default()).job_id.clone())
+        Ok(self
+            .start(track, None, Purpose::Stream, Want::default(), Slot::Live)
+            .job_id
+            .clone())
     }
 
-    /// Activity rows: running transfers first, then recently ended ones.
+    /// Activity rows: running transfers (upgrades too) first, then recently ended ones.
     pub fn rows(&self) -> Vec<serde_json::Value> {
-        let mut rows: Vec<_> = self
-            .live
-            .lock()
-            .map(|l| l.values().map(|f| job_row(f, &f.now())).collect())
-            .unwrap_or_default();
+        let mut rows: Vec<_> = self.all().iter().map(|f| job_row(f, &f.now())).collect();
         if let Ok(ended) = self.ended.lock() {
             rows.extend(ended.iter().rev().map(|r| {
                 let mut r = r.clone();
@@ -446,10 +617,9 @@ impl Fetcher {
 
     /// Whether bytes are moving for any song right now.
     pub fn transferring(&self) -> bool {
-        self.live.lock().is_ok_and(|l| {
-            l.values()
-                .any(|f| matches!(f.now().status, Status::Buffering | Status::Streaming | Status::Stalled))
-        })
+        self.all()
+            .iter()
+            .any(|f| matches!(f.now().status, Status::Buffering | Status::Streaming | Status::Stalled))
     }
 
     /// The source the song is (or was last) fetched from, while its fetch is live.
@@ -459,29 +629,29 @@ impl Fetcher {
 
     /// Lets go of finished songs nobody is reading, so the cache may evict them.
     pub fn sweep(&self) {
-        let Ok(mut live) = self.live.lock() else { return };
-        live.retain(|_, f| {
-            let p = f.now();
-            let saving = f.want.lock().map(|w| w.saving).unwrap_or(0);
-            !(p.ended() && saving == 0 && f.idle())
-        });
+        for map in [&self.live, &self.upgrades] {
+            let Ok(mut m) = map.lock() else { continue };
+            m.retain(|_, f| {
+                let p = f.now();
+                let saving = f.want.lock().map(|w| w.saving).unwrap_or(0);
+                !(p.ended() && saving == 0 && f.idle())
+            });
+        }
     }
 
     fn by_job(&self, job_id: &str) -> Option<Arc<Fetch>> {
-        self.live.lock().ok()?.values().find(|f| f.job_id == job_id).cloned()
+        self.all().into_iter().find(|f| f.job_id == job_id)
     }
 
     fn cancel_fetch(&self, f: &Arc<Fetch>) {
         if f.now().ended() {
-            if let Ok(mut live) = self.live.lock() {
-                live.retain(|_, other| !Arc::ptr_eq(other, f));
-            }
+            self.forget(f);
         } else {
             f.stop.send_replace(true);
         }
     }
 
-    fn new_fetch(&self, track: Track, purpose: Purpose, progress: Progress, wanted: Want) -> Arc<Fetch> {
+    fn new_fetch(&self, track: Track, purpose: Purpose, progress: Progress, wanted: Want, slot: Slot) -> Arc<Fetch> {
         let n = self.next.fetch_add(1, Ordering::Relaxed);
         let f = Arc::new(Fetch {
             job_id: format!("job-{:x}{n}", lull_core::now()),
@@ -492,11 +662,16 @@ impl Fetcher {
             want: Mutex::new(wanted),
             readers: AtomicUsize::new(0),
             last_read: Mutex::new(Instant::now()),
+            on_youtube: AtomicBool::new(false),
             _pin: self.cache.pin(&track.id),
             track,
         });
-        if let Ok(mut live) = self.live.lock() {
-            live.insert(f.track.id.clone(), f.clone());
+        let map = match slot {
+            Slot::Live => &self.live,
+            Slot::Upgrade => &self.upgrades,
+        };
+        if let Ok(mut m) = map.lock() {
+            m.insert(f.track.id.clone(), f.clone());
         }
         f
     }
@@ -506,11 +681,14 @@ impl Fetcher {
         let source = self
             .sources
             .get(&track.id, &e.source)
-            .or_else(|| bare_source(&e.source));
-        let below = source
-            .as_ref()
-            .is_some_and(|s| !s.meets(&self.rules.get().stream.minimum, track.duration));
-        Ok(self.new_fetch(
+            .or_else(|| bare_source(&e.source, track.duration));
+        let on_youtube = youtube::is_youtube(&e.source);
+        // YouTube copies are exempt from the minimum: they carry their own badge instead.
+        let below = !on_youtube
+            && source
+                .as_ref()
+                .is_some_and(|s| !s.meets(&self.rules.get().stream.minimum, track.duration));
+        let f = self.new_fetch(
             track,
             Purpose::Stream,
             Progress {
@@ -522,11 +700,14 @@ impl Fetcher {
                 ..Progress::new(Status::Done)
             },
             Want::default(),
-        ))
+            Slot::Live,
+        );
+        f.on_youtube.store(on_youtube, Ordering::Relaxed);
+        Ok(f)
     }
 
-    fn start(&self, track: Track, pick: Option<SourceRef>, purpose: Purpose, wanted: Want) -> Arc<Fetch> {
-        let f = self.new_fetch(track, purpose, Progress::new(Status::Finding), wanted);
+    fn start(&self, track: Track, pick: Option<SourceRef>, purpose: Purpose, wanted: Want, slot: Slot) -> Arc<Fetch> {
+        let f = self.new_fetch(track, purpose, Progress::new(Status::Finding), wanted, slot);
         let this = self.clone();
         let fetch = f.clone();
         tokio::spawn(async move { this.run(fetch, pick).await });
@@ -557,23 +738,234 @@ impl Fetcher {
             }
         }
         // A stopped fetch leaves even when it finished at the last moment: nobody is playing it.
-        // So does a finished one nobody plays or saves (a preload): its file stays in the
-        // cache, unpinned, and playing it later starts from there at once.
+        // So does a finished one nobody plays or saves (a preload, an upgrade): its file stays in
+        // the cache, unpinned, and playing it later starts from there at once.
         let stopped = *f.stop.borrow();
         let idle = want(&f, |w| !w.streaming && w.saving == 0);
-        if (p.status != Status::Done || stopped || idle)
-            && let Ok(mut live) = self.live.lock()
-        {
-            live.retain(|_, other| !Arc::ptr_eq(other, &f));
+        if p.status != Status::Done || stopped || idle {
+            self.forget(&f);
         }
     }
 
+    /// Gets the song onto disk by the listener's mode: Soulseek alone, Soulseek then YouTube
+    /// (`fallback`), or YouTube first with Soulseek's copy fetched beside it (`startFast`). Only
+    /// the player's own fetches (and preloads) turn to YouTube; a save names its copy.
     async fn attempts(&self, f: &Fetch, pick: Option<SourceRef>) -> Result<PathBuf, Stop> {
-        let mut tried: Vec<SourceRef> = Vec::new();
         let mut stop = f.stop.subscribe();
-        for attempt in 1..=MAX_ATTEMPTS as u32 {
+        let prefetch_only = want(f, |w| w.prefetch_only());
+        match route(f.purpose, pick.as_ref(), &self.rules.get().youtube, prefetch_only) {
+            Route::Youtube(copy) => self.youtube_attempt(f, &copy, &mut stop).await,
+            Route::Soulseek => self.soulseek(f, pick, stop).await,
+            Route::SoulseekThenYoutube(wait) => self.soulseek_then_youtube(f, wait, true, &mut stop).await,
+            Route::YoutubeFirst => match self.youtube_first(f, &mut stop).await {
+                Err(Stop::Failed(why)) => {
+                    tracing::info!(track = %f.track.id, why, "YouTube didn't start the song; looking on Soulseek");
+                    f.on_youtube.store(false, Ordering::Relaxed);
+                    self.drop_upgrade(&f.track.id);
+                    self.soulseek_then_youtube(f, None, false, &mut stop).await
+                }
+                done => done,
+            },
+        }
+    }
+
+    /// Start fast: the YouTube copy plays now, and Soulseek's best copy is fetched beside it.
+    async fn youtube_first(&self, f: &Fetch, stop: &mut watch::Receiver<bool>) -> Result<PathBuf, Stop> {
+        let copy = self.youtube_copy(f, stop).await?;
+        if let Err(e) = self.upgrade_later(f.track.clone()).await {
+            tracing::warn!(error = %e, "starting the Soulseek upgrade");
+        }
+        self.youtube_attempt(f, &copy, stop).await
+    }
+
+    /// Soulseek, and YouTube when no peer delivers the song: none shares it, none passes the
+    /// rules, every peer failed, or (`wait`) none started sending in time.
+    async fn soulseek_then_youtube(
+        &self,
+        f: &Fetch,
+        wait: Option<Duration>,
+        youtube_after: bool,
+        stop: &mut watch::Receiver<bool>,
+    ) -> Result<PathBuf, Stop> {
+        let (give_way, soulseek_stop) = watch::channel(false);
+        let mut gave_way = false;
+        let outcome = {
+            let soulseek = self.soulseek(f, None, soulseek_stop);
+            tokio::pin!(soulseek);
+            let slow = too_slow(f, wait);
+            tokio::pin!(slow);
+            let mut stopping = false;
+            loop {
+                tokio::select! {
+                    r = &mut soulseek => break r,
+                    () = stopped(stop), if !stopping => {
+                        stopping = true;
+                        give_way.send_replace(true);
+                    }
+                    () = &mut slow, if !gave_way && !stopping => {
+                        gave_way = true;
+                        give_way.send_replace(true);
+                    }
+                }
+            }
+        };
+        if *stop.borrow() {
+            return Err(Stop::Cancelled);
+        }
+        let why = match outcome {
+            Ok(path) => return Ok(path),
+            Err(Stop::Cancelled) if !gave_way => return Err(Stop::Cancelled),
+            Err(Stop::Cancelled) => format!(
+                "no Soulseek peer started sending within {} s",
+                wait.map_or(0, |w| w.as_secs())
+            ),
+            Err(Stop::Failed(why)) => why,
+        };
+        if !youtube_after {
+            return Err(Stop::Failed(why));
+        }
+        tracing::info!(track = %f.track.id, why, "playing from YouTube instead");
+        let tried = async {
+            let copy = self.youtube_copy(f, stop).await?;
+            self.youtube_attempt(f, &copy, stop).await
+        };
+        match tried.await {
+            Err(Stop::Failed(yt)) => Err(Stop::Failed(format!("{why}; YouTube: {yt}"))),
+            other => other,
+        }
+    }
+
+    /// The song's YouTube copy, by the listener's format and the streaming cap ("finding").
+    async fn youtube_copy(&self, f: &Fetch, stop: &mut watch::Receiver<bool>) -> Result<SourceRef, Stop> {
+        f.on_youtube.store(true, Ordering::Relaxed);
+        self.update(f, |p| p.status = Status::Finding);
+        let want = YoutubeWant::Stream {
+            max_kbps: self.rules.get().stream.max_kbps,
+        };
+        let found = tokio::select! {
+            r = self.youtube.find(&f.track, want) => r,
+            () = stopped(stop) => return Err(Stop::Cancelled),
+        };
+        match found {
+            Ok(Some(found)) => Ok(found.source),
+            Ok(None) => Err(Stop::Failed("no YouTube upload matches this song".into())),
+            Err(e) => Err(Stop::Failed(reason(&e))),
+        }
+    }
+
+    /// One YouTube download into the cache, watched like a transfer: the file grows front to
+    /// back and readers serve it as it does. A finished copy in the cache is used as it is.
+    async fn youtube_attempt(
+        &self,
+        f: &Fetch,
+        copy_ref: &SourceRef,
+        stop: &mut watch::Receiver<bool>,
+    ) -> Result<PathBuf, Stop> {
+        f.on_youtube.store(true, Ordering::Relaxed);
+        let failed = |e: Error| Stop::Failed(reason(&e));
+        let (Some(copy), Some(source)) = (youtube::Copy::of(copy_ref), bare_source(copy_ref, f.track.duration)) else {
+            return Err(Stop::Failed(format!("{} is not a YouTube copy", copy_ref.path)));
+        };
+        let attempt = f.now().attempt + 1;
+        let begin = |p: &mut Progress| {
+            p.attempt = attempt;
+            p.source = Some(source.clone());
+            p.below = false;
+            p.choices.clear();
+            p.received = 0;
+            p.speed = 0;
+            p.queue_pos = None;
+            p.path = None;
+            p.error = None;
+        };
+        if let Some(e) = self.cache.finished(&f.track.id, Some(copy_ref)).await.map_err(failed)?
+            && e.source == *copy_ref
+        {
+            self.update(f, |p| {
+                begin(p);
+                p.received = copy_ref.size;
+                p.path = Some(e.path.clone());
+                p.status = Status::Streaming;
+            });
+            return Ok(e.path);
+        }
+        self.cache.make_room(copy_ref.size).await.map_err(failed)?;
+        let dest = self.cache.youtube_file(&copy).await.map_err(failed)?;
+        self.update(f, |p| {
+            begin(p);
+            p.status = Status::Queued;
+        });
+        let record = |complete| Entry {
+            track: f.track.id.clone(),
+            source: copy_ref.clone(),
+            path: dest.clone(),
+            complete,
+            used_at: lull_core::now(),
+        };
+        let download = self.youtube.download(copy_ref, &dest);
+        tokio::pin!(download);
+        let begun = Instant::now();
+        let mut last = (0u64, Instant::now());
+        let mut recorded = false;
+        let stall = self.rules.get().stall_timeout();
+        loop {
+            tokio::select! {
+                r = &mut download => {
+                    r.map_err(|e| Stop::Failed(reason(&e)))?;
+                    self.cache.record(record(true)).await.map_err(failed)?;
+                    if let Err(e) = self.cache.report().await {
+                        tracing::warn!(error = %e, "measuring the stream cache");
+                    }
+                    return Ok(dest.clone());
+                }
+                () = tokio::time::sleep(YOUTUBE_POLL) => {}
+                // Dropping the download stops yt-dlp; a partial file stays recorded, so evictable.
+                () = stopped(stop) => return Err(Stop::Cancelled),
+            }
+            let received = tokio::fs::metadata(&dest).await.map_or(0, |m| m.len());
+            if received > 0 && !recorded {
+                self.cache.record(record(false)).await.map_err(failed)?;
+                recorded = true;
+            }
+            if received > last.0 {
+                last = (received, Instant::now());
+            }
+            let quiet = last.1.elapsed();
+            if quiet > stall && begun.elapsed() > YOUTUBE_START {
+                return Err(Stop::Failed(format!(
+                    "YouTube stopped sending at {}%",
+                    received.saturating_mul(100) / copy_ref.size.max(1)
+                )));
+            }
+            let speed = received * 1000 / (begun.elapsed().as_millis().max(1) as u64);
+            self.update(f, |p| {
+                p.received = received;
+                p.speed = speed;
+                p.path = (received > 0).then(|| dest.clone());
+                p.status = match received {
+                    0 => Status::Queued,
+                    _ if quiet > STALL_NOTICE => Status::Stalled,
+                    r if r < BUFFERED => Status::Buffering,
+                    _ => Status::Streaming,
+                };
+            });
+        }
+    }
+
+    /// Peers in the profile's order, falling back from one to the next.
+    async fn soulseek(
+        &self,
+        f: &Fetch,
+        pick: Option<SourceRef>,
+        mut stop: watch::Receiver<bool>,
+    ) -> Result<PathBuf, Stop> {
+        let mut tried: Vec<SourceRef> = Vec::new();
+        for _ in 0..MAX_ATTEMPTS {
             let next = self.next_source(f, pick.as_ref(), &tried, &mut stop).await?;
             tried.push(next.source_ref());
+            // Counted across sources (YouTube included): a reader of an older attempt has the
+            // wrong file.
+            let attempt = f.now().attempt + 1;
             match self.attempt(f, attempt, &next, &mut stop).await {
                 Ok(path) => return Ok(path),
                 Err(Ok(skip)) => {
@@ -616,7 +1008,7 @@ impl Fetcher {
             return self
                 .sources
                 .get(&f.track.id, pick)
-                .or_else(|| bare_source(pick))
+                .or_else(|| bare_source(pick, f.track.duration))
                 .ok_or_else(|| Stop::Failed(format!("{} is not audio lull can play", pick.path)));
         }
         let rules = self.rules.get();
@@ -933,6 +1325,36 @@ impl Fetcher {
     }
 }
 
+/// Where a fetch gets the song, by the listener's YouTube mode (docs/context/youtube.md).
+#[derive(Debug, PartialEq, Eq)]
+enum Route {
+    /// The copy named is a YouTube one (a save's, or the listener's pick).
+    Youtube(SourceRef),
+    /// Soulseek peers only: YouTube is off, a save named a peer's copy, or the listener picked one.
+    Soulseek,
+    /// Soulseek, then YouTube when no peer delivers; with a wait, also when none starts in time.
+    SoulseekThenYoutube(Option<Duration>),
+    /// Start fast: YouTube now, Soulseek's best copy fetched beside it.
+    YoutubeFirst,
+}
+
+fn route(purpose: Purpose, pick: Option<&SourceRef>, yt: &youtube::Settings, prefetch_only: bool) -> Route {
+    if let Some(copy) = pick.filter(|p| youtube::is_youtube(p)) {
+        return Route::Youtube(copy.clone());
+    }
+    if purpose != Purpose::Stream || pick.is_some() {
+        return Route::Soulseek;
+    }
+    match yt.mode {
+        Mode::Off => Route::Soulseek,
+        Mode::Fallback => Route::SoulseekThenYoutube(Some(Duration::from_secs(u64::from(yt.wait_s)))),
+        // A preload gets Soulseek's copy, YouTube's only when Soulseek has none; the song's
+        // YouTube match is warmed meanwhile, so playing it still starts at once.
+        Mode::StartFast if prefetch_only => Route::SoulseekThenYoutube(None),
+        Mode::StartFast => Route::YoutubeFirst,
+    }
+}
+
 /// What to do when copies exist but none passes the profile's minimum.
 enum Below {
     /// Take the best of them (`playBest`, `saveBestUpgrade`).
@@ -987,9 +1409,22 @@ fn want<T>(f: &Fetch, change: impl FnOnce(&mut Want) -> T) -> T {
     change(&mut w)
 }
 
-/// A source known only by reference (picked before a restart, or named by a save): its facts
-/// come from the file name alone.
-fn bare_source(r: &SourceRef) -> Option<Source> {
+/// A source known only by reference (picked before a restart, named by a save, a YouTube copy):
+/// its facts come from the file name alone, a YouTube copy's from its format and the song's length.
+fn bare_source(r: &SourceRef, duration: Option<u32>) -> Option<Source> {
+    if let Some(copy) = youtube::Copy::of(r) {
+        return Some(Source {
+            user: r.user.clone(),
+            path: r.path.clone(),
+            size: r.size,
+            facts: copy.facts(r.size, duration),
+            ext: copy.ext,
+            upload_speed: 0,
+            free_slot: true,
+            queue: 0,
+            length: duration,
+        });
+    }
     let ext = files::extension(&r.path)?;
     let facts = files::facts(&ext, r.size, files::Attributes::default())?;
     Some(Source {
@@ -1003,6 +1438,27 @@ fn bare_source(r: &SourceRef) -> Option<Source> {
         queue: 0,
         length: None,
     })
+}
+
+/// `fallback`: resolves once `wait` has passed and no peer is sending (still finding, queued, or
+/// between peers). Never without a `wait`.
+async fn too_slow(f: &Fetch, wait: Option<Duration>) {
+    let Some(wait) = wait else {
+        return std::future::pending().await;
+    };
+    tokio::time::sleep(wait).await;
+    let mut progress = f.progress();
+    let _ = progress
+        .wait_for(|p| matches!(p.status, Status::Finding | Status::Queued | Status::Fallback))
+        .await;
+}
+
+/// Where a fetch is a running fetch in `map`, not one that failed or was cancelled.
+fn running(map: &Mutex<HashMap<TrackId, Arc<Fetch>>>, track: &TrackId) -> Option<Arc<Fetch>> {
+    let m = map.lock().ok()?;
+    m.get(track)
+        .filter(|f| !matches!(f.now().status, Status::Failed | Status::Cancelled))
+        .cloned()
 }
 
 /// The first candidate path that exists, with its length (the bytes received so far).
@@ -1054,6 +1510,7 @@ pub fn stream_event(f: &Fetch, p: &Progress) -> serde_json::Value {
         "failedPeers": p.failed_peers,
         "error": p.error,
         "belowMinimum": p.below,
+        "youtube": p.source.as_ref().is_some_and(|s| youtube::is_youtube(&s.source_ref())),
     });
     if p.status == Status::Choosing {
         event["choices"] = json!(p.choices);
@@ -1102,6 +1559,71 @@ mod tests {
         assert_eq!(shown, "soulseek failed: answered 500 Internal Server Error");
         let disk = Error::unavailable("soulseek", "the transfers disk is full");
         assert_eq!(reason(&disk), "the transfers disk is full");
+    }
+
+    #[test]
+    fn the_youtube_mode_decides_where_the_players_fetch_looks_and_saves_keep_their_copy() {
+        let peer = SourceRef {
+            user: "peer".into(),
+            path: "Music\\A\\01 - Song.flac".into(),
+            size: 1,
+        };
+        let yt_copy = youtube::Copy {
+            video: "LUjGtyYEi90".into(),
+            format: "251".into(),
+            ext: "webm".into(),
+        }
+        .source_ref(5_730_310);
+        let mut yt = youtube::Settings::default();
+        let player = |yt: &youtube::Settings, preload: bool| route(Purpose::Stream, None, yt, preload);
+
+        assert_eq!(player(&yt, false), Route::Soulseek, "off by default");
+        yt.mode = Mode::Fallback;
+        yt.wait_s = 25;
+        assert_eq!(
+            player(&yt, false),
+            Route::SoulseekThenYoutube(Some(Duration::from_secs(25)))
+        );
+        assert_eq!(
+            player(&yt, true),
+            Route::SoulseekThenYoutube(Some(Duration::from_secs(25)))
+        );
+        yt.mode = Mode::StartFast;
+        assert_eq!(player(&yt, false), Route::YoutubeFirst);
+        assert_eq!(
+            player(&yt, true),
+            Route::SoulseekThenYoutube(None),
+            "a preload fetches Soulseek's copy; YouTube only when there is none"
+        );
+        assert_eq!(
+            route(Purpose::Save, None, &yt, false),
+            Route::Soulseek,
+            "a save never turns to YouTube by itself"
+        );
+        assert_eq!(
+            route(Purpose::Stream, Some(&peer), &yt, false),
+            Route::Soulseek,
+            "the listener's pick"
+        );
+        assert_eq!(
+            route(Purpose::Save, Some(&yt_copy), &youtube::Settings::default(), false),
+            Route::Youtube(yt_copy.clone()),
+            "a save that named a YouTube copy gets it"
+        );
+    }
+
+    #[test]
+    fn a_youtube_copy_carries_its_own_badge_and_plays_its_native_type() {
+        let r = youtube::Copy {
+            video: "LUjGtyYEi90".into(),
+            format: "140".into(),
+            ext: "m4a".into(),
+        }
+        .source_ref(5_152_490);
+        let s = bare_source(&r, Some(318));
+        assert_eq!(s.as_ref().map(|s| s.facts.format.as_str()), Some("YouTube · AAC 128"));
+        assert_eq!(s.as_ref().map(|s| s.ext.as_str()), Some("m4a"));
+        assert_eq!(s.map(|s| s.user), Some(youtube::PEER.to_owned()));
     }
 
     #[test]

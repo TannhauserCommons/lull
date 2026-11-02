@@ -4,7 +4,8 @@ Streamed-but-unsaved audio, capped at `LULL_CACHE_MAX_GB` (`crates/soulseek/src/
 
 ## What it holds
 
-- **Only lull's own files.** The cache is every file lull asked slskd for, recorded in `soulseek_files`: the source, the path on disk (the incomplete file while it runs, then the finished one), whether it's complete, and when it was last used.
+- **Only lull's own files.** The cache is every file lull asked slskd for, recorded in `soulseek_files`: the source, the path on disk (the incomplete file while it runs, then the finished one), whether it's complete, and when it was last used. YouTube copies are recorded the same way, written to `youtube/` in the same folder ([youtube.md](youtube.md#downloads)).
+- **Soulseek first.** Playing a song from the cache takes its Soulseek copy over a YouTube one, whichever was used last.
 - **Never anything else.** Nothing that isn't recorded is ever deleted, so an existing slskd's other downloads are safe.
 - **The disk is the truth.** A row whose file is gone (deleted by hand, moved away) is dropped the next time usage is measured. Usage counts bytes actually on disk, partial files included.
 

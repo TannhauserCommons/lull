@@ -24,6 +24,7 @@ lull-collection = { path = "../collection" }
 lull-skins = { path = "../skins" }
 lull-subsonic = { path = "../subsonic" }
 lull-themes = { path = "../themes" }
+lull-youtube = { path = "../youtube" }
 axum.workspace = true
 reqwest.workspace = true
 serde.workspace = true

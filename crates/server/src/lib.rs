@@ -110,11 +110,13 @@ async fn wire(ctx: &Ctx) -> Result<Router, Error> {
         &lull_skins::MIGRATIONS,
         &lull_subsonic::MIGRATIONS,
         &lull_themes::MIGRATIONS,
+        &lull_youtube::MIGRATIONS,
     ] {
         ctx.db.migrate(m)?;
     }
 
-    let soulseek = lull_soulseek::start(ctx).await?;
+    let youtube = lull_youtube::start(ctx).await?;
+    let soulseek = lull_soulseek::start(ctx, youtube.clone()).await?;
     let library = lull_library::start(ctx, soulseek.clone()).await?;
     let discovery = lull_discovery::start(ctx, library.clone(), soulseek.clone()).await?;
     let lastfm = lull_lastfm::start(ctx).await?;
@@ -128,6 +130,7 @@ async fn wire(ctx: &Ctx) -> Result<Router, Error> {
 
     Ok(Router::new()
         .merge(lull_soulseek::router(soulseek, library.clone()))
+        .merge(lull_youtube::router(youtube))
         .merge(lull_library::router(library))
         .merge(lull_discovery::router(discovery))
         .merge(lull_lastfm::router(lastfm))
