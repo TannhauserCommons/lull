@@ -548,6 +548,10 @@
   :root[data-design="lull"] .pbar .vol { display: none; }
   :root[data-design="lull"] .pbar__seek { grid-area: seek; grid-template-columns: auto auto minmax(0, 1fr) auto; padding: 0 16px 6px 14px; }
   :root[data-design="lull"] .pbar__seek::before { grid-column: auto; margin: 0 6px 0 0; }
+  /* nothing playing: the seek row would be blank, so the bar is one row tall (the desk bar's 80 px) until a song loads */
+  :root[data-design="lull"]:has(.pbar[data-status="idle"]) { --bar-h: 80px; }
+  :root[data-design="lull"] .pbar[data-status="idle"] { grid-template-rows: 1fr; grid-template-areas: "now ctl tools"; }
+  :root[data-design="lull"] .pbar[data-status="idle"] .pbar__seek { display: none; }
 }
 
 /* =====================================================================
