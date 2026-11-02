@@ -485,10 +485,15 @@
 }
 @media (min-width: 1100px) {
   :root[data-design="lull"] .pbar {
-    grid-template-columns: minmax(200px, 1fr) 40px auto minmax(240px, 1.35fr) 40px minmax(90px, 150px) 40px 12px repeat(4, 48px);
-    grid-template-areas: "now like ctl seek save vol more . t1 t2 t3 t4"; gap: 0 4px;
+    grid-template-columns: minmax(200px, 1fr) 40px auto minmax(240px, 1.35fr) 40px minmax(90px, 150px) 40px auto auto 12px repeat(4, 48px);
+    grid-template-areas: "now like ctl seek save vol more nc cn . t1 t2 t3 t4"; gap: 0 4px;
   }
-  :root[data-design="lull"] .pbar > .region-title { grid-area: 1 / 1 / 2 / 8; }
+  /* the Now Playing column toggle (wide windows only, ADR-0007) and lull Connect's device picker (when other devices
+     are online) get their own columns inside the bar, each 0 px wide while hidden, instead of falling onto a second
+     row below the window or onto the first tray tile */
+  :root[data-design="lull"] .pbar .pbar__nowcol { grid-area: nc; }
+  :root[data-design="lull"] .pbar [data-act="connect"] { grid-area: cn; }
+  :root[data-design="lull"] .pbar > .region-title { grid-area: 1 / 1 / 2 / 10; }
   :root[data-design="lull"] .pbar__centre, :root[data-design="lull"] .pbar__tools { display: contents; }
   :root[data-design="lull"] .pbar__now { grid-area: now; }
   :root[data-design="lull"] .pbar__controls { grid-area: ctl; padding: 0 14px 0 8px; }
@@ -517,7 +522,7 @@
 }
 /* narrow desks: the title and seek give up some room so the four tray tiles still fit inside the bar */
 @media (min-width: 1100px) and (max-width: 1199px) {
-  :root[data-design="lull"] .pbar { grid-template-columns: minmax(150px, 1fr) 40px auto minmax(200px, 1.35fr) 40px minmax(90px, 150px) 40px 4px repeat(4, 48px); }
+  :root[data-design="lull"] .pbar { grid-template-columns: minmax(150px, 1fr) 40px auto minmax(200px, 1.35fr) 40px minmax(90px, 150px) 40px auto auto 4px repeat(4, 48px); }
 }
 @media (min-width: 640px) and (max-width: 1099px) {
   :root[data-design="lull"] { --bar-h: 116px; }
