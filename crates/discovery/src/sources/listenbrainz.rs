@@ -27,6 +27,10 @@ const SIMILARITY: &str =
 const METADATA_BATCH: usize = 50;
 /// "No more than one call per second."
 const PACE: Duration = Duration::from_secs(1);
+/// Fresh releases are one 3-4 MB answer (a month of releases, about 8,500), fetched in the
+/// background and cached for hours: CALL_TIMEOUT, meant for calls a listener waits on, cut it off
+/// mid-body ("error decoding response body").
+const FEED_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct ListenBrainz {
     pub switch: Arc<Switch>,
@@ -96,9 +100,10 @@ impl ListenBrainz {
         self.cache
             .get("lb:fresh:30".into(), 6 * HOUR, || async {
                 let body: Value = self
-                    .get(
+                    .get_within(
                         format!("{API}/explore/fresh-releases/"),
                         &[("days", "30"), ("future", "false")],
+                        FEED_TIMEOUT,
                     )
                     .await?
                     .unwrap_or_default();
@@ -290,13 +295,22 @@ impl ListenBrainz {
 
     /// One paced GET; `None` for 204 (ListenBrainz's "nothing computed yet").
     async fn get<T: DeserializeOwned>(&self, url: String, query: &[(&str, &str)]) -> Result<Option<T>> {
+        self.get_within(url, query, CALL_TIMEOUT).await
+    }
+
+    async fn get_within<T: DeserializeOwned>(
+        &self,
+        url: String,
+        query: &[(&str, &str)],
+        timeout: Duration,
+    ) -> Result<Option<T>> {
         let call = self.breaker.call()?;
         let answer = async {
             self.http.pace(SERVICE, PACE).await;
             let resp = self
                 .http
                 .send(SERVICE, |c| {
-                    let req = c.get(&url).query(query).timeout(CALL_TIMEOUT);
+                    let req = c.get(&url).query(query).timeout(timeout);
                     match &self.token {
                         Some(t) => req.header("Authorization", format!("Token {}", t.expose())),
                         None => req,
