@@ -9,6 +9,7 @@
 //! announces the full tracklist as `album.updated` when it arrives later.
 
 use std::collections::{BTreeMap, HashMap};
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -37,6 +38,8 @@ const TAG_NEW_DAYS: i64 = 90;
 
 /// How long the album page waits for its tracklist before answering with what lull has.
 const ALBUM_DEADLINE: Duration = Duration::from_secs(3);
+/// How long the artist and tag pages wait for their sections.
+const PAGE_DEADLINE: Duration = Duration::from_secs(4);
 
 type Errors = BTreeMap<&'static str, String>;
 
@@ -224,45 +227,98 @@ pub async fn artist(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> 
         .artist_ref(id.clone())
         .await?
         .ok_or_else(|| Error::NotFound(format!("Artist {id} is unknown to lull.")))?;
+    let until = Instant::now() + PAGE_DEADLINE;
     let mut errors = Errors::new();
+
+    // Who the artist is: the MBID a release named, else Last.fm's (by name, its best-known
+    // artist of that name), else MusicBrainz's. Asked side by side.
+    let (name, mbid) = (artist.name.clone(), artist.musicbrainz_id.clone());
+    let profile = svc.lastfm().map(|_| {
+        let (s, name, mbid) = (svc.clone(), name.clone(), mbid.clone());
+        background(&svc, async move {
+            match s.lastfm() {
+                Some(lastfm) => lastfm.artist(&name, mbid.as_deref()).await,
+                None => Err(Error::unavailable(
+                    "Last.fm",
+                    "it is switched off in Settings > Discovery",
+                )),
+            }
+        })
+    });
+    let found = mbid.is_none().then(|| {
+        let (s, name) = (svc.clone(), name.clone());
+        background(&svc, async move { s.mb.find_artist(&name).await })
+    });
+    let profile = match profile {
+        Some(rx) => section(&mut errors, "bio", by(until, rx).await),
+        None => None,
+    };
     if artist.musicbrainz_id.is_none() {
-        artist.musicbrainz_id = section(&mut errors, "artist", svc.mb.find_artist(&artist.name).await)
-            .flatten()
-            .and_then(|a| a.mbid);
+        artist.musicbrainz_id = profile.as_ref().and_then(|p| p.mbid.clone());
     }
+    if let Some(rx) = found {
+        let found = section(&mut errors, "artist", by(until, rx).await).flatten();
+        if artist.musicbrainz_id.is_none() {
+            artist.musicbrainz_id = found.and_then(|a| a.mbid);
+        } else {
+            errors.remove("artist");
+        }
+    }
+    if let Some(profile) = profile {
+        artist.listeners = profile.listeners;
+        artist.bio = profile.bio;
+        artist.tags = profile.tags;
+    }
+    artist.id = id;
     let info = ArtistInfo {
         mbid: artist.musicbrainz_id.clone(),
         name: artist.name.clone(),
     };
 
-    if let Some(mbid) = &info.mbid
-        && let Some(tags) = section(&mut errors, "tags", svc.mb.artist_tags(mbid).await)
-    {
+    // Every section at once, each in a task of its own: one that misses the deadline is named
+    // in `errors` and is cached for the next visit.
+    let tags = info.mbid.clone().map(|mbid| {
+        let s = svc.clone();
+        background(&svc, async move { s.mb.artist_tags(&mbid).await })
+    });
+    let releases = {
+        let (s, i) = (svc.clone(), info.clone());
+        background(&svc, async move { s.mb.discography(&i).await })
+    };
+    let top = {
+        let (s, i) = (svc.clone(), info.clone());
+        background(&svc, async move { top_songs(&s, &i).await })
+    };
+    let similar = {
+        let (s, i) = (svc.clone(), info.clone());
+        background(&svc, async move { similar_artists(&s, &i).await })
+    };
+    let photo = {
+        let (s, a) = (svc.clone(), artist.clone());
+        background(&svc, async move {
+            remember_photo(&s, &a).await;
+            Ok(())
+        })
+    };
+    let tags = match tags {
+        Some(rx) => section(&mut errors, "tags", by(until, rx).await),
+        None => None,
+    };
+    if let Some(tags) = tags.filter(|t| !t.is_empty()) {
         artist.tags = tags;
     }
-    if let Some(lastfm) = svc.lastfm()
-        && let Some(profile) = section(&mut errors, "bio", lastfm.artist(&artist.name).await)
-    {
-        artist.listeners = profile.listeners;
-        artist.bio = profile.bio;
-        if artist.tags.is_empty() {
-            artist.tags = profile.tags;
-        }
-    }
+    let releases = section(&mut errors, "albums", by(until, releases).await).unwrap_or_default();
+    let songs = section(&mut errors, "topTracks", by(until, top).await).unwrap_or_default();
+    let similar = section(&mut errors, "similar", by(until, similar).await).unwrap_or_default();
+    let _ = by(until, photo).await;
 
-    let releases = section(&mut errors, "albums", svc.mb.discography(&info).await).unwrap_or_default();
     let albums = svc.store.albums(releases).await?;
-    let songs = section(&mut errors, "topTracks", top_songs(&svc, &info).await).unwrap_or_default();
     let tracks = svc.store.tracks(songs).await?;
-    let similar = section(&mut errors, "similar", similar_artists(&svc, &info).await).unwrap_or_default();
     let similar = svc
         .store
         .artists(similar.into_iter().map(store::artist).collect())
         .await?;
-
-    artist.id = id;
     let mut all_artists = svc.store.artists(vec![artist.clone()]).await?;
-    remember_photo(&svc, &artist).await;
     all_artists.extend(similar.iter().cloned());
     let top_tracks = tracks.iter().map(|t| t.id.clone()).collect();
     let album_ids = albums.iter().map(|a| a.id.clone()).collect();
@@ -280,6 +336,35 @@ pub async fn artist(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> 
         errors,
         entities,
     }))
+}
+
+/// Runs a page section in a task of its own, so a fetch that misses the page's deadline still
+/// ends and fills the cache for the next visit.
+fn background<T: Send + 'static>(
+    svc: &Service,
+    section: impl Future<Output = Result<T>> + Send + 'static,
+) -> oneshot::Receiver<Result<T>> {
+    let (tx, rx) = oneshot::channel();
+    svc.ctx.spawn(async move {
+        // The page stopped waiting: the answer is cached all the same.
+        let _ = tx.send(section.await);
+    });
+    rx
+}
+
+/// A section's answer by `until`, or why it is missing.
+async fn by<T>(until: Instant, section: oneshot::Receiver<Result<T>>) -> Result<T> {
+    match tokio::time::timeout_at(until, section).await {
+        Ok(Ok(answer)) => answer,
+        Ok(Err(_)) => Err(Error::unavailable("discovery", "is restarting")),
+        Err(_) => Err(Error::unavailable(
+            "this section",
+            format!(
+                "took over {} s; it shows when the page is opened again",
+                PAGE_DEADLINE.as_secs()
+            ),
+        )),
+    }
 }
 
 /// The artist's Deezer photo, found by name once and kept in the catalog. Pages show without one
@@ -327,7 +412,7 @@ async fn top_songs(svc: &Service, artist: &ArtistInfo) -> Result<Vec<Song>> {
 /// Last.fm's similar artists when configured, else ListenBrainz's.
 async fn similar_artists(svc: &Service, artist: &ArtistInfo) -> Result<Vec<ArtistInfo>> {
     let mut similar = match (svc.lastfm(), &artist.mbid) {
-        (Some(lastfm), _) => lastfm.similar_artists(&artist.name).await?,
+        (Some(lastfm), mbid) => lastfm.similar_artists(&artist.name, mbid.as_deref()).await?,
         (None, Some(mbid)) => svc.lb.similar_artists(mbid).await?,
         (None, None) => Vec::new(),
     };
@@ -359,32 +444,79 @@ pub async fn tag(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Res
     if tag.is_empty() {
         return Err(Error::BadRequest("a tag needs a name".into()));
     }
+    let until = Instant::now() + PAGE_DEADLINE;
     let mut errors = Errors::new();
     let since = iso_date(lull_core::now() - TAG_NEW_DAYS * 86_400);
-    let mut releases =
-        section(&mut errors, "newReleases", svc.mb.tagged_releases(&tag, &since).await).unwrap_or_default();
+    let releases = {
+        let (s, t) = (svc.clone(), tag.clone());
+        background(&svc, async move { s.mb.tagged_releases(&t, &since).await })
+    };
+    let lastfm = svc.lastfm().map(|_| {
+        let (s, t) = (svc.clone(), tag.clone());
+        background(&svc, async move {
+            let Some(lastfm) = s.lastfm() else {
+                return Err(Error::unavailable(
+                    "Last.fm",
+                    "it is switched off in Settings > Discovery",
+                ));
+            };
+            let (desc, related, artists) = tokio::join!(
+                lastfm.tag_description(&t),
+                lastfm.similar_tags(&t),
+                lastfm.tag_artists(&t)
+            );
+            Ok((desc, related, artists))
+        })
+    });
+    let radio = lastfm.is_none().then(|| {
+        let (s, t) = (svc.clone(), tag.clone());
+        background(&svc, async move { tag_artists_from_radio(&s, &t).await })
+    });
+
+    let mut releases = section(&mut errors, "newReleases", by(until, releases).await).unwrap_or_default();
     let co_tagged = co_tags(&tag, &releases);
     releases.truncate(TAG_RELEASES);
-
-    let (desc, related, artists) = match svc.lastfm() {
-        Some(lastfm) => (
-            section(&mut errors, "desc", lastfm.tag_description(&tag).await).flatten(),
-            section(&mut errors, "related", lastfm.similar_tags(&tag).await).unwrap_or_default(),
-            section(&mut errors, "artists", lastfm.tag_artists(&tag).await).unwrap_or_default(),
-        ),
-        None => (
+    let (desc, related, artists) = match (lastfm, radio) {
+        (Some(rx), _) => match section(&mut errors, "artists", by(until, rx).await) {
+            Some((desc, related, artists)) => (
+                section(&mut errors, "desc", desc).flatten(),
+                section(&mut errors, "related", related).unwrap_or_default(),
+                section(&mut errors, "artists", artists).unwrap_or_default(),
+            ),
+            None => (None, Vec::new(), Vec::new()),
+        },
+        (None, Some(rx)) => (
             None,
             Vec::new(),
-            section(&mut errors, "artists", tag_artists_from_radio(&svc, &tag).await).unwrap_or_default(),
+            section(&mut errors, "artists", by(until, rx).await).unwrap_or_default(),
         ),
+        (None, None) => (None, Vec::new(), Vec::new()),
     };
     let related = if related.is_empty() { co_tagged } else { related };
+    if errors.is_empty() && desc.is_none() && releases.is_empty() && artists.is_empty() && related.is_empty() {
+        return Err(Error::NotFound(format!("No source knows the tag {tag}.")));
+    }
 
     let albums = svc.store.albums(releases).await?;
     let artists = svc
         .store
         .artists(artists.into_iter().take(TAG_ARTISTS).map(store::artist).collect())
         .await?;
+    // Their photos, as on artist pages (found once, then kept); what misses the deadline shows
+    // next time.
+    let photos: Vec<_> = artists
+        .iter()
+        .map(|a| {
+            let (s, a) = (svc.clone(), a.clone());
+            background(&svc, async move {
+                remember_photo(&s, &a).await;
+                Ok(())
+            })
+        })
+        .collect();
+    for photo in photos {
+        let _ = by(until, photo).await;
+    }
     Ok(Json(TagPage {
         tag: TagInfo {
             id: tag.clone(),

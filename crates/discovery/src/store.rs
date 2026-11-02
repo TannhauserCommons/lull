@@ -46,8 +46,21 @@ impl Store {
     }
 
     /// Releases as albums, remembered so their ids resolve later. A release already known keeps
-    /// what is known (its tracks), and saved state comes from its catalog tracks.
+    /// what is known (its tracks), and saved state comes from its catalog tracks. Their artists
+    /// are remembered too, with the MBID the release names, so an album's artist link opens the
+    /// right artist.
     pub async fn albums(&self, releases: Vec<Release>) -> Result<Vec<Album>> {
+        let credited: Vec<Artist> = releases
+            .iter()
+            .filter(|r| r.artist_mbid.is_some())
+            .map(|r| {
+                artist(ArtistInfo {
+                    mbid: r.artist_mbid.clone(),
+                    name: r.artist.clone(),
+                })
+            })
+            .collect();
+        self.artists(credited).await?;
         self.remember_albums(releases.into_iter().map(album).collect()).await
     }
 
@@ -56,6 +69,16 @@ impl Store {
         let (mut albums, members) = self
             .db
             .call(move |c| {
+                let artists: Vec<Artist> = albums
+                    .iter()
+                    .map(|a| {
+                        artist(ArtistInfo {
+                            mbid: None,
+                            name: a.artist.clone(),
+                        })
+                    })
+                    .collect();
+                merge_put(c, "discovery_artists", artists, |a| &a.id.0, merge_artist)?;
                 let albums = merge_put(c, "discovery_albums", albums, |a| &a.id.0, merge_album)?;
                 let ids: Vec<AlbumId> = albums.iter().map(|a| a.id.clone()).collect();
                 Ok((albums, catalog_members(c, &ids)?))

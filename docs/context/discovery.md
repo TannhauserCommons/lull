@@ -67,16 +67,17 @@ Umbrella genres (rock, pop, electronic, hip hop, indie…: `taste::UMBRELLA_TAGS
   - sets the popularity window: 0 is 40-100%, 1 is 0-50%;
   - nudges liked artists up (familiar) or down (adventurous).
 - **Each call returns 12 tracks:** at most 2 per artist (except the seed artist), minus `exclude`, hidden and disliked artists.
+- **Originals first:** a title whose brackets or " - " suffix say remix, live, edit, mix, version or dub ("Talamak (Tom Lown Remix)") only fills a batch after every original, unless the seed track is such a take.
 
 ## Pages
 
 | Page | From |
 |---|---|
 | **Album** | An album iTunes or Deezer found (search remembers its `collectionId` / album id in `discovery_album_sources`): that catalog's tracklist, one call (about 0.1-0.5 s from here); MusicBrainz then adds its MBID, tags, type and date in the background. Otherwise the MusicBrainz release group (by remembered MBID, else search by artist and title, version tags ignored) and the earliest official release's tracklist: two calls behind the shared 1.1 s pace. Without a match, the catalog's tracks of that album. **The page answers within 3 s:** a tracklist not in by then is still fetched and remembered, the page answers with the tracks lull has (`partial: true`), and `album.updated` follows |
-| **Artist** | MusicBrainz tags and discography; Last.fm bio and listeners; top tracks from artist radio, sorted by listens; similar from Last.fm (else ListenBrainz) |
-| **Tag** | MusicBrainz releases tagged it in the last 90 days; Last.fm description, top artists and similar tags. Without Last.fm: artists from tag radio, and related tags from tag co-occurrence on the releases |
+| **Artist** | Who it is: the MBID a release named (feed, search, album and tag pages remember each album's artist with it), else Last.fm's by name (its best-known artist of that name), else MusicBrainz's. Then MusicBrainz tags and discography; Last.fm bio and listeners (asked by MBID when known; a bio that only says several artists share the name is dropped); top tracks from artist radio, sorted by listens; similar from Last.fm by MBID (else ListenBrainz); the Deezer photo, exact name first ("The Prodigy" is not the rapper Prodigy) |
+| **Tag** | MusicBrainz releases tagged it in the last 90 days; Last.fm description (without its "Read more on Last.fm" tail), top artists (with their Deezer photos) and similar tags. Without Last.fm: artists from tag radio, and related tags from tag co-occurrence on the releases. 404 when no source knows the tag (and none failed) |
 
-A section whose source failed is empty and named in `errors`.
+A section whose source failed is empty and named in `errors`. **Artist and tag pages answer within 4 s:** their sections run at once, each in a task of its own; one not in by then is named in `errors` and, cached when it ends, shows on the next visit.
 
 ## Search (`GET /api/search`, ADR-0008)
 
@@ -115,9 +116,9 @@ Code: `src/search/` (`mod.rs` runs a query, `merge.rs` merges and ranks), `src/a
 - **Fetching:** a request waits at most 3 s for a picture lull doesn't have yet. Meanwhile it answers 404 with `Cache-Control: no-store`, and the fetch goes on in the background: one try of up to 20 s, one fetch per picture and size, shared by every request for it. The next request is served from the cache. A source that fails leaves nothing cached, so it is asked again next time.
 - **The URL is relative** (`api/catalog/art/…`): the UI's routes are all in the hash (`#/artist/…`), so it resolves the same from every screen and behind a reverse-proxy sub-path. The archive is asked for its smallest size that covers the request (250 for 96 and 256, 500 for 512), and every picture is scaled down to the size asked for (JPEG). `size` defaults to 256.
 - **Where each picture comes from** is `lull_core::catalog` (`catalog_albums.art`, `catalog_artists.image`, a URL with `{size}`). Search records it, and the artist page looks the photo up on Deezer by exact name once.
-- **Entities:** albums carry `art` and artists `image`, `api/catalog/art/<id>` relative to the page (the UI adds `?size=`), only when a source is known. Albums without one use library's `/api/art/{albumId}`.
+- **Entities:** albums carry `art` and artists `image`, `api/catalog/art/<id>` relative to the page (the UI adds `?size=`), only when a source is known and hasn't said lately (a day) that it has none: a new release the Cover Art Archive has no cover for gets no `art` once that is known, instead of a 404 on every load. Albums without one use library's `/api/art/{albumId}`.
 - **Cache:** `<data dir>/catalog-art/<id>-<size>`, 30 days; "the source has none" for a day.
 
 ## Ids
 
-Album and artist ids are hashes (`lull_core::ids`), so discovery remembers every album and artist it shows (`discovery_albums`, `discovery_artists`). An unknown id falls back to the catalog: the first track with that `albumId` / `artistId`. Tracks go to the catalog. An id the catalog already has keeps every fact it has, because another crate may have added file facts. Discovery only fills its gaps: year, number, disc, length and tags.
+Album and artist ids are hashes (`lull_core::ids`), so discovery remembers every album and artist it shows (`discovery_albums`, `discovery_artists`), and every album's artist with it (with the MBID the release names), so an album's artist link resolves. An unknown id falls back to the catalog: the first track with that `albumId` / `artistId`. Tracks go to the catalog. An id the catalog already has keeps every fact it has, because another crate may have added file facts. Discovery only fills its gaps: year, number, disc, length and tags.

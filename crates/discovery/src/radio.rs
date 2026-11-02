@@ -30,6 +30,10 @@ use crate::{Service, mix, taste};
 
 /// Tracks returned per call; the UI asks again as the queue drains.
 const BATCH: usize = 12;
+/// Places a remix or live take behind every original in a batch.
+const VERSION_PENALTY: f64 = 10_000.0;
+/// Words in a title's brackets or " - " suffix that make it another take of a song.
+const VERSION_WORDS: &[&str] = &["remix", "rmx", "live", "edit", "mix", "version", "dub", "remixed"];
 /// Candidates looked at per call (one metadata request).
 const POOL: usize = 50;
 /// Per artist in one batch, except the seed artist of an artist radio.
@@ -83,6 +87,8 @@ pub async fn next(
     )
     .await?;
 
+    // Originals first: remixes and live takes only fill up, unless the seed is one.
+    let versions_too = seed.title.as_deref().is_some_and(is_version);
     let mut ranked: Vec<(f64, Track)> = tracks
         .into_iter()
         .filter(|t| !exclude.contains(&t.id) && !taste.hidden.contains(&t.artist_id))
@@ -96,7 +102,12 @@ pub async fn next(
                 0.0
             };
             let nudge = (1.0 - 2.0 * steer) * known * 10.0;
-            (i as f64 - nudge, t)
+            let version = if !versions_too && is_version(&t.title) {
+                VERSION_PENALTY
+            } else {
+                0.0
+            };
+            (i as f64 - nudge + version, t)
         })
         .collect();
     ranked.sort_by(|a, b| a.0.total_cmp(&b.0));
@@ -273,7 +284,7 @@ async fn from_lastfm(svc: &Service, lastfm: &LastFm, seed: &Known, steer: f64) -
 /// The artist's top tracks and those of a few similar artists: the closest when familiar,
 /// further down Last.fm's list when adventurous.
 async fn around_artist(lastfm: &LastFm, artist: &str, steer: f64) -> Result<Vec<Song>> {
-    let similar = lastfm.similar_artists(artist).await?;
+    let similar = lastfm.similar_artists(artist, None).await?;
     let skip = (similar.len().saturating_sub(LASTFM_SIMILAR) as f64 * quantized(steer) * 0.5) as usize;
     let mut songs: Vec<Song> = lastfm.artist_top_tracks(artist).await?.into_iter().take(4).collect();
     for other in similar.iter().skip(skip).take(LASTFM_SIMILAR) {
@@ -325,6 +336,32 @@ async fn by_artist(svc: &Service, credit: &str, tags: &[String], steer: f64, pop
     }
     Err(failure
         .unwrap_or_else(|| Error::NotFound(format!("No music source knows {credit} well enough for a radio yet."))))
+}
+
+/// Whether a title names another take of a song: a remix, live take, edit, mix, version or
+/// dub in its brackets or " - " suffix ("Talamak (Tom Lown Remix)", "So Many Details - Live").
+pub fn is_version(title: &str) -> bool {
+    let mut tagged = String::new();
+    let mut depth = 0usize;
+    for c in title.chars() {
+        match c {
+            '(' | '[' => depth += 1,
+            ')' | ']' => depth = depth.saturating_sub(1),
+            _ if depth > 0 => {
+                tagged.push(c);
+                continue;
+            }
+            _ => continue,
+        }
+        tagged.push(' ');
+    }
+    if let Some((_, suffix)) = title.split_once(" - ") {
+        tagged.push(' ');
+        tagged.push_str(suffix);
+    }
+    lull_core::ids::normalize(&tagged)
+        .split(' ')
+        .any(|w| VERSION_WORDS.contains(&w))
 }
 
 /// The artists in a credit, best first: the whole credit, the part before "feat.", "ft.",
@@ -437,7 +474,7 @@ async fn musicbrainz_mbid(svc: &Service, name: String) -> Result<Option<String>>
 }
 
 async fn lastfm_mbid(svc: &Service, name: String) -> Option<String> {
-    svc.lastfm()?.artist(&name).await.ok()?.mbid
+    svc.lastfm()?.artist(&name, None).await.ok()?.mbid
 }
 
 /// Radio without the artist's own: the artist radio of Last.fm's most similar artist that has an
@@ -454,7 +491,7 @@ async fn around(
     let mut found = Vec::new();
     let mut tags: Vec<String> = tags.to_vec();
     if let Some(lastfm) = svc.lastfm() {
-        match lastfm.similar_artists(name).await {
+        match lastfm.similar_artists(name, None).await {
             Ok(similar) => {
                 if let Some(mbid) = similar.into_iter().find_map(|a| a.mbid) {
                     match svc.lb.artist_radio(&mbid, mode(steer), 15, 4, pop).await {
@@ -465,7 +502,7 @@ async fn around(
             }
             Err(e) => *failure = Some(e),
         }
-        if let Ok(profile) = lastfm.artist(name).await {
+        if let Ok(profile) = lastfm.artist(name, None).await {
             tags.extend(profile.tags);
         }
     }
@@ -511,7 +548,7 @@ mod tests {
     use lull_core::ids::{AlbumId, ArtistId, TrackId};
     use lull_core::model::Track;
 
-    use super::{Budget, credited_names, gather, resolve};
+    use super::{Budget, credited_names, gather, is_version, resolve};
 
     fn track(title: &str) -> Track {
         Track {
@@ -684,5 +721,16 @@ mod tests {
         .await;
         assert!(mbid.is_none());
         assert!(failure.is_some_and(|e| e.to_string().contains("MusicBrainz")));
+    }
+
+    #[test]
+    fn remixes_and_live_takes_are_versions_but_titles_with_the_words_are_not() {
+        // Live, "Toro y Moi radio" opened with a Tom Lown remix, then two more and a live take.
+        assert!(is_version("Talamak (Tom Lown Remix)"));
+        assert!(is_version("So Many Details - Live at KEXP"));
+        assert!(is_version("Rose Quartz [Midland Version]"));
+        assert!(!is_version("Live and Let Die"), "the word in the title itself");
+        assert!(!is_version("Dub Be Good to Me"));
+        assert!(!is_version("Mix Tape (feat. Neon Wren)"));
     }
 }

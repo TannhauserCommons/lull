@@ -65,9 +65,35 @@ pub struct Pictured {
     pub artists: BTreeMap<ArtistId, PicturedArtist>,
 }
 
-/// Same-origin picture URLs for what the catalog has a picture source for.
+/// Same-origin picture URLs for what the catalog has a picture source for, except where the
+/// source said it has none (a new release the Cover Art Archive has no cover for): the UI shows
+/// its placeholder at once instead of asking for a 404 on every load.
 pub async fn pictured(svc: &Service, e: Entities) -> Result<Pictured> {
-    svc.ctx.db.call(move |c| picture(c, e)).await
+    let mut out = svc.ctx.db.call(move |c| picture(c, e)).await?;
+    for (id, album) in &mut out.albums {
+        if album.art.is_some() && has_none(&svc.art_dir, id.as_str()).await {
+            album.art = None;
+        }
+    }
+    for (id, artist) in &mut out.artists {
+        if artist.image.is_some() && has_none(&svc.art_dir, id.as_str()).await {
+            artist.image = None;
+        }
+    }
+    Ok(out)
+}
+
+/// Whether the picture's source said lately that it has none, at any size.
+async fn has_none(dir: &FsPath, id: &str) -> bool {
+    for size in SIZES {
+        if read_fresh(&dir.join(format!("{id}-{size}.none")), NONE_FOR)
+            .await
+            .is_some()
+        {
+            return true;
+        }
+    }
+    false
 }
 
 /// `pictured` on a connection. An album with a release group and no known source gets the Cover

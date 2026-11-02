@@ -9,7 +9,7 @@ use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use lull_core::http::Http;
-use lull_core::ids::normalize_artist;
+use lull_core::ids::{normalize, normalize_artist};
 use lull_core::{Error, Result};
 use serde::Deserialize;
 use serde_json::Value;
@@ -105,20 +105,20 @@ impl Deezer {
         open(&self.http.json(SERVICE, |c| c.get(format!("{API}/infos"))).await?)
     }
 
-    /// The photo of the artist called `name` (exact name, ignoring case and a leading "the").
+    /// The photo of the artist called `name`: the exact name first (ignoring case), else the
+    /// same without a leading "the". "The Prodigy" is not the rapper Prodigy.
     pub async fn artist_image(&self, name: &str) -> Result<Option<String>> {
         self.cache
-            .get(
-                format!("dz:artist-image:{}", normalize_artist(name)),
-                7 * DAY,
-                || async {
-                    let found = artists_of(self.get("search/artist", &[("q", name), ("limit", "5")]).await?)?;
-                    Ok(found
-                        .into_iter()
-                        .find(|a| normalize_artist(&a.name) == normalize_artist(name))
-                        .and_then(|a| a.image))
-                },
-            )
+            .get(format!("dz:artist-photo:{}", normalize(name)), 7 * DAY, || async {
+                let found = artists_of(self.get("search/artist", &[("q", name), ("limit", "5")]).await?)?;
+                let exact = found.iter().position(|a| normalize(&a.name) == normalize(name));
+                let at = exact.or_else(|| {
+                    found
+                        .iter()
+                        .position(|a| normalize_artist(&a.name) == normalize_artist(name))
+                });
+                Ok(at.and_then(|i| found.into_iter().nth(i)).and_then(|a| a.image))
+            })
             .await
     }
 

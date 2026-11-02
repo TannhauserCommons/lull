@@ -55,12 +55,21 @@ impl LastFm {
         }
     }
 
-    pub async fn artist(&self, name: &str) -> Result<Profile> {
+    /// The artist's profile: by MBID when known (a name can be several artists: "Prodigy" is
+    /// also Mobb Deep's), else by name. A bio that only says the name is shared is no bio.
+    pub async fn artist(&self, name: &str, mbid: Option<&str>) -> Result<Profile> {
+        let key = format!("lfm:artist:{}:{}", normalize_artist(name), mbid.unwrap_or_default());
         self.cache
-            .get(format!("lfm:artist:{}", normalize_artist(name)), 7 * DAY, || async {
-                let body = self
-                    .call("artist.getInfo", &[("artist", name), ("autocorrect", "1")])
-                    .await?;
+            .get(key, 7 * DAY, || async {
+                let mut body = Value::Null;
+                if let Some(mbid) = mbid {
+                    body = self.call("artist.getInfo", &[("mbid", mbid)]).await?;
+                }
+                if body["artist"].is_null() {
+                    body = self
+                        .call("artist.getInfo", &[("artist", name), ("autocorrect", "1")])
+                        .await?;
+                }
                 let a = &body["artist"];
                 let counted = list(&a["tags"]["tag"])
                     .iter()
@@ -69,7 +78,10 @@ impl LastFm {
                 Ok(Profile {
                     mbid: a["mbid"].as_str().filter(|m| !m.is_empty()).map(str::to_owned),
                     listeners: a["stats"]["listeners"].as_str().and_then(|n| n.parse().ok()),
-                    bio: a["bio"]["summary"].as_str().and_then(plain_text),
+                    bio: a["bio"]["summary"]
+                        .as_str()
+                        .and_then(plain_text)
+                        .filter(|b| !is_disambiguation(b)),
                     // Last.fm lists them most used first already; the stable sort keeps that.
                     tags: top_tags(counted, 8),
                 })
@@ -77,16 +89,28 @@ impl LastFm {
             .await
     }
 
-    pub async fn similar_artists(&self, name: &str) -> Result<Vec<ArtistInfo>> {
+    /// Similar artists: by MBID when known, else by name.
+    pub async fn similar_artists(&self, name: &str, mbid: Option<&str>) -> Result<Vec<ArtistInfo>> {
+        let key = format!("lfm:similar:{}:{}", normalize_artist(name), mbid.unwrap_or_default());
         self.cache
-            .get(format!("lfm:similar:{}", normalize_artist(name)), 7 * DAY, || async {
-                let body = self
-                    .call(
-                        "artist.getSimilar",
-                        &[("artist", name), ("autocorrect", "1"), ("limit", "30")],
-                    )
-                    .await?;
-                Ok(artists(&body["similarartists"]["artist"]))
+            .get(key, 7 * DAY, || async {
+                let mut found = Vec::new();
+                if let Some(mbid) = mbid {
+                    let body = self
+                        .call("artist.getSimilar", &[("mbid", mbid), ("limit", "30")])
+                        .await?;
+                    found = artists(&body["similarartists"]["artist"]);
+                }
+                if found.is_empty() {
+                    let body = self
+                        .call(
+                            "artist.getSimilar",
+                            &[("artist", name), ("autocorrect", "1"), ("limit", "30")],
+                        )
+                        .await?;
+                    found = artists(&body["similarartists"]["artist"]);
+                }
+                Ok(found)
             })
             .await
     }
@@ -307,6 +331,20 @@ pub fn found(tracks: &Value, artists: &Value) -> Found {
     }
 }
 
+/// A bio that only says several artists share the name ("There are 3 artists with this
+/// name: …", "… is the name of more than one artist").
+fn is_disambiguation(bio: &str) -> bool {
+    let lower = bio.to_lowercase();
+    const COUNTS: &[&str] = &[
+        "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "several", "multiple",
+    ];
+    let mut words = lower.strip_prefix("there are ").unwrap_or_default().split_whitespace();
+    let (count, what) = (words.next().unwrap_or_default(), words.next().unwrap_or_default());
+    let counted = (COUNTS.contains(&count) || count.chars().all(|c| c.is_ascii_digit()) && !count.is_empty())
+        && (what.starts_with("artist") || what.starts_with("band"));
+    counted || lower.contains("is the name of more than one") || lower.contains("there are two artists")
+}
+
 /// Last.fm summaries are HTML ending in a "Read more on Last.fm" link: keep the prose.
 fn plain_text(html: &str) -> Option<String> {
     let mut text = String::with_capacity(html.len());
@@ -319,7 +357,37 @@ fn plain_text(html: &str) -> Option<String> {
             _ => {}
         }
     }
-    let text = text.trim_end().trim_end_matches("Read more on Last.fm").trim();
+    // The link ends the summary, sometimes followed by a full stop.
+    let text = text.trim_end().trim_end_matches('.').trim_end();
+    let text = text.trim_end_matches("Read more on Last.fm").trim();
     let text = text.trim_end_matches('.').trim_end().to_owned();
     (!text.is_empty()).then(|| format!("{text}."))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_disambiguation, plain_text};
+
+    #[test]
+    fn summaries_lose_the_read_more_link() {
+        // Live, tag pages ended with a plain "Read more on Last.fm." tail.
+        let summary = r#"Dream pop is a subgenre of alternative rock. <a href="https://www.last.fm/tag/dream+pop">Read more on Last.fm</a>."#;
+        assert_eq!(
+            plain_text(summary).as_deref(),
+            Some("Dream pop is a subgenre of alternative rock.")
+        );
+        let bare = r#"Shoegaze. <a href="https://www.last.fm/tag/shoegaze">Read more on Last.fm</a>"#;
+        assert_eq!(plain_text(bare).as_deref(), Some("Shoegaze."));
+    }
+
+    #[test]
+    fn a_bio_that_only_says_the_name_is_shared_is_no_bio() {
+        // Live, Dirty River's page said "There are two artists with this name."
+        assert!(is_disambiguation(
+            "There are two artists with this name: 1) a band from Texas."
+        ));
+        assert!(is_disambiguation("There are 3 artists named Prodigy."));
+        assert!(is_disambiguation("Blood Orange is the name of more than one artist."));
+        assert!(!is_disambiguation("There are few bands like Slowdive."));
+    }
 }
