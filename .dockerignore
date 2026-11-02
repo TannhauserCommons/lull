@@ -1,9 +1,10 @@
 .git
 target
-web/node_modules
+**/node_modules
 web/vendor
 design
 app
 docs
 .env
 .env.*
+tests

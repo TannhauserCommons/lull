@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "description": "Production web assets: build.mjs minifies web/ file by file and pre-compresses it (docs/context/quality.md).",
+  "type": "module",
+  "dependencies": {
+    "esbuild": "0.28.2",
+    "lightningcss": "1.33.0"
+  }
+}

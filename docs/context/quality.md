@@ -1,0 +1,71 @@
+# Quality: web assets, visual matrix, budgets
+
+Owned by the Quality session. Files: `scripts/web-dist/`, `crates/server/src/web.rs`, the web stage of the `Dockerfile`, `tests/ui/`, `.github/workflows/ui.yml`.
+
+## Production web assets
+
+`web/` is buildless in development and served from disk in debug builds. A release build embeds what `scripts/web-dist/build.mjs` makes of it:
+- **Minified file by file, never bundled.** `index.html` loads scripts in a fixed order and designs swap `designs/<name>/design.css` by name, so every file keeps its path. CSS goes through lightningcss and JS through esbuild (both pinned in `scripts/web-dist/package-lock.json`). JS stays classic: no `format`, no `target`, so top-level names that other scripts read survive. Files already named `*.min.js` (Webamp) are left alone.
+- **Pre-compressed.** Next to each text file (`.html .css .js .svg .json .webmanifest .txt .ico`) it writes `<file>.br` (brotli 11) and `<file>.gz` (gzip 9), kept only when they save 5% or more. Fonts and images are compressed already and get no variants.
+- **Where it runs.** The Dockerfile's `web` stage vendors Webamp, then runs `node scripts/web-dist/build.mjs web dist`; the build stage copies `dist` over `web/`. For the app build (Tauri's `frontendDist`), `mise run web:dist [out dir]` does the same; the out dir may be `web/` itself in a throwaway CI checkout. Run the script from the repo root.
+
+`web.rs` serves from the embedded files:
+- It picks the first of `br`, `gzip` that `Accept-Encoding` allows (a `q=0` refuses it) and has a variant file, and answers with `Content-Encoding`. Without a variant, or in a checkout, it serves the plain file.
+- Every answer carries `Vary: Accept-Encoding`, `Cache-Control: no-cache` and an ETag of the bytes sent, so each encoding has its own tag; `If-None-Match` gets a bodyless 304 with the same headers.
+- `rust-embed` reads `web/` from disk in debug builds, so the variants don't exist there and nothing is compressed on the fly.
+
+**Sizes** (`web/` at `a324215`, 144 files; the hub sent everything uncompressed before):
+
+| | files | before (raw) | minified raw | on the wire, brotli |
+|---|---|---|---|---|
+| JS | 18 | 1604 KiB | 1366 KiB | 377 KiB |
+| CSS | 14 | 719 KiB | 540 KiB | 96 KiB |
+| everything | 144 | 3369 KiB | 2951 KiB | 1399 KiB |
+
+The rest is the Webamp bundle, fonts, SVG and images. Brotli over the old raw transfer is the real gain: JS 1604 → 377 KiB, CSS 719 → 96 KiB.
+
+## Visual matrix
+
+`tests/ui/` (Playwright, pinned; `mise` is not needed, `npm ci` in that folder). `matrix.spec.mjs` makes one test per picture:
+- **Routes** (`routes.mjs`): every fixed route, every Settings section, plus an album, artist, tag and playlist page found in the hub's library by `global-setup.mjs` once there is one. Add a route there when a screen registers one.
+- **Designs and themes:** `lull skydeck starlight petal glasshouse` × `day night`, set through the `lull:prefs` the UI reads before first paint.
+- **Viewports:** `phone` 390×844 (mobile, touch) and `desktop` 1440×900.
+- **Per picture it asserts:** no horizontal overflow (names the widest element), no console error or uncaught exception, no failed or 4xx/5xx request, then compares the viewport screenshot (animations disabled, caret hidden, fixed clock and timezone, 0.2% of pixels tolerated).
+- **Tolerated requests** are listed with their reason in `expected-failures.json`. Delete an entry when its cause lands; don't add one to get green.
+
+**The CI hub.** `run-hub.sh` runs the built image (`lull:ui`) on host networking next to:
+- `stub-slskd.mjs`: an slskd that is logged in, shares a library and finds nothing. It answers only what `crates/soulseek/src/slskd.rs` calls and 404s anything else loudly.
+- a fixture library (`fixtures/make-library.mjs`, ffmpeg): 4 albums, 14 tracks of 6 s sine tones, invented artists, real tags, embedded and folder covers, in `Artist/Album (Year)/NN - Title.ext`. Never commit generated media. It is mounted at `/music`.
+- a dead proxy for everything outside localhost, so MusicBrainz, Cover Art Archive and the rest fail identically on every run rather than changing the pictures.
+- `LULL_SETUP_CODE` and `LULL_LIBRARY=folder` are passed only once `crates/core` reads those keys (the hub refuses unknown keys), and `global-setup.mjs` claims the hub and keeps the `lull_device` cookie only once `GET /api/setup` exists (ADR-0002). Before that the hub is open.
+
+**Goldens are not committed by the Quality session.** With no `tests/ui/goldens/`, or with `UI_CAPTURE=1`, a run writes the pictures instead of comparing, and the `ui` workflow uploads them as the `goldens` artifact. `mise run ui:update` triggers a capture run on the current branch and downloads them into `tests/ui/goldens/`; review and commit them. Pictures from any other machine differ by fonts and anti-aliasing, so only CI's image captures them. Failing runs upload `diffs` (expected, actual, diff images and the HTML report).
+
+## Budgets
+
+Lighthouse CI on the mobile profile (simulated slow 4G, 4x CPU), three runs per route, the median asserted. `lighthouse.sh` runs `lighthouserc.cjs` once per route in `budgets.json` (`home`, `search`, `library/albums`, `now`, `settings/playback`), because lhci drops the `#fragment` and would merge the routes into one page. Per route: `total-byte-weight` (transfer size), largest contentful paint, total blocking time, cumulative layout shift.
+
+**Measured** on the CI hub with the fixture library (run 41315307272, `main` with theme packages, minified and brotli-compressed, median of three):
+
+| route | transfer | LCP | TBT | CLS |
+|---|---|---|---|---|
+| home | 369 KB | 4.3 s | 87 ms | 0 |
+| search | 368 KB | 4.3 s | 40 ms | 0 |
+| library/albums | 385 KB | 4.1 s | 27 ms | 0 |
+| now | 367 KB | 4.0 s | 91 ms | 0 |
+| settings/playback | 369 KB | 4.0 s | 52 ms | 0 |
+
+How the baseline moved, so the next raise has a precedent to compare with:
+- **302 KB, LCP 3.5 s** (run 41308967643): empty library, `main` at `a324215`.
+- **326 KB, LCP 3.7 s** (run 41312904377): web changes landed on `main`; library/albums adds about 17 KB of covers.
+- **369 KB, LCP 4.3 s** (this table): the themes work. A design is now a theme package: `theme.css`, `theme.json`, one HTML file per slot, `purify.min.js` (DOMPurify, 11 KB) and `/api/themes`, and `appearance.js` grew by 7 KB. LCP rose because the stylesheet, the package and its slots now load one after another. CLS fell to 0.
+
+**Budgets move only with a stated reason the user would accept**, never because `main` got heavier: a budget that follows every regression catches nothing. The numbers below, set from the 369 KB / 4.3 s run, are **temporary**: they are raised only until the themes work stops loading the theme stylesheet, package and slots one after another. When that lands, set them back to the pre-themes figures (run 41312904377: transfer about 359 KB, library/albums 377 KB; LCP 4.35-4.65 s; CLS 0.025) and delete this note.
+
+**Budgets** = median plus a margin:
+- **Transfer +10%** (about 405 KB, library/albums 424 KB): it moves only when we change files, so the margin is small. A change that adds a script or a font fails it.
+- **LCP +25%** (4.0-4.3 s -> 5.05-5.4 s): the simulated network makes it stable, but runners differ.
+- **CLS +0.02** over a median of 0.
+- **TBT 150 ms,** not median +50%: lab TBT of 0-90 ms is noise, and a floor keeps the check from flaking while still catching a real long task.
+
+Raise a budget only with a measured reason a listener would accept, in the commit (a feature they asked for, not drift): run the workflow, read the `lighthouse` artifact's reports, and edit `budgets.json` the same way.

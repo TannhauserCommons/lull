@@ -1,0 +1,13 @@
+{
+  "note": "Invented artists and albums, so nothing here is anyone's music. make-library.mjs turns each track into a short tone with these tags and a generated cover.",
+  "albums": [
+    { "artist": "Nightfold", "album": "Low Tide Radio", "year": 2019, "genre": "Ambient", "format": "flac", "cover": ["#1d2b64", "#f8cdda"],
+      "tracks": ["Harbour Lights", "Salt and Static", "Slow Ferry", "Lantern Hour"] },
+    { "artist": "Nightfold", "album": "Paper Moons", "year": 2022, "genre": "Ambient", "format": "mp3", "cover": ["#41295a", "#2f0743"],
+      "tracks": ["First Quarter", "Waning", "Blue Hour"] },
+    { "artist": "Velvet Orchard", "album": "Fruit Machine", "year": 2016, "genre": "Dream Pop", "format": "mp3", "cover": ["#ff9a9e", "#fad0c4"],
+      "tracks": ["Peach Season", "Late Bus", "Glass Orchard", "Honey Static"] },
+    { "artist": "Tomas Eriksen Quartet", "album": "Small Hours", "year": 2011, "genre": "Jazz", "format": "flac", "cover": ["#0f2027", "#2c5364"],
+      "tracks": ["Quarter to Three", "The Long Way", "Kettle Song"] }
+  ]
+}

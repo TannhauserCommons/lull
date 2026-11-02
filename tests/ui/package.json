@@ -1,0 +1,14 @@
+{
+  "private": true,
+  "description": "Visual matrix (Playwright) and performance budgets (Lighthouse CI) for the web UI: docs/context/quality.md.",
+  "type": "module",
+  "scripts": {
+    "fixtures": "node fixtures/make-library.mjs",
+    "test": "playwright test",
+    "lighthouse": "sh lighthouse.sh"
+  },
+  "devDependencies": {
+    "@lhci/cli": "0.15.1",
+    "@playwright/test": "1.64.1"
+  }
+}

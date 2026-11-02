@@ -27,3 +27,14 @@ env = { LULL_CONFIG = ".env", LULL_DATA_DIR = "data", LULL_LOG = "info,lull=debu
 [tasks.image]
 description = "Build the container image locally"
 run = "docker build -t lull:dev ."
+
+[tasks."web:dist"]
+description = "Minify web/ and pre-compress it, as the image (and the app build) ships it: web:dist [out dir]"
+run = [
+  "npm ci --prefix scripts/web-dist --ignore-scripts --no-audit --no-fund",
+  "node scripts/web-dist/build.mjs web {{arg(i=0, default='web-dist')}}",
+]
+
+[tasks."ui:update"]
+description = "Recapture the visual goldens on CI's image and download them into tests/ui/goldens"
+run = "sh tests/ui/update-goldens.sh"

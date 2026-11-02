@@ -1,0 +1,120 @@
+name: ui
+# The web UI against a hub built from this commit's image: the visual matrix (every route x five
+# designs x day/night x phone/desktop) and the Lighthouse budgets. docs/context/quality.md.
+# `capture` (by hand, or when no goldens are committed) writes the pictures instead of comparing:
+# take them from the run's `goldens` artifact (`mise run ui:update`).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - "crates/server/src/web.rs"
+      - "tests/ui/**"
+      - "scripts/web-dist/**"
+      - "Dockerfile"
+      - ".github/workflows/ui.yml"
+  pull_request:
+    paths:
+      - "web/**"
+      - "crates/server/src/web.rs"
+      - "tests/ui/**"
+      - "scripts/web-dist/**"
+      - "Dockerfile"
+      - ".github/workflows/ui.yml"
+  workflow_dispatch:
+    inputs:
+      capture:
+        description: "Write the goldens instead of comparing against them"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  # The hub in the image listens here (tests/ui/run-hub.sh); the stub slskd next to it on :5030.
+  LULL_URL: http://127.0.0.1:8080
+  LULL_SETUP_CODE: ui-test-setup
+
+jobs:
+  ui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24.11"
+          cache: npm
+          cache-dependency-path: tests/ui/package-lock.json
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: lull:ui
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - working-directory: tests/ui
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Start the hub on a fixture library and a stub slskd
+        working-directory: tests/ui
+        run: |
+          node fixtures/make-library.mjs "$RUNNER_TEMP/music"
+          nohup node stub-slskd.mjs 5030 ui-test-key > "$RUNNER_TEMP/slskd-stub.log" 2>&1 &
+          sh run-hub.sh lull:ui "$RUNNER_TEMP/music" "$RUNNER_TEMP/hub"
+
+      - id: mode
+        name: Compare or capture
+        run: |
+          if [ "${{ inputs.capture }}" = "true" ] || [ -z "$(ls -A tests/ui/goldens 2>/dev/null)" ]; then
+            echo "capture=true" >> "$GITHUB_OUTPUT"
+            echo "UI_CAPTURE=1" >> "$GITHUB_ENV"
+          else
+            echo "capture=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Visual matrix
+        working-directory: tests/ui
+        run: npx playwright test
+
+      - name: Lighthouse budgets
+        if: ${{ !cancelled() }}
+        working-directory: tests/ui
+        run: |
+          export CHROME_PATH=$(node -e "console.log(require('@playwright/test').chromium.executablePath())")
+          sh lighthouse.sh
+
+      - name: Hub log
+        if: ${{ failure() }}
+        run: docker logs lull-ui 2>&1 | tail -200; cat "$RUNNER_TEMP/slskd-stub.log"
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && steps.mode.outputs.capture == 'true' }}
+        with:
+          name: goldens
+          path: tests/ui/goldens
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        if: ${{ failure() }}
+        with:
+          name: diffs
+          # Expected, actual and diff images of every failing picture, and the HTML report.
+          path: |
+            tests/ui/test-results
+            tests/ui/report
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: lighthouse
+          path: tests/ui/lhci
+          if-no-files-found: ignore

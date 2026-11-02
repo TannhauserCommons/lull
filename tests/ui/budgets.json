@@ -1,0 +1,35 @@
+{
+  "note": "Pre-themes baseline (run 41312904377: median of 3 mobile runs on the CI hub with the fixture library) plus margin: transfer +10%, LCP +25%, CLS +0.025, TBT floored at 150 ms because lab TBT of 0-90 ms is noise. Budgets move only with a reason the user would accept: docs/context/quality.md#budgets.",
+  "routes": {
+    "home": {
+      "transferBytes": 359000,
+      "lcpMs": 4650,
+      "tbtMs": 150,
+      "cls": 0.025
+    },
+    "search": {
+      "transferBytes": 358000,
+      "lcpMs": 4350,
+      "tbtMs": 150,
+      "cls": 0.025
+    },
+    "library/albums": {
+      "transferBytes": 377000,
+      "lcpMs": 4600,
+      "tbtMs": 150,
+      "cls": 0.025
+    },
+    "now": {
+      "transferBytes": 358000,
+      "lcpMs": 4500,
+      "tbtMs": 150,
+      "cls": 0.09
+    },
+    "settings/playback": {
+      "transferBytes": 360000,
+      "lcpMs": 4500,
+      "tbtMs": 150,
+      "cls": 0.025
+    }
+  }
+}

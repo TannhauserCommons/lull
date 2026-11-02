@@ -1,0 +1,41 @@
+{
+  "note": "Requests the matrix tolerates, each with the reason and what removes it. A request that fails and is not listed fails the test. Keep this short: delete an entry as soon as its cause lands.",
+  "failures": [
+    {
+      "url": "/api/library/",
+      "status": [
+        503
+      ],
+      "why": "No library source is configured in the CI hub until folder mode lands (ADR-0003); library endpoints answer 503 unavailable",
+      "removedBy": "crates/library folder mode, then run-hub.sh passes LULL_LIBRARY=folder"
+    },
+    {
+      "url": "/api/(feed|radio|albums|artists|tags|lyrics|lastfm)",
+      "status": [
+        502,
+        503
+      ],
+      "why": "The hub's outside services (MusicBrainz, ListenBrainz, LRCLIB, Cover Art Archive) are refused through a dead proxy on purpose, so pictures do not change between runs",
+      "removedBy": "nothing: this is the design of the CI hub"
+    },
+    {
+      "url": "/api/art/",
+      "status": [
+        404,
+        502,
+        503
+      ],
+      "why": "Covers come from Jellyfin or the Cover Art Archive; neither is reachable from the CI hub until folder mode serves the fixture covers",
+      "removedBy": "folder mode serving covers"
+    },
+    {
+      "url": "/api/skins",
+      "status": [
+        502,
+        503
+      ],
+      "why": "The Winamp Skin Museum is outside the CI hub (dead proxy), so Classic mode's skin list answers 503",
+      "removedBy": "nothing: this is the design of the CI hub"
+    }
+  ]
+}
