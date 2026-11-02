@@ -30,11 +30,71 @@ pub struct LogRecord {
     pub message: String,
 }
 
+/// The longest log message a status detail quotes: it ends up in the app-wide banner.
+const SUMMARY_CHARS: usize = 120;
+
+/// slskd's messages that mean something plain, and what lull says instead.
+const PLAIN: &[(&[&str], &str)] = &[
+    (&["GetUserEndPoint"], "couldn't reach the peer (timed out)"),
+    (&["Connection refused"], "the peer refused the connection"),
+    (&["Connection reset"], "the connection was reset"),
+    (&["No route to host"], "the network can't reach the peer"),
+    (&["Network is unreachable"], "the network is unreachable"),
+    (&["timed out"], "a request timed out"),
+];
+
 impl LogRecord {
     pub fn is_problem(&self) -> bool {
         let l = self.level.to_ascii_lowercase();
         l.starts_with("warn") || l.starts_with("err") || l.starts_with("fatal")
     }
+
+    /// The message as a status detail may quote it (`plain`). `/api/soulseek/diagnostics`
+    /// keeps the full text.
+    pub fn summary(&self) -> String {
+        plain(&self.message)
+    }
+}
+
+/// An slskd message (a log line, a transfer's exception) as the listener may read it: plain
+/// words for the common ones, else its first line without .NET's exception type or stack
+/// trace, cut at a sentence near `SUMMARY_CHARS`.
+pub fn plain(m: &str) -> String {
+    if let Some((_, plain)) = PLAIN.iter().find(|(words, _)| words.iter().all(|w| m.contains(w))) {
+        return (*plain).to_owned();
+    }
+    let line = m.lines().next().unwrap_or_default();
+    let line = line.split(" --->").next().unwrap_or_default();
+    let line = stack_frame(line).map_or(line, |at| &line[..at]).trim();
+    // "System.InvalidOperationException: Sequence contains no elements" → the sentence.
+    let line = match line.split_once(": ") {
+        Some((kind, rest)) if kind.ends_with("Exception") && !kind.contains(' ') => rest,
+        _ => line,
+    };
+    shorten(line.trim(), SUMMARY_CHARS)
+}
+
+/// Where a stack trace starts on a one-line message: " at Namespace.Type.Method(...)".
+fn stack_frame(line: &str) -> Option<usize> {
+    line.match_indices(" at ").map(|(i, _)| i).find(|i| {
+        line[i + 4..]
+            .split(' ')
+            .next()
+            .is_some_and(|word| word.contains('.') && word.chars().next().is_some_and(char::is_alphabetic))
+    })
+}
+
+/// At most `max` characters: the whole sentences that fit, else the words that fit and "…".
+fn shorten(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_owned();
+    }
+    let head: String = text.chars().take(max).collect();
+    if let Some(end) = head.rfind(". ") {
+        return head[..=end].to_owned();
+    }
+    let cut = head.rfind(' ').unwrap_or(head.len());
+    format!("{}…", head[..cut].trim_end_matches([',', ';', ':']))
 }
 
 #[derive(Debug, Deserialize)]
@@ -503,4 +563,37 @@ async fn decode<T: DeserializeOwned>(resp: reqwest::Response) -> Result<T> {
     resp.json()
         .await
         .map_err(|e| Error::upstream(SERVICE, format!("slskd sent unexpected JSON: {e}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_log_message_reads_as_one_short_plain_sentence() {
+        let said = |message: &str| {
+            LogRecord {
+                timestamp: String::new(),
+                level: "Warning".into(),
+                message: message.into(),
+            }
+            .summary()
+        };
+        assert_eq!(
+            said(
+                "Failed to download: System.TimeoutException: Failed to get endpoint for user x: GetUserEndPoint wait timed out after 5000 milliseconds\n   at Soulseek.SoulseekClient.<>c__DisplayClass360_0.<<GetUserEndPointAsync>b__0>d.MoveNext()"
+            ),
+            "couldn't reach the peer (timed out)"
+        );
+        assert_eq!(
+            said(
+                "System.InvalidOperationException: Sequence contains no elements at Soulseek.SoulseekClient.<>c__DisplayClass1.Disconnect()"
+            ),
+            "Sequence contains no elements"
+        );
+        let long = said(&format!("{}. {}", "word ".repeat(15).trim(), "x ".repeat(80)));
+        assert!(long.chars().count() <= SUMMARY_CHARS && long.ends_with('.'), "{long}");
+        let unbroken = said(&"word ".repeat(60));
+        assert!(unbroken.chars().count() <= SUMMARY_CHARS + 1 && unbroken.ends_with('…'));
+    }
 }

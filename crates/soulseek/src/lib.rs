@@ -352,7 +352,7 @@ async fn unanswered_searches(svc: &Service) -> Option<String> {
             .into_iter()
             .rev()
             .find(|l| l.is_problem())
-            .map(|l| format!("; slskd's latest warning: {}", l.message)),
+            .map(|l| format!("; slskd's latest warning: {}", l.summary())),
         Err(e) => Some(format!("; slskd's log can't be read: {e}")),
     };
     let wait = if svc.fetcher.transferring() {

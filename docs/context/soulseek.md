@@ -38,7 +38,7 @@ The Soulseek server can keep a session that slskd reports as logged in while non
 - **The trigger.** 3 searches in a row get no answer from any peer.
 - **The fix.** lull asks slskd for a fresh login (`DELETE /server`, then `PUT /server`, whose watchdog retries until it's in).
 - **Limits.** At most once per 15 minutes, never while a song is transferring (a new login drops peer connections), and logged as a warning.
-- **The status** says what happened ("logged in again at 04:05 UTC…") until a search is answered again. While a fresh login isn't due, it quotes slskd's latest warning instead.
+- **The status** says what happened ("logged in again at 04:05 UTC…") until a search is answered again. While a fresh login isn't due, it quotes slskd's latest warning instead: its first sentence, at most 120 characters, without .NET's exception type or stack trace, and in plain words for the common ones ("couldn't reach the peer (timed out)" for `GetUserEndPoint` timeouts; `slskd::plain`). The status ends up in the app-wide banner, so the full text is only in diagnostics. A transfer's failure reason is shortened the same way.
 - **Diagnostics.** `GET /api/soulseek/diagnostics` shows slskd's own state, how recent searches ended, and its latest log lines.
 - **No setting needed.** slskd's connection watchdog has none: it starts by itself after an unexpected disconnect and stops once connected. It deliberately doesn't start after "another client logged in", so lull doesn't fight a second login either.
 

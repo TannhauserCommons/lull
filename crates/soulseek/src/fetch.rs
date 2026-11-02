@@ -822,7 +822,10 @@ impl Fetcher {
                     return Err(Ok(Skip::Stalled(format!("{} stalled at {pct}%", source.user))));
                 }
                 Phase::Failed => {
-                    let why = t.exception.clone().unwrap_or_else(|| t.state.clone());
+                    let why = t
+                        .exception
+                        .as_deref()
+                        .map_or_else(|| t.state.clone(), crate::slskd::plain);
                     return Err(Ok(Skip::Stalled(format!("{}: {why}", source.user))));
                 }
                 Phase::Succeeded => {
