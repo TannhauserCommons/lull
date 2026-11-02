@@ -319,8 +319,9 @@ pub async fn cover_response(svc: &Service, id: &AlbumId, size: u32) -> Result<Re
     let image = art::cover(svc, id, size).await?;
     Ok((
         [
-            (header::CONTENT_TYPE, image.content_type),
-            (header::CACHE_CONTROL, "private, max-age=86400"),
+            (header::CONTENT_TYPE, image.content_type.to_owned()),
+            (header::CACHE_CONTROL, "private, max-age=86400".to_owned()),
+            (header::ETAG, lull_core::etag::of(&image.bytes)),
         ],
         image.bytes,
     )
