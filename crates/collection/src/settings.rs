@@ -48,6 +48,8 @@ struct Playback {
     /// Percent: 2, 5 or 10.
     volume_step: u32,
     radio_when_queue_ends: bool,
+    /// How many queued songs the player asks soulseek to preload, 0-3.
+    prefetch_count: u32,
 }
 
 impl Default for Playback {
@@ -59,6 +61,7 @@ impl Default for Playback {
             loudness_target: -14,
             volume_step: 5,
             radio_when_queue_ends: true,
+            prefetch_count: 2,
         }
     }
 }
@@ -190,7 +193,18 @@ impl Prefs {
                 [2, 5, 10].contains(&self.playback.volume_step),
                 "2, 5 or 10",
             ),
+            ("playback.prefetchCount", self.playback.prefetch_count <= 3, "0 to 3"),
             ("sources.stream.minimum.kbps", s.stream.minimum.kbps <= 320, "0 to 320"),
+            (
+                "sources.stream.maxKbps",
+                [0, 128, 192, 256, 320].contains(&s.stream.max_kbps),
+                "0 (no cap), 128, 192, 256 or 320",
+            ),
+            (
+                "sources.stream.minimum.kbps",
+                s.stream.max_kbps == 0 || s.stream.minimum.kbps <= s.stream.max_kbps,
+                "at most sources.stream.maxKbps while a cap is set",
+            ),
             (
                 "sources.stream.minimum.formats",
                 minimum_can_pass(&s.stream.minimum),
@@ -558,5 +572,21 @@ mod tests {
         prefs.sources.save.minimum.formats = vec!["wma".into()];
         prefs.sources.save.minimum.lossless_only = false;
         assert!(prefs.validate().is_err(), "unknown format");
+    }
+
+    #[test]
+    fn a_streaming_cap_is_one_of_the_offered_bitrates_and_never_below_the_minimum() {
+        let mut prefs = Prefs::default();
+        prefs.sources.stream.max_kbps = 256;
+        assert!(prefs.validate().is_ok(), "192 kbps minimum under a 256 kbps cap");
+        prefs.sources.stream.max_kbps = 128;
+        assert!(prefs.validate().is_err(), "a cap below the minimum");
+        prefs.sources.stream.minimum.kbps = 0;
+        assert!(prefs.validate().is_ok());
+        prefs.sources.stream.max_kbps = 300;
+        assert!(prefs.validate().is_err(), "not an offered bitrate");
+        prefs.sources.stream.max_kbps = 0;
+        prefs.playback.prefetch_count = 4;
+        assert!(prefs.validate().is_err(), "at most 3 songs ahead");
     }
 }
