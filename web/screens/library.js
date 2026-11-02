@@ -1368,11 +1368,17 @@
       { label: 'Add to queue', icon: 'plus', run: function () { App.player.addToQueue([id]); } },
       { label: isSaved(id) ? 'In your library' : 'Save to library', icon: isSaved(id) ? 'saved' : 'save', run: function () { if (isSaved(id)) App.toast('Already saved to your library', { icon: 'saved' }); else App.saves.start([id]); } },
       { label: 'Add to another playlist', icon: 'playlists', run: function () { openPicker([id]); } },
-      'sep',
-      { label: 'Move up', icon: 'chevron-up', run: function () { if (!custom) return sortNeeded(); if (n > 0) moveItems(p, [itemAt(n)], itemAt(n - 1)); } },
-      { label: 'Move down', icon: 'chevron-down', run: function () { if (!custom) return sortNeeded(); if (n < shown.length - 1) moveItems(p, [itemAt(n)], itemAt(n + 2)); } }
+      { label: 'Start radio', icon: 'radio', run: function () { App.player.startRadio({ kind: 'track', id: id }); } },
+      'sep'
     ];
-    if (t) items.push({ label: 'Go to album', icon: 'library', run: function () { App.go('/album/' + t.albumId); } });
+    /* no Move up on the first row, no Move down on the last */
+    if (n > 0) items.push({ label: 'Move up', icon: 'chevron-up', run: function () { if (!custom) return sortNeeded(); moveItems(p, [itemAt(n)], itemAt(n - 1)); } });
+    if (n < shown.length - 1) items.push({ label: 'Move down', icon: 'chevron-down', run: function () { if (!custom) return sortNeeded(); moveItems(p, [itemAt(n)], itemAt(n + 2)); } });
+    if (t) {
+      items.push({ label: 'Go to album', icon: 'library', run: function () { App.go('/album/' + t.albumId); } });
+      items.push({ label: 'Go to artist', icon: 'peer', run: function () { App.go('/artist/' + t.artistId); } });
+      items.push({ label: 'Show sources', icon: 'soulseek', run: function () { App.hooks.sourcePicker(id); } });
+    }
     items.push({ label: 'Remove from this playlist', icon: 'trash', danger: true, run: function () { if (!custom) return sortNeeded(); removeItem(p, itemAt(n), n); } });
     App.menu(el, items, { label: 'Actions for ' + (t ? t.title : 'this song') });
   });
