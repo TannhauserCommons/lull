@@ -385,11 +385,13 @@
   function coverMarkup(c) {
     return '<span class="' + c.cls + '" style="--cover-size-base:' + c.size + '"' + c.attrs + '>' + artImg(c.key, c.size) + '</span>';
   }
-  var artMissing = {};          // albums whose art 404'd this session: not asked for again
+  /* albums whose art 404'd twice: not asked for again for ART_AGAIN. The hub answers 404 while it is still fetching a
+     cover from outside (api.md /api/art), so one 404 gets one retry, and a miss is never final for the session */
+  var artMissing = {}, ART_RETRY = 5000, ART_AGAIN = 10 * 60 * 1000;
   /* the picture for an album or artist key: a catalog entity's own URL (album `art`, artist `image`, same origin through
      /api/catalog/art, ADR-0008) at the size wanted, else the library's /api/art for albums */
   function artImg(key, size) {
-    if (artMissing[key]) return '';
+    if (Date.now() - (artMissing[key] || 0) < ART_AGAIN) return '';
     var px = parseInt(size, 10), want = /%$/.test(size) || !px ? 256 : px <= 96 ? 96 : px <= 256 ? 256 : 512;
     var e = /^ar-/.test(key) ? M.artist(key) : /^al-/.test(key) ? M.album(key) : null;
     var own = e && (e.art || e.image);
@@ -404,7 +406,13 @@
   }, true);
   document.addEventListener('error', function (e) {
     var img = e.target; if (img.tagName !== 'IMG' || !img.classList.contains('cover__img')) return;
-    artMissing[img.getAttribute('data-art')] = true; img.remove();
+    if (!img.hasAttribute('data-retried')) {
+      var src = img.getAttribute('src');
+      img.setAttribute('data-retried', ''); img.removeAttribute('src');
+      setTimeout(function () { if (img.isConnected) img.setAttribute('src', src + '&retry=1'); }, ART_RETRY);
+      return;
+    }
+    artMissing[img.getAttribute('data-art')] = Date.now(); img.remove();
   }, true);
   /* 2x2 mosaic of the first four distinct album covers (playlists) */
   ui.mosaic = function (trackIds, size, label) {
