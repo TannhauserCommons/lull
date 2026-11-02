@@ -13,7 +13,7 @@ window.LullData = (function () {
 
   var tracks = {}, albums = {}, artists = {}, tags = {};
   var M = {
-    saveSteps: ['Completing transfer', 'Matching on MusicBrainz', 'Fetching cover art', 'Tagging and writing to library', 'Jellyfin rescan'],
+    saveSteps: ['Completing transfer', 'Matching on MusicBrainz', 'Fetching cover art', 'Tagging and writing to library', 'Adding to your library'],
     /* quality chip facts by format label ("FLAC 16/44.1"), learned from the tracks that carry them */
     formats: {},
     playlists: []
