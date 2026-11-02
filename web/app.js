@@ -1246,7 +1246,7 @@
     cur = e || null; nxt = null;
     was.forEach(letGo);
     if (!e || !M.track(e.trackId)) { out.pause(); out.setNext(null); ps.status = 'idle'; ps.playing = false; ps.source = null; changed('track'); return; }
-    e.attempt = 0; if (opts.forceSoulseek) e.complete = false;
+    e.attempt = null; if (opts.forceSoulseek) e.complete = false;
     ps.source = e.source || null;
     ps.playing = opts.autoplay !== false;
     var library = App.isSaved(e.trackId) && !opts.forceSoulseek;
@@ -1530,8 +1530,11 @@
     var e = cur && cur.trackId === ev.trackId ? cur : nxt && nxt.trackId === ev.trackId ? nxt : null;
     if (!e || !e.soulseek) return;
     if (ev.size && ev.received >= ev.size) e.complete = true;
-    /* a fallback to another peer ends the old response: reopen the stream and seek back to where we were */
-    if (ev.attempt > (e.attempt || 0)) { e.attempt = ev.attempt; if (e === cur) reopen(); }
+    /* a fallback to another peer ends the old response: reopen the stream and seek back to where we were.
+       The first event after opening only says which attempt the response already belongs to (the hub sends
+       one on every opening, also for a song that fell back long ago), so it is adopted, not reopened */
+    if (e.attempt == null) e.attempt = ev.attempt || 0;
+    else if (ev.attempt > e.attempt) { e.attempt = ev.attempt; if (e === cur) reopen(); }
     if (e === nxt) { e.resolve = ev.status === 'failed' ? 'none' : ev.status === 'streaming' ? 'ready' : 'resolving'; changed('queue'); return; }
     var prevPeer = ps.peer && ps.peer.name, t = P.current();
     ps.received = ev.size ? clamp(ev.received / ev.size, 0, 1) : ps.received;
