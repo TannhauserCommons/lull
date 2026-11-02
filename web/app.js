@@ -2108,7 +2108,7 @@
       if (i < 0) list.unshift(row); else list[i] = Object.assign({}, list[i], row);
     });
   }
-  function onJobEvent(e) { upsertJob(Object.assign({}, e, { id: e.jobId })); }
+  function onJobEvent(e) { upsertJob(Object.assign({}, e, { id: e.jobId })); learnJobTracks([e]); }
   /* the next song can start at once: the player has it loaded, or the hub has bytes of it on disk (a preload) */
   P.isPreloaded = function (id) {
     if (nxt && nxt.trackId === id) return true;
@@ -2117,6 +2117,7 @@
   function onTransferEvent(e) {
     upsertJob({ id: e.jobId, kind: 'transfer', trackId: e.trackId, peer: e.peer, state: e.state, queuePos: e.queuePos,
       pct: e.size ? Math.round(e.received / e.size * 100) : 0, speed: e.speed ? e.speed / 1e6 : 0, error: e.error || null });
+    learnJobTracks([e]);
   }
   function loadJobs() {
     return M.api('/api/jobs').then(function (res) {
@@ -2128,7 +2129,17 @@
           error: j.error || null, kind: j.failKind || null, nocover: !!j.nocover, upgrade: !!j.upgrade, belowMinimum: !!j.belowMinimum });
       });
       App.store.set({ activity: rows, activityError: null });
+      learnJobTracks(rows);
     }, function (err) { App.store.set({ activity: [], activityError: err.message }); });
+  }
+  /* GET /api/jobs lists rows without entities: read the songs they name (once each), then repaint Activity */
+  var jobTracksAsked = {};
+  function learnJobTracks(rows) {
+    var ids = rows.map(function (j) { return j.trackId; }).filter(function (id, i, a) { return id && !M.track(id) && !jobTracksAsked[id] && a.indexOf(id) === i; });
+    if (!ids.length) return;
+    ids.forEach(function (id) { jobTracksAsked[id] = true; });
+    Promise.all(ids.map(function (id) { return M.api('/api/tracks/' + encodeURIComponent(id)).catch(function () { return null; }); }))
+      .then(function () { App.store.set('activity', state.activity.slice()); });
   }
   App.loadJobs = loadJobs;
   function updateActivityBadge() {
