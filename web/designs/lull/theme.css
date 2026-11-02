@@ -1065,12 +1065,21 @@
   :root[data-design="lull"] .disc-songs .trow__album { display: none; }
 }
 
-/* wide desks: six picks; releases in four columns, the other shelves in three */
-@media (min-width: 1880px) {
-  :root[data-design="lull"] .disc-home .disc-picks { --picks: 6; }
-  :root[data-design="lull"] .disc-home .disc-shelf, :root[data-design="lull"] .disc-home .disc-skel-shelf .skel-group { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* Each Home module is a `section` container, and wide windows set two or three modules side by side (ADR-0007), so
+   the counts above follow the module's width, not the window's: tiles keep their size and a wider module shows more */
+@container section (max-width: 519px) {
+  :root[data-design="lull"] .disc-home :is(.disc-shelf, .disc-skel-shelf .skel-group) { grid-template-columns: minmax(0, 1fr); }
+}
+@container section (min-width: 820px) {
+  :root[data-design="lull"] .disc-home :is(.disc-shelf, .disc-skel-shelf .skel-group) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@container section (min-width: 1120px) {
   :root[data-design="lull"] .disc-home [data-region="new"] :is(.disc-shelf, .skel-group) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
+@container section (max-width: 439px) { :root[data-design="lull"] .disc-home .disc-picks { --picks: 2; } }
+@container section (min-width: 440px) and (max-width: 619px) { :root[data-design="lull"] .disc-home .disc-picks { --picks: 3; } }
+@container section (min-width: 620px) and (max-width: 819px) { :root[data-design="lull"] .disc-home .disc-picks { --picks: 4; } }
+@container section (min-width: 1040px) { :root[data-design="lull"] .disc-home .disc-picks { --picks: 6; } }
 
 /* =====================================================================
    Desk widgets (homeLead slot, >= 1700 px): the discover window hands 300 px back to the wallpaper and three little
@@ -1080,13 +1089,15 @@
 @media (min-width: 1700px) {
   :root[data-design="lull"] { --l-desk-w: 290px; }
   /* .disc-home's inline-size container would be the widgets' containing block; at this width nothing on Home uses
-     its container queries (the lull grids are explicit) */
+     its container queries (the lull grids query their module, `section`) */
   :root[data-design="lull"] .disc-home { container-type: normal; }
   /* the widgets hang off the discover window's edge, in the room it hands back: placed against .main, with the view
      static so neither its scroll nor its clip applies. The Now Playing column takes that room when it is open. */
   :root[data-design="lull"] .app[data-screen="home"]:not([data-nowcol]) .main { margin-right: calc(var(--l-desk-w) + 22px); }
   :root[data-design="lull"] .app[data-screen="home"]:not([data-nowcol]) #view { position: static; }
   :root[data-design="lull"] .app:not([data-nowcol]) .disc-lead { display: block; position: absolute; z-index: 1; top: 8px; left: calc(100% + 22px); width: var(--l-desk-w); }
+  /* a docked queue already leads with the playing song: the pocket would be a third copy beside the player bar */
+  :root[data-design="lull"] .app[data-ctx="docked"] .lull-desk__pocket { display: none; }
 }
 :root[data-design="lull"] .lull-desk { display: grid; gap: 20px; }
 :root[data-design="lull"] .lull-desk__win {

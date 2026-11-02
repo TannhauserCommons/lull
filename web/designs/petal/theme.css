@@ -586,8 +586,8 @@
 /* =====================================================================
    Home
    ===================================================================== */
-@media (min-width: 640px) {   /* new releases: four equal tiles, one title line, the play button inside the cover */
-  :root[data-design="petal"] [data-region="new"] .disc-shelf { grid-auto-flow: row; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; padding-right: 0; overflow: visible; }
+@media (min-width: 640px) {   /* new releases: equal tiles, as many as the module fits (more as it widens), one title line, the play button inside the cover */
+  :root[data-design="petal"] [data-region="new"] .disc-shelf { grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; padding-right: 0; overflow: visible; }
 }
 :root[data-design="petal"] .disc-shelf { gap: 16px; }
 :root[data-design="petal"] .disc-shelf--sm { grid-auto-columns: 132px; }
