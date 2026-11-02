@@ -3,6 +3,7 @@
 //! (docs/context/discovery.md, docs/context/taste.md).
 
 mod art;
+mod artist;
 mod feed;
 mod mix;
 mod pages;
@@ -36,6 +37,7 @@ use sources::itunes::Itunes;
 use sources::lastfm::LastFm;
 use sources::listenbrainz::ListenBrainz;
 use sources::musicbrainz::MusicBrainz;
+use sources::wikidata::Wikidata;
 use store::Store;
 use taste::Taste;
 
@@ -97,6 +99,15 @@ pub const MIGRATIONS: Migrations = Migrations {
             updated_at  INTEGER NOT NULL
         );
     "#,
+        r#"
+        -- An artist's photo once vetted (artist/photo.rs): a picture URL with `{size}`, or NULL
+        -- when none is surely a photo of this artist. Wins over the catalog's `image`.
+        CREATE TABLE discovery_artist_photos (
+            artist_id   TEXT PRIMARY KEY,
+            image       TEXT,
+            checked_at  INTEGER NOT NULL
+        );
+    "#,
     ],
 };
 
@@ -110,6 +121,8 @@ pub struct Service {
     mb: MusicBrainz,
     deezer: Deezer,
     itunes: Itunes,
+    /// Artist photos on Wikimedia Commons.
+    wikidata: Wikidata,
     /// Deezer, or iTunes plus Deezer's artists where Deezer is closed.
     catalog: search::catalog::Catalog,
     searches: search::Searches,
@@ -145,6 +158,7 @@ pub async fn start(ctx: &Ctx, library: Arc<dyn Library>, transfers: Arc<dyn Tran
             cache.clone(),
             ctx.config.discovery.catalog_country.clone(),
         ),
+        wikidata: Wikidata::new(ctx.http.clone(), cache.clone()),
         catalog: search::catalog::Catalog::default(),
         searches: search::Searches::default(),
         art_dir: ctx.config.data_dir.join("catalog-art"),
@@ -177,7 +191,7 @@ pub fn router(svc: Arc<Service>) -> Router {
         .route("/api/share/{kind}/{id}", get(share::get))
         .route("/api/radio", get(radio_tracks))
         .route("/api/albums/{id}", get(pages::album))
-        .route("/api/artists/{id}", get(pages::artist))
+        .route("/api/artists/{id}", get(artist::page))
         .route("/api/tags/{id}", get(pages::tag))
         .route("/api/feedback", post(feedback))
         .route("/api/taste", get(taste_summary))

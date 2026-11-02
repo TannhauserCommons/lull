@@ -22,7 +22,7 @@ use tokio::sync::watch;
 
 use crate::Service;
 
-const SIZES: [u32; 3] = [96, 256, 512];
+pub(crate) const SIZES: [u32; 3] = [96, 256, 512];
 const DEFAULT_SIZE: u32 = 256;
 /// How long a request waits for a picture lull doesn't have yet. The fetch goes on after it,
 /// and the next request is served from the cache.
@@ -116,7 +116,13 @@ pub fn picture(c: &rusqlite::Connection, e: Entities) -> Result<Pictured> {
         out.albums.insert(id, PicturedAlbum { album, art });
     }
     for (id, artist) in e.artists {
-        let image = catalog::artist_image(c, &id)?.map(|_| url(id.as_str()));
+        // A vetted photo carries its version, so a browser holding the old picture asks again.
+        let image = match crate::artist::photo::vetted(c, &id)? {
+            Some((image, _)) => {
+                image.map(|source| format!("{}?v={}", url(id.as_str()), crate::artist::photo::version(&source)))
+            }
+            None => catalog::artist_image(c, &id)?.map(|_| url(id.as_str())),
+        };
         out.artists.insert(id, PicturedArtist { artist, image });
     }
     Ok(out)
@@ -155,7 +161,7 @@ pub async fn get(State(svc): State<Arc<Service>>, Path(id): Path<String>, Query(
         }
         i if i.strip_prefix(ArtistId::PREFIX).is_some_and(hex) => {
             let id = ArtistId(id.clone());
-            svc.ctx.db.call(move |c| catalog::artist_image(c, &id)).await?
+            svc.ctx.db.call(move |c| crate::artist::photo::image_of(c, &id)).await?
         }
         _ => None,
     };
@@ -281,11 +287,13 @@ pub fn fit(bytes: Vec<u8>, size: u32) -> Vec<u8> {
     }
 }
 
-async fn fetch(svc: &Service, url: &str) -> Result<Option<Vec<u8>>> {
+pub(crate) async fn fetch(svc: &Service, url: &str) -> Result<Option<Vec<u8>>> {
     let service = if url.starts_with("https://coverartarchive.org/") {
         "Cover Art Archive"
     } else if url.contains(".mzstatic.com/") {
         "iTunes"
+    } else if url.starts_with("https://commons.wikimedia.org/") {
+        "Wikimedia Commons"
     } else {
         "Deezer"
     };

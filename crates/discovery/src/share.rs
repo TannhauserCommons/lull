@@ -196,7 +196,7 @@ async fn known_picture(svc: &Service, shared: &Shared) -> Result<Option<String>>
         }
         Shared::Artist { id, .. } => {
             let id = id.clone();
-            svc.ctx.db.call(move |c| catalog::artist_image(c, &id)).await?
+            svc.ctx.db.call(move |c| crate::artist::photo::image_of(c, &id)).await?
         }
     };
     Ok(source.map(|s| art::sized(&s, ARTWORK_PX)))

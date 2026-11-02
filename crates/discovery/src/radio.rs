@@ -385,7 +385,7 @@ pub fn credited_names(credit: &str) -> Vec<String> {
 }
 
 /// A credit's main artists and its featured ones ("A & B feat. C" → "A & B", "C").
-fn main_and_featured(credit: &str) -> (&str, &str) {
+pub(crate) fn main_and_featured(credit: &str) -> (&str, &str) {
     let lower = credit.to_lowercase();
     let markers = [
         " feat. ",

@@ -11,13 +11,15 @@ use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use lull_core::http::Http;
+use lull_core::ids::normalize_artist;
 use lull_core::{Error, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::time::Instant;
 
 use super::cache::{Cache, DAY};
 use super::{AlbumSource, Song, year};
+use crate::artist::discography::{Entry, Origin};
 use crate::search::merge::{AlbumHit, Found, SongHit};
 
 const SERVICE: &str = "iTunes";
@@ -174,6 +176,197 @@ impl Itunes {
             serde_json::from_value(body).map_err(|e| Error::upstream(SERVICE, format!("unexpected answer: {e}")))?;
         Ok(page.results)
     }
+}
+
+impl Itunes {
+    /// The store's artists called `name` (case and a leading "the" aside), best known first. Kept
+    /// a month: an artist's id doesn't change.
+    pub async fn artists(&self, name: &str) -> Result<Vec<StoreArtist>> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Raw {
+            artist_id: Option<u64>,
+            artist_name: Option<String>,
+        }
+        #[derive(Deserialize)]
+        struct Page {
+            results: Vec<Raw>,
+        }
+        let key = format!("it:artists:{}:{}", self.country, normalize_artist(name));
+        self.cache
+            .get(key, 30 * DAY, || async {
+                self.spend(Instant::now())?;
+                let body: Value = self
+                    .http
+                    .json(SERVICE, |c| {
+                        c.get(API).query(&[
+                            ("term", name),
+                            ("entity", "musicArtist"),
+                            ("limit", "10"),
+                            ("country", self.country.as_str()),
+                        ])
+                    })
+                    .await?;
+                let page: Page = serde_json::from_value(body)
+                    .map_err(|e| Error::upstream(SERVICE, format!("unexpected answer: {e}")))?;
+                Ok(page
+                    .results
+                    .into_iter()
+                    .filter_map(|r| {
+                        Some(StoreArtist {
+                            id: r.artist_id?,
+                            name: r.artist_name?,
+                        })
+                    })
+                    .filter(|a| normalize_artist(&a.name) == normalize_artist(name))
+                    .collect())
+            })
+            .await
+    }
+
+    /// What the store has of an artist (`artistId`): its releases and the ones it appears on,
+    /// and its songs, most played first as far as Apple's order says. Two `lookup` calls, kept a
+    /// day; they use only what search leaves spare of the budget.
+    pub async fn artist_catalog(&self, id: u64) -> Result<ArtistCatalog> {
+        let key = format!("it:artist:{}:{id}", self.country);
+        self.cache
+            .get(key, DAY, || async {
+                let lookup = |entity: &'static str| {
+                    let id = id.to_string();
+                    async move {
+                        self.spend_spare(Instant::now())?;
+                        self.http
+                            .json::<Value>(SERVICE, |c| {
+                                c.get(LOOKUP).query(&[
+                                    ("id", id.as_str()),
+                                    ("entity", entity),
+                                    ("limit", "200"),
+                                    ("country", self.country.as_str()),
+                                ])
+                            })
+                            .await
+                    }
+                };
+                let (albums, songs) = tokio::join!(lookup("album"), lookup("song"));
+                artist_catalog(albums?, songs?, id)
+            })
+            .await
+    }
+
+    fn spend(&self, now: Instant) -> Result<()> {
+        if self.budget.lock().unwrap_or_else(PoisonError::into_inner).take(now) {
+            Ok(())
+        } else {
+            Err(Error::unavailable(SERVICE, "lull's calls for this minute are spent"))
+        }
+    }
+
+    fn spend_spare(&self, now: Instant) -> Result<()> {
+        if self
+            .budget
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take_spare(now)
+        {
+            Ok(())
+        } else {
+            Err(Error::unavailable(SERVICE, "lull's calls for this minute are spent"))
+        }
+    }
+}
+
+/// An artist in the store.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StoreArtist {
+    pub id: u64,
+    pub name: String,
+}
+
+/// `artist_catalog`'s answer.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ArtistCatalog {
+    pub releases: Vec<Entry>,
+    /// Songs credited to the artist (alone or with others), Apple's order.
+    pub songs: Vec<SongHit>,
+}
+
+/// The two `lookup` answers (`entity=album`, `entity=song`) of the artist `id` as its
+/// releases: the albums the store lists for it (its own when their `artistId` is its), then the
+/// albums its songs are on that those miss (soundtracks, compilations, other artists' EPs).
+/// DJ mixes are left out: they are someone's set, not a release to play.
+pub fn artist_catalog(albums: Value, songs_body: Value, id: u64) -> Result<ArtistCatalog> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct RawCollection {
+        wrapper_type: Option<String>,
+        collection_id: Option<u64>,
+        collection_name: Option<String>,
+        artist_id: Option<u64>,
+        artist_name: Option<String>,
+        release_date: Option<String>,
+        artwork_url100: Option<String>,
+        collection_explicitness: Option<String>,
+    }
+    #[derive(Deserialize)]
+    struct Page {
+        results: Vec<RawCollection>,
+    }
+    let page: Page =
+        serde_json::from_value(albums).map_err(|e| Error::upstream(SERVICE, format!("unexpected answer: {e}")))?;
+    let mut releases: Vec<Entry> = page
+        .results
+        .into_iter()
+        .filter(|r| r.wrapper_type.as_deref() == Some("collection"))
+        .filter_map(|r| {
+            let (title, kind) = release(r.collection_name.as_deref()?);
+            let artist = r.artist_name?;
+            let kind = if artist == "Various Artists" {
+                "compilation"
+            } else {
+                kind
+            };
+            Some(Entry {
+                own: Some(r.artist_id == Some(id)),
+                explicit: r.collection_explicitness.as_deref() == Some("explicit"),
+                origin: Origin::Itunes,
+                album: AlbumHit {
+                    title,
+                    kind: Some(kind.to_owned()),
+                    date: r.release_date.as_deref().and_then(|d| d.get(..10)).map(str::to_owned),
+                    art: r.artwork_url100.as_deref().and_then(sized),
+                    source: r.collection_id.map(AlbumSource::Itunes),
+                    artist,
+                    ..AlbumHit::default()
+                },
+            })
+        })
+        .collect();
+    let found = songs(songs_body)?;
+    for album in found.albums {
+        let listed = releases.iter().any(|e| e.album.source == album.source);
+        if listed || is_dj_mix(&album.title) {
+            continue;
+        }
+        releases.push(Entry {
+            own: None,
+            explicit: false,
+            origin: Origin::Itunes,
+            album: AlbumHit {
+                popularity: 0.0,
+                ..album
+            },
+        });
+    }
+    Ok(ArtistCatalog {
+        releases,
+        songs: found.songs.into_iter().filter(|s| !is_dj_mix(&s.album)).collect(),
+    })
+}
+
+/// "Halloween XII (DJ Mix)", "Gold (Mixed)": a DJ's set.
+fn is_dj_mix(title: &str) -> bool {
+    let t = title.to_lowercase();
+    t.ends_with("(dj mix)") || t.contains("(mixed)") || t.contains("[mixed]")
 }
 
 /// One song or album in the store, as `listings` gives it.

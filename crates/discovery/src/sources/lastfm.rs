@@ -167,6 +167,37 @@ impl LastFm {
             .await
     }
 
+    /// An artist page's popular songs: the artist's most played tracks with Last.fm's play and
+    /// listener counts, by MBID when known (a name can be several artists), else by name.
+    pub async fn top_tracks(&self, name: &str, mbid: Option<&str>) -> Result<Vec<Counted>> {
+        let key = format!(
+            "lfm:top-counted:{}:{}",
+            normalize_artist(name),
+            mbid.unwrap_or_default()
+        );
+        self.cache
+            .get(key, DAY, || async {
+                let mut found = Vec::new();
+                if let Some(mbid) = mbid {
+                    let body = self
+                        .call("artist.getTopTracks", &[("mbid", mbid), ("limit", "30")])
+                        .await?;
+                    found = counted(&body["toptracks"]["track"]);
+                }
+                if found.is_empty() {
+                    let body = self
+                        .call(
+                            "artist.getTopTracks",
+                            &[("artist", name), ("autocorrect", "1"), ("limit", "30")],
+                        )
+                        .await?;
+                    found = counted(&body["toptracks"]["track"]);
+                }
+                Ok(found)
+            })
+            .await
+    }
+
     /// Radio without ListenBrainz: a tag's most played tracks.
     pub async fn tag_top_tracks(&self, tag: &str) -> Result<Vec<Song>> {
         self.cache
@@ -259,6 +290,29 @@ fn artists(v: &Value) -> Vec<ArtistInfo> {
             Some(ArtistInfo {
                 name: a["name"].as_str()?.to_owned(),
                 mbid: a["mbid"].as_str().filter(|m| !m.is_empty()).map(str::to_owned),
+            })
+        })
+        .collect()
+}
+
+/// A song with Last.fm's counts.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Counted {
+    pub title: String,
+    pub plays: Option<u64>,
+    pub listeners: Option<u64>,
+}
+
+/// `artist.getTopTracks` with its counts, most played first. Counts come as strings.
+pub fn counted(v: &Value) -> Vec<Counted> {
+    let n = |v: &Value| v.as_str().and_then(|s| s.parse().ok()).or(v.as_u64());
+    list(v)
+        .iter()
+        .filter_map(|t| {
+            Some(Counted {
+                title: t["name"].as_str()?.to_owned(),
+                plays: n(&t["playcount"]),
+                listeners: n(&t["listeners"]),
             })
         })
         .collect()

@@ -11,12 +11,13 @@ use std::time::Duration;
 use lull_core::http::Http;
 use lull_core::ids::{normalize, normalize_artist};
 use lull_core::{Error, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::time::Instant;
 
 use super::cache::{Cache, DAY};
 use super::{AlbumSource, Song};
+use crate::artist::discography::{Entry, Origin};
 use crate::search::merge::{AlbumHit, ArtistHit, Found, SongHit, popularity};
 
 const SERVICE: &str = "Deezer";
@@ -105,19 +106,92 @@ impl Deezer {
         open(&self.http.json(SERVICE, |c| c.get(format!("{API}/infos"))).await?)
     }
 
-    /// The photo of the artist called `name`: the exact name first (ignoring case), else the
-    /// same without a leading "the". "The Prodigy" is not the rapper Prodigy.
-    pub async fn artist_image(&self, name: &str) -> Result<Option<String>> {
+    /// The artists called `name`: the exact name (ignoring case), else the same without a
+    /// leading "the" ("The Prodigy" is not the rapper Prodigy). Several can share a name; the
+    /// caller tells them apart.
+    pub async fn artists_named(&self, name: &str) -> Result<Vec<DeezerArtist>> {
         self.cache
-            .get(format!("dz:artist-photo:{}", normalize(name)), 7 * DAY, || async {
-                let found = artists_of(self.get("search/artist", &[("q", name), ("limit", "5")]).await?)?;
-                let exact = found.iter().position(|a| normalize(&a.name) == normalize(name));
-                let at = exact.or_else(|| {
-                    found
-                        .iter()
-                        .position(|a| normalize_artist(&a.name) == normalize_artist(name))
-                });
-                Ok(at.and_then(|i| found.into_iter().nth(i)).and_then(|a| a.image))
+            .get(format!("dz:artists-named:{}", normalize(name)), 7 * DAY, || async {
+                let found: Vec<DeezerArtist> = Page::<RawArtist>::of(
+                    self.get("search/artist", &[("q", name), ("limit", "10")]).await?,
+                    "artists",
+                )?
+                .into_iter()
+                .filter_map(RawArtist::artist)
+                .collect();
+                let exact: Vec<DeezerArtist> = found
+                    .iter()
+                    .filter(|a| normalize(&a.name) == normalize(name))
+                    .cloned()
+                    .collect();
+                if !exact.is_empty() {
+                    return Ok(exact);
+                }
+                Ok(found
+                    .into_iter()
+                    .filter(|a| normalize_artist(&a.name) == normalize_artist(name))
+                    .collect())
+            })
+            .await
+    }
+
+    /// One artist by id (answers where the catalog is closed too).
+    pub async fn artist(&self, id: u64) -> Result<Option<DeezerArtist>> {
+        self.cache
+            .get(format!("dz:artist:{id}"), 7 * DAY, || async {
+                let raw: RawArtist = serde_json::from_value(self.get(&format!("artist/{id}"), &[]).await?)
+                    .map_err(|e| Error::upstream(SERVICE, format!("unexpected artist answer: {e}")))?;
+                Ok(raw.artist())
+            })
+            .await
+    }
+
+    /// The artist's albums, EPs and singles, where the catalog is open.
+    pub async fn artist_releases(&self, id: u64) -> Result<Vec<Entry>> {
+        self.cache
+            .get(format!("dz:artist-albums:{id}"), DAY, || async {
+                artist_releases(self.get(&format!("artist/{id}/albums"), &[("limit", "100")]).await?)
+            })
+            .await
+    }
+
+    /// The artist's most played songs, by Deezer's rank, where the catalog is open.
+    pub async fn artist_top(&self, id: u64) -> Result<Vec<SongHit>> {
+        self.cache
+            .get(format!("dz:artist-top:{id}"), DAY, || async {
+                songs(self.get(&format!("artist/{id}/top"), &[("limit", "20")]).await?)
+            })
+            .await
+    }
+
+    /// Covers of the artist's own songs on its Deezer radio, which answers where the catalog is
+    /// closed: what an artist "photo" is checked against, as Deezer shows a cover when the
+    /// artist has no photo. Empty for an artist too small to have a radio.
+    pub async fn artist_covers(&self, id: u64) -> Result<Vec<String>> {
+        #[derive(Deserialize)]
+        struct Raw {
+            md5_image: Option<String>,
+            artist: RawId,
+        }
+        #[derive(Deserialize)]
+        struct RawId {
+            id: u64,
+        }
+        self.cache
+            .get(format!("dz:artist-covers:{id}"), 7 * DAY, || async {
+                let tracks = Page::<Raw>::of(
+                    self.get(&format!("artist/{id}/radio"), &[("limit", "50")]).await?,
+                    "radio",
+                )?;
+                let mut covers: Vec<String> = Vec::new();
+                for t in tracks.into_iter().filter(|t| t.artist.id == id) {
+                    if let Some(cover) = t.md5_image.as_deref().and_then(|m| picture("cover", m))
+                        && !covers.contains(&cover)
+                    {
+                        covers.push(cover);
+                    }
+                }
+                Ok(covers)
             })
             .await
     }
@@ -281,9 +355,67 @@ struct RawAlbum {
 
 #[derive(Deserialize)]
 struct RawArtist {
+    id: Option<u64>,
     name: String,
     picture_xl: Option<String>,
     nb_fan: Option<u64>,
+}
+
+impl RawArtist {
+    fn image(&self) -> Option<String> {
+        self.picture_xl
+            .as_deref()
+            .and_then(artist_md5)
+            .and_then(|m| picture("artist", m))
+    }
+
+    fn artist(self) -> Option<DeezerArtist> {
+        Some(DeezerArtist {
+            picture: self.image(),
+            id: self.id?,
+            name: self.name,
+            fans: self.nb_fan,
+        })
+    }
+}
+
+/// An artist on Deezer. `picture` may be a cover: Deezer shows one for an artist without a photo.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DeezerArtist {
+    pub id: u64,
+    pub name: String,
+    pub picture: Option<String>,
+    pub fans: Option<u64>,
+}
+
+/// An `artist/{id}/albums` answer as the artist's releases. Deezer names no artist on them: the
+/// artist is the page's.
+pub fn artist_releases(body: Value) -> Result<Vec<Entry>> {
+    #[derive(Deserialize)]
+    struct Raw {
+        id: Option<u64>,
+        title: String,
+        record_type: Option<String>,
+        release_date: Option<String>,
+        md5_image: Option<String>,
+        explicit_lyrics: Option<bool>,
+    }
+    Ok(Page::<Raw>::of(body, "albums")?
+        .into_iter()
+        .map(|a| Entry {
+            own: Some(true),
+            explicit: a.explicit_lyrics.unwrap_or(false),
+            origin: Origin::Deezer,
+            album: AlbumHit {
+                title: a.title,
+                kind: a.record_type.as_deref().map(kind),
+                date: a.release_date.filter(|d| !d.is_empty() && !d.starts_with("0000")),
+                art: a.md5_image.as_deref().and_then(|m| picture("cover", m)),
+                source: a.id.map(AlbumSource::Deezer),
+                ..AlbumHit::default()
+            },
+        })
+        .collect())
 }
 
 pub fn songs(body: Value) -> Result<Vec<SongHit>> {
@@ -360,11 +492,7 @@ pub fn artists_of(body: Value) -> Result<Vec<ArtistHit>> {
     Ok(Page::<RawArtist>::of(body, "artists")?
         .into_iter()
         .map(|a| ArtistHit {
-            image: a
-                .picture_xl
-                .as_deref()
-                .and_then(artist_md5)
-                .and_then(|m| picture("artist", m)),
+            image: a.image(),
             popularity: a.nb_fan.map_or(0.0, |f| popularity(f, FULL_FANS)),
             audience: a.nb_fan,
             lastfm_only: false,

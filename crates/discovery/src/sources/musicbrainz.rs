@@ -7,8 +7,8 @@ use std::sync::Arc;
 use lull_core::http::{self, Http};
 use lull_core::ids::{loose_title, normalize, normalize_artist};
 use lull_core::{Error, Result};
-use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 
 use super::cache::{Cache, DAY, HOUR};
 use super::{ArtistInfo, Breaker, CALL_TIMEOUT, Release, Song, Switch, top_tags, year};
@@ -52,6 +52,8 @@ struct RawGroup {
     id: String,
     title: String,
     primary_type: Option<String>,
+    #[serde(default)]
+    secondary_types: Vec<String>,
     first_release_date: Option<String>,
     #[serde(default)]
     artist_credit: Vec<Credit>,
@@ -80,6 +82,32 @@ impl RawGroup {
             tags: tags(self.tags, self.genres),
         }
     }
+}
+
+/// What `artist_links` knows of an artist.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Links {
+    pub tags: Vec<String>,
+    /// Apple's `artistId`.
+    pub itunes: Option<u64>,
+    /// Deezer's artist id.
+    pub deezer: Option<u64>,
+}
+
+/// The number after `/artist/` in a link to one of `hosts` ("https://music.apple.com/gb/artist/1689784894",
+/// "https://www.deezer.com/artist/329421301"; old iTunes links end in "id657515").
+fn linked_id(url: &str, hosts: &[&str]) -> Option<u64> {
+    if !hosts.iter().any(|h| url.contains(h)) {
+        return None;
+    }
+    let rest = url.split("/artist/").nth(1)?;
+    let last = rest
+        .split(['?', '#'])
+        .next()?
+        .trim_end_matches('/')
+        .rsplit('/')
+        .next()?;
+    last.trim_start_matches("id").parse().ok()
 }
 
 /// "A & B" and the first artist's MBID, from an artist credit.
@@ -143,8 +171,10 @@ impl MusicBrainz {
             .await
     }
 
-    /// The artist's tags and genres, most used first.
-    pub async fn artist_tags(&self, mbid: &str) -> Result<Vec<String>> {
+    /// The artist's tags and genres, most used first, and its pages elsewhere: the iTunes and
+    /// Deezer artists MusicBrainz links it to, which tell apart artists of the same name. One
+    /// call.
+    pub async fn artist_links(&self, mbid: &str) -> Result<Links> {
         self.switch.check()?;
         #[derive(Deserialize)]
         struct Raw {
@@ -152,16 +182,41 @@ impl MusicBrainz {
             tags: Vec<Tag>,
             #[serde(default)]
             genres: Vec<Tag>,
+            #[serde(default)]
+            relations: Vec<Relation>,
+        }
+        #[derive(Deserialize)]
+        struct Relation {
+            url: Option<Url>,
+        }
+        #[derive(Deserialize)]
+        struct Url {
+            resource: String,
         }
         self.cache
-            .get(format!("mb:artist-tags:{mbid}"), 30 * DAY, || async {
-                let raw: Raw = self.get(&format!("artist/{mbid}"), &[("inc", "tags genres")]).await?;
-                Ok(tags(raw.tags, raw.genres))
+            .get(format!("mb:artist-links:{mbid}"), 30 * DAY, || async {
+                let raw: Raw = self
+                    .get(&format!("artist/{mbid}"), &[("inc", "tags genres url-rels")])
+                    .await?;
+                let urls: Vec<String> = raw
+                    .relations
+                    .into_iter()
+                    .filter_map(|r| Some(r.url?.resource))
+                    .collect();
+                Ok(Links {
+                    tags: tags(raw.tags, raw.genres),
+                    itunes: urls
+                        .iter()
+                        .find_map(|u| linked_id(u, &["music.apple.com/", "itunes.apple.com/"])),
+                    deezer: urls.iter().find_map(|u| linked_id(u, &["deezer.com/"])),
+                })
             })
             .await
     }
 
-    /// Albums, EPs and singles credited to the artist, newest first.
+    /// Albums, EPs and singles credited to the artist, newest first, with their credits (whose
+    /// first artist tells the artist's own releases from those it appears on). `kind` is
+    /// "album", "EP", "single" or "compilation".
     pub async fn discography(&self, artist: &ArtistInfo) -> Result<Vec<Release>> {
         self.switch.check()?;
         #[derive(Deserialize)]
@@ -174,14 +229,27 @@ impl MusicBrainz {
         };
         let mut releases: Vec<Release> = self
             .cache
-            .get(format!("mb:discography:{mbid}"), 7 * DAY, || async {
+            .get(format!("mb:discography-credits:{mbid}"), 7 * DAY, || async {
                 let found: Found = self
                     .get(
                         "release-group",
-                        &[("artist", mbid), ("type", "album|ep|single"), ("limit", "100")],
+                        &[
+                            ("artist", mbid),
+                            ("type", "album|ep|single"),
+                            ("inc", "artist-credits"),
+                            ("limit", "100"),
+                        ],
                     )
                     .await?;
-                Ok(found.groups.into_iter().map(|g| g.into_release(Some(artist))).collect())
+                Ok(found
+                    .groups
+                    .into_iter()
+                    .filter(|g| !is_talk(g.primary_type.as_deref(), &g.secondary_types))
+                    .map(|mut g| {
+                        g.primary_type = release_kind(g.primary_type.as_deref(), &g.secondary_types);
+                        g.into_release(Some(artist))
+                    })
+                    .collect())
             })
             .await?;
         releases.sort_by(|a, b| b.date.cmp(&a.date));
@@ -603,4 +671,31 @@ pub fn recordings(body: serde_json::Value) -> Result<Found> {
         });
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::linked_id;
+
+    #[test]
+    fn links_name_the_itunes_and_deezer_artists() {
+        // Live, BIJI's MusicBrainz links; two Deezer artists and two iTunes artists share the name.
+        let apple = ["music.apple.com/", "itunes.apple.com/"];
+        assert_eq!(
+            linked_id("https://music.apple.com/gb/artist/1689784894", &apple),
+            Some(1_689_784_894)
+        );
+        assert_eq!(
+            linked_id("https://itunes.apple.com/us/artist/radiohead/id657515", &apple),
+            Some(657_515)
+        );
+        assert_eq!(
+            linked_id("https://www.deezer.com/artist/329421301", &["deezer.com/"]),
+            Some(329_421_301)
+        );
+        assert_eq!(
+            linked_id("https://open.spotify.com/artist/2spZzA9c41ahb6OIXkYJgy", &apple),
+            None
+        );
+    }
 }
