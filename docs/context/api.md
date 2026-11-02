@@ -105,7 +105,7 @@ The library is the music folder or Jellyfin (`LULL_LIBRARY`, ADR-0003); every ro
 |---|---|
 | `GET /api/tracks/{id}` | `{ track, entities }`. A saved track (also under the id it was saved as, see save-flow.md#ids), else the catalog's with `saved: false`; 404 if neither knows it |
 | `GET /api/library/songs?sort=album\|title\|artist\|recent` | `{ items: [trackId], total, entities: { tracks }, songs: { trackId: { addedAt, plays } }, stale }`. `addedAt`: when the song entered the library (ISO 8601 UTC: the file's modified time in folder mode, Jellyfin's DateCreated in Jellyfin mode). `plays`: its rows in `plays`, counting plays under ids that alias it. Both stay out of the track entity (per-listener state) |
-| `GET /api/library/albums?sort=recent\|title\|artist\|year` | `{ items: [albumId], total, entities: { albums }, stale }`. Library albums are `saved: "all"` |
+| `GET /api/library/albums?sort=recent\|title\|artist\|year` | `{ items: [albumId], total, entities: { albums }, stale }`. Library albums are `saved: "all"` with their saved songs, or `saved: "partial"` with the catalog's whole tracklist when discovery stored one that holds every saved song and more |
 | `GET /api/library/artists?sort=name` | `{ items: [artistId], total, entities: { artists }, stale }` |
 | `GET /api/library/genres?sort=songs\|name` | `{ items: [{ id, name, artists, songs, trackIds }], total, entities: { tracks }, stale }` (`trackIds`: a few, for the mosaic) |
 | ↳ every list | Also `filter=` (words in title, artist or album), `limit=` (default 200, max 5000), `offset=`. An unknown `sort` is 400. `stale: true` while Jellyfin is down (Jellyfin mode) and the list is the last one read |

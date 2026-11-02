@@ -13,7 +13,7 @@ use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use lull_core::config::LibraryMode;
 use lull_core::ids::{AlbumId, TrackId};
-use lull_core::model::{Entities, SourceRef};
+use lull_core::model::{Album, Entities, Saved, SourceRef};
 use lull_core::{Error, Result, catalog};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -179,7 +179,7 @@ fn play_counts(c: &rusqlite::Connection, ids: &[Vec<TrackId>]) -> Result<Vec<i64
 }
 
 async fn albums(State(svc): Svc, Query(q): Query<ListQuery>) -> Result<Json<Value>> {
-    let (page, total, entities) = {
+    let (page, total, mut entities) = {
         let index = svc.index();
         let (page, total) = q.page(index.albums(&q.sort, &q.filter)?)?;
         let mut entities = Entities::default();
@@ -188,7 +188,30 @@ async fn albums(State(svc): Svc, Query(q): Query<ListQuery>) -> Result<Json<Valu
         }
         (page.iter().map(|a| json!(a.album.id)).collect(), total, entities)
     };
+    // The library holds an album's saved songs only. Where the catalog has its whole tracklist (discovery
+    // stored it), the tile can say "1 of 13 saved" from the first load instead of "Saved".
+    let ids: Vec<AlbumId> = entities.albums.keys().cloned().collect();
+    let whole = svc
+        .ctx
+        .db
+        .call(move |c| ids.iter().map(|id| catalog::album(c, id)).collect::<Result<Vec<_>>>())
+        .await?;
+    for full in whole.into_iter().flatten() {
+        if let Some(saved) = entities.albums.get_mut(&full.id) {
+            widen(saved, &full);
+        }
+    }
     list(&svc, page, total, entities)
+}
+
+/// A saved album takes the catalog's whole tracklist when that holds every saved song and more; it
+/// is then only partly saved.
+fn widen(saved: &mut Album, whole: &Album) {
+    let more = whole.track_ids.len() > saved.track_ids.len();
+    if more && saved.track_ids.iter().all(|t| whole.track_ids.contains(t)) {
+        saved.track_ids = whole.track_ids.clone();
+        saved.saved = Saved::Partial;
+    }
 }
 
 async fn artists(State(svc): Svc, Query(q): Query<ListQuery>) -> Result<Json<Value>> {
@@ -554,6 +577,33 @@ mod tests {
             .await
             .map_err(|e| Error::internal(e.to_string()))?;
         Ok((parts.status, parts.headers, bytes))
+    }
+
+    #[test]
+    fn a_saved_album_takes_the_catalogs_whole_tracklist() {
+        let id = |s: &str| TrackId(s.to_owned());
+        let album = |tracks: &[&str], saved: Saved| Album {
+            id: AlbumId("al-1".to_owned()),
+            title: "Anything in Return".to_owned(),
+            artist_id: lull_core::ids::ArtistId("ar-1".to_owned()),
+            artist: "Toro y Moi".to_owned(),
+            year: None,
+            kind: None,
+            released: None,
+            label: None,
+            tags: vec![],
+            saved,
+            track_ids: tracks.iter().map(|t| id(t)).collect(),
+            duration: None,
+            musicbrainz_id: None,
+        };
+        let mut saved = album(&["b"], Saved::All);
+        widen(&mut saved, &album(&["a", "b", "c"], Saved::None));
+        assert_eq!((saved.track_ids.len(), saved.saved), (3, Saved::Partial));
+        // a catalog list that misses a saved song is another release: the library's own stands
+        let mut other = album(&["b", "x"], Saved::All);
+        widen(&mut other, &album(&["a", "c", "d"], Saved::None));
+        assert_eq!((other.track_ids.len(), other.saved), (2, Saved::All));
     }
 
     #[test]

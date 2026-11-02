@@ -119,13 +119,17 @@
       <p><b>Jellyfin is offline.</b> This is your library as last synced; saved songs can't play until it's back. Soulseek still works.</p>
       <button class="btn btn--sm" data-act="reload-read" data-id="${path}">${icon('refresh')}Retry connection</button></div>`;
   }
-  /* The library list sends each album with only the songs the library holds (`saved: "all"` = all of those); the
-     album's real tracklist arrives with its page. Until then a library tile can say how many songs are saved, not
-     "Saved". `held` = the list's own count per album, `whole` = albums whose page has given the full tracklist. */
+  /* The library list sends each album with its whole tracklist when the hub knows it (`saved: "partial"` when some
+     are missing), else with only the songs the library holds (`saved: "all"` = all of those): the real tracklist
+     then arrives with the album's page. Until it does, a tile can say how many songs are saved, not "Saved".
+     `held` = the list's own count per album, `whole` = albums whose full tracklist is known. */
   var held = {}, whole = {};
   function noteHeld(d) {
     var albums = (d && d.entities && d.entities.albums) || {};
-    (d.items || []).forEach(function (id) { if (albums[id] && albums[id].trackIds) held[id] = albums[id].trackIds.length; });
+    (d.items || []).forEach(function (id) {
+      var a = albums[id]; if (!a || !a.trackIds) return;
+      if (a.saved === 'partial') whole[id] = true; else held[id] = a.trackIds.length;
+    });
   }
   function heldOnly(a) { return held[a.id] > 0 && !whole[a.id] && a.trackIds.length <= held[a.id]; }
   /* how much of an album is saved (all | partial | none): counted from its songs when known, so it follows the
