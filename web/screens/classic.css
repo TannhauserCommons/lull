@@ -1,6 +1,6 @@
 /* screens/classic.css: Classic mode stage, the Webamp slot, skin drawer. Semantic tokens only. */
 
-/* ---------- stage: full viewport over the app, which shows through at 30% (solid scrim, no blur) ---------- */
+/* ---------- stage: full viewport; Webamp alone, the app hidden under it (nothing of it renders) ---------- */
 .cls-root {
   position: fixed; inset: 0; z-index: var(--z-classic); background: none;
   opacity: 0; transition: opacity var(--dur-2) var(--ease-out);
@@ -8,7 +8,8 @@
 .cls-root.is-on { opacity: 1; }
 .cls-root:focus { outline: none; }                           /* the dialog container; its controls keep their rings */
 .cls-root.is-leaving { opacity: 0; transition-duration: var(--dur-2); transition-timing-function: var(--ease-in-out); }
-.cls-scrim { position: absolute; inset: 0; background: var(--bg); opacity: .7; }
+.cls-scrim { position: absolute; inset: 0; background: var(--bg); }
+html[data-classic="on"] #app { visibility: hidden; }
 
 .cls-crt {
   position: absolute; inset: 0; display: grid; gap: var(--sp-4);

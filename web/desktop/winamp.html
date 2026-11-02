@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>lull classic</title>
+<!-- The desktop app's Classic window (app/src/desktop/classic.rs): Webamp alone, on nothing. -->
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; }
+  #stage { position: absolute; inset: 0; }
+  #failed { display: none; margin: 0; padding: 12px; font: 13px system-ui, sans-serif; color: #fff; background: #222; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<p id="failed" role="alert"></p>
+<script src="../vendor/webamp/webamp.bundle.min.js"></script>
+<script src="webamp-session.js"></script>
+<script src="winamp.js"></script>
+</body>
+</html>

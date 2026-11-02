@@ -11,6 +11,8 @@
      settings() / setSettings(patch)                 Settings > App inside the wrapper (Promises)
      tailscale() / tailscaleServe()                  Settings > App when this computer is the hub (Promises)
      openMini()                                      the player bar's Device view button
+     openClassic(handoff) / onClassic(fn)            Classic mode's own window (screens/classic.js): open it with the
+                                                     queue; fn(message) hears what Webamp's window reports
      mountPage()                                     wrapper.html: render the view named in the hash
    window.__LULL_DESKTOP__ ({ os, titlebar, layout }) is set by the wrapper before any page script runs. */
 (function () {
@@ -48,6 +50,10 @@
   D.settings = function () { return invoke('desktop_settings'); };
   D.setSettings = function (patch) { return invoke('set_desktop_settings', { patch: patch }); };
   D.openMini = function () { return D.windowAction('mini').catch(logFailure('mini player')); };
+  /* Classic mode: Webamp alone in its own window (desktop/winamp.js); the app's window hides meanwhile */
+  var classicHears = [];
+  D.openClassic = function (handoff) { return invoke('classic_open', { handoff: handoff }); };
+  D.onClassic = function (fn) { classicHears.push(fn); };
   /* this computer is the hub: Tailscale's state, and serving the hub on the tailnet (only on the listener's click) */
   D.tailscale = function () { return invoke('tailscale_status'); };
   D.tailscaleServe = function () { return invoke('tailscale_serve'); };
@@ -612,13 +618,16 @@
 
   /* =====================================================================
      8. Bridge in the web UI (wrapper only; DESKTOP.md 4 and 6.1). Tray items and mini-player buttons run
-        the web UI's own actions; set_now_playing keeps the tray current; 'player' snapshots feed the mini
-        player; 'appearance' tells the wrapper which design and theme its own pages should use.
+        the web UI's own actions; set_now_playing keeps the tray, the taskbar buttons and Discord current;
+        'player' snapshots feed the mini player; 'appearance' tells the wrapper which design and theme its own
+        pages should use. While Classic mode's window plays, what it reports is what's playing.
      ===================================================================== */
   if (window.App && App.player && D.inWrapper) {
     var P = App.player;
+    var classicNow = null;                                 // { id, playing, pos, duration } from Webamp's window
+    var playingId = function () { return classicNow ? classicNow.id : P.currentId(); };
     var run = function (a, detail) {
-      var id = P.currentId(), ps = P.state;
+      var id = playingId(), ps = P.state;
       switch (a) {
         case 'play-pause': return P.toggle();
         case 'next': return P.next();
@@ -639,14 +648,35 @@
     T.event.listen('tray', function (e) { run(e.payload.action, e.payload); });
     T.event.listen('mini', function (e) { run(e.payload.action, e.payload); });
     T.event.listen('ask-close', function () { D.askClose(); });
+    T.event.listen('classic', function (e) {
+      var m = e.payload || {};
+      if (m.type === 'now') classicNow = m;
+      else if (m.type === 'back') classicNow = null;
+      else if (m.type === 'action') run(m.action);
+      if (m.type === 'now' || m.type === 'back') sendNow();
+      classicHears.forEach(function (fn) { fn(m); });
+    });
 
+    /* what plays: the app engine, or Webamp's window while Classic mode is open */
+    var playingNow = function () {
+      if (classicNow) {
+        return { track: classicNow.id ? App.data.track(classicNow.id) : null, playing: !!classicNow.playing,
+          pos: classicNow.pos || 0, duration: classicNow.duration || 0 };
+      }
+      return { track: P.current(), playing: !!P.state.playing, pos: P.state.pos || 0, duration: P.duration() || 0 };
+    };
     var lastNow = '';
     var sendNow = function () {
-      var t = P.current(), id = t ? t.id : null;
-      var now = { title: t ? t.title : '', artist: t ? t.artist : '', playing: !!P.state.playing,
+      var p = playingNow(), t = p.track, id = t ? t.id : null;
+      var now = { title: t ? t.title : '', artist: t ? t.artist : '', playing: p.playing,
         liked: !!(id && App.isLiked(id)), saved: !!(id && App.isSaved(id)),
-        connected: !App.banner.list().some(function (b) { return b.id === 'sys-unreachable'; }) };
-      var key = JSON.stringify(now); if (key === lastNow) return; lastNow = key;
+        connected: !App.banner.list().some(function (b) { return b.id === 'sys-unreachable'; }),
+        id: id || '', album: t && t.album || '', position: p.pos, duration: p.duration };
+      /* the position moves every second: a new report only when it jumped (a seek), not as it plays */
+      var started = p.playing ? Math.round((Date.now() / 1000 - p.pos) / 3) : 0;
+      var key = JSON.stringify([now.title, now.artist, now.playing, now.liked, now.saved, now.connected, id, now.album,
+        Math.round(now.duration), started]);
+      if (key === lastNow) return; lastNow = key;
       invoke('set_now_playing', { now: now }).catch(logFailure('set_now_playing'));
     };
 

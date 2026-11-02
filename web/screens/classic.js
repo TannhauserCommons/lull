@@ -1,16 +1,19 @@
-/* screens/classic.js: Classic mode (/classic): Webamp on a full-viewport stage, the skin drawer, Classic window chrome.
-   The stage lives on <body> above the inert app, which renders dimmed behind it: glossy title pill with three orbs
-   (Exit / Skins / Help), the Webamp slot, a skin drawer (Browse / Favourites / Downloaded) and a footer notice.
-   design/DESIGN.md section 12 is the design; docs/context/web.md the data layer and the player engine.
+/* screens/classic.js: Classic mode (/classic). Webamp plays the queue; nothing of the app shows behind it.
+   - In the desktop app (LullDesktop.openClassic), Webamp gets its own borderless window, like Winamp itself, and the
+     app's window hides (app/src/desktop/classic.rs, docs/context/desktop.md). This page hands over the queue, leaves
+     /classic at once, records what the window reports hearing, and takes the queue back when Webamp closes.
+   - In a browser, Webamp sits on a full-viewport stage on <body> over the inert, hidden app: glossy title pill with
+     three orbs (Exit / Skins / Help), the Webamp slot, a skin drawer (Browse / Favourites / Downloaded) and a footer
+     notice. design/DESIGN.md section 12 is the design; docs/context/web.md the data layer and the player engine.
 
    Webamp 2.3.1 (vendor/webamp/webamp.bundle.min.js, copied by scripts/vendor-web.sh) loads with a <script> tag the
    first time the stage opens, never on boot. One instance renders into #webamp-stage; later visits close() and
    reopen() it (dispose() still leaks), so the stage element itself is kept and moved into each new stage.
-   - Hand-off: on enter the app engine pauses and Webamp gets the queue (URLs from App.player.streamUrl) with title,
-     artist, album and duration, plus the index, position, shuffle, repeat and volume. Webamp has no play/pause/seek
-     events, so on exit (its own close button, Esc, W or any route change) the playlist, current song, position,
-     shuffle and repeat are read back into App.player. While open, App.hooks.media points media keys at Webamp and
-     songs heard there are recorded with App.recordPlay.
+   - Hand-off (desktop/webamp-session.js, shared with the desktop window): on enter the app engine pauses and Webamp
+     gets the queue (URLs from App.player.streamUrl) with title, artist, album and duration, plus the index, position,
+     shuffle, repeat and volume. On exit (Webamp's close button, Esc, W or any route change) the playlist, current
+     song, position, shuffle and repeat come back into App.player. While open, App.hooks.media points media keys at
+     Webamp and songs heard there are recorded with App.recordPlay.
    - Skins (docs/context/skins.md): GET /api/skins?q=&offset=&nsfw= (the server's Winamp Skin Museum proxy, with
      favourite and downloaded flags), /api/skins/favourites, files from /api/skins/{md5}.wsz (validated, cached, same
      origin, immutable). A skin file is fetched here first, so a failure shows the server's sentence instead of
@@ -25,6 +28,7 @@
   var html = App.html, raw = App.raw, ui = App.ui, M = App.data, P = App.player, icon = App.icon, $ = App.$, $$ = App.$$;
 
   var BUNDLE = 'vendor/webamp/webamp.bundle.min.js';
+  var SESSION = 'desktop/webamp-session.js';
   var PREVIEW_SECONDS = 15;
   var APPLY_TIMEOUT_MS = 10000;
   var SEARCH_DEBOUNCE_MS = 300;
@@ -88,7 +92,7 @@
   /* ---------- the stage element (lives on <body>, above the inert app) ---------- */
   var root = null, stage = null, lastPage = null, restore = null, timers = [], visit = 0;
 
-  /* remember the page Classic was opened from: it renders dimmed behind the stage, and Exit returns to it */
+  /* remember the page Classic was opened from: Exit returns to it */
   App.on('route', function (cur) {
     if (cur.path === '/classic') return;
     lastPage = { path: cur.path, params: cur.params, query: cur.query, route: cur.route };
@@ -99,12 +103,6 @@
     } else restore = null;
   });
 
-  function behindMarkup(ctx) {
-    if (!lastPage || !lastPage.route || !lastPage.route.render) return '';
-    try {
-      return lastPage.route.render({ params: lastPage.params, query: lastPage.query, el: ctx.el, route: lastPage.route, onCleanup: function () {} });
-    } catch (e) { return ''; }
-  }
   function lastHref() {
     if (!lastPage) return '/home';
     var q = Object.keys(lastPage.query)
@@ -435,27 +433,29 @@
   }
 
   /* ---------- Webamp: load, create once, reopen ---------- */
-  var webamp = null, webampClosed = false, closingByUs = false, prepared = null, creating = null;
-  function loadBundle() {
+  var webamp = null, session = null, webampClosed = false, closingByUs = false, prepared = null, creating = null;
+  function loadScript(src, global, missing) {
+    if (window[global]) return Promise.resolve(window[global]);
     return new Promise(function (resolve, reject) {
       var s = document.createElement('script');
-      s.src = BUNDLE;
+      s.src = src;
       s.onload = function () {
-        if (typeof window.Webamp === 'function') resolve(window.Webamp);
-        else reject(new Error(BUNDLE + ' loaded but defined no Webamp.'));
+        if (window[global]) resolve(window[global]);
+        else reject(new Error(src + ' loaded but defined no ' + global + '.'));
       };
-      s.onerror = function () {
-        s.remove();
-        reject(new Error('the player file (' + BUNDLE + ') didn\'t load. Check your connection; a server built from source needs `mise run setup`.'));
-      };
+      s.onerror = function () { s.remove(); reject(new Error(missing)); };
       document.head.appendChild(s);
     });
   }
-  /* the bundle plus what the constructor needs (favourites for its skins menu); a failed load can be retried */
+  /* the bundle, the shared hand-off, and what the constructor needs (favourites for its skins menu); a failed load
+     can be retried */
   function prepare() {
     if (!prepared) {
-      prepared = Promise.all([loadBundle(), readOnce()]).then(function (r) { return r[0]; },
-        function (err) { prepared = null; throw err; });
+      prepared = Promise.all([
+        loadScript(BUNDLE, 'Webamp', 'the player file (' + BUNDLE + ') didn\'t load. Check your connection; a server built from source needs `mise run setup`.'),
+        loadScript(SESSION, 'LullWebamp', SESSION + ' didn\'t load. Check your connection.'),
+        readOnce()
+      ]).then(function (r) { return r[0]; }, function (err) { prepared = null; throw err; });
     }
     return prepared;
   }
@@ -478,11 +478,8 @@
       handleLoadListEvent: importM3u
     });
     w.onWillClose(function (cancel) { if (closingByUs) return; cancel(); exit(); });   // its close button = leave Classic
-    w.onTrackDidChange(onWebampTrack);
-    w.media.on('timeupdate', onWebampTime);
-    /* Webamp can seek only once the file's duration is known */
-    w.media.on('fileLoaded', function () { if (pendingSeek !== null) { var at = pendingSeek; pendingSeek = null; w.seekToTime(at); } });
-    return w.renderInto(stage).then(function () { webamp = w; }, function (err) {
+    var s = LullWebamp.session(w, { listen: App.recordPlay });
+    return w.renderInto(stage).then(function () { webamp = w; session = s; }, function (err) {
       w.dispose();
       var fresh = makeStage();                                  // React may own the old host: start clean next time
       if (stage.parentNode) stage.parentNode.replaceChild(fresh, stage);
@@ -520,60 +517,47 @@
     if (pendingFile) { var f = pendingFile; pendingFile = null; applyLocal(f); }
   }
 
-  /* ---------- hand-off between the app engine and Webamp ---------- */
-  var urlToId = {}, currentUrl = null, pendingSeek = null, handedOver = false;
+  /* ---------- hand-off between the app engine and Webamp (desktop/webamp-session.js has its shape) ---------- */
+  var handedOver = false;
   function absolute(url) { return new URL(url, location.href).href; }
-  /* a queue entry as a Webamp track; metaData and duration spare Webamp fetching each file's head */
-  function webampTrack(trackId, source) {
+  function sameOrigin(url) { return new URL(url).origin === location.origin; }
+  /* a queue entry as a hand-off track; duration spares Webamp fetching each file's head, art feeds the OS overlay */
+  function handoffTrack(trackId, source) {
     var t = M.track(trackId), url = t && P.streamUrl(t.id, source);
-    if (!url) return null;
-    urlToId[absolute(url)] = t.id;
-    return { url: url, metaData: { title: t.title, artist: t.artist, album: t.album }, duration: t.duration || undefined };
+    if (!url || !sameOrigin(absolute(url))) return null;
+    var art = t.albumId ? absolute(App.artUrl(t.albumId, 256)) : null;
+    return { id: t.id, url: absolute(url), title: t.title || '', artist: t.artist || '', album: t.album || '',
+      duration: t.duration || null, art: art && sameOrigin(art) ? art : null };
   }
-  function handOver() {
-    var ps = P.state, wasPlaying = ps.playing, index = 0, tracks = [];
-    if (wasPlaying) P.pause();
-    urlToId = {};
+  function handoff() {
+    var ps = P.state, index = 0, tracks = [];
     ps.queue.forEach(function (q, i) {
-      var t = webampTrack(q.trackId, q.source);
+      var t = handoffTrack(q.trackId, q.source);
       if (!t) return;
       if (i === ps.index) index = tracks.length;
       tracks.push(t);
     });
-    webamp.setTracksToPlay([]);                                 // empties Webamp's list without starting anything
-    webamp.appendTracks(tracks);
-    if (webamp.isShuffleEnabled() !== ps.shuffle) webamp.toggleShuffle();
-    if (webamp.isRepeatEnabled() !== (ps.repeat !== 'off')) webamp.toggleRepeat();
-    webamp.setVolume(Math.round((ps.muted ? 0 : ps.volume) * 100));
-    if (tracks.length) {
-      pendingSeek = ps.pos > 1 ? ps.pos : null;
-      webamp.setCurrentTrack(index);
-      if (wasPlaying) webamp.play();
-    }
+    return { tracks: tracks, index: index, pos: ps.pos || 0, playing: !!ps.playing, shuffle: !!ps.shuffle,
+      repeat: ps.repeat !== 'off', volume: ps.muted ? 0 : ps.volume };
+  }
+  function handOver() {
+    var h = handoff();
+    if (h.playing) P.pause();
+    session.handIn(h);
     handedOver = true;
   }
-  /* Webamp's list, song, position and modes back into the app engine. Songs Webamp played from local files
-     have no place in a lull queue and are left out */
-  function handBack() {
-    handedOver = false; pendingSeek = null;
-    var playing = webamp.getMediaStatus() === 'PLAYING', pos = webamp.media.timeElapsed();
-    var ids = [], index = -1, local = 0;
-    webamp.getPlaylistTracks().forEach(function (t) {
-      var url = absolute(t.url), id = urlToId[url];
-      if (!id) { local += 1; return; }
-      if (index < 0 && url === currentUrl) index = ids.length;
-      ids.push(id);
-    });
-    syncModes();
-    if (local) App.toast(local === 1 ? 'The local file you added in Webamp isn\'t in your queue' : 'The ' + local + ' local files you added in Webamp aren\'t in your queue', { icon: 'info' });
-    if (!ids.length) return;                                    // nothing of lull's left in Webamp: the queue stays
-    if (index < 0) { index = 0; pos = 0; playing = false; }     // Webamp was on a local file
-    var ps = P.state, same = ids.length === ps.queue.length && ids.every(function (id, i) { return ps.queue[i].trackId === id; });
-    if (!same) P.playList(ids, index, { at: pos, autoplay: playing });
-    else if (index !== ps.index) P.jumpTo(index, { at: pos, autoplay: playing });   // keeps radio and queue groups
+  /* Webamp's list, song, position and modes back into the app engine (b: session.handBack()). Songs Webamp played
+     from local files have no place in a lull queue and are left out */
+  function takeBack(b) {
+    syncModes(b.shuffle, b.repeat);
+    if (b.local) App.toast(b.local === 1 ? 'The local file you added in Webamp isn\'t in your queue' : 'The ' + b.local + ' local files you added in Webamp aren\'t in your queue', { icon: 'info' });
+    if (!b.ids.length) return;                                  // nothing of lull's left in Webamp: the queue stays
+    var ps = P.state, same = b.ids.length === ps.queue.length && b.ids.every(function (id, i) { return ps.queue[i].trackId === id; });
+    if (!same) P.playList(b.ids, b.index, { at: b.pos, autoplay: b.playing });
+    else if (b.index !== ps.index) P.jumpTo(b.index, { at: b.pos, autoplay: b.playing });   // keeps radio and queue groups
     else {
-      if (Math.abs(pos - ps.pos) > 1) P.seek(pos);
-      if (playing) P.play();
+      if (Math.abs(b.pos - ps.pos) > 1) P.seek(b.pos);
+      if (b.playing) P.play();
     }
   }
   /* App.hooks.media while Classic is open */
@@ -584,32 +568,9 @@
     seekBy: function (sec) { if (sec < 0) webamp.seekBackward(-sec); else webamp.seekForward(sec); }
   };
 
-  /* ---------- listening history for songs heard in Webamp (App.recordPlay: scrobbles, history, taste) ---------- */
-  var listen = null;                                            // { rec, last (s into the song), dur }
-  function nearEnd(l) { return l.dur > 0 && l.last >= l.dur - 1.5; }
-  function endListen(how) { if (listen) { listen.rec.end(how); listen = null; } }
-  function onWebampTrack(t) {
-    currentUrl = t ? absolute(t.url) : null;
-    if (listen) endListen(nearEnd(listen) ? 'completed' : 'skipped');
-  }
-  /* Webamp's media clock (several times a second while playing, and on seeks): the record begins once a lull song
-     plays, and gains the seconds that passed in steady playback (jumps from seeks don't count) */
-  function onWebampTime() {
-    if (!handedOver) return;
-    var playing = webamp.getMediaStatus() === 'PLAYING', now = webamp.media.timeElapsed();
-    if (listen && now < listen.last - 1 && nearEnd(listen)) endListen('completed');   // the same song again (repeat)
-    if (!listen) {
-      var id = currentUrl && urlToId[currentUrl];
-      if (!playing || !id) return;
-      listen = { rec: App.recordPlay(id, webamp.media.duration() || M.track(id).duration), last: now, dur: 0 };
-    }
-    var dt = now - listen.last;
-    if (playing && dt > 0 && dt < 1.5) listen.rec.listened += dt;
-    listen.last = now; listen.dur = webamp.media.duration();
-  }
   /* Webamp's repeat is on or off: on keeps the app's all / one, off turns it off */
-  function syncModes() {
-    var ps = P.state, shuffle = webamp.isShuffleEnabled(), repeat = webamp.isRepeatEnabled();
+  function syncModes(shuffle, repeat) {
+    var ps = P.state;
     if (shuffle !== ps.shuffle) P.setShuffle(shuffle);
     if (repeat && ps.repeat === 'off') P.cycleRepeat();
     while (!repeat && ps.repeat !== 'off') P.cycleRepeat();
@@ -620,7 +581,8 @@
   function onWebampDrop(e) {
     var dt = e.dataTransfer, skinFile = Array.prototype.filter.call(dt.files || [], isWsz)[0];
     if (skinFile) { takeSkinFile(skinFile); return []; }
-    var tracks = (dt.getData('text/plain') || '').split(',').map(function (id) { return webampTrack(id.trim(), null); }).filter(Boolean);
+    var tracks = (dt.getData('text/plain') || '').split(',').map(function (id) { return handoffTrack(id.trim(), null); })
+      .filter(Boolean).map(session.add);
     return tracks.length ? tracks : null;
   }
   /* Webamp's playlist menu. Save list: the lull songs in it as an M3U download. Load list: the library's M3U import,
@@ -628,7 +590,7 @@
   function exportM3u(tracks) {
     var lines = ['#EXTM3U'];
     tracks.forEach(function (wt) {
-      var url = wt.url && absolute(wt.url), t = url && M.track(urlToId[url]);
+      var url = wt.url && absolute(wt.url), id = url && session.idOf(url), t = id && M.track(id);
       if (t) lines.push('#EXTINF:' + Math.round(t.duration || -1) + ',' + t.artist + ' - ' + t.title, url);
     });
     if (lines.length === 1) { App.toast('Nothing to save: the list holds no lull songs', { icon: 'info' }); return null; }
@@ -954,8 +916,8 @@
     if (S.preview) endPreview(false, true);                    // leaving mid-preview keeps the applied skin
     if (webamp) {
       App.hooks.media = null;                                  // back to the app engine
-      endListen('stopped');
-      if (handedOver) handBack();
+      session.stop();
+      if (handedOver) { handedOver = false; takeBack(session.handBack()); }
       closingByUs = true; webamp.close(); closingByUs = false;  // close() asks onWillClose too: let it through
       webampClosed = true;
     }
@@ -969,17 +931,56 @@
     $('#app').removeAttribute('inert'); $('#app').removeAttribute('aria-hidden');
   }
 
+  /* ---------- the desktop app: Webamp in its own window (app/src/desktop/classic.rs) ---------- */
+  /* desktop.js loads after this file: ask when Classic opens */
+  function desktopApp() { var D = window.LullDesktop; return D && D.inWrapper && D.openClassic ? D : null; }
+  var windowListen = null, hearing = false, windowWasPlaying = false;
+  /* the hand-off plus the skin to start in and the favourites for Webamp's Skins menu */
+  function openWindow(D) {
+    if (!hearing) { hearing = true; D.onClassic(fromWindow); }
+    readDevicePrefs();
+    var skinOf = function (s) { return { url: absolute(skinFileUrl(s.md5)), name: s.name }; };
+    var h = handoff(), skin = appliedSkin();
+    return readOnce().then(function () {
+      h.skin = skin && !skin.local ? skinOf(skin) : null;
+      h.skins = S.favs.items.map(skinOf);
+      return D.openClassic(h);
+    }).then(function () {                                       // the window starts Webamp where the app was
+      windowWasPlaying = h.playing;
+      if (h.playing) P.pause();
+    });
+  }
+  /* what Webamp's window reports (desktop.js passes on its 'classic' events) */
+  function fromWindow(m) {
+    if (m.type === 'listen') windowListen = App.recordPlay(m.id, m.duration);
+    else if (m.type === 'listened' && windowListen) {
+      windowListen.listened = m.seconds; windowListen.end(m.how); windowListen = null;
+    } else if (m.type === 'back') {
+      if (m.back) takeBack(m.back);
+      else if (windowWasPlaying) P.play();                      // Webamp never started: carry on here
+    }
+    else if (m.type === 'failed') App.toast('Webamp didn\'t start: ' + m.message, { kind: 'error', icon: 'warning' });
+  }
+
   /* ---------- route ---------- */
   App.route('/classic', {
     title: 'Classic mode',
     render: function (ctx) {
       if (!root) restore = { scroll: ctx.el.scrollTop, opener: document.activeElement };
-      return html`<div class="cls-behind" aria-hidden="true">${behindMarkup(ctx)}</div>`;
+      return '';
     },
     mount: function (ctx) {
-      if (!root) openStage();
-      /* a re-render of /classic (a read behind the stage settled) keeps the stage; leaving closes it */
-      ctx.onCleanup(function () { if (!onClassic()) closeStage(); });
+      var D = desktopApp();
+      if (D && !root) {
+        /* Classic lives in its own window: back to the page it came from. An app without that window (older than
+           this page) refuses, and the stage opens here instead */
+        openWindow(D).then(function () { if (onClassic()) App.go(lastHref()); }, function (err) {
+          console.warn('Classic window unavailable, using the stage', err);
+          if (onClassic() && !root) openStage();
+        });
+      } else if (!root) openStage();
+      /* a re-render of /classic keeps the stage; leaving closes it */
+      ctx.onCleanup(function () { if (!onClassic() && root) closeStage(); });
     }
   });
 })();
