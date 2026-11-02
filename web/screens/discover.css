@@ -57,7 +57,7 @@
 .disc-starter__main { display: grid; min-width: 0; }
 .disc-starter__title { font: var(--t-row); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .disc-starter__sub { font: var(--t-meta); color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.disc-starter__play .ic { width: 18px; height: 18px; margin-left: 2px; }
+.disc-starter__play .ic { width: 18px; height: 18px; }
 
 /* ---------- picked for you: grid of rows with reason chips ---------- */
 /* columns of picks as the module allows, about three rows of them: 6 picks, 9 from 900 px, 12 from 1200 px */
@@ -77,7 +77,7 @@
   background: var(--panel); color: var(--fg-panel); border: var(--stroke) solid var(--theme-edge);
   opacity: 0; transition: opacity var(--dur-1);
 }
-.disc-pick__play .ic { width: 14px; height: 14px; margin-left: 2px; }
+.disc-pick__play .ic { width: 14px; height: 14px; }
 .disc-pick:hover .disc-pick__play, .disc-pick:focus-within .disc-pick__play { opacity: 1; }
 @media (hover: none) { .disc-pick__play { opacity: 1; } }
 .disc-pick__main { grid-area: main; display: grid; justify-items: start; min-width: 0; padding-top: 2px; }

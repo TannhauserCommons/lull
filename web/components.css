@@ -91,7 +91,6 @@
   background: radial-gradient(ellipse at 50% 100%, color-mix(in srgb, var(--mauve) 60%, transparent), color-mix(in srgb, var(--mauve) 0%, transparent) 75%);
 }
 .btn-gloss .ic { width: calc(var(--size) * .4); height: calc(var(--size) * .4); }
-.btn-gloss .ic-play { margin-left: calc(var(--size) * .06); }
 .btn-gloss:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--mocha-edge), 0 0 0 var(--gloss-ring-w) var(--play-ring); }
 .btn-gloss--64 { --size: 64px; }
 .btn-gloss--56 { --size: 56px; }
@@ -243,7 +242,7 @@ button.src-badge::after { content: ""; position: absolute; inset: -10px -2px; }
   transition: transform var(--dur-press) var(--ease-out);
 }
 .tile__play::before { content: ""; position: absolute; inset: -2px; border-radius: 50%; }
-.tile__play .ic { width: 18px; height: 18px; margin-left: 2px; }
+.tile__play .ic { width: 18px; height: 18px; }
 .tile__play:hover { background: var(--panel-2); }
 .tile__play:active { transform: translateY(2px); }
 .tile__title { font: var(--t-row); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

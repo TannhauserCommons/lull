@@ -280,7 +280,6 @@
 :root[data-design="starlight"][data-motion="reduce"] .btn-gloss:active { transform: none; background: var(--bg-3); }
 :root[data-design="starlight"] :is(.btn-gloss, .tile__play):focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; background: var(--sl-chip); }
 :root[data-design="starlight"] .btn-gloss .ic { width: calc(var(--size) * .36); height: calc(var(--size) * .36); stroke-width: 1.5; }
-:root[data-design="starlight"] .btn-gloss .ic-play { margin-left: calc(var(--size) * .05); }
 :root[data-design="starlight"] .btn-gloss.is-liked { color: var(--heart); }
 :root[data-design="starlight"] .btn-gloss__spin { inset: -6px; border-width: 1.5px; border-color: var(--accent-ui); }
 /* Like breaks into six pixel specks (img 04) that fall 12 px and fade; only the heart just pressed (it holds focus) */
@@ -746,7 +745,7 @@
   opacity: 1; width: 56px; height: 56px; background: var(--bg); color: var(--sl-accent);
 }
 :root[data-design="starlight"] .disc-card[data-region="new"] .tile:first-child .tile__play:hover { background: var(--sl-accent); color: var(--bg); }
-:root[data-design="starlight"] .disc-card[data-region="new"] .tile:first-child .tile__play .ic { width: 20px; height: 20px; margin-left: 3px; }
+:root[data-design="starlight"] .disc-card[data-region="new"] .tile:first-child .tile__play .ic { width: 20px; height: 20px; }
 /* picked for you = img 01's lower card: two columns of framed art, caps title, caps artist, the reason as one quiet line, heart right */
 :root[data-design="starlight"] .disc-card[data-region="picks"]::after {
   content: ""; position: absolute; right: -36px; bottom: -22px; width: 68px; height: 68px; pointer-events: none; background: var(--sl-spark-img) center / contain no-repeat;
