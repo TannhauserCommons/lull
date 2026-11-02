@@ -569,9 +569,12 @@
     });
     return { days: days.filter(function (day) { return day.items.length; }), next: next, tail: tail };
   }
-  /* a pending scrobble counts as sent once Last.fm has nothing queued; null = never reported (no badge) */
+  function lastfmOff() { var lf = App.store.get('services').lastfm; return !!lf && lf.state === 'off'; }
+  /* a pending scrobble counts as sent once Last.fm has nothing queued; null = never reported (no badge); with
+     Last.fm not connected nothing is scrobbled, so no badges */
   function scrobbleOf(item) {
     var lf = App.store.get('services').lastfm;
+    if (lastfmOff()) return null;
     return item.scrobble === 'pending' && lf && lf.state === 'ok' && !lf.queued ? 'done' : item.scrobble;
   }
   function two(n) { return String(n).padStart(2, '0'); }
@@ -589,11 +592,14 @@
         text: 'Songs you play show up here by day, with their Last.fm scrobble status.', action: { label: 'Go home', href: '#/home' } })}</section>`;
     }
     var waiting = days.reduce(function (n, day) { return n + day.items.filter(function (i) { return scrobbleOf(i) === 'pending'; }).length; }, 0);
-    var status = waiting
+    var off = lastfmOff();
+    var status = off
+      ? html`${ui.statusGlyph('off', 'Not connected')}<p><b>Last.fm isn't connected, so plays aren't scrobbled.</b> Connect it in Settings to start.</p><a class="btn btn--sm" href="#/settings/lastfm">Set up</a>`
+      : waiting
       ? html`${ui.statusGlyph('warn', 'Waiting')}<p><b>${plural(waiting, 'scrobble')} waiting for Last.fm.</b> They stay queued and retry on their own.</p><button class="btn btn--sm" data-act="lastfm-retry">${icon('refresh')}Retry now</button>`
       : html`${ui.statusGlyph('ok', 'Up to date')}<p><b>Every eligible play is scrobbled.</b> Songs under 30 seconds are skipped, as Last.fm asks.</p>`;
     return html`<section class="card lib-card" aria-labelledby="lib-history-h">
-      ${ruleWith('history', 'lib-history-h', html`<ul class="lib-legend" aria-label="Scrobble status key">
+      ${ruleWith('history', 'lib-history-h', off ? '' : html`<ul class="lib-legend" aria-label="Scrobble status key">
         <li>${icon('check', null, 'ic-16')}scrobbled</li><li>${icon('clock', null, 'ic-16')}pending</li><li>${icon('dash', null, 'ic-16')}too short</li></ul>`)}
       <div class="lib-status inset">${status}</div>
       ${days.map(function (day) {
