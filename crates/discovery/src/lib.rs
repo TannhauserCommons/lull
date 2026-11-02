@@ -8,6 +8,7 @@ mod mix;
 mod pages;
 mod radio;
 mod search;
+mod share;
 mod sources;
 mod store;
 mod taste;
@@ -118,6 +119,9 @@ pub struct Service {
     /// Only with Last.fm API credentials configured; read through `lastfm()`.
     lastfm: Option<LastFm>,
     feed: feed::Feeds,
+    /// Answers kept in `discovery_cache`, for share links (the sources hold their own).
+    cache: Cache,
+    shares: share::Shares,
     /// Soulseek, for new releases peers share.
     transfers: Arc<dyn Transfers>,
     /// Settings > Discovery "adventurousness": radio's steer when the UI sends none.
@@ -149,8 +153,10 @@ pub async fn start(ctx: &Ctx, library: Arc<dyn Library>, transfers: Arc<dyn Tran
             .config
             .lastfm
             .as_ref()
-            .map(|l| LastFm::new(ctx.http.clone(), cache, l.api_key.clone())),
+            .map(|l| LastFm::new(ctx.http.clone(), cache.clone(), l.api_key.clone())),
         feed: feed::Feeds::default(),
+        cache,
+        shares: share::Shares::default(),
         transfers,
         adventurousness: RwLock::new(DEFAULT_STEER),
         ctx: ctx.clone(),
@@ -168,6 +174,7 @@ pub fn router(svc: Arc<Service>) -> Router {
         .route("/api/search", get(search::search))
         .route("/api/catalog/art/{id}", get(art::get))
         .route("/api/feed", get(feed::get))
+        .route("/api/share/{kind}/{id}", get(share::get))
         .route("/api/radio", get(radio_tracks))
         .route("/api/albums/{id}", get(pages::album))
         .route("/api/artists/{id}", get(pages::artist))

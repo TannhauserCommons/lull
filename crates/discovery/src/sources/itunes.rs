@@ -143,8 +143,58 @@ impl Itunes {
     }
 }
 
+impl Itunes {
+    /// The store's songs (`Entity::Song`) or albums for `term`, with their ids and covers, for
+    /// share links (`share.rs` caches the outcome). Fails while the budget is spent.
+    pub async fn listings(&self, term: &str, entity: Entity) -> Result<Vec<Listing>> {
+        if !self
+            .budget
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take(Instant::now())
+        {
+            return Err(Error::unavailable(SERVICE, "lull's calls for this minute are spent"));
+        }
+        let name = match entity {
+            Entity::Song => "song",
+            Entity::Album => "album",
+        };
+        let body: Value = self
+            .http
+            .json(SERVICE, |c| {
+                c.get(API).query(&[
+                    ("term", term),
+                    ("entity", name),
+                    ("limit", "10"),
+                    ("country", self.country.as_str()),
+                ])
+            })
+            .await?;
+        let page: Listings =
+            serde_json::from_value(body).map_err(|e| Error::upstream(SERVICE, format!("unexpected answer: {e}")))?;
+        Ok(page.results)
+    }
+}
+
+/// One song or album in the store, as `listings` gives it.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Listing {
+    pub track_id: Option<u64>,
+    pub track_name: Option<String>,
+    pub collection_id: Option<u64>,
+    pub collection_name: Option<String>,
+    pub artist_name: Option<String>,
+    pub artwork_url100: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct Listings {
+    results: Vec<Listing>,
+}
+
 #[derive(Clone, Copy)]
-enum Entity {
+pub enum Entity {
     Song,
     Album,
 }
