@@ -1461,5 +1461,5 @@
     title: function () { return S.q ? 'Search: ' + S.q : 'Search'; } });
 
   App.discover = { openFolder: openFolder, openPicker: openPicker, openDetails: openDetails, openSaveSheet: openSaveSheet,
-    openAggregate: openAggregate, openReleasePicker: openReleasePicker, openDuplicate: openDuplicate, startRadio: startRadio };
+    openAggregate: openAggregate, openReleasePicker: openReleasePicker, openDuplicate: openDuplicate, startRadio: startRadio, thousands: thousands };
 })();

@@ -202,7 +202,7 @@
   /* following, else Last.fm listeners when known */
   function artistMeta(ar) {
     if (App.isFollowed(ar.id)) return html`${icon('check', null, 'ic-16')} following`;
-    return ar.listeners ? (ar.listeners / 1000).toFixed(1) + 'k listeners' : '';
+    return ar.listeners ? App.discover.thousands(ar.listeners) + ' listeners' : '';
   }
 
   /* =====================================================================
@@ -491,7 +491,7 @@
           <div class="lib-hero">
             ${ui.mosaic(coverIds, 'var(--lib-art)', 'Covers tagged ' + tag.name)}
             <div class="lib-hero__info">
-              <p class="lib-kicker">tag, ${plural(artists.length, 'artist')}, ${plural(albums.length, 'new release')}</p>
+              <p class="lib-kicker">${['tag'].concat(d.errors && d.errors.artists ? [] : [plural(artists.length, 'artist')], d.errors && d.errors.newReleases ? [] : [plural(albums.length, 'new release')]).join(', ')}</p>
               <h1 class="t-display lib-title" id="lib-tag-title">${tag.name}</h1>
               <p class="lib-bio">${tag.desc || 'No description yet. Tags come from MusicBrainz and Last.fm.'}</p>
               <div class="lib-actions">
