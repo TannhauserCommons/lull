@@ -103,4 +103,10 @@ pub trait Transfers: Send + Sync {
     async fn album_available(&self, _artist: &str, _album: &str) -> Result<Option<bool>> {
         Ok(None)
     }
+
+    /// `album_available`'s remembered answer only: never searches, so a caller can fill a
+    /// shelf at once before spending searches on the rest. `None` when nothing is remembered.
+    async fn album_known(&self, _artist: &str, _album: &str) -> Result<Option<bool>> {
+        Ok(None)
+    }
 }
