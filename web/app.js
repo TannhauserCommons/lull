@@ -2073,9 +2073,9 @@
     var actions = { soulseek: ['Settings', 'open-sources'], library: ['Rescan', 'jellyfin-rescan'], catalog: ['Check again', 'sys-health'],
       lastfm: ['Retry now', 'lastfm-retry'], cache: ['Manage', 'open-cache'] };
     var body = html`<div class="popover__head">services</div><div class="status-list">${Object.keys(s).map(function (k) {
-      var st = s[k].state;
+      var st = s[k].state, act = k === 'lastfm' && st === 'off' ? ['Set up', 'open-lastfm'] : actions[k];   // nothing to retry while Last.fm isn't connected
       return html`<div class="status-row">${ui.statusGlyph(st, STATE_WORDS[st])}<div><span class="status-row__name">${s[k].label}</span><span class="status-row__detail">${s[k].detail}</span></div>
-        <button class="btn btn--sm" data-act="${actions[k][1]}">${actions[k][0]}</button></div>`;
+        <button class="btn btn--sm" data-act="${act[1]}">${act[0]}</button></div>`;
     })}</div>`;
     App.popover(anchor, body, { label: 'Service status', className: 'popover--status' });
   }
@@ -2585,6 +2585,7 @@
     'palette': function () { App.hooks.palette(); },
     'classic': function () { App.go('/classic'); },
     'open-sources': function () { App.closePopover(); App.go('/settings/sources'); },
+    'open-lastfm': function () { App.closePopover(); App.go('/settings/lastfm'); },
     'jellyfin-rescan': function () { serverAction('/api/library/rescan', 'Jellyfin rescan started'); },
     'lastfm-retry': function () { serverAction('/api/lastfm/retry', 'Sending queued scrobbles to Last.fm'); },
     'open-cache': function () { App.closePopover(); App.go('/settings/cache'); },
