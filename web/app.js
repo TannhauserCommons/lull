@@ -2429,7 +2429,7 @@
     ids = [].concat(ids);
     var p = M.playlist(plId); if (!p) return;
     var before = p.items.map(function (i) { return i.trackId; });
-    App.savePlaylistOrder(plId, ids.concat(before)).then(function () {
+    App.savePlaylistOrder(plId, before.concat(ids)).then(function () {
       App.toast('Added to ' + p.name, { icon: 'playlists', action: 'Undo', onAction: function () { App.savePlaylistOrder(plId, before); } });
     }, function (err) { App.toast('Couldn\'t add to ' + p.name + ': ' + err.message, { kind: 'error' }); });
   }
