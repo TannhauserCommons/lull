@@ -2411,7 +2411,7 @@
     // mini-player text
     $('#mini-title').textContent = idle ? 'Nothing playing' : t.title;
     $('#mini-sub').textContent = idle ? 'Search or pick something from Home' : (line && st !== 'streaming' && st !== 'library' ? line : t.artist);
-    var mt = $('#mini-thumb'); mt.innerHTML = idle ? '<span></span>' : String(ui.cover(t, 40)); mt.classList.toggle('bezel-thumb--empty', idle);
+    var mt = $('#mini-thumb'); patch(mt, idle ? '<span></span>' : ui.cover(t, 40)); mt.classList.toggle('bezel-thumb--empty', idle);
     App.syncRows();
     updateSeeks();
     updateMediaSession();
