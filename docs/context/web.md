@@ -304,8 +304,8 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
   - The catalog answer comes first from `GET /api/search`. It holds the top result card, songs (beside it once the
     column passes 900 px), artists (round photos from the entity's `image`) and releases (with their `type`: album,
     EP, single).
-  - While `pending` names catalogs still searching, a quiet line says so. `search.more` appends its ids to each
-    list, never reordering.
+  - While `pending` names catalogs still searching, a quiet line with a spinner says so in the songs heading (one line,
+    so it leaves without moving the list). `search.more` appends its ids to each list, never reordering.
   - Soulseek is asked for 3+ characters once the query is submitted: Enter in either field, "Ask now", or 1.5 s
     without typing. The call is `GET /api/soulseek/search`, with rows as `search.results`. Its `onlySoulseek` songs
     are "Only on Soulseek". The same moment asks `/api/search?q=…&submitted=1`, which adds MusicBrainz release groups

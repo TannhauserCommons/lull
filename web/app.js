@@ -592,12 +592,13 @@
     return chip;
   };
 
-  /* section label: lowercase text + hairline rule + optional quiet action { label, href | act } */
+  /* section label: lowercase text + hairline rule + optional quiet action { label, href | act } or end markup (a status) */
   ui.labelRule = function (text, opts) {
     opts = opts || {}; var tag = opts.level || 'h2';
     var action = opts.action ? (opts.action.href
       ? html`<a class="btn btn--quiet btn--sm" href="${opts.action.href}">${opts.action.label}</a>`
-      : html`<button class="btn btn--quiet btn--sm" data-act="${opts.action.act}">${opts.action.label}</button>`) : '';
+      : html`<button class="btn btn--quiet btn--sm" data-act="${opts.action.act}">${opts.action.label}</button>`)
+      : opts.end ? html`<span class="label-rule__end">${opts.end}</span>` : '';
     return html`<div class="label-rule${opts.sm ? ' label-rule--sm' : ''}">${raw('<' + tag + (opts.id ? ' id="' + esc(opts.id) + '"' : '') + '>')}${text}${raw('</' + tag + '>')}${action}</div>`;
   };
   ui.iconButton = function (name, label, attrs) {

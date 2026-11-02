@@ -168,6 +168,9 @@ button.disc-pick__title:hover { text-decoration: underline; text-underline-offse
   .disc-songs:not(:has(.tlist > li:nth-child(11))) .disc-more { display: none; }
 }
 .disc-pending { display: flex; align-items: center; gap: var(--sp-2); margin: 0 0 var(--sp-3); font: var(--t-meta); color: var(--fg-2); }
+/* in the songs heading: one line that never wraps, so it can come and go without moving the list */
+.label-rule__end:has(> .disc-pending) { flex: 0 1 auto; min-width: 0; }
+.label-rule__end > .disc-pending { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .disc-tabs { width: max-content; margin-bottom: var(--sp-4); }
 @media (max-width: 639px) {      /* one scrolling row of pills on phone, bleeding to the screen edges */
   .disc-filters { flex-wrap: nowrap; overflow-x: auto; margin: 0 -16px var(--sp-4); padding: 6px 16px; scrollbar-width: none; }

@@ -680,15 +680,16 @@
         : ui.emptyState({ art: 'moon', title: 'Nothing matches ' + S.q, text: S.slsk ? 'Soulseek peers may still share it: see below.' : 'Type at least three characters to ask Soulseek peers too.' })}</section>`;
     }
     var shown = S.showAll ? tracks : tracks.slice(0, SONGS_MAX);
-    return html`${pendingLine()}
-      <div class="disc-cat__lead">
+    /* catalogs still answering show in the songs heading, so the line going away moves nothing below it */
+    var songsHead = ui.labelRule('songs', { id: 'disc-h-songs', end: pendingLine() });
+    return html`<div class="disc-cat__lead">
         ${top ? html`<section class="card disc-card disc-top" aria-labelledby="disc-h-top">${ui.labelRule('top result', { id: 'disc-h-top' })}${topCard(top)}</section>` : ''}
         ${tracks.length ? html`<section class="card disc-card disc-songs${S.showAll ? ' is-all' : ''}" aria-labelledby="disc-h-songs">
-          ${ui.labelRule('songs', { id: 'disc-h-songs' })}
+          ${songsHead}
           <ol class="tlist tlist--dense" data-ids="${shown.map(function (t) { return t.id; }).join(',')}" aria-label="Songs">${shown.map(songRow)}</ol>
           ${!S.showAll && tracks.length > 5 ? html`<button class="btn btn--quiet disc-more" data-act="disc-show-all">Show all ${plural(tracks.length, 'song')}</button>` : ''}
         </section>` : C.pending.length ? html`<section class="card disc-card disc-songs" aria-labelledby="disc-h-songs" aria-busy="true">
-          ${ui.labelRule('songs', { id: 'disc-h-songs' })}<div class="disc-songs__wait">${ui.skeleton('row', 5)}</div>
+          ${songsHead}<div class="disc-songs__wait">${ui.skeleton('row', 5)}</div>
         </section>` : ''}
       </div>
       ${artists.length ? html`<section class="card disc-card" aria-labelledby="disc-h-artists">${ui.labelRule('artists', { id: 'disc-h-artists' })}
@@ -701,7 +702,7 @@
   function pendingLine() {
     var names = unique((S.cat ? S.cat.pending : []).map(function (k) { return CATALOG[k]; }).filter(Boolean));
     if (!names.length) return '';
-    return html`<p class="disc-pending" role="status"><span class="spin-ring" aria-hidden="true"></span>Still asking ${names.join(' and ')}</p>`;
+    return html`<span class="disc-pending" role="status"><span class="spin-ring" aria-hidden="true"></span>Still asking ${names.join(' and ')}</span>`;
   }
   /* a quiet line: which catalogs didn't answer (their own sentences as a tooltip) */
   function catalogErrors() {
