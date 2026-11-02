@@ -108,6 +108,8 @@ pub async fn page(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Re
     let mut errors = Errors::new();
     let mut pending = Vec::new();
     let late = Late::new(&svc, id.clone());
+    // This page vets the artist's photo against its covers; the background queue leaves it be.
+    svc.photos.hold(&id);
 
     // Who the artist is: Last.fm's profile (asked by MBID when known) and, without an MBID,
     // MusicBrainz's artist of that name, side by side. With the MBID known, the sections don't
@@ -159,7 +161,7 @@ pub async fn page(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Re
     let (photos_tx, photos_rx) = oneshot::channel::<Result<()>>();
     late.open(3);
     {
-        let (svc, late, info, artist) = (svc.clone(), late.clone(), info.clone(), artist.clone());
+        let (svc, late, info, artist, held) = (svc.clone(), late.clone(), info.clone(), artist.clone(), id.clone());
         svc.ctx.clone().spawn(async move {
             let (catalog, similar) = tokio::join!(
                 async {
@@ -183,6 +185,7 @@ pub async fn page(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Re
                 covers: Vec::new(),
             }));
             photo::find(&svc, asks).await;
+            svc.photos.release(&held);
             late.deliver(photos_tx, Ok(()));
         });
     }

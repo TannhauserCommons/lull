@@ -7,17 +7,20 @@
 //!    copies of the picture and of the covers lull knows: the discography's, Deezer radio's).
 //!
 //! Without either, the artist has no photo and each design draws its own fallback. The verdict
-//! is kept in `discovery_artist_photos` (a photo a month, "none" a week) and wins over a
-//! picture search recorded in the catalog.
+//! is kept in `discovery_artist_photos` (a photo a month, "none" a week). Only a vetted photo is
+//! ever advertised or served: the picture search records in the catalog may be a cover. An
+//! artist a response names before it is vetted (search, feed, tag pages) is queued (`Queue`),
+//! so its photo shows from a later read.
 
+use std::collections::HashSet;
 use std::path::Path as FsPath;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use lull_core::Result;
-use lull_core::catalog;
 use lull_core::ids::ArtistId;
 use lull_core::model::Artist;
 use rusqlite::{Connection, OptionalExtension, params};
+use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
 use crate::Service;
@@ -33,6 +36,10 @@ const SAME_BITS: u32 = 10;
 const COVERS: usize = 8;
 /// The size pictures are compared at.
 const PROBE: u32 = 96;
+/// Artists waiting to be vetted; beyond this, a response's artists wait for a later one.
+const QUEUE: usize = 64;
+/// Artists vetted together (one Wikidata query).
+const BATCH: usize = 12;
 
 /// An artist whose photo is wanted, with what the page already knows: the Deezer artist
 /// MusicBrainz links it to, and its covers.
@@ -42,12 +49,80 @@ pub struct Ask {
     pub covers: Vec<String>,
 }
 
-/// The photo the catalog serves for an artist: the vetted one (or none), else what search
-/// recorded.
+/// The photo lull serves for an artist: a vetted one only.
 pub fn image_of(c: &Connection, id: &ArtistId) -> Result<Option<String>> {
-    match vetted(c, id)? {
-        Some((image, _)) => Ok(image),
-        None => catalog::artist_image(c, id),
+    Ok(vetted(c, id)?.and_then(|(image, _)| image))
+}
+
+/// Artists to vet in the background, and those being vetted, so none is vetted twice at once.
+pub struct Queue {
+    tx: mpsc::Sender<Artist>,
+    queued: Mutex<HashSet<ArtistId>>,
+    vetting: Mutex<HashSet<ArtistId>>,
+}
+
+impl Queue {
+    pub fn new() -> (Self, mpsc::Receiver<Artist>) {
+        let (tx, rx) = mpsc::channel(QUEUE);
+        let q = Queue {
+            tx,
+            queued: Mutex::default(),
+            vetting: Mutex::default(),
+        };
+        (q, rx)
+    }
+
+    /// Keeps `ask` from queuing an artist whose page vets it itself (with its covers).
+    pub fn hold(&self, id: &ArtistId) {
+        self.queued
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(id.clone());
+    }
+
+    pub fn release(&self, id: &ArtistId) {
+        self.queued.lock().unwrap_or_else(PoisonError::into_inner).remove(id);
+    }
+
+    /// Queues artists no verdict names yet; a full queue drops them until a later response.
+    pub fn ask(&self, artists: Vec<Artist>) {
+        let mut queued = self.queued.lock().unwrap_or_else(PoisonError::into_inner);
+        for a in artists {
+            if queued.contains(&a.id) {
+                continue;
+            }
+            let id = a.id.clone();
+            if self.tx.try_send(a).is_ok() {
+                queued.insert(id);
+            }
+        }
+    }
+}
+
+/// Vets queued artists a batch at a time, for as long as the hub runs.
+pub async fn work(svc: Arc<Service>, mut rx: mpsc::Receiver<Artist>) {
+    while let Some(first) = rx.recv().await {
+        let mut batch = vec![first];
+        while batch.len() < BATCH
+            && let Ok(more) = rx.try_recv()
+        {
+            batch.push(more);
+        }
+        {
+            let mut queued = svc.photos.queued.lock().unwrap_or_else(PoisonError::into_inner);
+            for a in &batch {
+                queued.remove(&a.id);
+            }
+        }
+        let asks = batch
+            .into_iter()
+            .map(|artist| Ask {
+                artist,
+                deezer: None,
+                covers: Vec::new(),
+            })
+            .collect();
+        find(&svc, asks).await;
     }
 }
 
@@ -87,13 +162,21 @@ pub async fn find(svc: &Arc<Service>, asks: Vec<Ask>) {
                 true
             }
         };
-        if !fresh {
+        let claimed = !fresh
+            && svc
+                .photos
+                .vetting
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .insert(ask.artist.id.clone());
+        if claimed {
             stale.push(ask);
         }
     }
     if stale.is_empty() {
         return;
     }
+    let claimed: Vec<ArtistId> = stale.iter().map(|a| a.artist.id.clone()).collect();
     let mbids: Vec<String> = stale.iter().filter_map(|a| a.artist.musicbrainz_id.clone()).collect();
     let wiki = if mbids.is_empty() {
         Default::default()
@@ -115,6 +198,10 @@ pub async fn find(svc: &Arc<Service>, asks: Vec<Ask>) {
         });
     }
     while tasks.join_next().await.is_some() {}
+    let mut vetting = svc.photos.vetting.lock().unwrap_or_else(PoisonError::into_inner);
+    for id in &claimed {
+        vetting.remove(id);
+    }
 }
 
 /// The artist's photo (`Some(None)`: surely none), or `None` when a source failed and the

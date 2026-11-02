@@ -129,6 +129,8 @@ pub struct Service {
     /// Pictures fetched for `/api/catalog/art`.
     art_dir: std::path::PathBuf,
     art_fetches: art::Fetches,
+    /// Artist photos waiting to be vetted.
+    photos: artist::photo::Queue,
     /// Only with Last.fm API credentials configured; read through `lastfm()`.
     lastfm: Option<LastFm>,
     feed: feed::Feeds,
@@ -143,6 +145,7 @@ pub struct Service {
 
 pub async fn start(ctx: &Ctx, library: Arc<dyn Library>, transfers: Arc<dyn Transfers>) -> Result<Arc<Service>> {
     let cache = Cache::new(ctx.db.clone());
+    let (photos, photo_queue) = artist::photo::Queue::new();
     cache.prune().await?;
     let svc = Arc::new(Service {
         store: Store::new(ctx.db.clone(), library),
@@ -163,6 +166,7 @@ pub async fn start(ctx: &Ctx, library: Arc<dyn Library>, transfers: Arc<dyn Tran
         searches: search::Searches::default(),
         art_dir: ctx.config.data_dir.join("catalog-art"),
         art_fetches: art::Fetches::default(),
+        photos,
         lastfm: ctx
             .config
             .lastfm
@@ -176,6 +180,7 @@ pub async fn start(ctx: &Ctx, library: Arc<dyn Library>, transfers: Arc<dyn Tran
         ctx: ctx.clone(),
     });
     ctx.spawn(listen(svc.clone(), ctx.bus.subscribe()));
+    ctx.spawn(artist::photo::work(svc.clone(), photo_queue));
     ctx.spawn(feed::keep_fresh(svc.clone()));
     ctx.spawn(search::catalog::keep_choosing(svc.clone()));
     Ok(svc)

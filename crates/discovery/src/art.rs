@@ -3,7 +3,8 @@
 //! lull, so the UI never loads an outside image and the CSP stays same-origin. Where each
 //! picture comes from is `lull_core::catalog`'s; an album with a MusicBrainz release group and
 //! no other source gets the Cover Art Archive's. Entities point at this route as `art` (albums)
-//! and `image` (artists) whenever a source is known.
+//! whenever a source is known, and as `image` (artists) only for a vetted photo
+//! (`artist::photo`); the route serves nothing else for an artist.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path as FsPath, PathBuf};
@@ -69,7 +70,20 @@ pub struct Pictured {
 /// source said it has none (a new release the Cover Art Archive has no cover for): the UI shows
 /// its placeholder at once instead of asking for a 404 on every load.
 pub async fn pictured(svc: &Service, e: Entities) -> Result<Pictured> {
-    let mut out = svc.ctx.db.call(move |c| picture(c, e)).await?;
+    let (mut out, unvetted) = svc
+        .ctx
+        .db
+        .call(move |c| {
+            let mut unvetted = Vec::new();
+            for (id, artist) in &e.artists {
+                if crate::artist::photo::vetted(c, id)?.is_none() {
+                    unvetted.push(artist.clone());
+                }
+            }
+            Ok((picture(c, e)?, unvetted))
+        })
+        .await?;
+    svc.photos.ask(unvetted);
     for (id, album) in &mut out.albums {
         if album.art.is_some() && has_none(&svc.art_dir, id.as_str()).await {
             album.art = None;
@@ -116,13 +130,10 @@ pub fn picture(c: &rusqlite::Connection, e: Entities) -> Result<Pictured> {
         out.albums.insert(id, PicturedAlbum { album, art });
     }
     for (id, artist) in e.artists {
-        // A vetted photo carries its version, so a browser holding the old picture asks again.
-        let image = match crate::artist::photo::vetted(c, &id)? {
-            Some((image, _)) => {
-                image.map(|source| format!("{}?v={}", url(id.as_str()), crate::artist::photo::version(&source)))
-            }
-            None => catalog::artist_image(c, &id)?.map(|_| url(id.as_str())),
-        };
+        // Only a vetted photo: what search recorded may be a cover (artist/photo.rs). Its version
+        // makes a browser holding an old picture ask again.
+        let image = crate::artist::photo::image_of(c, &id)?
+            .map(|source| format!("{}?v={}", url(id.as_str()), crate::artist::photo::version(&source)));
         out.artists.insert(id, PicturedArtist { artist, image });
     }
     Ok(out)
@@ -356,7 +367,7 @@ fn content_type(bytes: &[u8]) -> &'static str {
 mod tests {
     use lull_core::db::Db;
     use lull_core::ids::{AlbumId, ArtistId};
-    use lull_core::model::{Album, Entities, Saved};
+    use lull_core::model::{Album, Artist, Entities, Saved};
     use lull_core::{Result, catalog};
 
     use super::{Fetches, fit, picture, sized};
@@ -377,6 +388,47 @@ mod tests {
             duration: None,
             musicbrainz_id: group.map(str::to_owned),
         }
+    }
+
+    #[tokio::test]
+    async fn an_artist_picture_search_recorded_is_not_advertised_until_vetted() -> Result<()> {
+        // Live, BIJI's first page visit advertised Deezer's "photo" (the Edgerunners cover).
+        let db = Db::memory()?;
+        db.migrate(&catalog::MIGRATIONS)?;
+        db.migrate(&crate::MIGRATIONS)?;
+        let biji = Artist {
+            id: ArtistId::of("BIJI"),
+            name: "BIJI".into(),
+            tags: vec![],
+            listeners: None,
+            bio: None,
+            musicbrainz_id: None,
+        };
+        let id = biji.id.clone();
+        let e = || Entities {
+            artists: [(biji.id.clone(), biji.clone())].into(),
+            ..Entities::default()
+        };
+        let (first, e1) = (id.clone(), e());
+        let unvetted = db
+            .call(move |c| {
+                catalog::remember_artist(c, &e1.artists[&first], Some("https://cdn.example/cover/{size}.jpg"))?;
+                Ok(picture(c, e1)?.artists[&first].image.clone())
+            })
+            .await?;
+        assert_eq!(unvetted, None, "search's picture may be a cover");
+        let (then, e2) = (id.clone(), e());
+        let vetted = db
+            .call(move |c| {
+                c.execute(
+                    "INSERT INTO discovery_artist_photos (artist_id, image, checked_at) VALUES (?1, ?2, 0)",
+                    [then.as_str(), "https://commons.example/biji.jpg?width={size}"],
+                )?;
+                Ok(picture(c, e2)?.artists[&then].image.clone())
+            })
+            .await?;
+        assert!(vetted.is_some_and(|u| u.starts_with("api/catalog/art/ar-") && u.contains("?v=")));
+        Ok(())
     }
 
     #[tokio::test]
