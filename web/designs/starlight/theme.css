@@ -980,8 +980,9 @@
   :root[data-design="starlight"] .rail__head .sl-mark__word { display: none; }
   :root[data-design="starlight"] .nav-item { width: 48px; min-height: 48px; padding: 0; }
   :root[data-design="starlight"] .nav-item .ic { width: 22px; height: 22px; color: var(--fg); }
-  :root[data-design="starlight"] .pbar__now { min-width: 250px; }
-  :root[data-design="starlight"] .pbar__centre { width: min(260px, 30vw); }
+  :root[data-design="starlight"] .pbar__now { min-width: 0; }   /* it was 250: the title ran out of its column over the transport at 640 to 800 px; the base look clips it */
+  :root[data-design="starlight"] .pbar__centre { width: 232px; }   /* the five transport buttons at a 4 px gap (they were 264 px at 12 px in a 230 px column, and Repeat ran onto Like) */
+  :root[data-design="starlight"] .pbar__controls { gap: 4px; }
   :root[data-design="starlight"] .header__search .input { font-size: .9375rem; }
   :root[data-design="starlight"] .lib .trow__title { white-space: normal; text-align: left; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 }
