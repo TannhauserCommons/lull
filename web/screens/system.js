@@ -847,7 +847,8 @@
     window.LullDesktop.settings().then(function (d) { desk = { data: d }; repaint('#sys-desktop', desktopRows()); },
       function (err) { desk = { error: errText(err) }; repaint('#sys-desktop', desktopRows()); });
   }
-  ['closeToTray', 'launchAtLogin', 'startInTray', 'miniStyle', 'miniOnTop', 'ownTitlebar', 'discordPresence'].forEach(function (key) {
+  ['closeToTray', 'launchAtLogin', 'startInTray', 'miniStyle', 'miniOnTop', 'ownTitlebar', 'discordPresence', 'discordStatus',
+    'discordCover', 'discordButtons', 'discordPaused'].forEach(function (key) {
     custom['desktop.' + key] = { get: function () { return desk.data[key]; }, set: function (v) {
       var before = desk.data[key], patch = {}; patch[key] = v; desk.data[key] = v;
       window.LullDesktop.setSettings(patch).then(null, function (err) {
@@ -858,6 +859,7 @@
     } };
   });
   effects['desktop.ownTitlebar'] = function () { App.toast('Restart lull to change the title bar', { icon: 'refresh' }); };
+  effects['desktop.discordPresence'] = function (v) { $$('[data-when="discord"]').forEach(function (r) { r.hidden = !v; }); };
   App.action('sys-desktop-connect', function () { window.LullDesktop.windowAction('change-server'); });
   App.action('sys-desktop-reload', function () { loadDesktop(); repaint('#sys-desktop', desktopRows()); });
   function desktopRows() {
@@ -871,7 +873,17 @@
       ${row('Mini player style', 'Opens from the tray, the player bar or Ctrl+Shift+M.', choice('desktop.miniStyle', 'Mini player style', [['device', 'Device'], ['strip', 'Strip']]))}
       ${switchRow('desktop.miniOnTop', 'Mini player always on top', 'Some Linux desktops decide this themselves.')}
       ${d.ownTitlebar == null ? '' : switchRow('desktop.ownTitlebar', 'Use lull title bar', 'Replaces the system title bar; takes effect after a restart.')}
-      ${d.discordPresence == null ? '' : switchRow('desktop.discordPresence', 'Show what I\'m playing on Discord', 'Your Discord status shows the song, its cover and a song.link button while Discord runs on this computer.')}`;
+      ${d.discordPresence == null ? '' : discordRows(d)}`;
+  }
+  /* Discord Rich Presence (app/src/desktop/discord.rs): the switch, then its look while it is on */
+  function discordRows(d) {
+    return html`${switchRow('desktop.discordPresence', 'Show what I\'m playing on Discord', 'While Discord runs on this computer, your status shows the song, its cover and its progress.')}
+      <div data-when="discord" ${d.discordPresence ? '' : raw('hidden')}>
+        ${row('Next to your name', 'What follows "Listening to" in the member list.', choice('desktop.discordStatus', 'Next to your name', [['song', 'Song'], ['artist', 'Artist'], ['lull', 'lull']]))}
+        ${switchRow('desktop.discordCover', 'Show the album cover', 'Off shows lull\'s own picture instead.')}
+        ${switchRow('desktop.discordButtons', 'Show buttons', '"Open on song.link" and "Get lull". Others see them; Discord doesn\'t show them to you.')}
+        ${row('When paused', '', choice('desktop.discordPaused', 'When paused', [['clear', 'Hide it'], ['show', 'Show it as paused']]))}
+      </div>`;
   }
   function secApp() {
     if (inWrapper() && !desk) loadDesktop();

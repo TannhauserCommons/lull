@@ -671,11 +671,12 @@
       var now = { title: t ? t.title : '', artist: t ? t.artist : '', playing: p.playing,
         liked: !!(id && App.isLiked(id)), saved: !!(id && App.isSaved(id)),
         connected: !App.banner.list().some(function (b) { return b.id === 'sys-unreachable'; }),
-        id: id || '', album: t && t.album || '', position: p.pos, duration: p.duration };
+        id: id || '', artistId: t && t.artistId || '', albumId: t && t.albumId || '', album: t && t.album || '',
+        position: p.pos, duration: p.duration };
       /* the position moves every second: a new report only when it jumped (a seek), not as it plays */
       var started = p.playing ? Math.round((Date.now() / 1000 - p.pos) / 3) : 0;
-      var key = JSON.stringify([now.title, now.artist, now.playing, now.liked, now.saved, now.connected, id, now.album,
-        Math.round(now.duration), started]);
+      var key = JSON.stringify([now.title, now.artist, now.playing, now.liked, now.saved, now.connected, id, now.artistId,
+        now.albumId, now.album, Math.round(now.duration), started]);
       if (key === lastNow) return; lastNow = key;
       invoke('set_now_playing', { now: now }).catch(logFailure('set_now_playing'));
     };
