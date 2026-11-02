@@ -796,7 +796,7 @@
   :root[data-design="starlight"] .lib-hero:has(> .lib-hero__info > .lib-actions) > .lib-hero__info > * { grid-column: 2; justify-self: start; margin-top: 0; margin-bottom: 0; }
   :root[data-design="starlight"] .lib-hero:has(> .lib-hero__info > .lib-actions) > :is(.cover, .mosaic) { grid-row: 1 / span 5; align-self: center; margin-bottom: 14px; }
   :root[data-design="starlight"] .lib-hero:has(> .lib-hero__info > .lib-actions) > .lib-hero__info > .lib-actions {
-    grid-column: 1 / -1; justify-self: stretch; flex-wrap: nowrap; gap: 8px; margin-top: 10px;
+    grid-column: 1 / -1; justify-self: stretch; flex-wrap: wrap; gap: 8px; margin-top: 10px;   /* wraps: in the two-column album page the hero is only ~380 px wide */
   }
   :root[data-design="starlight"] .lib-hero__info > .lib-actions .lib-actions__icons { margin-left: auto; gap: 4px; }
 }
