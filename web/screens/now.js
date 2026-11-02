@@ -716,7 +716,7 @@
     return list;
   }
   function jobState(j) {
-    if (j.kind === 'transfer') return j.state === 'failed' ? 'failed' : ['transferring', 'queued', 'stalled'].indexOf(j.state) >= 0 ? 'active' : 'done';
+    if (j.kind === 'transfer') return j.state === 'failed' ? 'failed' : j.state === 'cancelled' ? 'cancelled' : ['transferring', 'queued', 'stalled'].indexOf(j.state) >= 0 ? 'active' : 'done';
     if (j.kind === 'save') return j.status === 'saving' || j.status === 'waiting' ? 'active' : j.status === 'failed' ? 'failed' : 'done';
     return j.state === 'running' ? 'active' : j.state === 'failed' ? 'failed' : 'done';
   }
@@ -776,22 +776,23 @@
   function activityBlock() {
     var err = App.store.get('activityError');
     if (err) return html`<div class="now-act">${ui.emptyState({ art: 'star', title: 'Couldn\'t load activity', text: err, action: { label: 'Try again', act: 'now-act-reload' } })}</div>`;
-    var all = jobs(), counts = { all: all.length, active: 0, done: 0, failed: 0 };
+    var all = jobs(), counts = { all: all.length, active: 0, done: 0, failed: 0, cancelled: 0 };
     all.forEach(function (j) { counts[jobState(j)]++; });
     if (!all.length) return html`<div class="now-act">${ui.emptyState({ art: 'moon', title: 'All quiet', text: 'Transfers, saves and imports show up here while they run.' })}</div>`;
     var shown = all.filter(function (j) { return actFilter === 'all' || jobState(j) === actFilter; });
-    var order = { active: 0, failed: 1, done: 2 };
+    var order = { active: 0, failed: 1, done: 2, cancelled: 3 };
+    var filters = ['all', 'active', 'done', 'failed'].concat(counts.cancelled || actFilter === 'cancelled' ? ['cancelled'] : []);   // Cancelled shows only when something was
     shown.sort(function (a, b) { return order[jobState(a)] - order[jobState(b)]; });
     var groups = [['transfer', 'transfers'], ['save', 'saves'], ['other', 'imports and rescans']].map(function (g) {
       var items = shown.filter(function (j) { return g[0] === 'other' ? (j.kind === 'import' || j.kind === 'rescan') : j.kind === g[0]; });
       return items.length ? html`${ui.labelRule(g[1], { level: 'h3', sm: true })}<ul class="now-act__list">${items.map(jobRow)}</ul>` : '';
     });
     return html`<div class="now-act">
-      <div class="now-act__filters" role="group" aria-label="Filter activity">${['all', 'active', 'done', 'failed'].map(function (f) {
+      <div class="now-act__filters" role="group" aria-label="Filter activity">${filters.map(function (f) {
         return html`<button class="pill-filter" data-act="now-act-filter" data-value="${f}" aria-pressed="${String(actFilter === f)}" data-fk="f-${f}">${f[0].toUpperCase() + f.slice(1)} <span class="now-act__n">${counts[f]}</span></button>`;
       })}</div>
       ${shown.length ? groups : html`<p class="now-next__none">${icon('check', null, 'ic-16')}Nothing ${actFilter} right now.<button class="btn btn--sm btn--quiet" data-act="now-act-filter" data-value="all">Show all</button></p>`}
-      <div class="now-q__foot"><button class="btn btn--sm" data-act="now-act-clear" ${counts.done ? '' : raw('disabled')} data-fk="act-clear">${icon('check')}Clear finished</button></div>
+      <div class="now-q__foot"><button class="btn btn--sm" data-act="now-act-clear" ${counts.done || counts.cancelled ? '' : raw('disabled')} data-fk="act-clear">${icon('check')}Clear finished</button></div>
     </div>`;
   }
 
@@ -1090,12 +1091,6 @@
       return App.loadJobs();
     }, toastError);
   });
-  App.action('now-job-cancel', function (el) {
-    var j = findJob(el.getAttribute('data-job')); if (!j) return;
-    M.api('/api/transfers/' + encodeURIComponent(j.id), { method: 'DELETE' }).then(function () {
-      App.toast('Transfer cancelled: ' + jobTitle(j), { icon: 'close' });
-    }, toastError);
-  });
   App.action('now-job-retry', function (el) {
     var j = findJob(el.getAttribute('data-job')); if (!j) return;
     if (j.kind === 'save') {
@@ -1107,9 +1102,16 @@
       App.toast('Retrying transfer: ' + jobTitle(j), { icon: 'soulseek' });
     }, toastError);
   });
-  /* DELETE /api/saves/{jobId}: a waiting save stops looking, a failed one goes away */
+  /* a transfer is cancelled with DELETE /api/transfers/{id}; for a save, DELETE /api/saves/{jobId}: a waiting save
+     stops looking, a failed one goes away */
   App.action('now-job-cancel', function (el) {
     var j = findJob(el.getAttribute('data-job')); if (!j) return;
+    if (j.kind === 'transfer') {
+      M.api('/api/transfers/' + encodeURIComponent(j.id), { method: 'DELETE' }).then(function () {
+        App.toast('Transfer cancelled: ' + jobTitle(j), { icon: 'close' });
+      }, toastError);
+      return;
+    }
     adoptSave(j); App.saves.cancel(j.trackId);
   });
   App.action('now-job-fix', function (el) {              // the recovery sheet reads the live save record
