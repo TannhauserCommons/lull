@@ -491,10 +491,12 @@
 :root[data-design="glasshouse"] .trow__art .cover { width: var(--art); }
 :root[data-design="glasshouse"] .trow__fmt { font: 500 .75rem/1.25 var(--f-px); letter-spacing: 0; color: var(--fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 :root[data-design="glasshouse"] .trow__fmt::before { content: "::\00a0"; }
+/* History's first column holds a play time ("12:34"), not a track number: it needs the room lull's own CSS gives it */
+:root[data-design="glasshouse"] .lib-history { --gh-num: 48px; }
 @container tlist (min-width: 521px) {
   :root[data-design="glasshouse"] :is(.tlist:not(.tlist--dense), .disc-search .tlist, .lib-pl-list) > .trow { --art: 34px; min-height: 50px; padding: 5px 8px; align-items: center; }
   :root[data-design="glasshouse"] :is(.tlist:not(.tlist--dense), .disc-search .tlist) > .trow {
-    grid-template-columns: 26px var(--art) minmax(0, 1fr) auto 40px 52px 40px;
+    grid-template-columns: var(--gh-num, 26px) var(--art) minmax(0, 1fr) auto 40px 52px 40px;
     grid-template-areas: "num art main badges like dur more";
   }
   :root[data-design="glasshouse"] :is(.tlist:not(.tlist--dense), .disc-search .tlist) .trow__num { font-weight: 600; }
@@ -520,16 +522,16 @@
 }
 @container tlist (min-width: 760px) {
   :root[data-design="glasshouse"] :is(.tlist:not(.tlist--dense), .disc-search .tlist) > .trow {
-    grid-template-columns: 26px var(--art) minmax(0, 1.5fr) minmax(0, .7fr) auto 40px 52px 40px;
+    grid-template-columns: var(--gh-num, 26px) var(--art) minmax(0, 1.5fr) minmax(0, .7fr) auto 40px 52px 40px;
     grid-template-areas: "num art main album badges like dur more";
   }
   :root[data-design="glasshouse"] .tlist--dated:not(.tlist--dense) > .trow {
-    grid-template-columns: 26px var(--art) minmax(0, 1.5fr) minmax(0, .7fr) 104px auto 40px 52px 40px;
+    grid-template-columns: var(--gh-num, 26px) var(--art) minmax(0, 1.5fr) minmax(0, .7fr) 104px auto 40px 52px 40px;
     grid-template-areas: "num art main album added badges like dur more";
   }
   /* album and artist pages: the album column would repeat one name on every row; the file line gets the room */
   :root[data-design="glasshouse"] .app:is([data-screen="album"], [data-screen="artist"]) .tlist:not(.tlist--dense) > .trow {
-    grid-template-columns: 26px var(--art) minmax(0, 1fr) auto 40px 52px 40px;
+    grid-template-columns: var(--gh-num, 26px) var(--art) minmax(0, 1fr) auto 40px 52px 40px;
     grid-template-areas: "num art main badges like dur more";
   }
   :root[data-design="glasshouse"] .app:is([data-screen="album"], [data-screen="artist"]) .tlist:not(.tlist--dense) .trow__album { display: none; }
