@@ -891,6 +891,13 @@ impl Fetcher {
         }
         self.cache.make_room(copy_ref.size).await.map_err(failed)?;
         let dest = self.cache.youtube_file(&copy).await.map_err(failed)?;
+        // What a cancelled download left is never served as this one's first bytes.
+        // (Should it be open elsewhere, the download truncates it as it starts.)
+        if let Err(e) = tokio::fs::remove_file(&dest).await
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::debug!(error = %e, path = %dest.display(), "removing an old partial YouTube file");
+        }
         self.update(f, |p| {
             begin(p);
             p.status = Status::Queued;
