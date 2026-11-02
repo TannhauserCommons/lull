@@ -813,7 +813,7 @@
           ${ui.cover(a, 112)}
           <div class="disc-top__info">
             <p class="disc-top__kind">${a.type.toLowerCase()}${S.albums[a.id] ? ', Soulseek folder' : ''}</p>
-            <h3 class="disc-top__title">${a.title}</h3>
+            <h3 class="disc-top__title">${S.albums[a.id] && !a.trackIds.length ? a.title : html`<a href="#/album/${a.id}">${a.title}</a>`}</h3>
             <p class="disc-top__by"><a href="#/artist/${a.artistId}">${a.artist}</a>${a.year ? ', ' + a.year : ''}</p>
             <div class="cluster disc-top__badges">${ids.length && savedN === ids.length ? ui.savedBadge() : savedN ? html`<span class="badge badge-saved">${icon('saved')}${savedN} of ${ids.length} saved</span>` : ui.soulseekBadge()}
               ${fmtA ? ui.qualityChip(fmtA) : ''}${ids.length ? html`<span class="px fg-2">${plural(ids.length, 'track')}${a.sizeMB ? ', ' + size(a.sizeMB) : ''}</span>` : ''}</div>
@@ -831,7 +831,7 @@
         ${ui.cover(ar.id, 112, { round: true })}
         <div class="disc-top__info">
           <p class="disc-top__kind">artist</p>
-          <h3 class="disc-top__title">${ar.name}</h3>
+          <h3 class="disc-top__title"><a href="#/artist/${ar.id}">${ar.name}</a></h3>
           ${ar.listeners != null ? html`<p class="disc-top__by">${thousands(ar.listeners)} listeners</p>` : ''}
           <div class="cluster disc-top__badges">${ar.tags.slice(0, 2).map(function (g) { return ui.tagChip(g); })}</div>
         </div>

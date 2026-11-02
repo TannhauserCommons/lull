@@ -198,6 +198,8 @@ button.disc-pick__title:hover { text-decoration: underline; text-underline-offse
 .disc-top__kind { font: var(--t-micro); color: var(--fg-2); }
 .disc-top__kind b { color: var(--fg); }
 .disc-top__title { max-width: 100%; font: var(--t-title-xl); letter-spacing: var(--t-title-xl-track); font-size: 1.75rem; overflow-wrap: anywhere; }
+.disc-top__title a { color: inherit; text-decoration: none; }   /* an album or artist opens its page, as on Spotify */
+.disc-top__title a:hover { text-decoration: underline; text-underline-offset: .12em; }
 .disc-top__by { font: var(--t-meta); color: var(--fg-2); }
 .disc-top__by a:hover { color: var(--link); text-decoration: underline; text-underline-offset: 3px; }
 .disc-top__badges { margin-top: var(--sp-2); }
