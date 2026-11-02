@@ -847,7 +847,7 @@
     window.LullDesktop.settings().then(function (d) { desk = { data: d }; repaint('#sys-desktop', desktopRows()); },
       function (err) { desk = { error: errText(err) }; repaint('#sys-desktop', desktopRows()); });
   }
-  ['closeToTray', 'launchAtLogin', 'startInTray', 'miniStyle', 'miniOnTop', 'ownTitlebar'].forEach(function (key) {
+  ['closeToTray', 'launchAtLogin', 'startInTray', 'miniStyle', 'miniOnTop', 'ownTitlebar', 'discordPresence'].forEach(function (key) {
     custom['desktop.' + key] = { get: function () { return desk.data[key]; }, set: function (v) {
       var before = desk.data[key], patch = {}; patch[key] = v; desk.data[key] = v;
       window.LullDesktop.setSettings(patch).then(null, function (err) {
@@ -870,7 +870,8 @@
       ${switchRow('desktop.startInTray', 'Start in the tray', 'Launches without opening the window.', { disabled: noTray })}
       ${row('Mini player style', 'Opens from the tray, the player bar or Ctrl+Shift+M.', choice('desktop.miniStyle', 'Mini player style', [['device', 'Device'], ['strip', 'Strip']]))}
       ${switchRow('desktop.miniOnTop', 'Mini player always on top', 'Some Linux desktops decide this themselves.')}
-      ${d.ownTitlebar == null ? '' : switchRow('desktop.ownTitlebar', 'Use lull title bar', 'Replaces the system title bar; takes effect after a restart.')}`;
+      ${d.ownTitlebar == null ? '' : switchRow('desktop.ownTitlebar', 'Use lull title bar', 'Replaces the system title bar; takes effect after a restart.')}
+      ${d.discordPresence == null ? '' : switchRow('desktop.discordPresence', 'Show what I\'m playing on Discord', 'Your Discord status shows the song, its cover and a song.link button while Discord runs on this computer.')}`;
   }
   function secApp() {
     if (inWrapper() && !desk) loadDesktop();
