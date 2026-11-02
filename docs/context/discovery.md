@@ -32,7 +32,7 @@ Built in the background; the first build happens while the first caller waits (t
 
 | Shelf | From |
 |---|---|
-| `newReleases` | ListenBrainz fresh releases (30 days, every size). Ranked: followed artists, then liked artists (taste), then releases tagged with followed or liked tags (albums and EPs above singles). 12. |
+| `newReleases` | ListenBrainz fresh releases (30 days, every size). Ranked: followed artists, then liked artists (taste), then releases tagged with followed or liked tags (albums and EPs above singles). Only what can play: of the best 30, saved albums and those Soulseek peers share (`Transfers::album_available`, all asked at once; Soulseek queues them), 12. The build waits 3 s for answers (remembered ones come at once); later answers re-serve the shelf and announce `feed.updated`. An unchecked release is hidden, except while none has an answer (Soulseek offline, or it can't tell yet): then the 12 best show unfiltered |
 | `picks` | Four pools, interleaved round-robin. One track per artist. Nothing already played or liked, nothing by hidden or disliked artists. Except fresh releases, no artist the listener already likes. 12. |
 | `radioStarters` | Top artist, followed tags, the strongest liked tag not followed, the track played 3+ times this week; on a cold start, three cold-start tags |
 | `jumpBackIn` | Albums played (not skipped) in the last 30 days, most recent first (5), then the month's most played artist |

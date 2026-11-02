@@ -23,7 +23,7 @@ use lull_core::db::Migrations;
 use lull_core::events::Event;
 use lull_core::ids::{ArtistId, TrackId};
 use lull_core::model::Entities;
-use lull_core::seams::Library;
+use lull_core::seams::{Library, Transfers};
 use lull_core::{Ctx, Error, Result};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -118,11 +118,13 @@ pub struct Service {
     /// Only with Last.fm API credentials configured; read through `lastfm()`.
     lastfm: Option<LastFm>,
     feed: feed::Feeds,
+    /// Soulseek, for new releases peers share.
+    transfers: Arc<dyn Transfers>,
     /// Settings > Discovery "adventurousness": radio's steer when the UI sends none.
     adventurousness: RwLock<f64>,
 }
 
-pub async fn start(ctx: &Ctx, library: Arc<dyn Library>) -> Result<Arc<Service>> {
+pub async fn start(ctx: &Ctx, library: Arc<dyn Library>, transfers: Arc<dyn Transfers>) -> Result<Arc<Service>> {
     let cache = Cache::new(ctx.db.clone());
     cache.prune().await?;
     let svc = Arc::new(Service {
@@ -149,6 +151,7 @@ pub async fn start(ctx: &Ctx, library: Arc<dyn Library>) -> Result<Arc<Service>>
             .as_ref()
             .map(|l| LastFm::new(ctx.http.clone(), cache, l.api_key.clone())),
         feed: feed::Feeds::default(),
+        transfers,
         adventurousness: RwLock::new(DEFAULT_STEER),
         ctx: ctx.clone(),
     });

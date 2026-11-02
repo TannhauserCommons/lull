@@ -112,7 +112,7 @@ async fn wire(ctx: &Ctx) -> Result<Router, Error> {
 
     let soulseek = lull_soulseek::start(ctx).await?;
     let library = lull_library::start(ctx, soulseek.clone()).await?;
-    let discovery = lull_discovery::start(ctx, library.clone()).await?;
+    let discovery = lull_discovery::start(ctx, library.clone(), soulseek.clone()).await?;
     let lastfm = lull_lastfm::start(ctx).await?;
     let lyrics = lull_lyrics::start(ctx).await?;
     let collection = lull_collection::start(ctx, library.clone()).await?;

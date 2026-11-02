@@ -2,20 +2,25 @@
 //! kept in memory and in the database, served at once and rebuilt when it is six hours old,
 //! when follows change, or after feedback. A shelf whose source failed is empty and says why in
 //! `errors`; the other shelves still come.
+//!
+//! New releases show only what can play: saved albums and those Soulseek peers share
+//! (`Transfers::album_available`). The best 30 are asked about at once; the shelf is served
+//! with the answers in after 3 s, and re-served (`feed.updated`) as later ones arrive.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
 use axum::Json;
 use axum::extract::State;
 use lull_core::ids::{AlbumId, ArtistId, TrackId};
-use lull_core::model::{Album, Artist, Entities, Track};
+use lull_core::model::{Album, Artist, Entities, Saved, Track};
 use lull_core::{Error, Result};
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, mpsc};
+use tokio::time::Instant;
 
 use crate::sources::listenbrainz::Mode;
 use crate::sources::{ArtistInfo, Release, Song};
@@ -25,6 +30,12 @@ use crate::{Service, art, mix};
 
 const STALE_AFTER_S: i64 = 6 * 3600;
 const NEW_RELEASES: usize = 12;
+/// The best fresh releases asked about on Soulseek, to fill `NEW_RELEASES`.
+const RELEASE_CANDIDATES: usize = 30;
+/// How long a build waits for Soulseek's answers before serving the shelf.
+const AVAILABILITY_WAIT: Duration = Duration::from_secs(3);
+/// A check still unanswered after this counts as unchecked.
+const AVAILABILITY_LIMIT: Duration = Duration::from_secs(600);
 const PICKS: usize = 12;
 /// Niche and micro-genre tags offered on first run, across the map rather than the charts.
 const COLD_START_TAGS: &[&str] = &[
@@ -124,6 +135,26 @@ pub struct Jump {
 struct Built {
     feed: Feed,
     follows: String,
+    /// The new releases asked about, best first; `newReleases` is chosen from them.
+    #[serde(default)]
+    shelf: Vec<Shelved>,
+    /// Built with nothing known of the listener (the summary says so).
+    #[serde(default)]
+    cold: bool,
+}
+
+/// A fresh release that may go on the shelf.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Shelved {
+    pub id: AlbumId,
+    pub artist: String,
+    pub title: String,
+    /// By an artist the listener follows or likes.
+    pub liked: bool,
+    /// Saved in the library: shown without asking Soulseek.
+    pub saved: bool,
+    /// Soulseek's answer: `None` until it gives one.
+    pub available: Option<bool>,
 }
 
 #[derive(Default)]
@@ -131,6 +162,17 @@ pub struct Feeds {
     current: RwLock<Option<Built>>,
     building: Mutex<()>,
     queued: AtomicBool,
+    /// Releases Soulseek is being asked about: a rebuild doesn't ask again, the answer reaches
+    /// whichever feed is current.
+    checking: std::sync::Mutex<HashSet<AlbumId>>,
+}
+
+/// Soulseek's answers as they arrive.
+type Answers = mpsc::UnboundedReceiver<(AlbumId, Option<bool>)>;
+
+#[derive(Serialize)]
+struct Updated {
+    updated: i64,
 }
 
 /// The feed, its albums and artists with their pictures (`art::pictured`).
@@ -220,7 +262,7 @@ async fn current(svc: &Service) -> Result<Option<Built>> {
 }
 
 /// The first feed ever: built while the caller waits (the UI shows its loading state).
-async fn build_now(svc: &Service) -> Result<Built> {
+async fn build_now(svc: &Arc<Service>) -> Result<Built> {
     let _building = svc.feed.building.lock().await;
     if let Some(b) = svc.feed.current.read().await.clone() {
         return Ok(b);
@@ -228,9 +270,27 @@ async fn build_now(svc: &Service) -> Result<Built> {
     rebuild(svc).await
 }
 
-async fn rebuild(svc: &Service) -> Result<Built> {
-    let built = build(svc).await?;
-    let json = serde_json::to_string(&built).map_err(|e| Error::internal(format!("feed json: {e}")))?;
+async fn rebuild(svc: &Arc<Service>) -> Result<Built> {
+    let (built, answers) = build(svc).await?;
+    {
+        let mut current = svc.feed.current.write().await;
+        persist(svc, &built).await?;
+        *current = Some(built.clone());
+    }
+    svc.ctx.bus.publish(
+        "feed.updated",
+        Updated {
+            updated: built.feed.updated,
+        },
+    );
+    svc.ctx.spawn(keep_checking(svc.clone(), answers));
+    Ok(built)
+}
+
+/// Stores the feed, served after a restart. Callers hold `current`'s write lock, so the stored
+/// feed is the current one.
+async fn persist(svc: &Service, built: &Built) -> Result<()> {
+    let json = serde_json::to_string(built).map_err(|e| Error::internal(format!("feed json: {e}")))?;
     svc.ctx
         .db
         .call(move |c| {
@@ -241,9 +301,110 @@ async fn rebuild(svc: &Service) -> Result<Built> {
             )?;
             Ok(())
         })
-        .await?;
-    *svc.feed.current.write().await = Some(built.clone());
-    Ok(built)
+        .await
+}
+
+/// Asks Soulseek whether peers share each release not saved, all at once (Soulseek queues
+/// them). A release an earlier build is still asking about isn't asked again.
+fn ask_soulseek(svc: &Arc<Service>, shelf: &[Shelved]) -> Answers {
+    let (tx, rx) = mpsc::unbounded_channel();
+    let mut checking = svc.feed.checking.lock().unwrap_or_else(PoisonError::into_inner);
+    for c in shelf.iter().filter(|c| !c.saved) {
+        if !checking.insert(c.id.clone()) {
+            continue;
+        }
+        let (task_svc, tx, c) = (svc.clone(), tx.clone(), c.clone());
+        svc.ctx.spawn(async move {
+            let asked = task_svc.transfers.album_available(&c.artist, &c.title);
+            let answer = match tokio::time::timeout(AVAILABILITY_LIMIT, asked).await {
+                Ok(Ok(answer)) => answer,
+                Ok(Err(e)) => {
+                    tracing::info!(error = %e, album = %c.id, "Soulseek couldn't say whether peers share it");
+                    None
+                }
+                Err(_) => None,
+            };
+            task_svc
+                .feed
+                .checking
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .remove(&c.id);
+            // The receiver is gone only when the crates stop.
+            let _ = tx.send((c.id, answer));
+        });
+    }
+    rx
+}
+
+/// Applies the answers that come in by `until`.
+async fn first_answers(answers: &mut Answers, shelf: &mut [Shelved], until: Instant) {
+    while let Ok(Some((id, answer))) = tokio::time::timeout_at(until, answers.recv()).await {
+        answered(shelf, &id, answer);
+    }
+}
+
+/// Re-serves the new releases as Soulseek's later answers arrive, to whichever feed is current.
+async fn keep_checking(svc: Arc<Service>, mut answers: Answers) {
+    while let Some(first) = answers.recv().await {
+        let mut batch = vec![first];
+        while let Ok(more) = answers.try_recv() {
+            batch.push(more);
+        }
+        if let Err(e) = reshelve(&svc, batch).await {
+            tracing::warn!(error = %e, "new releases not re-served");
+        }
+    }
+}
+
+async fn reshelve(svc: &Service, batch: Vec<(AlbumId, Option<bool>)>) -> Result<()> {
+    let mut current = svc.feed.current.write().await;
+    let Some(built) = current.as_mut() else { return Ok(()) };
+    let mut changed = false;
+    for (id, answer) in &batch {
+        changed |= answered(&mut built.shelf, id, *answer);
+    }
+    let shown = shown(&built.shelf);
+    if !changed || shown == built.feed.new_releases {
+        return Ok(());
+    }
+    built.feed.summary = summary(built.cold, from_follows(&built.shelf, &shown), &built.feed.picks);
+    built.feed.new_releases = shown;
+    persist(svc, built).await?;
+    svc.ctx.bus.publish(
+        "feed.updated",
+        Updated {
+            updated: built.feed.updated,
+        },
+    );
+    Ok(())
+}
+
+/// Records Soulseek's answer for a release on the shelf; returns whether it changed anything.
+fn answered(shelf: &mut [Shelved], id: &AlbumId, answer: Option<bool>) -> bool {
+    shelf.iter_mut().filter(|c| c.id == *id).fold(false, |changed, c| {
+        let differs = c.available != answer;
+        c.available = answer;
+        changed || differs
+    })
+}
+
+/// The new releases shown: saved ones and those Soulseek peers share, best first. While no
+/// release has an answer (Soulseek offline, or not able to tell yet) all of them count, so the
+/// shelf isn't empty.
+pub fn shown(shelf: &[Shelved]) -> Vec<AlbumId> {
+    let checked = shelf.iter().any(|c| c.available.is_some());
+    shelf
+        .iter()
+        .filter(|c| !checked || c.saved || c.available == Some(true))
+        .take(NEW_RELEASES)
+        .map(|c| c.id.clone())
+        .collect()
+}
+
+/// How many shown releases are by artists the listener follows or likes.
+fn from_follows(shelf: &[Shelved], shown: &[AlbumId]) -> usize {
+    shelf.iter().filter(|c| c.liked && shown.contains(&c.id)).count()
 }
 
 /// A pick before it is a track: the song, why, and from where.
@@ -253,7 +414,7 @@ struct Candidate {
     via: &'static str,
 }
 
-async fn build(svc: &Service) -> Result<Built> {
+async fn build(svc: &Arc<Service>) -> Result<(Built, Answers)> {
     let now = lull_core::now();
     let taste = svc.taste().await?;
     let (followed_artists, followed_tags, recent, follows) = svc
@@ -291,23 +452,39 @@ async fn build(svc: &Service) -> Result<Built> {
             via: c.via.to_owned(),
         })
         .collect();
-    let from_follows = releases.iter().filter(|r| r.1.is_some()).count();
-    let albums = svc.store.albums(releases.into_iter().map(|r| r.0).collect()).await?;
+    let albums = svc.store.albums(releases.iter().map(|r| r.0.clone()).collect()).await?;
+    let mut shelf: Vec<Shelved> = albums
+        .iter()
+        .zip(&releases)
+        .map(|(a, (_, why))| Shelved {
+            id: a.id.clone(),
+            artist: a.artist.clone(),
+            title: a.title.clone(),
+            liked: why.is_some(),
+            saved: matches!(a.saved, Saved::All | Saved::Partial),
+            available: None,
+        })
+        .collect();
+    let mut answers = ask_soulseek(svc, &shelf);
     let (starters, starter_artists, starter_tracks) = starters(svc, &taste, &followed_tags, &recent).await?;
     let (jumps, jump_albums, jump_artists) = jump_back_in(svc, &recent).await?;
+    // Remembered answers are in at once; the rest re-serve the shelf as they come.
+    first_answers(&mut answers, &mut shelf, Instant::now() + AVAILABILITY_WAIT).await;
+    let new_releases = shown(&shelf);
 
-    let summary = summary(cold && followed_tags.is_empty(), from_follows, &picks);
+    let cold = cold && followed_tags.is_empty();
+    let summary = summary(cold, from_follows(&shelf, &new_releases), &picks);
     let mut artists = starter_artists;
     artists.extend(jump_artists);
     let mut all_albums = albums.clone();
     all_albums.extend(jump_albums);
     let mut all_tracks = tracks;
     all_tracks.extend(starter_tracks);
-    Ok(Built {
+    let built = Built {
         feed: Feed {
             updated: now,
             summary,
-            new_releases: albums.into_iter().map(|a| a.id).collect(),
+            new_releases,
             picks,
             radio_starters: starters,
             jump_back_in: jumps,
@@ -317,12 +494,15 @@ async fn build(svc: &Service) -> Result<Built> {
             entities: entities(all_tracks, all_albums, artists),
         },
         follows,
-    })
+        shelf,
+        cold,
+    };
+    Ok((built, answers))
 }
 
 /// Fresh releases (last 30 days, every size of artist) by followed and liked artists, then
-/// those tagged with followed and liked tags. The second half is a release's artist name when
-/// it is "fresh from an artist you like".
+/// those tagged with followed and liked tags, the best `RELEASE_CANDIDATES`. The second half is
+/// a release's artist name when it is "fresh from an artist you like".
 async fn new_releases(
     svc: &Service,
     taste: &Taste,
@@ -365,7 +545,7 @@ async fn new_releases(
     Ok(scored
         .into_iter()
         .filter(|(_, r, _)| seen.insert(AlbumId::of(&r.artist, &r.title)))
-        .take(NEW_RELEASES)
+        .take(RELEASE_CANDIDATES)
         .map(|(_, r, why)| (r, why))
         .collect())
 }
@@ -706,4 +886,49 @@ fn follows_key(c: &rusqlite::Connection) -> Result<String> {
         [],
         |r| r.get(0),
     )?)
+}
+
+#[cfg(test)]
+mod tests {
+    use lull_core::ids::AlbumId;
+
+    use super::{NEW_RELEASES, Shelved, answered, shown};
+
+    fn release(n: usize, saved: bool) -> Shelved {
+        Shelved {
+            id: AlbumId::of("Velvet Orchard", &format!("Release {n}")),
+            artist: "Velvet Orchard".into(),
+            title: format!("Release {n}"),
+            liked: false,
+            saved,
+            available: None,
+        }
+    }
+
+    #[test]
+    fn new_releases_show_only_what_can_play_best_first() {
+        // Live, the shelf listed releases no Soulseek peer shared.
+        let mut shelf: Vec<Shelved> = (0..30).map(|n| release(n, n == 4)).collect();
+        assert_eq!(
+            shown(&shelf).len(),
+            NEW_RELEASES,
+            "no answer yet (Soulseek offline, or the seam not built): unfiltered"
+        );
+        let id = |n: usize| shelf[n].id.clone();
+        let (one, two, three, twenty) = (id(1), id(2), id(3), id(20));
+        assert!(answered(&mut shelf, &one, Some(false)));
+        assert!(answered(&mut shelf, &two, Some(true)));
+        assert!(answered(&mut shelf, &twenty, Some(true)));
+        assert!(
+            !answered(&mut shelf, &twenty, Some(true)),
+            "the same answer changes nothing"
+        );
+        assert_eq!(
+            shown(&shelf),
+            [two.clone(), shelf[4].id.clone(), twenty.clone()],
+            "peers share it, or it is saved; unchecked ones wait"
+        );
+        answered(&mut shelf, &three, Some(true));
+        assert_eq!(shown(&shelf)[..2], [two, three]);
+    }
 }
