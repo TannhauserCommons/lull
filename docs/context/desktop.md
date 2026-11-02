@@ -24,7 +24,7 @@ The Tauri v2 project in `app/` (its own Cargo workspace; ADR-0006) shows the hub
 | `app/src/desktop/settings.rs` | The desktop's settings: the hub choice and this app's token, window options |
 | `app/src/desktop/platform/` | Windows taskbar theme (registry watch) and slskd's job object; Linux tray host, button layout, compositing, media keys |
 | `app/build.rs` | Stages the web files the bundled page needs into `app/dist/`; fetches slskd (sha256-pinned) into `app/binaries/`; declares command permissions |
-| `app/tauri.conf.json`, `tauri.windows.conf.json`, `tauri.linux.conf.json` | Shared config (updater key and endpoint, the asset protocol Android's download covers use, scoped to `**/lull-art/*`); the desktop configs add the slskd sidecar and its licence |
+| `app/tauri.conf.json`, `tauri.windows.conf.json`, `tauri.linux.conf.json` | Shared config (updater key and endpoint, the asset protocol Android's download covers use, scoped to `**/lull-art/*`, and the bundled pages' CSP: Tauri leaves its `style-src` alone, since a nonce it adds would make browsers ignore `'unsafe-inline'` and drop every `style="…"` the pages render); the desktop configs add the slskd sidecar and its licence |
 | `app/licenses/THIRD-PARTY.md` | slskd's AGPL notice, shipped next to the app with slskd's `LICENSE` |
 | `app/capabilities/local.json` | IPC for the bundled page |
 | `web/desktop/wrapper.html` | The bundled page: welcome, connect, hub unreachable, hub didn't start, mini player (view in the hash) |
