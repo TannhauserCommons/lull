@@ -693,8 +693,16 @@
 :root[data-design="skydeck"] .now-dev .device__led [data-now="led"] { display: none; }
 :root[data-design="skydeck"] .now-dev .device__led::after { content: "power"; }
 :root[data-design="skydeck"] .now-dev .device__led { top: 7px; }
-:root[data-design="skydeck"] .now:has(.wave.is-playing) .device__led i { animation: sd-led 1.8s ease-in-out infinite alternate; }
-@keyframes sd-led { from { box-shadow: 0 0 0 1.5px var(--mocha-edge), 0 0 0 3px #dd9fc933; } to { box-shadow: 0 0 0 1.5px var(--mocha-edge), 0 0 0 6px #dd9fc966; } }
+/* while playing, the LED's glow breathes: a ring outside the LED's rim that grows and brightens. It is its own layer
+   animated by transform and opacity, so the compositor runs it (a box-shadow animation repainted the device 60 times
+   a second) */
+:root[data-design="skydeck"] .now-dev .device__led i { position: relative; }
+:root[data-design="skydeck"] .now:has(.wave.is-playing) .device__led i { box-shadow: 0 0 0 1.5px var(--mocha-edge); }
+:root[data-design="skydeck"] .now:has(.wave.is-playing) .device__led i::after {
+  content: ""; position: absolute; inset: -1.5px; border-radius: 50%; box-shadow: 0 0 0 4.5px #dd9fc966;
+  animation: sd-led 1.8s ease-in-out infinite alternate;
+}
+@keyframes sd-led { from { opacity: .5; transform: scale(.8); } to { opacity: 1; transform: none; } }
 
 /* failed: the LCD drops to a "no signal" screen (glyph, words, a flat line for the waveform) */
 :root[data-design="skydeck"] .app:has(.pbar[data-status="failed"]) .now-dev [data-now="head"] { color: #f9dcec; font-weight: 800; }

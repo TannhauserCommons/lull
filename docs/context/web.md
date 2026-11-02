@@ -370,3 +370,5 @@ with the reason and a "Copy lull link" button; a browser that refuses the clipbo
   so nothing that stayed the same reloads or flashes. A new route still renders fresh. Because a refresh keeps the
   elements, a route's `mount` runs again on them: listen on elements with `ctx.on(target, type, fn)` (removed before
   the next render) and keep one-off effects (entrance animations, scrolling to a section) behind `!ctx.refresh`.
+- **Live values write only on change** (`setText`, `setAttr`, `setVar` in app.js section 9): the clock ticks four
+  times a second, and an identical write still costs a style and layout pass.

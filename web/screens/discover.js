@@ -1196,9 +1196,9 @@
         offTick = App.on('tick', function () {
           var ps = P.state, peer = ps.peer, cur = P.current(); if (!peer || !cur) return;
           var total = peer.sizeMB || cur.sizeMB, stt = xferState();
-          $$('[data-d="speed"]', el).forEach(function (n) { n.textContent = mbps(peer.speed); });
-          $$('[data-d="recv"]', el).forEach(function (n) { n.textContent = Math.round(ps.received * 100) + '%' + (total ? ' of ' + size(total) : ''); });
-          if (total) $$('[data-d="bytes"]', el).forEach(function (n) { n.textContent = size(total * ps.received) + ' of ' + size(total); });
+          $$('[data-d="speed"]', el).forEach(function (n) { App.setText(n, mbps(peer.speed)); });
+          $$('[data-d="recv"]', el).forEach(function (n) { App.setText(n, Math.round(ps.received * 100) + '%' + (total ? ' of ' + size(total) : '')); });
+          if (total) $$('[data-d="bytes"]', el).forEach(function (n) { App.setText(n, size(total * ps.received) + ' of ' + size(total)); });
           $$('[data-d="state"]', el).forEach(function (n) { if (n.getAttribute('data-was') !== stt[1]) { n.setAttribute('data-was', stt[1]); n.innerHTML = String(html`${ui.statusGlyph(stt[0])} ${stt[1]}`); } });
         });
         offPlayer = App.on('player', function (k) { if (k === 'track' || k === 'source') paint('details', detailsBody(), el); });

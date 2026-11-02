@@ -855,7 +855,7 @@
     var offs = [
       App.on('player', onPlayer),
       App.on('save', function (d) { if (d.id === P.currentId()) { updateSaveBits(); } }),
-      App.on('like', function () { var t = cur(); $$('[data-now="b-label"]').forEach(function (el) { el.textContent = t && App.isLiked(t.id) ? 'liked' : 'like'; }); }),
+      App.on('like', function () { var t = cur(); $$('[data-now="b-label"]').forEach(function (el) { App.setText(el, t && App.isLiked(t.id) ? 'liked' : 'like'); }); }),
       App.on('follow', function () { var a = $('[data-now="acts"]'); if (a) swap(a, actionRow()); })
     ];
     ctx.onCleanup(function () { offs.forEach(function (off) { off(); }); });
@@ -867,22 +867,22 @@
   }
   function updateControls() {
     var on = playingNow();
-    $$('[data-now="a-label"]').forEach(function (el) { el.textContent = on ? 'pause' : 'play'; });
-    $$('[data-now="led"]').forEach(function (el) { el.textContent = ledText(); });
-    $$('[data-now="head"]').forEach(function (el) { el.textContent = headText(); });
-    $$('[data-now="state"]').forEach(function (el) { el.textContent = stateText(); });
+    $$('[data-now="a-label"]').forEach(function (el) { App.setText(el, on ? 'pause' : 'play'); });
+    $$('[data-now="led"]').forEach(function (el) { App.setText(el, ledText()); });
+    $$('[data-now="head"]').forEach(function (el) { App.setText(el, headText()); });
+    $$('[data-now="state"]').forEach(function (el) { App.setText(el, stateText()); });
     $$('.now .device__pill--shuffle').forEach(function (b) { b.setAttribute('aria-pressed', String(ps.shuffle)); });
     $$('.now .device__pill--repeat').forEach(function (b) {
       b.setAttribute('aria-pressed', String(ps.repeat !== 'off'));
       b.setAttribute('aria-label', { off: 'Repeat off', all: 'Repeat all', one: 'Repeat one' }[ps.repeat] + ' (R)');
     });
-    $$('[data-now="repeat"]').forEach(function (el) { el.textContent = repeatLabel(); });
+    $$('[data-now="repeat"]').forEach(function (el) { App.setText(el, repeatLabel()); });
   }
   /* text-only live hooks for custom heroes: data-now="title|artist|album|format" (format = App.fmt.formatLine) */
   function updateTextHooks() {
     var t = cur();
     var text = { title: t ? t.title : 'Nothing playing', artist: t ? t.artist : '', album: t ? t.album : '', format: App.fmt.formatLine(t) };
-    Object.keys(text).forEach(function (k) { $$('[data-now="' + k + '"]').forEach(function (el) { if (el.textContent !== text[k]) el.textContent = text[k]; }); });
+    Object.keys(text).forEach(function (k) { $$('[data-now="' + k + '"]').forEach(function (el) { App.setText(el, text[k]); }); });
   }
   function updateMeta() {
     $$('[data-now="next"], [data-now="queue"]').forEach(function (c) { c.setAttribute('data-meta', queueMeta()); });
@@ -899,7 +899,7 @@
       $$('[data-now="c-art"]').forEach(function (h) { swap(h, t ? ui.cover(t, 56) : '<span class="now-dev__slot" aria-hidden="true"></span>'); });
       $$('[data-now="b"]').forEach(function (h) { swap(h, likeBtn(52)); });
       $$('[data-now="cb"]').forEach(function (h) { swap(h, likeBtn(40)); });
-      $$('[data-now="b-label"]').forEach(function (el) { el.textContent = t && App.isLiked(t.id) ? 'liked' : 'like'; });
+      $$('[data-now="b-label"]').forEach(function (el) { App.setText(el, t && App.isLiked(t.id) ? 'liked' : 'like'); });
       lyAway = {};
       $$('[data-now="facts"]').forEach(function (el) { swap(el, factsLine()); });
       swap($('[data-now="head-info"]'), infoHead());

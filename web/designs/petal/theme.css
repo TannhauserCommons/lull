@@ -713,14 +713,15 @@
   font: var(--t-pixel); letter-spacing: .03em; color: var(--pt-lcd-ink); white-space: nowrap;
 }
 :root[data-design="petal"] .pt-win__lcd::before {   /* VU: five pixel blocks, stepping while music plays */
-  content: ""; flex: none; width: 23px; height: 14px; order: -1;
+  content: ""; flex: none; width: 23px; height: 14px; order: -1; transform-origin: bottom;
   background: linear-gradient(var(--pt-lcd-ink) 0 0) 0 100% / 3px 4px no-repeat, linear-gradient(var(--pt-lcd-ink) 0 0) 5px 100% / 3px 8px no-repeat,
     linear-gradient(var(--pt-lcd-ink) 0 0) 10px 100% / 3px 6px no-repeat, linear-gradient(var(--pt-lcd-ink) 0 0) 15px 100% / 3px 10px no-repeat,
     linear-gradient(var(--pt-lcd-ink) 0 0) 20px 100% / 3px 4px no-repeat;
 }
 :root[data-design="petal"] .pt-win:has([data-bind="play"][aria-label="Pause"]) .pt-win__lcd::before,
 :root[data-design="petal"] .pt-mini:has([data-dk="play"][aria-label="Pause"]) .pt-win__lcd::before { animation: pt-vu 1.2s steps(4, end) infinite; }
-@keyframes pt-vu { 50% { transform: scaleY(.55); transform-origin: bottom; } }
+/* only transform moves (the origin is set on the blocks), so the compositor runs it without restyling the page */
+@keyframes pt-vu { 50% { transform: scaleY(.55); } }
 :root[data-design="petal"] .pt-win__lcdtext { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 :root[data-design="petal"] .pt-win__lcd b { font-weight: 400; color: var(--fg); }
 :root[data-design="petal"] .pt-win__kbd { display: inline-flex; gap: 4px; flex: none; }

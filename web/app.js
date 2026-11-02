@@ -1967,47 +1967,60 @@
      9. Live bindings: seek bars, waveforms, data-bind text, rows (playing / liked / saved)
      ===================================================================== */
   function bufKey(r) { return r.map(function (x) { return x[0].toFixed(3) + '-' + x[1].toFixed(3); }).join('|'); }
+  /* writes that skip an unchanged value: the clock runs four times a second, and rewriting the same text, attribute or
+     custom property still costs a style recalculation (and for text, a layout) of what it touches. Text changes the
+     existing text node's data: replacing the node (textContent =) counts as inserting one, which makes the designs'
+     page-wide :has() rules restyle the whole page each second */
+  function setText(el, v) {
+    var n = el.firstChild;
+    if (n && n.nodeType === 3 && !n.nextSibling) { if (n.data !== v) n.data = v; }
+    else if (el.textContent !== v) el.textContent = v;
+  }
+  function setAttr(el, name, v) { v = String(v); if (el.getAttribute(name) !== v) el.setAttribute(name, v); }
+  function setVar(el, name, v) { v = String(v); if (el.style.getPropertyValue(name) !== v) el.style.setProperty(name, v); }
   function updateSeeks() {
     var dur = P.duration() || 1, f = clamp(ps.pos / dur, 0, 1), bk = bufKey(ps.buffered);
     var bufTo = ps.buffered.length ? ps.buffered[ps.buffered.length - 1][1] * dur : 0;
     var valText = fmtTime(ps.pos) + ' of ' + (ps.durationKnown ? '' : 'about ') + fmtTime(dur) + (ps.received < 1 ? ', downloaded to ' + fmtTime(bufTo) : '');
     var transferring = ps.received < 1 && (ps.status === 'streaming' || ps.status === 'buffering');
     // player bar + mini: play state and the received percentage (an integer, usable as counter(rx) in CSS)
-    ['#pbar', '#mini'].forEach(function (s) { var el = $(s); if (!el) return; el.setAttribute('data-playing', String(!!ps.playing)); el.style.setProperty('--rx', Math.round(ps.received * 100)); });
+    ['#pbar', '#mini'].forEach(function (s) { var el = $(s); if (!el) return; setAttr(el, 'data-playing', !!ps.playing); setVar(el, '--rx', Math.round(ps.received * 100)); });
     $$('.seek[data-seek="player"]').forEach(function (el) {
-      el.style.setProperty('--pos', f.toFixed(4));
-      el.style.setProperty('--xfer', ps.received.toFixed(4));
-      el.classList.toggle('is-transferring', transferring);
+      setVar(el, '--pos', f.toFixed(4));
+      setVar(el, '--xfer', ps.received.toFixed(4));
+      if (el.classList.contains('is-transferring') !== transferring) el.classList.toggle('is-transferring', transferring);
       if (el._bk !== bk) {
         el._bk = bk;
         var host = $('.seek__bufs', el);
         if (host) host.innerHTML = ps.buffered.map(function (r) { return '<i class="seek__buf" style="left:' + (r[0] * 100).toFixed(2) + '%;width:' + ((r[1] - r[0]) * 100).toFixed(2) + '%"></i>'; }).join('');
       }
-      el.setAttribute('aria-valuenow', Math.round(f * 100));
-      el.setAttribute('aria-valuetext', valText);
+      setAttr(el, 'aria-valuenow', Math.round(f * 100));
+      setAttr(el, 'aria-valuetext', valText);
     });
     $$('.wave[data-seek="player"]').forEach(function (el) {
-      var bars = el._bars || (el._bars = $$('.wave__bar', el)), n = bars.length;
-      el.style.setProperty('--pos', f.toFixed(4));
-      el.classList.toggle('is-playing', ps.playing && ps.status !== 'buffering');
+      var bars = $$('.wave__bar', el), n = bars.length;
+      setVar(el, '--pos', f.toFixed(4));
+      var moving = ps.playing && ps.status !== 'buffering';
+      if (el.classList.contains('is-playing') !== moving) el.classList.toggle('is-playing', moving);
       bars.forEach(function (b, i) {
         var x = (i + .5) / n, inBuf = ps.buffered.some(function (r) { return x >= r[0] && x <= r[1]; });
         var c = x <= f ? 'is-played' : inBuf ? 'is-buf' : x <= ps.received ? 'is-xfer' : '';
         if (b._c !== c) { if (b._c) b.classList.remove(b._c); if (c) b.classList.add(c); b._c = c; }
       });
-      el.setAttribute('aria-valuenow', Math.round(f * 100));
-      el.setAttribute('aria-valuetext', valText);
+      setAttr(el, 'aria-valuenow', Math.round(f * 100));
+      setAttr(el, 'aria-valuetext', valText);
     });
-    $$('[data-bind="pos"]').forEach(function (el) { el.textContent = fmtTime(ps.pos); });
-    $$('[data-bind="dur"]').forEach(function (el) { el.textContent = fmtTime(dur, !ps.durationKnown); });
-    $$('[data-bind="buffered-to"]').forEach(function (el) { el.textContent = fmtTime(bufTo); });
-    $$('[data-bind="received"]').forEach(function (el) { el.textContent = Math.round(ps.received * 100) + '%'; });
+    $$('[data-bind="pos"]').forEach(function (el) { setText(el, fmtTime(ps.pos)); });
+    $$('[data-bind="dur"]').forEach(function (el) { setText(el, fmtTime(dur, !ps.durationKnown)); });
+    $$('[data-bind="buffered-to"]').forEach(function (el) { setText(el, fmtTime(bufTo)); });
+    $$('[data-bind="received"]').forEach(function (el) { setText(el, Math.round(ps.received * 100) + '%'); });
     var vol = ps.muted ? 0 : ps.volume;
     $$('.seek[data-seek="volume"]').forEach(function (el) {
-      el.style.setProperty('--pos', vol.toFixed(3)); el.style.setProperty('--xfer', 0);
-      el.setAttribute('aria-valuenow', Math.round(vol * 100)); el.setAttribute('aria-valuetext', ps.muted ? 'Muted' : Math.round(vol * 100) + '%');
+      setVar(el, '--pos', vol.toFixed(3)); setVar(el, '--xfer', 0);
+      setAttr(el, 'aria-valuenow', Math.round(vol * 100)); setAttr(el, 'aria-valuetext', ps.muted ? 'Muted' : Math.round(vol * 100) + '%');
     });
   }
+  App.setText = setText;
   App.on('tick', updateSeeks);
   App.on('player', updateSeeks);
 
@@ -2410,8 +2423,8 @@
     });
     $$('[data-bind="xfade"]').forEach(function (el) { el.hidden = !ps.crossfade; });
     // mini-player text
-    $('#mini-title').textContent = idle ? 'Nothing playing' : t.title;
-    $('#mini-sub').textContent = idle ? 'Search or pick something from Home' : (line && st !== 'streaming' && st !== 'library' ? line : t.artist);
+    setText($('#mini-title'), idle ? 'Nothing playing' : t.title);
+    setText($('#mini-sub'), idle ? 'Search or pick something from Home' : (line && st !== 'streaming' && st !== 'library' ? line : t.artist));
     var mt = $('#mini-thumb'); patch(mt, idle ? '<span></span>' : ui.cover(t, 40)); mt.classList.toggle('bezel-thumb--empty', idle);
     App.syncRows();
     updateSeeks();
