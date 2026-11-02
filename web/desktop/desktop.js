@@ -167,7 +167,7 @@
       '<p class="dk-card__lede">One computer is your hub: it keeps your library, finds music on Soulseek and remembers what you play. Your other devices pair with it.</p>' +
       '<div class="dk-choices">' +
       '<button type="button" class="dk-choice" data-dk="this-computer"><span class="dk-choice__title">This computer is my hub</span>' +
-      '<span class="dk-choice__text">lull runs here, with your music folder. Pick Soulseek and Last.fm next.</span></button>' +
+      '<span class="dk-choice__text">lull runs here. Next, choose a music folder or your Jellyfin server, then Soulseek and Last.fm.</span></button>' +
       '<button type="button" class="dk-choice" data-dk="connect"><span class="dk-choice__title">Connect to a hub</span>' +
       '<span class="dk-choice__text">Your hub runs on another computer or a server. You&rsquo;ll need a pair code from it.</span></button>' +
       '</div><div class="dk-status" role="status" data-state="idle" hidden></div></section>');
