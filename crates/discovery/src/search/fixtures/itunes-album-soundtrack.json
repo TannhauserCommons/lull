@@ -1,0 +1,104 @@
+{
+ "resultCount": 9,
+ "results": [
+  {
+   "wrapperType": "collection",
+   "collectionType": "Album",
+   "collectionId": 6823237344,
+   "artistName": "Various Artists",
+   "collectionName": "Cyberpunk: Edgerunners 2 (Original Series Soundtrack)",
+   "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/89/91/f3/8991f3f2-e261-1885-568d-1d35f71fcc4a/196874707302.jpg/100x100bb.jpg",
+   "trackCount": 8,
+   "releaseDate": "2026-10-20T07:00:00Z",
+   "primaryGenreName": "Soundtrack"
+  },
+  {
+   "wrapperType": "collection",
+   "collectionType": "Album",
+   "collectionId": 6784452938,
+   "artistName": "Rico Nasty",
+   "collectionName": "You Can't Run From Me (from Cyberpunk: Edgerunners 2) - Single",
+   "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/8e/d5/62/8ed56274-f502-082f-2231-39fd4c7076bf/196874552971.jpg/100x100bb.jpg",
+   "trackCount": 1,
+   "releaseDate": "2026-06-30T07:00:00Z",
+   "primaryGenreName": "Soundtrack"
+  },
+  {
+   "wrapperType": "collection",
+   "collectionType": "Album",
+   "collectionId": 6797586084,
+   "artistName": "ChemyNoSurfea",
+   "collectionName": "You Can't Run from Me (From Cyberpunk: Edgerunners Season 2) [feat. 楔 kusabi] [Español Latino] - Single",
+   "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/5f/20/81/5f2081b2-3908-b694-5edc-d81aaee1b804/199999714118.png/100x100bb.jpg",
+   "trackCount": 1,
+   "releaseDate": "2026-08-03T07:00:00Z",
+   "primaryGenreName": "Anime"
+  },
+  {
+   "wrapperType": "collection",
+   "collectionType": "Album",
+   "collectionId": 6798658034,
+   "artistName": "Kabaaneko & KASA",
+   "collectionName": "You Can't Run From Me (from Cyberpunk: Edgerunners Season 2) - Single",
+   "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/22/8e/10/228e1030-75a5-2b69-80b4-8695c97943a5/artwork.jpg/100x100bb.jpg",
+   "trackCount": 1,
+   "releaseDate": "2026-08-07T07:00:00Z",
+   "primaryGenreName": "Soundtrack"
+  },
+  {
+   "wrapperType": "collection",
+   "collectionType": "Album",
+   "collectionId": 1683041810,
+   "artistName": "KyotoJam",
+   "collectionName": "Cyberpunk Edgerunners (Ending Theme Let You Down) - Single",
+   "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/45/28/ff/4528ffe6-9a8c-0df0-9c28-fe626d0488d5/artwork.jpg/100x100bb.jpg",
+   "trackCount": 1,
+   "releaseDate": "2023-04-16T07:00:00Z",
+   "primaryGenreName": "House"
+  },
+  {
+   "wrapperType": "collection",
+   "collectionType": "Album",
+   "collectionId": 6827313791,
+   "artistName": "MrLopez2112",
+   "collectionName": "Cyberpunk: Edgerunners Season II Opening (10: 15 Saturday Night) - Single",
+   "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/1f/4a/f7/1f4af7e0-07da-354f-f6f1-a4fc9d9cf101/199999763499.png/100x100bb.jpg",
+   "trackCount": 1,
+   "releaseDate": "2026-10-26T07:00:00Z",
+   "primaryGenreName": "Anime"
+  },
+  {
+   "wrapperType": "collection",
+   "collectionType": "Album",
+   "collectionId": 6825147190,
+   "artistName": "Aera Rin",
+   "collectionName": "You Can't Run From Me (From \"Cyberpunk: Edgerunners Season 2\") (feat. Jun Mitsui) - Single",
+   "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/98/d7/ac/98d7acdd-5ddb-c707-a9d3-97c78e053a5e/artwork.jpg/100x100bb.jpg",
+   "trackCount": 1,
+   "releaseDate": "2026-10-20T07:00:00Z",
+   "primaryGenreName": "Metal"
+  },
+  {
+   "wrapperType": "collection",
+   "collectionType": "Album",
+   "collectionId": 6827255549,
+   "artistName": "Davide Nigro & Alessandro Penna",
+   "collectionName": "High Forever (From Cyberpunk Edgerunners Season 2 Ambient Version) - Single",
+   "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/d8/ed/24/d8ed24d4-dd1e-ea95-3515-73948c118ded/199999763352.png/100x100bb.jpg",
+   "trackCount": 1,
+   "releaseDate": "2026-10-26T07:00:00Z",
+   "primaryGenreName": "Alternative"
+  },
+  {
+   "wrapperType": "collection",
+   "collectionType": "Album",
+   "collectionId": 1711647903,
+   "artistName": "Akira Yamaoka, Marcin Przybylowicz & P.T. Adamczyk",
+   "collectionName": "Cyberpunk: Edgerunners (Original Series Soundtrack)",
+   "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/7e/d6/1f/7ed61f99-381f-b7bb-eae8-e0be4f22a680/196871377898.jpg/100x100bb.jpg",
+   "trackCount": 14,
+   "releaseDate": "2023-10-27T07:00:00Z",
+   "primaryGenreName": "Soundtrack"
+  }
+ ]
+}

@@ -483,11 +483,17 @@ pub fn recordings(body: serde_json::Value) -> Result<Found> {
         #[serde(default)]
         secondary_types: Vec<String>,
     }
-    /// Lower is a better home for a song: an official studio album first.
+    /// Lower is a better home for a song: an official studio album or soundtrack first (a
+    /// soundtrack is where its songs come from), compilations and live releases last.
     fn preference(r: &RawRelease) -> (u8, String) {
         let official = r.status.as_deref() == Some("Official");
+        let original = |g: &Group| {
+            g.secondary_types.iter().all(|t| {
+                t == "Soundtrack" || (t == "Compilation" && g.secondary_types.iter().any(|t| t == "Soundtrack"))
+            })
+        };
         let class = match &r.release_group {
-            Some(g) if g.secondary_types.is_empty() => match g.primary_type.as_deref() {
+            Some(g) if original(g) => match g.primary_type.as_deref() {
                 Some("Album") => 0,
                 Some("EP" | "Single") => 1,
                 _ => 2,

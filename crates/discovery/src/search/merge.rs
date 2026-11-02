@@ -7,6 +7,9 @@
 //! - **Order:** rows another source confirms before Last.fm-only ones (scrobbles carry
 //!   misspellings), then how well the row matches the query, then popularity (in tenths), then
 //!   the listener's own (saved, liked, followed), then exact popularity.
+//! - **Fit:** exact, then every word typed, then most of them (a soundtrack named without the
+//!   "season" the listener typed), then loose. Words found only in a "(from …)" note count as
+//!   most: such a song is from the work the query names, not that work.
 //! - **Misspelt artists:** a Last.fm-only artist a typo away from a confirmed one, with under 1%
 //!   of its audience, is dropped ("Radiohed" next to Radiohead).
 
@@ -21,9 +24,15 @@ use crate::store;
 
 /// Lengths within this many seconds are the same recording.
 const SAME_LENGTH_S: u32 = 3;
-/// How far the top result leans toward an artist, then an album, over a track of about the
-/// same popularity ("radiohed" is Radiohead, not their best known song).
-const TOP_LEAN: [f64; 3] = [0.15, 0.05, 0.0];
+/// How far the top result leans toward an artist or a full-length album (an album, a
+/// compilation, a soundtrack), then an EP or single, over a track of about the same popularity
+/// ("radiohed" is Radiohead, not their best known song; a soundtrack's name is the soundtrack).
+const LEAN_ARTIST: f64 = 0.15;
+const LEAN_FULL_LENGTH: f64 = 0.15;
+const LEAN_RELEASE: f64 = 0.05;
+/// Words shorter than this (but not numbers) don't count toward "most of the words": "of" and
+/// "the" make "Sign of the Times" no answer to "skronk of the times".
+const SIGNIFICANT_LETTERS: usize = 4;
 /// A Last.fm-only artist with less than this share of a near-namesake's audience is a typo.
 const MISSPELT_SHARE: u64 = 100;
 
@@ -334,6 +343,10 @@ fn fill_artist(row: &mut ArtistHit, hit: ArtistHit) -> bool {
 pub enum Fit {
     /// The source found it (a typo, an alias), but the words differ.
     Loose,
+    /// At least two of the typed words, and two thirds of them (not counting short ones like
+    /// "of"), start a word of its artist, title or album; or every word does, but only thanks
+    /// to a "(from …)" note.
+    Most,
     /// Every word typed starts a word of its artist, title or album.
     Words,
     /// The title or name is the query, or the artist is (an artist's songs and albums), or
@@ -366,17 +379,24 @@ impl Query {
         if exact.iter().any(|e| self.is(e)) {
             return Fit::Exact;
         }
-        let have: Vec<String> = text
-            .iter()
-            .flat_map(|t| normalize(t).split_whitespace().map(str::to_owned).collect::<Vec<_>>())
-            .collect();
-        if !self.words.is_empty()
-            && self
-                .words
-                .iter()
-                .all(|w| have.iter().any(|h| h.starts_with(w.as_str())))
-        {
-            Fit::Words
+        let words_of = |texts: &mut dyn Iterator<Item = String>| -> Vec<String> {
+            texts
+                .flat_map(|t| normalize(&t).split_whitespace().map(str::to_owned).collect::<Vec<_>>())
+                .collect()
+        };
+        let own = words_of(&mut text.iter().map(|t| without_from_notes(t)));
+        let all = words_of(&mut text.iter().map(|t| (*t).to_owned()));
+        let holds = |have: &[String], w: &str| have.iter().any(|h| h.starts_with(w));
+        if self.words.is_empty() {
+            return Fit::Loose;
+        }
+        if self.words.iter().all(|w| holds(&own, w)) {
+            return Fit::Words;
+        }
+        let significant: Vec<&String> = self.words.iter().filter(|w| is_significant(w)).collect();
+        let held = significant.iter().filter(|w| holds(&all, w)).count();
+        if self.words.iter().all(|w| holds(&all, w)) || (held >= 2 && held * 3 >= significant.len() * 2) {
+            Fit::Most
         } else {
             Fit::Loose
         }
@@ -399,6 +419,31 @@ impl Query {
     }
 }
 
+/// A word that counts toward "most of the words": a number, or four letters or more.
+fn is_significant(word: &str) -> bool {
+    word.chars().count() >= SIGNIFICANT_LETTERS || word.chars().all(|c| c.is_numeric())
+}
+
+/// The text without brackets that say where a song is from: "You Can't Run From Me (from
+/// Cyberpunk: Edgerunners Season 2)" → "You Can't Run From Me ".
+fn without_from_notes(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(open) = rest.find(['(', '[']) {
+        let close = if rest[open..].starts_with('(') { ')' } else { ']' };
+        let Some(len) = rest[open + 1..].find(close) else { break };
+        let inner = rest[open + 1..open + 1 + len].trim_start_matches(|c: char| !c.is_alphanumeric());
+        let is_note = inner.get(..5).is_some_and(|w| w.eq_ignore_ascii_case("from "));
+        out.push_str(&rest[..open]);
+        if !is_note {
+            out.push_str(&rest[open..open + len + 2]);
+        }
+        rest = &rest[open + len + 2..];
+    }
+    out.push_str(rest);
+    out
+}
+
 /// What a row is ranked by.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Score {
@@ -406,6 +451,8 @@ pub struct Score {
     pub confirmed: bool,
     pub fit: Fit,
     pub popularity: f64,
+    /// How far the top result leans toward it over the other kinds (`top`).
+    pub lean: f64,
 }
 
 impl Score {
@@ -414,14 +461,20 @@ impl Score {
             confirmed: !s.lastfm_only,
             fit: q.song(s),
             popularity: s.popularity,
+            lean: 0.0,
         }
     }
 
     pub fn album(q: &Query, a: &AlbumHit) -> Self {
+        let full_length = a
+            .kind
+            .as_deref()
+            .is_some_and(|k| k.eq_ignore_ascii_case("album") || k.eq_ignore_ascii_case("compilation"));
         Score {
             confirmed: true,
             fit: q.album(a),
             popularity: a.popularity,
+            lean: if full_length { LEAN_FULL_LENGTH } else { LEAN_RELEASE },
         }
     }
 
@@ -430,6 +483,7 @@ impl Score {
             confirmed: !a.lastfm_only,
             fit: q.artist(a),
             popularity: a.popularity,
+            lean: LEAN_ARTIST,
         }
     }
 }
@@ -504,7 +558,8 @@ pub enum Kind {
 }
 
 /// The one top result among the best artist, album and track: a confirmed row before a
-/// Last.fm-only one, then the best fit, then the most popular, leaning toward artists and albums.
+/// Last.fm-only one, then the best fit, then the most popular, leaning toward artists and albums
+/// (full-length ones more than EPs and singles).
 pub fn top(artist: Option<Score>, album: Option<Score>, track: Option<Score>) -> Option<Kind> {
     let better = |a: &(Kind, (bool, Fit), f64), b: &(Kind, (bool, Fit), f64)| {
         a.1.cmp(&b.1)
@@ -513,8 +568,7 @@ pub fn top(artist: Option<Score>, album: Option<Score>, track: Option<Score>) ->
     };
     [(Kind::Artist, artist), (Kind::Album, album), (Kind::Track, track)]
         .into_iter()
-        .zip(TOP_LEAN)
-        .filter_map(|((kind, row), lean)| row.map(|r| (kind, (r.confirmed, r.fit), r.popularity + lean)))
+        .filter_map(|(kind, row)| row.map(|r| (kind, (r.confirmed, r.fit), r.popularity + r.lean)))
         .fold(None, |best, c| match best {
             Some(b) if !better(&c, &b) => Some(b),
             _ => Some(c),

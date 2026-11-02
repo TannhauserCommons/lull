@@ -307,17 +307,18 @@ async fn fetch(svc: &Service, source: Source, q: &str) -> Result<Found> {
         }),
         Source::MusicBrainz => {
             let mut found = svc.mb.search(q).await?;
-            // Its query is broad; rows whose words don't match are someone else's.
+            // Its query is broad; rows whose words don't match are someone else's. An album
+            // holding most of them stays (a soundtrack named without the "season" typed).
             let query = Query::new(q);
-            found.songs.retain(|s| query.song(s) > Fit::Loose);
-            found.albums.retain(|a| query.album(a) > Fit::Loose);
-            found.artists.retain(|a| query.artist(a) > Fit::Loose);
+            found.songs.retain(|s| query.song(s) >= Fit::Words);
+            found.albums.retain(|a| query.album(a) >= Fit::Most);
+            found.artists.retain(|a| query.artist(a) >= Fit::Words);
             Ok(found)
         }
         Source::MusicBrainzAlbums => {
             let mut found = svc.mb.search_releases(q).await?;
             let query = Query::new(q);
-            found.albums.retain(|a| query.album(a) > Fit::Loose);
+            found.albums.retain(|a| query.album(a) >= Fit::Most);
             Ok(found)
         }
         Source::LastFm => match svc.lastfm() {

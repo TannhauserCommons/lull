@@ -21,6 +21,11 @@ fn fixture(name: &str) -> Value {
         "deezer-withheld" => include_str!("fixtures/deezer-withheld.json"),
         "deezer-infos" => include_str!("fixtures/deezer-infos.json"),
         "itunes-song" => include_str!("fixtures/itunes-song.json"),
+        // "cyberpunk edgerunners season 2", recorded 2026-11-02 (US store).
+        "itunes-song-soundtrack" => include_str!("fixtures/itunes-song-soundtrack.json"),
+        "itunes-album-soundtrack" => include_str!("fixtures/itunes-album-soundtrack.json"),
+        // Dawid Podsiadło's "Let You Down": a single, his album and the Edgerunners soundtrack.
+        "musicbrainz-recording-soundtrack" => include_str!("fixtures/musicbrainz-recording-soundtrack.json"),
         "musicbrainz-recording" => include_str!("fixtures/musicbrainz-recording.json"),
         "musicbrainz-release-group" => include_str!("fixtures/musicbrainz-release-group.json"),
         _ => "null",
@@ -44,6 +49,7 @@ fn score(fit: Fit, popularity: f64) -> Score {
         confirmed: true,
         fit,
         popularity,
+        lean: 0.0,
     }
 }
 
@@ -425,6 +431,94 @@ fn the_itunes_budget_stays_under_twenty_a_minute() {
     assert_eq!((0..25).filter(|_| b.take(t0)).count(), 18);
     assert!(!b.take(t0 + Duration::from_secs(59)));
     assert!(b.take(t0 + Duration::from_secs(60)));
+    // Album searches take only what songs leave spare: six calls stay for songs.
+    let mut b = itunes::Budget::default();
+    assert_eq!((0..25).filter(|_| b.take_spare(t0)).count(), 12);
+    assert_eq!((0..25).filter(|_| b.take(t0)).count(), 6);
+}
+
+#[test]
+fn a_soundtrack_named_without_the_season_typed_is_the_top_result() {
+    // Live, "cyberpunk edgerunners season 2" led with a cover single "(from Cyberpunk:
+    // Edgerunners Season 2)"; Spotify leads with the soundtrack, whose title has no "season".
+    let q = Query::new("cyberpunk edgerunners season 2");
+    let mut m = Merged::default();
+    m.add(itunes::songs(fixture("itunes-song-soundtrack")).unwrap_or_default());
+    m.add(itunes::albums(fixture("itunes-album-soundtrack")).unwrap_or_default());
+    let ost = "Cyberpunk: Edgerunners 2 (Original Series Soundtrack)";
+
+    let album_scores: Vec<Score> = m.albums.iter().map(|a| Score::album(&q, a)).collect();
+    let albums = merge::rank(&album_scores, |_| false);
+    let first = &m.albums[albums[0]];
+    assert_eq!(
+        (first.title.as_str(), first.artist.as_str(), first.kind.as_deref()),
+        (ost, "Various Artists", Some("compilation"))
+    );
+    assert_eq!(album_scores[albums[0]].fit, Fit::Most);
+    let song_scores: Vec<Score> = m.songs.iter().map(|s| Score::song(&q, s)).collect();
+    let songs = merge::rank(&song_scores, |_| false);
+    assert_eq!(
+        merge::top(None, Some(album_scores[albums[0]]), Some(song_scores[songs[0]])),
+        Some(Kind::Album)
+    );
+    // The first season's soundtrack holds only half the words: listed, but below.
+    let first_season = m
+        .albums
+        .iter()
+        .position(|a| a.title == "Cyberpunk: Edgerunners (Original Series Soundtrack)");
+    assert_eq!(first_season.map(|i| album_scores[i].fit), Some(Fit::Loose));
+}
+
+#[test]
+fn a_song_from_the_work_typed_fits_it_only_in_part() {
+    let q = Query::new("cyberpunk edgerunners season 2");
+    let from = song(
+        "Rico Nasty",
+        "You Can't Run From Me (from Cyberpunk: Edgerunners Season 2)",
+        "You Can't Run From Me (from Cyberpunk: Edgerunners Season 2)",
+        None,
+    );
+    assert_eq!(q.song(&from), Fit::Most, "it is from the work typed, not that work");
+    let named = song("Nameless", "Cyberpunk Edgerunners Season 2 Medley", "", None);
+    assert_eq!(q.song(&named), Fit::Words);
+    // Short words don't make "most": "of the times" is not "skronk of the times".
+    let q = Query::new("skronk of the times");
+    assert_eq!(q.song(&song("Harry Styles", "Sign of the Times", "", None)), Fit::Loose);
+    // Two words of three is most; one of two is not.
+    assert_eq!(
+        Query::new("paper moon static").song(&song("Velvet Orchard", "Paper Moon", "", None)),
+        Fit::Most
+    );
+    assert_eq!(
+        Query::new("paper static").song(&song("Velvet Orchard", "Paper Moon", "", None)),
+        Fit::Loose
+    );
+}
+
+#[test]
+fn itunes_album_search_names_soundtracks_compilations_and_singles() {
+    let found = itunes::albums(fixture("itunes-album-soundtrack")).unwrap_or_default();
+    assert_eq!(found.albums.len(), 9);
+    let ost = &found.albums[0];
+    assert_eq!(ost.kind.as_deref(), Some("compilation"), "Various Artists");
+    assert_eq!(ost.date.as_deref(), Some("2026-10-20"));
+    assert!(ost.art.as_deref().is_some_and(|a| a.ends_with("/{size}x{size}bb.jpg")));
+    assert_eq!(
+        (found.albums[1].title.as_str(), found.albums[1].kind.as_deref()),
+        ("You Can't Run From Me (from Cyberpunk: Edgerunners 2)", Some("single"))
+    );
+    assert_eq!(found.albums[8].kind.as_deref(), Some("album"));
+    assert!(ost.popularity > found.albums[1].popularity, "Apple's order stands in");
+}
+
+#[test]
+fn a_soundtrack_song_lives_on_its_soundtrack() {
+    // Before, any secondary type ranked below singles: "Let You Down" landed on a reissue.
+    let found = musicbrainz::recordings(fixture("musicbrainz-recording-soundtrack")).unwrap_or_default();
+    assert_eq!(
+        (found.songs[0].album.as_str(), found.songs[0].album_kind.as_deref()),
+        ("Cyberpunk: Edgerunners (Original Series Soundtrack)", Some("album"))
+    );
 }
 
 #[test]
@@ -493,7 +587,7 @@ fn a_bandcamp_only_ep_is_found_by_its_title() {
     // Live, "skronk of the times" never showed Hairy Babies' EP: recordings don't match titles.
     let q = Query::new("skronk of the times");
     let found = musicbrainz::release_groups(fixture("musicbrainz-release-group")).unwrap_or_default();
-    let kept: Vec<&AlbumHit> = found.albums.iter().filter(|a| q.album(a) > Fit::Loose).collect();
+    let kept: Vec<&AlbumHit> = found.albums.iter().filter(|a| q.album(a) >= Fit::Most).collect();
     assert_eq!(kept.len(), 1, "\"Sign of the Times\" and the like are someone else's");
     assert_eq!(
         (kept[0].title.as_str(), kept[0].artist.as_str(), kept[0].kind.as_deref()),

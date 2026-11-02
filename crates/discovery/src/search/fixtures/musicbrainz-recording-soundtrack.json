@@ -1,0 +1,200 @@
+{
+ "recordings": [
+  {
+   "id": "ab100b50-31eb-4a71-98d8-52a5e4e1304e",
+   "title": "Let You Down",
+   "length": 227047,
+   "artist-credit": [
+    {
+     "name": "Dawid Podsiadło",
+     "joinphrase": "",
+     "artist": {
+      "id": "68ffdf6b-001c-41ed-aa3a-20ec0128f627"
+     }
+    }
+   ],
+   "isrcs": [
+    "PLL892200029"
+   ],
+   "releases": [
+    {
+     "title": "Lata Dwudzieste (edycja limitowana)",
+     "date": "2022-10-21",
+     "artist-credit": [
+      {
+       "name": "Dawid Podsiadło",
+       "joinphrase": "",
+       "artist": {
+        "id": "68ffdf6b-001c-41ed-aa3a-20ec0128f627"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "a9e1cfea-b509-4bd6-bf9c-d29510857d5d",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "title": "Cyberpunk: Edgerunners OST",
+     "status": "Bootleg",
+     "artist-credit": [
+      {
+       "name": "Various Artists",
+       "joinphrase": "",
+       "artist": {
+        "id": "89ad4ac3-39f7-470e-963a-56509c546377"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "593a0ee9-3980-483a-8a8b-704c698e8811",
+      "primary-type": "EP",
+      "secondary-types": [
+       "Soundtrack"
+      ]
+     }
+    },
+    {
+     "title": "Cyberpunk: Edgerunners (Original Series Soundtrack)",
+     "status": "Official",
+     "date": "2024-03-24",
+     "artist-credit": [
+      {
+       "name": "Akira Yamaoka",
+       "joinphrase": ", ",
+       "artist": {
+        "id": "23a32153-7314-4359-a5cd-9e584fe83504"
+       }
+      },
+      {
+       "name": "Marcin Przybyłowicz",
+       "joinphrase": " & ",
+       "artist": {
+        "id": "9ce4f0c8-8ce4-461a-ba1e-10460d2399a2"
+       }
+      },
+      {
+       "name": "P.T. Adamczyk",
+       "joinphrase": "",
+       "artist": {
+        "id": "bc1285ea-31c8-4f50-847e-b66244a142b3"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "0137d4cd-d79d-466a-b5a7-242bd9661205",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ]
+     }
+    },
+    {
+     "title": "Lata Dwudzieste z kawałkiem",
+     "status": "Official",
+     "artist-credit": [
+      {
+       "name": "Dawid Podsiadło",
+       "joinphrase": "",
+       "artist": {
+        "id": "68ffdf6b-001c-41ed-aa3a-20ec0128f627"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "a9e1cfea-b509-4bd6-bf9c-d29510857d5d",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "title": "Cyberpunk: Edgerunners (Original Series Soundtrack)",
+     "status": "Official",
+     "date": "2024-03-22",
+     "artist-credit": [
+      {
+       "name": "Akira Yamaoka",
+       "joinphrase": ", ",
+       "artist": {
+        "id": "23a32153-7314-4359-a5cd-9e584fe83504"
+       }
+      },
+      {
+       "name": "Marcin Przybyłowicz",
+       "joinphrase": " & ",
+       "artist": {
+        "id": "9ce4f0c8-8ce4-461a-ba1e-10460d2399a2"
+       }
+      },
+      {
+       "name": "P.T. Adamczyk",
+       "joinphrase": "",
+       "artist": {
+        "id": "bc1285ea-31c8-4f50-847e-b66244a142b3"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "0137d4cd-d79d-466a-b5a7-242bd9661205",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ]
+     }
+    },
+    {
+     "title": "Cyberpunk: Edgerunners (Original Series Soundtrack)",
+     "status": "Official",
+     "date": "2023-10-27",
+     "artist-credit": [
+      {
+       "name": "Akira Yamaoka",
+       "joinphrase": ", ",
+       "artist": {
+        "id": "23a32153-7314-4359-a5cd-9e584fe83504"
+       }
+      },
+      {
+       "name": "Marcin Przybyłowicz",
+       "joinphrase": " & ",
+       "artist": {
+        "id": "9ce4f0c8-8ce4-461a-ba1e-10460d2399a2"
+       }
+      },
+      {
+       "name": "P.T. Adamczyk",
+       "joinphrase": "",
+       "artist": {
+        "id": "bc1285ea-31c8-4f50-847e-b66244a142b3"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "0137d4cd-d79d-466a-b5a7-242bd9661205",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ]
+     }
+    },
+    {
+     "title": "Let You Down",
+     "status": "Official",
+     "date": "2022-09-13",
+     "artist-credit": [
+      {
+       "name": "Dawid Podsiadło",
+       "joinphrase": "",
+       "artist": {
+        "id": "68ffdf6b-001c-41ed-aa3a-20ec0128f627"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "accc6197-31f7-4554-8670-37e6ac3be194",
+      "primary-type": "Single"
+     }
+    }
+   ]
+  }
+ ]
+}
