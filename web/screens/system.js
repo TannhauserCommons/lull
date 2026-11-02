@@ -665,7 +665,7 @@
       : y.updated ? 'Using yt-dlp ' + y.version + ', fetched by the server' + (y.pinnedVersion ? ' (built in: ' + y.pinnedVersion + ').' : '.')
       : 'Using the built-in yt-dlp ' + y.version + '.';
     var checked = y.checkedAt ? ' Last checked ' + new Date(y.checkedAt * 1000).toLocaleString() + (y.latest ? '; the newest is ' + y.latest + '.' : '.') : '';
-    return html`${statusLine(d.state, d.detail)}<span class="sys-row__help">${using}${checked}${y.error ? ' ' + y.error : ''}</span>`;
+    return html`<div>${statusLine(d.state, d.detail)}</div><span class="sys-row__help">${using}${checked}${y.error ? ' ' + y.error : ''}</span>`;
   }
   App.action('sys-ytdlp-update', function (el) {
     el.disabled = true;
