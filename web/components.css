@@ -178,6 +178,7 @@ button.chip:hover, a.chip:hover { background: var(--lilac); }
 .q-chip--ll::before { content: ""; width: 7px; height: 7px; margin-top: -2px; background: currentColor; transform: rotate(45deg); flex: none; }
 .q-chip--solid.q-chip--ll { background: var(--indigo); border-color: var(--indigo); color: var(--lilac); }
 .q-chip--solid.q-chip--ly { background: var(--ink); border-color: var(--ink); color: var(--cream); }
+.q-chip--yt { border-style: dashed; }
 button.q-chip { cursor: pointer; position: relative; }
 button.q-chip::after { content: ""; position: absolute; inset: -10px -2px; }
 

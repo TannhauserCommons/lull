@@ -532,7 +532,8 @@
   ui.qualityChip = function (fmt, opts) {
     opts = opts || {};
     var f = M.formats[fmt] || { label: fmt, lossless: false };
-    var cls = 'q-chip ' + (f.lossless ? 'q-chip--ll' : 'q-chip--ly') + (opts.solid ? ' q-chip--solid' : '');
+    /* a YouTube copy's own chip ("YouTube · Opus 160", docs/context/youtube.md): never a peer file's format */
+    var cls = 'q-chip ' + (f.lossless ? 'q-chip--ll' : 'q-chip--ly') + (opts.solid ? ' q-chip--solid' : '') + (/^YouTube /.test(String(fmt)) ? ' q-chip--yt' : '');
     var label = (f.lossless ? 'Lossless, ' : '') + f.label;
     if (opts.button) return html`<button class="${cls}" data-act="source-details" ${opts.id ? raw('data-id="' + esc(opts.id) + '"') : ''} aria-label="${label}. Show source details" data-tip="Source details">${f.label}</button>`;
     return html`<span class="${cls}" title="${label}">${f.label}</span>`;
@@ -2356,7 +2357,7 @@
         <div class="pbar__text">
           <div class="pbar__title"><a href="#/album/${t.albumId}">${t.title}</a></div>
           <div class="pbar__artist"><a href="#/artist/${t.artistId}">${t.artist}</a></div>
-          <div class="pbar__badges">${ui.sourceBadge(t)}${playingFormat(t) ? ui.qualityChip(playingFormat(t), { solid: true, button: true, id: t.id }) : ''}${ps.belowMinimum ? ui.belowBadge() : ''}</div>
+          <div class="pbar__badges">${playingYoutube() ? '' : ui.sourceBadge(t)}${playingFormat(t) ? ui.qualityChip(playingFormat(t), { solid: true, button: true, id: t.id }) : ''}${ps.belowMinimum ? ui.belowBadge() : ''}</div>
         </div>`);
     }
     // state tab above the seek bar
@@ -2418,6 +2419,8 @@
   }
   /* the format actually playing: the picked peer's file for Soulseek, the library file otherwise */
   function playingFormat(t) { return ps.peer && ps.status !== 'library' ? ps.peer.format || t.format : t.format; }
+  /* the song plays from YouTube: its own chip ("YouTube · Opus 160") says so, not the Soulseek badge */
+  function playingYoutube() { return !!(ps.peer && ps.status !== 'library' && ps.peer.name === 'YouTube'); }
   App.on('player', renderBar);
   App.on('player', function (k) { if (k === 'track' || k === 'queue') ui.warmArt(P.upNext(1)[0]); });
   App.on('save', function (d) { if (d.id === P.currentId()) renderBar(); });

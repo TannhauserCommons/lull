@@ -531,7 +531,7 @@
 
   var SECTIONS = [
     ['playback', 'Playback', 'volume-2', 'Gapless, crossfade, loudness'],
-    ['sources', 'Sources', 'soulseek', 'Streaming and saving rules, peers'],
+    ['sources', 'Sources', 'soulseek', 'Streaming and saving rules, peers, YouTube'],
     ['search', 'Search', 'search', 'File results'],
     ['cache', 'Cache', 'grid', 'Size, usage, clear'],
     ['library', 'Library and saving', 'library', 'Music folder or Jellyfin, names, duplicates'],
@@ -628,10 +628,67 @@
       ${group('peers')}
       ${row('Longest peer queue', 'Skip peers with more people waiting than this.', stepper('sources.maxPeerQueue', 'Longest peer queue', 0, 50, 5, 'waiting'))}
       ${row('Stall timeout', 'If a peer stops sending for this long, switch to the next copy.', range('sources.stallTimeout', 'Stall timeout, seconds', 5, 60, 5))}
+      ${youtubeRows()}
       ${group('soulseek connection')}
       ${cfgNotice()}${App.hubKit.soulseekRows()}
       ${cfgField('LULL_SLSKD_URL', 'slskd address', 'lull reaches Soulseek through slskd, which signs in with your Soulseek account.', { type: 'url' })}
       ${cfgField('LULL_SLSKD_API_KEY', 'slskd API key')}`;
+  }
+
+  /* ---------- YouTube (docs/context/youtube.md): a second source through yt-dlp ----------
+     sources.youtube = { mode: off | fallback | startFast, format: opus | aac, match: official | close | loose, waitS, saves,
+     autoUpdate }. GET /api/youtube says how it stands and which yt-dlp is in use; POST /api/youtube/update checks now. */
+  var YOUTUBE = '/api/youtube';
+  var yt = null;                                   // { loading, error, data } of GET /api/youtube
+  fmtRange['sources.youtube.waitS'] = function (v) { return v + ' s'; };
+  effects['sources.youtube.mode'] = function (v) {
+    $$('[data-when="youtube"]').forEach(function (r) { r.hidden = v === 'off'; });
+    $$('[data-when="youtube-wait"]').forEach(function (r) { r.hidden = v !== 'fallback'; });
+    loadYoutube();
+  };
+  effects['sources.youtube.autoUpdate'] = function (v) {
+    $$('[data-act="sys-ytdlp-update"]').forEach(function (b) { b.disabled = !v; });
+    loadYoutube();
+  };
+  function loadYoutube() {
+    yt = yt && yt.data ? yt : { loading: true };
+    M.api(YOUTUBE).then(function (d) { yt = { data: d }; repaint('#sys-youtube', youtubeState()); },
+      function (err) { yt = { error: err && err.message || String(err) }; repaint('#sys-youtube', youtubeState()); });
+  }
+  /* the `youtube` service (backing off, yt-dlp updated) changes while the page is open */
+  App.on('server:service', function (e) { if (e && e.name === 'youtube' && $('#sys-youtube')) loadYoutube(); });
+  function youtubeState() {
+    if (!yt || yt.loading) return spinnerLine('Asking the server');
+    if (yt.error) return statusLine('down', yt.error);
+    var d = yt.data, y = d.ytdlp || {};
+    var using = !y.version ? 'yt-dlp isn\'t working on the server.'
+      : y.updated ? 'Using yt-dlp ' + y.version + ', fetched by the server' + (y.pinnedVersion ? ' (built in: ' + y.pinnedVersion + ').' : '.')
+      : 'Using the built-in yt-dlp ' + y.version + '.';
+    var checked = y.checkedAt ? ' Last checked ' + new Date(y.checkedAt * 1000).toLocaleString() + (y.latest ? '; the newest is ' + y.latest + '.' : '.') : '';
+    return html`${statusLine(d.state, d.detail)}<span class="sys-row__help">${using}${checked}${y.error ? ' ' + y.error : ''}</span>`;
+  }
+  App.action('sys-ytdlp-update', function (el) {
+    el.disabled = true;
+    M.api(YOUTUBE + '/update', { method: 'POST' }).then(function (d) {
+      el.disabled = false; yt = { data: d }; repaint('#sys-youtube', youtubeState());
+      App.announce('Checked for a new yt-dlp');
+    }, function (err) { el.disabled = false; App.toast('Couldn\'t check: ' + err.message, { kind: 'error' }); });
+  });
+  function youtubeRows() {
+    if (!lookup('sources.youtube')) return '';
+    var mode = get('sources.youtube.mode'), off = mode === 'off';
+    loadYoutube();
+    return html`${group('youtube')}
+      ${row('Use YouTube', 'Off: songs only ever play from Soulseek. As a fallback: YouTube plays a song when no Soulseek peer has it, or none starts in time. Start fast: YouTube starts every song at once while the best Soulseek copy is fetched for the next play and for saving.',
+        choice('sources.youtube.mode', 'Use YouTube', [['off', 'Off'], ['fallback', 'As a fallback'], ['startFast', 'Start fast, then upgrade']], 'sys-seg--wrap'), { cls: 'sys-row--stack' })}
+      ${row('Wait for Soulseek', 'How long a song waits for a Soulseek peer before YouTube plays it.', range('sources.youtube.waitS', 'Wait for Soulseek, seconds', 5, 120, 5), { when: 'youtube-wait', hidden: mode !== 'fallback', cls: 'sys-row--sub' })}
+      ${row('Format', 'Opus sounds a little better for its size. AAC plays on more devices. Either way it is YouTube\'s own audio, never converted.',
+        choice('sources.youtube.format', 'YouTube format', [['opus', 'Opus'], ['aac', 'AAC']]), { when: 'youtube', hidden: off })}
+      ${row('Which uploads count', 'Official audio comes from YouTube Music or the artist\'s own channel. Close also takes other uploads of the same song and length. Loose allows lengths up to 15 seconds apart. Live, cover, sped-up and nightcore versions never count unless the song is one.',
+        choice('sources.youtube.match', 'Which uploads count', [['official', 'Official audio only'], ['close', 'Close'], ['loose', 'Loose']], 'sys-seg--wrap'), { when: 'youtube', hidden: off, cls: 'sys-row--stack' })}
+      <div data-when="youtube" ${off ? raw('hidden') : ''}>${switchRow('sources.youtube.saves', 'Save from YouTube', 'When no Soulseek peer has a song, Save keeps the YouTube copy (AAC). Upgrade saved songs replaces it once a good Soulseek copy turns up. Saves never use YouTube while a peer has the song.')}</div>
+      ${switchRow('sources.youtube.autoUpdate', 'Keep yt-dlp up to date', 'lull reaches YouTube with a program called yt-dlp, and YouTube changes often. The server fetches the newest version once a day, checks it, and keeps the built-in one in case the new one fails.')}
+      ${row('YouTube now', '', html`<div class="sys-inline sys-inline--col"><div id="sys-youtube" aria-live="polite">${youtubeState()}</div><button class="btn btn--sm" data-act="sys-ytdlp-update" ${get('sources.youtube.autoUpdate') ? '' : raw('disabled')}>${icon('refresh')}Check for a new yt-dlp</button></div>`, { cls: 'sys-row--stack' })}`;
   }
 
   /* ---------- search (ADR-0008): Soulseek's raw files stay in the source picker unless this adds a Files tab ---------- */
