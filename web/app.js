@@ -1086,12 +1086,12 @@
   function changed(kind) { App.emit('player', kind || 'state'); persistSoon(); }
 
   /* playback settings (Settings > Playback; GET /api/settings), defaults until the server answers */
-  var playback = { gapless: true, crossfade: 0, normalisation: 'off', loudnessTarget: -14, radioWhenQueueEnds: true, volumeStep: 5 };
+  var playback = { gapless: true, crossfade: 0, normalisation: 'off', loudnessTarget: -14, radioWhenQueueEnds: true, volumeStep: 5, prefetchCount: 2 };
   P.volumeStep = function () { return (playback.volumeStep || 5) / 100; };
   App.setPlayback = function (patch) {
     Object.assign(playback, patch);
     App.store.set('crossfadeSec', playback.crossfade || 0);
-    applyLevels();
+    applyLevels(); prefetchSoon();
   };
 
   /* ---------- what the output plays: the playing queue entry (cur) and the one set to follow it (nxt) ----------
@@ -1765,6 +1765,30 @@
     updateBuffered();
     App.emit('tick', ps);
   }, TICK);
+
+  /* ---------- preloading (Settings > Playback): the hub starts fetching the next few Soulseek songs while this one
+     plays, so a skip finds them on disk instead of searching and waiting for a peer. PUT /api/stream/prefetch takes
+     the whole list each time; songs that drop off it are cancelled by the hub. Saved songs need nothing. Nothing is
+     asked while the playing song is still finding its own source: it gets Soulseek's searches first. ---------- */
+  var prefetchSent = '', prefetchTimer = null;
+  function prefetchSoon() { clearTimeout(prefetchTimer); prefetchTimer = setTimeout(syncPrefetch, 800); }
+  function upcoming(n) {
+    if (!cur || n <= 0 || ps.repeat === 'one') return [];
+    var at = ps.shuffle ? [nextIndex(true)] : ps.queue.map(function (e, i) { return i; }).slice(ps.index + 1), ids = [];
+    at.forEach(function (i) {
+      var e = ps.queue[i];
+      if (e && ids.length < n && !App.isSaved(e.trackId) && ids.indexOf(e.trackId) < 0 && e.trackId !== cur.trackId) ids.push(e.trackId);
+    });
+    return ids;
+  }
+  function syncPrefetch() {
+    if (cur && cur.soulseek && /^(finding|queued|buffering|choose)$/.test(ps.status)) return;   // the 'status' change after it re-runs this
+    var ids = upcoming(playback.prefetchCount), key = ids.join(',');
+    if (key === prefetchSent) return;
+    prefetchSent = key;
+    M.api('/api/stream/prefetch', { method: 'PUT', body: { tracks: ids } }).catch(function (err) { console.warn('Preloading unavailable:', err.message); });
+  }
+  App.on('player', function (k) { if (k === 'queue' || k === 'track' || k === 'status' || k === 'mode') prefetchSoon(); });
 
   /* ---------- the queue survives a reload on this device (localStorage, a convenience) ---------- */
   var persistTimer = null;
@@ -2791,7 +2815,8 @@
   function applyPlaybackSettings(s) {
     var pb = (s && s.playback) || {}, v = function (x) { return x && typeof x === 'object' && 'value' in x ? x.value : x; };
     App.setPlayback({ gapless: v(pb.gapless) !== false, crossfade: +v(pb.crossfade) || 0, normalisation: v(pb.normalisation) || 'off',
-      loudnessTarget: +v(pb.loudnessTarget) || -14, radioWhenQueueEnds: v(pb.radioWhenQueueEnds) !== false, volumeStep: +v(pb.volumeStep) || 5 });
+      loudnessTarget: +v(pb.loudnessTarget) || -14, radioWhenQueueEnds: v(pb.radioWhenQueueEnds) !== false, volumeStep: +v(pb.volumeStep) || 5,
+      prefetchCount: v(pb.prefetchCount) == null ? 2 : +v(pb.prefetchCount) });
   }
   App.reloadCollections = loadCollections;
   /* after a reconnect or a resync: everything the events would have told us */

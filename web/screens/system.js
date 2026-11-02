@@ -176,7 +176,8 @@
   function playbackPrefs() {
     var pb = settings().playback;
     return { gapless: !!val(pb.gapless), crossfade: +val(pb.crossfade) || 0, normalisation: val(pb.normalisation) || 'off',
-      loudnessTarget: +val(pb.loudnessTarget) || -14, radioWhenQueueEnds: !!val(pb.radioWhenQueueEnds), volumeStep: +val(pb.volumeStep) || 5 };
+      loudnessTarget: +val(pb.loudnessTarget) || -14, radioWhenQueueEnds: !!val(pb.radioWhenQueueEnds), volumeStep: +val(pb.volumeStep) || 5,
+      prefetchCount: val(pb.prefetchCount) == null ? 2 : +val(pb.prefetchCount) };
   }
   /* the `settings` event (any device's change, our own included): merge what differs, re-render if anything did */
   App.on('server:settings', function (stored) {
@@ -556,7 +557,9 @@
       ${row('Loudness normalisation', 'ReplayGain reads tags in the file. Loudness measures files that have no tags.', choice('playback.normalisation', 'Loudness normalisation', [['off', 'Off'], ['replaygain-track', 'Track'], ['replaygain-album', 'Album'], ['loudness', 'Loudness']], 'sys-seg--4'))}
       ${row('Target loudness', 'Quieter targets leave more headroom for dynamic music.', choice('playback.loudnessTarget', 'Target loudness', [[-18, '-18 LUFS'], [-14, '-14 LUFS'], [-11, '-11 LUFS']]), { when: 'loudness', hidden: get('playback.normalisation') !== 'loudness', cls: 'sys-row--sub' })}
       ${row('Volume step', 'How far Up, Down and the D-pad move the volume.', choice('playback.volumeStep', 'Volume step', [[2, '2%'], [5, '5%'], [10, '10%']]))}
-      ${switchRow('playback.radioWhenQueueEnds', 'Continue with radio when the queue ends', 'Starts a radio from the last song so the music keeps going.')}`;
+      ${switchRow('playback.radioWhenQueueEnds', 'Continue with radio when the queue ends', 'Starts a radio from the last song so the music keeps going.')}
+      ${lookup('playback.prefetchCount') == null ? '' : row('Preload upcoming songs', 'Your server starts getting the next songs from Soulseek while this one plays, so skipping plays at once. More uses more of its bandwidth. Saved songs never need it.',
+        choice('playback.prefetchCount', 'Preload upcoming songs', [[0, 'Off'], [1, '1'], [2, '2'], [3, '3']], 'sys-seg--4'))}`;
   }
 
   /* ---------- sources (ADR-0008): a streaming and a saving profile, then the peer limits ----------
@@ -572,6 +575,18 @@
     effects['sources.' + kind + '.minimum.losslessOnly'] = function (v) { $$('[data-when="' + kind + '-kbps"]').forEach(function (r) { r.hidden = !!v; }); };
   });
   effects['sources.save.autoUpgrade'] = function (v) { $$('[data-when="upgrade"]').forEach(function (r) { r.hidden = !v; }); };
+  /* the streaming cap never sits below the streaming minimum (the hub refuses that): moving one past the other
+     moves both, in one PATCH */
+  custom['sources.stream.maxKbps'] = { set: function (v) {
+    var c = { 'sources.stream.maxKbps': v }, min = +get('sources.stream.minimum.kbps') || 0;
+    if (v && min > v) c['sources.stream.minimum.kbps'] = v;
+    save(c); if (c['sources.stream.minimum.kbps'] != null) App.refresh();
+  } };
+  custom['sources.stream.minimum.kbps'] = { set: function (v) {
+    var c = { 'sources.stream.minimum.kbps': v }, max = +get('sources.stream.maxKbps') || 0;
+    if (max && v > max) c['sources.stream.maxKbps'] = v;
+    save(c); if (c['sources.stream.maxKbps'] != null) App.refresh();
+  } };
   /* formats as toggle chips: none pressed means any format */
   function formatChips(path) {
     var on = get(path) || [];
@@ -590,6 +605,8 @@
     return html`
       ${switchRow(base + '.minimum.losslessOnly', 'Lossless only', 'Only FLAC and other lossless files are good enough.')}
       ${row('Minimum bitrate', 'Lossy files below this aren\'t good enough. Lossless always is.', choice(base + '.minimum.kbps', 'Minimum bitrate', [[128, '128'], [192, '192'], [256, '256'], [320, '320']]), { when: kind + '-kbps', hidden: ll, cls: 'sys-row--sub' })}
+      ${kind === 'stream' && lookup('sources.stream.maxKbps') != null ? row('Maximum bitrate', 'Streaming prefers copies at or under this, to save data: lossless counts as over any cap. Saving is never capped.',
+        choice('sources.stream.maxKbps', 'Maximum bitrate', [[0, 'No cap'], [128, '128'], [192, '192'], [256, '256'], [320, '320']], 'sys-seg--wrap')) : ''}
       ${row('Formats', 'Only these count. With none picked, any format does.', formatChips(base + '.minimum.formats'), { cls: 'sys-row--stack' })}
       ${row('Which copy', 'Among the copies that are good enough.', choice(base + '.pick', 'Which copy', [['fastest', 'Fastest'], ['highest', 'Highest quality']]))}
       ${row('If none is good enough', kind === 'stream' ? 'Playing the best one marks it as below your minimum.' : 'Saving the best one marks it, and auto-upgrade replaces it later.',

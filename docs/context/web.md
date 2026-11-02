@@ -121,7 +121,15 @@ The state shape and methods are DESIGN.md 7.8; the insides:
   transfer completed) is treated as that fallback in progress, never as the song's end.
 - **Gapless**: the next song is preloaded 30 s before the end (90 s when the current transfer is done; at once for the
   native output, whose page may sleep) and handed
-  over on `ended`. Off when Settings > Playback turns gapless off.
+  over on `ended`. Off when Settings > Playback turns gapless off. A queue edit that leaves it next keeps it loaded.
+- **Preloading** (`playback.prefetchCount`, 0-3, default 2): after the playing song has its source, the engine sends
+  the next that many unsaved songs (in queue order; with shuffle, the one picked next) to `PUT /api/stream/prefetch`,
+  the whole list each time, debounced 800 ms after a queue, track, status or mode change. The hub fetches them from
+  Soulseek and cancels the ones that drop off; a skip then opens a stream that is already on disk.
+- **Queue reorder** (`now.js`): pointer events, not native drag and drop. The lifted row follows the pointer and the
+  rows it passes slide by transforms, painted once per frame from positions measured at the start; mouse from
+  anywhere on a row after 5 px, touch from the cover (the list keeps scrolling); the list scrolls near its edges;
+  Escape cancels. Keyboard: Alt + arrows.
 - **Crossfade** (`playback.crossfade` seconds): the next deck starts under an equal-power fade.
 - **Normalisation** (`off | replaygain-track | replaygain-album | loudness`): Web Audio gain per deck. ReplayGain uses
   `track.replayGain { track, album }` (dB) when the library supplies it; otherwise the measured loudness of what has
