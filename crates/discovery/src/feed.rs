@@ -4,12 +4,13 @@
 //! `errors`; the other shelves still come.
 //!
 //! New releases show only what can play: saved albums and those Soulseek peers share
-//! (`Transfers::album_available`). The best 30 are asked about at once; the shelf is served
-//! with the answers in after 3 s, and re-served (`feed.updated`) as later ones arrive.
+//! (`check_shelf`). Remembered answers fill the shelf at once; the rest are searched one at a
+//! time, best first, only while they could still make the shelf. The shelf is served with the
+//! answers in after 3 s, and re-served (`feed.updated`) as later ones arrive.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, PoisonError};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use axum::Json;
@@ -36,6 +37,9 @@ const RELEASE_CANDIDATES: usize = 30;
 const AVAILABILITY_WAIT: Duration = Duration::from_secs(3);
 /// A check still unanswered after this counts as unchecked.
 const AVAILABILITY_LIMIT: Duration = Duration::from_secs(600);
+/// How long releases Soulseek couldn't answer for (offline, searches unanswered) wait before
+/// they are asked again. Asking a paused or offline Soulseek costs no search.
+const RECHECK: Duration = Duration::from_secs(5 * 60);
 const PICKS: usize = 12;
 /// Niche and micro-genre tags offered on first run, across the map rather than the charts.
 const COLD_START_TAGS: &[&str] = &[
@@ -157,18 +161,24 @@ pub struct Shelved {
     pub available: Option<bool>,
 }
 
+impl Shelved {
+    /// Can go on the shelf: saved, or peers share it. A release without an answer can't.
+    fn playable(&self) -> bool {
+        self.saved || self.available == Some(true)
+    }
+}
+
 #[derive(Default)]
 pub struct Feeds {
     current: RwLock<Option<Built>>,
     building: Mutex<()>,
     queued: AtomicBool,
-    /// Releases Soulseek is being asked about: a rebuild doesn't ask again, the answer reaches
-    /// whichever feed is current.
-    checking: std::sync::Mutex<HashSet<AlbumId>>,
+    /// Which shelf `check_shelf` asks about: a newer one stops the older check.
+    shelf_checks: AtomicU64,
 }
 
 /// Soulseek's answers as they arrive.
-type Answers = mpsc::UnboundedReceiver<(AlbumId, Option<bool>)>;
+type Answers = mpsc::UnboundedReceiver<(AlbumId, bool)>;
 
 #[derive(Serialize)]
 struct Updated {
@@ -240,7 +250,9 @@ pub async fn keep_fresh(svc: Arc<Service>) {
     }
 }
 
-async fn current(svc: &Service) -> Result<Option<Built>> {
+/// The feed in memory, else the stored one. A stored feed's shelf is checked again: the hub
+/// restarted, so whatever was asking about it stopped.
+async fn current(svc: &Arc<Service>) -> Result<Option<Built>> {
     if let Some(b) = svc.feed.current.read().await.clone() {
         return Ok(Some(b));
     }
@@ -254,11 +266,19 @@ async fn current(svc: &Service) -> Result<Option<Built>> {
             )
         })
         .await?;
-    let built: Option<Built> = stored.and_then(|s| serde_json::from_str(&s).ok());
-    if let Some(b) = &built {
-        *svc.feed.current.write().await = Some(b.clone());
+    let Some(mut built) = stored.and_then(|s| serde_json::from_str::<Built>(&s).ok()) else {
+        return Ok(None);
+    };
+    let mut current = svc.feed.current.write().await;
+    if let Some(b) = current.as_ref() {
+        return Ok(Some(b.clone()));
     }
-    Ok(built)
+    // Stored by an earlier build of lull, the shelf may hold releases nobody answered for.
+    built.feed.new_releases = shown(&built.shelf);
+    *current = Some(built.clone());
+    svc.ctx
+        .spawn(keep_checking(svc.clone(), ask_soulseek(svc, &built.shelf)));
+    Ok(Some(built))
 }
 
 /// The first feed ever: built while the caller waits (the UI shows its loading state).
@@ -304,37 +324,92 @@ async fn persist(svc: &Service, built: &Built) -> Result<()> {
         .await
 }
 
-/// Asks Soulseek whether peers share each release not saved, all at once (Soulseek queues
-/// them). A release an earlier build is still asking about isn't asked again.
+/// Starts asking Soulseek about this shelf, which stops any check of an older one.
 fn ask_soulseek(svc: &Arc<Service>, shelf: &[Shelved]) -> Answers {
     let (tx, rx) = mpsc::unbounded_channel();
-    let mut checking = svc.feed.checking.lock().unwrap_or_else(PoisonError::into_inner);
-    for c in shelf.iter().filter(|c| !c.saved) {
-        if !checking.insert(c.id.clone()) {
-            continue;
-        }
-        let (task_svc, tx, c) = (svc.clone(), tx.clone(), c.clone());
-        svc.ctx.spawn(async move {
-            let asked = task_svc.transfers.album_available(&c.artist, &c.title);
-            let answer = match tokio::time::timeout(AVAILABILITY_LIMIT, asked).await {
-                Ok(Ok(answer)) => answer,
-                Ok(Err(e)) => {
-                    tracing::info!(error = %e, album = %c.id, "Soulseek couldn't say whether peers share it");
-                    None
-                }
-                Err(_) => None,
-            };
-            task_svc
-                .feed
-                .checking
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .remove(&c.id);
-            // The receiver is gone only when the crates stop.
-            let _ = tx.send((c.id, answer));
-        });
-    }
+    let check = svc.feed.shelf_checks.fetch_add(1, Ordering::SeqCst) + 1;
+    svc.ctx.spawn(check_shelf(svc.clone(), check, shelf.to_vec(), tx));
     rx
+}
+
+/// Asks Soulseek which of the shelf's releases peers share, until it holds `NEW_RELEASES`
+/// playable ones or nothing left could make it. Remembered answers come first, all of them,
+/// so the shelf fills at once; then one search per release, best first, never for a release
+/// already ranked below a full shelf: the 12 best that peers share, for as few searches as
+/// that takes. Releases Soulseek couldn't answer for are asked again every `RECHECK`. Stops
+/// once a newer shelf is being checked, or the answers' receiver is gone.
+async fn check_shelf(
+    svc: Arc<Service>,
+    check: u64,
+    mut shelf: Vec<Shelved>,
+    tx: mpsc::UnboundedSender<(AlbumId, bool)>,
+) {
+    let current = || svc.feed.shelf_checks.load(Ordering::SeqCst) == check && !tx.is_closed();
+    for c in shelf.iter_mut().filter(|c| !c.saved && c.available.is_none()) {
+        match svc.transfers.album_known(&c.artist, &c.title).await {
+            Ok(Some(shared)) => {
+                c.available = Some(shared);
+                let _ = tx.send((c.id.clone(), shared));
+            }
+            Ok(None) => {}
+            Err(e) => tracing::info!(error = %e, album = %c.id, "reading Soulseek's remembered answer"),
+        }
+    }
+    loop {
+        let mut unanswered = HashSet::new();
+        while let Some(i) = next_to_ask(&shelf, &unanswered) {
+            if !current() {
+                return;
+            }
+            let c = &mut shelf[i];
+            match ask(&svc, c).await {
+                Some(shared) => {
+                    c.available = Some(shared);
+                    let _ = tx.send((c.id.clone(), shared));
+                }
+                None => {
+                    unanswered.insert(c.id.clone());
+                }
+            }
+        }
+        if unanswered.is_empty() {
+            return;
+        }
+        tokio::time::sleep(RECHECK).await;
+        if !current() {
+            return;
+        }
+    }
+}
+
+/// Whether peers share the release; `None` when Soulseek can't say now.
+async fn ask(svc: &Service, c: &Shelved) -> Option<bool> {
+    let asked = svc.transfers.album_available(&c.artist, &c.title);
+    match tokio::time::timeout(AVAILABILITY_LIMIT, asked).await {
+        Ok(Ok(answer)) => answer,
+        Ok(Err(e)) => {
+            tracing::info!(error = %e, album = %c.id, "Soulseek couldn't say whether peers share it");
+            None
+        }
+        Err(_) => None,
+    }
+}
+
+/// The best release still to ask about that could make the shelf: one without an answer
+/// (and not in `skip`) with fewer than `NEW_RELEASES` playable releases ranked above it.
+fn next_to_ask(shelf: &[Shelved], skip: &HashSet<AlbumId>) -> Option<usize> {
+    let mut playable = 0;
+    for (i, c) in shelf.iter().enumerate() {
+        if playable >= NEW_RELEASES {
+            return None;
+        }
+        if c.playable() {
+            playable += 1;
+        } else if c.available.is_none() && !skip.contains(&c.id) {
+            return Some(i);
+        }
+    }
+    None
 }
 
 /// Applies the answers that come in by `until`.
@@ -357,7 +432,7 @@ async fn keep_checking(svc: Arc<Service>, mut answers: Answers) {
     }
 }
 
-async fn reshelve(svc: &Service, batch: Vec<(AlbumId, Option<bool>)>) -> Result<()> {
+async fn reshelve(svc: &Service, batch: Vec<(AlbumId, bool)>) -> Result<()> {
     let mut current = svc.feed.current.write().await;
     let Some(built) = current.as_mut() else { return Ok(()) };
     let mut changed = false;
@@ -381,22 +456,20 @@ async fn reshelve(svc: &Service, batch: Vec<(AlbumId, Option<bool>)>) -> Result<
 }
 
 /// Records Soulseek's answer for a release on the shelf; returns whether it changed anything.
-fn answered(shelf: &mut [Shelved], id: &AlbumId, answer: Option<bool>) -> bool {
+fn answered(shelf: &mut [Shelved], id: &AlbumId, shared: bool) -> bool {
     shelf.iter_mut().filter(|c| c.id == *id).fold(false, |changed, c| {
-        let differs = c.available != answer;
-        c.available = answer;
+        let differs = c.available != Some(shared);
+        c.available = Some(shared);
         changed || differs
     })
 }
 
-/// The new releases shown: saved ones and those Soulseek peers share, best first. While no
-/// release has an answer (Soulseek offline, or not able to tell yet) all of them count, so the
-/// shelf isn't empty.
+/// The new releases shown: saved ones and those Soulseek peers share, best first. A release
+/// without an answer isn't shown: the shelf is empty rather than wrong while Soulseek can't say.
 pub fn shown(shelf: &[Shelved]) -> Vec<AlbumId> {
-    let checked = shelf.iter().any(|c| c.available.is_some());
     shelf
         .iter()
-        .filter(|c| !checked || c.saved || c.available == Some(true))
+        .filter(|c| c.playable())
         .take(NEW_RELEASES)
         .map(|c| c.id.clone())
         .collect()
@@ -890,9 +963,11 @@ fn follows_key(c: &rusqlite::Connection) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use lull_core::ids::AlbumId;
 
-    use super::{NEW_RELEASES, Shelved, answered, shown};
+    use super::{NEW_RELEASES, Shelved, answered, next_to_ask, shown};
 
     fn release(n: usize, saved: bool) -> Shelved {
         Shelved {
@@ -907,28 +982,54 @@ mod tests {
 
     #[test]
     fn new_releases_show_only_what_can_play_best_first() {
-        // Live, the shelf listed releases no Soulseek peer shared.
+        // Live, the shelf listed releases no Soulseek peer shared, because none had an answer.
         let mut shelf: Vec<Shelved> = (0..30).map(|n| release(n, n == 4)).collect();
         assert_eq!(
-            shown(&shelf).len(),
-            NEW_RELEASES,
-            "no answer yet (Soulseek offline, or the seam not built): unfiltered"
+            shown(&shelf),
+            [shelf[4].id.clone()],
+            "no answers yet (Soulseek offline, or still asking): only what is saved"
         );
         let id = |n: usize| shelf[n].id.clone();
         let (one, two, three, twenty) = (id(1), id(2), id(3), id(20));
-        assert!(answered(&mut shelf, &one, Some(false)));
-        assert!(answered(&mut shelf, &two, Some(true)));
-        assert!(answered(&mut shelf, &twenty, Some(true)));
-        assert!(
-            !answered(&mut shelf, &twenty, Some(true)),
-            "the same answer changes nothing"
-        );
+        assert!(answered(&mut shelf, &one, false));
+        assert!(answered(&mut shelf, &two, true));
+        assert!(answered(&mut shelf, &twenty, true));
+        assert!(!answered(&mut shelf, &twenty, true), "the same answer changes nothing");
         assert_eq!(
             shown(&shelf),
             [two.clone(), shelf[4].id.clone(), twenty.clone()],
             "peers share it, or it is saved; unchecked ones wait"
         );
-        answered(&mut shelf, &three, Some(true));
+        answered(&mut shelf, &three, true);
         assert_eq!(shown(&shelf)[..2], [two, three]);
+    }
+
+    #[test]
+    fn searches_go_best_first_and_stop_once_the_shelf_is_full() {
+        let mut shelf: Vec<Shelved> = (0..30).map(|n| release(n, n == 0)).collect();
+        let none = HashSet::new();
+        assert_eq!(next_to_ask(&shelf, &none), Some(1), "saved ones need no search");
+        let id = |n: usize| AlbumId::of("Velvet Orchard", &format!("Release {n}"));
+        answered(&mut shelf, &id(1), false);
+        let unanswerable = HashSet::from([id(2)]);
+        assert_eq!(
+            next_to_ask(&shelf, &unanswerable),
+            Some(3),
+            "one Soulseek couldn't answer for waits for the next round"
+        );
+        for n in 3..3 + NEW_RELEASES - 1 {
+            answered(&mut shelf, &id(n), true);
+        }
+        assert_eq!(shown(&shelf).len(), NEW_RELEASES);
+        assert_eq!(
+            next_to_ask(&shelf, &unanswerable),
+            None,
+            "nothing below a full shelf could make it: no search spent on it"
+        );
+        assert_eq!(
+            next_to_ask(&shelf, &none),
+            Some(2),
+            "an unanswered one above the twelfth could still take its place"
+        );
     }
 }
