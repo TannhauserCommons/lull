@@ -1055,21 +1055,14 @@
 :root[data-design="lull"] .disc-card > .empty .empty__text { grid-area: text; margin: 0; font: 600 .8125rem/1.35 var(--f-ui); color: var(--fg-2); }
 :root[data-design="lull"] .disc-card > .empty .empty__actions { grid-area: act; margin: 0; }
 
-/* search results (desk): two columns, so the Soulseek side shows above the fold. Left: the top result as a compact
-   card, then the albums (Soulseek folders) and artists shelves; right: the songs list, without the album column */
+/* search results (desk): core lays them out (the top result beside the songs in .disc-cat__lead, then the shelves,
+   side by side with the Soulseek column when split); lull only makes the top result a compact card */
 @media (min-width: 1100px) {
-  :root[data-design="lull"] .disc-results { display: grid; grid-template-columns: minmax(300px, .78fr) minmax(0, 1.4fr); column-gap: 28px; align-items: start; }
-  :root[data-design="lull"] .disc-results > :is(.disc-duo--results, .disc-duo--results2) { display: contents; }
-  :root[data-design="lull"] .disc-results .disc-card { grid-column: 1; min-width: 0; }
-  :root[data-design="lull"] .disc-results .disc-songs { grid-column: 2; grid-row: 1 / span 4; }
   :root[data-design="lull"] .disc-top__body { grid-template-columns: 96px minmax(0, 1fr); gap: 16px; }
   /* core sizes the top cover inline (112px) */
   :root[data-design="lull"] .disc-top__body > .cover { --cover-size: 96px !important; }
   :root[data-design="lull"] .disc-top__title { font-size: 1.375rem; }
   :root[data-design="lull"] .disc-top__actions { margin-top: 12px; gap: 8px; }
-  :root[data-design="lull"] .disc-results .disc-shelf { grid-auto-columns: calc((100% - 16px) / 2); }
-  :root[data-design="lull"] .disc-results .disc-shelf--artists { grid-auto-columns: calc((100% - 32px) / 3); }
-  :root[data-design="lull"] .disc-songs .trow__album { display: none; }
 }
 
 /* Each Home module is a `section` container, and wide windows set two or three modules side by side (ADR-0007), so
