@@ -469,9 +469,6 @@
 :root[data-design="lull"] .pbar__controls { gap: 6px; }
 :root[data-design="lull"] .pbar .btn-gloss { --size: 52px; }
 :root[data-design="lull"] .pbar__seek .seek { height: 22px; }
-/* the knob's rail sits at the play position itself instead of being a full-width box slid right by it, so it never
-   runs past the bar (and the window) when the seek spans the whole tray */
-:root[data-design="lull"] .pbar__seek .seek__rail { left: calc(var(--pos) * 100%); right: auto; width: 0; transform: none; }
 /* the seek group is headed by what the stream is doing ("Streaming from peer") */
 :root[data-design="lull"] .pbar__seek { max-width: none; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 8px; align-items: center; }
 :root[data-design="lull"] .pbar__seek::before { content: "now playing"; grid-column: 1 / -1; margin: 0 0 1px 2px; color: var(--link); font: 800 .75rem/1.2 var(--f-ui); }

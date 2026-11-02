@@ -427,7 +427,7 @@ button.trow__title:hover { text-decoration: underline; text-underline-offset: 3p
    Seek bar (player bar, Now Playing). Layers: track, transfer hatch, buffered ranges, played, knob
    Set --pos (0-1) and --xfer (0-1) on .seek; buffered ranges are .seek__buf with left/width in %.
    ===================================================================== */
-.seek { position: relative; height: 44px; min-width: 80px; cursor: pointer; touch-action: none; --pos: 0; --xfer: 0; }
+.seek { position: relative; height: 44px; min-width: 80px; cursor: pointer; touch-action: none; --pos: 0; --xfer: 0; container-type: inline-size; }
 .seek:focus-visible { outline-offset: -8px; border-radius: 12px; }
 .seek__track { position: absolute; left: 0; right: 0; top: 50%; height: 8px; margin-top: -4px; border-radius: 4px; overflow: hidden; box-shadow: inset 0 0 0 var(--stroke-thin) var(--seek-line); }
 .seek__xfer { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; overflow: hidden; transform-origin: left; transform: scaleX(var(--xfer)); }
@@ -438,7 +438,13 @@ button.trow__title:hover { text-decoration: underline; text-underline-offset: 3p
 .seek.is-transferring .seek__xfer::before { animation: hatch-drift 1.2s linear infinite; }
 .seek__buf { position: absolute; top: 0; bottom: 0; background: var(--seek-buffered); }
 .seek__played { position: absolute; inset: 0; background: var(--seek-played); transform-origin: left; transform: scaleX(var(--pos)); }
-.seek__rail { position: absolute; left: 0; right: 0; top: 50%; height: 0; transform: translateX(calc(var(--pos) * 100%)); pointer-events: none; }
+/* the knob rides a zero-size rail moved by a transform on its own layer (100cqw = the seek's width), in whole pixels:
+   the knob is drawn once and moved whole. At a fraction of a pixel its circle edge blurs smoothly across while the
+   sheen's crisp edge jumps a pixel at a time, so the sheen seemed to trail the circle. Nothing reaches past the bar */
+.seek__rail { position: absolute; left: 0; top: 50%; width: 0; height: 0; transform: translateX(calc(var(--pos) * 100cqw)); will-change: transform; pointer-events: none; }
+@supports (width: round(1.5px, 1px)) {
+  .seek__rail { transform: translateX(round(calc(var(--pos) * 100cqw), 1px)); }
+}
 .seek__knob {
   position: absolute; left: -8px; top: -8px; width: 16px; height: 16px; border-radius: 50%;
   background: var(--seek-played); border: 2.5px solid var(--bg); box-shadow: 0 0 0 var(--stroke-thin) var(--seek-played);
