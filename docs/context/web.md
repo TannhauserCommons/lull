@@ -281,7 +281,8 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
   - Pointer: a drag, throttled to animation frames and saved when it ends; double-click restores the default.
   - Keyboard: arrows (Shift for bigger steps), Home and End for the limits.
 - **Screens.**
-  - **Home:** modules in 1, 2 or 3 CSS columns (`main` at 1100 and 1600). Each module is a `section` container.
+  - **Home:** modules in 1, 2 or 3 CSS columns (`main` at 1100 and 1600), in the order Picked for you, New releases,
+    Radio starters, Jump back in, Tags (`MODULE_IDS`). Each module is a `section` container.
     "Picked for you" shows 6, 9 or 12 picks as its module widens. An empty module is one line.
   - **Shelves:** fixed tile widths, so a wider shelf shows more tiles.
   - **Song lists:** album at 760 px, and date added where the list has dates. From 1100 px, play counts (lists that

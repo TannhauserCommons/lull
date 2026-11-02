@@ -138,7 +138,7 @@
     jump: { body: jumpBody },
     tags: { body: tagsBody }
   };
-  var MODULE_IDS = ['new', 'radio', 'picks', 'jump', 'tags'];
+  var MODULE_IDS = ['picks', 'new', 'radio', 'jump', 'tags'];        // reading order: "Picked for you" comes first
   function homeModule(id, feed) {
     var m = MODULES[id];
     var card = html`<section class="card disc-card" aria-labelledby="disc-h-${id}" data-region="${id}" data-meta="${m.meta ? m.meta(feed) : ''}">${m.body(feed)}</section>`;
