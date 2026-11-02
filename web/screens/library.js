@@ -119,10 +119,20 @@
       <p><b>Jellyfin is offline.</b> This is your library as last synced; saved songs can't play until it's back. Soulseek still works.</p>
       <button class="btn btn--sm" data-act="reload-read" data-id="${path}">${icon('refresh')}Retry connection</button></div>`;
   }
+  /* The library list sends each album with only the songs the library holds (`saved: "all"` = all of those); the
+     album's real tracklist arrives with its page. Until then a library tile can say how many songs are saved, not
+     "Saved". `held` = the list's own count per album, `whole` = albums whose page has given the full tracklist. */
+  var held = {}, whole = {};
+  function noteHeld(d) {
+    var albums = (d && d.entities && d.entities.albums) || {};
+    (d.items || []).forEach(function (id) { if (albums[id] && albums[id].trackIds) held[id] = albums[id].trackIds.length; });
+  }
+  function heldOnly(a) { return held[a.id] > 0 && !whole[a.id] && a.trackIds.length <= held[a.id]; }
   /* how much of an album is saved (all | partial | none): counted from its songs when known, so it follows the
      save pipeline live; else the album's own `saved` summary (library lists send only the album head) */
   function savedState(a) {
     var total = a.trackIds.length, n = a.trackIds.filter(isSaved).length;
+    if (heldOnly(a)) return { state: 'partial', text: held[a.id] + ' saved', label: plural(held[a.id], 'song') + ' saved in your library' };
     if (!total) return { state: a.saved || 'none', text: 'partly saved' };
     return { state: n === total ? 'all' : n ? 'partial' : 'none', text: n + ' of ' + total, label: n + ' of ' + total + ' songs saved' };
   }
@@ -178,7 +188,7 @@
         <button class="tile__play" data-act="play-album" data-id="${a.id}" aria-label="Play ${a.title}" data-tip="Play">${icon('play')}</button></div>
       <div class="tile__title"><a href="#/album/${a.id}">${a.title}</a></div>
       <div class="tile__by"><a href="#/artist/${a.artistId}">${a.artist}</a></div>
-      <div class="lib-tile__meta"><span data-lib-album-status="${a.id}">${albumStatus(a)}</span><span class="px">${a.type === 'album' ? a.year : a.type.toLowerCase()}</span></div>
+      <div class="lib-tile__meta"><span data-lib-album-status="${a.id}">${albumStatus(a)}</span><span class="px">${a.type.toLowerCase() === 'album' ? a.year : a.type.toLowerCase()}</span></div>
     </div>`;
   }
   function artistTile(ar) {
@@ -265,6 +275,7 @@
     return html`<section class="card lib-card" aria-labelledby="lib-albums-h">
       ${ruleWith('albums', 'lib-albums-h', html`${r.data ? html`<span class="lib-count">${count(r.data)}</span>` : ''}${sortButton('lib-album-sort', ALBUM_SORTS[prefs.albumSort])}`)}
       ${listBody(r, path, gridSkeleton(), function (d) {
+        noteHeld(d);
         return html`<div class="lib-grid">${resolve(d.items, M.album).map(albumTile)}</div>${showAll('albums', d, 'album')}`;
       })}
     </section>`;
@@ -351,7 +362,8 @@
     var path = albumPath(ctx.params.id);
     return entityPage('album', path, function (d) {
       var a = pageEntity(d, 'album', 'albums', M.album); if (!a) return null;
-      var ids = a.trackIds, tracks = ids.map(M.track).filter(Boolean), down = jellyfinDown();
+      whole[a.id] = true;                               // this page has the album's full tracklist
+      var ids = a.trackIds, tracks = ids.map(M.track).filter(Boolean), down = jellyfinDown(), noTracks = !ids.length;
       var discs = []; tracks.forEach(function (t) { var n = (t.disc || 1) - 1; (discs[n] = discs[n] || []).push(t); });
       discs = discs.filter(Boolean);
       return html`<div class="view__inner lib">
@@ -365,18 +377,18 @@
               <p class="lib-hero__by"><a href="#/artist/${a.artistId}">${a.artist}</a></p>
               <div class="lib-hero__facts">
                 <span data-lib-album-status="${a.id}">${albumStatus(a)}</span>${a.format ? ui.qualityChip(a.format) : ''}${a.isNew ? ui.newBadge() : ''}
-                <span class="px">${plural(tracks.length, 'song')}, ${fmt.length(a.duration || 0)}</span>
+                ${noTracks ? '' : html`<span class="px">${plural(tracks.length, 'song')}, ${fmt.length(a.duration || 0)}</span>`}
               </div>
               <p class="lib-hero__fmt" aria-hidden="true">${fmt.albumLine(a)}</p>
               <div class="lib-chips">${a.tags.map(function (g) { return ui.tagChip(g); })}</div>
               <div class="lib-actions">
-                <button class="btn btn--primary" data-act="play-album" data-id="${a.id}">${icon('play', null, 'ic-play')}Play</button>
+                ${noTracks ? '' : html`<button class="btn btn--primary" data-act="play-album" data-id="${a.id}">${icon('play', null, 'ic-play')}Play</button>
                 <button class="btn" data-act="shuffle-album" data-id="${a.id}">${icon('shuffle')}Shuffle</button>
-                ${groupSaveButton(ids, 'album')}
+                ${groupSaveButton(ids, 'album')}`}
                 <span class="lib-actions__icons">
-                  ${likeAllButton(ids)}
+                  ${noTracks ? '' : html`${likeAllButton(ids)}
                   ${ui.downloadButton({ kind: 'album', id: a.id }, ids)}
-                  ${ui.iconButton('playlists', 'Add album to playlist', { 'data-act': 'add-to-playlist', 'data-ids': ids.join(','), 'aria-haspopup': 'dialog' })}
+                  ${ui.iconButton('playlists', 'Add album to playlist', { 'data-act': 'add-to-playlist', 'data-ids': ids.join(','), 'aria-haspopup': 'dialog' })}`}
                   ${ui.iconButton('radio', 'Start album radio', { 'data-act': 'start-radio', 'data-kind': 'album', 'data-id': a.id })}
                   ${ui.iconButton('more', 'More album actions', { 'data-act': 'lib-album-menu', 'data-id': a.id, 'aria-haspopup': 'menu' })}
                 </span>
@@ -384,13 +396,15 @@
             </div>
           </div>
           <div class="lib-album__songs">
+          ${noTracks ? ui.emptyState({ art: 'moon', title: 'No tracklist found yet', text: 'lull hasn\'t found the songs on this release yet. Soulseek may have them.',
+            action: { label: 'Search Soulseek', href: '#/search?q=' + encodeURIComponent(a.artist + ' ' + a.title) } }) : ''}
           ${discs.map(function (list, i) {
             return html`${discs.length > 1 ? html`<div class="label-rule label-rule--sm lib-disc"><h2>disc ${i + 1}</h2><span class="label-rule__end t-micro fg-2">${plural(list.length, 'song')}, ${fmt.length(sumDuration(list.map(function (t) { return t.id; })))}</span></div>` : ''}
             <ol class="tlist" data-ids="${ids.join(',')}" aria-label="${discs.length > 1 ? 'Disc ' + (i + 1) + ' of ' + a.title : 'Songs on ' + a.title}">${list.map(function (t, j) {
               return ui.trackRow(t, { index: j + 1, unavailable: down && isSaved(t.id) });
             })}</ol>`;
           })}
-          <p class="lib-foot">${albumFoot(a)}</p>
+          ${noTracks ? '' : html`<p class="lib-foot">${albumFoot(a)}</p>`}
           </div>
         </article>
       </div>`;
@@ -398,10 +412,10 @@
   }
   /* "Released Oct 29, 2026 on Breakwater Tapes. 250 MB as FLAC 16/44.1, saved songs are in Jellyfin." (known parts only) */
   function albumFoot(a) {
-    var out = a.released ? 'Released ' + fmt.date(a.released, true) + (a.label ? ' on ' + a.label : '') + '. ' : '';
-    if (a.sizeMB) out += fmt.size(a.sizeMB) + (a.format ? ' as ' + a.format : '');
-    else if (a.format) out += a.format;
-    return out + (savedState(a).state !== 'none' ? ', saved songs are in Jellyfin.' : ', streaming from Soulseek until you save it.');
+    var released = a.released ? 'Released ' + fmt.date(a.released, true) + (a.label ? ' on ' + a.label : '') + '.' : '';
+    var rest = [a.sizeMB ? fmt.size(a.sizeMB) + (a.format ? ' as ' + a.format : '') : a.format || '',
+      savedState(a).state !== 'none' ? 'saved songs are in Jellyfin' : 'streaming from Soulseek until you save it'].filter(Boolean).join(', ');
+    return (released ? released + ' ' : '') + rest.charAt(0).toUpperCase() + rest.slice(1) + '.';
   }
   function mountAlbum(ctx) { liveSaveButtons(ctx); liveOn(ctx, ['liked', 'services']); }
 
