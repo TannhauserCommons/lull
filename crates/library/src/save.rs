@@ -267,12 +267,15 @@ async fn choose_release(svc: &Service, job: &mut SaveJob) -> Result<(), Fail> {
             });
             Ok(())
         }
+        // MusicBrainz doesn't list the song at all: there is nothing to pick, so waiting for the
+        // listener would only stall the save. It goes on as "keep existing tags" would.
         Decision::Unsure(rows) if rows.is_empty() => {
-            job.candidates = rows;
-            Err(Fail::new(
-                FailKind::Match,
-                "MusicBrainz has nothing that matches this song.",
-            ))
+            tracing::info!(
+                job = job.id,
+                "MusicBrainz lists no such recording; saving with the file's own tags"
+            );
+            job.release = Some(Release::KeepTags);
+            Ok(())
         }
         Decision::Unsure(rows) => {
             let message = format!("No confident MusicBrainz match ({} candidates)", rows.len());

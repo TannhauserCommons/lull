@@ -7,7 +7,7 @@
 | Step | What | Fails as |
 |---|---|---|
 | 1 Completing transfer | `Transfers::complete(track, source)`. The source is the listener's pick, else the saving profile's ([below](#picking-the-copy)). Soulseek's `transfer` events for the track become the job's `pct` | `transfer`: no peer shares it, no copy passes the minimum under `ask`, or the transfer failed. Retry with another `source` |
-| 2 Matching on MusicBrainz | Recording search, then scoring (below). Skipped when the listener already picked a release | `match`: no sure match. The release picker (`/releases`) or "keep existing tags" |
+| 2 Matching on MusicBrainz | Recording search, then scoring (below). Skipped when the listener already picked a release. When MusicBrainz lists nothing like the song, the save goes on with the file's own tags (as "keep existing tags") | `match`: no sure match among several candidates. The release picker (`/releases`) or "keep existing tags" |
 | 3 Fetching cover art | Release lookup (tags) and the Cover Art Archive front, 1200 px: the release's, else the release group's | Never fails on art: no cover sets `nocover: true` and the save carries on. A failed release lookup is `match` |
 | 4 Tagging and writing | Copy, tag, rename into place (below) | `write`: unreadable file, no permission, disk full |
 | 5 Pick-up | Jellyfin mode: ask Jellyfin to scan the music library; the job is `done` once the song is in the library. Folder mode: the folder index reads the file at once | Jellyfin mode never fails: the file is saved, the job is `pending` (below). Folder mode: `write` if the file can't be read back as the song; a retry only reads it again |
@@ -59,6 +59,7 @@ With no peer sharing the song at all, `wait` waits too; the others fail as `tran
 - **Sure** means the best score is at least 0.85 and leads every other release group by 0.08 or more.
   - Releases of the same album tie by design. Among them the official, earliest release wins, then the lowest id, so the choice is stable.
 - **Not sure** fails step 2 as `match` with up to 8 candidates, one per release, for the picker.
+- **Nothing at all** (MusicBrainz has no recording like it, common for small or local artists) isn't a question for the listener: the save continues with the file's own tags, the search result filling the gaps, and the file's own cover if it has one (`nocover` otherwise).
   - Without an album name (a loose file), an album, its single and a best-of tie. The listener picks.
 - **A resumed save whose transfer is gone.** Soulseek keeps the finished transfer pinned only until the save fails, pends or finishes. A save resumed from step 2-4 (a picked release, a retry) whose file was evicted transfers it again first; a chosen release is kept.
 - **Pacing.** MusicBrainz allows one request per second per IP, shared by every crate: `Http::pace("musicbrainz", MUSICBRAINZ_PACE)`. A save makes two requests (search, release lookup).
