@@ -345,6 +345,15 @@ same preview and the playlist is `POST`ed with the ids kept. Listening history: 
 (`POST /api/import/history { source: lastfm, user }`) or a ListenBrainz export file sent as the body; the job shows
 in Activity ("Listening history", plays added and duplicates).
 
+## Links
+
+`App.copyShareLink(kind, id, lullPath)` is "Copy link" (album and artist menus, the player's More menu): it copies the
+public page from `GET /api/share/{kind}/{id}` (song.link, or Last.fm) and says which. `App.copyLullLink(path)` is "Copy
+lull link", this hub's own address for the screen, which opens only on the listener's devices; playlists have only
+that. The clipboard write starts inside the click with the text still on its way (`ClipboardItem` with a promise), so
+it keeps the click's permission while the hub answers. No public link (404, 503, hub unreachable) is an error toast
+with the reason and a "Copy lull link" button; a browser that refuses the clipboard gets a toast showing the link.
+
 ## Rules for screens
 
 - No `PROTO`, no state switcher, no `ctx.state`, no simulated delays, no sample data.

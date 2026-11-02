@@ -2655,7 +2655,8 @@
         { label: 'Go to artist', icon: 'peer', run: function () { App.go('/artist/' + t.artistId); } },
         { label: 'Start radio', icon: 'radio', run: function () { startRadio({ kind: 'track', id: t.id }); } },
         { label: 'Show source', icon: 'soulseek', run: function () { App.hooks.sourceDetails(); } },
-        { label: 'Copy link', icon: 'link', run: function () { copyText(location.href.split('#')[0] + '#/album/' + t.albumId); } },
+        { label: 'Copy link', icon: 'link', run: function () { App.copyShareLink('track', t.id, '/album/' + t.albumId); } },
+        { label: 'Copy lull link', icon: 'link', run: function () { App.copyLullLink('/album/' + t.albumId); } },
         'sep',
         { label: 'Lyrics', icon: 'lyrics', run: function () { App.togglePanel('lyrics'); } },
         { label: 'Classic mode', icon: 'classic', run: function () { App.go('/classic'); } }
@@ -2693,10 +2694,39 @@
     'back': function () { App.back(); },
     'skip': function () { $('#view').focus(); }
   });
-  function copyText(text) {
-    var done = function () { App.toast('Link copied', { icon: 'link' }); };
-    try { navigator.clipboard.writeText(text).then(done, done); } catch (e) { done(); }
+  /* ---------- copying links ----------
+     "Copy link" copies a public page anyone can open: song.link (every streaming service), or Last.fm when song.link
+     doesn't know it, from GET /api/share/{kind}/{id} (kind track | album | artist). "Copy lull link" copies this hub's
+     own address for the screen, which opens only on the listener's devices. The clipboard write starts inside the
+     click, with the text still on its way (ClipboardItem takes a promise), so the browser allows it once the hub has
+     answered. */
+  var SHARE_NOUN = { track: 'song', album: 'album', artist: 'artist' };
+  App.copyShareLink = function (kind, id, lullPath) {
+    var share = M.api('/api/share/' + kind + '/' + encodeURIComponent(id));
+    clipboardWrite(share.then(function (r) { return r.url; })).then(function () {
+      share.then(function (r) { App.toast(r.source === 'lastfm' ? 'Link copied: the Last.fm page' : 'Link copied: opens in any music app', { icon: 'link' }); });
+    }, function () {
+      share.then(function (r) { copyFailed(r.url); }, function (err) {
+        App.toast(err.status === 404 ? 'There\'s no public link for this ' + SHARE_NOUN[kind] + '.' : 'Couldn\'t make a public link: ' + err.message,
+          { kind: 'error', icon: 'link', action: lullPath ? 'Copy lull link' : null, onAction: function () { App.copyLullLink(lullPath); } });
+      });
+    });
+  };
+  App.copyLullLink = function (path) {
+    var url = location.href.split('#')[0] + '#' + path;
+    clipboardWrite(Promise.resolve(url)).then(function () { App.toast('lull link copied: it opens on your own devices', { icon: 'link' }); },
+      function () { copyFailed(url); });
+  };
+  function clipboardWrite(text) {
+    if (!navigator.clipboard) return Promise.reject(new Error('no clipboard'));
+    if (window.ClipboardItem && navigator.clipboard.write) {
+      var blob = text.then(function (t) { return new Blob([t], { type: 'text/plain' }); });
+      blob.catch(function () { /* reported by the caller, whose own promise it is */ });
+      return navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })]);
+    }
+    return text.then(function (t) { return navigator.clipboard.writeText(t); });
   }
+  function copyFailed(url) { App.toast('This browser didn\'t allow copying. The link is ' + url, { kind: 'error', icon: 'link' }); }
   document.addEventListener('click', function (e) {
     var el = e.target.closest('[data-act]'); if (!el || el.disabled) return;
     var fn = actions[el.getAttribute('data-act')];

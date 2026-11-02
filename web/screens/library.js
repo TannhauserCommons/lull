@@ -59,10 +59,6 @@
       if (changed.some(function (k) { return keys.indexOf(k) >= 0; })) (fn || refreshKeepFocus)();
     }));
   }
-  function copyLink(path) {
-    var url = location.href.split('#')[0] + '#' + path, done = function () { App.toast('Link copied', { icon: 'link' }); };
-    try { navigator.clipboard.writeText(url).then(done, done); } catch (e) { done(); }
-  }
 
   /* page states: loading, not found, a failed read (the server's sentence + retry) */
   function notFound(kind) {
@@ -1313,7 +1309,8 @@
       { label: 'Go to artist', icon: 'peer', run: function () { App.go('/artist/' + a.artistId); } }
     ];
     if (a.trackIds[0]) items.push({ label: 'Show sources for track 1', icon: 'soulseek', run: function () { App.hooks.sourcePicker(a.trackIds[0]); } });
-    items.push('sep', { label: 'Copy link', icon: 'link', run: function () { copyLink('/album/' + a.id); } });
+    items.push('sep', { label: 'Copy link', icon: 'link', run: function () { App.copyShareLink('album', a.id, '/album/' + a.id); } },
+      { label: 'Copy lull link', icon: 'link', run: function () { App.copyLullLink('/album/' + a.id); } });
     App.menu(el, items, { label: 'Actions for ' + a.title });
   });
   App.action('lib-artist-menu', function (el) {
@@ -1326,7 +1323,8 @@
         App.store.update('hiddenArtists', function (h) { h[ar.id] = true; });
         App.toast('Hidden ' + ar.name + ' from your feed', { icon: 'info' });
       }, function (err) { App.toast('Couldn\'t hide ' + ar.name + ': ' + err.message, { kind: 'error' }); });
-    } }, 'sep', { label: 'Copy link', icon: 'link', run: function () { copyLink('/artist/' + ar.id); } });
+    } }, 'sep', { label: 'Copy link', icon: 'link', run: function () { App.copyShareLink('artist', ar.id, '/artist/' + ar.id); } },
+      { label: 'Copy lull link', icon: 'link', run: function () { App.copyLullLink('/artist/' + ar.id); } });
     App.menu(el, items, { label: 'Actions for ' + ar.name });
   });
   App.action('lib-import', function () { openImportStart(); });
@@ -1359,7 +1357,7 @@
         makePlaylist(p.name + ' (copy)', p.desc, ids).then(function (c) { if (c) { App.go('/playlist/' + c.id); App.toast('Made a copy of ' + p.name, { icon: 'playlists' }); } });
       } },
       { label: 'Export as M3U', icon: 'export', run: function () { if (ids.length) openExport(p); else App.toast('Add a few songs before exporting', { icon: 'info' }); } },
-      { label: 'Copy link', icon: 'link', run: function () { copyLink('/playlist/' + p.id); } },
+      { label: 'Copy lull link', icon: 'link', run: function () { App.copyLullLink('/playlist/' + p.id); } },   // playlists have no public page
       'sep',
       { label: 'Delete playlist', icon: 'trash', danger: true, run: function () { deletePlaylist(p); } }
     ], { label: 'Actions for ' + p.name });
