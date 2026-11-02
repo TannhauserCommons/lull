@@ -130,7 +130,19 @@
   /* a step finishes on the hub (a restart, a switch, a sign-in): ask again what setup needs */
   function refreshSteps() { if (App.current.path === '/setup') M.reload(SETUP); }
   App.route('/setup', { render: renderSetup, title: 'Setup', nav: 'home', mount: function (ctx) {
+    App.storage('setupOffered', true);
     ctx.onCleanup(App.on('server:hub.restarting', refreshSteps));
     ctx.onCleanup(App.on('server:service', function (e) { if (e.name === 'soulseek') refreshSteps(); }));
   } });
+  /* A hub without a library or a Soulseek account opens setup once per device, on its first Home: the claim above
+     goes there itself, but the desktop app claims the hub it starts on this computer and opens Home directly. */
+  var offering = false;
+  App.on('server', function (srv) {
+    if (srv.authorized !== true || offering || App.storage('setupOffered') || App.current.path !== '/home') return;
+    offering = true;
+    M.api(SETUP).then(function (s) {
+      App.storage('setupOffered', true);
+      if ((!s.steps.library || !s.steps.soulseek) && App.current.path === '/home') App.go('/setup', { replace: true });
+    }, function () { offering = false; });
+  });
 })();
