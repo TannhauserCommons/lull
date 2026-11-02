@@ -24,6 +24,18 @@ pub struct Config {
     pub library: Library,
     pub lastfm: Option<LastFm>,
     pub discovery: Discovery,
+    pub youtube: Youtube,
+}
+
+/// The programs YouTube needs (docs/context/youtube.md). The image and the desktop app ship both,
+/// pinned; elsewhere they are looked up on `PATH`.
+#[derive(Debug, Clone)]
+pub struct Youtube {
+    /// The pinned yt-dlp. A newer one the hub fetched itself (Settings › Sources › YouTube) is
+    /// kept in the data folder and wins while it works.
+    pub ytdlp: PathBuf,
+    /// The JavaScript runtime yt-dlp needs for YouTube.
+    pub deno: PathBuf,
 }
 
 #[derive(Debug, Clone)]
@@ -276,6 +288,10 @@ impl Config {
                 listenbrainz_user: v.opt("LULL_LISTENBRAINZ_USER"),
                 listenbrainz_token: v.opt("LULL_LISTENBRAINZ_TOKEN").map(Secret),
                 catalog_country: country(v.or("LULL_CATALOG_COUNTRY", "US"))?,
+            },
+            youtube: Youtube {
+                ytdlp: v.or("LULL_YTDLP", "yt-dlp").into(),
+                deno: v.or("LULL_DENO", "deno").into(),
             },
         };
         match v.0.into_keys().next() {

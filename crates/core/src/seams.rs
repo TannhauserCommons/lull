@@ -1,7 +1,7 @@
 //! The only calls that cross between domain crates. Each is implemented by one crate and
 //! handed to the others by `server` at start-up, so crates never depend on each other.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use axum::http::HeaderValue;
@@ -11,6 +11,7 @@ use crate::error::{Error, Result};
 use crate::ids::{AlbumId, ArtistId, TrackId};
 use crate::model::{self, Album, Artist, PlayReport, Playlist, PlaylistEdit, SourceRef, Track};
 use crate::quality::SaveCandidate;
+use crate::youtube::{Found, Want};
 
 /// The saved library. Implemented by `library`, from a music folder or Jellyfin (ADR-0003).
 #[async_trait]
@@ -109,4 +110,18 @@ pub trait Transfers: Send + Sync {
     async fn album_known(&self, _artist: &str, _album: &str) -> Result<Option<bool>> {
         Ok(None)
     }
+}
+
+/// YouTube through yt-dlp. Implemented by `youtube`, handed to `soulseek`, whose fetches write
+/// the audio into the stream cache like a peer's file (docs/context/youtube.md).
+#[async_trait]
+pub trait Youtube: Send + Sync {
+    /// The YouTube copy that best matches the track by the listener's match rules, searching
+    /// YouTube unless a recent answer is remembered. `None` when no upload matches;
+    /// `Unavailable` while YouTube is backed off (a sign-in check, too many requests).
+    async fn find(&self, track: &Track, want: Want) -> Result<Option<Found>>;
+
+    /// Writes the copy's audio to `dest` front to back, the native stream with no transcoding,
+    /// and returns once all of it is there. Dropping the future stops the download.
+    async fn download(&self, source: &SourceRef, dest: &Path) -> Result<()>;
 }
