@@ -240,6 +240,10 @@ impl Transfers for Service {
     async fn album_available(&self, artist: &str, album: &str) -> Result<Option<bool>> {
         albums::available(self, artist, album).await
     }
+
+    async fn album_known(&self, artist: &str, album: &str) -> Result<Option<bool>> {
+        albums::known(self, artist, album).await
+    }
 }
 
 /// Keeps the `soulseek` status current: connected, reconnecting or down. On each (re)connect

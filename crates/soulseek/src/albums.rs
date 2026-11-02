@@ -15,6 +15,11 @@ const FOUND_FOR_S: i64 = 7 * 24 * 3600;
 /// A fresh release nobody shares yet often appears within a day.
 const MISSING_FOR_S: i64 = 24 * 3600;
 
+/// The remembered answer, without searching (`Transfers::album_known`).
+pub async fn known(svc: &Service, artist: &str, album: &str) -> Result<Option<bool>> {
+    remembered(&svc.ctx.db, &(loose_artist(artist), loose_title(album))).await
+}
+
 /// The remembered or searched answer; `None` when Soulseek is offline and nothing is
 /// remembered, or the search said nothing (see `Searches::album_shared`).
 pub async fn available(svc: &Service, artist: &str, album: &str) -> Result<Option<bool>> {

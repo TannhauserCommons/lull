@@ -121,6 +121,9 @@ pub struct Searches {
 /// A search no peer answered tells nothing about an album when no search was answered in this
 /// long either: the session may be stale (`recover`), so nothing is remembered.
 const ANSWERED_LATELY_S: i64 = 10 * 60;
+/// Searches lately, none answered, after which album checks wait: on a quiet hub the first
+/// checks may be albums nobody shares, so two are allowed before waiting.
+const UNHEARD_CHECKS: usize = 2;
 
 /// Counts a search as running in its lane while it lives.
 struct Running {
@@ -166,6 +169,19 @@ pub struct Outcome {
     pub peers: u32,
     pub files: u32,
     pub at: i64,
+    /// Who the search was for.
+    #[serde(skip)]
+    pub lane: Lane,
+}
+
+impl Outcome {
+    /// Whether it tells if the server still answers searches. An album check nobody answered
+    /// doesn't: most likely nobody shares the album, which is what the check asks (a fresh
+    /// release by a small artist). Counting it paused every later check and could start a
+    /// fresh login, seen live on 2026-11-02.
+    fn tells_if_answering(&self) -> bool {
+        self.peers > 0 || self.lane != Lane::Availability
+    }
 }
 
 /// Outcomes kept for diagnostics.
@@ -493,6 +509,9 @@ impl Searches {
     /// lost the answers, or nobody answered while no search has been answered lately either).
     pub async fn album_shared(&self, artist: &str, album: &str) -> Result<Option<bool>> {
         self.turn(Lane::Availability).await;
+        if self.checks_unheard() {
+            return Ok(None);
+        }
         let text = Wanted::album_query(artist, album);
         let responses = {
             let _running = self.running(Lane::Availability);
@@ -582,6 +601,7 @@ impl Searches {
             peers: last.response_count,
             files: last.file_count,
             at: lull_core::now(),
+            lane: priority.get(),
         });
         responses.map(Some)
     }
@@ -643,6 +663,7 @@ impl Searches {
 
     /// How many of the latest searches in a row no peer answered, counting only those that
     /// ended after `since` (unix seconds): a fresh login starts the count again.
+    /// Album checks nobody answered don't count (`Outcome::tells_if_answering`).
     pub fn unanswered_since(&self, since: i64) -> usize {
         self.inner
             .lock()
@@ -650,10 +671,21 @@ impl Searches {
                 i.outcomes
                     .iter()
                     .rev()
+                    .filter(|o| o.tells_if_answering())
                     .take_while(|o| o.peers == 0 && o.at > since)
                     .count()
             })
             .unwrap_or(0)
+    }
+
+    /// Album checks wait while they can't be told from a server that stopped answering: at
+    /// least `UNHEARD_CHECKS` searches ran lately and none was answered.
+    fn checks_unheard(&self) -> bool {
+        let lately = lull_core::now() - ANSWERED_LATELY_S;
+        self.inner.lock().is_ok_and(|i| {
+            let mut latest = i.outcomes.iter().filter(|o| o.at > lately);
+            latest.clone().count() >= UNHEARD_CHECKS && latest.all(|o| o.peers == 0)
+        })
     }
 
     /// Whether a search has been answered since `since` (unix seconds).
@@ -1144,6 +1176,44 @@ mod tests {
         assert!(error.contains("8217 files from 300 peers"), "{last}");
         let again = searches.start("portishead", true)?;
         assert_ne!(again.search_id, first.search_id, "search again runs a fresh search");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn an_album_check_nobody_answered_is_no_sign_of_throttling() -> Test {
+        let searches = searches(true).await?;
+        let outcome = |peers: u32, lane: Lane| Outcome {
+            query: "q".into(),
+            state: "Completed".into(),
+            peers,
+            files: peers,
+            at: lull_core::now(),
+            lane,
+        };
+        searches.record(outcome(0, Lane::Availability));
+        assert!(
+            !searches.checks_unheard(),
+            "one silent check: maybe nobody shares that album"
+        );
+        searches.record(outcome(0, Lane::Availability));
+        assert_eq!(
+            searches.unanswered_since(0),
+            0,
+            "preloads and recovery don't count them"
+        );
+        assert!(
+            searches.checks_unheard(),
+            "two, and nothing answered lately: checks wait"
+        );
+        searches.record(outcome(12, Lane::Listener));
+        searches.record(outcome(0, Lane::Availability));
+        searches.record(outcome(0, Lane::Availability));
+        assert!(
+            !searches.checks_unheard(),
+            "the server answers: silence means nobody shares it"
+        );
+        searches.record(outcome(0, Lane::Prefetch));
+        assert_eq!(searches.unanswered_since(0), 1, "a song nobody answered still counts");
         Ok(())
     }
 

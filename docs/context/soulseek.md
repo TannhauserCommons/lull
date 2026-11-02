@@ -95,13 +95,14 @@ The Soulseek server throttles an account that searches too often: seen live on 2
 - **Rate.** Searches start at least 1 s apart and at most 30 in any minute, all lanes together; a lane waits once the minute's count reaches its ceiling, so the gap is kept for the lanes above it.
 - **Order.** A search waits while one of a higher lane waits. A search a higher lane joins (the player asking for a song a preload is searching) takes that lane.
 - **Pausing.** Once the latest searches got no answer from any peer, the background lanes don't search (the song is skipped, availability answers `None`) until a search is answered again; the player and the listener always search, and those are what show the server answering again (and what [stale-session recovery](#stale-sessions) counts).
+- **Album checks nobody answered don't count** toward pausing, recovery or the status: most likely nobody shares that album, which is the answer the check wants. Counting them paused every check after the first two niche releases (seen live on 2026-11-02), so the new releases shelf got no answers. Album checks have their own wait instead: after 2 searches in the last 10 minutes with none answered, they answer `None` without searching until a search is answered.
 
 ## Albums
 
-`Transfers::album_available(artist, album)` (`albums.rs`) tells discovery whether peers share an album, so new releases nobody shares can be hidden.
+`Transfers::album_available(artist, album)` (`albums.rs`) tells discovery whether peers share an album, so new releases nobody shares can be hidden. `album_known` gives only the remembered answer and never searches.
 - **Remembered** in `soulseek_albums` by loose artist and title (`ids::loose_*`): found for 7 days, not found for 1 (fresh releases appear on Soulseek within days). A remembered answer comes back at once, even while Soulseek is offline.
 - **Otherwise one search** for `artist album` in the `Availability` lane, early-stopped like a resolve search, one album at a time. Shared means a peer folder ([merged](#search) as for album rows) whose album and artist [match](#matching) by the same rules as a song's title and artist; one file of it is enough (singles and EPs are albums too). What it finds is kept as sources.
-- **`None`** while Soulseek is offline, while the lane is paused, when slskd lost the answers, or when nobody answered and no search has been answered in the last 10 minutes either (a stale session, not an answer). None of these is remembered.
+- **`None`** while Soulseek is offline, while the lane is paused or album checks [wait](#search-budget), when slskd lost the answers, or when nobody answered and no search has been answered in the last 10 minutes either (a stale session, not an answer). None of these is remembered.
 - **Slow when cold.** An unremembered album takes a search, a few seconds, queued behind every other kind of search; callers should not hold a page for it.
 
 ## Matching
