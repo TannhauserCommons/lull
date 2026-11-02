@@ -100,7 +100,7 @@
      ===================================================================== */
   /* view state: picks dismissed this session, cold-start choices, "search again" on picks with no source,
      the cold-start follows in flight, and the shelves showing skeletons while the feed reloads */
-  var H = { dismissed: {}, coldPicks: {}, finding: null, found: {}, building: false, reloading: null };
+  var H = { dismissed: {}, coldPicks: {}, finding: null, found: {}, building: false, reloading: null, expanded: {} };
   function list(feed, key) { return (feed && feed[key]) || []; }
   function greeting() {
     var h = new Date().getHours();
@@ -187,11 +187,13 @@
 
   function newReleasesBody(feed) {
     var issue = shelfIssue(feed, 'newReleases', html`<div class="disc-skel-shelf">${ui.skeleton('tile', 4)}</div>`, 'Couldn\'t load new releases');
-    var head = ui.labelRule('new releases', { id: 'disc-h-new', action: issue ? null : { label: 'See all', href: '#/library/albums' } });
+    var more = !!H.expanded.new;
+    /* See all opens the shelf in place as a grid: the feed's releases are not library albums */
+    var head = ui.labelRule('new releases', { id: 'disc-h-new', action: issue ? null : { label: more ? 'Show less' : 'See all', act: 'disc-expand-new' } });
     if (issue) return html`${head}${issue}`;
     var albums = list(feed, 'newReleases').filter(function (id) { return M.album(id); });
     if (!albums.length) return emptyLine('new', 'new releases', 'Nothing new from artists you follow yet.');
-    return html`${head}<div class="shelf disc-shelf">${albums.map(function (id) { return ui.releaseTile(id); })}</div>`;
+    return html`${head}<div class="shelf disc-shelf${more ? ' disc-shelf--grid' : ''}">${albums.map(function (id) { return ui.releaseTile(id); })}</div>`;
   }
 
   function seedArt(seed, px) {
@@ -216,23 +218,24 @@
 
   function pickFor(trackId) { return list(M.peek(FEED), 'picks').filter(function (p) { return p.trackId === trackId; })[0] || null; }
   /* picks still shown: not dismissed, artist not hidden, track known; picks with a source first */
-  function visiblePicks(feed) {
+  function visiblePicks(feed, all) {
     var hidden = App.store.get('hiddenArtists') || {};
     var shown = list(feed, 'picks').filter(function (p) { var t = M.track(p.trackId); return t && !H.dismissed[p.trackId] && !hidden[t.artistId]; });
-    /* up to 12: the module shows as many as its width allows (discover.css) */
-    return shown.filter(function (p) { return !p.noSource; }).concat(shown.filter(function (p) { return p.noSource; })).slice(0, 12);
+    /* up to 12: the module shows as many as its width allows (discover.css); See all lifts the cap */
+    var ordered = shown.filter(function (p) { return !p.noSource; }).concat(shown.filter(function (p) { return p.noSource; }));
+    return all ? ordered : ordered.slice(0, 12);
   }
   function picksBody(feed) {
     var issue = shelfIssue(feed, 'picks', html`<div class="disc-picks-skel">${ui.skeleton('row', 6)}</div>`, 'Couldn\'t load your picks');
-    var head = ui.labelRule('picked for you', { id: 'disc-h-picks', action: issue ? null : { label: 'Refresh picks', act: 'disc-refresh-picks' } });
+    var more = !!H.expanded.picks, picks = visiblePicks(feed, more);
+    var head = html`<div class="label-rule"><h2 id="disc-h-picks">picked for you</h2>${issue ? '' : html`${list(feed, 'picks').length > 6 || more ? html`<button class="btn btn--quiet btn--sm" data-act="disc-expand-picks" aria-expanded="${more ? 'true' : 'false'}">${more ? 'Show less' : 'See all'}</button>` : ''}<button class="btn btn--quiet btn--sm" data-act="disc-refresh-picks">Refresh picks</button>`}</div>`;
     if (issue) return html`${head}${issue}`;
-    var picks = visiblePicks(feed);
     if (!picks.length) {
       return emptyLine('picks', 'picked for you', (list(feed, 'picks').length ? 'You hid everything we had. ' : '') + 'Like a few songs or follow a tag and picks show up here.',
         html`<a class="btn btn--quiet btn--sm" href="#/following">Browse tags</a>`);
     }
     var playable = picks.filter(function (p) { return !p.noSource || H.found[p.trackId]; }).map(function (p) { return p.trackId; });
-    return html`${head}<ul class="disc-picks" data-ids="${playable.join(',')}">${picks.map(pickItem)}</ul>`;
+    return html`${head}<ul class="disc-picks${more ? ' disc-picks--all' : ''}" data-ids="${playable.join(',')}">${picks.map(pickItem)}</ul>`;
   }
   function pickItem(p) {
     var t = M.track(p.trackId), reasons = p.reasons || [];
@@ -350,6 +353,9 @@
   }
   App.action('disc-retry-shelf', function (el) { reloadFeed([el.getAttribute('data-id')]); });
   App.action('disc-refresh-picks', function () { reloadFeed(['picks']); });
+  /* See all / Show less: a Home shelf grows in place to show everything the feed holds */
+  App.action('disc-expand-new', function () { H.expanded.new = !H.expanded.new; paintShelf('newReleases'); });
+  App.action('disc-expand-picks', function () { H.expanded.picks = !H.expanded.picks; paintShelf('picks'); });
   /* a pick with no source: ask Soulseek again; the first source that answers makes it playable */
   App.action('disc-find', function (el) {
     var id = el.getAttribute('data-id'), t = M.track(id);

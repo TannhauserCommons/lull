@@ -40,6 +40,7 @@
 /* shelves inside cards: tiles keep their size, a wider module shows more of them; the scrollbar stays off the edge */
 .disc-shelf { padding: 0 10px var(--sp-2) 0; grid-auto-columns: 168px; }
 .disc-shelf--sm { grid-auto-columns: 152px; }
+.disc-shelf--grid { grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); grid-auto-columns: auto; overflow: visible; scroll-snap-type: none; }
 .disc-shelf--artists { grid-auto-columns: 132px; }
 @media (max-width: 639px) { .disc-shelf, .disc-shelf--sm { grid-auto-columns: 148px; } .disc-shelf--artists { grid-auto-columns: 128px; } }
 .disc-skel-shelf .skel-group { display: grid; grid-auto-flow: column; grid-auto-columns: 168px; gap: var(--sp-5); overflow: hidden; }
@@ -64,6 +65,7 @@
 .disc-picks > li:nth-child(n+7) { display: none; }
 @container section (min-width: 900px) { .disc-picks > li:nth-child(-n+9) { display: grid; } }
 @container section (min-width: 1200px) { .disc-picks > li:nth-child(-n+12) { display: grid; } }
+.disc-picks--all > li:nth-child(n) { display: grid; }
 .disc-pick {
   display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; grid-template-areas: "art main end" "art why why";
   align-items: start; align-content: start; gap: 0 var(--sp-3); padding: 8px; border-radius: 16px; transition: background-color var(--dur-1);
