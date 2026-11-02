@@ -11,6 +11,7 @@ Curated pages for what is expensive to rediscover: boundaries, contracts, invari
 | Soulseek: slskd, search, ranking | [soulseek.md](soulseek.md) *(owner writes)* | `crates/soulseek/` |
 | Progressive streaming, peer fallback | [streaming.md](streaming.md) *(owner writes)* | `crates/soulseek/` |
 | Stream cache and eviction | [cache.md](cache.md) *(owner writes)* | `crates/soulseek/` |
+| YouTube as a second source: modes, matching, yt-dlp | [youtube.md](youtube.md), ADR-0012 | `crates/youtube/`, `crates/soulseek/src/fetch.rs` |
 | Deploying (plain, VPN, existing slskd) | [deploy.md](deploy.md) *(owner writes)* | `deploy/` |
 | Library sources (folder, Jellyfin), switching, saved-track streaming | [library.md](library.md) *(owner writes)*, ADR-0003 | `crates/library/` |
 | Save flow (match, cover, tags, naming, rescan) | [save-flow.md](save-flow.md) *(owner writes)* | `crates/library/` |

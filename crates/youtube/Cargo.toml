@@ -1,0 +1,26 @@
+[package]
+name = "lull-youtube"
+description = "YouTube as a second source through yt-dlp: matching, native audio downloads, keeping yt-dlp current"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+lull-core.workspace = true
+async-trait.workspace = true
+axum.workspace = true
+reqwest.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# yt-dlp runs as a child process; its audio arrives on stdout.
+tokio = { workspace = true, features = ["process"] }
+tracing.workspace = true
+# Streaming a yt-dlp release to disk.
+futures-util = "=0.3.34"
+# Checking a yt-dlp release against its published SHA2-256SUMS before it is used.
+sha2 = "0.11.1"
+
+[lints]
+workspace = true

@@ -11,6 +11,7 @@ Each area has one owner at a time. Edit only what your brief says you own.
 | `crates/core` | Shared contracts: config, settings store, devices, db + migrations, `catalog`, HTTP client, event bus, service status, ids, models, seams | integrator; Hub session owns `settings.rs` and `devices.rs`. Others: **additive** changes only, as their own `feat(core): …` commit |
 | `crates/server` | The hub: `lib.rs` (`run`, wiring), gate and pairing, `/health`, `/api/events`, devices and Connect, `/api/config`, setup | Hub session; `src/web.rs` is the Quality session's; the Subsonic session adds its own wiring lines in `lib.rs` |
 | `crates/soulseek` | slskd client, search + ranking, transfers, progressive streaming, stream cache, sharing | Soulseek session (idle) |
+| `crates/youtube` | YouTube through yt-dlp: matching, native audio downloads, keeping yt-dlp current (the `Youtube` seam; soulseek decides when it plays) | Soulseek session (idle) |
 | `crates/library` | Library sources (folder, Jellyfin), switching and reconciliation, Quick Connect, the Jellyfin mirror, saved-track streaming, save pipeline | Library session |
 | `crates/discovery` | Feed, new releases, radio, album/artist/tag pages, taste model | Discovery session (idle) |
 | `crates/lastfm` | Last.fm auth, now playing, scrobbles + retry queue, the built-in app key | Collection session |
@@ -36,7 +37,8 @@ Each area has one owner at a time. Edit only what your brief says you own.
 - **Domain crates depend on `lull-core` only, never on each other.** `server` builds them in order and hands each the seams it needs:
   - `Transfers` (implemented by `soulseek`) goes to `library`, for completing a transfer before a save;
   - `Library` (implemented by `library`) goes to `soulseek`, `discovery`, `collection` and `subsonic`, for saved badges, duplicates, the library half of search, M3U matching and Subsonic's browsing, streaming and covers;
-  - `Collection` (implemented by `collection`) and `Lyrics` (implemented by `lyrics`) go to `subsonic`, so Subsonic apps like, scrobble, edit playlists and read lyrics as the web UI does.
+  - `Collection` (implemented by `collection`) and `Lyrics` (implemented by `lyrics`) go to `subsonic`, so Subsonic apps like, scrobble, edit playlists and read lyrics as the web UI does;
+  - `Youtube` (implemented by `youtube`) goes to `soulseek`, whose fetches write YouTube copies into the stream cache.
 - **The event bus** (`ctx.bus`) carries everything else between crates. Every event also reaches the browser over SSE. Topics are listed in `api.md#events`. Example: `collection` publishes `play.started` / `play.ended`, and `lastfm` and `discovery` subscribe.
 - **The catalog** (`lull_core::catalog`) resolves any track id. Whoever hands a track to the UI records it there.
 - **Each crate exposes the same three things:**

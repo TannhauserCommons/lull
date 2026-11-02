@@ -13,6 +13,7 @@ members = [
   "crates/skins",
   "crates/subsonic",
   "crates/themes",
+  "crates/youtube",
 ]
 # The Tauri app is its own workspace (its dependency tree is large); it uses the hub as a path
 # dependency on `crates/server` (ADR-0006).
