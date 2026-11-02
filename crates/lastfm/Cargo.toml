@@ -8,6 +8,7 @@ publish.workspace = true
 
 [dependencies]
 lull-core.workspace = true
+async-trait.workspace = true
 axum.workspace = true
 # Query strings for reads, form bodies for signed writes.
 reqwest = { workspace = true, features = ["query", "form"] }

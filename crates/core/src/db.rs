@@ -70,6 +70,10 @@ pub const CORE: Migrations = Migrations {
             last_seen   INTEGER
         );
     "#,
+        // Private listening: what a device plays leaves no trace (history, taste, Last.fm).
+        r#"
+        ALTER TABLE core_devices ADD COLUMN private INTEGER NOT NULL DEFAULT 0;
+    "#,
     ],
 };
 

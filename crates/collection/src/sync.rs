@@ -6,10 +6,11 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use axum::extract::State;
 use axum::extract::rejection::JsonRejection;
+use axum::extract::{Extension, State};
 use axum::routing::post;
 use axum::{Json, Router};
+use lull_core::devices::Device;
 use lull_core::ids::TrackId;
 use lull_core::{Error, Result};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -95,13 +96,17 @@ struct Rejected {
 /// `{ applied: [id], rejected: [{ id, message }], playlists: { tempId: playlistId } }`.
 /// `playlists` names the playlist made for each `tempId` the batch created or named, so the
 /// device can swap its temporary ids.
-async fn sync(State(svc): State<Arc<Service>>, body: Result<Json<Body>, JsonRejection>) -> Result<Json<Value>> {
+async fn sync(
+    State(svc): State<Arc<Service>>,
+    Extension(device): Extension<Device>,
+    body: Result<Json<Body>, JsonRejection>,
+) -> Result<Json<Value>> {
     let Json(body) = body.map_err(bad_json)?;
-    apply_all(&svc, body.ops).await.map(Json)
+    apply_all(&svc, &device.id, body.ops).await.map(Json)
 }
 
 /// Applies a batch in order (see `sync`).
-async fn apply_all(svc: &Service, ops: Vec<Value>) -> Result<Value> {
+async fn apply_all(svc: &Service, device: &str, ops: Vec<Value>) -> Result<Value> {
     if ops.len() > MAX_OPS {
         return Err(Error::BadRequest(format!("Send at most {MAX_OPS} changes at a time.")));
     }
@@ -112,8 +117,9 @@ async fn apply_all(svc: &Service, ops: Vec<Value>) -> Result<Value> {
     for (id, op) in ops {
         let outcome = match op {
             Ok((at, op)) => {
-                let op_id = id.clone();
-                svc.write(move |tx, events| apply(tx, events, &op_id, at, op)).await
+                let (op_id, device) = (id.clone(), device.to_owned());
+                svc.write(move |tx, events| apply(tx, events, &device, &op_id, at, op))
+                    .await
             }
             Err(message) => Err(Error::BadRequest(message)),
         };
@@ -163,7 +169,14 @@ fn parse(mut fields: Map<String, Value>) -> Parsed {
 
 /// Applies one op unless its id was applied before, and records the id. Returns the `tempId`
 /// this op created or named, with the playlist id it stands for.
-fn apply(conn: &Connection, events: &mut Events, id: &str, at: i64, op: Op) -> Result<Option<(String, String)>> {
+fn apply(
+    conn: &Connection,
+    events: &mut Events,
+    device: &str,
+    id: &str,
+    at: i64,
+    op: Op,
+) -> Result<Option<(String, String)>> {
     let seen: Option<i64> = conn
         .query_row("SELECT 1 FROM collection_sync_ops WHERE id = ?1", [id], |r| r.get(0))
         .optional()?;
@@ -174,7 +187,7 @@ fn apply(conn: &Connection, events: &mut Events, id: &str, at: i64, op: Op) -> R
             _ => Ok(None),
         };
     }
-    let made = run(conn, events, at, op)?;
+    let made = run(conn, events, device, at, op)?;
     conn.execute(
         "INSERT INTO collection_sync_ops (id, applied_at) VALUES (?1, ?2)",
         params![id, lull_core::now()],
@@ -182,7 +195,7 @@ fn apply(conn: &Connection, events: &mut Events, id: &str, at: i64, op: Op) -> R
     Ok(made)
 }
 
-fn run(conn: &Connection, events: &mut Events, at: i64, op: Op) -> Result<Option<(String, String)>> {
+fn run(conn: &Connection, events: &mut Events, device: &str, at: i64, op: Op) -> Result<Option<(String, String)>> {
     match op {
         Op::Play {
             track_id,
@@ -196,7 +209,7 @@ fn run(conn: &Connection, events: &mut Events, at: i64, op: Op) -> Result<Option
                 completed,
                 skipped,
             };
-            plays::record(conn, events, &track_id, started_at, &end)?;
+            plays::record(conn, events, device, &track_id, started_at, &end)?;
         }
         Op::Like { track_id, liked } => likes::set(conn, events, &track_id, liked, at)?,
         Op::Follow {
@@ -304,6 +317,7 @@ mod tests {
     #[tokio::test]
     async fn a_resent_batch_is_acknowledged_without_applying_twice() -> Result<()> {
         let (svc, mut rx) = testing::service().await?;
+        let device = testing::device(&svc, false).await?.id;
         let song = testing::known_song(&svc, "Velvet Orchard", "Paper Moon Static").await?;
         let started_at = lull_core::now() - 7200;
         let ops = json!([
@@ -311,9 +325,9 @@ mod tests {
               "playedS": 200, "completed": true, "skipped": false },
             { "id": "op-2", "at": started_at, "op": "playlist.create", "tempId": "tmp-a", "name": "Road", "trackIds": [song] },
         ]);
-        let first = apply_all(&svc, batch(ops.clone())).await?;
+        let first = apply_all(&svc, &device, batch(ops.clone())).await?;
         let first_events: Vec<String> = testing::published(&mut rx).into_iter().map(|e| e.topic).collect();
-        let again = apply_all(&svc, batch(ops)).await?;
+        let again = apply_all(&svc, &device, batch(ops)).await?;
 
         assert_eq!(first["applied"], json!(["op-1", "op-2"]));
         assert_eq!(
@@ -334,6 +348,7 @@ mod tests {
     #[tokio::test]
     async fn ops_apply_in_order_and_a_bad_one_does_not_stop_the_rest() -> Result<()> {
         let (svc, mut rx) = testing::service().await?;
+        let device = testing::device(&svc, false).await?.id;
         let song = testing::known_song(&svc, "Velvet Orchard", "Paper Moon Static").await?;
         let other = testing::known_song(&svc, "Low Tide Radio", "Harbour Lights").await?;
         let at = lull_core::now() - 60;
@@ -345,7 +360,7 @@ mod tests {
             { "id": "e", "at": at, "op": "like", "trackId": song, "liked": false },
             { "id": "f", "at": at, "op": "like", "trackId": song, "liked": true, "extra": 1 },
         ]);
-        let out = apply_all(&svc, batch(ops)).await?;
+        let out = apply_all(&svc, &device, batch(ops)).await?;
 
         assert_eq!(out["applied"], json!(["a", "b", "d", "e"]));
         let rejected: Vec<&str> = out["rejected"]

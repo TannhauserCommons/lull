@@ -134,11 +134,26 @@ pub struct PlaylistEdit {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayReport {
+    /// The paired device that reports it: a private device's plays are not recorded.
+    pub device: String,
     pub track_id: TrackId,
     /// Unix seconds.
     pub started_at: i64,
     pub played_s: u32,
     pub completed: bool,
+}
+
+/// A finished play as lull recorded it, offered to Last.fm after the fact (History's "Send to
+/// Last.fm"). `started_at` is the play's own start, which is Last.fm's timestamp.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LatePlay {
+    pub play_id: i64,
+    pub artist: String,
+    pub title: String,
+    pub album: String,
+    pub duration_s: u32,
+    pub played_s: u32,
+    pub started_at: i64,
 }
 
 /// A song's lyrics, as `GET /api/lyrics/{trackId}` serves them and the `Lyrics` seam hands

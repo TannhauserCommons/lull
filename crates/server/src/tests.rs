@@ -203,6 +203,132 @@ async fn the_gate_lets_paired_devices_in_and_nobody_else() -> Result<(), BoxErro
 }
 
 #[tokio::test]
+async fn a_private_device_leaves_no_trace_while_the_others_still_do() -> Result<(), BoxError> {
+    let (hub, dir) = test_hub().await?;
+    let (_, cookie, _) = call(
+        &hub,
+        send(
+            "POST",
+            "/api/setup/claim",
+            Auth::None,
+            json!({ "code": SETUP_CODE, "name": "Laptop" }),
+        )?,
+    )
+    .await?;
+    let laptop = cookie_token(cookie);
+    let (_, _, issued) = call(&hub, send("POST", "/api/pair/codes", Auth::Cookie(&laptop), json!({}))?).await?;
+    let pair = json!({ "code": issued["code"], "name": "Agents", "kind": "app" });
+    let (_, _, agents) = call(&hub, send("POST", "/api/pair", Auth::None, pair)?).await?;
+    let agents = agents["token"].as_str().unwrap_or_default().to_owned();
+
+    let song = lull_core::model::Track {
+        id: lull_core::ids::TrackId::of("Grouper", "Shade", "Kelso"),
+        title: "Kelso".into(),
+        artist_id: lull_core::ids::ArtistId::of("Grouper"),
+        artist: "Grouper".into(),
+        album_id: lull_core::ids::AlbumId::of("Grouper", "Shade"),
+        album: "Shade".into(),
+        year: None,
+        no: None,
+        disc: None,
+        duration: Some(200),
+        tags: Vec::new(),
+        saved: false,
+        file: None,
+    };
+    let track_id = song.id.clone();
+    hub.db.call(move |c| lull_core::catalog::remember(c, &[song])).await?;
+    let mut events = hub.ctx().await.bus.subscribe();
+    let plays = || async {
+        hub.db
+            .call(|c| Ok(c.query_row("SELECT COUNT(*) FROM plays", [], |r| r.get::<_, i64>(0))?))
+            .await
+    };
+    let start = json!({ "trackId": track_id });
+    let end = json!({ "playedS": 150, "completed": false, "skipped": true });
+
+    // The laptop listens normally: a play, and its events.
+    let (_, _, started) = call(&hub, send("POST", "/api/plays", Auth::Cookie(&laptop), start.clone())?).await?;
+    let open_play = started["playId"].as_str().unwrap_or_default().to_owned();
+    assert_eq!(plays().await?, 1);
+
+    // The agents' device turns private listening on, for itself, and it shows in the device list.
+    let on = send(
+        "PATCH",
+        "/api/devices/me",
+        Auth::Bearer(&agents),
+        json!({ "private": true }),
+    )?;
+    assert_eq!(call(&hub, on).await?.0, StatusCode::NO_CONTENT);
+    let (_, _, listed) = call(&hub, get("/api/devices", Auth::Cookie(&laptop))?).await?;
+    let private: Vec<(&str, bool)> = listed["items"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|d| Some((d["name"].as_str()?, d["private"].as_bool()?)))
+        .collect();
+    assert_eq!(private, [("Laptop", false), ("Agents", true)]);
+    while events.try_recv().is_ok() {}
+
+    // Its plays go nowhere: no row, no event, however they reach the hub.
+    let (status, _, refused) = call(&hub, send("POST", "/api/plays", Auth::Bearer(&agents), start.clone())?).await?;
+    assert_eq!(
+        (status, &refused),
+        (StatusCode::OK, &json!({ "playId": null, "private": true }))
+    );
+    let sync = json!({ "ops": [{ "id": "o1", "at": lull_core::now() - 60, "op": "play", "trackId": track_id,
+        "startedAt": lull_core::now() - 300, "playedS": 200, "completed": true, "skipped": false }] });
+    let (_, _, synced) = call(&hub, send("POST", "/api/sync", Auth::Bearer(&agents), sync)?).await?;
+    assert_eq!(synced["applied"], json!(["o1"]), "the outbox drops it as handled");
+    let (status, ..) = call(
+        &hub,
+        send(
+            "PATCH",
+            &format!("/api/plays/{open_play}"),
+            Auth::Bearer(&agents),
+            end.clone(),
+        )?,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _, body) = call(
+        &hub,
+        send(
+            "POST",
+            "/api/history/lastfm",
+            Auth::Bearer(&agents),
+            json!({ "playIds": [open_play] }),
+        )?,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(plays().await?, 1, "nothing was recorded");
+    assert!(events.try_recv().is_err(), "nothing was published");
+
+    // The laptop is unaffected, and so is the agents' device once it switches back.
+    let (status, ..) = call(
+        &hub,
+        send("PATCH", &format!("/api/plays/{open_play}"), Auth::Cookie(&laptop), end)?,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(events.recv().await?.topic, "play.ended");
+    let off = send(
+        "PATCH",
+        "/api/devices/me",
+        Auth::Bearer(&agents),
+        json!({ "private": false }),
+    )?;
+    assert_eq!(call(&hub, off).await?.0, StatusCode::NO_CONTENT);
+    call(&hub, send("POST", "/api/plays", Auth::Bearer(&agents), start)?).await?;
+    assert_eq!(plays().await?, 2);
+
+    hub.stop().await;
+    let _ = std::fs::remove_dir_all(dir);
+    Ok(())
+}
+
+#[tokio::test]
 async fn a_settings_change_rewires_the_crates_behind_the_same_listener() -> Result<(), BoxError> {
     let (hub, dir) = test_hub().await?;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;

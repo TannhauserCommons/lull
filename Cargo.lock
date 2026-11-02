@@ -1177,6 +1177,7 @@ dependencies = [
 name = "lull-lastfm"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "axum",
  "lull-core",
  "md-5",

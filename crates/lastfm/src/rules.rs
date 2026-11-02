@@ -2,7 +2,7 @@
 //! a track counts when it is longer than 30 seconds and was played for at least half its length
 //! or for 4 minutes, whichever comes first.
 
-const MIN_LENGTH_S: u32 = 30;
+pub const MIN_LENGTH_S: u32 = 30;
 const ENOUGH_S: u32 = 240;
 
 /// Whether a play of `played_s` seconds of a `duration_s`-second track is a scrobble.

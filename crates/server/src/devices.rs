@@ -23,7 +23,7 @@ use crate::pairing::{bad_json, device_name};
 pub fn router() -> Router<Arc<Hub>> {
     Router::new()
         .route("/api/devices", axum::routing::get(list))
-        .route("/api/devices/{id}", patch(rename).delete(unpair))
+        .route("/api/devices/{id}", patch(edit).delete(unpair))
         .route("/api/devices/subsonic", post(subsonic))
         .route("/api/devices/me/state", post(report_state))
         .route("/api/devices/{id}/command", post(command))
@@ -148,14 +148,34 @@ struct NameBody {
     name: String,
 }
 
-/// `PATCH /api/devices/{id} { name }`.
-async fn rename(
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EditBody {
+    name: Option<String>,
+    /// Private listening (see `Device::private`).
+    private: Option<bool>,
+}
+
+/// `PATCH /api/devices/{id} { name?, private? }`; `me` is the calling device.
+async fn edit(
     State(hub): State<Arc<Hub>>,
+    Extension(me): Extension<Device>,
     Path(id): Path<String>,
-    body: Result<Json<NameBody>, JsonRejection>,
+    body: Result<Json<EditBody>, JsonRejection>,
 ) -> Result<StatusCode> {
     let Json(body) = body.map_err(bad_json)?;
-    devices::rename(&hub.db, &id, &device_name(&body.name)?).await?;
+    if body.name.is_none() && body.private.is_none() {
+        return Err(Error::BadRequest("Send a name or private.".into()));
+    }
+    let id = if id == "me" { me.id } else { id };
+    // Validated before anything is written, so a bad name doesn't leave the other change applied.
+    let name = body.name.as_deref().map(device_name).transpose()?;
+    if let Some(name) = name {
+        devices::rename(&hub.db, &id, &name).await?;
+    }
+    if let Some(private) = body.private {
+        devices::set_private(&hub.db, &id, private).await?;
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 

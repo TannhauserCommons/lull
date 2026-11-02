@@ -62,6 +62,18 @@ pub struct Play {
     pub started_at: i64,
 }
 
+impl From<&lull_core::model::LatePlay> for Play {
+    fn from(p: &lull_core::model::LatePlay) -> Self {
+        Play {
+            artist: p.artist.clone(),
+            title: p.title.clone(),
+            album: p.album.clone(),
+            duration_s: p.duration_s,
+            started_at: p.started_at,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct Session {
     pub name: String,

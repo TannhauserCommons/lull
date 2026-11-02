@@ -76,7 +76,7 @@ impl Collection for Service {
             completed: play.completed,
             skipped: false,
         };
-        self.write(move |tx, events| plays::record(tx, events, &play.track_id, play.started_at, &end))
+        self.write(move |tx, events| plays::record(tx, events, &play.device, &play.track_id, play.started_at, &end))
             .await
             .map(drop)
     }
@@ -120,9 +120,11 @@ mod tests {
     #[tokio::test]
     async fn a_reported_play_ends_at_its_real_start_without_now_playing() -> Result<()> {
         let (svc, mut rx) = testing::service().await?;
+        let device = testing::device(&svc, false).await?;
         let track = testing::known_song(&svc, "Velvet Orchard", "Paper Moon Static").await?;
         let started_at = lull_core::now() - 3600;
         svc.record_play(PlayReport {
+            device: device.id,
             track_id: track,
             started_at,
             played_s: 180,
@@ -134,6 +136,32 @@ mod tests {
         assert_eq!(topics, ["play.ended"]);
         assert_eq!(events[0].data["at"], started_at);
         assert_eq!(events[0].data["playedS"], 180);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_private_device_s_reported_play_goes_nowhere() -> Result<()> {
+        let (svc, mut rx) = testing::service().await?;
+        let private = testing::device(&svc, true).await?;
+        let track = testing::known_song(&svc, "Velvet Orchard", "Paper Moon Static").await?;
+        svc.record_play(PlayReport {
+            device: private.id,
+            track_id: track,
+            started_at: lull_core::now() - 3600,
+            played_s: 180,
+            completed: true,
+        })
+        .await?;
+        let rows = svc
+            .ctx
+            .db
+            .call(|c| Ok(c.query_row("SELECT COUNT(*) FROM plays", [], |r| r.get::<_, i64>(0))?))
+            .await?;
+        assert_eq!(rows, 0, "no history, stats or taste");
+        assert!(
+            testing::published(&mut rx).is_empty(),
+            "nothing for Last.fm or discovery"
+        );
         Ok(())
     }
 }

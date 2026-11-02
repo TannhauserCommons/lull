@@ -10,11 +10,14 @@ mod rules;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use async_trait::async_trait;
 use axum::Router;
 use lull_core::db::Migrations;
 use lull_core::events::Event;
+use lull_core::model::LatePlay;
+use lull_core::seams::Scrobbles;
 use lull_core::status::State;
-use lull_core::{Ctx, Result};
+use lull_core::{Ctx, Error, Result};
 use rusqlite::{Connection, OptionalExtension};
 use serde::Deserialize;
 use serde_json::json;
@@ -50,6 +53,8 @@ pub const MIGRATIONS: Migrations = Migrations {
 
 /// The history signal is refreshed this often while connected.
 const HISTORY_EVERY: Duration = Duration::from_secs(24 * 3600);
+/// Last.fm takes no scrobble timestamped more than this long ago.
+const MAX_AGE_S: i64 = 14 * 24 * 3600;
 /// The queue is looked at at least this often, even with nothing due.
 const IDLE_WAKE: Duration = Duration::from_secs(300);
 
@@ -185,6 +190,60 @@ async fn history(svc: Arc<Service>) {
     }
 }
 
+/// History's "Send to Last.fm" (api.md): plays that ended while nothing was listening, queued
+/// like any scrobble, each at most once (the queue's key is the play).
+#[async_trait]
+impl Scrobbles for Service {
+    fn refusal(&self, play: &LatePlay, now: i64) -> Option<String> {
+        if now - play.started_at > MAX_AGE_S {
+            return Some("it is older than 14 days, which Last.fm no longer accepts.".into());
+        }
+        (!rules::scrobbles(play.duration_s, play.played_s)).then(|| {
+            if play.duration_s != 0 && play.duration_s <= rules::MIN_LENGTH_S {
+                "Last.fm doesn't count tracks of 30 seconds or less.".into()
+            } else {
+                "it wasn't played for half its length or 4 minutes, so Last.fm wouldn't count it.".into()
+            }
+        })
+    }
+
+    async fn submit(&self, plays: Vec<LatePlay>) -> Result<()> {
+        self.client()?;
+        if !self.account().await?.is_some_and(|a| a.scrobbling) {
+            return Err(Error::Conflict(
+                "Connect Last.fm and switch on \"Scrobble what I play\" in Settings first.".into(),
+            ));
+        }
+        let now = lull_core::now();
+        if let Some((play, why)) = plays.iter().find_map(|p| self.refusal(p, now).map(|why| (p, why))) {
+            return Err(Error::BadRequest(format!("\u{201c}{}\u{201d}: {why}", play.title)));
+        }
+        let ids: Vec<i64> = plays.iter().map(|p| p.play_id).collect();
+        self.ctx
+            .db
+            .call(move |conn| {
+                // One transaction: a play already queued refuses the lot, and nothing is kept.
+                let tx = conn.transaction()?;
+                for p in &plays {
+                    if !queue::push(&tx, p.play_id, &Play::from(p), now)? {
+                        return Err(Error::Conflict(format!(
+                            "\u{201c}{}\u{201d} is already waiting to be sent.",
+                            p.title
+                        )));
+                    }
+                }
+                tx.commit()?;
+                Ok(())
+            })
+            .await?;
+        self.wake.notify_one();
+        for id in ids {
+            self.publish_scrobble(id, "pending");
+        }
+        Ok(())
+    }
+}
+
 impl Service {
     fn client(&self) -> Result<&Client> {
         self.client.as_ref().ok_or_else(|| {
@@ -214,7 +273,7 @@ impl Service {
         let status = if rules::scrobbles(play.duration_s, played_s) {
             self.ctx
                 .db
-                .call(move |c| queue::push(c, play_id, &play, lull_core::now()))
+                .call(move |c| queue::push(c, play_id, &play, lull_core::now()).map(drop))
                 .await?;
             self.wake.notify_one();
             "pending"
@@ -388,6 +447,10 @@ mod tests {
     use super::*;
 
     fn service() -> Result<Arc<Service>> {
+        build(false)
+    }
+
+    fn build(with_key: bool) -> Result<Arc<Service>> {
         let vars: BTreeMap<String, String> = [("LULL_SLSKD_URL", "http://slskd"), ("LULL_SLSKD_API_KEY", "k")]
             .into_iter()
             .map(|(k, v)| (k.to_owned(), v.to_owned()))
@@ -396,16 +459,21 @@ mod tests {
         let db = Db::memory()?;
         db.migrate(&MIGRATIONS)?;
         let bus = Bus::new();
+        let http = Http::new()?;
+        let creds = lull_core::config::LastFm {
+            api_key: lull_core::config::Secret::new("key"),
+            api_secret: lull_core::config::Secret::new("secret"),
+        };
         Ok(Arc::new(Service {
             ctx: Ctx {
                 config: Arc::new(config),
                 db,
-                http: Http::new()?,
+                http: http.clone(),
                 status: Status::new(bus.clone()),
                 bus,
                 shutdown: Default::default(),
             },
-            client: None,
+            client: with_key.then(|| Client::new(http, creds)),
             wake: Notify::new(),
             pending_auth: Mutex::new(None),
             signed_out: Mutex::new(false),
@@ -469,6 +537,76 @@ mod tests {
         assert_eq!(verdicts(&mut rx), ["3 pending", "4 short"]);
         let queued = svc.ctx.db.call(|c| queue::summary(c)).await?.0;
         assert_eq!(queued, 1, "only play 3 waits to be sent; plays 1 and 2 are gone");
+        Ok(())
+    }
+    fn late(play_id: i64, ago: i64, played_s: u32) -> LatePlay {
+        LatePlay {
+            play_id,
+            artist: "Grouper".into(),
+            title: "Kelso".into(),
+            album: "Shade".into(),
+            duration_s: 200,
+            played_s,
+            started_at: lull_core::now() - ago,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_late_play_must_pass_last_fms_rule_and_age() -> Result<()> {
+        let svc = service()?;
+        let now = lull_core::now();
+        let why = |p: LatePlay| svc.refusal(&p, now);
+        assert_eq!(why(late(1, 3600, 100)), None, "half of 200 s");
+        assert!(why(late(2, 3600, 99)).is_some_and(|w| w.contains("half")));
+        assert!(why(late(3, 14 * 86_400 + 5, 200)).is_some_and(|w| w.contains("14 days")));
+        assert_eq!(why(late(4, 14 * 86_400 - 60, 200)), None, "just inside the limit");
+        let short = LatePlay {
+            duration_s: 30,
+            played_s: 30,
+            ..late(5, 60, 30)
+        };
+        assert!(why(short).is_some_and(|w| w.contains("30 seconds")));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_late_play_is_queued_once_and_all_or_nothing() -> Result<()> {
+        let svc = build(true)?;
+        let mut rx = svc.ctx.bus.subscribe();
+        let waiting = |svc: &Arc<Service>| {
+            let svc = svc.clone();
+            async move { svc.ctx.db.call(|c| queue::summary(c)).await.map(|s| s.0) }
+        };
+
+        let early = svc.submit(vec![late(1, 3600, 150)]).await;
+        assert!(matches!(early, Err(Error::Conflict(_))), "not connected: {early:?}");
+        connect(&svc, false).await?;
+        let paused = svc.submit(vec![late(1, 3600, 150)]).await;
+        assert!(matches!(paused, Err(Error::Conflict(_))), "scrobbling off: {paused:?}");
+        assert_eq!(waiting(&svc).await?, 0);
+
+        connect(&svc, true).await?;
+        svc.submit(vec![late(1, 3600, 150)]).await?;
+        assert_eq!(verdicts(&mut rx), ["1 pending"]);
+        let stored = svc.ctx.db.call(|c| queue::due(c, i64::MAX, 10)).await?;
+        assert_eq!(
+            stored[0].play.started_at,
+            late(1, 3600, 150).started_at,
+            "its own start"
+        );
+
+        // Once: the same play again, or a play the live path already queued, is refused and
+        // takes nothing else with it.
+        end(&svc, 2, 254).await?;
+        assert_eq!(verdicts(&mut rx), ["2 pending"]);
+        for repeated in [late(1, 3600, 150), late(2, 3600, 200)] {
+            let again = svc.submit(vec![late(3, 3600, 150), repeated]).await;
+            assert!(matches!(again, Err(Error::Conflict(_))), "{again:?}");
+        }
+        let old = svc.submit(vec![late(4, 15 * 86_400, 200)]).await;
+        assert!(matches!(old, Err(Error::BadRequest(_))), "{old:?}");
+        assert_eq!(waiting(&svc).await?, 2, "only plays 1 and 2 wait");
+        assert!(verdicts(&mut rx).is_empty());
         Ok(())
     }
 }

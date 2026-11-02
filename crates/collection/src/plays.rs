@@ -5,16 +5,18 @@
 use std::sync::Arc;
 
 use axum::extract::rejection::{JsonRejection, QueryRejection};
-use axum::extract::{Path, Query, State};
+use axum::extract::{Extension, Path, Query, State};
 use axum::routing::{get, patch, post};
 use axum::{Json, Router};
+use lull_core::devices::{self, Device};
 use lull_core::ids::TrackId;
-use lull_core::model::Track;
+use lull_core::model::{LatePlay, Track};
 use lull_core::{Error, Result};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use crate::lastfm_send::Stored;
 use crate::{Events, Service, bad_json, bad_query, entities, known_track};
 
 pub(crate) fn routes() -> Router<Arc<Service>> {
@@ -57,10 +59,19 @@ struct StartBody {
     recommended: bool,
 }
 
-async fn start(State(svc): State<Arc<Service>>, body: Result<Json<StartBody>, JsonRejection>) -> Result<Json<Value>> {
+/// `{ playId }`, or `{ playId: null, private: true }` from a device in private listening: nothing
+/// was recorded or published, so there is no play to end.
+async fn start(
+    State(svc): State<Arc<Service>>,
+    Extension(device): Extension<Device>,
+    body: Result<Json<StartBody>, JsonRejection>,
+) -> Result<Json<Value>> {
     let Json(body) = body.map_err(bad_json)?;
     let play_id = svc
         .write(move |tx, events| {
+            if devices::is_private(tx, &device.id)? {
+                return Ok(None);
+            }
             begin(
                 tx,
                 events,
@@ -69,9 +80,13 @@ async fn start(State(svc): State<Arc<Service>>, body: Result<Json<StartBody>, Js
                 body.recommended,
                 lull_core::now(),
             )
+            .map(Some)
         })
         .await?;
-    Ok(Json(json!({ "playId": play_id.to_string() })))
+    Ok(Json(match play_id {
+        Some(id) => json!({ "playId": id.to_string() }),
+        None => json!({ "playId": null, "private": true }),
+    }))
 }
 
 #[derive(Deserialize)]
@@ -84,6 +99,7 @@ pub(crate) struct EndBody {
 
 async fn end(
     State(svc): State<Arc<Service>>,
+    Extension(device): Extension<Device>,
     Path(play_id): Path<String>,
     body: Result<Json<EndBody>, JsonRejection>,
 ) -> Result<Json<Value>> {
@@ -91,7 +107,8 @@ async fn end(
     let id: i64 = play_id
         .parse()
         .map_err(|_| Error::NotFound(format!("No play {play_id}.")))?;
-    svc.write(move |tx, events| finish(tx, events, id, &body)).await?;
+    svc.write(move |tx, events| finish(tx, events, &device.id, id, &body))
+        .await?;
     Ok(Json(json!({ "playId": play_id })))
 }
 
@@ -124,9 +141,13 @@ fn begin(
     Ok(play_id)
 }
 
-/// Ends a play, once: a second end would scrobble twice, so it is a conflict.
-fn finish(conn: &Connection, events: &mut Events, id: i64, body: &EndBody) -> Result<()> {
+/// Ends a play, once: a second end would scrobble twice, so it is a conflict. A device in
+/// private listening ends nothing: a play it started before switching it on stays as it was.
+fn finish(conn: &Connection, events: &mut Events, device: &str, id: i64, body: &EndBody) -> Result<()> {
     check_end(body)?;
+    if devices::is_private(conn, device)? {
+        return Ok(());
+    }
     let play = conn
         .query_row(
             "SELECT p.track_id, p.artist, p.title, p.album, p.duration_s, p.started_at, c.ended_at
@@ -172,14 +193,19 @@ fn finish(conn: &Connection, events: &mut Events, id: i64, body: &EndBody) -> Re
 /// Records a play that already happened elsewhere (the offline outbox, a Subsonic app): history,
 /// taste and scrobbling see it as the web player's own, timed by its real start. Only
 /// `play.ended` goes out: "now playing" for a song that already finished would be wrong.
+/// A private device's play is dropped, whatever it was queued as: `None`.
 pub(crate) fn record(
     conn: &Connection,
     events: &mut Events,
+    device: &str,
     track_id: &TrackId,
     started_at: i64,
     body: &EndBody,
-) -> Result<i64> {
+) -> Result<Option<i64>> {
     check_end(body)?;
+    if devices::is_private(conn, device)? {
+        return Ok(None);
+    }
     let now = lull_core::now();
     if started_at <= 0 {
         return Err(Error::BadRequest("startedAt is not a time.".into()));
@@ -210,7 +236,7 @@ pub(crate) fn record(
         album: track.album,
     };
     events.push("play.ended", json!(ended));
-    Ok(play_id)
+    Ok(Some(play_id))
 }
 
 fn insert(conn: &Connection, track: &Track, duration: u32, at: i64) -> Result<i64> {
@@ -269,6 +295,9 @@ struct HistoryItem {
     completed: bool,
     skipped: bool,
     scrobble: Option<String>,
+    /// "Send to Last.fm" would be accepted for this play (`lastfm_send`), given an account that
+    /// is connected and scrobbling and a device that isn't private, which only the UI knows.
+    sendable: bool,
 }
 
 /// `{ days: [{ day: "YYYY-MM-DD", items }], next, entities }`, newest first. A day can continue
@@ -283,25 +312,45 @@ async fn history(
         return Err(Error::BadRequest("limit must be between 1 and 500.".into()));
     }
     let tz_offset = tz_seconds(q.tz)?;
+    let scrobbles = svc.scrobbles.clone();
     svc.ctx
         .db
         .call(move |conn| {
+            let now = lull_core::now();
             let items = conn
                 .prepare(
-                    "SELECT p.id, p.track_id, p.started_at, p.played_s, p.completed, p.skipped, c.scrobble
+                    "SELECT p.id, p.track_id, p.started_at, p.played_s, p.completed, p.skipped, c.scrobble,
+                            p.artist, p.title, p.album, p.duration_s,
+                            COALESCE(c.ended_at IS NOT NULL, 0), COALESCE(c.imported, 0)
                      FROM plays p LEFT JOIN collection_plays c ON c.play_id = p.id
                      WHERE ?1 IS NULL OR (p.started_at, p.id) < (SELECT started_at, id FROM plays WHERE id = ?1)
                      ORDER BY p.started_at DESC, p.id DESC LIMIT ?2",
                 )?
                 .query_map(params![q.before, limit], |r| {
+                    let id: i64 = r.get(0)?;
+                    let stored = Stored {
+                        play: LatePlay {
+                            play_id: id,
+                            artist: r.get(7)?,
+                            title: r.get(8)?,
+                            album: r.get(9)?,
+                            duration_s: r.get(10)?,
+                            played_s: r.get(3)?,
+                            started_at: r.get(2)?,
+                        },
+                        finished: r.get(11)?,
+                        imported: r.get(12)?,
+                        scrobble: r.get(6)?,
+                    };
                     Ok(HistoryItem {
-                        play_id: r.get::<_, i64>(0)?.to_string(),
+                        play_id: id.to_string(),
                         track_id: TrackId(r.get(1)?),
-                        at: r.get(2)?,
+                        at: stored.play.started_at,
                         played_s: r.get(3)?,
                         completed: r.get(4)?,
                         skipped: r.get(5)?,
-                        scrobble: r.get(6)?,
+                        sendable: stored.check(&*scrobbles, now).is_ok(),
+                        scrobble: stored.scrobble,
                     })
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;

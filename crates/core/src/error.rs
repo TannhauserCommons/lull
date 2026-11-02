@@ -16,6 +16,9 @@ pub enum Error {
     BadRequest(String),
     #[error("{0}")]
     Conflict(String),
+    /// Too much of something that is limited on purpose; the message says when to try again.
+    #[error("{0}")]
+    TooManyRequests(String),
     /// No paired device's token, or a wrong pairing code (ADR-0002).
     #[error("this device isn't paired with the hub")]
     Unauthorized,
@@ -51,6 +54,7 @@ impl Error {
             Error::NotFound(_) => (StatusCode::NOT_FOUND, "not_found"),
             Error::BadRequest(_) => (StatusCode::BAD_REQUEST, "bad_request"),
             Error::Conflict(_) => (StatusCode::CONFLICT, "conflict"),
+            Error::TooManyRequests(_) => (StatusCode::TOO_MANY_REQUESTS, "too_many_requests"),
             Error::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
             Error::Unavailable { .. } => (StatusCode::SERVICE_UNAVAILABLE, "unavailable"),
             Error::Upstream { .. } => (StatusCode::BAD_GATEWAY, "upstream"),

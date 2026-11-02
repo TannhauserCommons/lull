@@ -17,9 +17,10 @@ pub struct Queued {
     pub attempts: u32,
 }
 
-/// Queues a play once; a repeated `play.ended` for the same play changes nothing.
-pub fn push(conn: &Connection, play_id: i64, play: &Play, now: i64) -> Result<()> {
-    conn.execute(
+/// Queues a play once; a repeated `play.ended` for the same play changes nothing. Whether this
+/// call queued it (`false`: it was already there).
+pub fn push(conn: &Connection, play_id: i64, play: &Play, now: i64) -> Result<bool> {
+    let queued = conn.execute(
         "INSERT OR IGNORE INTO lastfm_queue (play_id, artist, title, album, duration_s, started_at, next_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![
@@ -32,7 +33,7 @@ pub fn push(conn: &Connection, play_id: i64, play: &Play, now: i64) -> Result<()
             now
         ],
     )?;
-    Ok(())
+    Ok(queued == 1)
 }
 
 /// Up to `limit` plays whose wait is over, oldest play first (Last.fm wants them in order).

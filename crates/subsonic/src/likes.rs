@@ -40,8 +40,8 @@ pub async fn starred(svc: &Service, key: &str) -> Result<Reply, Fail> {
 
 /// A submission is a song the client played to its scrobble point: recorded as a completed
 /// play that started at `time` (ms), or one song length ago. "Now playing" (`submission=false`)
-/// has no seam yet and is accepted without effect.
-pub async fn scrobble(svc: &Service, p: &Params) -> Result<Reply, Fail> {
+/// has no seam yet and is accepted without effect. A device in private listening records nothing.
+pub async fn scrobble(svc: &Service, p: &Params, device: &str) -> Result<Reply, Fail> {
     let ids: Vec<&str> = p.all("id").collect();
     if ids.is_empty() {
         return Err(Fail::missing("id"));
@@ -64,6 +64,7 @@ pub async fn scrobble(svc: &Service, p: &Params) -> Result<Reply, Fail> {
             .map_or_else(|| lull_core::now() - i64::from(played_s), |ms| ms / 1000);
         svc.collection
             .record_play(PlayReport {
+                device: device.to_owned(),
                 track_id: track.id,
                 started_at,
                 played_s,

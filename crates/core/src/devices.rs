@@ -46,6 +46,9 @@ pub struct Device {
     pub kind: Kind,
     pub created_at: i64,
     pub last_seen: Option<i64>,
+    /// Private listening: what this device plays is recorded nowhere (not in history, taste or
+    /// Last.fm). Decided by the hub, per device, so it holds whatever the device's UI does.
+    pub private: bool,
 }
 
 /// Pairs a new device and returns it with its token, which is shown or handed over once.
@@ -58,6 +61,7 @@ pub async fn create(db: &Db, name: &str, kind: Kind) -> Result<(Device, Secret)>
         kind,
         created_at: crate::now(),
         last_seen: None,
+        private: false,
     };
     let (d, hash) = (device.clone(), digest(&token));
     let secret = (kind == Kind::Subsonic).then(|| token.clone());
@@ -98,9 +102,9 @@ pub async fn verify(db: &Db, token: &str) -> Result<Option<Device>> {
 pub async fn subsonic(db: &Db) -> Result<Vec<(Device, Secret)>> {
     db.call(|conn| {
         let mut stmt = conn.prepare(
-            "SELECT id, name, kind, created_at, last_seen, secret FROM core_devices WHERE kind = 'subsonic'",
+            "SELECT id, name, kind, created_at, last_seen, private, secret FROM core_devices WHERE kind = 'subsonic'",
         )?;
-        let rows = stmt.query_map([], |r| Ok((row(r)?, Secret::new(r.get::<_, String>(5)?))))?;
+        let rows = stmt.query_map([], |r| Ok((row(r)?, Secret::new(r.get::<_, String>(6)?))))?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     })
     .await
@@ -129,6 +133,31 @@ pub async fn rename(db: &Db, id: &str, name: &str) -> Result<()> {
     )
 }
 
+/// Turns private listening on or off for a device.
+pub async fn set_private(db: &Db, id: &str, private: bool) -> Result<()> {
+    let id = id.to_owned();
+    changed(
+        db.call(move |conn| {
+            Ok(conn.execute(
+                "UPDATE core_devices SET private = ?1 WHERE id = ?2",
+                rusqlite::params![private, id],
+            )?)
+        })
+        .await?,
+    )
+}
+
+/// Whether a device listens privately. A device that isn't paired (any more) counts as private:
+/// nothing it reports is worth recording.
+pub fn is_private(conn: &rusqlite::Connection, id: &str) -> Result<bool> {
+    Ok(conn
+        .query_row("SELECT private FROM core_devices WHERE id = ?1", [id], |r| r.get(0))
+        .or_else(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => Ok(true),
+            e => Err(e),
+        })?)
+}
+
 /// Unpairs a device: its token stops working at once.
 pub async fn revoke(db: &Db, id: &str) -> Result<()> {
     let id = id.to_owned();
@@ -138,7 +167,7 @@ pub async fn revoke(db: &Db, id: &str) -> Result<()> {
     )
 }
 
-const SELECT: &str = "SELECT id, name, kind, created_at, last_seen FROM core_devices";
+const SELECT: &str = "SELECT id, name, kind, created_at, last_seen, private FROM core_devices";
 
 fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Device> {
     Ok(Device {
@@ -147,6 +176,7 @@ fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Device> {
         kind: Kind::parse(&r.get::<_, String>(2)?),
         created_at: r.get(3)?,
         last_seen: r.get(4)?,
+        private: r.get(5)?,
     })
 }
 
@@ -195,6 +225,13 @@ mod tests {
         assert_eq!(
             subsonic(&db).await?.first().map(|(_, p)| p.expose().to_owned()),
             Some(password.expose().to_owned())
+        );
+        assert!(!phone.private);
+        set_private(&db, &phone.id, true).await?;
+        assert_eq!(verify(&db, token.expose()).await?.map(|d| d.private), Some(true));
+        assert!(
+            db.call(|c| is_private(c, "d-gone")).await?,
+            "an unknown device is private"
         );
         revoke(&db, &phone.id).await?;
         assert!(verify(&db, token.expose()).await?.is_none());

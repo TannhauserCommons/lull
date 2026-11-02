@@ -170,12 +170,13 @@ struct Hub {
     library: Arc<FakeLibrary>,
     collection: Arc<FakeCollection>,
     password: String,
+    device: String,
 }
 
 async fn hub() -> Result<Hub> {
     let db = Db::memory()?;
     db.migrate(&db::CORE)?;
-    let (_, password) = devices::create(&db, "Feishin", Kind::Subsonic).await?;
+    let (device, password) = devices::create(&db, "Feishin", Kind::Subsonic).await?;
     let library = Arc::new(FakeLibrary {
         tracks: vec![track("Paper Moon Static", 1), track("Rock & Roll", 2)],
         last_range: Mutex::new(None),
@@ -192,6 +193,7 @@ async fn hub() -> Result<Hub> {
         library,
         collection,
         password: password.expose().to_owned(),
+        device: device.id,
     })
 }
 
@@ -404,6 +406,7 @@ async fn a_scrobble_submission_is_a_completed_play_from_its_time() -> Result<()>
     assert_eq!(
         hub.collection.plays.lock().map_err(poisoned)?.as_slice(),
         [PlayReport {
+            device: hub.device.clone(),
             track_id: id,
             started_at: 1_793_534_400,
             played_s: 200,

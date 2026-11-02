@@ -68,6 +68,19 @@ pub trait Collection: Send + Sync {
     async fn record_play(&self, play: PlayReport) -> Result<()>;
 }
 
+/// Last.fm's side of History's "Send to Last.fm". Implemented by `lastfm`, for `collection`, which
+/// owns the plays and decides which may be offered.
+#[async_trait]
+pub trait Scrobbles: Send + Sync {
+    /// Why Last.fm would turn this play down (its own rule, or too old), in a sentence for the
+    /// listener; `None` when it would take it. Says nothing about the account.
+    fn refusal(&self, play: &model::LatePlay, now: i64) -> Option<String>;
+    /// Queues the plays, all or none: every one must pass `refusal`, none may have been queued
+    /// before, and Last.fm must be connected with scrobbling on (409 otherwise). They then go out
+    /// like any scrobble and publish the usual `scrobble` events.
+    async fn submit(&self, plays: Vec<model::LatePlay>) -> Result<()>;
+}
+
 /// Lyrics. Implemented by `lyrics`, for Subsonic's `getLyricsBySongId`.
 #[async_trait]
 pub trait Lyrics: Send + Sync {

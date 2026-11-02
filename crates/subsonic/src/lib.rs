@@ -113,7 +113,7 @@ impl Service {
         if endpoint == "getOpenSubsonicExtensions" {
             return Ok(extensions());
         }
-        auth::check(&self.db, p).await?;
+        let device = auth::check(&self.db, p).await?;
         match endpoint {
             "ping" => Ok(Reply::empty()),
             "getLicense" => Ok(Reply::of("license", json!({ "valid": true }))),
@@ -135,7 +135,7 @@ impl Service {
             "unstar" => likes::star(self, p, false).await,
             "getStarred2" => likes::starred(self, "starred2").await,
             "getStarred" => likes::starred(self, "starred").await,
-            "scrobble" => likes::scrobble(self, p).await,
+            "scrobble" => likes::scrobble(self, p, &device.id).await,
             "getPlaylists" => playlists::list(self).await,
             "getPlaylist" => playlists::get(self, p).await,
             "createPlaylist" => playlists::create(self, p).await,

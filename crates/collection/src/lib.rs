@@ -7,6 +7,7 @@ mod follows;
 mod import;
 mod imported_plays;
 mod lastfm_import;
+mod lastfm_send;
 mod likes;
 mod listenbrainz_import;
 mod m3u;
@@ -19,8 +20,8 @@ mod sync;
 #[cfg(test)]
 mod testing;
 
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 
 use axum::Router;
 use axum::extract::rejection::{JsonRejection, QueryRejection};
@@ -28,7 +29,7 @@ use lull_core::db::Migrations;
 use lull_core::events::Event;
 use lull_core::ids::TrackId;
 use lull_core::model::Entities;
-use lull_core::seams::Library;
+use lull_core::seams::{Library, Scrobbles};
 use lull_core::{Ctx, Error, Result, catalog};
 use rusqlite::{Connection, Transaction, params};
 use serde::Deserialize;
@@ -101,17 +102,23 @@ pub const MIGRATIONS: Migrations = Migrations {
 pub struct Service {
     ctx: Ctx,
     library: Arc<dyn Library>,
+    /// Last.fm, for History's "Send to Last.fm".
+    scrobbles: Arc<dyn Scrobbles>,
+    /// Plays sent to Last.fm in the last hour (`lastfm_send`).
+    sent: Mutex<lastfm_send::Sent>,
     /// A history import is running: one at a time, so a second tap can't double the load on Last.fm.
     importing: AtomicBool,
 }
 
-pub async fn start(ctx: &Ctx, library: Arc<dyn Library>) -> Result<Arc<Service>> {
+pub async fn start(ctx: &Ctx, library: Arc<dyn Library>, scrobbles: Arc<dyn Scrobbles>) -> Result<Arc<Service>> {
     // Subscribe before anything can publish, so no scrobble or save is missed.
     ctx.spawn(record_events(ctx.clone(), ctx.bus.subscribe()));
     settings::announce(ctx).await?;
     Ok(Arc::new(Service {
         ctx: ctx.clone(),
         library,
+        scrobbles,
+        sent: Mutex::default(),
         importing: AtomicBool::new(false),
     }))
 }
@@ -122,6 +129,7 @@ pub fn router(svc: Arc<Service>) -> Router {
         .merge(likes::routes())
         .merge(follows::routes())
         .merge(plays::routes())
+        .merge(lastfm_send::routes())
         .merge(playlists::routes())
         .merge(stats::routes())
         .merge(settings::routes())

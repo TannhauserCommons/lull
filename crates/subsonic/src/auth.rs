@@ -5,7 +5,7 @@
 
 use lull_core::config::Secret;
 use lull_core::db::Db;
-use lull_core::devices;
+use lull_core::devices::{self, Device};
 use md5::{Digest, Md5};
 
 use serde_json::json;
@@ -46,23 +46,20 @@ pub fn user(params: &Params) -> Result<Reply, Fail> {
     ))
 }
 
-pub async fn check(db: &Db, params: &Params) -> Result<(), Fail> {
+/// The paired device the call comes from.
+pub async fn check(db: &Db, params: &Params) -> Result<Device, Fail> {
     if let Some(key) = params.get("apiKey") {
         if ["u", "p", "t", "s"].iter().any(|k| params.has(k)) {
             return Err(Fail::conflicting_auth());
         }
-        return match devices::verify(db, key).await? {
-            Some(_) => Ok(()),
-            None => Err(Fail::invalid_api_key()),
-        };
+        return devices::verify(db, key).await?.ok_or_else(Fail::invalid_api_key);
     }
     let user = params.required("u")?;
     let presented = Presented::of(params)?;
     let passwords = devices::subsonic(db).await?;
-    if user == USER && passwords.iter().any(|(_, password)| presented.matches(password)) {
-        Ok(())
-    } else {
-        Err(Fail::wrong_credentials())
+    match passwords.into_iter().find(|(_, password)| presented.matches(password)) {
+        Some((device, _)) if user == USER => Ok(device),
+        _ => Err(Fail::wrong_credentials()),
     }
 }
 
