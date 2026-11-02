@@ -38,7 +38,7 @@
   /* replace a part of the page and put focus back on an equivalent control */
   function repaint(sel, markup, focusSel) {
     var el = $(sel); if (!el) return;
-    el.innerHTML = String(markup);
+    App.patch(el, markup);
     if (focusSel) { var f = $(focusSel, el); if (f) f.focus(); }
   }
   /* the server-side health check (GET /health): services and version land in the store and App.server */
@@ -466,8 +466,8 @@
       history.replaceState(null, '', '#/stats?period=' + statsUi.period);
       App.refresh();
     }
-    tl.addEventListener('click', function (e) { var b = e.target.closest('[role="tab"]'); if (b) choose(b); });
-    tl.addEventListener('keydown', function (e) {
+    ctx.on(tl, 'click', function (e) { var b = e.target.closest('[role="tab"]'); if (b) choose(b); });
+    ctx.on(tl, 'keydown', function (e) {
       var tabs = $$('[role="tab"]', tl), i = tabs.indexOf(document.activeElement);
       var d = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
       if (e.key === 'Home') d = -i; if (e.key === 'End') d = tabs.length - 1 - i;

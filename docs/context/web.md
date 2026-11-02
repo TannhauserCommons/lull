@@ -351,4 +351,12 @@ in Activity ("Listening history", plays added and duplicates).
 - Every control does something real; an endpoint that is down shows its error, not a pretend result.
 - Cover art: `App.ui.cover` puts `<img class="cover__img">` (from `/api/art`, album keys only) inside the cover span;
   `.has-art` is added once it loads and hides the recipe's `::before/::after`. Designs that draw on those
-  pseudo-elements handle `.has-art` (starlight keeps its frame line, petal never mirrors real art).
+  pseudo-elements handle `.has-art` (starlight keeps its frame line, petal never mirrors real art). A picture this page
+  has already loaded renders with `.has-art` from the start, and the player warms the next song's cover
+  (`ui.warmArt`), so art never fades in twice.
+- **Re-renders patch, they don't rebuild.** `App.refresh()` of the page already showing, the player bar, the side
+  panel and the screens' own repaints go through `App.patch(el, markup)`: only what differs changes, children matched
+  by `id`, `data-key`, `data-track-id` or `data-id`, else by position. An `<img>` with the same `src` is never touched,
+  so nothing that stayed the same reloads or flashes. A new route still renders fresh. Because a refresh keeps the
+  elements, a route's `mount` runs again on them: listen on elements with `ctx.on(target, type, fn)` (removed before
+  the next render) and keep one-off effects (entrance animations, scrolling to a section) behind `!ctx.refresh`.

@@ -960,18 +960,18 @@
       var line = document.createElement('li'); line.className = 'drop-line'; line.setAttribute('aria-hidden', 'true');
       var drag = { from: null, at: shown.length };
       var clear = function () { if (line.parentNode) line.parentNode.removeChild(line); };
-      list.addEventListener('dragstart', function (e) {
+      ctx.on(list, 'dragstart', function (e) {
         var row = e.target.closest('.trow'); if (!row) return;
         var rows = $$('.trow', list), sel = rows.filter(function (r) { return r.classList.contains('is-selected'); });
         drag.from = (row.classList.contains('is-selected') && sel.length > 1 ? sel : [row]).map(function (r) { return rows.indexOf(r); });
       });
-      list.addEventListener('dragover', function (e) {
+      ctx.on(list, 'dragover', function (e) {
         var rows = $$('.trow', list), at = rows.length;
         for (var i = 0; i < rows.length; i++) { var b = rows[i].getBoundingClientRect(); if (e.clientY < b.top + b.height / 2) { at = i; break; } }
         drag.at = at;
         if (at < rows.length) list.insertBefore(line, rows[at]); else list.appendChild(line);
       });
-      list.addEventListener('dragleave', function (e) { if (!list.contains(e.relatedTarget)) clear(); });
+      ctx.on(list, 'dragleave', function (e) { if (!list.contains(e.relatedTarget)) clear(); });
       var onEnd = function () { clear(); drag.from = null; };
       document.addEventListener('dragend', onEnd);
       ctx.onCleanup(function () { document.removeEventListener('dragend', onEnd); });

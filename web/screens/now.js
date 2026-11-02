@@ -59,7 +59,7 @@
   function withFocus(key, fn) { pendingFocus = key; try { fn(); } finally { pendingFocus = null; } }
   function swap(el, markup) {
     if (!el) return;
-    rememberFocus(el); el.innerHTML = String(markup); restoreFocus(el);
+    rememberFocus(el); App.patch(el, markup); restoreFocus(el);
   }
 
   /* =====================================================================
@@ -829,10 +829,8 @@
     </div>`;
   }
   var lastRender = 0;
-  function mount(ctx) {
-    var root = $('.now', ctx.el); if (!root) return;
-    updateTextHooks();
-    // "power on": the device lifts in and the screen wakes (reduced motion: a short fade)
+  /* "power on": the device lifts in and the screen wakes (reduced motion: a short fade) */
+  function powerOn(root) {
     var devs = $$('.now-dev, .now-devc', root);
     if (App.reducedMotion()) {
       devs.forEach(function (d) { d.classList.add('now-fade'); });
@@ -841,11 +839,16 @@
       devs.forEach(function (d) { d.classList.add('is-power-on'); });
       setTimeout(function () { devs.forEach(function (d) { d.classList.remove('is-power-on'); }); }, 1100);
     }
+  }
+  function mount(ctx) {
+    var root = $('.now', ctx.el); if (!root) return;
+    updateTextHooks();
+    if (!ctx.refresh) powerOn(root);             // once per visit, not on every refresh of the page
     lastRender = Date.now();
     lyMountAll();
     App.syncRows();
-    if (ctx.query.tab === 'queue' && window.innerWidth >= 640) App.openPanel('queue');
-    if (ctx.query.tab === 'details' || ctx.query.tab === 'lyrics') {
+    if (!ctx.refresh && ctx.query.tab === 'queue' && window.innerWidth >= 640) App.openPanel('queue');
+    if (!ctx.refresh && (ctx.query.tab === 'details' || ctx.query.tab === 'lyrics')) {
       var target = $(ctx.query.tab === 'details' ? '.now-srccard' : '.now-lycard', root);
       if (target && window.innerWidth >= 640) setTimeout(function () { target.scrollIntoView({ block: 'start', behavior: App.reducedMotion() ? 'auto' : 'smooth' }); }, 650);
     }
@@ -936,7 +939,7 @@
     view.page = PAGES[(PAGES.indexOf(view.page) + 1) % PAGES.length];
     var t = cur();
     $$('.now').forEach(function (n) { n.setAttribute('data-page', view.page); });
-    $$('[data-now="page"]').forEach(function (p) { p.innerHTML = String(pageBody(t)); });
+    $$('[data-now="page"]').forEach(function (p) { swap(p, pageBody(t)); });
     $$('.now .device__select').forEach(function (b) { b.innerHTML = view.page + window.icon('chevron-right', null, 'ic-16'); b.setAttribute('aria-label', selectLabel()); });
     updateControls();
     App.announce('Screen: ' + view.page + ' page');

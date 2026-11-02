@@ -70,7 +70,78 @@
   var uid = 0;
   function nextId(prefix) { uid += 1; return (prefix || 'id') + '-' + uid; }
 
-  App.html = html; App.raw = raw; App.esc = esc; App.icon = icon; App.$ = $; App.$$ = $$;
+  /* App.patch(el, markup): make el's contents match markup by changing only what differs, instead of rebuilding them.
+     Every re-render goes through it, so nothing that stayed the same is replaced: an <img> whose src is unchanged keeps
+     its decoded picture (a new one would reload and fade in again), rows keep their place, focus, hover and scroll,
+     and text changes in place. Children are matched by key (id, data-key, data-track-id, data-id), the rest by position
+     and tag. Returns el. */
+  function patch(el, markup) {
+    var tpl = document.createElement('template');
+    tpl.innerHTML = String(markup == null ? '' : markup);
+    patchChildren(el, decorated(el, tpl.content));
+    return el;
+  }
+  /* where the page decorates what screens render (card heads, see ui.cardHeads), the new markup gets the same
+     decoration first, so the comparison is like for like and the decoration isn't stripped and redrawn each time */
+  function decorated(el, content) {
+    if (!el.closest('#view, #ctx-body, #overlay-host')) return content;
+    var host = el.cloneNode(false), box = document.createDocumentFragment();   // a copy of el: its own head counts too
+    host.appendChild(content); box.appendChild(host);
+    ui.cardHeads(box);
+    return host;
+  }
+  function nodeKey(n) {
+    if (n.nodeType !== 1) return null;
+    var k = n.getAttribute('id') || n.getAttribute('data-key') || n.getAttribute('data-track-id') || n.getAttribute('data-id');
+    return k ? n.nodeName + '#' + k : null;
+  }
+  function patchChildren(parent, next) {
+    var keyed = {}, used = new Set(), cur = parent.firstChild, n, k;
+    for (n = parent.firstChild; n; n = n.nextSibling) { k = nodeKey(n); if (k) (keyed[k] = keyed[k] || []).push(n); }
+    for (var want = next.firstChild; want; want = n) {
+      n = want.nextSibling;
+      while (cur && used.has(cur)) cur = cur.nextSibling;
+      k = nodeKey(want);
+      var match = k ? (keyed[k] || []).shift() : unkeyedMatch(cur, want, used);
+      if (match) {
+        used.add(match);
+        if (match === cur) cur = cur.nextSibling; else parent.insertBefore(match, cur);
+        patchNode(match, want);
+      } else {
+        used.add(want);
+        parent.insertBefore(want, cur);         // moves it out of the template
+      }
+    }
+    for (n = parent.firstChild; n; n = k) { k = n.nextSibling; if (!used.has(n)) parent.removeChild(n); }
+  }
+  /* the next unclaimed, unkeyed old node from the cursor, if it is the same kind of node */
+  function unkeyedMatch(cur, want, used) {
+    for (var n = cur; n; n = n.nextSibling) {
+      if (used.has(n) || nodeKey(n)) continue;
+      return n.nodeName === want.nodeName ? n : null;
+    }
+    return null;
+  }
+  function patchNode(old, want) {
+    if (old.nodeType !== 1) { if (old.nodeValue !== want.nodeValue) old.nodeValue = want.nodeValue; return; }
+    if (old.nodeName === 'IMG' && old.getAttribute('src') === want.getAttribute('src')) return;   // same picture: leave it be
+    patchAttrs(old, want);
+    if (old.nodeName === 'TEXTAREA') { if (old !== document.activeElement) old.value = want.value; return; }
+    patchChildren(old, want);
+    if (old.nodeName === 'SELECT') old.value = want.value || (want.querySelector('option[selected]') || {}).value || old.value;
+  }
+  function patchAttrs(old, want) {
+    var i, a, attrs = want.attributes;
+    for (i = 0; i < attrs.length; i++) { a = attrs[i]; if (old.getAttribute(a.name) !== a.value) old.setAttribute(a.name, a.value); }
+    attrs = old.attributes;
+    for (i = attrs.length - 1; i >= 0; i--) { a = attrs[i]; if (!want.hasAttribute(a.name)) old.removeAttribute(a.name); }
+    if (old.nodeName === 'INPUT') {                // properties the user may have changed since the last render
+      if (old.checked !== want.checked) old.checked = want.checked;
+      if (old.type !== 'file' && old !== document.activeElement && old.value !== want.value) old.value = want.value;
+    }
+  }
+
+  App.html = html; App.raw = raw; App.esc = esc; App.icon = icon; App.$ = $; App.$$ = $$; App.patch = patch;
   function fmtSize(mb) {                    // "30.2 MB" / "1.4 GB"
     mb = +mb || 0;
     return mb >= 1000 ? (Math.round(mb / 100) / 10) + ' GB' : (mb >= 100 ? Math.round(mb) : Math.round(mb * 10) / 10) + ' MB';
@@ -307,15 +378,21 @@
     if (!isRefresh) M.nextRoute();                    // reads made by the previous route stop re-rendering
 
     cleanups.forEach(function (fn) { try { fn(); } catch (e) { console.error(e); } }); cleanups = [];
-    var view = $('#view');
-    var ctx = { params: params, query: loc.query, el: view, route: route,
-      onCleanup: function (fn) { cleanups.push(fn); } };
+    var view = $('#view'), same = isRefresh && lastPath === loc.path;
+    /* ctx.refresh: this render updates the page already showing (mount runs again on the same elements, so one-off
+       effects check it); ctx.on(target, type, fn, opts) listens until the next render */
+    var ctx = { params: params, query: loc.query, el: view, route: route, refresh: same,
+      onCleanup: function (fn) { cleanups.push(fn); },
+      on: function (target, type, fn, opts) {
+        target.addEventListener(type, fn, opts);
+        cleanups.push(function () { target.removeEventListener(type, fn, opts); });
+      } };
     App.current = { path: loc.path, params: params, query: loc.query, route: route };
 
     var markup;
     if (!route) markup = notFound(loc.path);
     else { try { markup = route.render(ctx); } catch (e) { console.error(e); markup = renderError(e); } }
-    view.innerHTML = String(markup || '');
+    if (same) patch(view, markup || ''); else view.innerHTML = String(markup || '');   // a new page starts fresh
     if (route && route.mount) { try { route.mount(ctx); } catch (e) { console.error(e); } }
 
     $('#app').setAttribute('data-view', (route && route.view) || 'page');
@@ -382,28 +459,43 @@
   };
   /* default coverArt slot: one span; the .c1-.c8 recipe draws the art in CSS until (and unless) the real cover
      loads: <img class="cover__img"> from /api/art, and .has-art on the span once it has (see the load listener) */
-  function coverMarkup(c) {
-    return '<span class="' + c.cls + '" style="--cover-size-base:' + c.size + '"' + c.attrs + '>' + artImg(c.key, c.size) + '</span>';
+  function coverMarkup(c) { return coverSpan(c.cls, ' style="--cover-size-base:' + c.size + '"' + c.attrs, c.key, c.size); }
+  /* a picture this page has already loaded renders as shown from the start (.has-art, no lazy load), so a cover drawn
+     again (another screen, a new row) shows its art at once instead of fading in over the recipe each time */
+  var artReady = new Set();
+  function coverSpan(cls, attrs, key, size) {
+    var src = artSrc(key, size), ready = artReady.has(src);
+    return '<span class="' + cls + (ready ? ' has-art' : '') + '"' + attrs + '>' + (src ? '<img class="cover__img"' +
+      (ready ? '' : ' loading="lazy" decoding="async"') + ' alt="" data-art="' + esc(key) + '" src="' + esc(src) + '">' : '') + '</span>';
   }
   /* albums whose art 404'd twice: not asked for again for ART_AGAIN. The hub answers 404 while it is still fetching a
      cover from outside (api.md /api/art), so one 404 gets one retry, and a miss is never final for the session */
   var artMissing = {}, ART_RETRY = 5000, ART_AGAIN = 10 * 60 * 1000;
   /* the picture for an album or artist key: a catalog entity's own URL (album `art`, artist `image`, same origin through
      /api/catalog/art, ADR-0008) at the size wanted, else the library's /api/art for albums */
-  function artImg(key, size) {
+  function artSrc(key, size) {
     if (Date.now() - (artMissing[key] || 0) < ART_AGAIN) return '';
     var px = parseInt(size, 10), want = /%$/.test(size) || !px ? 256 : px <= 96 ? 96 : px <= 256 ? 256 : 512;
     var e = /^ar-/.test(key) ? M.artist(key) : /^al-/.test(key) ? M.album(key) : null;
     var own = e && (e.art || e.image);
     if (!own && !/^al-/.test(key)) return '';
     if (!own && e && e.saved === 'none') return '';   // library art exists only for saved albums: asking would 404
-    var src = own ? sized(own, want) : App.artUrl(key, want);
-    return '<img class="cover__img" loading="lazy" decoding="async" alt="" data-art="' + esc(key) + '" src="' + esc(src) + '">';
+    return own ? sized(own, want) : App.artUrl(key, want);
   }
+  /* fetch and decode a track's cover ahead of time (the player warms the next song's), so it shows at once when drawn */
+  ui.warmArt = function (t) {
+    if (!t) return;
+    [96, 256].forEach(function (px) {
+      var src = artSrc(t.albumId, px); if (!src || artReady.has(src)) return;
+      var im = new Image(); im.src = src;
+      im.decode().then(function () { artReady.add(src); }, function () { /* no cover: the recipe stays */ });
+    });
+  };
   function sized(url, px) { return /[?&]size=/.test(url) ? url.replace(/([?&]size=)\d+/, '$1' + px) : url + (url.indexOf('?') < 0 ? '?' : '&') + 'size=' + px; }
   App.artUrl = function (albumId, size) { return M.url('/api/art/' + encodeURIComponent(albumId) + '?size=' + size); };
   document.addEventListener('load', function (e) {
-    var img = e.target; if (img.tagName === 'IMG' && img.classList.contains('cover__img')) img.parentNode.classList.add('has-art');
+    var img = e.target; if (img.tagName !== 'IMG' || !img.classList.contains('cover__img')) return;
+    artReady.add(img.getAttribute('src')); img.parentNode.classList.add('has-art');
   }, true);
   document.addEventListener('error', function (e) {
     var img = e.target; if (img.tagName !== 'IMG' || !img.classList.contains('cover__img')) return;
@@ -424,7 +516,7 @@
     return raw('<span class="mosaic" style="--cover-size-base:' + px + '"' + (label ? ' role="img" aria-label="' + esc(label) + '"' : ' aria-hidden="true"') + '>' +
       keys.map(function (k) {
         var c = { key: k, recipe: App.coverClass(k), size: '100%', cls: 'cover ' + App.coverClass(k), attrs: '', round: false, label: '', mosaic: true };
-        return String(App.slot('coverArt', c, function (x) { return '<span class="' + x.cls + '">' + artImg(x.key, '100%') + '</span>'; }));
+        return String(App.slot('coverArt', c, function (x) { return coverSpan(x.cls, '', x.key, '100%'); }));
       }).join('') + '</span>');
   };
 
@@ -433,7 +525,8 @@
   /* Saved / Soulseek badge for a track; flips in place when a save completes (App.syncRows) */
   ui.sourceBadge = function (trackOrId) {
     var id = typeof trackOrId === 'string' ? trackOrId : trackOrId.id;
-    return html`<span class="src-badge" data-src-badge="${id}">${App.isSaved(id) ? ui.savedBadge() : ui.soulseekBadge()}</span>`;
+    var saved = App.isSaved(id);
+    return html`<span class="src-badge" data-src-badge="${id}" data-was="${saved ? 'saved' : 'slsk'}">${saved ? ui.savedBadge() : ui.soulseekBadge()}</span>`;
   };
   /* quality chip: outlined by default; { solid: true } for player bar / device; { button: true } opens source details */
   ui.qualityChip = function (fmt, opts) {
@@ -707,7 +800,7 @@
         cardMeta(card, first);
         return;
       }
-      var by = card.getAttribute('aria-labelledby'), lab = by && document.getElementById(by);
+      var by = card.getAttribute('aria-labelledby'), lab = by && (scope.querySelector('[id="' + by + '"]') || document.getElementById(by));
       var title = card.getAttribute('aria-label') || (lab ? lab.textContent : '') || card.getAttribute('data-title') || '';
       if (!title) return;
       var head = document.createElement('div');
@@ -1932,14 +2025,14 @@
       var u = $('use', b); if (u) u.setAttribute('href', '#i-' + (on ? 'heart-fill' : 'heart'));
     });
     $$('[data-src-badge]').forEach(function (el) {
-      var id = el.getAttribute('data-src-badge'), want = App.isSaved(id) ? 'saved' : 'slsk';
+      var want = App.isSaved(el.getAttribute('data-src-badge')) ? 'saved' : 'slsk';
       if (el.getAttribute('data-was') === want) return;
       el.setAttribute('data-was', want);
-      el.innerHTML = String(want === 'saved' ? ui.savedBadge() : ui.soulseekBadge());
+      patch(el, want === 'saved' ? ui.savedBadge() : ui.soulseekBadge());
     });
     $$('[data-src-mini]').forEach(function (el) {
       var on = App.isSaved(el.getAttribute('data-src-mini'));
-      el.innerHTML = window.icon(on ? 'saved' : 'soulseek', on ? 'Saved' : 'Soulseek');
+      if (el._saved !== on) { el._saved = on; patch(el, window.icon(on ? 'saved' : 'soulseek', on ? 'Saved' : 'Soulseek')); }
     });
     $$('[data-save-btn]').forEach(function (el) {
       var keep = el.className.split(/\s+/).filter(function (c) { return c && c !== 'btn' && c !== 'btn-save'; }).join(' ');
@@ -2191,18 +2284,18 @@
     if (tabs.indexOf(state.ctxTab) < 0) state.ctxTab = tabs[0];
     var i = tabs.indexOf(state.ctxTab);
     $('#ctx-tabs').style.setProperty('--n', tabs.length); $('#ctx-tabs').style.setProperty('--i', i);
-    $('#ctx-tabs').innerHTML = '<span class="seg__ind" aria-hidden="true"></span>' + tabs.map(function (id) {
+    patch($('#ctx-tabs'), '<span class="seg__ind" aria-hidden="true"></span>' + tabs.map(function (id) {
       var on = id === state.ctxTab, label = two && id === 'queue' ? panels.queue.label + ' + ' + panels.lyrics.label : panels[id].label;
       return '<button class="seg__btn" role="tab" id="ctx-tab-' + id + '" aria-controls="ctx-body" aria-selected="' + on + '" tabindex="' + (on ? 0 : -1) + '" data-ctx-tab="' + id + '">' + esc(label) + (id === 'activity' && activeJobs() ? ' <span class="badge-count">' + activeJobs() + '</span>' : '') + '</button>';
-    }).join('');
+    }).join(''));
     var body = $('#ctx-body'), body2 = $('#ctx-body-2'), p = panels[state.ctxTab], second = two && state.ctxTab === 'queue' ? panels.lyrics : null;
     var title = $('#ctx-title'); if (title) title.textContent = p ? p.label.toLowerCase() : '';
     updateCtxMeta();
     host.toggleAttribute('data-two', !!second);
     body.setAttribute('aria-labelledby', 'ctx-tab-' + state.ctxTab);
-    body.innerHTML = p ? String(p.render(body) || '') : '';
+    patch(body, p ? p.render(body) || '' : '');
     body2.hidden = !second;
-    body2.innerHTML = second ? String(second.render(body2) || '') : '';
+    patch(body2, second ? second.render(body2) || '' : '');
     if (p && p.mount) p.mount(body);
     if (second && second.mount) second.mount(body2);
     renderStrip();
@@ -2212,10 +2305,10 @@
   var STRIP_ICONS = { queue: 'queue', lyrics: 'lyrics', activity: 'activity' };
   function renderStrip() {
     var strip = $('#ctx-strip'); if (!strip) return;
-    strip.innerHTML = panelOrder.filter(function (id) { return panels[id]; }).map(function (id) {
+    patch(strip, panelOrder.filter(function (id) { return panels[id]; }).map(function (id) {
       var n = id === 'activity' ? activeJobs() : 0;
       return String(html`<button class="btn-icon btn-icon--bare" data-act="panel-expand" data-tab="${id}" aria-label="${panels[id].label}${n ? ', ' + n + ' running' : ''}" data-tip="${panels[id].label}">${icon(STRIP_ICONS[id] || 'expand')}${n ? html`<span class="btn-icon__badge">${n}</span>` : ''}</button>`);
-    }).join('');
+    }).join(''));
   }
   /* the panel's meta line: #ctx[data-meta] + .region-meta (panel def meta(), e.g. queue "14 songs, 52 min") */
   function updateCtxMeta() {
@@ -2256,9 +2349,9 @@
     mini.setAttribute('data-status', idle ? 'idle' : st);
     var now = $('#pbar-now');
     if (idle) {
-      now.innerHTML = String(html`<span class="bezel-thumb bezel-thumb--empty" aria-hidden="true"><span></span></span><div class="pbar__idle">${icon('sparkle')}<span>Search or pick something from Home</span></div>`);
+      patch(now, html`<span class="bezel-thumb bezel-thumb--empty" aria-hidden="true"><span></span></span><div class="pbar__idle">${icon('sparkle')}<span>Search or pick something from Home</span></div>`);
     } else {
-      now.innerHTML = String(html`<a class="bezel-thumb" href="#/now" aria-label="Open Now Playing: ${t.title}" data-tip="Now Playing">${ui.cover(t, 52)}</a>
+      patch(now, html`<a class="bezel-thumb" href="#/now" aria-label="Open Now Playing: ${t.title}" data-tip="Now Playing">${ui.cover(t, 52)}</a>
         <div class="pbar__text">
           <div class="pbar__title"><a href="#/album/${t.albumId}">${t.title}</a></div>
           <div class="pbar__artist"><a href="#/artist/${t.artistId}">${t.artist}</a></div>
@@ -2274,7 +2367,7 @@
         : st === 'stalled' || (st === 'buffering' && ps.fallback) ? html`<button class="btn btn--quiet" data-act="pick-source">Choose manually</button>`
         : st === 'ended' ? html`<button class="btn btn--quiet" data-act="start-radio-current">Start radio</button>` : '';
       var ic = err ? 'warning' : st === 'finding' || st === 'queued' || st === 'buffering' ? 'soulseek' : st === 'stalled' ? 'refresh' : ps.crossfade ? 'shuffle' : 'info';
-      stEl.innerHTML = String(html`${icon(ic)}<span>${line}</span>${acts}`);
+      patch(stEl, html`${icon(ic)}<span>${line}</span>${acts}`);
       stEl.classList.toggle('is-error', err); stEl.hidden = false;
     } else { stEl.hidden = true; stEl.innerHTML = ''; }
     // transport
@@ -2325,6 +2418,7 @@
   /* the format actually playing: the picked peer's file for Soulseek, the library file otherwise */
   function playingFormat(t) { return ps.peer && ps.status !== 'library' ? ps.peer.format || t.format : t.format; }
   App.on('player', renderBar);
+  App.on('player', function (k) { if (k === 'track' || k === 'queue') ui.warmArt(P.upNext(1)[0]); });
   App.on('save', function (d) { if (d.id === P.currentId()) renderBar(); });
   App.on('like', function (d) { if (d.id === P.currentId()) App.syncRows(); });
 

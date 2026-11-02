@@ -50,7 +50,7 @@
     var el = $('[data-region="' + name + '"]', root || document); if (!el) return;
     var a = document.activeElement, had = a && el.contains(a);
     var key = had ? (a.getAttribute('data-act') || '') + '|' + (a.getAttribute('data-id') || a.getAttribute('data-q') || '') : null;
-    el.innerHTML = String(markup);
+    App.patch(el, markup);
     App.syncRows();
     if (had) {
       var back = $$('[data-act]', el).filter(function (b) { return (b.getAttribute('data-act') || '') + '|' + (b.getAttribute('data-id') || b.getAttribute('data-q') || '') === key; })[0];
@@ -889,8 +889,8 @@
   function mountSearch(ctx) {
     var input = $('#disc-q'), t = null;
     if (input) {
-      input.addEventListener('input', function () { clearTimeout(t); t = setTimeout(function () { setQuery(input.value); }, TYPE_PAUSE_MS); });
-      input.addEventListener('keydown', function (e) {
+      ctx.on(input, 'input', function () { clearTimeout(t); t = setTimeout(function () { setQuery(input.value); }, TYPE_PAUSE_MS); });
+      ctx.on(input, 'keydown', function (e) {
         if (e.key === 'Enter') { clearTimeout(t); setQuery(input.value); startSoulseek(S.seq); input.blur(); }
         if (e.key === 'Escape' && input.value) { e.stopPropagation(); input.value = ''; setQuery(''); }
       });

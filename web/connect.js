@@ -181,7 +181,7 @@
     var f = document.activeElement, mine = f && open.el.contains(f);
     if (mine && f.matches('input[type="range"]')) return;          // don't yank a slider mid-drag
     var sel = mine && f.getAttribute('data-act') ? '[data-act="' + f.getAttribute('data-act') + '"]' + (f.getAttribute('data-id') ? '[data-id="' + f.getAttribute('data-id') + '"]' : '') : null;
-    $('.cx-body', open.el).innerHTML = String(pickerBody());
+    App.patch($('.cx-body', open.el), pickerBody());
     var again = sel && open.el.querySelector(sel); if (again) again.focus();
     if (open.place) open.place();
   }
