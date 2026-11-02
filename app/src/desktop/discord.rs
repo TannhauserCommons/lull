@@ -340,8 +340,16 @@ fn open_pipes() -> impl Iterator<Item = Box<dyn Pipe>> {
         .find_map(|v| std::env::var(v).ok())
         .unwrap_or_else(|| "/tmp".to_owned());
     let dirs = ["", "app/com.discordapp.Discord/", "snap.discord/"];
-    dirs.into_iter()
-        .flat_map(move |dir| (0..10).map(move |n| format!("{base}/{dir}discord-ipc-{n}")))
+    let paths: Vec<String> = dirs
+        .iter()
+        .flat_map(|dir| {
+            (0..10)
+                .map(|n| format!("{base}/{dir}discord-ipc-{n}"))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    paths
+        .into_iter()
         .filter_map(|path| UnixStream::connect(path).ok().map(|s| Box::new(s) as Box<dyn Pipe>))
 }
 
