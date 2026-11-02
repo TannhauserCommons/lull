@@ -226,6 +226,7 @@
 :root[data-design="lull"] .app[data-screen="library"] .main::before { content: "library"; }
 :root[data-design="lull"] .app[data-screen="liked"] .main::before { content: "liked"; }
 :root[data-design="lull"] .app[data-screen="history"] .main::before { content: "history"; }
+:root[data-design="lull"] .app[data-screen="downloads"] .main::before { content: "downloads"; }
 :root[data-design="lull"] .app[data-screen="following"] .main::before { content: "following"; }
 :root[data-design="lull"] .app[data-screen="album"] .main::before { content: "album"; }
 :root[data-design="lull"] .app[data-screen="artist"] .main::before { content: "artist"; }
