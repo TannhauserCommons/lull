@@ -480,7 +480,7 @@
      18 a minute); the header field uses the same pause */
   var SLSK_REST_MS = 1500, SONGS_MAX = 20, PENDING_MAX_MS = 20000, TYPE_PAUSE_MS = 350;
   var CATALOG = { deezer: 'Deezer', itunes: 'iTunes', musicbrainz: 'MusicBrainz', 'musicbrainz-albums': 'MusicBrainz', lastfm: 'Last.fm', library: 'your library' };
-  var S = { q: null, seq: 0, showAll: false, tab: 'all', loading: false, error: null, cat: null,
+  var S = { q: null, seq: 0, showAll: false, showAllOnly: false, tab: 'all', loading: false, error: null, cat: null,
     slsk: false, slskStarted: false, slskTimer: null, slskMissing: false, searchId: null, files: 0, peers: 0, done: true, slskError: null,
     peerSongs: {}, peerOrder: [], albums: {}, albumOrder: [], onlySoulseek: [] };
 
@@ -491,7 +491,7 @@
     clearTimeout(S.slskTimer);
     /* while the next answer comes, the last one stays on screen, dimmed, instead of a skeleton per keystroke */
     var stale = q ? (S.cat && !S.loading ? S.cat : S.stale) : null;
-    Object.assign(S, { stale: stale, q: q, showAll: false, loading: !!q, error: null, cat: null, slsk: q.length >= 3, slskStarted: false, slskMissing: false,
+    Object.assign(S, { stale: stale, q: q, showAll: false, showAllOnly: false, loading: !!q, error: null, cat: null, slsk: q.length >= 3, slskStarted: false, slskMissing: false,
       searchId: null, files: 0, peers: 0, done: true, slskError: null, peerSongs: {}, peerOrder: [], albums: {}, albumOrder: [], onlySoulseek: [] });
     if (!q) return;
     M.api('/api/search?q=' + encodeURIComponent(q)).then(function (res) {
@@ -722,10 +722,14 @@
   function soulseekBody() {
     if (!S.slsk) return '';
     var only = S.onlySoulseek.map(M.track).filter(Boolean);
+    /* a popular query leaves hundreds of songs only peers know (196 for "toro": 8,000 DOM nodes, most of the page's weight and
+       its style work): the first SONGS_MAX show, the rest on request, as in Songs above */
+    var shownOnly = S.showAllOnly ? only : only.slice(0, SONGS_MAX);
     return html`<section class="card disc-card disc-only" aria-labelledby="disc-h-only">
       ${ui.labelRule('only on soulseek', { id: 'disc-h-only' })}
       ${scanLine()}
-      ${only.length ? html`<ol class="tlist tlist--dense" data-ids="${only.map(function (t) { return t.id; }).join(',')}" aria-label="Only on Soulseek">${only.map(songRow)}</ol>`
+      ${only.length ? html`<ol class="tlist tlist--dense" data-ids="${shownOnly.map(function (t) { return t.id; }).join(',')}" aria-label="Only on Soulseek">${shownOnly.map(songRow)}</ol>
+        ${shownOnly.length < only.length ? html`<button class="btn btn--quiet disc-more" data-act="disc-only-all">Show all ${plural(only.length, 'song')}</button>` : ''}`
         : S.done && S.slskStarted && !S.slskError && !S.slskMissing ? html`<p class="disc-note">${S.peerOrder.length
           ? 'Every song peers share here is in the catalogs above.' : 'Soulseek found nothing for these words.'}</p>` : ''}
       ${streaming() ? ui.skeleton('row', 2) : ''}
@@ -917,6 +921,10 @@
   App.action('disc-show-all', function () {
     S.showAll = true; paint('results', resultsBody());
     var rows = $$('.disc-songs .trow'); if (rows[5]) rows[5].focus();
+  });
+  App.action('disc-only-all', function () {
+    S.showAllOnly = true; paint('results', resultsBody());
+    var rows = $$('.disc-only .trow'); if (rows[SONGS_MAX]) rows[SONGS_MAX].focus();
   });
   App.action('disc-recent-remove', function (el) {
     var q = el.getAttribute('data-q');
