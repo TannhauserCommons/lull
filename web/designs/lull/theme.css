@@ -417,6 +417,12 @@
   background: linear-gradient(90deg, var(--l-switch) calc(var(--cache-frac, 0) * 100%), color-mix(in srgb, var(--l-card) 70%, transparent) 0);
 }
 :root[data-design="lull"] .header .tray__pill--cache::after { content: attr(data-cache-used) " / " attr(data-cache-cap) " GB"; font-size: .8125rem; white-space: nowrap; }
+/* 1,100 to 1,179: the cache tile drops its little bar and the search its / hint, so the search field keeps room for "Search music"
+   (it was squeezed to 90 px and the status tray ran over it) */
+@media (min-width: 1100px) and (max-width: 1179px) {
+  :root[data-design="lull"] .header .tray__pill--cache::before { display: none; }
+  :root[data-design="lull"] .header__search .kbd { display: none; }
+}
 /* status dots: ringed so they read on any tile; the shape already differs (ok = circle, warn = diamond) */
 :root[data-design="lull"] .tray .sg { width: 15px; height: 15px; margin: 0 -2px; overflow: visible; filter: drop-shadow(1.2px 0 0 #fff9fe) drop-shadow(-1.2px 0 0 #fff9fe) drop-shadow(0 1.2px 0 #fff9fe) drop-shadow(0 -1.2px 0 #fff9fe); }
 /* compact tray (tablet, phone): the worst state in words (.tray__word, "all good" included), never colour alone */
