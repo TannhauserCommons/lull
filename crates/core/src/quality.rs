@@ -44,6 +44,13 @@ impl Quality {
         }
     }
 
+    /// Whether a file with this quality is within a streaming cap of `max_kbps` (0 = no cap).
+    /// Lossless is above any cap; a lossy file of unknown bitrate counts as within it, since
+    /// lossy files are small either way.
+    pub fn within(&self, max_kbps: u32) -> bool {
+        max_kbps == 0 || (!self.lossless && self.kbps <= max_kbps)
+    }
+
     /// Whether a file with this quality and `format` (lowercase extension) passes `min`.
     /// A lossy file of unknown bitrate fails any bitrate floor: it can't be shown to pass.
     pub fn meets(&self, format: &str, min: &Minimum) -> bool {
@@ -122,6 +129,11 @@ pub struct StreamProfile {
     pub minimum: Minimum,
     pub pick: Pick,
     pub below: StreamBelow,
+    /// The highest lossy bitrate worth streaming, in kbps; 0 = no cap. Copies within it are
+    /// taken before copies above it, and lossless counts as above any cap. Streaming only:
+    /// saving keeps its own profile.
+    #[serde(default)]
+    pub max_kbps: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -146,6 +158,7 @@ impl Default for StreamProfile {
             },
             pick: Pick::Fastest,
             below: StreamBelow::PlayBest,
+            max_kbps: 0,
         }
     }
 }
@@ -257,6 +270,20 @@ mod tests {
                 ..flac_only
             }
         ));
+    }
+
+    #[test]
+    fn a_streaming_cap_puts_lossless_and_higher_bitrates_above_it() -> serde_json::Result<()> {
+        assert!(q(true, 900).within(0), "no cap");
+        assert!(!q(true, 900).within(320), "lossless is above any cap");
+        assert!(q(false, 256).within(256));
+        assert!(!q(false, 320).within(256));
+        assert!(q(false, 0).within(128), "unknown lossy bitrate counts as within");
+        let stored: StreamProfile = serde_json::from_str(
+            r#"{"minimum":{"losslessOnly":false,"kbps":192},"pick":"fastest","below":"playBest"}"#,
+        )?;
+        assert_eq!(stored.max_kbps, 0, "profiles stored before the cap have none");
+        Ok(())
     }
 
     #[test]
