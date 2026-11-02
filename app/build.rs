@@ -3,7 +3,9 @@
 //!   `dist/`, which `tauri.conf.json` embeds. Only these: `web/` also holds the full web UI, which the
 //!   app loads from the hub, and untracked `node_modules`/`vendor` that must never end up in the binary;
 //! - fetches the slskd sidecar for desktop targets: the pinned release zip, checked by sha256, then
-//!   its binary as `binaries/slskd-<target>` (Tauri's sidecar naming) and its licence.
+//!   its binary as `binaries/slskd-<target>` (Tauri's sidecar naming) and its licence;
+//! - fetches yt-dlp and Deno for the hub's YouTube source the same way, as `binaries/yt-dlp-<target>`
+//!   and `binaries/deno-<target>` (docs/context/youtube.md).
 
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -46,12 +48,82 @@ struct Sidecar {
     sha256: &'static str,
 }
 
+/// yt-dlp and the JavaScript runtime it needs for YouTube, the versions the server image pins
+/// (`Dockerfile`). Bump them there and here together; the hashes are the releases' own
+/// (yt-dlp's `SHA2-256SUMS`; `gh release view v<version> --repo denoland/deno --json assets`).
+const YTDLP_VERSION: &str = "2026.10.26";
+const DENO_VERSION: &str = "2.9.8";
+const YOUTUBE: &[Tool] = &[
+    Tool {
+        name: "yt-dlp",
+        target: "x86_64-pc-windows-msvc",
+        asset: "yt-dlp.exe",
+        sha256: "f5389d3698ecde4ef06f4e6b1ce0294fe9ac1396228c8990b8d3416d6d177a7d",
+        zipped: None,
+    },
+    Tool {
+        name: "yt-dlp",
+        target: "x86_64-unknown-linux-gnu",
+        asset: "yt-dlp_linux",
+        sha256: "767ba9dce7052aa196f8b12652f433d76de128ba168966fa84b6394d5e6c6795",
+        zipped: None,
+    },
+    Tool {
+        name: "deno",
+        target: "x86_64-pc-windows-msvc",
+        asset: "deno-x86_64-pc-windows-msvc.zip",
+        sha256: "cba84b26e0df5ae7f74fc66b86a95b866872a86292ebd84fa1e959927edd93bf",
+        zipped: Some("deno.exe"),
+    },
+    Tool {
+        name: "deno",
+        target: "x86_64-unknown-linux-gnu",
+        asset: "deno-x86_64-unknown-linux-gnu.zip",
+        sha256: "e890975bc2549807bbcc0b584ffafda72cc7c93349dd99c80483dd784f6c4609",
+        zipped: Some("deno"),
+    },
+];
+
+/// A program shipped beside the app: one release asset, the binary itself or a zip holding it.
+struct Tool {
+    name: &'static str,
+    target: &'static str,
+    asset: &'static str,
+    sha256: &'static str,
+    zipped: Option<&'static str>,
+}
+
+impl Tool {
+    fn version(&self) -> &'static str {
+        match self.name {
+            "deno" => DENO_VERSION,
+            _ => YTDLP_VERSION,
+        }
+    }
+
+    fn url(&self) -> String {
+        match self.name {
+            "deno" => format!(
+                "https://github.com/denoland/deno/releases/download/v{DENO_VERSION}/{}",
+                self.asset
+            ),
+            _ => format!(
+                "https://github.com/yt-dlp/yt-dlp/releases/download/{YTDLP_VERSION}/{}",
+                self.asset
+            ),
+        }
+    }
+}
+
 fn main() -> io::Result<()> {
     stage_web()?;
     let target = std::env::var("TARGET").map_err(io::Error::other)?;
     // Phones get no hub, so no slskd (ADR-0002).
     if !target.contains("android") {
         fetch_slskd(&target)?;
+        for tool in YOUTUBE.iter().filter(|t| t.target == target) {
+            fetch_tool(tool)?;
+        }
     }
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         // App commands get permissions (allow-<name>) so capabilities can grant them one by one.
@@ -143,6 +215,55 @@ fn fetch_slskd(target: &str) -> io::Result<()> {
         fs::set_permissions(&exe, fs::Permissions::from_mode(0o755))?;
     }
     fs::write(&stamp, sidecar.sha256)
+}
+
+/// Like slskd: the verified asset is kept in `binaries/`, and the binary is put in place again
+/// whenever its stamp doesn't name the pinned asset.
+fn fetch_tool(tool: &Tool) -> io::Result<()> {
+    let dir = Path::new(BINARIES);
+    fs::create_dir_all(dir)?;
+    let suffix = if tool.target.contains("windows") { ".exe" } else { "" };
+    let exe = dir.join(format!("{}-{}{suffix}", tool.name, tool.target));
+    let stamp = dir.join(format!("{}-{}.sha256", tool.name, tool.target));
+    println!("cargo:rerun-if-changed={}", exe.display());
+    if fs::read_to_string(&stamp).is_ok_and(|s| s == tool.sha256) && exe.is_file() {
+        return Ok(());
+    }
+    // A zip is kept to unpack again; a bare binary is the file itself.
+    let kept = tool
+        .zipped
+        .map(|_| dir.join(format!("{}-{}-{}", tool.name, tool.version(), tool.asset)));
+    let bytes = match kept.as_ref().map(fs::read) {
+        Some(Ok(bytes)) if sha256(&bytes) == tool.sha256 => bytes,
+        _ => {
+            let url = tool.url();
+            let bytes = download(&url)?;
+            let got = sha256(&bytes);
+            if got != tool.sha256 {
+                return Err(io::Error::other(format!(
+                    "{url} has sha256 {got}, not the pinned {}",
+                    tool.sha256
+                )));
+            }
+            if let Some(kept) = &kept {
+                fs::write(kept, &bytes)?;
+            }
+            bytes
+        }
+    };
+    match tool.zipped {
+        Some(entry) => {
+            let mut archive = zip::ZipArchive::new(io::Cursor::new(bytes)).map_err(io::Error::other)?;
+            extract(&mut archive, entry, &exe)?;
+        }
+        None => fs::write(&exe, &bytes)?,
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&exe, fs::Permissions::from_mode(0o755))?;
+    }
+    fs::write(&stamp, tool.sha256)
 }
 
 fn download(url: &str) -> io::Result<Vec<u8>> {

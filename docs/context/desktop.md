@@ -27,9 +27,9 @@ The Tauri v2 project in `app/` (its own Cargo workspace; ADR-0006) shows the hub
 | `app/src/desktop/discord.rs` | Discord Rich Presence over Discord's IPC pipe; `APPLICATION_ID` is lull's Discord application |
 | `app/src/desktop/settings.rs` | The desktop's settings: the hub choice and this app's token, window options |
 | `app/src/desktop/platform/` | Windows taskbar theme (registry watch), slskd's job object, the taskbar's thumbnail buttons (`taskbar.rs`, glyphs drawn in `glyphs.rs`), a sleeping webview, the browser; Linux tray host, button layout, compositing, media keys |
-| `app/build.rs` | Stages the web files the bundled page needs into `app/dist/`; fetches slskd (sha256-pinned) into `app/binaries/`; declares command permissions |
-| `app/tauri.conf.json`, `tauri.windows.conf.json`, `tauri.linux.conf.json` | Shared config (updater key and endpoint, the asset protocol Android's download covers use, scoped to `**/lull-art/*`, and the bundled pages' CSP: Tauri leaves its `style-src` alone, since a nonce it adds would make browsers ignore `'unsafe-inline'` and drop every `style="…"` the pages render); the desktop configs add the slskd sidecar and its licence |
-| `app/licenses/THIRD-PARTY.md` | slskd's AGPL notice, shipped next to the app with slskd's `LICENSE` |
+| `app/build.rs` | Stages the web files the bundled page needs into `app/dist/`; fetches slskd, yt-dlp and Deno (sha256-pinned) into `app/binaries/`; declares command permissions |
+| `app/tauri.conf.json`, `tauri.windows.conf.json`, `tauri.linux.conf.json` | Shared config (updater key and endpoint, the asset protocol Android's download covers use, scoped to `**/lull-art/*`, and the bundled pages' CSP: Tauri leaves its `style-src` alone, since a nonce it adds would make browsers ignore `'unsafe-inline'` and drop every `style="…"` the pages render); the desktop configs add the slskd, yt-dlp and Deno sidecars and slskd's licence |
+| `app/licenses/THIRD-PARTY.md` | slskd's AGPL notice (shipped next to the app with slskd's `LICENSE`), yt-dlp's and Deno's |
 | `app/capabilities/local.json` | IPC for the bundled page |
 | `web/desktop/wrapper.html` | The bundled page: welcome, connect, hub unreachable, hub didn't start, mini player (view in the hash) |
 | `web/desktop/desktop.js`, `desktop.css` | The app's UI; also loaded by the web UI (`index.html`), where it does nothing outside the app |
@@ -38,7 +38,7 @@ The Tauri v2 project in `app/` (its own Cargo workspace; ADR-0006) shows the hub
 
 ## Run it
 
-- `cd app && cargo run` (set `CARGO_TARGET_DIR` outside `Desktop` on Windows). The first build downloads slskd (55 MB) into `app/binaries/`.
+- `cd app && cargo run` (set `CARGO_TARGET_DIR` outside `Desktop` on Windows). The first build downloads slskd (55 MB), yt-dlp (24 MB on Windows, 41 MB on Linux) and Deno (a 43 MB zip) into `app/binaries/`.
 - Pages in `web/desktop/` and the staged web files are embedded at compile time: rebuild after editing them. The web UI itself comes from the hub; the in-process hub embeds it at compile time too (release builds), so web edits need a rebuild here.
 - **Inspecting the webviews:** start with `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333` and open `http://127.0.0.1:9333/json`; each window is a DevTools target.
 - **Where things live** (Windows; Linux uses `~/.config/` and `~/.local/share/` with the same identifier):
@@ -66,13 +66,15 @@ The Tauri v2 project in `app/` (its own Cargo workspace; ADR-0006) shows the hub
 
 `local_hub::start`:
 1. **Paths** under the app's data dir (above). The hub's log goes to `hub.log` through `tracing`.
-2. **Env** for `lull_server::run` (shown as locked in Settings, ADR-0002): `LULL_DATA_DIR`, `LULL_LISTEN=0.0.0.0:8484` (phones reach it on the LAN; Windows asks to allow it through the firewall on first run), `LULL_SLSKD_URL` (loopback, a free port chosen per run), `LULL_SLSKD_API_KEY` (random per run), `LULL_TRANSFERS_DIR`, `LULL_SLSKD_CONFIG_FILE`.
+2. **Env** for `lull_server::run` (shown as locked in Settings, ADR-0002): `LULL_DATA_DIR`, `LULL_LISTEN=0.0.0.0:8484` (phones reach it on the LAN; Windows asks to allow it through the firewall on first run), `LULL_SLSKD_URL` (loopback, a free port chosen per run), `LULL_SLSKD_API_KEY` (random per run), `LULL_TRANSFERS_DIR`, `LULL_SLSKD_CONFIG_FILE`, and `LULL_YTDLP`/`LULL_DENO` (the sidecars next to `lull.exe`; when one is missing the hub looks on PATH).
 3. **First run seeds** `LULL_MUSIC_DIR` with the OS Music folder as a *stored* setting, so the hub's setup screen can change it.
    **Each start stores** `LULL_PUBLIC_URL` = `http://<LAN address>:8484` (the address of the default route), because pair codes carry it and the webview itself talks to `127.0.0.1`. It does so only while the stored value is empty or plain http; an https address (Tailscale serve, or the listener's own) is never touched.
 4. **The app's own device:** the stored token if `devices::verify` still knows it, else `devices::create(name, Kind::App)`.
 5. **slskd starts**, then the hub; the app waits until port 8484 accepts connections (30 s at most) or the hub's task fails.
 6. **mDNS** advertises `_lull._tcp` with the computer's name and port 8484. A network that refuses multicast only loses discovery.
 7. **Following settings:** a thread follows `/api/events` with the app's token. On `hub.restarting` it reads the settings again (env over stored) and restarts slskd if what it shares changed (`LULL_MUSIC_DIR`, `LULL_SHARE`): slskd takes shares only at start.
+
+**yt-dlp and Deno** (YouTube, docs/context/youtube.md), the versions the server image pins: fetched by `build.rs` like slskd (yt-dlp's standalone `yt-dlp.exe` / `yt-dlp_linux`, Deno's release zip), checked against pinned sha256s and shipped as sidecars (`binaries/yt-dlp-<target>`, `binaries/deno-<target>`). The hub runs them itself, without a console window; Keep yt-dlp up to date may put a newer yt-dlp in the hub's data folder. To bump either, change the version and hashes in `build.rs` and the `Dockerfile` together.
 
 **slskd** (`slskd.rs`), 0.26.2 like the deploy kit:
 - **Fetched at build time** by `build.rs`: the release zip for the target, checked against the pinned sha256, kept in `app/binaries/`; the binary becomes `binaries/slskd-<target-triple>[.exe]`, Tauri's sidecar name, and ships next to `lull.exe`. To bump it, change the version and both hashes in `build.rs` (`gh release view <v> --repo slskd/slskd --json assets` lists them).

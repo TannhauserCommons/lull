@@ -62,7 +62,7 @@ pub fn start(app: &AppHandle) -> Result<LocalHub, String> {
         api_key: slskd::secret()?,
         web_password: slskd::secret()?,
     };
-    let env = BTreeMap::from([
+    let mut env = BTreeMap::from([
         ("LULL_DATA_DIR".to_owned(), path_string(&paths.data)),
         ("LULL_LISTEN".to_owned(), format!("0.0.0.0:{PORT}")),
         ("LULL_SLSKD_URL".to_owned(), fixed.url()),
@@ -71,6 +71,16 @@ pub fn start(app: &AppHandle) -> Result<LocalHub, String> {
         // The hub writes the Soulseek account from its settings here and logs slskd in again.
         ("LULL_SLSKD_CONFIG_FILE".to_owned(), path_string(&fixed.config_file())),
     ]);
+    // YouTube's programs ship beside the app like slskd (docs/context/youtube.md). Without them
+    // the hub looks on PATH, and Settings › Sources says when yt-dlp won't run.
+    for (key, name) in [("LULL_YTDLP", "yt-dlp"), ("LULL_DENO", "deno")] {
+        match beside_app(name) {
+            Some(path) => {
+                env.insert(key.to_owned(), path_string(&path));
+            }
+            None => tracing::warn!("{name} is missing next to the app; YouTube looks for it on PATH"),
+        }
+    }
 
     let db = Db::open(&paths.data).map_err(|e| e.to_string())?;
     db.migrate(&db::CORE).map_err(|e| e.to_string())?;
@@ -159,6 +169,13 @@ fn sidecar_exe() -> Result<PathBuf, String> {
     } else {
         Err(format!("slskd is missing from {}; reinstall lull", dir.display()))
     }
+}
+
+/// A program Tauri placed next to the app's own executable (a sidecar), when it is there.
+fn beside_app(name: &str) -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let path = exe.parent()?.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
+    path.is_file().then_some(path)
 }
 
 /// A free port for slskd's API on loopback, chosen once per run (the hub keeps its URL).
