@@ -6,6 +6,7 @@ pub mod config;
 pub mod db;
 pub mod devices;
 pub mod error;
+pub mod etag;
 pub mod events;
 pub mod http;
 pub mod ids;
