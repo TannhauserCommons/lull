@@ -322,12 +322,13 @@ impl Fetcher {
                 // Start fast: a preload still waiting for a peer becomes the upgrade, and
                 // YouTube starts the song below.
                 if !(pick.is_none() && mode == Mode::StartFast && self.make_way(&f)) {
-                    let joined = !want(&f, |w| std::mem::replace(&mut w.streaming, true));
+                    want(&f, |w| w.streaming = true);
                     self.cache.touch(&track.id).await?;
-                    // A preload (or a save) the player joins: it learns where the song stands now.
-                    if joined {
-                        self.bus.publish("stream", stream_event(&f, &f.now()));
-                    }
+                    // Every opening tells the player where the song stands now: a preload or save
+                    // it joins, and equally a song it streamed before (a replay, a reload). A
+                    // finished transfer sends nothing more, so without this the player only
+                    // knows what it buffered itself and refuses to seek past it.
+                    self.bus.publish("stream", stream_event(&f, &f.now()));
                     return Ok(f);
                 }
             } else {
