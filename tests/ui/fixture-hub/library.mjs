@@ -5,6 +5,9 @@
 const NOW = Date.UTC(2026, 10, 1, 12) / 1000; // 2026-11-01 12:00 UTC, the matrix's fixed clock
 // every song this long instead (a long listening session in minutes: the memory soak)
 const SONG_S = +(process.env.FIXTURE_TRACK_SECONDS || 0);
+// a bigger library and a longer "Long drive" (how a screen's cost grows with a list's length)
+const ALBUMS = Math.max(150, +(process.env.FIXTURE_ALBUMS || 0));
+const LONG = +(process.env.FIXTURE_LONG_PLAYLIST || 1200);
 
 // mulberry32: small, fast, deterministic
 function rng(seed) {
@@ -57,7 +60,7 @@ for (let i = 0; i < 64; i++) {
 const artistIds = Object.keys(artists);
 
 let added = NOW - 400 * 86400;
-for (let i = 0; i < 150; i++) {
+for (let i = 0; i < ALBUMS; i++) {
   const artistId = artistIds[i % artistIds.length];
   const artist = artists[artistId].name;
   const title = i % 4 === 0 ? `${cap(pick(N))} ${cap(pick(N))}` : `${cap(pick(V))} ${cap(pick(A))} ${cap(pick(N))}`;
@@ -65,7 +68,7 @@ for (let i = 0; i < 150; i++) {
   const year = 1994 + (i * 7) % 32;
   const f = FORMATS[i % FORMATS.length];
   // the last albums are the catalog's, not the library's: Soulseek songs, unsaved
-  const saved = i < 140;
+  const saved = i < 140 || i >= 150;
   const n = int(8, 14);
   const tagsOf = artists[artistId].tags;
   const trackIds = [];
@@ -100,7 +103,7 @@ export const tags = TAGS;
 export const likes = trackIds.filter((_, i) => i % 5 === 0).slice(0, 300);
 
 export const playlists = [
-  { name: 'Long drive', desc: 'Everything for the coast road', ids: trackIds.slice(0, 1200) },
+  { name: 'Long drive', desc: 'Everything for the coast road', ids: trackIds.slice(0, LONG) },
   { name: 'Morning', desc: '', ids: trackIds.filter((_, i) => i % 11 === 0).slice(0, 60) },
   { name: 'Focus', desc: 'Quiet ones', ids: trackIds.filter((_, i) => i % 17 === 3).slice(0, 40) },
   { name: 'Late night', desc: '', ids: trackIds.filter((_, i) => i % 23 === 5).slice(0, 25) },
