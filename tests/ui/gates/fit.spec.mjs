@@ -12,6 +12,13 @@ import { designs, ids, openScreen, themes } from './lib.mjs';
 const widths = [];
 for (let w = 2560; w >= 360; w -= 20) widths.push(w);
 const frames = (page) => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
+// the header and the bar as they stand, to name the cause when a width fails: each part's box and whether it gave way
+const geometry = (page) => page.evaluate(() => ['.header', '#pbar'].map((sel) => {
+  const row = document.querySelector(sel); if (!row) return '';
+  const box = (e) => { const r = e.getBoundingClientRect(); return Math.round(r.left) + '-' + Math.round(r.right); };
+  return sel + ' ' + box(row) + ' (scroll ' + row.scrollWidth + ' of ' + row.clientWidth + '): ' + [...row.children].map((c) =>
+    String(c.getAttribute('class') || c.tagName).split(' ')[0] + (c.hasAttribute('data-fit-out') ? ' (out)' : '') + ' ' + box(c)).join(', ');
+}).join(' | '));
 
 for (const design of designs) {
   for (const theme of themes) {
@@ -22,14 +29,26 @@ for (const design of designs) {
       await page.waitForFunction(() => App.player.current());
       await page.evaluate(() => { location.hash = '#/home'; });
       await page.waitForTimeout(500);
-      const found = new Map();
+      const found = new Map(), seen = new Map();
       for (const w of [...widths, ...widths.slice().reverse()]) {    // both ways: a row fits again as it widens
         await page.setViewportSize({ width: w, height: 900 });
         await frames(page);
-        for (const p of await chrome(page)) found.set(p, [...(found.get(p) || []), w]);
+        let now = await chrome(page);
+        if (now.length) {
+          /* judged once the window has settled (its fonts in, two more frames), as a listener sees it when they stop
+             resizing; a moment's overflow is logged with the rows' geometry (CI's runner showed one now and then that
+             nothing on a desktop reproduces), one that stays fails with it */
+          const first = await geometry(page);
+          await page.evaluate(() => document.fonts.ready); await frames(page); await frames(page);
+          const later = await chrome(page);
+          if (!later.length) console.log(`[fit] ${design} / ${theme} at ${w} px, for a moment: ${now.join('; ')}. ${first}`);
+          else seen.set(w, await geometry(page));
+          now = later;
+        }
+        for (const p of now) found.set(p, [...(found.get(p) || []), w]);
       }
       const report = [...found].map(([p, ws]) => `${p} at ${[...new Set(ws)].sort((a, b) => a - b).join(', ')} px`);
-      expect(report, 'the chrome at some width').toEqual([]);
+      expect(report, 'the chrome at some width\n' + [...seen].map(([w, g]) => `at ${w} px: ${g}`).join('\n')).toEqual([]);
     });
 
     test(`desktop mini player / ${design} / ${theme}`, async ({ page }) => {
