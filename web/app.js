@@ -109,13 +109,18 @@
     var k = n.getAttribute('id') || n.getAttribute('data-key') || n.getAttribute('data-track-id') || n.getAttribute('data-id');
     return k ? n.nodeName + '#' + k : null;
   }
+  /* The cursor passes old nodes already placed and keyed ones nothing wants any more (they go at the end): stopping at
+     one put every later node in front of it, so a song leaving the top of a list (the queue moving on, a row removed)
+     moved all the rows after it, 5,000 removals and insertions, each restyled and laid out again */
   function patchChildren(parent, next) {
-    var keyed = {}, used = new Set(), cur = parent.firstChild, n, k;
+    var keyed = {}, wants = {}, used = new Set(), cur = parent.firstChild, n, k;
     for (n = parent.firstChild; n; n = n.nextSibling) { k = nodeKey(n); if (k) (keyed[k] = keyed[k] || []).push(n); }
+    for (n = next.firstChild; n; n = n.nextSibling) { k = nodeKey(n); if (k) wants[k] = (wants[k] || 0) + 1; }
     for (var want = next.firstChild; want; want = n) {
       n = want.nextSibling;
-      while (cur && used.has(cur)) cur = cur.nextSibling;
+      while (cur && (used.has(cur) || ((k = nodeKey(cur)) && !wants[k]))) cur = cur.nextSibling;
       k = nodeKey(want);
+      if (k) wants[k]--;
       var match = k ? (keyed[k] || []).shift() : unkeyedMatch(cur, want, used);
       if (match) {
         used.add(match);
