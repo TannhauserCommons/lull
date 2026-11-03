@@ -947,8 +947,13 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
   grid-template-areas: "rail head" "rail banner" "rail main" "bar bar";
   column-gap: 24px; padding: 16px 16px 0;
 }
+/* a column being dragged (layout.js) shows its width through --ctx-drag / --now-drag, set only on the elements that
+   read it. They don't inherit, so a drag frame restyles those few elements; a change to the inherited --ctx or
+   --now-w restyles every element on the page (20-30 ms a frame on a long list). Release saves --ctx / --now-w */
+@property --ctx-drag { syntax: "*"; inherits: false; }
+@property --now-drag { syntax: "*"; inherits: false; }
 .app[data-ctx="docked"] {
-  grid-template-columns: var(--rail) minmax(560px, 1fr) var(--ctx);
+  grid-template-columns: var(--rail) minmax(560px, 1fr) var(--ctx-drag, var(--ctx));
   grid-template-areas: "rail head head" "rail banner banner" "rail main ctx" "bar bar bar";
 }
 .skip-link { position: fixed; left: 16px; top: -60px; z-index: var(--z-overlay); }
@@ -1003,7 +1008,7 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 
 /* context panel (Queue / Lyrics / Activity): the `panel` size container */
 .ctx {
-  grid-area: ctx; position: relative; display: flex; flex-direction: column; min-height: 0; width: var(--ctx); container: panel / inline-size;
+  grid-area: ctx; position: relative; display: flex; flex-direction: column; min-height: 0; width: var(--ctx-drag, var(--ctx)); container: panel / inline-size;
   border: var(--stroke) solid var(--edge); border-radius: var(--r-panel); box-shadow: var(--stack-1l); margin-bottom: 21px;
 }
 .ctx__head { display: flex; align-items: center; gap: var(--sp-2); padding: 12px 12px 8px; flex: none; }
@@ -1026,9 +1031,10 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 .app[data-panel="strip"] .ctx__strip { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); padding: 12px 0; }
 .ctx__strip .btn-icon { position: relative; }
 
-/* column resize handle (layout.js): the left edge of the panel and of the Now Playing column */
+/* column resize handle (layout.js): the left edge of the panel and of the Now Playing column, inside the column's own
+   box, so a design that rounds its windows with overflow: hidden (glasshouse) can't clip it away */
 .col-resize {
-  position: absolute; z-index: 2; left: -9px; top: 16px; bottom: 16px; width: 12px; cursor: col-resize; touch-action: none;
+  position: absolute; z-index: 2; left: 0; top: 16px; bottom: 16px; width: 12px; cursor: col-resize; touch-action: none;
   border-radius: var(--r-pill);
 }
 .col-resize::after {
@@ -1044,11 +1050,11 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 /* Now Playing column (ADR-0007, from wide): shares the main grid cell, the main area gives it room */
 .nowcol {
   grid-area: main; justify-self: end; position: relative; z-index: 1; display: none; flex-direction: column; min-height: 0;
-  width: var(--now-w); margin-bottom: 21px; container: nowcol / inline-size;
+  width: var(--now-drag, var(--now-w)); margin-bottom: 21px; container: nowcol / inline-size;
   border: var(--stroke) solid var(--edge); border-radius: var(--r-panel); box-shadow: var(--stack-1l);
 }
 .app:is([data-nowcol="open"], [data-nowcol="strip"]) .nowcol { display: flex; }
-.app:is([data-nowcol="open"], [data-nowcol="strip"]) .main { margin-right: calc(var(--now-w) + 16px) !important; }
+.app:is([data-nowcol="open"], [data-nowcol="strip"]) .main { margin-right: calc(var(--now-drag, var(--now-w)) + 16px) !important; }
 .nowcol__head { display: flex; align-items: center; gap: var(--sp-2); padding: 12px 12px 4px 18px; flex: none; }
 .nowcol__title { flex: 1; font: var(--t-micro); color: var(--fg-2); }
 .nowcol__body { flex: 1; min-height: 0; overflow: auto; padding: 4px 14px 16px; overscroll-behavior: contain; }
@@ -1156,7 +1162,7 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
   /* shared by topnav + dock: no rail column, a panel strip header with the brand */
   :root[data-shell="topnav"] .app, :root[data-shell="dock"] .app { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "banner" "main" "bar"; }
   :root[data-shell="topnav"] .app[data-ctx="docked"], :root[data-shell="dock"] .app[data-ctx="docked"] {
-    grid-template-columns: minmax(560px, 1fr) var(--ctx); grid-template-areas: "head head" "banner banner" "main ctx" "bar bar";
+    grid-template-columns: minmax(560px, 1fr) var(--ctx-drag, var(--ctx)); grid-template-areas: "head head" "banner banner" "main ctx" "bar bar";
   }
   :root[data-shell="topnav"] .header, :root[data-shell="dock"] .header {
     --bg: var(--panel); --bg-2: var(--panel-2); --fg: var(--fg-panel); --fg-2: var(--fg-panel-2);

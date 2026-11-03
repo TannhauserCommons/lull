@@ -6,7 +6,9 @@
      nowColumn, nowWidth, searchSplit, panelSplit }. get(), set(patch) (emits 'layout'), reset(),
      size(). Widths ride on custom properties of .app (--ctx, --now-w), so the columns resize with CSS alone.
    - Resize handles [data-resize="panel|now"] (role separator): a pointer drag throttled to animation frames, arrow
-     keys (Shift for bigger steps), Home / End for the limits, double-click for the default. Saved when the drag ends.
+     keys (Shift for bigger steps), Home / End for the limits, double-click for the default. While a drag runs, its
+     width (`live`) is the one shown, through --ctx-drag / --now-drag on the elements that read it (components.css
+     says why), so the column follows the pointer each frame; it is saved when the drag ends.
    - The Now Playing column (.nowcol, from `wide`): beside the main area in the same grid cell, so no design's shell
      grid changes. It is offered when the main area would stay `wide` with it open, so opening it never takes itself
      away; App.nowColumn (now.js) fills it. Closed on /now, which shows all of it already. */
@@ -19,6 +21,9 @@
   var LIMITS = { panel: [280, 560], now: [300, 560] };
   var NOW_DEFAULT = 360, STRIP = 60, GAP = 16, KEY_STEP = 16;
   var app = $('#app'), main = $('.main');
+  var live = { panel: null, now: null };          // a width being dragged: shown at once, saved when the drag ends
+  var DRAG = { panel: '--ctx-drag', now: '--now-drag' };
+  function readers(kind) { return kind === 'panel' ? [app, $('#ctx')] : [main, $('#nowcol')]; }
 
   /* ---------- the stored choices: anything unknown or out of range falls back to the default ---------- */
   function width(v, kind) { return typeof v === 'number' && isFinite(v) ? clamp(Math.round(v), LIMITS[kind][0], LIMITS[kind][1]) : null; }
@@ -60,20 +65,22 @@
   /* ---------- applying: attributes and custom properties on .app, nothing measured ---------- */
   function docked() { return app.getAttribute('data-ctx') === 'docked'; }
   function nowShown() { var v = app.getAttribute('data-nowcol'); return v === 'open' || v === 'strip'; }
+  function nowOpen() { return live.now || L.nowWidth || NOW_DEFAULT; }
   function nowWidth() { return L.nowColumn === 'strip' ? STRIP : L.nowWidth || NOW_DEFAULT; }
   function apply() {
     /* the main area's width without the Now column decides whether the column is offered (no feedback loop) */
-    var shownW = nowShown() ? (app.getAttribute('data-nowcol') === 'strip' ? STRIP : L.nowWidth || NOW_DEFAULT) + GAP : 0;
+    var shownW = nowShown() ? (app.getAttribute('data-nowcol') === 'strip' ? STRIP : nowOpen()) + GAP : 0;
     var offered = rank(classOf(mainW + shownW)) >= rank('wide');
     var show = offered && L.nowColumn && app.getAttribute('data-screen') !== 'now';
     toggleAttr('data-nowcol-ok', offered ? '' : null);
     toggleAttr('data-nowcol', show ? L.nowColumn : null);
-    app.style.setProperty('--now-w', nowWidth() + 'px');
+    prop(app, '--now-w', nowWidth() + 'px');
     /* the panel: its stored width, or the icon strip while docked and collapsed */
     var ctx = docked() && L.panelCollapsed ? STRIP : L.panelWidth;
-    if (ctx) app.style.setProperty('--ctx', ctx + 'px'); else app.style.removeProperty('--ctx');
+    prop(app, '--ctx', ctx ? ctx + 'px' : '');
     toggleAttr('data-panel', docked() && L.panelCollapsed ? 'strip' : null);
     toggleAttr('data-panel-split', L.panelSplit && App.layout.at('xwide') ? '' : null);
+    showLive('panel'); showLive('now');
     $$('[data-resize]').forEach(function (h) {
       var kind = h.getAttribute('data-resize');
       h.setAttribute('aria-valuemin', LIMITS[kind][0]); h.setAttribute('aria-valuemax', LIMITS[kind][1]);
@@ -82,6 +89,15 @@
     $$('[data-act="now-column"]').forEach(function (b) { b.setAttribute('aria-pressed', String(!!show)); });
     $$('[data-act="panel-split"]').forEach(function (b) { b.setAttribute('aria-pressed', String(L.panelSplit)); });
   }
+  function showLive(kind) {
+    readers(kind).forEach(function (el) { if (el) prop(el, DRAG[kind], live[kind] == null ? '' : live[kind] + 'px'); });
+  }
+  /* custom properties written only when they change: apply() runs on every frame of a drag (the main area resizes),
+     and rewriting --ctx or --now-w, even unchanged, could restyle the whole page */
+  function prop(el, name, v) {
+    if (el.style.getPropertyValue(name) === v) return;
+    if (v) el.style.setProperty(name, v); else el.style.removeProperty(name);
+  }
   function toggleAttr(name, value) {
     if (value == null) { if (app.hasAttribute(name)) app.removeAttribute(name); }
     else if (app.getAttribute(name) !== value) app.setAttribute(name, value);
@@ -89,8 +105,8 @@
   /* a column's width as shown: the stored one, or the design's own (--ctx, read once per design) until one is set */
   var designCtx = null;
   function current(kind) {
-    if (kind === 'now') return L.nowWidth || NOW_DEFAULT;
-    if (L.panelWidth) return L.panelWidth;
+    if (kind === 'now') return nowOpen();
+    if (live.panel || L.panelWidth) return live.panel || L.panelWidth;
     if (designCtx == null) designCtx = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--ctx'), 10) || LIMITS.panel[0];
     return designCtx;
   }
@@ -114,9 +130,6 @@
   new MutationObserver(apply).observe(app, { attributes: true, attributeFilter: ['data-ctx', 'data-screen'] });
 
   /* ---------- resize handles ---------- */
-  function setWidth(kind, w) {
-    if (kind === 'panel') app.style.setProperty('--ctx', w + 'px'); else app.style.setProperty('--now-w', w + 'px');
-  }
   function save(kind, w) { App.layout.set(kind === 'panel' ? { panelWidth: w } : { nowWidth: w }); }
   document.addEventListener('pointerdown', function (e) {
     var h = e.target.closest && e.target.closest('[data-resize]'); if (!h || e.button !== 0) return;
@@ -126,12 +139,13 @@
     /* the handle sits on the column's left edge: dragging left widens it */
     function move(ev) {
       w = clamp(w0 - (ev.clientX - x0), LIMITS[kind][0], LIMITS[kind][1]);
-      if (!frame) frame = requestAnimationFrame(function () { frame = 0; setWidth(kind, w); });
+      if (!frame) frame = requestAnimationFrame(function () { frame = 0; live[kind] = w; apply(); });
     }
     function end() {
       h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', end); h.removeEventListener('pointercancel', end);
       cancelAnimationFrame(frame); app.classList.remove('is-resizing');
-      if (w !== w0) save(kind, w);
+      live[kind] = null;
+      if (w !== w0) save(kind, w); else apply();
     }
     h.addEventListener('pointermove', move); h.addEventListener('pointerup', end); h.addEventListener('pointercancel', end);
   });

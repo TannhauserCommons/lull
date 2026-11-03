@@ -283,7 +283,10 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
   - `.app[data-nowcol="open|strip"]` shows it; it's hidden on `/now`. Resizable from 300 to 560 px (`--now-w`) and
     collapsible to a strip.
 - **Resize handles.**
-  - Pointer: a drag, throttled to animation frames and saved when it ends; double-click restores the default.
+  - Pointer: a drag, throttled to animation frames, that the column follows live and that is saved when it ends;
+    double-click restores the default. While it runs, the width is `--ctx-drag` / `--now-drag` (registered, not
+    inherited) on the few elements that read it, not `--ctx` / `--now-w` on `.app`: an inherited property restyles the
+    whole page every frame. A grid that places the panel reads `var(--ctx-drag, var(--ctx))`.
   - Keyboard: arrows (Shift for bigger steps), Home and End for the limits.
 - **Screens.**
   - **Home:** modules in 1, 2 or 3 CSS columns (`main` at 1100 and 1600), in the order Picked for you, New releases,

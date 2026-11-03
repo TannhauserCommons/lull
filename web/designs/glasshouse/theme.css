@@ -724,7 +724,7 @@
     grid-template-areas: "head head" "banner banner" "dock main" "bar bar"; column-gap: 10px;
   }
   :root[data-design="glasshouse"][data-shell="dock"] .app[data-ctx="docked"] {
-    grid-template-columns: 104px minmax(520px, 1fr) var(--ctx);
+    grid-template-columns: 104px minmax(520px, 1fr) var(--ctx-drag, var(--ctx));
     grid-template-areas: "head head head" "banner banner banner" "dock main ctx" "bar bar bar";
   }
   :root[data-design="glasshouse"][data-shell="dock"] .rail {

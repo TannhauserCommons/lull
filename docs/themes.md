@@ -118,7 +118,7 @@ Go beyond tokens with any selector. These hooks are the theme API: they stay put
 | `.nowcol`, `.nowcol__head`, `.nowcol__title`, `.nowcol__body`, `.app[data-nowcol="open\|strip"]` | the Now Playing column beside the main area |
 | `.disc-modules > .disc-mod > .card[data-region]` | Home's modules (`new`, `radio`, `picks`, `jump`, `tags`), in a fixed order |
 
-Prefer `@container main` to `@media`: it follows the main area, so it stays right when a panel opens. Layout states that must hold whatever a theme draws (the strips, the room the column takes) are `!important` in lull's own CSS: style them, don't fight them. The widths the listener drags are custom properties (`--ctx`, `--now-w`); read them, don't set them.
+Prefer `@container main` to `@media`: it follows the main area, so it stays right when a panel opens. Layout states that must hold whatever a theme draws (the strips, the room the column takes) are `!important` in lull's own CSS: style them, don't fight them. The widths the listener drags are custom properties (`--ctx`, `--now-w`); read them, don't set them. While a drag runs the column's width is `--ctx-drag` / `--now-drag` instead, so a theme's own shell grid that places the panel writes its track as `var(--ctx-drag, var(--ctx))`.
 
 `design/DESIGN.md` section 3.4 lists more state hooks (tray pills, track row file facts). Pseudo-elements are free for ornaments; keep them decorative.
 
