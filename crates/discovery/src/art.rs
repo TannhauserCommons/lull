@@ -238,7 +238,13 @@ pub struct Pictures {
     ready: Arc<art::Ready>,
     /// The songs `playing` last warmed.
     playing: Mutex<Vec<TrackId>>,
+    /// Failed fetches by picture and tier, and how often (`again_later`).
+    failed: Mutex<HashMap<String, u32>>,
 }
+
+/// A failed fetch is tried again after this (twice that the second time).
+const RETRY_AFTER: Duration = Duration::from_secs(20);
+const RETRIES: u32 = 2;
 
 /// Pictures fetched at once in the background: polite to the archive and the CDNs, and still a
 /// page of covers in a few seconds.
@@ -254,6 +260,7 @@ impl Pictures {
             warmer: Warmer::start(ctx, WARM_WORKERS),
             ready: art::Ready::new(ctx),
             playing: Mutex::default(),
+            failed: Mutex::default(),
         })
     }
 
@@ -322,7 +329,13 @@ impl Pictures {
                 let master = me.file(&id, tier);
                 let (bytes, fetched) = match read_fresh(&master, KEEP).await {
                     Some(bytes) => (Some(bytes), false),
-                    None => (me.fetch_into(&url, tier, &master, &id).await, true),
+                    None => match me.fetch_into(&url, tier, &master, &id).await {
+                        Ok(bytes) => (bytes, true),
+                        Err(()) => {
+                            me.again_later(&key, &id, tier);
+                            (None, false)
+                        }
+                    },
                 };
                 if let Some(bytes) = bytes {
                     if tier == SMALL {
@@ -337,10 +350,36 @@ impl Pictures {
         })
     }
 
-    /// The source's picture scaled to `tier` and cached at `path`; "none" cached when the source
-    /// has none (an archive thumbnail it lacks falls back to its original first). A failure caches
-    /// nothing, so the next request tries again.
-    async fn fetch_into(&self, url: &str, tier: u32, path: &FsPath, id: &str) -> Option<Vec<u8>> {
+    /// A fetch that failed (a source timing out while a long page's covers come in) is queued
+    /// again after a while, twice at most, so the pages waiting for it still hear `art.ready`.
+    fn again_later(self: &Arc<Self>, key: &str, id: &str, tier: u32) {
+        let tries = {
+            let mut failed = self.failed.lock().unwrap_or_else(PoisonError::into_inner);
+            let n = failed.entry(key.to_owned()).or_insert(0);
+            *n += 1;
+            *n
+        };
+        if tries > RETRIES {
+            self.failed.lock().unwrap_or_else(PoisonError::into_inner).remove(key);
+            return;
+        }
+        let (me, id) = (self.clone(), id.to_owned());
+        self.ctx.spawn(async move {
+            tokio::time::sleep(RETRY_AFTER * tries).await;
+            me.warm(&id, tier, Priority::Page);
+        });
+    }
+
+    /// The source's picture scaled to `tier` and cached at `path` (`Ok(None)`: the source has
+    /// none, remembered; an archive thumbnail it lacks falls back to its original first). A
+    /// failure caches nothing: `Err`.
+    async fn fetch_into(
+        &self,
+        url: &str,
+        tier: u32,
+        path: &FsPath,
+        id: &str,
+    ) -> std::result::Result<Option<Vec<u8>>, ()> {
         let mut fetched = fetch(&self.ctx, url).await;
         if let (Ok(None), Some(original)) = (&fetched, archive_original(url)) {
             fetched = fetch(&self.ctx, &original).await;
@@ -349,20 +388,24 @@ impl Pictures {
             Ok(Some(bytes)) => match tokio::task::spawn_blocking(move || art::fit(bytes, tier)).await {
                 Ok(bytes) => {
                     write(path, &bytes).await;
-                    Some(bytes)
+                    self.failed
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .remove(&format!("{id} {tier}"));
+                    Ok(Some(bytes))
                 }
                 Err(e) => {
                     tracing::warn!(error = %e, "picture scaling failed");
-                    None
+                    Ok(None)
                 }
             },
             Ok(None) => {
                 write(&none_file(&self.dir, id), &[]).await;
-                None
+                Ok(None)
             }
             Err(e) => {
-                tracing::info!(url, error = %e, "picture not fetched; asked again next time");
-                None
+                tracing::info!(url, error = %e, "picture not fetched; tried again later");
+                Err(())
             }
         }
     }

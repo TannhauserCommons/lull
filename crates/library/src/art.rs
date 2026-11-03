@@ -43,12 +43,20 @@ pub struct Lookups {
     /// Cache path → turns `true` when its lookup ends, so requests for the same cover share one.
     running: Mutex<HashMap<PathBuf, watch::Receiver<bool>>>,
     down_until: Mutex<Option<Instant>>,
+    /// Covers asked for while lookups were paused, to look up once the pause ends.
+    after_pause: Mutex<std::collections::HashSet<String>>,
 }
 
 impl Lookups {
     fn down(&self) -> bool {
         let until = self.down_until.lock().unwrap_or_else(PoisonError::into_inner);
         until.is_some_and(|t| Instant::now() < t)
+    }
+
+    /// What is left of the pause after a failed lookup.
+    fn pause_left(&self) -> Option<Duration> {
+        let until = *self.down_until.lock().unwrap_or_else(PoisonError::into_inner);
+        until.and_then(|t| t.checked_duration_since(Instant::now()))
     }
 
     fn failed(&self) {
@@ -150,6 +158,7 @@ pub async fn cover(svc: &Service, album: &AlbumId, size: u32) -> Result<Cover> {
         return Ok(Cover::None(left));
     }
     if svc.lookups.down() {
+        after_pause(svc, album, tier);
         return Ok(Cover::NotYet);
     }
     let known = saved.map(|(_, release_group, release)| Known { release_group, release });
@@ -176,10 +185,15 @@ fn start_look_up(svc: &Service, album: &AlbumId, known: Option<Known>, tier: u32
     let (done, start) = svc.lookups.join(&path);
     if let Some(tx) = start {
         let (ctx, lookups, ready, album) = (svc.ctx.clone(), svc.lookups.clone(), svc.ready.clone(), album.clone());
+        let me = svc.me.clone();
         let row = (tier == SMALL).then(|| archive_file(svc, &album, art::SIZES[0]));
         let none = svc.art_dir.join(format!("{album}-nocover"));
         svc.ctx.spawn(async move {
-            if look_up(&ctx, &lookups, &album, known, tier, &path, &none).await {
+            let found = look_up(&ctx, &lookups, &album, known, tier, &path, &none).await;
+            if !found && let Some(me) = me.upgrade() {
+                after_pause(&me, &album, tier);
+            }
+            if found {
                 if let Some(row) = row
                     && let Some(small) = cached(&path).await
                     && let Ok(bytes) = scaled(small, art::SIZES[0]).await
@@ -193,6 +207,33 @@ fn start_look_up(svc: &Service, album: &AlbumId, known: Option<Known>, tier: u32
         });
     }
     done
+}
+
+/// A cover asked for while lookups are paused (or whose lookup just failed and paused them) is
+/// looked up once the pause ends, so the pages waiting for it still hear `art.ready`. Nothing
+/// happens when lookups aren't paused (a lookup that found nothing remembered that itself).
+fn after_pause(svc: &Service, album: &AlbumId, size: u32) {
+    let Some(left) = svc.lookups.pause_left() else { return };
+    let key = format!("{album} {size}");
+    let first = svc
+        .lookups
+        .after_pause
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .insert(key.clone());
+    let Some(me) = svc.me.upgrade().filter(|_| first) else {
+        return;
+    };
+    let album = album.clone();
+    svc.ctx.spawn(async move {
+        tokio::time::sleep(left).await;
+        me.lookups
+            .after_pause
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&key);
+        warm(&me, &album, size, Priority::Page);
+    });
 }
 
 /// Fetches the album's cover at `size` in the background, before anyone asks.
