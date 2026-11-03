@@ -43,6 +43,7 @@ export default defineConfig({
     { name: 'screens', testMatch: 'screens.spec.mjs', fullyParallel: true },
     { name: 'a11y', testMatch: 'a11y.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
     { name: 'covers', testMatch: 'covers.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
+    { name: 'fit', testMatch: 'fit.spec.mjs', fullyParallel: true },
   ],
 });
 

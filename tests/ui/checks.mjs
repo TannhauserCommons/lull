@@ -88,3 +88,77 @@ export function overflow(page) {
     return `${doc.scrollWidth}px wide in a ${doc.clientWidth}px viewport, widest: ${name}`;
   });
 }
+
+// What is wrong with the chrome (header, player bar, mini player, tab bar, the desktop app's mini) at the current width,
+// as a list: a control outside its bar or the window, two controls on each other, text cut off without an ellipsis or
+// spilling out, or a missing essential (play, previous, next, the player's "…", search). The header and the player
+// bar fit themselves (layout.js, data-fit); this is what keeps a design from needing a width band to patch them.
+export function chrome(page) {
+  return page.evaluate(() => {
+    const out = [];
+    const vw = document.documentElement.clientWidth;
+    const shown = (e) => {
+      if (!e.getClientRects().length) return false;
+      const r = e.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return false;
+      for (let a = e; a && a !== document.body; a = a.parentElement) {
+        const s = getComputedStyle(a); if (s.visibility === 'hidden' || s.display === 'none' || +s.opacity === 0) return false;
+      }
+      return !e.closest('.vh, [hidden], [aria-hidden="true"]:not(.kbd)');
+    };
+    // what of an element shows: its box clipped by every ancestor that clips (a link in an ellipsised line is as wide
+    // as its text, but shows only up to the ellipsis)
+    const seen = (e, upTo) => {
+      const r = e.getBoundingClientRect(); let { left, right, top, bottom } = r;
+      for (let a = e.parentElement; a && a !== upTo; a = a.parentElement) {
+        if (getComputedStyle(a).overflowX === 'visible') continue;
+        const c = a.getBoundingClientRect();
+        left = Math.max(left, c.left); right = Math.min(right, c.right); top = Math.max(top, c.top); bottom = Math.min(bottom, c.bottom);
+      }
+      return { left, right, top, bottom };
+    };
+    const label = (e) => String(e.getAttribute('aria-label') || e.getAttribute('data-act') || e.getAttribute('data-nav') || e.className || e.tagName).split(' ')[0].slice(0, 24);
+    const regions = [['header', '.header'], ['bar', '#pbar'], ['mini', '#mini'], ['tabs', '.tabbar'], ['desktop mini', '[data-dk-player]']]
+      .map(([n, s]) => [n, document.querySelector(s)]).filter(([, e]) => e && shown(e));
+    for (const [name, reg] of regions) {
+      const rr = reg.getBoundingClientRect();
+      const ctrls = [...reg.querySelectorAll('button, a[href], input, [role="slider"], .kbd, .tray')].filter(shown)
+        .filter((c) => !c.closest('.pbar__state, .tooltip'))         // the state tab rides above the bar on purpose
+        .filter((c) => getComputedStyle(c).position !== 'fixed');   // a design may float a part elsewhere (glasshouse's tray)
+      for (const c of ctrls) {
+        const r = seen(c, reg);
+        if (r.left < rr.left - 1 || r.right > rr.right + 1 || r.top < rr.top - 1 || r.bottom > rr.bottom + 1) out.push(`${name}: ${label(c)} sticks out`);
+        else if (r.left < -1 || r.right > vw + 1) out.push(`${name}: ${label(c)} off screen`);
+      }
+      for (let i = 0; i < ctrls.length; i++) for (let j = i + 1; j < ctrls.length; j++) {
+        const a = ctrls[i], b = ctrls[j];
+        if (a.contains(b) || b.contains(a)) continue;
+        const fa = a.closest('.search-field'); if (fa && fa === b.closest('.search-field')) continue;   // the field's own end buttons
+        const p = seen(a, reg), q = seen(b, reg);
+        if (Math.min(p.right, q.right) - Math.max(p.left, q.left) > 2 && Math.min(p.bottom, q.bottom) - Math.max(p.top, q.top) > 2) out.push(`${name}: ${label(a)} on ${label(b)}`);
+      }
+      const walker = document.createTreeWalker(reg, NodeFilter.SHOW_TEXT);
+      for (let t = walker.nextNode(); t; t = walker.nextNode()) {
+        const el = t.parentElement;
+        if (!t.data.trim() || !el || !shown(el) || el.closest('.pbar__state, .tooltip, .seek__tip')) continue;
+        const range = document.createRange(); range.selectNodeContents(t);
+        const tr = range.getBoundingClientRect(); if (tr.width < 1) continue;
+        const what = `"${t.data.trim().slice(0, 20)}"`;
+        if (tr.left < rr.left - 1 || tr.right > rr.right + 1) { out.push(`${name}: text ${what} spills out`); continue; }
+        for (let a = el; a && a !== reg.parentElement; a = a.parentElement) {
+          const s = getComputedStyle(a); if (s.overflowX === 'visible') continue;
+          if (s.textOverflow === 'ellipsis' || /\d/.test(s.webkitLineClamp || '')) break;   // it ends in an ellipsis here
+          const ar = a.getBoundingClientRect();
+          if (a.scrollWidth > a.clientWidth + 1 && (tr.right > ar.right + 1 || tr.left < ar.left - 1)) { out.push(`${name}: text ${what} cut off`); break; }
+        }
+      }
+    }
+    const bar = regions.find(([n]) => n === 'bar');
+    if (bar) for (const act of ['play', 'prev', 'next', 'player-more']) {
+      const e = bar[1].querySelector(`[data-act="${act}"]`); if (!e || !shown(e)) out.push(`bar: ${act} missing`);
+    }
+    const head = regions.find(([n]) => n === 'header');
+    const search = head && head[1].querySelector('#header-search');
+    if (head && vw >= 640 && !(search && shown(search))) out.push('header: search missing');
+    return out;
+  });
+}
