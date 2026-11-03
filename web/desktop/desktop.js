@@ -5,6 +5,7 @@
      attachTitlebar(os, layout) / detachTitlebar()   Windows caption buttons or GNOME header-bar buttons
      welcomePage() / connectPage(opts)               bundled first-run pages: which hub, pairing
      offlinePage(opts) / hubErrorPage(opts)          bundled pages: hub unreachable, hub didn't start
+     crashedPage()                                   bundled page: the window kept crashing (app/src/desktop/recovery.rs)
      miniDevice() / miniStrip()                      mini-player markup (the miniPlayer design slot)
      askClose()                                      one-time "keep playing in the tray?" dialog
      windowAction(action, detail)                    window operations (DESKTOP.md 4, window_action)
@@ -276,6 +277,15 @@
       '<p class="dk-offline__text">' + esc(o.error || 'Something stopped it.') + '</p>' +
       '<div class="dk-actions"><button type="button" class="btn" data-dk="change-server">Use another hub</button>' +
       '<button type="button" class="btn btn--primary" data-dk="restart-hub">Try again</button></div></section>');
+  };
+
+  /* The window's page kept crashing (recovery.rs): lull's own page instead of the engine's error page. */
+  D.crashedPage = function () {
+    return page('<section class="card dk-card dk-offline" aria-labelledby="dk-x-title">' +
+      '<div class="empty__art" aria-hidden="true">' + STAR_ART + '<span class="sparkle"></span></div>' +
+      '<h1 class="empty__title" id="dk-x-title">lull stopped working a few times in a row</h1>' +
+      '<p class="dk-offline__text">The window\u2019s page crashed again each time it came back. Reload to try once more. If it keeps happening, the app\u2019s logs folder has a file called webview.log that says why.</p>' +
+      '<div class="dk-actions"><button type="button" class="btn btn--primary" data-dk="restart-hub">Reload</button></div></section>');
   };
 
   var STAR_ART = '<svg viewBox="0 0 112 88"><path d="M56 10l9 20 22 3-16 15 4 22-19-10-19 10 4-22-16-15 22-3z"/><path d="M56 30l-4 12 6 4-5 12"/></svg>';
@@ -612,7 +622,8 @@
       welcome: ['Welcome to lull', function () { return D.welcomePage(); }],
       connect: ['Connect to your hub', function () { return D.connectPage({ url: q.get('url'), unpaired: !!q.get('unpaired'), phone: !!q.get('phone') }); }],
       offline: ['Can’t reach your hub', function () { return D.offlinePage({ url: q.get('url'), error: q.get('error'), last: q.get('last') }); }],
-      'hub-error': ['Your hub didn’t start', function () { return D.hubErrorPage({ error: q.get('error') }); }]
+      'hub-error': ['Your hub didn’t start', function () { return D.hubErrorPage({ error: q.get('error') }); }],
+      crashed: ['lull stopped working', function () { return D.crashedPage(); }]
     };
     if (pages[view]) {
       $$('[data-dk-offline]').forEach(function (c) { clearInterval(c._dkTimer); });   // leaving the unreachable page
@@ -768,5 +779,11 @@
     if (!('mediaSession' in navigator)) D.windowAction('media-keys').catch(logFailure('media keys'));
     attachConfigured();
     sendNow(); sendAppearance();
+    /* the page came back after its process crashed (app/src/desktop/recovery.rs): the queue is restored from this
+       device, and the app says which song played, where, and whether it was playing */
+    invoke('resume_after_crash').then(function (r) {
+      var at = r ? P.state.queue.findIndex(function (q) { return q.trackId === r.id; }) : -1;
+      if (at >= 0) P.jumpTo(at, { at: r.position, autoplay: r.playing });
+    }).catch(logFailure('resume after a crash'));
   }
 })();

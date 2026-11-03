@@ -140,3 +140,180 @@ pub fn open_in_browser(url: &tauri::Url) -> Result<(), String> {
         Err(format!("Windows couldn't open it (error {})", result.0 as usize))
     }
 }
+
+/// One WebView2 environment for all of lull's windows, made on the UI thread before the first.
+/// Wry's own options (its default browser arguments), plus custom crash reporting: a crashed
+/// process's minidump then stays in the app's data folder (`EBWebView\Crashpad\reports`) instead of
+/// going to Microsoft (docs/context/desktop.md, Crashes).
+struct Environment(webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Environment);
+// SAFETY: only ever cloned (AddRef, which is thread-safe) and handed to Tauri, which uses it on the
+// UI thread that made it, as it does with the environments it passes between windows itself.
+unsafe impl Send for Environment {}
+unsafe impl Sync for Environment {}
+
+static ENVIRONMENT: std::sync::OnceLock<Environment> = std::sync::OnceLock::new();
+
+/// What wry passes when it makes the environment itself (wry's webview2 `create_environment`, with
+/// autoplay on as Tauri leaves it): the same, so nothing else changes.
+const BROWSER_ARGS: &str =
+    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required";
+
+/// Makes the shared environment; says which WebView2 runs and where its crash dumps go.
+pub fn create_environment(data_dir: &std::path::Path) -> Result<String, String> {
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        CreateCoreWebView2EnvironmentWithOptions, ICoreWebView2Environment11, ICoreWebView2EnvironmentOptions,
+    };
+    use webview2_com::{CoreWebView2EnvironmentOptions, CreateCoreWebView2EnvironmentCompletedHandler, take_pwstr};
+    use windows::Win32::Foundation::{E_POINTER, E_UNEXPECTED};
+    use windows::core::{HSTRING, Interface, PCWSTR, PWSTR};
+
+    use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
+
+    // This runs before the first window, so before wry has set up COM on the UI thread: do as it
+    // does (an STA; a second call on the thread is harmless).
+    // SAFETY: called on the UI thread, which stays an STA for the app's life.
+    unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }
+        .ok()
+        .map_err(|e| e.to_string())?;
+    let options = CoreWebView2EnvironmentOptions::default();
+    // SAFETY: setters on an options object this function owns.
+    unsafe {
+        options.set_additional_browser_arguments(BROWSER_ARGS.to_owned());
+        options.set_is_custom_crash_reporting_enabled(true);
+    }
+    let options: ICoreWebView2EnvironmentOptions = options.into();
+    let folder = HSTRING::from(data_dir);
+    let (tx, rx) = std::sync::mpsc::channel();
+    CreateCoreWebView2EnvironmentCompletedHandler::wait_for_async_operation(
+        // SAFETY: the folder and options outlive the call; WebView2 calls the handler back on this thread.
+        Box::new(move |handler| unsafe {
+            CreateCoreWebView2EnvironmentWithOptions(PCWSTR::null(), &folder, &options, &handler)
+                .map_err(webview2_com::Error::WindowsError)
+        }),
+        Box::new(move |error, environment| {
+            error?;
+            tx.send(environment.ok_or_else(|| windows::core::Error::from(E_POINTER)))
+                .map_err(|_| windows::core::Error::from(E_UNEXPECTED))
+        }),
+    )
+    .map_err(|e| format!("{e:?}"))?;
+    let environment = rx.recv().map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
+
+    let mut version = PWSTR::null();
+    // SAFETY: a live environment; WebView2 allocates the string and take_pwstr frees it.
+    let version = unsafe { environment.BrowserVersionString(&mut version) }
+        .map_or_else(|e| e.to_string(), |()| take_pwstr(version));
+    let dumps = environment.cast::<ICoreWebView2Environment11>().and_then(|e| {
+        let mut folder = PWSTR::null();
+        // SAFETY: as above.
+        unsafe { e.FailureReportFolderPath(&mut folder) }.map(|()| take_pwstr(folder))
+    });
+    let _ = ENVIRONMENT.set(Environment(environment));
+    Ok(format!(
+        "WebView2 {version}; crash dumps in {}",
+        dumps.unwrap_or_else(|e| format!("(unknown: {e})"))
+    ))
+}
+
+/// A window builder on the shared environment, once it exists (else Tauri makes its own).
+pub fn shared_environment<'a>(
+    builder: tauri::WebviewWindowBuilder<'a, tauri::Wry, tauri::AppHandle>,
+) -> tauri::WebviewWindowBuilder<'a, tauri::Wry, tauri::AppHandle> {
+    match ENVIRONMENT.get() {
+        Some(environment) => builder.with_environment(environment.0.clone()),
+        None => builder,
+    }
+}
+
+/// Hears WebView2's ProcessFailed for this window: which process died, why, its exit code and the
+/// module it crashed in. `failed` runs on the UI thread.
+pub fn watch_webview(
+    window: &tauri::WebviewWindow,
+    failed: impl Fn(crate::desktop::recovery::Failure) + Send + 'static,
+) -> tauri::Result<()> {
+    use webview2_com::ProcessFailedEventHandler;
+    window.with_webview(move |webview| {
+        let handler = ProcessFailedEventHandler::create(Box::new(move |_, args| {
+            if let Some(args) = args {
+                failed(failure(&args));
+            }
+            Ok(())
+        }));
+        let mut token = 0;
+        // SAFETY: the controller and its webview are live; Tauri runs this on their UI thread.
+        let added = unsafe {
+            webview
+                .controller()
+                .CoreWebView2()
+                .and_then(|core| core.add_ProcessFailed(&handler, &mut token))
+        };
+        if let Err(e) = added {
+            eprintln!("lull: can't hear this window's crashes: {e}");
+        }
+    })
+}
+
+fn failure(
+    args: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2ProcessFailedEventArgs,
+) -> crate::desktop::recovery::Failure {
+    use crate::desktop::recovery::{Failure, Process};
+    use webview2_com::Microsoft::Web::WebView2::Win32::*;
+    use webview2_com::take_pwstr;
+    use windows::core::{Interface, PWSTR};
+
+    let mut kind = COREWEBVIEW2_PROCESS_FAILED_KIND::default();
+    // SAFETY: event args WebView2 handed us, read during the event.
+    let _ = unsafe { args.ProcessFailedKind(&mut kind) };
+    let helper = |name: &str| Process::Helper(name.to_owned());
+    let process = match kind {
+        COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED => Process::Renderer,
+        COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE => Process::Unresponsive,
+        COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED => Process::Browser,
+        COREWEBVIEW2_PROCESS_FAILED_KIND_GPU_PROCESS_EXITED => helper("GPU process"),
+        COREWEBVIEW2_PROCESS_FAILED_KIND_FRAME_RENDER_PROCESS_EXITED => helper("a frame's renderer"),
+        COREWEBVIEW2_PROCESS_FAILED_KIND_UTILITY_PROCESS_EXITED => helper("utility process"),
+        COREWEBVIEW2_PROCESS_FAILED_KIND_SANDBOX_HELPER_PROCESS_EXITED => helper("sandbox helper"),
+        COREWEBVIEW2_PROCESS_FAILED_KIND_PPAPI_PLUGIN_PROCESS_EXITED => helper("plugin process"),
+        COREWEBVIEW2_PROCESS_FAILED_KIND_PPAPI_BROKER_PROCESS_EXITED => helper("plugin broker"),
+        other => helper(&format!("process of kind {}", other.0)),
+    };
+    let mut failure = Failure {
+        process,
+        reason: String::new(),
+        exit_code: None,
+        description: String::new(),
+        module: String::new(),
+    };
+    if let Ok(more) = args.cast::<ICoreWebView2ProcessFailedEventArgs2>() {
+        let (mut reason, mut code, mut description) = (COREWEBVIEW2_PROCESS_FAILED_REASON::default(), 0, PWSTR::null());
+        // SAFETY: as above; take_pwstr frees the string WebView2 allocated.
+        unsafe {
+            if more.Reason(&mut reason).is_ok() {
+                failure.reason = match reason {
+                    COREWEBVIEW2_PROCESS_FAILED_REASON_UNEXPECTED => "unexpectedly".into(),
+                    COREWEBVIEW2_PROCESS_FAILED_REASON_UNRESPONSIVE => "unresponsive".into(),
+                    COREWEBVIEW2_PROCESS_FAILED_REASON_TERMINATED => "terminated".into(),
+                    COREWEBVIEW2_PROCESS_FAILED_REASON_CRASHED => "crashed".into(),
+                    COREWEBVIEW2_PROCESS_FAILED_REASON_LAUNCH_FAILED => "failed to start".into(),
+                    COREWEBVIEW2_PROCESS_FAILED_REASON_OUT_OF_MEMORY => "out of memory".into(),
+                    COREWEBVIEW2_PROCESS_FAILED_REASON_PROFILE_DELETED => "its profile was deleted".into(),
+                    other => format!("reason {}", other.0),
+                };
+            }
+            if more.ExitCode(&mut code).is_ok() {
+                failure.exit_code = Some(code);
+            }
+            if more.ProcessDescription(&mut description).is_ok() {
+                failure.description = take_pwstr(description);
+            }
+        }
+    }
+    if let Ok(more) = args.cast::<ICoreWebView2ProcessFailedEventArgs3>() {
+        let mut module = PWSTR::null();
+        // SAFETY: as above.
+        if unsafe { more.FailureSourceModulePath(&mut module) }.is_ok() {
+            failure.module = take_pwstr(module);
+        }
+    }
+    failure
+}

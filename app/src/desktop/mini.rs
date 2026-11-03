@@ -2,10 +2,11 @@
 //! that mirrors `main`'s player over events; `main` hides while one is open.
 
 use crate::desktop::main_window;
+use crate::desktop::recovery;
 use crate::desktop::settings::MiniStyle;
 use crate::desktop::state::Desktop;
 use crate::pages::{self, Mini};
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow};
 
 const LABELS: [&str; 2] = ["mini", "strip"];
 
@@ -43,7 +44,7 @@ pub fn open(app: &AppHandle) -> tauri::Result<()> {
         MiniStyle::Device => (340.0, 560.0),
         MiniStyle::Strip => (540.0, 90.0),
     };
-    WebviewWindowBuilder::new(app, style.label(), WebviewUrl::External(url))
+    let mini = recovery::builder(app, style.label(), WebviewUrl::External(url))
         .title("lull mini player")
         .inner_size(width, height)
         .resizable(false)
@@ -56,6 +57,7 @@ pub fn open(app: &AppHandle) -> tauri::Result<()> {
         .always_on_top(settings.mini_on_top)
         .disable_drag_drop_handler()
         .build()?;
+    recovery::watch(&mini);
     if wayland_hint {
         desktop.update(|s| s.wayland_hint_shown = true);
     }

@@ -6,9 +6,11 @@
 use crate::desktop::links;
 use crate::desktop::main_window;
 use crate::desktop::platform;
+use crate::desktop::recovery;
 use crate::desktop::state::{Desktop, lock};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use std::time::{Duration, Instant};
+use tauri::{AppHandle, Emitter, Listener, Manager, Url, WebviewUrl, WebviewWindow};
 
 pub const LABEL: &str = "classic";
 
@@ -55,7 +57,83 @@ struct Skin {
     name: String,
 }
 
+/// The handoff while the Classic window is open. `taken` once its page has it; it stays, following
+/// what Webamp plays, so a page that reloads after a crash starts where Webamp was (recovery.rs).
+pub struct Held {
+    handoff: Handoff,
+    taken: bool,
+    /// When `handoff.pos` was true: Webamp reports a position only as a song starts, pauses or seeks.
+    at: Instant,
+}
+
+impl Held {
+    fn new(handoff: Handoff) -> Self {
+        Held {
+            handoff,
+            taken: false,
+            at: Instant::now(),
+        }
+    }
+
+    fn follow(&mut self, id: &str, playing: bool, pos: f64) {
+        self.handoff.follow(id, playing, pos);
+        self.at = Instant::now();
+    }
+
+    /// The handoff as Webamp has it now: a playing song has moved on since its last report.
+    fn now(&self) -> Handoff {
+        self.handoff.since(self.at.elapsed())
+    }
+}
+
+/// What the Classic window's page tells `main` it plays (`web/desktop/winamp.js`).
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+enum Report {
+    Now {
+        id: Option<String>,
+        playing: bool,
+        pos: f64,
+    },
+    #[serde(other)]
+    Other,
+}
+
 impl Handoff {
+    /// Webamp moved on: the song it plays (the first time it is in the list), where, and whether.
+    fn follow(&mut self, id: &str, playing: bool, pos: f64) {
+        if let Some(index) = self.tracks.iter().position(|t| t.id == id) {
+            self.index = index;
+        }
+        self.pos = pos;
+        self.playing = playing;
+    }
+
+    /// Where a playing song has got to `elapsed` after its position was reported, never past its end.
+    fn since(&self, elapsed: Duration) -> Handoff {
+        let mut now = self.clone();
+        if now.playing {
+            now.pos += elapsed.as_secs_f64();
+            if let Some(length) = now.tracks.get(now.index).and_then(|t| t.duration) {
+                now.pos = now.pos.min(length);
+            }
+        }
+        now
+    }
+
+    /// The queue as `main` takes it back from Webamp (`web/screens/classic.js`, takeBack).
+    fn back(&self) -> serde_json::Value {
+        serde_json::json!({
+            "ids": self.tracks.iter().map(|t| &t.id).collect::<Vec<_>>(),
+            "index": self.index,
+            "pos": self.pos,
+            "playing": self.playing,
+            "shuffle": self.shuffle,
+            "repeat": self.repeat,
+            "local": 0,
+        })
+    }
+
     fn urls(&self) -> impl Iterator<Item = &str> {
         let tracks = self.tracks.iter().flat_map(|t| std::iter::once(&t.url).chain(&t.art));
         let skins = self.skin.iter().chain(&self.skins).map(|s| &s.url);
@@ -91,14 +169,14 @@ pub fn open(app: &AppHandle, handoff: Handoff) -> Result<(), String> {
     let page = Url::parse(&hub.ascii_serialization())
         .and_then(|origin| origin.join(PAGE))
         .map_err(|e| e.to_string())?;
-    *lock(&desktop.classic) = Some(handoff);
+    *lock(&desktop.classic) = Some(Held::new(handoff));
     build(app, page).map_err(|e| e.to_string())?;
     main_window::sleep(app).map_err(|e| e.to_string())
 }
 
 fn build(app: &AppHandle, page: Url) -> tauri::Result<()> {
     let (width, height) = FIRST_SIZE;
-    let classic = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::External(page))
+    let classic = recovery::builder(app, LABEL, WebviewUrl::External(page))
         .title("lull classic")
         .inner_size(width, height)
         .center()
@@ -117,12 +195,34 @@ fn build(app: &AppHandle, page: Url) -> tauri::Result<()> {
         .on_new_window(links::on_new_window(app))
         .build()?;
     platform::add_thumb_buttons(&classic);
+    recovery::watch(&classic);
     Ok(())
 }
 
-/// The window's page, once: what to play.
+/// Keeps the held handoff where Webamp is, from the reports its page sends `main`.
+pub fn follow(app: &AppHandle) {
+    let handle = app.clone();
+    app.listen_any("classic", move |event| {
+        let Ok(Report::Now {
+            id: Some(id),
+            playing,
+            pos,
+        }) = serde_json::from_str(event.payload())
+        else {
+            return;
+        };
+        if let Some(held) = lock(&handle.state::<Desktop>().classic).as_mut() {
+            held.follow(&id, playing, pos);
+        }
+    });
+}
+
+/// The window's page: what to play. Again, as Webamp last had it, if the page reloaded.
 pub fn take_handoff(app: &AppHandle) -> Option<Handoff> {
-    lock(&app.state::<Desktop>().classic).take()
+    lock(&app.state::<Desktop>().classic).as_mut().map(|held| {
+        held.taken = true;
+        held.now()
+    })
 }
 
 /// Back to lull (its close button, Alt+F4, the tray's Show lull): the page hands the queue back and
@@ -131,10 +231,29 @@ pub fn close(app: &AppHandle) -> tauri::Result<()> {
     let Some(classic) = window(app) else {
         return Ok(());
     };
-    if lock(&app.state::<Desktop>().classic).is_some() {
+    if lock(&app.state::<Desktop>().classic)
+        .as_ref()
+        .is_some_and(|held| !held.taken)
+    {
         return done(app);
     }
     classic.emit_to(LABEL, "classic-close", ())
+}
+
+/// The window's page keeps crashing: `main` takes the queue back as Webamp last had it, as the page
+/// itself would have handed it, then Webamp goes.
+pub fn hand_back(app: &AppHandle) -> tauri::Result<()> {
+    let back = lock(&app.state::<Desktop>().classic)
+        .as_ref()
+        .map(|held| held.now().back());
+    if let Some(back) = back {
+        app.emit_to(
+            main_window::LABEL,
+            "classic",
+            serde_json::json!({ "type": "back", "back": back }),
+        )?;
+    }
+    done(app)
 }
 
 /// The page handed the queue back: Webamp goes, `main` wakes.
@@ -144,4 +263,56 @@ pub fn done(app: &AppHandle) -> tauri::Result<()> {
         classic.destroy()?;
     }
     main_window::wake(app)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn handoff(playing: bool) -> Handoff {
+        let track = |id: &str| Track {
+            id: id.into(),
+            url: format!("http://hub/{id}"),
+            title: id.into(),
+            artist: String::new(),
+            album: String::new(),
+            duration: Some(200.0),
+            art: None,
+        };
+        Handoff {
+            tracks: vec![track("a"), track("b")],
+            index: 0,
+            pos: 10.0,
+            playing,
+            shuffle: false,
+            repeat: false,
+            volume: 1.0,
+            skin: None,
+            skins: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_reloaded_classic_window_starts_on_the_song_webamp_reported_and_where_it_has_got_to() {
+        let mut h = handoff(true);
+        h.follow("b", true, 50.0);
+        let now = h.since(Duration::from_secs(30));
+        assert_eq!((now.index, now.pos, now.playing), (1, 80.0, true));
+    }
+
+    #[test]
+    fn a_paused_song_stays_where_it_stopped_and_a_playing_one_never_runs_past_its_end() {
+        assert_eq!(handoff(false).since(Duration::from_secs(30)).pos, 10.0);
+        assert_eq!(handoff(true).since(Duration::from_secs(600)).pos, 200.0);
+    }
+
+    #[test]
+    fn main_takes_back_the_whole_list_at_webamps_song() {
+        let mut h = handoff(true);
+        h.follow("b", false, 42.0);
+        assert_eq!(
+            h.back(),
+            serde_json::json!({ "ids": ["a", "b"], "index": 1, "pos": 42.0, "playing": false, "shuffle": false, "repeat": false, "local": 0 })
+        );
+    }
 }

@@ -1,7 +1,7 @@
 //! What the app keeps while it runs: its settings, what the web UI says is playing, the tray, and
 //! the hub when this computer is the hub.
 
-use crate::desktop::classic::Handoff;
+use crate::desktop::classic::Held;
 use crate::desktop::discord::Presence;
 use crate::desktop::local_hub::LocalHub;
 use crate::desktop::settings::{HubChoice, Settings};
@@ -11,6 +11,7 @@ use serde::Deserialize;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
+use std::time::Instant;
 use tauri::Url;
 
 /// `set_now_playing` from the web UI (DESKTOP.md 4): drives the tray, the taskbar's buttons and
@@ -55,7 +56,10 @@ pub struct Platform {
 pub struct Desktop {
     store: Store<Settings>,
     settings: Mutex<Settings>,
-    now: Mutex<NowPlaying>,
+    /// What the web UI last reported, and when (recovery.rs works out where a playing song got to).
+    now: Mutex<(NowPlaying, Instant)>,
+    /// `main` is hidden and quiet while Classic mode plays (main_window::sleep).
+    main_asleep: AtomicBool,
     /// `main` shows the hub's web UI (not a bundled page).
     on_hub: AtomicBool,
     /// Hub origins already given their IPC capability this run.
@@ -66,8 +70,8 @@ pub struct Desktop {
     local: OnceLock<LocalHub>,
     /// Held while the hub starts: a second "This computer" click waits, then opens the same hub.
     pub starting: Mutex<()>,
-    /// What `main` hands the Classic window, until its page takes it (classic.rs).
-    pub classic: Mutex<Option<Handoff>>,
+    /// What `main` handed the Classic window, kept current while it plays (classic.rs).
+    pub classic: Mutex<Option<Held>>,
     /// Discord Rich Presence (discord.rs).
     pub discord: Presence,
 }
@@ -78,7 +82,8 @@ impl Desktop {
         Desktop {
             store,
             settings: Mutex::new(settings),
-            now: Mutex::new(NowPlaying::default()),
+            now: Mutex::new((NowPlaying::default(), Instant::now())),
+            main_asleep: AtomicBool::new(false),
             on_hub: AtomicBool::new(false),
             granted: Mutex::new(HashSet::new()),
             platform,
@@ -116,11 +121,23 @@ impl Desktop {
 
     /// Callers then call `player::refresh`, which shows the change.
     pub fn set_now_playing(&self, now: NowPlaying) {
-        *lock(&self.now) = now;
+        *lock(&self.now) = (now, Instant::now());
     }
 
     pub fn now_playing(&self) -> NowPlaying {
+        lock(&self.now).0.clone()
+    }
+
+    pub fn now_playing_at(&self) -> (NowPlaying, Instant) {
         lock(&self.now).clone()
+    }
+
+    pub fn main_asleep(&self) -> bool {
+        self.main_asleep.load(Ordering::Relaxed)
+    }
+
+    pub fn set_main_asleep(&self, asleep: bool) {
+        self.main_asleep.store(asleep, Ordering::Relaxed);
     }
 
     /// The hub in use and this app's token there: what Rust needs to call its API.

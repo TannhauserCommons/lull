@@ -11,6 +11,7 @@ mod main_window;
 mod mini;
 mod platform;
 mod player;
+mod recovery;
 mod settings;
 mod signin;
 mod slskd;
@@ -58,6 +59,7 @@ pub fn run() {
             commands::app_update,
             commands::app_update_check,
             commands::app_update_install,
+            commands::resume_after_crash,
         ])
         .setup(setup)
         .on_window_event(on_window_event)
@@ -88,6 +90,8 @@ fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     remember_appearance(handle);
+    recovery::start(handle);
+    classic::follow(handle);
     main_window::launch(handle);
     updater::start(handle);
     Ok(())

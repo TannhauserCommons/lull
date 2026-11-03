@@ -179,6 +179,7 @@ fn main() -> io::Result<()> {
             "app_update",
             "app_update_check",
             "app_update_install",
+            "resume_after_crash",
         ]),
     ))
     .map_err(io::Error::other)

@@ -90,6 +90,9 @@ gtk = "=0.18.2"
 tauri-plugin-global-shortcut = "=2.4.1"
 # prctl(PR_SET_PDEATHSIG): slskd stops when the app does, even after a crash. Already in Tauri's tree.
 libc = "=0.2.191"
+# The page's process dying (web-process-terminated), so the window recovers (recovery.rs). Wry's
+# own WebKitGTK binding, same version.
+webkit2gtk = "=2.0.2"
 
 [target.'cfg(target_os = "android")'.dependencies]
 # The native player: Media3 with a MediaSession service, downloads to app storage (ADR-0006), and

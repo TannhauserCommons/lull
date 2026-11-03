@@ -43,6 +43,12 @@ pub fn hub_failed(error: &str, appearance: &Appearance) -> tauri::Result<Url> {
     page("hub-error", appearance, &[("error", error)])
 }
 
+/// `main`'s page kept crashing (desktop/recovery.rs): lull's own page instead of the engine's.
+#[cfg(desktop)]
+pub fn crashed(appearance: &Appearance) -> tauri::Result<Url> {
+    page("crashed", appearance, &[])
+}
+
 pub struct Unreachable<'a> {
     pub hub: &'a Url,
     pub error: &'a str,

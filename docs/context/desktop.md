@@ -19,6 +19,7 @@ The Tauri v2 project in `app/` (its own Cargo workspace; ADR-0006) shows the hub
 | `app/src/desktop/main_window.rs` | `main`: welcome page, local hub or remote probe, device cookie, runtime IPC grant for the hub origin, close-to-tray |
 | `app/src/desktop/commands.rs` | The commands the pages call, checked at the boundary |
 | `app/src/desktop/tailscale.rs` | `tailscale serve --bg <port>` for the hub, and its status |
+| `app/src/desktop/recovery.rs` | A window whose page's process died: `logs/webview.log`, reload and resume, lull's own page for a crash loop; every window is built here on the shared WebView2 environment (Crashes, below) |
 | `app/src/desktop/updater.rs` | Update checks (at launch, every 6 hours, on request), the download with its progress, the install; the tray's update item |
 | `app/src/desktop/mini.rs` | Mini player windows `mini` (device) and `strip` |
 | `app/src/desktop/tray.rs` | Tray icon and native menu; player items become `tray` events |
@@ -32,7 +33,7 @@ The Tauri v2 project in `app/` (its own Cargo workspace; ADR-0006) shows the hub
 | `app/tauri.conf.json`, `tauri.windows.conf.json`, `tauri.linux.conf.json` | Shared config (updater key and endpoint, the asset protocol Android's download covers use, scoped to `**/lull-art/*`, and the bundled pages' CSP: Tauri leaves its `style-src` alone, since a nonce it adds would make browsers ignore `'unsafe-inline'` and drop every `style="…"` the pages render); the desktop configs add the slskd, yt-dlp and Deno sidecars and slskd's licence |
 | `app/licenses/THIRD-PARTY.md` | slskd's AGPL notice (shipped next to the app with slskd's `LICENSE`), yt-dlp's and Deno's |
 | `app/capabilities/local.json` | IPC for the bundled page |
-| `web/desktop/wrapper.html` | The bundled page: welcome, connect, hub unreachable, hub didn't start, mini player (view in the hash) |
+| `web/desktop/wrapper.html` | The bundled page: welcome, connect, hub unreachable, hub didn't start, a window that kept crashing, mini player (view in the hash) |
 | `web/desktop/desktop.js`, `desktop.css` | The app's UI; also loaded by the web UI (`index.html`), where it does nothing outside the app |
 | `web/desktop/winamp.html`, `winamp.js` | Served by the hub: the Classic window's page (Webamp alone) |
 | `web/desktop/webamp-session.js` | One Webamp playing lull's queue (hand-in, hand-back, listening), and the listener's Classic skin (loading it, Webamp's alerts, `.wsz` files kept on this device), shared by the Classic window, the browser's Classic stage (`web/screens/classic.js`) and Settings (`web/screens/skins.js`) |
@@ -48,6 +49,8 @@ The Tauri v2 project in `app/` (its own Cargo workspace; ADR-0006) shows the hub
   - `%APPDATA%\io.github.tannhausercommons.lull\slskd\`: slskd's app dir (its data, logs and `slskd.yml`);
   - `%APPDATA%\io.github.tannhausercommons.lull\transfers\`: `complete/` and `incomplete/` (`LULL_TRANSFERS_DIR`);
   - `%LOCALAPPDATA%\io.github.tannhausercommons.lull\logs\hub.log`: the hub's log, truncated at each start;
+  - `%LOCALAPPDATA%\io.github.tannhausercommons.lull\logs\webview.log` (and `webview.log.1`): which WebView2 runs, and every crash of a window's page (Crashes, below);
+  - `%LOCALAPPDATA%\io.github.tannhausercommons.lull\EBWebView\Crashpad\reports\*.dmp`: WebView2's crash dumps, kept here and never sent to Microsoft;
   - `%LOCALAPPDATA%\io.github.tannhausercommons.lull\EBWebView`: WebView2 data.
 - Bundles: `npm ci && npm run bundle` in `app/`. CI does this (`.github/workflows/app.yml`): it compiles lull's own Last.fm key into the hub (secrets `LULL_LASTFM_API_KEY`/`_SECRET`, as the image does); a `v*` tag sets the version from the tag, signs the updater files (secret `TAURI_SIGNING_PRIVATE_KEY`, no password; the .deb and .rpm with `tauri signer sign`, since the bundler signs only the installer and the AppImage) and attaches the Windows installers, the Linux deb, rpm and AppImage packages, their `.sig` files, the Android APK and `latest.json` (api.md, App releases) to that tag's Release; a manual run keeps unsigned bundles as workflow artifacts. Four desktop builds, each native on GitHub's runner for its architecture: Windows x64 (`windows-latest`) and ARM64 (`windows-11-arm`), Linux x64 (`ubuntu-22.04`) and ARM64 (`ubuntu-22.04-arm`), the oldest glibc of each.
 - **Cutting a release:** `mise run release 0.2.0` on an up-to-date, clean `main` (`scripts/release.sh`) sets the version in `Cargo.toml` (the hub's workspace) and `app/Cargo.toml` and Android's versionCode, updates both lock files, drafts the F-Droid changelog (android.md, Build it), commits `build(release): lull 0.2.0` and tags `v0.2.0`. Nothing is pushed: run `mise run check`, then `git push origin main v0.2.0` publishes it. The tag's run builds for about half an hour; the Release appears when every bundle is in.
@@ -93,6 +96,19 @@ The Tauri v2 project in `app/` (its own Cargo workspace; ADR-0006) shows the hub
 - **States** (`updates::Status`, the same in Settings > App and the tray's update item above **Quit lull**): not checked yet (**Check for updates**); checking; up to date (**lull 0.1.0 is up to date**, a click checks again); downloading, with its percentage; ready (**Restart to update to lull X**); failed, in plain words where the cause is plain ("Couldn't reach GitHub. Are you offline?", "No lull release has been published yet"), else the updater's own message.
 - A check while one runs, while an update downloads or while one waits returns the current state instead of starting another.
 
+## Crashes
+
+When a process behind a window's page dies, `recovery.rs` hears it (WebView2's `ProcessFailed` on Windows, WebKitGTK's `web-process-terminated` on Linux), writes one line to `logs/webview.log` and brings the window back, so the engine's own "This page is having a problem" never stays up.
+- **One WebView2 environment** for every window (`recovery::builder`), made on the UI thread before the first: wry's own options plus `IsCustomCrashReportingEnabled`, so dumps stay in `EBWebView\Crashpad\reports` on this computer. The log's first line each run names the WebView2 version and that folder.
+- **The log line:** the window, the process (renderer, unresponsive renderer, browser, GPU, a helper), the reason, the exit code (`0xC0000005` is an access violation), WebView2's process description and the module it crashed in, then what the app was doing (Classic open, `main` asleep, the mini player, the song and second) and what recovery did. At 256 KB it moves to `webview.log.1`.
+- **A renderer exited or hung:** the window reloads. `main` then resumes the song, second and play state it last reported (`resume_after_crash`, once; not while Classic mode plays, since Webamp plays then). The Classic window takes its handoff again, kept current as Webamp reports and moved on by the time since, so Webamp starts where it was. The mini player asks `main` for the player again.
+- **A loop** (one window's page dying 3 times in 2 minutes): `main` shows lull's own page (`crashed`) with **Reload**, which loads the web UI again with the same resume; Classic mode hands the queue back to `main` as Webamp would have; the mini player closes.
+- **The browser process** (every window's) exited: lull restarts, at most once in 10 minutes (a stamp beside the log).
+- **GPU and helper processes:** they come back by themselves; logged only.
+- **If it happens:** ask for `webview.log` and the newest `.dmp` from `Crashpad\reports`.
+
+Verified in a debug build, crashing pages through DevTools (`Page.crash`, `Browser.crashGpuProcess`): `main` while playing (reloaded and played on from the same second), three in a row (lull's page, then Reload), the mini player, the GPU process (logged with `0xC0000005`, nothing else needed), the Classic window once (Webamp started again on the same song) and three times (the queue back in `main`, playing), and `main` while Classic played (it took the queue back when Webamp closed). Opening and closing Classic mode and the mini player 15 times with a song playing crashed nothing.
+
 ## The seam with the web UI
 
 The web UI never calls Tauri directly. It uses `window.LullDesktop` from `desktop.js`, and `desktop.js` uses these parts of the web UI's `App`:
@@ -125,6 +141,7 @@ The web UI never calls Tauri directly. It uses `window.LullDesktop` from `deskto
 | `classic_handoff` | → the handoff, once; null after | hub origin (Classic window) |
 | `desktop_settings`, `set_desktop_settings` | `{ patch }` | hub origin |
 | `tailscale_status`, `tailscale_serve` | → `{ installed, running, url, serving }`; an error when this computer isn't the hub | hub origin |
+| `resume_after_crash` | → `{ id, position, playing }` once after `main`'s page reloaded from a crash, else null | hub origin (`main`) |
 | `app_update`, `app_update_check`, `app_update_install` | → the update report above; install → nothing (restarts) or an error | hub origin (`main`) |
 
 The hub origin gets its capabilities at runtime when the app first loads it: one for `main`, a smaller one for the Classic window (`core:window` show, size, focus, minimise, drag; events; `window_action`, `classic_handoff`). An origin used earlier in the same run keeps its grant until restart (Tauri can't revoke one).

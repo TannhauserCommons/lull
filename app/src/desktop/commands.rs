@@ -8,6 +8,7 @@ use crate::desktop::main_window;
 use crate::desktop::mini;
 use crate::desktop::platform;
 use crate::desktop::player;
+use crate::desktop::recovery::{self, Resume};
 use crate::desktop::settings::{HubChoice, MiniStyle};
 use crate::desktop::state::{Desktop, NowPlaying};
 use crate::desktop::tailscale::{self, Status};
@@ -65,7 +66,10 @@ pub async fn window_action(app: AppHandle, request: WindowAction) -> Result<(), 
         WindowAction::Pair { url, code } => return pair(&app, &url, code).await,
         WindowAction::Connect => main_window::open_page(&app, pages::connect(None, false, &appearance)),
         WindowAction::ChangeServer => main_window::open_page(&app, pages::welcome(&appearance)),
-        WindowAction::Retry => main_window::open_chosen(&app),
+        WindowAction::Retry => {
+            recovery::forget(&app, main_window::LABEL);
+            main_window::open_chosen(&app)
+        }
         WindowAction::CloseChoice { keep, remember } => main_window::close_choice(&app, keep, remember),
         WindowAction::MediaKeys => return platform::media_keys(&app),
         WindowAction::ClassicDone => classic::done(&app),
@@ -306,4 +310,11 @@ pub async fn app_update_install(app: AppHandle) -> Result<(), String> {
     spawn_blocking(move || updater::install(&app))
         .await
         .map_err(|e| e.to_string())?
+}
+
+/// `main`'s page once it has reloaded after its process crashed: the song, second and play state to
+/// resume (recovery.rs). Null otherwise, and after the first call.
+#[tauri::command]
+pub fn resume_after_crash(app: AppHandle) -> Option<Resume> {
+    recovery::take_resume(&app)
 }

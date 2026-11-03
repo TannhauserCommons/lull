@@ -73,3 +73,30 @@ pub fn media_keys(app: &AppHandle) -> Result<(), String> {
     }
     Ok(())
 }
+
+/// Hears WebKitGTK's web-process-terminated for this window: its page's process crashed, ran out of
+/// memory or was stopped. `failed` runs on the GTK thread.
+pub fn watch_webview(
+    window: &tauri::WebviewWindow,
+    failed: impl Fn(crate::desktop::recovery::Failure) + Send + 'static,
+) -> tauri::Result<()> {
+    use crate::desktop::recovery::{Failure, Process};
+    use webkit2gtk::{WebProcessTerminationReason, WebViewExt};
+    window.with_webview(move |webview| {
+        webview.inner().connect_web_process_terminated(move |_, reason| {
+            let reason = match reason {
+                WebProcessTerminationReason::Crashed => "crashed".to_owned(),
+                WebProcessTerminationReason::ExceededMemoryLimit => "out of memory".to_owned(),
+                WebProcessTerminationReason::TerminatedByApi => "terminated".to_owned(),
+                other => format!("{other:?}"),
+            };
+            failed(Failure {
+                process: Process::Renderer,
+                reason,
+                exit_code: None,
+                description: String::new(),
+                module: String::new(),
+            });
+        });
+    })
+}

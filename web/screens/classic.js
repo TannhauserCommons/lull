@@ -375,6 +375,12 @@
   /* desktop.js loads after this file: ask when Classic opens */
   function desktopApp() { var D = window.LullDesktop; return D && D.inWrapper && D.openClassic ? D : null; }
   var windowListen = null, hearing = false, windowWasPlaying = false;
+  /* from the start, not only once this page opened the window: a page that reloaded while Classic mode played
+     (its process crashed, app/src/desktop/recovery.rs) still takes the queue back */
+  App.on('ready', function () {                                // desktop.js loads after this file
+    var D = desktopApp();
+    if (D && !hearing) { hearing = true; D.onClassic(fromWindow); }
+  });
   /* the hand-off plus the skin to start in (later choices reach the window by the storage event) and the favourites
      for Webamp's Skins menu */
   function openWindow(D) {

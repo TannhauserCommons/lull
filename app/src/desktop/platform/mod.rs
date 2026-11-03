@@ -53,6 +53,43 @@ pub fn set_webview_awake(window: &WebviewWindow, awake: bool) -> tauri::Result<(
     }
 }
 
+/// Before the first window (recovery.rs): on Windows, one WebView2 environment for every window,
+/// whose crash dumps stay on this computer. What it says goes in the webview log.
+pub fn prepare_webviews(app: &AppHandle) -> Result<String, String> {
+    #[cfg(windows)]
+    {
+        use tauri::Manager;
+        let data = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+        windows::create_environment(&data)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = app;
+        Ok("WebKitGTK".into())
+    }
+}
+
+/// A window builder that uses the environment `prepare_webviews` made.
+pub fn shared_environment<'a>(
+    builder: tauri::WebviewWindowBuilder<'a, tauri::Wry, AppHandle>,
+) -> tauri::WebviewWindowBuilder<'a, tauri::Wry, AppHandle> {
+    #[cfg(windows)]
+    return windows::shared_environment(builder);
+    #[cfg(not(windows))]
+    builder
+}
+
+/// Calls `failed` when a process behind this window's page dies (recovery.rs).
+pub fn watch_webview(
+    window: &WebviewWindow,
+    failed: impl Fn(crate::desktop::recovery::Failure) + Send + 'static,
+) -> tauri::Result<()> {
+    #[cfg(windows)]
+    return windows::watch_webview(window, failed);
+    #[cfg(target_os = "linux")]
+    return linux::watch_webview(window, failed);
+}
+
 /// The listener's default browser (links.rs).
 pub fn open_in_browser(url: &Url) -> Result<(), String> {
     #[cfg(windows)]

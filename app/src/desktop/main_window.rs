@@ -6,6 +6,7 @@ use crate::desktop::links;
 use crate::desktop::local_hub;
 use crate::desktop::platform;
 use crate::desktop::player;
+use crate::desktop::recovery;
 use crate::desktop::settings::HubChoice;
 use crate::desktop::state::{Desktop, lock};
 use crate::hub;
@@ -13,7 +14,7 @@ use crate::pages::{self, Unreachable};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::ipc::CapabilityBuilder;
 use tauri::webview::PageLoadEvent;
-use tauri::{AppHandle, Emitter, Manager, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, Url, WebviewUrl, WebviewWindow};
 
 pub const LABEL: &str = "main";
 
@@ -39,6 +40,7 @@ const HUB_PERMISSIONS: &[&str] = &[
     "allow-app-update",
     "allow-app-update-check",
     "allow-app-update-install",
+    "allow-resume-after-crash",
 ];
 
 /// What Webamp's page in the Classic window may call (classic.rs): fit and show its window, move it
@@ -123,7 +125,7 @@ fn create(app: &AppHandle, url: Url) -> tauri::Result<WebviewWindow> {
     // Show once painted (no white flash), unless the tray holds a connected lull ("Start in the tray").
     let reveal = !(settings.start_in_tray && desktop.has_tray() && settings.hub.is_some());
     let reveal = std::sync::atomic::AtomicBool::new(reveal);
-    let main = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::External(url))
+    let main = recovery::builder(app, LABEL, WebviewUrl::External(url))
         .title("lull")
         .inner_size(1280.0, 800.0)
         .min_inner_size(480.0, 600.0)
@@ -147,6 +149,7 @@ fn create(app: &AppHandle, url: Url) -> tauri::Result<WebviewWindow> {
         })
         .build()?;
     platform::add_thumb_buttons(&main);
+    recovery::watch(&main);
     Ok(main)
 }
 
@@ -245,6 +248,7 @@ pub fn sleep(app: &AppHandle) -> tauri::Result<()> {
         return Ok(());
     };
     main.hide()?;
+    app.state::<Desktop>().set_main_asleep(true);
     platform::set_webview_awake(&main, false)
 }
 
@@ -252,6 +256,7 @@ pub fn sleep(app: &AppHandle) -> tauri::Result<()> {
 pub fn wake(app: &AppHandle) -> tauri::Result<()> {
     if let Some(main) = app.get_webview_window(LABEL) {
         platform::set_webview_awake(&main, true)?;
+        app.state::<Desktop>().set_main_asleep(false);
     }
     show(app)
 }
