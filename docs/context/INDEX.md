@@ -23,7 +23,7 @@ Curated pages for what is expensive to rediscover: boundaries, contracts, invari
 | Themes: format, hooks, Theme Studio | [../themes.md](../themes.md) *(owner writes)*, ADR-0004 | `web/designs/`, `crates/themes/` |
 | Offline downloads, outbox, lull Connect (UI) | [web.md](web.md) *(owner writes)*, ADR-0005 | `web/` |
 | Visual tests, performance budgets, asset pipeline | [quality.md](quality.md) *(owner writes)* | `tests/ui/` |
-| Classic mode skins | [skins.md](skins.md) *(owner writes)* | `crates/skins/`, `web/screens/classic.js` |
+| Classic mode skins | [skins.md](skins.md) *(owner writes)* | `crates/skins/`, `web/screens/skins.js`, `web/screens/classic.js` |
 | Web UI: structure, data layer, player engine | [web.md](web.md) *(owner writes)*, `design/DESIGN.md` | `web/index.html`, `web/app.js` |
 | Windows and Linux app | [desktop.md](desktop.md) *(owner writes)*, `design/desktop/DESKTOP.md`, ADR-0006 | `app/` |
 | Android app, native player | [android.md](android.md) *(owner writes)*, ADR-0006 | `app/src/mobile/`, `app/plugins/player/` |

@@ -512,7 +512,7 @@ Endpoint names below are suggestions; the shapes are what the UI needs.
 | `M.stats` | Stats | `GET /api/stats?period=7d|30d|12m|all`; `POST /api/taste/reset` |
 | `M.lyrics` | Lyrics | `GET /api/lyrics/:trackId` (LRCLIB, fetched and cached server-side): synced / word-synced / plain / instrumental / not found / rate-limited |
 | `M.settings` | Settings | `GET/PATCH /api/settings`; config-sourced values come back read-only; Jellyfin test + rescan; Last.fm auth URL, callback, disconnect, retry scrobbles; cache clear |
-| `M.skins`, museum search delay | Classic drawer | museum GraphQL (direct or proxied), `GET /api/skins/:md5.wsz` (server-cached, same origin), favourites stored server-side |
+| `M.skins`, museum search delay | Settings > Appearance > Classic | museum GraphQL (direct or proxied), `GET /api/skins/:md5.wsz` (server-cached, same origin), favourites stored server-side |
 | cover recipes (`.c1-.c8`) | every cover, Media Session | `GET /api/art/:albumId?size=96|256|512` (same origin); see the note below |
 | token gate mock | gate | shared token check (`GET /api/ping` -> 401) |
 | Settings > App health / update | App section | `GET /health`; service worker update flow |
@@ -552,7 +552,7 @@ and petal's `.pv-flip` mirrors the whole `.cover` (limit it to covers without ar
 - Every drag has a non-drag equivalent (menus, Alt+arrows, "Add to playlist").
 - Names and live regions: icon-only buttons have `aria-label` + tooltip; decorative art is `aria-hidden`; covers get a
   label only where they are the content; `App.announce` reports async results (search done, saved, health checked);
-  tablists use roles and arrow keys; sheets and dialogs trap focus and return it; the closed Classic skin drawer is `inert`.
+  tablists use roles and arrow keys; sheets and dialogs trap focus and return it; the Classic stage hides the app behind it (`inert`).
 - No colour-only state: status, source, quality and save states each have a glyph shape and a text label.
 - No layout shift on state changes: buffering, saving and errors swap content inside fixed boxes.
 - Text size pref 90 / 100 / 112 / 125 % scales the root; spacing is in rem. Hit targets >= 44 px (`--hit`).
@@ -575,9 +575,12 @@ resize one in a given place.
 The full integration recipe is in the header comment of
 [prototype/screens/classic.js](prototype/screens/classic.js); the essentials:
 
-- **Mount**: the stage is a full-viewport layer (`--z-classic`, under sheets, popovers and toasts opened from it).
-  Webamp renders into `#webamp-stage` (marked `data-webamp`, `position: relative`) with `webamp.renderInto(el)`
-  (Webamp >= 2.3.0). The prototype draws a tinted placeholder there; nothing else on the stage changes.
+- **Classic is only Webamp.** In a browser the stage is a full-viewport layer (`--z-classic`, under sheets, popovers
+  and toasts opened from it) holding the design's wallpaper, Webamp and one quiet way back: a small "Back to lull"
+  button in the corner (Esc, W and Webamp's close button leave too). In the desktop app Webamp has its own borderless
+  window (docs/context/desktop.md). The prototype's title pill (Exit / Skins / Help), skin drawer and footer notice
+  are gone: what they held lives in Settings > Appearance > Classic. Webamp renders into `#webamp-stage` (marked
+  `data-webamp`, `position: relative`) with `webamp.renderInto(el)` (Webamp >= 2.3.0).
 - **Version and vetting**: npm `webamp`, MIT. Designed against 2.3.1. Pin the exact version with a lockfile, bundle it
   (no CDN), lazy-load it the first time the stage opens (never on boot), read the diff before any upgrade.
   `webamp/butterchurn` (Milkdrop) is optional and much larger.
@@ -588,19 +591,25 @@ The full integration recipe is in the header comment of
 - **Hand-off** (the design assumes it): on enter, pause the app engine and give Webamp the queue, index and position;
   Webamp has no play / pause / seek events, so read `getMediaStatus()`, `getPlaylistTracks()`, shuffle and repeat back
   on exit. Webamp's own close button exits Classic (`onWillClose(cancel)`). Create the instance once; `close()` /
-  `reopen()`. The stage footer says what differs: crossfade, loudness normalisation and gapless pause, repeat is on/off.
+  `reopen()`. Settings says what differs: crossfade, loudness normalisation and gapless pause, repeat is on/off.
 - **Skins** from the Winamp Skin Museum (public GraphQL `https://api.webamp.org/graphql`, CORS allowed):
   `search_classic_skins(query, first: 30, offset, nsfw: false)` while searching (debounce 300 ms), else
   `skins(first: 30, offset, sort: MUSEUM, filter: APPROVED)`. Use `md5` as the skin id. Screenshots are 275x348 PNGs,
   shown with `image-rendering: pixelated`. `.wsz` downloads send no CORS headers, so the server downloads, validates
   (a zip holding `main.bmp`) and caches skins and serves them same-origin. NSFW skins are hidden unless Settings >
-  Appearance turns them on. Attribution is in the drawer: "Skins from the Winamp Skin Museum" (links to
+  Appearance turns them on. Attribution is in the skin browser: "Skins from the Winamp Skin Museum" (links to
   skins.webamp.org) and "View on the Winamp Skin Museum" per skin (`museum_url`). No terms of use or rate limits were
-  published when this was designed: page, debounce and cache to stay polite. A `.wsz` dropped on the window applies a
-  local skin (`URL.createObjectURL`).
-- **States**: preview with Keep / Revert (reverts after 15 s), applying, applied, failed (restores the previous skin;
-  a load that has not resolved after ~10 s counts as failed), offline (downloaded skins only). On phones Webamp runs at
-  1x with the equalizer closed (275 px fits a 360 px viewport).
+  published when this was designed: page, debounce and cache to stay polite.
+- **Settings > Appearance > Classic** (lull's own controls, every design): the skin in use with "Open a .wsz file" and
+  "Use Webamp's base skin"; the skin browser (Browse / Favourites / Downloaded tabs, search, screenshot cards with Use,
+  favourite star and museum link; a screenshot opens larger in a popover); Show NSFW skins; what differs in Classic,
+  with a way in. The choice is per device and reaches an open Classic at once, in other tabs and in the app's window.
+  A `.wsz` opened there or dropped anywhere on lull is kept on the device and chosen.
+- **States**: in Settings, downloading (through the hub) then in use, or couldn't download with the hub's sentence and
+  Try again; offline (downloaded skins only). In Classic, loading the skin, and failed (the previous skin stays; a
+  load that hasn't resolved after ~10 s counts as failed; a link to Settings). Webamp's own `alert()`s never reach the
+  browser: they become these sentences or toasts. On phones Webamp runs at 1x with the equalizer closed (275 px fits a
+  360 px viewport).
 
 ## 13. Media Session and PWA
 

@@ -43,7 +43,6 @@
   --skel: #dcdde6; --skel-hi: #ebecf2; --wave-dim: #6c7186;
   --dusk: #2a2f40; --dusk-deep: #1a1d29;
   --card-seek-played: #5a2236; --card-seek-buffered: #6f8ab8;
-  --win-hi: #f3f5fb; --win-upper: #9fb3d6; --win-mid: #3d4a6a; --win-glow: #6f84ad; --win-edge: #232a40;
 
   /* day theme: pale pearl */
   --sky: #e8e9f1; --sky-deep: #dcdde8;
@@ -319,7 +318,7 @@
 }
 :root[data-design="glasshouse"] .card--flush { padding-top: var(--gh-barh); }
 /* one title-bar recipe for windows, sheets, gadgets and the queue */
-:root[data-design="glasshouse"] :is(.card > .card-head, .sheet__head, .ctx > .region-title, .nowcol__head, .sys-tile__label, .win__bar) {
+:root[data-design="glasshouse"] :is(.card > .card-head, .sheet__head, .ctx > .region-title, .nowcol__head, .sys-tile__label) {
   color: var(--gh-bar-ink); border-bottom: 1px solid var(--gh-frame); background: var(--gh-bar);
   box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 65%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--gh-bar-1) 45%, transparent);
   text-shadow: 0 1px 0 var(--gh-bar-shadow);
@@ -341,7 +340,7 @@
   flex: 1 0 auto; max-width: calc(100% - 64px); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font: 600 .8125rem/1 var(--f-px); letter-spacing: .03em; color: var(--gh-bar-ink); text-transform: lowercase;
 }
-:root[data-design="glasshouse"] :is(.card-head__title, .sheet__title, .ctx > .region-title, .nowcol__title, .win__title)::before { content: "::\00a0"; color: var(--gh-bar-ink-2); }
+:root[data-design="glasshouse"] :is(.card-head__title, .sheet__title, .ctx > .region-title, .nowcol__title)::before { content: "::\00a0"; color: var(--gh-bar-ink-2); }
 :root[data-design="glasshouse"] .card-head__meta { order: 2; flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; font: 500 .75rem/1 var(--f-px); color: var(--gh-bar-ink-2); }
 :root[data-design="glasshouse"] .card-head:has(> .btn--quiet, > a, > .label-rule__end) > .card-head__meta { display: none; }
 :root[data-design="glasshouse"] .card > .card-head::after {      /* three glossy beads (decorative) */
@@ -1166,34 +1165,11 @@
 :root[data-design="glasshouse"] .dk-strip { border: 1px solid var(--gh-frame); box-shadow: inset 0 1px 0 var(--gh-rim), var(--stack-1l); }
 
 /* =====================================================================
-   Classic stage: the misty desktop itself (the app is hidden while the stage is open, so nothing smears behind it),
-   standard window bars (mono title, orbs on the right in bead order) and a frosted stage with a faint lens ring
+   Classic stage: Webamp alone on the misty desktop itself (the app is hidden while the stage is open, so nothing smears
+   behind it)
    ===================================================================== */
 :root[data-design="glasshouse"][data-classic="on"] .app { visibility: hidden; }
 :root[data-design="glasshouse"] .cls-scrim { opacity: 1; background: color-mix(in srgb, var(--gh-wall-0) 28%, transparent); }
-:root[data-design="glasshouse"] .win { border: 1px solid var(--gh-frame); border-radius: var(--r-card); }
-:root[data-design="glasshouse"] .cls-bar { background: transparent; box-shadow: var(--stack-1l); }
-:root[data-design="glasshouse"] .cls-bar .win__bar { padding: 4px 10px 4px 14px; }
-:root[data-design="glasshouse"] .win__title {
-  order: 1; display: flex; align-items: center; justify-content: flex-start; height: 28px; padding: 0; border: 0; border-radius: 0; background: none;
-  font: 600 .9375rem/1 var(--f-px); letter-spacing: .04em; color: var(--gh-bar-ink); text-shadow: 0 1px 0 var(--gh-bar-shadow);
-}
-:root[data-design="glasshouse"] .cls-bar .win__title { height: 30px; }
-:root[data-design="glasshouse"] .win__orbs { order: 2; gap: 8px; }
-:root[data-design="glasshouse"] .orb { width: 16px; height: 16px; border-color: rgba(0, 0, 0, .45);
-  background: radial-gradient(circle at 50% 28%, #fff 0 14%, transparent 34%), radial-gradient(circle at 50% 80%, rgba(255, 255, 255, .5), transparent 60%), var(--orb); }
-:root[data-design="glasshouse"] .orb::after { display: none; }
-:root[data-design="glasshouse"] .orb--blue { --orb: #8fb0d8; } :root[data-design="glasshouse"] .orb--lav { --orb: #b9b1d6; } :root[data-design="glasshouse"] .orb--mag { --orb: var(--gh-rose-glow); }
-:root[data-design="glasshouse"] .orb:hover { filter: brightness(1.12); }
-:root[data-design="glasshouse"] .cls-slot { border: 1px solid var(--gh-frame); border-radius: var(--r-card);
-  background: radial-gradient(circle at 50% 55%, transparent 0 30%, var(--gh-ghost) 30.5% 31.5%, transparent 32% 40%, color-mix(in srgb, var(--gh-ghost) 60%, transparent) 40.5% 41%, transparent 41.5%),
-    linear-gradient(128deg, var(--gh-sheen-panel), transparent 40%), color-mix(in srgb, var(--panel) 55%, transparent);
-  box-shadow: inset 0 1px 0 var(--gh-rim), inset 0 2px 12px var(--gh-cast); }
-:root[data-design="glasshouse"] :is(.cls-notice, .cls-exit) {      /* small windows: a slim aero band on top */
-  border: 1px solid var(--gh-frame); border-radius: 10px; padding-top: 14px;
-  background: var(--gh-bar) top / 100% 8px no-repeat, linear-gradient(128deg, var(--gh-sheen-panel), transparent 40%), var(--cream);
-  box-shadow: inset 0 1px 0 var(--gh-rim), var(--stack-sm);
-}
 
 /* =====================================================================
    Phone (< 640): glass header, capsule mini player, glass tab dock; Now Playing art is the hero

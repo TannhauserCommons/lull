@@ -36,8 +36,6 @@
     --dusk: #414759; --dusk-deep: #2a2f40;
     /* seek colours on cream (cards are cream in both themes, so they use the day pair) */
     --card-seek-played: #2e2a6e; --card-seek-buffered: #7489c4;
-    /* Classic-mode window chrome only (moodboard img 05 / 03) */
-    --win-hi: #e4defe; --win-upper: #8e7ce6; --win-mid: #5f4fc4; --win-glow: #8d7de0; --win-edge: #4a3fa3;
   }
 
   /* ---------- 4.2 theme tokens ---------- */

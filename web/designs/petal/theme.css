@@ -68,7 +68,6 @@
   --ok: #2f6b4f; --warn: #7a5200; --down: #a3324f;
   --skel: #f6dbe9; --skel-hi: #fcecf4; --wave-dim: #b98aa8;
   --card-seek-played: #5e1f4c; --card-seek-buffered: #c46fa5;
-  --win-hi: #ffffff; --win-upper: #fdf0f7; --win-mid: #8e3574; --win-glow: #f6cee4; --win-edge: #c46fa5;
 
   /* theme (day) */
   --sky: #fce8f3; --sky-deep: #f8dcec; --panel: #fffafd; --panel-2: #fbeef5;
@@ -110,7 +109,6 @@
   --ok: #93d8b2; --warn: #f2c879; --down: #ff9db5;
   --skel: #412838; --skel-hi: #4e3147; --wave-dim: #c99bb8;
   --card-seek-played: #fff0f8; --card-seek-buffered: #b0628f;
-  --win-hi: #6a3a5e; --win-upper: #4f2c47; --win-mid: #f3c3df; --win-glow: #3a2036; --win-edge: #8c4a7a;
   --sky: #22131e; --sky-deep: #2e1a29; --panel: #2c1827; --panel-2: #3a2134;
   --tray: #3a2134; --tray-edge: #5a3350;
   --fg-sky: #fbeaf4; --fg-sky-2: #dfb8cf; --fg-panel: #fbeaf4; --fg-panel-2: #dfb8cf;
@@ -895,24 +893,9 @@
 :root[data-design="petal"] .dk-strip { border: 1.5px solid var(--pt-frame); border-radius: 5px; }
 
 /* =====================================================================
-   Classic: the Webamp ghost in a small img 03 window on a pixel-cloud wallpaper
+   Classic: Webamp alone on the blush desk; the skin cards in Settings keep petal's pixel corners
    ===================================================================== */
 :root[data-design="petal"] .cls-scrim { opacity: 1; }
-:root[data-design="petal"] :is(.cls-bar, .cls-desk) { border: 1.5px solid var(--pt-frame); border-radius: 6px; }
-:root[data-design="petal"] .cls-bar { overflow: hidden; }
-:root[data-design="petal"] .cls-desk { background: var(--pt-blush) var(--pt-clouds) 0 0 / 192px 112px repeat; image-rendering: pixelated; box-shadow: var(--stack); }
-:root[data-design="petal"] .cls-slot { border: 0; }
-:root[data-design="petal"] .win { border: 1.5px solid var(--pt-frame); }
-:root[data-design="petal"] .win__bar { background: linear-gradient(180deg, var(--pt-bar-1) 0%, var(--pt-bar-2) 46%, var(--pt-bar-3) 47%, var(--pt-bar-4) 100%); border-bottom: 1px solid var(--pt-bar-line); }
-:root[data-design="petal"] .win__title {
-  background: transparent; border: 0; color: var(--fg-sky); height: 28px;
-  font: var(--t-label); font-size: .8125rem; text-transform: uppercase; letter-spacing: .18em;
-}
-:root[data-design="petal"] .orb { width: 16px; height: 16px; border-color: var(--gl-edge); }
-:root[data-design="petal"] .orb--blue { --orb: var(--gl-low); }
-:root[data-design="petal"] .orb--lav { --orb: var(--gl-mid); }
-:root[data-design="petal"] .orb--mag { --orb: var(--gl-edge); }
-:root[data-design="petal"] .cls-drawer { border: 1.5px solid var(--pt-frame); box-shadow: var(--stack); }
 :root[data-design="petal"] .cls-card { border-radius: 4px; }
 :root[data-design="petal"] .cls-shot { border-radius: 2px; }
 

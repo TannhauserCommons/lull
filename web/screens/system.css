@@ -205,13 +205,11 @@ label.sys-row { cursor: pointer; }
 .sys-follows a:hover { text-decoration: underline; }
 .sys-follows .btn[aria-pressed="true"] { background: var(--peri); color: var(--ink); }
 
-/* appearance: design and skin pickers */
+/* appearance: design picker (Classic's skins are classic.css) */
 .sys-designs { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: var(--sp-3); width: 100%; }
-.sys-design, .sys-skin { position: relative; border: var(--stroke) solid var(--line); border-radius: 14px; background: var(--bg); color: var(--fg); text-align: left; transition: background-color var(--dur-1); }
-.sys-design { display: grid; align-content: start; gap: 4px; padding: 8px 8px 12px; }
-.sys-design:hover, .sys-skin:hover { background: var(--bg-2); }
-.sys-design[aria-checked="true"], .sys-skin[aria-checked="true"] { background: var(--peri); color: var(--ink); }
-.sys-design[aria-checked="true"] { box-shadow: 0 4px 0 -2px var(--stack-1), 0 4px 0 0 var(--line); }
+.sys-design { position: relative; display: grid; align-content: start; gap: 4px; padding: 8px 8px 12px; border: var(--stroke) solid var(--line); border-radius: 14px; background: var(--bg); color: var(--fg); text-align: left; transition: background-color var(--dur-1); }
+.sys-design:hover { background: var(--bg-2); }
+.sys-design[aria-checked="true"] { background: var(--peri); color: var(--ink); box-shadow: 0 4px 0 -2px var(--stack-1), 0 4px 0 0 var(--line); }
 .sys-design__name { display: flex; align-items: center; gap: 6px; margin: 6px 4px 0; font: 800 1rem/1.2 var(--f-ui); }
 .sys-design__desc { margin: 0 4px; font: var(--t-meta); color: var(--fg-2); }
 .sys-design[aria-checked="true"] .sys-design__desc { color: var(--ink); }
@@ -246,13 +244,6 @@ label.sys-row { cursor: pointer; }
 .sys-design__pv.has-shot { --pv: var(--pv-day); display: block; height: auto; aspect-ratio: 16 / 10; padding: 0; background: var(--pv) center / cover no-repeat, var(--d1); }
 :root[data-theme="night"] .sys-design__pv.has-shot { --pv: var(--pv-night); }
 .sys-design__pv.has-shot > i { display: none; }
-.sys-skins { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: var(--sp-2); }
-.sys-skin { display: grid; gap: 6px; padding: 8px; }
-/* the skin's museum screenshot (pixel art: kept crisp), top-aligned where the main window sits */
-.sys-skin__thumb { display: block; height: 56px; border-radius: 8px; overflow: hidden; border: var(--stroke-thin) solid var(--line); background: var(--bg-2); image-rendering: pixelated; }
-.sys-skin__thumb img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top; }
-.sys-skin__name { font: 800 .875rem/1.2 var(--f-ui); padding-right: 18px; }
-.sys-skin__fav { position: absolute; right: 8px; bottom: 9px; color: var(--heart); }
 .sys-version { font: var(--t-px); }
 .sys-health__when { margin: var(--sp-2) 0 0; }
 .sys-health__when .px { font: var(--t-px); color: var(--fg); }

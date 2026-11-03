@@ -10,7 +10,8 @@ from, how the player plays, and the rules screens follow. The endpoint contract 
 ```
 index.html   tokens.css base.css components.css screens/*.css desktop/desktop.css designs/<name>/design.css (last)
              designs/designs.js + the pre-paint script (design, theme, motion, text size)
-             icons.js data.js app.js layout.js connect.js offline.js screens/{discover,now,library,system,appearance,hub,setup,classic}.js desktop/desktop.js
+             icons.js data.js app.js layout.js connect.js offline.js screens/{discover,now,library,system,appearance}.js
+             desktop/webamp-session.js screens/{skins,hub,setup,classic}.js desktop/desktop.js
 data.js      window.LullData = App.data: API client, entity cache, per-route reads, the event stream
 app.js       window.App: router, render helpers, overlays, save pipeline, player engine, shell, actions,
              keyboard, Media Session, drag and drop, server events + boot
@@ -18,6 +19,9 @@ layout.js    ADR-0007: size classes, App.layout (lull:layout), resize handles, t
 sw.js        service worker (app shell for offline start); manifest.webmanifest
 hub.js       the hub's own settings: library source (folder / Jellyfin), Soulseek account, Settings > Devices (App.hubKit)
 setup.js     the pairing gate, #/pair/<code>, first-run setup (/setup)
+skins.js     Classic mode's skin, per device (App.classicSkin), and Settings > Appearance > Classic: the skin browser,
+             .wsz files kept on this device, the NSFW switch (docs/context/skins.md)
+classic.js   Classic mode: Webamp alone, on a stage in a browser or in the desktop app's own window
 vendor/      Webamp bundle and the QR encoder (qrcode-generator), copied by scripts/vendor-web.sh, gitignored
 desktop/     the desktop app's wrapper pages and bridge (`LullDesktop`), owned by the Apps session
 ```

@@ -1,14 +1,13 @@
 /* screens/appearance.js.
-   Settings > Appearance: design, theme, motion, text size, the layout's reset and Classic mode's skin settings, all per device
-   (App.setPref, and App.storage for Classic mode's two); the listener's own themes (import by drag and drop, export,
-   delete) and the way into Theme Studio (designs/studio.js, ADR-0004, docs/themes.md). Live reload of a stored theme
-   runs here too.
+   Settings > Appearance: design, theme, motion, text size and the layout's reset, all per device (App.setPref); the
+   listener's own themes (import by drag and drop, export, delete) and the way into Theme Studio (designs/studio.js,
+   ADR-0004, docs/themes.md); Classic mode's group, which screens/skins.js builds (App.classicSettings). Live reload
+   of a stored theme runs here too.
    Builds with the shared settings controls from screens/system.js (App.settingsKit), which loads first. */
 (function () {
   'use strict';
-  var html = App.html, ui = App.ui, M = App.data, icon = App.icon, $ = App.$;
-  var K = App.settingsKit, row = K.row, choice = K.choice, switchRow = K.switchRow, group = K.group, custom = K.custom, get = K.get;
-  var SKIN_FAVS = '/api/skins/favourites';
+  var html = App.html, M = App.data, icon = App.icon, $ = App.$;
+  var K = App.settingsKit, row = K.row, choice = K.choice, group = K.group, custom = K.custom;
 
   var designFocus = false;                         // the picker had focus: give it back after the re-render
   custom['device.design'] = { get: function () { return App.prefs().design; }, set: function (v) {
@@ -19,9 +18,6 @@
   custom['device.theme'] = { get: function () { return App.prefs().theme; }, set: function (v) { App.setPref('theme', v === 'system' ? null : v); } };
   custom['device.motion'] = { get: function () { return App.prefs().motion; }, set: function (v) { App.setPref('motion', v); } };
   custom['device.textSize'] = { get: function () { return App.prefs().textSize; }, set: function (v) { App.setPref('textSize', v); } };
-  /* Classic mode reads these two from the same storage keys */
-  custom['device.defaultSkin'] = { get: function () { return App.storage('defaultSkin'); }, set: function (v) { App.storage('defaultSkin', v); } };
-  custom['device.showNsfwSkins'] = { get: function () { return App.storage('showNsfwSkins') === true; }, set: function (v) { App.storage('showNsfwSkins', v); } };
   /* design preview card: the package's screenshot (assets/preview-{day,night}.webp, when d.preview) over a tiny
      picture of the shell (rail / topnav / dock) in its swatches, which shows while the image loads or when there is none */
   function designCard(name, on) {
@@ -33,18 +29,6 @@
       <span class="sys-design__pv${d.preview ? ' has-shot' : ''}" data-shell="${d.shell}" aria-hidden="true"><i class="sys-design__nav"></i><i class="sys-design__win"><b></b><b></b><b></b></i><i class="sys-design__win sys-design__win--b"><b></b><b></b></i><i class="sys-design__bar"><b></b></i><i class="sys-design__dock"></i></span>
       <span class="sys-design__name">${d.label}${icon('check', null, 'ic-16 sys-design__check')}</span>
       <span class="sys-design__desc">${d.description || (d.author ? 'By ' + d.author : 'Your theme')}</span></button>`;
-  }
-  /* favourite skins (GET /api/skins/favourites) to pick the default from */
-  function skinPicker() {
-    var r = M.get(SKIN_FAVS);
-    if (r.loading) return ui.skeleton('chip', 3);
-    if (r.error) return html`<p class="field__error">${icon('warning', null, 'ic-16')}${r.error.message}</p><button class="btn btn--sm" data-act="reload-read" data-id="${SKIN_FAVS}">Try again</button>`;
-    var skins = r.data.items, cur = get('device.defaultSkin');
-    if (!skins.length) return html`<p class="sys-row__help">No favourite skins yet. Star one in Classic mode and it shows up here.</p>`;
-    return html`<div class="sys-skins" role="radiogroup" aria-labelledby="sys-skin-l" data-key="device.defaultSkin">${skins.map(function (s) {
-      var on = s.md5 === cur;
-      return html`<button type="button" class="sys-skin" role="radio" aria-checked="${on ? 'true' : 'false'}" tabindex="${on ? '0' : '-1'}" data-value="${s.md5}"><span class="sys-skin__thumb" aria-hidden="true">${s.screenshotUrl ? html`<img src="${s.screenshotUrl}" alt="" loading="lazy" decoding="async">` : ''}</span><span class="sys-skin__name">${s.name}</span>${icon('star-fill', 'Favourite', 'ic-16 sys-skin__fav')}</button>`;
-    })}</div>`;
   }
   /* the listener's themes: edit in Theme Studio, export, delete; import by drop or file */
   function myThemes() {
@@ -72,10 +56,7 @@
       ${row('Reset layout', 'Puts the side panel, the Now Playing column, and side-by-side search back as they came. This device only.', html`<button class="btn btn--sm" data-act="layout-reset">${icon('undo', null, 'ic-16')}Reset layout</button>`)}
       ${group('themes')}
       ${myThemes()}
-      ${group('classic mode')}
-      <div class="sys-row sys-row--stack"><div class="sys-row__text"><span class="sys-row__label" id="sys-skin-l">Default skin</span><span class="sys-row__help">Used when Classic mode opens on this device. Your favourite skins are listed; find more in Classic mode.</span></div>
-        <div class="sys-row__ctl">${skinPicker()}<a class="btn btn--quiet btn--sm" href="#/classic">${icon('classic')}Browse skins in Classic mode</a></div></div>
-      ${switchRow('device.showNsfwSkins', 'Show NSFW skins', 'Hidden by default in the skin browser on this device.')}`;
+      ${App.classicSettings()}`;
   }
   var listed = false;                              // GET /api/themes once per page; theme.changed keeps it current
   function onAppearance() { return /^\/settings\/appearance/.test(App.current.path); }

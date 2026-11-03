@@ -35,7 +35,7 @@ The Tauri v2 project in `app/` (its own Cargo workspace; ADR-0006) shows the hub
 | `web/desktop/wrapper.html` | The bundled page: welcome, connect, hub unreachable, hub didn't start, mini player (view in the hash) |
 | `web/desktop/desktop.js`, `desktop.css` | The app's UI; also loaded by the web UI (`index.html`), where it does nothing outside the app |
 | `web/desktop/winamp.html`, `winamp.js` | Served by the hub: the Classic window's page (Webamp alone) |
-| `web/desktop/webamp-session.js` | One Webamp playing lull's queue (hand-in, hand-back, listening), shared by the Classic window and the browser's Classic stage (`web/screens/classic.js`) |
+| `web/desktop/webamp-session.js` | One Webamp playing lull's queue (hand-in, hand-back, listening), and the listener's Classic skin (loading it, Webamp's alerts, `.wsz` files kept on this device), shared by the Classic window, the browser's Classic stage (`web/screens/classic.js`) and Settings (`web/screens/skins.js`) |
 
 ## Run it
 
@@ -171,4 +171,4 @@ The hub origin gets its capabilities at runtime when the app first loads it: one
 
 - The Snap Layouts flyout on the custom Maximise button doesn't appear (DESKTOP.md 2.1).
 - Pages from other origins get no IPC.
-- In the Classic window Webamp's windows stay docked together (the window moves instead), and its double-click on a title bar (window shade) is lost to the drag. The skin drawer is the browser stage's; the window has Webamp's own Skins menu (favourites) and takes dropped `.wsz` files.
+- In the Classic window Webamp's windows stay docked together (the window moves instead), and its double-click on a title bar (window shade) is lost to the drag. Skins are chosen in Settings › Appearance › Classic, in `main`; the window follows a new choice at once (the `storage` event, docs/context/skins.md), shows Webamp's own Skins menu (favourites), and takes dropped `.wsz` files for that session only. Webamp's alerts show as a note over its windows, never as a dialog.

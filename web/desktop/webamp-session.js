@@ -1,6 +1,6 @@
-/* desktop/webamp-session.js: one Webamp playing lull's queue. Shared by Classic mode in the web UI
-   (screens/classic.js) and by the desktop app's Classic window (desktop/winamp.js), which has no App:
-   everything it needs comes in the hand-off.
+/* desktop/webamp-session.js: one Webamp playing lull's queue, and the listener's Classic skin. Shared by Classic
+   mode in the web UI (screens/classic.js, loaded at boot for screens/skins.js too) and by the desktop app's Classic
+   window (desktop/winamp.js), which has no App: everything it needs comes in the hand-off.
      handoff = { tracks: [{ id, url, title, artist, album, duration, art }], index, pos, playing, shuffle,
                  repeat (Webamp's is on or off), volume (0..1) }, URLs absolute
    LullWebamp.session(webamp, hooks) -> session
@@ -20,13 +20,51 @@
    Skins: Webamp reads a skin with fetch(url) and reports a failure with window.alert(). lull never lets it:
      LullWebamp.quietAlerts(onAlert)   Webamp's alerts come here instead of the browser's dialog; during a
                                        loadSkin they fail that load, any other goes to onAlert(message)
-     LullWebamp.loadSkin(webamp, src)  src: a URL on the hub, fetched here first (the hub's sentence on a
-                                       failure), or a Blob (a file from this device). Webamp gets the bytes as
-                                       a blob: URL; resolves once it shows them, rejects with a sentence. */
+     LullWebamp.loadSkin(webamp, src)  src: a skin URL (below), fetched here first (the hub's sentence on a
+                                       failure), a Blob, or null for Webamp's base skin. Webamp gets the bytes
+                                       as a blob: URL; resolves once it shows them, rejects with a sentence.
+     LullWebamp.skinFile(url)          the .wsz as a Blob, or a rejection with the sentence
+   The listener's Classic skin is per device: localStorage SKIN_KEY = { md5, name, screenshotUrl } or null
+   (Webamp's base skin), chosen in Settings > Appearance (screens/skins.js). Both Classic players apply it when
+   they open, and follow its storage event while open (a change made in another tab or window).
+     LullWebamp.skinUrl(base, skin)    its file: <base>api/skins/<md5>.wsz for a museum skin, or
+                                       <base>local-skins/<md5>.wsz for a .wsz kept on this device (md5
+                                       'local-…'), a URL on the hub's origin that nothing serves: skinFile
+                                       reads it from IndexedDB 'lull-skins' (store 'files', by md5)
+     LullWebamp.localSkins()           [{ md5, name, file, blob, added }] kept on this device, newest first
+     LullWebamp.keepLocal(entry), dropLocal(md5) */
 (function () {
   'use strict';
   var SKIN_TIMEOUT_MS = 10000;
+  var SKIN_KEY = 'lull:classicSkin';
+  var LOCAL = /\/local-skins\/(local-[0-9a-z]+)\.wsz$/;
   function absolute(url) { return new URL(url, location.href).href; }
+
+  function skinUrl(base, skin) {
+    if (!skin) return null;
+    var local = /^local-/.test(skin.md5);
+    return new URL((local ? 'local-skins/' : 'api/skins/') + encodeURIComponent(skin.md5) + '.wsz', base).href;
+  }
+  /* .wsz files from this device, in IndexedDB (shared by every lull page and window of this browser or app) */
+  function files(mode, use) {
+    return new Promise(function (resolve, reject) {
+      var req = indexedDB.open('lull-skins', 1);
+      req.onupgradeneeded = function () { req.result.createObjectStore('files', { keyPath: 'md5' }); };
+      req.onerror = function () { reject(req.error); };
+      req.onsuccess = function () {
+        var db = req.result, tx = db.transaction('files', mode), op = use(tx.objectStore('files'));
+        tx.oncomplete = function () { db.close(); resolve(op.result); };
+        tx.onerror = tx.onabort = function () { db.close(); reject(tx.error); };
+      };
+    });
+  }
+  function localSkins() {
+    return files('readonly', function (s) { return s.getAll(); }).then(function (all) {
+      return all.sort(function (a, b) { return b.added - a.added; });
+    });
+  }
+  function keepLocal(entry) { return files('readwrite', function (s) { return s.put(entry); }); }
+  function dropLocal(md5) { return files('readwrite', function (s) { return s.delete(md5); }); }
 
   var failSkin = null;                                            // the loadSkin in progress, if any
   function quietAlerts(onAlert) {
@@ -35,8 +73,14 @@
       if (failSkin && /skin/i.test(message)) failSkin(message); else onAlert(message);
     };
   }
-  function skinBlob(src) {
-    if (src instanceof Blob) return Promise.resolve(src);
+  function skinFile(src) {
+    var local = LOCAL.exec(src);
+    if (local) {
+      return files('readonly', function (s) { return s.get(local[1]); }).then(function (entry) {
+        if (!entry) throw new Error('the file isn\'t kept on this device any more.');
+        return entry.blob;
+      }, function () { throw new Error('this device\'s skin files can\'t be read.'); });
+    }
     /* the hub serves .wsz files as immutable (named by md5), so any cached copy will do, also offline */
     return fetch(src, { credentials: 'same-origin', cache: 'force-cache' }).then(function (res) {
       if (res.ok) return res.blob();
@@ -49,7 +93,9 @@
   }
   /* one load at a time: callers wait for the last one before starting the next */
   function loadSkin(webamp, src) {
-    return skinBlob(src).then(function (blob) {
+    /* Webamp has no public call for its base skin: this is what its own Skins > <Base Skin> sends (2.3.1) */
+    if (!src) { webamp.store.dispatch({ type: 'LOAD_DEFAULT_SKIN' }); return Promise.resolve(); }
+    return (src instanceof Blob ? Promise.resolve(src) : skinFile(src)).then(function (blob) {
       var url = URL.createObjectURL(blob);
       return new Promise(function (resolve, reject) {
         var settled = false, timer = setTimeout(function () {
@@ -61,7 +107,10 @@
           URL.revokeObjectURL(url);                               // Webamp has read it by now, or never will
           if (err) reject(err); else resolve();
         }
-        failSkin = function () { done(new Error('Webamp couldn\'t read it, so it may not be a classic Winamp skin.')); };
+        failSkin = function (said) {
+          done(new Error(/download/i.test(said) ? 'Webamp couldn\'t open the file lull handed it.'
+            : 'Webamp couldn\'t read it, so it may not be a classic Winamp skin.'));
+        };
         webamp.setSkinFromUrl(url);
         webamp.skinIsLoaded().then(function () { done(null); }, done);
       });
@@ -153,5 +202,6 @@
       idOf: function (url) { var t = byUrl[absolute(url)]; return t ? t.id : null; } };
   }
 
-  window.LullWebamp = { session: session, quietAlerts: quietAlerts, loadSkin: loadSkin };
+  window.LullWebamp = { session: session, quietAlerts: quietAlerts, loadSkin: loadSkin, skinFile: skinFile,
+    SKIN_KEY: SKIN_KEY, skinUrl: skinUrl, localSkins: localSkins, keepLocal: keepLocal, dropLocal: dropLocal };
 })();

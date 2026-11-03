@@ -540,7 +540,7 @@
     ['discovery', 'Discovery', 'sparkle', 'Sources, follows, adventurousness'],
     ['privacy', 'Privacy', 'eye-off', 'Private listening on this device'],
     ['devices', 'Devices', 'connect', 'Paired devices, add one, Subsonic apps'],
-    ['appearance', 'Appearance', 'sun', 'Design, theme, motion, text size'],
+    ['appearance', 'Appearance', 'sun', 'Design, theme, motion, text size, Classic skins'],
     ['shortcuts', 'Shortcuts', 'keyboard', 'Every keyboard shortcut'],
     ['app', 'App', 'device', 'Install, version, server health']
   ];

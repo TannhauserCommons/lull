@@ -190,7 +190,7 @@
 /* =====================================================================
    Surfaces. Cream trays everywhere content lives (both themes), on the two-layer stack.
    ===================================================================== */
-:root[data-design="starlight"] :is(.s-card, .card, .pbar, .ctx, .nowcol, .mini, .sl-hero, .now-head, .now__acts, .sys-nav, .cls-drawer, .cls-bar, .sl-mini__card, .dk-strip) {
+:root[data-design="starlight"] :is(.s-card, .card, .pbar, .ctx, .nowcol, .mini, .sl-hero, .now-head, .now__acts, .sys-nav, .sl-mini__card, .dk-strip) {
   --bg: var(--cream); --bg-2: var(--cream-2); --bg-3: var(--cream-3);
   --fg: var(--ink); --fg-2: var(--ink-2);
   --link: var(--link-on-cream); --edge: var(--line); --focus: var(--indigo);
@@ -203,14 +203,14 @@
 :root[data-design="starlight"] .card { border-width: var(--stroke); border-radius: var(--r-card); }
 /* a field error is an error, not a hint: the danger ink, not the periwinkle link */
 :root[data-design="starlight"] .field__error { color: var(--sl-down); }
-:root[data-design="starlight"] :is(.pbar, .ctx, .nowcol, .sl-hero, .sys-nav, .cls-drawer, .sl-mini__card) {
+:root[data-design="starlight"] :is(.pbar, .ctx, .nowcol, .sl-hero, .sys-nav, .sl-mini__card) {
   border: var(--stroke) solid var(--line); box-shadow: var(--sl-stack);
 }
 :root[data-design="starlight"] :is(.pbar, .ctx, .nowcol) { border-radius: var(--r-panel); }
 :root[data-design="starlight"] :is(.ctx, .nowcol) { margin-bottom: 30px; }
 :root[data-design="starlight"] .pbar { margin-bottom: 26px; }
 /* --sl-stack is declared on each tray (not on :root) so a tray's own --sl-o1 / --sl-o2 move its layers */
-:root[data-design="starlight"] :is(.pbar, .ctx, .nowcol, .sl-hero, .sys-nav, .cls-drawer, .sl-mini__card, .card[data-region], .sys-design) {
+:root[data-design="starlight"] :is(.pbar, .ctx, .nowcol, .sl-hero, .sys-nav, .sl-mini__card, .card[data-region], .sys-design) {
   --sl-stack: 0 var(--sl-o1) 0 -2px var(--stack-1), 0 var(--sl-o1) 0 0 var(--line), 0 var(--sl-o2) 0 -2px var(--stack-2), 0 var(--sl-o2) 0 0 var(--line);
 }
 /* the stack is physical: a tray under the pointer sinks 3 px onto its lavender layer, the periwinkle layer peeks out */
@@ -819,7 +819,7 @@
   :root[data-design="starlight"] .sys-nav__item--default { background: var(--sl-chip); color: var(--ink); border-color: var(--line); box-shadow: 0 4px 0 -1.5px var(--stack-1), 0 4px 0 0 var(--line); margin-bottom: 5px; }
 }
 /* the design picker (base shows each design's screenshot): the card in use is lifted on its stack and tagged */
-:root[data-design="starlight"] :is(.sys-design, .sys-skin)[aria-checked="true"] { background: var(--cream); color: var(--ink); }
+:root[data-design="starlight"] .sys-design[aria-checked="true"] { background: var(--cream); color: var(--ink); }
 :root[data-design="starlight"] .sys-design[aria-checked="true"] { box-shadow: var(--sl-stack); margin-bottom: 14px; }
 :root[data-design="starlight"] .sys-design[aria-checked="true"]::before {
   content: "in use"; position: absolute; top: -11px; left: 14px; padding: 3px 10px; border: var(--stroke) solid var(--line); border-radius: 999px;
@@ -895,33 +895,9 @@
 :root[data-design="starlight"] :is(.s-sky, .view > .empty) .sl-empty__spark { fill: var(--sparkle); }
 
 /* =====================================================================
-   Classic stage: opaque starry sky (no ghost shell, see the sky section), a cream title tray in the label-rule voice
-   ("classic ----" with three outlined round keys), the skins drawer a cream tray on the stack
+   Classic stage: Webamp alone on the opaque starry sky (no ghost shell, see the sky section)
    ===================================================================== */
 :root[data-design="starlight"] .cls-scrim { opacity: 1; }
-:root[data-design="starlight"] .cls-bar { border: var(--stroke) solid var(--line); border-radius: 999px; box-shadow: var(--sl-layer); }
-:root[data-design="starlight"] .cls-bar .win__bar { flex-direction: row-reverse; padding: 6px 8px 6px 22px; }
-:root[data-design="starlight"] :is(.cls-bar, .cls-drawer) .win__title {
-  flex: 1; display: flex; align-items: center; gap: 14px; height: auto; margin: 0; padding: 0; background: transparent; border: 0; box-shadow: none;
-  color: var(--fg); font: 400 1.0625rem/1.3 var(--f-ui); letter-spacing: .01em; text-transform: none; justify-content: flex-start;
-}
-:root[data-design="starlight"] :is(.cls-bar, .cls-drawer) .win__title::after { content: ""; flex: 1; height: 1.5px; background: var(--sl-rule); }
-:root[data-design="starlight"] :is(.cls-bar, .cls-drawer) .win__title::before { display: none; }
-:root[data-design="starlight"] .orb { position: relative; width: 34px; height: 34px; border: var(--stroke) solid var(--sl-icon); border-radius: 50%; background: var(--bg); box-shadow: none; }
-:root[data-design="starlight"] .orb:hover { background: var(--bg-2); }
-:root[data-design="starlight"] .orb::after { display: none; }
-:root[data-design="starlight"] .orb::before {
-  content: ""; position: absolute; inset: 8px; background: var(--sl-icon); opacity: 1;
-  -webkit-mask: var(--sl-orb-glyph) center / contain no-repeat; mask: var(--sl-orb-glyph) center / contain no-repeat;
-}
-/* glyph masks stay inline: CSS masks cannot load files from file:// */
-:root[data-design="starlight"] .orb--blue { --sl-orb-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 3l10 10M13 3L3 13' stroke='%23000' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E"); }
-:root[data-design="starlight"] .orb--lav { --sl-orb-glyph: var(--mask-sparkle); }
-:root[data-design="starlight"] .orb--mag { --sl-orb-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M5.6 5.6a2.5 2.5 0 1 1 3.4 2.3c-.7.3-1 .8-1 1.5v.6' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round'/%3E%3Ccircle cx='8' cy='12.6' r='1.1'/%3E%3C/svg%3E"); }
-:root[data-design="starlight"] .cls-slot { border-color: color-mix(in srgb, var(--edge) 70%, transparent); background: color-mix(in srgb, var(--sky-deep) 30%, transparent); }
-:root[data-design="starlight"] .cls-drawer { border-radius: var(--r-card); margin-bottom: var(--stack-reserve); }
-:root[data-design="starlight"] .cls-drawer .win__bar { padding: 16px 12px 6px 20px; }
-:root[data-design="starlight"] :is(.cls-notice, .cls-exit) { box-shadow: var(--sl-layer); margin-bottom: 5px; }
 
 /* =====================================================================
    Desktop pages: first-run connect fields are cream wells; the mini player (slots/miniPlayer) and the strip

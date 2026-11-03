@@ -897,23 +897,6 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 }
 
 /* =====================================================================
-   Classic window chrome (Classic stage + skin drawer only; img 05/03)
-   ===================================================================== */
-.win { border: var(--stroke) solid var(--line); border-radius: var(--r-panel); overflow: hidden; }
-.win__bar { display: flex; align-items: center; gap: var(--sp-2); padding: 6px 8px; }
-.win__title {
-  flex: 1; min-width: 0; display: grid; place-items: center; height: 30px; padding: 0 var(--sp-4); border-radius: var(--r-pill);
-  border: 1px solid var(--win-edge); color: var(--lilac); font: italic 800 1rem/1 var(--f-ui); letter-spacing: -.01em;
-  background: linear-gradient(180deg, var(--win-hi) 0%, var(--win-upper) 18%, var(--win-mid) 34%, var(--win-mid) 72%, var(--win-glow) 100%);
-}
-.win__orbs { display: flex; gap: 6px; }
-.orb { position: relative; width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--win-edge); background: var(--orb, var(--peri-deep)); isolation: isolate; }
-.orb::before { content: ""; position: absolute; inset: -11px; border-radius: 50%; }
-.orb::after { content: ""; position: absolute; left: 20%; right: 20%; top: 8%; height: 40%; border-radius: 50%; z-index: -1; background: linear-gradient(180deg, color-mix(in srgb, var(--star) 70%, transparent), color-mix(in srgb, var(--star) 0%, transparent)); }
-.orb--blue { --orb: var(--peri-deep); } .orb--lav { --orb: var(--lav); } .orb--mag { --orb: var(--pink-ink); }
-.orb:focus-visible { outline-offset: 3px; }
-
-/* =====================================================================
    Drag and drop
    ===================================================================== */
 .drag-chip {

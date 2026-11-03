@@ -7,8 +7,9 @@
      Save from the tray, which only the app can do), 'back' with the queue when Webamp closes, 'failed'.
    - From the app: 'tray' (tray and taskbar buttons) and 'classic-close' (Alt+F4, the tray's Show lull).
    - The system's media overlay and media keys (Media Session) follow Webamp.
-   - Skins load through LullWebamp.loadSkin, and Webamp's alerts show as a note in this window (#note), never as a
-     browser dialog. */
+   - The skin: the hand-off's, then whatever Settings > Appearance chooses while this window is open (the storage
+     event of LullWebamp.SKIN_KEY: the app's windows share one browser profile). Skins load through
+     LullWebamp.loadSkin, and Webamp's alerts show as a note in this window (#note), never as a browser dialog. */
 (function () {
   'use strict';
   var T = window.__TAURI__, win = T.window.getCurrentWindow(), LogicalSize = (T.dpi || T.window).LogicalSize;
@@ -44,9 +45,7 @@
       session.handIn(h);
       wireMediaSession();
       /* the window shows once the listener's skin is on, so Webamp's base skin never flashes */
-      return h.skin && LullWebamp.loadSkin(webamp, h.skin.url).catch(function (err) {
-        say('Couldn\'t load ' + h.skin.name + ': ' + err.message);
-      });
+      return h.skin && showSkin(h.skin.url, h.skin.name);
     }).then(function () {
       fit();
       new MutationObserver(scheduleFit).observe(stage, { subtree: true, childList: true, attributes: true, attributeFilter: ['style', 'class'] });
@@ -79,6 +78,22 @@
     e.preventDefault(); e.stopPropagation();
     win.startDragging().catch(logFailure('drag'));
   }, true);
+
+  /* ---------- the skin: one load at a time; a failure keeps the skin Webamp had and says why ---------- */
+  var skinJob = Promise.resolve();
+  function showSkin(url, name) {
+    skinJob = skinJob.then(function () {
+      return LullWebamp.loadSkin(webamp, url).catch(function (err) { say('Couldn\'t load ' + name + ': ' + err.message); });
+    });
+    return skinJob;
+  }
+  /* this window sits at <hub>/desktop/winamp.html, so the hub's web root is one folder up */
+  window.addEventListener('storage', function (e) {
+    if (e.key !== LullWebamp.SKIN_KEY || !webamp) return;
+    var skin = null;
+    try { skin = JSON.parse(e.newValue); } catch (err) { console.error('lull classic: unreadable skin choice', err); return; }
+    showSkin(LullWebamp.skinUrl(new URL('../', location.href).href, skin), skin ? skin.name || 'your skin' : 'Webamp\'s base skin');
+  });
 
   /* a sentence over Webamp for a few seconds (a click dismisses it); the window is only as big as Webamp */
   var noteTimer = 0;
