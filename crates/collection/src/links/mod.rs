@@ -101,11 +101,15 @@ impl Song {
 // Starting an import
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct StartBody {
     url: String,
+    /// Save the playlist's songs too (`saves.request`); kept for the link, so a re-import
+    /// without it does as the last one did.
+    save_songs: Option<bool>,
 }
 
-/// `{ url }`: 202 `{ jobId, id }`. A link lull can't read, an unknown or private playlist, or an
+/// `{ url, saveSongs? }`: 202 `{ jobId, id }`. A link lull can't read, an unknown or private playlist, or an
 /// empty one is an answer here, not a failed job.
 async fn start(
     State(svc): State<Arc<Service>>,
@@ -118,8 +122,11 @@ async fn start(
     let link = resolve(&svc, &body.url).await?;
     let claim = Claim::new(&svc, link.key())?;
     let (name, listing) = open(&svc, &link).await?;
-    let (key, title) = (link.key(), name.clone());
-    let (seq, now) = (svc.write(move |tx, _| begin(tx, &key, &title)).await?, lull_core::now());
+    let (key, title, save) = (link.key(), name.clone(), body.save_songs);
+    let (seq, now) = (
+        svc.write(move |tx, _| begin(tx, &key, &title, save)).await?,
+        lull_core::now(),
+    );
     let job = Job::start(&svc, seq, name, now);
     let job_id = job.id.clone();
     svc.ctx.spawn(run(svc.clone(), link, listing, claim, job));
@@ -173,11 +180,17 @@ fn empty() -> Error {
 }
 
 /// The import's row, made on the first import of a link: its id is known from the start.
-fn begin(conn: &Connection, key: &str, name: &str) -> Result<i64> {
+fn begin(conn: &Connection, key: &str, name: &str, save_songs: Option<bool>) -> Result<i64> {
     conn.execute(
         "INSERT INTO collection_links (key, name, imported_at) VALUES (?1, ?2, 0) ON CONFLICT(key) DO NOTHING",
         params![key, name],
     )?;
+    if let Some(save) = save_songs {
+        conn.execute(
+            "UPDATE collection_links SET save_songs = ?2 WHERE key = ?1",
+            params![key, save],
+        )?;
+    }
     Ok(conn.query_row("SELECT seq FROM collection_links WHERE key = ?1", [key], |r| r.get(0))?)
 }
 
@@ -286,6 +299,8 @@ async fn match_songs(svc: &Arc<Service>, songs: &[Song], job: &mut Job) -> Resul
 struct Done {
     playlist_seq: i64,
     counts: Counts,
+    /// Songs asked to be saved (the link's "Save the songs too").
+    saving: usize,
 }
 
 /// Writes the listing and its matches, then makes or updates the link's playlist.
@@ -328,10 +343,32 @@ fn store(
         None => format!("Imported from {url}."),
     };
     let playlist_seq = fill_playlist(conn, events, seq, &listing.name, &desc)?;
+    let lines = lines(conn, seq)?;
+    let saving = ask_saves(
+        conn,
+        events,
+        seq,
+        lines.iter().filter_map(|l| l.track_id.clone()).collect(),
+    )?;
     Ok(Done {
         playlist_seq,
-        counts: counts(&lines(conn, seq)?),
+        counts: counts(&lines),
+        saving,
     })
+}
+
+/// Asks library to save `ids` (`saves.request`, after the change commits) when the link's "Save
+/// the songs too" is on; how many were asked for.
+fn ask_saves(conn: &Connection, events: &mut Events, seq: i64, ids: Vec<TrackId>) -> Result<usize> {
+    let save: bool = conn.query_row("SELECT save_songs FROM collection_links WHERE seq = ?1", [seq], |r| {
+        r.get(0)
+    })?;
+    if !save || ids.is_empty() {
+        return Ok(0);
+    }
+    let n = ids.len();
+    events.push("saves.request", json!({ "trackIds": ids }));
+    Ok(n)
 }
 
 /// Sets the link's playlist to its songs, making the playlist when it has none (or the
@@ -438,7 +475,7 @@ impl Job {
                 json!({
                     "pct": 100, "playlistId": format!("pl-{}", d.playlist_seq),
                     "matched": d.counts.matched + d.counts.fixed, "unmatched": d.counts.unmatched,
-                    "skipped": d.counts.skipped,
+                    "skipped": d.counts.skipped, "saving": d.saving,
                 }),
             ),
             (Ok(()), None) => self.publish("failed", json!({ "error": "the import stopped before it finished" })),
@@ -570,16 +607,17 @@ async fn one(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Result<
 }
 
 fn summary(conn: &Connection, seq: i64, running: &HashSet<String>) -> Result<Value> {
-    /// key, name, playlist_seq, note, imported_at
-    type Row = (String, String, Option<i64>, Option<String>, i64);
+    /// key, name, playlist_seq, note, imported_at, save_songs
+    type Row = (String, String, Option<i64>, Option<String>, i64, bool);
     let row: Option<Row> = conn
         .query_row(
-            "SELECT key, name, playlist_seq, note, imported_at FROM collection_links WHERE seq = ?1",
+            "SELECT key, name, playlist_seq, note, imported_at, save_songs FROM collection_links WHERE seq = ?1",
             [seq],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
         )
         .optional()?;
-    let (key, name, playlist, note, at) = row.ok_or_else(|| Error::NotFound(format!("No import lk-{seq}.")))?;
+    let (key, name, playlist, note, at, save_songs) =
+        row.ok_or_else(|| Error::NotFound(format!("No import lk-{seq}.")))?;
     let playlist = match playlist {
         Some(p) => playlists::one(conn, p)?.map(|_| format!("pl-{p}")),
         None => None,
@@ -588,7 +626,7 @@ fn summary(conn: &Connection, seq: i64, running: &HashSet<String>) -> Result<Val
     Ok(json!({
         "id": format!("lk-{seq}"), "url": link.url(), "site": link.site.name(), "name": name,
         "playlistId": playlist, "note": note, "importedAt": (at > 0).then_some(at),
-        "running": running.contains(&key), "counts": counts(&lines(conn, seq)?),
+        "running": running.contains(&key), "counts": counts(&lines(conn, seq)?), "saveSongs": save_songs,
     }))
 }
 
@@ -655,6 +693,7 @@ async fn choose(
             Choice::Skip => Some(None),
             Choice::None => None,
         };
+        let picked = chosen.clone().flatten();
         match chosen {
             Some(id) => tx.execute(
                 "INSERT INTO collection_link_choices (link_seq, song, track_id) VALUES (?1, ?2, ?3)
@@ -672,6 +711,10 @@ async fn choose(
             })?;
         let desc = format!("Imported from {}.", Link::from_key(&key)?.url());
         fill_playlist(tx, events, seq, &name, &desc)?;
+        // A song the listener picked or kept joins the saves when the link saves its songs.
+        if let Some(id) = picked {
+            ask_saves(tx, events, seq, vec![id])?;
+        }
         detail(tx, seq, &running)
     })
     .await

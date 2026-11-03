@@ -33,9 +33,14 @@ fn listing(songs: Vec<Song>) -> Listing {
 
 /// Runs an import of `listing` as the job would after reading the link.
 async fn import_now(svc: &Arc<Service>, listing: Listing) -> Result<Value> {
+    import_saving(svc, listing, None).await
+}
+
+/// `import_now` with the request's "Save the songs too" (`None`: not said).
+async fn import_saving(svc: &Arc<Service>, listing: Listing, save: Option<bool>) -> Result<Value> {
     let link = link()?;
     let key = link.key();
-    let seq = svc.write(move |tx, _| begin(tx, &key, "Road Trip")).await?;
+    let seq = svc.write(move |tx, _| begin(tx, &key, "Road Trip", save)).await?;
     let mut job = Job::start(svc, seq, "Road Trip".into(), lull_core::now());
     let result = import(svc, &link, Some(listing), &mut job).await;
     job.finish(result);
@@ -258,5 +263,53 @@ async fn a_song_kept_as_named_takes_its_sources_picture_as_its_cover() -> Result
         has_cover,
         "the upload's thumbnail is the song's cover until the catalog's is found"
     );
+    Ok(())
+}
+
+/// The track ids of the `saves.request` events published so far.
+fn save_requests(rx: &mut tokio::sync::broadcast::Receiver<lull_core::events::Event>) -> Vec<Vec<String>> {
+    published(rx)
+        .into_iter()
+        .filter(|e| e.topic == "saves.request")
+        .map(|e| {
+            e.data["trackIds"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|v| v.as_str().map(str::to_owned))
+                .collect()
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn save_the_songs_too_asks_library_and_is_kept_for_the_link() -> Result<()> {
+    let (svc, mut rx, _, fake) = service_with_fakes().await?;
+    let a = known(&svc, &fake, "Velvet Orchard", "Paper Moon").await?;
+    let songs = || {
+        listing(vec![
+            song("spotify:track:1", "Velvet Orchard", "Paper Moon"),
+            song("spotify:track:2", "Nobody Knows", "Lost Song"),
+        ])
+    };
+
+    let out = import_saving(&svc, songs(), Some(true)).await?;
+    assert_eq!(out["saveSongs"], true);
+    assert_eq!(
+        save_requests(&mut rx),
+        [vec![a.clone()]],
+        "the playlist's songs, not the unmatched one"
+    );
+
+    // A re-import that doesn't say keeps the link's choice; a song kept as named joins the saves.
+    import_saving(&svc, songs(), None).await?;
+    assert_eq!(save_requests(&mut rx), [vec![a.clone()]]);
+    let kept = choose_now(&svc, 1, json!({ "choice": "as-is" })).await?;
+    let kept_id = kept["songs"][1]["trackId"].as_str().unwrap_or_default().to_owned();
+    assert_eq!(save_requests(&mut rx), [vec![kept_id]]);
+
+    // Turned off: nothing is asked.
+    import_saving(&svc, songs(), Some(false)).await?;
+    assert!(save_requests(&mut rx).is_empty());
     Ok(())
 }

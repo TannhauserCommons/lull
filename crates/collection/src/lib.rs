@@ -191,6 +191,10 @@ pub const MIGRATIONS: Migrations = Migrations {
         r#"
         ALTER TABLE collection_link_songs ADD COLUMN picture TEXT;
     "#,
+        // A link import's "Save the songs too", kept for the link (links/mod.rs).
+        r#"
+        ALTER TABLE collection_links ADD COLUMN save_songs INTEGER NOT NULL DEFAULT 0;
+    "#,
     ],
 };
 
