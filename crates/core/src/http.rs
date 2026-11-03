@@ -26,6 +26,12 @@ pub const USER_AGENT: &str = concat!(
 pub const MUSICBRAINZ_PACE: Duration = Duration::from_millis(1100);
 /// The `Http::pace` key for MusicBrainz: every crate must use this one, so they share the budget.
 pub const MUSICBRAINZ: &str = "musicbrainz";
+/// Last.fm counts calls per IP (at most 5 a second, averaged over 5 minutes, and "several per
+/// second" risks suspension), whichever crate makes them: scrobbling (lastfm), search and pages
+/// (discovery) and history imports (collection) share one `Http::pace` under this key, at
+/// discovery's careful 0.5 s.
+pub const LASTFM: &str = "lastfm";
+pub const LASTFM_PACE: Duration = Duration::from_millis(500);
 /// Deezer allows 50 requests per 5 s per IP, whichever crate sends them (`Http::window`): search
 /// and pages (discovery) and playlist links (collection) share it.
 pub const DEEZER: Limit = Limit {
