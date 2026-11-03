@@ -433,29 +433,15 @@
   :root[data-design="petal"][data-shell="topnav"] .header__search { flex: 1 1 300px; max-width: 380px; }
   :root[data-design="petal"][data-shell="topnav"] .header__search .input { height: 40px; background: var(--panel-2); }
 }
-@media (min-width: 1100px) and (max-width: 1359px) {   /* desktop app default (1280): text tabs stay, the tray folds to one pill */
-  :root[data-design="petal"][data-shell="topnav"] .nav-pill { width: auto; padding: 0 9px; letter-spacing: .08em; }
-  :root[data-design="petal"][data-shell="topnav"] .nav-pill__label { display: inline; }
-  :root[data-design="petal"][data-shell="topnav"] .tray--full { display: none; }
-  :root[data-design="petal"][data-shell="topnav"] .tray--compact { display: inline-flex; }
-}
+/* a tab that gave way (layout.js, data-fit) is an icon tab */
+:root[data-design="petal"] .header .nav-pill[data-fit-out] { width: 40px; padding: 0; }
+:root[data-design="petal"] .header .nav-pill[data-fit-out] .ic { display: block; }
 @media (min-width: 640px) and (max-width: 1099px) {    /* tablet: icon tabs; the heart alone stands for the brand */
   :root[data-design="petal"] .nav-pill { padding: 0 10px; }
   :root[data-design="petal"] .nav-pill .ic { display: block; }
   :root[data-design="petal"] .header__brand .wordmark.pt-mark { font-size: 0; width: auto; height: auto; }
   :root[data-design="petal"] .header__brand .pt-mark .pt-px { width: 27px; height: 21px; margin: 0; }
-  :root[data-design="petal"][data-shell="topnav"] .header__search { min-width: 0; }
-}
-@media (min-width: 640px) and (max-width: 759px) {     /* narrow tablet: tighter tabs and tools, no "/" hint, so all tools stay on screen */
-  :root[data-design="petal"][data-shell="topnav"] .header { padding-left: 12px; }
-  :root[data-design="petal"][data-shell="topnav"] .header .spacer { display: none; }
-  :root[data-design="petal"][data-shell="topnav"] .header__nav { gap: 2px; }
-  :root[data-design="petal"][data-shell="topnav"] .nav-pill { width: 40px; padding: 0; }
-  :root[data-design="petal"][data-shell="topnav"] .header__tools { gap: 4px; }
-  :root[data-design="petal"][data-shell="topnav"] .header .btn-icon { width: 40px; height: 40px; }
-  :root[data-design="petal"][data-shell="topnav"] .header__search > .ic { left: 11px; }
-  :root[data-design="petal"][data-shell="topnav"] .header__search .input { padding-left: 38px; padding-right: 36px; }
-  :root[data-design="petal"][data-shell="topnav"] .header__search .kbd { display: none; }
+  :root[data-design="petal"][data-shell="topnav"] .header__search { min-width: 140px; }
 }
 
 /* status tray: small pixel pills; compact (tablet, phone, 1100-1359): one pill with a pixel heart when all is well */
@@ -530,14 +516,7 @@
 :root[data-design="petal"] .bezel-thumb .cover { border-radius: 2px; border-color: var(--pt-rule); }
 :root[data-design="petal"] .bezel-thumb:hover { background: var(--panel-2); }
 :root[data-design="petal"] .pbar__save-step { border-radius: 2px; }
-@media (min-width: 1100px) and (max-width: 1359px) {
-  :root[data-design="petal"] .pbar { grid-template-columns: minmax(180px, 1fr) minmax(300px, 1.2fr) minmax(180px, 1fr); }   /* equal sides: the transport stays centred */
-  :root[data-design="petal"] .pbar__badges .src-badge { display: none; }
-}
 @media (max-width: 1099px) { :root[data-design="petal"] .pbar__badges { display: none; } }
-@media (max-width: 1279px) {   /* Lyrics, Classic and Device view are in the "..." menu and the cover link */
-  :root[data-design="petal"] .pbar__tools .is-wide { display: none; }
-}
 
 /* phone shell: header, mini player and tab bar as white bars with pink rules */
 @media (max-width: 639px) {

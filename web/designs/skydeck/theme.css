@@ -223,13 +223,6 @@
    4. Header: search pill + roomy LED status tray (img 02 top bar)
    ===================================================================== */
 :root[data-design="skydeck"] .header__search .input { box-shadow: inset 0 2px 0 var(--panel-2); }
-/* the LED tray is about 590 px wide, so a 220 px search left the header 39 px too wide at 1,100 and pushed the theme button
-   off the screen; the search may shrink to 160 px between 1,100 and 1,199 (without its / key hint, so the placeholder still reads) */
-@media (min-width: 1100px) and (max-width: 1199px) {
-  :root[data-design="skydeck"] .header__search { min-width: 160px; }
-  :root[data-design="skydeck"] .header__search .kbd { display: none; }
-  :root[data-design="skydeck"] .header__search .input { padding-right: 44px; }
-}
 :root[data-design="skydeck"] .tray { padding: 4px; gap: 5px; box-shadow: inset 0 2px 0 #00000014; }
 :root[data-design="skydeck"] .tray__pill {
   height: 32px; padding: 1px 15px 0 12px; gap: 0; font-size: 1.25rem; letter-spacing: .05em;
@@ -553,7 +546,7 @@
 }
 :root[data-design="skydeck"][data-theme="night"] :is(.pbar, .mini) { --heart: #8f3573; }   /* a deeper pink on the darker night body */
 :root[data-design="skydeck"] .pbar {
-  grid-template-columns: minmax(220px, 1fr) minmax(340px, 1.6fr) minmax(220px, 1fr); gap: var(--sp-5);   /* equal sides: the transport stays centred */
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 1.6fr) minmax(0, 1fr); gap: min(var(--sp-5), 2%);   /* equal sides: the transport stays centred */
   border-radius: 22px 22px 44px 22px; padding: 0 16px 0 12px;
   box-shadow: inset 0 2px 0 #e9f5ff, inset 0 -3px 0 var(--sd-console-lo), var(--sd-bar-stack);
 }
@@ -611,7 +604,7 @@
 :root[data-design="skydeck"] .pbar__tools .vol { gap: 2px; }
 /* tablet: three real columns, so the dock never sits on the LCD */
 @media (max-width: 1099px) {
-  :root[data-design="skydeck"] .pbar { grid-template-columns: minmax(150px, 1fr) minmax(220px, 1.25fr) minmax(150px, 1fr); gap: var(--sp-4); }
+  :root[data-design="skydeck"] .pbar { grid-template-columns: minmax(120px, 1fr) minmax(220px, 1.25fr) minmax(0, 1fr); gap: var(--sp-4); }
   :root[data-design="skydeck"] .pbar__centre { width: auto; }
   :root[data-design="skydeck"] .pbar__tools { padding: 0 4px; }
 }

@@ -317,9 +317,26 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
     collapsible to a strip.
 - **Player bar.** The transport is centred on the bar: the side columns are equal in every design, so nothing the
   sides show or hide moves it. Every control has a fixed slot (toggles show pressed or not, the crossfade tag floats
-  above the tools); only width breakpoints move tools into the "…" menu, which always lists Lyrics, Classic mode and
-  Device view. The seek keeps one length: the time cells are as wide as the song's duration reads (`--time-ch`) and
-  a design's status caption has one slot sized for its longest word.
+  above the tools); only the room the bar has moves tools into the "…" menu, which lists every one of them. The seek
+  keeps one length: the time cells are as wide as the song's duration reads (`--time-ch`) and a design's status
+  caption has one slot sized for its longest word.
+- **Rows that fit themselves** (layout.js). The header, the player bar, its tools and the song's chips lay themselves
+  out from the room they have, not from the window's width, so a docked panel, the Now column, the text size or a
+  long title count as much as the window, and no design needs a width band to patch them.
+  - A row is `[data-fit-row]`; a part that can give way is `[data-fit="<order>"]`, 1 first, parts of one order
+    together. When a row's content needs more than its width, parts give way in order (`[data-fit-out]`) until it
+    fits; with room again they come back. A ResizeObserver re-fits a row, and `App.layout.refit()` after its content
+    changes (renderBar, renderTray).
+  - What giving way means is the component's (components.css, `!important`, so a design draws it but can't undo it):
+    the header drops the "/" hint (1), the tray's long words (2), the following-and-playlists button (3), the full
+    tray for the compact one (4), the nav pills' labels (5: Playlists, Stats; 6: Home, Library), and last lets the
+    search narrow (7). The bar's tools leave for the "…" menu: the volume slider (1), Device view (2), Classic (3),
+    Lyrics (4), Devices (5), Save (6), Like (7). The song's chips drop the source (1), "below minimum" (2), the format
+    (3), and Private keeps its eye (4).
+  - A part a design takes out of the row's flow (glasshouse floats the tray into the rail) never gives way; a design
+    that lays a row out with `display: contents` (lull's desk bar) hands its parts to the row around it.
+  - Width rules are for genuine layout changes only: the shells (640, 1100, 1360) and content that rearranges by the
+    room its container has (`@container`). The fit gate (quality.md#ui-gates) sweeps every width.
 - **Resize handles.**
   - Pointer: a drag, throttled to animation frames, that the column follows live and that is saved when it ends;
     double-click restores the default. While it runs, the width is `--ctx-drag` / `--now-drag` (registered, not

@@ -354,16 +354,8 @@
 }
 :root[data-design="lull"] .nav-pill { padding: 0 14px 0 11px; font: 800 .875rem/1 var(--f-ui); gap: 7px; }
 :root[data-design="lull"] .nav-pill .ic { width: 18px; height: 18px; }
-/* desk widths: every pill keeps its label from 1360; 1100-1359 labels Home and Library, Playlists and
-   Stats go icon-only. Below 1600 the "following and playlists" shelf tile steps aside for the labels: Playlists
-   and Library (Following) reach the same lists. */
-@media (min-width: 1100px) and (max-width: 1359px) {
-  :root[data-design="lull"] .nav-pill:is([data-nav="home"], [data-nav="library"]) { width: auto; padding: 0 14px 0 11px; }
-  :root[data-design="lull"] .nav-pill:is([data-nav="home"], [data-nav="library"]) .nav-pill__label { display: inline; }
-}
-@media (min-width: 1100px) and (max-width: 1599px) {
-  :root[data-design="lull"] .header__shelf { display: none; }
-}
+/* a pill that gave way (layout.js, data-fit) is a square tile with its icon */
+:root[data-design="lull"] .header .nav-pill[data-fit-out] { width: 40px; }
 :root[data-design="lull"] .nav-pill:hover, :root[data-design="lull"] .header .btn-icon:hover, :root[data-design="lull"] .header .tray:hover .tray__pill { background: color-mix(in srgb, var(--l-tile) 82%, #fff); }
 :root[data-design="lull"] .nav-pill[aria-current="page"], :root[data-design="lull"] .header .btn-icon[aria-current="page"], :root[data-design="lull"] .header .btn-icon[data-act="theme"] {
   border-radius: 999px; background: var(--l-hi), var(--l-gloss); color: #fff; border: var(--stroke) solid var(--l-gloss-edge);
@@ -371,21 +363,12 @@
 }
 :root[data-design="lull"] .header .btn-icon { width: 40px; }
 :root[data-design="lull"] .header .btn-icon__badge { top: -6px; right: -6px; border-color: var(--tray-edge); }
-:root[data-design="lull"] .header__search { flex: 1 1 260px; min-width: 0; max-width: none; }
+:root[data-design="lull"] .header__search { flex: 1 1 260px; min-width: 160px; max-width: none; }
 :root[data-design="lull"] .header__search .input {
   height: 40px; border-radius: 10px; border: var(--stroke) solid transparent; background: var(--l-card); color: var(--fg-panel);
   box-shadow: inset 0 1px 2px rgba(43, 38, 80, .14); font: 700 .875rem/1 var(--f-ui); text-overflow: ellipsis;
 }
 :root[data-design="lull"] .header__search .input:focus-visible { border-color: var(--l-ribbon); }
-/* below 1600 the long placeholder would be cut: the field shows a short "Search music" (the label still names it) */
-@media (min-width: 640px) and (max-width: 1599px) {
-  :root[data-design="lull"] .header__search .input::placeholder { color: transparent; }
-  :root[data-design="lull"] .header__search:has(.input:placeholder-shown)::after {
-    content: "Search music"; position: absolute; left: 42px; top: 50%; transform: translateY(-50%); pointer-events: none;
-    color: var(--fg-panel-2); font: 700 .875rem/1 var(--f-ui);
-  }
-  :root[data-design="lull"] .header__search:has(.input:disabled)::after { content: "Search paused: server offline"; }
-}
 
 /* status tray: one tile of services (ringed dot shape + name, Last.fm's queue as a count), then the cache tile with a
    fill meter (--cache-frac) and "3.1 / 5 GB" */
@@ -418,12 +401,8 @@
   background: linear-gradient(90deg, var(--l-switch) calc(var(--cache-frac, 0) * 100%), color-mix(in srgb, var(--l-card) 70%, transparent) 0);
 }
 :root[data-design="lull"] .header .tray__pill--cache::after { content: attr(data-cache-used) " / " attr(data-cache-cap) " GB"; font-size: .8125rem; white-space: nowrap; }
-/* 1,100 to 1,179: the cache tile drops its little bar and the search its / hint, so the search field keeps room for "Search music"
-   (it was squeezed to 90 px and the status tray ran over it) */
-@media (min-width: 1100px) and (max-width: 1179px) {
-  :root[data-design="lull"] .header .tray__pill--cache::before { display: none; }
-  :root[data-design="lull"] .header__search .kbd { display: none; }
-}
+/* the cache tile's meter goes with the tray's long words when the header runs out of room (layout.js, data-fit) */
+:root[data-design="lull"] .header .tray__pill--cache:has(> .tray__label-long[data-fit-out])::before { display: none; }
 /* status dots: ringed so they read on any tile; the shape already differs (ok = circle, warn = diamond) */
 :root[data-design="lull"] .tray .sg { width: 15px; height: 15px; margin: 0 -2px; overflow: visible; filter: drop-shadow(1.2px 0 0 #fff9fe) drop-shadow(-1.2px 0 0 #fff9fe) drop-shadow(0 1.2px 0 #fff9fe) drop-shadow(0 -1.2px 0 #fff9fe); }
 /* compact tray (tablet, phone): the worst state in words (.tray__word, "all good" included), never colour alone */
@@ -494,7 +473,9 @@
 }
 @media (min-width: 1100px) {
   :root[data-design="lull"] .pbar {
-    grid-template-columns: minmax(200px, 1fr) 40px auto minmax(240px, 1.35fr) 40px minmax(90px, 150px) 40px auto auto 12px repeat(4, 48px);
+    /* the song and the seek give up room before anything else; a part that gives way (layout.js, data-fit: the tiles,
+       Devices, Save, Like, the volume slider) takes its track with it, so the bar always fits its width */
+    grid-template-columns: minmax(140px, 1fr) auto auto minmax(240px, 1.35fr) auto minmax(40px, 150px) 40px auto auto 12px repeat(4, auto);
     grid-template-areas: "now like ctl seek save vol more nc cn . t1 t2 t3 t4"; gap: 0 4px;
   }
   /* the Now Playing column toggle and lull Connect's device picker get their own columns inside the bar, instead of
@@ -529,23 +510,12 @@
   :root[data-design="lull"] .pbar [data-act="toggle-panel"] .ic, :root[data-design="lull"] .pbar [data-act="classic"] .ic, :root[data-design="lull"] .pbar [data-act="open-now"] .ic { width: 22px; height: 22px; }
   :root[data-design="lull"] .pbar [data-act="toggle-panel"]:focus-visible, :root[data-design="lull"] .pbar [data-act="classic"]:focus-visible, :root[data-design="lull"] .pbar [data-act="open-now"]:focus-visible { outline-color: #fff9fe; outline-offset: 3px; }
 }
-/* narrow desks: the title, seek and volume give up room so the window and the four tray tiles fit inside the bar.
-   The full grid's minimums add up to about 1,220 px, more than the bar has below a 1,280 px window: the last tray
-   tile was cut off and the device picker crowded against it. Below 1,280 they add up to about 1,000 px. */
-@media (min-width: 1100px) and (max-width: 1279px) {
-  :root[data-design="lull"] .pbar { grid-template-columns: minmax(140px, 1fr) 40px auto minmax(140px, 1.35fr) 40px minmax(40px, 110px) 40px auto auto 4px repeat(4, 48px); }
-}
-/* the idle hint ("Search or pick something from Home") wrapped to five lines in the 140 to 200 px title column and
-   ran out of the bar: no sparkle, three lines at most */
-@media (min-width: 1100px) and (max-width: 1279px) {
-  :root[data-design="lull"] .pbar__idle { gap: 0; }
-  :root[data-design="lull"] .pbar__idle > .ic { display: none; }
-  :root[data-design="lull"] .pbar__idle > span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
-}
+/* the idle hint ("Search or pick something from Home") never runs out of the bar, however narrow the song's column */
+:root[data-design="lull"] .pbar__idle > span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
 @media (min-width: 640px) and (max-width: 1099px) {
   :root[data-design="lull"] { --bar-h: 116px; }
   :root[data-design="lull"] .pbar {
-    grid-template-columns: minmax(0, 1fr) auto auto; grid-template-rows: 1fr auto;
+    grid-template-columns: minmax(120px, 1fr) auto minmax(0, max-content); grid-template-rows: 1fr auto;   /* the tools give way (data-fit) */
     grid-template-areas: "now ctl tools" "seek seek seek"; gap: 0 8px; padding: 6px;
   }
   :root[data-design="lull"] .pbar__centre { display: contents; }
@@ -1532,7 +1502,9 @@
   :root[data-design="lull"] .lib-pl .lib-thead { display: none; }
   :root[data-design="lull"] .lib-pl-list .trow { min-height: 52px; padding-block: 3px; }
 }
-@media (min-width: 640px) and (max-width: 1239px) {
+/* the cassette card needs the header's room beside the title: below it (the library's own width, so a docked panel
+   counts), it steps aside */
+@container lib (max-width: 1153px) {
   :root[data-design="lull"] .lib .lib-pl__head { padding-right: 24px; }
   :root[data-design="lull"] .lib-pl__head::after { display: none; }
 }
@@ -1675,12 +1647,7 @@
 @media (min-width: 640px) and (max-width: 1099px) {
   :root[data-design="lull"] .header__brand .wordmark.lull-wm { font-size: 1.25rem; width: auto; height: 38px; padding: 0 16px 0 12px; }
   :root[data-design="lull"] .header__brand .lull-wm .wordmark__spark { width: .55em; height: .55em; right: auto; top: -.42em; }
-  :root[data-design="lull"] .header__search .kbd { display: none; }
-  :root[data-design="lull"] .header__search:has(.input:placeholder-shown)::after { content: "Search"; }
   :root[data-design="lull"] .disc-home .disc-picks { --picks: 4; }
-}
-@media (min-width: 640px) and (max-width: 1359px) {
-  :root[data-design="lull"] .nav-pill { width: 40px; padding: 0; justify-content: center; }
 }
 
 /* =====================================================================

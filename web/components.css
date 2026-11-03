@@ -1061,6 +1061,16 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 .main { grid-area: main; position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; container: main / inline-size; }
 .header { grid-area: head; display: flex; align-items: center; gap: var(--sp-3); min-width: 0; padding: 0 0 12px 16px; }
 .header__search { flex: 1 1 360px; max-width: 520px; min-width: 220px; }
+/* parts of the header that give way when it runs out of room (layout.js, data-fit), after the search has shrunk to its
+   least: the "/" hint, the tray's long words, the following-and-playlists button (Library has them), the full tray for
+   the compact one, the nav pills' labels (their icons and tooltips stay), and last the search's own least width */
+.header :is(.kbd, .tray__label-long, .header__shelf, .tray--full)[data-fit-out], .header .nav-pill[data-fit-out] .nav-pill__label { display: none !important; }
+.header .header__tools:has(> .tray--full[data-fit-out]) > .tray--compact { display: inline-flex !important; }
+.header .search-field:has(.kbd[data-fit-out]) .input { padding-right: 48px; }
+.header .nav-pill[data-fit-out] { width: 44px; padding: 0; justify-content: center; }
+.header .header__search[data-fit-out] { min-width: 96px !important; }
+/* a placeholder longer than the field ends in an ellipsis instead of being cut */
+.search-field .input { text-overflow: ellipsis; }
 .header__brand { display: none; }
 .header .spacer { flex: 1; }
 .header__tools { display: flex; align-items: center; gap: var(--sp-2); }
@@ -1153,11 +1163,11 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
    ===================================================================== */
 .pbar {
   grid-area: bar; position: relative; z-index: var(--z-bar); height: var(--bar-h); margin: 0 0 21px;
-  display: grid; grid-template-columns: minmax(220px, 1fr) minmax(360px, 1.5fr) minmax(220px, 1fr); align-items: center; gap: var(--sp-6);
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 1.5fr) minmax(0, 1fr); align-items: center; gap: min(var(--sp-6), 2%);
   padding: 0 14px 0 10px; border: var(--stroke) solid var(--edge); border-radius: var(--r-panel); box-shadow: var(--stack-1l);
 }
 .pbar__now { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
-.pbar__text { min-width: 0; display: grid; gap: 1px; }
+.pbar__text { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; }   /* its chips never widen it */
 .pbar__title { display: flex; align-items: center; gap: 6px; min-width: 0; font: var(--t-row); }
 .pbar__title > a, .pbar__title > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pbar__title a:hover, .pbar__artist a:hover { text-decoration: underline; text-underline-offset: 3px; }
@@ -1166,13 +1176,19 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 .pbar__from { justify-self: start; margin-bottom: 1px; font: 700 .75rem/1.2 var(--f-ui); color: var(--fg-2); }
 .pbar__from b { font-weight: 800; color: var(--fg); }
 .pbar__from .ic { width: 14px; height: 14px; }
-.pbar__badges { display: flex; align-items: center; gap: 6px; margin-top: 3px; min-height: 24px; }
+.pbar__badges { display: flex; align-items: center; gap: 6px; margin-top: 3px; min-height: 24px; min-width: 0; }
+/* parts of the bar that give way when it runs out of room (layout.js, data-fit): the tools leave for the "…" menu, which
+   lists every one of them; the chips go (the source and quality are one click away in Now Playing); Private keeps its
+   eye and its name for screen readers. Whatever a design draws, a part that gave way is gone (!important, as the layout
+   states below: a later layer can't bring it back) */
+.pbar :is(.btn-icon, .seek)[data-fit-out], .pbar__badges > [data-fit-out]:not(.pbar__private) { display: none !important; }
+.pbar__private[data-fit-out] .pbar__private-label { display: none !important; }
 .pbar__centre { display: grid; justify-items: center; gap: 2px; min-width: 0; }
 .pbar__controls { display: flex; align-items: center; gap: var(--sp-3); }
 .pbar__controls .btn-icon .ic { width: 22px; height: 22px; }
 .pbar__seek { width: 100%; max-width: 640px; }
 .pbar__seek .seek { height: 24px; }
-.pbar__tools { position: relative; display: flex; align-items: center; justify-content: flex-end; gap: 2px; min-width: 0; }
+.pbar__tools { position: relative; display: flex; align-items: center; justify-content: flex-end; gap: 2px; min-width: 0; max-width: 100%; }   /* never wider than its column: it fits itself (data-fit) */
 .pbar__tools .btn-icon .ic { width: 20px; height: 20px; }
 /* state line: a fixed tab riding on the bar's top edge, above the seek bar (no layout shift) */
 .pbar__state {
@@ -1281,13 +1297,6 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
   :root[data-shell="dock"] .nav-item { width: 46px; height: 46px; min-height: 0; justify-content: center; padding: 0; border-radius: 14px; }
   :root[data-shell="dock"] .nav-item__label { display: none; }
 }
-@media (min-width: 640px) and (max-width: 1599px) {
-  :root[data-shell="topnav"] .tray__label-long { display: none; }
-}
-@media (min-width: 640px) and (max-width: 1359px) {
-  :root[data-shell="topnav"] .nav-pill { padding: 0; width: 44px; justify-content: center; }
-  :root[data-shell="topnav"] .nav-pill__label { display: none; }
-}
 @media (min-width: 640px) and (max-width: 1099px) {
   :root[data-shell="topnav"] .app, :root[data-shell="dock"] .app,
   :root[data-shell="topnav"] .app[data-ctx="docked"], :root[data-shell="dock"] .app[data-ctx="docked"] { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "banner" "main" "bar"; }
@@ -1302,9 +1311,6 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 /* =====================================================================
    Breakpoints: desktop >= 1100 (above), tablet 640-1099, phone < 640, short landscape
    ===================================================================== */
-@media (max-width: 1359px) {
-  .pbar { grid-template-columns: minmax(200px, 1fr) minmax(320px, 1.4fr) minmax(200px, 1fr); gap: var(--sp-4); }
-}
 @media (max-width: 1099px) {
   :root { --gutter: 24px; }
   .app, .app[data-ctx="docked"] { grid-template-columns: var(--rail-icons) minmax(0, 1fr); grid-template-areas: "rail head" "rail banner" "rail main" "bar bar"; column-gap: 16px; }
@@ -1315,12 +1321,11 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
   .nav-item { width: 48px; justify-content: center; padding: 0; }
   .nav-item__label, .rail__scroll, .rail__foot { display: none; }
   .nav-item .badge-count { position: absolute; top: -4px; right: -6px; }
-  .pbar { grid-template-columns: minmax(0, 1fr) auto auto; gap: var(--sp-4); }
+  /* tablet: the song keeps a little room, the transport its own, the tools what is left (and give way to fit it) */
+  .pbar { grid-template-columns: minmax(120px, 1fr) auto minmax(0, max-content); gap: var(--sp-4); }
   .pbar__centre { width: min(360px, 40vw); }
   .pbar__now { overflow: hidden; }
-  .pbar__tools .is-wide, .pbar__tools .vol .seek { display: none; }
   .header__search { flex: 1 1 280px; }
-  .tray__label-long { display: none; }
   .app:not([data-ctx="docked"]) .ctx { top: 16px; }
 }
 @media (max-width: 1099px) {
@@ -1355,7 +1360,6 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
   .app[data-view="now"] .tabbar { display: none; }
 }
 @media (min-width: 640px) { .tray--compact { display: none; } }
-@media (min-width: 640px) and (max-width: 959px) { .tray--full { display: none; } .tray--compact { display: inline-flex; } }
 @media (max-width: 639px) {
   .tray--full { display: none; }
   /* a phone header has no room to spare: a long status word ("soulseek reconnecting") is cut, never widens the page */

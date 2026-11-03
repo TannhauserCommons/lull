@@ -475,7 +475,6 @@
 :root[data-design="starlight"] .tray .sg--down { color: var(--sl-down); }
 :root[data-design="starlight"] .tray__count { display: inline; }
 :root[data-design="starlight"] .tray__count::before { content: "· "; color: var(--fg-sky-2); }
-@media (max-width: 1399px) { :root[data-design="starlight"] .tray__label-long { display: none; } }
 /* the compact pill (tablet, phone) shows the worst state in words (.tray__word) instead of the cache figure: one glyph + "last.fm queued" */
 :root[data-design="starlight"] .tray--compact .tray__pill { font-size: 0; gap: 6px; }
 :root[data-design="starlight"] .tray--compact .sg { margin: 0 -4px; }
@@ -515,12 +514,6 @@
 :root[data-design="starlight"] .pbar__title { font-size: 1.0625rem; }
 :root[data-design="starlight"] .pbar__controls .btn-icon .ic { width: 22px; height: 22px; }
 :root[data-design="starlight"] .pbar__tools { gap: 0; }
-/* below 1,360 the side columns can't hold every tool beside a centred transport: Lyrics, Classic and Device view move to
-   the "..." menu (the side columns stay equal, so the transport stays on the bar's centre) */
-@media (min-width: 1100px) and (max-width: 1359px) {
-  :root[data-design="starlight"] .pbar { grid-template-columns: minmax(220px, 1fr) minmax(300px, 1.1fr) minmax(220px, 1fr); }
-  :root[data-design="starlight"] .pbar__tools .is-wide { display: none; }
-}
 /* the state line rides the bar's top edge as a slim tab of night sky (cream words), so it never hides a cream card's text;
    on Now Playing the hero says it instead */
 :root[data-design="starlight"] .pbar__state {

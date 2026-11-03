@@ -832,9 +832,11 @@
   ui.sourceBadge = function (trackOrId, opts) {
     var id = typeof trackOrId === 'string' ? trackOrId : trackOrId.id;
     var saved = App.isSaved(id), inner = saved ? ui.savedBadge() : ui.soulseekBadge();
-    if (opts && opts.button) return html`<button class="src-badge" data-act="source-details" data-src-badge="${id}" data-was="${saved ? 'saved' : 'slsk'}" aria-label="${saved ? 'Saved' : 'From Soulseek'}. Show source details" data-tip="Source details">${inner}</button>`;
+    if (opts && opts.button) return html`<button class="src-badge" data-act="source-details" data-src-badge="${id}" data-was="${saved ? 'saved' : 'slsk'}" ${fitAttr(opts)} aria-label="${saved ? 'Saved' : 'From Soulseek'}. Show source details" data-tip="Source details">${inner}</button>`;
     return html`<span class="src-badge" data-src-badge="${id}" data-was="${saved ? 'saved' : 'slsk'}">${inner}</span>`;
   };
+  /* opts.fit: the order a part gives way in, in a row that fits itself (layout.js, data-fit) */
+  function fitAttr(opts) { return opts && opts.fit ? raw('data-fit="' + (+opts.fit) + '"') : ''; }
   /* quality chip: outlined by default; { solid: true } for player bar / device; { button: true } opens source details */
   ui.qualityChip = function (fmt, opts) {
     opts = opts || {};
@@ -842,7 +844,7 @@
     /* a YouTube copy's own chip ("YouTube · Opus 160", docs/context/youtube.md): never a peer file's format */
     var cls = 'q-chip ' + (f.lossless ? 'q-chip--ll' : 'q-chip--ly') + (opts.solid ? ' q-chip--solid' : '') + (/^YouTube /.test(String(fmt)) ? ' q-chip--yt' : '');
     var label = (f.lossless ? 'Lossless, ' : '') + f.label;
-    if (opts.button) return html`<button class="${cls}" data-act="source-details" ${opts.id ? raw('data-id="' + esc(opts.id) + '"') : ''} aria-label="${label}. Show source details" data-tip="Source details">${f.label}</button>`;
+    if (opts.button) return html`<button class="${cls}" data-act="source-details" ${opts.id ? raw('data-id="' + esc(opts.id) + '"') : ''} ${fitAttr(opts)} aria-label="${label}. Show source details" data-tip="Source details">${f.label}</button>`;
     return html`<span class="${cls}" title="${label}">${f.label}</span>`;
   };
   ui.newBadge = function () { return html`<span class="badge-new">new</span>`; };
@@ -1059,8 +1061,8 @@
     return html`<button class="btn btn-save ${opts.cls || ''}" data-state="${st}" data-save-btn="${trackId}" data-act="${act}" data-id="${trackId}"${raw(attrs)}>${icon(ic)}<span>${label}</span></button>`;
   };
   /* the copy playing (or saved) doesn't pass the listener's minimum (ADR-0008) */
-  ui.belowBadge = function () {
-    return html`<span class="badge badge-below" data-tip="Below your minimum in Settings > Sources">${icon('warning')}below minimum</span>`;
+  ui.belowBadge = function (opts) {
+    return html`<span class="badge badge-below" ${fitAttr(opts)} data-tip="Below your minimum in Settings > Sources">${icon('warning')}below minimum</span>`;
   };
   /* 5-step pipeline. step = current step (1-5); status saving|failed|saved|waiting */
   ui.pipeline = function (step, status, error) {
@@ -2961,9 +2963,9 @@
     var cacheAttrs = raw('data-cache-used="' + (c.usedGB || 0) + '" data-cache-cap="' + (c.capGB || 0) + '" style="--cache-frac:' + frac.toFixed(3) + '"');
     var gb = c.capGB ? c.usedGB + '/' + c.capGB + 'G' : 'off';
     var full = html`${['soulseek', 'library', 'lastfm'].map(function (k) {
-      var extra = k === 'lastfm' && s.lastfm.queued ? html`&nbsp;<span class="tray__count">${s.lastfm.queued}</span><span class="tray__label-long">&nbsp;queued</span>` : '';
+      var extra = k === 'lastfm' && s.lastfm.queued ? html`&nbsp;<span class="tray__count">${s.lastfm.queued}</span><span class="tray__label-long" data-fit="2">&nbsp;queued</span>` : '';
       return html`<span class="tray__pill" data-svc="${k}" data-state="${s[k].state}">${ui.statusGlyph(s[k].state)}${s[k].label}${extra}</span>`;
-    })}<span class="tray__pill tray__pill--cache" data-svc="cache" data-state="${c.state}" ${cacheAttrs}>${ui.statusGlyph(c.state)}<span class="tray__label-long">cache&nbsp;</span>${gb}</span>`;
+    })}<span class="tray__pill tray__pill--cache" data-svc="cache" data-state="${c.state}" ${cacheAttrs}>${ui.statusGlyph(c.state)}<span class="tray__label-long" data-fit="2">cache&nbsp;</span>${gb}</span>`;
     var worst = trayWorst();
     var compact = html`<span class="tray__pill" data-worst="${worst.state}">${['soulseek', 'library', 'lastfm'].map(function (k) { return ui.statusGlyph(s[k].state); })}<span class="tray__word">${worst.word}</span>${c.capGB ? html`<span class="tray__gb">${c.usedGB}G</span>` : ''}</span>`;
     $$('[data-tray]').forEach(function (b) {
@@ -2972,6 +2974,7 @@
       b.style.setProperty('--cache-frac', frac.toFixed(3));
       b.setAttribute('data-cache-used', c.usedGB || 0); b.setAttribute('data-cache-cap', c.capGB || 0);
     });
+    if (App.layout) App.layout.refit();     // the tray's words changed: the header fits again
   }
   function statusPopover(anchor) {
     var s = state.services;
@@ -3161,21 +3164,26 @@
     mini.setAttribute('data-status', idle ? 'idle' : st);
     var now = $('#pbar-now');
     /* private listening shows with the track, wherever the design puts it: the bar's tools are laid out per design */
-    var priv = state.privateListening ? html`<a class="pbar__private" href="#/settings/privacy" aria-label="Private listening is on. Open its setting" data-tip="Private listening: nothing you play here is recorded or scrobbled">${icon('eye-off')}Private</a>` : '';
+    var priv = state.privateListening ? html`<a class="pbar__private" href="#/settings/privacy" aria-label="Private listening is on. Open its setting" data-tip="Private listening: nothing you play here is recorded or scrobbled" data-fit="4">${icon('eye-off')}<span class="pbar__private-label">Private</span></a>` : '';
+    var nowMarkup;
     if (idle) {
-      patch(now, html`<span class="bezel-thumb bezel-thumb--empty" aria-hidden="true"><span></span></span><div class="pbar__idle">${priv || html`${icon('sparkle')}<span>Search or pick something from Home</span>`}</div>`);
+      nowMarkup = html`<span class="bezel-thumb bezel-thumb--empty" aria-hidden="true"><span></span></span><div class="pbar__idle">${priv || html`${icon('sparkle')}<span>Search or pick something from Home</span>`}</div>`;
     } else {
       /* the cover opens Now Playing; the title, and the "Playing from" line where the design shows it, open the place
          it plays from at the song; with no such page (a single song, radio, your queue), the title opens the album */
       var from = P.playingFrom(), fromPath = from && App.placePath(from);
-      patch(now, html`<span class="cover-zoom"><a class="bezel-thumb" href="#/now" aria-label="Open Now Playing: ${t.title}" data-tip="Now Playing">${ui.cover(t, 52, { hero: true })}</a>${ui.coverZoom(t.id)}</span>
+      nowMarkup = html`<span class="cover-zoom"><a class="bezel-thumb" href="#/now" aria-label="Open Now Playing: ${t.title}" data-tip="Now Playing">${ui.cover(t, 52, { hero: true })}</a>${ui.coverZoom(t.id)}</span>
         <div class="pbar__text">
           ${ui.playingFrom('pbar__from')}
           <div class="pbar__title">${fromPath ? html`<a href="#${fromPath}" data-act="go-playing" data-tip="Show the song in ${App.placeName(from)}">${t.title}</a>` : html`<a href="#/album/${t.albumId}">${t.title}</a>`}</div>
           <div class="pbar__artist"><a href="#/artist/${t.artistId}">${t.artist}</a></div>
-          <div class="pbar__badges">${playingYoutube() ? '' : ui.sourceBadge(t, { button: true })}${playingFormat(t) ? ui.qualityChip(playingFormat(t), { solid: true, button: true, id: t.id }) : ''}${ps.belowMinimum ? ui.belowBadge() : ''}${priv}</div>
-        </div>`);
+          <div class="pbar__badges" data-fit-row>${playingYoutube() ? '' : ui.sourceBadge(t, { button: true, fit: 1 })}${playingFormat(t) ? ui.qualityChip(playingFormat(t), { solid: true, button: true, id: t.id, fit: 3 }) : ''}${ps.belowMinimum ? ui.belowBadge({ fit: 2 }) : ''}${priv}</div>
+        </div>`;
     }
+    patch(now, nowMarkup);
+    /* the song side's words changed: the bar fits again (only then: a queue change re-renders the bar too) */
+    var fitKey = String(nowMarkup);
+    if (App.layout && now._fitKey !== fitKey) { now._fitKey = fitKey; App.layout.refit(); }
     // state tab above the seek bar
     var line = P.statusText(), stEl = $('#pbar-state');
     if (line && st !== 'idle') {
@@ -3442,16 +3450,21 @@
   }
   App.itemMenus.track = trackMenu;
   /* the player's "…" (the bar's, Now Playing's, a right-click on the playing song): the song's actions, then the bar's
-     views; the ones a narrow bar takes out of its tools (Lyrics, Classic, Device view) are always here, playing or not */
+     views. Every tool a narrow bar lets give way (data-fit) is here: Like and Save with the song, Lyrics, Classic,
+     Devices and Device view always */
   function playerMenu(anchor) {
     var t = P.current();
     var views = [
       { label: 'Lyrics', icon: 'lyrics', run: function () { App.togglePanel('lyrics'); } },
       { label: 'Classic mode', icon: 'classic', run: function () { App.go('/classic'); } },
+      { label: 'Play on another device', icon: 'connect', run: function () { App.connect.open(anchor); } },
       { label: 'Device view', icon: 'device', run: actions['open-now'] }
     ];
     if (!t) { App.menu(anchor, views, { label: 'More player actions' }); return; }
+    var liked = App.isLiked(t.id), saved = App.isSaved(t.id);
     App.menu(anchor, [
+      { label: liked ? 'Remove from Liked' : 'Like', icon: liked ? 'heart-fill' : 'heart', run: function () { App.toggleLike(t.id); } },
+      { label: saved ? 'In your library' : 'Save to library', icon: saved ? 'saved' : 'save', run: function () { if (!saved) App.saves.start([t.id]); } },
       { label: 'Add to playlist', icon: 'playlists', run: function () { App.hooks.addToPlaylist([t.id]); } },
       { label: 'Go to album', icon: 'library', run: function () { App.go('/album/' + t.albumId); } },
       { label: 'Go to artist', icon: 'peer', run: function () { App.go('/artist/' + t.artistId); } },

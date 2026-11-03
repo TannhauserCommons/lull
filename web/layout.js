@@ -197,5 +197,57 @@
   }).observe(app, { attributes: true, attributeFilter: ['data-nowcol'] });
 
   App.action('panel-split', function () { App.layout.set({ panelSplit: !L.panelSplit }); App.refreshPanel(); });
+
+  /* ---------- rows that fit themselves ----------
+     The header, the player bar and the rows inside them lay themselves out from the room they have, never from the
+     window's width, so a docked panel, the Now column, the text size or a longer title count as much as the window. A
+     row is [data-fit-row]; a part that can give way is [data-fit="<order>"] (1 gives way first; parts of one order go
+     together). When a row's content needs more than its width, parts give way in order (they get [data-fit-out]; the
+     component's CSS says what that means: hidden and in the "…" menu, a pill without its label, the compact tray) until
+     it fits; with room again they come back. A part belongs to its nearest row with a box, so a design that lays a row
+     out with display: contents hands its parts to the row around it. Rows fit again when they resize (ResizeObserver),
+     and App.layout.refit() after their content changes (a new song, the status tray). */
+  function fitRowOf(part) {
+    for (var a = part.parentElement; a; a = a.parentElement) if (a.hasAttribute('data-fit-row') && getComputedStyle(a).display !== 'contents') return a;
+    return null;
+  }
+  /* the row's content is wider than the row: its scroll width, or, for a row that packs toward its end (whose overflow
+     the scroll width doesn't count), its children's widths and gaps */
+  function overflows(row) {
+    if (row.scrollWidth > row.clientWidth + 1) return true;
+    var cs = getComputedStyle(row); if (cs.display.indexOf('flex') < 0) return false;
+    var need = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight), gap = parseFloat(cs.columnGap) || 0, n = 0;
+    Array.prototype.forEach.call(row.children, function (c) {
+      var s = getComputedStyle(c); if (s.display === 'none' || s.position === 'absolute' || s.position === 'fixed') return;
+      need += c.getBoundingClientRect().width + parseFloat(s.marginLeft) + parseFloat(s.marginRight); n++;
+    });
+    return need + gap * Math.max(0, n - 1) > row.clientWidth + 1;
+  }
+  function fit(row) {
+    if (!row.getClientRects().length || getComputedStyle(row).display === 'contents') return;
+    /* a part a design placed outside the row's flow (glasshouse floats the tray into the rail) takes no room in it */
+    var parts = $$('[data-fit]', row).filter(function (p) {
+      var pos = getComputedStyle(p).position; return fitRowOf(p) === row && pos !== 'fixed' && pos !== 'absolute';
+    });
+    parts.forEach(function (p) { p.removeAttribute('data-fit-out'); });
+    var orders = parts.map(function (p) { return +p.getAttribute('data-fit'); })
+      .filter(function (o, i, all) { return all.indexOf(o) === i; }).sort(function (a, b) { return a - b; });
+    for (var i = 0; i < orders.length && overflows(row); i++) {
+      parts.forEach(function (p) { if (+p.getAttribute('data-fit') === orders[i]) p.setAttribute('data-fit-out', ''); });
+    }
+  }
+  var fitting = new ResizeObserver(function (entries) { entries.forEach(function (e) { fit(e.target); }); });
+  var watched = new WeakSet();
+  /* outer rows first (document order): an inner row's width follows from what its outer row gave way. Every row is
+     watched, a box-less one too (display: contents at some widths), since the observer reports it when it gets a box;
+     a row drawn since the last call (the song's chips) is watched from now on */
+  App.layout.refit = function () {
+    $$('[data-fit-row]').forEach(function (r) { if (!watched.has(r)) { watched.add(r); fitting.observe(r); } fit(r); });
+  };
+  App.on('ready', App.layout.refit);
+  App.on('design', function () { fitting.disconnect(); watched = new WeakSet(); App.layout.refit(); });
+  if (document.fonts) document.fonts.ready.then(App.layout.refit);
+  App.layout.refit();
+
   apply();
 })();
