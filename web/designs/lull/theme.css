@@ -1284,8 +1284,11 @@
 :root[data-design="lull"] .lull-np .wave-times { grid-area: times; margin-top: -2px; font: 800 .75rem/1 var(--f-ui); color: var(--l-screen-ink); }
 :root[data-design="lull"] .lull-np .wave-times b { color: var(--l-screen-ink); }
 :root[data-design="lull"] .lull-np .now-osd { z-index: 3; }
-/* transport: shuffle pill | prev, big gloss play, next | repeat pill */
-:root[data-design="lull"] .lull-np__deck { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 2px 2px; }
+/* transport: shuffle pill | prev, big gloss play, next | repeat pill. The keys are the middle column between two equal
+   ones, so play is on the screen's centre line though "shuffle" and "repeat" differ in width */
+:root[data-design="lull"] .lull-np__deck { display: grid; grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr); align-items: center; gap: 8px; padding: 6px 2px 2px; }
+:root[data-design="lull"] .lull-np__deck > .device__pill--shuffle { justify-self: start; }
+:root[data-design="lull"] .lull-np__deck > .device__pill--repeat { justify-self: end; }
 :root[data-design="lull"] .lull-np__transport { display: flex; align-items: center; gap: 14px; }
 :root[data-design="lull"] :is(.lull-np, .dk-mini) .dpad__btn {
   width: 42px; height: 42px; border-radius: 50%; border: var(--stroke) solid var(--l-edge); background: var(--l-card); color: var(--ink);
@@ -1329,9 +1332,12 @@
   display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px 0 8px; border-radius: 999px; border: var(--stroke) solid var(--l-edge);
   background: var(--l-card); color: var(--ink); font: 800 .75rem/1 var(--f-ui);
 }
+/* shuffle and repeat keep the d-pad keys' raised edge in both states: pressing one changes its fill, never how big it
+   looks beside them. Where they are round keys (the mini, Now on a phone) they are the keys' 42 px too */
+:root[data-design="lull"] :is(.lull-np, .dk-mini) .device__pill { box-shadow: 0 2px 0 var(--l-edge); }
 :root[data-design="lull"] :is(.lull-np, .dk-mini) .device__pill > i { width: 15px; height: 15px; border: 0; border-radius: 0; background: currentColor; box-shadow: none; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 7h3c4.5 0 6.5 10 11 10h4M3 17h3c4.5 0 6.5-10 11-10h4M18 4l3 3-3 3M18 14l3 3-3 3'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 7h3c4.5 0 6.5 10 11 10h4M3 17h3c4.5 0 6.5-10 11-10h4M18 4l3 3-3 3M18 14l3 3-3 3'/%3E%3C/svg%3E") center / contain no-repeat; }
 :root[data-design="lull"] :is(.lull-np, .dk-mini) .device__pill--repeat > i { -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 12V9.5A3.5 3.5 0 0 1 7.5 6H20M17 3l3 3-3 3M20 12v2.5a3.5 3.5 0 0 1-3.5 3.5H4M7 21l-3-3 3-3'/%3E%3C/svg%3E"); mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 12V9.5A3.5 3.5 0 0 1 7.5 6H20M17 3l3 3-3 3M20 12v2.5a3.5 3.5 0 0 1-3.5 3.5H4M7 21l-3-3 3-3'/%3E%3C/svg%3E"); }
-:root[data-design="lull"] :is(.lull-np, .dk-mini) .device__pill[aria-pressed="true"] { background: var(--l-hi), var(--l-gloss); color: #fff; border-color: var(--l-gloss-edge); text-shadow: 0 1px 0 rgba(40, 25, 110, .55); }
+:root[data-design="lull"] :is(.lull-np, .dk-mini) .device__pill[aria-pressed="true"] { background: var(--l-hi), var(--l-gloss); color: #fff; border-color: var(--l-gloss-edge); text-shadow: 0 1px 0 rgba(40, 25, 110, .55); box-shadow: 0 2px 0 var(--l-gloss-edge); }
 :root[data-design="lull"] :is(.lull-np, .dk-mini) .device__pill[aria-pressed="true"] > i { background: #fff; box-shadow: none; }
 :root[data-design="lull"][data-theme="night"] :is(.lull-np, .dk-mini) .device__pill:not([aria-pressed="true"]) { background: var(--sky); color: #f4efff; }
 :root[data-design="lull"] .lull-np__mark { margin-right: auto; white-space: nowrap; font: italic 400 .9375rem/1 var(--f-disp); letter-spacing: .05em; color: #3d3491; }
@@ -1432,7 +1438,7 @@
 /* desktop mini window: a small lull window, not a handheld (the handheld is skydeck's). Orb title bar, the pocket
    screen, then the Now window's transport row (shuffle | prev, play, next | repeat) and a slim row (vol -, like, vol +) */
 :root[data-design="lull"] .dk-mini .device {
-  --device-w: 320px; display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto minmax(0, 1fr); align-items: center; gap: 12px 10px;
+  --device-w: 320px; display: grid; grid-template-columns: minmax(0, 1fr) repeat(5, auto) minmax(0, 1fr); align-items: center; gap: 12px 10px;
   padding: 38px 10px 14px; border-radius: 14px; background: var(--sky); box-shadow: inset 0 0 0 4px var(--l-frame), var(--l-win-stack);
 }
 :root[data-design="lull"] .dk-mini .device::before {
@@ -1450,19 +1456,20 @@
 :root[data-design="lull"] .dk-mini :is(.device__controls, .dpad, .device__ab, .device__pills) { display: contents; }
 :root[data-design="lull"] .dk-mini .device__key { font-size: 0; }
 :root[data-design="lull"] .dk-mini .device__key [data-dk-play-label] { display: none; }
-:root[data-design="lull"] .dk-mini .device__pill--shuffle { grid-area: 2 / 1; justify-self: start; }
-:root[data-design="lull"] .dk-mini .dpad__btn--left { grid-area: 2 / 2; }
-:root[data-design="lull"] .dk-mini .device__key--a { grid-area: 2 / 3; }
-:root[data-design="lull"] .dk-mini .dpad__btn--right { grid-area: 2 / 4; }
-:root[data-design="lull"] .dk-mini .device__pill--repeat { grid-area: 2 / 5; justify-self: end; }
-:root[data-design="lull"] .dk-mini .dpad__btn--down { grid-area: 3 / 2; }
-:root[data-design="lull"] .dk-mini .device__key--b { grid-area: 3 / 3; }
-:root[data-design="lull"] .dk-mini .dpad__btn--up { grid-area: 3 / 4; }
+:root[data-design="lull"] .dk-mini .device__pill--shuffle { grid-area: 2 / 2; }
+:root[data-design="lull"] .dk-mini .dpad__btn--left { grid-area: 2 / 3; }
+:root[data-design="lull"] .dk-mini .device__key--a { grid-area: 2 / 4; }
+:root[data-design="lull"] .dk-mini .dpad__btn--right { grid-area: 2 / 5; }
+:root[data-design="lull"] .dk-mini .device__pill--repeat { grid-area: 2 / 6; }
+:root[data-design="lull"] .dk-mini .dpad__btn--down { grid-area: 3 / 3; }
+:root[data-design="lull"] .dk-mini .device__key--b { grid-area: 3 / 4; }
+:root[data-design="lull"] .dk-mini .dpad__btn--up { grid-area: 3 / 5; }
 :root[data-design="lull"] .dk-mini .device__key--a .btn-gloss { --size: 60px; }
 :root[data-design="lull"] .dk-mini .device__key--b .btn-gloss { --size: 42px; }
 :root[data-design="lull"] .dk-mini .dpad__btn { border-radius: 50%; border: var(--stroke) solid var(--l-edge); }
-/* shuffle / repeat are icon pills here (named by their text, shown by aria-pressed) so the row fits 320 px */
-:root[data-design="lull"] .dk-mini .device__pill { width: 38px; height: 38px; padding: 0; justify-content: center; font-size: 0; }
+/* shuffle / repeat are round keys here (named by their text, shown by aria-pressed): five keys with equal gaps between
+   free columns on both sides, play in the middle */
+:root[data-design="lull"] .dk-mini .device__pill { width: 42px; height: 42px; padding: 0; justify-content: center; font-size: 0; }
 @media (max-width: 639px) {
   :root[data-design="lull"] .now-ly--page { --ly-size: calc(1.0625rem + var(--ly-step, 0) * .125rem); }
   :root[data-design="lull"] .now-ly__line.is-current { font-size: calc(var(--ly-size) + .375rem); }
@@ -1726,7 +1733,7 @@
   :root[data-design="lull"] .lull-np .wave { height: 38px; }
   :root[data-design="lull"] .lull-np__transport { gap: 10px; }
   /* shuffle / repeat keep only their glyphs (the buttons keep their names) so the deck fits a phone */
-  :root[data-design="lull"] .lull-np .device__pill { width: 36px; height: 36px; padding: 0; justify-content: center; font-size: 0; }
+  :root[data-design="lull"] .lull-np .device__pill { width: 42px; height: 42px; padding: 0; justify-content: center; font-size: 0; }
   /* Lyrics / Queue / Details: the compact pocket already carries the title */
   :root[data-design="lull"] .now:not([data-tab="art"]) .now-head :is(.now-head__title, .now-head__by) { display: none; }
   /* the sheet's top line already says where it plays from */
