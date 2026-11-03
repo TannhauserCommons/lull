@@ -61,7 +61,7 @@ data, ever.
 |---|---|---|
 | tracks, albums, artists | server entities | every response (`M.absorb`) |
 | liked, followed | `GET /api/likes`, `/api/follows` -> `App.store` `liked`, `followed` | `App.toggleLike`, `App.setLiked`, `App.toggleFollow` (PUT/DELETE); `like` / `follow` events from other devices |
-| playlists | `GET /api/playlists` -> store `playlists` (= `M.playlists`) | `App.createPlaylist`, `App.savePlaylistOrder`, `App.addToPlaylist` |
+| playlists | `GET /api/playlists` -> store `playlists` (= `M.playlists`) | `App.createPlaylist`, `App.savePlaylistOrder`, `App.addToPlaylist`; how each is shown (`sort`) by `App.setPlaylistSort` (shown at once, kept by `PUT /api/playlists/{id}/sort` for every device; a failure keeps it for this visit and says so) |
 | saves | store `saves` `{ trackId: { jobId, step, status, pct, error, kind, nocover } }`, seeded from unfinished save rows of `GET /api/jobs` | `App.saves.start(ids, { mode, source })` (`mode` = the duplicate dialog's separate/replace), `retry`, `save` events |
 | activity | `GET /api/jobs` -> store `activity` (rows keyed `id` = jobId) | `job`, `transfer` events |
 | services | `GET /health` -> store `services` (`state ok|warn|down|off`, `label`, `detail`, `queued`, `usedGB`, `capGB`) | `service` events |
@@ -386,6 +386,16 @@ with Review). When an import this tab started ends, a toast offers Review (or Op
 (`openLinkReview`, `GET /api/import/links/{id}`) filters Not found, In the playlist, Skipped and All; a song is found
 in place with catalog search (`/api/search`, first 6 songs), kept as named, skipped, or undone, each a
 `PUT /api/import/links/{id}/songs/{pos}` whose answer repaints the list. "Update from the link" imports it again.
+
+## Playlist sorting
+
+The playlist page shows its songs by the playlist's `sort` (`{ key: custom|added|title|artist|album|duration, dir }`,
+library.js section 8): a column header sorts by it (`role=columnheader` with `aria-sort` and an arrow), clicking it
+again turns it round, and the sort menu also has Reversed (the custom order, descending). A new column starts the way
+people expect: dates newest first, the rest A to Z or shortest first; ties keep the playlist's order. Dragging, Alt +
+arrows, Move up/down and Remove act on the playlist's own order, so they work only while it shows custom order;
+sorted, a note says so with a "Show custom order" button. Copies and imports send their songs' dates (`added`), so
+"Date added" means when a song came into the playlist (an Exportify file's `Added At`).
 
 ## Links
 

@@ -160,8 +160,10 @@
 }
 .lib-th { display: inline-flex; align-items: center; gap: 2px; justify-self: start; min-height: 32px; padding: 0 4px; margin-left: -4px; border-radius: var(--r-chip);
   font: 800 .8125rem/1 var(--f-ui); color: var(--fg-2); white-space: nowrap; }
-button.lib-th:hover { color: var(--fg); background: var(--bg-2); }
-.lib-th[aria-pressed="true"] { color: var(--link); }
+/* each header is a columnheader holding its sort button, which fills it */
+.lib-th__btn { display: inline-flex; align-items: center; gap: 2px; min-height: 32px; margin: 0 -4px; padding: 0 4px; border-radius: inherit; }
+.lib-th__btn:hover { color: var(--fg); background: var(--bg-2); }
+.lib-th:is([aria-sort="ascending"], [aria-sort="descending"]) { color: var(--link); }
 .lib-th--num { grid-column: 1; justify-self: center; margin-left: 0; }
 .lib-th--title { grid-column: 2 / span 2; }
 .lib-th--album, .lib-th--added { display: none; }

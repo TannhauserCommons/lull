@@ -266,8 +266,8 @@
     if (r.error) return readError(r.error, path, r.error.status === 503 ? 'Your library is offline' : null);
     return fn(r.data);
   }
-  function sortButton(act, label) {
-    return html`<button class="btn btn--quiet btn--sm lib-sort" data-act="${act}" aria-haspopup="menu">${icon('sort')}${label}${icon('chevron-down', null, 'ic-16')}</button>`;
+  function sortButton(act, label, id) {
+    return html`<button class="btn btn--quiet btn--sm lib-sort" data-act="${act}" ${id ? raw('data-id="' + id + '"') : ''} aria-haspopup="menu">${icon('sort')}${label}${icon('chevron-down', null, 'ic-16')}</button>`;
   }
 
   /* every library album is saved, so there is no saved-state filter: the list, sorted, with its count */
@@ -1027,26 +1027,55 @@
      8. Playlist page (moodboard image 04): mosaic, big title, pixel-face count + duration, table.
         The store copy is live; GET /api/playlists/{id} fills in its songs (and stands in when the store lacks it).
      ===================================================================== */
+  /* How a playlist is shown: its own order (custom; descending is "Reversed") or a column, either way round. It is
+     the playlist's `sort` on the hub (PUT /api/playlists/{id}/sort), so it is the same on every device and after a
+     reload. Each key compares ascending; ties keep the playlist's own order. A new key starts the way people
+     expect it: dates newest first, the rest A to Z or shortest first. */
+  var text = function (f) { return function (a, b) { return String(f(a) || '').localeCompare(String(f(b) || ''), undefined, { sensitivity: 'base', numeric: true }); }; };
   var SORTS = {
-    custom: { label: 'Custom order', fn: null },
-    added: { label: 'Date added', fn: function (a, b) { return stamp(b.it.added) - stamp(a.it.added); } },
-    title: { label: 'Title', fn: function (a, b) { return a.t.title.localeCompare(b.t.title); } },
-    album: { label: 'Album', fn: function (a, b) { return a.t.album.localeCompare(b.t.album); } },
-    time: { label: 'Duration', fn: function (a, b) { return a.t.duration - b.t.duration; } }
+    custom: { label: 'Custom order', reversed: 'Reversed', first: 'asc', fn: function () { return 0; } },
+    added: { label: 'Date added', first: 'desc', fn: function (a, b) { return stamp(a.it.added) - stamp(b.it.added); } },
+    title: { label: 'Title', first: 'asc', fn: text(function (r) { return r.t.title; }) },
+    artist: { label: 'Artist', first: 'asc', fn: text(function (r) { return r.t.artist; }) },
+    album: { label: 'Album', first: 'asc', fn: text(function (r) { return r.t.album; }) },
+    duration: { label: 'Duration', first: 'asc', fn: function (a, b) { return (a.t.duration || 0) - (b.t.duration || 0); } }
   };
-  var plSort = 'custom', plSortFor = null;   // sort is per visit: it resets when another playlist opens
+  var DEFAULT_SORT = { key: 'custom', dir: 'asc' };
+  function sortOf(p) { var s = p && p.sort; return s && SORTS[s.key] && (s.dir === 'asc' || s.dir === 'desc') ? s : DEFAULT_SORT; }
+  /* drag, Alt + arrows and Remove work on the playlist's own order, so only while it shows that order */
+  function inOwnOrder(p) { var s = sortOf(p); return s.key === 'custom' && s.dir === 'asc'; }
+  /* "Custom order", "Reversed", "Date added, newest first", "Title, A to Z", "Duration, longest first"; `inSentence`
+     lowers the column's name ("Sorted by title, A to Z") */
+  function sortLabel(s, inSentence) {
+    if (s.key === 'custom') return s.dir === 'desc' ? SORTS.custom.reversed : SORTS.custom.label;
+    var words = s.key === 'added' ? ['oldest first', 'newest first'] : s.key === 'duration' ? ['shortest first', 'longest first'] : ['A to Z', 'Z to A'];
+    var name = SORTS[s.key].label;
+    return (inSentence ? name.toLowerCase() : name) + ', ' + words[s.dir === 'asc' ? 0 : 1];
+  }
   function playlistOf(id) { return playlist(id) || M.peek(playlistPath(id)); }
   /* the rows on screen, in order, each with its index in p.items: songs the cache can't describe aren't
      drawn, but they stay in the playlist (every order sent is built from p.items, not from the screen) */
   function shownRows(p) {
+    var s = sortOf(p), sign = s.dir === 'desc' ? -1 : 1;
     var rows = (p.items || []).map(function (it, i) { return { it: it, i: i, t: M.track(it.trackId) }; }).filter(function (r) { return r.t; });
-    return SORTS[plSort].fn ? rows.sort(SORTS[plSort].fn) : rows;
+    return rows.sort(function (a, b) { return sign * (SORTS[s.key].fn(a, b) || a.i - b.i); });
   }
   /* screen row n -> its index in p.items (past the last row: the end of the playlist) */
   function rowToItem(p, shown) { return function (n) { return n < shown.length ? shown[n].i : plIds(p).length; }; }
-  function headCell(key, label, cls) {
-    var on = plSort === key;
-    return html`<button class="lib-th ${cls}" data-act="lib-pl-sort" data-value="${key}" aria-pressed="${on ? 'true' : 'false'}" aria-label="Sort by ${SORTS[key].label.toLowerCase()}">${label}${on && key !== 'custom' ? icon('chevron-down', null, 'ic-16') : ''}</button>`;
+  /* a column header: the sorted one says which way (aria-sort, and an arrow); clicking it again turns it round */
+  function headCell(p, key, label, cls) {
+    var s = sortOf(p), on = s.key === key, next = on ? (s.dir === 'asc' ? 'desc' : 'asc') : SORTS[key].first;
+    var name = key === 'custom' ? 'playlist order' : SORTS[key].label.toLowerCase();
+    return html`<span class="lib-th ${cls}" role="columnheader" aria-sort="${on ? (s.dir === 'asc' ? 'ascending' : 'descending') : 'none'}">
+      <button class="lib-th__btn" data-act="lib-pl-sort" data-id="${p.id}" data-value="${key}" data-dir="${next}" aria-label="${on ? 'Sorted by ' + name + ', ' + (s.dir === 'asc' ? 'ascending' : 'descending') + '. Reverse' : 'Sort by ' + name}">${label}${on ? icon(s.dir === 'asc' ? 'chevron-up' : 'chevron-down', null, 'ic-16') : ''}</button></span>`;
+  }
+  /* shows the playlist sorted at once and keeps it on the hub; if the hub can't keep it, it stays sorted here and
+     says it won't be next time */
+  function setSort(p, sort) {
+    var before = sortOf(p);
+    if (before.key === sort.key && before.dir === sort.dir) return;
+    App.setPlaylistSort(p.id, sort);
+    App.announce(sort.key === 'custom' ? sortLabel(sort) : 'Sorted by ' + sortLabel(sort, true));
   }
   function renderPlaylist(ctx) {
     var id = ctx.params.id, path = playlistPath(id), r = M.get(path), p = playlist(id) || r.data;
@@ -1056,15 +1085,14 @@
     }
     var ids = plIds(p);
     if (r.loading && !ids.every(function (x) { return M.track(x); })) return pageSkeleton();
-    if (plSortFor !== p.id) { plSort = 'custom'; plSortFor = p.id; }
-    var rows = shownRows(p), custom = plSort === 'custom', down = jellyfinDown();
+    var rows = shownRows(p), custom = inOwnOrder(p), sort = sortOf(p), down = jellyfinDown();
     var missing = ids.filter(function (x) { return !isSaved(x); }).length;
     var table = ids.length ? html`<div class="lib-table">
-        <div class="lib-thead" role="group" aria-label="Sort songs">
-          ${headCell('custom', '#', 'lib-th--num')}${headCell('title', 'title', 'lib-th--title')}${headCell('album', 'album', 'lib-th--album')}
-          ${headCell('added', 'date added', 'lib-th--added')}<span class="lib-th lib-th--like" aria-hidden="true">${icon('heart', null, 'ic-16')}</span>
-          ${headCell('time', icon('clock', 'Duration', 'ic-16'), 'lib-th--dur')}
-        </div>
+        <div role="table" aria-label="Sort songs"><div class="lib-thead" role="row">
+          ${headCell(p, 'custom', '#', 'lib-th--num')}${headCell(p, 'title', 'title', 'lib-th--title')}${headCell(p, 'album', 'album', 'lib-th--album')}
+          ${headCell(p, 'added', 'date added', 'lib-th--added')}<span class="lib-th lib-th--like" role="columnheader">${icon('heart', 'Liked', 'ic-16')}</span>
+          ${headCell(p, 'duration', icon('clock', 'Duration', 'ic-16'), 'lib-th--dur')}
+        </div></div>
         <ol class="tlist tlist--dated lib-pl-list" data-ids="${rows.map(function (x) { return x.it.trackId; }).join(',')}" data-drop="lib-pl:${p.id}" data-pl="${p.id}"
           aria-label="Songs in ${p.name}${custom ? '. Alt plus arrow keys reorder, Delete removes' : ''}">${rows.map(function (x, n) {
           return ui.trackRow(x.t, { index: n + 1, added: x.it.added, draggable: custom, unavailable: down && isSaved(x.t.id) });
@@ -1095,9 +1123,9 @@
           ${ui.iconButton('export', 'Export as M3U', { 'data-act': 'lib-pl-export', 'data-id': p.id, 'aria-haspopup': 'dialog' })}
           ${ui.iconButton('more', 'More playlist actions', { 'data-act': 'lib-pl-menu', 'data-id': p.id, 'aria-haspopup': 'menu' })}
           <span class="spacer"></span>
-          ${ids.length ? sortButton('lib-pl-sortmenu', SORTS[plSort].label) : ''}
+          ${ids.length ? sortButton('lib-pl-sortmenu', sortLabel(sort), p.id) : ''}
         </div>
-        ${!custom && ids.length ? html`<p class="lib-sortnote">${icon('info', null, 'ic-16')}Sorted by ${SORTS[plSort].label.toLowerCase()}. <button class="btn btn--quiet btn--sm" data-act="lib-pl-sort" data-value="custom">Back to custom order</button> to drag or reorder.</p>` : ''}
+        ${!custom && ids.length ? html`<p class="lib-sortnote">${icon('info', null, 'ic-16')}${sort.key === 'custom' ? 'Shown reversed.' : 'Sorted by ' + sortLabel(sort, true) + '.'} Dragging, moving and removing songs work on the playlist's own order: <button class="btn btn--quiet btn--sm" data-act="lib-pl-sort" data-id="${p.id}" data-value="custom" data-dir="asc">Show custom order</button></p>` : ''}
         ${table}
       </article>
     </div>`;
@@ -1149,10 +1177,12 @@
         onAction: function () { saveOrder(p, before).then(function (back) { if (back) focusRow(row); }); } });
     });
   }
-  /* a new playlist with songs in it, in one POST (App.createPlaylist says why when it fails, and answers null) */
-  function makePlaylist(name, desc, ids, imported) {
-    return App.createPlaylist({ name: name, desc: desc || '', trackIds: ids, imported: imported });
+  /* a new playlist with songs in it, in one POST (App.createPlaylist says why when it fails, and answers null).
+     `added`: when each song was added (unix seconds or null), so a copy or an import keeps "Date added" */
+  function makePlaylist(name, desc, ids, imported, added) {
+    return App.createPlaylist({ name: name, desc: desc || '', trackIds: ids, imported: imported, added: added });
   }
+  function addedOf(p) { return (p.items || []).map(function (i) { return i.added; }); }
   function saveDetails(p, name, desc) { return App.updatePlaylist(p.id, { name: name, desc: desc }); }
   function deletePlaylist(p) {
     var ids = plIds(p);
@@ -1161,7 +1191,7 @@
       if (App.current.path === '/playlist/' + p.id) App.go('/playlists');
       /* undo makes it again from what it held (a new playlist, same name, description and songs) */
       App.toast('Deleted ' + p.name, { icon: 'trash', action: 'Undo', onAction: function () {
-        makePlaylist(p.name, p.desc, ids).then(function (back) { if (back) App.go('/playlist/' + back.id); });
+        makePlaylist(p.name, p.desc, ids, undefined, addedOf(p)).then(function (back) { if (back) App.go('/playlist/' + back.id); });
       } });
     }, function (err) { App.toast('Couldn\'t delete ' + p.name + ': ' + err.message, { kind: 'error' }); });
   }
@@ -1175,7 +1205,7 @@
     // row "more" buttons get a playlist-aware menu (adds move and remove)
     $$('.lib-pl-list .trow__more [data-act="track-menu"]', ctx.el).forEach(function (b) { b.setAttribute('data-act', 'lib-pl-row-menu'); });
     var list = $('.lib-pl-list', ctx.el), shown = shownRows(p), itemAt = rowToItem(p, shown);
-    if (list && plSort === 'custom') {
+    if (list && inOwnOrder(p)) {
       var line = document.createElement('li'); line.className = 'drop-line'; line.setAttribute('aria-hidden', 'true');
       var drag = { from: null, at: shown.length };
       var clear = function () { if (line.parentNode) line.parentNode.removeChild(line); };
@@ -1204,18 +1234,18 @@
     // keyboard reorder and remove (the shell emits these from a focused row)
     ctx.onCleanup(App.on('row:move', function (d) {
       if (d.list !== list) return;
-      if (plSort !== 'custom') { sortNeeded(); return; }
+      if (!inOwnOrder(p)) { sortNeeded(p); return; }
       var to = d.index + d.dir; if (to < 0 || to >= shown.length) return;
       moveItems(p, [itemAt(d.index)], itemAt(d.dir > 0 ? d.index + 2 : d.index - 1));
     }));
     ctx.onCleanup(App.on('row:delete', function (d) {
       if (d.list !== list) return;
-      if (plSort !== 'custom') { sortNeeded(); return; }
+      if (!inOwnOrder(p)) { sortNeeded(p); return; }
       removeItem(p, itemAt(d.index), d.index);
     }));
   }
-  function sortNeeded() {
-    App.toast('Switch to custom order to reorder or remove songs', { icon: 'sort', action: 'Switch', onAction: function () { plSort = 'custom'; App.refresh(); } });
+  function sortNeeded(p) {
+    App.toast('Show the custom order to move or remove songs', { icon: 'sort', action: 'Show it', onAction: function () { setSort(p, DEFAULT_SORT); } });
   }
 
   /* the playlist's own cover: PUT the picture (the hub checks it, cuts it square and keeps it) or DELETE it; the
@@ -1524,7 +1554,8 @@
           var saveToo = !!$('[data-imp-save][aria-checked="true"]', el);
           close();
           var imported = { file: fileName, library: counts.library, willSearch: counts.willSearch, notFound: counts.notFound };
-          makePlaylist(name, 'Imported from ' + fileName + '.', usable.map(function (l) { return l.trackId; }), imported).then(function (p) {
+          makePlaylist(name, 'Imported from ' + fileName + '.', usable.map(function (l) { return l.trackId; }), imported,
+            usable.map(function (l) { return l.addedAt == null ? null : l.addedAt; })).then(function (p) {
             if (!p) return;
             if (saveToo) App.saves.start(searchIds);
             App.go('/playlist/' + p.id);
@@ -1793,11 +1824,23 @@
     if (!plIds(p).length) { App.toast('Add a few songs before exporting', { icon: 'info' }); return; }
     openExport(p);
   });
-  App.action('lib-pl-sort', function (el) { plSort = el.getAttribute('data-value'); App.refresh(); App.announce('Sorted by ' + SORTS[plSort].label.toLowerCase()); });
+  App.action('lib-pl-sort', function (el) {
+    var p = playlistOf(el.getAttribute('data-id')), key = el.getAttribute('data-value');
+    if (p && SORTS[key]) setSort(p, { key: key, dir: el.getAttribute('data-dir') === 'desc' ? 'desc' : 'asc' });
+  });
+  /* the menu: custom order and Reversed, then each column; the column in use offers its other direction */
   App.action('lib-pl-sortmenu', function (el) {
-    App.menu(el, Object.keys(SORTS).map(function (k) {
-      return { label: SORTS[k].label, icon: plSort === k ? 'check' : 'dash', run: function () { plSort = k; App.refresh(); } };
-    }), { label: 'Sort songs' });
+    var p = playlistOf(el.getAttribute('data-id')); if (!p) return;
+    var s = sortOf(p), item = function (label, sort, checked) {
+      return { label: label, icon: checked ? 'check' : 'dash', run: function () { setSort(p, sort); } };
+    };
+    var items = [item(SORTS.custom.label, DEFAULT_SORT, inOwnOrder(p)), item(SORTS.custom.reversed, { key: 'custom', dir: 'desc' }, s.key === 'custom' && s.dir === 'desc'), 'sep'];
+    ['added', 'title', 'artist', 'album', 'duration'].forEach(function (k) {
+      var on = s.key === k, dir = on ? s.dir : SORTS[k].first, other = dir === 'asc' ? 'desc' : 'asc';
+      items.push(item(sortLabel({ key: k, dir: dir }), { key: k, dir: dir }, on));
+      if (on) items.push(item(sortLabel({ key: k, dir: other }), { key: k, dir: other }, false));
+    });
+    App.menu(el, items, { label: 'Sort songs' });
   });
   App.action('lib-pl-menu', function (el) {
     var p = playlistOf(el.getAttribute('data-id')); if (!p) return;
@@ -1807,7 +1850,7 @@
       { label: 'Play next', icon: 'queue', run: function () { if (!ids.length) return App.toast('This playlist is empty', { icon: 'info' }); App.player.playNext(ids); App.toast(p.name + ' plays next', { icon: 'queue' }); } },
       { label: 'Add to queue', icon: 'plus', run: function () { if (!ids.length) return App.toast('This playlist is empty', { icon: 'info' }); App.player.addToQueue(ids); App.toast('Added ' + p.name + ' to the queue', { icon: 'queue' }); } },
       { label: 'Duplicate', icon: 'playlists', run: function () {
-        makePlaylist(p.name + ' (copy)', p.desc, ids).then(function (c) { if (c) { App.go('/playlist/' + c.id); App.toast('Made a copy of ' + p.name, { icon: 'playlists' }); } });
+        makePlaylist(p.name + ' (copy)', p.desc, ids, undefined, addedOf(p)).then(function (c) { if (c) { App.go('/playlist/' + c.id); App.toast('Made a copy of ' + p.name, { icon: 'playlists' }); } });
       } },
       { label: 'Export as M3U', icon: 'export', run: function () { if (ids.length) openExport(p); else App.toast('Add a few songs before exporting', { icon: 'info' }); } },
       { label: 'Copy lull link', icon: 'link', run: function () { App.copyLullLink('/playlist/' + p.id); } },   // playlists have no public page
@@ -1817,7 +1860,7 @@
   });
   App.action('lib-pl-row-menu', function (el) {
     var row = el.closest('.trow'), list = row.parentElement, p = playlistOf(list.getAttribute('data-pl')); if (!p) return;
-    var shown = shownRows(p), itemAt = rowToItem(p, shown), n = $$('.trow', list).indexOf(row), id = row.getAttribute('data-track-id'), t = M.track(id), custom = plSort === 'custom';
+    var shown = shownRows(p), itemAt = rowToItem(p, shown), n = $$('.trow', list).indexOf(row), id = row.getAttribute('data-track-id'), t = M.track(id), custom = inOwnOrder(p);
     var items = [
       { label: 'Play next', icon: 'queue', run: function () { App.player.playNext([id]); } },
       { label: 'Add to queue', icon: 'plus', run: function () { App.player.addToQueue([id]); } },
@@ -1827,14 +1870,14 @@
       'sep'
     ];
     /* no Move up on the first row, no Move down on the last */
-    if (n > 0) items.push({ label: 'Move up', icon: 'chevron-up', run: function () { if (!custom) return sortNeeded(); moveItems(p, [itemAt(n)], itemAt(n - 1)); } });
-    if (n < shown.length - 1) items.push({ label: 'Move down', icon: 'chevron-down', run: function () { if (!custom) return sortNeeded(); moveItems(p, [itemAt(n)], itemAt(n + 2)); } });
+    if (n > 0) items.push({ label: 'Move up', icon: 'chevron-up', run: function () { if (!custom) return sortNeeded(p); moveItems(p, [itemAt(n)], itemAt(n - 1)); } });
+    if (n < shown.length - 1) items.push({ label: 'Move down', icon: 'chevron-down', run: function () { if (!custom) return sortNeeded(p); moveItems(p, [itemAt(n)], itemAt(n + 2)); } });
     if (t) {
       items.push({ label: 'Go to album', icon: 'library', run: function () { App.go('/album/' + t.albumId); } });
       items.push({ label: 'Go to artist', icon: 'peer', run: function () { App.go('/artist/' + t.artistId); } });
       items.push({ label: 'Show sources', icon: 'soulseek', run: function () { App.hooks.sourcePicker(id); } });
     }
-    items.push({ label: 'Remove from this playlist', icon: 'trash', danger: true, run: function () { if (!custom) return sortNeeded(); removeItem(p, itemAt(n), n); } });
+    items.push({ label: 'Remove from this playlist', icon: 'trash', danger: true, run: function () { if (!custom) return sortNeeded(p); removeItem(p, itemAt(n), n); } });
     App.menu(el, items, { label: 'Actions for ' + (t ? t.title : 'this song') });
   });
 

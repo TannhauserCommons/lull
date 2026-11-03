@@ -2690,6 +2690,21 @@
   };
   /* name and description: PATCH /api/playlists/{id} */
   App.updatePlaylist = function (plId, fields) {
+  /* how a playlist is shown (its `sort` { key, dir }): it changes here at once and the hub keeps it for every device
+     (PUT /api/playlists/{id}/sort). A view setting, not an edit, so it doesn't go through the outbox: when the hub
+     can't keep it, it stays here for this visit and a toast says so. */
+  App.setPlaylistSort = function (plId, sort) {
+    var path = '/api/playlists/' + encodeURIComponent(plId), read = M.peek(path), p = M.playlist(plId);
+    if (read) read.sort = sort;
+    if (p) putPlaylist(Object.assign({}, p, { sort: sort })); else App.refresh();
+    if (isTemp(plId)) return Promise.resolve();
+    return M.api(path + '/sort', { method: 'PUT', body: sort }).then(function (back) {
+      if (read) read.sort = back.sort;
+      if (M.playlist(plId)) putPlaylist(Object.assign({}, M.playlist(plId), { sort: back.sort }));
+    }, function (err) {
+      App.toast('Sorted here only: lull couldn\'t keep it for next time. ' + err.message, { kind: 'error' });
+    });
+  };
     return plSend('/api/playlists/' + encodeURIComponent(plId), { method: 'PATCH', body: fields }, plOp('playlist.edit', plId, fields)).then(function (p) {
       return p && p.queued ? localPlaylist(plId, fields) : loadPlaylists();
     });

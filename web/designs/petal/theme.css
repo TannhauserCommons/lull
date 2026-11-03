@@ -320,12 +320,15 @@
   :root[data-design="petal"] .trow__badges { justify-content: flex-start; flex-wrap: wrap; }
 }
 :root[data-design="petal"] .lib-thead { border-bottom: 2px solid var(--pt-frame); margin-bottom: 6px; }
-:root[data-design="petal"] .lib-th[aria-pressed="true"] { color: var(--link); }
-:root[data-design="petal"] :is(.lib-th[aria-pressed="true"]:not(.lib-th--num), .lib-th--added)::after {
+:root[data-design="petal"] .lib-th:is([aria-sort="ascending"], [aria-sort="descending"]) { color: var(--link); }
+/* the sorted column's pixel triangle replaces the arrow icon, pointing the way it sorts */
+:root[data-design="petal"] .lib-th__btn .ic { display: none; }
+:root[data-design="petal"] .lib-th:is([aria-sort="ascending"], [aria-sort="descending"], .lib-th--added) .lib-th__btn::after {
   content: ""; display: inline-block; width: 9px; height: 6px; margin-left: 7px; vertical-align: 1px; background: var(--pt-frame);
   -webkit-mask: var(--px-tri) center / contain no-repeat; mask: var(--px-tri) center / contain no-repeat;
 }
-:root[data-design="petal"] .lib-th[aria-pressed="true"]::after { background: var(--link); }
+:root[data-design="petal"] .lib-th:is([aria-sort="ascending"], [aria-sort="descending"]) .lib-th__btn::after { background: var(--link); }
+:root[data-design="petal"] .lib-th[aria-sort="ascending"] .lib-th__btn::after { transform: scaleY(-1); }
 :root[data-design="petal"] .tile__meta { gap: 6px; overflow: hidden; font: 650 .8125rem/1 var(--f-ui); letter-spacing: 0; }
 
 /* source picker: score as five pixel stars (img 03 ratings) */
