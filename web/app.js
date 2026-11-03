@@ -3039,6 +3039,48 @@
     App.closePopover(true);
     M.api(path, { method: 'POST' }).then(function () { App.toast(ok, { kind: 'ok' }); }, function (err) { App.toast(err.message, { kind: 'error' }); });
   }
+  /* menus by what they're for, opened by id at an anchor: track here, album / artist / playlist from library.js; a
+     right-click on an item without its own "…" opens these (section 11) */
+  App.itemMenus = {};
+  /* a song's menu (its "…" in any list, a right-click on it) */
+  function trackMenu(id, anchor) {
+    var t = M.track(id); if (!t) return;
+    App.menu(anchor, [
+      { label: 'Play next', icon: 'queue', run: function () { P.playNext([id]); } },
+      { label: 'Add to queue', icon: 'plus', run: function () { P.addToQueue([id]); } },
+      { label: App.isSaved(id) ? 'In your library' : 'Save to library', icon: App.isSaved(id) ? 'saved' : 'save', run: function () { App.saves.start([id]); } },
+      { label: 'Add to playlist', icon: 'playlists', run: function () { App.hooks.addToPlaylist([id]); } },
+      { label: 'Start radio', icon: 'radio', run: function () { startRadio({ kind: 'track', id: id }); } },
+      App.downloads.has(id) ? { label: 'Remove download', icon: 'downloaded', run: function () { App.downloads.remove([id]); } }
+        : { label: 'Download', icon: 'download', run: function () { App.downloads.keep({ kind: 'track', id: id }, [id]); } },
+      'sep',
+      { label: 'Go to album', icon: 'library', run: function () { App.go('/album/' + t.albumId); } },
+      { label: 'Go to artist', icon: 'peer', run: function () { App.go('/artist/' + t.artistId); } },
+      { label: 'Show sources', icon: 'soulseek', run: function () { App.hooks.sourcePicker(id); } }
+    ], { label: 'Actions for ' + t.title });
+  }
+  App.itemMenus.track = trackMenu;
+  /* the player's "…" (the bar's, Now Playing's, a right-click on the playing song): the song's actions, then the bar's
+     views; the ones a narrow bar takes out of its tools (Lyrics, Classic, Device view) are always here, playing or not */
+  function playerMenu(anchor) {
+    var t = P.current();
+    var views = [
+      { label: 'Lyrics', icon: 'lyrics', run: function () { App.togglePanel('lyrics'); } },
+      { label: 'Classic mode', icon: 'classic', run: function () { App.go('/classic'); } },
+      { label: 'Device view', icon: 'device', run: actions['open-now'] }
+    ];
+    if (!t) { App.menu(anchor, views, { label: 'More player actions' }); return; }
+    App.menu(anchor, [
+      { label: 'Add to playlist', icon: 'playlists', run: function () { App.hooks.addToPlaylist([t.id]); } },
+      { label: 'Go to album', icon: 'library', run: function () { App.go('/album/' + t.albumId); } },
+      { label: 'Go to artist', icon: 'peer', run: function () { App.go('/artist/' + t.artistId); } },
+      { label: 'Start radio', icon: 'radio', run: function () { startRadio({ kind: 'track', id: t.id }); } },
+      { label: 'Show source', icon: 'soulseek', run: function () { App.hooks.sourceDetails(); } },
+      { label: 'Copy link', icon: 'link', run: function () { App.copyShareLink('track', t.id, '/album/' + t.albumId); } },
+      { label: 'Copy lull link', icon: 'link', run: function () { App.copyLullLink('/album/' + t.albumId); } },
+      'sep'
+    ].concat(views), { label: 'More player actions' });
+  }
   Object.assign(actions, {
     'noop': function () {},
     'noop-saved': function () { App.toast('Already saved to your library', { icon: 'saved' }); },
@@ -3087,38 +3129,8 @@
         App.toast('Hidden ' + (a ? a.name : 'the artist') + ' from your feed', { icon: 'info' });
       });
     },
-    'track-menu': function (el) {
-      var id = el.getAttribute('data-id'), t = M.track(id); if (!t) return;
-      App.menu(el, [
-        { label: 'Play next', icon: 'queue', run: function () { P.playNext([id]); } },
-        { label: 'Add to queue', icon: 'plus', run: function () { P.addToQueue([id]); } },
-        { label: App.isSaved(id) ? 'In your library' : 'Save to library', icon: App.isSaved(id) ? 'saved' : 'save', run: function () { App.saves.start([id]); } },
-        { label: 'Add to playlist', icon: 'playlists', run: function () { App.hooks.addToPlaylist([id]); } },
-        { label: 'Start radio', icon: 'radio', run: function () { startRadio({ kind: 'track', id: id }); } },
-        App.downloads.has(id) ? { label: 'Remove download', icon: 'downloaded', run: function () { App.downloads.remove([id]); } }
-          : { label: 'Download', icon: 'download', run: function () { App.downloads.keep({ kind: 'track', id: id }, [id]); } },
-        'sep',
-        { label: 'Go to album', icon: 'library', run: function () { App.go('/album/' + t.albumId); } },
-        { label: 'Go to artist', icon: 'peer', run: function () { App.go('/artist/' + t.artistId); } },
-        { label: 'Show sources', icon: 'soulseek', run: function () { App.hooks.sourcePicker(id); } }
-      ], { label: 'Actions for ' + (t ? t.title : 'this song') });
-    },
-    'player-more': function (el) {
-      var t = P.current();
-      if (!t) { App.toast('Nothing playing yet', { icon: 'info' }); return; }
-      App.menu(el, [
-        { label: 'Add to playlist', icon: 'playlists', run: function () { App.hooks.addToPlaylist([t.id]); } },
-        { label: 'Go to album', icon: 'library', run: function () { App.go('/album/' + t.albumId); } },
-        { label: 'Go to artist', icon: 'peer', run: function () { App.go('/artist/' + t.artistId); } },
-        { label: 'Start radio', icon: 'radio', run: function () { startRadio({ kind: 'track', id: t.id }); } },
-        { label: 'Show source', icon: 'soulseek', run: function () { App.hooks.sourceDetails(); } },
-        { label: 'Copy link', icon: 'link', run: function () { App.copyShareLink('track', t.id, '/album/' + t.albumId); } },
-        { label: 'Copy lull link', icon: 'link', run: function () { App.copyLullLink('/album/' + t.albumId); } },
-        'sep',
-        { label: 'Lyrics', icon: 'lyrics', run: function () { App.togglePanel('lyrics'); } },
-        { label: 'Classic mode', icon: 'classic', run: function () { App.go('/classic'); } }
-      ], { label: 'More player actions' });
-    },
+    'track-menu': function (el) { trackMenu(el.getAttribute('data-id'), el); },
+    'player-more': function (el) { playerMenu(el); },
     'play': function () { P.toggle(); }, 'next': function () { P.next(); }, 'prev': function () { P.prev(); },
     'shuffle': function () { P.setShuffle(); }, 'repeat': function () { P.cycleRepeat(); }, 'mute': function () { P.toggleMute(); },
     'retry-search': function () { P.retry(); App.toast('Searching Soulseek again', { icon: 'refresh' }); },
@@ -3192,19 +3204,30 @@
     fn(el, e);
     if (el.hasAttribute('data-close')) App.closeTop();
   });
-  /* Context menus: right-click, the Menu key (or Shift+F10) and a touch long-press on a song, album, artist or
-     playlist open lull's own "…" menu, at the pointer, instead of the browser's (the desktop app's WebView2 draws
-     its own unless the page takes the event). A row or card with a "…" button opens that button's menu; a tile or a
-     rail playlist opens its album's, artist's or playlist's (App.itemMenus, filled by library.js). Text fields and
-     selected text keep the native menu, for copy and paste; anywhere else nothing changes. */
-  App.itemMenus = {};
+  /* Context menus: right-click, the Menu key (or Shift+F10) and a touch long-press open lull's own "…" menu, at the
+     pointer, instead of the browser's (the desktop app's WebView2 draws its own unless the page takes the event).
+     Everything that has a "…" opens that same menu, built by the same code: MENU_OF names each item and where its "…"
+     is (in it, or elsewhere in a scope around it: the player bar's song opens the bar's). Items without one (tiles, a
+     rail playlist, the search's top result, Home's lead) open the menu of what they are (App.itemMenus). Text fields and selected
+     text keep the native menu, for copy and paste; anywhere else nothing changes. */
+  var MENU_OF = [
+    ['.trow, .disc-pick, .lib-hero', null, '[data-act$="menu"][aria-haspopup="menu"]'],
+    ['.lib-pl__head', '.lib-pl', '[data-act="lib-pl-menu"]'],
+    ['.pbar__now', '.pbar', '[data-act="player-more"]'],
+    ['.now-head, .now__dev, .now__devc', '.now', '[data-act="player-more"]']
+  ];
   var ITEM_LINK = /^#\/(album|artist|playlist)\/([^/?#]+)/;
   function contextMenuFor(target) {
-    var row = target.closest('.trow, .disc-pick');
-    var more = row && row.querySelector('[data-act][aria-haspopup="menu"]');
-    if (more && actions[more.getAttribute('data-act')]) return function () { actions[more.getAttribute('data-act')](more); };
-    var tile = target.closest('.tile, .rail__pl');
-    var link = tile && (tile.matches('a') ? tile : tile.querySelector('.tile__title a[href], .tile__art a[href]'));
+    for (var i = 0; i < MENU_OF.length; i++) {
+      var item = target.closest(MENU_OF[i][0]); if (!item) continue;
+      var scope = MENU_OF[i][1] ? item.closest(MENU_OF[i][1]) : item;
+      var more = scope && scope.querySelector(MENU_OF[i][2]);
+      if (more && actions[more.getAttribute('data-act')]) return function () { actions[more.getAttribute('data-act')](more); };
+    }
+    var thing = target.closest('.tile, .rail__pl, .disc-top, .disc-lead'); if (!thing) return null;
+    var song = thing.matches('.disc-top, .disc-lead') && thing.querySelector('[data-act="play-track"][data-id]');
+    if (song) return function () { App.itemMenus.track(song.getAttribute('data-id'), song); };
+    var link = thing.matches('a') ? thing : thing.querySelector('.tile__title a[href], .tile__art a[href], a[href^="#/album/"], a[href^="#/artist/"]');
     var m = link && ITEM_LINK.exec(link.getAttribute('href') || '');
     var open = m && App.itemMenus[m[1]];
     return open ? function () { open(decodeURIComponent(m[2]), link); } : null;

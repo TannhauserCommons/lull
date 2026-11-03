@@ -433,10 +433,12 @@ sorted, a note says so with a "Show custom order" button. Copies and imports sen
 
 ## Context menus
 
-Right-click, the Menu key (Shift+F10) and a touch long-press on a song row, a Home pick, or an album, artist or
-playlist tile (and a rail playlist) open lull's own "…" menu at the pointer (app.js section 11, `contextmenu`): a row
-or card with a "…" button opens that button's menu; a tile opens `App.itemMenus[album|artist|playlist](id, anchor)`
-(library.js). The keyboard opens it by the item. Text fields and selected text keep the browser's menu (copy, paste),
+Right-click, the Menu key (Shift+F10) and a touch long-press open lull's own "…" menu at the pointer (app.js section
+11, `contextmenu`): everything with a "…" opens that same menu, built by the same code. `MENU_OF` names each item and
+where its "…" is: song and queue rows, Home picks and the album and artist heroes hold theirs; a playlist's header
+opens the playlist's, the player bar's song and Now Playing's song the player's. Items without one (tiles, a rail
+playlist, the search's top result) open `App.itemMenus[track|album|artist|playlist](id, anchor)` (track in app.js,
+the rest in library.js). The keyboard opens it by the item. Text fields and selected text keep the browser's menu (copy, paste),
 and so does everything else; the desktop app's WebView2 shows its own menu only where the page leaves the event.
 
 ## Links
