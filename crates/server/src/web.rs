@@ -23,9 +23,12 @@ struct Web;
 /// also come from the Winamp Skin Museum's CDN (skin screenshots); Theme Studio frames the app itself.
 /// Inside the lull app (ADR-0006), downloaded covers come over Tauri's asset protocol and the page
 /// talks to the app over its IPC; in a browser those `*.localhost` sources reach nothing.
+/// Webamp reads every skin with `fetch`, and Classic mode hands it the `.wsz` as a `blob:` URL (the
+/// file it already fetched and checked, or one from this device), so `connect-src` allows `blob:`:
+/// a blob holds only what the page already has, so nothing new can leave or arrive.
 const CSP: &str = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; \
     img-src 'self' data: blob: https://r2.webampskins.org https://asset.localhost; font-src 'self' data:; media-src 'self' blob:; \
-    connect-src 'self' ipc: http://ipc.localhost; worker-src 'self'; manifest-src 'self'; frame-src 'self'; frame-ancestors 'self'; \
+    connect-src 'self' blob: ipc: http://ipc.localhost; worker-src 'self'; manifest-src 'self'; frame-src 'self'; frame-ancestors 'self'; \
     object-src 'none'; base-uri 'self'; form-action 'self'";
 
 /// `Content-Encoding` and the suffix of its pre-compressed file, in the order lull prefers them.
