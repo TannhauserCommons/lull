@@ -1313,7 +1313,8 @@
     if (o.onMount) o.onMount(el, layer.close);
     var first = $('[autofocus]', el) || focusables($('.sheet__body', el))[0] || $('[data-close]', el) || el;
     if (first === el) el.setAttribute('tabindex', '-1');
-    setTimeout(function () { first.focus(); }, 30);
+    /* unless its content has already focused a control of its own (a form filled in as it arrives: the pairing gate) */
+    setTimeout(function () { var a = document.activeElement; if (!layer.closed && (a === el || !el.contains(a))) first.focus(); }, 30);
     return { el: el, close: function () { layer.close(); } };
   }
   App.openSheet = function (o) { return openLayer('sheet', o); };
