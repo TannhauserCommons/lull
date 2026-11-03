@@ -16,6 +16,7 @@ pub mod quality;
 pub mod seams;
 pub mod settings;
 pub mod status;
+pub mod warm;
 pub mod youtube;
 
 use std::sync::Arc;

@@ -49,6 +49,9 @@ pub trait Library: Send + Sync {
             "covers through the seam are not built yet",
         ))
     }
+    /// Albums an answer just handed out whose cover the UI will ask library for (`/api/art`: no
+    /// catalog picture): fetched in the background before it asks (docs/context/library.md).
+    fn warm_covers(&self, _albums: &[AlbumId]) {}
 }
 
 /// The listener's collection: likes, playlists and plays. Implemented by `collection`, for

@@ -2,13 +2,21 @@
 //! rules every picture route keeps: a picture is scaled down to fit the size asked for and never
 //! up, and the answer says how large it really is (`X-Image-Size`), so a client that asked for
 //! more than the source has stops asking for larger sizes.
+//!
+//! A picture the hub doesn't have yet answers 404 "not yet" (never cached), and `art.ready`
+//! tells the pages once it has it, so a page asks for a picture once and waits instead of
+//! polling. A picture no source has answers 404 "none", cached for as long as that is believed.
 
+use std::collections::BTreeSet;
 use std::io::Cursor;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
-use axum::http::{HeaderName, header};
+use axum::Json;
+use axum::http::{HeaderName, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 
-use crate::{Error, Result};
+use crate::{Ctx, Error, Result};
 
 /// The sizes, in pixels, a picture fits into (both sides). 96 to 512 for rows, tiles and heroes;
 /// 1024 and 2048 for large views on high-density screens.
@@ -85,6 +93,63 @@ pub fn response(bytes: Vec<u8>) -> Response {
     response
 }
 
+/// 404 while the picture is on its way: never cached, so the request after `art.ready` gets it.
+pub fn not_yet(key: &str) -> Response {
+    missing("no-store".into(), format!("The picture for {key} is still on its way."))
+}
+
+/// 404 for a picture no source has, cached by the browser for as long as the hub believes it.
+pub fn none(key: &str, believed_for: Duration) -> Response {
+    let cache = format!("private, max-age={}", believed_for.as_secs());
+    missing(cache, format!("There is no picture for {key}."))
+}
+
+fn missing(cache: String, message: String) -> Response {
+    let mut response = (
+        StatusCode::NOT_FOUND,
+        Json(serde_json::json!({ "error": "not_found", "message": message })),
+    )
+        .into_response();
+    if let Ok(cache) = cache.parse() {
+        response.headers_mut().insert(header::CACHE_CONTROL, cache);
+    }
+    response
+}
+
+/// How long `art.ready` collects keys before it goes out: a page of covers is one event.
+const READY_BATCH: Duration = Duration::from_millis(250);
+
+/// Publishes `art.ready { keys }` (album and artist ids whose picture the hub now has, at some
+/// size), batched so a page of covers coming in is one event, not fifty.
+pub struct Ready {
+    ctx: Ctx,
+    keys: Mutex<BTreeSet<String>>,
+}
+
+impl Ready {
+    pub fn new(ctx: &Ctx) -> Arc<Ready> {
+        Arc::new(Ready {
+            ctx: ctx.clone(),
+            keys: Mutex::default(),
+        })
+    }
+
+    pub fn announce(self: &Arc<Self>, key: impl Into<String>) {
+        let first = {
+            let mut keys = self.keys.lock().unwrap_or_else(PoisonError::into_inner);
+            keys.insert(key.into()) && keys.len() == 1
+        };
+        if first {
+            let me = self.clone();
+            self.ctx.spawn(async move {
+                tokio::time::sleep(READY_BATCH).await;
+                let keys = std::mem::take(&mut *me.keys.lock().unwrap_or_else(PoisonError::into_inner));
+                me.ctx.bus.publish("art.ready", serde_json::json!({ "keys": keys }));
+            });
+        }
+    }
+}
+
 pub fn content_type(bytes: &[u8]) -> &'static str {
     match bytes {
         [0x89, b'P', b'N', b'G', ..] => "image/png",
@@ -138,6 +203,34 @@ mod tests {
         assert_eq!(archive_size(512), Some(500));
         assert_eq!(archive_size(1024), Some(1200));
         assert_eq!(archive_size(2048), None, "the original");
+    }
+
+    #[tokio::test]
+    async fn covers_coming_in_together_are_one_art_ready_event() -> Result<()> {
+        let vars = [("LULL_SLSKD_URL", "http://slskd"), ("LULL_SLSKD_API_KEY", "k")]
+            .into_iter()
+            .map(|(k, v)| (k.to_owned(), v.to_owned()))
+            .collect();
+        let config = crate::config::Config::from_vars(vars).map_err(|e| Error::internal(e.to_string()))?;
+        let bus = crate::events::Bus::new();
+        let ctx = Ctx {
+            config: std::sync::Arc::new(config),
+            db: crate::db::Db::memory()?,
+            http: crate::http::Http::new()?,
+            status: crate::status::Status::new(bus.clone()),
+            bus: bus.clone(),
+            shutdown: Default::default(),
+        };
+        let mut rx = bus.subscribe();
+        let ready = Ready::new(&ctx);
+        for key in ["al-0b", "al-0a", "al-0b", "ar-0c"] {
+            ready.announce(key);
+        }
+        let event = rx.recv().await.map_err(|e| Error::internal(e.to_string()))?;
+        assert_eq!(event.topic, "art.ready");
+        assert_eq!(event.data, serde_json::json!({ "keys": ["al-0a", "al-0b", "ar-0c"] }));
+        assert!(rx.try_recv().is_err(), "one event for the batch");
+        Ok(())
     }
 
     #[test]
