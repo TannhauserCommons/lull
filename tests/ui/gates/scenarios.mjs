@@ -173,6 +173,26 @@ export async function playing(browser, page, opts, route = '/home') {
 export async function idle(browser, page, opts, route = '/home') {
   await openScreen(page, route, opts);
   await page.waitForTimeout(1500);   // past entrances and cover fade-ins
+  // and, on a slow runner, until they have happened: every cover on screen in, every animation on screen that ends
+  // ended (a design's loops and scroll-driven effects never end, and are what this gate is about). Polled on a timer:
+  // polling on frames would draw the frames this counts
+  await page.waitForFunction(() => {
+    // drawn (not hidden, nor in a row content-visibility skips), and inside the window and every box that clips it
+    const shown = (el) => {
+      if (!el || !el.checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true })) return false;
+      const r = el.getBoundingClientRect();
+      let [t, b, l, x] = [Math.max(r.top, 0), Math.min(r.bottom, innerHeight), Math.max(r.left, 0), Math.min(r.right, innerWidth)];
+      for (let e = el.parentElement; e && b > t && x > l; e = e.parentElement) {
+        if (getComputedStyle(e).overflow === 'visible') continue;
+        const c = e.getBoundingClientRect();
+        [t, b, l, x] = [Math.max(t, c.top), Math.min(b, c.bottom), Math.max(l, c.left), Math.min(x, c.right)];
+      }
+      return b > t && x > l;
+    };
+    return [...document.images].every((i) => i.complete || !shown(i))
+      && document.getAnimations().every((a) => a.playState !== 'running' || a.effect?.getTiming().iterations === Infinity
+        || a.timeline?.constructor.name !== 'DocumentTimeline' || !shown(a.effect?.target));
+  }, null, { polling: 100, timeout: 5000 }).catch(() => {});
   await throttle(page, opts.rate);
   const s = await traced(browser, page, () => page.waitForTimeout(2000));
   s.perSecondMs = s.busyMs / 2;
