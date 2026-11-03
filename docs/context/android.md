@@ -8,6 +8,7 @@ The same Tauri v2 project as the desktop app (`app/`, ADR-0006), built for Andro
 |---|---|
 | `app/src/mobile/mod.rs` | Builder (player plugin, opener), the phone's settings (hub and token), launch, pairing, the runtime IPC grant for the hub origin |
 | `app/src/mobile/native.js` | `window.LullNative.player`, `.downloads` and `.updates`, injected before the page's scripts; the player's and downloads' calls are `plugin:lull-player|<command>` |
+| `app/gen/android/.../MainActivity.kt` | Shared links: "Share" to lull from any app (`SEND text/plain`, the first web link in the text) and `lull://open?link=…` (`VIEW`), both intent filters in the manifest. `SharedLinks` holds the link until the hub's web UI takes it through the `lullLinks` JavaScript interface (`App.takeSharedLink`, at boot and when a running page is nudged), which opens it as `#/open`; the bundled pages never ask |
 | `app/src/mobile/update.rs` | Updates: the newest release against this build, and its APK opened in the browser (`tauri-plugin-opener`) |
 | `app/src/hub.rs`, `discovery.rs`, `pairing.rs`, `pages.rs`, `store.rs` | Shared with desktop: hub client, mDNS, `discover_hubs`/`find_hub`, bundled page URLs, `settings.json` |
 | `app/plugins/player/` | The native player plugin: `src/lib.rs` registers the Kotlin plugin and offers `configure` and `multicast` to Rust; `build.rs` lists the commands (one permission each; `default` has the player's and downloads', not `scan`) |

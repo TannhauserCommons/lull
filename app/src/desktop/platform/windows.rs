@@ -8,8 +8,9 @@ use std::ffi::c_void;
 use std::ptr::null_mut;
 use windows_sys::Win32::Foundation::ERROR_SUCCESS;
 use windows_sys::Win32::System::Registry::{
-    HKEY, HKEY_CURRENT_USER, KEY_NOTIFY, KEY_READ, REG_NOTIFY_CHANGE_LAST_SET, RRF_RT_REG_DWORD, RegCloseKey,
-    RegGetValueW, RegNotifyChangeKeyValue, RegOpenKeyExW,
+    HKEY, HKEY_CURRENT_USER, KEY_NOTIFY, KEY_READ, KEY_SET_VALUE, REG_NOTIFY_CHANGE_LAST_SET, REG_OPTION_NON_VOLATILE,
+    REG_SZ, RRF_RT_REG_DWORD, RegCloseKey, RegCreateKeyExW, RegGetValueW, RegNotifyChangeKeyValue, RegOpenKeyExW,
+    RegSetValueExW,
 };
 use windows_sys::w;
 
@@ -32,6 +33,54 @@ pub fn light_taskbar() -> bool {
         )
     };
     status == ERROR_SUCCESS && value == 1
+}
+
+/// `<scheme>:` links start `exe` with the link as its argument: `HKCU\Software\Classes\<scheme>`,
+/// which needs no admin and follows the app wherever it is installed.
+pub fn register_scheme(scheme: &str, exe: &std::path::Path) -> Result<(), String> {
+    let root = format!(r"Software\Classes\{scheme}");
+    set_string(&root, "", &format!("URL:{scheme} link"))?;
+    set_string(&root, "URL Protocol", "")?;
+    set_string(
+        &format!(r"{root}\shell\open\command"),
+        "",
+        &format!("\"{}\" \"%1\"", exe.display()),
+    )
+}
+
+/// One string value under `HKEY_CURRENT_USER\<path>` (the key made when missing); `""` names the
+/// key's default value.
+fn set_string(path: &str, name: &str, value: &str) -> Result<(), String> {
+    let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+    let (path, name, value) = (wide(path), wide(name), wide(value));
+    let mut key: HKEY = null_mut();
+    // SAFETY: null-terminated strings that outlive the call; `key` is closed below.
+    let made = unsafe {
+        RegCreateKeyExW(
+            HKEY_CURRENT_USER,
+            path.as_ptr(),
+            0,
+            std::ptr::null(),
+            REG_OPTION_NON_VOLATILE,
+            KEY_SET_VALUE,
+            std::ptr::null(),
+            &mut key,
+            null_mut(),
+        )
+    };
+    if made != ERROR_SUCCESS {
+        return Err(format!("the registry refused the key (error {made})"));
+    }
+    let bytes = u32::try_from(value.len() * 2).unwrap_or(u32::MAX);
+    // SAFETY: a REG_SZ of `bytes` bytes, its terminating null included, from a live buffer.
+    let set = unsafe { RegSetValueExW(key, name.as_ptr(), 0, REG_SZ, value.as_ptr().cast::<u8>(), bytes) };
+    // SAFETY: the key opened above.
+    unsafe { RegCloseKey(key) };
+    if set == ERROR_SUCCESS {
+        Ok(())
+    } else {
+        Err(format!("the registry refused the value (error {set})"))
+    }
 }
 
 /// Calls `changed` after every write under the Personalize key, for the life of the app.

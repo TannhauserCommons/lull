@@ -118,6 +118,16 @@ pub fn open_in_browser(url: &Url) -> Result<(), String> {
         .map_err(|e| format!("xdg-open: {e}"))
 }
 
+/// `<scheme>:` links start this app (open_links.rs), for this user: the registry's
+/// `Software\Classes` on Windows, a desktop entry and `xdg-mime` on Linux.
+pub fn register_scheme(scheme: &str) -> Result<(), String> {
+    let exe = std::env::current_exe().map_err(|e| format!("where lull is: {e}"))?;
+    #[cfg(windows)]
+    return windows::register_scheme(scheme, &exe);
+    #[cfg(target_os = "linux")]
+    return linux::register_scheme(scheme, &exe);
+}
+
 /// Read once at startup, on the main thread.
 pub fn detect() -> Platform {
     #[cfg(target_os = "linux")]

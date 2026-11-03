@@ -18,6 +18,7 @@ The Tauri v2 project in `app/` (its own Cargo workspace; ADR-0006) shows the hub
 | `app/src/desktop/slskd.rs` | The bundled slskd: one supervisor thread, its folders, port and API key, restart when its share changes, when it stops by itself and when the hub finds it wedged |
 | `app/src/desktop/main_window.rs` | `main`: welcome page, local hub or remote probe, device cookie, runtime IPC grant for the hub origin, close-to-tray |
 | `app/src/desktop/commands.rs` | The commands the pages call, checked at the boundary |
+| `app/src/desktop/open_links.rs` | `lull://open?link=<link>` (a launch's argument, or a second launch's, which hands over): the link opens in `main` as the web UI's `#/open`, once `main` shows the hub. The installed app (the release identifier only, so a dev build never takes its links) registers the scheme at each start: `HKCU\Software\Classes\lull` on Windows, a `lull-lull-links.desktop` entry and `xdg-mime` on Linux (the AppImage's own path when run as one) |
 | `app/src/desktop/tailscale.rs` | `tailscale serve --bg <port>` for the hub, and its status |
 | `app/src/desktop/recovery.rs` | A window whose page's process died: `logs/webview.log`, reload and resume, lull's own page for a crash loop; every window is built here on the shared WebView2 environment (Crashes, below) |
 | `app/src/desktop/updater.rs` | Update checks (at launch, every 6 hours, on request), the download with its progress, the install; the tray's update item |

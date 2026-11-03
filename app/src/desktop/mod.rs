@@ -9,6 +9,7 @@ mod links;
 mod local_hub;
 mod main_window;
 mod mini;
+mod open_links;
 mod platform;
 mod player;
 mod recovery;
@@ -30,10 +31,14 @@ use tauri_plugin_window_state::StateFlags;
 
 pub fn run() {
     let builder = tauri::Builder::default()
-        // First: a second launch hands over to this one and exits before anything else starts.
-        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
-            report(main_window::reveal(app))
-        }))
+        // First: a second launch hands over to this one and exits before anything else starts. A
+        // `lull:` link it was started with opens here.
+        .plugin(tauri_plugin_single_instance::init(
+            |app, args, _| match open_links::from_args(&args) {
+                Some(link) => open_links::open(app, link),
+                None => report(main_window::reveal(app)),
+            },
+        ))
         // Placement only: visibility and decorations are the wrapper's call.
         .plugin(
             tauri_plugin_window_state::Builder::new()
@@ -91,6 +96,10 @@ fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     remember_appearance(handle);
+    open_links::register(handle);
+    if let Some(link) = open_links::from_args(&std::env::args().collect::<Vec<_>>()) {
+        open_links::open(handle, link);
+    }
     recovery::start(handle);
     classic::follow(handle);
     main_window::launch(handle);

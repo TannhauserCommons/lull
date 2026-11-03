@@ -165,6 +165,9 @@ fn loaded(window: &WebviewWindow, url: &Url) {
     }
     desktop.set_on_hub(on_hub);
     player::refresh(window.app_handle());
+    if on_hub {
+        crate::desktop::open_links::deliver(window.app_handle());
+    }
 }
 
 /// Load the hub's web UI in `main`, paired: the device cookie goes in before the first request.

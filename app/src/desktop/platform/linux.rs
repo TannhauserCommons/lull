@@ -10,6 +10,35 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Shortcut, ShortcutSt
 
 /// A tray shows only where a StatusNotifier host runs (KDE, Ubuntu's GNOME, GNOME with the
 /// AppIndicator extension). Without one there is no tray, and Close quits.
+/// `<scheme>:` links start `exe` (the AppImage itself when run as one): a desktop entry in the
+/// user's applications, made the scheme's handler with `xdg-mime`.
+pub fn register_scheme(scheme: &str, exe: &std::path::Path) -> Result<(), String> {
+    let exe = std::env::var_os("APPIMAGE").map_or_else(|| exe.to_path_buf(), std::path::PathBuf::from);
+    let data = std::env::var_os("XDG_DATA_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/share")))
+        .ok_or("no home folder")?;
+    let dir = data.join("applications");
+    let name = format!("lull-{scheme}-links.desktop");
+    let entry = format!(
+        "[Desktop Entry]\nType=Application\nName=lull\nExec=\"{}\" %u\nIcon=lull\nNoDisplay=true\nMimeType=x-scheme-handler/{scheme};\n",
+        exe.display()
+    );
+    std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    std::fs::write(dir.join(&name), entry).map_err(|e| format!("{name}: {e}"))?;
+    let status = std::process::Command::new("xdg-mime")
+        .arg("default")
+        .arg(&name)
+        .arg(format!("x-scheme-handler/{scheme}"))
+        .status()
+        .map_err(|e| format!("xdg-mime: {e}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("xdg-mime: {status}"))
+    }
+}
+
 pub fn tray_host() -> bool {
     let has_owner = || -> Option<bool> {
         let bus = gio::bus_get_sync(gio::BusType::Session, None::<&gio::Cancellable>).ok()?;

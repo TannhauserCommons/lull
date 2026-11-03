@@ -64,6 +64,8 @@ pub struct Desktop {
     on_hub: AtomicBool,
     /// Hub origins already given their IPC capability this run.
     granted: Mutex<HashSet<String>>,
+    /// A shared link handed to the app, until the hub's web UI opens it (open_links.rs).
+    link: Mutex<Option<String>>,
     pub platform: Platform,
     pub tray: OnceLock<Tray>,
     /// Set once the hub on this computer runs; it stops only when the app quits.
@@ -86,6 +88,7 @@ impl Desktop {
             main_asleep: AtomicBool::new(false),
             on_hub: AtomicBool::new(false),
             granted: Mutex::new(HashSet::new()),
+            link: Mutex::new(None),
             platform,
             tray: OnceLock::new(),
             local: OnceLock::new(),
@@ -169,6 +172,15 @@ impl Desktop {
     /// A hub origin the app opened this run (and granted IPC): its pages belong in lull's windows.
     pub fn is_hub(&self, origin: &str) -> bool {
         lock(&self.granted).contains(origin)
+    }
+
+    /// The newest link handed over wins.
+    pub fn hold_link(&self, link: String) {
+        *lock(&self.link) = Some(link);
+    }
+
+    pub fn take_link(&self) -> Option<String> {
+        lock(&self.link).take()
     }
 }
 
