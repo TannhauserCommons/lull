@@ -13,12 +13,13 @@ use axum::extract::{DefaultBodyLimit, State};
 use axum::http::StatusCode;
 use axum::routing::post;
 use axum::{Json, Router};
+use lull_core::ids::TrackId;
 use lull_core::{Error, Result, catalog};
 use rusqlite::{Connection, params};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::{Service, import, lastfm_import, listenbrainz_import};
+use crate::{Service, lastfm_import, listenbrainz_import};
 
 pub(crate) fn routes() -> Router<Arc<Service>> {
     Router::new()
@@ -195,25 +196,29 @@ fn store(conn: &mut Connection, listens: &[Listen]) -> Result<Counts> {
             counts.invalid += 1;
             continue;
         }
-        let song = import::unsaved_track(artist, listen.album.trim(), title, listen.duration);
-        let known = catalog::track(&tx, &song.id)?;
+        let album = listen.album.trim();
+        let id = TrackId::of(artist, album, title);
         let duplicate: bool = tx.query_row(
             "SELECT EXISTS (SELECT 1 FROM plays WHERE started_at = ?1 AND (track_id = ?2 OR lower(title) = lower(?3)))",
-            params![listen.started_at, song.id.as_str(), song.title],
+            params![listen.started_at, id.as_str(), title],
             |r| r.get(0),
         )?;
         if duplicate {
             counts.duplicates += 1;
             continue;
         }
-        // A richer record from search or the library wins over what a listen says.
-        let track = match known {
-            Some(known) => known,
-            None => {
-                catalog::remember(&tx, std::slice::from_ref(&song))?;
-                song
-            }
-        };
+        // As the listen names it (a richer record from search or the library wins); discovery
+        // resolves it to the catalog's song when History shows it.
+        let track = catalog::remember_named(
+            &tx,
+            catalog::Named {
+                artist,
+                album: Some(album).filter(|a| !a.is_empty()),
+                title,
+                duration: listen.duration,
+                ..catalog::Named::default()
+            },
+        )?;
         // A listen counts as heard: that is what a scrobble means, and the taste model reads it so.
         let duration = track.duration.unwrap_or(0);
         tx.execute(

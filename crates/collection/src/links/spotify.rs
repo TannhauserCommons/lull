@@ -86,6 +86,8 @@ pub(crate) fn embedded(page: &str, kind: Kind) -> Result<Listing> {
                 isrc: None,
                 // The embed page doesn't say when a song was added.
                 added: None,
+                // The embed names no picture per song: the catalog's is found when shown.
+                picture: None,
             })
         })
         .collect();

@@ -28,12 +28,17 @@ pub(crate) async fn read(svc: &Service, link: &Link) -> Result<Listing> {
     let kind = kind(link);
     let about: About = get(svc, &format!("{kind}/{}", link.id)).await?;
     let album = (link.kind == Kind::Album).then(|| about.title.clone());
+    let album_cover = album.as_ref().and(about.cover_xl.clone());
     let mut songs = Vec::new();
     loop {
         let path = format!("{kind}/{}/tracks?index={}&limit={PAGE}", link.id, songs.len());
         let page: Page = get(svc, &path).await?;
         let got = page.data.len();
-        songs.extend(page.data.into_iter().map(|t| t.song(album.as_deref())));
+        songs.extend(
+            page.data
+                .into_iter()
+                .map(|t| t.song(album.as_deref(), album_cover.as_deref())),
+        );
         if got < PAGE || page.next.is_none() || songs.len() >= MAX_SONGS {
             break;
         }
@@ -123,18 +128,25 @@ struct Named {
 #[derive(Deserialize)]
 struct Named2 {
     title: String,
+    cover_xl: Option<String>,
 }
 
 impl Track {
-    fn song(self, album: Option<&str>) -> Song {
+    /// `album` and `cover` are the album's when reading an album (its tracks don't repeat them).
+    fn song(self, album: Option<&str>, cover: Option<&str>) -> Song {
+        let (own_album, own_cover) = match self.album {
+            Some(a) => (Some(a.title), a.cover_xl),
+            None => (None, None),
+        };
         Song {
             key: format!("deezer:track:{}", self.id),
             artist: self.artist.name,
             title: self.title,
-            album: album.map(str::to_owned).or(self.album.map(|a| a.title)),
+            album: album.map(str::to_owned).or(own_album),
             duration: self.duration.filter(|d| *d > 0),
             isrc: self.isrc.filter(|i| !i.is_empty()),
             added: self.time_add.filter(|t| *t > 0),
+            picture: cover.map(str::to_owned).or(own_cover),
         }
     }
 }
@@ -147,13 +159,17 @@ mod tests {
     fn a_playlist_page_keeps_each_songs_isrc_and_album() -> Result<()> {
         let page: Page = decode(serde_json::json!({ "data": [{
             "id": 116348632, "title": "Hey Jude (Remastered 2015)", "duration": 429, "isrc": "GBUM71505902",
-            "artist": { "name": "The Beatles" }, "album": { "title": "1 (Remastered 2015)" }
+            "artist": { "name": "The Beatles" }, "album": { "title": "1 (Remastered 2015)", "cover_xl": "https://cdn-images.dzcdn.net/images/cover/x/1000x1000.jpg" }
         }], "next": null }))?;
-        let song = page.data.into_iter().next().map(|t| t.song(None));
+        let song = page.data.into_iter().next().map(|t| t.song(None, None));
         let song = song.ok_or_else(|| Error::internal("no song"))?;
         assert_eq!(song.key, "deezer:track:116348632");
         assert_eq!(song.isrc.as_deref(), Some("GBUM71505902"));
         assert_eq!(song.album.as_deref(), Some("1 (Remastered 2015)"));
+        assert_eq!(
+            song.picture.as_deref(),
+            Some("https://cdn-images.dzcdn.net/images/cover/x/1000x1000.jpg")
+        );
         Ok(())
     }
 

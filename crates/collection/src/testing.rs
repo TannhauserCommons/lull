@@ -165,10 +165,19 @@ pub(crate) async fn service_with_fakes() -> Result<(Arc<Service>, Receiver<Event
 
 /// Records a song in the catalog, as search would have, and returns its id.
 pub(crate) async fn known_song(svc: &Service, artist: &str, title: &str) -> Result<TrackId> {
-    let track = crate::import::unsaved_track(artist, "", title, Some(200));
-    let id = track.id.clone();
-    svc.ctx.db.call(move |c| catalog::remember(c, &[track])).await?;
-    Ok(id)
+    let (artist, title) = (artist.to_owned(), title.to_owned());
+    svc.ctx
+        .db
+        .call(move |c| {
+            let named = catalog::Named {
+                artist: &artist,
+                title: &title,
+                duration: Some(200),
+                ..catalog::Named::default()
+            };
+            Ok(catalog::remember_named(c, named)?.id)
+        })
+        .await
 }
 
 /// The topics published so far, in order.

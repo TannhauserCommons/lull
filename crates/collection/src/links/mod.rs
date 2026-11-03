@@ -32,7 +32,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use self::parse::{Link, Parsed, Site};
-use crate::{Events, Service, bad_json, covers, entities, import, known_track, playlists};
+use crate::{Events, Service, bad_json, covers, entities, known_track, playlists};
 
 /// The most songs one link imports.
 pub(crate) const MAX_SONGS: usize = 2000;
@@ -78,6 +78,23 @@ pub(crate) struct Song {
     pub(crate) isrc: Option<String>,
     /// When it was added to the source (unix seconds), where the source says (Deezer playlists).
     pub(crate) added: Option<i64>,
+    /// The source's own picture for the song (a Deezer album cover, an upload's thumbnail).
+    #[serde(default)]
+    pub(crate) picture: Option<String>,
+}
+
+impl Song {
+    /// The song as the source names it, for `catalog::remember_named`.
+    pub(crate) fn named(&self) -> catalog::Named<'_> {
+        catalog::Named {
+            artist: &self.artist,
+            album: self.album.as_deref(),
+            title: &self.title,
+            duration: self.duration,
+            isrc: self.isrc.as_deref(),
+            picture: self.picture.as_deref(),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -288,8 +305,8 @@ fn store(
     let seq: i64 = conn.query_row("SELECT seq FROM collection_links WHERE key = ?1", [key], |r| r.get(0))?;
     conn.execute("DELETE FROM collection_link_songs WHERE link_seq = ?1", [seq])?;
     let mut insert = conn.prepare(
-        "INSERT INTO collection_link_songs (link_seq, pos, song, artist, title, album, duration, isrc, track_id, added_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        "INSERT INTO collection_link_songs (link_seq, pos, song, artist, title, album, duration, isrc, track_id, added_at, picture)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
     )?;
     for (pos, (song, id)) in listing.songs.iter().zip(matches).enumerate() {
         insert.execute(params![
@@ -303,6 +320,7 @@ fn store(
             song.isrc,
             id.as_ref().map(TrackId::as_str),
             song.added,
+            song.picture,
         ])?;
     }
     let desc = match &listing.description {
@@ -610,26 +628,30 @@ async fn choose(
     let (seq, Json(choice)) = (seq_of(&id)?, body.map_err(bad_json)?);
     let running: HashSet<String> = svc.linking.lock().map(|r| r.clone()).unwrap_or_default();
     svc.write(move |tx, events| {
-        /// song, artist, title, album, duration
-        type Row = (String, String, String, Option<String>, Option<u32>);
-        let song: Option<Row> = tx
+        let song: Option<Song> = tx
             .query_row(
-                "SELECT song, artist, title, album, duration FROM collection_link_songs WHERE link_seq = ?1 AND pos = ?2",
+                "SELECT song, artist, title, album, duration, isrc, picture, added_at FROM collection_link_songs
+                 WHERE link_seq = ?1 AND pos = ?2",
                 params![seq, pos as i64],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+                |r| {
+                    Ok(Song {
+                        key: r.get(0)?,
+                        artist: r.get(1)?,
+                        title: r.get(2)?,
+                        album: r.get(3)?,
+                        duration: r.get(4)?,
+                        isrc: r.get(5)?,
+                        picture: r.get(6)?,
+                        added: r.get(7)?,
+                    })
+                },
             )
             .optional()?;
-        let (song, artist, title, album, duration) =
-            song.ok_or_else(|| Error::NotFound(format!("Import lk-{seq} has no song {pos}.")))?;
+        let song = song.ok_or_else(|| Error::NotFound(format!("Import lk-{seq} has no song {pos}.")))?;
         let chosen: Option<Option<TrackId>> = match choice {
             Choice::Track { track_id } => Some(Some(known_track(tx, &track_id)?.id)),
-            Choice::AsIs => {
-                let track = import::unsaved_track(&artist, album.as_deref().unwrap_or(""), &title, duration);
-                if catalog::track(tx, &track.id)?.is_none() {
-                    catalog::remember(tx, std::slice::from_ref(&track))?;
-                }
-                Some(Some(track.id))
-            }
+            // As the link names it, with its own picture; discovery resolves it when shown.
+            Choice::AsIs => Some(Some(catalog::remember_named(tx, song.named())?.id)),
             Choice::Skip => Some(None),
             Choice::None => None,
         };
@@ -637,18 +659,17 @@ async fn choose(
             Some(id) => tx.execute(
                 "INSERT INTO collection_link_choices (link_seq, song, track_id) VALUES (?1, ?2, ?3)
                  ON CONFLICT(link_seq, song) DO UPDATE SET track_id = excluded.track_id",
-                params![seq, song, id.as_ref().map(TrackId::as_str)],
+                params![seq, song.key, id.as_ref().map(TrackId::as_str)],
             )?,
             None => tx.execute(
                 "DELETE FROM collection_link_choices WHERE link_seq = ?1 AND song = ?2",
-                params![seq, song],
+                params![seq, song.key],
             )?,
         };
-        let (name, key): (String, String) = tx.query_row(
-            "SELECT name, key FROM collection_links WHERE seq = ?1",
-            [seq],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )?;
+        let (name, key): (String, String) =
+            tx.query_row("SELECT name, key FROM collection_links WHERE seq = ?1", [seq], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })?;
         let desc = format!("Imported from {}.", Link::from_key(&key)?.url());
         fill_playlist(tx, events, seq, &name, &desc)?;
         detail(tx, seq, &running)

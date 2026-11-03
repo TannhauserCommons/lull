@@ -19,6 +19,8 @@ pub(crate) struct Entry {
     pub track_id: Option<TrackId>,
     /// When the song was added to the source playlist (unix seconds): Exportify's "Added At".
     pub added: Option<i64>,
+    /// The song's ISRC, when the file names it (Exportify's column).
+    pub isrc: Option<String>,
 }
 
 #[derive(Debug, Default)]

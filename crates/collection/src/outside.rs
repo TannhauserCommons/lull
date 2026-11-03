@@ -34,7 +34,7 @@ use serde_json::{Value, json};
 
 use crate::links::parse::{self, Link, Parsed};
 use crate::links::{self, Song};
-use crate::{Service, bad_query, covers, entities, import, matches};
+use crate::{Service, bad_query, covers, entities, matches};
 
 /// A listing is read from its source again when opened after this long (seconds).
 const FRESH_FOR: i64 = 3600;
@@ -181,12 +181,7 @@ fn row(c: &Connection, pos: usize, s: &Song, known: Option<Option<TrackId>>) -> 
 }
 
 fn named(c: &Connection, s: &Song) -> Result<TrackId> {
-    let track = import::unsaved_track(&s.artist, s.album.as_deref().unwrap_or(""), &s.title, s.duration);
-    let id = track.id.clone();
-    if catalog::track(c, &id)?.is_none() {
-        catalog::remember(c, &[track])?;
-    }
-    Ok(id)
+    Ok(catalog::remember_named(c, s.named())?.id)
 }
 
 /// The kept listing, read from the source first when it is older than `FRESH_FOR` (or there is

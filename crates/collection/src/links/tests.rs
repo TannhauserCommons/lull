@@ -16,6 +16,7 @@ fn song(key: &str, artist: &str, title: &str) -> Song {
         duration: Some(200),
         isrc: None,
         added: None,
+        picture: None,
     }
 }
 
@@ -234,5 +235,28 @@ async fn the_same_link_imports_once_at_a_time() -> Result<()> {
     assert!(matches!(Claim::new(&svc, key.clone()), Err(Error::Conflict(_))));
     drop(held);
     assert!(Claim::new(&svc, key).is_ok());
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_song_kept_as_named_takes_its_sources_picture_as_its_cover() -> Result<()> {
+    let (svc, _rx, _, _) = service_with_fakes().await?;
+    let mut lost = song("youtube:abcdefghijk", "Nobody", "Lost Song");
+    lost.picture = Some("https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg".into());
+    import_now(&svc, listing(vec![lost])).await?;
+    let out = choose_now(&svc, 0, json!({ "choice": "as-is" })).await?;
+    let id = TrackId(out["songs"][0]["trackId"].as_str().unwrap_or_default().to_owned());
+    let has_cover = svc
+        .ctx
+        .db
+        .call(move |c| {
+            let t = catalog::track(c, &id)?.ok_or_else(|| Error::internal("no track"))?;
+            catalog::is_bare(c, &t).map(|bare| !bare)
+        })
+        .await?;
+    assert!(
+        has_cover,
+        "the upload's thumbnail is the song's cover until the catalog's is found"
+    );
     Ok(())
 }

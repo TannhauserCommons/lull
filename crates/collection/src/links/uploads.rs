@@ -80,6 +80,7 @@ pub(crate) fn song(l: &Listed, site: Site) -> Option<Song> {
         duration: l.duration.filter(|_| l.exact_length),
         isrc: None,
         added: None,
+        picture: l.thumbnail.clone(),
     })
 }
 
@@ -97,6 +98,7 @@ mod tests {
             artist: Some("Olivia Rodrigo".into()),
             track: Some("drop dead".into()),
             exact_length,
+            thumbnail: Some("https://i.ytimg.com/vi/78wrful9cVU/hqdefault.jpg".into()),
         };
         let video = song(&listed(false), Site::Youtube);
         assert_eq!(

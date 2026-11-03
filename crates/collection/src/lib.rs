@@ -186,6 +186,11 @@ pub const MIGRATIONS: Migrations = Migrations {
                               AND s.pos = collection_playlist_items.pos);
         DROP TABLE spread;
     "#,
+        // A link song's own picture (a Deezer album cover, an upload's thumbnail): its cover when
+        // kept as the link names it.
+        r#"
+        ALTER TABLE collection_link_songs ADD COLUMN picture TEXT;
+    "#,
     ],
 };
 

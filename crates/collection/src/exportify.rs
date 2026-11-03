@@ -42,11 +42,12 @@ fn parse(text: &str) -> Result<Vec<Entry>> {
             "This isn't an Exportify file: it has no \"Track Name\" and \"Artist Name(s)\" columns.".into(),
         ));
     };
-    let (album, uri, duration, added) = (
+    let (album, uri, duration, added, isrc) = (
         column(&["album name"]),
         column(&["track uri"]),
         column(&["duration (ms)"]),
         column(&["added at"]),
+        column(&["isrc"]),
     );
 
     let field = |row: &[String], i: Option<usize>| {
@@ -74,6 +75,7 @@ fn parse(text: &str) -> Result<Vec<Entry>> {
                     .and_then(|ms| u32::try_from(ms / 1000).ok()),
                 track_id: None,
                 added: field(&row, added).and_then(|at| unix_time(&at)),
+                isrc: field(&row, isrc),
             })
         })
         .collect())
@@ -236,5 +238,14 @@ mod tests {
             rows("a,\"b,\nc\",\"d\"\"e\"\n"),
             [["a", "b,\nc", "d\"e"].map(String::from).to_vec()]
         );
+    }
+
+    #[test]
+    fn an_exportify_isrc_comes_along_as_a_hint() -> Result<()> {
+        let file = "Track URI,Track Name,Artist Name(s),Album Name,ISRC\nspotify:track:9,Down Under (feat. Colin Hay),Luude;Colin Hay,Down Under (feat. Colin Hay),AUUM72100123\n";
+        let entries = parse(&m3u::decode(file.as_bytes()))?;
+        assert_eq!(entries[0].isrc.as_deref(), Some("AUUM72100123"));
+        assert_eq!(entries[0].artist.as_deref(), Some("Luude"));
+        Ok(())
     }
 }

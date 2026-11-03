@@ -788,10 +788,12 @@ mod tests {
     #[tokio::test]
     async fn songs_an_older_build_dated_alike_take_distinct_seconds_in_playlist_order() -> Result<()> {
         let db = lull_core::db::Db::memory()?;
+        // Up to the step that spreads the dates (later steps may follow it).
         let steps = crate::MIGRATIONS.steps;
+        let spread = steps.iter().position(|s| s.contains("sort_key")).unwrap_or(steps.len());
         db.migrate(&lull_core::db::Migrations {
             owner: crate::MIGRATIONS.owner,
-            steps: &steps[..steps.len() - 1],
+            steps: &steps[..spread],
         })?;
         db.call(|c| {
             c.execute_batch(

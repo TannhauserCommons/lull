@@ -14,6 +14,7 @@ fn song(key: &str, artist: &str, title: &str) -> Song {
         duration: Some(200),
         isrc: None,
         added: None,
+        picture: None,
     }
 }
 

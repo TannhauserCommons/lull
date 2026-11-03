@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use futures_util::{StreamExt, stream};
-use lull_core::ids::{AlbumId, ArtistId, TrackId, normalize, normalize_artist};
+use lull_core::ids::{TrackId, normalize, normalize_artist};
 use lull_core::model::Track;
 use lull_core::seams::Library;
 use lull_core::{Error, Result, catalog};
@@ -81,16 +81,13 @@ pub(crate) async fn preview_entries(svc: &Service, name: Option<String>, entries
                 let (status, track_id) = match m {
                     Match::Known(track, saved) => {
                         let id = track.id.clone();
-                        catalog::remember(conn, &[track])?;
+                        catalog::remember(conn, &[*track])?;
                         (if saved { Status::Library } else { Status::WillSearch }, Some(id))
                     }
-                    Match::New(track) => {
-                        let id = track.id.clone();
-                        // A richer record from search or the library wins over what a line says.
-                        if catalog::track(conn, &id)?.is_none() {
-                            catalog::remember(conn, &[track])?;
-                        }
-                        (Status::WillSearch, Some(id))
+                    Match::New => {
+                        // As the line names it; discovery resolves it to the catalog's song when shown.
+                        let named = catalog::remember_named(conn, named(&entry))?;
+                        (Status::WillSearch, Some(named.id))
                     }
                     Match::None => (Status::NotFound, None),
                 };
@@ -119,9 +116,9 @@ pub(crate) async fn preview_entries(svc: &Service, name: Option<String>, entries
 
 enum Match {
     /// A track lull already has a record of, and whether it is in the library.
-    Known(Track, bool),
-    /// A song lull hasn't seen: playing it searches Soulseek for artist + title.
-    New(Track),
+    Known(Box<Track>, bool),
+    /// A song lull hasn't seen: recorded as the line names it; playing it searches Soulseek.
+    New,
     None,
 }
 
@@ -134,24 +131,32 @@ async fn match_entry(svc: &Service, library: &dyn Library, library_ok: &AtomicBo
         });
         if let Some(track) = known.await? {
             let saved = in_library(library, library_ok, &track).await || track.saved;
-            return Ok(Match::Known(track, saved));
+            return Ok(Match::Known(Box::new(track), saved));
         }
     }
     let Some(title) = entry.title.as_deref() else {
         return Ok(Match::None);
     };
     if let Some(track) = search_library(library, library_ok, entry.artist.as_deref(), title).await {
-        return Ok(Match::Known(track, true));
+        return Ok(Match::Known(Box::new(track), true));
     }
-    Ok(match entry.artist.as_deref() {
-        Some(artist) => Match::New(unsaved_track(
-            artist,
-            entry.album.as_deref().unwrap_or(""),
-            title,
-            entry.duration,
-        )),
-        None => Match::None,
+    Ok(if entry.artist.is_some() {
+        Match::New
+    } else {
+        Match::None
     })
+}
+
+/// The line's song as `catalog::remember_named` takes it (artist and title are set).
+fn named(entry: &Entry) -> catalog::Named<'_> {
+    catalog::Named {
+        artist: entry.artist.as_deref().unwrap_or(""),
+        album: entry.album.as_deref(),
+        title: entry.title.as_deref().unwrap_or(""),
+        duration: entry.duration,
+        isrc: entry.isrc.as_deref(),
+        picture: None,
+    }
 }
 
 /// The library's copy of a song with this title (and artist, when the line names one).
@@ -193,23 +198,5 @@ async fn in_library(library: &dyn Library, ok: &AtomicBool, track: &Track) -> bo
 fn library_unreachable(ok: &AtomicBool, e: &Error) {
     if ok.swap(false, Ordering::Relaxed) {
         tracing::warn!(error = %e, "M3U import continues without the library");
-    }
-}
-
-pub(crate) fn unsaved_track(artist: &str, album: &str, title: &str, duration: Option<u32>) -> Track {
-    Track {
-        id: TrackId::of(artist, album, title),
-        title: title.to_owned(),
-        artist_id: ArtistId::of(artist),
-        artist: artist.to_owned(),
-        album_id: AlbumId::of(artist, album),
-        album: album.to_owned(),
-        year: None,
-        no: None,
-        disc: None,
-        duration,
-        tags: Vec::new(),
-        saved: false,
-        file: None,
     }
 }
