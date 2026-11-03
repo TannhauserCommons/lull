@@ -3,10 +3,9 @@
 //! publishes no number, but warns against several calls per second; lull keeps to two.
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use lull_core::config::Secret;
-use lull_core::http::Http;
+use lull_core::http::{self, Http};
 use lull_core::ids::{normalize, normalize_artist};
 use lull_core::{Error, Result};
 use serde::{Deserialize, Serialize};
@@ -20,7 +19,6 @@ const SERVICE: &str = "Last.fm";
 const ROOT: &str = "https://ws.audioscrobbler.com/2.0/";
 /// "The artist you supplied could not be found" and the like: an answer, not a failure.
 const NOT_FOUND: u64 = 6;
-const PACE: Duration = Duration::from_millis(500);
 /// Listeners that score 1 on `popularity`'s scale, for a track and for an artist.
 const FULL_TRACK: f64 = 5e6;
 const FULL_ARTIST: f64 = 1e7;
@@ -243,7 +241,7 @@ impl LastFm {
     async fn call(&self, method: &str, params: &[(&str, &str)]) -> Result<Value> {
         let call = self.breaker.call()?;
         let answer = async {
-            self.http.pace(SERVICE, PACE).await;
+            self.http.pace(http::LASTFM, http::LASTFM_PACE).await;
             let resp = self
                 .http
                 .send(SERVICE, |c| {
