@@ -114,6 +114,11 @@ pub struct Service {
     art_dir: PathBuf,
     /// Cover lookups outside the library, running or recently failed (art.rs).
     lookups: Arc<art::Lookups>,
+    /// Covers fetched before anyone asks, and `art.ready` when one comes in (art.rs).
+    warmer: Arc<lull_core::warm::Warmer>,
+    ready: Arc<lull_core::art::Ready>,
+    /// This service, for background work started from `&self` (the `Library` seam's warming).
+    me: std::sync::Weak<Service>,
     /// Wakes the sync loop early (a save waits for Jellyfin, a rescan finished).
     wake: Notify,
     /// Quick Connect attempts waiting for approval (connect.rs).
@@ -141,7 +146,10 @@ pub async fn start(ctx: &Ctx, transfers: Arc<dyn Transfers>) -> Result<Arc<Servi
     };
     let jobs = Jobs::load(ctx.db.clone(), ctx.bus.clone()).await?;
     jobs.follow(ctx);
-    let svc = Arc::new(Service {
+    let svc = Arc::new_cyclic(|me| Service {
+        me: me.clone(),
+        warmer: lull_core::warm::Warmer::start(ctx, WARM_WORKERS),
+        ready: lull_core::art::Ready::new(ctx),
         ctx: ctx.clone(),
         transfers,
         mode: library.mode,
@@ -179,8 +187,14 @@ pub async fn start(ctx: &Ctx, transfers: Arc<dyn Transfers>) -> Result<Arc<Servi
         }
     }
     save::resume(&svc);
+    ctx.spawn(art::follow_playing(svc.clone(), ctx.bus.subscribe()));
+    ctx.spawn(art::warm_library(svc.clone()));
     Ok(svc)
 }
+
+/// Covers fetched at once in the background (MusicBrainz's pace serialises the outside lookups
+/// anyway; the second keeps saved albums' local covers coming meanwhile).
+const WARM_WORKERS: usize = 2;
 
 /// `/api/tracks/{id}`, `/api/library/...`, `/api/jellyfin/...`, `/api/art/{id}`, `/api/saves/...`,
 /// `/api/jobs`.
@@ -286,5 +300,11 @@ impl seams::Library for Service {
             None => 512,
         };
         routes::cover_response(self, id, size).await
+    }
+
+    fn warm_covers(&self, albums: &[AlbumId]) {
+        for album in albums {
+            art::warm(self, album, art::SMALL, lull_core::warm::Priority::Page);
+        }
     }
 }
