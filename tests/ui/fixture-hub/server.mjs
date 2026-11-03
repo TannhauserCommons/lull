@@ -6,7 +6,8 @@
 //
 //   node tests/ui/fixture-hub/server.mjs [port]      (default 8790; LULL_WEB=<dir> serves another web/)
 //
-// POST /__fixture/emit { topic, data } sends one server event to every open /api/events stream.
+// POST /__fixture/emit { topic, data } sends one server event to every open /api/events stream (with X-Fixture-Client,
+// to that client's streams only).
 // POST /__fixture/art-pending { ids } makes those covers answer 404 "not yet" (no-store), as the hub does while it
 // fetches one; POST /__fixture/art-ready { ids } serves them again and sends `art.ready { keys }`.
 // GET /__fixture/art-requests: cover requests that reached the hub since the last call, by URL (and resets them).
@@ -369,7 +370,7 @@ async function files(req, res, path) {
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://fixture');
   const path = url.pathname, q = url.searchParams;
-  if (path === '/__fixture/emit' && req.method === 'POST') { const b = await readBody(req); emit(b.topic, b.data); return send(res, 204); }
+  if (path === '/__fixture/emit' && req.method === 'POST') { const b = await readBody(req); emit(b.topic, b.data, req.headers['x-fixture-client']); return send(res, 204); }
   if (path === '/api/events') {
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
     res.write(': open\n\n');

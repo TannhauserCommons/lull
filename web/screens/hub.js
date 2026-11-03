@@ -4,7 +4,8 @@
    - the Soulseek account slskd signs in with: hub config when the hub manages its own slskd (the desktop app,
      GET /api/setup `soulseekManaged`), otherwise only slskd's state (the login is set where slskd runs);
    - Settings > Devices: paired devices (online, rename, unpair), adding one by QR code, Subsonic app passwords.
-   First-run setup (setup.js) is built from the same parts: App.hubKit.
+   First-run setup (setup.js) is built from the same parts: App.hubKit. Loaded on use, with hub.css (App.needHub): by
+   the settings sections and setup that show these, and by the pairing gate as it opens.
    Reads: GET /api/library/source, GET /api/jellyfin/discover, GET /api/devices, `library.source` and `device.*` events. */
 (function () {
   'use strict';
@@ -53,7 +54,7 @@
     another: false,      // connected, but connecting another server
     qc: null,            // Quick Connect { code, secret, state: waiting|approved|expired }
     busy: false, error: null,
-    progress: null       // the latest `library.source` event
+    progress: App.librarySource   // the latest `library.source` event, also from before this file loaded (setup.js)
   };
   K.custom['hub.library'] = { get: function () { var s = M.peek(SOURCE); return lib.pick || (s && s.mode) || 'folder'; },
     set: function (v) { lib.pick = v; lib.stage = 'choose'; lib.error = null; repaintLib(); } };
@@ -210,9 +211,9 @@
     }, function (err) { busy(false, err); });
   });
   document.addEventListener('input', function (e) { if (e.target.id === 'hub-jf-url') lib.url = e.target.value.trim(); });
+  /* setup.js fetches the reads again (it hears the event from the start); this shows the progress */
   App.on('server:library.source', function (e) {
     lib.progress = e;
-    if (e.state !== 'switching') { M.reload(SOURCE); M.reload('/api/setup'); }
     if ($('#hub-lib')) repaintLib();
   });
 

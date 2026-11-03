@@ -17,7 +17,6 @@
 <style>@import url(screens/now.css) layer(screens);</style>
 <style>@import url(screens/library.css) layer(screens);</style>
 <style>@import url(screens/system.css) layer(screens);</style>
-<style>@import url(screens/hub.css) layer(screens);</style>
 <!-- the desktop app only: Classic mode's styles (a browser loads them with its code, App.needClassic) and the wrapper's -->
 <script>if (window.__TAURI__ && !window.LullNative) document.write('<style>@import url(screens/classic.css) layer(screens);<\/style><style>@import url(desktop/desktop.css) layer(screens);<\/style>');</script>
 <link rel="stylesheet" id="design-css" href="designs/lull/theme.css">
@@ -217,7 +216,6 @@
 <script src="screens/library.js"></script>
 <script src="screens/system.js"></script>
 <script src="screens/appearance.js"></script>
-<script src="screens/hub.js"></script>
 <script src="screens/setup.js"></script>
 <!-- the desktop app only: its bridge (desktop.js), and Classic mode from the start, as its crash recovery hands the queue
      back through classic.js. A browser loads Classic mode on first use (App.needClassic, app.js) and has no bridge -->

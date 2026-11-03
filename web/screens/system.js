@@ -318,7 +318,8 @@
      1. Stats (/stats?period=7d|30d|12m|all): GET /api/stats?period=
      ===================================================================== */
   /* on first visit: screens/stats.js (and stats.css) has the screen, and registers the route again with it */
-  App.route('/stats', { need: function () { return App.needScript('screens/stats.js', 'Stats', 'screens/stats.css'); }, render: function () { return ''; }, nav: 'stats', title: 'Stats',
+  App.needStats = function () { return App.needScript('screens/stats.js', 'Stats', 'screens/stats.css'); };
+  App.route('/stats', { need: App.needStats, render: function () { return ''; }, nav: 'stats', title: 'Stats',
     place: function () { return App.place('stats', '', 'your top songs'); } });
 
   /* =====================================================================
@@ -894,7 +895,9 @@
       if (!/^#\/settings\/app\b/.test(location.hash)) desk = null;   // leaving Settings > App: read the wrapper again next visit
     });
   }
-  App.route('/settings/:section?', { render: renderSettings, mount: mountSettings, nav: 'settings', title: function (ctx) { var s = sectionOf(ctx.params.section); return s ? s[1] + ' settings' : 'Settings'; } });
+  /* the sections built from screens/hub.js (App.hubKit) load it on entry; the others render at once */
+  var HUB_SECTIONS = { sources: true, library: true, devices: true };
+  App.route('/settings/:section?', { need: function (params) { return HUB_SECTIONS[params.section] && !App.hubKit ? App.needHub() : null; }, render: renderSettings, mount: mountSettings, nav: 'settings', title: function (ctx) { var s = sectionOf(ctx.params.section); return s ? s[1] + ' settings' : 'Settings'; } });
 
   /* =====================================================================
      3. Shortcuts overlay (?): grouped keycaps + filter

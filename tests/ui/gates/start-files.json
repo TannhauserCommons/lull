@@ -1,0 +1,29 @@
+{
+  "note": "The scripts and stylesheets a browser loads at start (index.html), each with what the start needs it for. Code that belongs to one screen or panel loads on its first use instead (docs/context/web.md, Code loads where it is used): a file missing here fails gates/on-use.spec.mjs until it is loaded on use, or listed with its reason. designs/<design>: the chosen design's own files.",
+  "files": {
+    "tokens.css": "the design tokens every screen reads",
+    "base.css": "element defaults and the shell's frame",
+    "components.css": "the shared components on every screen: cards, rows, buttons, dialogs, popovers",
+    "screens/discover.css": "Home, the first screen",
+    "screens/now.css": "the player bar and the Now Playing column, on every screen",
+    "screens/library.css": "the song lists and cards every list screen, Home included, is built from",
+    "screens/system.css": "service banners, the command palette, the pairing gate and the Connect picker, on any screen; and Settings",
+    "designs/<design>/theme.css": "the chosen design, before the first paint",
+    "designs/designs.js": "designs and their slots, before the first paint",
+    "designs/<design>.js": "the chosen design's slots",
+    "icons.js": "the icon sprite",
+    "data.js": "the API client and the reads every screen makes",
+    "align.js": "the player's switch to a better copy mid-song",
+    "eq.js": "the device's equaliser, applied from the first song",
+    "app.js": "the router, the shell and the player",
+    "layout.js": "size classes and the panels",
+    "connect.js": "lull Connect: this device reports what it plays, and takes commands, from the start",
+    "offline.js": "downloads, and their covers without the hub",
+    "screens/now.js": "the player bar and Now Playing",
+    "screens/discover.js": "Home, the first screen",
+    "screens/library.js": "the library's screens and the song rows shared across the app",
+    "screens/appearance.js": "a stored theme reloads live when the hub changes it (server events); and Settings > Appearance",
+    "screens/setup.js": "the pairing gate, which opens before anything else works, and library.source events",
+    "screens/system.js": "service banners, the command palette, shortcuts, install and update; and Settings"
+  }
+}

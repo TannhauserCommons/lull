@@ -356,7 +356,9 @@
 
   /* App.route('/album/:id', render, opts) or App.route(pattern, { render, mount, title, nav, view }).
      render(ctx) returns markup (Safe or string); mount(ctx) runs after it is in the DOM.
-     ctx = { params, query, el (the view), onCleanup(fn) }. ':name?' marks an optional segment. */
+     ctx = { params, query, el (the view), onCleanup(fn) }. ':name?' marks an optional segment.
+     need(params, query): code the route's screen loads on first use (docs/context/web.md, Code loads where it is used):
+     a promise while some is still to load (App.needScript, App.needHub, App.needClassic), nothing once it is here. */
   App.route = function (pattern, render, opts) {
     var def = typeof render === 'function' ? Object.assign({ render: render }, opts || {}) : render;
     var keys = [];
@@ -428,14 +430,30 @@
     if (App.eq) return Promise.resolve();
     return eqLoad || (eqLoad = loadScript('screens/eq.js', 'the equaliser').then(null, function (err) { eqLoad = null; throw err; }));
   };
-  /* opening Classic shouldn't wait for its code (a first open took ~150 ms more with the CPU slowed 6x, plus the
-     fetches): it loads as the pointer or focus reaches the way in, or the menu that lists it opens (playerMenu) */
-  function classicSoon(e) {
-    if (!e.target.closest || !e.target.closest('[data-act="classic"]')) return;
-    document.removeEventListener('pointerover', classicSoon, true); document.removeEventListener('focusin', classicSoon, true);
-    App.needClassic().then(null, function () {});    // a failed fetch is tried again, and reported, when Classic opens
+  /* the hub's own settings (screens/hub.js, hub.css): the library source, the Soulseek account, Settings > Devices, and
+     the parts the pairing gate and first-run setup are built from (App.hubKit). The routes that show them ask for it
+     (their `need`), and the gate as it opens */
+  App.needHub = function () {
+    return App.hubKit ? Promise.resolve() : App.needScript('screens/hub.js', 'the hub\'s settings', 'screens/hub.css');
+  };
+  /* opening a screen shouldn't wait for its code (Classic's first open took ~150 ms more with the CPU slowed 6x, plus
+     the fetches): it loads as the pointer or focus reaches a way in (or, for Classic, the menu that lists it opens,
+     playerMenu). [where the pointer goes, what it loads]; each fires once */
+  var SOON = [
+    ['[data-act="classic"]', function () { return App.needClassic(); }],
+    ['a[href^="#/settings/library"], a[href^="#/settings/devices"], a[href^="#/settings/sources"]', function () { return App.needHub(); }],
+    ['a[href^="#/stats"]', function () { return App.needStats(); }]
+  ];
+  function soon(e) {
+    if (!e.target.closest) return;
+    SOON = SOON.filter(function (s) {
+      if (!e.target.closest(s[0])) return true;
+      s[1]().then(null, function () {});    // a failed fetch is tried again, and reported, when the screen opens
+      return false;
+    });
+    if (!SOON.length) { document.removeEventListener('pointerover', soon, true); document.removeEventListener('focusin', soon, true); }
   }
-  document.addEventListener('pointerover', classicSoon, true); document.addEventListener('focusin', classicSoon, true);
+  document.addEventListener('pointerover', soon, true); document.addEventListener('focusin', soon, true);
   /* and for the W key, which gives no warning: once the page has settled and the browser is idle, well after the start's
      own reads and covers, so it never competes with them */
   App.on('ready', function () {
@@ -572,9 +590,10 @@
       if (m) { route = routes[i]; route.keys.forEach(function (k, j) { if (m[j + 1] !== undefined) params[k] = decodeURIComponent(m[j + 1]); }); break; }
     }
     /* a route whose code loads on first use (route.need): the page showing stays until it has run, then the route
-       renders as if it had always been here (the screen it replaced its stub with) */
-    if (route && route.need) {
-      route.need().then(function () { renderRoute(isRefresh); }, function (err) {
+       renders as if it had always been here (the screen it replaced its stub with, or the one it now has the code for) */
+    var waiting = route && route.need && route.need(params, loc.query);   // a promise while there is code to load
+    if (waiting) {
+      waiting.then(function () { renderRoute(isRefresh); }, function (err) {
         App.toast(err.message, { kind: 'error', icon: 'warning' }); App.back();
       });
       return;

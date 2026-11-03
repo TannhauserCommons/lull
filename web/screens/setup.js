@@ -5,7 +5,8 @@
      code from a paired device (POST /api/pair); #/pair/<code> (the QR code's link) fills the code in;
    - first-run setup (/setup): the library (folder or Jellyfin), the Soulseek account, Last.fm.
      GET /api/setup { claimed, steps: { library, soulseek, lastfm } } says which steps are done.
-   Parts come from screens/hub.js (App.hubKit). */
+   Parts come from screens/hub.js (App.hubKit), which loads on use (App.needHub): the gate asks for it as it opens,
+   alongside its own read, and /setup on entry. library.source events are handled here, from the start. */
 (function () {
   'use strict';
   var html = App.html, ui = App.ui, M = App.data, icon = App.icon, raw = App.raw, $ = App.$, $$ = App.$$;
@@ -24,7 +25,7 @@
       body: html`<div id="setup-gate">${ui.skeleton('text', 3)}</div>`,
       onMount: function (el) { el.setAttribute('aria-labelledby', titleId); el.removeAttribute('aria-label'); } });
     gate.titleId = titleId;
-    M.api(SETUP).then(function (s) { if (gate) gateForm(s.claimed); }, function (err) {
+    Promise.all([M.api(SETUP), App.needHub()]).then(function (r) { if (gate) gateForm(r[0].claimed); }, function (err) {
       if (!gate) return;
       $('#setup-gate').innerHTML = String(html`<div class="sys-gate__form"><div class="sys-gate__mark">${ui.wordmark('desktop')}</div>
         <h2 class="sys-gate__title" id="${gate.titleId}">can't reach your hub</h2>
@@ -82,6 +83,14 @@
   } });
   App.on('server', function () { if (/^\/pair\//.test(App.current.path)) App.refresh(); });
 
+  /* the library switching source (folder or Jellyfin): its reads are fetched again once it has finished, whether or not
+     screens/hub.js is here yet; hub.js shows the switch's progress, from the latest event when it loads mid-switch */
+  App.librarySource = null;
+  App.on('server:library.source', function (e) {
+    App.librarySource = e;
+    if (e.state !== 'switching') { M.reload('/api/library/source'); M.reload(SETUP); }
+  });
+
   /* =====================================================================
      2. First-run setup (/setup): three steps, each done when GET /api/setup says so
      ===================================================================== */
@@ -129,7 +138,7 @@
   }
   /* a step finishes on the hub (a restart, a switch, a sign-in): ask again what setup needs */
   function refreshSteps() { if (App.current.path === '/setup') M.reload(SETUP); }
-  App.route('/setup', { render: renderSetup, title: 'Setup', nav: 'home', mount: function (ctx) {
+  App.route('/setup', { need: function () { return App.hubKit ? null : App.needHub(); }, render: renderSetup, title: 'Setup', nav: 'home', mount: function (ctx) {
     App.storage('setupOffered', true);
     ctx.onCleanup(App.on('server:hub.restarting', refreshSteps));
     ctx.onCleanup(App.on('server:service', function (e) { if (e.name === 'soulseek') refreshSteps(); }));

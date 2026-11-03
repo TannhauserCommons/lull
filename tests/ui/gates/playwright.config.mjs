@@ -45,7 +45,7 @@ export default defineConfig({
     { name: 'covers', testMatch: 'covers.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     { name: 'fit', testMatch: 'fit.spec.mjs', fullyParallel: true },
     // what loading Classic mode on first use must keep (a browser) and not change (the desktop app)
-    { name: 'classic', testMatch: 'classic.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
+    { name: 'on-use', testMatch: 'on-use.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     { name: 'now', testMatch: 'now.spec.mjs', fullyParallel: true },
   ],
 });

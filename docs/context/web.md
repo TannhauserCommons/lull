@@ -8,19 +8,15 @@ from, how the player plays, and the rules screens follow. The endpoint contract 
 ## Files and load order
 
 ```
-index.html   tokens.css base.css components.css screens/*.css (not classic.css) designs/<name>/design.css (last)
+index.html   tokens.css base.css components.css screens/{discover,now,library,system}.css designs/<name>/design.css (last)
              designs/designs.js + the pre-paint script (design, theme, motion, text size)
              icons.js data.js align.js eq.js app.js layout.js connect.js offline.js screens/{discover,now,library,system,appearance}.js
-             screens/{hub,setup}.js
+             screens/setup.js
              the desktop app only (window.__TAURI__): screens/classic.css desktop/desktop.css
              desktop/webamp-session.js screens/{skins,classic}.js desktop/desktop.js, from the start, as its crash
-             recovery hands the queue back through classic.js. A browser loads Classic's four files on first use
-             (App.needClassic: the /classic route, a dropped .wsz, Settings > Appearance), early when the pointer
-             reaches a Classic button, or once the page is idle; it never loads desktop.js or desktop.css. Stats
-             (screens/stats.js, stats.css) loads on its first visit (App.needScript, the /stats route's `need`). The
-             equaliser's panel (screens/eq.js) loads on first use too (App.needEq: Settings > Playback, the player's
-             "…" > Equaliser). New code that only some screens use loads the same way (a route's `need`), not from
-             index.html: Lighthouse's transfer budget (tests/ui/budgets.json) is for the start
+             recovery hands the queue back through classic.js
+             everything else loads on its first use: see "Code loads where it is used" below; the start's files and
+             why each is there: tests/ui/gates/start-files.json
 data.js      window.LullData = App.data: API client, entity cache, per-route reads, the event stream
 align.js     window.LullAlign: how far apart two recordings of one moment are (switching to a better copy); pure,
              tested by tests/web/align.test.mjs (`node --test`, part of `mise run check`)
@@ -30,8 +26,9 @@ app.js       window.App: router, render helpers, overlays, save pipeline, player
              keyboard, Media Session, drag and drop, server events + boot
 layout.js    ADR-0007: size classes, App.layout (lull:layout), resize handles, the Now Playing column host
 sw.js        service worker (app shell for offline start); manifest.webmanifest
-hub.js       the hub's own settings: library source (folder / Jellyfin), Soulseek account, Settings > Devices (App.hubKit)
-setup.js     the pairing gate, #/pair/<code>, first-run setup (/setup)
+hub.js       the hub's own settings: library source (folder / Jellyfin), Soulseek account, Settings > Devices (App.hubKit);
+             with hub.css, loaded on use (App.needHub)
+setup.js     the pairing gate, #/pair/<code>, first-run setup (/setup), library.source events
 skins.js     Classic mode's skin and size, per device (App.classicSkin, App.classicSize), and Settings > Appearance >
              Classic: the size, the skin browser, .wsz files kept on this device, the NSFW switch (docs/context/skins.md)
 stats.js     Stats and the taste profile (/stats), with stats.css; loaded on the first visit, built with system.js's kit
@@ -39,6 +36,36 @@ classic.js   Classic mode: Webamp alone, in an iframe on a stage in a browser, o
 vendor/      Webamp bundle and the QR encoder (qrcode-generator), copied by scripts/vendor-web.sh, gitignored
 desktop/     the desktop app's wrapper pages and bridge (`LullDesktop`), owned by the Apps session
 ```
+
+## Code loads where it is used
+
+Code that belongs to one screen or panel loads on its first use, not from index.html. What a browser fetches at start
+is what every visit needs before it can show anything: the shell, the player, Home, the pairing gate. Each file there
+is listed with its reason in tests/ui/gates/start-files.json, and the on-use gate (gates/on-use.spec.mjs) fails on a
+file at start that isn't, so a new screen can't join the start by default. Lighthouse's transfer budget
+(tests/ui/budgets.json) is for the start; a feature that stays out of it doesn't spend it.
+
+The way to do it (app.js, beside the router):
+
+- `App.needScript(src, what, style)`: a screen's script and, if it has one, its stylesheet (in the screens layer),
+  loaded once; the promise resolves when both are in, so the screen never shows unstyled; a failed fetch is tried
+  again next time and reported with `what`. Named helpers wrap it: `App.needStats`, `App.needHub`; `App.needClassic`
+  and `App.needEq` are the same pattern for Classic mode's several files and the equaliser's panel.
+- A route's `need(params, query)`: a promise while there is code to load, nothing once it is here. The page showing
+  stays until it resolves, then the route renders as if it had always been here. A route whose whole screen loads
+  registers a stub with `need` up front (its nav, title and place work before it loads), and the screen's file
+  registers the route again (Stats, Classic). A route that shows such code in some cases asks only then (Settings
+  asks for hub.js for Library, Sources and Devices).
+- Panels and dialogs call their helper before building (`App.needEq().then(...)`), and a section drawn inside an
+  always-loaded screen shows a placeholder until its code arrives (Settings > Appearance > Classic).
+- The way in fetches ahead: the `SOON` table in app.js lists, for each, where the pointer or focus goes and what it
+  loads, so the first click doesn't wait (Classic, Stats, the hub's settings). Classic, which the W key opens
+  without warning, also loads once the page is idle.
+- What has to happen from the start stays in an always-loaded file, and the screen's file picks it up when it
+  loads: setup.js hears `library.source` and keeps the latest (`App.librarySource`), hub.js shows it. Styles the
+  start needs stay in a start stylesheet (the Connect picker and the pairing gate are system.css's).
+- Offline: the service worker keeps every app file as it is fetched (sw.js), so a screen used once online opens
+  offline too.
 
 Designs: all five ship (`lull skydeck starlight petal glasshouse`), switchable live in Settings > Appearance; design,
 theme (day/night/system), motion and text size are stored per device in `localStorage['lull:prefs']`.
