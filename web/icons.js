@@ -28,7 +28,7 @@
     'soulseek': '<circle cx="12" cy="9" r="1.6"/><path d="M12 10.6V20M9.5 20h5M8.6 5.6a4.8 4.8 0 0 0 0 6.8M15.4 5.6a4.8 4.8 0 0 1 0 6.8M6 3a8.5 8.5 0 0 0 0 12M18 3a8.5 8.5 0 0 1 0 12"/>',
     'quality-diamond': 'F:<path d="M12 4l7 8-7 8-7-8z"/>',
     'queue': '<path d="M4 6.5h16M4 12h16M4 17.5h9M16.5 15l3 2.5-3 2.5"/>',
-    'lyrics': '<path d="M5 5h14a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 19 17h-8l-4 3.5V17H5a1.5 1.5 0 0 1-1.5-1.5v-9A1.5 1.5 0 0 1 5 5zM8 9.5h8M8 12.5h5"/>',
+    'lyrics': '<path d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3zM5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/>',   // a microphone: the speech bubble read as comments
     'classic': '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M3.5 9h17M6.5 6.8h.01M9 6.8h.01M11.5 6.8h.01"/>',
     'activity': '<path d="M8 4v16M4.5 7.5 8 4l3.5 3.5M16 20V4M12.5 16.5 16 20l3.5-3.5"/>',
     'volume-0': '<path d="M4 9.5h3l4.5-4v13l-4.5-4H4z"/>',
