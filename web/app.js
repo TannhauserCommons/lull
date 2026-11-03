@@ -2266,11 +2266,16 @@
      10. Shell: rail, header, status tray, context panel, player bar, mini-player, tab bar
      ===================================================================== */
   function followedTags() {
-    return html`${Object.keys(state.followed).filter(function (id) { return !/^ar-/.test(id); }).map(function (id) { return ui.tagChip(id); })}`;
+    var ids = Object.keys(state.followed).filter(function (id) { return state.followed[id]; });
+    var tags = ids.filter(function (id) { return !/^ar-/.test(id); }), artists = ids.length - tags.length;
+    if (!tags.length) return html`<p class="rail__empty">Tags you follow show up here.${artists ? html` <a href="#/following">${artists === 1 ? 'The artist you follow' : 'The ' + artists + ' artists you follow'}</a> ${artists === 1 ? 'is' : 'are'} on Following.` : ''}</p>`;
+    return html`${tags.map(function (id) { return ui.tagChip(id); })}`;
+  /* the rail's (and the shelf popover's) two sections; an empty one says what will show there instead of a bare heading */
   }
   function playlistLinks() {
     return html`${state.playlists.map(function (p) {
       return html`<li><a class="rail__pl" href="#/playlist/${p.id}" data-drop="playlist:${p.id}">${ui.playlistArt(p, 36)}<span class="ellipsis"><b>${p.name}</b><small>${p.items.length} songs</small></span></a></li>`;
+    if (!state.playlists.length) return html`<li><p class="rail__empty">Playlists you make show up here. <a href="#/playlists">Make one</a></p></li>`;
     })}`;
   }
   function renderRail() {
