@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "io.github.tannhausercommons.lull",
+      "sha256_cert_fingerprints": [
+        "C9:CE:ED:19:14:C9:6A:26:03:24:D4:9F:4B:59:BE:85:D7:FA:1C:D1:A2:32:A0:B4:B7:42:20:96:8A:2A:03:21"
+      ]
+    }
+  }
+]

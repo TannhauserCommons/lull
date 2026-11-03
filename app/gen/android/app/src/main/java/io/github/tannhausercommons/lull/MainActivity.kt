@@ -29,18 +29,26 @@ class MainActivity : TauriActivity() {
 }
 
 /**
- * A song, album, artist or playlist shared to lull: "Share" from another app (its text holds the
+ * A song, album, artist or playlist shared to lull: lull's open page (an App Link: the whole
+ * address, whose `#lull?` part names the item), "Share" from another app (its text holds the
  * link) or a lull://open?link=… link. Held until the hub's web UI takes it (App.takeSharedLink,
  * at boot and when nudged), which opens it as #/open; a bundled page never asks.
  */
 object SharedLinks {
   private val WEB_LINK = Regex("https?://\\S+")
+  private const val OPEN_PAGE_HOST = "tannhausercommons.github.io"
 
   @Volatile private var pending: String? = null
 
   fun receive(intent: Intent?) {
     val link = when (intent?.action) {
-      Intent.ACTION_VIEW -> intent.data?.takeIf { it.scheme == "lull" && it.host == "open" }?.getQueryParameter("link")
+      Intent.ACTION_VIEW -> intent.data?.let {
+        when {
+          it.scheme == "https" && it.host == OPEN_PAGE_HOST -> it.toString()
+          it.scheme == "lull" && it.host == "open" -> it.getQueryParameter("link")
+          else -> null
+        }
+      }
       Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)?.let { WEB_LINK.find(it)?.value }
       else -> null
     }
