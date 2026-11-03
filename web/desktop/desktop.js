@@ -10,6 +10,8 @@
      askClose()                                      one-time "keep playing in the tray?" dialog
      windowAction(action, detail)                    window operations (DESKTOP.md 4, window_action)
      settings() / setSettings(patch)                 Settings > App inside the wrapper (Promises)
+     glass                                           the see-through window: state ({ material, held }, null until the
+                                                     app answered) and on(fn), which hears every change
      tailscale() / tailscaleServe()                  Settings > App when this computer is the hub (Promises)
      updates                                         this app's own updates: status(), check(), install() (Promises of
                                                      { current, state, ... }) and on(fn), which hears every change
@@ -52,6 +54,15 @@
   };
   D.settings = function () { return invoke('desktop_settings'); };
   D.setSettings = function (patch) { return invoke('set_desktop_settings', { patch: patch }); };
+  /* a see-through window (app/src/desktop/glass.rs): what `main` shows behind the page, and why not when its theme
+     asked for glass and got none (held: off, system, unsupported, restart) */
+  var glassFns = [];
+  D.glass = { state: null, on: function (fn) { glassFns.push(fn); } };
+  function showGlass(grant) {
+    D.glass.state = grant;
+    Designs.setWindow(grant && grant.material);
+    glassFns.forEach(function (fn) { fn(grant); });
+  }
   D.openMini = function () { return D.windowAction('mini').catch(logFailure('mini player')); };
   /* Classic mode: Webamp alone in its own window (desktop/winamp.js); the app's window hides meanwhile */
   var classicHears = [];
@@ -786,6 +797,20 @@
     var sendAppearance = function () {
       T.event.emit('appearance', { design: App.design(), theme: App.prefs().theme }).catch(logFailure('appearance'));
     };
+
+    /* the theme's window: asked again whenever the theme or its mode changes. The answer, and every later change (the
+       listener's switch, Windows' transparency effects), sets :root[data-window]. A theme that wants a solid window
+       gets its wallpaper back first, so a solid window never shows a frame of see-through page. */
+    var askedGlass;
+    var askGlass = function () {
+      var request = Designs.windowRequest(), key = JSON.stringify(request);
+      if (key === askedGlass) return; askedGlass = key;
+      if (!request) Designs.setWindow(null);
+      invoke('window_glass', { request: request }).then(showGlass, logFailure('glass'));
+    };
+    T.event.listen('glass', function (e) { showGlass(e.payload); });
+    Designs.onLook(askGlass);
+    askGlass();
 
     ['player', 'like', 'save', 'ready'].forEach(function (ev) { App.on(ev, sendNow); });
     ['player', 'tick', 'like', 'save'].forEach(function (ev) { App.on(ev, function () { sendPlayer(false); }); });

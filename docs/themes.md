@@ -37,7 +37,7 @@ A folder, or a `.lulltheme` file (a zip of that folder):
 - `shell`: the layout on desktop and tablet: `rail` (a side menu), `topnav` (pills in the header) or `dock`. Phones always use the tab bar.
 - `swatches`: page, surface, accent and ink colours (`#rrggbb`) for the picker card in Settings › Appearance.
 - `modes`: `["day", "night"]`, or just one. A one-mode theme ignores the day/night switch.
-- Optional: `description`, `preview` (true when `assets/preview-day.webp` and `-night.webp` exist, 320×200), `coverVariety` (section 5). The hub fills in `slots` itself.
+- Optional: `description`, `preview` (true when `assets/preview-day.webp` and `-night.webp` exist, 320×200), `coverVariety` (section 5), `window` (a see-through window in the desktop app, section 12). The hub fills in `slots` itself.
 
 **Installing one:** drop the `.lulltheme` on Settings › Appearance › Your themes, or make it in Theme Studio there. Both store it on your hub in `<data dir>/themes/<id>/`, so every device can pick it. You can also edit the files in that folder directly: open devices reload the theme within a second.
 
@@ -87,6 +87,7 @@ Set any of these in `:root` (both modes) or `:root[data-theme="day"]` / `[data-t
 | Motion | `--dur-press`, `--dur-1` ... `--dur-4`, `--ease-out`, `--ease-in-out`, `--ease-spring` |
 | Layers | `--z-bar`, `--z-panel`, `--z-sheet`, `--z-popover`, `--z-toast`, `--z-overlay` |
 | Sizes | `--rail`, `--rail-icons`, `--ctx`, `--bar-h`, `--mini-h`, `--tab-h`, `--hit` |
+| Window (section 12) | `--window-tint`, `--window-opacity` (from theme.json's `window`), `--window-backdrop` (what lies over the desktop where the wallpaper was) |
 
 Components read semantic tokens (`--bg`, `--fg`, `--fg-2`, `--link`, `--edge`, `--focus`...) that the surfaces `.s-sky`, `.s-panel`, `.s-card` and `.s-screen` map from the ones above, so a surface's text always pairs with its own background.
 
@@ -100,6 +101,7 @@ Go beyond tokens with any selector. These hooks are the theme API: they stay put
 | `:root[data-shell]` | `rail`, `topnav`, `dock` |
 | `:root[data-motion]` | `reduce`, `full` (absent: follow the system). Keep motion off under `reduce`. |
 | `:root[data-design]` | the built-in design that is loaded (your `extends`), else your id |
+| `:root[data-window]` | `mica`, `acrylic`, `blur`, `transparent`: what the desktop app's window shows behind the page now (section 12); absent while the window is solid |
 | `[data-region]` | `rail`, `header`, `topnav`, `content`, `ctx` (queue, lyrics, activity), `playerbar`, `mini` (phone player), `tabbar`, `lead` (Home's homeLead slot) |
 | `.app[data-screen]` | `home`, `search`, `now`, `library`, `liked`, `history`, `following`, `album`, `artist`, `tag`, `playlists`, `playlist`, `stats`, `settings`, `classic`... |
 | `.app[data-route]`, `.app[data-view]`, `.app[data-ctx]` | nav key; `page` or `now`; `docked`, `open`, `closed` |
@@ -226,7 +228,7 @@ Themes never run code, and never reach outside your hub. The hub refuses a packa
 - a `<script>`, an event handler (`onclick=`...), `<style>`, `<iframe>`, `<form>` or a `javascript:` URL in a slot, or a link that leaves the app (slot links are `#/...`);
 - a URL to another site in `theme.css` (`url(https://...)`, `//host`, `@import`), or a `url()` to a file the package doesn't have; use `assets/` or `data:`;
 - an SVG with a script or outside reference, or any file that isn't `theme.json`, `theme.css`, `slots/*.html` or a font, image or `.txt` in `assets/`;
-- a `theme.json` field lull doesn't know, or an `api` newer than this lull.
+- a `theme.json` field lull doesn't know, a `window` material it doesn't know (section 12), or an `api` newer than this lull.
 
 In the browser every template is also sanitized (DOMPurify), and the page's Content-Security-Policy only loads fonts, images and styles from the hub itself (`'self'`, `data:`, `blob:`).
 
@@ -322,6 +324,7 @@ Every class lull's CSS styles and every `data-*` attribute lull's markup sets, e
   - `data-classic` (`on` while the Classic stage is open);
   - `data-theme-fade` (set for a moment while the listener flips day and night, so a design can animate the change);
   - `data-titlebar` and `data-window-inactive` (the desktop app);
+  - `data-window` (`mica` `acrylic` `blur` `transparent`: the desktop app's window shows the desktop behind the page, section 12; absent while it is solid) and `data-window-preview` (the browser's preview of it, over a black and white checkerboard);
   - `.is-hidden` on `:root` (the page is hidden: loops pause).
 - **The app:**
   - `.app` with `data-screen`, `data-route`, `data-view`, `data-ctx`, `data-size`, `data-height`;
@@ -452,3 +455,90 @@ lull's plumbing: these may change in any release.
   - Settings controls: `data-cfg`, `data-switch`, `data-step`, `data-stepper`, `data-min`, `data-max`, `data-unit`, `data-weight`, `data-when`, `data-format`, `data-formats`;
   - screens with their own wiring: `data-imp-*`, `data-lib-*`, `data-linkrev*`, `data-rev-*`, `data-cx*`, `data-studio*`, `data-drop-theme`, `data-theme-file`, `data-skin`, `data-skin-file`, `data-webamp`, `data-eq*`, `data-token`, `data-token-reset`;
   - the desktop app's pages: `data-attempt`, `data-dk-attempt`, `data-dk-close`, `data-dk-connect`, `data-dk-error`, `data-dk-found`, `data-dk-offline`, `data-dk-retry-status`, `data-dk-welcome`.
+
+## 12. A see-through window
+
+In the desktop app on Windows and Linux, a theme can show the real desktop through lull's window, with the system's own glass behind it. Everywhere else the window stays solid and the theme looks as it always does, wallpaper included: in the browser, on Android, on a computer that can't draw glass, and for a listener who turned it off.
+
+**Asking for it.** One line in theme.json:
+
+```json
+"window": "glass"
+```
+
+That is frosted glass where this computer can draw it, tinted with your theme's own page colour. The full form is a small object; `day` and `night` override the rest for that mode:
+
+```json
+"window": {
+  "material": ["acrylic", "blur"],
+  "tint": "#f4f1ff",
+  "opacity": 0.6,
+  "night": { "material": "mica", "tint": "#14101f", "opacity": 0.7 }
+}
+```
+
+| Field | What |
+|---|---|
+| `material` | What shows behind the window: a material, or a list in your order of preference (below). Default: `"glass"`. |
+| `tint` | `#rrggbb` that lull lays over the desktop. Default: your `--sky`. |
+| `opacity` | How much of the tint covers the desktop: 0 is clear glass, 1 a solid tint. Default: 0.85. |
+| `day`, `night` | `material`, `tint` and `opacity` for one mode. |
+
+| Material | What it is | Where |
+|---|---|---|
+| `mica` | The listener's wallpaper, blurred and tinted by the system; other windows don't show through | Windows 11 |
+| `acrylic` | Frosted glass over whatever is behind the window | Windows 11 22H2 and later |
+| `blur` | Plain blur over whatever is behind the window | Windows 10; KDE Plasma on X11 |
+| `transparent` | Clear: the desktop as it is | Windows; Linux with a compositor |
+| `none` | Solid. In a list it ends the list | everywhere |
+
+**The fallback chain.** lull uses the first material in your list that this computer draws, and keeps the window solid when it can draw none of them. A single word means that material and the gentler ones after it in `mica`, `acrylic`, `blur`, so `"glass"` and `"mica"` both mean all three. `transparent` is used only when you list it. A material that makes the window lag is never used: Windows 10 draws acrylic, and Windows 11 draws plain blur, through an old path that makes the window trail the pointer when it is dragged (docs/context/desktop.md), so those count as not there. Asking for `glass` gets Mica on Windows 11, blur on Windows 10 and KDE on X11, and a solid window elsewhere.
+
+The hub checks the field when you install a theme and refuses one it doesn't know by name (`window.material "frosty" is not one of mica, acrylic, blur, transparent, none`).
+
+**What the page gets.**
+- `:root[data-window]` names what the window shows *now*. It may be less than you asked for, so style for the material you got, never the one you asked for. Absent, the window is solid. A listener's **See-through window** switch (Settings › Appearance), Windows' **Transparency effects** and the system's reduced transparency (`prefers-reduced-transparency`) all turn it off, and then it is absent too.
+- While it is set, lull lays `--window-backdrop` over the desktop where your wallpaper was: it clears the page's own background and hides the sky specks. Nothing else changes. Every part your theme paints stays as you paint it, so a part shows the desktop exactly where you make it transparent or translucent, all the way down.
+- `--window-backdrop` is the tint at its opacity (`--window-tint` and `--window-opacity`, from theme.json). Set it yourself for anything else: a gradient, or `transparent`.
+- Switching to or from a glass theme changes the window at once on Windows. On Linux a window gets the channel that makes it see-through only when it opens: a theme that turns glass on there applies after a restart, and Settings says so.
+
+**Examples.** Three working themes are in [`docs/theme-examples/`](theme-examples/): zip a folder to make a `.lulltheme`.
+- **[Glass window](theme-examples/glass-window/)** (the whole window): every tray is glass and the page is translucent paper.
+
+  ```css
+  :root[data-window] :is([data-region="rail"], [data-region="header"], [data-region="playerbar"], [data-region="ctx"], [data-region="nowcol"]) {
+    background: color-mix(in srgb, var(--panel) 45%, transparent);
+  }
+  :root[data-window] [data-region="content"] { background: transparent; }
+  /* translucent cards over glass */
+  :root[data-window] .main > .view { background: color-mix(in srgb, var(--panel) 75%, transparent); }
+  ```
+
+- **[Glass rail](theme-examples/glass-rail/)** (only the side menu). The desktop shows only where every layer down to the window is see-through. So the backdrop is clear (`"opacity": 0`), the other parts are solid, and they meet edge to edge, because a gap would show the desktop too:
+
+  ```css
+  :root[data-window] .app { padding: 0; gap: 0; }
+  :root[data-window] :is([data-region="header"], [data-region="content"], [data-region="playerbar"], [data-region="ctx"], [data-region="nowcol"]) {
+    margin: 0; border-radius: 0; box-shadow: none; background: var(--sky);
+  }
+  :root[data-window] [data-region="rail"] {
+    margin: 0; border: 0; border-radius: 0; box-shadow: none;
+    background: color-mix(in srgb, var(--panel) 75%, transparent);
+  }
+  ```
+
+- **[Glass player bar](theme-examples/glass-playerbar/)** (only the player bar) works the same way, with the bar translucent instead.
+
+**Keeping text readable.** You can't know the listener's desktop, so check against the worst ones: pure black and pure white.
+- Text needs 4.5:1, and large text 3:1, against what lies under it composited over a black *and* over a white desktop.
+- **The preview** shows exactly that: `#/home?window=blur` in a browser (any material) shows your theme as glass over a black and white checkerboard. Text that reads on both squares reads on any desktop.
+- **Rough minimums** for the layer under body text, at 4.5:1:
+  - dark text on a light tint: about 0.6;
+  - light text on a dark tint: about 0.65;
+  - a mid-tone tint needs more: lull's night `--sky` under its cream text needs 0.83.
+- The default 0.85 keeps every built-in design's text readable.
+- Layers add up. A card at 0.75 over a backdrop at 0.6 covers 1 − 0.25 × 0.4 = 0.9 of the desktop.
+- `mica` is the gentlest material. `transparent` and `blur` let the desktop through as it is, so check those.
+
+**Staying fast.** The system draws the glass; lull adds nothing that runs while the window is idle. `backdrop-filter` in your CSS blurs the page, not the desktop, and costs work on every frame that scrolls under it: keep it off large areas.
+

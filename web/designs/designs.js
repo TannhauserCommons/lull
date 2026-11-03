@@ -2,7 +2,8 @@
    Classic script, loaded in <head> right after <link id="design-css"> by index.html and the desktop pages.
 
    A package is designs/<id>/ (built in) or /api/themes/<id>/ (the listener's, stored on the hub):
-     theme.json   manifest: id, name, author, api, extends, shell, swatches, modes, description, slots, coverVariety
+     theme.json   manifest: id, name, author, api, extends, shell, swatches, modes, description, slots, coverVariety,
+                  window (what the desktop app shows behind the page: D.windowRequest)
      theme.css    a built-in design's CSS is the `design` cascade layer (it says so itself); a listener's theme is
                   imported into the `user` layer, after the design it extends
      slots/*.html slot templates: static markup with {{field}} placeholders and <lull-part> elements for live parts;
@@ -21,7 +22,7 @@
   D.API = 1;                                     // the theme API this build speaks (docs/themes.md, versioning)
   D.builtIn = ['lull', 'skydeck', 'starlight', 'petal', 'glasshouse'];
   D.fallback = 'lull';
-  /* id -> { id, label, description, author, api, extends, shell, swatches, modes, preview, builtIn, slots, coverVariety }.
+  /* id -> { id, label, description, author, api, extends, shell, swatches, modes, preview, builtIn, slots, coverVariety, window }.
      The same objects for the life of the page (App.designs is this object), filled in from the manifests. */
   D.list = {};
   D.order = [];                                  // built-ins first, then the listener's themes by name
@@ -61,6 +62,7 @@
     m.modes = Array.isArray(raw.modes) && raw.modes.length ? raw.modes : ['day', 'night'];
     m.preview = !!raw.preview; m.slots = Array.isArray(raw.slots) ? raw.slots : [];
     m.coverVariety = !!raw.coverVariety;
+    m.window = raw.window || null;          // as written; windowSpec reads it, and ignores what it doesn't know
     return m;
   }
   function sortOrder() {
@@ -75,7 +77,8 @@
   }
   function raw(m) {
     return { id: m.id, name: m.label, description: m.description, author: m.author, api: m.api, extends: m.extends,
-      shell: m.shell, swatches: m.swatches, modes: m.modes, preview: m.preview, slots: m.slots, coverVariety: m.coverVariety };
+      shell: m.shell, swatches: m.swatches, modes: m.modes, preview: m.preview, slots: m.slots, coverVariety: m.coverVariety,
+      window: m.window };
   }
   /* the built-ins are always known by name (each manifest arrives with its designs/<id>.js) */
   D.builtIn.forEach(function (id) { D.list[id] = { id: id, builtIn: true, label: id, swatches: [], slots: [] }; });
@@ -169,11 +172,73 @@
     }
     root.setAttribute('data-theme', t);
     root.setAttribute('data-theme-pref', themePref);
+    looked();
     return t;
   };
   if (darkOs) {
     var onOs = function () { if (themePref === 'system') D.applyTheme('system'); };
     if (darkOs.addEventListener) darkOs.addEventListener('change', onOs); else if (darkOs.addListener) darkOs.addListener(onOs);
+  }
+
+  /* ---------- the window: what a theme asks the desktop app to show behind the page (docs/themes.md, section 12) ----------
+     theme.json's `window` is "glass", a material, or { material, tint, opacity, day: {...}, night: {...} }. A material is
+     a word or a list in the theme's order; the app grants the first this computer draws without lag
+     (app/src/desktop/glass.rs) and the page hears which: :root[data-window="<material>"], absent while the window is
+     solid. A single word means it and the gentler ones after it (mica, acrylic, blur); "none" ends a list. tint and
+     opacity become --window-tint and --window-opacity, which make --window-backdrop (tokens.css). */
+  D.MATERIALS = ['mica', 'acrylic', 'blur', 'transparent'];
+  var GENTLER = ['mica', 'acrylic', 'blur'];
+  var lessGlass = window.matchMedia ? window.matchMedia('(prefers-reduced-transparency: reduce)') : null;
+  /* { materials, tint, opacity } for a theme in a mode, or null for a solid window */
+  function windowSpec(m, mode) {
+    var w = m && m.window;
+    if (typeof w === 'string') w = { material: w };
+    if (!w || typeof w !== 'object') return null;
+    var own = w[mode] && typeof w[mode] === 'object' ? w[mode] : {};
+    var pick = function (k) { return own[k] != null ? own[k] : w[k]; };
+    var material = pick('material') == null ? 'glass' : pick('material'), list;
+    if (Array.isArray(material)) list = material;
+    else if (material === 'glass') list = GENTLER;
+    else list = GENTLER.indexOf(material) >= 0 ? GENTLER.slice(GENTLER.indexOf(material)) : [material];
+    var stop = list.indexOf('none');
+    list = (stop >= 0 ? list.slice(0, stop) : list).filter(function (x) { return D.MATERIALS.indexOf(x) >= 0; });
+    if (!list.length) return null;
+    var tint = pick('tint'), opacity = pick('opacity');
+    return { materials: list, tint: /^#[0-9a-f]{6}$/i.test(tint) ? tint : null,
+      opacity: typeof opacity === 'number' && opacity >= 0 && opacity <= 1 ? opacity : null };
+  }
+  function shownMode() { return root.getAttribute('data-theme') === 'night' ? 'night' : 'day'; }
+  /* what the desktop app's window_glass takes: null for a solid window */
+  D.windowRequest = function () {
+    var spec = windowSpec(D.list[D.current], shownMode());
+    return spec && { materials: spec.materials, dark: shownMode() === 'night', reduced: !!(lessGlass && lessGlass.matches) };
+  };
+  /* the material the window shows now (from the app), or null: solid, the theme's wallpaper back */
+  D.setWindow = function (material) {
+    if (D.MATERIALS.indexOf(material) >= 0) root.setAttribute('data-window', material);
+    else root.removeAttribute('data-window');
+  };
+  /* the theme's tint and opacity as tokens, for whichever mode shows; a theme without them keeps tokens.css's */
+  function windowTokens() {
+    var spec = windowSpec(D.list[D.current], shownMode());
+    var set = function (k, v) { if (v == null) root.style.removeProperty(k); else root.style.setProperty(k, String(v)); };
+    set('--window-tint', spec && spec.tint);
+    set('--window-opacity', spec && spec.opacity);
+  }
+  /* fn() runs whenever the theme or its mode changed (the desktop app asks for the window again) */
+  var lookFns = [];
+  D.onLook = function (fn) { lookFns.push(fn); };
+  function looked() {
+    windowTokens();
+    lookFns.forEach(function (fn) { fn(); });
+  }
+  if (lessGlass && lessGlass.addEventListener) lessGlass.addEventListener('change', looked);
+  /* #/home?window=blur in a browser shows the page as that material would, over a black and white checkerboard: the
+     worst desktop there is, so text that reads there reads on any (docs/themes.md, section 12) */
+  var preview = /(?:^|[#?&])window=([a-z]+)/.exec(location.hash + '&' + location.search);
+  if (preview && D.MATERIALS.indexOf(preview[1]) >= 0 && !window.__TAURI__) {
+    D.setWindow(preview[1]);
+    root.setAttribute('data-window-preview', '');
   }
 
   /* default brand markup (the `brand` slot's fallback): .brand holds the visible name, .brand__orn an optional
@@ -463,6 +528,7 @@
     root.setAttribute('data-design', designOf(id) || id);
     root.setAttribute('data-shell', m.shell || 'rail');
     if (m.modes && m.modes.length === 1) D.applyTheme(themePref);
+    looked();
   }
   /* everything a theme needs before the app renders with it: its manifest (and its design's), DOMPurify, slot templates */
   var purify = null;

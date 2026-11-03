@@ -17,6 +17,21 @@
 }
 
 @layer base {
+  /* ---------- a see-through window (the desktop app; docs/themes.md, section 12) ----------
+     The app says what the window shows (:root[data-window]): the theme's wallpaper (the page's background and the sky
+     specks) steps aside for --window-backdrop over the desktop. Important in this early layer, so no design's or theme's
+     wallpaper covers the glass; a theme changes what shows through --window-backdrop, and paints its own parts as
+     see-through as it likes. Chromium paints a root opaque when its colour scheme differs from the webview's, so the
+     root keeps the default scheme and the body carries the theme's. */
+  :root[data-window] { background: var(--window-backdrop) !important; color-scheme: normal !important; }
+  :root[data-window] body { background: transparent !important; }
+  :root[data-window][data-theme="day"] body { color-scheme: light; }
+  :root[data-window][data-theme="night"] body { color-scheme: dark; }
+  :root[data-window] .sky-specks { display: none !important; }
+  /* the browser preview (#/home?window=blur): the worst desktop there is, black and white, under the glass */
+  :root[data-window-preview] { background: repeating-conic-gradient(#000 0 25%, #fff 0 50%) 0 0 / 64px 64px !important; }
+  :root[data-window-preview] body { background: var(--window-backdrop) !important; }
+
   /* ---------- fonts (self-hosted, Latin subset, SIL OFL 1.1; licences in fonts/) ---------- */
   @font-face {
     font-family: "Nunito"; font-style: normal; font-weight: 200 1000; font-display: swap;

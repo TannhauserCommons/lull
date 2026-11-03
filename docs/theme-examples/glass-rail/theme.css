@@ -1,0 +1,12 @@
+/* Glass rail: only the side menu shows the desktop (docs/themes.md, section 12). The desktop shows only where every
+   layer down to the window is see-through, so the backdrop is clear (opacity 0 in theme.json) and the other parts are
+   solid. They meet edge to edge: a gap between two parts would show the desktop too. */
+:root[data-window] .app { padding: 0; gap: 0; }
+:root[data-window] :is([data-region="header"], [data-region="content"], [data-region="playerbar"], [data-region="ctx"], [data-region="nowcol"]) {
+  margin: 0; border-radius: 0; box-shadow: none; background: var(--sky);
+}
+/* the rail itself: a tint under its icons and labels, 75% of the panel, so they read over a black or a white desktop */
+:root[data-window] [data-region="rail"] {
+  margin: 0; border: 0; border-radius: 0; box-shadow: none;
+  background: color-mix(in srgb, var(--panel) 75%, transparent);
+}

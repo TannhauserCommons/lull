@@ -6,6 +6,9 @@
 //
 //   node tests/ui/fixture-hub/server.mjs [port]      (default 8790; LULL_WEB=<dir> serves another web/)
 //
+// FIXTURE_THEMES=<dir> serves the theme packages in that folder (<dir>/<id>/theme.json...) as the listener's own, as the
+// hub stores them (docs/themes.md, section 1): GET /api/themes lists them, /api/themes/<id>/<file> serves their files.
+//
 // POST /__fixture/emit { topic, data } sends one server event to every open /api/events stream (with X-Fixture-Client,
 // to that client's streams only).
 // POST /__fixture/art-pending { ids } makes those covers answer 404 "not yet" (no-store), as the hub does while it
@@ -16,6 +19,7 @@
 // hub never count or answer each other's pictures. With no header, the client is '' (one shared scope, as before).
 
 import { createServer } from 'node:http';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import { deflateSync } from 'node:zlib';
 import { dirname, extname, join, normalize } from 'node:path';
@@ -25,6 +29,7 @@ import * as L from './library.mjs';
 const here = dirname(fileURLToPath(import.meta.url));
 const WEB = process.env.LULL_WEB || join(here, '..', '..', '..', 'web');
 const PORT = +(process.argv[2] || process.env.FIXTURE_PORT || 8790);
+const THEMES = process.env.FIXTURE_THEMES || null;
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -108,7 +113,7 @@ const routes = [
   ] })],
   ['GET', /^\/api\/settings$/, () => state.settings],
   ['PATCH', /^\/api\/settings$/, (m, q, body) => { deepMerge(state.settings, body || {}); return state.settings; }],
-  ['GET', /^\/api\/themes$/, () => ({ items: [] })],
+  ['GET', /^\/api\/themes$/, () => ({ items: THEMES ? themeItems() : [] })],
   ['GET', /^\/api\/lastfm$/, () => ({ configured: true, connected: true, user: 'fixture', scrobbling: true, useHistory: true, queued: 0 })],
   ['GET', /^\/api\/youtube$/, () => ({ state: 'off', detail: 'YouTube is off', mode: 'off', ytdlp: { version: null, updated: false, pinnedVersion: null, latest: null, checkedAt: null, error: null }, backoffUntil: null })],
   ['GET', /^\/api\/library\/source$/, () => ({ mode: 'folder', musicDir: '/music', jellyfin: null, files: L.savedIds.length, lastScan: L.NOW - 3600, switching: false })],
@@ -339,6 +344,18 @@ async function audioFile(req, res, t) {
 }
 
 // ---------- server ----------
+/* FIXTURE_THEMES' packages as GET /api/themes lists the hub's: each manifest with the slots its files have */
+function themeItems() {
+  return readdirSync(THEMES, { withFileTypes: true }).filter((d) => d.isDirectory()).flatMap((d) => {
+    const dir = join(THEMES, d.name);
+    try {
+      const m = JSON.parse(readFileSync(join(dir, 'theme.json'), 'utf8'));
+      const slots = existsSync(join(dir, 'slots')) ? readdirSync(join(dir, 'slots')).filter((f) => f.endsWith('.html')).map((f) => f.slice(0, -5)) : [];
+      return [{ ...m, slots, builtIn: false }];
+    } catch { return []; }
+  });
+}
+
 function send(res, status, body) {
   if (status === 204) { res.writeHead(204); return res.end(); }
   const b = Buffer.from(JSON.stringify(body));
@@ -353,10 +370,10 @@ async function readBody(req) {
   try { return s ? JSON.parse(s) : undefined; } catch { return s; }
 }
 
-async function files(req, res, path) {
+async function files(req, res, path, root = WEB) {
   const rel = normalize(decodeURIComponent(path === '/' ? '/index.html' : path)).replace(/^([/\\])+/, '');
   if (rel.startsWith('..')) return send(res, 404, { error: 'not_found', message: 'No such file.' });
-  const f = join(WEB, rel);
+  const f = join(root, rel);
   try {
     if (!(await stat(f)).isFile()) throw new Error('not a file');
     const body = await readFile(f);
@@ -401,6 +418,7 @@ const server = createServer(async (req, res) => {
   }
   if ((m = /^\/api\/(library\/)?stream\/([^/]+)$/.exec(path)) && req.method === 'GET') return audio(req, res, m[2], !!m[1]);
   if ((m = /^\/api\/stream\/([^/]+)$/.exec(path)) && req.method === 'DELETE') return send(res, 204);
+  if (THEMES && (m = /^\/api\/themes\/([a-z0-9-]+)\/(.+)$/.exec(path)) && req.method === 'GET') return files(req, res, '/' + m[2], join(THEMES, m[1]));
   if (path.startsWith('/api/') || path === '/health') {
     const body = req.method === 'GET' || req.method === 'HEAD' ? undefined : await readBody(req);
     for (const [method, re, fn] of routes) {

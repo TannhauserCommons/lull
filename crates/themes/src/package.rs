@@ -60,7 +60,15 @@ pub struct Manifest {
     /// Every cover gets the per-item `data-look` and `--cover-*` hooks.
     #[serde(default)]
     pub cover_variety: bool,
+    /// What the desktop app's window shows behind the page: `"glass"`, a material, or the full
+    /// request (docs/themes.md section 12). Checked by `check_window`, kept as written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<serde_json::Value>,
 }
+
+/// What a theme may ask to show behind the window, from the most to the least see-through choice it
+/// makes. The app grants the first in the theme's list this computer can do (app/src/desktop/glass.rs).
+pub const MATERIALS: [&str; 5] = ["mica", "acrylic", "blur", "transparent", "none"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -196,7 +204,70 @@ fn check_manifest(m: &Manifest, origin: Origin) -> Result<()> {
     if m.modes.is_empty() || (m.modes.len() == 2 && m.modes[0] == m.modes[1]) || m.modes.len() > 2 {
         return Err(bad("theme.json: modes is [\"day\"], [\"night\"] or both"));
     }
+    if let Some(window) = &m.window {
+        check_window(window).map_err(|e| bad(format!("theme.json: {e}")))?;
+    }
     Ok(())
+}
+
+/// `window`: `"glass"`, a material, or `{ material, tint, opacity, day, night }` where `day` and
+/// `night` hold the same three fields for that mode. Every unknown word is refused by name.
+fn check_window(window: &serde_json::Value) -> std::result::Result<(), String> {
+    use serde_json::Value;
+    match window {
+        Value::String(word) if word == "glass" || MATERIALS.contains(&word.as_str()) => Ok(()),
+        Value::String(word) => Err(format!(
+            "window {word:?} is not \"glass\" or a material ({})",
+            MATERIALS.join(", ")
+        )),
+        Value::Object(fields) => {
+            for (key, value) in fields {
+                match key.as_str() {
+                    "day" | "night" => check_window_mode(key, value)?,
+                    _ => check_window_field("window", key, value)?,
+                }
+            }
+            Ok(())
+        }
+        _ => Err("window is \"glass\", a material, or an object (docs/themes.md)".into()),
+    }
+}
+
+fn check_window_mode(mode: &str, value: &serde_json::Value) -> std::result::Result<(), String> {
+    let fields = value
+        .as_object()
+        .ok_or_else(|| format!("window.{mode} is an object of material, tint and opacity"))?;
+    fields
+        .iter()
+        .try_for_each(|(key, value)| check_window_field(&format!("window.{mode}"), key, value))
+}
+
+fn check_window_field(at: &str, key: &str, value: &serde_json::Value) -> std::result::Result<(), String> {
+    use serde_json::Value;
+    let material = |v: &Value| match v.as_str() {
+        Some(word) if MATERIALS.contains(&word) => Ok(()),
+        Some(word) => Err(format!("{at}.material {word:?} is not one of {}", MATERIALS.join(", "))),
+        None => Err(format!("{at}.material is a material or a list of them")),
+    };
+    match (key, value) {
+        ("material", Value::Array(list)) if list.is_empty() || list.len() > MATERIALS.len() => {
+            Err(format!("{at}.material lists 1 to {} materials", MATERIALS.len()))
+        }
+        ("material", Value::Array(list)) => list.iter().try_for_each(material),
+        ("material", v) => material(v),
+        ("tint", Value::String(c)) if is_hex_colour(c) => Ok(()),
+        ("tint", _) => Err(format!("{at}.tint is a #rrggbb colour")),
+        ("opacity", Value::Number(n)) if n.as_f64().is_some_and(|o| (0.0..=1.0).contains(&o)) => Ok(()),
+        ("opacity", _) => Err(format!("{at}.opacity is a number from 0 (clear) to 1 (solid tint)")),
+        _ => {
+            let known = if at == "window" {
+                "material, tint, opacity, day, night"
+            } else {
+                "material, tint, opacity"
+            };
+            Err(format!("{at} has no field {key:?} ({known})"))
+        }
+    }
 }
 
 fn is_hex_colour(s: &str) -> bool {
@@ -510,6 +581,37 @@ mod tests {
         files
     }
 
+    /// A package folder as the hub takes it, by path inside the folder.
+    fn read_folder(dir: &std::path::Path) -> Files {
+        let mut files = Files::new();
+        let mut stack = vec![dir.to_path_buf()];
+        while let Some(d) = stack.pop() {
+            for e in std::fs::read_dir(&d).into_iter().flatten().flatten() {
+                if e.path().is_dir() {
+                    stack.push(e.path());
+                } else if let Ok(rel) = e.path().strip_prefix(dir) {
+                    files.insert(
+                        rel.to_string_lossy().replace('\\', "/"),
+                        std::fs::read(e.path()).unwrap_or_default(),
+                    );
+                }
+            }
+        }
+        files
+    }
+
+    #[test]
+    fn the_glass_examples_in_the_theme_docs_are_packages_the_hub_takes() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/theme-examples");
+        for id in ["glass-window", "glass-rail", "glass-playerbar"] {
+            let checked = validate(&read_folder(&root.join(id)), Origin::Listener);
+            assert!(
+                checked.as_ref().is_ok_and(|m| m.id == id && m.window.is_some()),
+                "{id}: {checked:?}"
+            );
+        }
+    }
+
     fn refused(files: &Files) -> String {
         match validate(files, Origin::Listener) {
             Err(Error::BadRequest(m)) => m,
@@ -521,21 +623,7 @@ mod tests {
     fn the_five_designs_are_valid_packages_whose_manifests_list_their_slots() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../web/designs");
         for id in BUILT_IN {
-            let dir = root.join(id);
-            let mut files = Files::new();
-            let mut stack = vec![dir.clone()];
-            while let Some(d) = stack.pop() {
-                for e in std::fs::read_dir(&d).into_iter().flatten().flatten() {
-                    if e.path().is_dir() {
-                        stack.push(e.path());
-                    } else if let Ok(rel) = e.path().strip_prefix(&dir) {
-                        files.insert(
-                            rel.to_string_lossy().replace('\\', "/"),
-                            std::fs::read(e.path()).unwrap_or_default(),
-                        );
-                    }
-                }
-            }
+            let files = read_folder(&root.join(id));
             let stored = serde_json::from_slice::<Manifest>(&files["theme.json"]);
             let checked = validate(&files, Origin::BuiltIn);
             assert!(
@@ -697,5 +785,58 @@ mod tests {
         let mut files = package("", &[]);
         files.insert("../escape.css".into(), Vec::new());
         assert!(refused(&files).contains("plain relative path"));
+    }
+
+    #[test]
+    fn a_window_request_is_checked_and_an_unknown_material_refused_by_name() {
+        let with_window = |window: &str| {
+            let mut files = package("", &[]);
+            let manifest = format!(
+                r##"{{ "id": "mine", "name": "M", "api": 1, "shell": "rail", "swatches": ["#ffffff", "#000000", "#123456", "#abcdef"], "modes": ["day", "night"], "window": {window} }}"##
+            );
+            files.insert("theme.json".into(), manifest.into_bytes());
+            files
+        };
+        for fine in [
+            r#""glass""#,
+            r#""mica""#,
+            r##"{ "material": ["acrylic", "blur"], "tint": "#f4f1ff", "opacity": 0.6, "night": { "material": "mica", "tint": "#14101f", "opacity": 1 } }"##,
+            r#"{ "day": { "opacity": 0 } }"#,
+        ] {
+            let checked = validate(&with_window(fine), Origin::Listener);
+            assert!(
+                checked.as_ref().is_ok_and(|m| m.window.is_some()),
+                "{fine}: {checked:?}"
+            );
+        }
+        for (wrong, says) in [
+            (
+                r#""frosty""#,
+                r#"window "frosty" is not "glass" or a material (mica, acrylic, blur, transparent, none)"#,
+            ),
+            (
+                r#"{ "material": "frosty" }"#,
+                r#"window.material "frosty" is not one of mica"#,
+            ),
+            (
+                r#"{ "night": { "material": ["mica", "frosty"] } }"#,
+                r#"window.night.material "frosty""#,
+            ),
+            (r#"{ "material": [] }"#, "lists 1 to 5 materials"),
+            (r#"{ "tint": "white" }"#, "window.tint is a #rrggbb colour"),
+            (
+                r#"{ "day": { "opacity": 1.5 } }"#,
+                "window.day.opacity is a number from 0",
+            ),
+            (r#"{ "blur": 8 }"#, r#"window has no field "blur""#),
+            (
+                r#"{ "day": { "day": {} } }"#,
+                r#"window.day has no field "day" (material, tint, opacity)"#,
+            ),
+            ("true", "window is \"glass\", a material, or an object"),
+        ] {
+            let message = refused(&with_window(wrong));
+            assert!(message.contains(says), "{wrong}: {message}");
+        }
     }
 }

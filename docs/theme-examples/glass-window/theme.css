@@ -1,0 +1,10 @@
+/* Glass window: the whole window is glass (docs/themes.md, section 12). lull lays the tint from theme.json over the
+   desktop where the wallpaper was; this theme lets every tray show it too, and keeps the page and its cards as
+   translucent paper, so their text keeps its contrast over any desktop. Without glass, the rules don't apply and
+   the window looks like Lull. */
+:root[data-window] :is([data-region="rail"], [data-region="header"], [data-region="playerbar"], [data-region="ctx"], [data-region="nowcol"]) {
+  background: color-mix(in srgb, var(--panel) 45%, transparent);
+}
+:root[data-window] [data-region="content"] { background: transparent; }
+/* translucent cards over glass: paper at 75%, enough for body text over a black or a white desktop */
+:root[data-window] .main > .view { background: color-mix(in srgb, var(--panel) 75%, transparent); }

@@ -1,0 +1,13 @@
+/* Glass player bar: only the player bar shows the desktop (docs/themes.md, section 12), the same way as the Glass
+   rail example: a clear backdrop, every other part solid and meeting edge to edge. Its last material is clear glass,
+   so the bar's own tint carries the contrast on its own. */
+:root[data-window] .app { padding: 0; gap: 0; }
+:root[data-window] :is([data-region="rail"], [data-region="header"], [data-region="content"], [data-region="ctx"], [data-region="nowcol"]) {
+  margin: 0; border: 0; border-radius: 0; box-shadow: none; background: var(--sky);
+}
+:root[data-window] [data-region="playerbar"] {
+  margin: 0; border-radius: 0; box-shadow: none;
+  background: color-mix(in srgb, var(--tray) 70%, transparent);
+}
+/* Lull draws the bar's light inner window with its region title: paper at 75%, for the song's title over any desktop */
+:root[data-window] [data-region="playerbar"] .region-title { background: color-mix(in srgb, var(--panel) 75%, transparent); }

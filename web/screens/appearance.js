@@ -1,5 +1,6 @@
 /* screens/appearance.js.
-   Settings > Appearance: design, theme, motion, text size and the layout's reset, all per device (App.setPref); the
+   Settings > Appearance: design, theme, motion, text size, the desktop app's see-through window (LullDesktop.glass) and
+   the layout's reset, all per device (App.setPref); the
    listener's own themes (import by drag and drop, export, delete) and the way into Theme Studio (designs/studio.js,
    ADR-0004, docs/themes.md); Classic mode's group, which screens/skins.js builds (App.classicSettings). Live reload
    of a stored theme runs here too.
@@ -18,6 +19,47 @@
   custom['device.theme'] = { get: function () { return App.prefs().theme; }, set: function (v) { App.setPref('theme', v === 'system' ? null : v); } };
   custom['device.motion'] = { get: function () { return App.prefs().motion; }, set: function (v) { App.setPref('motion', v); } };
   custom['device.textSize'] = { get: function () { return App.prefs().textSize; }, set: function (v) { App.setPref('textSize', v); } };
+
+  /* the desktop app's see-through window (app/src/desktop/glass.rs): the listener's switch, stored by the app on this
+     computer, and what the window shows now. An app older than the switch has no row. desktop.js loads after this file,
+     so the app is looked up when the row is first drawn. */
+  var desk;                                        // LullDesktop in the app, null elsewhere (undefined: not looked yet)
+  var glassOn = null;                              // the switch, read from the app once per page
+  custom['desktop.glass'] = { get: function () { return glassOn; }, set: function (v) {
+    var before = glassOn; glassOn = v;
+    desk.setSettings({ glass: v }).then(null, function (err) {
+      glassOn = before; repaintGlass();
+      App.toast('Couldn\'t change that: ' + (err && err.message || err), { kind: 'error' });
+    });
+  } };
+  function lookUpDesk() {
+    var D = window.LullDesktop;
+    desk = D && D.inWrapper && D.glass ? D : null;
+    if (desk) desk.glass.on(function () { repaintGlass(); });
+  }
+  var MATERIAL = { mica: 'Mica', acrylic: 'acrylic glass', blur: 'frosted glass', transparent: 'clear glass' };
+  function glassHelp() {
+    var g = desk.glass.state, name = App.designs[Designs.current].label;
+    if (g && g.material) return 'Your desktop shows through the window, behind ' + MATERIAL[g.material] + '.';
+    switch (g && g.held) {
+      case 'off': return 'Off: the window stays solid, with ' + name + '\'s own background.';
+      case 'system': return 'Transparency effects are off on this computer, so the window stays solid.';
+      case 'unsupported': return 'This computer can\'t draw ' + name + '\'s glass smoothly, so the window stays solid.';
+      case 'restart': return 'Restart lull to see your desktop through the window.';
+      default: return 'Lets a theme show your desktop through the window. ' + name + ' keeps it solid.';
+    }
+  }
+  function glassRow() {
+    if (desk === undefined) lookUpDesk();
+    if (!desk) return '';
+    if (glassOn === null) {
+      desk.settings().then(function (d) { glassOn = d.glass == null ? false : d.glass; if (d.glass == null) desk = null; repaintGlass(); },
+        function (err) { console.error('lull: desktop settings', err); });
+      return html`<div id="sys-glass"></div>`;
+    }
+    return html`<div id="sys-glass">${K.switchRow('desktop.glass', 'See-through window', glassHelp())}</div>`;
+  }
+  function repaintGlass() { if (onAppearance()) K.repaint('#sys-glass', desk ? K.switchRow('desktop.glass', 'See-through window', glassHelp()) : ''); }
   /* design preview card: the package's screenshot (assets/preview-{day,night}.webp, when d.preview) over a tiny
      picture of the shell (rail / topnav / dock) in its swatches, which shows while the image loads or when there is none */
   function designCard(name, on) {
@@ -50,6 +92,7 @@
     return html`<div class="sys-row sys-row--stack"><div class="sys-row__text"><span class="sys-row__label" id="sys-design-l">Design</span><span class="sys-row__help">The whole look: colours, type, window chrome and layout. Applies at once on this device.</span></div>
         <div class="sys-row__ctl"><div class="sys-designs" role="radiogroup" aria-labelledby="sys-design-l" data-key="device.design">${App.designOrder.map(function (n) { return designCard(n, n === p.design); })}</div></div></div>
       ${row('Theme', 'Match system follows your device. T switches day and night anywhere.', choice('device.theme', 'Theme', [['system', 'Match system'], ['day', 'Day'], ['night', 'Night']]))}
+      ${glassRow()}
       ${row('Motion', 'Reduced swaps slides and loops for quick fades. Full ignores the system setting.', choice('device.motion', 'Motion', [['system', 'Match system'], ['reduce', 'Reduced'], ['full', 'Full']]))}
       ${row('Text size', 'Scales all text and spacing on this device.', choice('device.textSize', 'Text size', [[90, 'Smaller'], [100, 'Default'], [112, 'Larger'], [125, 'Largest']], 'sys-seg--4'))}
       ${group('layout')}

@@ -1,0 +1,12 @@
+{
+  "id": "glass-playerbar",
+  "name": "Glass player bar",
+  "author": "lull",
+  "api": 1,
+  "extends": "lull",
+  "shell": "rail",
+  "swatches": ["#e4def9", "#f7f4ff", "#445796", "#2a0809"],
+  "modes": ["day", "night"],
+  "description": "Only the player bar is glass.",
+  "window": { "material": ["acrylic", "blur", "transparent"], "opacity": 0 }
+}

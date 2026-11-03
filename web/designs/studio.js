@@ -35,7 +35,9 @@
     var base = stored ? stored.extends : (App.designs[Designs.current].builtIn ? Designs.current : App.designs[Designs.current].extends) || Designs.fallback;
     S = { id: stored ? id : null, dirty: false, tab: 'tokens', route: 'home', phone: false, frames: [],
       draft: { name: stored ? stored.label : 'My ' + App.designs[base].label, extends: base, shell: stored ? stored.shell : App.designs[base].shell,
-        modes: stored ? stored.modes.slice() : ['day', 'night'], description: stored ? stored.description : '', author: stored ? stored.author : '', css: '' } };
+        modes: stored ? stored.modes.slice() : ['day', 'night'], description: stored ? stored.description : '', author: stored ? stored.author : '', css: '',
+        /* what Studio doesn't edit stays as the theme has it */
+        coverVariety: !!(stored && stored.coverVariety), window: stored ? stored.window : null } };
     var sheet = App.openSheet({ title: 'Theme Studio', wide: true, className: 'studio-sheet', body: studioBody(), foot: studioFoot(),
       onMount: function (el) {
         el.style.width = 'min(1600px, 100%)'; el.style.maxWidth = 'none'; el.style.height = 'min(940px, calc(100dvh - 24px))';
@@ -364,8 +366,11 @@
   }
   function manifest(id) {
     var d = S.draft, day = frameVars(d.modes[0]) || frameVars('day');
-    return { id: id, name: d.name.trim() || 'My theme', author: d.author, api: Designs.API, extends: d.extends || null, shell: d.shell,
+    var m = { id: id, name: d.name.trim() || 'My theme', author: d.author, api: Designs.API, extends: d.extends || null, shell: d.shell,
       swatches: ['sky', 'panel', 'accent-ui', 'fg-panel'].map(function (n) { return hex(day, n); }), modes: d.modes, description: d.description };
+    if (d.coverVariety) m.coverVariety = true;
+    if (d.window) m.window = d.window;
+    return m;
   }
   function save() {
     if (!S) return Promise.resolve(null);

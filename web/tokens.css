@@ -127,4 +127,16 @@
     /* sizes */
     --rail: 232px; --rail-icons: 72px; --ctx: 320px; --bar-h: 88px; --mini-h: 64px; --tab-h: 60px; --hit: 44px;
   }
+
+  /* ---------- 4.6 the window (docs/themes.md, section 12) ----------
+     While the desktop app's window is glass (:root[data-window]), --window-backdrop is what lays over the desktop where
+     the wallpaper was: the tint at its opacity. theme.json's window sets --window-tint and --window-opacity (designs.js);
+     a theme may also set --window-backdrop itself (a gradient, a pattern, transparent). The one translucent token: its
+     text is checked over a black and a white desktop (the preview, section 12). 0.85 of the theme's own --sky keeps
+     every built-in design's --fg-sky at 4.5:1 over either. */
+  :root {
+    --window-tint: var(--sky);
+    --window-opacity: .85;
+    --window-backdrop: color-mix(in srgb, var(--window-tint) calc(var(--window-opacity) * 100%), transparent);
+  }
 }
