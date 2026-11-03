@@ -414,12 +414,14 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
     rows when the window or a column resizes.
   - **Long lists cost what short ones do.** In a list of more than 60 rows (a playlist, the queue, an album's discs and
     History's days, each counted as one list with `ui.lazyRows`, saved, liked and downloaded songs, search results, an
-    import's lines, an outside playlist's songs), a row past the first 24 has its contents only within a screen of view
-    (`ui.row`, `ui.lazyRow`):
+    import's lines, an outside playlist's songs), a row has its contents only within a screen of view (`ui.row`,
+    `ui.lazyRow`); the first 24 are drawn at once, as the list opens, and then go the same way:
     - The `<li>` with its classes, data, label and tabindex is always there, so selection, the keyboard, screen
       readers, dragging, `App.syncRows` and scrolling to a song work on every row. Away from the screen it is an empty
-      block as tall as the row's min-height (components.css `li[data-fill]:empty`): as the row's grid, with
-      `content-visibility`, each held ~10 KB of grid sizing and a paint layer of its own.
+      block (components.css `li[data-fill]:empty`) holding the height it had drawn, or, never drawn, a drawn row's of
+      its list (`holdPlace`), so the list is as long as it will be and a jump ("Playing from", Back) lands where it
+      stays. As the row's grid, with `content-visibility`, an empty row held ~10 KB of grid sizing and a paint layer of
+      its own; a long list's rows have no `content-visibility`, which would report an estimated height.
     - Its contents are made from the state of the moment (likes, downloads, saved, playing) each time it comes near,
       and dropped once it is well away; a focused, dragged or menu-open row keeps them. Markup with lazy rows must
       reach the page in the task that made it (`pruneFills`). Reusing the contents of rows that left instead, updated

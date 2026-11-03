@@ -149,7 +149,7 @@
     if (old.nodeName === 'IMG' && old.getAttribute('src') === want.getAttribute('src')) return;   // same picture: leave it be
     if (old.nodeName === 'IMG' && old.hasAttribute('data-pic') && old.getAttribute('data-pic') === want.getAttribute('data-pic')) return;   // a cover's size is the fitter's
     patchAttrs(old, want);
-    if (want.hasAttribute('data-fill')) { watchRow(old); if (old.firstChild) fillRow(old); return; }   // a lazy row: see ui.row
+    if (want.hasAttribute('data-fill')) { watchRow(old); if (old.firstChild) fillRow(old); else holdPlace(old); return; }   // a lazy row: see ui.row
     if (old.nodeName === 'TEXTAREA') { if (old !== document.activeElement) old.value = want.value; return; }
     patchChildren(old, want);
     if (old.nodeName === 'SELECT') old.value = want.value || (want.querySelector('option[selected]') || {}).value || old.value;
@@ -1098,16 +1098,18 @@
      row as before; its contents (~40 elements and five icons a track row, the bulk of a long list's memory: an 835-song
      playlist with its queue open held 200k DOM nodes) are made from the state of the moment when it comes within a
      screen or so of view, and dropped again once it is well out of it.
-     ui.row(open, inner, lazy): `open` is the row's start tag without its ">", `inner()` its contents. lazy: draw them
-     only near the screen (ui.lazyRow(n, count) says which rows of a list should be). */
+     ui.row(open, inner, lazy): `open` is the row's start tag without its ">", `inner()` its contents. lazy (what
+     ui.lazyRow(n, count) says of a list's row): 'now', a long list's row drawn at once, then like the others; 'near',
+     drawn only near the screen; falsy, a short list's row, always drawn. Every row of a long list is watched the same
+     way, so none is ever skipped by content-visibility and each measures as it is drawn (holdPlace). */
   var fills = new Map(), fillSeq = 0, fillsChecked = 0, LAZY_MIN = 60, LAZY_HEAD = 24;
   ui.row = function (open, inner, lazy) {
     if (!lazy) return html`${open}>${inner()}</li>`;
     var k = String(++fillSeq); fills.set(k, inner);
-    return html`${open} data-fill="${k}"></li>`;
+    return lazy === 'near' ? html`${open} data-fill="${k}"></li>` : html`${open} data-fill="${k}">${inner()}</li>`;
   };
-  /* the first rows of a short list, or of any list, are drawn at once: they are the ones on screen when it opens */
-  ui.lazyRow = function (n, count) { return count > LAZY_MIN && n >= LAZY_HEAD; };
+  /* a long list's first rows are drawn at once: they are the ones on screen when it opens */
+  ui.lazyRow = function (n, count) { return count > LAZY_MIN && (n >= LAZY_HEAD ? 'near' : 'now'); };
   /* the same over several lists that read as one (an album's discs, History's days): next() for each row in turn */
   ui.lazyRows = function (count) { var n = 0; return function next() { return ui.lazyRow(n++, count); }; };
   function fillRow(li) {
@@ -1116,6 +1118,23 @@
     var tpl = document.createElement('template');
     tpl.innerHTML = String(inner());
     if (li.firstChild) patchChildren(li, tpl.content); else li.appendChild(tpl.content);
+  }
+  /* An empty row holds the height it has drawn, so a list away from the screen is as long as it is drawn, and a jump
+     (to the playing song, back to a spot) lands where it stays: the height it had when it left, or, never drawn, the
+     height of a drawn row of its list. The design's min-height it had before was 2-4 px short of a drawn row in some
+     designs, which moved a row jumped to as the rows above it were drawn. A row whose title wraps on a phone is a line
+     taller than its list's: that is known only once it has been drawn. Inline, since nothing in CSS knows it; patchNode
+     puts it back after a re-render's attributes. */
+  var heldHeight = new WeakMap();
+  function hold(li, h) { if (h) heldHeight.set(li, h); }   // a hidden row (an import's filter) measures 0: nothing to hold
+  function holdPlace(li) { var h = heldHeight.get(li); if (h) li.style.height = h + 'px'; }
+  function listRowHeight(li, drawn) {
+    var list = li.parentNode;
+    if (!drawn.has(list)) {
+      var first = list.querySelector(':scope > li[data-fill].' + CSS.escape(li.classList[0]) + ':not(:empty)');
+      drawn.set(list, first ? first.getBoundingClientRect().height : 0);
+    }
+    return drawn.get(list);
   }
   /* a row keeps its contents while something in it has focus, is being dragged or has its menu open */
   function inUse(li) { return li.contains(document.activeElement) || li.classList.contains('is-dragging') || !!li.querySelector('[aria-expanded="true"]'); }
@@ -1137,11 +1156,13 @@
     var w = watchers.get(root);
     if (!w) {
       w = new IntersectionObserver(function (entries) {
+        var drawn = new Map();   // list -> its drawn row height, read once a callback (layout is current here)
         entries.forEach(function (e) {
           var li = e.target;
           if (!li.hasAttribute('data-fill')) return;
-          if (e.isIntersecting) { if (!li.firstChild) fillRow(li); }
-          else if (li.firstChild && !inUse(li)) li.textContent = '';
+          if (e.isIntersecting) { if (!li.firstChild) { li.style.removeProperty('height'); fillRow(li); } }
+          else if (li.firstChild) { if (!inUse(li)) { hold(li, e.boundingClientRect.height); li.textContent = ''; holdPlace(li); } }
+          else if (!heldHeight.has(li)) { hold(li, listRowHeight(li, drawn)); holdPlace(li); }
         });
       }, { root: root, rootMargin: '100% 0px' });
       watchers.set(root, w);

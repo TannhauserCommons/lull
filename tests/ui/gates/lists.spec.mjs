@@ -3,7 +3,7 @@
 // as it is now. On a fixture hub of its own: these change likes, downloads and a playlist's order.
 
 import { expect, test as base } from '@playwright/test';
-import { ids, openScreen, ownHub, settle } from './lib.mjs';
+import { designs, ids, openScreen, ownHub, settle } from './lib.mjs';
 
 const test = base.extend({
   hub: [async ({}, use) => { const hub = await ownHub(); await use(hub); hub.close(); }, { scope: 'worker' }],
@@ -119,24 +119,45 @@ test('the queue drags a song far down it', async ({ page }) => {
   await expect.poll(async () => (await queue()).indexOf(before[600]), 'where the song landed in the queue').toBe(603);
 });
 
-test('the playing song is shown where it plays from, with its bars and no others', async ({ page }) => {
-  await openScreen(page, `/playlist/${ids.longPlaylist}`);
-  const row = rows(page).nth(900);
-  await row.scrollIntoViewIfNeeded();
-  await frames(page);
-  const id = await row.getAttribute('data-track-id');
-  await row.locator('.trow__play').click({ force: true });
-  await expect.poll(() => page.evaluate(() => App.player.currentId())).toBe(id);
-  await page.evaluate(() => { location.hash = '/home'; });
-  await settle(page);
-  await page.evaluate(() => App.goPlaying());
-  await expect.poll(() => page.evaluate((id) => {
-    const li = document.querySelector(`#view .lib-pl-list > li[data-track-id="${id}"]`), r = li && li.getBoundingClientRect();
-    return !!li && li.classList.contains('is-playing') && !!li.firstElementChild && r.top >= 0 && r.bottom <= innerHeight && document.activeElement === li;
-  }, id), 'the playing row: lit, drawn, on screen and focused').toBe(true);
-  expect(await page.locator('#view .trow .trow__num > .eq').count(), 'playing bars in the list').toBe(1);
-  expect(await mismatches(page), 'drawn rows showing another song').toEqual([]);
-});
+// "Playing from" opens the playlist at a song 900 rows down: it lands lit, drawn, focused and fully in sight (not under
+// the header, the player bar or the tab bar), and stays there while the rows around it are drawn, which needs every
+// empty row to hold the height it has drawn (app.js holdPlace). In every design, on a laptop and a phone.
+for (const design of designs) {
+  for (const [size, use] of Object.entries({ laptop: { viewport: { width: 1440, height: 900 } }, phone: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } })) {
+    test.describe(`${design}, ${size}`, () => {
+      test.use(use);
+      test('the playing song is shown where it plays from, and stays put', async ({ page }) => {
+        await openScreen(page, `/playlist/${ids.longPlaylist}`, { design });
+        if (size === 'laptop') {
+          const heights = await rows(page).evaluateAll((lis) => ({
+            drawn: [...new Set(lis.filter((li) => li.firstElementChild).map((li) => Math.round(li.getBoundingClientRect().height)))],
+            empty: [...new Set(lis.filter((li) => !li.firstElementChild).map((li) => Math.round(li.getBoundingClientRect().height)))],
+          }));
+          expect(heights.empty, 'an empty row holds a drawn row\'s height').toEqual(heights.drawn);
+        }
+        const id = await rows(page).nth(900).getAttribute('data-track-id');
+        await page.evaluate((i) => { const lis = [...document.querySelectorAll('#view .lib-pl-list > li[data-track-id]')]; App.player.playList(lis.map((li) => li.getAttribute('data-track-id')), i); App.player.pause(); }, 900);
+        await expect.poll(() => page.evaluate(() => App.player.currentId())).toBe(id);
+        await page.evaluate(() => { location.hash = '/home'; });
+        await settle(page);
+        await page.evaluate(() => App.goPlaying());
+        const row = page.locator(`${LIST} > li[data-track-id="${id}"]`);
+        await expect(row).toHaveClass(/is-playing/);
+        await frames(page, 30);   // a design's own easing on scroll (glasshouse's, 8 px, on main too) has finished
+        const at = (r) => r.evaluate((li) => {
+          const b = li.getBoundingClientRect(), x = b.left + b.width / 2, seen = (y) => li.contains(document.elementFromPoint(x, y));
+          return { top: Math.round(b.top), inSight: seen(b.top + 2) && seen(b.bottom - 2), drawn: !!li.firstElementChild, focused: document.activeElement === li };
+        });
+        const first = await at(row);
+        expect(first, 'where the playing row lands').toEqual({ top: first.top, inSight: true, drawn: true, focused: true });
+        await frames(page, 20);
+        expect((await at(row)).top, 'the playing row stays where it landed').toBe(first.top);
+        expect(await page.locator('#view .trow .trow__num > .eq').count(), 'playing bars in the list').toBeLessThanOrEqual(1);
+        expect(await mismatches(page), 'drawn rows showing another song').toEqual([]);
+      });
+    });
+  }
+}
 
 test('likes and downloads made while a row is away show when it is drawn', async ({ page }) => {
   await openScreen(page, `/playlist/${ids.longPlaylist}`);

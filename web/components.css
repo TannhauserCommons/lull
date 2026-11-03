@@ -330,12 +330,13 @@ button.src-badge::after { content: ""; position: absolute; inset: -10px -2px; }
 .tlist { container: tlist / inline-size; list-style: none; padding: 0; margin: 0; display: grid; gap: 2px; }
 /* a row off screen skips layout and paint (it keeps its last height), so a long list costs only its visible rows when
    a column is dragged or the window resizes: a 100-row History went from ~16 to ~4 ms a frame */
-.tlist > .trow, li[data-fill] { content-visibility: auto; contain-intrinsic-size: auto 56px; }
+.tlist > .trow:not([data-fill]) { content-visibility: auto; contain-intrinsic-size: auto 56px; }
 /* a long list's row away from the screen is an empty <li> (ui.row) that only holds its place, a plain block as tall
-   as the row's min-height (what a drawn row measures in every design, give or take 2 px). As the row's grid each kept
-   ~10 KB of track sizing (50 MB on a 5,000-song playlist); with content-visibility and position a paint layer, clip
-   and transform nodes of its own (another 7 MB) */
-li[data-fill]:empty { display: block; position: static; content-visibility: visible; }
+   as it is drawn (app.js holdPlace). As the row's grid each kept ~10 KB of track sizing (50 MB on a 5,000-song
+   playlist); with content-visibility and position a paint layer, clip and transform nodes of its own (another 7 MB).
+   A lazy row is never skipped by content-visibility: only rows near the screen are drawn anyway, and a skipped one
+   reports an estimated height, not the one its place is held at */
+li[data-fill]:empty { display: block; position: static; }
 .trow {
   --art: 48px;
   position: relative; display: grid; align-items: center; column-gap: var(--sp-3);

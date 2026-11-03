@@ -1887,7 +1887,7 @@
       <span class="lib-imp__status">${acts}</span>
       ${st.finding === s.pos ? findPanel(s, st) : ''}
     `;
-    }, lazy && st.finding !== s.pos);
+    }, st.finding === s.pos ? false : lazy);
   }
   function findPanel(s, st) {
     var results;
