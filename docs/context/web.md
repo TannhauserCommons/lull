@@ -374,6 +374,13 @@ Copies that don't line up (other masters, edits, loops) never switch mid-song: S
     record. It's reached from "Stop waiting" (Activity, and the waiting save button's toast) and "Remove this save" on
     a failed row. Skip in the choose prompt moves on, and the engine's `letGo` stops the transfer.
 
+## Bare songs
+
+`ui.cover` (and `ui.mosaic`) ask about every song they draw that isn't saved and has no pictured album: once a
+session, batched (`POST /api/catalog/resolve`, 200 at most). The answer's entities, and `catalog.tracks` events for
+songs the hub resolves later, are absorbed; covers then repaint (route and player bar, at most twice a second). So a
+song from any path, an import's line or a Last.fm-only result, shows the catalog's spelling and cover without a reload.
+
 ## Outside playlists
 
 Search's Playlists section (`discover.js`: `playlists` rows in the answer and `search.more`, a shelf after albums; a

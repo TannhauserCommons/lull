@@ -448,8 +448,36 @@
 
   /* cover recipe .c1-.c8 by a stable hash of the album (or artist / playlist) id */
   App.coverClass = function (key) { return 'c' + (hash(String(key)) % 8 + 1); };
+  /* songs drawn without a picture (an import's line, a playlist song lull has no match for, a Last.fm-only result,
+     file tags): each is asked about once a session (POST /api/catalog/resolve, discovery.md#bare-songs). The answer's
+     entities, and `catalog.tracks` for the songs the hub resolves later, bring the catalog's song and cover; covers then
+     repaint. Every cover goes through here, so no screen can show a song lull could picture without asking. */
+  var resolveAsked = new Set(), resolveWaiting = [], resolveTimer = null, RESOLVE_BATCH = 200;
+  function askResolve(t) {
+    if (!t || !/^t-/.test(t.id || '') || resolveAsked.has(t.id) || App.isSaved(t.id)) return;
+    var a = t.albumId && M.album(t.albumId);
+    if (a && a.art) return;
+    resolveAsked.add(t.id); resolveWaiting.push(t.id);
+    if (!resolveTimer) resolveTimer = setTimeout(sendResolve, 300);
+  }
+  function sendResolve() {
+    resolveTimer = null;
+    var batch = resolveWaiting.splice(0, RESOLVE_BATCH);
+    if (resolveWaiting.length) resolveTimer = setTimeout(sendResolve, 300);
+    if (!batch.length) return;
+    M.api('/api/catalog/resolve', { method: 'POST', body: { trackIds: batch } }).then(function (res) {
+      if (res && res.entities && Object.keys(res.entities.tracks || {}).length) repaintCovers();
+    }, function () { batch.forEach(function (id) { resolveAsked.delete(id); }); });   // asked again when next drawn
+  }
+  /* the route and the player bar again, at most twice a second, once entities brought covers */
+  var repaintTimer = null;
+  function repaintCovers() {
+    if (repaintTimer) return;
+    repaintTimer = setTimeout(function () { repaintTimer = null; App.refresh(); renderBar(); }, 500);
+  }
   ui.cover = function (item, size, opts) {
     opts = opts || {}; size = size == null ? 48 : size;
+    if (item && typeof item === 'object' && item.albumId) askResolve(item);
     var key = typeof item === 'string' ? item : (item.albumId || item.id);
     var px = typeof size === 'number';
     var cls = 'cover ' + App.coverClass(key) + (px && size < 40 ? ' cover--xs' : px && size <= 64 ? ' cover--thumb' : '') +
@@ -522,7 +550,10 @@
      frame every design styles, with one cover filling it. */
   ui.mosaic = function (trackIds, size, label, own) {
     var seen = {}, keys = [];
-    trackIds.forEach(function (id) { var t = M.track(id); if (t && !seen[t.albumId] && keys.length < 4) { seen[t.albumId] = 1; keys.push(t.albumId); } });
+    trackIds.forEach(function (id) {
+      var t = M.track(id); if (!t || seen[t.albumId] || keys.length >= 4) return;
+      seen[t.albumId] = 1; keys.push(t.albumId); askResolve(t);
+    });
     var one = !!own || keys.length === 1;
     if (own) keys = ['own-' + own];
     while (!one && keys.length < 4) keys.push('pad-' + keys.length);
@@ -3399,6 +3430,8 @@
     stream: onStreamEvent,
     save: onSaveEvent,
     job: onJobEvent,
+    /* bare songs the hub resolved (app.js has absorbed their entities): their covers fill in */
+    'catalog.tracks': function () { repaintCovers(); },
     transfer: onTransferEvent,
     /* likes, follows and settings changed elsewhere (another device or tab) */
     like: function (e) { if (App.isLiked(e.trackId) !== e.liked) { App.store.update('liked', function (l) { if (e.liked) l[e.trackId] = true; else delete l[e.trackId]; }); App.syncRows(); } },
