@@ -760,10 +760,10 @@
   }
   :root[data-design="glasshouse"][data-shell="dock"] .nav-item[aria-current="page"] .nav-item__label { background: var(--gh-label-cur-bg); color: var(--gh-label-cur-fg); text-shadow: none; }
   /* with notices open the column gets shorter: tighter icons, and it scrolls rather than slide under the bar */
-  :root[data-design="glasshouse"][data-shell="dock"]:has(.banner) .rail { align-self: stretch; min-height: 0; overflow-y: auto; scrollbar-width: none; }
-  :root[data-design="glasshouse"][data-shell="dock"]:has(.banner) .rail__nav { gap: 2px; }
+  :root[data-design="glasshouse"][data-shell="dock"]:has(> :where(body) > :where(.app) > :where(.banner-slot) > .banner) .rail { align-self: stretch; min-height: 0; overflow-y: auto; scrollbar-width: none; }
+  :root[data-design="glasshouse"][data-shell="dock"]:has(> :where(body) > :where(.app) > :where(.banner-slot) > .banner) .rail__nav { gap: 2px; }
   /* set on .nav-item, not .nav-item .ic: under a page-wide :has() a selector ending in .ic restyles every icon on each DOM insertion */
-  :root[data-design="glasshouse"][data-shell="dock"]:has(.banner) .nav-item { --gh-dock-ic: 40px; --gh-dock-ic-pad: 10px; }
+  :root[data-design="glasshouse"][data-shell="dock"]:has(> :where(body) > :where(.app) > :where(.banner-slot) > .banner) .nav-item { --gh-dock-ic: 40px; --gh-dock-ic-pad: 10px; }
 }
 /* status gadget (img 03's left gadgets): the tray leaves the header and stacks under the desktop icons as a small
    window of tiles, anchored to the icon column (CSS anchor positioning) so it always sits right under the icons and can
@@ -771,31 +771,31 @@
 @supports (anchor-name: --a) {
   @media (min-width: 1100px) and (min-height: 880px) {
     :root[data-design="glasshouse"][data-shell="dock"] .rail { anchor-name: --gh-dock; }
-    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(.banner)) .tray--full {
+    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(> :where(body) > :where(.app) > :where(.banner-slot) > .banner)) .tray--full {
       position: fixed; z-index: 2; position-anchor: --gh-dock; top: calc(anchor(bottom) + 10px); left: anchor(left); width: anchor-size(width);
       display: grid; gap: 0; padding: 22px 0 2px; border-radius: 10px; border: 1px solid var(--gh-frame); overflow: hidden;
       background: linear-gradient(128deg, var(--gh-sheen-panel) 0%, transparent 34%), color-mix(in srgb, var(--panel) 92%, transparent);
       box-shadow: inset 0 1px 0 var(--gh-rim), var(--stack-1l);
     }
-    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(.banner)) .tray--full:hover { background: color-mix(in srgb, var(--panel-2) 94%, transparent); }
-    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(.banner)) .tray--full::before {
+    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(> :where(body) > :where(.app) > :where(.banner-slot) > .banner)) .tray--full:hover { background: color-mix(in srgb, var(--panel-2) 94%, transparent); }
+    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(> :where(body) > :where(.app) > :where(.banner-slot) > .banner)) .tray--full::before {
       content: ":: status"; position: absolute; left: 0; right: 0; top: 0; height: 22px; padding: 0 8px;
       display: flex; align-items: center; font: 600 .6875rem/1 var(--f-px); letter-spacing: .04em; color: var(--gh-bar-ink);
       background: var(--gh-bar); border-bottom: 1px solid var(--gh-frame); text-shadow: 0 1px 0 var(--gh-bar-shadow);
     }
-    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(.banner)) .tray--full .tray__pill {
+    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(> :where(body) > :where(.app) > :where(.banner-slot) > .banner)) .tray--full .tray__pill {
       display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 6px; height: auto; padding: 7px 9px 7px;
       border-radius: 0; background: transparent; box-shadow: none; color: var(--fg-panel); font: 600 .8125rem/1.15 var(--f-px);
     }
-    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(.banner)) .tray--full .tray__pill + .tray__pill { border-top: 1px solid color-mix(in srgb, var(--fg-panel-2) 22%, transparent); }
-    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(.banner)) .tray--full .tray__pill > .sg { grid-column: 2; grid-row: 1; --gh-ring: inherit; }
-    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(.banner)) .tray--full .sg { --gh-ok: inherit; --gh-warn: inherit; --gh-down: inherit; }
-    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(.banner)) .tray--full .tray__label-long { display: block; grid-column: 1 / -1; grid-row: 2;
+    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(> :where(body) > :where(.app) > :where(.banner-slot) > .banner)) .tray--full .tray__pill + .tray__pill { border-top: 1px solid color-mix(in srgb, var(--fg-panel-2) 22%, transparent); }
+    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(> :where(body) > :where(.app) > :where(.banner-slot) > .banner)) .tray--full .tray__pill > .sg { grid-column: 2; grid-row: 1; --gh-ring: inherit; }
+    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(> :where(body) > :where(.app) > :where(.banner-slot) > .banner)) .tray--full .sg { --gh-ok: inherit; --gh-warn: inherit; --gh-down: inherit; }
+    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(> :where(body) > :where(.app) > :where(.banner-slot) > .banner)) .tray--full .tray__label-long { display: block; grid-column: 1 / -1; grid-row: 2;
       font: 500 .6875rem/1.2 var(--f-px); color: var(--fg-panel-2); }
     /* cache tile: the big value on its own line and a meter from --cache-frac */
-    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(.banner)) .tray--full .tray__pill--cache { font-size: 1.0625rem; letter-spacing: -.02em; }
-    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(.banner)) .tray--full .tray__pill--cache .tray__label-long { grid-row: 3; letter-spacing: .02em; }
-    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(.banner)) .tray--full .tray__pill--cache::after {
+    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(> :where(body) > :where(.app) > :where(.banner-slot) > .banner)) .tray--full .tray__pill--cache { font-size: 1.0625rem; letter-spacing: -.02em; }
+    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(> :where(body) > :where(.app) > :where(.banner-slot) > .banner)) .tray--full .tray__pill--cache .tray__label-long { grid-row: 3; letter-spacing: .02em; }
+    :root[data-design="glasshouse"][data-shell="dock"]:not(:has(> :where(body) > :where(.app) > :where(.banner-slot) > .banner)) .tray--full .tray__pill--cache::after {
       content: ""; grid-column: 1 / -1; grid-row: 2; height: 5px; margin-top: 3px; border-radius: 3px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg-panel-2) 45%, transparent);
       background: linear-gradient(90deg, var(--gh-lit-3), #a9c3ea) 0 0 / calc(var(--cache-frac, .5) * 100%) 100% no-repeat, color-mix(in srgb, var(--panel-2) 80%, transparent);
     }

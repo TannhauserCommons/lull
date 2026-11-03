@@ -157,7 +157,7 @@
   content: ""; position: absolute; z-index: 0; top: -12px; right: 14px; width: 310px; height: 140px;
   background: var(--sd-moon) right top / contain no-repeat; pointer-events: none;
 }
-:root[data-design="skydeck"] .main:has(.now, .lib-page, .lib-head)::before { display: none; }
+:root[data-design="skydeck"] .main:has(> :where(.view) > .now, > :where(.view) > :where(.view__inner) > :is(.lib-page, .lib-head))::before { display: none; }
 :root[data-design="skydeck"] .view { z-index: 1; }
 
 /* one big cream sparkle kisses the top-right corner of the page's first card (img 01) */
@@ -711,18 +711,18 @@
 @keyframes sd-led { from { opacity: .5; transform: scale(.8); } to { opacity: 1; transform: none; } }
 
 /* failed: the LCD drops to a "no signal" screen (glyph, words, a flat line for the waveform) */
-:root[data-design="skydeck"] .app:has(.pbar[data-status="failed"]) .now-dev [data-now="head"] { color: #f9dcec; font-weight: 800; }
-:root[data-design="skydeck"] .app:has(.pbar[data-status="failed"]) .now-dev .device__now { visibility: hidden; }
-:root[data-design="skydeck"] .app:has(.pbar[data-status="failed"]) .now-dev__page { position: relative; }
-:root[data-design="skydeck"] .app:has(.pbar[data-status="failed"]) .now-dev__page::before,
-:root[data-design="skydeck"] .app:has(.pbar[data-status="failed"]) .now-dev__page::after {
+:root[data-design="skydeck"] .app:has(> .pbar[data-status="failed"]) .now-dev [data-now="head"] { color: #f9dcec; font-weight: 800; }
+:root[data-design="skydeck"] .app:has(> .pbar[data-status="failed"]) .now-dev .device__now { visibility: hidden; }
+:root[data-design="skydeck"] .app:has(> .pbar[data-status="failed"]) .now-dev__page { position: relative; }
+:root[data-design="skydeck"] .app:has(> .pbar[data-status="failed"]) .now-dev__page::before,
+:root[data-design="skydeck"] .app:has(> .pbar[data-status="failed"]) .now-dev__page::after {
   position: absolute; left: 0; right: 0; text-align: center; font-family: var(--f-px); letter-spacing: .04em; color: #f9dcec;
 }
-:root[data-design="skydeck"] .app:has(.pbar[data-status="failed"]) .now-dev__page::before { content: "\26a0\FE0E  no signal"; top: calc(50% - 30px); font-size: 2rem; line-height: 1; }
-:root[data-design="skydeck"] .app:has(.pbar[data-status="failed"]) .now-dev__page::after { content: "all sources failed"; top: calc(50% + 8px); font-size: 1.25rem; line-height: 1; color: var(--lilac); }
-:root[data-design="skydeck"] .app:has(.pbar[data-status="failed"]) .now-dev .device__screen { background-image: repeating-linear-gradient(0deg, #fff9fe12 0 1px, transparent 1px 3px); }
-:root[data-design="skydeck"] .app:has(.pbar[data-status="failed"]) .now-dev .wave__rail { visibility: hidden; }
-:root[data-design="skydeck"] .app:has(.pbar[data-status="failed"]) .now-dev .wave__bar { height: 1px !important; min-height: 0; background: var(--lavender); }   /* bar heights are inline */
+:root[data-design="skydeck"] .app:has(> .pbar[data-status="failed"]) .now-dev__page::before { content: "\26a0\FE0E  no signal"; top: calc(50% - 30px); font-size: 2rem; line-height: 1; }
+:root[data-design="skydeck"] .app:has(> .pbar[data-status="failed"]) .now-dev__page::after { content: "all sources failed"; top: calc(50% + 8px); font-size: 1.25rem; line-height: 1; color: var(--lilac); }
+:root[data-design="skydeck"] .app:has(> .pbar[data-status="failed"]) .now-dev .device__screen { background-image: repeating-linear-gradient(0deg, #fff9fe12 0 1px, transparent 1px 3px); }
+:root[data-design="skydeck"] .app:has(> .pbar[data-status="failed"]) .now-dev .wave__rail { visibility: hidden; }
+:root[data-design="skydeck"] .app:has(> .pbar[data-status="failed"]) .now-dev .wave__bar { height: 1px !important; min-height: 0; background: var(--lavender); }   /* bar heights are inline */
 
 /* the cartridge seated in the top slot (slots/nowHero): grey-lilac plastic, grip ridges, notch, cream label with
    the live cover + title; it lifts and reseats on track change */

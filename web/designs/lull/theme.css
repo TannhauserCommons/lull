@@ -558,7 +558,7 @@
      ellipsis) keeps the seek one length whatever the stream says */
   :root[data-design="lull"] .pbar__seek::before { grid-column: auto; width: 14em; margin: 0 6px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* nothing playing: the seek row would be blank, so the bar is one row tall (the desk bar's 80 px) until a song loads */
-  :root[data-design="lull"]:has(.pbar[data-status="idle"]) { --bar-h: 80px; }
+  :root[data-design="lull"]:has(> :where(body) > :where(.app) > .pbar[data-status="idle"]) { --bar-h: 80px; }
   :root[data-design="lull"] .pbar[data-status="idle"] { grid-template-rows: 1fr; grid-template-areas: "now ctl tools"; }
   :root[data-design="lull"] .pbar[data-status="idle"] .pbar__seek { display: none; }
 }
@@ -856,7 +856,7 @@
 @media (min-width: 640px) {
   /* page-wide :has() rules end in a class (.btn, .wave-times__buf): Chrome restyles every element the last part could
      match on each DOM insertion, so [data-act] or span alone restyled the whole page */
-  :root[data-design="lull"]:has(.pbar[data-status="failed"]) .now-srccard .btn:is([data-act="retry-search"], [data-act="pick-source"]),
+  :root[data-design="lull"]:has(> :where(body) > :where(.app) > .pbar[data-status="failed"]) .now-srccard .btn:is([data-act="retry-search"], [data-act="pick-source"]),
   :root[data-design="lull"] .app[data-screen="now"] .pbar__state :is(button, a) { display: none; }
 }
 :root[data-design="lull"] .scrim { background: var(--scrim); }
@@ -1164,9 +1164,9 @@
    "lyrics" over a slim "source" window, and the queue (ctx). Nothing peeks under the dock.
    ===================================================================== */
 @media (min-width: 640px) {
-  :root[data-design="lull"] .main:has(.now) { background: none; border: 0; box-shadow: none; padding: 0; }
-  :root[data-design="lull"] .main:has(.now)::before, :root[data-design="lull"] .main:has(.now)::after { display: none; }
-  :root[data-design="lull"] .main:has(.now) > .view { margin: 0; padding: 0 2px 0 0; background: none; box-shadow: none; border-radius: 0; }
+  :root[data-design="lull"] .main:has(> :where(.view) > .now) { background: none; border: 0; box-shadow: none; padding: 0; }
+  :root[data-design="lull"] .main:has(> :where(.view) > .now)::before, :root[data-design="lull"] .main:has(> :where(.view) > .now)::after { display: none; }
+  :root[data-design="lull"] .main:has(> :where(.view) > .now) > .view { margin: 0; padding: 0 2px 0 0; background: none; box-shadow: none; border-radius: 0; }
   :root[data-design="lull"] .now { max-width: none; height: 100%; }
   :root[data-design="lull"] .now > .now__top { display: none; }
   :root[data-design="lull"] .now__grid {
@@ -1403,12 +1403,12 @@
 }
 :root[data-design="lull"] .now-ly__foot { border-top-color: var(--l-rule); }
 /* a song that never started has no words to follow yet */
-:root[data-design="lull"]:has(.pbar[data-status="failed"]) .now-lycard :is(.now-ly__view, .now-ly__foot) { display: none; }
-:root[data-design="lull"]:has(.pbar[data-status="failed"]) .now-lycard .now-ly::after {
+:root[data-design="lull"]:has(> :where(body) > :where(.app) > .pbar[data-status="failed"]) .now-lycard :is(.now-ly__view, .now-ly__foot) { display: none; }
+:root[data-design="lull"]:has(> :where(body) > :where(.app) > .pbar[data-status="failed"]) .now-lycard .now-ly::after {
   content: "Waiting for a source. The words come back as soon as a peer answers."; margin: auto; padding: 24px 40px;
   text-align: center; color: var(--fg-panel-2); font: 700 1rem/1.4 var(--f-ui);
 }
-:root[data-design="lull"]:has(.pbar[data-status="failed"]) .lull-np .wave-times__buf { visibility: hidden; }
+:root[data-design="lull"]:has(> :where(body) > :where(.app) > .pbar[data-status="failed"]) .lull-np .wave-times__buf { visibility: hidden; }
 :root[data-design="lull"] .now-ly__gap i { background: var(--pink); }
 
 
@@ -1709,8 +1709,8 @@
   :root[data-design="lull"] .toast-region { bottom: calc(var(--mini-h) + var(--tab-h) + 40px + env(safe-area-inset-bottom)); }
   /* Now Playing sheet: one "now playing" window; the collapse chevron rides in its title bar */
   :root[data-design="lull"] .app[data-view="now"] .main { margin-top: calc(8px + env(safe-area-inset-top)); }
-  :root[data-design="lull"] .main:has(.now)::before { content: "now playing"; }
-  :root[data-design="lull"] .main:has(.now)::after { display: none; }
+  :root[data-design="lull"] .main:has(> :where(.view) > .now)::before { content: "now playing"; }
+  :root[data-design="lull"] .main:has(> :where(.view) > .now)::after { display: none; }
   :root[data-design="lull"] .app[data-view="now"] .sheet-bar { position: absolute; top: 4px; right: 6px; z-index: 2; display: block; height: 30px; padding: 0; background: none; }
   :root[data-design="lull"] .app[data-view="now"] .sheet-bar .sheet__handle { display: none; }
   :root[data-design="lull"] .app[data-view="now"] .sheet-bar .btn-icon { width: 30px; height: 30px; color: var(--l-bar-ink); }

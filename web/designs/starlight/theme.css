@@ -361,9 +361,11 @@
 :root[data-design="starlight"] :is(.trow__like, .btn-icon).is-liked .ic { fill: currentColor; }
 /* img 01 rows carry title, artist and heart only: a chip every row repeats is said once by the page instead
    (album page: "Saved" + format sit in the header; artist page: the source). A row that differs keeps its chip. */
-:root[data-design="starlight"] .app:is([data-screen="album"], [data-screen="artist"]) .tlist:is(:not(:has(.src-badge:not([data-was="saved"]))), :not(:has(.src-badge:not([data-was="slsk"])))) .trow__badges .src-badge,
-:root[data-design="starlight"] .app:is([data-screen="album"], [data-screen="artist"]) .tlist:not(:has(.trow:not([data-bits="16"][data-khz="44.1"]))) .trow__badges .q-chip { display: none; }
-:root[data-design="starlight"] .app:is([data-screen="album"], [data-screen="artist"]) .tlist:is(:not(:has(.src-badge:not([data-was="saved"]))), :not(:has(.src-badge:not([data-was="slsk"])))) .trow__mini { display: inline-flex; }
+/* the screen test sits in the list's own compound too: selectors match right to left, so without it every song row's
+   badge checked the whole list (:has over 1,200 rows) before finding it was not on an album or artist page */
+:root[data-design="starlight"] .app:is([data-screen="album"], [data-screen="artist"]) .tlist:where(.app:is([data-screen="album"], [data-screen="artist"]) *):is(:not(:has(> :where(.trow) > :where(.trow__badges) > .src-badge:not([data-was="saved"]))), :not(:has(> :where(.trow) > :where(.trow__badges) > .src-badge:not([data-was="slsk"])))) .trow__badges .src-badge,
+:root[data-design="starlight"] .app:is([data-screen="album"], [data-screen="artist"]) .tlist:where(.app:is([data-screen="album"], [data-screen="artist"]) *):not(:has(> .trow:not([data-bits="16"][data-khz="44.1"]))) .trow__badges .q-chip { display: none; }
+:root[data-design="starlight"] .app:is([data-screen="album"], [data-screen="artist"]) .tlist:where(.app:is([data-screen="album"], [data-screen="artist"]) *):is(:not(:has(> :where(.trow) > :where(.trow__badges) > .src-badge:not([data-was="saved"]))), :not(:has(> :where(.trow) > :where(.trow__badges) > .src-badge:not([data-was="slsk"])))) .trow__mini { display: inline-flex; }
 /* search results at mid widths (tablet, docked panel): status and quality chips move under the artist instead of eating the title */
 @container tlist (min-width: 521px) and (max-width: 759px) {
   :root[data-design="starlight"] .disc-search .trow:has(.trow__badges > *) {
@@ -527,7 +529,7 @@
   padding: 4px 8px 3px 12px; bottom: calc(100% + 1px); border-bottom: 0;
 }
 :root[data-design="starlight"] .pbar__state .btn--quiet { color: var(--link); }
-:root[data-design="starlight"] .app:has(.pbar__state:not([hidden])) .view { padding-bottom: 44px; }
+:root[data-design="starlight"] .app:has(> :where(.pbar) > .pbar__state:not([hidden])) .view { padding-bottom: 44px; }
 :root[data-design="starlight"] .app:has(#view .sl-hero) .pbar__state { display: none; }
 
 /* =====================================================================
@@ -575,9 +577,9 @@
 :root[data-design="starlight"] .sl-hero__ctl .btn-icon.is-liked { color: var(--heart); }
 /* a failed play takes the seek line's slot: a burgundy line with a warning glyph, its fixes where the transport was */
 :root[data-design="starlight"] .sl-hero__trouble { display: none; }
-:root[data-design="starlight"] .app:has(.pbar[data-status="failed"]) .sl-hero__trouble--failed,
-:root[data-design="starlight"] .app:has(.pbar[data-status="jellyfin-error"]) .sl-hero__trouble--jellyfin { display: grid; gap: 14px; margin-top: 14px; }
-:root[data-design="starlight"] .app:has(.pbar:is([data-status="failed"], [data-status="jellyfin-error"])) .sl-hero:not(.sl-hero--compact) :is(.sl-hero__seek, .sl-hero__ctl, .sl-hero__time) { display: none; }
+:root[data-design="starlight"] .app:has(> .pbar[data-status="failed"]) .sl-hero__trouble--failed,
+:root[data-design="starlight"] .app:has(> .pbar[data-status="jellyfin-error"]) .sl-hero__trouble--jellyfin { display: grid; gap: 14px; margin-top: 14px; }
+:root[data-design="starlight"] .app:has(> .pbar:is([data-status="failed"], [data-status="jellyfin-error"])) .sl-hero:not(.sl-hero--compact) :is(.sl-hero__seek, .sl-hero__ctl, .sl-hero__time) { display: none; }
 :root[data-design="starlight"] .sl-hero__err {
   display: flex; align-items: center; gap: 10px; margin: 0; padding-bottom: 12px; border-bottom: 1.5px solid var(--sl-title);
   font: 500 1.0625rem/1.3 var(--f-ui); color: var(--sl-title);

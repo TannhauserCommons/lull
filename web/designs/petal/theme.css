@@ -524,8 +524,8 @@
 }
 :root[data-design="petal"] .pbar__state .btn--quiet { min-height: 26px; padding: 0 8px; border: 1.5px solid var(--pt-frame); border-radius: 3px; background: var(--bg); }
 :root[data-design="petal"] .pbar__state .btn--quiet:hover { background: var(--peri); }
-:root[data-design="petal"] .app:has(.pbar__state:not([hidden])) .view { padding-bottom: 56px; }   /* the error tab never covers the page */
-@media (max-width: 1099px) { :root[data-design="petal"] .app:has(.pbar__state:not([hidden])) .view { padding-bottom: 88px; } }   /* two-line tab */
+:root[data-design="petal"] .app:has(> :where(.pbar) > .pbar__state:not([hidden])) .view { padding-bottom: 56px; }   /* the error tab never covers the page */
+@media (max-width: 1099px) { :root[data-design="petal"] .app:has(> :where(.pbar) > .pbar__state:not([hidden])) .view { padding-bottom: 88px; } }   /* two-line tab */
 :root[data-design="petal"] .bezel-thumb { padding: 3px; border-radius: 3px; border: 1.5px solid var(--pt-frame); background: var(--panel); }
 :root[data-design="petal"] .bezel-thumb .cover { border-radius: 2px; border-color: var(--pt-rule); }
 :root[data-design="petal"] .bezel-thumb:hover { background: var(--panel-2); }
