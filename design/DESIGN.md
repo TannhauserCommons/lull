@@ -332,6 +332,7 @@ Behaviour worth knowing per screen (not obvious from a screenshot):
   steps: completing transfer, MusicBrainz match, cover art, tag + write, Jellyfin rescan. Missing cover art does not
   block; a match failure offers the release picker or "save with existing tags"; a Jellyfin failure leaves the file
   saved and pending. Albums and the queue show aggregate progress.
+- **Back** returns a page to where it was: its scroll position and focused row, also after a reload.
 - **Queue** groups: now playing, next up (the listener's own picks: "Play next" at its front, "Add to queue" at its
   end), then (context), radio tail ("keeps adding" toggle + familiar/adventurous steer). Next up plays before the
   context continues, survives starting another album, playlist or radio, and is never shuffled. Shuffle reorders the
@@ -355,6 +356,9 @@ Behaviour worth knowing per screen (not obvious from a screenshot):
 App.route('/album/:id', { render: function (ctx) { return html`...`; }, mount: fn, title: 'Album' | fn(ctx),
   nav: 'library', view: 'page' | 'now', meta: fn(ctx), keepFocus: bool });
 ```
+- Each history entry keeps where its page was (scroll, the element at the top third of the view, the focused row):
+  Back, Forward and a reload return there, waiting for content that arrives with a read. A screen that rewrites its
+  URL in place keeps the entry: `history.replaceState(history.state, ...)` (or `App.go(path, { replace: true })`).
 - Hash routes, `/x/:param`, optional `/:param?`, query after `?`. `ctx = { params, query, state, el, route, onCleanup(fn) }`;
   `ctx.el` is `#view` (the scroll container). `render` returns markup; `mount` runs after insertion; `onCleanup` runs
   before the next route.

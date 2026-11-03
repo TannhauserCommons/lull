@@ -989,7 +989,7 @@
   App.action('now-tab', function (el) { setTab(el.getAttribute('data-tab'), true); });
   function setTab(tab, focus) {
     view.tab = tab;
-    try { history.replaceState(null, '', '#/now?tab=' + tab); } catch (e) { /* file:// in some browsers */ }
+    try { history.replaceState(history.state, '', '#/now?tab=' + tab); } catch (e) { /* file:// in some browsers */ }
     var root = $('.now'); if (!root) return;
     root.setAttribute('data-tab', tab);
     var seg = $('.now-seg', root), i = tabList().indexOf(tab);

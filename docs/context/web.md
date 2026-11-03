@@ -72,6 +72,7 @@ data, ever.
 | playback settings | `GET /api/settings` playback -> `App.setPlayback(patch)` | Settings > Playback calls `App.setPlayback` after a PATCH; `settings` events |
 | recent searches | store `recentSearches`, this device only (`localStorage`) | discover.js |
 | queue, volume, shuffle, repeat | `App.player.state`, saved per device so a reload keeps the queue | the engine |
+| where each page was (scroll, focused row) | the router, per history entry (`sessionStorage['lull:spots']`) | leaving a page; Back, Forward and a reload return there |
 
 ### Server events
 
@@ -494,5 +495,13 @@ with the reason and a "Copy lull link" button; a browser that refuses the clipbo
   app.js places `.seg__ind` on that button by measuring it (a long label widens its column), whenever a `.seg` appears,
   its selection changes or a button resizes. It slides only when a patch keeps the `.seg`, so re-render it with
   `App.patch`, not `innerHTML`.
+- **Back returns where the page was.** The router gives each history entry an id (`history.state.lullEntry`) and,
+  when its page is left, records the scroll position, the element a third down the view with its offset (rows off
+  screen have an estimated height, so the element places the page truly; the next frames correct it once the rows
+  around it are drawn) and the focused control (by `data-track-id`, `data-place`, `data-album-id`, `data-fk` or `id`).
+  Showing that entry again restores them and holds them for 4 s while a read adds content, until the listener
+  scrolls, types or clicks. A new entry starts at the top. Screens get it for free: keep "Show all" and paging state
+  outside the render (as library.js `limits` does), give list items one of those attributes, and rewrite the URL in
+  place with `history.replaceState(history.state, ...)` so the entry keeps its id.
 - **Live values write only on change** (`setText`, `setAttr`, `setVar` in app.js section 9): the clock ticks four
   times a second, and an identical write still costs a style and layout pass.

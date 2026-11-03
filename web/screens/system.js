@@ -463,7 +463,7 @@
     var tl = $('.sys-period', ctx.el); if (!tl) return;
     function choose(btn) {
       statsUi.period = btn.getAttribute('data-period'); statsUi.focusTab = true;
-      history.replaceState(null, '', '#/stats?period=' + statsUi.period);
+      history.replaceState(history.state, '', '#/stats?period=' + statsUi.period);
       App.refresh();
     }
     ctx.on(tl, 'click', function (e) { var b = e.target.closest('[role="tab"]'); if (b) choose(b); });

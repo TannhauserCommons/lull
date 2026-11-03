@@ -914,7 +914,7 @@
   /* phone: the header field is hidden, so the page has its own; it updates the results in place */
   function setQuery(q) {
     q = q.trim(); if (q === S.q) return;
-    history.replaceState(null, '', '#/search' + (q ? '?q=' + encodeURIComponent(q) : ''));
+    history.replaceState(history.state, '', '#/search' + (q ? '?q=' + encodeURIComponent(q) : ''));
     search(q);
     var f = $('[data-filters]'); if (f) f.hidden = !q;
     paint('sub', subline());

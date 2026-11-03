@@ -359,17 +359,105 @@
     if (path === '/' || path === '') path = '/home';
     return { path: path, query: query };
   }
+  /* replace keeps the history entry (and so where its page was, below) */
   App.go = function (path, opts) {
-    if (opts && opts.replace) history.replaceState(null, '', '#' + path); else location.hash = path;
+    if (opts && opts.replace) history.replaceState(history.state, '', '#' + path); else location.hash = path;
     if (opts && opts.replace) renderRoute();
   };
   App.back = function () { if (history.length > 1) history.back(); else App.go('/home'); };
   /* re-render the current route (screens call this after their own state changes) */
   App.refresh = function () { renderRoute(true); };
 
+  /* ---------- where each page was: Back returns to it ----------
+     Every history entry gets an id (history.state.lullEntry). Leaving an entry's page records where it was under that
+     id: the scroll position, the element at the top third of the view and its offset (rows off screen keep an estimated
+     height, so the element places the page more truly than the pixels), and the focused row or control. A page shown
+     again for that entry (Back, Forward, a reload: kept in sessionStorage) goes back there; a new entry starts at the
+     top. What a read adds after the first render is waited for, until the listener scrolls, types or 4 s pass. Every
+     page gets this from the router; a screen that rewrites its URL in place passes history.state on. */
+  var spots = {}, spotOrder = [], shownEntry = null, returnTo = null, entrySeq = 0;
+  try { var keptSpots = JSON.parse(sessionStorage.getItem('lull:spots')); if (keptSpots && keptSpots.order) { spots = keptSpots.spots; spotOrder = keptSpots.order; } } catch (e) { /* storage off */ }
+  function entryId() {
+    var st = history.state && typeof history.state === 'object' ? history.state : null;
+    if (st && st.lullEntry) return st.lullEntry;
+    var id = Date.now().toString(36) + '-' + (++entrySeq);
+    try { history.replaceState(Object.assign({}, st, { lullEntry: id }), ''); } catch (e) { return null; }
+    return id;
+  }
+  /* an element named so it can be found again in a fresh render: the nearest of it and its parents with an
+     identifying attribute, and which of the page's matches it is */
+  var IDENTITY = ['data-track-id', 'data-place', 'data-album-id', 'data-fk', 'id'];
+  function markOf(el, view) {
+    for (var n = el; n && n !== view; n = n.parentElement) {
+      for (var i = 0; i < IDENTITY.length; i++) {
+        var v = n.getAttribute(IDENTITY[i]);
+        if (v) { var sel = '[' + IDENTITY[i] + '="' + CSS.escape(v) + '"]'; return { sel: sel, n: $$(sel, view).indexOf(n) }; }
+      }
+    }
+    return null;
+  }
+  function findMark(m, view) { return m && $$(m.sel, view)[m.n] || null; }
+  var ANCHOR_AT = [[.4, 1 / 3], [.15, 1 / 3], [.65, 1 / 3], [.4, .45], [.15, .45], [.65, .45]];
+  function recordSpot(entry, view) {
+    if (!entry || !view.firstElementChild) return;
+    var box = view.getBoundingClientRect(), a = document.activeElement, spot = { top: view.scrollTop };
+    /* a few points a third down: the first may fall in a gap between tiles */
+    for (var i = 0; i < ANCHOR_AT.length && !spot.anchor; i++) {
+      var at = document.elementFromPoint(box.left + box.width * ANCHOR_AT[i][0], box.top + box.height * ANCHOR_AT[i][1]);
+      var m = at && view.contains(at) && at !== view ? markOf(at, view) : null, el = findMark(m, view);
+      if (el) { spot.anchor = m; spot.offset = Math.round(el.getBoundingClientRect().top - box.top); }
+    }
+    if (a && a !== view && view.contains(a)) {
+      spot.focus = markOf(a, view);
+      spot.href = a.getAttribute('href'); spot.act = a.getAttribute('data-act'); spot.selected = a.classList.contains('is-selected');
+    }
+    if (!spots[entry]) spotOrder.push(entry);
+    spots[entry] = spot;
+    while (spotOrder.length > 60) delete spots[spotOrder.shift()];
+    try { sessionStorage.setItem('lull:spots', JSON.stringify({ spots: spots, order: spotOrder })); } catch (e) { /* storage off or full */ }
+  }
+  /* put the page back where it was, as far as its content allows yet. It holds it there while it waits (4 s, until the
+     listener scrolls, types or clicks), so a section or picture that arrives above doesn't push the page away */
+  function settleSpot() {
+    var r = returnTo, view = $('#view'); if (!r) return;
+    if (r.entry !== shownEntry || Date.now() > r.until) { returnTo = null; return; }
+    var el = findMark(r.anchor, view);
+    if (el) { placeAnchor(view, el, r.offset); fixAnchor(view, el, r.offset); } else view.scrollTop = r.top;
+    if (r.focus) {
+      var f = findMark(r.focus, view);
+      if (f && !(f.tabIndex >= 0 && f.matches('a[href], button, [tabindex]'))) f = $(r.href ? '[href="' + CSS.escape(r.href) + '"]' : r.act ? '[data-act="' + r.act + '"]' : 'a[href], button', f);
+      if (f) { f.focus({ preventScroll: true }); if (r.selected) f.classList.add('is-selected'); r.focus = null; }
+    }
+  }
+  /* the anchor back at its offset from the top of the view. Rows off screen have only an estimated height until they
+     are drawn, so the first placing is close and the next frames, with the rows around it drawn, make it exact */
+  function placeAnchor(view, el, offset) {
+    var d = el.getBoundingClientRect().top - view.getBoundingClientRect().top - offset;
+    if (Math.abs(d) >= 1) view.scrollTop += d;
+  }
+  var anchorFix = null;
+  function fixAnchor(view, el, offset) {
+    var job = anchorFix = {};
+    (function step(n) {
+      requestAnimationFrame(function () {
+        if (anchorFix !== job || !el.isConnected) return;
+        placeAnchor(view, el, offset);
+        if (n > 1) step(n - 1); else anchorFix = null;
+      });
+    })(4);
+  }
+  /* content that grows without a re-render (a screen patching its own part) settles it too, while it waits */
+  var spotSizes = new ResizeObserver(function () { settleSpot(); if (!returnTo) spotSizes.disconnect(); });
+  function awaitSpot(view) { spotSizes.disconnect(); if (returnTo && view.firstElementChild) spotSizes.observe(view.firstElementChild); }
+  function stopReturning() { returnTo = null; anchorFix = null; spotSizes.disconnect(); }
+  ['wheel', 'touchstart', 'keydown', 'pointerdown'].forEach(function (type) { document.addEventListener(type, stopReturning, { capture: true, passive: true }); });
+
+
   var lastPath = null;
   function renderRoute(isRefresh) {
     var loc = parseHash(), route = null, params = {};
+    var entry = isRefresh ? shownEntry : entryId(), arrived = !isRefresh && entry !== shownEntry;
+    if (arrived) recordSpot(shownEntry, $('#view'));   // the page leaving is still in the view
     for (var i = 0; i < routes.length; i++) {
       var m = routes[i].re.exec(loc.path);
       if (m) { route = routes[i]; route.keys.forEach(function (k, j) { if (m[j + 1] !== undefined) params[k] = decodeURIComponent(m[j + 1]); }); break; }
@@ -413,13 +501,17 @@
     $$('.rail__pl').forEach(function (a) {
       if (a.getAttribute('href') === '#' + loc.path) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
-    if (!isRefresh && lastPath !== loc.path) {
+    var spot = arrived && spots[entry];
+    if (!isRefresh && (lastPath !== loc.path || spot)) {
       view.scrollTop = 0;
       if (lastPath !== null && !(route && route.keepFocus)) view.focus({ preventScroll: true });
     }
+    if (arrived) { shownEntry = entry; anchorFix = null; returnTo = spot ? Object.assign({ entry: entry, until: Date.now() + 4000 }, spot) : null; }
     lastPath = loc.path;
     App.syncRows();
     App.emit('route', App.current);
+    settleSpot();
+    if (arrived) awaitSpot(view);
   }
   function safeCall(fn, arg) { try { return fn(arg) || ''; } catch (e) { console.error(e); return ''; } }
   /* the content window's meta line (.main[data-meta]); screens may update it after a change */
@@ -3610,7 +3702,7 @@
       toggleClear(); clearTimeout(t);
       t = setTimeout(function () {
         var q = input.value.trim(), target = '/search' + (q ? '?q=' + encodeURIComponent(q) : '');
-        if (App.current.path === '/search') { history.replaceState(null, '', '#' + target); renderRoute(true); } else App.go(target);
+        if (App.current.path === '/search') { history.replaceState(history.state, '', '#' + target); renderRoute(true); } else App.go(target);
       }, 350);   // discover.js TYPE_PAUSE_MS
     });
     input.addEventListener('keydown', function (e) {
