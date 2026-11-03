@@ -126,15 +126,16 @@ Code: `src/search/` (`mod.rs` runs a query, `merge.rs` merges and ranks), `src/a
 - **`search.catalog`** names the 50 best tracks once every source is in (at the answer when all were in by then).
 **Deezer withholds its catalog where it isn't open.** From the homelab's IP, `/search/track` and `/search/album` answer `data: []` with `total` above zero, and `/infos` says `open: false`. Only `/search/artist` and lookups by id work. Should Deezer be searched for tracks there anyway (before `/infos` has answered), that is named in `errors.deezer` ("isn't open in this country") rather than taken as "nothing found".
 
-## Pictures (`GET /api/catalog/art/{id}?size=96|256|512`)
+## Pictures (`GET /api/catalog/art/{id}?size=96|256|512|1024|2048`)
 
 - **Sources:** Deezer covers and artist photos (any size, from `md5_image` / `picture_xl`), iTunes covers (any size, from `artworkUrl100`), Cover Art Archive covers for MusicBrainz albums, and Wikimedia Commons artist photos (`Special:FilePath/<file>?width=`). Last.fm is never a picture source.
 - **Every album discovery hands out** (search, feed, album, artist and tag pages) with a release-group MBID and no other source gets the Cover Art Archive's (`art::picture`), so new releases have covers.
 - **Fetching:** a request waits at most 3 s for a picture lull doesn't have yet. Meanwhile it answers 404 with `Cache-Control: no-store`, and the fetch goes on in the background: one try of up to 20 s, one fetch per picture and size, shared by every request for it. The next request is served from the cache. A source that fails leaves nothing cached, so it is asked again next time.
-- **The URL is relative** (`api/catalog/art/…`): the UI's routes are all in the hash (`#/artist/…`), so it resolves the same from every screen and behind a reverse-proxy sub-path. The archive is asked for its smallest size that covers the request (250 for 96 and 256, 500 for 512), and every picture is scaled down to the size asked for (JPEG). `size` defaults to 256.
+- **The URL is relative** (`api/catalog/art/…`): the UI's routes are all in the hash (`#/artist/…`), so it resolves the same from every screen and behind a reverse-proxy sub-path. Every picture is scaled down to fit the size asked for (JPEG) and never up (`lull_core::art`; `X-Image-Size` gives the real size). `size` defaults to 256.
+- **Each source at its best for the size:** the archive's smallest thumbnail that covers it (250 for 96 and 256, 500 for 512, 1200 for 1024), its original for 2048, and the original when a thumbnail is missing; iTunes (`{size}x{size}bb`) and Commons (`?width=`) at the size, which they serve up to their original and never past it (checked 2026-11-03: iTunes answered 2048 px at 2048 and its 4000 px original at 5000); Deezer at the size up to 1400 px. Deezer's CDN answers up to 1900 px (403 above) whatever its master is, and 1400 px is the smallest master it takes from labels, so 1400 is never blown up.
 - **Where each picture comes from:** albums, `lull_core::catalog`'s `catalog_albums.art` (a URL with `{size}`), recorded by search; artists, only `discovery_artist_photos` ([Artist pages](#artist-pages)). The `catalog_artists.image` search records is never served.
 - **Entities:** albums carry `art` and artists `image` (with `?v=`, for a vetted photo only), `api/catalog/art/<id>` relative to the page (the UI adds `?size=`), only when a source is known and hasn't said lately (a day) that it has none: a new release the Cover Art Archive has no cover for gets no `art` once that is known, instead of a 404 on every load. Albums without one use library's `/api/art/{albumId}`.
-- **Cache:** `<data dir>/catalog-art/<id>-<size>`, 30 days; "the source has none" for a day.
+- **Cache:** `<data dir>/catalog-art/<id>-<size>`, 30 days; "the source has none" (`<id>.none`, one for every size) for a day.
 
 ## Share links (`GET /api/share/{kind}/{id}`)
 

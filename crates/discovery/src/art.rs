@@ -1,6 +1,7 @@
-//! `GET /api/catalog/art/{id}?size=96|256|512`: covers and artist photos discovery found
-//! (Deezer, iTunes, the Cover Art Archive), fetched once per size, scaled to it and served from
-//! lull, so the UI never loads an outside image and the CSP stays same-origin. Where each
+//! `GET /api/catalog/art/{id}?size=96|256|512|1024|2048`: covers and artist photos discovery
+//! found (Deezer, iTunes, the Cover Art Archive, Wikimedia Commons), fetched once per size at the
+//! source's best for it, scaled down to it (never up: `lull_core::art`) and served from lull, so
+//! the UI never loads an outside image and the CSP stays same-origin. Where each
 //! picture comes from is `lull_core::catalog`'s; an album with a MusicBrainz release group and
 //! no other source gets the Cover Art Archive's. Entities point at this route as `art` (albums)
 //! whenever a source is known, and as `image` (artists) only for a vetted photo
@@ -17,13 +18,13 @@ use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use lull_core::ids::{AlbumId, ArtistId, TrackId};
 use lull_core::model::{Album, Artist, Entities, Track};
-use lull_core::{Error, Result, catalog};
+use lull_core::{Error, Result, art, catalog};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 
 use crate::Service;
 
-pub(crate) const SIZES: [u32; 3] = [96, 256, 512];
+pub(crate) use lull_core::art::SIZES;
 const DEFAULT_SIZE: u32 = 256;
 /// How long a request waits for a picture lull doesn't have yet. The fetch goes on after it,
 /// and the next request is served from the cache.
@@ -34,8 +35,9 @@ const FETCH_TIMEOUT: Duration = Duration::from_secs(20);
 const KEEP: Duration = Duration::from_secs(30 * 24 * 3600);
 /// "The source has none" is believed this long.
 const NONE_FOR: Duration = Duration::from_secs(24 * 3600);
-/// The Cover Art Archive's own sizes; the next one up is served.
-const ARCHIVE_SIZES: [u32; 3] = [250, 500, 1200];
+/// The largest Deezer picture asked for. Its CDN serves up to 1900 px whatever the master is,
+/// and 1400 px is the smallest master it takes from labels, so this size is never blown up.
+const DEEZER_LARGEST: u32 = 1400;
 
 /// An album as the UI gets it from discovery: with `art` when lull serves its cover.
 #[derive(Debug, Clone, Serialize)]
@@ -97,17 +99,15 @@ pub async fn pictured(svc: &Service, e: Entities) -> Result<Pictured> {
     Ok(out)
 }
 
-/// Whether the picture's source said lately that it has none, at any size.
+/// Whether the picture's source said lately that it has none.
 async fn has_none(dir: &FsPath, id: &str) -> bool {
-    for size in SIZES {
-        if read_fresh(&dir.join(format!("{id}-{size}.none")), NONE_FOR)
-            .await
-            .is_some()
-        {
-            return true;
-        }
-    }
-    false
+    read_fresh(&none_file(dir, id), NONE_FOR).await.is_some()
+}
+
+/// "The source has none", one file for every size: a source missing at one size has none at all
+/// (an archive thumbnail it lacks falls back to its original first).
+pub(crate) fn none_file(dir: &FsPath, id: &str) -> PathBuf {
+    dir.join(format!("{id}.none"))
 }
 
 /// `pictured` on a connection. An album with a release group and no known source gets the Cover
@@ -179,9 +179,7 @@ fn default_size() -> u32 {
 }
 
 pub async fn get(State(svc): State<Arc<Service>>, Path(id): Path<String>, Query(q): Query<Size>) -> Result<Response> {
-    if !SIZES.contains(&q.size) {
-        return Err(Error::BadRequest("size must be 96, 256 or 512".into()));
-    }
+    art::check(q.size)?;
     let hex = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_hexdigit());
     let source = match id.as_str() {
         i if i.strip_prefix(AlbumId::PREFIX).is_some_and(hex) => {
@@ -201,7 +199,7 @@ pub async fn get(State(svc): State<Arc<Service>>, Path(id): Path<String>, Query(
     };
     let source = source.ok_or_else(|| Error::NotFound(format!("lull has no picture for {id}")))?;
     let path = svc.art_dir.join(format!("{id}-{}", q.size));
-    let none = svc.art_dir.join(format!("{id}-{}.none", q.size));
+    let none = none_file(&svc.art_dir, &id);
     let bytes = match read_fresh(&path, KEEP).await {
         Some(bytes) => bytes,
         None if read_fresh(&none, NONE_FOR).await.is_some() => {
@@ -220,15 +218,7 @@ pub async fn get(State(svc): State<Arc<Service>>, Path(id): Path<String>, Query(
             }
         }
     };
-    Ok((
-        [
-            (header::CONTENT_TYPE, content_type(&bytes).to_owned()),
-            (header::CACHE_CONTROL, "private, max-age=86400".to_owned()),
-            (header::ETAG, lull_core::etag::of(&bytes)),
-        ],
-        bytes,
-    )
-        .into_response())
+    Ok(art::response(bytes))
 }
 
 /// Picture fetches under way, one per source URL and size, shared by every request for it.
@@ -257,15 +247,19 @@ impl Fetches {
 }
 
 /// Fetches `url` into the cache in the background (one fetch per URL and size): scaled to `size` at
-/// `path`, or "none" at `none` when the source has no picture. A failure leaves nothing, so the
-/// next request tries again.
+/// `path`, or "none" at `none` when the source has no picture. An archive thumbnail it doesn't
+/// have falls back to its original. A failure leaves nothing, so the next request tries again.
 fn fetching(svc: &Arc<Service>, url: String, size: u32, path: PathBuf, none: PathBuf) -> watch::Receiver<bool> {
     let key = format!("{size} {url}");
     svc.art_fetches.join(&key.clone(), |done| {
         let svc = svc.clone();
         svc.ctx.clone().spawn(async move {
-            match fetch(&svc, &url).await {
-                Ok(Some(bytes)) => match tokio::task::spawn_blocking(move || fit(bytes, size)).await {
+            let mut fetched = fetch(&svc, &url).await;
+            if let (Ok(None), Some(original)) = (&fetched, archive_original(&url)) {
+                fetched = fetch(&svc, &original).await;
+            }
+            match fetched {
+                Ok(Some(bytes)) => match tokio::task::spawn_blocking(move || art::fit(bytes, size)).await {
                     Ok(bytes) => write(&path, &bytes).await,
                     Err(e) => tracing::warn!(error = %e, "picture scaling failed"),
                 },
@@ -290,35 +284,32 @@ fn not_yet(id: &str) -> Response {
         .into_response()
 }
 
-/// The source URL at `size`. The Cover Art Archive only has its own sizes: the smallest that
-/// covers the request (250 counts for 256), scaled down after.
+/// The source URL at its best for `size`, scaled down after. The Cover Art Archive has its own
+/// sizes: the smallest thumbnail that covers the request (250 counts for 256), else its original.
+/// Deezer is asked for at most `DEEZER_LARGEST`; iTunes and Wikimedia Commons serve any size up
+/// to their original and never more.
 pub fn sized(source: &str, size: u32) -> String {
-    let size = if source.starts_with("https://coverartarchive.org/") {
-        ARCHIVE_SIZES.into_iter().find(|s| s * 100 >= size * 95).unwrap_or(1200)
+    if source.starts_with("https://coverartarchive.org/") {
+        return match art::archive_size(size) {
+            Some(thumbnail) => source.replace("{size}", &thumbnail.to_string()),
+            None => source.replace("-{size}", ""),
+        };
+    }
+    let size = if source.contains(".dzcdn.net/") {
+        size.min(DEEZER_LARGEST)
     } else {
         size
     };
     source.replace("{size}", &size.to_string())
 }
 
-/// The picture scaled to fit `size` pixels (JPEG), or as it is when it already fits or can't
-/// be read.
-pub fn fit(bytes: Vec<u8>, size: u32) -> Vec<u8> {
-    let Ok(image) = image::load_from_memory(&bytes) else {
-        return bytes;
-    };
-    if image.width() <= size && image.height() <= size {
-        return bytes;
+/// The archive's original for one of its thumbnails (`…/front-1200` → `…/front`).
+fn archive_original(url: &str) -> Option<String> {
+    if !url.starts_with("https://coverartarchive.org/") {
+        return None;
     }
-    let mut out = Vec::new();
-    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 88);
-    match image.thumbnail(size, size).to_rgb8().write_with_encoder(encoder) {
-        Ok(()) => out,
-        Err(e) => {
-            tracing::debug!(error = %e, "picture could not be scaled; serving it whole");
-            bytes
-        }
-    }
+    let (front, size) = url.rsplit_once('-')?;
+    size.parse::<u32>().ok().map(|_| front.to_owned())
 }
 
 pub(crate) async fn fetch(svc: &Service, url: &str) -> Result<Option<Vec<u8>>> {
@@ -377,15 +368,6 @@ async fn write(path: &FsPath, bytes: &[u8]) {
     }
 }
 
-fn content_type(bytes: &[u8]) -> &'static str {
-    match bytes {
-        [0x89, b'P', b'N', b'G', ..] => "image/png",
-        [b'R', b'I', b'F', b'F', _, _, _, _, b'W', b'E', b'B', b'P', ..] => "image/webp",
-        [b'G', b'I', b'F', ..] => "image/gif",
-        _ => "image/jpeg",
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use lull_core::db::Db;
@@ -393,7 +375,7 @@ mod tests {
     use lull_core::model::{Album, Artist, Entities, Saved};
     use lull_core::{Result, catalog};
 
-    use super::{Fetches, fit, picture, sized};
+    use super::{Fetches, archive_original, picture, sized};
 
     fn album(title: &str, group: Option<&str>) -> Album {
         Album {
@@ -480,28 +462,33 @@ mod tests {
     }
 
     #[test]
-    fn the_archive_is_asked_for_the_smallest_size_that_covers_the_request() {
-        let archive = "https://coverartarchive.org/release-group/x/front-{size}";
+    fn each_source_is_asked_for_its_best_at_the_size() {
+        let archive = "https://coverartarchive.org/release-group/0f3c0c64-5b0c/front-{size}";
         assert!(sized(archive, 96).ends_with("front-250"));
         assert!(sized(archive, 256).ends_with("front-250"));
         assert!(sized(archive, 512).ends_with("front-500"));
-        assert!(sized("https://cdn.example/{size}x{size}.jpg", 96).ends_with("/96x96.jpg"));
+        assert!(sized(archive, 1024).ends_with("front-1200"));
+        assert!(sized(archive, 2048).ends_with("/0f3c0c64-5b0c/front"), "the original");
+        let deezer = "https://cdn-images.dzcdn.net/images/cover/d06e/{size}x{size}-000000-80-0-0.jpg";
+        assert!(sized(deezer, 1024).contains("/1024x1024-"));
+        // Live, its CDN answered 403 above 1900 px and may blow up a small master below that.
+        assert!(sized(deezer, 2048).contains("/1400x1400-"));
+        let itunes = "https://is1-ssl.mzstatic.com/image/thumb/x/1.png/{size}x{size}bb.jpg";
+        // Live, iTunes answered 2048 at 2048 px and 5000 at its 4000 px original.
+        assert!(sized(itunes, 2048).ends_with("/2048x2048bb.jpg"));
     }
 
     #[test]
-    fn a_picture_is_scaled_to_the_size_asked_for() {
-        // Live, size=96 came back as the archive's 188x250 original.
-        let big = image::RgbImage::from_pixel(188, 250, image::Rgb([200, 120, 40]));
-        let mut jpeg = Vec::new();
-        let encoded = image::DynamicImage::ImageRgb8(big)
-            .write_to(&mut std::io::Cursor::new(&mut jpeg), image::ImageFormat::Jpeg);
-        assert!(encoded.is_ok());
-        let scaled = image::load_from_memory(&fit(jpeg, 96))
-            .map(|i| (i.width(), i.height()))
-            .ok();
-        assert_eq!(scaled, Some((72, 96)));
-        let small = vec![1, 2, 3];
-        assert_eq!(fit(small.clone(), 96), small, "what can't be read is served as it is");
+    fn an_archive_thumbnail_falls_back_to_the_original() {
+        assert_eq!(
+            archive_original("https://coverartarchive.org/release-group/0f3c0c64-5b0c/front-1200").as_deref(),
+            Some("https://coverartarchive.org/release-group/0f3c0c64-5b0c/front")
+        );
+        assert_eq!(
+            archive_original("https://coverartarchive.org/release-group/0f3c0c64-5b0c/front"),
+            None
+        );
+        assert_eq!(archive_original("https://cdn.example/1200"), None);
     }
 
     #[tokio::test]

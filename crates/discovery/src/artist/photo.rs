@@ -310,13 +310,12 @@ pub fn same_picture(a: u64, b: u64) -> bool {
     (a ^ b).count_ones() <= SAME_BITS
 }
 
-/// Removes every cached size of a picture.
+/// Removes every cached size of a picture, and "the source has none".
 pub async fn forget_files(dir: &FsPath, id: &str) {
     for size in crate::art::SIZES {
-        for name in [format!("{id}-{size}"), format!("{id}-{size}.none")] {
-            let _ = tokio::fs::remove_file(dir.join(name)).await;
-        }
+        let _ = tokio::fs::remove_file(dir.join(format!("{id}-{size}"))).await;
     }
+    let _ = tokio::fs::remove_file(crate::art::none_file(dir, id)).await;
 }
 
 #[cfg(test)]
