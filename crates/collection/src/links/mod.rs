@@ -33,7 +33,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use self::parse::{Link, Parsed, Site};
-use crate::{Events, Service, bad_json, entities, import, known_track, playlists};
+use crate::{Events, Service, bad_json, covers, entities, import, known_track, playlists};
 
 /// The most songs one link imports.
 pub(crate) const MAX_SONGS: usize = 2000;
@@ -57,6 +57,10 @@ pub(crate) struct Listing {
     pub(crate) songs: Vec<Song>,
     /// What the listener should know about the listing (Spotify's 100-song limit).
     pub(crate) note: Option<String>,
+    /// The source's pictures for the playlist, best first (the first that loads is kept as its
+    /// cover), and its description.
+    pub(crate) covers: Vec<String>,
+    pub(crate) description: Option<String>,
 }
 
 /// A song as the link lists it.
@@ -197,10 +201,14 @@ async fn import(svc: &Arc<Service>, link: &Link, listing: Option<Listing>, job: 
     }
     job.name = listing.name.clone();
     let matches = match_songs(svc, link, &listing.songs, job).await?;
-    let (key, url) = (link.key(), link.url());
+    let (key, url, pictures) = (link.key(), link.url(), listing.covers.clone());
     let done = svc
         .write(move |tx, events| store(tx, events, &key, &url, &listing, &matches))
         .await?;
+    // The playlist is there either way; a picture that can't be had leaves its songs' covers.
+    if let Err(e) = covers::from_link(svc, done.playlist_seq, &pictures).await {
+        tracing::info!(error = %e, "a link import's cover wasn't kept");
+    }
     job.done = Some(done);
     Ok(())
 }
@@ -320,7 +328,11 @@ fn store(
             id.as_ref().map(TrackId::as_str),
         ])?;
     }
-    let playlist_seq = fill_playlist(conn, events, seq, &listing.name, url, now)?;
+    let desc = match &listing.description {
+        Some(d) => d.chars().take(1000).collect(),
+        None => format!("Imported from {url}."),
+    };
+    let playlist_seq = fill_playlist(conn, events, seq, &listing.name, &desc, now)?;
     Ok(Done {
         playlist_seq,
         counts: counts(&lines(conn, seq)?),
@@ -328,8 +340,9 @@ fn store(
 }
 
 /// Sets the link's playlist to its songs, making the playlist when it has none (or the
-/// listener deleted it). The name is the link's only when it is made: a rename stays.
-fn fill_playlist(conn: &Connection, events: &mut Events, seq: i64, name: &str, url: &str, now: i64) -> Result<i64> {
+/// listener deleted it). The name and description are the link's only when it is made: the
+/// listener's edits stay.
+fn fill_playlist(conn: &Connection, events: &mut Events, seq: i64, name: &str, desc: &str, now: i64) -> Result<i64> {
     let ids: Vec<TrackId> = lines(conn, seq)?.into_iter().filter_map(|l| l.track_id).collect();
     let existing: Option<i64> = conn
         .query_row(
@@ -348,7 +361,7 @@ fn fill_playlist(conn: &Connection, events: &mut Events, seq: i64, name: &str, u
     } else {
         name
     };
-    let p = playlists::make(conn, events, &name, &format!("Imported from {url}."), &ids, now)?;
+    let p = playlists::make(conn, events, &name, desc, &ids, now)?;
     conn.execute(
         "UPDATE collection_links SET playlist_seq = ?2 WHERE seq = ?1",
         params![seq, p],
@@ -642,7 +655,8 @@ async fn choose(
             [seq],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
-        fill_playlist(tx, events, seq, &name, &Link::from_key(&key)?.url(), lull_core::now())?;
+        let desc = format!("Imported from {}.", Link::from_key(&key)?.url());
+        fill_playlist(tx, events, seq, &name, &desc, lull_core::now())?;
         detail(tx, seq, &running)
     })
     .await

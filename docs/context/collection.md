@@ -78,6 +78,15 @@ Spotify's Private Session, per paired device: `core_devices.private`, switched w
 - **`playlist` event.** `{ playlistId, deleted }` goes out once per operation (create, rename, track change, delete), from the routes, the seam and sync alike, so a PATCH that changes name and tracks is one event. Library mirrors playlists into Jellyfin from it.
 - **Activity.** A playlist created with `imported: { file, library, willSearch, notFound }` publishes an import `job` event, and library's `/api/jobs` lists it.
 
+## Covers
+
+`covers.rs`. A playlist's own cover is an upload (`PUT /api/playlists/{id}/cover`) or a link import's source picture; without one the UI shows its songs' album covers (a 2×2 mosaic of the first four albums, one cover for a single album).
+- **Stored on the hub** as `<data>/playlist-covers/pl-<n>.jpg`: the centred square, at most 600 px, JPEG 88, so it keeps working whatever the source does. `collection_playlists.cover_at` (ms) versions its URL; `cover_from` is `upload` or `link`, `cover_url` the source picture kept.
+- **Checked before decoding:** JPEG, PNG or WebP only, at most 10 MB and 8000 px a side (a small file can claim a huge picture).
+- **A link's picture** (Spotify's embed images, Deezer's `picture_xl`/`cover_xl`, YouTube's or SoundCloud's thumbnails; the first of up to three, largest first, that loads, since YouTube lists a `maxresdefault` that often 404s) is fetched once: again only when the source shows another picture, and never over an upload. If it can't be had, the import still ends and the songs' covers show.
+- **Removing a cover** or **deleting the playlist** removes the file (deletion through the `playlist` event, whichever path deleted it).
+- **Subsonic** asks through `Collection::playlist_cover` (subsonic.md).
+
 ## Playlist links
 
 `POST /api/import/link` (`links/`): a pasted link becomes a lull playlist whose songs play from Soulseek (or YouTube) when played; nothing is saved. A `job` row shows it in Activity.
@@ -89,6 +98,7 @@ Spotify's Private Session, per paired device: `core_devices.private`, switched w
 - **Matching** is discovery's `Catalog::find_song` (discovery.md): the library, then the catalog by ISRC, else by artist, title and length. A song this link matched before keeps its match without a lookup. A failed lookup leaves the song unmatched (a re-import tries again); the job fails only when every lookup does. Songs with an ISRC (Deezer's) match in seconds; in iTunes countries the others go at about 12 a minute, so a 100-song Spotify or YouTube playlist takes several minutes. Activity shows "Matching songs, n of m" from the start.
 - **Unmatched songs** stay out of the playlist and are listed (`GET /api/import/links/{id}`). The listener picks the song from search, keeps it as the link names it (`as-is`: recorded as `TrackId::of(artist, album, title)`, searched on Soulseek when played, as an M3U line is), or skips it. Matched songs can be changed or skipped the same way.
 - **Choices are kept by the source's song id** (`collection_link_choices`), so they outlive re-imports; `none` undoes one.
+- **Name, description and cover** come from the source when the playlist is made (the description is "Imported from <link>." when the source has none; Spotify's embed has none). Later imports keep the listener's name and description; the cover follows covers' rules.
 - **Re-importing** the same link updates its playlist (`collection_links.playlist_seq`) to the link's songs in the link's order, with the choices applied: no second playlist. Songs added or removed by hand in lull are overwritten; skip a song to drop it for good. A rename stays. A deleted playlist is made again. One import per link at a time (409).
 
 ## Stats

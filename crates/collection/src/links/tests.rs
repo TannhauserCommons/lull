@@ -23,6 +23,8 @@ fn listing(songs: Vec<Song>) -> Listing {
         name: "Road Trip".into(),
         songs,
         note: None,
+        covers: Vec::new(),
+        description: Some("Songs for the long drive.".into()),
     }
 }
 
@@ -102,6 +104,11 @@ async fn a_link_becomes_a_playlist_of_its_matched_songs_and_lists_the_rest() -> 
         (Some("done"), Some(2), Some(1))
     );
     assert_eq!(done["playlistId"], json!(playlist));
+    let made = svc.ctx.db.call(|c| playlists::all(c)).await?;
+    assert_eq!(
+        made[0].description, "Songs for the long drive.",
+        "the source's description"
+    );
     Ok(())
 }
 

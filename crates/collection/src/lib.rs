@@ -2,6 +2,7 @@
 //! export, stats and settings. Publishes `play` events that Last.fm and the taste model consume
 //! (docs/context/collection.md).
 
+mod covers;
 mod exportify;
 mod follows;
 mod import;
@@ -129,6 +130,13 @@ pub const MIGRATIONS: Migrations = Migrations {
             PRIMARY KEY (link_seq, song)
         );
     "#,
+        // Playlist covers (covers.rs): the stored file's version (ms; NULL = none), where it came
+        // from (upload | link) and, for a link's, the source picture's URL, fetched once.
+        r#"
+        ALTER TABLE collection_playlists ADD COLUMN cover_at INTEGER;
+        ALTER TABLE collection_playlists ADD COLUMN cover_from TEXT;
+        ALTER TABLE collection_playlists ADD COLUMN cover_url TEXT;
+    "#,
     ],
 };
 
@@ -179,6 +187,7 @@ pub fn router(svc: Arc<Service>) -> Router {
         .merge(plays::routes())
         .merge(lastfm_send::routes())
         .merge(playlists::routes())
+        .merge(covers::routes())
         .merge(stats::routes())
         .merge(settings::routes())
         .merge(sync::routes())
@@ -242,6 +251,7 @@ async fn record_events(ctx: Ctx, mut rx: tokio::sync::broadcast::Receiver<Event>
         let outcome = match event.topic.as_str() {
             "scrobble" => record_scrobble(&ctx, event).await,
             "save" => record_save(&ctx, event).await,
+            "playlist" => forget_cover(&ctx, event).await,
             _ => Ok(()),
         };
         if let Err(e) = outcome {
@@ -272,6 +282,18 @@ async fn record_scrobble(ctx: &Ctx, event: Event) -> Result<()> {
             Ok(())
         })
         .await
+}
+
+/// A deleted playlist's cover file goes with it, whichever path deleted it (route, seam, sync).
+async fn forget_cover(ctx: &Ctx, event: Event) -> Result<()> {
+    let deleted = event.data["deleted"].as_bool() == Some(true);
+    let seq = event.data["playlistId"]
+        .as_str()
+        .and_then(|id| playlists::seq_of(id).ok());
+    if let (true, Some(seq)) = (deleted, seq) {
+        covers::forget(ctx, seq).await;
+    }
+    Ok(())
 }
 
 /// A save counts once its file is in the library: step 5 done, or pending (written, rescan failed).

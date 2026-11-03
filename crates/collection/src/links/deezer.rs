@@ -42,6 +42,8 @@ pub(crate) async fn read(svc: &Service, link: &Link) -> Result<Listing> {
         name: about.title,
         songs,
         note: None,
+        covers: about.picture_xl.into_iter().chain(about.cover_xl).collect(),
+        description: about.description.map(|d| d.trim().to_owned()).filter(|d| !d.is_empty()),
     })
 }
 
@@ -81,6 +83,10 @@ fn decode<T: DeserializeOwned>(body: Value) -> Result<T> {
 #[derive(Deserialize)]
 struct About {
     title: String,
+    description: Option<String>,
+    /// A playlist's picture, an album's cover (1000 px).
+    picture_xl: Option<String>,
+    cover_xl: Option<String>,
 }
 
 #[derive(Deserialize)]

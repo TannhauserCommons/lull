@@ -120,10 +120,18 @@ pub(crate) async fn service_with_lastfm() -> Result<(Arc<Service>, Receiver<Even
 }
 
 pub(crate) async fn service_with_fakes() -> Result<(Arc<Service>, Receiver<Event>, Arc<FakeLastfm>, Arc<FakeCatalog>)> {
-    let vars: BTreeMap<String, String> = [("LULL_SLSKD_URL", "http://slskd"), ("LULL_SLSKD_API_KEY", "k")]
+    // Each service writes files (playlist covers) into a folder of its own.
+    static DIRS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let data = std::env::temp_dir().join(format!(
+        "lull-collection-test-{}-{}",
+        std::process::id(),
+        DIRS.fetch_add(1, Ordering::Relaxed)
+    ));
+    let mut vars: BTreeMap<String, String> = [("LULL_SLSKD_URL", "http://slskd"), ("LULL_SLSKD_API_KEY", "k")]
         .into_iter()
         .map(|(k, v)| (k.to_owned(), v.to_owned()))
         .collect();
+    vars.insert("LULL_DATA_DIR".into(), data.to_string_lossy().into_owned());
     let config = Config::from_vars(vars).map_err(|e| lull_core::Error::internal(e.to_string()))?;
     let db = Db::memory()?;
     for m in [&CORE, &catalog::MIGRATIONS, &MIGRATIONS] {

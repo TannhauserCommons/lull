@@ -91,7 +91,21 @@ pub(crate) fn embedded(page: &str, kind: Kind) -> Result<Listing> {
          Exportify and import the .csv."
             .to_owned()
     });
-    Ok(Listing { name, songs, note })
+    // The embed's pictures, largest first, then its cover art's.
+    let mut pictures: Vec<Picture> = entity.visual_identity.map(|v| v.image).unwrap_or_default();
+    pictures.sort_by_key(|p| std::cmp::Reverse(p.max_width.unwrap_or(0)));
+    let covers = pictures
+        .into_iter()
+        .map(|p| p.url)
+        .chain(entity.cover_art.into_iter().flat_map(|c| c.sources).map(|s| s.url))
+        .collect();
+    Ok(Listing {
+        name,
+        songs,
+        note,
+        covers,
+        description: None,
+    })
 }
 
 #[derive(Deserialize)]
@@ -101,6 +115,32 @@ struct Entity {
     title: Option<String>,
     #[serde(default)]
     track_list: Vec<Embedded>,
+    visual_identity: Option<Visual>,
+    cover_art: Option<CoverArt>,
+}
+
+#[derive(Deserialize)]
+struct Visual {
+    #[serde(default)]
+    image: Vec<Picture>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Picture {
+    url: String,
+    max_width: Option<u32>,
+}
+
+#[derive(Deserialize)]
+struct CoverArt {
+    #[serde(default)]
+    sources: Vec<Source>,
+}
+
+#[derive(Deserialize)]
+struct Source {
+    url: String,
 }
 
 #[derive(Deserialize)]
@@ -127,7 +167,9 @@ mod tests {
     fn an_embedded_playlist_lists_its_songs_with_every_artist() -> Result<()> {
         let listing = embedded(
             &page(
-                r#"{"name":"All Out 80s","trackList":[
+                r#"{"name":"All Out 80s","visualIdentity":{"image":[
+                {"url":"https://image-cdn-fa.spotifycdn.com/image/small","maxWidth":64},
+                {"url":"https://image-cdn-fa.spotifycdn.com/image/big","maxWidth":640}]},"trackList":[
                 {"uri":"spotify:track:2LlQb7Uoj1kKyGhlkBf9aC","title":"Thriller","subtitle":"Michael Jackson","duration":358807},
                 {"uri":"spotify:track:6OmhkSOpvYBokMKQxpIGx2","title":"Global Warming (feat. Sensato)","subtitle":"Pitbull, Sensato","duration":85400}]}"#,
             ),
@@ -139,6 +181,10 @@ mod tests {
         assert_eq!(listing.songs[1].artist, "Pitbull, Sensato");
         assert_eq!(listing.songs[1].album, None);
         assert_eq!(listing.note, None);
+        assert_eq!(
+            listing.covers.first().map(String::as_str),
+            Some("https://image-cdn-fa.spotifycdn.com/image/big")
+        );
         Ok(())
     }
 

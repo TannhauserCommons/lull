@@ -40,6 +40,8 @@ struct Playlist {
     desc: String,
     created: i64,
     updated: i64,
+    /// The playlist's own cover (`/api/playlists/{id}/cover?v=`), `null` for its songs' covers.
+    cover: Option<String>,
     items: Vec<Item>,
 }
 
@@ -196,7 +198,7 @@ pub(crate) fn make(
 
 /// Every change of a playlist publishes `playlist { playlistId, deleted }`, once per operation:
 /// library mirrors playlists into Jellyfin from it.
-fn announce(events: &mut Events, seq: i64, deleted: bool) {
+pub(crate) fn announce(events: &mut Events, seq: i64, deleted: bool) {
     events.push(
         "playlist",
         json!({ "playlistId": format!("pl-{seq}"), "deleted": deleted }),
@@ -383,7 +385,7 @@ async fn export(svc: &Service, seq: i64, headers: &HeaderMap) -> Result<Response
         .into_response())
 }
 
-fn respond(conn: &Connection, seq: i64) -> Result<Json<Value>> {
+pub(crate) fn respond(conn: &Connection, seq: i64) -> Result<Json<Value>> {
     let playlist = load(conn, seq)?.ok_or_else(|| not_found(seq))?;
     let entities = entities(conn, playlist.items.iter().map(|i| &i.track_id))?;
     let mut body = serde_json::to_value(playlist).map_err(|e| Error::internal(format!("playlist json: {e}")))?;
@@ -394,12 +396,12 @@ fn respond(conn: &Connection, seq: i64) -> Result<Json<Value>> {
 fn load(conn: &Connection, seq: i64) -> Result<Option<Playlist>> {
     let head = conn
         .query_row(
-            "SELECT name, description, created_at, updated_at FROM collection_playlists WHERE seq = ?1",
+            "SELECT name, description, created_at, updated_at, cover_at FROM collection_playlists WHERE seq = ?1",
             [seq],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
         )
         .optional()?;
-    let Some((name, desc, created, updated)) = head else {
+    let Some((name, desc, created, updated, cover_at)) = head else {
         return Ok(None);
     };
     let items = items_of(conn, seq)?.unwrap_or_default();
@@ -409,6 +411,7 @@ fn load(conn: &Connection, seq: i64) -> Result<Option<Playlist>> {
         desc,
         created,
         updated,
+        cover: crate::covers::url(seq, cover_at),
         items,
     }))
 }

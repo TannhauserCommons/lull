@@ -61,6 +61,13 @@ impl Collection for Service {
         .await
     }
 
+    async fn playlist_cover(&self, id: &str, size: Option<u32>) -> Result<Option<axum::response::Response>> {
+        match seq_of(id) {
+            Ok(seq) => crate::covers::response(self, seq, size).await,
+            Err(_) => Ok(None),
+        }
+    }
+
     async fn delete_playlist(&self, id: &str) -> Result<()> {
         let seq = seq_of(id)?;
         self.write(move |tx, events| match playlists::delete(tx, events, seq)? {

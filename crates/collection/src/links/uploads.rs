@@ -46,6 +46,8 @@ pub(crate) async fn read(svc: &Service, link: &Link, mut on_page: impl FnMut(usi
         };
         if from == 0 {
             listing.name = page.title.clone();
+            listing.covers = page.thumbnails.clone();
+            listing.description = page.description.clone();
         }
         from += n;
         listing

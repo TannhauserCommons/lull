@@ -23,6 +23,9 @@ percent-encoding = "=2.3.2"
 futures-util = { version = "=0.3.34", default-features = false, features = ["alloc"] }
 # Reading pasted playlist links (Spotify, Deezer, YouTube, SoundCloud). Already in the tree through reqwest.
 url = "=2.5.8"
+# Playlist covers: uploads and a link's picture checked, cut square and stored as JPEG. The same
+# version as library's and discovery's, plus WebP, which browsers save pictures as.
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 
 [lints]
 workspace = true
