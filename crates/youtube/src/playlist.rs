@@ -154,7 +154,6 @@ struct Entry {
 }
 
 impl Entry {
-    /// `None` for an upload that is gone: YouTube lists it as "[Private video]" or "[Deleted video]".
     /// The upload as a song (`matching::read_upload`); a SoundCloud upload's length is always
     /// the track's. `None` for an upload that is gone ("[Private video]") or names no song.
     fn listed(self, soundcloud: bool) -> Option<Listed> {
@@ -163,6 +162,12 @@ impl Entry {
         let uploader = self.channel.or(self.uploader).unwrap_or_default();
         let music_artist = self.artists.and_then(|a| a.into_iter().next()).or(self.artist);
         let (artist, track, official) = read_upload(&title, &uploader, music_artist.as_deref(), self.track.as_deref())?;
+        let thumbnail = self
+            .thumbnails
+            .into_iter()
+            .filter(|t| t.url.starts_with("https://"))
+            .max_by_key(|t| t.width.unwrap_or(0))
+            .map(|t| t.url);
         Some(Listed {
             id,
             title,
@@ -171,6 +176,7 @@ impl Entry {
             artist: Some(artist),
             track: Some(track),
             exact_length: official || soundcloud,
+            thumbnail,
         })
     }
 }
@@ -187,7 +193,8 @@ mod tests {
                 {"url": "https://i9.ytimg.com/s_p/x/maxresdefault.jpg", "width": 1200},
                 {"url": "https://i9.ytimg.com/s_p/x/sddefault.jpg", "width": 640}
             ], "entries": [
-            {"id": "78wrful9cVU", "title": "Olivia Rodrigo - drop dead (Official Music Video)", "channel": "Olivia Rodrigo", "duration": 251},
+            {"id": "78wrful9cVU", "title": "Olivia Rodrigo - drop dead (Official Music Video)", "channel": "Olivia Rodrigo", "duration": 251,
+             "thumbnails": [{"url": "https://i.ytimg.com/vi/78wrful9cVU/hqdefault.jpg", "width": 480}, {"url": "https://i.ytimg.com/vi/78wrful9cVU/default.jpg", "width": 120}]},
             {"id": "aaaaaaaaaaa", "title": "[Private video]", "duration": null},
             {"id": "bbbbbbbbbbb", "title": "Patient Zero", "channel": "Taylor Swift - Topic", "duration": 313.4}
         ]}"#;
@@ -204,6 +211,10 @@ mod tests {
         assert_eq!(page.songs[1].duration, Some(313));
         assert_eq!(page.songs[0].artist.as_deref(), Some("Olivia Rodrigo"));
         assert_eq!(page.songs[0].track.as_deref(), Some("drop dead"));
+        assert_eq!(
+            page.songs[0].thumbnail.as_deref(),
+            Some("https://i.ytimg.com/vi/78wrful9cVU/hqdefault.jpg")
+        );
         assert_eq!(
             (page.songs[0].exact_length, page.songs[1].exact_length),
             (false, true),
