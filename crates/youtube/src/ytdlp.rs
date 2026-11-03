@@ -139,7 +139,11 @@ impl Ytdlp {
             return Ok(out.stdout);
         }
         match classify(&String::from_utf8_lossy(&out.stderr)) {
-            Problem::Gone(_) | Problem::Other(_) if partial && !out.stdout.is_empty() => Ok(out.stdout),
+            Problem::Gone(_) | Problem::Other(_)
+                if partial && out.stdout.trim_ascii() != b"null" && !out.stdout.is_empty() =>
+            {
+                Ok(out.stdout)
+            }
             problem => Err(problem),
         }
     }

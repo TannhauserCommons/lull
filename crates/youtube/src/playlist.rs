@@ -1,6 +1,8 @@
 //! Playlists for link imports. YouTube and YouTube Music list flat (yt-dlp asks for a hundred
-//! songs a request); SoundCloud's flat listing names no song, so each one is read, about a second
-//! apiece, and a song blocked in this country is left out rather than failing the page.
+//! songs a request). SoundCloud's flat listing names no song, so each one is read: its metadata
+//! only (no stream formats, one request a song), a second apart, since SoundCloud answers 403 to
+//! a burst (seen after about 150 songs read with their formats). A song blocked in this country
+//! is left out rather than failing the page.
 
 use std::time::Duration;
 
@@ -25,7 +27,18 @@ pub async fn page(svc: &Service, url: &str, from: usize, count: usize) -> Result
         .unwrap_or(false);
     let items = format!("{}:{}", from + 1, from + count.max(1));
     let mut args = vec!["-J", "-I", items.as_str()];
-    args.push(if soundcloud { "-i" } else { "--flat-playlist" });
+    if soundcloud {
+        args.extend([
+            "-i",
+            "--ignore-no-formats-error",
+            "--extractor-args",
+            "soundcloud:formats=none",
+            "--sleep-requests",
+            "1",
+        ]);
+    } else {
+        args.push("--flat-playlist");
+    }
     // `--`: the link is never read as an option.
     args.extend(["--", url]);
     let limit = if soundcloud { FULL_TIME } else { FLAT_TIME };
@@ -35,7 +48,9 @@ pub async fn page(svc: &Service, url: &str, from: usize, count: usize) -> Result
 
 /// yt-dlp's `-J` of a playlist as a page of songs.
 pub fn parse(json: &[u8]) -> Result<Listing, Problem> {
-    let raw: Raw = serde_json::from_slice(json).map_err(|e| Problem::Other(format!("yt-dlp's answer: {e}")))?;
+    // `-i` turns a failed playlist into `null` on stdout.
+    let raw: Option<Raw> = serde_json::from_slice(json).map_err(|e| Problem::Other(format!("yt-dlp's answer: {e}")))?;
+    let raw = raw.ok_or_else(|| Problem::Other("the site didn't give the playlist".into()))?;
     if raw.kind.as_deref() != Some("playlist") {
         return Err(Problem::Other("this link is a single upload, not a playlist".into()));
     }
@@ -115,6 +130,11 @@ mod tests {
         assert_eq!(page.songs[0].artist.as_deref(), Some("Sweet Medicine"));
         assert_eq!(page.songs[0].duration, Some(158));
         Ok(())
+    }
+
+    #[test]
+    fn a_playlist_the_site_refused_is_an_error() {
+        assert!(parse(b"null\n").is_err());
     }
 
     #[test]

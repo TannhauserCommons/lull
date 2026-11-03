@@ -84,7 +84,7 @@ Score: official +40, YouTube Music +10, exact title +5, minus 3 per second off, 
 
 ## Playlists for link imports
 
-`Youtube::playlist(url, from, count)` lists a YouTube, YouTube Music or SoundCloud playlist for collection's link imports (collection.md), whatever the play mode. YouTube lists flat (`--flat-playlist`, no extraction); SoundCloud's flat listing names no song, so each song is read (`-i`, about 1 s a song), and a song blocked in this country is left out instead of failing the page. Runs share the lookups' pacing, limit and back-off.
+`Youtube::playlist(url, from, count)` lists a YouTube, YouTube Music or SoundCloud playlist for collection's link imports (collection.md), whatever the play mode. YouTube lists flat (`--flat-playlist`, no extraction); SoundCloud's flat listing names no song, so each song is read: metadata only (`--ignore-no-formats-error`, `soundcloud:formats=none`: one request a song) with `--sleep-requests 1`, about 3-4 s a song, because SoundCloud answered 403 to every set for some minutes after about 150 songs were read with their stream formats at full speed. `-i` leaves out a song blocked in this country instead of failing the page; a set it can't read at all comes back `null` and is an error. Runs share the lookups' pacing, limit and back-off.
 
 ## Status
 
