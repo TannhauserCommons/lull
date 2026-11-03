@@ -1,7 +1,8 @@
 //! Playlist covers (docs/context/collection.md#covers): an image the listener uploads, or the one
 //! a link import's source shows. Either is checked, cut to a centred square and stored on the hub
-//! as a 600 px JPEG (`<data>/playlist-covers/pl-<n>.jpg`), so it keeps working whatever the source
-//! does later. A playlist without one shows its songs' covers; that mosaic is the UI's.
+//! as a JPEG of at most 2048 px (`<data>/playlist-covers/pl-<n>.jpg`), so it keeps working whatever
+//! the source does later, and is served at the sizes album art is (`lull_core::art`). A playlist
+//! without one shows its songs' covers; that mosaic is the UI's.
 
 use std::io::Cursor;
 use std::path::PathBuf;
@@ -17,7 +18,7 @@ use axum::routing::get;
 use axum::{Json, Router};
 use image::imageops::FilterType;
 use image::{ImageReader, Limits};
-use lull_core::{Ctx, Error, Result};
+use lull_core::{Ctx, Error, Result, art};
 use rusqlite::{OptionalExtension, params};
 use serde::Deserialize;
 use serde_json::Value;
@@ -25,8 +26,9 @@ use serde_json::Value;
 use crate::playlists::{self, seq_of};
 use crate::{Service, bad_query};
 
-/// The stored square's side, in pixels.
-pub(crate) const SIZE: u32 = 600;
+/// The stored square's largest side, in pixels: the largest size served. A smaller picture is
+/// kept at its own size, never blown up.
+pub(crate) const SIZE: u32 = 2048;
 /// The largest image accepted, uploaded or fetched.
 const MAX_BYTES: usize = 10 * 1024 * 1024;
 /// Larger pictures are refused before they are decoded (a small file can claim a huge image).
@@ -72,7 +74,7 @@ struct SizeQuery {
     size: Option<u32>,
 }
 
-/// `GET /api/playlists/{id}/cover?size=`: the JPEG, scaled down to `size` (32-600) when asked.
+/// `GET /api/playlists/{id}/cover?size=`: the JPEG, scaled down to fit `size` when asked.
 async fn serve(
     State(svc): State<Arc<Service>>,
     Path(id): Path<String>,
@@ -104,31 +106,35 @@ pub(crate) async fn response(svc: &Service, seq: i64, size: Option<u32>) -> Resu
     jpeg_response(&file(&svc.ctx, seq), size).await
 }
 
-/// A stored cover file as a response, scaled down to `size` (32-600) when asked; `None` when
-/// there is no file.
+/// A stored cover file as a response, scaled down to fit the smallest served size that covers
+/// `size` when asked (never up), with its real size in `X-Image-Size`; `None` when there is no
+/// file.
 pub(crate) async fn jpeg_response(path: &std::path::Path, size: Option<u32>) -> Result<Option<Response>> {
     let jpeg = match tokio::fs::read(path).await {
         Ok(bytes) => bytes,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(Error::internal(format!("reading {}: {e}", path.display()))),
     };
-    let jpeg = match size.map(|s| s.clamp(32, SIZE)) {
-        Some(s) if s < SIZE => tokio::task::spawn_blocking(move || scaled(&jpeg, s))
+    let jpeg = match size.map(|s| art::SIZES.into_iter().find(|&b| b >= s).unwrap_or(SIZE)) {
+        Some(s) => tokio::task::spawn_blocking(move || art::fit(jpeg, s))
             .await
-            .map_err(|e| Error::internal(format!("scaling a cover: {e}")))??,
-        _ => jpeg,
+            .map_err(|e| Error::internal(format!("scaling a cover: {e}")))?,
+        None => jpeg,
     };
-    Ok(Some(
-        (
-            [
-                (header::CONTENT_TYPE, "image/jpeg"),
-                // The URL carries the cover's version (`?v=`), so a new cover is a new URL.
-                (header::CACHE_CONTROL, "private, max-age=31536000, immutable"),
-            ],
-            jpeg,
-        )
-            .into_response(),
-    ))
+    let real = art::dimensions(&jpeg).map(|(w, h)| format!("{w}x{h}"));
+    let mut response = (
+        [
+            (header::CONTENT_TYPE, "image/jpeg"),
+            // The URL carries the cover's version (`?v=`), so a new cover is a new URL.
+            (header::CACHE_CONTROL, "private, max-age=31536000, immutable"),
+        ],
+        jpeg,
+    )
+        .into_response();
+    if let Some(Ok(real)) = real.map(|r| r.parse()) {
+        response.headers_mut().insert(art::IMAGE_SIZE, real);
+    }
+    Ok(Some(response))
 }
 
 /// `PUT /api/playlists/{id}/cover` (body: a JPEG, PNG or WebP up to 10 MB): the playlist with it.
@@ -314,12 +320,6 @@ pub(crate) fn square(bytes: &[u8]) -> Result<Vec<u8>> {
     encode(&cut.resize_exact(out, out, FilterType::Lanczos3))
 }
 
-/// A stored cover at a smaller size.
-fn scaled(jpeg: &[u8], size: u32) -> Result<Vec<u8>> {
-    let image = image::load_from_memory(jpeg).map_err(|e| Error::internal(format!("a stored cover: {e}")))?;
-    encode(&image.resize(size, size, FilterType::Triangle))
-}
-
 fn encode(image: &image::DynamicImage) -> Result<Vec<u8>> {
     let mut out = Vec::new();
     image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 88)
@@ -384,11 +384,39 @@ mod tests {
     }
 
     #[test]
-    fn a_wide_picture_becomes_a_600_px_square() -> Result<()> {
+    fn a_wide_picture_becomes_its_centred_square_of_at_most_2048_px() -> Result<()> {
         assert_eq!(
             side_of(&square(&picture(1280, 720, image::ImageFormat::Png)?)?)?,
-            (600, 600)
+            (720, 720)
         );
+        assert_eq!(
+            side_of(&square(&picture(3000, 2400, image::ImageFormat::Jpeg)?)?)?,
+            (2048, 2048)
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_stored_cover_is_served_at_most_at_its_own_size() -> Result<()> {
+        let dir = std::env::temp_dir().join(format!("lull-cover-{}", std::process::id()));
+        tokio::fs::create_dir_all(&dir)
+            .await
+            .map_err(|e| Error::internal(e.to_string()))?;
+        let path = dir.join("pl-1.jpg");
+        tokio::fs::write(&path, square(&picture(600, 600, image::ImageFormat::Jpeg)?)?)
+            .await
+            .map_err(|e| Error::internal(e.to_string()))?;
+        for (asked, real) in [(Some(1024), "600x600"), (Some(200), "256x256"), (None, "600x600")] {
+            let answer = jpeg_response(&path, asked)
+                .await?
+                .ok_or_else(|| Error::internal("no cover"))?;
+            assert_eq!(
+                answer.headers().get(art::IMAGE_SIZE).and_then(|v| v.to_str().ok()),
+                Some(real),
+                "asked {asked:?}"
+            );
+        }
+        let _ = tokio::fs::remove_dir_all(&dir).await;
         Ok(())
     }
 

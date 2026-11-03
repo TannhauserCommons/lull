@@ -93,7 +93,8 @@ Spotify's Private Session, per paired device: `core_devices.private`, switched w
 ## Covers
 
 `covers.rs`. A playlist's own cover is an upload (`PUT /api/playlists/{id}/cover`) or a link import's source picture; without one the UI shows its songs' album covers (a 2×2 mosaic of the first four albums, one cover for a single album).
-- **Stored on the hub** as `<data>/playlist-covers/pl-<n>.jpg`: the centred square, at most 600 px, JPEG 88, so it keeps working whatever the source does. `collection_playlists.cover_at` (ms) versions its URL; `cover_from` is `upload` or `link`, `cover_url` the source picture kept.
+- **Stored on the hub** as `<data>/playlist-covers/pl-<n>.jpg`: the centred square, at most 2048 px (a smaller picture keeps its own size), JPEG 88, so it keeps working whatever the source does. `collection_playlists.cover_at` (ms) versions its URL; `cover_from` is `upload` or `link`, `cover_url` the source picture kept. Covers stored before 2026-11-03 are 600 px.
+- **Served** like album art (`lull_core::art`): `?size=` gives the smallest of 96, 256, 512, 1024 and 2048 that covers it, scaled down and never up, with `X-Image-Size`; no `size` gives the stored file. Outside playlists' pictures (`outside-covers/`) are kept and served the same way.
 - **Checked before decoding:** JPEG, PNG or WebP only, at most 10 MB and 8000 px a side (a small file can claim a huge picture).
 - **A link's picture** (Spotify's embed images, Deezer's `picture_xl`/`cover_xl`, YouTube's or SoundCloud's thumbnails; the first of up to three, largest first, that loads, since YouTube lists a `maxresdefault` that often 404s) is fetched once: again only when the source shows another picture, and never over an upload. If it can't be had, the import still ends and the songs' covers show.
 - **Removing a cover** or **deleting the playlist** removes the file (deletion through the `playlist` event, whichever path deleted it).
