@@ -1856,7 +1856,8 @@
     var items = [
       { label: 'Play next', icon: 'queue', run: function () { App.player.playNext(a.trackIds); App.toast(a.title + ' plays next', { icon: 'queue' }); } },
       { label: 'Add to queue', icon: 'plus', run: function () { App.player.addToQueue(a.trackIds); App.toast('Added ' + a.title + ' to the queue', { icon: 'queue' }); } },
-      { label: 'Go to artist', icon: 'peer', run: function () { App.go('/artist/' + a.artistId); } }
+      { label: 'Go to artist', icon: 'peer', run: function () { App.go('/artist/' + a.artistId); } },
+      App.coverItem('album', a.id)
     ];
     if (a.trackIds[0]) items.push({ label: 'Show sources for track 1', icon: 'soulseek', run: function () { App.hooks.sourcePicker(a.trackIds[0]); } });
     items.push('sep', { label: 'Copy link', icon: 'link', run: function () { App.copyShareLink('album', a.id, '/album/' + a.id); } },
@@ -1924,6 +1925,7 @@
       { label: 'Duplicate', icon: 'playlists', run: function () {
         makePlaylist(p.name + ' (copy)', p.desc, ids, undefined, addedOf(p)).then(function (c) { if (c) { App.go('/playlist/' + c.id); App.toast('Made a copy of ' + p.name, { icon: 'playlists' }); } });
       } },
+      App.coverItem('playlist', p.id),
       { label: 'Export as M3U', icon: 'export', run: function () { if (ids.length) openExport(p); else App.toast('Add a few songs before exporting', { icon: 'info' }); } },
       { label: 'Copy lull link', icon: 'link', run: function () { App.copyLullLink('/playlist/' + p.id); } },   // playlists have no public page
       'sep',
@@ -1947,6 +1949,7 @@
     if (t) {
       items.push({ label: 'Go to album', icon: 'library', run: function () { App.go('/album/' + t.albumId); } });
       items.push({ label: 'Go to artist', icon: 'peer', run: function () { App.go('/artist/' + t.artistId); } });
+      items.push(App.coverItem('track', id));
       items.push({ label: 'Show sources', icon: 'soulseek', run: function () { App.hooks.sourcePicker(id); } });
     }
     items.push({ label: 'Remove from this playlist', icon: 'trash', danger: true, run: function () { if (!custom) return sortNeeded(p); removeItem(p, itemAt(n), n); } });

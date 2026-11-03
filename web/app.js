@@ -832,6 +832,11 @@
   function placePlaying(key) { return !!App.player && !!key && App.placeKey(App.player.playingFrom()) === key; }
   var PLACE_MARK = '<span class="place-mark"><span class="eq" aria-hidden="true"><i></i><i></i><i></i></span><span class="vh">(playing)</span></span>';
   ui.placeCls = function (key) { return placePlaying(key) ? ' is-playing-place' + (App.player.state.playing ? ' is-playing-now' : '') : ''; };
+  /* the expand button over a cover that opens it large (App.viewCover): shown on hover and focus, the way Spotify's
+     arrow is; a touch screen has no hover, and its "…" menus have View cover */
+  ui.coverZoom = function (trackId) {
+    return html`<button class="cover-zoom__btn" data-act="view-cover" data-kind="track" data-id="${trackId}" aria-label="View cover" data-tip="View cover">${icon('expand', null, 'ic-16')}</button>`;
+  };
   ui.placeMark = function (key) { return raw(placePlaying(key) ? PLACE_MARK : ''); };
   /* "Playing from <name>": the place the song plays from, as a link that opens it at the song (App.goPlaying); radio
      and the listener's own queue open the queue. Empty while nothing plays from anywhere. */
@@ -1093,6 +1098,41 @@
     $('[data-yes]', d.el).addEventListener('click', function () { d.close(); if (onYes) onYes(); });
     return d;
   };
+  /* ---------- the cover viewer: a song's, album's or playlist's art, large, without leaving the page ----------
+     App.viewCover({ kind: track|album|playlist, id }) opens the design's dialog: the picture with its name, artist and
+     album as links. Esc, the scrim and Close shut it, and focus goes back to what opened it (openLayer). The picture
+     shows at once with the size this page already decoded; the hub's largest (COVER_BIG) replaces it once decoded, so
+     it never fades in twice. A picture drawn no larger than what it has (a mosaic's quarter) isn't asked again.
+     Opened from the player bar's and the Now column's cover (an expand button on hover and focus), the player's "…",
+     and every song, album and playlist menu (App.coverItem), so also by right-click. */
+  var COVER_BIG = 512;
+  App.viewCover = function (what) {
+    var v = coverSubject(what); if (!v) return;
+    var d = App.openDialog({ title: 'cover', className: 'cover-view', body: html`<div class="cover-view__art">${v.art}</div>
+      <div class="cover-view__info">${v.info}</div>` });
+    $$('.cover__img', d.el).forEach(sharpen);
+  };
+  App.coverItem = function (kind, id) { return { label: 'View cover', icon: 'expand', run: function () { App.viewCover({ kind: kind, id: id }); } }; };
+  function coverSubject(w) {
+    function link(href, text, cls) { return html`<a class="${cls}" href="${href}" data-close>${text}</a>`; }
+    if (w.kind === 'playlist') {
+      var p = M.playlist(w.id); if (!p) return null;
+      return { art: ui.playlistArt(p, '100%', 'Cover of ' + p.name),
+        info: html`${link('#/playlist/' + encodeURIComponent(p.id), p.name, 'cover-view__title')}<span class="cover-view__by">${p.items.length === 1 ? '1 song' : p.items.length + ' songs'}</span>` };
+    }
+    var t = w.kind === 'track' ? M.track(w.id) : null, a = t ? M.album(t.albumId) : M.album(w.id), e = t || a;
+    if (!e) return null;
+    var albumHref = '#/album/' + encodeURIComponent(t ? t.albumId : a.id), albumTitle = t ? t.album : a.title;
+    return { art: ui.cover(e, '100%', { label: 'Cover of ' + albumTitle }),
+      info: html`${link(albumHref, t ? t.title : a.title, 'cover-view__title')}<span class="cover-view__by">${link('#/artist/' + encodeURIComponent(e.artistId), e.artist, 'link')}${t && t.album ? html`, ${link(albumHref, t.album, 'link-plain')}` : ''}</span>` };
+  }
+  function sharpen(img) {
+    var src = img.getAttribute('src'), big = src && /[?&]size=/.test(src) ? sized(src, COVER_BIG) : null;
+    if (!big || big === src || img.getBoundingClientRect().width * (window.devicePixelRatio || 1) <= parseInt(/[?&]size=(\d+)/.exec(src)[1], 10)) return;
+    if (artReady.has(big) || !artReady.has(src)) { img.src = big; return; }   // the big one is decoded, or nothing is yet: one picture
+    var im = new Image(); im.src = big;
+    im.decode().then(function () { artReady.add(big); if (img.isConnected) img.src = big; }, function () { /* the smaller one stays */ });
+  }
   function enableDragDismiss(el, layer) {
     var startY = null, dy = 0;
     el.addEventListener('pointerdown', function (e) {
@@ -3011,7 +3051,7 @@
       /* the cover opens Now Playing; the title, and the "Playing from" line where the design shows it, open the place
          it plays from at the song; with no such page (a single song, radio, your queue), the title opens the album */
       var from = P.playingFrom(), fromPath = from && App.placePath(from);
-      patch(now, html`<a class="bezel-thumb" href="#/now" aria-label="Open Now Playing: ${t.title}" data-tip="Now Playing">${ui.cover(t, 52)}</a>
+      patch(now, html`<span class="cover-zoom"><a class="bezel-thumb" href="#/now" aria-label="Open Now Playing: ${t.title}" data-tip="Now Playing">${ui.cover(t, 52)}</a>${ui.coverZoom(t.id)}</span>
         <div class="pbar__text">
           ${ui.playingFrom('pbar__from')}
           <div class="pbar__title">${fromPath ? html`<a href="#${fromPath}" data-act="go-playing" data-tip="Show the song in ${App.placeName(from)}">${t.title}</a>` : html`<a href="#/album/${t.albumId}">${t.title}</a>`}</div>
@@ -3279,6 +3319,7 @@
       'sep',
       { label: 'Go to album', icon: 'library', run: function () { App.go('/album/' + t.albumId); } },
       { label: 'Go to artist', icon: 'peer', run: function () { App.go('/artist/' + t.artistId); } },
+      App.coverItem('track', id),
       { label: 'Show sources', icon: 'soulseek', run: function () { App.hooks.sourcePicker(id); } }
     ], { label: 'Actions for ' + t.title });
   }
@@ -3297,6 +3338,7 @@
       { label: 'Add to playlist', icon: 'playlists', run: function () { App.hooks.addToPlaylist([t.id]); } },
       { label: 'Go to album', icon: 'library', run: function () { App.go('/album/' + t.albumId); } },
       { label: 'Go to artist', icon: 'peer', run: function () { App.go('/artist/' + t.artistId); } },
+      App.coverItem('track', t.id),
       { label: 'Start radio', icon: 'radio', run: function () { startRadio({ kind: 'track', id: t.id }); } },
       { label: 'Show source', icon: 'soulseek', run: function () { App.hooks.sourceDetails(); } },
       { label: 'Copy link', icon: 'link', run: function () { App.copyShareLink('track', t.id, '/album/' + t.albumId); } },
@@ -3324,6 +3366,7 @@
     },
     'play-ids': function (el) { P.playList(ids(el), 0); },
     'go-playing': function () { App.goPlaying(); },
+    'view-cover': function (el) { App.viewCover({ kind: el.getAttribute('data-kind') || 'track', id: el.getAttribute('data-id') }); },
     'queue-next': function (el) { P.playNext(ids(el)); },
     'queue-add': function (el) { P.addToQueue(ids(el)); },
     'like': function (el) { App.toggleLike(el.getAttribute('data-id')); },

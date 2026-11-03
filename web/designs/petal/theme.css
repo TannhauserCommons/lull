@@ -505,7 +505,7 @@
 :root[data-design="petal"] .pbar > .region-title { display: none; }
 :root[data-design="petal"] .pbar__text { grid-template-columns: minmax(0, auto) auto; grid-template-areas: "lbl lbl" "title title" "artist badges"; column-gap: 8px; row-gap: 0; align-items: center; justify-content: start; }
 :root[data-design="petal"] .pbar__from, :root[data-design="petal"] .pbar[data-status="failed"] .pbar__text::before { grid-area: lbl; margin-bottom: 3px; font: 700 .75rem/1 var(--f-ui); color: var(--fg-panel-2); }
-:root[data-design="petal"] .pbar__from b { font-weight: 800; color: var(--fg-panel); }
+:root[data-design="petal"] .pbar__from b { font-weight: 800; color: var(--fg); }
 :root[data-design="petal"] .pbar[data-status="failed"] .pbar__from { display: none; }
 :root[data-design="petal"] .pbar__title { grid-area: title; font-size: 1.0625rem; }
 :root[data-design="petal"] .pbar__artist { grid-area: artist; min-width: 0; }

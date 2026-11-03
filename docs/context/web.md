@@ -448,6 +448,18 @@ picker): its own `cover` (`/api/playlists/{id}/cover`, asked at 96, 256 or 512 p
 one larger tilted card). The create and edit dialog picks a picture (JPEG, PNG or WebP, 10 MB, checked before sending)
 with a preview, or removes the cover; it is `PUT`/`DELETE` after the details save.
 
+## Cover viewer
+
+`App.viewCover({ kind: track|album|playlist, id })` shows a cover large without leaving the page: the design's dialog
+(`.cover-view`) with the picture and its name, artist and album as links; Esc, the scrim and Close shut it and focus
+returns to the opener. It opens at once with the size this page already decoded and swaps in 512 px (the largest
+`/api/art`, `/api/catalog/art` and playlist covers serve) once that has decoded, so it never fades in twice; a picture
+drawn no larger than the size it has (a mosaic's quarter) isn't asked again. Opened from:
+- the player bar's cover and the Now column's (`ui.coverZoom(trackId)`, an expand button inside `.cover-zoom`, shown
+  on hover and keyboard focus; hidden on touch screens, which have no hover);
+- "View cover" (`App.coverItem(kind, id)`) in the player's "…" (Now Playing's too) and every song, album and playlist
+  menu, so also by right-click. A song row's cover keeps its click for the row (select, double-click to play).
+
 ## Imports
 
 Library's Import dialog (`lib-import`, library.js section 10): a playlist file dropped anywhere or chosen there,

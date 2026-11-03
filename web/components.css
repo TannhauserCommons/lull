@@ -448,6 +448,16 @@ button.trow__title:hover { text-decoration: underline; text-underline-offset: 3p
 :is(.trow, .disc-pick).is-revealed { background: var(--bg-2); box-shadow: inset 0 0 0 2px var(--link); animation: row-revealed 1.8s var(--ease-out) both; }
 @keyframes row-revealed { 0%, 60% { background: var(--bg-2); box-shadow: inset 0 0 0 2px var(--link); } 100% { background: transparent; box-shadow: inset 0 0 0 2px transparent; } }
 
+/* the cover viewer (App.viewCover): the picture as large as the window allows up to the hub's 512 px, its names under it */
+.dialog.cover-view { width: fit-content; max-width: calc(100% - 32px); }   /* .dialog's own width comes later */
+.cover-view .sheet__body { display: grid; justify-items: center; gap: var(--sp-3); }
+.cover-view__art { width: min(512px, calc(100vw - 96px), calc(100dvh - 240px)); }
+.cover-view__art :is(.cover, .mosaic) { --cover-size: 100%; }
+.cover-view__info { display: grid; justify-items: center; gap: 2px; max-width: min(512px, calc(100vw - 96px)); text-align: center; }
+.cover-view__title { font: var(--t-row); font-size: 1.125rem; }
+.cover-view__title:hover { text-decoration: underline; text-underline-offset: 3px; }
+.cover-view__by { font: var(--t-meta); color: var(--fg-2); }
+
 /* "Playing from <place>" (ui.playingFrom): a quiet link to where the song plays from */
 .from { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; text-decoration: none; cursor: pointer; }
 .from__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -856,6 +866,16 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 .bezel-thumb { position: relative; flex: none; display: block; padding: 4px; background: var(--mauve); border: var(--stroke) solid var(--mocha-edge); border-radius: 10px 10px 18px 10px; }
 .bezel-thumb .cover { --cover-size: 52px; border-color: var(--mocha-edge); border-radius: 6px; }
 .bezel-thumb:hover { background: var(--mocha); }
+/* a cover with the expand button that opens it large (ui.coverZoom, App.viewCover): shown on hover and keyboard focus,
+   on a dark round so it reads over any picture; a touch screen gets View cover from the "…" menus instead */
+.cover-zoom { position: relative; flex: none; }
+.cover-zoom__btn {
+  position: absolute; top: 6px; right: 6px; z-index: 1; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%;
+  background: rgba(20, 16, 28, .72); color: #fff; opacity: 0; pointer-events: none; transition: opacity var(--dur-1) var(--ease-out);
+}   /* check: #ffffff on rgba(20,16,28,.72) over white 4.5 */
+.cover-zoom__btn .ic { width: 14px; height: 14px; }
+.cover-zoom:hover .cover-zoom__btn, .cover-zoom__btn:focus-visible { opacity: 1; pointer-events: auto; }
+@media (hover: none) { .cover-zoom__btn { display: none; } }
 .bezel-thumb--empty > span { display: block; width: var(--cover-size, 52px); aspect-ratio: 1; border-radius: 6px; background: var(--screen); border: var(--stroke) solid var(--mocha-edge); }
 .mini .bezel-thumb--empty > span { --cover-size: 40px; border-radius: 5px; }
 
@@ -1143,7 +1163,7 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 .pbar__artist { font: var(--t-meta); color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* "Playing from <place>" over the title; a design without room for a fourth line hides it (the title opens it too) */
 .pbar__from { justify-self: start; margin-bottom: 1px; font: 700 .75rem/1.2 var(--f-ui); color: var(--fg-2); }
-.pbar__from b { font-weight: 800; color: var(--fg-panel); }
+.pbar__from b { font-weight: 800; color: var(--fg); }
 .pbar__from .ic { width: 14px; height: 14px; }
 .pbar__badges { display: flex; align-items: center; gap: 6px; margin-top: 3px; min-height: 24px; }
 .pbar__centre { display: grid; justify-items: center; gap: 2px; min-width: 0; }

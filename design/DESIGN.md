@@ -272,6 +272,7 @@ a label makes it `role="img"`) and `ICON_NAMES`. Sizes `.ic` 20 px, `.ic-16`, `.
 | Cards | `.card` (`--flush`), `.label-rule` (`--sm`), `.inset` (flat group inside a card) |
 | Tiles, covers | `.shelf` (scroll-snap row), `.tile` (`__art __play __title __by __meta`); `.cover.c1..c8` (`--thumb --xs --round`, size `--cover-size`), `.mosaic` (2x2) |
 | Track rows | `ol.tlist` (`--dense --dated`, a container query) > `li.trow` (`__num __grip __art __main __title __artist __album __added __badges __sources __like __dur __more __fmt`); `.is-playing .is-playing-now .is-selected .is-unavailable .is-failed .is-dragging .is-revealed` (lit for a moment when "Playing from" opens its page); `.eq` (playing bars) |
+| Cover viewer | `.cover-zoom` > `.cover-zoom__btn` (the expand button over a cover, on hover and focus), `.cover-view` (dialog) > `.cover-view__art`, `.cover-view__info` (`__title`, `__by`) |
 | Playing from | `.from` (`ui.playingFrom(cls, label)`: icon, `.from__text` > `.from__label` + `b` name; a link to the place, a button for radio and the queue), `.place-mark` (`.eq` + hidden "(playing)") |
 | Source picker | `.src-table` > `.src-row` (`--head`, `.is-failed`, `.is-preferred`), `.score` (`--s` 0-1) |
 | Seek, waveform, volume | `.seek` (`__track __xfer __bufs __buf __played __rail __knob __tip`; `--pos`, `--xfer`; `.is-transferring .is-dragging .is-shake`), `.seek--line`, `.seek-row`; `.wave` (`__bar` with `--h`, `.is-played .is-buf .is-xfer`, `__rail __head`), `.wave-times`; `.vol`, `.range` (`--fill`) |
@@ -341,6 +342,9 @@ Behaviour worth knowing per screen (not obvious from a screenshot):
   which lights up for a moment (radio and the listener's own queue open the queue). In the player bar the cover opens
   Now Playing, the title opens the place at the song (the album when there is no such page), the artist the artist.
   Every tile, rail playlist and search result of that place shows the playing bars, still while paused.
+- **Cover viewer.** Hovering or focusing the player bar's cover (and the Now column's) shows an expand button that
+  opens the cover large in a dialog, with the song, artist and album as links, without leaving the page; "View
+  cover" in the player's and every song, album and playlist "…" menu (and right-click) opens the same.
 - **Back** returns a page to where it was: its scroll position and focused row, also after a reload.
 - **Queue** groups: now playing, next up (the listener's own picks: "Play next" at its front, "Add to queue" at its
   end), then (context: "next from <place>"), radio tail ("keeps adding" toggle + familiar/adventurous steer). Next up
@@ -418,6 +422,7 @@ lastfm-retry open-cache go-playing back noop reload`. Screens add their own, pre
 `App.openSheet({ title, body, foot, wide, className, label, role, closable, dismissible, onMount(el, close), onClose })`
 and `App.openDialog(same)` (focus trap, Esc, focus returns to the opener; phone sheets drag down to dismiss; dialogs
 never stack), `App.closeTop()`, `App.confirm({ title, text, confirm, danger }, onYes)`,
+`App.viewCover({ kind: track|album|playlist, id })` (the cover viewer, a `.cover-view` dialog),
 `App.popover(anchor, markup, opts)` / `App.closePopover()`, `App.menu(anchor, items, { label })`, `data-tip="..."`
 tooltips, `App.toast(msg, { icon, kind: 'info'|'ok'|'error', action, onAction, sticky })`,
 `App.banner.show({ id, kind: 'warn'|'down'|'info'|'ok', icon, text, action: { label, run }, dismissible })`, `.hide(id)`,

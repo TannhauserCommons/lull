@@ -396,6 +396,7 @@
       { label: 'Start radio', icon: 'radio', run: function () { startRadio({ kind: 'track', id: id }); } }
     ]);
     if (!noSrc) items.push({ label: 'Show sources', icon: 'soulseek', run: function () { openPicker(id); } });
+    items.push(App.coverItem('track', id));
     items.push('sep', { label: 'Not interested', icon: 'close', run: function () { lessLike(id); } });
     App.menu(el, items, { label: 'Actions for ' + t.title });
   });

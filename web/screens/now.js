@@ -1066,6 +1066,7 @@
     items.push({ label: App.isSaved(t.id) ? 'In your library' : 'Save to library', icon: App.isSaved(t.id) ? 'saved' : 'save', run: function () { App.saves.start([t.id]); } });
     items.push({ label: 'Add to playlist', icon: 'playlists', run: function () { App.hooks.addToPlaylist([t.id], el); } });
     items.push({ label: 'Go to album', icon: 'library', run: function () { App.go('/album/' + t.albumId); } });
+    items.push(App.coverItem('track', t.id));
     items.push({ label: 'Show sources', icon: 'soulseek', run: function () { App.hooks.sourcePicker(t.id); } });
     App.menu(el, items, { label: 'Queue actions for ' + t.title });
   });
@@ -1200,7 +1201,7 @@
   function colBody() {
     var t = cur();
     if (!t) return ui.emptyState({ art: 'wave', title: 'Nothing playing', text: 'Pick something from Home and it shows here.' });
-    return html`<div class="nowcol__art">${ui.cover(t, '100%', { label: t.album })}</div>
+    return html`<div class="nowcol__art cover-zoom">${ui.cover(t, '100%', { label: t.album })}${ui.coverZoom(t.id)}</div>
       <div class="nowcol__info">${colInfo(t)}</div>
       <section class="nowcol__src" data-nowcol="src" aria-label="Source">${sourceCard()}</section>
       <section class="nowcol__ly" data-nowcol="lyrics" aria-label="Lyrics">${lyricsBlock('col')}</section>`;
