@@ -4,7 +4,8 @@
     "externalBin": ["binaries/slskd", "binaries/yt-dlp", "binaries/deno"],
     "resources": {
       "binaries/slskd-LICENSE.txt": "licenses/slskd-LICENSE.txt",
-      "licenses/THIRD-PARTY.md": "licenses/THIRD-PARTY.md"
+      "licenses/THIRD-PARTY.md": "licenses/THIRD-PARTY.md",
+      "../LICENSE": "licenses/LICENSE.txt"
     }
   }
 }

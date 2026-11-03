@@ -1,5 +1,6 @@
 {
   "private": true,
+  "license": "AGPL-3.0-only",
   "description": "Only vendored browser files (Webamp, the QR encoder): the UI itself is buildless. `mise run setup` copies them into web/vendor/.",
   "dependencies": {
     "qrcode-generator": "1.4.4",

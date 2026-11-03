@@ -71,3 +71,7 @@ The details of each setup are in [docs/context/deploy.md](docs/context/deploy.md
 ## For contributors
 
 Start at [AGENTS.md](AGENTS.md). `mise run setup` once, then `mise run check` runs what CI runs.
+
+## Licence
+
+lull is free software, licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0-only). You may use, study, change and share it. If you run a changed version for others over a network, offer them its source. The web UI includes Webamp (MIT). The desktop apps bundle slskd (AGPL-3.0), yt-dlp (Unlicense) and Deno (MIT), unmodified; their notices ship in the apps' `licenses` folder (`app/licenses/THIRD-PARTY.md`).

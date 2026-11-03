@@ -1023,6 +1023,7 @@
     return html`${row(app ? 'Server version' : 'Version', '', html`<span class="sys-inline"><span class="px sys-version" id="sys-version">${App.server.version || 'not reported yet'}</span><button class="btn btn--sm" data-act="sys-update-check">Check for updates</button></span>`)}
       ${row('Install app', 'Adds lull to your home screen or dock with lock-screen controls and its own window.', html`<div id="sys-install">${installBody()}</div>`)}
       ${row('First-run setup', 'Your library, your Soulseek account and Last.fm, step by step.', html`<a class="btn" href="#/setup">Open setup</a>`)}
+      ${row('Licence', 'lull is free software under the GNU Affero General Public License 3.0: you may use, change and share it, and its source is open to everyone who uses it.', html`<a class="btn" href="https://github.com/TannhauserCommons/lull" target="_blank" rel="noopener">${icon('external', null, 'ic-16')}Source code</a>`)}
       ${group('server')}
       ${inWrapper() ? '' : configRow('Server address', serverAddress(), 'The address this page was loaded from.')}
       <div class="sys-row sys-row--stack"><div class="sys-row__text"><span class="sys-row__label">Server health</span><span class="sys-row__help">What the server reports about itself and its services.</span></div>

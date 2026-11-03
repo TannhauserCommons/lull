@@ -3,6 +3,8 @@ name = "lull-app"
 version = "0.2.0"
 edition = "2024"
 rust-version = "1.99"
+license = "AGPL-3.0-only"
+repository = "https://github.com/TannhauserCommons/lull"
 description = "The lull app for Windows, Linux and Android: the web UI, the hub in-process on desktop, a native player on Android"
 publish = false
 

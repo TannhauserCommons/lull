@@ -30,6 +30,9 @@
       "appimage"
     ],
     "category": "Music",
+    "license": "AGPL-3.0-only",
+    "copyright": "Copyright (C) 2026 TannhauserCommons",
+    "publisher": "TannhauserCommons",
     "shortDescription": "Self-hosted music player",
     "longDescription": "lull is a music app you host yourself: Soulseek while it downloads, your music folder or Jellyfin, discovery and Last.fm. On Windows and Linux this computer can be your hub; phones and other computers pair with it.",
     "icon": [

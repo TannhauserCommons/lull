@@ -21,6 +21,8 @@ exclude = ["app"]
 
 [workspace.package]
 version = "0.2.0"
+license = "AGPL-3.0-only"
+repository = "https://github.com/TannhauserCommons/lull"
 edition = "2024"
 rust-version = "1.99"
 publish = false
