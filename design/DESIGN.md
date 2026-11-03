@@ -334,9 +334,9 @@ Behaviour worth knowing per screen (not obvious from a screenshot):
   saved and pending. Albums and the queue show aggregate progress.
 - **Queue** groups: now playing, next up (the listener's own picks: "Play next" at its front, "Add to queue" at its
   end), then (context), radio tail ("keeps adding" toggle + familiar/adventurous steer). Next up plays before the
-  context continues, survives starting another album, playlist or radio, and plays in order under shuffle; shuffle
-  then plays every other song once per round (repeat all starts a new round). Each item shows source and resolve
-  state (ready / resolving / none).
+  context continues, survives starting another album, playlist or radio, and is never shuffled. Shuffle reorders the
+  songs after next up in the queue itself, so the queue shows what will play and each song plays once; turning it off
+  puts them back in their order. Each item shows source and resolve state (ready / resolving / none).
 - **Lyrics** auto-scroll pauses when the user scrolls ("back to current line" pill); clicking a line seeks only inside
   what is buffered; attribution "Lyrics provided by LRCLIB".
 - **Settings**: values that come from server config (credentials, URLs, keys) are read-only with "set in server

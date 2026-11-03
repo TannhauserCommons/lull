@@ -1268,7 +1268,6 @@
     resetTrackState();
     var was = [cur, nxt], e = ps.queue[ps.index], seq = ++loadSeq;
     cur = e || null; nxt = null;
-    if (e) heard[e.uid] = true;
     was.forEach(letGo);
     if (!e || !M.track(e.trackId)) { out.pause(); out.setNext(null); ps.status = 'idle'; ps.playing = false; ps.source = null; changed('track'); return; }
     e.attempt = null; if (opts.forceSoulseek) e.complete = false;
@@ -1306,43 +1305,37 @@
   P.pause = function () { ps.playing = false; out.pause(); changed('play'); };
   P.toggle = function () { if (ps.playing) P.pause(); else P.play(); };
 
-  /* the index the queue moves to next: repeat one (only when a song ends by itself), shuffle, wrap, or -1.
-     Shuffle plays the listener's "next up" first, in order, then every other song once in a random order: `heard`
-     holds the queue entries (by uid) already played this round; when none is left, repeat all starts a new round. */
-  var shuffleNext = null, heard = {};
-  function shuffleLeft() {
-    var left = [];
-    ps.queue.forEach(function (e, i) { if (i !== ps.index && !heard[e.uid]) left.push(i); });
-    return left;
+  /* Shuffle is an order, not a pick: turning it on shuffles the songs after the listener's "next up" in the queue
+     itself, so the queue shows what will play, and every song plays once per pass. Each entry keeps `orig`, its
+     place before shuffling, so turning shuffle off puts the rest back in order. Next up is never shuffled. */
+  function shuffleFrom() { var at = ps.index + 1; while (ps.queue[at] && ps.queue[at].group === 'next') at++; return at; }
+  function shuffleRest() {
+    var from = shuffleFrom(), rest = ps.queue.slice(from);
+    for (var i = rest.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), x = rest[i]; rest[i] = rest[j]; rest[j] = x; }
+    ps.queue.splice.apply(ps.queue, [from, rest.length].concat(rest));
   }
+  function unshuffleRest() {
+    var from = shuffleFrom(), rest = ps.queue.slice(from);
+    rest = rest.map(function (e, k) { return { e: e, k: k }; })            // songs added later keep their place after
+      .sort(function (a, b) { return (a.e.orig == null ? Infinity : a.e.orig) - (b.e.orig == null ? Infinity : b.e.orig) || a.k - b.k; })
+      .map(function (x) { return x.e; });
+    ps.queue.splice.apply(ps.queue, [from, rest.length].concat(rest));
+  }
+  function markOrder() { ps.queue.forEach(function (e, i) { e.orig = i; }); }
+  /* the index the queue moves to next: repeat one (only when a song ends by itself), the next entry, wrap, or -1 */
   function nextIndex(auto) {
     if (auto && ps.repeat === 'one') return ps.index;
-    if (ps.shuffle && ps.queue.length > 1) {
-      var after = ps.queue[ps.index + 1];
-      if (after && after.group === 'next') return ps.index + 1;
-      if (shuffleNext === null || shuffleNext === ps.index || shuffleNext >= ps.queue.length || heard[ps.queue[shuffleNext].uid]) {
-        var left = shuffleLeft();
-        if (!left.length) {
-          if (ps.repeat !== 'all') return -1;
-          heard = {}; if (cur) heard[cur.uid] = true;
-          left = shuffleLeft();
-        }
-        shuffleNext = left.length ? left[Math.floor(Math.random() * left.length)] : -1;
-      }
-      return shuffleNext;
-    }
     if (ps.index + 1 < ps.queue.length) return ps.index + 1;
     return ps.repeat === 'all' ? 0 : -1;
   }
   P.next = function (auto) {
     if (!ps.queue.length) return;
-    var i = nextIndex(auto); shuffleNext = null;
+    var i = nextIndex(auto);
     if (i === ps.index && auto) { endPlay('completed'); out.seek(0); out.play().catch(playRefused); return; }
     if (i < 0) {                                        // the end: radio may still add songs
-      topUpRadio().then(function (added) {           // shuffle picks among the new songs too
+      topUpRadio().then(function (added) {
         if (!added) { endQueue(auto); return; }
-        shuffleNext = null; var j = nextIndex(auto);
-        load(j >= 0 ? j : ps.index + 1, { reason: auto ? 'completed' : 'skipped' });
+        load(ps.index + 1, { reason: auto ? 'completed' : 'skipped' });
       });
       return;
     }
@@ -1394,9 +1387,13 @@
   P.seekBy = function (d) { return P.seek(ps.pos + d); };
 
   P.setShuffle = function (on) {
-    ps.shuffle = on == null ? !ps.shuffle : !!on; shuffleNext = null;
-    heard = {}; if (cur) heard[cur.uid] = true;          // a new round from here
-    releaseNext(); changed('mode');
+    on = on == null ? !ps.shuffle : !!on;
+    if (on !== ps.shuffle) {
+      ps.shuffle = on;
+      if (on) { markOrder(); shuffleRest(); } else unshuffleRest();
+      queueChanged();
+    }
+    changed('mode');
   };
   P.cycleRepeat = function () { ps.repeat = { off: 'all', all: 'one', one: 'off' }[ps.repeat]; releaseNext(); applyLevels(); changed('mode'); };
   P.setVolume = function (v) { ps.volume = clamp(v, 0, 1); ps.muted = false; applyLevels(); changed('volume'); };
@@ -1409,8 +1406,7 @@
   }
   /* the song set as next stays loaded when it is still next (a reorder elsewhere in the queue, an append) */
   function queueChanged() {
-    shuffleNext = null;
-    if (nxt && (ps.shuffle || ps.queue[nextIndex(true)] !== nxt)) releaseNext();
+    if (nxt && ps.queue[nextIndex(true)] !== nxt) releaseNext();
     changed('queue');
   }
   /* replace the playing context and start: playList(ids, startIndex, { radio, sources: { trackId: source }, at, autoplay }).
@@ -1420,11 +1416,14 @@
     opts = opts || {};
     var group = opts.radio ? 'radio' : 'context', sources = opts.sources || {};
     var nextUp = ps.queue.slice(ps.index + 1).filter(function (e) { return e.group === 'next'; });
-    endPlay('skipped'); releaseNext(); heard = {};
+    endPlay('skipped'); releaseNext();
     start = clamp(start || 0, 0, Math.max(0, ids.length - 1));
     ps.queue = ids.map(function (id) { return entry(id, group, sources[id]); });
+    markOrder();
     ps.queue.splice.apply(ps.queue, [start + 1, 0].concat(nextUp));
     ps.radio = opts.radio || null;
+    ps.index = start;
+    if (ps.shuffle) shuffleRest();                       // the chosen song first, the rest shuffled after next up
     load(start, { reason: 'skipped', at: opts.at, autoplay: opts.autoplay });
     queueChanged();
   };
@@ -1689,8 +1688,8 @@
   }
   /* the output moved on by itself into `next` (gapless or the end of a crossfade) */
   function handOver(e) {
-    endPlay('completed'); shuffleNext = null;
-    var was = cur; cur = e; nxt = null; heard[e.uid] = true;
+    endPlay('completed');
+    var was = cur; cur = e; nxt = null;
     ps.index = ps.queue.indexOf(e); resetTrackState();
     ps.status = e.soulseek ? (e.complete ? 'streaming' : 'buffering') : 'library';
     ps.received = e.soulseek && !e.complete ? 0 : 1; ps.durationKnown = !e.soulseek; ps.source = e.source || null;
@@ -1996,12 +1995,12 @@
     var keep = {};
     ps.queue.forEach(function (q) { var t = M.track(q.trackId); if (t) keep[t.id] = t; });
     storage('player', { volume: ps.volume, muted: ps.muted, shuffle: ps.shuffle, repeat: ps.repeat, radio: ps.radio,
-      index: ps.index, pos: ps.pos, queue: ps.queue.map(function (q) { return { trackId: q.trackId, group: q.group, source: q.source }; }), tracks: keep });
+      index: ps.index, pos: ps.pos, queue: ps.queue.map(function (q) { return { trackId: q.trackId, group: q.group, source: q.source, orig: q.orig }; }), tracks: keep });
   }
   function restore() {
     if (!saved0.queue || !saved0.queue.length) return;
     M.absorb({ tracks: saved0.tracks });
-    ps.queue = saved0.queue.filter(function (q) { return M.track(q.trackId); }).map(function (q) { return entry(q.trackId, q.group, q.source); });
+    ps.queue = saved0.queue.filter(function (q) { return M.track(q.trackId); }).map(function (q) { var e = entry(q.trackId, q.group, q.source); e.orig = q.orig; return e; });   // orig: shuffle's way back
     if (!ps.queue.length) return;
     ps.index = clamp(saved0.index || 0, 0, ps.queue.length - 1);
     ps.radio = saved0.radio ? Object.assign({}, saved0.radio, { error: null }) : null;    // an old error was that session's
