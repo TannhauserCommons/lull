@@ -129,6 +129,19 @@ pub struct PlaylistEdit {
     pub add: Vec<TrackId>,
 }
 
+/// A song as another service lists it (a playlist link), to find in lull's catalog.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SongQuery {
+    /// As the service credits it; may name several artists ("A, B", "A feat. B").
+    pub artist: String,
+    pub title: String,
+    pub album: Option<String>,
+    /// Seconds; `None` when the service's length isn't the song's (a music video).
+    pub duration: Option<u32>,
+    pub isrc: Option<String>,
+}
+
 /// A finished or abandoned play reported by something other than the web player (Subsonic
 /// scrobbles, the offline outbox).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

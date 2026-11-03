@@ -11,7 +11,7 @@ use crate::error::{Error, Result};
 use crate::ids::{AlbumId, ArtistId, TrackId};
 use crate::model::{self, Album, Artist, PlayReport, Playlist, PlaylistEdit, SourceRef, Track};
 use crate::quality::SaveCandidate;
-use crate::youtube::{Found, Want};
+use crate::youtube::{Found, Listing, Want};
 
 /// The saved library. Implemented by `library`, from a music folder or Jellyfin (ADR-0003).
 #[async_trait]
@@ -137,4 +137,22 @@ pub trait Youtube: Send + Sync {
     /// Writes the copy's audio to `dest` front to back, the native stream with no transcoding,
     /// and returns once all of it is there. Dropping the future stops the download.
     async fn download(&self, source: &SourceRef, dest: &Path) -> Result<()>;
+
+    /// Up to `count` songs of a YouTube, YouTube Music or SoundCloud playlist, from position
+    /// `from` (0 = the first), as the uploads name them. For link imports, whatever YouTube's
+    /// play mode; `Unavailable` while YouTube is backed off.
+    async fn playlist(&self, _url: &str, _from: usize, _count: usize) -> Result<Listing> {
+        Err(Error::unavailable("youtube", "this hub can't list playlists"))
+    }
+}
+
+/// lull's catalog (iTunes or Deezer search, ADR-0008) for songs another service names.
+/// Implemented by `discovery`, handed to `collection` for playlist link imports.
+#[async_trait]
+pub trait Catalog: Send + Sync {
+    /// The song as lull knows it: the library's copy, else the catalog's same song (the same
+    /// ISRC, else the same loose artist and title with lengths within 3 s), recorded so its id
+    /// resolves. `None` when nothing matches. Waits its turn within the catalog's rate limits,
+    /// leaving room for the listener's own searches.
+    async fn find_song(&self, song: &model::SongQuery) -> Result<Option<Track>>;
 }

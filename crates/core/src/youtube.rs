@@ -96,6 +96,30 @@ pub struct Found {
     pub official: bool,
 }
 
+/// A page of a playlist yt-dlp lists (YouTube, YouTube Music, SoundCloud), for link imports.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Listing {
+    /// The playlist's own name.
+    pub title: String,
+    /// How many songs the whole playlist has, when the site says.
+    pub total: Option<usize>,
+    pub songs: Vec<Listed>,
+}
+
+/// A song of a playlist, as its upload names it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Listed {
+    /// The site's id for the upload (a video id, a SoundCloud track id).
+    pub id: String,
+    pub title: String,
+    /// The channel or account it was uploaded by ("Artist - Topic" for YouTube's official audio).
+    pub uploader: String,
+    pub duration: Option<u32>,
+    /// The song's own artist and title, when the site gives music metadata.
+    pub artist: Option<String>,
+    pub track: Option<String>,
+}
+
 /// The parts of a YouTube copy's path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Copy {
