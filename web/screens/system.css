@@ -332,3 +332,6 @@ label.sys-row { cursor: pointer; }
 .sys-ios__steps b { display: block; font: 800 1rem/1.3 var(--f-ui); }
 .sys-ios__steps span { font: var(--t-meta); color: var(--fg-2); }
 .sys-ios__ic { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--peri); color: var(--ink); border: var(--stroke) solid var(--line); }
+/* a section drawn before its settings arrived (withSettings, system.js): rows at their final size, controls hidden */
+.sys-pending { display: contents; }
+.sys-pending :is(.switch, .sys-seg, .sys-range, .sys-stepper, .sys-formats, select, input) { visibility: hidden; }

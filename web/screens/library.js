@@ -102,7 +102,16 @@
     var msg = d.errors && d.errors[section];
     return msg ? readError({ message: msg }, path, 'Couldn\'t load this part') : '';
   }
-  function gridSkeleton(n) { return html`<div class="lib-skel-grid">${ui.skeleton('tile', n || 8)}</div>`; }
+  /* loading tiles built from albumTile's blocks (tile__art, tile__title, tile__by, lib-tile__meta), in the grid the list
+     will fill, so every design sizes them as it sizes the real ones and nothing moves when the list arrives (a generic
+     skeleton tile was 54 px shorter: the second row jumped) */
+  function gridSkeleton(n, o) {
+    o = o || {};
+    var bar = function (w) { return '<span class="skel skel--text" style="display:inline-block;vertical-align:middle;width:' + w + '%"></span>'; };
+    var tile = '<div class="tile lib-tile"><div class="tile__art"><div class="skel skel--cover"></div></div><div class="tile__title">' + bar(80) +
+      '</div><div class="tile__by">' + bar(55) + '</div>' + (o.meta ? '<div class="lib-tile__meta"><span class="badge skel" style="width:56%">&nbsp;</span></div>' : '') + '</div>';
+    return html`<div class="lib-grid${o.cls ? ' ' + o.cls : ''}" aria-busy="true" aria-label="Loading">${raw(new Array(n || 8).fill(tile).join(''))}</div>`;
+  }
   function listSkeleton(label) { return html`<section class="card lib-card" aria-label="${label}">${ui.skeleton('row', 6)}</section>`; }
 
   /* shared bits of markup */
@@ -299,7 +308,7 @@
   function albumsSegment(r, path) {
     return html`<section class="card lib-card" aria-labelledby="lib-albums-h">
       ${ruleWith('albums', 'lib-albums-h', html`${r.data ? html`<span class="lib-count">${count(r.data)}</span>` : ''}${sortButton('lib-album-sort', ALBUM_SORTS[prefs.albumSort])}`)}
-      ${listBody(r, path, gridSkeleton(), function (d) {
+      ${listBody(r, path, gridSkeleton(8, { meta: true }), function (d) {
         noteHeld(d);
         return html`<div class="lib-grid">${resolve(d.items, M.album).map(albumTile)}</div>${showAll('albums', d, 'album')}`;
       })}
@@ -309,7 +318,7 @@
   function artistsSegment(r, path) {
     return html`<section class="card lib-card" aria-labelledby="lib-artists-h">
       ${ruleWith('artists', 'lib-artists-h', html`<a class="btn btn--quiet btn--sm" href="#/following">Manage following</a>`)}
-      ${listBody(r, path, gridSkeleton(), function (d) {
+      ${listBody(r, path, gridSkeleton(8, { cls: 'lib-grid--artists' }), function (d) {
         var list = resolve(d.items, M.artist).sort(function (a, b) { return App.isFollowed(b.id) - App.isFollowed(a.id); });
         return html`<div class="lib-grid lib-grid--artists">${list.map(artistTile)}</div>${showAll('artists', d, 'artist')}`;
       })}

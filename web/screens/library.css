@@ -54,8 +54,7 @@
 .lib-tile--pl.is-drop-target { outline-offset: 6px; border-radius: var(--r-art); }
 .lib .shelf { padding-bottom: var(--sp-4); }
 
-/* loading: tile skeletons laid out like the grid they stand in for; the hero's cover slot */
-.lib-skel-grid .skel-group { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--sp-6) var(--sp-5); }
+/* loading: the hero's cover slot */
 .lib-hero > .skel--cover { width: var(--lib-art); }
 
 /* "new playlist" tile: dashed slot the size of a cover */
@@ -337,7 +336,7 @@
   .lib-pl__bar [data-act="lib-pl-edit"], .lib-pl__bar [data-act="lib-pl-export"] { display: none; }   /* both are in the more menu */
   .lib-pl__bar .btn-save { padding: 0 12px; }
   .lib-pl__bar .btn-save span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-  .lib-grid, .lib-skel-grid .skel-group { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-5) var(--sp-4); }
+  .lib-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-5) var(--sp-4); }
   .lib-tags { grid-template-columns: minmax(0, 1fr); }
   .lib-legend { display: none; }
   .lib-listhead { align-items: flex-start; flex-direction: column; gap: var(--sp-3); }

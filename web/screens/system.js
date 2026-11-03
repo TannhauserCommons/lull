@@ -545,10 +545,13 @@
     ['app', 'App', 'device', 'Install, version, server health']
   ];
   function sectionOf(id) { return SECTIONS.filter(function (s) { return s[0] === id; })[0]; }
-  /* a section body that needs the server's settings: skeleton, honest error, or the body */
-  function withSettings(body) {
+  /* a section body that needs the server's settings: skeleton, honest error, or the body. `early`: a section whose words
+     don't depend on the values is drawn while they load, its controls hidden (.sys-pending, system.css), so every row
+     has its final size from the start and nothing moves when they arrive. A section that says things about the values
+     ("needs a newer hub", "sharing nothing") waits behind the skeleton, as that would be false until they come */
+  function withSettings(body, early) {
     var r = M.get(SETTINGS);
-    if (r.loading) return ui.skeleton('text', 6);
+    if (r.loading) return early ? html`<div class="sys-pending" aria-busy="true">${body()}</div>` : ui.skeleton('text', 6);
     if (r.error) return readError(r.error, SETTINGS, 'Couldn\'t load settings');
     return body();
   }
@@ -1035,9 +1038,9 @@
   }
 
   var BODY = {
-    playback: function () { return withSettings(secPlayback); }, sources: function () { return withSettings(secSources); },
+    playback: function () { return withSettings(secPlayback, true); }, sources: function () { return withSettings(secSources); },
     search: function () { return withSettings(secSearch); },
-    cache: function () { return withSettings(secCache); }, library: function () { return withSettings(secLibrary); },
+    cache: function () { return withSettings(secCache); }, library: function () { return withSettings(secLibrary, true); },
     sharing: function () { return withSettings(secSharing); }, lastfm: secLastfm,
     discovery: function () { return withSettings(secDiscovery); }, privacy: secPrivacy,
     shortcuts: secShortcuts, app: secApp

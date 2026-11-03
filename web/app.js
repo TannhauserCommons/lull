@@ -123,14 +123,17 @@
     }
     for (n = parent.firstChild; n; n = k) { k = n.nextSibling; if (!used.has(n)) parent.removeChild(n); }
   }
-  /* the next unclaimed, unkeyed old node from the cursor, if it is the same kind of node */
+  /* the next unclaimed, unkeyed old node from the cursor, if it is the same kind of node. A loading block (aria-busy:
+     every skeleton) is never the content that replaces it: morphing one into the other made the content look as if it
+     had moved from where the skeleton's bars were (layout shift) */
   function unkeyedMatch(cur, want, used) {
     for (var n = cur; n; n = n.nextSibling) {
       if (used.has(n) || nodeKey(n)) continue;
-      return n.nodeName === want.nodeName ? n : null;
+      return n.nodeName === want.nodeName && busy(n) === busy(want) ? n : null;
     }
     return null;
   }
+  function busy(n) { return n.nodeType === 1 && n.getAttribute('aria-busy') === 'true'; }
   function patchNode(old, want) {
     if (old.nodeType !== 1) { if (old.nodeValue !== want.nodeValue) old.nodeValue = want.nodeValue; return; }
     if (old.nodeName === 'IMG' && old.getAttribute('src') === want.getAttribute('src')) return;   // same picture: leave it be
