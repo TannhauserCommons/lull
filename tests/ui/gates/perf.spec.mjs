@@ -76,6 +76,8 @@ test.describe('lull', () => {
   test('scrolling a long playlist', async ({ browser, page }) => {
     const s = await S.scroll(browser, page, o);
     expect(s.longestMs, 'longest task while scrolling (ms)').toBeLessThanOrEqual(B.scrollLongestMs);
+    // only the rows near the screen have contents (ui.row): every row drawn was ~50k elements here
+    expect(s.domNodes, 'elements on the 1,200-song playlist, scrolled part way down').toBeLessThanOrEqual(B.longPlaylistDomNodes);
   });
 
   test('moving between screens', async ({ browser, page }) => {

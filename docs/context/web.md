@@ -411,7 +411,12 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
     number, Play under the pointer or focus, the bars while the song plays. Rows drag from anywhere on them (no grip),
     the queue's by mouse past 5 px or by touch from the cover; Alt + arrows reorder from the keyboard. A row off screen skips layout and paint
     (`content-visibility: auto` on `.tlist > .trow`, keeping its last height), so a long list costs only its visible
-    rows when the window or a column resizes.
+    rows when the window or a column resizes. In a list of more than 60 rows (playlists, saved and liked songs, the
+    queue), a row past the first 24 has its contents only within a screen of view (`ui.row`, `ui.lazyRow`): the `<li>`
+    with its classes, data, label and tabindex is always there, so selection, the keyboard, dragging, `App.syncRows`
+    and scrolling to a song work on every row, and its contents are made from the state of the moment each time it
+    comes near and dropped once it is well away (a focused, dragged or menu-open row keeps them). An 835-song playlist
+    with the queue open went from ~196k DOM nodes to ~24k.
   - **Album pages:** two columns from `wide`; the header is sticky in tall windows.
   - **Artist pages:** a hero across the page (photo, name, Last.fm listeners, Play, Shuffle, Follow, Radio; a real
     photo also glows behind it), then Popular (5 rows, See more for 10, with Last.fm plays at any width) beside About

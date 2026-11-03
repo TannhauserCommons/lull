@@ -577,19 +577,23 @@
   function qRow(q, i, opts) {
     opts = opts || {};
     var t = M.track(q.trackId); if (!t) return '';
-    var playing = i === ps.index, saved = App.isSaved(t.id);
+    var playing = i === ps.index;
     var where = playing ? 'now playing' : 'position ' + (i - ps.index) + ' in the queue';
     var markLabel = q.resolve === 'none' ? ', no source found' : q.resolve === 'resolving' ? ', finding a source' : i === ps.index + 1 ? ', ready' : '';
-    return html`<li class="trow trow--dense now-q__row${playing ? ' is-playing' : ''}${playing && ps.playing ? ' is-playing-now' : ''}${q.resolve === 'none' && !playing ? ' is-unavailable' : ''}"
+    var open = html`<li class="trow trow--dense now-q__row${playing ? ' is-playing' : ''}${playing && ps.playing ? ' is-playing-now' : ''}${q.resolve === 'none' && !playing ? ' is-unavailable' : ''}"
         data-track-id="${t.id}" data-qi="${i}" data-uid="${q.uid}" tabindex="0" ${opts.preview || playing ? '' : raw('data-sortable')} data-fk="row-${q.uid}"
-        aria-label="${t.title} by ${t.artist}, ${where}${markLabel}">
+        aria-label="${t.title} by ${t.artist}, ${where}${markLabel}"`;
+    return ui.row(open, function () {
+      var saved = App.isSaved(t.id);
+      return html`
       <div class="trow__art">${ui.cover(t, 40)}${playing ? html`<span class="eq now-q__eq" aria-hidden="true"><i></i><i></i><i></i></span>` : ''}</div>
       <div class="trow__main">
         <button class="trow__title" data-act="now-q-jump" data-qi="${i}" tabindex="-1">${t.title}</button>
         <div class="trow__artist"><span class="trow__mini" data-src-mini="${t.id}">${icon(saved ? 'saved' : 'soulseek', saved ? 'Saved' : 'Soulseek')}</span><span>${t.artist}</span>${qMark(q, i)}</div>
       </div>
       <div class="trow__more"><button class="btn-icon btn-icon--bare" data-act="now-q-menu" data-qi="${i}" aria-haspopup="menu" aria-label="Queue actions for ${t.title}" data-tip="More" data-fk="more-${q.uid}">${icon('more')}</button></div>
-    </li>`;
+    `;
+    }, opts.lazy);
   }
   function radioHead() {
     if (!ps.radio) return '';
@@ -615,7 +619,7 @@
     var rows = [html`<li class="now-q__group label-rule label-rule--sm"><h3>now playing</h3></li>`, qRow(ps.queue[ps.index], ps.index)];
     GROUPS.forEach(function (g) {
       var items = [];
-      ps.queue.forEach(function (q, i) { if (i > ps.index && q.group === g[0] && M.track(q.trackId)) items.push(qRow(q, i)); });
+      ps.queue.forEach(function (q, i) { if (i > ps.index && q.group === g[0] && M.track(q.trackId)) items.push(qRow(q, i, { lazy: ui.lazyRow(rows.length + items.length, ps.queue.length - ps.index) })); });
       if (!items.length) return;
       var label = g[0] === 'radio' && !(ps.radio && ps.radio.keepsAdding) ? 'from radio'
         : g[0] === 'context' && ps.context && ps.context.kind !== 'radio' ? 'next from ' + App.placeName(ps.context) : g[1];

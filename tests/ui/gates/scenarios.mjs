@@ -61,13 +61,15 @@ export async function scroll(browser, page, opts) {
   const box = await page.locator('#view').boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + 300);
   await throttle(page, opts.rate);
-  return traced(browser, page, async () => {
+  const s = await traced(browser, page, async () => {
     for (let i = 0; i < 24; i++) {
       await page.mouse.wheel(0, 400);
       await page.waitForTimeout(50);
     }
     await page.waitForTimeout(300);
   });
+  s.domNodes = await page.evaluate(() => document.getElementsByTagName('*').length);
+  return s;
 }
 
 // Home, the long playlist, an album, Home again; returns the longest task of each move.

@@ -88,6 +88,7 @@
     var tpl = document.createElement('template');
     tpl.innerHTML = String(markup == null ? '' : markup);
     patchChildren(el, decorated(el, tpl.content));
+    pruneFills();
     return el;
   }
   /* where the page decorates what screens render (card heads, see ui.cardHeads), the new markup gets the same
@@ -143,6 +144,7 @@
     if (old.nodeName === 'IMG' && old.getAttribute('src') === want.getAttribute('src')) return;   // same picture: leave it be
     if (old.nodeName === 'IMG' && old.hasAttribute('data-pic') && old.getAttribute('data-pic') === want.getAttribute('data-pic')) return;   // a cover's size is the fitter's
     patchAttrs(old, want);
+    if (want.hasAttribute('data-fill')) { watchRow(old); if (old.firstChild) fillRow(old); return; }   // a lazy row: see ui.row
     if (old.nodeName === 'TEXTAREA') { if (old !== document.activeElement) old.value = want.value; return; }
     patchChildren(old, want);
     if (old.nodeName === 'SELECT') old.value = want.value || (want.querySelector('option[selected]') || {}).value || old.value;
@@ -1051,15 +1053,16 @@
   ui.trackRow = function (track, opts) {
     opts = opts || {}; if (typeof track === 'string') track = M.track(track);
     if (!track) return '';
-    var saved = App.isSaved(track.id);
     var playing = App.player && App.player.currentId() === track.id;
     var cls = 'trow' + (opts.dense ? ' trow--dense' : '') + (playing ? ' is-playing' : '') + (opts.unavailable ? ' is-unavailable' : '');
     var drag = opts.draggable === false ? '' : ' draggable="true"';
     var n = opts.index != null ? opts.index : track.no;
     /* file facts as data (data-khz / data-kbps / data-bits / data-size in MB) + a hidden .trow__fmt line a design may show */
     var facts = raw(' data-khz="' + (kHz(track.khz) || '') + '" data-kbps="' + (track.kbps || '') + '" data-bits="' + (track.bits || '') + '" data-size="' + (track.sizeMB || '') + '"');
-    var line = formatLine(track);
-    return html`<li class="${cls}" data-track-id="${track.id}" ${opts.queueIndex != null ? raw('data-queue-index="' + opts.queueIndex + '"') : ''}${facts} tabindex="0"${raw(drag)} aria-label="${track.title} by ${track.artist}">
+    var open = html`<li class="${cls}" data-track-id="${track.id}" ${opts.queueIndex != null ? raw('data-queue-index="' + opts.queueIndex + '"') : ''}${facts} tabindex="0"${raw(drag)} aria-label="${track.title} by ${track.artist}"`;
+    return ui.row(open, function () {
+      var saved = App.isSaved(track.id), line = formatLine(track);
+      return html`
       <div class="trow__num"><span class="trow__n">${n}</span><button class="trow__play" data-act="play-track" data-id="${track.id}" tabindex="-1" aria-label="Play ${track.title}">${icon('play', null, 'ic-16')}</button><span class="eq" aria-hidden="true"><i></i><i></i><i></i></span></div>
       <div class="trow__art">${ui.cover(rowCover(track, opts.album), opts.dense ? 40 : 48)}</div>
       <div class="trow__main">
@@ -1073,8 +1076,83 @@
       <div class="trow__like">${ui.likeButton(track.id)}</div>
       <div class="trow__dur">${track.duration ? fmtTime(track.duration) : '–'}</div>
       <div class="trow__more">${opts.actions === false ? '' : html`<button class="btn-icon btn-icon--bare" data-act="track-menu" data-id="${track.id}" aria-haspopup="menu" aria-label="More actions for ${track.title}" data-tip="More">${icon('more')}</button>`}</div>
-    </li>`;
+    `;
+    }, opts.lazy);
   };
+  /* Rows of a long list draw what's inside them only near the screen. The <li> is always there, with its classes,
+     data, label and tabindex, so selection, the keyboard, dragging, App.syncRows and scrolling to a song work on every
+     row as before; its contents (~40 elements and five icons a track row, the bulk of a long list's memory: an 835-song
+     playlist with its queue open held 200k DOM nodes) are made from the state of the moment when it comes within a
+     screen or so of view, and dropped again once it is well out of it.
+     ui.row(open, inner, lazy): `open` is the row's start tag without its ">", `inner()` its contents. lazy: draw them
+     only near the screen (ui.lazyRow(n, count) says which rows of a list should be). */
+  var fills = new Map(), fillSeq = 0, fillsChecked = 0, LAZY_MIN = 60, LAZY_HEAD = 24;
+  ui.row = function (open, inner, lazy) {
+    if (!lazy) return html`${open}>${inner()}</li>`;
+    var k = String(++fillSeq); fills.set(k, inner);
+    return html`${open} data-fill="${k}"></li>`;
+  };
+  /* the first rows of a short list, or of any list, are drawn at once: they are the ones on screen when it opens */
+  ui.lazyRow = function (n, count) { return count > LAZY_MIN && n >= LAZY_HEAD; };
+  function fillRow(li) {
+    var inner = fills.get(li.getAttribute('data-fill'));
+    if (!inner) return;
+    var tpl = document.createElement('template');
+    tpl.innerHTML = String(inner());
+    if (li.firstChild) patchChildren(li, tpl.content); else li.appendChild(tpl.content);
+  }
+  /* a row keeps its contents while something in it has focus, is being dragged or has its menu open */
+  function inUse(li) { return li.contains(document.activeElement) || li.classList.contains('is-dragging') || !!li.querySelector('[aria-expanded="true"]'); }
+  /* one IntersectionObserver per scroll container (null: the page) gives and takes a lazy row's contents. Watching
+     rows was measured against `contentvisibilityautostatechange`, which the rows' content-visibility makes free: about
+     the same CPU, but ~110 MB more kept heap after scrolling 2,500 songs */
+  var watchers = new Map();
+  function scrollerOf(el) {
+    for (var p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+      var o = getComputedStyle(p).overflowY;
+      if (o === 'auto' || o === 'scroll') return p;
+    }
+    return null;
+  }
+  function watcherFor(li) {
+    var list = li.parentElement, root = list && list.__rowScroller;
+    if (root === undefined || (root && !root.isConnected)) root = list.__rowScroller = scrollerOf(list);
+    var w = watchers.get(root);
+    if (!w) {
+      w = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) {
+          var li = e.target;
+          if (!li.hasAttribute('data-fill')) return;
+          if (e.isIntersecting) { if (!li.firstChild) fillRow(li); }
+          else if (li.firstChild && !inUse(li)) li.textContent = '';
+        });
+      }, { root: root, rootMargin: '100% 0px' });
+      watchers.set(root, w);
+    }
+    return w;
+  }
+  function watchRow(li) { if (li.isConnected && !li.__rowWatch) { li.__rowWatch = watcherFor(li); li.__rowWatch.observe(li); } }
+  function eachLazy(node, fn) {
+    if (node.nodeType !== 1) return;
+    if (node.hasAttribute('data-fill')) fn(node);
+    else if (node.firstElementChild) node.querySelectorAll('li[data-fill]').forEach(fn);
+  }
+  new MutationObserver(function (records) {
+    records.forEach(function (r) {
+      r.removedNodes.forEach(function (n) { eachLazy(n, function (li) { if (!li.isConnected && li.__rowWatch) { li.__rowWatch.unobserve(li); li.__rowWatch = null; } }); });
+      r.addedNodes.forEach(function (n) { eachLazy(n, watchRow); });
+    });
+  }).observe(document.documentElement, { childList: true, subtree: true });
+  /* every render makes a new maker for each lazy row it draws (App.patch looks after each); those of rows no longer on
+     the page go. One made since the last look may belong to markup not on the page yet, so it waits for the next:
+     markup with lazy rows must reach the page in the task that made it, or soon after, not be kept for later */
+  function pruneFills() {
+    if (fillSeq === fillsChecked || fills.size < 4 * LAZY_MIN) return;   // nothing made since the last look
+    var live = new Set(), mark = fillsChecked;
+    document.querySelectorAll('li[data-fill]').forEach(function (li) { live.add(li.getAttribute('data-fill')); });
+    fills.forEach(function (v, k) { if (+k <= mark && !live.has(k)) fills.delete(k); });
+    fillsChecked = fillSeq;
+  }
   /* A place to play from, wherever it shows (tiles, rail playlists, Home shelves, search results): its root carries
      data-place="kind:id" (App.placeKey) and ui.placeCls(key); ui.placeMark(key) goes at the start of its
      [data-place-at] part (a tile's title) or, without one, at its end. While it is the place playing (P.playingFrom),
@@ -1125,7 +1203,7 @@
     opts = opts || {};
     tracks = tracks.map(function (t) { return typeof t === 'string' ? M.track(t) : t; }).filter(Boolean);
     return html`<ol class="tlist${opts.dense ? ' tlist--dense' : ''}${opts.dated ? ' tlist--dated' : ''}${opts.plays ? ' tlist--plays' : ''}" data-ids="${tracks.map(function (t) { return t.id; }).join(',')}" ${opts.label ? raw('aria-label="' + esc(opts.label) + '"') : ''}>${tracks.map(function (t, i) {
-      return ui.trackRow(t, Object.assign({}, opts, { index: opts.numbered === false ? t.no : i + 1, added: opts.added ? opts.added[i] : null, plays: opts.plays ? opts.plays[i] : null }));
+      return ui.trackRow(t, Object.assign({}, opts, { index: opts.numbered === false ? t.no : i + 1, added: opts.added ? opts.added[i] : null, plays: opts.plays ? opts.plays[i] : null, lazy: ui.lazyRow(i, tracks.length) }));
     })}</ol>`;
   };
 

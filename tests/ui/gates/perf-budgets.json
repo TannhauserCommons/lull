@@ -14,6 +14,7 @@
     "startupLongestMs": 600,
     "startupBusyMs": 3500,
     "homeDomNodes": 2000,
+    "longPlaylistDomNodes": 5000,
     "scrollLongestMs": 300,
     "navigateLongestMs": 2000,
     "typingLongestMs": 200,

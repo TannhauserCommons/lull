@@ -1023,7 +1023,7 @@
           <ol class="tlist lib-out-list" data-ids="${ids.join(',')}" aria-label="Songs in ${d.name}">${d.songs.map(function (s, n) {
             var label = OUT_STATUS[s.status];
             var badge = label ? html`<span class="badge lib-out__status" data-status="${s.status}" data-tip="${s.status === 'pending' ? 'Not matched to lull\'s catalog yet: plays as the playlist names it meanwhile' : 'Not in lull\'s catalog: plays as the playlist names it (' + s.artist + ', ' + s.title + ')'}">${label}</span>` : '';
-            return ui.trackRow(s.trackId, { index: n + 1, draggable: false, badges: badge });
+            return ui.trackRow(s.trackId, { index: n + 1, draggable: false, badges: badge, lazy: ui.lazyRow(n, d.songs.length) });
           })}</ol>
         </div>
       </article>
@@ -1157,7 +1157,7 @@
         </div></div>
         <ol class="tlist tlist--dated lib-pl-list" data-ids="${rows.map(function (x) { return x.it.trackId; }).join(',')}" data-drop="lib-pl:${p.id}" data-pl="${p.id}"
           aria-label="Songs in ${p.name}${custom ? '. Alt plus arrow keys reorder, Delete removes' : ''}">${rows.map(function (x, n) {
-          return ui.trackRow(x.t, { index: n + 1, added: x.it.added, draggable: custom, unavailable: down && isSaved(x.t.id) });
+          return ui.trackRow(x.t, { index: n + 1, added: x.it.added, draggable: custom, unavailable: down && isSaved(x.t.id), lazy: ui.lazyRow(n, rows.length) });
         })}</ol>
       </div>`
       : html`<div class="lib-dropzone lib-dropzone--songs" data-drop="playlist:${p.id}">
