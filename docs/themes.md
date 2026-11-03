@@ -118,6 +118,15 @@ Go beyond tokens with any selector. These hooks are the theme API: they stay put
 | `.nowcol`, `.nowcol__head`, `.nowcol__title`, `.nowcol__body`, `.app[data-nowcol="open\|strip"]` | the Now Playing column beside the main area |
 | `.disc-modules > .disc-mod > .card[data-region]` | Home's modules (`new`, `radio`, `picks`, `jump`, `tags`), in a fixed order |
 
+**Never patch a width band.** The header, the player bar, its tools and the song's chips fit the room they actually
+have (a docked panel, the Now column, the text size and a long title count as much as the window): each part that can
+give way has an order (`data-fit`), and when a row runs out of room its parts give way in that order and come back with
+room. So a theme never writes `@media (min-width: 1100px) and (max-width: 1359px)` to hide a tool or shrink a pill: style
+`[data-fit-out]` for how a part looks once it gave way, keep the bar's side columns equal (`minmax(0, 1fr)`) and let a
+part's track be `auto`, so a part that gives way takes its room with it. Width rules are for genuine layout changes: the
+shell breakpoints (640, 1100 and 1360 px) and content that rearranges by its container's room (`@container`).
+`mise run check:ui` sweeps every width from 360 to 2560 px for the built-in designs (docs/context/quality.md#ui-gates).
+
 Prefer `@container main` to `@media`: it follows the main area, so it stays right when a panel opens. Layout states that must hold whatever a theme draws (the strips, the room the column takes) are `!important` in lull's own CSS: style them, don't fight them. The widths the listener drags are custom properties (`--ctx`, `--now-w`); read them, don't set them. While a drag runs the column's width is `--ctx-drag` / `--now-drag` instead, so a theme's own shell grid that places the panel writes its track as `var(--ctx-drag, var(--ctx))`.
 
 `design/DESIGN.md` section 3.4 lists more state hooks (tray pills, track row file facts). Pseudo-elements are free for ornaments; keep them decorative.
@@ -321,6 +330,10 @@ Every class lull's CSS styles and every `data-*` attribute lull's markup sets, e
 - **Regions:** `data-region` (section 5), `.region-title`, `.region-meta`.
 - **Shell parts:** `.rail`, `.header`, `.main`, `.view`, `.ctx` (with `data-ctx-tab` on its tab buttons), `.ctx-scrim`, `.nowcol`, `.pbar`, `.mini`, `.tabbar`, `.tab`, `.nav-item`, `.nav-pill`, `.wordmark`, `.brand` (the default brand slot), `.skip-link`, `.sky-specks`, `.col-resize` (a resize handle, `data-resize`).
 - **Links:** `data-nav` on every nav link, `data-brand` on brand links.
+- **Rows that fit themselves** (section 5, Wide screens): `data-fit-row` on a row (the header, the player bar, its tools,
+  the song's chips), `data-fit` on a part that can give way (its value is its order, 1 first), `data-fit-out` on a part
+  that gave way. Style how a part that gave way looks (a nav pill as its icon); lull's own CSS already takes away what
+  must go, and puts it in the "…" menu.
 - **Status tray:** `.tray` with `.tray__pill[data-svc][data-state]`, `data-worst`, `data-cache-used`, `data-cache-cap`, `data-tray`; `data-activity-count` holds the number of running jobs.
 - **Banners:** `.banner`, `.banner-slot`, `.banner-more`, `.is-lead` (the banner a phone shows when the others collapse).
 - **Surfaces:** `.s-sky`, `.s-panel`, `.s-card`, `.s-screen`.
@@ -358,7 +371,7 @@ Every class lull's CSS styles and every `data-*` attribute lull's markup sets, e
   - `.sky-star` and `.sky-line` (the `queue-sky` part).
 - **Status:**
   - `.is-done`, `.is-failed`, `.is-skipped`, `.is-error`, `.is-below` (below the minimum bitrate), `.is-preferred`, `.is-unavailable`;
-  - `.is-liked`, `.is-selected`, `.is-on`, `.is-open`, `.is-wide` (a player bar tool that leaves for the "…" menu as the bar narrows), `.is-dragging`, `.is-drop-target`;
+  - `.is-liked`, `.is-selected`, `.is-on`, `.is-open`, `.is-wide` (the player bar's view tools: Lyrics, Classic, Device view), `.is-dragging`, `.is-drop-target`;
   - `.is-applied`, `.is-bad` (Classic skins);
   - `.is-out` (Now Playing's slide while the song changes).
 - **Player status:** `data-status` (`#pbar`, `#mini`, an album's save status), `data-playing`, `data-state`.
