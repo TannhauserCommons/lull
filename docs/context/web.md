@@ -10,9 +10,11 @@ from, how the player plays, and the rules screens follow. The endpoint contract 
 ```
 index.html   tokens.css base.css components.css screens/*.css desktop/desktop.css designs/<name>/design.css (last)
              designs/designs.js + the pre-paint script (design, theme, motion, text size)
-             icons.js data.js app.js layout.js connect.js offline.js screens/{discover,now,library,system,appearance}.js
+             icons.js data.js align.js app.js layout.js connect.js offline.js screens/{discover,now,library,system,appearance}.js
              desktop/webamp-session.js screens/{skins,hub,setup,classic}.js desktop/desktop.js
 data.js      window.LullData = App.data: API client, entity cache, per-route reads, the event stream
+align.js     window.LullAlign: how far apart two recordings of one moment are (switching to a better copy); pure,
+             tested by tests/web/align.test.mjs (`node --test`, part of `mise run check`)
 app.js       window.App: router, render helpers, overlays, save pipeline, player engine, shell, actions,
              keyboard, Media Session, drag and drop, server events + boot
 layout.js    ADR-0007: size classes, App.layout (lull:layout), resize handles, the Now Playing column host
@@ -138,8 +140,9 @@ The state shape and methods are DESIGN.md 7.8; the insides:
 - **Crossfade** (`playback.crossfade` seconds): the next deck starts under an equal-power fade.
 - **Normalisation** (`off | replaygain-track | replaygain-album | loudness`): Web Audio gain per deck. ReplayGain uses
   `track.replayGain { track, album }` (dB) when the library supplies it; otherwise the measured loudness of what has
-  played (unweighted RMS) is levelled toward `playback.loudnessTarget` (-18 / -14 / -11) within -12..+6 dB. The Web Audio graph is built only when normalisation or
-  crossfade is on, inside the first play gesture.
+  played (unweighted RMS) is levelled toward `playback.loudnessTarget` (-18 / -14 / -11) within -12..+6 dB. The Web Audio graph is built only when normalisation,
+  crossfade or switching to better copies (`sources.switchToBetter`) is on, inside the first play gesture.
+- **Better copies**: the playing song moves to a better copy mid-song without a jump; [below](#better-copies).
 - **Plays**: `App.recordPlay(trackId, duration, recommended)` posts `POST /api/plays` when a song starts playing
   (`recommended` for radio songs) and its `end(how)` sends `PATCH /api/plays/{playId}` with `playedS` (time actually
   heard), `completed`, `skipped` when it ends, is skipped, or the page closes (`keepalive`). Classic mode uses it too.
@@ -181,6 +184,7 @@ output with one contract and two implementations:
 | `setVolume(v)` | `0..1`, the final level: the engine has already applied mute and its perceptual curve (`v = volume²`) |
 | `setNext(item \| null)` | Preload `item` and, when the current one ends, continue into it with no gap. Continue only when the current one reached its end (within 2 s of its duration): an earlier end is a cut response, reported as `ended` with `next: null`, and the next item stays set. `null` cancels. Called again whenever the queue, shuffle or repeat changes |
 | `crossfade(seconds)` | `0` = off. Otherwise, with a next item set, fade equal-power from the current into the next over the current's last `seconds` |
+| `switchTo(item, { commit })` | Optional (the browser output has it; without it a better copy waits for the next play). `item` is a better copy of the playing song (same `key`): line it up and crossfade into it with no jump, calling `commit()` (a Promise) right before the fade. Resolves `{ switched: true, residualMs, offsetS }` or `{ switched: false, why: mismatch \| quiet \| abandoned \| refused \| slow \| busy \| error }`; `time` positions stay the song's ([Better copies](#better-copies)) |
 
 **Events.** `LullNative.player.on(type, fn)` returns a function that unsubscribes. `fn` gets one object.
 
@@ -316,6 +320,22 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
   - Each design adds its own wide-screen touches in its `design` layer, using the same `data-size` and container
     names.
 
+### Better copies
+
+ADR-0013, [streaming.md](streaming.md#better-copies) for the hub's half. While the playing Soulseek song is a lesser copy, its `stream` events offer `upgrade`; the engine (`trySwitch`) switches when:
+- the listener didn't pick the copy (`e.source`), and the output has `switchTo`;
+- the song plays steadily (not paused, waiting or crossfading), at least 45 s from its end;
+- `ready`, and what arrived covers 20 s past where the song is.
+
+The browser output then:
+1. **Plays the copy silently** on its second deck (`/api/stream/{id}/copy?peer=&path=`), from where the song is in its own time (the next song's preload waits).
+2. **Measures** both decks over 2.5 s, recorded in the same render quanta (one ScriptProcessor), with `LullAlign.measure`: low-band correlation for the lag (±1 s, then the length difference as a second guess for an intro one copy has), full rate for the sample. `locked()` needs confidence 0.6 and a 0.1 margin over any other lag.
+3. **Lines it up**: a seek puts the copy 150 ms ahead, its DelayNode holds it back by what is measured, and a narrow measurement checks what is left (under 0.25 ms; measured live at 0.0005-0.014 ms).
+4. **Waits for a quiet moment** (a level under 0.6 of the recent median, at most 3 s), calls `commit()` (`POST /api/stream/{id}/switch`), and fades equal-power over 200 ms, the copy's level matched to the song's and gliding to its own over a few seconds.
+5. **Keeps the timeline**: the deck keeps its offset and delay, so positions, seeks and buffered ranges stay the song's.
+
+Copies that don't line up (other masters, edits, loops) never switch mid-song: Source details says the better copy plays from the next play. So does a song within 45 s of its end, and the Android app's native output. A seek, pause or skip interrupts an attempt (retried, 3 tries); after the hub switched, it finishes the handover at once. The engine reads the stream events by `jobId`, so the switched-to copy's own `attempt` count is adopted, never reopened. Now Playing's Source details shows a "Better copy" row (on its way, ready, lining up, switched from what at which time, or why it waits).
+
 ## Search and source rules (ADR-0008)
 
 - **Search** (discover.js section 2).
@@ -334,7 +354,7 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
 - **Settings > Sources.**
   - Two profiles, `sources.stream` and `sources.save`. Each has: lossless only or a minimum bitrate, format chips
     (none means any), which copy, and what to do if none is good enough.
-  - Saving adds `autoUpgrade` and `upgradeEveryH`. Then come the peer limits.
+  - Saving adds `autoUpgrade` and `upgradeEveryH`. Then come the peer limits and "Switch to a better copy while a song plays" (`switchToBetter`, shown when the hub has it).
   - Each control PATCHes only its own key, and the hub merges objects.
   - A hub without the profiles shows a sentence instead.
   - Settings > Search has "Show file results".

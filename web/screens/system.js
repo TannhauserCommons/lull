@@ -629,6 +629,8 @@
       ${group('peers')}
       ${row('Longest peer queue', 'Skip peers with more people waiting than this.', stepper('sources.maxPeerQueue', 'Longest peer queue', 0, 50, 5, 'waiting'))}
       ${row('Stall timeout', 'If a peer stops sending for this long, switch to the next copy.', range('sources.stallTimeout', 'Stall timeout, seconds', 5, 60, 5))}
+      ${lookup('sources.switchToBetter') != null ? switchRow('sources.switchToBetter', 'Switch to a better copy while a song plays',
+        'When a song starts on a lesser copy (from YouTube, below your minimum, or a slower peer after one failed), the server keeps fetching the best one. Once it is ready, the song moves over to it at a quiet moment, lined up so you don\'t hear a jump. If the two can\'t be lined up, the better copy plays from the next play instead.') : ''}
       ${youtubeRows()}
       ${group('soulseek connection')}
       ${cfgNotice()}${App.hubKit.soulseekRows()}
@@ -685,7 +687,7 @@
     var mode = get('sources.youtube.mode'), off = mode === 'off';
     loadYoutube();
     return html`${group('youtube')}
-      ${row('Use YouTube', 'Off: songs only ever play from Soulseek. As a fallback: YouTube plays a song when no Soulseek peer has it, or none starts in time. Start fast: YouTube starts every song at once while the best Soulseek copy is fetched for the next play and for saving.',
+      ${row('Use YouTube', 'Off: songs only ever play from Soulseek. As a fallback: YouTube plays a song when no Soulseek peer has it, or none starts in time. Start fast: YouTube starts every song at once while the best Soulseek copy is fetched, for this play (with "Switch to a better copy" on), the next one and saving.',
         choice('sources.youtube.mode', 'Use YouTube', [['off', 'Off'], ['fallback', 'As a fallback'], ['startFast', 'Start fast, then upgrade']], 'sys-seg--wrap'), { cls: 'sys-row--stack' })}
       ${row('Wait for Soulseek', 'How long a song waits for a Soulseek peer before YouTube plays it.', range('sources.youtube.waitS', 'Wait for Soulseek, seconds', 5, 120, 5), { when: 'youtube-wait', hidden: mode !== 'fallback', cls: 'sys-row--sub' })}
       ${row('Format', 'Opus sounds a little better for its size. AAC plays on more devices. Either way it is YouTube\'s own audio, never converted.',

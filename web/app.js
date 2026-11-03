@@ -1214,7 +1214,8 @@
   function changed(kind) { App.emit('player', kind || 'state'); persistSoon(); }
 
   /* playback settings (Settings > Playback; GET /api/settings), defaults until the server answers */
-  var playback = { gapless: true, crossfade: 0, normalisation: 'off', loudnessTarget: -14, radioWhenQueueEnds: true, volumeStep: 5, prefetchCount: 2 };
+  var playback = { gapless: true, crossfade: 0, normalisation: 'off', loudnessTarget: -14, radioWhenQueueEnds: true, volumeStep: 5, prefetchCount: 2,
+    switchToBetter: true };
   P.volumeStep = function () { return (playback.volumeStep || 5) / 100; };
   App.setPlayback = function (patch) {
     Object.assign(playback, patch);
@@ -1247,9 +1248,12 @@
       var url = localUrl || streamUrl(t, e.source, forceSoulseek);
       e.url = url; e.local = !!localUrl; e.soulseek = !localUrl && url.indexOf('api/stream/') >= 0;
       if (!e.soulseek) e.complete = true;
-      return { key: e.uid, url: localUrl || new URL(url, location.href).href, trackId: t.id, title: t.title, artist: t.artist, album: t.album,
-        duration: t.duration || null, artwork: t.albumId ? new URL(App.artUrl(t.albumId, 512), location.href).href : null, gainDb: replayGainDb(t.id) };
+      return item(e, t, localUrl || url);
     });
+  }
+  function item(e, t, url) {
+    return { key: e.uid, url: new URL(url, location.href).href, trackId: t.id, title: t.title, artist: t.artist, album: t.album,
+      duration: t.duration || null, artwork: t.albumId ? new URL(App.artUrl(t.albumId, 512), location.href).href : null, gainDb: replayGainDb(t.id) };
   }
   /* a Soulseek transfer nobody will listen to any more is cancelled (DELETE /api/stream/{id}) */
   function letGo(e) {
@@ -1265,7 +1269,7 @@
   function resetTrackState() {
     ps.pos = 0; duration = 0; ps.fallback = null; ps.failedPeers = []; ps.error = null; ps.crossfade = false;
     ps.peer = null; ps.peersFound = 0; ps.queuePos = 0; ps.durationKnown = false; lastRanges = [];
-    ps.belowMinimum = false; ps.choices = null;
+    ps.belowMinimum = false; ps.choices = null; ps.upgrade = null;
     sound = { playing: false, waiting: false };
   }
   /* begin playing queue[index]: opts { autoplay (default true), at (seconds), reason (how the last song ended), forceSoulseek } */
@@ -1278,7 +1282,7 @@
     cur = e || null; nxt = null;
     was.forEach(letGo);
     if (!e || !M.track(e.trackId)) { out.pause(); out.setNext(null); ps.status = 'idle'; ps.playing = false; ps.source = null; changed('track'); return; }
-    e.attempt = null; if (opts.forceSoulseek) e.complete = false;
+    e.attempt = null; e.job = null; e.better = null; if (opts.forceSoulseek) e.complete = false;
     ps.source = e.source || null;
     ps.playing = opts.autoplay !== false;
     var library = App.isSaved(e.trackId) && !opts.forceSoulseek;
@@ -1339,7 +1343,8 @@
   P.next = function (auto) {
     if (!ps.queue.length) return;
     var i = nextIndex(auto);
-    if (i === ps.index && auto) { endPlay('completed'); out.seek(0); out.play().catch(playRefused); return; }
+    /* repeat one replays the same response, unless a better copy waits for the next play: that is now */
+    if (i === ps.index && auto && !(ps.upgrade && ps.upgrade.state === 'next-play')) { endPlay('completed'); out.seek(0); out.play().catch(playRefused); return; }
     if (i < 0) {                                        // the end: radio may still add songs
       topUpRadio().then(function (added) {
         if (!added) { endQueue(auto); return; }
@@ -1605,11 +1610,13 @@
     if (!e || !e.soulseek) return;
     if (ev.size && ev.received >= ev.size) e.complete = true;
     /* a fallback to another peer ends the old response: reopen the stream and seek back to where we were.
-       The first event after opening only says which attempt the response already belongs to (the hub sends
-       one on every opening, also for a song that fell back long ago), so it is adopted, not reopened */
-    if (e.attempt == null) e.attempt = ev.attempt || 0;
+       The first event of a fetch only says which attempt the response already belongs to (the hub sends one on
+       every opening, also for a song that fell back long ago; and the better copy switched to counts its own), so
+       it is adopted, not reopened */
+    if (e.job !== ev.jobId) { e.job = ev.jobId; e.attempt = ev.attempt || 0; }
     else if (ev.attempt > e.attempt) { e.attempt = ev.attempt; if (e === cur) reopen(); }
     if (e === nxt) { e.resolve = ev.status === 'failed' ? 'none' : ev.status === 'streaming' ? 'ready' : 'resolving'; changed('queue'); return; }
+    onUpgrade(e, ev.upgrade);
     var prevPeer = ps.peer && ps.peer.name, t = P.current();
     ps.received = ev.size ? clamp(ev.received / ev.size, 0, 1) : ps.received;
     ps.peersFound = ev.peersFound || ps.peersFound;
@@ -1648,6 +1655,62 @@
     changed(ev.peer !== prevPeer ? 'source' : 'status');
   }
 
+  /* ---------- a better copy mid-song (docs/context/web.md#better-copies) ----------
+     While the song plays a lesser copy (YouTube's, one below the minimum, a peer fallen back to), the hub fetches a
+     better one beside it and offers it in `stream` events (`upgrade`). Once what arrived covers where the song is,
+     the output plays it silently on its second deck, lines it up by ear (align.js) and crossfades; right before the
+     fade the hub makes it the song's stream (POST /api/stream/{id}/switch). When the copies can't be lined up, or the
+     output can't do it, nothing changes mid-song and the better copy plays from the next play: the hub picks the best
+     cached copy. A copy the listener picked (`e.source`) is never switched away from.
+     ps.upgrade: { peer, path, format, pct, state: arriving | ready | switching | switched | next-play, note; once switched:
+     from (the copy before), at (the song's time), residualMs (how far apart the copies were left), offsetS (where the copy's own time was) } */
+  var SWITCH_LEAD = 45, SWITCH_AHEAD = 20, SWITCH_TRIES = 3, switching = false;
+  function onUpgrade(e, up) {
+    if (ps.upgrade && /^(switching|switched)$/.test(ps.upgrade.state)) return;
+    if (!up) { ps.upgrade = null; return; }
+    var key = up.peer + '\n' + up.path;
+    if (!e.better || e.better.key !== key) e.better = { key: key, tries: 0, note: null };
+    ps.upgrade = { peer: up.peer, path: up.path, format: up.format, pct: up.size ? clamp(up.received / up.size, 0, 1) : 0,
+      state: e.better.note ? 'next-play' : up.ready ? 'ready' : 'arriving', note: e.better.note };
+    trySwitch();
+  }
+  function waitForNextPlay(e, note) {
+    e.better.note = note;
+    if (cur === e && ps.upgrade) { ps.upgrade.state = 'next-play'; ps.upgrade.note = note; changed('source'); }
+  }
+  /* switch when the song plays steadily, far enough from its end, from a copy nobody picked, with the better copy
+     here up to a little past where the song is; anything else waits for a later tick */
+  function trySwitch() {
+    var up = ps.upgrade, e = cur, dur = P.duration();
+    if (!up || up.state !== 'ready' || switching || !e || e.source || !e.soulseek) return;
+    if (!out.switchTo) { waitForNextPlay(e, 'This player can\'t line two copies up, so the better copy plays from the next play.'); return; }
+    if (!ps.playing || !sound.playing || sound.waiting || ps.crossfade) return;
+    if (dur && dur - ps.pos < SWITCH_LEAD) { waitForNextPlay(e, 'The song is nearly over, so the better copy plays from the next play.'); return; }
+    if (up.pct < 1 && (!dur || up.pct * dur < ps.pos + SWITCH_AHEAD)) return;
+    var t = M.track(e.trackId); if (!t) return;
+    var id = encodeURIComponent(t.id), from = playingFormat(t) || (ps.peer && ps.peer.format), at = ps.pos;
+    var url = M.url('/api/stream/' + id + '/copy?peer=' + encodeURIComponent(up.peer) + '&path=' + encodeURIComponent(up.path));
+    switching = true; up.state = 'switching'; releaseNext(); changed('source');
+    out.switchTo(item(e, t, url), { commit: function () {
+      return M.api('/api/stream/' + id + '/switch', { method: 'POST', body: { peer: up.peer, path: up.path } });
+    } }).then(null, function () { return { switched: false, why: 'error' }; })
+      .then(function (r) {
+        switching = false;
+        if (cur !== e) return;
+        if (r.switched) {
+          e.url = url; e.complete = up.pct >= 1;
+          ps.upgrade = { peer: up.peer, path: up.path, format: up.format, pct: up.pct, state: 'switched', from: from, at: at, residualMs: r.residualMs, offsetS: r.offsetS };
+          App.toast('Switched to a better copy' + (up.format ? ': ' + up.format : ''), { icon: 'soulseek', kind: 'ok' });
+        } else if (r.why === 'mismatch') {
+          waitForNextPlay(e, 'The two copies couldn\'t be lined up closely enough to switch without a jump, so the better copy plays from the next play.');
+        } else if (r.why === 'refused' || ++e.better.tries >= SWITCH_TRIES) {
+          waitForNextPlay(e, 'Switching didn\'t work out this time, so the better copy plays from the next play.');
+        } else up.state = 'ready';                       // interrupted (a seek, a pause, a quiet passage): later
+        changed('source');
+        preloadNext();
+      });
+  }
+
   /* buffered = what the output holds (seconds), cut to what the transfer delivered; both as 0-1 of the song */
   var lastRanges = [];
   function updateBuffered() {
@@ -1684,6 +1747,7 @@
   /* set the next song once the playing one is close to its end (or its transfer is done). The Android app's
      output wants it at once (eagerNext): its page may be asleep when the song ends. */
   function preloadNext() {
+    if (switching) return;                                // the second deck holds the better copy meanwhile
     var i = nextIndex(true);
     if (i < 0 || i === ps.index || !playback.gapless && !playback.crossfade) { if (nxt) releaseNext(); return; }
     /* a Soulseek song still transferring gets the bandwidth to itself until its last half minute */
@@ -1747,13 +1811,17 @@
      8b. The browser's output: two <audio> decks, the playing one and the next, preloaded for gapless and
          crossfade. Loudness normalisation and crossfade go through Web Audio gains when switched on.
          The same contract as window.LullNative.player (docs/context/web.md#output-interface), plus the
-         optional `crossfade { key, next }` event (next null: the fade was abandoned).
+         optional `crossfade { key, next }` event (next null: the fade was abandoned) and `switchTo` (a better copy of
+         the playing song, lined up and crossfaded; below).
      ===================================================================== */
   function audioOutput() {
     var subs = {}, decks = [deck(), deck()], a = decks[0], b = decks[1], volume = 1, xfade = 0, fading = null;
     function emit(type, detail) { (subs[type] || []).forEach(function (fn) { fn(detail); }); }
     function deck() {
-      var d = { el: new Audio(), item: null, waiting: false, fade: 1, norm: 1, gain: null, analyser: null, ms: 0, msN: 0 };
+      /* offset: how far this copy's own time runs ahead of the song's (a better copy switched to); lag: what its delay
+         holds it back by. Both 0 until a switch */
+      var d = { el: new Audio(), item: null, waiting: false, fade: 1, norm: 1, gain: null, analyser: null, ms: 0, msN: 0,
+        offset: 0, lag: 0, delay: null, sw: null };
       d.el.preload = 'auto';
       ['playing', 'waiting', 'pause', 'timeupdate', 'durationchange', 'ended', 'error'].forEach(function (type) {
         d.el.addEventListener(type, function () { onEl(d, type); });
@@ -1764,14 +1832,18 @@
     function hold(d, it) {
       d.item = it; d.waiting = true; d.fade = 1; d.norm = 1; d.ms = 0; d.msN = 0;
       if (it) { d.el.src = it.url; d.el.load(); } else { d.el.pause(); d.el.removeAttribute('src'); d.el.load(); }
+      setLag(d, 0); d.offset = 0;
+      if (d.sw) { d.sw.gain.cancelScheduledValues(0); d.sw.gain.value = 1; }
     }
     function key(d) { return d.item ? d.item.key : null; }
     function dur(d) { return isFinite(d.el.duration) && d.el.duration > 0 ? d.el.duration : d.item && d.item.duration || 0; }
+    /* the song's time = the deck's own, less the copy's offset and its delay */
+    function shift(d) { return d.offset + d.lag; }
     function time(d) {
-      emit('time', { key: key(d), position: d.el.currentTime || 0, duration: isFinite(d.el.duration) && d.el.duration > 0 ? d.el.duration : null,
-        playing: !d.el.paused, waiting: d.waiting });
+      emit('time', { key: key(d), position: Math.max(0, (d.el.currentTime || 0) - shift(d)),
+        duration: isFinite(d.el.duration) && d.el.duration > 0 ? d.el.duration - d.offset : null, playing: !d.el.paused, waiting: d.waiting });
     }
-    function ranges(d) { var r = [], br = d.el.buffered; for (var i = 0; i < br.length; i++) r.push([br.start(i), br.end(i)]); return r; }
+    function ranges(d) { var r = [], br = d.el.buffered, k = shift(d); for (var i = 0; i < br.length; i++) r.push([Math.max(0, br.start(i) - k), br.end(i) - k]); return r; }
     function start(d) {
       ensureGraph();
       if (d.el.readyState < 3) d.waiting = true;
@@ -1780,11 +1852,12 @@
     }
     function onEl(d, type) {
       if (!d.item) return;
-      if (type === 'error') { emit('error', { key: key(d), message: null, status: null }); return; }
       if (type === 'waiting') d.waiting = true;
       else if (type === 'playing') d.waiting = false;
+      if (switching && d === b) { if (type === 'error') abandonSwitch(); return; }   // the better copy, still silent
+      if (type === 'error') { emit('error', { key: key(d), message: null, status: null }); return; }
       if (d !== a) return;                                   // the preloading deck reports only errors
-      if (type === 'ended') { if (fading) finishFade(); else ended(); return; }
+      if (type === 'ended') { abandonSwitch(); if (fading) finishFade(); else ended(); return; }
       time(d);
     }
     /* gapless: continue into the next deck only when the song really reached its end; an early end (a
@@ -1799,7 +1872,7 @@
     /* crossfade: the next deck starts under an equal-power fade over the playing song's last seconds */
     function maybeFade() {
       var d = dur(a);
-      if (!xfade || fading || a.el.paused || !b.item || !d || d - a.el.currentTime > xfade || b.el.readyState < 3) return;
+      if (!xfade || switching || fading || a.el.paused || !b.item || !d || d - a.el.currentTime > xfade || b.el.readyState < 3) return;
       fading = { start: Date.now(), len: Math.max(1, (d - a.el.currentTime) * 1000) };
       b.fade = 0; start(b).catch(function () {}); levels();
       emit('crossfade', { key: key(a), next: key(b) });
@@ -1820,16 +1893,19 @@
 
     /* levels: volume x crossfade x loudness normalisation */
     var ctx = null, master = null;
-    function wantGraph() { return playback.normalisation && playback.normalisation !== 'off' || playback.crossfade > 0; }
+    function wantGraph() { return playback.normalisation && playback.normalisation !== 'off' || playback.crossfade > 0 || playback.switchToBetter; }
     /* Web Audio only when a feature needs it; built inside a user gesture (play), once */
     function ensureGraph() {
       if (ctx || !wantGraph() || !window.AudioContext) { if (ctx && ctx.state === 'suspended') ctx.resume(); return; }
       ctx = new AudioContext();
       master = ctx.createGain(); master.connect(ctx.destination);
+      /* each deck: source -> delay (a better copy's, to line it up) -> switch fade -> level -> master; the analyser
+         listens to the source */
       decks.forEach(function (d) {
         var src = ctx.createMediaElementSource(d.el);
+        d.delay = ctx.createDelay(MAX_DELAY_S); d.sw = ctx.createGain();
         d.gain = ctx.createGain(); d.analyser = ctx.createAnalyser(); d.analyser.fftSize = 2048;
-        src.connect(d.gain); d.gain.connect(master); src.connect(d.analyser);
+        src.connect(d.delay); d.delay.connect(d.sw); d.sw.connect(d.gain); d.gain.connect(master); src.connect(d.analyser);
       });
       levels();
     }
@@ -1857,6 +1933,163 @@
       var rms = Math.sqrt(d.ms / d.msN); if (rms < 1e-4) return;
       d.norm = clamp(Math.pow(10, playback.loudnessTarget / 20) / rms, Math.pow(10, -12 / 20), Math.pow(10, 6 / 20));
     }
+    /* ---------- a better copy of the playing song, switched to without a jump (docs/context/web.md#better-copies) ----------
+       It plays silently on the second deck from about where the song is. One ScriptProcessor records both decks in the
+       same render quanta, and LullAlign measures how much later the copy sounds: a seek puts it a little ahead, its
+       DelayNode holds it back to the sample, and another measurement checks what is left (`residualMs`). At a quiet
+       moment (or after QUIET_S) the engine's commit() makes it the song's stream, and an equal-power fade of FADE_S
+       hands over, the copy's level matched to the song's and gliding to its own. Copies that don't clearly line up are
+       never switched ({ switched: false, why: 'mismatch' }). A load abandons it; a pause, seek or end before the hub
+       switched abandons it too, and after that finishes the handover at once. */
+    var FADE_S = .2, RECORD_S = 2.5, WIDE_S = 1, QUIET_S = 3, AHEAD_S = .15, MAX_DELAY_S = 1.5, TOLERANCE_S = .00025, switching = null;
+    function setLag(d, s) { d.lag = s; if (d.delay) d.delay.delayTime.value = s; }
+    function stop(why) { var e = new Error(why); e.why = why; return e; }
+    function switchTo(it, o) {
+      if (!ctx || ctx.state !== 'running' || !a.item || a.el.paused || fading || switching || !window.LullAlign) return Promise.resolve({ switched: false, why: 'busy' });
+      var sw = switching = { live: true }, rate = ctx.sampleRate, rec = recorder();
+      function alive(x) { if (!sw.live) throw stop('abandoned'); return x; }
+      function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }).then(alive); }
+      function measure(wide) {
+        return rec.take(RECORD_S).then(function (x) {
+          alive();
+          var m = LullAlign.measure(x.a, x.b, rate, wide); m.levels = [LullAlign.rms(x.a), LullAlign.rms(x.b)];
+          return m;
+        });
+      }
+      /* the copy at `at` of its own time, playing steadily */
+      function place(at) {
+        b.el.currentTime = Math.max(0, at);
+        var until = Date.now() + 20000;
+        return new Promise(function (resolve, reject) {
+          (function look() {
+            if (!sw.live) reject(stop('abandoned'));
+            else if (!b.el.paused && !b.el.seeking && b.el.readyState >= 3 && !b.waiting) resolve();
+            else if (Date.now() > until) reject(stop('slow'));
+            else setTimeout(look, 100);
+          })();
+        }).then(function () { return wait(300); });
+      }
+      /* where the song is now in the copy, at the same point of its own time first, then shifted by how much longer it
+         is (an intro the other hasn't) */
+      function find(shifted) {
+        var here = a.el.currentTime - a.lag;
+        return place(here + (shifted ? dur(b) - dur(a) : 0)).then(function () { return measure(WIDE_S); }).then(function (m) {
+          if (LullAlign.locked(m)) return m;
+          if (m.quiet) throw stop('quiet');
+          if (!shifted && Math.abs(dur(b) - dur(a)) > .8 * WIDE_S) return find(true);
+          throw stop('mismatch');
+        });
+      }
+      /* the copy a little ahead (a seek can't land to the sample), so its delay can hold it back exactly */
+      function ahead(m) {
+        if (m.lag <= -.002 && m.lag >= -MAX_DELAY_S) return m;
+        return place(b.el.currentTime + m.lag + AHEAD_S).then(function () { return measure(.5); }).then(function (m2) {
+          if (!LullAlign.similar(m2)) throw stop(m2.quiet ? 'quiet' : 'mismatch');
+          if (m2.lag > -.002 || m2.lag < -MAX_DELAY_S) throw stop('mismatch');
+          return m2;
+        });
+      }
+      /* held back by what was measured, then measured again: what is left must be under TOLERANCE_S */
+      function verify(left) {
+        return wait(b.lag * 1000 + 200).then(function () { return measure(.05); }).then(function (m) {
+          if (!LullAlign.similar(m)) throw stop(m.quiet ? 'quiet' : 'mismatch');
+          if (Math.abs(m.lag) <= TOLERANCE_S) return m;
+          var next = b.lag - m.lag;
+          if (!left || next < 0 || next > MAX_DELAY_S) throw stop('mismatch');
+          setLag(b, next);
+          return verify(left - 1);
+        });
+      }
+      hold(b, it); b.norm = a.norm; b.sw.gain.value = 0;
+      return start(b).then(function () { return find(false); })
+        .then(ahead)
+        .then(function (m) { setLag(b, -m.lag); return verify(2); })
+        .then(function (m) {
+          sw.residual = m.lag;
+          sw.match = clamp(m.levels[0] / Math.max(m.levels[1], 1e-6), .5, 2);
+          b.offset = b.el.currentTime - b.lag - (a.el.currentTime - shift(a));
+          return quietMoment(sw);
+        })
+        .then(function () {
+          sw.committing = true;
+          return Promise.resolve(o && o.commit ? o.commit() : null).then(null, function () { throw stop('refused'); });
+        })
+        .then(function () { if (!sw.live) throw stop('abandoned'); return fadeOver(sw); })
+        .then(function () { return { switched: true, residualMs: sw.residual * 1000, offsetS: a.offset }; },
+          function (err) {
+            if (sw.live && !sw.done) { sw.live = false; hold(b, null); }
+            return { switched: false, why: err && err.why || 'error' };
+          })
+        .then(function (r) { rec.close(); if (switching === sw) switching = null; return r; });
+    }
+    /* a quiet moment in the song (well under its recent level), or QUIET_S from now */
+    function quietMoment(sw) {
+      var buf = new Float32Array(a.analyser.fftSize), levels = [], until = Date.now() + QUIET_S * 1000;
+      return new Promise(function (resolve, reject) {
+        (function look() {
+          if (!sw.live) { reject(stop('abandoned')); return; }
+          a.analyser.getFloatTimeDomainData(buf);
+          var level = LullAlign.rms(buf); levels.push(level);
+          var median = levels.slice().sort(function (x, y) { return x - y; })[levels.length >> 1];
+          if (levels.length >= 8 && level <= .6 * median || Date.now() >= until) resolve();
+          else setTimeout(look, 50);
+        })();
+      });
+    }
+    function fadeOver(sw) {
+      if (sw.cut) { finishSwitch(sw); return Promise.resolve(); }
+      var t0 = ctx.currentTime + .03, n = 64, down = new Float32Array(n), up = new Float32Array(n);
+      for (var i = 0; i < n; i++) { var k = i / (n - 1); down[i] = Math.cos(k * Math.PI / 2); up[i] = sw.match * Math.sin(k * Math.PI / 2); }
+      a.sw.gain.setValueCurveAtTime(down, t0, FADE_S);
+      b.sw.gain.setValueCurveAtTime(up, t0, FADE_S);
+      b.sw.gain.setTargetAtTime(1, t0 + FADE_S + .01, 1.5);          // from the song's level to the copy's own
+      sw.fading = true;
+      return new Promise(function (r) { setTimeout(r, (FADE_S + .08) * 1000); }).then(function () { finishSwitch(sw); });
+    }
+    /* the better copy becomes the playing deck. Cut short (a pause or seek during the handover): at once, at the song's
+       time, paused if the song was */
+    function finishSwitch(sw) {
+      if (!sw.live || sw.done) return;
+      sw.done = true;
+      var old = a, pos = old.el.currentTime - shift(old), paused = old.el.paused;
+      if (sw.cut) { b.sw.gain.cancelScheduledValues(0); b.sw.gain.value = 1; b.el.currentTime = pos + shift(b); }
+      a = b; b = old; hold(b, null);
+      if (paused) a.el.pause();
+      levels(); time(a);
+    }
+    /* a load (hard) drops it; a pause, seek or end before the hub switched drops it, after that finishes it at once */
+    function abandonSwitch(hard) {
+      var sw = switching; if (!sw || sw.done) return;
+      if (!hard && sw.committing) { sw.cut = true; if (sw.fading) finishSwitch(sw); return; }
+      sw.live = false; switching = null; hold(b, null);
+    }
+    /* both decks into one ScriptProcessor (a mono channel each): take(seconds) resolves to what they played meanwhile */
+    function recorder() {
+      var merger = ctx.createChannelMerger(2), proc = ctx.createScriptProcessor(4096, 2, 1), mute = ctx.createGain(), taps = [], got = null;
+      mute.gain.value = 0;
+      [a, b].forEach(function (d, i) {
+        var mono = ctx.createGain(); mono.channelCount = 1; mono.channelCountMode = 'explicit'; mono.channelInterpretation = 'speakers';
+        d.delay.connect(mono); mono.connect(merger, 0, i); taps.push([d.delay, mono]);
+      });
+      merger.connect(proc); proc.connect(mute); mute.connect(ctx.destination);
+      proc.onaudioprocess = function (ev) {
+        if (!got) return;
+        var x = ev.inputBuffer.getChannelData(0), y = ev.inputBuffer.getChannelData(1), n = Math.min(x.length, got.a.length - got.n);
+        got.a.set(x.subarray(0, n), got.n); got.b.set(y.subarray(0, n), got.n); got.n += n;
+        if (got.n >= got.a.length) { var done = got; got = null; done.resolve(done); }
+      };
+      return {
+        take: function (sec) {
+          return new Promise(function (resolve) { var len = Math.round(sec * ctx.sampleRate); got = { a: new Float32Array(len), b: new Float32Array(len), n: 0, resolve: resolve }; });
+        },
+        close: function () {
+          proc.onaudioprocess = null;
+          taps.forEach(function (t) { t[0].disconnect(t[1]); });
+          merger.disconnect(); proc.disconnect(); mute.disconnect();
+        }
+      };
+    }
+
     /* the deck clock: time at least 4 times a second while playing, buffered when it moved, normalisation, the fade */
     var held = '';
     setInterval(function () {
@@ -1875,7 +2108,7 @@
       },
       load: function (it, o) {
         o = o || {};
-        abandonFade();
+        abandonSwitch(true); abandonFade();
         if (b.item && b.item.key === it.key && b.item.url === it.url) { var s = a; a = b; b = s; a.fade = 1; }   // already preloaded
         else hold(a, it);
         hold(b, null);
@@ -1885,15 +2118,16 @@
         return start(a);
       },
       play: function () { return start(a); },
-      pause: function () { a.el.pause(); abandonFade(); return Promise.resolve(); },
-      seek: function (sec) { a.el.currentTime = sec; time(a); return Promise.resolve(); },
+      pause: function () { abandonSwitch(); a.el.pause(); abandonFade(); return Promise.resolve(); },
+      seek: function (sec) { abandonSwitch(); a.el.currentTime = sec + shift(a); time(a); return Promise.resolve(); },
       setVolume: function (v) { volume = v; levels(); return Promise.resolve(); },
       setNext: function (it) {
         if (it && b.item && b.item.key === it.key && b.item.url === it.url) return Promise.resolve();
-        abandonFade(); hold(b, it);
+        abandonSwitch(); abandonFade(); hold(b, it);
         return Promise.resolve();
       },
-      crossfade: function (sec) { xfade = sec; if (!sec) abandonFade(); return Promise.resolve(); }
+      crossfade: function (sec) { xfade = sec; if (!sec) abandonFade(); return Promise.resolve(); },
+      switchTo: switchTo
     };
   }
   /* the Android app's native player: the same contract; it wants the next song as soon as one plays */
@@ -1962,7 +2196,7 @@
   setInterval(function () {
     if (!cur) return;
     if (cur.resumeAt && ps.playing && ps.pos > cur.resumeAt + 1) cur.resumeAt = 0;   // the resume worked
-    preloadNext();
+    preloadNext(); trySwitch();
     if (document.hidden) return;
     updateBuffered();
     var waiting = /^(finding|queued|buffering|stalled)$/.test(ps.status) ? Math.floor(Date.now() / 1000) : 0;
@@ -3229,7 +3463,7 @@
     var pb = (s && s.playback) || {}, v = function (x) { return x && typeof x === 'object' && 'value' in x ? x.value : x; };
     App.setPlayback({ gapless: v(pb.gapless) !== false, crossfade: +v(pb.crossfade) || 0, normalisation: v(pb.normalisation) || 'off',
       loudnessTarget: +v(pb.loudnessTarget) || -14, radioWhenQueueEnds: v(pb.radioWhenQueueEnds) !== false, volumeStep: +v(pb.volumeStep) || 5,
-      prefetchCount: v(pb.prefetchCount) == null ? 2 : +v(pb.prefetchCount) });
+      prefetchCount: v(pb.prefetchCount) == null ? 2 : +v(pb.prefetchCount), switchToBetter: !s || !s.sources || v(s.sources.switchToBetter) !== false });
   }
   App.reloadCollections = loadCollections;
   /* after a reconnect or a resync: everything the events would have told us */

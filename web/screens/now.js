@@ -321,10 +321,23 @@
     } else rows.push(['Source', lib ? 'Jellyfin library' : 'Soulseek, ' + stateText()]);
     rows.push(['Size', App.fmt.size((ps.peer && ps.peer.sizeMB) || t.sizeMB)]);
     if (ps.failedPeers.length) rows.push(['Fallbacks', ps.failedPeers.map(stalledAt).join(', ')]);
+    if (!lib && ps.upgrade) rows.push(['Better copy', betterCopy(ps.upgrade)]);
     var label = view.detailsTrack ? 'Hide sources' : known ? 'See all ' + (known.sources || []).length + ' sources' : 'See all sources';
     return html`<dl class="now-src__dl">${rows.map(function (r) { return html`<div><dt>${r[0]}</dt><dd>${r[1]}</dd></div>`; })}</dl>
       <div class="now-src__more"><button class="btn btn--sm" data-act="now-other-sources" data-id="${t.id}" aria-expanded="${String(!!view.detailsTrack)}" data-fk="src-list">${icon('soulseek')}${label}</button></div>
       ${view.detailsTrack ? sourcesTable(view.detailsTrack) : ''}`;
+  }
+  /* the better copy the hub fetches beside a lesser one, and whether the player switched to it mid-song
+     (docs/context/web.md#better-copies) */
+  function betterCopy(u) {
+    var copy = (u.format || 'A better copy') + ' from ' + u.peer;
+    switch (u.state) {
+      case 'arriving': return copy + ', ' + Math.round(u.pct * 100) + '% here. The song switches to it once enough has arrived.';
+      case 'ready': return copy + ' is here. The song switches to it at a quiet moment.';
+      case 'switching': return 'Lining ' + copy + ' up with the song.';
+      case 'switched': return 'Switched from ' + (u.from || 'the first copy') + ' to ' + copy + ' at ' + App.fmt.time(u.at) + '.';
+      default: return copy + '. ' + (u.note || 'It plays from the next play.');
+    }
   }
   /* ranked sources per song (GET /api/tracks/{id}/sources), fetched when the list opens. Kept here rather than in an
      M.get read: a settled M.get re-renders the whole route (replaying the device's power-on); this swaps the card. */

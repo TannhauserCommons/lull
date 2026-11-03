@@ -9,7 +9,7 @@ Curated pages for what is expensive to rediscover: boundaries, contracts, invari
 | Config keys, settings in the app | [api.md](api.md), `deploy/.env.example`, ADR-0002 | `crates/core/src/config.rs`, `crates/core/src/settings.rs` |
 | Hub: pairing, devices, Connect, restart | [hub.md](hub.md) *(owner writes)*, ADR-0002 | `crates/server/`, `crates/core/src/devices.rs` |
 | Soulseek: slskd, search, ranking | [soulseek.md](soulseek.md) *(owner writes)* | `crates/soulseek/` |
-| Progressive streaming, peer fallback | [streaming.md](streaming.md) *(owner writes)* | `crates/soulseek/` |
+| Progressive streaming, peer fallback, switching to a better copy mid-song | [streaming.md](streaming.md) *(owner writes)*, ADR-0013 | `crates/soulseek/`, `web/align.js` |
 | Stream cache and eviction | [cache.md](cache.md) *(owner writes)* | `crates/soulseek/` |
 | YouTube as a second source: modes, matching, yt-dlp | [youtube.md](youtube.md), ADR-0012 | `crates/youtube/`, `crates/soulseek/src/fetch.rs` |
 | Deploying (plain, VPN, existing slskd) | [deploy.md](deploy.md) *(owner writes)* | `deploy/` |
