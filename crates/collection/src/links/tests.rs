@@ -31,7 +31,7 @@ async fn import_now(svc: &Arc<Service>, listing: Listing) -> Result<Value> {
     let link = link()?;
     let key = link.key();
     let seq = svc.write(move |tx, _| begin(tx, &key, "Road Trip")).await?;
-    let mut job = Job::start(svc, seq, lull_core::now());
+    let mut job = Job::start(svc, seq, "Road Trip".into(), lull_core::now());
     let result = import(svc, &link, Some(listing), &mut job).await;
     job.finish(result);
     Ok(one(State(svc.clone()), Path(format!("lk-{seq}"))).await?.0)

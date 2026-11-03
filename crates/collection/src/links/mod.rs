@@ -94,9 +94,9 @@ async fn start(
     let link = resolve(&svc, &body.url).await?;
     let claim = Claim::new(&svc, link.key())?;
     let (name, listing) = open(&svc, &link).await?;
-    let key = link.key();
-    let (seq, now) = (svc.write(move |tx, _| begin(tx, &key, &name)).await?, lull_core::now());
-    let job = Job::start(&svc, seq, now);
+    let (key, title) = (link.key(), name.clone());
+    let (seq, now) = (svc.write(move |tx, _| begin(tx, &key, &title)).await?, lull_core::now());
+    let job = Job::start(&svc, seq, name, now);
     let job_id = job.id.clone();
     svc.ctx.spawn(run(svc.clone(), link, listing, claim, job));
     Ok((
@@ -224,6 +224,7 @@ async fn match_songs(svc: &Arc<Service>, link: &Link, songs: &[Song], job: &mut 
         })
         .buffered(PARALLEL);
     let (mut matches, mut failures, mut first_error) = (Vec::with_capacity(total), 0, None);
+    job.matching(0, total, 0);
     while let Some(found) = lookups.next().await {
         match found {
             Ok(id) => matches.push(id),
@@ -366,13 +367,13 @@ struct Job {
 }
 
 impl Job {
-    fn start(svc: &Arc<Service>, seq: i64, now: i64) -> Self {
+    fn start(svc: &Arc<Service>, seq: i64, name: String, now: i64) -> Self {
         let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_nanos());
         let job = Job {
             svc: svc.clone(),
             id: format!("job-link-{nanos}"),
             link: format!("lk-{seq}"),
-            name: String::new(),
+            name,
             started: now,
             last: None,
             done: None,
@@ -392,7 +393,7 @@ impl Job {
     }
 
     fn matching(&mut self, n: usize, total: usize, matched: usize) {
-        if n == total || self.due() {
+        if n == 0 || n == total || self.due() {
             let pct = (n * 100 / total.max(1)).min(99);
             let detail = format!("Matching songs, {n} of {total}");
             self.publish("running", json!({ "pct": pct, "detail": detail, "matched": matched }));
