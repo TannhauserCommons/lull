@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="light dark">
+<title>Open in lull</title>
+<link rel="icon" href="app-icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="open.css">
+<script src="open.js" defer></script>
+</head>
+<body>
+<main class="card" aria-labelledby="title">
+  <img class="icon" src="app-icon.svg" alt="" width="64" height="64">
+  <p class="kicker" id="kind">shared from lull</p>
+  <h1 id="title">Opening in lull</h1>
+  <p class="by" id="by"></p>
+
+  <section id="opening" hidden>
+    <p class="note" role="status" id="opening-text"></p>
+    <div class="actions">
+      <button type="button" id="other-lull">Use a different lull</button>
+      <button type="button" class="quiet" id="stay">Stay on this page</button>
+    </div>
+  </section>
+
+  <section id="choices" hidden>
+    <div class="actions">
+      <a class="primary" id="app" href="#">Open in the lull app</a>
+      <button type="button" id="browser">Open in lull in the browser</button>
+    </div>
+    <form id="hub-form" hidden novalidate>
+      <label for="hub">Your lull's address</label>
+      <input id="hub" type="url" inputmode="url" autocomplete="url" placeholder="https://lull.example.ts.net" spellcheck="false" aria-describedby="hub-help hub-error">
+      <p class="help" id="hub-help">The address you open lull at. It stays in this browser and is never sent to this page.</p>
+      <p class="error" id="hub-error" role="alert"></p>
+      <button type="submit" class="primary">Open it there</button>
+    </form>
+  </section>
+
+  <section class="elsewhere" aria-labelledby="elsewhere-h">
+    <h2 id="elsewhere-h">No lull?</h2>
+    <div class="actions">
+      <a id="public" href="#" rel="noopener noreferrer">Listen on every music app</a>
+      <a class="quiet" href="https://github.com/TannhauserCommons/lull/releases/latest" rel="noopener noreferrer">Get lull</a>
+    </div>
+  </section>
+</main>
+</body>
+</html>

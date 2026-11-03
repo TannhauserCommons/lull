@@ -1,0 +1,42 @@
+# lull's public "open" page (site/, ADR-0032) on GitHub Pages: https://tannhausercommons.github.io/lull/open.
+# The repository's Pages source must be "GitHub Actions" (Settings > Pages). lull's icon and font come from web/,
+# so the page has no copy of its own.
+name: pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - site/**
+      - web/assets/app-icon.svg
+      - web/fonts/nunito-latin.woff2
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}open
+    steps:
+      - uses: actions/checkout@v5
+      - name: Assemble the site
+        run: |
+          mkdir -p _site
+          cp site/open.html site/open.css site/open.js _site/
+          cp web/assets/app-icon.svg web/fonts/nunito-latin.woff2 _site/
+          touch _site/.nojekyll
+      - uses: actions/upload-pages-artifact@v4
+      - id: deployment
+        uses: actions/deploy-pages@v4
