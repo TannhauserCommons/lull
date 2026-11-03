@@ -521,8 +521,15 @@ The hub serves every cover and photo at 96, 256, 512, 1024 and 2048 px, scaled d
   viewport, so nothing large decodes off screen; a big picture a small place borrowed is swapped for its own size the
   same way. `App.patch` leaves a cover `<img>` with the same `data-pic` alone: its `src` is the fitter's.
 - **No more than the source has.** An answer smaller than asked (a 600 px original asked at 1024) marks the picture's
-  full size, and no larger size of it is asked again. A size that fails (the hub answers 404 while it fetches one
-  from outside) is tried once more after 5 s; the smaller picture stays meanwhile.
+  full size, and no larger size of it is asked again.
+- **Asked once, then told.** The hub fetches covers before pages ask (library.md, discovery.md#pictures). A cover it
+  answers 404 for ("not yet", or "none") makes every cover of that key wait without a src, the recipe showing, until
+  `art.ready` names the key; then each fits again and asks once (a larger size that 404'd keeps the smaller picture
+  meanwhile). Nothing retries on a timer, so a page asks for a picture once however many rows show it. A wait ends by
+  itself after 2 minutes (a "none" is answered from the browser's cache then), and a reconnect ends them all.
+- **Heroes first.** `ui.cover(…, { hero: true })` (also `ui.mosaic`/`ui.playlistArt`'s last argument): the player
+  bar's and the phone mini player's cover, Now Playing's, album, artist, tag and playlist headers and the cover viewer
+  load at once with `fetchpriority="high"`; every other cover is `loading="lazy"`.
 - **Blurred covers** (`ui.cover(…, { blurred: true })`, the artist hero's glow) take 96 px and aren't fitted.
 - **Fixed sizes** where lull hands a picture outside the page: Media Session 96/256/512 (OS overlays; the desktop app
   passes the 512 to its mini player and SMTC), the Android player's and downloads' 512, Classic mode's 256 for the OS

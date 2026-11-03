@@ -367,7 +367,7 @@
     cover: function (c, el, slot) {
       if (slot === 'miniPlayer') return c.parts.cover(num(el, 'size', 84));
       if (hasPart(c, 'cover')) return c.track ? c.parts.cover(c.track, size(el, 64)) : '';
-      return c.track && window.App ? App.ui.cover(c.track, size(el, 56)) : '<span class="now-dev__slot" aria-hidden="true"></span>';
+      return c.track && window.App ? App.ui.cover(c.track, size(el, 56), { hero: true }) : '<span class="now-dev__slot" aria-hidden="true"></span>';
     },
     seek: function () { return window.App ? App.ui.seekBar({ bind: 'player', label: 'Seek' }) : ''; },
     /* where the song plays from: the link Now Playing shows (App.ui.playingFrom), refreshed in place by now.js */

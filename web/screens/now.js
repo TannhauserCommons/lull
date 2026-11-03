@@ -103,7 +103,7 @@
   }
   function pageNow(t) {
     if (!t) return html`<div class="now-dev__idle"><span class="now-dev__slot" aria-hidden="true"></span><p class="device__title">Nothing playing</p><p class="device__artist">Search or pick something from Home</p></div>`;
-    return html`<div class="device__now">${ui.cover(t, 'var(--now-art)')}<div class="now-dev__meta">
+    return html`<div class="device__now">${ui.cover(t, 'var(--now-art)', { hero: true })}<div class="now-dev__meta">
       <p class="device__title">${t.title}</p><p class="device__artist">${t.artist}</p>
       <div class="device__facts">${nowFacts(t)}</div></div></div>`;
   }
@@ -1201,7 +1201,7 @@
   function colBody() {
     var t = cur();
     if (!t) return ui.emptyState({ art: 'wave', title: 'Nothing playing', text: 'Pick something from Home and it shows here.' });
-    return html`<div class="nowcol__art cover-zoom">${ui.cover(t, '100%', { label: t.album })}${ui.coverZoom(t.id)}</div>
+    return html`<div class="nowcol__art cover-zoom">${ui.cover(t, '100%', { label: t.album, hero: true })}${ui.coverZoom(t.id)}</div>
       <div class="nowcol__info">${colInfo(t)}</div>
       <section class="nowcol__src" data-nowcol="src" aria-label="Source">${sourceCard()}</section>
       <section class="nowcol__ly" data-nowcol="lyrics" aria-label="Lyrics">${lyricsBlock('col')}</section>`;

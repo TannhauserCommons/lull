@@ -610,24 +610,27 @@
       (opts.round ? ' cover--round' : '') + (opts.cls ? ' ' + opts.cls : '');
     var a11y = opts.label ? ' role="img" aria-label="' + esc(opts.label) + '"' : ' aria-hidden="true"';
     var c = { key: String(key), recipe: App.coverClass(key), size: px ? size + 'px' : size, cls: cls, attrs: a11y,
-      round: !!opts.round, label: opts.label || '', blurred: !!opts.blurred };
+      round: !!opts.round, label: opts.label || '', blurred: !!opts.blurred, hero: !!opts.hero };
     return raw(String(App.slot('coverArt', c, coverMarkup)));
   };
   /* default coverArt slot: one span; the .c1-.c8 recipe draws the art in CSS until (and unless) the real cover
      loads: <img class="cover__img"> from /api/art, and .has-art on the span once it has (see the load listener).
-     { blurred: true }: drawn blurred behind something (the artist hero's glow), so its smallest size is all it shows */
-  function coverMarkup(c) { return coverSpan(c.cls, ' style="--cover-size-base:' + c.size + '"' + c.attrs, c.key, c.size, null, c.blurred); }
+     { blurred: true }: drawn blurred behind something (the artist hero's glow), so its smallest size is all it shows;
+     { hero: true }: the page's main picture (Now Playing, a page's header, the player bar), asked for first and at once */
+  function coverMarkup(c) { return coverSpan(c.cls, ' style="--cover-size-base:' + c.size + '"' + c.attrs, c.key, c.size, null, c); }
   /* a picture this page has already loaded renders as shown from the start (.has-art, no lazy load), so a cover drawn
      again (another screen, a new row) shows its art at once instead of fading in over the recipe each time */
   var artReady = new Set();
-  /* `own`: a picture of the item's own (a playlist's cover, or a blob being chosen) instead of the key's */
-  function coverSpan(cls, attrs, key, size, own, blurred) {
-    var pic = own ? ownPic(own) : artPic(key), src = pic ? firstSrc(pic, size) : own || '', ready = artReady.has(src);
-    if (blurred && pic) { src = sized(pic, ART_SIZES[0]); ready = artReady.has(src); pic = ''; }   // not fitted
-    var mono = own ? '' : monogram(key);
+  /* `own`: a picture of the item's own (a playlist's cover, or a blob being chosen) instead of the key's; o: { blurred, hero } */
+  function coverSpan(cls, attrs, key, size, own, o) {
+    o = o || {};
+    var pic = own ? ownPic(own) : artPic(key), src = pic && !artWaits(pic) ? firstSrc(pic, size) : pic ? '' : own || '';
+    if (o.blurred && pic) { src = artWaits(pic) ? '' : sized(pic, ART_SIZES[0]); pic = ''; }   // not fitted
+    var ready = artReady.has(src), mono = own ? '' : monogram(key);
+    var load = ready ? '' : o.hero ? ' fetchpriority="high" decoding="async"' : ' loading="lazy" decoding="async"';
     return '<span class="' + cls + (mono ? ' cover--artist' : '') + (ready ? ' has-art' : '') + '"' + attrs + '>' +
       (mono ? '<span class="cover__mono" aria-hidden="true">' + esc(mono) + '</span>' : '') + (pic || src ? '<img class="cover__img"' +
-      (ready ? '' : ' loading="lazy" decoding="async"') + ' alt="" data-art="' + esc(key) + '"' + (pic ? ' data-pic="' + esc(pic) + '"' : '') +
+      load + ' alt="" data-art="' + esc(key) + '"' + (pic ? ' data-pic="' + esc(pic) + '"' : '') +
       (src ? ' src="' + esc(src) + '"' : '') + '>' : '') + '</span>';
   }
   /* an artist's initial: what an artist without a photo shows, set in the design's display face over its recipe
@@ -637,13 +640,31 @@
     var a = M.artist(key), name = a && a.name ? a.name.trim().replace(/^the\s+/i, '') : '';
     return (Array.from(name)[0] || '').toLocaleUpperCase();
   }
-  /* albums whose art 404'd twice: not asked for again for ART_AGAIN. The hub answers 404 while it is still fetching a
-     cover from outside (api.md /api/art), so one 404 gets one retry, and a miss is never final for the session */
-  var artMissing = {}, ART_RETRY = 5000, ART_AGAIN = 10 * 60 * 1000;
+  /* ---------- covers the hub doesn't have yet ----------
+     A cover answered 404 is one the hub is still fetching ("not yet") or has none of (api.md /api/art). Every cover of
+     that picture then waits without a src, the recipe showing, until `art.ready` names its key (the hub has fetched it):
+     then each fits again and asks once. The wait is the picture's, not the album's: an album that gains a catalog
+     picture meanwhile asks for that at once. Nothing retries on a timer, so a page asks for a picture once, whatever number
+     of rows show it. A wait ends by itself after ART_WAIT: one more request may go out then (a "none" is answered from
+     the browser's cache), and a reconnect ends them all, since events may have been missed. */
+  var artWaiting = {}, ART_WAIT = 2 * 60 * 1000;
+  function artWaits(pic) { return Date.now() - (artWaiting[pic] || 0) < ART_WAIT; }
+  App.on('server:art.ready', function (p) { ((p && p.keys) || []).forEach(artCameIn); });
+  function artCameIn(key) {
+    $$('img[data-art="' + key + '"]').forEach(function (img) {
+      var pic = img.getAttribute('data-pic'); if (!pic) return;
+      delete artWaiting[pic];
+      ART_SIZES.forEach(function (s) { delete artFailed[sized(pic, s)]; });
+      refit(img);
+    });
+  }
+  function forgetArtWaits() {
+    artWaiting = {}; artFailed = {};
+    $$('img[data-pic]:not([src])').forEach(refit);
+  }
   /* the picture for an album or artist key, without a size: a catalog entity's own URL (album `art`, artist `image`, same
      origin through /api/catalog/art, ADR-0008), else the library's /api/art for albums */
   function artPic(key) {
-    if (Date.now() - (artMissing[key] || 0) < ART_AGAIN) return '';
     var e = /^ar-/.test(key) ? M.artist(key) : /^al-/.test(key) ? M.album(key) : null;
     var own = e && (e.art || e.image);
     if (!own && !/^al-/.test(key)) return '';
@@ -715,7 +736,7 @@
     var size = artBucket(px, pic), src = img.getAttribute('src'), now = bucketOf(src);
     if (now === size || (artFull[pic] && Math.min(now, size) >= artBucket(Infinity, pic))) return;   // both hold the whole source
     var want = sized(pic, size);
-    if (artFailed[want] > 1) return;
+    if (artWaits(pic) || Date.now() - (artFailed[want] || 0) < ART_WAIT) return;   // until art.ready
     if (!src || artReady.has(want) || !artReady.has(src)) { img.setAttribute('src', want); return; }   // nothing on show yet
     artWanted.set(img, want); nearby.observe(img);
   }
@@ -732,10 +753,9 @@
         artReady.add(want); noteFull(pic, want, im.naturalWidth, im.naturalHeight);
         if (artWanted.get(img) === want) { artWanted.delete(img); if (img.isConnected) img.setAttribute('src', want); }
       }, function () {
-        /* the hub answers 404 while it fetches a size from outside: one more try, then the smaller picture stays */
-        artFailed[want] = (artFailed[want] || 0) + 1;
+        /* the hub is fetching this size ("not yet"): the smaller picture stays until art.ready names the key */
+        artFailed[want] = Date.now();
         if (artWanted.get(img) === want) artWanted.delete(img);
-        if (artFailed[want] < 2) setTimeout(function () { if (img.isConnected) refit(img); }, ART_RETRY);
       });
     });
   }, { rootMargin: '50%' });
@@ -776,18 +796,15 @@
   }, true);
   document.addEventListener('error', function (e) {
     var img = e.target; if (img.tagName !== 'IMG' || !img.classList.contains('cover__img')) return;
-    if (!img.hasAttribute('data-retried')) {
-      var src = img.getAttribute('src');
-      img.setAttribute('data-retried', ''); img.removeAttribute('src');
-      setTimeout(function () { if (img.isConnected) img.setAttribute('src', src + '&retry=1'); }, ART_RETRY);
-      return;
-    }
-    artMissing[img.getAttribute('data-art')] = Date.now(); img.remove();
+    var pic = img.getAttribute('data-pic');
+    if (!pic) { img.remove(); return; }   // a blurred or chosen picture: the recipe shows
+    artWaiting[pic] = Date.now();
+    $$('img[data-art="' + img.getAttribute('data-art') + '"]').forEach(function (i) { if (i.getAttribute('data-pic') === pic && !i.naturalWidth) i.removeAttribute('src'); });
   }, true);
   /* 2x2 mosaic of the first four distinct album covers (playlists); one cover when the songs share one album, or when
      `own` is a picture of the playlist's own (its stored cover, or a picture being chosen). `.mosaic--one` keeps the
-     frame every design styles, with one cover filling it. */
-  ui.mosaic = function (trackIds, size, label, own) {
+     frame every design styles, with one cover filling it. opts: { hero } as for ui.cover. */
+  ui.mosaic = function (trackIds, size, label, own, opts) {
     var seen = {}, keys = [];
     trackIds.forEach(function (id) {
       var t = M.track(id); if (!t || seen[t.albumId] || keys.length >= 4) return;
@@ -800,12 +817,12 @@
     return raw('<span class="mosaic' + (one ? ' mosaic--one' : '') + '" style="--cover-size-base:' + px + '"' + (label ? ' role="img" aria-label="' + esc(label) + '"' : ' aria-hidden="true"') + '>' +
       keys.map(function (k) {
         var c = { key: k, recipe: App.coverClass(k), size: '100%', cls: 'cover ' + App.coverClass(k), attrs: '', round: false, label: '', mosaic: true };
-        return String(App.slot('coverArt', c, function (x) { return coverSpan(x.cls, '', x.key, each, own); }));
+        return String(App.slot('coverArt', c, function (x) { return coverSpan(x.cls, '', x.key, each, own, opts); }));
       }).join('') + '</span>');
   };
   /* a playlist's picture: its own cover (GET /api/playlists/{id}/cover, sized like album art), else its songs' mosaic */
-  ui.playlistArt = function (p, size, label) {
-    return ui.mosaic((p.items || []).map(function (i) { return i.trackId; }), size, label, p.cover || null);
+  ui.playlistArt = function (p, size, label, opts) {
+    return ui.mosaic((p.items || []).map(function (i) { return i.trackId; }), size, label, p.cover || null, opts);
   };
 
   ui.savedBadge = function () { return html`<span class="badge badge-saved">${icon('saved')}Saved</span>`; };
@@ -1224,13 +1241,13 @@
     function link(href, text, cls) { return html`<a class="${cls}" href="${href}" data-close>${text}</a>`; }
     if (w.kind === 'playlist') {
       var p = M.playlist(w.id); if (!p) return null;
-      return { art: ui.playlistArt(p, '100%', 'Cover of ' + p.name),
+      return { art: ui.playlistArt(p, '100%', 'Cover of ' + p.name, { hero: true }),
         info: html`${link('#/playlist/' + encodeURIComponent(p.id), p.name, 'cover-view__title')}<span class="cover-view__by">${p.items.length === 1 ? '1 song' : p.items.length + ' songs'}</span>` };
     }
     var t = w.kind === 'track' ? M.track(w.id) : null, a = t ? M.album(t.albumId) : M.album(w.id), e = t || a;
     if (!e) return null;
     var albumHref = '#/album/' + encodeURIComponent(t ? t.albumId : a.id), albumTitle = t ? t.album : a.title;
-    return { art: ui.cover(e, '100%', { label: 'Cover of ' + albumTitle }),
+    return { art: ui.cover(e, '100%', { label: 'Cover of ' + albumTitle, hero: true }),
       info: html`${link(albumHref, t ? t.title : a.title, 'cover-view__title')}<span class="cover-view__by">${link('#/artist/' + encodeURIComponent(e.artistId), e.artist, 'link')}${t && t.album ? html`, ${link(albumHref, t.album, 'link-plain')}` : ''}</span>` };
   }
   function enableDragDismiss(el, layer) {
@@ -3151,7 +3168,7 @@
       /* the cover opens Now Playing; the title, and the "Playing from" line where the design shows it, open the place
          it plays from at the song; with no such page (a single song, radio, your queue), the title opens the album */
       var from = P.playingFrom(), fromPath = from && App.placePath(from);
-      patch(now, html`<span class="cover-zoom"><a class="bezel-thumb" href="#/now" aria-label="Open Now Playing: ${t.title}" data-tip="Now Playing">${ui.cover(t, 52)}</a>${ui.coverZoom(t.id)}</span>
+      patch(now, html`<span class="cover-zoom"><a class="bezel-thumb" href="#/now" aria-label="Open Now Playing: ${t.title}" data-tip="Now Playing">${ui.cover(t, 52, { hero: true })}</a>${ui.coverZoom(t.id)}</span>
         <div class="pbar__text">
           ${ui.playingFrom('pbar__from')}
           <div class="pbar__title">${fromPath ? html`<a href="#${fromPath}" data-act="go-playing" data-tip="Show the song in ${App.placeName(from)}">${t.title}</a>` : html`<a href="#/album/${t.albumId}">${t.title}</a>`}</div>
@@ -3215,7 +3232,7 @@
     var miniFrom = !idle && P.playingFrom(); if (miniFrom && miniFrom.kind === 'queue') miniFrom = null;
     patch($('#mini-sub'), idle ? 'Search or pick something from Home' : line && st !== 'streaming' && st !== 'library' ? esc(line)
       : html`<span class="mini__artist">${t.artist}</span>${miniFrom ? html`<span class="mini__from">${App.placeName(miniFrom)}</span>` : ''}`);
-    var mt = $('#mini-thumb'); patch(mt, idle ? '<span></span>' : ui.cover(t, 40)); mt.classList.toggle('bezel-thumb--empty', idle);
+    var mt = $('#mini-thumb'); patch(mt, idle ? '<span></span>' : ui.cover(t, 40, { hero: true })); mt.classList.toggle('bezel-thumb--empty', idle);
     App.syncRows();
     updateSeeks();
     updateMediaSession();
@@ -3892,6 +3909,7 @@
   App.reloadCollections = loadCollections;
   /* after a reconnect or a resync: everything the events would have told us */
   function refetchAll() {
+    forgetArtWaits();
     M.invalidate();
     loadHealth(); loadCollections();
     if (booted) renderRoute(true);

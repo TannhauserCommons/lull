@@ -395,7 +395,7 @@
         ${jellyfinNotice(path)}
         <article class="card lib-page lib-page--album" aria-labelledby="lib-album-title" data-meta="${albumMeta(a)}" data-tracks="${tracks.length}" data-duration="${a.duration}" data-size="${a.sizeMB}">
           <div class="lib-hero">
-            ${ui.cover(a, 'var(--lib-art)', { label: 'Cover of ' + a.title })}
+            ${ui.cover(a, 'var(--lib-art)', { label: 'Cover of ' + a.title, hero: true })}
             <div class="lib-hero__info">
               <p class="lib-kicker">${a.type.toLowerCase()}${a.year ? ', ' + a.year : ''}</p>
               <h1 class="t-display lib-title" id="lib-album-title">${a.title}</h1>
@@ -495,7 +495,7 @@
     return html`<section class="card lib-page lib-ahero${ar.image ? ' has-photo' : ''}" aria-labelledby="lib-artist-title">
       ${ar.image ? html`<div class="lib-ahero__glow" aria-hidden="true">${ui.cover(ar, '100%', { blurred: true })}</div>` : ''}
       <div class="lib-hero lib-hero--round">
-        ${ui.cover(ar, 'var(--lib-art)', { round: true, label: ar.image ? 'Photo of ' + ar.name : ar.name })}
+        ${ui.cover(ar, 'var(--lib-art)', { round: true, label: ar.image ? 'Photo of ' + ar.name : ar.name, hero: true })}
         <div class="lib-hero__info">
           <p class="lib-kicker">artist</p>
           <h1 class="t-display lib-title" id="lib-artist-title">${ar.name}</h1>
@@ -597,7 +597,7 @@
       return html`<div class="view__inner lib">
         <section class="card lib-page" aria-labelledby="lib-tag-title">
           <div class="lib-hero">
-            ${ui.mosaic(coverIds, 'var(--lib-art)', 'Covers tagged ' + tag.name)}
+            ${ui.mosaic(coverIds, 'var(--lib-art)', 'Covers tagged ' + tag.name, null, { hero: true })}
             <div class="lib-hero__info">
               <p class="lib-kicker">${['tag'].concat(d.errors && d.errors.artists ? [] : [plural(artists.length, 'artist')], d.errors && d.errors.newReleases ? [] : [plural(albums.length, 'new release')]).join(', ')}</p>
               <h1 class="t-display lib-title" id="lib-tag-title">${tag.name}</h1>
@@ -988,7 +988,7 @@
     return html`<div class="view__inner lib">
       <article class="card card--flush lib-page lib-pl lib-out" aria-labelledby="lib-out-title" data-meta="${site} playlist">
         <header class="lib-pl__head">
-          ${ui.mosaic(ids, 'var(--lib-art)', 'Playlist cover: ' + d.name, d.cover)}
+          ${ui.mosaic(ids, 'var(--lib-art)', 'Playlist cover: ' + d.name, d.cover, { hero: true })}
           <div class="lib-hero__info">
             <p class="lib-kicker">playlist on ${site}</p>
             <h1 class="t-title-xl lib-pl__title" id="lib-out-title">${d.name}</h1>
@@ -1155,7 +1155,7 @@
       ${jellyfinNotice(path)}
       <article class="card card--flush lib-page lib-pl" aria-labelledby="lib-pl-title" data-meta="${playlistMeta(p)}">
         <header class="lib-pl__head">
-          ${ui.playlistArt(p, 'var(--lib-art)', 'Playlist cover: ' + p.name)}
+          ${ui.playlistArt(p, 'var(--lib-art)', 'Playlist cover: ' + p.name, { hero: true })}
           <div class="lib-hero__info">
             <p class="lib-kicker">playlist</p>
             <h1 class="t-title-xl lib-pl__title" id="lib-pl-title">${p.name}</h1>
