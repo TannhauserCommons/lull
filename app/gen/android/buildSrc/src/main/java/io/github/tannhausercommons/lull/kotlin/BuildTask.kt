@@ -23,7 +23,9 @@ abstract class BuildTask : DefaultTask() {
 
     @TaskAction
     fun assemble() {
-        val executable = """npm""";
+        // lull: scripts/android-build.sh sets LULL_TAURI_CLI=cargo, a Tauri CLI built from source
+        // (F-Droid); otherwise npm's, as `npx tauri android build` runs it.
+        val executable = if (System.getenv("LULL_TAURI_CLI") == "cargo") "cargo" else "npm"
         try {
             runTauriCli(executable)
         } catch (e: Exception) {
@@ -55,7 +57,8 @@ abstract class BuildTask : DefaultTask() {
         val rootDirRel = rootDirRel ?: throw GradleException("rootDirRel cannot be null")
         val target = target ?: throw GradleException("target cannot be null")
         val release = release ?: throw GradleException("release cannot be null")
-        val args = listOf("run", "--", "tauri", "android", "android-studio-script");
+        val cli = if (executable.startsWith("cargo")) listOf("tauri") else listOf("run", "--", "tauri")
+        val args = cli + listOf("android", "android-studio-script")
 
         execOperations.exec {
             workingDir(File(projectDir, rootDirRel))

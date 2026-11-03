@@ -7,9 +7,9 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
-    paths: ["app/**", "crates/**", "web/desktop/**", "web/assets/icons/**", ".github/workflows/app.yml"]
+    paths: ["app/**", "crates/**", "web/desktop/**", "web/assets/icons/**", "scripts/android-*.sh", "rust-toolchain.toml", ".github/workflows/app.yml"]
   pull_request:
-    paths: ["app/**", "crates/**", "web/desktop/**", "web/assets/icons/**", ".github/workflows/app.yml"]
+    paths: ["app/**", "crates/**", "web/desktop/**", "web/assets/icons/**", "scripts/android-*.sh", "rust-toolchain.toml", ".github/workflows/app.yml"]
   workflow_dispatch:
 
 permissions:
@@ -151,52 +151,82 @@ jobs:
             app/target/release/bundle/appimage/*.AppImage.sig
             app/target/release/bundle/updater-*.json
 
-  # Android: an APK for arm64 phones. A debug build checks every change (Rust for Android and the
-  # Kotlin player); a v* tag builds the release APK signed with the release keystore.
+  # Android: the APK for arm64 phones, built the way F-Droid builds it (packaging/fdroid/): in
+  # F-Droid's build image, by scripts/android-build.sh, with the toolchains pinned. A v* tag signs it
+  # with the release keystore; other runs with a throwaway key (an APK to try). Every run also checks
+  # that no non-free library got in (the Gradle dependency tree and F-Droid's scanner) and that a clean
+  # clone in another folder builds the same APK, which is what lets F-Droid ship the release APK.
   android:
     runs-on: ubuntu-24.04
+    container:
+      image: registry.gitlab.com/fdroid/fdroidserver:buildserver@sha256:1ea8bef1820bff06c2974e31b4fc4c79c364cd24231b86e71fa4b926797e0dac
+    env:
+      ANDROID_HOME: /opt/android-sdk
+      NDK_HOME: /opt/android-sdk/ndk/28.2.13676358
+      CARGO_HOME: /opt/cargo
+      RUSTUP_HOME: /opt/rustup
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-java@v4
+      # What F-Droid's recipe installs: Debian's rustup and the NDK, then (after the cache) the pinned
+      # Rust toolchain and the Tauri CLI from source.
+      - name: Toolchains
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends build-essential rustup sdkmanager apksigcopier fdroidserver
+          sdkmanager --install "ndk;28.2.13676358"
+      - uses: actions/cache@v4
         with:
-          distribution: temurin
-          java-version: "17"
-      - run: rustup toolchain install && rustup target add aarch64-linux-android
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: app
-          key: android
-      - uses: actions/setup-node@v5
-        with:
-          node-version: "24.11"
-      - working-directory: app
-        run: npm ci --no-audit --no-fund
-      # The runner image ships the SDK and NDKs; Tauri needs NDK_HOME.
-      - run: echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
-      - name: Release keystore
-        if: github.ref_type == 'tag'
+          path: |
+            /opt/cargo/registry
+            /opt/cargo/bin
+            /opt/cargo/.crates.toml
+            /opt/cargo/.crates2.json
+          key: android-cargo-${{ hashFiles('app/Cargo.lock', 'app/package.json', 'rust-toolchain.toml') }}
+          restore-keys: android-cargo-
+      - run: sh scripts/android-toolchains.sh
+      - name: Signing key
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          else
+            ANDROID_KEYSTORE_PASSWORD=throwaway ANDROID_KEY_ALIAS=test ANDROID_KEY_PASSWORD=throwaway
+            keytool -genkeypair -keystore "$RUNNER_TEMP/release.jks" -storepass throwaway -keypass throwaway \
+              -alias test -dname CN=lull-test -keyalg RSA -keysize 2048 -validity 30
+          fi
           cat > app/gen/android/keystore.properties <<EOF
           storeFile=$RUNNER_TEMP/release.jks
           storePassword=$ANDROID_KEYSTORE_PASSWORD
           keyAlias=$ANDROID_KEY_ALIAS
           keyPassword=$ANDROID_KEY_PASSWORD
           EOF
-      - working-directory: app
+      - run: sh scripts/android-build.sh
+      - name: No non-free libraries
         run: |
-          if [ "$GITHUB_REF_TYPE" = tag ]; then
-            npx tauri android build --ci --apk --target aarch64 --config "{\"version\":\"${GITHUB_REF_NAME#v}\"}"
-            cp gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk "lull-${GITHUB_REF_NAME#v}-android-arm64.apk"
-          else
-            npx tauri android build --ci --apk --target aarch64 --debug
-            cp gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk lull-android-arm64-debug.apk
+          apk=app/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
+          (cd app/gen/android && ./gradlew -q :app:dependencies --configuration universalReleaseRuntimeClasspath) > "$RUNNER_TEMP/deps.txt"
+          cat "$RUNNER_TEMP/deps.txt"
+          if grep -Ei 'com\.google\.(android\.gms|firebase|mlkit)|play-services|crashlytics' "$RUNNER_TEMP/deps.txt"; then
+            echo "::error::A non-free Google library is in the APK's dependencies (F-Droid can't ship it)"; exit 1
           fi
+          fdroid scanner --exit-code "$apk"
+      # F-Droid builds the tag unsigned from its own clone and publishes the release APK only when the
+      # two match except for the signature (packaging/fdroid/, Binaries). So does this.
+      - name: Same APK from a clean clone elsewhere
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git clone -q "$GITHUB_WORKSPACE" "$RUNNER_TEMP/again"
+          git -C "$RUNNER_TEMP/again" checkout -q "$GITHUB_SHA"
+          sh "$RUNNER_TEMP/again/scripts/android-build.sh"
+          apksigcopier compare app/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk \
+            --unsigned "$RUNNER_TEMP/again/app/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk"
+      - run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then name="lull-${GITHUB_REF_NAME#v}-android-arm64.apk"; else name=lull-android-arm64-test.apk; fi
+          cp app/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk "app/$name"
       - uses: actions/upload-artifact@v4
         with:
           name: lull-android

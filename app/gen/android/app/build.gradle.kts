@@ -24,6 +24,8 @@ val keystoreProperties = Properties().apply {
 
 android {
     compileSdk = 37
+    // lull: the NDK every build uses (scripts/android-build.sh, CI, F-Droid), for reproducible APKs.
+    ndkVersion = "28.2.13676358"
     namespace = "io.github.tannhausercommons.lull"
     defaultConfig {
         // lull: hubs on the home network speak plain http (ADR-0006), release builds included.
@@ -76,6 +78,12 @@ android {
     }
     buildFeatures {
         buildConfig = true
+    }
+    // lull: no Google-encrypted dependency list in the APK's signing block. F-Droid refuses it,
+    // and it would keep F-Droid's build from matching the release APK.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
     }
 }
 
