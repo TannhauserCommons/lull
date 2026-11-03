@@ -545,13 +545,31 @@
         return $('[name="code"]', card).focus();
       case 'switch': el.setAttribute('aria-checked', String(el.getAttribute('aria-checked') !== 'true')); return;
       case 'retry': var off = el.closest('[data-dk-offline]'); if (off && off._dkRetry) off._dkRetry(); return;
-      case 'seek': return seekTo((e.clientX - el.getBoundingClientRect().left) / el.offsetWidth);
     }
   });
   doc.addEventListener('submit', function (e) {
     var card = e.target.closest('[data-dk-connect]'); if (!card) return;
     e.preventDefault();
     pair(card);
+  });
+  /* the wave scrubs like the main window's: the playhead follows the pointer while the button is down (painted here
+     at once, main seeks once a frame), not only where the button comes up. Main's next snapshot has the truth (a
+     Soulseek song can't seek past what has arrived) */
+  doc.addEventListener('pointerdown', function (e) {
+    var w = e.target.closest && e.target.closest('.wave[data-dk="seek"]'); if (!w || e.button !== 0 || !S.duration) return;
+    e.preventDefault(); w.focus({ preventScroll: true });
+    try { w.setPointerCapture(e.pointerId); } catch (err) { /* synthetic events */ }
+    var f = 0, frame = 0;
+    function at(ev) { var r = w.getBoundingClientRect(); return Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width)); }
+    function show() { frame = 0; S.pos = f * S.duration; paintPlayer(doc); seekTo(f); }
+    function move(ev) { f = at(ev); if (!frame) frame = requestAnimationFrame(show); }
+    function end(ev) {
+      w.removeEventListener('pointermove', move); w.removeEventListener('pointerup', end); w.removeEventListener('pointercancel', end);
+      cancelAnimationFrame(frame);
+      if (ev.type === 'pointerup') { f = at(ev); show(); }
+    }
+    move(e);
+    w.addEventListener('pointermove', move); w.addEventListener('pointerup', end); w.addEventListener('pointercancel', end);
   });
   doc.addEventListener('keydown', function (e) {
     var w = e.target.closest && e.target.closest('.wave[data-dk="seek"]'); if (!w || !S.duration) return;
