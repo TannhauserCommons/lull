@@ -237,6 +237,19 @@ button.lib-th:hover { color: var(--fg); background: var(--bg-2); }
 .lib-imp__none { display: inline-flex; align-items: center; gap: 4px; font: 700 .8125rem/1 var(--f-ui); color: var(--fg-2); font-style: italic; }
 .lib-imp__opt { padding: 0 var(--sp-1); }
 
+/* import from a link: the box (import dialog, Playlists) and the review dialog */
+.lib-link { display: grid; gap: var(--sp-2); }
+.lib-link__row { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+.lib-link__row .input { flex: 1 1 260px; min-width: 0; }
+.lib-link-card { padding: var(--sp-4) var(--card-pad) 0; }
+.lib-linkrev .lib-imp__list { max-height: min(56vh, 520px); }
+.lib-linkrev__row .lib-imp__status { flex-wrap: wrap; }
+.lib-linkrev__find { grid-column: 1 / -1; display: grid; gap: var(--sp-2); padding: var(--sp-2) 0 var(--sp-1); }
+.lib-linkrev__hits { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.lib-linkrev__hit { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: var(--sp-3); align-items: center; width: 100%; padding: 6px 8px; border: 0; border-radius: 12px; background: none; color: inherit; text-align: left; cursor: pointer; }
+.lib-linkrev__hit:hover, .lib-linkrev__hit:focus-visible { background: var(--bg-2); }
+.lib-linkrev__foot { display: contents; }
+
 /* add-to-playlist picker sheet */
 .lib-picker .sheet__body { display: grid; gap: var(--sp-3); align-content: start; }
 .lib-picker__what { font: var(--t-meta); color: var(--fg-2); }

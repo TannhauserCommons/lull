@@ -350,6 +350,13 @@ same preview and the playlist is `POST`ed with the ids kept. Listening history: 
 (`POST /api/import/history { source: lastfm, user }`) or a ListenBrainz export file sent as the body; the job shows
 in Activity ("Listening history", plays added and duplicates).
 
+**Import from a link** (`linkForm`, in the Import dialog and under the Playlists grid): `POST /api/import/link { url }`,
+then the `job` row shows in Activity ("Playlist link", reading, "Matching songs, n of m", then matched and not found,
+with Review). When an import this tab started ends, a toast offers Review (or Open when all matched). The review dialog
+(`openLinkReview`, `GET /api/import/links/{id}`) filters Not found, In the playlist, Skipped and All; a song is found
+in place with catalog search (`/api/search`, first 6 songs), kept as named, skipped, or undone, each a
+`PUT /api/import/links/{id}/songs/{pos}` whose answer repaints the list. "Update from the link" imports it again.
+
 ## Links
 
 `App.copyShareLink(kind, id, lullPath)` is "Copy link" (album and artist menus, the player's More menu): it copies the

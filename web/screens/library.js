@@ -914,6 +914,7 @@
       <section class="card lib-card" aria-labelledby="lib-pls-h">
         ${ruleWith('your playlists', 'lib-pls-h', html`<span class="t-micro fg-2">recently updated first</span>`)}
         ${body}
+        <div class="lib-link-card">${linkForm()}</div>
         ${dropZone()}
       </section>
     </div>`;
@@ -1251,9 +1252,11 @@
     App.openDialog({
       title: 'import', wide: true, className: 'lib-import',
       body: html`<div class="lib-form">
-        ${ui.labelRule('a playlist', { level: 'h3', sm: true })}
+        ${ui.labelRule('a playlist link', { level: 'h3', sm: true })}
+        ${linkForm()}
+        ${ui.labelRule('a playlist file', { level: 'h3', sm: true })}
         ${dropZone()}
-        <p class="lib-help">Each song is matched to your library first, then searched on Soulseek. Nothing downloads until you play or save it. From Spotify, export a playlist with Exportify and drop the .csv here.</p>
+        <p class="lib-help">Each song is matched to your library first, then searched on Soulseek. Nothing downloads until you play or save it. For a Spotify playlist of more than 100 songs, export it with Exportify and drop the .csv here.</p>
         ${ui.labelRule('listening history', { level: 'h3', sm: true })}
         <p class="lib-help">Past plays join History, Stats and your taste profile. They never scrobble.</p>
         <form class="lib-hist" data-form="lib-lastfm-import">
@@ -1385,6 +1388,181 @@
     reader.onerror = function () { App.toast('Couldn\'t read ' + file.name, { kind: 'error', icon: 'warning' }); };
     reader.readAsText(file);
   };
+
+  /* ---------- a playlist link (POST /api/import/link, docs/context/collection.md#playlist-links) ----------
+     A Spotify, Deezer, YouTube, YouTube Music or SoundCloud link becomes a playlist that plays on demand. The hub reads
+     and matches it as a `job` (Activity); when this tab's import ends, a toast offers the review, where songs the catalog
+     didn't match are found in search, kept as the link names them, or skipped (PUT /api/import/links/{id}/songs/{pos}).
+     Importing the same link again updates its playlist and keeps those choices. */
+  var linkJobs = {};                  // jobId -> true for the imports this tab started
+  var SITE_NAME = { spotify: 'Spotify', deezer: 'Deezer', youtube: 'YouTube', soundcloud: 'SoundCloud' };
+  var LINK_STATUS = { matched: 'Matched', fixed: 'Your pick', skipped: 'Skipped', unmatched: 'Not found' };
+  function linkForm() {
+    var id = App.uid('lib-link');
+    return html`<form class="lib-link" data-form="lib-link-import">
+      <label class="field__label" for="${id}">Import from a link</label>
+      <div class="lib-link__row">
+        <input class="input" id="${id}" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="A Spotify, YouTube, Deezer or SoundCloud playlist link">
+        <button class="btn btn--primary" type="submit">${icon('import')}Import</button>
+      </div>
+      <span class="field__help">Songs play from Soulseek when you play them. Spotify lets lull read the first 100 songs of a playlist. Importing a link again updates its playlist.</span>
+    </form>`;
+  }
+  function importLink(url, onStarted) {
+    return M.api('/api/import/link', { method: 'POST', body: { url: url } }).then(function (res) {
+      linkJobs[res.jobId] = true;
+      if (onStarted) onStarted();
+      App.toast('Importing the playlist. Activity shows how it goes.', { icon: 'import', action: 'Activity', onAction: function () { App.openPanel('activity'); } });
+      App.loadJobs();
+    }, function (err) { App.toast('Couldn\'t import that link: ' + err.message, { kind: 'error', icon: 'warning' }); });
+  }
+  document.addEventListener('submit', function (e) {
+    var form = e.target.closest && e.target.closest('[data-form="lib-link-import"]');
+    if (!form) return;
+    e.preventDefault();
+    var input = $('input', form), btn = $('button[type="submit"]', form), url = input.value.trim();
+    if (!url) { input.focus(); return; }
+    btn.disabled = true;
+    importLink(url, function () { input.value = ''; if (form.closest('.lib-import')) App.closeTop(); })
+      .then(function () { btn.disabled = false; });
+  });
+  /* the hub made or changed a playlist: the Playlists page and the playlist's own page read it again */
+  function linkPlaylistChanged(playlistId) {
+    if (playlistId) M.invalidate(playlistPath(playlistId));
+    App.loadPlaylists();
+  }
+  App.on('server:job', function (j) {
+    if (!j || !j.link || j.state === 'running') return;
+    if (j.state === 'done') linkPlaylistChanged(j.playlistId);
+    if (!linkJobs[j.jobId]) return;
+    delete linkJobs[j.jobId];
+    if (j.state === 'failed') { App.toast('Couldn\'t import ' + j.name + ': ' + (j.error || 'the import failed'), { kind: 'error', icon: 'warning' }); return; }
+    App.toast('Imported ' + j.name + ': ' + plural(j.matched || 0, 'song') + (j.unmatched ? ', ' + j.unmatched + ' not found' : ''),
+      { kind: 'ok', icon: 'import', action: j.unmatched ? 'Review' : 'Open', onAction: function () {
+        if (j.unmatched) openLinkReview(j.link); else App.go('/playlist/' + j.playlistId);
+      } });
+  });
+
+  /* the review: { id, url, site, name, playlistId, note, importedAt, running, counts, songs: [{ pos, artist, title, album,
+     duration, status: matched|fixed|skipped|unmatched, trackId }] }; a status this version doesn't know fails loudly */
+  function openLinkReview(id) {
+    var st = { data: null, filter: 'unmatched', finding: null, results: null, searching: false };
+    var d = App.openDialog({
+      title: 'review import', wide: true, className: 'lib-import lib-linkrev',
+      body: html`<div class="lib-form" data-linkrev>${ui.skeleton('row', 4)}</div>`,
+      foot: html`<button class="btn" type="button" data-close>Close</button><span class="lib-linkrev__foot" data-linkrev-foot></span>`
+    });
+    function paint() {
+      $('[data-linkrev]', d.el).innerHTML = String(reviewBody(st));
+      $('[data-linkrev-foot]', d.el).innerHTML = String(reviewFoot(st.data));
+      var q = $('[data-rev-q]', d.el); if (q && !st.results && !st.searching) q.focus();
+    }
+    function showError(message) {
+      $('[data-linkrev]', d.el).innerHTML = String(html`<p class="field__error">${icon('warning', null, 'ic-16')}${message}</p>`);
+    }
+    function took(res) {
+      var odd = res.songs.filter(function (s) { return !LINK_STATUS[s.status]; })[0];
+      if (odd) { showError('The server sent a song status lull doesn\'t understand (' + odd.status + ').'); return; }
+      st.data = res;
+      if (st.filter === 'unmatched' && !res.counts.unmatched) st.filter = 'all';
+      paint();
+    }
+    function failed(err) { App.toast('Couldn\'t change that song: ' + err.message, { kind: 'error', icon: 'warning' }); }
+    function choose(pos, body) {
+      st.finding = null; st.results = null;
+      M.api('/api/import/links/' + encodeURIComponent(id) + '/songs/' + pos, { method: 'PUT', body: body }).then(function (res) {
+        took(res); linkPlaylistChanged(res.playlistId);
+      }, failed);
+    }
+    M.api('/api/import/links/' + encodeURIComponent(id)).then(took, function (err) { showError(err.message); });
+    d.el.addEventListener('click', function (e) {
+      var b = e.target.closest('button'); if (!b || !st.data) return;
+      var pos = b.getAttribute('data-pos');
+      if (b.hasAttribute('data-rev-filter')) { st.filter = b.getAttribute('data-rev-filter'); paint(); }
+      else if (b.hasAttribute('data-rev-find')) { st.finding = +pos; st.results = null; paint(); }
+      else if (b.hasAttribute('data-rev-cancel')) { st.finding = null; st.results = null; paint(); }
+      else if (b.hasAttribute('data-rev-choose')) choose(pos, { choice: b.getAttribute('data-rev-choose') });
+      else if (b.hasAttribute('data-rev-pick')) choose(pos, { choice: 'track', trackId: b.getAttribute('data-id') });
+      else if (b.hasAttribute('data-rev-update')) importLink(st.data.url, d.close);
+      else if (b.hasAttribute('data-rev-open')) { d.close(); App.go('/playlist/' + st.data.playlistId); }
+    });
+    d.el.addEventListener('submit', function (e) {
+      if (!e.target.matches('[data-rev-search]')) return;
+      e.preventDefault();
+      var q = $('[data-rev-q]', e.target).value.trim(); if (!q) return;
+      st.searching = true; st.query = q; paint();
+      M.api('/api/search?q=' + encodeURIComponent(q)).then(function (res) {
+        st.searching = false; st.results = (res.tracks || []).slice(0, 6); paint();
+      }, function (err) { st.searching = false; st.results = []; failed(err); paint(); });
+    });
+  }
+  function reviewBody(st) {
+    var r = st.data; if (!r) return ui.skeleton('row', 4);
+    var c = r.counts, inList = c.matched + c.fixed;
+    var tally = { all: r.songs.length, unmatched: c.unmatched, matched: inList, skipped: c.skipped };
+    var shown = r.songs.filter(function (s) {
+      return st.filter === 'all' || (st.filter === 'matched' ? s.status === 'matched' || s.status === 'fixed' : s.status === st.filter);
+    });
+    function pill(key, label, ic) {
+      return html`<button class="pill-filter" type="button" data-rev-filter="${key}" aria-pressed="${String(st.filter === key)}">${ic ? icon(ic) : ''}${label}<span class="lib-count">${tally[key]}</span></button>`;
+    }
+    return html`<p class="lib-help">${SITE_NAME[r.site] || r.site}: <a href="${r.url}" target="_blank" rel="noopener noreferrer">${r.name}</a>.
+        ${plural(inList, 'song')} in the playlist${r.running ? '. Importing now.' : r.importedAt ? ', imported ' + fmt.date(r.importedAt) + '.' : '.'}</p>
+      ${r.note ? html`<p class="lib-help">${icon('info', null, 'ic-16')}${r.note}</p>` : ''}
+      <div class="lib-imp__sum" role="group" aria-label="Show songs">
+        ${pill('unmatched', 'Not found', 'no-source')}${pill('matched', 'In the playlist', 'check')}${pill('skipped', 'Skipped', 'close')}${pill('all', 'All')}
+      </div>
+      ${shown.length ? html`<ol class="lib-imp__list" aria-label="Songs in ${r.name}">${shown.map(function (s) { return reviewRow(s, st); })}</ol>`
+        : html`<p class="now-next__none">${icon('check', null, 'ic-16')}${st.filter === 'unmatched' ? 'Every song was found.' : 'Nothing here.'}</p>`}
+      <p class="lib-help">Choices stay when you import the link again. Songs you add or remove in the playlist itself are replaced by the link's songs then: skip a song here to keep it out.</p>`;
+  }
+  function reviewRow(s, st) {
+    var t = s.trackId && M.track(s.trackId), acts;
+    if (s.status === 'unmatched') {
+      acts = html`<button class="btn btn--sm" type="button" data-rev-find data-pos="${s.pos}">${icon('search')}Find</button>
+        <button class="btn btn--sm btn--quiet" type="button" data-rev-choose="as-is" data-pos="${s.pos}" data-tip="Searched on Soulseek by this artist and title when played">Keep as named</button>
+        <button class="btn btn--sm btn--quiet" type="button" data-rev-choose="skip" data-pos="${s.pos}">Skip</button>`;
+    } else if (s.status === 'matched') {
+      acts = html`<button class="btn btn--sm btn--quiet" type="button" data-rev-find data-pos="${s.pos}">Change</button>
+        <button class="btn btn--sm btn--quiet" type="button" data-rev-choose="skip" data-pos="${s.pos}">Skip</button>`;
+    } else {
+      acts = html`<button class="btn btn--sm btn--quiet" type="button" data-rev-choose="none" data-pos="${s.pos}">Undo</button>`;
+    }
+    var found = t ? html`<small>${LINK_STATUS[s.status]}: ${t.artist}, ${t.title}${t.album ? ' (' + t.album + ')' : ''}</small>` : html`<small>${LINK_STATUS[s.status]}</small>`;
+    return html`<li class="lib-imp__row lib-linkrev__row" data-status="${s.status}">
+      <span class="lib-imp__n">${s.pos + 1}</span>
+      ${t ? ui.cover(t, 40) : html`<span class="lib-imp__blank" aria-hidden="true">${icon('no-source')}</span>`}
+      <span class="lib-imp__main"><b>${s.title}</b><span>${s.artist}${s.duration ? ', ' + fmt.time(s.duration) : ''}</span>${found}</span>
+      <span class="lib-imp__status">${acts}</span>
+      ${st.finding === s.pos ? findPanel(s, st) : ''}
+    </li>`;
+  }
+  function findPanel(s, st) {
+    var results;
+    if (st.searching) results = ui.skeleton('row', 2);
+    else if (st.results && !st.results.length) results = html`<p class="lib-help">Nothing found. Try other words.</p>`;
+    else if (st.results) {
+      results = html`<ul class="lib-linkrev__hits">${st.results.map(function (id) {
+        var t = M.track(id); if (!t) return '';
+        return html`<li><button class="lib-linkrev__hit" type="button" data-rev-pick data-pos="${s.pos}" data-id="${id}">
+          ${ui.cover(t, 40)}<span class="lib-imp__main"><b>${t.title}</b><span>${t.artist}${t.album ? ', ' + t.album : ''}${t.duration ? ', ' + fmt.time(t.duration) : ''}</span></span></button></li>`;
+      })}</ul>`;
+    } else results = '';
+    return html`<div class="lib-linkrev__find">
+      <form class="lib-link__row" data-rev-search role="search">
+        <input class="input" data-rev-q aria-label="Search for this song" value="${st.query && st.results ? st.query : (s.artist + ' ' + s.title)}" autocomplete="off" spellcheck="false">
+        <button class="btn btn--sm" type="submit">${icon('search')}Search</button>
+        <button class="btn btn--sm btn--quiet" type="button" data-rev-cancel>Cancel</button>
+      </form>
+      ${results}
+    </div>`;
+  }
+  function reviewFoot(r) {
+    if (!r) return '';
+    return html`<button class="btn" type="button" data-rev-update ${r.running ? raw('disabled') : ''}>${icon('refresh')}Update from the link</button>
+      ${r.playlistId ? html`<button class="btn btn--primary" type="button" data-rev-open>${icon('play')}Open playlist</button>` : ''}`;
+  }
+  App.action('lib-link-review', function (el) { openLinkReview(el.getAttribute('data-id')); });
 
   /* =====================================================================
      11. Actions
