@@ -296,7 +296,9 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
   - **Song lists:** album at 760 px, and date added where the list has dates. From 1100 px, play counts (lists that
     have them); from 1240 px, the bitrate and sample rate. Both go in the badge cell, which gets a fixed width so a
     design's grid can't misplace them; the playlist table shows the bitrate from 1300 px. The saved songs list gets
-    dates and plays from the `songs` map of `/api/library/songs`.
+    dates and plays from the `songs` map of `/api/library/songs`. A row off screen skips layout and paint
+    (`content-visibility: auto` on `.tlist > .trow`, keeping its last height), so a long list costs only its visible
+    rows when the window or a column resizes.
   - **Album pages:** two columns from `wide`; the header is sticky in tall windows.
   - **Artist pages:** a hero across the page (photo, name, Last.fm listeners, Play, Shuffle, Follow, Radio; a real
     photo also glows behind it), then Popular (5 rows, See more for 10, with Last.fm plays at any width) beside About
