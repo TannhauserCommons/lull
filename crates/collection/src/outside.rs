@@ -123,6 +123,14 @@ async fn preview(
                 .map(|(pos, s)| row(c, pos, s, known.get(&s.key).cloned()))
                 .collect::<Result<_>>()?;
             let bookmarked = bookmarked(c, &key)?;
+            // Imported as a playlist already (its link import): "Import as playlist" updates that one.
+            let copy: Option<i64> = c
+                .query_row(
+                    "SELECT p.seq FROM collection_links l JOIN collection_playlists p ON p.seq = l.playlist_seq WHERE l.key = ?1",
+                    [&key],
+                    |r| r.get(0),
+                )
+                .optional()?;
             let entities = entities(c, rows.iter().map(|r| &r.track_id))?;
             let duration: u32 = kept.songs.iter().filter_map(|s| s.duration).sum();
             Ok(json!({
@@ -130,6 +138,7 @@ async fn preview(
                 "owner": kept.owner, "description": kept.description, "note": kept.note,
                 "cover": cover_url(&key, kept.cover_at), "total": rows.len(), "duration": duration,
                 "fetchedAt": kept.fetched_at, "bookmarked": bookmarked, "matching": matching,
+                "playlistId": copy.map(|p| format!("pl-{p}")),
                 "songs": rows, "entities": entities,
             }))
         })

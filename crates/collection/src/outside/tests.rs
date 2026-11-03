@@ -87,6 +87,7 @@ async fn a_preview_plays_at_once_and_its_songs_are_matched_in_the_background() -
         (first["total"].as_u64(), first["bookmarked"].as_bool()),
         (Some(2), Some(false))
     );
+    assert!(first["playlistId"].is_null(), "not imported as a playlist");
     for s in first["songs"].as_array().into_iter().flatten() {
         assert_eq!(s["status"], "pending");
         let id = s["trackId"].as_str().unwrap_or_default();
@@ -189,4 +190,27 @@ fn a_key_or_a_link_names_the_playlist_and_anything_else_is_refused() {
         Some("youtube:playlist:PLrFSfgR7Y3I1yKrovCWPyGNlFR4eoEgCd")
     );
     assert!(matches!(link_of("https://example.com/x"), Err(Error::BadRequest(_))));
+}
+
+#[tokio::test]
+async fn a_preview_of_a_link_already_imported_points_at_that_playlist() -> Result<()> {
+    let (svc, _rx, _, _) = service_with_fakes().await?;
+    keep(&svc, vec![song("deezer:track:2", "Nobody", "Lost")]).await?;
+    let seq = svc
+        .write(|tx, events| {
+            let p = crate::playlists::make(tx, events, "Person of Interest", "", &[], 0)?;
+            tx.execute(
+                "INSERT INTO collection_links (key, name, playlist_seq, imported_at) VALUES (?1, 'x', ?2, 1)",
+                params![KEY, p],
+            )?;
+            Ok(p)
+        })
+        .await?;
+    let Json(shown) = preview(State(svc.clone()), query(KEY)).await?;
+    assert_eq!(
+        shown["playlistId"],
+        format!("pl-{seq}"),
+        "Import as playlist updates it, never a second one"
+    );
+    Ok(())
 }
