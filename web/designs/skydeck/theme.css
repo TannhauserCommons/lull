@@ -377,7 +377,6 @@
 :root[data-design="skydeck"] .sys-tile__value { font: 400 2.5rem/1 var(--f-px); letter-spacing: .02em; color: var(--star); }
 :root[data-design="skydeck"] .sys-tile__label { color: #f9dcec; }
 :root[data-design="skydeck"] .sys-tile__sub { text-wrap: balance; }
-:root[data-design="skydeck"] .sys-order__note { white-space: normal; } /* the content card is narrower here; wrap so the size estimate stays visible */
 :root[data-design="skydeck"] .sys-bar { height: 10px; border-radius: 3px; background: var(--sd-lcd-tex), var(--screen); box-shadow: inset 0 1.5px 0 #00000033; }
 :root[data-design="skydeck"] .sys-bar > i {
   border-radius: 2px; background: repeating-linear-gradient(90deg, var(--peri) 0 7px, transparent 7px 9px);
@@ -413,7 +412,6 @@
 
 /* search: one compact top result, rows with one quiet pixel line of facts, then the Soulseek section */
 @media (min-width: 640px) {
-  :root[data-design="skydeck"] .disc-top > [data-after] { display: flex; align-items: center; gap: var(--sp-4) var(--sp-5); flex-wrap: wrap; }
   :root[data-design="skydeck"] .disc-top .disc-top__body { flex: 1 1 300px; grid-template-columns: 64px minmax(0, 1fr); gap: var(--sp-4); align-items: center; }
   :root[data-design="skydeck"] .disc-top .disc-top__body > .cover { --cover-size: 64px !important; }   /* inline --cover-size from the markup */
   :root[data-design="skydeck"] .disc-top .disc-top__kind { display: none; }
@@ -423,14 +421,6 @@
   :root[data-design="skydeck"] .disc-top .card-head { margin-bottom: var(--sp-3); }
   :root[data-design="skydeck"] .disc-top.card { padding-top: 16px; padding-bottom: 16px; }
   :root[data-design="skydeck"] .disc-songs .disc-scan { margin-bottom: 4px; }
-}
-/* stacked (main column under 980 px): the top result and the songs read as one cream card, like one
-   search panel: no gap, no stack between them, a hairline instead */
-@container disc (max-width: 979px) {
-  :root[data-design="skydeck"] .disc-duo--results { row-gap: 0; }
-  :root[data-design="skydeck"] .disc-duo--results > .disc-top.card { margin-bottom: 0; border-bottom: 0; border-radius: var(--r-card) var(--r-card) 0 0; box-shadow: inset 0 1.5px 0 #fffaf2; }
-  :root[data-design="skydeck"] .disc-duo--results > .disc-top + .disc-songs.card { border-top: 1px solid var(--divider); border-radius: 0 0 var(--r-card) var(--r-card); box-shadow: var(--stack); }
-  :root[data-design="skydeck"] .disc-duo--results > .disc-top + .disc-songs.card::after { display: none; }
 }
 :root[data-design="skydeck"] .disc-top .disc-top__by { margin: 0; }
 :root[data-design="skydeck"] .disc-top .disc-top__badges .badge-saved { font-size: 0; gap: 0; width: 26px; padding: 0; justify-content: center; }

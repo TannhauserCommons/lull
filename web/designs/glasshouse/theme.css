@@ -902,12 +902,6 @@
 /* =====================================================================
    Search
    ===================================================================== */
-@container disc (min-width: 820px) {
-  :root[data-design="glasshouse"] .disc-search .disc-duo--results { grid-template-columns: minmax(260px, .62fr) minmax(0, 1.5fr); align-items: start; }
-  :root[data-design="glasshouse"] .disc-search .disc-duo--results .disc-top__body { grid-template-columns: minmax(0, 1fr); justify-items: start; gap: var(--sp-3); }
-  :root[data-design="glasshouse"] .disc-search .disc-duo--results .disc-top__body .cover { width: 168px; --cover-size: 168px; }
-  :root[data-design="glasshouse"] .disc-search .disc-duo--results .disc-top__actions { flex-wrap: wrap; gap: 8px; }
-}
 :root[data-design="glasshouse"] .disc-top__title { font-size: 2rem; }
 /* "searching Soulseek" strip: a glass key groove with a lit glass fill */
 :root[data-design="glasshouse"] .disc-scan { border-radius: 8px; border: 1px solid color-mix(in srgb, var(--line) 50%, transparent);

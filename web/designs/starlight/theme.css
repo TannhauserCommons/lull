@@ -905,7 +905,6 @@
    ===================================================================== */
 :root[data-design="starlight"] .dk-form .input { background: var(--cream-2); color: var(--ink); border-color: var(--line); }
 :root[data-design="starlight"] .dk-form .input::placeholder { color: var(--ink-2); }
-:root[data-design="starlight"] .dk-reveal { color: var(--sl-accent); --focus: var(--indigo); }
 :root[data-design="starlight"] .sl-mini__card { position: relative; width: 316px; display: grid; gap: 10px; padding: 14px 16px 16px; border-radius: var(--r-card); margin-bottom: 20px; }
 :root[data-design="starlight"] .sl-mini__head { display: flex; align-items: center; gap: 8px; }
 :root[data-design="starlight"] .sl-mini__label { font: 400 .9375rem/1 var(--f-ui); }

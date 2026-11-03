@@ -105,7 +105,7 @@ Go beyond tokens with any selector. These hooks are the theme API: they stay put
 | `.app[data-route]`, `.app[data-view]`, `.app[data-ctx]` | nav key; `page` or `now`; `docked`, `open`, `closed` |
 | `[data-act]`, `[data-nav]` | every control's action (`play`, `next`, `like`, `shuffle`...) and nav target (`home`, `library`...) |
 | `#pbar` / `#mini` `[data-status]`, `[data-playing]` | player state (`idle`, `streaming`, `buffering`, `failed`...) |
-| Classes | the BEM blocks: `.card` (`.card-head`, `.card-head__title`), `.btn` (`--primary`, `--quiet`, `--sm`), `.btn-icon`, `.btn-gloss`, `.cover` (`.c1`-`.c8` recipes, `.has-art`; `.cover--artist` with `.cover__mono`, the artist's initial shown while it has no photo, in the design's display face), `.trow`, `.tile`, `.chip`, `.pill-filter`, `.seg`, `.input`, `.seek`, `.wave`, `.device`, `.empty`, `.sheet`, `.dialog`, `.toast`, `.banner`, `.nav-item`, `.nav-pill`, `.tab`, `.region-title` (hidden window titles you can show) |
+| Classes | the BEM blocks: `.card` (`.card-head`, `.card-head__title`), `.btn` (`--primary`, `--quiet`, `--sm`), `.btn-icon`, `.btn-gloss`, `.cover` (`.c1`-`.c8` recipes, `.has-art`; `.cover--artist` with `.cover__mono`, the artist's initial shown while it has no photo, in the design's display face), `.trow`, `.tile`, `.chip`, `.pill-filter`, `.seg`, `.input`, `.seek`, `.wave`, `.device`, `.empty`, `.sheet`, `.dialog`, `.toast`, `.banner`, `.nav-item`, `.nav-pill`, `.tab`, `.region-title` (hidden window titles you can show). Every other class and attribute, stable or internal, is in section 11 |
 
 **Wide screens (ADR-0007).** A bigger window reveals more (more columns, more tiles); nothing is stretched. Your theme can add its own touches per size:
 
@@ -127,6 +127,21 @@ Prefer `@container main` to `@media`: it follows the main area, so it stays righ
 **Staying fast.** Chrome re-checks a `:has()` on a page-wide element (`:root`, `.app`, `.main`) whenever anything is inserted anywhere: a menu, a toast, a tooltip, a row. Each time it restyles every element the rest of the selector could match, so `:root:has(X) .now-card :is([data-act="retry"])` or `... span:not(:last-child)` restyles the whole page on every such change. End those selectors in a class, prefer a state lull already sets (`.app[data-screen="now"]` rather than `.app:has(.now)`; `.pipeline-wrap--idle` for a save pipeline that hasn't started; `.wave-times__buf` for the "buffered to" part of the times), and never test classes by substring (`[class*="is-"]`) inside `:has()`. Animate `transform` and `opacity` only, so loops run off the main thread. `mise run check:ui` measures all of this for the built-in designs (docs/context/quality.md#ui-gates).
 
 **Cover variety:** with `"coverVariety": true` every cover gets stable per-item hooks, so two albums that share a generated cover still differ: `data-look="0"`-`"5"` (pick one of 2, 3 or 6 looks with `[data-look="1"], [data-look="3"], [data-look="5"]`, ...) and `--cover-flip` (1 or -1), `--cover-hue` (-28deg to 28deg), `--cover-zoom` (1 to 1.45), `--cover-dx`, `--cover-dy`.
+
+**Parts with states of their own.** These hold rules a theme must keep, so style them, don't rebuild them:
+
+- **The song row's number cell** (`.trow__num`) shows one thing at a time: the number (`.trow__n`), Play (`.trow__play`) under the pointer or keyboard focus, or the playing bars (`.eq`) on `.trow.is-playing`. Under 520 px the cell is gone and the cover is the playing marker (`.trow.is-playing .trow__art::after`).
+- **The playing bars** (`.eq`, three `<i>`) move only inside `.is-playing-now` (sound is coming out), and stand still while paused. Animate them with `transform` only.
+- **The place playing** (a tile, a rail playlist, a search result, a menu item: `[data-place].is-playing-place`) gets `.place-mark` (the bars, plus a hidden "(playing)") before its title. "Playing from" is `.from` (icon, `.from__label`, the place's name in `b`): `.pbar__from` in the player bar, `.mini__from` in the phone mini player, `.now-head__from` on Now Playing. Clicking it opens the place, where the playing row is lit for 1.8 s with `.is-revealed`.
+- **Covers.** `.cover` holds a recipe (`.c1`-`.c8`, drawn on `::before`/`::after`) until its picture loads; then `.has-art` hides the recipe. A cover still waiting for the hub keeps its recipe, so a recipe must look finished on its own. `.mosaic` is a playlist's 2×2 of covers, and `.mosaic--one` holds one picture: the playlist's own, or the one album its songs share.
+- **The cover viewer.** `.cover-zoom` wraps the player bar's and the Now column's cover, and its `.cover-zoom__btn` shows on hover and keyboard focus. The button is never shown on touch screens. The viewer is a `.dialog.cover-view` holding `.cover-view__art` and `.cover-view__info` (`__title`, `__by`). Its picture is as large as the window allows, up to 1024 px: give it a frame, not a size.
+- **Sortable column headers** on the playlist page (`.lib-thead > .lib-th`) carry `aria-sort="ascending|descending"` on the sorted column. The arrow is `.lib-th__btn .ic`, and `.lib-th--added` is the date column. While the list is sorted, `.lib-sortnote` says why dragging is off.
+- **The player bar** keeps the transport centred on the bar: its three columns (`.pbar__now`, `.pbar__centre`, `.pbar__tools`) keep equal sides in every design, so change their gaps, not that balance. Every control has a fixed slot, and toggles show pressed or not (`aria-pressed`). Only width breakpoints move tools into the "…" menu (`.pbar__tools .is-wide` are the ones that go). The status line is `.pbar__state`, a tab on the bar's top edge that is `[hidden]` while all is well, with `.is-error` for a failure. `.pbar__xfade` floats above the tools during a crossfade, and `.pbar__private` is the "Private" tag. The two times are as wide as the song's duration reads (`--time-ch`), so the seek bar keeps its length.
+- **Sliders** (`.seek`, `.range`, `.vol`): `.seek.is-scrubbing` while the pointer drags it. A slider clicked rather than tabbed to has `[data-pointer]` and no focus ring; the ring comes back with the first key. Show focus with `:focus-visible`, and never on `[data-pointer]`.
+- **Segmented controls** (`.seg`): place `.seg__ind` by the measured `--seg-x` and `--seg-w` (above).
+- **The side panel's tabs** (`.ctx__head .seg__btn[data-ctx-tab="queue|lyrics|activity"]`) and the phone Now Playing tabs (`.now-seg`) lose Lyrics for a song with no words (none found, or instrumental), and get it back when a song has some. Never give a tab a fixed position by count.
+- **Classic's section in Settings** (`/settings/appearance`): `.cls-now` (the skin in use), `.cls-browser` (tabs and search over `.cls-grid`), `.cls-card` (`.is-applied` for the skin in use, `.cls-card__status.is-bad` for one that failed) with its `.cls-shot`, the larger view `.cls-pop` > `.cls-look`, and `.cls-nsfw`. Keep `.cls-shot`'s 275:348 ratio and its sharp pixels. The stage itself is Webamp alone on `.cls-desk` / `.cls-scrim`; the app under it is hidden while `:root[data-classic="on"]`.
+- **The desktop app's own pages** load your theme too: the mini player windows (`.dk-mini`, and `.dk-strip` in `.dk-strip-wrap`, with `slots/miniPlayer`), and the connect, unreachable and close-to-tray pages (`.dk-page`, `.dk-card`, `.dk-form`, `.dk-hubs`, `.dk-modal`). The title bar is `.dk-titlebar` with `.dk-caption` buttons, under `:root[data-titlebar="win|gnome"]` and `:root[data-window-inactive]`. The mini windows are transparent (`:root.dk-transparent`), so the player's own shape is the window: never paint the page `body` there. The Classic window (`desktop/winamp.html`) is Webamp on nothing and takes no theme.
 
 ## 6. Slots: your own markup
 
@@ -209,6 +224,217 @@ In the browser every template is also sanitized (DOMPurify), and the page's Cont
 ## 9. Versioning
 
 - `api` is the theme API version a theme is written for. lull speaks one version (now `1`) and refuses a theme that asks for a newer one, so update lull to use it.
-- The API is: the tokens in section 4, the hooks in section 5, the slots, fields and parts in section 6, and the package format. Adding a token, hook, field, part or slot keeps the version.
+- The API is: the tokens in section 4, the hooks in sections 5 and 11 (the stable ones), the slots, fields and parts in section 6, and the package format. Adding a token, hook, field, part or slot keeps the version. Section 11's internal hooks may change in any release.
 - Renaming or removing any of them, or changing what one means, is a breaking change: it raises `api`, and the release notes say what moved. A theme written for an older `api` keeps loading; whatever it relied on that moved is ignored, never an error.
 - Built-in designs' own classes (`.lull-*`, `.sd-*`, `.sl-*`, `.pt-*`, `.gh-*`) are not part of the API; extend a design for its look, but target the hooks above in your own rules.
+
+## 10. A complete theme: checklist
+
+Go through this before you share a theme, and before a built-in design ships. The five built-in designs meet all of it.
+
+**Every screen, in every state it can be in.**
+- **Home:** playing and idle (both `homeLead` variants), a first start with nothing to recommend (`.disc-cold`), loading (skeletons appear after 150 ms), a module that failed, every module empty.
+- **Search:** empty with recent searches, typing, results with Soulseek still streaming in, side by side from `wide`, nothing found, Soulseek down, the Files tab, a Soulseek folder.
+- **Library:** albums, artists, songs, genres and downloads, each loading, empty and with its source down.
+- **Pages:** album (saved, partly saved, Soulseek only, saving, failed), artist (with and without a photo, sections still loading), tag, playlists (empty), playlist (sorted, being reordered, empty, a drop), an outside playlist.
+- **Collections:** Liked, History and Following, each with its empty state.
+- **Stats:** loading, empty, each period.
+- **Now Playing:** every player status (`idle finding queued buffering streaming stalled fallback failed choose library paused ended jellyfin-error`), its Art, Lyrics, Queue and Details tabs on a phone, lyrics in each state (synced, plain, instrumental, not found, loading, error), the queue empty and with a radio.
+- **Settings:** every section, the design picker, Your themes and Theme Studio, Classic's section.
+- **The rest:** Welcome, the pairing gate and first-run setup, the Classic stage, the desktop app's mini player, strip and connect pages.
+
+**Every region:**
+- **The shell:** your shell's rail, top strip or dock; the status tray (ok, warn, down, the compact pill).
+- **The side panel:** queue, lyrics and activity; docked, open over the page, collapsed to its strip, two panes.
+- **The Now column:** open, and collapsed to its strip.
+- **The player:** the player bar (idle, every status, crossfading, private listening, a failure in `.pbar__state`); the phone mini player and tab bar.
+- **Overlays:** banners (one, several, collapsed on a phone), toasts, menus, popovers, sheets, dialogs, tooltips, the cover viewer, the source picker, the save pipeline, a drag in progress.
+
+**Every element state:** hover, pressed (`aria-pressed`), current (`aria-current`, `aria-selected`, `aria-checked`), disabled, keyboard focus, loading, liked, playing, selected, failed.
+
+**Every width and height:**
+- phone 390×844;
+- tablet 768 and 1024;
+- a short laptop, 1366×768;
+- desktop 1440×900;
+- `wide` 1920×1080;
+- `ultra` 2560×1440.
+
+Also a window narrowed past each `data-size` step. Nothing may scroll sideways, and no title may be squeezed.
+
+**Every mode** the manifest lists, with each token you set given in both the day and the night block.
+
+**Contrast:**
+- **The ratios:** text 4.5:1 and large text 3:1; outlines of controls and the parts that show state (a pressed toggle, a knob, a focus ring) 3:1 against the surface under them. Text on a gradient or glass is checked against its darkest and its lightest stop.
+- **In every state:** check them in each of the states above, hover included, in both modes. A hover that only changes colour must still pass.
+- **Theme Studio** warns for its token pairs; anything else you draw is yours to check.
+- **Never colour alone:** where a song comes from (saved or Soulseek) and every service state keep their shape and icon, never colour alone.
+
+**Motion:**
+- **Cheap to run:** animate `transform` and `opacity` only, so it runs off the main thread on a slow phone.
+- **Calm by default:** one signature moment at most. Loops only while they mean something, such as the playing bars while sound comes out.
+- **Off under reduced motion:** nothing moves under `:root[data-motion="reduce"]`, or under the system's reduced-motion setting unless `data-motion="full"`. lull's base CSS already stops animations and travel there; don't undo it with `!important`.
+- **Paused when hidden:** loops pause on `:root.is-hidden` (the page is hidden).
+- **Keep restyles small:** follow "Staying fast" in section 5.
+
+**Shared behaviour stays:**
+- **Accessibility:** keep every control visible and reachable, with its accessible name.
+- **Slots:** keep the live hooks a slot needs (section 6).
+- **Layout lull controls:** leave `.seg__ind`'s position and the dragged widths (`--ctx`, `--now-w`) alone, and style the layout states that are `!important` rather than fight them.
+
+**Preview it:**
+- **A listener's theme:** put the folder in `<data dir>/themes/<id>/` on a hub, or drop the `.lulltheme` on Settings › Appearance. Open devices reload it within a second of each save. `mise run dev` runs a hub on your machine (settings in `.env`).
+- **A built-in design:** `node tests/ui/fixture-hub/server.mjs 8790` serves your checkout's `web/` at `http://localhost:8790` with an invented library (150 albums, a 1,200-song playlist, lyrics) and no outside services.
+- **Hash flags:** pick a design and theme for one visit with `#/home?design=<name>&theme=night` (also `motion=reduce`).
+- **Against your own hub:** serve your checkout's `web/` files over the hub's (for example with Playwright's request routing) to see your own library.
+
+**Run the checks:**
+- **`mise run check`** includes this document's own gate (`tests/web/theme-hooks.test.mjs`): every hook lull's CSS and markup use must be in section 11, and a built-in design may not style a hook that no longer exists.
+- **`mise run check:ui`** runs the UI gates on every built-in design: performance budgets, the key screens and accessibility (docs/context/quality.md#ui-gates).
+- **Visual goldens:** after a visible change, push and run `mise run ui:approve` to recapture the gates' goldens. `mise run ui:update` recaptures the full visual matrix. Review the pictures and commit them with the change.
+- **A new built-in design** also joins the lists of built-ins:
+  - `D.builtIn` in `web/designs/designs.js`;
+  - `BUILT_IN` in `crates/themes/src/package.rs`;
+  - `designs` in `tests/ui/routes.mjs` and `tests/ui/gates/lib.mjs`;
+  - `DESIGNS` and its own class prefix in `tests/web/theme-hooks.test.mjs`.
+
+  Then run `LULL_WRITE_PACKAGES=1 cargo test -p lull-themes` to write its package script, and add its picker previews.
+
+## 11. Hook reference
+
+Every class lull's CSS styles and every `data-*` attribute lull's markup sets, each stable or internal. `mise run check` fails when one is missing here, so this list is complete. A class stands for its BEM block: `.trow` covers `.trow__num` and `.trow--dense`. State classes (`.is-*`, `.has-*`) stand alone and mean the same wherever they appear.
+
+**Stable** hooks are the API (section 9): style them freely. **Internal** ones (at the end) are lull's plumbing and may change in any release: a theme that styles them may break.
+
+### Root and shell
+
+- **Root:**
+  - `data-design`, `data-shell`, `data-theme` (`day` `night`), `data-theme-pref` (`day` `night` `system`), `data-motion` (`reduce` `full`);
+  - `data-classic` (`on` while the Classic stage is open);
+  - `data-theme-fade` (set for a moment while the listener flips day and night, so a design can animate the change);
+  - `data-titlebar` and `data-window-inactive` (the desktop app);
+  - `.is-hidden` on `:root` (the page is hidden: loops pause).
+- **The app:**
+  - `.app` with `data-screen`, `data-route`, `data-view`, `data-ctx`, `data-size`, `data-height`;
+  - `data-panel` (`strip`), `data-panel-split` and `data-two` (Queue and Lyrics as two panes), `data-nowcol` (`open` `strip`), `data-nowcol-ok`;
+  - `.is-resizing` (a resize handle is being dragged).
+- **Regions:** `data-region` (section 5), `.region-title`, `.region-meta`.
+- **Shell parts:** `.rail`, `.header`, `.main`, `.view`, `.ctx` (with `data-ctx-tab` on its tab buttons), `.ctx-scrim`, `.nowcol`, `.pbar`, `.mini`, `.tabbar`, `.tab`, `.nav-item`, `.nav-pill`, `.wordmark`, `.brand` (the default brand slot), `.skip-link`, `.sky-specks`, `.col-resize` (a resize handle, `data-resize`).
+- **Links:** `data-nav` on every nav link, `data-brand` on brand links.
+- **Status tray:** `.tray` with `.tray__pill[data-svc][data-state]`, `data-worst`, `data-cache-used`, `data-cache-cap`, `data-tray`; `data-activity-count` holds the number of running jobs.
+- **Banners:** `.banner`, `.banner-slot`, `.banner-more`, `.is-lead` (the banner a phone shows when the others collapse).
+- **Surfaces:** `.s-sky`, `.s-panel`, `.s-card`, `.s-screen`.
+
+### Components
+
+- **Buttons:** `.btn`, `.btn-icon`, `.btn-gloss`, `.btn-save` (`data-state`), `.kbd`, `.switch`, `.switch-row`.
+- **Every control:** `data-act` names its action, `data-tip` its tooltip, `data-bind` the player state it shows.
+- **Chips and badges:** `.chip`, `.chip-reason`, `.chip-more`, `.pill-filter`, `.badge`, `.badge-saved`, `.badge-slsk`, `.badge-new`, `.badge-count`, `.badge-below`, `.q-chip`, `.src-badge` (`data-was`: `saved` `slsk`), `.dup-note`, `.dup-better`, `.resolve`, `.scrobble`, `.sg`, `.spin-ring`.
+- **Cards:** `.card` (`data-head`: `rule` `hidden`; `data-meta`), `.card-head`, `.label-rule`, `.inset`, `.source-card`, `.disc-pick` (a Home pick).
+- **Covers:** `.cover`, `.c1`, `.c2`, `.c3`, `.c4`, `.c5`, `.c6`, `.c7`, `.c8`, `.has-art`, `data-look` (cover variety), `.mosaic`, `.bezel-thumb`, `.cover-zoom`, `.cover-view`.
+- **Tiles and lists:**
+  - `.shelf`, `.tile`, `.tlist`, `.trow`;
+  - row facts `data-khz`, `data-kbps`, `data-bits`, `data-size`;
+  - `.eq`, `.place-mark`, `data-place`, `.from`;
+  - `.dl-mark` and `.dl-btn` (downloads; `data-on` on a downloaded row's mark);
+  - `data-sortable` (a queue row that can be dragged);
+  - `.drag-chip`, `.drop-line`, `.drop-overlay`, `data-drop`.
+- **Player parts:** `.seek` (`data-seek`, `data-pointer`), `.seek-row`, `.wave`, `.wave-times`, `.vol`, `.range`, `.progress`, `.pipeline`, `.pipeline-wrap`, `.device`, `.dpad`.
+- **Source picker:** `.src-table`, `.src-row`, `.score`.
+- **Inputs:** `.input`, `.field`, `.search-field`, `.seg`.
+- **Overlays:** `.sheet`, `.sheet-bar`, `.dialog`, `.scrim`, `.popover`, `.menu`, `.menu-list`, `.tooltip`, `.toast`, `.toast-region`, `.shelf-pop` (the rail's tags and playlists on a tablet), `.shortcut-list`, `.shortcut-row`.
+- **Status and empty states:** `.status-list`, `.status-row`, `.empty` (with `data-art` and `data-title` in its art; `data-noun` in slot templates), `.skel`, `.skel-row`, `.skel-tile`, `.skel-group`, `.sparkle`.
+- **Type and icons:** `.t-display`, `.t-title-xl`, `.t-h2`, `.t-row`, `.t-body`, `.t-meta`, `.t-micro`, `.t-px`, `.t-lyric`, `.px`, `.link`, `.link-plain`, `.ic`, `.ic-16`, `.ic-24`.
+
+### States
+
+- **Playback:**
+  - `.is-playing` (the row or place playing), `.is-playing-now` (and sound is coming out), `.is-playing-place`, `.is-revealed`;
+  - `.is-current`, `.is-past` (a lyric line; `.is-current` also marks a pipeline step);
+  - `.is-buffering`, `.is-transferring`, `.is-played`, `.is-buf`, `.is-xfer` (seek and wave parts);
+  - `.is-scrubbing`, `.is-shake` (a seek past what has arrived);
+  - `.is-power-on` (a device's power-on moment as the song starts);
+  - `.is-peak` (the busiest hour in the `week-clock` part);
+  - `.sky-star` and `.sky-line` (the `queue-sky` part).
+- **Status:**
+  - `.is-done`, `.is-failed`, `.is-skipped`, `.is-error`, `.is-below` (below the minimum bitrate), `.is-preferred`, `.is-unavailable`;
+  - `.is-liked`, `.is-selected`, `.is-on`, `.is-open`, `.is-wide` (a player bar tool that leaves for the "…" menu as the bar narrows), `.is-dragging`, `.is-drop-target`;
+  - `.is-applied`, `.is-bad` (Classic skins);
+  - `.is-out` (Now Playing's slide while the song changes).
+- **Player status:** `data-status` (`#pbar`, `#mini`, an album's save status), `data-playing`, `data-state`.
+
+### Home and Search
+
+- **Home:**
+  - `.disc-home`, `.disc-hello` (the greeting band), `.disc-lead` (the `homeLead` slot);
+  - modules: `.disc-modules`, `.disc-mod` (`data-module`), `.disc-card`;
+  - their contents: `.disc-picks`, `.disc-shelf`, `.disc-rel`, `.disc-starters`, `.disc-starter`, `.disc-jump`, `.disc-tags`, `.disc-tag`;
+  - loading and empty: `.disc-skel-shelf`, `.disc-picks-skel`, `.disc-cold`, `.disc-empty`.
+- **Search:**
+  - the page: `.disc-search`, `.disc-q` (the search field on phones), `.disc-tabs`, `.disc-filters`, `.disc-recents`, `.disc-recent`;
+  - results: `.disc-duo` (catalog and Soulseek), `.disc-splitview` (side by side) and its switch `.disc-split`, `.disc-top` (the top result), `.disc-songs`, `.disc-scan` (Soulseek's live count);
+  - Soulseek: `.disc-folder` and `.disc-folder-tile` (a Soulseek folder), `.disc-dup` (a saved copy beside a Soulseek one), `.disc-kv` (source details);
+  - sheets: `.disc-src` (the source picker sheet), `.disc-step` (a save step).
+
+### Now Playing
+
+- **The page:** `.now` (`data-tab`: `art` `lyrics` `queue` `details` on a phone; `data-page`: `now` `source` `save`), `data-sec` (which tab a section belongs to).
+- **The hero:** `.now-head`, `.now-acts`, `.now-dev` and `.now-devc` (the hero and its compact form), `data-now` (live parts of a hero, section 6), `data-like`, `.now-slide`, `.now-osd`, `.now-sbtn` (a button on the device screen).
+- **The cards:** `.now-ly` and `.now-lycard` (lyrics), `.now-q` and `.now-qcard` (the queue), `.now-next`, `.now-src` and `.now-srccard` (the source), `.now-seg` (the phone tabs).
+
+### Library and pages
+
+- **Library:**
+  - page structure: `.lib`, `.lib-head`, `.lib-kicker`, `.lib-segs` (the sub-nav), `.lib-count`, `.lib-page`;
+  - grids and loading: `.lib-grid`, `.lib-tile`, `.lib-newtile`, `.lib-skel-grid`, `.lib-skel-shelf`;
+  - list parts: `.lib-listhead`, `.lib-notice`, `.lib-rule`, `.lib-cols`, `.lib-card`, `.lib-actions`, `.lib-bar`;
+  - history: `.lib-day` (a day in History), `.lib-history`.
+- **Album:** `.lib-hero` (also tag and playlist heads; `data-tracks`, `data-duration` and `data-size` carry the album's facts), `.lib-bio`, `.lib-disc` (a disc heading).
+- **Artist:** `.lib-artist`, `.lib-ahero`, `.lib-popular`, `.lib-about`, `.lib-disco` (the discography).
+- **Playlist:** `.lib-pl`, `.lib-pl-list`, `.lib-thead`, `.lib-th`, `.lib-table`, `.lib-sort`, `.lib-sortnote`, `.lib-site` (a bookmark's site, `data-site`).
+- **The add-to-playlist picker:** `.lib-picker`, `.lib-pick`, `.lib-pick-list`, `.lib-pick-new`, `.lib-pick-none`.
+
+### Settings, Stats and first run
+
+- **Settings:**
+  - structure: `.sys-settings`, `.sys-nav`, `.sys-page`, `.sys-section`, `.sys-card`, `.sys-group`, `.sys-row`, `.sys-grid`, `.sys-span`, `.sys-head`, `.sys-lede`;
+  - controls: `.sys-period`, `.sys-pal`, `.sys-usage`, `.sys-ios`;
+  - the design picker: `.sys-designs`, `.sys-design` (`data-value` is the design's id; on other elements `data-value` is wiring).
+- **Stats:** `.sys-stats`, `.sys-tiles`, `.sys-tile`, `.sys-bars`, `.sys-bar`, `.sys-heat` (`data-l`: the cell's level, 0 to 4), `.sys-empty-stats`.
+- **First run and pairing:** `.sys-welcome`, `.sys-gate` (the pairing gate), `.setup`, `.setup-step`, `.setup-code`, `.sys-step`, `.hub-pair` and `.hub-qr` (the pair dialog).
+- **Connect:** `.cx-pop` (the device picker), `.cx-dev`, `.cx-remote`.
+
+### Classic and the desktop app
+
+- **Classic:**
+  - the stage: `.cls-desk`, `.cls-scrim`, `.cls-back`, `.cls-busy`, `.cls-failed`;
+  - Classic's section in Settings: `.cls-now`, `.cls-browser`, `.cls-grid`, `.cls-card`, `.cls-shot`, `.cls-skel-shot`, `.cls-pop`, `.cls-look`, `.cls-nsfw`, `.cls-note`, `.cls-meta`, `.cls-attrib`, `.cls-more`.
+- **Desktop app pages:**
+  - the mini windows: `.dk-mini`, `.dk-strip`, `.dk-strip-wrap`, `.dk-art`;
+  - window chrome: `.dk-titlebar`, `.dk-caption`, `.dk-glyph`, `.dk-tip`;
+  - pages and dialogs: `.dk-page`, `.dk-card`, `.dk-form`, `.dk-hubs`, `.dk-status`, `.dk-offline`, `.dk-retry`, `.dk-modal`;
+  - the mini player's keys (section 6): `data-dk`, `data-dk-player`, `data-dk-now`, `data-dk-pos`, `data-dk-dur`, `data-dk-buf`, `data-dk-vol`, `data-dk-title`, `data-dk-artist`, `data-dk-thumb`, `data-dk-play-label`, `data-tauri-drag-region`.
+
+### Internal
+
+lull's plumbing: these may change in any release.
+
+- **Built-in designs' own:** `.lull-*`, `.sd-*`, `.sl-*`, `.pt-*`, `.gh-*` classes, and the attributes only their slots set: `data-p`, `data-week`, `data-track`.
+- **Layout utilities:** `.cluster`, `.flow`, `.stacked`, `.spacer`, `.ellipsis`, `.vh`, `.num`, `.prose`, `.fg-2`.
+- **Boot:** `data-booting`.
+- **Home and Search parts:** `.disc-agg`, `.disc-aggl`, `.disc-alt`, `.disc-alts`, `.disc-cat`, `.disc-cloud`, `.disc-col`, `.disc-fallback`, `.disc-issue`, `.disc-more`, `.disc-note`, `.disc-pending`, `.disc-picker`, `.disc-recover`, `.disc-shead`, `.disc-sheet`, `.disc-steps`, `.disc-sugg`, `.disc-tile-open`, `.disc-why`, `.disc-why-pop`, `.is-all`, `.is-better`, `.is-down`, `.is-nosource`, `.is-stale`, `.is-wait`.
+- **Now Playing parts:** `.now-act`, `.now-fade`, `.is-denied`, `.is-far`, `.is-in`, `.is-lifted`, `.is-ready`, `.is-sorting`.
+- **Library parts:** `.lib-adddesc`, `.lib-chips`, `.lib-cover`, `.lib-dl-storage`, `.lib-dropzone`, `.lib-facts`, `.lib-flist`, `.lib-foot`, `.lib-form`, `.lib-frow`, `.lib-help`, `.lib-hist`, `.lib-imp`, `.lib-import`, `.lib-kept`, `.lib-legend`, `.lib-link`, `.lib-link-card`, `.lib-linkrev`, `.lib-m3u`, `.lib-more`, `.lib-out`, `.lib-status`, `.lib-suggest`, `.lib-tagcard`, `.lib-tags`, `.lib-textarea`, `.lib-title`, `.lib-toggle`.
+- **Settings and hub parts:**
+  - Settings and Stats: `.sys-back`, `.sys-chips`, `.sys-combo`, `.sys-detail`, `.sys-follows`, `.sys-funnel`, `.sys-health`, `.sys-hit`, `.sys-inline`, `.sys-keys`, `.sys-legend`, `.sys-locked`, `.sys-meter-label`, `.sys-newart`, `.sys-nomatch`, `.sys-off`, `.sys-palette`, `.sys-plus`, `.sys-preview`, `.sys-range`, `.sys-rescan`, `.sys-seg`, `.sys-status`, `.sys-stepper`, `.sys-steps`, `.sys-taste`, `.sys-then`, `.sys-version`, `.sys-themes`;
+  - hub and Connect: `.sys-cfg`, `.sys-connect`, `.sys-note`, `.hub-cred`, `.hub-dev`, `.hub-devs`, `.hub-form`, `.hub-jf`, `.hub-lib`, `.hub-qc`, `.hub-slsk`, `.cx-foot`, `.cx-list`, `.cx-note`, `.cx-title`;
+  - states: `.has-section`, `.has-shot`, `.is-disabled`, `.is-index`, `.is-here`, `.is-online`;
+  - Theme Studio: `.studio`, `.studio-sheet`, `.is-drop`, `.is-phone`.
+- **Classic and desktop parts:** `.cls-root`, `.cls-slot`, `.cls-frame`, `.is-closed`, `.is-leaving`, `.dk-actions`, `.dk-choice`, `.dk-choices`, `.dk-code`, `.dk-details`, `.dk-dragstrip`, `.dk-hb`, `.dk-kv`, `.dk-sep`.
+- **Attributes that carry ids and wiring, never looks:**
+  - ids and keys: `data-id`, `data-ids`, `data-key`, `data-fk`, `data-uid`, `data-track-id`, `data-album-id`, `data-pl`, `data-qi`, `data-place-at`, `data-dl-mark`, `data-queue-index`, `data-si`, `data-pi`, `data-pic`, `data-i`, `data-t`, `data-d`, `data-q`, `data-ref`;
+  - values and wiring: `data-kind`, `data-name`, `data-label`, `data-dir`, `data-pos`, `data-group`, `data-item`, `data-via`, `data-job`, `data-mode`, `data-choice`, `data-close`, `data-yes`, `data-form`, `data-url`, `data-text`, `data-msg`, `data-locked-msg`, `data-placeholder`, `data-cmd`, `data-device`, `data-remote`;
+  - lists, filters and banners: `data-filters`, `data-issue`, `data-more`, `data-out`, `data-period`, `data-range`, `data-pick`, `data-pick-new`, `data-sync`, `data-save-btn`, `data-save-songs`, `data-src-badge`, `data-src-mini`, `data-dl`, `data-cold-count`, `data-banner`, `data-banner-*`, `data-toast-*`, `data-cover-*`, `data-scan*`, `data-now-qlist`, `data-now-steer`;
+  - Settings controls: `data-cfg`, `data-switch`, `data-step`, `data-stepper`, `data-min`, `data-max`, `data-unit`, `data-weight`, `data-when`, `data-format`, `data-formats`;
+  - screens with their own wiring: `data-imp-*`, `data-lib-*`, `data-linkrev*`, `data-rev-*`, `data-cx*`, `data-studio*`, `data-drop-theme`, `data-theme-file`, `data-skin`, `data-skin-file`, `data-webamp`, `data-token`, `data-token-reset`;
+  - the desktop app's pages: `data-attempt`, `data-dk-attempt`, `data-dk-close`, `data-dk-connect`, `data-dk-error`, `data-dk-found`, `data-dk-offline`, `data-dk-retry-status`, `data-dk-welcome`.

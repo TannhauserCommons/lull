@@ -86,3 +86,13 @@ Raise a budget only with a measured reason a listener would accept, in the commi
 
 **Finding a cause** when a gate fails: the Chrome trace of the scenario (DevTools Performance panel, or the `summarise` numbers), and for slow style recalculation Chrome's selector stats (trace category `disabled-by-default-blink.debug`, event `SelectorStats`), which name the selector. The pattern behind most of the fixes so far: a `:has()` on a page-wide element whose argument can be anywhere walks the whole page each time it is checked; limit it to where the element sits (`.main:has(> :where(.view) > .now)`; `:where()` keeps the specificity) or use a state lull already sets (docs/themes.md, Staying fast).
 
+
+## Theme hooks
+
+`tests/web/theme-hooks.test.mjs` (part of `mise run check`) keeps docs/themes.md section 11, the hook reference, complete. It fails when:
+- a class block lull's CSS or a built-in design styles is listed neither as stable nor as internal;
+- a `data-*` attribute web/ sets or styles is listed in neither;
+- a built-in design styles a class or attribute web/ no longer has, so the rule never matches;
+- the reference lists a hook web/ no longer has, or lists one as both.
+
+A new hook is added to section 11 in the same commit: as stable when a theme may style it, else as internal.
