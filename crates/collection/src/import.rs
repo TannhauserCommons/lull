@@ -37,9 +37,11 @@ struct Line {
     title: Option<String>,
     status: Status,
     track_id: Option<TrackId>,
+    /// When the song was added to the source (unix seconds), for `POST /api/playlists`' `added`.
+    added_at: Option<i64>,
 }
 
-/// `{ name, lines: [{ n, location, artist, title, status, trackId }], counts, libraryChecked, entities }`.
+/// `{ name, lines: [{ n, location, artist, title, status, trackId, addedAt }], counts, libraryChecked, entities }`.
 pub(crate) async fn preview(svc: &Service, body: &[u8]) -> Result<Value> {
     let playlist = m3u::parse(&m3u::decode(body));
     preview_entries(svc, playlist.name, playlist.entries).await
@@ -100,6 +102,7 @@ pub(crate) async fn preview_entries(svc: &Service, name: Option<String>, entries
                     title: entry.title,
                     status,
                     track_id,
+                    added_at: entry.added,
                 });
             }
             let entities = entities(conn, lines.iter().filter_map(|l| l.track_id.as_ref()))?;

@@ -111,6 +111,8 @@ struct Track {
     isrc: Option<String>,
     artist: Named,
     album: Option<Named2>,
+    /// When it was added to the playlist (unix seconds); albums have none.
+    time_add: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -132,6 +134,7 @@ impl Track {
             album: album.map(str::to_owned).or(self.album.map(|a| a.title)),
             duration: self.duration.filter(|d| *d > 0),
             isrc: self.isrc.filter(|i| !i.is_empty()),
+            added: self.time_add.filter(|t| *t > 0),
         }
     }
 }

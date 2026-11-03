@@ -76,6 +76,8 @@ pub(crate) struct Song {
     /// Seconds, only when it is the song's own length (not a music video's).
     pub(crate) duration: Option<u32>,
     pub(crate) isrc: Option<String>,
+    /// When it was added to the source (unix seconds), where the source says (Deezer playlists).
+    pub(crate) added: Option<i64>,
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -286,8 +288,8 @@ fn store(
     let seq: i64 = conn.query_row("SELECT seq FROM collection_links WHERE key = ?1", [key], |r| r.get(0))?;
     conn.execute("DELETE FROM collection_link_songs WHERE link_seq = ?1", [seq])?;
     let mut insert = conn.prepare(
-        "INSERT INTO collection_link_songs (link_seq, pos, song, artist, title, album, duration, isrc, track_id)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        "INSERT INTO collection_link_songs (link_seq, pos, song, artist, title, album, duration, isrc, track_id, added_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
     )?;
     for (pos, (song, id)) in listing.songs.iter().zip(matches).enumerate() {
         insert.execute(params![
@@ -300,13 +302,14 @@ fn store(
             song.duration,
             song.isrc,
             id.as_ref().map(TrackId::as_str),
+            song.added,
         ])?;
     }
     let desc = match &listing.description {
         Some(d) => d.chars().take(1000).collect(),
         None => format!("Imported from {url}."),
     };
-    let playlist_seq = fill_playlist(conn, events, seq, &listing.name, &desc, now)?;
+    let playlist_seq = fill_playlist(conn, events, seq, &listing.name, &desc)?;
     Ok(Done {
         playlist_seq,
         counts: counts(&lines(conn, seq)?),
@@ -315,9 +318,22 @@ fn store(
 
 /// Sets the link's playlist to its songs, making the playlist when it has none (or the
 /// listener deleted it). The name and description are the link's only when it is made: the
-/// listener's edits stay.
-fn fill_playlist(conn: &Connection, events: &mut Events, seq: i64, name: &str, desc: &str, now: i64) -> Result<i64> {
-    let ids: Vec<TrackId> = lines(conn, seq)?.into_iter().filter_map(|l| l.track_id).collect();
+/// listener's edits stay. Each song is dated when the source added it, else by its place in the
+/// link: distinct, increasing seconds ending at the import, the same whichever songs are skipped
+/// or fixed, so "Date added" follows the source.
+fn fill_playlist(conn: &Connection, events: &mut Events, seq: i64, name: &str, desc: &str) -> Result<i64> {
+    let imported: i64 = conn.query_row("SELECT imported_at FROM collection_links WHERE seq = ?1", [seq], |r| {
+        r.get(0)
+    })?;
+    let lines = lines(conn, seq)?;
+    let last = lines.len().saturating_sub(1) as i64;
+    let items: Vec<playlists::Dated> = lines
+        .into_iter()
+        .filter_map(|l| {
+            let added = l.added.unwrap_or(imported - (last - l.pos as i64));
+            l.track_id.map(|id| (id, Some(added)))
+        })
+        .collect();
     let existing: Option<i64> = conn
         .query_row(
             "SELECT p.seq FROM collection_links l JOIN collection_playlists p ON p.seq = l.playlist_seq WHERE l.seq = ?1",
@@ -326,7 +342,7 @@ fn fill_playlist(conn: &Connection, events: &mut Events, seq: i64, name: &str, d
         )
         .optional()?;
     if let Some(p) = existing {
-        playlists::change(conn, events, p, None, None, Some(ids))?;
+        playlists::refill(conn, events, p, &items, imported)?;
         return Ok(p);
     }
     let name: String = name.trim().chars().take(100).collect();
@@ -335,7 +351,7 @@ fn fill_playlist(conn: &Connection, events: &mut Events, seq: i64, name: &str, d
     } else {
         name
     };
-    let p = playlists::make(conn, events, &name, desc, &ids, now)?;
+    let p = playlists::make_dated(conn, events, &name, desc, &items, imported)?;
     conn.execute(
         "UPDATE collection_links SET playlist_seq = ?2 WHERE seq = ?1",
         params![seq, p],
@@ -453,6 +469,9 @@ struct Line {
     status: Status,
     /// The song in the playlist: the match or the fix. `None` when skipped or unmatched.
     track_id: Option<TrackId>,
+    /// When the source added it (`Song::added`).
+    #[serde(skip)]
+    added: Option<i64>,
 }
 
 #[derive(Default, Serialize)]
@@ -479,7 +498,7 @@ fn counts(lines: &[Line]) -> Counts {
 /// The link's songs in order, each with the listener's choice applied.
 fn lines(conn: &Connection, seq: i64) -> Result<Vec<Line>> {
     let mut stmt = conn.prepare(
-        "SELECT s.pos, s.artist, s.title, s.album, s.duration, s.track_id, c.song IS NOT NULL, c.track_id
+        "SELECT s.pos, s.artist, s.title, s.album, s.duration, s.track_id, c.song IS NOT NULL, c.track_id, s.added_at
          FROM collection_link_songs s
          LEFT JOIN collection_link_choices c ON c.link_seq = s.link_seq AND c.song = s.song
          WHERE s.link_seq = ?1 ORDER BY s.pos",
@@ -500,6 +519,7 @@ fn lines(conn: &Connection, seq: i64) -> Result<Vec<Line>> {
             duration: r.get(4)?,
             status,
             track_id: track_id.map(TrackId),
+            added: r.get(8)?,
         })
     })?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -630,7 +650,7 @@ async fn choose(
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
         let desc = format!("Imported from {}.", Link::from_key(&key)?.url());
-        fill_playlist(tx, events, seq, &name, &desc, lull_core::now())?;
+        fill_playlist(tx, events, seq, &name, &desc)?;
         detail(tx, seq, &running)
     })
     .await

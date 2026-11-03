@@ -168,6 +168,24 @@ pub const MIGRATIONS: Migrations = Migrations {
         SELECT s.song, s.track_id, l.imported_at FROM collection_link_songs s
         JOIN collection_links l ON l.seq = s.link_seq WHERE s.track_id IS NOT NULL;
     "#,
+        // How each playlist is shown (playlists.rs `Sort`), on every device; when a link's song
+        // was added to its source, where the source says (Deezer). Songs added together used to
+        // share one second, which made "Date added" meaningless for an import: they take distinct,
+        // increasing seconds in playlist order, the last one keeping that second.
+        r#"
+        ALTER TABLE collection_playlists ADD COLUMN sort_key TEXT NOT NULL DEFAULT 'custom';
+        ALTER TABLE collection_playlists ADD COLUMN sort_desc INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE collection_link_songs ADD COLUMN added_at INTEGER;
+        CREATE TEMP TABLE spread AS
+            SELECT playlist_seq, pos,
+                   added_at - (ROW_NUMBER() OVER (PARTITION BY playlist_seq, added_at ORDER BY pos DESC) - 1) AS added
+              FROM collection_playlist_items;
+        UPDATE collection_playlist_items
+           SET added_at = (SELECT s.added FROM spread s
+                            WHERE s.playlist_seq = collection_playlist_items.playlist_seq
+                              AND s.pos = collection_playlist_items.pos);
+        DROP TABLE spread;
+    "#,
     ],
 };
 

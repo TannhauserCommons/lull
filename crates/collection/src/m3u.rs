@@ -17,6 +17,8 @@ pub(crate) struct Entry {
     pub duration: Option<u32>,
     /// Set when the line is a lull stream link (an export read back).
     pub track_id: Option<TrackId>,
+    /// When the song was added to the source playlist (unix seconds): Exportify's "Added At".
+    pub added: Option<i64>,
 }
 
 #[derive(Debug, Default)]

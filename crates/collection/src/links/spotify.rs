@@ -84,6 +84,8 @@ pub(crate) fn embedded(page: &str, kind: Kind) -> Result<Listing> {
                     .map(|ms| u32::try_from(ms / 1000).unwrap_or(u32::MAX))
                     .filter(|d| *d > 0),
                 isrc: None,
+                // The embed page doesn't say when a song was added.
+                added: None,
             })
         })
         .collect();

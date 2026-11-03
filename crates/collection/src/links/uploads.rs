@@ -79,6 +79,7 @@ pub(crate) fn song(l: &Listed, site: Site) -> Option<Song> {
         album: None,
         duration: l.duration.filter(|_| l.exact_length),
         isrc: None,
+        added: None,
     })
 }
 
