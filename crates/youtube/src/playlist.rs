@@ -54,9 +54,18 @@ pub fn parse(json: &[u8]) -> Result<Listing, Problem> {
     if raw.kind.as_deref() != Some("playlist") {
         return Err(Problem::Other("this link is a single upload, not a playlist".into()));
     }
+    // Largest first; one without a width (SoundCloud's original) comes last.
+    let mut thumbnails: Vec<Thumbnail> = raw
+        .thumbnails
+        .into_iter()
+        .filter(|t| t.url.starts_with("https://"))
+        .collect();
+    thumbnails.sort_by_key(|t| std::cmp::Reverse(t.width.unwrap_or(0)));
     Ok(Listing {
         title: raw.title.unwrap_or_default(),
         total: raw.playlist_count,
+        thumbnails: thumbnails.into_iter().map(|t| t.url).collect(),
+        description: raw.description.map(|d| d.trim().to_owned()).filter(|d| !d.is_empty()),
         songs: raw.entries.into_iter().flatten().filter_map(Entry::listed).collect(),
     })
 }
@@ -67,9 +76,18 @@ struct Raw {
     kind: Option<String>,
     title: Option<String>,
     playlist_count: Option<usize>,
+    description: Option<String>,
+    #[serde(default)]
+    thumbnails: Vec<Thumbnail>,
     /// `null` for a song `-i` skipped.
     #[serde(default)]
     entries: Vec<Option<Entry>>,
+}
+
+#[derive(Deserialize)]
+struct Thumbnail {
+    url: String,
+    width: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -106,13 +124,24 @@ mod tests {
 
     #[test]
     fn a_flat_youtube_playlist_lists_its_songs_without_the_gone_ones() -> Result<(), Problem> {
-        let json = br#"{"_type": "playlist", "title": "The Hit List", "playlist_count": 52, "entries": [
+        let json = br#"{"_type": "playlist", "title": "The Hit List", "playlist_count": 52,
+            "description": " Today's hits. ", "thumbnails": [
+                {"url": "https://i9.ytimg.com/s_p/x/mqdefault.jpg", "width": 180},
+                {"url": "https://i9.ytimg.com/s_p/x/maxresdefault.jpg", "width": 1200},
+                {"url": "https://i9.ytimg.com/s_p/x/sddefault.jpg", "width": 640}
+            ], "entries": [
             {"id": "78wrful9cVU", "title": "Olivia Rodrigo - drop dead (Official Music Video)", "channel": "Olivia Rodrigo", "duration": 251},
             {"id": "aaaaaaaaaaa", "title": "[Private video]", "duration": null},
             {"id": "bbbbbbbbbbb", "title": "Patient Zero", "channel": "Taylor Swift - Topic", "duration": 313.4}
         ]}"#;
         let page = parse(json)?;
         assert_eq!((page.title.as_str(), page.total), ("The Hit List", Some(52)));
+        assert_eq!(
+            page.thumbnails.first().map(String::as_str),
+            Some("https://i9.ytimg.com/s_p/x/maxresdefault.jpg")
+        );
+        assert_eq!(page.thumbnails.len(), 3);
+        assert_eq!(page.description.as_deref(), Some("Today's hits."));
         assert_eq!(page.songs.len(), 2);
         assert_eq!(page.songs[1].uploader, "Taylor Swift - Topic");
         assert_eq!(page.songs[1].duration, Some(313));
