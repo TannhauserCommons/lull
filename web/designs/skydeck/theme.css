@@ -587,7 +587,7 @@
   background: linear-gradient(115deg, #fff9fe00 0 58%, #fff9fe12 58% 72%, #fff9fe00 72%), var(--sd-lcd-tex), var(--screen);
   border: var(--stroke) solid var(--mocha-edge); box-shadow: inset 0 2px 0 #00000026, var(--sd-lcd-glow);
 }
-:root[data-design="skydeck"] .pbar__seek:focus-within { outline: 2px solid var(--indigo); outline-offset: 2px; }
+:root[data-design="skydeck"] .pbar__seek:has(.seek:focus-visible:not([data-pointer])) { outline: 2px solid var(--indigo); outline-offset: 2px; }   /* keyboard focus only, not a click (app.js data-pointer) */
 :root[data-design="skydeck"] .pbar__seek .seek:focus-visible { outline: none; }
 :root[data-design="skydeck"] .pbar__seek .seek { height: 26px; }
 :root[data-design="skydeck"] .pbar__seek .seek-row__time { font: var(--t-px); letter-spacing: var(--t-px-track); color: var(--lilac); min-width: 34px; }

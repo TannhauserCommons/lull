@@ -1360,7 +1360,10 @@
   /* outside what arrived: snap to the furthest point that did, shake (seek bar) and return false */
   P.seekFraction = function (f) {
     f = clamp(f, 0, 1);
-    var dur = P.duration(); if (!dur || !cur) return false;
+    var dur = P.duration(); if (!dur || !P.current()) return false;
+    /* a song restored after a reload (or the app starting) isn't loaded until it plays, and P.play then resumes it at
+       ps.pos: a seek before that moves where it will start */
+    if (!cur) { ps.pos = f * dur; changed('seek'); return true; }
     var ok = P.seekable(f), target = ok ? f : Math.max(0, seekLimit() - .004);
     ps.pos = target * dur; out.seek(ps.pos);
     changed('seek');
@@ -1399,6 +1402,16 @@
   /* move to queue[index] without touching the queue: jumpTo(index, { at, autoplay }) */
   P.jumpTo = function (index, opts) { load(index, Object.assign({ reason: 'skipped' }, opts)); };
   P.streamUrl = function (trackId, source) { var t = M.track(trackId); return t ? streamUrl(t, source) : null; };
+  /* The stream event a song's opening sends is lost when the player opens the stream before /api/events is
+     connected (the page reloading, the app starting with a restored song) or while the events are down. The
+     player then knows only what its own buffer holds and refuses to seek past it, which shows on a paused song.
+     On every (re)connect it opens the playing Soulseek song's stream once more for one byte, and the hub answers
+     with where the song stands (docs/context/api.md, stream). */
+  P.resyncStream = function () {
+    var t = cur && cur.soulseek && !cur.complete ? M.track(cur.trackId) : null; if (!t) return;   // loaded songs only
+    fetch(streamUrl(t, cur.source), { headers: { Range: 'bytes=0-0' }, credentials: 'include' })
+      .then(function (r) { if (r.body) r.body.cancel(); }, function () { /* offline: the next connect asks again */ });
+  };
   P.playTrack = function (id, contextIds) {
     var ids = contextIds && contextIds.indexOf(id) >= 0 ? contextIds : [id];
     P.playList(ids, ids.indexOf(id));
@@ -2110,7 +2123,7 @@
     var el = e.target.closest('[data-seek]'); if (!el || e.button !== 0) return;
     /* focused for the arrow keys, but a click draws no focus ring: data-pointer holds it back until a key is used */
     e.preventDefault(); el.setAttribute('data-pointer', ''); el.focus({ preventScroll: true });
-    drag = { el: el }; el.classList.add('is-dragging');
+    drag = { el: el }; el.classList.add('is-scrubbing');   // not is-dragging: that class boxes a dragged row
     try { el.setPointerCapture(e.pointerId); } catch (err) { /* synthetic events */ }
     applySeek(el, seekFrac(el, e.clientX), false);
   });
@@ -2128,7 +2141,7 @@
   document.addEventListener('pointerup', function (e) {
     if (!drag) return;
     applySeek(drag.el, seekFrac(drag.el, e.clientX), true);
-    drag.el.classList.remove('is-dragging'); drag = null;
+    drag.el.classList.remove('is-scrubbing'); drag = null;
   });
   document.addEventListener('keydown', function (e) {
     var el = e.target.closest && e.target.closest('[data-seek]'); if (!el) return;
@@ -3089,6 +3102,7 @@
     events = M.connect(onServerEvent, function () {
       if (connectedOnce) refetchAll();
       connectedOnce = true;
+      P.resyncStream();
       setServer({ reachable: true });
     }, function () { loadHealth(); });
   }

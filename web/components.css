@@ -465,7 +465,7 @@ button.trow__title:hover { text-decoration: underline; text-underline-offset: 3p
   background: var(--seek-played); border: 2.5px solid var(--bg); box-shadow: 0 0 0 var(--stroke-thin) var(--seek-played);
   transition: transform var(--dur-1) var(--ease-out);
 }
-.seek.is-dragging .seek__knob { transform: scale(1.15); }
+.seek.is-scrubbing .seek__knob { transform: scale(1.15); }
 .seek.is-shake .seek__knob { animation: knob-shake 120ms ease-in-out 2; outline: 2px solid var(--focus); outline-offset: 1px; }
 .seek__tip {
   position: absolute; bottom: calc(50% + 14px); transform: translateX(-50%); white-space: nowrap; pointer-events: none;
