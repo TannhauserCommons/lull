@@ -2,12 +2,15 @@
 //! for tracks and albums where Deezer's catalog is closed (ADR-0008 update). Per query, in the
 //! store of `LULL_CATALOG_COUNTRY`: an `entity=song` call, whose songs also bring the albums
 //! they are on, and an `entity=album` call beside it, so a soundtrack or compilation is found
-//! by its own name. Apple asks for about 20 calls a minute, so lull keeps a budget below that:
-//! album searches use only what songs leave spare, and with it spent search answers without
-//! iTunes, not with an error.
+//! by its own name. Apple asks for about 20 calls a minute, so lull keeps a budget below that,
+//! shared by everyone using the hub: album searches and pages use only what songs leave spare.
+//! With it spent a call waits its turn (`Budget::take_turn`), the newest search first, rather
+//! than a search answering without iTunes: that answer would be kept for ten minutes and shown
+//! to everyone searching the same words.
 
+use std::cmp::Reverse;
 use std::collections::VecDeque;
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use lull_core::http::Http;
@@ -15,6 +18,7 @@ use lull_core::ids::normalize_artist;
 use lull_core::{Error, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tokio::sync::Notify;
 use tokio::time::Instant;
 
 use super::cache::{Cache, DAY};
@@ -31,6 +35,9 @@ const BUDGET: usize = 18;
 /// Calls of the budget album searches leave to songs.
 const SONGS_RESERVE: usize = 6;
 const BUDGET_WINDOW: Duration = Duration::from_secs(60);
+/// The longest a search's album call waits for its turn: well within the 8 s search gives a
+/// source, so it never holds back the songs.
+const ALBUM_WAIT: Duration = Duration::from_secs(5);
 /// Songs and albums asked for per query.
 const SONGS: &str = "25";
 const ALBUMS: &str = "25";
@@ -44,6 +51,8 @@ pub struct Itunes {
     cache: Cache,
     country: String,
     budget: Mutex<Budget>,
+    /// Woken whenever a waiting call takes its turn or gives up, so the next in line looks.
+    turn: Notify,
 }
 
 impl Itunes {
@@ -53,6 +62,7 @@ impl Itunes {
             cache,
             country,
             budget: Mutex::default(),
+            turn: Notify::new(),
         }
     }
 
@@ -61,23 +71,13 @@ impl Itunes {
     }
 
     /// Songs for finding a song another service names (a playlist link): kept a week, and only
-    /// with the calls the listener's own searches leave spare, waiting for one when none is.
+    /// with the calls left spare by everything a listener is looking at.
     pub async fn match_songs(&self, q: &str) -> Result<Vec<SongHit>> {
         let key = format!("it:match:{}:{q}", self.country);
         if let Some(found) = self.cache.fresh(key.clone(), KEEP_MATCH_S).await? {
             return Ok(found);
         }
-        loop {
-            let free_at = self
-                .budget
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .take_spare_or_wait(Instant::now());
-            match free_at {
-                None => break,
-                Some(at) => tokio::time::sleep_until(at).await,
-            }
-        }
+        self.wait_turn(Need::Background).await?;
         let body: Value = self
             .http
             .json(SERVICE, |c| {
@@ -94,11 +94,16 @@ impl Itunes {
         Ok(found)
     }
 
-    /// Songs for `q` with the albums they are on, and albums by their own name. Empty when the
-    /// budget is spent; without albums when only songs fit in it. Album search failing leaves
-    /// the songs, and is named in `problem`.
+    /// Songs for `q` with the albums they are on, and albums by their own name, each call waiting
+    /// its turn of the budget. Album search failing, or not getting a turn within `ALBUM_WAIT`,
+    /// leaves the songs, and is named in `problem`.
     pub async fn search(&self, q: &str) -> Result<Found> {
-        let (songs, albums) = tokio::join!(self.find(q, Entity::Song), self.find(q, Entity::Album));
+        let albums = async {
+            tokio::time::timeout(ALBUM_WAIT, self.find(q, Entity::Album))
+                .await
+                .unwrap_or_else(|_| Err(Error::unavailable(SERVICE, "lull's calls for this minute are spent")))
+        };
+        let (songs, albums) = tokio::join!(self.find(q, Entity::Song), albums);
         let mut found = songs?;
         match albums {
             Ok(albums) => found.albums.extend(albums.albums),
@@ -117,17 +122,11 @@ impl Itunes {
         if let Some(found) = self.cache.fresh(key.clone(), KEEP_S).await? {
             return Ok(found);
         }
-        let allowed = {
-            let mut budget = self.budget.lock().unwrap_or_else(PoisonError::into_inner);
-            match entity {
-                Entity::Song => budget.take(Instant::now()),
-                Entity::Album => budget.take_spare(Instant::now()),
-            }
-        };
-        if !allowed {
-            tracing::info!(query = q, entity = name, "iTunes budget spent; searching without it");
-            return Ok(Found::default());
-        }
+        self.wait_turn(match entity {
+            Entity::Song => Need::Whole,
+            Entity::Album => Need::Spare,
+        })
+        .await?;
         let body: Value = self
             .http
             .json(SERVICE, |c| {
@@ -155,12 +154,7 @@ impl Itunes {
         let key = format!("it:tracklist:{}:{collection}", self.country);
         self.cache
             .get(key, KEEP_TRACKLIST_S, || async {
-                if !self
-                    .budget
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .take(Instant::now())
-                {
+                if !self.budget().take(Instant::now()) {
                     return Err(Error::unavailable(SERVICE, "lull's calls for this minute are spent"));
                 }
                 let id = collection.to_string();
@@ -185,12 +179,7 @@ impl Itunes {
     /// The store's songs (`Entity::Song`) or albums for `term`, with their ids and covers, for
     /// share links (`share.rs` caches the outcome). Fails while the budget is spent.
     pub async fn listings(&self, term: &str, entity: Entity) -> Result<Vec<Listing>> {
-        if !self
-            .budget
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take(Instant::now())
-        {
+        if !self.budget().take(Instant::now()) {
             return Err(Error::unavailable(SERVICE, "lull's calls for this minute are spent"));
         }
         let name = match entity {
@@ -231,7 +220,7 @@ impl Itunes {
         let key = format!("it:artists:{}:{}", self.country, normalize_artist(name));
         self.cache
             .get(key, 30 * DAY, || async {
-                self.spend(Instant::now())?;
+                self.wait_turn(Need::Whole).await?;
                 let body: Value = self
                     .http
                     .json(SERVICE, |c| {
@@ -262,7 +251,7 @@ impl Itunes {
 
     /// What the store has of an artist (`artistId`): its releases and the ones it appears on,
     /// and its songs, most played first as far as Apple's order says. Two `lookup` calls, kept a
-    /// day; they use only what search leaves spare of the budget.
+    /// day; they wait for what searches leave spare of the budget (the page shows them late).
     pub async fn artist_catalog(&self, id: u64) -> Result<ArtistCatalog> {
         let key = format!("it:artist:{}:{id}", self.country);
         self.cache
@@ -270,7 +259,7 @@ impl Itunes {
                 let lookup = |entity: &'static str| {
                     let id = id.to_string();
                     async move {
-                        self.spend_spare(Instant::now())?;
+                        self.wait_turn(Need::Spare).await?;
                         self.http
                             .json::<Value>(SERVICE, |c| {
                                 c.get(LOOKUP).query(&[
@@ -289,25 +278,47 @@ impl Itunes {
             .await
     }
 
-    fn spend(&self, now: Instant) -> Result<()> {
-        if self.budget.lock().unwrap_or_else(PoisonError::into_inner).take(now) {
-            Ok(())
-        } else {
-            Err(Error::unavailable(SERVICE, "lull's calls for this minute are spent"))
+    /// Waits for a call of the budget: served by need, then newest first, so the words a
+    /// listener ended on go before the ones typed on the way. Fails after `BUDGET_WINDOW`.
+    async fn wait_turn(&self, need: Need) -> Result<()> {
+        let until = Instant::now() + BUDGET_WINDOW;
+        let ticket = Waiting::join(self, need);
+        loop {
+            // Made before the check, so a turn taken in between still wakes it.
+            let turn = self.turn.notified();
+            let now = Instant::now();
+            let next = match self.budget().take_turn(ticket.0, now) {
+                Ok(()) => return Ok(()),
+                Err(next) => next,
+            };
+            if now >= until {
+                return Err(Error::unavailable(SERVICE, "lull's calls for this minute are spent"));
+            }
+            tokio::select! {
+                () = tokio::time::sleep_until(next.min(until)) => {}
+                () = turn => {}
+            }
         }
     }
 
-    fn spend_spare(&self, now: Instant) -> Result<()> {
-        if self
-            .budget
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take_spare(now)
-        {
-            Ok(())
-        } else {
-            Err(Error::unavailable(SERVICE, "lull's calls for this minute are spent"))
-        }
+    fn budget(&self) -> MutexGuard<'_, Budget> {
+        self.budget.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// A call in line for the budget; leaving it (served, or given up) lets the next one look.
+struct Waiting<'a>(u64, &'a Itunes);
+
+impl<'a> Waiting<'a> {
+    fn join(itunes: &'a Itunes, need: Need) -> Self {
+        Waiting(itunes.budget().join(need), itunes)
+    }
+}
+
+impl Drop for Waiting<'_> {
+    fn drop(&mut self) {
+        self.1.budget().leave(self.0);
+        self.1.turn.notify_waiters();
     }
 }
 
@@ -428,41 +439,87 @@ pub enum Entity {
     Album,
 }
 
-/// At most `BUDGET` calls in any `BUDGET_WINDOW`.
+/// Who a call is for, in the order calls are served when they are scarce.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Need {
+    /// A search's songs, an artist page's store lookup: may use the whole budget.
+    Whole,
+    /// A search's albums, an artist page's catalog: only what leaves `SONGS_RESERVE` for songs.
+    Spare,
+    /// Work nobody is looking at (matching a playlist link's songs): spare calls, served last.
+    Background,
+}
+
+impl Need {
+    fn up_to(self) -> usize {
+        match self {
+            Need::Whole => BUDGET,
+            Need::Spare | Need::Background => BUDGET - SONGS_RESERVE,
+        }
+    }
+}
+
+/// At most `BUDGET` calls in any `BUDGET_WINDOW`, and the calls waiting for room.
 #[derive(Debug, Default)]
 pub struct Budget {
     sent: VecDeque<Instant>,
+    /// Calls in line by need and ticket (a later ticket is newer).
+    waiting: Vec<(Need, u64)>,
+    tickets: u64,
 }
 
 impl Budget {
-    /// Spends one call if the budget allows it.
+    /// Spends one call now if the whole budget allows it: for calls with a fallback of their own
+    /// (an album page asks MusicBrainz), which don't wait.
     pub fn take(&mut self, now: Instant) -> bool {
-        self.spend(now, BUDGET)
-    }
-
-    /// Spends one call only if songs would still have `SONGS_RESERVE` calls left after it.
-    pub fn take_spare(&mut self, now: Instant) -> bool {
-        self.spend(now, BUDGET - SONGS_RESERVE)
-    }
-
-    /// `take_spare`, or when it can't, the time a spare call frees up.
-    pub fn take_spare_or_wait(&mut self, now: Instant) -> Option<Instant> {
-        let up_to = BUDGET - SONGS_RESERVE;
-        if self.spend(now, up_to) {
-            return None;
-        }
-        Some(self.sent[self.sent.len() - up_to] + BUDGET_WINDOW)
-    }
-
-    fn spend(&mut self, now: Instant, up_to: usize) -> bool {
-        while self.sent.front().is_some_and(|t| *t + BUDGET_WINDOW <= now) {
-            self.sent.pop_front();
-        }
-        let ok = self.sent.len() < up_to;
+        self.expire(now);
+        let ok = self.sent.len() < BUDGET;
         if ok {
             self.sent.push_back(now);
         }
         ok
+    }
+
+    /// Puts a call in line; its ticket.
+    pub fn join(&mut self, need: Need) -> u64 {
+        self.tickets += 1;
+        self.waiting.push((need, self.tickets));
+        self.tickets
+    }
+
+    pub fn leave(&mut self, ticket: u64) {
+        self.waiting.retain(|(_, t)| *t != ticket);
+    }
+
+    /// Spends a call for `ticket` when it is first in line (by need, then newest) and its need
+    /// has room, and takes it out of line. Otherwise, when room for it may free up.
+    pub fn take_turn(&mut self, ticket: u64, now: Instant) -> std::result::Result<(), Instant> {
+        self.expire(now);
+        let first = self
+            .waiting
+            .iter()
+            .min_by_key(|&&(need, t)| (need, Reverse(t)))
+            .map(|w| w.1);
+        let Some(&(need, _)) = self.waiting.iter().find(|(_, t)| *t == ticket) else {
+            return Err(now + BUDGET_WINDOW);
+        };
+        let up_to = need.up_to();
+        if first == Some(ticket) && self.sent.len() < up_to {
+            self.sent.push_back(now);
+            self.leave(ticket);
+            return Ok(());
+        }
+        // When the call that makes room ages out; one ahead in line wakes it by taking its turn.
+        Err(match self.sent.len().checked_sub(up_to) {
+            Some(i) => self.sent[i] + BUDGET_WINDOW,
+            None => now + BUDGET_WINDOW,
+        })
+    }
+
+    fn expire(&mut self, now: Instant) {
+        while self.sent.front().is_some_and(|t| *t + BUDGET_WINDOW <= now) {
+            self.sent.pop_front();
+        }
     }
 }
 
@@ -642,14 +699,45 @@ fn sized(url: &str) -> Option<String> {
 mod budget_tests {
     use super::*;
 
+    /// One call that joins the line alone and takes its turn at once, or doesn't.
+    fn turn(b: &mut Budget, need: Need, now: Instant) -> bool {
+        let t = b.join(need);
+        let ok = b.take_turn(t, now).is_ok();
+        b.leave(t);
+        ok
+    }
+
     #[test]
-    fn matching_waits_for_a_spare_call_and_leaves_the_reserve_to_searches() {
+    fn spare_calls_leave_the_reserve_to_the_songs_of_searches() {
         let (mut b, now) = (Budget::default(), Instant::now());
-        for _ in 0..BUDGET - SONGS_RESERVE {
-            assert_eq!(b.take_spare_or_wait(now), None);
+        assert_eq!((0..25).filter(|_| turn(&mut b, Need::Spare, now)).count(), 12);
+        assert!(!turn(&mut b, Need::Background, now));
+        assert_eq!((0..25).filter(|_| turn(&mut b, Need::Whole, now)).count(), 6);
+        assert!(!b.take(now + Duration::from_secs(59)));
+        assert!(turn(&mut b, Need::Spare, now + BUDGET_WINDOW));
+    }
+
+    #[test]
+    fn with_the_budget_spent_the_newest_search_goes_first_and_imports_last() {
+        let (mut b, now) = (Budget::default(), Instant::now());
+        for _ in 0..BUDGET {
+            assert!(b.take(now));
         }
-        assert_eq!(b.take_spare_or_wait(now), Some(now + BUDGET_WINDOW));
-        assert!(b.take(now), "the listener's search still has its reserve");
-        assert_eq!(b.take_spare_or_wait(now + BUDGET_WINDOW), None);
+        let import = b.join(Need::Background);
+        let typed_on_the_way = b.join(Need::Whole);
+        let albums = b.join(Need::Spare);
+        let ended_on = b.join(Need::Whole);
+        assert_eq!(b.take_turn(ended_on, now), Err(now + BUDGET_WINDOW));
+        let later = now + BUDGET_WINDOW;
+        assert!(
+            b.take_turn(typed_on_the_way, later).is_err(),
+            "a newer search is in line"
+        );
+        assert!(b.take_turn(import, later).is_err());
+        assert!(b.take_turn(ended_on, later).is_ok());
+        assert!(b.take_turn(typed_on_the_way, later).is_ok());
+        assert!(b.take_turn(import, later).is_err(), "the album search goes first");
+        assert!(b.take_turn(albums, later).is_ok());
+        assert!(b.take_turn(import, later).is_ok());
     }
 }

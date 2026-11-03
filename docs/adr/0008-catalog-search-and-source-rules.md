@@ -84,3 +84,9 @@ Exploring the code found three gaps:
 - **iTunes' limit** (about 20 calls a minute) is kept by the 10-minute cache, the UI's debounce and a budget of 18 calls per rolling minute. Over budget, a search answers with the library and gets `search.more` from MusicBrainz and Last.fm: never an error.
 - **The choice shows** as the `catalog` status ("catalog: iTunes (US) + Deezer artists").
 - **Not chosen:** sending Deezer's calls through a proxy in another country.
+
+## Update 2026-11-03: over the iTunes budget, calls wait their turn
+
+- **Answering without iTunes was wrong.** Two people searching "edgerunners 2" on one hub, a minute apart, got different top results, and one never saw "High Forever": as-you-type searches had spent the 18 calls, the run answered with MusicBrainz and Last.fm alone, said nothing, and was kept 10 minutes for anyone searching those words.
+- **Now a call over the budget waits its turn,** the newest search's songs first, then album searches and artist pages, then link imports. A search that gets no turn within its 8 s shows `errors.itunes`, and its run isn't kept.
+- **And a run's answers are one list:** the first answer fixes the top result and order, `search.more` rows go after it, and later answers for the same words get that list, not a new ranking.

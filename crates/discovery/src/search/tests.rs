@@ -2,6 +2,7 @@
 //! search is closed where they were recorded, so its track and album pages are its `/track`
 //! and `/album` answers for the same songs, cut to the fields a search answer has.
 
+use std::collections::HashSet;
 use std::time::Duration;
 
 use lull_core::ids::{ArtistId, TrackId};
@@ -9,6 +10,7 @@ use lull_core::model::Track;
 use serde_json::{Value, json};
 use tokio::time::Instant;
 
+use super::Board;
 use super::merge::{self, AlbumHit, ArtistHit, Fit, Found, Kind, Merged, Query, Score, SongHit};
 use crate::sources::{AlbumSource, deezer, itunes, lastfm, musicbrainz};
 
@@ -259,6 +261,51 @@ fn ranking_puts_exact_matches_first_then_popularity_then_the_listeners_own() {
 }
 
 #[test]
+fn a_late_source_goes_after_the_rows_shown_and_everyone_gets_that_list() {
+    // Live, two listeners searching "edgerunners 2" a minute apart got different top results,
+    // one without "High Forever": iTunes's songs had been skipped for its budget.
+    let q = Query::new("edgerunners 2");
+    let (liked, followed) = (HashSet::new(), HashSet::new());
+    let mut m = merged(vec![
+        song(
+            "Tsuneo Imahori",
+            "Out of Bounds",
+            "Cyberpunk: Edgerunners 2 (Original Series Score)",
+            Some(120),
+        ),
+        song("Hurakion", "Cyberpunk: Edgerunners 2 Trailer Theme Music", "", None),
+    ]);
+    let mut board = Board::first(super::rank_rows(&q, &m, &liked, &followed));
+    m.freeze();
+    let first = board.clone();
+    let high_forever = SongHit {
+        popularity: 0.9,
+        ..song(
+            "Petite Meller",
+            "High Forever",
+            "Cyberpunk: Edgerunners 2 (Original Series Soundtrack)",
+            Some(180),
+        )
+    };
+    m.add(Found {
+        songs: vec![high_forever],
+        ..Found::default()
+    });
+    let ranked_anew = super::rank_rows(&q, &m, &liked, &followed);
+    assert_eq!(ranked_anew.songs[0], 2, "ranked anew, the late match would lead");
+    let added = board.add(ranked_anew);
+    assert_eq!(added.songs, [2], "announced once");
+    assert_eq!(
+        board.songs[..first.songs.len()],
+        first.songs[..],
+        "the rows shown don't move"
+    );
+    assert_eq!(board.songs.last(), Some(&2), "and the strong match isn't dropped");
+    assert_eq!(board.top, first.top, "the top result stays");
+    assert!(board.add(super::rank_rows(&q, &m, &liked, &followed)).songs.is_empty());
+}
+
+#[test]
 fn the_top_result_is_the_best_fit_leaning_toward_artists() {
     // "radiohed": nothing fits exactly; Radiohead beats their best known song.
     let q = Query::new("radiohed");
@@ -418,10 +465,6 @@ fn the_itunes_budget_stays_under_twenty_a_minute() {
     assert_eq!((0..25).filter(|_| b.take(t0)).count(), 18);
     assert!(!b.take(t0 + Duration::from_secs(59)));
     assert!(b.take(t0 + Duration::from_secs(60)));
-    // Album searches take only what songs leave spare: six calls stay for songs.
-    let mut b = itunes::Budget::default();
-    assert_eq!((0..25).filter(|_| b.take_spare(t0)).count(), 12);
-    assert_eq!((0..25).filter(|_| b.take(t0)).count(), 6);
 }
 
 #[test]

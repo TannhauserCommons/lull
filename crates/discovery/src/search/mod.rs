@@ -7,7 +7,8 @@
 //!   Deezer take 0.6-1 s from the homelab), so its top result and order come from all of them.
 //!   What arrives later is announced as `search.more`, with only rows not shown yet.
 //! - **One run per query for 10 minutes:** the same words again answer at once, joining a run
-//!   that is still going. A run with a failed source isn't reused.
+//!   that is still going, with the run's list as shown so far (`Board`): everyone searching the
+//!   same words sees the same rows in the same order. A run with a failed source isn't reused.
 //! - **A submitted query** (`submitted=1`: Enter, or the rest that starts Soulseek) also asks
 //!   MusicBrainz for release groups by title, so Bandcamp-only EPs and albums are found.
 //! - **`search.catalog`** names the best tracks once every source is in, for Soulseek.
@@ -76,17 +77,8 @@ struct RunState {
     merged: Merged,
     pending: BTreeSet<Source>,
     errors: BTreeMap<Source, String>,
-    /// In an answer or a `search.more` already.
-    shown: Shown,
-    answered: bool,
-}
-
-#[derive(Default)]
-struct Shown {
-    tracks: HashSet<TrackId>,
-    albums: HashSet<AlbumId>,
-    artists: HashSet<ArtistId>,
-    playlists: HashSet<String>,
+    /// What answers and `search.more` have shown; `None` until the first answer.
+    board: Option<Board>,
 }
 
 /// A playlist row of an answer (`playlists.rs`): not an entity, as it isn't in lull's catalog.
@@ -124,10 +116,16 @@ pub struct Answer {
     entities: Pictured,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct Top {
     kind: &'static str,
     id: String,
+}
+
+impl Top {
+    fn of(kind: &'static str, id: String) -> Self {
+        Top { kind, id }
+    }
 }
 
 #[derive(Serialize)]
@@ -162,7 +160,6 @@ pub async fn search(State(svc): State<Arc<Service>>, Params(p): Params<SearchPar
     run.first_answer().await;
     let mut st = run.state.lock().await;
     let view = view(&svc, &run.query, &mut st, None).await?;
-    st.answered = true;
     st.merged.freeze();
     if st.pending.is_empty() {
         publish_catalog(&svc, &run.query, &st.merged);
@@ -396,7 +393,7 @@ async fn arrive(svc: &Service, run: &Run, source: Source, found: Result<Found>) 
             Touched::default()
         }
     };
-    if st.answered {
+    if st.board.is_some() {
         match view(svc, &run.query, &mut st, Some(&touched)).await {
             Ok(v) => svc.ctx.bus.publish(
                 "search.more",
@@ -444,109 +441,47 @@ struct View {
     entities: Pictured,
 }
 
-/// The ranked rows, with their entities. For an announcement (`touched`), only rows not shown
-/// yet are listed, and the entities also carry shown rows that gained facts.
+/// The rows of an answer or an announcement (`touched`), with their entities. The run's first
+/// answer fixes its top result and order (`Board`); an announcement lists only rows not on the
+/// board, which go after it, and its entities also carry shown rows that gained facts. Every
+/// later answer is the board as it stands.
 async fn view(svc: &Service, query: &str, st: &mut RunState, touched: Option<&Touched>) -> Result<View> {
-    let q = Query::new(query);
-    let (liked, followed) = svc.store.own().await?;
-    let m = &st.merged;
-
-    let song_ids: Vec<TrackId> = m.songs.iter().map(SongHit::id).collect();
-    let fits: Vec<Score> = m.songs.iter().map(|s| Score::song(&q, s)).collect();
-    let songs = merge::rank(&fits, |i| {
-        let s = &m.songs[i];
-        s.saved.is_some() || liked.contains(&song_ids[i]) || followed.contains(&ArtistId::of(&s.artist))
-    });
-    let album_ids: Vec<AlbumId> = m.albums.iter().map(merge::AlbumHit::id).collect();
-    let album_fits: Vec<Score> = m.albums.iter().map(|a| Score::album(&q, a)).collect();
-    let albums = merge::rank(&album_fits, |i| followed.contains(&ArtistId::of(&m.albums[i].artist)));
-    let artist_ids: Vec<ArtistId> = m.artists.iter().map(merge::ArtistHit::id).collect();
-    let mut artist_fits: Vec<Score> = m.artists.iter().map(|a| Score::artist(&q, a)).collect();
-    merge::overshadow(&m.artists, &mut artist_fits);
-    let misspelt = merge::misspelt(&m.artists);
-    let mut artists = merge::rank(&artist_fits, |i| followed.contains(&artist_ids[i]));
-    artists.retain(|&i| !misspelt[i]);
-
-    let search_top = match touched {
-        Some(_) => None,
-        None => merge::top(
-            artists.first().map(|&i| artist_fits[i]),
-            albums.first().map(|&i| album_fits[i]),
-            songs.first().map(|&i| fits[i]),
-        )
-        .map(|kind| match kind {
-            Kind::Artist => Top {
-                kind: "artist",
-                id: artist_ids[artists[0]].0.clone(),
-            },
-            Kind::Album => Top {
-                kind: "album",
-                id: album_ids[albums[0]].0.clone(),
-            },
-            Kind::Track => Top {
-                kind: "track",
-                id: song_ids[songs[0]].0.clone(),
-            },
-        }),
-    };
-    // A query that names a film, show or game: its soundtrack, album or playlist, leads.
-    let playlist_order = playlists::rank(&q, &m.playlists);
-    let mut top_album = None;
-    let top = match touched {
-        Some(_) => None,
-        None => {
-            let ranked: Vec<(usize, &merge::AlbumHit)> = albums.iter().map(|&i| (i, &m.albums[i])).collect();
-            match playlists::work_top(&q, &ranked, &m.playlists) {
-                Some(playlists::WorkTop::Album(i)) => {
-                    top_album = Some(i);
-                    Some(Top {
-                        kind: "album",
-                        id: album_ids[i].0.clone(),
-                    })
-                }
-                Some(playlists::WorkTop::Playlist(i)) => Some(Top {
-                    kind: "playlist",
-                    id: m.playlists[i].link(),
-                }),
-                None => search_top,
+    let RunState { merged: m, board, .. } = st;
+    let rows = match (board.as_ref(), touched) {
+        (Some(shown), None) => shown.clone(),
+        _ => {
+            let (liked, followed) = svc.store.own().await?;
+            let ranked = rank_rows(&Query::new(query), m, &liked, &followed);
+            match board {
+                Some(shown) => shown.add(ranked),
+                None => board.insert(Board::first(ranked)).clone(),
             }
         }
     };
-
-    // Listed: the best rows (all for an answer; the new ones for an announcement).
-    let listed = |order: Vec<usize>, limit: usize, new: &dyn Fn(usize) -> bool| -> Vec<usize> {
-        order.into_iter().filter(|&i| new(i)).take(limit).collect()
-    };
-    let fresh = touched.is_some();
-    let songs = listed(songs, TRACKS, &|i| !fresh || !st.shown.tracks.contains(&song_ids[i]));
-    let albums = listed(albums, ALBUMS, &|i| !fresh || !st.shown.albums.contains(&album_ids[i]));
-    let artists = listed(artists, ARTISTS, &|i| {
-        !fresh || !st.shown.artists.contains(&artist_ids[i])
-    });
-    let listed_playlists = listed(playlist_order, playlists::LISTED, &|i| {
-        !fresh || !st.shown.playlists.contains(&m.playlists[i].link())
-    });
-    // Described: the listed rows, and shown rows that gained facts.
-    let improved = |all: &[usize], ids_shown: &dyn Fn(usize) -> bool| -> Vec<usize> {
-        all.iter().copied().filter(|&i| ids_shown(i)).collect()
-    };
-    let (mut d_songs, mut d_albums, mut d_artists) = (songs.clone(), albums.clone(), artists.clone());
-    d_albums.extend(top_album.filter(|i| !albums.contains(i)));
-    if let Some(t) = touched {
-        d_songs.extend(improved(&t.songs, &|i| st.shown.tracks.contains(&song_ids[i])));
-        d_albums.extend(improved(&t.albums, &|i| st.shown.albums.contains(&album_ids[i])));
-        d_artists.extend(improved(&t.artists, &|i| st.shown.artists.contains(&artist_ids[i])));
+    let (mut d_songs, mut d_albums, mut d_artists) = (rows.songs.clone(), rows.albums.clone(), rows.artists.clone());
+    d_albums.extend(rows.top_album.filter(|i| !rows.albums.contains(i)));
+    if let (Some(t), Some(shown)) = (touched, board.as_ref()) {
+        let improved = |touched: &[usize], listed: &[usize], on_board: &[usize]| -> Vec<usize> {
+            touched
+                .iter()
+                .copied()
+                .filter(|i| on_board.contains(i) && !listed.contains(i))
+                .collect()
+        };
+        d_songs.extend(improved(&t.songs, &rows.songs, &shown.songs));
+        d_albums.extend(improved(&t.albums, &rows.albums, &shown.albums));
+        d_artists.extend(improved(&t.artists, &rows.artists, &shown.artists));
     }
 
     let entities = describe(svc, m, &d_songs, &d_albums, &d_artists).await?;
-    let mut playlist_rows = Vec::with_capacity(listed_playlists.len());
-    for &i in &listed_playlists {
+    let mut playlists = Vec::with_capacity(rows.playlists.len());
+    for &i in &rows.playlists {
         let p = &m.playlists[i];
         let cover = match &p.cover {
             Some(source) => Some(art::playlist_picture(svc, &p.link(), source).await?),
             None => None,
         };
-        playlist_rows.push(PlaylistRow {
+        playlists.push(PlaylistRow {
             id: p.link(),
             site: p.site.clone(),
             title: p.title.clone(),
@@ -556,19 +491,115 @@ async fn view(svc: &Service, query: &str, st: &mut RunState, touched: Option<&To
             fans: p.fans,
         });
     }
-    let view = View {
-        top,
-        playlists: playlist_rows,
-        tracks: songs.iter().map(|&i| song_ids[i].clone()).collect(),
-        albums: albums.iter().map(|&i| album_ids[i].clone()).collect(),
-        artists: artists.iter().map(|&i| artist_ids[i].clone()).collect(),
+    Ok(View {
+        top: rows.top,
+        playlists,
+        tracks: rows.songs.iter().map(|&i| m.songs[i].id()).collect(),
+        albums: rows.albums.iter().map(|&i| m.albums[i].id()).collect(),
+        artists: rows.artists.iter().map(|&i| m.artists[i].id()).collect(),
         entities,
+    })
+}
+
+/// Every row so far, best first (positions in `Merged`), and the top result.
+#[derive(Debug, Default)]
+struct Ranked {
+    top: Option<Top>,
+    /// The album the top result is.
+    top_album: Option<usize>,
+    songs: Vec<usize>,
+    albums: Vec<usize>,
+    artists: Vec<usize>,
+    playlists: Vec<usize>,
+}
+
+/// Ranks the merged rows for the query; `liked` and `followed` are the listener's own, which
+/// break ties (`merge`). Misspelt artists are left out.
+fn rank_rows(q: &Query, m: &Merged, liked: &HashSet<TrackId>, followed: &HashSet<ArtistId>) -> Ranked {
+    let fits: Vec<Score> = m.songs.iter().map(|s| Score::song(q, s)).collect();
+    let songs = merge::rank(&fits, |i| {
+        let s = &m.songs[i];
+        s.saved.is_some() || liked.contains(&s.id()) || followed.contains(&ArtistId::of(&s.artist))
+    });
+    let album_fits: Vec<Score> = m.albums.iter().map(|a| Score::album(q, a)).collect();
+    let albums = merge::rank(&album_fits, |i| followed.contains(&ArtistId::of(&m.albums[i].artist)));
+    let mut artist_fits: Vec<Score> = m.artists.iter().map(|a| Score::artist(q, a)).collect();
+    merge::overshadow(&m.artists, &mut artist_fits);
+    let misspelt = merge::misspelt(&m.artists);
+    let mut artists = merge::rank(&artist_fits, |i| followed.contains(&m.artists[i].id()));
+    artists.retain(|&i| !misspelt[i]);
+
+    // A query that names a film, show or game: its soundtrack, album or playlist, leads.
+    let ranked_albums: Vec<(usize, &merge::AlbumHit)> = albums.iter().map(|&i| (i, &m.albums[i])).collect();
+    let (top, top_album) = match playlists::work_top(q, &ranked_albums, &m.playlists) {
+        Some(playlists::WorkTop::Album(i)) => (Some(Top::of("album", m.albums[i].id().0)), Some(i)),
+        Some(playlists::WorkTop::Playlist(i)) => (Some(Top::of("playlist", m.playlists[i].link())), None),
+        None => {
+            let kind = merge::top(
+                artists.first().map(|&i| artist_fits[i]),
+                albums.first().map(|&i| album_fits[i]),
+                songs.first().map(|&i| fits[i]),
+            );
+            let top = kind.map(|kind| match kind {
+                Kind::Artist => Top::of("artist", m.artists[artists[0]].id().0),
+                Kind::Album => Top::of("album", m.albums[albums[0]].id().0),
+                Kind::Track => Top::of("track", m.songs[songs[0]].id().0),
+            });
+            (top, None)
+        }
     };
-    st.shown.tracks.extend(view.tracks.iter().cloned());
-    st.shown.albums.extend(view.albums.iter().cloned());
-    st.shown.artists.extend(view.artists.iter().cloned());
-    st.shown.playlists.extend(view.playlists.iter().map(|p| p.id.clone()));
-    Ok(view)
+    Ranked {
+        top,
+        top_album,
+        songs,
+        albums,
+        artists,
+        playlists: playlists::rank(q, &m.playlists),
+    }
+}
+
+/// The rows a run has shown (positions in `Merged`) in the order shown: the first answer's best,
+/// then each announcement's after them. A later answer is the board as it stands, so two people
+/// searching the same words see one list, and a source arriving late moves nothing.
+#[derive(Debug, Clone, Default, PartialEq)]
+struct Board {
+    top: Option<Top>,
+    top_album: Option<usize>,
+    songs: Vec<usize>,
+    albums: Vec<usize>,
+    artists: Vec<usize>,
+    playlists: Vec<usize>,
+}
+
+impl Board {
+    /// The first answer: the best rows of each kind, and the top result.
+    fn first(r: Ranked) -> Board {
+        Board {
+            top: r.top,
+            top_album: r.top_album,
+            songs: r.songs.into_iter().take(TRACKS).collect(),
+            albums: r.albums.into_iter().take(ALBUMS).collect(),
+            artists: r.artists.into_iter().take(ARTISTS).collect(),
+            playlists: r.playlists.into_iter().take(playlists::LISTED).collect(),
+        }
+    }
+
+    /// An announcement: the best rows not on the board yet, put after it. Its top result stays.
+    fn add(&mut self, r: Ranked) -> Board {
+        fn new(order: Vec<usize>, shown: &mut Vec<usize>, limit: usize) -> Vec<usize> {
+            let added: Vec<usize> = order.into_iter().filter(|i| !shown.contains(i)).take(limit).collect();
+            shown.extend(&added);
+            added
+        }
+        Board {
+            top: None,
+            top_album: None,
+            songs: new(r.songs, &mut self.songs, TRACKS),
+            albums: new(r.albums, &mut self.albums, ALBUMS),
+            artists: new(r.artists, &mut self.artists, ARTISTS),
+            playlists: new(r.playlists, &mut self.playlists, playlists::LISTED),
+        }
+    }
 }
 
 /// Entities for rows: tracks recorded in the catalog with saved state, albums (the rows' and
