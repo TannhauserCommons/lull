@@ -446,12 +446,36 @@
       });
     })(4);
   }
-  /* content that grows without a re-render (a screen patching its own part) settles it too, while it waits */
-  var spotSizes = new ResizeObserver(function () { settleSpot(); if (!returnTo) spotSizes.disconnect(); });
-  function awaitSpot(view) { spotSizes.disconnect(); if (returnTo && view.firstElementChild) spotSizes.observe(view.firstElementChild); }
-  function stopReturning() { returnTo = null; anchorFix = null; spotSizes.disconnect(); }
+  /* content that grows without a re-render (a screen patching its own part, search results streaming in) settles it
+     too, and the "Playing from" reveal below, while they wait */
+  var spotSizes = new ResizeObserver(function () { settleSpot(); settleReveal(); if (!returnTo && !reveal) spotSizes.disconnect(); });
+  function awaitSpot(view) { spotSizes.disconnect(); if ((returnTo || reveal) && view.firstElementChild) spotSizes.observe(view.firstElementChild); }
+  /* the listener's own scroll, key or click takes over from both */
+  function stopReturning() { returnTo = null; anchorFix = null; reveal = null; spotSizes.disconnect(); }
   ['wheel', 'touchstart', 'keydown', 'pointerdown'].forEach(function (type) { document.addEventListener(type, stopReturning, { capture: true, passive: true }); });
 
+  /* "Playing from" (App.goPlaying): the place the song plays from, opened at the song, which is scrolled to the middle,
+     focused and briefly lit (.is-revealed). Its rows may come with the page's read: the reveal waits for the row until
+     6 s pass or the listener goes elsewhere. Radio and the listener's own queue have no page: the queue opens. */
+  var reveal = null;
+  App.goPlaying = function () {
+    var c = P.playingFrom(); if (!c) return;
+    var path = App.placePath(c);
+    if (!path) { showQueue(); return; }
+    reveal = { path: path.split('?')[0], trackId: P.currentId(), until: Date.now() + 6000 };
+    if (location.hash === '#' + path) settleReveal(); else App.go(path);
+  };
+  function settleReveal() {
+    var r = reveal, view = $('#view'); if (!r) return;
+    if (Date.now() > r.until || App.current.path !== r.path) { reveal = null; return; }
+    var row = $('.trow.is-playing', view) || $('[data-track-id="' + CSS.escape(r.trackId) + '"]', view);
+    if (!row) return;
+    stopReturning();
+    row.scrollIntoView({ block: 'center' });
+    if (row.tabIndex >= 0) row.focus({ preventScroll: true });
+    row.classList.remove('is-revealed'); void row.offsetWidth; row.classList.add('is-revealed');
+    setTimeout(function () { row.classList.remove('is-revealed'); }, 1800);
+  }
 
   var lastPath = null;
   function renderRoute(isRefresh) {
@@ -501,7 +525,7 @@
     $$('.rail__pl').forEach(function (a) {
       if (a.getAttribute('href') === '#' + loc.path) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
-    var spot = arrived && spots[entry];
+    var spot = arrived && !(reveal && reveal.path === loc.path) && spots[entry];
     if (!isRefresh && (lastPath !== loc.path || spot)) {
       view.scrollTop = 0;
       if (lastPath !== null && !(route && route.keepFocus)) view.focus({ preventScroll: true });
@@ -510,7 +534,7 @@
     lastPath = loc.path;
     App.syncRows();
     App.emit('route', App.current);
-    settleSpot();
+    settleSpot(); settleReveal();
     if (arrived) awaitSpot(view);
   }
   function safeCall(fn, arg) { try { return fn(arg) || ''; } catch (e) { console.error(e); return ''; } }
@@ -791,6 +815,36 @@
       <div class="trow__more">${opts.actions === false ? '' : html`<button class="btn-icon btn-icon--bare" data-act="track-menu" data-id="${track.id}" aria-haspopup="menu" aria-label="More actions for ${track.title}" data-tip="More">${icon('more')}</button>`}</div>
     </li>`;
   };
+  /* A place to play from, wherever it shows (tiles, rail playlists, Home shelves, search results): its root carries
+     data-place="kind:id" (App.placeKey) and ui.placeCls(key); ui.placeMark(key) goes at the start of its
+     [data-place-at] part (a tile's title) or, without one, at its end. While it is the place playing (P.playingFrom),
+     it is .is-playing-place, .is-playing-now while sound plays, and shows the playing bars: the same .eq as a playing
+     row, still while paused. Rendered with the state of the moment; App.syncRows keeps them current. */
+  function placePlaying(key) { return !!App.player && !!key && App.placeKey(App.player.playingFrom()) === key; }
+  var PLACE_MARK = '<span class="place-mark"><span class="eq" aria-hidden="true"><i></i><i></i><i></i></span><span class="vh">(playing)</span></span>';
+  ui.placeCls = function (key) { return placePlaying(key) ? ' is-playing-place' + (App.player.state.playing ? ' is-playing-now' : '') : ''; };
+  ui.placeMark = function (key) { return raw(placePlaying(key) ? PLACE_MARK : ''); };
+  /* "Playing from <name>": the place the song plays from, as a link that opens it at the song (App.goPlaying); radio
+     and the listener's own queue open the queue. Empty while nothing plays from anywhere. */
+  ui.playingFrom = function (cls, label) {
+    var c = App.player.playingFrom(); if (!c) return '';
+    var path = App.placePath(c), name = App.placeName(c);
+    var inner = html`${icon(App.placeIcon(c), null, 'ic-16')}<span class="from__text"><span class="from__label">${label || 'Playing from'}</span> <b>${name}</b></span>`;
+    return path ? html`<a class="from ${cls}" href="#${path}" data-act="go-playing" data-tip="Show the song in ${name}">${inner}</a>`
+      : html`<button class="from ${cls}" data-act="go-playing" data-tip="Show the queue">${inner}</button>`;
+  };
+  App.syncPlaces = function (root) {
+    var key = App.placeKey(App.player.playingFrom()), playing = App.player.state.playing;
+    $$('[data-place]', root).forEach(function (el) {
+      var on = !!key && el.getAttribute('data-place') === key, now = on && playing;
+      if (el.classList.contains('is-playing-place') === on && el.classList.contains('is-playing-now') === now) return;
+      el.classList.toggle('is-playing-place', on); el.classList.toggle('is-playing-now', now);
+      var mark = $('.place-mark', el), at = $('[data-place-at]', el);
+      if (on && !mark) { if (at) at.insertAdjacentHTML('afterbegin', PLACE_MARK); else el.insertAdjacentHTML('beforeend', PLACE_MARK); }
+      else if (!on && mark) mark.remove();
+    });
+  };
+
   /* a row on an album page shows the page's cover when the song's own album (and so its cover) isn't known */
   function rowCover(t, album) { var own = M.album(t.albumId); return album && t.albumId !== album && !(own && own.art) ? album : t; }
   /* bitrate and sample rate, the format column of a wide list ("1040 kbps, 44.1 kHz"); "–" until the file is known,
@@ -813,10 +867,11 @@
   /* release tile (shelves): art + flat round play + title + artist + new chip + pixel-face "album, Oct 29" */
   ui.releaseTile = function (album, opts) {
     opts = opts || {}; if (typeof album === 'string') album = M.album(album);
-    return html`<div class="tile" data-album-id="${album.id}">
+    var key = 'album:' + album.id;
+    return html`<div class="tile${ui.placeCls(key)}" data-album-id="${album.id}" data-place="${key}">
       <div class="tile__art"><a href="#/album/${album.id}" aria-label="${album.title} by ${album.artist}">${ui.cover(album, '100%')}</a>
         <button class="tile__play" data-act="play-album" data-id="${album.id}" aria-label="Play ${album.title}" data-tip="Play">${icon('play')}</button></div>
-      <div class="tile__title"><a href="#/album/${album.id}">${album.title}</a></div>
+      <div class="tile__title"><a href="#/album/${album.id}" data-place-at>${ui.placeMark(key)}${album.title}</a></div>
       <div class="tile__by"><a href="#/artist/${album.artistId}">${album.artist}</a></div>
       <div class="tile__meta">${album.isNew && opts.showNew !== false ? ui.newBadge() : ''}<span>${album.type.toLowerCase()}${album.released ? ', ' + fmtDate(album.released) : ''}</span></div>
     </div>`;
@@ -1327,7 +1382,7 @@
     received: 0, buffered: [], durationKnown: false,
     peer: null, peersFound: 0, queuePos: 0, fallback: null, failedPeers: [], source: null,
     crossfade: false, shuffle: !!saved0.shuffle, repeat: saved0.repeat || 'off',
-    volume: saved0.volume == null ? .7 : saved0.volume, muted: !!saved0.muted, radio: null, error: null
+    volume: saved0.volume == null ? .7 : saved0.volume, muted: !!saved0.muted, radio: null, context: null, error: null
   };
   var quSeq = 0, duration = 0;
   P.current = function () { var q = ps.queue[ps.index]; return q ? M.track(q.trackId) : null; };
@@ -1545,12 +1600,15 @@
     if (nxt && ps.queue[nextIndex(true)] !== nxt) releaseNext();
     changed('queue');
   }
-  /* replace the playing context and start: playList(ids, startIndex, { radio, sources: { trackId: source }, at, autoplay }).
+  /* replace the playing context and start: playList(ids, startIndex, { radio, context, sources: { trackId: source }, at,
+     autoplay }). `context` is the place it plays from ({ kind, id, name }, see "where the music plays from"); left out,
+     it is the page showing (App.here()), which is where a click on a list or its Play button came from.
      Songs the listener queued themselves ("next up": Play next, Add to queue) that haven't played yet are theirs, not
      the context's: they stay, right after the new song, as Spotify keeps its "next in queue". */
   P.playList = function (ids, start, opts) {
     opts = opts || {};
     var group = opts.radio ? 'radio' : 'context', sources = opts.sources || {};
+    ps.context = opts.context !== undefined ? opts.context : App.here();
     var nextUp = ps.queue.slice(ps.index + 1).filter(function (e) { return e.group === 'next'; });
     endPlay('skipped'); releaseNext();
     start = clamp(start || 0, 0, Math.max(0, ids.length - 1));
@@ -1576,9 +1634,9 @@
     fetch(streamUrl(t, cur.source), { headers: { Range: 'bytes=0-0' }, credentials: 'include' })
       .then(function (r) { if (r.body) r.body.cancel(); }, function () { /* offline: the next connect asks again */ });
   };
-  P.playTrack = function (id, contextIds) {
+  P.playTrack = function (id, contextIds, opts) {
     var ids = contextIds && contextIds.indexOf(id) >= 0 ? contextIds : [id];
-    P.playList(ids, ids.indexOf(id));
+    P.playList(ids, ids.indexOf(id), opts);
   };
   function titleOf(id) { var t = M.track(id); return t ? t.title : 'one song'; }
   /* the listener's own picks go to "next up", right after the playing song: Play next at its front, Add to queue at
@@ -1636,10 +1694,60 @@
   /* a saved song Jellyfin can't serve: stream it from Soulseek instead */
   P.trySoulseek = function () { if (P.current()) load(ps.index, { forceSoulseek: true }); };
 
+  /* ---------- where the music plays from: ps.context = { kind, id, name } | null ----------
+     Every play started from a place records it beside the queue (and persists with it): the page's own place (a
+     route's `place(ctx)`, App.here()), or the album, playlist or radio a tile or button plays. P.playingFrom() is the
+     place of the song playing now; the player bar, Now Playing, the mini player and the queue say it, App.goPlaying()
+     opens it at the song, and every tile or link of that place (data-place="kind:id") shows the playing bars.
+     PLACES: each kind's icon, its page (radio and the queue have none: they open the queue) and its live name (a
+     renamed playlist reads its new name; the stored one is the fallback). */
+  function enc(s) { return encodeURIComponent(s); }
+  var PLACES = {
+    playlist: { icon: 'playlists', path: function (id) { return '/playlist/' + enc(id); }, name: function (id) { var p = M.playlist(id); return p && p.name; } },
+    album: { icon: 'library', path: function (id) { return '/album/' + enc(id); }, name: function (id) { var a = M.album(id); return a && a.title; } },
+    artist: { icon: 'follow', path: function (id) { return '/artist/' + enc(id); }, name: function (id) { var a = M.artist(id); return a && a.name; } },
+    tag: { icon: 'tag', path: function (id) { return '/tag/' + enc(id); } },
+    outside: { icon: 'globe', path: function (id) { return '/outside/' + enc(id); } },
+    liked: { icon: 'heart-fill', path: function () { return '/liked'; } },
+    history: { icon: 'clock', path: function () { return '/history'; } },
+    songs: { icon: 'saved', path: function () { return '/library/songs'; } },
+    downloads: { icon: 'downloaded', path: function () { return '/downloads'; } },
+    stats: { icon: 'stats', path: function () { return '/stats'; } },
+    home: { icon: 'home', path: function () { return '/home'; } },
+    search: { icon: 'search', path: function (q) { return '/search?q=' + enc(q); } },
+    radio: { icon: 'radio' },
+    queue: { icon: 'queue' }
+  };
+  /* a stored or reported place, checked once: an unknown kind or a missing name is no place */
+  function validPlace(c) {
+    return c && PLACES[c.kind] && typeof c.name === 'string' && c.name ? { kind: c.kind, id: String(c.id || ''), name: c.name } : null;
+  }
+  App.place = function (kind, id, name) { return validPlace({ kind: kind, id: id, name: name }); };
+  App.placeKey = function (c) { return c ? c.kind + ':' + c.id : ''; };
+  App.placeIcon = function (c) { return PLACES[c.kind].icon; };
+  App.placeName = function (c) { var d = PLACES[c.kind]; return (d.name && d.name(c.id)) || c.name; };
+  App.placePath = function (c) { var d = PLACES[c.kind]; return d.path ? d.path(c.id) : null; };
+  /* the page showing as a place to play from (its route's place(ctx)), or null */
+  App.here = function () {
+    var cur = App.current, r = cur.route;
+    if (!r || !r.place) return null;
+    try { return validPlace(r.place(cur)); } catch (e) { console.error(e); return null; }
+  };
+  function radioPlace(seed, name) { return validPlace({ kind: 'radio', id: seed.kind + ':' + seed.id, name: name + ' radio' }); }
+  /* the place of the song playing now: the context it was started from, the radio that added it, or the listener's
+     own queue (their "next up", or a song played on its own) */
+  P.playingFrom = function () {
+    var e = ps.queue[ps.index]; if (!e) return null;
+    if (e.group === 'next') return PLACE_QUEUE;
+    if (e.group === 'radio' && ps.radio && !(ps.context && ps.context.kind === 'radio')) return radioPlace(ps.radio.seed, ps.radio.name);
+    return ps.context || PLACE_QUEUE;
+  };
+  var PLACE_QUEUE = { kind: 'queue', id: '', name: 'your queue' };
+
   /* ---------- radio: GET /api/radio tops the queue up while "keeps adding" is on ---------- */
   function radioActive() { return !!(ps.radio && ps.radio.keepsAdding); }
   function radioName(seed) {
-    var e = seed.kind === 'artist' ? M.artist(seed.id) : seed.kind === 'track' ? M.track(seed.id) : null;
+    var e = seed.kind === 'artist' ? M.artist(seed.id) : seed.kind === 'track' ? M.track(seed.id) : seed.kind === 'album' ? M.album(seed.id) : null;
     return e ? e.name || e.title : seed.id;
   }
   function fetchRadio(seed, steer, exclude) {
@@ -1656,16 +1764,16 @@
   /* one radio start at a time: a repeat click gets the same promise; a sticky toast says it is starting; an answer that
      takes longer than RADIO_WAIT_MS counts as failed (and is ignored if it comes later); a failure offers Retry */
   var RADIO_WAIT_MS = 25000, radioStart = null;
-  P.startRadio = function (seed) {
-    seed = radioSeed(seed);
+  P.startRadio = function (from) {
+    var seed = radioSeed(from);
     var key = seed.kind + ':' + seed.id;
     if (radioStart && radioStart.key === key) return radioStart.promise;
     if (radioStart) radioStart.cancel();
-    var name = radioName(seed), live = true, timer = null;
+    var name = radioName(from), live = true, timer = null;     // an album's radio is named after the album, not its first song
     var note = App.toast('Starting ' + name + ' radio', { icon: 'radio', sticky: true });
     function settle() { live = false; clearTimeout(timer); note.close(); radioStart = null; }
     function failed(message) {
-      App.toast('Couldn\'t start ' + name + ' radio: ' + message, { kind: 'error', action: 'Retry', onAction: function () { P.startRadio(seed); } });
+      App.toast('Couldn\'t start ' + name + ' radio: ' + message, { kind: 'error', action: 'Retry', onAction: function () { P.startRadio(from); } });
       return false;
     }
     var promise = new Promise(function (resolve) {
@@ -1675,7 +1783,7 @@
         settle();
         if (seed.kind === 'track') ids = [seed.id].concat(ids.filter(function (id) { return id !== seed.id; }));
         if (!ids.length) { App.toast('No radio for ' + name + ' yet: nothing similar was found', { icon: 'radio' }); resolve(false); return; }
-        P.playList(ids, 0, { radio: { name: name, seed: seed, keepsAdding: true, steer: .4 } });
+        P.playList(ids, 0, { radio: { name: name, seed: seed, keepsAdding: true, steer: .4 }, context: radioPlace(from, name) });
         App.toast('Radio: ' + name + ', keeps adding songs', { icon: 'radio' });
         resolve(true);
       }, function (err) { if (live) { settle(); resolve(failed(err.message)); } });
@@ -2359,7 +2467,7 @@
   function persist() {
     var keep = {};
     ps.queue.forEach(function (q) { var t = M.track(q.trackId); if (t) keep[t.id] = t; });
-    storage('player', { volume: ps.volume, muted: ps.muted, shuffle: ps.shuffle, repeat: ps.repeat, radio: ps.radio,
+    storage('player', { volume: ps.volume, muted: ps.muted, shuffle: ps.shuffle, repeat: ps.repeat, radio: ps.radio, context: ps.context,
       index: ps.index, pos: ps.pos, queue: ps.queue.map(function (q) { return { trackId: q.trackId, group: q.group, source: q.source, orig: q.orig }; }), tracks: keep });
   }
   function restore() {
@@ -2369,6 +2477,7 @@
     if (!ps.queue.length) return;
     ps.index = clamp(saved0.index || 0, 0, ps.queue.length - 1);
     ps.radio = saved0.radio ? Object.assign({}, saved0.radio, { error: null }) : null;    // an old error was that session's
+    ps.context = validPlace(saved0.context);
     ps.pos = saved0.pos || 0;
     var t = P.current();
     ps.status = App.isSaved(t.id) ? 'library' : 'streaming';
@@ -2471,6 +2580,7 @@
       r.classList.toggle('is-playing', on);
       r.classList.toggle('is-playing-now', on && ps.playing);
     });
+    App.syncPlaces();
     $$('[data-like]').forEach(function (b) {
       var id = b.getAttribute('data-like'), on = App.isLiked(id);
       if (b.getAttribute('aria-pressed') === String(on)) return;
@@ -2635,7 +2745,8 @@
   function playlistLinks() {
     if (!state.playlists.length) return html`<li><p class="rail__empty">Playlists you make show up here. <a href="#/playlists">Make one</a></p></li>`;
     return html`${state.playlists.map(function (p) {
-      return html`<li><a class="rail__pl" href="#/playlist/${p.id}" data-drop="playlist:${p.id}">${ui.playlistArt(p, 36)}<span class="ellipsis"><b>${p.name}</b><small>${p.items.length} songs</small></span></a></li>`;
+      var key = 'playlist:' + p.id;
+      return html`<li><a class="rail__pl${ui.placeCls(key)}" href="#/playlist/${p.id}" data-drop="playlist:${p.id}" data-place="${key}">${ui.playlistArt(p, 36)}<span class="ellipsis"><b>${p.name}</b><small>${p.items.length} songs</small></span>${ui.placeMark(key)}</a></li>`;
     })}`;
   }
   function renderRail() {
@@ -2885,9 +2996,13 @@
     if (idle) {
       patch(now, html`<span class="bezel-thumb bezel-thumb--empty" aria-hidden="true"><span></span></span><div class="pbar__idle">${priv || html`${icon('sparkle')}<span>Search or pick something from Home</span>`}</div>`);
     } else {
+      /* the cover opens Now Playing; the title, and the "Playing from" line where the design shows it, open the place
+         it plays from at the song; with no such page (a single song, radio, your queue), the title opens the album */
+      var from = P.playingFrom(), fromPath = from && App.placePath(from);
       patch(now, html`<a class="bezel-thumb" href="#/now" aria-label="Open Now Playing: ${t.title}" data-tip="Now Playing">${ui.cover(t, 52)}</a>
         <div class="pbar__text">
-          <div class="pbar__title"><a href="#/album/${t.albumId}">${t.title}</a></div>
+          ${ui.playingFrom('pbar__from')}
+          <div class="pbar__title">${fromPath ? html`<a href="#${fromPath}" data-act="go-playing" data-tip="Show the song in ${App.placeName(from)}">${t.title}</a>` : html`<a href="#/album/${t.albumId}">${t.title}</a>`}</div>
           <div class="pbar__artist"><a href="#/artist/${t.artistId}">${t.artist}</a></div>
           <div class="pbar__badges">${playingYoutube() ? '' : ui.sourceBadge(t, { button: true })}${playingFormat(t) ? ui.qualityChip(playingFormat(t), { solid: true, button: true, id: t.id }) : ''}${ps.belowMinimum ? ui.belowBadge() : ''}${priv}</div>
         </div>`);
@@ -2943,7 +3058,11 @@
     $$('[data-bind="xfade"]').forEach(function (el) { el.hidden = !ps.crossfade; });
     // mini-player text
     setText($('#mini-title'), idle ? 'Nothing playing' : t.title);
-    setText($('#mini-sub'), idle ? 'Search or pick something from Home' : (line && st !== 'streaming' && st !== 'library' ? line : t.artist));
+    /* the artist, and where the song plays from (the whole text opens Now Playing, whose "Playing from" opens it);
+       "your queue" goes without saying */
+    var miniFrom = !idle && P.playingFrom(); if (miniFrom && miniFrom.kind === 'queue') miniFrom = null;
+    patch($('#mini-sub'), idle ? 'Search or pick something from Home' : line && st !== 'streaming' && st !== 'library' ? esc(line)
+      : html`<span class="mini__artist">${t.artist}</span>${miniFrom ? html`<span class="mini__from">${App.placeName(miniFrom)}</span>` : ''}`);
     var mt = $('#mini-thumb'); patch(mt, idle ? '<span></span>' : ui.cover(t, 40)); mt.classList.toggle('bezel-thumb--empty', idle);
     App.syncRows();
     updateSeeks();
@@ -2970,10 +3089,10 @@
 
   /* default More sheet (phone 4th tab) */
   function defaultMoreSheet() {
-    var links = [['#/playlists', 'playlists', 'Playlists'], ['#/liked', 'heart', 'Liked songs'], ['#/history', 'clock', 'History'],
-      ['#/following', 'follow', 'Following'], ['#/downloads', 'download', 'Downloads'], ['#/stats', 'stats', 'Stats'], ['#/settings', 'settings', 'Settings'], ['#/classic', 'classic', 'Classic mode']];
+    var links = [['#/playlists', 'playlists', 'Playlists'], ['#/liked', 'heart', 'Liked songs', 'liked:'], ['#/history', 'clock', 'History', 'history:'],
+      ['#/following', 'follow', 'Following'], ['#/downloads', 'download', 'Downloads', 'downloads:'], ['#/stats', 'stats', 'Stats'], ['#/settings', 'settings', 'Settings'], ['#/classic', 'classic', 'Classic mode']];
     var d = App.openSheet({ title: 'more', body: html`<nav class="menu-list" aria-label="More">${links.map(function (l) {
-      return html`<a class="menu__item" href="${l[0]}" data-close>${icon(l[1])}<span>${l[2]}</span></a>`;
+      return html`<a class="menu__item${ui.placeCls(l[3])}" href="${l[0]}" data-close ${l[3] ? raw('data-place="' + l[3] + '"') : ''}>${icon(l[1])}<span>${l[2]}</span>${ui.placeMark(l[3])}</a>`;
     })}<button class="menu__item" data-act="open-activity" data-close>${icon('activity')}<span>Activity</span></button>
       <button class="menu__item" data-act="shortcuts" data-close>${icon('keyboard')}<span>Keyboard shortcuts</span></button></nav>` });
     return d;
@@ -3101,12 +3220,11 @@
   App.action = function (name, fn) { actions[name] = fn; };
   function ids(el) { return (el.getAttribute('data-ids') || el.getAttribute('data-id') || '').split(',').filter(Boolean); }
   function listIds(el) { var l = el.closest('[data-ids]'); return l ? l.getAttribute('data-ids').split(',') : null; }
-  /* start radio, then show where it landed: the Queue panel (phone: Now Playing, Queue tab) */
+  /* the Queue panel (phone: Now Playing, Queue tab) */
+  function showQueue() { if (window.innerWidth < 640) App.go('/now?tab=queue'); else App.openPanel('queue'); }
+  /* start radio, then show where it landed */
   function startRadio(seed) {
-    P.startRadio(seed).then(function (ok) {
-      if (!ok) return;
-      if (window.innerWidth < 640) App.go('/now?tab=queue'); else App.openPanel('queue');
-    });
+    P.startRadio(seed).then(function (ok) { if (ok) showQueue(); });
   }
   /* an album's songs, fetched when only the album head is known yet (shelf tiles) */
   /* an album's songs, known to the cache: a list's album entity carries trackIds without the tracks, and the player can't
@@ -3181,17 +3299,19 @@
     'play-track': function (el) { var id = el.getAttribute('data-id'); P.playTrack(id, listIds(el)); },
     'play-album': function (el) {
       var id = el.getAttribute('data-id');
-      withAlbum(id, function (list) { P.playList(list, 0); App.toast('Playing ' + M.album(id).title, { icon: 'play' }); });
+      withAlbum(id, function (list) { var a = M.album(id); P.playList(list, 0, { context: App.place('album', id, a.title) }); App.toast('Playing ' + a.title, { icon: 'play' }); });
     },
     'shuffle-album': function (el) {
-      withAlbum(el.getAttribute('data-id'), function (list) { P.setShuffle(true); P.playList(list, Math.floor(Math.random() * list.length)); });
+      var id = el.getAttribute('data-id');
+      withAlbum(id, function (list) { P.setShuffle(true); P.playList(list, Math.floor(Math.random() * list.length), { context: App.place('album', id, M.album(id).title) }); });
     },
     'play-playlist': function (el) {
       var p = state.playlists.filter(function (x) { return x.id === el.getAttribute('data-id'); })[0];
       if (!p.items.length) { App.toast('This playlist is empty. Drag songs here or use Add to playlist.', { icon: 'info' }); return; }
-      P.playList(p.items.map(function (i) { return i.trackId; }), 0);
+      P.playList(p.items.map(function (i) { return i.trackId; }), 0, { context: App.place('playlist', p.id, p.name) });
     },
     'play-ids': function (el) { P.playList(ids(el), 0); },
+    'go-playing': function () { App.goPlaying(); },
     'queue-next': function (el) { P.playNext(ids(el)); },
     'queue-add': function (el) { P.addToQueue(ids(el)); },
     'like': function (el) { App.toggleLike(el.getAttribute('data-id')); },

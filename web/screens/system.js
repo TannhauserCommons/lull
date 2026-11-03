@@ -517,7 +517,7 @@
     });
   });
 
-  App.route('/stats', { render: renderStats, mount: mountStats, nav: 'stats', title: 'Stats' });
+  App.route('/stats', { render: renderStats, mount: mountStats, nav: 'stats', title: 'Stats', place: function () { return App.place('stats', '', 'your top songs'); } });
 
   /* =====================================================================
      2. Settings (/settings/:section?): GET + PATCH /api/settings; appearance is per device

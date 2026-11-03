@@ -126,7 +126,7 @@
       return learnTracks(queue).then(function () {
         var known = queue.filter(function (id) { return M.track(id); }), cur = queue[index];
         if (known.indexOf(cur) < 0) { App.toast('Couldn\'t read the song ' + d.name + ' was playing', { kind: 'error' }); return; }
-        P.playList(known, known.indexOf(cur), { at: at, autoplay: !!st.playing });
+        P.playList(known, known.indexOf(cur), { at: at, autoplay: !!st.playing, context: null });   // the state doesn't say where it played from
         App.toast('Playing here, from ' + d.name, { kind: 'ok', icon: 'connect' });
       });
     }).catch(function () {});

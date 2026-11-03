@@ -208,9 +208,10 @@
     if (!starters.length) return emptyLine('radio', 'radio starters', 'Play a few songs and starters show up here.');
     return html`${head}<ul class="disc-starters">${starters.map(function (r) {
       /* the whole row starts the radio on click; the round button is the keyboard control */
-      return html`<li class="disc-starter" data-act="disc-radio" data-kind="${r.seed.kind}" data-id="${r.seed.id}">
+      var key = 'radio:' + r.seed.kind + ':' + r.seed.id;
+      return html`<li class="disc-starter${ui.placeCls(key)}" data-act="disc-radio" data-kind="${r.seed.kind}" data-id="${r.seed.id}" data-place="${key}">
         ${seedArt(r.seed)}
-        <div class="disc-starter__main"><span class="disc-starter__title">${r.title}</span><span class="disc-starter__sub">${r.sub}</span></div>
+        <div class="disc-starter__main"><span class="disc-starter__title" data-place-at>${ui.placeMark(key)}${r.title}</span><span class="disc-starter__sub">${r.sub}</span></div>
         <button class="btn-icon disc-starter__play" data-act="disc-radio" data-kind="${r.seed.kind}" data-id="${r.seed.id}" aria-label="Start ${r.title}" data-tip="Start radio">${icon('play')}</button>
       </li>`;
     })}</ul>`;
@@ -240,7 +241,7 @@
   function pickItem(p) {
     var t = M.track(p.trackId), reasons = p.reasons || [];
     var noSrc = p.noSource && !H.found[t.id], finding = H.finding === t.id;
-    return html`<li class="disc-pick${noSrc ? ' is-nosource' : ''}">
+    return html`<li class="disc-pick${noSrc ? ' is-nosource' : ''}" data-track-id="${t.id}">
       <div class="disc-pick__art">${ui.cover(t, 64)}${noSrc ? '' : html`<button class="disc-pick__play" data-act="play-track" data-id="${t.id}" tabindex="-1" aria-label="Play ${t.title}" data-tip="Play">${icon('play')}</button>`}</div>
       <div class="disc-pick__main">
         ${noSrc ? html`<span class="disc-pick__title">${t.title}</span>` : html`<button class="disc-pick__title" data-act="play-track" data-id="${t.id}">${t.title}</button>`}
@@ -258,7 +259,7 @@
 
   /* j: { kind: album | artist, id } */
   function jumpTile(j) {
-    var art, href, title, by, byHref, play, round = false;
+    var art, href, title, by, byHref, play, round = false, key = j.kind + ':' + j.id;
     if (j.kind === 'album') {
       var a = M.album(j.id); if (!a) return '';
       art = ui.cover(a, '100%'); href = '#/album/' + a.id; title = a.title; by = a.artist; byHref = '#/artist/' + a.artistId;
@@ -268,9 +269,9 @@
       art = ui.cover(ar.id, '100%', { round: true }); href = '#/artist/' + ar.id; title = ar.name; by = 'artist'; round = true;
       play = html`<button class="tile__play" data-act="disc-radio" data-kind="artist" data-id="${ar.id}" aria-label="Start ${ar.name} radio" data-tip="Start radio">${icon('radio')}</button>`;
     }
-    return html`<div class="tile disc-jump${round ? ' disc-jump--round' : ''}">
+    return html`<div class="tile disc-jump${round ? ' disc-jump--round' : ''}${ui.placeCls(key)}" data-place="${key}">
       <div class="tile__art"><a href="${href}" tabindex="-1" aria-hidden="true">${art}</a>${play}</div>
-      <div class="tile__title"><a href="${href}">${title}</a></div>
+      <div class="tile__title"><a href="${href}" data-place-at>${ui.placeMark(key)}${title}</a></div>
       <div class="tile__by">${byHref ? html`<a href="${byHref}">${by}</a>` : by}</div>
     </div>`;
   }
@@ -824,7 +825,7 @@
           ${ui.cover(a, 112)}
           <div class="disc-top__info">
             <p class="disc-top__kind">${a.type.toLowerCase()}${S.albums[a.id] ? ', Soulseek folder' : ''}</p>
-            <h3 class="disc-top__title">${S.albums[a.id] && !a.trackIds.length ? a.title : html`<a href="#/album/${a.id}">${a.title}</a>`}</h3>
+            <h3 class="disc-top__title${ui.placeCls('album:' + a.id)}" data-place="album:${a.id}">${S.albums[a.id] && !a.trackIds.length ? a.title : html`<a href="#/album/${a.id}">${a.title}</a>`}${ui.placeMark('album:' + a.id)}</h3>
             <p class="disc-top__by"><a href="#/artist/${a.artistId}">${a.artist}</a>${a.year ? ', ' + a.year : ''}</p>
             <div class="cluster disc-top__badges">${ids.length && savedN === ids.length ? ui.savedBadge() : savedN ? html`<span class="badge badge-saved">${icon('saved')}${savedN} of ${ids.length} saved</span>` : ui.soulseekBadge()}
               ${fmtA ? ui.qualityChip(fmtA) : ''}${ids.length ? html`<span class="px fg-2">${plural(ids.length, 'track')}${a.sizeMB ? ', ' + size(a.sizeMB) : ''}</span>` : ''}</div>
@@ -843,7 +844,7 @@
           ${ui.mosaic([], 112, '', pl.cover)}
           <div class="disc-top__info">
             <p class="disc-top__kind">playlist</p>
-            <h3 class="disc-top__title"><a href="${href}">${pl.title}</a></h3>
+            <h3 class="disc-top__title${ui.placeCls('outside:' + pl.id)}" data-place="outside:${pl.id}"><a href="${href}">${pl.title}</a>${ui.placeMark('outside:' + pl.id)}</h3>
             <p class="disc-top__by">${pl.owner ? 'by ' + pl.owner + ', ' : ''}${playlistFacts(pl)}</p>
           </div>
         </div>
@@ -857,7 +858,7 @@
         ${ui.cover(ar.id, 112, { round: true })}
         <div class="disc-top__info">
           <p class="disc-top__kind">artist</p>
-          <h3 class="disc-top__title"><a href="#/artist/${ar.id}">${ar.name}</a></h3>
+          <h3 class="disc-top__title${ui.placeCls('artist:' + ar.id)}" data-place="artist:${ar.id}"><a href="#/artist/${ar.id}">${ar.name}</a>${ui.placeMark('artist:' + ar.id)}</h3>
           ${ar.listeners != null ? html`<p class="disc-top__by">${thousands(ar.listeners)} listeners</p>` : ''}
           <div class="cluster disc-top__badges">${ar.tags.slice(0, 2).map(function (g) { return ui.tagChip(g); })}</div>
         </div>
@@ -876,11 +877,11 @@
       <button class="btn btn--quiet btn--sm" data-act="disc-save-sheet" data-id="${id}">${s.status === 'failed' ? 'Fix it' : 'Details'}</button></div>`;
   }
   function folderTile(a) {
-    var n = trackIdsOf(a).length;
-    return html`<div class="tile disc-folder-tile">
+    var n = trackIdsOf(a).length, key = 'album:' + a.id;
+    return html`<div class="tile disc-folder-tile${ui.placeCls(key)}" data-place="${key}">
       <div class="tile__art"><button class="disc-tile-open" data-act="disc-folder" data-id="${a.id}" tabindex="-1" aria-hidden="true">${ui.cover(a, '100%')}</button>
         <button class="tile__play" data-act="play-album" data-id="${a.id}" aria-label="Play ${a.title}" data-tip="Play">${icon('play')}</button></div>
-      <div class="tile__title"><button data-act="disc-folder" data-id="${a.id}" aria-label="Open ${a.title} folder">${a.title}</button></div>
+      <div class="tile__title"><button data-act="disc-folder" data-id="${a.id}" aria-label="Open ${a.title} folder" data-place-at>${ui.placeMark(key)}${a.title}</button></div>
       <div class="tile__by">${a.artist}</div>
       <div class="tile__meta">${icon(a.saved === 'all' ? 'saved' : 'soulseek', a.saved === 'all' ? 'Saved' : 'On Soulseek', 'ic-16')}<span>${n ? plural(n, 'track') : a.type}${S.albums[a.id].folders.length > 1 ? ', ' + plural(S.albums[a.id].folders.length, 'folder') : ''}</span></div>
     </div>`;
@@ -890,18 +891,19 @@
     return App.outside.site(p.site) + (p.tracks ? ', ' + plural(p.tracks, 'song') : '') + (p.fans ? ', ' + thousands(p.fans) + ' fans' : '');
   }
   function playlistTile(p) {
-    var href = App.outside.href(p.id);
-    return html`<div class="tile disc-jump disc-playlist">
+    var href = App.outside.href(p.id), key = 'outside:' + p.id;
+    return html`<div class="tile disc-jump disc-playlist${ui.placeCls(key)}" data-place="${key}">
       <div class="tile__art"><a href="${href}" tabindex="-1" aria-hidden="true">${ui.mosaic([], '100%', '', p.cover)}</a></div>
-      <div class="tile__title"><a href="${href}">${p.title}</a></div>
+      <div class="tile__title"><a href="${href}" data-place-at>${ui.placeMark(key)}${p.title}</a></div>
       <div class="tile__by">${p.owner ? p.owner + ', ' : ''}${playlistFacts(p)}</div>
     </div>`;
   }
   function artistTile(a) {
-    return html`<div class="tile disc-jump disc-jump--round">
+    var key = 'artist:' + a.id;
+    return html`<div class="tile disc-jump disc-jump--round${ui.placeCls(key)}" data-place="${key}">
       <div class="tile__art"><a href="#/artist/${a.id}" tabindex="-1" aria-hidden="true">${ui.cover(a.id, '100%', { round: true })}</a>
         <button class="tile__play" data-act="disc-radio" data-kind="artist" data-id="${a.id}" aria-label="Start ${a.name} radio" data-tip="Start radio">${icon('radio')}</button></div>
-      <div class="tile__title"><a href="#/artist/${a.id}">${a.name}</a></div>
+      <div class="tile__title"><a href="#/artist/${a.id}" data-place-at>${ui.placeMark(key)}${a.name}</a></div>
       <div class="tile__by">${a.listeners != null ? thousands(a.listeners) + ' listeners' : 'artist'}</div>
     </div>`;
   }
@@ -1503,10 +1505,11 @@
   /* =====================================================================
      5. Routes, public API
      ===================================================================== */
-  App.route('/home', { render: renderHome, mount: mountHome, nav: 'home', title: 'Home',
+  App.route('/home', { render: renderHome, mount: mountHome, nav: 'home', title: 'Home', place: function () { return App.place('home', '', 'Home'); },
     meta: function () { var f = M.peek(FEED); return f && f.updated ? 'updated ' + ago(f.updated) : ''; } });
   App.route('/search', { render: renderSearch, mount: mountSearch, nav: 'search', keepFocus: true, meta: function () { return 'catalogs + soulseek'; },
-    title: function () { return S.q ? 'Search: ' + S.q : 'Search'; } });
+    title: function () { return S.q ? 'Search: ' + S.q : 'Search'; },
+    place: function () { return S.q ? App.place('search', S.q, 'search for \u201c' + S.q + '\u201d') : null; } });
 
   App.discover = { openFolder: openFolder, openPicker: openPicker, openDetails: openDetails, openSaveSheet: openSaveSheet,
     openAggregate: openAggregate, openReleasePicker: openReleasePicker, openDuplicate: openDuplicate, startRadio: startRadio, thousands: thousands };

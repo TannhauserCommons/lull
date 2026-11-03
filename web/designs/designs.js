@@ -301,9 +301,11 @@
       repeatIcon: rep === 'one' ? 'repeat-one' : 'repeat', status: p.status || 'idle',
       liked: isOn(liked), likeClass: liked ? 'is-liked' : '', likeIcon: liked ? 'heart-fill' : 'heart',
       error: p.status === 'failed' && p.error ? p.error : 'Couldn\'t play this song',
-      radio: p.radio ? p.radio.name : ''
+      radio: p.radio ? p.radio.name : '', from: playingFrom()
     };
   }
+  /* the name of the place the song plays from ("Liked songs", "Night drive"), as the player bar says it */
+  function playingFrom() { var f = window.App && App.player && App.player.playingFrom(); return f ? App.placeName(f) : ''; }
   var FIELDS = {
     brand: function (c) { return { where: c.where || '' }; },
     /* noun: what is missing, from a "No liked songs yet" title ("liked songs"); empty for other titles */
@@ -368,11 +370,10 @@
       return c.track && window.App ? App.ui.cover(c.track, size(el, 56)) : '<span class="now-dev__slot" aria-hidden="true"></span>';
     },
     seek: function () { return window.App ? App.ui.seekBar({ bind: 'player', label: 'Seek' }) : ''; },
-    /* where the music comes from: the radio, the queue, or nothing */
+    /* where the song plays from: the link Now Playing shows (App.ui.playingFrom), refreshed in place by now.js */
     'playing-from': function (c) {
-      var p = c.player || {};
-      if (p.radio) return ic('radio', 'ic-16') + '<span>playing from <b>' + esc(p.radio.name) + '</b> radio</span>';
-      return c.track ? ic('queue', 'ic-16') + '<span>playing from your queue</span>' : ic('sparkle', 'ic-16') + '<span>nothing queued</span>';
+      var from = c.track && window.App ? String(App.ui.playingFrom('', 'playing from')) : '';
+      return from || ic('sparkle', 'ic-16') + '<span>nothing queued</span>';
     },
     /* the playing song and up next, as a dense track list (homeLead) */
     'track-list': function (c, el) {

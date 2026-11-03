@@ -435,6 +435,22 @@ button.trow__title:hover { text-decoration: underline; text-underline-offset: 3p
 .is-playing-now .eq i { animation: eq-bar .9s ease-in-out infinite alternate; }
 .eq i:nth-child(2) { animation-delay: -.3s; transform: scaleY(.9); }
 .eq i:nth-child(3) { animation-delay: -.6s; transform: scaleY(.7); }
+/* the place playing (a tile, a rail playlist, a search result: [data-place].is-playing-place): the same bars before its
+   title, still while paused */
+.place-mark { display: inline-flex; align-items: center; flex: none; margin-right: 6px; vertical-align: -1px; }
+.place-mark .eq { height: 12px; }
+.rail__pl.is-playing-place { grid-template-columns: 36px minmax(0, 1fr) auto; }
+.rail__pl .place-mark { margin: 0; }
+.menu__item .place-mark { margin: 0 0 0 auto; padding-left: 6px; }
+/* "Playing from" opened the place: the song's row is lit for a moment and fades (lit, then gone, under reduced motion) */
+:is(.trow, .disc-pick).is-revealed { background: var(--bg-2); box-shadow: inset 0 0 0 2px var(--link); animation: row-revealed 1.8s var(--ease-out) both; }
+@keyframes row-revealed { 0%, 60% { background: var(--bg-2); box-shadow: inset 0 0 0 2px var(--link); } 100% { background: transparent; box-shadow: inset 0 0 0 2px transparent; } }
+
+/* "Playing from <place>" (ui.playingFrom): a quiet link to where the song plays from */
+.from { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; text-decoration: none; cursor: pointer; }
+.from__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.from .ic { flex: none; }
+.from:hover b, .from:focus-visible b { text-decoration: underline; text-underline-offset: 3px; }
 
 /* source picker row: format, bitrate, size, speed, slot, queue, score (pixel-face columns) */
 .src-table { container: tlist / inline-size; display: grid; gap: 2px; }
@@ -1123,6 +1139,10 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 .pbar__title > a, .pbar__title > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pbar__title a:hover, .pbar__artist a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .pbar__artist { font: var(--t-meta); color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* "Playing from <place>" over the title; a design without room for a fourth line hides it (the title opens it too) */
+.pbar__from { justify-self: start; margin-bottom: 1px; font: 700 .75rem/1.2 var(--f-ui); color: var(--fg-2); }
+.pbar__from b { font-weight: 800; color: var(--fg-panel); }
+.pbar__from .ic { width: 14px; height: 14px; }
 .pbar__badges { display: flex; align-items: center; gap: 6px; margin-top: 3px; min-height: 24px; }
 .pbar__centre { display: grid; justify-items: center; gap: 2px; min-width: 0; }
 .pbar__controls { display: flex; align-items: center; gap: var(--sp-3); }
@@ -1167,6 +1187,7 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 .mini__text { flex: 1; min-width: 0; display: grid; text-align: left; }
 .mini__title { font: 800 .9375rem/1.25 var(--f-ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mini__sub { font: 600 .8125rem/1.3 var(--f-ui); color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini__from::before { content: " \00b7  "; white-space: pre; }
 .tabbar {
   grid-area: tabs; grid-template-columns: repeat(4, 1fr); height: calc(var(--tab-h) + env(safe-area-inset-bottom));
   padding: 4px 8px env(safe-area-inset-bottom); border-top: var(--stroke) solid var(--edge);

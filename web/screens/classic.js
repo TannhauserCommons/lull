@@ -310,7 +310,7 @@
     if (b.local) App.toast(b.local === 1 ? 'The local file you added in Webamp isn\'t in your queue' : 'The ' + b.local + ' local files you added in Webamp aren\'t in your queue', { icon: 'info' });
     if (!b.ids.length) return;                                  // nothing of lull's left in Webamp: the queue stays
     var ps = P.state, same = b.ids.length === ps.queue.length && b.ids.every(function (id, i) { return ps.queue[i].trackId === id; });
-    if (!same) P.playList(b.ids, b.index, { at: b.pos, autoplay: b.playing });
+    if (!same) P.playList(b.ids, b.index, { at: b.pos, autoplay: b.playing, context: ps.context });   // the same listening, edited in Webamp
     else if (b.index !== ps.index) P.jumpTo(b.index, { at: b.pos, autoplay: b.playing });   // keeps radio and queue groups
     else {
       if (Math.abs(b.pos - ps.pos) > 1) P.seek(b.pos);

@@ -464,6 +464,15 @@
   :root[data-design="lull"] .pbar__state .btn--quiet { color: var(--link); }
 }
 :root[data-design="lull"] .pbar__now { gap: 12px; padding-left: 6px; }
+/* the bar holds three lines: "Playing from" rides on the artist's (the artist, a dot, the place's icon and name; its words stay
+   for screen readers) */
+:root[data-design="lull"] .pbar__text { flex: 1; grid-template-columns: fit-content(60%) minmax(0, 1fr); grid-template-areas: "title title" "artist from" "badges badges"; }
+:root[data-design="lull"] .pbar__title { grid-area: title; }
+:root[data-design="lull"] .pbar__artist { grid-area: artist; }
+:root[data-design="lull"] .pbar__badges { grid-area: badges; }
+:root[data-design="lull"] .pbar__from { grid-area: from; margin: 0; font: var(--t-meta); }
+:root[data-design="lull"] .pbar__from::before { content: "\00b7"; margin: 0 6px; color: var(--fg-2); }
+:root[data-design="lull"] .pbar__from .from__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 :root[data-design="lull"] .bezel-thumb { padding: 0; background: none; border: 0; border-radius: 10px; }
 :root[data-design="lull"] .bezel-thumb .cover { --cover-size: 54px; border-radius: 9px; border-color: var(--l-edge); }
 :root[data-design="lull"] .bezel-thumb:hover { background: none; }

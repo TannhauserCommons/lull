@@ -174,6 +174,8 @@ Hooks a design may target (stable in every screen, also after repaints):
 | `.banner.is-lead`, `.banner-more`, `.banner-slot.is-open` | phone banner collapse |
 | `.sys-design[data-value="<name>"]` | Settings design picker cards |
 | `#pbar` / `#mini` `[data-status]` (player status or `idle`), `[data-playing="true|false"]`, `--rx` (received %, integer 0-100: `counter-reset: rx var(--rx)` then `counter(rx) "%"`) | player bar and phone mini player state words |
+| `.pbar__from` (in `.pbar__text`, before the title; `.from__label` is its "Playing from" words), `.mini__from` | where the song plays from: place it per design (petal sets it in its label row, lull on the artist's line), or hide it: the title opens the same place |
+| `[data-place].is-playing-place` (`.is-playing-now` while sound plays), `.place-mark` | a tile, rail playlist or search result of the place playing: the playing bars, before its title |
 
 ### 3.5 Slots (`design.js`)
 
@@ -269,7 +271,8 @@ a label makes it `role="img"`) and `ICON_NAMES`. Sizes `.ic` 20 px, `.ic-16`, `.
 | Badges | `.badge.badge-saved`, `.badge.badge-slsk`, `.q-chip--ll` / `--ly` (+ `--solid` in player and device), `.badge-new`, `.badge-count`, `.dup-note`, `.dup-better`, `.resolve`, `.spin-ring`, `.scrobble--done|pending|short`, `.sg--ok|warn|down` |
 | Cards | `.card` (`--flush`), `.label-rule` (`--sm`), `.inset` (flat group inside a card) |
 | Tiles, covers | `.shelf` (scroll-snap row), `.tile` (`__art __play __title __by __meta`); `.cover.c1..c8` (`--thumb --xs --round`, size `--cover-size`), `.mosaic` (2x2) |
-| Track rows | `ol.tlist` (`--dense --dated`, a container query) > `li.trow` (`__num __grip __art __main __title __artist __album __added __badges __sources __like __dur __more __fmt`); `.is-playing .is-playing-now .is-selected .is-unavailable .is-failed .is-dragging`; `.eq` (playing bars) |
+| Track rows | `ol.tlist` (`--dense --dated`, a container query) > `li.trow` (`__num __grip __art __main __title __artist __album __added __badges __sources __like __dur __more __fmt`); `.is-playing .is-playing-now .is-selected .is-unavailable .is-failed .is-dragging .is-revealed` (lit for a moment when "Playing from" opens its page); `.eq` (playing bars) |
+| Playing from | `.from` (`ui.playingFrom(cls, label)`: icon, `.from__text` > `.from__label` + `b` name; a link to the place, a button for radio and the queue), `.place-mark` (`.eq` + hidden "(playing)") |
 | Source picker | `.src-table` > `.src-row` (`--head`, `.is-failed`, `.is-preferred`), `.score` (`--s` 0-1) |
 | Seek, waveform, volume | `.seek` (`__track __xfer __bufs __buf __played __rail __knob __tip`; `--pos`, `--xfer`; `.is-transferring .is-dragging .is-shake`), `.seek--line`, `.seek-row`; `.wave` (`__bar` with `--h`, `.is-played .is-buf .is-xfer`, `__rail __head`), `.wave-times`; `.vol`, `.range` (`--fill`) |
 | Inputs | `.input` (`--readonly`), `.field` (`__label __help __error`), `.search-field` (`__end __clear`, `.kbd`), `button.switch[role=switch][aria-checked]` in `label.switch-row` |
@@ -332,12 +335,18 @@ Behaviour worth knowing per screen (not obvious from a screenshot):
   steps: completing transfer, MusicBrainz match, cover art, tag + write, Jellyfin rescan. Missing cover art does not
   block; a match failure offers the release picker or "save with existing tags"; a Jellyfin failure leaves the file
   saved and pending. Albums and the queue show aggregate progress.
+- **Playing from.** Every play remembers the place it started from (a playlist, album, artist, Liked songs, History,
+  search results, a tag, a radio and its seed, a bookmarked playlist...). The player bar, Now Playing, the Now column,
+  the phone mini player and the queue say "Playing from <place>"; clicking it opens the place scrolled to the song,
+  which lights up for a moment (radio and the listener's own queue open the queue). In the player bar the cover opens
+  Now Playing, the title opens the place at the song (the album when there is no such page), the artist the artist.
+  Every tile, rail playlist and search result of that place shows the playing bars, still while paused.
 - **Back** returns a page to where it was: its scroll position and focused row, also after a reload.
 - **Queue** groups: now playing, next up (the listener's own picks: "Play next" at its front, "Add to queue" at its
-  end), then (context), radio tail ("keeps adding" toggle + familiar/adventurous steer). Next up plays before the
-  context continues, survives starting another album, playlist or radio, and is never shuffled. Shuffle reorders the
-  songs after next up in the queue itself, so the queue shows what will play and each song plays once; turning it off
-  puts them back in their order. Each item shows source and resolve state (ready / resolving / none).
+  end), then (context: "next from <place>"), radio tail ("keeps adding" toggle + familiar/adventurous steer). Next up
+  plays before the context continues, survives starting another album, playlist or radio, and is never shuffled.
+  Shuffle reorders the songs after next up in the queue itself, so the queue shows what will play and each song plays
+  once; turning it off puts them back in their order. Each item shows source and resolve state (ready / resolving / none).
 - **Lyrics** auto-scroll pauses when the user scrolls ("back to current line" pill); clicking a line seeks only inside
   what is buffered; attribution "Lyrics provided by LRCLIB".
 - **Settings**: values that come from server config (credentials, URLs, keys) are read-only with "set in server
@@ -354,11 +363,14 @@ Behaviour worth knowing per screen (not obvious from a screenshot):
 
 ```js
 App.route('/album/:id', { render: function (ctx) { return html`...`; }, mount: fn, title: 'Album' | fn(ctx),
-  nav: 'library', view: 'page' | 'now', meta: fn(ctx), keepFocus: bool });
+  nav: 'library', view: 'page' | 'now', meta: fn(ctx), keepFocus: bool, place: fn(ctx) });
 ```
+- `place(ctx)`: the page as a place to play from, `App.place(kind, id, name)` (or null). A play started on the page
+  (a row, its Play button) records it unless the caller names another (`playList(..., { context })`).
 - Each history entry keeps where its page was (scroll, the element at the top third of the view, the focused row):
   Back, Forward and a reload return there, waiting for content that arrives with a read. A screen that rewrites its
   URL in place keeps the entry: `history.replaceState(history.state, ...)` (or `App.go(path, { replace: true })`).
+- `App.goPlaying()`: opens where the playing song plays from, scrolled to the song.
 - Hash routes, `/x/:param`, optional `/:param?`, query after `?`. `ctx = { params, query, state, el, route, onCleanup(fn) }`;
   `ctx.el` is `#view` (the scroll container). `render` returns markup; `mount` runs after insertion; `onCleanup` runs
   before the next route.
@@ -383,9 +395,12 @@ App.route('/album/:id', { render: function (ctx) { return html`...`; }, mount: f
   `filterPill`, `reasonChip(reason, { more, via, itemId })`, `labelRule(text, { action, level, sm, id })`,
   `iconButton(icon, label, attrs)`, `likeButton`, `seekBar({ bind: 'player'|'volume' })`, `volume`, `wave(trackId, bars)`,
   `waveTimes`, `saveButton(trackId)`, `pipeline(step, status, error)`, `emptyState({ art, title, text, action, secondary })`,
-  `skeleton(kind, n)`, `sparkle`, `wordmark(where)`, `brand(where)`, `cardHeads(root)`.
+  `skeleton(kind, n)`, `sparkle`, `wordmark(where)`, `brand(where)`, `cardHeads(root)`, `playingFrom(cls, label)`,
+  `placeCls(key)` + `placeMark(key)` (a place's tile: its root carries `data-place="kind:id"` and the class, the mark
+  goes first in its `[data-place-at]` title link, or last in it without one).
 - Live parts stay in sync by themselves: like buttons, save buttons, source badges, seek bars, waveforms, playing rows,
-  and any `data-bind="pos|dur|buffered-to|received"` text. After injecting rows outside a route render, call `App.syncRows()`.
+  places (`data-place`), and any `data-bind="pos|dur|buffered-to|received"` text. After injecting rows outside a route
+  render, call `App.syncRows()`.
 
 ### 7.3 Actions
 
@@ -395,7 +410,7 @@ shuffle-album play-playlist play-ids queue-next queue-add like save save-album g
 start-radio-current add-to-playlist show-sources pick-source source-details reason more-like less-like hide-artist
 track-menu player-more play next prev shuffle repeat mute retry-search try-soulseek toggle-panel close-panel
 open-activity open-now theme status more-sheet shortcuts palette classic soulseek-reconnect jellyfin-rescan
-lastfm-retry open-cache back noop reload`. Screens add their own, prefixed (`disc-*`, `lib-*`, `sys-*`, `cls-*`,
+lastfm-retry open-cache go-playing back noop reload`. Screens add their own, prefixed (`disc-*`, `lib-*`, `sys-*`, `cls-*`,
 `now-*`).
 
 ### 7.4 Overlays
@@ -446,11 +461,13 @@ State (`App.player.state`): `queue [{ uid, trackId, group: 'next'|'context'|'rad
 jellyfin-error`; paused = `playing: false` while streaming or library), `received` (0-1 of the file transferred),
 `buffered [[from, to], ...]` (fractions), `durationKnown`, `peer { name, rank, of, speed, format, sizeMB }`,
 `peersFound`, `queuePos`, `fallback { from, to, n, of }`, `failedPeers [{ peer, at }]`, `crossfade`, `shuffle`,
-`repeat 'off'|'all'|'one'`, `volume` 0-1, `muted`, `radio { name, seed, keepsAdding, steer } | null`, `error`.
+`repeat 'off'|'all'|'one'`, `volume` 0-1, `muted`, `radio { name, seed, keepsAdding, steer } | null`,
+`context { kind, id, name } | null` (the place the queue's context plays from), `error`.
 
 Methods: `current() currentId() duration() upNext(n) play() pause() toggle() next() prev() seek(sec) seekBy(sec)
 seekFraction(f)` (returns false and shakes outside buffered) `setShuffle(on?) cycleRepeat() setVolume(v) toggleMute()
-playList(ids, start, { radio }) playTrack(id, contextIds?) playNext(ids) addToQueue(ids)` (before the radio tail)
+playList(ids, start, { radio, context }) playTrack(id, contextIds?, opts?) playNext(ids) addToQueue(ids)` (before the radio tail)
+`playingFrom()` (the playing song's place: the context, the radio that added it, or `queue`)
 `removeAt(i)` (undo toast) `move(from, to) clear()` (undo toast) `startRadio({ kind, id }) setRadio(patch|null)
 useSource(trackId, sourceIndex) retry() statusText()`; prototype-only: `stall()`, `setState(patch)`.
 

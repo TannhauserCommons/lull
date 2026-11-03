@@ -183,19 +183,21 @@
 
   /* tiles */
   function albumTile(a) {
-    return html`<div class="tile lib-tile" data-album-id="${a.id}" draggable="true">
+    var key = 'album:' + a.id;
+    return html`<div class="tile lib-tile${ui.placeCls(key)}" data-album-id="${a.id}" data-place="${key}" draggable="true">
       <div class="tile__art"><a href="#/album/${a.id}" aria-label="${a.title} by ${a.artist}">${ui.cover(a, '100%')}</a>
         <button class="tile__play" data-act="play-album" data-id="${a.id}" aria-label="Play ${a.title}" data-tip="Play">${icon('play')}</button></div>
-      <div class="tile__title"><a href="#/album/${a.id}">${a.title}</a></div>
+      <div class="tile__title"><a href="#/album/${a.id}" data-place-at>${ui.placeMark(key)}${a.title}</a></div>
       <div class="tile__by"><a href="#/artist/${a.artistId}">${a.artist}</a></div>
       <div class="lib-tile__meta"><span data-lib-album-status="${a.id}">${albumStatus(a)}</span><span class="px">${a.type.toLowerCase() === 'album' ? a.year : a.type.toLowerCase()}</span></div>
     </div>`;
   }
   function artistTile(ar) {
-    return html`<div class="tile lib-tile lib-tile--artist">
+    var key = 'artist:' + ar.id;
+    return html`<div class="tile lib-tile lib-tile--artist${ui.placeCls(key)}" data-place="${key}">
       <div class="tile__art"><a href="#/artist/${ar.id}" aria-label="${ar.name}">${ui.cover(ar, '100%', { round: true })}</a>
         <button class="tile__play" data-act="start-radio" data-kind="artist" data-id="${ar.id}" aria-label="Start ${ar.name} radio" data-tip="Artist radio">${icon('radio')}</button></div>
-      <div class="tile__title"><a href="#/artist/${ar.id}">${ar.name}</a></div>
+      <div class="tile__title"><a href="#/artist/${ar.id}" data-place-at>${ui.placeMark(key)}${ar.name}</a></div>
       <div class="tile__by">${artistMeta(ar)}</div>
     </div>`;
   }
@@ -541,11 +543,11 @@
   }
   /* a release on its artist's page: the year and kind instead of the artist's name */
   function discoTile(a) {
-    var kind = a.type.toLowerCase();
-    return html`<div class="tile lib-tile" data-album-id="${a.id}" draggable="true">
+    var kind = a.type.toLowerCase(), key = 'album:' + a.id;
+    return html`<div class="tile lib-tile${ui.placeCls(key)}" data-album-id="${a.id}" data-place="${key}" draggable="true">
       <div class="tile__art"><a href="#/album/${a.id}" aria-label="${a.title}, ${kind}${a.year ? ' from ' + a.year : ''}">${ui.cover(a, '100%')}</a>
         <button class="tile__play" data-act="play-album" data-id="${a.id}" aria-label="Play ${a.title}" data-tip="Play">${icon('play')}</button></div>
-      <div class="tile__title"><a href="#/album/${a.id}">${a.title}</a></div>
+      <div class="tile__title"><a href="#/album/${a.id}" data-place-at>${ui.placeMark(key)}${a.title}</a></div>
       <div class="tile__by">${[a.year, kind === 'ep' ? 'EP' : kind].filter(Boolean).join(', ')}</div>
       <div class="lib-tile__meta"><span data-lib-album-status="${a.id}">${albumStatus(a)}</span></div>
     </div>`;
@@ -891,11 +893,11 @@
      7. Playlists list (store `playlists`; `playlistsError` once a load failed, null once one succeeded)
      ===================================================================== */
   function playlistTile(p) {
-    var ids = plIds(p);
-    return html`<div class="tile lib-tile lib-tile--pl" data-drop="playlist:${p.id}">
+    var ids = plIds(p), key = 'playlist:' + p.id;
+    return html`<div class="tile lib-tile lib-tile--pl${ui.placeCls(key)}" data-drop="playlist:${p.id}" data-place="${key}">
       <div class="tile__art"><a href="#/playlist/${p.id}" aria-label="${p.name}, ${plural(ids.length, 'song')}">${ui.playlistArt(p, '100%')}</a>
         <button class="tile__play" data-act="play-playlist" data-id="${p.id}" aria-label="Play ${p.name}" data-tip="Play">${icon('play')}</button></div>
-      <div class="tile__title"><a href="#/playlist/${p.id}">${p.name}</a></div>
+      <div class="tile__title"><a href="#/playlist/${p.id}" data-place-at>${ui.placeMark(key)}${p.name}</a></div>
       <div class="tile__by">${plural(ids.length, 'song')}, ${fmt.length(sumDuration(ids))}</div>
       ${p.updated ? html`<div class="lib-tile__meta t-micro">updated ${fmt.date(p.updated)}</div>` : ''}
     </div>`;
@@ -954,11 +956,11 @@
       <div class="lib-grid" aria-labelledby="lib-bm-h">${items.map(bookmarkTile)}</div>`;
   }
   function bookmarkTile(b) {
-    var site = SITE[b.site] || b.site;
-    return html`<div class="tile lib-tile lib-tile--pl lib-tile--outside">
+    var site = SITE[b.site] || b.site, key = 'outside:' + b.id;
+    return html`<div class="tile lib-tile lib-tile--pl lib-tile--outside${ui.placeCls(key)}" data-place="${key}">
       <div class="tile__art"><a href="${outsideHref(b.id)}" aria-label="${b.name}, ${site} playlist, ${plural(b.total, 'song')}">${ui.mosaic([], '100%', '', b.cover)}</a>
         <span class="badge lib-site" data-site="${b.site}">${site}</span></div>
-      <div class="tile__title"><a href="${outsideHref(b.id)}">${b.name}</a></div>
+      <div class="tile__title"><a href="${outsideHref(b.id)}" data-place-at>${ui.placeMark(key)}${b.name}</a></div>
       <div class="tile__by">${b.owner ? b.owner + ', ' : ''}${plural(b.total, 'song')}</div>
     </div>`;
   }
@@ -1959,17 +1961,21 @@
     var d = M.peek(artistPath(ctx.params.id));
     return d && d.albums && (d.pending || []).indexOf('albums') < 0 ? plural(ownReleases(d), 'release') : '';
   }
+  /* route.place(ctx): the page as a place to play from (App.here(), "where the music plays from" in app.js) */
+  function placeOf(kind, fn) { return function (ctx) { var x = fn(ctx.params.id); return x ? App.place(kind, ctx.params.id, x.title || x.name) : null; }; }
   App.route('/library/:segment?', { render: renderLibrary, mount: mountLibrary, nav: 'library',
+    place: function (ctx) { return ctx.params.segment === 'songs' ? App.place('songs', '', 'Saved songs') : null; },
     title: function (ctx) { var s = SEGMENTS.filter(function (x) { return x.id === ctx.params.segment; })[0]; return 'Library' + (s ? ': ' + s.label : ''); } });
-  App.route('/liked', { render: renderLiked, mount: mountLiked, nav: 'library', title: 'Liked songs' });
-  App.route('/downloads', { render: renderDownloads, mount: mountDownloads, nav: 'library', title: 'Downloads' });
-  App.route('/history', { render: renderHistory, mount: mountLibrary, nav: 'library', title: 'History' });
+  App.route('/liked', { render: renderLiked, mount: mountLiked, nav: 'library', title: 'Liked songs', place: function () { return App.place('liked', '', 'Liked songs'); } });
+  App.route('/downloads', { render: renderDownloads, mount: mountDownloads, nav: 'library', title: 'Downloads', place: function () { return App.place('downloads', '', 'Downloads'); } });
+  App.route('/history', { render: renderHistory, mount: mountLibrary, nav: 'library', title: 'History', place: function () { return App.place('history', '', 'History'); } });
   App.route('/following', { render: renderFollowing, mount: mountLibrary, nav: 'library', title: 'Following' });
-  App.route('/album/:id', { render: renderAlbum, mount: mountAlbum, nav: 'library', title: titleOf(M.album, 'Album'), meta: metaOf(M.album, albumMeta) });
-  App.route('/artist/:id', { render: renderArtist, mount: mountArtist, nav: 'library', title: titleOf(M.artist, 'Artist'), meta: artistMetaLine });
-  App.route('/tag/:id', { render: renderTag, mount: mountTag, nav: 'library', title: function (ctx) { return M.tag(ctx.params.id).name; } });
+  App.route('/album/:id', { render: renderAlbum, mount: mountAlbum, nav: 'library', title: titleOf(M.album, 'Album'), meta: metaOf(M.album, albumMeta), place: placeOf('album', M.album) });
+  App.route('/artist/:id', { render: renderArtist, mount: mountArtist, nav: 'library', title: titleOf(M.artist, 'Artist'), meta: artistMetaLine, place: placeOf('artist', M.artist) });
+  App.route('/tag/:id', { render: renderTag, mount: mountTag, nav: 'library', title: function (ctx) { return M.tag(ctx.params.id).name; }, place: placeOf('tag', M.tag) });
   App.route('/playlists', { render: renderPlaylists, mount: mountPlaylists, nav: 'playlists', title: 'Playlists' });
   App.route('/outside/:id', { render: renderOutside, mount: mountOutside, nav: 'playlists',
-    title: function (ctx) { var d = M.peek(outsidePath(ctx.params.id)); return d ? d.name : 'Playlist'; } });
-  App.route('/playlist/:id', { render: renderPlaylist, mount: mountPlaylist, nav: 'playlists', title: titleOf(playlistOf, 'Playlist'), meta: metaOf(playlistOf, playlistMeta) });
+    title: function (ctx) { var d = M.peek(outsidePath(ctx.params.id)); return d ? d.name : 'Playlist'; },
+    place: placeOf('outside', function (id) { return M.peek(outsidePath(id)); }) });
+  App.route('/playlist/:id', { render: renderPlaylist, mount: mountPlaylist, nav: 'playlists', title: titleOf(playlistOf, 'Playlist'), meta: metaOf(playlistOf, playlistMeta), place: placeOf('playlist', playlistOf) });
 })();

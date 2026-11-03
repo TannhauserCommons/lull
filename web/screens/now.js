@@ -241,10 +241,10 @@
   /* =====================================================================
      3. Info stack: playing-from label, title block, chips, action row, source card, up next
      ===================================================================== */
+  /* inside every .now-head__from (the info head, the phone sheet's top bar, a design's hero: the playing-from part):
+     "playing from <place>", a link that opens it at the song (App.goPlaying) */
   function fromLine() {
-    if (ps.radio) return html`${icon('radio', null, 'ic-16')}<span>playing from <b>${ps.radio.name}</b> radio</span>`;
-    var t = cur();
-    return t ? html`${icon('queue', null, 'ic-16')}<span>playing from your queue</span>` : html`${icon('sparkle', null, 'ic-16')}<span>nothing queued</span>`;
+    return ui.playingFrom('', 'playing from') || html`${icon('sparkle', null, 'ic-16')}<span>nothing queued</span>`;
   }
   /* why this song: its pick in the home feed (when Home has loaded it), or the artist radio it came from */
   function reasonFor(t) {
@@ -617,12 +617,14 @@
       var items = [];
       ps.queue.forEach(function (q, i) { if (i > ps.index && q.group === g[0] && M.track(q.trackId)) items.push(qRow(q, i)); });
       if (!items.length) return;
-      var label = g[0] === 'radio' && !(ps.radio && ps.radio.keepsAdding) ? 'from radio' : g[1];
+      var label = g[0] === 'radio' && !(ps.radio && ps.radio.keepsAdding) ? 'from radio'
+        : g[0] === 'context' && ps.context && ps.context.kind !== 'radio' ? 'next from ' + App.placeName(ps.context) : g[1];
       rows.push(html`<li class="now-q__group label-rule label-rule--sm"><h3>${label}</h3><span class="now-q__count">${items.length}</span></li>`);
       rows = rows.concat(items);
     });
-    var after = ps.queue.length - ps.index - 1;
+    var after = ps.queue.length - ps.index - 1, from = P.playingFrom();
     return html`<div class="now-q">
+      ${from && App.placePath(from) ? ui.playingFrom('now-q__from') : ''}
       ${radioHead()}
       <ol class="tlist tlist--dense now-q__list" aria-label="Queue" data-now-qlist>${rows}</ol>
       ${after ? '' : html`<p class="now-next__none">${icon('sparkle', null, 'ic-16')}Nothing after this song.</p>`}
@@ -948,7 +950,7 @@
       swap($('[data-now="lyrics"]'), lyricsBlock('page'));
       swap($('[data-now="next"]'), upNext());
       swap($('[data-now="queue"]'), queueBlock());
-      $$('.now .now__top .now-head__from').forEach(function (el) { swap(el, fromLine()); });
+      $$('.now .now-head__from').forEach(function (el) { swap(el, fromLine()); });
       lyMountAll(); App.syncRows();
     } else if (kind === 'status' || kind === 'source' || kind === 'ended' || kind === 'state' || kind === 'play') {
       $$('[data-now="facts"]').forEach(function (el) { swap(el, factsLine()); });
@@ -1199,12 +1201,13 @@
     var t = cur();
     if (!t) return ui.emptyState({ art: 'wave', title: 'Nothing playing', text: 'Pick something from Home and it shows here.' });
     return html`<div class="nowcol__art">${ui.cover(t, '100%', { label: t.album })}</div>
-      <div class="nowcol__info">
-        <a class="nowcol__song" href="#/album/${t.albumId}">${t.title}</a>
-        <a class="nowcol__artist" href="#/artist/${t.artistId}">${t.artist}</a>
-      </div>
+      <div class="nowcol__info">${colInfo(t)}</div>
       <section class="nowcol__src" data-nowcol="src" aria-label="Source">${sourceCard()}</section>
       <section class="nowcol__ly" data-nowcol="lyrics" aria-label="Lyrics">${lyricsBlock('col')}</section>`;
+  }
+  function colInfo(t) {
+    return html`${ui.playingFrom('nowcol__from')}<a class="nowcol__song" href="#/album/${t.albumId}">${t.title}</a>
+      <a class="nowcol__artist" href="#/artist/${t.artistId}">${t.artist}</a>`;
   }
   App.nowColumn = {
     render: function (host) { if (!host) return; swap(host, colBody()); lyMountAll(); }
@@ -1213,6 +1216,7 @@
     if (!colOpen()) return;
     if (kind === 'track') App.nowColumn.render($('#nowcol-body'));
     else if (kind === 'status' || kind === 'source' || kind === 'ended' || kind === 'state') swap($('[data-nowcol="src"]'), sourceCard());
+    else if (kind === 'queue' && cur()) swap($('.nowcol__info'), colInfo(cur()));   // a radio started or stopped changes where it plays from
   });
   App.on('save', function (d) { if (colOpen() && d.id === P.currentId()) swap($('[data-nowcol="src"]'), sourceCard()); });
 

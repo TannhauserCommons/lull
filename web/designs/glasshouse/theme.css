@@ -491,7 +491,7 @@
 :root[data-design="glasshouse"] .trow.is-playing { background: linear-gradient(90deg, var(--gh-blush-1), var(--gh-blush-2)); box-shadow: inset 3px 0 0 var(--gh-rose);
   --fg: var(--ink); --fg-2: var(--gh-blush-ink); --link: var(--gh-rose-lo); }
 :root[data-design="glasshouse"] .trow.is-playing .trow__title { color: var(--gh-rose-lo); }
-:root[data-design="glasshouse"] .trow .eq { color: var(--gh-rose); }
+:root[data-design="glasshouse"] :is(.trow, .place-mark) .eq { color: var(--gh-rose); }
 :root[data-design="glasshouse"] :is(.trow__dur, .trow__num) { font: 500 .8125rem/1 var(--f-px); }
 :root[data-design="glasshouse"] :is(.trow__added, .trow__album) { font: 400 .8125rem/1.2 var(--f-px); }
 :root[data-design="glasshouse"] .trow__sources { font: 500 .75rem/1.2 var(--f-px); }

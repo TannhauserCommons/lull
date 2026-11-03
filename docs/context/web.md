@@ -71,7 +71,7 @@ data, ever.
 | private listening | `GET /api/devices` (`me`'s `private`) -> store `privateListening` | Settings > Privacy (`App.setPrivateListening` = `PATCH /api/devices/me`); `POST /api/plays` answering `private: true`. Shown as a "Private" tag with the track in the player bar and in the phone mini player; History hides "Send to Last.fm" while it is on |
 | playback settings | `GET /api/settings` playback -> `App.setPlayback(patch)` | Settings > Playback calls `App.setPlayback` after a PATCH; `settings` events |
 | recent searches | store `recentSearches`, this device only (`localStorage`) | discover.js |
-| queue, volume, shuffle, repeat | `App.player.state`, saved per device so a reload keeps the queue | the engine |
+| queue, volume, shuffle, repeat, where it plays from | `App.player.state` (`context`), saved per device so a reload keeps the queue | the engine |
 | where each page was (scroll, focused row) | the router, per history entry (`sessionStorage['lull:spots']`) | leaving a page; Back, Forward and a reload return there |
 
 ### Server events
@@ -157,6 +157,23 @@ The state shape and methods are DESIGN.md 7.8; the insides:
 - **Radio**: `P.startRadio({ kind: track|artist|tag|album, id })` fetches `/api/radio`; while "keeps adding" is on
   the queue is topped up to three songs ahead (`exclude` = what is queued). With "radio when the queue ends", the
   last song seeds a radio as it starts. Changing the steer re-fills the radio songs not yet played.
+- **Where it plays from** (`ps.context = { kind, id, name }`, persisted with the queue): `playList(ids, start,
+  { context })` records the place a play starts from. Left out, it is the page showing, `App.here()`: each list route
+  declares its `place(ctx)` (album, artist, playlist, tag, Liked, History, Saved songs, Downloads, search results by
+  query, Home, Stats, a bookmarked or outside playlist); tile and button plays name theirs (`play-album`,
+  `play-playlist`, a radio: `radio`, `<seed kind>:<seed id>`). Connect's Play here has none (the device state doesn't
+  carry it); Classic's hand-back keeps it. `P.playingFrom()` is the playing song's place: the context, the radio that
+  added it (radio when the queue ends), or `queue` (the listener's next up, a song played on its own). `PLACES` in
+  app.js gives each kind its icon, its page (radio and the queue have none) and its live name (a renamed playlist).
+  - **Shown** by `ui.playingFrom(cls, label)`: the player bar (`.pbar__from`; the title opens the same place, the
+    album when it has no page), Now Playing (`.now-head__from`, and a theme's `playing-from` part), the Now column, the
+    queue (its heading, and "next from <place>"), the phone mini player (`.mini__from`, text only).
+  - **Opened** by `App.goPlaying()` (`data-act="go-playing"`): the place's page, the playing row scrolled to the
+    middle, focused and lit (`.is-revealed`, 1.8 s), waiting up to 6 s for the page's read; radio and the queue open
+    the queue.
+  - **Marked**: a tile or link of a place carries `data-place="kind:id"` with `ui.placeCls(key)` and
+    `ui.placeMark(key)` (the playing bars, a row's `.eq`); `App.syncRows` (`App.syncPlaces`) moves the mark when the
+    place or play state changes, touching only the elements whose state differs.
 - **Media Session**: metadata with `/api/art/{albumId}?size=96|256|512` once the 96 px cover is known to exist (else
   `assets/fallback-art-*.png`), `playbackState`, position state on track change and seek, all handlers; `seekto`
   clamps like the seek bar.
