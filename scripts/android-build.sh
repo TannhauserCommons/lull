@@ -30,6 +30,13 @@ export LULL_TAURI_CLI=cargo
 # The CLI gives Gradle a versionName and versionCode only when the config names a version: the app's
 # (scripts/release.sh sets it). The versionCode is tauri.android.conf.json's.
 version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+# F-Droid's scanner deletes the Gradle wrapper (gradlew and its jar, a prebuilt binary). Its own
+# `gradle` (gradlew-fdroid) runs the same Gradle, the version in gradle/wrapper/gradle-wrapper.properties.
+if [ ! -f gen/android/gradle/wrapper/gradle-wrapper.jar ]; then
+  command -v gradle >/dev/null || die "no Gradle wrapper jar and no gradle on PATH"
+  printf '#!/bin/sh\nexec gradle "$@"\n' > gen/android/gradlew
+  chmod +x gen/android/gradlew
+fi
 # tauri.conf.json's beforeBuildCommand only makes dist/ for a clean clone (with npm); build.rs fills it.
 mkdir -p dist
 cargo tauri android build --ci --apk --target aarch64 \

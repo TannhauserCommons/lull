@@ -22,6 +22,7 @@ The listener asked for lull's Android app on F-Droid. F-Droid's main repository 
 
 ## Consequences
 
+- F-Droid's scanner deletes the Gradle wrapper (a prebuilt jar). `android-build.sh` then runs F-Droid's `gradle` at the wrapper's version, and CI builds that way too.
 - No Node in the Android build. Gradle's Rust task calls `cargo tauri` when `LULL_TAURI_CLI=cargo` (a lull change to the generated `buildSrc`); `npx tauri android build` still works for contributors.
 - CI's Android job builds twice (about twice as long). That's the price of hearing about a non-reproducible change before a release does.
 - Bumping the NDK, the Rust toolchain or the Tauri CLI changes the bytes: change the NDK in `build.gradle.kts`, CI and the fdroiddata recipe's `ndk:` together.

@@ -3,7 +3,8 @@ name = "tauri-plugin-lull-player"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.99"
-description = "lull's native Android player: Media3 ExoPlayer in a MediaSession service, and downloads to app storage"
+license = "AGPL-3.0-only"
+description = "lull's native Android player: Media3 ExoPlayer in a MediaSession service, downloads to app storage, and the pairing QR scanner"
 publish = false
 links = "tauri-plugin-lull-player"
 

@@ -204,7 +204,11 @@ jobs:
           keyAlias=$ANDROID_KEY_ALIAS
           keyPassword=$ANDROID_KEY_PASSWORD
           EOF
-      - run: sh scripts/android-build.sh
+      # As F-Droid's scanner does before its build: no prebuilt Gradle wrapper. The clean clone below
+      # keeps it, so the two builds also cover both ways Gradle starts.
+      - run: |
+          rm app/gen/android/gradlew app/gen/android/gradlew.bat app/gen/android/gradle/wrapper/gradle-wrapper.jar
+          sh scripts/android-build.sh
       - name: No non-free libraries
         run: |
           apk=app/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
