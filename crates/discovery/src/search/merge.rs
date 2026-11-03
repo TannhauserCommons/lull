@@ -53,6 +53,12 @@ pub enum Source {
     #[serde(rename = "musicbrainz-albums")]
     MusicBrainzAlbums,
     LastFm,
+    /// Deezer's playlist search (keyless, in every country).
+    #[serde(rename = "deezer-playlists")]
+    DeezerPlaylists,
+    /// YouTube's playlist search, through yt-dlp.
+    #[serde(rename = "youtube-playlists")]
+    YoutubePlaylists,
 }
 
 impl Source {
@@ -64,6 +70,8 @@ impl Source {
             Source::Library => "The library",
             Source::MusicBrainz | Source::MusicBrainzAlbums => "MusicBrainz",
             Source::LastFm => "Last.fm",
+            Source::DeezerPlaylists => "Deezer's playlists",
+            Source::YoutubePlaylists => "YouTube's playlists",
         }
     }
 }
@@ -74,8 +82,35 @@ pub struct Found {
     pub songs: Vec<SongHit>,
     pub albums: Vec<AlbumHit>,
     pub artists: Vec<ArtistHit>,
+    #[serde(default)]
+    pub playlists: Vec<PlaylistHit>,
     /// Part of the answer is missing, and why (the rest is still used).
     pub problem: Option<String>,
+}
+
+/// A playlist someone made on YouTube or Deezer (search's Playlists section, `playlists.rs`).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct PlaylistHit {
+    /// `youtube` or `deezer`.
+    pub site: String,
+    /// The site's id for it.
+    pub id: String,
+    pub title: String,
+    pub owner: String,
+    /// Its picture: an outside URL.
+    pub cover: Option<String>,
+    /// How many songs, and how many follow it (Deezer's fans), when the site says.
+    pub tracks: Option<u32>,
+    pub fans: Option<u64>,
+    /// Its place in the site's own order (0 = first), which weighs relevance and popularity.
+    pub rank: u32,
+}
+
+impl PlaylistHit {
+    /// `youtube:playlist:<id>`: the key link imports and bookmarks use.
+    pub fn link(&self) -> String {
+        format!("{}:playlist:{}", self.site, self.id)
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -221,6 +256,7 @@ pub struct Merged {
     pub songs: Vec<SongHit>,
     pub albums: Vec<AlbumHit>,
     pub artists: Vec<ArtistHit>,
+    pub playlists: Vec<PlaylistHit>,
     /// Songs before this position have been shown: their identity (and so their id) stays.
     shown_songs: usize,
 }
@@ -231,6 +267,7 @@ pub struct Touched {
     pub songs: Vec<usize>,
     pub albums: Vec<usize>,
     pub artists: Vec<usize>,
+    pub playlists: Vec<usize>,
 }
 
 impl Merged {
@@ -268,6 +305,12 @@ impl Merged {
                 }
             };
             touched.artists.extend(at.filter(|i| !touched.artists.contains(i)));
+        }
+        for hit in found.playlists {
+            if !self.playlists.iter().any(|p| p.link() == hit.link()) {
+                self.playlists.push(hit);
+                touched.playlists.push(self.playlists.len() - 1);
+            }
         }
         touched
     }

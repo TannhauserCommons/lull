@@ -25,7 +25,7 @@ use lull_core::db::Migrations;
 use lull_core::events::Event;
 use lull_core::ids::{ArtistId, TrackId};
 use lull_core::model::Entities;
-use lull_core::seams::{Library, Transfers};
+use lull_core::seams::{Library, Transfers, Youtube};
 use lull_core::{Ctx, Error, Result};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -139,11 +139,18 @@ pub struct Service {
     shares: share::Shares,
     /// Soulseek, for new releases peers share.
     transfers: Arc<dyn Transfers>,
+    /// yt-dlp, for YouTube's playlists in search.
+    youtube: Arc<dyn Youtube>,
     /// Settings > Discovery "adventurousness": radio's steer when the UI sends none.
     adventurousness: RwLock<f64>,
 }
 
-pub async fn start(ctx: &Ctx, library: Arc<dyn Library>, transfers: Arc<dyn Transfers>) -> Result<Arc<Service>> {
+pub async fn start(
+    ctx: &Ctx,
+    library: Arc<dyn Library>,
+    transfers: Arc<dyn Transfers>,
+    youtube: Arc<dyn Youtube>,
+) -> Result<Arc<Service>> {
     let cache = Cache::new(ctx.db.clone());
     let (photos, photo_queue) = artist::photo::Queue::new();
     cache.prune().await?;
@@ -176,6 +183,7 @@ pub async fn start(ctx: &Ctx, library: Arc<dyn Library>, transfers: Arc<dyn Tran
         cache,
         shares: share::Shares::default(),
         transfers,
+        youtube,
         adventurousness: RwLock::new(DEFAULT_STEER),
         ctx: ctx.clone(),
     });

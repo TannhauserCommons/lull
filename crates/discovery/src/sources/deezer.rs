@@ -18,7 +18,7 @@ use tokio::time::Instant;
 use super::cache::{Cache, DAY};
 use super::{AlbumSource, Song};
 use crate::artist::discography::{Entry, Origin};
-use crate::search::merge::{AlbumHit, ArtistHit, Found, SongHit, popularity};
+use crate::search::merge::{AlbumHit, ArtistHit, Found, PlaylistHit, SongHit, popularity};
 
 const SERVICE: &str = "Deezer";
 const API: &str = "https://api.deezer.com";
@@ -31,6 +31,11 @@ const QUOTA: u64 = 4;
 const NO_DATA: u64 = 800;
 /// Search answers are kept this long (seconds), and served stale when Deezer fails.
 const KEEP_S: i64 = 600;
+/// Playlists whose fans are looked up, of a playlist search's answer, and how long they're kept.
+const WITH_FANS: usize = 4;
+const FANS_FOR: i64 = 7 * DAY;
+/// Between those lookups: Deezer's window is shared with search, and they're no hurry.
+const FANS_PACE: Duration = Duration::from_millis(500);
 /// Tracklists are kept this long (seconds).
 const KEEP_TRACKLIST_S: i64 = 7 * DAY;
 /// Rank, fans: the counts that score 1 on `popularity`'s scale.
@@ -83,6 +88,7 @@ impl Deezer {
                     albums: albums.unwrap_or_default(),
                     artists: artists.unwrap_or_default(),
                     problem: (!problems.is_empty()).then(|| problems.join("; ")),
+                    playlists: Vec::new(),
                 })
             })
             .await
@@ -98,6 +104,29 @@ impl Deezer {
                 })
             })
             .await
+    }
+
+    /// Playlists for `q` (15, Deezer's order), kept a day. Answers in every country. Fans come
+    /// only with a playlist's whole page (seconds for a long one), so the answer carries the fans
+    /// lull already knows, and the first few unknown ones are fetched after it, for next time.
+    pub async fn playlists(&self, q: &str) -> Result<Vec<PlaylistHit>> {
+        let mut found: Vec<PlaylistHit> = self
+            .cache
+            .get(format!("dz:playlists:{q}"), DAY, || async {
+                playlists_of(self.get("search/playlist", &[("q", q), ("limit", "15")]).await?)
+            })
+            .await?;
+        let mut unknown = Vec::new();
+        for hit in found.iter_mut().take(WITH_FANS) {
+            match self.cache.fresh::<Option<u64>>(fans_key(&hit.id), FANS_FOR).await? {
+                Some(fans) => hit.fans = fans,
+                None => unknown.push(hit.id.clone()),
+            }
+        }
+        if !unknown.is_empty() {
+            tokio::spawn(learn_fans(self.http.clone(), self.cache.clone(), unknown));
+        }
+        Ok(found)
     }
 
     /// Songs only, for finding a song another service names (a playlist link): kept a day.
@@ -442,6 +471,54 @@ pub fn artist_releases(body: Value) -> Result<Vec<Entry>> {
                 source: a.id.map(AlbumSource::Deezer),
                 ..AlbumHit::default()
             },
+        })
+        .collect())
+}
+
+fn fans_key(id: &str) -> String {
+    format!("dz:playlist-fans:{id}")
+}
+
+/// Fetches playlists' fans into the cache, one at a time; a failure is tried again next search.
+async fn learn_fans(http: Http, cache: Cache, ids: Vec<String>) {
+    for id in ids {
+        http.pace("deezer-fans", FANS_PACE).await;
+        let url = format!("{API}/playlist/{id}");
+        let fans = match http.json::<Value>(SERVICE, |c| c.get(&url)).await {
+            Ok(body) => body["fans"].as_u64(),
+            Err(e) => {
+                tracing::info!(error = %e, playlist = id, "a Deezer playlist's fans weren't fetched");
+                continue;
+            }
+        };
+        if let Err(e) = cache.put(fans_key(&id), &fans).await {
+            tracing::warn!(error = %e, "a Deezer playlist's fans weren't kept");
+        }
+    }
+}
+
+/// A `search/playlist` answer as playlist rows, in Deezer's order.
+pub fn playlists_of(body: Value) -> Result<Vec<PlaylistHit>> {
+    #[derive(Deserialize)]
+    struct Raw {
+        id: u64,
+        title: String,
+        nb_tracks: Option<u32>,
+        picture_xl: Option<String>,
+        user: Option<Named>,
+    }
+    Ok(Page::<Raw>::of(body, "playlists")?
+        .into_iter()
+        .enumerate()
+        .map(|(i, p)| PlaylistHit {
+            site: "deezer".into(),
+            id: p.id.to_string(),
+            title: p.title,
+            owner: p.user.map(|u| u.name).unwrap_or_default(),
+            cover: p.picture_xl,
+            tracks: p.nb_tracks,
+            fans: None,
+            rank: i as u32,
         })
         .collect())
 }

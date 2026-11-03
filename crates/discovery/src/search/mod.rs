@@ -15,6 +15,7 @@
 pub mod catalog;
 mod matching;
 pub mod merge;
+mod playlists;
 #[cfg(test)]
 mod tests;
 
@@ -40,7 +41,7 @@ use merge::{Fit, Found, Kind, Merged, Query, Score, SongHit, Source, Touched};
 
 /// The longest the first answer waits for the fast sources.
 const FIRST_ANSWER: Duration = Duration::from_millis(1500);
-const FAST: [Source; 3] = [Source::Deezer, Source::Itunes, Source::Library];
+const FAST: [Source; 4] = [Source::Deezer, Source::Itunes, Source::Library, Source::DeezerPlaylists];
 const KEEP: Duration = Duration::from_secs(600);
 /// The longest any one source is waited for.
 const SOURCE_LIMIT: Duration = Duration::from_secs(8);
@@ -84,6 +85,21 @@ struct Shown {
     tracks: HashSet<TrackId>,
     albums: HashSet<AlbumId>,
     artists: HashSet<ArtistId>,
+    playlists: HashSet<String>,
+}
+
+/// A playlist row of an answer (`playlists.rs`): not an entity, as it isn't in lull's catalog.
+#[derive(Debug, Clone, Serialize)]
+pub struct PlaylistRow {
+    /// Its link key (`youtube:playlist:<id>`), what the preview and bookmarks take.
+    id: String,
+    site: String,
+    title: String,
+    owner: String,
+    /// Same-origin, through `/api/catalog/art` (`art::playlist_picture`).
+    cover: Option<String>,
+    tracks: Option<u32>,
+    fans: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -100,6 +116,7 @@ pub struct Answer {
     artists: Vec<ArtistId>,
     albums: Vec<AlbumId>,
     tracks: Vec<TrackId>,
+    playlists: Vec<PlaylistRow>,
     pending: Vec<Source>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     errors: BTreeMap<Source, String>,
@@ -118,6 +135,7 @@ struct More<'a> {
     artists: Vec<ArtistId>,
     albums: Vec<AlbumId>,
     tracks: Vec<TrackId>,
+    playlists: Vec<PlaylistRow>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     errors: &'a BTreeMap<Source, String>,
     entities: Pictured,
@@ -160,6 +178,7 @@ pub async fn search(State(svc): State<Arc<Service>>, Params(p): Params<SearchPar
         artists: view.artists,
         albums: view.albums,
         tracks: view.tracks,
+        playlists: view.playlists,
         pending: st.pending.iter().copied().collect(),
         errors: st.errors.clone(),
         entities: view.entities,
@@ -218,7 +237,7 @@ fn start(svc: &Arc<Service>, run: &Arc<Run>, source: Source) {
 }
 
 /// The sources in use: the fast catalog and the library; for 3+ characters also MusicBrainz
-/// unless switched off, and Last.fm when configured and on.
+/// unless switched off, Last.fm when configured and on, and Deezer's and YouTube's playlists.
 fn sources(svc: &Service, query: &str) -> Vec<Source> {
     let mut sources = vec![Source::Deezer, Source::Library];
     if svc.catalog.choice() == Choice::Itunes {
@@ -230,6 +249,9 @@ fn sources(svc: &Service, query: &str) -> Vec<Source> {
     }
     if slow && svc.lastfm().is_some() {
         sources.push(Source::LastFm);
+    }
+    if slow {
+        sources.extend([Source::DeezerPlaylists, Source::YoutubePlaylists]);
     }
     sources
 }
@@ -308,7 +330,39 @@ async fn fetch(svc: &Service, source: Source, q: &str) -> Result<Found> {
             Some(lastfm) => lastfm.search(q).await,
             None => Ok(Found::default()),
         },
+        Source::DeezerPlaylists => Ok(Found {
+            playlists: svc.deezer.playlists(q).await?,
+            ..Found::default()
+        }),
+        Source::YoutubePlaylists => Ok(Found {
+            playlists: youtube_playlists(svc, q).await?,
+            ..Found::default()
+        }),
     }
+}
+
+/// YouTube's playlists for `q`, kept a day: a yt-dlp run takes seconds, so a query asked again
+/// gets them in its first answer.
+async fn youtube_playlists(svc: &Service, q: &str) -> Result<Vec<merge::PlaylistHit>> {
+    svc.cache
+        .get(format!("yt:playlists:{q}"), crate::sources::cache::DAY, || async {
+            let found = svc.youtube.search_playlists(q, playlists::LISTED).await?;
+            Ok(found
+                .into_iter()
+                .enumerate()
+                .map(|(i, p)| merge::PlaylistHit {
+                    site: "youtube".into(),
+                    id: p.id,
+                    title: p.title,
+                    owner: p.owner,
+                    cover: p.thumbnails.into_iter().next(),
+                    tracks: None,
+                    fans: None,
+                    rank: i as u32,
+                })
+                .collect())
+        })
+        .await
 }
 
 fn saved(t: Track) -> SongHit {
@@ -350,6 +404,7 @@ async fn arrive(svc: &Service, run: &Run, source: Source, found: Result<Found>) 
                     artists: v.artists,
                     albums: v.albums,
                     tracks: v.tracks,
+                    playlists: v.playlists,
                     errors: &st.errors,
                     entities: v.entities,
                     done: st.pending.is_empty(),
@@ -384,6 +439,7 @@ struct View {
     artists: Vec<ArtistId>,
     albums: Vec<AlbumId>,
     tracks: Vec<TrackId>,
+    playlists: Vec<PlaylistRow>,
     entities: Pictured,
 }
 
@@ -410,7 +466,7 @@ async fn view(svc: &Service, query: &str, st: &mut RunState, touched: Option<&To
     let mut artists = merge::rank(&artist_fits, |i| followed.contains(&artist_ids[i]));
     artists.retain(|&i| !misspelt[i]);
 
-    let top = match touched {
+    let search_top = match touched {
         Some(_) => None,
         None => merge::top(
             artists.first().map(|&i| artist_fits[i]),
@@ -432,6 +488,29 @@ async fn view(svc: &Service, query: &str, st: &mut RunState, touched: Option<&To
             },
         }),
     };
+    // A query that names a film, show or game: its soundtrack, album or playlist, leads.
+    let playlist_order = playlists::rank(&q, &m.playlists);
+    let mut top_album = None;
+    let top = match touched {
+        Some(_) => None,
+        None => {
+            let ranked: Vec<(usize, &merge::AlbumHit)> = albums.iter().map(|&i| (i, &m.albums[i])).collect();
+            match playlists::work_top(&q, &ranked, &m.playlists) {
+                Some(playlists::WorkTop::Album(i)) => {
+                    top_album = Some(i);
+                    Some(Top {
+                        kind: "album",
+                        id: album_ids[i].0.clone(),
+                    })
+                }
+                Some(playlists::WorkTop::Playlist(i)) => Some(Top {
+                    kind: "playlist",
+                    id: m.playlists[i].link(),
+                }),
+                None => search_top,
+            }
+        }
+    };
 
     // Listed: the best rows (all for an answer; the new ones for an announcement).
     let listed = |order: Vec<usize>, limit: usize, new: &dyn Fn(usize) -> bool| -> Vec<usize> {
@@ -443,11 +522,15 @@ async fn view(svc: &Service, query: &str, st: &mut RunState, touched: Option<&To
     let artists = listed(artists, ARTISTS, &|i| {
         !fresh || !st.shown.artists.contains(&artist_ids[i])
     });
+    let listed_playlists = listed(playlist_order, playlists::LISTED, &|i| {
+        !fresh || !st.shown.playlists.contains(&m.playlists[i].link())
+    });
     // Described: the listed rows, and shown rows that gained facts.
     let improved = |all: &[usize], ids_shown: &dyn Fn(usize) -> bool| -> Vec<usize> {
         all.iter().copied().filter(|&i| ids_shown(i)).collect()
     };
     let (mut d_songs, mut d_albums, mut d_artists) = (songs.clone(), albums.clone(), artists.clone());
+    d_albums.extend(top_album.filter(|i| !albums.contains(i)));
     if let Some(t) = touched {
         d_songs.extend(improved(&t.songs, &|i| st.shown.tracks.contains(&song_ids[i])));
         d_albums.extend(improved(&t.albums, &|i| st.shown.albums.contains(&album_ids[i])));
@@ -455,8 +538,26 @@ async fn view(svc: &Service, query: &str, st: &mut RunState, touched: Option<&To
     }
 
     let entities = describe(svc, m, &d_songs, &d_albums, &d_artists).await?;
+    let mut playlist_rows = Vec::with_capacity(listed_playlists.len());
+    for &i in &listed_playlists {
+        let p = &m.playlists[i];
+        let cover = match &p.cover {
+            Some(source) => Some(art::playlist_picture(svc, &p.link(), source).await?),
+            None => None,
+        };
+        playlist_rows.push(PlaylistRow {
+            id: p.link(),
+            site: p.site.clone(),
+            title: p.title.clone(),
+            owner: p.owner.clone(),
+            cover,
+            tracks: p.tracks,
+            fans: p.fans,
+        });
+    }
     let view = View {
         top,
+        playlists: playlist_rows,
         tracks: songs.iter().map(|&i| song_ids[i].clone()).collect(),
         albums: albums.iter().map(|&i| album_ids[i].clone()).collect(),
         artists: artists.iter().map(|&i| artist_ids[i].clone()).collect(),
@@ -465,6 +566,7 @@ async fn view(svc: &Service, query: &str, st: &mut RunState, touched: Option<&To
     st.shown.tracks.extend(view.tracks.iter().cloned());
     st.shown.albums.extend(view.albums.iter().cloned());
     st.shown.artists.extend(view.artists.iter().cloned());
+    st.shown.playlists.extend(view.playlists.iter().map(|p| p.id.clone()));
     Ok(view)
 }
 

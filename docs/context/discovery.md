@@ -145,6 +145,15 @@ Code: `src/search/` (`mod.rs` runs a query, `merge.rs` merges and ranks), `src/a
 - **Artwork:** the store's cover at 600 px (`…/600x600bb.jpg`), else the public source the catalog knows for the album or artist (Deezer, iTunes, the Cover Art Archive) at 600 px, else `null`.
 - **Cached** in `discovery_cache` (`share:<kind>:<id>`): store links 30 days, Last.fm fallbacks 1 day, so a release that reaches the store later gets its link. An expired answer is served when iTunes fails. One link is resolved at a time, so the same link asked for twice at once costs one call. iTunes calls share the 18-a-minute budget with search; with it spent and nothing cached the answer is 503.
 
+## Playlists in search
+
+`search/playlists.rs`. For 3+ characters, search also asks for playlists people made: Deezer's `search/playlist` (15, about 0.4 s from the homelab: a fast source, in the first answer) and YouTube's search filtered to playlists through yt-dlp (`Youtube::search_playlists`, 12, a few seconds: usually a `search.more`). YouTube Music's own search lists the same community playlists, without names, so YouTube's stands for both. Both are keyless and kept a day (`dz:playlists:`, `yt:playlists:`), so the same words later get YouTube's in the first answer. There is no Spotify: its search needs a key.
+- **Relevance first:** the title against the words typed (fit as album titles fit, but a title that is just the words counts as one holding every word, since anyone can name a playlist anything; a playlist holding less than most of the words is left out), then soundtrack wording ("soundtrack", "OST", "score", "songs from", "songs used", "list of songs", "tracklist"…).
+- **Then size and popularity:** 0.4 × the site's own order (1/(1 + place/3)) + 0.3 × size (√(songs/100)) + 0.3 × following (log fans, 100 000 full); unknown size or following counts 0.4 / 0.3. YouTube's search gives neither, so its order stands in for them. Deezer's fans come only with a playlist's whole page (seconds for a long one), so an answer carries the fans already known and the first 4 unknown are fetched after it (500 ms apart, kept a week), for the next search.
+- **Top result:** a query names a film, show or game when two or more playlists holding every word say soundtrack. Then the album holding every word that says soundtrack takes the top ("cyberpunk edgerunners 2" is still its OST album), and without one, the best such playlist (`top.kind: playlist`; "person of interest"). Otherwise search's own top stands. Playlists arriving later (`search.more`) never change the top.
+- **Pictures** go through `/api/catalog/art/pls-<link in hex>`, their source kept a month in `discovery_cache`, so the CSP stays same-origin.
+- Opening one previews it without importing; collection.md#outside-playlists.
+
 ## Matching another service's songs (the `Catalog` seam)
 
 Collection's playlist link imports ask `Catalog::find_song` for each song a Spotify, Deezer, YouTube or SoundCloud playlist names (`search/matching.rs`).

@@ -144,6 +144,24 @@ pub fn cover_archive(release_group: &str) -> String {
     format!("https://coverartarchive.org/release-group/{release_group}/front-{{size}}")
 }
 
+/// The prefix of a playlist picture's id: `pls-` and the playlist's link key in hex, so the id
+/// says which picture it is and stays a plain path segment.
+const PLAYLIST_PICTURE: &str = "pls-";
+
+/// The route for an outside playlist's picture (search's Playlists section), its source
+/// remembered for the route a month.
+pub async fn playlist_picture(svc: &Service, link: &str, source: &str) -> Result<String> {
+    let id = format!("{PLAYLIST_PICTURE}{}", hex_of(link));
+    svc.cache
+        .put(format!("playlist-picture:{id}"), &source.to_owned())
+        .await?;
+    Ok(url(&id))
+}
+
+fn hex_of(s: &str) -> String {
+    s.bytes().map(|b| format!("{b:02x}")).collect()
+}
+
 /// The route for an album's or artist's picture; the UI adds `?size=`. Relative to the page, as
 /// the UI's own requests are, so lull also works behind a reverse-proxy sub-path.
 pub fn url(id: &str) -> String {
@@ -173,6 +191,11 @@ pub async fn get(State(svc): State<Arc<Service>>, Path(id): Path<String>, Query(
         i if i.strip_prefix(ArtistId::PREFIX).is_some_and(hex) => {
             let id = ArtistId(id.clone());
             svc.ctx.db.call(move |c| crate::artist::photo::image_of(c, &id)).await?
+        }
+        i if i.strip_prefix(PLAYLIST_PICTURE).is_some_and(hex) => {
+            svc.cache
+                .fresh::<String>(format!("playlist-picture:{id}"), 30 * crate::sources::cache::DAY)
+                .await?
         }
         _ => None,
     };

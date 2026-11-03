@@ -1,0 +1,47 @@
+{
+ "data": [
+  {
+   "id": 2647620188,
+   "title": "Person of Interest Complete Soundtrack OST",
+   "public": true,
+   "nb_tracks": 94,
+   "link": "https://www.deezer.com/playlist/2647620188",
+   "picture_xl": "https://cdn-images.dzcdn.net/images/cover/85abbdc3ed4a7b94ace97f868fe70f63-df8991e014cc9eab10a462304545c128-0a5e2762b45de4e16e9397bb50b063b0-6ae5c3834fca8487754a608653cc1b05/1000x1000-000000-80-0-0.jpg",
+   "user": {
+    "id": 1324335508,
+    "name": "Márcio Moreira",
+    "type": "user"
+   },
+   "type": "playlist"
+  },
+  {
+   "id": 13498145043,
+   "title": "Person Of Interest OST",
+   "public": true,
+   "nb_tracks": 71,
+   "link": "https://www.deezer.com/playlist/13498145043",
+   "picture_xl": "https://cdn-images.dzcdn.net/images/cover/542b0af3990aee68be2fc767418329dd-9a2c610eef30b63105296897cc99f8ad-e69ab651c6ecf214db8a16f11908a752-5dd4b40ba007cd3a1881cb2e15611e90/1000x1000-000000-80-0-0.jpg",
+   "user": {
+    "id": 6413714923,
+    "name": "anonymous",
+    "type": "user"
+   },
+   "type": "playlist"
+  },
+  {
+   "id": 15254651243,
+   "title": "person of interest",
+   "public": true,
+   "nb_tracks": 67,
+   "link": "https://www.deezer.com/playlist/15254651243",
+   "picture_xl": "https://cdn-images.dzcdn.net/images/playlist/d18621651d7d84251d157f6893f71b28/1000x1000-000000-80-0-0.jpg",
+   "user": {
+    "id": 4371030,
+    "name": "fabnature",
+    "type": "user"
+   },
+   "type": "playlist"
+  }
+ ],
+ "total": 150
+}

@@ -118,7 +118,7 @@ async fn wire(ctx: &Ctx) -> Result<Router, Error> {
     let youtube = lull_youtube::start(ctx).await?;
     let soulseek = lull_soulseek::start(ctx, youtube.clone()).await?;
     let library = lull_library::start(ctx, soulseek.clone()).await?;
-    let discovery = lull_discovery::start(ctx, library.clone(), soulseek.clone()).await?;
+    let discovery = lull_discovery::start(ctx, library.clone(), soulseek.clone(), youtube.clone()).await?;
     let lastfm = lull_lastfm::start(ctx).await?;
     let lyrics = lull_lyrics::start(ctx).await?;
     let collection =

@@ -381,6 +381,7 @@ pub fn found(tracks: &Value, artists: &Value) -> Found {
             })
             .collect(),
         albums: Vec::new(),
+        playlists: Vec::new(),
         problem: None,
     }
 }

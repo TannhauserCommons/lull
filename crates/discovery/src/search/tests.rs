@@ -16,6 +16,7 @@ fn fixture(name: &str) -> Value {
     let text = match name {
         "deezer-track" => include_str!("fixtures/deezer-track.json"),
         "deezer-album" => include_str!("fixtures/deezer-album.json"),
+        "deezer-playlists" => include_str!("fixtures/deezer-playlists.json"),
         "deezer-artist" => include_str!("fixtures/deezer-artist.json"),
         "deezer-quota" => include_str!("fixtures/deezer-quota.json"),
         "deezer-withheld" => include_str!("fixtures/deezer-withheld.json"),
@@ -838,4 +839,26 @@ fn credit_strings_are_not_artists() {
         .map(|(a, _)| a.name.as_str())
         .collect();
     assert_eq!(kept, ["Radiohead", "Radiodread"]);
+}
+
+#[test]
+fn deezers_playlist_search_gives_title_owner_size_and_picture_in_its_order() {
+    let found = deezer::playlists_of(fixture("deezer-playlists")).unwrap_or_default();
+    assert_eq!(found.len(), 3);
+    let first = &found[0];
+    assert_eq!((first.site.as_str(), first.rank), ("deezer", 0));
+    assert!(
+        first.title.to_lowercase().contains("person of interest"),
+        "{}",
+        first.title
+    );
+    assert!(!first.owner.is_empty() && first.tracks.is_some_and(|t| t > 0));
+    assert!(
+        first
+            .cover
+            .as_deref()
+            .is_some_and(|c| c.starts_with("https://cdn-images.dzcdn.net/"))
+    );
+    assert_eq!(first.link(), format!("deezer:playlist:{}", first.id));
+    assert_eq!(found[2].rank, 2);
 }
