@@ -279,6 +279,17 @@
 .lib-pick-new { display: flex; gap: var(--sp-2); }
 .lib-pick-new[hidden] { display: none; }
 .lib-pick-none { font: var(--t-meta); color: var(--fg-2); padding: 0 8px; }
+/* the checklist: a box at the row's end, filled while ticked (a dash while part-ticked), as a switch fills when on */
+.lib-pick-list li { position: relative; min-width: 0; }
+.lib-pick-list li[hidden] { display: none; }
+.lib-pick__box { display: grid; place-items: center; width: 24px; height: 24px; flex: none; margin-left: auto; border-radius: 7px; border: var(--stroke) solid var(--edge); color: transparent; transition: background-color var(--dur-1), border-color var(--dur-1); }
+.lib-pick:is([aria-checked="true"], [aria-checked="mixed"]) .lib-pick__box { background: var(--accent-ui); border-color: var(--accent-ui); color: var(--bg); }
+.lib-pick:is([aria-checked="true"], [aria-checked="mixed"]) .lib-pick__text > span { color: var(--link); }
+/* "Add again" sits just before the box, over the row's free end, so every box stays in one column */
+.lib-pick__again { position: absolute; top: 50%; right: 44px; transform: translateY(-50%); }
+.lib-pick-list li:has(.lib-pick__again) .lib-pick__text { padding-right: 110px; }
+.lib-picker .sheet__foot { align-items: center; }
+.lib-picker__count { margin-right: auto; font: var(--t-meta); color: var(--fg-2); }
 
 /* ---------- artist page: a hero across the page (the photo large, its glow behind), then Popular beside About, the
    discography by group, Appears on, Fans also like. Designs style .lib-ahero and the round cover as their own ---------- */

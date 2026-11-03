@@ -422,7 +422,7 @@
                 <span class="lib-actions__icons">
                   ${noTracks ? '' : html`${likeAllButton(ids)}
                   ${ui.downloadButton({ kind: 'album', id: a.id }, ids)}
-                  ${ui.iconButton('playlists', 'Add album to playlist', { 'data-act': 'add-to-playlist', 'data-ids': ids.join(','), 'aria-haspopup': 'dialog' })}`}
+                  ${ui.iconButton('playlists', 'Add album to playlist', { 'data-act': 'add-to-playlist', 'data-ids': ids.join(','), 'data-what': a.title, 'aria-haspopup': 'dialog' })}`}
                   ${ui.iconButton('radio', 'Start album radio', { 'data-act': 'start-radio', 'data-kind': 'album', 'data-id': a.id })}
                   ${ui.iconButton('more', 'More album actions', { 'data-act': 'lib-album-menu', 'data-id': a.id, 'aria-haspopup': 'menu' })}
                 </span>
@@ -1416,68 +1416,145 @@
   }
 
   /* =====================================================================
-     9. Add-to-playlist picker (App.hooks.addToPlaylist): search, new playlist, recent playlists
+     9. Add-to-playlist picker (App.hooks.addToPlaylist): a checklist, so one visit adds to several playlists.
+        Each playlist is ticked when it already holds every song (part-ticked when it holds some); ticking adds only
+        what it lacks, so nothing is added twice unless the listener asks ("Add again"), and unticking takes the
+        songs out. New playlists are made from the same sheet. Nothing changes until Done; one toast undoes it all.
      ===================================================================== */
-  function openPicker(ids) {
-    ids = [].concat(ids).filter(Boolean); if (!ids.length) return;
-    var first = M.track(ids[0]), what = ids.length === 1 && first ? first.title : plural(ids.length, 'song');
-    var recent = playlists().slice().sort(newestFirst);
-    function rowMeta(p) {
+  /* named: what is being added when it is more than a song (an album, a playlist); except: the playlist it comes from */
+  function openPicker(ids, named, except) {
+    ids = [].concat(ids).filter(Boolean).filter(function (id, i, all) { return all.indexOf(id) === i; });
+    if (!ids.length) return;
+    var first = M.track(ids[0]), what = named || (ids.length === 1 && first ? first.title : plural(ids.length, 'song'));
+    var lists = playlists().filter(function (p) { return p.id !== except; }).sort(newestFirst);
+    /* per playlist: how many of the songs it holds when the sheet opens, what the listener has ticked, "add again" */
+    var picks = {}, made = [];
+    lists.forEach(function (p) {
       var have = ids.filter(function (id) { return plIds(p).indexOf(id) >= 0; }).length;
-      if (have === ids.length) return html`<span class="lib-pick__have">${icon('check', null, 'ic-16')}already added</span>`;
-      if (have) return html`<span class="lib-pick__have">${have} of ${ids.length} already in</span>`;
-      return plural(plIds(p).length, 'song');
+      var was = have === ids.length ? 'true' : have ? 'mixed' : 'false';
+      picks[p.id] = { have: have, was: was, now: was, again: false };
+    });
+    function meta(p) {
+      var k = picks[p.id];
+      if (k.now === 'false') return k.was === 'false' ? plural(plIds(p).length, 'song') : 'Taking ' + (ids.length === 1 ? 'it' : 'them') + ' out';
+      if (k.now === 'mixed') return k.have + ' of ' + ids.length + ' already in';
+      if (k.again) return 'Adding ' + (ids.length === 1 ? 'it' : 'them') + ' again';
+      if (k.was === 'true') return 'Already in';
+      return k.was === 'mixed' ? 'Adding the other ' + (ids.length - k.have) : 'Adding ' + (ids.length === 1 ? 'it' : 'them');
+    }
+    function row(p) {
+      var k = picks[p.id];
+      return html`<li data-name="${p.name.toLowerCase()}" data-key="${p.id}">
+        <button class="lib-pick" type="button" role="checkbox" aria-checked="${k.now}" data-pick="${p.id}">${ui.playlistArt(p, 44)}<span class="lib-pick__text"><b>${p.name}</b><span>${meta(p)}</span></span><span class="lib-pick__box" aria-hidden="true">${icon(k.now === 'mixed' ? 'dash' : 'check', null, 'ic-16')}</span></button>
+        ${k.was === 'true' && k.now === 'true' ? html`<button class="btn btn--quiet btn--sm lib-pick__again" type="button" aria-pressed="${k.again ? 'true' : 'false'}" data-pick-again="${p.id}" aria-label="${'Add ' + what + ' to ' + p.name + ' again'}">Add again</button>` : ''}</li>`;
+    }
+    function madeRow(m, i) {
+      return html`<li data-name="${m.name.toLowerCase()}" data-key="${'new-' + i}"><button class="lib-pick" type="button" role="checkbox" aria-checked="${m.on ? 'true' : 'false'}" data-pick-made="${i}"><span class="lib-pick__plus">${icon('playlists')}</span><span class="lib-pick__text"><b>${m.name}</b><span>${m.on ? 'New, made with ' + what : 'Not made'}</span></span><span class="lib-pick__box" aria-hidden="true">${icon('check', null, 'ic-16')}</span></button></li>`;
+    }
+    function changes() {
+      return made.filter(function (m) { return m.on; }).length + lists.filter(function (p) { var k = picks[p.id]; return k.now !== k.was || k.again; }).length;
     }
     var inputId = App.uid('lib-pick');
     App.openSheet({
       title: 'add to playlist', className: 'lib-picker',
-      body: html`<p class="lib-picker__what">Adding <b>${what}</b></p>
+      body: html`<p class="lib-picker__what">Adding <b>${what}</b>. Tick every playlist it goes in, then Done.</p>
         <div class="search-field lib-picker__search">${icon('search')}<label class="vh" for="${inputId}">Find a playlist</label>
           <input class="input" id="${inputId}" type="search" placeholder="Find a playlist" autocomplete="off" autofocus></div>
         <button class="lib-pick lib-pick--new" type="button" data-pick-new><span class="lib-pick__plus">${icon('plus')}</span><span class="lib-pick__text"><b>New playlist</b><span>with ${what}</span></span></button>
         <form class="lib-pick-new" hidden><label class="vh" for="${inputId}-new">New playlist name</label>
-          <input class="input" id="${inputId}-new" maxlength="60" placeholder="Name it" autocomplete="off"><button class="btn btn--primary" type="submit">Create</button></form>
-        ${recent.length ? ui.labelRule('recent', { level: 'h3', sm: true }) : ''}
-        <ul class="lib-pick-list">${recent.map(function (p) {
-          return html`<li data-name="${p.name.toLowerCase()}"><button class="lib-pick" type="button" data-pick="${p.id}">${ui.playlistArt(p, 44)}<span class="lib-pick__text"><b>${p.name}</b><span>${rowMeta(p)}</span></span></button></li>`;
-        })}</ul>
+          <input class="input" id="${inputId}-new" maxlength="60" placeholder="Name it" autocomplete="off"><button class="btn btn--primary" type="submit">Add</button></form>
+        <ul class="lib-pick-list" role="group" aria-label="Playlists"></ul>
         <p class="lib-pick-none" hidden>No playlist matches that. Press Enter to make a new one with that name.</p>`,
+      foot: html`<span class="lib-picker__count" role="status"></span><button class="btn btn--quiet" type="button" data-close>Cancel</button><button class="btn btn--primary" type="button" data-pick-done>Done</button>`,
       onMount: function (el, close) {
-        var input = $('#' + inputId, el), form = $('.lib-pick-new', el), none = $('.lib-pick-none', el);
-        function pick(id) {
-          var p = playlist(id); if (!p) return;
-          var missing = ids.filter(function (x) { return plIds(p).indexOf(x) < 0; });
-          close();
-          if (!missing.length) { App.toast('Already in ' + p.name, { icon: 'check' }); return; }
-          App.addToPlaylist(p.id, missing);       // shell toast with Undo
+        var input = $('#' + inputId, el), form = $('.lib-pick-new', el), none = $('.lib-pick-none', el), list = $('.lib-pick-list', el);
+        function paint() {
+          App.patch(list, made.map(madeRow).concat(lists.map(row)).map(String).join(''));
+          filter();
+          var n = changes();
+          $('.lib-picker__count', el).textContent = n ? plural(n, 'change') : '';
         }
-        function create(name) {
-          name = name.trim() || 'new playlist';
-          close();
-          makePlaylist(name, '', ids).then(function (p) {
-            if (p) App.toast('Created ' + name + ' with ' + what, { icon: 'playlists', action: 'Open', onAction: function () { App.go('/playlist/' + p.id); } });
-          });
-        }
-        function showForm() { form.hidden = false; $('input', form).value = input.value; $('input', form).focus(); }
-        input.addEventListener('input', function () {
+        function filter() {
           var q = input.value.trim().toLowerCase(), shown = 0;
-          $$('.lib-pick-list li', el).forEach(function (li) { li.hidden = q && li.getAttribute('data-name').indexOf(q) < 0; if (!li.hidden) shown++; });
+          $$('li', list).forEach(function (li) { li.hidden = !!q && li.getAttribute('data-name').indexOf(q) < 0; if (!li.hidden) shown++; });
           none.hidden = shown > 0 || !q;
-        });
+        }
+        /* a part-ticked playlist goes ticked (add the rest), unticked (take them out), then back as it was */
+        function toggle(id) {
+          var k = picks[id];
+          k.now = k.was === 'mixed' ? { mixed: 'true', 'true': 'false', 'false': 'mixed' }[k.now] : k.now === 'true' ? 'false' : 'true';
+          if (k.now !== 'true') k.again = false;
+          paint();
+        }
+        function stage(name) {
+          name = name.trim() || 'new playlist';
+          made.unshift({ name: name, on: true });
+          form.hidden = true; input.value = ''; paint();
+          var b = $('[data-pick-made="0"]', list); if (b) b.focus();
+          App.announce(name + ' will be made with ' + what);
+        }
+        function done() { close(); apply(ids, what, lists, picks, made); }
+        input.addEventListener('input', filter);
         input.addEventListener('keydown', function (e) {
-          if (e.key !== 'Enter') return; e.preventDefault();
-          var b = $$('.lib-pick-list li:not([hidden]) [data-pick]', el)[0];
-          if (b && input.value.trim()) pick(b.getAttribute('data-pick')); else if (input.value.trim()) create(input.value);
+          if (e.key !== 'Enter' || !input.value.trim()) return;
+          e.preventDefault();
+          var b = $$('li:not([hidden]) [role="checkbox"]', list)[0];
+          if (b) { b.click(); b.focus(); } else stage(input.value);
         });
         el.addEventListener('click', function (e) {
-          var b = e.target.closest('[data-pick]'); if (b) { pick(b.getAttribute('data-pick')); return; }
-          if (e.target.closest('[data-pick-new]')) showForm();
+          var b = e.target.closest('[data-pick]');
+          if (b) { toggle(b.getAttribute('data-pick')); return; }
+          b = e.target.closest('[data-pick-made]');
+          if (b) { var m = made[+b.getAttribute('data-pick-made')]; m.on = !m.on; paint(); return; }
+          b = e.target.closest('[data-pick-again]');
+          if (b) { var k = picks[b.getAttribute('data-pick-again')]; k.again = !k.again; paint(); return; }
+          if (e.target.closest('[data-pick-new]')) { form.hidden = false; $('input', form).value = input.value; $('input', form).focus(); return; }
+          if (e.target.closest('[data-pick-done]')) done();
         });
-        form.addEventListener('submit', function (e) { e.preventDefault(); create($('input', form).value); });
+        /* up and down move between the playlists; Ctrl+Enter is Done from anywhere */
+        el.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); done(); return; }
+          if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' || !e.target.closest('.lib-pick-list')) return;
+          var all = $$('li:not([hidden]) [role="checkbox"]', list), i = all.indexOf(e.target.closest('[role="checkbox"]'));
+          var to = all[i + (e.key === 'ArrowDown' ? 1 : -1)];
+          if (to) { e.preventDefault(); to.focus(); }
+        });
+        form.addEventListener('submit', function (e) { e.preventDefault(); stage($('input', form).value); });
+        paint();
       }
     });
   }
-  App.hooks.addToPlaylist = function (ids) { openPicker(ids); };
+  /* Done: each playlist whose tick changed gets its new order (the songs it lacked at the end, or without them), the
+     new ones are made, and one toast says what happened with one Undo for all of it */
+  function apply(ids, what, lists, picks, made) {
+    var undo = [], into = [], outOf = [], jobs = [];
+    lists.forEach(function (p) {
+      var k = picks[p.id], before = plIds(p), after = null;
+      if (k.now === 'true' && (k.was !== 'true' || k.again)) {
+        after = before.concat(k.again ? ids : ids.filter(function (id) { return before.indexOf(id) < 0; }));
+        into.push(p.name);
+      } else if (k.now === 'false' && k.was !== 'false') {
+        after = before.filter(function (id) { return ids.indexOf(id) < 0; });
+        outOf.push(p.name);
+      }
+      if (!after) return;
+      jobs.push(App.savePlaylistOrder(p.id, after).then(function () { undo.push(function () { return App.savePlaylistOrder(p.id, before); }); },
+        function (err) { App.toast('Couldn\'t change ' + p.name + ': ' + err.message, { kind: 'error' }); }));
+    });
+    made.filter(function (m) { return m.on; }).forEach(function (m) {
+      into.push(m.name);
+      jobs.push(makePlaylist(m.name, '', ids).then(function (p) { if (p) undo.push(function () { return App.deletePlaylist(p.id); }); }));
+    });
+    if (!jobs.length) return;
+    Promise.all(jobs).then(function () {
+      if (!undo.length) return;
+      var said = (into.length ? 'Added ' + what + ' to ' + names(into) : '') + (into.length && outOf.length ? '; ' : '') +
+        (outOf.length ? (into.length ? 'took it out of ' : 'Took ' + what + ' out of ') + names(outOf) : '');
+      App.toast(said, { icon: 'playlists', action: 'Undo', onAction: function () { undo.forEach(function (u) { u(); }); } });
+    });
+  }
+  function names(list) { return list.length <= 2 ? list.join(' and ') : list.slice(0, -1).join(', ') + ' and ' + list[list.length - 1]; }
+  App.hooks.addToPlaylist = function (ids, anchor) { openPicker(ids, anchor && anchor.getAttribute && anchor.getAttribute('data-what')); };
 
   /* =====================================================================
      10. Imports (App.hooks.importFile + the Import buttons).
@@ -1865,6 +1942,9 @@
     var items = [
       { label: 'Play next', icon: 'queue', run: function () { App.player.playNext(a.trackIds); App.toast(a.title + ' plays next', { icon: 'queue' }); } },
       { label: 'Add to queue', icon: 'plus', run: function () { App.player.addToQueue(a.trackIds); App.toast('Added ' + a.title + ' to the queue', { icon: 'queue' }); } },
+      { label: 'Add to playlist', icon: 'playlists', run: function () {
+        App.albumTracks(id).then(function (list) { openPicker(list, a.title); }, function (err) { App.toast('Couldn\'t read ' + a.title + ': ' + err.message, { kind: 'error' }); });
+      } },
       { label: 'Go to artist', icon: 'peer', run: function () { App.go('/artist/' + a.artistId); } },
       App.coverItem('album', a.id)
     ];
@@ -1931,6 +2011,7 @@
       { label: 'Rename', icon: 'edit', run: function () { openEdit(p); } },
       { label: 'Play next', icon: 'queue', run: function () { if (!ids.length) return App.toast('This playlist is empty', { icon: 'info' }); App.player.playNext(ids); App.toast(p.name + ' plays next', { icon: 'queue' }); } },
       { label: 'Add to queue', icon: 'plus', run: function () { if (!ids.length) return App.toast('This playlist is empty', { icon: 'info' }); App.player.addToQueue(ids); App.toast('Added ' + p.name + ' to the queue', { icon: 'queue' }); } },
+      { label: 'Add to another playlist', icon: 'playlists', run: function () { if (!ids.length) return App.toast('This playlist is empty', { icon: 'info' }); openPicker(ids, p.name, p.id); } },
       { label: 'Duplicate', icon: 'playlists', run: function () {
         makePlaylist(p.name + ' (copy)', p.desc, ids, undefined, addedOf(p)).then(function (c) { if (c) { App.go('/playlist/' + c.id); App.toast('Made a copy of ' + p.name, { icon: 'playlists' }); } });
       } },
@@ -1943,12 +2024,14 @@
   }
   App.action('lib-pl-row-menu', function (el) {
     var row = el.closest('.trow'), list = row.parentElement, p = playlistOf(list.getAttribute('data-pl')); if (!p) return;
+    var sel = App.selectedIds(row);
+    if (sel.length > 1) { App.itemMenus.songs(sel, el); return; }
     var shown = shownRows(p), itemAt = rowToItem(p, shown), n = $$('.trow', list).indexOf(row), id = row.getAttribute('data-track-id'), t = M.track(id), custom = inOwnOrder(p);
     var items = [
       { label: 'Play next', icon: 'queue', run: function () { App.player.playNext([id]); } },
       { label: 'Add to queue', icon: 'plus', run: function () { App.player.addToQueue([id]); } },
       { label: isSaved(id) ? 'In your library' : 'Save to library', icon: isSaved(id) ? 'saved' : 'save', run: function () { if (isSaved(id)) App.toast('Already saved to your library', { icon: 'saved' }); else App.saves.start([id]); } },
-      { label: 'Add to another playlist', icon: 'playlists', run: function () { openPicker([id]); } },
+      { label: 'Add to another playlist', icon: 'playlists', run: function () { openPicker([id], null, p.id); } },
       { label: 'Start radio', icon: 'radio', run: function () { App.player.startRadio({ kind: 'track', id: id }); } },
       'sep'
     ];

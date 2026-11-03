@@ -544,6 +544,26 @@ playlist, the search's top result) open `App.itemMenus[track|album|artist|playli
 the rest in library.js). The keyboard opens it by the item. Text fields and selected text keep the browser's menu (copy, paste),
 and so does everything else; the desktop app's WebView2 shows its own menu only where the page leaves the event.
 
+**Several songs at once.** A click on a song row selects it (`.is-selected`), Ctrl (Cmd) adds or drops one, Shift
+reaches from the last one picked, and Shift with Up or Down does the same from the keyboard. With more than one
+selected, the row's "…" and right-click open `App.itemMenus.songs(ids, anchor)` (play next, queue, add to playlist,
+save, like, download) and dragging carries them all; `App.selectedIds(row)` is the list.
+
+## Adding to playlists
+
+Every way in opens one sheet, `App.hooks.addToPlaylist(ids, anchor)` (library.js section 9): a song's "…" and its
+right-click, the player's and Now Playing's, several selected songs, an album's button and menu, and a playlist's
+"Add to another playlist" (the playlist itself left out). It is a checklist: a playlist that already holds every song
+is ticked, one holding some is part-ticked (`aria-checked="mixed"`), and nothing changes until Done (Ctrl+Enter).
+- Ticking adds only the songs a playlist lacks; "Add again" on an already-ticked one adds them once more, the one way
+  to make a duplicate. Unticking takes the songs out. A part-ticked one cycles ticked, unticked, as it was.
+- "New playlist" names one in the sheet; it is made at Done, with the songs.
+- Done saves each changed playlist (`App.savePlaylistOrder`, so offline it goes through the outbox) and makes the new
+  ones; one toast names them all, with one Undo. Up and Down move between playlists; Enter in the search ticks the
+  first match, or names a new playlist when none matches.
+- Songs dropped on a playlist (`App.addToPlaylist`) add only what it lacks, too; when it has them all, the toast says
+  so and offers "Add again".
+
 ## Links
 
 `App.copyShareLink(kind, id, lullPath)` is "Copy link" (album and artist menus, the player's More menu): it copies the

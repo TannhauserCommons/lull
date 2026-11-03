@@ -3462,12 +3462,19 @@
       return loadPlaylists();
     });
   };
-  function addToPlaylist(plId, ids) {
-    ids = [].concat(ids);
+  /* songs dropped on a playlist: only those it lacks, unless `again` (the toast's "Add again" when it has them all) */
+  function addToPlaylist(plId, ids, again) {
+    ids = [].concat(ids).filter(function (id, i, all) { return all.indexOf(id) === i; });
     var p = M.playlist(plId); if (!p) return;
     var before = p.items.map(function (i) { return i.trackId; });
-    App.savePlaylistOrder(plId, before.concat(ids)).then(function () {
-      App.toast('Added to ' + p.name, { icon: 'playlists', action: 'Undo', onAction: function () { App.savePlaylistOrder(plId, before); } });
+    var adding = again ? ids : ids.filter(function (id) { return before.indexOf(id) < 0; });
+    if (!adding.length) {
+      App.toast((ids.length === 1 ? 'Already in ' : 'All already in ') + p.name, { icon: 'check', action: 'Add again', onAction: function () { addToPlaylist(plId, ids, true); } });
+      return;
+    }
+    var skipped = ids.length - adding.length;
+    App.savePlaylistOrder(plId, before.concat(adding)).then(function () {
+      App.toast('Added to ' + p.name + (skipped ? ' (' + skipped + ' already in it)' : ''), { icon: 'playlists', action: 'Undo', onAction: function () { App.savePlaylistOrder(plId, before); } });
     }, function (err) { App.toast('Couldn\'t add to ' + p.name + ': ' + err.message, { kind: 'error' }); });
   }
   App.addToPlaylist = addToPlaylist;
@@ -3540,6 +3547,19 @@
     ], { label: 'Actions for ' + t.title });
   }
   App.itemMenus.track = trackMenu;
+  /* several selected songs (section 11, selecting rows): their "…" and right-click act on all of them */
+  function songsMenu(list, anchor) {
+    var unsaved = list.filter(function (id) { return !App.isSaved(id); }), unliked = list.filter(function (id) { return !App.isLiked(id); });
+    App.menu(anchor, [
+      { label: 'Play next', icon: 'queue', run: function () { P.playNext(list); } },
+      { label: 'Add to queue', icon: 'plus', run: function () { P.addToQueue(list); } },
+      { label: 'Add to playlist', icon: 'playlists', run: function () { App.hooks.addToPlaylist(list); } },
+      unsaved.length ? { label: 'Save to library', icon: 'save', run: function () { App.saves.start(unsaved); } } : null,
+      unliked.length ? { label: 'Like', icon: 'heart', run: function () { setLiked(unliked, true); App.toast('Added ' + unliked.length + ' to Liked songs', { icon: 'heart-fill' }); } } : null,
+      { label: 'Download', icon: 'download', run: function () { App.downloads.keep({ kind: 'track', id: list[0] }, list); } }
+    ].filter(Boolean), { label: 'Actions for ' + list.length + ' songs' });
+  }
+  App.itemMenus.songs = songsMenu;
   /* the player's "…" (the bar's, Now Playing's, a right-click on the playing song): the song's actions, then the bar's
      views. Every tool a narrow bar lets give way (data-fit) is here: Like and Save with the song, Lyrics, Classic,
      Devices and Device view always, and the equaliser (screens/eq.js) */
@@ -3620,7 +3640,10 @@
         App.toast('Hidden ' + (a ? a.name : 'the artist') + ' from your feed', { icon: 'info' });
       });
     },
-    'track-menu': function (el) { trackMenu(el.getAttribute('data-id'), el); },
+    'track-menu': function (el) {
+      var sel = App.selectedIds(el.closest('.trow'));
+      if (sel.length > 1) songsMenu(sel, el); else trackMenu(el.getAttribute('data-id'), el);
+    },
     'player-more': function (el) { playerMenu(el); },
     'play': function () { P.toggle(); }, 'next': function () { P.next(); }, 'prev': function () { P.prev(); },
     'shuffle': function () { P.setShuffle(); }, 'repeat': function () { P.cycleRepeat(); }, 'mute': function () { P.toggleMute(); },
@@ -3741,6 +3764,29 @@
   document.addEventListener('click', function (e) {
     var a = e.target.closest('a[data-close]'); if (a && !a.hasAttribute('data-act')) setTimeout(App.closeTop, 0);
   });
+  /* selecting rows: a click selects one, Ctrl (Cmd on a Mac) adds or drops one, Shift reaches from the last one
+     picked; Shift with Up or Down does the same from the keyboard. The "…", a right-click and dragging then act on all
+     of them (App.selectedIds) */
+  var selFrom = null;
+  function selectRows(row, how) {
+    var rows = $$('.trow[data-track-id]', row.parentElement);
+    if (how === 'range' && selFrom && rows.indexOf(selFrom) >= 0) {
+      var a = rows.indexOf(selFrom), b = rows.indexOf(row);
+      rows.forEach(function (r, i) { r.classList.toggle('is-selected', i >= Math.min(a, b) && i <= Math.max(a, b)); });
+    } else if (how === 'add') { row.classList.toggle('is-selected'); selFrom = row; }
+    else { rows.forEach(function (r) { r.classList.toggle('is-selected', r === row); }); selFrom = row; }
+    var n = rows.filter(function (r) { return r.classList.contains('is-selected'); }).length;
+    if (how !== 'one' && n > 1) App.announce(n + ' songs selected');
+  }
+  App.selectedIds = function (row) {
+    if (!row || !row.classList.contains('is-selected')) return row ? [row.getAttribute('data-track-id')] : [];
+    return $$('.trow.is-selected[data-track-id]', row.parentElement).map(function (r) { return r.getAttribute('data-track-id'); });
+  };
+  document.addEventListener('click', function (e) {
+    var r = e.target.closest && e.target.closest('.trow[data-track-id]');
+    if (!r || e.target.closest('button, a, input')) return;
+    selectRows(r, e.shiftKey ? 'range' : e.ctrlKey || e.metaKey ? 'add' : 'one');
+  });
   // double-click a row plays it
   document.addEventListener('dblclick', function (e) {
     var r = e.target.closest('.trow[data-track-id]'); if (!r || e.target.closest('button, a')) return;
@@ -3771,6 +3817,7 @@
     { group: 'Go to', keys: ['G+H', 'G+S', 'G+L', 'G+P'], label: 'Home, Search, Library, Playlists' },
     { group: 'Go to', keys: ['?'], label: 'This list' },
     { group: 'Lists', keys: ['Up', 'Down'], label: 'Move between songs' },
+    { group: 'Lists', keys: ['Shift+Up', 'Shift+Down'], label: 'Select several songs (or Ctrl+click, Shift+click)' },
     { group: 'Lists', keys: ['Enter'], label: 'Play the song' },
     { group: 'Lists', keys: ['Shift+Enter'], label: 'Play next' },
     { group: 'Lists', keys: ['Alt+Up', 'Alt+Down'], label: 'Reorder (queue, playlists)' },
@@ -3799,7 +3846,7 @@
       if ((k === 'ArrowDown' || k === 'ArrowUp') && e.altKey) { e.preventDefault(); App.emit('row:move', { row: row, list: list, index: i, dir: k === 'ArrowDown' ? 1 : -1 }); return; }
       if (k === 'ArrowDown' || k === 'ArrowUp') {
         e.preventDefault(); var n = rows[i + (k === 'ArrowDown' ? 1 : -1)];
-        if (n) { rows.forEach(function (r) { r.classList.remove('is-selected'); }); n.classList.add('is-selected'); n.focus(); }
+        if (n) { if (e.shiftKey) { if (!selFrom || rows.indexOf(selFrom) < 0) selFrom = row; selectRows(n, 'range'); } else selectRows(n, 'one'); n.focus(); }
         return;
       }
       if (k === 'Enter' && a === row) { e.preventDefault(); if (e.shiftKey) P.playNext([row.getAttribute('data-track-id')]); else P.playTrack(row.getAttribute('data-track-id'), listIds(row)); return; }
