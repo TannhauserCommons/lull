@@ -167,11 +167,14 @@ async fn look_up(
     }
     let archive_size = if size <= 256 { 250 } else { 500 };
     match find(ctx, album, known, archive_size).await {
-        Ok(Some(Some(bytes))) => {
-            if let Err(e) = write_atomic(path, bytes).await {
-                tracing::warn!(path = %path.display(), error = %e, "could not cache a cover");
+        Ok(Some(Some(bytes))) => match scaled(bytes, size).await {
+            Ok(bytes) => {
+                if let Err(e) = write_atomic(path, bytes).await {
+                    tracing::warn!(path = %path.display(), error = %e, "could not cache a cover");
+                }
             }
-        }
+            Err(e) => tracing::warn!(error = %e, "could not scale a cover"),
+        },
         Ok(Some(None)) => {
             if let Err(e) = write_atomic(none, Vec::new()).await {
                 tracing::warn!(error = %e, "could not cache a missing cover");
@@ -226,6 +229,14 @@ async fn file_cover(file: PathBuf, embedded: bool, size: u32) -> Result<Option<V
     })
     .await
     .map_err(|e| format!("cover task: {e}"))?
+}
+
+/// An archive cover at the size asked for: the archive's smallest thumbnail is 250 px, and a 96 px
+/// row cover kept at 250 is 6.8 times the pixels for every client to decode and hold.
+async fn scaled(bytes: Vec<u8>, size: u32) -> Result<Vec<u8>, String> {
+    tokio::task::spawn_blocking(move || fit(bytes, size))
+        .await
+        .map_err(|e| format!("cover task: {e}"))
 }
 
 /// Scales an image down to fit `size` × `size` (JPEG), so a 96 px thumbnail isn't a 3 MB
@@ -302,5 +313,22 @@ fn content_type(bytes: &[u8]) -> &'static str {
         [b'G', b'I', b'F', ..] => "image/gif",
         [b'R', b'I', b'F', b'F', _, _, _, _, b'W', b'E', b'B', b'P', ..] => "image/webp",
         _ => "image/jpeg",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn an_archive_cover_is_kept_at_the_size_asked_for() -> Result<(), String> {
+        // The archive answers a 96 px ask with its 250 px thumbnail (look_up's archive_size).
+        let mut png = Vec::new();
+        image::RgbImage::new(250, 250)
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .map_err(|e| e.to_string())?;
+        let kept = image::load_from_memory(&scaled(png, 96).await?).map_err(|e| e.to_string())?;
+        assert_eq!((kept.width(), kept.height()), (96, 96));
+        Ok(())
     }
 }
