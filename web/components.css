@@ -230,7 +230,7 @@ button.src-badge::after { content: ""; position: absolute; inset: -10px -2px; }
    ===================================================================== */
 .shelf {
   display: grid; grid-auto-flow: column; grid-auto-columns: 168px; gap: var(--sp-5);
-  overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: var(--sp-3); scrollbar-width: thin;
+  overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: var(--sp-3);
 }
 .shelf > * { scroll-snap-align: start; }
 .tile { position: relative; display: grid; gap: 2px; min-width: 0; }
@@ -986,7 +986,7 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 .nav-item:hover { background: var(--bg-2); }
 .nav-item[aria-current="page"] { background: var(--peri); color: var(--ink); border-color: var(--line); }
 .nav-item .badge-count { margin-left: auto; }
-.rail__scroll { flex: 1; min-height: 0; overflow: auto; padding-bottom: 8px; scrollbar-width: thin; }
+.rail__scroll { flex: 1; min-height: 0; overflow: auto; padding-bottom: 8px; }
 .rail__section { padding: 12px 20px 4px; }
 .rail__section .label-rule { margin: 0; --rule: var(--edge); }
 .rail__tags { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 18px 6px; }

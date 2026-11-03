@@ -310,6 +310,9 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
 - **Designs.**
   - Layout states that must hold whatever a design draws (the strips, the column's margin) are `!important` in the
     components layer.
+  - Scrollbars are base.css's: a thin rounded thumb in `--scroll-thumb` (each surface's quiet colour) on a clear track,
+    no arrow buttons. A design retints the token; `scrollbar-width`/`scrollbar-color` on an element would make Chromium
+    and WebView2 draw their native bar there, so those are only set for Firefox.
   - Each design adds its own wide-screen touches in its `design` layer, using the same `data-size` and container
     names.
 

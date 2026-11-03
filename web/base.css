@@ -80,6 +80,22 @@
     background: var(--bg); color: var(--fg);
   }
 
+  /* ---------- scrollbars ----------
+     One look for every scroll area (the page, panels, lists, shelves): a thin rounded thumb in the surface's quiet colour
+     on a clear track, no arrow buttons. --scroll-thumb is set per surface, so a shelf on a cream card and the page on the
+     sky each read on their own background; a design retints it. Chromium (the desktop app's WebView2 too) and WebKit
+     draw the ::-webkit-scrollbar parts, which they ignore on an element with scrollbar-width or scrollbar-color set:
+     those two are for Firefox only. */
+  :root, .s-sky, .s-panel, .s-card, .card, .s-screen { --scroll-thumb: color-mix(in srgb, var(--fg-2) 60%, transparent); }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+  ::-webkit-scrollbar-button { display: none; }
+  ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: var(--scroll-thumb) padding-box; }
+  ::-webkit-scrollbar-thumb:hover { background-color: var(--fg-2); }
+  @supports not selector(::-webkit-scrollbar) {
+    :root, .s-sky, .s-panel, .s-card, .card, .s-screen { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
+  }
+
   /* ---------- page ---------- */
   /* first visit only: nothing shows until the theme's manifest says which shell to draw (designs/designs.js boot) */
   :root[data-booting] body { visibility: hidden; }
