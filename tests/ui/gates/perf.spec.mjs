@@ -39,7 +39,7 @@ for (const design of designs) {
     test('nothing runs on the main thread at rest', async ({ browser, page }) => {
       for (const route of ['/home', `/playlist/${ids.longPlaylist}`]) {
         const s = await S.idle(browser, page, opts(design), route);
-        expect(s.frames, `main-thread frames in 2 s at rest on ${route}`).toBeLessThanOrEqual(B.idleFrames);
+        expect(s.frames, `main-thread frames in 2 s at rest on ${route}; running: ${s.animations.join(' | ')}`).toBeLessThanOrEqual(B.idleFrames);
       }
     });
 

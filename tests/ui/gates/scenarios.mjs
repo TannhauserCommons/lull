@@ -176,13 +176,26 @@ export async function idle(browser, page, opts, route = '/home') {
   await throttle(page, opts.rate);
   const s = await traced(browser, page, () => page.waitForTimeout(2000));
   s.perSecondMs = s.busyMs / 2;
+  // what was moving, to name the cause when frames show up at rest
+  s.animations = await page.evaluate(() => [...new Set(document.getAnimations().filter((a) => a.playState === 'running').map((a) => {
+    const t = a.effect?.target, kf = a.effect?.getKeyframes?.() || [];
+    const props = [...new Set(kf.flatMap((k) => Object.keys(k).filter((p) => !['offset', 'easing', 'composite', 'computedOffset'].includes(p))))];
+    const timeline = a.timeline && a.timeline.constructor.name !== 'DocumentTimeline' ? ' (' + a.timeline.constructor.name + ')' : '';
+    return (a.animationName || a.transitionProperty || 'animation') + ' on ' + (t ? t.tagName.toLowerCase() + '.' + [...t.classList].slice(0, 2).join('.') : '?') + (a.effect?.pseudoElement || '') + ': ' + props.join(',') + timeline;
+  }))]);
   return s;
 }
 
 // A long listening session, compressed: the desktop app's bridge stubbed in (desktop-bridge.js), a queue skipped
 // through song by song while the screens change, and what stays behind measured after a forced collection: heap,
 // nodes, listeners, and what crossed the bridge per song.
-export async function listening(browser, page, opts, songs = 48) {
+export async function listening(browser, page, opts) {
+  // every seventh album's cover is one the hub is still fetching (404 until art.ready), as on a real hub: a cover
+  // waiting for its picture must not keep its screen alive once it leaves the page
+  const { albumIds } = await import('../fixture-hub/library.mjs');
+  const pending = albumIds.filter((_, i) => i % 7 === 3);
+  const fixture = (p, ids) => page.request.post(p, { data: { ids } });
+  await fixture('/__fixture/art-pending', pending);
   await page.addInitScript({ path: fileURLToPath(new URL('./desktop-bridge.js', import.meta.url)) });
   await openScreen(page, `/playlist/${ids.playlist}`, opts);   // a song from another album each time: a new cover each time
   const cdp = await page.context().newCDPSession(page);
@@ -193,7 +206,8 @@ export async function listening(browser, page, opts, songs = 48) {
     await settle(page);
     await cdp.send('HeapProfiler.collectGarbage');
     const m = Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.map((x) => [x.name, x.value]));
-    return { heapMB: m.JSHeapUsedSize / 1e6, nodes: m.Nodes, listeners: m.JSEventListeners };
+    const attached = await page.evaluate(() => document.getElementsByTagName('*').length);
+    return { heapMB: m.JSHeapUsedSize / 1e6, nodes: m.Nodes, attached, listeners: m.JSEventListeners };
   };
   await page.evaluate(() => {
     const ids = [...document.querySelectorAll('#view .trow[data-track-id]')].map((r) => r.getAttribute('data-track-id'));
@@ -210,12 +224,15 @@ export async function listening(browser, page, opts, songs = 48) {
       await page.evaluate(() => App.player.next());
     }
   };
+  // a whole lap of the queue (repeat all) between the two samples, so the queue panel shows the same songs both times
+  const songs = await page.evaluate(() => App.player.state.queue.length);
   await play(12, 0);   // warm: every screen built once, covers and code paths seen
   const first = await heap();
   const bridge0 = await page.evaluate(() => JSON.parse(JSON.stringify(window.__bridge)));
   await play(songs, 12);
   const last = await heap();
   const bridge = await page.evaluate(() => window.__bridge);
+  await fixture('/__fixture/art-ready', pending);
   const sent = (name) => (bridge.bytes[name] || 0) - (bridge0.bytes[name] || 0);
   return {
     first, last, songs,
