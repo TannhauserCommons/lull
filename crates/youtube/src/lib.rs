@@ -7,6 +7,7 @@
 mod api;
 mod formats;
 mod matching;
+mod playlist;
 mod search;
 mod update;
 mod ytdlp;
@@ -23,7 +24,7 @@ use lull_core::ids::TrackId;
 use lull_core::model::{SourceRef, Track};
 use lull_core::seams::Youtube;
 use lull_core::status::State;
-use lull_core::youtube::{Copy, Found, Mode, Settings, Want};
+use lull_core::youtube::{Copy, Found, Listing, Mode, Settings, Want};
 use lull_core::{Ctx, Error, Result};
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -169,6 +170,15 @@ impl Youtube for Service {
         }
         Err(Error::upstream("youtube", "the download failed twice"))
     }
+
+    async fn playlist(&self, url: &str, from: usize, count: usize) -> Result<Listing> {
+        self.backed_off()?;
+        let listing = playlist::page(self, url, from, count)
+            .await
+            .map_err(|p| self.failed(p))?;
+        self.succeeded();
+        Ok(listing)
+    }
 }
 
 impl Service {
@@ -206,18 +216,23 @@ impl Service {
     /// One yt-dlp lookup (search or extraction), paced and bounded lull-wide. An updated yt-dlp
     /// that won't run is dropped for the pinned one, and the run tried again with it.
     async fn run(&self, args: &[&str], limit: Duration) -> Result<Vec<u8>, Problem> {
+        self.run_with(args, limit, false).await
+    }
+
+    /// `run`, keeping what a `-i` run printed before it failed (`Ytdlp::output`).
+    async fn run_with(&self, args: &[&str], limit: Duration, partial: bool) -> Result<Vec<u8>, Problem> {
         let _turn = self
             .lookups
             .acquire()
             .await
             .map_err(|_| Problem::Other("youtube lookups closed".into()))?;
         self.ctx.http.pace("youtube", PACE).await;
-        match self.ytdlp.output(args, limit).await {
+        match self.ytdlp.output(args, limit, partial).await {
             Err(Problem::Broken(why)) if self.ytdlp.current().updated => {
                 tracing::warn!(why, "the updated yt-dlp failed; going back to the pinned one");
                 self.ytdlp.fall_back().await;
                 self.report();
-                self.ytdlp.output(args, limit).await
+                self.ytdlp.output(args, limit, partial).await
             }
             other => other,
         }

@@ -7,10 +7,11 @@
 | File | Holds |
 |---|---|
 | `core/src/youtube.rs` | The settings, `Copy` (how a YouTube copy is named as a `SourceRef`), its quality chip |
-| `core/src/seams.rs` | `Youtube`: `find(track, want)` and `download(source, dest)` |
+| `core/src/seams.rs` | `Youtube`: `find(track, want)`, `download(source, dest)` and `playlist(url, from, count)` |
 | `youtube/src/search.rs` | Searching, confirming by full extraction, remembered matches, kept extractions |
 | `youtube/src/matching.rs` | Whether an upload is the song, and how good a copy it is |
 | `youtube/src/formats.rs` | Which audio stream to take |
+| `youtube/src/playlist.rs` | Listing a playlist for link imports |
 | `youtube/src/ytdlp.rs` | Running yt-dlp, its errors in plain words |
 | `youtube/src/update.rs` | Keep yt-dlp up to date |
 | `youtube/src/lib.rs` | The seam, back-off, the `youtube` status |
@@ -80,6 +81,10 @@ Score: official +40, YouTube Music +10, exact title +5, minus 3 per second off, 
 - Lookups (searches, extractions) start at least 1.5 s apart lull-wide and at most 2 at once; downloads at most 3 at once. One search per song at a time.
 - **Back-off:** "Sign in to confirm you're not a bot" or HTTP 429 stops every lookup and download for 15 minutes, doubling up to 6 hours, until YouTube answers again. The `youtube` status says so in plain words ("YouTube is asking for a sign-in check, try later (lull asks again at 14:05 UTC)"); a stream that needed YouTube fails with the same sentence, never a stack trace.
 - An upload YouTube won't give (removed, private, age-restricted) is forgotten, so the next find searches again.
+
+## Playlists for link imports
+
+`Youtube::playlist(url, from, count)` lists a YouTube, YouTube Music or SoundCloud playlist for collection's link imports (collection.md), whatever the play mode. YouTube lists flat (`--flat-playlist`, no extraction); SoundCloud's flat listing names no song, so each song is read (`-i`, about 1 s a song), and a song blocked in this country is left out instead of failing the page. Runs share the lookups' pacing, limit and back-off.
 
 ## Status
 

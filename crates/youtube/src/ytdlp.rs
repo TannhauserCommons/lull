@@ -123,8 +123,11 @@ impl Ytdlp {
         command(&self.current().path, &self.deno, &self.dir, args)
     }
 
-    /// Runs yt-dlp to the end and returns its stdout.
-    pub async fn output(&self, args: &[&str], limit: Duration) -> Result<Vec<u8>, Problem> {
+    /// Runs yt-dlp to the end and returns its stdout. With `partial`, what it printed counts even
+    /// when it then failed: a playlist run with `-i` prints the songs it could read and fails for
+    /// the ones it couldn't (blocked in this country). A sign-in check, a 429 or a broken yt-dlp
+    /// still fail.
+    pub async fn output(&self, args: &[&str], limit: Duration, partial: bool) -> Result<Vec<u8>, Problem> {
         let mut cmd = self.command(args);
         cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).stdin(Stdio::null());
         let child = cmd.spawn().map_err(|e| broken(&self.current().path, &e))?;
@@ -135,7 +138,10 @@ impl Ytdlp {
         if out.status.success() {
             return Ok(out.stdout);
         }
-        Err(classify(&String::from_utf8_lossy(&out.stderr)))
+        match classify(&String::from_utf8_lossy(&out.stderr)) {
+            Problem::Gone(_) | Problem::Other(_) if partial && !out.stdout.is_empty() => Ok(out.stdout),
+            problem => Err(problem),
+        }
     }
 }
 
