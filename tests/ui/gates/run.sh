@@ -9,5 +9,5 @@ npx playwright install chromium >/dev/null
 [ -f ../../web/vendor/webamp/webamp.bundle.min.js ] || sh ../../scripts/vendor-web.sh >/dev/null
 status=0
 npx playwright test -c gates/playwright.config.mjs --project perf --workers 1 "$@" || status=1
-npx playwright test -c gates/playwright.config.mjs --project screens --project a11y "$@" || status=1
+npx playwright test -c gates/playwright.config.mjs --project screens --project a11y --project covers "$@" || status=1
 exit $status

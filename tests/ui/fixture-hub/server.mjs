@@ -7,6 +7,9 @@
 //   node tests/ui/fixture-hub/server.mjs [port]      (default 8790; LULL_WEB=<dir> serves another web/)
 //
 // POST /__fixture/emit { topic, data } sends one server event to every open /api/events stream.
+// POST /__fixture/art-pending { ids } makes those covers answer 404 "not yet" (no-store), as the hub does while it
+// fetches one; POST /__fixture/art-ready { ids } serves them again and sends `art.ready { keys }`.
+// GET /__fixture/art-requests: cover requests that reached the hub since the last call, by URL (and resets them).
 
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
@@ -261,7 +264,7 @@ function emit(topic, data) {
 
 // ---------- covers: a two-colour gradient per id, as a real PNG at the size asked. The 512 px one has a fine grain,
 // so it weighs what a photo cover does (tens of KB): the desktop app hands that size to its mini player ----------
-const art = new Map();
+const art = new Map(), artPending = new Set(), artRequests = new Map();
 function cover(id, size) {
   const key = id + '@' + size;
   if (art.has(key)) return art.get(key);
@@ -370,11 +373,23 @@ const server = createServer(async (req, res) => {
     return;
   }
   let m;
+  if (path === '/__fixture/art-requests') { const counts = Object.fromEntries(artRequests); artRequests.clear(); return send(res, 200, counts); }
+  if (path === '/__fixture/art-pending' && req.method === 'POST') { (await readBody(req)).ids.forEach((id) => artPending.add(id)); return send(res, 204); }
+  if (path === '/__fixture/art-ready' && req.method === 'POST') {
+    const { ids } = await readBody(req); ids.forEach((id) => artPending.delete(id)); emit('art.ready', { keys: ids }); return send(res, 204);
+  }
   if ((m = /^\/api\/(?:catalog\/)?art\/([^/]+)$/.exec(path))) {
-    const size = [96, 256, 512].includes(+q.get('size')) ? +q.get('size') : 256;
+    artRequests.set(url.pathname + url.search, (artRequests.get(url.pathname + url.search) || 0) + 1);
+    // api.md /api/art: the sizes the hub serves; the fixture's pictures are 512 px at most, as a source with no more
+    // is: never blown up, and X-Image-Size says so
+    const asked = [96, 256, 512, 1024, 2048].includes(+q.get('size')) ? +q.get('size') : 256, size = Math.min(asked, 512);
     if (!L.albums[m[1]] && !L.artists[m[1]]) return send(res, 404, { error: 'not_found', message: 'No cover.' });
+    if (artPending.has(m[1])) {
+      res.writeHead(404, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+      return res.end(JSON.stringify({ error: 'not_found', message: 'The picture is still on its way.' }));
+    }
     const png = cover(m[1], size);
-    res.writeHead(200, { 'content-type': 'image/png', 'content-length': png.length, 'cache-control': 'private, max-age=86400' });
+    res.writeHead(200, { 'content-type': 'image/png', 'content-length': png.length, 'cache-control': 'private, max-age=86400', 'x-image-size': size + 'x' + size });
     return res.end(png);
   }
   if ((m = /^\/api\/(library\/)?stream\/([^/]+)$/.exec(path)) && req.method === 'GET') return audio(req, res, m[2], !!m[1]);
