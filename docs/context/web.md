@@ -8,17 +8,18 @@ from, how the player plays, and the rules screens follow. The endpoint contract 
 ## Files and load order
 
 ```
-index.html   tokens.css base.css components.css screens/*.css desktop/desktop.css designs/<name>/design.css (last)
+index.html   tokens.css base.css components.css screens/*.css (not classic.css) designs/<name>/design.css (last)
              designs/designs.js + the pre-paint script (design, theme, motion, text size)
              icons.js data.js align.js eq.js app.js layout.js connect.js offline.js screens/{discover,now,library,system,appearance}.js
              screens/{hub,setup}.js
-             the desktop app only (window.__TAURI__): desktop/webamp-session.js screens/{skins,classic}.js
-             desktop/desktop.js, from the start, as its crash recovery hands the queue back through classic.js.
-             A browser loads those three Classic files on first use (App.needClassic: the /classic route, a dropped
-             .wsz, Settings > Appearance), early when the pointer reaches a Classic button, or once the page is idle;
-             it never loads desktop.js. The equaliser's panel (screens/eq.js) loads on first use too (App.needEq:
-             Settings > Playback, the player's "…" > Equaliser). New code that only some screens use loads the same way (a route's `need`),
-             not from index.html: Lighthouse's transfer budget (tests/ui/budgets.json) is for the start
+             the desktop app only (window.__TAURI__): screens/classic.css desktop/desktop.css
+             desktop/webamp-session.js screens/{skins,classic}.js desktop/desktop.js, from the start, as its crash
+             recovery hands the queue back through classic.js. A browser loads Classic's four files on first use
+             (App.needClassic: the /classic route, a dropped .wsz, Settings > Appearance), early when the pointer
+             reaches a Classic button, or once the page is idle; it never loads desktop.js or desktop.css. The
+             equaliser's panel (screens/eq.js) loads on first use too (App.needEq: Settings > Playback, the player's
+             "…" > Equaliser). New code that only some screens use loads the same way (a route's `need`), not from
+             index.html: Lighthouse's transfer budget (tests/ui/budgets.json) is for the start
 data.js      window.LullData = App.data: API client, entity cache, per-route reads, the event stream
 align.js     window.LullAlign: how far apart two recordings of one moment are (switching to a better copy); pure,
              tested by tests/web/align.test.mjs (`node --test`, part of `mise run check`)

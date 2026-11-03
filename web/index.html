@@ -18,8 +18,8 @@
 <style>@import url(screens/library.css) layer(screens);</style>
 <style>@import url(screens/system.css) layer(screens);</style>
 <style>@import url(screens/hub.css) layer(screens);</style>
-<style>@import url(screens/classic.css) layer(screens);</style>
-<style>@import url(desktop/desktop.css) layer(screens);</style>
+<!-- the desktop app only: Classic mode's styles (a browser loads them with its code, App.needClassic) and the wrapper's -->
+<script>if (window.__TAURI__ && !window.LullNative) document.write('<style>@import url(screens/classic.css) layer(screens);<\/style><style>@import url(desktop/desktop.css) layer(screens);<\/style>');</script>
 <link rel="stylesheet" id="design-css" href="designs/lull/theme.css">
 <script src="designs/designs.js"></script>
 <script>

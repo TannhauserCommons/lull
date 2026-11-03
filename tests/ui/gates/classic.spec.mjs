@@ -1,7 +1,8 @@
-// Classic mode's code (webamp-session.js, skins.js, classic.js) loads at start only in the desktop app; a browser loads
-// it on first use (app.js App.needClassic) and never loads desktop.js. These pin what that must not change: a .wsz
-// dropped anywhere becomes the Classic skin, leaving Classic returns to the page it was opened from, and the desktop
-// app hears Webamp's window from the start (its crash recovery hands the queue back through classic.js).
+// Classic mode (webamp-session.js, skins.js, classic.js, classic.css) and the desktop bridge (desktop.js, desktop.css) load
+// at start only in the desktop app; a browser loads Classic on first use (app.js App.needClassic) and never the bridge.
+// These pin what that must not change: a .wsz dropped anywhere becomes the Classic skin, Classic opens styled and leaving
+// it returns to the page it was opened from, and the desktop app hears Webamp's window from the start (its crash
+// recovery hands the queue back through classic.js).
 
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
@@ -12,12 +13,13 @@ const loaded = (page) =>
     classic: !!window.LullWebamp && !!App.classicSettings,
     desktop: !!window.LullDesktop,
     scripts: [...document.scripts].map((s) => s.getAttribute('src')).filter((s) => /classic|skins|webamp-session|desktop\.js/.test(s || '')),
+    styles: [...document.styleSheets].flatMap((sh) => [...sh.cssRules].filter((r) => r.href).map((r) => r.href)).filter((h) => /classic|desktop/.test(h)),
   }));
 
 test.describe('in a browser', () => {
   test('starts without Classic mode or the desktop bridge', async ({ page }) => {
     await openScreen(page, '/home');
-    expect(await loaded(page)).toEqual({ classic: false, desktop: false, scripts: [] });
+    expect(await loaded(page)).toEqual({ classic: false, desktop: false, scripts: [], styles: [] });
   });
 
   test('a .wsz dropped anywhere becomes the Classic skin', async ({ page }) => {
@@ -33,6 +35,8 @@ test.describe('in a browser', () => {
   test('leaving Classic returns to the page it was opened from', async ({ page }) => {
     await openScreen(page, `/album/${ids.album}`);
     await page.keyboard.press('w');
+    // its stage styled from the first frame: classic.css comes in with the code
+    expect(await page.locator('.cls-root').first().evaluate((el) => getComputedStyle(el).position)).toBe('fixed');
     await page.locator('[data-act="cls-exit"]').first().click();
     await page.waitForFunction((album) => location.hash === `#/album/${album}`, ids.album);
   });
@@ -52,6 +56,7 @@ test.describe('in the desktop app', () => {
     await openScreen(page, '/home');
     const l = await loaded(page);
     expect(l.classic && l.desktop).toBe(true);
+    expect(l.styles.length, 'classic.css and desktop.css').toBe(2);
     // what the window reports after a crash reaches classic.js without Classic having been opened on this page
     await page.evaluate(() => window.__bridge.fire('classic', { type: 'failed', message: 'pinned by the gate' }));
     await expect(page.locator('.toast', { hasText: 'pinned by the gate' })).toBeVisible();

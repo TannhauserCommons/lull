@@ -383,20 +383,30 @@
   App.refresh = function () { renderRoute(true); };
 
   /* code most visits never run loads on first use: index.html ships Classic mode (webamp-session.js, skins.js,
-     classic.js) at start only in the desktop app, whose crash recovery needs classic.js from the start. Elsewhere
-     App.needClassic() loads them, once, in order; it resolves when they have run (they register their route,
-     App.classicSettings and the .wsz import, as they do when loaded at start) */
+     classic.js and classic.css) at start only in the desktop app, whose crash recovery needs classic.js from the start.
+     Elsewhere App.needClassic() loads them, once, the scripts in order; it resolves when they have run (they register
+     their route, App.classicSettings and the .wsz import, as they do when loaded at start) and the styles are in */
   var CLASSIC = ['desktop/webamp-session.js', 'screens/skins.js', 'screens/classic.js'], classicLoad = null;
   App.needClassic = function () {
     if (App.classicSettings && window.LullWebamp && !classicRoute().need) return Promise.resolve();
-    return classicLoad || (classicLoad = CLASSIC.reduce(function (p, src) { return p.then(function () { return loadScript(src, 'Classic mode'); }); }, Promise.resolve())
+    return classicLoad || (classicLoad = Promise.all([loadStyle('screens/classic.css', 'Classic mode'),
+      CLASSIC.reduce(function (p, src) { return p.then(function () { return loadScript(src, 'Classic mode'); }); }, Promise.resolve())])
       .then(null, function (err) { classicLoad = null; throw err; }));
   };
   function classicRoute() { return routes.filter(function (r) { return r.pattern === '/classic'; })[0] || {}; }
+  function unloaded(what) { return new Error('Couldn\'t load ' + what + '. Check your connection and try again.'); }
+  /* in the screens layer, as index.html's own screen styles are */
+  function loadStyle(href, what) {
+    return new Promise(function (ok, fail) {
+      var el = document.createElement('style'); el.textContent = '@import url(' + href + ') layer(screens);';
+      el.onload = ok; el.onerror = function () { el.remove(); fail(unloaded(what)); };
+      document.head.appendChild(el);
+    });
+  }
   function loadScript(src, what) {
     return new Promise(function (ok, fail) {
       var s = document.createElement('script'); s.src = src;
-      s.onload = ok; s.onerror = function () { s.remove(); fail(new Error('Couldn\'t load ' + what + '. Check your connection and try again.')); };
+      s.onload = ok; s.onerror = function () { s.remove(); fail(unloaded(what)); };
       document.head.appendChild(s);
     });
   }
