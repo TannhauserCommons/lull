@@ -649,6 +649,7 @@
         if (e.payload.design !== Designs.current) Designs.set(e.payload.design, render);
       });
       toMain('hello');                                     // main answers with a snapshot
+      window.addEventListener('pagehide', function () { toMain('bye'); });   // main stops sending snapshots
       if (q.get('wayland')) setTimeout(function () {
         note(doc, 'Your desktop decides what stays on top: use the window menu (Alt+Space) > Always on Top.', 8000);
       }, 400);
@@ -696,7 +697,8 @@
         case 'vol-up': return P.setVolume(ps.volume + .1);
         case 'vol-down': return P.setVolume(ps.volume - .1);
         case 'seek': return typeof detail.fraction === 'number' && P.seekFraction(detail.fraction);
-        case 'hello': return sendPlayer(true);
+        case 'hello': miniOpen = true; return sendPlayer(true);
+        case 'bye': miniOpen = false; return;            // also sent by the app when it destroys the mini player
         default: console.warn('lull desktop: unknown action', a);
       }
     };
@@ -756,20 +758,25 @@
       var t = P.current(), ps = P.state, id = t ? t.id : null;
       return { track: t ? { title: t.title, artist: t.artist, format: t.format || '', lossless: !!t.lossless } : null,
         playing: !!ps.playing, liked: !!(id && App.isLiked(id)),
-        pos: ps.pos || 0, duration: P.duration() || 0, durationKnown: ps.durationKnown !== false,
-        buffered: ps.buffered || [], received: ps.received == null ? 1 : ps.received,
+        pos: Math.floor(ps.pos || 0), duration: P.duration() || 0, durationKnown: ps.durationKnown !== false,
+        buffered: ps.buffered || [], received: ps.received == null ? 1 : Math.floor(ps.received * 100) / 100,
         shuffle: !!ps.shuffle, repeat: ps.repeat || 'off', volume: ps.muted ? 0 : ps.volume };
     };
     /* the cover goes on its own, once per song: inside the snapshot, a 100 KB data URL crossed to the mini player with
        every position update (four a second), and the page's memory grew by tens of MB a minute */
     var sentArt;
     var sendArt = function (force) {
+      if (!miniOpen) return;
       var data = P.current() ? artFor() : null;
       if (!force && data === sentArt) return; sentArt = data;
       T.event.emit('player-art', { art: data }).catch(logFailure('cover art'));
     };
-    var lastPlayer = '';
+    /* snapshots feed only the mini player: none while it's closed ('hello' when it opens, 'bye' when it goes). pos in
+       whole seconds and received in whole percent, as the mini player shows them, so a tick that moved nothing it draws
+       sends nothing */
+    var lastPlayer = '', miniOpen = false;
     var sendPlayer = function (force) {
+      if (!miniOpen) return;
       sendArt(force);
       var snap = snapshot(), key = JSON.stringify(snap);
       if (!force && key === lastPlayer) return; lastPlayer = key;
