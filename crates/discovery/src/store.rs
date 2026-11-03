@@ -427,34 +427,10 @@ fn get<T: DeserializeOwned>(c: &Connection, table: &str, id: &str) -> Result<Opt
     Ok(json.and_then(|j| serde_json::from_str(&j).ok()))
 }
 
-/// Records tracks in the catalog and returns each as the catalog then has it. A known track
-/// keeps every fact it has; this source only fills its gaps.
+/// Records tracks in the catalog and returns each as the catalog then has it: a known track
+/// keeps every fact it has; this source only fills its gaps (`catalog::remember_found`).
 fn record(c: &Connection, tracks: Vec<Track>) -> Result<Vec<Track>> {
-    let mut out = Vec::with_capacity(tracks.len());
-    let mut changed = Vec::new();
-    for t in tracks {
-        let merged = match catalog::track(c, &t.id)? {
-            Some(known) => fill_gaps(known, t),
-            None => t,
-        };
-        if catalog::track(c, &merged.id)?.as_ref() != Some(&merged) {
-            changed.push(merged.clone());
-        }
-        out.push(merged);
-    }
-    catalog::remember(c, &changed)?;
-    Ok(out)
-}
-
-fn fill_gaps(mut known: Track, new: Track) -> Track {
-    known.year = known.year.or(new.year);
-    known.no = known.no.or(new.no);
-    known.disc = known.disc.or(new.disc);
-    known.duration = known.duration.or(new.duration);
-    if known.tags.is_empty() {
-        known.tags = new.tags;
-    }
-    known
+    catalog::remember_found(c, tracks)
 }
 
 /// Any one catalog track by the artist (a scan, but only for ids discovery never showed).
