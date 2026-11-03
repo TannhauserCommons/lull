@@ -53,10 +53,18 @@
     if (!n && act && (same = $$(act, view)).length) n = same[Math.min(actIndex, same.length - 1)];   // e.g. the next "Following" after an unfollow
     if (n) n.focus({ preventScroll: true });
   }
-  /* re-render when any of these store keys change (unsubscribed when the route changes) */
+  /* re-render when any of these store keys change (unsubscribed when the route changes). `services` changes with every
+     report from the hub (the cache's size moves while a song streams), but these pages draw only Jellyfin being offline
+     and Last.fm's state: a page re-renders, every row of it, only when one of those moved */
+  function servicesShown() { var lf = App.store.get('services').lastfm || {}; return [jellyfinDown(), lf.state, lf.queued || 0].join('|'); }
   function liveOn(ctx, keys, fn) {
+    var shown = servicesShown();
     ctx.onCleanup(App.store.subscribe(function (changed) {
-      if (changed.some(function (k) { return keys.indexOf(k) >= 0; })) (fn || refreshKeepFocus)();
+      var hit = changed.some(function (k) { return k !== 'services' && keys.indexOf(k) >= 0; });
+      if (!hit && changed.indexOf('services') >= 0 && keys.indexOf('services') >= 0) hit = servicesShown() !== shown;
+      if (!hit) return;
+      shown = servicesShown();
+      (fn || refreshKeepFocus)();
     }));
   }
 
@@ -1241,7 +1249,7 @@
      through the shell's 'drop' event because the list is a [data-drop] target. Screen row n is item shown[n].i. */
   function mountPlaylist(ctx) {
     var p = playlistOf(ctx.params.id); if (!p) return;
-    liveOn(ctx, ['playlists', 'liked', 'services']);
+    liveOn(ctx, ['playlists', 'services']);   // a like changes only its heart, which App.syncRows flips in place
     liveSaveButtons(ctx);
     // row "more" buttons get a playlist-aware menu (adds move and remove)
     $$('.lib-pl-list .trow__more [data-act="track-menu"]', ctx.el).forEach(function (b) { b.setAttribute('data-act', 'lib-pl-row-menu'); });

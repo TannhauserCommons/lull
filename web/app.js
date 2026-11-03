@@ -2827,6 +2827,8 @@
     App.setService(name, patch);
   }
   App.setService = function (key, patch) {
+    var was = state.services[key] || {};
+    if (Object.keys(patch).every(function (k) { return was[k] === patch[k]; })) return;   // the same report again: nothing to redraw
     App.store.update('services', function (s) { s[key] = Object.assign({}, s[key], patch); });
     renderTray();
   };
