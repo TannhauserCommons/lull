@@ -227,7 +227,8 @@
     invoke('discover_hubs').then(function (hubs) {
       box.innerHTML = (hubs.length ? hubs.map(function (h) {
         return '<button type="button" class="chip" data-dk="pick-hub" data-url="' + esc(h.url) + '" aria-pressed="false">' + esc(h.name) + ' <span class="dk-hubs__host">' + esc(hostOf(h.url)) + '</span></button>';
-      }).join('') : '<span class="dk-hubs__none">None found. Type the address below.</span>') +
+      }).join('') : '<span class="dk-hubs__none">None found on this network. Only a computer running lull as its hub shows up here; a server you reach over Tailscale doesn\'t. ' +
+        ($('[data-dk="scan"]', card) ? 'Scan the QR code from Settings &rsaquo; Devices on a paired device, or type the address below.' : 'Type its address below, with a code from Settings &rsaquo; Devices on a paired device.') + '</span>') +
         '<button type="button" class="btn btn--quiet btn--sm" data-dk="discover">Search again</button>';
     }, function (err) {
       box.innerHTML = '<span class="dk-hubs__none">' + esc(String(err)) + '</span>' +
