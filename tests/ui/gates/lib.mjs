@@ -2,6 +2,11 @@
 // Chrome trace. Gates assert on counts the trace reports (elements restyled, layouts, frames, task lengths), which
 // stay put from run to run, rather than on stopwatch times.
 
+import { spawn } from 'node:child_process';
+import { createServer } from 'node:net';
+import { fileURLToPath } from 'node:url';
+
+
 export const designs = ['lull', 'skydeck', 'starlight', 'petal', 'glasshouse'];
 export const themes = ['day', 'night'];
 // A fixed "now", as in the visual matrix: relative times and date ranges read the same on every run.
@@ -18,6 +23,23 @@ export const screens = {
   settings: '/settings/playback',
 };
 
+
+// A fixture hub of the gate's own, on a free port, with `env` on top of this process's (library.mjs reads FIXTURE_*): for
+// a library of another size, or for changes (likes, a playlist's order) the gates beside it must not see.
+export async function ownHub(env = {}) {
+  const port = await new Promise((ok, fail) => {
+    const s = createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => ok(p)); }).on('error', fail);
+  });
+  const server = fileURLToPath(new URL('../fixture-hub/server.mjs', import.meta.url));
+  const child = spawn(process.execPath, [server, String(port)], { env: { ...process.env, ...env }, stdio: 'ignore' });
+  const url = `http://127.0.0.1:${port}`;
+  for (let i = 0; ; i++) {
+    try { if ((await fetch(url + '/health')).ok) break; } catch { /* not listening yet */ }
+    if (i > 100) { child.kill(); throw new Error('the fixture hub did not start on ' + url); }
+    await new Promise((ok) => setTimeout(ok, 100));
+  }
+  return { url, close: () => child.kill() };
+}
 
 // Open `route` in `design`/`theme` and wait until the app has booted and the view stopped changing.
 export async function openScreen(page, route, { design = 'lull', theme = 'day', clock = true } = {}) {

@@ -3,7 +3,7 @@
 // print before/after numbers when run by hand (docs/context/quality.md#ui-gates).
 
 import { fileURLToPath } from 'node:url';
-import { ids, openScreen, settle, throttle, traced } from './lib.mjs';
+import { ids, openScreen, ownHub, settle, throttle, traced } from './lib.mjs';
 
 const playShown = (page) =>
   page.evaluate(() => App.player.playList([...document.querySelectorAll('#view .trow[data-track-id]')].map((r) => r.getAttribute('data-track-id')), 0));
@@ -70,6 +70,58 @@ export async function scroll(browser, page, opts) {
   });
   s.domNodes = await page.evaluate(() => document.getElementsByTagName('*').length);
   return s;
+}
+
+// A playlist of `songs` scrolled top to bottom in a fresh page, on a fixture hub of its own (FIXTURE_LONG_PLAYLIST; the
+// library the same size at any length, FIXTURE_ALBUMS, so only the list differs), then what the renderer holds after a
+// garbage collection: its whole private footprint (DOM, layout, styles, decoded pictures, the JS heap; also once opened,
+// before the scroll), DOM nodes, elements and the empty rows among them (ui.row), and pictures.
+export async function listCost(browser, opts, songs) {
+  const hub = await ownHub({ FIXTURE_ALBUMS: '480', FIXTURE_LONG_PLAYLIST: String(songs) });
+  const context = await browser.newContext({ baseURL: hub.url, viewport: { width: 1440, height: 900 }, serviceWorkers: 'block', deviceScaleFactor: 1 });
+  try {
+    const page = await context.newPage();
+    await openScreen(page, `/playlist/${ids.longPlaylist}`, opts);
+    const cdp = await context.newCDPSession(page);
+    const collect = async () => { for (let i = 0; i < 2; i++) { await cdp.send('HeapProfiler.collectGarbage'); await page.waitForTimeout(500); } };
+    await collect();
+    const openedMB = await rendererMB(browser);
+    await page.evaluate(async () => {
+      let s = document.querySelector('#view li[data-fill]');
+      while (s && !(s.scrollHeight > s.clientHeight + 10 && /auto|scroll/.test(getComputedStyle(s).overflowY))) s = s.parentElement;
+      s = s || document.scrollingElement;
+      for (let y = 0; y < s.scrollHeight; y += 800) { s.scrollTop = y; await new Promise((ok) => requestAnimationFrame(() => setTimeout(ok, 30))); }
+    });
+    await settle(page);
+    await collect();
+    const { nodes } = await cdp.send('Memory.getDOMCounters');
+    const facts = await page.evaluate(() => ({
+      rows: document.querySelectorAll('#view .tlist > li[data-track-id]').length,
+      elements: document.getElementsByTagName('*').length,
+      empty: document.querySelectorAll('li[data-fill]:empty').length,
+      images: document.images.length,
+    }));
+    return { songs, nodes, ...facts, openedMB, rendererMB: await rendererMB(browser) };
+  } finally {
+    await context.close();
+    hub.close();
+  }
+}
+// the largest renderer's private footprint (MB) in a memory dump: the page measured, the only one open
+async function rendererMB(browser) {
+  const cdp = await browser.newBrowserCDPSession(), events = [];
+  cdp.on('Tracing.dataCollected', (e) => events.push(...e.value));
+  const done = new Promise((ok) => cdp.once('Tracing.tracingComplete', ok));
+  await cdp.send('Tracing.start', { transferMode: 'ReportEvents', traceConfig: { includedCategories: ['disabled-by-default-memory-infra'], excludedCategories: ['*'], memoryDumpConfig: { triggers: [] } } });
+  await cdp.send('Tracing.requestMemoryDump', { deterministic: true, levelOfDetail: 'detailed' });
+  await cdp.send('Tracing.end');
+  await done;
+  await cdp.detach();
+  const names = {};
+  for (const e of events) if (e.ph === 'M' && e.name === 'process_name') names[e.pid] = e.args.name;
+  const mb = events.filter((e) => e.ph === 'v' && /renderer/i.test(names[e.pid] || '') && e.args.dumps.process_totals?.private_footprint_bytes)
+    .map((e) => parseInt(e.args.dumps.process_totals.private_footprint_bytes, 16) / 1048576);
+  return Math.max(...mb);
 }
 
 // Home, the long playlist, an album, Home again; returns the longest task of each move.

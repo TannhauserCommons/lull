@@ -80,6 +80,21 @@ test.describe('lull', () => {
     expect(s.domNodes, 'elements on the 1,200-song playlist, scrolled part way down').toBeLessThanOrEqual(B.longPlaylistDomNodes);
   });
 
+  // A long list costs what a short one does: every song keeps its <li> (ui.row), empty while away from the screen, and
+  // that is all that grows, opened or scrolled through. Before, a 5,000-song playlist took 600 MB opened and 1.5 GB
+  // scrolled through (0.27 MB a song); with only the rows near the screen drawn, still 72 KB a song scrolled through.
+  test('a long playlist costs what a short one does', async ({ browser }) => {
+    const short = await S.listCost(browser, o, 1200), long = await S.listCost(browser, o, 5000), more = long.songs - short.songs;
+    const kb = (k) => ((long[k] - short[k]) * 1024) / more;
+    console.log('list cost', JSON.stringify({ short, long }));
+    expect(long.rows - short.rows, 'rows: one for each song').toBe(more);
+    expect((long.elements - long.empty) - (short.elements - short.empty), 'elements besides the empty rows, 5,000 songs against 1,200').toBeLessThanOrEqual(B.listDrawnGrowth);
+    expect((long.nodes - short.nodes) / more, 'DOM nodes per song more (its <li>)').toBeLessThanOrEqual(B.listNodesPerSong);
+    expect(long.images - short.images, 'pictures, 5,000 songs against 1,200').toBeLessThanOrEqual(B.listImageGrowth);
+    expect(kb('openedMB'), 'renderer memory per song more, opened (KB)').toBeLessThanOrEqual(B.listKBPerSongOpened);
+    expect(kb('rendererMB'), 'renderer memory per song more, scrolled through (KB)').toBeLessThanOrEqual(B.listKBPerSong);
+  });
+
   test('moving between screens', async ({ browser, page }) => {
     const s = await S.navigate(browser, page, o);
     expect(s.longestMs, 'longest task of a screen change (ms)').toBeLessThanOrEqual(B.navigateLongestMs);
