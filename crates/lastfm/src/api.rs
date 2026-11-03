@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use lull_core::config::LastFm;
-use lull_core::http::Http;
+use lull_core::http::{self, Http};
 use lull_core::{Error, Result};
 use md5::{Digest, Md5};
 use serde::Deserialize;
@@ -171,6 +171,7 @@ impl Client {
         p.insert("method".into(), method.to_owned());
         p.insert("api_key".into(), self.api_key().to_owned());
         p.insert("format".into(), "json".into());
+        self.http.pace(http::LASTFM, http::LASTFM_PACE).await;
         let resp = self.http.send(SERVICE, |c| c.get(ROOT).query(&p)).await?;
         answer(resp).await
     }
@@ -181,6 +182,7 @@ impl Client {
         let sig = signature(&p, self.creds.api_secret.expose());
         p.insert("api_sig".into(), sig);
         p.insert("format".into(), "json".into());
+        self.http.pace(http::LASTFM, http::LASTFM_PACE).await;
         let resp = self.http.send(SERVICE, |c| c.post(ROOT).form(&p)).await?;
         answer(resp).await
     }
