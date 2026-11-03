@@ -155,4 +155,34 @@ mod tests {
         let w = wanted(&query("Olivia Rodrigo", "drop dead", None));
         assert!(is_wanted(&hit("Olivia Rodrigo", "drop dead", Some(251)), &w));
     }
+
+    #[test]
+    fn a_song_in_capitals_or_with_its_featured_artist_is_the_same_song() {
+        let catalog = hit("Luude", "Down Under (feat. Colin Hay)", Some(222));
+        assert!(is_wanted(
+            &catalog,
+            &wanted(&query("LUUDE", "DOWN UNDER (FEAT. COLIN HAY)", Some(222)))
+        ));
+        assert!(
+            is_wanted(&catalog, &wanted(&query("Luude", "Down Under", None))),
+            "feat. aside"
+        );
+        assert!(is_wanted(
+            &catalog,
+            &wanted(&query("Luude, Colin Hay", "Down Under", Some(223)))
+        ));
+    }
+
+    #[test]
+    fn a_remix_is_not_the_original() {
+        let original = wanted(&query("Luude", "Down Under (feat. Colin Hay)", None));
+        assert!(!is_wanted(
+            &hit("Luude", "Down Under (feat. Colin Hay) [Majestic Remix]", None),
+            &original
+        ));
+        assert!(!is_wanted(
+            &hit("Luude", "Down Under - Majestic Remix", None),
+            &original
+        ));
+    }
 }

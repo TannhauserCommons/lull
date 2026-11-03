@@ -16,6 +16,7 @@ pub mod catalog;
 mod matching;
 pub mod merge;
 mod playlists;
+pub mod resolve;
 #[cfg(test)]
 mod tests;
 

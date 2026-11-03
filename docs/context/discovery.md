@@ -162,6 +162,14 @@ Collection's playlist link imports ask `Catalog::find_song` for each song a Spot
 - **Recorded** like a search row (track, album with its cover, catalog source), so the id resolves and the album page opens.
 - **Limits:** iTunes match lookups spend only the calls the listener's searches leave spare (12 of 18 a minute), waiting for one rather than skipping, and are kept 7 days (`it:match:`). Deezer name lookups are kept a day, ISRC lookups 30 days, inside Deezer's shared window.
 
+## Bare songs
+
+`search/resolve.rs`, `lull_core::catalog` (`remember_named`, `enrich`). A song recorded from another source's text (an imported line, a playlist's song with no match, a Last.fm-only result, file tags) is bare: no album lull has a picture for. Every crate records such songs one way (`catalog::remember_named`: a richer record is kept, the source's ISRC is kept as a hint, the source's own picture becomes its cover), and nobody resolves them when recording.
+- **The UI asks:** `ui.cover` (web) collects every song it draws that isn't saved and has no pictured album, and posts them to `POST /api/catalog/resolve` (each once a session). So every path is covered, including ones added later.
+- **At once:** songs lull can picture already (a known album cover, a source's own picture, a resolved song) come back with their album pictured.
+- **In the background:** a bare song due a lookup (never tried, or missed a day ago, `catalog_resolutions`) is found as `Catalog::find_song` finds songs (the library, Deezer by ISRC, then the catalog by name: case, "feat." and remaster tags aside, a remix is another song), one at a time. A match fills the bare record in place (`catalog::enrich`: the catalog's spelling, album and cover, the same id, so playlists, likes and plays naming it change too); batches go out as `catalog.tracks`, a second apart.
+- **Old imports** are covered the same way: their songs are resolved the first time they are shown.
+
 ## Ids
 
 Album and artist ids are hashes (`lull_core::ids`), so discovery remembers every album and artist it shows (`discovery_albums`, `discovery_artists`), and every album's artist with it (with the MBID the release names), so an album's artist link resolves. An unknown id falls back to the catalog: the first track with that `albumId` / `artistId`. Tracks go to the catalog. An id the catalog already has keeps every fact it has, because another crate may have added file facts. Discovery only fills its gaps: year, number, disc, length and tags.

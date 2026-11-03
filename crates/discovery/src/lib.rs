@@ -141,6 +141,8 @@ pub struct Service {
     transfers: Arc<dyn Transfers>,
     /// yt-dlp, for YouTube's playlists in search.
     youtube: Arc<dyn Youtube>,
+    /// Bare songs the UI showed, waiting for a catalog lookup.
+    resolver: search::resolve::Queue,
     /// Settings > Discovery "adventurousness": radio's steer when the UI sends none.
     adventurousness: RwLock<f64>,
 }
@@ -184,6 +186,7 @@ pub async fn start(
         shares: share::Shares::default(),
         transfers,
         youtube,
+        resolver: search::resolve::Queue::default(),
         adventurousness: RwLock::new(DEFAULT_STEER),
         ctx: ctx.clone(),
     });
@@ -191,6 +194,7 @@ pub async fn start(
     ctx.spawn(artist::photo::work(svc.clone(), photo_queue));
     ctx.spawn(feed::keep_fresh(svc.clone()));
     ctx.spawn(search::catalog::keep_choosing(svc.clone()));
+    ctx.spawn(search::resolve::work(svc.clone()));
     Ok(svc)
 }
 
@@ -200,6 +204,7 @@ pub fn router(svc: Arc<Service>) -> Router {
     Router::new()
         .route("/api/search", get(search::search))
         .route("/api/catalog/art/{id}", get(art::get))
+        .route("/api/catalog/resolve", axum::routing::post(search::resolve::post))
         .route("/api/feed", get(feed::get))
         .route("/api/share/{kind}/{id}", get(share::get))
         .route("/api/radio", get(radio_tracks))
