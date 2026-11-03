@@ -818,7 +818,7 @@
     position: static; width: auto; height: auto; overflow: visible; clip-path: none; white-space: normal;
     margin: 0; font: italic 900 1.625rem/1.1 var(--f-ui); letter-spacing: -.01em; color: var(--fg-sky);
   }
-  :root[data-design="skydeck"] .now[data-tab="art"] .now-head__by { display: block; margin: 4px 0 10px; }
+  :root[data-design="skydeck"] .now[data-tab="art"] .now-head__by { margin: 4px 0 10px; }
   :root[data-design="skydeck"] .now-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   :root[data-design="skydeck"] .now-acts .btn { justify-content: center; width: auto; }
   :root[data-design="skydeck"] .now-acts .btn-save { grid-column: 1 / -1; }

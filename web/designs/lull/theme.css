@@ -313,21 +313,6 @@
 :root[data-design="lull"] .now-q__hint { white-space: normal; }
 /* check: --reason-fg on --reason-bg 4.5 */
 
-/* on Now Playing the lyrics window already sits beside the panel, so the panel never shows lyrics there: its Lyrics
-   tab is dropped, and if lyrics were asked for (a state, ?tab) the body points at the middle window instead of
-   repeating it. The tab strip's inline --n / --i come from core, so the two-tab layout needs !important to win. */
-@media (min-width: 640px) {
-  :root[data-design="lull"] .app[data-screen="now"] #ctx-tabs { --n: 2 !important; }
-  :root[data-design="lull"] .app[data-screen="now"] #ctx-tabs:has(#ctx-tab-activity[aria-selected="true"]) { --i: 1 !important; }
-  :root[data-design="lull"] .app[data-screen="now"] #ctx-tabs:has(#ctx-tab-lyrics[aria-selected="true"]) .seg__ind { opacity: 0; }
-  :root[data-design="lull"] .app[data-screen="now"] #ctx-tab-lyrics { display: none; }
-  :root[data-design="lull"] .app[data-screen="now"] #ctx-body .now-ly--panel { display: none; }
-  :root[data-design="lull"] .app[data-screen="now"] #ctx-body:has(.now-ly--panel)::before {
-    content: "Lyrics are open in the middle window. Pick Queue or Activity above."; display: block; margin: 18px 6px;
-    padding: 12px 14px; border-radius: 12px; border: 1px dashed var(--l-edge); color: var(--fg-panel-2); font: 700 .8125rem/1.4 var(--f-ui);
-  }
-}
-
 /* =====================================================================
    Top strip (topnav shell): mocha tray with tiles (img 02 status bar)
    ===================================================================== */

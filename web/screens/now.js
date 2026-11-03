@@ -1182,9 +1182,25 @@
     render: function (body) { rememberFocus(body); return queueBlock(); },
     mount: function (body) { restoreFocus(body); App.syncRows(); }
   });
+  /* one place shows the lyrics: Now Playing's page when it is the page, else the Now column while it is open, else the
+     panel. The panel's Lyrics tab steps aside for the other two, and asking for it (Y, the bar's button) goes there */
+  function lyricsOnScreen() {
+    if (App.current.route && App.current.route.view === 'now') return { where: 'on this page', el: $('.now-lycard') };
+    if (colOpen()) return { where: 'in the Now Playing column', el: $('[data-nowcol="lyrics"]') };
+    return null;
+  }
+  function revealLyrics() {
+    var on = lyricsAvailable() && lyricsOnScreen(); if (!on || !on.el) return false;
+    if (on.el.classList.contains('now-lycard') && window.innerWidth < 640) { setTab('lyrics', true); return true; }
+    on.el.scrollIntoView({ block: 'nearest', behavior: App.reducedMotion() ? 'auto' : 'smooth' });
+    App.announce('The lyrics are ' + on.where);
+    return true;
+  }
   App.panel('lyrics', {
     label: 'Lyrics', meta: function () { var t = cur(); return t ? t.title : ''; },
-    hidden: function () { return !lyricsAvailable(); }, hiddenNote: 'No lyrics for this song',
+    hidden: function () { return !lyricsAvailable() || !!lyricsOnScreen(); },
+    hiddenNote: function () { var on = lyricsAvailable() && lyricsOnScreen(); return on ? 'The lyrics are ' + on.where : 'No lyrics for this song'; },
+    reveal: revealLyrics,
     render: function (body) { rememberFocus(body); return lyricsBlock('panel'); },
     mount: function (body) { lyMountAll(); restoreFocus(body); }
   });
@@ -1208,7 +1224,7 @@
   }
   function colInfo(t) {
     return html`${ui.playingFrom('nowcol__from')}<a class="nowcol__song" href="#/album/${t.albumId}">${t.title}</a>
-      <a class="nowcol__artist" href="#/artist/${t.artistId}">${t.artist}</a>`;
+      <a class="nowcol__artist" href="#/artist/${t.artistId}">${t.artist}</a><a class="nowcol__album" href="#/album/${t.albumId}">${t.album}</a>`;
   }
   App.nowColumn = {
     render: function (host) { if (!host) return; swap(host, colBody()); lyMountAll(); }

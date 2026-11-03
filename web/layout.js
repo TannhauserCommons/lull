@@ -193,6 +193,7 @@
   new MutationObserver(function () {
     var v = app.getAttribute('data-nowcol');
     if (v === 'open' && lastNow !== 'open' && App.nowColumn) App.nowColumn.render($('#nowcol-body'));
+    if ((v === 'open') !== (lastNow === 'open')) App.emit('nowcol', v === 'open');   // the panel's tabs follow (app.js)
     lastNow = v;
   }).observe(app, { attributes: true, attributeFilter: ['data-nowcol'] });
 

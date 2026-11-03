@@ -216,6 +216,7 @@
     recentSearches: storage('recentSearches') || [],   // this device only
     hiddenArtists: {},
     ctxTab: 'queue',
+    ctxWant: null,                 // the panel tab the listener chose, shown again whenever it is available
     crossfadeSec: 0,
     privateListening: false        // this device's switch on the hub (PATCH /api/devices/me): its plays are recorded nowhere
   };
@@ -3155,14 +3156,21 @@
      opens over the page. From `xwide`, Queue and Lyrics can show as two panes at once (layout panelSplit). */
   var panels = {}, panelOrder = ['queue', 'lyrics', 'activity'], SPLIT = ['queue', 'lyrics'];
   App.panel = function (id, def) { panels[id] = def; if (panelOrder.indexOf(id) < 0) panelOrder.push(id); renderCtx(); };
-  /* a panel def's hidden() takes its tab away for now (Lyrics for a song with no words); hiddenNote says why */
+  /* a panel def's hidden() takes its tab away for now (Lyrics for a song with no words, or shown by the page or the Now
+     column already: one place shows a thing at a time); hiddenNote (a string or a function) says why, and reveal(),
+     when it returns true, has shown the listener where it is instead. The tab the listener chose (ctxWant) comes back
+     once it is shown again. */
   function shown(id) { return !!panels[id] && !(panels[id].hidden && safeCall(panels[id].hidden)); }
+  function hiddenNote(p) { return (typeof p.hiddenNote === 'function' ? safeCall(p.hiddenNote) : p.hiddenNote) || p.label + ' isn\'t available right now'; }
+  var shownTabs = '';
+  function retab() { if (panelOrder.filter(shown).join() !== shownTabs) renderCtx(); }
+  App.on('route', retab); App.on('nowcol', retab);
   function panelOpen() {
     var mode = $('#app').getAttribute('data-ctx');
     return mode === 'open' || mode === 'docked' && !App.layout.get().panelCollapsed;
   }
   App.openPanel = function (tab) {
-    if (tab) state.ctxTab = tab;
+    if (tab) state.ctxTab = state.ctxWant = tab;
     var app = $('#app');
     if (window.innerWidth >= 1360) { app.setAttribute('data-ctx', 'docked'); App.layout.makeRoom('panel'); App.layout.set({ panelCollapsed: false }); }
     else app.setAttribute('data-ctx', 'open');
@@ -3176,7 +3184,10 @@
     updatePanelButtons();
   };
   App.togglePanel = function (tab) {
-    if (tab && panels[tab] && !shown(tab)) { App.toast(panels[tab].hiddenNote || panels[tab].label + ' isn\'t available right now', { icon: 'info' }); return; }
+    if (tab && panels[tab] && !shown(tab)) {
+      if (!(panels[tab].reveal && safeCall(panels[tab].reveal))) App.toast(hiddenNote(panels[tab]), { icon: 'info' });
+      return;
+    }
     if (panelOpen() && (!tab || tab === state.ctxTab || split() && SPLIT.indexOf(tab) >= 0 && SPLIT.indexOf(state.ctxTab) >= 0)) App.closePanel();
     else App.openPanel(tab);
   };
@@ -3186,6 +3197,8 @@
   function renderCtx() {
     var host = $('#ctx'); if (!host) return;
     var two = split(), tabs = panelOrder.filter(function (id) { return shown(id) && !(two && id === 'lyrics'); });
+    shownTabs = panelOrder.filter(shown).join();
+    if (state.ctxWant && tabs.indexOf(state.ctxWant) >= 0) state.ctxTab = state.ctxWant;
     if (two && state.ctxTab === 'lyrics') state.ctxTab = 'queue';
     if (tabs.indexOf(state.ctxTab) < 0) state.ctxTab = tabs[0];
     var i = tabs.indexOf(state.ctxTab);
@@ -3234,7 +3247,7 @@
   App.on('layout:size', function () { if (split() !== $('#ctx').hasAttribute('data-two') && state.ctxTab !== 'activity') renderCtx(); });
   document.addEventListener('click', function (e) {
     var t = e.target.closest('[data-ctx-tab]'); if (!t) return;
-    state.ctxTab = t.getAttribute('data-ctx-tab'); renderCtx();
+    state.ctxTab = state.ctxWant = t.getAttribute('data-ctx-tab'); renderCtx();
     var nb = $('[data-ctx-tab="' + state.ctxTab + '"]'); if (nb) nb.focus();
   });
   App.on('player', function (k) { if (k === 'queue' || k === 'track') { if (state.ctxTab === 'queue' || state.ctxTab === 'lyrics') renderCtx(); } });

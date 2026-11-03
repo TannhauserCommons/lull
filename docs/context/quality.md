@@ -86,6 +86,10 @@ Raise a budget only with a measured reason a listener would accept, in the commi
 
 **Classic mode loaded on use** (`gates/classic.spec.mjs`, web.md "Files and load order"): a browser starts without Classic mode's code or the desktop bridge, and still a .wsz dropped anywhere becomes the Classic skin, leaving Classic returns to the page it was opened from, and Settings > Appearance shows Classic's group; in the desktop app (the bridge stubbed in) both load with the page and a crash report from Webamp's window reaches classic.js without Classic having been opened. Each of the three fails if its part of App.needClassic is taken out.
 
+**Now Playing in every design** (`gates/now.spec.mjs`): with a song playing and its lyrics asked for in the side panel, Now Playing at a phone, a laptop, a short (1440x700) and a wide window, and the Now column, must show the title, artist, album, quality and "playing from", and the lyrics in one place only (web.md, One place shows the lyrics). Pages from different designs can then be mixed.
+
+**Running the gates beside another checkout:** the fixture hub listens on 8790 and a local run reuses a hub already there, which may serve another checkout's `web/`. Give yours its own port: `FIXTURE_PORT=8797 mise run check:ui`.
+
 **Accessibility** (`gates/a11y.spec.mjs`): axe-core, WCAG 2.2 A and AA, on the same screens in every design and theme. `gates/a11y-known.json` lists the violations main had when the gate arrived, each with its rule and where; a new one fails. The list only shrinks: fix one, delete its entry.
 
 **Budgets move only with a measured reason a listener would accept** (a feature, not drift), stated in the commit with the run's numbers, as above for Lighthouse.

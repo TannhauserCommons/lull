@@ -73,6 +73,11 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: tests/ui
         run: npx playwright test -c gates/playwright.config.mjs --project fit
+      # Now Playing and the Now column say the same in every design, lyrics in one place (gates/now.spec.mjs).
+      - name: Now Playing in every design
+        if: ${{ !cancelled() }}
+        working-directory: tests/ui
+        run: npx playwright test -c gates/playwright.config.mjs --project now
 
       - uses: actions/upload-artifact@v4
         if: ${{ always() && steps.mode.outputs.capture == 'true' }}

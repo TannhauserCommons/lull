@@ -314,8 +314,8 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
   - From `xwide`, a switch shows Queue and Lyrics as two panes (`.app[data-panel-split]`, `.ctx[data-two]`): stacked
     in a narrow panel, side by side once the panel is 600 px wide.
 - **Now Playing column.**
-  - It's `.nowcol`, in the main grid cell; `.main` gives it room with a right margin. Contents: art, transfer state
-    and synced lyrics (`App.nowColumn`, now.js).
+  - It's `.nowcol`, in the main grid cell; `.main` gives it room with a right margin. Contents: art, where it plays
+    from, title, artist and album, transfer state and synced lyrics (`App.nowColumn`, now.js).
   - It's offered (`.app[data-nowcol-ok]`, the player bar's button shows) when the main area stays `wide` beside it
     with the docked panel at its strip: the window's width alone decides, so the button never comes and goes as the
     panel opens or closes.
@@ -326,6 +326,14 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
     takes nothing from the column. Checked in all five designs at 1280, 1440 and 1920 px.
   - `.app[data-nowcol="open|strip"]` shows it; it's hidden on `/now`. Resizable from 300 to 560 px (`--now-w`) and
     collapsible to a strip.
+- **One place shows the lyrics.** Now Playing's page when it is the page, else the Now column while it is open, else
+  the side panel: the panel's Lyrics tab steps aside for the other two (its `hidden()`, now.js), and comes back by
+  itself where it is the only one (the tab the listener chose is `ctxWant`). Asking for the lyrics (Y, the bar's
+  button) then goes to where they are. A panel def may give `hiddenNote` as a function and a `reveal()`. A design
+  never patches this, so every design behaves the same; the `now` gate checks it.
+- **Now Playing says the same in every design:** title, artist, album, the quality badge and where it plays from,
+  on the page at any size (on phones the Art tab's by-line carries the album) and in the Now column; a design may
+  restyle them, never drop one (the `now` gate).
 - **Player bar.** The transport is centred on the bar: the side columns are equal in every design, so nothing the
   sides show or hide moves it. Every control has a fixed slot (toggles show pressed or not, the crossfade tag floats
   above the tools); only the room the bar has moves tools into the "…" menu, which lists every one of them. The seek
