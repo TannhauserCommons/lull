@@ -1057,20 +1057,31 @@
 :root[data-design="glasshouse"] .device .wave__bar.is-buf { box-shadow: inset 0 0 0 1px #7f9cc8; }
 :root[data-design="glasshouse"] .device .wave__bar.is-xfer { background: repeating-linear-gradient(to top, #7f9cc8 0 2px, transparent 2px 4px); }
 :root[data-design="glasshouse"] .device .wave__head { background: #fff; box-shadow: 0 0 6px #f3c1cf; }
-/* transport strip: dpad + keys flattened into one row of glass keys around the rose orb */
-:root[data-design="glasshouse"] .device__controls { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 14px 4px 4px; }
-:root[data-design="glasshouse"] .device__controls :is(.dpad, .device__ab, .device__key) { display: contents; font-size: 0; }
+/* transport: the dpad and the keys flattened into glass keys around the rose orb, on the device's own grid so the orb
+   is on the window's centre line: - << play >> + in one row, and under it shuffle, the like key (under play) and repeat.
+   The outer columns are free room, equal on both sides */
+:root[data-design="glasshouse"] .device:not(.device--compact) {
+  display: grid; grid-template-columns: minmax(0, 1fr) repeat(5, auto) minmax(0, 1fr); align-items: center; gap: 10px 8px;
+}
+:root[data-design="glasshouse"] .device:not(.device--compact) > :is(.device__bezel, .gh-np__ticker) { grid-column: 1 / -1; }
+:root[data-design="glasshouse"] .device:not(.device--compact) > .device__bezel { grid-row: 1; margin-bottom: 4px; }
+:root[data-design="glasshouse"] .device:not(.device--compact) > .gh-np__ticker { grid-row: 4; }
+:root[data-design="glasshouse"] :is(.device__controls, .device__controls :is(.dpad, .device__ab, .device__key), .device__pills) { display: contents; font-size: 0; }
 :root[data-design="glasshouse"] :is(.device__controls .dpad__hub, .device__key > span:not(:first-child)) { display: none; }
+:root[data-design="glasshouse"] .device__controls .dpad__btn--down { grid-area: 2 / 2; }
+:root[data-design="glasshouse"] .device__controls .dpad__btn--left { grid-area: 2 / 3; }
+:root[data-design="glasshouse"] .device__key--a > :first-child { grid-area: 2 / 4; justify-self: center; margin: 0 6px; }
+:root[data-design="glasshouse"] .device__controls .dpad__btn--right { grid-area: 2 / 5; }
+:root[data-design="glasshouse"] .device__controls .dpad__btn--up { grid-area: 2 / 6; }
+:root[data-design="glasshouse"] .device__pill--shuffle { grid-area: 3 / 1 / 4 / 4; justify-self: end; }
+:root[data-design="glasshouse"] .device__key--b > :first-child { grid-area: 3 / 4; justify-self: center; }
+:root[data-design="glasshouse"] .device__pill--repeat { grid-area: 3 / 5 / 4 / -1; justify-self: start; }
+:root[data-design="glasshouse"] .device__key--b .btn-gloss { --size: 36px; }
 :root[data-design="glasshouse"] :is(.device__controls, .device--compact) .dpad__btn {
   width: 44px; height: 36px; border: 1px solid var(--gh-key-edge); border-radius: 9px; color: var(--gh-key-ink); background: var(--gh-keyg);
   box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 45%, transparent);
 }
 :root[data-design="glasshouse"] .device__controls .dpad__btn:hover { background: linear-gradient(180deg, var(--gh-key-1) 0%, var(--gh-key-1) 50%, var(--gh-key-2) 51%, var(--gh-key-1) 100%); }
-:root[data-design="glasshouse"] .dpad__btn--down { order: 1; } :root[data-design="glasshouse"] .dpad__btn--left { order: 2; }
-:root[data-design="glasshouse"] .device__key--a > :first-child { order: 3; margin: 0 6px; }
-:root[data-design="glasshouse"] .dpad__btn--right { order: 4; } :root[data-design="glasshouse"] .dpad__btn--up { order: 5; }
-:root[data-design="glasshouse"] .device__key--b > :first-child { order: 6; margin-left: 6px; }
-:root[data-design="glasshouse"] .device__pills { gap: 8px; padding: 10px 0 0; }
 :root[data-design="glasshouse"] .device__pill { grid-auto-flow: column; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 7px; border: 1px solid var(--gh-key-edge);
   color: var(--gh-key-ink); font: 500 .75rem/1 var(--f-px); background: var(--gh-keyg); }
 :root[data-design="glasshouse"] .device__pill > i { width: 8px; height: 8px; border-radius: 50%; border: 1px solid var(--gh-key-edge); background: var(--gh-key-3); }
