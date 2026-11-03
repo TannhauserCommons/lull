@@ -15,7 +15,7 @@ pub(crate) mod parse;
 mod spotify;
 mod uploads;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -201,7 +201,7 @@ async fn import(svc: &Arc<Service>, link: &Link, listing: Option<Listing>, job: 
         return Err(empty());
     }
     job.name = listing.name.clone();
-    let matches = match_songs(svc, link, &listing.songs, job).await?;
+    let matches = match_songs(svc, &listing.songs, job).await?;
     let (key, url, pictures) = (link.key(), link.url(), listing.covers.clone());
     let done = svc
         .write(move |tx, events| store(tx, events, &key, &url, &listing, &matches))
@@ -231,16 +231,16 @@ async fn read(svc: &Service, link: &Link, job: &mut Job) -> Result<Listing> {
     }
 }
 
-/// Each song's track id, `None` when the catalog has no match. A song this link matched
-/// before keeps its match without a lookup. A song whose lookup fails counts as unmatched (a
-/// re-import tries it again); the import fails only when every lookup does.
-async fn match_songs(svc: &Arc<Service>, link: &Link, songs: &[Song], job: &mut Job) -> Result<Vec<Option<TrackId>>> {
-    let earlier = earlier_matches(svc, link.key()).await?;
+/// Each song's track id, `None` when the catalog has no match. A song matched before, by this
+/// link or any other or a preview, keeps its match without a lookup (`matches`). A song whose
+/// lookup fails counts as unmatched (a re-import tries it again); the import fails only when
+/// every lookup does.
+async fn match_songs(svc: &Arc<Service>, songs: &[Song], job: &mut Job) -> Result<Vec<Option<TrackId>>> {
     let total = songs.len();
     let mut lookups = stream::iter(songs.iter().cloned())
         .map(|song| {
-            let (svc, known) = (svc.clone(), earlier.get(&song.key).cloned());
-            async move { match_one(&svc, &song, known).await }
+            let svc = svc.clone();
+            async move { crate::matches::find(&svc, &song).await }
         })
         .buffered(PARALLEL);
     let (mut matches, mut failures, mut first_error) = (Vec::with_capacity(total), 0, None);
@@ -261,35 +261,6 @@ async fn match_songs(svc: &Arc<Service>, link: &Link, songs: &[Song], job: &mut 
         Some(e) if failures == total => Err(e),
         _ => Ok(matches),
     }
-}
-
-async fn match_one(svc: &Service, song: &Song, earlier: Option<TrackId>) -> Result<Option<TrackId>> {
-    if let Some(id) = earlier {
-        let known = svc
-            .ctx
-            .db
-            .call(move |c| Ok(catalog::track(c, &id)?.map(|t| t.id)))
-            .await?;
-        if known.is_some() {
-            return Ok(known);
-        }
-    }
-    crate::matches::find(svc, song).await
-}
-
-/// The songs this link matched last time, by the source's id for them.
-async fn earlier_matches(svc: &Service, key: String) -> Result<HashMap<String, TrackId>> {
-    svc.ctx
-        .db
-        .call(move |c| {
-            let mut stmt = c.prepare(
-                "SELECT s.song, s.track_id FROM collection_link_songs s JOIN collection_links l ON l.seq = s.link_seq
-                 WHERE l.key = ?1 AND s.track_id IS NOT NULL",
-            )?;
-            let rows = stmt.query_map([key], |r| Ok((r.get::<_, String>(0)?, TrackId(r.get(1)?))))?;
-            Ok(rows.collect::<rusqlite::Result<_>>()?)
-        })
-        .await
 }
 
 /// What a finished import tells Activity.

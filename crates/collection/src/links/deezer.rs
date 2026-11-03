@@ -1,9 +1,9 @@
 //! Deezer playlists and albums through its public API: no key, every song with its ISRC. A
 //! playlist or album id answers even where Deezer's catalog is closed. Pages of 100,
-//! paced under Deezer's 50 requests per 5 s, which discovery's searches share.
+//! inside lull's one Deezer window (50 requests per 5 s, `http::DEEZER`), which discovery's
+//! searches share.
 
-use std::time::Duration;
-
+use lull_core::http::DEEZER;
 use lull_core::{Error, Result};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -16,7 +16,8 @@ use crate::Service;
 const SERVICE: &str = "Deezer";
 const API: &str = "https://api.deezer.com";
 const PAGE: usize = 100;
-const PACE: Duration = Duration::from_millis(250);
+/// Deezer's `error.code` for "quota limit exceeded".
+const QUOTA: u64 = 4;
 
 /// The playlist's or album's name: also how a link to nothing is found out before the import.
 pub(crate) async fn name(svc: &Service, link: &Link) -> Result<String> {
@@ -56,9 +57,12 @@ fn kind(link: &Link) -> &'static str {
 }
 
 async fn get<T: DeserializeOwned>(svc: &Service, path: &str) -> Result<T> {
-    svc.ctx.http.pace("deezer-links", PACE).await;
+    svc.ctx.http.window(DEEZER).await;
     let url = format!("{API}/{path}");
     let body: Value = svc.ctx.http.json(SERVICE, |c| c.get(&url)).await?;
+    if body["error"]["code"].as_u64() == Some(QUOTA) {
+        svc.ctx.http.close_window(DEEZER);
+    }
     decode(body)
 }
 
@@ -71,7 +75,7 @@ fn decode<T: DeserializeOwned>(body: Value) -> Result<T> {
                 "Deezer has no public playlist or album at that link. A private playlist can't be read: make it public first."
                     .into(),
             ),
-            Some(4) => Error::unavailable(SERVICE, "is limiting lull's requests; try again in a minute"),
+            Some(QUOTA) => Error::unavailable(SERVICE, "is limiting lull's requests; try again in a minute"),
             code => Error::upstream(
                 SERVICE,
                 format!("error {}: {}", code.unwrap_or(0), error["message"].as_str().unwrap_or("no message")),

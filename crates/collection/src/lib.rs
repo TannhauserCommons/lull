@@ -161,6 +161,13 @@ pub const MIGRATIONS: Migrations = Migrations {
             saved_at  INTEGER NOT NULL
         );
     "#,
+        // Link imports kept their own matches per link before the shared ones: those become
+        // shared, so nothing matched is looked up again.
+        r#"
+        INSERT OR IGNORE INTO collection_song_matches (song, track_id, checked_at)
+        SELECT s.song, s.track_id, l.imported_at FROM collection_link_songs s
+        JOIN collection_links l ON l.seq = s.link_seq WHERE s.track_id IS NOT NULL;
+    "#,
     ],
 };
 
