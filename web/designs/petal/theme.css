@@ -885,7 +885,7 @@
 :root[data-design="petal"] .pt-mini .dk-mini__now .cover { width: 124px; height: 124px; border-width: 2px; box-shadow: 3px 3px 0 0 var(--pt-shadow); }
 :root[data-design="petal"] .pt-mini .device__title { font: 700 1.0625rem/1.2 var(--f-ui); }
 :root[data-design="petal"] .pt-mini .device__artist { font: 600 .875rem/1.3 var(--f-ui); color: var(--link); margin-bottom: 6px; }
-:root[data-design="petal"] .pt-mini .wave { width: 100%; height: 72px; align-self: center; justify-content: space-between; }
+:root[data-design="petal"] .pt-mini .wave { width: 100%; height: 72px; align-self: center; }
 :root[data-design="petal"] .pt-mini .wave-times { display: flex; justify-content: space-between; }
 :root[data-design="petal"] .pt-mini .pt-win__deck { justify-content: center; border-top: 1px solid var(--pt-rule); border-radius: 0; }
 :root[data-design="petal"] .pt-mini__foot { display: flex; align-items: center; justify-content: space-between; padding: 8px 14px 12px; }

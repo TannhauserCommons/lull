@@ -122,7 +122,7 @@ Prefer `@container main` to `@media`: it follows the main area, so it stays righ
 
 `design/DESIGN.md` section 3.4 lists more state hooks (tray pills, track row file facts). Pseudo-elements are free for ornaments; keep them decorative.
 
-**Measured parts.** lull places a `.seg`'s indicator (`.seg__ind`) on the selected button by measuring it (`--seg-x`, `--seg-w`), so gaps, padding and labels of different lengths are fine: restyle or hide the indicator, but don't position it.
+**Measured parts.** lull places a `.seg`'s indicator (`.seg__ind`) on the selected button by measuring it (`--seg-x`, `--seg-w`), so gaps, padding and labels of different lengths are fine: restyle or hide the indicator, but don't position it. A `.wave`'s bars share its whole width (set the `gap`, not the bars' width), and its head travels the strip less its own width, so it never passes the last bar: a bigger head sets `--wave-head` on the `.wave` and fills `.wave__rail`.
 
 **Cover variety:** with `"coverVariety": true` every cover gets stable per-item hooks, so two albums that share a generated cover still differ: `data-look="0"`-`"5"` (pick one of 2, 3 or 6 looks with `[data-look="1"], [data-look="3"], [data-look="5"]`, ...) and `--cover-flip` (1 or -1), `--cover-hue` (-28deg to 28deg), `--cover-zoom` (1 to 1.45), `--cover-dx`, `--cover-dy`.
 

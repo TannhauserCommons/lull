@@ -1278,7 +1278,6 @@
 :root[data-design="lull"] .lull-np .q-chip--ll::before { background: var(--l-screen-ink); }
 :root[data-design="lull"] .lull-np .device__kv { font: 700 .8125rem/1.25 var(--f-ui); gap: 5px 12px; }
 :root[data-design="lull"] .lull-np .wave { grid-area: wave; height: 48px; margin-top: 2px; gap: 2px; }
-:root[data-design="lull"] .lull-np .wave__bar { flex: 1 1 0; min-width: 2px; }
 :root[data-design="lull"] .lull-np .wave-times { grid-area: times; margin-top: -2px; font: 800 .75rem/1 var(--f-ui); color: var(--l-screen-ink); }
 :root[data-design="lull"] .lull-np .wave-times b { color: var(--l-screen-ink); }
 :root[data-design="lull"] .lull-np .now-osd { z-index: 3; }

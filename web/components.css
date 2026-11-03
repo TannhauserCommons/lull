@@ -483,16 +483,21 @@ button.trow__title:hover { text-decoration: underline; text-underline-offset: 3p
 /* =====================================================================
    Waveform strip (device screen): .wave > .wave__bar(--h 0-1) + .wave__head(--pos)
    ===================================================================== */
-.wave { position: relative; display: flex; align-items: flex-end; gap: 2px; height: 52px; cursor: pointer; touch-action: none; --pos: 0; }
-.wave__bar { flex: 0 0 3px; height: calc(var(--h, .5) * 100%); border-radius: 1.5px 1.5px 0 0; background: var(--wave-dim); transform-origin: bottom; }
+/* bar i is the song's i-th slice: the bars share the strip's whole width (a design sets the gap), as the seek does.
+   The rail is the head's width (--wave-head) and travels the strip less that, so the head stays on the bars */
+.wave {
+  position: relative; display: flex; align-items: flex-end; gap: 2px; height: 52px; cursor: pointer; touch-action: none; --pos: 0; --wave-head: 2px;
+  container-type: inline-size;
+}
+.wave__bar { flex: 1 1 0; min-width: 1px; height: calc(var(--h, .5) * 100%); border-radius: 1.5px 1.5px 0 0; background: var(--wave-dim); transform-origin: bottom; }
 .wave__bar.is-played { background: var(--lilac); }
 .wave.is-playing .wave__bar.is-played { animation: breathe 1.6s ease-in-out infinite alternate; }
 .wave.is-playing .wave__bar.is-played:nth-child(3n) { animation-delay: -.5s; }
 .wave.is-playing .wave__bar.is-played:nth-child(3n+1) { animation-delay: -1s; }
 .wave__bar.is-buf { background: transparent; box-shadow: inset 0 0 0 1.5px var(--peri); }
 .wave__bar.is-xfer { background: repeating-linear-gradient(to top, var(--peri) 0 2px, transparent 2px 4px); }
-.wave__rail { position: absolute; top: -4px; bottom: 0; left: 0; right: 0; transform: translateX(calc(var(--pos) * 100%)); pointer-events: none; }
-.wave__head { position: absolute; top: 0; bottom: 0; left: -1px; width: 2px; background: var(--pink-light); }
+.wave__rail { position: absolute; top: -4px; bottom: 0; left: 0; width: var(--wave-head); transform: translateX(calc(var(--pos) * (100cqw - 100%))); pointer-events: none; }
+.wave__head { position: absolute; inset: 0; background: var(--pink-light); }
 .wave-times { display: flex; justify-content: space-between; gap: var(--sp-2); margin-top: 6px; font: var(--t-px); letter-spacing: var(--t-px-track); color: var(--fg-2); }
 .wave-times b { font-weight: 400; color: var(--fg); }
 

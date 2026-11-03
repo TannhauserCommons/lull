@@ -616,11 +616,10 @@
 :root[data-design="starlight"] .sl-hero--compact { grid-template-columns: 56px minmax(0, 1fr) auto; gap: var(--sp-3); align-items: center; padding: 12px; border-radius: 22px; box-shadow: var(--stack-sm); margin-bottom: 12px; }
 :root[data-design="starlight"] .sl-hero--compact .device__title { font: 600 1rem/1.2 var(--f-ui); letter-spacing: .03em; -webkit-line-clamp: 2; }
 :root[data-design="starlight"] .sl-hero--compact .device__artist { margin: 2px 0 0; padding: 0; font: 400 .78rem/1.3 var(--f-ui); letter-spacing: .05em; }
-:root[data-design="starlight"] .sl-hero--compact .wave { height: 18px; margin-top: 6px; justify-content: space-between; }
+:root[data-design="starlight"] .sl-hero--compact .wave { height: 18px; margin-top: 6px; }
 :root[data-design="starlight"] :is(.sl-hero--compact, .sl-mini) .wave__bar { background: var(--sl-track); box-shadow: inset 0 0 0 1px var(--line); }   /* hollow = not downloaded yet */
 :root[data-design="starlight"] :is(.sl-hero--compact, .sl-mini) .wave__bar.is-played { background: var(--sl-played); box-shadow: none; }
 :root[data-design="starlight"] :is(.sl-hero--compact, .sl-mini) .wave__bar.is-buf { background: var(--sl-buf); box-shadow: none; }
-:root[data-design="starlight"] .sl-hero--compact .wave__bar { flex: 0 1 3px; min-width: 2px; }
 :root[data-design="starlight"] .sl-hero--compact .wave__bar.is-xfer { background: repeating-linear-gradient(to top, var(--sl-buf) 0 2px, transparent 2px 4px); }
 :root[data-design="starlight"] .sl-hero--compact .wave__head { background: var(--sl-title); }
 :root[data-design="starlight"] .sl-hero__thumb .cover { --cover-size: 56px; border-radius: var(--r-thumb); }
@@ -926,11 +925,11 @@
 :root[data-design="starlight"] .sl-mini__times { display: flex; justify-content: space-between; margin: 2px 0 -6px; font: 400 .8125rem/1 var(--f-px); color: var(--fg-2); }
 :root[data-design="starlight"] .sl-mini__times b { font-weight: 400; color: var(--fg); }
 /* the waveform drawn as img 01's seek line: flat 3 px segments, a dot for the head */
-:root[data-design="starlight"] .sl-mini .wave { height: 22px; gap: 0; align-items: center; }
-:root[data-design="starlight"] .sl-mini .wave__bar { flex: 1 1 0; height: 3px; border-radius: 0; animation: none; }
+:root[data-design="starlight"] .sl-mini .wave { height: 22px; gap: 0; align-items: center; --wave-head: 14px; }
+:root[data-design="starlight"] .sl-mini .wave__bar { height: 3px; border-radius: 0; animation: none; }
 :root[data-design="starlight"] .sl-mini .wave__bar.is-xfer { background: repeating-linear-gradient(90deg, var(--sl-buf) 0 2px, transparent 2px 4px); }
 :root[data-design="starlight"] .sl-mini .wave__rail { top: 0; }
-:root[data-design="starlight"] .sl-mini .wave__head { top: 50%; left: -7px; width: 14px; height: 14px; margin-top: -7px; border-radius: 50%; background: var(--sl-accent); box-shadow: 0 0 0 2px var(--bg); }
+:root[data-design="starlight"] .sl-mini .wave__head { top: 50%; bottom: auto; height: 14px; margin-top: -7px; border-radius: 50%; background: var(--sl-accent); box-shadow: 0 0 0 2px var(--bg); }
 :root[data-design="starlight"] .sl-mini__keys { display: flex; align-items: center; justify-content: space-between; padding: 0 2px; }
 :root[data-design="starlight"] :is(.sl-mini__keys, .dk-strip__keys) .btn-icon { color: var(--sl-icon); }
 :root[data-design="starlight"] .sl-mini__keys .btn-icon:is(.is-liked, [aria-pressed="true"]) { color: var(--heart); }

@@ -153,9 +153,6 @@
    4. Mini player windows (frameless, transparent, always on top)
    ===================================================================== */
 /* the transparent page itself (no wallpaper) is in wrapper.html: it has to outrank every design's unlayered CSS */
-/* the player's root is the window's frame (desktop.js fits the window to it), and clips like the main UI's frames do:
-   the wave's seek rail is the wave's width moved by --pos, so it always reaches past the wave's right edge */
-[data-dk-player] { overflow: clip; }
 .dk-mini { display: grid; place-items: start center; padding: 8px 10px 0; }
 .dk-mini--opaque { background: var(--sky); min-height: 100vh; min-height: 100dvh; padding-top: 10px; }
 
