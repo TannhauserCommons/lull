@@ -83,6 +83,18 @@ pub fn shared_environment<'a>(
     builder
 }
 
+/// Ends the hung renderer of this window's page, so it can load again (recovery.rs). Only WebView2
+/// reports a hang.
+pub fn end_renderer(window: &WebviewWindow) -> tauri::Result<()> {
+    #[cfg(windows)]
+    return windows::end_renderer(window);
+    #[cfg(not(windows))]
+    {
+        let _ = window;
+        Ok(())
+    }
+}
+
 /// Calls `failed` when a process behind this window's page dies (recovery.rs).
 pub fn watch_webview(
     window: &WebviewWindow,

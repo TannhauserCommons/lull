@@ -2,7 +2,9 @@
 //! (WebView2's ProcessFailed, WebKitGTK's web-process-terminated: platform::watch_webview); this
 //! logs it with what the app was doing to `logs/webview.log`, and brings the window back so the
 //! listener never sees the engine's own error page:
-//! - a renderer that exited or hangs: the window reloads. `main` then resumes the song, second and
+//! - a renderer that hangs (WebView2 says so when the page ignores input) can't run a reload, so its
+//!   process is ended first (platform::end_renderer); its exit then goes on as below.
+//! - a renderer that exited: the window reloads. `main` then resumes the song, second and
 //!   play state it last reported (`resume_after_crash`); the Classic window takes its handoff again,
 //!   kept current as Webamp plays (classic.rs); the mini player asks `main` for the player again.
 //! - the same window dying 3 times in 2 minutes is a loop: `main` shows lull's own page with a
@@ -71,14 +73,28 @@ pub struct Recovery {
     deaths: Mutex<HashMap<String, Vec<Instant>>>,
     resume: Mutex<Option<Resume>>,
     log: Mutex<Option<PathBuf>>,
+    /// Windows whose hung renderer this app is ending, and what to do once it has gone.
+    ending: Mutex<HashMap<String, Action>>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum Action {
     Reload,
     GiveUp,
+    /// The page hangs: a reload can't run in its busy renderer, so the renderer goes first.
+    EndHung,
     Restart,
     Nothing,
+}
+
+/// One more death of this window's page: reload it, or give up when they come in a loop.
+fn counted(recovery: &Recovery, label: &str) -> Action {
+    let mut deaths = lock(&recovery.deaths);
+    if a_loop(deaths.entry(label.to_owned()).or_default(), Instant::now()) {
+        Action::GiveUp
+    } else {
+        Action::Reload
+    }
 }
 
 /// Before the first window: the shared WebView2 environment (Windows), and a line in the log saying
@@ -121,13 +137,15 @@ pub fn watch(window: &WebviewWindow) {
 pub fn failed(app: &AppHandle, label: &str, failure: Failure) {
     let recovery = app.state::<Recovery>();
     let action = match &failure.process {
-        Process::Renderer | Process::Unresponsive => {
-            let mut deaths = lock(&recovery.deaths);
-            if a_loop(deaths.entry(label.to_owned()).or_default(), Instant::now()) {
-                Action::GiveUp
-            } else {
-                Action::Reload
-            }
+        // A renderer this app ended because it hung: the hang counted, and decided what comes next.
+        Process::Renderer => match lock(&recovery.ending).remove(label) {
+            Some(decided) => decided,
+            None => counted(&recovery, label),
+        },
+        Process::Unresponsive => {
+            let decided = counted(&recovery, label);
+            lock(&recovery.ending).insert(label.to_owned(), decided);
+            Action::EndHung
         }
         Process::Browser => Action::Restart,
         Process::Helper(_) => Action::Nothing,
@@ -169,6 +187,11 @@ fn a_loop(deaths: &mut Vec<Instant>, now: Instant) -> bool {
 fn act(app: &AppHandle, label: &str, action: &Action) -> String {
     let result = match (action, label) {
         (Action::Nothing, _) => return "recovers by itself".into(),
+        (Action::EndHung, _) => match app.get_webview_window(label) {
+            Some(window) => platform::end_renderer(&window)
+                .map(|()| "ending the hung renderer; the window comes back once it has gone".into()),
+            None => Ok("the window is gone".into()),
+        },
         (Action::Restart, _) => return restart(app),
         (Action::Reload, main_window::LABEL) => {
             let said = keep_resume_point(app);

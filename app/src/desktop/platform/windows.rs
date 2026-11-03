@@ -318,6 +318,107 @@ fn failure(
     failure
 }
 
+/// A hung page can't run a reload: its renderer is busy (tried: the page stayed frozen). This ends the
+/// renderer process hosting the window's main frame, and WebView2 then reports that it exited, which
+/// reloads the window.
+pub fn end_renderer(window: &tauri::WebviewWindow) -> tauri::Result<()> {
+    use webview2_com::GetProcessExtendedInfosCompletedHandler;
+    use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2_20, ICoreWebView2Environment13};
+    use windows::core::Interface;
+    window.with_webview(|webview| {
+        let found = (|| -> windows::core::Result<()> {
+            let mut frame = 0;
+            // SAFETY: the controller and its webview are live; Tauri runs this on their UI thread.
+            unsafe {
+                webview
+                    .controller()
+                    .CoreWebView2()?
+                    .cast::<ICoreWebView2_20>()?
+                    .FrameId(&mut frame)?
+            };
+            let handler = GetProcessExtendedInfosCompletedHandler::create(Box::new(move |result, infos| {
+                result?;
+                match infos.map(|infos| renderer_of(&infos, frame)).transpose()?.flatten() {
+                    // After this callback has returned and WebView2 is done with its objects.
+                    Some(pid) => drop(std::thread::spawn(move || terminate(pid))),
+                    None => eprintln!("lull: no renderer hosts frame {frame}"),
+                }
+                Ok(())
+            }));
+            // SAFETY: the environment lives as long as the app; WebView2 calls back on this thread.
+            unsafe {
+                webview
+                    .environment()
+                    .cast::<ICoreWebView2Environment13>()?
+                    .GetProcessExtendedInfos(&handler)
+            }
+        })();
+        if let Err(e) = found {
+            eprintln!("lull: can't find the hung renderer: {e}");
+        }
+    })
+}
+
+/// The renderer process whose frames include `frame`.
+fn renderer_of(
+    infos: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2ProcessExtendedInfoCollection,
+    frame: u32,
+) -> windows::core::Result<Option<u32>> {
+    use webview2_com::Microsoft::Web::WebView2::Win32::{COREWEBVIEW2_PROCESS_KIND_RENDERER, ICoreWebView2FrameInfo2};
+    use windows::core::{BOOL, Interface};
+    let mut count = 0;
+    // SAFETY: a collection WebView2 handed us, read during its callback.
+    unsafe {
+        infos.Count(&mut count)?;
+        for i in 0..count {
+            let info = infos.GetValueAtIndex(i)?;
+            let process = info.ProcessInfo()?;
+            let (mut kind, mut pid) = (Default::default(), 0);
+            process.Kind(&mut kind)?;
+            process.ProcessId(&mut pid)?;
+            if kind != COREWEBVIEW2_PROCESS_KIND_RENDERER {
+                continue;
+            }
+            // Held while iterating: WebView2's iterator doesn't keep its collection alive, and
+            // walking it after the collection's release read freed memory and crashed lull.
+            let collection = info.AssociatedFrameInfos()?;
+            let frames = collection.GetIterator()?;
+            let mut more = BOOL::default();
+            frames.HasCurrent(&mut more)?;
+            while more.as_bool() {
+                let mut id = 0;
+                if frames
+                    .GetCurrent()?
+                    .cast::<ICoreWebView2FrameInfo2>()?
+                    .FrameId(&mut id)
+                    .is_ok()
+                    && id == frame
+                {
+                    return Ok(u32::try_from(pid).ok());
+                }
+                frames.MoveNext(&mut more)?;
+            }
+        }
+    }
+    Ok(None)
+}
+
+fn terminate(pid: u32) {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_TERMINATE, TerminateProcess};
+    // SAFETY: a handle opened here for this one call and closed after it.
+    unsafe {
+        let process = OpenProcess(PROCESS_TERMINATE, 0, pid);
+        if process.is_null() {
+            return eprintln!("lull: can't open renderer {pid}: {}", std::io::Error::last_os_error());
+        }
+        if TerminateProcess(process, 1) == 0 {
+            eprintln!("lull: can't end renderer {pid}: {}", std::io::Error::last_os_error());
+        }
+        CloseHandle(process);
+    }
+}
+
 /// Where lull's own crash dump goes, as a null-terminated wide path made before any crash.
 static CRASH_DUMP: std::sync::OnceLock<Vec<u16>> = std::sync::OnceLock::new();
 
