@@ -3013,7 +3013,6 @@
     }
     if (mod && (k === 'k' || k === 'K')) { e.preventDefault(); App.hooks.palette(); return; }
     if (typing(a) || e.defaultPrevented) return;
-    if (a && a.closest && a.closest('.webamp, [data-webamp]')) return;
     if (layers.length && k !== '?') return;            // sheets/dialogs own the keyboard
     var row = a && a.closest && a.closest('.trow');
     if (row) {

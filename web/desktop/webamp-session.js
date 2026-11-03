@@ -18,8 +18,9 @@
    store and media clock are watched instead.
 
    Skins: Webamp reads a skin with fetch(url) and reports a failure with window.alert(). lull never lets it:
-     LullWebamp.quietAlerts(onAlert)   Webamp's alerts come here instead of the browser's dialog; during a
-                                       loadSkin they fail that load, any other goes to onAlert(message)
+     LullWebamp.quietAlerts(onAlert, win)  Webamp's alerts (win: the window its bundle runs in) come here
+                                       instead of the browser's dialog; during a loadSkin they fail that load,
+                                       any other goes to onAlert(message)
      LullWebamp.loadSkin(webamp, src)  src: a skin URL (below), fetched here first (the hub's sentence on a
                                        failure), a Blob, or null for Webamp's base skin. Webamp gets the bytes
                                        as a blob: URL; resolves once it shows them, rejects with a sentence.
@@ -32,12 +33,27 @@
                                        'local-…'), a URL on the hub's origin that nothing serves: skinFile
                                        reads it from IndexedDB 'lull-skins' (store 'files', by md5)
      LullWebamp.localSkins()           [{ md5, name, file, blob, added }] kept on this device, newest first
-     LullWebamp.keepLocal(entry), dropLocal(md5) */
+     LullWebamp.keepLocal(entry), dropLocal(md5)
+
+   Size: Webamp drawn at 1x to 3x, per device: localStorage SIZE_KEY, chosen in Settings > Appearance and followed
+   live like the skin. Each player scales the whole page Webamp lives in (the app's webview zoom, the browser stage's
+   iframe), so Webamp's own pointer math stays right; pixels stay sharp with Webamp's image-rendering: pixelated.
+     LullWebamp.SIZES, readSize(), writeSize(size)   the choice (1 when unset); writeSize stores it
+     LullWebamp.fitSize(size, w, h, roomW, roomH)    the largest size up to `size` at which w x h (Webamp at 1x)
+                                                     fits the room, 1 at least
+     LullWebamp.doubleSize(webamp, onDouble)         Webamp's own Double Size (Ctrl+D, Options, the clutter bar's
+                                                     D) calls onDouble() instead: Webamp's doubles the main window
+                                                     and equalizer only, lull's size scales every window evenly
+     LullWebamp.doubled(size)                        Double Size from `size`, as in Winamp: 2x, or 1x from 2x
+     LullWebamp.isDoubleKey(e)                       Ctrl+D: each player takes it before Webamp, which ignores
+                                                     its keys while one of its sliders has focus */
 (function () {
   'use strict';
   var SKIN_TIMEOUT_MS = 10000;
   var SKIN_KEY = 'lull:classicSkin';
   var LOCAL = /\/local-skins\/(local-[0-9a-z]+)\.wsz$/;
+  var SIZE_KEY = 'lull:classicSize';
+  var SIZES = [1, 1.5, 2, 2.5, 3];
   function absolute(url) { return new URL(url, location.href).href; }
 
   function skinUrl(base, skin) {
@@ -66,9 +82,35 @@
   function keepLocal(entry) { return files('readwrite', function (s) { return s.put(entry); }); }
   function dropLocal(md5) { return files('readwrite', function (s) { return s.delete(md5); }); }
 
+  /* ---------- size ---------- */
+  function readSize() {
+    var v = null;
+    try { v = JSON.parse(localStorage.getItem(SIZE_KEY)); } catch (e) { /* storage blocked or unreadable: 1x */ }
+    return SIZES.indexOf(v) >= 0 ? v : 1;
+  }
+  function writeSize(size) {
+    if (SIZES.indexOf(size) < 0) throw new Error('Unknown Classic size ' + size);
+    try { localStorage.setItem(SIZE_KEY, JSON.stringify(size)); } catch (e) { /* storage blocked: this visit only */ }
+  }
+  function fitSize(size, w, h, roomW, roomH) {
+    var fits = SIZES.filter(function (s) { return s <= size && w * s <= roomW && h * s <= roomH; });
+    return fits.length ? fits[fits.length - 1] : 1;
+  }
+  function doubled(size) { return size === 2 ? 1 : 2; }
+  function isDoubleKey(e) { return (e.key === 'd' || e.key === 'D') && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey; }
+  function doubleSize(webamp, onDouble) {
+    var store = webamp.store;
+    store.subscribe(function () {
+      if (!store.getState().display.doubled) return;
+      /* back at once, inside the dispatch: the thunk that toggled measures no size change, so the layout stays */
+      store.dispatch({ type: 'TOGGLE_DOUBLESIZE_MODE' });
+      onDouble();
+    });
+  }
+
   var failSkin = null;                                            // the loadSkin in progress, if any
-  function quietAlerts(onAlert) {
-    window.alert = function (message) {
+  function quietAlerts(onAlert, win) {
+    win.alert = function (message) {
       message = String(message);
       if (failSkin && /skin/i.test(message)) failSkin(message); else onAlert(message);
     };
@@ -203,5 +245,7 @@
   }
 
   window.LullWebamp = { session: session, quietAlerts: quietAlerts, loadSkin: loadSkin, skinFile: skinFile,
-    SKIN_KEY: SKIN_KEY, skinUrl: skinUrl, localSkins: localSkins, keepLocal: keepLocal, dropLocal: dropLocal };
+    SKIN_KEY: SKIN_KEY, skinUrl: skinUrl, localSkins: localSkins, keepLocal: keepLocal, dropLocal: dropLocal,
+    SIZE_KEY: SIZE_KEY, SIZES: SIZES, readSize: readSize, writeSize: writeSize, fitSize: fitSize,
+    doubleSize: doubleSize, doubled: doubled, isDoubleKey: isDoubleKey };
 })();

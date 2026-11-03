@@ -1,5 +1,9 @@
-/* screens/skins.js: Classic mode's skin and where it is chosen, Settings > Appearance > Classic (design/DESIGN.md
-   section 12, docs/context/skins.md). Classic itself (screens/classic.js, desktop/winamp.js) is only Webamp.
+/* screens/skins.js: Classic mode's skin and size, and where they are chosen, Settings > Appearance > Classic
+   (design/DESIGN.md section 12, docs/context/skins.md). Classic itself (screens/classic.js, desktop/winamp.js) is only
+   Webamp.
+   - The size is per device too: App.classicSize.get() / .set(size) / .double() (Webamp's Double Size: 2x, or 1x from
+     2x), stored as localStorage 'lull:classicSize' (LullWebamp.SIZES); 'classic-size' in this page, the storage event
+     elsewhere.
    - The choice is per device: App.classicSkin.get() / .choose(skin | null), stored as localStorage 'lull:classicSkin'
      (desktop/webamp-session.js has its shape). A change reaches Classic at once: 'classic-skin' in this page, the
      storage event in other tabs and in the desktop app's Classic window.
@@ -15,7 +19,7 @@
 (function () {
   'use strict';
   var html = App.html, raw = App.raw, ui = App.ui, M = App.data, icon = App.icon, $ = App.$;
-  var K = App.settingsKit, row = K.row, group = K.group, switchRow = K.switchRow;
+  var K = App.settingsKit, row = K.row, group = K.group, switchRow = K.switchRow, choice = K.choice;
   var L = window.LullWebamp;
 
   var SEARCH_DEBOUNCE_MS = 300;
@@ -36,8 +40,24 @@
     renderChoice();
   }
   App.classicSkin = { get: chosen, choose: choose, keepFile: keepFile };
+  /* the size: Settings' Size row and Webamp's Double Size both set it */
+  function setSize(size) {
+    L.writeSize(size);
+    App.emit('classic-size', size);
+    K.showChoice('device.classicSize', size);
+  }
+  App.classicSize = {
+    get: L.readSize, set: setSize,
+    double: function () {
+      var size = L.doubled(L.readSize());
+      setSize(size);
+      App.announce('Classic size ' + size + '\u00d7');
+    }
+  };
+  K.custom['device.classicSize'] = { get: L.readSize, set: function (v) { setSize(+v); } };
   /* another tab or window chose: this page's Classic and Settings follow */
   window.addEventListener('storage', function (e) {
+    if (e.key === L.SIZE_KEY) { App.emit('classic-size', L.readSize()); K.showChoice('device.classicSize', L.readSize()); return; }
     if (e.key !== L.SKIN_KEY) return;
     App.emit('classic-skin', chosen());
     renderChoice();
@@ -112,6 +132,8 @@
       <div class="sys-row sys-row--stack">
         <div class="sys-row__text"><span class="sys-row__label" id="cls-find-l">Find a skin</span><span class="sys-row__help">Browse and search the Winamp Skin Museum, or pick from your favourites and the skins already downloaded. Select a picture to see it larger.</span></div>
         <div class="sys-row__ctl cls-browser" id="cls-browser" role="group" aria-labelledby="cls-find-l">${browserMarkup()}</div></div>
+      ${row('Size', 'How big Webamp is drawn, in the browser and in the app\'s Winamp window, with every skin pixel kept sharp. If a size doesn\'t fit the screen, Classic shows the largest that does. In Classic, Ctrl+D (Webamp\'s Double Size) switches between 1\u00d7 and 2\u00d7.',
+        choice('device.classicSize', 'Size', L.SIZES.map(function (z) { return [z, z + '\u00d7']; })))}
       ${switchRow('device.showNsfwSkins', 'Show NSFW skins', 'The museum marks some skins NSFW. They stay hidden while you browse on this device unless this is on.')}
       ${row('Classic mode', 'Webamp plays your queue. Crossfade, loudness normalisation and gapless playback pause there, and repeat is on or off only. Esc, W or Webamp\'s close button brings you back.', html`<a class="btn btn--sm" href="#/classic">${icon('classic')}Open Classic mode</a>`)}`;
   };

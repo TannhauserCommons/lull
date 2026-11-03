@@ -546,8 +546,8 @@ and petal's `.pv-flip` mirrors the whole `.cover` (limit it to covers without ar
 - Contrast: text 4.5:1, large text and UI parts (edges, icons, focus, seek layers) 3:1, on every surface, in both
   themes, in every design. Pairs on gradients and glass are checked on the worst stop and recorded as `check:` comments.
 - Focus: `:focus-visible` draws a 2 px `--focus` outline on every control; never removed. A skip link leads to content.
-- Keyboard: everything works without a mouse; shortcuts are ignored while typing and inside `.webamp` /
-  `[data-webamp]`. Shortcut list (`App.shortcuts`, shown by `?`): Space play/pause; Left/Right seek 5 s (Shift 30 s);
+- Keyboard: everything works without a mouse; shortcuts are ignored while typing, and Webamp's own
+  document (its iframe) keeps its keys apart; Classic handles Esc, W and Ctrl+D there. Shortcut list (`App.shortcuts`, shown by `?`): Space play/pause; Left/Right seek 5 s (Shift 30 s);
   N / Ctrl+Right next; P / Ctrl+Left previous; Up/Down volume (outside lists); M mute; S shuffle; R repeat; L like;
   Shift+S save; Q queue; Y lyrics; W Classic; T theme; Esc close; `/` search; Ctrl+K palette; G then H/S/L/P go to
   Home/Search/Library/Playlists; Ctrl+Shift+M mini player (desktop app). Lists: Up/Down move, Enter play, Shift+Enter
@@ -583,12 +583,13 @@ The full integration recipe is in the header comment of
   button in the corner (Esc, W and Webamp's close button leave too). In the desktop app Webamp has its own borderless
   window (docs/context/desktop.md). The prototype's title pill (Exit / Skins / Help), skin drawer and footer notice
   are gone: what they held lives in Settings > Appearance > Classic. Webamp renders into `#webamp-stage` (marked
-  `data-webamp`, `position: relative`) with `webamp.renderInto(el)` (Webamp >= 2.3.0).
+  `data-webamp`, `position: relative`) with `webamp.renderInto(el)` (Webamp >= 2.3.0); in a browser that mount is
+  in a same-origin iframe on the stage, which carries the size (below).
 - **Version and vetting**: npm `webamp`, MIT. Designed against 2.3.1. Pin the exact version with a lockfile, bundle it
   (no CDN), lazy-load it the first time the stage opens (never on boot), read the diff before any upgrade.
   `webamp/butterchurn` (Milkdrop) is optional and much larger.
 - **Options**: `enableHotkeys: false` (the app owns shortcuts), `enableMediaSession: false` (the app owns Media
-  Session and forwards actions while Classic is open), `zIndex` just above `--z-classic`, `handleTrackDropEvent` into
+  Session and forwards actions while Classic is open), `handleTrackDropEvent` into
   the app queue, `handleSaveListEvent` / `handleLoadListEvent` to M3U export / import, `availableSkins` from favourites,
   always pass `metaData` and `duration` per track (otherwise Webamp fetches each file's head).
 - **Hand-off** (the design assumes it): on enter, pause the app engine and give Webamp the queue, index and position;
@@ -604,7 +605,8 @@ The full integration recipe is in the header comment of
   skins.webamp.org) and "View on the Winamp Skin Museum" per skin (`museum_url`). No terms of use or rate limits were
   published when this was designed: page, debounce and cache to stay polite.
 - **Settings > Appearance > Classic** (lull's own controls, every design): the skin in use with "Open a .wsz file" and
-  "Use Webamp's base skin"; the skin browser (Browse / Favourites / Downloaded tabs, search, screenshot cards with Use,
+  "Use Webamp's base skin"; Size (1×, 1.5×, 2×, 2.5×, 3×, sharp pixels at each, the largest that fits when one
+  doesn't; Webamp's Ctrl+D / Double Size switches 1× and 2×, as in Winamp); the skin browser (Browse / Favourites / Downloaded tabs, search, screenshot cards with Use,
   favourite star and museum link; a screenshot opens larger in a popover); Show NSFW skins; what differs in Classic,
   with a way in. The choice is per device and reaches an open Classic at once, in other tabs and in the app's window.
   A `.wsz` opened there or dropped anywhere on lull is kept on the device and chosen.

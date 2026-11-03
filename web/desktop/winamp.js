@@ -9,7 +9,11 @@
    - The system's media overlay and media keys (Media Session) follow Webamp.
    - The skin: the hand-off's, then whatever Settings > Appearance chooses while this window is open (the storage
      event of LullWebamp.SKIN_KEY: the app's windows share one browser profile). Skins load through
-     LullWebamp.loadSkin, and Webamp's alerts show as a note in this window (#note), never as a browser dialog. */
+     LullWebamp.loadSkin, and Webamp's alerts show as a note in this window (#note), never as a browser dialog.
+   - The size (1x to 3x, LullWebamp.SIZE_KEY, followed the same way): the webview zooms (invoke('classic_fit'), which
+     also sizes the window and keeps it in the monitor's work area, taking the largest size that fits). Webamp's
+     Double Size (Ctrl+D, Options, the clutter bar's D) switches between 1x and 2x and stores that as the size.
+     An app older than classic_fit stays at 1x and says so. */
 (function () {
   'use strict';
   var T = window.__TAURI__, win = T.window.getCurrentWindow(), LogicalSize = (T.dpi || T.window).LogicalSize;
@@ -27,7 +31,7 @@
 
   function start(h) {
     if (typeof window.Webamp !== 'function') throw new Error('the player file didn\'t load');
-    LullWebamp.quietAlerts(say);
+    LullWebamp.quietAlerts(say, window);
     webamp = new window.Webamp({
       availableSkins: h.skins.map(function (s) { return { url: s.url, name: s.name }; }),
       windowLayout: {
@@ -41,34 +45,56 @@
     webamp.onWillClose(function (cancel) { cancel(); finish(); });   // its close button: back to lull
     webamp.onMinimize(function () { win.minimize().catch(logFailure('minimize')); });
     session = LullWebamp.session(webamp, { listen: listen, change: report });
+    LullWebamp.doubleSize(webamp, double);
     return webamp.renderInto(stage).then(function () {
       session.handIn(h);
       wireMediaSession();
       /* the window shows once the listener's skin is on, so Webamp's base skin never flashes */
       return h.skin && showSkin(h.skin.url, h.skin.name);
-    }).then(function () {
-      fit();
+    }).then(fit).then(function () {                           // shown at its size, not 1x first
       new MutationObserver(scheduleFit).observe(stage, { subtree: true, childList: true, attributes: true, attributeFilter: ['style', 'class'] });
       return win.show().then(function () { return win.setFocus(); });
     });
   }
 
-  /* ---------- the window is exactly Webamp's windows: they stay stacked, and the window moves instead ---------- */
-  var fitting = false, size = '';
+  /* ---------- the window is exactly Webamp's windows at the listener's size: they stay stacked, the window moves ---------- */
+  var fitting = false, fitted = '', canZoom = true, sizeNoted = false;
   function scheduleFit() { if (!fitting) { fitting = true; requestAnimationFrame(fit); } }
+  /* resolves once the window has its size */
   function fit() {
     fitting = false;
     var right = 0, bottom = 0;
+    /* page zoom leaves CSS pixels as they are: this is Webamp's size at 1x, whatever the zoom */
     WINDOWS.forEach(function (sel) {
       var el = stage.querySelector(sel); if (!el) return;
       var r = el.getBoundingClientRect(); if (!r.width) return;
       right = Math.max(right, r.right); bottom = Math.max(bottom, r.bottom);
     });
-    var next = Math.ceil(right) + 'x' + Math.ceil(bottom);
-    if (!right || next === size) return;
-    size = next;
-    win.setSize(new LogicalSize(Math.ceil(right), Math.ceil(bottom))).catch(logFailure('fit'));
+    var want = LullWebamp.readSize(), w = Math.ceil(right), h = Math.ceil(bottom), next = w + 'x' + h + '@' + want;
+    if (!right || next === fitted) return Promise.resolve();
+    fitted = next;
+    if (!canZoom) return win.setSize(new LogicalSize(w, h)).catch(logFailure('fit'));
+    /* the chosen size first, then each smaller one: the app takes the first that fits the screen */
+    var zooms = LullWebamp.SIZES.filter(function (z) { return z <= want; }).reverse();
+    return T.core.invoke('classic_fit', { width: w, height: h, zooms: zooms }).then(function (took) {
+      if (took < want) say(want + '\u00d7 doesn\'t fit this screen, so Classic shows ' + took + '\u00d7.');
+    }, function (err) {
+      console.warn('lull classic: this app can\'t zoom its Classic window', err);
+      canZoom = false; fitted = '';
+      if (want !== 1 && !sizeNoted) { sizeNoted = true; say('Classic sizes other than 1\u00d7 need lull 0.2.1 or newer.'); }
+      return fit();
+    });
   }
+  /* Webamp's Double Size, from its menu and D button (doubleSize) or Ctrl+D, taken here before Webamp's own keys */
+  function double() {
+    LullWebamp.writeSize(LullWebamp.doubled(LullWebamp.readSize()));
+    fit();
+  }
+  document.addEventListener('keydown', function (e) {
+    if (!webamp || !LullWebamp.isDoubleKey(e)) return;
+    e.preventDefault(); e.stopPropagation();
+    double();
+  }, true);
   /* a press on a title bar (Webamp's .draggable, not one of its buttons, which carry ids) drags the window */
   document.addEventListener('mousedown', function (e) {
     if (e.button !== 0) return;
@@ -89,6 +115,7 @@
   }
   /* this window sits at <hub>/desktop/winamp.html, so the hub's web root is one folder up */
   window.addEventListener('storage', function (e) {
+    if (e.key === LullWebamp.SIZE_KEY && webamp) { fit(); return; }
     if (e.key !== LullWebamp.SKIN_KEY || !webamp) return;
     var skin = null;
     try { skin = JSON.parse(e.newValue); } catch (err) { console.error('lull classic: unreadable skin choice', err); return; }

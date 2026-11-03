@@ -5,13 +5,21 @@
    - In a browser, Webamp sits alone on a full-viewport stage on <body> over the hidden app, with one quiet way
      back (Esc, W, Webamp's close button, or the small Back to lull button). design/DESIGN.md section 12 is the
      design; docs/context/web.md the data layer and the player engine.
-   - The skin is the one Settings > Appearance > Classic chose (screens/skins.js, App.classicSkin): on when Webamp
-     starts and whenever the choice changes ('classic-skin'), loaded with LullWebamp.loadSkin. Webamp's alerts are
-     lull's toasts or the stage's sentence (LullWebamp.quietAlerts); a skin that fails leaves the previous one on.
+   - The skin and the size are the ones Settings > Appearance > Classic chose (screens/skins.js, App.classicSkin and
+     App.classicSize): on when Webamp starts and whenever the choice changes ('classic-skin', 'classic-size').
+     Skins load with LullWebamp.loadSkin. Webamp's alerts are lull's toasts or the stage's sentence
+     (LullWebamp.quietAlerts); a skin that fails leaves the previous one on.
+   - Size: Webamp lives in a same-origin iframe (.cls-frame) drawn at the size with a transform, 1/size of the stage
+     big, so the stage stays covered. Pointer events reach the iframe in its own coordinates, so every bit of
+     Webamp's pointer math (window moves, playlist resize and drag, sliders, the marquee) stays right, and its
+     image-rendering: pixelated keeps the skin sharp. A new size scales the windows about the page's centre; a size
+     the stage can't hold gives way to the largest that fits. Webamp's Double Size (Ctrl+D, Options, the clutter
+     bar's D) switches between 1x and 2x.
 
-   Webamp 2.3.1 (vendor/webamp/webamp.bundle.min.js, copied by scripts/vendor-web.sh) loads with a <script> tag the
-   first time the stage opens, never on boot. One instance renders into #webamp-stage; later visits close() and
-   reopen() it (dispose() still leaks), so the stage element itself is kept and moved into each new stage.
+   Webamp 2.3.1 (vendor/webamp/webamp.bundle.min.js, copied by scripts/vendor-web.sh) loads in the iframe the first
+   time the stage opens, never on boot. One instance renders into the iframe's #webamp-stage; later visits close()
+   and reopen() it (dispose() still leaks), so the stage is kept: closed, it is hidden, not removed, since moving
+   an iframe reloads it.
    - Hand-off (desktop/webamp-session.js, shared with the desktop window): on enter the app engine pauses and Webamp
      gets the queue (URLs from App.player.streamUrl) with title, artist, album and duration, plus the index, position,
      shuffle, repeat and volume. On exit the playlist, current song, position, shuffle and repeat come back into
@@ -22,6 +30,12 @@
   var html = App.html, M = App.data, P = App.player, icon = App.icon, $ = App.$;
 
   var BUNDLE = 'vendor/webamp/webamp.bundle.min.js';
+  /* the iframe's page: Webamp's mount and its bundle; relative URLs resolve against this page, the CSP is this page's */
+  var FRAME = '<!doctype html><html lang="en"><head><meta charset="utf-8"><style>'
+    + 'html,body{margin:0;height:100%;overflow:hidden;background:transparent;color-scheme:normal}'
+    + '#webamp-stage{position:absolute;inset:0}</style></head><body>'
+    + '<div id="webamp-stage" data-webamp role="region" aria-label="Webamp"></div>'
+    + '<script src="' + BUNDLE + '"></script></body></html>';
 
   var S = {
     player: { state: 'idle', message: '' },   // Webamp: idle | loading | ready | failed (message says why)
@@ -31,8 +45,8 @@
   function base() { return new URL('./', location.href).href; }
   function skinFileUrl(md5) { return M.url('/api/skins/' + encodeURIComponent(md5) + '.wsz'); }
 
-  /* ---------- the stage element (lives on <body>, above the hidden app) ---------- */
-  var root = null, stage = null, lastPage = null, restore = null, timers = [], visit = 0;
+  /* ---------- the stage (lives on <body>, above the hidden app; kept between visits, hidden) ---------- */
+  var root = null, open = false, frame = null, lastPage = null, restore = null, timers = [], visit = 0;
 
   /* remember the page Classic was opened from: leaving returns to it */
   App.on('route', function (cur) {
@@ -52,19 +66,36 @@
     return lastPage.path + (q ? '?' + q : '');
   }
 
-  /* #webamp-stage: Webamp's renderInto host, owned by React once rendered, so nothing else goes inside it */
-  function makeStage() {
-    var el = document.createElement('div');
-    el.className = 'cls-slot'; el.id = 'webamp-stage';
-    el.setAttribute('data-webamp', ''); el.setAttribute('role', 'region'); el.setAttribute('aria-label', 'Webamp');
-    return el;
+  /* the iframe Webamp runs in; a new one after a failed start (React may own the old mount) */
+  function makeFrame() {
+    var f = document.createElement('iframe');
+    f.className = 'cls-frame'; f.title = 'Webamp';
+    f.srcdoc = FRAME;
+    var slot = $('.cls-slot', root);
+    if (frame) slot.replaceChild(f, frame); else slot.appendChild(f);
+    frame = f;
+    scale = 1;
+    return f;
+  }
+  /* the iframe's window once its page and Webamp's bundle have loaded */
+  function frameReady() {
+    var f = frame;
+    return new Promise(function (resolve, reject) {
+      function check() {
+        var w = f.contentWindow;
+        if (w && w.Webamp) resolve(w);
+        else reject(new Error('the player file (' + BUNDLE + ') didn\'t load. Check your connection; a server built from source needs `mise run setup`.'));
+      }
+      if (f.contentDocument && f.contentDocument.readyState === 'complete' && f.contentWindow.Webamp) check();
+      else f.addEventListener('load', check, { once: true });
+    });
   }
 
   /* ---------- markup: Webamp, what it is doing when that needs saying, and the way back ---------- */
   function stageMarkup() {
     return html`<div class="cls-scrim" aria-hidden="true"></div>
       <h1 class="vh" id="cls-title">Classic mode</h1>
-      <div class="cls-desk" id="cls-desk"><div class="cls-desk__status" id="cls-status">${statusMarkup()}</div></div>
+      <div class="cls-desk" id="cls-desk"><div class="cls-slot"></div><div class="cls-desk__status" id="cls-status">${statusMarkup()}</div></div>
       <button class="btn btn--sm cls-back" data-act="cls-exit" aria-keyshortcuts="Escape">${icon('chevron-left', null, 'ic-16')}Back to lull<kbd class="kbd" aria-hidden="true">Esc</kbd></button>`;
   }
   function statusMarkup() {
@@ -90,27 +121,14 @@
     </div>`;
   }
   function renderStatus() {
-    if (!root) return;
+    if (!open) return;
     var box = $('#cls-status', root), hadFocus = box.contains(document.activeElement);
     box.innerHTML = String(statusMarkup());
     if (hadFocus) $('.cls-back', root).focus({ preventScroll: true });
   }
 
   /* ---------- Webamp: load, create once, reopen ---------- */
-  var webamp = null, session = null, webampClosed = false, closingByUs = false, prepared = null, creating = null;
-  function loadScript(src, global, missing) {
-    if (window[global]) return Promise.resolve(window[global]);
-    return new Promise(function (resolve, reject) {
-      var s = document.createElement('script');
-      s.src = src;
-      s.onload = function () {
-        if (window[global]) resolve(window[global]);
-        else reject(new Error(src + ' loaded but defined no ' + global + '.'));
-      };
-      s.onerror = function () { s.remove(); reject(new Error(missing)); };
-      document.head.appendChild(s);
-    });
-  }
+  var webamp = null, session = null, frameWin = null, webampClosed = false, closingByUs = false, prepared = null, creating = null;
   /* favourites for Webamp's Skins menu, once per page load; settles either way (the menu is then empty) */
   var favourites = null;
   function readFavourites() {
@@ -122,13 +140,16 @@
     }
     return favourites;
   }
-  /* the bundle and what the constructor needs; a failed load can be retried */
+  /* the iframe with the bundle, and what the constructor needs; a failed load can be retried with a new iframe */
   function prepare() {
     if (!prepared) {
-      prepared = Promise.all([
-        loadScript(BUNDLE, 'Webamp', 'the player file (' + BUNDLE + ') didn\'t load. Check your connection; a server built from source needs `mise run setup`.'),
-        readFavourites()
-      ]).then(function (r) { LullWebamp.quietAlerts(webampSaid); return r; }, function (err) { prepared = null; throw err; });
+      if (!frame) makeFrame();
+      prepared = Promise.all([frameReady(), readFavourites()]).then(function (r) {
+        frameWin = r[0];
+        LullWebamp.quietAlerts(webampSaid, frameWin);
+        wireFrame(frameWin.document);
+        return [frameWin.Webamp, r[1]];
+      }, function (err) { prepared = null; makeFrame(); throw err; });
     }
     return prepared;
   }
@@ -142,28 +163,27 @@
         equalizer: { position: { top: 116, left: 0 }, closed: phone },
         playlist: { position: { top: phone ? 116 : 232, left: 0 }, size: { extraWidth: 0, extraHeight: 0 } }
       },
-      enableHotkeys: false,                                     // lull owns the shortcuts ([data-webamp] silences them)
-      enableMediaSession: false,                                // and Media Session
-      /* the stage is a stacking context, so this only lifts what Webamp puts on <body> (its context menu) over it */
-      zIndex: parseInt(getComputedStyle(document.documentElement).getPropertyValue('--z-classic'), 10) + 1,
+      enableHotkeys: false,                                     // lull owns the shortcuts (wireFrame)
+      enableMediaSession: false,                                // and Media Session: the top frame's handlers drive Webamp
       handleTrackDropEvent: onWebampDrop,
       handleSaveListEvent: exportM3u,
       handleLoadListEvent: importM3u
     });
     w.onWillClose(function (cancel) { if (closingByUs) return; cancel(); exit(); });   // its close button = leave Classic
     var s = LullWebamp.session(w, { listen: App.recordPlay });
-    return w.renderInto(stage).then(function () { webamp = w; session = s; shown = null; }, function (err) {
+    LullWebamp.doubleSize(w, function () { App.classicSize.double(); });
+    return w.renderInto(frameWin.document.getElementById('webamp-stage')).then(function () {
+      webamp = w; session = s; shown = null;
+    }, function (err) {
       w.dispose();
-      var fresh = makeStage();                                  // React may own the old host: start clean next time
-      if (stage.parentNode) stage.parentNode.replaceChild(fresh, stage);
-      stage = fresh;
+      prepared = null; makeFrame();                             // React may own the old mount: start clean next time
       throw err;
     });
   }
   /* every visit: make sure Webamp is up, then hand it the queue. A visit that ended meanwhile does nothing */
   function startWebamp() {
     var mine = visit;
-    function current() { return mine === visit && root; }
+    function current() { return mine === visit && open; }
     if (!webamp) { S.player = { state: 'loading', message: '' }; renderStatus(); }
     prepare().then(function (r) {
       if (webamp || !current()) return null;
@@ -185,13 +205,14 @@
     handOver();
     App.hooks.media = webampControls;                          // media keys and the lock screen drive Webamp now
     renderStatus();
+    followSize();
     followSkin();
   }
 
   /* ---------- the skin: Settings' choice, on now and whenever it changes ---------- */
   var shown = null, skinJob = Promise.resolve();               // shown: the md5 Webamp shows (null: its base skin)
   function followSkin() {
-    if (!webamp || !root) return;
+    if (!webamp || !open) return;
     var skin = App.classicSkin.get(), md5 = skin ? skin.md5 : null;
     if (md5 === shown) return;
     var before = shown;
@@ -209,6 +230,45 @@
     });
   }
   App.on('classic-skin', followSkin);
+
+  /* ---------- the size: Settings' choice, or the largest that fits the stage; windows scale about its centre ---------- */
+  var scale = 1, sizeSaid = null;
+  var WINDOWS = ['main', 'equalizer', 'playlist'];
+  function followSize() {
+    if (!webamp || !open) return;
+    var slot = $('.cls-slot', root), roomW = slot.clientWidth, roomH = slot.clientHeight;
+    if (!roomW || !roomH) return;
+    var want = App.classicSize.get(), box = windowsBox();
+    var next = box ? LullWebamp.fitSize(want, box.w, box.h, roomW, roomH) : want;
+    if (next < want && sizeSaid !== want + '>' + next) {
+      sizeSaid = want + '>' + next;
+      App.toast(want + '\u00d7 doesn\'t fit this window, so Classic shows ' + next + '\u00d7', { icon: 'info' });
+    }
+    if (next === scale) return;
+    /* a window at x shows at x*scale; keeping the page's centre still moves every window by the same amount */
+    var dx = roomW / 2 * (1 / next - 1 / scale), dy = roomH / 2 * (1 / next - 1 / scale);
+    var positions = {}, wins = webamp.store.getState().windows.genWindows;
+    WINDOWS.forEach(function (k) {
+      var at = wins[k] && wins[k].position;
+      if (at) positions[k] = { x: Math.round(at.x + dx), y: Math.round(at.y + dy) };
+    });
+    scale = next;
+    frame.style.width = 100 / scale + '%'; frame.style.height = 100 / scale + '%';
+    frame.style.transform = scale === 1 ? '' : 'scale(' + scale + ')';
+    webamp.store.dispatch({ type: 'UPDATE_WINDOW_POSITIONS', positions: positions });   // Webamp keeps them on screen after
+  }
+  /* Webamp's open windows at 1x, in its own coordinates */
+  function windowsBox() {
+    var doc = frameWin.document, l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+    WINDOWS.forEach(function (k) {
+      var el = doc.getElementById(k === 'main' ? 'main-window' : k + '-window');
+      var rect = el && el.getBoundingClientRect();
+      if (!rect || !rect.width) return;
+      l = Math.min(l, rect.left); t = Math.min(t, rect.top); r = Math.max(r, rect.right); b = Math.max(b, rect.bottom);
+    });
+    return r > l ? { w: r - l, h: b - t } : null;
+  }
+  App.on('classic-size', followSize);
   /* what Webamp says outside a skin load (a skin from its own Skins menu, a menu item it lacks) */
   function webampSaid(message) {
     App.toast(/skin/i.test(message) ? 'Webamp couldn\'t load that skin' : 'Webamp: ' + message, { kind: 'error', icon: 'warning' });
@@ -309,7 +369,7 @@
 
   /* ---------- actions ---------- */
   function exit() {
-    if (!root || root.classList.contains('is-leaving')) return;
+    if (!open || root.classList.contains('is-leaving')) return;
     root.classList.add('is-leaving');
     later(function () { App.go(lastHref()); }, App.reducedMotion() ? 130 : 200);
   }
@@ -317,44 +377,68 @@
   App.action('cls-start', startWebamp);
   App.action('cls-dismiss', function () { S.skin = null; renderStatus(); });
 
-  /* keyboard: Esc and W leave Classic (W not inside Webamp), Tab stays on the stage (the app behind is hidden) */
+  /* keyboard, on the stage and in Webamp's iframe: Esc and W leave Classic (W not inside Webamp), Ctrl+D is Webamp's
+     Double Size, Tab stays on the stage (the app behind is hidden) */
   function onKey(e) {
-    if (!root) return;
+    if (!open) return;
     if (document.querySelector('body > .popover, body > .menu, #overlay-host > .is-open')) return;   // the app's overlay owns Esc / Tab
     var a = e.target && e.target.nodeType === 1 ? e.target : document.activeElement;
     var typing = a && /^(INPUT|TEXTAREA)$/.test(a.tagName) && a.type !== 'file';
     var w = (e.key === 'w' || e.key === 'W') && !typing && !e.ctrlKey && !e.metaKey && !e.altKey && !(a && a.closest && a.closest('[data-webamp]'));
     if (e.key === 'Escape' || w) { e.preventDefault(); e.stopPropagation(); exit(); return; }
+    if (LullWebamp.isDoubleKey(e)) {
+      e.preventDefault(); e.stopPropagation(); App.classicSize.double(); return;
+    }
     if (e.key === 'Tab') {
-      var f = App.$$('a[href], button:not([disabled])', root).filter(function (n) { return n.offsetParent !== null && !stage.contains(n); });
+      var f = App.$$('a[href], button:not([disabled])', root).filter(function (n) { return n.offsetParent !== null; });
       var i = f.indexOf(a);
       if (i < 0 || (e.shiftKey && i === 0) || (!e.shiftKey && i === f.length - 1)) { e.preventDefault(); f[e.shiftKey ? f.length - 1 : 0].focus(); }
     }
   }
+  /* what happens in the iframe that lull handles: its keys, and files dropped beside Webamp's windows (on them,
+     Webamp takes them: onWebampDrop) go where a drop anywhere on lull goes */
+  function wireFrame(doc) {
+    doc.addEventListener('keydown', onKey, true);
+    function files(e) { return e.dataTransfer && [].indexOf.call(e.dataTransfer.types || [], 'Files') >= 0; }
+    doc.addEventListener('dragover', function (e) { if (files(e)) e.preventDefault(); });
+    doc.addEventListener('drop', function (e) {
+      if (!files(e) || e.defaultPrevented) return;
+      e.preventDefault();
+      var f = e.dataTransfer.files[0]; if (f) App.hooks.importFile(f);
+    });
+  }
+  function onResize() { followSize(); }
 
   function later(fn, ms) { var t = setTimeout(fn, ms); timers.push(t); return t; }
 
   /* ---------- open / close ---------- */
   function openStage() {
     visit += 1;
+    open = true;
     if (restore) restore.path = lastPage ? lastPage.path : '/home';
-    root = document.createElement('div');
-    root.className = 's-sky cls-root';
-    root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-labelledby', 'cls-title');
-    root.setAttribute('tabindex', '-1');                       // the dialog itself takes focus; Tab moves into it
-    root.innerHTML = String(stageMarkup());
-    if (!stage) stage = makeStage();
-    $('#cls-desk', root).insertBefore(stage, $('#cls-status', root));
-    document.body.appendChild(root);
+    if (!root) {
+      root = document.createElement('div');
+      root.className = 's-sky cls-root';
+      root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-labelledby', 'cls-title');
+      root.setAttribute('tabindex', '-1');                     // the dialog itself takes focus; Tab moves into it
+      root.innerHTML = String(stageMarkup());
+      document.body.appendChild(root);
+    } else {
+      $('#cls-status', root).innerHTML = String(statusMarkup());
+      root.classList.remove('is-leaving');
+      root.classList.remove('is-closed'); root.removeAttribute('inert');
+    }
     document.documentElement.setAttribute('data-classic', 'on');
     $('#app').setAttribute('inert', ''); $('#app').setAttribute('aria-hidden', 'true');
-    requestAnimationFrame(function () { requestAnimationFrame(function () { if (root) root.classList.add('is-on'); }); });
-    later(function () { if (root) root.focus({ preventScroll: true }); }, 60);
+    requestAnimationFrame(function () { requestAnimationFrame(function () { if (open) root.classList.add('is-on'); }); });
+    later(function () { if (open) root.focus({ preventScroll: true }); }, 60);
     document.addEventListener('keydown', onKey, true);
+    window.addEventListener('resize', onResize);
     startWebamp();
   }
   function closeStage() {
     visit += 1;                                                // a Webamp start still in flight won't hand over now
+    open = false;
     if (webamp) {
       App.hooks.media = null;                                  // back to the app engine
       session.stop();
@@ -363,10 +447,14 @@
       webampClosed = true;
     }
     document.removeEventListener('keydown', onKey, true);
+    window.removeEventListener('resize', onResize);
     timers.forEach(clearTimeout); timers = [];
     if (S.skin && S.skin.state === 'failed') S.skin = null;    // said once; the next visit tries again
+    sizeSaid = null;
     App.closePopover();
-    root.remove(); root = null;
+    /* hidden, not removed (Webamp's iframe would reload) and not display: none (its size, so Webamp's layout, stays) */
+    root.classList.remove('is-on');
+    root.classList.add('is-closed'); root.setAttribute('inert', '');
     document.documentElement.removeAttribute('data-classic');
     $('#app').removeAttribute('inert'); $('#app').removeAttribute('aria-hidden');
   }
@@ -411,21 +499,21 @@
   App.route('/classic', {
     title: 'Classic mode',
     render: function (ctx) {
-      if (!root) restore = { scroll: ctx.el.scrollTop, opener: document.activeElement };
+      if (!open) restore = { scroll: ctx.el.scrollTop, opener: document.activeElement };
       return '';
     },
     mount: function (ctx) {
       var D = desktopApp();
-      if (D && !root) {
+      if (D && !open) {
         /* Classic lives in its own window: back to the page it came from. An app without that window (older than
            this page) refuses, and the stage opens here instead */
         openWindow(D).then(function () { if (onClassic()) App.go(lastHref()); }, function (err) {
           console.warn('Classic window unavailable, using the stage', err);
-          if (onClassic() && !root) openStage();
+          if (onClassic() && !open) openStage();
         });
-      } else if (!root) openStage();
+      } else if (!open) openStage();
       /* a re-render of /classic keeps the stage; leaving closes it */
-      ctx.onCleanup(function () { if (!onClassic() && root) closeStage(); });
+      ctx.onCleanup(function () { if (!onClassic() && open) closeStage(); });
     }
   });
 })();

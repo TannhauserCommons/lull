@@ -525,7 +525,7 @@
   /* Settings sections that live in their own file register here; they build with the same controls
      (screens/appearance.js, owned by the themes work: docs/context/workspace.md). */
   App.settingsSections = App.settingsSections || {};
-  App.settingsKit = { row: row, choice: choice, switchRow: switchRow, group: group, custom: custom, get: get, effects: effects,
+  App.settingsKit = { row: row, choice: choice, showChoice: showChoice, switchRow: switchRow, group: group, custom: custom, get: get, effects: effects,
     statusLine: statusLine, spinnerLine: spinnerLine, lockedValue: lockedValue, readError: readError, repaint: repaint,
     cfgField: cfgField, cfgNotice: cfgNotice, cfgItem: cfgItem, cfgSave: cfgSave, clause: clause };
 

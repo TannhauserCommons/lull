@@ -19,9 +19,9 @@ layout.js    ADR-0007: size classes, App.layout (lull:layout), resize handles, t
 sw.js        service worker (app shell for offline start); manifest.webmanifest
 hub.js       the hub's own settings: library source (folder / Jellyfin), Soulseek account, Settings > Devices (App.hubKit)
 setup.js     the pairing gate, #/pair/<code>, first-run setup (/setup)
-skins.js     Classic mode's skin, per device (App.classicSkin), and Settings > Appearance > Classic: the skin browser,
-             .wsz files kept on this device, the NSFW switch (docs/context/skins.md)
-classic.js   Classic mode: Webamp alone, on a stage in a browser or in the desktop app's own window
+skins.js     Classic mode's skin and size, per device (App.classicSkin, App.classicSize), and Settings > Appearance >
+             Classic: the size, the skin browser, .wsz files kept on this device, the NSFW switch (docs/context/skins.md)
+classic.js   Classic mode: Webamp alone, in an iframe on a stage in a browser, or in the desktop app's own window
 vendor/      Webamp bundle and the QR encoder (qrcode-generator), copied by scripts/vendor-web.sh, gitignored
 desktop/     the desktop app's wrapper pages and bridge (`LullDesktop`), owned by the Apps session
 ```

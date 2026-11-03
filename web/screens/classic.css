@@ -9,6 +9,7 @@
 .cls-root.is-on { opacity: 1; }
 .cls-root:focus { outline: none; }                           /* the dialog container; its controls keep their rings */
 .cls-root.is-leaving { opacity: 0; transition-duration: var(--dur-2); transition-timing-function: var(--ease-in-out); }
+.cls-root.is-closed { visibility: hidden; pointer-events: none; }  /* kept between visits: Webamp's iframe stays loaded */
 .cls-scrim { position: absolute; inset: 0; background: var(--bg); }
 html[data-classic="on"] #app { visibility: hidden; }
 
@@ -19,9 +20,13 @@ html[data-classic="on"] #app { visibility: hidden; }
 }
 .cls-root.is-on .cls-desk { animation: cls-crt 300ms var(--ease-out) both; }
 @keyframes cls-crt { from { transform: scaleY(.02); } to { transform: none; } }
-/* #webamp-stage: Webamp's renderInto host. It must be positioned and it clips nothing: Webamp windows are draggable
-   anywhere inside it. isolation keeps Webamp's own z-indexes inside the stage, under the status boxes. */
-.cls-slot { position: relative; min-height: 0; isolation: isolate; }
+/* the slot holds Webamp's iframe: 1/size of the slot, drawn at the size (classic.js followSize), so it covers the slot
+   exactly. Webamp's windows move anywhere inside; isolation keeps it under the status boxes */
+.cls-slot { position: relative; min-height: 0; overflow: hidden; isolation: isolate; }
+.cls-frame {
+  position: absolute; left: 0; top: 0; width: 100%; height: 100%; border: 0; transform-origin: 0 0;
+  background: transparent; color-scheme: normal;            /* matches the iframe's page, so it stays transparent */
+}
 .cls-desk__status { display: contents; }                     /* its boxes position against the desk */
 
 /* starting / loading the skin / failed sit at the bottom of the stage; fixed boxes, so nothing shifts */
