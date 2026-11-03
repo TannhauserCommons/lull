@@ -18,7 +18,7 @@ use crate::Service;
 /// Songs asked of yt-dlp at once: a flat YouTube page is one quick run; SoundCloud reads each
 /// song (about 1 s), so its pages are small and progress shows.
 fn page_size(site: Site) -> usize {
-    if site == Site::Soundcloud { 20 } else { 200 }
+    if site == Site::Soundcloud { 40 } else { 200 }
 }
 
 /// The playlist page by page; `on_page` hears how many songs are read so far.
@@ -27,7 +27,23 @@ pub(crate) async fn read(svc: &Service, link: &Link, mut on_page: impl FnMut(usi
     let mut listing = Listing::default();
     let mut from = 0;
     loop {
-        let page = svc.youtube.playlist(&url, from, n).await?;
+        let page = match svc.youtube.playlist(&url, from, n).await {
+            Ok(page) => page,
+            // The songs read so far are worth importing; the note says the rest are missing.
+            Err(e) if !listing.songs.is_empty() => {
+                listing.note = Some(format!(
+                    "{} stopped answering after {} songs ({e}). Import the link again later for the rest.",
+                    if link.site == Site::Soundcloud {
+                        "SoundCloud"
+                    } else {
+                        "YouTube"
+                    },
+                    listing.songs.len()
+                ));
+                break;
+            }
+            Err(e) => return Err(e),
+        };
         if from == 0 {
             listing.name = page.title.clone();
         }
@@ -65,7 +81,10 @@ pub(crate) fn song(l: &Listed, site: Site) -> Option<Song> {
         _ => match uploader.strip_suffix(" - Topic") {
             Some(artist) => (artist.to_owned(), clean(&l.title), true),
             None => match split_dash(&l.title) {
-                Some((a, t)) => (a, clean(&t), exact),
+                Some((a, t)) => {
+                    let title = clean(&without_artist(&t, &a));
+                    (a, title, exact)
+                }
                 None => (channel_artist(uploader), clean(&l.title), exact),
             },
         },
@@ -80,14 +99,24 @@ pub(crate) fn song(l: &Listed, site: Site) -> Option<Song> {
     })
 }
 
-/// "Artist - Title" (any dash), when both sides have words.
+/// "Artist - Title" (any dash, or SoundCloud's "Artist • Title"), when both sides have words.
 fn split_dash(title: &str) -> Option<(String, String)> {
-    [" - ", " – ", " — ", " -- "]
+    [" - ", " – ", " — ", " -- ", " • "]
         .iter()
         .filter_map(|d| title.split_once(d))
         .min_by_key(|(a, _)| a.len())
         .map(|(a, t)| (a.trim().to_owned(), t.trim().to_owned()))
         .filter(|(a, t)| !a.is_empty() && !t.is_empty())
+}
+
+/// "Dominic Fike \"Babydoll\"" after "Dominic Fike - ": the artist said again before the title.
+fn without_artist(title: &str, artist: &str) -> String {
+    match title.get(..artist.len()) {
+        Some(head) if head.eq_ignore_ascii_case(artist) && title[artist.len()..].starts_with(' ') => {
+            title[artist.len()..].trim().to_owned()
+        }
+        _ => title.to_owned(),
+    }
 }
 
 /// A channel name as an artist: "AdeleVEVO" is Adele, "Adele Official" is Adele.
@@ -185,6 +214,19 @@ mod tests {
     }
 
     #[test]
+    fn an_artist_named_again_before_a_quoted_title_is_dropped() {
+        let s = song(
+            &listed(
+                "Dominic Fike - Dominic Fike \"Babydoll\" (Official Video)",
+                "Dominic Fike",
+                None,
+            ),
+            Site::Youtube,
+        );
+        assert_eq!(named(s), ("Dominic Fike".into(), "Babydoll".into(), None));
+    }
+
+    #[test]
     fn a_topic_channel_is_official_audio_with_the_songs_length() {
         let s = song(
             &listed("Patient Zero", "Taylor Swift - Topic", Some(313)),
@@ -217,6 +259,12 @@ mod tests {
             named(song(&l, Site::Soundcloud)),
             ("Sweet Medicine".into(), "Breezin'".into(), Some(158))
         );
+    }
+
+    #[test]
+    fn a_bullet_splits_artist_and_title_too() {
+        let s = song(&listed("Juan RIOS • praia", "Juan RIOS", Some(203)), Site::Soundcloud);
+        assert_eq!(named(s), ("Juan RIOS".into(), "praia".into(), Some(203)));
     }
 
     #[test]
