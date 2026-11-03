@@ -2273,6 +2273,12 @@
   out.on('crossfade', function (d) { if (isCur(d.key)) { ps.crossfade = !!d.next; changed('status'); } });
   out.on('remote', function (d) { if (d.action === 'next') P.next(); else if (d.action === 'prev') P.prev(); });
 
+  /* the equaliser: this device's (web/eq.js), followed live, also when Classic's Webamp or another window changes it.
+     An Android app older than its native equaliser has none: Settings says so (P.canEqualize) */
+  function applyEq(s) { if (out.equalize) out.equalize(LullEq.spec(s)).catch(function (err) { console.warn('The equaliser didn\'t apply', err); }); }
+  P.canEqualize = function () { return !!out.equalize; };
+  applyEq(LullEq.read()); LullEq.on(applyEq);
+
   /* volume (perceptual curve, mute) and crossfade length go to the output; repeat one never crossfades */
   function applyLevels() {
     out.setVolume(ps.muted ? 0 : ps.volume * ps.volume);
@@ -2363,14 +2369,16 @@
       emit('crossfade', { key: key(a), next: null });
     }
 
-    /* levels: volume x crossfade x loudness normalisation */
-    var ctx = null, master = null;
-    function wantGraph() { return playback.normalisation && playback.normalisation !== 'off' || playback.crossfade > 0 || playback.switchToBetter; }
+    /* levels: volume x crossfade x loudness normalisation; then the equaliser (web/eq.js), after the decks are mixed, so
+       crossfades, gapless and a better copy's handover pass through one unchanged chain */
+    var ctx = null, master = null, eqSpec = null, eqChain = null;
+    function wantGraph() { return playback.normalisation && playback.normalisation !== 'off' || playback.crossfade > 0 || playback.switchToBetter || !!eqSpec; }
     /* Web Audio only when a feature needs it; built inside a user gesture (play), once */
     function ensureGraph() {
       if (ctx || !wantGraph() || !window.AudioContext) { if (ctx && ctx.state === 'suspended') ctx.resume(); return; }
       ctx = new AudioContext();
-      master = ctx.createGain(); master.connect(ctx.destination);
+      master = ctx.createGain(); eqChain = LullEq.chain(ctx); eqChain.set(eqSpec);
+      master.connect(eqChain.input); eqChain.output.connect(ctx.destination);
       /* each deck: source -> delay (a better copy's, to line it up) -> switch fade -> level -> master; the analyser
          listens to the source */
       decks.forEach(function (d) {
@@ -2380,6 +2388,14 @@
         src.connect(d.delay); d.delay.connect(d.sw); d.sw.connect(d.gain); d.gain.connect(master); src.connect(d.analyser);
       });
       levels();
+    }
+    /* turned on mid-song: the graph is built at once (the page has had the listener's click, so it starts running);
+       otherwise the next play builds it */
+    function equalize(spec) {
+      eqSpec = spec;
+      if (eqChain) eqChain.set(spec);
+      else if (spec && !a.el.paused && (!navigator.userActivation || navigator.userActivation.hasBeenActive)) ensureGraph();
+      return Promise.resolve();
     }
     function levels() {
       decks.forEach(function (d) {
@@ -2599,6 +2615,7 @@
         return Promise.resolve();
       },
       crossfade: function (sec) { xfade = sec; if (!sec) abandonFade(); return Promise.resolve(); },
+      equalize: equalize,
       switchTo: switchTo
     };
   }
@@ -2610,7 +2627,8 @@
       };
     }
     return { eagerNext: true, on: function (type, fn) { return n.on(type, fn); }, load: call('load'), play: call('play'), pause: call('pause'),
-      seek: call('seek'), setVolume: call('setVolume'), setNext: call('setNext'), crossfade: call('crossfade') };
+      seek: call('seek'), setVolume: call('setVolume'), setNext: call('setNext'), crossfade: call('crossfade'),
+      equalize: n.equalize ? call('equalize') : null };
   }
 
   /* ---------- plays: POST /api/plays when a song starts, PATCH when it ends (scrobbling, history, taste) ---------- */
@@ -3524,7 +3542,7 @@
   App.itemMenus.track = trackMenu;
   /* the player's "…" (the bar's, Now Playing's, a right-click on the playing song): the song's actions, then the bar's
      views. Every tool a narrow bar lets give way (data-fit) is here: Like and Save with the song, Lyrics, Classic,
-     Devices and Device view always */
+     Devices and Device view always, and the equaliser (screens/eq.js) */
   function playerMenu(anchor) {
     var t = P.current();
     App.needClassic().then(null, function () {});      // it lists Classic mode: have it ready
@@ -3532,7 +3550,8 @@
       { label: 'Lyrics', icon: 'lyrics', run: function () { App.togglePanel('lyrics'); } },
       { label: 'Classic mode', icon: 'classic', run: function () { App.go('/classic'); } },
       { label: 'Play on another device', icon: 'connect', run: function () { App.connect.open(anchor); } },
-      { label: 'Device view', icon: 'device', run: actions['open-now'] }
+      { label: 'Device view', icon: 'device', run: actions['open-now'] },
+      { label: 'Equaliser', icon: 'equaliser', run: function () { App.eq.open(anchor); } }
     ];
     if (!t) { App.menu(anchor, views, { label: 'More player actions' }); return; }
     var liked = App.isLiked(t.id), saved = App.isSaved(t.id);

@@ -530,7 +530,7 @@
     cfgField: cfgField, cfgNotice: cfgNotice, cfgItem: cfgItem, cfgSave: cfgSave, clause: clause };
 
   var SECTIONS = [
-    ['playback', 'Playback', 'volume-2', 'Gapless, crossfade, loudness'],
+    ['playback', 'Playback', 'volume-2', 'Gapless, crossfade, loudness, equaliser'],
     ['sources', 'Sources', 'soulseek', 'Streaming and saving rules, peers, YouTube'],
     ['search', 'Search', 'search', 'File results'],
     ['cache', 'Cache', 'grid', 'Size, usage, clear'],
@@ -568,7 +568,8 @@
       ${row('Volume step', 'How far Up, Down and the D-pad move the volume.', choice('playback.volumeStep', 'Volume step', [[2, '2%'], [5, '5%'], [10, '10%']]))}
       ${switchRow('playback.radioWhenQueueEnds', 'Continue with radio when the queue ends', 'Starts a radio from the last song so the music keeps going.')}
       ${lookup('playback.prefetchCount') == null ? '' : row('Preload upcoming songs', 'Your server starts getting the next songs from Soulseek while this one plays, so skipping plays at once. More uses more of its bandwidth. Saved songs never need it.',
-        choice('playback.prefetchCount', 'Preload upcoming songs', [[0, 'Off'], [1, '1'], [2, '2'], [3, '3']], 'sys-seg--4'))}`;
+        choice('playback.prefetchCount', 'Preload upcoming songs', [[0, 'Off'], [1, '1'], [2, '2'], [3, '3']], 'sys-seg--4'))}
+      ${App.eq.panel({ full: true })}`;
   }
 
   /* ---------- sources (ADR-0008): a streaming and a saving profile, then the peer limits ----------

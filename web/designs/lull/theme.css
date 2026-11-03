@@ -760,6 +760,8 @@
 :root[data-design="lull"] .range::-webkit-slider-thumb { width: 16px; height: 16px; margin-top: -5px; background: var(--l-gloss); border: var(--stroke) solid var(--l-gloss-edge); box-shadow: none; }
 :root[data-design="lull"] .range::-moz-range-thumb { background: var(--l-gloss); border: var(--stroke) solid var(--l-gloss-edge); box-shadow: none; }
 :root[data-design="lull"] .range::-moz-range-progress { background: var(--l-ribbon); }
+:root[data-design="lull"] .range--centred::-webkit-slider-runnable-track { background: linear-gradient(to right, var(--l-received) min(var(--fill, 50%), 50%), var(--l-ribbon) min(var(--fill, 50%), 50%), var(--l-ribbon) max(var(--fill, 50%), 50%), var(--l-received) max(var(--fill, 50%), 50%)); }
+:root[data-design="lull"] .range--centred::-moz-range-progress { background: transparent; }
 
 /* =====================================================================
    Overlays: sheets and dialogs are windows; popovers, menus and toasts are small paper panels

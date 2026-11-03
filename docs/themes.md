@@ -416,6 +416,7 @@ Every class lull's CSS styles and every `data-*` attribute lull's markup sets, e
 - **Stats:** `.sys-stats`, `.sys-tiles`, `.sys-tile`, `.sys-bars`, `.sys-bar`, `.sys-heat` (`data-l`: the cell's level, 0 to 4), `.sys-empty-stats`.
 - **First run and pairing:** `.sys-welcome`, `.sys-gate` (the pairing gate), `.setup`, `.setup-step`, `.setup-code`, `.sys-step`, `.hub-pair` and `.hub-qr` (the pair dialog).
 - **Connect:** `.cx-pop` (the device picker), `.cx-dev`, `.cx-remote`.
+- **Equaliser:** `.eqp` (the panel: `.eqp--full` in Settings > Playback, `.is-off` while it is off), `.eq-pop` (the player's popover), `.eq-sheet` (the same on phones). Its sliders are `.range.range--centred` (filled from 0 dB).
 
 ### Classic and the desktop app
 
@@ -449,5 +450,5 @@ lull's plumbing: these may change in any release.
   - values and wiring: `data-kind`, `data-name`, `data-label`, `data-dir`, `data-pos`, `data-group`, `data-item`, `data-via`, `data-job`, `data-mode`, `data-choice`, `data-close`, `data-yes`, `data-form`, `data-url`, `data-text`, `data-msg`, `data-locked-msg`, `data-placeholder`, `data-cmd`, `data-device`, `data-remote`;
   - lists, filters and banners: `data-filters`, `data-issue`, `data-more`, `data-out`, `data-period`, `data-range`, `data-pick`, `data-pick-new`, `data-sync`, `data-save-btn`, `data-save-songs`, `data-src-badge`, `data-src-mini`, `data-dl`, `data-cold-count`, `data-banner`, `data-banner-*`, `data-toast-*`, `data-cover-*`, `data-scan*`, `data-now-qlist`, `data-now-steer`;
   - Settings controls: `data-cfg`, `data-switch`, `data-step`, `data-stepper`, `data-min`, `data-max`, `data-unit`, `data-weight`, `data-when`, `data-format`, `data-formats`;
-  - screens with their own wiring: `data-imp-*`, `data-lib-*`, `data-linkrev*`, `data-rev-*`, `data-cx*`, `data-studio*`, `data-drop-theme`, `data-theme-file`, `data-skin`, `data-skin-file`, `data-webamp`, `data-token`, `data-token-reset`;
+  - screens with their own wiring: `data-imp-*`, `data-lib-*`, `data-linkrev*`, `data-rev-*`, `data-cx*`, `data-studio*`, `data-drop-theme`, `data-theme-file`, `data-skin`, `data-skin-file`, `data-webamp`, `data-eq*`, `data-token`, `data-token-reset`;
   - the desktop app's pages: `data-attempt`, `data-dk-attempt`, `data-dk-close`, `data-dk-connect`, `data-dk-error`, `data-dk-found`, `data-dk-offline`, `data-dk-retry-status`, `data-dk-welcome`.

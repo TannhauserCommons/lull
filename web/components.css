@@ -565,6 +565,43 @@ button.trow__title:hover { text-decoration: underline; text-underline-offset: 3p
 .range::-moz-range-progress { height: 8px; border-radius: 4px; background: var(--accent-ui); }
 .range::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; margin-top: -5px; border-radius: 50%; background: var(--accent-ui); border: 2.5px solid var(--bg); box-shadow: 0 0 0 1.5px var(--accent-ui); }
 .range::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--accent-ui); border: 2.5px solid var(--bg); box-shadow: 0 0 0 1.5px var(--accent-ui); }
+/* a slider around 0 (the equaliser's dB): filled from the middle to the value */
+.range--centred::-webkit-slider-runnable-track { background: linear-gradient(to right, transparent min(var(--fill, 50%), 50%), var(--accent-ui) min(var(--fill, 50%), 50%), var(--accent-ui) max(var(--fill, 50%), 50%), transparent max(var(--fill, 50%), 50%)); }
+.range--centred::-moz-range-progress { background: transparent; }
+
+/* the equaliser (screens/eq.js): Settings > Playback and the player's popover. Built from the shared parts (switch,
+   chips, ranges, settings rows), so each design's look of those is its look */
+.eqp { display: grid; gap: var(--sp-3); min-width: 0; }
+.eqp.is-off .eqp__presets, .eqp.is-off .eqp__tones, .eqp.is-off .eqp__more { opacity: .55; }
+.eqp__top.switch-row:not(.sys-row) { padding: var(--sp-1) var(--sp-2) 0 var(--sp-3); }
+.eqp__title { font: var(--t-h2); font-size: 1.0625rem; }
+.eqp__presets { display: flex; flex-wrap: wrap; gap: var(--sp-2); padding: 0 var(--sp-2); }
+.eqp__custom { background: transparent; border-style: dashed; color: var(--fg-2); }
+.eqp__custom[hidden] { display: none; }
+.eqp__tones, .eqp__bands { display: grid; gap: 0; padding: 0 var(--sp-2); }
+.eqp__tone { display: grid; grid-template-columns: 4.5rem minmax(0, 1fr) 4.5rem; align-items: center; gap: var(--sp-3); cursor: pointer; }
+.eqp__tone .range { height: 36px; }
+.eqp__label { font: 700 .875rem/1.2 var(--f-ui); color: var(--fg); }
+.eqp__val { font: var(--t-meta); color: var(--fg-2); text-align: right; }
+.eqp__link { display: inline-flex; align-items: center; gap: var(--sp-2); justify-self: start; min-height: 36px; margin: 0 var(--sp-2) var(--sp-1); padding: 0 var(--sp-1); font: 700 .875rem/1.2 var(--f-ui); color: var(--fg-2); }
+.eqp__link:hover { color: var(--fg); }
+.eqp__more { padding: 0 var(--sp-2); }
+.eqp__summary { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: 40px; font: 700 .875rem/1.2 var(--f-ui); color: var(--fg-2); cursor: pointer; list-style: none; }
+.eqp__summary::-webkit-details-marker { display: none; }
+.eqp__summary:hover { color: var(--fg); }
+.eqp__chev { transform: rotate(-90deg); transition: transform var(--dur-1); }
+.eqp__more[open] .eqp__chev { transform: none; }
+.eqp__curve { display: block; width: 100%; height: 64px; margin: var(--sp-1) 0 var(--sp-2); }
+.eqp__zero { fill: none; stroke: var(--divider); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.eqp__line { fill: none; stroke: var(--accent-ui); stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.eqp__level { margin-top: var(--sp-2); }
+.eqp__levelnote { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); min-height: 36px; font: var(--t-meta); color: var(--fg-2); }
+.eqp__levelnote [hidden] { display: none; }
+.eqp__help { font: var(--t-meta); color: var(--fg-2); }
+.eqp__note { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); font: var(--t-meta); color: var(--fg-2); }
+.eqp--full { gap: var(--sp-3); }
+.eqp--full .eqp__presets, .eqp--full .eqp__tones, .eqp--full .eqp__more, .eqp--full .eqp__bands { padding: 0; }
+.eq-pop { width: min(380px, calc(100vw - 24px)); padding: var(--sp-2) var(--sp-2) var(--sp-3); }
 
 /* =====================================================================
    Toggle switch: <button class="switch" role="switch" aria-checked>

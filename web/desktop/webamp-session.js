@@ -13,6 +13,9 @@
      session.idOf(url)          the lull id of a Webamp track's URL, or null (a local file)
      session.now()              { track, playing, pos, duration }: the hand-off's track or null
      session.stop()             the listening record ends as 'stopped' (leaving Classic)
+   The equaliser: Webamp's equaliser window is lull's (web/eq.js, loaded before this file), so a session links them
+   both ways: its bands and on/off are this device's settings, and its preamp shows the level (automatic unless the
+   listener moves it, which sets it by hand). A change in Settings or another window shows in Webamp at once.
    Listening: a record begins once a lull song plays and gains the seconds heard in steady playback
    (seeks don't count), as the app engine counts them. Webamp has no play/pause or seek events, so its
    store and media clock are watched instead.
@@ -159,6 +162,38 @@
     });
   }
 
+  /* ---------- the equaliser: Webamp's sliders run 0-100 for -12 to +12 dB ---------- */
+  function inRange(db) { return Math.min(12, Math.max(-12, db)); }
+  function toSlider(db) { return (inRange(db) + 12) / 24 * 100; }
+  function toDb(v) { return v / 100 * 24 - 12; }
+  function linkEq(webamp) {
+    var store = webamp.store, BANDS = LullEq.BANDS, shown = null, showing = false;
+    function differs(v, db) { return Math.abs(toDb(v) - db) > .05; }
+    /* lull's settings into Webamp's window (its own dispatches are not the listener's changes) */
+    function show(s) {
+      var eq = store.getState().equalizer;
+      shown = { on: s.on, bands: s.bands.slice(), level: inRange(LullEq.level(s)) };   // its preamp ends at -12 dB
+      showing = true;
+      try {
+        if (eq.on !== s.on) store.dispatch({ type: s.on ? 'SET_EQ_ON' : 'SET_EQ_OFF' });
+        BANDS.forEach(function (hz, i) { if (differs(eq.sliders[hz], s.bands[i])) store.dispatch({ type: 'SET_BAND_VALUE', band: hz, value: toSlider(s.bands[i]) }); });
+        if (differs(eq.sliders.preamp, shown.level)) store.dispatch({ type: 'SET_BAND_VALUE', band: 'preamp', value: toSlider(shown.level) });
+      } finally { showing = false; }
+    }
+    /* the listener's changes in Webamp's window (sliders, its on button, its presets) become lull's settings */
+    store.subscribe(function () {
+      if (showing || !shown) return;
+      var eq = store.getState().equalizer, s = LullEq.read();
+      var bands = BANDS.map(function (hz) { return toDb(eq.sliders[hz]); });
+      var moved = bands.some(function (db, i) { return Math.abs(db - shown.bands[i]) > .05; });
+      var preamp = differs(eq.sliders.preamp, shown.level) ? toDb(eq.sliders.preamp) : s.preamp;
+      if (!moved && eq.on === shown.on && preamp === s.preamp) return;
+      LullEq.write({ on: eq.on, bands: moved ? bands : s.bands, preamp: preamp });
+    });
+    LullEq.on(show);
+    show(LullEq.read());
+  }
+
   function session(webamp, hooks) {
     var byUrl = {}, currentUrl = null, pendingSeek = null, handedOver = false, listen = null;
     var lastStatus = null, lastTime = 0;
@@ -239,6 +274,8 @@
       lastStatus = status;
       if (hooks.change) hooks.change();
     });
+
+    linkEq(webamp);
 
     return { handIn: handIn, handBack: handBack, add: add, now: now, stop: function () { endListen('stopped'); },
       idOf: function (url) { var t = byUrl[absolute(url)]; return t ? t.id : null; } };

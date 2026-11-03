@@ -10,7 +10,7 @@ from, how the player plays, and the rules screens follow. The endpoint contract 
 ```
 index.html   tokens.css base.css components.css screens/*.css desktop/desktop.css designs/<name>/design.css (last)
              designs/designs.js + the pre-paint script (design, theme, motion, text size)
-             icons.js data.js align.js app.js layout.js connect.js offline.js screens/{discover,now,library,system,appearance}.js
+             icons.js data.js align.js eq.js app.js layout.js connect.js offline.js screens/{discover,now,library,system,eq,appearance}.js
              screens/{hub,setup}.js
              the desktop app only (window.__TAURI__): desktop/webamp-session.js screens/{skins,classic}.js
              desktop/desktop.js, from the start, as its crash recovery hands the queue back through classic.js.
@@ -21,6 +21,8 @@ index.html   tokens.css base.css components.css screens/*.css desktop/desktop.cs
 data.js      window.LullData = App.data: API client, entity cache, per-route reads, the event stream
 align.js     window.LullAlign: how far apart two recordings of one moment are (switching to a better copy); pure,
              tested by tests/web/align.test.mjs (`node --test`, part of `mise run check`)
+eq.js        window.LullEq: the equaliser's settings (per device), its curve and automatic level, its Web Audio chain;
+             pure but for storage and chain(), tested by tests/web/eq.test.mjs. Loaded by desktop/winamp.html too
 app.js       window.App: router, render helpers, overlays, save pipeline, player engine, shell, actions,
              keyboard, Media Session, drag and drop, server events + boot
 layout.js    ADR-0007: size classes, App.layout (lull:layout), resize handles, the Now Playing column host
@@ -153,7 +155,9 @@ The state shape and methods are DESIGN.md 7.8; the insides:
 - **Normalisation** (`off | replaygain-track | replaygain-album | loudness`): Web Audio gain per deck. ReplayGain uses
   `track.replayGain { track, album }` (dB) when the library supplies it; otherwise the measured loudness of what has
   played (unweighted RMS) is levelled toward `playback.loudnessTarget` (-18 / -14 / -11) within -12..+6 dB. The Web Audio graph is built only when normalisation,
-  crossfade or switching to better copies (`sources.switchToBetter`) is on, inside the first play gesture.
+  crossfade, switching to better copies (`sources.switchToBetter`) or the equaliser is on, inside the first play gesture
+  (the equaliser turned on mid-song builds it at once).
+- **Equaliser**: [below](#equaliser), after both decks are mixed.
 - **Better copies**: the playing song moves to a better copy mid-song without a jump; [below](#better-copies).
 - **Plays**: `App.recordPlay(trackId, duration, recommended)` posts `POST /api/plays` when a song starts playing
   (`recommended` for radio songs) and its `end(how)` sends `PATCH /api/plays/{playId}` with `playedS` (time actually
@@ -213,6 +217,7 @@ output with one contract and two implementations:
 | `setVolume(v)` | `0..1`, the final level: the engine has already applied mute and its perceptual curve (`v = volume²`) |
 | `setNext(item \| null)` | Preload `item` and, when the current one ends, continue into it with no gap. Continue only when the current one reached its end (within 2 s of its duration): an earlier end is a cut response, reported as `ended` with `next: null`, and the next item stays set. `null` cancels. Called again whenever the queue, shuffle or repeat changes |
 | `crossfade(seconds)` | `0` = off. Otherwise, with a next item set, fade equal-power from the current into the next over the current's last `seconds` |
+| `equalize(spec \| null)` | Optional (an Android app without it shows Settings' equaliser as needing an update). Play through `spec` = `LullEq.spec(settings)`: `{ levelDb, bands: [{ type: lowshelf \| peaking \| highshelf, hz, gainDb }] }`, a level and then the bands in order, as Web Audio's BiquadFilterNode computes them (peaks Q 1, shelves slope 1). `null` = off. Called at start and on every change |
 | `switchTo(item, { commit })` | Optional (the browser output has it; without it a better copy waits for the next play). `item` is a better copy of the playing song (same `key`): line it up and crossfade into it with no jump, calling `commit()` (a Promise) right before the fade. Resolves `{ switched: true, residualMs, offsetS }` or `{ switched: false, why: mismatch \| quiet \| abandoned \| refused \| slow \| busy \| error }`; `time` positions stay the song's ([Better copies](#better-copies)) |
 
 **Events.** `LullNative.player.on(type, fn)` returns a function that unsubscribes. `fn` gets one object.
@@ -378,6 +383,27 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
     and WebView2 draw their native bar there, so those are only set for Firefox.
   - Each design adds its own wide-screen touches in its `design` layer, using the same `data-size` and container
     names.
+
+### Equaliser
+
+One per device, `localStorage['lull:eq']` = `{ on, bands: [10 dB], preamp: dB | null }` (web/eq.js). The bands are
+Webamp's (a 60 Hz low shelf, peaks at 170 Hz to 14 kHz, a 16 kHz high shelf, ±12 dB), so Classic mode's equaliser
+window is the same equaliser, not a second one.
+- **Faces** (screens/eq.js, `App.eq`): Settings > Playback (the switch, presets, Bass and Treble, "Every band" with
+  the curve and the level) and the player's "…" > Equaliser (a popover, a sheet on phones: switch, presets, Bass and
+  Treble). Built from the shared switch, chips, `.range--centred` and settings rows, so each design draws it as it
+  draws those. A panel updates its values in place on every change (`LullEq.on`), from any panel, Webamp or window.
+- **Bass and Treble** move a shelf shape over the bands (+6 dB of Bass peaks at +6 dB) and read back as the weighted
+  mean of their bands, so a curve drawn band by band keeps its detail when one moves. A preset sets the bands; a
+  curve matching none shows "Custom".
+- **No clipping:** the level before the filters is automatic, the curve's highest point back to just under 0 dB
+  (computed from the filters' formulas, not measured). Webamp's preamp shows it; moving Webamp's preamp sets it by
+  hand until Bass, Treble, a preset or "Make automatic" makes it automatic again.
+- **Where it runs:** the browser output (also the desktop app) runs `LullEq.chain` after the decks' master gain:
+  native BiquadFilterNodes, no script on the samples, nothing at all while flat or off (the chain is bypassed). Gapless,
+  crossfades, a better copy's handover and seeks happen before it and pass through unchanged. The Android app runs
+  the same filters natively (`EqProcessor`, android.md). Classic: `LullWebamp.session` links Webamp's equaliser
+  window (its sliders, on button and presets) to the settings both ways.
 
 ### Better copies
 
