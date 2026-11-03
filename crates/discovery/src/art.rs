@@ -12,12 +12,11 @@ use std::path::{Path as FsPath, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 
-use axum::Json;
 use axum::extract::{Path, Query, State};
-use axum::http::{StatusCode, header};
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use lull_core::ids::{AlbumId, ArtistId, TrackId};
-use lull_core::model::{Album, Artist, Entities, Track};
+use lull_core::model::{Album, Artist, Entities, Saved, Track};
+use lull_core::warm::{Priority, Warmer};
 use lull_core::{Error, Result, art, catalog};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
@@ -86,22 +85,39 @@ pub async fn pictured(svc: &Service, e: Entities) -> Result<Pictured> {
         })
         .await?;
     svc.photos.ask(unvetted);
+    let pictures = &svc.pictures;
     for (id, album) in &mut out.albums {
-        if album.art.is_some() && has_none(&svc.art_dir, id.as_str()).await {
+        if album.art.is_some() && pictures.has_none(id.as_str()).await {
             album.art = None;
         }
     }
     for (id, artist) in &mut out.artists {
-        if artist.image.is_some() && has_none(&svc.art_dir, id.as_str()).await {
+        if artist.image.is_some() && pictures.has_none(id.as_str()).await {
             artist.image = None;
         }
     }
+    // What this answer shows is fetched now, before the page asks: rows, tiles and heroes.
+    let shown = out
+        .albums
+        .iter()
+        .filter(|(_, a)| a.art.is_some())
+        .map(|(id, _)| id.as_str());
+    for id in shown.chain(
+        out.artists
+            .iter()
+            .filter(|(_, a)| a.image.is_some())
+            .map(|(id, _)| id.as_str()),
+    ) {
+        pictures.warm(id, SMALL, Priority::Page);
+    }
+    let from_library: Vec<AlbumId> = out
+        .albums
+        .iter()
+        .filter(|(_, a)| a.art.is_none() && a.album.saved != Saved::None)
+        .map(|(id, _)| id.clone())
+        .collect();
+    svc.store.warm_covers(&from_library);
     Ok(out)
-}
-
-/// Whether the picture's source said lately that it has none.
-async fn has_none(dir: &FsPath, id: &str) -> bool {
-    read_fresh(&none_file(dir, id), NONE_FOR).await.is_some()
 }
 
 /// "The source has none", one file for every size: a source missing at one size has none at all
@@ -180,48 +196,249 @@ fn default_size() -> u32 {
 
 pub async fn get(State(svc): State<Arc<Service>>, Path(id): Path<String>, Query(q): Query<Size>) -> Result<Response> {
     art::check(q.size)?;
-    let hex = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_hexdigit());
-    let source = match id.as_str() {
-        i if i.strip_prefix(AlbumId::PREFIX).is_some_and(hex) => {
-            let id = AlbumId(id.clone());
-            svc.ctx.db.call(move |c| catalog::album_art(c, &id)).await?
-        }
-        i if i.strip_prefix(ArtistId::PREFIX).is_some_and(hex) => {
-            let id = ArtistId(id.clone());
-            svc.ctx.db.call(move |c| crate::artist::photo::image_of(c, &id)).await?
-        }
-        i if i.strip_prefix(PLAYLIST_PICTURE).is_some_and(hex) => {
-            svc.cache
-                .fresh::<String>(format!("playlist-picture:{id}"), 30 * crate::sources::cache::DAY)
-                .await?
-        }
-        _ => None,
-    };
-    let source = source.ok_or_else(|| Error::NotFound(format!("lull has no picture for {id}")))?;
-    let path = svc.art_dir.join(format!("{id}-{}", q.size));
-    let none = none_file(&svc.art_dir, &id);
-    let bytes = match read_fresh(&path, KEEP).await {
-        Some(bytes) => bytes,
-        None if read_fresh(&none, NONE_FOR).await.is_some() => {
-            return Err(Error::NotFound(format!("no picture for {id}")));
-        }
-        None => {
-            let mut done = fetching(&svc, sized(&source, q.size), q.size, path.clone(), none.clone());
-            // Ended (or the hub stopping) either way; what matters is what is on disk now.
-            let _ = tokio::time::timeout(WAIT, done.wait_for(|d| *d)).await;
-            match read_fresh(&path, KEEP).await {
-                Some(bytes) => bytes,
-                None if read_fresh(&none, NONE_FOR).await.is_some() => {
-                    return Err(Error::NotFound(format!("no picture for {id}")));
-                }
-                None => return Ok(not_yet(&id)),
-            }
-        }
-    };
-    Ok(art::response(bytes))
+    let pictures = &svc.pictures;
+    let source = pictures
+        .source_of(&id)
+        .await?
+        .ok_or_else(|| Error::NotFound(format!("lull has no picture for {id}")))?;
+    let path = pictures.file(&id, q.size);
+    if let Some(bytes) = read_fresh(&path, KEEP).await {
+        return Ok(art::response(bytes));
+    }
+    if pictures.has_none(&id).await {
+        return Ok(art::none(&id, NONE_FOR));
+    }
+    let mut done = pictures.ensure(&id, &source, q.size);
+    // Ended (or the hub stopping) either way; what matters is what is on disk now.
+    let _ = tokio::time::timeout(WAIT, done.wait_for(|d| *d)).await;
+    Ok(match read_fresh(&path, KEEP).await {
+        Some(bytes) => art::response(bytes),
+        None if pictures.has_none(&id).await => art::none(&id, NONE_FOR),
+        None => art::not_yet(&id),
+    })
 }
 
-/// Picture fetches under way, one per source URL and size, shared by every request for it.
+/// The size fetched from outside for `size`: one 256 px picture makes 96 and 256 (rows and tiles,
+/// the smaller scaled here), so a cover the page shows costs one small outside fetch; 512 and up
+/// are fetched as they are wanted.
+fn tier(size: u32) -> u32 {
+    size.max(SMALL)
+}
+const SMALL: u32 = 256;
+
+/// Everything about catalog pictures: where they are cached, the fetches under way (one per
+/// picture and tier), the background queue that fetches them before they are asked for, and
+/// `art.ready`, which tells the pages one has come in.
+pub struct Pictures {
+    ctx: lull_core::Ctx,
+    cache: crate::sources::cache::Cache,
+    dir: PathBuf,
+    fetches: Fetches,
+    warmer: Arc<Warmer>,
+    ready: Arc<art::Ready>,
+    /// The songs `playing` last warmed.
+    playing: Mutex<Vec<TrackId>>,
+}
+
+/// Pictures fetched at once in the background: polite to the archive and the CDNs, and still a
+/// page of covers in a few seconds.
+const WARM_WORKERS: usize = 3;
+
+impl Pictures {
+    pub fn new(ctx: &lull_core::Ctx, cache: crate::sources::cache::Cache) -> Arc<Pictures> {
+        Arc::new(Pictures {
+            ctx: ctx.clone(),
+            cache,
+            dir: ctx.config.data_dir.join("catalog-art"),
+            fetches: Fetches::default(),
+            warmer: Warmer::start(ctx, WARM_WORKERS),
+            ready: art::Ready::new(ctx),
+            playing: Mutex::default(),
+        })
+    }
+
+    pub(crate) fn dir(&self) -> &FsPath {
+        &self.dir
+    }
+
+    fn file(&self, id: &str, size: u32) -> PathBuf {
+        self.dir.join(format!("{id}-{size}"))
+    }
+
+    /// Whether the picture's source said lately that it has none.
+    async fn has_none(&self, id: &str) -> bool {
+        read_fresh(&none_file(&self.dir, id), NONE_FOR).await.is_some()
+    }
+
+    /// Where the picture for `id` comes from: an album's catalog source, an artist's vetted
+    /// photo, or a search playlist's picture; `None` for an id lull has no picture for.
+    async fn source_of(&self, id: &str) -> Result<Option<String>> {
+        let hex = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_hexdigit());
+        Ok(match id {
+            i if i.strip_prefix(AlbumId::PREFIX).is_some_and(hex) => {
+                let id = AlbumId(id.to_owned());
+                self.ctx.db.call(move |c| catalog::album_art(c, &id)).await?
+            }
+            i if i.strip_prefix(ArtistId::PREFIX).is_some_and(hex) => {
+                let id = ArtistId(id.to_owned());
+                self.ctx
+                    .db
+                    .call(move |c| crate::artist::photo::image_of(c, &id))
+                    .await?
+            }
+            i if i.strip_prefix(PLAYLIST_PICTURE).is_some_and(hex) => {
+                self.cache
+                    .fresh::<String>(format!("playlist-picture:{id}"), 30 * crate::sources::cache::DAY)
+                    .await?
+            }
+            _ => None,
+        })
+    }
+
+    /// Queues the picture for `id` at `size` to be fetched before anyone asks, unless it is here
+    /// or its source has none.
+    pub fn warm(self: &Arc<Self>, id: &str, size: u32, priority: Priority) {
+        let (me, id) = (self.clone(), id.to_owned());
+        self.warmer.push(format!("{id} {}", tier(size)), priority, async move {
+            if read_fresh(&me.file(&id, size), KEEP).await.is_some() || me.has_none(&id).await {
+                return;
+            }
+            if let Ok(Some(source)) = me.source_of(&id).await {
+                let _ = me.ensure(&id, &source, size).wait_for(|d| *d).await;
+            }
+        });
+    }
+
+    /// Makes the picture for `id` at `size`'s tier: the rows' size scaled here from the 256 px
+    /// picture when that is cached, else fetched from `source` (with "none" remembered when the source has none).
+    /// One job per picture and tier, shared by every request and the queue; the receiver turns
+    /// `true` when it ends. A picture fetched from outside is announced (`art.ready`).
+    fn ensure(self: &Arc<Self>, id: &str, source: &str, size: u32) -> watch::Receiver<bool> {
+        let tier = tier(size);
+        let key = format!("{id} {tier}");
+        self.fetches.join(&key.clone(), |done| {
+            let (me, id, url) = (self.clone(), id.to_owned(), sized(source, tier));
+            self.ctx.spawn(async move {
+                let master = me.file(&id, tier);
+                let (bytes, fetched) = match read_fresh(&master, KEEP).await {
+                    Some(bytes) => (Some(bytes), false),
+                    None => (me.fetch_into(&url, tier, &master, &id).await, true),
+                };
+                if let Some(bytes) = bytes {
+                    if tier == SMALL {
+                        me.derive(&id, bytes).await;
+                    }
+                    if fetched {
+                        me.ready.announce(id);
+                    }
+                }
+                me.fetches.finish(&key, done);
+            });
+        })
+    }
+
+    /// The source's picture scaled to `tier` and cached at `path`; "none" cached when the source
+    /// has none (an archive thumbnail it lacks falls back to its original first). A failure caches
+    /// nothing, so the next request tries again.
+    async fn fetch_into(&self, url: &str, tier: u32, path: &FsPath, id: &str) -> Option<Vec<u8>> {
+        let mut fetched = fetch(&self.ctx, url).await;
+        if let (Ok(None), Some(original)) = (&fetched, archive_original(url)) {
+            fetched = fetch(&self.ctx, &original).await;
+        }
+        match fetched {
+            Ok(Some(bytes)) => match tokio::task::spawn_blocking(move || art::fit(bytes, tier)).await {
+                Ok(bytes) => {
+                    write(path, &bytes).await;
+                    Some(bytes)
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "picture scaling failed");
+                    None
+                }
+            },
+            Ok(None) => {
+                write(&none_file(&self.dir, id), &[]).await;
+                None
+            }
+            Err(e) => {
+                tracing::info!(url, error = %e, "picture not fetched; asked again next time");
+                None
+            }
+        }
+    }
+
+    /// The sizes below `SMALL`, scaled from it.
+    async fn derive(&self, id: &str, master: Vec<u8>) {
+        for size in SIZES.into_iter().filter(|&s| s < SMALL) {
+            let path = self.file(id, size);
+            if read_fresh(&path, KEEP).await.is_some() {
+                continue;
+            }
+            let from = master.clone();
+            if let Ok(bytes) = tokio::task::spawn_blocking(move || art::fit(from, size)).await {
+                write(&path, &bytes).await;
+            }
+        }
+    }
+}
+
+/// Songs played next, from `device.state`: the playing song's cover is fetched at every size its
+/// Now Playing view may want, and the next songs' at the player bar's and Now Playing's, ahead
+/// of everything a page asked for. A state that names the same songs again changes nothing.
+pub async fn playing(svc: &Service, data: serde_json::Value) -> Result<()> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Playing {
+        track_id: Option<TrackId>,
+        #[serde(default)]
+        queue: Vec<TrackId>,
+        queue_index: Option<usize>,
+    }
+    let p: Playing = serde_json::from_value(data).map_err(|e| Error::internal(format!("device.state payload: {e}")))?;
+    let next = p.queue_index.map_or(0, |i| i + 1);
+    let songs: Vec<TrackId> = p
+        .track_id
+        .into_iter()
+        .chain(p.queue.into_iter().skip(next).take(UP_NEXT))
+        .collect();
+    let pictures = &svc.pictures;
+    {
+        let mut last = pictures.playing.lock().unwrap_or_else(PoisonError::into_inner);
+        if *last == songs {
+            return Ok(());
+        }
+        last.clone_from(&songs);
+    }
+    let albums = svc
+        .ctx
+        .db
+        .call(move |c| {
+            let mut albums = Vec::new();
+            for song in &songs {
+                if let Some(track) = catalog::track(c, song)?
+                    && catalog::album_art(c, &track.album_id)?.is_some()
+                    && !albums.contains(&track.album_id)
+                {
+                    albums.push(track.album_id);
+                }
+            }
+            Ok(albums)
+        })
+        .await?;
+    pictures.warmer.clear(Priority::Playing);
+    for (i, album) in albums.iter().enumerate() {
+        let sizes: &[u32] = if i == 0 { &[SMALL, 512, 1024] } else { &[SMALL, 512] };
+        for &size in sizes {
+            pictures.warm(album.as_str(), size, Priority::Playing);
+        }
+    }
+    Ok(())
+}
+
+/// Songs after the playing one whose covers are fetched ahead.
+const UP_NEXT: usize = 3;
+
+/// Picture fetches under way, one per picture and tier, shared by every request for it.
 #[derive(Default)]
 pub struct Fetches(Mutex<HashMap<String, watch::Receiver<bool>>>);
 
@@ -244,44 +461,6 @@ impl Fetches {
         self.0.lock().unwrap_or_else(PoisonError::into_inner).remove(key);
         let _ = done.send(true);
     }
-}
-
-/// Fetches `url` into the cache in the background (one fetch per URL and size): scaled to `size` at
-/// `path`, or "none" at `none` when the source has no picture. An archive thumbnail it doesn't
-/// have falls back to its original. A failure leaves nothing, so the next request tries again.
-fn fetching(svc: &Arc<Service>, url: String, size: u32, path: PathBuf, none: PathBuf) -> watch::Receiver<bool> {
-    let key = format!("{size} {url}");
-    svc.art_fetches.join(&key.clone(), |done| {
-        let svc = svc.clone();
-        svc.ctx.clone().spawn(async move {
-            let mut fetched = fetch(&svc, &url).await;
-            if let (Ok(None), Some(original)) = (&fetched, archive_original(&url)) {
-                fetched = fetch(&svc, &original).await;
-            }
-            match fetched {
-                Ok(Some(bytes)) => match tokio::task::spawn_blocking(move || art::fit(bytes, size)).await {
-                    Ok(bytes) => write(&path, &bytes).await,
-                    Err(e) => tracing::warn!(error = %e, "picture scaling failed"),
-                },
-                Ok(None) => write(&none, &[]).await,
-                Err(e) => tracing::info!(url, error = %e, "picture not fetched; asked again next time"),
-            }
-            svc.art_fetches.finish(&key, done);
-        });
-    })
-}
-
-/// 404 while the picture is still on its way: not to be cached, so the next look gets it.
-fn not_yet(id: &str) -> Response {
-    (
-        StatusCode::NOT_FOUND,
-        [(header::CACHE_CONTROL, "no-store")],
-        Json(serde_json::json!({
-            "error": "not_found",
-            "message": format!("The picture for {id} is still on its way."),
-        })),
-    )
-        .into_response()
 }
 
 /// The source URL at its best for `size`, scaled down after. The Cover Art Archive has its own
@@ -312,7 +491,7 @@ fn archive_original(url: &str) -> Option<String> {
     size.parse::<u32>().ok().map(|_| front.to_owned())
 }
 
-pub(crate) async fn fetch(svc: &Service, url: &str) -> Result<Option<Vec<u8>>> {
+pub(crate) async fn fetch(ctx: &lull_core::Ctx, url: &str) -> Result<Option<Vec<u8>>> {
     let service = if url.starts_with("https://coverartarchive.org/") {
         "Cover Art Archive"
     } else if url.contains(".mzstatic.com/") {
@@ -322,8 +501,7 @@ pub(crate) async fn fetch(svc: &Service, url: &str) -> Result<Option<Vec<u8>>> {
     } else {
         "Deezer"
     };
-    let resp = svc
-        .ctx
+    let resp = ctx
         .http
         .client()
         .get(url)
@@ -375,7 +553,30 @@ mod tests {
     use lull_core::model::{Album, Artist, Entities, Saved};
     use lull_core::{Result, catalog};
 
-    use super::{Fetches, archive_original, picture, sized};
+    use super::{Fetches, Pictures, archive_original, picture, sized};
+
+    fn test_ctx() -> Result<lull_core::Ctx> {
+        let data = std::env::temp_dir().join(format!("lull-discovery-art-{}", std::process::id()));
+        let vars = [
+            ("LULL_SLSKD_URL", "http://slskd"),
+            ("LULL_SLSKD_API_KEY", "k"),
+            ("LULL_DATA_DIR", data.to_str().unwrap_or_default()),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        .collect();
+        let config =
+            lull_core::config::Config::from_vars(vars).map_err(|e| lull_core::Error::internal(e.to_string()))?;
+        let bus = lull_core::events::Bus::new();
+        Ok(lull_core::Ctx {
+            config: std::sync::Arc::new(config),
+            db: Db::memory()?,
+            http: lull_core::http::Http::new()?,
+            status: lull_core::status::Status::new(bus.clone()),
+            bus,
+            shutdown: Default::default(),
+        })
+    }
 
     fn album(title: &str, group: Option<&str>) -> Album {
         Album {
@@ -489,6 +690,27 @@ mod tests {
             None
         );
         assert_eq!(archive_original("https://cdn.example/1200"), None);
+    }
+
+    #[tokio::test]
+    async fn a_rows_cover_is_scaled_from_the_tiles_without_another_outside_fetch() -> Result<()> {
+        let ctx = test_ctx()?;
+        let pictures = Pictures::new(&ctx, crate::sources::cache::Cache::new(ctx.db.clone()));
+        let tile = image::RgbImage::from_pixel(256, 256, image::Rgb([200, 120, 40]));
+        let mut jpeg = Vec::new();
+        let encoded = image::DynamicImage::ImageRgb8(tile)
+            .write_to(&mut std::io::Cursor::new(&mut jpeg), image::ImageFormat::Jpeg);
+        assert!(encoded.is_ok());
+        super::write(&pictures.file("al-0a", 256), &jpeg).await;
+        // A source nobody can reach: the 96 px cover must come from the cached 256 px one.
+        let mut done = pictures.ensure("al-0a", "https://unreachable.invalid/{size}", 96);
+        assert!(done.wait_for(|d| *d).await.is_ok());
+        let row = tokio::fs::read(pictures.file("al-0a", 96))
+            .await
+            .map_err(|e| lull_core::Error::internal(e.to_string()))?;
+        assert_eq!(lull_core::art::dimensions(&row), Some((96, 96)));
+        let _ = tokio::fs::remove_dir_all(pictures.dir()).await;
+        Ok(())
     }
 
     #[tokio::test]

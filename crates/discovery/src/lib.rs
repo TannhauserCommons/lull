@@ -126,9 +126,8 @@ pub struct Service {
     /// Deezer, or iTunes plus Deezer's artists where Deezer is closed.
     catalog: search::catalog::Catalog,
     searches: search::Searches,
-    /// Pictures fetched for `/api/catalog/art`.
-    art_dir: std::path::PathBuf,
-    art_fetches: art::Fetches,
+    /// Pictures for `/api/catalog/art`: cache, fetches, the warm queue.
+    pictures: Arc<art::Pictures>,
     /// Artist photos waiting to be vetted.
     photos: artist::photo::Queue,
     /// Only with Last.fm API credentials configured; read through `lastfm()`.
@@ -173,8 +172,7 @@ pub async fn start(
         wikidata: Wikidata::new(ctx.http.clone(), cache.clone()),
         catalog: search::catalog::Catalog::default(),
         searches: search::Searches::default(),
-        art_dir: ctx.config.data_dir.join("catalog-art"),
-        art_fetches: art::Fetches::default(),
+        pictures: art::Pictures::new(ctx, cache.clone()),
         photos,
         lastfm: ctx
             .config
@@ -230,7 +228,8 @@ impl Service {
 }
 
 /// Learns from saves (`save` done) and the Last.fm history (`lastfm.history`); follows the
-/// listener's discovery settings (`settings`).
+/// listener's discovery settings (`settings`); fetches the covers of what devices play and play
+/// next ahead (`device.state`).
 async fn listen(svc: Arc<Service>, mut rx: broadcast::Receiver<Event>) {
     loop {
         let event = match rx.recv().await {
@@ -241,6 +240,7 @@ async fn listen(svc: Arc<Service>, mut rx: broadcast::Receiver<Event>) {
         let outcome = match event.topic.as_str() {
             "save" => saved(&svc, event.data).await,
             "lastfm.history" => history(&svc, event.data).await,
+            "device.state" => art::playing(&svc, event.data).await,
             "settings" => settings(&svc, event.data),
             _ => Ok(()),
         };

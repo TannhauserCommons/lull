@@ -273,7 +273,7 @@ async fn record(svc: &Service, id: &ArtistId, image: Option<String>) {
         })
         .await;
     match changed {
-        Ok(true) => forget_files(&svc.art_dir, id.as_str()).await,
+        Ok(true) => forget_files(svc.pictures.dir(), id.as_str()).await,
         Ok(false) => {}
         Err(e) => tracing::warn!(error = %e, "could not keep an artist photo verdict"),
     }
@@ -282,7 +282,7 @@ async fn record(svc: &Service, id: &ArtistId, image: Option<String>) {
 /// A small copy's difference hash, or `None` when it can't be fetched or read.
 async fn hash_of(svc: &Service, source: &str) -> Option<u64> {
     let url = crate::art::sized(source, PROBE);
-    match crate::art::fetch(svc, &url).await {
+    match crate::art::fetch(&svc.ctx, &url).await {
         Ok(Some(bytes)) => dhash(&bytes),
         Ok(None) => None,
         Err(e) => {

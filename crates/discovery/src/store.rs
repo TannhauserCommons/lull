@@ -33,6 +33,12 @@ impl Store {
         Store { db, library }
     }
 
+    /// Asks library to fetch these saved albums' covers ahead: they have no catalog picture, so
+    /// the UI asks library's `/api/art` for them.
+    pub fn warm_covers(&self, albums: &[AlbumId]) {
+        self.library.warm_covers(albums);
+    }
+
     /// Source songs as catalog tracks with saved state. A track the catalog already knows keeps
     /// its record (another crate may have added file facts); only `saved` is refreshed.
     pub async fn tracks(&self, songs: Vec<Song>) -> Result<Vec<Track>> {
