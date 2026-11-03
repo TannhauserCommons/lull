@@ -152,7 +152,7 @@ Code: `src/search/` (`mod.rs` runs a query, `merge.rs` merges and ranks), `src/a
 
 ## Opening links (`GET /api/open?link=`)
 
-`open.rs`: a link someone shared becomes this hub's own page, on any hub.
+`open.rs`: a link someone shared becomes this hub's own page, on any hub. Why this shape: [ADR-0032](../adr/0032-lull-links-are-public-pages-with-ids.md).
 - **Read:** a lull link's `#lull?` ids first (whatever page precedes them); else song.link and album.link (`/i/<iTunes id>`), Apple Music (`?i=<song>` or the last path id), Deezer `track|album|artist/<id>`, MusicBrainz `release-group/<mbid>`, Last.fm `music/<artist>[/_/<song> | /<album>]` (names). Anything else is a 400 saying what lull reads. Playlist links aren't read here: the UI opens them as an outside playlist.
 - **Asked:** an iTunes id with one `lookup` (this hub's store, then the US one; a month in the cache; it waits its turn of the budget as a search's songs do), a Deezer id by id (answers where Deezer is closed), a release group from MusicBrainz.
 - **Recorded** like a search row (`store.tracks`, `store.albums`, `store.artists`), the album with its catalog source so its page lists the tracklist; a song named without an album (Last.fm) is looked for in the catalog first (`Catalog::find_song`). The same names give the same ids on every hub (`ids::TrackId::of`).
