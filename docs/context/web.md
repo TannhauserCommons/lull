@@ -346,6 +346,15 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
     record. It's reached from "Stop waiting" (Activity, and the waiting save button's toast) and "Remove this save" on
     a failed row. Skip in the choose prompt moves on, and the engine's `letGo` stops the transfer.
 
+## Outside playlists
+
+Search's Playlists section (`discover.js`: `playlists` rows in the answer and `search.more`, a shelf after albums; a
+`playlist` top result) opens `#/outside/{link key}` (`library.js` section 7b): the album-page layout over
+`GET /api/outside?link=`, every row playable at once (`play-ids`), unmatched rows badged "As named", pending ones
+"Matching" until an `outside` event swaps in the catalog's song. Save bookmarks it (`PUT`/`DELETE /api/bookmarks?link=`;
+a `bookmark` event updates other devices), Make a copy is the link import, Open on YouTube/Deezer the source. Library's
+Playlists lists bookmarks after lull's own ("saved from youtube and deezer"), each tile with its site.
+
 ## Playlist covers
 
 `ui.playlistArt(p, size, label)` draws a playlist wherever it shows (rail, tiles, the playlist page, the add-to-playlist

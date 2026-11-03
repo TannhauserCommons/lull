@@ -914,12 +914,114 @@
       <section class="card lib-card" aria-labelledby="lib-pls-h">
         ${ruleWith('your playlists', 'lib-pls-h', html`<span class="t-micro fg-2">recently updated first</span>`)}
         ${body}
+        ${bookmarksShelf()}
         <div class="lib-link-card">${linkForm()}</div>
         ${dropZone()}
       </section>
     </div>`;
   }
   function mountPlaylists(ctx) { liveOn(ctx, ['playlists', 'playlistsError']); }
+
+  /* =====================================================================
+     7b. Outside playlists (docs/context/collection.md#outside-playlists): someone's playlist on YouTube or Deezer,
+         opened from search. It previews like an album (GET /api/outside?link=), every song playable at once (the
+         catalog's match, else the song as the playlist names it); songs not matched yet arrive as `outside` events.
+         Save bookmarks it (PUT /api/bookmarks?link=), like following a playlist; Make a copy is the link import.
+     ===================================================================== */
+  var SITE = { youtube: 'YouTube', deezer: 'Deezer', spotify: 'Spotify', soundcloud: 'SoundCloud' };
+  function outsidePath(key) { return '/api/outside?link=' + encodeURIComponent(key); }
+  function outsideHref(key) { return '#/outside/' + encodeURIComponent(key); }
+  function bookmarks() { var r = M.get('/api/bookmarks'); return r.data ? r.data.items || [] : []; }
+  function bookmarksShelf() {
+    var items = bookmarks();
+    if (!items.length) return '';
+    return html`${ruleWith('saved from youtube and deezer', 'lib-bm-h', html`<span class="t-micro fg-2">bookmarks: they follow their source</span>`)}
+      <div class="lib-grid" aria-labelledby="lib-bm-h">${items.map(bookmarkTile)}</div>`;
+  }
+  function bookmarkTile(b) {
+    var site = SITE[b.site] || b.site;
+    return html`<div class="tile lib-tile lib-tile--pl lib-tile--outside">
+      <div class="tile__art"><a href="${outsideHref(b.id)}" aria-label="${b.name}, ${site} playlist, ${plural(b.total, 'song')}">${ui.mosaic([], '100%', '', b.cover)}</a>
+        <span class="badge lib-site" data-site="${b.site}">${site}</span></div>
+      <div class="tile__title"><a href="${outsideHref(b.id)}">${b.name}</a></div>
+      <div class="tile__by">${b.owner ? b.owner + ', ' : ''}${plural(b.total, 'song')}</div>
+    </div>`;
+  }
+  var OUT_STATUS = { matched: '', pending: 'Matching', unmatched: 'As named' };
+  function renderOutside(ctx) {
+    var key = ctx.params.id, path = outsidePath(key), r = M.get(path), d = r.data;
+    if (!d) {
+      if (r.loading) return pageSkeleton();
+      return r.error && r.error.status !== 404 ? pageError(r.error, path) : notFound('playlist');
+    }
+    var odd = d.songs.filter(function (s) { return !(s.status in OUT_STATUS); })[0];
+    if (odd) return pageError(new M.ApiError(0, 'bad_outside', 'The server sent a song status lull doesn\'t understand (' + odd.status + ').'), path);
+    var ids = d.songs.map(function (s) { return s.trackId; }), site = SITE[d.site] || d.site;
+    var named = d.songs.filter(function (s) { return s.status === 'unmatched'; }).length;
+    var pending = d.songs.filter(function (s) { return s.status === 'pending'; }).length;
+    var facts = plural(d.total, 'song') + (d.duration ? ', ' + fmt.length(d.duration) : '');
+    return html`<div class="view__inner lib">
+      <article class="card card--flush lib-page lib-pl lib-out" aria-labelledby="lib-out-title" data-meta="${site} playlist">
+        <header class="lib-pl__head">
+          ${ui.mosaic(ids, 'var(--lib-art)', 'Playlist cover: ' + d.name, d.cover)}
+          <div class="lib-hero__info">
+            <p class="lib-kicker">playlist on ${site}</p>
+            <h1 class="t-title-xl lib-pl__title" id="lib-out-title">${d.name}</h1>
+            ${d.owner ? html`<p class="lib-pl__by">by ${d.owner}</p>` : ''}
+            ${d.description ? html`<p class="lib-bio">${d.description}</p>` : ''}
+            <p class="lib-pl__facts"><span class="px">${facts}</span>
+              <span class="lib-pl__upd">${pending ? 'matching ' + plural(pending, 'song') + ' to lull\'s catalog' : named ? plural(named, 'song') + ' not in lull\'s catalog play as named' : 'every song found in lull\'s catalog'}</span></p>
+            ${d.note ? html`<p class="lib-help">${icon('info', null, 'ic-16')}${d.note}</p>` : ''}
+          </div>
+        </header>
+        <div class="lib-pl__bar">
+          <button class="btn btn--primary" data-act="play-ids" data-ids="${ids.join(',')}">${icon('play', null, 'ic-play')}Play</button>
+          ${ui.iconButton('shuffle', 'Shuffle play', { 'data-act': 'lib-shuffle-ids', 'data-ids': ids.join(',') })}
+          <button class="btn" data-act="lib-out-save" data-id="${d.id}" aria-pressed="${d.bookmarked ? 'true' : 'false'}">${icon(d.bookmarked ? 'check' : 'plus')}${d.bookmarked ? 'Saved' : 'Save'}</button>
+          <button class="btn" data-act="lib-out-copy" data-id="${d.url}">${icon('import')}Make a copy</button>
+          <a class="btn btn--quiet" href="${d.url}" target="_blank" rel="noopener noreferrer">${icon('link')}Open on ${site}</a>
+        </div>
+        <div class="lib-table">
+          <ol class="tlist lib-out-list" data-ids="${ids.join(',')}" aria-label="Songs in ${d.name}">${d.songs.map(function (s, n) {
+            var label = OUT_STATUS[s.status];
+            var badge = label ? html`<span class="badge lib-out__status" data-status="${s.status}" data-tip="${s.status === 'pending' ? 'Not matched to lull\'s catalog yet: plays as the playlist names it meanwhile' : 'Not in lull\'s catalog: plays as the playlist names it (' + s.artist + ', ' + s.title + ')'}">${label}</span>` : '';
+            return ui.trackRow(s.trackId, { index: n + 1, draggable: false, badges: badge });
+          })}</ol>
+        </div>
+      </article>
+    </div>`;
+  }
+  function mountOutside(ctx) {
+    var key = ctx.params.id, path = outsidePath(key);
+    liveOn(ctx, ['liked', 'services']);
+    liveSaveButtons(ctx);
+    /* matches arriving: the rows take the catalog's song (app.js has absorbed the event's entities) */
+    ctx.onCleanup(App.on('server:outside', function (e) {
+      var d = M.peek(path); if (!e || !d || e.id !== d.id) return;
+      (e.songs || []).forEach(function (u) { var s = d.songs[u.pos]; if (s) { s.status = u.status; s.trackId = u.trackId; } });
+      refreshKeepFocus();
+    }));
+  }
+  function isBookmarked(key) { return bookmarks().some(function (b) { return b.id === key; }); }
+  function toggleBookmark(key) {
+    var path = outsidePath(key), d = M.peek(path), on = d ? !!d.bookmarked : isBookmarked(key);
+    return M.api('/api/bookmarks?link=' + encodeURIComponent(key), { method: on ? 'DELETE' : 'PUT' }).then(function () {
+      if (d) d.bookmarked = !on;
+      M.invalidate('/api/bookmarks');
+      App.refresh();
+      App.toast(on ? 'Removed from your library' : 'Saved to your library. It follows ' + (SITE[d && d.site] || 'its source') + '.', { icon: on ? 'close' : 'check' });
+    }, function (err) { App.toast('Couldn\'t ' + (on ? 'remove' : 'save') + ' it: ' + err.message, { kind: 'error', icon: 'warning' }); });
+  }
+  App.action('lib-out-save', function (el) { toggleBookmark(el.getAttribute('data-id')); });
+  App.action('lib-out-copy', function (el) { importLink(el.getAttribute('data-id')); });
+  App.outside = { href: outsideHref, saved: isBookmarked, site: function (s) { return SITE[s] || s; } };
+  /* another device saved or removed one */
+  App.on('server:bookmark', function (e) {
+    var d = e && M.peek(outsidePath(e.id));
+    if (d) d.bookmarked = !!e.saved;
+    M.invalidate('/api/bookmarks');
+    App.refresh();
+  });
 
   /* =====================================================================
      8. Playlist page (moodboard image 04): mosaic, big title, pixel-face count + duration, table.
@@ -1762,5 +1864,7 @@
   App.route('/artist/:id', { render: renderArtist, mount: mountArtist, nav: 'library', title: titleOf(M.artist, 'Artist'), meta: artistMetaLine });
   App.route('/tag/:id', { render: renderTag, mount: mountTag, nav: 'library', title: function (ctx) { return M.tag(ctx.params.id).name; } });
   App.route('/playlists', { render: renderPlaylists, mount: mountPlaylists, nav: 'playlists', title: 'Playlists' });
+  App.route('/outside/:id', { render: renderOutside, mount: mountOutside, nav: 'playlists',
+    title: function (ctx) { var d = M.peek(outsidePath(ctx.params.id)); return d ? d.name : 'Playlist'; } });
   App.route('/playlist/:id', { render: renderPlaylist, mount: mountPlaylist, nav: 'playlists', title: titleOf(playlistOf, 'Playlist'), meta: metaOf(playlistOf, playlistMeta) });
 })();

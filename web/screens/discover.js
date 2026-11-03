@@ -501,7 +501,7 @@
       if (!Array.isArray(res.tracks) || !Array.isArray(res.artists) || !Array.isArray(res.albums)) {
         S.error = { status: 0, message: 'This hub still searches the old way. Update lull on the server for catalog search.' };
       } else {
-        S.cat = { top: res.top || null, artists: res.artists.slice(), albums: res.albums.slice(), tracks: res.tracks.slice(),
+        S.cat = { top: res.top || null, artists: res.artists.slice(), albums: res.albums.slice(), tracks: res.tracks.slice(), playlists: (res.playlists || []).slice(),
           pending: [], errors: {} };
         mergeCatalog(res); setPending(res.pending, mine);
       }
@@ -553,6 +553,8 @@
     ['artists', 'albums', 'tracks'].forEach(function (k) {
       (e[k] || []).forEach(function (id) { if (S.cat[k].indexOf(id) < 0) S.cat[k].push(id); });
     });
+    /* playlists are rows, not entities: someone's playlist on YouTube or Deezer (discovery.md#playlists-in-search) */
+    (e.playlists || []).forEach(function (p) { if (!S.cat.playlists.some(function (x) { return x.id === p.id; })) S.cat.playlists.push(p); });
     if (e.errors) S.cat.errors = Object.assign({}, S.cat.errors, e.errors);     // every source that failed so far
     S.cat.pending = S.cat.pending.filter(function (k) { return !S.cat.errors[k]; });   // a failed source isn't coming
   }
@@ -668,14 +670,16 @@
     return html`${tabs}<div class="disc-col">${catalogBody()}${soulseekBody()}</div>`;
   }
   function entityOf(top) {
-    var item = top && (top.kind === 'track' ? M.track(top.id) : top.kind === 'album' ? M.album(top.id) : top.kind === 'artist' ? M.artist(top.id) : null);
+    var item = top && (top.kind === 'track' ? M.track(top.id) : top.kind === 'album' ? M.album(top.id) : top.kind === 'artist' ? M.artist(top.id)
+      : top.kind === 'playlist' ? S.cat.playlists.filter(function (p) { return p.id === top.id; })[0] : null);
     return item ? { kind: top.kind, item: item } : null;
   }
   /* the catalogs' answer: top result and songs side by side when there is room, then artists, then releases */
   function catalogBody() {
     var C = S.cat, top = entityOf(C.top);
     var tracks = C.tracks.map(M.track).filter(Boolean), artists = C.artists.map(M.artist).filter(Boolean), albums = C.albums.map(M.album).filter(Boolean);
-    if (!top && !tracks.length && !artists.length && !albums.length) {
+    var lists = C.playlists.filter(function (p) { return !top || top.kind !== 'playlist' || top.item.id !== p.id; });
+    if (!top && !tracks.length && !artists.length && !albums.length && !lists.length) {
       return html`<section class="card disc-card">${pendingLine()}${C.pending.length ? ui.skeleton('row', 3)
         : ui.emptyState({ art: 'moon', title: 'Nothing matches ' + S.q, text: S.slsk ? 'Soulseek peers may still share it: see below.' : 'Type at least three characters to ask Soulseek peers too.' })}</section>`;
     }
@@ -696,6 +700,8 @@
         <div class="shelf disc-shelf disc-shelf--artists">${artists.map(artistTile)}</div></section>` : ''}
       ${albums.length ? html`<section class="card disc-card" aria-labelledby="disc-h-albums">${ui.labelRule('albums, EPs and singles', { id: 'disc-h-albums' })}
         <div class="shelf disc-shelf">${albums.map(function (a) { return ui.releaseTile(a, { showNew: false }); })}</div></section>` : ''}
+      ${lists.length ? html`<section class="card disc-card" aria-labelledby="disc-h-playlists">${ui.labelRule('playlists', { id: 'disc-h-playlists', end: html`<span class="t-micro fg-2">from YouTube and Deezer</span>` })}
+        <div class="shelf disc-shelf">${lists.map(playlistTile)}</div></section>` : ''}
       ${catalogErrors()}`;
   }
   /* catalogs still answering: a quiet line; their additions arrive in place */
@@ -831,6 +837,22 @@
           ${ui.iconButton('radio', 'Start radio from ' + a.title, { 'data-act': 'disc-radio', 'data-kind': 'album', 'data-id': a.id })}
         </div>`;
     }
+    if (top.kind === 'playlist') {
+      var pl = top.item, href = App.outside.href(pl.id);
+      return html`<div class="disc-top__body">
+          ${ui.mosaic([], 112, '', pl.cover)}
+          <div class="disc-top__info">
+            <p class="disc-top__kind">playlist</p>
+            <h3 class="disc-top__title"><a href="${href}">${pl.title}</a></h3>
+            <p class="disc-top__by">${pl.owner ? 'by ' + pl.owner + ', ' : ''}${playlistFacts(pl)}</p>
+          </div>
+        </div>
+        <div class="disc-top__actions">
+          <a class="btn btn--primary" href="${href}">${icon('play')}Open playlist</a>
+          ${App.outside.saved(pl.id) ? html`<button class="btn" data-act="lib-out-save" data-id="${pl.id}" aria-pressed="true">${icon('check')}Saved</button>`
+            : html`<button class="btn" data-act="lib-out-save" data-id="${pl.id}" aria-pressed="false">${icon('plus')}Save</button>`}
+        </div>`;
+    }
     var ar = top.item, on = App.isFollowed(ar.id);
     return html`<div class="disc-top__body">
         ${ui.cover(ar.id, 112, { round: true })}
@@ -862,6 +884,18 @@
       <div class="tile__title"><button data-act="disc-folder" data-id="${a.id}" aria-label="Open ${a.title} folder">${a.title}</button></div>
       <div class="tile__by">${a.artist}</div>
       <div class="tile__meta">${icon(a.saved === 'all' ? 'saved' : 'soulseek', a.saved === 'all' ? 'Saved' : 'On Soulseek', 'ic-16')}<span>${n ? plural(n, 'track') : a.type}${S.albums[a.id].folders.length > 1 ? ', ' + plural(S.albums[a.id].folders.length, 'folder') : ''}</span></div>
+    </div>`;
+  }
+  /* someone's playlist on YouTube or Deezer: opens its preview (library.js #/outside/{key}) */
+  function playlistFacts(p) {
+    return App.outside.site(p.site) + (p.tracks ? ', ' + plural(p.tracks, 'song') : '') + (p.fans ? ', ' + thousands(p.fans) + ' fans' : '');
+  }
+  function playlistTile(p) {
+    var href = App.outside.href(p.id);
+    return html`<div class="tile disc-jump disc-playlist">
+      <div class="tile__art"><a href="${href}" tabindex="-1" aria-hidden="true">${ui.mosaic([], '100%', '', p.cover)}</a></div>
+      <div class="tile__title"><a href="${href}">${p.title}</a></div>
+      <div class="tile__by">${p.owner ? p.owner + ', ' : ''}${playlistFacts(p)}</div>
     </div>`;
   }
   function artistTile(a) {

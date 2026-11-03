@@ -237,6 +237,13 @@ button.lib-th:hover { color: var(--fg); background: var(--bg-2); }
 .lib-imp__none { display: inline-flex; align-items: center; gap: 4px; font: 700 .8125rem/1 var(--f-ui); color: var(--fg-2); font-style: italic; }
 .lib-imp__opt { padding: 0 var(--sp-1); }
 
+/* outside playlists: a bookmark's site on its tile, the preview's owner line and song statuses */
+.lib-tile--outside .tile__art { position: relative; }
+.lib-site { position: absolute; left: 8px; bottom: 8px; pointer-events: none; }
+.lib-pl__by { margin-top: 2px; font: var(--t-meta); color: var(--fg-2); }
+.lib-out__status { white-space: nowrap; }
+.lib-out__status[data-status="pending"] { opacity: .75; }
+
 /* the edit dialog's cover: the picture (or the songs' mosaic) beside its buttons */
 .lib-cover { display: flex; align-items: center; gap: var(--sp-4); }
 .lib-cover__acts { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
