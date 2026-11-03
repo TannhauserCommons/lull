@@ -10,6 +10,7 @@ use lull_core::youtube::{FoundPlaylist, Listed, Listing};
 use serde::Deserialize;
 
 use crate::Service;
+use crate::matching::read_upload;
 use crate::search::plain_id;
 use crate::ytdlp::Problem;
 
@@ -43,11 +44,11 @@ pub async fn page(svc: &Service, url: &str, from: usize, count: usize) -> Result
     args.extend(["--", url]);
     let limit = if soundcloud { FULL_TIME } else { FLAT_TIME };
     let out = svc.run_with(&args, limit, soundcloud).await?;
-    parse(&out)
+    parse(&out, soundcloud)
 }
 
 /// yt-dlp's `-J` of a playlist as a page of songs.
-pub fn parse(json: &[u8]) -> Result<Listing, Problem> {
+pub fn parse(json: &[u8], soundcloud: bool) -> Result<Listing, Problem> {
     // `-i` turns a failed playlist into `null` on stdout.
     let raw: Option<Raw> = serde_json::from_slice(json).map_err(|e| Problem::Other(format!("yt-dlp's answer: {e}")))?;
     let raw = raw.ok_or_else(|| Problem::Other("the site didn't give the playlist".into()))?;
@@ -67,7 +68,12 @@ pub fn parse(json: &[u8]) -> Result<Listing, Problem> {
         owner: raw.channel.or(raw.uploader).filter(|o| !o.trim().is_empty()),
         thumbnails: thumbnails.into_iter().map(|t| t.url).collect(),
         description: raw.description.map(|d| d.trim().to_owned()).filter(|d| !d.is_empty()),
-        songs: raw.entries.into_iter().flatten().filter_map(Entry::listed).collect(),
+        songs: raw
+            .entries
+            .into_iter()
+            .flatten()
+            .filter_map(|e| e.listed(soundcloud))
+            .collect(),
     })
 }
 
@@ -149,16 +155,22 @@ struct Entry {
 
 impl Entry {
     /// `None` for an upload that is gone: YouTube lists it as "[Private video]" or "[Deleted video]".
-    fn listed(self) -> Option<Listed> {
+    /// The upload as a song (`matching::read_upload`); a SoundCloud upload's length is always
+    /// the track's. `None` for an upload that is gone ("[Private video]") or names no song.
+    fn listed(self, soundcloud: bool) -> Option<Listed> {
         let id = self.id.filter(|id| plain_id(id))?;
         let title = self.title.filter(|t| !(t.starts_with('[') && t.ends_with(" video]")))?;
+        let uploader = self.channel.or(self.uploader).unwrap_or_default();
+        let music_artist = self.artists.and_then(|a| a.into_iter().next()).or(self.artist);
+        let (artist, track, official) = read_upload(&title, &uploader, music_artist.as_deref(), self.track.as_deref())?;
         Some(Listed {
             id,
             title,
-            uploader: self.channel.or(self.uploader).unwrap_or_default(),
+            uploader,
             duration: self.duration.filter(|d| *d > 0.0).map(|d| d.round() as u32),
-            artist: self.artists.and_then(|a| a.into_iter().next()).or(self.artist),
-            track: self.track,
+            artist: Some(artist),
+            track: Some(track),
+            exact_length: official || soundcloud,
         })
     }
 }
@@ -179,7 +191,7 @@ mod tests {
             {"id": "aaaaaaaaaaa", "title": "[Private video]", "duration": null},
             {"id": "bbbbbbbbbbb", "title": "Patient Zero", "channel": "Taylor Swift - Topic", "duration": 313.4}
         ]}"#;
-        let page = parse(json)?;
+        let page = parse(json, false)?;
         assert_eq!((page.title.as_str(), page.total), ("The Hit List", Some(52)));
         assert_eq!(
             page.thumbnails.first().map(String::as_str),
@@ -190,6 +202,13 @@ mod tests {
         assert_eq!(page.songs.len(), 2);
         assert_eq!(page.songs[1].uploader, "Taylor Swift - Topic");
         assert_eq!(page.songs[1].duration, Some(313));
+        assert_eq!(page.songs[0].artist.as_deref(), Some("Olivia Rodrigo"));
+        assert_eq!(page.songs[0].track.as_deref(), Some("drop dead"));
+        assert_eq!(
+            (page.songs[0].exact_length, page.songs[1].exact_length),
+            (false, true),
+            "a music video's length isn't the song's; official audio's is"
+        );
         Ok(())
     }
 
@@ -199,16 +218,17 @@ mod tests {
             {"id": "917326303", "title": "Breezin'", "uploader": "Sweet Medicine", "artist": "Sweet Medicine", "track": "Breezin'", "duration": 157.7},
             null
         ]}"#;
-        let page = parse(json)?;
+        let page = parse(json, true)?;
         assert_eq!(page.songs.len(), 1);
         assert_eq!(page.songs[0].artist.as_deref(), Some("Sweet Medicine"));
         assert_eq!(page.songs[0].duration, Some(158));
+        assert!(page.songs[0].exact_length, "a SoundCloud track's length is the song's");
         Ok(())
     }
 
     #[test]
     fn a_playlist_the_site_refused_is_an_error() {
-        assert!(parse(b"null\n").is_err());
+        assert!(parse(b"null\n", true).is_err());
     }
 
     #[test]
@@ -232,6 +252,6 @@ mod tests {
 
     #[test]
     fn a_single_upload_is_not_a_playlist() {
-        assert!(parse(br#"{"_type": "video", "id": "78wrful9cVU", "title": "x"}"#).is_err());
+        assert!(parse(br#"{"_type": "video", "id": "78wrful9cVU", "title": "x"}"#, false).is_err());
     }
 }

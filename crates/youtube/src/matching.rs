@@ -201,16 +201,95 @@ fn another_version(wanted: &Wanted, c: &Candidate) -> bool {
     (c.live && !song_has(&["live"])) || OTHER_VERSION.iter().any(|run| upload_has(run) && !song_has(run))
 }
 
-/// "Artist - Title (Official Audio)": the artist part (when there is a " - ") and the title with
-/// its packaging brackets dropped.
+/// The one reading of an upload's title, for matching here and for playlists lull lists
+/// (collection's link imports and outside playlists): "Artist - Title (Official Audio)" as the
+/// artist part (at the first dash, or SoundCloud's "•") and the title, with
+/// - packaging brackets dropped ("(Official Video)", "[HD]"), and quality tags at the end
+///   outside them ("HD 1080p");
+/// - a leading "<show> Soundtrack - " dropped (fan playlists of a series' songs);
+/// - whatever follows " | " dropped: a channel or a show ("Song | Band", "Song | Live at X"),
+///   which comes after the title;
+/// - the artist said again before the title dropped (`Dominic Fike - Dominic Fike "Babydoll"`),
+///   and quotes around the whole title.
 pub fn split(raw: &str) -> (Option<String>, String) {
     let cleaned = drop_packaging(raw);
-    for sep in [" - ", " – ", " — ", " | "] {
-        if let Some((a, t)) = cleaned.split_once(sep) {
-            return (Some(a.trim().to_owned()), t.trim().to_owned());
-        }
+    let cleaned = cleaned.split(" | ").next().unwrap_or(&cleaned);
+    let cleaned = without_work(&without_quality_tags(cleaned));
+    let parts = [" - ", " – ", " — ", " -- ", " • "]
+        .iter()
+        .filter_map(|sep| cleaned.split_once(sep))
+        .min_by_key(|(a, _)| a.len());
+    match parts.map(|(a, t)| (a.trim(), t.trim())) {
+        Some((a, t)) if !a.is_empty() && !t.is_empty() => (Some(a.to_owned()), unquoted(without_artist(t, a))),
+        _ => (None, unquoted(cleaned.trim())),
     }
-    (None, cleaned.trim().to_owned())
+}
+
+/// An upload as a song: its artist and title (the site's music metadata when it has some, a
+/// Topic channel's name, the title's artist part, else the channel's name), and whether its
+/// length is the song's (official audio). `None` when it names no song.
+pub fn read_upload(
+    title: &str,
+    channel: &str,
+    music_artist: Option<&str>,
+    music_track: Option<&str>,
+) -> Option<(String, String, bool)> {
+    let (artist, song, official) = match (music_artist, music_track) {
+        (Some(a), Some(t)) if t != title && !a.trim().is_empty() => (a.trim().to_owned(), split(t).1, true),
+        _ => match channel.trim().strip_suffix(" - Topic") {
+            Some(artist) => (artist.to_owned(), split(title).1, true),
+            None => match split(title) {
+                (Some(a), t) => (a, t, false),
+                (None, t) => (channel_name(channel), t, false),
+            },
+        },
+    };
+    (!artist.is_empty() && !song.is_empty()).then_some((artist, song, official))
+}
+
+/// "Angel HD 1080p": quality tags at the end, outside brackets, dropped (not the whole title).
+fn without_quality_tags(s: &str) -> String {
+    let mut words: Vec<&str> = s.split_whitespace().collect();
+    while words.len() > 1
+        && words.last().is_some_and(|w| {
+            matches!(
+                w.to_ascii_lowercase().as_str(),
+                "hd" | "hq" | "4k" | "1080p" | "720p" | "480p" | "60fps"
+            )
+        })
+    {
+        words.pop();
+    }
+    words.join(" ")
+}
+
+/// "Person Of Interest Soundtrack - Massive Attack - Live With Me" without the work it is from.
+fn without_work(s: &str) -> String {
+    match s.split_once(" - ") {
+        Some((work, rest)) if normalize(work).split(' ').any(|w| matches!(w, "soundtrack" | "ost")) => {
+            rest.trim().to_owned()
+        }
+        _ => s.to_owned(),
+    }
+}
+
+fn without_artist(title: &str, artist: &str) -> String {
+    match title.get(..artist.len()) {
+        Some(head) if head.eq_ignore_ascii_case(artist) && title[artist.len()..].starts_with(' ') => {
+            title[artist.len()..].trim().to_owned()
+        }
+        _ => title.to_owned(),
+    }
+}
+
+/// A title quoted whole ("\"Song\""), not an apostrophe at its end ("Breezin'").
+fn unquoted(s: impl AsRef<str>) -> String {
+    let s = s.as_ref().trim();
+    let quotes = ['"', '“', '”'];
+    match s.strip_prefix(quotes).and_then(|o| o.strip_suffix(quotes)) {
+        Some(inner) if !inner.trim().is_empty() => inner.trim().to_owned(),
+        _ => s.to_owned(),
+    }
 }
 
 fn drop_packaging(s: &str) -> String {
@@ -247,12 +326,15 @@ fn artist_agrees(wanted: &Wanted, c: &Candidate, artist_part: Option<&str>) -> b
         || contains_words(&loose_title(&c.title), &wanted.artist)
 }
 
-/// "Radiohead - Topic", "RadioheadVEVO", "Radiohead Official": the name alone.
+/// "Radiohead - Topic", "RadioheadVEVO", "Radiohead Official", "Radiohead Music": the name alone.
 fn channel_name(channel: &str) -> String {
-    let c = channel.trim();
-    let c = c.strip_suffix(" - Topic").unwrap_or(c);
-    let c = c.strip_suffix("VEVO").unwrap_or(c);
-    let c = c.strip_suffix(" Official").unwrap_or(c);
+    let mut c = channel.trim();
+    c = c.strip_suffix(" - Topic").unwrap_or(c);
+    for suffix in ["VEVO", "Vevo", " Official", " official", " Music"] {
+        if let Some(rest) = c.strip_suffix(suffix).filter(|r| !r.trim().is_empty()) {
+            c = rest.trim();
+        }
+    }
     c.to_owned()
 }
 
@@ -470,5 +552,78 @@ mod tests {
             (Some("Radiohead".into()), "Weird Fishes / Arpeggi".into())
         );
         assert_eq!(split("Song (feat. X) (Lyric Video)"), (None, "Song (feat. X)".into()));
+    }
+
+    fn read(title: &str, channel: &str) -> Option<(String, String, bool)> {
+        read_upload(title, channel, None, None)
+    }
+
+    fn named(artist: &str, title: &str, official: bool) -> Option<(String, String, bool)> {
+        Some((artist.into(), title.into(), official))
+    }
+
+    #[test]
+    fn an_upload_reads_as_artist_and_title_without_its_packaging() {
+        assert_eq!(
+            read("Olivia Rodrigo - drop dead (Official Music Video)", "Olivia Rodrigo"),
+            named("Olivia Rodrigo", "drop dead", false)
+        );
+        assert_eq!(
+            read("Patient Zero", "Taylor Swift - Topic"),
+            named("Taylor Swift", "Patient Zero", true)
+        );
+        assert_eq!(read("Hello [Lyrics]", "AdeleVEVO"), named("Adele", "Hello", false));
+        assert_eq!(
+            read("Juan RIOS • praia", "Juan RIOS"),
+            named("Juan RIOS", "praia", false)
+        );
+        assert_eq!(
+            read("Song (Live at Wembley) (Official Video) | Band", "x").map(|r| r.1),
+            Some("Song (Live at Wembley)".into())
+        );
+    }
+
+    #[test]
+    fn fan_playlist_titles_lose_the_series_their_quality_tags_and_repeated_artist() {
+        assert_eq!(
+            read(
+                "Person Of Interest Soundtrack - Massive Attack - Live With Me",
+                "AshesInTheWind1"
+            ),
+            named("Massive Attack", "Live With Me", false)
+        );
+        assert_eq!(
+            read("Massive Attack - Angel  HD 1080p", "k l.s"),
+            named("Massive Attack", "Angel", false)
+        );
+        assert_eq!(
+            read(
+                "Dominic Fike - Dominic Fike \"Babydoll\" (Official Video)",
+                "Dominic Fike"
+            ),
+            named("Dominic Fike", "Babydoll", false)
+        );
+        assert_eq!(
+            read("HD", "Someone").map(|r| r.1),
+            Some("HD".into()),
+            "a title that is only a tag stays"
+        );
+        assert_eq!(
+            read("Sweet Medicine - Breezin'", "Label").map(|r| r.1),
+            Some("Breezin'".into())
+        );
+    }
+
+    #[test]
+    fn music_metadata_wins_over_the_upload_title() {
+        assert_eq!(
+            read_upload(
+                "Sweet Medicine w/ ODYSSEE - Breezin' [lofi]",
+                "Label",
+                Some("Sweet Medicine"),
+                Some("Breezin'")
+            ),
+            named("Sweet Medicine", "Breezin'", true)
+        );
     }
 }

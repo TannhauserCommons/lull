@@ -55,10 +55,12 @@ A YouTube copy's chip is its own: `YouTube · Opus 160`, `YouTube · AAC 128` (`
 2. **Videos** (`ytsearch8:`, first 8 with channel and length): judged, best first; at most 2 extracted and judged again.
 
 An upload is the song when (`matching.rs`):
-- **the title matches** after packaging brackets ("(Official Audio)", "[HD]", "(Lyric Video)") are dropped and an "Artist - " prefix split off, with `ids::loose_title` and one slip per 8 letters; numbers must agree;
-- **the artist matches** YouTube's music metadata, the title's artist part, the channel ("- Topic", "VEVO" dropped), or the title itself;
+- **the title matches** after `split` reads it (packaging brackets like "(Official Audio)" and quality tags like "HD 1080p" dropped, a " | …" tail and a leading "<show> Soundtrack - " dropped, an "Artist - " or "Artist • " prefix split off, a repeated artist and whole-title quotes dropped), with `ids::loose_title` and one slip per 8 letters; numbers must agree;
+- **the artist matches** YouTube's music metadata, the title's artist part, the channel ("- Topic", "VEVO", " Official", " Music" dropped), or the title itself;
 - **the length agrees** within the strictness's slack;
 - **it is no other version**: live (or a recorded live stream), cover, nightcore, sped up, slowed, reverb, 8D, karaoke, instrumental, remix, acoustic, piano, reaction and the like are refused unless the song's artist, title or album has the word.
+
+`split` is the one reading of an upload's title: `read_upload` (the same, plus music metadata and Topic channels, and whether the length is the song's) gives the artist and title of each song `Youtube::playlist` lists, which collection's link imports and outside playlists take as they are.
 
 Score: official +40, YouTube Music +10, exact title +5, minus 3 per second off, a music video (not audio) −10.
 
