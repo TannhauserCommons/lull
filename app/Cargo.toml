@@ -78,19 +78,24 @@ windows-sys = { version = "=0.61.2", features = [
   "Win32_System_Threading",
 ] }
 # COM for the taskbar's thumbnail buttons (ITaskbarList3), the window subclass that hears their
-# clicks, opening links in the browser, and a see-through `main` (its DWM frame). Same
-# version as Tauri's, which already enables most of it.
+# clicks, opening links in the browser, and a see-through `main` (its DWM frame); Classic's
+# native window (GDI, layered windows, menus) and its media overlay (the System Media Transport
+# Controls). Same version as Tauri's, which already enables most of it.
 windows = { version = "=0.62.2", features = [
   "Win32_Foundation",
   "Win32_Graphics_Dwm",
   "Win32_Graphics_Gdi",
   "Win32_System_Com",
   "Win32_System_LibraryLoader",
+  "Win32_System_WinRT",
   "Win32_UI_Controls",
   "Win32_UI_HiDpi",
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging",
+  "Foundation",
+  "Media",
+  "Storage_Streams",
 ] }
 # A see-through `main` (glass.rs): the system's Mica, Acrylic and blur. Tauri's own set_effects
 # drops the system's answer, and the page must know what it got. Same version as Tauri's.
@@ -101,10 +106,15 @@ windows-version = "=0.1.7"
 # memory while Classic mode plays. Same version as Tauri's.
 webview2-com = "=0.39.1"
 # Classic mode without a webview (src/desktop/classic_native): Symphonia decodes the songs (MPL-2.0;
-# the royalty-free formats plus MP3 and AAC/ALAC in MP4, what the hub serves), cpal plays them
+# the royalty-free formats plus MP3 and AAC/ALAC in MP4 and WebM, what the hub serves), cpal plays them
 # (Apache-2.0, WASAPI), image reads the skins' BMP and PNG sheets and zip opens the .wsz (both
 # already in the tree: Tauri's image, build.rs's zip).
-symphonia = { version = "=0.5.5", default-features = false, features = ["aac", "alac", "flac", "isomp4", "mp3", "ogg", "pcm", "vorbis", "wav"] }
+symphonia = { version = "=0.5.5", default-features = false, features = ["aac", "alac", "flac", "isomp4", "mkv", "mp3", "ogg", "pcm", "vorbis", "wav"] }
+# Opus, YouTube's format (WebM), which Symphonia can't decode: pure Rust, no C, RFC 8251's
+# conformance vectors pass (MIT or Apache-2.0).
+opus-decoder = "=0.1.1"
+# A skin kept on the device comes from the page as base64. Already in Tauri's tree.
+base64 = "=0.23.1"
 cpal = "=0.18.2"
 image = { version = "=0.25.10", default-features = false, features = ["bmp", "png"] }
 zip = { version = "=9.2.1", default-features = false, features = ["deflate"] }

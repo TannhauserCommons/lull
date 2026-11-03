@@ -135,6 +135,17 @@ pub fn classic_fit(window: WebviewWindow, width: f64, height: f64, zooms: Vec<f6
     classic::fit(&window, width, height, &zooms)
 }
 
+/// `main`'s page, once it runs: the queue Classic's native window handed back when it closed this
+/// page's predecessor (classic_native). Null if none, once taken, and where Classic has no native
+/// window.
+#[tauri::command]
+pub fn classic_back() -> Option<serde_json::Value> {
+    #[cfg(windows)]
+    return crate::desktop::classic_native::take_back();
+    #[cfg(not(windows))]
+    None
+}
+
 #[tauri::command]
 pub fn set_now_playing(app: AppHandle, now: NowPlaying) {
     app.state::<Desktop>().set_now_playing(now);

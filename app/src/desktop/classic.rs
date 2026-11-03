@@ -34,13 +34,30 @@ pub struct Handoff {
     pub(crate) volume: f64,
     /// The listener's Classic skin, and their favourites for Webamp's Skins menu.
     pub(crate) skin: Option<Skin>,
-    skins: Vec<Skin>,
+    pub(crate) skins: Vec<Skin>,
     /// The listener's Classic size, and the page Classic was opened from (`#/library…`): the
     /// native window (classic_native) takes its size here, and `main` comes back on that page.
     #[serde(default)]
     pub(crate) size: Option<f64>,
     #[serde(default)]
     pub(crate) page: Option<String>,
+    /// The device's equaliser (`lull:eq`), which the native window plays through and hands back.
+    #[serde(default)]
+    pub(crate) eq: Option<Equaliser>,
+    /// The skin's file, base64, when it is kept on the device (the page's storage) and not the hub.
+    #[serde(default)]
+    pub(crate) skin_data: Option<String>,
+}
+
+/// The web UI's equaliser settings (web/eq.js): on, ten bands in dB, and a hand-set preamp or
+/// `None` for the automatic level.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) struct Equaliser {
+    pub(crate) on: bool,
+    pub(crate) bands: [f64; 10],
+    pub(crate) preamp: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,17 +67,29 @@ pub(crate) struct Track {
     pub(crate) url: String,
     pub(crate) title: String,
     pub(crate) artist: String,
-    album: String,
+    pub(crate) album: String,
     pub(crate) duration: Option<f64>,
     /// Cover art for the system's media overlay.
-    art: Option<String>,
+    pub(crate) art: Option<String>,
+    /// What the native window reports and records (the tray, Discord, listening history).
+    #[serde(default)]
+    pub(crate) artist_id: String,
+    #[serde(default)]
+    pub(crate) album_id: String,
+    #[serde(default)]
+    pub(crate) liked: bool,
+    #[serde(default)]
+    pub(crate) saved: bool,
+    /// Played from radio or a feed pick (listening history's hit rate).
+    #[serde(default)]
+    pub(crate) recommended: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct Skin {
     pub(crate) url: String,
-    name: String,
+    pub(crate) name: String,
 }
 
 /// The handoff while the Classic window is open. `taken` once its page has it; it stays, following
@@ -343,6 +372,11 @@ mod tests {
             album: String::new(),
             duration: Some(200.0),
             art: None,
+            artist_id: String::new(),
+            album_id: String::new(),
+            liked: false,
+            saved: false,
+            recommended: false,
         };
         Handoff {
             tracks: vec![track("a"), track("b")],
@@ -356,6 +390,8 @@ mod tests {
             skins: Vec::new(),
             size: None,
             page: None,
+            eq: None,
+            skin_data: None,
         }
     }
 

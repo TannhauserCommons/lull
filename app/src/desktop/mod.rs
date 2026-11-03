@@ -66,6 +66,7 @@ pub fn run() {
             commands::classic_open,
             commands::classic_handoff,
             commands::classic_fit,
+            commands::classic_back,
             commands::app_update,
             commands::app_update_check,
             commands::app_update_install,

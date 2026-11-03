@@ -288,13 +288,15 @@
     if (!url || !sameOrigin(absolute(url))) return null;
     var art = t.albumId ? absolute(App.artUrl(t.albumId, 256)) : null;
     return { id: t.id, url: absolute(url), title: t.title || '', artist: t.artist || '', album: t.album || '',
-      duration: t.duration || null, art: art && sameOrigin(art) ? art : null };
+      duration: t.duration || null, art: art && sameOrigin(art) ? art : null,
+      artistId: t.artistId || '', albumId: t.albumId || '', liked: App.isLiked(t.id), saved: App.isSaved(t.id) };
   }
   function handoff() {
     var ps = P.state, index = 0, tracks = [];
     ps.queue.forEach(function (q, i) {
       var t = handoffTrack(q.trackId, q.source);
       if (!t) return;
+      t.recommended = q.group === 'radio';
       if (i === ps.index) index = tracks.length;
       tracks.push(t);
     });
@@ -311,6 +313,11 @@
      from local files have no place in a lull queue and are left out */
   function takeBack(b) {
     syncModes(b.shuffle, b.repeat);
+    /* from the native window: its equaliser and size, and the plays and likes the hub couldn't take then (the outbox sends
+       them) */
+    if (b.eq) LullEq.write(b.eq);
+    if (b.size) App.classicSize.set(b.size);
+    (b.ops || []).forEach(function (op) { App.outbox.add(op); });
     if (b.local) App.toast(b.local === 1 ? 'The local file you added in Webamp isn\'t in your queue' : 'The ' + b.local + ' local files you added in Webamp aren\'t in your queue', { icon: 'info' });
     if (!b.ids.length) return;                                  // nothing of lull's left in Webamp: the queue stays
     var ps = P.state, same = b.ids.length === ps.queue.length && b.ids.every(function (id, i) { return ps.queue[i].trackId === id; });
@@ -472,22 +479,42 @@
   App.on('ready', function () {                                // desktop.js loads after this file
     var D = desktopApp();
     if (D && !hearing) { hearing = true; D.onClassic(fromWindow); }
+    /* the native Classic window closed this page while it played, and hands its queue to the new one */
+    if (D && D.classicBack) D.classicBack().then(function (b) { if (b) takeBack(b); }, function (err) { console.warn('Classic hand-back', err); });
   });
   /* the hand-off plus the skin to start in (later choices reach the window by the storage event) and the favourites
      for Webamp's Skins menu */
   function openWindow(D) {
     if (!hearing) { hearing = true; D.onClassic(fromWindow); }
     var h = handoff();
-    h.size = App.classicSize.get(); h.page = lastHref();      // a window drawn natively takes its size here, and lull comes back on this page
+    /* a window drawn natively (no webview) takes its size and equaliser here, and lull comes back on this page; a skin
+       kept on this device comes along as its file, which only this page's storage holds */
+    h.size = App.classicSize.get(); h.page = lastHref(); h.eq = LullEq.read();
     return Promise.all([readFavourites(), App.classicSkin.opening()]).then(function (r) {
       var favs = r[0], skin = r[1];
-      h.skin = skin ? { url: LullWebamp.skinUrl(base(), skin), name: skin.name || 'Your skin' } : null;
-      h.skins = favs.map(function (s) { return { url: absolute(skinFileUrl(s.md5)), name: s.name }; });
-      return D.openClassic(h);
+      return keptFile(skin).then(function (bytes) {
+        if (bytes) h.skinData = base64(bytes);
+        h.skin = skin ? { url: LullWebamp.skinUrl(base(), skin), name: skin.name || 'Your skin' } : null;
+        h.skins = favs.map(function (s) { return { url: absolute(skinFileUrl(s.md5)), name: s.name }; });
+        return D.openClassic(h);
+      });
     }).then(function () {                                       // the window starts Webamp where the app was
       windowWasPlaying = h.playing;
       if (h.playing) P.pause();
     });
+  }
+  /* a skin kept on this device (`local-` md5) as its file's bytes; null for any other */
+  function keptFile(skin) {
+    if (!skin || !/^local-/.test(skin.md5)) return Promise.resolve(null);
+    return LullWebamp.localSkins().then(function (all) {
+      var e = all.filter(function (x) { return x.md5 === skin.md5; })[0];
+      return e ? e.blob.arrayBuffer() : null;
+    });
+  }
+  function base64(buffer) {
+    var bytes = new Uint8Array(buffer), out = '';
+    for (var i = 0; i < bytes.length; i += 0x8000) out += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(out);
   }
   /* what Webamp's window reports (desktop.js passes on its 'classic' events) */
   function fromWindow(m) {

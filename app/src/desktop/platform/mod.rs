@@ -35,6 +35,12 @@ pub fn add_thumb_buttons(window: &WebviewWindow) {
     let _ = window;
 }
 
+/// The same under a window that isn't Tauri's (Classic's native one), from the main thread.
+#[cfg(windows)]
+pub fn add_thumb_buttons_to(app: &AppHandle, hwnd: isize) {
+    taskbar::attach_hwnd(app, hwnd);
+}
+
 pub fn show_thumb_buttons(app: &AppHandle, buttons: ThumbButtons) {
     #[cfg(windows)]
     taskbar::show(app, buttons);

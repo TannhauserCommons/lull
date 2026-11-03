@@ -39,6 +39,7 @@ const HUB_PERMISSIONS: &[&str] = &[
     "allow-tailscale-status",
     "allow-tailscale-serve",
     "allow-classic-open",
+    "allow-classic-back",
     "allow-app-update",
     "allow-app-update-check",
     "allow-app-update-install",

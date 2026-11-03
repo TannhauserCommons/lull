@@ -1,23 +1,35 @@
 //! Classic mode without a webview (Windows; a test build chosen with `LULL_CLASSIC=native`): the
-//! skin's main window drawn natively (window.rs, draw.rs, skin.rs) and its own player (sound.rs),
-//! so `main`'s webview can close and WebView2 with it while Classic plays. Leaving Classic builds
-//! `main` again on the page it was on, and the page resumes the song where Classic left it
-//! (`resume_after_crash`, as after a crash). The equaliser and playlist windows, menus, shade,
-//! plays, likes, media keys, the taskbar buttons and Discord aren't here yet.
+//! skin's main window drawn natively (window.rs, draw.rs, skin.rs) with its own player (sound.rs)
+//! and what the web UI would do around it (session.rs: listening history, Like and Save, the tray,
+//! the taskbar's buttons, Discord; smtc.rs: Windows' media overlay and keys), so `main`'s webview can
+//! close and WebView2 with it while Classic plays. The window holds the main window, the equaliser
+//! and the playlist (eqwin.rs, playlist.rs). Leaving Classic builds `main` again on the page it was
+//! on, and that page takes the queue back (`classic_back`) as it takes it from Webamp's window.
 
+mod canvas;
 mod draw;
+mod eq;
+mod eqwin;
+mod hub;
+mod playlist;
+mod session;
 mod skin;
+mod smtc;
 mod sound;
 mod vis;
 mod window;
 
-use crate::desktop::classic::Handoff;
+use crate::desktop::classic::{Equaliser, Handoff};
 use crate::desktop::main_window;
-use crate::desktop::recovery::{self, Resume};
 use crate::desktop::state::Desktop;
+use base64::Engine;
+use hub::Hub;
+use serde_json::Value;
+use session::{Handback, Session};
 use skin::Skin;
 use sound::{Player, Song, Start};
 use std::io::Read;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tauri::{AppHandle, Manager, Url, WebviewWindow};
@@ -32,6 +44,8 @@ const MAX_SKIN: u64 = 16 * 1024 * 1024;
 
 /// Open: readable from any thread (the window itself lives on the main thread).
 static OPEN: AtomicBool = AtomicBool::new(false);
+/// The queue Classic handed back, until `main`'s new page takes it.
+static BACK: Mutex<Option<Value>> = Mutex::new(None);
 
 /// Classic opens natively instead of in Webamp's window.
 pub fn chosen() -> bool {
@@ -49,14 +63,19 @@ pub fn open(app: &AppHandle, handoff: Handoff, main: WebviewWindow) -> Result<()
         .state::<Desktop>()
         .hub_access()
         .ok_or("Classic mode needs your hub")?;
-    let skin = load_skin(&origin, &token, handoff.skin.as_ref().map(|s| s.url.as_str()))?;
-    let (scale, at) = place(&main, handoff.size.unwrap_or(1.0))?;
-    let titles = handoff
-        .tracks
-        .iter()
-        .enumerate()
-        .map(|(i, t)| title_line(i, &t.artist, &t.title, t.duration))
-        .collect();
+    let source = match (&handoff.skin_data, &handoff.skin) {
+        (Some(data), _) => Some(SkinSource::Bytes(
+            base64::engine::general_purpose::STANDARD
+                .decode(data)
+                .map_err(|e| format!("the skin's file is damaged: {e}"))?,
+        )),
+        (None, Some(skin)) => Some(SkinSource::Hub(skin.url.clone())),
+        (None, None) => None,
+    };
+    let (skin, said) = load_skin(&origin, &token, source)?;
+    let (size, dpi, at) = place(&main, handoff.size.unwrap_or(1.0))?;
+    let favourites = handoff.skins.iter().map(|s| (s.name.clone(), s.url.clone())).collect();
+    let eq = handoff.eq.clone().unwrap_or_else(Equaliser::flat).normalised();
     let songs = handoff
         .tracks
         .iter()
@@ -70,29 +89,32 @@ pub fn open(app: &AppHandle, handoff: Handoff, main: WebviewWindow) -> Result<()
         position: handoff.pos,
         playing: handoff.playing,
         volume: handoff.volume,
-        repeat: handoff.repeat,
-    };
-    let player = Player::start(token.clone(), songs, start)?;
-    let setup = window::Setup {
-        skin,
-        player,
-        titles,
-        scale,
-        at,
         shuffle: handoff.shuffle,
         repeat: handoff.repeat,
+        eq: eq.clone(),
     };
-    let back = Back {
-        app: app.clone(),
-        origin,
-        token,
-        page: handoff.page.clone(),
-        ids: handoff.tracks.iter().map(|t| t.id.clone()).collect(),
+    let player = Player::start(token.clone(), songs, start)?;
+    let setup = session::Setup {
+        shuffle: handoff.shuffle,
+        repeat: handoff.repeat,
+        eq,
     };
+    let session = Session::new(app.clone(), Hub::new(origin, token), player, handoff.tracks, setup);
+    let page = handoff.page.clone();
+    let app_back = app.clone();
     let (opened, result) = std::sync::mpsc::channel();
     app.run_on_main_thread(move || {
-        let on_close: window::OnClose = Box::new(move |player| back.go(player));
-        let _ = opened.send(window::open(setup, on_close));
+        let on_close: window::OnClose = Box::new(move |session, size| go_back(app_back, session, size, page));
+        let window = window::Setup {
+            skin,
+            said,
+            session,
+            size,
+            dpi,
+            at,
+            favourites,
+        };
+        let _ = opened.send(window::open(window, on_close));
     })
     .map_err(|e| e.to_string())?;
     result.recv().map_err(|e| e.to_string())??;
@@ -110,55 +132,88 @@ pub fn close(app: &AppHandle) -> tauri::Result<()> {
     app.run_on_main_thread(window::close)
 }
 
-/// The way back to lull: its hub, the page Classic was opened from, and the queue's songs.
-struct Back {
-    app: AppHandle,
-    origin: Url,
-    token: String,
-    page: Option<String>,
-    ids: Vec<String>,
+/// The tray's and the taskbar's buttons while Classic plays (player::forward).
+pub fn act(app: &AppHandle, action: &'static str) -> tauri::Result<()> {
+    app.run_on_main_thread(move || window::act(action))
 }
 
-impl Back {
-    /// The window has gone: `main` comes back on its page, and its page resumes the song where
-    /// Classic had it. Off the main thread: building a webview there would wait on itself.
-    fn go(self, player: &Player) {
-        OPEN.store(false, Ordering::Relaxed);
-        let now = player.now();
-        if let Some(id) = self.ids.get(now.index) {
-            let resume = Resume {
-                id: id.clone(),
-                position: now.position,
-                playing: now.playing,
-            };
-            recovery::resume_on_load(&self.app, resume);
+/// `main`'s new page asks for the queue Classic handed back: once.
+pub fn take_back() -> Option<Value> {
+    BACK.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take()
+}
+
+/// The window has gone: once the hub has heard about the last play (or it's out of reach, and the
+/// outbox will tell it), the queue waits for `main`'s new page, which opens on the page Classic was
+/// opened from. Off the main thread: building a webview there would wait on itself.
+fn go_back(app: AppHandle, session: Session, size: f64, page: Option<String>) {
+    OPEN.store(false, Ordering::Relaxed);
+    let (origin, token) = (session.origin().clone(), session.token().to_owned());
+    let Handback {
+        mut value,
+        threads,
+        ops,
+    } = session.hand_back();
+    value["size"] = size.into();
+    let mut url = origin;
+    url.set_fragment(Some(page.as_deref().filter(|p| p.starts_with('/')).unwrap_or("/home")));
+    let spawned = std::thread::Builder::new().name("classic-back".into()).spawn(move || {
+        for thread in threads {
+            let _ = thread.join();
         }
-        let mut url = self.origin.clone();
-        url.set_fragment(Some(
-            self.page.as_deref().filter(|p| p.starts_with('/')).unwrap_or("/home"),
+        value["ops"] = Value::Array(std::mem::take(
+            &mut *ops.lock().unwrap_or_else(std::sync::PoisonError::into_inner),
         ));
-        let spawned = std::thread::Builder::new()
-            .name("classic-back".into())
-            .spawn(move || main_window::report(main_window::open_hub(&self.app, &url, &self.token)));
-        if let Err(e) = spawned {
-            eprintln!("lull: can't bring lull back from Classic: {e}");
-        }
+        *BACK.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(value);
+        main_window::report(main_window::open_hub(&app, &url, &token));
+    });
+    if let Err(e) = spawned {
+        eprintln!("lull: can't bring lull back from Classic: {e}");
     }
 }
 
-/// The listener's skin, or Webamp's base skin; a skin missing some of the main window's sheets has
-/// them filled from the base skin.
-fn load_skin(origin: &Url, token: &str, url: Option<&str>) -> Result<Skin, String> {
-    let base_url = origin.join(BASE_SKIN).map_err(|e| e.to_string())?;
-    let base = || fetch(base_url.as_str(), token).and_then(|bytes| Skin::from_archive(&bytes, None));
-    let Some(url) = url else {
-        return base();
+/// Where a skin comes from: its file on the hub, or its bytes (one kept on the device).
+pub enum SkinSource {
+    Hub(String),
+    Bytes(Vec<u8>),
+}
+
+/// The skin, or Webamp's base skin with none chosen; a skin missing some sheets has them filled
+/// from the base skin. A skin that fails leaves the base skin on, and the failure says why (Webamp
+/// kept the skin it had). Without even the base skin there's nothing to draw.
+fn load_skin(origin: &Url, token: &str, source: Option<SkinSource>) -> Result<(Skin, Option<String>), String> {
+    let base = || {
+        let url = origin.join(BASE_SKIN).map_err(|e| e.to_string())?;
+        fetch(url.as_str(), token).and_then(|bytes| Skin::from_archive(&bytes, None))
     };
-    let bytes = fetch(url, token)?;
-    let skin = Skin::from_archive(&bytes, None);
-    match skin {
-        Ok(skin) if skin.complete() => Ok(skin),
-        _ => Skin::from_archive(&bytes, Some(&base()?)),
+    let chosen = source.map(|source| {
+        let bytes = match source {
+            SkinSource::Hub(url) => fetch(&url, token)?,
+            SkinSource::Bytes(bytes) => bytes,
+        };
+        match Skin::from_archive(&bytes, None) {
+            Ok(skin) if skin.complete() => Ok(skin),
+            _ => Skin::from_archive(&bytes, Some(&base()?)),
+        }
+    });
+    match chosen {
+        Some(Ok(skin)) => Ok((skin, None)),
+        Some(Err(why)) => Ok((base()?, Some(format!("Couldn't load the skin: {why}")))),
+        None => Ok((base()?, None)),
+    }
+}
+
+/// Another skin from the Options menu: fetched off the main thread, then on.
+pub fn change_skin(app: &AppHandle, origin: Url, token: String, url: String) {
+    let app = app.clone();
+    let spawned = std::thread::Builder::new().name("classic-skin".into()).spawn(move || {
+        let skin = load_skin(&origin, &token, Some(SkinSource::Hub(url)));
+        let shown = app.run_on_main_thread(move || window::set_skin(skin));
+        if let Err(e) = shown {
+            eprintln!("lull: Classic skin: {e}");
+        }
+    });
+    if let Err(e) = spawned {
+        eprintln!("lull: Classic skin: {e}");
     }
 }
 
@@ -191,9 +246,9 @@ fn fetch(url: &str, token: &str) -> Result<Vec<u8>, String> {
 }
 
 /// The size and place of the window: the listener's size, or the largest smaller one that fits the
-/// work area of the monitor `main` is on (classic::fit's rule), centred there. In physical pixels,
-/// with the monitor's own scale on top of Classic's size.
-fn place(main: &WebviewWindow, want: f64) -> Result<(f64, (i32, i32)), String> {
+/// work area of the monitor `main` is on (classic::fit's rule), centred there; the monitor's own
+/// scale goes on top. The windows stacked are three of the main one's height.
+fn place(main: &WebviewWindow, want: f64) -> Result<(f64, f64, (i32, i32)), String> {
     let monitor = main
         .current_monitor()
         .map_err(|e| e.to_string())?
@@ -203,7 +258,7 @@ fn place(main: &WebviewWindow, want: f64) -> Result<(f64, (i32, i32)), String> {
     let physical = |size: f64| {
         (
             f64::from(skin::WIDTH) * size * dpi,
-            f64::from(skin::HEIGHT) * size * dpi,
+            f64::from(3 * skin::HEIGHT) * size * dpi,
         )
     };
     let fits = |&size: &f64| {
@@ -220,32 +275,5 @@ fn place(main: &WebviewWindow, want: f64) -> Result<(f64, (i32, i32)), String> {
     let (w, h) = physical(size);
     let x = area.position.x + ((f64::from(area.size.width) - w) / 2.0) as i32;
     let y = area.position.y + ((f64::from(area.size.height) - h) / 2.0) as i32;
-    Ok((size * dpi, (x, y)))
-}
-
-/// Winamp's marquee line: `3. Artist - Title (4:05)`.
-fn title_line(index: usize, artist: &str, title: &str, duration: Option<f64>) -> String {
-    let name = if artist.is_empty() {
-        title.to_owned()
-    } else {
-        format!("{artist} - {title}")
-    };
-    match duration {
-        Some(d) => format!("{}. {name} ({}:{:02})", index + 1, d as u32 / 60, d as u32 % 60),
-        None => format!("{}. {name}", index + 1),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_marquee_names_the_song_the_way_winamp_did() {
-        assert_eq!(
-            title_line(2, "Air", "La Femme d'Argent", Some(431.0)),
-            "3. Air - La Femme d'Argent (7:11)"
-        );
-        assert_eq!(title_line(0, "", "Untitled", None), "1. Untitled");
-    }
+    Ok((size, dpi, (x, y)))
 }

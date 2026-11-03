@@ -43,20 +43,22 @@ static WINDOWS: Mutex<Vec<isize>> = Mutex::new(Vec::new());
 /// Called once the window exists; the buttons follow when its taskbar button does. A subclass
 /// belongs to the window's own thread, the UI thread.
 pub fn attach(window: &WebviewWindow) {
-    let _ = APP.set(window.app_handle().clone());
     let hwnd = match window.hwnd() {
         Ok(hwnd) => hwnd.0 as isize,
         Err(e) => return eprintln!("lull: no taskbar buttons: {e}"),
     };
-    let label = window.label().to_owned();
-    let subclassed = window.run_on_main_thread(move || {
-        // SAFETY: a live window of this thread; the subclass removes itself when the window goes.
-        if !unsafe { SetWindowSubclass(HWND(hwnd as *mut _), Some(subclass), SUBCLASS_ID, 0) }.as_bool() {
-            eprintln!("lull: no taskbar buttons for {label}");
-        }
-    });
-    if let Err(e) = subclassed {
+    let app = window.app_handle().clone();
+    if let Err(e) = window.run_on_main_thread(move || attach_hwnd(&app, hwnd)) {
         eprintln!("lull: no taskbar buttons: {e}");
+    }
+}
+
+/// The same for a window that isn't Tauri's (Classic's native one). On the main thread.
+pub fn attach_hwnd(app: &AppHandle, hwnd: isize) {
+    let _ = APP.set(app.clone());
+    // SAFETY: a live window of this thread; the subclass removes itself when the window goes.
+    if !unsafe { SetWindowSubclass(HWND(hwnd as *mut _), Some(subclass), SUBCLASS_ID, 0) }.as_bool() {
+        eprintln!("lull: no taskbar buttons for window {hwnd:#x}");
     }
 }
 

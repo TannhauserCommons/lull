@@ -1,21 +1,28 @@
 //! Classic mode's own player, so no webview has to stay open for the sound: songs stream from the
-//! hub (ranged requests, so a seek fetches from there on), Symphonia decodes them and cpal plays
-//! them at the file's own rate (the system resamples: WASAPI's AUTOCONVERTPCM).
+//! hub (ranged requests, so a seek fetches from there on), Symphonia decodes them (Opus, YouTube's
+//! format, through opus-decoder: Symphonia has no Opus), the device's equaliser filters them
+//! (eq.rs) and cpal plays them at the file's own rate (the system resamples: WASAPI's
+//! AUTOCONVERTPCM).
 //!
 //! One thread per player decodes ahead into a half-second buffer the device drains. Everything the
 //! two share sits behind one lock, and one condition wakes the thread: a command, room in the
-//! buffer, or the buffer run dry at a song's end.
+//! buffer, or the buffer run dry at a song's end. Which song comes next is the player's own call
+//! (Next, a song's end, shuffle and repeat), so a song that ended by itself is told apart from one
+//! the listener moved on from (`Now::ends`).
 
+use super::eq::Chain;
+use crate::desktop::classic::Equaliser;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::collections::VecDeque;
+use std::hash::{BuildHasher, RandomState};
 use std::io::{self, Read, Seek, SeekFrom};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::Duration;
 use symphonia::core::audio::SampleBuffer;
-use symphonia::core::codecs::{CODEC_TYPE_NULL, Decoder, DecoderOptions};
+use symphonia::core::codecs::{CODEC_TYPE_NULL, CODEC_TYPE_OPUS, CodecParameters, Decoder, DecoderOptions};
 use symphonia::core::errors::Error as DecodeError;
-use symphonia::core::formats::{FormatOptions, FormatReader, SeekMode, SeekTo};
+use symphonia::core::formats::{FormatOptions, FormatReader, Packet, SeekMode, SeekTo};
 use symphonia::core::io::{MediaSource, MediaSourceStream};
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
@@ -28,8 +35,12 @@ const AHEAD: f64 = 0.5;
 const TAP: usize = 1024;
 /// A seek this close ahead reads on through the open response instead of asking again.
 const SKIP_READ: u64 = 64 * 1024;
+/// Opus always decodes at 48 kHz; a packet holds at most 120 ms of it.
+const OPUS_RATE: u32 = 48_000;
+const OPUS_MAX_FRAMES: usize = 5_760;
 
 /// A song to play: its stream on the hub, and what the hub knows of its length.
+#[derive(Clone)]
 pub struct Song {
     pub url: String,
     pub duration: Option<f64>,
@@ -41,7 +52,9 @@ pub struct Start {
     pub position: f64,
     pub playing: bool,
     pub volume: f64,
+    pub shuffle: bool,
     pub repeat: bool,
+    pub eq: Equaliser,
 }
 
 /// What the window shows.
@@ -59,14 +72,19 @@ pub struct Now {
     pub khz: Option<u32>,
     pub stereo: bool,
     pub error: Option<String>,
+    /// How many songs have ended by themselves since the player started.
+    pub ends: u32,
 }
 
 enum Command {
     Play,
     Pause,
     Stop,
+    Next,
+    Previous,
     Jump(usize),
     Seek(f64),
+    Modes { shuffle: bool, repeat: bool },
     Quit,
 }
 
@@ -95,7 +113,20 @@ struct State {
     played: u64,
     base: f64,
     tap: VecDeque<f32>,
+    /// The equaliser's settings, and its filters at `rate` (none when they'd change nothing).
+    eq: Option<Equaliser>,
+    chain: Option<Chain>,
+    ends: u32,
+    /// The list, which the window may shorten while a song plays.
+    songs: Vec<Song>,
     now: Now,
+}
+
+impl State {
+    fn set_rate(&mut self, rate: u32) {
+        self.rate = rate;
+        self.chain = self.eq.as_ref().and_then(|eq| Chain::new(eq, rate));
+    }
 }
 
 fn lock(shared: &Shared) -> MutexGuard<'_, State> {
@@ -111,15 +142,17 @@ impl Player {
                     position: start.position,
                     ..Now::default()
                 },
+                eq: Some(start.eq.clone()),
+                songs,
                 ..State::default()
             }),
             wake: Condvar::new(),
             volume: AtomicU32::new((start.volume.clamp(0.0, 1.0) as f32).to_bits()),
         });
-        let worker = Worker::new(shared.clone(), token, songs, start.repeat);
+        let worker = Worker::new(shared.clone(), token, start.shuffle, start.repeat);
         std::thread::Builder::new()
             .name("classic-player".into())
-            .spawn(move || worker.run(start))
+            .spawn(move || worker.run(start.index, start.position, start.playing))
             .map_err(|e| e.to_string())?;
         Ok(Self { shared })
     }
@@ -133,12 +166,42 @@ impl Player {
     pub fn stop(&self) {
         self.send(Command::Stop);
     }
+    pub fn next(&self) {
+        self.send(Command::Next);
+    }
+    pub fn previous(&self) {
+        self.send(Command::Previous);
+    }
     pub fn jump(&self, index: usize) {
         self.send(Command::Jump(index));
     }
     /// Seek `seconds` into the song.
     pub fn seek(&self, seconds: f64) {
         self.send(Command::Seek(seconds));
+    }
+    pub fn set_modes(&self, shuffle: bool, repeat: bool) {
+        self.send(Command::Modes { shuffle, repeat });
+    }
+    /// Takes songs out of the list: `keep` says, for each one, whether it stays. The playing song
+    /// always does. The list and the playing song's place change together, at once.
+    pub fn keep(&self, keep: &[bool]) {
+        let mut state = lock(&self.shared);
+        let index = state.now.index;
+        let stays = |i: usize| i == index || keep.get(i).copied().unwrap_or(true);
+        state.now.index = (0..index).filter(|&i| stays(i)).count();
+        let mut i = 0;
+        state.songs.retain(|_| {
+            i += 1;
+            stays(i - 1)
+        });
+    }
+
+    /// The equaliser changes at the next buffer the device asks for.
+    pub fn set_equaliser(&self, eq: Equaliser) {
+        let mut state = lock(&self.shared);
+        let rate = state.rate;
+        state.eq = Some(eq);
+        state.set_rate(rate);
     }
 
     pub fn volume(&self) -> f64 {
@@ -152,6 +215,7 @@ impl Player {
     pub fn now(&self) -> Now {
         let state = lock(&self.shared);
         let mut now = state.now.clone();
+        now.ends = state.ends;
         if state.rate > 0 && !now.stopped {
             now.position = state.base + state.played as f64 / f64::from(state.rate);
         }
@@ -183,23 +247,94 @@ impl Drop for Player {
 /// The open song: its demuxer and decoder, and the device stream draining the buffer.
 struct Loaded {
     format: Box<dyn FormatReader>,
-    decoder: Box<dyn Decoder>,
+    decoder: Sound,
     track: u32,
     stream: cpal::Stream,
+}
+
+/// A song's decoder: Symphonia's, or opus-decoder for Opus.
+enum Sound {
+    Symphonia(Box<dyn Decoder>),
+    Opus {
+        decoder: Box<opus_decoder::OpusDecoder>,
+        channels: usize,
+        pcm: Vec<f32>,
+    },
+}
+
+impl Sound {
+    fn new(params: &CodecParameters) -> Result<Self, String> {
+        if params.codec != CODEC_TYPE_OPUS {
+            return symphonia::default::get_codecs()
+                .make(params, &DecoderOptions::default())
+                .map(Sound::Symphonia)
+                .map_err(|e| format!("can't play this kind of song: {e}"));
+        }
+        let channels = params.channels.map_or(2, |c| c.count()).clamp(1, 2);
+        let decoder = opus_decoder::OpusDecoder::new(OPUS_RATE, channels).map_err(|e| e.to_string())?;
+        Ok(Sound::Opus {
+            decoder: Box::new(decoder),
+            channels,
+            pcm: vec![0.0; OPUS_MAX_FRAMES * channels],
+        })
+    }
+
+    fn reset(&mut self) {
+        match self {
+            Sound::Symphonia(decoder) => decoder.reset(),
+            Sound::Opus { decoder, channels, .. } => {
+                if let Ok(fresh) = opus_decoder::OpusDecoder::new(OPUS_RATE, *channels) {
+                    **decoder = fresh;
+                }
+            }
+        }
+    }
+
+    /// One packet's sound as stereo frames, onto the end of `out`. A damaged packet adds nothing.
+    fn decode(&mut self, packet: &Packet, out: &mut VecDeque<f32>) -> Result<(), String> {
+        let mut push = |samples: &[f32], channels: usize| {
+            for frame in samples.chunks_exact(channels.max(1)) {
+                out.push_back(frame[0]);
+                out.push_back(frame.get(1).copied().unwrap_or(frame[0]));
+            }
+        };
+        match self {
+            Sound::Symphonia(decoder) => {
+                let decoded = match decoder.decode(packet) {
+                    Ok(decoded) => decoded,
+                    // A damaged packet is skipped, as every player does.
+                    Err(DecodeError::DecodeError(_)) => return Ok(()),
+                    Err(e) => return Err(e.to_string()),
+                };
+                let spec = *decoded.spec();
+                let mut buffer = SampleBuffer::<f32>::new(decoded.capacity() as u64, spec);
+                buffer.copy_interleaved_ref(decoded);
+                push(buffer.samples(), spec.channels.count());
+            }
+            Sound::Opus { decoder, channels, pcm } => {
+                if let Ok(frames) = decoder.decode_float(&packet.data, pcm, false) {
+                    push(&pcm[..frames * *channels], *channels);
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 struct Worker {
     shared: Arc<Shared>,
     agent: ureq::Agent,
     token: String,
-    songs: Vec<Song>,
+    shuffle: bool,
     repeat: bool,
     loaded: Option<Loaded>,
     playing: bool,
+    random: RandomState,
+    draws: u64,
 }
 
 impl Worker {
-    fn new(shared: Arc<Shared>, token: String, songs: Vec<Song>, repeat: bool) -> Self {
+    fn new(shared: Arc<Shared>, token: String, shuffle: bool, repeat: bool) -> Self {
         let agent = ureq::Agent::config_builder()
             .timeout_connect(Some(Duration::from_secs(10)))
             .timeout_recv_response(Some(Duration::from_secs(20)))
@@ -211,16 +346,18 @@ impl Worker {
             shared,
             agent,
             token,
-            songs,
+            shuffle,
             repeat,
             loaded: None,
             playing: false,
+            random: RandomState::new(),
+            draws: 0,
         }
     }
 
-    fn run(mut self, start: Start) {
-        self.playing = start.playing;
-        self.load(start.index, start.position);
+    fn run(mut self, index: usize, position: f64, playing: bool) {
+        self.playing = playing;
+        self.load(index, position);
         loop {
             let (commands, drained, room) = self.wait();
             for command in commands {
@@ -229,11 +366,15 @@ impl Worker {
                     Command::Play => self.play(),
                     Command::Pause => self.pause(),
                     Command::Stop => self.stop(),
+                    Command::Next => self.next(),
+                    Command::Previous => self.previous(),
                     Command::Jump(index) => self.jump(index),
                     Command::Seek(seconds) => self.seek(seconds),
+                    Command::Modes { shuffle, repeat } => (self.shuffle, self.repeat) = (shuffle, repeat),
                 }
             }
             if drained {
+                lock(&self.shared).ends += 1;
                 self.next();
             } else if room {
                 self.decode();
@@ -271,9 +412,9 @@ impl Worker {
                 ..Now::default()
             };
         }
-        let opened = self
-            .songs
-            .get(index)
+        let song = lock(&self.shared).songs.get(index).cloned();
+        let opened = song
+            .as_ref()
             .ok_or_else(|| "no such song".to_owned())
             .and_then(|song| open(&self.agent, &self.token, song, position));
         let mut state = lock(&self.shared);
@@ -283,8 +424,8 @@ impl Worker {
             Ok((opened, facts, stream))
         }) {
             Ok(((format, decoder, track), facts, stream)) => {
-                state.rate = facts.rate;
-                state.now.duration = facts.duration.or(self.songs.get(index).and_then(|s| s.duration));
+                state.set_rate(facts.rate);
+                state.now.duration = facts.duration.or(song.and_then(|s| s.duration));
                 state.now.khz = Some((facts.rate + 500) / 1000);
                 state.now.kbps = facts.kbps;
                 state.now.stereo = facts.channels > 1;
@@ -333,27 +474,15 @@ impl Worker {
             self.shared.wake.notify_all();
             return;
         };
-        let decoded = match loaded.decoder.decode(&packet) {
-            Ok(decoded) => decoded,
-            // A damaged packet is skipped, as every player does.
-            Err(DecodeError::DecodeError(_)) => return,
-            Err(e) => {
-                let mut state = lock(&self.shared);
-                state.now.error = Some(e.to_string());
-                state.input_done = true;
-                return;
-            }
-        };
-        let spec = *decoded.spec();
-        let channels = spec.channels.count().max(1);
-        let mut buffer = SampleBuffer::<f32>::new(decoded.capacity() as u64, spec);
-        buffer.copy_interleaved_ref(decoded);
+        let mut sound = VecDeque::new();
+        let decoded = loaded.decoder.decode(&packet, &mut sound);
         let mut state = lock(&self.shared);
-        for frame in buffer.samples().chunks_exact(channels) {
-            let left = frame[0];
-            let right = frame.get(1).copied().unwrap_or(left);
-            state.samples.push_back(left);
-            state.samples.push_back(right);
+        match decoded {
+            Ok(()) => state.samples.extend(sound),
+            Err(error) => {
+                state.now.error = Some(error);
+                state.input_done = true;
+            }
         }
     }
 
@@ -399,19 +528,45 @@ impl Worker {
     }
 
     fn jump(&mut self, index: usize) {
-        if index < self.songs.len() {
+        if index < self.count() {
             self.load(index, 0.0);
         }
     }
 
-    /// The song ended: the next one, back to the first with repeat on, else stop on the last.
+    /// The next song: another at random with shuffle on; after the last, the first with repeat on,
+    /// else the player stops on the last.
     fn next(&mut self) {
         let index = lock(&self.shared).now.index;
-        match (index + 1 < self.songs.len(), self.repeat) {
+        let count = self.count();
+        if self.shuffle && count > 1 {
+            let pick = self.draw(count - 1);
+            return self.load(if pick >= index { pick + 1 } else { pick }, 0.0);
+        }
+        match (index + 1 < count, self.repeat) {
             (true, _) => self.load(index + 1, 0.0),
             (false, true) => self.load(0, 0.0),
             (false, false) => self.stop(),
         }
+    }
+
+    /// Winamp's Previous: the song before, the last one from the first with repeat on.
+    fn previous(&mut self) {
+        let index = lock(&self.shared).now.index;
+        match (index.checked_sub(1), self.repeat) {
+            (Some(before), _) => self.load(before, 0.0),
+            (None, true) => self.load(self.count().saturating_sub(1), 0.0),
+            (None, false) => self.load(0, 0.0),
+        }
+    }
+
+    fn count(&self) -> usize {
+        lock(&self.shared).songs.len()
+    }
+
+    /// A number below `below`, at random.
+    fn draw(&mut self, below: usize) -> usize {
+        self.draws += 1;
+        (self.random.hash_one(self.draws) % below as u64) as usize
     }
 
     fn seek(&mut self, seconds: f64) {
@@ -452,7 +607,7 @@ struct Facts {
     kbps: Option<u32>,
 }
 
-type Opened = (Box<dyn FormatReader>, Box<dyn Decoder>, u32);
+type Opened = (Box<dyn FormatReader>, Sound, u32);
 
 /// Fetches the song, finds its audio and gets a decoder for it, `position` seconds in.
 fn open(agent: &ureq::Agent, token: &str, song: &Song, position: f64) -> Result<(Opened, Facts), String> {
@@ -478,10 +633,11 @@ fn open(agent: &ureq::Agent, token: &str, song: &Song, position: f64) -> Result<
         .ok_or("the song has no sound")?;
     let params = track.codec_params.clone();
     let id = track.id;
-    let decoder = symphonia::default::get_codecs()
-        .make(&params, &DecoderOptions::default())
-        .map_err(|e| format!("can't play this kind of song: {e}"))?;
-    let rate = params.sample_rate.ok_or("the song doesn't say its sample rate")?;
+    let decoder = Sound::new(&params)?;
+    let rate = match decoder {
+        Sound::Opus { .. } => OPUS_RATE,
+        Sound::Symphonia(_) => params.sample_rate.ok_or("the song doesn't say its sample rate")?,
+    };
     let duration = params.time_base.zip(params.n_frames).map(|(base, frames)| {
         let t = base.calc_time(frames);
         t.seconds as f64 + t.frac
@@ -531,17 +687,23 @@ fn output(shared: &Arc<Shared>, rate: u32) -> Result<cpal::Stream, String> {
     Ok(stream)
 }
 
-/// The device wants `out` (interleaved stereo): the buffer's next frames at the volume, silence
-/// where it has none.
+/// The device wants `out` (interleaved stereo): the buffer's next frames through the equaliser at
+/// the volume, silence where it has none. The visualiser sees the sound after the equaliser, before
+/// the volume, as Winamp's did.
 fn fill(shared: &Shared, out: &mut [f32]) {
     let volume = f32::from_bits(shared.volume.load(Ordering::Relaxed));
     let mut state = lock(shared);
+    let state = &mut *state;
     let mut played = 0;
     for frame in out.as_chunks_mut::<2>().0 {
-        let (Some(left), Some(right)) = (state.samples.pop_front(), state.samples.pop_front()) else {
+        let (Some(mut left), Some(mut right)) = (state.samples.pop_front(), state.samples.pop_front()) else {
             frame.fill(0.0);
             continue;
         };
+        if let Some(chain) = state.chain.as_mut() {
+            left = chain.process(0, left);
+            right = chain.process(1, right);
+        }
         frame[0] = left * volume;
         frame[1] = right * volume;
         if state.tap.len() == TAP {
@@ -554,7 +716,6 @@ fn fill(shared: &Shared, out: &mut [f32]) {
     if state.samples.is_empty() && state.input_done {
         state.drained = true;
     }
-    drop(state);
     shared.wake.notify_all();
 }
 

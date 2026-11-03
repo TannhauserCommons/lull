@@ -1,5 +1,6 @@
-//! A Winamp 2 skin (`.wsz`): the main window's sprite sheets, its shape (`region.txt`), the
-//! visualiser's colours (`viscolor.txt`) and the bitmap font (`text.bmp`).
+//! A Winamp 2 skin (`.wsz`): the sprite sheets of the main, equaliser and playlist windows, their
+//! shapes (`region.txt`), the visualiser's colours (`viscolor.txt`), the bitmap font (`text.bmp`)
+//! and the playlist's colours and font (`pledit.txt`).
 //!
 //! The sprite and layout tables, the region and colour readers and the font's folding are adapted
 //! from Spotifast's `src/skin/` (https://github.com/crmne/spotifast, commit 672d665), which took the
@@ -68,10 +69,14 @@ pub enum Sheet {
     NumsEx,
     /// The 5x6 bitmap font.
     Text,
+    EqMain,
+    /// The equaliser rolled up; skins from Winamp 2.9 on ship it.
+    EqEx,
+    PlEdit,
 }
 
 impl Sheet {
-    const ALL: [Sheet; 12] = [
+    const ALL: [Sheet; 15] = [
         Sheet::Main,
         Sheet::CButtons,
         Sheet::TitleBar,
@@ -84,6 +89,9 @@ impl Sheet {
         Sheet::Numbers,
         Sheet::NumsEx,
         Sheet::Text,
+        Sheet::EqMain,
+        Sheet::EqEx,
+        Sheet::PlEdit,
     ];
 
     fn file_stem(self) -> &'static str {
@@ -100,6 +108,9 @@ impl Sheet {
             Sheet::Numbers => "numbers",
             Sheet::NumsEx => "nums_ex",
             Sheet::Text => "text",
+            Sheet::EqMain => "eqmain",
+            Sheet::EqEx => "eq_ex",
+            Sheet::PlEdit => "pledit",
         }
     }
 
@@ -176,9 +187,13 @@ pub mod sprites {
         CLUTTER_BAR = (TitleBar, 304, 0, 8, 43);
 
         SHUFFLE_OFF = (ShufRep, 28, 0, 47, 15);
+        SHUFFLE_OFF_PRESSED = (ShufRep, 28, 15, 47, 15);
         SHUFFLE_ON = (ShufRep, 28, 30, 47, 15);
+        SHUFFLE_ON_PRESSED = (ShufRep, 28, 45, 47, 15);
         REPEAT_OFF = (ShufRep, 0, 0, 28, 15);
+        REPEAT_OFF_PRESSED = (ShufRep, 0, 15, 28, 15);
         REPEAT_ON = (ShufRep, 0, 30, 28, 15);
+        REPEAT_ON_PRESSED = (ShufRep, 0, 45, 28, 15);
         EQ_OFF = (ShufRep, 0, 61, 23, 12);
         PLAYLIST_OFF = (ShufRep, 23, 61, 23, 12);
 
@@ -208,6 +223,86 @@ pub mod sprites {
         NUMBERS_BLANK = (Numbers, 90, 0, 9, 13);
         NUMS_EX_BLANK = (NumsEx, 90, 0, 9, 13);
         NUMS_EX_MINUS = (NumsEx, 99, 0, 9, 13);
+
+        EQ_ON = (ShufRep, 0, 73, 23, 12);
+        EQ_OFF_PRESSED = (ShufRep, 46, 61, 23, 12);
+        EQ_ON_PRESSED = (ShufRep, 46, 73, 23, 12);
+        PLAYLIST_ON = (ShufRep, 23, 73, 23, 12);
+        PLAYLIST_OFF_PRESSED = (ShufRep, 69, 61, 23, 12);
+        PLAYLIST_ON_PRESSED = (ShufRep, 69, 73, 23, 12);
+
+        SHADE_BAR_ACTIVE = (TitleBar, 27, 29, 275, 14);
+        SHADE_BAR_INACTIVE = (TitleBar, 27, 42, 275, 14);
+        UNSHADE_BUTTON = (TitleBar, 0, 27, 9, 9);
+        UNSHADE_BUTTON_PRESSED = (TitleBar, 9, 27, 9, 9);
+        SHADE_POSITION_TRACK = (TitleBar, 0, 36, 17, 7);
+        SHADE_POSITION_THUMB = (TitleBar, 20, 36, 3, 7);
+        SHADE_POSITION_THUMB_LEFT = (TitleBar, 17, 36, 3, 7);
+        SHADE_POSITION_THUMB_RIGHT = (TitleBar, 23, 36, 3, 7);
+
+        EQ_BACKGROUND = (EqMain, 0, 0, 275, 116);
+        EQ_TITLE_BAR_ACTIVE = (EqMain, 0, 134, 275, 14);
+        EQ_TITLE_BAR_INACTIVE = (EqMain, 0, 149, 275, 14);
+        EQ_CLOSE_BUTTON = (EqMain, 0, 116, 9, 9);
+        EQ_CLOSE_BUTTON_PRESSED = (EqMain, 0, 125, 9, 9);
+        EQ_ON_OFF = (EqMain, 10, 119, 26, 12);
+        EQ_ON_OFF_PRESSED = (EqMain, 128, 119, 26, 12);
+        EQ_ON_ON = (EqMain, 69, 119, 26, 12);
+        EQ_ON_ON_PRESSED = (EqMain, 187, 119, 26, 12);
+        EQ_AUTO_OFF = (EqMain, 36, 119, 32, 12);
+        EQ_AUTO_OFF_PRESSED = (EqMain, 154, 119, 32, 12);
+        EQ_AUTO_ON = (EqMain, 95, 119, 32, 12);
+        EQ_AUTO_ON_PRESSED = (EqMain, 213, 119, 32, 12);
+        EQ_PRESETS = (EqMain, 224, 164, 44, 12);
+        EQ_PRESETS_PRESSED = (EqMain, 224, 176, 44, 12);
+        EQ_GRAPH = (EqMain, 0, 294, 113, 19);
+        // One pixel wide: the colour the curve takes at each row.
+        EQ_GRAPH_LINE = (EqMain, 115, 294, 1, 19);
+        EQ_PREAMP_LINE = (EqMain, 0, 314, 113, 1);
+        EQ_THUMB = (EqMain, 0, 164, 11, 11);
+        EQ_THUMB_PRESSED = (EqMain, 0, 176, 11, 11);
+        EQ_SHADE_BAR_ACTIVE = (EqEx, 0, 0, 275, 14);
+        EQ_SHADE_BAR_INACTIVE = (EqEx, 0, 15, 275, 14);
+        EQ_SHADE_BUTTON_PRESSED = (EqEx, 1, 38, 9, 9);
+        EQ_UNSHADE_BUTTON_PRESSED = (EqEx, 1, 47, 9, 9);
+        EQ_SHADE_CLOSE_BUTTON = (EqEx, 11, 38, 9, 9);
+        EQ_SHADE_CLOSE_BUTTON_PRESSED = (EqEx, 11, 47, 9, 9);
+        EQ_SHADE_VOLUME_THUMB_LOW = (EqEx, 1, 30, 3, 7);
+        EQ_SHADE_VOLUME_THUMB_MIDDLE = (EqEx, 4, 30, 3, 7);
+        EQ_SHADE_VOLUME_THUMB_HIGH = (EqEx, 7, 30, 3, 7);
+        EQ_SHADE_BALANCE_THUMB_MIDDLE = (EqEx, 14, 30, 3, 7);
+
+        PLAYLIST_TOP_LEFT_ACTIVE = (PlEdit, 0, 0, 25, 20);
+        PLAYLIST_TITLE_ACTIVE = (PlEdit, 26, 0, 100, 20);
+        PLAYLIST_TOP_TILE_ACTIVE = (PlEdit, 127, 0, 25, 20);
+        PLAYLIST_TOP_RIGHT_ACTIVE = (PlEdit, 153, 0, 25, 20);
+        PLAYLIST_TOP_LEFT = (PlEdit, 0, 21, 25, 20);
+        PLAYLIST_TITLE = (PlEdit, 26, 21, 100, 20);
+        PLAYLIST_TOP_TILE = (PlEdit, 127, 21, 25, 20);
+        PLAYLIST_TOP_RIGHT = (PlEdit, 153, 21, 25, 20);
+        PLAYLIST_LEFT_TILE = (PlEdit, 0, 42, 12, 29);
+        PLAYLIST_RIGHT_TILE = (PlEdit, 31, 42, 20, 29);
+        PLAYLIST_BOTTOM_LEFT = (PlEdit, 0, 72, 125, 38);
+        PLAYLIST_BOTTOM_RIGHT = (PlEdit, 126, 72, 150, 38);
+        PLAYLIST_SCROLL_HANDLE = (PlEdit, 52, 53, 8, 18);
+        PLAYLIST_SCROLL_HANDLE_PRESSED = (PlEdit, 61, 53, 8, 18);
+        PLAYLIST_CLOSE_PRESSED = (PlEdit, 52, 42, 9, 9);
+        PLAYLIST_SHADE_PRESSED = (PlEdit, 62, 42, 9, 9);
+        PLAYLIST_UNSHADE_PRESSED = (PlEdit, 150, 42, 9, 9);
+        PLAYLIST_SHADE_LEFT = (PlEdit, 72, 42, 25, 14);
+        PLAYLIST_SHADE_TILE = (PlEdit, 72, 57, 25, 14);
+        PLAYLIST_SHADE_RIGHT = (PlEdit, 99, 57, 50, 14);
+        PLAYLIST_SHADE_RIGHT_ACTIVE = (PlEdit, 99, 42, 50, 14);
+    }
+
+    /// The equaliser's sliders are drawn in this many steps.
+    pub const EQ_SLIDER_FRAMES: u32 = 28;
+
+    /// An equaliser slider's track at a position, `frame` 0 (all the way down) to 27: two rows of
+    /// fourteen, fifteen pixels apart.
+    pub fn eq_slider_frame(frame: u32) -> Sprite {
+        let frame = frame.min(EQ_SLIDER_FRAMES - 1);
+        Sprite::new(Sheet::EqMain, 13 + (frame % 14) * 15, 164 + (frame / 14) * 65, 14, 63)
     }
 
     /// The volume and balance sliders are drawn in this many steps.
@@ -300,7 +395,57 @@ pub mod layout {
         EJECT = (136, 89, 22, 16);
         SHUFFLE = (164, 89, 47, 15);
         REPEAT = (210, 89, 28, 15);
+
+        SHADE_VISUALIZER = (79, 5, 38, 5);
+        SHADE_TIME = (127, 4, 30, 6);
+        SHADE_PREVIOUS = (169, 2, 7, 10);
+        SHADE_PLAY = (176, 2, 10, 10);
+        SHADE_PAUSE = (186, 2, 9, 10);
+        SHADE_STOP = (195, 2, 9, 10);
+        SHADE_NEXT = (204, 2, 10, 10);
+        SHADE_EJECT = (215, 2, 10, 10);
+        SHADE_POSITION = (226, 4, 17, 7);
+
+        EQ_TITLE_BAR = (0, 0, 275, 14);
+        EQ_CLOSE = (264, 3, 9, 9);
+        EQ_SHADE = (254, 3, 9, 9);
+        EQ_ON = (14, 18, 26, 12);
+        EQ_AUTO = (40, 18, 32, 12);
+        EQ_PRESETS = (217, 18, 44, 12);
+        EQ_GRAPH = (86, 17, 113, 19);
+        EQ_PREAMP = (21, 38, 14, 63);
+        EQ_SHADE_VOLUME = (61, 4, 97, 7);
+        EQ_SHADE_BALANCE = (164, 4, 43, 7);
+
+        PLAYLIST_CLOSE = (264, 3, 9, 9);
+        PLAYLIST_SHADE = (254, 3, 9, 9);
     }
+
+    /// The window rolled up to its title bar (shade mode).
+    pub const SHADE_HEIGHT: u32 = 14;
+
+    /// An equaliser band's slider, the ten eighteen pixels apart.
+    pub const fn eq_band(band: usize) -> Area {
+        Area::new(78 + 18 * band as u32, 38, 14, 63)
+    }
+
+    /// The playlist's frame: its title bar and bottom, its sides, the tiles they repeat, a row.
+    pub const PLAYLIST_TITLE_HEIGHT: u32 = 20;
+    pub const PLAYLIST_BOTTOM_HEIGHT: u32 = 38;
+    pub const PLAYLIST_LEFT_WIDTH: u32 = 12;
+    pub const PLAYLIST_RIGHT_WIDTH: u32 = 20;
+    pub const PLAYLIST_TILE_WIDTH: u32 = 25;
+    pub const PLAYLIST_TILE_HEIGHT: u32 = 29;
+    pub const PLAYLIST_ROW_HEIGHT: u32 = 13;
+    pub const PLAYLIST_SCROLL_X: u32 = 260;
+    pub const PLAYLIST_SCROLL_HANDLE_HEIGHT: u32 = 18;
+    /// In the bottom bar: the running time, the song's time, and the little transport.
+    pub const PLAYLIST_RUNNING_TIME: (u32, u32) = (132, 10);
+    pub const PLAYLIST_TRACK_TIME: (u32, u32) = (191, 23);
+    pub const PLAYLIST_MINI_TRANSPORT: (u32, u32) = (128, 22);
+    /// The menu buttons along the bottom (ADD, REM, SEL, MISC, LIST), 22 by 18 from eight rows
+    /// into the bottom bar.
+    pub const PLAYLIST_MENUS: [u32; 5] = [14, 43, 72, 101, 231];
 
     /// The time display's digit cells, left to right.
     pub const TIME_DIGITS: [Area; 4] = [MINUTE_TENS, MINUTE_ONES, SECOND_TENS, SECOND_ONES];
@@ -351,9 +496,10 @@ pub struct Mask {
 }
 
 impl Mask {
-    /// The pixels inside any of the polygons, filled the even-odd way at the pixels' centres.
-    fn from_polygons(polygons: &[Vec<(i32, i32)>]) -> Self {
-        let mut inside = vec![false; (WIDTH * HEIGHT) as usize];
+    /// The pixels inside any of the polygons, filled the even-odd way at the pixels' centres, in a
+    /// window `height` rows tall.
+    fn from_polygons(height: u32, polygons: &[Vec<(i32, i32)>]) -> Self {
+        let mut inside = vec![false; (WIDTH * height) as usize];
         for (y, row) in inside.as_chunks_mut::<{ WIDTH as usize }>().0.iter_mut().enumerate() {
             let centre_y = y as f64 + 0.5;
             for polygon in polygons.iter().filter(|polygon| polygon.len() >= 3) {
@@ -379,7 +525,7 @@ impl Mask {
         Self { inside }
     }
 
-    /// Whether the pixel at this index of the window (row by row, at 1x) is in the shape.
+    /// Whether the pixel at this index of its window (row by row, at 1x) is in the shape.
     pub fn contains(&self, index: usize) -> bool {
         self.inside.get(index).copied().unwrap_or(false)
     }
@@ -393,8 +539,39 @@ impl Mask {
 pub struct Skin {
     sheets: HashMap<Sheet, Bitmap>,
     pub vis_colors: VisColors,
-    /// `None`: the whole rectangle.
-    pub mask: Option<Mask>,
+    pub regions: Regions,
+    pub playlist: PlaylistStyle,
+}
+
+/// The windows' shapes; `None` is the whole rectangle.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Regions {
+    pub main: Option<Mask>,
+    pub main_shade: Option<Mask>,
+    pub equaliser: Option<Mask>,
+    pub equaliser_shade: Option<Mask>,
+}
+
+/// The playlist's colours and font (`pledit.txt`'s `[Text]`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlaylistStyle {
+    pub normal: Rgb,
+    pub current: Rgb,
+    pub normal_background: Rgb,
+    pub selected_background: Rgb,
+    pub font: String,
+}
+
+impl Default for PlaylistStyle {
+    fn default() -> Self {
+        Self {
+            normal: [0x00, 0xff, 0x00],
+            current: [0xff, 0xff, 0xff],
+            normal_background: [0x00, 0x00, 0x00],
+            selected_background: [0x00, 0x00, 0xff],
+            font: "Arial".into(),
+        }
+    }
 }
 
 impl Skin {
@@ -465,11 +642,12 @@ impl Skin {
         Ok(Self {
             sheets,
             vis_colors: text("viscolor.txt").map_or(DEFAULT_VIS_COLORS, |t| parse_vis_colors(&t)),
-            mask: text("region.txt").and_then(|t| parse_region(&t)),
+            regions: text("region.txt").map(|t| parse_regions(&t)).unwrap_or_default(),
+            playlist: text("pledit.txt").map(|t| parse_playlist(&t)).unwrap_or_default(),
         })
     }
 
-    /// Whether every sheet the main window draws is here, its own or a stand-in.
+    /// Whether every sheet the windows draw is here, its own or a stand-in.
     pub fn complete(&self) -> bool {
         Sheet::ALL
             .iter()
@@ -517,12 +695,13 @@ fn rgb_line(line: &str) -> Option<Rgb> {
     Some([channels.next()??, channels.next()??, channels.next()??])
 }
 
-/// Reads the `[Normal]` section of `region.txt`: `NumPoints` lists polygon sizes, `PointList` their
-/// corners. Skin tools were loose with it, so a polygon short of points is dropped, and a shape
-/// that covers everything is no shape.
-fn parse_region(text: &str) -> Option<Mask> {
+/// Reads `region.txt`: a section per window (`[Normal]`, `[WindowShade]`, `[Equalizer]`,
+/// `[EqualizerWS]`), each with `NumPoints` (the polygons' sizes) and `PointList` (their corners).
+/// Skin tools were loose with it, so a polygon short of points is dropped, and a shape that covers
+/// everything is no shape.
+fn parse_regions(text: &str) -> Regions {
+    let mut sections: HashMap<String, (Vec<usize>, Vec<i32>)> = HashMap::new();
     let mut section = String::new();
-    let (mut num_points, mut points) = (Vec::<usize>::new(), Vec::<i32>::new());
     for line in text.lines().map(str::trim) {
         if line.is_empty() || line.starts_with(';') {
             continue;
@@ -534,32 +713,82 @@ fn parse_region(text: &str) -> Option<Mask> {
         let Some((key, value)) = line.split_once('=') else {
             continue;
         };
-        if section != "normal" {
-            continue;
-        }
         let numbers = value
             .split(|c: char| c == ',' || c.is_whitespace())
             .filter_map(|field| field.trim().parse::<i32>().ok());
+        let (counts, points) = sections.entry(section.clone()).or_default();
         match key.trim().to_ascii_lowercase().as_str() {
-            "numpoints" => num_points.extend(numbers.map(|n| n.max(0) as usize)),
+            "numpoints" => counts.extend(numbers.map(|n| n.max(0) as usize)),
             "pointlist" => points.extend(numbers),
             _ => {}
         }
     }
-    let pairs: Vec<(i32, i32)> = points.as_chunks::<2>().0.iter().map(|p| (p[0], p[1])).collect();
-    let mut polygons = Vec::new();
-    let mut at = 0;
-    for count in num_points {
-        let polygon: Vec<(i32, i32)> = pairs.iter().skip(at).take(count).copied().collect();
-        at += count;
-        if polygon.len() == count && count >= 3 {
-            polygons.push(polygon);
+    let mask = |name: &str, height: u32| {
+        let (counts, points) = sections.get(name)?;
+        let pairs: Vec<(i32, i32)> = points.as_chunks::<2>().0.iter().map(|p| (p[0], p[1])).collect();
+        let mut polygons = Vec::new();
+        let mut at = 0;
+        for &count in counts {
+            let polygon: Vec<(i32, i32)> = pairs.iter().skip(at).take(count).copied().collect();
+            at += count;
+            if polygon.len() == count && count >= 3 {
+                polygons.push(polygon);
+            }
+        }
+        if polygons.is_empty() {
+            return None;
+        }
+        Some(Mask::from_polygons(height, &polygons)).filter(|mask| !mask.is_everything())
+    };
+    Regions {
+        main: mask("normal", HEIGHT),
+        main_shade: mask("windowshade", layout::SHADE_HEIGHT),
+        equaliser: mask("equalizer", HEIGHT),
+        equaliser_shade: mask("equalizerws", layout::SHADE_HEIGHT),
+    }
+}
+
+/// Reads `pledit.txt`: an INI file whose `[Text]` section has the colours (`#RRGGBB`, the hash and
+/// extra digits allowed, as Winamp allowed them) and the font.
+fn parse_playlist(text: &str) -> PlaylistStyle {
+    let mut style = PlaylistStyle::default();
+    let mut in_text = false;
+    for line in text.lines().map(str::trim) {
+        if line.is_empty() || line.starts_with(';') {
+            continue;
+        }
+        if let Some(section) = line.strip_prefix('[') {
+            in_text = section.trim_end_matches(']').trim().eq_ignore_ascii_case("text");
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=').filter(|_| in_text) else {
+            continue;
+        };
+        let value = value.trim();
+        let slot = match key.trim().to_ascii_lowercase().as_str() {
+            "normal" => &mut style.normal,
+            "current" => &mut style.current,
+            "normalbg" => &mut style.normal_background,
+            "selectedbg" => &mut style.selected_background,
+            "font" if !value.is_empty() => {
+                style.font = value.to_owned();
+                continue;
+            }
+            _ => continue,
+        };
+        if let Some(color) = hex(value) {
+            *slot = color;
         }
     }
-    if polygons.is_empty() {
-        return None;
-    }
-    Some(Mask::from_polygons(&polygons)).filter(|mask| !mask.is_everything())
+    style
+}
+
+/// A `#RRGGBB` colour; anything but six hex digits at the front is none.
+fn hex(value: &str) -> Option<Rgb> {
+    let digits = value.trim().trim_start_matches('#').as_bytes();
+    let nibble = |at: usize| digits.get(at).and_then(|byte| (*byte as char).to_digit(16));
+    let channel = |at: usize| Some((nibble(at)? << 4 | nibble(at + 1)?) as u8);
+    Some([channel(0)?, channel(2)?, channel(4)?])
 }
 
 /// The skin's bitmap font: `text.bmp`, capitals only, Latin, digits and some punctuation. Lower case
@@ -644,17 +873,21 @@ mod tests {
 
     #[test]
     fn a_region_cuts_the_window_to_its_polygons_and_a_full_one_is_no_shape() {
-        let mask = parse_region("[Normal]\nNumPoints=4\nPointList=0,0, 275,0, 275,14, 0,14\n");
-        let mask = mask.map(|m| {
-            (
-                m.contains((5 * WIDTH + 10) as usize),
-                m.contains((20 * WIDTH + 10) as usize),
-            )
-        });
-        assert_eq!(mask, Some((true, false)));
+        let regions = parse_regions(
+            "[Normal]\nNumPoints=4\nPointList=0,0, 275,0, 275,14, 0,14\n[WindowShade]\nNumPoints=4\nPointList=0,0,275,0,275,14,0,14",
+        );
+        let at = |x: u32, y: u32| (y * WIDTH + x) as usize;
+        let main = regions.main.map(|m| (m.contains(at(10, 5)), m.contains(at(10, 20))));
+        assert_eq!(main, Some((true, false)));
+        assert_eq!(regions.main_shade, None);
+    }
+
+    #[test]
+    fn the_playlist_style_reads_loose_colours_and_keeps_defaults() {
+        let style = parse_playlist("[Text]\nNormal=#00FF00\nCurrent=FFFFFF00\nNormalBG=#zz\nFont=Tahoma\n");
         assert_eq!(
-            parse_region("[Normal]\nNumPoints=4\nPointList=0,0,275,0,275,116,0,116"),
-            None
+            (style.current, style.normal_background, style.font.as_str()),
+            ([255, 255, 255], [0, 0, 0], "Tahoma")
         );
     }
 

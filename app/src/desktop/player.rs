@@ -1,5 +1,5 @@
 //! Where the music plays and who shows it. The web UI in `main` plays, or Webamp in the Classic
-//! window while that is open (classic.rs). What is playing reaches Rust through `set_now_playing`;
+//! window while that is open (classic.rs), or Classic's native player (classic_native). What is playing reaches Rust through `set_now_playing`;
 //! the tray, the taskbar's thumbnail buttons and Discord all show that one report. Their buttons
 //! come back here and go to whichever window plays.
 
@@ -20,6 +20,10 @@ pub struct Action {
 
 /// Run a player action (play-pause, next, previous, like, save, classic) in the window that plays.
 pub fn forward(app: &AppHandle, action: &'static str) -> tauri::Result<()> {
+    #[cfg(windows)]
+    if crate::desktop::classic_native::is_open() {
+        return crate::desktop::classic_native::act(app, action);
+    }
     let target = if classic::window(app).is_some() {
         classic::LABEL
     } else {

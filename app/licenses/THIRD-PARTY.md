@@ -35,7 +35,7 @@ lull bundles Deno, unmodified: the JavaScript runtime yt-dlp needs for YouTube.
 
 ## Spotifast (parts of its source)
 
-lull's native Classic window (`app/src/desktop/classic_native`) adapts code from Spotifast: its tables of where each part of a Winamp skin sits, its readers for `region.txt` and `viscolor.txt`, its bitmap-font folding, and its spectrum analyser.
+lull's native Classic window (`app/src/desktop/classic_native`) adapts code from Spotifast: its tables of where each part of a Winamp skin sits, its readers for `region.txt`, `viscolor.txt` and `pledit.txt`, its bitmap-font folding, its spectrum analyser, and its drawing of the equaliser (curve and sliders) and playlist (frame and positions).
 
 - Project: https://github.com/crmne/spotifast (commit 672d665)
 - Copyright (c) 2026 Carmine Paolino

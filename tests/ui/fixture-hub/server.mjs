@@ -407,15 +407,19 @@ function audio(req, res, id, library) {
 }
 
 // FIXTURE_AUDIO_DIR=<dir> with song.mp3 and song.flac: songs alternate between the two real files (codecs and
-// buffers as a listener's library has them) instead of the generated WAV
+// buffers as a listener's library has them) instead of the generated WAV. With song.webm (Opus) and song.m4a (AAC)
+// there too, YouTube's two formats join the turn: mp3, flac, webm, m4a.
 const AUDIO_DIR = process.env.FIXTURE_AUDIO_DIR;
+const AUDIO_TYPES = { mp3: 'audio/mpeg', flac: 'audio/flac', webm: 'audio/webm', m4a: 'audio/mp4' };
 const audioFiles = {};
+let audioTurn = null;
 async function audioFile(req, res, t) {
-  const ext = t.no % 2 ? 'mp3' : 'flac';
+  audioTurn ||= ['mp3', 'flac'].concat(await Promise.all(['webm', 'm4a'].map((x) => stat(join(AUDIO_DIR, 'song.' + x)).then(() => x, () => null))).then((x) => x.filter(Boolean)));
+  const ext = audioTurn[(t.no + 1) % audioTurn.length];
   const body = (audioFiles[ext] ||= await readFile(join(AUDIO_DIR, 'song.' + ext)));
   const total = body.length, m = /bytes=(\d*)-(\d*)/.exec(req.headers.range || '');
   const start = m && m[1] ? +m[1] : 0, end = m && m[2] ? Math.min(+m[2], total - 1) : total - 1;
-  res.writeHead(m ? 206 : 200, { 'content-type': ext === 'mp3' ? 'audio/mpeg' : 'audio/flac', 'accept-ranges': 'bytes', 'content-length': end - start + 1, ...(m ? { 'content-range': `bytes ${start}-${end}/${total}` } : {}) });
+  res.writeHead(m ? 206 : 200, { 'content-type': AUDIO_TYPES[ext], 'accept-ranges': 'bytes', 'content-length': end - start + 1, ...(m ? { 'content-range': `bytes ${start}-${end}/${total}` } : {}) });
   res.end(body.subarray(start, end + 1));
 }
 

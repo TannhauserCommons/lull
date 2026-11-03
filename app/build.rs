@@ -177,6 +177,7 @@ fn main() -> io::Result<()> {
             "classic_open",
             "classic_handoff",
             "classic_fit",
+            "classic_back",
             "app_update",
             "app_update_check",
             "app_update_install",

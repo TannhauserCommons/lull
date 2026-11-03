@@ -18,6 +18,8 @@
      openMini()                                      the player bar's Device view button
      openClassic(handoff) / onClassic(fn)            Classic mode's own window (screens/classic.js): open it with the
                                                      queue; fn(message) hears what Webamp's window reports
+     classicBack()                                   the queue the native Classic window hands this page when it closes
+                                                     (null if none): a Promise
      mountPage()                                     wrapper.html: render the view named in the hash
    window.__LULL_DESKTOP__ ({ os, titlebar, layout }) is set by the wrapper before any page script runs. */
 (function () {
@@ -68,6 +70,7 @@
   var classicHears = [];
   D.openClassic = function (handoff) { return invoke('classic_open', { handoff: handoff }); };
   D.onClassic = function (fn) { classicHears.push(fn); };
+  D.classicBack = function () { return invoke('classic_back'); };
   /* this computer is the hub: Tailscale's state, and serving the hub on the tailnet (only on the listener's click) */
   D.tailscale = function () { return invoke('tailscale_status'); };
   D.tailscaleServe = function () { return invoke('tailscale_serve'); };
