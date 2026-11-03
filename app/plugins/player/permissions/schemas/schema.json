@@ -415,6 +415,18 @@
           "markdownDescription": "Denies the remove_listener command without any pre-configured scope."
         },
         {
+          "description": "Enables the scan command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-scan",
+          "markdownDescription": "Enables the scan command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the scan command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-scan",
+          "markdownDescription": "Denies the scan command without any pre-configured scope."
+        },
+        {
           "description": "Enables the seek command without any pre-configured scope.",
           "type": "string",
           "const": "allow-seek",

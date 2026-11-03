@@ -1,4 +1,5 @@
-// lull's native player (ADR-0006): the only Kotlin in the repo. Playback and downloads only.
+// lull's native player (ADR-0006): the only Kotlin in the repo. Playback, downloads, and the connect
+// page's QR scanner.
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -34,4 +35,9 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.5.1")
     implementation("androidx.media3:media3-session:1.5.1")
     implementation("androidx.media3:media3-datasource:1.5.1")
+    // The pairing QR scanner: ZXing (Apache-2.0), all Java, no Google Play Services, so F-Droid
+    // can ship the app.
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+    // Its result comes back as an ActivityResult. Same version as the app's.
+    implementation("androidx.activity:activity-ktx:1.10.1")
 }

@@ -12,9 +12,6 @@
     "allow-discover-hubs",
     "allow-find-hub",
     "allow-window-action",
-    "barcode-scanner:allow-scan",
-    "barcode-scanner:allow-cancel",
-    "barcode-scanner:allow-check-permissions",
-    "barcode-scanner:allow-request-permissions"
+    "lull-player:allow-scan"
   ]
 }

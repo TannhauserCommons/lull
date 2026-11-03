@@ -59,7 +59,6 @@ impl Phone {
 
 pub fn run() {
     let app = tauri::Builder::default()
-        .plugin(tauri_plugin_barcode_scanner::init())
         .plugin(tauri_plugin_lull_player::init())
         .plugin(tauri_plugin_opener::init())
         .manage(update::Updates::default())

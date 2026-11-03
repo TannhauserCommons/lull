@@ -290,6 +290,32 @@ Denies the remove_listener command without any pre-configured scope.
 <tr>
 <td>
 
+`lull-player:allow-scan`
+
+</td>
+<td>
+
+Enables the scan command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`lull-player:deny-scan`
+
+</td>
+<td>
+
+Denies the scan command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `lull-player:allow-seek`
 
 </td>

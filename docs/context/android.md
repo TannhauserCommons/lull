@@ -6,17 +6,17 @@ The same Tauri v2 project as the desktop app (`app/`, ADR-0006), built for Andro
 
 | Path | What |
 |---|---|
-| `app/src/mobile/mod.rs` | Builder (barcode scanner, player plugin), the phone's settings (hub and token), launch, pairing, the runtime IPC grant for the hub origin |
+| `app/src/mobile/mod.rs` | Builder (player plugin, opener), the phone's settings (hub and token), launch, pairing, the runtime IPC grant for the hub origin |
 | `app/src/mobile/native.js` | `window.LullNative.player`, `.downloads` and `.updates`, injected before the page's scripts; the player's and downloads' calls are `plugin:lull-player|<command>` |
 | `app/src/mobile/update.rs` | Updates: the newest release against this build, and its APK opened in the browser (`tauri-plugin-opener`) |
 | `app/src/hub.rs`, `discovery.rs`, `pairing.rs`, `pages.rs`, `store.rs` | Shared with desktop: hub client, mDNS, `discover_hubs`/`find_hub`, bundled page URLs, `settings.json` |
-| `app/plugins/player/` | The native player plugin: `src/lib.rs` registers the Kotlin plugin and offers `configure` and `multicast` to Rust; `build.rs` lists the commands (one permission each) |
+| `app/plugins/player/` | The native player plugin: `src/lib.rs` registers the Kotlin plugin and offers `configure` and `multicast` to Rust; `build.rs` lists the commands (one permission each; `default` has the player's and downloads', not `scan`) |
 | `app/plugins/player/android/.../Engine.kt` | The output contract on two Media3 ExoPlayer decks |
 | `app/plugins/player/android/.../PlaybackService.kt` | The MediaSession service: foreground notification, lock screen, Bluetooth, headset |
 | `app/plugins/player/android/.../Downloads.kt` | Downloads through Android's DownloadManager, covers and `index.json` beside them |
-| `app/plugins/player/android/.../PlayerPlugin.kt` | The commands, run on the main thread |
+| `app/plugins/player/android/.../PlayerPlugin.kt` | The commands, run on the main thread, and `scan`: the connect page's QR scanner (ZXing's camera screen) |
 | `app/tauri.android.conf.json` | Minimum SDK 24. The asset protocol for downloaded covers is in the shared `tauri.conf.json` (scope `**/lull-art/*`), because tauri-build checks the `protocol-asset` feature against every platform's config |
-| `app/capabilities/mobile.json` | IPC for the bundled connect page (pairing, QR scan) |
+| `app/capabilities/mobile.json` | IPC for the bundled connect page (pairing, `lull-player:allow-scan`) |
 | `app/gen/android/` | The Gradle project `tauri android init` generated (in CI: there's no NDK on the workstation), tracked with lull's changes: plain http allowed in release builds too (LAN hubs), release signing from `keystore.properties`, lull's launcher icons (`tauri icon` from `web/assets/icons/icon-512.png`, background `#F7F4FF`). Its own `.gitignore` keeps Tauri's per-build files out |
 
 ## Build it
@@ -27,7 +27,7 @@ The same Tauri v2 project as the desktop app (`app/`, ADR-0006), built for Andro
 
 ## Launch and pairing
 
-1. **Not paired:** the connect page (`wrapper.html#view=connect&phone=1`). It shows hubs found by mDNS (the plugin holds Android's multicast lock while it looks), an address field, a pair code field and **Scan the QR code**. The QR code is `<hub url>/#/pair/<code>` from a paired device's Settings > Devices (`plugin:barcode-scanner|scan`).
+1. **Not paired:** the connect page (`wrapper.html#view=connect&phone=1`). It shows hubs found by mDNS (the plugin holds Android's multicast lock while it looks), an address field, a pair code field and **Scan the QR code**. The QR code is `<hub url>/#/pair/<code>` from a paired device's Settings > Devices (`plugin:lull-player|scan`: ZXing's camera screen, which asks for the camera itself; backing out resolves `{ content: null }` and the page stays as it was, a refused camera rejects with what to do instead).
 2. **Pairing:** `find_hub` checks the address, then `window_action {pair}` posts `/api/pair { code, name: "lull on Android", kind: app }` from Rust. The token goes into `settings.json` in the app's config dir.
 3. **Paired:** Rust probes `/health` and `/api/ping` with the token.
    - **Both fine:** the plugin's `configure` gives Kotlin the token, which puts it in the WebView's `lull_device` cookie and on its own stream, cover and download requests. Then `main` loads the hub's origin.

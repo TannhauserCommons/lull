@@ -3,14 +3,17 @@ package app.lull.player
 import android.app.Activity
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.net.wifi.WifiManager
 import android.os.Handler
 import android.os.Looper
 import android.webkit.CookieManager
 import android.webkit.WebView
+import androidx.activity.result.ActivityResult
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import app.tauri.annotation.ActivityCallback
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
@@ -18,6 +21,10 @@ import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 import com.google.common.util.concurrent.ListenableFuture
+import com.google.zxing.client.android.Intents
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanIntentResult
+import com.journeyapps.barcodescanner.ScanOptions
 
 @InvokeArg
 class HubArgs {
@@ -182,6 +189,30 @@ class PlayerPlugin(private val activity: Activity) : Plugin(activity) {
 
     @Command
     fun downloadUsage(invoke: Invoke) = onMain(invoke) { downloads.usage() }
+
+    /**
+     * The connect page's QR scanner: ZXing's camera screen, which asks for the camera itself. Resolves
+     * `{ content }`, null when the listener backs out.
+     */
+    @Command
+    fun scan(invoke: Invoke) {
+        val options = ScanOptions()
+            .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+            .setPrompt("Point the camera at the hub's pairing QR code")
+            .setBeepEnabled(false)
+            .setOrientationLocked(false)
+        startActivityForResult(invoke, ScanContract().createIntent(activity, options), "scanned")
+    }
+
+    @ActivityCallback
+    private fun scanned(invoke: Invoke, result: ActivityResult) {
+        val scan = ScanIntentResult.parseActivityResult(result.resultCode, result.data)
+        if (scan.originalIntent?.getBooleanExtra(Intents.Scan.MISSING_CAMERA_PERMISSION, false) == true) {
+            invoke.reject("lull can't use the camera. Allow it in Android's settings, or type the pair code.")
+            return
+        }
+        invoke.resolve(JSObject().put("content", scan.contents))
+    }
 
     /** Binding a controller starts the MediaSession service, which then keeps playback alive. */
     private fun startService() {

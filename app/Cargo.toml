@@ -92,9 +92,9 @@ tauri-plugin-global-shortcut = "=2.4.1"
 libc = "=0.2.191"
 
 [target.'cfg(target_os = "android")'.dependencies]
-# Pairing by scanning the hub's QR code.
-tauri-plugin-barcode-scanner = "=2.5.3"
-# The native player: Media3 with a MediaSession service, and downloads to app storage (ADR-0006).
+# The native player: Media3 with a MediaSession service, downloads to app storage (ADR-0006), and
+# the pairing QR scanner (ZXing, not tauri-plugin-barcode-scanner: that one needs Google Play
+# Services, which F-Droid can't ship).
 tauri-plugin-lull-player = { path = "plugins/player" }
 # Opens a newer release's APK in the browser, which downloads it for Android to install.
 tauri-plugin-opener = "=2.7.2"

@@ -235,9 +235,10 @@
         '<button type="button" class="btn btn--quiet btn--sm" data-dk="discover">Search again</button>';
     });
   }
-  /* phone: the hub's pairing QR code is <hub url>/#/pair/<code> */
+  /* phone: the hub's pairing QR code is <hub url>/#/pair/<code>; no content means the listener backed out */
   function scan(card) {
-    invoke('plugin:barcode-scanner|scan', { formats: ['QR_CODE'], windowed: false }).then(function (r) {
+    invoke('plugin:lull-player|scan').then(function (r) {
+      if (r.content == null) return;
       var m = /^(https?:\/\/[^/#?]+)[^#]*#\/pair\/([A-Za-z0-9]{6})$/.exec(String(r.content || '').trim());
       if (!m) return setStatus(card, 'error', 'That QR code isn&rsquo;t a lull pair code.');
       $('[name="url"]', card).value = m[1];
