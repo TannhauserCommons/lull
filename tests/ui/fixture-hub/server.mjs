@@ -10,6 +10,9 @@
 // POST /__fixture/art-pending { ids } makes those covers answer 404 "not yet" (no-store), as the hub does while it
 // fetches one; POST /__fixture/art-ready { ids } serves them again and sends `art.ready { keys }`.
 // GET /__fixture/art-requests: cover requests that reached the hub since the last call, by URL (and resets them).
+// The three art ones are per client: a browser context that sends `X-Fixture-Client: <id>` (and the calls that name
+// the same id) sees only its own pending covers, art.ready events and counts, so gates running side by side on one
+// hub never count or answer each other's pictures. With no header, the client is '' (one shared scope, as before).
 
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
@@ -51,7 +54,7 @@ const state = {
   },
   plays: 0,
 };
-const clients = new Set();
+const clients = new Map();   // open /api/events streams -> their fixture client
 
 // ---------- helpers ----------
 function entities({ tracks = [], albums = [], artists = [] } = {}) {
@@ -257,14 +260,15 @@ function deepMerge(into, patch) {
 }
 function cap(w) { return w[0].toUpperCase() + w.slice(1); }
 
-function emit(topic, data) {
+function emit(topic, data, only) {
   const line = `event: ${topic}\ndata: ${JSON.stringify(data)}\n\n`;
-  for (const res of clients) res.write(line);
+  for (const [res, client] of clients) if (only === undefined || client === only) res.write(line);
 }
+const clientOf = (req) => req.headers['x-fixture-client'] || '';
 
 // ---------- covers: a two-colour gradient per id, as a real PNG at the size asked. The 512 px one has a fine grain,
 // so it weighs what a photo cover does (tens of KB): the desktop app hands that size to its mini player ----------
-const art = new Map(), artPending = new Set(), artRequests = new Map();
+const art = new Map(), artPending = new Set(), artRequests = new Map();   // pending: client + ' ' + id; requests: client -> url -> n
 function cover(id, size) {
   const key = id + '@' + size;
   if (art.has(key)) return art.get(key);
@@ -369,22 +373,24 @@ const server = createServer(async (req, res) => {
   if (path === '/api/events') {
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
     res.write(': open\n\n');
-    clients.add(res); req.on('close', () => clients.delete(res));
+    clients.set(res, clientOf(req)); req.on('close', () => clients.delete(res));
     return;
   }
   let m;
-  if (path === '/__fixture/art-requests') { const counts = Object.fromEntries(artRequests); artRequests.clear(); return send(res, 200, counts); }
-  if (path === '/__fixture/art-pending' && req.method === 'POST') { (await readBody(req)).ids.forEach((id) => artPending.add(id)); return send(res, 204); }
+  const client = clientOf(req);
+  if (path === '/__fixture/art-requests') { const counts = Object.fromEntries(artRequests.get(client) || []); artRequests.delete(client); return send(res, 200, counts); }
+  if (path === '/__fixture/art-pending' && req.method === 'POST') { (await readBody(req)).ids.forEach((id) => artPending.add(client + ' ' + id)); return send(res, 204); }
   if (path === '/__fixture/art-ready' && req.method === 'POST') {
-    const { ids } = await readBody(req); ids.forEach((id) => artPending.delete(id)); emit('art.ready', { keys: ids }); return send(res, 204);
+    const { ids } = await readBody(req); ids.forEach((id) => artPending.delete(client + ' ' + id)); emit('art.ready', { keys: ids }, client); return send(res, 204);
   }
   if ((m = /^\/api\/(?:catalog\/)?art\/([^/]+)$/.exec(path))) {
-    artRequests.set(url.pathname + url.search, (artRequests.get(url.pathname + url.search) || 0) + 1);
+    const seen = artRequests.get(client) || artRequests.set(client, new Map()).get(client);
+    seen.set(url.pathname + url.search, (seen.get(url.pathname + url.search) || 0) + 1);
     // api.md /api/art: the sizes the hub serves; the fixture's pictures are 512 px at most, as a source with no more
     // is: never blown up, and X-Image-Size says so
     const asked = [96, 256, 512, 1024, 2048].includes(+q.get('size')) ? +q.get('size') : 256, size = Math.min(asked, 512);
     if (!L.albums[m[1]] && !L.artists[m[1]]) return send(res, 404, { error: 'not_found', message: 'No cover.' });
-    if (artPending.has(m[1])) {
+    if (artPending.has(client + ' ' + m[1])) {
       res.writeHead(404, { 'content-type': 'application/json', 'cache-control': 'no-store' });
       return res.end(JSON.stringify({ error: 'not_found', message: 'The picture is still on its way.' }));
     }

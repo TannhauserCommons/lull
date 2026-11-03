@@ -5,11 +5,19 @@
 import { expect, test } from '@playwright/test';
 import { ids, openScreen } from './lib.mjs';
 
+/** This test's own scope on the fixture hub (server.mjs, X-Fixture-Client): its page's cover requests, pending covers
+ *  and art.ready events, apart from the gates running beside it on the same hub. */
+async function own(page, request) {
+  const headers = { 'x-fixture-client': `${test.info().testId}:${test.info().repeatEachIndex}` };
+  await page.context().setExtraHTTPHeaders(headers);   // the context's: the service worker's fetches carry it too
+  return { get: (url) => request.get(url, { headers }), post: (url, o) => request.post(url, { ...o, headers }) };
+}
+
 /** Cover requests that reached the fixture hub while `fn` ran (the browser's cache hits never do): url -> count. */
-async function coverRequests(request, fn) {
-  await request.get('/__fixture/art-requests');
+async function coverRequests(hub, fn) {
+  await hub.get('/__fixture/art-requests');
   await fn();
-  return new Map(Object.entries(await (await request.get('/__fixture/art-requests')).json()));
+  return new Map(Object.entries(await (await hub.get('/__fixture/art-requests')).json()));
 }
 
 const unloaded = () => [...document.querySelectorAll('img.cover__img')]
@@ -18,7 +26,8 @@ const unloaded = () => [...document.querySelectorAll('img.cover__img')]
 
 for (const [name, route] of [['home', '/home'], ['the 1,200-song playlist', `/playlist/${ids.longPlaylist}`], ['an album', `/album/${ids.album}`]]) {
   test(`${name} asks for each cover once, and shows them within 2 s`, async ({ page, request }) => {
-    const seen = await coverRequests(request, async () => {
+    const hub = await own(page, request);
+    const seen = await coverRequests(hub, async () => {
       await openScreen(page, route);
       // every cover on screen loaded within 2 s of the page settling (nothing waits on a timer)
       await page.waitForFunction(() => [...document.querySelectorAll('img.cover__img')]
@@ -34,25 +43,26 @@ for (const [name, route] of [['home', '/home'], ['the 1,200-song playlist', `/pl
 }
 
 test('a cover the hub is still fetching is asked once, then again when art.ready names it', async ({ page, request }) => {
-  await request.post('/__fixture/art-pending', { data: { ids: [ids.album] } });
+  const hub = await own(page, request);
+  await hub.post('/__fixture/art-pending', { data: { ids: [ids.album] } });
   try {
     const mine = (seen) => [...seen].filter(([url]) => url.includes(ids.album));
-    const first = await coverRequests(request, async () => {
+    const first = await coverRequests(hub, async () => {
       await openScreen(page, `/album/${ids.album}`);
       await page.waitForTimeout(6000);   // longer than the 5 s the page used to retry after
     });
     // the header and every row show the same picture: one request per size drawn, answered "not yet", no retry
     expect(mine(first).length, 'sizes asked').toBeGreaterThan(0);
     expect(mine(first).filter(([, n]) => n > 1), 'sizes asked again before art.ready').toEqual([]);
-    const then = await coverRequests(request, async () => {
-      await request.post('/__fixture/art-ready', { data: { ids: [ids.album] } });
+    const then = await coverRequests(hub, async () => {
+      await hub.post('/__fixture/art-ready', { data: { ids: [ids.album] } });
       await page.waitForFunction((id) => [...document.querySelectorAll(`img.cover__img[data-art="${id}"]`)]
         .some((i) => i.complete && i.naturalWidth > 0), ids.album, { timeout: 5000 });
     });
     expect(mine(then).length, 'sizes asked again after art.ready').toBeGreaterThan(0);
     expect(mine(then).filter(([, n]) => n > 1), 'each asked once more').toEqual([]);
   } finally {
-    await request.post('/__fixture/art-ready', { data: { ids: [ids.album] } });
+    await hub.post('/__fixture/art-ready', { data: { ids: [ids.album] } });
   }
 });
 

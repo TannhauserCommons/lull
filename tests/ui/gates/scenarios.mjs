@@ -194,7 +194,10 @@ export async function listening(browser, page, opts) {
   // waiting for its picture must not keep its screen alive once it leaves the page
   const { albumIds } = await import('../fixture-hub/library.mjs');
   const pending = albumIds.filter((_, i) => i % 7 === 3);
-  const fixture = (p, ids) => page.request.post(p, { data: { ids } });
+  // in its own scope on the hub (server.mjs, X-Fixture-Client), so the gates beside it never see these covers pending
+  const headers = { 'x-fixture-client': 'listening:' + Math.random().toString(36).slice(2) };
+  await page.context().setExtraHTTPHeaders(headers);
+  const fixture = (p, ids) => page.request.post(p, { data: { ids }, headers });
   await fixture('/__fixture/art-pending', pending);
   await page.addInitScript({ path: fileURLToPath(new URL('./desktop-bridge.js', import.meta.url)) });
   await openScreen(page, `/playlist/${ids.playlist}`, opts);   // a song from another album each time: a new cover each time
