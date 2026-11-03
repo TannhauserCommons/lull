@@ -2610,7 +2610,7 @@ checksum = "4050469837a6ff301cd14c1f8f24f88549e6d548f24f64e2148eb0f72cebc51f"
 
 [[package]]
 name = "lull-app"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "getrandom 0.4.3",
  "gtk",
@@ -2644,7 +2644,7 @@ dependencies = [
 
 [[package]]
 name = "lull-collection"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -2662,7 +2662,7 @@ dependencies = [
 
 [[package]]
 name = "lull-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -2680,7 +2680,7 @@ dependencies = [
 
 [[package]]
 name = "lull-discovery"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -2696,7 +2696,7 @@ dependencies = [
 
 [[package]]
 name = "lull-lastfm"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -2712,7 +2712,7 @@ dependencies = [
 
 [[package]]
 name = "lull-library"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -2733,7 +2733,7 @@ dependencies = [
 
 [[package]]
 name = "lull-lyrics"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -2748,7 +2748,7 @@ dependencies = [
 
 [[package]]
 name = "lull-server"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axum",
  "getrandom 0.4.3",
@@ -2778,7 +2778,7 @@ dependencies = [
 
 [[package]]
 name = "lull-skins"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axum",
  "lull-core",
@@ -2791,7 +2791,7 @@ dependencies = [
 
 [[package]]
 name = "lull-soulseek"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -2808,7 +2808,7 @@ dependencies = [
 
 [[package]]
 name = "lull-subsonic"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axum",
  "form_urlencoded",
@@ -2821,7 +2821,7 @@ dependencies = [
 
 [[package]]
 name = "lull-themes"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axum",
  "flate2",
@@ -2835,7 +2835,7 @@ dependencies = [
 
 [[package]]
 name = "lull-youtube"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "axum",
