@@ -15,10 +15,58 @@
      session.stop()             the listening record ends as 'stopped' (leaving Classic)
    Listening: a record begins once a lull song plays and gains the seconds heard in steady playback
    (seeks don't count), as the app engine counts them. Webamp has no play/pause or seek events, so its
-   store and media clock are watched instead. */
+   store and media clock are watched instead.
+
+   Skins: Webamp reads a skin with fetch(url) and reports a failure with window.alert(). lull never lets it:
+     LullWebamp.quietAlerts(onAlert)   Webamp's alerts come here instead of the browser's dialog; during a
+                                       loadSkin they fail that load, any other goes to onAlert(message)
+     LullWebamp.loadSkin(webamp, src)  src: a URL on the hub, fetched here first (the hub's sentence on a
+                                       failure), or a Blob (a file from this device). Webamp gets the bytes as
+                                       a blob: URL; resolves once it shows them, rejects with a sentence. */
 (function () {
   'use strict';
+  var SKIN_TIMEOUT_MS = 10000;
   function absolute(url) { return new URL(url, location.href).href; }
+
+  var failSkin = null;                                            // the loadSkin in progress, if any
+  function quietAlerts(onAlert) {
+    window.alert = function (message) {
+      message = String(message);
+      if (failSkin && /skin/i.test(message)) failSkin(message); else onAlert(message);
+    };
+  }
+  function skinBlob(src) {
+    if (src instanceof Blob) return Promise.resolve(src);
+    /* the hub serves .wsz files as immutable (named by md5), so any cached copy will do, also offline */
+    return fetch(src, { credentials: 'same-origin', cache: 'force-cache' }).then(function (res) {
+      if (res.ok) return res.blob();
+      return res.json().then(function (e) { return e && e.message; }, function () { return null; }).then(function (msg) {
+        var err = new Error(msg || 'the lull hub answered ' + res.status + '.');
+        err.status = res.status;
+        throw err;
+      });
+    }, function () { throw new Error('can\'t reach the lull hub.'); });
+  }
+  /* one load at a time: callers wait for the last one before starting the next */
+  function loadSkin(webamp, src) {
+    return skinBlob(src).then(function (blob) {
+      var url = URL.createObjectURL(blob);
+      return new Promise(function (resolve, reject) {
+        var settled = false, timer = setTimeout(function () {
+          done(new Error('Webamp didn\'t finish loading it within 10 seconds.'));
+        }, SKIN_TIMEOUT_MS);
+        function done(err) {
+          if (settled) return;
+          settled = true; failSkin = null; clearTimeout(timer);
+          URL.revokeObjectURL(url);                               // Webamp has read it by now, or never will
+          if (err) reject(err); else resolve();
+        }
+        failSkin = function () { done(new Error('Webamp couldn\'t read it, so it may not be a classic Winamp skin.')); };
+        webamp.setSkinFromUrl(url);
+        webamp.skinIsLoaded().then(function () { done(null); }, done);
+      });
+    });
+  }
 
   function session(webamp, hooks) {
     var byUrl = {}, currentUrl = null, pendingSeek = null, handedOver = false, listen = null;
@@ -105,5 +153,5 @@
       idOf: function (url) { var t = byUrl[absolute(url)]; return t ? t.id : null; } };
   }
 
-  window.LullWebamp = { session: session };
+  window.LullWebamp = { session: session, quietAlerts: quietAlerts, loadSkin: loadSkin };
 })();

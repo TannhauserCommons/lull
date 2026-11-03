@@ -7,12 +7,17 @@
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; }
   #stage { position: absolute; inset: 0; }
-  #failed { display: none; margin: 0; padding: 12px; font: 13px system-ui, sans-serif; color: #fff; background: #222; }
+  /* a skin that didn't load, or anything else Webamp would have alert()ed: over its windows, above their z-index */
+  #note {
+    position: fixed; left: 4px; right: 4px; bottom: 4px; z-index: 2147483647; margin: 0; padding: 8px 10px;
+    font: 12px/1.35 system-ui, sans-serif; color: #fff; background: #222d; border: 1px solid #fff4; border-radius: 4px; cursor: default;
+  }
+  #note[hidden] { display: none; }
 </style>
 </head>
 <body>
 <div id="stage"></div>
-<p id="failed" role="alert"></p>
+<p id="note" role="alert" hidden></p>
 <script src="../vendor/webamp/webamp.bundle.min.js"></script>
 <script src="webamp-session.js"></script>
 <script src="winamp.js"></script>

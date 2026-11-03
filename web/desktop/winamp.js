@@ -6,11 +6,13 @@
      taskbar buttons and Discord follow it), 'listen' / 'listened' (its listening history), 'action' (Like and
      Save from the tray, which only the app can do), 'back' with the queue when Webamp closes, 'failed'.
    - From the app: 'tray' (tray and taskbar buttons) and 'classic-close' (Alt+F4, the tray's Show lull).
-   - The system's media overlay and media keys (Media Session) follow Webamp. */
+   - The system's media overlay and media keys (Media Session) follow Webamp.
+   - Skins load through LullWebamp.loadSkin, and Webamp's alerts show as a note in this window (#note), never as a
+     browser dialog. */
 (function () {
   'use strict';
   var T = window.__TAURI__, win = T.window.getCurrentWindow(), LogicalSize = (T.dpi || T.window).LogicalSize;
-  var stage = document.getElementById('stage');
+  var stage = document.getElementById('stage'), note = document.getElementById('note');
   var webamp = null, session = null, finished = false;
   var WINDOWS = ['#main-window', '#equalizer-window', '#playlist-window'];
 
@@ -24,8 +26,8 @@
 
   function start(h) {
     if (typeof window.Webamp !== 'function') throw new Error('the player file didn\'t load');
+    LullWebamp.quietAlerts(say);
     webamp = new window.Webamp({
-      initialSkin: h.skin ? { url: h.skin.url } : undefined,
       availableSkins: h.skins.map(function (s) { return { url: s.url, name: s.name }; }),
       windowLayout: {
         main: { position: { top: 0, left: 0 } },
@@ -41,6 +43,11 @@
     return webamp.renderInto(stage).then(function () {
       session.handIn(h);
       wireMediaSession();
+      /* the window shows once the listener's skin is on, so Webamp's base skin never flashes */
+      return h.skin && LullWebamp.loadSkin(webamp, h.skin.url).catch(function (err) {
+        say('Couldn\'t load ' + h.skin.name + ': ' + err.message);
+      });
+    }).then(function () {
       fit();
       new MutationObserver(scheduleFit).observe(stage, { subtree: true, childList: true, attributes: true, attributeFilter: ['style', 'class'] });
       return win.show().then(function () { return win.setFocus(); });
@@ -72,6 +79,16 @@
     e.preventDefault(); e.stopPropagation();
     win.startDragging().catch(logFailure('drag'));
   }, true);
+
+  /* a sentence over Webamp for a few seconds (a click dismisses it); the window is only as big as Webamp */
+  var noteTimer = 0;
+  function say(message) {
+    note.textContent = message;
+    note.hidden = false;
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(function () { note.hidden = true; }, 8000);
+  }
+  note.addEventListener('click', function () { note.hidden = true; });
 
   /* ---------- what plays, for the app and the system ---------- */
   function report() {

@@ -16,9 +16,9 @@
      Webamp and songs heard there are recorded with App.recordPlay.
    - Skins (docs/context/skins.md): GET /api/skins?q=&offset=&nsfw= (the server's Winamp Skin Museum proxy, with
      favourite and downloaded flags), /api/skins/favourites, files from /api/skins/{md5}.wsz (validated, cached, same
-     origin, immutable). A skin file is fetched here first, so a failure shows the server's sentence instead of
-     Webamp's alert(); Webamp then parses the blob. A preview reverts after 15 s unless kept; a skin Webamp hasn't
-     finished after 10 s counts as failed and the previous one comes back.
+     origin, immutable), loaded with LullWebamp.loadSkin: fetched first, so a failure shows the server's sentence,
+     and Webamp's alerts are lull's toasts or that sentence (LullWebamp.quietAlerts). A preview reverts after 15 s
+     unless kept; a skin Webamp hasn't finished after 10 s counts as failed and the previous one comes back.
    - Downloaded = skins the server has cached (its flag), plus .wsz files opened this session; offline, the drawer
      lists favourites and downloaded skins from the last answers.
    - NSFW visibility and the default skin are per-device settings (Settings > Appearance writes them to
@@ -30,7 +30,6 @@
   var BUNDLE = 'vendor/webamp/webamp.bundle.min.js';
   var SESSION = 'desktop/webamp-session.js';
   var PREVIEW_SECONDS = 15;
-  var APPLY_TIMEOUT_MS = 10000;
   var SEARCH_DEBOUNCE_MS = 300;
 
   /* ---------- model (kept across visits, so leaving and coming back finds things as they were) ---------- */
@@ -455,7 +454,7 @@
         loadScript(BUNDLE, 'Webamp', 'the player file (' + BUNDLE + ') didn\'t load. Check your connection; a server built from source needs `mise run setup`.'),
         loadScript(SESSION, 'LullWebamp', SESSION + ' didn\'t load. Check your connection.'),
         readOnce()
-      ]).then(function (r) { return r[0]; }, function (err) { prepared = null; throw err; });
+      ]).then(function (r) { LullWebamp.quietAlerts(webampSaid); return r[0]; }, function (err) { prepared = null; throw err; });
     }
     return prepared;
   }
@@ -610,25 +609,10 @@
     return null;
   }
 
-  /* ---------- skins in Webamp: fetch, apply, preview, restore ---------- */
-  /* a URL Webamp can parse: the .wsz fetched from the server (its sentence on failure), or the local file */
-  function fetchSkin(skin) {
-    if (skin.local) return Promise.resolve(skin.url);
-    /* the server serves .wsz as immutable (named by md5), so any cached copy will do, also offline */
-    return fetch(skinFileUrl(skin.md5), { credentials: 'same-origin', cache: 'force-cache' }).then(function (res) {
-      if (res.ok) return res.blob().then(function (b) { return URL.createObjectURL(b); });
-      if (res.status === 401) M.onUnauthorized();
-      return res.json().then(function (e) { return e && e.message; }, function () { return null; }).then(function (msg) {
-        throw new Error(msg || 'the server answered ' + res.status + '.');
-      });
-    }, function () { throw new Error('can\'t reach the lull server.'); });
-  }
-  function applyUrl(url) {
-    webamp.setSkinFromUrl(url);
-    return new Promise(function (resolve, reject) {
-      var t = setTimeout(function () { reject(new Error('Webamp didn\'t finish loading it within 10 seconds.')); }, APPLY_TIMEOUT_MS);
-      webamp.skinIsLoaded().then(function () { clearTimeout(t); resolve(); }, function (e) { clearTimeout(t); reject(e); });
-    });
+  /* ---------- skins in Webamp: apply, preview, restore ---------- */
+  /* what Webamp says outside a skin load (a skin from its own Skins menu, a menu item it lacks) */
+  function webampSaid(message) {
+    App.toast(/skin/i.test(message) ? 'Webamp couldn\'t load that skin' : 'Webamp: ' + message, { kind: 'error', icon: 'warning' });
   }
   /* show a skin without the busy states (revert, restore after a failure); null = Webamp's base skin */
   function showSkin(skin) {
@@ -645,15 +629,11 @@
     var kept = mode === 'restore' ? null : S.preview ? S.preview.prev : appliedSkin();
     var replacesPreview = !!S.preview;
     if (replacesPreview) { clearInterval(previewTimer); S.preview = null; }
-    var job = S.busy = { skin: skin, mode: mode, phase: isDownloaded(skin) ? 'apply' : 'download' }, objectUrl = null;
+    var job = S.busy = { skin: skin, mode: mode, phase: isDownloaded(skin) ? 'apply' : 'download' };
     S.failed = null;
     if (mode !== 'restore') App.announce((job.phase === 'download' ? 'Downloading ' : 'Applying ') + skin.name);
     renderAll();
-    fetchSkin(skin).then(function (url) {
-      if (!skin.local) objectUrl = url;
-      job.phase = 'apply'; renderAll();
-      return applyUrl(url);
-    }).then(function () {
+    LullWebamp.loadSkin(webamp, skin.local ? skin.blob : skinFileUrl(skin.md5)).then(function () {
       S.busy = null;
       if (!skin.local) { skin.downloaded = true; setFlag(skin.md5, 'downloaded', true); }   // the server cached it
       if (mode === 'preview') { if (root) startPreview(skin, kept); else showSkin(kept); }   // left mid-load: no preview
@@ -664,11 +644,12 @@
       persist(); renderAll();
     }, function (err) {
       S.busy = null;
+      if (err.status === 401) M.onUnauthorized();
       S.failed = { skin: skin, kept: kept, message: err.message };
-      if (job.phase === 'apply' || replacesPreview) showSkin(kept);   // Webamp may be half-way into it
+      showSkin(kept);                                          // Webamp may be half-way into it
       App.announce('Couldn\'t load ' + skin.name + '. ' + nameOf(kept) + ' stays on.');
       renderAll();
-    }).then(function () { if (objectUrl) URL.revokeObjectURL(objectUrl); });
+    });
   }
 
   var previewTimer = 0;
@@ -710,7 +691,7 @@
     var key = 'local:' + file.name + ':' + file.size;
     var skin = S.local.filter(function (s) { return s.md5 === key; })[0];
     if (!skin) {
-      skin = { md5: key, name: wszName(file.name), file: file.name, url: URL.createObjectURL(file), local: true, screenshotUrl: '', museumUrl: '', nsfw: false };
+      skin = { md5: key, name: wszName(file.name), file: file.name, blob: file, url: URL.createObjectURL(file), local: true, screenshotUrl: '', museumUrl: '', nsfw: false };
       S.local.unshift(skin);
     }
     S.tab = 'downloaded'; S.query = '';
