@@ -50,6 +50,8 @@ for (const design of designs) {
       expect(report, 'the chrome at some width\n' + [...seen].map(([w, g]) => `at ${w} px: ${g}`).join('\n')).toEqual([]);
     });
 
+    // the rows fit again by themselves when their text widens or narrows in place (a web font with wider letters than the
+    // fallback's arriving; no row changes size): two frames on, they are as a fresh fit of everything leaves them
     test(`header and player bar / ${design} / ${theme}: content that grows in place fits at once`, async ({ page }) => {
       await openScreen(page, `/album/${ids.album}`, { design, theme });
       await page.dblclick('.tlist .trow:nth-child(1) .trow__dur');
@@ -64,10 +66,15 @@ for (const design of designs) {
         // wider text everywhere in the rows, as a font with wider letters gives: no row changes size
         await page.evaluate(() => { const s = document.createElement('style'); s.id = 'gate-wide'; s.textContent = '.header *, #pbar * { letter-spacing: .14em !important; }'; document.head.appendChild(s); });
         await frames(page);
-        expect(await chrome(page), `${w} px, the text wider: ${await geometry(page)}`).toEqual([]);
+        const wider = await out(), at = await geometry(page);
+        await page.evaluate(() => App.layout.refit());
+        expect(wider, `${w} px, the text wider: fitted already (${at})`).toEqual(await out());
         await page.evaluate(() => document.getElementById('gate-wide').remove());
         await frames(page);
-        expect(await out(), `${w} px, the text back: what gave way comes back`).toEqual(before);
+        const back = await out();
+        await page.evaluate(() => App.layout.refit());
+        expect(back, `${w} px, the text back: fitted already`).toEqual(await out());
+        expect(back, `${w} px, the text back: what gave way comes back`).toEqual(before);
       }
     });
 
