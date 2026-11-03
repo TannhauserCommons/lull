@@ -11,7 +11,7 @@ use crate::error::{Error, Result};
 use crate::ids::{AlbumId, ArtistId, TrackId};
 use crate::model::{self, Album, Artist, PlayReport, Playlist, PlaylistEdit, SourceRef, Track};
 use crate::quality::SaveCandidate;
-use crate::youtube::{Found, Listing, Want};
+use crate::youtube::{Found, FoundPlaylist, Listing, Want};
 
 /// The saved library. Implemented by `library`, from a music folder or Jellyfin (ADR-0003).
 #[async_trait]
@@ -148,6 +148,13 @@ pub trait Youtube: Send + Sync {
     /// play mode; `Unavailable` while YouTube is backed off.
     async fn playlist(&self, _url: &str, _from: usize, _count: usize) -> Result<Listing> {
         Err(Error::unavailable("youtube", "this hub can't list playlists"))
+    }
+
+    /// Up to `limit` playlists a YouTube search for `query` finds, in YouTube's order, for
+    /// search's Playlists section (YouTube Music's own search lists the same community
+    /// playlists, without their names). Whatever YouTube's play mode; `Unavailable` while backed off.
+    async fn search_playlists(&self, _query: &str, _limit: usize) -> Result<Vec<FoundPlaylist>> {
+        Ok(Vec::new())
     }
 }
 
