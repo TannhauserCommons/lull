@@ -11,6 +11,7 @@ Everything the web UI's native player and downloads use (docs/context/web.md, ou
 - `allow-set-volume`
 - `allow-set-next`
 - `allow-crossfade`
+- `allow-equalize`
 - `allow-download-add`
 - `allow-download-remove`
 - `allow-download-list`
@@ -153,6 +154,32 @@ Enables the download_usage command without any pre-configured scope.
 <td>
 
 Denies the download_usage command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`lull-player:allow-equalize`
+
+</td>
+<td>
+
+Enables the equalize command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`lull-player:deny-equalize`
+
+</td>
+<td>
+
+Denies the equalize command without any pre-configured scope.
 
 </td>
 </tr>

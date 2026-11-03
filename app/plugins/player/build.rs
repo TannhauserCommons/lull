@@ -11,6 +11,7 @@ const COMMANDS: &[&str] = &[
     "set_volume",
     "set_next",
     "crossfade",
+    "equalize",
     "download_add",
     "download_remove",
     "download_list",

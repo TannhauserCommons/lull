@@ -42,6 +42,7 @@
       setVolume: function (v) { return call('set_volume', { volume: v }); },
       setNext: function (item) { return call('set_next', { item: item || null }); },
       crossfade: function (seconds) { return call('crossfade', { seconds: seconds }); },
+      equalize: function (spec) { return call('equalize', { spec: spec || null }); },
       on: on
     }),
     downloads: Object.freeze({

@@ -10,6 +10,7 @@ permissions = [
   "allow-set-volume",
   "allow-set-next",
   "allow-crossfade",
+  "allow-equalize",
   "allow-download-add",
   "allow-download-remove",
   "allow-download-list",

@@ -70,6 +70,11 @@ class CrossfadeArgs {
 }
 
 @InvokeArg
+class EqualizeArgs {
+    var spec: EqSpec? = null
+}
+
+@InvokeArg
 class DownloadAddArgs {
     lateinit var trackId: String
     lateinit var url: String
@@ -170,6 +175,14 @@ class PlayerPlugin(private val activity: Activity) : Plugin(activity) {
     fun crossfade(invoke: Invoke) {
         val args = invoke.parseArgs(CrossfadeArgs::class.java)
         onMain(invoke) { Engine.crossfade(args.seconds); null }
+    }
+
+    /** The equaliser (web/eq.js `spec`, null for off): both decks pick it up at their next buffer. */
+    @Command
+    fun equalize(invoke: Invoke) {
+        val args = invoke.parseArgs(EqualizeArgs::class.java)
+        Equaliser.spec = args.spec
+        invoke.resolve()
     }
 
     @Command

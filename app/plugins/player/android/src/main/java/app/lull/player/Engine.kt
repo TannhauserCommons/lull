@@ -16,6 +16,11 @@ import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.Renderer
+import androidx.media3.exoplayer.RenderersFactory
+import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.audio.MediaCodecAudioRenderer
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import app.tauri.annotation.InvokeArg
@@ -170,8 +175,14 @@ object Engine {
 
     // ----- decks -----
 
+    /** Audio only, through the device's equaliser ([EqProcessor]); a deck plays nothing else. */
+    private fun renderers() = RenderersFactory { handler, _, audio, _, _ ->
+        val sink = DefaultAudioSink.Builder(context).setAudioProcessors(arrayOf(EqProcessor())).build()
+        arrayOf<Renderer>(MediaCodecAudioRenderer(context, MediaCodecSelector.DEFAULT, handler, audio, sink))
+    }
+
     private fun deck(): ExoPlayer {
-        val player = ExoPlayer.Builder(context)
+        val player = ExoPlayer.Builder(context, renderers())
             .setMediaSourceFactory(DefaultMediaSourceFactory(sources))
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)

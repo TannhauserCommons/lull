@@ -355,6 +355,18 @@
           "markdownDescription": "Denies the download_usage command without any pre-configured scope."
         },
         {
+          "description": "Enables the equalize command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-equalize",
+          "markdownDescription": "Enables the equalize command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the equalize command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-equalize",
+          "markdownDescription": "Denies the equalize command without any pre-configured scope."
+        },
+        {
           "description": "Enables the load command without any pre-configured scope.",
           "type": "string",
           "const": "allow-load",
@@ -463,10 +475,10 @@
           "markdownDescription": "Denies the set_volume command without any pre-configured scope."
         },
         {
-          "description": "Everything the web UI's native player and downloads use (docs/context/web.md, output interface).\n#### This default permission set includes:\n\n- `allow-load`\n- `allow-play`\n- `allow-pause`\n- `allow-seek`\n- `allow-set-volume`\n- `allow-set-next`\n- `allow-crossfade`\n- `allow-download-add`\n- `allow-download-remove`\n- `allow-download-list`\n- `allow-download-usage`\n- `allow-registerListener`\n- `allow-remove-listener`",
+          "description": "Everything the web UI's native player and downloads use (docs/context/web.md, output interface).\n#### This default permission set includes:\n\n- `allow-load`\n- `allow-play`\n- `allow-pause`\n- `allow-seek`\n- `allow-set-volume`\n- `allow-set-next`\n- `allow-crossfade`\n- `allow-equalize`\n- `allow-download-add`\n- `allow-download-remove`\n- `allow-download-list`\n- `allow-download-usage`\n- `allow-registerListener`\n- `allow-remove-listener`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Everything the web UI's native player and downloads use (docs/context/web.md, output interface).\n#### This default permission set includes:\n\n- `allow-load`\n- `allow-play`\n- `allow-pause`\n- `allow-seek`\n- `allow-set-volume`\n- `allow-set-next`\n- `allow-crossfade`\n- `allow-download-add`\n- `allow-download-remove`\n- `allow-download-list`\n- `allow-download-usage`\n- `allow-registerListener`\n- `allow-remove-listener`"
+          "markdownDescription": "Everything the web UI's native player and downloads use (docs/context/web.md, output interface).\n#### This default permission set includes:\n\n- `allow-load`\n- `allow-play`\n- `allow-pause`\n- `allow-seek`\n- `allow-set-volume`\n- `allow-set-next`\n- `allow-crossfade`\n- `allow-equalize`\n- `allow-download-add`\n- `allow-download-remove`\n- `allow-download-list`\n- `allow-download-usage`\n- `allow-registerListener`\n- `allow-remove-listener`"
         }
       ]
     }
