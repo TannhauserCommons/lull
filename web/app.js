@@ -1052,6 +1052,12 @@
   /* Track row. opts: { index, dense, added (ISO), draggable (default true), showSources, dup ('saved'|'better'),
      queueIndex, actions (default true), unavailable, badges (markup placed before the source badge), album (the album
      page's id: its cover stands in for an unknown one) } */
+  /* the playing bars: in the playing row only (App.syncRows moves them), never as hidden markup in every row */
+  var EQ = '<span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>';
+  function playingBars(row, on) {
+    var num = $(':scope > .trow__num', row), bars = num && $(':scope > .eq', num);
+    if (on && num && !bars) num.insertAdjacentHTML('beforeend', EQ); else if (!on && bars) bars.remove();
+  }
   ui.trackRow = function (track, opts) {
     opts = opts || {}; if (typeof track === 'string') track = M.track(track);
     if (!track) return '';
@@ -1063,9 +1069,9 @@
     var facts = raw(' data-khz="' + (kHz(track.khz) || '') + '" data-kbps="' + (track.kbps || '') + '" data-bits="' + (track.bits || '') + '" data-size="' + (track.sizeMB || '') + '"');
     var open = html`<li class="${cls}" data-track-id="${track.id}" ${opts.queueIndex != null ? raw('data-queue-index="' + opts.queueIndex + '"') : ''}${facts} tabindex="0"${raw(drag)} aria-label="${track.title} by ${track.artist}"`;
     return ui.row(open, function () {
-      var saved = App.isSaved(track.id), line = formatLine(track);
+      var saved = App.isSaved(track.id), line = formatLine(track), bars = App.player && App.player.currentId() === track.id ? raw(EQ) : '';
       return html`
-      <div class="trow__num"><span class="trow__n">${n}</span><button class="trow__play" data-act="play-track" data-id="${track.id}" tabindex="-1" aria-label="Play ${track.title}">${icon('play', null, 'ic-16')}</button><span class="eq" aria-hidden="true"><i></i><i></i><i></i></span></div>
+      <div class="trow__num"><span class="trow__n">${n}</span><button class="trow__play" data-act="play-track" data-id="${track.id}" tabindex="-1" aria-label="Play ${track.title}">${icon('play', null, 'ic-16')}</button>${bars}</div>
       <div class="trow__art">${ui.cover(rowCover(track, opts.album), opts.dense ? 40 : 48)}</div>
       <div class="trow__main">
         <button class="trow__title" data-act="play-track" data-id="${track.id}" tabindex="-1">${track.title}</button>
@@ -1161,7 +1167,7 @@
      it is .is-playing-place, .is-playing-now while sound plays, and shows the playing bars: the same .eq as a playing
      row, still while paused. Rendered with the state of the moment; App.syncRows keeps them current. */
   function placePlaying(key) { return !!App.player && !!key && App.placeKey(App.player.playingFrom()) === key; }
-  var PLACE_MARK = '<span class="place-mark"><span class="eq" aria-hidden="true"><i></i><i></i><i></i></span><span class="vh">(playing)</span></span>';
+  var PLACE_MARK = '<span class="place-mark">' + EQ + '<span class="vh">(playing)</span></span>';
   ui.placeCls = function (key) { return placePlaying(key) ? ' is-playing-place' + (App.player.state.playing ? ' is-playing-now' : '') : ''; };
   /* the expand button over a cover that opens it large (App.viewCover): shown on hover and focus, the way Spotify's
      arrow is; a touch screen has no hover, and its "…" menus have View cover */
@@ -2967,7 +2973,7 @@
     var cur = P.currentId();
     $$('.trow[data-track-id]').forEach(function (r) {
       var on = r.getAttribute('data-track-id') === cur;
-      r.classList.toggle('is-playing', on);
+      if (r.classList.contains('is-playing') !== on) { r.classList.toggle('is-playing', on); playingBars(r, on); }
       r.classList.toggle('is-playing-now', on && ps.playing);
     });
     App.syncPlaces();
