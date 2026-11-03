@@ -77,7 +77,42 @@ pub const MIGRATIONS: Migrations = Migrations {
 /// A miss is looked up again after this long (seconds): the catalog gains songs.
 pub const RESOLVE_AGAIN_S: i64 = 86_400;
 
-/// Records or refreshes tracks (latest facts win).
+/// Records songs a source found (search, Soulseek's files) and returns each as the catalog then
+/// has it: a song already known keeps what it has (title, artist and album as first recorded, or
+/// as `enrich` set them) and only gains the facts it lacks; file facts are the newest.
+/// Sources that find songs use this, so none can overwrite a richer record with its own text.
+pub fn remember_found(conn: &Connection, tracks: Vec<Track>) -> Result<Vec<Track>> {
+    let mut out = Vec::with_capacity(tracks.len());
+    let mut changed = Vec::new();
+    for t in tracks {
+        let known = track(conn, &t.id)?;
+        let merged = match known.clone() {
+            Some(k) => fill_gaps(k, t),
+            None => t,
+        };
+        if known.as_ref() != Some(&merged) {
+            changed.push(merged.clone());
+        }
+        out.push(merged);
+    }
+    remember(conn, &changed)?;
+    Ok(out)
+}
+
+fn fill_gaps(mut known: Track, new: Track) -> Track {
+    known.year = known.year.or(new.year);
+    known.no = known.no.or(new.no);
+    known.disc = known.disc.or(new.disc);
+    known.duration = known.duration.or(new.duration);
+    if known.tags.is_empty() {
+        known.tags = new.tags;
+    }
+    known.file = new.file.or(known.file);
+    known
+}
+
+/// Records or refreshes tracks as given (latest facts win): for the crate that owns a song's
+/// facts (the library's saved songs). Others use `remember_found` or `remember_named`.
 pub fn remember(conn: &Connection, tracks: &[Track]) -> Result<()> {
     let mut stmt = conn.prepare_cached(
         "INSERT INTO catalog_tracks (id, json, updated_at) VALUES (?1, ?2, ?3)
@@ -562,6 +597,33 @@ mod bare_tests {
                 },
             )?;
             assert_eq!(again.year, Some(2021), "a richer record already there is kept");
+            Ok(())
+        })
+        .await
+    }
+
+    #[tokio::test]
+    async fn a_found_song_fills_gaps_and_never_overwrites_what_is_known() -> Result<()> {
+        let db = Db::memory()?;
+        db.migrate(&MIGRATIONS)?;
+        db.call(|c| {
+            let bare = song("LUUDE", "", "DOWN UNDER");
+            let resolved = Track {
+                title: "Down Under".into(),
+                artist: "Luude".into(),
+                duration: None,
+                ..bare.clone()
+            };
+            remember(c, std::slice::from_ref(&resolved))?;
+            // Soulseek's file tags for the same id: the raw text again, a length, file facts.
+            let tagged = Track {
+                year: Some(2021),
+                ..bare.clone()
+            };
+            let out = remember_found(c, vec![tagged])?;
+            assert_eq!((out[0].title.as_str(), out[0].artist.as_str()), ("Down Under", "Luude"));
+            assert_eq!((out[0].year, out[0].duration), (Some(2021), Some(200)), "gaps filled");
+            assert_eq!(track(c, &bare.id)?.map(|t| t.title), Some("Down Under".into()));
             Ok(())
         })
         .await
