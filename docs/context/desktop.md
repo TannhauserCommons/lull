@@ -49,6 +49,7 @@ The Tauri v2 project in `app/` (its own Cargo workspace; ADR-0006) shows the hub
   - Only `npm run bundle` and CI's release builds use the real identifier.
 - Pages in `web/desktop/` and the staged web files are embedded at compile time: rebuild after editing them. The web UI itself comes from the hub; the in-process hub embeds it at compile time too (release builds), so web edits need a rebuild here.
 - **Inspecting the webviews:** start with `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333` and open `http://127.0.0.1:9333/json`; each window is a DevTools target.
+  - **Out of sight means hidden:** `node tests/desktop/visibility.mjs [port]` checks, against a running debug build signed in to a hub, that main's page reports hidden while the mini player hides main and while main is minimised, visible again once it is back, and that a song goes on playing out of sight (`platform::set_webview_awake`). It reads the page over a bare DevTools socket: Playwright attached over CDP holds a page "visible", so measure visibility without it.
 - **Where things live** (Windows; Linux uses `~/.config/` and `~/.local/share/` with the same identifier). These are the installed app's; a dev build's are the same paths under its own identifier:
   - `%APPDATA%\io.github.tannhausercommons.lull\settings.json`: the app's settings, including its device token;
   - `%APPDATA%\io.github.tannhausercommons.lull\hub\`: the hub's database (`LULL_DATA_DIR`);
