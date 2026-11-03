@@ -5,6 +5,7 @@
 mod classic;
 mod commands;
 mod discord;
+mod glass;
 mod links;
 mod local_hub;
 mod main_window;
@@ -66,6 +67,7 @@ pub fn run() {
             commands::app_update_check,
             commands::app_update_install,
             commands::resume_after_crash,
+            commands::window_glass,
         ])
         .setup(setup)
         .on_window_event(on_window_event)
@@ -90,11 +92,11 @@ fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         match tray::create(handle) {
             Ok(tray) => {
                 let _ = app.state::<Desktop>().tray.set(tray);
-                platform::follow_taskbar(handle);
             }
             Err(e) => eprintln!("lull: no tray: {e}"),
         }
     }
+    platform::follow_personalize(handle);
     remember_appearance(handle);
     open_links::register(handle);
     if let Some(link) = open_links::from_args(&std::env::args().collect::<Vec<_>>()) {

@@ -17,6 +17,7 @@ The Tauri v2 project in `app/` (its own Cargo workspace; ADR-0006) shows the hub
 | `app/src/desktop/local_hub.rs` | This computer is the hub: `lull_server::run` in-process, its env, the app's own device token, following `hub.restarting` |
 | `app/src/desktop/slskd.rs` | The bundled slskd: one supervisor thread, its folders, port and API key, restart when its share changes, when it stops by itself and when the hub finds it wedged |
 | `app/src/desktop/main_window.rs` | `main`: welcome page, local hub or remote probe, device cookie, runtime IPC grant for the hub origin, close-to-tray |
+| `app/src/desktop/glass.rs` | A see-through `main` (below): which material the theme gets, the listener's and the system's opt-outs |
 | `app/src/desktop/commands.rs` | The commands the pages call, checked at the boundary |
 | `app/src/desktop/open_links.rs` | `lull://open?link=<link>` (a launch's argument, or a second launch's, which hands over): the link opens in `main` as the web UI's `#/open`, once `main` shows the hub. The installed app (the release identifier only, so a dev build never takes its links) registers the scheme at each start: `HKCU\Software\Classes\lull` on Windows, a `lull-lull-links.desktop` entry and `xdg-mime` on Linux (the AppImage's own path when run as one) |
 | `app/src/desktop/tailscale.rs` | `tailscale serve --bg <port>` for the hub, and its status |
@@ -29,7 +30,7 @@ The Tauri v2 project in `app/` (its own Cargo workspace; ADR-0006) shows the hub
 | `app/src/desktop/links.rs`, `signin.rs` | Other sites open in the browser; Last.fm's sign-in goes there and comes back through a one-time listener |
 | `app/src/desktop/discord.rs` | Discord Rich Presence over Discord's IPC pipe; `APPLICATION_ID` is lull's Discord application |
 | `app/src/desktop/settings.rs` | The desktop's settings: the hub choice and this app's token, window options |
-| `app/src/desktop/platform/` | Windows taskbar theme (registry watch), slskd's job object, the taskbar's thumbnail buttons (`taskbar.rs`, glyphs drawn in `glyphs.rs`), a sleeping webview, the browser; Linux tray host, button layout, compositing, media keys |
+| `app/src/desktop/platform/` | Windows taskbar theme and transparency effects (registry watch), the window's glass (DWM, window-vibrancy; a KWin property on Linux), slskd's job object, the taskbar's thumbnail buttons (`taskbar.rs`, glyphs drawn in `glyphs.rs`), a sleeping webview, the browser; Linux tray host, button layout, compositing, media keys |
 | `app/build.rs` | Stages the web files the bundled page needs into `app/dist/`; fetches slskd, yt-dlp and Deno (sha256-pinned) into `app/binaries/`; declares command permissions |
 | `app/tauri.conf.json`, `tauri.windows.conf.json`, `tauri.linux.conf.json` | Shared config (updater key and endpoint, the asset protocol Android's download covers use, scoped to `**/lull-art/*`, and the bundled pages' CSP: Tauri leaves its `style-src` alone, since a nonce it adds would make browsers ignore `'unsafe-inline'` and drop every `style="…"` the pages render); the desktop configs add the slskd, yt-dlp and Deno sidecars and slskd's licence |
 | `app/licenses/THIRD-PARTY.md` | slskd's AGPL notice (shipped next to the app with slskd's `LICENSE`), yt-dlp's and Deno's |
@@ -127,8 +128,9 @@ The web UI never calls Tauri directly. It uses `window.LullDesktop` from `deskto
 
 **What the web UI calls (`LullDesktop`):**
 - `inWrapper`: show Settings > App's desktop rows only when true.
-- `settings()` resolves to `{ server, hub, tray, closeToTray, launchAtLogin, startInTray, miniStyle, miniOnTop, ownTitlebar, discordPresence }`. `server` is the hub's address (`http://127.0.0.1:8484/` when this computer is the hub); `hub` is `local`, `remote` or null. `ownTitlebar` is null off Linux; `discordPresence` is null while the build has no Discord application; without a tray, Close always quits.
-- `setSettings(patch)` takes any of those keys except `server`, `hub` and `tray`. Unknown keys are refused.
+- `settings()` resolves to `{ server, hub, tray, closeToTray, launchAtLogin, startInTray, miniStyle, miniOnTop, ownTitlebar, glass, window, discordPresence }`. `glass` is Settings › Appearance's **See-through window**; `window` is what `main` shows now (`glass`, below). `server` is the hub's address (`http://127.0.0.1:8484/` when this computer is the hub); `hub` is `local`, `remote` or null. `ownTitlebar` is null off Linux; `discordPresence` is null while the build has no Discord application; without a tray, Close always quits.
+- `setSettings(patch)` takes any of those keys except `server`, `hub`, `tray` and `window`. Unknown keys are refused.
+- `glass`: the see-through window. `state` is `{ material, held }` (null until the app answered), and `on(fn)` hears every change. `desktop.js` asks for it itself.
 - `openMini()`: the player bar's Device view button.
 - `openClassic(handoff)` and `onClassic(fn)`: Classic mode (`web/screens/classic.js`), see below. An app older than the page rejects `openClassic`, and the page shows Webamp on its own stage instead.
 - `windowAction('change-server')`: Settings > App, "Change hub…" (the welcome page).
@@ -151,6 +153,7 @@ The web UI never calls Tauri directly. It uses `window.LullDesktop` from `deskto
 | `desktop_settings`, `set_desktop_settings` | `{ patch }` | hub origin |
 | `tailscale_status`, `tailscale_serve` | → `{ installed, running, url, serving }`; an error when this computer isn't the hub | hub origin |
 | `resume_after_crash` | → `{ id, position, playing }` once after `main`'s page reloaded from a crash, else null | hub origin (`main`) |
+| `window_glass` | `{ request: { materials: [mica \| acrylic \| blur \| transparent], dark, reduced } \| null }` → `{ material, held: off \| system \| unsupported \| restart \| null }` | hub origin (`main`) |
 | `app_update`, `app_update_check`, `app_update_install` | → the update report above; install → nothing (restarts) or an error | hub origin (`main`) |
 
 The hub origin gets its capabilities at runtime when the app first loads it: one for `main`, a smaller one for the Classic window (`core:window` show, size, focus, minimise, drag; events; `window_action`, `classic_handoff`, `classic_fit`). An origin used earlier in the same run keeps its grant until restart (Tauri can't revoke one).
@@ -168,6 +171,7 @@ The hub origin gets its capabilities at runtime when the app first loads it: one
 | `appearance` | `main` → Rust and the mini player | `{ design, theme }`; stored and passed in the hash of every bundled page |
 | `ask-close` | Rust → `main` | none: show "keep playing in the tray?" |
 | `app-update` | Rust → all | the update report, on every change of the check (progress per whole percent) |
+| `glass` | Rust → `main` | `{ material, held }`, when what `main` shows changed without the page asking (the listener's switch, Windows' transparency effects) |
 
 ## Behaviour worth knowing
 
@@ -193,6 +197,28 @@ The hub origin gets its capabilities at runtime when the app first loads it: one
   - **Title bar:** native by default. With **Use lull title bar** (`ownTitlebar`, restart), the window is undecorated and draws GNOME header-bar buttons in the order of `button-layout`.
   - **Mini player:** opaque `--sky` fallback without a compositor. On Wayland it shows a one-time note about Always on Top.
   - **Media keys:** grabbed with global shortcuts only when the web UI reports no `navigator.mediaSession` (X11 only). Windows never grabs them: SMTC handles them through Media Session. That path works only while a media element plays: Chromium gives a page a system media session only then. Verified on Windows with a Jellyfin song: Play/Pause, Next, Previous and Stop all reach the web UI's own handlers.
+- **A see-through `main`** (`glass.rs`, docs/themes.md section 12):
+  - **The request.** The theme in use asks through `window_glass`: its materials in its order, for the mode shown. `designs.js` resolves theme.json's `window`, and `desktop.js` asks again whenever the theme or its mode changes.
+  - **The grant.** The app grants the first material this computer draws without lag, unless **See-through window** is off (`held: off`), Windows' Transparency effects are off or the page reports `prefers-reduced-transparency` (`system`), none is drawable (`unsupported`), or Linux made `main` solid (`restart`). The page sets `:root[data-window]` from the answer, and from the `glass` event when the listener's switch or the system changes it.
+  - **Kept for the next launch.** The request is stored as `window` in `settings.json`, so the next launch opens `main` as the theme wants it.
+  - **Windows.** `main` changes live: blur-behind with an empty region lets the page's alpha through, the webview's background turns clear (solid white again when off), and window-vibrancy draws the material. Mica and Acrylic also extend the frame over the whole window, because the system draws them in the frame.
+    - What each Windows draws without lag: Mica from build 22000; Acrylic from 22523, as a system backdrop; plain blur only on Windows 10; clear everywhere.
+    - Acrylic before 22523 and plain blur on Windows 11 go through the old accent policy, whose window trails the pointer when dragged.
+    - Measured on Windows 10 22H2 (165 Hz). A script moved `main` across 400 px, then resized it by 220×160 px, 60 times a second for 5 s each, timing how long DWM took to show each step (`DwmFlush`):
+
+      | `main` | Moving: average, 95th percentile, steps over 1.5 refreshes | Resizing: the same |
+      |---|---|---|
+      | made opaque (as 0.2.1), solid theme | 4.2 ms, 6.9 ms, 0% | 6.1 ms, 8.9 ms, 5% |
+      | made transparent, solid theme | 4.2 ms, 6.8 ms, 0% | 6.5 ms, 9.3 ms, 7% |
+      | clear | 4.7 ms, 7.4 ms, 0% | 6.7 ms, 9.3 ms, 7% |
+      | blur (two runs) | 4.7–4.8 ms, 7.4–7.5 ms, 0% | 6.9–7.1 ms, 9.3–9.6 ms, 9–12% |
+      | acrylic (accent policy) | 10.3 ms, 13.0 ms, 71% | 17.7 ms, 18.5 ms, 97% |
+
+    - Idle, with nothing moving, lull's own processes used the same few tens of ms of CPU per 20 s with glass or without, and no GPU. DWM redraws the blur only when something behind the window changes.
+    - The Personalize registry watch (`follow_personalize`) also follows Transparency effects.
+  - **Linux.** A window gets an alpha channel only when it is made. `main` is made with one when the stored request would be granted (a compositor is needed). Blur is KWin's `_KDE_NET_WM_BLUR_BEHIND_REGION` on X11; GNOME and Wayland get clear glass only.
+  - **The title bar.** On Windows it is always lull's own, so nothing changes. On Linux the native frame or lull's own (`ownTitlebar`) stays as set.
+  - **Bundled pages** in `main` (welcome, unreachable) don't take part: they paint their wallpaper, so the window looks solid.
 - **Window state:** the plugin restores size, position and maximised for `main`, `mini`, `strip` and `classic` (the mini player's and Classic's pages then fit their size). Visibility and decorations are always the wrapper's choice.
 
 ## Known limits

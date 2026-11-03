@@ -1,11 +1,15 @@
 //! Windows: the tray glyph follows the taskbar's theme, not the app's (DESKTOP.md 4), the sidecar
-//! dies with the app, a hidden `main` tells WebView2 so, and links open in the browser.
+//! dies with the app, a hidden `main` tells WebView2 so, a see-through `main` shows the system's
+//! glass, and links open in the browser.
 //! `SystemUsesLightTheme` is that theme; Tauri's ThemeChanged follows the app theme instead, so a
 //! thread waits on the registry key and swaps the glyph when it changes.
 #![allow(unsafe_code)]
 
+use crate::desktop::glass::Material;
 use std::ffi::c_void;
 use std::ptr::null_mut;
+use windows::Win32::Graphics::Dwm::DwmExtendFrameIntoClientArea;
+use windows::Win32::UI::Controls::MARGINS;
 use windows_sys::Win32::Foundation::ERROR_SUCCESS;
 use windows_sys::Win32::System::Registry::{
     HKEY, HKEY_CURRENT_USER, KEY_NOTIFY, KEY_READ, KEY_SET_VALUE, REG_NOTIFY_CHANGE_LAST_SET, REG_OPTION_NON_VOLATILE,
@@ -18,6 +22,16 @@ const PERSONALIZE: *const u16 = w!(r"Software\Microsoft\Windows\CurrentVersion\T
 
 /// A light taskbar. Without the value (Windows 10 before 1903) the taskbar is dark.
 pub fn light_taskbar() -> bool {
+    personalize(w!("SystemUsesLightTheme")) == Some(1)
+}
+
+/// "Transparency effects" (Settings › Personalisation › Colours). Without the value it is on.
+pub fn transparency_effects() -> bool {
+    personalize(w!("EnableTransparency")) != Some(0)
+}
+
+/// A DWORD under the Personalize key, if it is there.
+fn personalize(name: *const u16) -> Option<u32> {
     let mut value: u32 = 0;
     let mut size = size_of::<u32>() as u32;
     // SAFETY: a DWORD read into a u32 of the size we pass; the strings are static and null-terminated.
@@ -25,14 +39,80 @@ pub fn light_taskbar() -> bool {
         RegGetValueW(
             HKEY_CURRENT_USER,
             PERSONALIZE,
-            w!("SystemUsesLightTheme"),
+            name,
             RRF_RT_REG_DWORD,
             null_mut(),
             (&raw mut value).cast::<c_void>(),
             &mut size,
         )
     };
-    status == ERROR_SUCCESS && value == 1
+    (status == ERROR_SUCCESS).then_some(value)
+}
+
+/// What `main` can show here without lag (measured on Windows 10 22H2: docs/context/desktop.md):
+/// - Mica from Windows 11 (build 22000);
+/// - Acrylic from build 22523, where the system draws it as a backdrop. Before that (Windows 10,
+///   Windows 11 21H2) it is the old accent policy, whose window trails the pointer when dragged;
+/// - Blur, the accent policy's plain blur, on Windows 10 only: on Windows 11 it lags the same way;
+/// - Transparent everywhere.
+pub fn glass_materials() -> Vec<Material> {
+    let build = windows_version::OsVersion::current().build;
+    [
+        (Material::Mica, build >= 22000),
+        (Material::Acrylic, build >= 22523),
+        (Material::Blur, (17763..22000).contains(&build)),
+        (Material::Transparent, true),
+    ]
+    .into_iter()
+    .filter_map(|(m, here)| here.then_some(m))
+    .collect()
+}
+
+/// `main` shows `material` behind its page, or is solid again. `main` is made transparent (its own
+/// surface clear, its alpha let through: main_window.rs), so this only turns the webview's background
+/// clear or back to solid white, and has the system draw the material under it. Mica and Acrylic are
+/// drawn in the window's frame, so the frame covers the whole window while one is on.
+pub fn set_glass(window: &tauri::WebviewWindow, material: Option<Material>, dark: bool) -> tauri::Result<()> {
+    let webview: &tauri::Webview = window.as_ref();
+    let clear = tauri::window::Color(0, 0, 0, 0);
+    let solid = tauri::window::Color(255, 255, 255, 255);
+    webview.set_background_color(Some(if material.is_some() { clear } else { solid }))?;
+    let target = window.clone();
+    window.run_on_main_thread(move || {
+        let Ok(hwnd) = target.hwnd() else {
+            return;
+        };
+        // Only one material at a time: whichever was on goes first. Each clear is refused where its
+        // material doesn't exist, which is fine.
+        let _ = window_vibrancy::clear_blur(&target);
+        let _ = window_vibrancy::clear_acrylic(&target);
+        let _ = window_vibrancy::clear_mica(&target);
+        let frame = if matches!(material, Some(Material::Mica | Material::Acrylic)) {
+            -1
+        } else {
+            0
+        };
+        let margins = MARGINS {
+            cxLeftWidth: frame,
+            cxRightWidth: frame,
+            cyTopHeight: frame,
+            cyBottomHeight: frame,
+        };
+        // SAFETY: `hwnd` is `main`'s, alive on this (its UI) thread.
+        let framed = unsafe { DwmExtendFrameIntoClientArea(hwnd, &margins) };
+        let drawn = match material {
+            None | Some(Material::Transparent) => Ok(()),
+            Some(Material::Blur) => window_vibrancy::apply_blur(&target, Some((0, 0, 0, 0))),
+            Some(Material::Acrylic) => window_vibrancy::apply_acrylic(&target, None),
+            Some(Material::Mica) => window_vibrancy::apply_mica(&target, Some(dark)),
+        };
+        if let Err(e) = framed {
+            eprintln!("lull: glass frame: {e}");
+        }
+        if let Err(e) = drawn {
+            eprintln!("lull: glass {material:?}: {e}");
+        }
+    })
 }
 
 /// `<scheme>:` links start `exe` with the link as its argument: `HKCU\Software\Classes\<scheme>`,

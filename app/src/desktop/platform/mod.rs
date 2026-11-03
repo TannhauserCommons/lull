@@ -1,5 +1,5 @@
-//! Where Windows and Linux differ: title bar, tray glyph, transparency, media keys, taskbar
-//! buttons, a sleeping webview, opening links.
+//! Where Windows and Linux differ: title bar, tray glyph, transparency and glass, media keys,
+//! taskbar buttons, a sleeping webview, opening links.
 
 #[cfg(windows)]
 mod glyphs;
@@ -12,6 +12,7 @@ mod windows;
 #[cfg(windows)]
 pub use windows::kill_with_app;
 
+use crate::desktop::glass::Material;
 use crate::desktop::settings::Settings;
 use crate::desktop::state::Platform;
 use tauri::image::Image;
@@ -39,6 +40,24 @@ pub fn show_thumb_buttons(app: &AppHandle, buttons: ThumbButtons) {
     taskbar::show(app, buttons);
     #[cfg(not(windows))]
     let _ = (app, buttons);
+}
+
+/// `main` shows `material` behind its page, or is solid (glass.rs). `dark`: Mica's dark variant.
+/// Linux: only a window made with an alpha channel shows anything.
+pub fn set_glass(window: &WebviewWindow, material: Option<Material>, dark: bool) -> tauri::Result<()> {
+    #[cfg(windows)]
+    return windows::set_glass(window, material, dark);
+    #[cfg(target_os = "linux")]
+    return linux::set_glass(window, material, dark);
+}
+
+/// The system lets windows be see-through: Windows' "Transparency effects" (Settings ›
+/// Personalisation › Colours). Linux has no such switch.
+pub fn transparency_effects() -> bool {
+    #[cfg(windows)]
+    return windows::transparency_effects();
+    #[cfg(not(windows))]
+    true
 }
 
 /// A hidden `main` while Classic mode plays (main_window::sleep). On Linux, WebKitGTK already
@@ -136,6 +155,7 @@ pub fn detect() -> Platform {
         transparent: linux::composited(),
         wayland: linux::wayland(),
         button_layout: linux::button_layout(),
+        glass: linux::glass_materials(),
     };
     #[cfg(not(target_os = "linux"))]
     Platform {
@@ -143,6 +163,7 @@ pub fn detect() -> Platform {
         transparent: true,
         wayland: false,
         button_layout: None,
+        glass: windows::glass_materials(),
     }
 }
 
@@ -219,14 +240,17 @@ fn windows_tray_png(light_taskbar: bool, scale: f64) -> &'static [u8] {
     }
 }
 
-/// Keep the tray glyph matched to the taskbar when the user switches its theme.
-pub fn follow_taskbar(app: &AppHandle) {
+/// Windows' personalisation changed: the tray glyph follows the taskbar's theme, and a see-through
+/// `main` follows "Transparency effects".
+pub fn follow_personalize(app: &AppHandle) {
     #[cfg(windows)]
     {
         use crate::desktop::state::Desktop;
         use tauri::Manager;
         let app = app.clone();
+        // The same key holds "Transparency effects": a see-through `main` follows it too.
         windows::watch_taskbar(move || {
+            crate::desktop::glass::refresh(&app);
             if let Some(tray) = app.state::<Desktop>().tray.get() {
                 match tray_icon(&app) {
                     Ok(image) => tray.set_icon(image),

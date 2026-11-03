@@ -3,6 +3,7 @@
 //! Launch at login is not stored: the OS autostart entry is its only source of truth.
 
 use crate::desktop::discord::Look;
+use crate::desktop::glass::Request;
 use crate::pages::Appearance;
 use serde::{Deserialize, Serialize};
 
@@ -17,6 +18,11 @@ pub struct Settings {
     pub last_connected: Option<u64>,
     /// Design and theme the web UI last reported, passed to the bundled pages (DESKTOP.md 6.1).
     pub appearance: Appearance,
+    /// What the theme in use last asked to show behind `main` (glass.rs), so the next launch opens
+    /// the window as the theme wants it. None: a solid theme.
+    pub window: Option<Request>,
+    /// "See-through window" (Settings › Appearance): off keeps `main` solid whatever the theme asks.
+    pub glass: bool,
     pub close_to_tray: bool,
     /// The one-time "keep playing in the tray?" question was answered with "Don't ask again".
     pub close_asked: bool,
@@ -39,6 +45,8 @@ impl Default for Settings {
             token: None,
             last_connected: None,
             appearance: Appearance::default(),
+            window: None,
+            glass: true,
             close_to_tray: true,
             close_asked: false,
             start_in_tray: false,

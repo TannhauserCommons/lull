@@ -75,15 +75,23 @@ windows-sys = { version = "=0.61.2", features = [
   "Win32_System_Threading",
 ] }
 # COM for the taskbar's thumbnail buttons (ITaskbarList3), the window subclass that hears their
-# clicks, and opening links in the browser. Same version as Tauri's, which already enables most of it.
+# clicks, opening links in the browser, and a see-through `main` (its DWM frame). Same
+# version as Tauri's, which already enables most of it.
 windows = { version = "=0.62.2", features = [
   "Win32_Foundation",
+  "Win32_Graphics_Dwm",
   "Win32_Graphics_Gdi",
   "Win32_System_Com",
+  "Win32_UI_Controls",
   "Win32_UI_HiDpi",
   "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging",
 ] }
+# A see-through `main` (glass.rs): the system's Mica, Acrylic and blur. Tauri's own set_effects
+# drops the system's answer, and the page must know what it got. Same version as Tauri's.
+window-vibrancy = "=0.8.1"
+# Which of those this Windows draws without lag (its build). Same version as window-vibrancy's.
+windows-version = "=0.1.7"
 # The webview behind a window: a hidden `main` tells WebView2 it isn't visible and needs little
 # memory while Classic mode plays. Same version as Tauri's.
 webview2-com = "=0.39.1"

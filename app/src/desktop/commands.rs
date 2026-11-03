@@ -3,6 +3,7 @@
 
 use crate::desktop::classic::{self, Handoff};
 use crate::desktop::discord::{Presence, StatusLine, WhenPaused};
+use crate::desktop::glass::{self, Grant, Request};
 use crate::desktop::local_hub::{self, PORT};
 use crate::desktop::main_window;
 use crate::desktop::mini;
@@ -151,6 +152,9 @@ pub struct DesktopSettings {
     mini_on_top: bool,
     /// None where the setting doesn't exist (only Linux has it).
     own_titlebar: Option<bool>,
+    /// "See-through window" (Settings › Appearance), and what `main` shows now.
+    glass: bool,
+    window: Grant,
     /// None while this build has no Discord application (discord.rs), and so is its look:
     /// the member list's words, the album cover, the buttons, and what a pause does.
     discord_presence: Option<bool>,
@@ -179,6 +183,8 @@ pub fn desktop_settings(app: AppHandle) -> Result<DesktopSettings, String> {
         mini_style: s.mini_style,
         mini_on_top: s.mini_on_top,
         own_titlebar: cfg!(target_os = "linux").then_some(s.own_titlebar),
+        glass: s.glass,
+        window: desktop.glass(),
         discord_presence: Presence::available().then_some(s.discord_presence),
         discord_status: Presence::available().then_some(s.discord.status),
         discord_cover: Presence::available().then_some(s.discord.cover),
@@ -196,6 +202,7 @@ pub struct SettingsPatch {
     mini_style: Option<MiniStyle>,
     mini_on_top: Option<bool>,
     own_titlebar: Option<bool>,
+    glass: Option<bool>,
     discord_presence: Option<bool>,
     discord_status: Option<StatusLine>,
     discord_cover: Option<bool>,
@@ -242,6 +249,9 @@ pub fn set_desktop_settings(app: AppHandle, patch: SettingsPatch) -> Result<(), 
         if let Some(on) = patch.own_titlebar {
             s.own_titlebar = on;
         }
+        if let Some(on) = patch.glass {
+            s.glass = on;
+        }
         if let Some(on) = patch.discord_presence {
             s.discord_presence = on;
         }
@@ -260,6 +270,9 @@ pub fn set_desktop_settings(app: AppHandle, patch: SettingsPatch) -> Result<(), 
     });
     if patch.touches_discord() {
         player::refresh(&app);
+    }
+    if patch.glass.is_some() {
+        glass::refresh(&app);
     }
     Ok(())
 }
@@ -324,4 +337,11 @@ pub async fn app_update_install(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn resume_after_crash(app: AppHandle) -> Option<Resume> {
     recovery::take_resume(&app)
+}
+
+/// The web UI in `main`: what its theme asks to show behind the page for the mode it shows (null:
+/// solid). The answer is what `main` shows now; later changes arrive as the `glass` event.
+#[tauri::command]
+pub fn window_glass(app: AppHandle, request: Option<Request>) -> Grant {
+    glass::ask(&app, request)
 }

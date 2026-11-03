@@ -2,6 +2,7 @@
 //! didn't start) when there is no hub yet or it doesn't answer. DESKTOP.md 1, 2 and 6; ADR-0006.
 
 use crate::desktop::classic;
+use crate::desktop::glass;
 use crate::desktop::links;
 use crate::desktop::local_hub;
 use crate::desktop::platform;
@@ -41,6 +42,7 @@ const HUB_PERMISSIONS: &[&str] = &[
     "allow-app-update-check",
     "allow-app-update-install",
     "allow-resume-after-crash",
+    "allow-window-glass",
 ];
 
 /// What Webamp's page in the Classic window may call (classic.rs): fit and show its window (at its
@@ -127,6 +129,11 @@ fn create(app: &AppHandle, url: Url) -> tauri::Result<WebviewWindow> {
     // Show once painted (no white flash), unless the tray holds a connected lull ("Start in the tray").
     let reveal = !(settings.start_in_tray && desktop.has_tray() && settings.hub.is_some());
     let reveal = std::sync::atomic::AtomicBool::new(reveal);
+    // A window shows the desktop only if it was made able to (glass.rs). On Windows `main` always is,
+    // so glass follows the theme live: the window itself paints nothing, and a solid theme's opaque
+    // page and webview cover it. Linux pays for an alpha channel, so only when the theme will use it.
+    let alpha = cfg!(windows) || (desktop.platform.transparent && glass::wants_alpha(app));
+    desktop.set_main_alpha(alpha);
     let main = recovery::builder(app, LABEL, WebviewUrl::External(url))
         .title("lull")
         .inner_size(1280.0, 800.0)
@@ -134,6 +141,7 @@ fn create(app: &AppHandle, url: Url) -> tauri::Result<WebviewWindow> {
         .center()
         .visible(false)
         .decorations(titlebar.is_none())
+        .transparent(alpha)
         .shadow(true)
         // The web UI needs HTML5 drag and drop (rows, M3U and .wsz drops); the native handler blocks it.
         .disable_drag_drop_handler()
@@ -152,6 +160,8 @@ fn create(app: &AppHandle, url: Url) -> tauri::Result<WebviewWindow> {
         .build()?;
     platform::add_thumb_buttons(&main);
     recovery::watch(&main);
+    // See-through from its first frame when the theme in use asks (and may: glass.rs).
+    glass::apply(app);
     Ok(main)
 }
 

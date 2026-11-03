@@ -3,6 +3,7 @@
 
 use crate::desktop::classic::Held;
 use crate::desktop::discord::Presence;
+use crate::desktop::glass::{Grant, Material};
 use crate::desktop::local_hub::LocalHub;
 use crate::desktop::settings::{HubChoice, Settings};
 use crate::desktop::tray::Tray;
@@ -51,6 +52,8 @@ pub struct Platform {
     pub wayland: bool,
     /// GNOME's window-button order, for the optional lull title bar on Linux.
     pub button_layout: Option<String>,
+    /// What a see-through `main` can show here without lag (glass.rs), in no particular order.
+    pub glass: Vec<Material>,
 }
 
 pub struct Desktop {
@@ -62,6 +65,11 @@ pub struct Desktop {
     main_asleep: AtomicBool,
     /// `main` shows the hub's web UI (not a bundled page).
     on_hub: AtomicBool,
+    /// `main` can show the desktop behind its page (glass.rs): always on Windows, on Linux only when
+    /// it was made with an alpha channel.
+    main_alpha: AtomicBool,
+    /// What `main` shows behind its page now.
+    glass: Mutex<Grant>,
     /// Hub origins already given their IPC capability this run.
     granted: Mutex<HashSet<String>>,
     /// A shared link handed to the app, until the hub's web UI opens it (open_links.rs).
@@ -87,6 +95,11 @@ impl Desktop {
             now: Mutex::new((NowPlaying::default(), Instant::now())),
             main_asleep: AtomicBool::new(false),
             on_hub: AtomicBool::new(false),
+            main_alpha: AtomicBool::new(cfg!(windows)),
+            glass: Mutex::new(Grant {
+                material: None,
+                held: None,
+            }),
             granted: Mutex::new(HashSet::new()),
             link: Mutex::new(None),
             platform,
@@ -141,6 +154,23 @@ impl Desktop {
 
     pub fn set_main_asleep(&self, asleep: bool) {
         self.main_asleep.store(asleep, Ordering::Relaxed);
+    }
+
+    pub fn main_alpha(&self) -> bool {
+        self.main_alpha.load(Ordering::Relaxed)
+    }
+
+    /// Linux: `main` was just made, with an alpha channel or without.
+    pub fn set_main_alpha(&self, alpha: bool) {
+        self.main_alpha.store(alpha, Ordering::Relaxed);
+    }
+
+    pub fn glass(&self) -> Grant {
+        *lock(&self.glass)
+    }
+
+    pub fn set_glass(&self, grant: Grant) {
+        *lock(&self.glass) = grant;
     }
 
     /// The hub in use and this app's token there: what Rust needs to call its API.

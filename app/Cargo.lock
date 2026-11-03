@@ -2648,8 +2648,10 @@ dependencies = [
  "ureq",
  "webkit2gtk",
  "webview2-com",
+ "window-vibrancy",
  "windows",
  "windows-sys 0.61.2",
+ "windows-version",
  "zip",
 ]
 

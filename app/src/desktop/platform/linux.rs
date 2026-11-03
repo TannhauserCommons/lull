@@ -1,6 +1,7 @@
 //! Linux: what the desktop session offers (DESKTOP.md 2.2, 3, 4, 5). Read on the main thread, where
 //! GTK lives.
 
+use crate::desktop::glass::Material;
 use crate::desktop::main_window::report;
 use crate::desktop::player;
 use gtk::gio::{self, prelude::*};
@@ -75,6 +76,53 @@ pub fn composited() -> bool {
 
 pub fn wayland() -> bool {
     std::env::var_os("WAYLAND_DISPLAY").is_some()
+}
+
+/// What a see-through `main` can show here: the desktop as it is wherever a compositor gives windows
+/// an alpha channel, and blurred where KWin is asked on X11 (`_KDE_NET_WM_BLUR_BEHIND_REGION`).
+/// GNOME has no blur an app can ask for, and Wayland's KWin takes it only over its own protocol.
+pub fn glass_materials() -> Vec<Material> {
+    if !composited() {
+        return Vec::new();
+    }
+    let kde = std::env::var("XDG_CURRENT_DESKTOP").is_ok_and(|d| d.split(':').any(|d| d == "KDE"));
+    let blur = kde && !wayland();
+    [(Material::Blur, blur), (Material::Transparent, true)]
+        .into_iter()
+        .filter_map(|(m, here)| here.then_some(m))
+        .collect()
+}
+
+/// `main` shows `material` behind its page, or is solid again. Only a window made with an alpha
+/// channel can (glass.rs decides that when it makes `main`); the webview then paints nothing where
+/// the page paints nothing, and KWin blurs behind the whole window when asked.
+pub fn set_glass(window: &tauri::WebviewWindow, material: Option<Material>, _dark: bool) -> tauri::Result<()> {
+    use gtk::prelude::WidgetExt;
+    let webview: &tauri::Webview = window.as_ref();
+    let clear = tauri::window::Color(0, 0, 0, 0);
+    let solid = tauri::window::Color(255, 255, 255, 255);
+    webview.set_background_color(Some(if material.is_some() { clear } else { solid }))?;
+    let target = window.clone();
+    window.run_on_main_thread(move || {
+        let Some(gdk_window) = target.gtk_window().ok().and_then(|w| w.window()) else {
+            return;
+        };
+        let blur = gtk::gdk::Atom::intern("_KDE_NET_WM_BLUR_BEHIND_REGION");
+        if material == Some(Material::Blur) {
+            // No rectangles: the whole window.
+            let cardinal = gtk::gdk::Atom::intern("CARDINAL");
+            gtk::gdk::property_change(
+                &gdk_window,
+                &blur,
+                &cardinal,
+                32,
+                gtk::gdk::PropMode::Replace,
+                gtk::gdk::ChangeData::ULongs(&[]),
+            );
+        } else {
+            gtk::gdk::property_delete(&gdk_window, &blur);
+        }
+    })
 }
 
 /// The fallback when WebKitGTK ships without Media Session: grab the media keys and forward them
