@@ -24,7 +24,7 @@ use tokio::time::Instant;
 use super::cache::{Cache, DAY};
 use super::{AlbumSource, Song, year};
 use crate::artist::discography::{Entry, Origin};
-use crate::search::merge::{AlbumHit, Found, SongHit};
+use crate::search::merge::{AlbumHit, ArtistHit, Found, SongHit};
 
 const SERVICE: &str = "iTunes";
 const API: &str = "https://itunes.apple.com/search";
@@ -177,11 +177,10 @@ impl Itunes {
 
 impl Itunes {
     /// The store's songs (`Entity::Song`) or albums for `term`, with their ids and covers, for
-    /// share links (`share.rs` caches the outcome). Fails while the budget is spent.
+    /// share links (`share.rs` caches the outcome). Over the budget it waits its turn, after
+    /// searches' songs.
     pub async fn listings(&self, term: &str, entity: Entity) -> Result<Vec<Listing>> {
-        if !self.budget().take(Instant::now()) {
-            return Err(Error::unavailable(SERVICE, "lull's calls for this minute are spent"));
-        }
+        self.wait_turn(Need::Spare).await?;
         let name = match entity {
             Entity::Song => "song",
             Entity::Album => "album",
@@ -204,6 +203,37 @@ impl Itunes {
 }
 
 impl Itunes {
+    /// What the store id `id` is (a song with its album, an album, or an artist), for a link
+    /// someone pasted: in this hub's store, else the US one, where Odesli's links mostly point.
+    /// Kept a month; it waits its turn, as the listener is waiting.
+    pub async fn lookup(&self, id: u64) -> Result<Found> {
+        let mut countries = vec![self.country.as_str()];
+        if !self.country.eq_ignore_ascii_case("US") {
+            countries.push("US");
+        }
+        for country in countries {
+            let key = format!("it:lookup:{country}:{id}");
+            let found = self
+                .cache
+                .get(key, 30 * DAY, || async {
+                    self.wait_turn(Need::Whole).await?;
+                    let id = id.to_string();
+                    let body: Value = self
+                        .http
+                        .json(SERVICE, |c| {
+                            c.get(LOOKUP).query(&[("id", id.as_str()), ("country", country)])
+                        })
+                        .await?;
+                    looked_up(body)
+                })
+                .await?;
+            if !(found.songs.is_empty() && found.albums.is_empty() && found.artists.is_empty()) {
+                return Ok(found);
+            }
+        }
+        Ok(Found::default())
+    }
+
     /// The store's artists called `name` (case and a leading "the" aside), best known first. Kept
     /// a month: an artist's id doesn't change.
     pub async fn artists(&self, name: &str) -> Result<Vec<StoreArtist>> {
@@ -410,6 +440,32 @@ pub fn artist_catalog(albums: Value, songs_body: Value, id: u64) -> Result<Artis
     })
 }
 
+/// A `lookup` answer as what it is: a song with its album, an album, or an artist.
+pub fn looked_up(body: Value) -> Result<Found> {
+    let wrapper = body
+        .pointer("/results/0/wrapperType")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    Ok(match wrapper.as_str() {
+        "track" => songs(body)?,
+        "collection" => albums(body)?,
+        "artist" => Found {
+            artists: body
+                .pointer("/results/0/artistName")
+                .and_then(Value::as_str)
+                .map(|name| ArtistHit {
+                    name: name.to_owned(),
+                    ..ArtistHit::default()
+                })
+                .into_iter()
+                .collect(),
+            ..Found::default()
+        },
+        _ => Found::default(),
+    })
+}
+
 /// "Halloween XII (DJ Mix)", "Gold (Mixed)": a DJ's set.
 fn is_dj_mix(title: &str) -> bool {
     let t = title.to_lowercase();
@@ -444,7 +500,8 @@ pub enum Entity {
 pub enum Need {
     /// A search's songs, an artist page's store lookup: may use the whole budget.
     Whole,
-    /// A search's albums, an artist page's catalog: only what leaves `SONGS_RESERVE` for songs.
+    /// A search's albums, an artist page's catalog, a share link: what leaves `SONGS_RESERVE`
+    /// for songs.
     Spare,
     /// Work nobody is looking at (matching a playlist link's songs): spare calls, served last.
     Background,

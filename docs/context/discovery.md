@@ -147,7 +147,15 @@ Code: `src/search/` (`mod.rs` runs a query, `merge.rs` merges and ranks), `src/a
 - **Why not Odesli's API:** its keyless API answers 401 `PUBLIC_API_ACCESS_DEPRECATED` (checked 2026-11-02). Its pages still resolve an iTunes id, so lull builds the page URL and makes no Odesli call. `song.link/i/<collectionId>` and `artist.link/i/<artistId>` don't resolve; `album.link/i/<collectionId>` does.
 - **Artists, and anything the store doesn't list:** the Last.fm page (`https://www.last.fm/music/<artist>[/_/<track> | /<album>]`), `source: "lastfm"`.
 - **Artwork:** the store's cover at 600 px (`…/600x600bb.jpg`), else the public source the catalog knows for the album or artist (Deezer, iTunes, the Cover Art Archive) at 600 px, else `null`.
-- **Cached** in `discovery_cache` (`share:<kind>:<id>`): store links 30 days, Last.fm fallbacks 1 day, so a release that reaches the store later gets its link. An expired answer is served when iTunes fails. One link is resolved at a time, so the same link asked for twice at once costs one call. iTunes calls share the 18-a-minute budget with search; with it spent and nothing cached the answer is 503.
+- **Cached** in `discovery_cache` (`share:<kind>:<id>`): store links 30 days, Last.fm fallbacks 1 day, so a release that reaches the store later gets its link. An expired answer is served when iTunes fails. One link is resolved at a time, so the same link asked for twice at once costs one call. iTunes calls share the 18-a-minute budget with search; over it the call waits its turn (after searches' songs), and only a store that fails answers 503.
+- **`link`, what Copy link copies,** is `url` followed by `#lull?` and what lull knows (`open::fragment`): `kind=song|album|artist`, `artist`, `title`, `album`, `by` (the album's artist when it differs), `length` (s), `mbid`, and the album's catalog id (`deezer=` or `itunes=`). Public facts only, never the hub's address or a token; the page ignores everything after `#`.
+
+## Opening links (`GET /api/open?link=`)
+
+`open.rs`: a link someone shared becomes this hub's own page, on any hub.
+- **Read:** a lull link's `#lull?` ids first (whatever page precedes them); else song.link and album.link (`/i/<iTunes id>`), Apple Music (`?i=<song>` or the last path id), Deezer `track|album|artist/<id>`, MusicBrainz `release-group/<mbid>`, Last.fm `music/<artist>[/_/<song> | /<album>]` (names). Anything else is a 400 saying what lull reads. Playlist links aren't read here: the UI opens them as an outside playlist.
+- **Asked:** an iTunes id with one `lookup` (this hub's store, then the US one; a month in the cache; it waits its turn of the budget as a search's songs do), a Deezer id by id (answers where Deezer is closed), a release group from MusicBrainz.
+- **Recorded** like a search row (`store.tracks`, `store.albums`, `store.artists`), the album with its catalog source so its page lists the tracklist; a song named without an album (Last.fm) is looked for in the catalog first (`Catalog::find_song`). The same names give the same ids on every hub (`ids::TrackId::of`).
 
 ## Playlists in search
 

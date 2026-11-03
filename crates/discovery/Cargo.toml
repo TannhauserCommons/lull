@@ -15,6 +15,9 @@ axum.workspace = true
 # Query strings for ListenBrainz, MusicBrainz and Last.fm reads.
 reqwest = { workspace = true, features = ["query"] }
 rusqlite.workspace = true
+# Reading the links people paste and writing a lull link's ids (`open.rs`); the build reqwest and
+# collection already use.
+url = "=2.5.8"
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

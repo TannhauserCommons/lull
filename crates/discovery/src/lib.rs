@@ -6,6 +6,7 @@ mod art;
 mod artist;
 mod feed;
 mod mix;
+mod open;
 mod pages;
 mod radio;
 mod search;
@@ -205,6 +206,7 @@ pub fn router(svc: Arc<Service>) -> Router {
         .route("/api/catalog/resolve", axum::routing::post(search::resolve::post))
         .route("/api/feed", get(feed::get))
         .route("/api/share/{kind}/{id}", get(share::get))
+        .route("/api/open", get(open::open))
         .route("/api/radio", get(radio_tracks))
         .route("/api/albums/{id}", get(pages::album))
         .route("/api/artists/{id}", get(artist::page))

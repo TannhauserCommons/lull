@@ -6,6 +6,10 @@
 //! still resolve an iTunes id to every service. Artists, and anything the store doesn't
 //! list, get their Last.fm page. Answers are kept in the database; one is resolved at a time,
 //! so the same link asked for twice at once costs one iTunes call.
+//!
+//! `link`, what "Copy link" copies, is that page followed by `#lull?` and the names and public
+//! ids lull knows (`open::fragment`): any lull opens it as its own page (`open.rs`), and the
+//! page ignores it. Never the hub's address.
 
 use std::sync::Arc;
 
@@ -18,6 +22,7 @@ use tokio::sync::Mutex;
 
 use crate::Service;
 use crate::art;
+use crate::open::{self, Item};
 use crate::sources::cache::DAY;
 use crate::sources::itunes::{Entity, Listing};
 
@@ -28,7 +33,15 @@ const KEEP_FALLBACK_S: i64 = DAY;
 /// Covers handed out for sharing: big enough for Discord, small enough to load fast.
 const ARTWORK_PX: u32 = 600;
 
-/// `GET /api/share/{kind}/{id}` answer.
+/// `GET /api/share/{kind}/{id}` answer: the public page, and the lull link to it.
+#[derive(Debug, Serialize)]
+pub struct Answer {
+    #[serde(flatten)]
+    share: Share,
+    link: String,
+}
+
+/// The public page found for an item, kept.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Share {
     pub url: String,
@@ -50,25 +63,31 @@ pub struct Shares {
     one: Mutex<()>,
 }
 
-/// What a share link is for, with what lull knows of it.
+/// What a share link is for: what lull knows of it (`item`), and the album or artist whose
+/// picture it shows.
 enum Shared {
-    Track {
-        artist: String,
-        title: String,
-        album: AlbumId,
-    },
-    Album {
-        artist: String,
-        title: String,
-        id: AlbumId,
-    },
-    Artist {
-        name: String,
-        id: ArtistId,
-    },
+    Track { item: Item, album: AlbumId },
+    Album { item: Item, id: AlbumId },
+    Artist { item: Item, id: ArtistId },
 }
 
-pub async fn get(State(svc): State<Arc<Service>>, Path((kind, id)): Path<(String, String)>) -> Result<Json<Share>> {
+impl Shared {
+    fn item(&self) -> &Item {
+        match self {
+            Shared::Track { item, .. } | Shared::Album { item, .. } | Shared::Artist { item, .. } => item,
+        }
+    }
+
+    /// The artist, and the song's or album's title (empty for an artist).
+    fn names(&self) -> (&str, &str) {
+        match self.item() {
+            Item::Track { artist, title, .. } | Item::Album { artist, title, .. } => (artist, title),
+            Item::Artist { name, .. } => (name, ""),
+        }
+    }
+}
+
+pub async fn get(State(svc): State<Arc<Service>>, Path((kind, id)): Path<(String, String)>) -> Result<Json<Answer>> {
     let shared = known(&svc, &kind, id.clone())
         .await?
         .ok_or_else(|| Error::NotFound(format!("{kind} {id} is unknown to lull.")))?;
@@ -86,31 +105,57 @@ pub async fn get(State(svc): State<Arc<Service>>, Path((kind, id)): Path<(String
             Error::Upstream { service, reason } => Error::Unavailable { service, reason },
             e => e,
         })?;
-    Ok(Json(share))
+    let link = format!("{}#{}", share.url, open::fragment(shared.item()));
+    Ok(Json(Answer { share, link }))
 }
 
-/// The track, album or artist an id stands for; `None` for an id lull never handed out.
+/// The track, album or artist an id stands for, with the album's catalog source; `None` for an
+/// id lull never handed out.
 async fn known(svc: &Service, kind: &str, id: String) -> Result<Option<Shared>> {
     Ok(match kind {
-        "track" if id.starts_with(TrackId::PREFIX) => svc.store.track(TrackId(id)).await?.map(|t| Shared::Track {
-            artist: t.artist,
-            title: t.title,
-            album: t.album_id,
-        }),
+        "track" if id.starts_with(TrackId::PREFIX) => match svc.store.track(TrackId(id)).await? {
+            Some(t) => {
+                let on = svc.store.album_ref(t.album_id.clone()).await?;
+                let album_artist = on.map(|a| a.artist).filter(|by| *by != t.artist);
+                let album_source = svc.store.album_source(t.album_id.clone()).await?;
+                Some(Shared::Track {
+                    item: Item::Track {
+                        artist: t.artist,
+                        title: t.title,
+                        album: t.album,
+                        album_artist,
+                        duration: t.duration,
+                        album_source,
+                    },
+                    album: t.album_id,
+                })
+            }
+            None => None,
+        },
         "album" if id.starts_with(AlbumId::PREFIX) => {
             let id = AlbumId(id);
-            svc.store.album_ref(id.clone()).await?.map(|a| Shared::Album {
-                artist: a.artist,
-                title: a.title,
-                id,
-            })
+            match svc.store.album_ref(id.clone()).await? {
+                Some(a) => Some(Shared::Album {
+                    item: Item::Album {
+                        artist: a.artist,
+                        title: a.title,
+                        mbid: a.musicbrainz_id,
+                        source: svc.store.album_source(id.clone()).await?,
+                    },
+                    id,
+                }),
+                None => None,
+            }
         }
         "artist" if id.starts_with(ArtistId::PREFIX) => {
             let id = ArtistId(id);
-            svc.store
-                .artist_ref(id.clone())
-                .await?
-                .map(|a| Shared::Artist { name: a.name, id })
+            svc.store.artist_ref(id.clone()).await?.map(|a| Shared::Artist {
+                item: Item::Artist {
+                    name: a.name,
+                    mbid: a.musicbrainz_id,
+                },
+                id,
+            })
         }
         _ => None,
     })
@@ -119,13 +164,14 @@ async fn known(svc: &Service, kind: &str, id: String) -> Result<Option<Shared>> 
 /// The iTunes Store's song or album behind an Odesli page, else the Last.fm page. Artwork is
 /// the store's cover, else the picture the catalog already knows a public source for.
 async fn resolve(svc: &Service, shared: &Shared) -> Result<Share> {
+    let (artist, title) = shared.names();
     let found = match shared {
-        Shared::Track { artist, title, .. } => {
+        Shared::Track { .. } => {
             let listings = svc.itunes.listings(&format!("{artist} {title}"), Entity::Song).await?;
             best(&listings, artist, title, |l| (l.track_id, l.track_name.as_deref()))
                 .map(|(id, l)| (format!("https://song.link/i/{id}"), cover(l)))
         }
-        Shared::Album { artist, title, .. } => {
+        Shared::Album { .. } => {
             let listings = svc.itunes.listings(&format!("{artist} {title}"), Entity::Album).await?;
             best(&listings, artist, title, |l| {
                 (l.collection_id, l.collection_name.as_deref())
@@ -205,10 +251,11 @@ async fn known_picture(svc: &Service, shared: &Shared) -> Result<Option<String>>
 /// Last.fm's page for it: `/music/<artist>[/_/<track> | /<album>]`, each name one encoded
 /// path segment.
 fn lastfm_page(shared: &Shared) -> String {
+    let (artist, title) = shared.names();
     let segments: Vec<&str> = match shared {
-        Shared::Track { artist, title, .. } => vec![artist, "_", title],
-        Shared::Album { artist, title, .. } => vec![artist, title],
-        Shared::Artist { name, .. } => vec![name],
+        Shared::Track { .. } => vec![artist, "_", title],
+        Shared::Album { .. } => vec![artist, title],
+        Shared::Artist { .. } => vec![artist],
     };
     const BASE: &str = "https://www.last.fm/music";
     let Ok(mut url) = reqwest::Url::parse(BASE) else {
@@ -271,8 +318,14 @@ mod tests {
     #[test]
     fn the_lastfm_fallback_encodes_each_name() {
         let track = Shared::Track {
-            artist: "Sigur Rós".into(),
-            title: "Hoppípolla / Með blóðnasir".into(),
+            item: Item::Track {
+                artist: "Sigur Rós".into(),
+                title: "Hoppípolla / Með blóðnasir".into(),
+                album: String::new(),
+                album_artist: None,
+                duration: None,
+                album_source: None,
+            },
             album: AlbumId("al-x".into()),
         };
         assert_eq!(
@@ -280,7 +333,10 @@ mod tests {
             "https://www.last.fm/music/Sigur%20R%C3%B3s/_/Hopp%C3%ADpolla%20%2F%20Me%C3%B0%20bl%C3%B3%C3%B0nasir"
         );
         let artist = Shared::Artist {
-            name: "AC/DC".into(),
+            item: Item::Artist {
+                name: "AC/DC".into(),
+                mbid: None,
+            },
             id: ArtistId("ar-x".into()),
         };
         assert_eq!(lastfm_page(&artist), "https://www.last.fm/music/AC%2FDC");

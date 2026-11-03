@@ -144,6 +144,36 @@ impl Deezer {
             .await
     }
 
+    /// One song by id, with its album, kept a month (answers where the catalog is closed too).
+    pub async fn track(&self, id: u64) -> Result<Option<SongHit>> {
+        self.cache
+            .get(format!("dz:track:{id}"), 30 * DAY, || async {
+                let body = self.get(&format!("track/{id}"), &[]).await?;
+                if body.get("data").is_some() {
+                    return Ok(None);
+                }
+                let track: RawTrack = serde_json::from_value(body)
+                    .map_err(|e| Error::upstream(SERVICE, format!("unexpected track answer: {e}")))?;
+                Ok(Some(hit(track)))
+            })
+            .await
+    }
+
+    /// One album by id, kept a month (answers where the catalog is closed too).
+    pub async fn album(&self, id: u64) -> Result<Option<AlbumHit>> {
+        self.cache
+            .get(format!("dz:album:{id}"), 30 * DAY, || async {
+                let body = self.get(&format!("album/{id}"), &[]).await?;
+                if body.get("data").is_some() {
+                    return Ok(None);
+                }
+                let album: RawAlbum = serde_json::from_value(body)
+                    .map_err(|e| Error::upstream(SERVICE, format!("unexpected album answer: {e}")))?;
+                Ok(Some(album_hit(album, 0.0)))
+            })
+            .await
+    }
+
     /// Whether Deezer's catalog is open where lull runs (`/infos`).
     pub async fn is_open(&self) -> Result<bool> {
         self.wait_turn().await;
@@ -541,16 +571,20 @@ pub fn albums_of(body: Value) -> Result<Vec<AlbumHit>> {
     Ok(raw
         .into_iter()
         .enumerate()
-        .map(|(i, a)| AlbumHit {
-            title: a.title,
-            artist: a.artist.name,
-            kind: a.record_type.as_deref().map(kind),
-            popularity: 0.6 * (1.0 - i as f64 / n),
-            art: a.md5_image.as_deref().and_then(|m| picture("cover", m)),
-            source: a.id.map(AlbumSource::Deezer),
-            ..AlbumHit::default()
-        })
+        .map(|(i, a)| album_hit(a, 0.6 * (1.0 - i as f64 / n)))
         .collect())
+}
+
+fn album_hit(a: RawAlbum, popularity: f64) -> AlbumHit {
+    AlbumHit {
+        title: a.title,
+        artist: a.artist.name,
+        kind: a.record_type.as_deref().map(kind),
+        popularity,
+        art: a.md5_image.as_deref().and_then(|m| picture("cover", m)),
+        source: a.id.map(AlbumSource::Deezer),
+        ..AlbumHit::default()
+    }
 }
 
 pub fn artists_of(body: Value) -> Result<Vec<ArtistHit>> {
