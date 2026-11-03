@@ -174,7 +174,9 @@ jobs:
           apt-get update -qq
           apt-get install -y -qq --no-install-recommends build-essential rustup sdkmanager apksigcopier fdroidserver
           sdkmanager --install "ndk;28.2.13676358"
-      - uses: actions/cache@v4
+      # Saved as soon as the Tauri CLI is built, not at the end: a push to main cancels the run before.
+      - id: cargo
+        uses: actions/cache/restore@v4
         with:
           path: |
             /opt/cargo/registry
@@ -184,6 +186,15 @@ jobs:
           key: android-cargo-${{ hashFiles('app/Cargo.lock', 'app/package.json', 'rust-toolchain.toml') }}
           restore-keys: android-cargo-
       - run: sh scripts/android-toolchains.sh
+      - if: steps.cargo.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            /opt/cargo/registry
+            /opt/cargo/bin
+            /opt/cargo/.crates.toml
+            /opt/cargo/.crates2.json
+          key: ${{ steps.cargo.outputs.cache-primary-key }}
       - name: Signing key
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
