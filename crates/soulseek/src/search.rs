@@ -1087,26 +1087,10 @@ fn albums(folders: HashMap<(String, String), Folder>, sources: &Sources) -> Vec<
 /// Records found tracks in the catalog and returns each as the catalog then has it. Ids are
 /// normalised, so a peer's tags often name a song the catalog already knows in another spelling
 /// ("Cyberpunk_ Edgerunners" for "Cyberpunk: Edgerunners", the track artist as album artist).
-/// Such a song keeps the catalog's names and album; the file only adds what it is.
+/// Such a song keeps the catalog's names and album; the file only adds what it is
+/// (`catalog::remember_found`, the rule every source that finds songs follows).
 fn record(c: &rusqlite::Connection, found: Vec<Track>) -> Result<Vec<Track>> {
-    let mut out = Vec::with_capacity(found.len());
-    for t in found {
-        out.push(match catalog::track(c, &t.id)? {
-            Some(known) => with_file_of(known, t),
-            None => t,
-        });
-    }
-    catalog::remember(c, &out)?;
-    Ok(out)
-}
-
-fn with_file_of(mut known: Track, found: Track) -> Track {
-    known.file = found.file.or(known.file);
-    known.year = known.year.or(found.year);
-    known.no = known.no.or(found.no);
-    known.disc = known.disc.or(found.disc);
-    known.duration = known.duration.or(found.duration);
-    known
+    catalog::remember_found(c, found)
 }
 
 #[cfg(test)]
