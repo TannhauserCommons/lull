@@ -248,7 +248,10 @@
     }
     return P.sanitize(markup, PURIFY);
   };
-  function parsed(markup) { var b = document.createElement('div'); b.innerHTML = markup; return b; }
+  /* slot markup is taken apart in a document of its own, which loads nothing: in the page's, a cover part's picture
+     would be fetched for each render (and a cover the hub hasn't yet, asked again), before the page draws it */
+  var inert = document.implementation.createHTMLDocument('');
+  function parsed(markup) { var b = inert.createElement('div'); b.innerHTML = markup; return b; }
   /* fields fill {{name}} (always escaped, so a song title can never become markup); then the sanitizer; then every
      <lull-part name="..."> becomes the live markup the app hands the slot (ctx.parts), which is the app's own */
   function renderSlot(name, tpl, ctx, isTrusted) {
@@ -273,7 +276,7 @@
     var out = made[key] != null ? made[key] : (made[key] = String(make(ctx, el, slot) || ''));
     var pick = el.getAttribute('pick');
     if (pick) {
-      var host = document.createElement('div'); host.innerHTML = out;
+      var host = parsed(out);
       var n = host.querySelector(pick);
       out = !n ? '' : el.hasAttribute('inner') ? n.innerHTML : n.outerHTML;
     }

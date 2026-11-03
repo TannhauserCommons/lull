@@ -91,10 +91,14 @@
     return el;
   }
   /* where the page decorates what screens render (card heads, see ui.cardHeads), the new markup gets the same
-     decoration first, so the comparison is like for like and the decoration isn't stripped and redrawn each time */
+     decoration first, so the comparison is like for like and the decoration isn't stripped and redrawn each time.
+     All of it stays in the template's own document, which loads nothing: in the page's, every picture of the new
+     markup would be fetched, even those the patch then drops for the one on show (a cover the hub hasn't yet: asked
+     again on every render) */
   function decorated(el, content) {
     if (!el.closest('#view, #ctx-body, #overlay-host')) return content;
-    var host = el.cloneNode(false), box = document.createDocumentFragment();   // a copy of el: its own head counts too
+    var inert = content.ownerDocument;
+    var host = inert.importNode(el, false), box = inert.createDocumentFragment();   // a copy of el: its own head counts too
     host.appendChild(content); box.appendChild(host);
     ui.cardHeads(box);
     return host;
