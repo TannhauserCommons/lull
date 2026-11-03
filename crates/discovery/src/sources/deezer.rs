@@ -1,19 +1,15 @@
 //! Deezer (https://developers.deezer.com/api): catalog search with covers, artist photos and
-//! popularity, no key needed. The limit is 50 requests per 5 s per IP; going over is answered
-//! with HTTP 200 and `error.code` 4, which closes lull's window for 5 s and is tried once more.
+//! popularity, no key needed. The limit is 50 requests per 5 s per IP, kept in lull's one Deezer
+//! window (`http::DEEZER`, shared with collection's playlist links); going over is answered with
+//! HTTP 200 and `error.code` 4, which closes that window for 5 s and is tried once more.
 //! Where Deezer isn't open (in some countries) track and album searches come back empty with a
 //! `total` above zero: that is reported, not mistaken for "nothing found".
 
-use std::collections::VecDeque;
-use std::sync::{Mutex, PoisonError};
-use std::time::Duration;
-
-use lull_core::http::Http;
+use lull_core::http::{DEEZER, Http};
 use lull_core::ids::{normalize, normalize_artist};
 use lull_core::{Error, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::time::Instant;
 
 use super::cache::{Cache, DAY};
 use super::{AlbumSource, Song};
@@ -23,8 +19,6 @@ use crate::search::merge::{AlbumHit, ArtistHit, Found, PlaylistHit, SongHit, pop
 const SERVICE: &str = "Deezer";
 const API: &str = "https://api.deezer.com";
 const CDN: &str = "https://cdn-images.dzcdn.net/images";
-const WINDOW: Duration = Duration::from_secs(5);
-const PER_WINDOW: usize = 50;
 /// `error.code` for "Quota limit exceeded".
 const QUOTA: u64 = 4;
 /// `error.code` for "no data": an empty answer, not a failure.
@@ -34,8 +28,6 @@ const KEEP_S: i64 = 600;
 /// Playlists whose fans are looked up, of a playlist search's answer, and how long they're kept.
 const WITH_FANS: usize = 4;
 const FANS_FOR: i64 = 7 * DAY;
-/// Between those lookups: Deezer's window is shared with search, and they're no hurry.
-const FANS_PACE: Duration = Duration::from_millis(500);
 /// Tracklists are kept this long (seconds).
 const KEEP_TRACKLIST_S: i64 = 7 * DAY;
 /// Rank, fans: the counts that score 1 on `popularity`'s scale.
@@ -45,16 +37,11 @@ const FULL_FANS: f64 = 1e7;
 pub struct Deezer {
     http: Http,
     cache: Cache,
-    window: Mutex<Window>,
 }
 
 impl Deezer {
     pub fn new(http: Http, cache: Cache) -> Self {
-        Deezer {
-            http,
-            cache,
-            window: Mutex::default(),
-        }
+        Deezer { http, cache }
     }
 
     /// Tracks, albums and artists for `q`. A part that fails leaves the others, and is named in
@@ -263,13 +250,9 @@ impl Deezer {
             .await
     }
 
+    /// Deezer's window is lull's (`http::DEEZER`): collection's playlist links share it.
     async fn wait_turn(&self) {
-        let turn = self
-            .window
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .reserve(Instant::now());
-        tokio::time::sleep_until(turn).await;
+        self.http.window(DEEZER).await;
     }
 
     async fn get(&self, path: &str, query: &[(&str, &str)]) -> Result<Value> {
@@ -282,10 +265,7 @@ impl Deezer {
             match answer(body) {
                 Err(Refusal::Quota) if attempt == 0 => {
                     tracing::info!("Deezer quota reached; waiting for the next window");
-                    self.window
-                        .lock()
-                        .unwrap_or_else(PoisonError::into_inner)
-                        .close(Instant::now());
+                    self.http.close_window(DEEZER);
                 }
                 Err(Refusal::Quota) => break,
                 Err(Refusal::Other(message)) => return Err(Error::upstream(SERVICE, message)),
@@ -296,35 +276,6 @@ impl Deezer {
             SERVICE,
             "is limiting lull's requests; try again in a few seconds",
         ))
-    }
-}
-
-/// When requests may go: at most `PER_WINDOW` in any `WINDOW`, and none for a window after
-/// Deezer said the quota was reached.
-#[derive(Debug, Default)]
-pub struct Window {
-    /// Send times handed out, oldest first.
-    sent: VecDeque<Instant>,
-    closed_until: Option<Instant>,
-}
-
-impl Window {
-    /// The time the next request may be sent, booked.
-    pub fn reserve(&mut self, now: Instant) -> Instant {
-        while self.sent.front().is_some_and(|t| *t + WINDOW <= now) {
-            self.sent.pop_front();
-        }
-        let mut at = self.closed_until.filter(|u| *u > now).unwrap_or(now);
-        if self.sent.len() >= PER_WINDOW {
-            at = at.max(self.sent[self.sent.len() - PER_WINDOW] + WINDOW);
-        }
-        let i = self.sent.partition_point(|t| *t <= at);
-        self.sent.insert(i, at);
-        at
-    }
-
-    pub fn close(&mut self, now: Instant) {
-        self.closed_until = Some(now + WINDOW);
     }
 }
 
@@ -482,10 +433,18 @@ fn fans_key(id: &str) -> String {
 /// Fetches playlists' fans into the cache, one at a time; a failure is tried again next search.
 async fn learn_fans(http: Http, cache: Cache, ids: Vec<String>) {
     for id in ids {
-        http.pace("deezer-fans", FANS_PACE).await;
+        http.window(DEEZER).await;
         let url = format!("{API}/playlist/{id}");
-        let fans = match http.json::<Value>(SERVICE, |c| c.get(&url)).await {
-            Ok(body) => body["fans"].as_u64(),
+        let fans = match http.json::<Value>(SERVICE, |c| c.get(&url)).await.map(answer) {
+            Ok(Ok(body)) => body["fans"].as_u64(),
+            Ok(Err(Refusal::Quota)) => {
+                http.close_window(DEEZER);
+                continue;
+            }
+            Ok(Err(Refusal::Other(why))) => {
+                tracing::info!(why, playlist = id, "a Deezer playlist's fans weren't fetched");
+                continue;
+            }
             Err(e) => {
                 tracing::info!(error = %e, playlist = id, "a Deezer playlist's fans weren't fetched");
                 continue;

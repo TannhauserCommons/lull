@@ -338,28 +338,6 @@ fn a_deezer_quota_error_is_recognised_although_it_comes_as_http_200() {
 }
 
 #[test]
-fn deezer_requests_keep_to_fifty_per_five_seconds_and_wait_out_a_quota() {
-    let mut w = deezer::Window::default();
-    let t0 = Instant::now();
-    for _ in 0..50 {
-        assert_eq!(w.reserve(t0), t0);
-    }
-    assert_eq!(
-        w.reserve(t0),
-        t0 + Duration::from_secs(5),
-        "the 51st waits for the first to age out"
-    );
-    let later = t0 + Duration::from_secs(20);
-    assert_eq!(w.reserve(later), later);
-    w.close(later);
-    assert_eq!(
-        w.reserve(later),
-        later + Duration::from_secs(5),
-        "after a quota error, a whole window"
-    );
-}
-
-#[test]
 fn a_catalog_deezer_withholds_is_reported_not_taken_as_nothing_found() {
     let err = deezer::songs(fixture("deezer-withheld"))
         .err()

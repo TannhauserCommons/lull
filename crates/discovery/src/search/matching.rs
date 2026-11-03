@@ -2,12 +2,12 @@
 //! seam. The library's copy wins; then Deezer by ISRC, a lookup that answers in every country
 //! and within Deezer's roomy limit; then the fast catalog by name: Deezer where it is open, else
 //! iTunes, whose small budget is kept for the songs that come without an ISRC.
-//! A hit counts when it is the same song by search's rule (`merge::same_song`), with each artist
-//! the service credits tried, so "Tyler, The Creator" and "A, B" both find theirs.
+//! A hit counts when it is the same song by search's rule (`merge::same_song`), with the whole
+//! credit and each name in it tried (`radio::credited_names`, radio's own reading of credits), so
+//! "Tyler, The Creator" and "A, B" both find theirs.
 
 use async_trait::async_trait;
 use lull_core::Result;
-use lull_core::ids::loose_artist;
 use lull_core::model::{SongQuery, Track};
 use lull_core::seams::Catalog;
 
@@ -15,6 +15,7 @@ use super::catalog::Choice;
 use super::describe;
 use super::merge::{Found, Merged, SongHit, same_song};
 use crate::Service;
+use crate::radio::credited_names;
 
 /// Library hits looked at.
 const SAVED: usize = 10;
@@ -23,7 +24,10 @@ const SAVED: usize = 10;
 impl Catalog for Service {
     async fn find_song(&self, song: &SongQuery) -> Result<Option<Track>> {
         let wanted = wanted(song);
-        let query = format!("{} {}", credits(&song.artist)[0], song.title);
+        let names = credited_names(&song.artist);
+        // The first name of the credit, not the whole: "Daft Punk, Pharrell Williams Get Lucky"
+        // finds less than "Daft Punk Get Lucky".
+        let query = format!("{} {}", names.get(1).unwrap_or(&song.artist), song.title);
         let saved = self.store.search_saved(&query, SAVED).await.unwrap_or_else(|e| {
             tracing::info!(error = %e, "matching a song without the library");
             Vec::new()
@@ -66,9 +70,7 @@ impl Service {
 
 /// The song as search rows, once per artist credited: the whole credit first, then each name.
 fn wanted(song: &SongQuery) -> Vec<SongHit> {
-    let mut artists = vec![song.artist.clone()];
-    artists.extend(credits(&song.artist).into_iter().filter(|a| *a != song.artist));
-    artists
+    credited_names(&song.artist)
         .into_iter()
         .map(|artist| SongHit {
             title: song.title.clone(),
@@ -82,36 +84,6 @@ fn wanted(song: &SongQuery) -> Vec<SongHit> {
 
 fn is_wanted(hit: &SongHit, wanted: &[SongHit]) -> bool {
     wanted.iter().any(|w| same_song(hit, w))
-}
-
-/// The names in a credit, main artist first: "A, B & C feat. D" is A, B, C and D.
-pub fn credits(artist: &str) -> Vec<String> {
-    let mut names = vec![artist.to_owned()];
-    for sep in [
-        ", ",
-        " & ",
-        " x ",
-        " X ",
-        " feat. ",
-        " ft. ",
-        " featuring ",
-        " with ",
-        "; ",
-    ] {
-        names = names
-            .into_iter()
-            .flat_map(|n| n.split(sep).map(str::to_owned).collect::<Vec<_>>())
-            .collect();
-    }
-    let mut names: Vec<String> = names
-        .into_iter()
-        .map(|n| n.trim().to_owned())
-        .filter(|n| !loose_artist(n).is_empty())
-        .collect();
-    if names.is_empty() {
-        names.push(artist.trim().to_owned());
-    }
-    names
 }
 
 #[cfg(test)]
@@ -134,16 +106,6 @@ mod tests {
             duration,
             ..SongQuery::default()
         }
-    }
-
-    #[test]
-    fn a_credit_splits_into_its_artists_main_first() {
-        assert_eq!(
-            credits("Daft Punk, Pharrell Williams"),
-            ["Daft Punk", "Pharrell Williams"]
-        );
-        assert_eq!(credits("A & B feat. C"), ["A", "B", "C"]);
-        assert_eq!(credits("Adele"), ["Adele"]);
     }
 
     #[test]
