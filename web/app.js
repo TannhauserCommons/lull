@@ -681,7 +681,8 @@
      display scaling and in any design (designs resize covers in CSS, so the size a screen passes is only a first guess).
      - Markup: every cover <img> carries data-pic, its picture without a size. Its first src (firstSrc) is the size its
        CSS size needs when that is a number of pixels; a picture this page already decoded, when there is one, so a big
-       view never starts blank; else none, and the fitter sets it once laid out.
+       view never starts blank; else 256 px until the fitter has measured it. Never none: a lazy <img> with no src
+       stays pending in the browser after it leaves the page, and keeps the whole screen it was part of in memory.
      - The fitter: a ResizeObserver measures each cover in device pixels (and again when it, the zoom or the screen
        changes). A larger size is decoded off the page and swapped in, so the picture on show stays until the sharp one
        is ready; a smaller one replaces a big picture a small place borrowed. Swaps wait until the cover is near the
@@ -715,7 +716,7 @@
     var px = typeof size === 'number' ? size : /^\d+(\.\d+)?(px)?$/.test(size) ? parseFloat(size) : 0;
     var want = px ? sized(pic, artBucket(px * devicePixels(), pic)) : '';
     if (want && artReady.has(want)) return want;
-    return decodedOf(pic, bucketOf(want)) || want;
+    return decodedOf(pic, bucketOf(want)) || want || sized(pic, 256);
   }
   /* an answer smaller than the size asked (250 counts for 256: the archive's thumbnail) means the source has no more */
   function noteFull(pic, src, w, h) {
