@@ -401,8 +401,8 @@
             action: { label: 'Search Soulseek', href: '#/search?q=' + encodeURIComponent(a.artist + ' ' + a.title) } }) : ''}
           ${discs.map(function (list, i) {
             return html`${discs.length > 1 ? html`<div class="label-rule label-rule--sm lib-disc"><h2>disc ${i + 1}</h2><span class="label-rule__end t-micro fg-2">${plural(list.length, 'song')}, ${fmt.length(sumDuration(list.map(function (t) { return t.id; })))}</span></div>` : ''}
-            <ol class="tlist" data-ids="${ids.join(',')}" aria-label="${discs.length > 1 ? 'Disc ' + (i + 1) + ' of ' + a.title : 'Songs on ' + a.title}">${list.map(function (t, j) {
-              return ui.trackRow(t, { index: j + 1, unavailable: down && isSaved(t.id) });
+            <ol class="tlist tlist--album" data-ids="${ids.join(',')}" aria-label="${discs.length > 1 ? 'Disc ' + (i + 1) + ' of ' + a.title : 'Songs on ' + a.title}">${list.map(function (t, j) {
+              return ui.trackRow(t, { index: j + 1, unavailable: down && isSaved(t.id), album: a.id });
             })}</ol>`;
           })}
           ${noTracks ? '' : html`<p class="lib-foot">${albumFoot(a)}</p>`}

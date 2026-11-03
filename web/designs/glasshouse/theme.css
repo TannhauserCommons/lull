@@ -261,7 +261,9 @@
      The window keeps that line for it (1.4rem: .875rem at the captions' 1.6 line height), so it never sits on the
      hero or, on a two-column album page, on the first song */
   :root[data-design="glasshouse"] .app:is([data-screen="album"], [data-screen="playlist"], [data-screen="artist"], [data-screen="tag"]) .lib-page { padding-top: calc(var(--gh-barh) + 10px + 1.4rem + 8px); }
-  :root[data-design="glasshouse"] .lib-page::after { top: calc(var(--gh-barh) + 10px); right: 22px; color: var(--ink-2); text-shadow: none; font-size: .875rem; animation-name: gh-type-line; }
+  /* one line that never leaves the window: a long one (an album's meta grows with it) ends in an ellipsis */
+  :root[data-design="glasshouse"] .lib-page::after { top: calc(var(--gh-barh) + 10px); right: 22px; max-width: calc(100% - 44px); color: var(--ink-2); text-shadow: none; font-size: .875rem;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation-name: gh-type-line; }
   :root[data-design="glasshouse"] .app[data-screen="album"] .lib-page::after { content: "side a to side b :: " attr(data-meta) " of weather_" / ""; }
   :root[data-design="glasshouse"] .app[data-screen="playlist"] .lib-page::after { content: "for the window seat :: " attr(data-meta) "_" / ""; }
   :root[data-design="glasshouse"] .app[data-screen="artist"] .lib-page::after { content: "a voice on the wire, still transmitting_" / ""; }

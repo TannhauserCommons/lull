@@ -381,6 +381,12 @@ button.trow__title:hover { text-decoration: underline; text-underline-offset: 3p
           grid-template-areas: "num art main album added badges like dur more"; }
   .tlist--dated .trow__added { display: block; }
 }
+/* one album's songs (the album page): the album column would repeat the page's title on every row */
+@container tlist (min-width: 760px) {
+  .tlist--album .trow { grid-template-columns: 32px var(--art) minmax(0, 1fr) auto auto 52px 40px;
+          grid-template-areas: "num art main badges like dur more"; }
+  .tlist--album .trow__album { display: none; }
+}
 /* a wide list adds columns inside the badge cell, which takes a fixed width so they read as columns: play counts
    (lists that have them, from 1100 px), then the file's bitrate and sample rate (from 1240 px) */
 .trow__plays, .trow__rate { display: none; font: var(--t-meta); color: var(--fg-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -393,6 +399,7 @@ button.trow__title:hover { text-decoration: underline; text-underline-offset: 3p
 @container tlist (min-width: 1240px) {
   .trow { grid-template-columns: 32px var(--art) minmax(0, 1.3fr) minmax(0, 1fr) 340px auto 52px 40px; }
   .tlist--dated .trow { grid-template-columns: 32px var(--art) minmax(0, 1.3fr) minmax(0, 1fr) 112px 340px auto 52px 40px; }
+  .tlist--album .trow { grid-template-columns: 32px var(--art) minmax(0, 1fr) 340px auto 52px 40px; }
   /* the cell keeps its width whatever a design's badges measure: the rate gives way, never the like button */
   .trow__badges { justify-content: flex-start; min-width: 0; overflow: hidden; }
   .trow__rate { display: inline; margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }

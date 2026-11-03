@@ -151,7 +151,8 @@
     return [Math.floor(sec / 3600), Math.floor(sec / 60) % 60, sec % 60].map(function (n) { return String(n).padStart(2, '0'); }).join(':');
   }
   /* one line of file facts for a track (or a source { format, sizeMB }):
-     formatLine(t) -> "FLAC :: 44.1 kHz, 1040 kbps, 30.2 MB"; { bits: true } adds "16-bit, " before the rate */
+     formatLine(t) -> "FLAC :: 44.1 kHz, 1040 kbps, 30.2 MB"; { bits: true } adds "16-bit, " before the rate.
+     Only what is known: "" for a song whose file isn't known yet, never a bare separator */
   /* the hub's sample rate is a float (44.099998...): one decimal at most */
   function kHz(v) { return v ? Math.round(v * 10) / 10 : v; }
   function formatLine(t, opts) {
@@ -161,7 +162,7 @@
     if (khz) parts.push((o.bits && bits ? bits + '-bit, ' : '') + khz + ' kHz');
     if (kbps) parts.push(kbps + ' kbps');
     if (t.sizeMB) parts.push(fmtSize(t.sizeMB));
-    return (f.codec || String(t.format || '').split(' ')[0]) + ' :: ' + parts.join(', ');
+    return [f.codec || String(t.format || '').split(' ')[0], parts.join(', ')].filter(Boolean).join(' :: ');
   }
   /* album facts: "Tracks: 8  Duration: 00:36:12  Size: 250 MB" */
   function albumLine(a) {
@@ -638,7 +639,8 @@
   };
 
   /* Track row. opts: { index, dense, added (ISO), draggable (default true), showSources, dup ('saved'|'better'),
-     queueIndex, actions (default true), unavailable, badges (markup placed before the source badge) } */
+     queueIndex, actions (default true), unavailable, badges (markup placed before the source badge), album (the album
+     page's id: its cover stands in for an unknown one) } */
   ui.trackRow = function (track, opts) {
     opts = opts || {}; if (typeof track === 'string') track = M.track(track);
     if (!track) return '';
@@ -649,13 +651,14 @@
     var n = opts.index != null ? opts.index : track.no;
     /* file facts as data (data-khz / data-kbps / data-bits / data-size in MB) + a hidden .trow__fmt line a design may show */
     var facts = raw(' data-khz="' + (kHz(track.khz) || '') + '" data-kbps="' + (track.kbps || '') + '" data-bits="' + (track.bits || '') + '" data-size="' + (track.sizeMB || '') + '"');
+    var line = formatLine(track);
     return html`<li class="${cls}" data-track-id="${track.id}" ${opts.queueIndex != null ? raw('data-queue-index="' + opts.queueIndex + '"') : ''}${facts} tabindex="0"${raw(drag)} aria-label="${track.title} by ${track.artist}">
       <div class="trow__num"><span class="trow__n">${n}</span><span class="trow__grip" aria-hidden="true">${icon('grip', null, 'ic-16')}</span><span class="eq" aria-hidden="true"><i></i><i></i><i></i></span></div>
-      <div class="trow__art">${ui.cover(track, opts.dense ? 40 : 48)}</div>
+      <div class="trow__art">${ui.cover(rowCover(track, opts.album), opts.dense ? 40 : 48)}</div>
       <div class="trow__main">
         <button class="trow__title" data-act="play-track" data-id="${track.id}" tabindex="-1">${track.title}</button>
         <div class="trow__artist"><span class="trow__mini" data-src-mini="${track.id}">${icon(saved ? 'saved' : 'soulseek', saved ? 'Saved' : 'Soulseek')}</span><a href="#/artist/${track.artistId}" tabindex="-1">${track.artist}</a></div>
-        <div class="trow__fmt" aria-hidden="true">${formatLine(track)}</div>
+        ${line ? html`<div class="trow__fmt" aria-hidden="true">${line}</div>` : ''}
       </div>
       <div class="trow__album"><a href="#/album/${track.albumId}" tabindex="-1">${track.album}</a></div>
       ${opts.added ? html`<div class="trow__added">${fmtDate(opts.added, true)}</div>` : ''}
@@ -665,10 +668,13 @@
       <div class="trow__more">${opts.actions === false ? '' : html`<button class="btn-icon btn-icon--bare" data-act="track-menu" data-id="${track.id}" aria-haspopup="menu" aria-label="More actions for ${track.title}" data-tip="More">${icon('more')}</button>`}</div>
     </li>`;
   };
-  /* bitrate and sample rate, the format column of a wide list ("1040 kbps, 44.1 kHz") */
+  /* a row on an album page shows the page's cover when the song's own album (and so its cover) isn't known */
+  function rowCover(t, album) { var own = M.album(t.albumId); return album && t.albumId !== album && !(own && own.art) ? album : t; }
+  /* bitrate and sample rate, the format column of a wide list ("1040 kbps, 44.1 kHz"); "–" until the file is known,
+     as the duration column has it */
   function rateLine(t) {
     var f = M.formats[t.format] || {}, kbps = t.kbps || f.kbps, khz = kHz(t.khz || f.khz);
-    return [kbps ? kbps + ' kbps' : '', khz ? khz + ' kHz' : ''].filter(Boolean).join(', ');
+    return [kbps ? kbps + ' kbps' : '', khz ? khz + ' kHz' : ''].filter(Boolean).join(', ') || '–';
   }
   /* how many peers offer a track: a search result's count, or the length of a fetched source list */
   function sourceCount(t) { return typeof t.sources === 'number' ? t.sources : t.sources ? t.sources.length : 0; }

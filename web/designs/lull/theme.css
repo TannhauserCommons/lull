@@ -1561,12 +1561,17 @@
 :root[data-design="lull"] [aria-labelledby="lib-album-title"] .trow__main { display: contents; }
 :root[data-design="lull"] [aria-labelledby="lib-album-title"] .trow__title { grid-area: main; }
 @container tlist (min-width: 760px) {
+  :root[data-design="lull"] .tlist--album .trow { grid-template-columns: 32px var(--art) minmax(0, 1.3fr) minmax(0, 1fr) auto auto 52px 40px;
+    grid-template-areas: "num art main album badges like dur more"; }
   :root[data-design="lull"] [aria-labelledby="lib-album-title"] .trow__fmt { display: block; grid-area: album; font: 700 .75rem/1.2 var(--f-ui); color: var(--l-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }
 /* between 760 and 1,239 px a list's badge cell is `auto` and every row is its own grid, so the album column started wherever
    its row's badges ended and the list zig-zagged. The cell keeps a minimum width that fits the usual badges (a song
    list's source and quality chips, about 105 px; a search list's source, saved, quality and new chips, about 255 px),
    so album and badges line up from row to row. Lists with a play count have their own fixed cell (components.css). */
+@container tlist (min-width: 1240px) {
+  :root[data-design="lull"] .tlist--album .trow { grid-template-columns: 32px var(--art) minmax(0, 1.3fr) minmax(0, 1fr) 340px auto 52px 40px; }
+}
 @container tlist (min-width: 760px) and (max-width: 1239px) {
   :root[data-design="lull"] .tlist:not(.tlist--plays) .trow__badges { min-width: 6.5rem; justify-content: flex-end; }
   :root[data-design="lull"] .tlist--dense:not(.tlist--plays) .trow__badges { min-width: 16rem; }
