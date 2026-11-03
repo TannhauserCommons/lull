@@ -728,11 +728,16 @@
 :root[data-design="petal"] .pt-win__kbd { display: inline-flex; gap: 4px; flex: none; }
 :root[data-design="petal"] .pt-win__kbd .kbd { height: 22px; min-width: 22px; padding: 0 5px; font-size: 1rem; }
 
-/* transport: one row, heart | shuffle prev PLAY next repeat | - + */
+/* transport: one row, heart | shuffle prev PLAY next repeat | - +. The keys are the middle column between two equal
+   ones, so PLAY is on the window's centre line whatever the heart and the volume keys measure */
 :root[data-design="petal"] .pt-win__deck {
-  display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 12px;
+  display: flex; align-items: center; gap: 6px; padding: 12px;
   background: linear-gradient(180deg, var(--bg-2), var(--bg)); border-radius: 0 0 5px 5px;
 }
+:root[data-design="petal"] .now-dev > .pt-win__deck { display: grid; grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr); }
+:root[data-design="petal"] .now-dev > .pt-win__deck > .pt-win__like { grid-column: 1; justify-self: start; }
+:root[data-design="petal"] .now-dev > .pt-win__deck > .pt-win__keys { grid-column: 2; }
+:root[data-design="petal"] .now-dev > .pt-win__deck > .pt-win__vol { grid-column: 3; justify-self: end; }
 :root[data-design="petal"] .pt-win__keys { display: inline-flex; align-items: center; gap: 4px; }
 :root[data-design="petal"] .pt-win__play { margin: 0 4px; }
 :root[data-design="petal"] .pt-win__key { width: 36px; height: 36px; border: 1.5px solid var(--pt-frame); background: var(--bg); color: var(--link); }
@@ -741,7 +746,9 @@
 :root[data-design="petal"] .pt-win__vol { display: inline-flex; align-items: center; gap: 4px; }
 :root[data-design="petal"] .pt-win__vol .pt-win__key { width: 30px; height: 30px; border-radius: 3px; }
 :root[data-design="petal"] .now__keys { display: none; }   /* the keycaps live in the LCD strip */
-@container dev (max-width: 370px) {   /* narrow window: volume drops (hardware keys and the bar have it) */
+/* narrow window: volume drops (hardware keys and the bar have it). Under 396 px the keys (232), two sides as wide as the
+   volume keys (64), the gaps and the padding (36) don't fit, and PLAY would leave the centre line */
+@container dev (max-width: 395.98px) {
   :root[data-design="petal"] .pt-win__vol { display: none; }
 }
 
