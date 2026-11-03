@@ -346,6 +346,15 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
     record. It's reached from "Stop waiting" (Activity, and the waiting save button's toast) and "Remove this save" on
     a failed row. Skip in the choose prompt moves on, and the engine's `letGo` stops the transfer.
 
+## Playlist covers
+
+`ui.playlistArt(p, size, label)` draws a playlist wherever it shows (rail, tiles, the playlist page, the add-to-playlist
+picker): its own `cover` (`/api/playlists/{id}/cover`, asked at 96, 256 or 512 px like album art) as one picture, else
+`ui.mosaic` of its songs, the first four distinct albums 2×2, or one cover when the songs share an album. Both keep the
+`.mosaic` frame every design styles; `.mosaic--one` holds a single cover (the lull design's playlist header shows it as
+one larger tilted card). The create and edit dialog picks a picture (JPEG, PNG or WebP, 10 MB, checked before sending)
+with a preview, or removes the cover; it is `PUT`/`DELETE` after the details save.
+
 ## Imports
 
 Library's Import dialog (`lib-import`, library.js section 10): a playlist file dropped anywhere or chosen there,

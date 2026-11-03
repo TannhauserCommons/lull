@@ -237,6 +237,10 @@ button.lib-th:hover { color: var(--fg); background: var(--bg-2); }
 .lib-imp__none { display: inline-flex; align-items: center; gap: 4px; font: 700 .8125rem/1 var(--f-ui); color: var(--fg-2); font-style: italic; }
 .lib-imp__opt { padding: 0 var(--sp-1); }
 
+/* the edit dialog's cover: the picture (or the songs' mosaic) beside its buttons */
+.lib-cover { display: flex; align-items: center; gap: var(--sp-4); }
+.lib-cover__acts { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+
 /* import from a link: the box (import dialog, Playlists) and the review dialog */
 .lib-link { display: grid; gap: var(--sp-2); }
 .lib-link__row { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }

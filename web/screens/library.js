@@ -878,7 +878,7 @@
   function playlistTile(p) {
     var ids = plIds(p);
     return html`<div class="tile lib-tile lib-tile--pl" data-drop="playlist:${p.id}">
-      <div class="tile__art"><a href="#/playlist/${p.id}" aria-label="${p.name}, ${plural(ids.length, 'song')}">${ui.mosaic(ids, '100%')}</a>
+      <div class="tile__art"><a href="#/playlist/${p.id}" aria-label="${p.name}, ${plural(ids.length, 'song')}">${ui.playlistArt(p, '100%')}</a>
         <button class="tile__play" data-act="play-playlist" data-id="${p.id}" aria-label="Play ${p.name}" data-tip="Play">${icon('play')}</button></div>
       <div class="tile__title"><a href="#/playlist/${p.id}">${p.name}</a></div>
       <div class="tile__by">${plural(ids.length, 'song')}, ${fmt.length(sumDuration(ids))}</div>
@@ -976,7 +976,7 @@
       ${jellyfinNotice(path)}
       <article class="card card--flush lib-page lib-pl" aria-labelledby="lib-pl-title" data-meta="${playlistMeta(p)}">
         <header class="lib-pl__head">
-          ${ui.mosaic(ids, 'var(--lib-art)', 'Playlist cover: ' + p.name)}
+          ${ui.playlistArt(p, 'var(--lib-art)', 'Playlist cover: ' + p.name)}
           <div class="lib-hero__info">
             <p class="lib-kicker">playlist</p>
             <h1 class="t-title-xl lib-pl__title" id="lib-pl-title">${p.name}</h1>
@@ -989,7 +989,7 @@
           ${ui.iconButton('shuffle', 'Shuffle play', { 'data-act': 'lib-shuffle-ids', 'data-ids': ids.join(',') })}
           ${ids.length && missing ? groupSaveButton(ids, 'playlist') : ''}
           ${ids.length ? ui.downloadButton({ kind: 'playlist', id: p.id }, ids) : ''}
-          ${ui.iconButton('edit', 'Edit name and description', { 'data-act': 'lib-pl-edit', 'data-id': p.id, 'aria-haspopup': 'dialog' })}
+          ${ui.iconButton('edit', 'Edit name, description and cover', { 'data-act': 'lib-pl-edit', 'data-id': p.id, 'aria-haspopup': 'dialog' })}
           ${ui.iconButton('export', 'Export as M3U', { 'data-act': 'lib-pl-export', 'data-id': p.id, 'aria-haspopup': 'dialog' })}
           ${ui.iconButton('more', 'More playlist actions', { 'data-act': 'lib-pl-menu', 'data-id': p.id, 'aria-haspopup': 'menu' })}
           <span class="spacer"></span>
@@ -1116,9 +1116,29 @@
     App.toast('Switch to custom order to reorder or remove songs', { icon: 'sort', action: 'Switch', onAction: function () { plSort = 'custom'; App.refresh(); } });
   }
 
-  /* create / rename / edit description: the dialog stays open until the server has answered */
+  /* the playlist's own cover: PUT the picture (the hub checks it, cuts it square and keeps it) or DELETE it; the
+     playlist then shows its songs' covers. A picture is checked here first only to say what's wrong sooner. */
+  var COVER_TYPES = ['image/jpeg', 'image/png', 'image/webp'], COVER_MAX = 10 * 1024 * 1024;
+  function coverProblem(file) {
+    if (COVER_TYPES.indexOf(file.type) < 0) return file.name + ' isn\'t a JPEG, PNG or WebP picture.';
+    if (file.size > COVER_MAX) return file.name + ' is larger than 10 MB.';
+    return '';
+  }
+  function saveCover(plId, cover) {
+    var path = playlistPath(plId) + '/cover';
+    var sent = cover.file ? M.api(path, { method: 'PUT', body: cover.file }) : cover.remove ? M.api(path, { method: 'DELETE' }) : null;
+    if (!sent) return Promise.resolve();
+    return sent.then(function () { M.invalidate(playlistPath(plId)); return App.loadPlaylists(); },
+      function (er) { App.toast('Couldn\'t ' + (cover.file ? 'set' : 'remove') + ' the cover: ' + er.message, { kind: 'error', icon: 'warning' }); });
+  }
+
+  /* create / rename / edit description and cover: the dialog stays open until the server has answered */
   function openEdit(p) {
-    var formId = App.uid('lib-edit');
+    var formId = App.uid('lib-edit'), cover = { file: null, remove: false, preview: null };
+    function coverArt() {
+      var shown = cover.preview || (cover.remove ? null : p && p.cover);
+      return ui.mosaic(p ? plIds(p) : [], 96, 'Cover', shown);
+    }
     return App.openDialog({
       title: p ? 'edit playlist' : 'new playlist',
       body: html`<form class="lib-form" id="${formId}" novalidate>
@@ -1127,11 +1147,38 @@
           <p class="field__error" id="${formId}-err" hidden>${icon('warning', null, 'ic-16')}<span></span></p></div>
         <div class="field"><label class="field__label" for="${formId}-desc">Description <span class="fg-2">(optional)</span></label>
           <textarea class="input lib-textarea" id="${formId}-desc" name="desc" rows="3" maxlength="300" placeholder="What it's for, when to play it">${p ? p.desc : ''}</textarea></div>
+        <div class="field"><span class="field__label">Cover</span>
+          <div class="lib-cover">
+            <span data-cover-art>${coverArt()}</span>
+            <div class="lib-cover__acts">
+              <label class="btn btn--sm">${icon('import')}Choose a picture<input class="vh" type="file" accept="image/jpeg,image/png,image/webp" data-cover-file></label>
+              <button class="btn btn--sm btn--quiet" type="button" data-cover-remove ${p && p.cover ? '' : raw('hidden')}>${icon('close')}Remove cover</button>
+            </div>
+          </div>
+          <span class="field__help">A JPEG, PNG or WebP up to 10 MB, cut to a square. Without one, the playlist shows its songs' covers.</span></div>
       </form>`,
       foot: html`<button class="btn" type="button" data-close>Cancel</button><button class="btn btn--primary" type="submit" form="${formId}">${p ? 'Save' : 'Create playlist'}</button>`,
       onMount: function (el, close) {
         var form = $('form', el), name = form.elements.name, err = $('.field__error', el), submit = $('[type="submit"]', el);
         function showError(msg) { err.hidden = !msg; $('span', err).textContent = msg; name.setAttribute('aria-invalid', msg ? 'true' : 'false'); if (msg) name.focus(); }
+        function paintCover() {
+          $('[data-cover-art]', el).innerHTML = String(coverArt());
+          $('[data-cover-remove]', el).hidden = !(cover.file || (p && p.cover && !cover.remove));
+        }
+        $('[data-cover-file]', el).addEventListener('change', function (e) {
+          var file = e.target.files[0]; e.target.value = '';
+          if (!file) return;
+          var problem = coverProblem(file);
+          if (problem) { App.toast(problem, { kind: 'error', icon: 'warning' }); return; }
+          if (cover.preview) URL.revokeObjectURL(cover.preview);
+          cover = { file: file, remove: false, preview: URL.createObjectURL(file) };
+          paintCover();
+        });
+        $('[data-cover-remove]', el).addEventListener('click', function () {
+          if (cover.preview) URL.revokeObjectURL(cover.preview);
+          cover = { file: null, remove: !!(p && p.cover), preview: null };
+          paintCover();
+        });
         name.select();
         form.addEventListener('submit', function (e) {
           e.preventDefault();
@@ -1143,8 +1190,12 @@
           submit.disabled = true;
           var old = p && { name: p.name, desc: p.desc || '' };
           (p ? saveDetails(p, v, desc).then(function () { return p; }) : App.createPlaylist({ name: v, desc: desc })).then(function (done) {
+            if (!done) { submit.disabled = false; return; }  // App.createPlaylist has said why
+            return saveCover(done.id, cover).then(function () { return done; });
+          }).then(function (done) {
             submit.disabled = false;
-            if (!done) return;                       // App.createPlaylist has said why
+            if (!done) return;
+            if (cover.preview) URL.revokeObjectURL(cover.preview);
             close();
             if (!p) { App.go('/playlist/' + done.id); App.toast('Created ' + v + '. Drag songs in, or use Add to playlist.', { icon: 'playlists' }); return; }
             App.toast(old.name !== v ? 'Renamed to ' + v : 'Playlist details saved', { icon: 'edit', action: 'Undo', onAction: function () {
@@ -1198,7 +1249,7 @@
           <input class="input" id="${inputId}-new" maxlength="60" placeholder="Name it" autocomplete="off"><button class="btn btn--primary" type="submit">Create</button></form>
         ${recent.length ? ui.labelRule('recent', { level: 'h3', sm: true }) : ''}
         <ul class="lib-pick-list">${recent.map(function (p) {
-          return html`<li data-name="${p.name.toLowerCase()}"><button class="lib-pick" type="button" data-pick="${p.id}">${ui.mosaic(plIds(p), 44)}<span class="lib-pick__text"><b>${p.name}</b><span>${rowMeta(p)}</span></span></button></li>`;
+          return html`<li data-name="${p.name.toLowerCase()}"><button class="lib-pick" type="button" data-pick="${p.id}">${ui.playlistArt(p, 44)}<span class="lib-pick__text"><b>${p.name}</b><span>${rowMeta(p)}</span></span></button></li>`;
         })}</ul>
         <p class="lib-pick-none" hidden>No playlist matches that. Press Enter to make a new one with that name.</p>`,
       onMount: function (el, close) {

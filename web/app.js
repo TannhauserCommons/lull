@@ -464,8 +464,8 @@
   /* a picture this page has already loaded renders as shown from the start (.has-art, no lazy load), so a cover drawn
      again (another screen, a new row) shows its art at once instead of fading in over the recipe each time */
   var artReady = new Set();
-  function coverSpan(cls, attrs, key, size) {
-    var src = artSrc(key, size), ready = artReady.has(src), mono = monogram(key);
+  function coverSpan(cls, attrs, key, size, own) {
+    var src = own || artSrc(key, size), ready = artReady.has(src), mono = own ? '' : monogram(key);
     return '<span class="' + cls + (mono ? ' cover--artist' : '') + (ready ? ' has-art' : '') + '"' + attrs + '>' +
       (mono ? '<span class="cover__mono" aria-hidden="true">' + esc(mono) + '</span>' : '') + (src ? '<img class="cover__img"' +
       (ready ? '' : ' loading="lazy" decoding="async"') + ' alt="" data-art="' + esc(key) + '" src="' + esc(src) + '">' : '') + '</span>';
@@ -516,18 +516,31 @@
     }
     artMissing[img.getAttribute('data-art')] = Date.now(); img.remove();
   }, true);
-  /* 2x2 mosaic of the first four distinct album covers (playlists) */
-  ui.mosaic = function (trackIds, size, label) {
+  /* 2x2 mosaic of the first four distinct album covers (playlists); one cover when the songs share one album, or when
+     `own` is a picture of the playlist's own (its stored cover, or a picture being chosen). `.mosaic--one` keeps the
+     frame every design styles, with one cover filling it. */
+  ui.mosaic = function (trackIds, size, label, own) {
     var seen = {}, keys = [];
     trackIds.forEach(function (id) { var t = M.track(id); if (t && !seen[t.albumId] && keys.length < 4) { seen[t.albumId] = 1; keys.push(t.albumId); } });
-    while (keys.length < 4) keys.push('pad-' + keys.length);
+    var one = !!own || keys.length === 1;
+    if (own) keys = ['own-' + own];
+    while (!one && keys.length < 4) keys.push('pad-' + keys.length);
     var px = typeof size === 'number' ? size + 'px' : size;
-    return raw('<span class="mosaic" style="--cover-size-base:' + px + '"' + (label ? ' role="img" aria-label="' + esc(label) + '"' : ' aria-hidden="true"') + '>' +
+    return raw('<span class="mosaic' + (one ? ' mosaic--one' : '') + '" style="--cover-size-base:' + px + '"' + (label ? ' role="img" aria-label="' + esc(label) + '"' : ' aria-hidden="true"') + '>' +
       keys.map(function (k) {
         var c = { key: k, recipe: App.coverClass(k), size: '100%', cls: 'cover ' + App.coverClass(k), attrs: '', round: false, label: '', mosaic: true };
-        return String(App.slot('coverArt', c, function (x) { return coverSpan(x.cls, '', x.key, '100%'); }));
+        return String(App.slot('coverArt', c, function (x) { return coverSpan(x.cls, '', x.key, '100%', own && ownSrc(own, size)); }));
       }).join('') + '</span>');
   };
+  /* a playlist's picture: its own cover (GET /api/playlists/{id}/cover, sized like album art), else its songs' mosaic */
+  ui.playlistArt = function (p, size, label) {
+    return ui.mosaic((p.items || []).map(function (i) { return i.trackId; }), size, label, p.cover || null);
+  };
+  function ownSrc(url, size) {
+    if (/^(blob|data):/.test(url)) return url;
+    var px = parseInt(size, 10), want = /%$/.test(String(size)) || !px ? 512 : px <= 96 ? 96 : px <= 256 ? 256 : 512;
+    return sized(M.url(url), want);
+  }
 
   ui.savedBadge = function () { return html`<span class="badge badge-saved">${icon('saved')}Saved</span>`; };
   ui.soulseekBadge = function () { return html`<span class="badge badge-slsk">${icon('soulseek')}Soulseek</span>`; };
@@ -2154,7 +2167,7 @@
   }
   function playlistLinks() {
     return html`${state.playlists.map(function (p) {
-      return html`<li><a class="rail__pl" href="#/playlist/${p.id}" data-drop="playlist:${p.id}">${ui.mosaic(p.items.map(function (i) { return i.trackId; }), 36)}<span class="ellipsis"><b>${p.name}</b><small>${p.items.length} songs</small></span></a></li>`;
+      return html`<li><a class="rail__pl" href="#/playlist/${p.id}" data-drop="playlist:${p.id}">${ui.playlistArt(p, 36)}<span class="ellipsis"><b>${p.name}</b><small>${p.items.length} songs</small></span></a></li>`;
     })}`;
   }
   function renderRail() {

@@ -1501,6 +1501,8 @@
   :root[data-design="lull"] .lib-pl__head > .mosaic > .cover:nth-child(2) { left: 74px; top: 0; transform: rotate(6deg); }
   :root[data-design="lull"] .lib-pl__head > .mosaic > .cover:nth-child(3) { left: 12px; top: 62px; transform: rotate(3deg); }
   :root[data-design="lull"] .lib-pl__head > .mosaic > .cover:nth-child(4) { left: 78px; top: 58px; transform: rotate(-5deg); }
+  /* one picture (the playlist's own cover, or a single album): one larger card, tilted like the stack's first */
+  :root[data-design="lull"] .lib-pl__head > .mosaic--one > .cover:nth-child(1) { left: 14px; top: 8px; width: 160px; height: 160px; transform: rotate(-4deg); }
   :root[data-design="lull"] .lib-pl__head::after {
     content: ""; position: absolute; right: 30px; top: 50%; width: 214px; height: 134px; margin-top: -67px; transform: rotate(-4deg); pointer-events: none;
     border: var(--stroke) solid var(--l-edge); border-radius: 12px; box-shadow: var(--l-win-stack);
