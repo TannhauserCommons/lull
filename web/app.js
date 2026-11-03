@@ -149,13 +149,15 @@
     patchChildren(old, want);
     if (old.nodeName === 'SELECT') old.value = want.value || (want.querySelector('option[selected]') || {}).value || old.value;
   }
+  /* by name, never through el.attributes: reading that makes an Attr node for each attribute, which the element then
+     keeps for as long as it lives (an empty row of a 5,000-song list held eleven nodes and ~15 KB that way) */
   function patchAttrs(old, want) {
-    var i, a, attrs = want.attributes;
-    for (i = 0; i < attrs.length; i++) { a = attrs[i]; if (old.getAttribute(a.name) !== a.value) old.setAttribute(a.name, a.value); }
-    attrs = old.attributes;
+    var i, v, names = want.getAttributeNames();
+    for (i = 0; i < names.length; i++) { v = want.getAttribute(names[i]); if (old.getAttribute(names[i]) !== v) old.setAttribute(names[i], v); }
+    names = old.getAttributeNames();
     /* data-fit-out is the row fitter's (layout.js), not the markup's: a re-render that kept the words would show a part
        that gave way again, with nothing to fit the row anew */
-    for (i = attrs.length - 1; i >= 0; i--) { a = attrs[i]; if (!want.hasAttribute(a.name) && a.name !== 'data-fit-out') old.removeAttribute(a.name); }
+    for (i = names.length - 1; i >= 0; i--) if (!want.hasAttribute(names[i]) && names[i] !== 'data-fit-out') old.removeAttribute(names[i]);
     if (old.nodeName === 'INPUT') {                // properties the user may have changed since the last render
       if (old.checked !== want.checked) old.checked = want.checked;
       if (old.type !== 'file' && old !== document.activeElement && old.value !== want.value) old.value = want.value;

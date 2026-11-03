@@ -676,7 +676,9 @@ The hub serves every cover and photo at 96, 256, 512, 1024 and 2048 px, scaled d
   (`ui.warmArt`), so art never fades in twice.
 - **Re-renders patch, they don't rebuild.** `App.refresh()` of the page already showing, the player bar, the side
   panel and the screens' own repaints go through `App.patch(el, markup)`: only what differs changes, children matched
-  by `id`, `data-key`, `data-track-id` or `data-id`, else by position. An `<img>` with the same `src` is never touched,
+  by `id`, `data-key`, `data-track-id` or `data-id`, else by position. Attributes are compared by name
+  (`getAttributeNames`): reading `el.attributes` makes an Attr node for each, which the element keeps for life (eleven
+  nodes on every row of a long list). An `<img>` with the same `src` is never touched,
   so nothing that stayed the same reloads or flashes. A new route still renders fresh. Because a refresh keeps the
   elements, a route's `mount` runs again on them: listen on elements with `ctx.on(target, type, fn)` (removed before
   the next render) and keep one-off effects (entrance animations, scrolling to a section) behind `!ctx.refresh`.
