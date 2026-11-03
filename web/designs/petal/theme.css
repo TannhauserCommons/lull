@@ -233,6 +233,8 @@
 
 :root[data-design="petal"] .chip { border-color: var(--pt-frame); background: var(--lavender); font: 700 .8125rem/1.2 var(--f-ui); min-height: 28px; }
 :root[data-design="petal"] :is(button.chip, a.chip):hover { background: var(--peri); }
+/* a pressed chip (a follow, a preset) is state: filled and lifted, as a pressed filter pill */
+:root[data-design="petal"] :is(.chip[aria-pressed="true"], .chip.is-on) { background: var(--peri); box-shadow: 2px 2px 0 0 var(--pt-frame); }
 :root[data-design="petal"] .chip-reason { border-radius: 3px; border-style: solid; border-color: var(--pt-rule); background: var(--reason-bg); }
 :root[data-design="petal"] .chip-more { border-radius: 3px; border-color: var(--pt-frame); }
 :root[data-design="petal"] .pill-filter { border-width: 1.5px; font: 700 .875rem/1 var(--f-ui); }
