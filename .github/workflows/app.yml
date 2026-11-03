@@ -15,11 +15,13 @@ on:
 permissions:
   contents: read
 
-# A new push supersedes the previous push's run; a manual run (installers to test) is in its own
-# group, so other pushes to main don't cancel it.
+# One run at a time per event and ref. A new pull request push cancels the old run. On main, a running
+# run finishes and only the newest push waits behind it: main moves every few minutes, and the
+# Android job (two builds, about half an hour) would otherwise never finish there. A manual run
+# (installers to test) has its own group.
 concurrency:
   group: app-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   # Tauri's documented Linux build prerequisites (WebKitGTK 4.1, AppIndicator, rsvg for icons, xdo).
