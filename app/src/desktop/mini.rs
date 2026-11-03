@@ -6,7 +6,7 @@ use crate::desktop::recovery;
 use crate::desktop::settings::MiniStyle;
 use crate::desktop::state::Desktop;
 use crate::pages::{self, Mini};
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow};
 
 const LABELS: [&str; 2] = ["mini", "strip"];
 
@@ -62,7 +62,7 @@ pub fn open(app: &AppHandle) -> tauri::Result<()> {
         desktop.update(|s| s.wayland_hint_shown = true);
     }
     if let Some(main) = app.get_webview_window(main_window::LABEL) {
-        main.hide()?;
+        main_window::hide(&main)?;
     }
     set_checked(app, true);
     Ok(())
@@ -73,6 +73,8 @@ pub fn close(app: &AppHandle) -> tauri::Result<()> {
     for mini in LABELS.iter().filter_map(|label| app.get_webview_window(label)) {
         mini.destroy()?;
     }
+    // A destroyed page may not get to say 'bye' itself: main stops its snapshots (desktop.js).
+    app.emit_to(main_window::LABEL, "mini", serde_json::json!({ "action": "bye" }))?;
     set_checked(app, false);
     main_window::show(app)
 }

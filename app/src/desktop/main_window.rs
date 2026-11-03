@@ -216,6 +216,7 @@ fn grant(app: &AppHandle, origin: &Url) -> tauri::Result<()> {
 /// Show `main`, un-minimised and focused.
 pub fn show(app: &AppHandle) -> tauri::Result<()> {
     if let Some(main) = app.get_webview_window(LABEL) {
+        platform::set_webview_awake(&main, true)?;
         main.show()?;
         main.unminimize()?;
         main.set_focus()?;
@@ -226,9 +227,32 @@ pub fn show(app: &AppHandle) -> tauri::Result<()> {
 /// Tray left click (Windows): hide a visible `main`, otherwise bring lull forward.
 pub fn toggle(app: &AppHandle) -> tauri::Result<()> {
     match app.get_webview_window(LABEL) {
-        Some(main) if main.is_visible()? && !main.is_minimized()? => main.hide(),
+        Some(main) if main.is_visible()? && !main.is_minimized()? => hide(&main),
         _ => reveal(app),
     }
+}
+
+/// `main` out of sight (the tray, the mini player): hidden, and WebView2 told so, as `sleep` does for
+/// Classic mode: no frames, the page's hidden-document rules (loops paused, no screen ticks) and a
+/// low memory target. Playback goes on: an audible page isn't throttled. `show` wakes it.
+pub fn hide(main: &WebviewWindow) -> tauri::Result<()> {
+    main.hide()?;
+    platform::set_webview_awake(main, false)
+}
+
+/// Minimised, `main` sleeps like a hidden one; back on screen (it takes focus), it wakes.
+pub fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
+    let Some(main) = window.app_handle().get_webview_window(LABEL) else {
+        return;
+    };
+    let result = match event {
+        tauri::WindowEvent::Resized(_) if main.is_minimized().unwrap_or(false) => {
+            platform::set_webview_awake(&main, false)
+        }
+        tauri::WindowEvent::Focused(true) => platform::set_webview_awake(&main, true),
+        _ => Ok(()),
+    };
+    report(result);
 }
 
 /// A second launch, or the tray: the open Classic window or mini player if there is one, else `main`.
@@ -273,7 +297,10 @@ pub fn close_requested(window: &tauri::Window, api: &tauri::CloseRequestApi) {
     }
     api.prevent_close();
     let result = if settings.close_asked {
-        window.hide()
+        window
+            .app_handle()
+            .get_webview_window(LABEL)
+            .map_or(Ok(()), |main| hide(&main))
     } else {
         window.emit_to(LABEL, "ask-close", ())
     };
@@ -289,7 +316,7 @@ pub fn close_choice(app: &AppHandle, keep: bool, remember: bool) -> tauri::Resul
         });
     }
     match app.get_webview_window(LABEL) {
-        Some(main) if keep => main.hide(),
+        Some(main) if keep => hide(&main),
         _ => {
             app.exit(0);
             Ok(())

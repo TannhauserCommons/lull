@@ -113,6 +113,9 @@ fn remember_appearance(app: &tauri::AppHandle) {
 }
 
 fn on_window_event(window: &Window, event: &WindowEvent) {
+    if window.label() == main_window::LABEL {
+        main_window::on_window_event(window, event);
+    }
     let WindowEvent::CloseRequested { api, .. } = event else {
         return;
     };
