@@ -6,7 +6,7 @@ OpenSubsonic at `/rest/*`, so existing apps (Feishin, Symfonium, DSub, play:Subâ
 
 - **Over the seams only.** Browsing, audio and covers come from `Library` (`artists`, `albums`, `album`, `saved`, `search`, `stream`, `cover`); likes, playlists and plays go through `Collection`, so the web UI, history, taste and Last.fm see them as if the web player had made them; lyrics come from `Lyrics`, the same answer as `/api/lyrics`.
 - **Reads two core tables directly:** `likes` (when each song was liked: Subsonic's `starred`) and `plays` joined to `catalog_tracks` (album lists `frequent` and `recent`). No tables of its own.
-- **Ids are lull's ids** (`ar-`, `al-`, `t-`, `pl-`). An album id is also the cover art id of the album and its songs; an artist's `coverArt` is one of its albums.
+- **Ids are lull's ids** (`ar-`, `al-`, `t-`, `pl-`). An album id is also the cover art id of the album and its songs; an artist's `coverArt` is one of its albums. A playlist's `coverArt` is its own id: `getCoverArt` serves its own cover (`Collection::playlist_cover`), else its first saved song's album cover.
 - **Only saved songs.** A client can only stream what the library has, so playlists and stars list their saved songs. `updatePlaylist`'s `songIndexToRemove` counts those and is mapped back to positions in the whole playlist.
 - **One music folder** (id 1); `getIndexes` is `getArtists` again, since a lull library has no folder tree.
 

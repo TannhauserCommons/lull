@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use lull_core::ids::TrackId;
+use lull_core::ids::{AlbumId, TrackId};
 use lull_core::model::{Playlist, PlaylistEdit, Track};
 use serde_json::{Value, json};
 
@@ -90,6 +90,13 @@ async fn full(svc: &Service, playlist: &Playlist) -> Result<Reply, Fail> {
     Ok(Reply::of("playlist", body))
 }
 
+/// The album whose cover stands for a playlist without its own: its first saved song's.
+pub async fn first_album(svc: &Service, id: &str) -> Result<Option<AlbumId>, Fail> {
+    let playlist = find(svc, id).await?;
+    let saved = svc.saved(&playlist.track_ids).await?;
+    Ok(visible(&playlist, &saved).first().map(|(_, t)| t.album_id.clone()))
+}
+
 /// The playlist's saved songs with their positions in the whole playlist.
 fn visible<'a>(playlist: &Playlist, saved: &'a HashMap<TrackId, Track>) -> Vec<(usize, &'a Track)> {
     playlist
@@ -111,6 +118,7 @@ fn summary(p: &Playlist, shown: &[(usize, &Track)]) -> Value {
         "duration": shown.iter().map(|(_, t)| t.duration.unwrap_or(0)).sum::<u32>(),
         "created": shape::iso(p.created_at),
         "changed": shape::iso(p.updated_at),
-        "coverArt": shown.first().map(|(_, t)| &t.album_id),
+        // getCoverArt serves the playlist's own cover, else its first song's album's.
+        "coverArt": p.id,
     })
 }

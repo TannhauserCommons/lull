@@ -48,6 +48,9 @@ struct FakeLibrary {
 
 #[async_trait]
 impl Library for FakeLibrary {
+    async fn cover(&self, id: &AlbumId, _size: Option<u32>) -> Result<Response> {
+        Ok(format!("cover of {id}").into_response())
+    }
     async fn search(&self, query: &str, limit: usize) -> Result<Vec<Track>> {
         Ok(self
             .tracks
@@ -111,6 +114,8 @@ impl Library for FakeLibrary {
 #[derive(Default)]
 struct FakeCollection {
     playlist: Mutex<Option<Playlist>>,
+    /// The playlist's own cover, as its body.
+    cover: Mutex<Option<String>>,
     edits: Mutex<Vec<PlaylistEdit>>,
     plays: Mutex<Vec<PlayReport>>,
 }
@@ -146,6 +151,14 @@ impl Collection for FakeCollection {
     async fn record_play(&self, play: PlayReport) -> Result<()> {
         self.plays.lock().map_err(poisoned)?.push(play);
         Ok(())
+    }
+    async fn playlist_cover(&self, _id: &str, _size: Option<u32>) -> Result<Option<Response>> {
+        Ok(self
+            .cover
+            .lock()
+            .map_err(poisoned)?
+            .clone()
+            .map(IntoResponse::into_response))
     }
 }
 
@@ -380,6 +393,37 @@ async fn playlist_indexes_count_only_the_saved_songs_a_client_sees() -> Result<(
     assert_eq!(removed["status"], "ok");
     let edits = hub.collection.edits.lock().map_err(poisoned)?;
     assert_eq!(edits.first().map(|e| e.remove_positions.clone()), Some(vec![2]));
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_playlist_cover_is_its_own_else_its_first_saved_songs_album() -> Result<()> {
+    let hub = hub().await?;
+    *hub.collection.playlist.lock().map_err(poisoned)? = Some(Playlist {
+        id: "pl-1".into(),
+        name: "Porch".into(),
+        description: String::new(),
+        track_ids: vec![
+            TrackId::of("Someone", "Elsewhere", "Not Saved"),
+            TrackId::of(ARTIST, ALBUM, "Paper Moon Static"),
+        ],
+        created_at: 0,
+        updated_at: 0,
+    });
+    let shown = hub
+        .json(&format!("/rest/getPlaylist?{}&id=pl-1&f=json", hub.auth()))
+        .await;
+    assert_eq!(shown["playlist"]["coverArt"], "pl-1");
+
+    let cover = format!("/rest/getCoverArt?{}&id=pl-1", hub.auth());
+    let (status, _, body) = hub.get(&cover, &[]).await;
+    assert_eq!(
+        (status, body),
+        (StatusCode::OK, format!("cover of {}", AlbumId::of(ARTIST, ALBUM)))
+    );
+    *hub.collection.cover.lock().map_err(poisoned)? = Some("own cover".into());
+    let (_, _, body) = hub.get(&cover, &[]).await;
+    assert_eq!(body, "own cover");
     Ok(())
 }
 
