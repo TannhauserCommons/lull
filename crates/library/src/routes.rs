@@ -463,17 +463,33 @@ async fn start_saves(State(svc): Svc, Json(mut body): Json<SavesBody>) -> Result
     if body.ids.is_empty() {
         return Err(Error::BadRequest("ids is empty".into()));
     }
-    let mut jobs = Vec::new();
-    let mut skipped = Vec::new();
+    let mut wanted = Vec::with_capacity(body.ids.len());
     for raw in body.ids {
         let id = track_id(raw)?;
         let source = body.source.remove(id.as_str()).map(SourceIn::into_ref).transpose()?;
+        let duplicate = body.duplicate.get(id.as_str()).copied();
+        wanted.push((id, source, duplicate));
+    }
+    let (jobs, skipped) = queue_saves(&svc, wanted).await;
+    Ok(Json(json!({ "jobs": jobs, "skipped": skipped })))
+}
+
+/// One save job per song, the one way saves start (`POST /api/saves`, and `saves.request`
+/// events from other crates): a song already saving keeps its job; a saved one is skipped unless
+/// `duplicate` says what to do. The jobs, and the songs skipped.
+pub(crate) async fn queue_saves(
+    svc: &Arc<Service>,
+    wanted: Vec<(TrackId, Option<SourceRef>, Option<Duplicate>)>,
+) -> (Vec<String>, Vec<TrackId>) {
+    let mut jobs = Vec::new();
+    let mut skipped = Vec::new();
+    for (id, source, duplicate) in wanted {
         if let Some(running) = svc.jobs.active_for(&id) {
             jobs.push(running.id);
             continue;
         }
         let saved = svc.index().saved(&id).is_some();
-        let duplicate = body.duplicate.get(id.as_str()).copied().filter(|_| saved);
+        let duplicate = duplicate.filter(|_| saved);
         if saved && duplicate.is_none() {
             skipped.push(id);
             continue;
@@ -484,9 +500,44 @@ async fn start_saves(State(svc): Svc, Json(mut body): Json<SavesBody>) -> Result
         let job = SaveJob::new(id, source, duplicate);
         jobs.push(job.id.clone());
         svc.jobs.put(&job).await;
-        save::spawn(&svc, job);
+        save::spawn(svc, job);
     }
-    Ok(Json(json!({ "jobs": jobs, "skipped": skipped })))
+    (jobs, skipped)
+}
+
+/// `saves.request { trackIds }` from another crate (a link import with "Save the songs too"):
+/// saved as `POST /api/saves` saves them, with the saving profile's pick.
+pub(crate) async fn save_requests(svc: Arc<Service>) {
+    let mut events = svc.ctx.bus.subscribe();
+    loop {
+        let event = match events.recv().await {
+            Ok(e) => e,
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                tracing::warn!(missed = n, "save requests may have been missed");
+                continue;
+            }
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+        };
+        if event.topic != "saves.request" {
+            continue;
+        }
+        let ids: Vec<TrackId> = match serde_json::from_value::<Vec<TrackId>>(event.data["trackIds"].clone()) {
+            Ok(ids) => ids
+                .into_iter()
+                .filter(|id| id.as_str().starts_with(TrackId::PREFIX))
+                .collect(),
+            Err(e) => {
+                tracing::warn!(error = %e, "a saves.request doesn't match api.md");
+                continue;
+            }
+        };
+        let (jobs, skipped) = queue_saves(&svc, ids.into_iter().map(|id| (id, None, None)).collect()).await;
+        tracing::info!(
+            jobs = jobs.len(),
+            skipped = skipped.len(),
+            "songs saved on another crate's request"
+        );
+    }
 }
 
 fn save_job(svc: &Service, id: &str) -> Result<SaveJob> {

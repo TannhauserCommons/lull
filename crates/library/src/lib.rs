@@ -167,6 +167,7 @@ pub async fn start(ctx: &Ctx, transfers: Arc<dyn Transfers>) -> Result<Arc<Servi
     // Before collection starts, so its start-up `settings` arrives (ADR-0050).
     ctx.spawn(upgrade::follow_settings(&svc));
     ctx.spawn(upgrade::run(svc.clone()));
+    ctx.spawn(routes::save_requests(svc.clone()));
     match svc.mode {
         LibraryMode::Folder => {
             svc.report(State::Warn, "reading the music folder");
