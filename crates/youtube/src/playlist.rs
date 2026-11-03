@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use lull_core::youtube::{Listed, Listing};
+use lull_core::youtube::{FoundPlaylist, Listed, Listing};
 use serde::Deserialize;
 
 use crate::Service;
@@ -64,10 +64,50 @@ pub fn parse(json: &[u8]) -> Result<Listing, Problem> {
     Ok(Listing {
         title: raw.title.unwrap_or_default(),
         total: raw.playlist_count,
+        owner: raw.channel.or(raw.uploader).filter(|o| !o.trim().is_empty()),
         thumbnails: thumbnails.into_iter().map(|t| t.url).collect(),
         description: raw.description.map(|d| d.trim().to_owned()).filter(|d| !d.is_empty()),
         songs: raw.entries.into_iter().flatten().filter_map(Entry::listed).collect(),
     })
+}
+
+/// YouTube's search, filtered to playlists (`sp=EgIQAw==`), first `limit` results, flat.
+pub async fn search(svc: &Service, query: &str, limit: usize) -> Result<Vec<FoundPlaylist>, Problem> {
+    let url = reqwest::Url::parse_with_params(
+        "https://www.youtube.com/results",
+        [("search_query", query), ("sp", "EgIQAw==")],
+    )
+    .map_err(|e| Problem::Other(format!("search link: {e}")))?;
+    let items = format!("1:{}", limit.max(1));
+    let out = svc
+        .run(&["-J", "--flat-playlist", "-I", &items, "--", url.as_str()], FLAT_TIME)
+        .await?;
+    parse_search(&out)
+}
+
+/// A playlist search's `-J` as playlists; videos and channels among the results are left out.
+pub fn parse_search(json: &[u8]) -> Result<Vec<FoundPlaylist>, Problem> {
+    let raw: Option<Raw> = serde_json::from_slice(json).map_err(|e| Problem::Other(format!("yt-dlp's answer: {e}")))?;
+    let Some(raw) = raw else { return Ok(Vec::new()) };
+    Ok(raw
+        .entries
+        .into_iter()
+        .flatten()
+        .filter(|e| e.url.as_deref().is_some_and(|u| u.contains("playlist?list=")))
+        .filter_map(|e| {
+            let id = e.id.filter(|id| plain_id(id))?;
+            let title = e.title.filter(|t| !t.trim().is_empty())?;
+            let mut thumbnails = e.thumbnails;
+            thumbnails.retain(|t| t.url.starts_with("https://"));
+            thumbnails.sort_by_key(|t| std::cmp::Reverse(t.width.unwrap_or(0)));
+            Some(FoundPlaylist {
+                id,
+                title,
+                owner: e.channel.or(e.uploader).unwrap_or_default(),
+                thumbnails: thumbnails.into_iter().map(|t| t.url).collect(),
+            })
+        })
+        .collect())
 }
 
 #[derive(Deserialize)]
@@ -77,6 +117,8 @@ struct Raw {
     title: Option<String>,
     playlist_count: Option<usize>,
     description: Option<String>,
+    channel: Option<String>,
+    uploader: Option<String>,
     #[serde(default)]
     thumbnails: Vec<Thumbnail>,
     /// `null` for a song `-i` skipped.
@@ -93,6 +135,9 @@ struct Thumbnail {
 #[derive(Deserialize)]
 struct Entry {
     id: Option<String>,
+    url: Option<String>,
+    #[serde(default)]
+    thumbnails: Vec<Thumbnail>,
     title: Option<String>,
     channel: Option<String>,
     uploader: Option<String>,
@@ -164,6 +209,25 @@ mod tests {
     #[test]
     fn a_playlist_the_site_refused_is_an_error() {
         assert!(parse(b"null\n").is_err());
+    }
+
+    #[test]
+    fn a_playlist_search_keeps_only_playlists_with_their_owner_and_biggest_picture() -> Result<(), Problem> {
+        let json = br#"{"_type": "playlist", "title": "person of interest", "entries": [
+            {"_type": "url", "ie_key": "YoutubeTab", "id": "PLrFSfgR7Y3I1yKrovCWPyGNlFR4eoEgCd",
+             "url": "https://www.youtube.com/playlist?list=PLrFSfgR7Y3I1yKrovCWPyGNlFR4eoEgCd",
+             "title": "Person of Interest : List of Songs", "channel": "young Jin", "thumbnails": [
+                {"url": "https://i.ytimg.com/vi/x/hq720.jpg?a=1", "width": 360},
+                {"url": "https://i.ytimg.com/vi/x/hq720.jpg?a=2", "width": 720}]},
+            {"_type": "url", "ie_key": "Youtube", "id": "dQw4w9WgXcQ", "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "title": "a video"},
+            {"_type": "url", "ie_key": "YoutubeTab", "id": "PLnoname", "url": "https://www.youtube.com/playlist?list=PLnoname", "title": null}
+        ]}"#;
+        let found = parse_search(json)?;
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].title, "Person of Interest : List of Songs");
+        assert_eq!(found[0].owner, "young Jin");
+        assert_eq!(found[0].thumbnails[0], "https://i.ytimg.com/vi/x/hq720.jpg?a=2");
+        Ok(())
     }
 
     #[test]
