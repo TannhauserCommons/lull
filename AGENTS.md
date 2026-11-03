@@ -21,6 +21,7 @@ A music app for one listener who hosts it themselves (PROJECT.md). It streams fr
 | First time in a clone | `mise run setup` (Rust toolchain, Webamp bundle) |
 | Everything CI runs | `mise run check` (fmt, clippy `-D warnings`, tests) |
 | Tests only | `mise run test` |
+| After changing `web/` (CI runs it too) | `mise run check:ui`: performance budgets, key screens, accessibility ([quality.md](docs/context/quality.md#ui-gates)) |
 | Run locally (settings in `.env`, see `deploy/.env.example`) | `mise run dev` |
 | Container image | `mise run image` |
 

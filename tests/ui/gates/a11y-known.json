@@ -1,0 +1,20 @@
+{
+  "note": "Accessibility violations main had when the gate arrived (2026-11-03), each with its reason: a11y.spec.mjs fails on any other. Fix one and delete its entry; never add one to get green. `target` is a regex on axe's selector; `designs` (optional) limits an entry.",
+  "known": [
+    {
+      "rule": "target-size",
+      "target": "disc-pick__(title|by)",
+      "why": "Home's picks: the song title and artist are text links one line tall (17 px) with the next line close under them, under WCAG 2.2's 24 px. A larger invisible hit area needs room between the lines, which is a layout change in every design."
+    },
+    {
+      "rule": "target-size",
+      "target": "tile__by",
+      "why": "Album and artist tiles (Home, Search): the artist line under a tile title is a one-line text link."
+    },
+    {
+      "rule": "target-size",
+      "target": "^a\\[href=\"#/(album|artist)/",
+      "why": "Album and artist names as links on Home and Search: album tile titles, and the artist in song rows and in picks' reasons, each one line of text (17-18 px) where a tap target should be 24 px. The cover or row beside each opens the same page."
+    }
+  ]
+}

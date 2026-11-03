@@ -1,6 +1,6 @@
 # Quality: web assets, visual matrix, budgets
 
-Owned by the Quality session. Files: `scripts/web-dist/`, `crates/server/src/web.rs`, the web stage of the `Dockerfile`, `tests/ui/`, `.github/workflows/ui.yml`.
+Owned by the Quality session. Files: `scripts/web-dist/`, `crates/server/src/web.rs`, the web stage of the `Dockerfile`, `tests/ui/`, `.github/workflows/ui.yml` and `ui-gates.yml`.
 
 ## Production web assets
 
@@ -69,3 +69,20 @@ How the baseline moved, so the next raise has a precedent to compare with:
 - **TBT 150 ms,** not median +50%: lab TBT of 0-90 ms is noise, and a floor keeps the check from flaking while still catching a real long task.
 
 Raise a budget only with a measured reason a listener would accept, in the commit (a feature they asked for, not drift): run the workflow, read the `lighthouse` artifact's reports, and edit `budgets.json` the same way.
+
+## UI gates
+
+`mise run check:ui` (CI: `.github/workflows/ui-gates.yml` on every change to `web/` or `tests/ui/`). Node and Chromium only, about ten minutes: no image, no hub, no outside service. Run it before pushing a `web/` change.
+
+**The fixture hub** (`tests/ui/fixture-hub/`): `server.mjs` serves this checkout's `web/` and answers `/api` from `library.mjs`, an invented library made by a seeded generator, the same on every run: 64 artists, 150 albums (the last ten the catalog's, unsaved; streaming one of them fails), 1,672 songs, a 1,200-song playlist (`pl-1`) and a 60-song one (`pl-2`), 300 likes, a week of history, synced lyrics. Covers are generated PNGs at the size asked (the 512 px one weighs what a photo does); audio is a silent WAV as long as the song. It models the contract in api.md, not the hub: anything it doesn't answer is a 404 the specs count as a failure, so add the endpoint there when a screen starts reading a new one. `node tests/ui/fixture-hub/server.mjs 8790` runs it by hand; `FIXTURE_TRACK_SECONDS=20` makes every song 20 s and `FIXTURE_AUDIO_DIR=<dir with song.mp3, song.flac>` serves real files (a listening soak in minutes); `LULL_WEB=<dir>` serves another `web/` (an A/B against main).
+
+**Performance** (`gates/perf.spec.mjs`, budgets in `gates/perf-budgets.json`, scenarios in `gates/scenarios.mjs`). The CPU is slowed 4x and each scenario is read from a Chrome trace: counts that don't move between runs (elements restyled, layouts, main-thread frames, bytes) wherever possible, and task lengths with about twice the measured time as room for a slower runner. Per design (all five): one class flip, text change or insertion restyles at most a hundred elements on Home, a playlist and Now Playing; the hover highlight is complete in the first frame, and a sweep over the long playlist causes no layout and spends under 100 ms in event handlers (the bug that made the highlight trail spent 320); no main-thread frames at rest; playing costs under 220 ms a second on Now Playing (about 60 measured). In lull: startup, scrolling and moving between screens, typing a search, opening a menu, dragging in the queue, resizing the panel, playing beside a 1,200-song list, and a compressed listening session (60 songs skipped through, in a playlist of mixed albums, while the screens change, the desktop app's bridge stubbed by `gates/desktop-bridge.js`): heap, nodes and listeners left behind, and what crosses to the mini player (a snapshot under 2 KB, the cover once per song).
+
+**Key screens** (`gates/screens.spec.mjs`): Home, a search, a playlist, an album, Now Playing and Settings, in every design and theme, at a phone (390x844), a laptop (1366x768) and a wide window (1920x1080). Each must load without console errors or failed requests, keep inside the window, give every title room, and match its golden in `gates/goldens/linux/`. Goldens are CI's only (fonts and anti-aliasing differ elsewhere); on another system a first run writes its own, gitignored, so later runs compare against them. **Approving a change in how a screen looks:** push, then `mise run ui:approve` (it runs the workflow in capture mode and downloads the pictures), review `git diff --stat tests/ui/gates/goldens` and the pictures, and commit them with the change. A failing run uploads `gates-diffs` (expected, actual and diff images).
+
+**Accessibility** (`gates/a11y.spec.mjs`): axe-core, WCAG 2.2 A and AA, on the same screens in every design and theme. `gates/a11y-known.json` lists the violations main had when the gate arrived, each with its rule and where; a new one fails. The list only shrinks: fix one, delete its entry.
+
+**Budgets move only with a measured reason a listener would accept** (a feature, not drift), stated in the commit with the run's numbers, as above for Lighthouse.
+
+**Finding a cause** when a gate fails: the Chrome trace of the scenario (DevTools Performance panel, or the `summarise` numbers), and for slow style recalculation Chrome's selector stats (trace category `disabled-by-default-blink.debug`, event `SelectorStats`), which name the selector. The pattern behind most of the fixes so far: a `:has()` on a page-wide element whose argument can be anywhere walks the whole page each time it is checked; limit it to where the element sits (`.main:has(> :where(.view) > .now)`; `:where()` keeps the specificity) or use a state lull already sets (docs/themes.md, Staying fast).
+

@@ -1,0 +1,85 @@
+name: ui-gates
+# The UI gates on the fixture hub (tests/ui/fixture-hub, Node only, no image): performance budgets under a 4x CPU
+# slowdown, the key screens against their goldens in every design, theme and size, and accessibility.
+# `mise run check:ui` runs the same; docs/context/quality.md#ui-gates. `capture` (by hand, or while no goldens are
+# committed) writes the screens' pictures instead of comparing: `mise run ui:approve` takes them from the run.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - "tests/ui/**"
+      - ".github/workflows/ui-gates.yml"
+  pull_request:
+    paths:
+      - "web/**"
+      - "tests/ui/**"
+      - ".github/workflows/ui-gates.yml"
+  workflow_dispatch:
+    inputs:
+      capture:
+        description: "Write the screens' goldens instead of comparing against them"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-gates-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  gates:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24.11"
+          cache: npm
+          cache-dependency-path: |
+            tests/ui/package-lock.json
+            web/package-lock.json
+      - name: Webamp and the QR encoder (Classic mode, pairing)
+        run: sh scripts/vendor-web.sh
+      - working-directory: tests/ui
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - id: mode
+        name: Compare or capture
+        run: |
+          if [ "${{ inputs.capture }}" = "true" ] || [ -z "$(ls -A tests/ui/gates/goldens/linux 2>/dev/null)" ]; then
+            echo "capture=true" >> "$GITHUB_OUTPUT"
+            echo "UI_CAPTURE=1" >> "$GITHUB_ENV"
+          else
+            echo "capture=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Alone, so the task-length budgets don't share the CPU with screenshots.
+      - name: Performance budgets
+        working-directory: tests/ui
+        run: npx playwright test -c gates/playwright.config.mjs --project perf --workers 1
+      - name: Key screens and accessibility
+        if: ${{ !cancelled() }}
+        working-directory: tests/ui
+        run: npx playwright test -c gates/playwright.config.mjs --project screens --project a11y
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && steps.mode.outputs.capture == 'true' }}
+        with:
+          name: gates-goldens
+          path: tests/ui/gates/goldens/linux
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        if: ${{ failure() }}
+        with:
+          name: gates-diffs
+          # Expected, actual and diff images of every failing picture, the traces' numbers, and the HTML report.
+          path: |
+            tests/ui/test-results/gates
+            tests/ui/report/gates
+          if-no-files-found: ignore

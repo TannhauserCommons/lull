@@ -1,0 +1,21 @@
+// A stand-in for the desktop app's Tauri bridge (window.__TAURI__), so desktop.js runs its wrapper code in a plain
+// browser: it answers every call, counts what the page sends across by event or command name, and lets a test send
+// the page an event as Rust or another window would: __bridge.fire('mini', { action: 'hello' }).
+window.__bridge = { calls: {}, bytes: {}, largest: {}, heard: {} };
+(function () {
+  function note(name, payload) {
+    var b = JSON.stringify(payload === undefined ? null : payload).length, x = window.__bridge;
+    x.calls[name] = (x.calls[name] || 0) + 1; x.bytes[name] = (x.bytes[name] || 0) + b; x.largest[name] = Math.max(x.largest[name] || 0, b);
+    return Promise.resolve(name === 'desktop_settings' ? {} : null);
+  }
+  var win = { minimize: note, toggleMaximize: note, close: note, onFocusChanged: function () { return Promise.resolve(function () {}); }, listen: function () { return Promise.resolve(function () {}); } };
+  window.__bridge.fire = function (name, payload) { (window.__bridge.heard[name] || []).forEach(function (fn) { fn({ payload: payload }); }); };
+  window.__TAURI__ = {
+    core: { invoke: note },
+    event: {
+      emit: note, emitTo: function (to, name, p) { return note(name, p); },
+      listen: function (name, fn) { (window.__bridge.heard[name] = window.__bridge.heard[name] || []).push(fn); return Promise.resolve(function () {}); }
+    },
+    window: { getCurrentWindow: function () { return win; } }
+  };
+})();

@@ -3,3 +3,5 @@ node_modules/
 test-results/
 report/
 lhci/
+gates/goldens/*
+!gates/goldens/linux/

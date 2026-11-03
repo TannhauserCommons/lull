@@ -36,6 +36,14 @@ run = [
   "node scripts/web-dist/build.mjs web {{arg(i=0, default='web-dist')}}",
 ]
 
+[tasks."check:ui"]
+description = "The UI gates CI runs on web/ changes: performance budgets, key screens, accessibility (Node and Chromium only)"
+run = "sh tests/ui/gates/run.sh"
+
+[tasks."ui:approve"]
+description = "Approve how the key screens look now: capture the UI gates' goldens on CI into tests/ui/gates/goldens/linux"
+run = "sh tests/ui/gates/approve.sh"
+
 [tasks."ui:update"]
 description = "Recapture the visual goldens on CI's image and download them into tests/ui/goldens"
 run = "sh tests/ui/update-goldens.sh"
