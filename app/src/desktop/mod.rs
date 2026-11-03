@@ -56,6 +56,7 @@ pub fn run() {
             commands::tailscale_serve,
             commands::classic_open,
             commands::classic_handoff,
+            commands::classic_fit,
             commands::app_update,
             commands::app_update_check,
             commands::app_update_install,

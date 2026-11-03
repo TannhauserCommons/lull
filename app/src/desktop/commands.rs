@@ -18,7 +18,7 @@ use crate::pages;
 use crate::updates::Report;
 use serde::{Deserialize, Serialize};
 use tauri::async_runtime::spawn_blocking;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, WebviewWindow};
 use tauri_plugin_autostart::ManagerExt;
 
 #[derive(Debug, Deserialize)]
@@ -119,6 +119,13 @@ pub async fn classic_open(app: AppHandle, handoff: Handoff) -> Result<(), String
 #[tauri::command]
 pub fn classic_handoff(app: AppHandle) -> Option<Handoff> {
     classic::take_handoff(&app)
+}
+
+/// The Classic window's page: Webamp's size at 1x and the sizes it may take, the listener's first.
+/// The window zooms, fits and stays on screen (classic::fit); the answer is the size it took.
+#[tauri::command]
+pub fn classic_fit(window: WebviewWindow, width: f64, height: f64, zooms: Vec<f64>) -> Result<f64, String> {
+    classic::fit(&window, width, height, &zooms)
 }
 
 #[tauri::command]

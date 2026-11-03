@@ -10,7 +10,7 @@ use crate::desktop::recovery;
 use crate::desktop::state::{Desktop, lock};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter, Listener, Manager, Url, WebviewUrl, WebviewWindow};
+use tauri::{AppHandle, Emitter, Listener, Manager, PhysicalPosition, PhysicalSize, Url, WebviewUrl, WebviewWindow};
 
 pub const LABEL: &str = "classic";
 
@@ -215,6 +215,57 @@ pub fn follow(app: &AppHandle) {
             held.follow(&id, playing, pos);
         }
     });
+}
+
+/// Webamp's page asks for its size: Webamp measures `width` x `height` at 1x, and `zooms` are the
+/// sizes it may be drawn at, the listener's own first. The window takes the first that fits the work
+/// area of the monitor it is on (the last if none does), zooms its webview to it (page zoom, so
+/// Webamp's pointer math and its pixelated skin stay right), fits Webamp exactly and stays inside
+/// that work area. Returns the zoom it took.
+pub fn fit(window: &WebviewWindow, width: f64, height: f64, zooms: &[f64]) -> Result<f64, String> {
+    let valid = |v: f64| v.is_finite() && v > 0.0;
+    if !valid(width) || !valid(height) || width > 10_000.0 || height > 10_000.0 {
+        return Err(format!("Webamp can't be {width} x {height}"));
+    }
+    if zooms.is_empty() || zooms.iter().any(|z| !(0.5..=4.0).contains(z)) {
+        return Err(format!("unknown Classic sizes {zooms:?}"));
+    }
+    let monitor = window.current_monitor().map_err(|e| e.to_string())?;
+    let scale = window.scale_factor().map_err(|e| e.to_string())?;
+    let physical = |zoom: f64| ((width * zoom * scale).ceil(), (height * zoom * scale).ceil());
+    let area = monitor.map(|m| *m.work_area());
+    let fits = |zoom: f64| {
+        area.is_none_or(|a| {
+            let (w, h) = physical(zoom);
+            w <= f64::from(a.size.width) && h <= f64::from(a.size.height)
+        })
+    };
+    let zoom = zooms
+        .iter()
+        .copied()
+        .find(|&z| fits(z))
+        .or(zooms.last().copied())
+        .ok_or("no Classic size")?;
+    let (w, h) = physical(zoom);
+    window.set_zoom(zoom).map_err(|e| e.to_string())?;
+    window
+        .set_size(PhysicalSize::new(w as u32, h as u32))
+        .map_err(|e| e.to_string())?;
+    if let Some(a) = area {
+        let at = window.outer_position().map_err(|e| e.to_string())?;
+        let inside = |pos: i32, len: f64, start: i32, room: u32| {
+            let end = start + i32::try_from(room).unwrap_or(i32::MAX) - len as i32;
+            pos.min(end).max(start)
+        };
+        let x = inside(at.x, w, a.position.x, a.size.width);
+        let y = inside(at.y, h, a.position.y, a.size.height);
+        if (x, y) != (at.x, at.y) {
+            window
+                .set_position(PhysicalPosition::new(x, y))
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(zoom)
 }
 
 /// The window's page: what to play. Again, as Webamp last had it, if the page reloaded.

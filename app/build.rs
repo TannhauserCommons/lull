@@ -176,6 +176,7 @@ fn main() -> io::Result<()> {
             "tailscale_serve",
             "classic_open",
             "classic_handoff",
+            "classic_fit",
             "app_update",
             "app_update_check",
             "app_update_install",

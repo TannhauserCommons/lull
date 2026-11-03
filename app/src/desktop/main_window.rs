@@ -43,8 +43,9 @@ const HUB_PERMISSIONS: &[&str] = &[
     "allow-resume-after-crash",
 ];
 
-/// What Webamp's page in the Classic window may call (classic.rs): fit and show its window, move it
-/// by Webamp's title bars, take the handoff, and talk to `main`.
+/// What Webamp's page in the Classic window may call (classic.rs): fit and show its window (at its
+/// size, `classic_fit`), move it by Webamp's title bars, take the handoff, and talk to `main`.
+/// `allow-set-size` stays for pages that predate `classic_fit`.
 const CLASSIC_PERMISSIONS: &[&str] = &[
     "core:window:default",
     "core:window:allow-set-size",
@@ -55,6 +56,7 @@ const CLASSIC_PERMISSIONS: &[&str] = &[
     "core:event:default",
     "allow-window-action",
     "allow-classic-handoff",
+    "allow-classic-fit",
 ];
 
 /// First window of the run. No hub chosen yet: the welcome page. Otherwise the hub is started or
