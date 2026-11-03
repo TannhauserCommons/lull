@@ -262,6 +262,13 @@ fn resume_from(now: &NowPlaying, since: Duration) -> Option<Resume> {
     })
 }
 
+/// What `main`'s next page resumes when it isn't a crash that brings it back: Classic mode's native
+/// window closed `main` and builds it again (classic_native).
+#[cfg(windows)]
+pub fn resume_on_load(app: &AppHandle, resume: Resume) {
+    *lock(&app.state::<Recovery>().resume) = Some(resume);
+}
+
 /// `main`'s page, once it runs again: what to resume, once.
 pub fn take_resume(app: &AppHandle) -> Option<Resume> {
     lock(&app.state::<Recovery>().resume).take()

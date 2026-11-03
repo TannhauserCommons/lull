@@ -32,3 +32,17 @@ lull bundles Deno, unmodified: the JavaScript runtime yt-dlp needs for YouTube.
   >
   > THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 - Binaries: the release's `deno-x86_64-pc-windows-msvc.zip` and `deno-x86_64-unknown-linux-gnu.zip`, checked by sha256 when lull is built (`app/build.rs`)
+
+## Spotifast (parts of its source)
+
+lull's native Classic window (`app/src/desktop/classic_native`) adapts code from Spotifast: its tables of where each part of a Winamp skin sits, its readers for `region.txt` and `viscolor.txt`, its bitmap-font folding, and its spectrum analyser.
+
+- Project: https://github.com/crmne/spotifast (commit 672d665)
+- Copyright (c) 2026 Carmine Paolino
+- Licence: MIT:
+
+  > Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+  >
+  > The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+  >
+  > THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

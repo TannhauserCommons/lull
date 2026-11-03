@@ -25,35 +25,41 @@ const FIRST_SIZE: (f64, f64) = (275.0, 348.0);
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Handoff {
-    tracks: Vec<Track>,
-    index: usize,
-    pos: f64,
-    playing: bool,
-    shuffle: bool,
-    repeat: bool,
-    volume: f64,
+    pub(crate) tracks: Vec<Track>,
+    pub(crate) index: usize,
+    pub(crate) pos: f64,
+    pub(crate) playing: bool,
+    pub(crate) shuffle: bool,
+    pub(crate) repeat: bool,
+    pub(crate) volume: f64,
     /// The listener's Classic skin, and their favourites for Webamp's Skins menu.
-    skin: Option<Skin>,
+    pub(crate) skin: Option<Skin>,
     skins: Vec<Skin>,
+    /// The listener's Classic size, and the page Classic was opened from (`#/library…`): the
+    /// native window (classic_native) takes its size here, and `main` comes back on that page.
+    #[serde(default)]
+    pub(crate) size: Option<f64>,
+    #[serde(default)]
+    pub(crate) page: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Track {
-    id: String,
-    url: String,
-    title: String,
-    artist: String,
+pub(crate) struct Track {
+    pub(crate) id: String,
+    pub(crate) url: String,
+    pub(crate) title: String,
+    pub(crate) artist: String,
     album: String,
-    duration: Option<f64>,
+    pub(crate) duration: Option<f64>,
     /// Cover art for the system's media overlay.
     art: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Skin {
-    url: String,
+pub(crate) struct Skin {
+    pub(crate) url: String,
     name: String,
 }
 
@@ -148,6 +154,10 @@ pub fn window(app: &AppHandle) -> Option<WebviewWindow> {
 /// Open Webamp's window with the queue `main` hands over, then hide `main`. Asked again while it is
 /// open, it comes to the front.
 pub fn open(app: &AppHandle, handoff: Handoff) -> Result<(), String> {
+    #[cfg(windows)]
+    if crate::desktop::classic_native::is_open() {
+        return crate::desktop::classic_native::show(app).map_err(|e| e.to_string());
+    }
     if let Some(classic) = window(app) {
         return classic
             .show()
@@ -165,6 +175,10 @@ pub fn open(app: &AppHandle, handoff: Handoff) -> Result<(), String> {
         .find(|u| Url::parse(u).map(|u| u.origin()) != Ok(hub.clone()))
     {
         return Err(format!("Classic mode plays only from your hub, not {url}"));
+    }
+    #[cfg(windows)]
+    if crate::desktop::classic_native::chosen() {
+        return crate::desktop::classic_native::open(app, handoff, main);
     }
     let page = Url::parse(&hub.ascii_serialization())
         .and_then(|origin| origin.join(PAGE))
@@ -340,6 +354,8 @@ mod tests {
             volume: 1.0,
             skin: None,
             skins: Vec::new(),
+            size: None,
+            page: None,
         }
     }
 

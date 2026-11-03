@@ -478,6 +478,7 @@
   function openWindow(D) {
     if (!hearing) { hearing = true; D.onClassic(fromWindow); }
     var h = handoff();
+    h.size = App.classicSize.get(); h.page = lastHref();      // a window drawn natively takes its size here, and lull comes back on this page
     return Promise.all([readFavourites(), App.classicSkin.opening()]).then(function (r) {
       var favs = r[0], skin = r[1];
       h.skin = skin ? { url: LullWebamp.skinUrl(base(), skin), name: skin.name || 'Your skin' } : null;

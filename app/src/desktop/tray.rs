@@ -140,6 +140,8 @@ impl Tray {
 fn on_menu(app: &AppHandle, event: MenuEvent) {
     let result = match event.id().as_ref() {
         // Back to lull: from Classic mode with the queue handed back, else from the mini player.
+        #[cfg(windows)]
+        "show" if crate::desktop::classic_native::is_open() => crate::desktop::classic_native::close(app),
         "show" if classic::window(app).is_some() => classic::close(app),
         "show" => mini::close(app),
         "mini" => mini::toggle(app),

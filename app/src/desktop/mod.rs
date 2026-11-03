@@ -3,6 +3,8 @@
 //! it in-process with its bundled slskd. Every player action runs in the web UI.
 
 mod classic;
+#[cfg(windows)]
+mod classic_native;
 mod commands;
 mod discord;
 mod glass;
@@ -153,7 +155,15 @@ fn on_window_event(window: &Window, event: &WindowEvent) {
 }
 
 /// Quitting stops the hub on this computer and its slskd, which would otherwise keep the Soulseek login.
+/// Classic's native window isn't a Tauri window: while it plays with `main` closed, the last Tauri
+/// window closing doesn't end lull.
 fn on_run_event(app: &AppHandle, event: RunEvent) {
+    #[cfg(windows)]
+    if let RunEvent::ExitRequested { code: None, api, .. } = &event
+        && classic_native::is_open()
+    {
+        api.prevent_exit();
+    }
     if let RunEvent::Exit = event
         && let Some(local) = app.state::<Desktop>().local_hub()
     {
