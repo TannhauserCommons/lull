@@ -29,7 +29,9 @@ notify = "8.2.1"
 tower-http = { version = "0.6.11", features = ["fs"] }
 # `oneshot` to call ServeFile from the `Library` seam's `stream`.
 tower = { version = "0.5.3", features = ["util"] }
-# Folder mode: scales embedded and folder covers down to the sizes the UI asks for.
+
+[dev-dependencies]
+# Test pictures for the cover tests (scaling itself is lull_core::art's).
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
 
 [lints]

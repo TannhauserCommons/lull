@@ -278,11 +278,12 @@ impl seams::Library for Service {
         routes::stream_saved(self, id, range).await
     }
 
+    /// Any size (Subsonic's `getCoverArt`): the smallest served size that covers it, else the
+    /// largest; 512 when none is asked for.
     async fn cover(&self, id: &AlbumId, size: Option<u32>) -> Result<Response> {
         let size = match size {
-            Some(s) if s <= 96 => 96,
-            Some(s) if s <= 256 => 256,
-            _ => 512,
+            Some(s) => lull_core::art::SIZES.into_iter().find(|&b| b >= s).unwrap_or(2048),
+            None => 512,
         };
         routes::cover_response(self, id, size).await
     }

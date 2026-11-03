@@ -8,7 +8,7 @@ use axum::body::{Body, Bytes};
 use axum::extract::{Path, Query, State};
 use axum::http::HeaderValue;
 use axum::http::{HeaderMap, StatusCode, header};
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use lull_core::config::LibraryMode;
@@ -316,16 +316,7 @@ async fn cover(State(svc): Svc, Path(id): Path<String>, Query(q): Query<ArtQuery
 }
 
 pub async fn cover_response(svc: &Service, id: &AlbumId, size: u32) -> Result<Response> {
-    let image = art::cover(svc, id, size).await?;
-    Ok((
-        [
-            (header::CONTENT_TYPE, image.content_type.to_owned()),
-            (header::CACHE_CONTROL, "private, max-age=86400".to_owned()),
-            (header::ETAG, lull_core::etag::of(&image.bytes)),
-        ],
-        image.bytes,
-    )
-        .into_response())
+    Ok(lull_core::art::response(art::cover(svc, id, size).await?))
 }
 
 // ---------- rescan and duplicates ----------

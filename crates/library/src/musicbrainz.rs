@@ -199,13 +199,23 @@ pub enum CoverOf<'a> {
     ReleaseGroup(&'a str),
 }
 
-/// The front cover at one of the archive's thumbnail sizes (250, 500, 1200), or `None`.
-pub async fn cover(http: &Http, of: CoverOf<'_>, size: u32) -> Result<Option<Vec<u8>>> {
-    let url = match of {
-        CoverOf::Release(id) => format!("{CAA}/release/{id}/front-{size}"),
-        CoverOf::ReleaseGroup(id) => format!("{CAA}/release-group/{id}/front-{size}"),
+/// The front cover at one of the archive's thumbnail sizes (250, 500, 1200), or its original
+/// (`None`, or a thumbnail the archive doesn't have); `None` when there is no front cover.
+pub async fn cover(http: &Http, of: CoverOf<'_>, size: Option<u32>) -> Result<Option<Vec<u8>>> {
+    let front = match of {
+        CoverOf::Release(id) => format!("{CAA}/release/{id}/front"),
+        CoverOf::ReleaseGroup(id) => format!("{CAA}/release-group/{id}/front"),
     };
-    let resp = http.send("coverartarchive", |c| c.get(&url)).await?;
+    if let Some(size) = size
+        && let Some(thumbnail) = front_at(http, &format!("{front}-{size}")).await?
+    {
+        return Ok(Some(thumbnail));
+    }
+    front_at(http, &front).await
+}
+
+async fn front_at(http: &Http, url: &str) -> Result<Option<Vec<u8>>> {
+    let resp = http.send("coverartarchive", |c| c.get(url)).await?;
     match http::ok("coverartarchive", resp) {
         Ok(resp) => resp
             .bytes()

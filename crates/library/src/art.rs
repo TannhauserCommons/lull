@@ -1,7 +1,8 @@
 //! `GET /api/art/{albumId}`: the library's cover for saved albums (Jellyfin's image, or the
 //! music folder's image file or embedded picture), else the Cover Art Archive's. Every image is
 //! cached on disk under `<data_dir>/art`, and so is "the archive has none" (for a week), so a
-//! cover costs at most one outside call per album and size.
+//! cover costs at most one outside call per album and size. Sizes and scaling are
+//! `lull_core::art`'s: scaled down to the size asked for, never up.
 //!
 //! The outside lookup (MusicBrainz, then the archive) never holds a request for long: a page asks
 //! for many covers at once, and browsers open only six connections per host. A request waits
@@ -14,7 +15,7 @@ use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant, SystemTime};
 
 use lull_core::ids::AlbumId;
-use lull_core::{Ctx, Error, Result, catalog};
+use lull_core::{Ctx, Error, Result, art, catalog};
 use tokio::sync::watch;
 
 use crate::items::Art;
@@ -69,15 +70,9 @@ struct Known {
     release: Option<String>,
 }
 
-pub struct Image {
-    pub bytes: Vec<u8>,
-    pub content_type: &'static str,
-}
-
-pub async fn cover(svc: &Service, album: &AlbumId, size: u32) -> Result<Image> {
-    if ![96, 256, 512].contains(&size) {
-        return Err(Error::BadRequest("size must be 96, 256 or 512".into()));
-    }
+/// The album's cover at `size` (one of `art::SIZES`), or smaller when its source is.
+pub async fn cover(svc: &Service, album: &AlbumId, size: u32) -> Result<Vec<u8>> {
+    art::check(size)?;
     if !album.as_str().starts_with(AlbumId::PREFIX) || !album.as_str()[3..].chars().all(|c| c.is_ascii_hexdigit()) {
         return Err(Error::NotFound(format!("no album {album}")));
     }
@@ -98,7 +93,7 @@ pub async fn cover(svc: &Service, album: &AlbumId, size: u32) -> Result<Image> {
                 return Ok(image);
             }
             match svc.jellyfin()?.image(item, size).await {
-                Ok(Some(bytes)) => return store(&path, bytes).await,
+                Ok(Some(bytes)) => return Ok(store(&path, bytes).await),
                 Ok(None) => {}
                 // Jellyfin down: the archive may still have it.
                 Err(e) => tracing::debug!(%album, error = %e, "Jellyfin cover unavailable"),
@@ -110,7 +105,7 @@ pub async fn cover(svc: &Service, album: &AlbumId, size: u32) -> Result<Image> {
                 return Ok(image);
             }
             match file_cover(svc.folder.file(path), *embedded, size).await {
-                Ok(Some(bytes)) => return store(&cache, bytes).await,
+                Ok(Some(bytes)) => return Ok(store(&cache, bytes).await),
                 Ok(None) => {}
                 // Changed since it was indexed: the watcher catches up; the archive may have it.
                 Err(e) => tracing::debug!(%album, error = e, "folder cover unreadable"),
@@ -165,8 +160,7 @@ async fn look_up(
     if lookups.down() {
         return;
     }
-    let archive_size = if size <= 256 { 250 } else { 500 };
-    match find(ctx, album, known, archive_size).await {
+    match find(ctx, album, known, art::archive_size(size)).await {
         Ok(Some(Some(bytes))) => match scaled(bytes, size).await {
             Ok(bytes) => {
                 if let Err(e) = write_atomic(path, bytes).await {
@@ -189,8 +183,9 @@ async fn look_up(
     }
 }
 
-/// The archive's cover (`Some(None)`: it has none), or `None` when lull doesn't know the album.
-async fn find(ctx: &Ctx, album: &AlbumId, known: Option<Known>, size: u32) -> Result<Option<Option<Vec<u8>>>> {
+/// The archive's cover at its thumbnail `size` (`None`: the original), `Some(None)` when it has
+/// none, or `None` when lull doesn't know the album.
+async fn find(ctx: &Ctx, album: &AlbumId, known: Option<Known>, size: Option<u32>) -> Result<Option<Option<Vec<u8>>>> {
     let http = &ctx.http;
     let found = match known {
         Some(Known {
@@ -225,7 +220,7 @@ async fn file_cover(file: PathBuf, embedded: bool, size: u32) -> Result<Option<V
         } else {
             Some(std::fs::read(&file).map_err(|e| format!("{}: {e}", file.display()))?)
         };
-        Ok(bytes.map(|b| fit(b, size)))
+        Ok(bytes.map(|b| art::fit(b, size)))
     })
     .await
     .map_err(|e| format!("cover task: {e}"))?
@@ -234,29 +229,9 @@ async fn file_cover(file: PathBuf, embedded: bool, size: u32) -> Result<Option<V
 /// An archive cover at the size asked for: the archive's smallest thumbnail is 250 px, and a 96 px
 /// row cover kept at 250 is 6.8 times the pixels for every client to decode and hold.
 async fn scaled(bytes: Vec<u8>, size: u32) -> Result<Vec<u8>, String> {
-    tokio::task::spawn_blocking(move || fit(bytes, size))
+    tokio::task::spawn_blocking(move || art::fit(bytes, size))
         .await
         .map_err(|e| format!("cover task: {e}"))
-}
-
-/// Scales an image down to fit `size` × `size` (JPEG), so a 96 px thumbnail isn't a 3 MB
-/// scan. Images already small enough, and formats lull doesn't decode, are kept as they are.
-fn fit(bytes: Vec<u8>, size: u32) -> Vec<u8> {
-    let Ok(image) = image::load_from_memory(&bytes) else {
-        return bytes;
-    };
-    if image.width() <= size && image.height() <= size {
-        return bytes;
-    }
-    let mut out = Vec::new();
-    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 88);
-    match image.thumbnail(size, size).to_rgb8().write_with_encoder(encoder) {
-        Ok(()) => out,
-        Err(e) => {
-            tracing::debug!(error = %e, "cover could not be scaled; serving it whole");
-            bytes
-        }
-    }
 }
 
 /// An album lull only knows by id (a search result, a recommendation): its artist and title
@@ -275,22 +250,15 @@ async fn release_groups_by_name(ctx: &Ctx, album: &AlbumId) -> Result<Option<Vec
         .map(Some)
 }
 
-async fn cached(path: &Path) -> Option<Image> {
-    let bytes = tokio::fs::read(path).await.ok()?;
-    Some(Image {
-        content_type: content_type(&bytes),
-        bytes,
-    })
+async fn cached(path: &Path) -> Option<Vec<u8>> {
+    tokio::fs::read(path).await.ok()
 }
 
-async fn store(path: &Path, bytes: Vec<u8>) -> Result<Image> {
+async fn store(path: &Path, bytes: Vec<u8>) -> Vec<u8> {
     if let Err(e) = write_atomic(path, bytes.clone()).await {
         tracing::warn!(path = %path.display(), error = %e, "could not cache a cover");
     }
-    Ok(Image {
-        content_type: content_type(&bytes),
-        bytes,
-    })
+    bytes
 }
 
 async fn write_atomic(path: &Path, bytes: Vec<u8>) -> std::io::Result<()> {
@@ -305,15 +273,6 @@ async fn write_atomic(path: &Path, bytes: Vec<u8>) -> std::io::Result<()> {
 async fn recently_written(path: &Path) -> bool {
     let modified = tokio::fs::metadata(path).await.and_then(|m| m.modified());
     modified.is_ok_and(|t| SystemTime::now().duration_since(t).is_ok_and(|age| age < NONE_FOR))
-}
-
-fn content_type(bytes: &[u8]) -> &'static str {
-    match bytes {
-        [0x89, b'P', b'N', b'G', ..] => "image/png",
-        [b'G', b'I', b'F', ..] => "image/gif",
-        [b'R', b'I', b'F', b'F', _, _, _, _, b'W', b'E', b'B', b'P', ..] => "image/webp",
-        _ => "image/jpeg",
-    }
 }
 
 #[cfg(test)]

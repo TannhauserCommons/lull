@@ -322,9 +322,9 @@ async fn fetch_cover(svc: &Service, job: &mut SaveJob) -> Result<(Option<TagSet>
         .map_err(|e| Fail::new(FailKind::Match, format!("MusicBrainz release lookup failed: {e}")))?;
     let set = musicbrainz::tag_set(&release, &recording, existing.disc, existing.track)
         .map_err(|e| Fail::new(FailKind::Match, e.to_string()))?;
-    let mut cover = musicbrainz::cover(http, CoverOf::Release(&mbid), EMBED_SIZE).await;
+    let mut cover = musicbrainz::cover(http, CoverOf::Release(&mbid), Some(EMBED_SIZE)).await;
     if let (Ok(None), Some(group)) = (&cover, &set.mb.release_group) {
-        cover = musicbrainz::cover(http, CoverOf::ReleaseGroup(group), EMBED_SIZE).await;
+        cover = musicbrainz::cover(http, CoverOf::ReleaseGroup(group), Some(EMBED_SIZE)).await;
     }
     let cover = cover.unwrap_or_else(|e| {
         tracing::info!(job = job.id, error = %e, "cover art unavailable; saving without it");
