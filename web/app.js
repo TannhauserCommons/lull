@@ -3616,8 +3616,7 @@
       App.coverItem('track', t.id),
       { label: 'Start radio', icon: 'radio', run: function () { startRadio({ kind: 'track', id: t.id }); } },
       { label: 'Show source', icon: 'soulseek', run: function () { App.hooks.sourceDetails(); } },
-      { label: 'Copy link', icon: 'link', run: function () { App.copyShareLink('track', t.id, '/album/' + t.albumId); } },
-      { label: 'Copy lull link', icon: 'link', run: function () { App.copyLullLink('/album/' + t.albumId); } },
+      { label: 'Copy link', icon: 'link', run: function () { App.copyShareLink('track', t.id); } },
       'sep'
     ].concat(views), { label: 'More player actions' });
   }
@@ -3710,27 +3709,29 @@
     'skip': function () { $('#view').focus(); }
   });
   /* ---------- copying links ----------
-     "Copy link" copies a public page anyone can open: song.link (every streaming service), or Last.fm when song.link
-     doesn't know it, from GET /api/share/{kind}/{id} (kind track | album | artist). "Copy lull link" copies this hub's
-     own address for the screen, which opens only on the listener's devices. The clipboard write starts inside the
-     click, with the text still on its way (ClipboardItem takes a promise), so the browser allows it once the hub has
-     answered. */
+     "Copy link" copies one link that works for anyone: a public page (song.link, which opens in every music app, or
+     Last.fm when song.link doesn't know it) followed by `#lull?` and the song's names and public ids, from
+     GET /api/share/{kind}/{id} (kind track | album | artist). Any lull opens it as its own page (App.openLink, on
+     another hub too); never this hub's address. A playlist's link is the page it was imported from. The clipboard write
+     starts inside the click, with the text still on its way (ClipboardItem takes a promise), so the browser allows
+     it once the hub has answered. */
   var SHARE_NOUN = { track: 'song', album: 'album', artist: 'artist' };
-  App.copyShareLink = function (kind, id, lullPath) {
+  App.copyShareLink = function (kind, id) {
     var share = M.api('/api/share/' + kind + '/' + encodeURIComponent(id));
-    clipboardWrite(share.then(function (r) { return r.url; })).then(function () {
-      share.then(function (r) { App.toast(r.source === 'lastfm' ? 'Link copied: the Last.fm page' : 'Link copied: opens in any music app', { icon: 'link' }); });
-    }, function () {
-      share.then(function (r) { copyFailed(r.url); }, function (err) {
-        App.toast(err.status === 404 ? 'There\'s no public link for this ' + SHARE_NOUN[kind] + '.' : 'Couldn\'t make a public link: ' + err.message,
-          { kind: 'error', icon: 'link', action: lullPath ? 'Copy lull link' : null, onAction: function () { App.copyLullLink(lullPath); } });
-      });
+    App.copyLink(share.then(function (r) { return r.link; }), function (r) {
+      return 'Link copied: it opens in lull, and as ' + (r.source === 'lastfm' ? 'the Last.fm page' : 'a page for every music app') + ' without it';
+    }, share, function (err) {
+      return err.status === 404 ? 'There\'s no link for this ' + SHARE_NOUN[kind] + '.' : 'Couldn\'t make a link: ' + err.message;
     });
   };
-  App.copyLullLink = function (path) {
-    var url = location.href.split('#')[0] + '#' + path;
-    clipboardWrite(Promise.resolve(url)).then(function () { App.toast('lull link copied: it opens on your own devices', { icon: 'link' }); },
-      function () { copyFailed(url); });
+  /* link: a promise of the text; said(answer) and failed(err) word the toasts; answer: what said() reads */
+  App.copyLink = function (link, said, answer, failed) {
+    answer = answer || link;
+    clipboardWrite(link).then(function () {
+      answer.then(function (r) { App.toast(said(r), { icon: 'link' }); });
+    }, function () {
+      link.then(copyFailed, function (err) { App.toast(failed(err), { kind: 'error', icon: 'link' }); });
+    });
   };
   function clipboardWrite(text) {
     if (!navigator.clipboard) return Promise.reject(new Error('no clipboard'));
@@ -4207,6 +4208,13 @@
   App.on('announce', announce);
   document.addEventListener('visibilitychange', function () { root.classList.toggle('is-hidden', document.hidden); });
 
+  /* a link shared to the Android app ("Share", lull://open?link=…) waits in the shell until this page takes it: at boot,
+     and when the shell nudges a running page. It opens as #/open (discover.js). */
+  App.takeSharedLink = function () {
+    var link = window.lullLinks && typeof window.lullLinks.take === 'function' ? window.lullLinks.take() : '';
+    if (link) App.go('/open?link=' + encodeURIComponent(link));
+  };
+
   var booted = false;
   function boot() {
     renderBrand(); renderRail(); renderTray(); wireHeader(); wireThemeButtons(); layoutCtx(); renderCtx(); wireMediaSession();
@@ -4231,6 +4239,7 @@
     renderRoute();
     startServer();
     App.emit('ready');
+    App.takeSharedLink();
   }
   /* boot once the DOM is parsed and the design's design.js (if any) has registered its slots */
   document.addEventListener('DOMContentLoaded', function () { Designs.ready(boot); });

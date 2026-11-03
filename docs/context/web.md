@@ -576,12 +576,20 @@ is ticked, one holding some is part-ticked (`aria-checked="mixed"`), and nothing
 
 ## Links
 
-`App.copyShareLink(kind, id, lullPath)` is "Copy link" (album and artist menus, the player's More menu): it copies the
-public page from `GET /api/share/{kind}/{id}` (song.link, or Last.fm) and says which. `App.copyLullLink(path)` is "Copy
-lull link", this hub's own address for the screen, which opens only on the listener's devices; playlists have only
-that. The clipboard write starts inside the click with the text still on its way (`ClipboardItem` with a promise), so
-it keeps the click's permission while the hub answers. No public link (404, 503, hub unreachable) is an error toast
-with the reason and a "Copy lull link" button; a browser that refuses the clipboard gets a toast showing the link.
+One "Copy link" per item, and it works for anyone:
+- **Songs, albums, artists** (`App.copyShareLink(kind, id)`: their menus, the player's More menu) copy `link` from
+  `GET /api/share/{kind}/{id}`: the public page (song.link, which opens in every music app, or Last.fm) followed by
+  `#lull?` and the names and public ids lull knows. Never this hub's address.
+- **Playlists** imported from a link copy that link (`GET /api/import/links`); an outside preview's Copy link copies
+  its page. One made in lull has no page to share and says so (Export as M3U sends it).
+- **Opening** (`App.openLink`, `#/open?link=`, discover.js): a link pasted in search, or handed over by the apps'
+  `lull://open?link=…`, opens this hub's own page for what it names (`GET /api/open`); playlist links open as their
+  preview (`#/outside/`). A song opens on its album and plays when a click or key brought it there (sticky user
+  activation), else a toast offers Play. Without lull, the link is just the public page.
+
+The clipboard write starts inside the click with the text still on its way (`ClipboardItem` with a promise), so it
+keeps the click's permission while the hub answers (`App.copyLink`). No link (404, hub unreachable) is an error toast
+with the reason; a browser that refuses the clipboard gets a toast showing the link.
 
 ## Covers at the size they are drawn
 

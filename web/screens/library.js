@@ -1017,6 +1017,7 @@
               <button class="btn btn--quiet" data-act="lib-out-copy" data-id="${d.url}" data-tip="Your playlist of it takes the songs it has now">${icon('refresh')}Update it</button>`
             : html`<button class="btn" data-act="lib-out-copy" data-id="${d.url}" data-tip="Your own playlist of its songs, which you can edit">${icon('import')}Import as playlist</button>`}
           <a class="btn btn--quiet" href="${d.url}" target="_blank" rel="noopener noreferrer">${icon('link')}Open on ${site}</a>
+          <button class="btn btn--quiet" data-act="lib-out-share" data-id="${d.url}" data-tip="Opens in anyone's lull as this preview">${icon('link')}Copy link</button>
         </div>
         <div class="lib-table">
           <ol class="tlist lib-out-list" data-ids="${ids.join(',')}" aria-label="Songs in ${d.name}">${d.songs.map(function (s, n) {
@@ -1073,6 +1074,9 @@
   }
   App.action('lib-out-save', function (el) { toggleBookmark(el.getAttribute('data-id')); });
   App.action('lib-out-copy', function (el) { importLink(el.getAttribute('data-id')); });
+  App.action('lib-out-share', function (el) {
+    App.copyLink(Promise.resolve(el.getAttribute('data-id')), function () { return 'Link copied: it opens in lull as this preview'; });
+  });
   /* another device saved or removed one */
   App.on('server:bookmark', function (e) {
     var d = e && M.peek(outsidePath(e.id));
@@ -1949,8 +1953,7 @@
       App.coverItem('album', a.id)
     ];
     if (a.trackIds[0]) items.push({ label: 'Show sources for track 1', icon: 'soulseek', run: function () { App.hooks.sourcePicker(a.trackIds[0]); } });
-    items.push('sep', { label: 'Copy link', icon: 'link', run: function () { App.copyShareLink('album', a.id, '/album/' + a.id); } },
-      { label: 'Copy lull link', icon: 'link', run: function () { App.copyLullLink('/album/' + a.id); } });
+    items.push('sep', { label: 'Copy link', icon: 'link', run: function () { App.copyShareLink('album', a.id); } });
     App.menu(anchor, items, { label: 'Actions for ' + a.title });
   }
   /* `top`: the artist page's top songs; a tile has none, so its menu has no "Add top songs" */
@@ -1963,8 +1966,7 @@
         App.store.update('hiddenArtists', function (h) { h[ar.id] = true; });
         App.toast('Hidden ' + ar.name + ' from your feed', { icon: 'info' });
       }, function (err) { App.toast('Couldn\'t hide ' + ar.name + ': ' + err.message, { kind: 'error' }); });
-    } }, 'sep', { label: 'Copy link', icon: 'link', run: function () { App.copyShareLink('artist', ar.id, '/artist/' + ar.id); } },
-      { label: 'Copy lull link', icon: 'link', run: function () { App.copyLullLink('/artist/' + ar.id); } });
+    } }, 'sep', { label: 'Copy link', icon: 'link', run: function () { App.copyShareLink('artist', ar.id); } });
     App.menu(anchor, items, { label: 'Actions for ' + ar.name });
   }
   App.action('lib-album-menu', function (el) { albumMenu(el.getAttribute('data-id'), el); });
@@ -2017,10 +2019,20 @@
       } },
       App.coverItem('playlist', p.id),
       { label: 'Export as M3U', icon: 'export', run: function () { if (ids.length) openExport(p); else App.toast('Add a few songs before exporting', { icon: 'info' }); } },
-      { label: 'Copy lull link', icon: 'link', run: function () { App.copyLullLink('/playlist/' + p.id); } },   // playlists have no public page
+      { label: 'Copy link', icon: 'link', run: function () { copyPlaylistLink(p); } },
       'sep',
       { label: 'Delete playlist', icon: 'trash', danger: true, run: function () { deletePlaylist(p); } }
     ], { label: 'Actions for ' + p.name });
+  }
+  /* a playlist imported from a link shares that link: any lull opens it as its preview (#/outside), anyone else on its
+     site. One made in lull lives only on this hub, so it has none. */
+  function copyPlaylistLink(p) {
+    var link = M.api('/api/import/links').then(function (r) {
+      var from = (r.links || []).filter(function (l) { return l.playlistId === p.id; })[0];
+      if (!from) throw new M.ApiError(404, 'no_link', p.name + ' was made in lull, so it has no page to share. Export it as M3U to send it.');
+      return from.url;
+    });
+    App.copyLink(link, function () { return 'Link copied: it opens in lull as a preview, and on its site without it'; }, null, function (err) { return err.message; });
   }
   App.action('lib-pl-row-menu', function (el) {
     var row = el.closest('.trow'), list = row.parentElement, p = playlistOf(list.getAttribute('data-pl')); if (!p) return;
