@@ -8,7 +8,7 @@
     "hoverHandlersMs": 100,
     "hoverLongestMs": 180,
     "idleFrames": 4,
-    "idleDrawnFrames": 0,
+    "idleDrawnFrames": 44,
     "playingMsPerSecond": 220,
     "tickRestyleElements": 200,
     "startupLongestMs": 600,

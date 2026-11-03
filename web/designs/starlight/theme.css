@@ -599,7 +599,7 @@
 }
 /* one sky sparkle pinned to the card's corner; it breathes while music plays */
 :root[data-design="starlight"] .sl-hero__spark { --s: 84px; left: -42px; top: -42px; z-index: 2; -webkit-mask: none; mask: none; background: var(--sl-spark-img) center / contain no-repeat; }
-:root[data-design="starlight"] .sl-hero:has(.wave.is-playing) .sl-hero__spark { animation: sl-beat 1s var(--ease-in-out) infinite alternate; }
+:root[data-design="starlight"] .sl-hero:has(.wave.is-playing) .sl-hero__spark { animation: sl-beat 1s var(--ease-in-out) infinite alternate; --loop-fps: 30; }
 @keyframes sl-beat { from { transform: scale(.82) rotate(-6deg); opacity: .75; } to { transform: scale(1.08) rotate(0); opacity: 1; } }
 /* power on: the stack deals in (lavender layer, then periwinkle), the cream card settles, the art fades up last */
 :root[data-design="starlight"] .sl-hero.is-power-on { animation: sl-deal 620ms var(--ease-out) both; }
@@ -696,10 +696,9 @@
 :root[data-design="starlight"] .sky-star {
   position: absolute; width: 7px; height: 7px; margin: -3.5px; border-radius: 50%; background: var(--sparkle);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--sparkle) 22%, transparent);
-  animation: sl-twinkle 2.6s var(--ease-in-out) calc(var(--i) * -.45s) infinite alternate;
+  animation: sl-twinkle 2.6s var(--ease-in-out) calc(var(--i) * -.45s) infinite alternate; --loop-fps: 20;   /* the stagger is whole steps: all change together */
 }
 :root[data-design="starlight"] .sky-star--now { width: 30px; height: 30px; margin: -15px; border-radius: 0; box-shadow: none; animation: none; background: var(--sl-spark-img) center / contain no-repeat; }
-:root.is-resting[data-design="starlight"] .sky-star { animation-play-state: paused; }
 @keyframes sl-twinkle { from { opacity: .55; transform: scale(.8); } to { opacity: 1; transform: none; } }
 :root[data-design="starlight"] .sl-sky__label { flex: none; display: flex; align-items: center; gap: 10px; font: 400 .9375rem/1 var(--f-ui); color: var(--fg-sky-2); }
 /* the release card: the first album is the feature (giant caps title, caps artist; play ring, Save and Radio on one row

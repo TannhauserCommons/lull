@@ -4240,11 +4240,38 @@
   function announce(msg) { var a = $('#announcer'); if (a) { a.textContent = ''; setTimeout(function () { a.textContent = msg; }, 30); } }
   App.announce = announce;
   App.on('announce', announce);
-  document.addEventListener('visibilitychange', function () { root.classList.toggle('is-hidden', document.hidden); });
-  /* nothing playing: the decorative loops hold still (:root.is-resting, docs/themes.md), so a page left paused draws
-     nothing, and the GPU rests too */
-  function resting() { root.classList.toggle('is-resting', !App.player.state.playing); }
-  App.on('player', resting); resting();
+  document.addEventListener('visibilitychange', function () { root.classList.toggle('is-hidden', document.hidden); if (!document.hidden) paceAll(); });
+
+  /* loops at their own rate (docs/themes.md, Drawing cheaply): a loop that never ends and names a rate (--loop-fps on
+     what it animates) changes that many times a second, its easing kept (the steps sample it), and every such loop
+     changes on one shared beat (a sixtieth of a second), so the compositor draws a frame only when one has changed (a
+     twinkle at 10 a second instead of the screen's 165), and loops at 10 and 20 a second together draw no more frames
+     than the faster one */
+  var BEAT = 1000 / 60, paced = new WeakMap();
+  function pace(a) {
+    var e = a.effect, t = e && e.target;
+    if (!t || !(a instanceof window.CSSAnimation) || e.getTiming().iterations !== Infinity) return;
+    var fps = parseFloat(getComputedStyle(t, e.pseudoElement).getPropertyValue('--loop-fps'));
+    if (!(fps > 0)) return;
+    if (!paced.has(a)) paced.set(a, e.getTiming().delay);
+    var dur = e.getTiming().duration, n = Math.max(1, Math.round(dur / (Math.max(1, Math.round(1000 / fps / BEAT)) * BEAT)));
+    e.updateTiming({ easing: 'steps(' + n + ')' });
+    /* on the beat: the first change lands on a whole step of the page's clock (moved by less than one step) */
+    a.ready.then(function () {
+      if (a.startTime == null) return;
+      var step = dur / n, d = paced.get(a), off = ((a.startTime + d) % step + step) % step;
+      e.updateTiming({ delay: d - off });
+    }, function () { /* cancelled before it started: nothing to set */ });
+  }
+  document.addEventListener('animationstart', function (ev) {
+    if (!window.CSSAnimation || !ev.target.getAnimations) return;
+    ev.target.getAnimations({ subtree: true }).forEach(function (a) {
+      if (a.animationName === ev.animationName && a.effect.target === ev.target && (a.effect.pseudoElement || '') === ev.pseudoElement) pace(a);
+    });
+  });
+  /* a browser without them (an old Safari) runs loops as they are */
+  function paceAll() { if (window.CSSAnimation && document.getAnimations) document.getAnimations().forEach(pace); }
+  App.on('ready', paceAll);   // loops already running before this page's script
 
   /* a link shared to the Android app ("Share", lull://open?link=…) waits in the shell until this page takes it: at boot,
      and when the shell nudges a running page. It opens as #/open (discover.js). */

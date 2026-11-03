@@ -37,21 +37,27 @@ for (const design of designs) {
       expect(s.longestMs, 'longest task while hovering (ms)').toBeLessThanOrEqual(B.hoverLongestMs);
     });
 
-    // paused and left alone: no frames at all, the compositor's own too (a decorative loop runs there with no main-thread
-    // work, and keeps the GPU busy while the listener is away)
-    test('nothing runs or draws at rest, a song paused', async ({ browser, baseURL }) => {
-      for (const route of ['/home', `/playlist/${ids.longPlaylist}`, '/now']) {
-        const context = await browser.newContext({ baseURL, viewport: { width: 1440, height: 900 }, serviceWorkers: 'block' }), page = await context.newPage();
-        const s = await S.idle(browser, page, opts(design), route);
-        expect(s.frames, `main-thread frames in 2 s at rest on ${route}; running: ${s.animations.join(' | ')}`).toBeLessThanOrEqual(B.idleFrames);
-        expect(s.drawn, `frames drawn in 2 s at rest on ${route}; running: ${s.animations.join(' | ')}`).toBeLessThanOrEqual(B.idleDrawnFrames);
-        await context.close();
-      }
-    });
+    // paused and left alone, in both themes: the main thread idle, and the design's loops drawn cheaply (each at the rate
+    // it names, on one shared beat, by the compositor, clear of live glass), so the GPU draws a few frames a second, not
+    // one per refresh (a decorative loop runs on the compositor with no main-thread work, and keeps the GPU busy while
+    // the listener is away)
+    for (const theme of ['day', 'night']) {
+      test(`little runs or draws at rest, a song paused / ${theme}`, async ({ browser, baseURL }) => {
+        for (const route of ['/home', `/playlist/${ids.longPlaylist}`, '/now']) {
+          const context = await browser.newContext({ baseURL, viewport: { width: 1440, height: 900 }, serviceWorkers: 'block' }), page = await context.newPage();
+          const s = await S.idle(browser, page, { ...opts(design), theme }, route);
+          expect(s.frames, `main-thread frames in 2 s at rest on ${route}; running: ${s.animations.join(' | ')}`).toBeLessThanOrEqual(B.idleFrames);
+          expect(s.loops, `loops drawn dearly at rest on ${route}`).toEqual([]);
+          expect(s.drawn, `frames drawn in 2 s at rest on ${route}; running: ${s.animations.join(' | ')}`).toBeLessThanOrEqual(B.idleDrawnFrames);
+          await context.close();
+        }
+      });
+    }
 
     test('playing costs little per second', async ({ browser, page }) => {
       const s = await S.playing(browser, page, opts(design), '/now');
       expect(s.perSecondMs, 'main-thread ms per second while playing, on Now Playing').toBeLessThanOrEqual(B.playingMsPerSecond);
+      expect(s.loops, 'loops drawn dearly while playing, on Now Playing').toEqual([]);
       expect(s.restyled[0] ?? 0, 'most elements restyled by one clock tick').toBeLessThanOrEqual(B.tickRestyleElements);
     });
   });

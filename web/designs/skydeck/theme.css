@@ -142,17 +142,14 @@
   background-repeat: no-repeat, no-repeat, no-repeat, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat, repeat, repeat, repeat;
   background-size: 20px 20px, 14px 14px, 26px 26px, 61px 240px, 83px 240px, 109px 240px, 137px 240px, 163px 240px, 170px 150px, 260px 230px, 210px 190px, 290px 270px;
   background-position: 8px calc(100% - 132px), calc(100% - 4px) 56%, calc(100% - 30px) 92px, 0 0, 17px 0, 40px 0, 5px 0, 90px 0, 0 0, 0 0, 0 0, 0 0;
-  opacity: .75; animation: sd-twinkle 7s ease-in-out infinite alternate;
+  opacity: .75; animation: sd-twinkle 7s ease-in-out infinite alternate; --loop-fps: 10;   /* the whole sky: 10 changes a second, not one a frame */
 }
 :root[data-design="skydeck"][data-theme="night"] .sky-specks::after { opacity: .9; }
 :root.is-hidden[data-design="skydeck"] .sky-specks::after,
 :root.is-hidden[data-design="skydeck"] .tray .sg--down,
+:root.is-hidden[data-design="skydeck"] .tray__pill:has(.sg--down)::before,
 :root.is-hidden[data-design="skydeck"] .sd-empty__cursor,
-:root.is-hidden[data-design="skydeck"] .sd-empty:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i]) .sd-empty__lcd::before,
-:root.is-resting[data-design="skydeck"] .sky-specks::after,
-:root.is-resting[data-design="skydeck"] .tray .sg--down,
-:root.is-resting[data-design="skydeck"] .sd-empty__cursor,
-:root.is-resting[data-design="skydeck"] .sd-empty:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i]) .sd-empty__lcd::before { animation-play-state: paused; }   /* loops rest in hidden tabs */
+:root.is-hidden[data-design="skydeck"] .sd-empty:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i]) .sd-empty__lcd::before { animation-play-state: paused; }   /* loops rest in hidden tabs */
 @keyframes sd-twinkle { from { opacity: .6; } to { opacity: 1; } }
 
 /* moon (night) or pearl sun + clouds (day) with a constellation, in the empty top-right of the page;
@@ -247,9 +244,22 @@
 :root[data-design="skydeck"] .tray .sg--warn { --led: #f2c46b; width: 8px; height: 8px; border-radius: 1.5px; transform: rotate(45deg); }
 :root[data-design="skydeck"] .tray .sg--down {
   --led: #f08fb2; background: linear-gradient(135deg, var(--led) 0 40%, #3b3345 40% 60%, var(--led) 60%);
-  animation: sd-led-down 2s ease-in-out infinite alternate;
+  animation: sd-led-down-paint 2s ease-in-out infinite alternate; --loop-fps: 20;
 }
-@keyframes sd-led-down { from { box-shadow: 0 0 0 1.5px #3b3345, 0 0 2px 1px #f08fb233; } to { box-shadow: 0 0 0 1.5px #3b3345, 0 0 7px 3px #f08fb2a6; } }
+@keyframes sd-led-down-paint { from { box-shadow: 0 0 0 1.5px #3b3345, 0 0 2px 1px #f08fb233; } to { box-shadow: 0 0 0 1.5px #3b3345, 0 0 7px 3px #f08fb2a6; } }
+/* the pulse is a glow around the LED that grows and brightens, drawn by the LED's pill (the LED is an icon: no pseudo
+   element of its own) and anchored to it, on its own layer moved by transform and opacity: the compositor runs it, where
+   the box-shadow above repainted the header 60 times a second (kept where anchors aren't) */
+@supports (anchor-name: --a) and (anchor-scope: --a) {
+  :root[data-design="skydeck"] .tray .sg.sg--down { animation: none; box-shadow: 0 0 0 1.5px #3b3345; anchor-name: --sd-down; }
+  :root[data-design="skydeck"] .tray__pill:has(.sg--down) { position: relative; anchor-scope: --sd-down; }
+  :root[data-design="skydeck"] .tray__pill:has(.sg--down)::before {
+    content: ""; position: absolute; position-anchor: --sd-down; top: anchor(top); left: anchor(left); width: anchor-size(width); height: anchor-size(height);
+    border-radius: 50%; box-shadow: 0 0 7px 3px #f08fb2a6; pointer-events: none;
+    animation: sd-led-down 2s ease-in-out infinite alternate; --loop-fps: 20;
+  }
+}
+@keyframes sd-led-down { from { opacity: .3; transform: scale(.7); } to { opacity: 1; transform: none; } }
 /* compact tray (tablet, phone): one LCD pill of LEDs + cache; when something is wrong the cache gives way to .tray__word */
 :root[data-design="skydeck"] .tray--compact .tray__pill {
   background: var(--screen); color: var(--lilac); padding: 1px 12px 0 12px;
@@ -515,7 +525,7 @@
 :root[data-design="skydeck"] .sd-empty:not(:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i]), :is([data-title*="drag songs" i], [data-title*="drop to add" i], [data-title*="no songs yet" i]), :is([data-title*="playing" i], [data-title*="played" i], [data-title*="listening" i], [data-title*="queued" i], [data-title*="instrumental" i]))[data-art="moon"] .sd-lcd--moon,
 :root[data-design="skydeck"] .sd-empty:not(:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i]), :is([data-title*="drag songs" i], [data-title*="drop to add" i], [data-title*="no songs yet" i]), :is([data-title*="playing" i], [data-title*="played" i], [data-title*="listening" i], [data-title*="queued" i], [data-title*="instrumental" i]), [data-art="slot"], [data-art="moon"]) .sd-lcd--empty { display: inline; }
 :root[data-design="skydeck"] .sd-empty:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i]) .sd-empty__cursor { display: none; }
-:root[data-design="skydeck"] .sd-empty__cursor { display: inline-block; width: .5em; height: 2px; margin-left: 2px; background: currentColor; vertical-align: baseline; animation: sd-blink 1.1s steps(1) infinite; }
+:root[data-design="skydeck"] .sd-empty__cursor { display: inline-block; width: .5em; height: 2px; margin-left: 2px; background: currentColor; vertical-align: baseline; animation: sd-blink 1.1s steps(1) infinite; --loop-fps: 10; }
 @keyframes sd-blink { 50% { opacity: 0; } }
 :root[data-design="skydeck"] .sd-empty__keys { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 12px 6px 0; }
 :root[data-design="skydeck"] .sd-empty__dpad {
@@ -531,9 +541,12 @@
 :root[data-design="skydeck"] .sd-empty:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i]) .sd-empty__lcd::before {
   content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .35;
   background: repeating-linear-gradient(0deg, #fff9fe33 0 1px, transparent 1px 3px), repeating-linear-gradient(90deg, #00000026 0 2px, transparent 2px 5px);
+  /* moved as a layer, not by background-position (a repaint each step): 3 px wider and 1 px taller up and left, the
+     pattern set back to where it was, so a shift of the layer is the shift of each set of lines, and the LCD clips it */
+  inset: -1px 0 0 -3px; background-position: 3px 1px;
   animation: sd-static .24s steps(2) infinite;
 }
-@keyframes sd-static { 50% { background-position: 0 1px, 3px 0; } }
+@keyframes sd-static { 50% { transform: translate(3px, 1px); } }
 :root[data-design="skydeck"] .empty__art:has(.sd-empty) .sparkle { top: 0; right: 4px; }
 
 /* =====================================================================
@@ -693,7 +706,7 @@
 :root[data-design="skydeck"] .now:has(.wave.is-playing) .device__led i { box-shadow: 0 0 0 1.5px var(--mocha-edge); }
 :root[data-design="skydeck"] .now:has(.wave.is-playing) .device__led i::after {
   content: ""; position: absolute; inset: -1.5px; border-radius: 50%; box-shadow: 0 0 0 4.5px #dd9fc966;
-  animation: sd-led 1.8s ease-in-out infinite alternate;
+  animation: sd-led 1.8s ease-in-out infinite alternate; --loop-fps: 20;
 }
 @keyframes sd-led { from { opacity: .5; transform: scale(.8); } to { opacity: 1; transform: none; } }
 

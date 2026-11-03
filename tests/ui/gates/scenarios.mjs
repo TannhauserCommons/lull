@@ -166,6 +166,7 @@ export async function playing(browser, page, opts, route = '/home') {
   const s = await traced(browser, page, () => page.waitForTimeout(2000));
   s.perSecondMs = s.busyMs / 2;
   s.framesPerSecond = s.frames / 2;
+  s.loops = await loops(page);
   return s;
 }
 
@@ -212,7 +213,48 @@ export async function idle(browser, page, opts, route = '/home') {
     const timeline = a.timeline && a.timeline.constructor.name !== 'DocumentTimeline' ? ' (' + a.timeline.constructor.name + ')' : '';
     return (a.animationName || a.transitionProperty || 'animation') + ' on ' + (t ? t.tagName.toLowerCase() + '.' + [...t.classList].slice(0, 2).join('.') : '?') + (a.effect?.pseudoElement || '') + ': ' + props.join(',') + timeline;
   }))]);
+  s.loops = await loops(page);
   return s;
+}
+
+// The loops on screen that draw more than they need to (docs/themes.md, Drawing cheaply): each one that never ends must
+// tick at a rate it names (--loop-fps, or a steps() timing of its own), move only by transform and opacity (the
+// compositor's, no repaint), and stay clear of live glass (a backdrop-filter recomputes its blur for every frame
+// that changes anything under or inside it). Named, with the reason, for the failure.
+export function loops(page) {
+  return page.evaluate(() => {
+    const glass = [...document.querySelectorAll('body *')].filter((e) => {
+      const s = getComputedStyle(e), f = s.backdropFilter || s.webkitBackdropFilter;
+      return f && f !== 'none' && e.checkVisibility();
+    });
+    const hit = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom && a.width && a.height;
+    const out = [];
+    for (const a of document.getAnimations()) {
+      const e = a.effect, t = e?.target;
+      if (!t || a.playState !== 'running' || e.getTiming().iterations !== Infinity) continue;
+      if (a.timeline && a.timeline.constructor.name !== 'DocumentTimeline') continue;     // scroll-driven: still at rest
+      if (!t.checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true })) continue;
+      // what of it shows: its box clipped by every box that clips it (a ticker's long track shows only in its strip)
+      const r = t.getBoundingClientRect().toJSON();
+      for (let c = t.parentElement; c; c = c.parentElement) {
+        if (getComputedStyle(c).overflow === 'visible') continue;
+        const k = c.getBoundingClientRect();
+        r.left = Math.max(r.left, k.left); r.right = Math.min(r.right, k.right); r.top = Math.max(r.top, k.top); r.bottom = Math.min(r.bottom, k.bottom);
+      }
+      r.width = r.right - r.left; r.height = r.bottom - r.top;
+      if (r.width <= 0 || r.height <= 0 || r.bottom <= 0 || r.top >= innerHeight || r.right <= 0 || r.left >= innerWidth) continue;
+      const name = (a.animationName || 'animation') + ' on ' + t.tagName.toLowerCase() + '.' + [...t.classList].slice(0, 2).join('.') + (e.pseudoElement || '');
+      const kf = e.getKeyframes();
+      const props = [...new Set(kf.flatMap((k) => Object.keys(k).filter((p) => !['offset', 'easing', 'composite', 'computedOffset'].includes(p))))];
+      const stepped = /steps/.test(e.getTiming().easing) || kf.slice(0, -1).every((k) => /steps/.test(k.easing));
+      if (!stepped) out.push(name + ': ticks every frame (no --loop-fps)');
+      const slow = props.filter((p) => !['transform', 'opacity', 'translate', 'scale', 'rotate'].includes(p));
+      if (slow.length) out.push(name + ': repaints (' + slow.join(', ') + ')');
+      const under = glass.find((g) => hit(r, g.getBoundingClientRect()));
+      if (under) out.push(name + ': under or in live glass (' + under.tagName.toLowerCase() + '.' + [...under.classList].slice(0, 2).join('.') + ')');
+    }
+    return out;
+  });
 }
 
 // A long listening session, compressed: the desktop app's bridge stubbed in (desktop-bridge.js), a queue skipped
