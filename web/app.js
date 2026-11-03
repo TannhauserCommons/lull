@@ -2285,6 +2285,8 @@
      opens over the page. From `xwide`, Queue and Lyrics can show as two panes at once (layout panelSplit). */
   var panels = {}, panelOrder = ['queue', 'lyrics', 'activity'], SPLIT = ['queue', 'lyrics'];
   App.panel = function (id, def) { panels[id] = def; if (panelOrder.indexOf(id) < 0) panelOrder.push(id); renderCtx(); };
+  /* a panel def's hidden() takes its tab away for now (Lyrics for a song with no words); hiddenNote says why */
+  function shown(id) { return !!panels[id] && !(panels[id].hidden && safeCall(panels[id].hidden)); }
   function panelOpen() {
     var mode = $('#app').getAttribute('data-ctx');
     return mode === 'open' || mode === 'docked' && !App.layout.get().panelCollapsed;
@@ -2304,15 +2306,16 @@
     updatePanelButtons();
   };
   App.togglePanel = function (tab) {
+    if (tab && panels[tab] && !shown(tab)) { App.toast(panels[tab].hiddenNote || panels[tab].label + ' isn\'t available right now', { icon: 'info' }); return; }
     if (panelOpen() && (!tab || tab === state.ctxTab || split() && SPLIT.indexOf(tab) >= 0 && SPLIT.indexOf(state.ctxTab) >= 0)) App.closePanel();
     else App.openPanel(tab);
   };
   /* Queue and Lyrics side by side (or stacked, in a narrow panel) */
-  function split() { return $('#app').hasAttribute('data-panel-split') && SPLIT.every(function (id) { return panels[id]; }); }
+  function split() { return $('#app').hasAttribute('data-panel-split') && SPLIT.every(shown); }
   App.refreshPanel = function () { renderCtx(); };
   function renderCtx() {
     var host = $('#ctx'); if (!host) return;
-    var two = split(), tabs = panelOrder.filter(function (id) { return panels[id] && !(two && id === 'lyrics'); });
+    var two = split(), tabs = panelOrder.filter(function (id) { return shown(id) && !(two && id === 'lyrics'); });
     if (two && state.ctxTab === 'lyrics') state.ctxTab = 'queue';
     if (tabs.indexOf(state.ctxTab) < 0) state.ctxTab = tabs[0];
     var i = tabs.indexOf(state.ctxTab);
@@ -2338,7 +2341,7 @@
   var STRIP_ICONS = { queue: 'queue', lyrics: 'lyrics', activity: 'activity' };
   function renderStrip() {
     var strip = $('#ctx-strip'); if (!strip) return;
-    patch(strip, panelOrder.filter(function (id) { return panels[id]; }).map(function (id) {
+    patch(strip, panelOrder.filter(shown).map(function (id) {
       var n = id === 'activity' ? activeJobs() : 0;
       return String(html`<button class="btn-icon btn-icon--bare" data-act="panel-expand" data-tab="${id}" aria-label="${panels[id].label}${n ? ', ' + n + ' running' : ''}" data-tip="${panels[id].label}">${icon(STRIP_ICONS[id] || 'expand')}${n ? html`<span class="btn-icon__badge">${n}</span>` : ''}</button>`);
     }).join(''));

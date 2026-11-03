@@ -390,9 +390,30 @@
     if (r) return r;
     r = lyrics[id] = { loading: true, error: null, data: null };
     M.api('/api/lyrics/' + encodeURIComponent(id)).then(function (d) { r.data = d || {}; }, function (err) { r.error = err; })
-      .then(function () { r.loading = false; if (lyrics[id] === r && P.currentId() === id) refreshLyrics(); });
+      .then(function () {
+        if (lyrics[id] !== r || P.currentId() !== id) { r.loading = false; return; }
+        var was = lyricsShown; r.loading = false;
+        refreshLyrics();
+        if (lyricsAvailable() !== was) lyricsTabsChanged();
+      });
     return r;
   }
+  /* A song with no words (no lyrics found, or instrumental) gets no Lyrics tab, in the panel or the phone sheet.
+     While the next song's lyrics load, the tabs keep the last answer, so they only change when it does. A failed
+     read keeps the tab, where "Try again" is. */
+  var lyricsShown = true;
+  function lyricsAvailable() {
+    var t = cur(); if (!t) return lyricsShown;
+    if (lyricsRead(t.id).data) { var st = lyricsFor(t).state; lyricsShown = st !== 'none' && st !== 'instrumental'; }
+    return lyricsShown;
+  }
+  function lyricsTabsChanged() {
+    App.refreshPanel();
+    var seg = $('.now .now__seg'); if (!seg) return;
+    if (tabList().indexOf(view.tab) < 0) view.tab = 'art';
+    swap(seg, phoneTabs()); setTab(view.tab, false);
+  }
+  App.on('player', function (kind) { if (kind === 'track') { var was = lyricsShown; if (lyricsAvailable() !== was) lyricsTabsChanged(); } });
   function lyricsFor(t) {
     var r = lyricsRead(t.id), d = r.data;
     if (r.error) return { state: 'error', error: r.error };
@@ -799,15 +820,17 @@
   /* =====================================================================
      7. Route: /now (desktop two columns, tablet, phone sheet with Art / Lyrics / Queue / Details)
      ===================================================================== */
+  function tabList() { return TABS.filter(function (tb) { return tb !== 'lyrics' || lyricsAvailable(); }); }
   function phoneTabs() {
-    var i = TABS.indexOf(view.tab);
-    return html`<div class="seg now-seg" role="tablist" aria-label="Now Playing views" style="--n:4;--i:${i}"><span class="seg__ind" aria-hidden="true"></span>${TABS.map(function (tb, n) {
+    var list = tabList(), i = list.indexOf(view.tab);
+    return html`<div class="seg now-seg" role="tablist" aria-label="Now Playing views" style="--n:${list.length};--i:${i}"><span class="seg__ind" aria-hidden="true"></span>${list.map(function (tb, n) {
       return html`<button class="seg__btn" role="tab" id="now-tab-${tb}" aria-selected="${String(n === i)}" tabindex="${n === i ? 0 : -1}" aria-controls="now-panel" data-act="now-tab" data-tab="${tb}">${tb[0].toUpperCase() + tb.slice(1)}</button>`;
     })}</div>`;
   }
   function render(ctx) {
     var q = ctx.query;
     if (q.tab && TABS.indexOf(q.tab) >= 0) view.tab = q.tab;
+    if (tabList().indexOf(view.tab) < 0) view.tab = 'art';
     view.detailsTrack = q.track || null;
     if (q.tab === 'details') view.detailsOpen = true;
     return html`<div class="now" data-tab="${view.tab}" data-page="${view.page}">
@@ -952,7 +975,7 @@
     try { history.replaceState(null, '', '#/now?tab=' + tab); } catch (e) { /* file:// in some browsers */ }
     var root = $('.now'); if (!root) return;
     root.setAttribute('data-tab', tab);
-    var seg = $('.now-seg', root), i = TABS.indexOf(tab);
+    var seg = $('.now-seg', root), i = tabList().indexOf(tab);
     seg.style.setProperty('--i', i);
     $$('.seg__btn', seg).forEach(function (b, n) { b.setAttribute('aria-selected', String(n === i)); b.tabIndex = n === i ? 0 : -1; if (n === i && focus) b.focus(); });
     if (tab === 'details' && !view.detailsOpen) { view.detailsOpen = true; refreshSourceCard(); }
@@ -960,9 +983,9 @@
   }
   document.addEventListener('keydown', function (e) {        // arrow keys move between the phone tabs
     var b = e.target.closest && e.target.closest('.now-seg .seg__btn'); if (!b) return;
-    var i = TABS.indexOf(b.getAttribute('data-tab')), n = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: TABS.length - 1 }[e.key];
+    var list = tabList(), i = list.indexOf(b.getAttribute('data-tab')), n = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: list.length - 1 }[e.key];
     if (n == null) return;
-    e.preventDefault(); setTab(TABS[(n + TABS.length) % TABS.length], true);
+    e.preventDefault(); setTab(list[(n + list.length) % list.length], true);
   });
   App.action('now-details', function () {
     view.detailsOpen = !view.detailsOpen;
@@ -1141,6 +1164,7 @@
   });
   App.panel('lyrics', {
     label: 'Lyrics', meta: function () { var t = cur(); return t ? t.title : ''; },
+    hidden: function () { return !lyricsAvailable(); }, hiddenNote: 'No lyrics for this song',
     render: function (body) { rememberFocus(body); return lyricsBlock('panel'); },
     mount: function (body) { lyMountAll(); restoreFocus(body); }
   });
