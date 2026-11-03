@@ -29,6 +29,7 @@ A music app for one listener who hosts it themselves (PROJECT.md). It streams fr
 
 ## Engineering rules
 
+- **Quality over development cost.** When making technical decisions, do not give much weight to development cost. Instead, prefer quality, simplicity, robustness, scalability, and long term maintainability.
 - **Surgical.** Touch only what the task needs: no speculative refactors, no unrelated cleanups.
 - **One source of truth.** A fact lives in one place, and everything else reads it.
 - **Fix the cause, where it starts.** Don't use special cases, arbitrary size or threshold changes, retries, sleeps, weakened checks, or error suppression to hide symptoms. Trace the failure to its origin and correct it there.
