@@ -1,7 +1,7 @@
 /* lull icon sprite: the single source of every icon.
    24x24 viewBox, outline, stroke = currentColor at var(--icon-stroke) (set by .ic in base.css).
    Filled exceptions (meaning only): play, pause, heart-fill, saved, downloaded, star-fill, status-ok, status-warn,
-   quality-diamond, plus the dot glyphs (more, grip).
+   quality-diamond, plus the dot glyph (more).
    Loading this file injects the sprite once into <body> and defines:
      icon(name, label?, cls?) -> '<svg class="ic ...">' markup string
      ICON_NAMES                -> array of every icon name */
@@ -43,7 +43,6 @@
     'chevron-up': '<path d="m6 15 6-6 6 6"/>',
     'chevron-left': '<path d="m15 6-6 6 6 6"/>',
     'chevron-right': '<path d="m9 6 6 6-6 6"/>',
-    'grip': 'F:<circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/>',
     'radio': '<rect x="3.5" y="8.5" width="17" height="11.5" rx="2"/><path d="M7 8.5l9-4.5M7 12.5h4M7 15.5h4"/><circle cx="15.5" cy="14.2" r="2.5"/>',
     'sparkle': '<path d="M12 2.5c.6 5.9 3.6 8.9 9.5 9.5-5.9.6-8.9 3.6-9.5 9.5-.6-5.9-3.6-8.9-9.5-9.5 5.9-.6 8.9-3.6 9.5-9.5z"/>',
     'tag': '<path d="M3.5 12.2V5A1.5 1.5 0 0 1 5 3.5h7.2l8.3 8.3-8.7 8.7z"/><circle cx="8" cy="8" r="1.4"/>',

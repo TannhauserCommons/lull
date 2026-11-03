@@ -684,7 +684,7 @@
     var facts = raw(' data-khz="' + (kHz(track.khz) || '') + '" data-kbps="' + (track.kbps || '') + '" data-bits="' + (track.bits || '') + '" data-size="' + (track.sizeMB || '') + '"');
     var line = formatLine(track);
     return html`<li class="${cls}" data-track-id="${track.id}" ${opts.queueIndex != null ? raw('data-queue-index="' + opts.queueIndex + '"') : ''}${facts} tabindex="0"${raw(drag)} aria-label="${track.title} by ${track.artist}">
-      <div class="trow__num"><span class="trow__n">${n}</span><span class="trow__grip" aria-hidden="true">${icon('grip', null, 'ic-16')}</span><span class="eq" aria-hidden="true"><i></i><i></i><i></i></span></div>
+      <div class="trow__num"><span class="trow__n">${n}</span><button class="trow__play" data-act="play-track" data-id="${track.id}" tabindex="-1" aria-label="Play ${track.title}">${icon('play', null, 'ic-16')}</button><span class="eq" aria-hidden="true"><i></i><i></i><i></i></span></div>
       <div class="trow__art">${ui.cover(rowCover(track, opts.album), opts.dense ? 40 : 48)}</div>
       <div class="trow__main">
         <button class="trow__title" data-act="play-track" data-id="${track.id}" tabindex="-1">${track.title}</button>

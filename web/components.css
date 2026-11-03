@@ -346,12 +346,20 @@ button.src-badge::after { content: ""; position: absolute; inset: -10px -2px; }
 .trow.is-playing .trow__title { color: var(--link); }
 .trow__num { grid-area: num; position: relative; display: grid; place-items: center; height: 32px; font: 700 .875rem/1 var(--f-ui); color: var(--fg-2); font-variant-numeric: tabular-nums; }
 .trow__num > * { grid-area: 1 / 1; }
-.trow__grip, .trow .eq { visibility: hidden; }
-.trow[draggable="true"]:hover .trow__grip, .trow[draggable="true"]:focus-within .trow__grip { visibility: visible; }
-.trow[draggable="true"]:hover .trow__n, .trow[draggable="true"]:focus-within .trow__n { visibility: hidden; }
-.trow__grip { cursor: grab; color: var(--fg-2); }
+/* the number cell holds one thing at a time: the number; Play under the pointer or focus; the bars while it plays
+   (so nothing else ever sits on them). A row drags from anywhere on it, so it needs no grip */
+.trow__play, .trow .eq { visibility: hidden; }
+.trow__play { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; color: var(--fg); }
+.trow__play::before { content: ""; position: absolute; inset: -6px; }
+.trow__play:hover { color: var(--link); }
+.trow:focus-within .trow__play { visibility: visible; }
+.trow:focus-within .trow__n { visibility: hidden; }
+@media (hover: hover) {
+  .trow:hover .trow__play { visibility: visible; }
+  .trow:hover .trow__n { visibility: hidden; }
+}
 .trow.is-playing .eq { visibility: visible; }
-.trow.is-playing .trow__n, .trow.is-playing .trow__grip { visibility: hidden; }
+.trow.is-playing .trow__n, .trow.is-playing:is(:hover, :focus-within) .trow__play { visibility: hidden; }
 .trow__art { grid-area: art; position: relative; }
 .trow__main { grid-area: main; min-width: 0; }
 .trow__title { display: block; max-width: 100%; font: var(--t-row); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
