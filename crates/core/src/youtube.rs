@@ -133,9 +133,13 @@ pub struct Listed {
     /// The channel or account it was uploaded by ("Artist - Topic" for YouTube's official audio).
     pub uploader: String,
     pub duration: Option<u32>,
-    /// The song's own artist and title, when the site gives music metadata.
+    /// The song's own artist and title: the site's music metadata when it gives some, else as
+    /// read from the upload's title and channel (`youtube` crate, `matching::read_upload`).
     pub artist: Option<String>,
     pub track: Option<String>,
+    /// `duration` is the song's own length (official audio, a SoundCloud track), not a music
+    /// video's with its intro.
+    pub exact_length: bool,
 }
 
 /// The parts of a YouTube copy's path.
