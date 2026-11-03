@@ -1,8 +1,10 @@
 //! `GET /api/open?link=`: a link to a song, album or artist, opened as this hub's own page
 //! (docs/context/discovery.md#opening-links).
-//! - **lull's links** (`share.rs`) are a public page (song.link, album.link, Last.fm) followed by
-//!   `#lull?` and what the sender's lull knows: names and public ids, never a hub's address. The
-//!   page ignores the part after `#`; any lull reads it.
+//! - **lull's links** (`share.rs`, ADR-0032) are lull's open page (`OPEN_PAGE`, `site/`) followed
+//!   by `#lull?` and what the sender's lull knows: names, public ids and the item's public page
+//!   (`page=`: song.link, album.link, Last.fm), never a hub's address. Browsers never send the part
+//!   after `#`; the page reads it to open lull, and any lull reads it here, whatever page precedes
+//!   it (older links had the public page itself in front).
 //! - **Other services' links** are read by their ids: song.link, album.link and Apple Music
 //!   (iTunes ids), Deezer, MusicBrainz release groups; Last.fm's by the names in them.
 //! - **Recorded like a search row**, its album with the catalog album behind it, so the page
@@ -27,6 +29,8 @@ use crate::search::merge::{AlbumHit, Found, SongHit};
 use crate::sources::{AlbumSource, ArtistInfo, Release, Song};
 use crate::store::{self, entities};
 
+/// lull's open page (site/open.html, deployed by `.github/workflows/pages.yml`).
+const OPEN_PAGE: &str = "https://tannhausercommons.github.io/lull/open";
 /// What follows `#` in a lull link, before its ids.
 const MARK: &str = "lull?";
 const READS: &str = "lull opens links to songs, albums and artists from lull, song.link, Apple Music, Deezer, \
@@ -94,8 +98,12 @@ pub async fn open(State(svc): State<Arc<Service>>, Params(p): Params<OpenParams>
     Ok(Json(record(&svc, item).await?))
 }
 
-/// The part after `#` of a lull link to `item`: `lull?kind=song&artist=…`.
-pub fn fragment(item: &Item) -> String {
+/// The lull link to `item`, whose public page is `page`: the open page, then `#lull?kind=song&…`.
+pub fn link(item: &Item, page: &str) -> String {
+    format!("{OPEN_PAGE}#{}", fragment(item, page))
+}
+
+fn fragment(item: &Item, page: &str) -> String {
     let mut f = form_urlencoded::Serializer::new(String::new());
     let mut put = |key: &str, value: Option<&str>| {
         if let Some(v) = value.filter(|v| !v.is_empty()) {
@@ -144,6 +152,7 @@ pub fn fragment(item: &Item) -> String {
             put("mbid", mbid.as_deref());
         }
     }
+    put("page", Some(page));
     format!("{MARK}{}", f.finish())
 }
 
@@ -484,8 +493,9 @@ mod tests {
 
     #[test]
     fn a_lull_link_carries_names_and_public_ids_and_reads_back() {
-        let link = format!("https://song.link/i/1789000777#{}", fragment(&track()));
-        assert!(link.contains("#lull?kind=song&artist=Petite+Meller&title=High+Forever"));
+        let link = link(&track(), "https://song.link/i/1789000777");
+        assert!(link.starts_with("https://tannhausercommons.github.io/lull/open#lull?kind=song&artist=Petite+Meller"));
+        assert!(link.ends_with("&page=https%3A%2F%2Fsong.link%2Fi%2F1789000777"));
         assert!(!link.contains("ts.net") && !link.contains("token"));
         assert_eq!(
             parse(&link).ok(),
@@ -496,8 +506,15 @@ mod tests {
             name: "AC/DC & Friends".into(),
             mbid: Some("66c662b6-6e2f-4930-8610-912e24c63ed1".into()),
         };
-        let link = format!("https://www.last.fm/music/AC%2FDC#{}", fragment(&artist));
-        assert_eq!(parse(&link).ok(), Some(Link::Named(artist)));
+        let older = format!(
+            "https://www.last.fm/music/AC%2FDC#{}",
+            fragment(&artist, "https://www.last.fm/music/AC%2FDC")
+        );
+        assert_eq!(
+            parse(&older).ok(),
+            Some(Link::Named(artist)),
+            "a link from before the open page"
+        );
     }
 
     #[test]

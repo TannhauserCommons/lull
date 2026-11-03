@@ -3720,10 +3720,11 @@
     'skip': function () { $('#view').focus(); }
   });
   /* ---------- copying links ----------
-     "Copy link" copies one link that works for anyone: a public page (song.link, which opens in every music app, or
-     Last.fm when song.link doesn't know it) followed by `#lull?` and the song's names and public ids, from
-     GET /api/share/{kind}/{id} (kind track | album | artist). Any lull opens it as its own page (App.openLink, on
-     another hub too); never this hub's address. A playlist's link is the page it was imported from. The clipboard write
+     "Copy link" copies one link that works for anyone: lull's open page (site/, ADR-0032) followed by `#lull?`, the
+     song's names and public ids, and its public page (song.link, which opens in every music app, or Last.fm), from
+     GET /api/share/{kind}/{id} (kind track | album | artist). Clicked, the open page opens the listener's lull or
+     offers the public page; any lull opens it as its own page (App.openLink, on another hub too); never this hub's
+     address. A playlist's link is the page it was imported from. The clipboard write
      starts inside the click, with the text still on its way (ClipboardItem takes a promise), so the browser allows
      it once the hub has answered. */
   var SHARE_NOUN = { track: 'song', album: 'album', artist: 'artist' };

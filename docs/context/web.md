@@ -580,8 +580,9 @@ is ticked, one holding some is part-ticked (`aria-checked="mixed"`), and nothing
 
 One "Copy link" per item, and it works for anyone:
 - **Songs, albums, artists** (`App.copyShareLink(kind, id)`: their menus, the player's More menu) copy `link` from
-  `GET /api/share/{kind}/{id}`: the public page (song.link, which opens in every music app, or Last.fm) followed by
-  `#lull?` and the names and public ids lull knows. Never this hub's address.
+  `GET /api/share/{kind}/{id}`: lull's open page (`site/`, ADR-0032) followed by `#lull?`, the names and public ids
+  lull knows, and the public page (song.link, which opens in every music app, or Last.fm). Clicked, the open page
+  opens the listener's lull or offers the public page. Never this hub's address.
 - **Playlists** imported from a link copy that link (`GET /api/import/links`); an outside preview's Copy link copies
   its page. One made in lull has no page to share and says so (Export as M3U sends it).
 - **Opening** (`App.openLink`, `#/open?link=`, discover.js): a link pasted in search, or handed over by the apps'

@@ -1,7 +1,7 @@
-# ADR-0032: lull links are public pages with ids after the `#`
+# ADR-0032: lull links are lull's open page, with ids after the `#`
 
 - Status: accepted
-- Date: 2026-11-03
+- Date: 2026-11-03 (the open page accepted by the listener the same day)
 
 ## Context
 
@@ -11,19 +11,25 @@ There is no lull service on the internet (PROJECT.md: no hosted relay), and a hu
 
 ## Decision
 
-- **One link:** the public page lull already found (song.link, album.link, Last.fm), followed by `#lull?` and what lull knows of the item: kind, artist, title, album, the album's artist, length, MBID, and the album's Deezer or iTunes id. Web pages ignore what follows `#`, and the browser never sends it to them. lull ids are hashes of names, so the same names give the same ids on every hub.
-- **Any hub opens it** (`GET /api/open`): the ids after `#lull?` first, else the public page's own ids (song.link and Apple Music's iTunes ids, Deezer's, MusicBrainz release groups, Last.fm's names). So links from those services open in lull too.
-- **Ways in:** pasted into search, `#/open?link=` in the web UI, `lull://open?link=` for the desktop app (registered by the installed app only), and Android's Share sheet and `lull://` links.
+- **One link:** lull's open page, `https://tannhausercommons.github.io/lull/open`, followed by `#lull?` and what lull knows of the item: kind, artist, title, album, the album's artist, length, MBID, the album's Deezer or iTunes id, and its public page (`page=`: song.link, album.link or Last.fm). Browsers never send what follows `#` to a server, so GitHub sees only that someone opened the page. lull ids are hashes of names, so the same names give the same ids on every hub.
+- **The open page** (`site/`, one static page on GitHub Pages, deployed by `.github/workflows/pages.yml`) makes no request of its own: no tracking, no outside scripts or fonts. On a click it:
+  - opens the listener's lull in the browser when they have told it the address (kept in that browser's storage only), with "use a different lull";
+  - else tries the app (`lull://open?link=…`; the desktop app asks "Open lull?"), and offers "Open in lull in the browser" (which asks for the address once);
+  - and always offers the public page (only song.link, album.link and Last.fm are linked, so a link can't send anyone elsewhere) and "Get lull".
+- **Android** opens the page's links straight in the app (App Links): an `autoVerify` intent filter for `/lull/open`, verified by `https://tannhausercommons.github.io/.well-known/assetlinks.json` (`packaging/android/assetlinks.json`, the release key's fingerprint).
+- **Any hub opens a link** (`GET /api/open`): the ids after `#lull?` first, whatever page precedes them (links copied before the open page had the public page itself in front), else the public page's own ids (song.link and Apple Music's iTunes ids, Deezer's, MusicBrainz release groups, Last.fm's names). So links from those services open in lull too.
+- **Other ways in:** pasted into search, `#/open?link=` in the web UI, `lull://open?link=` for the desktop app (registered by the installed app only), and Android's Share sheet.
 - **Playlists** share the link they were imported from, which any lull opens as the outside preview. A playlist made in lull lives only on its hub, so it has no link.
 
 ## Alternatives
 
-- **A lull-owned "open" page** (for example on GitHub Pages) that tries `lull://` and falls back to song.link. A link clicked in a browser would then reach the app, and Android could verify App Links. Not done yet: it publishes something under the listener's name, which needs their OK. The `#lull?` ids would carry over unchanged.
+- **The public page itself in front of the ids** (how links were first built, the same day). Rejected once the listener agreed to publish the open page: a click landed on song.link, and only paste or Share reached lull.
 - **The sender's hub address with a token.** Rejected: it leaks the tailnet name, and only works for people on it.
-- **Encoding a playlist's songs in the link.** Rejected for now: there's no public page to land on without lull, and long links break in some chat apps.
-- **Claiming song.link's https links on Android.** Rejected: without that domain's verification Android doesn't open them in an app by default, and lull would take every song.link link.
+- **Encoding a playlist's songs in the link.** Rejected for now: long links break in some chat apps.
+- **Claiming song.link's https links on Android.** Rejected: lull can't verify another site's domain, and it would take every song.link link.
 
 ## Consequences
 
-- A link clicked in a browser lands on the public page. Only paste, Share or `lull://` open it in lull, until an open page exists.
-- Opening an iTunes id costs one iTunes call, which waits its turn of the shared budget. Opening a Deezer id costs one Deezer call, and a MusicBrainz release group one MusicBrainz call. Opening a lull link costs nothing outside.
+- **The open page must stay at its address:** every link copied names it. `OPEN_PAGE` in `crates/discovery/src/open.rs` and `site/` move together, if ever.
+- **App Links need the root site:** Android reads `assetlinks.json` from the host's root, which a project site (`/lull/`) can't serve. The `TannhauserCommons/tannhausercommons.github.io` repository serves it, from Pages with a `.nojekyll`. Until it does, Android shows the page, which then opens the app through `lull://`.
+- **Costs:** opening an iTunes id costs one iTunes call, which waits its turn of the shared budget. A Deezer id costs one Deezer call, and a MusicBrainz release group one MusicBrainz call. Opening a lull link costs nothing outside.

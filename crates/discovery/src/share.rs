@@ -7,9 +7,10 @@
 //! list, get their Last.fm page. Answers are kept in the database; one is resolved at a time,
 //! so the same link asked for twice at once costs one iTunes call.
 //!
-//! `link`, what "Copy link" copies, is that page followed by `#lull?` and the names and public
-//! ids lull knows (`open::fragment`): any lull opens it as its own page (`open.rs`), and the
-//! page ignores it. Never the hub's address.
+//! `link`, what "Copy link" copies, is lull's open page followed by `#lull?`, the names and public
+//! ids lull knows, and that public page (`open::link`, ADR-0032): the open page sends a click on to
+//! lull or to the public page, and any lull opens it as its own (`open.rs`). Never the hub's
+//! address.
 
 use std::sync::Arc;
 
@@ -105,7 +106,7 @@ pub async fn get(State(svc): State<Arc<Service>>, Path((kind, id)): Path<(String
             Error::Upstream { service, reason } => Error::Unavailable { service, reason },
             e => e,
         })?;
-    let link = format!("{}#{}", share.url, open::fragment(shared.item()));
+    let link = open::link(shared.item(), &share.url);
     Ok(Json(Answer { share, link }))
 }
 
