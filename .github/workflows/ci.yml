@@ -21,6 +21,11 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
+      # The web UI's pure helpers (web/align.js): node's own test runner, no packages.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24.11"
+      - run: node --test "tests/web/*.test.mjs"
       # app/ is its own workspace but depends on the hub by path: a dependency change in crates/*
       # must update app/Cargo.lock in the same commit, or the app's --locked builds break.
       - run: cargo update --manifest-path app/Cargo.toml --workspace --locked

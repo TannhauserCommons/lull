@@ -12,12 +12,13 @@ run = [
   "cargo fmt --all --check",
   "cargo clippy --workspace --all-targets --locked -- -D warnings",
   "cargo test --workspace --locked",
+  "node --test tests/web/*.test.mjs",
   "cargo update --manifest-path app/Cargo.toml --workspace --locked",
 ]
 
 [tasks.test]
 description = "Tests only"
-run = "cargo test --workspace --locked"
+run = ["cargo test --workspace --locked", "node --test tests/web/*.test.mjs"]
 
 [tasks.dev]
 description = "Run lull locally with settings from .env (UI files reload from disk)"
