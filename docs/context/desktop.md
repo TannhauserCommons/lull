@@ -40,11 +40,14 @@ The Tauri v2 project in `app/` (its own Cargo workspace; ADR-0006) shows the hub
 
 ## Run it
 
-- `cd app && cargo run` (set `CARGO_TARGET_DIR` outside `Desktop` on Windows). The first build downloads slskd (55 MB), yt-dlp (24 MB on Windows, 41 MB on Linux) and Deno (a 43 MB zip) into `app/binaries/`.
+- **Every dev build gets its own identifier.** This is the default way to build or run `app/`:
+  `cd app && TAURI_CONFIG='{"identifier":"io.github.tannhausercommons.lull.dev"}' cargo run` (PowerShell: `$env:TAURI_CONFIG='{"identifier":"io.github.tannhausercommons.lull.dev"}'` first). Set `CARGO_TARGET_DIR` outside `Desktop` on Windows. The first build downloads slskd (55 MB), yt-dlp (24 MB on Windows, 41 MB on Linux) and Deno (a 43 MB zip) into `app/binaries/`.
+  - **Why:** without `TAURI_CONFIG` a dev build *is* the installed app as far as the OS can tell: same identifier, so the same settings (device token included), WebView2 profile and single-instance lock. Beside an installed lull it hands over to it and exits, and anything written into "its" settings is the installed app's.
+  - Use one test identifier per purpose (`….lull.dev`, `….lull.<what you test>`); seed, inspect and delete only that identifier's folders (the list below, with its name), never `io.github.tannhausercommons.lull`'s.
+  - Only `npm run bundle` and CI's release builds use the real identifier.
 - Pages in `web/desktop/` and the staged web files are embedded at compile time: rebuild after editing them. The web UI itself comes from the hub; the in-process hub embeds it at compile time too (release builds), so web edits need a rebuild here.
-- **A dev build is the installed app** as far as Windows and Linux can tell: same identifier, so the same settings (device token included), WebView2 profile and single-instance lock. Launched beside an installed lull it just hands over to it and exits; anything written into its settings is the installed app's. Test with its own identifier: `TAURI_CONFIG='{"identifier":"io.github.tannhausercommons.lull.dev"}' cargo build`, and seed or delete only that identifier's folders.
 - **Inspecting the webviews:** start with `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333` and open `http://127.0.0.1:9333/json`; each window is a DevTools target.
-- **Where things live** (Windows; Linux uses `~/.config/` and `~/.local/share/` with the same identifier):
+- **Where things live** (Windows; Linux uses `~/.config/` and `~/.local/share/` with the same identifier). These are the installed app's; a dev build's are the same paths under its own identifier:
   - `%APPDATA%\io.github.tannhausercommons.lull\settings.json`: the app's settings, including its device token;
   - `%APPDATA%\io.github.tannhausercommons.lull\hub\`: the hub's database (`LULL_DATA_DIR`);
   - `%APPDATA%\io.github.tannhausercommons.lull\slskd\`: slskd's app dir (its data, logs and `slskd.yml`);
