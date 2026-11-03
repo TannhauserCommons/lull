@@ -768,6 +768,7 @@
     var sendArt = function (force) {
       if (!miniOpen) return;
       var data = P.current() ? artFor() : null;
+      if (data === null && art.src && P.current()) return;   // still fetching this song's: keep showing the last one
       if (!force && data === sentArt) return; sentArt = data;
       T.event.emit('player-art', { art: data }).catch(logFailure('cover art'));
     };
