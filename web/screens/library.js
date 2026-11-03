@@ -493,7 +493,7 @@
     var facts = [ar.listeners ? html`<span><b>${ar.listeners.toLocaleString('en-US')}</b> Last.fm listeners</span>` : '',
       releases ? html`<span>${plural(releases, 'release')}</span>` : ''].filter(String);
     return html`<section class="card lib-page lib-ahero${ar.image ? ' has-photo' : ''}" aria-labelledby="lib-artist-title">
-      ${ar.image ? html`<div class="lib-ahero__glow" aria-hidden="true">${ui.cover(ar, '100%')}</div>` : ''}
+      ${ar.image ? html`<div class="lib-ahero__glow" aria-hidden="true">${ui.cover(ar, '100%', { blurred: true })}</div>` : ''}
       <div class="lib-hero lib-hero--round">
         ${ui.cover(ar, 'var(--lib-art)', { round: true, label: ar.image ? 'Photo of ' + ar.name : ar.name })}
         <div class="lib-hero__info">

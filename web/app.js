@@ -134,6 +134,7 @@
   function patchNode(old, want) {
     if (old.nodeType !== 1) { if (old.nodeValue !== want.nodeValue) old.nodeValue = want.nodeValue; return; }
     if (old.nodeName === 'IMG' && old.getAttribute('src') === want.getAttribute('src')) return;   // same picture: leave it be
+    if (old.nodeName === 'IMG' && old.hasAttribute('data-pic') && old.getAttribute('data-pic') === want.getAttribute('data-pic')) return;   // a cover's size is the fitter's
     patchAttrs(old, want);
     if (old.nodeName === 'TEXTAREA') { if (old !== document.activeElement) old.value = want.value; return; }
     patchChildren(old, want);
@@ -609,20 +610,25 @@
       (opts.round ? ' cover--round' : '') + (opts.cls ? ' ' + opts.cls : '');
     var a11y = opts.label ? ' role="img" aria-label="' + esc(opts.label) + '"' : ' aria-hidden="true"';
     var c = { key: String(key), recipe: App.coverClass(key), size: px ? size + 'px' : size, cls: cls, attrs: a11y,
-      round: !!opts.round, label: opts.label || '' };
+      round: !!opts.round, label: opts.label || '', blurred: !!opts.blurred };
     return raw(String(App.slot('coverArt', c, coverMarkup)));
   };
   /* default coverArt slot: one span; the .c1-.c8 recipe draws the art in CSS until (and unless) the real cover
-     loads: <img class="cover__img"> from /api/art, and .has-art on the span once it has (see the load listener) */
-  function coverMarkup(c) { return coverSpan(c.cls, ' style="--cover-size-base:' + c.size + '"' + c.attrs, c.key, c.size); }
+     loads: <img class="cover__img"> from /api/art, and .has-art on the span once it has (see the load listener).
+     { blurred: true }: drawn blurred behind something (the artist hero's glow), so its smallest size is all it shows */
+  function coverMarkup(c) { return coverSpan(c.cls, ' style="--cover-size-base:' + c.size + '"' + c.attrs, c.key, c.size, null, c.blurred); }
   /* a picture this page has already loaded renders as shown from the start (.has-art, no lazy load), so a cover drawn
      again (another screen, a new row) shows its art at once instead of fading in over the recipe each time */
   var artReady = new Set();
-  function coverSpan(cls, attrs, key, size, own) {
-    var src = own || artSrc(key, size), ready = artReady.has(src), mono = own ? '' : monogram(key);
+  /* `own`: a picture of the item's own (a playlist's cover, or a blob being chosen) instead of the key's */
+  function coverSpan(cls, attrs, key, size, own, blurred) {
+    var pic = own ? ownPic(own) : artPic(key), src = pic ? firstSrc(pic, size) : own || '', ready = artReady.has(src);
+    if (blurred && pic) { src = sized(pic, ART_SIZES[0]); ready = artReady.has(src); pic = ''; }   // not fitted
+    var mono = own ? '' : monogram(key);
     return '<span class="' + cls + (mono ? ' cover--artist' : '') + (ready ? ' has-art' : '') + '"' + attrs + '>' +
-      (mono ? '<span class="cover__mono" aria-hidden="true">' + esc(mono) + '</span>' : '') + (src ? '<img class="cover__img"' +
-      (ready ? '' : ' loading="lazy" decoding="async"') + ' alt="" data-art="' + esc(key) + '" src="' + esc(src) + '">' : '') + '</span>';
+      (mono ? '<span class="cover__mono" aria-hidden="true">' + esc(mono) + '</span>' : '') + (pic || src ? '<img class="cover__img"' +
+      (ready ? '' : ' loading="lazy" decoding="async"') + ' alt="" data-art="' + esc(key) + '"' + (pic ? ' data-pic="' + esc(pic) + '"' : '') +
+      (src ? ' src="' + esc(src) + '"' : '') + '>' : '') + '</span>';
   }
   /* an artist's initial: what an artist without a photo shows, set in the design's display face over its recipe
      (never an album cover standing in for a photo); hidden once a photo loads */
@@ -634,31 +640,139 @@
   /* albums whose art 404'd twice: not asked for again for ART_AGAIN. The hub answers 404 while it is still fetching a
      cover from outside (api.md /api/art), so one 404 gets one retry, and a miss is never final for the session */
   var artMissing = {}, ART_RETRY = 5000, ART_AGAIN = 10 * 60 * 1000;
-  /* the picture for an album or artist key: a catalog entity's own URL (album `art`, artist `image`, same origin through
-     /api/catalog/art, ADR-0008) at the size wanted, else the library's /api/art for albums */
-  function artSrc(key, size) {
+  /* the picture for an album or artist key, without a size: a catalog entity's own URL (album `art`, artist `image`, same
+     origin through /api/catalog/art, ADR-0008), else the library's /api/art for albums */
+  function artPic(key) {
     if (Date.now() - (artMissing[key] || 0) < ART_AGAIN) return '';
-    var px = parseInt(size, 10), want = /%$/.test(size) || !px ? 256 : px <= 96 ? 96 : px <= 256 ? 256 : 512;
     var e = /^ar-/.test(key) ? M.artist(key) : /^al-/.test(key) ? M.album(key) : null;
     var own = e && (e.art || e.image);
     if (!own && !/^al-/.test(key)) return '';
     if (!own && e && e.saved === 'none') return '';   // library art exists only for saved albums: asking would 404
-    return own ? sized(own, want) : App.artUrl(key, want);
+    return own || M.url('/api/art/' + encodeURIComponent(key));
   }
-  /* fetch and decode a track's cover ahead of time (the player warms the next song's), so it shows at once when drawn */
+  function ownPic(url) { return /^(blob|data):/.test(url) ? '' : M.url(url); }   // a blob being chosen is shown as it is
+  function sized(url, px) { return /[?&]size=/.test(url) ? url.replace(/([?&]size=)\d+/, '$1' + px) : url + (url.indexOf('?') < 0 ? '?' : '&') + 'size=' + px; }
+  App.artUrl = function (albumId, size) { return sized(M.url('/api/art/' + encodeURIComponent(albumId)), size); };
+
+  /* ---------- covers at the size they are drawn ----------
+     The hub serves every picture at ART_SIZES, scaled down and never up (api.md /api/art). A cover asks for the smallest
+     size that covers its drawn box in device pixels, so it is as sharp as the screen can show and no larger, at any
+     display scaling and in any design (designs resize covers in CSS, so the size a screen passes is only a first guess).
+     - Markup: every cover <img> carries data-pic, its picture without a size. Its first src (firstSrc) is the size its
+       CSS size needs when that is a number of pixels; a picture this page already decoded, when there is one, so a big
+       view never starts blank; else none, and the fitter sets it once laid out.
+     - The fitter: a ResizeObserver measures each cover in device pixels (and again when it, the zoom or the screen
+       changes). A larger size is decoded off the page and swapped in, so the picture on show stays until the sharp one
+       is ready; a smaller one replaces a big picture a small place borrowed. Swaps wait until the cover is near the
+       viewport, so nothing large decodes off screen.
+     - App.patch leaves a cover <img> with the same data-pic alone: its src is the fitter's. */
+  var ART_SIZES = [96, 256, 512, 1024, 2048];
+  /* a picture up to 10% short of its box isn't visibly softer, and the next size up has 2.7 to 7 times the pixels */
+  var ART_SLACK = 0.9;
+  /* picture -> its full size in pixels (long side), once an answer came back smaller than asked: no larger size is asked */
+  var artFull = {};
+  function devicePixels() { return window.devicePixelRatio || 1; }
+  /* the size to ask for a box `px` device pixels wide, never past the size that holds the whole source */
+  function artBucket(px, pic) {
+    var full = artFull[pic], top = ART_SIZES[ART_SIZES.length - 1];
+    for (var i = 0; i < ART_SIZES.length; i++) {
+      if (full && ART_SIZES[i] >= full) return ART_SIZES[i];
+      if (ART_SIZES[i] >= px * ART_SLACK) return ART_SIZES[i];
+    }
+    return top;
+  }
+  function bucketOf(src) { var m = /[?&]size=(\d+)/.exec(src || ''); return m ? +m[1] : 0; }
+  /* the largest size of `pic` already decoded, no larger than `most` (any size when 0) */
+  function decodedOf(pic, most) {
+    for (var i = ART_SIZES.length - 1; i >= 0; i--) {
+      var s = sized(pic, ART_SIZES[i]);
+      if ((!most || ART_SIZES[i] <= most) && artReady.has(s)) return s;
+    }
+    return '';
+  }
+  function firstSrc(pic, size) {
+    var px = typeof size === 'number' ? size : /^\d+(\.\d+)?(px)?$/.test(size) ? parseFloat(size) : 0;
+    var want = px ? sized(pic, artBucket(px * devicePixels(), pic)) : '';
+    if (want && artReady.has(want)) return want;
+    return decodedOf(pic, bucketOf(want)) || want;
+  }
+  /* an answer smaller than the size asked (250 counts for 256: the archive's thumbnail) means the source has no more */
+  function noteFull(pic, src, w, h) {
+    var asked = bucketOf(src), long = Math.max(w, h);
+    if (pic && asked && long && long < asked * 0.95) artFull[pic] = long;
+  }
+  /* CSS pixels × devicePixelRatio: zoom changes the CSS size, and a screen with other scaling is caught by onScaling */
+  var fitter = new ResizeObserver(function (entries) {
+    entries.forEach(function (e) { fitArt(e.target, Math.max(e.contentRect.width, e.contentRect.height) * devicePixels()); });
+  });
+  function watchArt(img) { fitter.observe(img); }
+  function refit(img) { fitter.unobserve(img); watchArt(img); }   // a new observation reports the size at once
+  function fitArt(img, px) {
+    if (!img.isConnected) { fitter.unobserve(img); return; }   // removed covers report 0 once
+    var pic = img.getAttribute('data-pic'); if (!pic || !px) return;   // hidden: fitted once shown
+    var w = img.naturalWidth, h = img.naturalHeight;
+    if (w && h) px *= Math.max(w, h) / Math.min(w, h);   // object-fit: cover fills the box with the short side
+    var size = artBucket(px, pic), src = img.getAttribute('src'), now = bucketOf(src);
+    if (now === size || (artFull[pic] && Math.min(now, size) >= artBucket(Infinity, pic))) return;   // both hold the whole source
+    var want = sized(pic, size);
+    if (artFailed[want] > 1) return;
+    if (!src || artReady.has(want) || !artReady.has(src)) { img.setAttribute('src', want); return; }   // nothing on show yet
+    artWanted.set(img, want); nearby.observe(img);
+  }
+  /* swaps wait for the cover to come near the viewport; then the new size is decoded, and swapped in if still wanted */
+  var artWanted = new WeakMap(), artFailed = {};
+  var nearby = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (!e.isIntersecting) return;
+      nearby.unobserve(e.target);
+      var img = e.target, want = artWanted.get(img), pic = img.getAttribute('data-pic');
+      if (!want) return;
+      var im = new Image(); im.src = want;
+      im.decode().then(function () {
+        artReady.add(want); noteFull(pic, want, im.naturalWidth, im.naturalHeight);
+        if (artWanted.get(img) === want) { artWanted.delete(img); if (img.isConnected) img.setAttribute('src', want); }
+      }, function () {
+        /* the hub answers 404 while it fetches a size from outside: one more try, then the smaller picture stays */
+        artFailed[want] = (artFailed[want] || 0) + 1;
+        if (artWanted.get(img) === want) artWanted.delete(img);
+        if (artFailed[want] < 2) setTimeout(function () { if (img.isConnected) refit(img); }, ART_RETRY);
+      });
+    });
+  }, { rootMargin: '50%' });
+  /* every cover <img> put on the page is fitted; one whose picture changed in place (App.patch) is fitted again */
+  new MutationObserver(function (records) {
+    records.forEach(function (r) {
+      if (r.type === 'attributes') { if (r.target.hasAttribute('data-pic')) refit(r.target); return; }
+      r.addedNodes.forEach(function (n) {
+        if (n.nodeType !== 1) return;
+        if (n.matches('img[data-pic]')) watchArt(n); else if (n.firstElementChild) n.querySelectorAll('img[data-pic]').forEach(watchArt);
+      });
+    });
+  }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-pic'] });
+  /* moving to a screen with another scaling changes no CSS size: fit every cover again */
+  (function onScaling() {
+    matchMedia('(resolution: ' + devicePixels() + 'dppx)').addEventListener('change', function () {
+      $$('img[data-pic]').forEach(refit); onScaling();
+    }, { once: true });
+  })();
+
+  /* fetch and decode a track's cover ahead of time (the player warms the next song's) at the sizes the playing song's
+     covers are drawn at now, so it shows at once when drawn */
   ui.warmArt = function (t) {
-    if (!t) return;
-    [96, 256].forEach(function (px) {
-      var src = artSrc(t.albumId, px); if (!src || artReady.has(src)) return;
+    var pic = t && artPic(t.albumId), cur = P.current(); if (!pic) return;
+    var sizes = cur ? $$('img[data-art="' + cur.albumId + '"]').map(function (i) { return bucketOf(i.getAttribute('src')); }).filter(Boolean) : [];
+    (sizes.length ? sizes : [artBucket(52 * devicePixels(), pic)]).forEach(function (px) {
+      var src = sized(pic, artBucket(px, pic)); if (artReady.has(src)) return;
       var im = new Image(); im.src = src;
-      im.decode().then(function () { artReady.add(src); }, function () { /* no cover: the recipe stays */ });
+      im.decode().then(function () { artReady.add(src); noteFull(pic, src, im.naturalWidth, im.naturalHeight); }, function () { /* no cover: the recipe stays */ });
     });
   };
-  function sized(url, px) { return /[?&]size=/.test(url) ? url.replace(/([?&]size=)\d+/, '$1' + px) : url + (url.indexOf('?') < 0 ? '?' : '&') + 'size=' + px; }
-  App.artUrl = function (albumId, size) { return M.url('/api/art/' + encodeURIComponent(albumId) + '?size=' + size); };
   document.addEventListener('load', function (e) {
     var img = e.target; if (img.tagName !== 'IMG' || !img.classList.contains('cover__img')) return;
-    artReady.add(img.getAttribute('src')); img.parentNode.classList.add('has-art');
+    var src = img.getAttribute('src'), pic = img.getAttribute('data-pic');
+    artReady.add(src); img.parentNode.classList.add('has-art');
+    noteFull(pic, src, img.naturalWidth, img.naturalHeight);
+    if (pic && img.naturalWidth !== img.naturalHeight) refit(img);   // a wide photo fills its box by its short side
   }, true);
   document.addEventListener('error', function (e) {
     var img = e.target; if (img.tagName !== 'IMG' || !img.classList.contains('cover__img')) return;
@@ -682,22 +796,17 @@
     var one = !!own || keys.length === 1;
     if (own) keys = ['own-' + own];
     while (!one && keys.length < 4) keys.push('pad-' + keys.length);
-    var px = typeof size === 'number' ? size + 'px' : size;
+    var px = typeof size === 'number' ? size + 'px' : size, each = typeof size === 'number' ? (one ? size : size / 2) : '100%';
     return raw('<span class="mosaic' + (one ? ' mosaic--one' : '') + '" style="--cover-size-base:' + px + '"' + (label ? ' role="img" aria-label="' + esc(label) + '"' : ' aria-hidden="true"') + '>' +
       keys.map(function (k) {
         var c = { key: k, recipe: App.coverClass(k), size: '100%', cls: 'cover ' + App.coverClass(k), attrs: '', round: false, label: '', mosaic: true };
-        return String(App.slot('coverArt', c, function (x) { return coverSpan(x.cls, '', x.key, '100%', own && ownSrc(own, size)); }));
+        return String(App.slot('coverArt', c, function (x) { return coverSpan(x.cls, '', x.key, each, own); }));
       }).join('') + '</span>');
   };
   /* a playlist's picture: its own cover (GET /api/playlists/{id}/cover, sized like album art), else its songs' mosaic */
   ui.playlistArt = function (p, size, label) {
     return ui.mosaic((p.items || []).map(function (i) { return i.trackId; }), size, label, p.cover || null);
   };
-  function ownSrc(url, size) {
-    if (/^(blob|data):/.test(url)) return url;
-    var px = parseInt(size, 10), want = /%$/.test(String(size)) || !px ? 512 : px <= 96 ? 96 : px <= 256 ? 256 : 512;
-    return sized(M.url(url), want);
-  }
 
   ui.savedBadge = function () { return html`<span class="badge badge-saved">${icon('saved')}Saved</span>`; };
   ui.soulseekBadge = function () { return html`<span class="badge badge-slsk">${icon('soulseek')}Soulseek</span>`; };
@@ -1101,16 +1210,14 @@
   /* ---------- the cover viewer: a song's, album's or playlist's art, large, without leaving the page ----------
      App.viewCover({ kind: track|album|playlist, id }) opens the design's dialog: the picture with its name, artist and
      album as links. Esc, the scrim and Close shut it, and focus goes back to what opened it (openLayer). The picture
-     shows at once with the size this page already decoded; the hub's largest (COVER_BIG) replaces it once decoded, so
-     it never fades in twice. A picture drawn no larger than what it has (a mosaic's quarter) isn't asked again.
+     shows at once with the size this page already decoded, and the fitter swaps in the size the dialog needs once that
+     has decoded (covers at the size they are drawn), so it never fades in twice.
      Opened from the player bar's and the Now column's cover (an expand button on hover and focus), the player's "…",
      and every song, album and playlist menu (App.coverItem), so also by right-click. */
-  var COVER_BIG = 512;
   App.viewCover = function (what) {
     var v = coverSubject(what); if (!v) return;
-    var d = App.openDialog({ title: 'cover', className: 'cover-view', body: html`<div class="cover-view__art">${v.art}</div>
+    App.openDialog({ title: 'cover', className: 'cover-view', body: html`<div class="cover-view__art">${v.art}</div>
       <div class="cover-view__info">${v.info}</div>` });
-    $$('.cover__img', d.el).forEach(sharpen);
   };
   App.coverItem = function (kind, id) { return { label: 'View cover', icon: 'expand', run: function () { App.viewCover({ kind: kind, id: id }); } }; };
   function coverSubject(w) {
@@ -1125,13 +1232,6 @@
     var albumHref = '#/album/' + encodeURIComponent(t ? t.albumId : a.id), albumTitle = t ? t.album : a.title;
     return { art: ui.cover(e, '100%', { label: 'Cover of ' + albumTitle }),
       info: html`${link(albumHref, t ? t.title : a.title, 'cover-view__title')}<span class="cover-view__by">${link('#/artist/' + encodeURIComponent(e.artistId), e.artist, 'link')}${t && t.album ? html`, ${link(albumHref, t.album, 'link-plain')}` : ''}</span>` };
-  }
-  function sharpen(img) {
-    var src = img.getAttribute('src'), big = src && /[?&]size=/.test(src) ? sized(src, COVER_BIG) : null;
-    if (!big || big === src || img.getBoundingClientRect().width * (window.devicePixelRatio || 1) <= parseInt(/[?&]size=(\d+)/.exec(src)[1], 10)) return;
-    if (artReady.has(big) || !artReady.has(src)) { img.src = big; return; }   // the big one is decoded, or nothing is yet: one picture
-    var im = new Image(); im.src = big;
-    im.decode().then(function () { artReady.add(big); if (img.isConnected) img.src = big; }, function () { /* the smaller one stays */ });
   }
   function enableDragDismiss(el, layer) {
     var startY = null, dy = 0;

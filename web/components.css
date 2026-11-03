@@ -448,12 +448,13 @@ button.trow__title:hover { text-decoration: underline; text-underline-offset: 3p
 :is(.trow, .disc-pick).is-revealed { background: var(--bg-2); box-shadow: inset 0 0 0 2px var(--link); animation: row-revealed 1.8s var(--ease-out) both; }
 @keyframes row-revealed { 0%, 60% { background: var(--bg-2); box-shadow: inset 0 0 0 2px var(--link); } 100% { background: transparent; box-shadow: inset 0 0 0 2px transparent; } }
 
-/* the cover viewer (App.viewCover): the picture as large as the window allows up to the hub's 512 px, its names under it */
+/* the cover viewer (App.viewCover): the picture as large as the window allows, up to 1024 px (the hub's 2048 at 2x
+   scaling), its names under it */
 .dialog.cover-view { width: fit-content; max-width: calc(100% - 32px); }   /* .dialog's own width comes later */
 .cover-view .sheet__body { display: grid; justify-items: center; gap: var(--sp-3); }
-.cover-view__art { width: min(512px, calc(100vw - 96px), calc(100dvh - 240px)); }
+.cover-view__art { width: min(1024px, calc(100vw - 96px), calc(100dvh - 240px)); }
 .cover-view__art :is(.cover, .mosaic) { --cover-size: 100%; }
-.cover-view__info { display: grid; justify-items: center; gap: 2px; max-width: min(512px, calc(100vw - 96px)); text-align: center; }
+.cover-view__info { display: grid; justify-items: center; gap: 2px; max-width: min(1024px, calc(100vw - 96px)); text-align: center; }
 .cover-view__title { font: var(--t-row); font-size: 1.125rem; }
 .cover-view__title:hover { text-decoration: underline; text-underline-offset: 3px; }
 .cover-view__by { font: var(--t-meta); color: var(--fg-2); }

@@ -28,6 +28,19 @@ self.addEventListener('message', function (e) {
   }
 });
 
+/* a downloaded song's cover without the hub: the size asked when kept, else the nearest kept size (downloads keep 96,
+   256 and 512; the page may ask for any size up to 2048, web.md "Covers at the size they are drawn") */
+function keptCover(url) {
+  url = url.replace(/&retry=1$/, '');   // the page's second try of a cover
+  var asked = +((/[?&]size=(\d+)/.exec(url) || [])[1] || 0);
+  var sizes = [asked, 512, 256, 96].filter(function (s, i, all) { return s && all.indexOf(s) === i; });
+  return caches.open('lull-downloads').then(function (c) {
+    return sizes.reduce(function (found, s) {
+      return found.then(function (hit) { return hit || c.match(url.replace(/([?&]size=)\d+/, '$1' + s)); });
+    }, Promise.resolve(null));
+  }).then(function (hit) { return hit || Response.error(); });
+}
+
 /* the UI's own files: same origin, not the API, not health */
 function shell(url) {
   var u = new URL(url, self.location.href);
@@ -39,9 +52,7 @@ function shell(url) {
 self.addEventListener('fetch', function (e) {
   var req = e.request;
   if (req.method === 'GET' && /\/api\/art\//.test(req.url)) {
-    e.respondWith(fetch(req).catch(function () {
-      return caches.open('lull-downloads').then(function (c) { return c.match(req); }).then(function (hit) { return hit || Response.error(); });
-    }));
+    e.respondWith(fetch(req).catch(function () { return keptCover(req.url); }));
     return;
   }
   if (req.method !== 'GET' || !shell(req.url)) return;

@@ -265,7 +265,7 @@ song menus have Download / Remove download; rows show a downloaded mark. The Dow
 segment `/downloads`. Downloads need a secure context (HTTPS or localhost); elsewhere the button says why.
 
 - **Browser backend**: audio in Cache Storage `lull-downloads` under `downloads/audio/<trackId>`, covers under
-  their `/api/art/…?size=96|256|512` URLs (sw.js answers covers from there when the hub can't), the index (track and
+  their `/api/art/…?size=96|256|512` URLs (sw.js answers covers from there when the hub can't: the size asked, else the nearest kept one, since the page may ask for up to 2048), the index (track and
   album JSON, size, state) in IndexedDB; `navigator.storage.persist()` on the first download. A downloaded song
   plays from a Blob URL.
 - **App backend**: `window.LullNative.downloads`, whose contract (Mobile session implements it) is:
@@ -442,7 +442,7 @@ Playlists lists bookmarks after lull's own ("saved from youtube and deezer"), ea
 ## Playlist covers
 
 `ui.playlistArt(p, size, label)` draws a playlist wherever it shows (rail, tiles, the playlist page, the add-to-playlist
-picker): its own `cover` (`/api/playlists/{id}/cover`, asked at 96, 256 or 512 px like album art) as one picture, else
+picker): its own `cover` (`/api/playlists/{id}/cover`, asked at the size it is drawn like album art) as one picture, else
 `ui.mosaic` of its songs, the first four distinct albums 2×2, or one cover when the songs share an album. Both keep the
 `.mosaic` frame every design styles; `.mosaic--one` holds a single cover (the lull design's playlist header shows it as
 one larger tilted card). The create and edit dialog picks a picture (JPEG, PNG or WebP, 10 MB, checked before sending)
@@ -452,9 +452,9 @@ with a preview, or removes the cover; it is `PUT`/`DELETE` after the details sav
 
 `App.viewCover({ kind: track|album|playlist, id })` shows a cover large without leaving the page: the design's dialog
 (`.cover-view`) with the picture and its name, artist and album as links; Esc, the scrim and Close shut it and focus
-returns to the opener. It opens at once with the size this page already decoded and swaps in 512 px (the largest
-`/api/art`, `/api/catalog/art` and playlist covers serve) once that has decoded, so it never fades in twice; a picture
-drawn no larger than the size it has (a mosaic's quarter) isn't asked again. Opened from:
+returns to the opener. The picture is as large as the window allows, up to 1024 CSS px (the hub's 2048 at 2x scaling).
+It opens at once with the size this page already decoded, and the size the dialog needs swaps in once decoded (covers
+at the size they are drawn, below), so it never fades in twice. Opened from:
 - the player bar's cover and the Now column's (`ui.coverZoom(trackId)`, an expand button inside `.cover-zoom`, shown
   on hover and keyboard focus; hidden on touch screens, which have no hover);
 - "View cover" (`App.coverItem(kind, id)`) in the player's "…" (Now Playing's too) and every song, album and playlist
@@ -504,12 +504,37 @@ that. The clipboard write starts inside the click with the text still on its way
 it keeps the click's permission while the hub answers. No public link (404, 503, hub unreachable) is an error toast
 with the reason and a "Copy lull link" button; a browser that refuses the clipboard gets a toast showing the link.
 
+## Covers at the size they are drawn
+
+The hub serves every cover and photo at 96, 256, 512, 1024 and 2048 px, scaled down and never up, with `X-Image-Size`
+(api.md `/api/art`). Each cover asks for the smallest size that covers its drawn box in device pixels (CSS size ×
+`devicePixelRatio`), so it is as sharp as the screen shows and no larger, in every design and at any display scaling
+(app.js, "covers at the size they are drawn"):
+- **Measured, not guessed.** Designs resize covers in CSS (`--cover-size`, `100%` tiles, heroes sized by `--lib-art`),
+  so the size a screen passes to `ui.cover` is only the first guess. A ResizeObserver measures every `img.cover__img`
+  carrying `data-pic` (its picture without a size; a MutationObserver finds them) and again when it, the zoom or the
+  screen's scaling changes. A size up to 10% short of the box counts (`ART_SLACK`). A photo that isn't square fills
+  its box by its short side, so its long side asks more.
+- **Never blank, never a flash.** The first `src` is the size a numeric CSS size needs, else a size of the same
+  picture already decoded (so Now Playing, a hero or the cover viewer start with what the player bar has), else none
+  until measured. A different size is decoded off the page and swapped in once ready, only when the cover is near the
+  viewport, so nothing large decodes off screen; a big picture a small place borrowed is swapped for its own size the
+  same way. `App.patch` leaves a cover `<img>` with the same `data-pic` alone: its `src` is the fitter's.
+- **No more than the source has.** An answer smaller than asked (a 600 px original asked at 1024) marks the picture's
+  full size, and no larger size of it is asked again. A size that fails (the hub answers 404 while it fetches one
+  from outside) is tried once more after 5 s; the smaller picture stays meanwhile.
+- **Blurred covers** (`ui.cover(…, { blurred: true })`, the artist hero's glow) take 96 px and aren't fitted.
+- **Fixed sizes** where lull hands a picture outside the page: Media Session 96/256/512 (OS overlays; the desktop app
+  passes the 512 to its mini player and SMTC), the Android player's and downloads' 512, Classic mode's 256 for the OS
+  overlay, and Discord's 600 px public picture (discovery.md, Share links).
+
 ## Rules for screens
 
 - No `PROTO`, no state switcher, no `ctx.state`, no simulated delays, no sample data.
 - Render from `M.get` records and the store; refresh happens by itself when reads settle.
 - Every control does something real; an endpoint that is down shows its error, not a pretend result.
-- Cover art: `App.ui.cover` puts `<img class="cover__img">` (from `/api/art`, album keys only) inside the cover span;
+- Cover art: `App.ui.cover` puts `<img class="cover__img">` (from `/api/art`, album keys only) inside the cover span,
+  at the size it is drawn (Covers at the size they are drawn, below);
   `.has-art` is added once it loads and hides the recipe's `::before/::after`. Designs that draw on those
   pseudo-elements handle `.has-art` (starlight keeps its frame line, petal never mirrors real art). A picture this page
   has already loaded renders with `.has-art` from the start, and the player warms the next song's cover
