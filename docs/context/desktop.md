@@ -159,7 +159,8 @@ The hub origin gets its capabilities at runtime when the app first loads it: one
 | `classic` | Classic window → `main` | `{ type: now, id, playing, pos, duration }`, `{ type: listen, id, duration }`, `{ type: listened, how, seconds }`, `{ type: action, action: like \| save, id }`, `{ type: back, back: { ids, index, pos, playing, shuffle, repeat, local } \| null }`, `{ type: failed, message }` |
 | `classic-close` | Rust → Classic window | none: hand the queue back, then `classic-done` |
 | `mini` | mini window → `main` | `{ action: play-pause \| previous \| next \| like \| shuffle \| repeat \| vol-up \| vol-down \| seek \| hello, fraction? }` |
-| `player` | `main` → all | snapshot `{ track, art, playing, liked, pos, duration, durationKnown, buffered, received, shuffle, repeat, volume }`, sent on change and in answer to `hello` |
+| `player` | `main` → all | snapshot `{ track, playing, liked, pos, duration, durationKnown, buffered, received, shuffle, repeat, volume }`, sent on change and in answer to `hello` |
+| `player-art` | `main` → all | `{ art }`: the cover as a data URL (or `null`), once per song and in answer to `hello`. Never inside `player`: that goes out with every position change, and a cover in it grew the page's memory by tens of MB a minute |
 | `appearance` | `main` → Rust and the mini player | `{ design, theme }`; stored and passed in the hash of every bundled page |
 | `ask-close` | Rust → `main` | none: show "keep playing in the tray?" |
 | `app-update` | Rust → all | the update report, on every change of the check (progress per whole percent) |

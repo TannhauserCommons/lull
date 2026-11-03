@@ -518,8 +518,8 @@
   /* a new snapshot from main: repaint, and say what the last button press changed */
   var REPEAT_TEXT = { off: 'repeat off', all: 'repeat all', one: 'repeat one' };
   function receive(scope, next, first) {
-    var prev = S; S = next;
-    var key = function (s) { return JSON.stringify([s.track, s.art, s.received < 1]); };
+    var prev = S; S = Object.assign({}, next, { art: prev.art });   // the cover comes on its own ('player-art')
+    var key = function (s) { return JSON.stringify([s.track, s.received < 1]); };
     if (first || key(prev) !== key(next)) paintTrack(scope);
     paintPlayer(scope);
     if (first) return;
@@ -643,6 +643,7 @@
       };
       Designs.ready(render);
       T.event.listen('player', function (e) { receive(doc, e.payload, false); });
+      T.event.listen('player-art', function (e) { if (S.art !== e.payload.art) { S = Object.assign({}, S, { art: e.payload.art }); paintTrack(doc); } });
       T.event.listen('appearance', function (e) {        // DESKTOP.md 6.1: follow the web UI live
         Designs.applyTheme(e.payload.theme);
         if (e.payload.design !== Designs.current) Designs.set(e.payload.design, render);
@@ -746,7 +747,7 @@
       if (src) fetch(src, { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.blob() : null; }).then(function (blob) {
         if (!blob || art.src !== src) return;
         var reader = new FileReader();
-        reader.onload = function () { if (art.src === src) { art.data = reader.result; sendPlayer(true); } };
+        reader.onload = function () { if (art.src === src) { art.data = reader.result; sendArt(false); } };
         reader.readAsDataURL(blob);
       }).catch(logFailure('cover art'));
       return null;
@@ -754,13 +755,22 @@
     var snapshot = function () {
       var t = P.current(), ps = P.state, id = t ? t.id : null;
       return { track: t ? { title: t.title, artist: t.artist, format: t.format || '', lossless: !!t.lossless } : null,
-        art: t ? artFor() : null, playing: !!ps.playing, liked: !!(id && App.isLiked(id)),
+        playing: !!ps.playing, liked: !!(id && App.isLiked(id)),
         pos: ps.pos || 0, duration: P.duration() || 0, durationKnown: ps.durationKnown !== false,
         buffered: ps.buffered || [], received: ps.received == null ? 1 : ps.received,
         shuffle: !!ps.shuffle, repeat: ps.repeat || 'off', volume: ps.muted ? 0 : ps.volume };
     };
+    /* the cover goes on its own, once per song: inside the snapshot, a 100 KB data URL crossed to the mini player with
+       every position update (four a second), and the page's memory grew by tens of MB a minute */
+    var sentArt;
+    var sendArt = function (force) {
+      var data = P.current() ? artFor() : null;
+      if (!force && data === sentArt) return; sentArt = data;
+      T.event.emit('player-art', { art: data }).catch(logFailure('cover art'));
+    };
     var lastPlayer = '';
     var sendPlayer = function (force) {
+      sendArt(force);
       var snap = snapshot(), key = JSON.stringify(snap);
       if (!force && key === lastPlayer) return; lastPlayer = key;
       T.event.emit('player', snap).catch(logFailure('player snapshot'));
