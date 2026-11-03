@@ -173,8 +173,10 @@
    ===================================================================== */
 :root[data-design="glasshouse"],
 :root[data-design="glasshouse"] body { background: var(--gh-wall-0); }
-:root[data-design="glasshouse"] .sky-specks {
-  background:
+:root[data-design="glasshouse"] {
+  /* the wallpaper's smooth layers, once: the sky draws them, and the glass over the wallpaper draws them again under its
+     tint (Windows, below: the glass), fixed to the window as the sky is */
+  --gh-wall:
     linear-gradient(90deg, var(--gh-wall-0) 0, color-mix(in srgb, var(--gh-wall-0) 80%, transparent) 104px, transparent 150px),
     radial-gradient(44vmax 36vmax at 92% 0%, color-mix(in srgb, var(--gh-moon) 30%, transparent) 0%, color-mix(in srgb, var(--gh-moon) 8%, transparent) 40%, transparent 64%),
     radial-gradient(30vmax 26vmax at 86% 64%, color-mix(in srgb, var(--gh-glow-3) 70%, transparent) 0%, transparent 70%),
@@ -184,6 +186,10 @@
       transparent 63%, color-mix(in srgb, var(--gh-fog) 12%, transparent) 66%, transparent 71%),
     radial-gradient(40vmax 14vmax at 58% 52%, color-mix(in srgb, var(--gh-fog) 34%, transparent) 0%, transparent 72%),
     linear-gradient(172deg, var(--gh-wall-0) 0%, var(--gh-wall-1) 34%, var(--gh-wall-2) 56%, var(--gh-wall-1) 78%, var(--gh-wall-0) 100%);
+  --gh-wall-at: fixed, fixed, fixed, fixed, fixed, fixed, fixed, fixed;
+}
+:root[data-design="glasshouse"] .sky-specks {
+  background: var(--gh-wall);
 }
 /* lens rings (img 03's eye, abstracted) and the star field: two drifting layers */
 :root[data-design="glasshouse"] .sky-specks::after {
@@ -210,14 +216,9 @@
   /* no specks over the heading band, where page titles and captions sit */
   -webkit-mask-image: linear-gradient(180deg, transparent 0 250px, #000 330px); mask-image: linear-gradient(180deg, transparent 0 250px, #000 330px);
 }
-:root[data-design="glasshouse"] .sky-specks .sparkle { filter: drop-shadow(0 0 6px color-mix(in srgb, var(--sparkle) 70%, transparent)); }
-:root[data-design="glasshouse"][data-theme="day"] .sky-specks .sparkle { filter: drop-shadow(0 0 3px var(--gh-glow-1)); }
-/* the wallpaper sparkles never straddle a window edge: with the queue docked the first two sit fully behind it (soft
-   glows through the frosted glass); elsewhere they would land on titles or edges, so they stay off */
+/* the wallpaper sparkles stay off: they would land on titles or window edges, and the two that sat behind the docked
+   queue showed through its frost as a glow of about 2 %, which the glass drawn from the wallpaper (below) covers */
 :root[data-design="glasshouse"] .sky-specks .sparkle { display: none; }
-@media (min-width: 1360px) {
-  :root[data-design="glasshouse"]:has(.app[data-ctx="docked"]) .sky-specks .sparkle:nth-child(-n+2) { display: block; translate: 0 90px; }
-}
 @supports (animation-timeline: scroll()) {
   :root[data-design="glasshouse"] body { timeline-scope: --gh-scroll; }
   :root[data-design="glasshouse"] .view { scroll-timeline: --gh-scroll block; }
@@ -309,6 +310,24 @@
     background: linear-gradient(128deg, var(--gh-sheen) 0%, transparent 36%),
       linear-gradient(180deg, var(--gh-glass-card) 0%, var(--gh-glass-card-2) 100%);
     -webkit-backdrop-filter: var(--gh-blur); backdrop-filter: var(--gh-blur);
+  }
+  /* glass that stays put over the wallpaper (the shell's panels; the queue while docked) frosts it without blurring it
+     every frame: the wallpaper's smooth layers again under the tint, fixed to the window as the sky is, and the stars and
+     lens rings left out, as a blur this wide wipes them out (docs/themes.md, Drawing cheaply). So does the AIMP window,
+     whose ticker would have its blur redone 20 times a second at rest; it repaints as the page scrolls, which costs less.
+     The other windows move over the wallpaper as the page scrolls, and a fixed wallpaper under each would repaint them
+     all on every scroll frame, so they blur live, as do a sheet, a menu, a toast and the queue sliding over the page:
+     what is under them moves. Each rule weighs what the glass rule above weighs (:where), so a window's own fill wins */
+  :root[data-design="glasshouse"] :is(.nowcol, .pbar, .mini, .tabbar, :where(.app[data-ctx="docked"]) .ctx) {
+    background: linear-gradient(128deg, var(--gh-sheen-panel) 0%, transparent 30%), linear-gradient(var(--gh-glass-panel) 0 0), var(--gh-wall);
+    background-attachment: scroll, scroll, var(--gh-wall-at);
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+  :root[data-design="glasshouse"] :is(.card.gh-aimp) {
+    background: linear-gradient(128deg, var(--gh-sheen) 0%, transparent 36%),
+      linear-gradient(180deg, var(--gh-glass-card) 0%, var(--gh-glass-card-2) 100%), var(--gh-wall);
+    background-attachment: scroll, scroll, var(--gh-wall-at);
+    -webkit-backdrop-filter: none; backdrop-filter: none;
   }
 }
 
