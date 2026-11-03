@@ -66,6 +66,7 @@ It is done when every item passes end to end on the homelab hub and on the Windo
 | 2026-11-01 | Remote access through the listener's Tailscale; `tailscale serve` provides HTTPS | No relay to host; browsers need HTTPS to install the app |
 | 2026-11-01 | Layouts reveal more as the window grows; resizable, collapsible panels and a reorderable Home, remembered per device (ADR-0007) | User's wish: big and odd window sizes used well, not stretched cards |
 | 2026-11-01 | Search is a catalog search (Deezer, MusicBrainz, Last.fm, saved songs) with Soulseek behind it; Soulseek copies are picked by separate streaming and saving profiles with minimums, auto-upgrade and mid-song source switching (ADR-0008) | User's wish: Spotify-like search that never misses a niche track, and every source rule a setting |
+| 2026-11-03 | Playlist links import from Spotify (its public embed page, keyless, first 100 songs), Deezer, YouTube, YouTube Music and SoundCloud, as a playlist that plays on demand | User's wish. Spotify's Web API reads only its app owner's own playlists since Feb 2026; the user OK'd reading the embed page despite Spotify's no-scraping terms |
 
 ## Open questions for the user
 
