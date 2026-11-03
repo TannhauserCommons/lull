@@ -733,17 +733,9 @@
 :root[data-design="lull"] .eq { color: var(--link); }
 
 /* =====================================================================
-   Seek: hatched = not downloaded, pale = received, lavender = buffered, violet = played; glossy knob
+   Seek: the shared language (plain track = not arrived, lavender = arrived, violet = played) in a rounded tape; glossy knob
    ===================================================================== */
-:root[data-design="lull"] .seek__track { height: 8px; margin-top: -4px; border-radius: 9px; background: var(--l-hatch-bg); box-shadow: inset 0 0 0 1px var(--l-rule); }
-:root[data-design="lull"] .seek__xfer::before { left: 0; right: 0; background: var(--l-received); animation: none; }
-/* while bytes arrive the not-downloaded tape marches; it stops when the file is complete. The tape is a layer one tile
-   wider than the track that slides by one tile, so the compositor moves it instead of the page repainting each frame */
-@keyframes lull-march { to { transform: translateX(6px); } }
-:root[data-design="lull"] .seek.is-transferring .seek__track::before {
-  content: ""; position: absolute; top: 0; bottom: 0; left: -6px; right: 0; background: var(--l-hatch-bg); animation: lull-march 1.6s linear infinite;
-}
-:root[data-design="lull"] .seek__buf { background: var(--seek-buffered); }
+:root[data-design="lull"] .seek__track { height: 8px; margin-top: -4px; border-radius: 9px; box-shadow: inset 0 0 0 1px var(--l-rule); }
 :root[data-design="lull"] .seek__played { background: var(--seek-played); border-radius: 9px; }
 :root[data-design="lull"] .seek__knob { width: 16px; height: 16px; left: -8px; top: -8px; border: var(--stroke) solid var(--l-gloss-edge); background: var(--l-hi), var(--l-gloss); box-shadow: none; }
 :root[data-design="lull"] .seek--line .seek__track { height: 3px; border-radius: 0; box-shadow: none; }
@@ -751,7 +743,7 @@
 :root[data-design="lull"] .seek-row__time { font: 800 .75rem/1 var(--f-ui); color: var(--l-muted); }
 :root[data-design="lull"] .seek__tip { background: var(--ink); color: #fff; border-radius: 8px; font: 800 .75rem/1.2 var(--f-ui); }
 :root[data-design="lull"][data-theme="night"] .seek__tip { background: #f4efff; color: #2b2650; }
-:root[data-design="lull"] .progress { height: 7px; border-radius: 9px; background: var(--l-hatch-bg); box-shadow: inset 0 0 0 1px var(--l-rule); }
+:root[data-design="lull"] .progress { height: 7px; border-radius: 9px; box-shadow: inset 0 0 0 1px var(--l-rule); }   /* the seek's plain track: no hatch */
 :root[data-design="lull"] .progress > i { background: var(--l-ribbon); border-radius: 9px; }
 /* save pipeline: each step names itself under its pill; nothing saved yet = one line in words, not five empty pills */
 :root[data-design="lull"] .pipeline { row-gap: 2px; }

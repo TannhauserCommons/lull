@@ -766,7 +766,7 @@
     switch (j.state) {
       case 'transferring': return { meta: html`${icon('soulseek', null, 'ic-16')}<span>${j.peer}, ${mbps(j.speed)}, ${pct}%</span>`, extra: html`<div class="progress progress--xfer" style="--p:${pct / 100}"><i></i></div>`, acts: cancel };
       case 'queued': return { meta: html`${icon('clock', null, 'ic-16')}<span>Queued at ${j.peer}${j.queuePos ? ', position ' + j.queuePos : ''}</span>`, extra: html`<div class="progress" style="--p:0"><i></i></div>`, acts: cancel };
-      case 'stalled': return { meta: html`${icon('refresh', null, 'ic-16')}<span>${j.peer} stalled at ${pct}%</span>`, extra: html`<div class="progress progress--xfer" style="--p:${pct / 100}"><i></i></div>`, acts: cancel };
+      case 'stalled': return { meta: html`${icon('refresh', null, 'ic-16')}<span>${j.peer} stalled at ${pct}%</span>`, extra: html`<div class="progress" style="--p:${pct / 100}"><i></i></div>`, acts: cancel };
       case 'failed': return { meta: html`${ui.statusGlyph('down', 'Failed')}<span>${j.error || 'Transfer failed'}</span>`, extra: html`<div class="progress progress--failed" style="--p:${pct / 100}"><i></i></div>`,
         acts: html`${actBtn('refresh', 'Retry transfer', 'now-job-retry', j)}${j.trackId ? actBtn('soulseek', 'Pick another source', 'show-sources', j, 'data-id="' + App.esc(j.trackId) + '"') : ''}` };
       case 'cancelled': return { meta: html`${icon('close', null, 'ic-16')}<span>Cancelled at ${pct}%</span>`, extra: '', acts: actBtn('refresh', 'Start again', 'now-job-retry', j) };

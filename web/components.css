@@ -448,20 +448,25 @@ button.trow__title:hover { text-decoration: underline; text-underline-offset: 3p
 }
 
 /* =====================================================================
-   Seek bar (player bar, Now Playing). Layers: track, transfer hatch, buffered ranges, played, knob
+   Seek bar (player bar, Now Playing). Layers: track, arrived, played, knob
    Set --pos (0-1) and --xfer (0-1) on .seek; buffered ranges are .seek__buf with left/width in %.
+   One language in every design and view (the waveform and the transfer progress bars too): played is solid
+   --seek-played; arrived but not played is one solid --seek-buffered (--xfer: what the hub has, 1 for a saved song,
+   so it is what you can seek into; the element's buffered ranges lie inside it and draw the same); not arrived is the
+   plain track. While bytes arrive (.is-transferring) the arrived part's edge breathes; reduced motion stills it.
    ===================================================================== */
 .seek { position: relative; height: 44px; min-width: 80px; cursor: pointer; touch-action: none; --pos: 0; --xfer: 0; container-type: inline-size; }
 .seek:focus-visible { outline-offset: -8px; border-radius: 12px; }
 [data-seek][data-pointer]:focus-visible { outline: none; }   /* clicked, not tabbed to (app.js) */
 .seek__track { position: absolute; left: 0; right: 0; top: 50%; height: 8px; margin-top: -4px; border-radius: 4px; overflow: hidden; box-shadow: inset 0 0 0 var(--stroke-thin) var(--seek-line); }
-.seek__xfer { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; overflow: hidden; transform-origin: left; transform: scaleX(var(--xfer)); }
-.seek__xfer::before {
-  content: ""; position: absolute; top: 0; bottom: 0; left: -16px; right: -16px;
-  background: repeating-linear-gradient(45deg, var(--seek-buffered) 0 2px, transparent 2px 5px);
-}
-.seek.is-transferring .seek__xfer::before { animation: hatch-drift 1.2s linear infinite; }
+.seek__xfer { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; background: var(--seek-buffered); transform-origin: left; transform: scaleX(var(--xfer)); }
 .seek__buf { position: absolute; top: 0; bottom: 0; background: var(--seek-buffered); }
+.seek__track::after {     /* the arrived part's leading edge (100cqw = the seek's width, the track's) */
+  content: ""; position: absolute; top: 0; bottom: 0; left: -12px; width: 12px; opacity: 0; pointer-events: none;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--seek-buffered) 45%, var(--seek-played)));
+  transform: translateX(calc(var(--xfer) * 100cqw));
+}
+.seek.is-transferring .seek__track::after { animation: xfer-edge 1.4s ease-in-out infinite alternate; }
 .seek__played { position: absolute; inset: 0; background: var(--seek-played); transform-origin: left; transform: scaleX(var(--pos)); }
 /* the knob rides a zero-size rail moved by a transform on its own layer (100cqw = the seek's width), in whole pixels:
    the knob is drawn once and moved whole. At a fraction of a pixel its circle edge blurs smoothly across while the
@@ -504,8 +509,7 @@ button.trow__title:hover { text-decoration: underline; text-underline-offset: 3p
 .wave.is-playing .wave__bar.is-played { animation: breathe 1.6s ease-in-out infinite alternate; }
 .wave.is-playing .wave__bar.is-played:nth-child(3n) { animation-delay: -.5s; }
 .wave.is-playing .wave__bar.is-played:nth-child(3n+1) { animation-delay: -1s; }
-.wave__bar.is-buf { background: transparent; box-shadow: inset 0 0 0 1.5px var(--peri); }
-.wave__bar.is-xfer { background: repeating-linear-gradient(to top, var(--peri) 0 2px, transparent 2px 4px); }
+.wave__bar:is(.is-buf, .is-xfer) { background: var(--peri); }    /* arrived, as on the seek bar: one solid tint */
 .wave__rail { position: absolute; top: -4px; bottom: 0; left: 0; width: var(--wave-head); transform: translateX(calc(var(--pos) * (100cqw - 100%))); pointer-events: none; }
 .wave__head { position: absolute; inset: 0; background: var(--pink-light); }
 .wave-times { display: flex; justify-content: space-between; gap: var(--sp-2); margin-top: 6px; font: var(--t-px); letter-spacing: var(--t-px-track); color: var(--fg-2); }
@@ -842,7 +846,7 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 }
 .pipeline__seg .ic { width: 12px; height: 12px; stroke-width: 2.6; }
 .pipeline__seg.is-done { background: var(--link); border-color: var(--link); }
-.pipeline__seg.is-current { border-color: var(--link); background: repeating-linear-gradient(45deg, var(--link) 0 2px, transparent 2px 5px); }
+.pipeline__seg.is-current { border-color: var(--link); background: color-mix(in srgb, var(--link) 35%, transparent); }   /* under way: the seek bar's arrived tint, solid */
 .pipeline__seg.is-failed { background: var(--down); border-color: var(--down); }
 .pipeline__seg.is-skipped { border-style: dashed; }
 .pipeline__text { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px var(--sp-3); }
@@ -855,7 +859,7 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 .btn-save { overflow: hidden; isolation: isolate; }
 .btn-save[data-state="saving"]::after {
   content: ""; position: absolute; inset: 0; z-index: -1; transform-origin: left; transform: scaleX(var(--p, .4));
-  background: repeating-linear-gradient(45deg, var(--lav) 0 3px, transparent 3px 7px);
+  background: var(--lav);
 }
 .btn-save[data-state="saved"] { background: var(--peri); color: var(--ink); border-color: var(--line); }
 .btn-save[data-state="failed"] .ic { color: var(--down); }
@@ -863,15 +867,15 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 .btn-save .px { margin-left: 2px; }
 
 /* =====================================================================
-   Progress bars (Activity, aggregate saves). .progress > i (--p 0-1); --xfer = hatched + drift
+   Progress bars (Activity, aggregate saves). .progress (--p 0-1) > i; --xfer = still transferring: solid, with the
+   seek bar's breathing edge
    ===================================================================== */
-.progress { position: relative; height: 8px; border-radius: 4px; overflow: hidden; box-shadow: inset 0 0 0 var(--stroke-thin) var(--seek-line); }
-.progress > i { position: absolute; inset: 0; transform-origin: left; transform: scaleX(var(--p, 0)); background: var(--accent-ui); overflow: hidden; }
-.progress--xfer > i { background: transparent; }
-.progress--xfer > i::before {
-  content: ""; position: absolute; top: 0; bottom: 0; left: -16px; right: -16px;
-  background: repeating-linear-gradient(45deg, var(--accent-ui) 0 2px, transparent 2px 5px);
-  animation: hatch-drift 1.2s linear infinite;
+.progress { position: relative; height: 8px; border-radius: 4px; overflow: hidden; box-shadow: inset 0 0 0 var(--stroke-thin) var(--seek-line); container-type: inline-size; }
+.progress > i { position: absolute; inset: 0; transform-origin: left; transform: scaleX(var(--p, 0)); background: var(--accent-ui); }
+.progress--xfer::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: -12px; width: 12px; pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--bg)); transform: translateX(calc(var(--p, 0) * 100cqw));
+  animation: xfer-edge 1.4s ease-in-out infinite alternate;
 }
 .progress--failed > i { background: var(--down); }
 
@@ -1307,7 +1311,7 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
    Keyframes (loops pause when the document is hidden: :root.is-hidden)
    ===================================================================== */
 @keyframes spin { to { transform: rotate(360deg); } }
-@keyframes hatch-drift { to { transform: translateX(7.07px); } }
+@keyframes xfer-edge { from { opacity: .15; } to { opacity: .7; } }
 @keyframes breathe { to { transform: scaleY(.82); } }
 @keyframes eq-bar { 0% { transform: scaleY(.3); } 100% { transform: scaleY(1); } }
 @keyframes twinkle { from { transform: scale(.8); opacity: .6; } to { transform: scale(1); opacity: 1; } }

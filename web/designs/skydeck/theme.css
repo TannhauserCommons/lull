@@ -591,8 +591,6 @@
 :root[data-design="skydeck"] .pbar__seek .seek:focus-visible { outline: none; }
 :root[data-design="skydeck"] .pbar__seek .seek { height: 26px; }
 :root[data-design="skydeck"] .pbar__seek .seek-row__time { font: var(--t-px); letter-spacing: var(--t-px-track); color: var(--lilac); min-width: 34px; }
-/* the buffered region is drawn as LCD pixels */
-:root[data-design="skydeck"] .pbar__seek .seek__buf { background: repeating-linear-gradient(90deg, var(--peri) 0 3px, transparent 3px 5px); opacity: .85; }
 @media (min-width: 1100px) {
   :root[data-design="skydeck"] .pbar__seek { grid-template-columns: auto auto minmax(0, 1fr) auto; }
   :root[data-design="skydeck"] .pbar__seek::before { content: ""; font: var(--t-px); letter-spacing: var(--t-px-track); color: #f9dcec; }

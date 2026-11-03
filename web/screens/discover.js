@@ -788,7 +788,7 @@
       ${icon('soulseek')}
       <span class="disc-scan__text" data-scan-text aria-live="polite">${scanText()}</span>
       ${done ? html`<button class="btn btn--quiet btn--sm" data-act="disc-search-again">${icon('refresh')}Search again</button>` : ''}
-      <div class="progress${done ? '' : ' progress--xfer'} disc-scan__bar" role="progressbar" aria-label="Soulseek search" aria-valuetext="${done ? 'finished' : 'still asking peers'}" data-scan-bar><i style="--p:1"></i></div>
+      <div class="progress${done ? '' : ' progress--xfer'} disc-scan__bar" role="progressbar" aria-label="Soulseek search" aria-valuetext="${done ? 'finished' : 'still asking peers'}" data-scan-bar style="--p:1"><i></i></div>
     </div>`;
   }
   function scanText() {
@@ -1466,14 +1466,14 @@
     return html`<div class="disc-agg">
       <div class="disc-agg__top">${icon(c.failed ? 'warning' : 'save')}<span class="disc-agg__text" aria-live="polite">${aggText(c)}</span>
         <button class="btn btn--quiet btn--sm" data-act="disc-agg-open" data-ids="${ids.join(',')}" data-label="${label}">Details</button></div>
-      <div class="progress${c.failed ? '' : ' progress--xfer'}" role="progressbar" aria-label="Saving ${label}" aria-valuemin="0" aria-valuemax="${c.total}" aria-valuenow="${c.saved}"><i style="--p:${(c.saved / c.total).toFixed(3)}"></i></div>
+      <div class="progress${c.failed ? '' : ' progress--xfer'}" role="progressbar" aria-label="Saving ${label}" aria-valuemin="0" aria-valuemax="${c.total}" aria-valuenow="${c.saved}" style="--p:${(c.saved / c.total).toFixed(3)}"><i></i></div>
     </div>`;
   }
   function aggBody(ids, label) {
     var c = aggCounts(ids);
     return html`<div class="disc-agg disc-agg--sheet">
         <div class="disc-agg__top">${icon(c.failed ? 'warning' : 'save')}<span class="disc-agg__text">${aggText(c)}</span></div>
-        <div class="progress" role="progressbar" aria-label="Saving ${label}" aria-valuemin="0" aria-valuemax="${c.total}" aria-valuenow="${c.saved}"><i style="--p:${(c.total ? c.saved / c.total : 0).toFixed(3)}"></i></div>
+        <div class="progress" role="progressbar" aria-label="Saving ${label}" aria-valuemin="0" aria-valuemax="${c.total}" aria-valuenow="${c.saved}" style="--p:${(c.total ? c.saved / c.total : 0).toFixed(3)}"><i></i></div>
       </div>
       <ul class="disc-aggl">${ids.map(function (id) {
         var t = M.track(id), s = App.saves.get(id), status;

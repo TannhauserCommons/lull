@@ -121,6 +121,11 @@ The state shape and methods are DESIGN.md 7.8; the insides:
   `received/size`, `peer`, `peersFound`, `queuePos`, `failedPeers`), merged with the element's own `playing`/`waiting`.
   `buffered` is `audio.buffered` cut to `received`. A seek may go anywhere for saved songs and only up to what has
   arrived for Soulseek ones (`P.seekable(f)`); beyond it snaps back, shakes and announces.
+- **The seek bar's look** is one language in every design and view (the bar, Now Playing, the device waveform, the
+  mini line, transfer progress in Activity): played is solid `--seek-played`; arrived but not played is one solid
+  `--seek-buffered` (`--xfer` = `received`, 1 for a saved song; the element's `buffered` ranges lie inside it and draw
+  the same); not arrived is the plain track. While bytes arrive (`.is-transferring`) the arrived part's edge breathes;
+  reduced motion stills it. No hatching: a design changes the tokens, not the language.
 - **Errors**: when the element fails, the engine fetches the same URL (`Range: bytes=0-0`) to read the server's
   sentence and shows it (`failed` / `jellyfin-error`).
 - **Peer fallback**: the server ends the old response and raises `attempt` in `stream` events; the engine reopens the

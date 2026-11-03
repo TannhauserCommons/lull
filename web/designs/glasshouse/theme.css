@@ -1062,8 +1062,7 @@
 :root[data-design="glasshouse"] :is(.device__brand, .device__grill, .now__keys) { display: none; }
 :root[data-design="glasshouse"] .device .wave__bar { border-radius: 1px; background: #3d4460; }
 :root[data-design="glasshouse"] .device .wave__bar.is-played { background: linear-gradient(180deg, #f6d6df, #c97a92); }
-:root[data-design="glasshouse"] .device .wave__bar.is-buf { box-shadow: inset 0 0 0 1px #7f9cc8; }
-:root[data-design="glasshouse"] .device .wave__bar.is-xfer { background: repeating-linear-gradient(to top, #7f9cc8 0 2px, transparent 2px 4px); }
+:root[data-design="glasshouse"] .device .wave__bar:is(.is-buf, .is-xfer) { background: #7f9cc8; }
 :root[data-design="glasshouse"] .device .wave__head { background: #fff; box-shadow: 0 0 6px #f3c1cf; }
 /* transport: the dpad and the keys flattened into glass keys around the rose orb, on the device's own grid so the orb
    is on the window's centre line: - << play >> + in one row, and under it shuffle, the like key (under play) and repeat.
