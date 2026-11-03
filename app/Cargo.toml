@@ -61,11 +61,16 @@ tauri-plugin-autostart = "=2.7.0"
 tauri-plugin-updater = "=2.14.1"
 
 [target.'cfg(windows)'.dependencies]
-# Taskbar theme for the tray glyph (registry), and a job object so slskd dies with the app.
+# Taskbar theme for the tray glyph (registry), a job object so slskd dies with the app, and a
+# minidump of lull's own process if it crashes (dbghelp's MiniDumpWriteDump).
 windows-sys = { version = "=0.61.2", features = [
   "Win32_Foundation",
   "Win32_Security",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Diagnostics_Debug",
   "Win32_System_JobObjects",
+  "Win32_System_Kernel",
+  "Win32_System_Memory",
   "Win32_System_Registry",
   "Win32_System_Threading",
 ] }

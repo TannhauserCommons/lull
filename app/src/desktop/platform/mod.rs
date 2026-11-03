@@ -53,12 +53,16 @@ pub fn set_webview_awake(window: &WebviewWindow, awake: bool) -> tauri::Result<(
     }
 }
 
-/// Before the first window (recovery.rs): on Windows, one WebView2 environment for every window,
-/// whose crash dumps stay on this computer. What it says goes in the webview log.
+/// Before the first window (recovery.rs): on Windows, a dump of lull's own process if it crashes
+/// (`logs\lull.dmp`), and one WebView2 environment for every window, whose crash dumps stay on this
+/// computer. What it says goes in the webview log.
 pub fn prepare_webviews(app: &AppHandle) -> Result<String, String> {
     #[cfg(windows)]
     {
         use tauri::Manager;
+        if let Ok(logs) = app.path().app_log_dir() {
+            windows::dump_on_crash(&logs.join("lull.dmp"));
+        }
         let data = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
         windows::create_environment(&data)
     }

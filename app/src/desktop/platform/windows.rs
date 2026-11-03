@@ -317,3 +317,68 @@ fn failure(
     }
     failure
 }
+
+/// Where lull's own crash dump goes, as a null-terminated wide path made before any crash.
+static CRASH_DUMP: std::sync::OnceLock<Vec<u16>> = std::sync::OnceLock::new();
+
+/// lull's own process crashing (not a page's, which WebView2 dumps): a minidump in `dump`, one file
+/// overwritten by the next crash, then Windows ends the process as usual.
+pub fn dump_on_crash(dump: &std::path::Path) {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::System::Diagnostics::Debug::SetUnhandledExceptionFilter;
+    let wide = dump.as_os_str().encode_wide().chain(Some(0)).collect();
+    if CRASH_DUMP.set(wide).is_ok() {
+        // SAFETY: installs a filter that only reads the static path above.
+        unsafe { SetUnhandledExceptionFilter(Some(write_dump)) };
+    }
+}
+
+/// Runs on the crashing thread: no allocation, only the prepared path and dbghelp.
+unsafe extern "system" fn write_dump(
+    info: *const windows_sys::Win32::System::Diagnostics::Debug::EXCEPTION_POINTERS,
+) -> i32 {
+    use windows_sys::Win32::Foundation::{CloseHandle, GENERIC_WRITE, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::Storage::FileSystem::{CREATE_ALWAYS, CreateFileW, FILE_ATTRIBUTE_NORMAL};
+    use windows_sys::Win32::System::Diagnostics::Debug::{
+        MINIDUMP_EXCEPTION_INFORMATION, MiniDumpWithIndirectlyReferencedMemory, MiniDumpWithThreadInfo,
+        MiniDumpWithUnloadedModules, MiniDumpWriteDump,
+    };
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, GetCurrentProcessId, GetCurrentThreadId};
+    /// Windows' EXCEPTION_CONTINUE_SEARCH: the process then ends as it would have.
+    const CONTINUE_SEARCH: i32 = 0;
+    let Some(path) = CRASH_DUMP.get() else {
+        return CONTINUE_SEARCH;
+    };
+    // SAFETY: the path is null-terminated; the handle is closed below; `info` is the exception
+    // Windows passed this filter, valid while it runs.
+    unsafe {
+        let file = CreateFileW(
+            path.as_ptr(),
+            GENERIC_WRITE,
+            0,
+            std::ptr::null(),
+            CREATE_ALWAYS,
+            FILE_ATTRIBUTE_NORMAL,
+            std::ptr::null_mut(),
+        );
+        if file == INVALID_HANDLE_VALUE {
+            return CONTINUE_SEARCH;
+        }
+        let exception = MINIDUMP_EXCEPTION_INFORMATION {
+            ThreadId: GetCurrentThreadId(),
+            ExceptionPointers: info.cast_mut(),
+            ClientPointers: 0,
+        };
+        MiniDumpWriteDump(
+            GetCurrentProcess(),
+            GetCurrentProcessId(),
+            file,
+            MiniDumpWithThreadInfo | MiniDumpWithUnloadedModules | MiniDumpWithIndirectlyReferencedMemory,
+            &exception,
+            std::ptr::null(),
+            std::ptr::null(),
+        );
+        CloseHandle(file);
+    }
+    CONTINUE_SEARCH
+}
