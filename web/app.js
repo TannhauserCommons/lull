@@ -932,14 +932,15 @@
     else if (!el.contains(document.activeElement)) { e.preventDefault(); f[0].focus(); }
   });
 
-  /* popover anchored to an element: App.popover(anchor, markup, { label, className, onMount(el, close), role })
-     -> { el, close, place } (place: position it again after its content changed size) */
-  var openPop = null;
-  function placeNear(el, anchor) {
-    var r = anchor.getBoundingClientRect(), w = el.offsetWidth, h = el.offsetHeight;
-    var left = clamp(r.left + r.width / 2 - w / 2, 12, window.innerWidth - w - 12);
-    var top = r.bottom + 10;
-    if (top + h > window.innerHeight - 12) top = Math.max(12, r.top - h - 14);
+  /* popover anchored to an element: App.popover(anchor, markup, { label, className, onMount(el, close), role, at })
+     -> { el, close, place } (place: position it again after its content changed size). `at` { x, y } opens it at a
+     point instead (a context menu at the pointer); the anchor still gets aria-expanded and focus back */
+  var openPop = null, contextAt = null;
+  function placeNear(el, anchor, at) {
+    var r = at ? { left: at.x, right: at.x, top: at.y, bottom: at.y, width: 0 } : anchor.getBoundingClientRect(), w = el.offsetWidth, h = el.offsetHeight;
+    var left = clamp(at ? at.x : r.left + r.width / 2 - w / 2, 12, window.innerWidth - w - 12);
+    var top = r.bottom + (at ? 2 : 10);
+    if (top + h > window.innerHeight - 12) top = Math.max(12, r.top - h - (at ? 2 : 14));
     el.style.left = left + 'px'; el.style.top = top + 'px';
   }
   App.closePopover = function (returnFocus) {
@@ -960,14 +961,15 @@
     if (o.label) el.setAttribute('aria-label', o.label);
     el.innerHTML = String(markup);
     document.body.appendChild(el);
-    placeNear(el, anchor);
+    var at = o.at || contextAt;
+    placeNear(el, anchor, at);
     anchor.setAttribute('aria-expanded', 'true');
     openPop = { el: el, anchor: anchor, onClose: o.onClose };
     afterPaint(function () { el.classList.add('is-open'); });
     var close = function () { App.closePopover(true); };
     if (o.onMount) o.onMount(el, close);
     var f = focusables(el)[0]; if (f) f.focus();
-    return { el: el, close: close, place: function () { placeNear(el, anchor); } };
+    return { el: el, close: close, place: function () { placeNear(el, anchor, at); } };
   };
   /* menu: App.menu(anchor, [{ label, icon, run, danger } | 'sep'], { label }) with arrow-key navigation */
   App.menu = function (anchor, items, o) {
@@ -2265,17 +2267,17 @@
   /* =====================================================================
      10. Shell: rail, header, status tray, context panel, player bar, mini-player, tab bar
      ===================================================================== */
+  /* the rail's (and the shelf popover's) two sections; an empty one says what will show there instead of a bare heading */
   function followedTags() {
     var ids = Object.keys(state.followed).filter(function (id) { return state.followed[id]; });
     var tags = ids.filter(function (id) { return !/^ar-/.test(id); }), artists = ids.length - tags.length;
     if (!tags.length) return html`<p class="rail__empty">Tags you follow show up here.${artists ? html` <a href="#/following">${artists === 1 ? 'The artist you follow' : 'The ' + artists + ' artists you follow'}</a> ${artists === 1 ? 'is' : 'are'} on Following.` : ''}</p>`;
     return html`${tags.map(function (id) { return ui.tagChip(id); })}`;
-  /* the rail's (and the shelf popover's) two sections; an empty one says what will show there instead of a bare heading */
   }
   function playlistLinks() {
+    if (!state.playlists.length) return html`<li><p class="rail__empty">Playlists you make show up here. <a href="#/playlists">Make one</a></p></li>`;
     return html`${state.playlists.map(function (p) {
       return html`<li><a class="rail__pl" href="#/playlist/${p.id}" data-drop="playlist:${p.id}">${ui.playlistArt(p, 36)}<span class="ellipsis"><b>${p.name}</b><small>${p.items.length} songs</small></span></a></li>`;
-    if (!state.playlists.length) return html`<li><p class="rail__empty">Playlists you make show up here. <a href="#/playlists">Make one</a></p></li>`;
     })}`;
   }
   function renderRail() {
@@ -2688,8 +2690,6 @@
       return loadPlaylists();
     });
   };
-  /* name and description: PATCH /api/playlists/{id} */
-  App.updatePlaylist = function (plId, fields) {
   /* how a playlist is shown (its `sort` { key, dir }): it changes here at once and the hub keeps it for every device
      (PUT /api/playlists/{id}/sort). A view setting, not an edit, so it doesn't go through the outbox: when the hub
      can't keep it, it stays here for this visit and a toast says so. */
@@ -2705,6 +2705,8 @@
       App.toast('Sorted here only: lull couldn\'t keep it for next time. ' + err.message, { kind: 'error' });
     });
   };
+  /* name and description: PATCH /api/playlists/{id} */
+  App.updatePlaylist = function (plId, fields) {
     return plSend('/api/playlists/' + encodeURIComponent(plId), { method: 'PATCH', body: fields }, plOp('playlist.edit', plId, fields)).then(function (p) {
       return p && p.queued ? localPlaylist(plId, fields) : loadPlaylists();
     });
@@ -2924,6 +2926,37 @@
     if (el.tagName === 'A') e.preventDefault();
     fn(el, e);
     if (el.hasAttribute('data-close')) App.closeTop();
+  });
+  /* Context menus: right-click, the Menu key (or Shift+F10) and a touch long-press on a song, album, artist or
+     playlist open lull's own "…" menu, at the pointer, instead of the browser's (the desktop app's WebView2 draws
+     its own unless the page takes the event). A row or card with a "…" button opens that button's menu; a tile or a
+     rail playlist opens its album's, artist's or playlist's (App.itemMenus, filled by library.js). Text fields and
+     selected text keep the native menu, for copy and paste; anywhere else nothing changes. */
+  App.itemMenus = {};
+  var ITEM_LINK = /^#\/(album|artist|playlist)\/([^/?#]+)/;
+  function contextMenuFor(target) {
+    var row = target.closest('.trow, .disc-pick');
+    var more = row && row.querySelector('[data-act][aria-haspopup="menu"]');
+    if (more && actions[more.getAttribute('data-act')]) return function () { actions[more.getAttribute('data-act')](more); };
+    var tile = target.closest('.tile, .rail__pl');
+    var link = tile && (tile.matches('a') ? tile : tile.querySelector('.tile__title a[href], .tile__art a[href]'));
+    var m = link && ITEM_LINK.exec(link.getAttribute('href') || '');
+    var open = m && App.itemMenus[m[1]];
+    return open ? function () { open(decodeURIComponent(m[2]), link); } : null;
+  }
+  function keepsNativeMenu(e) {
+    if (e.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return true;
+    var sel = window.getSelection();
+    return !!(sel && !sel.isCollapsed && sel.rangeCount && sel.getRangeAt(0).intersectsNode(e.target));
+  }
+  document.addEventListener('contextmenu', function (e) {
+    if (!(e.target instanceof Element) || keepsNativeMenu(e)) return;
+    var open = contextMenuFor(e.target); if (!open) return;
+    e.preventDefault();
+    App.closePopover();
+    // a pointer opens it where it is; the keyboard's menu key (no position) opens it by the item's own button
+    contextAt = e.clientX || e.clientY ? { x: e.clientX, y: e.clientY } : null;
+    try { open(); } finally { contextAt = null; }
   });
   // a bare <a data-close> inside a sheet closes it after navigating
   document.addEventListener('click', function (e) {

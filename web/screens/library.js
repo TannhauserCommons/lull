@@ -1785,8 +1785,9 @@
   }
   App.action('lib-album-sort', function (el) { sortMenu(el, ALBUM_SORTS, 'albumSort', 'libAlbumSort'); });
   App.action('lib-song-sort', function (el) { sortMenu(el, SONG_SORTS, 'songSort', 'libSongSort'); });
-  App.action('lib-album-menu', function (el) {
-    var a = M.album(el.getAttribute('data-id')); if (!a) return;
+  /* the album, artist and playlist menus, by id: their "…" buttons, and a right-click on their tiles (App.itemMenus) */
+  function albumMenu(id, anchor) {
+    var a = M.album(id); if (!a) return;
     var items = [
       { label: 'Play next', icon: 'queue', run: function () { App.player.playNext(a.trackIds); App.toast(a.title + ' plays next', { icon: 'queue' }); } },
       { label: 'Add to queue', icon: 'plus', run: function () { App.player.addToQueue(a.trackIds); App.toast('Added ' + a.title + ' to the queue', { icon: 'queue' }); } },
@@ -1795,11 +1796,11 @@
     if (a.trackIds[0]) items.push({ label: 'Show sources for track 1', icon: 'soulseek', run: function () { App.hooks.sourcePicker(a.trackIds[0]); } });
     items.push('sep', { label: 'Copy link', icon: 'link', run: function () { App.copyShareLink('album', a.id, '/album/' + a.id); } },
       { label: 'Copy lull link', icon: 'link', run: function () { App.copyLullLink('/album/' + a.id); } });
-    App.menu(el, items, { label: 'Actions for ' + a.title });
-  });
-  App.action('lib-artist-menu', function (el) {
-    var ar = M.artist(el.getAttribute('data-id')), top = (el.getAttribute('data-ids') || '').split(',').filter(Boolean);
-    if (!ar) return;
+    App.menu(anchor, items, { label: 'Actions for ' + a.title });
+  }
+  /* `top`: the artist page's top songs; a tile has none, so its menu has no "Add top songs" */
+  function artistMenu(id, top, anchor) {
+    var ar = M.artist(id); if (!ar) return;
     var items = [];
     if (top.length) items.push({ label: 'Add top songs to queue', icon: 'queue', run: function () { App.player.addToQueue(top); App.toast('Added ' + ar.name + ' to the queue', { icon: 'queue' }); } });
     items.push({ label: 'Hide from my feed', icon: 'close', run: function () {
@@ -1809,8 +1810,13 @@
       }, function (err) { App.toast('Couldn\'t hide ' + ar.name + ': ' + err.message, { kind: 'error' }); });
     } }, 'sep', { label: 'Copy link', icon: 'link', run: function () { App.copyShareLink('artist', ar.id, '/artist/' + ar.id); } },
       { label: 'Copy lull link', icon: 'link', run: function () { App.copyLullLink('/artist/' + ar.id); } });
-    App.menu(el, items, { label: 'Actions for ' + ar.name });
-  });
+    App.menu(anchor, items, { label: 'Actions for ' + ar.name });
+  }
+  App.action('lib-album-menu', function (el) { albumMenu(el.getAttribute('data-id'), el); });
+  App.action('lib-artist-menu', function (el) { artistMenu(el.getAttribute('data-id'), (el.getAttribute('data-ids') || '').split(',').filter(Boolean), el); });
+  App.itemMenus.album = albumMenu;
+  App.itemMenus.artist = function (id, anchor) { artistMenu(id, [], anchor); };
+  App.itemMenus.playlist = playlistMenu;
   App.action('lib-import', function () { openImportStart(); });
   App.action('lib-import-pick', function () { pickFile(); });
   App.action('lib-lb-pick', function () {
@@ -1842,10 +1848,11 @@
     });
     App.menu(el, items, { label: 'Sort songs' });
   });
-  App.action('lib-pl-menu', function (el) {
-    var p = playlistOf(el.getAttribute('data-id')); if (!p) return;
+  App.action('lib-pl-menu', function (el) { playlistMenu(el.getAttribute('data-id'), el); });
+  function playlistMenu(id, anchor) {
+    var p = playlistOf(id); if (!p) return;
     var ids = plIds(p);
-    App.menu(el, [
+    App.menu(anchor, [
       { label: 'Rename', icon: 'edit', run: function () { openEdit(p); } },
       { label: 'Play next', icon: 'queue', run: function () { if (!ids.length) return App.toast('This playlist is empty', { icon: 'info' }); App.player.playNext(ids); App.toast(p.name + ' plays next', { icon: 'queue' }); } },
       { label: 'Add to queue', icon: 'plus', run: function () { if (!ids.length) return App.toast('This playlist is empty', { icon: 'info' }); App.player.addToQueue(ids); App.toast('Added ' + p.name + ' to the queue', { icon: 'queue' }); } },
@@ -1857,7 +1864,7 @@
       'sep',
       { label: 'Delete playlist', icon: 'trash', danger: true, run: function () { deletePlaylist(p); } }
     ], { label: 'Actions for ' + p.name });
-  });
+  }
   App.action('lib-pl-row-menu', function (el) {
     var row = el.closest('.trow'), list = row.parentElement, p = playlistOf(list.getAttribute('data-pl')); if (!p) return;
     var shown = shownRows(p), itemAt = rowToItem(p, shown), n = $$('.trow', list).indexOf(row), id = row.getAttribute('data-track-id'), t = M.track(id), custom = inOwnOrder(p);

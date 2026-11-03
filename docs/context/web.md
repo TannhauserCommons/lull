@@ -397,6 +397,14 @@ arrows, Move up/down and Remove act on the playlist's own order, so they work on
 sorted, a note says so with a "Show custom order" button. Copies and imports send their songs' dates (`added`), so
 "Date added" means when a song came into the playlist (an Exportify file's `Added At`).
 
+## Context menus
+
+Right-click, the Menu key (Shift+F10) and a touch long-press on a song row, a Home pick, or an album, artist or
+playlist tile (and a rail playlist) open lull's own "…" menu at the pointer (app.js section 11, `contextmenu`): a row
+or card with a "…" button opens that button's menu; a tile opens `App.itemMenus[album|artist|playlist](id, anchor)`
+(library.js). The keyboard opens it by the item. Text fields and selected text keep the browser's menu (copy, paste),
+and so does everything else; the desktop app's WebView2 shows its own menu only where the page leaves the event.
+
 ## Links
 
 `App.copyShareLink(kind, id, lullPath)` is "Copy link" (album and artist menus, the player's More menu): it copies the
