@@ -21,6 +21,8 @@ encoding_rs = "=0.8.44"
 percent-encoding = "=2.3.2"
 # Matching M3U lines against the library a few at a time, in order. Already in the tree through axum.
 futures-util = { version = "=0.3.34", default-features = false, features = ["alloc"] }
+# Reading pasted playlist links (Spotify, Deezer, YouTube, SoundCloud). Already in the tree through reqwest.
+url = "=2.5.8"
 
 [lints]
 workspace = true

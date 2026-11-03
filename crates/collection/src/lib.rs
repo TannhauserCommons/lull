@@ -9,6 +9,7 @@ mod imported_plays;
 mod lastfm_import;
 mod lastfm_send;
 mod likes;
+mod links;
 mod listenbrainz_import;
 mod m3u;
 mod playlists;
@@ -20,6 +21,7 @@ mod sync;
 #[cfg(test)]
 mod testing;
 
+use std::collections::HashSet;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
@@ -29,7 +31,7 @@ use lull_core::db::Migrations;
 use lull_core::events::Event;
 use lull_core::ids::TrackId;
 use lull_core::model::Entities;
-use lull_core::seams::{Library, Scrobbles};
+use lull_core::seams::{Catalog, Library, Scrobbles, Youtube};
 use lull_core::{Ctx, Error, Result, catalog};
 use rusqlite::{Connection, Transaction, params};
 use serde::Deserialize;
@@ -96,6 +98,37 @@ pub const MIGRATIONS: Migrations = Migrations {
         r#"
         ALTER TABLE collection_plays ADD COLUMN imported INTEGER NOT NULL DEFAULT 0;
     "#,
+        // Playlist link imports (links.rs): the link, its songs as the source lists them with
+        // the catalog's match, and the listener's fixes and skips by the source's song id, which
+        // outlive re-imports.
+        r#"
+        CREATE TABLE collection_links (
+            seq           INTEGER PRIMARY KEY AUTOINCREMENT,  -- id is "lk-<seq>"
+            key           TEXT NOT NULL UNIQUE,               -- spotify:playlist:<id>
+            name          TEXT NOT NULL,
+            playlist_seq  INTEGER,                            -- the playlist it fills
+            note          TEXT,
+            imported_at   INTEGER NOT NULL                    -- 0 until the first import ends
+        );
+        CREATE TABLE collection_link_songs (
+            link_seq  INTEGER NOT NULL,
+            pos       INTEGER NOT NULL,
+            song      TEXT NOT NULL,     -- the source's id for the song
+            artist    TEXT NOT NULL,
+            title     TEXT NOT NULL,
+            album     TEXT,
+            duration  INTEGER,
+            isrc      TEXT,
+            track_id  TEXT,              -- the catalog's match; NULL = none
+            PRIMARY KEY (link_seq, pos)
+        );
+        CREATE TABLE collection_link_choices (
+            link_seq  INTEGER NOT NULL,
+            song      TEXT NOT NULL,
+            track_id  TEXT,              -- NULL = skipped
+            PRIMARY KEY (link_seq, song)
+        );
+    "#,
     ],
 };
 
@@ -108,9 +141,21 @@ pub struct Service {
     sent: Mutex<lastfm_send::Sent>,
     /// A history import is running: one at a time, so a second tap can't double the load on Last.fm.
     importing: AtomicBool,
+    /// Discovery's catalog, for matching the songs of a playlist link.
+    catalog: Arc<dyn Catalog>,
+    /// yt-dlp, for listing YouTube and SoundCloud playlist links.
+    youtube: Arc<dyn Youtube>,
+    /// The links being imported now (their keys): one import of a link at a time.
+    linking: Mutex<HashSet<String>>,
 }
 
-pub async fn start(ctx: &Ctx, library: Arc<dyn Library>, scrobbles: Arc<dyn Scrobbles>) -> Result<Arc<Service>> {
+pub async fn start(
+    ctx: &Ctx,
+    library: Arc<dyn Library>,
+    scrobbles: Arc<dyn Scrobbles>,
+    catalog: Arc<dyn Catalog>,
+    youtube: Arc<dyn Youtube>,
+) -> Result<Arc<Service>> {
     // Subscribe before anything can publish, so no scrobble or save is missed.
     ctx.spawn(record_events(ctx.clone(), ctx.bus.subscribe()));
     settings::announce(ctx).await?;
@@ -120,6 +165,9 @@ pub async fn start(ctx: &Ctx, library: Arc<dyn Library>, scrobbles: Arc<dyn Scro
         scrobbles,
         sent: Mutex::default(),
         importing: AtomicBool::new(false),
+        catalog,
+        youtube,
+        linking: Mutex::default(),
     }))
 }
 
@@ -136,6 +184,7 @@ pub fn router(svc: Arc<Service>) -> Router {
         .merge(sync::routes())
         .merge(exportify::routes())
         .merge(imported_plays::routes())
+        .merge(links::routes())
         .with_state(svc)
 }
 

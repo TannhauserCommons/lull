@@ -2657,6 +2657,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
+ "url",
 ]
 
 [[package]]
@@ -2681,6 +2682,7 @@ dependencies = [
 name = "lull-discovery"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "axum",
  "image",
  "lull-core",

@@ -1,4 +1,4 @@
-# Collection: likes, follows, plays, history, playlists, M3U, stats, settings
+# Collection: likes, follows, plays, history, playlists, M3U, playlist links, stats, settings
 
 `crates/collection`. Endpoints and shapes: [api.md](api.md#collection-cratescollection-cratesskins). This page has the rules that the shapes don't show.
 
@@ -11,6 +11,7 @@
 | `collection_saves` | collection | Songs saved through lull, from library's `save` events (step 5 `done`, or `pending` = written, rescan failed) |
 | `collection_playlists`, `collection_playlist_items` | collection | `pl-<seq>` ids from an AUTOINCREMENT column, so a deleted playlist's id is never reused. Items are keyed by position, so a song can appear twice |
 | `collection_settings` | collection | One JSON row of the editable settings |
+| `collection_links`, `collection_link_songs`, `collection_link_choices` | collection | Playlist link imports: the link and its playlist, its songs with the catalog's match, the listener's fixes and skips |
 
 ## Writes and events
 
@@ -76,6 +77,19 @@ Spotify's Private Session, per paired device: `core_devices.private`, switched w
 - **Export writes stream links only.** The design also offers "library paths", but the `Library` seam doesn't expose file paths. Guessing them from `LULL_NAMING` would be wrong after MusicBrainz retagging, so library paths are not offered. With `LULL_ACCESS_TOKEN` set, outside players can't fetch the links.
 - **`playlist` event.** `{ playlistId, deleted }` goes out once per operation (create, rename, track change, delete), from the routes, the seam and sync alike, so a PATCH that changes name and tracks is one event. Library mirrors playlists into Jellyfin from it.
 - **Activity.** A playlist created with `imported: { file, library, willSearch, notFound }` publishes an import `job` event, and library's `/api/jobs` lists it.
+
+## Playlist links
+
+`POST /api/import/link` (`links/`): a pasted link becomes a lull playlist whose songs play from Soulseek (or YouTube) when played; nothing is saved. A `job` row shows it in Activity.
+- **Sources, all keyless:**
+  - **Spotify** playlists and albums from the public embed page (`open.spotify.com/embed/…`): title, artists, length; no album or ISRC, and **only the first 100 songs** (the job and the import carry a `note` saying so; Exportify's CSV has the rest). Spotify's Web API reads only playlists its app's own user owns or collaborates on since February 2026, so it can't import a shared link. Reading the page bends Spotify's no-scraping terms, with the user's OK (PROJECT.md decisions).
+  - **Deezer** playlists and albums through its public API, with ISRCs, pages of 100 paced at 250 ms (an id lookup answers where Deezer's catalog is closed).
+  - **YouTube, YouTube Music, SoundCloud** playlists through yt-dlp (`Youtube::playlist`, youtube.md). Uploads are read into artist and title: music metadata when given; a "Artist - Topic" channel is the artist (official audio, its length is the song's); else "Artist - Title" at the first dash, else the channel ("AdeleVEVO" is Adele); video labels ("(Official Video)", "[Lyrics]", "| 4K") dropped. A music video's length isn't compared.
+- **Before the 202:** the link is parsed (each link has one key, `spotify:playlist:<id>`, whatever its tracking parameters or app), short links followed, and the playlist's name read, so a wrong or private link is an answer. At most 2000 songs.
+- **Matching** is discovery's `Catalog::find_song` (discovery.md): the library, then the catalog by ISRC, else by artist, title and length. A song this link matched before keeps its match without a lookup. A failed lookup leaves the song unmatched (a re-import tries again); the job fails only when every lookup does. In iTunes countries lookups go at about 12 a minute, so a 100-song playlist takes several minutes; Activity shows "Matching songs, n of m".
+- **Unmatched songs** stay out of the playlist and are listed (`GET /api/import/links/{id}`). The listener picks the song from search, keeps it as the link names it (`as-is`: recorded as `TrackId::of(artist, album, title)`, searched on Soulseek when played, as an M3U line is), or skips it. Matched songs can be changed or skipped the same way.
+- **Choices are kept by the source's song id** (`collection_link_choices`), so they outlive re-imports; `none` undoes one.
+- **Re-importing** the same link updates its playlist (`collection_links.playlist_seq`) to the link's songs in the link's order, with the choices applied: no second playlist. Songs added or removed by hand in lull are overwritten; skip a song to drop it for good. A rename stays. A deleted playlist is made again. One import per link at a time (409).
 
 ## Stats
 
