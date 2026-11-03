@@ -581,6 +581,8 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 .search-field .input { padding-left: 46px; padding-right: 84px; border-radius: var(--r-pill); }
 .search-field__end { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 4px; }
 .search-field__clear { color: var(--fg-panel); }
+/* a field with lull's own clear button hides the browser's (WebKit and Chromium draw one in type=search) */
+.search-field:has(.search-field__clear) .input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; display: none; }
 .search-field .kbd { background: var(--panel); color: var(--fg-panel-2); border-color: var(--theme-edge); }
 
 /* =====================================================================
