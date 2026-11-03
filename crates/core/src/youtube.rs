@@ -103,6 +103,10 @@ pub struct Listing {
     pub title: String,
     /// How many songs the whole playlist has, when the site says.
     pub total: Option<usize>,
+    /// The playlist's own pictures, largest first (a listed size may not exist: YouTube's
+    /// `maxresdefault` often doesn't), and its description, when it has them.
+    pub thumbnails: Vec<String>,
+    pub description: Option<String>,
     pub songs: Vec<Listed>,
 }
 

@@ -66,6 +66,11 @@ pub trait Collection: Send + Sync {
     async fn delete_playlist(&self, id: &str) -> Result<()>;
     /// Records a play as if the web player had reported it (history, taste, scrobbling).
     async fn record_play(&self, play: PlayReport) -> Result<()>;
+    /// The playlist's own cover (uploaded, or brought by a link import) as an image response,
+    /// at most `size` pixels square. `None` when it has none: callers show its songs' covers.
+    async fn playlist_cover(&self, _id: &str, _size: Option<u32>) -> Result<Option<Response>> {
+        Ok(None)
+    }
 }
 
 /// Last.fm's side of History's "Send to Last.fm". Implemented by `lastfm`, for `collection`, which
