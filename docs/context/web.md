@@ -375,10 +375,14 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
   long title count as much as the window, and no design needs a width band to patch them.
   - A row is `[data-fit-row]`; a part that can give way is `[data-fit="<order>"]`, 1 first, parts of one order
     together. When a row's content needs more than its width, parts give way in order (`[data-fit-out]`) until it
-    fits; with room again they come back. A ResizeObserver re-fits a row when it resizes and when its children or
-    parts do without it (a web font arriving with wider letters than the fallback's, a label changing), a font face
-    finishing loading re-fits them all, and `App.layout.refit()` runs after its content changes (renderBar,
-    renderTray), watching what was drawn since.
+    fits; with room again they come back. A row and the rows inside it (the bar, its tools, the song's chips) fit as
+    one, from all shown, outer first and again until none moves, so however the room was reached they end as a fresh
+    fit would: rows fitted one at a time, frames apart, settled differently by the path taken, or a frame late. A
+    ResizeObserver re-fits a row when it resizes and when its children or parts do without it (a label that grew),
+    every font that finishes loading re-fits them all (a part that gave way shows no box to tell the observer that
+    narrower letters would let it back), and `App.layout.refit()` runs after its content changes (renderBar,
+    renderTray), watching what was drawn since. `[data-fit-out]` is the fitter's: `App.patch` leaves it on a part
+    when it re-renders the bar with the same words.
   - What giving way means is the component's (components.css, `!important`, so a design draws it but can't undo it):
     the header drops the "/" hint (1), the tray's long words (2), the following-and-playlists button (3), the full
     tray for the compact one (4), the nav pills' labels (5: Playlists, Stats; 6: Home, Library), and last lets the

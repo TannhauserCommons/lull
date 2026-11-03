@@ -206,8 +206,9 @@
      together). When a row's content needs more than its width, parts give way in order (they get [data-fit-out]; the
      component's CSS says what that means: hidden and in the "…" menu, a pill without its label, the compact tray) until
      it fits; with room again they come back. A part belongs to its nearest row with a box, so a design that lays a row
-     out with display: contents hands its parts to the row around it. Rows fit again when they or their parts resize
-     (ResizeObserver: a web font arriving with wider letters than the fallback's, a label changing), and on
+     out with display: contents hands its parts to the row around it. A row and the rows inside it fit as one, so they
+     always end as a fresh fit of them would. Rows fit again when they or their parts resize (ResizeObserver: a label
+     that grew), when a font loads (a web font arriving with other widths than the fallback's), and on
      App.layout.refit() after their content changes (a new song, the status tray: parts drawn since are watched from
      then on). */
   function fitRowOf(part) {
@@ -226,49 +227,65 @@
     });
     return need + gap * Math.max(0, n - 1) > row.clientWidth + 1;
   }
+  /* the parts that give way first are out (orders 1..k, together); fit moves k from where the row stands: further while
+     the row overflows, back while it fits with one order more shown. Returns whether k moved */
   function fit(row) {
-    if (!row.getClientRects().length || getComputedStyle(row).display === 'contents') return;
+    if (!row.getClientRects().length || getComputedStyle(row).display === 'contents') return false;
     /* a part a design placed outside the row's flow (glasshouse floats the tray into the rail) takes no room in it */
     var parts = $$('[data-fit]', row).filter(function (p) {
       var pos = getComputedStyle(p).position; return fitRowOf(p) === row && pos !== 'fixed' && pos !== 'absolute';
     });
-    parts.forEach(function (p) { p.removeAttribute('data-fit-out'); });
     var orders = parts.map(function (p) { return +p.getAttribute('data-fit'); })
       .filter(function (o, i, all) { return all.indexOf(o) === i; }).sort(function (a, b) { return a - b; });
-    for (var i = 0; i < orders.length && overflows(row); i++) {
-      parts.forEach(function (p) { if (+p.getAttribute('data-fit') === orders[i]) p.setAttribute('data-fit-out', ''); });
+    function give(i, out) { parts.forEach(function (p) { if (+p.getAttribute('data-fit') === orders[i]) p.toggleAttribute('data-fit-out', out); }); }
+    var k = 0, was;
+    while (k < orders.length && parts.every(function (p) { return +p.getAttribute('data-fit') !== orders[k] || p.hasAttribute('data-fit-out'); })) k++;
+    for (var i = 0; i < orders.length; i++) give(i, i < k);
+    was = k;
+    if (overflows(row)) { while (k < orders.length && overflows(row)) give(k++, true); }
+    else while (k > 0) { give(k - 1, false); if (overflows(row)) { give(k - 1, true); break; } k--; }
+    return k !== was;
+  }
+  /* a row and the rows inside it fit together: from all shown, outer rows first (document order: an inner row's width
+     follows from what its outer row gave way), again until none moves (what an inner row gave way can give its outer row
+     room back). The same start every time, so the same room always ends the same way, however it was reached */
+  function rootOf(row) { for (var a = row.parentElement; a; a = a.parentElement) if (a.hasAttribute('data-fit-row')) row = a; return row; }
+  function settle(root) {
+    var rows = [root].concat($$('[data-fit-row]', root));
+    rows.forEach(function (r) { $$('[data-fit-out]', r).forEach(function (p) { p.removeAttribute('data-fit-out'); }); });
+    for (var pass = 0, moved = true; moved && pass < 4; pass++) {
+      moved = false;
+      rows.forEach(function (r) { if (fit(r)) moved = true; });
     }
   }
-  /* a row fits again when it resizes, and when what is in it does without the row resizing (a web font arriving with
+  /* rows fit again when they resize, and when what is in them does without the row resizing (a web font arriving with
      wider letters than the fallback's, a label that changed): the observer watches each row, its children and its
-     parts, and fits the row they belong to. Outer rows first (document order): an inner row's width follows from what
-     its outer row gave way */
-  function inOrder(a, b) { return a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1; }
+     parts, and settles the rows they belong to */
   var fitting = new ResizeObserver(function (entries) {
-    var rows = [];
+    var roots = [];
     entries.forEach(function (e) {
       var own = e.target.hasAttribute('data-fit-row'), row = own ? e.target : fitRowOf(e.target);
-      if (!row || rows.indexOf(row) >= 0) return;
+      if (!row) return;
       /* a part or child that resized in a row that still fits needs nothing when it is a part that gave way (fit's own
          doing) or nothing in the row has given way (all shown, nothing to bring back). Read after layout: no cost */
       if (!own && !overflows(row) && (e.target.hasAttribute('data-fit-out') || !$('[data-fit-out]', row))) return;
-      rows.push(row);
+      var root = rootOf(row); if (roots.indexOf(root) < 0) roots.push(root);
     });
-    rows.sort(inOrder).forEach(fit);
+    roots.forEach(settle);
   });
   var watched = new WeakSet();
   function watch(el) { if (!watched.has(el)) { watched.add(el); fitting.observe(el); } }
   /* every row is watched, a box-less one too (display: contents at some widths), since the observer reports it when it
      gets a box; a row or part drawn since the last call (the song's chips) is watched from now on */
   App.layout.refit = function () {
-    $$('[data-fit-row]').forEach(function (r) {
-      watch(r); Array.prototype.forEach.call(r.children, watch); $$('[data-fit]', r).forEach(watch);
-      fit(r);
-    });
+    $$('[data-fit-row]').forEach(function (r) { watch(r); Array.prototype.forEach.call(r.children, watch); $$('[data-fit]', r).forEach(watch); });
+    $$('[data-fit-row]').filter(function (r) { return rootOf(r) === r; }).forEach(settle);
   };
   App.on('ready', App.layout.refit);
   App.on('design', function () { fitting.disconnect(); watched = new WeakSet(); App.layout.refit(); });
-  if (document.fonts) document.fonts.ready.then(App.layout.refit);
+  /* a font that arrives changes the words' widths in place, and a part that gave way shows no box to tell the observer it
+     would fit now: every font that loads (a design's own, on first use) fits the rows again */
+  if (document.fonts) { document.fonts.ready.then(App.layout.refit); document.fonts.addEventListener('loadingdone', App.layout.refit); }
   App.layout.refit();
 
   apply();

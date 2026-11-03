@@ -151,7 +151,9 @@
     var i, a, attrs = want.attributes;
     for (i = 0; i < attrs.length; i++) { a = attrs[i]; if (old.getAttribute(a.name) !== a.value) old.setAttribute(a.name, a.value); }
     attrs = old.attributes;
-    for (i = attrs.length - 1; i >= 0; i--) { a = attrs[i]; if (!want.hasAttribute(a.name)) old.removeAttribute(a.name); }
+    /* data-fit-out is the row fitter's (layout.js), not the markup's: a re-render that kept the words would show a part
+       that gave way again, with nothing to fit the row anew */
+    for (i = attrs.length - 1; i >= 0; i--) { a = attrs[i]; if (!want.hasAttribute(a.name) && a.name !== 'data-fit-out') old.removeAttribute(a.name); }
     if (old.nodeName === 'INPUT') {                // properties the user may have changed since the last render
       if (old.checked !== want.checked) old.checked = want.checked;
       if (old.type !== 'file' && old !== document.activeElement && old.value !== want.value) old.value = want.value;
