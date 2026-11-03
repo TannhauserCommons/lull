@@ -1,6 +1,7 @@
 //! Finding a song another service names (a playlist link) in lull's catalog, for the `Catalog`
-//! seam. The library's copy wins; then the fast catalog: Deezer by ISRC or by name where it is
-//! open, else iTunes by name (Deezer by ISRC after that, as a lookup by id answers everywhere).
+//! seam. The library's copy wins; then Deezer by ISRC, a lookup that answers in every country
+//! and within Deezer's roomy limit; then the fast catalog by name: Deezer where it is open, else
+//! iTunes, whose small budget is kept for the songs that come without an ISRC.
 //! A hit counts when it is the same song by search's rule (`merge::same_song`), with each artist
 //! the service credits tried, so "Tyler, The Creator" and "A, B" both find theirs.
 
@@ -53,15 +54,12 @@ impl Service {
             }
         };
         let pick = |hits: Vec<SongHit>| hits.into_iter().find(|h| is_wanted(h, wanted));
+        if let Some(hit) = by_isrc().await? {
+            return Ok(Some(hit));
+        }
         Ok(match self.catalog.choice() {
-            Choice::Deezer => match by_isrc().await? {
-                Some(hit) => Some(hit),
-                None => pick(self.deezer.tracks(query).await?),
-            },
-            Choice::Itunes => match pick(self.itunes.match_songs(query).await?) {
-                Some(hit) => Some(hit),
-                None => by_isrc().await?,
-            },
+            Choice::Deezer => pick(self.deezer.tracks(query).await?),
+            Choice::Itunes => pick(self.itunes.match_songs(query).await?),
         })
     }
 }
