@@ -19,7 +19,8 @@
 <style>@import url(screens/system.css) layer(screens);</style>
 <!-- the desktop app only: Classic mode's styles (a browser loads them with its code, App.needClassic) and the wrapper's -->
 <script>if (window.__TAURI__ && !window.LullNative) document.write('<style>@import url(screens/classic.css) layer(screens);<\/style><style>@import url(desktop/desktop.css) layer(screens);<\/style>');</script>
-<link rel="stylesheet" id="design-css" href="designs/lull/theme.css">
+<!-- the design's stylesheet: Designs.boot gives it the chosen design's href, so no other design is fetched first -->
+<link rel="stylesheet" id="design-css" blocking="render">
 <script src="designs/designs.js"></script>
 <script>
   /* before first paint: design (stylesheet + data-design/data-shell), stored theme / motion / text size,

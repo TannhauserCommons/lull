@@ -30,8 +30,9 @@
 
   var root = document.documentElement;
   var link = document.getElementById('design-css');
-  /* designs/ folder relative to this page, read from the link the page ships with; the hub's API sits beside it */
-  D.base = link ? link.getAttribute('href').replace(/[^/]+\/theme\.css$/, '') : 'designs/';
+  /* designs/ folder relative to this page, read from this script's own src; the hub's API sits beside it. The link
+     ships without an href, so the page fetches no design but the chosen one (D.boot gives it its href) */
+  D.base = document.currentScript.getAttribute('src').replace(/designs\.js(\?.*)?$/, '');
   var API = D.base + '../api/themes/';
   var safe = /(?:^|[#?&])theme=safe(?:&|$)/.test(location.hash + '&' + location.search);
   D.safe = safe;
