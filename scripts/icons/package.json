@@ -1,0 +1,10 @@
+{
+  "name": "lull-icons",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "description": "Renders lull's packaged app icons from the masters in design/assets (mise run icons)",
+  "type": "module",
+  "dependencies": {
+    "@resvg/resvg-js": "2.6.2"
+  }
+}
