@@ -699,6 +699,7 @@
   animation: sl-twinkle 2.6s var(--ease-in-out) calc(var(--i) * -.45s) infinite alternate;
 }
 :root[data-design="starlight"] .sky-star--now { width: 30px; height: 30px; margin: -15px; border-radius: 0; box-shadow: none; animation: none; background: var(--sl-spark-img) center / contain no-repeat; }
+:root.is-resting[data-design="starlight"] .sky-star { animation-play-state: paused; }
 @keyframes sl-twinkle { from { opacity: .55; transform: scale(.8); } to { opacity: 1; transform: none; } }
 :root[data-design="starlight"] .sl-sky__label { flex: none; display: flex; align-items: center; gap: 10px; font: 400 .9375rem/1 var(--f-ui); color: var(--fg-sky-2); }
 /* the release card: the first album is the feature (giant caps title, caps artist; play ring, Save and Radio on one row

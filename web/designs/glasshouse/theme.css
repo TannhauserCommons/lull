@@ -642,7 +642,8 @@
 :root[data-design="glasshouse"] .gh-brand__bead { align-self: flex-start; width: 11px; height: 11px; margin: .05em 0 0 4px; border-radius: 50%; border: 1px solid var(--gh-rose-edge);
   background: radial-gradient(circle at 40% 30%, #fff 0 18%, var(--gh-rose-glow) 48%, var(--gh-rose) 86%); box-shadow: 0 0 6px var(--gh-rose-glow); }
 @keyframes gh-blink { 50% { opacity: 0; } }
-:root.is-hidden[data-design="glasshouse"] .gh-brand__caret { animation-play-state: paused; }
+:root.is-hidden[data-design="glasshouse"] .gh-brand__caret,
+:root.is-resting[data-design="glasshouse"] :is(.gh-brand__caret, .gh-caret) { animation-play-state: paused; }
 
 @media (min-width: 640px) {
   :root[data-design="glasshouse"][data-shell="dock"] .header { min-height: 54px; border-radius: 14px; padding: 5px 8px 5px 18px; margin-bottom: 14px; }
@@ -870,7 +871,8 @@
 :root[data-design="glasshouse"] .gh-ticker :is(b, [data-bind="pos"]) { font-weight: 600; color: #f3c1cf; }
 :root[data-design="glasshouse"] .gh-ticker i { font-style: normal; color: #9aa7c2; }
 :root[data-design="glasshouse"] :is(.gh-ticker:hover, .gh-aimp:focus-within, .gh-np:focus-within) .gh-ticker__track,
-:root.is-hidden[data-design="glasshouse"] .gh-ticker__track { animation-play-state: paused; }
+:root.is-hidden[data-design="glasshouse"] .gh-ticker__track,
+:root.is-resting[data-design="glasshouse"] .gh-ticker__track { animation-play-state: paused; }
 @keyframes gh-tick { to { transform: translateX(-50%); } }
 :root[data-design="glasshouse"] .gh-aimp__ticker { grid-area: tick; }
 

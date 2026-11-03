@@ -4239,6 +4239,10 @@
   App.announce = announce;
   App.on('announce', announce);
   document.addEventListener('visibilitychange', function () { root.classList.toggle('is-hidden', document.hidden); });
+  /* nothing playing: the decorative loops hold still (:root.is-resting, docs/themes.md), so a page left paused draws
+     nothing, and the GPU rests too */
+  function resting() { root.classList.toggle('is-resting', !App.player.state.playing); }
+  App.on('player', resting); resting();
 
   /* a link shared to the Android app ("Share", lull://open?link=…) waits in the shell until this page takes it: at boot,
      and when the shell nudges a running page. It opens as #/open (discover.js). */

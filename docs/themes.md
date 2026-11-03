@@ -286,6 +286,7 @@ Also a window narrowed past each `data-size` step. Nothing may scroll sideways, 
 - **Calm by default:** one signature moment at most. Loops only while they mean something, such as the playing bars while sound comes out.
 - **Off under reduced motion:** nothing moves under `:root[data-motion="reduce"]`, or under the system's reduced-motion setting unless `data-motion="full"`. lull's base CSS already stops animations and travel there; don't undo it with `!important`.
 - **Paused when hidden:** loops pause on `:root.is-hidden` (the page is hidden).
+- **Still at rest:** a decorative loop (a twinkle, a blinking caret, a ticker) pauses on `:root.is-resting`, set while nothing plays, so a page left paused draws no frames at all; a loop that means something now (a spinner, a loading shimmer) keeps going. The at-rest gate counts every frame drawn (gates/perf.spec.mjs).
 - **Keep restyles small:** follow "Staying fast" in section 5.
 
 **Shared behaviour stays:**
@@ -325,7 +326,8 @@ Every class lull's CSS styles and every `data-*` attribute lull's markup sets, e
   - `data-theme-fade` (set for a moment while the listener flips day and night, so a design can animate the change);
   - `data-titlebar` and `data-window-inactive` (the desktop app);
   - `data-window` (`mica` `acrylic` `blur` `transparent`: the desktop app's window shows the desktop behind the page, section 12; absent while it is solid) and `data-window-preview` (the browser's preview of it, over a black and white checkerboard);
-  - `.is-hidden` on `:root` (the page is hidden: loops pause).
+  - `.is-hidden` on `:root` (the page is hidden: loops pause);
+  - `.is-resting` on `:root` (nothing is playing: decorative loops pause).
 - **The app:**
   - `.app` with `data-screen`, `data-route`, `data-view`, `data-ctx`, `data-size`, `data-height`;
   - `data-panel` (`strip`), `data-panel-split` and `data-two` (Queue and Lyrics as two panes), `data-nowcol` (`open` `strip`), `data-nowcol-ok`;

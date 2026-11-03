@@ -37,10 +37,15 @@ for (const design of designs) {
       expect(s.longestMs, 'longest task while hovering (ms)').toBeLessThanOrEqual(B.hoverLongestMs);
     });
 
-    test('nothing runs on the main thread at rest', async ({ browser, page }) => {
-      for (const route of ['/home', `/playlist/${ids.longPlaylist}`]) {
+    // paused and left alone: no frames at all, the compositor's own too (a decorative loop runs there with no main-thread
+    // work, and keeps the GPU busy while the listener is away)
+    test('nothing runs or draws at rest, a song paused', async ({ browser, baseURL }) => {
+      for (const route of ['/home', `/playlist/${ids.longPlaylist}`, '/now']) {
+        const context = await browser.newContext({ baseURL, viewport: { width: 1440, height: 900 }, serviceWorkers: 'block' }), page = await context.newPage();
         const s = await S.idle(browser, page, opts(design), route);
         expect(s.frames, `main-thread frames in 2 s at rest on ${route}; running: ${s.animations.join(' | ')}`).toBeLessThanOrEqual(B.idleFrames);
+        expect(s.drawn, `frames drawn in 2 s at rest on ${route}; running: ${s.animations.join(' | ')}`).toBeLessThanOrEqual(B.idleDrawnFrames);
+        await context.close();
       }
     });
 

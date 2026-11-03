@@ -53,12 +53,14 @@ const CATEGORIES = ['devtools.timeline', 'disabled-by-default-devtools.timeline'
 //   busyMs     their sum
 //   handlersMs time in event handlers (pointer, mouse, key...)
 //   frames     main-thread frames committed to the compositor
+//   drawn      frames the page's compositor drew (with { drawn: true }: its own trace category), the main thread's
+//              and those a compositor-only animation draws with no main-thread work at all
 //   layouts    Layout passes; forcedLayouts: those run inside script (a read after a write)
 //   restyled   elements restyled by each style pass, largest first
 //   marked     the same restyle counts between console.timeStamp('gate-start') and ('gate-end'), when present (not
 //              performance.mark: the fixed clock the gates install replaces `performance`)
-export async function traced(browser, page, fn) {
-  await browser.startTracing(page, { categories: CATEGORIES });
+export async function traced(browser, page, fn, { drawn = false } = {}) {
+  await browser.startTracing(page, { categories: drawn ? [...CATEGORIES, 'disabled-by-default-devtools.timeline.frame'] : CATEGORIES });
   let raw;
   try {
     await fn();
@@ -88,6 +90,7 @@ export function summarise(json) {
     busyMs: tasks.reduce((a, b) => a + b, 0),
     handlersMs: mine.filter((e) => e.name === 'EventDispatch').reduce((a, e) => a + e.dur / 1000, 0),
     frames: mine.filter((e) => e.name === 'Commit').length,
+    drawn: events.filter((e) => e.name === 'DrawFrame' && page && String(e.pid) === page.split(':')[0]).length,
     layouts: layouts.length,
     forcedLayouts: layouts.filter(inScript).length,
     restyled: styles.map(count).sort((a, b) => b - a),

@@ -1406,7 +1406,8 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 }
 
 /* =====================================================================
-   Keyframes (loops pause when the document is hidden: :root.is-hidden)
+   Keyframes (loops pause when the document is hidden: :root.is-hidden; the decorative ones also while nothing
+   plays: :root.is-resting, so a page left paused draws no frames)
    ===================================================================== */
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes xfer-edge { from { opacity: .15; } to { opacity: .7; } }
@@ -1421,3 +1422,4 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 @keyframes scan-sweep { 0% { opacity: 1; transform: translateY(0); } 99% { opacity: 1; transform: translateY(300px); } 100% { opacity: 0; } }
 @keyframes sheet-up { from { transform: translateY(100%); } to { transform: none; } }
 :root.is-hidden * { animation-play-state: paused !important; }
+:root.is-resting .sparkle { animation-play-state: paused !important; }

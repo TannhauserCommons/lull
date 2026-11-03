@@ -148,7 +148,11 @@
 :root.is-hidden[data-design="skydeck"] .sky-specks::after,
 :root.is-hidden[data-design="skydeck"] .tray .sg--down,
 :root.is-hidden[data-design="skydeck"] .sd-empty__cursor,
-:root.is-hidden[data-design="skydeck"] .sd-empty:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i]) .sd-empty__lcd::before { animation-play-state: paused; }   /* loops rest in hidden tabs */
+:root.is-hidden[data-design="skydeck"] .sd-empty:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i]) .sd-empty__lcd::before,
+:root.is-resting[data-design="skydeck"] .sky-specks::after,
+:root.is-resting[data-design="skydeck"] .tray .sg--down,
+:root.is-resting[data-design="skydeck"] .sd-empty__cursor,
+:root.is-resting[data-design="skydeck"] .sd-empty:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i]) .sd-empty__lcd::before { animation-play-state: paused; }   /* loops rest in hidden tabs */
 @keyframes sd-twinkle { from { opacity: .6; } to { opacity: 1; } }
 
 /* moon (night) or pearl sun + clouds (day) with a constellation, in the empty top-right of the page;

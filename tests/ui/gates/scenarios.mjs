@@ -171,7 +171,16 @@ export async function playing(browser, page, opts, route = '/home') {
 
 // Nothing playing, nothing moving: what the page costs at rest.
 export async function idle(browser, page, opts, route = '/home') {
-  await openScreen(page, route, opts);
+  // as a listener leaves it: the desktop app's bridge in (its windows are fed while they're open), a song loaded and
+  // paused, the pointer off the page
+  await page.addInitScript({ path: fileURLToPath(new URL('./desktop-bridge.js', import.meta.url)) });
+  await openScreen(page, `/album/${ids.album}`, opts);
+  await playShown(page);
+  await page.waitForFunction(() => App.player.state.playing && App.player.state.pos > 0.3);
+  await page.evaluate(() => { App.player.pause(); window.__bridge.fire('mini', { action: 'hello' }); });
+  await page.evaluate((r) => { location.hash = r; }, route);
+  await settle(page);
+  await page.mouse.move(1, 1);
   await page.waitForTimeout(1500);   // past entrances and cover fade-ins
   // and, on a slow runner, until they have happened: every cover on screen in, every animation on screen that ends
   // ended (a design's loops and scroll-driven effects never end, and are what this gate is about). Polled on a timer:
@@ -194,7 +203,7 @@ export async function idle(browser, page, opts, route = '/home') {
         || a.timeline?.constructor.name !== 'DocumentTimeline' || !shown(a.effect?.target));
   }, null, { polling: 100, timeout: 5000 }).catch(() => {});
   await throttle(page, opts.rate);
-  const s = await traced(browser, page, () => page.waitForTimeout(2000));
+  const s = await traced(browser, page, () => page.waitForTimeout(2000), { drawn: true });
   s.perSecondMs = s.busyMs / 2;
   // what was moving, to name the cause when frames show up at rest
   s.animations = await page.evaluate(() => [...new Set(document.getAnimations().filter((a) => a.playState === 'running').map((a) => {
