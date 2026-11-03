@@ -20,6 +20,7 @@ The same Tauri v2 project as the desktop app (`app/`, ADR-0006), built for Andro
 | `app/gen/android/` | The Gradle project `tauri android init` generated (in CI: there's no NDK on the workstation), tracked with lull's changes: plain http allowed in release builds too (LAN hubs), release signing from `keystore.properties`, the pinned NDK (`ndkVersion`), no dependency-info block in the APK, `buildSrc`'s Rust task calling `cargo tauri` when `LULL_TAURI_CLI=cargo`, lull's launcher icons (`tauri icon` from `web/assets/icons/icon-512.png`, background `#F7F4FF`). Its own `.gitignore` keeps Tauri's per-build files out |
 | `app/tauri.android.conf.json` `versionCode` | Android's version number, set by `scripts/release.sh` (below) |
 | `scripts/android-toolchains.sh`, `scripts/android-build.sh` | The one Android build: the pinned Rust toolchain and the Tauri CLI from source, then the release APK. CI and F-Droid run both |
+| `packaging/fdroid/`, `fastlane/metadata/android/en-US/` | The fdroiddata recipe draft and how to submit it (and to IzzyOnDroid); the store listing, screenshots and per-versionCode changelogs |
 
 ## Build it
 

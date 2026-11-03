@@ -1,0 +1,1 @@
+The first release of lull for Android: pair with your hub by QR code or pair code, play with the screen off with lock-screen, notification and Bluetooth controls, gapless playback and crossfade, and downloads that play offline.

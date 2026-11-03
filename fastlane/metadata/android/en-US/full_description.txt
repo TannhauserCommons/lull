@@ -1,0 +1,25 @@
+lull is a music app you host yourself. This app connects your phone to your lull hub: the lull app on a Windows or Linux computer, or the lull server on a machine of your own. It needs a hub to work; there is no lull cloud.
+
+<b>Pair once, no account</b>
+On a device that already uses your hub, open Settings › Devices › Pair a device. Scan its QR code with this app, or type the 6-character pair code. lull also finds hubs on your home network by itself. Away from home, use your hub's Tailscale address.
+
+<b>On your phone</b>
+<ul>
+<li>Your hub's whole app, in five designs, each with a day and a night look.</li>
+<li>Playback with the screen off, with controls on the lock screen, in the notification, on Bluetooth and on headsets.</li>
+<li>Gapless playback, crossfade and ReplayGain.</li>
+<li>Downloads to the phone, which play without a connection.</li>
+</ul>
+
+<b>What your hub does</b>
+<ul>
+<li>Searches Soulseek and starts playing a song within seconds, while it is still transferring. YouTube is a second source.</li>
+<li>Saves the songs you want to keep, tagged from MusicBrainz with cover art, into your music folder or Jellyfin.</li>
+<li>Recommends music, with a reason for every pick, from a small taste model on your hub.</li>
+<li>Scrobbles to Last.fm, and keeps the same history, likes and playlists on every device.</li>
+</ul>
+
+<b>Network services</b>
+This app talks only to your own hub. Your hub, not the phone, reaches Soulseek, YouTube, Last.fm, MusicBrainz and the other services you turn on. Settings › App › Check for updates asks GitHub for a newer release, only when you press it.
+
+lull is free software under the GNU Affero General Public License v3.0.

@@ -68,6 +68,8 @@ The details of each setup are in [docs/context/deploy.md](docs/context/deploy.md
 
 **Apps:** tagged releases attach Windows installers and Linux deb, rpm and AppImage packages, each for x64 and ARM64, and an Android APK. On first launch, choose this computer as your hub or pair with one. The apps check for newer releases themselves (Settings > App); maintainers cut one with `mise run release X.Y.Z`.
 
+**Android:** install `lull-<version>-android-arm64.apk` from the newest [release](https://github.com/TannhauserCommons/lull/releases), or follow the releases with Obtainium. lull is on its way to F-Droid ([packaging/fdroid](packaging/fdroid/README.md)). F-Droid will ship the same APK, signed with the same key, so you can switch between F-Droid and GitHub without reinstalling. The phone is never a hub: pair it with one by scanning the QR code from Settings > Devices on a device that already uses the hub, or by typing the pair code.
+
 ## For contributors
 
 Start at [AGENTS.md](AGENTS.md). `mise run setup` once, then `mise run check` runs what CI runs.

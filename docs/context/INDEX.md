@@ -26,5 +26,5 @@ Curated pages for what is expensive to rediscover: boundaries, contracts, invari
 | Classic mode skins | [skins.md](skins.md) *(owner writes)* | `crates/skins/`, `web/screens/skins.js`, `web/screens/classic.js` |
 | Web UI: structure, data layer, player engine | [web.md](web.md) *(owner writes)*, `design/DESIGN.md` | `web/index.html`, `web/app.js` |
 | Windows and Linux app | [desktop.md](desktop.md) *(owner writes)*, `design/desktop/DESKTOP.md`, ADR-0006 | `app/` |
-| Android app, native player | [android.md](android.md) *(owner writes)*, ADR-0006 | `app/src/mobile/`, `app/plugins/player/` |
+| Android app, native player, F-Droid | [android.md](android.md) *(owner writes)*, ADR-0006, ADR-0061 | `app/src/mobile/`, `app/plugins/player/`, `packaging/fdroid/` |
 | Why something is the way it is | [../adr/](../adr/) | the ADR |

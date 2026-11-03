@@ -1,0 +1,43 @@
+AntiFeatures:
+  NonFreeNet:
+    en-US: |-
+      The app talks only to the listener's own lull hub (free software, self-hosted), but that hub
+      streams from the Soulseek network and YouTube and scrobbles to Last.fm, which are not free
+      network services. Settings › App › Check for updates asks GitHub for the newest release, only
+      when pressed.
+Categories:
+  - Multimedia
+  - Online Media Player
+License: AGPL-3.0-only
+AuthorName: TannhauserCommons
+SourceCode: https://github.com/TannhauserCommons/lull
+IssueTracker: https://github.com/TannhauserCommons/lull/issues
+Changelog: https://github.com/TannhauserCommons/lull/releases
+
+AutoName: lull
+
+RepoType: git
+Repo: https://github.com/TannhauserCommons/lull.git
+Binaries: https://github.com/TannhauserCommons/lull/releases/download/v%v/lull-%v-android-arm64.apk
+
+Builds:
+  - versionName: 0.2.1
+    versionCode: 2001
+    commit: FULL_COMMIT_HASH_OF_v0.2.1
+    sudo:
+      - apt-get update
+      - apt-get install -y build-essential rustup
+    output: app/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
+    prebuild: sh scripts/android-toolchains.sh
+    build:
+      - export NDK_HOME=$$NDK$$
+      - sh scripts/android-build.sh
+    ndk: r28c
+
+AllowedAPKSigningKeys: c9ceed1914c96a260324d49f4b59be85d7fa1cd1a232a0b4b74220968a2a0321
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags ^v\d+\.\d+\.\d+$
+UpdateCheckData: app/tauri.android.conf.json|"versionCode":\s*(\d+)|app/Cargo.toml|version = "(\d+\.\d+\.\d+)"
+CurrentVersion: 0.2.1
+CurrentVersionCode: 2001
