@@ -70,7 +70,10 @@ pub fn show(app: &AppHandle, state: ThumbButtons) {
         *shown = state;
     }
     let update = move || {
-        for hwnd in lock(&WINDOWS).clone() {
+        // A copy, not the lock: a temporary in a for loop's head lives for the whole loop, and the
+        // subclass takes this lock when Windows sends the window a message meanwhile.
+        let windows = lock(&WINDOWS).clone();
+        for hwnd in windows {
             if let Err(e) = put(HWND(hwnd as *mut _), state, Put::Update) {
                 eprintln!("lull: taskbar buttons: {e}");
             }
