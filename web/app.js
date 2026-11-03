@@ -1183,7 +1183,7 @@
     var text = target.getAttribute('data-tip'); if (!text) return;
     var lbl = target.querySelector('.nav-item__label'); if (lbl && lbl.offsetParent) return;   // rail labels visible: no tooltip
     if (!tipEl) { tipEl = document.createElement('div'); tipEl.className = 'tooltip'; tipEl.setAttribute('role', 'tooltip'); tipEl.id = 'tooltip'; document.body.appendChild(tipEl); }
-    tipEl.textContent = text; tipFor = target;
+    setText(tipEl, text); tipFor = target;
     var r = target.getBoundingClientRect();
     tipEl.style.left = '0px'; tipEl.style.top = '0px'; tipEl.classList.add('is-on');
     var w = tipEl.offsetWidth, h = tipEl.offsetHeight;
@@ -2632,16 +2632,17 @@
     try { el.setPointerCapture(e.pointerId); } catch (err) { /* synthetic events */ }
     applySeek(el, seekFrac(el, e.clientX), false);
   });
+  /* the hover tip showing, remembered: this runs on every pointer move anywhere, so it must not search the page */
+  var tipOn = null;
   document.addEventListener('pointermove', function (e) {
     if (drag) { applySeek(drag.el, seekFrac(drag.el, e.clientX), false); return; }
     var el = e.target.closest && e.target.closest('.seek[data-seek="player"]');
-    $$('.seek__tip.is-on').forEach(function (t) { if (!el || !el.contains(t)) t.classList.remove('is-on'); });
-    if (!el) return;
-    var f = seekFrac(el, e.clientX), tip = $('.seek__tip', el);
-    var inBuf = P.seekable(f);
+    var tip = el && $('.seek__tip', el);
+    if (tipOn && tipOn !== tip) { tipOn.classList.remove('is-on'); tipOn = null; }
     if (!tip) return;
-    tip.textContent = inBuf ? fmtTime(f * P.duration()) : 'Not downloaded yet (' + Math.round(ps.received * 100) + '%)';
-    tip.style.left = (f * 100) + '%'; tip.classList.add('is-on');
+    var f = seekFrac(el, e.clientX), inBuf = P.seekable(f);
+    setText(tip, inBuf ? fmtTime(f * P.duration()) : 'Not downloaded yet (' + Math.round(ps.received * 100) + '%)');
+    tip.style.left = (f * 100) + '%'; tip.classList.add('is-on'); tipOn = tip;
   });
   document.addEventListener('pointerup', function (e) {
     if (!drag) return;

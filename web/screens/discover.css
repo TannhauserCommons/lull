@@ -53,7 +53,7 @@
   display: grid; grid-template-columns: 48px minmax(0, 1fr) 40px; align-items: center; gap: var(--sp-3);
   min-height: 64px; padding: 6px 8px; border-radius: 14px; cursor: pointer; transition: background-color var(--dur-1);
 }
-.disc-starter:hover, .disc-starter:focus-within { background: var(--bg-2); }
+.disc-starter:hover, .disc-starter:focus-within { background: var(--bg-2); transition-duration: 0s; }   /* lands at once, fades out (as .trow) */
 .disc-starter__main { display: grid; min-width: 0; }
 .disc-starter__title { font: var(--t-row); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .disc-starter__sub { font: var(--t-meta); color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -70,7 +70,7 @@
   display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; grid-template-areas: "art main end" "art why why";
   align-items: start; align-content: start; gap: 0 var(--sp-3); padding: 8px; border-radius: 16px; transition: background-color var(--dur-1);
 }
-.disc-pick:hover, .disc-pick:focus-within { background: var(--bg-2); }
+.disc-pick:hover, .disc-pick:focus-within { background: var(--bg-2); transition-duration: 0s; }
 .disc-pick__art { grid-area: art; position: relative; }
 .disc-pick__play {
   position: absolute; right: -6px; bottom: -6px; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%;
