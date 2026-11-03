@@ -113,7 +113,9 @@ async fn resolve(svc: &Service, text: &str) -> Result<Link> {
             let resp = svc.ctx.http.send("link", |c| c.get(url.as_str())).await?;
             let landed = resp.url().to_string();
             let page = resp.text().await.unwrap_or_default();
-            parse::resolved(&landed, &page[..page.len().min(1 << 20)])
+            // The link is near the top; a huge page is cut at a character, never mid-character.
+            let head: String = page.chars().take(1 << 20).collect();
+            parse::resolved(&landed, &head)
                 .ok_or_else(|| Error::BadRequest("That short link doesn't lead to a playlist lull can read.".into()))
         }
     }
