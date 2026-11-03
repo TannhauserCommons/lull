@@ -411,12 +411,23 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
     number, Play under the pointer or focus, the bars while the song plays. Rows drag from anywhere on them (no grip),
     the queue's by mouse past 5 px or by touch from the cover; Alt + arrows reorder from the keyboard. A row off screen skips layout and paint
     (`content-visibility: auto` on `.tlist > .trow`, keeping its last height), so a long list costs only its visible
-    rows when the window or a column resizes. In a list of more than 60 rows (playlists, saved and liked songs, the
-    queue), a row past the first 24 has its contents only within a screen of view (`ui.row`, `ui.lazyRow`): the `<li>`
-    with its classes, data, label and tabindex is always there, so selection, the keyboard, dragging, `App.syncRows`
-    and scrolling to a song work on every row, and its contents are made from the state of the moment each time it
-    comes near and dropped once it is well away (a focused, dragged or menu-open row keeps them). An 835-song playlist
-    with the queue open went from ~196k DOM nodes to ~24k.
+    rows when the window or a column resizes.
+  - **Long lists cost what short ones do.** In a list of more than 60 rows (a playlist, the queue, an album's discs and
+    History's days, each counted as one list with `ui.lazyRows`, saved, liked and downloaded songs, search results, an
+    import's lines, an outside playlist's songs), a row past the first 24 has its contents only within a screen of view
+    (`ui.row`, `ui.lazyRow`):
+    - The `<li>` with its classes, data, label and tabindex is always there, so selection, the keyboard, screen
+      readers, dragging, `App.syncRows` and scrolling to a song work on every row. Away from the screen it is an empty
+      block as tall as the row's min-height (components.css `li[data-fill]:empty`): as the row's grid, with
+      `content-visibility`, each held ~10 KB of grid sizing and a paint layer of its own.
+    - Its contents are made from the state of the moment (likes, downloads, saved, playing) each time it comes near,
+      and dropped once it is well away; a focused, dragged or menu-open row keeps them. Markup with lazy rows must
+      reach the page in the task that made it (`pruneFills`). Reusing the contents of rows that left instead, updated
+      in place, was measured: the same memory and main-thread time, since what scrolling costs is the drawn row's
+      styles and layout, which any row coming into view needs anew.
+    - The playing bars (`.eq`) are in the playing row only; `App.syncRows` moves them.
+    - On the fixture, a 5,000-song playlist takes ~120 MB opened and ~240 MB scrolled through (it took 600 MB and
+      1.5 GB); each song more costs its empty `<li>`, a few KB, which perf.spec's long-list gate holds.
   - **Album pages:** two columns from `wide`; the header is sticky in tall windows.
   - **Artist pages:** a hero across the page (photo, name, Last.fm listeners, Play, Shuffle, Follow, Radio; a real
     photo also glows behind it), then Popular (5 rows, See more for 10, with Last.fm plays at any width) beside About

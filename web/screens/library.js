@@ -398,7 +398,7 @@
       var a = pageEntity(d, 'album', 'albums', M.album); if (!a) return null;
       whole[a.id] = true;                               // this page has the album's full tracklist
       var ids = a.trackIds, tracks = ids.map(M.track).filter(Boolean), down = jellyfinDown(), noTracks = !ids.length, gettingList = noTracks && !!d.partial;
-      var discs = []; tracks.forEach(function (t) { var n = (t.disc || 1) - 1; (discs[n] = discs[n] || []).push(t); });
+      var discs = [], lazy; tracks.forEach(function (t) { var n = (t.disc || 1) - 1; (discs[n] = discs[n] || []).push(t); });
       discs = discs.filter(Boolean);
       return html`<div class="view__inner lib">
         ${jellyfinNotice(path)}
@@ -434,9 +434,10 @@
             : noTracks ? ui.emptyState({ art: 'moon', title: 'No tracklist found yet', text: 'lull hasn\'t found the songs on this release yet. Soulseek may have them.',
             action: { label: 'Search Soulseek', href: '#/search?q=' + encodeURIComponent(a.artist + ' ' + a.title) } }) : ''}
           ${discs.map(function (list, i) {
+            if (!i) lazy = ui.lazyRows(ids.length);   // a box set's discs are one long list
             return html`${discs.length > 1 ? html`<div class="label-rule label-rule--sm lib-disc"><h2>disc ${i + 1}</h2><span class="label-rule__end t-micro fg-2">${plural(list.length, 'song')}, ${fmt.length(sumDuration(list.map(function (t) { return t.id; })))}</span></div>` : ''}
             <ol class="tlist tlist--album" data-ids="${ids.join(',')}" aria-label="${discs.length > 1 ? 'Disc ' + (i + 1) + ' of ' + a.title : 'Songs on ' + a.title}">${list.map(function (t, j) {
-              return ui.trackRow(t, { index: j + 1, unavailable: down && isSaved(t.id), album: a.id });
+              return ui.trackRow(t, { index: j + 1, unavailable: down && isSaved(t.id), album: a.id, lazy: lazy() });
             })}</ol>`;
           })}
           ${noTracks ? '' : html`<p class="lib-foot">${albumFoot(a)}</p>`}
@@ -756,6 +757,7 @@
   }
   function historyBody(first) {
     var h = historyDays(first), days = h.days;
+    var lazy = ui.lazyRows(days.reduce(function (n, day) { return n + day.items.length; }, 0));   // the days read as one list
     if (!days.length && !h.tail) {
       return html`<section class="card lib-card" aria-label="History">${ui.emptyState({ art: 'wave', title: 'Nothing played yet',
         text: 'Songs you play show up here by day, with their Last.fm scrobble status.', action: { label: 'Go home', href: '#/home' } })}</section>`;
@@ -780,7 +782,7 @@
         return html`<div class="lib-day">${ui.labelRule(label, { level: 'h3', sm: true })}
           <ol class="tlist lib-history" data-ids="${ids.join(',')}" aria-label="Played ${label}">${day.items.map(function (i) {
             var sc = scrobbleOf(i);
-            return ui.trackRow(i.trackId, { index: clockOf(i.at), draggable: false, unavailable: jellyfinDown() && isSaved(i.trackId), badges: sc ? ui.scrobble(sc) : off || !i.sendable || !canSend() ? '' : sendBadge(i) });
+            return ui.trackRow(i.trackId, { index: clockOf(i.at), draggable: false, unavailable: jellyfinDown() && isSaved(i.trackId), badges: sc ? ui.scrobble(sc) : off || !i.sendable || !canSend() ? '' : sendBadge(i), lazy: lazy() });
           })}</ol></div>`;
       })}
       ${h.tail}
@@ -1258,6 +1260,13 @@
     }, function (err) { App.toast('Couldn\'t delete ' + p.name + ': ' + err.message, { kind: 'error' }); });
   }
 
+  /* the first row whose middle is below y (rows.length: none). Rows run top to bottom, so a long list needs a dozen
+     of their boxes, not all 5,000 on every move of a drag */
+  function rowBelow(rows, y) {
+    var lo = 0, hi = rows.length;
+    while (lo < hi) { var mid = (lo + hi) >> 1, b = rows[mid].getBoundingClientRect(); if (y < b.top + b.height / 2) hi = mid; else lo = mid + 1; }
+    return lo;
+  }
   /* drag reorder (custom order only): an insertion line follows the pointer; the drop itself arrives
      through the shell's 'drop' event because the list is a [data-drop] target. Screen row n is item shown[n].i. */
   function mountPlaylist(ctx) {
@@ -1277,8 +1286,7 @@
         drag.from = (row.classList.contains('is-selected') && sel.length > 1 ? sel : [row]).map(function (r) { return rows.indexOf(r); });
       });
       ctx.on(list, 'dragover', function (e) {
-        var rows = $$('.trow', list), at = rows.length;
-        for (var i = 0; i < rows.length; i++) { var b = rows[i].getBoundingClientRect(); if (e.clientY < b.top + b.height / 2) { at = i; break; } }
+        var rows = $$('.trow', list), at = rowBelow(rows, e.clientY);
         drag.at = at;
         if (at < rows.length) list.insertBefore(line, rows[at]); else list.appendChild(line);
       });
@@ -1622,17 +1630,19 @@
     });
     return res;
   }
-  function importRow(l) {
+  function importRow(l, lazy) {
     var t = l.trackId && M.track(l.trackId), status;
     if (l.status === 'library') status = ui.savedBadge();
     else if (l.status === 'will-search') status = html`${ui.soulseekBadge()}<span class="lib-imp__src">when played</span>`;
     else status = html`<span class="lib-imp__none">${icon('no-source', null, 'ic-16')}not found</span><a class="btn btn--quiet btn--sm" href="#/search?q=${encodeURIComponent(((l.artist || '') + ' ' + (l.title || '')).trim() || l.location)}" data-close>Search</a>`;
-    return html`<li class="lib-imp__row" data-status="${l.status}">
+    return ui.row(html`<li class="lib-imp__row" data-status="${l.status}"`, function () {
+      return html`
       <span class="lib-imp__n">${l.n}</span>
       ${t ? ui.cover(t, 40) : html`<span class="lib-imp__blank" aria-hidden="true">${icon('no-source')}</span>`}
       <span class="lib-imp__main"><b>${t ? t.title : l.title || l.location}</b><span>${t ? t.artist : l.artist || 'unknown artist'}</span><small>${l.location}</small></span>
       <span class="lib-imp__status"><span class="vh">${IMPORT_LABEL[l.status]}: </span>${status}</span>
-    </li>`;
+    `;
+    }, lazy);
   }
   function openImportPreview(fileName, text) {
     if (!/^[ \t]*[^#\s]/m.test(text)) { App.toast(fileName + ' has no songs in it', { kind: 'error', icon: 'warning' }); return; }
@@ -1670,7 +1680,7 @@
           ${filterPill('all', 'All')}${filterPill('library', 'In library', 'saved')}${filterPill('will-search', 'On Soulseek', 'soulseek')}${filterPill('not-found', 'Not found', 'no-source')}
         </div>
         ${preview.libraryChecked ? '' : html`<p class="lib-help">${icon('warning', null, 'ic-16')}Your library couldn't be checked just now, so songs you've saved may show as found on Soulseek.</p>`}
-        <ol class="lib-imp__list" aria-label="Lines in ${fileName}">${lines.map(importRow)}</ol>
+        <ol class="lib-imp__list" aria-label="Lines in ${fileName}">${lines.map(function (l, i) { return importRow(l, ui.lazyRow(i, lines.length)); })}</ol>
         ${searchIds.length ? saveSongsSwitch(plural(searchIds.length, 'song') + ' not in your library yet. Otherwise they play from Soulseek when you play them.') : ''}
         ${!usable.length ? html`<p class="field__error">${icon('warning', null, 'ic-16')}Nothing in this file matched. Try searching for the songs instead.</p>` : ''}
       </div>`,
@@ -1851,11 +1861,11 @@
       <div class="lib-imp__sum" role="group" aria-label="Show songs">
         ${pill('unmatched', 'Not found', 'no-source')}${pill('matched', 'In the playlist', 'check')}${pill('skipped', 'Skipped', 'close')}${pill('all', 'All')}
       </div>
-      ${shown.length ? html`<ol class="lib-imp__list" aria-label="Songs in ${r.name}">${shown.map(function (s) { return reviewRow(s, st); })}</ol>`
+      ${shown.length ? html`<ol class="lib-imp__list" aria-label="Songs in ${r.name}">${shown.map(function (s, i) { return reviewRow(s, st, ui.lazyRow(i, shown.length)); })}</ol>`
         : html`<p class="now-next__none">${icon('check', null, 'ic-16')}${st.filter === 'unmatched' ? 'Every song was found.' : 'Nothing here.'}</p>`}
       <p class="lib-help">Choices stay when you import the link again. Songs you add or remove in the playlist itself are replaced by the link's songs then: skip a song here to keep it out.</p>`;
   }
-  function reviewRow(s, st) {
+  function reviewRow(s, st, lazy) {
     var t = s.trackId && M.track(s.trackId), acts;
     if (s.status === 'unmatched') {
       acts = html`<button class="btn btn--sm" type="button" data-rev-find data-pos="${s.pos}">${icon('search')}Find</button>
@@ -1868,13 +1878,16 @@
       acts = html`<button class="btn btn--sm btn--quiet" type="button" data-rev-choose="none" data-pos="${s.pos}">Undo</button>`;
     }
     var found = t ? html`<small>${LINK_STATUS[s.status]}: ${t.artist}, ${t.title}${t.album ? ' (' + t.album + ')' : ''}</small>` : html`<small>${LINK_STATUS[s.status]}</small>`;
-    return html`<li class="lib-imp__row lib-linkrev__row" data-status="${s.status}">
+    /* the row being matched by hand is always drawn: its search box and results are in it */
+    return ui.row(html`<li class="lib-imp__row lib-linkrev__row" data-status="${s.status}"`, function () {
+      return html`
       <span class="lib-imp__n">${s.pos + 1}</span>
       ${t ? ui.cover(t, 40) : html`<span class="lib-imp__blank" aria-hidden="true">${icon('no-source')}</span>`}
       <span class="lib-imp__main"><b>${s.title}</b><span>${s.artist}${s.duration ? ', ' + fmt.time(s.duration) : ''}</span>${found}</span>
       <span class="lib-imp__status">${acts}</span>
       ${st.finding === s.pos ? findPanel(s, st) : ''}
-    </li>`;
+    `;
+    }, lazy && st.finding !== s.pos);
   }
   function findPanel(s, st) {
     var results;

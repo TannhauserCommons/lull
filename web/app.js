@@ -1050,8 +1050,9 @@
   };
 
   /* Track row. opts: { index, dense, added (ISO), draggable (default true), showSources, dup ('saved'|'better'),
-     queueIndex, actions (default true), unavailable, badges (markup placed before the source badge), album (the album
-     page's id: its cover stands in for an unknown one) } */
+     queueIndex, actions (default true), unavailable, badges (markup placed before the source badge), artistEnd (markup
+     at the end of the artist line), album (the album page's id: its cover stands in for an unknown one), lazy (see
+     ui.row) } */
   /* the playing bars: in the playing row only (App.syncRows moves them), never as hidden markup in every row */
   var EQ = '<span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>';
   function playingBars(row, on) {
@@ -1075,7 +1076,7 @@
       <div class="trow__art">${ui.cover(rowCover(track, opts.album), opts.dense ? 40 : 48)}</div>
       <div class="trow__main">
         <button class="trow__title" data-act="play-track" data-id="${track.id}" tabindex="-1">${track.title}</button>
-        <div class="trow__artist"><span class="trow__mini" data-src-mini="${track.id}">${icon(saved ? 'saved' : 'soulseek', saved ? 'Saved' : 'Soulseek')}</span><a href="#/artist/${track.artistId}" tabindex="-1">${track.artist}</a></div>
+        <div class="trow__artist"><span class="trow__mini" data-src-mini="${track.id}">${icon(saved ? 'saved' : 'soulseek', saved ? 'Saved' : 'Soulseek')}</span><a href="#/artist/${track.artistId}" tabindex="-1">${track.artist}</a>${opts.artistEnd || ''}</div>
         ${line ? html`<div class="trow__fmt" aria-hidden="true">${line}</div>` : ''}
       </div>
       <div class="trow__album"><a href="#/album/${track.albumId}" tabindex="-1">${track.album}</a></div>
@@ -1102,6 +1103,8 @@
   };
   /* the first rows of a short list, or of any list, are drawn at once: they are the ones on screen when it opens */
   ui.lazyRow = function (n, count) { return count > LAZY_MIN && n >= LAZY_HEAD; };
+  /* the same over several lists that read as one (an album's discs, History's days): next() for each row in turn */
+  ui.lazyRows = function (count) { var n = 0; return function next() { return ui.lazyRow(n++, count); }; };
   function fillRow(li) {
     var inner = fills.get(li.getAttribute('data-fill'));
     if (!inner) return;
@@ -1115,8 +1118,9 @@
      rows was measured against `contentvisibilityautostatechange`, which the rows' content-visibility makes free: about
      the same CPU, but ~110 MB more kept heap after scrolling 2,500 songs */
   var watchers = new Map();
+  /* the list itself, or the nearest box around it that scrolls (an import's lines scroll in their own box) */
   function scrollerOf(el) {
-    for (var p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+    for (var p = el; p && p !== document.body; p = p.parentElement) {
       var o = getComputedStyle(p).overflowY;
       if (o === 'auto' || o === 'scroll') return p;
     }

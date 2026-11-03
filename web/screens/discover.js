@@ -720,14 +720,13 @@
     if (!names.length) return '';
     return html`<p class="disc-note" title="${keys.map(function (k) { return (CATALOG[k] || k) + ': ' + e[k]; }).join('\n')}">${names.join(' and ')} didn't answer, so ${names.length > 1 ? 'their' : 'its'} results are missing.</p>`;
   }
-  function songRow(t, i) {
+  function songRow(t, i, list) {
     var row = S.peerSongs[t.id], saved = App.isSaved(t.id);
     var dup = row && row.dup === 'better' && !slskDown() ? 'better' : null;
     /* a Soulseek row carries its peer count ("N sources") and, for a song not saved, the best file's format */
     var shownTrack = row ? Object.assign({}, t, { sources: row.sources }, !saved && row.best ? { format: row.best.format } : {}) : t;
-    var markup = String(ui.trackRow(shownTrack, { dense: true, showSources: true, index: i + 1 }));
     /* the "better than saved" marker goes on the artist line, so badges never squeeze the title */
-    return raw(markup.replace(/(<div class="trow__artist">[\s\S]*?)(<\/div>)/, function (m, a, b) { return a + (dup ? String(ui.dupBetter()) : '') + b; }));
+    return ui.trackRow(shownTrack, { dense: true, showSources: true, index: i + 1, artistEnd: dup ? ui.dupBetter() : '', lazy: ui.lazyRow(i, list.length) });
   }
   /* "Only on Soulseek": songs no catalog knew, built from file tags */
   function soulseekBody() {

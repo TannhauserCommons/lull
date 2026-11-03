@@ -709,11 +709,12 @@
     var scrolled = qd.scroller.scrollTop - qd.s0, dy = qd.y - qd.y0 + scrolled, mid = qd.mids[qd.from] + dy, to = qd.from;
     while (to < qd.mids.length - 1 && mid > qd.mids[to + 1]) to++;
     while (to > 0 && mid < qd.mids[to - 1]) to--;
-    qd.to = to;
-    qd.rows.forEach(function (r, k) {
+    /* only the rows between where the song was, is and was a frame ago move: a long queue's others stay as they are */
+    for (var k = Math.min(qd.from, to, qd.to), last = Math.max(qd.from, to, qd.to); k <= last; k++) {
       var shift = k === qd.from ? dy : k > qd.from && k <= to ? -qd.step : k < qd.from && k >= to ? qd.step : 0;
-      r.style.transform = shift ? 'translateY(' + shift + 'px)' : '';
-    });
+      qd.rows[k].style.transform = shift ? 'translateY(' + shift + 'px)' : '';
+    }
+    qd.to = to;
     if (speed) qd.frame = requestAnimationFrame(qPaint);
   }
   document.addEventListener('pointermove', function (e) {
@@ -728,7 +729,8 @@
     if (d.frame) cancelAnimationFrame(d.frame);
     if (!d.live) return;
     d.list.classList.remove('is-sorting'); d.row.classList.remove('is-lifted');
-    (d.rows || []).forEach(function (r) { r.style.transform = ''; }); d.row.style.removeProperty('--lift-bg');
+    for (var k = Math.min(d.from, d.to); k <= Math.max(d.from, d.to); k++) d.rows[k].style.transform = '';
+    d.row.style.removeProperty('--lift-bg');
     qDropped = Date.now();
     if (!drop || d.to === d.from || !d.row.isConnected) return;
     var from = +d.row.getAttribute('data-qi'), to = +d.rows[d.to].getAttribute('data-qi');
