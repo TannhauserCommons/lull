@@ -16,7 +16,8 @@ index.html   tokens.css base.css components.css screens/*.css (not classic.css) 
              desktop/webamp-session.js screens/{skins,classic}.js desktop/desktop.js, from the start, as its crash
              recovery hands the queue back through classic.js. A browser loads Classic's four files on first use
              (App.needClassic: the /classic route, a dropped .wsz, Settings > Appearance), early when the pointer
-             reaches a Classic button, or once the page is idle; it never loads desktop.js or desktop.css. The
+             reaches a Classic button, or once the page is idle; it never loads desktop.js or desktop.css. Stats
+             (screens/stats.js, stats.css) loads on its first visit (App.needScript, the /stats route's `need`). The
              equaliser's panel (screens/eq.js) loads on first use too (App.needEq: Settings > Playback, the player's
              "…" > Equaliser). New code that only some screens use loads the same way (a route's `need`), not from
              index.html: Lighthouse's transfer budget (tests/ui/budgets.json) is for the start
@@ -33,6 +34,7 @@ hub.js       the hub's own settings: library source (folder / Jellyfin), Soulsee
 setup.js     the pairing gate, #/pair/<code>, first-run setup (/setup)
 skins.js     Classic mode's skin and size, per device (App.classicSkin, App.classicSize), and Settings > Appearance >
              Classic: the size, the skin browser, .wsz files kept on this device, the NSFW switch (docs/context/skins.md)
+stats.js     Stats and the taste profile (/stats), with stats.css; loaded on the first visit, built with system.js's kit
 classic.js   Classic mode: Webamp alone, in an iframe on a stage in a browser, or in the desktop app's own window
 vendor/      Webamp bundle and the QR encoder (qrcode-generator), copied by scripts/vendor-web.sh, gitignored
 desktop/     the desktop app's wrapper pages and bridge (`LullDesktop`), owned by the Apps session

@@ -414,6 +414,13 @@
       document.head.appendChild(s);
     });
   }
+  /* a screen of its own file (a route's `need`), with its stylesheet if it has one: loaded once, and resolved when both
+     are in, so it never shows unstyled; tried again after a failed fetch */
+  var scriptLoads = {};
+  App.needScript = function (src, what, style) {
+    return scriptLoads[src] || (scriptLoads[src] = Promise.all([style && loadStyle(style, what), loadScript(src, what)])
+      .then(null, function (err) { delete scriptLoads[src]; throw err; }));
+  };
   /* the equaliser's face (screens/eq.js: Settings > Playback, the player's "…" > Equaliser) loads the same way; its
      settings and the sound (eq.js) are with the player from the start */
   var eqLoad = null;

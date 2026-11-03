@@ -2,7 +2,7 @@
 // at start only in the desktop app; a browser loads Classic on first use (app.js App.needClassic) and never the bridge.
 // These pin what that must not change: a .wsz dropped anywhere becomes the Classic skin, Classic opens styled and leaving
 // it returns to the page it was opened from, and the desktop app hears Webamp's window from the start (its crash
-// recovery hands the queue back through classic.js).
+// recovery hands the queue back through classic.js). Stats (stats.js, stats.css) loads on its first visit the same way.
 
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
@@ -39,6 +39,13 @@ test.describe('in a browser', () => {
     expect(await page.locator('.cls-root').first().evaluate((el) => getComputedStyle(el).position)).toBe('fixed');
     await page.locator('[data-act="cls-exit"]').first().click();
     await page.waitForFunction((album) => location.hash === `#/album/${album}`, ids.album);
+  });
+
+  test('Stats loads on its first visit, styled', async ({ page }) => {
+    await openScreen(page, '/home');
+    expect(await page.evaluate(() => [...document.scripts].some((s) => /stats\.js/.test(s.src))), 'stats.js at start').toBe(false);
+    await page.evaluate(() => { location.hash = '#/stats'; });
+    await expect(page.locator('.sys-tiles').first()).toHaveCSS('display', 'grid');
   });
 
   test('Settings > Appearance shows Classic mode\'s group', async ({ page }) => {
