@@ -849,8 +849,7 @@
         </div>
         <div class="disc-top__actions">
           <a class="btn btn--primary" href="${href}">${icon('play')}Open playlist</a>
-          ${App.outside.saved(pl.id) ? html`<button class="btn" data-act="lib-out-save" data-id="${pl.id}" aria-pressed="true">${icon('check')}Saved</button>`
-            : html`<button class="btn" data-act="lib-out-save" data-id="${pl.id}" aria-pressed="false">${icon('plus')}Save</button>`}
+          ${App.outside.button(pl.id, App.outside.saved(pl.id))}
         </div>`;
     }
     var ar = top.item, on = App.isFollowed(ar.id);

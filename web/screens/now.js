@@ -787,8 +787,8 @@
       return { meta: html`${ui.statusGlyph('ok', 'Done')}<span>${j.added || 0} plays added${j.duplicates ? ', ' + j.duplicates + ' already there' : ''}${j.invalid ? ', ' + j.invalid + ' unreadable' : ''}</span>`, extra: '', acts: '' };
     }
     if (j.kind === 'import' && j.link) {        // a playlist link (POST /api/import/link): its review lists the songs not found
-      return { meta: html`${ui.statusGlyph('ok', 'Done')}<span>${j.matched || 0} matched${j.unmatched ? ', ' + j.unmatched + ' not found' : ''}</span>`, extra: '',
-        acts: html`<button class="btn btn--sm btn--quiet" data-act="lib-link-review" data-id="${j.link}" data-fk="review-${j.id}">Review</button>` };
+      return { meta: html`${ui.statusGlyph('ok', 'Done')}<span>In your playlists: ${j.matched || 0} matched${j.unmatched ? ', ' + j.unmatched + ' not found' : ''}${j.saving ? ', saving ' + j.saving : ''}</span>`, extra: '',
+        acts: html`${j.playlistId ? html`<a class="btn btn--sm btn--quiet" href="#/playlist/${j.playlistId}" data-fk="open-${j.id}">Open</a>` : ''}<button class="btn btn--sm btn--quiet" data-act="lib-link-review" data-id="${j.link}" data-fk="review-${j.id}">Review</button>` };
     }
     if (j.kind === 'import') {
       return { meta: html`${ui.statusGlyph('ok', 'Done')}<span>${j.matched || 0} matched, ${j.search || 0} searching, ${j.notFound || 0} not found</span>`, extra: '',

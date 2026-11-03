@@ -377,3 +377,7 @@
 /* ---------- import dialog: listening history ---------- */
 .lib-hist { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-3); }
 .lib-hist .field { flex: 1 1 240px; min-width: 0; }
+
+/* an outside playlist's notice: what the page is (a preview, or in your library) */
+.lib-out__notice { margin: 0 var(--card-pad, 16px) var(--sp-3); box-shadow: inset 4px 0 0 var(--accent-ui), var(--stack-1l); }
+.lib-out__notice span { flex: 1; font: var(--t-meta); }

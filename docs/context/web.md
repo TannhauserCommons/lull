@@ -392,6 +392,19 @@ Copies that don't line up (other masters, edits, loops) never switch mid-song: S
     record. It's reached from "Stop waiting" (Activity, and the waiting save button's toast) and "Remove this save" on
     a failed row. Skip in the choose prompt moves on, and the engine's `letGo` stops the transfer.
 
+## What an import does, said plainly
+
+- **Save the songs too** is one per-device choice (`libImportSaveSongs`), shown wherever it applies: the file import's
+  preview, the link box, and an outside playlist's notice. A link import sends it (`saveSongs`), so the hub saves the songs
+  whether or not this tab stays open; the file import saves its Soulseek songs from this tab once the playlist exists.
+- **Every import ends in a playlist in Library, Playlists**, and its toast and Activity row say so ("Imported X into your
+  playlists: n songs, m not found, saving k", with Open and Review).
+- **A file imported again** under the name of an existing playlist updates that playlist's songs instead of making a
+  second one; the name field says so before the import ("You have a playlist called X: importing updates its songs").
+- **An outside playlist** opened from search is a preview and says so in a notice: playing it keeps nothing (playing
+  reminds once, with "Add to library"). "Add to library" follows it (a bookmark); "Import as playlist" makes the user's
+  own playlist (the link import); once imported, the page offers "Open your playlist" and "Update it" instead.
+
 ## Bare songs
 
 `ui.cover` (and `ui.mosaic`) ask about every song they draw that isn't saved and has no pictured album: once a

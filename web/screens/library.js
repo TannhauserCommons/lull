@@ -225,6 +225,21 @@
   var SONG_SORTS = { album: 'Album order', title: 'Title', artist: 'Artist', recent: 'Recently saved' };
   /* stored per device; a value this version doesn't know falls back to the default */
   function pref(key, known, fallback) { var v = App.storage(key); return known.indexOf(v) >= 0 ? v : fallback; }
+  /* "Save the songs too" for every import (file, link, a preview's copy): one choice per device, shown where it applies */
+  function saveSongsPref() { return App.storage('libImportSaveSongs') === true; }
+  function setSaveSongsPref(on) { App.storage('libImportSaveSongs', !!on); }
+  function saveSongsSwitch(help) {
+    return html`<label class="switch-row lib-imp__opt" data-save-songs><span><span class="switch-row__label">Save the songs too</span>
+      <span class="switch-row__help">${help}</span></span>
+      <button class="switch" type="button" role="switch" aria-checked="${String(saveSongsPref())}"></button></label>`;
+  }
+  /* a click on a "Save the songs too" row flips it and remembers the choice */
+  document.addEventListener('click', function (e) {
+    var row = e.target.closest && e.target.closest('[data-save-songs]'); if (!row) return;
+    e.preventDefault();
+    var sw = $('.switch', row), on = sw.getAttribute('aria-checked') !== 'true';
+    sw.setAttribute('aria-checked', String(on)); setSaveSongsPref(on);
+  });
   var prefs = {
     albumSort: pref('libAlbumSort', Object.keys(ALBUM_SORTS), 'recent'),
     songSort: pref('libSongSort', Object.keys(SONG_SORTS), 'album')
@@ -974,11 +989,14 @@
             ${d.note ? html`<p class="lib-help">${icon('info', null, 'ic-16')}${d.note}</p>` : ''}
           </div>
         </header>
+        ${previewNotice(d, site)}
         <div class="lib-pl__bar">
           <button class="btn btn--primary" data-act="play-ids" data-ids="${ids.join(',')}">${icon('play', null, 'ic-play')}Play</button>
           ${ui.iconButton('shuffle', 'Shuffle play', { 'data-act': 'lib-shuffle-ids', 'data-ids': ids.join(',') })}
-          <button class="btn" data-act="lib-out-save" data-id="${d.id}" aria-pressed="${d.bookmarked ? 'true' : 'false'}">${icon(d.bookmarked ? 'check' : 'plus')}${d.bookmarked ? 'Saved' : 'Save'}</button>
-          <button class="btn" data-act="lib-out-copy" data-id="${d.url}">${icon('import')}Make a copy</button>
+          ${bookmarkButton(d.id, d.bookmarked)}
+          ${d.playlistId ? html`<a class="btn" href="#/playlist/${d.playlistId}">${icon('playlists')}Open your playlist</a>
+              <button class="btn btn--quiet" data-act="lib-out-copy" data-id="${d.url}" data-tip="Your playlist of it takes the songs it has now">${icon('refresh')}Update it</button>`
+            : html`<button class="btn" data-act="lib-out-copy" data-id="${d.url}" data-tip="Your own playlist of its songs, which you can edit">${icon('import')}Import as playlist</button>`}
           <a class="btn btn--quiet" href="${d.url}" target="_blank" rel="noopener noreferrer">${icon('link')}Open on ${site}</a>
         </div>
         <div class="lib-table">
@@ -991,10 +1009,32 @@
       </article>
     </div>`;
   }
+  /* what this page is, said plainly: a preview keeps nothing; Add to library follows it; Import as playlist copies it */
+  function previewNotice(d, site) {
+    if (d.playlistId) {
+      return html`<p class="lib-notice lib-out__notice">${icon('check', null, 'ic-16')}<span>You imported this ${site} playlist: it is in Library, Playlists as your own playlist. Update it takes the songs it has now.</span></p>`;
+    }
+    return d.bookmarked
+      ? html`<p class="lib-notice lib-out__notice">${icon('check', null, 'ic-16')}<span>In your library: Library, Playlists shows it, and it follows ${site}. Its songs aren't saved; Import as playlist makes your own copy${saveSongsPref() ? ' and saves them' : ''}.</span></p>`
+      : html`<p class="lib-notice lib-out__notice">${icon('info', null, 'ic-16')}<span>A preview of a ${site} playlist: it isn't in your library, and playing it keeps nothing. Add to library follows it; Import as playlist makes your own copy${saveSongsPref() ? ' and saves its songs' : ''}.</span></p>`;
+  }
+  function bookmarkButton(key, on) {
+    return on ? html`<button class="btn" data-act="lib-out-save" data-id="${key}" aria-pressed="true" data-tip="Remove from your library">${icon('check')}In your library</button>`
+      : html`<button class="btn" data-act="lib-out-save" data-id="${key}" aria-pressed="false">${icon('plus')}Add to library</button>`;
+  }
+  App.outside = { href: outsideHref, saved: isBookmarked, site: function (s) { return SITE[s] || s; }, button: bookmarkButton };
   function mountOutside(ctx) {
     var key = ctx.params.id, path = outsidePath(key);
     liveOn(ctx, ['liked', 'services']);
     liveSaveButtons(ctx);
+    /* playing a preview says once that it keeps nothing, with the way to keep it */
+    var told = false;
+    ctx.el.addEventListener('click', function (e) {
+      var d = M.peek(path);
+      if (told || !d || d.bookmarked || !e.target.closest('[data-act="play-ids"], [data-act="play-track"], [data-act="lib-shuffle-ids"]')) return;
+      told = true;
+      App.toast('Playing a preview: it isn\'t in your library.', { icon: 'info', action: 'Add to library', onAction: function () { toggleBookmark(d.id); } });
+    });
     /* matches arriving: the rows take the catalog's song (app.js has absorbed the event's entities) */
     ctx.onCleanup(App.on('server:outside', function (e) {
       var d = M.peek(path); if (!e || !d || e.id !== d.id) return;
@@ -1009,12 +1049,11 @@
       if (d) d.bookmarked = !on;
       M.invalidate('/api/bookmarks');
       App.refresh();
-      App.toast(on ? 'Removed from your library' : 'Saved to your library. It follows ' + (SITE[d && d.site] || 'its source') + '.', { icon: on ? 'close' : 'check' });
+      App.toast(on ? 'Removed from your library' : 'Added to Library, Playlists. It follows ' + (SITE[d && d.site] || 'its source') + '; its songs play from Soulseek.', { icon: on ? 'close' : 'check' });
     }, function (err) { App.toast('Couldn\'t ' + (on ? 'remove' : 'save') + ' it: ' + err.message, { kind: 'error', icon: 'warning' }); });
   }
   App.action('lib-out-save', function (el) { toggleBookmark(el.getAttribute('data-id')); });
   App.action('lib-out-copy', function (el) { importLink(el.getAttribute('data-id')); });
-  App.outside = { href: outsideHref, saved: isBookmarked, site: function (s) { return SITE[s] || s; } };
   /* another device saved or removed one */
   App.on('server:bookmark', function (e) {
     var d = e && M.peek(outsidePath(e.id));
@@ -1525,20 +1564,22 @@
       title: 'import ' + fileName, wide: true, className: 'lib-import',
       body: html`<div class="lib-form">
         <div class="field"><label class="field__label" for="${nameId}">Playlist name</label>
-          <input class="input" id="${nameId}" maxlength="60" value="${base}" autocomplete="off"></div>
+          <input class="input" id="${nameId}" maxlength="60" value="${base}" autocomplete="off">
+          <span class="field__help" data-imp-same aria-live="polite">${sameNameHelp(base)}</span></div>
         <div class="lib-imp__sum" role="group" aria-label="Show lines">
           ${filterPill('all', 'All')}${filterPill('library', 'In library', 'saved')}${filterPill('will-search', 'On Soulseek', 'soulseek')}${filterPill('not-found', 'Not found', 'no-source')}
         </div>
         ${preview.libraryChecked ? '' : html`<p class="lib-help">${icon('warning', null, 'ic-16')}Your library couldn't be checked just now, so songs you've saved may show as found on Soulseek.</p>`}
         <ol class="lib-imp__list" aria-label="Lines in ${fileName}">${lines.map(importRow)}</ol>
-        ${searchIds.length ? html`<label class="switch-row lib-imp__opt"><span><span class="switch-row__label">Save the Soulseek matches too</span>
-          <span class="switch-row__help">${plural(searchIds.length, 'song')}. Otherwise they stream when played.</span></span>
-          <button class="switch" type="button" role="switch" aria-checked="false" data-imp-save></button></label>` : ''}
+        ${searchIds.length ? saveSongsSwitch(plural(searchIds.length, 'song') + ' not in your library yet. Otherwise they play from Soulseek when you play them.') : ''}
         ${!usable.length ? html`<p class="field__error">${icon('warning', null, 'ic-16')}Nothing in this file matched. Try searching for the songs instead.</p>` : ''}
       </div>`,
       foot: html`<button class="btn" type="button" data-close>Cancel</button>
         <button class="btn btn--primary" type="button" data-imp-go ${usable.length ? '' : raw('disabled')}>${icon('import')}Import ${plural(usable.length, 'song')}</button>`,
       onMount: function (el, close) {
+        $('#' + nameId, el).addEventListener('input', function (e) {
+          $('[data-imp-same]', el).innerHTML = String(sameNameHelp(e.target.value.trim() || base));
+        });
         el.addEventListener('click', function (e) {
           var f = e.target.closest('[data-imp-filter]');
           if (f) {
@@ -1547,23 +1588,34 @@
             $$('.lib-imp__row', el).forEach(function (r) { r.hidden = v !== 'all' && r.getAttribute('data-status') !== v; });
             return;
           }
-          var sw = e.target.closest('.lib-imp__opt');
-          if (sw) { e.preventDefault(); var s = $('[data-imp-save]', el); s.setAttribute('aria-checked', String(s.getAttribute('aria-checked') !== 'true')); return; }
           if (!e.target.closest('[data-imp-go]')) return;
           var name = $('#' + nameId, el).value.trim() || base;
-          var saveToo = !!$('[data-imp-save][aria-checked="true"]', el);
+          var saveToo = !!searchIds.length && saveSongsPref();
+          var same = sameName(name), ids = usable.map(function (l) { return l.trackId; });
           close();
           var imported = { file: fileName, library: counts.library, willSearch: counts.willSearch, notFound: counts.notFound };
-          makePlaylist(name, 'Imported from ' + fileName + '.', usable.map(function (l) { return l.trackId; }), imported,
-            usable.map(function (l) { return l.addedAt == null ? null : l.addedAt; })).then(function (p) {
+          /* the same file again updates the playlist it made, instead of a second one */
+          var done = same ? App.savePlaylistOrder(same.id, ids).then(function () { return same; })
+            : makePlaylist(name, 'Imported from ' + fileName + '.', ids, imported, usable.map(function (l) { return l.addedAt == null ? null : l.addedAt; }));
+          done.then(function (p) {
             if (!p) return;
             if (saveToo) App.saves.start(searchIds);
             App.go('/playlist/' + p.id);
-            App.toast('Imported ' + plural(usable.length, 'song') + (counts.notFound ? '. ' + counts.notFound + ' weren\'t found.' : ''), { kind: 'ok', icon: 'import' });
-          });
+            App.toast((same ? 'Updated ' + p.name + ' in your playlists: ' : 'Imported ' + p.name + ' into your playlists: ') + plural(usable.length, 'song')
+              + (counts.notFound ? ', ' + counts.notFound + ' not found' : '') + (saveToo ? ', saving ' + plural(searchIds.length, 'song') : ''), { kind: 'ok', icon: 'import' });
+          }, function (err) { App.toast('Couldn\'t import ' + fileName + ': ' + err.message, { kind: 'error', icon: 'warning' }); });
         });
       }
     });
+  }
+  /* a playlist already named so (case aside): importing under its name updates it */
+  function sameName(name) {
+    var n = String(name || '').trim().toLowerCase();
+    return playlists().filter(function (p) { return p.name.trim().toLowerCase() === n; })[0] || null;
+  }
+  function sameNameHelp(name) {
+    var p = sameName(name);
+    return p ? 'You have a playlist called ' + p.name + ': importing updates its songs. Rename to make a new one.' : 'Imported as a new playlist in Library, Playlists.';
   }
   App.hooks.importFile = function (file) {
     if (!PLAYLIST_FILE.test(file.name)) { App.toast('Can\'t import ' + file.name + ': only .m3u, .m3u8 and Exportify .csv playlists', { kind: 'error', icon: 'warning' }); return; }
@@ -1589,14 +1641,17 @@
         <input class="input" id="${id}" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="A Spotify, YouTube, Deezer or SoundCloud playlist link">
         <button class="btn btn--primary" type="submit">${icon('import')}Import</button>
       </div>
-      <span class="field__help">Songs play from Soulseek when you play them. Spotify lets lull read the first 100 songs of a playlist. Importing a link again updates its playlist.</span>
+      <span class="field__help">It becomes a playlist in Library, Playlists. Spotify lets lull read the first 100 songs of a playlist. Importing a link again updates its playlist.</span>
+      ${saveSongsSwitch('Otherwise they play from Soulseek when you play them.')}
     </form>`;
   }
+  /* every link import, from the box or a preview's "Import as playlist", carries the device's "Save the songs too" */
   function importLink(url, onStarted) {
-    return M.api('/api/import/link', { method: 'POST', body: { url: url } }).then(function (res) {
+    var save = saveSongsPref();
+    return M.api('/api/import/link', { method: 'POST', body: { url: url, saveSongs: save } }).then(function (res) {
       linkJobs[res.jobId] = true;
       if (onStarted) onStarted();
-      App.toast('Importing the playlist. Activity shows how it goes.', { icon: 'import', action: 'Activity', onAction: function () { App.openPanel('activity'); } });
+      App.toast('Importing it as a playlist' + (save ? ' and saving its songs' : '') + '. Activity shows how it goes.', { icon: 'import', action: 'Activity', onAction: function () { App.openPanel('activity'); } });
       App.loadJobs();
     }, function (err) { App.toast('Couldn\'t import that link: ' + err.message, { kind: 'error', icon: 'warning' }); });
   }
@@ -1621,7 +1676,7 @@
     if (!linkJobs[j.jobId]) return;
     delete linkJobs[j.jobId];
     if (j.state === 'failed') { App.toast('Couldn\'t import ' + j.name + ': ' + (j.error || 'the import failed'), { kind: 'error', icon: 'warning' }); return; }
-    App.toast('Imported ' + j.name + ': ' + plural(j.matched || 0, 'song') + (j.unmatched ? ', ' + j.unmatched + ' not found' : ''),
+    App.toast('Imported ' + j.name + ' into your playlists: ' + plural(j.matched || 0, 'song') + (j.unmatched ? ', ' + j.unmatched + ' not found' : '') + (j.saving ? ', saving ' + j.saving : ''),
       { kind: 'ok', icon: 'import', action: j.unmatched ? 'Review' : 'Open', onAction: function () {
         if (j.unmatched) openLinkReview(j.link); else App.go('/playlist/' + j.playlistId);
       } });
