@@ -31,6 +31,8 @@ fn routes() -> Router<Arc<Service>> {
         .route("/api/tracks/{id}/sources", get(sources))
         .route("/api/stream/prefetch", put(prefetch))
         .route("/api/stream/{id}", get(stream).delete(stop))
+        .route("/api/stream/{id}/copy", get(copy))
+        .route("/api/stream/{id}/switch", post(switch))
         .route("/api/soulseek/diagnostics", get(diagnostics))
         .route("/api/transfers", get(transfers))
         .route("/api/transfers/{job}", delete(cancel))
@@ -99,6 +101,47 @@ async fn stream(
     };
     let fetch = svc.fetcher.stream(track, pick).await?;
     crate::stream::serve(fetch, &headers).await
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Copy {
+    peer: String,
+    path: String,
+}
+
+impl Copy {
+    fn source_ref(self) -> SourceRef {
+        SourceRef {
+            user: self.peer,
+            path: self.path,
+            size: 0,
+        }
+    }
+}
+
+/// One copy's bytes while it plays or arrives beside the copy playing, changing nothing: the
+/// player lines a better copy up with the song before it switches (`switch`).
+async fn copy(
+    State(svc): State<Arc<Service>>,
+    Path(id): Path<String>,
+    Query(copy): Query<Copy>,
+    headers: HeaderMap,
+) -> Result<Response> {
+    let fetch = svc.fetcher.copy(&TrackId(id), &copy.source_ref())?;
+    crate::stream::serve(fetch, &headers).await
+}
+
+/// The player switched to the better copy on its way: it becomes the song's stream, and the
+/// copy before it stops once its response ends. 409 when that copy is no longer on its way.
+async fn switch(
+    State(svc): State<Arc<Service>>,
+    Path(id): Path<String>,
+    body: std::result::Result<Json<Copy>, JsonRejection>,
+) -> Result<StatusCode> {
+    let Json(copy) = body.map_err(|e| Error::BadRequest(e.body_text()))?;
+    svc.fetcher.adopt(&TrackId(id), &copy.source_ref(), false)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// A picked source must be one a search reported: its size comes from there.

@@ -237,6 +237,42 @@ pub fn order(mut ranked: Vec<Ranked>, duration: Option<u32>, rules: &Rules, purp
     ranked
 }
 
+/// Why the copy playing is a lesser one, worth switching away from mid-song.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Lesser {
+    /// YouTube's copy (a fallback, or start fast).
+    Youtube,
+    /// Below the streaming minimum (`playBest`).
+    Below,
+    /// A peer the fetch fell back to after better ones failed.
+    FellBack,
+}
+
+/// What a better copy has to beat: the copy playing, why it is a lesser one, and the peers
+/// that already failed this play.
+#[derive(Debug, Clone)]
+pub struct Bar {
+    pub playing: SourceRef,
+    pub why: Lesser,
+    pub avoid: Vec<String>,
+}
+
+/// The copies in `ordered` (the streaming order) better than the one playing, best first: they
+/// pass the minimum, aren't busy or failed already, and, when the copy playing passes too (a
+/// peer fallen back to), come before it in the order.
+pub fn better(ordered: Vec<Ranked>, bar: &Bar) -> Vec<Ranked> {
+    let playing_at = ordered.iter().position(|r| r.source.is(&bar.playing));
+    ordered
+        .into_iter()
+        .enumerate()
+        .filter(|(i, r)| {
+            let above = bar.why != Lesser::FellBack || playing_at.is_none_or(|at| *i < at);
+            above && r.meets && !r.queue_too_long && !r.source.is(&bar.playing) && !bar.avoid.contains(&r.peer)
+        })
+        .map(|(_, r)| r)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -381,6 +417,54 @@ mod tests {
         let save = order(peers(), Some(240), &capped, Purpose::Save);
         assert_eq!(save[0].peer, "slow-flac", "the saving order has no cap");
         assert!(save.iter().all(|r| !r.above_max));
+    }
+
+    #[test]
+    fn a_better_copy_passes_the_minimum_and_beats_a_peer_fallen_back_to_only_by_coming_first() {
+        let ordered = || order(peers(), Some(240), &rules(256, Pick::Fastest), Purpose::Stream);
+        let all = ordered();
+        let bar = |why, playing: &str, avoid: &[&str]| Bar {
+            playing: all
+                .iter()
+                .find(|r| r.peer == playing)
+                .map(|r| r.source.source_ref())
+                .unwrap_or_else(|| SourceRef {
+                    user: playing.into(),
+                    path: "youtube:abc:251.webm".into(),
+                    size: 1,
+                }),
+            why,
+            avoid: avoid.iter().map(|a| (*a).to_owned()).collect(),
+        };
+
+        let from_youtube = better(ordered(), &bar(Lesser::Youtube, "YouTube", &[]));
+        assert!(!from_youtube.is_empty() && from_youtube.iter().all(|r| r.meets && !r.queue_too_long));
+        assert!(
+            from_youtube.iter().all(|r| r.peer != "fast-128"),
+            "a copy below the minimum is no better than YouTube's"
+        );
+
+        let from_below = better(ordered(), &bar(Lesser::Below, "fast-128", &["mid-256"]));
+        assert!(from_below.iter().all(|r| r.peer != "fast-128" && r.peer != "mid-256"));
+        assert_eq!(
+            from_below.len(),
+            from_youtube.len() - 1,
+            "a peer that failed this play is avoided"
+        );
+
+        let last_passing = all.iter().rposition(|r| r.meets && !r.queue_too_long).unwrap_or(0);
+        let fell_back_to = all[last_passing].peer.clone();
+        let from_fallback = better(ordered(), &bar(Lesser::FellBack, &fell_back_to, &[]));
+        assert_eq!(
+            users(&from_fallback),
+            users(&all[..last_passing]),
+            "only copies the profile ranks above the one playing"
+        );
+        let first = all[0].peer.clone();
+        assert!(
+            better(ordered(), &bar(Lesser::FellBack, &first, &[])).is_empty(),
+            "nothing beats the profile's first choice"
+        );
     }
 
     #[test]

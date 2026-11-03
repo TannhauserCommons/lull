@@ -36,3 +36,7 @@ Facts that shaped it, checked on 2026-11-02 with yt-dlp 2026.10.26:
 - **Two binaries in the image** (about 150 MB), and each yt-dlp run unpacks itself into `<data>/youtube/tmp`.
 - **Start fast fetches each new song twice** (YouTube and Soulseek), by design: the second is the copy that's kept.
 - **The desktop app's own hub** ships yt-dlp and Deno the same way (desktop.md).
+
+## Update 2026-11-03: the play may move to the better copy
+
+With Settings › Sources › "Switch to a better copy while a song plays" on (the default), a song YouTube plays (start fast or a fallback) moves to Soulseek's copy once it is ready, lined up and crossfaded so it doesn't jump: [ADR-0013](0013-switching-to-a-better-copy-mid-song.md). With it off, the current play never jumps, as above.

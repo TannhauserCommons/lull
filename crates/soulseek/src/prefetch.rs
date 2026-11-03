@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use lull_core::ids::TrackId;
 use lull_core::quality::StreamBelow;
-use lull_core::youtube::{Mode, is_youtube};
+use lull_core::youtube::Mode;
 use lull_core::{Error, Result};
 use tokio::sync::watch;
 
@@ -122,11 +122,13 @@ async fn preload(svc: &Service, id: &TrackId) -> Result<()> {
         return Ok(());
     }
     let track = svc.track(id).await?;
-    let cached = svc.cache.finished(id, None).await?;
+    // A lesser copy in the cache (YouTube's, one below the minimum) is fetched again when a
+    // better one is known, so the song plays that from its start.
+    let cached = svc.fetcher.best_cached(&track, Purpose::Stream).await?;
     if svc.searches.saved(id).await
         || cached
             .as_ref()
-            .is_some_and(|e| mode != Mode::Off || !is_youtube(&e.source))
+            .is_some_and(|e| !svc.fetcher.better_than_cached(&track, &e.source))
     {
         return Ok(());
     }

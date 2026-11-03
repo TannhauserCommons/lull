@@ -422,6 +422,17 @@ impl Searches {
                 return Ok(());
             }
         }
+        self.search_song(track, lane).await
+    }
+
+    /// Searches for one song again although copies are known (a better copy is wanted than
+    /// those), in `lane`, after its turn.
+    pub async fn resolve_again(&self, track: &Track, lane: Lane) -> Result<()> {
+        self.turn(lane).await;
+        self.search_song(track, lane).await
+    }
+
+    async fn search_song(&self, track: &Track, lane: Lane) -> Result<()> {
         let mut done = self.shared_search(track, lane);
         let ended = done.wait_for(Option::is_some).await.ok().and_then(|e| e.clone());
         match ended {

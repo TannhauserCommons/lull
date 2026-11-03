@@ -41,7 +41,9 @@
 
 **The current play never jumps.** Upgrades live in their own map, out of the player's way: a seek joins the YouTube fetch, and the upgrade's bytes go to the cache only. A save started while YouTube plays the song runs there too. A preload still waiting for a peer when the song is played steps aside as the upgrade. A YouTube copy that has played through (its length plus a minute after it began, nobody reading) gives way to a cached Soulseek copy on the next play; until then a request is the same play seeking.
 
-**Later plays.** `Cache::finished` prefers a Soulseek copy over a YouTube one. With the mode off, cached YouTube copies are ignored; otherwise one plays at once (and `startFast` starts an upgrade beside it).
+**Switching to the better copy.** With Settings › Sources › "Switch to a better copy while a song plays" on (the default), a song YouTube plays moves to Soulseek's copy once it is ready, lined up and crossfaded so nothing jumps ([streaming.md](streaming.md#better-copies)). In `fallback` the copy is fetched by the streaming profile as soon as YouTube steps in; in `startFast` it is the upgrade above, offered when it passes the streaming minimum and cap. With the setting off, or when the player can't line the copies up, the rule above holds: it plays from the next play.
+
+**Later plays.** `Fetcher::best_cached` prefers a Soulseek copy over a YouTube one. With the mode off, cached YouTube copies are ignored; otherwise one plays at once (and `startFast` starts an upgrade beside it).
 
 ## Badges and quality
 

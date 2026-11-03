@@ -23,6 +23,13 @@ pub struct Rules {
     /// When YouTube plays instead of, or before, a Soulseek copy (docs/context/youtube.md).
     #[serde(default)]
     pub youtube: youtube::Settings,
+    /// Switch the playing song to a better copy once one is ready (docs/context/streaming.md#better-copies).
+    #[serde(default = "on")]
+    pub switch_to_better: bool,
+}
+
+fn on() -> bool {
+    true
 }
 
 impl Default for Rules {
@@ -33,6 +40,7 @@ impl Default for Rules {
             max_peer_queue: 20,
             stall_timeout: 15,
             youtube: youtube::Settings::default(),
+            switch_to_better: true,
         }
     }
 }

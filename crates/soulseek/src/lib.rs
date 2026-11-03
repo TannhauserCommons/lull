@@ -49,7 +49,7 @@ use crate::peers::Peers;
 use crate::rules::{Current, Purpose};
 use crate::search::Searches;
 use crate::slskd::Slskd;
-use crate::sources::Sources;
+use crate::sources::{Ranked, Sources};
 
 pub const MIGRATIONS: Migrations = Migrations {
     owner: "soulseek",
@@ -232,8 +232,9 @@ impl Transfers for Service {
         Ok(path)
     }
 
-    /// The saving profile's copy. The one already here (streamed, or in the cache) is reused
-    /// when it passes and the profile wouldn't rank another copy higher: no second transfer.
+    /// The saving profile's copy. One already here (a better copy on its way, the one playing,
+    /// else the best in the cache) is reused when it passes and the profile wouldn't rank
+    /// another copy higher: no second transfer.
     async fn save_candidate(&self, id: &TrackId, fresh: bool) -> Result<Option<SaveCandidate>> {
         let track = self.track(id).await?;
         if (fresh || !self.sources.known(id)) && self.online.load(Ordering::Relaxed) {
@@ -241,13 +242,13 @@ impl Transfers for Service {
         }
         let rules = self.rules.get();
         let ordered = self.sources.ordered(id, track.duration, &rules, Purpose::Save);
-        let mut picks = ordered.iter().filter(|r| !r.queue_too_long);
+        let picks = ordered.iter().filter(|r| !r.queue_too_long);
         let best = picks.clone().next();
-        let here = match self.fetcher.current_source(id) {
-            Some(s) => Some(s),
-            None => self.cache.finished(id, None).await?.map(|e| e.source),
-        };
-        let reuse = here.and_then(|h| picks.find(|r| r.source.is(&h))).filter(|r| {
+        let mut here = self.fetcher.copies_here(id);
+        if here.is_empty() {
+            here.extend(self.fetcher.best_cached(&track, Purpose::Save).await?.map(|e| e.source));
+        }
+        let reusable = |r: &&Ranked| {
             r.meets
                 && best.is_some_and(|b| match rules.save.pick {
                     Pick::Fastest => true,
@@ -256,7 +257,11 @@ impl Transfers for Service {
                         .quality(track.duration)
                         .beats(&r.source.quality(track.duration)),
                 })
-        });
+        };
+        let reuse = here
+            .iter()
+            .filter_map(|h| picks.clone().find(|r| r.source.is(h)))
+            .find(reusable);
         if let Some(r) = reuse.or(best) {
             return Ok(Some(SaveCandidate {
                 source: r.source.source_ref(),

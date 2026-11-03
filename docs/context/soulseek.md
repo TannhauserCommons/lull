@@ -87,7 +87,7 @@ The Soulseek server throttles an account that searches too often: seen live on 2
 | Lane, highest priority first | Waits while the searches started in the last minute number | Paused after this many unanswered searches in a row |
 |---|---|---|
 | `Play`: the song playing, being saved, or whose copies the picker lists | 30 | never |
-| `Prefetch`: songs queued next ([streaming.md](streaming.md#preloading)) | 24 | 3 |
+| `Prefetch`: songs queued next ([streaming.md](streaming.md#preloading)), and a better copy's one more search ([streaming.md](streaming.md#better-copies)) | 24 | 3 |
 | `Listener`: the listener's own search | 24 | never |
 | `Prewarm`: the catalog's top results | 12 | 2 |
 | `Availability`: whether peers share an album | 6 | 2 |

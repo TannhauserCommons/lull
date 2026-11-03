@@ -125,13 +125,17 @@ impl Cache {
             .await
     }
 
-    /// A finished file for the track that is still on disk, preferring `source` when given, then
-    /// a Soulseek copy over a YouTube one.
-    pub async fn finished(&self, track: &TrackId, source: Option<&SourceRef>) -> Result<Option<Entry>> {
+    /// The track's finished files still on disk; which one plays is the fetcher's choice
+    /// (`Fetcher::best_cached`).
+    pub async fn complete(&self, track: &TrackId) -> Result<Vec<Entry>> {
         let mut found = self.entries_for(track).await?;
         found.retain(|e| e.complete && e.path.is_file());
-        found.sort_by_key(|e| (source != Some(&e.source), youtube::is_youtube(&e.source), -e.used_at));
-        Ok(found.into_iter().next())
+        Ok(found)
+    }
+
+    /// The finished file of exactly this copy, while it is on disk.
+    pub async fn finished(&self, track: &TrackId, source: &SourceRef) -> Result<Option<Entry>> {
+        Ok(self.complete(track).await?.into_iter().find(|e| e.source == *source))
     }
 
     /// Where a YouTube copy is written: a `youtube` folder beside slskd's, so it counts against
@@ -378,7 +382,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_cached_soulseek_copy_plays_before_a_newer_youtube_one() -> Result<()> {
+    async fn the_cache_lists_finished_copies_and_finds_one_by_its_source() -> Result<()> {
         let dir = std::env::temp_dir().join(format!("lull-cache-youtube-{}", std::process::id()));
         std::fs::create_dir_all(&dir).map_err(|e| Error::internal(e.to_string()))?;
         let db = lull_core::db::Db::memory()?;
@@ -411,11 +415,11 @@ mod tests {
                 })
                 .await?;
         }
-        let played = cache.finished(&track, None).await?.map(|e| e.source);
-        let asked = cache.finished(&track, Some(&yt)).await?.map(|e| e.source);
+        let all = cache.complete(&track).await?.len();
+        let asked = cache.finished(&track, &yt).await?.map(|e| e.source);
         let _ = std::fs::remove_dir_all(&dir);
-        assert_eq!(played, Some(peer), "Soulseek's copy, though YouTube's was used last");
-        assert_eq!(asked, Some(yt), "unless the YouTube copy is asked for");
+        assert_eq!(all, 2, "both finished copies");
+        assert_eq!(asked, Some(yt), "exactly the copy asked for");
         Ok(())
     }
 

@@ -25,9 +25,11 @@ A finished copy already in the stream cache plays at once, whatever the `below` 
 
 **YouTube.** With Settings › Sources › YouTube on, the player's fetch (and a preload) turns to YouTube when no peer delivers, or none starts within `waitS` (`fallback`), or starts with YouTube while an upgrade fetch gets Soulseek's best copy beside it (`startFast`). The YouTube copy is one more attempt (`attempt` goes up), written into the cache and served the same way: [youtube.md](youtube.md#modes).
 
+**Better copies.** See [Better copies](#better-copies): a lesser copy playing gets a better one fetched beside it, and the player switches without a jump.
+
 **Switching source mid-song.** `GET /api/stream/{id}?peer=&path=` with another copy than the one playing replaces the fetch: the old one is cancelled, unless a save is completing it; then it runs on for the save, out of the player's way (no more `stream` events). The old response ends; the player opens the new one and seeks back by time (ADR-0008).
 
-**Stopping.** `DELETE /api/stream/{id}` (skip, next) cancels the fetch unless a save still needs it or a device lists it to preload. slskd keeps the partial file, and asking for the song again resumes it.
+**Stopping.** `DELETE /api/stream/{id}` (skip, next) cancels the fetch unless a save still needs it or a device lists it to preload; a better copy on its way for switching stops too, unless a save needs it. slskd keeps the partial file, and asking for the song again resumes it.
 
 **Events.** Each change publishes:
 - `stream` (to the player, only while it streams);
@@ -35,6 +37,19 @@ A finished copy already in the stream cache plays at once, whatever the `below` 
 - `job` (an Activity row).
 
 Stream status follows the fetch: `finding → queued → buffering` (under 256 KB received) `→ streaming`, with `stalled`, `fallback`, `choose` and `failed`.
+
+## Better copies
+
+When the copy the player streams is a lesser one, the best copy by the streaming profile is fetched beside it, and the player switches to it mid-song without an audible jump (ADR-0013). Settings › Sources › "Switch to a better copy while a song plays" (`sources.switchToBetter`, on by default) turns it off.
+
+- **Lesser copies** (`fetch.rs::lesser`): YouTube's (a `fallback`, or `startFast`), one below the streaming minimum (`playBest`), or a peer the fetch fell back to after better ones failed.
+- **Better** (`sources::better`): passes the streaming minimum, isn't busy beyond `maxPeerQueue` or one of the peers that failed this play; against a peer fallen back to, it must also come before it in the profile's order.
+- **When it starts.** Whenever the player streams a lesser copy: on opening the song (a preload or cached copy it joins included) and on each new attempt. Only when a better copy is known, or nothing is known yet; never for a copy the listener picked. It is an upgrade fetch (`Slot::Upgrade`, out of the player's way), Soulseek only, and the profile's `below` rule never applies to it. With no better copy left it searches once more, in the `Prefetch` lane of the [search budget](soulseek.md#search-budget), then gives up quietly. Start fast's own upgrade (the saving profile's copy) is offered the same way when it passes the streaming minimum and the cap.
+- **The offer.** The playing song's `stream` events carry `upgrade { peer, path, format, status, received, size, ready }` while one is on its way, sent again as it moves. `ready`: all of it is here, or it arrives at least 1.5 times faster than it plays (`upgrade_ready`). A finished upgrade stays in the map while the player streams the song, so it can be switched to.
+- **The switch.** The player plays the copy silently from `GET /api/stream/{id}/copy?peer=&path=` (serves whichever fetch holds that copy, changing nothing), lines it up, and calls `POST /api/stream/{id}/switch { peer, path }` right before its crossfade: the upgrade becomes the song's live fetch, and the copy before it stops once its last response ends (at most 60 s later), unless a save needs it. A manual pick of the same copy adopts it too (`?peer=&path=`).
+- **When the player can't line them up**, nothing changes mid-song and the better copy plays from the next play: the cache's choice is the best copy, not the latest ([cache.md](cache.md)).
+- **Preloads.** A song whose only cached copy is a lesser one is preloaded again when a better copy is known, so it plays that from its start.
+- **Saves.** `save_candidate` reuses the better copy on its way (or finished) before the one playing.
 
 ## Preloading
 
