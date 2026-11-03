@@ -64,10 +64,10 @@ jobs:
       - name: Performance budgets
         working-directory: tests/ui
         run: npx playwright test -c gates/playwright.config.mjs --project perf --workers 1
-      - name: Key screens and accessibility
+      - name: Key screens, accessibility, covers and Classic mode
         if: ${{ !cancelled() }}
         working-directory: tests/ui
-        run: npx playwright test -c gates/playwright.config.mjs --project screens --project a11y
+        run: npx playwright test -c gates/playwright.config.mjs --project screens --project a11y --project covers --project classic
       # The header, player bar and mini players at every width from 360 to 2560 px (gates/fit.spec.mjs).
       - name: The chrome at every width
         if: ${{ !cancelled() }}

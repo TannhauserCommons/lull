@@ -56,7 +56,13 @@
       ${row('Reset layout', 'Puts the side panel, the Now Playing column, and side-by-side search back as they came. This device only.', html`<button class="btn btn--sm" data-act="layout-reset">${icon('undo', null, 'ic-16')}Reset layout</button>`)}
       ${group('themes')}
       ${myThemes()}
-      ${App.classicSettings()}`;
+      ${classicGroup()}`;
+  }
+  /* Classic mode's group comes with Classic mode's code (skins.js), which a browser loads on first use */
+  function classicGroup() {
+    if (App.classicSettings) return App.classicSettings();
+    App.needClassic().then(function () { if (onAppearance()) App.refresh(); }, function () {});
+    return App.ui.skeleton('card', 1);
   }
   var listed = false;                              // GET /api/themes once per page; theme.changed keeps it current
   function onAppearance() { return /^\/settings\/appearance/.test(App.current.path); }

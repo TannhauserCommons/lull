@@ -1529,7 +1529,7 @@
   function pickFile(accept, then) {
     var input = document.createElement('input');
     input.type = 'file'; input.accept = accept || '.m3u,.m3u8,.csv,audio/x-mpegurl,text/csv'; input.hidden = true;
-    input.addEventListener('change', function () { if (input.files[0]) (then || App.hooks.importFile)(input.files[0]); input.remove(); });
+    input.addEventListener('change', function () { if (input.files[0]) (then || App.openFile)(input.files[0]); input.remove(); });
     document.body.appendChild(input); input.click();
   }
   var IMPORT_LABEL = { library: 'In your library', 'will-search': 'Searched on Soulseek when played', 'not-found': 'Not found' };

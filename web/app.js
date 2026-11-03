@@ -381,6 +381,49 @@
   /* re-render the current route (screens call this after their own state changes) */
   App.refresh = function () { renderRoute(true); };
 
+  /* code most visits never run loads on first use: index.html ships Classic mode (webamp-session.js, skins.js,
+     classic.js) at start only in the desktop app, whose crash recovery needs classic.js from the start. Elsewhere
+     App.needClassic() loads them, once, in order; it resolves when they have run (they register their route,
+     App.classicSettings and the .wsz import, as they do when loaded at start) */
+  var CLASSIC = ['desktop/webamp-session.js', 'screens/skins.js', 'screens/classic.js'], classicLoad = null;
+  App.needClassic = function () {
+    if (App.classicSettings && window.LullWebamp && !classicRoute().need) return Promise.resolve();
+    return classicLoad || (classicLoad = CLASSIC.reduce(function (p, src) { return p.then(function () { return loadScript(src); }); }, Promise.resolve())
+      .then(null, function (err) { classicLoad = null; throw err; }));
+  };
+  function classicRoute() { return routes.filter(function (r) { return r.pattern === '/classic'; })[0] || {}; }
+  function loadScript(src) {
+    return new Promise(function (ok, fail) {
+      var s = document.createElement('script'); s.src = src;
+      s.onload = ok; s.onerror = function () { s.remove(); fail(new Error('Couldn\'t load Classic mode. Check your connection and try again.')); };
+      document.head.appendChild(s);
+    });
+  }
+  /* opening Classic shouldn't wait for its code (a first open took ~150 ms more with the CPU slowed 6x, plus the
+     fetches): it loads as the pointer or focus reaches the way in, or the menu that lists it opens (playerMenu) */
+  function classicSoon(e) {
+    if (!e.target.closest || !e.target.closest('[data-act="classic"]')) return;
+    document.removeEventListener('pointerover', classicSoon, true); document.removeEventListener('focusin', classicSoon, true);
+    App.needClassic().then(null, function () {});    // a failed fetch is tried again, and reported, when Classic opens
+  }
+  document.addEventListener('pointerover', classicSoon, true); document.addEventListener('focusin', classicSoon, true);
+  /* and for the W key, which gives no warning: once the page has settled and the browser is idle, well after the start's
+     own reads and covers, so it never competes with them */
+  App.on('ready', function () {
+    setTimeout(function () {
+      var go = function () { App.needClassic().then(null, function () {}); };
+      if (window.requestIdleCallback) requestIdleCallback(go, { timeout: 10000 }); else go();
+    }, 15000);
+  });
+  /* until classic.js replaces it: the router loads Classic mode, then renders the real route */
+  App.route('/classic', { title: 'Classic mode', need: App.needClassic, render: function () { return ''; } });
+  /* a file opened by drop or by an Import button: a .wsz becomes the Classic skin (skins.js), anything else the
+     library's import (library.js); Classic mode loads first when it isn't here yet */
+  App.openFile = function (file) {
+    if (!/\.wsz$/i.test(file.name)) return App.hooks.importFile(file);
+    App.needClassic().then(function () { App.hooks.importFile(file); }, function (err) { App.toast(err.message, { kind: 'error', icon: 'warning' }); });
+  };
+
   /* ---------- where each page was: Back returns to it ----------
      Every history entry gets an id (history.state.lullEntry). Leaving an entry's page records where it was under that
      id: the scroll position, the element at the top third of the view and its offset (rows off screen keep an estimated
@@ -498,6 +541,14 @@
     for (var i = 0; i < routes.length; i++) {
       var m = routes[i].re.exec(loc.path);
       if (m) { route = routes[i]; route.keys.forEach(function (k, j) { if (m[j + 1] !== undefined) params[k] = decodeURIComponent(m[j + 1]); }); break; }
+    }
+    /* a route whose code loads on first use (route.need): the page showing stays until it has run, then the route
+       renders as if it had always been here (the screen it replaced its stub with) */
+    if (route && route.need) {
+      route.need().then(function () { renderRoute(isRefresh); }, function (err) {
+        App.toast(err.message, { kind: 'error', icon: 'warning' }); App.back();
+      });
+      return;
     }
     // global flags (not persisted): theme, motion, design
     if (loc.query.theme || loc.query.motion) { applyFlags(loc.query); applyPrefs(prefs); }
@@ -3476,6 +3527,7 @@
      Devices and Device view always */
   function playerMenu(anchor) {
     var t = P.current();
+    App.needClassic().then(null, function () {});      // it lists Classic mode: have it ready
     var views = [
       { label: 'Lyrics', icon: 'lyrics', run: function () { App.togglePanel('lyrics'); } },
       { label: 'Classic mode', icon: 'classic', run: function () { App.go('/classic'); } },
@@ -3848,7 +3900,7 @@
   document.addEventListener('drop', function (e) {
     if (isFileDrag(e)) {
       e.preventDefault(); fileDepth = 0; $('#drop-overlay').classList.remove('is-on');
-      var f = e.dataTransfer.files[0]; if (f) App.hooks.importFile(f);
+      var f = e.dataTransfer.files[0]; if (f) App.openFile(f);
       return;
     }
     var t = e.target.closest && e.target.closest('[data-drop]');

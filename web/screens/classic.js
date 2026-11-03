@@ -47,6 +47,8 @@
 
   /* ---------- the stage (lives on <body>, above the hidden app; kept between visits, hidden) ---------- */
   var root = null, open = false, frame = null, lastPage = null, restore = null, timers = [], visit = 0;
+  /* loaded on first use (app.js App.needClassic, in a browser): the page still showing is the one Classic is opened from */
+  if (App.current.route && App.current.path !== '/classic') lastPage = { path: App.current.path, params: App.current.params, query: App.current.query, route: App.current.route };
 
   /* remember the page Classic was opened from: leaving returns to it */
   App.on('route', function (cur) {

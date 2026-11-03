@@ -216,11 +216,10 @@
 <script src="screens/library.js"></script>
 <script src="screens/system.js"></script>
 <script src="screens/appearance.js"></script>
-<script src="desktop/webamp-session.js"></script>
-<script src="screens/skins.js"></script>
 <script src="screens/hub.js"></script>
 <script src="screens/setup.js"></script>
-<script src="screens/classic.js"></script>
-<script src="desktop/desktop.js"></script>
+<!-- the desktop app only: its bridge (desktop.js), and Classic mode from the start, as its crash recovery hands the queue
+     back through classic.js. A browser loads Classic mode on first use (App.needClassic, app.js) and has no bridge -->
+<script>if (window.__TAURI__ && !window.LullNative) document.write('<script src="desktop/webamp-session.js"><\/script><script src="screens/skins.js"><\/script><script src="screens/classic.js"><\/script><script src="desktop/desktop.js"><\/script>');</script>
 </body>
 </html>
