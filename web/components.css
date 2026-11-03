@@ -500,7 +500,9 @@ button.trow__title:hover { text-decoration: underline; text-underline-offset: 3p
 .seek--line .seek__track { top: 0; margin: 0; height: 2px; border-radius: 0; box-shadow: none; background: var(--divider); }
 .seek--line .seek__rail { display: none; }
 .seek-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--sp-3); }
-.seek-row__time { min-width: 40px; font: 700 .875rem/1 var(--f-ui); color: var(--fg-2); font-variant-numeric: tabular-nums; }
+/* both times are as wide as the song's duration reads (--time-ch, its characters, set per song by app.js): the
+   position never outgrows it, so the seek bar keeps one length from 0:00 to the end */
+.seek-row__time { min-width: calc(var(--time-ch, 4) * 1ch); font: 700 .875rem/1 var(--f-ui); color: var(--fg-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .seek-row__time:last-child { text-align: right; }
 
 /* =====================================================================
@@ -1106,7 +1108,9 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 @media (min-width: 1100px) { .app[data-ctx="open"] .ctx-scrim { opacity: 0; } }   /* 1100-1359 overlay: no scrim, click outside closes */
 
 /* =====================================================================
-   Player bar (desktop / tablet)
+   Player bar (desktop / tablet). The transport is centred on the bar: the side columns are always equal (designs keep
+   that), so nothing a side group shows or hides moves it. Each control has a fixed slot: a toggle shows pressed or not,
+   never comes and goes with panel state; only width breakpoints move controls into the "…" menu.
    ===================================================================== */
 .pbar {
   grid-area: bar; position: relative; z-index: var(--z-bar); height: var(--bar-h); margin: 0 0 21px;
@@ -1125,7 +1129,7 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 .pbar__controls .btn-icon .ic { width: 22px; height: 22px; }
 .pbar__seek { width: 100%; max-width: 640px; }
 .pbar__seek .seek { height: 24px; }
-.pbar__tools { display: flex; align-items: center; justify-content: flex-end; gap: 2px; min-width: 0; }
+.pbar__tools { position: relative; display: flex; align-items: center; justify-content: flex-end; gap: 2px; min-width: 0; }
 .pbar__tools .btn-icon .ic { width: 20px; height: 20px; }
 /* state line: a fixed tab riding on the bar's top edge, above the seek bar (no layout shift) */
 .pbar__state {
@@ -1139,7 +1143,8 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 .pbar__state .btn--quiet::before { inset: -10px -2px; }
 .pbar__state > .ic { width: 16px; height: 16px; color: var(--fg-2); flex: none; }
 .pbar__state.is-error > .ic { color: var(--heart); }
-.pbar__xfade { display: inline-flex; align-items: center; gap: 4px; font: var(--t-px); color: var(--fg-2); }
+/* "xfade" while a crossfade runs: a tag above the tools, so the buttons don't shift as it comes and goes */
+.pbar__xfade { position: absolute; right: 8px; bottom: calc(100% + 2px); display: inline-flex; align-items: center; gap: 4px; font: var(--t-px); color: var(--fg-2); }
 .pbar__private, .mini__private { display: inline-flex; align-items: center; gap: 4px; flex: none; padding: 2px 8px 2px 6px; border: 1px solid var(--accent-ui); border-radius: 999px; background: var(--panel); color: var(--fg-panel); font: var(--t-px); text-decoration: none; white-space: nowrap; }
 .pbar__private { align-self: center; }
 .pbar__private .ic, .mini__private .ic { flex: none; width: 14px; min-width: 14px; height: 14px; color: var(--accent-ui); }

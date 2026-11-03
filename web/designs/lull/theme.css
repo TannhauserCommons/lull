@@ -488,9 +488,9 @@
     grid-template-columns: minmax(200px, 1fr) 40px auto minmax(240px, 1.35fr) 40px minmax(90px, 150px) 40px auto auto 12px repeat(4, 48px);
     grid-template-areas: "now like ctl seek save vol more nc cn . t1 t2 t3 t4"; gap: 0 4px;
   }
-  /* the Now Playing column toggle (wide windows only, ADR-0007) and lull Connect's device picker (when other devices
-     are online) get their own columns inside the bar, each 0 px wide while hidden, instead of falling onto a second
-     row below the window or onto the first tray tile */
+  /* the Now Playing column toggle and lull Connect's device picker get their own columns inside the bar, instead of
+     falling onto a second row below the window or onto the first tray tile. The toggle shows wherever the window is
+     wide enough for the column (ADR-0007), whatever the panel does, so its column only changes at that width */
   :root[data-design="lull"] .pbar .pbar__nowcol { grid-area: nc; }
   :root[data-design="lull"] .pbar [data-act="connect"] { grid-area: cn; }
   :root[data-design="lull"] .pbar > .region-title { grid-area: 1 / 1 / 2 / 10; }
@@ -498,7 +498,7 @@
   :root[data-design="lull"] .pbar__now { grid-area: now; }
   :root[data-design="lull"] .pbar__controls { grid-area: ctl; padding: 0 14px 0 8px; }
   :root[data-design="lull"] .pbar__seek { grid-area: seek; }
-  :root[data-design="lull"] .pbar__xfade { grid-area: seek; justify-self: end; align-self: start; margin-top: 9px; }
+  :root[data-design="lull"] .pbar__xfade { position: static; grid-area: seek; justify-self: end; align-self: start; margin-top: 9px; }
   :root[data-design="lull"] .pbar [data-act="like"] { grid-area: like; }
   :root[data-design="lull"] .pbar [data-act="save"] { grid-area: save; }
   :root[data-design="lull"] .pbar .vol { grid-area: vol; min-width: 0; }
@@ -545,7 +545,9 @@
   :root[data-design="lull"] .pbar__tools { grid-area: tools; padding: 4px 8px 0 0; }
   :root[data-design="lull"] .pbar .vol { display: none; }
   :root[data-design="lull"] .pbar__seek { grid-area: seek; grid-template-columns: auto auto minmax(0, 1fr) auto; padding: 0 16px 6px 14px; }
-  :root[data-design="lull"] .pbar__seek::before { grid-column: auto; margin: 0 6px 0 0; }
+  /* beside the seek here, so one fixed slot (the longest caption, "streaming from peer · 100% received", ends in an
+     ellipsis) keeps the seek one length whatever the stream says */
+  :root[data-design="lull"] .pbar__seek::before { grid-column: auto; width: 14em; margin: 0 6px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* nothing playing: the seek row would be blank, so the bar is one row tall (the desk bar's 80 px) until a song loads */
   :root[data-design="lull"]:has(.pbar[data-status="idle"]) { --bar-h: 80px; }
   :root[data-design="lull"] .pbar[data-status="idle"] { grid-template-rows: 1fr; grid-template-areas: "now ctl tools"; }

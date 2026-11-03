@@ -528,7 +528,7 @@
 :root[data-design="petal"] .bezel-thumb:hover { background: var(--panel-2); }
 :root[data-design="petal"] .pbar__save-step { border-radius: 2px; }
 @media (min-width: 1100px) and (max-width: 1359px) {
-  :root[data-design="petal"] .pbar { grid-template-columns: minmax(180px, 1fr) minmax(300px, 1.2fr) auto; }
+  :root[data-design="petal"] .pbar { grid-template-columns: minmax(180px, 1fr) minmax(300px, 1.2fr) minmax(180px, 1fr); }   /* equal sides: the transport stays centred */
   :root[data-design="petal"] .pbar__badges .src-badge { display: none; }
 }
 @media (max-width: 1099px) { :root[data-design="petal"] .pbar__badges { display: none; } }

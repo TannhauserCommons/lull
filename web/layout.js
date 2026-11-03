@@ -10,8 +10,12 @@
      width (`live`) is the one shown, through --ctx-drag / --now-drag on the elements that read it (components.css
      says why), so the column follows the pointer each frame; it is saved when the drag ends.
    - The Now Playing column (.nowcol, from `wide`): beside the main area in the same grid cell, so no design's shell
-     grid changes. It is offered when the main area would stay `wide` with it open, so opening it never takes itself
-     away; App.nowColumn (now.js) fills it. Closed on /now, which shows all of it already. */
+     grid changes. App.nowColumn (now.js) fills it. Closed on /now, which shows all of it already.
+     It and the docked side panel follow one rule (docs/context/web.md, Layout):
+     - the column is offered when the main area stays `wide` beside it with the panel at its strip: the window's width
+       alone decides, so its button never comes and goes as the panel opens or closes;
+     - both are open when the main area stays `wide` beside both; otherwise opening one closes the other (the column's
+       choice is forgotten, the panel collapses to its strip), and closing it brings nothing back. */
 (function () {
   'use strict';
   var $ = App.$, $$ = App.$$, clamp = App.clamp;
@@ -67,11 +71,18 @@
   function nowShown() { var v = app.getAttribute('data-nowcol'); return v === 'open' || v === 'strip'; }
   function nowOpen() { return live.now || L.nowWidth || NOW_DEFAULT; }
   function nowWidth() { return L.nowColumn === 'strip' ? STRIP : L.nowWidth || NOW_DEFAULT; }
-  function apply() {
-    /* the main area's width without the Now column decides whether the column is offered (no feedback loop) */
+  function panelExpanded() { return docked() && !L.panelCollapsed; }
+  /* the main area's width with the Now column closed and the panel at its strip (no feedback loop: it doesn't change
+     as either opens), and what the expanded panel takes from it */
+  function freeWidth() {
     var shownW = nowShown() ? (app.getAttribute('data-nowcol') === 'strip' ? STRIP : nowOpen()) + GAP : 0;
-    var offered = rank(classOf(mainW + shownW)) >= rank('wide');
-    var show = offered && L.nowColumn && app.getAttribute('data-screen') !== 'now';
+    return mainW + shownW + (panelExpanded() ? current('panel') - STRIP : 0);
+  }
+  function wideAt(w) { return rank(classOf(w)) >= rank('wide'); }
+  function bothFit() { return wideAt(freeWidth() - (current('panel') - STRIP)); }
+  function apply() {
+    var offered = wideAt(freeWidth());
+    var show = offered && L.nowColumn && app.getAttribute('data-screen') !== 'now' && (!panelExpanded() || bothFit());
     toggleAttr('data-nowcol-ok', offered ? '' : null);
     toggleAttr('data-nowcol', show ? L.nowColumn : null);
     prop(app, '--now-w', nowWidth() + 'px');
@@ -165,9 +176,19 @@
 
   /* ---------- the Now Playing column ---------- */
   function setNow(v) { App.layout.set({ nowColumn: v }); }
-  App.action('now-column', function () { setNow(nowShown() ? false : 'open'); });
+  /* opening one of the two closes the other when the main area wouldn't stay wide beside both (the rule above);
+     app.js calls this as the panel opens docked */
+  App.layout.makeRoom = function (opening) {
+    if (opening === 'panel' && L.nowColumn && !bothFit()) setNow(false);
+    if (opening === 'now' && panelExpanded() && !bothFit()) App.closePanel();
+  };
+  App.action('now-column', function () {
+    if (nowShown()) { setNow(false); return; }
+    App.layout.makeRoom('now');
+    setNow('open');
+  });
   App.action('nowcol-collapse', function () { setNow('strip'); });
-  App.action('nowcol-expand', function () { setNow('open'); });
+  App.action('nowcol-expand', function () { App.layout.makeRoom('now'); setNow('open'); });
   var lastNow = null;
   new MutationObserver(function () {
     var v = app.getAttribute('data-nowcol');

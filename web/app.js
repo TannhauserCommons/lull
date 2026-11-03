@@ -2356,6 +2356,7 @@
       setAttr(el, 'aria-valuenow', Math.round(f * 100));
       setAttr(el, 'aria-valuetext', valText);
     });
+    $$('.seek-row').forEach(function (el) { setVar(el, '--time-ch', fmtTime(dur, !ps.durationKnown).length); });
     $$('[data-bind="pos"]').forEach(function (el) { setText(el, fmtTime(ps.pos)); });
     $$('[data-bind="dur"]').forEach(function (el) { setText(el, fmtTime(dur, !ps.durationKnown)); });
     $$('[data-bind="buffered-to"]').forEach(function (el) { setText(el, fmtTime(bufTo)); });
@@ -2697,7 +2698,7 @@
   App.openPanel = function (tab) {
     if (tab) state.ctxTab = tab;
     var app = $('#app');
-    if (window.innerWidth >= 1360) { app.setAttribute('data-ctx', 'docked'); App.layout.set({ panelCollapsed: false }); }
+    if (window.innerWidth >= 1360) { app.setAttribute('data-ctx', 'docked'); App.layout.makeRoom('panel'); App.layout.set({ panelCollapsed: false }); }
     else app.setAttribute('data-ctx', 'open');
     renderCtx();
     var body = $('#ctx-body'); if (body && app.getAttribute('data-ctx') === 'open') setTimeout(function () { var t = $('.seg__btn[aria-selected="true"]', $('#ctx')); if (t) t.focus(); }, 60);

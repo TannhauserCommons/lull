@@ -287,10 +287,21 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
 - **Now Playing column.**
   - It's `.nowcol`, in the main grid cell; `.main` gives it room with a right margin. Contents: art, transfer state
     and synced lyrics (`App.nowColumn`, now.js).
-  - A player bar button opens it from `wide` (`.app[data-nowcol-ok]`). It counts as offered when the main area
-    would stay `wide` with it open, so opening it can't take the button away.
+  - It's offered (`.app[data-nowcol-ok]`, the player bar's button shows) when the main area stays `wide` beside it
+    with the docked panel at its strip: the window's width alone decides, so the button never comes and goes as the
+    panel opens or closes.
+  - **It and the docked side panel:** both stay open when the main area stays `wide` beside both. Otherwise opening
+    one closes the other: opening the column collapses the panel to its strip; opening the panel closes the column
+    and forgets it, so closing the panel brings nothing back (`App.layout.makeRoom`). A window narrowed until both
+    no longer fit hides the column until it is wide enough again. Below 1360 px the panel opens over the page and
+    takes nothing from the column. Checked in all five designs at 1280, 1440 and 1920 px.
   - `.app[data-nowcol="open|strip"]` shows it; it's hidden on `/now`. Resizable from 300 to 560 px (`--now-w`) and
     collapsible to a strip.
+- **Player bar.** The transport is centred on the bar: the side columns are equal in every design, so nothing the
+  sides show or hide moves it. Every control has a fixed slot (toggles show pressed or not, the crossfade tag floats
+  above the tools); only width breakpoints move tools into the "…" menu, which always lists Lyrics, Classic mode and
+  Device view. The seek keeps one length: the time cells are as wide as the song's duration reads (`--time-ch`) and
+  a design's status caption has one slot sized for its longest word.
 - **Resize handles.**
   - Pointer: a drag, throttled to animation frames, that the column follows live and that is saved when it ends;
     double-click restores the default. While it runs, the width is `--ctx-drag` / `--now-drag` (registered, not
