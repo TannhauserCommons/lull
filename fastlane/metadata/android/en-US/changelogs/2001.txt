@@ -1,0 +1,8 @@
+* An equaliser for everyone: Bass, Treble and presets, shared with Classic
+* Add a song to several playlists at once
+* Shared lull links open in your own lull
+* Same search results for everyone on a hub
+* Steady memory during long listening; the app recovers by itself if its page stops
+* Sharper covers, fetched once and ahead of time
+* Now Playing shows the same facts in every design
+* Classic sizes from 1x to 3x
