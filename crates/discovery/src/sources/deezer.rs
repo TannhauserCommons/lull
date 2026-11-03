@@ -100,6 +100,34 @@ impl Deezer {
             .await
     }
 
+    /// Songs only, for finding a song another service names (a playlist link): kept a day.
+    pub async fn tracks(&self, q: &str) -> Result<Vec<SongHit>> {
+        self.cache
+            .get(format!("dz:tracks:{q}"), DAY, || async {
+                songs(self.get("search/track", &[("q", q), ("limit", "10")]).await?)
+            })
+            .await
+    }
+
+    /// The song with this ISRC (12 letters and digits), kept a month. A lookup by ISRC answers
+    /// even where Deezer's catalog is closed.
+    pub async fn by_isrc(&self, isrc: &str) -> Result<Option<SongHit>> {
+        if isrc.len() != 12 || !isrc.bytes().all(|b| b.is_ascii_alphanumeric()) {
+            return Ok(None);
+        }
+        self.cache
+            .get(format!("dz:isrc:{isrc}"), 30 * DAY, || async {
+                let body = self.get(&format!("track/isrc:{isrc}"), &[]).await?;
+                if body.get("data").is_some() {
+                    return Ok(None); // "no data": Deezer has no song with it
+                }
+                let track: RawTrack = serde_json::from_value(body)
+                    .map_err(|e| Error::upstream(SERVICE, format!("unexpected track answer: {e}")))?;
+                Ok(Some(hit(track)))
+            })
+            .await
+    }
+
     /// Whether Deezer's catalog is open where lull runs (`/infos`).
     pub async fn is_open(&self) -> Result<bool> {
         self.wait_turn().await;
@@ -419,20 +447,21 @@ pub fn artist_releases(body: Value) -> Result<Vec<Entry>> {
 }
 
 pub fn songs(body: Value) -> Result<Vec<SongHit>> {
-    Ok(Page::<RawTrack>::of(body, "tracks")?
-        .into_iter()
-        .map(|t| SongHit {
-            title: t.title,
-            artist: t.artist.name,
-            album: t.album.title,
-            duration: t.duration.filter(|d| *d > 0),
-            isrcs: t.isrc.into_iter().collect(),
-            popularity: t.rank.map_or(0.0, |r| popularity(r, FULL_RANK)),
-            art: t.album.md5_image.as_deref().and_then(|m| picture("cover", m)),
-            album_source: t.album.id.map(AlbumSource::Deezer),
-            ..SongHit::default()
-        })
-        .collect())
+    Ok(Page::<RawTrack>::of(body, "tracks")?.into_iter().map(hit).collect())
+}
+
+fn hit(t: RawTrack) -> SongHit {
+    SongHit {
+        title: t.title,
+        artist: t.artist.name,
+        album: t.album.title,
+        duration: t.duration.filter(|d| *d > 0),
+        isrcs: t.isrc.into_iter().collect(),
+        popularity: t.rank.map_or(0.0, |r| popularity(r, FULL_RANK)),
+        art: t.album.md5_image.as_deref().and_then(|m| picture("cover", m)),
+        album_source: t.album.id.map(AlbumSource::Deezer),
+        ..SongHit::default()
+    }
 }
 
 /// An `album/{id}/tracks` answer as the album's songs, in order. The album's own name and

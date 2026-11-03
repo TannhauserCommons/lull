@@ -8,6 +8,7 @@ publish.workspace = true
 
 [dependencies]
 lull-core.workspace = true
+async-trait.workspace = true
 axum.workspace = true
 # Query strings for ListenBrainz, MusicBrainz and Last.fm reads.
 reqwest = { workspace = true, features = ["query"] }

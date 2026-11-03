@@ -36,6 +36,8 @@ const SONGS: &str = "25";
 const ALBUMS: &str = "25";
 /// Answers are kept this long (seconds).
 const KEEP_S: i64 = 600;
+/// Songs looked up to match another service's song are kept this long (seconds).
+const KEEP_MATCH_S: i64 = 7 * DAY;
 
 pub struct Itunes {
     http: Http,
@@ -56,6 +58,40 @@ impl Itunes {
 
     pub fn country(&self) -> &str {
         &self.country
+    }
+
+    /// Songs for finding a song another service names (a playlist link): kept a week, and only
+    /// with the calls the listener's own searches leave spare, waiting for one when none is.
+    pub async fn match_songs(&self, q: &str) -> Result<Vec<SongHit>> {
+        let key = format!("it:match:{}:{q}", self.country);
+        if let Some(found) = self.cache.fresh(key.clone(), KEEP_MATCH_S).await? {
+            return Ok(found);
+        }
+        loop {
+            let free_at = self
+                .budget
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .take_spare_or_wait(Instant::now());
+            match free_at {
+                None => break,
+                Some(at) => tokio::time::sleep_until(at).await,
+            }
+        }
+        let body: Value = self
+            .http
+            .json(SERVICE, |c| {
+                c.get(API).query(&[
+                    ("term", q),
+                    ("entity", "song"),
+                    ("limit", "10"),
+                    ("country", self.country.as_str()),
+                ])
+            })
+            .await?;
+        let found = songs(body)?.songs;
+        self.cache.put(key, &found).await?;
+        Ok(found)
     }
 
     /// Songs for `q` with the albums they are on, and albums by their own name. Empty when the
@@ -409,6 +445,15 @@ impl Budget {
         self.spend(now, BUDGET - SONGS_RESERVE)
     }
 
+    /// `take_spare`, or when it can't, the time a spare call frees up.
+    pub fn take_spare_or_wait(&mut self, now: Instant) -> Option<Instant> {
+        let up_to = BUDGET - SONGS_RESERVE;
+        if self.spend(now, up_to) {
+            return None;
+        }
+        Some(self.sent[self.sent.len() - up_to] + BUDGET_WINDOW)
+    }
+
     fn spend(&mut self, now: Instant, up_to: usize) -> bool {
         while self.sent.front().is_some_and(|t| *t + BUDGET_WINDOW <= now) {
             self.sent.pop_front();
@@ -591,4 +636,20 @@ fn sized(url: &str) -> Option<String> {
     let (base, file) = url.rsplit_once('/')?;
     let ext = file.strip_prefix("100x100bb")?;
     Some(format!("{base}/{{size}}x{{size}}bb{ext}"))
+}
+
+#[cfg(test)]
+mod budget_tests {
+    use super::*;
+
+    #[test]
+    fn matching_waits_for_a_spare_call_and_leaves_the_reserve_to_searches() {
+        let (mut b, now) = (Budget::default(), Instant::now());
+        for _ in 0..BUDGET - SONGS_RESERVE {
+            assert_eq!(b.take_spare_or_wait(now), None);
+        }
+        assert_eq!(b.take_spare_or_wait(now), Some(now + BUDGET_WINDOW));
+        assert!(b.take(now), "the listener's search still has its reserve");
+        assert_eq!(b.take_spare_or_wait(now + BUDGET_WINDOW), None);
+    }
 }

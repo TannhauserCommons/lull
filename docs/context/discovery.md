@@ -145,6 +145,14 @@ Code: `src/search/` (`mod.rs` runs a query, `merge.rs` merges and ranks), `src/a
 - **Artwork:** the store's cover at 600 px (`…/600x600bb.jpg`), else the public source the catalog knows for the album or artist (Deezer, iTunes, the Cover Art Archive) at 600 px, else `null`.
 - **Cached** in `discovery_cache` (`share:<kind>:<id>`): store links 30 days, Last.fm fallbacks 1 day, so a release that reaches the store later gets its link. An expired answer is served when iTunes fails. One link is resolved at a time, so the same link asked for twice at once costs one call. iTunes calls share the 18-a-minute budget with search; with it spent and nothing cached the answer is 503.
 
+## Matching another service's songs (the `Catalog` seam)
+
+Collection's playlist link imports ask `Catalog::find_song` for each song a Spotify, Deezer, YouTube or SoundCloud playlist names (`search/matching.rs`).
+- **Order:** the library's copy (search's library half, `artist title`); then the fast catalog. Where Deezer is open: `track/isrc:<isrc>` when the source gives one, else `search/track` (10). Where it is closed: iTunes `entity=song` (10), then Deezer by ISRC, which answers in every country.
+- **Same song:** search's rule (`merge::same_song`: a shared ISRC, or loose artist and title with lengths within 3 s), tried with the whole credit and each name in it ("Daft Punk, Pharrell Williams", "A feat. B"), so a credit with a comma in a name ("Tyler, The Creator") still matches as a whole. The first hit in the catalog's order that is the same song wins.
+- **Recorded** like a search row (track, album with its cover, catalog source), so the id resolves and the album page opens.
+- **Limits:** iTunes match lookups spend only the calls the listener's searches leave spare (12 of 18 a minute), waiting for one rather than skipping, and are kept 7 days (`it:match:`). Deezer name lookups are kept a day, ISRC lookups 30 days, inside Deezer's shared window.
+
 ## Ids
 
 Album and artist ids are hashes (`lull_core::ids`), so discovery remembers every album and artist it shows (`discovery_albums`, `discovery_artists`), and every album's artist with it (with the MBID the release names), so an album's artist link resolves. An unknown id falls back to the catalog: the first track with that `albumId` / `artistId`. Tracks go to the catalog. An id the catalog already has keeps every fact it has, because another crate may have added file facts. Discovery only fills its gaps: year, number, disc, length and tags.
