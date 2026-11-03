@@ -105,6 +105,17 @@ jobs:
             config='{}'
           fi
           npx tauri build --ci --bundles ${{ matrix.bundles }} --config "$config"
+          # The bundler names the installer lull_<v>_x64-setup.exe; the Release says Windows in it
+          # (lull_<v>_windows-x64-setup.exe), so nobody has to guess. Renamed before latest.json's
+          # entries are written, so the updater points at the new name; the signature covers the
+          # bytes, not the name.
+          if [ "$RUNNER_OS" = Windows ]; then
+            for f in target/release/bundle/nsis/*-setup.exe target/release/bundle/nsis/*-setup.exe.sig; do
+              [ -f "$f" ] || continue
+              case "$(basename "$f")" in *_windows-*) continue ;; esac
+              mv "$f" "$(dirname "$f")/$(basename "$f" | sed -E 's/_(x64|arm64)-setup/_windows-\1-setup/')"
+            done
+          fi
           # The updater updates a .deb or .rpm install from its own kind of package, so those need a
           # signature too; the bundler signs only what it re-uses itself (the AppImage, the installer).
           if [ "$GITHUB_REF_TYPE" = tag ] && [ "$RUNNER_OS" = Linux ]; then
