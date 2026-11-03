@@ -31,8 +31,10 @@ const RESTART_GAP: Duration = Duration::from_secs(600);
 const LOG_LIMIT: u64 = 256 * 1024;
 const LOG: &str = "webview.log";
 
-/// Which process died, as the platform says it.
+/// Which process died, as the platform says it. WebKitGTK only ever reports the page's own process:
+/// the others are WebView2's.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(not(windows), allow(dead_code))]
 pub enum Process {
     /// The window's page (its renderer) exited or crashed.
     Renderer,
