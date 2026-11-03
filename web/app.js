@@ -37,6 +37,15 @@
   function icon(name, label, cls) { return raw(window.icon(name, label, cls)); }
   function $(sel, root) { return (root || document).querySelector(sel); }
   function $$(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
+  /* $$ over the whole page for what the clock and the player bar update several times a second: querySelectorAll walks
+     every element (~1.4 ms each on an 834-song playlist's 34k), so each answer is kept until the page's structure or
+     an attribute a selector could match on changes. takeRecords() makes that exact within the same task. */
+  var kept = {}, keptWatch = new MutationObserver(function () { kept = {}; });
+  keptWatch.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'id', 'data-bind', 'data-seek'] });
+  function $$kept(sel) {
+    if (keptWatch.takeRecords().length) kept = {};
+    return kept[sel] || (kept[sel] = $$(sel));
+  }
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
   function fmtTime(sec, estimated) {
     sec = Math.max(0, Math.round(sec || 0));
@@ -2531,8 +2540,8 @@
     var valText = fmtTime(ps.pos) + ' of ' + (ps.durationKnown ? '' : 'about ') + fmtTime(dur) + (ps.received < 1 ? ', downloaded to ' + fmtTime(bufTo) : '');
     var transferring = ps.received < 1 && (ps.status === 'streaming' || ps.status === 'buffering');
     // player bar + mini: play state and the received percentage (an integer, usable as counter(rx) in CSS)
-    ['#pbar', '#mini'].forEach(function (s) { var el = $(s); if (!el) return; setAttr(el, 'data-playing', !!ps.playing); setVar(el, '--rx', Math.round(ps.received * 100)); });
-    $$('.seek[data-seek="player"]').forEach(function (el) {
+    ['pbar', 'mini'].forEach(function (s) { var el = document.getElementById(s); if (!el) return; setAttr(el, 'data-playing', !!ps.playing); setVar(el, '--rx', Math.round(ps.received * 100)); });
+    $$kept('.seek[data-seek="player"]').forEach(function (el) {
       setVar(el, '--pos', f.toFixed(4));
       setVar(el, '--xfer', ps.received.toFixed(4));
       if (el.classList.contains('is-transferring') !== transferring) el.classList.toggle('is-transferring', transferring);
@@ -2544,7 +2553,7 @@
       setAttr(el, 'aria-valuenow', Math.round(f * 100));
       setAttr(el, 'aria-valuetext', valText);
     });
-    $$('.wave[data-seek="player"]').forEach(function (el) {
+    $$kept('.wave[data-seek="player"]').forEach(function (el) {
       var bars = $$('.wave__bar', el), n = bars.length;
       setVar(el, '--pos', f.toFixed(4));
       var moving = ps.playing && ps.status !== 'buffering';
@@ -2557,13 +2566,13 @@
       setAttr(el, 'aria-valuenow', Math.round(f * 100));
       setAttr(el, 'aria-valuetext', valText);
     });
-    $$('.seek-row').forEach(function (el) { setVar(el, '--time-ch', fmtTime(dur, !ps.durationKnown).length); });
-    $$('[data-bind="pos"]').forEach(function (el) { setText(el, fmtTime(ps.pos)); });
-    $$('[data-bind="dur"]').forEach(function (el) { setText(el, fmtTime(dur, !ps.durationKnown)); });
-    $$('[data-bind="buffered-to"]').forEach(function (el) { setText(el, fmtTime(bufTo)); });
-    $$('[data-bind="received"]').forEach(function (el) { setText(el, Math.round(ps.received * 100) + '%'); });
+    $$kept('.seek-row').forEach(function (el) { setVar(el, '--time-ch', fmtTime(dur, !ps.durationKnown).length); });
+    $$kept('[data-bind="pos"]').forEach(function (el) { setText(el, fmtTime(ps.pos)); });
+    $$kept('[data-bind="dur"]').forEach(function (el) { setText(el, fmtTime(dur, !ps.durationKnown)); });
+    $$kept('[data-bind="buffered-to"]').forEach(function (el) { setText(el, fmtTime(bufTo)); });
+    $$kept('[data-bind="received"]').forEach(function (el) { setText(el, Math.round(ps.received * 100) + '%'); });
     var vol = ps.muted ? 0 : ps.volume;
-    $$('.seek[data-seek="volume"]').forEach(function (el) {
+    $$kept('.seek[data-seek="volume"]').forEach(function (el) {
       setVar(el, '--pos', vol.toFixed(3)); setVar(el, '--xfer', 0);
       setAttr(el, 'aria-valuenow', Math.round(vol * 100)); setAttr(el, 'aria-valuetext', ps.muted ? 'Muted' : Math.round(vol * 100) + '%');
     });
@@ -3024,25 +3033,25 @@
     } else { stEl.hidden = true; stEl.innerHTML = ''; }
     // transport
     var busy = st === 'finding' || st === 'queued' || st === 'buffering' || st === 'stalled';
-    $$('[data-bind="play"]').forEach(function (b) {
+    $$kept('[data-bind="play"]').forEach(function (b) {
       var playingNow = ps.playing && !idle && st !== 'ended' && st !== 'failed';
       b.setAttribute('aria-label', playingNow ? 'Pause' : 'Play'); b.setAttribute('data-tip', playingNow ? 'Pause (Space)' : 'Play (Space)');
       $('use', b).setAttribute('href', '#i-' + (playingNow ? 'pause' : 'play'));
       $('svg', b).classList.toggle('ic-play', !playingNow);
       b.classList.toggle('is-buffering', busy && ps.playing);
     });
-    $$('[data-bind="shuffle"]').forEach(function (b) { b.setAttribute('aria-pressed', String(ps.shuffle)); });
-    $$('[data-bind="repeat"]').forEach(function (b) {
+    $$kept('[data-bind="shuffle"]').forEach(function (b) { b.setAttribute('aria-pressed', String(ps.shuffle)); });
+    $$kept('[data-bind="repeat"]').forEach(function (b) {
       b.setAttribute('aria-pressed', String(ps.repeat !== 'off'));
       var label = { off: 'Repeat off', all: 'Repeat all', one: 'Repeat one' }[ps.repeat];
       b.setAttribute('aria-label', label); b.setAttribute('data-tip', label + ' (R)');
       $('use', b).setAttribute('href', '#i-' + (ps.repeat === 'one' ? 'repeat-one' : 'repeat'));
     });
-    $$('[data-bind="like"]').forEach(function (b) {
+    $$kept('[data-bind="like"]').forEach(function (b) {
       if (!t) { b.disabled = true; b.removeAttribute('data-like'); b.setAttribute('aria-pressed', 'false'); b.classList.remove('is-liked'); $('use', b).setAttribute('href', '#i-heart'); return; } b.disabled = false;
       b.setAttribute('data-like', t.id); b.setAttribute('data-id', t.id); b.removeAttribute('aria-pressed');
     });
-    $$('[data-bind="save"]').forEach(function (b) {
+    $$kept('[data-bind="save"]').forEach(function (b) {
       if (!t) { b.disabled = true; return; } b.disabled = false;
       var sv = state.saves[t.id], saved = App.isSaved(t.id), stp = $('.pbar__save-step', b);
       var label = saved ? 'Saved to library' : sv && sv.status === 'saving' ? 'Saving, step ' + sv.step + ' of 5' : sv && sv.status === 'failed' ? 'Save failed, retry' : 'Save to library (Shift+S)';
@@ -3052,13 +3061,13 @@
       if (sv && sv.status === 'saving') { if (!stp) { stp = document.createElement('span'); stp.className = 'pbar__save-step'; stp.setAttribute('aria-hidden', 'true'); b.appendChild(stp); } stp.textContent = sv.step + '/5'; }
       else if (stp) stp.remove();
     });
-    $$('[data-bind="mute"]').forEach(function (b) {
+    $$kept('[data-bind="mute"]').forEach(function (b) {
       var v = ps.muted ? 0 : ps.volume;
       $('use', b).setAttribute('href', '#i-' + (ps.muted ? 'mute' : v === 0 ? 'volume-0' : v < .5 ? 'volume-1' : 'volume-2'));
       b.setAttribute('aria-label', ps.muted ? 'Unmute (M)' : 'Mute (M)'); b.setAttribute('data-tip', ps.muted ? 'Unmute (M)' : 'Mute (M)');
       b.setAttribute('aria-pressed', String(ps.muted));
     });
-    $$('[data-bind="xfade"]').forEach(function (el) { el.hidden = !ps.crossfade; });
+    $$kept('[data-bind="xfade"]').forEach(function (el) { el.hidden = !ps.crossfade; });
     // mini-player text
     setText($('#mini-title'), idle ? 'Nothing playing' : t.title);
     /* the artist, and where the song plays from (the whole text opens Now Playing, whose "Playing from" opens it);
