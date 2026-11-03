@@ -260,7 +260,7 @@
       </div>`;
   }
 
-  /* ---------- partial re-renders (focus stays where it was) ---------- */
+  /* ---------- partial re-renders: patched (web.md), so the tabs' indicator slides and focus stays where it was ---------- */
   function focusKey(scope) {
     var a = document.activeElement;
     if (!a || !scope.contains(a)) return null;
@@ -272,7 +272,7 @@
     var el = $(id);
     if (!el) return;
     var k = focusKey(el), top = el.scrollTop;
-    el.innerHTML = String(markup);
+    App.patch(el, markup);
     el.scrollTop = top;
     if (!k) return;
     var f = $(k, el) || (fallback && $(fallback));

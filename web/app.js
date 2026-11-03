@@ -2172,6 +2172,61 @@
     App.emit('announce', 'Not downloaded yet, ' + Math.round(d.received * 100) + ' percent');
   });
 
+  /* segmented controls: the indicator sits on the selected button, measured (--seg-x, --seg-w on .seg__ind). A .seg's
+     columns are equal only while every label fits its share, and a design may add gaps; until the first measure the
+     CSS equal split stands in. Placed when a .seg appears, when its selection changes and when a button resizes; it
+     slides only when the selection moves. A refresh's patch strips the indicator's inline style, so that re-places it */
+  var SEG_PICKED = ['aria-selected', 'aria-checked', 'aria-pressed'];
+  var segs = new Set(), segWatched = new WeakSet(), segLast = new WeakMap();
+  function segPicked(s) {
+    return $$('.seg__btn', s).filter(function (b) { return SEG_PICKED.some(function (a) { return b.getAttribute(a) === 'true'; }); })[0];
+  }
+  function placeSeg(s) {
+    var b = segPicked(s), ind = $('.seg__ind', s), sr = s.getBoundingClientRect();
+    if (!b || !ind || !sr.width) return;                     // nothing picked (the CSS hides it), or not rendered
+    var k = Math.abs(sr.width - s.offsetWidth) > 1 ? s.offsetWidth / sr.width : 1, br = b.getBoundingClientRect();   // k undoes a scaled ancestor
+    var at = { btn: b, x: ((br.left - sr.left) * k - s.clientLeft).toFixed(2) + 'px', w: (br.width * k).toFixed(2) + 'px' };
+    var last = segLast.get(s), slide = last && last.btn !== b && last.btn.isConnected;
+    segLast.set(s, at);
+    if (!slide && ind.style.getPropertyValue('--seg-x') === at.x && ind.style.getPropertyValue('--seg-w') === at.w) return;
+    var from = slide ? last : at;                             // a slide starts from where it was, even after a patch
+    ind.style.transition = 'none';
+    ind.style.setProperty('--seg-x', from.x); ind.style.setProperty('--seg-w', from.w);
+    void ind.offsetWidth;
+    ind.style.removeProperty('transition');
+    if (slide) { ind.style.setProperty('--seg-x', at.x); ind.style.setProperty('--seg-w', at.w); }
+  }
+  var segSizes = new ResizeObserver(function (entries) {
+    var seen = new Set();
+    entries.forEach(function (e) { var s = e.target.closest('.seg'); if (s && !seen.has(s)) { seen.add(s); placeSeg(s); } });
+    segMarks.takeRecords();                                   // our own writes
+  });
+  function watchSeg(s) {
+    segs.add(s);
+    [s].concat($$('.seg__btn', s)).forEach(function (el) { if (!segWatched.has(el)) { segWatched.add(el); segSizes.observe(el); } });
+  }
+  var segMarks = new MutationObserver(function (records) {
+    var touched = new Set();
+    records.forEach(function (r) {
+      var t = r.target.nodeType === 1 ? r.target : r.target.parentNode, s = t && t.closest && t.closest('.seg');
+      if (s) touched.add(s);
+      if (r.type !== 'childList') return;
+      r.addedNodes.forEach(function (n) {
+        if (n.nodeType !== 1) return;
+        if (n.matches('.seg')) touched.add(n);
+        n.querySelectorAll('.seg').forEach(function (x) { touched.add(x); });
+      });
+      if (r.removedNodes.length) segs.forEach(function (x) {
+        if (x.isConnected) return;
+        segs.delete(x); [x].concat($$('.seg__btn', x)).forEach(function (el) { segWatched.delete(el); segSizes.unobserve(el); });
+      });
+    });
+    touched.forEach(function (s) { if (s.isConnected) { watchSeg(s); placeSeg(s); } });
+    segMarks.takeRecords();
+  });
+  segMarks.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: SEG_PICKED.concat('style') });
+  $$('.seg').forEach(function (s) { watchSeg(s); placeSeg(s); });
+
   /* =====================================================================
      10. Shell: rail, header, status tray, context panel, player bar, mini-player, tab bar
      ===================================================================== */
