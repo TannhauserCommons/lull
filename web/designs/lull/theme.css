@@ -765,9 +765,11 @@
 :root[data-design="lull"] .pipeline__seg:nth-child(3)::after { content: "cover"; }
 :root[data-design="lull"] .pipeline__seg:nth-child(4)::after { content: "tag"; }
 :root[data-design="lull"] .pipeline__seg:nth-child(5)::after { content: "rescan"; }
-:root[data-design="lull"] .pipeline-wrap:not(:has(.pipeline__seg[class*="is-"])) .pipeline { display: none; }
-:root[data-design="lull"] .pipeline-wrap:not(:has(.pipeline__seg[class*="is-"])) .pipeline__step::first-letter { text-transform: uppercase; }
-:root[data-design="lull"] .pipeline-wrap:not(:has(.pipeline__seg[class*="is-"])) .pipeline__label { display: inline; font: 700 .8125rem/1.3 var(--f-ui); color: var(--fg-2); }
+/* nothing saved yet (now.js marks it --idle: a :not(:has()) on an ancestor here made every class change on the page
+   restyle the whole page) */
+:root[data-design="lull"] .pipeline-wrap--idle .pipeline { display: none; }
+:root[data-design="lull"] .pipeline-wrap--idle .pipeline__step::first-letter { text-transform: uppercase; }
+:root[data-design="lull"] .pipeline-wrap--idle .pipeline__label { display: inline; font: 700 .8125rem/1.3 var(--f-ui); color: var(--fg-2); }
 
 /* =====================================================================
    Tabs, switches, inputs
@@ -852,7 +854,9 @@
 /* a failed track has one owner on Now Playing: the pocket screen says it and offers retry / pick source; the dock's
    state tab only mirrors the words, and the source window drops its duplicate buttons */
 @media (min-width: 640px) {
-  :root[data-design="lull"]:has(.pbar[data-status="failed"]) .now-srccard :is([data-act="retry-search"], [data-act="pick-source"]),
+  /* page-wide :has() rules end in a class (.btn, .wave-times__buf): Chrome restyles every element the last part could
+     match on each DOM insertion, so [data-act] or span alone restyled the whole page */
+  :root[data-design="lull"]:has(.pbar[data-status="failed"]) .now-srccard .btn:is([data-act="retry-search"], [data-act="pick-source"]),
   :root[data-design="lull"] .app[data-screen="now"] .pbar__state :is(button, a) { display: none; }
 }
 :root[data-design="lull"] .scrim { background: var(--scrim); }
@@ -1220,8 +1224,8 @@
   :root[data-design="lull"] .now-srccard .pipeline__seg { height: 8px; margin-bottom: 0; }
   :root[data-design="lull"] .now-srccard .pipeline__seg::after, :root[data-design="lull"] .now-srccard .pipeline__seg .ic { display: none; }
   :root[data-design="lull"] .now-srccard .pipeline__text { flex-wrap: nowrap; min-width: 0; }
-  :root[data-design="lull"] .now-srccard .pipeline__label { display: none; }
-  :root[data-design="lull"] .now-srccard .pipeline-wrap:not(:has(.pipeline__seg[class*="is-"])) { grid-template-columns: minmax(0, 1fr); }
+  :root[data-design="lull"] .now-srccard .pipeline-wrap:not(.pipeline-wrap--idle) .pipeline__label { display: none; }
+  :root[data-design="lull"] .now-srccard .pipeline-wrap--idle { grid-template-columns: minmax(0, 1fr); }
   :root[data-design="lull"] .now-srccard .now-src__foot { margin: 0; }
   :root[data-design="lull"] .now-srccard .now-src__foot > * { min-height: 28px; }
   :root[data-design="lull"] .now-srccard .now-src__details:not([hidden]) { max-height: 180px; overflow: auto; }
@@ -1404,7 +1408,7 @@
   content: "Waiting for a source. The words come back as soon as a peer answers."; margin: auto; padding: 24px 40px;
   text-align: center; color: var(--fg-panel-2); font: 700 1rem/1.4 var(--f-ui);
 }
-:root[data-design="lull"]:has(.pbar[data-status="failed"]) .lull-np .wave-times > span:not(:last-child) { visibility: hidden; }
+:root[data-design="lull"]:has(.pbar[data-status="failed"]) .lull-np .wave-times__buf { visibility: hidden; }
 :root[data-design="lull"] .now-ly__gap i { background: var(--pink); }
 
 

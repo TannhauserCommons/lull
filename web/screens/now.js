@@ -306,8 +306,8 @@
     var s = App.saves.get(t.id);
     if (s) return ui.pipeline(s.step, s.status, s.error);
     if (App.isSaved(t.id)) return ui.pipeline(5, 'saved');
-    // not saved: five empty steps (pending = outline only)
-    return html`<div class="pipeline-wrap" role="group" aria-label="Save progress"><div class="pipeline">${raw(new Array(6).join('<span class="pipeline__seg" aria-hidden="true"></span>'))}</div>
+    // not saved: five empty steps (pending = outline only); --idle lets a design style it without :has()
+    return html`<div class="pipeline-wrap pipeline-wrap--idle" role="group" aria-label="Save progress"><div class="pipeline">${raw(new Array(6).join('<span class="pipeline__seg" aria-hidden="true"></span>'))}</div>
       <div class="pipeline__text"><span class="pipeline__step">not saved</span><span class="pipeline__label">Save keeps a tagged copy in your library</span></div></div>`;
   }
   function sourceDetails(t) {

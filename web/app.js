@@ -900,7 +900,7 @@
     return html`<div class="wave" data-seek="player" role="slider" tabindex="0" aria-label="Seek" aria-valuemin="0" aria-valuemax="100">${raw(out.join(''))}<div class="wave__rail"><i class="wave__head"></i></div></div>`;
   };
   ui.waveTimes = function () {
-    return html`<div class="wave-times"><b data-bind="pos">0:00</b><span>buffered to <span data-bind="buffered-to">0:00</span></span><span data-bind="dur">0:00</span></div>`;
+    return html`<div class="wave-times"><b data-bind="pos">0:00</b><span class="wave-times__buf">buffered to <span data-bind="buffered-to">0:00</span></span><span data-bind="dur">0:00</span></div>`;
   };
 
   /* save button: state from the save pipeline; re-rendered in place by App.syncRows */
