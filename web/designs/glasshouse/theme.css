@@ -1236,10 +1236,11 @@
   :root[data-design="glasshouse"] .now-devc__art { grid-area: art; }
   :root[data-design="glasshouse"] .now-devc .device__screen { grid-area: screen; grid-column: auto; }
   :root[data-design="glasshouse"] .now-devc .device__title { font: 400 1.375rem/1.1 var(--f-serif); }
-  :root[data-design="glasshouse"] .now-devc__keys { grid-area: keys; display: flex; justify-content: center; gap: 10px; }
-  :root[data-design="glasshouse"] .now-devc__skip { order: 1; }
-  :root[data-design="glasshouse"] .now-devc__keys > [data-now="ca"] { order: 2; }
-  :root[data-design="glasshouse"] .now-devc__keys > [data-now="cb"] { order: 3; }
+  /* skip keys | play | like: play in the middle column of two equal ones, on the deck's centre line */
+  :root[data-design="glasshouse"] .now-devc__keys { grid-area: keys; display: grid; grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr); gap: 10px; }
+  :root[data-design="glasshouse"] .now-devc__skip { grid-column: 1; justify-self: end; }
+  :root[data-design="glasshouse"] .now-devc__keys > [data-now="ca"] { grid-column: 2; grid-row: 1; }
+  :root[data-design="glasshouse"] .now-devc__keys > [data-now="cb"] { grid-column: 3; grid-row: 1; justify-self: start; }
 }
 
 /* =====================================================================
