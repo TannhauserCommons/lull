@@ -140,6 +140,8 @@ pub struct Listed {
     /// `duration` is the song's own length (official audio, a SoundCloud track), not a music
     /// video's with its intro.
     pub exact_length: bool,
+    /// The upload's own picture (its largest thumbnail), when the site lists one.
+    pub thumbnail: Option<String>,
 }
 
 /// The parts of a YouTube copy's path.

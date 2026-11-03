@@ -3,6 +3,13 @@
 //! it is given (queue, playlists, likes, history) without asking the crate that found it.
 //! Albums and artists found by catalog search are kept the same way, with where their picture
 //! comes from (ADR-0008).
+//!
+//! **Bare songs.** A crate that records a song from another source's text (an imported line, a
+//! playlist's song lull has no match for, a Last.fm-only result, file tags) records it bare: no
+//! album lull has a picture for. It may add what the source said (`hint`: an ISRC, its own
+//! picture). Discovery resolves bare songs when the UI shows them (`POST /api/catalog/resolve`):
+//! it finds the catalog's song and `enrich`es the bare record in place, keeping its id, and
+//! remembers each attempt here, so no crate has to resolve songs itself.
 
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -54,8 +61,21 @@ pub const MIGRATIONS: Migrations = Migrations {
            AND NOT EXISTS (SELECT 1 FROM catalog_albums own, json_each(own.json, '$.trackIds') o
                             WHERE own.id = catalog_tracks.album_id AND o.value = catalog_tracks.id);
     "#,
+        r#"
+        -- Bare songs (see the module doc): what their source said, and the last attempt to find
+        -- them in the catalog. `resolved` = enriched; a miss is tried again after a day.
+        CREATE TABLE catalog_resolutions (
+            track_id    TEXT PRIMARY KEY,
+            isrc        TEXT,
+            checked_at  INTEGER,
+            resolved    INTEGER NOT NULL DEFAULT 0
+        );
+    "#,
     ],
 };
+
+/// A miss is looked up again after this long (seconds): the catalog gains songs.
+pub const RESOLVE_AGAIN_S: i64 = 86_400;
 
 /// Records or refreshes tracks (latest facts win).
 pub fn remember(conn: &Connection, tracks: &[Track]) -> Result<()> {
@@ -135,6 +155,144 @@ pub fn artist(conn: &Connection, id: &ArtistId) -> Result<Option<Artist>> {
 /// The artist's outside photo URL (`{size}` = pixels), when one is known.
 pub fn artist_image(conn: &Connection, id: &ArtistId) -> Result<Option<String>> {
     picture(conn, "SELECT image FROM catalog_artists WHERE id = ?1", id.as_str())
+}
+
+/// A song as another source names it (an imported line, a playlist's song lull has no match
+/// for), for `remember_named`.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Named<'a> {
+    pub artist: &'a str,
+    /// The album the source names, if any.
+    pub album: Option<&'a str>,
+    pub title: &'a str,
+    pub duration: Option<u32>,
+    pub isrc: Option<&'a str>,
+    /// The source's own picture for the song (an outside URL), its cover until the catalog's
+    /// song is found.
+    pub picture: Option<&'a str>,
+}
+
+/// Records a song as its source names it, the one way every crate does so: the id is
+/// `TrackId::of(artist, album, title)`, a richer record already there is kept, the source's
+/// ISRC is kept as a hint, and its own picture becomes the cover of its album (of the song alone
+/// when the source names no album). Discovery resolves it to the catalog's song when shown.
+pub fn remember_named(conn: &Connection, n: Named) -> Result<Track> {
+    let (artist, title, album) = (n.artist.trim(), n.title.trim(), n.album.map(str::trim).unwrap_or(""));
+    let id = TrackId::of(artist, album, title);
+    if let Some(isrc) = n.isrc.filter(|i| !i.trim().is_empty()) {
+        hint_isrc(conn, &id, isrc.trim())?;
+    }
+    if let Some(known) = track(conn, &id)? {
+        return Ok(known);
+    }
+    // Without an album, a picture belongs to the song alone: an album of its own, named after it.
+    let album_id = match (album.is_empty(), n.picture) {
+        (true, Some(_)) => AlbumId::of(artist, title),
+        _ => AlbumId::of(artist, album),
+    };
+    let song = Track {
+        id,
+        title: title.to_owned(),
+        artist_id: ArtistId::of(artist),
+        artist: artist.to_owned(),
+        album_id: album_id.clone(),
+        album: album.to_owned(),
+        year: None,
+        no: None,
+        disc: None,
+        duration: n.duration,
+        tags: Vec::new(),
+        saved: false,
+        file: None,
+    };
+    remember(conn, std::slice::from_ref(&song))?;
+    if let Some(picture) = n.picture.filter(|p| p.starts_with("https://"))
+        && album_art(conn, &album_id)?.is_none()
+    {
+        let own = Album {
+            id: album_id,
+            title: if album.is_empty() {
+                title.to_owned()
+            } else {
+                album.to_owned()
+            },
+            artist_id: song.artist_id.clone(),
+            artist: artist.to_owned(),
+            year: None,
+            kind: Some(if album.is_empty() { "single" } else { "album" }.to_owned()),
+            released: None,
+            label: None,
+            tags: Vec::new(),
+            saved: crate::model::Saved::None,
+            track_ids: vec![song.id.clone()],
+            duration: None,
+            musicbrainz_id: None,
+        };
+        remember_album(conn, &own, Some(picture))?;
+    }
+    Ok(song)
+}
+
+/// Whether the UI would show the song without a cover: not saved (the library has its own), and
+/// its album has no picture source here.
+pub fn is_bare(conn: &Connection, track: &Track) -> Result<bool> {
+    Ok(!track.saved && album_art(conn, &track.album_id)?.is_none())
+}
+
+/// What the source said about a bare song: its ISRC, which resolves it exactly.
+pub fn hint_isrc(conn: &Connection, id: &TrackId, isrc: &str) -> Result<()> {
+    conn.prepare_cached(
+        "INSERT INTO catalog_resolutions (track_id, isrc) VALUES (?1, ?2)
+         ON CONFLICT(track_id) DO UPDATE SET isrc = excluded.isrc",
+    )?
+    .execute(params![id.as_str(), isrc])?;
+    Ok(())
+}
+
+/// A bare song's ISRC hint, and whether it is due a lookup: never tried, or missed over
+/// `RESOLVE_AGAIN_S` ago, and not resolved.
+pub fn resolution(conn: &Connection, id: &TrackId, now: i64) -> Result<(Option<String>, bool)> {
+    let row: Option<(Option<String>, Option<i64>, bool)> = conn
+        .prepare_cached("SELECT isrc, checked_at, resolved FROM catalog_resolutions WHERE track_id = ?1")?
+        .query_row([id.as_str()], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .optional()?;
+    Ok(match row {
+        None => (None, true),
+        Some((isrc, checked, resolved)) => (isrc, !resolved && checked.is_none_or(|at| now - at >= RESOLVE_AGAIN_S)),
+    })
+}
+
+/// Records a lookup of a bare song that found nothing.
+pub fn missed(conn: &Connection, id: &TrackId, now: i64) -> Result<()> {
+    conn.prepare_cached(
+        "INSERT INTO catalog_resolutions (track_id, checked_at) VALUES (?1, ?2)
+         ON CONFLICT(track_id) DO UPDATE SET checked_at = excluded.checked_at",
+    )?
+    .execute(params![id.as_str(), now])?;
+    Ok(())
+}
+
+/// Fills the bare song `id` with the catalog's facts for the same song (title and artist as the
+/// catalog spells them, album, year, length), keeping its own id, so every playlist, like and
+/// play that names it shows the catalog's song. A saved song is left alone. The enriched record.
+pub fn enrich(conn: &Connection, id: &TrackId, found: &Track, now: i64) -> Result<Option<Track>> {
+    let Some(bare) = track(conn, id)? else { return Ok(None) };
+    if bare.saved {
+        return Ok(None);
+    }
+    let enriched = Track {
+        id: bare.id,
+        saved: bare.saved,
+        file: bare.file,
+        ..found.clone()
+    };
+    remember(conn, std::slice::from_ref(&enriched))?;
+    conn.prepare_cached(
+        "INSERT INTO catalog_resolutions (track_id, checked_at, resolved) VALUES (?1, ?2, 1)
+         ON CONFLICT(track_id) DO UPDATE SET checked_at = excluded.checked_at, resolved = 1",
+    )?
+    .execute(params![id.as_str(), now])?;
+    Ok(Some(enriched))
 }
 
 fn row<T: serde::de::DeserializeOwned>(conn: &Connection, sql: &str, id: &str) -> Result<Option<T>> {
@@ -274,5 +432,153 @@ mod tests {
         assert_eq!(fixed.album_id, want);
         assert_eq!(fixed.album, "Cyberpunk: Edgerunners 2");
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod bare_tests {
+    use super::*;
+    use crate::db::Db;
+
+    fn song(artist: &str, album: &str, title: &str) -> Track {
+        Track {
+            id: TrackId::of(artist, album, title),
+            title: title.into(),
+            artist_id: crate::ids::ArtistId::of(artist),
+            artist: artist.into(),
+            album_id: AlbumId::of(artist, album),
+            album: album.into(),
+            year: None,
+            no: None,
+            disc: None,
+            duration: Some(200),
+            tags: Vec::new(),
+            saved: false,
+            file: None,
+        }
+    }
+
+    fn album(t: &Track) -> Album {
+        Album {
+            id: t.album_id.clone(),
+            title: t.album.clone(),
+            artist_id: t.artist_id.clone(),
+            artist: t.artist.clone(),
+            year: None,
+            kind: Some("single".into()),
+            released: None,
+            label: None,
+            tags: Vec::new(),
+            saved: crate::model::Saved::None,
+            track_ids: Vec::new(),
+            duration: None,
+            musicbrainz_id: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_bare_song_is_enriched_in_place_and_not_looked_up_again() -> Result<()> {
+        let db = Db::memory()?;
+        db.migrate(&MIGRATIONS)?;
+        db.call(|c| {
+            let bare = song("LUUDE", "", "DOWN UNDER (FEAT. COLIN HAY)");
+            let found = song("Luude", "Down Under (feat. Colin Hay)", "Down Under (feat. Colin Hay)");
+            remember(c, std::slice::from_ref(&bare))?;
+            remember_album(c, &album(&found), Some("https://cdn.example/{size}.jpg"))?;
+            assert!(is_bare(c, &bare)?);
+            assert_eq!(resolution(c, &bare.id, 100)?, (None, true));
+
+            let enriched = enrich(c, &bare.id, &found, 100)?.ok_or_else(|| Error::internal("not enriched"))?;
+            assert_eq!(enriched.id, bare.id, "the id every playlist holds stays");
+            assert_eq!(
+                (enriched.title.as_str(), enriched.album_id.clone()),
+                ("Down Under (feat. Colin Hay)", found.album_id.clone())
+            );
+            assert!(!is_bare(c, &enriched)?);
+            assert_eq!(resolution(c, &bare.id, 100 + RESOLVE_AGAIN_S * 9)?, (None, false));
+            Ok(())
+        })
+        .await
+    }
+
+    #[tokio::test]
+    async fn a_miss_is_tried_again_after_a_day_and_keeps_its_isrc_hint() -> Result<()> {
+        let db = Db::memory()?;
+        db.migrate(&MIGRATIONS)?;
+        db.call(|c| {
+            let bare = song("Someone", "", "Lost");
+            remember(c, std::slice::from_ref(&bare))?;
+            hint_isrc(c, &bare.id, "GBUM71505902")?;
+            missed(c, &bare.id, 1000)?;
+            assert_eq!(
+                resolution(c, &bare.id, 1000 + 60)?,
+                (Some("GBUM71505902".into()), false)
+            );
+            assert!(resolution(c, &bare.id, 1000 + RESOLVE_AGAIN_S)?.1);
+            Ok(())
+        })
+        .await
+    }
+
+    #[tokio::test]
+    async fn a_named_song_keeps_its_sources_picture_and_isrc_and_a_richer_record() -> Result<()> {
+        let db = Db::memory()?;
+        db.migrate(&MIGRATIONS)?;
+        db.call(|c| {
+            let named = remember_named(
+                c,
+                Named {
+                    artist: " Luude ",
+                    title: "Down Under (feat. Colin Hay)",
+                    isrc: Some("AUUM72100123"),
+                    picture: Some("https://i.ytimg.com/vi/x/hqdefault.jpg"),
+                    ..Named::default()
+                },
+            )?;
+            assert_eq!(named.id, TrackId::of("Luude", "", "Down Under (feat. Colin Hay)"));
+            assert!(!is_bare(c, &named)?, "the source's picture is its cover");
+            assert_eq!(resolution(c, &named.id, 1)?.0.as_deref(), Some("AUUM72100123"));
+
+            let plain = remember_named(
+                c,
+                Named {
+                    artist: "Someone",
+                    title: "Lost",
+                    ..Named::default()
+                },
+            )?;
+            assert!(is_bare(c, &plain)?);
+            let rich = Track {
+                year: Some(2021),
+                ..plain.clone()
+            };
+            remember(c, std::slice::from_ref(&rich))?;
+            let again = remember_named(
+                c,
+                Named {
+                    artist: "Someone",
+                    title: "Lost",
+                    ..Named::default()
+                },
+            )?;
+            assert_eq!(again.year, Some(2021), "a richer record already there is kept");
+            Ok(())
+        })
+        .await
+    }
+
+    #[tokio::test]
+    async fn a_saved_song_is_never_overwritten() -> Result<()> {
+        let db = Db::memory()?;
+        db.migrate(&MIGRATIONS)?;
+        db.call(|c| {
+            let mut saved = song("A", "Album", "Song");
+            saved.saved = true;
+            remember(c, std::slice::from_ref(&saved))?;
+            assert!(!is_bare(c, &saved)?);
+            assert_eq!(enrich(c, &saved.id, &song("B", "Other", "Song"), 1)?, None);
+            Ok(())
+        })
+        .await
     }
 }
