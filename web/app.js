@@ -2095,7 +2095,8 @@
   }
   document.addEventListener('pointerdown', function (e) {
     var el = e.target.closest('[data-seek]'); if (!el || e.button !== 0) return;
-    e.preventDefault(); el.focus({ preventScroll: true });
+    /* focused for the arrow keys, but a click draws no focus ring: data-pointer holds it back until a key is used */
+    e.preventDefault(); el.setAttribute('data-pointer', ''); el.focus({ preventScroll: true });
     drag = { el: el }; el.classList.add('is-dragging');
     try { el.setPointerCapture(e.pointerId); } catch (err) { /* synthetic events */ }
     applySeek(el, seekFrac(el, e.clientX), false);
@@ -2118,7 +2119,8 @@
   });
   document.addEventListener('keydown', function (e) {
     var el = e.target.closest && e.target.closest('[data-seek]'); if (!el) return;
-    var vol = el.getAttribute('data-seek') === 'volume', step = vol ? .05 : 5 / (P.duration() || 1);
+    el.removeAttribute('data-pointer');
+    var vol = el.getAttribute('data-seek') === 'volume', step = vol ? P.volumeStep() : 5 / (P.duration() || 1);
     var cur = vol ? (ps.muted ? 0 : ps.volume) : ps.pos / (P.duration() || 1), f = null;
     if (e.key === 'ArrowRight' || e.key === 'ArrowUp') f = cur + step * (e.shiftKey ? 6 : 1);
     else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') f = cur - step * (e.shiftKey ? 6 : 1);
@@ -2127,6 +2129,19 @@
     if (f === null) return;
     e.preventDefault(); e.stopPropagation(); applySeek(el, clamp(f, 0, 1), true);
   });
+  document.addEventListener('focusout', function (e) { if (e.target.closest && e.target.closest('[data-seek]')) e.target.removeAttribute('data-pointer'); });
+  /* the wheel over a volume bar turns it: one notch (or 100 px of trackpad scroll) is one volume step */
+  var wheelAcc = 0;
+  document.addEventListener('wheel', function (e) {
+    var el = e.target.closest && e.target.closest('[data-seek="volume"]'); if (!el) return;
+    e.preventDefault();
+    var dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+    if ((dy < 0) !== (wheelAcc < 0)) wheelAcc = 0;
+    wheelAcc += dy;
+    var steps = Math.trunc(wheelAcc / 100); if (!steps) return;
+    wheelAcc -= steps * 100;
+    P.setVolume(clamp((ps.muted ? 0 : ps.volume) - steps * P.volumeStep(), 0, 1));
+  }, { passive: false });
   App.on('seek-denied', function (d) {
     App.emit('announce', 'Not downloaded yet, ' + Math.round(d.received * 100) + ' percent');
   });
