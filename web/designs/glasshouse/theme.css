@@ -388,7 +388,9 @@
   min-height: 36px; border-radius: 9px; border: 1px solid var(--gh-key-edge); color: var(--gh-key-ink); background: var(--gh-keyg);
   box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 55%, transparent); font-weight: 800; font-size: .875rem;
 }
-:root[data-design="glasshouse"] :is(.btn, .btn-icon:not(.btn-icon--bare)):hover { background: linear-gradient(180deg, var(--gh-key-1) 0%, var(--gh-key-1) 50%, var(--gh-key-2) 51%, var(--gh-key-1) 100%); }
+/* a button's glass key lights on hover and sinks on press at the base rule's weight, so every variant's own states
+   (rose, quiet, saved, disabled) win whatever their selector: a light label never lands on the white key */
+:root[data-design="glasshouse"] .btn:hover { background: linear-gradient(180deg, var(--gh-key-1) 0%, var(--gh-key-1) 50%, var(--gh-key-2) 51%, var(--gh-key-1) 100%); }
 :root[data-design="glasshouse"] .btn:active { background: var(--gh-key-3); box-shadow: inset 0 2px 3px var(--gh-cast); }
 :root[data-design="glasshouse"] .btn--quiet,
 :root[data-design="glasshouse"] .btn--quiet:is(:hover, :active) { background: transparent; border-color: transparent; box-shadow: none; color: var(--link); }
@@ -400,7 +402,7 @@
   text-shadow: 0 1px 0 var(--gh-rose-edge);
 }
 :root[data-design="glasshouse"] :is(.btn--primary, .btn--danger):hover { background: linear-gradient(180deg, var(--gh-rose-hi) 0%, var(--gh-rose) 36%, var(--gh-rose) 74%, var(--gh-rose-glow) 100%); }
-:root[data-design="glasshouse"] .btn--primary:active { transform: translateY(1px); box-shadow: inset 0 2px 4px var(--gh-rose-edge); }
+:root[data-design="glasshouse"] :is(.btn--primary, .btn--danger):active { transform: translateY(1px); background: linear-gradient(180deg, var(--gh-rose) 0%, var(--gh-rose-lo) 100%); box-shadow: inset 0 2px 4px var(--gh-rose-edge); }
 :root[data-design="glasshouse"] :is(.btn--primary, .btn--danger, .btn-gloss) .ic { filter: drop-shadow(0 1px 0 var(--gh-rose-edge)); }
 :root[data-design="glasshouse"] .btn:is(:disabled, [aria-disabled="true"]) { background: transparent; box-shadow: none; color: var(--fg-2); text-shadow: none; border-style: dashed; }
 :root[data-design="glasshouse"] .btn-save[data-state="saved"] { background: var(--peri); color: var(--ink); border-color: var(--gh-lit-edge); text-shadow: none; }
@@ -410,6 +412,7 @@
 :root[data-design="glasshouse"] .btn-icon { border: 1px solid transparent; border-radius: 10px; }
 :root[data-design="glasshouse"] .btn-icon:not(.btn-icon--bare) { border-color: var(--gh-key-edge); background: var(--gh-keyg);
   box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 50%, transparent); color: var(--gh-key-ink); }
+:root[data-design="glasshouse"] .btn-icon:not(.btn-icon--bare):hover { background: linear-gradient(180deg, var(--gh-key-1) 0%, var(--gh-key-1) 50%, var(--gh-key-2) 51%, var(--gh-key-1) 100%); }
 :root[data-design="glasshouse"] .btn-icon--bare:hover { background: var(--bg-2); }
 :root[data-design="glasshouse"] .btn-icon__badge { background: var(--gh-rose); color: #fff; border: 1px solid var(--gh-rose-edge); font-family: var(--f-px); font-weight: 600; }
 

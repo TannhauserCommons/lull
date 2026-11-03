@@ -101,7 +101,6 @@ a.sys-bars__name:hover, button.sys-bars__name:hover { text-decoration: underline
   .sys-settings__grid { grid-template-columns: 232px minmax(0, 1fr); }
   .sys-back { display: none; }
   .sys-nav__desc, .sys-nav__chev { display: none; }
-  .sys-nav__item--default { background: var(--peri); color: var(--ink); box-shadow: inset 0 0 0 var(--stroke) var(--line); }
 }
 @container sys (max-width: 639px) {
   .sys-settings.is-index .sys-detail, .sys-settings.has-section .sys-nav { display: none; }
@@ -114,6 +113,12 @@ a.sys-bars__name:hover, button.sys-bars__name:hover { text-decoration: underline
 .sys-nav__item:hover { background: var(--bg-2); }
 .sys-nav__item[aria-current="page"] { background: var(--peri); color: var(--ink); box-shadow: inset 0 0 0 var(--stroke) var(--line); }
 .sys-nav__item[aria-current="page"] .sys-nav__desc { color: var(--ink-2); }
+/* with no section open, a wide page shows Playback beside the list: its item looks current, at the current item's
+   weight and after the item's own rules, so neither the theme's text colour (light at night, on the light peri) nor
+   the hover background takes its colours back */
+@container sys (min-width: 640px) {
+  .sys-nav__item.sys-nav__item--default { background: var(--peri); color: var(--ink); box-shadow: inset 0 0 0 var(--stroke) var(--line); }
+}
 .sys-nav__text { display: grid; min-width: 0; }
 .sys-nav__label { font: 800 .9375rem/1.25 var(--f-ui); }
 .sys-nav__desc { font: var(--t-micro); color: var(--fg-2); }

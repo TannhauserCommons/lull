@@ -1624,7 +1624,8 @@
 
 /* settings: a control-panel list on lavender beside flat sections */
 :root[data-design="lull"] .sys-nav { background: var(--l-frame); border: 0; border-radius: 12px; box-shadow: inset 0 0 0 var(--stroke) var(--l-rule); }
-:root[data-design="lull"] .sys-nav__item:hover { background: color-mix(in srgb, var(--l-tile) 40%, transparent); }
+/* the item shown as selected (current, or Playback beside the list) keeps its own colours under the pointer */
+:root[data-design="lull"] .sys-nav__item:not(.sys-nav__item--default, [aria-current="page"]):hover { background: color-mix(in srgb, var(--l-tile) 40%, transparent); }
 :root[data-design="lull"] .sys-nav__item[aria-current="page"] { background: linear-gradient(180deg, rgba(255, 244, 255, .6), rgba(255, 244, 255, 0)) 12px 2px / calc(100% - 24px) 4px no-repeat border-box, var(--l-gloss); color: #fff; box-shadow: inset 0 -2px 4px var(--l-gloss-glow), 0 0 0 var(--stroke) var(--l-gloss-edge); text-shadow: 0 1px 0 rgba(40, 25, 110, .55); }
 :root[data-design="lull"] .sys-nav__item[aria-current="page"] .sys-nav__desc, :root[data-design="lull"] .sys-nav__item[aria-current="page"] .ic { color: #fff; }
 
