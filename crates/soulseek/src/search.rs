@@ -774,7 +774,10 @@ impl Searches {
             entities.albums.insert(a.album.id.clone(), a.album);
         }
         let unsaved: Vec<Track> = entities.tracks.values().filter(|t| !t.saved).cloned().collect();
-        self.db.call(move |c| catalog::remember(c, &unsaved)).await?;
+        let recorded = self.db.call(move |c| record(c, unsaved)).await?;
+        for t in recorded {
+            entities.tracks.insert(t.id.clone(), t);
+        }
         Ok((out, entities))
     }
 }
@@ -1070,6 +1073,31 @@ fn albums(folders: HashMap<(String, String), Folder>, sources: &Sources) -> Vec<
     hits
 }
 
+/// Records found tracks in the catalog and returns each as the catalog then has it. Ids are
+/// normalised, so a peer's tags often name a song the catalog already knows in another spelling
+/// ("Cyberpunk_ Edgerunners" for "Cyberpunk: Edgerunners", the track artist as album artist).
+/// Such a song keeps the catalog's names and album; the file only adds what it is.
+fn record(c: &rusqlite::Connection, found: Vec<Track>) -> Result<Vec<Track>> {
+    let mut out = Vec::with_capacity(found.len());
+    for t in found {
+        out.push(match catalog::track(c, &t.id)? {
+            Some(known) => with_file_of(known, t),
+            None => t,
+        });
+    }
+    catalog::remember(c, &out)?;
+    Ok(out)
+}
+
+fn with_file_of(mut known: Track, found: Track) -> Track {
+    known.file = found.file.or(known.file);
+    known.year = known.year.or(found.year);
+    known.no = known.no.or(found.no);
+    known.disc = known.disc.or(found.disc);
+    known.duration = known.duration.or(found.duration);
+    known
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1273,5 +1301,61 @@ mod tests {
         assert!(s.reusable());
         s.stop.send_replace(true);
         assert!(!s.reusable(), "stopped by a newer query, so it never finished");
+    }
+
+    #[tokio::test]
+    async fn a_song_the_catalog_knows_keeps_its_names_when_a_peer_tags_it_otherwise() -> Test {
+        let db = Db::memory()?;
+        db.migrate(&catalog::MIGRATIONS)?;
+        let song = |artist: &str, album_artist: &str, album: &str| Track {
+            id: TrackId::of(artist, album, "Worth It"),
+            title: "Worth It".into(),
+            artist_id: ArtistId::of(artist),
+            artist: artist.into(),
+            album_id: AlbumId::of(album_artist, album),
+            album: album.into(),
+            year: None,
+            no: Some(8),
+            disc: None,
+            duration: Some(161),
+            tags: vec![],
+            saved: false,
+            file: None,
+        };
+        let known = song("Corbin", "Various Artists", "Cyberpunk: Edgerunners 2");
+        let mut found = song("Corbin", "Corbin", "Cyberpunk_ Edgerunners 2");
+        found.year = Some(2026);
+        found.file = Some(FileFacts {
+            format: "FLAC 24/44.1".into(),
+            codec: "FLAC".into(),
+            lossless: true,
+            khz: Some(44.1),
+            bits: Some(24),
+            kbps: Some(1617),
+            size_bytes: Some(32_550_654),
+        });
+        assert_eq!(known.id, found.id, "the same song once names are normalised");
+        let (first, kept) = (known.clone(), known.id.clone());
+        let (recorded, stored) = db
+            .call(move |c| {
+                catalog::remember(c, &[first])?;
+                let recorded = record(c, vec![found])?;
+                Ok((recorded, catalog::track(c, &kept)?))
+            })
+            .await?;
+        for t in recorded.iter().chain(stored.iter()) {
+            assert_eq!(t.album, known.album, "the catalog's spelling, not the file's");
+            assert_eq!(
+                t.album_id, known.album_id,
+                "still on the catalog's album, so it shows its cover"
+            );
+            assert_eq!(
+                t.file.as_ref().map(|f| f.kbps),
+                Some(Some(1617)),
+                "the file adds what it is"
+            );
+            assert_eq!(t.year, Some(2026), "and fills a gap");
+        }
+        Ok(())
     }
 }

@@ -41,6 +41,19 @@ pub const MIGRATIONS: Migrations = Migrations {
             updated_at  INTEGER NOT NULL
         );
     "#,
+        r#"
+        -- Soulseek searches used to overwrite a known track with the peer's tags, moving it to the
+        -- tags' album ("Cyberpunk_ Edgerunners", the track artist's): a track that a catalog album
+        -- lists but that sits on no album listing it goes back to that album and its title.
+        UPDATE catalog_tracks
+           SET json = json_set(json, '$.albumId', fix.album_id, '$.album', fix.title)
+          FROM (SELECT j.value AS track_id, MIN(a.id) AS album_id, json_extract(a.json, '$.title') AS title
+                  FROM catalog_albums a, json_each(a.json, '$.trackIds') j
+                 GROUP BY j.value) AS fix
+         WHERE catalog_tracks.id = fix.track_id
+           AND NOT EXISTS (SELECT 1 FROM catalog_albums own, json_each(own.json, '$.trackIds') o
+                            WHERE own.id = catalog_tracks.album_id AND o.value = catalog_tracks.id);
+    "#,
     ],
 };
 
@@ -203,6 +216,63 @@ mod tests {
             .await?;
         assert_eq!(art.as_deref(), Some("https://img.example/{size}.jpg"));
         assert_eq!(kept.map(|a| a.id), Some(id));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_track_a_peer_moved_to_its_tags_album_goes_back_to_the_album_listing_it() -> Result<()> {
+        let db = Db::memory()?;
+        db.migrate(&Migrations {
+            owner: MIGRATIONS.owner,
+            steps: &MIGRATIONS.steps[..3],
+        })?;
+        let album = Album {
+            id: AlbumId::of("Various Artists", "Cyberpunk: Edgerunners 2"),
+            title: "Cyberpunk: Edgerunners 2".into(),
+            artist_id: ArtistId::of("Various Artists"),
+            artist: "Various Artists".into(),
+            year: Some(2026),
+            kind: Some("compilation".into()),
+            released: None,
+            label: None,
+            tags: vec![],
+            saved: crate::model::Saved::None,
+            track_ids: vec![TrackId::of(
+                "Rico Nasty",
+                "Cyberpunk: Edgerunners 2",
+                "You Can't Run From Me",
+            )],
+            duration: None,
+            musicbrainz_id: None,
+        };
+        let moved = Track {
+            id: album.track_ids[0].clone(),
+            title: "You Can't Run From Me".into(),
+            artist_id: ArtistId::of("Rico Nasty"),
+            artist: "Rico Nasty".into(),
+            album_id: AlbumId::of("Rico Nasty", "Cyberpunk_ Edgerunners 2"),
+            album: "Cyberpunk_ Edgerunners 2".into(),
+            year: None,
+            no: None,
+            disc: None,
+            duration: None,
+            tags: vec![],
+            saved: false,
+            file: None,
+        };
+        let (id, want) = (moved.id.clone(), album.id.clone());
+        db.call(move |c| {
+            remember_album(c, &album, None)?;
+            remember(c, &[moved])
+        })
+        .await?;
+        db.migrate(&MIGRATIONS)?;
+        let fixed = db
+            .call(move |c| track(c, &id))
+            .await?
+            .ok_or(Error::internal("track gone"))?;
+        assert_eq!(fixed.album_id, want);
+        assert_eq!(fixed.album, "Cyberpunk: Edgerunners 2");
         Ok(())
     }
 }
