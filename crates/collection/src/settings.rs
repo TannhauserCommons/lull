@@ -89,6 +89,8 @@ struct Sources {
     stall_timeout: u32,
     /// YouTube as a second source; soulseek and youtube read it (docs/context/youtube.md).
     youtube: youtube::Settings,
+    /// Switch the playing song to a better copy once one is ready (docs/context/streaming.md#better-copies).
+    switch_to_better: bool,
 }
 
 impl Default for Sources {
@@ -99,6 +101,7 @@ impl Default for Sources {
             max_peer_queue: 20,
             stall_timeout: 15,
             youtube: youtube::Settings::default(),
+            switch_to_better: true,
         }
     }
 }
