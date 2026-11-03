@@ -4,7 +4,8 @@
 //! - music metadata, when the site gives it, wins;
 //! - a YouTube "Artist - Topic" channel is official audio: the channel is the artist, and the
 //!   length is the song's;
-//! - else "Artist - Title" splits at the first dash, and else the channel is the artist;
+//! - else "Artist - Title" splits at the first dash, and else the channel is the artist; a
+//!   leading "<show> Soundtrack - " (fan playlists of a series' songs) is dropped first;
 //! - video tags ("(Official Music Video)", "[Lyrics]", "| 4K") are dropped. A video's length
 //!   isn't the song's (intros, outros), so it isn't compared; a SoundCloud upload's is.
 
@@ -83,12 +84,12 @@ pub(crate) fn song(l: &Listed, site: Site) -> Option<Song> {
         (Some(a), Some(t)) if *t != l.title && !a.trim().is_empty() => (a.trim().to_owned(), clean(t), exact),
         _ => match uploader.strip_suffix(" - Topic") {
             Some(artist) => (artist.to_owned(), clean(&l.title), true),
-            None => match split_dash(&l.title) {
+            None => match split_dash(&without_work(&l.title)) {
                 Some((a, t)) => {
                     let title = clean(&without_artist(&t, &a));
                     (a, title, exact)
                 }
-                None => (channel_artist(uploader), clean(&l.title), exact),
+                None => (channel_artist(uploader), clean(&without_work(&l.title)), exact),
             },
         },
     };
@@ -100,6 +101,20 @@ pub(crate) fn song(l: &Listed, site: Site) -> Option<Song> {
         duration: l.duration.filter(|_| exact_length),
         isrc: None,
     })
+}
+
+/// "Person Of Interest Soundtrack - Massive Attack - Live With Me" without the work it is from.
+fn without_work(title: &str) -> String {
+    match split_dash(title) {
+        Some((work, rest))
+            if lull_core::ids::normalize(&work)
+                .split(' ')
+                .any(|w| matches!(w, "soundtrack" | "ost")) =>
+        {
+            rest
+        }
+        _ => title.to_owned(),
+    }
 }
 
 /// "Artist - Title" (any dash, or SoundCloud's "Artist • Title"), when both sides have words.
@@ -155,6 +170,20 @@ const VIDEO_WORDS: &[&str] = &[
 /// The title without video labels, a "| channel" tail or quotes around it.
 pub(crate) fn clean(title: &str) -> String {
     let title = title.split(" | ").next().unwrap_or(title);
+    // Quality tags at the end, outside brackets ("Angel HD 1080p").
+    let mut words: Vec<&str> = title.split_whitespace().collect();
+    while words.len() > 1
+        && words.last().is_some_and(|w| {
+            matches!(
+                w.to_ascii_lowercase().as_str(),
+                "hd" | "hq" | "4k" | "1080p" | "720p" | "480p" | "60fps"
+            )
+        })
+    {
+        words.pop();
+    }
+    let joined = words.join(" ");
+    let title = joined.as_str();
     let mut out = String::with_capacity(title.len());
     let mut rest = title;
     while let Some(open) = rest.find(['(', '[']) {
@@ -227,6 +256,25 @@ mod tests {
             Site::Youtube,
         );
         assert_eq!(named(s), ("Dominic Fike".into(), "Babydoll".into(), None));
+    }
+
+    #[test]
+    fn a_series_soundtrack_prefix_and_trailing_quality_tags_are_dropped() {
+        let s = song(
+            &listed(
+                "Person Of Interest Soundtrack - Massive Attack - Live With Me",
+                "AshesInTheWind1",
+                None,
+            ),
+            Site::Youtube,
+        );
+        assert_eq!(named(s), ("Massive Attack".into(), "Live With Me".into(), None));
+        let s = song(
+            &listed("Massive Attack - Angel  HD 1080p", "k l.s", None),
+            Site::Youtube,
+        );
+        assert_eq!(named(s), ("Massive Attack".into(), "Angel".into(), None));
+        assert_eq!(clean("HD"), "HD", "a title that is only the tag stays");
     }
 
     #[test]
