@@ -626,12 +626,14 @@
     o = o || {};
     var pic = own ? ownPic(own) : artPic(key), src = pic && !artWaits(pic) ? firstSrc(pic, size) : pic ? '' : own || '';
     if (o.blurred && pic) { src = artWaits(pic) ? '' : sized(pic, ART_SIZES[0]); pic = ''; }   // not fitted
-    var ready = artReady.has(src), mono = own ? '' : monogram(key);
-    var load = ready ? '' : o.hero ? ' fetchpriority="high" decoding="async"' : ' loading="lazy" decoding="async"';
-    return '<span class="' + cls + (mono ? ' cover--artist' : '') + (ready ? ' has-art' : '') + '"' + attrs + '>' +
-      (mono ? '<span class="cover__mono" aria-hidden="true">' + esc(mono) + '</span>' : '') + (pic || src ? '<img class="cover__img"' +
-      load + ' alt="" data-art="' + esc(key) + '"' + (pic ? ' data-pic="' + esc(pic) + '"' : '') +
-      (src ? ' src="' + esc(src) + '"' : '') + '>' : '') + '</span>';
+    var ready = artReady.has(src), mono = own ? '' : monogram(key), wait = pic && !src;
+    return '<span class="' + cls + (mono ? ' cover--artist' : '') + (ready ? ' has-art' : '') + '"' + attrs +
+      (wait ? ' data-wait-art="' + esc(key) + '" data-wait-pic="' + esc(pic) + '"' + (o.hero ? ' data-wait-hero' : '') : '') + '>' +
+      (mono ? '<span class="cover__mono" aria-hidden="true">' + esc(mono) + '</span>' : '') + (src ? coverImg(key, pic, src, ready, o.hero) : '') + '</span>';
+  }
+  function coverImg(key, pic, src, ready, hero) {
+    var load = ready ? '' : hero ? ' fetchpriority="high" decoding="async"' : ' loading="lazy" decoding="async"';
+    return '<img class="cover__img"' + load + ' alt="" data-art="' + esc(key) + '"' + (pic ? ' data-pic="' + esc(pic) + '"' : '') + ' src="' + esc(src) + '">';
   }
   /* an artist's initial: what an artist without a photo shows, set in the design's display face over its recipe
      (never an album cover standing in for a photo); hidden once a photo loads */
@@ -642,15 +644,18 @@
   }
   /* ---------- covers the hub doesn't have yet ----------
      A cover answered 404 is one the hub is still fetching ("not yet") or has none of (api.md /api/art). Every cover of
-     that picture then waits without a src, the recipe showing, until `art.ready` names its key (the hub has fetched it):
-     then each fits again and asks once. The wait is the picture's, not the album's: an album that gains a catalog
-     picture meanwhile asks for that at once. Nothing retries on a timer, so a page asks for a picture once, whatever number
-     of rows show it. A wait ends by itself after ART_WAIT: one more request may go out then (a "none" is answered from
-     the browser's cache), and a reconnect ends them all, since events may have been missed. */
+     that picture then waits as its span alone (data-wait-art, data-wait-pic), the recipe showing, until `art.ready` names
+     its key (the hub has fetched it): then each gets its <img> and asks once. Never an <img> with no src: one that leaves
+     the page stays pending in the browser, and keeps the whole screen it was part of in memory. The wait is the picture's,
+     not the album's: an album that gains a catalog picture meanwhile asks for that at once. Nothing retries on a timer, so
+     a page asks for a picture once, whatever number of rows show it. A wait ends by itself after ART_WAIT: one more request
+     may go out then (a "none" is answered from the browser's cache), and a reconnect ends them all, since events may have
+     been missed. */
   var artWaiting = {}, ART_WAIT = 2 * 60 * 1000;
   function artWaits(pic) { return Date.now() - (artWaiting[pic] || 0) < ART_WAIT; }
   App.on('server:art.ready', function (p) { ((p && p.keys) || []).forEach(artCameIn); });
   function artCameIn(key) {
+    $$('[data-wait-art="' + key + '"]').forEach(function (span) { delete artWaiting[span.getAttribute('data-wait-pic')]; unwait(span); });
     $$('img[data-art="' + key + '"]').forEach(function (img) {
       var pic = img.getAttribute('data-pic'); if (!pic) return;
       delete artWaiting[pic];
@@ -660,7 +665,20 @@
   }
   function forgetArtWaits() {
     artWaiting = {}; artFailed = {};
-    $$('img[data-pic]:not([src])').forEach(refit);
+    $$('[data-wait-art]').forEach(unwait);
+  }
+  /* a waiting cover (its span) gets its <img> back, at the size its markup asked for; the fitter takes it from there */
+  function unwait(span) {
+    var key = span.getAttribute('data-wait-art'), pic = span.getAttribute('data-wait-pic'), hero = span.hasAttribute('data-wait-hero');
+    span.removeAttribute('data-wait-art'); span.removeAttribute('data-wait-pic'); span.removeAttribute('data-wait-hero');
+    span.insertAdjacentHTML('beforeend', coverImg(key, pic, firstSrc(pic, span.style.getPropertyValue('--cover-size-base').trim()), false, hero));
+  }
+  /* a cover whose picture 404'd: its <img> goes, the span waits (see above) */
+  function toWait(img) {
+    var span = img.parentNode; if (!span) return;
+    span.setAttribute('data-wait-art', img.getAttribute('data-art')); span.setAttribute('data-wait-pic', img.getAttribute('data-pic'));
+    if (img.hasAttribute('fetchpriority')) span.setAttribute('data-wait-hero', '');
+    img.remove();
   }
   /* the picture for an album or artist key, without a size: a catalog entity's own URL (album `art`, artist `image`, same
      origin through /api/catalog/art, ADR-0008), else the library's /api/art for albums */
@@ -800,7 +818,7 @@
     var pic = img.getAttribute('data-pic');
     if (!pic) { img.remove(); return; }   // a blurred or chosen picture: the recipe shows
     artWaiting[pic] = Date.now();
-    $$('img[data-art="' + img.getAttribute('data-art') + '"]').forEach(function (i) { if (i.getAttribute('data-pic') === pic && !i.naturalWidth) i.removeAttribute('src'); });
+    $$('img[data-art="' + img.getAttribute('data-art') + '"]').forEach(function (i) { if (i.getAttribute('data-pic') === pic && !i.naturalWidth) toWait(i); });
   }, true);
   /* 2x2 mosaic of the first four distinct album covers (playlists); one cover when the songs share one album, or when
      `own` is a picture of the playlist's own (its stored cover, or a picture being chosen). `.mosaic--one` keeps the
