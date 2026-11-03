@@ -25,6 +25,7 @@ fn listing(songs: Vec<Song>) -> Listing {
         note: None,
         covers: Vec::new(),
         description: Some("Songs for the long drive.".into()),
+        owner: None,
     }
 }
 
@@ -200,8 +201,8 @@ async fn importing_a_link_again_updates_its_playlist_keeps_choices_and_reuses_ma
     assert_eq!(again["songs"][1]["status"], "skipped");
     assert_eq!(
         fake.lookups.load(Ordering::Relaxed) - lookups,
-        2,
-        "the song matched before isn't looked up again"
+        1,
+        "only the new song is looked up: a match, and a recent \"nothing matches\", are remembered"
     );
     let all = svc.ctx.db.call(|c| playlists::all(c)).await?;
     assert_eq!(all.len(), 1);

@@ -158,6 +158,7 @@ pub(crate) async fn service_with_fakes() -> Result<(Arc<Service>, Receiver<Event
         catalog: fake_catalog.clone(),
         youtube: Arc::new(NoYoutube),
         linking: Default::default(),
+        previewing: Default::default(),
     });
     Ok((svc, rx, lastfm, fake_catalog))
 }

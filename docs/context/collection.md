@@ -78,6 +78,16 @@ Spotify's Private Session, per paired device: `core_devices.private`, switched w
 - **`playlist` event.** `{ playlistId, deleted }` goes out once per operation (create, rename, track change, delete), from the routes, the seam and sync alike, so a PATCH that changes name and tracks is one event. Library mirrors playlists into Jellyfin from it.
 - **Activity.** A playlist created with `imported: { file, library, willSearch, notFound }` publishes an import `job` event, and library's `/api/jobs` lists it.
 
+## Outside playlists
+
+`outside.rs`, `matches.rs`. Someone's playlist on YouTube or Deezer (any link lull imports from), opened from search's Playlists section, previews like an album page without becoming a lull playlist; it can be bookmarked like following a playlist on Spotify. "Make a copy" is the link import.
+- **Kept, not imported:** `collection_outside` keeps the listing as last read (JSON). Opening it after an hour reads the source again; if the source fails, the kept one shows. A listing nobody bookmarked and nobody opened for 30 days is forgotten, with its picture.
+- **Playable at once:** every song has a track id from the first answer: the catalog's match, else the song as the link names it (`TrackId::of(artist, album, title)`, recorded in the catalog, searched on Soulseek or YouTube when played, as an M3U line is). Its `status` says which: `matched`, `pending` (not looked up yet) or `unmatched`.
+- **Matched in the background:** pending songs are looked up after the answer (4 at a time, the catalog paces itself), and go out as `outside` events, a batch a second. One run per playlist at a time.
+- **Matches are shared** with link imports (`collection_song_matches`, by the source's song id): a match is kept; "nothing matches" for a day. A preview makes its copy's import instant, and the other way round.
+- **Pictures** are fetched when a listing is read (up to 4 s, else later) and kept as square JPEGs in `<data>/outside-covers/`, so the CSP stays same-origin and a bookmark keeps its picture if the source changes.
+- **Bookmarks** (`collection_bookmarks`) hold the link, name, owner and size, refreshed whenever the listing is read; Library's Playlists shows them beside lull's own, marked with their site. Removing one keeps nothing.
+
 ## Covers
 
 `covers.rs`. A playlist's own cover is an upload (`PUT /api/playlists/{id}/cover`) or a link import's source picture; without one the UI shows its songs' album covers (a 2×2 mosaic of the first four albums, one cover for a single album).

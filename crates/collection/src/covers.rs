@@ -101,10 +101,16 @@ pub(crate) async fn response(svc: &Service, seq: i64, size: Option<u32>) -> Resu
     if !matches!(has, Some(Some(_))) {
         return Ok(None);
     }
-    let jpeg = match tokio::fs::read(file(&svc.ctx, seq)).await {
+    jpeg_response(&file(&svc.ctx, seq), size).await
+}
+
+/// A stored cover file as a response, scaled down to `size` (32-600) when asked; `None` when
+/// there is no file.
+pub(crate) async fn jpeg_response(path: &std::path::Path, size: Option<u32>) -> Result<Option<Response>> {
+    let jpeg = match tokio::fs::read(path).await {
         Ok(bytes) => bytes,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(Error::internal(format!("reading pl-{seq}'s cover: {e}"))),
+        Err(e) => return Err(Error::internal(format!("reading {}: {e}", path.display()))),
     };
     let jpeg = match size.map(|s| s.clamp(32, SIZE)) {
         Some(s) if s < SIZE => tokio::task::spawn_blocking(move || scaled(&jpeg, s))
@@ -246,14 +252,21 @@ pub(crate) async fn from_link(svc: &Service, seq: i64, pictures: &[String]) -> R
         Some((_, Some(kept))) if pictures.contains(&kept) && file(&svc.ctx, seq).exists() => return Ok(()),
         _ => {}
     }
+    let (jpeg, url) = first_picture(svc, &pictures).await?;
+    store(svc, seq, jpeg, Origin::Link, Some(url)).await
+}
+
+/// The first of a source's pictures (best first, up to three) that loads, as a stored cover's
+/// JPEG, with its URL.
+pub(crate) async fn first_picture(svc: &Service, pictures: &[String]) -> Result<(Vec<u8>, String)> {
     let mut failed = None;
-    for url in pictures {
-        match fetch(svc, &url).await {
-            Ok(jpeg) => return store(svc, seq, jpeg, Origin::Link, Some(url)).await,
+    for url in pictures.iter().filter(|u| u.starts_with("https://")).take(3) {
+        match fetch(svc, url).await {
+            Ok(jpeg) => return Ok((jpeg, url.clone())),
             Err(e) => failed = Some(e),
         }
     }
-    failed.map_or(Ok(()), Err)
+    Err(failed.unwrap_or_else(|| Error::NotFound("the source shows no picture".into())))
 }
 
 /// A source's picture as the stored cover.

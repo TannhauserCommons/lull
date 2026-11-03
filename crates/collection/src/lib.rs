@@ -13,6 +13,8 @@ mod likes;
 mod links;
 mod listenbrainz_import;
 mod m3u;
+mod matches;
+mod outside;
 mod playlists;
 mod plays;
 mod seam;
@@ -137,6 +139,28 @@ pub const MIGRATIONS: Migrations = Migrations {
         ALTER TABLE collection_playlists ADD COLUMN cover_from TEXT;
         ALTER TABLE collection_playlists ADD COLUMN cover_url TEXT;
     "#,
+        // Outside playlists (outside.rs): a listing as last read (JSON), what the catalog matched
+        // a source's song to (matches.rs; NULL = nothing, asked again after a day), and bookmarks.
+        r#"
+        CREATE TABLE collection_outside (
+            key         TEXT PRIMARY KEY,   -- youtube:playlist:<id>
+            kept        TEXT NOT NULL,
+            fetched_at  INTEGER NOT NULL
+        );
+        CREATE TABLE collection_song_matches (
+            song        TEXT PRIMARY KEY,   -- deezer:track:<id>, youtube:<video>
+            track_id    TEXT,
+            checked_at  INTEGER NOT NULL
+        );
+        CREATE TABLE collection_bookmarks (
+            seq       INTEGER PRIMARY KEY AUTOINCREMENT,
+            key       TEXT NOT NULL UNIQUE,
+            name      TEXT NOT NULL,
+            owner     TEXT,
+            total     INTEGER NOT NULL,
+            saved_at  INTEGER NOT NULL
+        );
+    "#,
     ],
 };
 
@@ -155,6 +179,8 @@ pub struct Service {
     youtube: Arc<dyn Youtube>,
     /// The links being imported now (their keys): one import of a link at a time.
     linking: Mutex<HashSet<String>>,
+    /// The outside playlists whose songs are being matched now (their keys).
+    previewing: outside::Previewing,
 }
 
 pub async fn start(
@@ -176,6 +202,7 @@ pub async fn start(
         catalog,
         youtube,
         linking: Mutex::default(),
+        previewing: Mutex::default(),
     }))
 }
 
@@ -194,6 +221,7 @@ pub fn router(svc: Arc<Service>) -> Router {
         .merge(exportify::routes())
         .merge(imported_plays::routes())
         .merge(links::routes())
+        .merge(outside::routes())
         .with_state(svc)
 }
 

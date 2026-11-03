@@ -63,6 +63,7 @@ pub(crate) fn embedded(page: &str, kind: Kind) -> Result<Listing> {
     }
     let entity: Entity = serde_json::from_value(props["state"]["data"]["entity"].clone())
         .map_err(|e| Error::upstream(SERVICE, format!("its page has changed: {e}")))?;
+    let owner = entity.subtitle.clone().map(|s| s.replace('\u{a0}', " "));
     let name = entity
         .name
         .or(entity.title)
@@ -105,6 +106,7 @@ pub(crate) fn embedded(page: &str, kind: Kind) -> Result<Listing> {
         note,
         covers,
         description: None,
+        owner,
     })
 }
 
@@ -113,6 +115,8 @@ pub(crate) fn embedded(page: &str, kind: Kind) -> Result<Listing> {
 struct Entity {
     name: Option<String>,
     title: Option<String>,
+    /// The playlist's maker ("Spotify"), an album's artists.
+    subtitle: Option<String>,
     #[serde(default)]
     track_list: Vec<Embedded>,
     visual_identity: Option<Visual>,

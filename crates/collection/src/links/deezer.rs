@@ -44,6 +44,7 @@ pub(crate) async fn read(svc: &Service, link: &Link) -> Result<Listing> {
         note: None,
         covers: about.picture_xl.into_iter().chain(about.cover_xl).collect(),
         description: about.description.map(|d| d.trim().to_owned()).filter(|d| !d.is_empty()),
+        owner: about.creator.or(about.artist).map(|n| n.name),
     })
 }
 
@@ -87,6 +88,9 @@ struct About {
     /// A playlist's picture, an album's cover (1000 px).
     picture_xl: Option<String>,
     cover_xl: Option<String>,
+    /// A playlist's maker, an album's artist.
+    creator: Option<Named>,
+    artist: Option<Named>,
 }
 
 #[derive(Deserialize)]

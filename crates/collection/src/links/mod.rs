@@ -11,7 +11,7 @@
 //!   order. A song matched before is not looked up again.
 
 mod deezer;
-mod parse;
+pub(crate) mod parse;
 mod spotify;
 mod uploads;
 
@@ -26,7 +26,6 @@ use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use futures_util::{StreamExt, stream};
 use lull_core::ids::TrackId;
-use lull_core::model::SongQuery;
 use lull_core::{Error, Result, catalog};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
@@ -61,10 +60,12 @@ pub(crate) struct Listing {
     /// cover), and its description.
     pub(crate) covers: Vec<String>,
     pub(crate) description: Option<String>,
+    /// Who made it (a Deezer user, a YouTube channel), when the site says.
+    pub(crate) owner: Option<String>,
 }
 
 /// A song as the link lists it.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Song {
     /// The source's id for the song (`spotify:track:<id>`, `youtube:<video>`): choices and
     /// earlier matches are kept by it.
@@ -213,6 +214,15 @@ async fn import(svc: &Arc<Service>, link: &Link, listing: Option<Listing>, job: 
     Ok(())
 }
 
+/// The whole listing, without a job to tell (a preview of an outside playlist).
+pub(crate) async fn fetch(svc: &Service, link: &Link) -> Result<Listing> {
+    match link.site {
+        Site::Spotify => spotify::read(svc, link).await,
+        Site::Deezer => deezer::read(svc, link).await,
+        Site::Youtube | Site::Soundcloud => uploads::read(svc, link, |_, _| {}).await,
+    }
+}
+
 async fn read(svc: &Service, link: &Link, job: &mut Job) -> Result<Listing> {
     match link.site {
         Site::Spotify => spotify::read(svc, link).await,
@@ -264,14 +274,7 @@ async fn match_one(svc: &Service, song: &Song, earlier: Option<TrackId>) -> Resu
             return Ok(known);
         }
     }
-    let query = SongQuery {
-        artist: song.artist.clone(),
-        title: song.title.clone(),
-        album: song.album.clone(),
-        duration: song.duration,
-        isrc: song.isrc.clone(),
-    };
-    Ok(svc.catalog.find_song(&query).await?.map(|t| t.id))
+    crate::matches::find(svc, song).await
 }
 
 /// The songs this link matched last time, by the source's id for them.
