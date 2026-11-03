@@ -3,9 +3,8 @@
 //! reads the key from the config rather than from `lastfm`, so the crates stay apart.
 
 use std::sync::Arc;
-use std::time::Duration;
 
-use lull_core::{Error, Result};
+use lull_core::{Error, Result, http};
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::Deserialize;
 
@@ -15,8 +14,6 @@ use crate::imported_plays::{Listen, Progress};
 const SERVICE: &str = "Last.fm";
 const ROOT: &str = "https://ws.audioscrobbler.com/2.0/";
 const PAGE: u32 = 200;
-/// Last.fm asks for at most 5 calls a second on average; a long history is hundreds of pages.
-const PACE: Duration = Duration::from_millis(300);
 
 /// A listener's history, with its first page already fetched, so a wrong user name or a private
 /// profile is an answer to the request and not a failed job.
@@ -74,7 +71,8 @@ impl Pages {
     }
 
     async fn fetch(&self, page: u32) -> Result<Page> {
-        self.svc.ctx.http.pace(SERVICE, PACE).await;
+        // A long history is hundreds of pages, in lull's one Last.fm pace.
+        self.svc.ctx.http.pace(http::LASTFM, http::LASTFM_PACE).await;
         let url = format!(
             "{ROOT}?method=user.getRecentTracks&format=json&limit={PAGE}&page={page}&to={}&user={}&api_key={}",
             self.until,
