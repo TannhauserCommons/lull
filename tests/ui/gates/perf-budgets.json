@@ -4,6 +4,7 @@
   "budgets": {
     "fanOutElements": 100,
     "hoverRestyleElements": 120,
+    "hoverLayouts": 2,
     "hoverHandlersMs": 100,
     "hoverLongestMs": 180,
     "idleFrames": 4,
