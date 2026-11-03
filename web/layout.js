@@ -206,8 +206,10 @@
      together). When a row's content needs more than its width, parts give way in order (they get [data-fit-out]; the
      component's CSS says what that means: hidden and in the "…" menu, a pill without its label, the compact tray) until
      it fits; with room again they come back. A part belongs to its nearest row with a box, so a design that lays a row
-     out with display: contents hands its parts to the row around it. Rows fit again when they resize (ResizeObserver),
-     and App.layout.refit() after their content changes (a new song, the status tray). */
+     out with display: contents hands its parts to the row around it. Rows fit again when they or their parts resize
+     (ResizeObserver: a web font arriving with wider letters than the fallback's, a label changing), and on
+     App.layout.refit() after their content changes (a new song, the status tray: parts drawn since are watched from
+     then on). */
   function fitRowOf(part) {
     for (var a = part.parentElement; a; a = a.parentElement) if (a.hasAttribute('data-fit-row') && getComputedStyle(a).display !== 'contents') return a;
     return null;
@@ -237,13 +239,32 @@
       parts.forEach(function (p) { if (+p.getAttribute('data-fit') === orders[i]) p.setAttribute('data-fit-out', ''); });
     }
   }
-  var fitting = new ResizeObserver(function (entries) { entries.forEach(function (e) { fit(e.target); }); });
+  /* a row fits again when it resizes, and when what is in it does without the row resizing (a web font arriving with
+     wider letters than the fallback's, a label that changed): the observer watches each row, its children and its
+     parts, and fits the row they belong to. Outer rows first (document order): an inner row's width follows from what
+     its outer row gave way */
+  function inOrder(a, b) { return a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1; }
+  var fitting = new ResizeObserver(function (entries) {
+    var rows = [];
+    entries.forEach(function (e) {
+      var own = e.target.hasAttribute('data-fit-row'), row = own ? e.target : fitRowOf(e.target);
+      if (!row || rows.indexOf(row) >= 0) return;
+      /* a part or child that resized in a row that still fits needs nothing when it is a part that gave way (fit's own
+         doing) or nothing in the row has given way (all shown, nothing to bring back). Read after layout: no cost */
+      if (!own && !overflows(row) && (e.target.hasAttribute('data-fit-out') || !$('[data-fit-out]', row))) return;
+      rows.push(row);
+    });
+    rows.sort(inOrder).forEach(fit);
+  });
   var watched = new WeakSet();
-  /* outer rows first (document order): an inner row's width follows from what its outer row gave way. Every row is
-     watched, a box-less one too (display: contents at some widths), since the observer reports it when it gets a box;
-     a row drawn since the last call (the song's chips) is watched from now on */
+  function watch(el) { if (!watched.has(el)) { watched.add(el); fitting.observe(el); } }
+  /* every row is watched, a box-less one too (display: contents at some widths), since the observer reports it when it
+     gets a box; a row or part drawn since the last call (the song's chips) is watched from now on */
   App.layout.refit = function () {
-    $$('[data-fit-row]').forEach(function (r) { if (!watched.has(r)) { watched.add(r); fitting.observe(r); } fit(r); });
+    $$('[data-fit-row]').forEach(function (r) {
+      watch(r); Array.prototype.forEach.call(r.children, watch); $$('[data-fit]', r).forEach(watch);
+      fit(r);
+    });
   };
   App.on('ready', App.layout.refit);
   App.on('design', function () { fitting.disconnect(); watched = new WeakSet(); App.layout.refit(); });

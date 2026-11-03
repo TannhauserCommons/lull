@@ -375,8 +375,10 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
   long title count as much as the window, and no design needs a width band to patch them.
   - A row is `[data-fit-row]`; a part that can give way is `[data-fit="<order>"]`, 1 first, parts of one order
     together. When a row's content needs more than its width, parts give way in order (`[data-fit-out]`) until it
-    fits; with room again they come back. A ResizeObserver re-fits a row, and `App.layout.refit()` after its content
-    changes (renderBar, renderTray).
+    fits; with room again they come back. A ResizeObserver re-fits a row when it resizes and when its children or
+    parts do without it (a web font arriving with wider letters than the fallback's, a label changing), a font face
+    finishing loading re-fits them all, and `App.layout.refit()` runs after its content changes (renderBar,
+    renderTray), watching what was drawn since.
   - What giving way means is the component's (components.css, `!important`, so a design draws it but can't undo it):
     the header drops the "/" hint (1), the tray's long words (2), the following-and-playlists button (3), the full
     tray for the compact one (4), the nav pills' labels (5: Playlists, Stats; 6: Home, Library), and last lets the

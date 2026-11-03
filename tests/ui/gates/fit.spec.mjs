@@ -13,7 +13,7 @@ const widths = [];
 for (let w = 2560; w >= 360; w -= 20) widths.push(w);
 const frames = (page) => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
 // the header and the bar as they stand, to name the cause when a width fails: each part's box and whether it gave way
-const geometry = (page) => page.evaluate(() => ['.header', '#pbar'].map((sel) => {
+const geometry = (page) => page.evaluate(() => 'fonts ' + document.fonts.status + ' | ' + ['.header', '#pbar'].map((sel) => {
   const row = document.querySelector(sel); if (!row) return '';
   const box = (e) => { const r = e.getBoundingClientRect(); return Math.round(r.left) + '-' + Math.round(r.right); };
   return sel + ' ' + box(row) + ' (scroll ' + row.scrollWidth + ' of ' + row.clientWidth + '): ' + [...row.children].map((c) =>
@@ -33,22 +33,42 @@ for (const design of designs) {
       for (const w of [...widths, ...widths.slice().reverse()]) {    // both ways: a row fits again as it widens
         await page.setViewportSize({ width: w, height: 900 });
         await frames(page);
-        let now = await chrome(page);
+        const now = await chrome(page);
         if (now.length) {
-          /* judged once the window has settled (its fonts in, two more frames), as a listener sees it when they stop
-             resizing; a moment's overflow is logged with the rows' geometry (CI's runner showed one now and then that
-             nothing on a desktop reproduces), one that stays fails with it */
-          const first = await geometry(page);
-          await page.evaluate(() => document.fonts.ready); await frames(page); await frames(page);
-          const later = await chrome(page);
-          if (!later.length) console.log(`[fit] ${design} / ${theme} at ${w} px, for a moment: ${now.join('; ')}. ${first}`);
-          else seen.set(w, await geometry(page));
-          now = later;
+          /* what the rows looked like then, and whether the next frame, then the settled page (fonts in), still
+             overflow: a moment's overflow fails as one that stays does, and this names its cause */
+          const at = await geometry(page);
+          await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => r())));
+          const next = await chrome(page);
+          await page.evaluate(() => document.fonts.ready); await frames(page);
+          const settled = await chrome(page);
+          seen.set(w, `${at}\n    next frame: ${next.join('; ') || 'fits'}; settled: ${settled.join('; ') || 'fits'}`);
         }
         for (const p of now) found.set(p, [...(found.get(p) || []), w]);
       }
       const report = [...found].map(([p, ws]) => `${p} at ${[...new Set(ws)].sort((a, b) => a - b).join(', ')} px`);
       expect(report, 'the chrome at some width\n' + [...seen].map(([w, g]) => `at ${w} px: ${g}`).join('\n')).toEqual([]);
+    });
+
+    test(`header and player bar / ${design} / ${theme}: content that grows in place fits at once`, async ({ page }) => {
+      await openScreen(page, `/album/${ids.album}`, { design, theme });
+      await page.dblclick('.tlist .trow:nth-child(1) .trow__dur');
+      await page.waitForFunction(() => App.player.current());
+      await page.evaluate(() => { location.hash = '#/home'; });
+      await page.waitForTimeout(500);
+      const out = () => page.evaluate(() => [...document.querySelectorAll('[data-fit-out]')].map((p) => p.getAttribute('class')).join(' / '));
+      for (const w of [1440, 1140, 960]) {
+        await page.setViewportSize({ width: w, height: 900 });
+        await frames(page);
+        const before = await out();
+        // wider text everywhere in the rows, as a font with wider letters gives: no row changes size
+        await page.evaluate(() => { const s = document.createElement('style'); s.id = 'gate-wide'; s.textContent = '.header *, #pbar * { letter-spacing: .14em !important; }'; document.head.appendChild(s); });
+        await frames(page);
+        expect(await chrome(page), `${w} px, the text wider: ${await geometry(page)}`).toEqual([]);
+        await page.evaluate(() => document.getElementById('gate-wide').remove());
+        await frames(page);
+        expect(await out(), `${w} px, the text back: what gave way comes back`).toEqual(before);
+      }
     });
 
     test(`desktop mini player / ${design} / ${theme}`, async ({ page }) => {
