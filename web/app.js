@@ -389,17 +389,24 @@
   var CLASSIC = ['desktop/webamp-session.js', 'screens/skins.js', 'screens/classic.js'], classicLoad = null;
   App.needClassic = function () {
     if (App.classicSettings && window.LullWebamp && !classicRoute().need) return Promise.resolve();
-    return classicLoad || (classicLoad = CLASSIC.reduce(function (p, src) { return p.then(function () { return loadScript(src); }); }, Promise.resolve())
+    return classicLoad || (classicLoad = CLASSIC.reduce(function (p, src) { return p.then(function () { return loadScript(src, 'Classic mode'); }); }, Promise.resolve())
       .then(null, function (err) { classicLoad = null; throw err; }));
   };
   function classicRoute() { return routes.filter(function (r) { return r.pattern === '/classic'; })[0] || {}; }
-  function loadScript(src) {
+  function loadScript(src, what) {
     return new Promise(function (ok, fail) {
       var s = document.createElement('script'); s.src = src;
-      s.onload = ok; s.onerror = function () { s.remove(); fail(new Error('Couldn\'t load Classic mode. Check your connection and try again.')); };
+      s.onload = ok; s.onerror = function () { s.remove(); fail(new Error('Couldn\'t load ' + what + '. Check your connection and try again.')); };
       document.head.appendChild(s);
     });
   }
+  /* the equaliser's face (screens/eq.js: Settings > Playback, the player's "…" > Equaliser) loads the same way; its
+     settings and the sound (eq.js) are with the player from the start */
+  var eqLoad = null;
+  App.needEq = function () {
+    if (App.eq) return Promise.resolve();
+    return eqLoad || (eqLoad = loadScript('screens/eq.js', 'the equaliser').then(null, function (err) { eqLoad = null; throw err; }));
+  };
   /* opening Classic shouldn't wait for its code (a first open took ~150 ms more with the CPU slowed 6x, plus the
      fetches): it loads as the pointer or focus reaches the way in, or the menu that lists it opens (playerMenu) */
   function classicSoon(e) {
@@ -3584,7 +3591,9 @@
       { label: 'Classic mode', icon: 'classic', run: function () { App.go('/classic'); } },
       { label: 'Play on another device', icon: 'connect', run: function () { App.connect.open(anchor); } },
       { label: 'Device view', icon: 'device', run: actions['open-now'] },
-      { label: 'Equaliser', icon: 'equaliser', run: function () { App.eq.open(anchor); } }
+      { label: 'Equaliser', icon: 'equaliser', run: function () {
+        App.needEq().then(function () { App.eq.open(anchor); }, function (err) { App.toast(err.message, { kind: 'error', icon: 'warning' }); });
+      } }
     ];
     if (!t) { App.menu(anchor, views, { label: 'More player actions' }); return; }
     var liked = App.isLiked(t.id), saved = App.isSaved(t.id);

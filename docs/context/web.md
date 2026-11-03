@@ -10,13 +10,14 @@ from, how the player plays, and the rules screens follow. The endpoint contract 
 ```
 index.html   tokens.css base.css components.css screens/*.css desktop/desktop.css designs/<name>/design.css (last)
              designs/designs.js + the pre-paint script (design, theme, motion, text size)
-             icons.js data.js align.js eq.js app.js layout.js connect.js offline.js screens/{discover,now,library,system,eq,appearance}.js
+             icons.js data.js align.js eq.js app.js layout.js connect.js offline.js screens/{discover,now,library,system,appearance}.js
              screens/{hub,setup}.js
              the desktop app only (window.__TAURI__): desktop/webamp-session.js screens/{skins,classic}.js
              desktop/desktop.js, from the start, as its crash recovery hands the queue back through classic.js.
              A browser loads those three Classic files on first use (App.needClassic: the /classic route, a dropped
              .wsz, Settings > Appearance), early when the pointer reaches a Classic button, or once the page is idle;
-             it never loads desktop.js. New code that only some screens use loads the same way (a route's `need`),
+             it never loads desktop.js. The equaliser's panel (screens/eq.js) loads on first use too (App.needEq:
+             Settings > Playback, the player's "…" > Equaliser). New code that only some screens use loads the same way (a route's `need`),
              not from index.html: Lighthouse's transfer budget (tests/ui/budgets.json) is for the start
 data.js      window.LullData = App.data: API client, entity cache, per-route reads, the event stream
 align.js     window.LullAlign: how far apart two recordings of one moment are (switching to a better copy); pure,
@@ -397,7 +398,7 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
 One per device, `localStorage['lull:eq']` = `{ on, bands: [10 dB], preamp: dB | null }` (web/eq.js). The bands are
 Webamp's (a 60 Hz low shelf, peaks at 170 Hz to 14 kHz, a 16 kHz high shelf, ±12 dB), so Classic mode's equaliser
 window is the same equaliser, not a second one.
-- **Faces** (screens/eq.js, `App.eq`): Settings > Playback (the switch, presets, Bass and Treble, "Every band" with
+- **Faces** (screens/eq.js, `App.eq`, loaded on first use by `App.needEq`): Settings > Playback (the switch, presets, Bass and Treble, "Every band" with
   the curve and the level) and the player's "…" > Equaliser (a popover, a sheet on phones: switch, presets, Bass and
   Treble). Built from the shared switch, chips, `.range--centred` and settings rows, so each design draws it as it
   draws those. A panel updates its values in place on every change (`LullEq.on`), from any panel, Webamp or window.

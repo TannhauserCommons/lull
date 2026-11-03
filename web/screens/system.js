@@ -559,6 +559,12 @@
   /* ---------- playback ---------- */
   fmtRange['playback.crossfade'] = function (v) { return v ? v + ' s' : 'Off'; };
   effects['playback.normalisation'] = function (v) { $$('[data-when="loudness"]').forEach(function (r) { r.hidden = v !== 'loudness'; }); };
+  /* the equaliser's panel comes with its code (screens/eq.js), loaded on first use */
+  function eqPanel() {
+    if (App.eq) return App.eq.panel({ full: true });
+    App.needEq().then(function () { if (/^\/settings(\/playback)?$/.test(App.current.path)) App.refresh(); }, function () {});
+    return ui.skeleton('card', 1);
+  }
   function secPlayback() {
     return html`
       ${switchRow('playback.gapless', 'Gapless playback', 'Where the source allows. Lossy files from Soulseek may still have a short gap.')}
@@ -569,7 +575,7 @@
       ${switchRow('playback.radioWhenQueueEnds', 'Continue with radio when the queue ends', 'Starts a radio from the last song so the music keeps going.')}
       ${lookup('playback.prefetchCount') == null ? '' : row('Preload upcoming songs', 'Your server starts getting the next songs from Soulseek while this one plays, so skipping plays at once. More uses more of its bandwidth. Saved songs never need it.',
         choice('playback.prefetchCount', 'Preload upcoming songs', [[0, 'Off'], [1, '1'], [2, '2'], [3, '3']], 'sys-seg--4'))}
-      ${App.eq.panel({ full: true })}`;
+      ${eqPanel()}`;
   }
 
   /* ---------- sources (ADR-0008): a streaming and a saving profile, then the peer limits ----------
