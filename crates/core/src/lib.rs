@@ -1,6 +1,7 @@
 //! Shared contracts for every lull crate. Domain crates depend on this and nothing else of
 //! lull's; `server` wires them together. Changes here are additive only (AGENTS.md).
 
+pub mod art;
 pub mod catalog;
 pub mod config;
 pub mod db;

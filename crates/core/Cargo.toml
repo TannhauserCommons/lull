@@ -13,6 +13,9 @@ async-trait.workspace = true
 axum.workspace = true
 # Device tokens: random generation and the hash the hub stores instead of the token.
 getrandom = "0.4.3"
+# `art`: scales covers and photos down to the served sizes and reads their real size (the same
+# build library and discovery use).
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
 sha2 = "0.11.1"
 reqwest.workspace = true
 rusqlite.workspace = true

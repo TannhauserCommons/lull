@@ -1160,6 +1160,7 @@ dependencies = [
  "async-trait",
  "axum",
  "getrandom 0.4.3",
+ "image",
  "reqwest",
  "rusqlite",
  "serde",
