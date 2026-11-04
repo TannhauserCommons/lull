@@ -1274,7 +1274,7 @@
 /* the title moment: big title, artist line, then the reason sticker and the tags on one row */
 :root[data-design="lull"] .now-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 :root[data-design="lull"] .now-head .now-head__title {
-  position: static; order: 0; flex: 1 0 100%; width: auto; height: auto; overflow: visible; clip-path: none; white-space: normal;
+  position: static; order: 0; flex: 1 0 100%; width: auto; height: auto; overflow: hidden; clip-path: none; white-space: normal;
   margin: 0; padding-right: 60px; font: 900 1.875rem/1.12 var(--f-ui); letter-spacing: -.02em; color: var(--fg-panel);
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
 }
@@ -1727,7 +1727,7 @@
   /* horizontal chip rows fade at the edge instead of cutting a chip in half */
   :root[data-design="lull"] :is(.disc-filters, .lib-segs ul) { -webkit-mask: linear-gradient(90deg, #000 calc(100% - 28px), transparent); mask: linear-gradient(90deg, #000 calc(100% - 28px), transparent); }
   /* rows: titles take two lines, "better than saved" drops to its own line so the artist stays whole */
-  :root[data-design="lull"] .trow__title, :root[data-design="lull"] .tile__title, :root[data-design="lull"] .tile__title a { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  :root[data-design="lull"] .trow__title, :root[data-design="lull"] .tile__title, :root[data-design="lull"] .tile__title a { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
   :root[data-design="lull"] .trow__artist { flex-wrap: wrap; row-gap: 0; }
   :root[data-design="lull"] .trow__artist .dup-better { flex-basis: 100%; }
   /* stats: two number windows per row (the fifth spans) */

@@ -107,6 +107,18 @@ export function unevenTags(page) {
   });
 }
 
+// Null when every text clamped to some lines also clips them; else the first that doesn't. A line clamp only shortens the
+// box and puts the ellipsis on its last line: with overflow visible the lines after it still draw, over what follows.
+export function unclippedClamps(page) {
+  return page.evaluate(() => {
+    const el = [...document.querySelectorAll('body *')].find((e) => {
+      const s = getComputedStyle(e);
+      return s.webkitLineClamp !== 'none' && s.overflowY === 'visible' && e.getClientRects().length;
+    });
+    return el ? `${el.tagName.toLowerCase()}.${[...el.classList].join('.')} "${el.textContent.trim().slice(0, 30)}"` : null;
+  });
+}
+
 // Null when nothing sticks out sideways; else the widest offender, to name it in the failure.
 export function overflow(page) {
   return page.evaluate(() => {
