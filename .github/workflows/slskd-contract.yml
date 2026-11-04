@@ -1,0 +1,38 @@
+name: slskd-contract
+# The pinned slskd resumes a download from a pre-sized incomplete file, and overwrites when told to (ADR-0014,
+# "A contract test guards the resume"). The real image against stand-in Soulseek server and peer
+# (tests/slskd-contract, Node only, no packages). Runs whenever the pin or the code that relies on it changes.
+on:
+  push:
+    paths:
+      - "deploy/compose.yaml"
+      - "app/build.rs"
+      - "crates/soulseek/**"
+      - "tests/slskd-contract/**"
+      - ".github/workflows/slskd-contract.yml"
+  pull_request:
+    paths:
+      - "deploy/compose.yaml"
+      - "app/build.rs"
+      - "crates/soulseek/**"
+      - "tests/slskd-contract/**"
+      - ".github/workflows/slskd-contract.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: slskd-contract-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  resume:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24.11"
+      - run: node tests/slskd-contract/run.mjs
