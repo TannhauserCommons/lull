@@ -544,7 +544,7 @@
   /* moved as a layer, not by background-position (a repaint each step): 3 px wider and 1 px taller up and left, the
      pattern set back to where it was, so a shift of the layer is the shift of each set of lines, and the LCD clips it */
   inset: -1px 0 0 -3px; background-position: 3px 1px;
-  animation: sd-static .24s steps(2) infinite;
+  animation: sd-static .24s steps(2) infinite; --loop-fps: 10;   /* two steps a turn, on the beat; holds when asked */
 }
 @keyframes sd-static { 50% { transform: translate(3px, 1px); } }
 :root[data-design="skydeck"] .empty__art:has(.sd-empty) .sparkle { top: 0; right: 4px; }
