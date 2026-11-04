@@ -77,6 +77,10 @@ const MARQUEE_STEP: Duration = Duration::from_millis(220);
 const MARQUEE_GAP: &str = "  ***  ";
 /// Characters the marquee holds.
 const MARQUEE_CHARS: usize = 31;
+/// What the marquee says for the playlist menus' buttons lull's queue has no use for.
+const ADD_IN_LULL: &str = "Classic plays lull's queue: add songs in lull";
+const LISTS_IN_LULL: &str = "Classic plays lull's queue: lists are kept in lull";
+const NOT_IN_CLASSIC: &str = "Not in Classic";
 /// A notice (a skin that didn't load) holds the marquee this long.
 const NOTICE: Duration = Duration::from_secs(8);
 /// Tauri's build puts the app's icon in the executable under this id (IDI_APPLICATION's).
@@ -205,8 +209,10 @@ enum Menu {
     /// The copies a song waiting in `choose` may play from.
     Choose,
     Presets,
-    Remove,
-    Select,
+    /// MISC's sort button: Webamp's menu of orders.
+    Sort,
+    /// MISC's options button.
+    MiscOptions,
 }
 
 struct Classic {
@@ -589,9 +595,17 @@ impl Classic {
                 let (x, y) = self.screen_to_skin(lparam);
                 self.double_click_title(x, y)
             }
+            WM_MOUSEMOVE if self.pressed.is_none() && self.list.menu.is_some() => {
+                let (x, y) = self.client_to_skin(lparam);
+                self.hover_menu(x, y);
+                Effect::Handled
+            }
             WM_MOUSEMOVE if self.pressed.is_some() => {
                 let (x, y) = self.client_to_skin(lparam);
                 self.drag(x, y);
+                if self.list.menu.is_some() {
+                    self.hover_menu(x, y);
+                }
                 Effect::Handled
             }
             WM_LBUTTONUP if self.pressed.is_some() => {
@@ -629,6 +643,14 @@ impl Classic {
         let Some((panel, _, target)) = self.target_at(x, y) else {
             return Effect::Default;
         };
+        // A press anywhere but on the open menu closes it, as a click outside Webamp's does.
+        let control = target.map(|t| t.control);
+        if !matches!(control, Some(Control::PlaylistMenuItem(..)))
+            && control != self.list.menu.map(Control::PlaylistMenu)
+        {
+            self.list.menu = None;
+            self.list.hover = None;
+        }
         self.focus = panel.focus();
         let Some(target) = target else {
             if double {
@@ -821,8 +843,15 @@ impl Classic {
             }),
             Control::Options => return Effect::Menu(Menu::Options, below),
             Control::EqPresets => return Effect::Menu(Menu::Presets, below),
-            Control::PlaylistMenu(1) => return Effect::Menu(Menu::Remove, below),
-            Control::PlaylistMenu(2) => return Effect::Menu(Menu::Select, below),
+            Control::PlaylistMenu(menu) => {
+                self.list.menu = if self.list.menu == Some(menu) { None } else { Some(menu) };
+                self.list.hover = None;
+            }
+            Control::PlaylistMenuItem(menu, item) => {
+                self.list.menu = None;
+                self.list.hover = None;
+                return self.menu_button(menu, item, below);
+            }
             _ => {}
         }
         Effect::Release
@@ -902,15 +931,13 @@ impl Classic {
                 items.extend([Item::Separator, Item::Command(99, "Skip this song".into(), false)]);
                 items
             }
-            Menu::Remove => vec![
-                Item::Command(1, "Remove selected\tDel".into(), false),
-                Item::Command(2, "Crop selected".into(), false),
+            Menu::Sort => vec![
+                Item::Command(1, "Sort list by title".into(), false),
+                Item::Separator,
+                Item::Command(2, "Reverse list".into(), false),
+                Item::Command(3, "Randomize list".into(), false),
             ],
-            Menu::Select => vec![
-                Item::Command(1, "Select all".into(), false),
-                Item::Command(2, "Select none".into(), false),
-                Item::Command(3, "Invert selection".into(), false),
-            ],
+            Menu::MiscOptions => vec![Item::Command(1, "Generate HTML playlist".into(), false)],
         }
     }
 
@@ -939,20 +966,13 @@ impl Classic {
                     self.send(Command::Choose(choice.clone()));
                 }
             }
-            (Menu::Remove, 1) => self.remove_selected(),
-            (Menu::Remove, _) => {
-                let keep = self.list.selected.clone();
-                self.keep(&keep);
+            (Menu::Sort, 1) => {
+                let order = self.session.by_title(&self.snapshot);
+                self.send(Command::Order(order));
             }
-            (Menu::Select, how) => {
-                for selected in &mut self.list.selected {
-                    *selected = match how {
-                        1 => true,
-                        2 => false,
-                        _ => !*selected,
-                    };
-                }
-            }
+            (Menu::Sort, 2) => self.reverse(),
+            (Menu::Sort, _) => self.send(Command::Randomize),
+            (Menu::MiscOptions, _) => self.say(NOT_IN_CLASSIC),
         }
         self.render();
         Effect::Handled
@@ -986,6 +1006,66 @@ impl Classic {
             Ok(text) => self.text = text,
             Err(e) => eprintln!("lull: Classic playlist text: {e}"),
         }
+    }
+
+    /// A button of an open playlist menu, Webamp's meaning for each. What lull's queue can't do
+    /// (files from this computer, lists kept as files, a file's tags) says so in the marquee, as
+    /// Webamp's own missing ones say so in a note.
+    fn menu_button(&mut self, menu: usize, item: usize, below: POINT) -> Effect {
+        let select = |list: &mut List, how: fn(bool) -> bool| {
+            for selected in &mut list.selected {
+                *selected = how(*selected);
+            }
+        };
+        match (menu, item) {
+            // ADD: a URL, a folder, a file.
+            (0, _) => self.say(ADD_IN_LULL),
+            // REM: misc, all, crop, selected.
+            (1, 0) | (3, 1) => self.say(NOT_IN_CLASSIC),
+            (1, 1) | (4, 0) => self.keep(&vec![false; self.list.labels.len()]),
+            (1, 2) => {
+                let keep = self.list.selected.clone();
+                self.keep(&keep);
+            }
+            (1, _) => self.remove_selected(),
+            // SEL: invert, none, all.
+            (2, 0) => select(&mut self.list, |s| !s),
+            (2, 1) => select(&mut self.list, |_| false),
+            (2, _) => select(&mut self.list, |_| true),
+            // MISC: sort, file info, options.
+            (3, 0) => return Effect::Menu(Menu::Sort, below),
+            (3, _) => return Effect::Menu(Menu::MiscOptions, below),
+            // LIST: new (above), save, load.
+            _ => self.say(LISTS_IN_LULL),
+        }
+        Effect::Release
+    }
+
+    /// The pointer over an open playlist menu lights the button under it.
+    fn hover_menu(&mut self, x: u32, y: u32) {
+        let open = self.list.menu;
+        self.list.hover = match self.target_at(x, y) {
+            Some((
+                _,
+                _,
+                Some(Target {
+                    control: Control::PlaylistMenuItem(menu, item),
+                    ..
+                }),
+            )) if Some(menu) == open => Some(item),
+            _ => None,
+        };
+    }
+
+    /// A line in the marquee for a few seconds.
+    fn say(&mut self, line: &str) {
+        self.notice = Some((line.to_owned(), Instant::now()));
+    }
+
+    /// Webamp's Reverse list (Ctrl+R too).
+    fn reverse(&mut self) {
+        let order: Vec<usize> = (0..self.list.labels.len()).rev().collect();
+        self.send(Command::Order(order));
     }
 
     fn remove_selected(&mut self) {
@@ -1061,10 +1141,7 @@ impl Classic {
         if control {
             match key {
                 _ if is(b'D') => self.double_size(),
-                _ if is(b'R') => {
-                    let rows: Vec<usize> = (0..self.list.labels.len()).rev().collect();
-                    self.send(Command::Reorder(rows, 0));
-                }
+                _ if is(b'R') => self.reverse(),
                 _ if is(b'T') => self.remaining = !self.remaining,
                 _ => return Effect::Default,
             }
@@ -1561,6 +1638,7 @@ fn fingerprint(panel: Panel, top: u32, shaded: bool, view: &View) -> u64 {
                 &list.labels,
                 list.scroll,
                 &list.selected,
+                (list.menu, list.hover),
                 now.index,
                 now.position as u64,
                 now.stopped,
@@ -1972,7 +2050,8 @@ mod tests {
     /// The side-by-side with Webamp (tests/ui/classic-compare.mjs): every `.wsz` in
     /// `LULL_SKINS_IN` drawn as the window draws it at 1x, the three windows stacked, one song
     /// loaded and stopped, the equaliser on and flat, in the scene `LULL_SCENE` names (the
-    /// harness's: `stopped`, `sliders` or `shaded`), into `<name>.png` in `LULL_RENDERS_OUT`. A skin missing pieces takes them from base-2.91 (`BASE_MD5.wsz`, in the
+    /// harness's: `stopped`, `sliders`, `shaded`, `unicode` or `menus`), into `<name>.png` in
+    /// `LULL_RENDERS_OUT`. A skin missing pieces takes them from base-2.91 (`BASE_MD5.wsz`, in the
     /// same folder), as the window does. Run by hand: `cargo test render_skins -- --ignored`.
     #[test]
     #[ignore = "renders a folder of skins: LULL_SKINS_IN, LULL_RENDERS_OUT"]
@@ -1983,20 +2062,26 @@ mod tests {
         };
         let read = |p: &std::path::Path| std::fs::read(p).map_err(|e| format!("{}: {e}", p.display()));
         let base = Skin::from_archive(&read(&inn.join(format!("{BASE_MD5}.wsz")))?, None)?;
-        // Volume, balance, and whether the main window and the equaliser are rolled up.
-        let (volume, balance, shaded) = match std::env::var("LULL_SCENE").as_deref() {
-            Err(_) | Ok("stopped") => (0.75, 0.0, false),
-            Ok("sliders") => (0.3, -0.6, false),
-            Ok("shaded") => (0.3, -0.6, true),
-            Ok(other) => return Err(format!("no scene {other}: stopped, sliders or shaded")),
+        // Volume, balance, whether the windows are rolled up, and the song's artist and title.
+        let scene = std::env::var("LULL_SCENE");
+        let (volume, balance, shaded, (artist, title)) = match scene.as_deref() {
+            Err(_) | Ok("stopped" | "menus") => (0.75, 0.0, false, SCENE_SONG),
+            Ok("sliders") => (0.3, -0.6, false, SCENE_SONG),
+            Ok("shaded") => (0.3, -0.6, true, SCENE_SONG),
+            Ok("unicode") => (0.75, 0.0, false, SCENE_UNICODE),
+            Ok(other) => return Err(format!("no scene {other}: stopped, sliders, shaded, unicode or menus")),
         };
+        // REM open, the pointer on its second button, the playlist the selected window.
+        let menus = scene.as_deref() == Ok("menus");
+        let (menu, hover) = if menus { (Some(1), Some(1)) } else { (None, None) };
+        let focus = if menus { Focus::Playlist } else { Focus::Main };
         let panels = Panels {
             main: true,
             eq: true,
             playlist: true,
             main_shade: shaded,
             eq_shade: shaded,
-            playlist_shade: false,
+            playlist_shade: shaded,
         };
         let now = Now {
             duration: Some(SCENE_SECONDS),
@@ -2009,19 +2094,21 @@ mod tests {
             preamp: Some(0.0),
         };
         let list = playlist::List {
-            labels: vec![format!("1. {SCENE_ARTIST} - {SCENE_TITLE}")],
+            labels: vec![format!("1. {artist} - {title}")],
             lengths: vec![Some(SCENE_SECONDS)],
             selected: vec![false],
             scroll: 0,
+            menu,
+            hover,
         };
         let bars = [Bar::default(); BARS];
-        let marquee = format!("1. {SCENE_ARTIST} - {SCENE_TITLE} (4:40)");
+        let marquee = Marquee::default().show(&format!("1. {artist} - {title} (4:40)"), Instant::now());
         let view = View {
             now: &now,
             marquee: &marquee,
             volume,
             balance,
-            focus: Focus::Main,
+            focus,
             pressed: None,
             seeking: None,
             remaining: false,
@@ -2092,8 +2179,11 @@ mod tests {
     }
 
     /// The scene both sides draw (tests/ui/classic-compare.mjs has the same).
-    const SCENE_ARTIST: &str = "Velvet Comet";
-    const SCENE_TITLE: &str = "Static Season";
+    const SCENE_SONG: (&str, &str) = ("Velvet Comet", "Static Season");
+    const SCENE_UNICODE: (&str, &str) = (
+        "\u{41a}\u{43e}\u{43c}\u{435}\u{442}\u{430}",
+        "\u{9759}\u{304b} \u{2019}\u{e9} \u{1f3b5}",
+    );
     const SCENE_SECONDS: f64 = 280.0;
     const BASE_MD5: &str = "5e4f10275dcb1fb211d4a8b4f1bda236";
 

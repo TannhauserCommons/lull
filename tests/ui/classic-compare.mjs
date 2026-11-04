@@ -2,8 +2,9 @@
 // vendored bundle, in Chromium, at 1x, its three windows stacked as the desktop app stacks them) and by native Classic
 // (the window's own drawing, rendered headless by `cargo test render_skins -- --ignored` in app/), in the same scene: one
 // song loaded and stopped, the equaliser on and flat, and per LULL_SCENE (both sides read it): `stopped` (the default,
-// volume 75 %), `sliders` (volume 30 %, balance 60 % left) or `shaded` (those, the main window and the equaliser rolled
-// up). Writes, per skin, Webamp's picture, a side-by-side (Webamp, native, their difference in red) and a line of
+// volume 75 %), `sliders` (volume 30 %, balance 60 % left), `shaded` (those, the three windows rolled up) or `unicode`
+// (a song named in Cyrillic, Japanese, an accent, a curly quote and an emoji, short enough not to scroll) or `menus`
+// (the playlist's REM menu open, the pointer on its second button). Writes, per skin, Webamp's picture, a side-by-side (Webamp, native, their difference in red) and a line of
 // report.json: how many pixels differ in each window.
 //   LULL_SCENE=<scene> node tests/ui/classic-compare.mjs <skins dir> <native renders dir> <out dir> [name filter]
 import { chromium } from '@playwright/test';
@@ -22,18 +23,21 @@ const SCENES = {
   stopped: { volume: 75, balance: 0, shaded: false },
   sliders: { volume: 30, balance: -60, shaded: false },
   shaded: { volume: 30, balance: -60, shaded: true },
+  menus: { volume: 75, balance: 0, shaded: false, menu: true },
+  unicode: { volume: 75, balance: 0, shaded: false, artist: '\u041a\u043e\u043c\u0435\u0442\u0430', title: '\u9759\u304b \u2019\u00e9 \u{1f3b5}', still: true },
 };
 const SCENE = { artist: 'Velvet Comet', title: 'Static Season', seconds: 280, ...SCENES[process.env.LULL_SCENE || 'stopped'] };
 if (!SCENE.volume) { console.error('LULL_SCENE is one of', Object.keys(SCENES).join(', ')); process.exit(2); }
 /* the windows stacked, each [name, top, bottom] */
 const WINDOWS = [];
-for (const [name, height] of [['main', SCENE.shaded ? 14 : 116], ['equalizer', SCENE.shaded ? 14 : 116], ['playlist', 116]]) {
+for (const name of ['main', 'equalizer', 'playlist']) {
+  const height = SCENE.shaded ? 14 : 116;
   const top = WINDOWS.length ? WINDOWS[WINDOWS.length - 1][2] : 0;
   WINDOWS.push([name, top, top + height]);
 }
 const HEIGHT = WINDOWS[2][2];
-/* left out of the count: the marquee scrolls on its own clock (Webamp's had moved by the time of the picture) */
-const MASKS = SCENE.shaded ? [] : [[111, 24, 154, 12]];
+/* left out of the count: a marquee that scrolls, on its own clock (Webamp's had moved by the time of the picture) */
+const MASKS = SCENE.shaded || SCENE.still ? [] : [[111, 24, 154, 12]];
 
 /* the song's file, never played: silence as long as the scene's song (Webamp takes its length from the file) */
 function silence() {
@@ -71,7 +75,7 @@ for (const file of readdirSync(skins).filter((f) => f.endsWith('.wsz') && (!only
         windowLayout: {
           main: { position: { top: WINDOWS[0][1], left: 0 }, shadeMode: SCENE.shaded },
           equalizer: { position: { top: WINDOWS[1][1], left: 0 }, shadeMode: SCENE.shaded },
-          playlist: { position: { top: WINDOWS[2][1], left: 0 }, size: { extraWidth: 0, extraHeight: 0 } },
+          playlist: { position: { top: WINDOWS[2][1], left: 0 }, size: { extraWidth: 0, extraHeight: 0 }, shadeMode: SCENE.shaded },
         },
         enableHotkeys: false,
       });
@@ -81,6 +85,15 @@ for (const file of readdirSync(skins).filter((f) => f.endsWith('.wsz') && (!only
       webamp.store.dispatch({ type: 'SET_BALANCE', balance: SCENE.balance });
     }, { file, SCENE, WINDOWS });
     await page.waitForTimeout(600);                                   // the skin's CSS and sprites applied
+    if (SCENE.menu) {                                                 // REM's button, then its second button
+      const top = WINDOWS[2][1] + 86;
+      /* the first click only selects the playlist: Webamp's window remounts on it, losing the click */
+      await page.mouse.click(43 + 11, top + 9);
+      await page.waitForTimeout(100);
+      await page.mouse.click(43 + 11, top + 9);
+      await page.mouse.move(43 + 11, top - 2 * 18 + 9);
+      await page.waitForTimeout(100);
+    }
     const shot = await page.screenshot({ clip: { x: 0, y: 0, width: 275, height: HEIGHT }, omitBackground: true });
     writeFileSync(join(out, name + '.webamp.png'), shot);
     const result = await page.evaluate(async ({ shot, native, WINDOWS, MASKS, HEIGHT }) => {

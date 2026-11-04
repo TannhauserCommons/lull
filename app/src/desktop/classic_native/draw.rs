@@ -47,6 +47,8 @@ pub enum Control {
     PlaylistScroll,
     /// ADD, REM, SEL, MISC, LIST along the bottom.
     PlaylistMenu(usize),
+    /// A button of one of those menus, open: the menu, then the button from the top.
+    PlaylistMenuItem(usize, usize),
 }
 
 /// A control under the pointer: where it is in its window, and for a slider the size of its knob

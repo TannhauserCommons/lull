@@ -130,6 +130,22 @@ impl Session {
             .unzip()
     }
 
+    /// The queue's places in the order of the songs' titles, as Webamp's Sort list by title: lower
+    /// case, compared as UTF-16, equal titles in their order.
+    pub fn by_title(&self, snapshot: &Snapshot) -> Vec<usize> {
+        let titles: Vec<Vec<u16>> = snapshot
+            .queue
+            .iter()
+            .map(|e| {
+                let title = self.engine.track(&e.track_id).unwrap_or_default().title;
+                title.to_lowercase().encode_utf16().collect()
+            })
+            .collect();
+        let mut order: Vec<usize> = (0..titles.len()).collect();
+        order.sort_by(|&a, &b| titles[a].cmp(&titles[b]));
+        order
+    }
+
     fn playing_track(&self, snapshot: &Snapshot) -> Option<Track> {
         snapshot
             .queue

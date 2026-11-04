@@ -182,6 +182,10 @@ pub enum Command {
     CycleRepeat,
     Keep(Vec<bool>),
     Reorder(Vec<usize>, usize),
+    /// The whole list in a new order (`Queue::order`).
+    Order(Vec<usize>),
+    /// Webamp's Randomize list: every song somewhere at random.
+    Randomize,
     /// A copy picked for a song waiting in `choose`.
     Choose(Value),
     /// The tray's Like (on or off) and Save, for the playing song.
@@ -606,6 +610,23 @@ impl Run {
             }
             Command::Reorder(rows, to) => {
                 self.queue.reorder(&rows, to);
+                self.queue_changed();
+            }
+            Command::Order(order) => {
+                self.queue.order(&order);
+                self.queue_changed();
+            }
+            Command::Randomize => {
+                let (random, draws) = (&self.random, &mut self.draws);
+                let mut order: Vec<usize> = (0..self.queue.queue.len()).collect();
+                // Fisher-Yates, as Webamp's shuffle of the list.
+                for i in (1..order.len()).rev() {
+                    *draws += 1;
+                    use std::hash::BuildHasher;
+                    let j = (random.hash_one(*draws) % (i as u64 + 1)) as usize;
+                    order.swap(i, j);
+                }
+                self.queue.order(&order);
                 self.queue_changed();
             }
             Command::Choose(source) => self.choose(source),

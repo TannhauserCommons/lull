@@ -21,6 +21,9 @@ pub struct List {
     pub selected: Vec<bool>,
     /// The first row in sight.
     pub scroll: usize,
+    /// The menu along the bottom that is open, and its button under the pointer.
+    pub menu: Option<usize>,
+    pub hover: Option<usize>,
 }
 
 impl List {
@@ -110,6 +113,14 @@ pub fn at(x: u32, y: u32, shaded: bool, list: &List) -> Option<Target> {
     ];
     if !shaded {
         let bottom = HEIGHT - layout::PLAYLIST_BOTTOM_HEIGHT;
+        // An open menu stands over everything else.
+        if let Some(menu) = list.menu {
+            let mut open =
+                (0..MENUS[menu].len()).map(|item| button(Control::PlaylistMenuItem(menu, item), menu_item(menu, item)));
+            if let Some(target) = open.find(|t| t.area.contains(x, y)) {
+                return Some(target);
+            }
+        }
         controls.extend(
             layout::PLAYLIST_MENUS
                 .iter()
@@ -149,6 +160,70 @@ pub fn window(pen: &mut Pen, view: &View) {
     rows(pen, view);
     scrollbar(pen, view);
     times(pen, view);
+    if let Some(menu) = view.list.menu {
+        open_menu(pen, menu, view.list.hover);
+    }
+}
+
+/// The menus' buttons, top to bottom, at rest and under the pointer (Webamp's `.hover`).
+const MENUS: [&[(Sprite, Sprite)]; 5] = [
+    &[
+        (sprites::PLAYLIST_ADD_URL, sprites::PLAYLIST_ADD_URL_HOVER),
+        (sprites::PLAYLIST_ADD_DIR, sprites::PLAYLIST_ADD_DIR_HOVER),
+        (sprites::PLAYLIST_ADD_FILE, sprites::PLAYLIST_ADD_FILE_HOVER),
+    ],
+    &[
+        (sprites::PLAYLIST_REMOVE_MISC, sprites::PLAYLIST_REMOVE_MISC_HOVER),
+        (sprites::PLAYLIST_REMOVE_ALL, sprites::PLAYLIST_REMOVE_ALL_HOVER),
+        (sprites::PLAYLIST_REMOVE_CROP, sprites::PLAYLIST_REMOVE_CROP_HOVER),
+        (
+            sprites::PLAYLIST_REMOVE_SELECTED,
+            sprites::PLAYLIST_REMOVE_SELECTED_HOVER,
+        ),
+    ],
+    &[
+        (sprites::PLAYLIST_SELECT_INVERT, sprites::PLAYLIST_SELECT_INVERT_HOVER),
+        (sprites::PLAYLIST_SELECT_ZERO, sprites::PLAYLIST_SELECT_ZERO_HOVER),
+        (sprites::PLAYLIST_SELECT_ALL, sprites::PLAYLIST_SELECT_ALL_HOVER),
+    ],
+    &[
+        (sprites::PLAYLIST_MISC_SORT, sprites::PLAYLIST_MISC_SORT_HOVER),
+        (sprites::PLAYLIST_MISC_INFO, sprites::PLAYLIST_MISC_INFO_HOVER),
+        (sprites::PLAYLIST_MISC_OPTIONS, sprites::PLAYLIST_MISC_OPTIONS_HOVER),
+    ],
+    &[
+        (sprites::PLAYLIST_LIST_NEW, sprites::PLAYLIST_LIST_NEW_HOVER),
+        (sprites::PLAYLIST_LIST_SAVE, sprites::PLAYLIST_LIST_SAVE_HOVER),
+        (sprites::PLAYLIST_LIST_LOAD, sprites::PLAYLIST_LIST_LOAD_HOVER),
+    ],
+];
+const MENU_BARS: [Sprite; 5] = [
+    sprites::PLAYLIST_ADD_BAR,
+    sprites::PLAYLIST_REMOVE_BAR,
+    sprites::PLAYLIST_SELECT_BAR,
+    sprites::PLAYLIST_MISC_BAR,
+    sprites::PLAYLIST_LIST_BAR,
+];
+
+/// Where a menu's button stands: the column rises from the menu's own button along the bottom.
+pub fn menu_item(menu: usize, item: usize) -> Area {
+    let (x, y) = (
+        layout::PLAYLIST_MENUS[menu],
+        HEIGHT - layout::PLAYLIST_BOTTOM_HEIGHT + 8,
+    );
+    let above = (MENUS[menu].len() - 1 - item) as u32;
+    Area::new(x, y - 18 * above, 22, 18)
+}
+
+/// An open menu as Webamp draws it: its column of buttons, the one under the pointer lit, and the
+/// bar to its left, both standing on the menu's own button.
+fn open_menu(pen: &mut Pen, menu: usize, hover: Option<usize>) {
+    let bar = MENU_BARS[menu];
+    let bottom = menu_item(menu, MENUS[menu].len() - 1);
+    pen.sprite(bar, bottom.x - bar.width, bottom.y + bottom.height - bar.height);
+    for (item, &(rest, lit)) in MENUS[menu].iter().enumerate() {
+        pen.at(if hover == Some(item) { lit } else { rest }, menu_item(menu, item));
+    }
 }
 
 /// Rolled up: its bar, with the playing song's name and time.

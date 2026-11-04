@@ -237,6 +237,23 @@ impl Queue {
         self.index = rest.iter().position(|(p, _)| *p).unwrap_or(0);
         self.queue = rest.into_iter().map(|(_, e)| e).collect();
     }
+
+    /// The songs in a new order: `order[i]` is the place the song now `i`th was at. Anything but a
+    /// rearrangement of every place leaves the queue as it is. The playing song stays the playing
+    /// one.
+    pub fn order(&mut self, order: &[usize]) {
+        let mut seen = vec![false; self.queue.len()];
+        if order.len() != seen.len()
+            || !order
+                .iter()
+                .all(|&i| i < seen.len() && !std::mem::replace(&mut seen[i], true))
+        {
+            return;
+        }
+        self.index = order.iter().position(|&i| i == self.index).unwrap_or(0);
+        let mut old: Vec<Option<Entry>> = std::mem::take(&mut self.queue).into_iter().map(Some).collect();
+        self.queue = order.iter().filter_map(|&i| old[i].take()).collect();
+    }
 }
 
 /// What to ask radio for (`GET /api/radio`).
@@ -299,6 +316,17 @@ mod tests {
             radio: None,
             context: Value::Null,
         }
+    }
+
+    #[test]
+    fn a_new_order_moves_every_song_and_the_playing_one_with_it() {
+        let mut q = queue(&["", "", ""], 0, Repeat::Off);
+        let ids = |q: &Queue| q.queue.iter().map(|e| e.track_id.clone()).collect::<Vec<_>>();
+        q.order(&[2, 1, 0]);
+        assert_eq!((ids(&q), q.index), (vec!["t2".to_owned(), "t1".into(), "t0".into()], 2));
+        q.order(&[0, 0, 1]);
+        q.order(&[0, 1]);
+        assert_eq!(ids(&q), ["t2", "t1", "t0"], "not a rearrangement: unchanged");
     }
 
     #[test]
