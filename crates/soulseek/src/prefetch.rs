@@ -137,7 +137,7 @@ async fn preload(svc: &Service, id: &TrackId) -> Result<()> {
     if mode == Mode::StartFast {
         svc.fetcher.warm(track.clone());
     }
-    if svc.online() && !svc.sources.known(id) {
+    if svc.online() && !svc.sources.known(&track) {
         let searched = svc.searches.resolve_in(&track, Lane::Prefetch).await;
         if mode == Mode::Off {
             searched?;
@@ -163,7 +163,7 @@ async fn preload(svc: &Service, id: &TrackId) -> Result<()> {
 /// the rule when the song plays.
 fn worth_starting(svc: &Service, track: &lull_core::model::Track) -> bool {
     let rules = svc.rules.get();
-    let ordered = svc.sources.ordered(&track.id, track.duration, &rules, Purpose::Stream);
+    let ordered = svc.sources.ordered(track, &rules, Purpose::Stream);
     let usable: Vec<_> = ordered.iter().filter(|r| !r.queue_too_long).collect();
     !usable.is_empty() && (rules.stream.below == StreamBelow::PlayBest || usable.iter().any(|r| r.meets))
 }

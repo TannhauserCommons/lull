@@ -1,16 +1,23 @@
 //! Every peer file a search has turned up, by song: what the source picker lists and what a
 //! stream falls back through, in the order the listener's profile sets (ADR-0008). Held in
 //! memory (searches are cheap to repeat, peers come and go) and bounded by age.
+//!
+//! Files are held under the `TrackId` their path names, and that names the album folder; a
+//! song's pool is every held file that is the song by `matching`, whatever its folder (live,
+//! "Drag Me Down" offered 2 copies from soundtrack folders while 6 more peers shared it under
+//! "Santa Cruz - Single - 2016 - Drag Me Down" and others).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
-use lull_core::ids::TrackId;
-use lull_core::model::{FileFacts, SourceRef};
+use lull_core::ids::{TrackId, loose_title};
+use lull_core::model::{FileFacts, SourceRef, Track};
 use lull_core::quality::{Minimum, Pick, Quality, format_of};
 use serde::Serialize;
 
+use crate::files;
+use crate::matching::Wanted;
 use crate::peers::Peers;
 use crate::rank::{self, Factors, Offer};
 use crate::rules::{Purpose, Rules};
@@ -115,14 +122,29 @@ pub struct Ranked {
 
 #[derive(Clone)]
 pub struct Sources {
-    inner: Arc<RwLock<HashMap<TrackId, Held>>>,
+    inner: Arc<RwLock<Map>>,
     peers: Peers,
     preferred: Arc<[String]>,
+}
+
+#[derive(Default)]
+struct Map {
+    held: HashMap<TrackId, Held>,
+    /// The ids held, by the title their files name (`title_key`): where a song's copies under
+    /// other folders' ids are looked for.
+    titled: HashMap<String, HashSet<TrackId>>,
+    /// Songs a search for the song itself has looked for lately (`searched`).
+    searched: HashMap<TrackId, Instant>,
 }
 
 struct Held {
     sources: Vec<Source>,
     seen: Instant,
+}
+
+/// A title as `matching` compares titles, spacing aside.
+fn title_key(title: &str) -> String {
+    loose_title(title).split(' ').collect()
 }
 
 impl Sources {
@@ -138,45 +160,86 @@ impl Sources {
     pub fn add(&self, found: HashMap<TrackId, Vec<Source>>) {
         let Ok(mut map) = self.inner.write() else { return };
         let now = Instant::now();
-        map.retain(|_, h| now.duration_since(h.seen) < KEEP_FOR);
+        let Map { held, titled, searched } = &mut *map;
+        held.retain(|_, h| now.duration_since(h.seen) < KEEP_FOR);
+        titled.retain(|_, ids| {
+            ids.retain(|id| held.contains_key(id));
+            !ids.is_empty()
+        });
+        searched.retain(|_, at| now.duration_since(*at) < KEEP_FOR);
         for (track, sources) in found {
-            let held = map.entry(track).or_insert_with(|| Held {
+            if let Some(song) = sources.first().and_then(|s| files::song(&s.path)) {
+                titled.entry(title_key(&song.title)).or_default().insert(track.clone());
+            }
+            let h = held.entry(track).or_insert_with(|| Held {
                 sources: Vec::new(),
                 seen: now,
             });
-            held.seen = now;
+            h.seen = now;
             for s in sources {
-                held.sources.retain(|old| !(old.user == s.user && old.path == s.path));
-                held.sources.push(s);
+                h.sources.retain(|old| !(old.user == s.user && old.path == s.path));
+                h.sources.push(s);
             }
+        }
+    }
+
+    /// Every held file that is this song: its own id's, then those under other folders' ids
+    /// that `matching` takes for it (artist and title loosely, lengths within 6 s, a remix or a
+    /// cover another song).
+    fn pool(&self, track: &Track) -> Vec<Source> {
+        let Ok(map) = self.inner.read() else {
+            return Vec::new();
+        };
+        let mut pool: Vec<Source> = map.held.get(&track.id).map(|h| h.sources.clone()).unwrap_or_default();
+        let wanted = Wanted::of(track);
+        // In one order, so ties in the profile's order don't shuffle between asks.
+        let mut ids: Vec<&TrackId> = map
+            .titled
+            .get(&title_key(&track.title))
+            .into_iter()
+            .flatten()
+            .filter(|id| **id != track.id)
+            .collect();
+        ids.sort_by(|a, b| a.0.cmp(&b.0));
+        let others = ids.into_iter().filter_map(|id| map.held.get(id));
+        for s in others.flat_map(|h| &h.sources) {
+            let is_song =
+                || files::song(&s.path).is_some_and(|f| wanted.matches_named(&f.artist, &f.title, s.length, &s.path));
+            if !pool.iter().any(|p| p.user == s.user && p.path == s.path) && is_song() {
+                pool.push(s.clone());
+            }
+        }
+        pool
+    }
+
+    /// A search for the song itself has run lately (`resolve`), not only searches that came
+    /// across some of its files (an album's, another query's).
+    pub fn searched(&self, track: &TrackId) -> bool {
+        self.inner.read().is_ok_and(|m| m.searched.contains_key(track))
+    }
+
+    pub fn mark_searched(&self, track: &TrackId) {
+        if let Ok(mut map) = self.inner.write() {
+            map.searched.insert(track.clone(), Instant::now());
         }
     }
 
     /// The track's sources in the order the profile for `purpose` takes them: copies that
     /// pass its minimum by its `pick`, then the rest by the same order, then peers whose queue
     /// is too long. `duration` (the song's) judges files whose bitrate the peer didn't report.
-    pub fn ordered(&self, track: &TrackId, duration: Option<u32>, rules: &Rules, purpose: Purpose) -> Vec<Ranked> {
-        let sources = self
-            .inner
-            .read()
-            .ok()
-            .and_then(|m| m.get(track).map(|h| h.sources.clone()))
-            .unwrap_or_default();
-        let ranked = sources.into_iter().map(|s| self.rank(s)).collect();
-        order(ranked, duration, rules, purpose)
+    pub fn ordered(&self, track: &Track, rules: &Rules, purpose: Purpose) -> Vec<Ranked> {
+        let ranked = self.pool(track).into_iter().map(|s| self.rank(s)).collect();
+        order(ranked, track.duration, rules, purpose)
     }
 
     /// One known source of the track, by reference.
-    pub fn get(&self, track: &TrackId, r: &SourceRef) -> Option<Source> {
-        let map = self.inner.read().ok()?;
-        map.get(track)?.sources.iter().find(|s| s.is(r)).cloned()
+    pub fn get(&self, track: &Track, r: &SourceRef) -> Option<Source> {
+        self.pool(track).into_iter().find(|s| s.is(r))
     }
 
     /// Whether any source is known for the track.
-    pub fn known(&self, track: &TrackId) -> bool {
-        self.inner
-            .read()
-            .is_ok_and(|m| m.get(track).is_some_and(|h| !h.sources.is_empty()))
+    pub fn known(&self, track: &Track) -> bool {
+        !self.pool(track).is_empty()
     }
 
     pub fn rank(&self, s: Source) -> Ranked {

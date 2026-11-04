@@ -83,7 +83,7 @@ async fn warm(svc: Arc<Service>, queue: Arc<Mutex<VecDeque<Track>>>, wake: Arc<N
             continue;
         };
         let online = svc.online.load(std::sync::atomic::Ordering::Relaxed);
-        if !online || track.saved || svc.sources.known(&track.id) {
+        if !online || track.saved || svc.sources.known(&track) {
             continue;
         }
         if let Err(e) = svc.searches.resolve_in(&track, Lane::Prewarm).await {

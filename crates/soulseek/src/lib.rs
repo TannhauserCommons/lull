@@ -259,11 +259,11 @@ impl Transfers for Service {
     /// another copy higher: no second transfer.
     async fn save_candidate(&self, id: &TrackId, fresh: bool) -> Result<Option<SaveCandidate>> {
         let track = self.track(id).await?;
-        if (fresh || !self.sources.known(id)) && self.online.load(Ordering::Relaxed) {
+        if (fresh || !self.sources.searched(&track.id)) && self.online.load(Ordering::Relaxed) {
             self.searches.resolve(&track).await?;
         }
         let rules = self.rules.get();
-        let ordered = self.sources.ordered(id, track.duration, &rules, Purpose::Save);
+        let ordered = self.sources.ordered(&track, &rules, Purpose::Save);
         let picks = ordered.iter().filter(|r| !r.queue_too_long);
         let best = picks.clone().next();
         let mut here = self.fetcher.copies_here(id);

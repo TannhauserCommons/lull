@@ -15,7 +15,7 @@
 | `budget.rs` | One search budget: priorities, rate, pausing while no peer answers |
 | `albums.rs` | `Transfers::album_available`: whether peers share an album, remembered |
 | `rules.rs` | The streaming and saving profiles and peer limits, from the `settings` event |
-| `sources.rs` | Every known peer file per song, in a profile's order on read |
+| `sources.rs` | Every known peer file per song (pooled across folders), in a profile's order on read |
 | `rank.rs` | The score and its factors |
 | `peers.rs` | Peers that stalled recently (`soulseek_peers`) |
 | `share.rs` | Sharing checks and rescans |
@@ -148,6 +148,8 @@ A peer that stalled on lull in the last 7 days loses 25 points (`factors.stalled
 - **A slow source gives way:** once a transfer has sent for 10 s, if it delivers under 1.25 times the song's rate and an untried copy is expected to be twice as fast, the fetch moves on (streaming.md). Never for the listener's pick or a save's named copy.
 
 ## Source rules
+
+**A song's copies** are every known file that is the song by [matching](#matching), whatever folder or album a peer keeps it in (`Sources::pool`). Files are held under the `TrackId` their path names, and that names the album folder: live, "Drag Me Down" by Santa Cruz offered the 2 MP3 128s of two soundtrack folders, while 6 more peers shared it under "Santa Cruz - Single - 2016 - Drag Me Down" and others (a FLAC, an OGG 320, an MP3 269). The picker, a stream's fallback, a save, pre-fetching and pre-warming all read the pool; a cover ("(One Direction Cover)") or a remix stays another song. Copies a search came across (an album's folder, another query) don't stand for a search for the song: the picker and a save search for the song itself unless one ran in the last 6 hours (`Sources::searched`); playing and pre-warming search only when no copy is known, so Soulseek isn't asked more often.
 
 The listener's streaming and saving profiles (ADR-0008, `lull_core::quality`) arrive in the `settings` event (`rules.rs`, ADR-0050); until collection's start-up copy, the defaults apply. `Sources::ordered` lists a song's copies for one profile:
 

@@ -91,9 +91,12 @@ impl Wanted {
 
     /// Whether a file found as `found` (parsed from `path`, `length` long) is this song.
     pub fn matches(&self, found: &Track, length: Option<u32>, path: &str) -> bool {
-        self.title_matches(&loose_title(&found.title))
-            && self.artist_matches(&found.artist, path)
-            && self.length_matches(length)
+        self.matches_named(&found.artist, &found.title, length, path)
+    }
+
+    /// `matches`, for a file its path names as `artist` and `title`.
+    pub fn matches_named(&self, artist: &str, title: &str, length: Option<u32>, path: &str) -> bool {
+        self.title_matches(&loose_title(title)) && self.artist_matches(artist, path) && self.length_matches(length)
     }
 
     fn title_matches(&self, title: &str) -> bool {

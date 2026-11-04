@@ -65,11 +65,11 @@ async fn sources(State(svc): State<Arc<Service>>, Path(id): Path<String>, Query(
         Some(other) => return Err(Error::BadRequest(format!("for={other}: stream or save"))),
     };
     let track = svc.track(&TrackId(id)).await?;
-    let ranked = svc
-        .sources
-        .ordered(&track.id, track.duration, &svc.rules.get(), purpose);
+    let ranked = svc.sources.ordered(&track, &svc.rules.get(), purpose);
     let mut searching = svc.searches.searching_for(&track);
-    if ranked.is_empty() && !searching && svc.online.load(Ordering::Relaxed) {
+    // Copies other searches came across (an album's folder, another query) don't stand for a
+    // search for the song: live, two soundtrack folders' copies kept six more peers' unseen.
+    if !svc.sources.searched(&track.id) && !searching && svc.online.load(Ordering::Relaxed) {
         let (searches, track) = (svc.searches.clone(), track.clone());
         tokio::spawn(async move {
             if let Err(e) = searches.resolve(&track).await {
@@ -95,7 +95,7 @@ async fn stream(
 ) -> Result<Response> {
     let track = svc.track(&TrackId(id)).await?;
     let pick = match (pick.peer, pick.path) {
-        (Some(peer), Some(path)) => Some(known_source(&svc, &track.id, peer, path)?),
+        (Some(peer), Some(path)) => Some(known_source(&svc, &track, peer, path)?),
         (None, None) => None,
         _ => return Err(Error::BadRequest("peer and path go together".into())),
     };
@@ -145,7 +145,7 @@ async fn switch(
 }
 
 /// A picked source must be one a search reported: its size comes from there.
-fn known_source(svc: &Service, track: &TrackId, peer: String, path: String) -> Result<SourceRef> {
+fn known_source(svc: &Service, track: &lull_core::model::Track, peer: String, path: String) -> Result<SourceRef> {
     let wanted = SourceRef {
         user: peer,
         path,

@@ -531,7 +531,7 @@ impl Fetcher {
     fn other_peer(&self, f: &Fetch, source: &Source, copy: &Copy) -> Option<Source> {
         let rules = self.rules.get();
         self.sources
-            .ordered(&f.track.id, f.track.duration, &rules, f.purpose)
+            .ordered(&f.track, &rules, f.purpose)
             .into_iter()
             .filter(|r| {
                 r.peer != source.user
@@ -546,7 +546,7 @@ impl Fetcher {
                     path: r.path,
                     size: r.size_bytes,
                 };
-                self.sources.get(&f.track.id, &found).filter(|s| s.ext == source.ext)
+                self.sources.get(&f.track, &found).filter(|s| s.ext == source.ext)
             })
     }
 

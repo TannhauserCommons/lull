@@ -537,9 +537,7 @@ impl Fetcher {
             why,
             avoid: p.failed_peers.iter().map(|failed| failed.peer.clone()).collect(),
         };
-        let known = self
-            .sources
-            .ordered(&f.track.id, f.track.duration, &rules, Purpose::Stream);
+        let known = self.sources.ordered(&f.track, &rules, Purpose::Stream);
         if !known.is_empty() && sources::better(known, &bar).is_empty() {
             return;
         }
@@ -554,7 +552,7 @@ impl Fetcher {
         let rules = self.rules.get();
         let below = || {
             self.sources
-                .get(&track.id, cached)
+                .get(track, cached)
                 .or_else(|| bare_source(cached, track.duration))
                 .is_some_and(|s| !s.meets(&rules.stream.minimum, track.duration))
         };
@@ -570,7 +568,7 @@ impl Fetcher {
             why,
             avoid: Vec::new(),
         };
-        let known = self.sources.ordered(&track.id, track.duration, &rules, Purpose::Stream);
+        let known = self.sources.ordered(track, &rules, Purpose::Stream);
         rules.switch_to_better && !sources::better(known, &bar).is_empty()
     }
 
@@ -700,11 +698,11 @@ impl Fetcher {
         let rules = self.rules.get();
         let mut entries = self.cache.complete(&track.id).await?;
         entries.retain(|e| rules.youtube.mode != Mode::Off || !youtube::is_youtube(&e.source));
-        let ordered = self.sources.ordered(&track.id, track.duration, &rules, purpose);
+        let ordered = self.sources.ordered(track, &rules, purpose);
         let rank = |e: &Entry| {
             let meets = self
                 .sources
-                .get(&track.id, &e.source)
+                .get(track, &e.source)
                 .or_else(|| bare_source(&e.source, track.duration))
                 .is_some_and(|s| s.meets(rules.minimum(purpose), track.duration));
             let at = ordered.iter().position(|r| r.source.is(&e.source));
@@ -1005,7 +1003,7 @@ impl Fetcher {
         self.cache.touch(&track.id).await?;
         let source = self
             .sources
-            .get(&track.id, &e.source)
+            .get(&track, &e.source)
             .or_else(|| bare_source(&e.source, track.duration));
         let on_youtube = youtube::is_youtube(&e.source);
         // YouTube copies are exempt from the minimum: they carry their own badge instead.
@@ -1379,7 +1377,7 @@ impl Fetcher {
         if let Some(pick) = pick.filter(|p| !tried.contains(p)) {
             return self
                 .sources
-                .get(&f.track.id, pick)
+                .get(&f.track, pick)
                 .or_else(|| bare_source(pick, f.track.duration))
                 .ok_or_else(|| Stop::Failed(format!("{} is not audio lull can play", pick.path)));
         }
@@ -1479,7 +1477,7 @@ impl Fetcher {
     fn untried(&self, f: &Fetch, tried: &[SourceRef], rules: &Rules) -> (Vec<Ranked>, usize) {
         let (copies, queued_out): (Vec<Ranked>, Vec<Ranked>) = self
             .sources
-            .ordered(&f.track.id, f.track.duration, rules, f.purpose)
+            .ordered(&f.track, rules, f.purpose)
             .into_iter()
             .filter(|r| !tried.iter().any(|t| r.source.is(t)))
             .partition(|r| !r.queue_too_long);
@@ -2285,12 +2283,9 @@ mod tests {
             let path = p.path.ok_or_else(|| Error::internal("no file"))?;
             assert_eq!(std::fs::read(&path).map_err(|e| Error::internal(e.to_string()))?, bytes);
             // Next time, the measured 50 KB/s ranks it under the honest peer's figure.
-            let ranked = fetcher.sources.ordered(
-                &song.id,
-                song.duration,
-                &fetcher.rules.get(),
-                super::super::Purpose::Stream,
-            );
+            let ranked = fetcher
+                .sources
+                .ordered(&song, &fetcher.rules.get(), super::super::Purpose::Stream);
             assert_eq!(ranked.first().map(|r| r.peer.as_str()), Some("honest"));
             let liar = ranked
                 .iter()

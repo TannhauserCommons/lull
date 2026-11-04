@@ -418,7 +418,7 @@ impl Searches {
     pub async fn resolve_in(&self, track: &Track, lane: Lane) -> Result<()> {
         if lane != Lane::Play {
             self.turn(lane).await;
-            if self.sources.known(&track.id) {
+            if self.sources.known(track) {
                 return Ok(());
             }
         }
@@ -511,6 +511,7 @@ impl Searches {
         let mut found: HashMap<TrackId, Vec<Source>> = merged.songs.drain().map(|(id, s)| (id, s.sources)).collect();
         found.entry(track.id.clone()).or_default().extend(matching);
         self.sources.add(found);
+        self.sources.mark_searched(&track.id);
         Ok(n)
     }
 
@@ -1168,6 +1169,111 @@ mod tests {
     use axum::routing::{get, post};
 
     type Test = std::result::Result<(), Box<dyn std::error::Error>>;
+
+    #[tokio::test]
+    async fn a_songs_sources_are_every_peers_copy_whatever_its_folder() -> Test {
+        // Live, "Drag Me Down" by Santa Cruz offered 2 MP3 128s from soundtrack folders, while
+        // slskd listed 8 peers for it: a FLAC single, an OGG 320, an MP3 269, more MP3s, and a
+        // One Direction cover (rightly another song).
+        let file = |path: &str, kbps: u32, ext_lossless: bool| slskd::File {
+            filename: path.into(),
+            size: if ext_lossless {
+                24_000_000
+            } else {
+                u64::from(kbps) * 207 * 125
+            },
+            bit_rate: (!ext_lossless).then_some(kbps),
+            bit_depth: ext_lossless.then_some(16),
+            sample_rate: Some(44_100),
+            length: Some(207),
+            is_variable_bit_rate: None,
+        };
+        let peer = |name: &str, f: slskd::File| slskd::Response {
+            username: name.into(),
+            has_free_upload_slot: true,
+            queue_length: 0,
+            upload_speed: 1_000_000,
+            files: vec![f],
+        };
+        let responses = [
+            peer(
+                "iwasinabandonce",
+                file(
+                    r"Music\Peacemaker S1 Soundtrack\05 Santa Cruz - Drag Me Down.mp3",
+                    128,
+                    false,
+                ),
+            ),
+            peer(
+                "Bubonic",
+                file(
+                    r"share\Peacemaker S1 Soundtrack\Santa Cruz - Drag Me Down.mp3",
+                    128,
+                    false,
+                ),
+            ),
+            peer(
+                "paradox1977",
+                file(
+                    r"Music\Santa Cruz - Single - 2016 - Drag Me Down\01 Drag Me Down.flac",
+                    0,
+                    true,
+                ),
+            ),
+            peer(
+                "garvfvrtwd",
+                file(r"Music\Santa Cruz\Drag Me Down\01 - Drag Me Down.ogg", 320, false),
+            ),
+            peer("yabosid", file(r"mp3\Santa Cruz - Drag Me Down.mp3", 269, false)),
+            peer(
+                "schnoober",
+                file(r"music\Santa Cruz\Bad Blood\03 Drag Me Down.mp3", 128, false),
+            ),
+            peer(
+                "Rex_Monday",
+                file(
+                    r"Downloads\Peacemaker (Original Soundtrack)\Santa Cruz - Drag Me Down.mp3",
+                    128,
+                    false,
+                ),
+            ),
+            peer(
+                "jgoss",
+                file(
+                    r"Music\Santa Cruz\Covers\Drag Me Down (One Direction Cover).mp3",
+                    192,
+                    false,
+                ),
+            ),
+        ];
+        let db = lull_core::db::Db::memory()?;
+        db.migrate(&crate::MIGRATIONS)?;
+        let sources = Sources::new(crate::peers::Peers::load(db).await?, Vec::new());
+        // Every search keeps what it found by the id each path names, as searches do.
+        let merged = merge(&responses);
+        let playing = merged
+            .songs
+            .values()
+            .find(|s| s.track.album == "Peacemaker S1 Soundtrack")
+            .map(|s| s.track.clone())
+            .ok_or("no soundtrack copy")?;
+        sources.add(merged.songs.into_iter().map(|(id, s)| (id, s.sources)).collect());
+        let ordered = sources.ordered(&playing, &crate::rules::Rules::default(), crate::rules::Purpose::Stream);
+        let peers: Vec<&str> = ordered.iter().map(|r| r.peer.as_str()).collect();
+        assert_eq!(ordered.len(), 7, "every copy but the cover: {peers:?}");
+        assert!(!peers.contains(&"jgoss"), "the cover is another song");
+        for p in ["paradox1977", "garvfvrtwd", "yabosid", "schnoober", "Rex_Monday"] {
+            assert!(peers.contains(&p), "{p}: {peers:?}");
+        }
+        // A picked copy from another folder streams: it is a known source of the song.
+        let flac = lull_core::model::SourceRef {
+            user: "paradox1977".into(),
+            path: r"Music\Santa Cruz - Single - 2016 - Drag Me Down\01 Drag Me Down.flac".into(),
+            size: 0,
+        };
+        assert!(sources.get(&playing, &flac).is_some());
+        Ok(())
+    }
 
     #[tokio::test]
     async fn one_album_in_differently_named_folders_is_one_album_with_one_cover() -> Test {
