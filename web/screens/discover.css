@@ -334,7 +334,7 @@ button.disc-pick__title:hover { text-decoration: underline; text-underline-offse
 .disc-kv dt { font: var(--t-micro); color: var(--fg-2); }
 .disc-kv dd { margin: 0; font: 600 .9375rem/1.35 var(--f-ui); min-width: 0; }
 .disc-kv dd.px { font: var(--t-px); letter-spacing: var(--t-px-track); }
-.disc-kv dd .sg { margin-right: 4px; vertical-align: 0; }
+.disc-kv dd .sg { display: inline-block; margin-right: 4px; vertical-align: -1px; }   /* in the line of text it states */
 .disc-kv dd b { font-weight: 800; }
 .disc-kv__wide { grid-column: 1 / -1; }
 .disc-kv dd.disc-kv__path { font: var(--t-micro); color: var(--fg-2); overflow-wrap: anywhere; }
