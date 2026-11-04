@@ -60,12 +60,12 @@ How the baseline moved, so the next raise has a precedent to compare with:
 - **326 KB, LCP 3.7 s** (run 41312904377): web changes landed on `main`; library/albums adds about 17 KB of covers.
 - **369 KB, LCP 4.3 s** (this table): the themes work. A design is now a theme package: `theme.css`, `theme.json`, one HTML file per slot, `purify.min.js` (DOMPurify, 11 KB) and `/api/themes`, and `appearance.js` grew by 7 KB. LCP rose because the stylesheet, the package and its slots now load one after another. CLS fell to 0.
 
-**Budgets move only with a stated reason the user would accept**, never because `main` got heavier: a budget that follows every regression catches nothing. The numbers below, set from the 369 KB / 4.3 s run, are **temporary**: they are raised only until the themes work stops loading the theme stylesheet, package and slots one after another. When that lands, set them back to the pre-themes figures (run 41312904377: transfer about 359 KB, library/albums 377 KB; LCP 4.35-4.65 s; CLS 0.025) and delete this note.
+- **Back under the pre-themes budgets** (run 41776358581, `main` at `894d001`): the budgets were raised from the themes run while the theme stylesheet, package and slots loaded one after another, and set back to the pre-themes figures once that was fixed (83176c3, 94fa61a). Main then failed transfer by 25-28 KB and CLS on library/albums (0.078) and settings/playback (0.032) until code began loading where it is used (Classic mode and the desktop bridge 03cf1db, their stylesheets bb4f0bb, the equaliser b2e873f, one screen's code and the hub's settings c909e31) and loading screens stopped jumping when their data came (ff4ffc5); every route now passes. Covers didn't move it: library/albums' covers weighed 16 KB before and after they were sized to their box (web.md), since at Lighthouse's 412 px and 1.75x its tiles ask for 256 px either way.
 
-**Budgets** = median plus a margin:
-- **Transfer +10%** (about 405 KB, library/albums 424 KB): it moves only when we change files, so the margin is small. A change that adds a script or a font fails it.
-- **LCP +25%** (4.0-4.3 s -> 5.05-5.4 s): the simulated network makes it stable, but runners differ.
-- **CLS +0.02** over a median of 0.
+**Budgets move only with a stated reason the user would accept**, never because `main` got heavier: a budget that follows every regression catches nothing. They are the pre-themes run's figures (41312904377) plus a margin:
+- **Transfer +10%** (358-360 KB, library/albums 377 KB): it moves only when we change files, so the margin is small. A change that adds a script or a font fails it.
+- **LCP +25%** (3.5-3.7 s -> 4.35-4.65 s): the simulated network makes it stable, but runners differ.
+- **CLS +0.025** over a median of 0 (now 0.09, set from its first measured 0.071).
 - **TBT 150 ms,** not median +50%: lab TBT of 0-90 ms is noise, and a floor keeps the check from flaking while still catching a real long task.
 
 Raise a budget only with a measured reason a listener would accept, in the commit (a feature they asked for, not drift): run the workflow, read the `lighthouse` artifact's reports, and edit `budgets.json` the same way.
