@@ -9,7 +9,7 @@
 use super::canvas::Pen;
 use super::draw::{Control, Focus, Target, View};
 use super::eq::{BANDS, MAX_DB};
-use super::skin::{Area, HEIGHT, layout, sprites};
+use super::skin::{Area, HEIGHT, Sprite, layout, sprites};
 
 /// A slider's thumb, and how far it travels: Webamp's slider is 62 pixels high in its 63-pixel
 /// track.
@@ -38,12 +38,16 @@ pub fn at(x: u32, y: u32, shaded: bool) -> Option<Target> {
         button(Control::EqShade, layout::EQ_SHADE),
     ];
     if shaded {
-        controls.push(Target {
-            control: Control::Volume,
-            area: layout::EQ_SHADE_VOLUME,
+        let small = |control, area: Area| Target {
+            control,
+            area,
             knob: 3,
-            travel: layout::EQ_SHADE_VOLUME.width - 3,
-        });
+            travel: area.width - 3,
+        };
+        controls.extend([
+            small(Control::Volume, layout::EQ_SHADE_VOLUME),
+            small(Control::Balance, layout::EQ_SHADE_BALANCE),
+        ]);
     } else {
         controls.extend([
             button(Control::EqOn, layout::EQ_ON),
@@ -116,8 +120,8 @@ pub fn window(pen: &mut Pen, view: &View) {
     pen.mask(mask.as_ref(), HEIGHT);
 }
 
-/// Rolled up: its bar, the volume as a small slider (its thumb changes look by thirds), balance
-/// centred, and its buttons.
+/// Rolled up: its bar, the volume and the balance as small sliders (each thumb in one of three
+/// looks, Webamp's: the nearest of the slider's start, middle and end), and its buttons.
 pub fn shaded(pen: &mut Pen, view: &View) {
     let bar = if view.focus == Focus::Equaliser {
         sprites::EQ_SHADE_BAR_ACTIVE
@@ -132,25 +136,36 @@ pub fn shaded(pen: &mut Pen, view: &View) {
         pen.at(sprites::EQ_SHADE_CLOSE_BUTTON_PRESSED, layout::EQ_CLOSE);
     }
     let volume = view.volume.clamp(0.0, 1.0);
-    let thumb = match volume {
-        v if v < 1.0 / 3.0 => sprites::EQ_SHADE_VOLUME_THUMB_LOW,
-        v if v < 2.0 / 3.0 => sprites::EQ_SHADE_VOLUME_THUMB_MIDDLE,
-        _ => sprites::EQ_SHADE_VOLUME_THUMB_HIGH,
-    };
-    let area = layout::EQ_SHADE_VOLUME;
-    pen.sprite(
-        thumb,
-        area.x + (volume * f64::from(area.width - 3)).round() as u32,
-        area.y,
-    );
-    let balance = layout::EQ_SHADE_BALANCE;
-    pen.sprite(
+    let looks = [
+        sprites::EQ_SHADE_VOLUME_THUMB_LOW,
+        sprites::EQ_SHADE_VOLUME_THUMB_MIDDLE,
+        sprites::EQ_SHADE_VOLUME_THUMB_HIGH,
+    ];
+    small_slider(pen, layout::EQ_SHADE_VOLUME, volume, looks);
+    let looks = [
+        sprites::EQ_SHADE_BALANCE_THUMB_LEFT,
         sprites::EQ_SHADE_BALANCE_THUMB_MIDDLE,
-        balance.x + (balance.width - 3) / 2,
-        balance.y,
+        sprites::EQ_SHADE_BALANCE_THUMB_RIGHT,
+    ];
+    small_slider(
+        pen,
+        layout::EQ_SHADE_BALANCE,
+        (view.balance.clamp(-1.0, 1.0) + 1.0) / 2.0,
+        looks,
     );
     let mask = pen.skin.regions.equaliser_shade.clone();
     pen.mask(mask.as_ref(), layout::SHADE_HEIGHT);
+}
+
+/// A rolled-up window's slider: its thumb at `value` (0 to 1) along the track, in the look nearest
+/// the value of three (Webamp rounds `value × 2`).
+fn small_slider(pen: &mut Pen, area: Area, value: f64, looks: [Sprite; 3]) {
+    let look = looks[(value * 2.0).round() as usize];
+    pen.sprite(
+        look,
+        area.x + (value * f64::from(area.width - 3)).round() as u32,
+        area.y,
+    );
 }
 
 /// A vertical slider: its track drawn at the value, the thumb riding on it.

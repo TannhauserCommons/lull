@@ -200,6 +200,7 @@ pub mod sprites {
         VOLUME_THUMB = (Volume, 15, 422, 14, 11);
         VOLUME_THUMB_PRESSED = (Volume, 0, 422, 14, 11);
         BALANCE_THUMB = (Balance, 15, 422, 14, 11);
+        BALANCE_THUMB_PRESSED = (Balance, 0, 422, 14, 11);
 
         STEREO_ON = (MonoSter, 0, 0, 29, 12);
         STEREO_OFF = (MonoSter, 0, 12, 29, 12);
@@ -260,7 +261,9 @@ pub mod sprites {
         EQ_SHADE_VOLUME_THUMB_LOW = (EqEx, 1, 30, 3, 7);
         EQ_SHADE_VOLUME_THUMB_MIDDLE = (EqEx, 4, 30, 3, 7);
         EQ_SHADE_VOLUME_THUMB_HIGH = (EqEx, 7, 30, 3, 7);
+        EQ_SHADE_BALANCE_THUMB_LEFT = (EqEx, 11, 30, 3, 7);
         EQ_SHADE_BALANCE_THUMB_MIDDLE = (EqEx, 14, 30, 3, 7);
+        EQ_SHADE_BALANCE_THUMB_RIGHT = (EqEx, 17, 30, 3, 7);
 
         PLAYLIST_TOP_LEFT_ACTIVE = (PlEdit, 0, 0, 25, 20);
         PLAYLIST_TITLE_ACTIVE = (PlEdit, 26, 0, 100, 20);
@@ -439,9 +442,10 @@ pub mod layout {
 
     /// The time display's digit cells, left to right.
     pub const TIME_DIGITS: [Area; 4] = [MINUTE_TENS, MINUTE_ONES, SECOND_TENS, SECOND_ONES];
-    /// How far a slider's thumb travels: the track's width less the thumb's.
-    /// The thumb's travel: Webamp's slider is 3 pixels narrower than the track's picture.
+    /// How far a slider's thumb travels: the track's width less the thumb's; Webamp's volume
+    /// slider is 3 pixels narrower than the track's picture.
     pub const VOLUME_TRAVEL: u32 = VOLUME.width - 3 - 14;
+    pub const BALANCE_TRAVEL: u32 = BALANCE.width - 14;
     pub const POSITION_TRAVEL: u32 = POSITION.width - 29;
 }
 

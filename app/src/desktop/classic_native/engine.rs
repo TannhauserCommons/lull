@@ -175,6 +175,8 @@ pub enum Command {
     Jump(usize),
     Seek(f64),
     Volume(f64),
+    /// Classic's balance, -1 (left) to 1 (right); the page has none, so it isn't handed back.
+    Balance(f64),
     Equaliser(Equaliser),
     Shuffle(bool),
     CycleRepeat,
@@ -423,6 +425,7 @@ struct Run {
     playing: bool,
     status: Status,
     volume: f64,
+    balance: f64,
     eq: Equaliser,
     current: Option<Loaded>,
     next: Option<Loaded>,
@@ -482,6 +485,7 @@ impl Run {
             playing: start.playing,
             status: Status::Idle,
             volume: start.volume,
+            balance: 0.0,
             eq: start.eq,
             current: None,
             next: None,
@@ -573,6 +577,10 @@ impl Run {
                 self.volume = volume.clamp(0.0, 1.0);
                 self.apply_levels();
                 self.connect_soon();
+            }
+            Command::Balance(balance) => {
+                self.balance = balance.clamp(-1.0, 1.0);
+                self.apply_levels();
             }
             Command::Equaliser(eq) => {
                 self.eq = eq;
@@ -1400,6 +1408,7 @@ impl Run {
     fn apply_levels(&mut self) {
         let mut mixer = lock(&self.mixer);
         mixer.volume = self.volume as f32;
+        mixer.balance = self.balance as f32;
         mixer.eq = Chain::new(&self.eq, self.rate);
     }
 

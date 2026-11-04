@@ -17,7 +17,7 @@
 use super::canvas::{Canvas, TextRun};
 use super::draw::{self, Control, Focus, Target, View};
 use super::engine::{Command, Snapshot, Status};
-use super::eq::presets;
+use super::eq::{self, presets};
 use super::eqwin;
 use super::playlist::{self, List};
 use super::queue::Repeat;
@@ -249,6 +249,8 @@ struct Classic {
     pressed: Option<(Target, u32)>,
     over: bool,
     seeking: Option<f64>,
+    /// The balance slider, -1 to 1: this window's alone, as the page has none.
+    balance: f64,
     remaining: bool,
     marquee: Marquee,
     notice: Option<(String, Instant)>,
@@ -336,6 +338,7 @@ pub fn open(setup: Setup, on_close: OnClose) -> Result<(), String> {
         pressed: None,
         over: false,
         seeking: None,
+        balance: 0.0,
         remaining: false,
         marquee: Marquee::default(),
         notice: setup.said.map(|said| (said, Instant::now())),
@@ -740,6 +743,10 @@ impl Classic {
         let down = along(y, area.y);
         match target.control {
             Control::Volume => self.volume(across),
+            Control::Balance => {
+                self.balance = centred(across * 2.0 - 1.0);
+                self.send(Command::Balance(self.balance));
+            }
             Control::Position => self.seeking = Some(across),
             Control::EqPreamp => self.equalise(|eq| eq.preamp = Some(eqwin::decibels(1.0 - down))),
             Control::EqBand(band) => self.equalise(|eq| eq.bands[band] = eqwin::decibels(1.0 - down)),
@@ -818,6 +825,20 @@ impl Classic {
             _ => {}
         }
         Effect::Release
+    }
+
+    /// What the marquee says while a slider is held, as Webamp's does.
+    fn drag_line(&self) -> Option<String> {
+        let (target, _) = self.pressed?;
+        let eq = &self.snapshot.eq;
+        Some(match target.control {
+            Control::Position => seek_line(self.seeking?, self.snapshot.duration.unwrap_or(0.0)),
+            Control::Volume => format!("Volume: {}%", (self.snapshot.volume * 100.0).round()),
+            Control::Balance => balance_line(self.balance),
+            Control::EqPreamp => eq_line(None, eq.level()),
+            Control::EqBand(band) => eq_line(Some(band), eq.bands[band]),
+            _ => return None,
+        })
     }
 
     /// The transport's buttons, shuffle and repeat, Winamp's meaning for each (the keys' too).
@@ -1107,14 +1128,14 @@ impl Classic {
         let bars = self.bars;
         self.notice = self.notice.take().filter(|(_, at)| at.elapsed() < NOTICE);
         let line = match (
+            self.drag_line(),
             &now.said,
             &self.notice,
-            self.seeking,
             self.session.titles.get(now.index),
         ) {
-            (Some(error), _, _, _) => error.clone(),
-            (None, Some((notice, _)), _, _) => notice.clone(),
-            (None, None, Some(fraction), _) => seek_line(fraction, now.duration.unwrap_or(0.0)),
+            (Some(line), _, _, _) => line,
+            (None, Some(error), _, _) => error.clone(),
+            (None, None, Some((notice, _)), _) => notice.clone(),
             (None, None, None, Some(title)) => title.clone(),
             (None, None, None, None) => String::new(),
         };
@@ -1138,6 +1159,7 @@ impl Classic {
             now: &now,
             marquee: &marquee,
             volume: self.snapshot.volume,
+            balance: self.balance,
             focus: self.focus,
             pressed: self.pressed.filter(|_| self.over).map(|(t, _)| t.control),
             seeking: self.seeking,
@@ -1562,6 +1584,38 @@ fn union(a: (u32, u32, u32, u32), b: (u32, u32, u32, u32)) -> (u32, u32, u32, u3
     (a.0.min(b.0), a.1.min(b.1), a.2.max(b.2), a.3.max(b.3))
 }
 
+/// The balance as Webamp takes it from its slider: whole percents, and within a quarter of the
+/// middle, the middle.
+fn centred(balance: f64) -> f64 {
+    let percent = (balance.clamp(-1.0, 1.0) * 100.0).round();
+    if percent.abs() < 25.0 { 0.0 } else { percent / 100.0 }
+}
+
+/// What the marquee says while the listener drags the balance (Webamp's words).
+fn balance_line(balance: f64) -> String {
+    let percent = (balance * 100.0).round();
+    if percent > 0.0 {
+        format!("Balance: {percent}% Right")
+    } else if percent < 0.0 {
+        format!("Balance: {}% Left", -percent)
+    } else {
+        "Balance: Center".to_owned()
+    }
+}
+
+/// What the marquee says while the listener drags an equaliser slider (Webamp's words): the band
+/// (`60HZ`, `3KHZ`, or `Preamp`) and its gain to a tenth of a decibel, a whole one without its `.0`.
+fn eq_line(band: Option<usize>, db: f64) -> String {
+    let name = match band.and_then(|band| eq::BANDS.get(band)) {
+        Some(hz) if *hz < 1000.0 => format!("{hz}HZ"),
+        Some(hz) => format!("{}KHZ", hz / 1000.0),
+        None => "Preamp".to_owned(),
+    };
+    let db = (db * 10.0).round() / 10.0;
+    let sign = if db > 0.0 { "+" } else { "" };
+    format!("EQ: {name} {sign}{} DB", if db == 0.0 { 0.0 } else { db })
+}
+
 /// What the marquee says while the listener drags the seek bar (Winamp's words).
 fn seek_line(fraction: f64, length: f64) -> String {
     let at = (fraction * length) as u32;
@@ -1909,8 +1963,8 @@ mod tests {
 
     /// The side-by-side with Webamp (tests/ui/classic-compare.mjs): every `.wsz` in
     /// `LULL_SKINS_IN` drawn as the window draws it at 1x, the three windows stacked, one song
-    /// loaded and stopped, volume 75 %, the equaliser on and flat, into `<name>.png` in
-    /// `LULL_RENDERS_OUT`. A skin missing pieces takes them from base-2.91 (`BASE_MD5.wsz`, in the
+    /// loaded and stopped, the equaliser on and flat, in the scene `LULL_SCENE` names (the
+    /// harness's: `stopped`, `sliders` or `shaded`), into `<name>.png` in `LULL_RENDERS_OUT`. A skin missing pieces takes them from base-2.91 (`BASE_MD5.wsz`, in the
     /// same folder), as the window does. Run by hand: `cargo test render_skins -- --ignored`.
     #[test]
     #[ignore = "renders a folder of skins: LULL_SKINS_IN, LULL_RENDERS_OUT"]
@@ -1921,12 +1975,19 @@ mod tests {
         };
         let read = |p: &std::path::Path| std::fs::read(p).map_err(|e| format!("{}: {e}", p.display()));
         let base = Skin::from_archive(&read(&inn.join(format!("{BASE_MD5}.wsz")))?, None)?;
+        // Volume, balance, and whether the main window and the equaliser are rolled up.
+        let (volume, balance, shaded) = match std::env::var("LULL_SCENE").as_deref() {
+            Err(_) | Ok("stopped") => (0.75, 0.0, false),
+            Ok("sliders") => (0.3, -0.6, false),
+            Ok("shaded") => (0.3, -0.6, true),
+            Ok(other) => return Err(format!("no scene {other}: stopped, sliders or shaded")),
+        };
         let panels = Panels {
             main: true,
             eq: true,
             playlist: true,
-            main_shade: false,
-            eq_shade: false,
+            main_shade: shaded,
+            eq_shade: shaded,
             playlist_shade: false,
         };
         let now = Now {
@@ -1950,7 +2011,8 @@ mod tests {
         let view = View {
             now: &now,
             marquee: &marquee,
-            volume: 0.75,
+            volume,
+            balance,
             focus: Focus::Main,
             pressed: None,
             seeking: None,
@@ -2026,6 +2088,19 @@ mod tests {
     const SCENE_TITLE: &str = "Static Season";
     const SCENE_SECONDS: f64 = 280.0;
     const BASE_MD5: &str = "5e4f10275dcb1fb211d4a8b4f1bda236";
+
+    #[test]
+    fn sliders_speak_as_webamps_do() {
+        assert_eq!(centred(0.2), 0.0);
+        assert_eq!(centred(-0.314), -0.31);
+        assert_eq!(balance_line(0.0), "Balance: Center");
+        assert_eq!(balance_line(-0.31), "Balance: 31% Left");
+        assert_eq!(balance_line(1.0), "Balance: 100% Right");
+        assert_eq!(eq_line(Some(0), 3.0), "EQ: 60HZ +3 DB");
+        assert_eq!(eq_line(Some(5), -2.46), "EQ: 3KHZ -2.5 DB");
+        assert_eq!(eq_line(Some(8), -0.01), "EQ: 14KHZ 0 DB");
+        assert_eq!(eq_line(None, 12.0), "EQ: Preamp +12 DB");
+    }
 
     #[test]
     fn the_keypad_skips_ten_songs_as_webamps_does() {

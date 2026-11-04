@@ -2,8 +2,9 @@
 //! section 8b): the playing deck at its loudness level; into the next deck without a gap when the
 //! song really reached its end (within 2 s of its length; an early end stops and says so); an
 //! equal-power crossfade over the song's last seconds; a better copy faded in over 200 ms once it is
-//! lined up; then the equaliser, then the volume (the slider squared, as the page sets it). The
-//! visualiser sees the sound after the equaliser, before the volume, as Winamp's did. What happened
+//! lined up; then the equaliser, then the balance (Webamp's: an equal-power stereo panner) and the
+//! volume (the slider squared, as the page sets it). The visualiser sees the sound after the
+//! equaliser, before the balance and the volume, as Winamp's did. What happened
 //! (a handover, an end, a switch) waits for the engine to read.
 
 use super::deck::{Deck, Phase};
@@ -51,6 +52,8 @@ pub struct Mixer {
     pub next_level: f32,
     /// The slider's value; it plays at its square.
     pub volume: f32,
+    /// Classic's balance slider, -1 (left) to 1 (right).
+    pub balance: f32,
     pub eq: Option<Chain>,
     fade: Option<Fade>,
     switch: Option<Switch>,
@@ -78,6 +81,7 @@ impl Mixer {
             level: 1.0,
             next_level: 1.0,
             volume: 1.0,
+            balance: 0.0,
             eq: None,
             fade: None,
             switch: None,
@@ -314,9 +318,10 @@ impl Mixer {
         self.heard.1 += frames as u64;
     }
 
-    /// The equaliser, the visualiser's copy, and the volume.
+    /// The equaliser, the visualiser's copy, the balance and the volume.
     fn finish(&mut self, out: &mut [f32]) {
         let volume = rules::output_volume(f64::from(self.volume), false) as f32;
+        let gains = pan_gains(self.balance);
         for frame in out.as_chunks_mut::<2>().0 {
             if let Some(chain) = self.eq.as_mut() {
                 frame[0] = chain.process(0, frame[0]);
@@ -326,9 +331,28 @@ impl Mixer {
                 self.tap.pop_front();
             }
             self.tap.push_back((frame[0] + frame[1]) / 2.0);
-            frame[0] *= volume;
-            frame[1] *= volume;
+            let [left, right] = pan(*frame, gains);
+            frame[0] = left * volume;
+            frame[1] = right * volume;
         }
+    }
+}
+
+/// The balance as Web Audio's StereoPannerNode has it (Webamp's balance): the side panned away
+/// from fades with the cosine of the angle, and moves across into the other side with its sine.
+/// Centred, both pass as they are. The gains and which side moves.
+fn pan_gains(balance: f32) -> (f32, f32, bool) {
+    let balance = balance.clamp(-1.0, 1.0);
+    let right = balance > 0.0;
+    let x = if right { balance } else { balance + 1.0 } * std::f32::consts::FRAC_PI_2;
+    (x.cos(), x.sin(), right)
+}
+
+fn pan([left, right]: [f32; 2], (cos, sin, to_right): (f32, f32, bool)) -> [f32; 2] {
+    if to_right {
+        [left * cos, right + left * sin]
+    } else {
+        [left + right * cos, right * sin]
     }
 }
 
@@ -337,4 +361,24 @@ impl Mixer {
 fn glided(from: f32, frames: u64, rate: u32) -> f32 {
     let t = frames as f64 / f64::from(rate);
     (1.0 + (f64::from(from) - 1.0) * (-t / rules::SWITCH_GLIDE_S).exp()) as f32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_balance_pans_as_web_audios_stereo_panner() {
+        let close = |a: [f32; 2], b: [f32; 2]| (a[0] - b[0]).abs() < 1e-6 && (a[1] - b[1]).abs() < 1e-6;
+        let frame = [0.5, 0.25];
+        assert!(close(pan(frame, pan_gains(0.0)), frame));
+        // Hard left: the right side moves across whole; hard right, the left does.
+        assert!(close(pan(frame, pan_gains(-1.0)), [0.75, 0.0]));
+        assert!(close(pan(frame, pan_gains(1.0)), [0.0, 0.75]));
+        let half = std::f32::consts::FRAC_PI_4;
+        assert!(close(
+            pan(frame, pan_gains(0.5)),
+            [0.5 * half.cos(), 0.25 + 0.5 * half.sin()]
+        ));
+    }
 }

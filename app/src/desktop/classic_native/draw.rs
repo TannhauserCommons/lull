@@ -26,6 +26,7 @@ pub enum Control {
     Shuffle,
     Repeat,
     Volume,
+    Balance,
     Position,
     Time,
     /// The scrolling title: where a song waiting for the listener's choice asks for it.
@@ -74,6 +75,8 @@ pub struct View<'a> {
     pub now: &'a Now,
     pub marquee: &'a str,
     pub volume: f64,
+    /// -1 (left) to 1 (right).
+    pub balance: f64,
     pub focus: Focus,
     /// The button held down, drawn pressed while the pointer is on it.
     pub pressed: Option<Control>,
@@ -98,7 +101,7 @@ impl View<'_> {
 }
 
 /// The main window's controls, unrolled and rolled up.
-const MAIN: [(Control, Area); 18] = [
+const MAIN: [(Control, Area); 19] = [
     (Control::Options, layout::OPTIONS_BUTTON),
     (Control::Minimize, layout::MINIMIZE_BUTTON),
     (Control::Shade, layout::SHADE_BUTTON),
@@ -112,6 +115,7 @@ const MAIN: [(Control, Area); 18] = [
     (Control::Shuffle, layout::SHUFFLE),
     (Control::Repeat, layout::REPEAT),
     (Control::Volume, layout::VOLUME),
+    (Control::Balance, layout::BALANCE),
     (Control::Position, layout::POSITION),
     (Control::Time, Area::new(layout::MINUS_EX.x, layout::MINUS_EX.y, 63, 13)),
     (Control::EqWindow, layout::EQ_BUTTON),
@@ -139,6 +143,7 @@ pub fn main_at(x: u32, y: u32, shaded: bool) -> Option<Target> {
     let (control, area) = controls.iter().copied().find(|(_, area)| area.contains(x, y))?;
     let (knob, travel) = match (control, shaded) {
         (Control::Volume, _) => (14, layout::VOLUME_TRAVEL),
+        (Control::Balance, _) => (14, layout::BALANCE_TRAVEL),
         (Control::Position, false) => (29, layout::POSITION_TRAVEL),
         (Control::Position, true) => (3, area.width - 3),
         _ => (0, 0),
@@ -397,15 +402,21 @@ fn sliders(pen: &mut Pen, view: &View) {
     };
     let x = layout::VOLUME.x + (level * f64::from(layout::VOLUME_TRAVEL)).round() as u32;
     pen.sprite(thumb, x, layout::VOLUME.y + 1);
-    // Balance stays centred: Classic's player plays both channels as they are.
-    let (track, thumb) = if pen.skin.has_balance() {
-        (sprites::balance_frame(0), sprites::BALANCE_THUMB)
-    } else {
-        (sprites::volume_frame(0), sprites::VOLUME_THUMB)
+    // Webamp's balance: 27 frames either way, the same for both sides; a skin without balance.bmp
+    // shows its volume slider's pictures.
+    let balance = view.balance.clamp(-1.0, 1.0);
+    let frame = (27.0 * balance.abs()).floor() as u32;
+    let held = view.held(Control::Balance);
+    let (track, thumb) = match (pen.skin.has_balance(), held) {
+        (true, false) => (sprites::balance_frame(frame), sprites::BALANCE_THUMB),
+        (true, true) => (sprites::balance_frame(frame), sprites::BALANCE_THUMB_PRESSED),
+        (false, false) => (sprites::volume_frame(frame), sprites::VOLUME_THUMB),
+        (false, true) => (sprites::volume_frame(frame), sprites::VOLUME_THUMB_PRESSED),
     };
     let area = layout::BALANCE;
     pen.sprite_clipped(track, area.x, area.y, area);
-    pen.sprite(thumb, area.x + 12, area.y + 1);
+    let x = area.x + ((balance + 1.0) / 2.0 * f64::from(layout::BALANCE_TRAVEL)).round() as u32;
+    pen.sprite(thumb, x, area.y + 1);
     let eq = [
         sprites::EQ_OFF,
         sprites::EQ_OFF_PRESSED,
