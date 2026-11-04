@@ -23,9 +23,20 @@ const geometry = (page) => page.evaluate(() => 'fonts ' + document.fonts.status 
   return sel + ' ' + box(row) + ' (scroll ' + row.scrollWidth + ' of ' + row.clientWidth + '): ' + kids(row).join(', ') + (last ? ' [in ' + String(last.className).split(' ')[0] + ': ' + kids(last).join(', ') + ']' : '');
 }).join(' | '));
 
+// to name a failure's kind: how many times the page's resize observers ran, and what threw, since the last call of
+// since(); and the width the page itself had then
+const watchObservers = (page) => page.addInitScript(() => {
+  window.__ro = 0; window.__errors = [];
+  const RO = window.ResizeObserver;
+  window.ResizeObserver = class extends RO { constructor(cb) { super((entries, o) => { window.__ro++; try { cb(entries, o); } catch (e) { window.__errors.push(String(e && e.stack || e)); throw e; } }); } };
+  window.addEventListener('error', (e) => window.__errors.push(String(e.message)));
+});
+const since = (page) => page.evaluate(() => { const r = `page width ${innerWidth}, resize callbacks ${window.__ro}, errors ${JSON.stringify(window.__errors)}`; window.__ro = 0; window.__errors = []; return r; });
+
 for (const design of designs) {
   for (const theme of themes) {
     test(`header and player bar / ${design} / ${theme}`, async ({ page }) => {
+      await watchObservers(page);
       await page.setViewportSize({ width: 1440, height: 900 });
       await openScreen(page, `/album/${ids.album}`, { design, theme });
       await page.dblclick('.tlist .trow:nth-child(1) .trow__dur');       // a song in the bar: its widest state
@@ -34,13 +45,14 @@ for (const design of designs) {
       await page.waitForTimeout(500);
       const found = new Map(), seen = new Map();
       for (const w of [...widths, ...widths.slice().reverse()]) {    // both ways: a row fits again as it widens
+        await since(page);
         await page.setViewportSize({ width: w, height: 900 });
         await frames(page);
         const now = await chrome(page);
         if (now.length) {
           /* what the rows looked like then, and whether the next frame, then the settled page (fonts in), still
              overflow: a moment's overflow fails as one that stays does, and this names its cause */
-          const at = await geometry(page);
+          const at = `${await geometry(page)}; ${await since(page)}`;
           await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => r())));
           const next = await chrome(page);
           await page.evaluate(() => document.fonts.ready); await frames(page);
@@ -57,14 +69,7 @@ for (const design of designs) {
     // when a font arrives with wider or narrower letters (a design's own, on first use): two frames on, they are as a
     // fresh fit of everything leaves them, and what gave way comes back when the narrower font does
     test(`header and player bar / ${design} / ${theme}: content that grows in place fits at once`, async ({ page }) => {
-      // to name a failure's kind: how many times the page's resize observers ran, and what threw, since a change
-      await page.addInitScript(() => {
-        window.__ro = 0; window.__errors = [];
-        const RO = window.ResizeObserver;
-        window.ResizeObserver = class extends RO { constructor(cb) { super((entries, o) => { window.__ro++; try { cb(entries, o); } catch (e) { window.__errors.push(String(e && e.stack || e)); throw e; } }); } };
-        window.addEventListener('error', (e) => window.__errors.push(String(e.message)));
-      });
-      const since = () => page.evaluate(() => { const r = `resize callbacks ${window.__ro}, errors ${JSON.stringify(window.__errors)}`; window.__ro = 0; return r; });
+      await watchObservers(page);
       await openScreen(page, `/album/${ids.album}`, { design, theme });
       await page.dblclick('.tlist .trow:nth-child(1) .trow__dur');
       await page.waitForFunction(() => App.player.current());
@@ -85,10 +90,10 @@ for (const design of designs) {
         await page.setViewportSize({ width: w, height: 900 });
         await frames(page);
         // a label that grew: wider text everywhere in the rows
-        await since();
+        await since(page);
         await page.evaluate(() => { const s = document.createElement('style'); s.id = 'gate-wide'; s.textContent = '.header *, #pbar * { letter-spacing: .14em !important; }'; document.head.appendChild(s); });
         await frames(page);
-        let now = await out(), at = await geometry(page), why = await since();
+        let now = await out(), at = await geometry(page), why = await since(page);
         let refit = await fresh(), atRefit = await geometry(page);
         expect(now, `${w} px, the text wider: fitted already (${at}; ${why}; after a fresh fit: ${atRefit})`).toEqual(refit);
         await page.evaluate(() => document.getElementById('gate-wide').remove());
@@ -96,8 +101,8 @@ for (const design of designs) {
         await font(`gate-narrow-${w}`); await frames(page);
         const before = await out();
         expect(before, `${w} px, a font arrives: fitted already`).toEqual(await fresh());
-        await since(); await font('gate-wide'); await frames(page);
-        now = await out(); at = await geometry(page); why = await since();
+        await since(page); await font('gate-wide'); await frames(page);
+        now = await out(); at = await geometry(page); why = await since(page);
         refit = await fresh(); atRefit = await geometry(page);
         expect(now, `${w} px, a wider font arrives: fitted already (${at}; ${why}; after a fresh fit: ${atRefit})`).toEqual(refit);
         await font(`gate-narrow-${w}-again`); await frames(page);
