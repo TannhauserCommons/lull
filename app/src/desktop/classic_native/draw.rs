@@ -196,33 +196,15 @@ pub fn main_shaded(pen: &mut Pen, view: &View) {
     }
     let area = layout::SHADE_TIME;
     mini_time(pen, view, area.x, area.y);
-    let area = layout::SHADE_VISUALIZER;
-    let palette = pen.skin.vis_colors;
-    pen.fill(area.x, area.y, area.width, area.height, palette[0]);
-    for (index, bar) in view.bars.iter().enumerate().take((area.width / 2) as usize) {
-        let rows = u32::from(bar.height) * area.height / u32::from(ROWS);
-        for row in 0..rows.min(area.height) {
-            // The skin's gradient sampled across the five rows, bottom up.
-            let shade = [17, 14, 11, 8, 4][row as usize];
-            pen.fill(
-                area.x + 2 * index as u32,
-                area.y + area.height - 1 - row,
-                1,
-                1,
-                palette[shade],
-            );
-        }
-    }
+    small_analyser(pen, view);
     pen.at(sprites::SHADE_POSITION_TRACK, layout::SHADE_POSITION);
-    let now = view.now;
-    let length = now.duration.unwrap_or(0.0);
-    if !now.stopped && length > 0.0 {
-        let fraction = view.seeking.unwrap_or(now.position / length).clamp(0.0, 1.0);
+    if let Some(percent) = position_percent(view) {
         let travel = layout::SHADE_POSITION.width - 3;
-        let offset = (fraction * f64::from(travel)).round() as u32;
-        let thumb = match offset {
-            0 => sprites::SHADE_POSITION_THUMB_LEFT,
-            x if x >= travel => sprites::SHADE_POSITION_THUMB_RIGHT,
+        let offset = (percent / 100.0 * f64::from(travel)).round() as u32;
+        // Webamp's thumb looks to the left up to a third, to the right from two.
+        let thumb = match percent {
+            p if p <= 33.0 => sprites::SHADE_POSITION_THUMB_LEFT,
+            p if p >= 66.0 => sprites::SHADE_POSITION_THUMB_RIGHT,
             _ => sprites::SHADE_POSITION_THUMB,
         };
         pen.sprite(thumb, layout::SHADE_POSITION.x + offset, layout::SHADE_POSITION.y);
@@ -306,6 +288,31 @@ fn time(pen: &mut Pen, view: &View) {
         (false, _) => {}
         (true, true) => pen.at(sprites::NUMS_EX_MINUS, layout::MINUS_EX),
         (true, false) => pen.at(sprites::NUMBERS_MINUS, layout::MINUS),
+    }
+}
+
+/// The rolled-up window's small analyser: as the big one, not there at all while stopped (the
+/// bar's own picture shows), as in Webamp.
+fn small_analyser(pen: &mut Pen, view: &View) {
+    if view.now.stopped {
+        return;
+    }
+    let area = layout::SHADE_VISUALIZER;
+    let palette = pen.skin.vis_colors;
+    pen.fill(area.x, area.y, area.width, area.height, palette[0]);
+    for (index, bar) in view.bars.iter().enumerate().take((area.width / 2) as usize) {
+        let rows = u32::from(bar.height) * area.height / u32::from(ROWS);
+        for row in 0..rows.min(area.height) {
+            // The skin's gradient sampled across the five rows, bottom up.
+            let shade = [17, 14, 11, 8, 4][row as usize];
+            pen.fill(
+                area.x + 2 * index as u32,
+                area.y + area.height - 1 - row,
+                1,
+                1,
+                palette[shade],
+            );
+        }
     }
 }
 
@@ -417,17 +424,23 @@ fn sliders(pen: &mut Pen, view: &View) {
         layout::PLAYLIST_BUTTON,
     );
     pen.at(sprites::POSITION_TRACK, layout::POSITION);
-    let length = view.now.duration.unwrap_or(0.0);
-    if !view.now.stopped && length > 0.0 {
-        let fraction = view.seeking.unwrap_or(view.now.position / length).clamp(0.0, 1.0);
+    if let Some(percent) = position_percent(view) {
         let thumb = if view.seeking.is_some() {
             sprites::POSITION_THUMB_PRESSED
         } else {
             sprites::POSITION_THUMB
         };
-        let x = layout::POSITION.x + (fraction * f64::from(layout::POSITION_TRAVEL)).round() as u32;
+        let x = layout::POSITION.x + (percent / 100.0 * f64::from(layout::POSITION_TRAVEL)).round() as u32;
         pen.sprite(thumb, x, layout::POSITION.y);
     }
+}
+
+/// Where the seek bar's thumb is, as Webamp's range input has it: whole percents of the song,
+/// from its whole seconds (or where the listener drags it); none while stopped or of no length.
+fn position_percent(view: &View) -> Option<f64> {
+    let length = view.now.duration.filter(|l| *l > 0.0 && !view.now.stopped)?;
+    let fraction = view.seeking.unwrap_or(view.now.position.floor() / length);
+    Some((fraction.clamp(0.0, 1.0) * 100.0).round())
 }
 
 fn transport(pen: &mut Pen, view: &View) {
