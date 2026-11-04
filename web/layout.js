@@ -230,9 +230,6 @@
      of its own (the song side holding the Private pill while nothing plays). A box that cuts its text short on purpose
      (text-overflow: ellipsis: a long title) or scrolls is not clipping anything that should give way */
   function clips(s) { return (s.overflowX === 'hidden' || s.overflowX === 'clip') && s.textOverflow !== 'ellipsis'; }
-  /* a part is shown whole or not at all: one whose words are cut short (text-overflow: ellipsis, in it or on it: the
-     place "Playing from" names) doesn't fit, so what gives way before it does, and then it does. A field's own text
-     (the search as typed) is the listener's, not the part's */
   /* words that keep a readable width ([data-fit-keep], its --fit-keep: the song's title and artist): narrower than that,
      or than all of them when they are shorter, they crowd their row, and its parts give way to make room */
   function crowded(k) {
@@ -240,6 +237,9 @@
     var full = [k].concat($$('*', k)).reduce(function (w, e) { return Math.max(w, e.scrollWidth); }, 0);
     return k.clientWidth + 1 < Math.min(full, parseFloat(getComputedStyle(k).getPropertyValue('--fit-keep')) || 0);
   }
+  /* a part is shown whole or not at all: one whose words are cut short (text-overflow: ellipsis, in it or on it: the
+     place "Playing from" names) doesn't fit, so what gives way before it does, and then it does. A field's own text
+     (the search as typed) is the listener's, not the part's */
   function cut(p) {
     if (p.hasAttribute('data-fit-out')) return false;
     return [p].concat($$('*', p)).some(function (e) {
@@ -259,41 +259,18 @@
       return right - r.left - parseFloat(s.paddingLeft) - parseFloat(s.borderLeftWidth) > inner + .01;
     });
   }
-  function overflows(row) {
-    if (row.scrollWidth > row.clientWidth + 1) return true;
-    var cs = getComputedStyle(row), r = row.getBoundingClientRect();
-    var left = r.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft) - 1;
-    var right = r.right - parseFloat(cs.borderRightWidth) - parseFloat(cs.paddingRight) + 1;
+  /* a row's content against its room: `over`, how far it runs past (0 when it fits; overflows() allows a pixel), and
+     `need`, the width the row takes with it (its boxes through display: contents, their margins, its gaps, its padding
+     and border: Skydeck's dock is outlined) */
+  function measure(row) {
+    var f = parseFloat, cs = getComputedStyle(row), r = row.getBoundingClientRect(),
+      padL = f(cs.paddingLeft) + f(cs.borderLeftWidth), padR = f(cs.paddingRight) + f(cs.borderRightWidth),
+      left = r.left + padL, right = r.right - padR, over = Math.max(0, row.scrollWidth - row.clientWidth), sum = 0, n = 0;
     for (var a = row.parentElement, top = rootOf(row); a && row !== top; a = a.parentElement) {
       var as = getComputedStyle(a);
-      if (clips(as)) {
-        var ar = a.getBoundingClientRect();
-        left = Math.max(left, ar.left + parseFloat(as.borderLeftWidth) - 1); right = Math.min(right, ar.right - parseFloat(as.borderRightWidth) + 1);
-      }
+      if (clips(as)) { var ar = a.getBoundingClientRect(); left = Math.max(left, ar.left + f(as.borderLeftWidth)); right = Math.min(right, ar.right - f(as.borderRightWidth)); }
       if (a === top) break;
     }
-    var flex = cs.display.indexOf('flex') >= 0, need = 0, n = 0, out = false;
-    (function walk(box) {
-      Array.prototype.forEach.call(box.children, function (c) {
-        if (out) return;
-        var s = getComputedStyle(c);
-        if (s.display === 'contents') { walk(c); return; }
-        if (s.display === 'none' || s.position === 'absolute' || s.position === 'fixed') return;
-        var b = c.getBoundingClientRect();
-        if (b.width && (b.right > right || b.left < left)) { out = true; return; }
-        if (clips(s) && c.scrollWidth > c.clientWidth + 1) { out = true; return; }
-        need += b.width + parseFloat(s.marginLeft) + parseFloat(s.marginRight); n++;
-      });
-    })(row);
-    if (out) return true;
-    return flex && need + (parseFloat(cs.columnGap) || 0) * Math.max(0, n - 1) > right - left - 1;
-  }
-  /* how far a row's content runs past its content box (the measure overflows() tests), in pixels */
-  function lack(row) {
-    var cs = getComputedStyle(row), r = row.getBoundingClientRect();
-    var left = r.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft);
-    var right = r.right - parseFloat(cs.borderRightWidth) - parseFloat(cs.paddingRight);
-    var over = Math.max(0, row.scrollWidth - row.clientWidth), need = 0, n = 0;
     (function walk(box) {
       Array.prototype.forEach.call(box.children, function (c) {
         var s = getComputedStyle(c);
@@ -301,12 +278,15 @@
         if (s.display === 'none' || s.position === 'absolute' || s.position === 'fixed') return;
         var b = c.getBoundingClientRect();
         if (b.width) over = Math.max(over, b.right - right, left - b.left);
-        need += b.width + parseFloat(s.marginLeft) + parseFloat(s.marginRight); n++;
+        if (clips(s)) over = Math.max(over, c.scrollWidth - c.clientWidth);
+        sum += b.width + f(s.marginLeft) + f(s.marginRight); n++;
       });
     })(row);
-    if (cs.display.indexOf('flex') >= 0) over = Math.max(over, need + (parseFloat(cs.columnGap) || 0) * Math.max(0, n - 1) - (right - left));
-    return over;
+    sum += (f(cs.columnGap) || 0) * Math.max(0, n - 1);
+    if (cs.display.indexOf('flex') >= 0) over = Math.max(over, sum - (right - left));
+    return { over: over, need: Math.ceil(sum + padL + padR) };
   }
+  function overflows(row) { return measure(row).over > 1; }
   /* the parts that give way first are out (orders 1..k, together); fit moves k from where the row stands: further while
      the row overflows, back while it fits with one order more shown. Returns whether k moved */
   function fit(row) {
@@ -359,13 +339,13 @@
          which nothing gives way that the most room kept (by halves from there, where a row took less than all of it) */
       var kept = $$('[data-fit-out]', root),
         min = Math.ceil(parseFloat(getComputedStyle(root).getPropertyValue('--fit-side-min')) || 0),
-        lo = Math.max(0, Math.min(most, Math.max(need(side), min)));
+        lo = Math.max(0, Math.min(most, Math.max(measure(side).need, min)));
       function more() { return $$('[data-fit-out]', root).filter(function (p) { return kept.indexOf(p) < 0; }); }
       function at(w) { root.style.setProperty('--fit-side', w + 'px'); passes(); return more().length > 0; }
       if (at(lo)) {
         var hit = [];
         more().forEach(function (p) { var r = fitRowOf(p); if (hit.indexOf(r) < 0) hit.push(r); p.removeAttribute('data-fit-out'); });
-        var hi = Math.min(most, Math.ceil(lo + Math.max.apply(Math, hit.map(lack))));
+        var hi = Math.min(most, Math.ceil(lo + Math.max.apply(Math, hit.map(function (r) { return measure(r).over; }))));
         if (at(hi)) { lo = hi; hi = most; while (hi - lo > 1) { var mid = Math.floor((lo + hi) / 2); if (at(mid)) lo = mid; else hi = mid; } at(hi); }
       }
     }
@@ -382,21 +362,6 @@
          the tracks fill the row (the middle one is 1fr), so what they leave is the gaps */
       gap = tracks.length === 3 && tracks.every(isFinite) ? (inner - tracks[0] - tracks[1] - tracks[2]) / 2 : parseFloat(cs.columnGap) || 0;
     return Math.max(0, (inner - (parseFloat(cs.getPropertyValue('--fit-centre-min')) || 0) - 2 * gap) / 2);
-  }
-  /* the width a row takes with its content: its boxes (through display: contents), their margins, its gaps, its padding
-     and border (Skydeck's dock is outlined) */
-  function need(row) {
-    var cs = getComputedStyle(row), n = 0,
-      w = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
-    (function walk(box) {
-      Array.prototype.forEach.call(box.children, function (c) {
-        var s = getComputedStyle(c);
-        if (s.display === 'contents') { walk(c); return; }
-        if (s.display === 'none' || s.position === 'absolute' || s.position === 'fixed') return;
-        w += c.getBoundingClientRect().width + parseFloat(s.marginLeft) + parseFloat(s.marginRight); n++;
-      });
-    })(row);
-    return Math.ceil(w + (parseFloat(cs.columnGap) || 0) * Math.max(0, n - 1));
   }
   /* rows fit again when they resize, and when what is in them does without the row resizing (a web font arriving with
      wider letters than the fallback's, a label that changed): the observer watches each row, its children and its
