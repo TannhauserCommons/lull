@@ -6,8 +6,13 @@
 //
 //   node tests/ui/fixture-hub/server.mjs [port]      (default 8790; LULL_WEB=<dir> serves another web/)
 //
+// GET /api/themes lists the five built-in designs (web/designs/<id>/theme.json), then the listener's.
 // FIXTURE_THEMES=<dir> serves the theme packages in that folder (<dir>/<id>/theme.json...) as the listener's own, as the
-// hub stores them (docs/themes.md, section 1): GET /api/themes lists them, /api/themes/<id>/<file> serves their files.
+// hub stores them (docs/themes.md, section 1): GET /api/themes lists them with their rev and the pictures made of them
+// (ADR-0080), /api/themes/<id>/<file> serves their files. POST /api/themes (a .lulltheme) and PUT /api/themes/<id>/<file>
+// write into that folder and send `theme.changed`, unchecked (the hub's checks are crates/themes'). The pictures
+// PUT /api/theme-pictures/<id>/<rev>-<mode>.webp keeps live in memory for the run; one of a rev that is no longer the
+// theme's is a 409, as on the hub.
 //
 // Your skins (docs/context/skins.md): the skins the hub keeps start empty and live in memory for the run; POST
 // /api/skins/mine?name= adds one (checked as below, one per md5), DELETE /api/skins/mine/<md5> removes one; both send
@@ -42,9 +47,9 @@
 
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { appendFile, readFile, stat } from 'node:fs/promises';
-import { deflateSync } from 'node:zlib';
+import { deflateSync, inflateRawSync } from 'node:zlib';
 import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as L from './library.mjs';
@@ -150,7 +155,7 @@ const routes = [
     const known = ((body && body.trackIds) || []).filter((id) => L.tracks[id]).slice(0, 200);
     return { entities: entities({ tracks: known, albums: albumsOf(known) }) };
   }],
-  ['GET', /^\/api\/themes$/, () => ({ items: THEMES ? themeItems() : [] })],
+  ['GET', /^\/api\/themes$/, () => ({ items: [...builtInThemes(), ...(THEMES ? themeItems() : [])] })],
   ['GET', /^\/api\/lastfm$/, () => ({ configured: true, connected: true, user: 'fixture', scrobbling: true, useHistory: true, queued: 0 })],
   ['GET', /^\/api\/youtube$/, () => ({ state: 'off', detail: 'YouTube is off', mode: 'off', ytdlp: { version: null, updated: false, pinnedVersion: null, latest: null, checkedAt: null, error: null }, backoffUntil: null })],
   ['GET', /^\/api\/library\/source$/, () => ({ mode: 'folder', musicDir: '/music', jellyfin: null, files: L.savedIds.length, lastScan: L.NOW - 3600, switching: false })],
@@ -569,16 +574,97 @@ function mineSkins() {
     items: [...own, ...folder.items.filter((i) => !seen.has(i.md5))], skipped: folder.skipped };
 }
 
-/* FIXTURE_THEMES' packages as GET /api/themes lists the hub's: each manifest with the slots its files have */
+const BUILT_IN = ['lull', 'skydeck', 'starlight', 'petal', 'glasshouse'];
+function builtInThemes() {
+  return BUILT_IN.map((id) => ({ ...JSON.parse(readFileSync(join(WEB, 'designs', id, 'theme.json'), 'utf8')), builtIn: true }));
+}
+
+/* FIXTURE_THEMES' packages as GET /api/themes lists the hub's: each manifest with the slots its files have, its rev and
+   the modes a picture was made of for that rev */
 function themeItems() {
-  return readdirSync(THEMES, { withFileTypes: true }).filter((d) => d.isDirectory()).flatMap((d) => {
-    const dir = join(THEMES, d.name);
-    try {
-      const m = JSON.parse(readFileSync(join(dir, 'theme.json'), 'utf8'));
-      const slots = existsSync(join(dir, 'slots')) ? readdirSync(join(dir, 'slots')).filter((f) => f.endsWith('.html')).map((f) => f.slice(0, -5)) : [];
-      return [{ ...m, slots, builtIn: false }];
-    } catch { return []; }
+  return readdirSync(THEMES, { withFileTypes: true }).filter((d) => d.isDirectory() && !d.name.startsWith('.')).flatMap((d) => {
+    const item = themeItem(d.name);
+    return item ? [item] : [];
   });
+}
+function themeItem(id) {
+  const dir = join(THEMES, id);
+  try {
+    const m = JSON.parse(readFileSync(join(dir, 'theme.json'), 'utf8'));
+    const slots = existsSync(join(dir, 'slots')) ? readdirSync(join(dir, 'slots')).filter((f) => f.endsWith('.html')).map((f) => f.slice(0, -5)) : [];
+    const rev = themeRev(id);
+    return { ...m, slots, builtIn: false, rev, pictures: ['day', 'night'].filter((mode) => themePictures.has(`${id}/${rev}-${mode}`)) };
+  } catch { return null; }
+}
+/* the hub's rev: the theme's files' names, sizes and modification times (crates/themes, watch.rs and pictures.rs) */
+function themeRev(id) {
+  const h = createHash('sha1');
+  (function walk(dir) {
+    for (const name of readdirSync(dir).sort()) {
+      const f = join(dir, name), st = statSync(f);
+      h.update(name);
+      if (st.isDirectory()) walk(f); else h.update(`${st.size}:${st.mtimeMs}`);
+    }
+  })(join(THEMES, id));
+  return h.digest('hex').slice(0, 16);
+}
+const themePictures = new Map();                  // '<id>/<rev>-<mode>' -> the WebP a page sent
+
+function writeTheme(id, files) {
+  for (const [path, bytes] of files) {
+    const f = join(THEMES, id, normalize(path).replace(/^([/\\])+/, ''));
+    mkdirSync(dirname(f), { recursive: true });
+    writeFileSync(f, bytes);
+  }
+  emit('theme.changed', { id });
+  return themeItem(id);
+}
+/* a .lulltheme's files: a zip's stored and deflated entries, at its root or inside one folder */
+function unzip(buf) {
+  const end = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  if (end < 0) return null;
+  const files = new Map();
+  for (let i = 0, at = buf.readUInt32LE(end + 16); i < buf.readUInt16LE(end + 10); i++) {
+    const method = buf.readUInt16LE(at + 10), size = buf.readUInt32LE(at + 20), nameLen = buf.readUInt16LE(at + 28);
+    const name = buf.toString('utf8', at + 46, at + 46 + nameLen), local = buf.readUInt32LE(at + 42);
+    at += 46 + nameLen + buf.readUInt16LE(at + 30) + buf.readUInt16LE(at + 32);
+    if (name.endsWith('/')) continue;
+    const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28), raw = buf.subarray(start, start + size);
+    files.set(name, method === 8 ? inflateRawSync(raw) : raw);
+  }
+  const top = [...files.keys()].find((n) => n.endsWith('theme.json'))?.slice(0, -'theme.json'.length) || '';
+  return new Map([...files].filter(([n]) => n.startsWith(top)).map(([n, b]) => [n.slice(top.length), b]));
+}
+async function themeWrite(req, res, path, q) {
+  const parts = [];
+  for await (const p of req) parts.push(p);
+  const body = Buffer.concat(parts);
+  let m;
+  if (path === '/api/themes' && req.method === 'POST') {
+    const files = unzip(body), manifest = files && files.get('theme.json') && JSON.parse(files.get('theme.json'));
+    if (!manifest) return send(res, 400, { error: 'bad_request', message: 'the package has no theme.json' });
+    if (existsSync(join(THEMES, manifest.id)) && q.get('replace') !== 'true') {
+      return send(res, 409, { error: 'conflict', message: `a theme called ${manifest.name} (${manifest.id}) is already here` });
+    }
+    return send(res, 200, writeTheme(manifest.id, files));
+  }
+  if ((m = /^\/api\/themes\/([a-z0-9-]+)\/(.+)$/.exec(path)) && req.method === 'PUT') {
+    if (!existsSync(join(THEMES, m[1])) && m[2] !== 'theme.json') return send(res, 404, { error: 'not_found', message: `no theme ${m[1]}; save its theme.json first` });
+    const files = new Map([[m[2], body]]);
+    if (!existsSync(join(THEMES, m[1], 'theme.css'))) files.set('theme.css', Buffer.alloc(0));
+    return send(res, 200, writeTheme(m[1], files));
+  }
+  if ((m = /^\/api\/theme-pictures\/([a-z0-9-]+)\/([0-9a-f]{16})-(day|night)\.webp$/.exec(path)) && req.method === 'PUT') {
+    const item = themeItem(m[1]);
+    if (!item) return send(res, 404, { error: 'not_found', message: `no theme ${m[1]}` });
+    if (!item.modes.includes(m[3])) return send(res, 400, { error: 'bad_request', message: `${item.name} has no ${m[3]} mode` });
+    if (body.toString('latin1', 0, 4) !== 'RIFF' || body.toString('latin1', 8, 12) !== 'WEBP') return send(res, 400, { error: 'bad_request', message: 'a theme\'s picture is a WebP' });
+    if (item.rev !== m[2]) return send(res, 409, { error: 'conflict', message: `${item.name} changed while its picture was drawn; draw it again` });
+    for (const key of themePictures.keys()) if (key.startsWith(m[1] + '/') && !key.startsWith(`${m[1]}/${m[2]}-`)) themePictures.delete(key);
+    themePictures.set(`${m[1]}/${m[2]}-${m[3]}`, body);
+    return send(res, 204);
+  }
+  return send(res, 404, { error: 'not_found', message: `The fixture hub has no ${req.method} ${path}.` });
 }
 
 function send(res, status, body) {
@@ -651,6 +737,13 @@ const server = createServer(async (req, res) => {
   if ((m = /^\/api\/(library\/)?stream\/([^/]+)$/.exec(path)) && req.method === 'GET') return audio(req, res, m[2], !!m[1]);
   if ((m = /^\/api\/stream\/([^/]+)$/.exec(path)) && req.method === 'DELETE') return send(res, 204);
   if (THEMES && (m = /^\/api\/themes\/([a-z0-9-]+)\/(.+)$/.exec(path)) && req.method === 'GET') return files(req, res, '/' + m[2], join(THEMES, m[1]));
+  if (THEMES && (m = /^\/api\/theme-pictures\/([a-z0-9-]+)\/([0-9a-f]{16}-(?:day|night))\.webp$/.exec(path)) && req.method === 'GET') {
+    const webp = themePictures.get(`${m[1]}/${m[2]}`);
+    if (!webp) return send(res, 404, { error: 'not_found', message: `no picture ${m[2]} of theme ${m[1]}` });
+    res.writeHead(200, { 'content-type': 'image/webp', 'content-length': webp.length, 'cache-control': 'private, max-age=31536000, immutable' });
+    return res.end(webp);
+  }
+  if (THEMES && (path === '/api/themes' || /^\/api\/(themes|theme-pictures)\/[a-z0-9-]+\/.+$/.test(path)) && ['POST', 'PUT'].includes(req.method)) return themeWrite(req, res, path, q);
   if (path === '/api/skins/mine' && req.method === 'POST') {
     const parts = [];
     for await (const p of req) parts.push(p);

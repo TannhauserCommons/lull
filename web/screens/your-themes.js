@@ -25,6 +25,7 @@
         if (r.status !== 200) throw new Error(r.body.message || 'The hub answered ' + r.status);
         App.toast('Added ' + r.body.name, { kind: 'ok', icon: 'sparkle', action: 'Use it', onAction: function () { App.setPref('design', r.body.id); } });
         App.loopsAfterImport(r.body);
+        App.themePictures(r.body);
         return Designs.refresh().then(function () { if (onAppearance()) App.refresh(); });
       })
       .catch(function (err) { App.toast('Couldn\'t import ' + file.name + ': ' + err.message, { kind: 'error' }); });

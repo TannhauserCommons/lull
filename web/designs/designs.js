@@ -25,7 +25,8 @@
   D.API = 1;                                     // the theme API this build speaks (docs/themes.md, versioning)
   D.builtIn = ['lull', 'skydeck', 'starlight', 'petal', 'glasshouse'];
   D.fallback = 'lull';
-  /* id -> { id, label, description, author, api, extends, shell, swatches, modes, preview, builtIn, slots, coverVariety, window }.
+  /* id -> { id, label, description, author, api, extends, shell, swatches, modes, preview, builtIn, slots, coverVariety, window,
+     rev, pictures } (a listener's theme: the hub's name for its files now, and the modes lull has a picture of, ADR-0080).
      The same objects for the life of the page (App.designs is this object), filled in from the manifests. */
   D.list = {};
   D.order = [];                                  // built-ins first, then the listener's themes by name
@@ -71,6 +72,8 @@
     m.preview = !!raw.preview; m.slots = Array.isArray(raw.slots) ? raw.slots : [];
     m.coverVariety = !!raw.coverVariety;
     m.window = raw.window || null;          // as written; windowSpec reads it, and ignores what it doesn't know
+    m.rev = typeof raw.rev === 'string' ? raw.rev : null;
+    m.pictures = Array.isArray(raw.pictures) ? raw.pictures : [];
     return m;
   }
   function sortOrder() {
@@ -86,7 +89,7 @@
   function raw(m) {
     return { id: m.id, name: m.label, description: m.description, author: m.author, api: m.api, extends: m.extends,
       shell: m.shell, swatches: m.swatches, modes: m.modes, preview: m.preview, slots: m.slots, coverVariety: m.coverVariety,
-      window: m.window };
+      window: m.window, rev: m.rev, pictures: m.pictures };
   }
   /* the built-ins are always known by name (each manifest arrives with its designs/<id>.js) */
   D.builtIn.forEach(function (id) { D.list[id] = { id: id, builtIn: true, label: id, swatches: [], slots: [] }; });

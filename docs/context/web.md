@@ -64,7 +64,9 @@ The way to do it (app.js, beside the router):
   always-loaded screen shows a placeholder until its code arrives (Settings > Appearance > Classic).
 - An action on a start screen whose work is rare loads that work when asked, behind a one-line stub: importing or
   deleting a theme and the check of a theme's loops (screens/your-themes.js, from appearance.js; Theme Studio asks
-  for the check through `App.themeLoops`).
+  for the check through `App.themeLoops`), and drawing a theme's picture for its card (screens/theme-pictures.js,
+  `App.themePictures`, ADR-0080: one off-screen frame of Home in the theme, drawn through an SVG foreignObject, each
+  step that can't be split waiting until nothing was tapped, typed or scrolled for 1.5 s).
 - A state most visits never reach loads with what it shows: the pairing gate opens from the start (setup.js) with its
   placeholder, and its form comes with hub.js (`App.hubKit.gateForm`), as first-run setup's page does
   (`App.hubKit.setupPage`); a paired device that is set up fetches neither.

@@ -59,6 +59,9 @@ export default defineConfig({
     { name: 'app-pages', testMatch: 'app-pages.spec.mjs', use: { viewport: { width: 1000, height: 700 } } },
     // Theme Studio and import: a loop with no rate named, its rate added, the loop paced
     { name: 'theme-loops', testMatch: 'theme-loops.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
+    // a theme's card shows a picture lull drew of it (ADR-0080), in Chromium and in WebKit (the Linux app's engine)
+    { name: 'theme-pictures', testMatch: 'theme-pictures.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
+    { name: 'theme-pictures-webkit', testMatch: 'theme-pictures.spec.mjs', use: { browserName: 'webkit', viewport: { width: 1440, height: 900 }, launchOptions: {} } },
     { name: 'loops-webkit', testMatch: 'loops.spec.mjs', fullyParallel: true, use: { browserName: 'webkit', viewport: { width: 1440, height: 900 }, launchOptions: {} } },
   ].filter(inGroup),
 });

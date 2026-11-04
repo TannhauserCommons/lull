@@ -1631,7 +1631,7 @@
 :root[data-design="lull"] .sys-design__name { margin: 6px 4px 0; font-size: .9375rem; }
 :root[data-design="lull"] .sys-design__desc { font-size: .75rem; line-height: 1.35; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 :root[data-design="lull"] .sys-design__pv {
-  position: relative; display: block; height: auto; aspect-ratio: 16 / 10; padding: 0; border: var(--stroke) solid var(--l-edge); border-radius: 9px;
+  position: relative; height: auto; aspect-ratio: 16 / 10; border: var(--stroke) solid var(--l-edge); border-radius: 9px;
 }
 :root[data-design="lull"] .sys-design__pv::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; }
 :root[data-design="lull"] .sys-design[aria-checked="true"]:hover .sys-design__pv::after { --l-foil: 150deg; background: var(--l-foil-bg); }

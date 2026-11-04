@@ -441,7 +441,8 @@
     state('Saving...');
     return M.api('/api/themes/' + id + '/theme.json', { method: 'PUT', body: JSON.stringify(manifest(id)) })
       .then(function () { return M.api('/api/themes/' + id + '/theme.css', { method: 'PUT', body: css }); })
-      .then(function () {
+      .then(function (saved) {
+        App.themePictures(saved);                  // its card's picture, of what was just saved (ADR-0080)
         if (!S) return id;
         S.id = id; S.dirty = false; state();
         App.announce('Saved ' + S.draft.name);
