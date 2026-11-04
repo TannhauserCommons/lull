@@ -426,6 +426,15 @@
   /* a font that arrives changes the words' widths in place, and a part that gave way shows no box to tell the observer it
      would fit now: every font that loads (a design's own, on first use) fits the rows again */
   if (document.fonts) { document.fonts.ready.then(App.layout.refit); document.fonts.addEventListener('loadingdone', App.layout.refit); }
+  /* a stylesheet that changes (a theme reloaded or edited live, Theme Studio's draft, a screen's sheet arriving) can
+     widen the words inside boxes that keep their size: a cut part's or a kept line's, beside sides the fitter sized
+     itself. No box the observer watches resizes, so every row fits again once the sheet is in: at once for a sheet's
+     text, on load for what it imports. Only <head> holds the sheets, so nothing else on the page pays */
+  function sheet(n) { return n && (n.nodeName === 'STYLE' || n.nodeName === 'LINK'); }
+  if (window.MutationObserver && document.head) new MutationObserver(function (records) {
+    if (records.some(function (r) { return sheet(r.target) || sheet(r.target.parentNode) || [].some.call(r.addedNodes, sheet) || [].some.call(r.removedNodes, sheet); })) App.layout.refit();
+  }).observe(document.head, { childList: true, subtree: true, characterData: true });
+  document.addEventListener('load', function (e) { if (sheet(e.target)) App.layout.refit(); }, true);
   App.layout.refit();
 
   apply();
