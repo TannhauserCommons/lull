@@ -1,0 +1,8 @@
+* Classic mode runs natively: a fraction of the memory and CPU, windows that dock like Winamp
+* Long playlists use as little memory as short ones
+* Covers and artist photos load in the order you see them
+* Sources are ranked by the speed lull measured, not the speed they claim
+* Seek anywhere in a song that is still downloading
+* Your Winamp skins live on your hub, with a random pick
+* Imported playlists keep every song
+* The app reconnects to your hub by itself
