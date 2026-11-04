@@ -461,10 +461,14 @@
 @media (min-width: 1100px) {
   :root[data-design="lull"] .pbar {
     /* the song and the seek give up room before anything else; a part that gives way (layout.js, data-fit: the tiles,
-       Devices, the volume slider) takes its track with it, so the bar always fits its width; Like and Save sit with the
-       song */
-    grid-template-columns: minmax(212px, 1fr) auto minmax(240px, 1.35fr) minmax(40px, 150px) 40px auto auto var(--sp-2) repeat(4, auto);   /* the song: 140 px of words beside its Like and Save */
-    grid-template-areas: "now ctl seek vol more nc cn . t1 t2 t3 t4"; gap: 0 var(--sp-1);
+       Devices, the volume slider) takes its track with it, so the bar always fits its width. The song and the seek share the
+       room evenly, the song with a fixed track besides as wide as its Like and Save (--acts-room, from their own sizes):
+       inside the share the buttons took the words' room, and the source and quality chips gave way at 1440 px beside a
+       366 px seek. Fixed, so the transport stands where it does whether a song is loaded or the buttons gave way; the
+       words take the buttons' room when they do */
+    --pbar-act: 36px; --acts-room: calc(2 * var(--pbar-act) + 2px + 12px);   /* the two buttons, their gap, and the gap before them */
+    grid-template-columns: minmax(126px, 1fr) var(--acts-room) auto minmax(240px, 1fr) minmax(40px, 150px) 40px auto auto var(--sp-2) repeat(4, auto);   /* the song: 140 px of words once Like and Save gave way */
+    grid-template-areas: "now now ctl seek vol more nc cn . t1 t2 t3 t4"; gap: 0 var(--sp-1);
     /* the tray's shelf: the tiles sit as far from the window, and from the tray's end, as they do from its top and
        bottom (48 px tiles in the 80 px bar): a gap, the spacer and a gap on the window's side, the padding on the end */
     padding-right: calc(var(--sp-4) - var(--stroke));
@@ -477,6 +481,7 @@
   :root[data-design="lull"] .pbar > .region-title { grid-area: 1 / now-start / 2 / cn-end; }   /* the window ends where the tray's shelf begins, by name: a track added or taken away doesn't move it */
   :root[data-design="lull"] .pbar__centre, :root[data-design="lull"] .pbar__tools { display: contents; }
   :root[data-design="lull"] .pbar__now { grid-area: now; }
+  :root[data-design="lull"] .pbar__acts .btn-icon { width: var(--pbar-act); height: var(--pbar-act); }
   :root[data-design="lull"] .pbar__controls { grid-area: ctl; padding: 0 14px 0 8px; }
   :root[data-design="lull"] .pbar__seek { grid-area: seek; }
   :root[data-design="lull"] .pbar__xfade { position: static; grid-area: seek; justify-self: end; align-self: start; margin-top: 9px; }

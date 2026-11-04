@@ -114,6 +114,21 @@ for (const design of designs) {
       expect([...found].map(([p, ws]) => `${p} at ${ws.join(', ')} px`), 'the idle bar with private listening on').toEqual([]);
     });
 
+    // a laptop's window has room for the song's source and quality: at 1440 px its chips, and Like and Save, stay in the
+    // bar (lull's song column once held its buttons inside its share of the room, and the chips gave way beside a
+    // 366 px seek)
+    test(`player bar, a song at 1440 px keeps its chips / ${design} / ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await openScreen(page, `/album/${ids.album}`, { design, theme });
+      await page.dblclick('.tlist .trow:nth-child(1) .trow__dur');
+      await page.waitForFunction(() => App.player.current());
+      await page.evaluate(() => { location.hash = '#/home'; });
+      await page.waitForTimeout(500);
+      await frames(page);
+      const out = await page.evaluate(() => [...document.querySelectorAll('#pbar-now :is(.pbar__badges > *, .pbar__acts)[data-fit-out]')].map((p) => String(p.className).split(' ')[0]));
+      expect(out, 'what gave way in the song side at 1440 px').toEqual([]);
+    });
+
     // the rows fit again by themselves when their text widens in place (a label that grew; no row changes size) and
     // when a font arrives with wider or narrower letters (a design's own, on first use): two frames on, they are as a
     // fresh fit of everything leaves them, and what gave way comes back when the narrower font does
