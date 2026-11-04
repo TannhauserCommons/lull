@@ -1169,6 +1169,56 @@ mod tests {
 
     type Test = std::result::Result<(), Box<dyn std::error::Error>>;
 
+    #[tokio::test]
+    async fn one_album_in_differently_named_folders_is_one_album_with_one_cover() -> Test {
+        // Live, "radiohead creep" listed Pablo Honey as about 13 album rows, each with a cover of
+        // its own to look up: peers name their folders as they rip them.
+        let file = |path: String| slskd::File {
+            filename: path,
+            size: 30_000_000,
+            bit_rate: Some(1_000),
+            bit_depth: Some(16),
+            sample_rate: Some(44_100),
+            length: Some(200),
+            is_variable_bit_rate: None,
+        };
+        let peer = |name: &str, folder: &str| slskd::Response {
+            username: name.into(),
+            has_free_upload_slot: true,
+            queue_length: 0,
+            upload_speed: 1_000_000,
+            files: ["01 You", "02 Creep", "03 How Do You"]
+                .iter()
+                .map(|t| file(format!("{folder}\\{t}.flac")))
+                .collect(),
+        };
+        let responses = [
+            peer("a", r"music\Radiohead\Pablo Honey"),
+            peer("b", r"Music\Radiohead - Pablo Honey - Flac"),
+            peer("c", r"share\Radiohead - Pablo Honey [SLSK]"),
+            peer("d", r"music\Radiohead\Album - Pablo Honey"),
+            peer("e", r"music\Radiohead\Pablo Honey (Live)"),
+        ];
+        let db = lull_core::db::Db::memory()?;
+        db.migrate(&crate::MIGRATIONS)?;
+        let sources = Sources::new(crate::peers::Peers::load(db).await?, Vec::new());
+        let albums = albums(merge(&responses).folders, &sources);
+        let named: Vec<(&str, usize)> = albums
+            .iter()
+            .map(|a| (a.album.title.as_str(), a.folders.len()))
+            .collect();
+        assert_eq!(albums.len(), 2, "{named:?}");
+        let studio = albums
+            .iter()
+            .find(|a| a.album.title == "Pablo Honey")
+            .ok_or("no Pablo Honey")?;
+        assert_eq!(studio.folders.len(), 4, "the live album stays apart: {named:?}");
+        // One album id, so one picture job: every song of it points at it.
+        assert_eq!(studio.tracks.len(), 3);
+        assert!(studio.tracks.iter().all(|t| t.album_id == studio.album.id));
+        Ok(())
+    }
+
     #[test]
     fn one_song_in_many_folders_is_one_row() {
         // Live, "radiohead creep" listed Radiohead - Creep 9 times, once per folder name.

@@ -148,7 +148,8 @@ struct Folder {
     year: Option<u16>,
 }
 
-/// `Artist - Album (1998) [FLAC 16-44]`, `1998 - Album`, `Album`.
+/// `Artist - Album (1998) [FLAC 16-44]`, `1998 - Album`, `Album`, and what rips add to them:
+/// `Artist - Album - Flac`, `Album [SLSK]`, `03. EPs - Album (TOCP 8129)`, `Artist - EP - Album`.
 fn read_folder(name: &str) -> Folder {
     let (rest, bracket_year) = strip_tags(name);
     let mut year = bracket_year;
@@ -159,8 +160,9 @@ fn read_folder(name: &str) -> Folder {
                 year = year.or(Some(y));
                 false
             }
-            None => !p.is_empty(),
+            None => !p.is_empty() && !is_release_tag(p) && !is_catalogue(p) && !is_kind_label(p),
         })
+        .map(|p| without_trailing_kind(&p))
         .collect();
     match parts.len() {
         0 => Folder {
@@ -310,7 +312,11 @@ fn strip_tags(name: &str) -> (String, Option<u16>) {
         out.push_str(&rest[..open]);
         if let Some(y) = as_year(inner) {
             year = year.or(Some(y));
-        } else if !is_release_tag(inner) {
+        } else if is_release_tag(inner) && names_edition(inner) {
+            // `(Deluxe Edition 320k)`: the edition is the album's, the bitrate the rip's.
+            let edition = without_tag_words(inner);
+            out.push_str(&format!("{}{edition}{}", &rest[open..=open], close_char));
+        } else if !is_release_tag(inner) && !is_catalogue(inner) && !is_kind_label(inner) {
             out.push_str(&rest[open..open + len + 2]);
         }
         rest = &rest[open + len + 2..];
@@ -328,14 +334,110 @@ fn as_year(s: &str) -> Option<u16> {
     (ok && (1900..=2100).contains(&y)).then_some(y)
 }
 
+/// Words of a rip, not of an album: formats, bitrates, sources, the share it came from.
+const RELEASE_TAGS: &[&str] = &[
+    "flac", "mp3", "aac", "alac", "ogg", "opus", "wav", "lossless", "kbps", "320", "256", "192", "v0", "v2", "cbr",
+    "vbr", "web", "cd", "vinyl", "hi res", "hires", "24bit", "16bit", "24 bit", "16 bit", "khz", "24 96", "24 48",
+    "24 44", "24 88", "16 44", "24 192", "slsk", "cds", "cdm", "itunes",
+];
+/// Words of an edition with its own tracklist, which keep a bracket that holds a rip's words
+/// too: `(Deluxe Edition 320k)` stays `(Deluxe Edition)`.
+const EDITION_WORDS: &[&str] = &[
+    "deluxe",
+    "edition",
+    "collector",
+    "collectors",
+    "anniversary",
+    "expanded",
+    "reissue",
+    "remaster",
+    "remastered",
+    "live",
+    "special",
+    "bonus",
+    "legacy",
+];
+
 fn is_release_tag(inner: &str) -> bool {
-    const WORDS: &[&str] = &[
-        "flac", "mp3", "aac", "alac", "ogg", "opus", "wav", "lossless", "kbps", "320", "256", "192", "v0", "v2", "cbr",
-        "vbr", "web", "cd", "vinyl", "hi res", "hires", "24bit", "16bit", "24 bit", "16 bit", "khz", "24 96", "24 48",
-        "24 44", "16 44", "24 192",
+    let n = lull_core::ids::normalize(inner);
+    let padded = format!(" {n} ");
+    RELEASE_TAGS.iter().any(|w| padded.contains(&format!(" {w} "))) || n.split(' ').any(is_bitrate)
+}
+
+/// `320k`, `256kbps`.
+fn is_bitrate(word: &str) -> bool {
+    let digits = word.trim_end_matches("kbps").trim_end_matches('k');
+    digits.len() < word.len() && (2..=3).contains(&digits.len()) && digits.bytes().all(|b| b.is_ascii_digit())
+}
+
+fn names_edition(inner: &str) -> bool {
+    lull_core::ids::normalize(inner)
+        .split(' ')
+        .any(|w| EDITION_WORDS.contains(&w))
+}
+
+/// The bracket's words without the rip's: "Deluxe Edition 320k" is "Deluxe Edition".
+fn without_tag_words(inner: &str) -> String {
+    let words: Vec<&str> = inner
+        .split_whitespace()
+        .filter(|w| {
+            let n = lull_core::ids::normalize(w);
+            !(RELEASE_TAGS.contains(&n.as_str()) || is_bitrate(&n))
+        })
+        .collect();
+    words.join(" ")
+}
+
+/// A label's catalogue number: `TOCP 8129`, `CDR 6078, EU`, `7243 8 80919 2 3`, `60258228`.
+/// Every word a number or a short code in capitals, and one a number of three digits or more.
+fn is_catalogue(s: &str) -> bool {
+    let words: Vec<&str> = s.split([' ', ',']).filter(|w| !w.is_empty()).collect();
+    let code = |w: &str| (2..=5).contains(&w.len()) && w.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit());
+    !words.is_empty()
+        && words.iter().all(|w| w.bytes().all(|b| b.is_ascii_digit()) || code(w))
+        && words.iter().any(|w| w.bytes().filter(u8::is_ascii_digit).count() >= 3)
+}
+
+/// A folder that sorts releases by kind, not an artist or an album: `EPs`, `03. Singles`,
+/// `Singles, EPs`, `Albums`, `Live Albums`. ("Live" alone may be the band.)
+fn is_kind_label(s: &str) -> bool {
+    const KINDS: &[&str] = &[
+        "album",
+        "albums",
+        "ep",
+        "eps",
+        "single",
+        "singles",
+        "compilation",
+        "compilations",
+        "discography",
+        "bootleg",
+        "bootlegs",
+        "demos",
+        "lp",
+        "lps",
     ];
-    let padded = format!(" {} ", lull_core::ids::normalize(inner));
-    WORDS.iter().any(|w| padded.contains(&format!(" {w} ")))
+    const ALSO: &[&str] = &["studio", "live", "and", "other", "misc", "official", "b", "sides"];
+    let unnumbered = s
+        .trim_start_matches(|c: char| c.is_ascii_digit())
+        .trim_start_matches(['.', '-', '_', ')', ' ']);
+    let n = lull_core::ids::normalize(unnumbered);
+    let words: Vec<&str> = n.split(' ').filter(|w| !w.is_empty()).collect();
+    !words.is_empty()
+        && words.iter().all(|w| KINDS.contains(w) || ALSO.contains(w))
+        && words.iter().any(|w| KINDS.contains(w))
+}
+
+/// "Creep EP" and "Creep" are one release: a trailing kind word names the release, not the album.
+fn without_trailing_kind(part: &str) -> String {
+    for kind in [" EP", " Single", " CDS"] {
+        if let Some(rest) = part.strip_suffix(kind)
+            && !rest.trim().is_empty()
+        {
+            return clean(rest);
+        }
+    }
+    part.to_owned()
 }
 
 /// Disc folders: `CD1`, `Disc 2`, `disk 01`.
@@ -374,7 +476,7 @@ fn is_generic(dir: &str) -> bool {
         "music library",
     ];
     let n = lull_core::ids::normalize(dir);
-    dir.contains(':') || n.chars().count() <= 1 || ROOTS.contains(&n.as_str())
+    dir.contains(':') || n.chars().count() <= 1 || ROOTS.contains(&n.as_str()) || is_kind_label(dir)
 }
 
 /// Drops the artist's words from the front of an album name, when they're there.
@@ -456,6 +558,50 @@ mod tests {
         let title_brackets = song(r"@@x\Oasis\(What's the Story) Morning Glory [FLAC]\02 Roll With It.flac")
             .unwrap_or_else(|| unreachable!());
         assert_eq!(title_brackets.album, "(What's the Story) Morning Glory");
+    }
+
+    #[test]
+    fn a_rips_folder_name_is_its_album_without_the_rips_words() {
+        // Live, "radiohead creep" listed Pablo Honey as about 13 albums, one per folder name.
+        let album = |path: &str| {
+            let s = song(path).unwrap_or_else(|| unreachable!("{path}"));
+            (normalize_artist(&s.album_artist), s.album)
+        };
+        let radiohead = |album: &str| ("radiohead".to_owned(), album.to_owned());
+        for path in [
+            r"music\Radiohead\Pablo Honey\02 Creep.flac",
+            r"Music\Radiohead - Pablo Honey - Flac\02 - Creep.flac",
+            r"share\Radiohead - Pablo Honey [SLSK]\02 Creep.mp3",
+            r"music\Radiohead\Radiohead - Album - Pablo Honey\02. Creep.flac",
+            r"music\Radiohead\Album - Pablo Honey\02 Creep.flac",
+        ] {
+            assert_eq!(album(path), radiohead("Pablo Honey"), "{path}");
+        }
+        for path in [
+            r"music\Radiohead\03. EPs - Creep (TOCP 8129)\01 Creep.flac",
+            r"music\Radiohead\Singles, EPs\Creep\01 Creep.flac",
+            r"music\Radiohead\Radiohead - EP - Creep\01 Creep.flac",
+            r"music\Radiohead\Radiohead - Creep (Single)\01 Creep.flac",
+            r"music\Radiohead\Creep EP\01 Creep.flac",
+        ] {
+            assert_eq!(album(path), radiohead("Creep"), "{path}");
+        }
+        // An edition with its own tracklist stays its own album; only the rip's words go.
+        for path in [
+            r"music\Radiohead - Pablo Honey (Deluxe Edition) - Flac 24-88\02 Creep.flac",
+            r"music\Radiohead\Album - Pablo Honey (Deluxe Edition 320k)\02 Creep.mp3",
+        ] {
+            assert_eq!(album(path), radiohead("Pablo Honey (Deluxe Edition)"), "{path}");
+        }
+        assert_eq!(
+            album(r"music\Fleetwood Mac\Rumours (Live)\01 Dreams.flac"),
+            ("fleetwood mac".to_owned(), "Rumours (Live)".to_owned())
+        );
+        // "Live" alone may be the band.
+        assert_eq!(
+            album(r"music\Live - Throwing Copper\01 Lightning Crashes.flac"),
+            ("live".to_owned(), "Throwing Copper".to_owned())
+        );
     }
 
     #[test]

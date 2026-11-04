@@ -123,6 +123,11 @@ A song's id comes from its path, so the parser decides what merges (`files.rs`, 
 
 Bracketed release tags (`[FLAC]`, `(1998)`, `[24-96]`) are dropped; brackets that belong to a title stay. Share roots such as `Music`, `share` or `Downloads` never count as an artist.
 
+What a rip adds to a folder's name is dropped too, so one album shared under many folder names is one album, with one id and one cover to look up (live, "radiohead creep" listed Pablo Honey as about 13 albums):
+- format, quality and source words, bracketed or after a dash (`Pablo Honey - Flac`, `[SLSK]`, `320k`, `Flac 24-88`), and catalogue numbers (`(TOCP 8129)`, `[CDR 6078, EU]`);
+- folders sorting releases by kind (`EPs`, `03. Singles`, `Singles, EPs`, `Album - Pablo Honey`), which are never an artist ("Live" alone may be the band), and a trailing `EP`, `Single` or `(Single)` ("Creep EP" is "Creep");
+- edition words stay, as an edition has its own tracklist: `(Deluxe Edition 320k)` is "(Deluxe Edition)", and "Rumours (Live)" is not "Rumours".
+
 ## Ranking
 
 The score runs from 0 to 100 and is the sum of four factors (`rank.rs`):
