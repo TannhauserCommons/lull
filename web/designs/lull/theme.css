@@ -443,14 +443,16 @@
 :root[data-design="lull"] .pbar__controls { gap: 6px; }
 :root[data-design="lull"] .pbar .btn-gloss { --size: 52px; }
 :root[data-design="lull"] .pbar__seek .seek { height: 22px; }
-/* the seek group is headed by what the stream is doing ("Streaming from peer") */
+/* the seek group is headed by what the stream is doing, in words that hold whatever the source (a peer, YouTube, the
+   library): the reason, where there is one, is the state tab's (lull's own words: --status-text) */
 :root[data-design="lull"] .pbar__seek { max-width: none; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 8px; align-items: center; }
 :root[data-design="lull"] .pbar__seek::before { content: "now playing"; grid-column: 1 / -1; margin: 0 0 1px 2px; color: var(--link); font: 800 .75rem/1.2 var(--f-ui); }
 :root[data-design="lull"] .pbar[data-playing="false"] .pbar__seek::before { content: "paused"; }
 /* while bytes still arrive the head also says how much is in (--rx is the received %, an integer) */
-:root[data-design="lull"] .pbar__seek:has(.is-transferring)::before { counter-reset: rx var(--rx); content: "streaming from peer \00b7  " counter(rx) "% received"; }
+:root[data-design="lull"] .pbar__seek:has(.is-transferring)::before { counter-reset: rx var(--rx); content: "streaming \00b7  " counter(rx) "% received"; }
 :root[data-design="lull"] .pbar[data-playing="false"] .pbar__seek:has(.is-transferring)::before { content: "paused \00b7  " counter(rx) "% received"; }
-:root[data-design="lull"] .pbar[data-status="buffering"] .pbar__seek::before, :root[data-design="lull"] .pbar[data-status="finding"] .pbar__seek::before { content: "finding a source"; }
+:root[data-design="lull"] .pbar[data-status="finding"] .pbar__seek::before { content: "finding a source"; }
+:root[data-design="lull"] .pbar[data-status="buffering"] .pbar__seek::before { content: "buffering"; }
 :root[data-design="lull"] .pbar[data-status="failed"] .pbar__seek::before { content: "\26A0  couldn't play this song"; color: var(--heart); }
 :root[data-design="lull"] .pbar[data-status="failed"] .seek__track, :root[data-design="lull"] .mini[data-status="failed"] .seek__track {
   background: repeating-linear-gradient(-45deg, color-mix(in srgb, var(--heart) 55%, transparent) 0 1.5px, transparent 1.5px 4.243px) 0 0 / 6px 6px;
@@ -1363,10 +1365,10 @@
   text-decoration: underline var(--l-hl) .42em; text-underline-offset: -.24em; text-decoration-skip-ink: none;
 }
 :root[data-design="lull"] .now-ly__foot { border-top-color: var(--l-rule); }
-/* a song that never started has no words to follow yet */
+/* a song that couldn't play has no words to follow (why it couldn't is the player's to say) */
 :root[data-design="lull"]:has(> :where(body) > :where(.app) > .pbar[data-status="failed"]) .now-lycard :is(.now-ly__view, .now-ly__foot) { display: none; }
 :root[data-design="lull"]:has(> :where(body) > :where(.app) > .pbar[data-status="failed"]) .now-lycard .now-ly::after {
-  content: "Waiting for a source. The words come back as soon as a peer answers."; margin: auto; padding: 24px 40px;
+  content: "This song couldn\2019t play, so there are no words to follow."; margin: auto; padding: 24px 40px;
   text-align: center; color: var(--fg-panel-2); font: 700 1rem/1.4 var(--f-ui);
 }
 :root[data-design="lull"]:has(> :where(body) > :where(.app) > .pbar[data-status="failed"]) .lull-np .wave-times__buf { visibility: hidden; }
