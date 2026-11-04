@@ -469,7 +469,9 @@ impl Classic {
         Layout::of(&self.places, &self.panels, self.size * self.dpi)
     }
 
-    /// The widest window's physical width, for a band a window's rows are drawn in.
+    /// The widest window's physical width, for a band a window's rows are drawn in (Windows draws
+    /// into one band, GTK into one per paint).
+    #[cfg(windows)]
     pub fn widest(&self) -> i32 {
         self.panes.iter().map(|p| p.physical().0).max().unwrap_or(0).max(1)
     }
@@ -1669,7 +1671,8 @@ impl Marquee {
     }
 }
 
-#[cfg(test)]
+/// The side-by-side's scenes; Windows' window renders them (`render_skins`), Linux's not yet.
+#[cfg(all(test, windows))]
 pub mod scenes {
     use super::super::session::Now;
     use super::*;
