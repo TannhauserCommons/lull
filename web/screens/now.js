@@ -794,8 +794,8 @@
     if (j.kind === 'import' && 'added' in j) {        // listening history (POST /api/import/history)
       return { meta: html`${ui.statusGlyph('ok', 'Done')}<span>${j.added || 0} plays added${j.duplicates ? ', ' + j.duplicates + ' already there' : ''}${j.invalid ? ', ' + j.invalid + ' unreadable' : ''}</span>`, extra: '', acts: '' };
     }
-    if (j.kind === 'import' && j.link) {        // a playlist link (POST /api/import/link): its review lists the songs not found
-      return { meta: html`${ui.statusGlyph('ok', 'Done')}<span>In your playlists: ${j.matched || 0} matched${j.unmatched ? ', ' + j.unmatched + ' not found' : ''}${j.saving ? ', saving ' + j.saving : ''}</span>`, extra: '',
+    if (j.kind === 'import' && j.link) {        // a playlist link (POST /api/import/link): its review lists the songs to review
+      return { meta: html`${ui.statusGlyph('ok', 'Done')}<span>In your playlists: ${App.linkImportSummary(j)}</span>`, extra: '',
         acts: html`${j.playlistId ? html`<a class="btn btn--sm btn--quiet" href="#/playlist/${j.playlistId}" data-fk="open-${j.id}">Open</a>` : ''}<button class="btn btn--sm btn--quiet" data-act="lib-link-review" data-id="${j.link}" data-fk="review-${j.id}">Review</button>` };
     }
     if (j.kind === 'import') {

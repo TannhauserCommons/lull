@@ -1737,12 +1737,23 @@
 
   /* ---------- a playlist link (POST /api/import/link, docs/context/collection.md#playlist-links) ----------
      A Spotify, Deezer, YouTube, YouTube Music or SoundCloud link becomes a playlist that plays on demand. The hub reads
-     and matches it as a `job` (Activity); when this tab's import ends, a toast offers the review, where songs the catalog
-     didn't match are found in search, kept as the link names them, or skipped (PUT /api/import/links/{id}/songs/{pos}).
-     Importing the same link again updates its playlist and keeps those choices. */
+     and matches it as a `job` (Activity); every song goes in the playlist, one the catalog didn't match as the link names
+     it. When this tab's import ends, a toast offers the review, where those are found in search, kept as named, or
+     skipped (PUT /api/import/links/{id}/songs/{pos}). Importing the same link again updates its playlist and keeps those
+     choices. */
   var linkJobs = {};                  // jobId -> true for the imports this tab started
   var SITE_NAME = { spotify: 'Spotify', deezer: 'Deezer', youtube: 'YouTube', soundcloud: 'SoundCloud' };
-  var LINK_STATUS = { matched: 'Matched', fixed: 'Your pick', skipped: 'Skipped', unmatched: 'Not found' };
+  var LINK_STATUS = { matched: 'Matched', fixed: 'Your pick', skipped: 'Skipped', unmatched: 'Not matched: plays as the link names it' };
+  /* a finished import's `job` row, said plainly (this toast and Activity): every song went in, those the catalog didn't
+     match to review; a song whose lookup failed was never searched, so nothing here says "not found" */
+  App.linkImportSummary = function (j) {
+    var n = j.songs || 0, review = j.unmatched || 0, unlooked = j.unlooked || 0, s = plural(n, 'song');
+    if (review && review === n && !unlooked) s += ', none matched in the catalog, so they play as the link names them';
+    else if (review) s += ', ' + review + ' to review';
+    if (j.saving) s += ', saving ' + j.saving;
+    if (unlooked) s += '. lull couldn\'t look up ' + unlooked + '; importing again tries ' + (unlooked === 1 ? 'it' : 'them');
+    return s;
+  };
   function linkForm() {
     var id = App.uid('lib-link');
     return html`<form class="lib-link" data-form="lib-link-import">
@@ -1786,8 +1797,8 @@
     if (!linkJobs[j.jobId]) return;
     delete linkJobs[j.jobId];
     if (j.state === 'failed') { App.toast('Couldn\'t import ' + j.name + ': ' + (j.error || 'the import failed'), { kind: 'error', icon: 'warning' }); return; }
-    App.toast('Imported ' + j.name + ' into your playlists: ' + plural(j.matched || 0, 'song') + (j.unmatched ? ', ' + j.unmatched + ' not found' : '') + (j.saving ? ', saving ' + j.saving : ''),
-      { kind: 'ok', icon: 'import', action: j.unmatched ? 'Review' : 'Open', onAction: function () {
+    App.toast('Imported ' + j.name + ' into your playlists: ' + App.linkImportSummary(j),
+      { kind: j.unmatched ? null : 'ok', icon: 'import', action: j.unmatched ? 'Review' : 'Open', onAction: function () {
         if (j.unmatched) openLinkReview(j.link); else App.go('/playlist/' + j.playlistId);
       } });
   });
@@ -1847,8 +1858,8 @@
   }
   function reviewBody(st) {
     var r = st.data; if (!r) return ui.skeleton('row', 4);
-    var c = r.counts, inList = c.matched + c.fixed;
-    var tally = { all: r.songs.length, unmatched: c.unmatched, matched: inList, skipped: c.skipped };
+    var c = r.counts, inList = r.songs.filter(function (s) { return s.trackId; }).length;
+    var tally = { all: r.songs.length, unmatched: c.unmatched, matched: c.matched + c.fixed, skipped: c.skipped };
     var shown = r.songs.filter(function (s) {
       return st.filter === 'all' || (st.filter === 'matched' ? s.status === 'matched' || s.status === 'fixed' : s.status === st.filter);
     });
@@ -1859,10 +1870,10 @@
         ${plural(inList, 'song')} in the playlist${r.running ? '. Importing now.' : r.importedAt ? ', imported ' + fmt.date(r.importedAt) + '.' : '.'}</p>
       ${r.note ? html`<p class="lib-help">${icon('info', null, 'ic-16')}${r.note}</p>` : ''}
       <div class="lib-imp__sum" role="group" aria-label="Show songs">
-        ${pill('unmatched', 'Not found', 'no-source')}${pill('matched', 'In the playlist', 'check')}${pill('skipped', 'Skipped', 'close')}${pill('all', 'All')}
+        ${pill('unmatched', 'To review', 'no-source')}${pill('matched', 'Matched or picked', 'check')}${pill('skipped', 'Skipped', 'close')}${pill('all', 'All')}
       </div>
       ${shown.length ? html`<ol class="lib-imp__list" aria-label="Songs in ${r.name}">${shown.map(function (s, i) { return reviewRow(s, st, ui.lazyRow(i, shown.length)); })}</ol>`
-        : html`<p class="now-next__none">${icon('check', null, 'ic-16')}${st.filter === 'unmatched' ? 'Every song was found.' : 'Nothing here.'}</p>`}
+        : html`<p class="now-next__none">${icon('check', null, 'ic-16')}${st.filter === 'unmatched' ? 'Nothing to review: every song matched or was picked.' : 'Nothing here.'}</p>`}
       <p class="lib-help">Choices stay when you import the link again. Songs you add or remove in the playlist itself are replaced by the link's songs then: skip a song here to keep it out.</p>`;
   }
   function reviewRow(s, st, lazy) {
@@ -1877,7 +1888,7 @@
     } else {
       acts = html`<button class="btn btn--sm btn--quiet" type="button" data-rev-choose="none" data-pos="${s.pos}">Undo</button>`;
     }
-    var found = t ? html`<small>${LINK_STATUS[s.status]}: ${t.artist}, ${t.title}${t.album ? ' (' + t.album + ')' : ''}</small>` : html`<small>${LINK_STATUS[s.status]}</small>`;
+    var found = t && s.status !== 'unmatched' ? html`<small>${LINK_STATUS[s.status]}: ${t.artist}, ${t.title}${t.album ? ' (' + t.album + ')' : ''}</small>` : html`<small>${LINK_STATUS[s.status]}</small>`;
     /* the row being matched by hand is always drawn: its search box and results are in it */
     return ui.row(html`<li class="lib-imp__row lib-linkrev__row" data-status="${s.status}"`, function () {
       return html`
