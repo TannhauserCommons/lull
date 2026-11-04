@@ -149,10 +149,15 @@ impl Presence {
         let Some(client_id) = APPLICATION_ID else {
             return Presence { tx: None };
         };
+        Self::start_on(client_id, pipe())
+    }
+
+    /// Talking to the pipes named `pipe` and a number.
+    fn start_on(client_id: &'static str, pipe: String) -> Self {
         let (tx, rx) = mpsc::channel();
         let spawned = std::thread::Builder::new()
             .name("discord".into())
-            .spawn(move || run(client_id, &rx));
+            .spawn(move || run(client_id, &pipe, &rx));
         if let Err(e) = spawned {
             eprintln!("lull: Discord presence didn't start: {e}");
             return Presence { tx: None };
@@ -178,7 +183,7 @@ impl Presence {
     }
 }
 
-fn run(client_id: &str, rx: &Receiver<Want>) {
+fn run(client_id: &str, pipe: &str, rx: &Receiver<Want>) {
     let mut want = Want::Off;
     let mut ipc: Option<Ipc> = None;
     // What Discord shows now (None: nothing).
@@ -224,7 +229,7 @@ fn run(client_id: &str, rx: &Receiver<Want>) {
                 continue; // nothing to clear on a Discord we aren't talking to
             }
             // Not running (or not yet): quietly, until next time.
-            ipc = Ipc::connect(client_id).ok();
+            ipc = Ipc::connect(client_id, pipe).ok();
             shown = None;
         }
         if let Some(c) = ipc.as_mut() {
@@ -404,9 +409,9 @@ const MAX_FRAME: u32 = 64 * 1024;
 
 impl Ipc {
     /// The first of Discord's pipes that answers the handshake.
-    fn connect(client_id: &str) -> io::Result<Ipc> {
+    fn connect(client_id: &str, name: &str) -> io::Result<Ipc> {
         let mut last = io::Error::new(io::ErrorKind::NotFound, "Discord isn't running");
-        for pipe in open_pipes() {
+        for pipe in open_pipes(name) {
             let mut ipc = Ipc { pipe, nonce: 0 };
             match ipc.handshake(client_id) {
                 Ok(()) => return Ok(ipc),
@@ -471,35 +476,48 @@ impl Ipc {
     }
 }
 
+/// Discord's pipes: `discord-ipc-` and a number. A debug build takes another name from
+/// `LULL_DISCORD_PIPE`, so a test app can be pointed at a stand-in and never reaches the listener's
+/// own Discord.
+fn pipe() -> String {
+    #[cfg(debug_assertions)]
+    if let Ok(name) = std::env::var("LULL_DISCORD_PIPE") {
+        return name;
+    }
+    "discord-ipc-".to_owned()
+}
+
 /// Discord listens on `discord-ipc-0` to `-9`: the first free one per running client.
 #[cfg(windows)]
-fn open_pipes() -> impl Iterator<Item = Box<dyn Pipe>> {
-    (0..10).filter_map(|n| {
+fn open_pipes(name: &str) -> impl Iterator<Item = Box<dyn Pipe>> {
+    (0..10).filter_map(move |n| {
         std::fs::OpenOptions::new()
             .read(true)
             .write(true)
-            .open(format!(r"\\?\pipe\discord-ipc-{n}"))
+            .open(format!(r"\\?\pipe\{name}{n}"))
             .ok()
             .map(|f| Box::new(f) as Box<dyn Pipe>)
     })
 }
 
-/// In the runtime dir, or a sandbox's corner of it (Flatpak, Snap).
+/// Where Discord's sockets are: the runtime dir.
 #[cfg(unix)]
-fn open_pipes() -> impl Iterator<Item = Box<dyn Pipe>> {
-    use std::os::unix::net::UnixStream;
-    let base = ["XDG_RUNTIME_DIR", "TMPDIR", "TMP", "TEMP"]
+fn runtime_dir() -> String {
+    ["XDG_RUNTIME_DIR", "TMPDIR", "TMP", "TEMP"]
         .iter()
         .find_map(|v| std::env::var(v).ok())
-        .unwrap_or_else(|| "/tmp".to_owned());
+        .unwrap_or_else(|| "/tmp".to_owned())
+}
+
+/// In the runtime dir, or a sandbox's corner of it (Flatpak, Snap).
+#[cfg(unix)]
+fn open_pipes(name: &str) -> impl Iterator<Item = Box<dyn Pipe>> {
+    use std::os::unix::net::UnixStream;
+    let base = runtime_dir();
     let dirs = ["", "app/com.discordapp.Discord/", "snap.discord/"];
     let paths: Vec<String> = dirs
         .iter()
-        .flat_map(|dir| {
-            (0..10)
-                .map(|n| format!("{base}/{dir}discord-ipc-{n}"))
-                .collect::<Vec<_>>()
-        })
+        .flat_map(|dir| (0..10).map(|n| format!("{base}/{dir}{name}{n}")).collect::<Vec<_>>())
         .collect();
     paths
         .into_iter()
@@ -598,5 +616,61 @@ mod tests {
         assert!(!same(a.as_ref(), activity(&later, Look::default(), &links()).as_ref()));
         assert!(same(None, None));
         assert!(!same(a.as_ref(), None));
+    }
+
+    /// A stand-in for Discord on its own socket: it answers the handshake and every command as
+    /// Discord does and keeps each frame lull sent.
+    #[cfg(unix)]
+    #[test]
+    fn the_activity_goes_out_and_is_cleared_over_discords_pipe() -> Result<(), String> {
+        use std::os::unix::net::UnixListener;
+        let name = format!("lull-test-ipc-{}-", std::process::id());
+        let path = format!("{}/{name}0", runtime_dir());
+        let _ = std::fs::remove_file(&path);
+        let listener = UnixListener::bind(&path).map_err(|e| e.to_string())?;
+        let presence = Presence::start_on("1234", name);
+        presence.show(true, Look::default(), Some(song(true)), None);
+        let (stream, _) = listener.accept().map_err(|e| e.to_string())?;
+        let _ = std::fs::remove_file(&path);
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .map_err(|e| e.to_string())?;
+        let mut discord = Ipc {
+            pipe: Box::new(stream),
+            nonce: 0,
+        };
+        let (op, hello) = discord.read().map_err(|e| e.to_string())?;
+        assert_eq!((op, hello["client_id"].as_str()), (HANDSHAKE, Some("1234")));
+        discord
+            .write(FRAME, &json!({ "cmd": "DISPATCH", "evt": "READY" }))
+            .map_err(|e| e.to_string())?;
+        // Each command, answered: what it set the activity to.
+        let mut next = || -> Result<Value, String> {
+            let (op, command) = discord.read().map_err(|e| e.to_string())?;
+            assert_eq!((op, command["cmd"].as_str()), (FRAME, Some("SET_ACTIVITY")));
+            assert_eq!(command["args"]["pid"], json!(std::process::id()));
+            discord
+                .write(FRAME, &json!({ "cmd": "SET_ACTIVITY", "nonce": command["nonce"] }))
+                .map_err(|e| e.to_string())?;
+            Ok(command["args"]["activity"].clone())
+        };
+        let playing = next()?;
+        assert_eq!(
+            Some(playing),
+            activity(&song(true), Look::default(), &Links::default()),
+            "what plays, as `activity` makes it"
+        );
+        presence.show(true, Look::default(), Some(song(false)), None);
+        assert_eq!(next()?, Value::Null, "paused: cleared");
+        let look = Look {
+            paused: WhenPaused::Show,
+            ..Look::default()
+        };
+        presence.show(true, look, Some(song(false)), None);
+        let paused = next()?;
+        assert_eq!(paused["assets"]["small_image"], BADGE_PAUSED, "paused, shown");
+        presence.show(true, look, None, None);
+        assert_eq!(next()?, Value::Null, "nothing loaded: cleared");
+        Ok(())
     }
 }

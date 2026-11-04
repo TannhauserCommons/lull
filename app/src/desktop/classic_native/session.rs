@@ -140,20 +140,7 @@ impl Session {
         let Some(track) = self.playing_track(snapshot) else {
             return;
         };
-        let report = NowPlaying {
-            title: track.title.clone(),
-            artist: track.artist.clone(),
-            playing: snapshot.playing,
-            liked: track.liked,
-            saved: track.saved,
-            connected: snapshot.reachable,
-            id: track.id.clone(),
-            artist_id: track.artist_id.clone(),
-            album_id: track.album_id.clone(),
-            album: track.album.clone(),
-            position: snapshot.position,
-            duration: snapshot.duration.unwrap_or(0.0),
-        };
+        let report = now_playing(&track, snapshot);
         let started = ((unix_now() - report.position) / 3.0).round() as i64;
         let same = self.reported.as_ref().is_some_and(|(was, at)| {
             let moved = NowPlaying {
@@ -238,6 +225,26 @@ impl Session {
     }
 }
 
+/// What plays, as the page reports it for the tray, the taskbar and Discord (web/desktop/desktop.js
+/// `sendNow`): the song's names and ids, playing or not, liked, saved, the hub in reach, where it
+/// is and how long it is.
+fn now_playing(track: &Track, snapshot: &Snapshot) -> NowPlaying {
+    NowPlaying {
+        title: track.title.clone(),
+        artist: track.artist.clone(),
+        playing: snapshot.playing,
+        liked: track.liked,
+        saved: track.saved,
+        connected: snapshot.reachable,
+        id: track.id.clone(),
+        artist_id: track.artist_id.clone(),
+        album_id: track.album_id.clone(),
+        album: track.album.clone(),
+        position: snapshot.position,
+        duration: snapshot.duration.unwrap_or(0.0),
+    }
+}
+
 /// Winamp's marquee line: `3. Artist - Title (4:05)`.
 fn title_line(index: usize, artist: &str, title: &str, duration: Option<f64>) -> String {
     let name = if artist.is_empty() {
@@ -260,6 +267,37 @@ fn unix_now() -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The report the page sends for the same song (desktop.js `sendNow`, as `set_now_playing`
+    /// takes it): the tray, the taskbar and Discord (player.rs `refresh`) show what it says.
+    #[test]
+    fn what_plays_is_reported_as_the_page_reports_it() -> Result<(), String> {
+        let track = Track {
+            id: "t1".into(),
+            title: "Paper Moon Static".into(),
+            artist: "Velvet Orchard".into(),
+            album: "Hum".into(),
+            artist_id: "ar1".into(),
+            album_id: "al1".into(),
+            liked: true,
+            ..Track::default()
+        };
+        let snapshot = Snapshot {
+            playing: true,
+            position: 12.5,
+            duration: Some(201.0),
+            reachable: true,
+            ..Snapshot::default()
+        };
+        let page: NowPlaying = serde_json::from_value(json!({
+            "title": "Paper Moon Static", "artist": "Velvet Orchard", "playing": true, "liked": true,
+            "saved": false, "connected": true, "id": "t1", "artistId": "ar1", "albumId": "al1",
+            "album": "Hum", "position": 12.5, "duration": 201.0,
+        }))
+        .map_err(|e| e.to_string())?;
+        assert_eq!(now_playing(&track, &snapshot), page);
+        Ok(())
+    }
 
     #[test]
     fn the_marquee_names_the_song_the_way_winamp_did() {
