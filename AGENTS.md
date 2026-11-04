@@ -47,6 +47,7 @@ A music app for one listener who hosts it themselves (PROJECT.md). It streams fr
 
 - **Git history is the changelog.** Commit as `type(scope): summary`, where scope is the crate or area (`soulseek`, `web`, `app`, `deploy`, `docs`). The body says why and how it was verified. No change logs, session notes or handoff files.
 - **Small commits, straight to `main`.** Rebase on `origin/main`, run `mise run check`, then push. Never push red; if you break `main`, fix or revert at once.
+- **Topic branches get a name that says what they hold.** Push one as `git push origin HEAD:refs/heads/<what-it-holds>` (e.g. `loops-in-css`), never under the worktree's generated branch name: the repository is public. A branch's checks run by hand (docs/context/quality.md).
 - **Stage only the files you changed.** Other agents may have uncommitted work here.
 - **Keep docs current.** A change that makes a `docs/context/` page wrong updates that page in the same commit.
 - **Record decisions as ADRs.** A decision with alternatives worth remembering gets an ADR in `docs/adr/`, numbered from your range in `workspace.md`.
