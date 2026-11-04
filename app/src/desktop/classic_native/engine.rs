@@ -9,7 +9,8 @@
 //!   at once as the Android player does (`eagerNext`), and tells the hub what to prefetch and what to
 //!   let go;
 //! - follows a song still arriving: waiting states, a fallback's new attempt reopened at the same
-//!   second, seeks held inside what has arrived, a failed song skipped after 2.5 s;
+//!   second, a seek past what has arrived kept until it has (or held inside it, with Settings'
+//!   "Jump to where I seek once it has downloaded" off), a failed song skipped after 2.5 s;
 //! - switches to a better copy mid-song, lined up by correlation (align.rs) and faded over 200 ms;
 //! - levels loudness (ReplayGain, or measured), plays through the equaliser at the slider's square;
 //! - records listening history (listen.rs) and tells lull Connect what plays.
