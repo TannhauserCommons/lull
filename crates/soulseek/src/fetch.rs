@@ -1329,7 +1329,16 @@ impl Fetcher {
             // Counted across sources (YouTube included): a reader of an older attempt has the
             // wrong file.
             let attempt = f.now().attempt + 1;
-            match self.legs(f, attempt, &next, &mut stop).await {
+            // A copy named for this fetch (the listener's pick, a save's) is kept however slow;
+            // otherwise the fastest copy left is what a slow one could give way to.
+            let faster = match pick {
+                Some(_) => 0.0,
+                None => {
+                    let (left, _) = self.untried(f, &tried, &self.rules.get());
+                    left.iter().map(|r| r.expected).fold(0.0, f64::max)
+                }
+            };
+            match self.legs(f, attempt, &next, faster, &mut stop).await {
                 Ok(path) => return Ok(path),
                 Err(Ok(skip)) => {
                     let (reason, stalled) = match skip {

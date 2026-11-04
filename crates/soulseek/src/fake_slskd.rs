@@ -188,7 +188,9 @@ async fn enqueue(
     if let Ok(mut all) = s.transfers.lock() {
         all.insert(id.clone(), t.clone());
     }
-    Ok(axum::Json(json!({ "batch": { "transfers": [view(&id, &t, s.peer.reported)] } })))
+    Ok(axum::Json(
+        json!({ "batch": { "transfers": [view(&id, &t, s.peer.reported)] } }),
+    ))
 }
 
 /// The peer sends from `at`: appended (resume) or written from a fresh file (overwrite).

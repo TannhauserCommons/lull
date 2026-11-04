@@ -15,7 +15,8 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::sync::watch;
 
 use super::{
-    BUFFERED, Fetch, Fetcher, POLL, QUEUE_TIMEOUT, STALL_NOTICE, START_TIMEOUT, Skip, Status, Stop, reason, stopped,
+    BUFFERED, FASTER_BY, Fetch, Fetcher, MEASURE_MIN, POLL, QUEUE_TIMEOUT, SLOW_AFTER, SLOWER_THAN, STALL_NOTICE,
+    START_TIMEOUT, Skip, Status, Stop, reason, stopped,
 };
 use crate::cache::Entry;
 use crate::ranges::Ranges;
@@ -116,6 +117,9 @@ struct Leg {
     /// The last new byte, for stall and queue timeouts: from when the peer started sending.
     last: (u64, Instant),
     was_running: bool,
+    /// When the peer started sending this leg, and the leg's front then: its rate is what came
+    /// since (ADR-0015).
+    sending: Option<(Instant, u64)>,
     /// When slskd said it finished, while it hasn't yet said where it put the file.
     landing: Option<Instant>,
 }
@@ -132,13 +136,15 @@ enum Ended {
 
 impl Fetcher {
     /// Gets one copy onto disk in legs, each from the first byte still missing, until every
-    /// byte is here. A peer that doesn't answer, queues us too long or stalls is skipped, as
+    /// byte is here. A peer that doesn't answer, queues us too long, stalls, or proves slower
+    /// than the song while a copy expected at `faster` bytes a second is left, is skipped, as
     /// with one transfer; what its legs brought stays recorded for a later fetch of the copy.
     pub(super) async fn legs(
         &self,
         f: &Fetch,
         attempt: u32,
         source: &Source,
+        faster: f64,
         stop: &mut watch::Receiver<bool>,
     ) -> Outcome<PathBuf> {
         let failed = |e: Error| Err(Stop::Failed(reason(&e)));
@@ -173,7 +179,7 @@ impl Fetcher {
                 Ok(leg) => leg,
                 Err(e) => break Err(e),
             };
-            let ended = self.run_leg(f, source, &mut copy, leg, stop).await;
+            let ended = self.run_leg(f, source, &mut copy, leg, faster, stop).await;
             if let Err(e) = self.save_copy(f, source, &mut copy, false).await {
                 break Err(failed(e));
             }
@@ -274,6 +280,7 @@ impl Fetcher {
             begun: Instant::now(),
             last: (start, Instant::now()),
             was_running: false,
+            sending: None,
             landing: None,
         })
     }
@@ -281,17 +288,25 @@ impl Fetcher {
     /// Runs a leg of the own peer until slskd finishes it, it reaches bytes that arrived before,
     /// a reader far ahead makes it start over there, or it fails. What it brings is copied as it
     /// lands and published as the copy's ranges. Beside it, another peer's leg may run for a
-    /// reader far ahead (`tend_side`).
+    /// reader far ahead (`tend_side`). However it ends, the rate the peer sent at is remembered.
     async fn run_leg(
         &self,
         f: &Fetch,
         source: &Source,
         copy: &mut Copy,
         mut leg: Leg,
+        faster: f64,
         stop: &mut watch::Receiver<bool>,
     ) -> Outcome<Ended> {
         let failed = |e: Error| Err(Stop::Failed(reason(&e)));
         let rules = self.rules.get();
+        // What the song needs, bytes a second: slower, and it outruns its own download.
+        let needs = f
+            .track
+            .duration
+            .or(source.length)
+            .filter(|&d| d > 0)
+            .map_or(0.0, |d| source.size as f64 / f64::from(d));
         let mut asked = Instant::now() - POLL;
         let mut t: Option<Transfer> = None;
         loop {
@@ -303,9 +318,10 @@ impl Fetcher {
                         && t.phase() == Phase::Succeeded
                         && let Some(ended) = self.land(source, copy, &mut leg, &t, From::Own).await.map_err(failed)?
                     {
+                        self.measure(source, &leg, &t).await;
                         return Ok(ended);
                     }
-                    self.drop_leg(source, &mut leg).await;
+                    self.end_leg(source, &mut leg, t.as_ref()).await;
                     return Err(Err(Stop::Cancelled));
                 }
             }
@@ -319,7 +335,7 @@ impl Fetcher {
             // what had arrived, the next would start over again, so it runs to the end.
             let resumes = self.resumes.load(std::sync::atomic::Ordering::Relaxed);
             if resumes && leg.front > leg.start && copy.ranges.has(leg.front) {
-                self.drop_leg(source, &mut leg).await;
+                self.end_leg(source, &mut leg, t.as_ref()).await;
                 return Ok(Ended::Joined);
             }
             let speed = t.as_ref().map_or(0, |t| t.average_speed.max(0.0) as u64);
@@ -349,7 +365,7 @@ impl Fetcher {
                 && let Some(at) = jump(waiting, &copy.arrived(), &leg, speed, JUMP_SAME_S)
             {
                 tracing::info!(peer = %source.user, from = leg.front, to = at, "starting the copy over where the listener seeks");
-                self.drop_leg(source, &mut leg).await;
+                self.end_leg(source, &mut leg, t.as_ref()).await;
                 return Ok(Ended::Jump(at));
             }
             if copy.ranges.total() >= copy.saved + SAVE_EVERY {
@@ -369,7 +385,7 @@ impl Fetcher {
             }
             match watch_leg(&mut leg, t, rules.stall_timeout()) {
                 Watch::Gone(gone) => {
-                    self.drop_leg(source, &mut leg).await;
+                    self.end_leg(source, &mut leg, Some(t)).await;
                     let pct = copy.ranges.total().saturating_mul(100) / source.size.max(1);
                     return Err(Ok(match gone {
                         Gone::Silent => Skip::Unavailable(format!("{} did not answer", source.user)),
@@ -380,8 +396,22 @@ impl Fetcher {
                 }
                 Watch::Done => {
                     if let Some(ended) = self.land(source, copy, &mut leg, t, From::Own).await.map_err(failed)? {
+                        self.measure(source, &leg, t).await;
                         return Ok(ended);
                     }
+                }
+                Watch::Running(phase, _)
+                    if phase == Phase::InProgress
+                        && leg.sending.is_some_and(|(since, _)| since.elapsed() >= SLOW_AFTER)
+                        && t.average_speed < needs * SLOWER_THAN
+                        && faster >= t.average_speed.max(0.0) * FASTER_BY =>
+                {
+                    self.end_leg(source, &mut leg, Some(t)).await;
+                    return Err(Ok(Skip::Slow(format!(
+                        "{} sent {} KB/s, slower than the song plays",
+                        source.user,
+                        (t.average_speed.max(0.0) / 1000.0).round()
+                    ))));
                 }
                 Watch::Running(phase, quiet) => {
                     let brought = leg.front - leg.start;
@@ -418,7 +448,7 @@ impl Fetcher {
         }
         // It ran into the own peer's bytes, and what overlapped was checked: it has nothing new.
         if side.leg.front > side.leg.start && copy.ranges.has(side.leg.front) && copy.side.is_empty() {
-            self.drop_leg(&side.source, &mut side.leg).await;
+            self.end_leg(&side.source, &mut side.leg, side.t.as_ref()).await;
             return;
         }
         if side.asked.elapsed() >= POLL {
@@ -433,9 +463,12 @@ impl Fetcher {
             return;
         };
         match watch_leg(&mut side.leg, &t, rules.stall_timeout()) {
-            Watch::Gone(_) => return self.shun(copy, side).await,
+            Watch::Gone(_) => {
+                self.measure(&side.source, &side.leg, &t).await;
+                return self.shun(copy, side).await;
+            }
             Watch::Done => match self.land(&side.source, copy, &mut side.leg, &t, from).await {
-                Ok(Some(_)) => return,
+                Ok(Some(_)) => return self.measure(&side.source, &side.leg, &t).await,
                 Ok(None) => {}
                 Err(_) => return self.shun(copy, side).await,
             },
@@ -457,6 +490,33 @@ impl Fetcher {
         } else if copy.check.same >= VERIFY && !copy.side.is_empty() {
             copy.ranges = copy.ranges.union(&copy.side);
             copy.side = Ranges::default();
+        }
+    }
+
+    /// Stops a leg that is still running, remembering the rate its peer sent at (`t`, slskd's
+    /// latest word on it).
+    async fn end_leg(&self, source: &Source, leg: &mut Leg, t: Option<&Transfer>) {
+        if let Some(t) = t {
+            self.measure(source, leg, t).await;
+        }
+        self.drop_leg(source, leg).await;
+    }
+
+    /// Remembers how fast the peer sent a leg (ADR-0015): slskd's average over the bytes that
+    /// flowed (queue time excluded), once enough came to judge it: `MEASURE_MIN`, or
+    /// `SLOW_AFTER` of sending, so a slow peer given up on is remembered too.
+    async fn measure(&self, source: &Source, leg: &Leg, t: &Transfer) {
+        let Some((since, from)) = leg.sending else { return };
+        let judged = leg.front.saturating_sub(from) >= MEASURE_MIN || since.elapsed() >= SLOW_AFTER;
+        if !judged || t.average_speed <= 0.0 {
+            return;
+        }
+        if let Err(e) = self
+            .peers
+            .sent(&source.user, t.average_speed, source.upload_speed)
+            .await
+        {
+            tracing::warn!(error = %e, "remembering a peer's speed");
         }
     }
 
@@ -666,6 +726,9 @@ fn watch_leg(leg: &mut Leg, t: &Transfer, stall: std::time::Duration) -> Watch {
         leg.last = (leg.front, Instant::now());
     }
     leg.was_running = running;
+    if running && leg.sending.is_none() {
+        leg.sending = Some((Instant::now(), leg.front));
+    }
     let quiet = leg.last.1.elapsed();
     match t.phase() {
         Phase::Starting if leg.begun.elapsed() > START_TIMEOUT => Watch::Gone(Gone::Silent),
@@ -1231,8 +1294,9 @@ mod tests {
             &["peer2"],
             Peer {
                 per_tick: 14_000,
-                reported: 10_000.0,
+                reported: Some(10_000.0),
                 overwrite: false,
+                settles: Duration::from_millis(200),
             },
         )
         .await?;
@@ -1262,8 +1326,9 @@ mod tests {
             &["peer2"],
             Peer {
                 per_tick: 14_000,
-                reported: 10_000.0,
+                reported: Some(10_000.0),
                 overwrite: false,
+                settles: Duration::from_millis(200),
             },
         )
         .await?;
