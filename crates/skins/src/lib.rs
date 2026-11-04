@@ -539,7 +539,6 @@ mod tests {
     use lull_core::db::{self, Db};
     use lull_core::events::Bus;
     use lull_core::http::Http;
-    use lull_core::status::Status;
     use tower::ServiceExt;
 
     use super::*;
@@ -563,15 +562,7 @@ mod tests {
         db.migrate(&db::CORE)?;
         db.migrate(&MIGRATIONS)?;
         let bus = Bus::new();
-        start(&Ctx {
-            config: Arc::new(config),
-            db,
-            http: Http::new()?,
-            status: Status::new(bus.clone()),
-            bus,
-            shutdown: Default::default(),
-        })
-        .await
+        start(&Ctx::new(config, db, Http::new()?, bus)).await
     }
 
     async fn call(app: &Router, method: &str, uri: &str) -> (StatusCode, Vec<u8>) {

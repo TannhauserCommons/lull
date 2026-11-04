@@ -10,7 +10,6 @@ use lull_core::db::Db;
 use lull_core::devices::{self, Kind};
 use lull_core::events::Bus;
 use lull_core::http::Http;
-use lull_core::status::Status;
 use lull_core::{Ctx, Error, Result, settings};
 use serde_json::json;
 use tokio::sync::{Mutex, RwLock, broadcast, mpsc};
@@ -100,14 +99,7 @@ impl Hub {
 impl Wiring {
     async fn start(config: Config, db: Db, restarts: mpsc::Sender<String>) -> Result<Wiring> {
         let bus = Bus::new();
-        let ctx = Ctx {
-            db,
-            http: Http::new()?,
-            status: Status::new(bus.clone()),
-            shutdown: Default::default(),
-            config: Arc::new(config),
-            bus,
-        };
+        let ctx = Ctx::new(config, db, Http::new()?, bus);
         // Subscribed before the crates start, so a crate asking for a restart while it starts
         // is still heard.
         ctx.spawn(forward_restarts(ctx.bus.subscribe(), restarts));

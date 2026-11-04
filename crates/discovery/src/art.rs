@@ -258,7 +258,7 @@ impl Pictures {
             dir: ctx.config.data_dir.join("catalog-art"),
             fetches: Fetches::default(),
             warmer: Warmer::start(ctx, WARM_WORKERS),
-            ready: art::Ready::new(ctx),
+            ready: art::Ready::new(ctx.bus.clone(), ctx.shutdown.clone()),
             playing: Mutex::default(),
             failed: Mutex::default(),
         })
@@ -610,15 +610,12 @@ mod tests {
         .collect();
         let config =
             lull_core::config::Config::from_vars(vars).map_err(|e| lull_core::Error::internal(e.to_string()))?;
-        let bus = lull_core::events::Bus::new();
-        Ok(lull_core::Ctx {
-            config: std::sync::Arc::new(config),
-            db: Db::memory()?,
-            http: lull_core::http::Http::new()?,
-            status: lull_core::status::Status::new(bus.clone()),
-            bus,
-            shutdown: Default::default(),
-        })
+        Ok(lull_core::Ctx::new(
+            config,
+            Db::memory()?,
+            lull_core::http::Http::new()?,
+            lull_core::events::Bus::new(),
+        ))
     }
 
     fn album(title: &str, group: Option<&str>) -> Album {

@@ -7,7 +7,7 @@
 //! tells the pages once it has it, so a page asks for a picture once and waits instead of
 //! polling. A picture no source has answers 404 "none", cached for as long as that is believed.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -16,7 +16,10 @@ use axum::Json;
 use axum::http::{HeaderName, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 
-use crate::{Ctx, Error, Result};
+use tokio_util::sync::CancellationToken;
+
+use crate::events::Bus;
+use crate::{Error, Result};
 
 /// The sizes, in pixels, a picture fits into (both sides). 96 to 512 for rows, tiles and heroes;
 /// 1024 and 2048 for large views on high-density screens.
@@ -119,33 +122,64 @@ fn missing(cache: String, message: String) -> Response {
 /// How long `art.ready` collects keys before it goes out: a page of covers is one event.
 const READY_BATCH: Duration = Duration::from_millis(250);
 
-/// Publishes `art.ready { keys }` (album and artist ids whose picture the hub now has, at some
-/// size), batched so a page of covers coming in is one event, not fifty.
+/// Publishes `art.ready { keys, images? }` (album and artist ids whose picture the hub now has,
+/// at some size; `images`: an artist's new photo URL, for a page that drew it without one),
+/// batched so a page of covers coming in is one event, not fifty.
 pub struct Ready {
-    ctx: Ctx,
-    keys: Mutex<BTreeSet<String>>,
+    bus: Bus,
+    shutdown: CancellationToken,
+    batch: Mutex<Batch>,
+}
+
+#[derive(Default)]
+struct Batch {
+    keys: BTreeSet<String>,
+    images: BTreeMap<String, String>,
 }
 
 impl Ready {
-    pub fn new(ctx: &Ctx) -> Arc<Ready> {
+    pub fn new(bus: Bus, shutdown: CancellationToken) -> Arc<Ready> {
         Arc::new(Ready {
-            ctx: ctx.clone(),
-            keys: Mutex::default(),
+            bus,
+            shutdown,
+            batch: Mutex::default(),
         })
     }
 
     pub fn announce(self: &Arc<Self>, key: impl Into<String>) {
+        self.add(|b| {
+            b.keys.insert(key.into());
+        });
+    }
+
+    /// `key` has a new picture at `image` (a URL the pages use as the entity's `image`).
+    pub fn announce_image(self: &Arc<Self>, key: impl Into<String>, image: String) {
+        let key = key.into();
+        self.add(|b| {
+            b.keys.insert(key.clone());
+            b.images.insert(key, image);
+        });
+    }
+
+    fn add(self: &Arc<Self>, put: impl FnOnce(&mut Batch)) {
         let first = {
-            let mut keys = self.keys.lock().unwrap_or_else(PoisonError::into_inner);
-            keys.insert(key.into()) && keys.len() == 1
+            let mut batch = self.batch.lock().unwrap_or_else(PoisonError::into_inner);
+            let was_empty = batch.keys.is_empty();
+            put(&mut batch);
+            was_empty
         };
         if first {
             let me = self.clone();
-            self.ctx.spawn(async move {
+            let shutdown = self.shutdown.clone();
+            tokio::spawn(shutdown.run_until_cancelled_owned(async move {
                 tokio::time::sleep(READY_BATCH).await;
-                let keys = std::mem::take(&mut *me.keys.lock().unwrap_or_else(PoisonError::into_inner));
-                me.ctx.bus.publish("art.ready", serde_json::json!({ "keys": keys }));
-            });
+                let batch = std::mem::take(&mut *me.batch.lock().unwrap_or_else(PoisonError::into_inner));
+                let mut data = serde_json::json!({ "keys": batch.keys });
+                if !batch.images.is_empty() {
+                    data["images"] = serde_json::json!(batch.images);
+                }
+                me.bus.publish("art.ready", data);
+            }));
         }
     }
 }
@@ -207,28 +241,22 @@ mod tests {
 
     #[tokio::test]
     async fn covers_coming_in_together_are_one_art_ready_event() -> Result<()> {
-        let vars = [("LULL_SLSKD_URL", "http://slskd"), ("LULL_SLSKD_API_KEY", "k")]
-            .into_iter()
-            .map(|(k, v)| (k.to_owned(), v.to_owned()))
-            .collect();
-        let config = crate::config::Config::from_vars(vars).map_err(|e| Error::internal(e.to_string()))?;
-        let bus = crate::events::Bus::new();
-        let ctx = Ctx {
-            config: std::sync::Arc::new(config),
-            db: crate::db::Db::memory()?,
-            http: crate::http::Http::new()?,
-            status: crate::status::Status::new(bus.clone()),
-            bus: bus.clone(),
-            shutdown: Default::default(),
-        };
+        let bus = Bus::new();
         let mut rx = bus.subscribe();
-        let ready = Ready::new(&ctx);
+        let ready = Ready::new(bus.clone(), CancellationToken::new());
         for key in ["al-0b", "al-0a", "al-0b", "ar-0c"] {
             ready.announce(key);
         }
+        ready.announce_image("ar-0d", "api/catalog/art/ar-0d?v=1".into());
         let event = rx.recv().await.map_err(|e| Error::internal(e.to_string()))?;
         assert_eq!(event.topic, "art.ready");
-        assert_eq!(event.data, serde_json::json!({ "keys": ["al-0a", "al-0b", "ar-0c"] }));
+        assert_eq!(
+            event.data,
+            serde_json::json!({
+                "keys": ["al-0a", "al-0b", "ar-0c", "ar-0d"],
+                "images": { "ar-0d": "api/catalog/art/ar-0d?v=1" },
+            })
+        );
         assert!(rx.try_recv().is_err(), "one event for the batch");
         Ok(())
     }

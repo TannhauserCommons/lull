@@ -149,7 +149,7 @@ pub async fn start(ctx: &Ctx, transfers: Arc<dyn Transfers>) -> Result<Arc<Servi
     let svc = Arc::new_cyclic(|me| Service {
         me: me.clone(),
         warmer: lull_core::warm::Warmer::start(ctx, WARM_WORKERS),
-        ready: lull_core::art::Ready::new(ctx),
+        ready: lull_core::art::Ready::new(ctx.bus.clone(), ctx.shutdown.clone()),
         ctx: ctx.clone(),
         transfers,
         mode: library.mode,

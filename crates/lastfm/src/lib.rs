@@ -441,7 +441,6 @@ mod tests {
     use lull_core::db::Db;
     use lull_core::events::Bus;
     use lull_core::http::Http;
-    use lull_core::status::Status;
     use rusqlite::params;
 
     use super::*;
@@ -465,14 +464,7 @@ mod tests {
             api_secret: lull_core::config::Secret::new("secret"),
         };
         Ok(Arc::new(Service {
-            ctx: Ctx {
-                config: Arc::new(config),
-                db,
-                http: http.clone(),
-                status: Status::new(bus.clone()),
-                bus,
-                shutdown: Default::default(),
-            },
+            ctx: Ctx::new(config, db, http.clone(), bus),
             client: with_key.then(|| Client::new(http, creds)),
             wake: Notify::new(),
             pending_auth: Mutex::new(None),

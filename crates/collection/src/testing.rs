@@ -13,7 +13,6 @@ use lull_core::http::Http;
 use lull_core::ids::TrackId;
 use lull_core::model::{LatePlay, SongQuery, SourceRef, Track};
 use lull_core::seams::{Catalog, Library, Scrobbles, Youtube};
-use lull_core::status::Status;
 use lull_core::youtube::{Found, Want};
 use lull_core::{Ctx, Result, catalog};
 use tokio::sync::broadcast::Receiver;
@@ -144,14 +143,7 @@ pub(crate) async fn service_with_fakes() -> Result<(Arc<Service>, Receiver<Event
     }
     let bus = Bus::new();
     let rx = bus.subscribe();
-    let ctx = Ctx {
-        config: Arc::new(config),
-        db,
-        http: Http::new()?,
-        status: Status::new(bus.clone()),
-        bus,
-        shutdown: Default::default(),
-    };
+    let ctx = Ctx::new(config, db, Http::new()?, bus);
     let lastfm = Arc::new(FakeLastfm::default());
     let fake_catalog = Arc::new(FakeCatalog::default());
     let svc = Arc::new(Service {
