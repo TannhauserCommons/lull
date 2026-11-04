@@ -40,18 +40,25 @@ checks() { # <base> <candidate>
   has() { printf '%s\n' "$files" | grep -Eq "$1"; }
   all=false; has '^(\.github/|scripts/queue\.sh$)' && all=true
   want() { if $all || has "$2"; then out "$1" true; else out "$1" false; fi; }
-  # ci: everything but words and pictures.
-  if $all || printf '%s\n' "$files" | grep -Evq '^(docs/|design/|fastlane/|site/)|\.md$'; then out ci true; else out ci false; fi
+  # ci: everything but words and pictures, and the share Worker (its own check), save its host list, which the hub
+  # compiles in.
+  if $all || has '^share/hosts\.json$' || printf '%s\n' "$files" | grep -Evq '^(docs/|design/|fastlane/|site/|share/)|\.md$'; then
+    out ci true
+  else
+    out ci false
+  fi
   want ui_gates '^(web/|tests/ui/)'
   want ui '^(web/|crates/server/src/web\.rs$|tests/ui/|scripts/web-dist/|Dockerfile$)'
   want app '^(app/|crates/|web/desktop/|web/assets/icons/|rust-toolchain\.toml$)'
   want android '^(app/gen/android/|app/src/mobile/|app/build\.rs$|app/Cargo\.(toml|lock)$|app/tauri\.android\.conf\.json$|scripts/android-|rust-toolchain\.toml$)'
   want slskd '^(deploy/compose\.yaml$|app/build\.rs$|crates/soulseek/|tests/slskd-contract/)'
   # What reaches the image: the hub's code, the web UI it embeds, and how both are built.
-  want image '^(crates/|web/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|Dockerfile$|\.dockerignore$|scripts/vendor-web\.sh$|scripts/web-dist/)'
+  want image '^(crates/|web/|share/hosts\.json$|Cargo\.(toml|lock)$|rust-toolchain\.toml$|Dockerfile$|\.dockerignore$|scripts/vendor-web\.sh$|scripts/web-dist/)'
   want pages '^(site/|web/assets/app-icon\.svg$|web/fonts/nunito-latin\.woff2$)'
   # Not a check (YouTube being down must not hold a landing): its live run follows a change to the reader.
   want youtube_contract '^crates/discovery/src/search/youtube_music\.rs$'
+  # The share Worker (ADR-0034): tested whenever it or a file it serves changes, deployed after landing.
+  want share '^(share/|site/|web/assets/app-icon\.svg$|web/assets/fallback-art-512\.png$|web/fonts/nunito-latin\.woff2$|packaging/android/assetlinks\.json$|app/gen/android/app/src/main/AndroidManifest\.xml$)'
   # What every release build compiles: main builds the bundles then, to warm their caches (ADR-0097).
   want warm '^(Cargo\.lock|app/Cargo\.lock|app/Cargo\.toml|rust-toolchain\.toml)$'
 }

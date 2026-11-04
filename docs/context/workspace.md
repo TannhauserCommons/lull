@@ -14,6 +14,7 @@ Each area has one owner at a time. Edit only what your brief says you own.
 | `crates/youtube` | YouTube through yt-dlp: matching, native audio downloads, keeping yt-dlp current (the `Youtube` seam; soulseek decides when it plays) | Soulseek session (idle) |
 | `crates/library` | Library sources (folder, Jellyfin), switching and reconciliation, Quick Connect, the Jellyfin mirror, saved-track streaming, save pipeline | Library session |
 | `crates/discovery` | Feed, new releases, radio, album/artist/tag pages, taste model | Discovery session (idle) |
+| `share/`, `.github/workflows/share.yml` | Share links on Cloudflare: the card pages, covers, App Links statement (share.md, ADR-0034) | Discovery session |
 | `crates/lastfm` | Last.fm auth, now playing, scrobbles + retry queue, the built-in app key | Collection session |
 | `crates/lyrics` | LRCLIB lyrics + cache | Discovery session (idle) |
 | `crates/collection` | Likes, follows, plays/history, playlists + M3U, stats, settings, the `Collection` seam, `/api/sync`, imports | Collection session |

@@ -1,0 +1,28 @@
+// lull's share links (docs/adr/0034). Deployed by .github/workflows/share.yml; tested locally by test/.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // Part of every link's address (lull.<account subdomain>.workers.dev): never renamed.
+  "name": "lull",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "preview_urls": false,
+  // Logs nothing: no Workers logs, no traces.
+  "observability": { "enabled": false },
+  // Nor does wrangler report its use to Cloudflare.
+  "send_metrics": false,
+  "build": { "command": "node build.mjs" },
+  // Static files are served before the Worker runs, and don't count against the free plan's requests.
+  "assets": { "directory": "./public", "binding": "ASSETS" },
+  "durable_objects": {
+    "bindings": [
+      { "name": "COVERS", "class_name": "Cover" },
+      { "name": "GATE", "class_name": "Gate" }
+    ]
+  },
+  // SQLite-backed: the only Durable Objects on Workers Free.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Cover", "Gate"] }],
+  // 60 requests a minute per client, per Cloudflare location.
+  "ratelimits": [{ "name": "CLIENTS", "namespace_id": "3401", "simple": { "limit": 60, "period": 60 } }]
+  // Secret LASTFM_API_KEY (Bitwarden lull/LASTFM_API_KEY), put by the deploy job.
+}

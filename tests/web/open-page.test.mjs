@@ -1,4 +1,4 @@
-// lull's open page (site/open.js, docs/adr/0032): the link it hands the lull app. On Android an intent URL, which Chrome
+// lull's open page (site/open.js, docs/adr/0032, 0034): the link it hands the lull app. On Android an intent URL, which Chrome
 // opens on one tap (it opens no app without one), as the app's lull://open with its package, and this page again,
 // marked ?app=none, when the app isn't installed. Elsewhere lull://open. Read back here as Chrome reads the intent
 // and as MainActivity's SharedLinks reads the link (getQueryParameter("link")).
@@ -49,4 +49,12 @@ test('Android is told apart by its user agent', () => {
   assert.equal(O.isAndroid('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'), false);
   assert.equal(O.isAndroid('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'), false);
   assert.equal(O.isAndroid(''), false);
+});
+
+test('a share host link keeps its ids: only the app=none it came back with is dropped', () => {
+  const link = 'https://lull.share-host.invalid/1/song/Portishead/Glory%20Box?al=Dummy&it=1440823733';
+  const intent = chromeReads(O.appUrl(link, true));
+  assert.equal(new URL(intent.data).searchParams.get('link'), link, 'the link arrives whole');
+  assert.equal(intent.fallback, link + '&app=none');
+  assert.equal(O.linkOf(intent.fallback), link);
 });

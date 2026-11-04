@@ -1,19 +1,25 @@
-/* lull's "open" page (docs/adr/0032): a shared lull link is this page with the item's names and public ids after
-   `#lull?`, which browsers never send to the server. It opens the item in lull:
+/* lull's "open" page (docs/adr/0032, 0034). Two hosts serve it:
+   - GitHub Pages, for links copied before ADR-0034: the item's names and public ids follow `#lull?`, which browsers
+     never send to the server;
+   - lull's share Worker (share/), for links copied since: the item is in the address, and the Worker hands it to
+     this script as JSON (#lull-item), with its cover and public page.
+   Either way it opens the item in lull:
    - in the listener's lull in the browser, when they told this page its address (kept in this browser only);
    - else in the lull app. Android: "Open in the lull app" is an intent URL for the app, which Chrome opens on one tap
      (it blocks lull:// unless a tap asks for it), coming back here with ?app=none when the app isn't installed; App
      Links, once verified, open the app before this page loads. Elsewhere: lull://open?link=…, tried once on load (the
      desktop app asks "Open lull?");
    - else it offers the item's public page (song.link, album.link, Last.fm) and lull itself.
-   No requests leave this page: everything is read from its own address. */
+   No requests leave this page for anywhere else: everything is read from its own address (the cover, on the share
+   host, is that host's own). */
 (function (root) {
   'use strict';
   var PACKAGE = 'io.github.tannhausercommons.lull';
-  /* the link a lull opens: this page's address, its #lull? part included, without the ?app=none it came back with */
-  function linkOf(href) { var u = new URL(href); u.search = ''; return u.href; }
+  /* the link a lull opens: this page's address (its ids and #lull? part included), without the app=none it came
+     back with */
+  function linkOf(href) { var u = new URL(href); u.searchParams.delete('app'); if (!u.searchParams.toString()) u.search = ''; return u.href; }
   /* where Chrome comes back to when the app isn't installed: this page, saying so */
-  function fallbackOf(link) { var u = new URL(link); u.search = '?app=none'; return u.href; }
+  function fallbackOf(link) { var u = new URL(link); u.searchParams.set('app', 'none'); return u.href; }
   function isAndroid(ua) { return /\bAndroid\b/i.test(ua || ''); }
   /* the lull app's link for `link`: on Android an intent URL (the app's lull://open, its package, and the page to come
      back to), elsewhere lull://open. Each value is encoded whole: the link's own # and ; stay out of the intent's */
@@ -36,15 +42,23 @@
   var $ = function (id) { return document.getElementById(id); };
   var here = linkOf(location.href);
   var android = isAndroid(navigator.userAgent);
-  var item = read(location.hash);
+  var item = read(location.hash, $('lull-item'));
 
-  function read(hash) {
-    if (hash.indexOf('#lull?') !== 0) return null;
-    var p = new URLSearchParams(hash.slice('#lull?'.length));
-    var kind = p.get('kind'), artist = (p.get('artist') || '').trim(), title = (p.get('title') || '').trim();
+  /* the item the share Worker handed over, else the one after #lull? */
+  function read(hash, handed) {
+    var p;
+    if (handed) {
+      try { p = JSON.parse(handed.textContent); } catch (e) { return null; }
+    } else if (hash.indexOf('#lull?') === 0) {
+      var q = new URLSearchParams(hash.slice('#lull?'.length));
+      p = { kind: q.get('kind'), artist: q.get('artist'), title: q.get('title'), album: q.get('album'), page: q.get('page') };
+    } else return null;
+    var kind = p.kind, artist = (p.artist || '').trim(), title = (p.title || '').trim();
     if (!NOUN[kind] || !artist || (kind !== 'artist' && !title)) return null;
-    return { kind: kind, artist: artist, title: title, page: publicPage(p.get('page')) };
+    return { kind: kind, artist: artist, title: title, album: (p.album || '').trim(), page: publicPage(p.page), cover: ownPath(p.cover) };
   }
+  /* the cover the share host serves itself: a path on this host, never another site's address */
+  function ownPath(path) { return typeof path === 'string' && /^\/[^/\\]/.test(path) ? path : null; }
   function publicPage(url) {
     try {
       var u = new URL(url);
@@ -82,10 +96,18 @@
     }
     $('kind').textContent = NOUN[item.kind] + ' shared from lull';
     $('title').textContent = item.kind === 'artist' ? item.artist : item.title;
-    $('by').textContent = item.kind === 'artist' ? '' : item.artist;
+    $('by').textContent = item.kind === 'artist' ? '' : [item.artist, item.album].filter(Boolean).join(' · ');
+    if (item.cover) {
+      $('cover').src = item.cover;
+      $('cover').alt = item.kind === 'artist' ? item.artist : 'Cover of ' + (item.album || item.title);
+      $('cover').hidden = false;
+      $('icon').hidden = true;
+    }
     document.title = $('title').textContent + ' · open in lull';
-    $('public').href = item.page || lastfm(item);
-    $('public').textContent = item.page ? 'Listen on every music app' : 'See it on Last.fm';
+    var page = item.page || lastfm(item);
+    $('public').href = page;
+    /* song.link and album.link list every music app; Last.fm is one page */
+    $('public').textContent = /(^|\.)last\.fm$/.test(new URL(page).hostname) ? 'See it on Last.fm' : 'Listen on every music app';
   }
 
   function showChoices(withForm) {

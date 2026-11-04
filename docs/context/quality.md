@@ -92,7 +92,7 @@ Raise a budget only with a measured reason a listener would accept, in the commi
 
 ## Checks on a branch
 
-The queue runs the checks on every candidate, and they run on every pull request. On any other branch, run them by hand: `gh workflow run ci --ref <branch>` (fmt, clippy, tests, the web's tests), `app` (the app's checks on Linux and Windows, then the four desktop bundles and the APK as artifacts) and `ui-gates`. Only the queue publishes the image and starts Pages; a Release comes only from a `v*` tag. A change to a workflow in `.github/workflows/` is tested by the queue with main's copy of each workflow (Actions reads a called workflow at the calling commit), so run a changed workflow on its branch by hand before it queues.
+The queue runs the checks on every candidate, and they run on every pull request. On any other branch, run them by hand: `gh workflow run ci --ref <branch>` (fmt, clippy, tests, the web's tests), `app` (the app's checks on Linux and Windows, then the four desktop bundles and the APK as artifacts) `ui-gates` and `share` (the share Worker's tests; on main it also deploys, share.md). Only the queue publishes the image and starts Pages; a Release comes only from a `v*` tag. A change to a workflow in `.github/workflows/` is tested by the queue with main's copy of each workflow (Actions reads a called workflow at the calling commit), so run a changed workflow on its branch by hand before it queues.
 
 ## Privacy
 

@@ -3,7 +3,7 @@ name: queue
 # starts this on main, so its checks read and warm main's caches. One run at a time: it rebases every
 # waiting branch onto main (scripts/queue.sh plan), runs the checks the candidate's diff needs, and
 # fast-forwards main only when they are green. Then it publishes what main's pushes used to start: the
-# image it tested, Pages, and the bundles' caches. Red: main stays, and the branch's tip says why.
+# image it tested, Pages, the share Worker, and the bundles' caches. Red: main stays, and the branch's tip says why.
 on:
   workflow_dispatch:
   # A safety net: a kick lost while GitHub was down would otherwise wait for the next push.
@@ -38,6 +38,7 @@ jobs:
       image: ${{ steps.plan.outputs.image }}
       pages: ${{ steps.plan.outputs.pages }}
       youtube_contract: ${{ steps.plan.outputs.youtube_contract }}
+      share: ${{ steps.plan.outputs.share }}
       warm: ${{ steps.plan.outputs.warm }}
     steps:
       - uses: actions/checkout@v5
@@ -94,6 +95,13 @@ jobs:
     needs: plan
     if: needs.plan.outputs.candidate != '' && needs.plan.outputs.slskd == 'true'
     uses: ./.github/workflows/slskd-contract.yml
+    with:
+      ref: ${{ needs.plan.outputs.candidate }}
+
+  share:
+    needs: plan
+    if: needs.plan.outputs.candidate != '' && needs.plan.outputs.share == 'true'
+    uses: ./.github/workflows/share.yml
     with:
       ref: ${{ needs.plan.outputs.candidate }}
 
@@ -155,7 +163,7 @@ jobs:
         run: cp scripts/queue.sh "$RUNNER_TEMP/" && sh "$RUNNER_TEMP/queue.sh" watch
 
   land:
-    needs: [plan, privacy, ci, ui-gates, app, slskd-contract, image, ui]
+    needs: [plan, privacy, ci, ui-gates, app, slskd-contract, share, image, ui]
     # Green means every check the diff needed passed; a check it didn't need is skipped.
     if: >-
       !cancelled() && needs.plan.outputs.candidate != ''
@@ -218,13 +226,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run youtube-music-contract.yml --repo "$GITHUB_REPOSITORY" --ref main
+      - if: steps.land.outputs.landed == 'true' && needs.plan.outputs.share == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run share.yml --repo "$GITHUB_REPOSITORY" --ref main
       - if: steps.land.outputs.landed == 'true' && needs.plan.outputs.warm == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run app.yml --repo "$GITHUB_REPOSITORY" --ref main
 
   reject:
-    needs: [plan, privacy, ci, ui-gates, app, slskd-contract, image, ui]
+    needs: [plan, privacy, ci, ui-gates, app, slskd-contract, share, image, ui]
     if: >-
       !cancelled() && needs.plan.outputs.candidate != ''
       && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
@@ -246,6 +258,7 @@ jobs:
             ${{ contains(fromJSON('["failure", "cancelled"]'), needs.ui-gates.result) && 'ui-gates ' || '' }}
             ${{ contains(fromJSON('["failure", "cancelled"]'), needs.app.result) && 'app ' || '' }}
             ${{ contains(fromJSON('["failure", "cancelled"]'), needs.slskd-contract.result) && 'slskd-contract ' || '' }}
+            ${{ contains(fromJSON('["failure", "cancelled"]'), needs.share.result) && 'share ' || '' }}
             ${{ contains(fromJSON('["failure", "cancelled"]'), needs.image.result) && 'image ' || '' }}
             ${{ contains(fromJSON('["failure", "cancelled"]'), needs.ui.result) && 'ui ' || '' }}
         run: sh scripts/queue.sh reject

@@ -82,7 +82,7 @@ A song's cover is its album's. Covers are keyed by the album (its best id, else 
 **Nothing found:** lull's card, a static 600 px PNG (lull's icon on its own background) shipped with the Worker. Chat apps print the title and artist beside it anyway.
 
 **Keeping what was found:** the Worker keeps the *address* of the picture found, never its bytes.
-- Rechecked after 30 days. A "none" is asked again after a day, and a step that failed (timeout, 429, 5xx) after 5 minutes.
+- Rechecked after 30 days. A "none" is asked again after a day, and a step that failed (timeout, 429, 5xx) after a minute, since that is often a moment's slowness. The gate keeps those retries polite.
 - When the address it kept stops answering, that request runs the chain again instead of failing.
 - Nothing is stored that could grow without bound: one small row per album or artist that someone opened.
 

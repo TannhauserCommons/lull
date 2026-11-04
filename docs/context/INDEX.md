@@ -16,6 +16,7 @@ Curated pages for what is expensive to rediscover: boundaries, contracts, invari
 | Library sources (folder, Jellyfin), switching, saved-track streaming | [library.md](library.md) *(owner writes)*, ADR-0003 | `crates/library/` |
 | Save flow (match, cover, tags, naming, rescan) | [save-flow.md](save-flow.md) *(owner writes)* | `crates/library/` |
 | Discovery sources and their limits | [discovery.md](discovery.md) *(owner writes)* | `crates/discovery/` |
+| Share links: the card pages on Cloudflare, covers, App Links | [share.md](share.md), ADR-0034 | `share/`, `crates/discovery/src/share_host.rs` |
 | Taste model | [taste.md](taste.md) *(owner writes)* | `crates/discovery/` |
 | Scrobbling rules, Last.fm auth | [scrobbling.md](scrobbling.md) *(owner writes)* | `crates/lastfm/` |
 | Likes, playlists, M3U, history, stats, settings, sync, imports | [collection.md](collection.md) *(owner writes)*, ADR-0005 | `crates/collection/` |

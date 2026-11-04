@@ -1,0 +1,92 @@
+name: share
+# lull's share links (share/, ADR-0034): a Cloudflare Worker. `test` runs it as it deploys, in Cloudflare's local
+# runtime with every outside service faked, and checks the Android app claims every share host. `deploy` publishes
+# main's Worker when the queue lands a change to it (or by hand); it waits for the Cloudflare account's secrets
+# (CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, from Bitwarden's lull/ items) and says so until they exist.
+on:
+  pull_request:
+    paths:
+      - "share/**"
+      - "site/**"
+      - "packaging/android/assetlinks.json"
+      - ".github/workflows/share.yml"
+  # On main: test, then deploy. On another branch: test only.
+  workflow_dispatch:
+  # The queue (ADR-0095) runs the tests on its candidate.
+  workflow_call:
+    inputs:
+      ref:
+        description: The commit to check
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: share-${{ inputs.ref || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: share
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24.11"
+          cache: npm
+          cache-dependency-path: share/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+
+  deploy:
+    needs: test
+    # Dispatched on main by hand or by the queue after landing; never when the queue calls the tests (a call runs in
+    # the caller's context, which is a dispatch on main too, but has a ref to check).
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && !inputs.ref
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    concurrency:
+      group: share-deploy
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: share
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - id: account
+        working-directory: .
+        run: |
+          if [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Not deployed: the CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets aren't set yet (ADR-0034, Cost)."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.account.outputs.ready == 'true'
+        uses: actions/checkout@v5
+      - if: steps.account.outputs.ready == 'true'
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24.11"
+          cache: npm
+          cache-dependency-path: share/package-lock.json
+      - if: steps.account.outputs.ready == 'true'
+        run: npm ci --no-audit --no-fund
+      - if: steps.account.outputs.ready == 'true'
+        run: npx wrangler deploy
+      # Last.fm's key, for the cover chain's name lookup: the hub's own key, as a Worker secret.
+      - if: steps.account.outputs.ready == 'true'
+        env:
+          LASTFM_API_KEY: ${{ secrets.LULL_LASTFM_API_KEY }}
+        run: |
+          node -e 'process.stdout.write(JSON.stringify({ LASTFM_API_KEY: process.env.LASTFM_API_KEY }))' | npx wrangler secret bulk
