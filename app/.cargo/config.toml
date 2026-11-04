@@ -1,0 +1,5 @@
+# libopus (opusic-sys, through the cmake crate) built unoptimised on Windows, its Opus decoding a few
+# times its cost: cmake/msvc-release.cmake puts MSVC's Release optimisation back. Windows only.
+[env]
+CMAKE_TOOLCHAIN_FILE_x86_64_pc_windows_msvc = { value = "cmake/msvc-release.cmake", relative = true }
+CMAKE_TOOLCHAIN_FILE_aarch64_pc_windows_msvc = { value = "cmake/msvc-release.cmake", relative = true }
