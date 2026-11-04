@@ -93,7 +93,8 @@ test.describe('lull', () => {
     expect(st.still, 'on: lull inactive, the loops hold still').toBe(true);
     expect(st.sky, 'on: the sky twinkle holds').toEqual(['paused']);
     expect(st.spinner, 'on: a spinner keeps going').toEqual(['running']);
-    await page.evaluate(() => document.getElementById('gate-spin').remove());
+    // counted once the hold and the spinner's going are on screen (two frames on): what follows is lull held still
+    await page.evaluate(() => { document.getElementById('gate-spin').remove(); return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); });
     expect(await drawn(), 'on: frames drawn in 2 s while lull is inactive').toBeLessThanOrEqual(2);
     await focus(true);
     st = await state();
