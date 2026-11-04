@@ -17,6 +17,7 @@ mod peers;
 mod prefetch;
 mod prewarm;
 mod range;
+mod ranges;
 mod rank;
 mod recover;
 mod rules;
@@ -99,6 +100,12 @@ pub const MIGRATIONS: Migrations = Migrations {
             reported    REAL NOT NULL,
             measured_at INTEGER NOT NULL    -- unix seconds
         );
+    "#,
+        r#"
+        -- The bytes of a copy that have arrived, as JSON [[start, end], ...] (ADR-0014): a copy
+        -- arrives in legs that start where the listener seeks. NULL: a file written front to
+        -- back, whose length is what arrived.
+        ALTER TABLE soulseek_files ADD COLUMN ranges TEXT;
     "#,
     ],
 };

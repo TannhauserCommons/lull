@@ -1,6 +1,6 @@
 # Progressive streaming and peer fallback
 
-How `GET /api/stream/{trackId}` plays a song while slskd is still downloading it (`fetch.rs`, `stream.rs`, `range.rs`, `layout.rs` in `crates/soulseek`).
+How `GET /api/stream/{trackId}` plays a song while slskd is still downloading it, and from wherever the listener seeks (`fetch.rs`, `fetch/legs.rs`, `ranges.rs`, `stream.rs`, `range.rs`, `layout.rs` in `crates/soulseek`; ADR-0014).
 
 ## Fetches
 
@@ -14,8 +14,8 @@ A finished copy already in the stream cache plays at once, whatever the `below` 
    - `keepLooking`: search again, up to 3 searches 20 s apart, then fail with "no copy meets your streaming minimum";
    - `ask`: the fetch waits as `choose`, with the copies found in the `stream` event's `choices` (up to 8). The listener answers by playing one (`?peer=&path=`), which replaces the fetch, or by skipping; after 10 minutes it fails;
    - a save's fallback (`saveBestUpgrade`) takes the best one; under `wait` and `ask` library decided before starting ([save-flow.md](save-flow.md)), so the fetch fails rather than save a copy below the minimum.
-3. **Make room** in the cache for the file ([cache.md](cache.md)), then queue it in slskd.
-4. **Watch it every second**, and give up on this peer when:
+3. **Make room** in the cache for the file twice over (lull's copy and slskd's file for the leg running, [cache.md](cache.md)), then get it in [legs](#legs).
+4. **Watch each leg every second**, and give up on this peer when:
    - it hasn't accepted the request within 20 s;
    - it has kept the transfer queued for 30 s;
    - no new bytes have arrived for Settings › Sources' stall timeout (`stallTimeout`, 15 s by default; shown as `stalled` after 5 s);
@@ -24,7 +24,7 @@ A finished copy already in the stream cache plays at once, whatever the `below` 
 
    However it ends, a transfer that sent 1 MB or for 10 s leaves its rate in the peer's record.
 5. **Fall back** to the next copy in the same order. A stall is remembered against the peer (ranking demotes it); an offline peer or a long queue is not. A fetch gives up after 5 peers. Peers whose queue is longer than `maxPeerQueue` are never picked automatically.
-6. **Done:** slskd moves the file to its downloads folder. Its final path comes from slskd's `DownloadFileComplete` event; the cache records it, and slskd's transfer record is removed. slskd marks the transfer Succeeded before it moves the file and raises that event, so lull asks for the path again each second, for up to 60 s, rather than failing the song in that moment; a reader keeps reading the file it has open meanwhile.
+6. **Done:** every byte of the copy is in lull's file, which the cache records as complete. The last leg's tail is read from where slskd moved its file: slskd marks a transfer Succeeded before it moves the file and raises `DownloadFileComplete`, so lull asks for the path again each second, for up to 60 s, rather than failing the song in that moment.
 
 **YouTube.** With Settings › Sources › YouTube on, the player's fetch (and a preload) turns to YouTube when no peer delivers, or none starts within `waitS` (`fallback`), or starts with YouTube while an upgrade fetch gets Soulseek's best copy beside it (`startFast`). The YouTube copy is one more attempt (`attempt` goes up), written into the cache and served the same way: [youtube.md](youtube.md#modes).
 
@@ -32,14 +32,23 @@ A finished copy already in the stream cache plays at once, whatever the `below` 
 
 **Switching source mid-song.** `GET /api/stream/{id}?peer=&path=` with another copy than the one playing replaces the fetch: the old one is cancelled, unless a save is completing it; then it runs on for the save, out of the player's way (no more `stream` events). The old response ends; the player opens the new one and seeks back by time (ADR-0008).
 
-**Stopping.** `DELETE /api/stream/{id}` (skip, next) cancels the fetch unless a save still needs it or a device lists it to preload; a better copy on its way for switching stops too, unless a save needs it. slskd keeps the partial file, and asking for the song again resumes it.
+**Stopping.** `DELETE /api/stream/{id}` (skip, next) cancels the fetch unless a save still needs it or a device lists it to preload; a better copy on its way for switching stops too, unless a save needs it. lull's file keeps what arrived, with its ranges, and asking for the song again fetches only what is missing.
 
 **Events.** Each change publishes:
 - `stream` (to the player, only while it streams);
 - `transfer`;
 - `job` (an Activity row).
 
-Stream status follows the fetch: `finding → queued → buffering` (under 256 KB received) `→ streaming`, with `stalled`, `fallback`, `choose` and `failed`.
+Stream status follows the fetch: `finding → queued → buffering` (under 256 KB from the leg running) `→ streaming`, with `stalled`, `fallback`, `choose` and `failed`.
+
+## Legs
+
+A Soulseek copy arrives in **legs** (`fetch/legs.rs`, ADR-0014): each is one slskd transfer of the file that starts at a byte lull picks.
+- **Starting one at X.** lull makes slskd's incomplete file exactly X bytes long, a hole (under both spellings of its path, [below](#where-the-bytes-are)), then queues the download. slskd 0.26 resumes a download from its incomplete file's length on every attempt (`retry.partial: resume`, its default), so the peer sends from X. This is pinned by the contract test (`tests/slskd-contract/`) against the pinned image.
+- **Copying.** Every 250 ms what slskd wrote of the leg is copied into lull's own file for the copy (`<transfers>/lull/<user>/<remote folders>/<file>`), at its own offsets, and added to the copy's `Ranges`. When slskd finishes a leg, the rest comes from its downloads folder (the path from its `DownloadFileComplete` event), then slskd's file and transfer record go. The ranges are written to the cache index every megabyte and when a leg ends.
+- **Which byte.** The first missing one; a leg that reaches bytes that arrived before stops (it has nothing new). A reader waiting for a byte that hasn't arrived asks for it (`Fetch::ask_for`, while it waits: a request the browser drops asks nothing). When that ask has stood 300 ms (the reads of one seek come together) and the leg running wouldn't bring the byte within 30 s at slskd's reported speed (`JUMP_SAME_S`; behind the leg is never), the same peer starts over there: the leg is cancelled and a new one starts at the byte. After that leg reaches the end, the gap it left fills from its start.
+- **When a jump is allowed.** It gives the peer's upload slot back, so only when slskd resumes where lull sizes the file, the peer's search answer said it had a free slot, and no leg of this copy has waited in its queue. `stream` events carry `seekAheadS`: the 30 while a jump is allowed, `null` while it isn't, so the player chooses between going to a seek now and keeping it ([web.md](web.md)).
+- **An slskd set to overwrite** (`retry.partial: overwrite`, possible on an existing slskd): it starts a leg over from byte 0. lull sees it (the file shorter than X, or its first bytes no longer the hole) and copies that leg from 0, which is still the copy's own bytes. Seeking ahead is then off until the hub restarts, and legs run to the end rather than stop at bytes that arrived.
 
 ## Better copies
 
@@ -68,13 +77,13 @@ So that next plays at once, the player lists the songs queued after the current 
 `LULL_TRANSFERS_DIR` is the folder holding slskd's incomplete and downloads folders, as lull sees it.
 - **Folder names.** lull reads slskd's folder names from `GET /options` (administrator key); without it, it assumes the kit's `/transfers/{incomplete,complete}`. A folder lull can't see turns the `soulseek` status to `warn`.
 - **Incomplete path.** slskd 0.26 writes a running download to `<incomplete>/<user>/<remote folders>/<file>`, with the peer's root (`@@abcde`, `C:\`, `\\server`) dropped. Each segment is sanitised: `/` and NUL become `_` on Linux slskd; Windows slskd also replaces `<>:"|?*`, so both spellings are tried.
-- **How it's written.** The file is written front to back and never sized up front, so its length on disk is the number of bytes received. slskd's lock is advisory on Linux, so lull opens it read-only and takes no lock.
+- **How it's written.** slskd appends from where the leg starts and never sizes the file up front. lull reads the spelling that changed from how it left it. slskd's lock is advisory on Linux, so lull opens it read-only and takes no lock. What has arrived is the copy's `Ranges`, never a file's length.
 
 ## Serving bytes
 
-- **Before answering.** The response waits until the fetch has a source (which gives the size and type) and bytes cover the requested start. Any range inside the file waits as long as the fetch keeps trying, a request from byte 0 or a seek ahead of the transfer alike: those bytes are coming, so the browser buffers rather than failing (its time-to-byte guess for VBR files or a big embedded cover can land past what the player thought had arrived). Only a range past the end of the file, or one a finished file turned out too short for, answers 416 (`Content-Range: bytes */size`). When another source took over meanwhile (a fallback, YouTube), the size and type are worked out again before answering.
+- **Before answering.** The response waits until the fetch has a source (which gives the size and type) and its ranges hold the requested start, asking for that byte while it waits ([Legs](#legs)). Any range inside the file waits as long as the fetch keeps trying, a request from byte 0 or a seek ahead of the transfer alike: those bytes are coming, so the browser buffers rather than failing (its time-to-byte guess for VBR files or a big embedded cover can land past what the player thought had arrived). Only a range past the end of the file, or one a finished file turned out too short for, answers 416 (`Content-Range: bytes */size`). When another source took over meanwhile (a fallback, YouTube), the size and type are worked out again before answering.
 - **Ranges.** They resolve against the file's full size from the search (`range.rs`): 200 for no range, 206 for one range, and suffix ranges are supported. Multi-range and malformed headers get the whole file.
-- **The body.** It reads at most 64 KiB at a time, never past the file's current length on disk (`range::sendable`), then waits for slskd to write more. Memory per response is one chunk; nothing is copied to a second file.
-- **When the file moves or is recreated.** slskd moves the finished file, and may recreate the incomplete one when it retries a peer. Whenever the fetch sees more bytes at its path than the open handle shows, or the handle fails while the transfer runs, the reader reopens by path at the same position (on a Windows host, Docker Desktop leaves old handles on the old copy).
+- **The body.** It reads at most 64 KiB at a time, never past the end of the range it is in (`range::sendable`), then waits at the gap, asking for the byte there. Memory per response is one chunk.
+- **When the file is recreated.** A Soulseek copy's file is lull's and never moves. A YouTube copy's may be recreated by yt-dlp: whenever the ranges hold bytes the open handle doesn't show, or the handle fails while the transfer runs, the reader reopens by path at the same position (on a Windows host, Docker Desktop leaves old handles on the old copy).
 - **Fallback ends a response** with an error, since another peer's file has different bytes. The player sees the `stream` fallback event, reopens the stream URL and seeks back by time.
 - **Saved tracks** stream from the library crate (`/api/library/stream/{id}`), not here.

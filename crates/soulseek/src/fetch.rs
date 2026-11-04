@@ -30,6 +30,8 @@ use serde::Serialize;
 use serde_json::json;
 use tokio::sync::{Notify, watch};
 
+mod legs;
+
 use crate::cache::{Cache, Entry, Pin};
 use crate::files;
 use crate::layout::Layout;
@@ -37,9 +39,10 @@ use lull_core::quality::{SaveBelow, StreamBelow};
 
 use crate::budget::Lane;
 use crate::peers::Peers;
+use crate::ranges::Ranges;
 use crate::rules::{Current, Purpose, Rules};
 use crate::search::Searches;
-use crate::slskd::{Phase, Slskd, Transfer};
+use crate::slskd::{Slskd, Transfer};
 use crate::sources::{self, Bar, Lesser, Ranked, Source, Sources};
 
 /// Received bytes after which a stream counts as playing rather than buffering.
@@ -117,8 +120,9 @@ pub struct Progress {
     pub attempt: u32,
     pub status: Status,
     pub source: Option<Source>,
-    /// Bytes on disk so far.
-    pub received: u64,
+    /// The bytes of the copy that have arrived (ADR-0014): legs that start where the listener
+    /// seeks leave gaps, so a file's length says nothing about it.
+    pub ranges: Ranges,
     /// Bytes per second.
     pub speed: u64,
     pub queue_pos: Option<u32>,
@@ -131,6 +135,10 @@ pub struct Progress {
     pub below: bool,
     /// What `ask` offers while `Choosing`.
     pub choices: Vec<Ranked>,
+    /// A seek past what has arrived starts a leg there when the leg running would take longer
+    /// than this many seconds to get there; `None` while it can't (ADR-0014). The player reads
+    /// it to choose between going there now and keeping the seek.
+    pub ahead: Option<u32>,
 }
 
 impl Progress {
@@ -139,7 +147,7 @@ impl Progress {
             attempt: 0,
             status,
             source: None,
-            received: 0,
+            ranges: Ranges::default(),
             speed: 0,
             queue_pos: None,
             path: None,
@@ -148,11 +156,17 @@ impl Progress {
             peers_found: 0,
             below: false,
             choices: Vec::new(),
+            ahead: None,
         }
     }
 
     pub fn size(&self) -> u64 {
         self.source.as_ref().map_or(0, |s| s.size)
+    }
+
+    /// Bytes arrived in all.
+    pub fn received(&self) -> u64 {
+        self.ranges.total()
     }
 
     pub fn ended(&self) -> bool {
@@ -162,7 +176,7 @@ impl Progress {
     fn pct(&self) -> u8 {
         match self.size() {
             0 => 0,
-            size => (self.received.min(size) * 100 / size) as u8,
+            size => (self.received().min(size) * 100 / size) as u8,
         }
     }
 }
@@ -186,6 +200,10 @@ pub struct Fetch {
     bar: Option<Bar>,
     /// Woken when the last response reading it ends.
     unread: Notify,
+    /// Bytes readers wait for that haven't arrived, each with its ask's id and since when, newest
+    /// last: where a leg may start (ADR-0014, What starts a leg).
+    asked: Mutex<Vec<(u64, u64, Instant)>>,
+    asks: AtomicU64,
     _pin: Pin,
 }
 
@@ -223,8 +241,43 @@ impl Fetch {
         Reader(self.clone())
     }
 
+    /// A reader waits for `byte`, which hasn't arrived, for as long as it holds the `Waiting`: a
+    /// request the browser drops (a probe it gave up on) asks for nothing any more.
+    pub fn ask_for(self: &Arc<Self>, byte: u64) -> Waiting {
+        let id = self.asks.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut asked) = self.asked.lock() {
+            asked.push((id, byte, Instant::now()));
+        }
+        Waiting {
+            fetch: self.clone(),
+            id,
+        }
+    }
+
+    /// The newest byte a reader still waits for, and since when.
+    fn asked(&self) -> Option<(u64, Instant)> {
+        self.asked
+            .lock()
+            .ok()
+            .and_then(|a| a.last().map(|&(_, byte, since)| (byte, since)))
+    }
+
     fn idle(&self) -> bool {
         self.readers.load(Ordering::Relaxed) == 0 && self.last_read.lock().is_ok_and(|t| t.elapsed() > IDLE)
+    }
+}
+
+/// A reader's wait for a byte that hasn't arrived; dropped when the reader stops waiting.
+pub struct Waiting {
+    fetch: Arc<Fetch>,
+    id: u64,
+}
+
+impl Drop for Waiting {
+    fn drop(&mut self) {
+        if let Ok(mut asked) = self.fetch.asked.lock() {
+            asked.retain(|&(id, _, _)| id != self.id);
+        }
     }
 }
 
@@ -276,6 +329,9 @@ pub struct Fetcher {
     upgrades: Arc<Mutex<HashMap<TrackId, Arc<Fetch>>>>,
     /// Ended fetches, newest last, for the Activity panel.
     ended: Arc<Mutex<VecDeque<serde_json::Value>>>,
+    /// slskd resumes a download where lull sized its file: until one is seen not to (an slskd
+    /// set to overwrite partial files), legs may start anywhere (ADR-0014).
+    resumes: Arc<AtomicBool>,
     next: Arc<AtomicU64>,
 }
 
@@ -312,6 +368,7 @@ impl Fetcher {
             live: Arc::default(),
             upgrades: Arc::default(),
             ended: Arc::default(),
+            resumes: Arc::new(AtomicBool::new(true)),
             next: Arc::default(),
         }
     }
@@ -633,7 +690,7 @@ impl Fetcher {
             "path": s.path,
             "format": s.facts.format,
             "status": stream_status(up.status),
-            "received": up.received,
+            "received": up.received(),
             "size": up.size(),
             "ready": upgrade_ready(&up, duration),
         }))
@@ -939,6 +996,8 @@ impl Fetcher {
             picked: AtomicBool::new(false),
             bar,
             unread: Notify::new(),
+            asked: Mutex::default(),
+            asks: AtomicU64::new(0),
             _pin: self.cache.pin(&track.id),
             track,
         })
@@ -961,7 +1020,7 @@ impl Fetcher {
             Purpose::Stream,
             Progress {
                 attempt: 1,
-                received: e.source.size,
+                ranges: Ranges::front(e.source.size),
                 source,
                 path: Some(e.path),
                 below,
@@ -1009,7 +1068,7 @@ impl Fetcher {
         self.update(&f, |p| match outcome {
             Ok(path) => {
                 p.status = Status::Done;
-                p.received = p.size();
+                p.ranges = Ranges::front(p.size());
                 p.path = Some(path);
             }
             Err(Stop::Cancelled) => p.status = Status::Cancelled,
@@ -1172,7 +1231,7 @@ impl Fetcher {
             p.source = Some(source.clone());
             p.below = false;
             p.choices.clear();
-            p.received = 0;
+            p.ranges = Ranges::default();
             p.speed = 0;
             p.queue_pos = None;
             p.path = None;
@@ -1181,7 +1240,7 @@ impl Fetcher {
         if let Some(e) = self.cache.finished(&f.track.id, copy_ref).await.map_err(failed)? {
             self.update(f, |p| {
                 begin(p);
-                p.received = copy_ref.size;
+                p.ranges = Ranges::front(copy_ref.size);
                 p.path = Some(e.path.clone());
                 p.status = Status::Streaming;
             });
@@ -1206,6 +1265,7 @@ impl Fetcher {
             path: dest.clone(),
             complete,
             used_at: lull_core::now(),
+            ranges: None,
         };
         let download = self.youtube.download(copy_ref, &dest);
         tokio::pin!(download);
@@ -1244,7 +1304,7 @@ impl Fetcher {
             }
             let speed = received * 1000 / (begun.elapsed().as_millis().max(1) as u64);
             self.update(f, |p| {
-                p.received = received;
+                p.ranges = Ranges::front(received);
                 p.speed = speed;
                 p.path = (received > 0).then(|| dest.clone());
                 p.status = match received {
@@ -1271,16 +1331,7 @@ impl Fetcher {
             // Counted across sources (YouTube included): a reader of an older attempt has the
             // wrong file.
             let attempt = f.now().attempt + 1;
-            // A copy named for this fetch (the listener's pick, a save's) is kept however slow;
-            // otherwise the fastest copy left is what a slow one could give way to.
-            let faster = match pick {
-                Some(_) => 0.0,
-                None => {
-                    let (left, _) = self.untried(f, &tried, &self.rules.get());
-                    left.iter().map(|r| r.expected).fold(0.0, f64::max)
-                }
-            };
-            match self.attempt(f, attempt, &next, faster, &mut stop).await {
+            match self.legs(f, attempt, &next, &mut stop).await {
                 Ok(path) => return Ok(path),
                 Err(Ok(skip)) => {
                     let (reason, stalled) = match skip {
@@ -1453,229 +1504,6 @@ impl Fetcher {
         }
     }
 
-    /// One transfer from one source, watched until it finishes, stalls, proves slower than the
-    /// song when a copy expected at `faster` bytes a second is left, or is stopped. However it
-    /// ends, the rate it sent at is remembered against the peer (ADR-0015).
-    async fn attempt(
-        &self,
-        f: &Fetch,
-        attempt: u32,
-        source: &Source,
-        faster: f64,
-        stop: &mut watch::Receiver<bool>,
-    ) -> Result<PathBuf, Result<Skip, Stop>> {
-        self.cache
-            .make_room(source.size)
-            .await
-            .map_err(|e| Err(Stop::Failed(reason(&e))))?;
-        let rules = self.rules.get();
-        let below = !source.meets(&rules.stream.minimum, f.track.duration);
-        self.update(f, |p| {
-            p.attempt = attempt;
-            p.source = Some(source.clone());
-            p.below = below;
-            p.choices.clear();
-            p.status = Status::Queued;
-            p.received = 0;
-            p.speed = 0;
-            p.queue_pos = None;
-            p.path = None;
-            p.error = None;
-        });
-        let transfer = match self.slskd.enqueue(&source.user, &source.path, source.size).await {
-            Ok(t) => t,
-            Err(e @ Error::Unavailable { .. }) => return Err(Err(Stop::Failed(reason(&e)))),
-            Err(e) => return Err(Ok(Skip::Unavailable(format!("{}: {}", source.user, reason(&e))))),
-        };
-        let candidates = self
-            .layout
-            .read()
-            .map(|l| l.incomplete(&source.user, &source.path))
-            .unwrap_or_default();
-        let record = |path: PathBuf, complete| Entry {
-            track: f.track.id.clone(),
-            source: source.source_ref(),
-            path,
-            complete,
-            used_at: lull_core::now(),
-        };
-        let begun = Instant::now();
-        let mut last_bytes = (0u64, Instant::now());
-        let mut recorded = false;
-        let mut was_running = false;
-        // When the peer started sending, and what was on disk then (a resumed partial).
-        let mut sending: Option<(Instant, u64)> = None;
-        // What the song needs, bytes a second: slower, and it outruns its own download.
-        let needs = f
-            .track
-            .duration
-            .or(source.length)
-            .filter(|&d| d > 0)
-            .map_or(0.0, |d| source.size as f64 / f64::from(d));
-        let mut last: Option<Transfer> = None;
-        loop {
-            tokio::select! {
-                _ = tokio::time::sleep(POLL) => {}
-                _ = stopped(stop) => {
-                    // It may have finished since the last poll: keep track of a finished file
-                    // (cached, evictable) rather than cancel what's already done.
-                    if let Ok(t) = self.slskd.download(&source.user, &transfer.id).await
-                        && t.phase() == Phase::Succeeded
-                    {
-                        self.measure(source, &t, sending, t.bytes_transferred).await;
-                        return self.finish(f, source, &t).await.map_err(|e| Err(Stop::Failed(reason(&e))));
-                    }
-                    if let Some(t) = &last {
-                        self.measure(source, t, sending, last_bytes.0).await;
-                    }
-                    if let Err(e) = self.slskd.cancel(&source.user, &transfer.id).await {
-                        tracing::warn!(error = %e, "cancelling a transfer in slskd");
-                    }
-                    return Err(Err(Stop::Cancelled));
-                }
-            }
-            let t = match self.slskd.download(&source.user, &transfer.id).await {
-                Ok(t) => t,
-                Err(e @ Error::Unavailable { .. }) => return Err(Err(Stop::Failed(reason(&e)))),
-                Err(e) => return Err(Ok(Skip::Unavailable(format!("{}: {}", source.user, reason(&e))))),
-            };
-            let on_disk = on_disk(&candidates).await;
-            // Recorded once slskd has written it, so even a partial left by a cancel is evictable.
-            if let Some((path, _)) = on_disk.as_ref().filter(|_| !recorded) {
-                self.cache
-                    .record(record(path.clone(), false))
-                    .await
-                    .map_err(|e| Err(Stop::Failed(reason(&e))))?;
-                recorded = true;
-            }
-            let received = on_disk.as_ref().map_or(t.bytes_transferred, |(_, len)| *len);
-            // Silence counts from the last new byte, or from when the peer started sending: a
-            // slow connection set-up (or slskd retrying the peer) is not a stall.
-            let running = t.phase() == Phase::InProgress;
-            if received > last_bytes.0 || (running && !was_running) {
-                last_bytes = (received, Instant::now());
-            }
-            if running && sending.is_none() {
-                sending = Some((Instant::now(), received));
-            }
-            was_running = running;
-            let quiet = last_bytes.1.elapsed();
-            last = Some(t.clone());
-            let rate = t.average_speed.max(0.0);
-            if running
-                && sending.is_some_and(|(since, _)| since.elapsed() >= SLOW_AFTER)
-                && rate < needs * SLOWER_THAN
-                && faster >= rate * FASTER_BY
-            {
-                self.measure(source, &t, sending, received).await;
-                self.give_up(source, &t).await;
-                return Err(Ok(Skip::Slow(format!(
-                    "{} sent {} KB/s, slower than the song plays",
-                    source.user,
-                    (rate / 1000.0).round()
-                ))));
-            }
-            match t.phase() {
-                Phase::Starting if begun.elapsed() > START_TIMEOUT => {
-                    self.give_up(source, &t).await;
-                    return Err(Ok(Skip::Unavailable(format!("{} did not answer", source.user))));
-                }
-                // Measured from the last new byte: a resumed partial file starts above zero.
-                Phase::Queued if quiet > QUEUE_TIMEOUT => {
-                    self.give_up(source, &t).await;
-                    let pos = t
-                        .place_in_queue
-                        .map(|q| format!(" at position {q}"))
-                        .unwrap_or_default();
-                    return Err(Ok(Skip::Unavailable(format!("{} kept us queued{pos}", source.user))));
-                }
-                Phase::InProgress if quiet > rules.stall_timeout() => {
-                    self.measure(source, &t, sending, received).await;
-                    self.give_up(source, &t).await;
-                    let pct = received.saturating_mul(100) / source.size.max(1);
-                    return Err(Ok(Skip::Stalled(format!("{} stalled at {pct}%", source.user))));
-                }
-                Phase::Failed => {
-                    self.measure(source, &t, sending, received).await;
-                    let why = t
-                        .exception
-                        .as_deref()
-                        .map_or_else(|| t.state.clone(), crate::slskd::plain);
-                    return Err(Ok(Skip::Stalled(format!("{}: {why}", source.user))));
-                }
-                Phase::Succeeded => {
-                    self.measure(source, &t, sending, t.bytes_transferred.max(received))
-                        .await;
-                    return self
-                        .finish(f, source, &t)
-                        .await
-                        .map_err(|e| Err(Stop::Failed(reason(&e))));
-                }
-                phase => self.update(f, |p| {
-                    p.received = received;
-                    p.speed = t.average_speed.max(0.0) as u64;
-                    p.queue_pos = t.place_in_queue;
-                    p.path = on_disk.as_ref().map(|(path, _)| path.clone());
-                    p.status = match phase {
-                        Phase::Starting | Phase::Queued => Status::Queued,
-                        _ if quiet > STALL_NOTICE => Status::Stalled,
-                        _ if received < BUFFERED => Status::Buffering,
-                        _ => Status::Streaming,
-                    };
-                }),
-            }
-        }
-    }
-
-    /// A transfer slskd finished: the file is recorded in the cache where slskd moved it, the
-    /// peer's stall record is cleared, and slskd's transfer record is removed.
-    async fn finish(&self, f: &Fetch, source: &Source, t: &Transfer) -> Result<PathBuf> {
-        let path = self.finished_path(t).await?;
-        self.cache
-            .record(Entry {
-                track: f.track.id.clone(),
-                source: source.source_ref(),
-                path: path.clone(),
-                complete: true,
-                used_at: lull_core::now(),
-            })
-            .await?;
-        if let Err(e) = self.cache.report().await {
-            tracing::warn!(error = %e, "measuring the stream cache");
-        }
-        if let Err(e) = self.peers.delivered(&source.user).await {
-            tracing::warn!(error = %e, "clearing a peer's stall record");
-        }
-        if let Err(e) = self.slskd.cancel(&source.user, &t.id).await {
-            tracing::debug!(error = %e, "removing a finished transfer from slskd's list");
-        }
-        Ok(path)
-    }
-
-    /// Remembers how fast the peer sent this transfer: slskd's average over the bytes that flowed
-    /// (queue time excluded), once enough came to judge it: `MEASURE_MIN`, or `SLOW_AFTER` of
-    /// sending, so a slow peer given up on is remembered too.
-    async fn measure(&self, source: &Source, t: &Transfer, sending: Option<(Instant, u64)>, received: u64) {
-        let Some((since, from)) = sending else { return };
-        let judged = received.saturating_sub(from) >= MEASURE_MIN || since.elapsed() >= SLOW_AFTER;
-        if !judged || t.average_speed <= 0.0 {
-            return;
-        }
-        if let Err(e) = self
-            .peers
-            .sent(&source.user, t.average_speed, source.upload_speed)
-            .await
-        {
-            tracing::warn!(error = %e, "remembering a peer's speed");
-        }
-    }
-
-    async fn give_up(&self, source: &Source, t: &Transfer) {
-        if let Err(e) = self.slskd.cancel(&source.user, &t.id).await {
-            tracing::warn!(error = %e, "cancelling a stalled transfer in slskd");
-        }
-    }
-
     /// Where slskd put a finished download. slskd marks a transfer Succeeded before it moves the
     /// file to its downloads folder and says where (its `DownloadFileComplete` event, slskd 0.26's
     /// `DownloadService`), so a look in between finds nothing yet: lull asks again each `POLL`, up
@@ -1724,7 +1552,8 @@ impl Fetcher {
         f.progress.send_modify(change);
         let p = f.now();
         let moved = p.status != before.status
-            || p.received != before.received
+            || p.ranges != before.ranges
+            || p.ahead != before.ahead
             || p.queue_pos != before.queue_pos
             || p.attempt != before.attempt
             || p.failed_peers.len() != before.failed_peers.len();
@@ -1930,16 +1759,6 @@ fn running(map: &Mutex<HashMap<TrackId, Arc<Fetch>>>, track: &TrackId) -> Option
         .cloned()
 }
 
-/// The first candidate path that exists, with its length (the bytes received so far).
-async fn on_disk(candidates: &[PathBuf]) -> Option<(PathBuf, u64)> {
-    for p in candidates {
-        if let Ok(m) = tokio::fs::metadata(p).await {
-            return Some((p.clone(), m.len()));
-        }
-    }
-    None
-}
-
 fn stream_status(s: Status) -> &'static str {
     match s {
         Status::Finding => "finding",
@@ -1973,13 +1792,15 @@ pub fn stream_event(f: &Fetch, p: &Progress) -> serde_json::Value {
         "format": p.source.as_ref().map(|s| &s.facts.format),
         "peersFound": p.peers_found,
         "queuePos": p.queue_pos,
-        "received": p.received,
+        "received": p.received(),
+        "ranges": p.ranges.fractions(p.size()),
         "size": p.size(),
         "speed": p.speed,
         "attempt": p.attempt,
         "failedPeers": p.failed_peers,
         "error": p.error,
         "belowMinimum": p.below,
+        "seekAheadS": p.ahead,
         "youtube": p.source.as_ref().is_some_and(|s| youtube::is_youtube(&s.source_ref())),
     });
     if p.status == Status::Choosing {
@@ -1995,7 +1816,7 @@ fn transfer_event(f: &Fetch, p: &Progress) -> serde_json::Value {
         "peer": p.source.as_ref().map(|s| &s.user),
         "state": transfer_state(p.status),
         "queuePos": p.queue_pos,
-        "received": p.received,
+        "received": p.received(),
         "size": p.size(),
         "speed": p.speed,
         "error": p.error,
@@ -2145,7 +1966,7 @@ mod tests {
     fn playing(source: Source, status: Status, received: u64, speed: u64) -> Progress {
         Progress {
             attempt: 1,
-            received,
+            ranges: Ranges::front(received),
             speed,
             source: Some(source),
             ..Progress::new(status)
@@ -2204,6 +2025,7 @@ mod tests {
             path: PathBuf::from(format!("{user}.{ext}")),
             complete: true,
             used_at,
+            ranges: None,
         };
         let yt = Entry {
             source: youtube::Copy {
@@ -2337,6 +2159,7 @@ mod tests {
             let peer = Peer {
                 per_tick: 32_768,
                 overwrite: false,
+                reported: None,
                 settles: Duration::ZERO,
             };
             let fake = Fake::start(HashMap::new(), peer)
@@ -2363,6 +2186,7 @@ mod tests {
             let peer = Peer {
                 per_tick: 32_768,
                 overwrite: false,
+                reported: None,
                 settles: Duration::from_secs(2),
             };
             let fake = Fake::start(HashMap::from([(REMOTE.to_owned(), bytes.clone())]), peer)
@@ -2388,6 +2212,7 @@ mod tests {
             let peer = Peer {
                 per_tick: 8_192,
                 overwrite: false,
+                reported: None,
                 settles: Duration::from_secs(2),
             };
             let fake = Fake::start(HashMap::from([(REMOTE.to_owned(), bytes.clone())]), peer)
@@ -2450,6 +2275,7 @@ mod tests {
             let peer = Peer {
                 per_tick: 20_000,
                 overwrite: false,
+                reported: None,
                 settles: Duration::from_millis(100),
             };
             let fake = Fake::start_with(
@@ -2541,7 +2367,7 @@ mod tests {
                 tokio::time::sleep(tick).await;
                 let p = f.now();
                 // A new source restarts the file: the player reopens at the same place.
-                let arrived = if p.attempt == attempt { p.received as f64 } else { 0.0 };
+                let arrived = if p.attempt == attempt { p.received() as f64 } else { 0.0 };
                 attempt = p.attempt.max(attempt);
                 let have = if p.status == Status::Done { size } else { arrived };
                 if playing {

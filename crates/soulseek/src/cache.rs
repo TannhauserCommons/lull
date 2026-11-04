@@ -15,6 +15,8 @@ use lull_core::{Error, Result, youtube};
 use rusqlite::params;
 use serde_json::json;
 
+use crate::ranges::Ranges;
+
 /// Free space kept on the transfers disk beyond the file being fetched, so slskd never writes
 /// the disk to the last byte.
 const DISK_MARGIN: u64 = 200_000_000;
@@ -29,6 +31,8 @@ pub struct Entry {
     pub path: PathBuf,
     pub complete: bool,
     pub used_at: i64,
+    /// What of an unfinished copy has arrived; `None` for a file written front to back.
+    pub ranges: Option<Ranges>,
 }
 
 #[derive(Clone)]
@@ -91,11 +95,18 @@ impl Cache {
     pub async fn record(&self, e: Entry) -> Result<()> {
         self.db
             .call(move |c| {
+                let ranges = e
+                    .ranges
+                    .as_ref()
+                    .map(serde_json::to_string)
+                    .transpose()
+                    .map_err(|err| Error::internal(format!("ranges as JSON: {err}")))?;
                 c.execute(
-                    "INSERT INTO soulseek_files (track_id, user, remote_path, size, local_path, complete, used_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                    "INSERT INTO soulseek_files (track_id, user, remote_path, size, local_path, complete, used_at, ranges)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
                      ON CONFLICT(user, remote_path) DO UPDATE SET track_id = excluded.track_id,
-                       local_path = excluded.local_path, complete = excluded.complete, used_at = excluded.used_at",
+                       local_path = excluded.local_path, complete = excluded.complete, used_at = excluded.used_at,
+                       ranges = excluded.ranges",
                     params![
                         e.track.as_str(),
                         e.source.user,
@@ -103,7 +114,8 @@ impl Cache {
                         e.source.size as i64,
                         e.path.to_string_lossy(),
                         e.complete,
-                        e.used_at
+                        e.used_at,
+                        ranges
                     ],
                 )?;
                 Ok(())
@@ -136,6 +148,26 @@ impl Cache {
     /// The finished file of exactly this copy, while it is on disk.
     pub async fn finished(&self, track: &TrackId, source: &SourceRef) -> Result<Option<Entry>> {
         Ok(self.complete(track).await?.into_iter().find(|e| e.source == *source))
+    }
+
+    /// The unfinished copy of this source lull has on disk, with what of it has arrived: a later
+    /// fetch of the same copy fetches only what is missing.
+    pub async fn partial(&self, track: &TrackId, source: &SourceRef) -> Result<Option<Entry>> {
+        let mut found = self.entries_for(track).await?;
+        found.retain(|e| !e.complete && e.source == *source && e.ranges.is_some() && e.path.is_file());
+        Ok(found.pop())
+    }
+
+    /// Where lull keeps a Soulseek copy while it arrives (ADR-0014): its own file under `lull/`,
+    /// beside slskd's folders, so legs from any byte land in one place that never moves.
+    pub async fn copy_file(&self, source: &SourceRef) -> Result<PathBuf> {
+        let path = crate::layout::beside(&self.root.join("lull"), &source.user, &source.path);
+        if let Some(dir) = path.parent() {
+            tokio::fs::create_dir_all(dir)
+                .await
+                .map_err(|e| Error::unavailable("cache", format!("can't create {}: {e}", dir.display())))?;
+        }
+        Ok(path)
     }
 
     /// Where a YouTube copy is written: a `youtube` folder beside slskd's, so it counts against
@@ -236,7 +268,11 @@ impl Cache {
         let mut present = Vec::with_capacity(all.len());
         for e in all {
             match tokio::fs::metadata(&e.path).await {
-                Ok(m) => present.push((e, m.len())),
+                // A copy arriving in legs has holes: what arrived is what it holds.
+                Ok(m) => {
+                    let bytes = e.ranges.as_ref().map_or(m.len(), Ranges::total);
+                    present.push((e, bytes));
+                }
                 Err(_) => self.forget(&e.source).await?,
             }
         }
@@ -274,7 +310,8 @@ fn size(bytes: u64) -> String {
     }
 }
 
-const SELECT: &str = "SELECT track_id, user, remote_path, size, local_path, complete, used_at FROM soulseek_files";
+const SELECT: &str =
+    "SELECT track_id, user, remote_path, size, local_path, complete, used_at, ranges FROM soulseek_files";
 
 fn row(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
     Ok(Entry {
@@ -287,6 +324,10 @@ fn row(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
         path: PathBuf::from(r.get::<_, String>(4)?),
         complete: r.get(5)?,
         used_at: r.get(6)?,
+        // Unreadable ranges trust nothing: the copy is fetched again.
+        ranges: r
+            .get::<_, Option<String>>(7)?
+            .map(|j| serde_json::from_str(&j).unwrap_or_default()),
     })
 }
 
@@ -345,6 +386,7 @@ mod tests {
                 size: 30 * MB,
             },
             path: PathBuf::from(format!("song{n}.flac")),
+            ranges: None,
             complete: true,
             used_at,
         }
@@ -412,6 +454,7 @@ mod tests {
                     path,
                     complete: true,
                     used_at,
+                    ranges: None,
                 })
                 .await?;
         }

@@ -3,7 +3,8 @@
 //! (`overwrite`), appends the peer's bytes at a set pace, then moves the file to the downloads
 //! folder and reports `DownloadFileComplete`, in slskd's order: the transfer reads `Succeeded`
 //! before the file has moved and before the event says where (slskd 0.26.2's
-//! `DownloadService`). This lets lull's fetches be tested in-process against it.
+//! `DownloadService`; pinned by the contract test, tests/slskd-contract). This lets lull's fetches
+//! and their legs be tested in-process against it.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -28,6 +29,7 @@ pub struct Fake {
     pub layout: Layout,
     /// The transfers folder: slskd's `incomplete` and `complete` are inside it.
     pub root: PathBuf,
+    shared: Arc<Shared>,
 }
 
 struct Shared {
@@ -40,6 +42,8 @@ struct Shared {
     /// Peers whose pace differs from `peer`'s.
     paces: HashMap<String, usize>,
     transfers: Mutex<HashMap<String, Transfer>>,
+    /// Every download started, with the offset the peer was asked for.
+    starts: Mutex<Vec<(String, u64)>>,
     events: Mutex<Vec<Value>>,
     next: Mutex<u32>,
 }
@@ -61,6 +65,8 @@ pub struct Peer {
     pub per_tick: usize,
     /// slskd set to `retry.partial: overwrite`: every download starts over from byte 0.
     pub overwrite: bool,
+    /// The speed slskd reports, bytes a second, when not the rate the bytes came at.
+    pub reported: Option<f64>,
     /// How long after a transfer reads `Succeeded` slskd moves the file and says where.
     pub settles: Duration,
 }
@@ -88,6 +94,7 @@ impl Fake {
             root: root.clone(),
             peer,
             transfers: Mutex::default(),
+            starts: Mutex::default(),
             events: Mutex::default(),
             next: Mutex::new(0),
         });
@@ -99,7 +106,7 @@ impl Fake {
                 get(one).merge(delete(cancel)),
             )
             .route("/api/v0/events", get(events))
-            .with_state(shared);
+            .with_state(shared.clone());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let url = format!("http://{}", listener.local_addr()?);
         tokio::spawn(async move { axum::serve(listener, app).await });
@@ -109,7 +116,21 @@ impl Fake {
             lull_core::config::Secret::new("key"),
         )
         .map_err(std::io::Error::other)?;
-        Ok(Fake { slskd, layout, root })
+        Ok(Fake {
+            slskd,
+            layout,
+            root,
+            shared,
+        })
+    }
+
+    /// The offsets downloads were asked from, in order.
+    pub fn starts(&self) -> Vec<u64> {
+        self.shared
+            .starts
+            .lock()
+            .map(|s| s.iter().map(|(_, at)| *at).collect())
+            .unwrap_or_default()
     }
 }
 
@@ -143,6 +164,9 @@ async fn enqueue(
         Ok(m) if m.len() > 0 && !s.peer.overwrite => m.len(),
         _ => 0,
     };
+    if let Ok(mut starts) = s.starts.lock() {
+        starts.push((filename.clone(), at));
+    }
     let pace = s.paces.get(&user).copied().unwrap_or(s.peer.per_tick);
     let task = tokio::spawn(download(s.clone(), id.clone(), path, filename.clone(), bytes, at, pace)).abort_handle();
     let t = Transfer {
@@ -155,7 +179,7 @@ async fn enqueue(
     if let Ok(mut all) = s.transfers.lock() {
         all.insert(id.clone(), t.clone());
     }
-    Ok(axum::Json(json!({ "batch": { "transfers": [view(&id, &t)] } })))
+    Ok(axum::Json(json!({ "batch": { "transfers": [view(&id, &t, s.peer.reported)] } })))
 }
 
 /// The peer sends from `at`: appended (resume) or written from a fresh file (overwrite).
@@ -207,8 +231,8 @@ async fn download(s: Arc<Shared>, id: String, path: PathBuf, filename: String, b
     }
 }
 
-fn view(id: &str, t: &Transfer) -> Value {
-    let speed = (t.bytes - t.from.0) as f64 / t.from.1.elapsed().as_secs_f64().max(0.001);
+fn view(id: &str, t: &Transfer, reported: Option<f64>) -> Value {
+    let speed = reported.unwrap_or_else(|| (t.bytes - t.from.0) as f64 / t.from.1.elapsed().as_secs_f64().max(0.001));
     json!({
         "id": id, "filename": t.filename, "state": t.state, "bytesTransferred": t.bytes,
         "averageSpeed": speed, "placeInQueue": null, "exception": null,
@@ -219,7 +243,7 @@ async fn list(State(s): State<Arc<Shared>>, UrlPath(_user): UrlPath<String>) -> 
     let files: Vec<Value> = s
         .transfers
         .lock()
-        .map(|all| all.iter().map(|(id, t)| view(id, t)).collect())
+        .map(|all| all.iter().map(|(id, t)| view(id, t, s.peer.reported)).collect())
         .unwrap_or_default();
     axum::Json(json!({ "directories": [{ "files": files }] }))
 }
@@ -230,7 +254,7 @@ async fn one(
 ) -> Result<axum::Json<Value>, StatusCode> {
     let all = s.transfers.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     all.get(&id)
-        .map(|t| axum::Json(view(&id, t)))
+        .map(|t| axum::Json(view(&id, t, s.peer.reported)))
         .ok_or(StatusCode::NOT_FOUND)
 }
 

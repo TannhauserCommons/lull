@@ -15,7 +15,7 @@ use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::sync::watch;
 
-use crate::fetch::{Fetch, Progress, Reader};
+use crate::fetch::{Fetch, Progress, Reader, Waiting};
 use crate::range::{self, Ask, Span};
 
 const CHUNK: usize = 64 * 1024;
@@ -25,7 +25,7 @@ const TICK: Duration = Duration::from_millis(250);
 pub async fn serve(fetch: Arc<Fetch>, headers: &HeaderMap) -> Result<Response> {
     let mut rx = fetch.progress();
     let requested = headers.get(header::RANGE).and_then(|v| v.to_str().ok());
-    let (ask, span, p) = match ready(&mut rx, requested).await? {
+    let (ask, span, p) = match ready(&mut rx, requested, |byte| fetch.ask_for(byte)).await? {
         Ready::Serve(ask, span, p) => (ask, span, *p),
         Ready::Unsatisfiable(size) => return Ok(unsatisfiable(size)),
     };
@@ -48,6 +48,8 @@ pub async fn serve(fetch: Arc<Fetch>, headers: &HeaderMap) -> Result<Response> {
     };
     let body = Body::from_stream(chunks(Feed {
         _reader: fetch.reading(),
+        fetch: fetch.clone(),
+        asked: None,
         rx,
         attempt: p.attempt,
         span,
@@ -71,7 +73,11 @@ enum Ready {
 /// file is satisfiable, only not yet: it waits for its bytes as long as the transfer runs, as a
 /// request from byte 0 does, so a seek ahead of the transfer plays once it gets there instead of
 /// failing. Only a range past the end of the file is 416.
-async fn ready(rx: &mut watch::Receiver<Progress>, requested: Option<&str>) -> Result<Ready> {
+async fn ready<A>(
+    rx: &mut watch::Receiver<Progress>,
+    requested: Option<&str>,
+    ask_for: impl Fn(u64) -> A,
+) -> Result<Ready> {
     loop {
         // The source decides the size and type; it may change through fallbacks until bytes flow.
         let first = wait(rx, |p| p.source.is_some() && p.path.is_some()).await?;
@@ -80,8 +86,11 @@ async fn ready(rx: &mut watch::Receiver<Progress>, requested: Option<&str>) -> R
             Ask::Whole(s) | Ask::Part(s) => s,
             Ask::Unsatisfiable => return Ok(Ready::Unsatisfiable(first.size())),
         };
-        let p = wait(rx, |p| p.path.is_some() && p.received > span.start).await?;
-        if p.received <= span.start && span.len() > 0 {
+        // A start that hasn't arrived is asked for while this waits: the fetch may start a leg
+        // there.
+        let _asked = (span.len() > 0 && !first.ranges.has(span.start)).then(|| ask_for(span.start));
+        let p = wait(rx, |p| p.path.is_some() && p.ranges.has(span.start)).await?;
+        if !p.ranges.has(span.start) && span.len() > 0 {
             // The fetch ended without those bytes: it failed, or the file is shorter than the
             // peer said.
             return match p.status {
@@ -143,6 +152,9 @@ fn content_type(ext: &str) -> &'static str {
 struct Feed {
     /// Keeps the fetch counted as playing while the body is in flight.
     _reader: Reader,
+    /// Asked for the byte the body waits for at a gap, while it waits there.
+    fetch: Arc<Fetch>,
+    asked: Option<(u64, Waiting)>,
     rx: watch::Receiver<Progress>,
     attempt: u32,
     span: Span,
@@ -151,10 +163,10 @@ struct Feed {
     file: Option<File>,
 }
 
-/// The body: read what's on disk, wait for more, stop at the span's end. The file's own
-/// length is the truth for what has arrived; slskd writes it front to back and never sizes it
-/// up front. The file is reopened by path whenever the fetch sees more on disk than this
-/// handle does: slskd moves the finished file, and may recreate it when it retries a peer.
+/// The body: read what has arrived, wait at a gap for more, stop at the span's end. The fetch's
+/// ranges are the truth for what has arrived (a copy arrives in legs, ADR-0014), not the file's
+/// length. The file is reopened when the fetch's path changes, or when its ranges hold bytes
+/// this handle doesn't see (a YouTube copy's file recreated under us).
 fn chunks(state: Feed) -> impl futures_util::Stream<Item = std::io::Result<Bytes>> {
     futures_util::stream::try_unfold(state, |mut s| async move {
         loop {
@@ -179,21 +191,29 @@ fn chunks(state: Feed) -> impl futures_util::Stream<Item = std::io::Result<Bytes
                 }
             }
             if let Some(f) = s.file.as_mut() {
-                match read_chunk(f, s.span, s.pos).await {
+                let arrived = p.ranges.end_from(s.pos).unwrap_or(s.pos);
+                match read_chunk(f, s.span, s.pos, arrived).await {
                     Ok(buf) if !buf.is_empty() => {
                         s.pos += buf.len() as u64;
+                        s.asked = None;
                         return Ok(Some((Bytes::from(buf), s)));
                     }
                     // Nothing new through this handle, but the fetch sees more at its path (or a
                     // new path): the file was moved or recreated under us.
-                    Ok(_) if p.received > s.pos || p.path.as_ref() != Some(&s.path) => s.file = None,
+                    Ok(_) if arrived > s.pos || p.path.as_ref() != Some(&s.path) => s.file = None,
                     Ok(_) if p.ended() => {
                         return Err(std::io::Error::other(match p.status {
                             crate::fetch::Status::Done => "the file is shorter than the peer said",
                             _ => "the transfer ended before this part arrived",
                         }));
                     }
-                    Ok(_) => {}
+                    // At a gap, with the transfer still on: the byte is asked for, so a leg may
+                    // start there rather than this body waiting for the one running to arrive.
+                    Ok(_) => {
+                        if s.asked.as_ref().is_none_or(|(at, _)| *at != s.pos) {
+                            s.asked = Some((s.pos, s.fetch.ask_for(s.pos)));
+                        }
+                    }
                     // The handle went bad while slskd is still writing: reopen by path.
                     Err(_) if !p.ended() => s.file = None,
                     Err(e) => return Err(e),
@@ -204,10 +224,10 @@ fn chunks(state: Feed) -> impl futures_util::Stream<Item = std::io::Result<Bytes
     })
 }
 
-/// Up to one chunk of the span from `pos`, never past what this handle sees on disk.
-async fn read_chunk(f: &mut File, span: Span, pos: u64) -> std::io::Result<Vec<u8>> {
-    let on_disk = f.metadata().await?.len();
-    let want = range::sendable(span, pos, on_disk).min(CHUNK as u64) as usize;
+/// Up to one chunk of the span from `pos`, never past `arrived`, the end of the bytes that have
+/// arrived from `pos` on.
+async fn read_chunk(f: &mut File, span: Span, pos: u64, arrived: u64) -> std::io::Result<Vec<u8>> {
+    let want = range::sendable(span, pos, arrived).min(CHUNK as u64) as usize;
     let mut buf = vec![0; want];
     let n = if want > 0 { f.read(&mut buf).await? } else { 0 };
     buf.truncate(n);
@@ -218,6 +238,7 @@ async fn read_chunk(f: &mut File, span: Span, pos: u64) -> std::io::Result<Vec<u
 mod tests {
     use super::*;
     use crate::fetch::Status;
+    use crate::ranges::Ranges;
     use crate::sources::Source;
 
     fn arriving(size: u64, received: u64) -> Progress {
@@ -243,7 +264,7 @@ mod tests {
                 queue: 0,
                 length: Some(200),
             }),
-            received,
+            ranges: Ranges::front(received),
             speed: 0,
             queue_pos: None,
             path: Some("song.mp3".into()),
@@ -252,19 +273,34 @@ mod tests {
             peers_found: 1,
             below: false,
             choices: Vec::new(),
+            ahead: None,
         }
     }
 
     #[tokio::test(start_paused = true)]
     async fn a_seek_ahead_of_the_transfer_waits_for_its_bytes_however_long_they_take() {
         let (tx, mut rx) = watch::channel(arriving(1000, 100));
-        let answer = tokio::spawn(async move { ready(&mut rx, Some("bytes=500-")).await });
+        let asked = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let asks = asked.clone();
+        let answer = tokio::spawn(async move {
+            ready(&mut rx, Some("bytes=500-"), |byte| {
+                if let Ok(mut a) = asks.lock() {
+                    a.push(byte);
+                }
+            })
+            .await
+        });
         tokio::time::sleep(Duration::from_secs(600)).await;
         assert!(!answer.is_finished(), "no 416 while the transfer is on its way there");
-        tx.send_modify(|p| p.received = 501);
+        assert_eq!(
+            *asked.lock().unwrap_or_else(|e| e.into_inner()),
+            [500],
+            "the byte is asked for, so a leg may start there"
+        );
+        tx.send_modify(|p| p.ranges.add(0, 501));
         let served = answer.await;
         assert!(
-            matches!(&served, Ok(Ok(Ready::Serve(Ask::Part(Span { start: 500, end: 1000 }), _, p))) if p.received == 501),
+            matches!(&served, Ok(Ok(Ready::Serve(Ask::Part(Span { start: 500, end: 1000 }), _, p))) if p.received() == 501),
             "the range is served once its bytes are here: {served:?}"
         );
     }
@@ -273,13 +309,16 @@ mod tests {
     async fn only_a_range_past_the_end_of_the_file_is_unsatisfiable() {
         let (_tx, mut rx) = watch::channel(arriving(1000, 100));
         assert!(matches!(
-            ready(&mut rx, Some("bytes=1000-")).await,
+            ready(&mut rx, Some("bytes=1000-"), |_| {}).await,
             Ok(Ready::Unsatisfiable(1000))
         ));
         let (tx, mut rx) = watch::channel(arriving(1000, 100));
         tx.send_modify(|p| p.status = Status::Done);
         assert!(
-            matches!(ready(&mut rx, Some("bytes=500-")).await, Ok(Ready::Unsatisfiable(1000))),
+            matches!(
+                ready(&mut rx, Some("bytes=500-"), |_| {}).await,
+                Ok(Ready::Unsatisfiable(1000))
+            ),
             "a finished file shorter than the peer said can't serve the rest"
         );
     }

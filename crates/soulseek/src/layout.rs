@@ -75,6 +75,16 @@ impl Layout {
     }
 }
 
+/// `<base>/<user>/<remote folders>/<file>`, every segment safe on any OS: lull's own files laid
+/// out like slskd's, so each peer's copy has its own place.
+pub fn beside(base: &Path, user: &str, remote: &str) -> PathBuf {
+    let mut p = base.join(sanitize(user, Os::Windows));
+    for seg in remote_segments(remote) {
+        p.push(sanitize(seg, Os::Windows));
+    }
+    p
+}
+
 #[derive(Clone, Copy)]
 enum Os {
     Unix,

@@ -172,7 +172,6 @@ pub struct Transfer {
     pub filename: String,
     /// Flags as text: `Queued, Remotely`, `InProgress`, `Completed, Succeeded`, `Completed, Errored`...
     pub state: String,
-    pub bytes_transferred: u64,
     /// Bytes per second.
     pub average_speed: f64,
     pub place_in_queue: Option<u32>,

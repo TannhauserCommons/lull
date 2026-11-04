@@ -41,7 +41,7 @@ What there is to work with:
 **The song's cache file is lull's: a sparse file plus a persisted list of byte ranges.**
 - **Where:** each song's copy gets one file of lull's, `<transfers>/lull/<id>.<ext>`, sized to the full file. A leg's bytes are copied into it at their own offsets as they land, one 64 KiB chunk at a time, as the body is read today. slskd's files are only where legs land, and lull deletes a leg's file when the leg ends.
 - **Why copy:** two legs from different starts can't share slskd's single incomplete path. A copy gives one file to serve, save and evict, whatever the legs did. It costs one extra write of each byte, on the same disk.
-- **The ranges** live in `soulseek_ranges (file, start, end)` and are merged as they grow. They are written each time a range grows by a megabyte, and when a leg ends. After a restart, a range is trusted only up to what was written.
+- **The ranges** live with the copy's row in `soulseek_files` (`ranges`, JSON) and are merged as they grow. They are written each time a range grows by a megabyte, and when a leg ends. After a restart, a range is trusted only up to what was written.
 - **"Length on disk = bytes received" goes.**
   - `Progress` carries `ranges`; `received` is their sum.
   - The body sends up to the end of the range it is in, then waits for the gap to fill.
