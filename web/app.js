@@ -3171,6 +3171,8 @@
       });
     return merged;
   }
+  /* what a transfer bar draws (0-1): the solid part from the start, and the parts drawn as arrived */
+  P.transferBar = function () { return { front: arrivedFront(), parts: shownParts() }; };
   function updateSeeks() {
     var dur = P.duration() || 1, f = clamp(ps.pos / dur, 0, 1), parts = shownParts(), bk = bufKey(parts), front = arrivedFront();
     var bufTo = ps.buffered.length ? ps.buffered[ps.buffered.length - 1][1] * dur : 0;

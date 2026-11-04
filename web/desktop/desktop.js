@@ -403,7 +403,7 @@
         as the 'player' event; the buttons go back to it as 'mini' events and it runs them as its own actions.
      ===================================================================== */
   var S = { track: null, art: null, playing: false, liked: false, pos: 0, duration: 0, durationKnown: true,
-    buffered: [], received: 1, shuffle: false, repeat: 'off', volume: 1, status: 'idle', statusText: '' };
+    buffered: [], front: 1, received: 1, shuffle: false, repeat: 'off', volume: 1, status: 'idle', statusText: '' };
   var FALLBACK_ART = '../assets/fallback-art-256.png';
   var BARS = 40;
   function barHeight(i) { return (0.32 + 0.6 * Math.abs(Math.sin(i * 1.7) * Math.cos(i * .43))).toFixed(2); }
@@ -413,10 +413,11 @@
   }
   function frac() { return S.duration ? Math.min(1, S.pos / S.duration) : 0; }
   function bufferedAt(x) { return S.buffered.some(function (r) { return x >= r[0] && x <= r[1]; }); }
-  function bufferEnd() {           // end of the buffered range the playhead is in
-    var f = frac(), r = S.buffered.filter(function (r) { return f >= r[0] && f <= r[1]; })[0];
-    return r ? r[1] : 0;
+  function bufferPart() {          // the arrived part the playhead is in (a seek ahead may leave a gap before it)
+    var f = frac();
+    return S.buffered.filter(function (r) { return f >= r[0] && f <= r[1]; })[0] || [0, 0];
   }
+  function bufferEnd() { return bufferPart()[1]; }
   function waveText() { return fmt(S.pos) + ' of ' + (S.durationKnown ? '' : 'about ') + fmt(S.duration) + ', downloaded to ' + fmt(bufferEnd() * S.duration); }
   function waveMarkup() {
     var b = ''; for (var i = 0; i < BARS; i++) b += '<i class="wave__bar" style="--h:' + barHeight(i) + '"></i>';
@@ -503,7 +504,7 @@
         w.classList.toggle('is-playing', S.playing);
         $$('.wave__bar', w).forEach(function (b, i) {
           var x = (i + .5) / BARS;
-          b.className = 'wave__bar' + (x <= f ? ' is-played' : bufferedAt(x) ? ' is-buf' : x <= S.received ? ' is-xfer' : '');
+          b.className = 'wave__bar' + (x <= f ? ' is-played' : bufferedAt(x) ? ' is-buf' : x <= S.front ? ' is-xfer' : '');
         });
         w.setAttribute('aria-valuenow', Math.round(f * 100)); w.setAttribute('aria-valuetext', waveText());
       });
@@ -511,8 +512,9 @@
       $$('[data-dk-dur]', el).forEach(function (n) { n.textContent = (S.durationKnown ? '' : '~') + fmt(S.duration); });
       $$('[data-dk-vol]', el).forEach(function (n) { n.textContent = volText(); });
       $$('.seek--line', el).forEach(function (s) {
-        s.style.setProperty('--pos', f.toFixed(4)); s.style.setProperty('--xfer', S.received);
-        var buf = $('[data-dk-buf]', s); buf.style.left = '0'; buf.style.width = (bufferEnd() * 100) + '%';
+        s.style.setProperty('--pos', f.toFixed(4)); s.style.setProperty('--xfer', S.front);
+        var buf = $('[data-dk-buf]', s), part = bufferPart();
+        buf.style.left = (part[0] * 100) + '%'; buf.style.width = ((part[1] - part[0]) * 100) + '%';
       });
       $$('[data-dk="play-pause"]', el).forEach(function (b) {
         var label = S.playing ? 'Pause' : 'Play';
@@ -806,11 +808,12 @@
       return null;
     };
     var snapshot = function () {
-      var t = P.current(), ps = P.state, id = t ? t.id : null;
+      var t = P.current(), ps = P.state, id = t ? t.id : null, bar = P.transferBar();
       return { track: t ? { title: t.title, artist: t.artist, format: t.format || '', lossless: !!t.lossless } : null,
         playing: !!ps.playing, liked: !!(id && App.isLiked(id)),
         pos: Math.floor(ps.pos || 0), duration: P.duration() || 0, durationKnown: ps.durationKnown !== false,
-        buffered: ps.buffered || [], received: ps.received == null ? 1 : Math.floor(ps.received * 100) / 100,
+        buffered: bar.parts, front: Math.floor(bar.front * 100) / 100,
+        received: ps.received == null ? 1 : Math.floor(ps.received * 100) / 100,
         shuffle: !!ps.shuffle, repeat: ps.repeat || 'off', volume: ps.muted ? 0 : ps.volume,
         status: t ? ps.status || 'idle' : 'idle', statusText: t && ps.status !== 'idle' ? P.stateWords() : '' };
     };
