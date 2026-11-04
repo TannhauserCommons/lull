@@ -1,10 +1,11 @@
 //! `GET /api/open?link=`: a link to a song, album or artist, opened as this hub's own page
 //! (docs/context/discovery.md#opening-links).
-//! - **lull's links** (`share.rs`, ADR-0032) are lull's open page (`OPEN_PAGE`, `site/`) followed
-//!   by `#lull?` and what the sender's lull knows: names, public ids and the item's public page
-//!   (`page=`: song.link, album.link, Last.fm), never a hub's address. Browsers never send the part
-//!   after `#`; the page reads it to open lull, and any lull reads it here, whatever page precedes
-//!   it (older links had the public page itself in front).
+//! - **lull's links** (`share.rs`) name what the sender's lull knows: names and public ids, never a
+//!   hub's address. Since ADR-0034 they are pages on the share host (`share_host.rs`, `share/`):
+//!   `/1/<kind>/<names>?<ids>`. Before it (ADR-0032) they were lull's open page (`OPEN_PAGE`, `site/`)
+//!   followed by `#lull?`, the names, ids and the item's public page (`page=`: song.link, album.link,
+//!   Last.fm); browsers never send the part after `#`, and any lull reads it here, whatever page
+//!   precedes it (the oldest links had the public page itself in front). Both are read for good.
 //! - **Other services' links** are read by their ids: song.link, album.link and Apple Music
 //!   (iTunes ids), Deezer, MusicBrainz release groups; Last.fm's by the names in them.
 //! - **Recorded like a search row**, its album with the catalog album behind it, so the page
@@ -26,6 +27,7 @@ use url::{Url, form_urlencoded};
 use crate::Service;
 use crate::art::{self, Pictured};
 use crate::search::merge::{AlbumHit, Found, SongHit};
+use crate::share_host;
 use crate::sources::{AlbumSource, ArtistInfo, Release, Song};
 use crate::store::{self, entities};
 
@@ -98,7 +100,8 @@ pub async fn open(State(svc): State<Arc<Service>>, Params(p): Params<OpenParams>
     Ok(Json(record(&svc, item).await?))
 }
 
-/// The lull link to `item`, whose public page is `page`: the open page, then `#lull?kind=song&…`.
+/// ADR-0032's lull link to `item`, whose public page is `page`: the open page, then `#lull?kind=song&…`.
+/// Written until the share host has a canonical address (`share_host::link`).
 pub fn link(item: &Item, page: &str) -> String {
     format!("{OPEN_PAGE}#{}", fragment(item, page))
 }
@@ -170,6 +173,9 @@ fn parse(text: &str) -> Result<Link> {
     }
     if !matches!(url.scheme(), "https" | "http") {
         return Err(Error::BadRequest(READS.into()));
+    }
+    if let Some(item) = share_host::read(&url)? {
+        return Ok(Link::Named(item));
     }
     let host = url
         .host_str()
@@ -291,7 +297,7 @@ fn lastfm(path: &[&str]) -> Option<Item> {
     }
 }
 
-fn is_mbid(s: &str) -> bool {
+pub(crate) fn is_mbid(s: &str) -> bool {
     s.len() == 36 && s.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
 }
 

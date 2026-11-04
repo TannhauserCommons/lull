@@ -7,10 +7,11 @@
 //! list, get their Last.fm page. Answers are kept in the database; one is resolved at a time,
 //! so the same link asked for twice at once costs one iTunes call.
 //!
-//! `link`, what "Copy link" copies, is lull's open page followed by `#lull?`, the names and public
-//! ids lull knows, and that public page (`open::link`, ADR-0032): the open page sends a click on to
-//! lull or to the public page, and any lull opens it as its own (`open.rs`). Never the hub's
-//! address.
+//! `link`, what "Copy link" copies, names the item and the public ids lull knows, never the hub's
+//! address: a page on the share host that chat apps show as a card (`share_host::link`, ADR-0034),
+//! or, until that host has a canonical address, lull's open page followed by `#lull?`, those ids and
+//! the public page (`open::link`, ADR-0032). Either page sends a click on to lull or to the public
+//! page, and any lull opens either as its own (`open.rs`).
 
 use std::sync::Arc;
 
@@ -23,6 +24,7 @@ use tokio::sync::Mutex;
 
 use crate::Service;
 use crate::open::{self, Item};
+use crate::share_host::{self, Extra};
 use crate::sources::cache::DAY;
 use crate::sources::itunes::{Entity, Listing};
 
@@ -66,9 +68,19 @@ pub struct Shares {
 /// What a share link is for: what lull knows of it (`item`), and the album or artist whose
 /// picture it shows.
 enum Shared {
-    Track { item: Item, album: AlbumId },
-    Album { item: Item, id: AlbumId },
-    Artist { item: Item, id: ArtistId },
+    Track {
+        item: Item,
+        album: AlbumId,
+        album_mbid: Option<String>,
+    },
+    Album {
+        item: Item,
+        id: AlbumId,
+    },
+    Artist {
+        item: Item,
+        id: ArtistId,
+    },
 }
 
 impl Shared {
@@ -105,8 +117,26 @@ pub async fn get(State(svc): State<Arc<Service>>, Path((kind, id)): Path<(String
             Error::Upstream { service, reason } => Error::Unavailable { service, reason },
             e => e,
         })?;
-    let link = open::link(shared.item(), &share.url);
+    let extra = Extra {
+        itunes: itunes_id(&share.url),
+        album_mbid: match &shared {
+            Shared::Track { album_mbid, .. } => album_mbid.clone(),
+            _ => None,
+        },
+    };
+    let link = match share_host::link(shared.item(), &extra)? {
+        Some(link) => link,
+        None => open::link(shared.item(), &share.url),
+    };
     Ok(Json(Answer { share, link }))
+}
+
+/// The iTunes id behind an Odesli page (`song.link/i/<id>`, `album.link/i/<id>`).
+fn itunes_id(page: &str) -> Option<u64> {
+    ["https://song.link/i/", "https://album.link/i/"]
+        .iter()
+        .find_map(|prefix| page.strip_prefix(prefix))
+        .and_then(|id| id.parse().ok())
 }
 
 /// The track, album or artist an id stands for, with the album's catalog source; `None` for an
@@ -116,6 +146,7 @@ async fn known(svc: &Service, kind: &str, id: String) -> Result<Option<Shared>> 
         "track" if id.starts_with(TrackId::PREFIX) => match svc.store.track(TrackId(id)).await? {
             Some(t) => {
                 let on = svc.store.album_ref(t.album_id.clone()).await?;
+                let album_mbid = on.as_ref().and_then(|a| a.musicbrainz_id.clone());
                 let album_artist = on.map(|a| a.artist).filter(|by| *by != t.artist);
                 let album_source = svc.store.album_source(t.album_id.clone()).await?;
                 Some(Shared::Track {
@@ -128,6 +159,7 @@ async fn known(svc: &Service, kind: &str, id: String) -> Result<Option<Shared>> 
                         album_source,
                     },
                     album: t.album_id,
+                    album_mbid,
                 })
             }
             None => None,
@@ -327,6 +359,7 @@ mod tests {
                 album_source: None,
             },
             album: AlbumId("al-x".into()),
+            album_mbid: None,
         };
         assert_eq!(
             lastfm_page(&track),

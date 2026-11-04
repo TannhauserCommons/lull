@@ -11,6 +11,7 @@ mod pages;
 mod radio;
 mod search;
 mod share;
+mod share_host;
 mod sources;
 mod store;
 mod taste;
