@@ -1239,12 +1239,35 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 .pbar__from b { font-weight: 800; color: var(--fg); }
 .pbar__from .ic { width: 14px; height: 14px; }
 .pbar__badges { display: flex; align-items: center; gap: 6px; margin-top: 3px; min-height: 24px; min-width: 0; }
-/* parts of the bar that give way when it runs out of room (layout.js, data-fit): the tools leave for the "…" menu, which
-   lists every one of them; the chips go (the source and quality are one click away in Now Playing); Private keeps its
-   eye and its name for screen readers. Whatever a design draws, a part that gave way is gone (!important, as the layout
-   states below: a later layer can't bring it back) */
-.pbar :is(.btn-icon, .seek)[data-fit-out], .pbar__badges > [data-fit-out]:not(.pbar__private) { display: none !important; }
+/* parts of the bar that give way when it runs out of room (layout.js, data-fit). Making room never takes a function away:
+   the tools leave for the "…" menu, which lists every one of them; the volume slider moves into a popover over the volume
+   button (below); the chips go (the source and quality are one click away in Now Playing); Private keeps its eye and its
+   name for screen readers. Whatever a design draws, a part that gave way is gone from the row (!important, as the
+   layout states below: a later layer can't bring it back) */
+.pbar :is(.btn-icon, .seek:not(.vol > .seek), .pbar__from)[data-fit-out], .pbar__badges > [data-fit-out]:not(.pbar__private) { display: none !important; }
+/* the volume slider that gave way: over the volume button, its right edge on the button's (it opens leftwards, over the
+   other tools: hidden, it is still laid out, and past the tools' right edge it would count as their overflow and make
+   more of them give way), shown while the pointer is on the button or the slider, or the slider has focus (Tab from the
+   button, or Enter on it: from the keyboard the button opens it rather than mutes, M still mutes; Escape goes back to
+   the button). Hidden, it is still there to Tab to and for screen readers. The wheel over the button turns the volume
+   too */
+.pbar .vol { position: relative; }
+.pbar .vol > .seek[data-fit-out] {
+  position: absolute !important; right: 0; bottom: calc(50% + var(--bar-h) / 2 + 8px); z-index: var(--z-popover); width: 132px; min-width: 132px; height: 40px; padding: 0 14px;
+  border: var(--stroke) solid var(--edge); border-radius: 999px; background: var(--bg); box-shadow: var(--stack-1l);
+  translate: 0 4px; opacity: 0; pointer-events: none;
+}
+/* it fades in when called, and is gone at once otherwise (as it gives way too: never half there above the bar) */
+.pbar .vol:hover > .seek[data-fit-out], .pbar .vol > .seek[data-fit-out]:focus-within, .pbar .vol > .seek[data-fit-out]:focus {
+  translate: 0 0; opacity: 1; pointer-events: auto; transition: opacity var(--dur-1) var(--ease-out), translate var(--dur-1) var(--ease-out);
+}
+.pbar .vol > .seek[data-fit-out]::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: calc(var(--bar-h) / 2 + 8px); }   /* the hover carries from the button up to the popover, over the bar's top edge */
 .pbar__private[data-fit-out] .pbar__private-label { display: none !important; }
+.pbar__acts[data-fit-out] { display: none !important; }   /* Like and Save: both in the "…" menu */
+/* the song's words keep a readable width (layout.js): the song side's parts ("Playing from", then Like and Save) give
+   way before the title or artist would show less than this, or less than all of it when it is shorter */
+@property --fit-keep { syntax: "<length>"; inherits: false; initial-value: 0px; }
+.pbar [data-fit-keep] { --fit-keep: 10ch; }
 .pbar__private[data-fit-out] { padding-inline: 7px; }   /* the eye alone sits in the middle of its pill, as wide as before */
 .pbar__centre { display: grid; justify-items: center; gap: 2px; min-width: 0; }
 .pbar__controls { display: flex; align-items: center; gap: var(--sp-3); }

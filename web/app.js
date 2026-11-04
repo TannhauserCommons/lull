@@ -3232,6 +3232,8 @@
   document.addEventListener('keydown', function (e) {
     var el = e.target.closest && e.target.closest('[data-seek]'); if (!el) return;
     el.removeAttribute('data-pointer');
+    /* the volume popover (a slider that gave way): Escape goes back to its button, which closes it */
+    if (e.key === 'Escape' && el.hasAttribute('data-fit-out') && el.closest('.vol')) { e.preventDefault(); e.stopPropagation(); $('[data-act="mute"]', el.closest('.vol')).focus(); return; }
     var vol = el.getAttribute('data-seek') === 'volume', step = vol ? P.volumeStep() : 5 / (P.duration() || 1);
     var cur = vol ? (ps.muted ? 0 : ps.volume) : P.seekTarget() / (P.duration() || 1), f = null;
     if (e.key === 'ArrowRight' || e.key === 'ArrowUp') f = cur + step * (e.shiftKey ? 6 : 1);
@@ -3242,10 +3244,10 @@
     e.preventDefault(); e.stopPropagation(); applySeek(el, clamp(f, 0, 1), true);
   });
   document.addEventListener('focusout', function (e) { if (e.target.closest && e.target.closest('[data-seek]')) e.target.removeAttribute('data-pointer'); });
-  /* the wheel over a volume bar turns it: one notch (or 100 px of trackpad scroll) is one volume step */
+  /* the wheel over a volume bar, or its button, turns it: one notch (or 100 px of trackpad scroll) is one volume step */
   var wheelAcc = 0;
   document.addEventListener('wheel', function (e) {
-    var el = e.target.closest && e.target.closest('[data-seek="volume"]'); if (!el) return;
+    var el = e.target.closest && e.target.closest('[data-seek="volume"], .vol'); if (!el) return;
     e.preventDefault();
     var dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
     if ((dy < 0) !== (wheelAcc < 0)) wheelAcc = 0;
@@ -3983,7 +3985,10 @@
     },
     'player-more': function (el) { playerMenu(el); },
     'play': function () { P.toggle(); }, 'next': function () { P.next(); }, 'prev': function () { P.prev(); },
-    'shuffle': function () { P.setShuffle(); }, 'repeat': function () { P.cycleRepeat(); }, 'mute': function () { P.toggleMute(); },
+    'shuffle': function () { P.setShuffle(); }, 'repeat': function () { P.cycleRepeat(); },
+    /* the volume button mutes; when the bar had no room for its slider and the pointer isn't showing it (the keyboard),
+       it opens the slider instead (M still mutes) */
+    'mute': function (el) { var vol = el.closest('.vol'), slider = vol && $('.seek[data-fit-out]', vol); if (slider && !vol.matches(':hover')) slider.focus(); else P.toggleMute(); },
     'retry-search': function () { P.retry(); App.toast('Searching Soulseek again', { icon: 'refresh' }); },
     'try-soulseek': function () { P.trySoulseek(); },
     'reload-read': function (el) { var path = el.getAttribute('data-id'); if (path) M.reload(path); else { M.invalidate(); App.refresh(); } },
