@@ -8,7 +8,9 @@ name: lull
 
 # slskd's settings, shared by the plain and vpn services.
 x-slskd: &slskd
-  image: slskd/slskd:0.26.2
+  # Pinned by decision (ADR-0014): lull relies on how this slskd resumes a download. Never updated automatically; a
+  # deliberate upgrade changes tag and digest together, here and in app/build.rs, once the resume contract test passes.
+  image: slskd/slskd:0.26.2@sha256:d0963a3e5b16facd295bf4f2156dad0182f246b1b21a032cae12f5494c694843
   restart: unless-stopped
   user: ${RUN_AS:-1000:1000}
   depends_on:
