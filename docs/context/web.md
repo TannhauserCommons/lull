@@ -671,11 +671,21 @@ The hub serves every cover and photo at 96, 256, 512, 1024 and 2048 px, scaled d
   same way. `App.patch` leaves a cover `<img>` with the same `data-pic` alone: its `src` is the fitter's.
 - **No more than the source has.** An answer smaller than asked (a 600 px original asked at 1024) marks the picture's
   full size, and no larger size of it is asked again.
-- **Asked once, then told.** The hub fetches covers before pages ask (library.md, discovery.md#pictures). A cover it
+- **The screen sets the hub's order** (ADR-0033). Two IntersectionObservers per scroll container (the page, or the box
+  a list scrolls in) keep which pictures are visible and which are within a screen of view: every cover `<img>`, every
+  cover waiting for its picture (`data-wait-pic`) and every artist drawn without a photo (`data-want-photo`).
+  `PUT /api/pictures/screen` reports them top to bottom, at the size drawn (an artist without a photo at 0, so the hub
+  looks for one), at most four times a second and once more when it settles; an unchanged screen isn't sent again, a
+  hidden page sends nothing, and a reconnect sends it again. The hub fetches what plays, then what is visible, then
+  what is near, newest screen first, and drops work for what left every screen: a long list scrolled fast fills the
+  screen it stops on first.
+- **Asked once, then told.** The hub fetches what screens show before they ask (library.md, discovery.md#pictures). A cover it
   answers 404 for ("not yet", or "none") makes every cover of that key wait without a src, the recipe showing, until
   `art.ready` names the key; then each fits again and asks once (a larger size that 404'd keeps the smaller picture
   meanwhile). Nothing retries on a timer, so a page asks for a picture once however many rows show it. A wait ends by
-  itself after 2 minutes (a "none" is answered from the browser's cache then), and a reconnect ends them all.
+  itself after 2 minutes (a "none" is answered from the browser's cache then), and a reconnect ends them all. An
+  artist's photo the hub vets after the page drew the artist without one comes in `art.ready`'s `images`: the entity
+  takes it, and every cover drawn for the artist without a photo gets its `<img>`, with no page read again.
 - **Heroes first.** `ui.cover(…, { hero: true })` (also `ui.mosaic`/`ui.playlistArt`'s last argument): the player
   bar's and the phone mini player's cover, Now Playing's, album, artist, tag and playlist headers and the cover viewer
   load at once with `fetchpriority="high"`; every other cover is `loading="lazy"`.

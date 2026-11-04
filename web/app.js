@@ -747,8 +747,10 @@
     var pic = own ? ownPic(own) : artPic(key), src = pic && !artWaits(pic) ? firstSrc(pic, size) : pic ? '' : own || '';
     if (o.blurred && pic) { src = artWaits(pic) ? '' : sized(pic, ART_SIZES[0]); pic = ''; }   // not fitted
     var ready = artReady.has(src), mono = own ? '' : monogram(key), wait = pic && !src;
+    var photo = mono && !pic && !o.blurred;   // an artist drawn without a photo: the screen asks the hub for one
     return '<span class="' + cls + (mono ? ' cover--artist' : '') + (ready ? ' has-art' : '') + '"' + attrs +
-      (wait ? ' data-wait-art="' + esc(key) + '" data-wait-pic="' + esc(pic) + '"' + (o.hero ? ' data-wait-hero' : '') : '') + '>' +
+      (wait ? ' data-wait-art="' + esc(key) + '" data-wait-pic="' + esc(pic) + '"' + (o.hero ? ' data-wait-hero' : '') : '') +
+      (photo ? ' data-want-photo="' + esc(key) + '"' + (o.hero ? ' data-wait-hero' : '') : '') + '>' +
       (mono ? '<span class="cover__mono" aria-hidden="true">' + esc(mono) + '</span>' : '') + (src ? coverImg(key, pic, src, ready, o.hero) : '') + '</span>';
   }
   function coverImg(key, pic, src, ready, hero) {
@@ -773,7 +775,24 @@
      been missed. */
   var artWaiting = {}, ART_WAIT = 2 * 60 * 1000;
   function artWaits(pic) { return Date.now() - (artWaiting[pic] || 0) < ART_WAIT; }
-  App.on('server:art.ready', function (p) { ((p && p.keys) || []).forEach(artCameIn); });
+  App.on('server:art.ready', function (p) {
+    var images = (p && p.images) || {};
+    Object.keys(images).forEach(function (key) { photoCameIn(key, images[key]); });
+    ((p && p.keys) || []).forEach(artCameIn);
+  });
+  /* an artist's photo the hub vetted after the page drew it without one: the entity takes it, and every cover drawn for
+     the artist without a photo gets its <img> (the monogram goes once it loads), as a waiting cover does */
+  function photoCameIn(key, image) {
+    var a = M.artist(key); if (!a) return;
+    a.image = image;
+    var pic = artPic(key); if (!pic) return;
+    $$('[data-want-photo="' + key + '"]').forEach(function (span) {
+      var hero = span.hasAttribute('data-wait-hero');
+      span.removeAttribute('data-want-photo'); span.removeAttribute('data-wait-hero');
+      unwatchShown(span);
+      span.insertAdjacentHTML('beforeend', coverImg(key, pic, firstSrc(pic, span.style.getPropertyValue('--cover-size-base').trim()), false, hero));
+    });
+  }
   function artCameIn(key) {
     $$('[data-wait-art="' + key + '"]').forEach(function (span) { delete artWaiting[span.getAttribute('data-wait-pic')]; unwait(span); });
     $$('img[data-art="' + key + '"]').forEach(function (img) {
@@ -786,11 +805,13 @@
   function forgetArtWaits() {
     artWaiting = {}; artFailed = {};
     $$('[data-wait-art]').forEach(unwait);
+    screenSent = ''; reportScreen();   // a restarted hub knows no screen
   }
   /* a waiting cover (its span) gets its <img> back, at the size its markup asked for; the fitter takes it from there */
   function unwait(span) {
     var key = span.getAttribute('data-wait-art'), pic = span.getAttribute('data-wait-pic'), hero = span.hasAttribute('data-wait-hero');
     span.removeAttribute('data-wait-art'); span.removeAttribute('data-wait-pic'); span.removeAttribute('data-wait-hero');
+    unwatchShown(span);   // its <img> is watched instead
     span.insertAdjacentHTML('beforeend', coverImg(key, pic, firstSrc(pic, span.style.getPropertyValue('--cover-size-base').trim()), false, hero));
   }
   /* a cover whose picture 404'd: its <img> goes, the span waits (see above) */
@@ -798,6 +819,7 @@
     var span = img.parentNode; if (!span) return;
     span.setAttribute('data-wait-art', img.getAttribute('data-art')); span.setAttribute('data-wait-pic', img.getAttribute('data-pic'));
     if (img.hasAttribute('fetchpriority')) span.setAttribute('data-wait-hero', '');
+    watchShown(span);
     img.remove();
   }
   /* the picture for an album or artist key, without a size: a catalog entity's own URL (album `art`, artist `image`, same
@@ -905,9 +927,92 @@
       r.addedNodes.forEach(function (n) {
         if (n.nodeType !== 1) return;
         if (n.matches('img[data-pic]')) watchArt(n); else if (n.firstElementChild) n.querySelectorAll('img[data-pic]').forEach(watchArt);
+        eachShown(n, watchShown);
       });
+      r.removedNodes.forEach(function (n) { if (n.nodeType === 1) eachShown(n, unwatchShown); });
     });
   }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-pic'] });
+
+  /* ---------- what is on screen, for the hub (PUT /api/pictures/screen, ADR-0033) ----------
+     The hub fetches outside pictures in the order screens show them: what plays, then what is visible, then what is
+     near, newest screen first, top to bottom, and drops work for pictures that left every screen. So a long list scrolled
+     fast fills the screen the listener stops on first. Two IntersectionObservers keep which pictures are visible and
+     which are within a screen of view: a cover's <img>, a cover waiting for its picture (data-wait-pic) and an artist
+     drawn without a photo (data-want-photo, size 0: the hub looks for one). Each pair watches one scroll container (the
+     page, or the box a list scrolls in, as the lazy rows' watchers do): with the page as their root, a list scrolling in
+     its own box would clip "near" away. A change is reported at most four times a second, the last one when it settles;
+     an unchanged screen isn't sent again. */
+  var SHOWN = 'img[data-pic], [data-wait-pic], [data-want-photo]', SCREEN_EVERY = 250, SCREEN_MAX = 400;
+  var shownVisible = new Set(), shownNear = new Set(), screenGen = Date.now() * 1000, screenSent = '', screenTimer = null, screenLast = 0;
+  var shownWatchers = new Map();   // scroll container (null: the page) -> { visible, near } observers
+  function shownWatcher(into, root, margin) {
+    return new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { if (e.isIntersecting && e.target.isConnected) into.add(e.target); else into.delete(e.target); });
+      reportScreen();
+    }, { root: root, rootMargin: margin });
+  }
+  /* a picture's scroll container, found once per list (its rows' covers share it) */
+  function shownRoot(el) {
+    var list = el.closest('ul, ol'), root = list && list.__shownRoot;
+    if (root === undefined || (root && !root.isConnected)) { root = scrollerOf(el.parentElement); if (list) list.__shownRoot = root; }
+    return root;
+  }
+  function watchShown(el) {
+    var root = shownRoot(el), w = shownWatchers.get(root);
+    if (!w) {
+      shownWatchers.forEach(function (old, r) { if (r && !r.isConnected) { old.visible.disconnect(); old.near.disconnect(); shownWatchers.delete(r); } });
+      w = { visible: shownWatcher(shownVisible, root, '0px'), near: shownWatcher(shownNear, root, '100% 0px') };
+      shownWatchers.set(root, w);
+    }
+    el.__shownWatch = w; w.visible.observe(el); w.near.observe(el);
+  }
+  function unwatchShown(el) {
+    var w = el.__shownWatch; if (w) { w.visible.unobserve(el); w.near.unobserve(el); el.__shownWatch = null; }
+    var was = shownNear.has(el);
+    shownVisible.delete(el); shownNear.delete(el);
+    if (was) reportScreen();
+  }
+  function eachShown(node, fn) {
+    if (node.matches(SHOWN)) fn(node);
+    if (node.firstElementChild) node.querySelectorAll(SHOWN).forEach(fn);
+  }
+  function reportScreen() {
+    if (!screenTimer) screenTimer = setTimeout(sendScreen, Math.max(0, screenLast + SCREEN_EVERY - Date.now()));
+  }
+  function sendScreen() {
+    screenTimer = null;
+    if (document.hidden) return;   // reported again when the page shows
+    var visible = shownList(shownVisible), seen = {};
+    visible.forEach(function (p) { seen[p[0]] = 1; });
+    var near = shownList(shownNear).filter(function (p) { return !seen[p[0]]; });
+    var room = SCREEN_MAX - visible.length, now = JSON.stringify([visible, near.slice(0, Math.max(0, room))]);
+    if (now === screenSent) return;
+    screenSent = now; screenLast = Date.now();
+    M.api('/api/pictures/screen', { method: 'PUT', body: { gen: ++screenGen, visible: visible.slice(0, SCREEN_MAX), near: near.slice(0, Math.max(0, room)) } })
+      .catch(function () { screenSent = ''; });   // sent again with the next change
+  }
+  /* the pictures in `set` as [route/id, size], in page order (top to bottom), each once at the largest size drawn */
+  function shownList(set) {
+    var els = [];
+    set.forEach(function (el) { if (el.isConnected) els.push(el); else set.delete(el); });
+    els.sort(function (a, b) { return a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1; });
+    var out = [], at = {};
+    els.forEach(function (el) {
+      var p = shownPicture(el); if (!p) return;
+      if (at[p[0]] == null) { at[p[0]] = out.length; out.push(p); } else if (p[1] > out[at[p[0]]][1]) out[at[p[0]]][1] = p[1];
+    });
+    return out;
+  }
+  function shownPicture(el) {
+    if (el.hasAttribute('data-want-photo')) return ['catalog/art/' + el.getAttribute('data-want-photo'), 0];
+    var pic = el.getAttribute(el.tagName === 'IMG' ? 'data-pic' : 'data-wait-pic'), size;
+    if (!pic) return null;
+    size = el.tagName === 'IMG' ? bucketOf(artWanted.get(el) || el.getAttribute('src'))
+      : bucketOf(firstSrc(pic, el.style.getPropertyValue('--cover-size-base').trim()));
+    var m = /(?:^|\/)api\/((?:catalog\/)?art\/(?:al|ar|pls)-[0-9a-f]+)(?:[?#]|$)/.exec(pic);
+    return m && size ? [m[1], size] : null;
+  }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) { screenSent = ''; reportScreen(); } });
   /* moving to a screen with another scaling changes no CSS size: fit every cover again */
   (function onScaling() {
     matchMedia('(resolution: ' + devicePixels() + 'dppx)').addEventListener('change', function () {
