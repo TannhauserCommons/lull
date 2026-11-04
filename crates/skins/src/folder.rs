@@ -1,5 +1,6 @@
-//! The listener's own skins folder (`LULL_SKINS_DIR`, docs/context/skins.md): every `.wsz` under
-//! it, checked as a downloaded skin is, named by the md5 of its bytes so the same skin in two
+//! A folder of the listener's own skins (docs/context/skins.md): the hub's own
+//! (`<data dir>/skins/mine`, where added skins go) or `LULL_SKINS_DIR`. Every `.wsz` under it is
+//! checked as a downloaded skin is and named by the md5 of its bytes, so the same skin in two
 //! places counts once. A file that isn't a skin is listed as skipped with why, never an error.
 //! The folder is read again when it changes (a watcher) or when asked; what each file was is kept
 //! in `skins_folder`, so a rescan reads only files whose size or time changed.
@@ -53,8 +54,8 @@ pub(crate) struct Folder {
     ctx: Ctx,
     root: PathBuf,
     listing: RwLock<Arc<Listing>>,
-    /// md5 -> the file it was read from.
-    files: RwLock<HashMap<String, PathBuf>>,
+    /// md5 -> the files holding it, in path order.
+    files: RwLock<HashMap<String, Vec<PathBuf>>>,
     /// One read at a time: the watcher's and a listener's.
     reading: tokio::sync::Mutex<()>,
     /// `true` once the first read has finished: the list waits for it.
@@ -105,7 +106,7 @@ impl Folder {
     /// The skin's bytes when the folder holds it. A file that changed since it was read is not
     /// served under its old md5 (the answer is cached for good): the folder is read again instead.
     pub(crate) async fn file(&self, md5: &str) -> Option<Vec<u8>> {
-        let path = lock(self.files.read()).get(md5).cloned()?;
+        let path = lock(self.files.read()).get(md5)?.first().cloned()?;
         let read = tokio::task::spawn_blocking(move || read_capped(&path)).await;
         match read {
             Ok(Ok(bytes)) if md5_hex(&bytes) == md5 => return Some(bytes),
@@ -119,6 +120,11 @@ impl Folder {
         }
         let _ = self.nudge.send(());
         None
+    }
+
+    /// Every file holding the skin, as last read.
+    pub(crate) fn paths(&self, md5: &str) -> Vec<PathBuf> {
+        lock(self.files.read()).get(md5).cloned().unwrap_or_default()
     }
 
     /// Reads the folder now and returns what it holds.
@@ -166,11 +172,13 @@ impl Folder {
                         tracing::warn!(path = e.path, why, "skipping a file in the skins folder");
                     }
                 }
-                *lock(self.files.write()) = entries
-                    .iter()
-                    .filter_map(|e| Some((e.verdict.as_ref().ok()?.clone(), e.file.clone())))
-                    .rev() // the first path of a duplicate wins
-                    .collect();
+                let mut files: HashMap<String, Vec<PathBuf>> = HashMap::new();
+                for e in &entries {
+                    if let Ok(md5) = &e.verdict {
+                        files.entry(md5.clone()).or_default().push(e.file.clone());
+                    }
+                }
+                *lock(self.files.write()) = files;
                 let listing = listing(&entries);
                 self.ctx
                     .db
@@ -245,10 +253,22 @@ fn known_files(conn: &rusqlite::Connection, root: &str) -> Result<HashMap<String
         .collect::<rusqlite::Result<_>>()?)
 }
 
-/// Stores this read, and forgets files that are gone and folders no longer configured.
+/// Forgets what was read in folders that are no longer the hub's or `LULL_SKINS_DIR`.
+pub(crate) fn forget_others(conn: &rusqlite::Connection, roots: &[&Path]) -> Result<()> {
+    let keep: Vec<String> = roots.iter().map(|r| r.to_string_lossy().into_owned()).collect();
+    let all: Vec<String> = conn
+        .prepare("SELECT DISTINCT root FROM skins_folder")?
+        .query_map([], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    for root in all.into_iter().filter(|r| !keep.contains(r)) {
+        conn.execute("DELETE FROM skins_folder WHERE root = ?1", [root])?;
+    }
+    Ok(())
+}
+
+/// Stores this read, and forgets files that are gone.
 fn remember(conn: &mut rusqlite::Connection, root: &str, entries: &[Entry]) -> Result<()> {
     let tx = conn.transaction()?;
-    tx.execute("DELETE FROM skins_folder WHERE root != ?1", [root])?;
     let seen: HashSet<&str> = entries.iter().map(|e| e.path.as_str()).collect();
     let gone: Vec<String> = tx
         .prepare("SELECT path FROM skins_folder WHERE root = ?1")?
@@ -392,7 +412,7 @@ fn listing(entries: &[Entry]) -> Listing {
     listing
 }
 
-fn md5_hex(bytes: &[u8]) -> String {
+pub(crate) fn md5_hex(bytes: &[u8]) -> String {
     Md5::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
 }
 

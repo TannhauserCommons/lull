@@ -59,7 +59,8 @@ services:
       - lull:/data
       - ${TRANSFERS:-transfers}:/transfers
       - ${MUSIC_DIR:?set MUSIC_DIR to your Jellyfin music folder}:/music
-      # Your Winamp skins for Classic mode (LULL_SKINS_DIR), read only.
+      # Optional: a Winamp skins folder you keep yourself (SKINS_DIR, LULL_SKINS_DIR=/skins), read only.
+      # Skins added in the app live in /data.
       - ${SKINS_DIR:-skins}:/skins:ro
 
   # Plain: slskd on the host's network connection. Forward SLSK_LISTEN_PORT on your router for
