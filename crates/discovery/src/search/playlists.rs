@@ -11,7 +11,9 @@
 //!   views, so its order stands in.
 //! - **Top result:** a query names a film, show or game when two or more playlists that hold
 //!   every word say soundtrack. Then the soundtrack album that holds every word takes the top
-//!   ("cyberpunk edgerunners 2"), and without one, the best such playlist ("person of interest").
+//!   ("cyberpunk edgerunners 2"), a full-length one before a single, and without one, the best
+//!   such playlist ("person of interest"). A work named after a song whose artist made its
+//!   soundtrack is the song ("bohemian rhapsody").
 
 use lull_core::ids::normalize;
 
@@ -108,9 +110,20 @@ pub fn work_top(q: &Query, albums: &[(usize, &AlbumHit)], playlists: &[PlaylistH
     if playlists.iter().filter(|p| fits_as_soundtrack(p)).count() < 2 {
         return None;
     }
-    if let Some((i, _)) = albums
-        .iter()
-        .find(|(_, a)| says_soundtrack(&a.title) && q.album(a) >= Fit::Words)
+    // A work's soundtrack is an album: a single called "Interstellar Soundtrack" is a cover.
+    let soundtracks = || {
+        albums
+            .iter()
+            .filter(|(_, a)| says_soundtrack(&a.title) && q.album(a) >= Fit::Words)
+    };
+    let full_length = |a: &AlbumHit| {
+        a.kind
+            .as_deref()
+            .is_some_and(|k| k.eq_ignore_ascii_case("album") || k.eq_ignore_ascii_case("compilation"))
+    };
+    if let Some((i, _)) = soundtracks()
+        .find(|(_, a)| full_length(a))
+        .or_else(|| soundtracks().next())
     {
         return Some(WorkTop::Album(*i));
     }

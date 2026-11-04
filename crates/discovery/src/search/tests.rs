@@ -59,6 +59,7 @@ fn score(fit: Fit, popularity: f64) -> Score {
     Score {
         confirmed: true,
         fit,
+        version: false,
         popularity,
         lean: 0.0,
     }
@@ -179,7 +180,7 @@ fn musicbrainz_rows_that_dont_hold_the_words_are_loose() {
     let mb = musicbrainz::recordings(fixture("musicbrainz-recording")).unwrap_or_default();
     let fits: Vec<(String, Fit)> = mb.songs.iter().map(|s| (s.artist.clone(), q.song(s))).collect();
     assert!(fits.iter().any(|(a, f)| a == "Radiohead" && *f == Fit::Exact));
-    assert!(fits.iter().any(|(a, f)| a == "Creep" && *f == Fit::Loose), "{fits:?}");
+    assert!(fits.iter().any(|(a, f)| a == "Creep" && *f == Fit::Partly), "{fits:?}");
 }
 
 #[test]
@@ -499,7 +500,7 @@ fn a_soundtrack_named_without_the_season_typed_is_the_top_result() {
         .albums
         .iter()
         .position(|a| a.title == "Cyberpunk: Edgerunners (Original Series Soundtrack)");
-    assert_eq!(first_season.map(|i| album_scores[i].fit), Some(Fit::Loose));
+    assert_eq!(first_season.map(|i| album_scores[i].fit), Some(Fit::Partly));
 }
 
 #[test]
@@ -513,10 +514,15 @@ fn a_song_from_the_work_typed_fits_it_only_in_part() {
     );
     assert_eq!(q.song(&from), Fit::Most, "it is from the work typed, not that work");
     let named = song("Nameless", "Cyberpunk Edgerunners Season 2 Medley", "", None);
+    assert_eq!(q.song(&named), Fit::Exact, "its title begins with every word typed");
+    let named = song("Nameless", "Medley: Cyberpunk Edgerunners Season 2", "", None);
     assert_eq!(q.song(&named), Fit::Words);
     // Short words don't make "most": "of the times" is not "skronk of the times".
     let q = Query::new("skronk of the times");
-    assert_eq!(q.song(&song("Harry Styles", "Sign of the Times", "", None)), Fit::Loose);
+    assert_eq!(
+        q.song(&song("Harry Styles", "Sign of the Times", "", None)),
+        Fit::Partly
+    );
     // Two words of three is most; one of two is not.
     assert_eq!(
         Query::new("paper moon static").song(&song("Velvet Orchard", "Paper Moon", "", None)),
@@ -524,7 +530,7 @@ fn a_song_from_the_work_typed_fits_it_only_in_part() {
     );
     assert_eq!(
         Query::new("paper static").song(&song("Velvet Orchard", "Paper Moon", "", None)),
-        Fit::Loose
+        Fit::Partly
     );
 }
 
@@ -870,6 +876,32 @@ fn credit_strings_are_not_artists() {
         .map(|(a, _)| a.name.as_str())
         .collect();
     assert_eq!(kept, ["Radiohead", "Radiodread"]);
+
+    // Last.fm's artist search answers scrobbles' credits: only the name typed is an artist, and
+    // not when it is a song the catalogs found.
+    let q = Query::new("daft punk get lucky");
+    let mut m = Merged::default();
+    m.add(Found {
+        songs: vec![song(
+            "Daft Punk, Pharrell Williams & Nile Rodgers",
+            "Get Lucky",
+            "Random Access Memories",
+            Some(369),
+        )],
+        artists: vec![
+            lastfm("Daft Punk Get Lucky", 2_400),
+            lastfm("DAFT PUNK - GET LUCKY (feat. Charles Butler) - Beats Antique", 300),
+        ],
+        ..Found::default()
+    });
+    assert_eq!(merge::credit_strings(&q, &m), [true, true]);
+    let q = Query::new("velvet orchard");
+    let mut m = Merged::default();
+    m.add(Found {
+        artists: vec![lastfm("Velvet Orchard", 800), lastfm("Velvet Orchard & Friends", 20)],
+        ..Found::default()
+    });
+    assert_eq!(merge::credit_strings(&q, &m), [false, true]);
 }
 
 #[test]

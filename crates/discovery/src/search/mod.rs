@@ -4,8 +4,9 @@
 //!   artists where Deezer is closed) and the saved library, then MusicBrainz (one recording
 //!   search) and Last.fm. Their rows are merged and ranked by `merge`.
 //! - **Fast first:** the answer goes out once every fast source is in, or at 1.5 s (iTunes and
-//!   Deezer take 0.6-1 s from the homelab), so its top result and order come from all of them.
-//!   What arrives later is announced as `search.more`, with only rows not shown yet.
+//!   Deezer take 0.6-1 s from the homelab), so its top result and order come from all of them;
+//!   but never before the catalog's songs, which the order can't do without. What arrives later
+//!   is announced as `search.more`, with only rows not shown yet.
 //! - **One run per query for 10 minutes:** the same words again answer at once, joining a run
 //!   that is still going, with the run's list as shown so far (`Board`): everyone searching the
 //!   same words sees the same rows in the same order. A run with a failed source isn't reused.
@@ -17,6 +18,8 @@ pub mod catalog;
 mod matching;
 pub mod merge;
 mod playlists;
+#[cfg(test)]
+mod query_set;
 pub mod resolve;
 #[cfg(test)]
 mod tests;
@@ -64,6 +67,8 @@ pub struct Searches {
 
 struct Run {
     query: String,
+    /// The source that answers songs (Deezer, or iTunes where Deezer is closed).
+    songs: Source,
     started: Instant,
     state: Mutex<RunState>,
     arrived: Notify,
@@ -199,6 +204,10 @@ impl Searches {
         let sources = sources(svc, &query);
         let run = Arc::new(Run {
             query: query.clone(),
+            songs: match svc.catalog.choice() {
+                Choice::Deezer => Source::Deezer,
+                Choice::Itunes => Source::Itunes,
+            },
             started: Instant::now(),
             state: Mutex::new(RunState {
                 pending: sources.iter().copied().collect(),
@@ -265,16 +274,26 @@ impl Run {
         start(svc, self, Source::MusicBrainzAlbums);
     }
 
-    /// Returns once every fast source is in, or at 1.5 s. Not sooner: an answer with only
-    /// Deezer's artists in fixes the order and the top result before iTunes's songs and albums
-    /// arrive ("blinding lights" led with a small artist of that name).
+    /// Returns once every fast source is in, or at 1.5 s, and once the catalog's songs are in
+    /// whenever they come (a source answers or fails within `SOURCE_LIMIT`). Not sooner: an
+    /// answer with only Deezer's artists in fixes the order and the top result before the songs
+    /// and albums arrive ("blinding lights" led with a small artist of that name; "abbey road",
+    /// with iTunes late, with an artist called Abbey Road).
     async fn first_answer(&self) {
         let until = self.started + FIRST_ANSWER;
         loop {
             // Made before the check, so an arrival in between still wakes it.
             let arrived = self.arrived.notified();
-            let waiting = self.state.lock().await.pending.iter().any(|s| FAST.contains(s));
-            if !waiting || tokio::time::timeout_at(until, arrived).await.is_err() {
+            let (fast, songs) = {
+                let st = self.state.lock().await;
+                (
+                    st.pending.iter().any(|s| FAST.contains(s)),
+                    st.pending.contains(&self.songs),
+                )
+            };
+            if songs {
+                arrived.await;
+            } else if !fast || tokio::time::timeout_at(until, arrived).await.is_err() {
                 return;
             }
         }
@@ -421,8 +440,7 @@ async fn arrive(svc: &Service, run: &Run, source: Source, found: Result<Found>) 
 
 /// `search.catalog`: the query's best tracks, for Soulseek's pre-warming.
 fn publish_catalog(svc: &Service, query: &str, merged: &Merged) {
-    let q = Query::new(query);
-    let fits: Vec<Score> = merged.songs.iter().map(|s| Score::song(&q, s)).collect();
+    let fits = song_scores(&Query::new(query), merged);
     let track_ids = merge::rank(&fits, |i| merged.songs[i].saved.is_some())
         .into_iter()
         .take(CATALOG_TRACKS)
@@ -514,9 +532,9 @@ struct Ranked {
 }
 
 /// Ranks the merged rows for the query; `liked` and `followed` are the listener's own, which
-/// break ties (`merge`). Misspelt artists are left out.
+/// break ties (`merge`). Misspelt artists and Last.fm's credit strings are left out.
 fn rank_rows(q: &Query, m: &Merged, liked: &HashSet<TrackId>, followed: &HashSet<ArtistId>) -> Ranked {
-    let fits: Vec<Score> = m.songs.iter().map(|s| Score::song(q, s)).collect();
+    let fits = song_scores(q, m);
     let songs = merge::rank(&fits, |i| {
         let s = &m.songs[i];
         s.saved.is_some() || liked.contains(&s.id()) || followed.contains(&ArtistId::of(&s.artist))
@@ -526,12 +544,24 @@ fn rank_rows(q: &Query, m: &Merged, liked: &HashSet<TrackId>, followed: &HashSet
     let mut artist_fits: Vec<Score> = m.artists.iter().map(|a| Score::artist(q, a)).collect();
     merge::overshadow(&m.artists, &mut artist_fits);
     let misspelt = merge::misspelt(&m.artists);
+    let credits = merge::credit_strings(q, m);
     let mut artists = merge::rank(&artist_fits, |i| followed.contains(&m.artists[i].id()));
-    artists.retain(|&i| !misspelt[i]);
+    artists.retain(|&i| !misspelt[i] && !credits[i]);
 
     // A query that names a film, show or game: its soundtrack, album or playlist, leads.
     let ranked_albums: Vec<(usize, &merge::AlbumHit)> = albums.iter().map(|&i| (i, &m.albums[i])).collect();
-    let (top, top_album) = match playlists::work_top(q, &ranked_albums, &m.playlists) {
+    // A film named after a song (Bohemian Rhapsody), whose soundtrack is that song's artist's, is
+    // the song.
+    let named_after_song = |album: &merge::AlbumHit| {
+        songs.first().is_some_and(|&i| {
+            fits[i].fit == Fit::Exact
+                && !fits[i].version
+                && lull_core::ids::loose_artist(&m.songs[i].artist) == lull_core::ids::loose_artist(&album.artist)
+        })
+    };
+    let work = playlists::work_top(q, &ranked_albums, &m.playlists)
+        .filter(|w| !matches!(w, playlists::WorkTop::Album(i) if named_after_song(&m.albums[*i])));
+    let (top, top_album) = match work {
         Some(playlists::WorkTop::Album(i)) => (Some(Top::of("album", m.albums[i].id().0)), Some(i)),
         Some(playlists::WorkTop::Playlist(i)) => (Some(Top::of("playlist", m.playlists[i].link())), None),
         None => {
@@ -556,6 +586,13 @@ fn rank_rows(q: &Query, m: &Merged, liked: &HashSet<TrackId>, followed: &HashSet
         artists,
         playlists: playlists::rank(q, &m.playlists),
     }
+}
+
+/// The songs' scores, their popularity raised by their other takes (`merge::known`).
+fn song_scores(q: &Query, m: &Merged) -> Vec<Score> {
+    let mut scores: Vec<Score> = m.songs.iter().map(|s| Score::song(q, s)).collect();
+    merge::known(m, &mut scores);
+    scores
 }
 
 /// The rows a run has shown (positions in `Merged`) in the order shown: the first answer's best,

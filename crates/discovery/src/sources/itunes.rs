@@ -24,7 +24,7 @@ use tokio::time::Instant;
 use super::cache::{Cache, DAY};
 use super::{AlbumSource, ArtistSource, Song, year};
 use crate::artist::discography::{Entry, Origin};
-use crate::search::merge::{AlbumHit, ArtistHit, Found, SongHit};
+use crate::search::merge::{self, AlbumHit, ArtistHit, Found, SongHit};
 
 const SERVICE: &str = "iTunes";
 const API: &str = "https://itunes.apple.com/search";
@@ -32,11 +32,12 @@ const LOOKUP: &str = "https://itunes.apple.com/lookup";
 /// Tracklists are kept this long (seconds).
 const KEEP_TRACKLIST_S: i64 = 7 * DAY;
 const BUDGET: usize = 18;
-/// Calls of the budget album searches leave to songs.
+/// Calls of the budget that work nobody is waiting on (artist pages' catalogs, share links,
+/// covers, link imports) leaves to the listener's searches.
 const SONGS_RESERVE: usize = 6;
 const BUDGET_WINDOW: Duration = Duration::from_secs(60);
-/// The longest a search's album call waits for its turn: well within the 8 s search gives a
-/// source, so it never holds back the songs.
+/// The longest a search's album call waits for its turn when searches have spent the budget:
+/// the first answer waits for the songs, which arrive with it.
 const ALBUM_WAIT: Duration = Duration::from_secs(5);
 /// Songs and albums asked for per query.
 const SONGS: &str = "25";
@@ -104,12 +105,7 @@ impl Itunes {
                 .unwrap_or_else(|_| Err(Error::unavailable(SERVICE, "lull's calls for this minute are spent")))
         };
         let (songs, albums) = tokio::join!(self.find(q, Entity::Song), albums);
-        let mut found = songs?;
-        match albums {
-            Ok(albums) => found.albums.extend(albums.albums),
-            Err(e) => found.problem = Some(format!("its album search failed: {e}")),
-        }
-        Ok(found)
+        Ok(answer(q, songs?, albums))
     }
 
     /// One search call, cached.
@@ -124,7 +120,7 @@ impl Itunes {
         }
         self.wait_turn(match entity {
             Entity::Song => Need::Whole,
-            Entity::Album => Need::Spare,
+            Entity::Album => Need::Albums,
         })
         .await?;
         let body: Value = self
@@ -543,8 +539,11 @@ pub enum Entity {
 pub enum Need {
     /// A search's songs, an artist page's store lookup: may use the whole budget.
     Whole,
-    /// A search's albums, an artist page's catalog, a share link: what leaves `SONGS_RESERVE`
-    /// for songs.
+    /// A search's albums: the whole budget too, after the songs. The listener is waiting on
+    /// them: the songs arrive with them, and an answer without them fixes a search's top
+    /// result without its albums (`search::first_answer`).
+    Albums,
+    /// An artist page's catalog, a share link: what leaves `SONGS_RESERVE` for searches.
     Spare,
     /// Work nobody is looking at (matching a playlist link's songs): spare calls, served last.
     Background,
@@ -553,7 +552,7 @@ pub enum Need {
 impl Need {
     fn up_to(self) -> usize {
         match self {
-            Need::Whole => BUDGET,
+            Need::Whole | Need::Albums => BUDGET,
             Need::Spare | Need::Background => BUDGET - SONGS_RESERVE,
         }
     }
@@ -706,6 +705,19 @@ pub fn songs(body: Value) -> Result<Found> {
     Ok(found)
 }
 
+/// A search's answer from its song and album calls: the albums its songs are on, then the ones
+/// found by name; songs found for their album's name lend it their popularity
+/// (`merge::credit_albums`).
+pub fn answer(q: &str, songs: Found, albums: Result<Found>) -> Found {
+    let mut found = songs;
+    match albums {
+        Ok(albums) => found.albums.extend(albums.albums),
+        Err(e) => found.problem = Some(format!("its album search failed: {e}")),
+    }
+    merge::credit_albums(&merge::Query::new(q), &mut found);
+    found
+}
+
 /// A `lookup?entity=song` answer as the album's songs, in order. The album's own name and artist
 /// are the page's to set: these are Apple's.
 pub fn tracklist(body: Value) -> Result<Vec<Song>> {
@@ -811,11 +823,12 @@ mod budget_tests {
     }
 
     #[test]
-    fn spare_calls_leave_the_reserve_to_the_songs_of_searches() {
+    fn spare_calls_leave_the_reserve_to_searches() {
         let (mut b, now) = (Budget::default(), Instant::now());
         assert_eq!((0..25).filter(|_| turn(&mut b, Need::Spare, now)).count(), 12);
         assert!(!turn(&mut b, Need::Background, now));
-        assert_eq!((0..25).filter(|_| turn(&mut b, Need::Whole, now)).count(), 6);
+        assert!(turn(&mut b, Need::Albums, now), "a search's albums use the reserve");
+        assert_eq!((0..25).filter(|_| turn(&mut b, Need::Whole, now)).count(), 5);
         assert!(!b.take(now + Duration::from_secs(59)));
         assert!(turn(&mut b, Need::Spare, now + BUDGET_WINDOW));
     }
@@ -828,7 +841,7 @@ mod budget_tests {
         }
         let import = b.join(Need::Background);
         let typed_on_the_way = b.join(Need::Whole);
-        let albums = b.join(Need::Spare);
+        let albums = b.join(Need::Albums);
         let ended_on = b.join(Need::Whole);
         assert_eq!(b.take_turn(ended_on, now), Err(now + BUDGET_WINDOW));
         let later = now + BUDGET_WINDOW;
