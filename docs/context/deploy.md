@@ -14,7 +14,7 @@ One compose file (`deploy/compose.yaml`) and one env file (`.env`, copied from `
 3. `docker compose up -d`, then open `http://<host>:8080` (`PORT`).
 
 **What runs:**
-- **`lull`** is the UI and API. Its data is in the `lull` volume: back it up. It mounts the music folder read-write, because saves are written there.
+- **`lull`** is the UI and API. Its data is in the `lull` volume: back it up. It mounts the music folder read-write, because saves are written there, and your Winamp skins folder (`SKINS_DIR`, optional, an empty volume when unset) read-only at `/skins` (`LULL_SKINS_DIR`, [skins.md](skins.md#your-skins-folder)).
 - **`init`** runs once per start: it hands fresh docker volumes to `RUN_AS`, so nothing runs as root.
 - **slskd's web UI** (port 5030) is never published; lull reaches it inside the compose network.
 
