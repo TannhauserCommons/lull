@@ -19,6 +19,9 @@ out() { echo "$1=$2" >> "${GITHUB_OUTPUT:-/dev/stdout}"; }
 CONTEXT=queue
 SPLIT="failed in a batch; trying alone"
 MAX_BATCH=10
+# More commits than a topic holds: a branch made from history main no longer has (a rewrite), which a rebase
+# would replay whole.
+MAX_TOPIC=100
 
 status() { # <sha> <state> <description> [url]
   gh api -X POST "repos/$REPO/statuses/$1" -f context="$CONTEXT" -f state="$2" \
@@ -77,8 +80,13 @@ EOF
   cand=$base branches=""
   while read -r topic tip; do
     [ -n "$topic" ] || continue
+    if ! fork=$(git merge-base "$base" "$tip") || [ "$(git rev-list --count "$fork..$tip")" -gt "$MAX_TOPIC" ]; then
+      echo "queue/$topic: not made from main's history"
+      status "$tip" failure "not made from main's history: rebase your commits onto origin/main and push again"
+      continue
+    fi
     git checkout -q --detach "$tip"
-    if git rebase -q --onto "$cand" "$(git merge-base "$base" "$tip")" 2>/dev/null; then
+    if git rebase -q --onto "$cand" "$fork" 2>/dev/null; then
       new=$(git rev-parse HEAD)
       if [ "$new" = "$cand" ]; then
         echo "queue/$topic: already in main"

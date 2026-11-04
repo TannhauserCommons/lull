@@ -52,9 +52,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: cp scripts/queue.sh "$RUNNER_TEMP/" && sh "$RUNNER_TEMP/queue.sh" plan
 
+  # A called workflow gets at most its caller's permissions, checked before any job is skipped: ci's image job
+  # (pushes to main only) and app's release job (tags only) never run here, but must be allowed.
   ci:
     needs: plan
     if: needs.plan.outputs.candidate != '' && needs.plan.outputs.ci == 'true'
+    permissions:
+      contents: read
+      packages: write
     uses: ./.github/workflows/ci.yml
     with:
       ref: ${{ needs.plan.outputs.candidate }}
@@ -69,6 +74,8 @@ jobs:
   app:
     needs: plan
     if: needs.plan.outputs.candidate != '' && (needs.plan.outputs.app == 'true' || needs.plan.outputs.android == 'true')
+    permissions:
+      contents: write
     uses: ./.github/workflows/app.yml
     with:
       ref: ${{ needs.plan.outputs.candidate }}
