@@ -5,6 +5,7 @@
 
 mod archive;
 mod package;
+mod pictures;
 mod store;
 mod watch;
 
@@ -22,6 +23,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::package::{BUILT_IN, Manifest};
+use crate::pictures::Pictures;
 use crate::store::Store;
 
 pub const MIGRATIONS: Migrations = Migrations {
@@ -40,6 +42,8 @@ const BUILT_IN_MANIFESTS: [&str; 5] = [
 
 pub struct Service {
     store: Store,
+    /// The pictures lull made of each theme (ADR-0080), beside the packages
+    pictures: Pictures,
     /// One writer at a time: an import and a Theme Studio save of the same theme must not interleave.
     writing: tokio::sync::Mutex<()>,
 }
@@ -50,8 +54,13 @@ pub async fn start(ctx: &Ctx) -> Result<Arc<Service>> {
         .await
         .map_err(|e| Error::internal(format!("create {}: {e}", dir.display())))?;
     watch::spawn(ctx, dir.clone());
+    let pictures = ctx.config.data_dir.join("theme-pictures");
+    tokio::fs::create_dir_all(&pictures)
+        .await
+        .map_err(|e| Error::internal(format!("create {}: {e}", pictures.display())))?;
     Ok(Arc::new(Service {
         store: Store { dir },
+        pictures: Pictures { dir: pictures },
         writing: tokio::sync::Mutex::new(()),
     }))
 }
@@ -61,6 +70,7 @@ pub fn router(svc: Arc<Service>) -> Router {
         .route("/api/themes", get(list).post(import))
         .route("/api/themes/{id}", get(export).put(replace).delete(remove))
         .route("/api/themes/{id}/{*path}", get(file).put(put_file))
+        .route("/api/theme-pictures/{id}/{name}", get(picture).put(put_picture))
         .layer(DefaultBodyLimit::max(package::MAX_PACKAGE_BYTES + 64 * 1024))
         .with_state(svc)
 }
@@ -73,10 +83,15 @@ async fn list(State(svc): State<Arc<Service>>) -> Result<Json<Value>> {
             serde_json::from_str(raw).map_err(|e| Error::internal(format!("built-in theme.json: {e}")))?;
         items.push(item(&m, true)?);
     }
-    let stored = blocking(move || svc.store.list()).await?;
-    for m in stored {
-        items.push(item(&m, false)?);
-    }
+    let stored = blocking(move || {
+        svc.store
+            .list()?
+            .iter()
+            .map(|m| svc.listed(m))
+            .collect::<Result<Vec<_>>>()
+    })
+    .await?;
+    items.extend(stored);
     Ok(Json(json!({ "items": items })))
 }
 
@@ -84,6 +99,18 @@ fn item(m: &Manifest, built_in: bool) -> Result<Value> {
     let mut v = serde_json::to_value(m).map_err(|e| Error::internal(e.to_string()))?;
     v["builtIn"] = json!(built_in);
     Ok(v)
+}
+
+impl Service {
+    /// A stored theme as the hub answers with it: its manifest, the `rev` of its files now and the
+    /// modes lull has a picture of for that rev (ADR-0080).
+    fn listed(&self, m: &Manifest) -> Result<Value> {
+        let rev = pictures::rev(&self.store.dir.join(&m.id));
+        let mut v = item(m, false)?;
+        v["pictures"] = json!(self.pictures.made(&m.id, &rev));
+        v["rev"] = json!(rev);
+        Ok(v)
+    }
 }
 
 #[derive(Deserialize)]
@@ -106,10 +133,11 @@ async fn import(State(svc): State<Arc<Service>>, Query(q): Query<ImportQuery>, b
                 m.name, m.id
             )));
         }
-        svc.store.put(files)
+        let m = svc.store.put(files)?;
+        svc.listed(&m)
     })
     .await?;
-    Ok(Json(item(&manifest, false)?))
+    Ok(Json(manifest))
 }
 
 /// `PUT /api/themes/{id}` (a `.lulltheme`): creates or replaces that theme.
@@ -126,10 +154,11 @@ async fn replace(State(svc): State<Arc<Service>>, Path(id): Path<String>, body: 
                 m.id
             )));
         }
-        svc.store.put(files)
+        let m = svc.store.put(files)?;
+        svc.listed(&m)
     })
     .await?;
-    Ok(Json(item(&manifest, false)?))
+    Ok(Json(manifest))
 }
 
 /// `PUT /api/themes/{id}/{path}` (Theme Studio): one file. A new theme starts with its theme.json
@@ -155,17 +184,22 @@ async fn put_file(
         if m.id != id {
             return Err(Error::BadRequest(format!("theme.json says id {:?}, not {id:?}", m.id)));
         }
-        svc.store.put(files)
+        let m = svc.store.put(files)?;
+        svc.listed(&m)
     })
     .await?;
-    Ok(Json(item(&manifest, false)?))
+    Ok(Json(manifest))
 }
 
 async fn remove(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Result<StatusCode> {
     let id = own_id(&id)?;
     let _w = svc.writing.lock().await;
     let svc = svc.clone();
-    blocking(move || svc.store.delete(&id)).await?;
+    blocking(move || {
+        svc.store.delete(&id)?;
+        svc.pictures.delete(&id)
+    })
+    .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -218,6 +252,55 @@ async fn file(
         data,
     )
         .into_response())
+}
+
+/// `GET /api/theme-pictures/{id}/{rev}-{mode}.webp`: a picture lull made of the theme. Its name
+/// changes with the theme, so it never needs asking again.
+async fn picture(State(svc): State<Arc<Service>>, Path((id, name)): Path<(String, String)>) -> Result<Response> {
+    let id = own_id(&id)?;
+    let (rev, mode) = pictures::parse_name(&name)
+        .map(|(rev, mode)| (rev.to_owned(), mode))
+        .ok_or_else(|| Error::NotFound(format!("theme {id} has no picture {name}")))?;
+    let data = blocking(move || svc.pictures.file(&id, &rev, mode)).await?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, "image/webp"),
+            (header::CACHE_CONTROL, "private, max-age=31536000, immutable"),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        ],
+        data,
+    )
+        .into_response())
+}
+
+/// `PUT /api/theme-pictures/{id}/{rev}-{mode}.webp` (a 320×200 WebP a page drew): kept while `rev`
+/// is still the theme's; 409 once its files changed, so a picture of an older theme is never kept.
+async fn put_picture(
+    State(svc): State<Arc<Service>>,
+    Path((id, name)): Path<(String, String)>,
+    body: Bytes,
+) -> Result<StatusCode> {
+    let id = own_id(&id)?;
+    let (rev, mode) = pictures::parse_name(&name)
+        .map(|(rev, mode)| (rev.to_owned(), mode))
+        .ok_or_else(|| Error::BadRequest(format!("{name:?} is not <rev>-<day|night>.webp")))?;
+    let _w = svc.writing.lock().await;
+    let svc = svc.clone();
+    blocking(move || {
+        let m = svc.store.manifest(&id)?;
+        if !m.modes.contains(&mode) {
+            return Err(Error::BadRequest(format!("{} has no {} mode", m.name, mode.word())));
+        }
+        if pictures::rev(&svc.store.dir.join(&id)) != rev {
+            return Err(Error::Conflict(format!(
+                "{} changed while its picture was drawn; draw it again",
+                m.name
+            )));
+        }
+        svc.pictures.put(&id, &rev, mode, &body)
+    })
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// A listener's theme id: well formed, and not one of the built-ins (they are static files of the UI).

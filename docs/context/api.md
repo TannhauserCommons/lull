@@ -226,12 +226,14 @@ ADR-0004; format, hooks and slots: [themes.md](../themes.md). Built-in designs a
 
 | Method + path | Returns |
 |---|---|
-| `GET /api/themes` | `{ items: [{ id, name, author, api, extends, shell, swatches, modes, description, preview, slots, coverVariety, builtIn }] }`: the five designs, then the listener's themes (a folder whose `theme.json` no longer reads is left out and logged) |
+| `GET /api/themes` | `{ items: [{ id, name, author, api, extends, shell, swatches, modes, description, preview, slots, coverVariety, builtIn }] }`: the five designs, then the listener's themes (a folder whose `theme.json` no longer reads is left out and logged), each with `rev` (16 hex: its files now and this lull's version) and `pictures` (the modes lull has a picture of for that `rev`, ADR-0080) |
 | `GET /api/themes/{id}/{path}` | A file of a stored theme (`theme.json`, `theme.css`, `slots/*.html`, `assets/*`), ETag'd, `no-cache`, served under a sandboxing CSP |
-| `POST /api/themes[?replace=true]` (body: a `.lulltheme` zip, up to 16 MB) | 200 manifest (with `builtIn: false`): stored under the id its `theme.json` names. 409 when that id exists, unless `replace` |
+| `POST /api/themes[?replace=true]` (body: a `.lulltheme` zip, up to 16 MB) | 200 manifest (with `builtIn: false`, `rev` and `pictures`): stored under the id its `theme.json` names. 409 when that id exists, unless `replace` |
 | `PUT /api/themes/{id}` (body: a `.lulltheme`) or `PUT /api/themes/{id}/{path}` (one file, from Theme Studio) | 200 manifest. A new theme starts with its `theme.json` (it gets an empty `theme.css`). Every write is checked as the whole package it makes: 400 names what's wrong (missing `theme.json`, an unknown field, a newer `api`, a script or handler, an outside URL, a file with no place in a theme) |
-| `DELETE /api/themes/{id}` | 204 |
+| `DELETE /api/themes/{id}` | 204; its pictures go too |
 | `GET /api/themes/{id}.lulltheme` | The package as a zip, for sharing |
+| `GET /api/theme-pictures/{id}/{rev}-{mode}.webp` | The picture lull made of the theme for its picker card, cached as immutable (the name changes with the theme). Kept in `<data_dir>/theme-pictures/<id>/`, outside the package |
+| `PUT /api/theme-pictures/{id}/{rev}-{mode}.webp` (body: a 320×200 WebP, up to 256 KB) | 204; the theme's pictures of other revs are deleted. 409 when `rev` is no longer the theme's (it changed while the picture was drawn); 400 for anything but a 320×200 WebP or a mode the theme lacks |
 
 The hub derives a stored manifest's `slots` from `slots/`. Any change to a stored theme's files, by these endpoints or on disk, publishes `theme.changed` within a second.
 

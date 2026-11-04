@@ -86,7 +86,7 @@ pub enum Mode {
 }
 
 impl Mode {
-    fn word(self) -> &'static str {
+    pub(crate) fn word(self) -> &'static str {
         match self {
             Mode::Day => "day",
             Mode::Night => "night",

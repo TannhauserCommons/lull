@@ -46,8 +46,11 @@ impl Store {
         self.dir.join(id).join("theme.json").is_file()
     }
 
-    fn manifest(&self, id: &str) -> Result<Manifest> {
-        let raw = fs::read(self.dir.join(id).join("theme.json")).map_err(io_err)?;
+    pub fn manifest(&self, id: &str) -> Result<Manifest> {
+        let raw = fs::read(self.dir.join(id).join("theme.json")).map_err(|e| match e.kind() {
+            io::ErrorKind::NotFound => Error::NotFound(format!("no theme {id}")),
+            _ => io_err(e),
+        })?;
         let m: Manifest = serde_json::from_slice(&raw).map_err(|e| Error::BadRequest(format!("theme.json: {e}")))?;
         if m.id != id {
             return Err(Error::BadRequest(format!(
