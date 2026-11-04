@@ -10,5 +10,5 @@ npx playwright install chromium webkit >/dev/null
 [ -f ../../web/vendor/webamp/webamp.bundle.min.js ] || sh ../../scripts/vendor-web.sh >/dev/null
 status=0
 npx playwright test -c gates/playwright.config.mjs --project perf --workers 1 "$@" || status=1
-npx playwright test -c gates/playwright.config.mjs --project screens --project a11y --project covers --project fit --project on-use --project now --project lists --project app-pages --project loops --project loops-webkit "$@" || status=1
+npx playwright test -c gates/playwright.config.mjs --project screens --project a11y --project covers --project fit --project on-use --project now --project lists --project app-pages --project theme-loops --project loops --project loops-webkit "$@" || status=1
 exit $status

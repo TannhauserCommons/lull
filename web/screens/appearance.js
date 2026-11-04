@@ -139,9 +139,49 @@
         }
         if (r.status !== 200) throw new Error(r.body.message || 'The hub answered ' + r.status);
         App.toast('Added ' + r.body.name, { kind: 'ok', icon: 'sparkle', action: 'Use it', onAction: function () { App.setPref('design', r.body.id); } });
+        loopsAfterImport(r.body);
         return Designs.refresh().then(function () { if (onAppearance()) App.refresh(); });
       })
       .catch(function (err) { App.toast('Couldn\'t import ' + file.name + ': ' + err.message, { kind: 'error' }); });
+  }
+  /* ---------- loops that never end and name no rate (designs/loops.js, docs/themes.md, Drawing cheaply) ----------
+     App.themeLoops(css, base) resolves to the hints for a theme's CSS, read beside what its loops share the page with:
+     lull's components.css and the built-in design it extends, each fetched once. Theme Studio checks its draft with it;
+     an imported theme is checked once it is in, and offered the rates (a hint: it works either way) */
+  var beside = {};
+  function besideText(url) {
+    return beside[url] || (beside[url] = fetch(url).then(function (r) {
+      if (!r.ok) throw new Error(url + ' answered ' + r.status);
+      return r.text();
+    }).catch(function (err) { delete beside[url]; throw err; }));
+  }
+  App.themeLoops = function (css, base) {
+    if (Designs.builtIn.indexOf(base) < 0) base = null;
+    var also = [besideText(Designs.base + '../components.css')].concat(base ? [besideText(Designs.base + base + '/theme.css')] : []);
+    return Promise.all([App.needScript(Designs.base + 'loops.js', 'the loop check')].concat(also)).then(function (got) {
+      return LullLoops.find(css, { also: got.slice(1), base: base });
+    });
+  };
+  function loopsAfterImport(item) {
+    var path = '/api/themes/' + encodeURIComponent(item.id) + '/theme.css';
+    M.api(path).then(function (css) {
+      return App.themeLoops(css, item.extends).then(function (hints) {
+        if (!hints.length) return;
+        var one = hints.length === 1;
+        var d = App.openDialog({ title: (one ? 'A loop' : hints.length + ' loops') + ' in ' + item.name + ' could draw less',
+          body: html`<p class="prose">${LullLoops.cost(hints.length)} ${item.name} works as it is; a rate makes it lighter on this device.</p>
+            <ul class="studio__warnings" role="list">${hints.map(function (h) {
+              return html`<li class="studio__warn">${icon('warning', null, 'ic-16')}<span><b>${h.animation || 'A loop'}</b> on <code>${h.selector}</code>: ${LullLoops.advice(h)}</span></li>`;
+            })}</ul>`,
+          foot: html`<button class="btn" data-close>Not now</button><button class="btn btn--primary" data-add-rates>${one ? 'Add it' : 'Add them'}</button>` });
+        $('[data-add-rates]', d.el).addEventListener('click', function () {
+          d.close();
+          M.api(path, { method: 'PUT', body: LullLoops.apply(css, hints) }).then(function () {
+            App.toast((one ? 'Added its rate to ' : 'Added their rates to ') + item.name, { kind: 'ok', icon: 'check' });
+          }, function (err) { App.toast('Couldn\'t add the rates: ' + err.message, { kind: 'error' }); });
+        });
+      });
+    }).catch(function (err) { console.warn('lull: couldn\'t check the loops in ' + item.name, err); });
   }
   document.addEventListener('change', function (e) {
     var f = e.target.closest && e.target.closest('[data-theme-file]');

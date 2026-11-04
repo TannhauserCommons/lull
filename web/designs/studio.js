@@ -72,6 +72,7 @@
           <p class="field__help" id="studio-css-help">Any CSS, loaded after the design you start from, so plain selectors win. Tab indents, Ctrl+S saves. Hooks and examples: docs/themes.md.</p>
         </div>
         <section class="studio__check" aria-labelledby="studio-check-h"><h3 class="studio__h" id="studio-check-h">Contrast</h3><ul class="studio__warnings" role="list" data-studio-warnings><li>${'Checking...'}</li></ul></section>
+        <section class="studio__check" aria-labelledby="studio-loops-h"><h3 class="studio__h" id="studio-loops-h">Loops</h3><p class="field__help" data-studio-loops-cost hidden></p><ul class="studio__warnings" role="list" data-studio-loops aria-live="polite"><li>${'Checking...'}</li></ul></section>
       </div>
       <div class="studio__stage">
         <div class="studio__bar">
@@ -151,6 +152,7 @@
     paintTimer = setTimeout(function () {
       if (!S) return;
       S.frames.forEach(paintFrame);
+      checkLoops();
       setTimeout(function () { if (S) { readTokens(); checkContrast(); } }, 120);
     }, 160);
   }
@@ -202,6 +204,8 @@
     }
     var tab = b.getAttribute('data-studio-tab');
     if (tab) { showTab(tab); return; }
+    var loop = b.getAttribute('data-studio-loop');
+    if (loop) { addRate(+loop); return; }
     var reset = b.getAttribute('data-token-reset');
     if (reset) { setToken(reset, b.getAttribute('data-mode'), null); return; }
     var act = b.getAttribute('data-studio-act');
@@ -354,6 +358,26 @@
       });
     });
     list.innerHTML = String(out.length ? html`${out}` : html`<li class="studio__ok">${icon('check', null, 'ic-16')}<span>Every text and accent pair reads well${S.draft.modes.length > 1 ? ' in day and night' : ''}.</span></li>`);
+  }
+
+  /* ---------- loops: each that never ends and names no rate, with the rate to add (designs/loops.js) ---------- */
+  function checkLoops() {
+    var css = S.draft.css;
+    App.themeLoops(css, S.draft.extends).then(function (hints) {
+      var list = S && S.draft.css === css && $('[data-studio-loops]', S.el); if (!list) return;
+      S.loops = { css: css, hints: hints };
+      var cost = $('[data-studio-loops-cost]', S.el);
+      cost.textContent = hints.length ? LullLoops.cost(hints.length) : ''; cost.hidden = !hints.length;
+      list.innerHTML = String(hints.length ? html`${hints.map(function (h, i) {
+        return html`<li class="studio__warn">${icon('warning', null, 'ic-16')}<span><b>${h.animation || 'A loop'}</b> on <code>${h.selector}</code>, line ${h.line}. ${LullLoops.advice(h)}</span>
+          <button type="button" class="btn btn--sm" data-studio-loop="${i}" aria-label="${'Add --loop-fps: ' + h.fps + ' to ' + h.selector}">Add it</button></li>`;
+      })}` : html`<li class="studio__ok">${icon('check', null, 'ic-16')}<span>Every loop that never ends names its rate.</span></li>`);
+    }, function (err) { console.warn('lull: couldn\'t check the theme\'s loops', err); });
+  }
+  function addRate(i) {
+    var h = S.loops && S.loops.css === S.draft.css && S.loops.hints[i]; if (!h) return;
+    setCss(LullLoops.apply(S.draft.css, [h]), true);
+    App.announce('Added --loop-fps: ' + h.fps + ' to ' + h.selector);
   }
 
   /* ---------- save: theme.json, then theme.css (the hub checks the whole package each time) ---------- */

@@ -47,7 +47,7 @@ The listener wants to restyle lull freely, and to let other people write themes 
 - start from any design;
 - edit tokens with pickers and sliders, with every screen previewing live in day and night;
 - edit the full CSS;
-- see contrast warnings;
+- see contrast warnings, and loops that name no rate, with an Add it for the rate (an imported theme is offered the same);
 - import by drag and drop, and export.
 
 ## Alternatives
