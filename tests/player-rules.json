@@ -1,0 +1,176 @@
+{
+  "note": "The player's rules as cases, each section one function of web/player-rules.js. The page's player (web/app.js) and the desktop's native Classic player (app/src/desktop/classic_native/rules.rs and the modules that use it) both decide by these rules: tests/web/player-rules.test.mjs runs every case against player-rules.js, and the native engine's tests run every case against its own code, so a rule changed on one side fails CI until the other matches. A section the native player doesn't decide for itself (it takes the page's answer) says so in `native`.",
+  "constants": {
+    "TICK_MS": 250,
+    "SKIP_FAILED_MS": 2500,
+    "PREFETCH_MS": 800,
+    "LISTEN_GAP_S": 1.5,
+    "PREVIOUS_RESTARTS_S": 3,
+    "GAPLESS_WITHIN_S": 2,
+    "ENDED_EARLY_S": 2,
+    "RADIO_AHEAD": 3,
+    "RADIO_STEER": 0.4,
+    "LOUDNESS_AFTER": 12,
+    "LOUDNESS_MIN_DB": -12,
+    "LOUDNESS_MAX_DB": 6,
+    "SWITCH_LEAD_S": 45,
+    "SWITCH_AHEAD_S": 20,
+    "SWITCH_TRIES": 3,
+    "SWITCH_FADE_S": 0.2,
+    "SWITCH_QUIET_S": 3,
+    "SWITCH_GLIDE_S": 1.5
+  },
+  "nextIndex": [
+    { "index": 0, "length": 3, "repeat": "off", "auto": false, "expect": 1 },
+    { "index": 2, "length": 3, "repeat": "off", "auto": true, "expect": -1 },
+    { "index": 2, "length": 3, "repeat": "all", "auto": true, "expect": 0 },
+    { "index": 1, "length": 3, "repeat": "one", "auto": true, "expect": 1 },
+    { "index": 1, "length": 3, "repeat": "one", "auto": false, "expect": 2 },
+    { "index": 2, "length": 3, "repeat": "one", "auto": false, "expect": -1 },
+    { "index": 0, "length": 1, "repeat": "all", "auto": false, "expect": 0 }
+  ],
+  "previous": [
+    { "index": 2, "pos": 3.01, "expect": -1 },
+    { "index": 2, "pos": 3, "expect": 1 },
+    { "index": 0, "pos": 1, "expect": -1 },
+    { "index": 1, "pos": 0, "expect": 0 }
+  ],
+  "cycleRepeat": [
+    { "mode": "off", "expect": "all" },
+    { "mode": "all", "expect": "one" },
+    { "mode": "one", "expect": "off" }
+  ],
+  "listening": {
+    "note": "One queue entry's time reports [position, playing, waiting], as the output sends them. The play starts at the first report that is playing and not waiting; that report adds nothing, nor does the next; after that each step forward shorter than LISTEN_GAP_S while playing adds itself. `starts`: the report that starts the play (-1: none).",
+    "cases": [
+      { "reports": [[0, true, true], [0, true, false], [0.25, true, false], [0.5, true, false], [0.75, true, false]], "starts": 1, "heard": 0.5 },
+      { "reports": [[0, false, false], [0, false, false]], "starts": -1, "heard": 0 },
+      { "reports": [[10, true, false], [10.25, true, false], [10.5, true, false], [40, true, false], [40.25, true, false], [40.5, false, false], [40.75, true, false], [39, true, false], [39.25, true, false]], "starts": 0, "heard": 1 },
+      { "reports": [[0, true, false], [1, true, false], [2.4, true, false], [3.9, true, false], [5.39, true, false]], "starts": 0, "heard": 2.89 }
+    ]
+  },
+  "playStart": [
+    { "trackId": "t1", "duration": 245.4, "recommended": true, "expect": { "trackId": "t1", "recommended": true, "duration": 245 } },
+    { "trackId": "t2", "duration": null, "recommended": false, "expect": { "trackId": "t2", "recommended": false } },
+    { "trackId": "t3", "duration": 0, "recommended": false, "expect": { "trackId": "t3", "recommended": false } }
+  ],
+  "playEnd": [
+    { "heard": 12.5, "how": "completed", "expect": { "playedS": 13, "completed": true, "skipped": false } },
+    { "heard": 12.49, "how": "skipped", "expect": { "playedS": 12, "completed": false, "skipped": true } },
+    { "heard": 0, "how": "stopped", "expect": { "playedS": 0, "completed": false, "skipped": false } }
+  ],
+  "outputVolume": [
+    { "volume": 0.7, "muted": false, "expect": 0.49 },
+    { "volume": 1, "muted": false, "expect": 1 },
+    { "volume": 0.7, "muted": true, "expect": 0 }
+  ],
+  "replayGainDb": {
+    "native": "takes the page's answer: the hand-off's gainDb for each song (web/screens/classic.js)",
+    "cases": [
+      { "replayGain": { "track": -6.5, "album": -4 }, "mode": "replaygain-track", "expect": -6.5 },
+      { "replayGain": { "track": -6.5, "album": -4 }, "mode": "replaygain-album", "expect": -4 },
+      { "replayGain": { "track": -6.5, "album": -4 }, "mode": "loudness", "expect": null },
+      { "replayGain": null, "mode": "replaygain-track", "expect": null }
+    ]
+  },
+  "gain": [
+    { "db": 0, "expect": 1 },
+    { "db": -6, "expect": 0.5011872336272722 },
+    { "db": 6, "expect": 1.9952623149688795 }
+  ],
+  "loudness": [
+    { "targetDb": -14, "rms": 0.1, "readings": 11, "expect": null },
+    { "targetDb": -14, "rms": 0.1, "readings": 12, "expect": 1.9952623149688795 },
+    { "targetDb": -14, "rms": 0.4, "readings": 40, "expect": 0.4988155787422199 },
+    { "targetDb": -18, "rms": 0.9, "readings": 40, "expect": 0.25118864315095796 },
+    { "targetDb": -11, "rms": 0.00005, "readings": 40, "expect": null }
+  ],
+  "crossfadeS": [
+    { "repeat": "off", "crossfade": 6, "expect": 6 },
+    { "repeat": "one", "crossfade": 6, "expect": 0 },
+    { "repeat": "all", "crossfade": 0, "expect": 0 }
+  ],
+  "preloadLead": [
+    { "crossfade": 0, "soulseek": false, "received": 1, "expect": 90 },
+    { "crossfade": 0, "soulseek": true, "received": 0.5, "expect": 30 },
+    { "crossfade": 0, "soulseek": true, "received": 1, "expect": 90 },
+    { "crossfade": 20, "soulseek": true, "received": 0.2, "expect": 35 }
+  ],
+  "preloadNow": [
+    { "lead": 90, "duration": 200, "pos": 109, "expect": false },
+    { "lead": 90, "duration": 200, "pos": 110, "expect": true },
+    { "lead": 30, "duration": null, "pos": 10, "expect": false }
+  ],
+  "gapless": [
+    { "duration": 200, "pos": 198, "expect": true },
+    { "duration": 200, "pos": 197.9, "expect": false },
+    { "duration": null, "pos": 50, "expect": true }
+  ],
+  "endedEarly": [
+    { "soulseek": true, "complete": false, "duration": 200, "pos": 150, "expect": true },
+    { "soulseek": true, "complete": false, "duration": 200, "pos": 198, "expect": false },
+    { "soulseek": true, "complete": true, "duration": 200, "pos": 150, "expect": false },
+    { "soulseek": false, "complete": false, "duration": 200, "pos": 150, "expect": false }
+  ],
+  "fade": [
+    { "k": 0, "expect": [1, 0] },
+    { "k": 0.5, "expect": [0.7071067811865476, 0.7071067811865475] },
+    { "k": 1, "expect": [6.123233995736766e-17, 1] }
+  ],
+  "crossfadeLengthS": [
+    { "left": 6, "expect": 6 },
+    { "left": 0.4, "expect": 1 }
+  ],
+  "upcoming": [
+    { "index": 0, "ids": ["a", "b", "c", "d"], "shuffle": false, "repeat": "off", "saved": ["c"], "n": 2, "expect": ["b", "d"] },
+    { "index": 0, "ids": ["a", "b", "b", "a", "e"], "shuffle": false, "repeat": "off", "saved": [], "n": 3, "expect": ["b", "e"] },
+    { "index": 1, "ids": ["a", "b", "c", "d"], "shuffle": true, "repeat": "off", "saved": [], "n": 3, "expect": ["c"] },
+    { "index": 3, "ids": ["a", "b", "c", "d"], "shuffle": true, "repeat": "all", "saved": [], "n": 2, "expect": ["a"] },
+    { "index": 0, "ids": ["a", "b"], "shuffle": false, "repeat": "one", "saved": [], "n": 2, "expect": [] },
+    { "index": 0, "ids": ["a", "b"], "shuffle": false, "repeat": "off", "saved": [], "n": 0, "expect": [] }
+  ],
+  "radio": [
+    { "index": 2, "length": 3, "repeat": "off", "radio": null, "radioWhenQueueEnds": true, "expect": { "seed": true, "ask": true } },
+    { "index": 2, "length": 3, "repeat": "all", "radio": null, "radioWhenQueueEnds": true, "expect": { "seed": false, "ask": false } },
+    { "index": 2, "length": 3, "repeat": "off", "radio": null, "radioWhenQueueEnds": false, "expect": { "seed": false, "ask": false } },
+    { "index": 1, "length": 3, "repeat": "off", "radio": null, "radioWhenQueueEnds": true, "expect": { "seed": false, "ask": false } },
+    { "index": 1, "length": 4, "repeat": "off", "radio": { "keepsAdding": true }, "radioWhenQueueEnds": false, "expect": { "seed": false, "ask": true } },
+    { "index": 0, "length": 4, "repeat": "off", "radio": { "keepsAdding": true }, "radioWhenQueueEnds": false, "expect": { "seed": false, "ask": false } },
+    { "index": 3, "length": 4, "repeat": "off", "radio": { "keepsAdding": false }, "radioWhenQueueEnds": true, "expect": { "seed": false, "ask": false } },
+    { "index": 3, "length": 4, "repeat": "off", "radio": { "keepsAdding": true, "error": "the hub is busy" }, "radioWhenQueueEnds": true, "expect": { "seed": false, "ask": true } }
+  ],
+  "seekLimit": [
+    { "soulseek": false, "buffered": [], "received": 0.1, "expect": 1 },
+    { "soulseek": true, "buffered": [[0, 0.3]], "received": 0.5, "expect": 0.49 },
+    { "soulseek": true, "buffered": [[0, 0.3], [0.5, 0.7]], "received": 0.5, "expect": 0.7 },
+    { "soulseek": true, "buffered": [], "received": 1, "expect": 1 }
+  ],
+  "seekTo": [
+    { "fraction": 0.4, "limit": 0.49, "expect": { "fraction": 0.4, "ok": true } },
+    { "fraction": 0.8, "limit": 0.49, "expect": { "fraction": 0.486, "ok": false } },
+    { "fraction": 1.3, "limit": 1, "expect": { "fraction": 1, "ok": true } },
+    { "fraction": 0.5, "limit": 0.002, "expect": { "fraction": 0, "ok": false } }
+  ],
+  "switchNow": [
+    { "picked": true, "canSwitch": true, "steady": true, "duration": 300, "pos": 10, "arrived": 1, "expect": "wait" },
+    { "picked": false, "canSwitch": false, "steady": true, "duration": 300, "pos": 10, "arrived": 1, "expect": "next-play" },
+    { "picked": false, "canSwitch": true, "steady": false, "duration": 300, "pos": 10, "arrived": 1, "expect": "wait" },
+    { "picked": false, "canSwitch": true, "steady": true, "duration": 300, "pos": 256, "arrived": 1, "expect": "next-play" },
+    { "picked": false, "canSwitch": true, "steady": true, "duration": 300, "pos": 255, "arrived": 1, "expect": "switch" },
+    { "picked": false, "canSwitch": true, "steady": true, "duration": 300, "pos": 40, "arrived": 0.19, "expect": "wait" },
+    { "picked": false, "canSwitch": true, "steady": true, "duration": 300, "pos": 40, "arrived": 0.2, "expect": "switch" },
+    { "picked": false, "canSwitch": true, "steady": true, "duration": null, "pos": 40, "arrived": 0.9, "expect": "wait" }
+  ],
+  "quiet": [
+    { "levels": [1, 1, 1, 1, 1, 1, 0.1], "expect": false },
+    { "levels": [1, 1, 1, 1, 1, 1, 1, 0.6], "expect": true },
+    { "levels": [1, 1, 1, 1, 1, 1, 1, 0.61], "expect": false },
+    { "levels": [0.2, 0.3, 1, 1, 1, 1, 1, 1, 0.5], "expect": true }
+  ],
+  "levelMatch": [
+    { "song": 0.2, "copy": 0.1, "expect": 2 },
+    { "song": 0.3, "copy": 0.2, "expect": 1.4999999999999998 },
+    { "song": 0.01, "copy": 0.5, "expect": 0.5 },
+    { "song": 0.1, "copy": 0, "expect": 2 }
+  ]
+}

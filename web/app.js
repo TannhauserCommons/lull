@@ -1934,9 +1934,8 @@
   }
   /* ReplayGain in dB for Settings > Playback's mode, when the library supplies it (track.replayGain { track, album }) */
   function replayGainDb(trackId) {
-    var t = M.track(trackId), rg = t && t.replayGain, mode = playback.normalisation;
-    if (!rg || mode.indexOf('replaygain') !== 0) return null;
-    return mode === 'replaygain-album' ? rg.album : rg.track;
+    var t = M.track(trackId);
+    return LullRules.replayGainDb(t && t.replayGain, playback.normalisation);
   }
   /* the output's item for an entry (docs/context/web.md#output-interface). A downloaded song plays from this
      device (App.downloads), otherwise from the hub; resolves to null when the track is unknown. */
@@ -2034,11 +2033,7 @@
   }
   function markOrder() { ps.queue.forEach(function (e, i) { e.orig = i; }); }
   /* the index the queue moves to next: repeat one (only when a song ends by itself), the next entry, wrap, or -1 */
-  function nextIndex(auto) {
-    if (auto && ps.repeat === 'one') return ps.index;
-    if (ps.index + 1 < ps.queue.length) return ps.index + 1;
-    return ps.repeat === 'all' ? 0 : -1;
-  }
+  function nextIndex(auto) { return LullRules.nextIndex({ index: ps.index, length: ps.queue.length, repeat: ps.repeat }, auto); }
   P.next = function (auto) {
     if (!ps.queue.length) return;
     var i = nextIndex(auto);
@@ -2062,7 +2057,7 @@
       var t = M.track(e.trackId);
       App.toast('Skipped ' + (t ? t.title : 'a song') + ': ' + (ps.error || 'no peer shares it right now'), { icon: 'soulseek' });
       P.next();
-    }, 2500);
+    }, LullRules.SKIP_FAILED_MS);
   }
   function endQueue(auto) {
     endPlay(auto ? 'completed' : 'skipped');
@@ -2070,17 +2065,14 @@
     changed('ended');
   }
   P.prev = function () {
-    if (ps.pos > 3 || ps.index === 0) { P.seek(0); return; }
-    load(ps.index - 1);
+    var i = LullRules.previous(ps.index, ps.pos);
+    if (i < 0) { P.seek(0); return; }
+    load(i);
   };
 
   /* ---------- seeking: only inside what has arrived ---------- */
   /* how far a seek may go (0-1): everything for saved songs, what the transfer delivered for Soulseek ones */
-  function seekLimit() {
-    if (!cur || !cur.soulseek) return 1;
-    var bufEnd = ps.buffered.reduce(function (m, r) { return Math.max(m, r[1]); }, 0);
-    return Math.max(bufEnd, ps.received >= 1 ? 1 : ps.received - .01);
-  }
+  function seekLimit() { return LullRules.seekLimit(!!(cur && cur.soulseek), ps.buffered, ps.received); }
   P.seekable = function (f) { return P.current() ? f <= seekLimit() : false; };
   /* outside what arrived: snap to the furthest point that did, shake (seek bar) and return false */
   P.seekFraction = function (f) {
@@ -2089,7 +2081,7 @@
     /* a song restored after a reload (or the app starting) isn't loaded until it plays, and P.play then resumes it at
        ps.pos: a seek before that moves where it will start */
     if (!cur) { ps.pos = f * dur; changed('seek'); return true; }
-    var ok = P.seekable(f), target = ok ? f : Math.max(0, seekLimit() - .004);
+    var to = LullRules.seekTo(f, seekLimit()), ok = to.ok, target = to.fraction;
     ps.pos = target * dur; out.seek(ps.pos);
     changed('seek');
     if (!ok) App.emit('seek-denied', { fraction: f, received: ps.received });
@@ -2107,7 +2099,7 @@
     }
     changed('mode');
   };
-  P.cycleRepeat = function () { ps.repeat = { off: 'all', all: 'one', one: 'off' }[ps.repeat]; releaseNext(); applyLevels(); changed('mode'); };
+  P.cycleRepeat = function () { ps.repeat = LullRules.cycleRepeat(ps.repeat); releaseNext(); applyLevels(); changed('mode'); };
   P.setVolume = function (v) { ps.volume = clamp(v, 0, 1); ps.muted = false; applyLevels(); changed('volume'); };
   P.toggleMute = function () { ps.muted = !ps.muted; applyLevels(); changed('volume'); };
 
@@ -2266,7 +2258,6 @@
   var PLACE_QUEUE = { kind: 'queue', id: '', name: 'your queue' };
 
   /* ---------- radio: GET /api/radio tops the queue up while "keeps adding" is on ---------- */
-  function radioActive() { return !!(ps.radio && ps.radio.keepsAdding); }
   function radioName(seed) {
     var e = seed.kind === 'artist' ? M.artist(seed.id) : seed.kind === 'track' ? M.track(seed.id) : seed.kind === 'album' ? M.album(seed.id) : null;
     return e ? e.name || e.title : seed.id;
@@ -2326,12 +2317,12 @@
      With "radio when the queue ends" (Settings > Playback), the last song seeds a radio as it starts. */
   function topUpRadio() {
     if (topping) return topping;
-    var left = ps.queue.length - ps.index - 1;
-    if (!ps.radio && playback.radioWhenQueueEnds && ps.repeat === 'off' && ps.queue.length && left === 0) {
+    var plan = LullRules.radio({ index: ps.index, length: ps.queue.length, repeat: ps.repeat, radio: ps.radio }, playback.radioWhenQueueEnds);
+    if (plan.seed) {
       var last = ps.queue[ps.index];
-      ps.radio = { name: radioName({ kind: 'track', id: last.trackId }), seed: { kind: 'track', id: last.trackId }, keepsAdding: true, steer: .4 };
+      ps.radio = { name: radioName({ kind: 'track', id: last.trackId }), seed: { kind: 'track', id: last.trackId }, keepsAdding: true, steer: LullRules.RADIO_STEER };
     }
-    if (!radioActive() || left >= 3) return Promise.resolve(0);
+    if (!plan.ask) return Promise.resolve(0);
     var have = ps.queue.map(function (q) { return q.trackId; });
     topping = fetchRadio(ps.radio.seed, ps.radio.steer, have).then(function (ids) {
       topping = null;
@@ -2416,7 +2407,7 @@
      cached copy. A copy the listener picked (`e.source`) is never switched away from.
      ps.upgrade: { peer, path, format, pct, state: arriving | ready | switching | switched | next-play, note; once switched:
      from (the copy before), at (the song's time), residualMs (how far apart the copies were left), offsetS (where the copy's own time was) } */
-  var SWITCH_LEAD = 45, SWITCH_AHEAD = 20, SWITCH_TRIES = 3, switching = false;
+  var switching = false;
   function onUpgrade(e, up) {
     if (ps.upgrade && /^(switching|switched)$/.test(ps.upgrade.state)) return;
     if (!up) { ps.upgrade = null; return; }
@@ -2434,11 +2425,14 @@
      here up to a little past where the song is; anything else waits for a later tick */
   function trySwitch() {
     var up = ps.upgrade, e = cur, dur = P.duration();
-    if (!up || up.state !== 'ready' || switching || !e || e.source || !e.soulseek) return;
-    if (!out.switchTo) { waitForNextPlay(e, 'This player can\'t line two copies up, so the better copy plays from the next play.'); return; }
-    if (!ps.playing || !sound.playing || sound.waiting || ps.crossfade) return;
-    if (dur && dur - ps.pos < SWITCH_LEAD) { waitForNextPlay(e, 'The song is nearly over, so the better copy plays from the next play.'); return; }
-    if (up.pct < 1 && (!dur || up.pct * dur < ps.pos + SWITCH_AHEAD)) return;
+    if (!up || up.state !== 'ready' || switching || !e || !e.soulseek) return;
+    var now = LullRules.switchNow({ picked: !!e.source, canSwitch: !!out.switchTo, duration: dur, pos: ps.pos, arrived: up.pct,
+      steady: ps.playing && sound.playing && !sound.waiting && !ps.crossfade });
+    if (now === 'next-play') {
+      waitForNextPlay(e, out.switchTo ? 'The song is nearly over, so the better copy plays from the next play.'
+        : 'This player can\'t line two copies up, so the better copy plays from the next play.');
+    }
+    if (now !== 'switch') return;
     var t = M.track(e.trackId); if (!t) return;
     var id = encodeURIComponent(t.id), from = playingFormat(t) || (ps.peer && ps.peer.format), at = ps.pos;
     var url = M.url('/api/stream/' + id + '/copy?peer=' + encodeURIComponent(up.peer) + '&path=' + encodeURIComponent(up.path));
@@ -2455,7 +2449,7 @@
           App.toast('Switched to a better copy' + (up.format ? ': ' + up.format : ''), { icon: 'soulseek', kind: 'ok' });
         } else if (r.why === 'mismatch') {
           waitForNextPlay(e, 'The two copies couldn\'t be lined up closely enough to switch without a jump, so the better copy plays from the next play.');
-        } else if (r.why === 'refused' || ++e.better.tries >= SWITCH_TRIES) {
+        } else if (r.why === 'refused' || ++e.better.tries >= LullRules.SWITCH_TRIES) {
           waitForNextPlay(e, 'Switching didn\'t work out this time, so the better copy plays from the next play.');
         } else up.state = 'ready';                       // interrupted (a seek, a pause, a quiet passage): later
         changed('source');
@@ -2503,8 +2497,8 @@
     var i = nextIndex(true);
     if (i < 0 || i === ps.index || !playback.gapless && !playback.crossfade) { if (nxt) releaseNext(); return; }
     /* a Soulseek song still transferring gets the bandwidth to itself until its last half minute */
-    var e = ps.queue[i], dur = P.duration(), lead = Math.max(30, (playback.crossfade || 0) + 15) + (cur.soulseek && ps.received < 1 ? 0 : 60);
-    if (!out.eagerNext && (!dur || dur - ps.pos > lead)) return;
+    var e = ps.queue[i], lead = LullRules.preloadLead(playback.crossfade, cur.soulseek, ps.received);
+    if (!out.eagerNext && !LullRules.preloadNow(lead, P.duration(), ps.pos)) return;
     if (nxt === e) return;
     var was = nxt; nxt = e; letGo(was);
     if (e.resolve === 'resolved') { e.resolve = 'resolving'; changed('queue'); }
@@ -2524,7 +2518,7 @@
     if (next) { if (nxt && nxt.uid === next) handOver(nxt); return; }
     /* a Soulseek response that ends early is a fallback in progress, not the song's end: the `stream` event
        with the next attempt reopens it */
-    if (cur.soulseek && !cur.complete && P.duration() - ps.pos > 2) { ps.status = 'buffering'; changed('status'); return; }
+    if (LullRules.endedEarly(cur.soulseek, cur.complete, P.duration(), ps.pos)) { ps.status = 'buffering'; changed('status'); return; }
     P.next(true);
   }
 
@@ -2561,8 +2555,8 @@
 
   /* volume (perceptual curve, mute) and crossfade length go to the output; repeat one never crossfades */
   function applyLevels() {
-    out.setVolume(ps.muted ? 0 : ps.volume * ps.volume);
-    out.crossfade(ps.repeat === 'one' ? 0 : playback.crossfade || 0);
+    out.setVolume(LullRules.outputVolume(ps.volume, ps.muted));
+    out.crossfade(LullRules.crossfadeS(ps.repeat, playback.crossfade));
   }
 
   /* =====================================================================
@@ -2622,7 +2616,7 @@
        Soulseek response cut by a fallback) is reported with next null and the next deck stays */
     function ended() {
       var from = key(a), d = dur(a);
-      if (b.item && (!d || d - a.el.currentTime <= 2)) { swap(); start(a).catch(function () {}); emit('ended', { key: from, next: key(a) }); time(a); return; }
+      if (b.item && LullRules.gapless(d, a.el.currentTime)) { swap(); start(a).catch(function () {}); emit('ended', { key: from, next: key(a) }); time(a); return; }
       emit('ended', { key: from, next: null });
     }
     function swap() { var s = a; a = b; b = s; hold(b, null); a.fade = 1; levels(); }
@@ -2631,14 +2625,14 @@
     function maybeFade() {
       var d = dur(a);
       if (!xfade || switching || fading || a.el.paused || !b.item || !d || d - a.el.currentTime > xfade || b.el.readyState < 3) return;
-      fading = { start: Date.now(), len: Math.max(1, (d - a.el.currentTime) * 1000) };
+      fading = { start: Date.now(), len: LullRules.crossfadeLengthS(d - a.el.currentTime) * 1000 };
       b.fade = 0; start(b).catch(function () {}); levels();
       emit('crossfade', { key: key(a), next: key(b) });
     }
     function stepFade() {
       if (!fading) return;
       var k = clamp((Date.now() - fading.start) / fading.len, 0, 1);
-      a.fade = Math.cos(k * Math.PI / 2); b.fade = Math.sin(k * Math.PI / 2);
+      var f = LullRules.fade(k); a.fade = f[0]; b.fade = f[1];
       levels();
       if (k >= 1) finishFade();
     }
@@ -2691,15 +2685,14 @@
     function normalise(d) {
       if (!d.gain || playback.normalisation === 'off' || !d.item) return;
       var db = replayGainDb(d.item.trackId);
-      if (db != null) { d.norm = Math.pow(10, db / 20); return; }
+      if (db != null) { d.norm = LullRules.gain(db); return; }
       if (d.el.paused || playback.normalisation !== 'loudness') return;
       var buf = d.buf || (d.buf = new Float32Array(d.analyser.fftSize));
       d.analyser.getFloatTimeDomainData(buf);
       var sum = 0; for (var i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
       d.ms += sum / buf.length; d.msN += 1;
-      if (d.msN < 12) return;                                            // ~3 s of listening before adjusting
-      var rms = Math.sqrt(d.ms / d.msN); if (rms < 1e-4) return;
-      d.norm = clamp(Math.pow(10, playback.loudnessTarget / 20) / rms, Math.pow(10, -12 / 20), Math.pow(10, 6 / 20));
+      var norm = LullRules.loudness(playback.loudnessTarget, Math.sqrt(d.ms / d.msN), d.msN);   // after ~3 s of listening
+      if (norm != null) d.norm = norm;
     }
     /* ---------- a better copy of the playing song, switched to without a jump (docs/context/web.md#better-copies) ----------
        It plays silently on the second deck from about where the song is. One ScriptProcessor records both decks in the
@@ -2709,7 +2702,7 @@
        hands over, the copy's level matched to the song's and gliding to its own. Copies that don't clearly line up are
        never switched ({ switched: false, why: 'mismatch' }). A load abandons it; a pause, seek or end before the hub
        switched abandons it too, and after that finishes the handover at once. */
-    var FADE_S = .2, RECORD_S = 2.5, WIDE_S = 1, QUIET_S = 3, AHEAD_S = .15, MAX_DELAY_S = 1.5, TOLERANCE_S = .00025, switching = null;
+    var FADE_S = LullRules.SWITCH_FADE_S, RECORD_S = 2.5, WIDE_S = 1, QUIET_S = LullRules.SWITCH_QUIET_S, AHEAD_S = .15, MAX_DELAY_S = 1.5, TOLERANCE_S = .00025, switching = null;
     function setLag(d, s) { d.lag = s; if (d.delay) d.delay.delayTime.value = s; }
     function stop(why) { var e = new Error(why); e.why = why; return e; }
     function switchTo(it, o) {
@@ -2774,7 +2767,7 @@
         .then(function (m) { setLag(b, -m.lag); return verify(2); })
         .then(function (m) {
           sw.residual = m.lag;
-          sw.match = clamp(m.levels[0] / Math.max(m.levels[1], 1e-6), .5, 2);
+          sw.match = LullRules.levelMatch(m.levels[0], m.levels[1]);
           b.offset = b.el.currentTime - b.lag - (a.el.currentTime - shift(a));
           return quietMoment(sw);
         })
@@ -2798,8 +2791,7 @@
           if (!sw.live) { reject(stop('abandoned')); return; }
           a.analyser.getFloatTimeDomainData(buf);
           var level = LullAlign.rms(buf); levels.push(level);
-          var median = levels.slice().sort(function (x, y) { return x - y; })[levels.length >> 1];
-          if (levels.length >= 8 && level <= .6 * median || Date.now() >= until) resolve();
+          if (LullRules.quiet(levels) || Date.now() >= until) resolve();
           else setTimeout(look, 50);
         })();
       });
@@ -2807,10 +2799,10 @@
     function fadeOver(sw) {
       if (sw.cut) { finishSwitch(sw); return Promise.resolve(); }
       var t0 = ctx.currentTime + .03, n = 64, down = new Float32Array(n), up = new Float32Array(n);
-      for (var i = 0; i < n; i++) { var k = i / (n - 1); down[i] = Math.cos(k * Math.PI / 2); up[i] = sw.match * Math.sin(k * Math.PI / 2); }
+      for (var i = 0; i < n; i++) { var f = LullRules.fade(i / (n - 1)); down[i] = f[0]; up[i] = sw.match * f[1]; }
       a.sw.gain.setValueCurveAtTime(down, t0, FADE_S);
       b.sw.gain.setValueCurveAtTime(up, t0, FADE_S);
-      b.sw.gain.setTargetAtTime(1, t0 + FADE_S + .01, 1.5);          // from the song's level to the copy's own
+      b.sw.gain.setTargetAtTime(1, t0 + FADE_S + .01, LullRules.SWITCH_GLIDE_S);   // from the song's level to the copy's own
       sw.fading = true;
       return new Promise(function (r) { setTimeout(r, (FADE_S + .08) * 1000); }).then(function () { finishSwitch(sw); });
     }
@@ -2919,8 +2911,7 @@
   var playWarned = false, OUTBOX = {};
   App.recordPlay = function (trackId, dur, recommended) {
     var rec = { listened: 0, ended: false }, startedAt = Math.floor(Date.now() / 1000);
-    var body = { trackId: trackId, recommended: !!recommended };
-    if (dur) body.duration = Math.round(dur);
+    var body = LullRules.playStart(trackId, dur, recommended);
     /* out of the hub's reach the whole play goes to the outbox when it ends, with its real start time */
     var id = App.outbox.offline() ? Promise.resolve(OUTBOX) : M.api('/api/plays', { method: 'POST', body: body })
       .then(function (r) {
@@ -2934,7 +2925,7 @@
       });
     rec.end = function (how) {
       if (rec.ended) return; rec.ended = true;
-      var end = { playedS: Math.round(rec.listened), completed: how === 'completed', skipped: how === 'skipped' };
+      var end = LullRules.playEnd(rec.listened, how);
       id.then(function (playId) {
         if (playId === OUTBOX) App.outbox.add(Object.assign({ op: 'play', trackId: trackId, startedAt: startedAt }, end));
         else if (playId) M.api('/api/plays/' + encodeURIComponent(playId), { method: 'PATCH', keepalive: true, body: end }).catch(function () {});
@@ -2952,14 +2943,14 @@
   function trackListening(now, playing) {
     if (!play) return;
     var dt = play.last == null ? 0 : now - play.last;
-    if (dt > 0 && dt < 1.5 && playing) play.rec.listened += dt;
+    play.rec.listened += LullRules.heard(dt, playing);
     play.last = now;
   }
   function endPlay(how) { if (play) { play.rec.end(how); play = null; } }
   window.addEventListener('pagehide', function () { endPlay('stopped'); persist(); });
 
   /* ---------- the clock: preload, and 'tick' for screens (the output reports the position) ---------- */
-  var TICK = 250;
+  var TICK = LullRules.TICK_MS;
   /* a paused song changes nothing on screen: the tick goes out only when what it shows moved (the waiting states
      count seconds), instead of rewriting the seek bars and times four times a second */
   var tickWas = '';
@@ -2981,15 +2972,11 @@
      the whole list each time; songs that drop off it are cancelled by the hub. Saved songs need nothing. Nothing is
      asked while the playing song is still finding its own source: it gets Soulseek's searches first. ---------- */
   var prefetchSent = '', prefetchTimer = null;
-  function prefetchSoon() { clearTimeout(prefetchTimer); prefetchTimer = setTimeout(syncPrefetch, 800); }
+  function prefetchSoon() { clearTimeout(prefetchTimer); prefetchTimer = setTimeout(syncPrefetch, LullRules.PREFETCH_MS); }
   function upcoming(n) {
-    if (!cur || n <= 0 || ps.repeat === 'one') return [];
-    var at = ps.shuffle ? [nextIndex(true)] : ps.queue.map(function (e, i) { return i; }).slice(ps.index + 1), ids = [];
-    at.forEach(function (i) {
-      var e = ps.queue[i];
-      if (e && ids.length < n && !App.isSaved(e.trackId) && ids.indexOf(e.trackId) < 0 && e.trackId !== cur.trackId) ids.push(e.trackId);
-    });
-    return ids;
+    if (!cur) return [];
+    var q = { index: ps.index, ids: ps.queue.map(function (e) { return e.trackId; }), shuffle: ps.shuffle, repeat: ps.repeat };
+    return LullRules.upcoming(q, function (id) { return App.isSaved(id); }, n);
   }
   function syncPrefetch() {
     if (cur && cur.soulseek && /^(finding|queued|buffering|choose)$/.test(ps.status)) return;   // the 'status' change after it re-runs this

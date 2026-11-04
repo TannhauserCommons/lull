@@ -10,7 +10,7 @@ from, how the player plays, and the rules screens follow. The endpoint contract 
 ```
 index.html   tokens.css base.css components.css screens/{discover,now,library,system}.css designs/<name>/design.css (last)
              designs/designs.js + the pre-paint script (design, theme, motion, text size)
-             icons.js data.js align.js eq.js app.js layout.js connect.js offline.js screens/{discover,now,library,system,appearance}.js
+             icons.js data.js align.js eq.js player-rules.js app.js layout.js connect.js offline.js screens/{discover,now,library,system,appearance}.js
              screens/setup.js
              the desktop app only (window.__TAURI__): screens/classic.css desktop/desktop.css
              desktop/webamp-session.js screens/{skins,classic}.js desktop/desktop.js, from the start, as its crash
@@ -18,6 +18,9 @@ index.html   tokens.css base.css components.css screens/{discover,now,library,sy
              everything else loads on its first use: see "Code loads where it is used" below; the start's files and
              why each is there: tests/ui/gates/start-files.json
 data.js      window.LullData = App.data: API client, entity cache, per-route reads, the event stream
+player-rules.js  window.LullRules: the player's rules (what the queue moves to, plays, levels, preloading, radio,
+             seeking, better copies), pure; app.js follows them and so does the desktop's native Classic player
+             (tests/player-rules.json, tested on both sides)
 align.js     window.LullAlign: how far apart two recordings of one moment are (switching to a better copy); pure,
              tested by tests/web/align.test.mjs (`node --test`, part of `mise run check`)
 eq.js        window.LullEq: the equaliser's settings (per device), its curve and automatic level, its Web Audio chain;
