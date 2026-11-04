@@ -453,7 +453,10 @@
 }
 :root[data-design="glasshouse"] .chip-reason { border-radius: 8px; border-color: color-mix(in srgb, var(--rsn-fg) 35%, transparent); }
 :root[data-design="glasshouse"] .pill-filter { border-width: 1px; }
-:root[data-design="glasshouse"] :is(.chip[aria-pressed="true"], .chip.is-on, .badge-saved, .pill-filter[aria-pressed="true"], .nav-pill[aria-current="page"],
+/* Saved stands apart from the :is(): inside it, it would take the list's highest specificity and beat the LCD strip's
+   plain tags in the player bar, drawing a pill with no padding round "Saved" */
+:root[data-design="glasshouse"] .badge-saved,
+:root[data-design="glasshouse"] :is(.chip[aria-pressed="true"], .chip.is-on, .pill-filter[aria-pressed="true"], .nav-pill[aria-current="page"],
   .lib-segs a.pill-filter[aria-current="page"], .sys-nav__item[aria-current="page"]) {
   background: var(--gh-lit); border-color: var(--gh-lit-edge); color: var(--ink); box-shadow: inset 0 1px 0 #fff;
 }
