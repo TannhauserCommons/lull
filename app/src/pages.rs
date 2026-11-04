@@ -1,5 +1,7 @@
 //! URLs of the pages bundled in the app (`web/desktop/wrapper.html`). The page reads its view and
 //! data from the hash, and the design and theme the web UI last reported (DESKTOP.md 6.1).
+//! A listener's theme reaches these pages from `main` (desktop/theme.rs); until it does, or when
+//! `main` never had it, they show `base`, the built-in design it extends.
 
 use serde::{Deserialize, Serialize};
 use tauri::Url;
@@ -84,6 +86,9 @@ pub fn mini(o: Mini, appearance: &Appearance) -> tauri::Result<Url> {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Appearance {
     pub design: Design,
+    /// The built-in design `design` extends (absent: `design` is built in, or extends none).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base: Option<Design>,
     pub theme: Theme,
 }
 
@@ -91,13 +96,15 @@ impl Default for Appearance {
     fn default() -> Self {
         Appearance {
             design: Design("lull".into()),
+            base: None,
             theme: Theme::System,
         }
     }
 }
 
-/// A design name as the web UI reports it. Only its shape is checked here (it goes into a URL
-/// hash); `Designs.wanted()` on the page decides whether it names a real design.
+/// A design name as the web UI reports it: a built-in design or a listener's theme (ids of up to 40
+/// characters, crates/themes). Only its shape is checked here (it goes into a URL hash);
+/// `Designs.wanted()` on the page decides whether it names a real design.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "String")]
 pub struct Design(String);
@@ -106,7 +113,7 @@ impl TryFrom<String> for Design {
     type Error = String;
     fn try_from(name: String) -> Result<Self, String> {
         let shaped = !name.is_empty()
-            && name.len() <= 32
+            && name.len() <= 40
             && name
                 .bytes()
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
@@ -149,9 +156,37 @@ fn page(view: &str, appearance: &Appearance, data: &[(&str, &str)]) -> tauri::Re
         .append_pair("view", view)
         .append_pair("design", appearance.design.as_str())
         .append_pair("theme", appearance.theme.as_str())
+        .extend_pairs(appearance.base.iter().map(|b| ("base", b.as_str())))
         .extend_pairs(data.iter().filter(|(_, v)| !v.is_empty()));
     let hash = url.query().map(str::to_owned);
     url.set_query(None);
     url.set_fragment(hash.as_deref());
     Ok(url)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_listeners_theme_goes_into_the_hash_with_the_design_it_extends() -> Result<(), String> {
+        let reported = r#"{"design":"a-theme-with-a-name-of-forty-characters-","base":"skydeck","theme":"night"}"#;
+        // a theme id may be 40 characters long (crates/themes)
+        let appearance: Appearance = serde_json::from_str(reported).map_err(|e| e.to_string())?;
+        let url = page("mini", &appearance, &[]).map_err(|e| e.to_string())?;
+        assert_eq!(
+            url.fragment(),
+            Some("view=mini&design=a-theme-with-a-name-of-forty-characters-&theme=night&base=skydeck")
+        );
+        // settings stored by an app that knew no base still load
+        let stored: Appearance =
+            serde_json::from_str(r#"{"design":"petal","theme":"day"}"#).map_err(|e| e.to_string())?;
+        assert_eq!(stored.base, None);
+        assert_eq!(
+            page("mini", &stored, &[]).map_err(|e| e.to_string())?.fragment(),
+            Some("view=mini&design=petal&theme=day")
+        );
+        assert!(serde_json::from_str::<Appearance>(r#"{"design":"x/../y","theme":"day"}"#).is_err());
+        Ok(())
+    }
 }

@@ -13,6 +13,7 @@ use crate::desktop::recovery::{self, Resume};
 use crate::desktop::settings::{HubChoice, MiniStyle};
 use crate::desktop::state::{Desktop, NowPlaying};
 use crate::desktop::tailscale::{self, Status};
+use crate::desktop::theme;
 use crate::desktop::updater;
 use crate::hub;
 use crate::pages;
@@ -344,4 +345,17 @@ pub fn resume_after_crash(app: AppHandle) -> Option<Resume> {
 #[tauri::command]
 pub fn window_glass(app: AppHandle, request: Option<Request>) -> Grant {
     glass::ask(&app, request)
+}
+
+/// The web UI in `main`: the listener's theme it shows now, for the bundled pages (null: a built-in
+/// design). Sent again when the theme changes on the hub.
+#[tauri::command]
+pub fn set_theme_package(app: AppHandle, package: Option<theme::Package>) -> Result<(), String> {
+    theme::hand_over(&app, package)
+}
+
+/// A bundled page: the listener's theme `main` handed over, if it is `id`.
+#[tauri::command]
+pub fn theme_package(app: AppHandle, id: String) -> Option<theme::Package> {
+    theme::package(&app, &id)
 }

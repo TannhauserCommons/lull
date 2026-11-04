@@ -19,6 +19,7 @@ mod signin;
 mod slskd;
 mod state;
 mod tailscale;
+mod theme;
 mod tray;
 mod updater;
 
@@ -68,6 +69,8 @@ pub fn run() {
             commands::app_update_install,
             commands::resume_after_crash,
             commands::window_glass,
+            commands::set_theme_package,
+            commands::theme_package,
         ])
         .setup(setup)
         .on_window_event(on_window_event)

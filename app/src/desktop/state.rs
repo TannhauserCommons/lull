@@ -6,12 +6,13 @@ use crate::desktop::discord::Presence;
 use crate::desktop::glass::{Grant, Material};
 use crate::desktop::local_hub::LocalHub;
 use crate::desktop::settings::{HubChoice, Settings};
+use crate::desktop::theme::Package;
 use crate::desktop::tray::Tray;
 use crate::store::Store;
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::Instant;
 use tauri::Url;
 
@@ -70,6 +71,8 @@ pub struct Desktop {
     main_alpha: AtomicBool,
     /// What `main` shows behind its page now.
     glass: Mutex<Grant>,
+    /// The listener's theme `main` shows, for the bundled pages (theme.rs). Kept for this run only.
+    theme: Mutex<Option<Arc<Package>>>,
     /// Hub origins already given their IPC capability this run.
     granted: Mutex<HashSet<String>>,
     /// A shared link handed to the app, until the hub's web UI opens it (open_links.rs).
@@ -100,6 +103,7 @@ impl Desktop {
                 material: None,
                 held: None,
             }),
+            theme: Mutex::new(None),
             granted: Mutex::new(HashSet::new()),
             link: Mutex::new(None),
             platform,
@@ -171,6 +175,14 @@ impl Desktop {
 
     pub fn set_glass(&self, grant: Grant) {
         *lock(&self.glass) = grant;
+    }
+
+    pub fn theme(&self) -> Option<Arc<Package>> {
+        lock(&self.theme).clone()
+    }
+
+    pub fn set_theme(&self, package: Option<Arc<Package>>) {
+        *lock(&self.theme) = package;
     }
 
     /// The hub in use and this app's token there: what Rust needs to call its API.

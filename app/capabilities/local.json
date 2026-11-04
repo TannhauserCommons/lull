@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "local",
-  "description": "The bundled pages (welcome, connect, hub unreachable, hub didn't start, mini player). The hub's web UI gets its own capability at runtime (src/desktop/main_window.rs).",
+  "description": "The bundled pages (welcome, connect, hub unreachable, hub didn't start, mini player): the listener's theme as main handed it over, and in main the window its theme asks for. The hub's web UI gets its own capability at runtime (src/desktop/main_window.rs).",
   "platforms": [
     "windows",
     "linux"
@@ -22,6 +22,8 @@
     "core:event:default",
     "allow-discover-hubs",
     "allow-find-hub",
-    "allow-window-action"
+    "allow-window-action",
+    "allow-theme-package",
+    "allow-window-glass"
   ]
 }
