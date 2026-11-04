@@ -605,7 +605,6 @@ pub fn artists_of(body: Value) -> Result<Vec<ArtistHit>> {
             image: a.image(),
             popularity: a.nb_fan.map_or(0.0, |f| popularity(f, FULL_FANS)),
             audience: a.nb_fan,
-            lastfm_only: false,
             name: a.name,
             mbid: None,
         })

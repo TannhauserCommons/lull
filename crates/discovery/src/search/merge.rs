@@ -4,8 +4,7 @@
 //!   remaster, version, edit and live tags dropped) with lengths within 3 s. A differing ISRC
 //!   doesn't keep two rows apart: remasters and compilations get new ones.
 //! - **A row keeps** the identity it was first shown with, and gains the facts others add.
-//! - **Order:** rows another source confirms before Last.fm-only ones (scrobbles carry
-//!   misspellings), then how well the row matches the query, then the song itself before its
+//! - **Order:** how well the row matches the query, then the song itself before its
 //!   live takes, remixes and covers' karaoke, then popularity (in tenths), then the listener's
 //!   own (saved, liked, followed), then exact popularity.
 //! - **Fit:** exact, then every word typed, then most of them (a soundtrack named without the
@@ -14,10 +13,9 @@
 //!   is from the work the query names, not that work.
 //! - **Well-known songs:** where the catalog gives no counts (iTunes), a song its own artists
 //!   have on more releases and takes in the answers is the better known (`known`).
-//! - **Misspelt and borrowed artists:** a Last.fm-only artist a typo away from a confirmed one,
-//!   or any artist whose name holds a confirmed one's ("Radiohead - Topic", "SZA with Kendrick
-//!   Lamar"), with under 1% of its audience (or Last.fm-only), is dropped.
-//! - **Famous near matches:** an artist with under a tenth of the audience of a confirmed artist
+//! - **Borrowed names:** an artist whose name holds another's ("Radiohead - Topic", "SZA with
+//!   Kendrick Lamar"), with under 1% of its audience, is dropped.
+//! - **Famous near matches:** an artist with under a tenth of the audience of another artist
 //!   that holds every word typed (or is a typo away) ranks by popularity with it, its better fit
 //!   aside: "mozart" is Wolfgang Amadeus Mozart before a pop act called Mozart.
 
@@ -41,8 +39,8 @@ const LEAN_RELEASE: f64 = 0.05;
 /// Words shorter than this (but not numbers) don't count toward "most of the words": "of" and
 /// "the" make "Sign of the Times" no answer to "skronk of the times".
 const SIGNIFICANT_LETTERS: usize = 4;
-/// An artist with less than 1/this of a near-namesake's audience is a typo or a borrowed name.
-const MISSPELT_SHARE: u64 = 100;
+/// An artist whose name holds another's, with less than 1/this of its audience, borrows it.
+const BORROWED_SHARE: u64 = 100;
 /// An artist with less than 1/this of a famous near match's audience ranks with it.
 const OVERSHADOWED_SHARE: u64 = 10;
 /// A typed word may hold one typo in this many letters (and is this long at least); the whole
@@ -97,7 +95,6 @@ pub enum Source {
     /// MusicBrainz's release groups by title, for submitted queries.
     #[serde(rename = "musicbrainz-albums")]
     MusicBrainzAlbums,
-    LastFm,
     /// Deezer's playlist search (keyless, in every country).
     #[serde(rename = "deezer-playlists")]
     DeezerPlaylists,
@@ -114,7 +111,6 @@ impl Source {
             Source::Itunes => "iTunes",
             Source::Library => "The library",
             Source::MusicBrainz | Source::MusicBrainzAlbums => "MusicBrainz",
-            Source::LastFm => "Last.fm",
             Source::DeezerPlaylists => "Deezer's playlists",
             Source::YoutubePlaylists => "YouTube's playlists",
         }
@@ -164,7 +160,7 @@ pub struct SongHit {
     pub saved: Option<Track>,
     pub title: String,
     pub artist: String,
-    /// Empty when the source names no release (Last.fm).
+    /// Empty when the source names no release.
     pub album: String,
     /// The release's artist when it differs from the song's.
     pub album_artist: Option<String>,
@@ -181,9 +177,6 @@ pub struct SongHit {
     /// The album in the catalog that found the song, for its tracklist.
     #[serde(default)]
     pub album_source: Option<AlbumSource>,
-    /// Only Last.fm knows it so far.
-    #[serde(default)]
-    pub lastfm_only: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -213,9 +206,6 @@ pub struct ArtistHit {
     /// Fans or listeners, the larger known.
     #[serde(default)]
     pub audience: Option<u64>,
-    /// Only Last.fm knows it so far.
-    #[serde(default)]
-    pub lastfm_only: bool,
 }
 
 /// A count (fans, listeners, Deezer rank) on a 0..1 log scale where `full` reaches 1.
@@ -423,7 +413,6 @@ fn fill_song(row: &mut SongHit, hit: SongHit, may_rename: bool) -> bool {
     row.mbid = row.mbid.take().or(hit.mbid);
     row.art = row.art.take().or(hit.art);
     row.popularity = row.popularity.max(hit.popularity);
-    row.lastfm_only &= hit.lastfm_only;
     for isrc in hit.isrcs {
         if !row.isrcs.contains(&isrc) {
             row.isrcs.push(isrc);
@@ -449,7 +438,6 @@ fn fill_artist(row: &mut ArtistHit, hit: ArtistHit) -> bool {
     row.image = row.image.take().or(hit.image);
     row.popularity = row.popularity.max(hit.popularity);
     row.audience = row.audience.max(hit.audience);
-    row.lastfm_only &= hit.lastfm_only;
     *row != before
 }
 
@@ -750,8 +738,6 @@ pub fn credit_albums(q: &Query, found: &mut Found) {
 /// What a row is ranked by.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Score {
-    /// A source other than Last.fm knows it.
-    pub confirmed: bool,
     pub fit: Fit,
     /// Another version than the words name (`Query::other_version`): it goes after the song.
     pub version: bool,
@@ -763,7 +749,6 @@ pub struct Score {
 impl Score {
     pub fn song(q: &Query, s: &SongHit) -> Self {
         Score {
-            confirmed: !s.lastfm_only,
             fit: q.song(s),
             version: q.other_version(&[&s.title, &s.album]),
             popularity: s.popularity,
@@ -777,7 +762,6 @@ impl Score {
             .as_deref()
             .is_some_and(|k| k.eq_ignore_ascii_case("album") || k.eq_ignore_ascii_case("compilation"));
         Score {
-            confirmed: true,
             fit: q.album(a),
             version: q.other_version(&[&a.title]),
             popularity: a.popularity,
@@ -787,7 +771,6 @@ impl Score {
 
     pub fn artist(q: &Query, a: &ArtistHit) -> Self {
         Score {
-            confirmed: !a.lastfm_only,
             fit: q.artist(a),
             version: false,
             popularity: a.popularity,
@@ -802,13 +785,7 @@ pub fn rank(rows: &[Score], own: impl Fn(usize) -> bool) -> Vec<usize> {
     let mut order: Vec<usize> = (0..rows.len()).collect();
     let key = |i: usize| {
         let r = rows[i];
-        (
-            r.confirmed,
-            r.fit,
-            !r.version,
-            (r.popularity * 10.0).floor() as i64,
-            own(i),
-        )
+        (r.fit, !r.version, (r.popularity * 10.0).floor() as i64, own(i))
     };
     order.sort_by(|&a, &b| {
         key(b).cmp(&key(a)).then_with(|| {
@@ -867,57 +844,24 @@ pub fn known(m: &Merged, scores: &mut [Score]) {
     }
 }
 
-/// Which artists to leave out: a Last.fm-only typo of a confirmed artist ("Radiohed"), or a name
-/// holding a confirmed artist's ("Radiohead - Topic", "We Love Taylor Swift", "Radiohead &
-/// Portishead"), with under 1% of its audience. A Last.fm-only artist holding the name needs no
-/// count: it is a scrobble's credit string, not an artist with releases of its own. (A confirmed
-/// typo stays, ranked by `overshadow`: it may be the band typed.)
-pub fn misspelt(artists: &[ArtistHit]) -> Vec<bool> {
+/// Which artists to leave out: a name holding another artist's ("Radiohead - Topic", "We Love
+/// Taylor Swift", "Radiohead & Portishead") with under 1% of its audience (none known counts as
+/// none). A typo of a known artist stays, ranked by `overshadow`: it may be the band typed.
+pub fn borrowed(artists: &[ArtistHit]) -> Vec<bool> {
     let names: Vec<String> = artists.iter().map(|a| loose_artist(&a.name)).collect();
     artists
         .iter()
         .enumerate()
         .map(|(i, a)| {
-            artists.iter().enumerate().any(|(j, c)| {
-                let smaller = smaller_than(a, c, MISSPELT_SHARE);
-                i != j
-                    && !c.lastfm_only
-                    && ((a.lastfm_only && smaller && typo_apart(&names[i], &names[j]))
-                        || ((smaller || a.lastfm_only) && holds_name(&names[i], &names[j])))
-            })
+            artists
+                .iter()
+                .enumerate()
+                .any(|(j, c)| i != j && smaller_than(a, c, BORROWED_SHARE) && holds_name(&names[i], &names[j]))
         })
         .collect()
 }
 
-/// Which Last.fm-only artists are scrobbles' credit strings, not artists with releases: all but
-/// those whose name is what was typed (or it with a typo), and those too when the name is a song
-/// or album the catalogs found ("Daft Punk Get Lucky", "Interstellar Soundtrack", "BTS
-/// DYNAMITE"). Live, they filled the artists row: "Nirvana - Smells Like Teen Spirit", "01
-/// Smells Like Teen Spirit", "Tech N9ne feat. Kendrick Lamar, ¡Mayday!, Kendall Morgan".
-pub fn credit_strings(q: &Query, m: &Merged) -> Vec<bool> {
-    let named = |artist: &str, title: &str| {
-        let title = loose_title(&without_versions(title).0);
-        let mut names: Vec<String> = crate::radio::credited_names(artist)
-            .iter()
-            .map(|n| format!("{} {title}", loose_artist(n)))
-            .collect();
-        names.push(title);
-        names
-    };
-    let found: Vec<String> = m
-        .songs
-        .iter()
-        .filter(|s| !s.lastfm_only)
-        .flat_map(|s| named(&s.artist, &s.title))
-        .chain(m.albums.iter().flat_map(|a| named(&a.artist, &a.title)))
-        .collect();
-    m.artists
-        .iter()
-        .map(|a| a.lastfm_only && (q.artist(a) < Fit::Exact || found.contains(&loose_artist(&a.name))))
-        .collect()
-}
-
-/// Lowers each artist's fit to that of a confirmed artist with ten times its audience that holds
+/// Lowers each artist's fit to that of an artist with ten times its audience that holds
 /// every word typed or is a typo away, so popularity decides between them.
 pub fn overshadow(artists: &[ArtistHit], scores: &mut [Score]) {
     let names: Vec<String> = artists.iter().map(|a| loose_artist(&a.name)).collect();
@@ -925,7 +869,6 @@ pub fn overshadow(artists: &[ArtistHit], scores: &mut [Score]) {
     for (i, a) in artists.iter().enumerate() {
         let near = artists.iter().enumerate().filter(|&(j, c)| {
             i != j
-                && !c.lastfm_only
                 && (fits[j] >= Fit::Words || typo_apart(&names[i], &names[j]))
                 && smaller_than(a, c, OVERSHADOWED_SHARE)
         });
@@ -983,12 +926,11 @@ pub enum Kind {
     Track,
 }
 
-/// The one top result among the best artist, album and track: a confirmed row before a
-/// Last.fm-only one, then the best fit, then the song itself (or its release) before another
-/// version of it, then the most popular, leaning toward artists and albums
+/// The one top result among the best artist, album and track: the best fit, then the song
+/// itself (or its release) before another version of it, then the most popular, leaning toward artists and albums
 /// (full-length ones more than EPs and singles).
 pub fn top(artist: Option<Score>, album: Option<Score>, track: Option<Score>) -> Option<Kind> {
-    type Candidate = (Kind, (bool, Fit, bool), f64);
+    type Candidate = (Kind, (Fit, bool), f64);
     let better = |a: &Candidate, b: &Candidate| {
         a.1.cmp(&b.1)
             .then_with(|| a.2.partial_cmp(&b.2).unwrap_or(Ordering::Equal))
@@ -996,7 +938,7 @@ pub fn top(artist: Option<Score>, album: Option<Score>, track: Option<Score>) ->
     };
     [(Kind::Artist, artist), (Kind::Album, album), (Kind::Track, track)]
         .into_iter()
-        .filter_map(|(kind, row)| row.map(|r| (kind, (r.confirmed, r.fit, !r.version), r.popularity + r.lean)))
+        .filter_map(|(kind, row)| row.map(|r| (kind, (r.fit, !r.version), r.popularity + r.lean)))
         .fold(None, |best, c| match best {
             Some(b) if !better(&c, &b) => Some(b),
             _ => Some(c),

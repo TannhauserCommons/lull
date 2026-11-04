@@ -54,10 +54,9 @@ fn song(artist: &str, title: &str, album: &str, duration: Option<u32>) -> SongHi
     }
 }
 
-/// A row another source than Last.fm confirms.
+/// A row's score.
 fn score(fit: Fit, popularity: f64) -> Score {
     Score {
-        confirmed: true,
         fit,
         version: false,
         popularity,
@@ -252,13 +251,9 @@ fn ranking_puts_exact_matches_first_then_popularity_then_the_listeners_own() {
         score(Fit::Exact, 0.82), // 2: exact, popular
         score(Fit::Exact, 0.36), // 3: exact, as popular as 1 in tenths, and liked
         score(Fit::Loose, 0.99), // 4: a fuzzy hit
-        Score {
-            confirmed: false,
-            ..score(Fit::Exact, 0.9)
-        }, // 5: only Last.fm knows it
     ];
     let order = merge::rank(&rows, |i| i == 3);
-    assert_eq!(order, [2, 3, 1, 0, 4, 5]);
+    assert_eq!(order, [2, 3, 1, 0, 4]);
 }
 
 #[test]
@@ -395,24 +390,6 @@ fn a_catalog_deezer_withholds_is_reported_not_taken_as_nothing_found() {
         .map(|e| e.to_string())
         .unwrap_or_default();
     assert!(err.contains("isn't open in this country"), "{err}");
-}
-
-#[test]
-fn last_fm_answers_become_rows_without_pictures() {
-    // Last.fm's documented shapes: a single match comes as an object, several as an array.
-    let tracks = json!({ "results": { "trackmatches": { "track": [
-        { "name": "Creep", "artist": "Radiohead", "listeners": "2311458", "mbid": "" },
-        { "name": "Creep", "artist": "TLC", "listeners": "512004", "mbid": "1c9b3d5d-3b4c-4cd8-a4c5-3d2c6b1a9e10" }
-    ] } } });
-    let artists = json!({ "results": { "artistmatches": { "artist":
-        { "name": "Radiohead", "listeners": "7350000", "mbid": "a74b1b7f-71a5-4011-9441-d0b5e4122711" }
-    } } });
-    let found = lastfm::found(&tracks, &artists);
-    assert_eq!(found.songs.len(), 2);
-    assert!(found.songs[0].popularity > found.songs[1].popularity);
-    assert!(found.songs.iter().all(|s| s.art.is_none() && s.album.is_empty()));
-    assert_eq!(found.artists[0].name, "Radiohead");
-    assert!(found.artists[0].image.is_none());
 }
 
 #[test]
@@ -575,50 +552,6 @@ fn an_artists_own_songs_match_their_name_as_well_as_a_song_called_that() {
     assert_eq!((q.song(&called_that), q.song(&theirs)), (Fit::Exact, Fit::Exact));
     let rows = [Score::song(&q, &called_that), Score::song(&q, &theirs)];
     assert_eq!(merge::rank(&rows, |_| false), [1, 0], "then popularity decides");
-}
-
-#[test]
-fn last_fm_only_rows_never_lead_and_its_misspelt_artists_go() {
-    // Live, warm "radiohed" put Last.fm's "Radiohed" above Radiohead.
-    let q = Query::new("radiohed");
-    let deezer = deezer::artists_of(fixture("deezer-artist")).unwrap_or_default();
-    let lastfm = lastfm::found(
-        &json!({ "results": { "trackmatches": { "track": [
-            { "name": "Creep", "artist": "Radiohed", "listeners": "4100", "mbid": "" }
-        ] } } }),
-        &json!({ "results": { "artistmatches": { "artist": [
-            { "name": "Radiohed", "listeners": "3900", "mbid": "" },
-            { "name": "Radiohead", "listeners": "7350000", "mbid": "" },
-            { "name": "Radiohedz", "listeners": "900000", "mbid": "" }
-        ] } } }),
-    );
-    let mut m = Merged::default();
-    m.add(Found {
-        artists: deezer,
-        ..Found::default()
-    });
-    m.add(lastfm.clone());
-    let names = |is: &[usize]| is.iter().map(|&i| m.artists[i].name.clone()).collect::<Vec<_>>();
-    let misspelt = merge::misspelt(&m.artists);
-    let shown: Vec<usize> = (0..m.artists.len()).filter(|&i| !misspelt[i]).collect();
-    assert!(
-        !names(&shown).contains(&"Radiohed".to_owned()),
-        "under 1% of Radiohead's fans, a letter away"
-    );
-    assert!(
-        names(&shown).contains(&"Radiohedz".to_owned()),
-        "a big audience of its own stays"
-    );
-    let scores: Vec<Score> = m.artists.iter().map(|a| Score::artist(&q, a)).collect();
-    let order = merge::rank(&scores, |_| false);
-    assert_eq!(
-        m.artists[order[0]].name, "Radiohead",
-        "confirmed by Deezer, though only a loose fit"
-    );
-    // A Last.fm-only song never takes the top from a confirmed artist.
-    let only = Score::song(&q, &lastfm.songs[0]);
-    assert!(!only.confirmed);
-    assert_eq!(merge::top(Some(scores[order[0]]), None, Some(only)), Some(Kind::Artist));
 }
 
 #[test]
@@ -851,24 +784,23 @@ fn credit_strings_are_not_artists() {
     let names: Vec<&str> = found.artists.iter().map(|a| a.name.as_str()).collect();
     assert_eq!(names, ["Radiohead", "Portishead"], "one row per credited artist");
 
-    let lastfm = |name: &str, listeners: u64| ArtistHit {
+    let fans = |name: &str, fans: u64| ArtistHit {
         name: name.into(),
-        audience: Some(listeners),
-        lastfm_only: true,
+        audience: Some(fans),
         ..ArtistHit::default()
     };
     let mut artists = deezer::artists_of(fixture("deezer-artist")).unwrap_or_default();
     artists.truncate(1);
     artists.extend([
-        lastfm("Radiohead - Topic", 120_000),
-        lastfm("Radiohead • Lossless", 900),
+        fans("Radiohead - Topic", 2_000),
+        fans("Radiohead • Lossless", 900),
         ArtistHit {
             name: "Radiohead & Portishead".into(),
             ..ArtistHit::default()
         },
-        lastfm("Radiodread", 50_000),
+        fans("Radiodread", 50_000),
     ]);
-    let hidden = merge::misspelt(&artists);
+    let hidden = merge::borrowed(&artists);
     let kept: Vec<&str> = artists
         .iter()
         .zip(&hidden)
@@ -876,32 +808,6 @@ fn credit_strings_are_not_artists() {
         .map(|(a, _)| a.name.as_str())
         .collect();
     assert_eq!(kept, ["Radiohead", "Radiodread"]);
-
-    // Last.fm's artist search answers scrobbles' credits: only the name typed is an artist, and
-    // not when it is a song the catalogs found.
-    let q = Query::new("daft punk get lucky");
-    let mut m = Merged::default();
-    m.add(Found {
-        songs: vec![song(
-            "Daft Punk, Pharrell Williams & Nile Rodgers",
-            "Get Lucky",
-            "Random Access Memories",
-            Some(369),
-        )],
-        artists: vec![
-            lastfm("Daft Punk Get Lucky", 2_400),
-            lastfm("DAFT PUNK - GET LUCKY (feat. Charles Butler) - Beats Antique", 300),
-        ],
-        ..Found::default()
-    });
-    assert_eq!(merge::credit_strings(&q, &m), [true, true]);
-    let q = Query::new("velvet orchard");
-    let mut m = Merged::default();
-    m.add(Found {
-        artists: vec![lastfm("Velvet Orchard", 800), lastfm("Velvet Orchard & Friends", 20)],
-        ..Found::default()
-    });
-    assert_eq!(merge::credit_strings(&q, &m), [false, true]);
 }
 
 #[test]

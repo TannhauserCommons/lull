@@ -668,7 +668,6 @@ pub fn recordings(body: serde_json::Value) -> Result<Found> {
                     popularity: 0.0,
                     image: None,
                     audience: None,
-                    lastfm_only: false,
                 });
             }
         }
@@ -684,7 +683,6 @@ pub fn recordings(body: serde_json::Value) -> Result<Found> {
             popularity: 0.0,
             art,
             album_source: None,
-            lastfm_only: false,
             artist,
             album_artist,
         });

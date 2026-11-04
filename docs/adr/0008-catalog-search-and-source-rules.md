@@ -90,3 +90,10 @@ Exploring the code found three gaps:
 - **Answering without iTunes was wrong.** Two people searching "edgerunners 2" on one hub, a minute apart, got different top results, and one never saw "High Forever": as-you-type searches had spent the 18 calls, the run answered with MusicBrainz and Last.fm alone, said nothing, and was kept 10 minutes for anyone searching those words.
 - **Now a call over the budget waits its turn,** the newest search's songs first, then album searches and artist pages, then link imports. A search that gets no turn within its 8 s shows `errors.itunes`, and its run isn't kept.
 - **And a run's answers are one list:** the first answer fixes the top result and order, `search.more` rows go after it, and later answers for the same words get that list, not a new ranking.
+
+## Update 2026-11-04: Apple's order kept, Last.fm out of search
+
+- **Measured on 63 queries,** Apple's song order was nearly always what the listener meant; lull's re-ranking threw it away (misspellings, unknown exact namesakes, live takes first). Ranking now forgives typos, counts a title being typed and an artist with words of the title as exact, ranks versions after the song, and, where iTunes gives no counts, takes a song its own artists have on more releases as the better known (discovery.md#search).
+- **Last.fm's search is no longer a source:** it added covers without a release and scrobbles' credit strings, nothing the catalogs and MusicBrainz missed. Last.fm stays for bios, similar artists, covers and scrobbling.
+- **Deezer stays for artists where it is closed:** Apple's song and album searches name no artists, and Deezer's fans are what rank them.
+- **A search's iTunes album call takes the whole budget after its songs,** and the first answer waits for the songs: queued behind background work, it held the songs back past 1.5 s, and the run's first answer, without them, fixed a wrong list.

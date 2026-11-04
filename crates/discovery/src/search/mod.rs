@@ -2,7 +2,8 @@
 //!
 //! - **Sources** run side by side: the fast catalog (`catalog`: Deezer, or iTunes plus Deezer's
 //!   artists where Deezer is closed) and the saved library, then MusicBrainz (one recording
-//!   search) and Last.fm. Their rows are merged and ranked by `merge`.
+//!   search). Their rows are merged and ranked by `merge`. Last.fm's search is not one: it
+//!   answered covers without a release and scrobbles' credit strings, nothing the others missed.
 //! - **Fast first:** the answer goes out once every fast source is in, or at 1.5 s (iTunes and
 //!   Deezer take 0.6-1 s from the homelab), so its top result and order come from all of them;
 //!   but never before the catalog's songs, which the order can't do without. What arrives later
@@ -244,7 +245,7 @@ fn start(svc: &Arc<Service>, run: &Arc<Run>, source: Source) {
 }
 
 /// The sources in use: the fast catalog and the library; for 3+ characters also MusicBrainz
-/// unless switched off, Last.fm when configured and on, and Deezer's and YouTube's playlists.
+/// unless switched off, and Deezer's and YouTube's playlists.
 fn sources(svc: &Service, query: &str) -> Vec<Source> {
     let mut sources = vec![Source::Deezer, Source::Library];
     if svc.catalog.choice() == Choice::Itunes {
@@ -253,9 +254,6 @@ fn sources(svc: &Service, query: &str) -> Vec<Source> {
     let slow = query.chars().count() >= SLOW_SOURCES_FROM;
     if slow && svc.mb.switch.is_on() {
         sources.push(Source::MusicBrainz);
-    }
-    if slow && svc.lastfm().is_some() {
-        sources.push(Source::LastFm);
     }
     if slow {
         sources.extend([Source::DeezerPlaylists, Source::YoutubePlaylists]);
@@ -343,10 +341,6 @@ async fn fetch(svc: &Service, source: Source, q: &str) -> Result<Found> {
             found.albums.retain(|a| query.album(a) >= Fit::Most);
             Ok(found)
         }
-        Source::LastFm => match svc.lastfm() {
-            Some(lastfm) => lastfm.search(q).await,
-            None => Ok(Found::default()),
-        },
         Source::DeezerPlaylists => Ok(Found {
             playlists: svc.deezer.playlists(q).await?,
             ..Found::default()
@@ -532,7 +526,7 @@ struct Ranked {
 }
 
 /// Ranks the merged rows for the query; `liked` and `followed` are the listener's own, which
-/// break ties (`merge`). Misspelt artists and Last.fm's credit strings are left out.
+/// break ties (`merge`). Artists borrowing another's name are left out.
 fn rank_rows(q: &Query, m: &Merged, liked: &HashSet<TrackId>, followed: &HashSet<ArtistId>) -> Ranked {
     let fits = song_scores(q, m);
     let songs = merge::rank(&fits, |i| {
@@ -543,10 +537,9 @@ fn rank_rows(q: &Query, m: &Merged, liked: &HashSet<TrackId>, followed: &HashSet
     let albums = merge::rank(&album_fits, |i| followed.contains(&ArtistId::of(&m.albums[i].artist)));
     let mut artist_fits: Vec<Score> = m.artists.iter().map(|a| Score::artist(q, a)).collect();
     merge::overshadow(&m.artists, &mut artist_fits);
-    let misspelt = merge::misspelt(&m.artists);
-    let credits = merge::credit_strings(q, m);
+    let borrowed = merge::borrowed(&m.artists);
     let mut artists = merge::rank(&artist_fits, |i| followed.contains(&m.artists[i].id()));
-    artists.retain(|&i| !misspelt[i] && !credits[i]);
+    artists.retain(|&i| !borrowed[i]);
 
     // A query that names a film, show or game: its soundtrack, album or playlist, leads.
     let ranked_albums: Vec<(usize, &merge::AlbumHit)> = albums.iter().map(|&i| (i, &m.albums[i])).collect();
