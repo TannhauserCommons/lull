@@ -437,12 +437,14 @@ pub fn same_song(a: &SongHit, b: &SongHit) -> bool {
         && loose_title(&a.title) == loose_title(&b.title))
 }
 
-/// `same_song`, and where a length is missing (YouTube Music gives none), the same take too: a
-/// remix, an edit or a live take is never the song itself ("Shelter (Them Jeans drum edit)" is
-/// not "Shelter"), so it neither merges into its row nor lends it its plays.
-fn same_take(a: &SongHit, b: &SongHit) -> bool {
-    same_song(a, b)
-        && ((a.duration.is_some() && b.duration.is_some()) || version_words(&a.title) == version_words(&b.title))
+/// `same_song`, and where a length is missing (YouTube Music gives none, a playlist line may
+/// not), the same take too: a remix, an edit or a live take is never the song itself ("Shelter
+/// (Them Jeans drum edit)" is not "Shelter"), so it neither merges into its row, lends it its
+/// plays, nor matches it for a link import. A shared ISRC is the same recording whatever the tags.
+pub fn same_take(a: &SongHit, b: &SongHit) -> bool {
+    let isrc = a.isrcs.iter().any(|i| b.isrcs.contains(i));
+    isrc || (same_song(a, b)
+        && ((a.duration.is_some() && b.duration.is_some()) || version_words(&a.title) == version_words(&b.title)))
 }
 
 fn same_album(a: &AlbumHit, b: &AlbumHit) -> bool {

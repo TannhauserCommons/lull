@@ -176,4 +176,5 @@ pub trait Catalog: Send + Sync {
 /// The version of `Catalog::find_song`'s rule: bump it with any change to the rule. Collection
 /// keeps "nothing matched" under it, so a rule that matches more isn't answered with yesterday's
 /// misses.
-pub const FIND_SONG_RULE: i64 = 2;
+/// 3: an edit or a live take is not the original when a length is missing (`merge::same_take`).
+pub const FIND_SONG_RULE: i64 = 3;

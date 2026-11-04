@@ -2,7 +2,8 @@
 //! seam. The library's copy wins; then Deezer by ISRC, a lookup that answers in every country
 //! and within Deezer's roomy limit; then the fast catalog by name: Deezer where it is open, else
 //! iTunes, whose small budget is kept for the songs that come without an ISRC.
-//! A hit counts when it is the same song by search's rule (`merge::same_song`), with the whole
+//! A hit counts when it is the same song by search's rule (`merge::same_take`: the same take, so
+//! a line "Shelter (Them Jeans drum edit)" never finds the plain "Shelter"), with the whole
 //! credit and each name in it tried (`radio::credited_names`, radio's own reading of credits), so
 //! "Tyler, The Creator" and "A, B" both find theirs.
 //! Names in different scripts can't be compared (ミドリ in the link, "Midori" in the store): then
@@ -17,7 +18,7 @@ use lull_core::seams::Catalog;
 
 use super::catalog::Choice;
 use super::describe;
-use super::merge::{Found, Merged, SongHit, same_song};
+use super::merge::{Found, Merged, SongHit, same_song, same_take};
 use crate::Service;
 use crate::radio::credited_names;
 
@@ -83,7 +84,7 @@ fn wanted(song: &SongQuery) -> Vec<SongHit> {
 }
 
 fn is_wanted(hit: &SongHit, wanted: &[SongHit]) -> bool {
-    wanted.iter().any(|w| same_song(hit, w))
+    wanted.iter().any(|w| same_take(hit, w))
 }
 
 /// The store's hit for the song: the first that is the same song by name, else the top hit when
@@ -265,6 +266,20 @@ mod tests {
             &catalog,
             &wanted(&query("Luude, Colin Hay", "Down Under", Some(223)))
         ));
+    }
+
+    #[test]
+    fn an_edit_or_a_live_take_is_not_the_original_when_a_length_is_missing() {
+        // A playlist line may come without a length, and search's own rule let any length pass.
+        let edit = wanted(&query("The xx", "Shelter (Them Jeans Drum Edit)", None));
+        assert!(!is_wanted(&hit("The xx", "Shelter", Some(270)), &edit));
+        assert!(is_wanted(
+            &hit("The xx", "Shelter (Them Jeans Drum Edit)", Some(301)),
+            &edit
+        ));
+        let original = wanted(&query("The xx", "Shelter", None));
+        assert!(!is_wanted(&hit("The xx", "Shelter (Live)", Some(284)), &original));
+        assert!(!is_wanted(&hit("The xx", "Shelter - Radio Edit", None), &original));
     }
 
     #[test]
