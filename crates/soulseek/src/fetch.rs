@@ -1055,11 +1055,14 @@ impl Fetcher {
             Route::Soulseek => self.soulseek(f, pick, stop).await,
             Route::SoulseekThenYoutube(wait) => self.soulseek_then_youtube(f, wait, true, &mut stop).await,
             Route::YoutubeFirst => match self.youtube_first(f, &mut stop).await {
-                Err(Stop::Failed(why)) => {
-                    tracing::info!(track = %f.track.id, why, "YouTube didn't start the song; looking on Soulseek");
+                Err(Stop::Failed(yt)) => {
+                    tracing::info!(track = %f.track.id, why = yt, "YouTube didn't start the song; looking on Soulseek");
                     f.on_youtube.store(false, Ordering::Relaxed);
                     self.drop_upgrade(&f.track.id);
-                    self.soulseek_then_youtube(f, None, false, &mut stop).await
+                    match self.soulseek_then_youtube(f, None, false, &mut stop).await {
+                        Err(Stop::Failed(why)) => Err(Stop::Failed(format!("{why}; YouTube: {yt}"))),
+                        other => other,
+                    }
                 }
                 done => done,
             },
@@ -2263,7 +2266,7 @@ mod tests {
         use crate::cache::Cache;
         use crate::fake_slskd::{Fake, Peer};
         use crate::peers::Peers;
-        use crate::rules::Current;
+        use crate::rules::{Current, Rules};
         use crate::search::Searches;
         use crate::sources::{Source, Sources};
 
@@ -2299,7 +2302,7 @@ mod tests {
             }
         }
 
-        async fn fetcher(fake: &Fake) -> Result<Fetcher> {
+        async fn fetcher(fake: &Fake, rules: Rules) -> Result<Fetcher> {
             let db = lull_core::db::Db::memory()?;
             db.migrate(&crate::MIGRATIONS)?;
             let bus = Bus::new();
@@ -2315,7 +2318,7 @@ mod tests {
                 sources,
                 searches,
                 bus,
-                Current::default(),
+                Current::from(rules),
                 Arc::new(NoYoutube),
             ))
         }
@@ -2327,6 +2330,29 @@ mod tests {
                 .map_err(|_| Error::internal("the fetch never ended"))?
                 .map_err(|_| Error::internal("gone"))?
                 .clone())
+        }
+
+        #[tokio::test]
+        async fn start_fast_with_no_youtube_match_and_no_peer_says_why_youtube_failed_too() -> Result<()> {
+            let peer = Peer {
+                per_tick: 32_768,
+                overwrite: false,
+                settles: Duration::ZERO,
+            };
+            let fake = Fake::start(HashMap::new(), peer)
+                .await
+                .map_err(|e| Error::internal(e.to_string()))?;
+            let mut rules = Rules::default();
+            rules.youtube.mode = lull_core::youtube::Mode::StartFast;
+            let f = fetcher(&fake, rules).await?.stream(track(), None).await?;
+            let p = ended(&f).await?;
+            assert_eq!(p.status, Status::Failed);
+            let error = p.error.unwrap_or_default();
+            assert!(
+                error.ends_with("; YouTube: no YouTube upload matches this song"),
+                "{error}"
+            );
+            Ok(())
         }
 
         #[tokio::test]
@@ -2342,7 +2368,7 @@ mod tests {
             let fake = Fake::start(HashMap::from([(REMOTE.to_owned(), bytes.clone())]), peer)
                 .await
                 .map_err(|e| Error::internal(e.to_string()))?;
-            let fetcher = fetcher(&fake).await?;
+            let fetcher = fetcher(&fake, Rules::default()).await?;
             let pick = SourceRef {
                 user: "peer".into(),
                 path: REMOTE.into(),
@@ -2367,7 +2393,7 @@ mod tests {
             let fake = Fake::start(HashMap::from([(REMOTE.to_owned(), bytes.clone())]), peer)
                 .await
                 .map_err(|e| Error::internal(e.to_string()))?;
-            let fetcher = fetcher(&fake).await?;
+            let fetcher = fetcher(&fake, Rules::default()).await?;
             let pick = SourceRef {
                 user: "peer".into(),
                 path: REMOTE.into(),
@@ -2433,7 +2459,7 @@ mod tests {
             )
             .await
             .map_err(|e| Error::internal(e.to_string()))?;
-            let fetcher = fetcher(&fake).await?;
+            let fetcher = fetcher(&fake, Rules::default()).await?;
             let song = Track {
                 duration: Some(20),
                 ..track()

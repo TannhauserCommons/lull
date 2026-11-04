@@ -76,6 +76,13 @@ impl Rules {
 #[derive(Clone, Default)]
 pub struct Current(Arc<RwLock<Rules>>);
 
+#[cfg(test)]
+impl From<Rules> for Current {
+    fn from(rules: Rules) -> Self {
+        Current(Arc::new(RwLock::new(rules)))
+    }
+}
+
 impl Current {
     pub fn get(&self) -> Rules {
         self.0.read().map(|r| r.clone()).unwrap_or_default()
