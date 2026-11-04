@@ -55,6 +55,10 @@ pub struct Handoff {
     pub(crate) radio: Option<serde_json::Value>,
     #[serde(default)]
     pub(crate) context: Option<serde_json::Value>,
+    /// Where native Classic's windows were when it last closed (classic_native's `Layout`), as the
+    /// device keeps it; Webamp's window has no use for it.
+    #[serde(default)]
+    pub(crate) layout: Option<serde_json::Value>,
 }
 
 /// The web UI's equaliser settings (web/eq.js): on, ten bands in dB, and a hand-set preamp or
@@ -418,6 +422,7 @@ mod tests {
             repeat_mode: None,
             radio: None,
             context: None,
+            layout: None,
         }
     }
 

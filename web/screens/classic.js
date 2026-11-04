@@ -314,11 +314,12 @@
   /* Webamp's list, song, position and modes back into the app engine (b: session.handBack()). Songs Webamp played
      from local files have no place in a lull queue and are left out */
   function takeBack(b) {
-    /* from the native window (no webview): its equaliser and size, the plays and likes the hub couldn't take then (the
+    /* from the native window (no webview): its equaliser, size and windows' layout, the plays and likes the hub couldn't take then (the
        outbox sends them), and the queue whole, played by this page's rules, radio and groups kept */
     if (b.player) {
       if (b.eq) LullEq.write(b.eq);
       if (b.size) App.classicSize.set(b.size);
+      if (b.layout) writeLayout(b.layout);
       (b.ops || []).forEach(function (op) { App.outbox.add(op); });
       P.adopt(b.player, b.playing);
       return;
@@ -333,6 +334,15 @@
       if (Math.abs(b.pos - ps.pos) > 1) P.seek(b.pos);
       if (b.playing) P.play();
     }
+  }
+  /* where native Classic's windows were (classic_native's Layout), per device as the size is: it comes back with the
+     queue and goes with the next hand-off */
+  var LAYOUT_KEY = 'lull:classicLayout';
+  function readLayout() {
+    try { return JSON.parse(localStorage.getItem(LAYOUT_KEY)); } catch (err) { console.warn('lull: Classic layout unreadable', err); return null; }
+  }
+  function writeLayout(layout) {
+    try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)); } catch (err) { console.warn('lull: Classic layout not kept', err); }
   }
   /* App.hooks.media while Classic is open */
   var webampControls = {
@@ -495,7 +505,7 @@
     var h = handoff();
     /* a window drawn natively (no webview) takes its size and equaliser here, and lull comes back on this page; a skin
        kept on this device comes along as its file, which only this page's storage holds */
-    h.size = App.classicSize.get(); h.page = lastHref(); h.eq = LullEq.read();
+    h.size = App.classicSize.get(); h.page = lastHref(); h.eq = LullEq.read(); h.layout = readLayout();
     h.repeatMode = P.state.repeat; h.radio = P.state.radio; h.context = P.state.context;
     return Promise.all([readFavourites(), App.classicSkin.opening()]).then(function (r) {
       var favs = r[0], skin = r[1];

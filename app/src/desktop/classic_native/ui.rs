@@ -50,10 +50,76 @@ pub struct Setup {
     pub at: (i32, i32),
     /// The listener's favourite skins (name, file), for the Options menu.
     pub favourites: Vec<(String, String)>,
+    /// Where the windows were when Classic last closed on this device, if it has.
+    pub layout: Option<Layout>,
 }
 
-/// What happens once the listener leaves Classic: the session as it is then, and the size.
-pub type OnClose = Box<dyn FnOnce(Session, f64)>;
+/// Where the windows were and how, as the device keeps it between openings: the main window's top
+/// left (physical pixels of the desktop), the others' from it in skin pixels (so they stay put at
+/// any size), which are open and rolled up, and the playlist's size in Webamp's steps.
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Layout {
+    pub main: Place,
+    pub eq: Place,
+    pub playlist: Place,
+    pub wide: u32,
+    pub tall: u32,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Place {
+    pub x: i32,
+    pub y: i32,
+    pub open: bool,
+    pub shade: bool,
+}
+
+impl Layout {
+    /// The windows' places at `scale` (physical pixels a skin pixel is).
+    fn places(&self, scale: f64) -> [(i32, i32); 3] {
+        let (x, y) = (self.main.x, self.main.y);
+        let from = |place: Place| {
+            let at = |d: i32| (f64::from(d) * scale).round() as i32;
+            (x + at(place.x), y + at(place.y))
+        };
+        [(x, y), from(self.eq), from(self.playlist)]
+    }
+
+    /// The layout of windows at these places, shown and rolled up as `panels` has them.
+    fn of(places: &[(i32, i32); 3], panels: &Panels, scale: f64) -> Self {
+        let main = places[Panel::Main.index()];
+        let from = |panel: Panel| {
+            let (x, y) = places[panel.index()];
+            let skin = |d: i32| (f64::from(d) / scale).round() as i32;
+            Place {
+                x: skin(x - main.0),
+                y: skin(y - main.1),
+                open: panels.showing(panel),
+                shade: panels.shaded(panel),
+            }
+        };
+        Layout {
+            main: Place {
+                x: main.0,
+                y: main.1,
+                open: true,
+                shade: panels.main_shade,
+            },
+            eq: from(Panel::Eq),
+            playlist: from(Panel::Playlist),
+            wide: panels.playlist_size.wide,
+            tall: panels.playlist_size.tall,
+        }
+    }
+}
+
+/// A playlist no wider or taller than this many steps comes back from a kept layout.
+const MOST_STEPS: u32 = 64;
+
+/// What happens once the listener leaves Classic: the session as it is then, the size, and where
+/// the windows were.
+pub type OnClose = Box<dyn FnOnce(Session, f64, Layout)>;
 
 /// The three windows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -341,17 +407,29 @@ impl Classic {
             playlist_shade: false,
             playlist_size: playlist::Size::default(),
         };
-        // Stacked as Webamp opens them: the equaliser under the main window, the playlist under it.
+        // As they were, or stacked as Webamp opens them: the equaliser under the main window, the
+        // playlist under it.
         let scale = setup.size * setup.dpi;
-        let (x, y) = setup.at;
         let height = edges(HEIGHT, scale).last().copied().unwrap_or(0);
+        let (x, y) = setup.at;
+        let mut places = [(x, y), (x, y + height), (x, y + 2 * height)];
+        let mut panels = panels;
+        if let Some(l) = setup.layout {
+            places = l.places(scale);
+            (panels.eq, panels.playlist) = (l.eq.open, l.playlist.open);
+            (panels.main_shade, panels.eq_shade, panels.playlist_shade) = (l.main.shade, l.eq.shade, l.playlist.shade);
+            panels.playlist_size = playlist::Size {
+                wide: l.wide.min(MOST_STEPS),
+                tall: l.tall.min(MOST_STEPS),
+            };
+        }
         let mut classic = Classic {
             skin: setup.skin,
             session: setup.session,
             on_close: Some(on_close),
             favourites: setup.favourites,
             panes: [Pane::new(), Pane::new(), Pane::new()],
-            places: [(x, y), (x, y + height), (x, y + 2 * height)],
+            places,
             laid_out: None,
             places_windows: true,
             areas: Vec::new(),
@@ -384,6 +462,11 @@ impl Classic {
         let index = classic.snapshot.index;
         classic.list.show(index, classic.panels.playlist_size);
         classic
+    }
+
+    /// Where the windows are and how, to keep for the next opening.
+    pub fn layout(&self) -> Layout {
+        Layout::of(&self.places, &self.panels, self.size * self.dpi)
     }
 
     /// The widest window's physical width, for a band a window's rows are drawn in.
@@ -1760,6 +1843,29 @@ mod tests {
         assert_eq!(skipped(25, 30, true, 10), Some(5));
         assert_eq!(skipped(3, 30, true, -10), Some(23));
         assert_eq!(skipped(0, 0, true, 10), None);
+    }
+
+    #[test]
+    fn the_layout_kept_brings_the_windows_back_where_they_were_at_any_size() {
+        let panels = Panels {
+            main: true,
+            eq: false,
+            playlist: true,
+            main_shade: true,
+            eq_shade: false,
+            playlist_shade: false,
+            playlist_size: playlist::Size { wide: 2, tall: 1 },
+        };
+        // At 2x: the equaliser apart, the playlist docked under the rolled-up main window.
+        let places = [(300, 200), (1000, 640), (300, 228)];
+        let layout = Layout::of(&places, &panels, 2.0);
+        assert_eq!((layout.eq.x, layout.eq.y, layout.eq.open), (350, 220, false));
+        assert_eq!((layout.playlist.x, layout.playlist.y), (0, 14));
+        assert_eq!(layout.places(2.0), places);
+        // Opened at 1x, the same layout at half the distances.
+        assert_eq!(layout.places(1.0), [(300, 200), (650, 420), (300, 214)]);
+        let kept = serde_json::to_value(layout).unwrap_or_default();
+        assert_eq!(serde_json::from_value::<Layout>(kept).ok(), Some(layout));
     }
 
     #[test]

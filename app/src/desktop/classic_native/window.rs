@@ -224,9 +224,9 @@ pub fn close() {
     let _ = unsafe { KillTimer(Some(window.panes[0].hwnd), TIMER) };
     destroy(&window.panes.each_ref().map(|p| p.hwnd));
     let mut classic = window.classic;
-    let size = classic.size;
+    let (size, layout) = (classic.size, classic.layout());
     if let Some(on_close) = classic.on_close.take() {
-        on_close(classic.session, size);
+        on_close(classic.session, size, layout);
     }
 }
 

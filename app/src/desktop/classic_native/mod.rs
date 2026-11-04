@@ -95,6 +95,11 @@ pub fn open(app: &AppHandle, handoff: Handoff, main: WebviewWindow) -> Result<()
     let (skin, said) = load_skin(&origin, &token, source)?;
     let (size, dpi, at) = place(&main, handoff.size.unwrap_or(1.0))?;
     let favourites = handoff.skins.iter().map(|s| (s.name.clone(), s.url.clone())).collect();
+    // Where the windows were last time, if this device kept it in a shape this can read.
+    let layout = handoff
+        .layout
+        .clone()
+        .and_then(|l| serde_json::from_value::<ui::Layout>(l).ok());
     let eq = handoff.eq.clone().unwrap_or_else(Equaliser::flat).normalised();
     let hub = Hub::new(origin, token);
     let engine = Engine::start(hub.clone(), start(&handoff, eq))?;
@@ -103,7 +108,8 @@ pub fn open(app: &AppHandle, handoff: Handoff, main: WebviewWindow) -> Result<()
     let app_back = app.clone();
     let (opened, result) = std::sync::mpsc::channel();
     app.run_on_main_thread(move || {
-        let on_close: window::OnClose = Box::new(move |session, size| go_back(app_back, session, size, page));
+        let on_close: window::OnClose =
+            Box::new(move |session, size, layout| go_back(app_back, session, (size, layout), page));
         let window = window::Setup {
             skin,
             said,
@@ -112,6 +118,7 @@ pub fn open(app: &AppHandle, handoff: Handoff, main: WebviewWindow) -> Result<()
             dpi,
             at,
             favourites,
+            layout,
         };
         let _ = opened.send(window::open(window, on_close));
     })
@@ -144,7 +151,7 @@ pub fn take_back() -> Option<Value> {
 /// The window has gone: once the hub has heard about the last play (or it's out of reach, and the
 /// outbox will tell it), the queue waits for `main`'s new page, which opens on the page Classic was
 /// opened from. Off the main thread: building a webview there would wait on itself.
-fn go_back(app: AppHandle, session: Session, size: f64, page: Option<String>) {
+fn go_back(app: AppHandle, session: Session, (size, layout): (f64, ui::Layout), page: Option<String>) {
     OPEN.store(false, Ordering::Relaxed);
     let (origin, token) = (session.origin().clone(), session.token().to_owned());
     let mut url = origin;
@@ -162,6 +169,7 @@ fn go_back(app: AppHandle, session: Session, size: f64, page: Option<String>) {
             let ops = std::mem::take(&mut *ops.lock().unwrap_or_else(std::sync::PoisonError::into_inner));
             value["ops"] = Value::Array(ops);
             value["size"] = size.into();
+            value["layout"] = serde_json::to_value(layout).unwrap_or_default();
             *BACK.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(value);
         }
         main_window::report(main_window::open_hub(&app, &url, &token));
