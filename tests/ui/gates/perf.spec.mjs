@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
-import { designs, ids, openScreen, restyleFanOut, traced } from './lib.mjs';
+import { designs, ids, openScreen, quiet, restyleFanOut, traced } from './lib.mjs';
 import * as S from './scenarios.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -93,8 +93,10 @@ test.describe('lull', () => {
     expect(st.still, 'on: lull inactive, the loops hold still').toBe(true);
     expect(st.sky, 'on: the sky twinkle holds').toEqual(['paused']);
     expect(st.spinner, 'on: a spinner keeps going').toEqual(['running']);
-    // counted once the hold and the spinner's going are on screen (two frames on): what follows is lull held still
-    await page.evaluate(() => { document.getElementById('gate-spin').remove(); return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); });
+    // counted once the hold and the spinner's going are on screen, drawn and the compositor quiet: what follows is lull
+    // held still
+    await page.evaluate(() => document.getElementById('gate-spin').remove());
+    await quiet(browser, page);
     expect(await drawn(), 'on: frames drawn in 2 s while lull is inactive').toBeLessThanOrEqual(2);
     await focus(true);
     st = await state();

@@ -92,6 +92,16 @@ export async function traced(browser, page, fn, { drawn = false } = {}) {
   return summarise(JSON.parse(raw.toString()));
 }
 
+// Wait until the page's compositor has drawn nothing for `ms` (giving up after `within`): a change just made is on
+// screen, so a count that follows sees only what keeps drawing by itself. Two requestAnimationFrames don't get there:
+// they wait for the main thread's frames, and the tiles those paint are rastered and drawn after them, a frame or more
+// later on a slow machine. A page that never goes quiet is left to the count that follows, which then fails.
+export async function quiet(browser, page, { ms = 250, within = 3000 } = {}) {
+  for (const end = Date.now() + within; Date.now() < end;) {
+    if (!(await traced(browser, page, () => page.waitForTimeout(ms), { drawn: true })).drawn) return;
+  }
+}
+
 export function summarise(json) {
   const events = json.traceEvents || json;
   const mainThreads = new Set(events.filter((e) => e.name === 'thread_name' && e.args?.name === 'CrRendererMain').map((e) => `${e.pid}:${e.tid}`));
