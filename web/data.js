@@ -82,8 +82,23 @@ window.LullData = (function () {
   /* set by app.js: called on any 401 so the token gate can open */
   M.onUnauthorized = function () {};
 
+  /* a read already on its way is shared: two parts of the page that ask for the same thing at once (the player's
+     settings and Settings > Playback, private listening and the device list, at start) make one request. A write
+     forgets every read on its way, so a read sent after a change never answers with what was there before it */
+  var reading = {};
   M.api = function (path, o) {
     o = o || {};
+    if ((o.method || 'GET') !== 'GET') reading = {};
+    else if (o.body === undefined && !o.keepalive) {
+      if (reading[path]) return reading[path];
+      var mine = reading[path] = send(path, o);
+      var done = function () { if (reading[path] === mine) delete reading[path]; };
+      mine.then(done, done);
+      return mine;
+    }
+    return send(path, o);
+  };
+  function send(path, o) {
     var init = { method: o.method || 'GET', headers: {}, credentials: 'same-origin', keepalive: !!o.keepalive };
     if (o.body !== undefined) {
       var file = typeof Blob !== 'undefined' && o.body instanceof Blob;     // a file goes as it is (imports)
@@ -106,7 +121,7 @@ window.LullData = (function () {
     }, function () {
       throw new ApiError(0, 'unreachable', 'Can\'t reach the lull server. Check your connection.');
     });
-  };
+  }
 
   /* ---------- per-route reads ---------- */
   var records = {}, generation = 0;

@@ -17,7 +17,8 @@ index.html   tokens.css base.css components.css screens/{discover,now,library,sy
              recovery hands the queue back through classic.js
              everything else loads on its first use: see "Code loads where it is used" below; the start's files and
              why each is there: tests/ui/gates/start-files.json
-data.js      window.LullData = App.data: API client, entity cache, per-route reads, the event stream
+data.js      window.LullData = App.data: API client (the same read made twice at once is one request; a write
+             forgets the reads on their way), entity cache, per-route reads, the event stream
 player-rules.js  window.LullRules: the player's rules (what the queue moves to, plays, levels, preloading, radio,
              seeking, better copies), pure; app.js follows them and so does the desktop's native Classic player
              (tests/player-rules.json, tested on both sides)
