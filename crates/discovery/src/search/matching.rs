@@ -5,6 +5,10 @@
 //! A hit counts when it is the same song by search's rule (`merge::same_song`), with the whole
 //! credit and each name in it tried (`radio::credited_names`, radio's own reading of credits), so
 //! "Tyler, The Creator" and "A, B" both find theirs.
+//! Names in different scripts can't be compared (ミドリ in the link, "Midori" in the store): then
+//! the store's top hit for the query counts when its length is within search's tolerance and the
+//! names in one script agree (`across_scripts`). A change to these rules bumps
+//! `seams::FIND_SONG_RULE`.
 
 use async_trait::async_trait;
 use lull_core::Result;
@@ -28,10 +32,7 @@ impl Catalog for Service {
         // The first name of the credit, not the whole: "Daft Punk, Pharrell Williams Get Lucky"
         // finds less than "Daft Punk Get Lucky".
         let query = format!("{} {}", names.get(1).unwrap_or(&song.artist), song.title);
-        let saved = self.store.search_saved(&query, SAVED).await.unwrap_or_else(|e| {
-            tracing::info!(error = %e, "matching a song without the library");
-            Vec::new()
-        });
+        let saved = self.store.search_saved(&query, SAVED).await?;
         if let Some(t) = saved.into_iter().find(|t| is_wanted(&super::saved(t.clone()), &wanted)) {
             return Ok(Some(t));
         }
@@ -57,13 +58,12 @@ impl Service {
                 None => Ok(None),
             }
         };
-        let pick = |hits: Vec<SongHit>| hits.into_iter().find(|h| is_wanted(h, wanted));
         if let Some(hit) = by_isrc().await? {
             return Ok(Some(hit));
         }
         Ok(match self.catalog.choice() {
-            Choice::Deezer => pick(self.deezer.tracks(query).await?),
-            Choice::Itunes => pick(self.itunes.match_songs(query).await?),
+            Choice::Deezer => pick(self.deezer.tracks(query).await?, wanted),
+            Choice::Itunes => pick(self.itunes.match_songs(query).await?, wanted),
         })
     }
 }
@@ -84,6 +84,60 @@ fn wanted(song: &SongQuery) -> Vec<SongHit> {
 
 fn is_wanted(hit: &SongHit, wanted: &[SongHit]) -> bool {
     wanted.iter().any(|w| same_song(hit, w))
+}
+
+/// The store's hit for the song: the first that is the same song by name, else the top hit when
+/// it is named in another script.
+fn pick(hits: Vec<SongHit>, wanted: &[SongHit]) -> Option<SongHit> {
+    let top = hits.first().filter(|h| across_scripts(h, wanted)).cloned();
+    hits.into_iter().find(|h| is_wanted(h, wanted)).or(top)
+}
+
+/// Whether `hit` is the song though its artist or title is in another script than the link's:
+/// both lengths known and within search's tolerance, and the names in one script the same song
+/// by search's rule. Each name in another script is taken as agreeing.
+fn across_scripts(hit: &SongHit, wanted: &[SongHit]) -> bool {
+    wanted.iter().any(|w| {
+        let (artist, title) = (apart(&hit.artist, &w.artist), apart(&hit.title, &w.title));
+        let read = SongHit {
+            artist: if artist { w.artist.clone() } else { hit.artist.clone() },
+            title: if title { w.title.clone() } else { hit.title.clone() },
+            duration: hit.duration,
+            ..SongHit::default()
+        };
+        (artist || title) && hit.duration.is_some() && w.duration.is_some() && same_song(&read, w)
+    })
+}
+
+#[derive(PartialEq)]
+enum Script {
+    Latin,
+    Other,
+    /// No letters (digits, signs): comparable with either.
+    None,
+}
+
+/// A name's script, as far as comparing names goes: any letter outside Latin makes it `Other`.
+fn script(name: &str) -> Script {
+    let latin = |c: char| {
+        c.is_ascii_alphabetic() || ('\u{00AA}'..='\u{024F}').contains(&c) || ('\u{1E00}'..='\u{1EFF}').contains(&c)
+    };
+    let mut seen = Script::None;
+    for c in name.chars().filter(|c| c.is_alphabetic()) {
+        if !latin(c) {
+            return Script::Other;
+        }
+        seen = Script::Latin;
+    }
+    seen
+}
+
+/// Whether two names can't be compared: one in Latin letters, the other not.
+fn apart(a: &str, b: &str) -> bool {
+    matches!(
+        (script(a), script(b)),
+        (Script::Latin, Script::Other) | (Script::Other, Script::Latin)
+    )
 }
 
 #[cfg(test)]
@@ -130,6 +184,46 @@ mod tests {
             &hit("The Beatles", "Hey Jude (Remastered 2015)", Some(431)),
             &w
         ));
+    }
+
+    #[test]
+    fn a_song_named_in_kana_matches_the_stores_romaji_top_hit_of_its_length() {
+        let w = wanted(&query("ミドリ", "ゆきこさん", Some(188)));
+        let found = pick(
+            vec![hit("Midori", "Yukikosan", Some(188)), hit("Midori", "Swing", Some(201))],
+            &w,
+        );
+        assert_eq!(found.map(|h| h.title), Some("Yukikosan".to_owned()));
+    }
+
+    #[test]
+    fn across_scripts_only_the_top_hit_of_a_close_length_counts() {
+        let w = wanted(&query("ミドリ", "ゆきこさん", Some(188)));
+        assert!(pick(vec![hit("Midori", "Yukikosan", Some(240))], &w).is_none());
+        assert!(
+            pick(
+                vec![hit("Midori", "Swing", Some(240)), hit("Midori", "Yukikosan", Some(188))],
+                &w
+            )
+            .is_none()
+        );
+        assert!(pick(vec![hit("Midori", "Yukikosan", None)], &w).is_none());
+    }
+
+    #[test]
+    fn across_scripts_a_name_in_the_same_script_must_still_agree() {
+        let w = wanted(&query("YOASOBI", "夜に駆ける", Some(261)));
+        assert!(pick(vec![hit("YOASOBI", "Yoru ni Kakeru", Some(261))], &w).is_some());
+        assert!(pick(vec![hit("Ado", "Yoru ni Kakeru", Some(261))], &w).is_none());
+    }
+
+    #[test]
+    fn a_latin_name_with_another_title_is_still_unmatched() {
+        let w = wanted(&query("The Beatles", "Hey Jude", Some(429)));
+        assert!(pick(vec![hit("The Beatles", "Let It Be", Some(429))], &w).is_none());
+        // Accented Latin is Latin: compared by name, as before.
+        let w = wanted(&query("Beyoncé", "Halo", Some(261)));
+        assert!(pick(vec![hit("Beyonce", "Single Ladies", Some(261))], &w).is_none());
     }
 
     #[test]

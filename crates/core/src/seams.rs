@@ -166,8 +166,14 @@ pub trait Youtube: Send + Sync {
 #[async_trait]
 pub trait Catalog: Send + Sync {
     /// The song as lull knows it: the library's copy, else the catalog's same song (the same
-    /// ISRC, else the same loose artist and title with lengths within 3 s), recorded so its id
-    /// resolves. `None` when nothing matches. Waits its turn within the catalog's rate limits,
-    /// leaving room for the listener's own searches.
+    /// ISRC, else the same loose artist and title with lengths within 3 s; a name in another
+    /// script than the store's leaves the length to decide, for the store's top hit), recorded so
+    /// its id resolves. `None` when nothing matches. Waits its turn within the catalog's rate
+    /// limits, leaving room for the listener's own searches.
     async fn find_song(&self, song: &model::SongQuery) -> Result<Option<Track>>;
 }
+
+/// The version of `Catalog::find_song`'s rule: bump it with any change to the rule. Collection
+/// keeps "nothing matched" under it, so a rule that matches more isn't answered with yesterday's
+/// misses.
+pub const FIND_SONG_RULE: i64 = 2;
