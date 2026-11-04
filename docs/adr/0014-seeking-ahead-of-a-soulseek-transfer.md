@@ -74,6 +74,12 @@ What there is to work with:
 - **M4A with `moov` at the end:** the browser asks for the tail before it can play anything. Until now that request waited for the whole file (since part 1; before, it got a 416 and "failed"). A leg for the tail fetches the index, a few hundred KB, and the song starts at once. This is the biggest single win.
 - **Ogg and Opus, and YouTube's WebM:** YouTube copies arrive in seconds through yt-dlp and get no legs. Ogg from Soulseek follows the browser's bisection rule like FLAC without a seek table, so it waits.
 
+**Measured in Chromium (2026-11-04)**, on the fixture hub trickling real files (`POST /__fixture/trickle { file }`, `GET /__fixture/reads`), with a seek to 60%:
+- **MP3 VBR with a Xing table:** one read at open, from 0 (no probe at the end); the seek is one read, at 0.588 of the file, and the song plays from there.
+- **MP3 VBR without one, with a 100 KB cover:** one read at open, but playback starts only once about 1 MB has arrived (the browser probes that much to estimate the length). The seek is one read at 0.721 of the file for 0.6 of the time: the browser's own guess, which lull follows.
+- **M4A with `moov` at the end:** reads at 0, then at 0.99 (the index), then 0.006; with the tail fetched by a leg the song starts, and the seek is one read at 0.591.
+- **FLAC without a seek table:** the seek is five reads, at 0.998, 0.996, 0.72, 0.393 and 0.557: the bisection above, which is why it doesn't jump. (A FLAC file with a seek table wasn't measured: no tool here writes one.)
+
 **Fallback: waiting, as part 1 has it.** It stays the behaviour, and the setting governs both: with "Jump to where I seek once it has downloaded" on, a seek ahead is kept and fetched where possible. Without seek-ahead (an slskd that overwrites, a format above, a peer that queues), it is kept and waited for. Off, it snaps, as before.
 
 ## Risks
