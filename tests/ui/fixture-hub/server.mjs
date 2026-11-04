@@ -9,6 +9,11 @@
 // FIXTURE_THEMES=<dir> serves the theme packages in that folder (<dir>/<id>/theme.json...) as the listener's own, as the
 // hub stores them (docs/themes.md, section 1): GET /api/themes lists them, /api/themes/<id>/<file> serves their files.
 //
+// FIXTURE_SKINS=<dir> is the hub's skins folder (LULL_SKINS_DIR, docs/context/skins.md): GET /api/skins/mine lists the
+// .wsz files in it (read again on every call, so POST /api/skins/mine/rescan answers the same), one per md5, and
+// /api/skins/<md5>.wsz serves them. A file is a skin when it is a zip under 16 MB naming main.bmp, a cruder check than
+// the hub's (crates/skins/src/wsz.rs). Without it, no skins folder is set.
+//
 // POST /__fixture/emit { topic, data } sends one server event to every open /api/events stream (with X-Fixture-Client,
 // to that client's streams only).
 // POST /__fixture/art-pending { ids } makes those covers answer 404 "not yet" (no-store), as the hub does while it
@@ -18,6 +23,7 @@
 // the same id) sees only its own pending covers, art.ready events and counts, so gates running side by side on one
 // hub never count or answer each other's pictures. With no header, the client is '' (one shared scope, as before).
 
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
@@ -30,6 +36,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const WEB = process.env.LULL_WEB || join(here, '..', '..', '..', 'web');
 const PORT = +(process.argv[2] || process.env.FIXTURE_PORT || 8790);
 const THEMES = process.env.FIXTURE_THEMES || null;
+const SKINS = process.env.FIXTURE_SKINS || null;
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -110,6 +117,8 @@ const routes = [
     { key: 'LULL_PUBLIC_URL', value: null, set: false, source: 'default', secret: false, restart: true },
     { key: 'LULL_SLSKD_URL', value: 'http://slskd:5030', set: true, source: 'env', secret: false, restart: true },
     { key: 'LULL_SLSKD_API_KEY', value: null, set: true, source: 'env', secret: true, restart: true },
+    SKINS ? { key: 'LULL_SKINS_DIR', value: '/skins', set: true, source: 'env', secret: false, restart: true }
+      : { key: 'LULL_SKINS_DIR', value: null, set: false, source: 'default', secret: false, restart: true },
   ] })],
   ['GET', /^\/api\/settings$/, () => state.settings],
   ['PATCH', /^\/api\/settings$/, (m, q, body) => { deepMerge(state.settings, body || {}); return state.settings; }],
@@ -246,6 +255,8 @@ const routes = [
   ['GET', /^\/api\/lyrics\/([^/]+)$/, (m) => L.lyrics(m[1]) || err(404, 'not_found', 'No lyrics for this song.')],
   ['GET', /^\/api\/skins$/, () => ({ items: [], more: false })],
   ['GET', /^\/api\/skins\/favourites$/, () => ({ items: [] })],
+  ['GET', /^\/api\/skins\/mine$/, () => mineSkins()],
+  ['POST', /^\/api\/skins\/mine\/rescan$/, () => (SKINS ? mineSkins() : err(404, 'not_found', 'No skins folder is set: LULL_SKINS_DIR.'))],
 ];
 
 function sortTracks(ids, sort) {
@@ -344,6 +355,32 @@ async function audioFile(req, res, t) {
 }
 
 // ---------- server ----------
+/* FIXTURE_SKINS as GET /api/skins/mine answers, and each skin's file by md5 */
+function readSkins() {
+  const files = readdirSync(SKINS, { recursive: true, withFileTypes: true })
+    .filter((d) => d.isFile() && /\.wsz$/i.test(d.name))
+    .map((d) => join(d.parentPath ?? d.path, d.name))
+    .map((f) => ({ file: f, path: f.slice(SKINS.length + 1).replaceAll('\\', '/') }))
+    .sort((a, b) => (a.path < b.path ? -1 : 1));
+  const items = [], skipped = [], byMd5 = new Map();
+  for (const { file, path } of files) {
+    const bytes = readFileSync(file), name = path.split('/').pop();
+    if (bytes.length > 16 * 1024 * 1024) { skipped.push({ path, why: 'it is over 16 MB, which no classic skin is' }); continue; }
+    if (bytes.subarray(0, 2).toString() !== 'PK') { skipped.push({ path, why: 'the file is not a zip archive' }); continue; }
+    if (!/main\.bmp/i.test(bytes.toString('latin1'))) { skipped.push({ path, why: 'the archive has no main.bmp, so it is not a classic Winamp skin' }); continue; }
+    const md5 = createHash('md5').update(bytes).digest('hex');
+    if (byMd5.has(md5)) continue;
+    byMd5.set(md5, file);
+    items.push({ md5, name: name.replace(/\.wsz$/i, '').replaceAll('_', ' ').trim(), file: name, path, size: bytes.length });
+  }
+  return { items, skipped, byMd5 };
+}
+function mineSkins() {
+  if (!SKINS) return { folder: null, watching: false, problem: null, items: [], skipped: [] };
+  const { items, skipped } = readSkins();
+  return { folder: '/skins', watching: true, problem: null, items, skipped };
+}
+
 /* FIXTURE_THEMES' packages as GET /api/themes lists the hub's: each manifest with the slots its files have */
 function themeItems() {
   return readdirSync(THEMES, { withFileTypes: true }).filter((d) => d.isDirectory()).flatMap((d) => {
@@ -419,6 +456,13 @@ const server = createServer(async (req, res) => {
   if ((m = /^\/api\/(library\/)?stream\/([^/]+)$/.exec(path)) && req.method === 'GET') return audio(req, res, m[2], !!m[1]);
   if ((m = /^\/api\/stream\/([^/]+)$/.exec(path)) && req.method === 'DELETE') return send(res, 204);
   if (THEMES && (m = /^\/api\/themes\/([a-z0-9-]+)\/(.+)$/.exec(path)) && req.method === 'GET') return files(req, res, '/' + m[2], join(THEMES, m[1]));
+  if (SKINS && (m = /^\/api\/skins\/([0-9a-f]{32})\.wsz$/.exec(path)) && req.method === 'GET') {
+    const file = readSkins().byMd5.get(m[1]);
+    if (!file) return send(res, 404, { error: 'not_found', message: 'The fixture hub has no skin ' + m[1] + '.' });
+    const body = readFileSync(file);
+    res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': body.length, 'cache-control': 'public, max-age=31536000, immutable' });
+    return res.end(body);
+  }
   if (path.startsWith('/api/') || path === '/health') {
     const body = req.method === 'GET' || req.method === 'HEAD' ? undefined : await readBody(req);
     for (const [method, re, fn] of routes) {

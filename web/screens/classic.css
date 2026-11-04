@@ -77,13 +77,19 @@ html[data-classic="on"] #app { visibility: hidden; }
 #cls-choice .spin-ring { width: 14px; height: 14px; }
 
 /* the browser: tabs and search over the list */
-.cls-browser { display: grid; gap: var(--sp-3); width: 100%; min-width: 0; }
-.cls-browser__head { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: var(--sp-3); align-items: center; }
+.cls-browser { container: cls-browser / inline-size; display: grid; gap: var(--sp-3); width: 100%; min-width: 0; }
+.cls-browser__head { display: grid; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); gap: var(--sp-3); align-items: center; }
 .cls-browser__head .search-field .input { padding-right: 48px; }
 .cls-browser__body { min-width: 0; }
 .cls-browser__body:focus-visible { outline-offset: 3px; }
 .cls-attrib { justify-self: start; font: var(--t-micro); color: var(--link); text-decoration: underline; text-underline-offset: 3px; }
-@media (max-width: 719px) { .cls-browser__head { grid-template-columns: minmax(0, 1fr); } }
+/* four tabs and a search field side by side need room: under it, the search goes below the tabs */
+@container cls-browser (max-width: 620px) { .cls-browser__head { grid-template-columns: minmax(0, 1fr); } }
+/* a phone: the tabs close up, and slide sideways if a longer label still can't fit */
+@container cls-browser (max-width: 420px) {
+  .cls-browser .seg { overflow-x: auto; scrollbar-width: none; }
+  .cls-browser .seg__btn { padding: 0 var(--sp-2); }
+}
 
 .cls-meta { display: flex; align-items: center; gap: var(--sp-2); margin: 0 0 var(--sp-3); font: var(--t-micro); color: var(--fg-2); }
 .cls-note { margin-bottom: var(--sp-3); font-size: .875rem; }
@@ -91,6 +97,14 @@ html[data-classic="on"] #app { visibility: hidden; }
 .cls-grid + .cls-note { margin: var(--sp-4) 0 0; }           /* a page that didn't load, under the ones that did */
 .cls-nsfw { display: flex; align-items: flex-start; gap: var(--sp-2); margin: var(--sp-4) 0 0; font: var(--t-micro); color: var(--fg-2); }
 .cls-nsfw .ic { flex: none; margin-top: 1px; }
+/* Your skins: where the hub's folder is, Look again, and the files it skipped */
+.cls-folder { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2) var(--sp-3); margin: 0 0 var(--sp-3); }
+.cls-folder__text { display: flex; align-items: flex-start; gap: var(--sp-2); min-width: 0; margin: 0; font: var(--t-micro); color: var(--fg-2); overflow-wrap: anywhere; }
+.cls-folder__text .ic { flex: none; margin-top: 1px; }
+.cls-folder .spin-ring { width: 14px; height: 14px; }
+.cls-skipped { margin: 0 0 var(--sp-3); font: var(--t-micro); color: var(--fg-2); }
+.cls-skipped summary { cursor: pointer; width: fit-content; }
+.cls-skipped ul { margin: var(--sp-2) 0 0; padding-left: var(--sp-4); display: grid; gap: 2px; overflow-wrap: anywhere; }
 
 .cls-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: var(--sp-3); }
 .cls-card {

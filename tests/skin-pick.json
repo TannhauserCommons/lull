@@ -1,0 +1,13 @@
+{
+  "note": "Random skin's rule (LullWebamp.pickSkin in web/desktop/webamp-session.js; docs/context/skins.md#random-skin). A player of its own (native Classic) that picks for itself checks its copy against these same cases. Each case: the listener's own skins and favourites (md5s), the one in use (null: Webamp's base skin), what random() returns, and the md5 picked (null: there is no other skin).",
+  "cases": [
+    { "name": "one of their own, never the one in use", "own": ["a", "b", "c"], "favourites": ["f"], "current": "a", "random": 0, "pick": "b" },
+    { "name": "random's top end stays in range", "own": ["a", "b", "c"], "favourites": [], "current": "a", "random": 0.9999999, "pick": "c" },
+    { "name": "the one in use is out of the draw, not skipped after it", "own": ["a", "b", "c"], "favourites": [], "current": "b", "random": 0.5, "pick": "c" },
+    { "name": "a single skin of their own, while another is in use", "own": ["a"], "favourites": ["f", "g"], "current": "f", "random": 0.7, "pick": "a" },
+    { "name": "a single skin of their own, already in use: there is no other", "own": ["a"], "favourites": ["f", "g"], "current": "a", "random": 0.3, "pick": null },
+    { "name": "none of their own: the favourites", "own": [], "favourites": ["f", "g"], "current": null, "random": 0.6, "pick": "g" },
+    { "name": "none of their own, the only favourite in use: there is no other", "own": [], "favourites": ["f"], "current": "f", "random": 0, "pick": null },
+    { "name": "nothing to pick from", "own": [], "favourites": [], "current": null, "random": 0.5, "pick": null }
+  ]
+}

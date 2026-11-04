@@ -478,9 +478,15 @@
   App.route('/classic', { title: 'Classic mode', need: App.needClassic, render: function () { return ''; } });
   /* a file opened by drop or by an Import button: a .wsz becomes the Classic skin (skins.js), anything else the
      library's import (library.js); Classic mode loads first when it isn't here yet */
-  App.openFile = function (file) {
-    if (!/\.wsz$/i.test(file.name)) return App.hooks.importFile(file);
-    App.needClassic().then(function () { App.hooks.importFile(file); }, function (err) { App.toast(err.message, { kind: 'error', icon: 'warning' }); });
+  App.openFile = function (file) { App.openFiles([file]); };
+  /* several at once (a drop): every .wsz is kept as a skin, and the library imports the first other file (one
+     playlist at a time) */
+  App.openFiles = function (files) {
+    var skins = files.filter(function (f) { return /\.wsz$/i.test(f.name); });
+    var other = files.filter(function (f) { return skins.indexOf(f) < 0; })[0];
+    if (other) App.hooks.importFile(other);
+    if (!skins.length) return;
+    App.needClassic().then(function () { App.classicSkin.keepFiles(skins); }, function (err) { App.toast(err.message, { kind: 'error', icon: 'warning' }); });
   };
 
   /* ---------- where each page was: Back returns to it ----------
@@ -4150,7 +4156,7 @@
   document.addEventListener('drop', function (e) {
     if (isFileDrag(e)) {
       e.preventDefault(); fileDepth = 0; $('#drop-overlay').classList.remove('is-on');
-      var f = e.dataTransfer.files[0]; if (f) App.openFile(f);
+      App.openFiles([].slice.call(e.dataTransfer.files));
       return;
     }
     var t = e.target.closest && e.target.closest('[data-drop]');

@@ -37,6 +37,11 @@
                                        reads it from IndexedDB 'lull-skins' (store 'files', by md5)
      LullWebamp.localSkins()           [{ md5, name, file, blob, added }] kept on this device, newest first
      LullWebamp.keepLocal(entry), dropLocal(md5)
+     LullWebamp.pickSkin(own, favourites, current, random)   Random skin, the one rule every player follows
+                                       (tests/skin-pick.json has its cases): one of the listener's own skins (the
+                                       hub's folder and this device's files), or of the favourites when there are
+                                       none of their own, never the one in use (current: its md5, or null). null
+                                       when there is no other. random() is Math.random's range
 
    Size: Webamp drawn at 1x to 3x, per device: localStorage SIZE_KEY, chosen in Settings > Appearance and followed
    live like the skin. Each player scales the whole page Webamp lives in (the app's webview zoom, the browser stage's
@@ -50,7 +55,7 @@
      LullWebamp.doubled(size)                        Double Size from `size`, as in Winamp: 2x, or 1x from 2x
      LullWebamp.isDoubleKey(e)                       Ctrl+D: each player takes it before Webamp, which ignores
                                                      its keys while one of its sliders has focus */
-(function () {
+(function (root) {
   'use strict';
   var SKIN_TIMEOUT_MS = 10000;
   var SKIN_KEY = 'lull:classicSkin';
@@ -84,6 +89,12 @@
   }
   function keepLocal(entry) { return files('readwrite', function (s) { return s.put(entry); }); }
   function dropLocal(md5) { return files('readwrite', function (s) { return s.delete(md5); }); }
+
+  function pickSkin(own, favourites, current, random) {
+    var others = (own.length ? own : favourites).filter(function (s) { return s.md5 !== current; });
+    if (!others.length) return null;
+    return others[Math.min(others.length - 1, Math.floor((random || Math.random)() * others.length))];
+  }
 
   /* ---------- size ---------- */
   function readSize() {
@@ -281,8 +292,11 @@
       idOf: function (url) { var t = byUrl[absolute(url)]; return t ? t.id : null; } };
   }
 
-  window.LullWebamp = { session: session, quietAlerts: quietAlerts, loadSkin: loadSkin, skinFile: skinFile,
+  var api = { session: session, quietAlerts: quietAlerts, loadSkin: loadSkin, skinFile: skinFile,
     SKIN_KEY: SKIN_KEY, skinUrl: skinUrl, localSkins: localSkins, keepLocal: keepLocal, dropLocal: dropLocal,
+    pickSkin: pickSkin,
     SIZE_KEY: SIZE_KEY, SIZES: SIZES, readSize: readSize, writeSize: writeSize, fitSize: fitSize,
     doubleSize: doubleSize, doubled: doubled, isDoubleKey: isDoubleKey };
-})();
+  root.LullWebamp = api;
+  if (typeof module === 'object' && module.exports) module.exports = api;   // tests/web
+})(typeof self !== 'undefined' ? self : this);

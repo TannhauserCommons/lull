@@ -6,7 +6,8 @@
      back (Esc, W, Webamp's close button, or the small Back to lull button). design/DESIGN.md section 12 is the
      design; docs/context/web.md the data layer and the player engine.
    - The skin and the size are the ones Settings > Appearance > Classic chose (screens/skins.js, App.classicSkin and
-     App.classicSize): on when Webamp starts and whenever the choice changes ('classic-skin', 'classic-size').
+     App.classicSize): on when Webamp starts and whenever the choice changes ('classic-skin', 'classic-size'). Each
+     opening asks App.classicSkin.opening() first, which picks a new random skin when the listener wants one.
      Skins load with LullWebamp.loadSkin. Webamp's alerts are lull's toasts or the stage's sentence
      (LullWebamp.quietAlerts); a skin that fails leaves the previous one on.
    - Size: Webamp lives in a same-origin iframe (.cls-frame) drawn at the size with a transform, 1/size of the stage
@@ -182,12 +183,13 @@
       throw err;
     });
   }
-  /* every visit: make sure Webamp is up, then hand it the queue. A visit that ended meanwhile does nothing */
+  /* every visit: make sure Webamp is up and the skin to open in is settled, then hand it the queue. A visit that ended
+     meanwhile does nothing */
   function startWebamp() {
     var mine = visit;
     function current() { return mine === visit && open; }
     if (!webamp) { S.player = { state: 'loading', message: '' }; renderStatus(); }
-    prepare().then(function (r) {
+    Promise.all([prepare(), App.classicSkin.opening()]).then(function (r) { return r[0]; }).then(function (r) {
       if (webamp || !current()) return null;
       if (!creating) {
         creating = createWebamp(r[0], r[1]).then(function () { creating = null; }, function (err) { creating = null; throw err; });
@@ -338,8 +340,8 @@
   /* files dropped on Webamp's windows: a .wsz becomes the Classic skin (kept on this device); lull songs dragged from
      another lull window join the list (and the queue on exit); anything else (audio files) Webamp plays by itself */
   function onWebampDrop(e) {
-    var dt = e.dataTransfer, skinFile = Array.prototype.filter.call(dt.files || [], function (f) { return /\.wsz$/i.test(f.name); })[0];
-    if (skinFile) { App.classicSkin.keepFile(skinFile); return []; }
+    var dt = e.dataTransfer, skinFiles = Array.prototype.filter.call(dt.files || [], function (f) { return /\.wsz$/i.test(f.name); });
+    if (skinFiles.length) { App.classicSkin.keepFiles(skinFiles); return []; }
     var tracks = (dt.getData('text/plain') || '').split(',').map(function (id) { return handoffTrack(id.trim(), null); })
       .filter(Boolean).map(session.add);
     return tracks.length ? tracks : null;
@@ -406,7 +408,7 @@
     doc.addEventListener('drop', function (e) {
       if (!files(e) || e.defaultPrevented) return;
       e.preventDefault();
-      var f = e.dataTransfer.files[0]; if (f) App.hooks.importFile(f);
+      App.openFiles([].slice.call(e.dataTransfer.files));
     });
   }
   function onResize() { followSize(); }
@@ -475,8 +477,9 @@
      for Webamp's Skins menu */
   function openWindow(D) {
     if (!hearing) { hearing = true; D.onClassic(fromWindow); }
-    var h = handoff(), skin = App.classicSkin.get();
-    return readFavourites().then(function (favs) {
+    var h = handoff();
+    return Promise.all([readFavourites(), App.classicSkin.opening()]).then(function (r) {
+      var favs = r[0], skin = r[1];
       h.skin = skin ? { url: LullWebamp.skinUrl(base(), skin), name: skin.name || 'Your skin' } : null;
       h.skins = favs.map(function (s) { return { url: absolute(skinFileUrl(s.md5)), name: s.name }; });
       return D.openClassic(h);

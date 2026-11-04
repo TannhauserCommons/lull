@@ -7,15 +7,22 @@
    - The choice is per device: App.classicSkin.get() / .choose(skin | null), stored as localStorage 'lull:classicSkin'
      (desktop/webamp-session.js has its shape). A change reaches Classic at once: 'classic-skin' in this page, the
      storage event in other tabs and in the desktop app's Classic window.
-   - App.classicSettings() is the section's markup (screens/appearance.js places it): the skin in use, a .wsz file
-     from this device, the skin browser, the NSFW switch and what differs in Classic mode.
-   - The browser: Browse is GET /api/skins?q=&offset=&nsfw= (the hub's Winamp Skin Museum proxy, 30 a page, search
-     debounced); Favourites is /api/skins/favourites (PUT / DELETE one); Downloaded is what the hub has cached (its
-     flag) plus the .wsz files kept on this device (LullWebamp.localSkins). Offline, Browse lists favourites and
-     downloaded skins from the last answers. Choosing a museum skin downloads it through the hub first, so a skin
-     that can't be had says why here, not later in Webamp.
-   - .wsz files: "Open a .wsz file" and a .wsz dropped anywhere on lull are kept on this device (IndexedDB) and
-     chosen. */
+   - App.classicSettings() is the section's markup (screens/appearance.js places it): the skin in use, Random skin,
+     .wsz files from this device, the skin browser, the hub's skins folder, the NSFW and random-on-open switches and
+     what differs in Classic mode.
+   - The browser: Your skins is the listener's own, GET /api/skins/mine (the hub's skins folder, LULL_SKINS_DIR, read
+     again on `skins.mine` and by Look again: POST /api/skins/mine/rescan) plus the .wsz files kept on this device
+     (LullWebamp.localSkins); Browse is GET /api/skins?q=&offset=&nsfw= (the hub's Winamp Skin Museum proxy, 30 a
+     page, search debounced); Favourites is /api/skins/favourites (PUT / DELETE one); Downloaded is what the hub has
+     cached (its flag) plus the files kept on this device. Offline, Browse lists favourites and downloaded skins from
+     the last answers. Choosing a skin from the hub downloads it first, so a skin that can't be had says why here,
+     not later in Webamp.
+   - Random skin (LullWebamp.pickSkin, the rule): one of Your skins, else of the favourites, never the one in use,
+     chosen as any other. With "New random skin each time Classic opens" on (per device, localStorage
+     'lull:classicRandom'), App.classicSkin.opening() picks one as Classic opens (screens/classic.js asks it before
+     Webamp gets a skin, in the browser and for the app's window).
+   - .wsz files: "Open .wsz files" and .wsz files dropped anywhere on lull are kept on this device (IndexedDB); one is
+     chosen at once, several are listed under Your skins. */
 (function () {
   'use strict';
   var html = App.html, raw = App.raw, ui = App.ui, M = App.data, icon = App.icon, $ = App.$;
@@ -24,7 +31,8 @@
 
   var SEARCH_DEBOUNCE_MS = 300;
   var MAX_FILE = 16 * 1024 * 1024;                      // the hub's cap for a .wsz
-  var TABS = [['browse', 'Browse'], ['favourites', 'Favourites'], ['downloaded', 'Downloaded']];
+  var MINE_PAGE = 60;                                   // Your skins shows this many more at a time
+  var TABS = [['mine', 'Your skins'], ['browse', 'Browse'], ['favourites', 'Favourites'], ['downloaded', 'Downloaded']];
 
   /* ---------- the choice ---------- */
   migrate();
@@ -39,7 +47,7 @@
     App.emit('classic-skin', value);
     renderChoice();
   }
-  App.classicSkin = { get: chosen, choose: choose, keepFile: keepFile };
+  App.classicSkin = { get: chosen, choose: choose, keepFiles: keepFiles, opening: opening };
   /* the size: Settings' Size row and Webamp's Double Size both set it */
   function setSize(size) {
     L.writeSize(size);
@@ -77,21 +85,25 @@
   /* ---------- the browser's model (kept across visits) ---------- */
   var S = {
     tab: 'browse', query: '',
-    local: [], localRead: false,          // .wsz files kept on this device: { md5: 'local-…', name, file, local }
+    local: [], localRead: null,           // .wsz files kept on this device: { md5: 'local-…', name, file, local }
+    /* the hub's skins folder: { md5, name, file, path, mine }; folder null when none is set */
+    mine: { items: [], loading: false, error: null, read: null, answered: false, folder: null, problem: null, watching: false, skipped: [], shown: MINE_PAGE },
+    picking: false,                       // Random skin, reading the lists
     browse: { items: [], more: false, loading: false, error: null, key: null, want: null },  // key: the request items answer
-    favs: { items: [], loading: false, error: null, read: false },
+    favs: { items: [], loading: false, error: null, read: null },
     offline: false,
     busy: null,                           // { skin }: downloading through the hub before it is chosen
     failed: null                          // { skin, message }
   };
   function showNsfw() { return App.storage('showNsfwSkins') === true; }
   function isDownloaded(s) { return !!s.local || !!s.downloaded; }
+  function isOwn(s) { return !!s.local || !!s.mine; }
   function isFavourite(s) { return !!s.favourite; }
   function sameSkin(a, b) { return !!a && !!b && a.md5 === b.md5; }
   /* every skin object known now (one md5 can appear in several lists), first copy of each */
   function knownSkins() {
     var seen = {};
-    return [].concat(S.local, S.favs.items, S.browse.items, S.failed ? S.failed.skin : [])
+    return [].concat(S.local, S.mine.items, S.favs.items, S.browse.items, S.failed ? S.failed.skin : [])
       .filter(function (s) { return !seen[s.md5] && (seen[s.md5] = true); });
   }
   function findSkin(md5) { return knownSkins().filter(function (s) { return s.md5 === md5; })[0]; }
@@ -114,6 +126,17 @@
     learnName(out);
     return out;
   }
+  /* the hub's skins folder, checked at the boundary as museum skins are */
+  function mineSkins(list) {
+    var out = [];
+    (list || []).forEach(function (s) {
+      if (!s || !/^[0-9a-f]{32}$/i.test(s.md5)) { console.error('Skipping a skin without an md5 id', s); return; }
+      out.push({ md5: s.md5, name: String(s.name || s.file || s.md5), file: String(s.path || s.file || ''), mine: true,
+        screenshotUrl: '', museumUrl: '', nsfw: false, favourite: false, downloaded: true });
+    });
+    learnName(out);
+    return out;
+  }
   /* a choice carried over without a name (the old default skin) takes it from the first list that has it */
   function learnName(list) {
     var c = chosen();
@@ -130,8 +153,10 @@
         <div class="sys-row__text"><span class="sys-row__label" id="cls-skin-l">Skin</span><span class="sys-row__help">Classic mode opens Webamp in this skin on this device, in the browser and in the app's Winamp window. If Classic is open, a new choice shows there at once.</span></div>
         <div class="sys-row__ctl" id="cls-choice">${choiceMarkup()}</div></div>
       <div class="sys-row sys-row--stack">
-        <div class="sys-row__text"><span class="sys-row__label" id="cls-find-l">Find a skin</span><span class="sys-row__help">Browse and search the Winamp Skin Museum, or pick from your favourites and the skins already downloaded. Select a picture to see it larger.</span></div>
+        <div class="sys-row__text"><span class="sys-row__label" id="cls-find-l">Find a skin</span><span class="sys-row__help">Your own skins, the Winamp Skin Museum, your favourites and the skins already downloaded. Select a picture to see it larger.</span></div>
         <div class="sys-row__ctl cls-browser" id="cls-browser" role="group" aria-labelledby="cls-find-l">${browserMarkup()}</div></div>
+      ${switchRow('device.classicRandom', 'New random skin each time Classic opens', 'Classic opens in one of your skins at random on this device, never the last one. With no skins of your own, it picks from your favourites.')}
+      ${K.cfgField('LULL_SKINS_DIR', 'Skins folder', 'A folder of .wsz files on your hub, read in every subfolder. Its skins show under Your skins on every device.')}
       ${row('Size', 'How big Webamp is drawn, in the browser and in the app\'s Winamp window, with every skin pixel kept sharp. If a size doesn\'t fit the screen, Classic shows the largest that does. In Classic, Ctrl+D (Webamp\'s Double Size) switches between 1\u00d7 and 2\u00d7.',
         choice('device.classicSize', 'Size', L.SIZES.map(function (z) { return [z, z + '\u00d7']; })))}
       ${switchRow('device.showNsfwSkins', 'Show NSFW skins', 'The museum marks some skins NSFW. They stay hidden while you browse on this device unless this is on.')}
@@ -146,21 +171,22 @@
         <div class="cls-now__text">
           <span class="cls-now__label">In use</span>
           <strong class="cls-now__name ellipsis">${nameOf(c)}</strong>
-          <span class="cls-now__src">${!c ? 'Webamp\'s own look' : /^local-/.test(c.md5) ? 'A file kept on this device' : 'From the Winamp Skin Museum'}</span>
+          <span class="cls-now__src">${!c ? 'Webamp\'s own look' : /^local-/.test(c.md5) ? 'A file kept on this device' : isMine(c.md5) ? 'From your skins folder' : 'From the Winamp Skin Museum'}</span>
         </div>
       </div>
       <div class="cluster">
-        <label class="btn btn--sm">${busyLocal ? html`<span class="spin-ring" aria-hidden="true"></span>` : icon('import', null, 'ic-16')}Open a .wsz file<input class="vh" type="file" accept=".wsz" data-skin-file></label>
+        <button class="btn btn--sm" data-act="cls-random" ${S.picking ? raw('aria-disabled="true"') : ''}>${S.picking ? html`<span class="spin-ring" aria-hidden="true"></span>` : icon('shuffle', null, 'ic-16')}Random skin</button>
+        <label class="btn btn--sm">${busyLocal ? html`<span class="spin-ring" aria-hidden="true"></span>` : icon('import', null, 'ic-16')}Open .wsz files<input class="vh" type="file" accept=".wsz" multiple data-skin-file></label>
         ${c ? html`<button class="btn btn--sm btn--quiet" data-act="cls-base">${icon('undo', null, 'ic-16')}Use Webamp's base skin</button>` : ''}
       </div>`;
   }
 
   function browserMarkup() {
     var i = TABS.map(function (t) { return t[0]; }).indexOf(S.tab);
-    var ph = S.tab === 'favourites' ? 'Search favourites'
+    var ph = S.tab === 'mine' ? 'Search your skins' : S.tab === 'favourites' ? 'Search favourites'
       : S.tab === 'downloaded' || S.offline ? 'Search downloaded skins' : 'Search the museum';
     return html`<div class="cls-browser__head">
-        <div class="seg" role="tablist" aria-label="Skin lists" style="--n:3;--i:${i}" id="cls-tabs">
+        <div class="seg" role="tablist" aria-label="Skin lists" style="--n:${TABS.length};--i:${i}" id="cls-tabs">
           <span class="seg__ind" aria-hidden="true"></span>
           ${TABS.map(function (t) {
             var on = t[0] === S.tab;
@@ -184,8 +210,8 @@
      name here */
   function visibleSkins() {
     var museum = S.tab === 'browse' && !S.offline;
-    var list = museum ? S.browse.items : S.tab === 'favourites' ? S.favs.items
-      : knownSkins().filter(function (s) { return isDownloaded(s) || (S.tab === 'browse' && isFavourite(s)); });
+    var list = museum ? S.browse.items : S.tab === 'favourites' ? S.favs.items : S.tab === 'mine' ? ownSkins()
+      : knownSkins().filter(function (s) { return !s.mine && (isDownloaded(s) || (S.tab === 'browse' && isFavourite(s))); });
     var q = museum ? '' : S.query.trim().toLowerCase(), nsfw = showNsfw();
     return list.filter(function (s) {
       if (s.nsfw && !nsfw) return false;
@@ -195,6 +221,7 @@
   function listMarkup() {
     var notes = S.offline ? html`<div class="banner banner--warn s-card cls-note">${icon('offline')}<span class="banner__msg">You're offline, so only favourite and downloaded skins are listed.</span></div>` : '';
     var museum = S.tab === 'browse' && !S.offline, b = S.browse, src = museum ? b : S.tab === 'favourites' ? S.favs : null;
+    if (S.tab === 'mine') return html`${notes}${mineMarkup()}`;
     if (src && src.error && !src.items.length) {
       return html`${notes}${ui.emptyState({ art: 'star', title: museum ? 'Couldn\'t load skins' : 'Couldn\'t load your favourites',
         text: src.error.message, action: { label: 'Try again', act: 'cls-reload', id: S.tab } })}`;
@@ -215,6 +242,41 @@
       <ul class="cls-grid">${list.map(cardMarkup)}</ul>
       ${museum ? moreMarkup() : ''}
       ${museum && !showNsfw() ? html`<p class="cls-nsfw">${icon('lock', null, 'ic-16')}<span>Skins marked NSFW are hidden. The switch below shows them.</span></p>` : ''}`;
+  }
+  /* Your skins: the hub's folder (what it is, what it skipped, Look again) and this device's files, MINE_PAGE at a time */
+  function mineMarkup() {
+    var m = S.mine;
+    if (!m.answered && !m.error) return html`<p class="cls-meta" role="status"><span class="spin-ring" aria-hidden="true"></span>Reading your skins</p>`;
+    var list = visibleSkins(), shown = list.slice(0, m.shown), q = S.query.trim();
+    var body = !list.length ? (q ? emptyMarkup() : mineEmptyMarkup())
+      : html`<p class="cls-meta" role="status">${list.length + (list.length === 1 ? ' skin' : ' skins') + (q ? ' match "' + q + '"' : '')}</p>
+        <ul class="cls-grid">${shown.map(cardMarkup)}</ul>
+        ${list.length > shown.length ? html`<div class="cls-more"><button class="btn btn--sm" data-act="cls-mine-more">Show more skins</button></div>` : ''}`;
+    return html`${folderMarkup()}${body}`;
+  }
+  /* where Your skins come from on the hub, and what to do when that's nothing */
+  function folderMarkup() {
+    var m = S.mine;
+    if (m.error) {
+      return html`<div class="banner banner--down s-card cls-note">${icon('warning')}<span class="banner__msg">Couldn't read your skins folder: ${m.error.message}</span>
+        <button class="btn btn--sm" data-act="cls-reload" data-id="mine">Try again</button></div>`;
+    }
+    if (!m.folder) return '';
+    var skipped = m.skipped.length;
+    return html`<div class="cls-folder">
+        <p class="cls-folder__text">${icon('link', null, 'ic-16')}<span>${m.problem ? m.problem
+          : html`From ${m.folder} on your hub${m.watching ? '' : '. lull can\'t see changes there by itself, so look again after adding skins'}.`}</span></p>
+        <button class="btn btn--sm btn--quiet" data-act="cls-rescan" ${m.loading ? raw('aria-disabled="true"') : ''}>${m.loading ? html`<span class="spin-ring" aria-hidden="true"></span>` : icon('refresh', null, 'ic-16')}Look again</button>
+      </div>
+      ${skipped ? html`<details class="cls-skipped"><summary>${skipped === 1 ? '1 file in the folder isn\'t a classic skin' : skipped + ' files in the folder aren\'t classic skins'}</summary>
+        <ul>${m.skipped.map(function (x) { return html`<li>${x.path}: ${x.why}</li>`; })}</ul></details>` : ''}`;
+  }
+  function mineEmptyMarkup() {
+    var m = S.mine;
+    if (m.folder) return ui.emptyState({ art: 'slot', title: 'No skins in your skins folder yet', text: 'Put .wsz files in it, in any subfolder, then look again. Files you open on this device show here too.', action: { label: 'Look again', act: 'cls-rescan' } });
+    return ui.emptyState({ art: 'slot', title: 'No skins of your own yet',
+      text: 'Link a folder of .wsz files on your hub and every device lists them here. Set Skins folder below, or, with the deploy kit, SKINS_DIR in its .env. Files you open on this device show here too.',
+      action: { label: 'Browse the museum', act: 'cls-tab', id: 'browse' } });
   }
   /* the museum list pages 30 at a time: the next page on request, or why it didn't come */
   function moreMarkup() {
@@ -243,6 +305,7 @@
       : failed ? html`${icon('warning', null, 'ic-16')}Couldn't download`
       : on ? html`${icon('check', null, 'ic-16')}In use`
       : s.local ? html`${icon('import', null, 'ic-16')}On this device`
+      : s.mine ? html`${icon('link', null, 'ic-16')}In your skins folder`
       : isDownloaded(s) ? html`${icon('saved', null, 'ic-16')}Downloaded`
       : html`${icon('external', null, 'ic-16')}On the museum`;
     var blocked = busy || (S.offline && !isDownloaded(s));
@@ -250,14 +313,14 @@
       <button class="cls-card__shot" data-act="cls-look" data-id="${s.md5}" aria-haspopup="dialog" aria-expanded="false" aria-label="${'See ' + s.name + ' larger'}" data-tip="See it larger">${shotMarkup(s)}</button>
       <div class="cls-card__text">
         <span class="cls-card__name ellipsis">${s.name}</span>
-        ${s.local ? html`<span class="cls-card__file ellipsis">${s.file}</span>` : ''}
+        ${isOwn(s) ? html`<span class="cls-card__file ellipsis" title="${s.file}">${s.file}</span>` : ''}
         <span class="cls-card__status${failed ? ' is-bad' : ''}">${status}</span>
         ${failed ? html`<span class="cls-card__why">${S.failed.message}</span>` : ''}
       </div>
       <div class="cls-card__acts">
         ${useButton(s, on, failed, blocked)}
         <span class="spacer"></span>
-        ${s.local ? html`<button class="btn-icon btn-icon--bare btn-icon--sm" data-act="cls-forget" data-id="${s.md5}" aria-label="${'Remove ' + s.name + ' from this device'}" data-tip="Remove from this device">${icon('trash', null, 'ic-16')}</button>`
+        ${s.mine ? '' : s.local ? html`<button class="btn-icon btn-icon--bare btn-icon--sm" data-act="cls-forget" data-id="${s.md5}" aria-label="${'Remove ' + s.name + ' from this device'}" data-tip="Remove from this device">${icon('trash', null, 'ic-16')}</button>`
           : html`<button class="btn-icon btn-icon--bare btn-icon--sm" data-act="cls-fav" data-id="${s.md5}" aria-pressed="${isFavourite(s) ? 'true' : 'false'}" aria-label="${'Favourite ' + s.name}" data-tip="${isFavourite(s) ? 'Remove from favourites' : 'Add to favourites'}">${icon(isFavourite(s) ? 'star-fill' : 'star', null, 'ic-16')}</button>`}
         ${s.museumUrl ? html`<a class="btn-icon btn-icon--bare btn-icon--sm" href="${s.museumUrl}" target="_blank" rel="noopener" aria-label="${'View ' + s.name + ' on the Winamp Skin Museum'}" data-tip="View on the Winamp Skin Museum">${icon('external', null, 'ic-16')}</a>` : ''}
       </div>
@@ -274,7 +337,7 @@
     return html`<div class="popover__head">${icon('classic')}<span class="ellipsis">${s.name}</span></div>
       <div class="popover__body cls-look">${s.screenshotUrl
         ? html`<span class="cls-look__shot"><img src="${s.screenshotUrl}" width="275" height="348" alt="${'Screenshot of ' + s.name + ': the main window, equalizer and playlist'}"></span>`
-        : html`<p class="fg-2">A file from this device has no screenshot. Use it to see it in Classic mode.</p>`}</div>
+        : html`<p class="fg-2">${s.mine ? 'A skin from your skins folder' : 'A file from this device'} has no screenshot. Use it to see it in Classic mode.</p>`}</div>
       <div class="popover__actions">
         ${s.museumUrl ? html`<a class="btn btn--quiet btn--sm" href="${s.museumUrl}" target="_blank" rel="noopener">${icon('external', null, 'ic-16')}On the museum</a>` : ''}
         ${on ? html`<button class="btn btn--sm" data-act="cls-look-close">Close</button>`
@@ -338,24 +401,38 @@
     loadBrowse(false);
   }
   function loadFavourites() {
-    S.favs.loading = true; S.favs.error = null; S.favs.read = true; renderList();
-    return M.api('/api/skins/favourites').then(function (res) {
+    S.favs.loading = true; S.favs.error = null; renderList();
+    return (S.favs.read = M.api('/api/skins/favourites').then(function (res) {
       S.favs.items = museumSkins(res && res.items);
-    }, function (err) { S.favs.error = err; }).then(function () { S.favs.loading = false; renderList(); });
+    }, function (err) { S.favs.error = err; }).then(function () { S.favs.loading = false; renderList(); }));
   }
   function loadLocal() {
-    S.localRead = true;
-    return L.localSkins().then(function (all) {
+    return (S.localRead = L.localSkins().then(function (all) {
       S.local = all.map(function (e) { return { md5: e.md5, name: e.name, file: e.file, local: true, screenshotUrl: '', museumUrl: '', nsfw: false }; });
       renderList();
-    }, function (err) { console.error('Couldn\'t read the skins kept on this device', err); });
+    }, function (err) { console.error('Couldn\'t read the skins kept on this device', err); }));
+  }
+  /* the hub's skins folder as it last read it, or (rescan) read again now */
+  function loadMine(rescan) {
+    var m = S.mine;
+    m.loading = true; m.error = null; renderList();
+    return (m.read = M.api('/api/skins/mine' + (rescan ? '/rescan' : ''), rescan ? { method: 'POST' } : undefined).then(function (res) {
+      m.answered = true;
+      m.items = mineSkins(res && res.items); m.folder = res && res.folder || null; m.problem = res && res.problem || null;
+      m.watching = !!(res && res.watching);
+      m.skipped = ((res && res.skipped) || []).filter(function (x) { return x && typeof x.path === 'string'; })
+        .map(function (x) { return { path: x.path, why: String(x.why || '') }; });
+    }, function (err) { m.error = err; }).then(function () { m.loading = false; renderChoice(); }));
   }
   /* each list once per page load (Try again reloads one); Browse whenever its request changed */
   function readOnce() {
     if (!S.favs.read) loadFavourites();
     if (!S.localRead) loadLocal();
+    if (!S.mine.read) loadMine();
     if (S.tab === 'browse' && !S.offline) ensureBrowse();
   }
+  /* the hub read its folder again and found something else */
+  App.on('server:skins.mine', function () { if (S.mine.read) loadMine(); });
   App.on('route', function (cur) { if (cur.path === '/settings/appearance') S.failed = null; });
   window.addEventListener('online', function () { if (S.offline && $('#cls-browser')) { S.offline = false; renderBrowser(); ensureBrowse(); } });
 
@@ -387,11 +464,58 @@
       renderList();
     });
   }
+  /* one toast says what the skin is: a quicker choice (Random, again and again) replaces it, never stacks under it */
+  var choseToast = null;
   function chose(s) {
     choose(s);
-    App.toast(s.name + ' is your Classic skin', { icon: 'check', kind: 'ok', action: 'Open Classic', onAction: function () { App.go('/classic'); } });
+    if (choseToast) choseToast.close();
+    choseToast = App.toast(s.name + ' is your Classic skin', { icon: 'check', kind: 'ok', action: 'Open Classic', onAction: function () { App.go('/classic'); } });
     App.announce(s.name + ' is your Classic skin');
   }
+
+  /* ---------- Random skin ---------- */
+  function ownSkins() { return [].concat(S.mine.items, S.local); }
+  function isMine(md5) { return S.mine.items.some(function (s) { return s.md5 === md5; }); }
+  /* the skin Random gives now, from the lists as this page has them (each read once, so a pick can't miss one) */
+  function pickRandom() {
+    return Promise.all([S.mine.read || loadMine(), S.localRead || loadLocal(), S.favs.read || loadFavourites()]).then(function () {
+      var c = chosen();
+      return L.pickSkin(ownSkins(), S.favs.items, c ? c.md5 : null);
+    });
+  }
+  /* why Random has nothing to give */
+  function noOther() {
+    var own = ownSkins(), pool = own.length ? own : S.favs.items, c = chosen();
+    if (!pool.length) return 'No skins to pick from yet. Link a skins folder, open .wsz files, or star favourites.';
+    return (c ? c.name || 'Your skin' : 'It') + ' is your only ' + (own.length ? 'skin' : 'favourite') + ', and it\'s in use';
+  }
+  App.action('cls-random', function () {
+    if (S.picking) return;
+    if (S.busy) { App.toast('Wait for ' + S.busy.skin.name + ' to finish downloading', { icon: 'clock' }); return; }
+    S.picking = true; renderChoice();
+    pickRandom().then(function (s) {
+      S.picking = false; renderChoice();
+      if (s) use(s); else App.toast(noOther(), { icon: 'info' });
+    });
+  });
+  /* Classic opening: the skin to start in. With random-on-open on, a new one is chosen first, once its file can be
+     had; otherwise (or with nothing else to pick, or when it can't be had) the choice stays */
+  function opening() {
+    if (App.storage('classicRandom') !== true) return Promise.resolve(chosen());
+    return pickRandom().then(function (s) {
+      if (!s) return null;
+      return L.skinFile(s.local ? L.skinUrl(new URL('./', location.href).href, s) : skinFileUrl(s.md5)).then(function () {
+        choose(s);
+      });
+    }).then(function () { return chosen(); }, function (err) {
+      console.warn('Classic keeps its skin: the random one couldn\'t be had', err);
+      return chosen();
+    });
+  }
+  K.custom['device.classicRandom'] = {
+    get: function () { return App.storage('classicRandom') === true; },
+    set: function (v) { App.storage('classicRandom', !!v); }
+  };
 
   /* a .wsz from this device: kept in IndexedDB under an id from its name, size and date, then chosen */
   function wszName(file) {
@@ -403,31 +527,48 @@
     for (var i = 0; i < key.length; i += 1) { h ^= key.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
     return 'local-' + h.toString(16) + file.size.toString(16);
   }
-  function keepFile(file) {
-    if (!isWsz(file)) { App.toast(file.name + ' isn\'t a .wsz skin', { kind: 'error', icon: 'warning' }); return Promise.resolve(); }
-    if (file.size > MAX_FILE) { App.toast(file.name + ' is over 16 MB, which no classic skin is', { kind: 'error', icon: 'warning' }); return Promise.resolve(); }
+  /* one file into IndexedDB: the skin, or a rejection with a sentence that names the file */
+  function keep(file, added) {
+    if (!isWsz(file)) return Promise.reject(new Error(file.name + ' isn\'t a .wsz skin'));
+    if (file.size > MAX_FILE) return Promise.reject(new Error(file.name + ' is over 16 MB, which no classic skin is'));
     var skin = { md5: localId(file), name: wszName(file.name), file: file.name, local: true, screenshotUrl: '', museumUrl: '', nsfw: false };
-    S.busy = { skin: skin }; renderChoice();
     return file.slice(0, 2).text().then(function (magic) {
-      if (magic !== 'PK') throw new Error(file.name + ' isn\'t a skin: a .wsz is a zip file.');
-      return L.keepLocal({ md5: skin.md5, name: skin.name, file: file.name, blob: file, added: Date.now() }).catch(function () {
-        throw new Error('this browser didn\'t let lull keep ' + file.name + '.');
+      if (magic !== 'PK') throw new Error(file.name + ' isn\'t a skin: a .wsz is a zip file');
+      return L.keepLocal({ md5: skin.md5, name: skin.name, file: file.name, blob: file, added: added }).catch(function () {
+        throw new Error('this browser didn\'t let lull keep ' + file.name);
       });
-    }).then(function () {
+    }).then(function () { return skin; });
+  }
+  /* .wsz files opened or dropped: each kept on this device. One becomes the Classic skin; several join Your skins,
+     and the skin in use stays */
+  function keepFiles(files) {
+    if (!files.length) return Promise.resolve();
+    var now = Date.now();
+    S.busy = { skin: { md5: '', name: files.length === 1 ? wszName(files[0].name) : files.length + ' skins', local: true } }; renderChoice();
+    /* in turn, the first file newest: the list shows them in the order given */
+    var kept = [], failed = [];
+    return files.reduce(function (p, file, i) {
+      return p.then(function () {
+        return keep(file, now + files.length - i).then(function (skin) { kept.push(skin); }, function (err) { failed.push(err.message); });
+      });
+    }, Promise.resolve()).then(function () {
       S.busy = null;
-      S.local = [skin].concat(S.local.filter(function (s) { return s.md5 !== skin.md5; }));
-      chose(skin);
-    }, function (err) {
-      S.busy = null; renderChoice();
-      App.toast('Couldn\'t keep the skin: ' + err.message, { kind: 'error', icon: 'warning' });
+      var ids = kept.map(function (s) { return s.md5; });
+      S.local = kept.concat(S.local.filter(function (s) { return ids.indexOf(s.md5) < 0; }));
+      if (files.length === 1 && kept.length) { chose(kept[0]); return; }
+      renderChoice();
+      if (kept.length) {
+        App.toast('Kept ' + kept.length + (kept.length === 1 ? ' skin' : ' skins') + ' on this device, under Your skins' + (failed.length ? '. ' + failed.length + ' couldn\'t be kept: ' + failed.join('; ') : ''),
+          { icon: 'check', kind: failed.length ? 'error' : 'ok', action: $('#cls-browser') ? 'Show' : null, onAction: function () { setTab('mine', true); } });
+      } else App.toast('Couldn\'t keep ' + (failed.length === 1 ? 'the skin: ' : 'the skins: ') + failed.join('; '), { kind: 'error', icon: 'warning' });
     });
   }
-  /* .wsz files dropped on the window become the Classic skin; everything else stays the library's (M3U import) */
+  /* .wsz files dropped on the window or opened become Classic skins; anything else stays the library's (M3U import) */
   var libraryImport = App.hooks.importFile;
-  App.hooks.importFile = function (file) { if (isWsz(file)) keepFile(file); else libraryImport(file); };
+  App.hooks.importFile = function (file) { if (isWsz(file)) keepFiles([file]); else libraryImport(file); };
   document.addEventListener('change', function (e) {
     var f = e.target.closest && e.target.closest('[data-skin-file]');
-    if (f && f.files && f.files[0]) { var file = f.files[0]; f.value = ''; keepFile(file); }
+    if (f && f.files && f.files.length) { var files = [].slice.call(f.files); f.value = ''; keepFiles(files); }
   });
 
   /* ---------- actions ---------- */
@@ -441,7 +582,7 @@
   App.action('cls-base', function () {
     choose(null);
     App.toast('Classic mode uses Webamp\'s base skin', { icon: 'undo' });
-    var f = $('#cls-choice [data-skin-file]'); if (f) f.focus();
+    var f = $('#cls-choice [data-act="cls-random"]'); if (f) f.focus();
   });
   App.action('cls-look', function (el) {
     var s = findSkin(el.getAttribute('data-id'));
@@ -452,8 +593,11 @@
   App.action('cls-clear', clearSearch);
   App.action('cls-more', function () { if (!S.browse.loading) loadBrowse(true, SEARCH_DEBOUNCE_MS); });
   App.action('cls-reload', function (el) {
-    if (el.getAttribute('data-id') === 'favourites') loadFavourites(); else loadBrowse(false);
+    var id = el.getAttribute('data-id');
+    if (id === 'favourites') loadFavourites(); else if (id === 'mine') loadMine(); else loadBrowse(false);
   });
+  App.action('cls-rescan', function () { if (!S.mine.loading) loadMine(true); });
+  App.action('cls-mine-more', function () { S.mine.shown += MINE_PAGE; renderList(); });
   /* favourites change at once (newest first, like the hub's list) and roll back with its sentence if refused */
   function setFavourite(s, on) {
     var before = S.favs.items;
@@ -468,7 +612,7 @@
   }
   App.action('cls-fav', function (el) {
     var s = findSkin(el.getAttribute('data-id'));
-    if (!s || s.local) return;
+    if (!s || isOwn(s)) return;
     var on = !isFavourite(s);
     setFavourite(s, on);
     if (S.tab === 'favourites' && !on) {
@@ -489,7 +633,7 @@
 
   function setTab(id, focus) {
     if (TABS.map(function (t) { return t[0]; }).indexOf(id) < 0) return;
-    S.tab = id; S.query = '';
+    S.tab = id; S.query = ''; S.mine.shown = MINE_PAGE;
     renderBrowser();
     if (id === 'browse' && !S.offline) ensureBrowse();
     if (focus) { var t = $('#cls-tab-' + id); if (t) t.focus(); }
