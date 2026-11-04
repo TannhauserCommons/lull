@@ -1877,6 +1877,7 @@ pub fn stream_event(f: &Fetch, p: &Progress) -> serde_json::Value {
         "queuePos": p.queue_pos,
         "received": p.received,
         "size": p.size(),
+        "speed": p.speed,
         "attempt": p.attempt,
         "failedPeers": p.failed_peers,
         "error": p.error,
