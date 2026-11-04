@@ -857,3 +857,39 @@ fn a_version_is_named_by_its_tags_or_a_live_release_never_by_the_title_itself() 
     )));
     assert!(version(song("Paul McCartney", "Coming Up [Midland Version]", "", None)));
 }
+
+#[test]
+fn a_gap_fillers_other_take_is_its_own_row_and_lends_no_plays() {
+    // Live, YouTube Music answered "Shelter (Them Jeans drum edit)" with "Shelter".
+    let mut m = merged(vec![SongHit {
+        popularity: 0.4,
+        ..song(
+            "The xx",
+            "Shelter (Them Jeans Drum Edit)",
+            "Shelter (Remixes)",
+            Some(301),
+        )
+    }]);
+    merge::fill_gaps(
+        &mut m,
+        Found {
+            songs: vec![
+                SongHit {
+                    popularity: 0.95,
+                    ..song("The xx", "Shelter", "", None)
+                },
+                SongHit {
+                    popularity: 0.6,
+                    ..song("The xx", "Shelter (Them Jeans Drum Edit)", "", None)
+                },
+            ],
+            ..Found::default()
+        },
+    );
+    let rows: Vec<(&str, f64)> = m.songs.iter().map(|s| (s.title.as_str(), s.popularity)).collect();
+    assert_eq!(
+        rows,
+        [("Shelter (Them Jeans Drum Edit)", 0.6), ("Shelter", 0.95)],
+        "the edit takes the edit's plays; the original is a row of its own"
+    );
+}

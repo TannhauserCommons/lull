@@ -335,7 +335,7 @@ impl Merged {
     pub fn add(&mut self, found: Found) -> Touched {
         let mut touched = Touched::default();
         for hit in found.songs {
-            let at = match self.songs.iter().position(|s| same_song(s, &hit)) {
+            let at = match self.songs.iter().position(|s| same_take(s, &hit)) {
                 Some(i) => {
                     let may_rename = i >= self.shown_songs;
                     fill_song(&mut self.songs[i], hit, may_rename).then_some(i)
@@ -402,7 +402,7 @@ pub fn fill_gaps(m: &mut Merged, mut found: Found) -> Touched {
 fn add_gaps(m: &mut Merged, mut found: Found) -> Touched {
     found
         .songs
-        .retain(|s| match m.songs.iter_mut().find(|row| same_song(row, s)) {
+        .retain(|s| match m.songs.iter_mut().find(|row| same_take(row, s)) {
             Some(row) => {
                 row.popularity = row.popularity.max(s.popularity);
                 false
@@ -435,6 +435,14 @@ pub fn same_song(a: &SongHit, b: &SongHit) -> bool {
     isrc || (length
         && loose_artist(&a.artist) == loose_artist(&b.artist)
         && loose_title(&a.title) == loose_title(&b.title))
+}
+
+/// `same_song`, and where a length is missing (YouTube Music gives none), the same take too: a
+/// remix, an edit or a live take is never the song itself ("Shelter (Them Jeans drum edit)" is
+/// not "Shelter"), so it neither merges into its row nor lends it its plays.
+fn same_take(a: &SongHit, b: &SongHit) -> bool {
+    same_song(a, b)
+        && ((a.duration.is_some() && b.duration.is_some()) || version_words(&a.title) == version_words(&b.title))
 }
 
 fn same_album(a: &AlbumHit, b: &AlbumHit) -> bool {

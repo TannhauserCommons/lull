@@ -135,6 +135,7 @@ const CASES: &[(&str, &[&str])] = &[
 /// The words of a title that make it another performance or mix of a song, not the song itself.
 const VERSION_WORDS: &[&str] = &[
     "live",
+    "unplugged",
     "remix",
     "mix",
     "acoustic",
@@ -330,4 +331,25 @@ fn a_search_and_its_repeat_show_one_list() {
     together.add(musicbrainz());
     let before = Board::first(rank_rows(&query, &together, &liked, &followed));
     assert_ne!(before.songs, shown.songs[..before.songs.len()]);
+}
+
+/// A namesake with a big count lends nothing to the catalog's song: only the same recording does.
+#[test]
+fn a_namesakes_plays_rank_nothing_but_itself() {
+    // YouTube Music's answer for "hello" lists a namesake with 42M plays, not Adele's.
+    let recorded = recorded();
+    let itunes_only = {
+        let mut m = Merged::default();
+        m.add(itunes::songs(recorded["hello"]["itunes-song"].clone()).unwrap_or_default());
+        m
+    };
+    let m = merged("hello", &recorded["hello"]);
+    let adele = |m: &Merged| {
+        m.songs
+            .iter()
+            .find(|s| s.artist == "Adele" && s.title == "Hello")
+            .map(|s| s.popularity)
+    };
+    assert!(adele(&m).is_some());
+    assert_eq!(adele(&m), adele(&itunes_only));
 }
