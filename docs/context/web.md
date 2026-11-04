@@ -65,6 +65,9 @@ The way to do it (app.js, beside the router):
 - An action on a start screen whose work is rare loads that work when asked, behind a one-line stub: importing or
   deleting a theme and the check of a theme's loops (screens/your-themes.js, from appearance.js; Theme Studio asks
   for the check through `App.themeLoops`).
+- A state most visits never reach loads with what it shows: the pairing gate opens from the start (setup.js) with its
+  placeholder, and its form comes with hub.js (`App.hubKit.gateForm`), as first-run setup's page does
+  (`App.hubKit.setupPage`); a paired device that is set up fetches neither.
 - The way in fetches ahead: the `SOON` table in app.js lists, for each, where the pointer or focus goes and what it
   loads, so the first click doesn't wait (Classic, Stats, the hub's settings). Classic, which the W key opens
   without warning, also loads once the page is idle.
