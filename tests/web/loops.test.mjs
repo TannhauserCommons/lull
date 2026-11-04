@@ -96,3 +96,65 @@ test('the built-in designs and the docs\' examples name every loop\'s rate', () 
     assert.deepEqual(brief(L.find(read(`docs/theme-examples/${id}/theme.css`), { also: [components] })), [], id);
   }
 });
+
+// what a loop animates besides transform and opacity, each with the cheaper way; and glass it sits in
+const kinds = (hints, kind) => hints.filter((h) => h.kind === kind);
+const loop = (sel, kf, body) => `${sel} { animation: ${kf} 2s ease-in-out infinite alternate; --loop-fps: 10; }\n@keyframes ${kf} { to { ${body} } }\n`;
+
+test('a loop that animates more than transform and opacity is named, with the cheaper way for what it changes', () => {
+  const css = [
+    loop('.glow', 'glow', 'box-shadow: 0 0 12px pink; filter: brightness(1.2);'),
+    loop('.stripes', 'slide', 'background-position: 40px 0;'),
+    loop('.walk', 'walk', 'left: 100px;'),
+    loop('.grow', 'grow', 'width: 120px;'),
+    loop('.blush', 'blush', 'background-color: pink;'),
+    loop('.wipe', 'wipe', 'clip-path: inset(0 50% 0 0);'),
+    loop('.text', 'letters', 'letter-spacing: 2px;'),
+    loop('.fine', 'fine', 'transform: translateY(4px) scale(1.1); opacity: .5; translate: 2px; rotate: 4deg; scale: 1.1;'),
+    '.borrowed { animation: from-elsewhere 3s infinite; --loop-fps: 10; }\n',
+  ].join('');
+  const found = kinds(L.find(css), 'repaint');
+  assert.deepEqual(found.map((h) => `${h.selector}: ${h.props.join(' ')}`), [
+    '.glow: box-shadow filter', '.stripes: background-position', '.walk: left', '.grow: width', '.blush: background-color', '.wipe: clip-path', '.text: letter-spacing',
+  ]);
+  assert.deepEqual(found.map((h) => h.fix.split(' ').slice(0, 4).join(' ')), [
+    'For a glow, draw', 'To slide a pattern,', 'To move it, use', 'To grow it, use', 'To change its colour,', 'To reveal it, move', 'Rebuild it with transform',
+  ]);
+  assert.ok(found.every((h) => !h.insert), 'nothing it rewrites by itself');
+  assert.equal(L.apply(css, found), css);
+  // lull's own keyframes, when a theme runs them
+  assert.deepEqual(kinds(L.find('.x { animation: breathe 2s infinite; --loop-fps: 10; }', { also: [components] }), 'repaint'), []);
+});
+
+test('a loop inside glass is named from the CSS; one that may pass under it is said to be unknown, never guessed', () => {
+  const css = `.panel { backdrop-filter: blur(12px); }
+.panel .twinkle::after { animation: tw 3s infinite alternate; --loop-fps: 10; }
+.panel > .dot { animation: tw 3s infinite alternate; --loop-fps: 10; }
+.pane { -webkit-backdrop-filter: blur(4px); animation: tw 3s infinite alternate; --loop-fps: 10; }
+.panel + .beside { animation: tw 3s infinite; --loop-fps: 10; }
+.flat { backdrop-filter: none; } .flat .x { animation: tw 3s infinite; --loop-fps: 10; }
+@keyframes tw { to { opacity: .4 } }`;
+  assert.deepEqual(kinds(L.find(css), 'glass').map((h) => `${h.selector} in ${h.glass}${h.itself ? ' (itself)' : ''}`),
+    ['.panel .twinkle::after in .panel', '.panel > .dot in .panel', '.pane in .pane (itself)']);
+  assert.deepEqual(kinds(L.find(css), 'glass-maybe'), [], 'Theme Studio looks in its previews instead');
+  const [maybe] = kinds(L.find(css, { unsure: true }), 'glass-maybe');
+  assert.deepEqual(maybe.loops.map((l) => l.selector), ['.panel + .beside', '.flat .x']);
+  assert.deepEqual(maybe.glass, ['.panel', '.pane']);
+  assert.deepEqual(kinds(L.find('.a { animation: tw 3s infinite; --loop-fps: 10; }', { unsure: true }), 'glass-maybe'), [], 'no glass, nothing to wonder');
+  // the glass of the design a theme extends, as its cascade leaves it: Glasshouse blurs .ctx and the cards live, and bakes
+  // the player bar's (backdrop-filter: none after)
+  const glasshouse = read('web/designs/glasshouse/theme.css');
+  const inGlasshouse = (sel) => kinds(L.find(`${sel} { animation: tw 3s infinite; --loop-fps: 10; } @keyframes tw { to { opacity: 0 } }`,
+    { also: [components, glasshouse], base: 'glasshouse' }), 'glass').map((h) => h.glass);
+  assert.deepEqual(inGlasshouse('.ctx i::before'), ['.ctx']);
+  assert.deepEqual(inGlasshouse('.card > .x'), ['.card']);
+  assert.deepEqual(inGlasshouse('.pbar i::before'), [], 'baked');
+});
+
+test('a loop kept as the fallback that @supports turns off is left alone', () => {
+  const pulse = '.tray .led { animation: pulse 2s infinite alternate; --loop-fps: 20; }\n@keyframes pulse { to { box-shadow: 0 0 6px red; } }\n';
+  assert.deepEqual(L.find(pulse + '@supports (anchor-name: --a) { .tray .led.on { animation: none; } }'), []);
+  assert.deepEqual(L.find(pulse + '@supports (anchor-name: --a) { .tray .led { animation-name: none; } }'), []);
+  assert.equal(L.find(pulse + '@supports (anchor-name: --a) { .tray .other { animation: none; } }').length, 1, 'another element');
+  assert.equal(L.find(pulse + '.tray .led.on { animation: none; }').length, 1, 'not a fallback: switched off everywhere it matches');
+});

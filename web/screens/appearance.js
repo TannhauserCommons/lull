@@ -144,10 +144,12 @@
       })
       .catch(function (err) { App.toast('Couldn\'t import ' + file.name + ': ' + err.message, { kind: 'error' }); });
   }
-  /* ---------- loops that never end and name no rate (designs/loops.js, docs/themes.md, Drawing cheaply) ----------
-     App.themeLoops(css, base) resolves to the hints for a theme's CSS, read beside what its loops share the page with:
-     lull's components.css and the built-in design it extends, each fetched once. Theme Studio checks its draft with it;
-     an imported theme is checked once it is in, and offered the rates (a hint: it works either way) */
+  /* ---------- loops that draw more than they need to (designs/loops.js, docs/themes.md, Drawing cheaply) ----------
+     App.themeLoops(css, base, opts) resolves to the hints for a theme's CSS, read beside what its loops share the page
+     with: lull's components.css and the built-in design it extends, each fetched once (opts.unsure: say where the CSS
+     alone can't tell whether a loop passes under glass). App.themeLoopsList(hints, opts) words them in groups, for Theme
+     Studio (which adds what it finds in its live previews) and for an imported theme, which is checked once it is in
+     and offered the rates. A hint, never a block: the theme works either way */
   var beside = {};
   function besideText(url) {
     return beside[url] || (beside[url] = fetch(url).then(function (r) {
@@ -155,29 +157,53 @@
       return r.text();
     }).catch(function (err) { delete beside[url]; throw err; }));
   }
-  App.themeLoops = function (css, base) {
+  App.themeLoops = function (css, base, opts) {
     if (Designs.builtIn.indexOf(base) < 0) base = null;
     var also = [besideText(Designs.base + '../components.css')].concat(base ? [besideText(Designs.base + base + '/theme.css')] : []);
     return Promise.all([App.needScript(Designs.base + 'loops.js', 'the loop check')].concat(also)).then(function (got) {
-      return LullLoops.find(css, { also: got.slice(1), base: base });
+      return LullLoops.find(css, { also: got.slice(1), base: base, unsure: !!(opts && opts.unsure) });
     });
+  };
+  /* opts: { lines: say each loop's line, add(hint, i): an Add it for a rate } */
+  var GROUPS = [['rate'], ['repaint'], ['glass', 'glass-live', 'glass-maybe']];
+  App.themeLoopsList = function (hints, opts) {
+    opts = opts || {};
+    var where = function (h) { return html`<b>${h.animation || 'A loop'}</b> on <code>${h.selector}</code>${opts.lines && h.line ? ', line ' + h.line : ''}`; };
+    var item = function (h, i) {
+      var ic = icon(h.kind === 'glass-maybe' ? 'info' : 'warning', null, 'ic-16');
+      if (h.kind === 'rate') return html`<li class="studio__warn">${ic}<span>${where(h)}. ${LullLoops.advice(h)}</span>${opts.add ? opts.add(h, i) : ''}</li>`;
+      if (h.kind === 'repaint') return html`<li class="studio__warn">${ic}<span>${where(h)} changes ${h.props.map(function (p, j) { return html`${j ? ', ' : ''}<code>${p}</code>`; })}. ${h.fix}</span></li>`;
+      if (h.kind === 'glass') return html`<li class="studio__warn">${ic}<span>${where(h)}${h.itself ? ' blurs what’s behind it itself.' : html` sits inside <code>${h.glass}</code>.`}</span></li>`;
+      if (h.kind === 'glass-live') return html`<li class="studio__warn">${ic}<span><b>${h.animation}</b> on <code>${h.target}</code> ${h.exact ? 'passes' : 'may pass'} under <code>${h.glass}</code> on ${h.screen}, in the ${h.modes.join(' and ')} preview${h.modes.length > 1 ? 's' : ''}.</span></li>`;
+      return html`<li class="studio__warn studio__warn--maybe">${ic}<span>lull can’t tell from the CSS alone whether ${h.loops.map(function (l, j) { return html`${j ? (j === h.loops.length - 1 ? ' or ' : ', ') : ''}<b>${l.animation || 'a loop'}</b>`; })} pass${h.loops.length === 1 ? 'es' : ''} under the glass of ${h.glass.slice(0, 3).map(function (g, j) { return html`${j ? ', ' : ''}<code>${g}</code>`; })}${h.glass.length > 3 ? ' and more' : ''}. Theme Studio checks it on its live preview.</span></li>`;
+    };
+    return html`${GROUPS.map(function (kinds) {
+      var group = hints.map(function (h, i) { return { h: h, i: i }; }).filter(function (x) { return kinds.indexOf(x.h.kind) >= 0; });
+      var sure = group.filter(function (x) { return x.h.kind !== 'glass-maybe'; });
+      if (!group.length) return '';
+      var said = LullLoops.say(kinds[0], sure.length || 1);
+      return html`<h4 class="studio__sub">${said.title}</h4>${sure.length ? html`<p class="field__help">${said.lead}</p>` : ''}
+        <ul class="studio__warnings" role="list">${group.map(function (x) { return item(x.h, x.i); })}</ul>`;
+    })}`;
   };
   function loopsAfterImport(item) {
     var path = '/api/themes/' + encodeURIComponent(item.id) + '/theme.css';
     M.api(path).then(function (css) {
-      return App.themeLoops(css, item.extends).then(function (hints) {
-        if (!hints.length) return;
-        var one = hints.length === 1;
-        var d = App.openDialog({ title: (one ? 'A loop' : hints.length + ' loops') + ' in ' + item.name + ' could draw less',
-          body: html`<p class="prose">${LullLoops.cost(hints.length)} ${item.name} works as it is; a rate makes it lighter on this device.</p>
-            <ul class="studio__warnings" role="list">${hints.map(function (h) {
-              return html`<li class="studio__warn">${icon('warning', null, 'ic-16')}<span><b>${h.animation || 'A loop'}</b> on <code>${h.selector}</code>: ${LullLoops.advice(h)}</span></li>`;
-            })}</ul>`,
-          foot: html`<button class="btn" data-close>Not now</button><button class="btn btn--primary" data-add-rates>${one ? 'Add it' : 'Add them'}</button>` });
-        $('[data-add-rates]', d.el).addEventListener('click', function () {
+      return App.themeLoops(css, item.extends, { unsure: true }).then(function (hints) {
+        var sure = hints.filter(function (h) { return h.kind !== 'glass-maybe'; });
+        if (!sure.length) return;                                // only a "can't tell": nothing to bother anyone with
+        var loops = {}, rates = hints.filter(function (h) { return h.kind === 'rate'; });
+        sure.forEach(function (h) { loops[h.selector + '|' + h.animation] = true; });
+        var n = Object.keys(loops).length;
+        var d = App.openDialog({ title: (n === 1 ? 'A loop' : n + ' loops') + ' in ' + item.name + ' could draw less',
+          body: html`<p class="prose">${item.name} works as it is; changing ${n === 1 ? 'it' : 'them'} makes it lighter on this device.</p>${App.themeLoopsList(hints)}`,
+          foot: rates.length ? html`<button class="btn" data-close>Not now</button><button class="btn btn--primary" data-add-rates>${rates.length === 1 ? 'Add it' : 'Add them'}</button>`
+            : html`<button class="btn btn--primary" data-close>OK</button>` });
+        var add = $('[data-add-rates]', d.el);
+        if (add) add.addEventListener('click', function () {
           d.close();
-          M.api(path, { method: 'PUT', body: LullLoops.apply(css, hints) }).then(function () {
-            App.toast((one ? 'Added its rate to ' : 'Added their rates to ') + item.name, { kind: 'ok', icon: 'check' });
+          M.api(path, { method: 'PUT', body: LullLoops.apply(css, rates) }).then(function () {
+            App.toast((rates.length === 1 ? 'Added its rate to ' : 'Added their rates to ') + item.name, { kind: 'ok', icon: 'check' });
           }, function (err) { App.toast('Couldn\'t add the rates: ' + err.message, { kind: 'error' }); });
         });
       });

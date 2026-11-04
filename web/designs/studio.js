@@ -72,7 +72,7 @@
           <p class="field__help" id="studio-css-help">Any CSS, loaded after the design you start from, so plain selectors win. Tab indents, Ctrl+S saves. Hooks and examples: docs/themes.md.</p>
         </div>
         <section class="studio__check" aria-labelledby="studio-check-h"><h3 class="studio__h" id="studio-check-h">Contrast</h3><ul class="studio__warnings" role="list" data-studio-warnings><li>${'Checking...'}</li></ul></section>
-        <section class="studio__check" aria-labelledby="studio-loops-h"><h3 class="studio__h" id="studio-loops-h">Loops</h3><p class="field__help" data-studio-loops-cost hidden></p><ul class="studio__warnings" role="list" data-studio-loops aria-live="polite"><li>${'Checking...'}</li></ul></section>
+        <section class="studio__check" aria-labelledby="studio-loops-h"><h3 class="studio__h" id="studio-loops-h">Loops</h3><div data-studio-loops aria-live="polite"><ul class="studio__warnings" role="list"><li>${'Checking...'}</li></ul></div></section>
       </div>
       <div class="studio__stage">
         <div class="studio__bar">
@@ -130,7 +130,7 @@
     var w = f.contentWindow, doc = f.contentDocument; if (!w || !doc || !w.Designs) return;
     var stored = doc.getElementById('user-css'); if (stored) stored.remove();
     paintFrame(f);
-    w.Designs.ready(function () { setTimeout(function () { if (S) { readTokens(); checkContrast(); } }, 600); });
+    w.Designs.ready(function () { setTimeout(function () { if (S) { readTokens(); checkContrast(); } }, 600); lookLive(); });
   }
   function draftCss() {
     var css = S.draft.css;
@@ -178,7 +178,7 @@
     var t = e.target, k = t.getAttribute('data-studio'), tok = t.getAttribute('data-token');
     if (k === 'name') { S.draft.name = t.value; S.dirty = true; state(); }
     else if (k === 'extends' && e.type === 'change') { S.draft.extends = t.value || null; if (t.value) S.draft.shell = App.designs[t.value].shell; S.dirty = true; showSeg('shell', S.draft.shell); loadFrames(); state(); }
-    else if (k === 'route' && e.type === 'change') { S.route = t.value; S.frames.forEach(function (f) { if (f.contentWindow) f.contentWindow.location.hash = '#/' + S.route; }); }
+    else if (k === 'route' && e.type === 'change') { S.route = t.value; S.frames.forEach(function (f) { if (f.contentWindow) f.contentWindow.location.hash = '#/' + S.route; }); lookLive(); }
     else if (k === 'css') { S.draft.css = t.value; lineNumbers(); S.dirty = true; state(); repaint(); }
     else if (tok) {
       var mode = t.getAttribute('data-mode'), unit = t.getAttribute('data-unit');
@@ -360,19 +360,46 @@
     list.innerHTML = String(out.length ? html`${out}` : html`<li class="studio__ok">${icon('check', null, 'ic-16')}<span>Every text and accent pair reads well${S.draft.modes.length > 1 ? ' in day and night' : ''}.</span></li>`);
   }
 
-  /* ---------- loops: each that never ends and names no rate, with the rate to add (designs/loops.js) ---------- */
+  /* ---------- loops that draw more than they need to (designs/loops.js) ----------
+     from the CSS: no rate (with an Add it), what they redraw, glass they sit in; and, from the live previews, the loops
+     on the screen shown that pass under glass, which only where things land can tell */
   function checkLoops() {
     var css = S.draft.css;
     App.themeLoops(css, S.draft.extends).then(function (hints) {
-      var list = S && S.draft.css === css && $('[data-studio-loops]', S.el); if (!list) return;
+      if (!S || S.draft.css !== css) return;
       S.loops = { css: css, hints: hints };
-      var cost = $('[data-studio-loops-cost]', S.el);
-      cost.textContent = hints.length ? LullLoops.cost(hints.length) : ''; cost.hidden = !hints.length;
-      list.innerHTML = String(hints.length ? html`${hints.map(function (h, i) {
-        return html`<li class="studio__warn">${icon('warning', null, 'ic-16')}<span><b>${h.animation || 'A loop'}</b> on <code>${h.selector}</code>, line ${h.line}. ${LullLoops.advice(h)}</span>
-          <button type="button" class="btn btn--sm" data-studio-loop="${i}" aria-label="${'Add --loop-fps: ' + h.fps + ' to ' + h.selector}">Add it</button></li>`;
-      })}` : html`<li class="studio__ok">${icon('check', null, 'ic-16')}<span>Every loop that never ends names its rate.</span></li>`);
+      showLoops();
+      lookLive();
     }, function (err) { console.warn('lull: couldn\'t check the theme\'s loops', err); });
+  }
+  /* the previews' loops under glass, once they have started (and been paced) after a change */
+  var liveTimer = 0;
+  function lookLive() {
+    clearTimeout(liveTimer);
+    liveTimer = setTimeout(function () {
+      if (!S || !window.LullLoops) return;
+      var found = {}, screen = (ROUTES.filter(function (r) { return r[0] === S.route; })[0] || ['', 'this screen'])[1];
+      S.frames.forEach(function (f) {
+        var w = f.contentWindow, mode = f.getAttribute('data-studio-frame');
+        if (!w || !w.document || !w.Designs) return;
+        LullLoops.underGlass(w).forEach(function (g) {
+          var key = g.animation + '|' + g.target + '|' + g.glass;
+          (found[key] = found[key] || Object.assign({ kind: 'glass-live', screen: screen, modes: [] }, g)).modes.push(mode);
+          found[key].exact = found[key].exact && g.exact;
+        });
+      });
+      S.live = Object.keys(found).map(function (k) { return found[k]; });
+      showLoops();
+    }, 1500);
+  }
+  function showLoops() {
+    var host = $('[data-studio-loops]', S.el); if (!host || !S.loops) return;
+    /* what the previews show adds to what the CSS says: a loop it already places inside glass isn't named twice */
+    var inGlass = S.loops.hints.filter(function (h) { return h.kind === 'glass'; }).map(function (h) { return h.animation; });
+    var hints = S.loops.hints.concat((S.live || []).filter(function (g) { return inGlass.indexOf(g.animation) < 0; }));
+    host.innerHTML = String(hints.length ? App.themeLoopsList(hints, { lines: true, add: function (h, i) {
+      return html`<button type="button" class="btn btn--sm" data-studio-loop="${i}" aria-label="${'Add --loop-fps: ' + h.fps + ' to ' + h.selector}">Add it</button>`;
+    } }) : html`<ul class="studio__warnings" role="list"><li class="studio__ok">${icon('check', null, 'ic-16')}<span>Every loop names its rate, moves by transform and opacity, and stays off glass on this screen.</span></li></ul>`);
   }
   function addRate(i) {
     var h = S.loops && S.loops.css === S.draft.css && S.loops.hints[i]; if (!h) return;
