@@ -626,7 +626,8 @@
   :root[data-design="skydeck"] .pbar__tools { padding: 0 4px; }
 }
 /* status line: shown on the LCD strip itself (anchor positioning; older engines keep the base tab).
-   Failed: the reason in full plus short keys; the full labels stay the accessible names. */
+   Failed: the reason in full plus short keys; the full labels stay the accessible names. A seek kept until it has
+   downloaded keeps the base tab: the song plays on, so the LCD stays to seek with. */
 :root[data-design="skydeck"] .pbar__state {
   background: var(--sd-lcd-tex), var(--screen); color: var(--lilac); border-color: var(--mocha-edge);
   font: var(--t-px); letter-spacing: var(--t-px-track);
@@ -646,7 +647,7 @@
 :root[data-design="skydeck"] .pbar__state .btn--quiet[data-act="next"]::after { content: "skip"; }
 @supports (anchor-name: --a) {
   :root[data-design="skydeck"] .pbar__seek { anchor-name: --sd-lcd; }
-  :root[data-design="skydeck"] .pbar__state {
+  :root[data-design="skydeck"] .pbar__state:not(.is-seek-wait) {
     position: absolute; position-anchor: --sd-lcd; left: anchor(left); right: anchor(right); top: anchor(top); bottom: anchor(bottom);
     transform: none; max-width: none; z-index: 2; justify-content: center; gap: 6px; padding: 1px 10px 0;
     border: var(--stroke) solid var(--mocha-edge); border-radius: 10px 10px 16px 10px; box-shadow: inset 0 2px 0 #00000026, var(--sd-lcd-glow);

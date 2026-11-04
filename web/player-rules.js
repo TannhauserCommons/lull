@@ -1,6 +1,6 @@
 /* The player's rules (docs/context/web.md#player): what the queue moves to, what a play records, how loud, when the
-   next song loads, what the hub preloads, when radio adds songs, how far a seek may go and when a better copy is
-   switched to. The page's player (app.js) decides by these, and so does the desktop's native Classic player
+   next song loads, what the hub preloads, when radio adds songs, how far a seek may go (and how long a kept one waits)
+   and when a better copy is switched to. The page's player (app.js) decides by these, and so does the desktop's native Classic player
    (app/src/desktop/classic_native), which restates them in Rust: tests/player-rules.json holds the cases both run
    (tests/web/player-rules.test.mjs here, the engine's tests there), so a rule changed on one side fails until the
    other matches. Pure functions over plain values, so node can test them. */
@@ -104,16 +104,30 @@
     return { seed: seed, ask: active && left < R.RADIO_AHEAD };
   };
 
-  /* seeking a Soulseek song still arriving: only inside what arrived (0-1 of the song). buffered: [[from, to]] the
-     output holds; received: the transfer's share. A seek past it lands just inside it */
+  /* seeking a Soulseek song still arriving (0-1 of the song). buffered: [[from, to]] the output holds; received: the
+     transfer's share. A seek inside what arrived (less a margin, so the output doesn't stall at once) lands now. Past
+     it, with Settings > Playback's "Jump to where I seek once it has downloaded" on (waits), the song plays on where
+     it is and the seek is kept: asked again as more arrives, it lands once the limit reaches it. Off, it lands just
+     inside what arrived */
+  R.SEEK_MARGIN = 0.01;
   R.seekLimit = function (soulseek, buffered, received) {
     if (!soulseek) return 1;
     var end = buffered.reduce(function (m, r) { return Math.max(m, r[1]); }, 0);
-    return Math.max(end, received >= 1 ? 1 : received - 0.01);
+    return Math.max(end, received >= 1 ? 1 : received - R.SEEK_MARGIN);
   };
-  R.seekTo = function (fraction, limit) {
+  /* -> { fraction, how: now | waits | snapped } */
+  R.seekTo = function (fraction, limit, waits) {
     fraction = clamp(fraction, 0, 1);
-    return fraction <= limit ? { fraction: fraction, ok: true } : { fraction: Math.max(0, limit - 0.004), ok: false };
+    if (fraction <= limit) return { fraction: fraction, how: 'now' };
+    if (waits) return { fraction: fraction, how: 'waits' };
+    return { fraction: Math.max(0, limit - 0.004), how: 'snapped' };
+  };
+  /* about how long a kept seek waits, in whole seconds rounded up: the bytes still to come before it lands, at the
+     transfer's speed (bytes a second); null while the speed isn't known */
+  R.seekWaitS = function (fraction, received, size, speed) {
+    var left = (Math.min(1, fraction + R.SEEK_MARGIN) - received) * size;
+    if (left <= 0) return 0;
+    return speed > 0 ? Math.ceil(left / speed) : null;
   };
 
   /* a better copy (docs/context/web.md#better-copies), offered while a song plays: switch | wait | next-play.

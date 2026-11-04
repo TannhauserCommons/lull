@@ -1895,12 +1895,13 @@
      status: idle | finding | choose | queued | buffering | streaming | stalled | failed | library | ended | jellyfin-error
      `playing` is separate: paused = playing false while streaming or library.
      Fractions (0-1) of the track: received (bytes transferred), buffered ranges [[from, to], ...].
+     seekWait: a seek past what arrived, kept until it arrives ({ fraction }), or null.
      ===================================================================== */
   var P = App.player = {};
   var saved0 = storage('player') || {};
   var ps = P.state = {
     queue: [], index: 0, playing: false, pos: 0, status: 'idle',
-    received: 0, buffered: [], durationKnown: false,
+    received: 0, buffered: [], durationKnown: false, seekWait: null,
     peer: null, peersFound: 0, queuePos: 0, fallback: null, failedPeers: [], source: null,
     crossfade: false, shuffle: !!saved0.shuffle, repeat: saved0.repeat || 'off',
     volume: saved0.volume == null ? .7 : saved0.volume, muted: !!saved0.muted, radio: null, context: null, error: null
@@ -1914,10 +1915,11 @@
 
   /* playback settings (Settings > Playback; GET /api/settings), defaults until the server answers */
   var playback = { gapless: true, crossfade: 0, normalisation: 'off', loudnessTarget: -14, radioWhenQueueEnds: true, volumeStep: 5, prefetchCount: 2,
-    switchToBetter: true };
+    switchToBetter: true, jumpWhenDownloaded: true };
   P.volumeStep = function () { return (playback.volumeStep || 5) / 100; };
   App.setPlayback = function (patch) {
     Object.assign(playback, patch);
+    if (!playback.jumpWhenDownloaded && ps.seekWait) { ps.seekWait = null; changed('seek'); }   // the song plays on where it is
     App.store.set('crossfadeSec', playback.crossfade || 0);
     applyLevels(); prefetchSoon();
   };
@@ -1967,7 +1969,7 @@
   function resetTrackState() {
     ps.pos = 0; duration = 0; ps.fallback = null; ps.failedPeers = []; ps.error = null; ps.crossfade = false;
     ps.peer = null; ps.peersFound = 0; ps.queuePos = 0; ps.durationKnown = false; lastRanges = [];
-    ps.belowMinimum = false; ps.choices = null; ps.upgrade = null;
+    ps.belowMinimum = false; ps.choices = null; ps.upgrade = null; ps.seekWait = null;
     sound = { playing: false, waiting: false };
   }
   /* begin playing queue[index]: opts { autoplay (default true), at (seconds), reason (how the last song ended), forceSoulseek } */
@@ -2070,25 +2072,57 @@
     load(i);
   };
 
-  /* ---------- seeking: only inside what has arrived ---------- */
-  /* how far a seek may go (0-1): everything for saved songs, what the transfer delivered for Soulseek ones */
+  /* ---------- seeking: inside what has arrived, or kept until it arrives ---------- */
+  /* how far a seek may go now (0-1): everything for saved songs, what the transfer delivered for Soulseek ones */
   function seekLimit() { return LullRules.seekLimit(!!(cur && cur.soulseek), ps.buffered, ps.received); }
   P.seekable = function (f) { return P.current() ? f <= seekLimit() : false; };
-  /* outside what arrived: snap to the furthest point that did, shake (seek bar) and return false */
+  /* past what arrived: with "Jump to where I seek once it has downloaded" (Settings > Playback) the song plays on and
+     the seek is kept until its bytes are here (landKept); without, it snaps to the furthest point that arrived, the
+     seek bar shakes and this returns false. The next seek, or another song, replaces a kept one */
   P.seekFraction = function (f) {
     f = clamp(f, 0, 1);
     var dur = P.duration(); if (!dur || !P.current()) return false;
     /* a song restored after a reload (or the app starting) isn't loaded until it plays, and P.play then resumes it at
        ps.pos: a seek before that moves where it will start */
     if (!cur) { ps.pos = f * dur; changed('seek'); return true; }
-    var to = LullRules.seekTo(f, seekLimit()), ok = to.ok, target = to.fraction;
-    ps.pos = target * dur; out.seek(ps.pos);
+    var to = LullRules.seekTo(f, seekLimit(), playback.jumpWhenDownloaded);
+    ps.seekWait = to.how === 'waits' ? { fraction: to.fraction } : null;
+    if (!ps.seekWait) { ps.pos = to.fraction * dur; out.seek(ps.pos); }
     changed('seek');
-    if (!ok) App.emit('seek-denied', { fraction: f, received: ps.received });
-    return ok;
+    if (to.how === 'waits') App.emit('seek-kept', ps.seekWait);
+    if (to.how === 'snapped') App.emit('seek-denied', { fraction: f, received: ps.received });
+    return to.how !== 'snapped';
   };
+  /* a kept seek lands once what arrived reaches it */
+  function landKept() {
+    var w = ps.seekWait; if (!w || !cur) return;
+    if (LullRules.seekTo(w.fraction, seekLimit(), true).how !== 'now') return;
+    ps.seekWait = null; ps.pos = w.fraction * P.duration(); out.seek(ps.pos);
+    changed('seek');
+    App.announce('Playing from ' + fmtTime(ps.pos));
+  }
+  /* about how long a kept seek (or one at f) waits, in words: "about 8 s", or null while the speed isn't known */
+  function waitWords(f) {
+    var p = ps.peer, n = p && LullRules.seekWaitS(f, ps.received, (p.sizeMB || 0) * 1e6, (p.speed || 0) * 1e6);
+    return n == null ? null : n < 100 ? 'about ' + Math.max(1, n) + ' s' : 'about ' + Math.round(n / 60) + ' min';
+  }
+  P.seekWaitText = function () {
+    var w = ps.seekWait; if (!w) return null;
+    var eta = waitWords(w.fraction);
+    return 'Waiting for ' + fmtTime(w.fraction * P.duration()) + (eta ? ', ' + eta : '');
+  };
+  /* the seek bar's hover tip at f */
+  P.seekTip = function (f) {
+    var at = fmtTime(f * P.duration());
+    if (P.seekable(f)) return at;
+    if (!playback.jumpWhenDownloaded) return 'Not downloaded yet (' + Math.round(ps.received * 100) + '%)';
+    var eta = waitWords(f);
+    return at + (eta ? ', downloaded in ' + eta : ', not downloaded yet');
+  };
+  /* where the listener asked to be: a kept seek's time, else where the song is. Seeking by steps goes on from there */
+  P.seekTarget = function () { return ps.seekWait ? ps.seekWait.fraction * P.duration() : ps.pos; };
   P.seek = function (sec) { return P.seekFraction(sec / (P.duration() || 1)); };
-  P.seekBy = function (d) { return P.seek(ps.pos + d); };
+  P.seekBy = function (d) { return P.seek(P.seekTarget() + d); };
 
   P.setShuffle = function (on) {
     on = on == null ? !ps.shuffle : !!on;
@@ -2388,13 +2422,14 @@
         break;
       case 'failed':
         if (ps.playing) skipFailed(cur);
-        ps.status = 'failed'; ps.playing = false; out.pause();
+        ps.status = 'failed'; ps.playing = false; out.pause(); ps.seekWait = null;
         ps.error = ev.error || 'Couldn\'t play: no peer responded';
         cur.resolve = 'none';
         break;
     }
     if (ps.received >= 1 && duration) ps.durationKnown = true;
     updateBuffered();
+    landKept();
     changed(ev.peer !== prevPeer ? 'source' : 'status');
   }
 
@@ -2958,8 +2993,8 @@
     if (!cur) return;
     if (cur.resumeAt && ps.playing && ps.pos > cur.resumeAt + 1) cur.resumeAt = 0;   // the resume worked
     preloadNext(); trySwitch();
+    updateBuffered(); landKept();
     if (document.hidden) return;
-    updateBuffered();
     var waiting = /^(finding|queued|buffering|stalled)$/.test(ps.status) ? Math.floor(Date.now() / 1000) : 0;
     var sig = [ps.playing, ps.pos.toFixed(2), ps.received.toFixed(3), bufKey(ps.buffered), ps.status, waiting].join('|');
     if (sig === tickWas) return;
@@ -3031,6 +3066,7 @@
       case 'jellyfin-error': return 'Library item unavailable' + (ps.error ? ': ' + ps.error : '');
       case 'ended': return 'End of queue';
       default:
+        if (ps.seekWait) return P.seekWaitText();
         if (ps.crossfade) { var n = nxt && M.track(nxt.trackId); return 'Crossfading into ' + (n ? n.title : 'the next song'); }
         return null;
     }
@@ -3054,7 +3090,8 @@
   function updateSeeks() {
     var dur = P.duration() || 1, f = clamp(ps.pos / dur, 0, 1), bk = bufKey(ps.buffered);
     var bufTo = ps.buffered.length ? ps.buffered[ps.buffered.length - 1][1] * dur : 0;
-    var valText = fmtTime(ps.pos) + ' of ' + (ps.durationKnown ? '' : 'about ') + fmtTime(dur) + (ps.received < 1 ? ', downloaded to ' + fmtTime(bufTo) : '');
+    var valText = fmtTime(ps.pos) + ' of ' + (ps.durationKnown ? '' : 'about ') + fmtTime(dur) + (ps.received < 1 ? ', downloaded to ' + fmtTime(bufTo) : '')
+      + (ps.seekWait ? ', waiting for ' + fmtTime(ps.seekWait.fraction * dur) : '');
     var transferring = ps.received < 1 && (ps.status === 'streaming' || ps.status === 'buffering');
     // player bar + mini: play state and the received percentage (an integer, usable as counter(rx) in CSS)
     ['pbar', 'mini'].forEach(function (s) { var el = document.getElementById(s); if (!el) return; setAttr(el, 'data-playing', !!ps.playing); setVar(el, '--rx', Math.round(ps.received * 100)); });
@@ -3159,17 +3196,18 @@
     applySeek(el, seekFrac(el, e.clientX), false);
   });
   /* the hover tip showing, remembered: this runs on every pointer move anywhere, so it must not search the page */
-  var tipOn = null;
+  var tipOn = null, tipAt = 0;
   document.addEventListener('pointermove', function (e) {
     if (drag) { applySeek(drag.el, seekFrac(drag.el, e.clientX), false); return; }
     var el = e.target.closest && e.target.closest('.seek[data-seek="player"]');
     var tip = el && $('.seek__tip', el);
     if (tipOn && tipOn !== tip) { tipOn.classList.remove('is-on'); tipOn = null; }
     if (!tip) return;
-    var f = seekFrac(el, e.clientX), inBuf = P.seekable(f);
-    setText(tip, inBuf ? fmtTime(f * P.duration()) : 'Not downloaded yet (' + Math.round(ps.received * 100) + '%)');
-    tip.style.left = (f * 100) + '%'; tip.classList.add('is-on'); tipOn = tip;
+    var f = seekFrac(el, e.clientX);
+    setText(tip, P.seekTip(f));
+    tip.style.left = (f * 100) + '%'; tip.classList.add('is-on'); tipOn = tip; tipAt = f;
   });
+  App.on('tick', function () { if (tipOn) setText(tipOn, P.seekTip(tipAt)); });   // what arrived moves on under a still pointer
   document.addEventListener('pointerup', function (e) {
     if (!drag) return;
     applySeek(drag.el, seekFrac(drag.el, e.clientX), true);
@@ -3179,7 +3217,7 @@
     var el = e.target.closest && e.target.closest('[data-seek]'); if (!el) return;
     el.removeAttribute('data-pointer');
     var vol = el.getAttribute('data-seek') === 'volume', step = vol ? P.volumeStep() : 5 / (P.duration() || 1);
-    var cur = vol ? (ps.muted ? 0 : ps.volume) : ps.pos / (P.duration() || 1), f = null;
+    var cur = vol ? (ps.muted ? 0 : ps.volume) : P.seekTarget() / (P.duration() || 1), f = null;
     if (e.key === 'ArrowRight' || e.key === 'ArrowUp') f = cur + step * (e.shiftKey ? 6 : 1);
     else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') f = cur - step * (e.shiftKey ? 6 : 1);
     else if (e.key === 'Home') f = 0; else if (e.key === 'End') f = 1;
@@ -3203,6 +3241,7 @@
   App.on('seek-denied', function (d) {
     App.emit('announce', 'Not downloaded yet, ' + Math.round(d.received * 100) + ' percent');
   });
+  App.on('seek-kept', function () { App.emit('announce', P.seekWaitText() + '. The song plays on until then.'); });
 
   /* segmented controls: the indicator sits on the selected button, measured (--seg-x, --seg-w on .seg__ind). A .seg's
      columns are equal only while every label fits its share, and a design may add gaps; until the first measure the
@@ -3562,9 +3601,11 @@
         : st === 'jellyfin-error' ? html`<button class="btn btn--quiet" data-act="try-soulseek">Try Soulseek instead</button>`
         : st === 'stalled' || (st === 'buffering' && ps.fallback) ? html`<button class="btn btn--quiet" data-act="pick-source">Choose manually</button>`
         : st === 'ended' ? html`<button class="btn btn--quiet" data-act="start-radio-current">Start radio</button>` : '';
-      var ic = err ? 'warning' : st === 'finding' || st === 'queued' || st === 'buffering' ? 'soulseek' : st === 'stalled' ? 'refresh' : ps.crossfade ? 'shuffle' : 'info';
-      patch(stEl, html`${icon(ic)}<span>${line}</span>${acts}`);
-      stEl.classList.toggle('is-error', err); stEl.hidden = false;
+      var ic = err ? 'warning' : st === 'finding' || st === 'queued' || st === 'buffering' ? 'soulseek' : st === 'stalled' ? 'refresh' : ps.seekWait ? 'clock' : ps.crossfade ? 'shuffle' : 'info';
+      /* a kept seek's line counts down with every stream event: the tab is a live region, so screen readers hear it
+         once from the announcer (seek-kept) instead of at each change */
+      patch(stEl, html`${icon(ic)}<span ${raw(ps.seekWait ? 'aria-hidden="true"' : '')}>${line}</span>${acts}`);
+      stEl.classList.toggle('is-error', err); stEl.classList.toggle('is-seek-wait', !!ps.seekWait); stEl.hidden = false;
     } else { stEl.hidden = true; stEl.innerHTML = ''; }
     // transport
     var busy = st === 'finding' || st === 'queued' || st === 'buffering' || st === 'stalled';
@@ -3608,7 +3649,7 @@
     /* the artist, and where the song plays from (the whole text opens Now Playing, whose "Playing from" opens it);
        "your queue" goes without saying */
     var miniFrom = !idle && P.playingFrom(); if (miniFrom && miniFrom.kind === 'queue') miniFrom = null;
-    patch($('#mini-sub'), idle ? 'Search or pick something from Home' : line && st !== 'streaming' && st !== 'library' ? esc(line)
+    patch($('#mini-sub'), idle ? 'Search or pick something from Home' : line && (st !== 'streaming' && st !== 'library' || ps.seekWait) ? esc(line)
       : html`<span class="mini__artist">${t.artist}</span>${miniFrom ? html`<span class="mini__from">${App.placeName(miniFrom)}</span>` : ''}`);
     var mt = $('#mini-thumb'); patch(mt, idle ? '<span></span>' : ui.cover(t, 40, { hero: true })); mt.classList.toggle('bezel-thumb--empty', idle);
     App.syncRows();
@@ -4202,7 +4243,7 @@
     var h = {
       play: function () { T().play(); }, pause: function () { T().pause(); }, stop: function () { T().pause(); T().seek(0); },
       previoustrack: function () { T().prev(); }, nexttrack: function () { T().next(); },
-      seekto: function (d) { T().seek(d.seekTime); },                     // the engine clamps to what arrived, like the seek bar
+      seekto: function (d) { T().seek(d.seekTime); },                     // the engine keeps or clamps it, like the seek bar's
       seekbackward: function (d) { T().seekBy(-(d.seekOffset || 10)); }, seekforward: function (d) { T().seekBy(d.seekOffset || 10); }
     };
     Object.keys(h).forEach(function (k) { try { navigator.mediaSession.setActionHandler(k, h[k]); } catch (e) { /* unsupported action */ } });
@@ -4340,7 +4381,8 @@
     var pb = (s && s.playback) || {}, v = function (x) { return x && typeof x === 'object' && 'value' in x ? x.value : x; };
     App.setPlayback({ gapless: v(pb.gapless) !== false, crossfade: +v(pb.crossfade) || 0, normalisation: v(pb.normalisation) || 'off',
       loudnessTarget: +v(pb.loudnessTarget) || -14, radioWhenQueueEnds: v(pb.radioWhenQueueEnds) !== false, volumeStep: +v(pb.volumeStep) || 5,
-      prefetchCount: v(pb.prefetchCount) == null ? 2 : +v(pb.prefetchCount), switchToBetter: !s || !s.sources || v(s.sources.switchToBetter) !== false });
+      prefetchCount: v(pb.prefetchCount) == null ? 2 : +v(pb.prefetchCount), switchToBetter: !s || !s.sources || v(s.sources.switchToBetter) !== false,
+      jumpWhenDownloaded: v(pb.jumpWhenDownloaded) !== false });
   }
   App.reloadCollections = loadCollections;
   /* after a reconnect or a resync: everything the events would have told us */

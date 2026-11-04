@@ -162,8 +162,15 @@ The state shape and methods are DESIGN.md 7.8; the insides:
   `DELETE /api/stream/{id}`.
 - **Streaming state** comes from `stream` events (`finding queued buffering streaming stalled fallback failed`,
   `received/size`, `peer`, `peersFound`, `queuePos`, `failedPeers`), merged with the element's own `playing`/`waiting`.
-  `buffered` is `audio.buffered` cut to `received`. A seek may go anywhere for saved songs and only up to what has
-  arrived for Soulseek ones (`P.seekable(f)`); beyond it snaps back, shakes and announces.
+  `buffered` is `audio.buffered` cut to `received`. A seek may go anywhere for saved songs and up to what has
+  arrived for Soulseek ones (`P.seekable(f)`, `LullRules.seekTo`). Past it, with Settings > Playback's "Jump to where
+  I seek once it has downloaded" (`playback.jumpWhenDownloaded`, on by default), the song plays on and the seek is
+  kept (`ps.seekWait`): the state tab, the mini line and the slider's value say "Waiting for 2:40, about 8 s"
+  (`LullRules.seekWaitS`, from the transfer's speed), screen readers hear it, and it lands as soon as those bytes
+  are here (`landKept`, on each `stream` event and tick). The next seek replaces it, another song drops it, and
+  stepping (arrow keys, Media Session) goes on from it (`P.seekTarget`). With the setting off, a seek past it snaps
+  back, shakes and announces. The hub holds a range ahead of the transfer until its bytes arrive (never 416 for a
+  range inside the file), so a start the browser maps past `received` (VBR, a big embedded cover) only buffers.
 - **The seek bar's look** is one language in every design and view (the bar, Now Playing, the device waveform, the
   mini line, transfer progress in Activity): played is solid `--seek-played`; arrived but not played is one solid
   `--seek-buffered` (`--xfer` = `received`, 1 for a saved song; the element's `buffered` ranges lie inside it and draw
@@ -220,7 +227,7 @@ The state shape and methods are DESIGN.md 7.8; the insides:
     place or play state changes, touching only the elements whose state differs.
 - **Media Session**: metadata with `/api/art/{albumId}?size=96|256|512` once the 96 px cover is known to exist (else
   `assets/fallback-art-*.png`), `playbackState`, position state on track change and seek, all handlers; `seekto`
-  clamps like the seek bar.
+  is kept or clamped like the seek bar's.
 
 ### Output interface (ADR-0006)
 
@@ -247,7 +254,7 @@ output with one contract and two implementations:
 |---|---|
 | `load(item, { at = 0, autoplay = true })` | Replaces the current item (and drops any next one), starting at `at` seconds. Also used to reopen the same item after a peer fallback cut its response |
 | `play()` · `pause()` | |
-| `seek(seconds)` | The engine only seeks inside what has arrived (`P.seekable`); the output doesn't need to know about Soulseek |
+| `seek(seconds)` | The engine only seeks inside what has arrived (`P.seekable`), keeping a seek past it until it arrives; the output doesn't need to know about Soulseek |
 | `setVolume(v)` | `0..1`, the final level: the engine has already applied mute and its perceptual curve (`v = volume²`) |
 | `setNext(item \| null)` | Preload `item` and, when the current one ends, continue into it with no gap. Continue only when the current one reached its end (within 2 s of its duration): an earlier end is a cut response, reported as `ended` with `next: null`, and the next item stays set. `null` cancels. Called again whenever the queue, shuffle or repeat changes |
 | `crossfade(seconds)` | `0` = off. Otherwise, with a next item set, fade equal-power from the current into the next over the current's last `seconds` |

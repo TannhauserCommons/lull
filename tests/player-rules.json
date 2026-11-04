@@ -18,7 +18,8 @@
     "SWITCH_TRIES": 3,
     "SWITCH_FADE_S": 0.2,
     "SWITCH_QUIET_S": 3,
-    "SWITCH_GLIDE_S": 1.5
+    "SWITCH_GLIDE_S": 1.5,
+    "SEEK_MARGIN": 0.01
   },
   "nextIndex": [
     { "index": 0, "length": 3, "repeat": "off", "auto": false, "expect": 1 },
@@ -146,10 +147,19 @@
     { "soulseek": true, "buffered": [], "received": 1, "expect": 1 }
   ],
   "seekTo": [
-    { "fraction": 0.4, "limit": 0.49, "expect": { "fraction": 0.4, "ok": true } },
-    { "fraction": 0.8, "limit": 0.49, "expect": { "fraction": 0.486, "ok": false } },
-    { "fraction": 1.3, "limit": 1, "expect": { "fraction": 1, "ok": true } },
-    { "fraction": 0.5, "limit": 0.002, "expect": { "fraction": 0, "ok": false } }
+    { "fraction": 0.4, "limit": 0.49, "waits": false, "expect": { "fraction": 0.4, "how": "now" } },
+    { "fraction": 0.8, "limit": 0.49, "waits": false, "expect": { "fraction": 0.486, "how": "snapped" } },
+    { "fraction": 1.3, "limit": 1, "waits": false, "expect": { "fraction": 1, "how": "now" } },
+    { "fraction": 0.5, "limit": 0.002, "waits": false, "expect": { "fraction": 0, "how": "snapped" } },
+    { "fraction": 0.8, "limit": 0.49, "waits": true, "expect": { "fraction": 0.8, "how": "waits" } },
+    { "fraction": 0.49, "limit": 0.49, "waits": true, "expect": { "fraction": 0.49, "how": "now" } },
+    { "fraction": -0.2, "limit": 0.3, "waits": true, "expect": { "fraction": 0, "how": "now" } }
+  ],
+  "seekWaitS": [
+    { "fraction": 0.5, "received": 0.3, "size": 10000000, "speed": 1000000, "expect": 3 },
+    { "fraction": 0.5, "received": 0.6, "size": 10000000, "speed": 1000000, "expect": 0 },
+    { "fraction": 0.5, "received": 0.3, "size": 10000000, "speed": 0, "expect": null },
+    { "fraction": 0.995, "received": 0.9, "size": 1000000, "speed": 10000, "expect": 10 }
   ],
   "switchNow": [
     { "picked": true, "canSwitch": true, "steady": true, "duration": 300, "pos": 10, "arrived": 1, "expect": "wait" },

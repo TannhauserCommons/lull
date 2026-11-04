@@ -18,8 +18,9 @@ Contents: 1 Principles · 2 The five designs · 3 Architecture · 4 Tokens · 5 
   "machine" face (pixel or mono, per design); everything a person reads uses the UI face.
 - **Where the music comes from is always visible.** Saved (Jellyfin) vs Soulseek is shown by shape and icon, never
   colour alone, on every row, the player and the queue. A completed save flips the badge in place everywhere.
-- **Streaming is honest.** The seek bar shows played, buffered ranges and the file's transfer progress; you can only
-  seek inside what has arrived. Finding, queued, buffering, stalled-and-falling-back and failed are distinct states.
+- **Streaming is honest.** The seek bar shows played, buffered ranges and the file's transfer progress. A seek past
+  what has arrived waits for it, saying for what time and about how long, while the song plays on (or, with that
+  setting off, stops where the download is). Finding, queued, buffering, stalled-and-falling-back and failed are distinct states.
 - **Nothing is dead.** Every visible control does something: an action, a sheet, a toast or a state. No "coming soon".
 - **Calm by default.** One orchestrated moment per design (Now Playing opening), small functional motion elsewhere,
   all of it off under reduced motion.
