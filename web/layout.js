@@ -126,7 +126,10 @@
   App.on('design', function () { designCtx = null; apply(); });
 
   /* ---------- size classes: the main area's width and the window's height, as ResizeObserver reports them ---------- */
+  /* the states a resize can switch, which change how the rows are laid out */
+  function states() { return ['data-size', 'data-height', 'data-nowcol', 'data-nowcol-ok', 'data-panel', 'data-panel-split'].map(function (n) { return app.getAttribute(n); }).join('|'); }
   var ro = new ResizeObserver(function (entries) {
+    var was = states();
     entries.forEach(function (e) {
       if (e.target === main) mainW = e.contentRect.width;
       else short = e.contentRect.height < SHORT;
@@ -135,6 +138,9 @@
     toggleAttr('data-height', short ? 'short' : 'tall');
     apply();
     if (next !== size) { size = next; toggleAttr('data-size', size); apply(); App.emit('layout:size', size); }
+    /* a state switched lays the rows out anew: fit them now, in this frame. Left to the rows' own observer, the change
+       reaches it a round later, which a frame can end before, and the header stuck out for a frame (CI, Skydeck, 900 px) */
+    if (states() !== was && App.layout.refit) App.layout.refit();
   });
   ro.observe(main); ro.observe(document.documentElement);
   /* the panel docking (app.js) and the route (/now hides the column) change what applies */
