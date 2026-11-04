@@ -1,12 +1,32 @@
 /* lull's "open" page (docs/adr/0032): a shared lull link is this page with the item's names and public ids after
    `#lull?`, which browsers never send to the server. It opens the item in lull:
    - in the listener's lull in the browser, when they told this page its address (kept in this browser only);
-   - else in the lull app, through lull://open?link=… (the desktop app asks "Open lull?"; Android's App Links open the
-     app before this page loads);
+   - else in the lull app. Android: "Open in the lull app" is an intent URL for the app, which Chrome opens on one tap
+     (it blocks lull:// unless a tap asks for it), coming back here with ?app=none when the app isn't installed; App
+     Links, once verified, open the app before this page loads. Elsewhere: lull://open?link=…, tried once on load (the
+     desktop app asks "Open lull?");
    - else it offers the item's public page (song.link, album.link, Last.fm) and lull itself.
    No requests leave this page: everything is read from its own address. */
-(function () {
+(function (root) {
   'use strict';
+  var PACKAGE = 'io.github.tannhausercommons.lull';
+  /* the link a lull opens: this page's address, its #lull? part included, without the ?app=none it came back with */
+  function linkOf(href) { var u = new URL(href); u.search = ''; return u.href; }
+  /* where Chrome comes back to when the app isn't installed: this page, saying so */
+  function fallbackOf(link) { var u = new URL(link); u.search = '?app=none'; return u.href; }
+  function isAndroid(ua) { return /\bAndroid\b/i.test(ua || ''); }
+  /* the lull app's link for `link`: on Android an intent URL (the app's lull://open, its package, and the page to come
+     back to), elsewhere lull://open. Each value is encoded whole: the link's own # and ; stay out of the intent's */
+  function appUrl(link, android) {
+    var data = 'open?link=' + encodeURIComponent(link);
+    if (!android) return 'lull://' + data;
+    return 'intent://' + data + '#Intent;scheme=lull;package=' + PACKAGE + ';S.browser_fallback_url=' + encodeURIComponent(fallbackOf(link)) + ';end';
+  }
+  var api = { appUrl: appUrl, linkOf: linkOf, fallbackOf: fallbackOf, isAndroid: isAndroid };
+  if (typeof module === 'object' && module.exports) module.exports = api;     // tests/web/open-page.test.mjs
+  if (typeof document === 'undefined') return;
+  root.LullOpen = api;
+
   var HUB_KEY = 'lull.hub';
   var TRIED_KEY = 'lull.tried-app';
   /* the public pages a link may name; anything else is ignored, so a link can't send people somewhere else */
@@ -14,7 +34,8 @@
   var NOUN = { song: 'a song', album: 'an album', artist: 'an artist' };
 
   var $ = function (id) { return document.getElementById(id); };
-  var here = location.href;
+  var here = linkOf(location.href);
+  var android = isAndroid(navigator.userAgent);
   var item = read(location.hash);
 
   function read(hash) {
@@ -77,7 +98,7 @@
   function start() {
     describe();
     if (!item) return;
-    var app = 'lull://open?link=' + encodeURIComponent(here);
+    var app = appUrl(here, android);
     $('app').href = app;
     var hub = origin(stored(HUB_KEY) || '');
     if (hub) {
@@ -89,6 +110,15 @@
       return;
     }
     showChoices(false);
+    /* Android: one tap on the app's button opens it (Chrome opens no app on its own); back here, it isn't installed */
+    if (android) {
+      if (new URLSearchParams(location.search).get('app') === 'none') {
+        $('no-app').hidden = false;
+        $('app').classList.remove('primary');
+        $('get').classList.replace('quiet', 'primary');
+      }
+      return;
+    }
     /* once per visit: coming back to this page (Back from the app's prompt) doesn't ask again */
     var tried = false;
     try { tried = sessionStorage.getItem(TRIED_KEY) === here; sessionStorage.setItem(TRIED_KEY, here); } catch (e) { /* private window */ }
@@ -111,4 +141,4 @@
   /* another link opened in this tab changes only what follows the `#`, which doesn't load the page again */
   window.addEventListener('hashchange', function () { location.reload(); });
   start();
-})();
+})(typeof self !== 'undefined' ? self : this);
