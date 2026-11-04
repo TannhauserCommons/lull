@@ -1274,7 +1274,7 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 /* the song's words keep a readable width (layout.js): the song side's parts ("Playing from", then Like and Save) give
    way before the title or artist would show less than this, or less than all of it when it is shorter */
 @property --fit-keep { syntax: "<length>"; inherits: false; initial-value: 0px; }
-.pbar [data-fit-keep] { --fit-keep: 10ch; }
+[data-fit-keep] { --fit-keep: 10ch; }
 .pbar__private[data-fit-out] { padding-inline: 7px; }   /* the eye alone sits in the middle of its pill, as wide as before */
 .pbar__centre { display: grid; justify-items: center; gap: 2px; min-width: 0; }
 .pbar__controls { display: flex; align-items: center; gap: var(--sp-3); }
@@ -1319,6 +1319,10 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 .mini__text { flex: 1; min-width: 0; display: grid; text-align: left; }
 .mini__title { font: 800 .9375rem/1.25 var(--f-ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mini__sub { font: 600 .8125rem/1.3 var(--f-ui); color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* a design's state chip beside the song's line (lull's "streaming"): empty and hidden unless a design draws it, and it
+   gives way before it would cover a button or squeeze the line below its readable width (layout.js) */
+.mini__chip { display: none; }
+.mini__chip[data-fit-out] { display: none !important; }
 .mini__from::before { content: " \00b7  "; white-space: pre; }
 .tabbar {
   grid-area: tabs; grid-template-columns: repeat(4, 1fr); height: calc(var(--tab-h) + env(safe-area-inset-bottom));

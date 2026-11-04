@@ -1712,11 +1712,13 @@
   :root[data-design="lull"] .mini > .seek--line .seek__track { height: 3px; margin-top: 0; }
   :root[data-design="lull"] .mini__text { grid-template-columns: auto minmax(0, 1fr); column-gap: 8px; align-items: center; }
   :root[data-design="lull"] .mini__title { grid-column: 1 / -1; }
-  :root[data-design="lull"] .mini:has(.seek--line.is-transferring) .mini__text::after {
-    content: "streaming"; grid-row: 2; grid-column: 2; justify-self: start; padding: 1px 7px; border-radius: 999px; border: 1px dashed var(--l-slsk);
-    color: var(--l-muted); font: 800 .6875rem/1.3 var(--f-ui);
+  /* the chip is the mini player's own part (.mini__chip): it gives way whole when the line beside it needs the room */
+  :root[data-design="lull"] .mini:has(.seek--line.is-transferring) .mini__chip {
+    display: block; grid-row: 2; grid-column: 2; justify-self: start; padding: 1px 7px; border-radius: 999px; border: 1px dashed var(--l-slsk);
+    color: var(--l-muted); font: 800 .6875rem/1.3 var(--f-ui); white-space: nowrap;
   }
-  :root[data-design="lull"] .mini[data-playing="false"]:has(.seek--line.is-transferring) .mini__text::after { counter-reset: rx var(--rx); content: "paused \00b7  " counter(rx) "%"; }
+  :root[data-design="lull"] .mini:has(.seek--line.is-transferring) .mini__chip::before { content: "streaming"; }
+  :root[data-design="lull"] .mini[data-playing="false"]:has(.seek--line.is-transferring) .mini__chip::before { counter-reset: rx var(--rx); content: "paused \00b7  " counter(rx) "%"; }
   /* home: two cards and a peek of the third; titles keep two lines' room so every card's rows line up, the reason
      sticker (with "+1" inline at its end) sits on the foot; releases in one column */
   :root[data-design="lull"] .disc-home .disc-picks, :root[data-design="lull"] .disc-home .disc-picks-skel .skel-group { grid-auto-columns: 150px; }

@@ -414,6 +414,9 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
     the keyboard, Escape goes back; the wheel over the button turns it). The song's chips drop the source (1),
     "below minimum" (2), the format (3), and Private keeps its eye (4); what the source and format open is the "…"
     menu's Show source.
+  - The phone's mini player: its text (`.mini__text`) is a row, and a design's state chip beside the song's line
+    (`.mini__chip`, empty and hidden unless a design draws it: lull's "streaming") gives way (1) before it would cover a
+    button or the line (`[data-fit-keep]`) would show less than its readable width.
   - The song side (`.pbar__now`) is a row of its own: "Playing from" (1), then Like and Save together (2), then, with
     nothing playing, the Private pill's word (4). What decides is the song's words: the title and artist
     (`[data-fit-keep]`) keep `--fit-keep` (10ch, components.css) or all of themselves when shorter, so the side's parts
