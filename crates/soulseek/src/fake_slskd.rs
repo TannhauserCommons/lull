@@ -132,6 +132,15 @@ impl Fake {
             .map(|s| s.iter().map(|(_, at)| *at).collect())
             .unwrap_or_default()
     }
+
+    /// The offsets one peer's downloads were asked from, in order.
+    pub fn starts_of(&self, user: &str) -> Vec<u64> {
+        self.shared
+            .starts
+            .lock()
+            .map(|s| s.iter().filter(|(u, _)| u == user).map(|(_, at)| *at).collect())
+            .unwrap_or_default()
+    }
 }
 
 fn rand_id() -> u64 {
@@ -165,7 +174,7 @@ async fn enqueue(
         _ => 0,
     };
     if let Ok(mut starts) = s.starts.lock() {
-        starts.push((filename.clone(), at));
+        starts.push((user.clone(), at));
     }
     let pace = s.paces.get(&user).copied().unwrap_or(s.peer.per_tick);
     let task = tokio::spawn(download(s.clone(), id.clone(), path, filename.clone(), bytes, at, pace)).abort_handle();

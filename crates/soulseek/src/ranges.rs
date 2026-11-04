@@ -34,6 +34,49 @@ impl Ranges {
         self.0.insert(at, (start, end));
     }
 
+    /// Takes `[start, end)` out: what a peer whose bytes turned out different had brought.
+    pub fn remove(&mut self, start: u64, end: u64) {
+        if end <= start {
+            return;
+        }
+        let mut kept = Vec::with_capacity(self.0.len() + 1);
+        for &(a, b) in &self.0 {
+            if b <= start || a >= end {
+                kept.push((a, b));
+                continue;
+            }
+            if a < start {
+                kept.push((a, start));
+            }
+            if b > end {
+                kept.push((end, b));
+            }
+        }
+        self.0 = kept;
+    }
+
+    /// The parts of `[start, end)` these ranges hold.
+    pub fn within(&self, start: u64, end: u64) -> Vec<(u64, u64)> {
+        self.0
+            .iter()
+            .map(|&(a, b)| (a.max(start), b.min(end)))
+            .filter(|&(a, b)| a < b)
+            .collect()
+    }
+
+    /// These ranges and `other`'s.
+    pub fn union(&self, other: &Ranges) -> Ranges {
+        let mut all = self.clone();
+        for &(a, b) in &other.0 {
+            all.add(a, b);
+        }
+        all
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     /// The end of the range holding `pos`: how far a reader at `pos` can read now.
     pub fn end_from(&self, pos: u64) -> Option<u64> {
         self.0.iter().find(|&&(a, b)| a <= pos && pos < b).map(|&(_, b)| b)
@@ -93,6 +136,17 @@ mod tests {
         assert_eq!(r.end_from(100), None, "the gap starts at the range's end");
         assert_eq!(r.end_from(600), Some(800));
         assert_eq!(r.fractions(1000), vec![[0.0, 0.1], [0.5, 0.8]]);
+    }
+
+    #[test]
+    fn a_peers_bytes_come_out_and_overlaps_are_found() {
+        let mut r = of(&[(0, 100), (200, 300)]);
+        r.remove(50, 250);
+        assert_eq!(r, of(&[(0, 50), (250, 300)]));
+        assert_eq!(r.within(40, 260), vec![(40, 50), (250, 260)]);
+        assert_eq!(r.union(&of(&[(50, 250)])), of(&[(0, 300)]));
+        r.remove(0, 300);
+        assert!(r.is_empty());
     }
 
     #[test]
