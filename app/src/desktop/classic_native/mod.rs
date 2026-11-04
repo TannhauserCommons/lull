@@ -21,6 +21,7 @@ mod output;
 mod playlist;
 mod queue;
 mod remote;
+mod rules;
 mod session;
 mod skin;
 mod smtc;
@@ -180,7 +181,6 @@ fn start(handoff: &Handoff, eq: Equaliser) -> engine::Start {
             liked: t.liked,
             art: t.art.clone(),
             gain_db: t.gain_db,
-            recommended: t.recommended,
             entity: None,
         })
         .collect();

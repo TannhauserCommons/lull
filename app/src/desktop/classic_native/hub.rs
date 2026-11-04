@@ -4,7 +4,6 @@
 //! them: plays and likes become the outbox's ops (web/offline.js), handed to the page with the
 //! queue when Classic closes.
 
-use super::listen::How;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::io::Read;
@@ -57,10 +56,7 @@ impl Hub {
         struct Started {
             play_id: Option<String>,
         }
-        let mut body = json!({ "trackId": track, "recommended": recommended });
-        if let Some(d) = duration {
-            body["duration"] = json!(d.round());
-        }
+        let body = super::rules::play_start(track, duration, recommended);
         let answer = self.call("POST", "/api/plays", Some(body))?;
         let started: Started = serde_json::from_slice(&answer).map_err(|e| Failure::Refused(e.to_string()))?;
         Ok(started.play_id)
@@ -140,15 +136,6 @@ impl Hub {
             .unwrap_or_else(|| format!("the hub said {status}"));
         Err(Failure::Refused(said))
     }
-}
-
-/// The end of a play as the hub takes it (`PATCH /api/plays/{id}`, and the outbox's `play` op).
-pub fn end_body(listened: f64, how: How) -> Value {
-    json!({
-        "playedS": listened.round(),
-        "completed": how == How::Completed,
-        "skipped": how == How::Skipped,
-    })
 }
 
 fn encode(id: &str) -> String {

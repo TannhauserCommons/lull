@@ -2,9 +2,10 @@
 //! (a song, its group, a picked source, its place before shuffling), the same moves at a song's end
 //! (`nextIndex`), the same Previous, shuffle as an order that keeps "next up" first, repeat off, all
 //! or one, and the same radio top-up. The page hands its queue over in its own saved shape and takes
-//! it back in that shape (`P.adopt`), so the queue never forks: these rules mirror app.js line for
-//! line, and the tests pin the cases app.js decides.
+//! it back in that shape (`P.adopt`), so the queue never forks. Where the queue moves, Previous and
+//! radio are the shared player rules (rules.rs, web/player-rules.js).
 
+use super::rules;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -66,7 +67,7 @@ pub struct Radio {
 }
 
 fn default_steer() -> f64 {
-    STEER
+    rules::RADIO_STEER
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -74,11 +75,6 @@ pub struct Seed {
     pub kind: String,
     pub id: String,
 }
-
-/// How far a radio seeded by the queue's end strays from its seed (app.js).
-const STEER: f64 = 0.4;
-/// Radio keeps at least this many songs after the playing one.
-const RADIO_AHEAD: usize = 3;
 
 /// The queue and its modes, as the page saves them (`persist`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -107,22 +103,12 @@ impl Queue {
     /// The place the queue moves to next: the same song for repeat one when it ended by itself,
     /// the next entry, the first again with repeat all, or none (app.js `nextIndex`).
     pub fn next_index(&self, by_itself: bool) -> Option<usize> {
-        if by_itself && self.repeat == Repeat::One {
-            return Some(self.index);
-        }
-        if self.index + 1 < self.queue.len() {
-            return Some(self.index + 1);
-        }
-        (self.repeat == Repeat::All && !self.queue.is_empty()).then_some(0)
+        rules::next_index(self.index, self.queue.len(), self.repeat, by_itself)
     }
 
     /// Previous: past 3 s, or on the first song, the song starts again; else the one before.
     pub fn previous(&self, position: f64) -> Previous {
-        if position > 3.0 || self.index == 0 {
-            Previous::Restart
-        } else {
-            Previous::Load(self.index - 1)
-        }
+        rules::previous(self.index, position).map_or(Previous::Restart, Previous::Load)
     }
 
     /// Shuffle on: the songs after "next up" shuffle, each keeping its place to come back to; off:
@@ -155,17 +141,22 @@ impl Queue {
         at.min(self.queue.len())
     }
 
-    /// Whether radio should add songs now, and from what: with "radio when the queue ends" on,
-    /// repeat off and nothing after the playing song, the playing song seeds a radio; a radio that
-    /// keeps adding keeps three songs ahead (app.js `topUpRadio`). The ids already queued are left
-    /// out of what it adds.
+    /// Whether radio should add songs now, and from what (rules.rs `radio`, app.js `topUpRadio`):
+    /// the playing song may seed a radio, which then keeps songs ahead. The ids already queued are
+    /// left out of what it adds.
     pub fn radio_wanted(
         &mut self,
         radio_when_queue_ends: bool,
         name: impl FnOnce(&str) -> Option<String>,
     ) -> Option<RadioAsk> {
-        let left = self.queue.len().saturating_sub(self.index + 1);
-        if self.radio.is_none() && radio_when_queue_ends && self.repeat == Repeat::Off && left == 0 {
+        let (seed, ask) = rules::radio(
+            self.index,
+            self.queue.len(),
+            self.repeat,
+            self.radio.as_ref().map(|r| r.keeps_adding),
+            radio_when_queue_ends,
+        );
+        if seed {
             let last = self.queue.get(self.index)?.track_id.clone();
             self.radio = Some(Radio {
                 name: name(&last),
@@ -174,12 +165,12 @@ impl Queue {
                     id: last,
                 },
                 keeps_adding: true,
-                steer: STEER,
+                steer: rules::RADIO_STEER,
                 error: None,
             });
         }
-        let radio = self.radio.as_ref().filter(|r| r.keeps_adding && r.error.is_none())?;
-        (left < RADIO_AHEAD).then(|| RadioAsk {
+        let radio = self.radio.as_ref().filter(|_| ask)?;
+        Some(RadioAsk {
             seed: radio.seed.clone(),
             steer: radio.steer,
             exclude: self.queue.iter().map(|e| e.track_id.clone()).collect(),

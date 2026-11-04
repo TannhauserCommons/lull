@@ -8,13 +8,12 @@
 
 use super::deck::{Deck, Phase};
 use super::eq::Chain;
+use super::rules;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
 /// Mono samples kept for the visualiser.
 const TAP: usize = 1024;
-/// A song that ends within this long of its length ended by itself: the next one follows at once.
-pub const GAPLESS_WITHIN: f64 = 2.0;
 
 /// What the mixer did that the engine needs to know.
 #[derive(Debug, PartialEq)]
@@ -39,6 +38,8 @@ pub struct Switch {
     pub deck: Arc<Deck>,
     pub skip: i64,
     pub level: f32,
+    /// Its level matched to the song's for the fade (rules.rs `level_match`).
+    pub matched: f32,
     fade: Fade,
 }
 
@@ -53,6 +54,9 @@ pub struct Mixer {
     pub eq: Option<Chain>,
     fade: Option<Fade>,
     switch: Option<Switch>,
+    /// A better copy switched to glides from the song's level to its own: from this factor, after
+    /// this many frames (rules.rs `SWITCH_GLIDE_S`).
+    glide: Option<(f32, u64)>,
     pub tap: VecDeque<f32>,
     /// The current deck's sound so far, for measured loudness: the sum of squares and frames.
     pub heard: (f64, u64),
@@ -77,6 +81,7 @@ impl Mixer {
             eq: None,
             fade: None,
             switch: None,
+            glide: None,
             tap: VecDeque::with_capacity(TAP),
             heard: (0.0, 0),
             events: Vec::new(),
@@ -95,6 +100,7 @@ impl Mixer {
         self.level = level;
         self.fade = None;
         self.switch = None;
+        self.glide = None;
         self.ended = false;
         self.heard = (0.0, 0);
     }
@@ -118,12 +124,14 @@ impl Mixer {
         self.fade.is_some()
     }
 
-    /// Fades the better copy in over `seconds`, after giving or taking `skip` frames to line it up.
-    pub fn switch(&mut self, deck: Arc<Deck>, skip: i64, level: f32, seconds: f64) {
+    /// Fades the better copy in over `seconds`, after giving or taking `skip` frames to line it up,
+    /// at the song's `level` times `matched`.
+    pub fn switch(&mut self, deck: Arc<Deck>, skip: i64, level: f32, matched: f32, seconds: f64) {
         self.switch = Some(Switch {
             deck,
             skip,
             level,
+            matched,
             fade: Fade {
                 frames: (seconds * f64::from(self.rate)) as u64,
                 done: 0,
@@ -148,8 +156,14 @@ impl Mixer {
             let got = current.take(&mut self.scratch);
             self.measure(got);
             self.keep(from, got);
+            let glide = self.glide;
             for (i, sample) in self.scratch[..got * 2].iter().enumerate() {
-                out[at * 2 + i] = sample * self.level;
+                let gain = glide.map_or(1.0, |(from, done)| glided(from, done + (i / 2) as u64, self.rate));
+                out[at * 2 + i] = sample * self.level * gain;
+            }
+            if let Some((from, done)) = glide {
+                let done = done + got as u64;
+                self.glide = ((glided(from, done, self.rate) - 1.0).abs() > 1e-3).then_some((from, done));
             }
             self.mix_fade(&mut out[at * 2..(at + got) * 2]);
             self.mix_switch(&mut out[at * 2..(at + got) * 2]);
@@ -167,13 +181,12 @@ impl Mixer {
         if !current.drained() {
             return false;
         }
-        let complete = current
-            .duration()
-            .is_none_or(|length| current.position() >= length - GAPLESS_WITHIN);
+        let complete = rules::gapless(current.duration(), current.position());
         match self.next.take() {
             Some(next) if complete && next.phase() != Phase::Opening => {
                 self.current = Some(next);
                 self.level = self.next_level;
+                self.glide = None;
                 self.fade = None;
                 self.heard = (0.0, 0);
                 self.events.push(Event::Handover);
@@ -199,10 +212,8 @@ impl Mixer {
         let got = next.take(&mut self.other);
         for (i, frame) in out.as_chunks_mut::<2>().0.iter_mut().enumerate() {
             let t = ((fade.done + i as u64) as f64 / fade.frames as f64).min(1.0);
-            let (down, up) = (
-                (t * std::f64::consts::FRAC_PI_2).cos() as f32,
-                (t * std::f64::consts::FRAC_PI_2).sin() as f32,
-            );
+            let (down, up) = rules::fade(t);
+            let (down, up) = (down as f32, up as f32);
             let incoming = if i < got {
                 [self.other[i * 2], self.other[i * 2 + 1]]
             } else {
@@ -215,6 +226,7 @@ impl Mixer {
         if fade.done >= fade.frames {
             self.current = self.next.take();
             self.level = self.next_level;
+            self.glide = None;
             self.fade = None;
             self.heard = (0.0, 0);
             self.events.push(Event::Handover);
@@ -249,8 +261,9 @@ impl Mixer {
                 Some(j) if j < got => [self.other[j * 2], self.other[j * 2 + 1]],
                 _ => [0.0, 0.0],
             };
-            frame[0] = frame[0] * down + incoming[0] * switch.level * up;
-            frame[1] = frame[1] * down + incoming[1] * switch.level * up;
+            let gain = switch.level * switch.matched * up;
+            frame[0] = frame[0] * down + incoming[0] * gain;
+            frame[1] = frame[1] * down + incoming[1] * gain;
         }
         switch.fade.done += frames as u64;
         if switch.fade.done >= switch.fade.frames {
@@ -258,6 +271,7 @@ impl Mixer {
             if let Some(switch) = switch {
                 self.current = Some(switch.deck);
                 self.level = switch.level;
+                self.glide = Some((switch.matched, 0));
                 self.heard = (0.0, 0);
                 self.events.push(Event::Switched);
             }
@@ -302,7 +316,7 @@ impl Mixer {
 
     /// The equaliser, the visualiser's copy, and the volume.
     fn finish(&mut self, out: &mut [f32]) {
-        let volume = self.volume * self.volume;
+        let volume = rules::output_volume(f64::from(self.volume), false) as f32;
         for frame in out.as_chunks_mut::<2>().0 {
             if let Some(chain) = self.eq.as_mut() {
                 frame[0] = chain.process(0, frame[0]);
@@ -316,4 +330,11 @@ impl Mixer {
             frame[1] *= volume;
         }
     }
+}
+
+/// The factor a better copy plays at `frames` after its fade: from `from` toward 1, exponentially
+/// (the page's `setTargetAtTime`).
+fn glided(from: f32, frames: u64, rate: u32) -> f32 {
+    let t = frames as f64 / f64::from(rate);
+    (1.0 + (f64::from(from) - 1.0) * (-t / rules::SWITCH_GLIDE_S).exp()) as f32
 }

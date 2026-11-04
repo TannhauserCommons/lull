@@ -18,12 +18,13 @@ use super::align;
 use super::deck::{Deck, Facts, Phase, Song};
 use super::eq::Chain;
 use super::events::{self, Heard, StreamEvent, Upgrade};
-use super::hub::{self, Failure, Hub};
+use super::hub::{Failure, Hub};
 use super::listen::{How, Listening};
 use super::mixer::{Event, Mixer};
 use super::output::{Device, Output};
 use super::queue::{Entry, Previous, Queue, Repeat, encode};
 use super::remote::Refused;
+use super::rules::{self, Switch};
 use crate::desktop::classic::Equaliser;
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
@@ -33,12 +34,6 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-/// The page's clock.
-const TICK: Duration = Duration::from_millis(250);
-/// A song that failed while the music played gives way to the next after this long.
-const SKIP_FAILED: Duration = Duration::from_millis(2500);
-/// Prefetch waits this long after the last change before telling the hub.
-const PREFETCH_DEBOUNCE: Duration = Duration::from_millis(800);
 /// lull Connect: what plays goes out at once on a song, play or pause; seeks, the volume and the
 /// queue at most once a second; and every 30 s while playing.
 const CONNECT_SOON: Duration = Duration::from_secs(1);
@@ -46,19 +41,11 @@ const CONNECT_EVERY: Duration = Duration::from_secs(30);
 /// Decoded ahead: the playing deck, and a deck waiting its turn.
 const AHEAD: f64 = 0.5;
 const AHEAD_WAITING: f64 = 1.0;
-/// Measured loudness waits for this much listening, then levels within these bounds.
-const LOUDNESS_AFTER_S: f64 = 3.0;
-const LOUDNESS_MIN_DB: f64 = -12.0;
-const LOUDNESS_MAX_DB: f64 = 6.0;
-/// A better copy: switched to only with this much of the song left, arrived this far past where the
-/// song is, from a copy started this far ahead, within this many tries; faded in over this long,
-/// at a quiet moment or after this long.
-const SWITCH_LEAD: f64 = 45.0;
-const SWITCH_AHEAD: f64 = 20.0;
+/// A better copy's deck starts this far ahead of where the song is, so it is playing by the time
+/// the song gets there; one that hasn't given enough sound to line up after this long is a try that
+/// didn't work out (app.js `place`, 20 s).
 const SWITCH_START: f64 = 1.0;
-const SWITCH_TRIES: u32 = 3;
-const SWITCH_FADE: f64 = 0.2;
-const SWITCH_QUIET: Duration = Duration::from_secs(3);
+const SWITCH_SLOW: Duration = Duration::from_secs(20);
 
 /// Settings › Playback, as the page reads them from `GET /api/settings` (app.js
 /// `applyPlaybackSettings`).
@@ -70,7 +57,6 @@ pub struct Playback {
     pub loudness_target: f64,
     pub radio_when_queue_ends: bool,
     pub prefetch_count: usize,
-    pub switch_to_better: bool,
 }
 
 impl Default for Playback {
@@ -82,7 +68,6 @@ impl Default for Playback {
             loudness_target: -14.0,
             radio_when_queue_ends: true,
             prefetch_count: 2,
-            switch_to_better: true,
         }
     }
 }
@@ -111,7 +96,6 @@ impl Playback {
             prefetch_count: v(&pb["prefetchCount"])
                 .as_u64()
                 .map_or(defaults.prefetch_count, |n| n.min(3) as usize),
-            switch_to_better: v(&s["sources"]["switchToBetter"]) != Value::Bool(false),
         }
     }
 }
@@ -133,8 +117,6 @@ pub struct Track {
     pub art: Option<String>,
     /// ReplayGain for Settings › Playback's mode, when the library has it.
     pub gain_db: Option<f64>,
-    /// Played from radio or a feed pick.
-    pub recommended: bool,
     /// The hub's own record of it, for the page to take back (songs radio added here).
     pub entity: Option<Value>,
 }
@@ -377,38 +359,52 @@ impl Loaded {
     }
 }
 
-/// A better copy on its way to being switched to.
+/// A better copy on its way to being switched to (app.js `onUpgrade`, `trySwitch`, the output's
+/// `switchTo`). `tries` counts attempts that didn't work out (a seek or pause in the middle, too
+/// quiet to tell, too slow); a copy offered again keeps its count, another starts afresh.
 enum Better {
     /// Offered by the hub; waiting for the moment.
-    Offered(Upgrade),
-    /// Its deck started a little before `anchor`; what plays from `anchor` on is being recorded.
+    Offered { upgrade: Upgrade, tries: u32 },
+    /// Its deck started at `start` of its own time; what plays of the song from `anchor` on is
+    /// being recorded, to be measured against the copy from `anchor + shift` of its own.
     Lining {
         upgrade: Upgrade,
         deck: Arc<Deck>,
         anchor: f64,
+        start: f64,
+        shift: f64,
         recorded: Vec<f32>,
+        began: Instant,
         tries: u32,
     },
-    /// Lined up: copy frame for song time t = (t - anchor) * rate + frames. Waiting for a quiet moment.
+    /// Lined up: copy frame for song time t = (t - anchor) * rate + frames, at the song's level
+    /// times `matched`. Waiting for a quiet moment.
     Lined {
         upgrade: Upgrade,
-        deck: Arc<Deck>,
-        anchor: f64,
-        frames: i64,
+        lined: Lined,
         since: Instant,
-        levels: Vec<f32>,
+        levels: Vec<f64>,
+        tries: u32,
     },
     /// Asking the hub to make it the song's stream.
     Committing {
-        deck: Arc<Deck>,
-        anchor: f64,
-        frames: i64,
+        upgrade: Upgrade,
+        lined: Lined,
         answer: Receiver<Result<(), Failure>>,
     },
     /// Fading in.
     Switching { offset: f64 },
-    /// Not now: the next play of the song takes the better copy.
-    NextPlay,
+    /// Not now: this copy plays from the song's next play.
+    NextPlay { peer: String, path: String },
+}
+
+/// A copy lined up with the song.
+struct Lined {
+    deck: Arc<Deck>,
+    anchor: f64,
+    start: f64,
+    frames: i64,
+    matched: f32,
 }
 
 struct Run {
@@ -541,7 +537,7 @@ impl Run {
         let (mut commands, _) = self
             .shared
             .wake
-            .wait_timeout_while(commands, TICK, |c| c.is_empty())
+            .wait_timeout_while(commands, rules::TICK, |c| c.is_empty())
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         commands.drain(..).collect()
     }
@@ -634,6 +630,7 @@ impl Run {
     fn pause(&mut self) {
         self.playing = false;
         lock(&self.mixer).abandon_fade();
+        self.abandon_switch();
         self.run_output();
         self.connect_now();
     }
@@ -655,7 +652,7 @@ impl Run {
         }
         let how = if by_itself { How::Completed } else { How::Skipped };
         match self.queue.next_index(by_itself) {
-            Some(i) if i == self.queue.index && by_itself && !matches!(self.better, Some(Better::NextPlay)) => {
+            Some(i) if i == self.queue.index && by_itself && !matches!(self.better, Some(Better::NextPlay { .. })) => {
                 self.end_play(How::Completed);
                 self.loads += 1;
                 if let Some(current) = self.current.as_mut() {
@@ -803,39 +800,38 @@ impl Run {
         let duration = current.deck.duration();
         let mut to = seconds.max(0.0);
         let mut held = false;
-        if let Some(length) = duration.filter(|_| current.soulseek && !current.complete) {
+        if let Some(length) = duration.filter(|l| *l > 0.0) {
+            // What the deck holds, and what the transfer delivered (a song done arriving: all of it).
             let buffered = (current.position() + current.deck.buffered()) / length;
-            let limit = buffered.max(if current.received >= 1.0 {
-                1.0
-            } else {
-                current.received - 0.01
-            });
-            if to / length > limit {
-                to = ((limit - 0.004) * length).max(0.0);
-                held = true;
-            }
+            let arriving = current.soulseek && !current.complete;
+            let limit = rules::seek_limit(arriving, &[(0.0, buffered)], current.received);
+            let (fraction, ok) = rules::seek_to(to / length, limit);
+            to = fraction * length;
+            held = !ok;
         }
         lock(&self.mixer).abandon_fade();
         current.deck.seek(to + current.offset);
         if held {
             self.notice("The song hasn't arrived that far yet".into());
         }
-        if matches!(self.better, Some(Better::Lining { .. } | Better::Lined { .. })) {
-            self.better = None;
-        }
+        self.abandon_switch();
         self.connect_soon();
     }
 
     /// Ends the open play, as the hub records it.
     fn end_play(&mut self, how: How) {
         if let Some(ended) = self.listening.end(how) {
-            self.plays.end(ended.load, ended.played, how);
+            self.plays.end(ended.load, ended.heard, how);
         }
     }
 
-    /// The next song set aside for gapless or crossfade (app.js `preloadNext`, `eagerNext`): the one
-    /// after this, opened at once, unless repeat one replays this one.
+    /// The next song set aside for gapless or crossfade (app.js `preloadNext`), every tick: the one
+    /// after this, unless repeat one replays this one, once the playing song is close enough to its
+    /// end (rules.rs `preload_lead`); not while a better copy is being lined up on another deck.
     fn preload(&mut self) {
+        if self.switching() {
+            return;
+        }
         let wanted = (self.settings.gapless || self.settings.crossfade > 0.0)
             .then(|| self.queue.next_index(true))
             .flatten()
@@ -845,6 +841,13 @@ impl Run {
             self.release_next();
             return;
         };
+        let due = self.current.as_ref().is_some_and(|c| {
+            let lead = rules::preload_lead(self.settings.crossfade, c.soulseek, c.received);
+            rules::preload_now(lead, c.deck.duration(), c.position())
+        });
+        if !due {
+            return;
+        }
         if self
             .next
             .as_ref()
@@ -899,6 +902,14 @@ impl Run {
     /// prefetch follow.
     fn queue_changed(&mut self) {
         self.revision += 1;
+        let next = self.queue.next_index(true).and_then(|i| self.queue.queue.get(i));
+        if self
+            .next
+            .as_ref()
+            .is_some_and(|n| next.is_none_or(|e| n.track_id != e.track_id || n.source != e.source))
+        {
+            self.release_next();
+        }
         self.preload();
         self.prefetch_soon();
         self.connect_soon();
@@ -971,7 +982,7 @@ impl Run {
     }
 
     fn prefetch_soon(&mut self) {
-        self.prefetch.1 = Some(Instant::now() + PREFETCH_DEBOUNCE);
+        self.prefetch.1 = Some(Instant::now() + rules::PREFETCH);
     }
 
     /// The songs after this one the hub should fetch ahead (app.js `prefetch`): unsaved, distinct,
@@ -988,27 +999,16 @@ impl Run {
             return;
         }
         self.prefetch.1 = None;
-        let current = self.queue.queue.get(self.queue.index).map(|e| e.track_id.clone());
         let catalogue = lock(&self.catalogue);
-        let unsaved = |id: &String| !catalogue.get(id).is_some_and(|t| t.saved);
-        let mut ids: Vec<String> = Vec::new();
-        let upcoming: Vec<&Entry> = if self.queue.shuffle {
-            self.queue
-                .next_index(true)
-                .and_then(|i| self.queue.queue.get(i))
-                .into_iter()
-                .collect()
-        } else {
-            self.queue.queue.iter().skip(self.queue.index + 1).collect()
-        };
-        for entry in upcoming {
-            if ids.len() >= self.settings.prefetch_count {
-                break;
-            }
-            if Some(&entry.track_id) != current.as_ref() && unsaved(&entry.track_id) && !ids.contains(&entry.track_id) {
-                ids.push(entry.track_id.clone());
-            }
-        }
+        let ids: Vec<String> = self.queue.queue.iter().map(|e| e.track_id.clone()).collect();
+        let ids = rules::upcoming(
+            self.queue.index,
+            &ids,
+            self.queue.shuffle,
+            self.queue.repeat,
+            |id| catalogue.get(id).is_some_and(|t| t.saved),
+            self.settings.prefetch_count,
+        );
         drop(catalogue);
         if ids == self.prefetch.0 {
             return;
@@ -1145,20 +1145,24 @@ impl Run {
         if reopen {
             self.reopen();
         }
-        if let Some(upgrade) = event.upgrade.clone()
-            && !matches!(
-                self.better,
-                Some(
-                    Better::Lining { .. }
-                        | Better::Lined { .. }
-                        | Better::Committing { .. }
-                        | Better::Switching { .. }
-                        | Better::NextPlay
-                )
-            )
-        {
-            self.better = Some(Better::Offered(upgrade));
-        }
+        // A copy offered again keeps its tries and its verdict; another starts afresh; none offered
+        // is none (app.js `onUpgrade`). One being lined up or switched to carries on.
+        self.better = match (self.better.take(), event.upgrade.clone()) {
+            (Some(Better::Offered { upgrade: was, tries }), Some(upgrade)) => {
+                let tries = if was.peer == upgrade.peer && was.path == upgrade.path {
+                    tries
+                } else {
+                    0
+                };
+                Some(Better::Offered { upgrade, tries })
+            }
+            (Some(Better::NextPlay { peer, path }), Some(upgrade)) if peer != upgrade.peer || path != upgrade.path => {
+                Some(Better::Offered { upgrade, tries: 0 })
+            }
+            (None, Some(upgrade)) => Some(Better::Offered { upgrade, tries: 0 }),
+            (Some(Better::Offered { .. }), None) => None,
+            (other, _) => other,
+        };
         let heard = self.playing && !self.waiting();
         self.status = match event.status.as_str() {
             "choose" => Status::Choose(event.choices.clone()),
@@ -1223,9 +1227,10 @@ impl Run {
                     }
                 }
                 Event::Ended => {
-                    let early = self.current.as_ref().is_some_and(|c| {
-                        c.soulseek && !c.complete && c.deck.duration().is_some_and(|d| d - c.position() > 2.0)
-                    });
+                    let early = self
+                        .current
+                        .as_ref()
+                        .is_some_and(|c| rules::ended_early(c.soulseek, c.complete, c.deck.duration(), c.position()));
                     if early {
                         self.status = Status::Buffering;
                     } else {
@@ -1263,22 +1268,23 @@ impl Run {
                     .and_then(|e| lock(&self.catalogue).get(&e.track_id).cloned());
                 if let Some(track) = track {
                     let duration = self.current.as_ref().and_then(|c| c.deck.duration()).or(track.duration);
+                    // Recommended: started from radio (app.js `beginPlay`).
                     let recommended = self
                         .queue
                         .queue
                         .get(self.queue.index)
-                        .is_some_and(|e| e.group == "radio")
-                        || track.recommended;
+                        .is_some_and(|e| e.group == "radio");
                     self.plays.start(started, &track.id, duration, recommended);
                 }
             }
         }
+        self.preload();
         self.crossfade();
         self.loudness();
         self.better();
         self.prefetch();
         self.connect();
-        if self.failed_at.is_some_and(|at| at.elapsed() >= SKIP_FAILED) {
+        if self.failed_at.is_some_and(|at| at.elapsed() >= rules::SKIP_FAILED) {
             self.failed_at = None;
             if matches!(self.status, Status::Failed(_))
                 && self.queue.next_index(false).is_some_and(|i| i != self.queue.index)
@@ -1332,8 +1338,8 @@ impl Run {
     /// A crossfade starts when the song's last seconds are as long as Settings' crossfade and the
     /// next song is ready to sound; a pause abandons it (app.js `crossfade`).
     fn crossfade(&mut self) {
-        let xfade = self.settings.crossfade;
-        if xfade <= 0.0 || !self.playing || self.queue.repeat == Repeat::One {
+        let xfade = rules::crossfade_s(self.queue.repeat, self.settings.crossfade);
+        if xfade <= 0.0 || !self.playing || self.switching() {
             return;
         }
         let (Some(current), Some(next)) = (self.current.as_ref(), self.next.as_ref()) else {
@@ -1343,9 +1349,17 @@ impl Run {
             return;
         };
         let left = length - current.position();
-        if left <= xfade && left > 0.0 && next.deck.buffered() > 0.0 {
-            lock(&self.mixer).crossfade(left);
+        if left <= xfade && next.deck.buffered() > 0.0 {
+            lock(&self.mixer).crossfade(rules::crossfade_length_s(left));
         }
+    }
+
+    /// A better copy is being lined up and switched to on the other deck (app.js `switching`).
+    fn switching(&self) -> bool {
+        matches!(
+            self.better,
+            Some(Better::Lining { .. } | Better::Lined { .. } | Better::Committing { .. } | Better::Switching { .. })
+        )
     }
 
     /// The playing deck's level: off, ReplayGain, or measured (app.js `normalise`): the mean loudness
@@ -1359,15 +1373,12 @@ impl Run {
         }
         let mut mixer = lock(&self.mixer);
         let (sum, frames) = mixer.heard;
-        if (frames as f64) < LOUDNESS_AFTER_S * f64::from(self.rate) {
-            return;
+        // The page reads the level once a tick.
+        let readings = frames as f64 / f64::from(self.rate) / rules::TICK.as_secs_f64();
+        let rms = (sum / frames.max(1) as f64).sqrt();
+        if let Some(level) = rules::loudness(self.settings.loudness_target, rms, readings) {
+            mixer.level = level as f32;
         }
-        let rms = (sum / frames as f64).sqrt();
-        if rms < 1e-4 {
-            return;
-        }
-        let db = (self.settings.loudness_target - 20.0 * rms.log10()).clamp(LOUDNESS_MIN_DB, LOUDNESS_MAX_DB);
-        mixer.level = 10f64.powf(db / 20.0) as f32;
     }
 
     fn gain_db(&self, id: &str) -> Option<f64> {
@@ -1382,7 +1393,7 @@ impl Run {
         if self.settings.normalisation == "off" {
             return 1.0;
         }
-        self.gain_db(id).map_or(1.0, |db| 10f64.powf(db / 20.0) as f32)
+        self.gain_db(id).map_or(1.0, |db| rules::gain(db) as f32)
     }
 
     /// The volume and the equaliser into the mixer.
@@ -1392,61 +1403,86 @@ impl Run {
         mixer.eq = Chain::new(&self.eq, self.rate);
     }
 
-    /// The better copy, step by step (app.js `trySwitch`).
+    /// The better copy, step by step (app.js `trySwitch`, the output's `switchTo`).
     fn better(&mut self) {
         let Some(better) = self.better.take() else {
             return;
         };
         self.better = Some(match better {
-            Better::Offered(upgrade) => self.consider(upgrade),
+            Better::Offered { upgrade, tries } => self.consider(upgrade, tries),
             Better::Lining {
                 upgrade,
                 deck,
                 anchor,
+                start,
+                shift,
                 mut recorded,
+                began,
                 tries,
             } => {
                 self.record(&mut recorded);
-                let want = (align::MEASURE_S * f64::from(self.rate)) as usize;
-                let around = ((align::MEASURE_S + 2.0 * align::SEARCH_S) * f64::from(self.rate)) as usize;
-                if recorded.len() < want || deck.buffered() * f64::from(self.rate) < around as f64 {
+                let rate = f64::from(self.rate);
+                let want = (align::RECORD_S * rate) as usize;
+                // The copy from `anchor + shift` of its own time is this far into its deck.
+                let lead = ((anchor + shift - start) * rate) as usize;
+                if matches!(deck.phase(), Phase::Failed(_)) || began.elapsed() >= SWITCH_SLOW {
+                    retry(upgrade, tries)
+                } else if recorded.len() < want || deck.buffered() * rate < (lead + want) as f64 {
                     Better::Lining {
                         upgrade,
                         deck,
                         anchor,
+                        start,
+                        shift,
                         recorded,
+                        began,
                         tries,
                     }
                 } else {
-                    let copy = deck.peek(around);
-                    match align::lag(&recorded[..want], &copy, self.rate) {
-                        Some(lag) => Better::Lined {
+                    let copy = deck.peek(lead + want);
+                    let (song, copy) = (&recorded[..want], &copy[lead..]);
+                    let m = align::measure(song, copy, self.rate, align::WIDE_S);
+                    let (song_length, copy_length) = (
+                        self.current.as_ref().and_then(|c| c.deck.duration()).unwrap_or(0.0),
+                        deck.duration().unwrap_or(0.0),
+                    );
+                    if align::locked(&m) {
+                        Better::Lined {
                             upgrade,
-                            deck,
-                            anchor,
-                            frames: (align::SEARCH_S * f64::from(self.rate)) as i64 + lag,
+                            lined: Lined {
+                                deck,
+                                anchor,
+                                start,
+                                frames: lead as i64 + (m.lag * rate).round() as i64,
+                                matched: rules::level_match(align::rms(song), align::rms(copy)) as f32,
+                            },
                             since: Instant::now(),
                             levels: Vec::new(),
-                        },
-                        None if tries + 1 < SWITCH_TRIES => Better::Offered(upgrade),
-                        None => Better::NextPlay,
+                            tries,
+                        }
+                    } else if m.quiet {
+                        retry(upgrade, tries)
+                    } else if shift == 0.0 && (copy_length - song_length).abs() > 0.8 * align::WIDE_S {
+                        // One copy has an intro the other hasn't: look where the song is in the copy
+                        // shifted by how much longer it is.
+                        self.line_up(upgrade, tries, copy_length - song_length)
+                    } else {
+                        Better::NextPlay {
+                            peer: upgrade.peer,
+                            path: upgrade.path,
+                        }
                     }
                 }
             }
             Better::Lined {
                 upgrade,
-                deck,
-                anchor,
-                frames,
+                lined,
                 since,
                 mut levels,
+                tries,
             } => {
-                let level = self.level_now();
-                levels.push(level);
-                if levels.len() > 40 {
-                    levels.remove(0);
-                }
-                if align::quiet(&levels) || since.elapsed() >= SWITCH_QUIET {
+                levels.push(f64::from(self.level_now()));
+                if rules::quiet(&levels) || since.elapsed().as_secs_f64() >= rules::SWITCH_QUIET_S {
                     let (to, answer) = channel();
                     let (hub, path) = (
                         self.hub.clone(),
@@ -1458,72 +1494,79 @@ impl Run {
                         .spawn(move || {
                             let _ = to.send(hub.json("POST", &path, Some(body)).map(drop));
                         });
-                    Better::Committing {
-                        deck,
-                        anchor,
-                        frames,
-                        answer,
-                    }
+                    Better::Committing { upgrade, lined, answer }
                 } else {
                     Better::Lined {
                         upgrade,
-                        deck,
-                        anchor,
-                        frames,
+                        lined,
                         since,
                         levels,
+                        tries,
                     }
                 }
             }
-            Better::Committing {
-                deck,
-                anchor,
-                frames,
-                answer,
-            } => match answer.try_recv() {
+            Better::Committing { upgrade, lined, answer } => match answer.try_recv() {
                 Ok(Ok(())) => {
                     let level = lock(&self.mixer).level;
-                    let offset = deck_offset(anchor, frames, self.rate);
+                    let offset = lined.start + lined.frames as f64 / f64::from(self.rate) - lined.anchor;
                     let position = self.position();
-                    let skip = ((position - anchor) * f64::from(self.rate)).round() as i64 + frames;
-                    lock(&self.mixer).switch(deck, skip, level, SWITCH_FADE);
+                    let skip = ((position - lined.anchor) * f64::from(self.rate)).round() as i64 + lined.frames;
+                    lock(&self.mixer).switch(lined.deck, skip, level, lined.matched, rules::SWITCH_FADE_S);
                     Better::Switching { offset }
                 }
-                Ok(Err(_)) => Better::NextPlay,
-                Err(_) => Better::Committing {
-                    deck,
-                    anchor,
-                    frames,
-                    answer,
+                // The hub refused: the next play takes it.
+                Ok(Err(_)) => Better::NextPlay {
+                    peer: upgrade.peer,
+                    path: upgrade.path,
                 },
+                Err(_) => Better::Committing { upgrade, lined, answer },
             },
             other => other,
         });
     }
 
-    /// Whether to start lining a better copy up now: wanted, not a copy the listener picked, playing
-    /// steadily, 45 s or more left, and the copy arrived 20 s past where the song is.
-    fn consider(&mut self, upgrade: Upgrade) -> Better {
+    /// Whether to start lining a better copy up now (rules.rs `switch_now`): ready, the song from
+    /// Soulseek, no copy the listener picked, playing steadily, far enough from its end, and the
+    /// copy arrived a little past where the song is.
+    fn consider(&mut self, upgrade: Upgrade, tries: u32) -> Better {
+        let now = self
+            .current
+            .as_ref()
+            .filter(|c| upgrade.ready && c.soulseek)
+            .map(|current| {
+                let arrived = upgrade
+                    .size
+                    .filter(|s| *s > 0)
+                    .zip(upgrade.received)
+                    .map_or(0.0, |(size, received)| received as f64 / size as f64);
+                let steady = self.playing && !self.waiting() && !lock(&self.mixer).fading();
+                rules::switch_now(
+                    current.source.is_some(),
+                    true,
+                    steady,
+                    current.deck.duration(),
+                    current.position(),
+                    arrived,
+                )
+            });
+        match now {
+            Some(Switch::Now) => self.line_up(upgrade, tries, 0.0),
+            Some(Switch::NextPlay) => Better::NextPlay {
+                peer: upgrade.peer,
+                path: upgrade.path,
+            },
+            Some(Switch::Wait) | None => Better::Offered { upgrade, tries },
+        }
+    }
+
+    /// Opens the copy a little ahead of where the song is (`shift` further on in its own time) and
+    /// records the song from a moment on, to measure one against the other.
+    fn line_up(&mut self, upgrade: Upgrade, tries: u32, shift: f64) -> Better {
         let Some(current) = self.current.as_ref() else {
-            return Better::Offered(upgrade);
+            return Better::Offered { upgrade, tries };
         };
-        let Some(length) = current.deck.duration() else {
-            return Better::Offered(upgrade);
-        };
-        let position = current.position();
-        let arrived = upgrade
-            .size
-            .filter(|s| *s > 0)
-            .zip(upgrade.received)
-            .map_or(0.0, |(size, received)| received as f64 / size as f64 * length);
-        let steady = self.playing && !self.waiting() && !lock(&self.mixer).fading();
-        if !self.settings.switch_to_better || current.source.is_some() || !current.soulseek {
-            return Better::NextPlay;
-        }
-        if !upgrade.ready || !steady || length - position < SWITCH_LEAD || arrived < position + SWITCH_AHEAD {
-            return Better::Offered(upgrade);
-        }
-        let anchor = position + SWITCH_START + align::SEARCH_S;
+        let anchor = current.position() + SWITCH_START + align::WIDE_S;
+        let start = anchor + shift - align::WIDE_S;
         let path = format!(
             "/api/stream/{}/copy?peer={}&path={}",
             encode(&current.track_id),
@@ -1531,14 +1574,14 @@ impl Run {
             encode(&upgrade.path)
         );
         let url = self.hub.origin().join(&path).map_or(path, |u| u.to_string());
-        let ahead = align::MEASURE_S + 2.0 * align::SEARCH_S + SWITCH_START + 4.0;
+        let ahead = align::RECORD_S + 2.0 * align::WIDE_S + SWITCH_START + 4.0;
         let deck = Arc::new(Deck::open(
             Song {
                 url,
-                duration: Some(length),
+                duration: current.deck.duration(),
             },
             self.hub.token().to_owned(),
-            anchor - align::SEARCH_S,
+            start.max(0.0),
             self.rate,
             ahead,
         ));
@@ -1547,9 +1590,22 @@ impl Run {
             upgrade,
             deck,
             anchor,
+            start: start.max(0.0),
+            shift,
             recorded: Vec::new(),
-            tries: 0,
+            began: Instant::now(),
+            tries,
         }
+    }
+
+    /// A seek or pause while a copy is being lined up: that try is over (app.js `abandonSwitch`).
+    fn abandon_switch(&mut self) {
+        self.better = match self.better.take() {
+            Some(Better::Lining { upgrade, tries, .. } | Better::Lined { upgrade, tries, .. }) => {
+                Some(retry(upgrade, tries))
+            }
+            other => other,
+        };
     }
 
     /// What the mixer recorded of the playing song since the anchor it was given.
@@ -1658,11 +1714,19 @@ fn upgrade_track(current: &Option<Loaded>) -> String {
     current.as_ref().map(|c| c.track_id.clone()).unwrap_or_default()
 }
 
-/// The copy's own time less the song's, once it plays: its frame for song time t is
-/// (t - anchor) * rate + frames, and it started at anchor - SEARCH_S.
-fn deck_offset(anchor: f64, frames: i64, rate: u32) -> f64 {
-    let started = anchor - align::SEARCH_S;
-    started + frames as f64 / f64::from(rate) - anchor
+/// A try that didn't work out: another later, or after three the next play takes the copy.
+fn retry(upgrade: Upgrade, tries: u32) -> Better {
+    if tries + 1 >= rules::SWITCH_TRIES {
+        Better::NextPlay {
+            peer: upgrade.peer,
+            path: upgrade.path,
+        }
+    } else {
+        Better::Offered {
+            upgrade,
+            tries: tries + 1,
+        }
+    }
 }
 
 /// A song radio added, from the hub's record of it.
@@ -1680,7 +1744,6 @@ fn track_from(id: &str, entity: &Value) -> Track {
         liked: false,
         art: None,
         gain_db: None,
-        recommended: true,
         entity: (!entity.is_null()).then(|| entity.clone()),
     }
 }
@@ -1719,10 +1782,11 @@ impl Plays {
         let spawned = std::thread::Builder::new().name("classic-play".into()).spawn(move || {
             let started = hub.start_play(&id, duration, recommended);
             reachable.store(!matches!(started, Err(Failure::Offline)), Ordering::Relaxed);
-            let Ok((played, how)) = ended.recv() else {
+            let Ok((heard, how)) = ended.recv() else {
                 return;
             };
-            let body = hub::end_body(played, how);
+            // The end as the hub takes it: `PATCH /api/plays/{id}`, or the outbox's `play` op.
+            let body = rules::play_end(heard, how);
             match started {
                 Ok(Some(play)) => {
                     if let Err(Failure::Refused(why)) = hub.end_play(&play, &body) {
@@ -1758,9 +1822,9 @@ impl Plays {
         }
     }
 
-    fn end(&mut self, load: u64, played: f64, how: How) {
+    fn end(&mut self, load: u64, heard: f64, how: How) {
         if let Some(end) = self.ends.remove(&load) {
-            let _ = end.send((played, how));
+            let _ = end.send((heard, how));
         }
         self.threads.retain(|t| !t.is_finished());
     }
@@ -1897,8 +1961,9 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["a", "b"]
         );
-        // Completed by itself; its seconds counted by listen.rs's rule (this test's clock runs four
-        // times fast, so its last step falls past the song's end).
+        // Completed by itself; its seconds counted by the shared rule (listen.rs). This test's clock
+        // runs four times fast: a 2 s song gets two or three time reports, and the first two add
+        // nothing, so at most a second.
         let ended = hub.calls("PATCH", "/api/plays/");
         let first = ended.first().ok_or("no end")?;
         assert_eq!(
@@ -1906,7 +1971,7 @@ mod tests {
             (json!(true), json!(false))
         );
         assert!(
-            first["playedS"].as_f64().is_some_and(|s| (1.0..=2.0).contains(&s)),
+            first["playedS"].as_i64().is_some_and(|s| (0..=1).contains(&s)),
             "{first}"
         );
         Ok(())

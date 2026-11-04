@@ -1,0 +1,181 @@
+{
+ "note": "Cases for lining a better copy up (web/align.js, app/src/desktop/classic_native/align.rs): each is two recordings made by tests/web/align-cases.mjs (and the same generator in align.rs), measured with a search of 1 s either way. `expect` is what web/align.js measures, written by `node tests/web/align-cases.mjs`; tests/web/align-cases.test.mjs and align.rs's tests hold both sides to it, numbers to 1e-9.",
+ "cases": [
+  {
+   "what": "the same copy a little later",
+   "seed": 1,
+   "rate": 12000,
+   "seconds": 2.5,
+   "delay": 0.3125,
+   "gain": 1,
+   "noise": 0,
+   "other": false,
+   "expect": {
+    "lag": 0.3125000026412021,
+    "confidence": 0.9587761250967188,
+    "margin": 0.859400158184968,
+    "quiet": false,
+    "similar": true,
+    "locked": true,
+    "levels": [
+     0.37539527122390276,
+     0.3716113113037027
+    ]
+   }
+  },
+  {
+   "what": "earlier, quieter and noisy",
+   "seed": 2,
+   "rate": 12000,
+   "seconds": 2.5,
+   "delay": -0.21,
+   "gain": 0.6,
+   "noise": 0.15,
+   "other": false,
+   "expect": {
+    "lag": -0.20999958580013386,
+    "confidence": 0.969742424599222,
+    "margin": 0.8684651090922808,
+    "quiet": false,
+    "similar": true,
+    "locked": true,
+    "levels": [
+     0.36713158987647276,
+     0.2289170463579017
+    ]
+   }
+  },
+  {
+   "what": "near the edge of the search",
+   "seed": 3,
+   "rate": 12000,
+   "seconds": 2.5,
+   "delay": 0.95,
+   "gain": 1,
+   "noise": 0.05,
+   "other": false,
+   "expect": {
+    "lag": 0.9499999320741925,
+    "confidence": 0.9981757999520542,
+    "margin": 0.9027942440111703,
+    "quiet": false,
+    "similar": true,
+    "locked": true,
+    "levels": [
+     0.36939670497658794,
+     0.37049179411967936
+    ]
+   }
+  },
+  {
+   "what": "lined up already",
+   "seed": 4,
+   "rate": 12000,
+   "seconds": 2.5,
+   "delay": 0,
+   "gain": 1.3,
+   "noise": 0,
+   "other": false,
+   "expect": {
+    "lag": 1.1435033602583464e-14,
+    "confidence": 0.9999999999999968,
+    "margin": 0.9166494060218006,
+    "quiet": false,
+    "similar": true,
+    "locked": true,
+    "levels": [
+     0.3726150634252364,
+     0.4843995826460368
+    ]
+   }
+  },
+  {
+   "what": "another song",
+   "seed": 5,
+   "rate": 12000,
+   "seconds": 2.5,
+   "delay": 0,
+   "gain": 1,
+   "noise": 0,
+   "other": true,
+   "expect": {
+    "lag": -0.7259388210261072,
+    "confidence": 0.11906235675956395,
+    "margin": 0.021051107729746207,
+    "quiet": false,
+    "similar": false,
+    "locked": false,
+    "levels": [
+     0.37198110951909863,
+     0.375529929307466
+    ]
+   }
+  },
+  {
+   "what": "mostly noise",
+   "seed": 6,
+   "rate": 12000,
+   "seconds": 2.5,
+   "delay": 0.1,
+   "gain": 0.3,
+   "noise": 1,
+   "other": false,
+   "expect": {
+    "lag": 0.10000287896583226,
+    "confidence": 0.24594078284252543,
+    "margin": 0.13240851884791766,
+    "quiet": false,
+    "similar": false,
+    "locked": false,
+    "levels": [
+     0.375529929307466,
+     0.3849364409873668
+    ]
+   }
+  },
+  {
+   "what": "a silent copy",
+   "seed": 7,
+   "rate": 12000,
+   "seconds": 2.5,
+   "delay": 0.1,
+   "gain": 0.00001,
+   "noise": 0,
+   "other": false,
+   "expect": {
+    "lag": 0,
+    "confidence": 0,
+    "margin": 0,
+    "quiet": true,
+    "similar": false,
+    "locked": false,
+    "levels": [
+     0.3737443071708715,
+     0.0000037262024884028626
+    ]
+   }
+  },
+  {
+   "what": "at 48 kHz",
+   "seed": 8,
+   "rate": 48000,
+   "seconds": 2.5,
+   "delay": 0.0457,
+   "gain": 0.9,
+   "noise": 0.1,
+   "other": false,
+   "expect": {
+    "lag": 0.04570831767532136,
+    "confidence": 0.9836899670753522,
+    "margin": 0.9162458978360914,
+    "quiet": false,
+    "similar": true,
+    "locked": true,
+    "levels": [
+     0.37334605024232187,
+     0.3392177021731368
+    ]
+   }
+  }
+ ]
+}
