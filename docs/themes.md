@@ -401,7 +401,7 @@ Every class lull's CSS styles and every `data-*` attribute lull's markup sets, e
   - `.is-playing` (the row or place playing), `.is-playing-now` (and sound is coming out), `.is-playing-place`, `.is-revealed`;
   - `.is-current`, `.is-past` (a lyric line; `.is-current` also marks a pipeline step);
   - `.is-buffering`, `.is-transferring`, `.is-played`, `.is-buf`, `.is-xfer` (seek and wave parts);
-  - `.is-scrubbing`, `.is-shake` (a seek past what has arrived);
+  - `.is-scrubbing`; `.is-going` (a seek kept until its part arrives: `.seek__target` marks where it lands, at `--target`);
   - `.is-power-on` (a device's power-on moment as the song starts);
   - `.is-peak` (the busiest hour in the `week-clock` part);
   - `.sky-star` and `.sky-line` (the `queue-sky` part).
@@ -474,7 +474,7 @@ lull's plumbing: these may change in any release.
 - **Layout utilities:** `.cluster`, `.flow`, `.stacked`, `.spacer`, `.ellipsis`, `.vh`, `.num`, `.prose`, `.fg-2`.
 - **Boot:** `data-booting`.
 - **Home and Search parts:** `.disc-agg`, `.disc-aggl`, `.disc-alt`, `.disc-alts`, `.disc-cat`, `.disc-cloud`, `.disc-col`, `.disc-fallback`, `.disc-issue`, `.disc-more`, `.disc-note`, `.disc-pending`, `.disc-picker`, `.disc-recover`, `.disc-shead`, `.disc-sheet`, `.disc-steps`, `.disc-sugg`, `.disc-tile-open`, `.disc-why`, `.disc-why-pop`, `.is-all`, `.is-better`, `.is-down`, `.is-nosource`, `.is-stale`, `.is-wait`.
-- **Now Playing parts:** `.now-act`, `.now-fade`, `.is-denied`, `.is-far`, `.is-in`, `.is-lifted`, `.is-ready`, `.is-sorting`.
+- **Now Playing parts:** `.now-act`, `.now-fade`, `.is-in`, `.is-lifted`, `.is-ready`, `.is-sorting`.
 - **Library parts:** `.lib-adddesc`, `.lib-chips`, `.lib-cover`, `.lib-dl-storage`, `.lib-dropzone`, `.lib-facts`, `.lib-flist`, `.lib-foot`, `.lib-form`, `.lib-frow`, `.lib-help`, `.lib-hist`, `.lib-imp`, `.lib-import`, `.lib-kept`, `.lib-legend`, `.lib-link`, `.lib-link-card`, `.lib-linkrev`, `.lib-m3u`, `.lib-more`, `.lib-out`, `.lib-status`, `.lib-suggest`, `.lib-tagcard`, `.lib-tags`, `.lib-textarea`, `.lib-title`, `.lib-toggle`.
 - **Settings and hub parts:**
   - Settings and Stats: `.sys-back`, `.sys-chips`, `.sys-combo`, `.sys-detail`, `.sys-follows`, `.sys-formats`, `.sys-funnel`, `.sys-health`, `.sys-hit`, `.sys-inline`, `.sys-keys`, `.sys-legend`, `.sys-locked`, `.sys-pending`, `.sys-meter-label`, `.sys-newart`, `.sys-nomatch`, `.sys-off`, `.sys-palette`, `.sys-plus`, `.sys-preview`, `.sys-range`, `.sys-rescan`, `.sys-seg`, `.sys-status`, `.sys-stepper`, `.sys-steps`, `.sys-taste`, `.sys-then`, `.sys-version`, `.sys-themes`;

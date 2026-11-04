@@ -68,7 +68,7 @@ const state = {
   follows: { artists: L.artistIds.slice(0, 6), tags: L.tags.slice(0, 3) },
   playlists: structuredClone(L.playlists),
   settings: {
-    playback: { gapless: true, crossfade: 0, normalisation: 'off', loudnessTarget: -14, volumeStep: 5, radioWhenQueueEnds: false, prefetchCount: 2, jumpWhenDownloaded: true },
+    playback: { gapless: true, crossfade: 0, normalisation: 'off', loudnessTarget: -14, volumeStep: 5, radioWhenQueueEnds: false, prefetchCount: 2 },
     sources: {
       maxPeerQueue: 20, stallTimeout: 15,
       stream: { below: 'playBest', maxKbps: 0, minimum: { formats: [], kbps: 192, losslessOnly: false }, pick: 'fastest' },

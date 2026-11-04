@@ -182,7 +182,7 @@
     var pb = settings().playback;
     return { gapless: !!val(pb.gapless), crossfade: +val(pb.crossfade) || 0, normalisation: val(pb.normalisation) || 'off',
       loudnessTarget: +val(pb.loudnessTarget) || -14, radioWhenQueueEnds: !!val(pb.radioWhenQueueEnds), volumeStep: +val(pb.volumeStep) || 5,
-      prefetchCount: val(pb.prefetchCount) == null ? 2 : +val(pb.prefetchCount), jumpWhenDownloaded: val(pb.jumpWhenDownloaded) !== false };
+      prefetchCount: val(pb.prefetchCount) == null ? 2 : +val(pb.prefetchCount) };
   }
   /* the `settings` event (any device's change, our own included): merge what differs, re-render if anything did */
   App.on('server:settings', function (stored) {
@@ -376,8 +376,6 @@
       ${row('Loudness normalisation', 'ReplayGain reads tags in the file. Loudness measures files that have no tags.', choice('playback.normalisation', 'Loudness normalisation', [['off', 'Off'], ['replaygain-track', 'Track'], ['replaygain-album', 'Album'], ['loudness', 'Loudness']], 'sys-seg--4'))}
       ${row('Target loudness', 'Quieter targets leave more headroom for dynamic music.', choice('playback.loudnessTarget', 'Target loudness', [[-18, '-18 LUFS'], [-14, '-14 LUFS'], [-11, '-11 LUFS']]), { when: 'loudness', hidden: get('playback.normalisation') !== 'loudness', cls: 'sys-row--sub' })}
       ${row('Volume step', 'How far Up, Down and the D-pad move the volume.', choice('playback.volumeStep', 'Volume step', [[2, '2%'], [5, '5%'], [10, '10%']]))}
-      ${lookup('playback.jumpWhenDownloaded') == null ? '' : switchRow('playback.jumpWhenDownloaded', 'Jump to where I seek once it has downloaded',
-        'Seeking past what has downloaded of a song from Soulseek waits for that part while the song plays on. Off, the seek stops where the download is.')}
       ${switchRow('playback.radioWhenQueueEnds', 'Continue with radio when the queue ends', 'Starts a radio from the last song so the music keeps going.')}
       ${lookup('playback.prefetchCount') == null ? '' : row('Preload upcoming songs', 'Your server starts getting the next songs from Soulseek while this one plays, so skipping plays at once. More uses more of its bandwidth. Saved songs never need it.',
         choice('playback.prefetchCount', 'Preload upcoming songs', [[0, 'Off'], [1, '1'], [2, '2'], [3, '3']], 'sys-seg--4'))}

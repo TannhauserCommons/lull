@@ -171,15 +171,17 @@ The state shape and methods are DESIGN.md 7.8; the insides:
   `received/size`, `peer`, `peersFound`, `queuePos`, `failedPeers`), merged with the element's own `playing`/`waiting`.
   `buffered` is `audio.buffered` cut to `received`. A seek may go anywhere for saved songs and up to what has
   arrived for Soulseek ones (`P.seekable(f)`, `LullRules.playable`/`seekTo`): `ps.arrived`, the hub's `ranges` (one
-  part from 0 until a seek ahead, ADR-0014), with what the output holds. Past it, with Settings > Playback's "Jump to
-  where I seek once it has downloaded" (`playback.jumpWhenDownloaded`, on by default), it goes there at once when the
-  hub can start the transfer there (`ps.aheadS`, the event's `seekAheadS`) and the transfer running would take longer
+  part from 0 until a seek ahead, ADR-0014), with what the output holds. Past it, it goes there at once when the hub
+  can start the transfer there (`ps.aheadS`, the event's `seekAheadS`) and the transfer running would take longer
   than that to get there: the output asks for that byte and the hub fetches from it ([streaming.md](streaming.md#legs)).
-  Otherwise the song plays on and the seek is kept (`ps.seekWait`): the state tab, the mini line and the slider's value say "Waiting for 2:40, about 8 s"
-  (`LullRules.seekWaitS`, from the transfer's speed), screen readers hear it, and it lands as soon as those bytes
-  are here (`landKept`, on each `stream` event and tick). The next seek replaces it, another song drops it, and
-  stepping (arrow keys, Media Session) goes on from it (`P.seekTarget`). With the setting off, a seek past it snaps
-  back, shakes and announces. The hub holds a range ahead of the transfer until its bytes arrive (never 416 for a
+  Otherwise (sooner, or a format the hub can't start mid-file) the song plays on and the seek is kept (`ps.seekWait`):
+  the seek bar and the mini line show a still notch where it lands (`.is-going`, `.seek__target` at `--target`) and
+  the slider's value says "waiting for 2:40". Words come only for a long wait (`P.seekWaitLong`: estimated over 8 s or
+  unknown, or lasting 3 s): then the state tab and the mini line say "Waiting for 2:40, about 8 s"
+  (`LullRules.seekWaitS`, from the transfer's speed) and screen readers hear it once, and "Playing from 2:40" when it
+  lands. It lands as soon as those bytes are here (`landKept`, on each `stream` event and tick). The next seek
+  replaces it, another song drops it, and stepping (arrow keys, Media Session) goes on from it (`P.seekTarget`). A
+  lyric line seeks the same way. The hub holds a range ahead of the transfer until its bytes arrive (never 416 for a
   range inside the file), so a start the browser maps past `received` (VBR, a big embedded cover) only buffers.
 - **The seek bar's look** is one language in every design and view (the bar, Now Playing, the device waveform, the
   mini line, transfer progress in Activity): played is solid `--seek-played`; arrived but not played is one solid

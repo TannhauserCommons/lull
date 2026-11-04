@@ -41,7 +41,7 @@ const run = {
   upcoming: (c) => R.upcoming({ index: c.index, ids: c.ids, shuffle: c.shuffle, repeat: c.repeat }, (id) => c.saved.includes(id), c.n),
   radio: (c) => R.radio({ index: c.index, length: c.length, repeat: c.repeat, radio: c.radio }, c.radioWhenQueueEnds),
   playable: (c) => R.playable(c.soulseek, c.arrived, c.buffered),
-  seekTo: (c) => R.seekTo(c.fraction, c.playable, c.waits, c.waitS, c.aheadS),
+  seekTo: (c) => R.seekTo(c.fraction, c.playable, c.waitS, c.aheadS),
   seekWaitS: (c) => R.seekWaitS(c.fraction, c.arrived, c.size, c.speed),
   switchNow: (c) => R.switchNow(c),
   quiet: (c) => R.quiet(c.levels),

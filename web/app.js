@@ -1944,11 +1944,10 @@
 
   /* playback settings (Settings > Playback; GET /api/settings), defaults until the server answers */
   var playback = { gapless: true, crossfade: 0, normalisation: 'off', loudnessTarget: -14, radioWhenQueueEnds: true, volumeStep: 5, prefetchCount: 2,
-    switchToBetter: true, jumpWhenDownloaded: true };
+    switchToBetter: true };
   P.volumeStep = function () { return (playback.volumeStep || 5) / 100; };
   App.setPlayback = function (patch) {
     Object.assign(playback, patch);
-    if (!playback.jumpWhenDownloaded && ps.seekWait) { ps.seekWait = null; changed('seek'); }   // the song plays on where it is
     App.store.set('crossfadeSec', playback.crossfade || 0);
     applyLevels(); prefetchSoon();
   };
@@ -2117,32 +2116,40 @@
     var p = ps.peer;
     return p ? LullRules.seekWaitS(f, arrivedParts(), (p.sizeMB || 0) * 1e6, (p.speed || 0) * 1e6) : null;
   }
-  /* past what arrived: with "Jump to where I seek once it has downloaded" (Settings > Playback) it goes there now when
-     the hub can start the transfer there and the transfer running would take longer (the hub fetches from the byte the
-     output asks for); otherwise the song plays on and the seek is kept until its bytes are here (landKept). Without the
-     setting, it snaps to the furthest point that arrived before it, the seek bar shakes and this returns false. The
-     next seek, or another song, replaces a kept one */
+  /* past what arrived: it goes there now when the hub can start the transfer there and the transfer running would take
+     longer (the hub fetches from the byte the output asks for); otherwise the song plays on and the seek is kept until
+     its bytes are here (landKept). The next seek, or another song, replaces a kept one */
   P.seekFraction = function (f) {
     f = clamp(f, 0, 1);
     var dur = P.duration(); if (!dur || !P.current()) return false;
     /* a song restored after a reload (or the app starting) isn't loaded until it plays, and P.play then resumes it at
        ps.pos: a seek before that moves where it will start */
     if (!cur) { ps.pos = f * dur; changed('seek'); return true; }
-    var to = LullRules.seekTo(f, playable(), playback.jumpWhenDownloaded, waitS(f), ps.aheadS);
-    ps.seekWait = to.how === 'waits' ? { fraction: to.fraction, since: Date.now() } : null;
+    var to = LullRules.seekTo(f, playable(), waitS(f), ps.aheadS);
+    clearTimeout(keptSay);
+    ps.seekWait = to.how === 'waits' ? { fraction: to.fraction, since: Date.now(), said: false } : null;
     if (!ps.seekWait) { ps.pos = to.fraction * dur; out.seek(ps.pos); }
     changed('seek');
-    if (to.how === 'waits') App.emit('seek-kept', ps.seekWait);
-    if (to.how === 'snapped') App.emit('seek-denied', { fraction: f, received: ps.received });
-    return to.how !== 'snapped';
+    if (ps.seekWait) sayKept(ps.seekWait);
+    return true;
   };
+  /* a kept seek is said aloud once it is a long one (P.seekWaitLong: at once, or when it has lasted 3 s), as the state
+     tab shows it; a short one lands unannounced, as it shows only as the seek bar's notch */
+  var keptSay = 0;
+  function sayKept(w) {
+    if (ps.seekWait !== w) return;
+    if (!P.seekWaitLong()) { keptSay = setTimeout(function () { sayKept(w); }, 3000 - (Date.now() - w.since)); return; }
+    w.said = true;
+    App.announce(P.seekWaitText() + '. The song plays on until then.');
+  }
   /* a kept seek lands once what arrived reaches it */
   function landKept() {
     var w = ps.seekWait; if (!w || !cur) return;
-    if (LullRules.seekTo(w.fraction, playable(), true, null, null).how !== 'now') return;
+    if (LullRules.seekTo(w.fraction, playable(), null, null).how !== 'now') return;
+    clearTimeout(keptSay);
     ps.seekWait = null; ps.pos = w.fraction * P.duration(); out.seek(ps.pos);
     changed('seek');
-    App.announce('Playing from ' + fmtTime(ps.pos));
+    if (w.said) App.announce('Playing from ' + fmtTime(ps.pos));
   }
   /* about how long a kept seek (or one at f) waits, in words: "about 8 s", or null while the speed isn't known */
   function waitWords(f) {
@@ -2165,13 +2172,10 @@
   P.seekTip = function (f) {
     var at = fmtTime(f * P.duration());
     if (P.seekable(f)) return at;
-    if (!playback.jumpWhenDownloaded) return 'Not downloaded yet (' + Math.round(ps.received * 100) + '%)';
-    if (LullRules.seekTo(f, playable(), true, waitS(f), ps.aheadS).how === 'fetches') return at;
+    if (LullRules.seekTo(f, playable(), waitS(f), ps.aheadS).how === 'fetches') return at;
     var eta = waitWords(f);
     return at + (eta ? ', downloaded in ' + eta : ', not downloaded yet');
   };
-  /* a seek past what has arrived is kept until it has, rather than stopping where the download is */
-  P.seeksAhead = function () { return !!playback.jumpWhenDownloaded; };
   /* where the listener asked to be: a kept seek's time, else where the song is. Seeking by steps goes on from there */
   P.seekTarget = function () { return ps.seekWait ? ps.seekWait.fraction * P.duration() : ps.pos; };
   P.seek = function (sec) { return P.seekFraction(sec / (P.duration() || 1)); };
@@ -3277,13 +3281,9 @@
     var t = $('.seek__track', el) || el, r = t.getBoundingClientRect();
     return clamp((x - r.left) / r.width, 0, 1);
   }
-  function applySeek(el, f, final) {
+  function applySeek(el, f) {
     if (el.getAttribute('data-seek') === 'volume') { P.setVolume(f); return; }
-    var ok = P.seekFraction(f);
-    if (!ok && final) {
-      el.classList.remove('is-shake'); void el.offsetWidth; el.classList.add('is-shake');
-      setTimeout(function () { el.classList.remove('is-shake'); }, 420);
-    }
+    P.seekFraction(f);
   }
   document.addEventListener('pointerdown', function (e) {
     var el = e.target.closest('[data-seek]'); if (!el || e.button !== 0) return;
@@ -3291,12 +3291,12 @@
     e.preventDefault(); el.setAttribute('data-pointer', ''); el.focus({ preventScroll: true });
     drag = { el: el }; el.classList.add('is-scrubbing');   // not is-dragging: that class boxes a dragged row
     try { el.setPointerCapture(e.pointerId); } catch (err) { /* synthetic events */ }
-    applySeek(el, seekFrac(el, e.clientX), false);
+    applySeek(el, seekFrac(el, e.clientX));
   });
   /* the hover tip showing, remembered: this runs on every pointer move anywhere, so it must not search the page */
   var tipOn = null, tipAt = 0;
   document.addEventListener('pointermove', function (e) {
-    if (drag) { applySeek(drag.el, seekFrac(drag.el, e.clientX), false); return; }
+    if (drag) { applySeek(drag.el, seekFrac(drag.el, e.clientX)); return; }
     var el = e.target.closest && e.target.closest('.seek[data-seek="player"]');
     var tip = el && $('.seek__tip', el);
     if (tipOn && tipOn !== tip) { tipOn.classList.remove('is-on'); tipOn = null; }
@@ -3308,7 +3308,7 @@
   App.on('tick', function () { if (tipOn) setText(tipOn, P.seekTip(tipAt)); });   // what arrived moves on under a still pointer
   document.addEventListener('pointerup', function (e) {
     if (!drag) return;
-    applySeek(drag.el, seekFrac(drag.el, e.clientX), true);
+    applySeek(drag.el, seekFrac(drag.el, e.clientX));
     drag.el.classList.remove('is-scrubbing'); drag = null;
   });
   document.addEventListener('keydown', function (e) {
@@ -3323,7 +3323,7 @@
     else if (e.key === 'Home') f = 0; else if (e.key === 'End') f = 1;
     else if (e.key === 'PageUp') f = cur + step * 6; else if (e.key === 'PageDown') f = cur - step * 6;
     if (f === null) return;
-    e.preventDefault(); e.stopPropagation(); applySeek(el, clamp(f, 0, 1), true);
+    e.preventDefault(); e.stopPropagation(); applySeek(el, clamp(f, 0, 1));
   });
   document.addEventListener('focusout', function (e) { if (e.target.closest && e.target.closest('[data-seek]')) e.target.removeAttribute('data-pointer'); });
   /* the wheel over a volume bar, or its button, turns it: one notch (or 100 px of trackpad scroll) is one volume step */
@@ -3338,10 +3338,6 @@
     wheelAcc -= steps * 100;
     P.setVolume(clamp((ps.muted ? 0 : ps.volume) - steps * P.volumeStep(), 0, 1));
   }, { passive: false });
-  App.on('seek-denied', function (d) {
-    App.emit('announce', 'Not downloaded yet, ' + Math.round(d.received * 100) + ' percent');
-  });
-  App.on('seek-kept', function () { App.emit('announce', P.seekWaitText() + '. The song plays on until then.'); });
 
   /* segmented controls: the indicator sits on the selected button, measured (--seg-x, --seg-w on .seg__ind). A .seg's
      columns are equal only while every label fits its share, and a design may add gaps; until the first measure the
@@ -3709,7 +3705,7 @@
         : st === 'ended' ? html`<button class="btn btn--quiet" data-act="start-radio-current">Start radio</button>` : '';
       var ic = err ? 'warning' : st === 'finding' || st === 'queued' || st === 'buffering' ? 'soulseek' : st === 'stalled' ? 'refresh' : ps.seekWait && P.seekWaitLong() ? 'clock' : ps.crossfade ? 'shuffle' : 'info';
       /* a kept seek's line counts down with every stream event: the tab is a live region, so screen readers hear it
-         once from the announcer (seek-kept) instead of at each change */
+         once from the announcer (sayKept) instead of at each change */
       var waiting = ps.seekWait && P.seekWaitLong();
       patch(stEl, html`${icon(ic)}<span ${raw(waiting ? 'aria-hidden="true"' : '')}>${line}</span>${acts}`);
       stEl.classList.toggle('is-error', err); stEl.classList.toggle('is-seek-wait', !!waiting); stEl.hidden = false;
@@ -4487,8 +4483,7 @@
     var pb = (s && s.playback) || {}, v = function (x) { return x && typeof x === 'object' && 'value' in x ? x.value : x; };
     App.setPlayback({ gapless: v(pb.gapless) !== false, crossfade: +v(pb.crossfade) || 0, normalisation: v(pb.normalisation) || 'off',
       loudnessTarget: +v(pb.loudnessTarget) || -14, radioWhenQueueEnds: v(pb.radioWhenQueueEnds) !== false, volumeStep: +v(pb.volumeStep) || 5,
-      prefetchCount: v(pb.prefetchCount) == null ? 2 : +v(pb.prefetchCount), switchToBetter: !s || !s.sources || v(s.sources.switchToBetter) !== false,
-      jumpWhenDownloaded: v(pb.jumpWhenDownloaded) !== false });
+      prefetchCount: v(pb.prefetchCount) == null ? 2 : +v(pb.prefetchCount), switchToBetter: !s || !s.sources || v(s.sources.switchToBetter) !== false });
   }
   App.reloadCollections = loadCollections;
   /* after a reconnect or a resync: everything the events would have told us */

@@ -191,11 +191,7 @@
   font: 700 var(--ly-size)/1.45 var(--f-ui); color: var(--fg-2); transition: color var(--dur-1), background-color var(--dur-1);
 }
 .now-ly__line:hover { background: var(--bg-2); color: var(--fg); }
-.now-ly__line.is-far { cursor: not-allowed; }
 .now-ly__line.is-current { color: var(--fg); font-weight: 800; font-size: calc(var(--ly-size) + .25rem); line-height: 1.35; box-shadow: inset 3px 0 0 var(--heart); border-radius: 4px 12px 12px 4px; }
-.now-ly__line.is-denied { animation: knob-shake 120ms linear 2; }
-:root[data-motion="reduce"] .now-ly__line.is-denied { outline: 2px solid var(--focus); outline-offset: -2px; }
-@media (prefers-reduced-motion: reduce) { :root:not([data-motion="full"]) .now-ly__line.is-denied { outline: 2px solid var(--focus); outline-offset: -2px; } }
 .now-ly__gap { display: flex; gap: 6px; padding: 12px 12px 14px; }
 .now-ly__gap i { width: 6px; height: 6px; border-radius: 50%; background: var(--edge); }
 .now-ly__plain { padding-top: var(--sp-3); }

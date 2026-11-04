@@ -541,7 +541,6 @@ button.trow__title:hover { text-decoration: underline; text-underline-offset: 3p
   transition: transform var(--dur-1) var(--ease-out);
 }
 .seek.is-scrubbing .seek__knob { transform: scale(1.15); }
-.seek.is-shake .seek__knob { animation: knob-shake 120ms ease-in-out 2; outline: 2px solid var(--focus); outline-offset: 1px; }
 .seek__tip {
   position: absolute; bottom: calc(50% + 14px); transform: translateX(-50%); white-space: nowrap; pointer-events: none;
   padding: 4px 8px; border-radius: var(--r-chip); background: var(--ink); color: var(--cream); font: var(--t-micro);
@@ -1499,7 +1498,6 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 @keyframes twinkle { from { transform: scale(.8); opacity: .6; } to { transform: scale(1); opacity: 1; } }
 @keyframes sheen { to { transform: translateX(100%); } }
 @keyframes skel-in { from { opacity: 0; } to { opacity: 1; } }
-@keyframes knob-shake { 0%, 100% { transform: none; } 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
 @keyframes power-on { from { opacity: 0; transform: translateY(14px) scale(.98); } to { opacity: 1; transform: none; } }
 @keyframes screen-on { from { opacity: 0; } to { opacity: 1; } }
 @keyframes scan-sweep { 0% { opacity: 1; transform: translateY(0); } 99% { opacity: 1; transform: translateY(300px); } 100% { opacity: 0; } }

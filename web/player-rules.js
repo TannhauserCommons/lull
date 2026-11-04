@@ -107,11 +107,10 @@
   /* seeking a Soulseek song still arriving (0-1 of the song). arrived: [[from, to]] the parts the hub has (one from 0,
      until a seek ahead starts the transfer elsewhere, ADR-0014); buffered: what the output holds. What can play now is
      those parts, each less a margin at its end so the output doesn't stall at once (a part reaching the song's end keeps
-     it). A seek inside it lands now. Past it, with Settings > Playback's "Jump to where I seek once it has downloaded"
-     on (waits): when the hub can start the transfer there (aheadS, its `seekAheadS`) and the transfer running would
-     take longer than that to get there (waitS; unknown counts as longer), it lands now and the hub fetches from there;
-     otherwise the song plays on and the seek is kept, asked again as more arrives. Off, it lands just inside the part
-     before it */
+     it). A seek inside it lands now. Past it: when the hub can start the transfer there (aheadS, its `seekAheadS`)
+     and the transfer running would take longer than that to get there (waitS; unknown counts as longer), it lands now
+     and the hub fetches from there; otherwise (sooner, or a format the hub can't start mid-file) the song plays on and
+     the seek is kept, asked again as more arrives */
   R.SEEK_MARGIN = 0.01;
   R.playable = function (soulseek, arrived, buffered) {
     if (!soulseek) return [[0, 1]];
@@ -124,14 +123,12 @@
     return merged.map(function (r) { return [r[0], r[1] >= 1 ? 1 : r[1] - R.SEEK_MARGIN]; })
       .filter(function (r) { return r[1] > r[0]; });
   };
-  /* -> { fraction, how: now | fetches | waits | snapped } */
-  R.seekTo = function (fraction, playable, waits, waitS, aheadS) {
+  /* -> { fraction, how: now | fetches | waits } */
+  R.seekTo = function (fraction, playable, waitS, aheadS) {
     fraction = clamp(fraction, 0, 1);
-    if (playable.some(function (r) { return r[0] <= fraction && fraction <= r[1]; })) return { fraction: fraction, how: 'now' };
-    if (waits && aheadS != null && (waitS == null || waitS > aheadS)) return { fraction: fraction, how: 'fetches' };
-    if (waits) return { fraction: fraction, how: 'waits' };
-    var before = playable.reduce(function (m, r) { return r[1] < fraction ? Math.max(m, r[1]) : m; }, 0);
-    return { fraction: Math.max(0, before - 0.004), how: 'snapped' };
+    var how = playable.some(function (r) { return r[0] <= fraction && fraction <= r[1]; }) ? 'now'
+      : aheadS != null && (waitS == null || waitS > aheadS) ? 'fetches' : 'waits';
+    return { fraction: fraction, how: how };
   };
   /* about how long the transfer takes to bring a seek at `fraction` (and the margin), in whole seconds rounded up: the
      bytes from the end of the part arriving toward it, at the transfer's speed (bytes a second); null while the speed

@@ -523,9 +523,7 @@
     try { sc.scrollTo({ top: Math.max(0, top), behavior: smooth && !App.reducedMotion() ? 'smooth' : 'auto' }); } catch (e) { sc.scrollTop = Math.max(0, top); }
     clearTimeout(st.autoT); st.autoT = setTimeout(function () { st.auto = false; }, smooth ? 700 : 60);
   }
-  /* a line can be jumped to only inside what has arrived (the engine's rule, P.seekable) */
-  /* a click on a line seeks there: now when that part arrived, or kept (or fetched) until it has, by Settings > Playback */
-  function lineSeekable(line) { return P.seekable(+line.getAttribute('data-t') / (P.duration() || 1)) || P.seeksAhead(); }
+  /* a click on a line seeks there: now when that part arrived, else fetched from there or kept until it has */
   function lyUpdate(sc, jump) {
     var st = sc._ly, lines = st.lines; if (!lines.length) return;
     var p = ps.pos + .15, i = -1;
@@ -543,10 +541,7 @@
     if (bk !== st.bk) {
       st.bk = bk;
       lines.forEach(function (l) {
-        var ok = lineSeekable(l);
-        var tip = P.seekTip(+l.getAttribute('data-t') / (P.duration() || 1));
-        l.setAttribute('data-tip', ok ? 'Jump to ' + tip : tip);
-        l.classList.toggle('is-far', !ok);
+        l.setAttribute('data-tip', 'Jump to ' + P.seekTip(+l.getAttribute('data-t') / (P.duration() || 1)));
       });
     }
   }
@@ -555,13 +550,8 @@
   document.addEventListener('click', function (e) {
     var line = e.target.closest('.now-ly__line'); if (!line) return;
     var sc = line.closest('.now-ly__scroll');
-    if (lineSeekable(line)) {
-      P.seek(+line.getAttribute('data-t')); if (!ps.playing) P.play();
-      if (sc && sc._ly) { lyAway[sc._ly.key] = false; var b = sc.parentNode.querySelector('.now-ly__back'); if (b) b.hidden = true; sc._ly.cur = -2; lyUpdate(sc, false); }
-    } else {
-      line.classList.remove('is-denied'); void line.offsetWidth; line.classList.add('is-denied');
-      App.announce('Not downloaded yet, ' + Math.round(ps.received * 100) + '% received');
-    }
+    P.seek(+line.getAttribute('data-t')); if (!ps.playing) P.play();
+    if (sc && sc._ly) { lyAway[sc._ly.key] = false; var b = sc.parentNode.querySelector('.now-ly__back'); if (b) b.hidden = true; sc._ly.cur = -2; lyUpdate(sc, false); }
   });
 
   /* =====================================================================
