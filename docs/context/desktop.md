@@ -38,6 +38,7 @@ The Tauri v2 project in `app/` (its own Cargo workspace; ADR-0006) shows the hub
 | `app/capabilities/local.json` | IPC for the bundled page |
 | `web/desktop/wrapper.html` | The bundled page: welcome, connect, hub unreachable, hub didn't start, a window that kept crashing, mini player (view in the hash) |
 | `web/desktop/desktop.js`, `desktop.css` | The app's UI; also loaded by the web UI (`index.html`), where it does nothing outside the app |
+| `web/desktop/mini-keys.json` | The mini player's keys (`data-dk`) and who runs each: main, the window, or the wave's seek. The one list: `desktop.js` carries it as `MINI_KEYS` (written from it by `LULL_WRITE_PACKAGES=1 cargo test -p lull-themes`, which fails while that line is stale), and `lull-themes` refuses a slot naming any other key. JSON, since the hub's build minifies the scripts before Rust compiles against `web/` |
 | `web/desktop/winamp.html`, `winamp.js` | Served by the hub: the Classic window's page (Webamp alone) |
 | `web/desktop/webamp-session.js` | One Webamp playing lull's queue (hand-in, hand-back, listening), and the listener's Classic skin (loading it, Webamp's alerts, `.wsz` files kept on this device), shared by the Classic window, the browser's Classic stage (`web/screens/classic.js`) and Settings (`web/screens/skins.js`) |
 
@@ -169,7 +170,7 @@ The hub origin gets its capabilities at runtime when the app first loads it: one
 | `tray` | Rust → the playing window (`main`, or the Classic window while open) | `{ action: play-pause \| next \| previous \| like \| save \| classic \| stop }` (`stop` comes from the Linux media-key fallback); also the taskbar buttons |
 | `classic` | Classic window → `main` | `{ type: now, id, playing, pos, duration }`, `{ type: listen, id, duration }`, `{ type: listened, how, seconds }`, `{ type: action, action: like \| save, id }`, `{ type: back, back: { ids, index, pos, playing, shuffle, repeat, local } \| null }`, `{ type: failed, message }` |
 | `classic-close` | Rust → Classic window | none: hand the queue back, then `classic-done` |
-| `mini` | mini window → `main` | `{ action: play-pause \| previous \| next \| like \| shuffle \| repeat \| vol-up \| vol-down \| seek \| hello, fraction? }` |
+| `mini` | mini window → `main` | `{ action: play-pause \| previous \| next \| like \| shuffle \| repeat \| vol-up \| vol-down \| seek \| hello, fraction? }` (the keys `mini-keys.json` gives to `main` or `seek`, and `hello`) |
 | `player` | `main` → all | snapshot `{ track, playing, liked, pos, duration, durationKnown, buffered, received, shuffle, repeat, volume }`, sent on change and in answer to `hello` |
 | `player-art` | `main` → all | `{ art }`: the cover as a data URL (or `null`), once per song and in answer to `hello`. Never inside `player`: that goes out with every position change, and a cover in it grew the page's memory by tens of MB a minute |
 | `appearance` | `main` → Rust and the mini player | `{ design, base, theme }`: `base` is the built-in design a listener's theme extends (absent for a built-in or a theme that extends none). Stored and passed in the hash of every bundled page |

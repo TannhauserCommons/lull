@@ -38,9 +38,10 @@ const handedOver = (page, after = 0) => page.waitForFunction((n) => (window.__br
 
 // a wrapper page as the app serves it: no hub beside it (every /api answers 404), the app's bridge answering
 // theme_package with what main handed over
-async function openWrapper(page, hash, pkg) {
+async function openWrapper(page, hash, pkg, init) {
   await page.addInitScript({ path: bridge });
   await page.addInitScript((p) => { window.__bridge.answers.theme_package = (args) => (p && args.id === p.manifest.id ? p : null); }, pkg);
+  if (init) await page.addInitScript(init);
   await page.route('**/api/**', (r) => r.fulfill({ status: 404, body: 'not here' }));
   await page.goto(`${hub.url}/desktop/wrapper.html#${hash}`);
   await page.waitForFunction(() => !document.documentElement.hasAttribute('data-booting'));
@@ -120,4 +121,39 @@ test('the app\'s pages open in the listener theme main already handed over, what
   // and without it (the hub was down when the app started), the design the theme extends
   await openWrapper(page, 'view=offline&url=http%3A%2F%2Fhub.invalid&design=paper-moon&base=skydeck&theme=day', null);
   expect(await look(page)).toMatchObject({ design: 'skydeck', loaded: 'skydeck' });
+});
+
+// The mini player's keys (web/desktop/mini-keys.json, the one list desktop.js runs and lull-themes checks slots against):
+// in every design's mini player and strip, each key a listener can click reaches what runs it, main or the window.
+const KEYS = JSON.parse(readFileSync(fileURLToPath(new URL('../../../web/desktop/mini-keys.json', import.meta.url)), 'utf8'));
+const DESIGNS = ['lull', 'skydeck', 'starlight', 'petal', 'glasshouse'];
+// what the page sends across, in order: 'mini' events to main, and window actions
+function recordSent() {
+  const t = window.__TAURI__, sent = window.__sent = [];
+  const emitTo = t.event.emitTo, invoke = t.core.invoke;
+  t.event.emitTo = (to, name, p) => { if (name === 'mini') sent.push({ to, ...p }); return emitTo(to, name, p); };
+  t.core.invoke = (cmd, args) => { if (cmd === 'window_action') sent.push({ window: args.request.action }); return invoke(cmd, args); };
+}
+
+test('every key in the mini player and the strip reaches what runs it, in every design', async ({ browser }) => {
+  for (const design of DESIGNS) {
+    for (const view of ['mini', 'strip']) {
+      const at = `${design} ${view}`, page = await browser.newPage();
+      await openWrapper(page, `view=${view}&design=${design}&theme=day&opaque=1`, null, recordSent);
+      await page.waitForFunction((d) => Designs.current === d && document.querySelector('[data-dk-player]'), design);
+      await page.evaluate(() => window.__bridge.fire('player', { track: { id: 't1', title: 'Song', artist: 'Artist', format: 'FLAC', lossless: true },
+        playing: false, liked: false, pos: 20, duration: 200, durationKnown: true, buffered: [[0, 1]], received: 1, shuffle: false, repeat: 'off', volume: .5 }));
+      const keys = await page.$$eval('[data-dk-player] [data-dk]', (els) => els.map((el) => el.getAttribute('data-dk')));
+      expect(keys.filter((k) => !(k in KEYS)), `${at}: keys nothing runs`).toEqual([]);
+      expect(keys, `${at}: the transport`).toEqual(expect.arrayContaining(['previous', 'play-pause', 'next']));
+      for (let i = 0; i < keys.length; i++) {
+        const key = keys[i], before = await page.evaluate(() => window.__sent.length);
+        await page.locator('[data-dk-player] [data-dk]').nth(i).click();
+        const sent = await page.evaluate((n) => window.__sent.slice(n), before);
+        const want = KEYS[key] === 'window' ? { window: key } : KEYS[key] === 'seek' ? { to: 'main', action: 'seek' } : { to: 'main', action: key };
+        expect(sent, `${at}: ${key}`).toEqual([expect.objectContaining(want)]);
+      }
+      await page.close();
+    }
+  }
 });

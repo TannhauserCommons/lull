@@ -398,6 +398,20 @@ fn check_slot(path: &str, html: &str) -> Result<()> {
         }
     }
     check_markup(path, &lower)?;
+    // as written, and in lowercase for a DATA-DK attribute: a key is a name, so Previous is not previous
+    let keys = mini_keys();
+    for key in attribute_values(html, "data-dk")
+        .into_iter()
+        .chain(attribute_values(&lower, "data-dk"))
+    {
+        if !keys.contains(&key) {
+            return Err(bad(format!(
+                "{path} has data-dk=\"{key}\", which is no mini player key, so that button would do nothing; \
+                 the keys are {}",
+                keys.join(", ")
+            )));
+        }
+    }
     for attr in ["href", "src", "xlink:href", "action", "formaction"] {
         for value in attribute_values(&lower, attr) {
             if !value.starts_with('#') {
@@ -408,6 +422,22 @@ fn check_slot(path: &str, html: &str) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// The mini player's keys and who runs each: the one list, which web/desktop/desktop.js carries as
+/// `MINI_KEYS` (a test below keeps that line written from it). JSON, since the hub's build minifies the
+/// scripts in web/ before this crate compiles against them, and copies JSON as it is.
+const MINI_KEYS: &str = include_str!("../../../web/desktop/mini-keys.json");
+
+/// The names in [`MINI_KEYS`], the `data-dk="..."` a slot may use. Empty if the file can't be read, which
+/// refuses every key and fails this crate's tests on the built-in designs.
+fn mini_keys() -> &'static [String] {
+    static KEYS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
+        serde_json::from_str::<BTreeMap<String, String>>(MINI_KEYS)
+            .map(|keys| keys.into_keys().collect())
+            .unwrap_or_default()
+    });
+    &KEYS
 }
 
 fn check_svg(path: &str, svg: &str) -> Result<()> {
@@ -735,6 +765,73 @@ mod tests {
             )
             .is_ok()
         );
+    }
+
+    /// desktop.js runs the mini player's keys from its own copy of web/desktop/mini-keys.json, one line;
+    /// `LULL_WRITE_PACKAGES=1 cargo test -p lull-themes` writes it.
+    #[test]
+    fn desktop_js_runs_the_mini_player_keys_this_crate_checks() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../web/desktop/desktop.js");
+        let have = std::fs::read_to_string(&path).unwrap_or_default();
+        let keys = serde_json::from_str::<BTreeMap<String, String>>(MINI_KEYS).unwrap_or_default();
+        let line = format!(
+            "  var MINI_KEYS = {};",
+            serde_json::to_string(&keys).unwrap_or_default()
+        );
+        let want = have
+            .lines()
+            .map(|l| {
+                if l.starts_with("  var MINI_KEYS = ") {
+                    line.as_str()
+                } else {
+                    l
+                }
+            })
+            .map(|l| format!("{l}\n"))
+            .collect::<String>();
+        if std::env::var_os("LULL_WRITE_PACKAGES").is_some() {
+            assert!(std::fs::write(&path, &want).is_ok(), "write {}", path.display());
+        }
+        let have = std::fs::read_to_string(&path).unwrap_or_default();
+        assert!(
+            have.contains(&format!("\n{line}\n")) && have == want,
+            "web/desktop/desktop.js: MINI_KEYS is stale: run LULL_WRITE_PACKAGES=1 cargo test -p lull-themes"
+        );
+    }
+
+    #[test]
+    fn a_mini_player_key_the_mini_player_lacks_is_refused_by_name() {
+        assert!(mini_keys().len() > 8, "web/desktop/mini-keys.json: {:?}", mini_keys());
+        let mini = |keys: &str| {
+            package(
+                "",
+                &[(
+                    "miniPlayer.device",
+                    &format!("<div data-dk-player=\"device\">{keys}</div>"),
+                )],
+            )
+        };
+        let all = mini_keys()
+            .iter()
+            .map(|k| format!("<button data-dk=\"{k}\"></button>"))
+            .collect::<String>();
+        assert!(validate(&mini(&all), Origin::Listener).is_ok());
+        for (key, html) in [
+            ("prev", "<button data-dk=\"prev\"></button>"),
+            ("play", "<button class=\"x\" data-dk='play'></button>"),
+            ("Previous", "<button data-dk=\"Previous\"></button>"),
+            ("stop", "<button DATA-DK=\"stop\"></button>"),
+        ] {
+            let err = refused(&mini(html));
+            assert!(
+                err.contains(&format!("slots/miniPlayer.device.html has data-dk=\"{key}\"")),
+                "{key}: {err}"
+            );
+            assert!(
+                err.contains("play-pause, previous, repeat"),
+                "{key}: names the keys: {err}"
+            );
+        }
     }
 
     #[test]

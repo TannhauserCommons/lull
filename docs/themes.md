@@ -196,7 +196,7 @@ Line breaks between tags are dropped and comments are removed, so indent freely;
 
 Booleans render as `true` or `false`, so CSS can follow them: `[data-playing="true"]`.
 
-Keep the live hooks when you rebuild a hero: `data-now="title|artist|album|format|screen|c-screen|c-art|led|head|state|facts|osd"` and `data-act` / `data-bind` on transport buttons (`design/DESIGN.md` 3.5 lists them all). A custom mini player keeps `data-dk-player`, the `data-dk="..."` keys and `data-dk-pos`, `data-dk-dur`, `data-dk-now`.
+Keep the live hooks when you rebuild a hero: `data-now="title|artist|album|format|screen|c-screen|c-art|led|head|state|facts|osd"` and `data-act` / `data-bind` on transport buttons (`design/DESIGN.md` 3.5 lists them all). A custom mini player keeps `data-dk-player`, the `data-dk="..."` keys and `data-dk-pos`, `data-dk-dur`, `data-dk-now`. The keys are `play-pause`, `previous`, `next`, `like`, `shuffle`, `repeat`, `vol-up`, `vol-down`, `seek` (on the wave), `full` and `mini-close`, the names `web/desktop/mini-keys.json` lists. The hub refuses a slot that names any other key, and says which keys there are, so a theme never ships a button that does nothing.
 
 ## 7. A full example: CSS and a slot
 

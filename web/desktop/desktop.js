@@ -545,13 +545,18 @@
   /* =====================================================================
      5. One delegated handler for everything above
      ===================================================================== */
-  var MINI_ACTIONS = ['play-pause', 'previous', 'next', 'like', 'shuffle', 'repeat', 'vol-up', 'vol-down'];
+  /* The mini player's keys: the data-dk="..." names a button in [data-dk-player] may carry, and who runs each: "main"
+     (sent as a 'mini' event; main's run() below), "window" (this window's own, windowAction) or "seek" (the wave, by
+     pointer and arrow keys). The one list is mini-keys.json beside this file, which lull-themes reads too, so a slot
+     naming any other key is refused (crates/themes/src/package.rs). The line below is written from it: edit the JSON,
+     then LULL_WRITE_PACKAGES=1 cargo test -p lull-themes */
+  var MINI_KEYS = {"full":"window","like":"main","mini-close":"window","next":"main","play-pause":"main","previous":"main","repeat":"main","seek":"seek","shuffle":"main","vol-down":"main","vol-up":"main"};
   function seekTo(fraction) { toMain('seek', { fraction: Math.min(1, Math.max(0, fraction)) }); }
 
   doc.addEventListener('click', function (e) {
     var el = e.target.closest('[data-dk]'); if (!el) return;
     var act = el.getAttribute('data-dk'), scope = el.closest('[data-dk-player]');
-    if (scope && MINI_ACTIONS.indexOf(act) >= 0) return toMain(act);
+    if (scope && MINI_KEYS[act] === 'main') return toMain(act);
     var card = el.closest('[data-dk-connect]');
     switch (act) {
       case 'minimize': case 'maximize': case 'close': case 'full': case 'mini-close': case 'change-server': case 'connect':

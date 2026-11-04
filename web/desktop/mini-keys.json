@@ -1,0 +1,13 @@
+{
+  "full": "window",
+  "like": "main",
+  "mini-close": "window",
+  "next": "main",
+  "play-pause": "main",
+  "previous": "main",
+  "repeat": "main",
+  "seek": "seek",
+  "shuffle": "main",
+  "vol-down": "main",
+  "vol-up": "main"
+}
