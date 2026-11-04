@@ -80,7 +80,7 @@ What there is to work with:
 - **M4A with `moov` at the end:** reads at 0, then at 0.99 (the index), then 0.006; with the tail fetched by a leg the song starts, and the seek is one read at 0.591.
 - **FLAC without a seek table:** the seek is five reads, at 0.998, 0.996, 0.72, 0.393 and 0.557: the bisection above, which is why it doesn't jump. (A FLAC file with a seek table wasn't measured: no tool here writes one.)
 
-**Fallback: waiting, as part 1 has it.** It stays the behaviour, and the setting governs both: with "Jump to where I seek once it has downloaded" on, a seek ahead is kept and fetched where possible. Without seek-ahead (an slskd that overwrites, a format above, a peer that queues), it is kept and waited for. Off, it snaps, as before.
+**Fallback: waiting, as part 1 has it.** Where seek-ahead can't jump (an slskd that overwrites, a format above, a peer that queues), a seek ahead is kept and waited for. Part 1's setting, "Jump to where I seek once it has downloaded", is gone (the owner, 2026-11-04: with real seeking there is nothing to switch off): a seek always goes where the listener asked, and stored settings lose the key by a collection migration. A kept seek shows as a still notch on the seek bar where it lands, and in words only for a long wait (estimated over 8 s, or lasting 3 s), so a short one isn't announced at all.
 
 ## Risks
 
