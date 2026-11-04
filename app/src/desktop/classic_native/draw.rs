@@ -92,6 +92,7 @@ pub struct View<'a> {
     pub bars: &'a [Bar; BARS],
     pub shuffle: bool,
     pub repeat: bool,
+    pub main_open: bool,
     pub eq_open: bool,
     pub playlist_open: bool,
     pub eq: &'a Equaliser,
@@ -169,7 +170,7 @@ pub fn main(pen: &mut Pen, view: &View) {
     time(pen, view);
     // Stopped, Webamp has no analyser: the main window's own picture shows there.
     if !view.now.stopped {
-        visualiser(pen, view.bars);
+        visualiser(pen, view.bars, layout::VISUALIZER);
     }
     pen.text(view.marquee, layout::MARQUEE);
     rates(pen, view.now);
@@ -360,9 +361,9 @@ pub fn mini_time(pen: &mut Pen, view: &View, x: u32, y: u32) {
 }
 
 /// The analyser: the skin's background and dot grid (even columns, odd rows, as Webamp draws it),
-/// nineteen bars in its sixteen row colours, and the peaks.
-fn visualiser(pen: &mut Pen, bars: &[Bar; BARS]) {
-    let area = layout::VISUALIZER;
+/// nineteen bars in its sixteen row colours, and the peaks; `area` cuts it narrower (the
+/// playlist's box shows 72 of its 76 columns).
+pub fn visualiser(pen: &mut Pen, bars: &[Bar; BARS], area: Area) {
     let palette = pen.skin.vis_colors;
     pen.fill(area.x, area.y, area.width, area.height, palette[0]);
     for y in (1..area.height).step_by(2) {
@@ -372,7 +373,7 @@ fn visualiser(pen: &mut Pen, bars: &[Bar; BARS]) {
     }
     let row_at = |row: u8| u32::from(row) * area.height / u32::from(ROWS);
     let stride = 4;
-    for (index, bar) in bars.iter().enumerate() {
+    for (index, bar) in bars.iter().enumerate().take(area.width.div_ceil(stride) as usize) {
         let x = area.x + stride * index as u32;
         for row in row_at(ROWS - bar.height)..area.height {
             pen.fill(x, area.y + row, stride - 1, 1, palette[2 + row as usize]);

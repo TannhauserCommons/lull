@@ -1309,6 +1309,7 @@ impl Classic {
             bars: &bars,
             shuffle: self.snapshot.shuffle,
             repeat: self.snapshot.repeat != Repeat::Off,
+            main_open: self.panels.main,
             eq_open: self.panels.eq,
             playlist_open: self.panels.playlist,
             eq: &self.snapshot.eq,
@@ -1709,6 +1710,11 @@ fn fingerprint(panel: Panel, top: u32, shaded: bool, view: &View) -> u64 {
                 now.stopped,
             )
                 .hash(&mut h);
+            if playlist::analyser_area(view).is_some() {
+                for bar in view.bars {
+                    (bar.height, bar.peak).hash(&mut h);
+                }
+            }
         }
     }
     h.finish()
@@ -2190,6 +2196,7 @@ mod tests {
             bars: &bars,
             shuffle: false,
             repeat: false,
+            main_open: true,
             eq_open: true,
             playlist_open: true,
             eq: &eq,

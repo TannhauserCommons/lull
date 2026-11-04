@@ -6,7 +6,7 @@
 //! `src/ui/winamp/playlist.rs` (MIT, credited in app/licenses/THIRD-PARTY.md).
 
 use super::canvas::Pen;
-use super::draw::{Control, Focus, Target, View, mini_time};
+use super::draw::{Control, Focus, Target, View, mini_time, visualiser};
 use super::skin::{Area, Sprite, WIDTH, layout, sprites};
 
 /// The playlist's height, as Webamp opens it.
@@ -202,6 +202,9 @@ pub fn at(x: u32, y: u32, shaded: bool, list: &List, size: Size) -> Option<Targe
 pub fn window(pen: &mut Pen, view: &View) {
     let size = view.playlist;
     frame(pen, view.focus == Focus::Playlist, size);
+    if let Some(area) = analyser_area(view) {
+        visualiser(pen, view.bars, area);
+    }
     if view.held(Control::PlaylistClose) {
         pen.at(
             sprites::PLAYLIST_CLOSE_PRESSED,
@@ -261,6 +264,15 @@ const MENU_BARS: [Sprite; 5] = [
     sprites::PLAYLIST_MISC_BAR,
     sprites::PLAYLIST_LIST_BAR,
 ];
+
+/// Where the playlist shows the analyser: in its visualiser's box (three steps wide or more), and
+/// only while the main window, which has its own, is closed and something plays, as in Webamp.
+pub fn analyser_area(view: &View) -> Option<Area> {
+    let size = view.playlist;
+    let shows = size.wide > 2 && !view.main_open && !view.now.stopped;
+    let x = size.width() - sprites::PLAYLIST_BOTTOM_RIGHT.width - sprites::PLAYLIST_VISUALIZER.width;
+    shows.then(|| Area::new(x + 2, size.bottom() + 12, 72, layout::VISUALIZER.height))
+}
 
 /// A menu's own button along the bottom; LIST's keeps to the right edge.
 fn menu_button(menu: usize, size: Size) -> Area {
