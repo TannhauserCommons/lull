@@ -14,17 +14,26 @@ COPY scripts/web-dist/build.mjs scripts/web-dist/
 COPY web web
 RUN node scripts/web-dist/build.mjs web dist
 
-FROM rust:1.99-slim-trixie@sha256:b8e062b1c3a80183df83d9ba187cadd2b5ab84bc78d453dbfeb2fccd5f982247 AS build
+# The hub's dependencies are a layer of their own (cargo-chef): its recipe changes only with the
+# manifests, so CI's layer cache keeps them compiled and a build compiles only lull's crates
+# (ADR-0097). BuildKit's cache mounts aren't kept between CI's machines; layers are.
+FROM rust:1.99-slim-trixie@sha256:b8e062b1c3a80183df83d9ba187cadd2b5ab84bc78d453dbfeb2fccd5f982247 AS chef
 WORKDIR /src
 COPY rust-toolchain.toml .
-RUN rustup toolchain install
+RUN rustup toolchain install && cargo install cargo-chef --version 0.1.78 --locked
+
+FROM chef AS recipe
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS build
+COPY --from=recipe /src/recipe.json recipe.json
+RUN cargo chef cook --release --locked --bin lull --recipe-path recipe.json
 COPY . .
 COPY --from=web /src/dist web
 # lull's own Last.fm app key is compiled in when the build passes it (core::config), so a listener
 # only clicks Connect. Optional: a build without these secrets just has no built-in key.
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/src/target \
-    --mount=type=secret,id=lastfm_key,env=LULL_LASTFM_API_KEY \
+RUN --mount=type=secret,id=lastfm_key,env=LULL_LASTFM_API_KEY \
     --mount=type=secret,id=lastfm_secret,env=LULL_LASTFM_API_SECRET \
     cargo build --release --locked --bin lull && cp target/release/lull /lull
 
