@@ -1,38 +1,43 @@
-//! The Classic window on Linux: a GTK window, no webview, holding ui.rs's stack, on X11 and on
-//! Wayland alike. Like Winamp 2's windows it has no frame and the skin cuts it to shape: its input
-//! shape always (clicks outside the skin's shapes reach the window behind), and with no compositor
-//! to see through it, its visible shape too. GTK asks for what it shows when it shows it; only that
-//! part is scaled up, nearest neighbour so pixels stay sharp at any size, a band of rows at a time
-//! into one small surface at the screen's own resolution, with the playlist's names drawn over it
-//! (Pango, through GTK, with the system's fallback fonts), and painted in. GTK's own scale stands in
-//! for Windows' DPI: the stack works in physical pixels, GTK's events and sizes are in its logical
-//! ones.
+//! The Classic windows on Linux: GTK windows, no webview, one a panel of ui.rs's stack, on X11
+//! and on Wayland alike. Like Winamp 2's windows they have no frame and the skin cuts them to
+//! shape: their input shape always (clicks outside the skin's shapes reach the window behind), and
+//! with no compositor to see through them, their visible shape too. GTK asks for what a window
+//! shows when it shows it; only that part is scaled up, nearest neighbour so pixels stay sharp at
+//! any size, a band of rows at a time into one small surface at the screen's own resolution, with
+//! the playlist's names drawn over it (Pango, through GTK, with the system's fallback fonts), and
+//! painted in. GTK's own scale stands in for Windows' DPI: the stack works in physical pixels,
+//! GTK's events and sizes are in its logical ones. On X11 the stack places the windows, and they
+//! dock as Winamp's; Wayland lets no app place its windows, so there each is moved by the
+//! compositor, alone.
 //!
-//! It lives on the main thread, GTK's, whose main loop (Tauri's) delivers its signals. Its state
+//! They live on the main thread, GTK's, whose main loop (Tauri's) delivers their signals. The state
 //! sits in a thread-local, borrowed only to decide what to do; moves and menus run after the borrow
 //! ends.
 #![allow(unsafe_code)]
 
 use super::canvas::{Canvas, TextRun};
+use super::dock::Rect;
 use super::playlist::{TEXT_SIZE, TEXT_SPACING, TIME_PADDING, baseline};
 use super::skin::{Skin, layout};
-use super::ui::{Classic, Effect, Frame, Item, Key, Menu, Mods, Shape, scale_rows};
+use super::ui::{Classic, Effect, Frame, Item, Key, Menu, Mods, PaneFrame, Panel, Shape, scale_rows};
 use gtk::gdk::keys::constants as keys;
 use gtk::prelude::*;
 use gtk::{cairo, gdk, glib, pango};
 use std::cell::RefCell;
 
-/// Rows of the window scaled and painted at a time: the band's height.
+/// Rows of a window scaled and painted at a time: the band's height.
 const BAND: i32 = 64;
 
 thread_local! {
-    static OPEN: RefCell<Option<Window>> = const { RefCell::new(None) };
+    static OPEN: RefCell<Option<Windows>> = const { RefCell::new(None) };
 }
 
-/// The stack and the GTK window showing it.
-struct Window {
-    window: gtk::Window,
+/// The stack and the GTK windows showing it.
+struct Windows {
     classic: Classic,
+    /// The main window's, the equaliser's and the playlist's, which are transient for the main
+    /// one and off the taskbar.
+    panes: [Pane; 3],
     /// GTK's scale: physical pixels to one of its own.
     scale: i32,
     text: Text,
@@ -43,11 +48,68 @@ struct Window {
     menu: Option<gtk::Menu>,
 }
 
-/// Opens the window. Main thread only.
+/// One GTK window, and what it shows now.
+struct Pane {
+    window: gtk::Window,
+    shown: bool,
+    at: (i32, i32),
+}
+
+/// Opens the windows. Main thread only.
 pub fn open(mut setup: Setup, on_close: OnClose) -> Result<(), String> {
     if OPEN.with_borrow(Option::is_some) {
         return Err("Classic mode is open already".into());
     }
+    let windows: [gtk::Window; 3] = Panel::ALL.map(|_| create());
+    let main = windows[0].clone();
+    for window in &windows[1..] {
+        window.set_transient_for(Some(&main));
+        window.set_skip_taskbar_hint(true);
+    }
+    // GTK's scale is the screen's; the stack's size is on top of it.
+    let scale = main.scale_factor().max(1);
+    setup.dpi = f64::from(scale);
+    let mut classic = Classic::new(setup, on_close);
+    classic.places_windows = !gdk::Display::default().is_some_and(|d| d.type_().name().contains("Wayland"));
+    classic.set_areas(work_areas(scale));
+    let (font, size) = classic.text_style();
+    let text_style = (font.to_owned(), size);
+    let text = Text::new(&main, font, size);
+    for (window, panel) in windows.iter().zip(Panel::ALL) {
+        connect(window, panel);
+    }
+    if let Some(screen) = WidgetExt::screen(&main) {
+        screen.connect_monitors_changed(move |_| {
+            with(|w| {
+                w.classic.set_areas(work_areas(scale));
+                Effect::Handled
+            });
+        });
+    }
+    let panes = windows.map(|window| Pane {
+        window,
+        shown: false,
+        at: (i32::MIN, i32::MIN),
+    });
+    let mut open = Windows {
+        classic,
+        panes,
+        scale,
+        text,
+        text_style,
+        timer: None,
+        menu: None,
+    };
+    open.render();
+    OPEN.with_borrow_mut(|o| *o = Some(open));
+    main.present();
+    Ok(())
+}
+
+pub use super::ui::{OnClose, Setup};
+
+/// A panel's window: undecorated, see-through where the skin isn't, taking the pointer and keys.
+fn create() -> gtk::Window {
     let window = gtk::Window::new(gtk::WindowType::Toplevel);
     window.set_title("lull classic");
     window.set_decorated(false);
@@ -64,37 +126,31 @@ pub fn open(mut setup: Setup, on_close: OnClose) -> Result<(), String> {
             | gdk::EventMask::SMOOTH_SCROLL_MASK
             | gdk::EventMask::KEY_PRESS_MASK,
     );
-    // GTK's scale is the screen's; the stack's size is on top of it.
-    let scale = window.scale_factor().max(1);
-    setup.dpi = f64::from(scale);
-    let at = setup.at;
-    let classic = Classic::new(setup, on_close);
-    let (font, size) = classic.text_style();
-    let text_style = (font.to_owned(), size);
-    let text = Text::new(&window, font, size);
-    window.move_(at.0 / scale, at.1 / scale);
-    connect(&window);
-    let mut open = Window {
-        window: window.clone(),
-        classic,
-        scale,
-        text,
-        text_style,
-        timer: None,
-        menu: None,
-    };
-    open.render();
-    OPEN.with_borrow_mut(|o| *o = Some(open));
-    window.show_all();
-    window.present();
-    Ok(())
+    window
 }
 
-pub use super::ui::{OnClose, Setup};
+/// The desktop's monitors' work areas (the screen less its panels), physical pixels.
+fn work_areas(scale: i32) -> Vec<Rect> {
+    let Some(display) = gdk::Display::default() else {
+        return Vec::new();
+    };
+    (0..display.n_monitors())
+        .filter_map(|i| display.monitor(i))
+        .map(|monitor| {
+            let area = monitor.workarea();
+            Rect::new(
+                area.x() * scale,
+                area.y() * scale,
+                area.width() * scale,
+                area.height() * scale,
+            )
+        })
+        .collect()
+}
 
-/// Brings the window forward (the tray, a second launch). Main thread only.
+/// Brings the windows forward (the tray, a second launch). Main thread only.
 pub fn show() {
-    if let Some(window) = OPEN.with_borrow(|open| open.as_ref().map(|w| w.window.clone())) {
+    if let Some(window) = OPEN.with_borrow(|open| open.as_ref().map(|w| w.panes[0].window.clone())) {
         window.present();
     }
 }
@@ -102,9 +158,9 @@ pub fn show() {
 /// The tray's and the taskbar's buttons, the system's media keys. Main thread only.
 pub fn act(action: &str) {
     let acted = OPEN.with_borrow_mut(|open| {
-        let window = open.as_mut()?;
-        window.classic.act(action);
-        window.render();
+        let windows = open.as_mut()?;
+        windows.classic.act(action);
+        windows.render();
         Some(())
     });
     if acted.is_none() {
@@ -115,72 +171,78 @@ pub fn act(action: &str) {
 /// Another skin, fetched for the Options menu; or why it couldn't be. Main thread only.
 pub fn set_skin(skin: Result<(Skin, Option<String>), String>) {
     OPEN.with_borrow_mut(|open| {
-        if let Some(window) = open.as_mut() {
-            window.classic.set_skin(skin);
-            window.render();
+        if let Some(windows) = open.as_mut() {
+            windows.classic.set_skin(skin);
+            windows.render();
         }
     });
 }
 
 /// Leaves Classic as its close button does. Main thread only.
 pub fn close() {
-    let Some(window) = OPEN.with_borrow_mut(Option::take) else {
+    let Some(windows) = OPEN.with_borrow_mut(Option::take) else {
         return;
     };
-    if let Some(timer) = window.timer {
+    if let Some(timer) = windows.timer {
         timer.remove();
     }
-    // SAFETY: the window's state is out of the thread-local already, so the signals destroying it
-    // finds nothing to borrow; nothing else holds the window to use it after.
-    unsafe { window.window.destroy() };
-    let mut classic = window.classic;
-    let size = classic.size;
+    for pane in windows.panes.iter().rev() {
+        // SAFETY: the windows' state is out of the thread-local already, so the signals destroying
+        // them find nothing to borrow; nothing else holds them to use them after.
+        unsafe { pane.window.destroy() };
+    }
+    let mut classic = windows.classic;
+    let (size, layout) = (classic.size, classic.layout());
     if let Some(on_close) = classic.on_close.take() {
-        on_close(classic.session, size);
+        on_close(classic.session, size, layout);
     }
 }
 
-/// The window's signals: each borrows the state to decide, then does what may call back.
-fn connect(window: &gtk::Window) {
-    window.connect_draw(|_, cr| {
+/// A window's signals: each borrows the state to decide, then does what may call back.
+fn connect(window: &gtk::Window, panel: Panel) {
+    window.connect_draw(move |_, cr| {
         OPEN.with(|open| {
             if let Ok(open) = open.try_borrow()
                 && let Some(w) = open.as_ref()
             {
-                w.draw(cr);
+                w.draw(panel, cr);
             }
         });
         glib::Propagation::Stop
     });
-    window.connect_button_press_event(|window, event| {
+    window.connect_button_press_event(move |window, event| {
         let double = event.event_type() == gdk::EventType::DoubleButtonPress;
         let effect = match event.button() {
             1 => with(|w| {
-                let at = w.physical(event.position());
-                w.classic.pointer_down(at, double, mods(event.state()))
+                let (at, screen) = (w.physical(event.position()), w.physical(event.root()));
+                w.classic.pointer_down(panel, at, screen, double, mods(event.state()))
             }),
             _ => None,
         };
-        after(window, effect, event);
+        after(window, panel, effect, event);
         glib::Propagation::Stop
     });
-    window.connect_button_release_event(|window, event| {
+    window.connect_button_release_event(move |window, event| {
         let effect = match event.button() {
-            1 => with(|w| w.classic.pointer_up(w.physical(event.position()))),
+            1 => with(|w| {
+                let (at, screen) = (w.physical(event.position()), w.physical(event.root()));
+                w.classic.pointer_up(panel, at, screen)
+            }),
             3 => with(|w| w.classic.right_click(w.physical(event.position()))),
             _ => None,
         };
-        after(window, effect, event);
+        after(window, panel, effect, event);
         glib::Propagation::Stop
     });
-    window.connect_motion_notify_event(|_, event| {
+    window.connect_motion_notify_event(move |_, event| {
         with(|w| {
-            w.classic.pointer_move(w.physical(event.position()));
+            let (at, screen) = (w.physical(event.position()), w.physical(event.root()));
+            w.classic.pointer_move(panel, at, screen);
             Effect::Handled
         });
         glib::Propagation::Stop
     });
-    window.connect_scroll_event(|_, event| {
+    window.connect_scroll_event(move |_, event| {
         let notches = match event.direction() {
             gdk::ScrollDirection::Up => 1.0,
             gdk::ScrollDirection::Down => -1.0,
@@ -188,18 +250,18 @@ fn connect(window: &gtk::Window) {
             _ => 0.0,
         };
         if notches != 0.0 {
-            with(|w| w.classic.wheel(notches, w.physical(event.position())));
+            with(|w| w.classic.wheel(panel, notches));
         }
         glib::Propagation::Stop
     });
-    window.connect_key_press_event(|window, event| {
+    window.connect_key_press_event(move |window, event| {
         let Some(key) = key(&event.keyval()) else {
             return glib::Propagation::Proceed;
         };
         match with(|w| w.classic.key(key, mods(event.state()))) {
             Some(Effect::Default) | None => glib::Propagation::Proceed,
             effect => {
-                after(window, effect, event);
+                after(window, panel, effect, event);
                 glib::Propagation::Stop
             }
         }
@@ -212,25 +274,36 @@ fn connect(window: &gtk::Window) {
 
 /// The state, borrowed to handle a signal, and the frame drawn after; `None` when it's closed or
 /// GTK called back while it's borrowed.
-fn with(handle: impl FnOnce(&mut Window) -> Effect) -> Option<Effect> {
+fn with(handle: impl FnOnce(&mut Windows) -> Effect) -> Option<Effect> {
     OPEN.with(|open| {
         let mut open = open.try_borrow_mut().ok()?;
-        let window = open.as_mut()?;
-        let effect = handle(window);
-        window.render();
+        let windows = open.as_mut()?;
+        let effect = handle(windows);
+        windows.render();
         Some(effect)
     })
 }
 
-/// What the stack said to do about an event, done with the borrow ended.
-fn after(window: &gtk::Window, effect: Option<Effect>, event: &gdk::Event) {
+/// What the stack said to do about an event on `panel`'s window, done with the borrow ended.
+fn after(window: &gtk::Window, panel: Panel, effect: Option<Effect>, event: &gdk::Event) {
     match effect {
         Some(Effect::Move) => {
             if let (Some(button), Some((x, y))) = (event.button(), event.root_coords()) {
                 window.begin_move_drag(button as i32, x as i32, y as i32, event.time());
             }
+            // A second press of a double click comes as a press on its own first.
+            if event.event_type() == gdk::EventType::DoubleButtonPress {
+                with(|w| {
+                    w.classic
+                        .title_double_click(panel, w.physical(event.coords().unwrap_or_default()))
+                });
+            }
         }
-        Some(Effect::Minimize) => window.iconify(),
+        Some(Effect::Minimize) => {
+            if let Some(main) = OPEN.with_borrow(|open| open.as_ref().map(|w| w.panes[0].window.clone())) {
+                main.iconify();
+            }
+        }
         Some(Effect::Close) => close(),
         Some(Effect::Menu(menu, at)) => pop_up(window, menu, at, event),
         // GTK holds the pointer for the window while a button is down: nothing to capture.
@@ -238,7 +311,7 @@ fn after(window: &gtk::Window, effect: Option<Effect>, event: &gdk::Event) {
     }
 }
 
-/// Shows a menu at `at` (physical pixels of the window); a choice comes back through `chose`.
+/// Shows a menu at `at` (physical pixels of `window`); a choice comes back through `chose`.
 fn pop_up(window: &gtk::Window, menu: Menu, at: (i32, i32), event: &gdk::Event) {
     let Some((items, scale)) = OPEN.with_borrow(|open| open.as_ref().map(|w| (w.classic.menu_items(menu), w.scale)))
     else {
@@ -302,38 +375,17 @@ fn chose(menu: Menu, id: u32) {
     }
 }
 
-impl Window {
-    /// A frame of the stack, and what it says the window does about it.
+impl Windows {
+    /// A frame of the stack, and what it says the windows do about it.
     fn render(&mut self) {
-        let Frame {
-            size,
-            shape,
-            dirty,
-            tick,
-        } = self.classic.render();
+        let Frame { panes, tick } = self.classic.render();
         let (font, scale) = self.classic.text_style();
         if (font, scale) != (self.text_style.0.as_str(), self.text_style.1) {
-            self.text = Text::new(&self.window, font, scale);
+            self.text = Text::new(&self.panes[0].window, font, scale);
             self.text_style = (font.to_owned(), scale);
         }
-        if let Some((width, height)) = size {
-            let (width, height) = (self.logical(width), self.logical(height));
-            self.window.set_size_request(width, height);
-            self.window.resize(width, height);
-        }
-        if let Some(shape) = shape {
-            self.reshape(shape);
-        }
-        if let Some((x0, y0, x1, y1)) = dirty {
-            let c = &self.classic;
-            let (left, top) = (c.columns[x0 as usize], c.rows[y0 as usize]);
-            let (right, bottom) = (c.columns[x1 as usize], c.rows[y1 as usize]);
-            self.window.queue_draw_area(
-                left / self.scale,
-                top / self.scale,
-                self.logical(right) - left / self.scale,
-                self.logical(bottom) - top / self.scale,
-            );
+        for (i, frame) in panes.into_iter().enumerate() {
+            self.apply(i, frame);
         }
         if let Some(tick) = tick {
             if let Some(timer) = self.timer.take() {
@@ -346,53 +398,76 @@ impl Window {
         }
     }
 
-    /// Cuts the window to these rectangles (physical pixels); none: the whole window. What it
-    /// takes input in, always; what shows, too, with no compositor to see through it.
-    fn reshape(&self, pieces: Shape) {
-        let region = pieces.map(|pieces| {
-            let rects: Vec<cairo::RectangleInt> = pieces
-                .into_iter()
-                .map(|(x0, y0, x1, y1)| {
-                    let (x0, y0) = (x0 / self.scale, y0 / self.scale);
-                    cairo::RectangleInt::new(x0, y0, self.logical(x1) - x0, self.logical(y1) - y0)
-                })
-                .collect();
-            cairo::Region::create_rectangles(&rects)
-        });
-        self.window.input_shape_combine_region(region.as_ref());
-        let composited = WidgetExt::screen(&self.window).is_some_and(|screen| screen.is_composited());
-        if !composited {
-            self.window.shape_combine_region(region.as_ref());
+    /// A window's part of a frame: shown or hidden, its place, size, shape and what changed.
+    fn apply(&mut self, i: usize, frame: PaneFrame) {
+        let scale = self.scale;
+        let logical = |physical: i32| (physical + scale - 1) / scale;
+        let pane = &mut self.panes[i];
+        let window = pane.window.clone();
+        if !frame.shown {
+            if pane.shown {
+                pane.shown = false;
+                window.hide();
+            }
+            return;
+        }
+        if let Some((width, height)) = frame.size {
+            window.set_size_request(logical(width), logical(height));
+            window.resize(logical(width), logical(height));
+        }
+        if frame.at != pane.at {
+            pane.at = frame.at;
+            window.move_(frame.at.0 / scale, frame.at.1 / scale);
+        }
+        if let Some(shape) = frame.shape {
+            reshape(&window, scale, shape);
+        }
+        if let Some((x0, y0, x1, y1)) = frame.dirty {
+            let p = self.classic.pane(Panel::ALL[i]);
+            let (left, top) = (p.columns[x0 as usize], p.rows[y0 as usize]);
+            let (right, bottom) = (p.columns[x1 as usize], p.rows[y1 as usize]);
+            window.queue_draw_area(
+                left / scale,
+                top / scale,
+                logical(right) - left / scale,
+                logical(bottom) - top / scale,
+            );
+        }
+        let pane = &mut self.panes[i];
+        if !pane.shown {
+            pane.shown = true;
+            window.show_all();
         }
     }
 
-    /// What GTK asks to see: the skin pixels under its clip, scaled into the band and painted in.
-    fn draw(&self, cr: &cairo::Context) {
+    /// What GTK asks to see of a window: the skin pixels under its clip, scaled into the band and
+    /// painted in.
+    fn draw(&self, panel: Panel, cr: &cairo::Context) {
         let Ok((x0, y0, x1, y1)) = cr.clip_extents() else {
             return;
         };
         let scale = f64::from(self.scale);
         let physical = |v: f64| (v * scale) as i32;
-        let Some(rect) = self
-            .classic
-            .covering((physical(x0), physical(y0), physical(x1.ceil()), physical(y1.ceil())))
-        else {
+        let Some(rect) = self.classic.covering(
+            panel,
+            (physical(x0), physical(y0), physical(x1.ceil()), physical(y1.ceil())),
+        ) else {
             return;
         };
-        if let Err(e) = self.paint(cr, rect) {
+        if let Err(e) = self.paint(panel, cr, rect) {
             eprintln!("lull: Classic window didn't update: {e}");
         }
     }
 
-    /// Scales skin pixels `[x0, x1) x [y0, y1)` of the canvas up a band at a time, draws the
+    /// Scales skin pixels `[x0, x1) x [y0, y1)` of a window's canvas up a band at a time, draws the
     /// playlist's text over each, and paints it into `cr` (GTK's, in its own pixels).
-    fn paint(&self, cr: &cairo::Context, (x0, y0, x1, y1): (u32, u32, u32, u32)) -> Result<(), String> {
+    fn paint(&self, panel: Panel, cr: &cairo::Context, (x0, y0, x1, y1): (u32, u32, u32, u32)) -> Result<(), String> {
         let failed = |e: cairo::Error| e.to_string();
-        let c = &self.classic;
-        let (columns, rows) = (&c.columns, &c.rows);
+        let pane = self.classic.pane(panel);
+        let (columns, rows) = (&pane.columns, &pane.rows);
         let (left, right) = (columns[x0 as usize], columns[x1 as usize]);
         let (top, bottom) = (rows[y0 as usize], rows[y1 as usize]);
-        let column = self.text.column(&c.canvas.texts);
+        let column = self.text.column(&pane.canvas.texts);
         let scale = f64::from(self.scale);
         cr.set_operator(cairo::Operator::Source);
         let mut from = top;
@@ -404,11 +479,11 @@ impl Window {
             {
                 let mut data = band.data().map_err(|e| e.to_string())?;
                 let (_, pixels, _) = as_pixels(&mut data);
-                scale_rows(&c.canvas, (columns, rows), (x0, x1), (from, to), pixels, stride);
+                scale_rows(&pane.canvas, (columns, rows), (x0, x1), (from, to), pixels, stride);
             }
             band.mark_dirty();
             self.text
-                .draw_runs(&band, &c.canvas, (columns, rows), (left, from), column)
+                .draw_runs(&band, &pane.canvas, (columns, rows), (left, from), column)
                 .map_err(failed)?;
             band.set_device_scale(scale, scale);
             cr.set_source_surface(&band, f64::from(left) / scale, f64::from(from) / scale)
@@ -425,15 +500,31 @@ impl Window {
         Ok(())
     }
 
-    /// A point of GTK's (its own pixels) as one of the window's physical ones.
+    /// A point of GTK's (its own pixels) as a physical one.
     fn physical(&self, (x, y): (f64, f64)) -> (i32, i32) {
         let scale = f64::from(self.scale);
         ((x * scale) as i32, (y * scale) as i32)
     }
+}
 
-    /// Physical pixels as GTK's own, rounded up.
-    fn logical(&self, physical: i32) -> i32 {
-        (physical + self.scale - 1) / self.scale
+/// Cuts a window to these rectangles (physical pixels); none: the whole window. What it takes
+/// input in, always; what shows, too, with no compositor to see through it.
+fn reshape(window: &gtk::Window, scale: i32, pieces: Shape) {
+    let logical = |physical: i32| (physical + scale - 1) / scale;
+    let region = pieces.map(|pieces| {
+        let rects: Vec<cairo::RectangleInt> = pieces
+            .into_iter()
+            .map(|(x0, y0, x1, y1)| {
+                let (x0, y0) = (x0 / scale, y0 / scale);
+                cairo::RectangleInt::new(x0, y0, logical(x1) - x0, logical(y1) - y0)
+            })
+            .collect();
+        cairo::Region::create_rectangles(&rects)
+    });
+    window.input_shape_combine_region(region.as_ref());
+    let composited = WidgetExt::screen(window).is_some_and(|screen| screen.is_composited());
+    if !composited {
+        window.shape_combine_region(region.as_ref());
     }
 }
 
