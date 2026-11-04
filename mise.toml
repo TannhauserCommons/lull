@@ -57,5 +57,5 @@ description = "Land HEAD on main through the queue and wait for its verdict: shi
 run = "sh scripts/ship.sh {{arg(i=0)}}"
 
 [tasks.release]
-description = "Set lull's version, commit and tag vX.Y.Z on main; pushing the tag publishes the apps: release X.Y.Z"
+description = "Tag vX.Y.Z on main's newest green commit with the version and what's new; pushing the tag publishes the apps: release X.Y.Z"
 run = "sh scripts/release.sh {{arg(i=0)}}"
