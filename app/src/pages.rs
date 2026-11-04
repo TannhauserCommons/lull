@@ -164,9 +164,38 @@ fn page(view: &str, appearance: &Appearance, data: &[(&str, &str)]) -> tauri::Re
     Ok(url)
 }
 
+/// A bundled page as `main` navigates to it: numbered, so going to the page it already shows (the
+/// hub-error page after Try again failed the same way) loads it again. A URL that differs only in
+/// its hash, or not at all, is not loaded again, and the page would sit as it was.
+pub fn fresh(mut url: Url) -> Url {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    if let Some(hash) = url.fragment().filter(|h| h.starts_with("view=")).map(str::to_owned) {
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        url.set_fragment(Some(&format!("{hash}&n={n}")));
+    }
+    url
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn going_to_the_page_main_shows_loads_it_again() -> Result<(), String> {
+        let appearance: Appearance =
+            serde_json::from_str(r#"{"design":"lull","theme":"day"}"#).map_err(|e| e.to_string())?;
+        let page = || hub_failed("Port 8484 is already used", &appearance).map_err(|e| e.to_string());
+        let (a, b) = (fresh(page()?), fresh(page()?));
+        assert_ne!(a, b);
+        assert!(
+            a.fragment()
+                .is_some_and(|h| h.starts_with("view=hub-error&") && h.contains("&n=")),
+            "{a}"
+        );
+        let hub = Url::parse("https://lull.example.ts.net/").map_err(|e| e.to_string())?;
+        assert_eq!(fresh(hub.clone()), hub, "the hub's own URL is left as it is");
+        Ok(())
+    }
 
     #[test]
     fn a_listeners_theme_goes_into_the_hash_with_the_design_it_extends() -> Result<(), String> {

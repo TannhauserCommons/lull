@@ -17,6 +17,7 @@ use crate::desktop::theme;
 use crate::desktop::updater;
 use crate::hub;
 use crate::pages;
+use crate::reconnect;
 use crate::updates::Report;
 use serde::{Deserialize, Serialize};
 use tauri::async_runtime::spawn_blocking;
@@ -70,6 +71,10 @@ pub async fn window_action(app: AppHandle, request: WindowAction) -> Result<(), 
         WindowAction::ChangeServer => main_window::open_page(&app, pages::welcome(&appearance)),
         WindowAction::Retry => {
             recovery::forget(&app, main_window::LABEL);
+            // the unreachable page: the reconnect running tries at once, and says how it went
+            if reconnect::wake(&app, reconnect::Wake::Now) {
+                return Ok(());
+            }
             main_window::open_chosen(&app)
         }
         WindowAction::CloseChoice { keep, remember } => main_window::close_choice(&app, keep, remember),

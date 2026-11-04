@@ -184,6 +184,7 @@ fn main() -> io::Result<()> {
             "window_glass",
             "set_theme_package",
             "theme_package",
+            "reconnect_status",
         ]),
     ))
     .map_err(io::Error::other)

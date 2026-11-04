@@ -157,3 +157,35 @@ test('every key in the mini player and the strip reaches what runs it, in every 
     }
   }
 });
+
+// The unreachable page when the hub's name doesn't resolve yet (Tailscale's DNS not up when the app started): the
+// wrapper reconnects (app/src/reconnect.rs) and says how each attempt went; the page only shows it. It never retries by
+// a timer of its own, so a hidden window or a probe that never returns can't leave it on "trying now".
+test('the unreachable page shows how the wrapper reconnects, and keeps no timer of its own', async ({ page }) => {
+  const DNS = 'No such host is known. (os error 11001)';
+  await openWrapper(page, `view=offline&url=${encodeURIComponent('https://lull.example.ts.net')}&error=${encodeURIComponent(DNS)}&design=lull&theme=day&opaque=1`, null,
+    () => { window.__bridge.answers.reconnect_status = { attempt: 1, trying: false, error: 'No such host is known. (os error 11001)', nextIn: 2 }; });
+  const card = page.locator('[data-dk-offline]'), label = card.locator('.dk-retry__label');
+  await expect(label).toHaveText('retrying in 2s');
+  await expect(card.locator('[data-dk-attempt]')).toHaveText('1');
+  await expect(card.locator('[data-dk-error]')).toHaveText(DNS);
+
+  // the window hidden (minimised, or in the tray), past the countdown: the page asks nothing; the wrapper tries
+  await page.evaluate(() => { Object.defineProperty(document, 'hidden', { value: true, configurable: true }); document.dispatchEvent(new Event('visibilitychange')); });
+  await page.waitForTimeout(3500);
+  expect(await page.evaluate(() => window.__bridge.calls.window_action || 0), 'no retry from the page itself').toBe(0);
+
+  // the wrapper tries, the probe runs out of time, it says so and waits longer
+  await page.evaluate(() => window.__bridge.fire('reconnect', { attempt: 1, trying: true, error: 'No such host is known. (os error 11001)', nextIn: 0 }));
+  await expect(label).toHaveText('trying now');
+  await page.evaluate(() => window.__bridge.fire('reconnect', { attempt: 2, trying: false, error: 'The hub didn\'t answer within 25 s', nextIn: 4 }));
+  await expect(label).toHaveText('retrying in 4s');
+  await expect(card.locator('[data-dk-attempt]')).toHaveText('2');
+  await expect(card.locator('[data-dk-error]')).toHaveText('The hub didn\'t answer within 25 s');
+  await expect(card.locator('[data-dk-retry-status]')).toHaveText('Still can\'t reach your hub. Attempt 2.');
+
+  // Retry now asks the wrapper to try at once
+  await card.getByRole('button', { name: 'Retry now' }).click();
+  expect(await page.evaluate(() => window.__bridge.last.window_action)).toEqual({ request: { action: 'retry' } });
+  await expect(label).toHaveText('trying now');
+});

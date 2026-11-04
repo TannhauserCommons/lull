@@ -123,7 +123,7 @@ Every page the wrapper owns (connect, unreachable, the mini window) loads the de
   - token rejected: token field error "Token rejected" + status "The server answered but didn't accept this token."
   - invalid address (client-side): "Enter a full address, like https://music.home.arpa".
   Test: `GET <url>/health` with a 10 s timeout, then an authenticated `GET <url>/api/ping`.
-- **Server unreachable at launch**: same window, the cracked-star empty state: "Can't reach your server", what to check, a countdown "retrying in 8s" (backoff 2, 4, 8, 16, 30 s, then every 30 s), **Retry now** (primary), **Change server** (secondary, opens Connect), and a Details disclosure (address, error, last connected, attempt). The tray shows "Not connected".
+- **Server unreachable at launch**: same window, the cracked-star empty state: "Can't reach your server", what to check, a countdown "retrying in 8s" (backoff 2, 4, 8, 16, 30 s, then every 30 s, and at once when the network changes; the app retries, hidden or not, and the page shows each attempt), **Retry now** (primary), **Change server** (secondary, opens Connect), and a Details disclosure (address, error, last connected, attempt). The tray shows "Not connected".
 - Once the web UI is loaded, a dropped server is the web UI's own "Can't reach your server" banner; the wrapper does nothing extra.
 
 ## 7. Settings > App (inside the wrapper only)

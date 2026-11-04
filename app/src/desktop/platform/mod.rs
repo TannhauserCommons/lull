@@ -51,6 +51,16 @@ pub fn set_glass(window: &WebviewWindow, material: Option<Material>, dark: bool)
     return linux::set_glass(window, material, dark);
 }
 
+/// Calls `on_change`, from a thread of its own, each time the network changes (a VPN such as
+/// Tailscale coming up, Wi-Fi back), so a hub that didn't answer is tried again at once
+/// (reconnect.rs). Windows: its IPv4 addresses changed. Linux follows the backoff alone.
+pub fn follow_network(on_change: impl Fn() + Send + 'static) {
+    #[cfg(windows)]
+    windows::follow_network(on_change);
+    #[cfg(not(windows))]
+    let _ = on_change;
+}
+
 /// The system lets windows be see-through: Windows' "Transparency effects" (Settings ›
 /// Personalisation › Colours). Linux has no such switch.
 pub fn transparency_effects() -> bool {

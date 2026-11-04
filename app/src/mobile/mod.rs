@@ -7,6 +7,7 @@ mod update;
 use crate::hub;
 use crate::pages::{self, Appearance, Unreachable};
 use crate::pairing;
+use crate::reconnect;
 use crate::store::Store;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -62,10 +63,12 @@ pub fn run() {
         .plugin(tauri_plugin_lull_player::init())
         .plugin(tauri_plugin_opener::init())
         .manage(update::Updates::default())
+        .manage(reconnect::Reconnect::default())
         .invoke_handler(tauri::generate_handler![
             pairing::discover_hubs,
             pairing::find_hub,
             window_action,
+            reconnect::reconnect_status,
             update::app_update,
             update::app_update_check,
             update::app_update_install
@@ -114,11 +117,15 @@ fn resolve(app: &AppHandle) -> Result<(), String> {
         return navigate(app, pages::connect(None, false, &appearance));
     };
     let origin = Url::parse(&origin).map_err(|e| e.to_string())?;
-    match hub::health(&origin).and_then(|_| hub::paired(&origin, &token)) {
-        Ok(true) => open_hub(app, &origin, &token),
-        Ok(false) => navigate(app, pages::connect(Some(&origin), true, &appearance)),
+    let probe: reconnect::Probe = {
+        let (origin, token) = (origin.clone(), token.clone());
+        std::sync::Arc::new(move || hub::health(&origin).and_then(|_| hub::paired(&origin, &token)))
+    };
+    match reconnect::once(&probe) {
+        Ok(paired) => reached(app, &origin, &token, paired),
         // Away from the hub: an https hub's web UI still opens from its service worker, with the
-        // downloads. A plain-http hub can't have one, so it gets the unreachable page.
+        // downloads. A plain-http hub can't have one, so it gets the unreachable page, and the app
+        // keeps trying by itself until the hub answers (reconnect.rs).
         Err(_) if origin.scheme() == "https" => open_hub(app, &origin, &token),
         Err(error) => {
             let page = Unreachable {
@@ -126,8 +133,23 @@ fn resolve(app: &AppHandle) -> Result<(), String> {
                 error: &error,
                 last_connected: None,
             };
-            navigate(app, pages::unreachable(page, &appearance))
+            navigate(app, pages::unreachable(page, &appearance))?;
+            reconnect::start(app, error, probe, move |app, paired| {
+                if let Err(e) = reached(app, &origin, &token, paired) {
+                    eprintln!("lull: {e}");
+                }
+            });
+            Ok(())
         }
+    }
+}
+
+/// The hub answered: its web UI, or pairing again when it doesn't know this device.
+fn reached(app: &AppHandle, origin: &Url, token: &str, paired: bool) -> Result<(), String> {
+    if paired {
+        open_hub(app, origin, token)
+    } else {
+        navigate(app, pages::connect(Some(origin), true, &Appearance::default()))
     }
 }
 
@@ -140,9 +162,11 @@ fn open_hub(app: &AppHandle, origin: &Url, token: &str) -> Result<(), String> {
     navigate(app, Ok(origin.clone()))
 }
 
+/// `main` shows something else: a reconnect for the page it showed stops.
 fn navigate(app: &AppHandle, url: tauri::Result<Url>) -> Result<(), String> {
+    reconnect::stop(app);
     let main = app.get_webview_window(LABEL).ok_or("The window is gone")?;
-    main.navigate(url.map_err(|e| e.to_string())?)
+    main.navigate(pages::fresh(url.map_err(|e| e.to_string())?))
         .map_err(|e| e.to_string())
 }
 
@@ -192,7 +216,10 @@ pub async fn window_action(app: AppHandle, request: WindowAction) -> Result<(), 
             open_hub(&app, &origin, &token)
         }
         WindowAction::Retry => {
-            open_chosen(&app);
+            // the unreachable page: the reconnect running tries at once, and says how it went
+            if !reconnect::wake(&app, reconnect::Wake::Now) {
+                open_chosen(&app);
+            }
             Ok(())
         }
         WindowAction::ChangeServer => navigate(&app, pages::connect(None, false, &Appearance::default())),

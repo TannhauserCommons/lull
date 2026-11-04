@@ -10,6 +10,7 @@ The Tauri v2 project in `app/` (its own Cargo workspace; ADR-0006) shows the hub
 | `app/src/hub.rs` | Shared: talking to a hub from Rust (ureq): `/health`, `/api/ping`, `POST /api/pair`, `PATCH /api/config`, `/api/events`, the `lull_device` cookie |
 | `app/src/discovery.rs` | Shared: mDNS `_lull._tcp`, browsing for hubs and advertising this computer's |
 | `app/src/pairing.rs` | Shared: the connect page's `discover_hubs` and `find_hub` |
+| `app/src/reconnect.rs` | Shared: reconnecting to a hub that didn't answer: the backoff, a hard limit on each probe, waking on a network change or Retry now, and each attempt's outcome as `reconnect` |
 | `app/src/pages.rs` | Shared: URLs of the bundled page (`wrapper.html#view=…`), with the design, the built-in design it extends (`base`) and the theme they open in |
 | `app/src/store.rs` | Shared: `settings.json` in the app config dir, written atomically |
 | `app/src/updates.rs` | Shared: the update check's `Status` that Settings > App shows, and Android's reading of `latest.json` |
@@ -69,7 +70,11 @@ The Tauri v2 project in `app/` (its own Cargo workspace; ADR-0006) shows the hub
 
 1. **No hub chosen:** `main` opens the welcome page: **This computer is my hub** or **Connect to a hub**.
 2. **This computer:** `local_hub::start` (off the main thread), then `main` loads `http://127.0.0.1:8484` with the device cookie. A failure loads the hub-error page with the reason ("Port 8484 is already used…"); **Try again** starts it again, **Use another hub** goes back to the welcome page.
-3. **A hub elsewhere:** Rust probes `GET /health` (10 s), then `GET /api/ping` with the token. Both fine: `main` loads the hub's origin with the device cookie. Unpaired (401): the connect page, saying so. No answer: the unreachable page with the error, which retries through `window_action {retry}` with a 2, 4, 8, 16, 30 s backoff, then every 30 s.
+3. **A hub elsewhere:** Rust probes `GET /health` (10 s), then `GET /api/ping` with the token. Both fine: `main` loads the hub's origin with the device cookie. Unpaired (401): the connect page, saying so. No answer: the unreachable page with the error, and the app keeps trying by itself (`app/src/reconnect.rs`, the desktop's and Android's):
+   - **When:** after 2, 4, 8 and 16 s, then every 30 s; at once on **Retry now** (`window_action {retry}` wakes it); and at once when the network changes (Windows: this computer's IPv4 addresses change, `NotifyAddrChange`, as when Tailscale comes up; it waits 1.5 s for names to resolve). Linux follows the backoff alone.
+   - **Each probe** has a hard limit of 25 s, whatever it waits on (a name lookup, a connection, TLS); one that runs out counts as failed. So does the first, at launch.
+   - **Whatever the window does:** it runs in Rust, hidden, minimised or in the tray alike. Every outcome reaches the page as `reconnect`, and the page only shows it (its countdown is display). It stops when `main` shows anything else.
+   - **Why:** v0.2.1 retried from the page's own timer, and Rust answered a failed retry by loading the same page again: same address, same error, same URL, which a webview doesn't load again, so the page sat on "trying now" with Attempt 1 for good (a hub name that didn't resolve when the app started, before Tailscale's DNS was up). Every bundled page `main` goes to is numbered now (`pages::fresh`), so going to the page it shows loads it again.
 4. `main` shows once its page has loaded, unless **Start in the tray** is on and a tray exists. It starts at `about:blank` when the cookie has to go in first; that page never shows.
 5. The app switches between its pages by changing the page's hash, so `desktop.js` re-renders on `hashchange`.
 
@@ -159,6 +164,7 @@ The web UI never calls Tauri directly. It uses `window.LullDesktop` from `deskto
 | `window_glass` | `{ request: { materials: [mica \| acrylic \| blur \| transparent], dark, reduced } \| null }` → `{ material, held: off \| system \| unsupported \| restart \| null }` | hub origin (`main`); bundled page in `main`, only for a theme that asks |
 | `set_theme_package` | `{ package: { manifest, css, slots } \| null }`: the listener's theme `main` shows (`Designs.packageOf`: theme.json, theme.css with its `assets/` inlined as `data:` URLs, slot templates by name), null for a built-in design. At most 24 MiB. Sent when the theme loads, on every switch and after `theme.changed` | hub origin (`main`) |
 | `theme_package` | `{ id }` → that package, if it is the one `main` handed over, else null | bundled page |
+| `reconnect_status` | → `{ attempt, trying, error, nextIn }` while the app is reconnecting to the hub, else null: for an unreachable page that opens after it began | bundled page |
 | `app_update`, `app_update_check`, `app_update_install` | → the update report above; install → nothing (restarts) or an error | hub origin (`main`) |
 
 The hub origin gets its capabilities at runtime when the app first loads it: one for `main`, a smaller one for the Classic window (`core:window` show, size, focus, minimise, drag; events; `window_action`, `classic_handoff`, `classic_fit`). An origin used earlier in the same run keeps its grant until restart (Tauri can't revoke one).
@@ -174,6 +180,7 @@ The hub origin gets its capabilities at runtime when the app first loads it: one
 | `player` | `main` → all | snapshot `{ track, playing, liked, pos, duration, durationKnown, buffered, received, shuffle, repeat, volume }`, sent on change and in answer to `hello` |
 | `player-art` | `main` → all | `{ art }`: the cover as a data URL (or `null`), once per song and in answer to `hello`. Never inside `player`: that goes out with every position change, and a cover in it grew the page's memory by tens of MB a minute |
 | `appearance` | `main` → Rust and the mini player | `{ design, base, theme }`: `base` is the built-in design a listener's theme extends (absent for a built-in or a theme that extends none). Stored and passed in the hash of every bundled page |
+| `reconnect` | Rust → `main` | `{ attempt, trying, error, nextIn }`: reconnecting to the hub, attempt by attempt (`trying` while a probe runs, else `nextIn` seconds to the next); the unreachable page shows it |
 | `theme-package` | Rust → all | `{ id }`: `main` handed over a listener's theme (again, after an edit on the hub); a bundled page showing it, or waiting for it, asks `theme_package` |
 | `ask-close` | Rust → `main` | none: show "keep playing in the tray?" |
 | `app-update` | Rust → all | the update report, on every change of the check (progress per whole percent) |

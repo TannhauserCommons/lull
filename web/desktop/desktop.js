@@ -300,7 +300,6 @@
   };
 
   var STAR_ART = '<svg viewBox="0 0 112 88"><path d="M56 10l9 20 22 3-16 15 4 22-19-10-19 10 4-22-16-15 22-3z"/><path d="M56 30l-4 12 6 4-5 12"/></svg>';
-  var BACKOFF = [2, 4, 8, 16, 30];
   function when(unix) {
     if (!unix) return 'Never';
     return new Date(unix * 1000).toLocaleString('en', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
@@ -322,32 +321,38 @@
       '<dt>Last connected</dt><dd>' + esc(when(+o.last)) + '</dd><dt>Attempt</dt><dd class="px" data-dk-attempt>1</dd></dl></details>' +
       '</section></div></div>';
   };
+  /* the unreachable page shows how reconnecting goes; the wrapper does it (app/src/reconnect.rs): it retries by itself,
+     on a backoff, at once when the network changes, and whether this window shows or not, and says how each attempt went
+     as `reconnect` { attempt, trying, error, nextIn }. Retry now asks it to try at once. The countdown here is only
+     shown: nothing waits on this page's timer */
   function startRetry(card) {
     var label = $('.dk-retry__label', card), bar = $('.progress > i', card), status = $('[data-dk-retry-status]', card);
-    var attempt = +card.getAttribute('data-attempt'), left, total, busy = false;
-    function arm() { total = left = BACKOFF[Math.min(attempt - 1, BACKOFF.length - 1)]; tick(); }
-    function tick() {
-      label.textContent = 'retrying in ' + left + 's';
-      bar.style.setProperty('--p', String(1 - left / total));
+    var now = null, due = 0;
+    function paint() {
+      if (!now) return;
+      if (now.trying) { label.textContent = 'trying now'; bar.style.setProperty('--p', '1'); return; }
+      var left = Math.max(0, Math.ceil((due - Date.now()) / 1000));
+      label.textContent = left ? 'retrying in ' + left + 's' : 'trying now';
+      bar.style.setProperty('--p', String(now.nextIn ? 1 - left / now.nextIn : 1));
     }
-    function attemptNow() {
-      if (busy) return;
-      busy = true; clearInterval(card._dkTimer);
-      label.textContent = 'trying now';
-      bar.style.setProperty('--p', '1');
-      // on success the wrapper loads the web UI in this window, and this page goes away
-      D.windowAction('retry').catch(function (err) {
-        busy = false;
-        attempt++; card.setAttribute('data-attempt', attempt);
-        $('[data-dk-attempt]', card).textContent = attempt;
-        $('[data-dk-error]', card).textContent = String(err);
-        status.textContent = 'Still can\'t reach your hub. Attempt ' + attempt + '.';
-        arm(); card._dkTimer = setInterval(step, 1000);
-      });
+    function show(s) {
+      if (!s || !card.isConnected) return;
+      var was = now;
+      now = s; due = Date.now() + s.nextIn * 1000;
+      card.setAttribute('data-attempt', s.attempt);
+      $('[data-dk-attempt]', card).textContent = s.attempt;
+      if (s.error) $('[data-dk-error]', card).textContent = s.error;
+      if (!s.trying && s.attempt > 1 && (!was || was.attempt !== s.attempt)) status.textContent = 'Still can\'t reach your hub. Attempt ' + s.attempt + '.';
+      paint();
     }
-    function step() { if (doc.hidden) return; left--; if (left <= 0) attemptNow(); else tick(); }
-    card._dkRetry = attemptNow;
-    arm(); card._dkTimer = setInterval(step, 1000);
+    card._dkRetry = function () {
+      label.textContent = 'trying now'; bar.style.setProperty('--p', '1');
+      D.windowAction('retry').catch(logFailure('retry'));
+    };
+    card._dkTimer = setInterval(paint, 1000);
+    if (!T) return;
+    T.event.listen('reconnect', function (e) { show(e.payload); });
+    invoke('reconnect_status').then(show, logFailure('reconnect status'));
   }
 
   /* =====================================================================

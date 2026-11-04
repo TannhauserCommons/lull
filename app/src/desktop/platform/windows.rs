@@ -612,3 +612,23 @@ unsafe extern "system" fn write_dump(
     }
     CONTINUE_SEARCH
 }
+
+/// Calls `on_change` each time this computer's IPv4 addresses change, from a thread of its own.
+pub fn follow_network(on_change: impl Fn() + Send + 'static) {
+    use windows_sys::Win32::NetworkManagement::IpHelper::NotifyAddrChange;
+    let spawned = std::thread::Builder::new().name("network".into()).spawn(move || {
+        loop {
+            // SAFETY: with no handle and no OVERLAPPED the call blocks this thread until the IPv4
+            // address table changes; it reads and writes nothing of ours.
+            let status = unsafe { NotifyAddrChange(std::ptr::null_mut(), std::ptr::null()) };
+            if status != 0 {
+                eprintln!("lull: not following network changes (error {status})");
+                return;
+            }
+            on_change();
+        }
+    });
+    if let Err(e) = spawned {
+        eprintln!("lull: not following network changes: {e}");
+    }
+}

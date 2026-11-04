@@ -12,6 +12,7 @@
     "allow-discover-hubs",
     "allow-find-hub",
     "allow-window-action",
+    "allow-reconnect-status",
     "lull-player:allow-scan"
   ]
 }

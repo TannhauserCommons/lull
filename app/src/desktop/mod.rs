@@ -71,6 +71,7 @@ pub fn run() {
             commands::window_glass,
             commands::set_theme_package,
             commands::theme_package,
+            crate::reconnect::reconnect_status,
         ])
         .setup(setup)
         .on_window_event(on_window_event)
@@ -89,7 +90,12 @@ fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let platform = platform::detect();
     let with_tray = platform.tray;
     app.manage(Desktop::new(store, platform));
+    app.manage(crate::reconnect::Reconnect::default());
     let handle = app.handle();
+    let h = handle.clone();
+    platform::follow_network(move || {
+        crate::reconnect::wake(&h, crate::reconnect::Wake::Network);
+    });
     // No tray is a supported state (Close then quits), so a tray that fails to appear isn't fatal.
     if with_tray {
         match tray::create(handle) {

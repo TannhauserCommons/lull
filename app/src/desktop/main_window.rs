@@ -12,6 +12,7 @@ use crate::desktop::settings::HubChoice;
 use crate::desktop::state::{Desktop, lock};
 use crate::hub;
 use crate::pages::{self, Unreachable};
+use crate::reconnect;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::ipc::CapabilityBuilder;
 use tauri::webview::PageLoadEvent;
@@ -113,14 +114,32 @@ fn resolve(app: &AppHandle) -> tauri::Result<()> {
                 };
                 pages::unreachable(page, &settings.appearance)
             };
-            match hub::health(&origin).and_then(|_| hub::paired(&origin, &token)) {
-                Ok(true) => open_hub(app, &origin, &token),
-                // Unpaired on the hub (or never paired): pair again with a new code.
-                Ok(false) => navigate(app, pages::connect(Some(&origin), true, &settings.appearance)?),
-                Err(error) => navigate(app, unreachable(&error)?),
+            let probe: reconnect::Probe = {
+                let (origin, token) = (origin.clone(), token.clone());
+                std::sync::Arc::new(move || hub::health(&origin).and_then(|_| hub::paired(&origin, &token)))
+            };
+            match reconnect::once(&probe) {
+                Ok(paired) => reached(app, &origin, &token, paired),
+                // No answer: the unreachable page, and the app keeps trying by itself until there is one
+                Err(error) => {
+                    navigate(app, unreachable(&error)?)?;
+                    reconnect::start(app, error, probe, move |app, paired| {
+                        report(reached(app, &origin, &token, paired))
+                    });
+                    Ok(())
+                }
             }
         }
     }
+}
+
+/// The hub answered: its web UI, or, unpaired on the hub (or never paired), pairing again with a new code.
+fn reached(app: &AppHandle, origin: &Url, token: &str, paired: bool) -> tauri::Result<()> {
+    if paired {
+        return open_hub(app, origin, token);
+    }
+    let appearance = app.state::<Desktop>().settings().appearance;
+    navigate(app, pages::connect(Some(origin), true, &appearance)?)
 }
 
 fn create(app: &AppHandle, url: Url) -> tauri::Result<WebviewWindow> {
@@ -183,6 +202,7 @@ fn loaded(window: &WebviewWindow, url: &Url) {
 
 /// Load the hub's web UI in `main`, paired: the device cookie goes in before the first request.
 pub fn open_hub(app: &AppHandle, origin: &Url, token: &str) -> tauri::Result<()> {
+    reconnect::stop(app);
     let main = match app.get_webview_window(LABEL) {
         Some(main) => main,
         None => create(app, Url::parse(BLANK).map_err(tauri::Error::InvalidUrl)?)?,
@@ -196,7 +216,10 @@ pub fn open_page(app: &AppHandle, url: tauri::Result<Url>) -> tauri::Result<()> 
     navigate(app, url?)
 }
 
+/// `main` shows something else: a reconnect for the page it showed stops.
 fn navigate(app: &AppHandle, url: Url) -> tauri::Result<()> {
+    reconnect::stop(app);
+    let url = pages::fresh(url);
     match app.get_webview_window(LABEL) {
         Some(main) => main.navigate(url),
         None => create(app, url).map(drop),

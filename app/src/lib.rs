@@ -7,6 +7,7 @@ mod discovery;
 mod hub;
 mod pages;
 mod pairing;
+mod reconnect;
 mod store;
 mod updates;
 

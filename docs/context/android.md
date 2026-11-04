@@ -46,7 +46,7 @@ One recipe, run the same way by CI, F-Droid and anyone else (ADR-0061): `sh scri
 3. **Paired:** Rust probes `/health` and `/api/ping` with the token.
    - **Both fine:** the plugin's `configure` gives Kotlin the token, which puts it in the WebView's `lull_device` cookie and on its own stream, cover and download requests. Then `main` loads the hub's origin.
    - **Unpaired (401):** the connect page says so.
-   - **No answer:** an https hub (Tailscale) opens anyway: its web UI comes from the service worker, and downloads play. A plain-http hub can't have a service worker, so the app shows the unreachable page.
+   - **No answer:** an https hub (Tailscale) opens anyway: its web UI comes from the service worker, and downloads play. A plain-http hub can't have a service worker, so the app shows the unreachable page, and keeps trying by itself until the hub answers, as the desktop app does (`app/src/reconnect.rs`: the backoff, a hard limit on each probe, Retry now; no network-change wake on Android yet).
 
 **Why Kotlin sets the cookie:** Tauri's `set_cookie` does nothing on Android (wry), so `configure` uses Android's `CookieManager` before the first page request.
 
