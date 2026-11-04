@@ -55,6 +55,7 @@ A music app for one listener who hosts it themselves (PROJECT.md). It streams fr
 ## Boundaries
 
 - **Never commit** secrets, `.env*` (except `deploy/.env.example`), datasets or media. Local data lives in `Desktop\files\data\lull\`.
+- **Nothing that points to the owner,** in files or commit messages: no name, country or region, time zone, network or host name, or personal path. Say "from the homelab" or "on the hub", never where that is. Commit with `TZ=UTC`. CI's `privacy` job (`scripts/privacy-check.sh`) checks every file and commit against a list kept in a secret.
 - **Secrets come from the user's Bitwarden** via keygate. Never ask the user to paste one.
 - **Don't scrape** Rate Your Music or any site whose terms forbid it.
 - **Be polite to every outside service:** it gets timeouts, backoff and caching (`lull_core::http`).

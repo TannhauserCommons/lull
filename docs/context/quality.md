@@ -76,6 +76,10 @@ Raise a budget only with a measured reason a listener would accept, in the commi
 
 The checks run on every push to main and every pull request. On any other branch, run them by hand: `gh workflow run ci --ref <branch>` (fmt, clippy, tests, the web's tests), `app` (the app's checks on Linux and Windows, then the four desktop bundles and the APK as artifacts) and `ui-gates`. Only main publishes: the image (`:main`, `:sha-<short>`) and Pages run only for `refs/heads/main`, a Release only for a `v*` tag.
 
+## Privacy
+
+`.github/workflows/privacy.yml` runs `scripts/privacy-check.sh` on every push to main, and the queue can call it on what it is about to land. It fails when a commit's time zone isn't UTC, or when a file at HEAD or any commit message matches a line of the `PRIVATE_PATTERNS` secret (extended regexes, case-insensitive). The list lives only in the secret, since a list in the repository would publish what it guards. The output names files and commits, never the words. Without the secret the words check is skipped and says so. To change the list, set the secret again (`gh secret set PRIVATE_PATTERNS`).
+
 ## UI gates
 
 `mise run check:ui` (CI: `.github/workflows/ui-gates.yml` on every change to `web/` or `tests/ui/`). Node, Chromium and WebKit only: no image, no hub, no outside service. CI runs it on four machines at once (about eight minutes): performance alone on one, every other gate split three ways (`--shard`). `GATES` in `gates/playwright.config.mjs` picks the projects for both CI and `run.sh` (`perf`, or `rest`: every other project), so a new gate runs everywhere without being listed.

@@ -1,0 +1,32 @@
+name: privacy
+# Nothing in the repository or its history points to the owner: commits in UTC, and no file or commit message naming
+# what the PRIVATE_PATTERNS secret lists (scripts/privacy-check.sh; AGENTS.md, Boundaries). On every push to main, and
+# called by the queue on what it is about to land.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: The commit to check
+        type: string
+        required: true
+    secrets:
+      PRIVATE_PATTERNS:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  privacy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+      - env:
+          PRIVATE_PATTERNS: ${{ secrets.PRIVATE_PATTERNS }}
+        run: sh scripts/privacy-check.sh
