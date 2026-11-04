@@ -616,7 +616,7 @@
 /* the dock: one recessed lavender track holding the right-hand keys, level with the LCD strip */
 :root[data-design="skydeck"] .pbar__tools {
   --bg-2: #d3d2ee; --edge: #6f6c94;
-  align-self: end; margin-bottom: 14px; justify-self: end; height: 40px; padding: 0 8px 0 6px; gap: 0;
+  align-self: end; margin-bottom: 14px; justify-self: end; height: 40px; padding: 0 var(--sp-2); gap: 0;   /* the same inset at every width (the tools give way, not the dock's padding) */
   background: var(--lav); border: var(--stroke) solid #8f8bb0; border-radius: 14px 14px 22px 14px;
   box-shadow: inset 0 2px 0 #00000017, 0 1.5px 0 #e9f5ff;
 }
@@ -625,12 +625,6 @@
 :root[data-design="skydeck"] .pbar .btn-icon--bare:hover { background: #ffffff40; }
 :root[data-design="skydeck"] .pbar__tools .btn-icon--bare:hover { background: #ffffff73; }
 :root[data-design="skydeck"] .pbar__tools .vol { gap: 2px; }
-/* tablet: three real columns, so the dock never sits on the LCD */
-@media (max-width: 1099px) {
-  :root[data-design="skydeck"] .pbar { grid-template-columns: minmax(120px, 1fr) minmax(220px, 1.25fr) minmax(0, 1fr); gap: var(--sp-4); }
-  :root[data-design="skydeck"] .pbar__centre { width: auto; }
-  :root[data-design="skydeck"] .pbar__tools { padding: 0 4px; }
-}
 /* status line: shown on the LCD strip itself (anchor positioning; older engines keep the base tab).
    Failed: the reason in full plus short keys; the full labels stay the accessible names. A seek kept until it has
    downloaded keeps the base tab: the song plays on, so the LCD stays to seek with. */
