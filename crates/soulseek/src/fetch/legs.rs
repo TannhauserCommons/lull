@@ -27,6 +27,8 @@ use lull_core::Error;
 const COPY_TICK: std::time::Duration = std::time::Duration::from_millis(250);
 /// At most this much of one leg is copied per tick, so a fast leg can't hold the loop.
 const COPY_MAX: u64 = 4 * 1024 * 1024;
+/// slskd reports a download done just before it moves the file and names where: this long at most.
+const LAND_WAIT: std::time::Duration = std::time::Duration::from_secs(60);
 /// What arrived is written to the cache index each time it grows this much, and when a leg ends.
 const SAVE_EVERY: u64 = 1024 * 1024;
 /// A reader's ask stands this long before a leg starts for it: the browser's reads around one
@@ -49,6 +51,9 @@ pub(super) struct Copy {
     /// A leg of this copy waited in the peer's queue: the peer is busy, so no leg gives its
     /// slot back for a jump.
     queued: bool,
+    /// Whether the browser seeks in this file in one read (`None` until its first bytes say):
+    /// no jumps for one it bisects.
+    seeks_in_one: Option<bool>,
 }
 
 /// One slskd transfer of the copy, from `start`.
@@ -64,6 +69,8 @@ struct Leg {
     /// The last new byte, for stall and queue timeouts: from when the peer started sending.
     last: (u64, Instant),
     was_running: bool,
+    /// When slskd said it finished, while it hasn't yet said where it put the file.
+    landing: Option<Instant>,
 }
 
 /// How a leg ended without failing the copy.
@@ -153,6 +160,7 @@ impl Fetcher {
             ranges,
             saved,
             queued: false,
+            seeks_in_one: None,
         })
     }
 
@@ -183,11 +191,7 @@ impl Fetcher {
             .unwrap_or_default();
         let fail = |e: Error| Err(Stop::Failed(reason(&e)));
         for path in &files {
-            match tokio::fs::remove_file(path).await {
-                Ok(()) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(e) => return Err(fail(io(path, e))),
-            }
+            remove_when_free(path).await.map_err(|e| fail(io(path, e)))?;
             if start > 0 {
                 presize(path, start).await.map_err(|e| fail(io(path, e)))?;
             }
@@ -206,6 +210,7 @@ impl Fetcher {
             begun: Instant::now(),
             last: (start, Instant::now()),
             was_running: false,
+            landing: None,
         })
     }
 
@@ -230,14 +235,18 @@ impl Fetcher {
                     // It may have finished since the last look: keep what is done.
                     if let Ok(t) = self.slskd.download(&source.user, &leg.id).await
                         && t.phase() == Phase::Succeeded
+                        && let Some(ended) = self.land(source, copy, &mut leg, &t).await.map_err(failed)?
                     {
-                        return self.land(source, copy, &mut leg, &t).await.map_err(failed);
+                        return Ok(ended);
                     }
                     self.drop_leg(source, &mut leg).await;
                     return Err(Err(Stop::Cancelled));
                 }
             }
             self.copy_leg(copy, &mut leg).await.map_err(failed)?;
+            if copy.seeks_in_one.is_none() {
+                copy.seeks_in_one = seeks_in_one(&source.ext, copy).await;
+            }
             // An slskd that starts every download over from 0 brings each leg from 0: stopped at
             // what had arrived, the next would start over again, so it runs to the end.
             let resumes = self.resumes.load(std::sync::atomic::Ordering::Relaxed);
@@ -302,7 +311,11 @@ impl Fetcher {
                     self.drop_leg(source, &mut leg).await;
                     return Err(Ok(Skip::Stalled(format!("{}: {why}", source.user))));
                 }
-                Phase::Succeeded => return self.land(source, copy, &mut leg, t).await.map_err(failed),
+                Phase::Succeeded => {
+                    if let Some(ended) = self.land(source, copy, &mut leg, t).await.map_err(failed)? {
+                        return Ok(ended);
+                    }
+                }
                 phase => {
                     let brought = leg.front - leg.start;
                     let ahead = self.jumps_allowed(source, copy).then_some(JUMP_SAME_S);
@@ -366,46 +379,81 @@ impl Fetcher {
         Ok(())
     }
 
-    /// slskd finished the leg and moved its file to the downloads folder: the rest of it comes
-    /// from there, then the file and slskd's record go.
-    async fn land(&self, source: &Source, copy: &mut Copy, leg: &mut Leg, t: &Transfer) -> lull_core::Result<Ended> {
-        let finished = self.finished_path(t).await?;
-        let mut file = File::open(&finished).await.map_err(|e| io(&finished, e))?;
-        file.seek(SeekFrom::Start(leg.front))
-            .await
-            .map_err(|e| io(&finished, e))?;
-        let mut rest = Vec::new();
-        file.read_to_end(&mut rest).await.map_err(|e| io(&finished, e))?;
-        write_at(copy, leg.front, &rest).await?;
-        leg.front += rest.len() as u64;
+    /// slskd finished the leg. It says so before it moves the file to its downloads folder, so
+    /// the rest comes from the leg's open file while it reads (on Linux it follows the file through
+    /// the move), then from where slskd put it. Once slskd names that place, its file and record
+    /// go. `None`: slskd hasn't named it yet; ask again on the next look.
+    async fn land(
+        &self,
+        source: &Source,
+        copy: &mut Copy,
+        leg: &mut Leg,
+        t: &Transfer,
+    ) -> lull_core::Result<Option<Ended>> {
+        loop {
+            let before = leg.front;
+            self.copy_leg(copy, leg).await?;
+            if leg.front == before {
+                break;
+            }
+        }
+        let Some(reported) = self.slskd.finished_path(&t.id).await? else {
+            if leg.landing.get_or_insert_with(Instant::now).elapsed() < LAND_WAIT {
+                return Ok(None);
+            }
+            return Err(Error::upstream(
+                "soulseek",
+                format!("slskd finished {} but did not say where it put it", t.filename),
+            ));
+        };
+        let finished = self
+            .layout
+            .read()
+            .ok()
+            .and_then(|l| l.finished(&reported))
+            .ok_or_else(|| {
+                Error::unavailable(
+                    "soulseek",
+                    format!("slskd saved {reported} outside the downloads folder lull reads"),
+                )
+            })?;
+        if leg.front < source.size {
+            let mut file = File::open(&finished).await.map_err(|e| io(&finished, e))?;
+            file.seek(SeekFrom::Start(leg.front))
+                .await
+                .map_err(|e| io(&finished, e))?;
+            let mut rest = Vec::new();
+            file.read_to_end(&mut rest).await.map_err(|e| io(&finished, e))?;
+            write_at(copy, leg.front, &rest).await?;
+            leg.front += rest.len() as u64;
+        }
         if leg.front < source.size {
             return Err(Error::upstream(
                 "soulseek",
                 format!("{} sent {} of {} bytes", source.user, leg.front, source.size),
             ));
         }
-        drop(file);
-        if let Err(e) = tokio::fs::remove_file(&finished).await {
-            tracing::warn!(error = %e, file = %finished.display(), "removing a finished leg's file");
-        }
         leg.reading = None;
-        for path in &leg.files {
+        for path in std::iter::once(&finished).chain(&leg.files) {
             if let Err(e) = tokio::fs::remove_file(path).await
                 && e.kind() != std::io::ErrorKind::NotFound
             {
-                tracing::debug!(error = %e, file = %path.display(), "removing a leg's other file");
+                tracing::warn!(error = %e, file = %path.display(), "removing a finished leg's file");
             }
         }
         if let Err(e) = self.slskd.cancel(&source.user, &t.id).await {
             tracing::debug!(error = %e, "removing a finished transfer from slskd's list");
         }
-        Ok(Ended::Finished)
+        Ok(Some(Ended::Finished))
     }
 
     /// The same peer may be asked to start over elsewhere: slskd resumes where lull sizes its file,
     /// the peer said it had a free slot, and no leg of this copy has waited in its queue.
     fn jumps_allowed(&self, source: &Source, copy: &Copy) -> bool {
-        self.resumes.load(std::sync::atomic::Ordering::Relaxed) && source.free_slot && !copy.queued
+        self.resumes.load(std::sync::atomic::Ordering::Relaxed)
+            && source.free_slot
+            && !copy.queued
+            && copy.seeks_in_one == Some(true)
     }
 
     /// Stops a leg in slskd and removes its record and its file: what it brought is in lull's.
@@ -435,6 +483,64 @@ fn jump(asked: Option<(u64, std::time::Duration)>, ranges: &Ranges, leg: &Leg, s
     let soon = byte >= leg.front && speed > 0 && (byte - leg.front) / speed <= u64::from(JUMP_SAME_S);
     (!soon).then_some(byte)
 }
+
+/// Whether a browser seeks in this file with one read (`None` while its first bytes haven't said),
+/// from what has arrived from byte 0 (ADR-0014, Formats). A FLAC file without a SEEKTABLE block,
+/// and Ogg, are bisected: a dozen reads at offsets one after another, each of which would start a
+/// leg, so they don't seek ahead. MP3 and M4A (its index fetched by a leg too) do.
+async fn seeks_in_one(ext: &str, copy: &Copy) -> Option<bool> {
+    match ext {
+        "ogg" | "opus" | "oga" => return Some(false),
+        "flac" => {}
+        _ => return Some(true),
+    }
+    let arrived = copy.ranges.end_from(0)?;
+    let mut file = File::open(&copy.path).await.ok()?;
+    if &four(&mut file, 0, arrived).await? != b"fLaC" {
+        return Some(true);
+    }
+    // Each metadata block: a header (last flag, type, 24-bit length), then its body, stepped over.
+    let mut at = 4;
+    loop {
+        let [head, l1, l2, l3] = four(&mut file, at, arrived).await?;
+        match (head & 0x80 != 0, head & 0x7f) {
+            (_, 3) => return Some(true),
+            (true, _) => return Some(false),
+            _ => at += 4 + (u64::from(l1) << 16 | u64::from(l2) << 8 | u64::from(l3)),
+        }
+    }
+}
+
+/// The four bytes at `at`, once they have arrived (`arrived`: the end of what came from byte 0).
+async fn four(file: &mut File, at: u64, arrived: u64) -> Option<[u8; 4]> {
+    let mut four = [0u8; 4];
+    (at + 4 <= arrived).then_some(())?;
+    file.seek(SeekFrom::Start(at)).await.ok()?;
+    file.read_exact(&mut four).await.ok()?;
+    Some(four)
+}
+
+/// Removes a file of slskd's, once slskd lets go of it: a leg just cancelled may still hold it
+/// open a moment, which Windows refuses to delete (a sharing violation) until it closes.
+async fn remove_when_free(path: &Path) -> std::io::Result<()> {
+    let since = Instant::now();
+    loop {
+        match tokio::fs::remove_file(path).await {
+            Ok(()) => return Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e)
+                if cfg!(windows) && e.raw_os_error() == Some(SHARING_VIOLATION) && since.elapsed() < RELEASE_WAIT =>
+            {
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+/// Windows' ERROR_SHARING_VIOLATION, and how long slskd gets to close a cancelled leg's file.
+const SHARING_VIOLATION: i32 = 32;
+const RELEASE_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// A new file of exactly `len` bytes, all of them a hole (zeros where the filesystem has no holes).
 async fn presize(path: &Path, len: u64) -> std::io::Result<()> {
@@ -509,7 +615,7 @@ mod tests {
         per_tick: 16_384,
         reported: Some(800_000.0),
         overwrite: false,
-        settles: Duration::ZERO,
+        settles: Duration::from_millis(200),
     };
 
     struct NoYoutube;
@@ -711,7 +817,7 @@ mod tests {
             per_tick: 14_000,
             reported: Some(10_000.0),
             overwrite: false,
-            settles: Duration::ZERO,
+            settles: Duration::from_millis(200),
         })
         .await?;
         let starts = fake.starts();
@@ -736,7 +842,7 @@ mod tests {
             per_tick: 14_000,
             reported: Some(10_000_000.0),
             overwrite: false,
-            settles: Duration::ZERO,
+            settles: Duration::from_millis(200),
         })
         .await?;
         assert_eq!(
@@ -753,7 +859,7 @@ mod tests {
             per_tick: 14_000,
             reported: Some(10_000.0),
             overwrite: true,
-            settles: Duration::ZERO,
+            settles: Duration::from_millis(200),
         })
         .await?;
         let path = f.now().path.ok_or_else(|| Error::internal("no file"))?;
@@ -764,6 +870,67 @@ mod tests {
             "the jump started over from 0, and no other followed"
         );
         assert_eq!(f.now().ahead, None, "the player hears it can't seek ahead");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_flac_file_seeks_ahead_only_with_a_seektable_known_once_its_block_headers_are_here() -> Result<()> {
+        let block = |kind: u8, last: bool, len: usize| {
+            let mut b = vec![
+                kind | if last { 0x80 } else { 0 },
+                (len >> 16) as u8,
+                (len >> 8) as u8,
+                len as u8,
+            ];
+            b.resize(4 + len, 0);
+            b
+        };
+        let flac = |blocks: &[Vec<u8>]| [b"fLaC".to_vec(), blocks.concat()].concat();
+        let streaminfo = block(0, false, 34);
+        let with = flac(&[streaminfo.clone(), block(6, false, 5000), block(3, true, 18)]);
+        let without = flac(&[streaminfo, block(6, false, 5000), block(4, true, 40)]);
+        let dir = std::env::temp_dir().join(format!("lull-legs-flac-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).map_err(|e| Error::internal(e.to_string()))?;
+        let copy = |name: &str, bytes: &[u8], arrived: usize| {
+            let path = dir.join(name);
+            let written = std::fs::write(&path, bytes);
+            async move {
+                written.map_err(|e| Error::internal(e.to_string()))?;
+                let file = tokio::fs::File::open(&path)
+                    .await
+                    .map_err(|e| Error::internal(e.to_string()))?;
+                Ok::<_, Error>(super::Copy {
+                    path,
+                    file,
+                    ranges: Ranges::front(arrived as u64),
+                    saved: 0,
+                    queued: false,
+                    seeks_in_one: None,
+                })
+            }
+        };
+        assert_eq!(
+            super::seeks_in_one("flac", &copy("with", &with, with.len()).await?).await,
+            Some(true),
+            "a seek table after a big picture"
+        );
+        assert_eq!(
+            super::seeks_in_one("flac", &copy("without", &without, without.len()).await?).await,
+            Some(false)
+        );
+        assert_eq!(
+            super::seeks_in_one("flac", &copy("early", &with, 100).await?).await,
+            None,
+            "the picture hasn't all arrived: not known yet"
+        );
+        assert_eq!(
+            super::seeks_in_one("ogg", &copy("ogg", b"OggS", 4).await?).await,
+            Some(false)
+        );
+        assert_eq!(
+            super::seeks_in_one("mp3", &copy("mp3", b"ID3", 3).await?).await,
+            Some(true)
+        );
         Ok(())
     }
 }

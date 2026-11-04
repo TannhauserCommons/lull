@@ -42,7 +42,7 @@ use crate::peers::Peers;
 use crate::ranges::Ranges;
 use crate::rules::{Current, Purpose, Rules};
 use crate::search::Searches;
-use crate::slskd::{Slskd, Transfer};
+use crate::slskd::Slskd;
 use crate::sources::{self, Bar, Lesser, Ranked, Source, Sources};
 
 /// Received bytes after which a stream counts as playing rather than buffering.
@@ -60,8 +60,6 @@ const FASTER_BY: f64 = 2.0;
 /// A transfer's rate is remembered once at least this much came (or it sent for `SLOW_AFTER`):
 /// before, the connection's start-up is most of it.
 const MEASURE_MIN: u64 = 1_000_000;
-/// slskd reports a download done just before it moves the file and says where: this long at most.
-const LAND_WAIT: Duration = Duration::from_secs(60);
 /// A peer that hasn't accepted the request by now is skipped.
 const START_TIMEOUT: Duration = Duration::from_secs(20);
 /// Waiting in a peer's queue longer than this moves on to the next source.
@@ -1502,48 +1500,6 @@ impl Fetcher {
             ))),
             _ = stopped(stop) => Err(Stop::Cancelled),
         }
-    }
-
-    /// Where slskd put a finished download. slskd marks a transfer Succeeded before it moves the
-    /// file to its downloads folder and says where (its `DownloadFileComplete` event, slskd 0.26's
-    /// `DownloadService`), so a look in between finds nothing yet: lull asks again each `POLL`, up
-    /// to `LAND_WAIT`, while a reader keeps reading the file it has open (on Linux the handle
-    /// follows the file through the move; one that has to reopen waits for the new path).
-    async fn finished_path(&self, t: &Transfer) -> Result<PathBuf> {
-        let since = Instant::now();
-        let reported = loop {
-            if let Some(reported) = self.slskd.finished_path(&t.id).await? {
-                break reported;
-            }
-            if since.elapsed() >= LAND_WAIT {
-                return Err(Error::upstream(
-                    "soulseek",
-                    format!("slskd finished {} but did not say where it put it", t.filename),
-                ));
-            }
-            tokio::time::sleep(POLL).await;
-        };
-        let path = self
-            .layout
-            .read()
-            .ok()
-            .and_then(|l| l.finished(&reported))
-            .ok_or_else(|| {
-                Error::unavailable(
-                    "soulseek",
-                    format!("slskd saved {reported} outside the downloads folder lull reads"),
-                )
-            })?;
-        if !path.is_file() {
-            return Err(Error::unavailable(
-                "soulseek",
-                format!(
-                    "lull cannot see slskd's finished file at {}; check LULL_TRANSFERS_DIR",
-                    path.display()
-                ),
-            ));
-        }
-        Ok(path)
     }
 
     /// Applies a change and publishes `stream`, `transfer` and `job` events when it matters.
