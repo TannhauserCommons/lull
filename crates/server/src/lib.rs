@@ -139,6 +139,7 @@ async fn wire(ctx: &Ctx) -> Result<Router, Error> {
         .merge(lull_collection::router(collection))
         .merge(lull_skins::router(skins))
         .merge(lull_themes::router(themes))
+        .merge(lull_core::pictures::router(ctx.pictures.clone()))
         // Subsonic apps sign in with an app password or API key; the gate leaves /rest to it.
         .merge(lull_subsonic::router(subsonic))
         .fallback(web::serve))

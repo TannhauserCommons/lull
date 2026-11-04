@@ -1,6 +1,6 @@
 # ADR-0033: One picture service in core, driven by what is on screen
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-04
 
 ## Context
@@ -57,8 +57,7 @@ Library keeps only the pictures it has itself (Jellyfin's image, the folder's fi
   1. **playing:** the playing song and the next 3, from `device.state`;
   2. **visible;**
   3. **near:** within a screen of view;
-  4. **asked:** a request is waiting on it, but no screen shows it, as with a Subsonic app;
-  5. **background.**
+  4. **asked:** a request is waiting on it, but no screen shows it, as with a Subsonic app.
   
   Within a place, the newest screen wins, then the order on screen.
 - **Off-screen work is dropped before it starts.** A job that is on no screen, not playing and has no request waiting is removed when it would run, and whenever a new report arrives.
@@ -68,7 +67,7 @@ Library keeps only the pictures it has itself (Jellyfin's image, the folder's fi
 
 - **Jobs wait in lanes** by the outside service they call next, each with its own workers:
   - `fetch`: the source is known, so the picture is fetched from a CDN (8 workers);
-  - `lastfm`, `itunes` and `vet`: 1 worker each.
+  - `lastfm` and `itunes`: 1 worker each.
   
   A slow lane never holds up another.
 - **A finder runs in steps.** Each step names the lane of the next:
@@ -88,7 +87,7 @@ Library keeps only the pictures it has itself (Jellyfin's image, the folder's fi
 
 ### Artist photos
 
-- Vetting (Wikidata/Commons, else Deezer, compared against the artist's covers as now) takes the 12 best-ranked artists waiting, on screen first. The fixed 64-deep queue goes.
+- Vetting (Wikidata/Commons, else Deezer, compared against the artist's covers as now) takes the 12 best-ranked artists waiting (`Pictures::rank`), on screen first; one no screen shows any more is dropped. The fixed 64-deep queue goes.
 - A photo found is announced: `art.ready { keys, images: { artistId: url } }` carries the new `image`, so the UI shows it without reading the page again.
 - Wikidata needs an MBID. An artist without one gets a MusicBrainz artist search, used only when exactly one strong match comes back. This raised Wikidata's coverage of the owner's artists from 6 to 26 of 43.
 
@@ -104,7 +103,7 @@ Library keeps only the pictures it has itself (Jellyfin's image, the folder's fi
 - **Priority inside `Http::pace`.** The pacer would have to know ranks that change as the listener scrolls. Lanes with one worker per paced service leave at most one picture call at any pacer, so a fair first-come gate is enough there.
 - **The browser cancels requests instead of a screen report.** Removed `<img>` elements don't reliably cancel their requests, and a cancelled request doesn't stop the work it started on the hub. Covers that are waiting make no request at all.
 - **Keep MusicBrainz name search first** (exact release groups). It is 0.5 s and then 3 s from the archive, found nothing Last.fm and iTunes missed, and chose another release group than the known MBID in 2 of 7 cases.
-- **TheAudioDB or fanart.tv for artist photos.** TheAudioDB found 70% of the owner's artists (Wikidata 60%), but its free key is a test key, and fanart.tv needs a key the owner doesn't have. They can join `vet` later as one more step, with `lull/THEAUDIODB_API_KEY` or `lull/FANARTTV_API_KEY` in Bitwarden. Not now.
+- **TheAudioDB or fanart.tv for artist photos.** TheAudioDB found 70% of the owner's artists (Wikidata 60%). But its terms (read 2026-11-04) allow the free key only "for your development projects", and "You cannot publish apps to an appstore unless you are a paid subscriber"; lull ships on F-Droid. fanart.tv needs a key the owner doesn't have. They can join `vet` later as one more step, with `lull/THEAUDIODB_API_KEY` or `lull/FANARTTV_API_KEY` in Bitwarden. Not now.
 
 ## Consequences
 

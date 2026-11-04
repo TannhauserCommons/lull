@@ -179,6 +179,24 @@ pub fn is_id(id: &str) -> bool {
     })
 }
 
+/// `PUT /api/pictures/screen`: the calling device's screen (`Report`) → 204. 400 for a picture
+/// lull doesn't serve or a size it doesn't; a report older than the device's last is ignored.
+pub fn router(pictures: Pictures) -> axum::Router {
+    axum::Router::new()
+        .route("/api/pictures/screen", axum::routing::put(screen))
+        .with_state(pictures)
+}
+
+async fn screen(
+    axum::extract::State(pictures): axum::extract::State<Pictures>,
+    axum::Extension(device): axum::Extension<crate::devices::Device>,
+    body: std::result::Result<axum::Json<Report>, axum::extract::rejection::JsonRejection>,
+) -> Result<axum::http::StatusCode> {
+    let axum::Json(report) = body.map_err(|e| Error::BadRequest(e.body_text()))?;
+    pictures.report(&device.id, report)?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
 /// What a request for a picture gets.
 #[derive(Debug)]
 pub enum Answer {
