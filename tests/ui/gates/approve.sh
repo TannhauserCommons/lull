@@ -16,8 +16,11 @@ done
 echo "ui-gates run $run: $(gh run view "$run" --json url --jq .url)"
 # The other gates may fail on the way (that is for you to read); the pictures are written either way.
 gh run watch "$run" >/dev/null || true
-# The run splits the screens over three machines, each uploading its share (gates-goldens-1..3): together, all of them.
-parts=$(mktemp -d)
+# The run splits the screens over three machines, each uploading the pictures it took (gates-goldens-1..3; a machine
+# with no screen tests uploads none): together, all of them.
+# Inside the repository (gitignored): gh on Windows can't write to Git Bash's /tmp.
+parts=tests/ui/test-results/goldens-parts
+rm -rf "$parts"
 gh run download "$run" --pattern 'gates-goldens-*' --dir "$parts"
 rm -rf tests/ui/gates/goldens/linux
 mkdir -p tests/ui/gates/goldens/linux
