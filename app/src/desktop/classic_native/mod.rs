@@ -6,28 +6,39 @@
 //! and the playlist (eqwin.rs, playlist.rs). Leaving Classic builds `main` again on the page it was
 //! on, and that page takes the queue back (`classic_back`) as it takes it from Webamp's window.
 
+mod align;
 mod canvas;
+mod deck;
 mod draw;
+mod engine;
 mod eq;
 mod eqwin;
+mod events;
 mod hub;
+mod listen;
+mod mixer;
+mod output;
 mod playlist;
+mod queue;
+mod remote;
 mod session;
 mod skin;
 mod smtc;
-mod sound;
+#[cfg(test)]
+mod testhub;
 mod vis;
 mod window;
 
 use crate::desktop::classic::{Equaliser, Handoff};
 use crate::desktop::main_window;
 use crate::desktop::state::Desktop;
-use base64::Engine;
+use base64::Engine as _;
+use engine::Engine;
 use hub::Hub;
+use queue::{Entry, Queue, Repeat};
 use serde_json::Value;
 use session::{Handback, Session};
 use skin::Skin;
-use sound::{Player, Song, Start};
 use std::io::Read;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -76,30 +87,9 @@ pub fn open(app: &AppHandle, handoff: Handoff, main: WebviewWindow) -> Result<()
     let (size, dpi, at) = place(&main, handoff.size.unwrap_or(1.0))?;
     let favourites = handoff.skins.iter().map(|s| (s.name.clone(), s.url.clone())).collect();
     let eq = handoff.eq.clone().unwrap_or_else(Equaliser::flat).normalised();
-    let songs = handoff
-        .tracks
-        .iter()
-        .map(|t| Song {
-            url: t.url.clone(),
-            duration: t.duration,
-        })
-        .collect();
-    let start = Start {
-        index: handoff.index.min(handoff.tracks.len().saturating_sub(1)),
-        position: handoff.pos,
-        playing: handoff.playing,
-        volume: handoff.volume,
-        shuffle: handoff.shuffle,
-        repeat: handoff.repeat,
-        eq: eq.clone(),
-    };
-    let player = Player::start(token.clone(), songs, start)?;
-    let setup = session::Setup {
-        shuffle: handoff.shuffle,
-        repeat: handoff.repeat,
-        eq,
-    };
-    let session = Session::new(app.clone(), Hub::new(origin, token), player, handoff.tracks, setup);
+    let hub = Hub::new(origin, token);
+    let engine = Engine::start(hub.clone(), start(&handoff, eq))?;
+    let session = Session::new(app.clone(), hub, engine);
     let page = handoff.page.clone();
     let app_back = app.clone();
     let (opened, result) = std::sync::mpsc::channel();
@@ -148,26 +138,87 @@ pub fn take_back() -> Option<Value> {
 fn go_back(app: AppHandle, session: Session, size: f64, page: Option<String>) {
     OPEN.store(false, Ordering::Relaxed);
     let (origin, token) = (session.origin().clone(), session.token().to_owned());
-    let Handback {
-        mut value,
-        threads,
-        ops,
-    } = session.hand_back();
-    value["size"] = size.into();
     let mut url = origin;
     url.set_fragment(Some(page.as_deref().filter(|p| p.starts_with('/')).unwrap_or("/home")));
     let spawned = std::thread::Builder::new().name("classic-back".into()).spawn(move || {
-        for thread in threads {
-            let _ = thread.join();
+        if let Some(Handback {
+            mut value,
+            threads,
+            ops,
+        }) = session.hand_back()
+        {
+            for thread in threads {
+                let _ = thread.join();
+            }
+            let ops: Vec<Value> = ops
+                .iter()
+                .flat_map(|o| std::mem::take(&mut *o.lock().unwrap_or_else(std::sync::PoisonError::into_inner)))
+                .collect();
+            value["ops"] = Value::Array(ops);
+            value["size"] = size.into();
+            *BACK.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(value);
         }
-        value["ops"] = Value::Array(std::mem::take(
-            &mut *ops.lock().unwrap_or_else(std::sync::PoisonError::into_inner),
-        ));
-        *BACK.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(value);
         main_window::report(main_window::open_hub(&app, &url, &token));
     });
     if let Err(e) = spawned {
         eprintln!("lull: can't bring lull back from Classic: {e}");
+    }
+}
+
+/// The player's start from the page's handoff: its queue by the page's rules, what it knows of each
+/// song, where it was and how it sounded.
+fn start(handoff: &Handoff, eq: Equaliser) -> engine::Start {
+    let tracks = handoff
+        .tracks
+        .iter()
+        .map(|t| engine::Track {
+            id: t.id.clone(),
+            title: t.title.clone(),
+            artist: t.artist.clone(),
+            album: t.album.clone(),
+            artist_id: t.artist_id.clone(),
+            album_id: t.album_id.clone(),
+            duration: t.duration,
+            saved: t.saved,
+            liked: t.liked,
+            art: t.art.clone(),
+            gain_db: t.gain_db,
+            recommended: t.recommended,
+            entity: None,
+        })
+        .collect();
+    let entries = handoff
+        .tracks
+        .iter()
+        .map(|t| Entry {
+            track_id: t.id.clone(),
+            group: t.group.clone().unwrap_or_else(|| "context".into()),
+            source: t.source.clone().and_then(|s| serde_json::from_value(s).ok()),
+            orig: t.orig,
+        })
+        .collect();
+    let repeat = match handoff.repeat_mode.as_deref() {
+        Some("one") => Repeat::One,
+        Some("all") => Repeat::All,
+        Some(_) => Repeat::Off,
+        None if handoff.repeat => Repeat::All,
+        None => Repeat::Off,
+    };
+    let queue = Queue {
+        queue: entries,
+        index: handoff.index.min(handoff.tracks.len().saturating_sub(1)),
+        shuffle: handoff.shuffle,
+        repeat,
+        radio: handoff.radio.clone().and_then(|r| serde_json::from_value(r).ok()),
+        context: handoff.context.clone().unwrap_or(Value::Null),
+    };
+    engine::Start {
+        queue,
+        tracks,
+        position: handoff.pos,
+        playing: handoff.playing,
+        volume: handoff.volume,
+        eq,
     }
 }
 

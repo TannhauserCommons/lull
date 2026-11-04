@@ -54,6 +54,13 @@ fn list_area() -> Area {
     )
 }
 
+/// The row a point of the playlist is on (past the last song: the end), for a drag.
+pub fn row_at(y: u32, list: &List) -> usize {
+    let area = list_area();
+    let row = list.scroll + (y.saturating_sub(area.y) / layout::PLAYLIST_ROW_HEIGHT) as usize;
+    row.min(list.labels.len())
+}
+
 /// The scroll bar's column, between the list and the right edge.
 fn scroll_area() -> Area {
     let list = list_area();

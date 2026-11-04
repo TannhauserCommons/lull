@@ -265,13 +265,14 @@ async fn launch(db: &Db, env: &BTreeMap<String, String>) -> Result<Launch, Strin
 fn follow_restarts(origin: Url, token: String, db: Db, env: BTreeMap<String, String>, sidecar: Sidecar) {
     let watch = move || {
         loop {
-            let streamed = hub::events(&origin, &token, |topic| {
+            let streamed = hub::events(&origin, &token, |topic, _| {
                 if topic == "hub.restarting" {
                     match block_on(launch(&db, &env)) {
                         Ok(next) => sidecar.apply(next),
                         Err(e) => tracing::warn!("can't read the settings for slskd: {e}"),
                     }
                 }
+                true
             });
             if let Err(e) = streamed {
                 tracing::debug!("hub events: {e}");

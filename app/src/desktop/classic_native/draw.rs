@@ -5,8 +5,8 @@
 //! draw from.
 
 use super::canvas::Pen;
+use super::session::Now;
 use super::skin::{Area, Sprite, layout, sprites};
-use super::sound::Now;
 use super::vis::{BARS, Bar, ROWS};
 use crate::desktop::classic::Equaliser;
 
@@ -28,6 +28,8 @@ pub enum Control {
     Volume,
     Position,
     Time,
+    /// The scrolling title: where a song waiting for the listener's choice asks for it.
+    Marquee,
     EqWindow,
     PlaylistWindow,
     EqClose,
@@ -84,7 +86,7 @@ impl View<'_> {
 }
 
 /// The main window's controls, unrolled and rolled up.
-const MAIN: [(Control, Area); 17] = [
+const MAIN: [(Control, Area); 18] = [
     (Control::Options, layout::OPTIONS_BUTTON),
     (Control::Minimize, layout::MINIMIZE_BUTTON),
     (Control::Shade, layout::SHADE_BUTTON),
@@ -102,6 +104,7 @@ const MAIN: [(Control, Area); 17] = [
     (Control::Time, Area::new(layout::MINUS_EX.x, layout::MINUS_EX.y, 63, 13)),
     (Control::EqWindow, layout::EQ_BUTTON),
     (Control::PlaylistWindow, layout::PLAYLIST_BUTTON),
+    (Control::Marquee, layout::MARQUEE),
 ];
 const SHADED: [(Control, Area); 12] = [
     (Control::Options, layout::OPTIONS_BUTTON),

@@ -289,7 +289,8 @@
     var art = t.albumId ? absolute(App.artUrl(t.albumId, 256)) : null;
     return { id: t.id, url: absolute(url), title: t.title || '', artist: t.artist || '', album: t.album || '',
       duration: t.duration || null, art: art && sameOrigin(art) ? art : null,
-      artistId: t.artistId || '', albumId: t.albumId || '', liked: App.isLiked(t.id), saved: App.isSaved(t.id) };
+      artistId: t.artistId || '', albumId: t.albumId || '', liked: App.isLiked(t.id), saved: App.isSaved(t.id),
+      gainDb: P.replayGainDb(t.id) };
   }
   function handoff() {
     var ps = P.state, index = 0, tracks = [];
@@ -297,6 +298,7 @@
       var t = handoffTrack(q.trackId, q.source);
       if (!t) return;
       t.recommended = q.group === 'radio';
+      t.group = q.group; t.source = q.source || null; t.orig = q.orig == null ? null : q.orig;
       if (i === ps.index) index = tracks.length;
       tracks.push(t);
     });
@@ -312,12 +314,16 @@
   /* Webamp's list, song, position and modes back into the app engine (b: session.handBack()). Songs Webamp played
      from local files have no place in a lull queue and are left out */
   function takeBack(b) {
+    /* from the native window (no webview): its equaliser and size, the plays and likes the hub couldn't take then (the
+       outbox sends them), and the queue whole, played by this page's rules, radio and groups kept */
+    if (b.player) {
+      if (b.eq) LullEq.write(b.eq);
+      if (b.size) App.classicSize.set(b.size);
+      (b.ops || []).forEach(function (op) { App.outbox.add(op); });
+      P.adopt(b.player, b.playing);
+      return;
+    }
     syncModes(b.shuffle, b.repeat);
-    /* from the native window: its equaliser and size, and the plays and likes the hub couldn't take then (the outbox sends
-       them) */
-    if (b.eq) LullEq.write(b.eq);
-    if (b.size) App.classicSize.set(b.size);
-    (b.ops || []).forEach(function (op) { App.outbox.add(op); });
     if (b.local) App.toast(b.local === 1 ? 'The local file you added in Webamp isn\'t in your queue' : 'The ' + b.local + ' local files you added in Webamp aren\'t in your queue', { icon: 'info' });
     if (!b.ids.length) return;                                  // nothing of lull's left in Webamp: the queue stays
     var ps = P.state, same = b.ids.length === ps.queue.length && b.ids.every(function (id, i) { return ps.queue[i].trackId === id; });
@@ -490,6 +496,7 @@
     /* a window drawn natively (no webview) takes its size and equaliser here, and lull comes back on this page; a skin
        kept on this device comes along as its file, which only this page's storage holds */
     h.size = App.classicSize.get(); h.page = lastHref(); h.eq = LullEq.read();
+    h.repeatMode = P.state.repeat; h.radio = P.state.radio; h.context = P.state.context;
     return Promise.all([readFavourites(), App.classicSkin.opening()]).then(function (r) {
       var favs = r[0], skin = r[1];
       return keptFile(skin).then(function (bytes) {

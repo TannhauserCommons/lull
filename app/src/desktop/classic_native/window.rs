@@ -15,9 +15,11 @@
 
 use super::canvas::{Canvas, TextRun};
 use super::draw::{self, Control, Target, View};
+use super::engine::{Command, Snapshot, Status};
 use super::eq::presets;
 use super::eqwin;
 use super::playlist::{self, List};
+use super::queue::Repeat;
 use super::session::Session;
 use super::skin::{HEIGHT, Skin, WIDTH, layout};
 use super::vis::{Analyser, FFT_SAMPLES};
@@ -157,6 +159,8 @@ impl Panels {
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Menu {
     Options,
+    /// The copies a song waiting in `choose` may play from.
+    Choose,
     Presets,
     Remove,
     Select,
@@ -176,6 +180,9 @@ struct Classic {
     shown_texts: Vec<TextRun>,
     /// Each window's fingerprint when it was last drawn, top to bottom.
     prints: [Option<u64>; 3],
+    /// The player as of this frame, and the queue's revision the playlist shows.
+    snapshot: Snapshot,
+    revision: Option<u64>,
     size: f64,
     dpi: f64,
     /// For each skin column and row, the first physical one it covers (the last entry is the size).
@@ -193,8 +200,9 @@ struct Classic {
     remaining: bool,
     marquee: Marquee,
     notice: Option<(String, Instant)>,
-    /// The row a selection by Shift-click runs from.
+    /// The row a selection by Shift-click runs from, and the row a drag of songs is over.
     anchor: usize,
+    dropping: Option<usize>,
     started: Instant,
     tick: Duration,
 }
@@ -255,6 +263,8 @@ pub fn open(setup: Setup, on_close: OnClose) -> Result<(), String> {
         shown: Vec::new(),
         shown_texts: Vec::new(),
         prints: [None; 3],
+        snapshot: Snapshot::default(),
+        revision: None,
         size: setup.size,
         dpi: setup.dpi,
         columns,
@@ -270,11 +280,13 @@ pub fn open(setup: Setup, on_close: OnClose) -> Result<(), String> {
         marquee: Marquee::default(),
         notice: setup.said.map(|said| (said, Instant::now())),
         anchor: 0,
+        dropping: None,
         started: Instant::now(),
         tick: ANIMATE,
     };
+    classic.snapshot = classic.session.snapshot();
     classic.relist();
-    let index = classic.session.player.now().index;
+    let index = classic.snapshot.index;
     classic.list.show(index);
     classic.render();
     OPEN.with_borrow_mut(|open| *open = Some(classic));
@@ -309,6 +321,15 @@ pub fn act(action: &str) {
     if acted.is_none() {
         eprintln!("lull: Classic is closed: no {action}");
     }
+}
+
+/// A command for the player from elsewhere on the main thread (a like the hub refused).
+pub fn send(command: Command) {
+    OPEN.with_borrow(|open| {
+        if let Some(classic) = open.as_ref() {
+            classic.session.engine.send(command);
+        }
+    });
 }
 
 /// Another skin, fetched for the Options menu; or why it couldn't be. Main thread only.
@@ -560,7 +581,16 @@ impl Classic {
                 self.remaining = !self.remaining;
                 return Effect::Handled;
             }
-            Control::PlaylistRow(row) => return self.click_row(row, double),
+            Control::PlaylistRow(row) => {
+                let effect = self.click_row(row, double);
+                // A single press on a song may drag the selected songs elsewhere in the list.
+                if !double && row < self.list.labels.len() {
+                    self.pressed = Some((target, self.panels.top(panel)));
+                    self.dropping = Some(row);
+                    return Effect::Capture;
+                }
+                return effect;
+            }
             _ => {}
         }
         self.pressed = Some((target, self.panels.top(panel)));
@@ -602,7 +632,7 @@ impl Classic {
             return Effect::Handled;
         }
         if double {
-            self.session.player.jump(row);
+            self.send(Command::Jump(row));
             return Effect::Handled;
         }
         // SAFETY: reads this thread's keyboard state.
@@ -638,18 +668,11 @@ impl Classic {
         let across = along(x, area.x, area.width);
         let down = along(y, area.y, area.height);
         match target.control {
-            Control::Volume => self.session.player.set_volume(across),
+            Control::Volume => self.volume(across),
             Control::Position => self.seeking = Some(across),
-            Control::EqPreamp => {
-                let mut eq = self.session.eq.clone();
-                eq.preamp = Some(eqwin::decibels(1.0 - down));
-                self.session.set_equaliser(eq);
-            }
-            Control::EqBand(band) => {
-                let mut eq = self.session.eq.clone();
-                eq.bands[band] = eqwin::decibels(1.0 - down);
-                self.session.set_equaliser(eq);
-            }
+            Control::EqPreamp => self.equalise(|eq| eq.preamp = Some(eqwin::decibels(1.0 - down))),
+            Control::EqBand(band) => self.equalise(|eq| eq.bands[band] = eqwin::decibels(1.0 - down)),
+            Control::PlaylistRow(_) => self.dropping = Some(playlist::row_at(y.max(0.0) as u32, &self.list)),
             Control::PlaylistScroll => {
                 let room = self.list.labels.len().saturating_sub(List::rows());
                 self.list.scroll_to((down * room as f64).round() as usize);
@@ -667,9 +690,19 @@ impl Classic {
         let Some((target, top)) = self.pressed.take() else {
             return Effect::Release;
         };
+        if let (Control::PlaylistRow(grabbed), Some(dropped)) = (target.control, self.dropping.take()) {
+            if dropped != grabbed {
+                let rows: Vec<usize> = (0..self.list.selected.len())
+                    .filter(|&i| self.list.selected[i])
+                    .collect();
+                let to = if dropped > grabbed { dropped + 1 } else { dropped };
+                self.send(Command::Reorder(rows, to.min(self.list.labels.len())));
+            }
+            return Effect::Release;
+        }
         if target.control == Control::Position {
-            if let (Some(fraction), Some(length)) = (self.seeking.take(), self.session.player.now().duration) {
-                self.session.player.seek(fraction * length);
+            if let (Some(fraction), Some(length)) = (self.seeking.take(), self.snapshot.duration) {
+                self.send(Command::Seek(fraction * length));
             }
         } else if self.over {
             return self.click(target, top);
@@ -679,24 +712,31 @@ impl Classic {
 
     /// A button, clicked: Winamp's own meaning for each.
     fn click(&mut self, target: Target, top: u32) -> Effect {
-        let now = self.session.player.now();
+        let now = &self.snapshot;
         let area = target.area;
         let below = self.client_to_screen(
             self.columns[area.x as usize],
             self.rows[((top + area.y + area.height) as usize).min(self.rows.len() - 1)],
         );
-        let player = &self.session.player;
-        match target.control {
-            Control::Previous => player.previous(),
+        let command = match target.control {
+            Control::Previous => Some(Command::Previous),
             // Play on a playing song starts it again.
-            Control::Play if now.playing => player.seek(0.0),
-            Control::Play => player.play(),
-            Control::Pause if now.playing => player.pause(),
-            Control::Pause if !now.stopped => player.play(),
-            Control::Stop => player.stop(),
-            Control::Next => player.next(),
-            Control::Shuffle => self.session.set_modes(!self.session.shuffle, self.session.repeat),
-            Control::Repeat => self.session.set_modes(self.session.shuffle, !self.session.repeat),
+            Control::Play if now.playing => Some(Command::Seek(0.0)),
+            Control::Play => Some(Command::Play),
+            Control::Pause if now.playing => Some(Command::Pause),
+            Control::Pause if !now.stopped => Some(Command::Play),
+            Control::Stop => Some(Command::Stop),
+            Control::Next => Some(Command::Next),
+            Control::Shuffle => Some(Command::Shuffle(!now.shuffle)),
+            Control::Repeat => Some(Command::CycleRepeat),
+            Control::Marquee if matches!(now.status, Status::Choose(_)) => return Effect::Menu(Menu::Choose, below),
+            _ => None,
+        };
+        if let Some(command) = command {
+            self.send(command);
+            return Effect::Release;
+        }
+        match target.control {
             Control::Minimize => return Effect::Minimize,
             Control::Close => return Effect::Close,
             Control::Shade => self.toggle_shade(Panel::Main),
@@ -704,19 +744,13 @@ impl Classic {
             Control::PlaylistShade => self.toggle_shade(Panel::Playlist),
             Control::EqWindow | Control::EqClose => self.panels.eq = !self.panels.eq,
             Control::PlaylistWindow | Control::PlaylistClose => self.panels.playlist = !self.panels.playlist,
-            Control::EqOn => {
-                let mut eq = self.session.eq.clone();
-                eq.on = !eq.on;
-                self.session.set_equaliser(eq);
-            }
-            Control::EqAuto => {
-                let mut eq = self.session.eq.clone();
+            Control::EqOn => self.equalise(|eq| eq.on = !eq.on),
+            Control::EqAuto => self.equalise(|eq| {
                 eq.preamp = match eq.preamp {
                     Some(_) => None,
                     None => Some(eq.level()),
-                };
-                self.session.set_equaliser(eq);
-            }
+                }
+            }),
             Control::Options => return Effect::Menu(Menu::Options, below),
             Control::EqPresets => return Effect::Menu(Menu::Presets, below),
             Control::PlaylistMenu(1) => return Effect::Menu(Menu::Remove, below),
@@ -750,8 +784,24 @@ impl Classic {
             Menu::Presets => presets()
                 .iter()
                 .enumerate()
-                .map(|(i, (name, bands))| Item::Command(1 + i as u32, (*name).into(), self.session.eq.bands == *bands))
+                .map(|(i, (name, bands))| Item::Command(1 + i as u32, (*name).into(), self.snapshot.eq.bands == *bands))
                 .collect(),
+            Menu::Choose => {
+                let choices = match &self.snapshot.status {
+                    Status::Choose(choices) => choices.clone(),
+                    _ => Vec::new(),
+                };
+                let mut items: Vec<Item> = choices
+                    .iter()
+                    .enumerate()
+                    .map(|(i, c)| {
+                        let text = |k: &str| c[k].as_str().unwrap_or_default().to_owned();
+                        Item::Command(1 + i as u32, format!("{}  ({})", text("format"), text("peer")), false)
+                    })
+                    .collect();
+                items.extend([Item::Separator, Item::Command(99, "Skip this song".into(), false)]);
+                items
+            }
             Menu::Remove => vec![
                 Item::Command(1, "Remove selected\tDel".into(), false),
                 Item::Command(2, "Crop selected".into(), false),
@@ -778,8 +828,15 @@ impl Classic {
             }
             (Menu::Presets, id) => {
                 if let Some((_, bands)) = presets().get(id.saturating_sub(1) as usize) {
-                    self.session
-                        .set_equaliser(crate::desktop::classic::Equaliser::with_preset(*bands));
+                    self.equalise(|eq| *eq = crate::desktop::classic::Equaliser::with_preset(*bands));
+                }
+            }
+            (Menu::Choose, 99) => self.send(Command::Next),
+            (Menu::Choose, id) => {
+                if let Status::Choose(choices) = &self.snapshot.status
+                    && let Some(choice) = choices.get(id.saturating_sub(1) as usize)
+                {
+                    self.send(Command::Choose(choice.clone()));
                 }
             }
             (Menu::Remove, 1) => self.remove_selected(),
@@ -828,13 +885,29 @@ impl Classic {
     }
 
     fn keep(&mut self, keep: &[bool]) {
-        self.session.keep(keep);
-        self.relist();
+        self.send(Command::Keep(keep.to_vec()));
+    }
+
+    fn send(&self, command: Command) {
+        self.session.engine.send(command);
+    }
+
+    /// The volume, at once on screen too.
+    fn volume(&mut self, volume: f64) {
+        self.snapshot.volume = volume.clamp(0.0, 1.0);
+        self.send(Command::Volume(volume));
+    }
+
+    /// A change to the equaliser, at once on screen too.
+    fn equalise(&mut self, change: impl FnOnce(&mut crate::desktop::classic::Equaliser)) {
+        change(&mut self.snapshot.eq);
+        self.snapshot.eq = self.snapshot.eq.clone().normalised();
+        self.send(Command::Equaliser(self.snapshot.eq.clone()));
     }
 
     /// The playlist's lines again, after the queue changed.
     fn relist(&mut self) {
-        let (labels, lengths) = self.session.lines();
+        let (labels, lengths) = self.session.lines(&self.snapshot);
         self.list.selected = vec![false; labels.len()];
         self.list.labels = labels;
         self.list.lengths = lengths;
@@ -850,9 +923,7 @@ impl Classic {
             let first = self.list.scroll.saturating_add_signed(rows);
             self.list.scroll_to(first);
         } else {
-            self.session
-                .player
-                .set_volume(self.session.player.volume() + 0.05 * notches);
+            self.volume(self.snapshot.volume + 0.05 * notches);
         }
         Effect::Handled
     }
@@ -860,37 +931,54 @@ impl Classic {
     /// Winamp's keys: Z X C V B for the transport, arrows for a few seconds and the volume, Ctrl+D
     /// for Double Size, Delete for the selected songs.
     fn key(&mut self, key: u16) -> Effect {
-        let now = self.session.player.now();
+        let (playing, position, volume) = (self.snapshot.playing, self.snapshot.position, self.snapshot.volume);
         // SAFETY: reads this thread's keyboard state.
         let control = unsafe { GetKeyState(i32::from(VK_CONTROL.0)) } < 0;
         let letter = |c: u8| key == u16::from(c);
-        let player = &self.session.player;
-        match key {
-            _ if letter(b'Z') => player.previous(),
-            _ if letter(b'X') && now.playing => player.seek(0.0),
-            _ if letter(b'X') => player.play(),
-            _ if letter(b'C') && now.playing => player.pause(),
-            _ if letter(b'C') => player.play(),
-            _ if letter(b'V') => player.stop(),
-            _ if letter(b'B') => player.next(),
-            _ if letter(b'D') && control => self.double_size(),
-            k if k == VK_LEFT.0 => player.seek((now.position - 5.0).max(0.0)),
-            k if k == VK_RIGHT.0 => player.seek(now.position + 5.0),
-            k if k == VK_UP.0 => player.set_volume(player.volume() + 0.02),
-            k if k == VK_DOWN.0 => player.set_volume(player.volume() - 0.02),
-            k if k == VK_DELETE.0 => self.remove_selected(),
+        let command = match key {
+            _ if letter(b'Z') => Command::Previous,
+            _ if letter(b'X') && playing => Command::Seek(0.0),
+            _ if letter(b'X') => Command::Play,
+            _ if letter(b'C') && playing => Command::Pause,
+            _ if letter(b'C') => Command::Play,
+            _ if letter(b'V') => Command::Stop,
+            _ if letter(b'B') => Command::Next,
+            _ if letter(b'D') && control => {
+                self.double_size();
+                return Effect::Handled;
+            }
+            k if k == VK_LEFT.0 => Command::Seek((position - 5.0).max(0.0)),
+            k if k == VK_RIGHT.0 => Command::Seek(position + 5.0),
+            k if k == VK_UP.0 => {
+                self.volume(volume + 0.02);
+                return Effect::Handled;
+            }
+            k if k == VK_DOWN.0 => {
+                self.volume(volume - 0.02);
+                return Effect::Handled;
+            }
+            k if k == VK_DELETE.0 => {
+                self.remove_selected();
+                return Effect::Handled;
+            }
             _ => return Effect::Default,
-        }
+        };
+        self.send(command);
         Effect::Handled
     }
 
     /// Draws a frame at 1x and puts on screen what changed. The timer then runs at the pace the
     /// window needs: fast while something moves, slow while only the title or a blink does.
     fn render(&mut self) {
-        let now = self.session.player.now();
-        self.session.tick(&now);
+        self.snapshot = self.session.snapshot();
+        self.session.tick(&self.snapshot);
+        if self.revision != Some(self.snapshot.revision) {
+            self.revision = Some(self.snapshot.revision);
+            self.relist();
+        }
+        let now = self.session.now(&self.snapshot);
         let samples = if now.playing {
-            self.session.player.tap(FFT_SAMPLES)
+            self.session.engine.tap(FFT_SAMPLES)
         } else {
             Vec::new()
         };
@@ -898,7 +986,7 @@ impl Classic {
         let bars = self.analyser.step(&samples, clock);
         self.notice = self.notice.take().filter(|(_, at)| at.elapsed() < NOTICE);
         let line = match (
-            &now.error,
+            &now.said,
             &self.notice,
             self.seeking,
             self.session.titles.get(now.index),
@@ -919,18 +1007,18 @@ impl Classic {
         let view = View {
             now: &now,
             marquee: &marquee,
-            volume: self.session.player.volume(),
+            volume: self.snapshot.volume,
             focused: self.focused,
             pressed: self.pressed.filter(|_| self.over).map(|(t, _)| t.control),
             seeking: self.seeking,
             remaining: self.remaining,
             blink_off,
             bars: &bars,
-            shuffle: self.session.shuffle,
-            repeat: self.session.repeat,
+            shuffle: self.snapshot.shuffle,
+            repeat: self.snapshot.repeat != Repeat::Off,
             eq_open: self.panels.eq,
             playlist_open: self.panels.playlist,
-            eq: &self.session.eq,
+            eq: &self.snapshot.eq,
             list: &self.list,
         };
         let mut drawn = Vec::new();

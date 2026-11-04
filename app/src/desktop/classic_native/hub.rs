@@ -4,6 +4,7 @@
 //! them: plays and likes become the outbox's ops (web/offline.js), handed to the page with the
 //! queue when Classic closes.
 
+use super::listen::How;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::io::Read;
@@ -25,14 +26,6 @@ pub struct Hub {
     agent: ureq::Agent,
     origin: Url,
     token: String,
-}
-
-/// How a play ended (web/app.js `recordPlay`): by itself, the listener moved on, or Classic closed.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum How {
-    Completed,
-    Skipped,
-    Stopped,
 }
 
 impl Hub {
@@ -98,6 +91,16 @@ impl Hub {
     pub fn save(&self, track: &str) -> Result<(), Failure> {
         self.call("POST", "/api/saves", Some(json!({ "ids": [track] })))
             .map(drop)
+    }
+
+    /// Any other call the player makes (settings, radio, prefetch, letting a stream go, a better
+    /// copy's switch, lull Connect's state): the answer as JSON, `null` when there is none.
+    pub fn json(&self, method: &str, path: &str, body: Option<Value>) -> Result<Value, Failure> {
+        let answer = self.call(method, path, body)?;
+        if answer.is_empty() {
+            return Ok(Value::Null);
+        }
+        serde_json::from_slice(&answer).map_err(|e| Failure::Refused(e.to_string()))
     }
 
     fn call(&self, method: &str, path: &str, body: Option<Value>) -> Result<Vec<u8>, Failure> {

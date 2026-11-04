@@ -47,6 +47,14 @@ pub struct Handoff {
     /// The skin's file, base64, when it is kept on the device (the page's storage) and not the hub.
     #[serde(default)]
     pub(crate) skin_data: Option<String>,
+    /// The page's repeat (`off`, `all`, `one`; `repeat` above is Webamp's on or off), its radio and
+    /// where the listening started, as it keeps them.
+    #[serde(default)]
+    pub(crate) repeat_mode: Option<String>,
+    #[serde(default)]
+    pub(crate) radio: Option<serde_json::Value>,
+    #[serde(default)]
+    pub(crate) context: Option<serde_json::Value>,
 }
 
 /// The web UI's equaliser settings (web/eq.js): on, ten bands in dB, and a hand-set preamp or
@@ -83,6 +91,17 @@ pub(crate) struct Track {
     /// Played from radio or a feed pick (listening history's hit rate).
     #[serde(default)]
     pub(crate) recommended: bool,
+    /// Its queue entry as the page keeps it (`context`, `next`, `radio`; a picked copy; its place
+    /// before shuffling) and its ReplayGain for Settings › Playback's mode: the native window plays
+    /// the queue by the page's rules and hands it back in the page's shape.
+    #[serde(default)]
+    pub(crate) group: Option<String>,
+    #[serde(default)]
+    pub(crate) source: Option<serde_json::Value>,
+    #[serde(default)]
+    pub(crate) orig: Option<usize>,
+    #[serde(default)]
+    pub(crate) gain_db: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -377,6 +396,10 @@ mod tests {
             liked: false,
             saved: false,
             recommended: false,
+            group: None,
+            source: None,
+            orig: None,
+            gain_db: None,
         };
         Handoff {
             tracks: vec![track("a"), track("b")],
@@ -392,6 +415,9 @@ mod tests {
             page: None,
             eq: None,
             skin_data: None,
+            repeat_mode: None,
+            radio: None,
+            context: None,
         }
     }
 

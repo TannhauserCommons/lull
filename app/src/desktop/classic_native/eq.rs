@@ -16,6 +16,12 @@ const CURVE_RATE: f64 = 48_000.0;
 /// The automatic level stays this far under 0 dB.
 const MARGIN_DB: f64 = 0.1;
 
+impl Default for Equaliser {
+    fn default() -> Self {
+        Self::flat()
+    }
+}
+
 impl Equaliser {
     pub fn flat() -> Self {
         Equaliser {

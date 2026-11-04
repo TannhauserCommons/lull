@@ -186,10 +186,12 @@ pub fn share(origin: &Url, token: &str, kind: &str, id: &str) -> Result<Option<S
     }
 }
 
-/// Follows `GET /api/events` and calls `on_event` with each event's topic until the stream ends.
-/// Its own agent: the stream stays open, so only connecting has a time limit.
+/// Follows `GET /api/events` and calls `on_event` with each event's topic and data until the stream
+/// ends, or `on_event` says to stop (false). Its own agent: the stream stays open, so only connecting
+/// has a time limit. The hub's keep-alive every 15 s asks `on_event` too (topic and data empty), so a
+/// caller that wants to stop is asked within 15 s.
 #[cfg(desktop)]
-pub fn events(origin: &Url, token: &str, mut on_event: impl FnMut(&str)) -> Result<(), String> {
+pub fn events(origin: &Url, token: &str, mut on_event: impl FnMut(&str, &str) -> bool) -> Result<(), String> {
     use std::io::BufRead;
     static STREAM: LazyLock<Agent> = LazyLock::new(|| {
         Agent::config_builder()
@@ -210,10 +212,29 @@ pub fn events(origin: &Url, token: &str, mut on_event: impl FnMut(&str)) -> Resu
         return Err(format!("The hub answered {}", response.status()));
     }
     let lines = std::io::BufReader::new(response.into_body().into_reader()).lines();
+    let mut topic = String::new();
+    let mut data = String::new();
     for line in lines {
         let line = line.map_err(|e| e.to_string())?;
-        if let Some(topic) = line.strip_prefix("event:") {
-            on_event(topic.trim());
+        let go_on = if let Some(t) = line.strip_prefix("event:") {
+            topic = t.trim().to_owned();
+            true
+        } else if let Some(d) = line.strip_prefix("data:") {
+            if !data.is_empty() {
+                data.push('\n');
+            }
+            data.push_str(d.strip_prefix(' ').unwrap_or(d));
+            true
+        } else if line.is_empty() && !topic.is_empty() {
+            let go_on = on_event(&topic, &data);
+            topic.clear();
+            data.clear();
+            go_on
+        } else {
+            on_event("", "")
+        };
+        if !go_on {
+            return Ok(());
         }
     }
     Ok(())

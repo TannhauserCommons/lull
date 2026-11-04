@@ -1960,7 +1960,9 @@
     var q = source ? '?peer=' + encodeURIComponent(source.peer) + '&path=' + encodeURIComponent(source.path) : '';
     return M.url('/api/stream/' + encodeURIComponent(t.id) + q);
   }
-  /* ReplayGain in dB for Settings > Playback's mode, when the library supplies it (track.replayGain { track, album }) */
+  /* ReplayGain in dB for Settings > Playback's mode, when the library supplies it (track.replayGain { track, album });
+     also what a native player is handed (screens/classic.js) */
+  P.replayGainDb = replayGainDb;
   function replayGainDb(trackId) {
     var t = M.track(trackId);
     return LullRules.replayGainDb(t && t.replayGain, playback.normalisation);
@@ -3059,20 +3061,31 @@
     storage('player', { volume: ps.volume, muted: ps.muted, shuffle: ps.shuffle, repeat: ps.repeat, radio: ps.radio, context: ps.context,
       index: ps.index, pos: ps.pos, queue: ps.queue.map(function (q) { return { trackId: q.trackId, group: q.group, source: q.source, orig: q.orig }; }), tracks: keep });
   }
-  function restore() {
-    if (!saved0.queue || !saved0.queue.length) return;
-    M.absorb({ tracks: saved0.tracks });
-    ps.queue = saved0.queue.filter(function (q) { return M.track(q.trackId); }).map(function (q) { var e = entry(q.trackId, q.group, q.source); e.orig = q.orig; return e; });   // orig: shuffle's way back
+  function restore(saved) {
+    if (!saved.queue || !saved.queue.length) return;
+    M.absorb({ tracks: saved.tracks });
+    ps.queue = saved.queue.filter(function (q) { return M.track(q.trackId); }).map(function (q) { var e = entry(q.trackId, q.group, q.source); e.orig = q.orig; return e; });   // orig: shuffle's way back
     if (!ps.queue.length) return;
-    ps.index = clamp(saved0.index || 0, 0, ps.queue.length - 1);
-    ps.radio = saved0.radio ? Object.assign({}, saved0.radio, { error: null }) : null;    // an old error was that session's
-    ps.context = validPlace(saved0.context);
-    ps.pos = saved0.pos || 0;
+    ps.index = clamp(saved.index || 0, 0, ps.queue.length - 1);
+    ps.radio = saved.radio ? Object.assign({}, saved.radio, { error: null }) : null;    // an old error was that session's
+    ps.context = validPlace(saved.context);
+    ps.pos = saved.pos || 0;
     var t = P.current();
     ps.status = App.isSaved(t.id) ? 'library' : 'streaming';
     ps.received = App.isSaved(t.id) ? 1 : 0;
   }
-  restore();
+  restore(saved0);
+  /* a queue played elsewhere comes back in persist()'s shape (the desktop's native Classic window,
+     app/src/desktop/classic_native): it replaces this one, modes and volume too, and plays on from where it was */
+  P.adopt = function (saved, playing) {
+    endPlay('skipped'); releaseNext();
+    ps.shuffle = !!saved.shuffle; ps.repeat = saved.repeat || 'off';
+    if (saved.volume != null) { ps.volume = clamp(saved.volume, 0, 1); ps.muted = !!saved.muted; applyLevels(); }
+    restore(saved);
+    if (!ps.queue.length) { changed('queue'); return; }
+    load(ps.index, { reason: 'skipped', at: ps.pos, autoplay: !!playing });
+    queueChanged(); changed('mode');
+  };
 
   /* how long the song has waited in this state, once that is long enough to wonder (5 s) */
   var statusWas = null, statusSince = 0;

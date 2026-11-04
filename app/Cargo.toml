@@ -115,6 +115,11 @@ symphonia = { version = "=0.5.5", default-features = false, features = ["aac", "
 opus-decoder = "=0.1.1"
 # A skin kept on the device comes from the page as base64. Already in Tauri's tree.
 base64 = "=0.23.1"
+# Every song resampled to the output's rate, so songs follow each other without a gap and crossfade
+# whatever their rates, as the browser's player does: rubato's FFT resampler (MIT or Apache-2.0),
+# clean and cheap; audioadapter-buffers is the buffer type it takes (same authors, same licence).
+rubato = "=5.0.1"
+audioadapter-buffers = "=5.2.0"
 cpal = "=0.18.2"
 image = { version = "=0.25.10", default-features = false, features = ["bmp", "png"] }
 zip = { version = "=9.2.1", default-features = false, features = ["deflate"] }
