@@ -58,7 +58,7 @@ plan() {
   git fetch -q origin '+refs/heads/queue/*:refs/remotes/origin/queue/*' '+refs/heads/main:refs/remotes/origin/main'
   base=$(git rev-parse origin/main)
   # Oldest first, by when the tip was committed.
-  waiting=$(git for-each-ref --sort=committerdate --format='%(refname:strip=3) %(objectname)' refs/remotes/origin/queue/)
+  waiting=$(git for-each-ref --sort=committerdate --format='%(refname:strip=4) %(objectname)' refs/remotes/origin/queue/)
   [ -n "$waiting" ] || { echo "nothing waiting"; out candidate ""; return; }
 
   # A red tip waits for its owner's next push. Tips left from a red batch go one at a time.
@@ -122,6 +122,7 @@ land() {
   # A fast-forward only: if main moved (a push past the queue), nothing is lost and the next run retries.
   if ! git push -q origin "$CANDIDATE:refs/heads/main"; then
     echo "main moved during the run; trying again"
+    git push -q origin --delete "refs/heads/queue-candidate/$GITHUB_RUN_ID" || true
     retry
     return
   fi
