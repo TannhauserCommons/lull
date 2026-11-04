@@ -9,9 +9,11 @@
 import { expect, test } from '@playwright/test';
 import { designs, ids, openScreen, themes } from './lib.mjs';
 
-// each running loop on the page: its rate and whether it is stepped, and its playback rate (0 = held)
+// each running loop on the page: its rate and whether it is stepped, and its playback rate (0 = held). One that has
+// not started yet (pending, or at 0 ms: made by the change just before, such as a wave bar the song has just reached) has drawn no
+// frame, and is judged once it has
 const loops = (page) => page.evaluate(() => document.getAnimations()
-  .filter((a) => a.effect && a.effect.target && a.effect.getTiming().iterations === Infinity && a.playState === 'running'
+  .filter((a) => a.effect && a.effect.target && a.effect.getTiming().iterations === Infinity && a.playState === 'running' && !a.pending && a.currentTime > 0
     && !(a.timeline && a.timeline.constructor.name !== 'DocumentTimeline'))
   .map((a) => {
     const e = a.effect, cs = getComputedStyle(e.target, e.pseudoElement), t = e.target;
