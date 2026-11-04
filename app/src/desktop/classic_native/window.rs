@@ -1,11 +1,12 @@
 //! The Classic window on Windows: a plain Win32 window, no webview. Like Winamp 2's windows it's a
-//! borderless popup the skin cuts to shape, here one layered window holding the main window, the
-//! equaliser and the playlist stacked (as Webamp's window holds them), its pixels outside the
-//! skin's shapes transparent (clicks there reach the window behind). The skin is drawn at 1x
-//! (canvas.rs and a module per window), only what changed since the last frame is scaled up,
-//! nearest neighbour so pixels stay sharp at any size, and handed to the compositor
-//! (UpdateLayeredWindowIndirect with a dirty rectangle). The playlist's names are drawn at the
-//! screen's own size in the skin's font (GDI), as Webamp's are.
+//! borderless popup the skin cuts to shape (a window region, so clicks outside the skin's shapes
+//! reach the window behind), here one window holding the main window, the equaliser and the
+//! playlist stacked (as Webamp's window holds them). The skin is drawn at 1x (canvas.rs and a
+//! module per window); only what changed since the last frame is scaled up, nearest neighbour so
+//! pixels stay sharp at any size, a band of rows at a time into one small bitmap, with the
+//! playlist's names drawn over it at the screen's own size in the skin's font (GDI), as Webamp's
+//! are, and copied to the window. Nothing the size of the window is kept: at 3x a whole-window
+//! bitmap would be 3.4 MB, and a layered window's compositor keeps a copy of it too.
 //!
 //! It lives on the main thread, whose message loop (Tauri's) delivers its messages. Its state sits
 //! in a thread-local; Windows calls back into the window procedure while it runs (capture changes,
@@ -26,13 +27,13 @@ use super::vis::{Analyser, FFT_SAMPLES};
 use std::cell::RefCell;
 use std::ffi::c_void;
 use std::time::{Duration, Instant};
-use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM};
+use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    AC_SRC_ALPHA, AC_SRC_OVER, ANTIALIASED_QUALITY, BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BLENDFUNCTION,
-    CLIP_DEFAULT_PRECIS, ClientToScreen, CreateCompatibleDC, CreateDIBSection, CreateFontW, DEFAULT_CHARSET,
-    DIB_RGB_COLORS, DT_LEFT, DT_NOPREFIX, DT_RIGHT, DT_SINGLELINE, DT_VCENTER, DeleteDC, DeleteObject, DrawTextW,
-    FF_DONTCARE, FW_NORMAL, HBITMAP, HDC, HFONT, HGDIOBJ, OUT_DEFAULT_PRECIS, SelectObject, SetBkMode,
-    SetTextCharacterExtra, SetTextColor, TRANSPARENT,
+    ANTIALIASED_QUALITY, BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BeginPaint, BitBlt, CLIP_DEFAULT_PRECIS, ClientToScreen,
+    CombineRgn, CreateCompatibleDC, CreateDIBSection, CreateFontW, CreateRectRgn, DEFAULT_CHARSET, DIB_RGB_COLORS,
+    DT_LEFT, DT_NOPREFIX, DT_RIGHT, DT_SINGLELINE, DT_VCENTER, DeleteDC, DeleteObject, DrawTextW, EndPaint,
+    FF_DONTCARE, FW_NORMAL, GdiFlush, GetDC, HBITMAP, HDC, HFONT, HGDIOBJ, OUT_DEFAULT_PRECIS, PAINTSTRUCT, RGN_OR,
+    ReleaseDC, SRCCOPY, SelectObject, SetBkMode, SetTextCharacterExtra, SetTextColor, SetWindowRgn, TRANSPARENT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -41,16 +42,18 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CS_DBLCLKS, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow, HMENU,
     HTCAPTION, IDC_ARROW, KillTimer, LoadCursorW, LoadIconW, MF_CHECKED, MF_POPUP, MF_SEPARATOR, MF_STRING,
-    RegisterClassExW, SW_MINIMIZE, SW_SHOWNORMAL, SendMessageW, SetForegroundWindow, SetTimer, ShowWindow,
-    TPM_NONOTIFY, TPM_RETURNCMD, TrackPopupMenuEx, ULW_ALPHA, UPDATELAYEREDWINDOWINFO, UpdateLayeredWindowIndirect,
+    RegisterClassExW, SW_MINIMIZE, SW_SHOWNORMAL, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER, SendMessageW,
+    SetForegroundWindow, SetTimer, SetWindowPos, ShowWindow, TPM_NONOTIFY, TPM_RETURNCMD, TrackPopupMenuEx,
     WA_INACTIVE, WM_ACTIVATE, WM_CLOSE, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
-    WM_MOUSEWHEEL, WM_NCLBUTTONDBLCLK, WM_NCLBUTTONDOWN, WM_RBUTTONUP, WM_TIMER, WNDCLASSEXW, WS_EX_APPWINDOW,
-    WS_EX_LAYERED, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU,
+    WM_MOUSEWHEEL, WM_NCLBUTTONDBLCLK, WM_NCLBUTTONDOWN, WM_PAINT, WM_RBUTTONUP, WM_TIMER, WNDCLASSEXW,
+    WS_EX_APPWINDOW, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU,
 };
 use windows::core::{HSTRING, PCWSTR, w};
 
 const CLASS: PCWSTR = w!("lull-classic");
 const TIMER: usize = 1;
+/// Rows of the window scaled and copied at a time: the band's height.
+const BAND: i32 = 64;
 /// While something moves (the analyser, a playing song): Winamp's own sixty a second.
 const ANIMATE: Duration = Duration::from_millis(16);
 /// Otherwise only the scrolling title and a pause's blinking time change.
@@ -172,7 +175,12 @@ struct Classic {
     session: Session,
     on_close: Option<OnClose>,
     favourites: Vec<(String, String)>,
-    surface: Surface,
+    /// A band of the window at the screen's size, its whole width and `BAND` rows: what changed is
+    /// scaled into it and copied to the window a band at a time.
+    band: Surface,
+    /// The windows' layout the shape Windows cuts the window to was made for: none since the size
+    /// or the skin changed. Skins' sheets are opaque, so only the layout and the skin change it.
+    shape: Option<Panels>,
     canvas: Canvas,
     text: Text,
     /// The frame on screen, at 1x: what the next one is compared with.
@@ -243,8 +251,8 @@ pub fn open(setup: Setup, on_close: OnClose) -> Result<(), String> {
         Ok(overlay) => session.attach_overlay(overlay),
         Err(e) => eprintln!("lull: no media keys for Classic: {e}"),
     }
-    let surface = match Surface::new(size) {
-        Ok(surface) => surface,
+    let band = match Surface::new((size.0, BAND)) {
+        Ok(band) => band,
         Err(e) => {
             // SAFETY: the window was just created on this thread and nothing else holds it.
             let _ = unsafe { DestroyWindow(hwnd) };
@@ -258,7 +266,8 @@ pub fn open(setup: Setup, on_close: OnClose) -> Result<(), String> {
         session,
         on_close: Some(on_close),
         favourites: setup.favourites,
-        surface,
+        band,
+        shape: None,
         canvas: Canvas::new(panels.height()),
         shown: Vec::new(),
         shown_texts: Vec::new(),
@@ -335,6 +344,7 @@ pub fn set_skin(skin: Result<(Skin, Option<String>), String>) {
                 classic.skin = skin;
                 classic.notice = said.map(|said| (said, Instant::now()));
                 classic.shown.clear();
+                classic.shape = None;
             }
             Err(why) => classic.notice = Some((format!("Couldn't load the skin: {why}"), Instant::now())),
         }
@@ -377,7 +387,7 @@ fn create(at: (i32, i32), size: (i32, i32)) -> Result<HWND, String> {
         };
         RegisterClassExW(&class);
         CreateWindowExW(
-            WS_EX_LAYERED | WS_EX_APPWINDOW,
+            WS_EX_APPWINDOW,
             CLASS,
             w!("lull classic"),
             WS_POPUP | WS_SYSMENU | WS_MINIMIZEBOX,
@@ -502,6 +512,10 @@ impl Classic {
         let effect = match message {
             WM_TIMER => {
                 self.render();
+                return Effect::Handled;
+            }
+            WM_PAINT => {
+                self.repaint();
                 return Effect::Handled;
             }
             WM_LBUTTONDOWN => {
@@ -1032,6 +1046,9 @@ impl Classic {
                 (Panel::Playlist, true) => playlist::shaded(&mut pen, &view),
             }
         }
+        if self.shape != Some(self.panels) {
+            self.reshape();
+        }
         let dirty = drawn
             .iter()
             .filter_map(|&(from, to)| changed(&self.canvas.pixels, &self.shown, from, to))
@@ -1056,88 +1073,154 @@ impl Classic {
         }
     }
 
-    /// The stack's height or the size changed: a new bitmap, all of it drawn again.
+    /// The stack's height or the size changed: the window takes its new size, and all of it is
+    /// drawn again.
     fn resize(&mut self, height: u32) {
         let scale = self.size * self.dpi;
         self.columns = edges(WIDTH, scale);
         self.rows = edges(height, scale);
         let size = (self.columns[WIDTH as usize], self.rows[height as usize]);
-        match Surface::new(size) {
-            Ok(surface) => self.surface = surface,
-            Err(e) => eprintln!("lull: Classic window: {e}"),
+        if size.0 != self.band.size.0 {
+            match Surface::new((size.0, BAND)) {
+                Ok(band) => self.band = band,
+                Err(e) => eprintln!("lull: Classic window: {e}"),
+            }
+        }
+        // SAFETY: a window this thread owns; only its size changes.
+        let resized = unsafe {
+            SetWindowPos(
+                self.hwnd,
+                None,
+                0,
+                0,
+                size.0,
+                size.1,
+                SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
+            )
+        };
+        if let Err(e) = resized {
+            eprintln!("lull: Classic window didn't resize: {e}");
         }
         // What was on screen was another shape: nothing of it is compared with, all of it is drawn.
         self.shown.clear();
         self.shown_texts.clear();
         self.prints = [None; 3];
+        self.shape = None;
     }
 
-    /// Scales the changed skin pixels into the window's bitmap, draws the playlist's text there at
-    /// the screen's size, and hands that part to Windows.
-    fn present(&mut self, (x0, y0, x1, y1): (u32, u32, u32, u32)) {
+    /// Cuts the window to the skin's shapes as drawn (outside them the canvas is transparent); a
+    /// window drawn with no transparency is a plain rectangle.
+    fn reshape(&mut self) {
+        self.shape = Some(self.panels);
+        let region = shape(&self.canvas.pixels).map(|pieces| {
+            // SAFETY: regions this makes; each piece is deleted once merged into `whole`, which
+            // Windows owns once it is the window's.
+            unsafe {
+                let whole = CreateRectRgn(0, 0, 0, 0);
+                for (x0, y0, x1, y1) in pieces {
+                    let piece = CreateRectRgn(
+                        self.columns[x0 as usize],
+                        self.rows[y0 as usize],
+                        self.columns[x1 as usize],
+                        self.rows[y1 as usize],
+                    );
+                    CombineRgn(Some(whole), Some(whole), Some(piece), RGN_OR);
+                    let _ = DeleteObject(piece.into());
+                }
+                whole
+            }
+        });
+        // SAFETY: a window this thread owns; Windows takes the region (none: the whole window).
+        if unsafe { SetWindowRgn(self.hwnd, region, false) } == 0 {
+            eprintln!("lull: Classic window's shape: {}", windows::core::Error::from_thread());
+        }
+    }
+
+    /// Shows skin pixels `[x0, x1) x [y0, y1)` of the canvas in the window now.
+    fn present(&mut self, dirty: (u32, u32, u32, u32)) {
+        // SAFETY: the window's own DC, released once painted.
+        unsafe {
+            let dc = GetDC(Some(self.hwnd));
+            self.paint(dc, dirty);
+            ReleaseDC(Some(self.hwnd), dc);
+        }
+    }
+
+    /// Windows asks for a part of the window again (shown, restored, uncovered).
+    fn repaint(&mut self) {
+        let mut paint = PAINTSTRUCT::default();
+        // SAFETY: a window this thread owns; EndPaint ends what BeginPaint began.
+        unsafe {
+            let dc = BeginPaint(self.hwnd, &mut paint);
+            let r = paint.rcPaint;
+            if r.right > r.left && r.bottom > r.top && !self.shown.is_empty() {
+                let x0 = skin_at(r.left, &self.columns);
+                let x1 = (skin_at(r.right - 1, &self.columns) + 1).min(WIDTH);
+                let y0 = skin_at(r.top, &self.rows);
+                let y1 = (skin_at(r.bottom - 1, &self.rows) + 1).min(self.canvas.height);
+                if x1 > x0 && y1 > y0 {
+                    self.paint(dc, (x0, y0, x1, y1));
+                }
+            }
+            let _ = EndPaint(self.hwnd, &paint);
+        }
+    }
+
+    /// Scales skin pixels `[x0, x1) x [y0, y1)` up into the band, a band of rows at a time, draws
+    /// the playlist's text over them at the screen's size, and copies each band to the window
+    /// through `dc`.
+    fn paint(&mut self, dc: HDC, (x0, y0, x1, y1): (u32, u32, u32, u32)) {
         let (left, right) = (self.columns[x0 as usize], self.columns[x1 as usize]);
         let (top, bottom) = (self.rows[y0 as usize], self.rows[y1 as usize]);
-        let stride = self.surface.size.0 as usize;
-        let pixels = self.surface.pixels();
-        for py in top..bottom {
-            let sy = skin_at(py, &self.rows) as usize;
-            let source = &self.canvas.pixels[sy * WIDTH as usize..(sy + 1) * WIDTH as usize];
-            let row = &mut pixels[py as usize * stride..(py as usize + 1) * stride];
-            for sx in x0..x1 {
-                let (from, to) = (
-                    self.columns[sx as usize] as usize,
-                    self.columns[sx as usize + 1] as usize,
-                );
-                row[from..to.min(stride)].fill(source[sx as usize]);
+        let stride = self.band.size.0 as usize;
+        let mut from = top;
+        while from < bottom {
+            let to = (from + self.band.size.1).min(bottom);
+            // SAFETY: GDI finishes with the band (the last copy out of it) before its pixels change.
+            let _ = unsafe { GdiFlush() };
+            let pixels = self.band.pixels();
+            for py in from..to {
+                let sy = skin_at(py, &self.rows) as usize;
+                let source = &self.canvas.pixels[sy * WIDTH as usize..(sy + 1) * WIDTH as usize];
+                let at = (py - from) as usize * stride;
+                let row = &mut pixels[at..at + stride];
+                for sx in x0..x1 {
+                    let (a, b) = (
+                        (self.columns[sx as usize] - left) as usize,
+                        (self.columns[sx as usize + 1] - left) as usize,
+                    );
+                    row[a..b.min(stride)].fill(source[sx as usize]);
+                }
             }
-        }
-        let dirty = RECT {
-            left,
-            top,
-            right,
-            bottom,
-        };
-        for run in &self.canvas.texts {
-            let area = run.area;
-            let at = RECT {
-                left: self.columns[area.x as usize],
-                top: self.rows[area.y as usize],
-                right: self.columns[(area.x + area.width) as usize],
-                bottom: self.rows[(area.y + area.height) as usize],
-            };
-            if at.left < dirty.right && dirty.left < at.right && at.top < dirty.bottom && dirty.top < at.bottom {
-                self.text.draw(&mut self.surface, run, at);
+            for run in &self.canvas.texts {
+                let area = run.area;
+                let at = RECT {
+                    left: self.columns[area.x as usize] - left,
+                    top: self.rows[area.y as usize] - from,
+                    right: self.columns[(area.x + area.width) as usize] - left,
+                    bottom: self.rows[(area.y + area.height) as usize] - from,
+                };
+                if at.left < right - left && at.right > 0 && at.top < to - from && at.bottom > 0 {
+                    self.text.draw(self.band.dc, run, at);
+                }
             }
-        }
-        let size = SIZE {
-            cx: self.surface.size.0,
-            cy: self.surface.size.1,
-        };
-        let origin = POINT { x: 0, y: 0 };
-        let blend = BLENDFUNCTION {
-            BlendOp: AC_SRC_OVER as u8,
-            BlendFlags: 0,
-            SourceConstantAlpha: 255,
-            AlphaFormat: AC_SRC_ALPHA as u8,
-        };
-        let info = UPDATELAYEREDWINDOWINFO {
-            cbSize: size_of::<UPDATELAYEREDWINDOWINFO>() as u32,
-            psize: &size,
-            hdcSrc: self.surface.dc,
-            pptSrc: &origin,
-            crKey: COLORREF(0),
-            pblend: &blend,
-            dwFlags: ULW_ALPHA,
-            prcDirty: &dirty,
-            ..Default::default()
-        };
-        // SAFETY: every pointer in `info` outlives the call; the surface's bitmap is selected into
-        // its DC.
-        if !unsafe { UpdateLayeredWindowIndirect(self.hwnd, &info) }.as_bool() {
-            eprintln!(
-                "lull: Classic window didn't update: {}",
-                windows::core::Error::from_thread()
-            );
+            // SAFETY: the band's bitmap is selected into its DC; `dc` is the window's.
+            if let Err(e) = unsafe {
+                BitBlt(
+                    dc,
+                    left,
+                    from,
+                    right - left,
+                    to - from,
+                    Some(self.band.dc),
+                    0,
+                    0,
+                    SRCCOPY,
+                )
+            } {
+                eprintln!("lull: Classic window didn't update: {e}");
+            }
+            from = to;
         }
     }
 
@@ -1183,6 +1266,51 @@ fn edges(count: u32, scale: f64) -> Vec<i32> {
 /// physical one it covers.
 fn skin_at(physical: i32, edges: &[i32]) -> u32 {
     edges.partition_point(|&e| e <= physical).saturating_sub(1) as u32
+}
+
+/// The canvas's drawn pixels as rectangles of skin pixels `(x0, y0, x1, y1)`, end exclusive: runs of
+/// a row, each carried down while the rows below have the same run. None when nothing is
+/// transparent (the window is a plain rectangle).
+fn shape(pixels: &[u32]) -> Option<Vec<(u32, u32, u32, u32)>> {
+    if pixels.iter().all(|p| p >> 24 != 0) {
+        return None;
+    }
+    let width = WIDTH as usize;
+    let mut done = Vec::new();
+    // Runs still growing down: x0, x1 and the row they began on.
+    let mut open: Vec<(u32, u32, u32)> = Vec::new();
+    let mut runs = Vec::new();
+    for (y, row) in pixels.chunks_exact(width).enumerate() {
+        let y = y as u32;
+        runs.clear();
+        let mut x = 0;
+        while x < width {
+            if row[x] >> 24 == 0 {
+                x += 1;
+                continue;
+            }
+            let start = x;
+            while x < width && row[x] >> 24 != 0 {
+                x += 1;
+            }
+            runs.push((start as u32, x as u32));
+        }
+        open.retain(|&(x0, x1, top)| {
+            let goes_on = runs.contains(&(x0, x1));
+            if !goes_on {
+                done.push((x0, top, x1, y));
+            }
+            goes_on
+        });
+        for &(x0, x1) in &runs {
+            if !open.iter().any(|&(a, b, _)| (a, b) == (x0, x1)) {
+                open.push((x0, x1, y));
+            }
+        }
+    }
+    let height = (pixels.len() / width) as u32;
+    done.extend(open.into_iter().map(|(x0, x1, top)| (x0, top, x1, height)));
+    Some(done)
 }
 
 /// The part of rows `from..to` of the frame that differs from the one on screen, as skin pixels
@@ -1321,13 +1449,11 @@ impl Marquee {
     }
 }
 
-/// The playlist's text, in the skin's font (`pledit.txt`) at the screen's size. Each line is drawn
-/// white on black into a scratch bitmap, greyscale-smoothed, and that coverage lays its colour over
-/// the row in the window's bitmap: GDI leaves alpha alone, and the window's pixels need theirs.
+/// The playlist's text, in the skin's font (`pledit.txt`) at the screen's size, greyscale-smoothed
+/// over the skin's pixels.
 struct Text {
     font: HFONT,
     spacing: i32,
-    scratch: Option<Surface>,
 }
 
 impl Text {
@@ -1355,73 +1481,30 @@ impl Text {
         Self {
             font,
             spacing: (TEXT_SPACING * scale).round() as i32,
-            scratch: None,
         }
     }
 
-    fn draw(&mut self, surface: &mut Surface, run: &TextRun, at: RECT) {
-        let (width, height) = (at.right - at.left, at.bottom - at.top);
-        if width <= 0 || height <= 0 {
+    /// One line into `dc` (the band's), in `at`.
+    fn draw(&self, dc: HDC, run: &TextRun, mut at: RECT) {
+        if at.right <= at.left || at.bottom <= at.top {
             return;
         }
-        if self
-            .scratch
-            .as_ref()
-            .is_none_or(|s| s.size.0 < width || s.size.1 < height)
-        {
-            match Surface::new((width.max(64), height.max(16))) {
-                Ok(scratch) => self.scratch = Some(scratch),
-                Err(e) => return eprintln!("lull: Classic text: {e}"),
-            }
-        }
-        let Some(scratch) = self.scratch.as_mut() else {
-            return;
-        };
-        let stride = scratch.size.0 as usize;
-        let (w, h) = (width as usize, height as usize);
-        for row in scratch.pixels().chunks_exact_mut(stride).take(h) {
-            row[..w].fill(0);
-        }
-        let mut rect = RECT {
-            left: 0,
-            top: 0,
-            right: width,
-            bottom: height,
-        };
         let mut words: Vec<u16> = run.text.encode_utf16().collect();
         let align = if run.right { DT_RIGHT } else { DT_LEFT };
-        // SAFETY: the scratch bitmap is selected into its own DC; the font outlives the call.
+        let [r, g, b] = run.color.map(u32::from);
+        // SAFETY: `dc` has a bitmap selected; the font outlives the call and is put back after.
         unsafe {
-            let previous = SelectObject(scratch.dc, self.font.into());
-            SetTextColor(scratch.dc, COLORREF(0x00ff_ffff));
-            SetBkMode(scratch.dc, TRANSPARENT);
-            SetTextCharacterExtra(scratch.dc, self.spacing);
+            let previous = SelectObject(dc, self.font.into());
+            SetTextColor(dc, COLORREF(b << 16 | g << 8 | r));
+            SetBkMode(dc, TRANSPARENT);
+            SetTextCharacterExtra(dc, self.spacing);
             DrawTextW(
-                scratch.dc,
+                dc,
                 &mut words,
-                &mut rect,
+                &mut at,
                 align | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX,
             );
-            SelectObject(scratch.dc, previous);
-        }
-        let coverage: Vec<u32> = scratch
-            .pixels()
-            .chunks_exact(stride)
-            .take(h)
-            .flat_map(|row| row[..w].iter().map(|p| (p >> 8) & 0xff))
-            .collect();
-        let [r, g, b] = run.color.map(u32::from);
-        let target_stride = surface.size.0 as usize;
-        let pixels = surface.pixels();
-        for (i, &a) in coverage.iter().enumerate().filter(|(_, a)| **a > 0) {
-            let (x, y) = (i % w, i / w);
-            let index = (at.top as usize + y) * target_stride + at.left as usize + x;
-            let Some(pixel) = pixels.get_mut(index) else {
-                continue;
-            };
-            let mix = |under: u32, over: u32| (over * a + under * (255 - a)) / 255;
-            let (ur, ug, ub) = ((*pixel >> 16) & 0xff, (*pixel >> 8) & 0xff, *pixel & 0xff);
-            *pixel = 0xff00_0000 | mix(ur, r) << 16 | mix(ug, g) << 8 | mix(ub, b);
+            SelectObject(dc, previous);
         }
     }
 }
@@ -1433,8 +1516,7 @@ impl Drop for Text {
     }
 }
 
-/// A bitmap: physical size, 32-bit premultiplied BGRA, top row first, in a memory DC (the window's,
-/// for UpdateLayeredWindowIndirect, and the text's scratch).
+/// A bitmap: physical size, 32-bit BGRA, top row first, in a memory DC (the window's band).
 struct Surface {
     dc: HDC,
     bitmap: HBITMAP,
@@ -1503,6 +1585,30 @@ impl Drop for Surface {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_window_is_cut_to_what_the_skin_draws() {
+        let width = WIDTH as usize;
+        let mut pixels = vec![0xff00_0000u32; width * 6];
+        assert_eq!(shape(&pixels), None, "drawn everywhere: no shape");
+        // A notch in rows 2 and 3, columns 10 to 19, and the last row only half drawn.
+        for y in 2..4 {
+            pixels[y * width + 10..y * width + 20].fill(0);
+        }
+        pixels[5 * width + 100..6 * width].fill(0);
+        let mut pieces = shape(&pixels).unwrap_or_default();
+        pieces.sort_unstable();
+        assert_eq!(
+            pieces,
+            vec![
+                (0, 0, WIDTH, 2),
+                (0, 2, 10, 4),
+                (0, 4, WIDTH, 5),
+                (0, 5, 100, 6),
+                (20, 2, WIDTH, 4),
+            ]
+        );
+    }
 
     #[test]
     fn only_the_changed_pixels_go_to_the_screen() {

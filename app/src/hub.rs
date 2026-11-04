@@ -188,7 +188,8 @@ pub fn share(origin: &Url, token: &str, kind: &str, id: &str) -> Result<Option<S
 
 /// Follows `GET /api/events` and calls `on_event` with each event's topic and data until the stream
 /// ends, or `on_event` says to stop (false). Its own agent: the stream stays open, so only connecting
-/// has a time limit. The hub's keep-alive every 15 s asks `on_event` too (topic and data empty), so a
+/// has a time limit, and its buffers are small (ureq's default is 128 KB each way), as the events
+/// are. The hub's keep-alive every 15 s asks `on_event` too (topic and data empty), so a
 /// caller that wants to stop is asked within 15 s.
 #[cfg(desktop)]
 pub fn events(origin: &Url, token: &str, mut on_event: impl FnMut(&str, &str) -> bool) -> Result<(), String> {
@@ -196,6 +197,8 @@ pub fn events(origin: &Url, token: &str, mut on_event: impl FnMut(&str, &str) ->
     static STREAM: LazyLock<Agent> = LazyLock::new(|| {
         Agent::config_builder()
             .timeout_connect(Some(TIMEOUT))
+            .input_buffer_size(16 * 1024)
+            .output_buffer_size(4 * 1024)
             .http_status_as_error(false)
             .user_agent(concat!("lull-app/", env!("CARGO_PKG_VERSION")))
             .build()

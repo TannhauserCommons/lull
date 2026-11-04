@@ -314,6 +314,9 @@ function emit(topic, data, only) {
   for (const [res, client] of clients) if (only === undefined || client === only) res.write(line);
 }
 const clientOf = (req) => req.headers['x-fixture-client'] || '';
+/* a comment on every open stream every 15 s, as the hub's keep-alive (crates/server/src/events.rs): a client that
+   stopped listening finds out at the next one */
+setInterval(() => { for (const res of clients.keys()) res.write(': keep-alive\n\n'); }, 15000).unref();
 
 // ---------- the screen each client reports, and covers a cold hub gets in that order (see the top) ----------
 const screens = new Map(), colds = new Map();   // client -> { visible: [id], near: [id] }; client -> cold state

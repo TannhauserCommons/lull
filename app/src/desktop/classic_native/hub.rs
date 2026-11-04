@@ -32,6 +32,8 @@ impl Hub {
     pub fn new(origin: Url, token: String) -> Self {
         let agent = ureq::Agent::config_builder()
             .timeout_global(Some(Duration::from_secs(15)))
+            .input_buffer_size(super::remote::INPUT_BUFFER)
+            .output_buffer_size(super::remote::OUTPUT_BUFFER)
             .http_status_as_error(false)
             .tls_config(TlsConfig::builder().root_certs(RootCerts::PlatformVerifier).build())
             .user_agent(concat!("lull-app/", env!("CARGO_PKG_VERSION")))
