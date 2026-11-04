@@ -25,6 +25,14 @@
 // The three art ones are per client: a browser context that sends `X-Fixture-Client: <id>` (and the calls that name
 // the same id) sees only its own pending covers, art.ready events and counts, so gates running side by side on one
 // hub never count or answer each other's pictures. With no header, the client is '' (one shared scope, as before).
+//
+// PUT /api/pictures/screen { gen, visible, near } (api.md) is kept per client, as the hub keeps it per device; a picture
+// or size lull doesn't serve is a 400. POST /__fixture/art-cold { pace } makes every cover of that client cold, as on a
+// hub that has fetched none: each answers 404 "not yet" until the hub has it. The hub then gets one every `pace` ms, in
+// the order the hub's picture service works (ADR-0033): the client's latest screen, visible then near, top to bottom,
+// then covers asked for that no screen shows, oldest first; each is announced with `art.ready`. GET /__fixture/art-filled
+// lists the ids it got, in order. GET /__fixture/screen is the client's latest screen as reported ({ gen, visible,
+// near }, raw), or null.
 
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
@@ -292,6 +300,44 @@ function emit(topic, data, only) {
 }
 const clientOf = (req) => req.headers['x-fixture-client'] || '';
 
+// ---------- the screen each client reports, and covers a cold hub gets in that order (see the top) ----------
+const screens = new Map(), colds = new Map();   // client -> { visible: [id], near: [id] }; client -> cold state
+const SIZES = [96, 256, 512, 1024, 2048];
+/* a reported picture's id, or null when lull serves no such picture at that size (api.md PUT /api/pictures/screen) */
+function shownId(p) {
+  const m = Array.isArray(p) && typeof p[0] === 'string' && /^(catalog\/art\/(?:al|ar|pls)|art\/al)-[0-9a-f]+$/.exec(p[0]);
+  if (!m || !(SIZES.includes(p[1]) || (p[1] === 0 && p[0].startsWith('catalog/art/ar-')))) return null;
+  return p[0].slice(p[0].lastIndexOf('/') + 1);
+}
+function report(client, body) {
+  const lists = [body && body.visible || [], body && body.near || []];
+  if (!body || typeof body.gen !== 'number' || !lists.every(Array.isArray)) return { status: 400, body: { error: 'bad_request', message: 'Send { gen, visible, near }.' } };
+  const [visible, near] = lists.map((l) => l.map(shownId));
+  if ([...visible, ...near].includes(null)) return { status: 400, body: { error: 'bad_request', message: 'Not a picture lull serves.' } };
+  const was = screens.get(client);
+  if (!was || body.gen > was.gen) screens.set(client, { gen: body.gen, visible, near, raw: body });
+  return { status: 204 };
+}
+function goCold(client, pace) {
+  const was = colds.get(client); if (was) clearInterval(was.timer);
+  const c = { warm: new Set(), asked: [], filled: [] };
+  c.timer = setInterval(() => {
+    const s = screens.get(client) || { visible: [], near: [] };
+    const next = [...s.visible, ...s.near, ...c.asked].find((id) => !c.warm.has(id) && (L.albums[id] || L.artists[id]));
+    if (!next) return;
+    c.warm.add(next); c.filled.push(next);
+    emit('art.ready', { keys: [next] }, client);
+  }, pace);
+  colds.set(client, c);
+}
+/* a cover a cold hub hasn't got yet: noted as asked, answered "not yet" */
+function cold(client, id) {
+  const c = colds.get(client);
+  if (!c || c.warm.has(id)) return false;
+  if (!c.asked.includes(id)) c.asked.push(id);
+  return true;
+}
+
 // ---------- covers: a two-colour gradient per id, as a real PNG at the size asked. The 512 px one has a fine grain,
 // so it weighs what a photo cover does (tens of KB): the desktop app hands that size to its mini player ----------
 const art = new Map(), artPending = new Set(), artRequests = new Map();   // pending: client + ' ' + id; requests: client -> url -> n
@@ -465,6 +511,10 @@ const server = createServer(async (req, res) => {
   const client = clientOf(req);
   if (path === '/__fixture/art-requests') { const counts = Object.fromEntries(artRequests.get(client) || []); artRequests.delete(client); return send(res, 200, counts); }
   if (path === '/__fixture/art-pending' && req.method === 'POST') { (await readBody(req)).ids.forEach((id) => artPending.add(client + ' ' + id)); return send(res, 204); }
+  if (path === '/__fixture/art-cold' && req.method === 'POST') { goCold(client, (await readBody(req)).pace); return send(res, 204); }
+  if (path === '/__fixture/screen') return send(res, 200, (screens.get(client) || { raw: null }).raw);
+  if (path === '/__fixture/art-filled') return send(res, 200, (colds.get(client) || { filled: [] }).filled);
+  if (path === '/api/pictures/screen' && req.method === 'PUT') { const out = report(client, await readBody(req)); return send(res, out.status, out.body); }
   if (path === '/__fixture/art-ready' && req.method === 'POST') {
     const { ids } = await readBody(req); ids.forEach((id) => artPending.delete(client + ' ' + id)); emit('art.ready', { keys: ids }, client); return send(res, 204);
   }
@@ -475,7 +525,7 @@ const server = createServer(async (req, res) => {
     // is: never blown up, and X-Image-Size says so
     const asked = [96, 256, 512, 1024, 2048].includes(+q.get('size')) ? +q.get('size') : 256, size = Math.min(asked, 512);
     if (!L.albums[m[1]] && !L.artists[m[1]]) return send(res, 404, { error: 'not_found', message: 'No cover.' });
-    if (artPending.has(client + ' ' + m[1])) {
+    if (artPending.has(client + ' ' + m[1]) || cold(client, m[1])) {
       res.writeHead(404, { 'content-type': 'application/json', 'cache-control': 'no-store' });
       return res.end(JSON.stringify({ error: 'not_found', message: 'The picture is still on its way.' }));
     }
