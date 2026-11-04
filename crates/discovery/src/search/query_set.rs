@@ -1,6 +1,7 @@
 //! The query set: words the listener types and what they mean by them, ranked on the fast
 //! sources' answers recorded for those words (`fixtures/query-set.json`: iTunes US songs and
-//! albums, Deezer artists and playlists, 2026-11-04, cut to the fields search reads). Search's
+//! albums, Deezer artists and playlists, YouTube Music's search, 2026-11-04, cut to the fields
+//! search reads). Search's
 //! first answer fixes the top result and the order, and these are the sources it comes from, so
 //! this is what the listener sees first.
 //!
@@ -12,7 +13,7 @@ use std::collections::HashSet;
 use lull_core::ids::{loose_title, normalize};
 use serde_json::Value;
 
-use super::merge::{Found, Merged, Query};
+use super::merge::{self, Found, Merged, Query};
 use super::{Board, Ranked, rank_rows};
 use crate::sources::{deezer, itunes, musicbrainz};
 
@@ -21,7 +22,11 @@ const CASES: &[(&str, &[&str])] = &[
     // Misspelt.
     (
         "radiohed creep",
-        &["track: Radiohead - Creep (Acoustic)", "album: Radiohead - Creep"],
+        &[
+            "track: Radiohead - Creep",
+            "track: Radiohead - Creep (Acoustic)",
+            "album: Radiohead - Creep",
+        ],
     ),
     ("beyonse halo", &["track: Beyoncé - Halo"]),
     ("fleetwod mac dreams", &["track: Fleetwood Mac - Dreams"]),
@@ -35,7 +40,11 @@ const CASES: &[(&str, &[&str])] = &[
     // Artist and title, either order.
     (
         "radiohead creep",
-        &["track: Radiohead - Creep (Acoustic)", "album: Radiohead - Creep"],
+        &[
+            "track: Radiohead - Creep",
+            "track: Radiohead - Creep (Acoustic)",
+            "album: Radiohead - Creep",
+        ],
     ),
     (
         "daft punk get lucky",
@@ -79,6 +88,8 @@ const CASES: &[(&str, &[&str])] = &[
         ],
     ),
     // Albums, some named like songs.
+    // Apple has no Nirvana: YouTube Music's best answer fills it, in the first answer.
+    ("nevermind", &["album: Nirvana - Nevermind"]),
     (
         "the dark side of the moon",
         &["album: Pink Floyd - The Dark Side of the Moon"],
@@ -150,6 +161,8 @@ fn merged(q: &str, answers: &Value) -> Merged {
         itunes::songs(answers["itunes-song"].clone()).unwrap_or_default(),
         itunes::albums(answers["itunes-album"].clone()),
     ));
+    // YouTube Music answers about as fast, and adds only what the catalog lacks.
+    merge::fill_gaps(&mut m, super::youtube_music::answer_of(&answers["youtube-music"]));
     m.add(Found {
         playlists: deezer::playlists_of(answers["deezer-playlist"].clone()).unwrap_or_default(),
         ..Found::default()

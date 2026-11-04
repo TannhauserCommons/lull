@@ -24,6 +24,7 @@ mod query_set;
 pub mod resolve;
 #[cfg(test)]
 mod tests;
+pub mod youtube_music;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -47,7 +48,13 @@ use merge::{Fit, Found, Kind, Merged, Query, Score, SongHit, Source, Touched};
 
 /// The longest the first answer waits for the fast sources.
 const FIRST_ANSWER: Duration = Duration::from_millis(1500);
-const FAST: [Source; 4] = [Source::Deezer, Source::Itunes, Source::Library, Source::DeezerPlaylists];
+const FAST: [Source; 5] = [
+    Source::Deezer,
+    Source::Itunes,
+    Source::Library,
+    Source::DeezerPlaylists,
+    Source::YoutubeMusic,
+];
 const KEEP: Duration = Duration::from_secs(600);
 /// The longest any one source is waited for.
 const SOURCE_LIMIT: Duration = Duration::from_secs(8);
@@ -88,6 +95,8 @@ struct RunState {
     /// Slow sources' answers that came before the first answer (kept from an earlier search):
     /// they go after its rows (`first_board`).
     held: Vec<Found>,
+    /// YouTube Music's answer, waiting for the catalog's songs: it only adds what they lack.
+    gap: Option<Found>,
 }
 
 /// A playlist row of an answer (`playlists.rs`): not an entity, as it isn't in lull's catalog.
@@ -259,7 +268,7 @@ fn sources(svc: &Service, query: &str) -> Vec<Source> {
         sources.push(Source::MusicBrainz);
     }
     if slow {
-        sources.extend([Source::DeezerPlaylists, Source::YoutubePlaylists]);
+        sources.extend([Source::DeezerPlaylists, Source::YoutubePlaylists, Source::YoutubeMusic]);
     }
     sources
 }
@@ -334,6 +343,11 @@ async fn fetch(svc: &Service, source: Source, q: &str) -> Result<Found> {
             playlists: svc.deezer.playlists(q).await?,
             ..Found::default()
         }),
+        // A gap-filler fails soft: it answers nothing, and says so, but the run stands.
+        Source::YoutubeMusic => Ok(svc.youtube_music.search(q).await.unwrap_or_else(|e| Found {
+            problem: Some(e.to_string()),
+            ..Found::default()
+        })),
         Source::YoutubePlaylists => Ok(Found {
             playlists: youtube_playlists(svc, q).await?,
             ..Found::default()
@@ -403,7 +417,14 @@ async fn arrive(svc: &Service, run: &Run, source: Source, found: Result<Found>) 
             if let Some(problem) = found.problem.take() {
                 st.errors.insert(source, problem);
             }
-            if st.board.is_none() && !FAST.contains(&source) {
+            if source == Source::YoutubeMusic {
+                if st.pending.contains(&run.songs) {
+                    st.gap = Some(found);
+                    Touched::default()
+                } else {
+                    merge::fill_gaps(&mut st.merged, found)
+                }
+            } else if st.board.is_none() && !FAST.contains(&source) {
                 st.held.push(found);
                 Touched::default()
             } else {
@@ -416,6 +437,11 @@ async fn arrive(svc: &Service, run: &Run, source: Source, found: Result<Found>) 
             st.errors.insert(source, e.to_string());
             Touched::default()
         }
+    };
+    // The catalog's songs are in (or failed): YouTube Music's answer adds what they lack.
+    let touched = match st.gap.take().filter(|_| source == run.songs) {
+        Some(gap) => touched.and(merge::fill_gaps(&mut st.merged, gap)),
+        None => touched,
     };
     if st.board.is_some() {
         match view(svc, &run.query, &mut st, Some(&touched)).await {
@@ -571,7 +597,15 @@ fn rank_rows(q: &Query, m: &Merged, liked: &HashSet<TrackId>, followed: &HashSet
         let s = &m.songs[i];
         s.saved.is_some() || liked.contains(&s.id()) || followed.contains(&ArtistId::of(&s.artist))
     });
-    let album_fits: Vec<Score> = m.albums.iter().map(|a| Score::album(q, a)).collect();
+    let album_fits: Vec<Score> = m
+        .albums
+        .iter()
+        .enumerate()
+        .map(|(i, a)| Score {
+            filler: m.filler_album(i),
+            ..Score::album(q, a)
+        })
+        .collect();
     let albums = merge::rank(&album_fits, |i| followed.contains(&ArtistId::of(&m.albums[i].artist)));
     let mut artist_fits: Vec<Score> = m.artists.iter().map(|a| Score::artist(q, a)).collect();
     merge::overshadow(&m.artists, &mut artist_fits);
@@ -626,7 +660,15 @@ fn rank_rows(q: &Query, m: &Merged, liked: &HashSet<TrackId>, followed: &HashSet
 
 /// The songs' scores, their popularity raised by their other takes (`merge::known`).
 fn song_scores(q: &Query, m: &Merged) -> Vec<Score> {
-    let mut scores: Vec<Score> = m.songs.iter().map(|s| Score::song(q, s)).collect();
+    let mut scores: Vec<Score> = m
+        .songs
+        .iter()
+        .enumerate()
+        .map(|(i, s)| Score {
+            filler: m.filler_song(i),
+            ..Score::song(q, s)
+        })
+        .collect();
     merge::known(m, &mut scores);
     scores
 }

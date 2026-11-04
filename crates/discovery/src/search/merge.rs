@@ -103,6 +103,9 @@ pub enum Source {
     /// YouTube's playlist search, through yt-dlp.
     #[serde(rename = "youtube-playlists")]
     YoutubePlaylists,
+    /// YouTube Music's search, for what the catalog lacks (`youtube_music`).
+    #[serde(rename = "youtube-music")]
+    YoutubeMusic,
 }
 
 impl Source {
@@ -115,6 +118,7 @@ impl Source {
             Source::MusicBrainz | Source::MusicBrainzAlbums => "MusicBrainz",
             Source::DeezerPlaylists => "Deezer's playlists",
             Source::YoutubePlaylists => "YouTube's playlists",
+            Source::YoutubeMusic => "YouTube Music",
         }
     }
 }
@@ -129,6 +133,10 @@ pub struct Found {
     pub playlists: Vec<PlaylistHit>,
     /// Part of the answer is missing, and why (the rest is still used).
     pub problem: Option<String>,
+    /// A gap-filler's rows beyond its own best answer (YouTube Music's list after its top
+    /// result): they rank after the catalog's rows of the same fit (`fill_gaps`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fillers: Option<Box<Found>>,
 }
 
 /// A playlist someone made on YouTube or Deezer (search's Playlists section, `playlists.rs`).
@@ -298,6 +306,9 @@ pub struct Merged {
     pub playlists: Vec<PlaylistHit>,
     /// Songs before this position have been shown: their identity (and so their id) stays.
     shown_songs: usize,
+    /// Songs and albums only a gap-filler's list has (`fill_gaps`).
+    filler_songs: Vec<usize>,
+    filler_albums: Vec<usize>,
 }
 
 /// Positions of the rows one answer added or improved.
@@ -307,6 +318,17 @@ pub struct Touched {
     pub albums: Vec<usize>,
     pub artists: Vec<usize>,
     pub playlists: Vec<usize>,
+}
+
+impl Touched {
+    /// Both answers' positions.
+    pub fn and(mut self, other: Touched) -> Touched {
+        self.songs.extend(other.songs);
+        self.albums.extend(other.albums);
+        self.artists.extend(other.artists);
+        self.playlists.extend(other.playlists);
+        self
+    }
 }
 
 impl Merged {
@@ -357,6 +379,50 @@ impl Merged {
     /// Every row so far has been shown: none may change id any more.
     pub fn freeze(&mut self) {
         self.shown_songs = self.songs.len();
+    }
+}
+
+/// What a gap-filler (YouTube Music) brings: its songs and albums that aren't the same song or
+/// album as one the catalog already gave are added; for one that is, the catalog's row keeps its
+/// identity and facts, and only takes the gap-filler's play count when that is higher, as the
+/// catalog's own order is a guess (iTunes) and plays are a count ("hello" is Adele's, 2B plays,
+/// not a namesake YouTube Music put first for the region asking). Artists and playlists are left
+/// out.
+pub fn fill_gaps(m: &mut Merged, mut found: Found) -> Touched {
+    let fillers = found.fillers.take();
+    let best = add_gaps(m, found);
+    let Some(fillers) = fillers else { return best };
+    let (songs, albums) = (m.songs.len(), m.albums.len());
+    let listed = add_gaps(m, *fillers);
+    m.filler_songs.extend(songs..m.songs.len());
+    m.filler_albums.extend(albums..m.albums.len());
+    best.and(listed)
+}
+
+fn add_gaps(m: &mut Merged, mut found: Found) -> Touched {
+    found
+        .songs
+        .retain(|s| match m.songs.iter_mut().find(|row| same_song(row, s)) {
+            Some(row) => {
+                row.popularity = row.popularity.max(s.popularity);
+                false
+            }
+            None => true,
+        });
+    found.albums.retain(|a| !m.albums.iter().any(|row| same_album(row, a)));
+    found.artists.clear();
+    found.playlists.clear();
+    m.add(found)
+}
+
+impl Merged {
+    /// Only a gap-filler's list has this song (`fill_gaps`).
+    pub fn filler_song(&self, i: usize) -> bool {
+        self.filler_songs.contains(&i)
+    }
+
+    pub fn filler_album(&self, i: usize) -> bool {
+        self.filler_albums.contains(&i)
     }
 }
 
@@ -765,6 +831,8 @@ pub struct Score {
     pub fit: Fit,
     /// Another version than the words name (`Query::other_version`): it goes after the song.
     pub version: bool,
+    /// Only a gap-filler's list has it: it goes after the catalog's rows of the same fit.
+    pub filler: bool,
     pub popularity: f64,
     /// How far the top result leans toward it over the other kinds (`top`).
     pub lean: f64,
@@ -775,6 +843,7 @@ impl Score {
         Score {
             fit: q.song(s),
             version: q.other_version(&[version_words(&s.title), release_versions(&s.album)].concat()),
+            filler: false,
             popularity: s.popularity,
             lean: 0.0,
         }
@@ -788,6 +857,7 @@ impl Score {
         Score {
             fit: q.album(a),
             version: q.other_version(&release_versions(&a.title)),
+            filler: false,
             popularity: a.popularity,
             lean: if full_length { LEAN_FULL_LENGTH } else { LEAN_RELEASE },
         }
@@ -797,6 +867,7 @@ impl Score {
         Score {
             fit: q.artist(a),
             version: false,
+            filler: false,
             popularity: a.popularity,
             lean: LEAN_ARTIST,
         }
@@ -809,7 +880,13 @@ pub fn rank(rows: &[Score], own: impl Fn(usize) -> bool) -> Vec<usize> {
     let mut order: Vec<usize> = (0..rows.len()).collect();
     let key = |i: usize| {
         let r = rows[i];
-        (r.fit, !r.version, (r.popularity * 10.0).floor() as i64, own(i))
+        (
+            r.fit,
+            !r.version,
+            !r.filler,
+            (r.popularity * 10.0).floor() as i64,
+            own(i),
+        )
     };
     order.sort_by(|&a, &b| {
         key(b).cmp(&key(a)).then_with(|| {

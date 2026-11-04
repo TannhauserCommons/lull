@@ -76,6 +76,7 @@ impl Deezer {
                     artists: artists.unwrap_or_default(),
                     problem: (!problems.is_empty()).then(|| problems.join("; ")),
                     playlists: Vec::new(),
+                    fillers: None,
                 })
             })
             .await

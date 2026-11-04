@@ -124,6 +124,8 @@ pub struct Service {
     itunes: Itunes,
     /// Artist photos on Wikimedia Commons.
     wikidata: Wikidata,
+    /// YouTube Music's search: what the catalog lacks.
+    youtube_music: search::youtube_music::YoutubeMusic,
     /// Deezer, or iTunes plus Deezer's artists where Deezer is closed.
     catalog: search::catalog::Catalog,
     searches: search::Searches,
@@ -170,6 +172,7 @@ pub async fn start(
             ctx.config.discovery.catalog_country.clone(),
         ),
         wikidata: Wikidata::new(ctx.http.clone(), cache.clone()),
+        youtube_music: search::youtube_music::YoutubeMusic::new(ctx.http.clone(), cache.clone()),
         catalog: search::catalog::Catalog::default(),
         searches: search::Searches::default(),
         photos: artist::photo::Queue::default(),

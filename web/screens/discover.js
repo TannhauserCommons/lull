@@ -475,7 +475,7 @@
   /* TYPE_PAUSE_MS: a search goes out once typing pauses this long (each one spends the catalogs' budgets: iTunes about
      18 a minute); the header field uses the same pause */
   var SLSK_REST_MS = 1500, SONGS_MAX = 20, PENDING_MAX_MS = 20000, TYPE_PAUSE_MS = 350;
-  var CATALOG = { deezer: 'Deezer', itunes: 'iTunes', musicbrainz: 'MusicBrainz', 'musicbrainz-albums': 'MusicBrainz', library: 'your library' };
+  var CATALOG = { deezer: 'Deezer', itunes: 'iTunes', musicbrainz: 'MusicBrainz', 'musicbrainz-albums': 'MusicBrainz', 'youtube-music': 'YouTube Music', library: 'your library' };
   var S = { q: null, seq: 0, showAll: false, showAllOnly: false, tab: 'all', loading: false, error: null, cat: null,
     slsk: false, slskStarted: false, slskTimer: null, slskMissing: false, searchId: null, files: 0, peers: 0, done: true, slskError: null,
     peerSongs: {}, peerOrder: [], albums: {}, albumOrder: [], onlySoulseek: [] };

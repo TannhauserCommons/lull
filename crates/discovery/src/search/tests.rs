@@ -59,6 +59,7 @@ fn score(fit: Fit, popularity: f64) -> Score {
     Score {
         fit,
         version: false,
+        filler: false,
         popularity,
         lean: 0.0,
     }
