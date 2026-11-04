@@ -1,0 +1,12 @@
+{
+  "id": "paper-moon",
+  "name": "Paper moon",
+  "author": "lull's UI gates",
+  "api": 1,
+  "extends": "skydeck",
+  "shell": "rail",
+  "swatches": ["#1d2440", "#f3efe4", "#c9a35b", "#0b0f1c"],
+  "modes": ["day", "night"],
+  "slots": ["brand"],
+  "description": "A listener's theme for the gates: a font, a picture and a slot from its own package."
+}

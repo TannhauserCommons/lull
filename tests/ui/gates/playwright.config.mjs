@@ -51,6 +51,8 @@ export default defineConfig({
     { name: 'lists', testMatch: 'lists.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     // loops at their own rate and held when asked, in Chromium and in WebKit (Linux's WebKitGTK app, Safari)
     { name: 'loops', testMatch: 'loops.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
+    // the desktop app's own pages in the listener's theme, handed over by main (no hub beside them)
+    { name: 'app-pages', testMatch: 'app-pages.spec.mjs', use: { viewport: { width: 1000, height: 700 } } },
     { name: 'loops-webkit', testMatch: 'loops.spec.mjs', fullyParallel: true, use: { browserName: 'webkit', viewport: { width: 1440, height: 900 }, launchOptions: {} } },
   ],
 });

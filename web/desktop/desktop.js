@@ -644,6 +644,11 @@
       $$('[data-dk-offline]').forEach(startRetry);
       $$('[data-dk-connect]').forEach(discover);
       var first = $('[data-dk-connect] [name="code"]') || $('.dk-choice'); if (first) first.focus();
+      /* main's own pages: the window its theme asks for, as the web UI's page would (the theme came from main) */
+      if (T) Designs.ready(function () {
+        var request = Designs.windowRequest();
+        if (request) invoke('window_glass', { request: request }).then(showGlass, logFailure('glass'));
+      });
     } else if (view === 'mini' || view === 'strip') {
       doc.title = 'lull mini player';
       miniOpts = { opaque: !!q.get('opaque') };
@@ -655,9 +660,24 @@
       Designs.ready(render);
       T.event.listen('player', function (e) { receive(doc, e.payload, false); });
       T.event.listen('player-art', function (e) { if (S.art !== e.payload.art) { S = Object.assign({}, S, { art: e.payload.art }); paintTrack(doc); } });
-      T.event.listen('appearance', function (e) {        // DESKTOP.md 6.1: follow the web UI live
+      /* DESKTOP.md 6.1: follow the web UI live. A listener's theme comes from main (theme-package, once main has
+         loaded it, and again whenever it changes on the hub); until then the design it extends shows. */
+      var want = { design: q.get('design'), base: q.get('base') };
+      var show = function () {
+        if (want.design === Designs.current) return;
+        var stopgap = function () { if (want.base && want.base !== Designs.current) Designs.set(want.base, render); };
+        if (Designs.set(want.design, render, stopgap) === false) stopgap();
+      };
+      T.event.listen('appearance', function (e) {
         Designs.applyTheme(e.payload.theme);
-        if (e.payload.design !== Designs.current) Designs.set(e.payload.design, render);
+        want = { design: e.payload.design, base: e.payload.base || null };
+        show();
+      });
+      T.event.listen('theme-package', function (e) {          // a copy kept from before is out of date now
+        var id = e.payload.id;
+        Designs.reload(id).then(function (inUse) {
+          if (inUse) render(); else if (id === want.design) show();
+        }, logFailure('theme ' + id));
       });
       toMain('hello');                                     // main answers with a snapshot
       window.addEventListener('pagehide', function () { toMain('bye'); });   // main stops sending snapshots
@@ -795,7 +815,19 @@
       T.event.emit('player', snap).catch(logFailure('player snapshot'));
     };
     var sendAppearance = function () {
-      T.event.emit('appearance', { design: App.design(), theme: App.prefs().theme }).catch(logFailure('appearance'));
+      var design = App.design(), base = Designs.designOf(design);
+      T.event.emit('appearance', { design: design, base: base !== design ? base || undefined : undefined, theme: App.prefs().theme })
+        .catch(logFailure('appearance'));
+    };
+    /* the listener's theme in use, for the app's own pages (mini player, unreachable...), which can't fetch it from
+       the hub (app/src/desktop/theme.rs): once loaded, on every switch, and when it changes on the hub */
+    var sentPackage;
+    var sendPackage = function () {
+      var design = App.design();
+      Designs.packageOf(design).then(function (p) {
+        if (p === sentPackage || design !== App.design()) return; sentPackage = p;   // a later switch sends its own
+        return invoke('set_theme_package', { package: p });
+      }).catch(logFailure('theme package'));
     };
 
     /* the theme's window: asked again whenever the theme or its mode changes. The answer, and every later change (the
@@ -815,13 +847,14 @@
     ['player', 'like', 'save', 'ready'].forEach(function (ev) { App.on(ev, sendNow); });
     ['player', 'tick', 'like', 'save'].forEach(function (ev) { App.on(ev, function () { sendPlayer(false); }); });
     ['design', 'prefs'].forEach(function (ev) { App.on(ev, sendAppearance); });
+    App.on('design', sendPackage);
     App.on('ready', reattach); App.on('design', reattach); App.on('route', markDragRegions);
     doc.addEventListener('keydown', function (e) {        // Ctrl+Shift+M: mini player
       if (e.ctrlKey && e.shiftKey && !e.altKey && (e.key === 'M' || e.key === 'm')) { e.preventDefault(); D.openMini(); }
     });
     if (!('mediaSession' in navigator)) D.windowAction('media-keys').catch(logFailure('media keys'));
     attachConfigured();
-    sendNow(); sendAppearance();
+    sendNow(); sendAppearance(); Designs.ready(sendPackage);
     /* the page came back after its process crashed (app/src/desktop/recovery.rs): the queue is restored from this
        device, and the app says which song played, where, and whether it was playing */
     invoke('resume_after_crash').then(function (r) {

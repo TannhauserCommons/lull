@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>lull</title>
 <!-- The desktop wrapper's own page (desktop/src/pages.rs): connect, server unreachable, mini player.
-     Hash: #view=connect|offline|mini|strip&design=<name>&theme=day|night|system, plus the view's data. -->
+     Hash: #view=connect|offline|mini|strip&design=<name>&base=<built-in>&theme=day|night|system, plus the view's data. -->
 <link rel="icon" href="../assets/app-icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../tokens.css">
 <link rel="stylesheet" href="../base.css">
@@ -21,7 +21,9 @@
 <script src="../designs/designs.js"></script>
 <script>
   (function () {   /* design, theme and transparency before first paint */
-    var q = new URLSearchParams(location.hash.slice(1)), view = q.get('view');
+    var q = new URLSearchParams(location.hash.slice(1)), view = q.get('view'), T = window.__TAURI__;
+    /* the app serves this page, not the hub: a listener's theme is the one main handed the app (desktop/theme.rs) */
+    if (T) Designs.packages = function (id) { return T.core.invoke('theme_package', { id: id }).catch(function () { return null; }); };
     Designs.boot();
     Designs.applyTheme(q.get('theme') || 'system');
     if ((view === 'mini' || view === 'strip') && !q.get('opaque')) document.documentElement.classList.add('dk-transparent');

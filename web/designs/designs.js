@@ -13,7 +13,10 @@
    loads alongside the CSS: no request chain before first paint. The theme in use is per device ('lull:prefs'.design);
    ?theme=safe boots the default design and keeps it. The listener's manifests seen last are cached ('lull:themes'), so
    the boot knows their shell at once and asks the hub only for that theme's theme.json, to learn whether it was deleted;
-   only Settings > Appearance asks the hub for the list (Designs.refresh). */
+   only Settings > Appearance asks the hub for the list (Designs.refresh).
+   The desktop app's own pages (desktop/wrapper.html) come from the app, not the hub: a listener's theme reaches them as
+   the package the web UI in `main` handed the app (D.packageOf, D.packages), and while there is none they show base=,
+   the built-in design it extends. */
 (function () {
   'use strict';
   var D = window.Designs = {};
@@ -36,6 +39,10 @@
   var API = D.base + '../api/themes/';
   var safe = /(?:^|[#?&])theme=safe(?:&|$)/.test(location.hash + '&' + location.search);
   D.safe = safe;
+  /* a page with no hub beside it sets this before D.boot: id -> a promise of the listener's theme as one package
+     ({ manifest, css, slots }, D.packageOf) or null. Its themes then come only from there, and are never cached. */
+  D.packages = null;
+  var packed = {};                          // theme id -> its package's CSS, while D.packages is set
 
   function store(key, value) {
     try {
@@ -120,6 +127,13 @@
     var m = D.list[id];
     if (D.builtIn.indexOf(id) >= 0) return templates[id] ? Promise.resolve(m) : builtInScript(id).then(function () { return D.list[id]; });
     if (m && m.shell) return Promise.resolve(m);
+    if (D.packages) return D.packages(id).then(function (p) {
+      var got = p && p.manifest && p.manifest.id === id ? absorb(p.manifest, false) : null;
+      if (!got) throw new Error('The app has no theme ' + id);
+      templates[id] = p.slots || {}; packed[id] = String(p.css || '');
+      sortOrder();
+      return got;
+    });
     return getJson(D.packageUrl(id) + 'theme.json').then(function (j) {
       var got = absorb(j, false);
       if (!got) throw new Error('Invalid theme.json for ' + id);
@@ -150,6 +164,16 @@
   };
   /* a theme this page knows, or a stored one it can still ask the hub for (a first visit has no cache yet) */
   function known(id) { return D.valid(id) || (typeof id === 'string' && /^[a-z0-9][a-z0-9-]{0,39}$/.test(id)); }
+  /* what shows when a theme can't load: the built-in design it extends (base= in the hash names it for the theme there,
+     when this page has never seen its manifest), else the fallback. Never another listener's theme. */
+  var hashBase = /(?:^|[#?&])base=([a-z0-9-]+)/.exec(location.hash + '&' + location.search);
+  hashBase = hashBase && D.builtIn.indexOf(hashBase[1]) >= 0 ? hashBase[1] : null;
+  function fallbackFor(id) {
+    var d = designOf(id);
+    if (d && d !== id) return d;
+    var m = /(?:^|[#?&])design=([a-z0-9-]+)/.exec(location.hash + '&' + location.search);
+    return hashBase && m && m[1] === id ? hashBase : D.fallback;
+  }
 
   /* ---------- theme: a stored 'day' | 'night' | 'system' always becomes an explicit data-theme ----------
      'system' is resolved from the OS (prefers-color-scheme) here and again whenever the OS flips, so CSS only
@@ -508,9 +532,13 @@
     if (m.builtIn) return id;
     return m.extends && D.list[m.extends] && D.list[m.extends].builtIn ? m.extends : null;
   }
+  /* the built-in design a theme's CSS loads first (itself for a built-in), or null */
+  D.designOf = designOf;
   function userImport(id) {
     var m = D.list[id];
-    return m && !m.builtIn ? '@import url("' + D.packageUrl(id) + 'theme.css?v=' + (stamp[id] || 0) + '") layer(user);' : '';
+    if (!m || m.builtIn) return '';
+    if (packed[id] != null) return '@layer user {\n' + packed[id] + '\n}';
+    return '@import url("' + D.packageUrl(id) + 'theme.css?v=' + (stamp[id] || 0) + '") layer(user);';
   }
   function setUserCss(id) {
     var css = userImport(id);
@@ -557,7 +585,7 @@
   var booting = null;
   D.boot = function () {
     if (safe) pick(D.fallback);                     // so the next normal load doesn't bring the broken theme back
-    var id = D.wanted(), m = D.list[id], design = designOf(id);
+    var id = D.wanted(), m = D.list[id], design = designOf(id) || (m ? null : hashBase);
     D.current = id;
     if (design) { root.setAttribute('data-design', design); if (link) link.setAttribute('href', D.base + design + '/theme.css'); }
     if (design) builtInScript(design, true);
@@ -565,14 +593,15 @@
     else if (!m || !m.builtIn) root.setAttribute('data-booting', '');
     if (link && !design && m && m.shell) link.disabled = true;
     setUserCss(id);
-    if (m && !m.builtIn && m.shell) getJson(D.packageUrl(id) + 'theme.json').catch(function (e) { if (e.status === 404) forget(id); });
+    if (m && !m.builtIn && m.shell && !D.packages) getJson(D.packageUrl(id) + 'theme.json').catch(function (e) { if (e.status === 404) forget(id); });
     booting = prepare(id).then(function () {
       applyAttrs(id); setUserCss(id);
       if (link) { var d = designOf(id); link.disabled = !d; if (d) link.setAttribute('href', D.base + d + '/theme.css'); }
     }, function (e) {
-      console.error('Theme ' + id + ' failed to load, using ' + D.fallback, e);
+      var to = fallbackFor(id);
+      console.error('Theme ' + id + ' failed to load, using ' + to, e);
       if (e && e.status === 404) forget(id);
-      return prepare(D.fallback).then(function () { applyAttrs(D.fallback); setUserCss(D.fallback); if (link) { link.disabled = false; link.setAttribute('href', D.base + D.fallback + '/theme.css'); } });
+      return prepare(to).then(function () { applyAttrs(to); setUserCss(to); if (link) { link.disabled = false; link.setAttribute('href', D.base + to + '/theme.css'); } });
     }).then(function () { root.removeAttribute('data-booting'); });
   };
   /* this device's theme ('lull:prefs'.design); app.js keeps the rest of the prefs */
@@ -593,7 +622,7 @@
      unstyled frame. onDone runs after the attributes changed (re-render there). If anything fails to load, the current
      theme stays and onFail(id) runs. */
   D.set = function (id, onDone, onFail) {
-    if (!D.valid(id)) { console.warn('Unknown theme', id); return false; }
+    if (!D.valid(id) && !(D.packages && known(id))) { console.warn('Unknown theme', id); return false; }
     if (id === D.current) { if (onDone) onDone(); return true; }
     prepare(id).then(function () {
       var design = designOf(id), cur = link && !link.disabled ? link.getAttribute('href') : null;
@@ -623,7 +652,7 @@
   D.reload = function (id) {
     if (!D.valid(id) || D.list[id].builtIn) return Promise.resolve(false);
     stamp[id] = Date.now();
-    delete templates[id];
+    delete templates[id]; delete packages[id];
     var inUse = chain(D.current).indexOf(id) >= 0;
     D.list[id].shell = null;                        // manifest() fetches it again
     return manifest(id).then(function () {
@@ -631,4 +660,41 @@
       return prepare(D.current).then(function () { setUserCss(D.current); applyAttrs(D.current); return true; });
     });
   };
+
+  /* a listener's theme as one package, for the desktop app's own pages, which can't reach the hub
+     (app/src/desktop/theme.rs): theme.json as this page read it, theme.css with every url() to the package's assets
+     inlined as a data: URL (no other origin has them, and a url() in a custom property would resolve against whichever
+     sheet uses it), and its slot templates. null for a built-in design. One build per version of the theme. */
+  var packages = {};
+  D.packageOf = function (id) {
+    var m = D.list[id];
+    if (!m || m.builtIn || D.packages) return Promise.resolve(null);
+    var key = id + '?v=' + (stamp[id] || 0);
+    if (packages[id] && packages[id].key === key) return packages[id].built;
+    var css = new URL(D.packageUrl(id) + 'theme.css?v=' + (stamp[id] || 0), location.href).href;
+    var built = Promise.all([manifest(id), getText(css), loadTemplates(id)]).then(function (r) {
+      return inline(r[1], css).then(function (text) { return { manifest: raw(r[0]), css: text, slots: templates[id] }; });
+    });
+    packages[id] = { key: key, built: built };
+    built.catch(function () { if (packages[id] && packages[id].built === built) delete packages[id]; });
+    return built;
+  };
+  var URL_RE = /url\(\s*(['"]?)([^'")]*)\1\s*\)/g;
+  function inline(css, from) {
+    var found = Object.create(null);
+    css.replace(URL_RE, function (all, q, ref) { if (ref && !/^(data:|#)/i.test(ref)) found[ref] = null; return all; });
+    return Promise.all(Object.keys(found).map(function (ref) {
+      var at = ref.indexOf('#'), path = at < 0 ? ref : ref.slice(0, at), frag = at < 0 ? '' : ref.slice(at);
+      return get(new URL(path, from).href).then(function (r) { return r.blob(); }).then(function (blob) {
+        return new Promise(function (ok) {
+          var reader = new FileReader();
+          reader.onload = function () { found[ref] = reader.result + frag; ok(); };
+          reader.onerror = function () { ok(); };
+          reader.readAsDataURL(blob);
+        });
+      }, function (e) { console.warn('Theme asset ' + ref + ' left out of the package', e); });
+    })).then(function () {
+      return css.replace(URL_RE, function (all, q, ref) { return found[ref] ? 'url("' + found[ref] + '")' : all; });
+    });
+  }
 })();

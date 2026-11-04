@@ -1,0 +1,5 @@
+/* The gates' listener theme (tests/ui/gates/app-pages.spec.mjs): what it changes is easy to read back. */
+@font-face { font-family: "Paper moon"; src: url("assets/fonts/moon.woff2") format("woff2"); font-display: block; }
+:root { --moon-mark: "paper"; --moon-sky: url(assets/moon.svg); }
+.dk-mini, .dk-strip, .dk-card { font-family: "Paper moon", sans-serif; }
+.dk-mini { background-image: var(--moon-sky); }
