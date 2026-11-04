@@ -1,6 +1,24 @@
-# Quality: web assets, visual matrix, budgets
+# Quality: the queue, web assets, visual matrix, budgets
 
-Owned by the Quality session. Files: `scripts/web-dist/`, `crates/server/src/web.rs`, the web stage of the `Dockerfile`, `tests/ui/`, `.github/workflows/ui.yml` and `ui-gates.yml`.
+Owned by the Quality session. Files: `scripts/web-dist/`, `crates/server/src/web.rs`, the web stage of the `Dockerfile`, `tests/ui/`, `.github/workflows/` and `scripts/queue.sh`, `ship.sh` and `release.sh`.
+
+## The queue: main is always green
+
+Main moves only through the queue (ADR-0095). `mise run ship <topic>` pushes `HEAD` to `queue/<topic>` and waits for the verdict on that commit: landed, or red with the run's link. Red leaves main untouched; fix it on your branch and ship again.
+
+- **One run at a time** (`.github/workflows/queue.yml`, on main, started by `queue-kick.yml`): `scripts/queue.sh plan` rebases every waiting branch, oldest first, onto main and the ones before it. That stack is the candidate. A branch that doesn't rebase cleanly is set aside red ("conflicts with main").
+- **Only the checks its diff needs** (`checks` in `queue.sh`): `ci` for anything but docs, `design/`, `fastlane/` and `site/`; `ui-gates` for `web/` and `tests/ui/`; `ui` for those and `web.rs`, `scripts/web-dist/` and the Dockerfile; the app's checks for `app/`, `crates/` and the desktop's web parts; Android for its own parts; `slskd-contract` for the pin and the code that relies on it. A change to `.github/` or `queue.sh` runs them all. Each workflow is reusable (`workflow_call` with the candidate's commit).
+- **Green:** the candidate gets the status `queue`, main fast-forwards to it, the landed branches are deleted, and the run publishes the image `ui` tested (`:main`, `:sha-<short>`), starts Pages when `site/` changed and warms the bundles' caches when the lockfiles changed (ADR-0097). Its own pushes start no workflows, so it starts these itself.
+- **Red:** the branch's tip gets `queue` = failure and the failing checks' names. A red batch of several is retried one at a time, oldest first.
+- **Main's ruleset** requires `queue` from GitHub Actions, linear history and no force push, with no bypass: a direct push is refused unless the queue already tested that exact commit. If the queue itself is broken, the owner turns the ruleset off (Settings > Rules) to push its fix.
+
+**A release** is `mise run release X.Y.Z` (`scripts/release.sh`, ADR-0097): it tags the newest commit on main with `queue` green, not `HEAD`. A first run drafts the fastlane notes from the `feat` and `fix` subjects and stops for a person to edit them; the second tags, then prints the push.
+
+**Speed.** Rust caches are saved only from main (the queue runs there) and read everywhere; the image's dependencies are a cargo-chef layer; Android's two builds run side by side.
+
+## Flaky checks
+
+A check that fails without a change to blame is a bug with an owner: whoever owns its area (the table in workspace.md, or the integrator), named that day. It gets a fix at its cause, the same day. It never gets a retry, a re-run until green, a sleep, or a loosened budget, and it stays required while it is fixed: a check that can't be trusted can't guard main. The fix's commit says what made it flaky and how the fix was proven (the same check green on runs that used to fail).
 
 ## Production web assets
 
@@ -74,7 +92,7 @@ Raise a budget only with a measured reason a listener would accept, in the commi
 
 ## Checks on a branch
 
-The checks run on every push to main and every pull request. On any other branch, run them by hand: `gh workflow run ci --ref <branch>` (fmt, clippy, tests, the web's tests), `app` (the app's checks on Linux and Windows, then the four desktop bundles and the APK as artifacts) and `ui-gates`. Only main publishes: the image (`:main`, `:sha-<short>`) and Pages run only for `refs/heads/main`, a Release only for a `v*` tag. A change to a workflow in `.github/workflows/` is tested by the queue with main's copy of each workflow (Actions reads a called workflow at the calling commit), so run a changed workflow on its branch by hand before it queues.
+The queue runs the checks on every candidate, and they run on every pull request. On any other branch, run them by hand: `gh workflow run ci --ref <branch>` (fmt, clippy, tests, the web's tests), `app` (the app's checks on Linux and Windows, then the four desktop bundles and the APK as artifacts) and `ui-gates`. Only the queue publishes the image and starts Pages; a Release comes only from a `v*` tag. A change to a workflow in `.github/workflows/` is tested by the queue with main's copy of each workflow (Actions reads a called workflow at the calling commit), so run a changed workflow on its branch by hand before it queues.
 
 ## Privacy
 

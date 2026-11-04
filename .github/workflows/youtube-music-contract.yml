@@ -2,16 +2,11 @@ name: youtube-music-contract
 # Search reads YouTube Music's own search answer, which YouTube publishes no contract for
 # (crates/discovery/src/search/youtube_music.rs). If its shape moves, search quietly loses its
 # gap-filler (it answers nothing, by design); this runs the one live check daily and whenever the
-# reader changes, so the move shows here as a red run instead. Not a queue check: YouTube being
-# down must not hold back a landing.
+# reader changes (the queue starts it after landing a change to it), so the move shows here as a red
+# run instead. Not a queue check: YouTube being down must not hold back a landing.
 on:
   schedule:
     - cron: "17 6 * * *"
-  push:
-    branches: [main]
-    paths:
-      - "crates/discovery/src/search/youtube_music.rs"
-      - ".github/workflows/youtube-music-contract.yml"
   workflow_dispatch:
 
 permissions:

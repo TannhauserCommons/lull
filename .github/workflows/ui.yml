@@ -4,15 +4,6 @@ name: ui
 # `capture` (by hand, or when no goldens are committed) writes the pictures instead of comparing:
 # take them from the run's `goldens` artifact (`mise run ui:update`).
 on:
-  push:
-    branches: [main]
-    paths:
-      - "web/**"
-      - "crates/server/src/web.rs"
-      - "tests/ui/**"
-      - "scripts/web-dist/**"
-      - "Dockerfile"
-      - ".github/workflows/ui.yml"
   pull_request:
     paths:
       - "web/**"

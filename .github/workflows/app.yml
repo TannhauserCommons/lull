@@ -7,9 +7,7 @@ name: app
 # `mise run release X.Y.Z` makes the tag (scripts/release.sh).
 on:
   push:
-    branches: [main]
     tags: ["v*"]
-    paths: ["app/**", "crates/**", "web/desktop/**", "web/assets/icons/**", "scripts/android-*.sh", "rust-toolchain.toml", ".github/workflows/app.yml"]
   pull_request:
     paths: ["app/**", "crates/**", "web/desktop/**", "web/assets/icons/**", "scripts/android-*.sh", "rust-toolchain.toml", ".github/workflows/app.yml"]
   workflow_dispatch:

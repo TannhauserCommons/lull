@@ -50,6 +50,8 @@ checks() { # <base> <candidate>
   # What reaches the image: the hub's code, the web UI it embeds, and how both are built.
   want image '^(crates/|web/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|Dockerfile$|\.dockerignore$|scripts/vendor-web\.sh$|scripts/web-dist/)'
   want pages '^(site/|web/assets/app-icon\.svg$|web/fonts/nunito-latin\.woff2$)'
+  # Not a check (YouTube being down must not hold a landing): its live run follows a change to the reader.
+  want youtube_contract '^crates/discovery/src/search/youtube_music\.rs$'
   # What every release build compiles: main builds the bundles then, to warm their caches (ADR-0097).
   want warm '^(Cargo\.lock|app/Cargo\.lock|app/Cargo\.toml|rust-toolchain\.toml)$'
 }

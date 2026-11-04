@@ -3,14 +3,8 @@
 # so the page has no copy of its own.
 name: pages
 
+# The queue starts it when a landed change touches the site (ADR-0095); by hand too.
 on:
-  push:
-    branches: [main]
-    paths:
-      - site/**
-      - web/assets/app-icon.svg
-      - web/fonts/nunito-latin.woff2
-      - .github/workflows/pages.yml
   workflow_dispatch:
 
 permissions:

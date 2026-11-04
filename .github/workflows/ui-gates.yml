@@ -5,12 +5,6 @@ name: ui-gates
 # `mise run check:ui` runs the same; docs/context/quality.md#ui-gates. `capture` (by hand, or while no goldens are
 # committed) writes the screens' pictures instead of comparing: `mise run ui:approve` takes them from the run.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "web/**"
-      - "tests/ui/**"
-      - ".github/workflows/ui-gates.yml"
   pull_request:
     paths:
       - "web/**"

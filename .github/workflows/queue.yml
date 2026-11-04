@@ -37,6 +37,7 @@ jobs:
       slskd: ${{ steps.plan.outputs.slskd }}
       image: ${{ steps.plan.outputs.image }}
       pages: ${{ steps.plan.outputs.pages }}
+      youtube_contract: ${{ steps.plan.outputs.youtube_contract }}
       warm: ${{ steps.plan.outputs.warm }}
     steps:
       - uses: actions/checkout@v5
@@ -52,14 +53,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: cp scripts/queue.sh "$RUNNER_TEMP/" && sh "$RUNNER_TEMP/queue.sh" plan
 
-  # A called workflow gets at most its caller's permissions, checked before any job is skipped: ci's image job
-  # (pushes to main only) and app's release job (tags only) never run here, but must be allowed.
+  # A called workflow gets at most its caller's permissions, checked before any job is skipped: app's release job
+  # (tags only) never runs here, but must be allowed.
   ci:
     needs: plan
     if: needs.plan.outputs.candidate != '' && needs.plan.outputs.ci == 'true'
-    permissions:
-      contents: read
-      packages: write
     uses: ./.github/workflows/ci.yml
     with:
       ref: ${{ needs.plan.outputs.candidate }}
@@ -216,6 +214,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" --ref main
+      - if: steps.land.outputs.landed == 'true' && needs.plan.outputs.youtube_contract == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run youtube-music-contract.yml --repo "$GITHUB_REPOSITORY" --ref main
       - if: steps.land.outputs.landed == 'true' && needs.plan.outputs.warm == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
