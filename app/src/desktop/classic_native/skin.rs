@@ -669,7 +669,7 @@ impl Skin {
 
 /// The files of a skin that the main window reads.
 fn wanted(name: &str) -> bool {
-    matches!(name, "viscolor.txt" | "region.txt")
+    matches!(name, "viscolor.txt" | "region.txt" | "pledit.txt")
         || Sheet::ALL.iter().any(|s| {
             name.strip_prefix(s.file_stem())
                 .is_some_and(|ext| ext == ".bmp" || ext == ".png")
@@ -880,6 +880,14 @@ mod tests {
         let main = regions.main.map(|m| (m.contains(at(10, 5)), m.contains(at(10, 20))));
         assert_eq!(main, Some((true, false)));
         assert_eq!(regions.main_shade, None);
+    }
+
+    #[test]
+    fn a_skin_is_read_from_its_pictures_and_its_three_text_files() {
+        for name in ["main.bmp", "eqmain.png", "pledit.txt", "viscolor.txt", "region.txt"] {
+            assert!(wanted(name), "{name}");
+        }
+        assert!(!wanted("readme.txt"));
     }
 
     #[test]
