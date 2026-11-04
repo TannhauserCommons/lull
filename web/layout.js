@@ -215,17 +215,29 @@
     for (var a = part.parentElement; a; a = a.parentElement) if (a.hasAttribute('data-fit-row') && getComputedStyle(a).display !== 'contents') return a;
     return null;
   }
-  /* the row's content is wider than the row: its scroll width, or, for a row that packs toward its end (whose overflow
-     the scroll width doesn't count), its children's widths and gaps */
+  /* the row's content is wider than the row: its scroll width, or any box laid out in it (through display: contents)
+     reaching past its content box on either side, into its padding or beyond (a row that packs toward its end
+     overflows at its start, which the scroll width doesn't count; content in the end padding counts in the scroll
+     width only from the padding's edge), or, in a flex row, its children's widths and gaps */
   function overflows(row) {
     if (row.scrollWidth > row.clientWidth + 1) return true;
-    var cs = getComputedStyle(row); if (cs.display.indexOf('flex') < 0) return false;
-    var need = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight), gap = parseFloat(cs.columnGap) || 0, n = 0;
-    Array.prototype.forEach.call(row.children, function (c) {
-      var s = getComputedStyle(c); if (s.display === 'none' || s.position === 'absolute' || s.position === 'fixed') return;
-      need += c.getBoundingClientRect().width + parseFloat(s.marginLeft) + parseFloat(s.marginRight); n++;
-    });
-    return need + gap * Math.max(0, n - 1) > row.clientWidth + 1;
+    var cs = getComputedStyle(row), r = row.getBoundingClientRect();
+    var left = r.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft) - 1;
+    var right = r.right - parseFloat(cs.borderRightWidth) - parseFloat(cs.paddingRight) + 1;
+    var flex = cs.display.indexOf('flex') >= 0, need = 0, n = 0, out = false;
+    (function walk(box) {
+      Array.prototype.forEach.call(box.children, function (c) {
+        if (out) return;
+        var s = getComputedStyle(c);
+        if (s.display === 'contents') { walk(c); return; }
+        if (s.display === 'none' || s.position === 'absolute' || s.position === 'fixed') return;
+        var b = c.getBoundingClientRect();
+        if (b.width && (b.right > right || b.left < left)) { out = true; return; }
+        need += b.width + parseFloat(s.marginLeft) + parseFloat(s.marginRight); n++;
+      });
+    })(row);
+    if (out) return true;
+    return flex && need + (parseFloat(cs.columnGap) || 0) * Math.max(0, n - 1) > right - left - 1;
   }
   /* the parts that give way first are out (orders 1..k, together); fit moves k from where the row stands: further while
      the row overflows, back while it fits with one order more shown. Returns whether k moved */
