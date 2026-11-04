@@ -149,12 +149,15 @@ button.chip:hover, a.chip:hover { background: var(--lilac); }
 
 /* =====================================================================
    Tags: the small labelled boxes that sit side by side (source badge, quality chip, Private, the "new" mark,
-   the device's facts). One box for them all, so tags in a row are one height on one centre line: a design
-   sets --tag-h, never a tag's own height
+   the device's facts). One box for them all, so tags in a row are one height on one centre line, their icons one
+   size and as far from their words: a design sets --tag-h, --tag-ic and --tag-gap, never a tag's own height, icon
+   size or gap
    ===================================================================== */
 .badge, .q-chip, .badge-new, .device__fact, .pbar__private, .mini__private {
-  box-sizing: border-box; display: inline-flex; align-items: center; flex: none; height: var(--tag-h); vertical-align: middle;
+  box-sizing: border-box; display: inline-flex; align-items: center; gap: var(--tag-gap); flex: none; height: var(--tag-h);
+  vertical-align: middle;
 }
+:is(.badge, .q-chip, .badge-new, .device__fact, .pbar__private, .mini__private) > .ic { flex: none; width: var(--tag-ic); height: var(--tag-ic); }
 /* a wrapper that holds only a tag (the source badge's span in rows and button in the player bar, an album's status, a
    source's format) is only the tag's box: a line box of its own would stand taller than the tag and lift it off the
    centre line */
@@ -164,11 +167,10 @@ button.chip:hover, a.chip:hover { background: var(--lilac); }
    Badges
    ===================================================================== */
 .badge {
-  gap: 5px; padding: 0 9px 0 6px;
+  padding: 0 9px 0 6px;
   border-radius: var(--r-pill); border: var(--stroke-thin) solid var(--edge);
   font: 800 .75rem/1 var(--f-ui); white-space: nowrap;
 }
-.badge .ic { width: 15px; height: 15px; }
 .badge-saved { background: var(--peri); color: var(--ink); border-color: var(--line); }
 .badge-slsk { background: transparent; color: var(--fg); border-style: dashed; }
 .badge-below { background: transparent; color: var(--fg); border-color: var(--warn); }
@@ -182,7 +184,7 @@ button.chip:hover, a.chip:hover { background: var(--lilac); }
 
 /* quality chip: outlined in lists; solid only in the player bar and on the device screen */
 .q-chip {
-  gap: 6px; padding: 1px 8px 0;
+  padding: 1px 8px 0;
   border-radius: var(--r-chip); border: var(--stroke-thin) solid var(--edge); color: var(--q-ly);
   font: var(--t-px); letter-spacing: var(--t-px-track); white-space: nowrap; background: transparent;
 }
@@ -1260,9 +1262,9 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 .pbar__state.is-error > .ic { color: var(--heart); }
 /* "xfade" while a crossfade runs: a tag above the tools, so the buttons don't shift as it comes and goes */
 .pbar__xfade { position: absolute; right: 8px; bottom: calc(100% + 2px); display: inline-flex; align-items: center; gap: 4px; font: var(--t-px); color: var(--fg-2); }
-.pbar__private, .mini__private { gap: 4px; padding: 0 8px 0 6px; border: 1px solid var(--accent-ui); border-radius: 999px; background: var(--panel); color: var(--fg-panel); font: var(--t-px); text-decoration: none; white-space: nowrap; }
+.pbar__private, .mini__private { padding: 0 8px 0 6px; border: 1px solid var(--accent-ui); border-radius: 999px; background: var(--panel); color: var(--fg-panel); font: var(--t-px); text-decoration: none; white-space: nowrap; }
 .pbar__private { align-self: center; }
-.pbar__private .ic, .mini__private .ic { flex: none; width: 14px; min-width: 14px; height: 14px; color: var(--accent-ui); }
+.pbar__private .ic, .mini__private .ic { color: var(--accent-ui); }
 .pbar__xfade i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-ui); }
 .pbar__idle { display: flex; align-items: center; gap: var(--sp-3); color: var(--fg-2); font: var(--t-meta); }
 .pbar[data-status="idle"] .pbar__seek, .pbar[data-status="idle"] .pbar__badges { visibility: hidden; }

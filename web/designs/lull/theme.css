@@ -29,7 +29,7 @@
   --t-lyric: 800 1.3125rem/1.35 var(--f-ui);
   --t-lyric-cur: 900 1.75rem/1.2 var(--f-ui);
   /* shape */
-  --tag-h: 21px; --r-chip: 5px; --r-thumb: 8px; --r-art: 10px; --r-input: 12px; --r-panel: 14px; --r-card: 14px;
+  --tag-h: 21px; --tag-ic: 13px; --r-chip: 5px; --r-thumb: 8px; --r-art: 10px; --r-input: 12px; --r-panel: 14px; --r-card: 14px;
   --r-device: 18px 18px 48px 18px; --r-bezel: 10px 10px 30px 10px;
   --stroke: 1.5px; --icon-stroke: 1.8;
   --stack-off-1: 5px; --stack-off-2: 10px;
@@ -550,7 +550,7 @@
 :root[data-design="lull"] .lib-segs a.pill-filter[aria-current="page"] { background: var(--peri); color: var(--ink); border-color: var(--line); }
 :root[data-design="lull"] .pill-filter[aria-pressed="true"] .lib-count { color: #fff; font-weight: 800; }
 :root[data-design="lull"] .badge { padding: 0 8px 0 5px; font: 800 .71875rem/1 var(--f-ui); border-width: var(--stroke); }
-:root[data-design="lull"] .badge .ic { width: 13px; height: 13px; stroke-width: 2.4; }
+:root[data-design="lull"] .badge .ic { stroke-width: 2.4; }
 :root[data-design="lull"] .badge-saved { background: var(--l-ribbon); border-color: var(--l-ribbon); color: #fff; }
 :root[data-design="lull"] .badge-slsk { border-color: var(--l-slsk); color: var(--l-muted); }
 :root[data-design="lull"] .badge-new { padding: 0; background: none; color: var(--reason-fg); font: 900 .75rem/1 var(--f-ui); letter-spacing: 0; }

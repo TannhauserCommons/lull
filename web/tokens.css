@@ -126,7 +126,8 @@
 
     /* sizes */
     --rail: 232px; --rail-icons: 72px; --ctx: 320px; --bar-h: 88px; --mini-h: 64px; --tab-h: 60px; --hit: 44px;
-    --tag-h: 24px;             /* every tag (components.css, Tags): tags side by side are one height */
+    --tag-h: 24px;             /* every tag (components.css, Tags): tags side by side are one height, */
+    --tag-ic: 14px; --tag-gap: 5px;   /* with one icon size and one gap between icon and words */
   }
 
   /* ---------- 4.6 the window (docs/themes.md, section 12) ----------

@@ -75,8 +75,8 @@ export function squeezed(page) {
   });
 }
 
-// Null when tags side by side (components.css, Tags) are one height on one centre line; else the first row that is not,
-// with each tag's height and centre. A row's tags are those on one line of the same parent, past a wrapper that only
+// Null when tags side by side (components.css, Tags) are one height on one centre line, with icons of one size; else the
+// first row that is not, with each tag's height, centre and icon. A row's tags are those on one line of the same parent, past a wrapper that only
 // holds one (the source badge's span): the wrapper's own line box once lifted the badge 1.25 px off its neighbours.
 export function unevenTags(page) {
   return page.evaluate(() => {
@@ -89,16 +89,18 @@ export function unevenTags(page) {
     const rows = new Map();
     for (const el of document.querySelectorAll(TAGS)) {
       if (!shown(el)) continue;
-      const box = el.getBoundingClientRect(), tag = { el, h: box.height, cy: (box.top + box.bottom) / 2 };
+      const box = el.getBoundingClientRect(), ic = el.querySelector(':scope > .ic');
+      const tag = { el, h: box.height, cy: (box.top + box.bottom) / 2, ic: ic && shown(ic) ? ic.getBoundingClientRect().width : null };
       const lines = rows.get(rowOf(el)) || [];
       const line = lines.find((l) => Math.abs(l[0].cy - tag.cy) < 6);
       line ? line.push(tag) : lines.push([tag]);
       rows.set(rowOf(el), lines);
     }
     for (const line of [...rows.values()].flat()) {
-      const hs = line.map((t) => t.h), cs = line.map((t) => t.cy);
-      if (line.length > 1 && (Math.max(...hs) - Math.min(...hs) > 0.5 || Math.max(...cs) - Math.min(...cs) > 0.5)) {
-        return line.map((t) => `.${t.el.classList[0]} ${t.h.toFixed(1)}px tall, centre ${t.cy.toFixed(1)}`).join(' | ');
+      const spread = (xs) => (xs.length ? Math.max(...xs) - Math.min(...xs) : 0);
+      const hs = line.map((t) => t.h), cs = line.map((t) => t.cy), ics = line.map((t) => t.ic).filter((w) => w !== null);
+      if (line.length > 1 && (spread(hs) > 0.5 || spread(cs) > 0.5 || spread(ics) > 0.5)) {
+        return line.map((t) => `.${t.el.classList[0]} ${t.h.toFixed(1)}px tall, centre ${t.cy.toFixed(1)}${t.ic === null ? '' : `, icon ${t.ic.toFixed(1)}`}`).join(' | ');
       }
     }
     return null;

@@ -317,7 +317,7 @@
 :root[data-design="skydeck"] .lib-page .trow__badges .q-chip--ll {
   position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
 }
-:root[data-design="skydeck"] .lib .trow__badges .badge-slsk { font-size: 0; gap: 0; width: 28px; padding: 0; justify-content: center; }
+:root[data-design="skydeck"] .lib .trow__badges .badge-slsk { font-size: 0; --tag-gap: 0; width: 28px; padding: 0; justify-content: center; }
 :root[data-design="skydeck"] .lib .trow__badges .badge-slsk .ic { margin: 0; }
 :root[data-design="skydeck"] .lib .trow__badges .q-chip:not(.q-chip--ly) { border-color: transparent; background: none; color: var(--fg-2); padding-inline: 2px; }
 :root[data-design="skydeck"] .lib .trow__badges .q-chip:not(.q-chip--ly)::before { display: none; }
@@ -430,7 +430,7 @@
   :root[data-design="skydeck"] .disc-songs .disc-scan { margin-bottom: 4px; }
 }
 :root[data-design="skydeck"] .disc-top .disc-top__by { margin: 0; }
-:root[data-design="skydeck"] .disc-top .disc-top__badges .badge-saved { font-size: 0; gap: 0; width: 26px; padding: 0; justify-content: center; }
+:root[data-design="skydeck"] .disc-top .disc-top__badges .badge-saved { font-size: 0; --tag-gap: 0; width: 26px; padding: 0; justify-content: center; }
 :root[data-design="skydeck"] .disc-songs .trow__artist { flex-wrap: wrap; }
 :root[data-design="skydeck"] .disc-songs .trow__artist .dup-better { flex-basis: 100%; margin-left: 0; }
 :root[data-design="skydeck"] .disc-songs .trow__badges { gap: 8px; }

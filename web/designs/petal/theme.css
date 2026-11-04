@@ -242,7 +242,7 @@
 :root[data-design="petal"] .badge { border-radius: 3px; font: 800 .75rem/1 var(--f-ui); }
 :root[data-design="petal"] .badge-slsk { border-style: solid; background: transparent; }
 :root[data-design="petal"] .badge-new { border-radius: 3px; padding: 2px 6px 1px; font: var(--t-pixel); letter-spacing: .04em; }
-:root[data-design="petal"] .q-chip { border-radius: 3px; padding: 0 6px; gap: 5px; font: 800 .75rem/1 var(--f-ui); letter-spacing: .04em; font-variant-numeric: tabular-nums; }
+:root[data-design="petal"] .q-chip { border-radius: 3px; padding: 0 6px; font: 800 .75rem/1 var(--f-ui); letter-spacing: .04em; font-variant-numeric: tabular-nums; }
 :root[data-design="petal"] .q-chip--solid { background: transparent; color: var(--q-lossless); border-color: currentColor; }
 :root[data-design="petal"] .q-chip--solid.q-chip--ly { color: var(--q-lossy); }
 :root[data-design="petal"] .kbd { border-radius: 3px; box-shadow: 0 2px 0 var(--pt-frame); border-color: var(--edge); font: var(--t-pixel); font-size: 1.125rem; }
