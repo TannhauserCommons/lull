@@ -378,7 +378,7 @@ Every class lull's CSS styles and every `data-*` attribute lull's markup sets, e
   - `data-sortable` (a queue row that can be dragged);
   - `.drag-chip`, `.drop-line`, `.drop-overlay`, `data-drop`.
 - **Player parts:** `.seek` (`data-seek`, `data-pointer`), `.seek-row`, `.wave`, `.wave-times`, `.vol`, `.range`, `.progress`, `.pipeline`, `.pipeline-wrap`, `.device`, `.dpad`.
-- **Source picker:** `.src-table`, `.src-row`, `.score`.
+- **Source picker:** `.src-table`, `.src-row`, `.score`, `.src-speed` (`--said`: a speed the peer reports, not one lull measured).
 - **Inputs:** `.input`, `.field`, `.search-field`, `.seg`.
 - **Overlays:** `.sheet`, `.sheet-bar`, `.dialog`, `.scrim`, `.popover`, `.menu`, `.menu-list`, `.tooltip`, `.toast`, `.toast-region`, `.shelf-pop` (the rail's tags and playlists on a tablet), `.shortcut-list`, `.shortcut-row`.
 - **Status and empty states:** `.status-list`, `.status-row`, `.empty` (with `data-art` and `data-title` in its art; `data-noun` in slot templates), `.skel`, `.skel-row`, `.skel-tile`, `.skel-group`, `.sparkle`.

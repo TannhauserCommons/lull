@@ -1089,7 +1089,7 @@
     var by = {
       score: function (a, b) { return b.s.score - a.s.score; },
       quality: function (a, b) { return quality(b.s.format) - quality(a.s.format) || b.s.score - a.s.score; },
-      speed: function (a, b) { return b.s.speed - a.s.speed; },
+      speed: function (a, b) { return (b.s.expectedSpeed != null ? b.s.expectedSpeed : b.s.speed) - (a.s.expectedSpeed != null ? a.s.expectedSpeed : a.s.speed); },   // as ranking expects it (ADR-0015)
       size: function (a, b) { return (a.s.sizeBytes || 0) - (b.s.sizeBytes || 0); }
     }[pk.sort];
     return rows.sort(by);
@@ -1106,7 +1106,7 @@
         ${note ? html`<span class="disc-src__note">${note}</span>` : ''}</span>
       <span role="cell">${ui.qualityChip(s.format)}</span>
       <span class="src-row__opt" role="cell">${s.sizeBytes ? size(s.sizeBytes / 1e6) : ''}</span>
-      <span class="src-row__opt" role="cell">${mbps(s.speed)}</span>
+      <span class="src-row__opt" role="cell">${ui.sourceSpeed(s)}</span>
       <span class="src-row__opt" role="cell">${icon(s.freeSlot ? 'check' : 'close', s.freeSlot ? 'Free slot' : 'No free slot')}</span>
       <span class="src-row__opt" role="cell">${s.queue}</span>
       <span class="disc-src__score" role="cell" tabindex="0" data-tip="${tip}" aria-label="Score ${s.score} of 100: ${tip}"><span class="score" style="--s:${(s.score / 100).toFixed(2)}"><i></i></span><span class="px">${s.score}</span></span>
@@ -1148,7 +1148,7 @@
         })}</div>
       </div>
       <div data-region="srcrows">${pickerRows(t, pk)}</div>
-      <p class="disc-note disc-picker__hint">Score weighs format, peer speed, a free upload slot and queue length. Hover or focus a score for the breakdown.</p>`;
+      <p class="disc-note disc-picker__hint">Score weighs format, speed, a free upload slot and queue length. Speed is what lull measured from the peer; a ~ marks the peer's own figure, not measured yet. Hover or focus a score for the breakdown.</p>`;
   }
   /* o.forSave: the pick answers a failed save's transfer (the job continues from that peer) instead of playing.
      o.choose: the player is waiting for this pick (streaming `below: ask`), so the sheet offers Skip too */

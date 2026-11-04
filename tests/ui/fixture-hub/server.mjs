@@ -213,7 +213,9 @@ const routes = [
     return { items, total: items.length, entities: entities({ tracks: items.flatMap((g) => g.trackIds), albums: albumsOf(items.flatMap((g) => g.trackIds)) }), stale: false };
   }],
   ['GET', /^\/api\/tracks\/([^/]+)$/, (m) => (L.tracks[m[1]] ? { track: L.tracks[m[1]], entities: entities({ tracks: [m[1]], albums: albumsOf([m[1]]) }) } : err(404, 'not_found', 'lull doesn\'t know this song.'))],
-  ['GET', /^\/api\/tracks\/([^/]+)\/sources$/, () => ({ sources: [], done: true })],
+  // A trickling song has two copies (ADR-0015): one the peer says is fast that lull never measured, one lull measured
+  // yesterday; any other song has none, so the gates' screens stay as they are.
+  ['GET', /^\/api\/tracks\/([^/]+)\/sources$/, (m) => ({ sources: trickles.has(m[1]) ? trickledSources(m[1]) : [], done: true })],
   ['PUT', /^\/api\/stream\/prefetch$/, () => ({ status: 204 })],
 
   // discovery
@@ -418,6 +420,15 @@ async function audioFile(req, res, t) {
 }
 
 // ---------- a Soulseek transfer arriving slowly (POST /__fixture/trickle) ----------
+function trickledSources(id) {
+  const t = L.tracks[id], size = trickles.get(id).size;
+  const row = (peer, speed, measuredAt, score) => ({
+    peer, path: `@@music\\${t.artist}\\${t.album}\\${t.title}.wav`, format: 'WAV 8 kHz', sizeBytes: size, speed, speedMeasured: measuredAt != null,
+    measuredAt, expectedSpeed: measuredAt != null ? speed : speed / 4, freeSlot: true, queue: 0, score, factors: { format: 30, speed: score - 60, slot: 15, queue: 15, stalled: 0 },
+    preferred: false, stalledBefore: false, meets: true, queueTooLong: false, aboveMax: false,
+  });
+  return [row('fixture-peer', 1.2, L.NOW - 86400, 71), row('says-fast', 8.6, null, 70)];
+}
 const trickles = new Map();   // trackId -> { start (ms), rate (bytes/s), size, timer }
 const arrivedOf = (tr) => Math.min(tr.size, Math.floor(((Date.now() - tr.start) / 1000) * tr.rate));
 function trickle(id, rate) {

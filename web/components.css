@@ -498,6 +498,8 @@ button.trow__title:hover { text-decoration: underline; text-underline-offset: 3p
 .src-row__peer { display: flex; align-items: center; gap: 8px; min-width: 0; font: var(--t-row); font-size: 1rem; color: var(--fg); }
 .src-row.is-failed .src-row__peer { text-decoration: line-through; color: var(--fg-2); }
 .src-row.is-preferred .src-row__peer::after { content: "preferred"; font: var(--t-micro); color: var(--link); text-decoration: none; }
+/* a speed the peer reports, not one lull measured (ADR-0015) */
+.src-speed--said { color: var(--fg-2); }
 .score { position: relative; display: block; width: 64px; height: 6px; border-radius: 3px; background: var(--lav); overflow: hidden; }
 .score > i { position: absolute; inset: 0; background: var(--accent-ui); transform-origin: left; transform: scaleX(var(--s, .5)); }
 @container tlist (max-width: 700px) {

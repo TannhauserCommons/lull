@@ -1026,6 +1026,16 @@
 
   /* fetch and decode a track's cover ahead of time (the player warms the next song's) at the sizes the playing song's
      covers are drawn at now, so it shows at once when drawn */
+  /* a source's speed (ADR-0015): what lull measured from the peer, with when in the tip, or the peer's own figure,
+     marked as such since peers' figures are often far off */
+  ui.sourceSpeed = function (s) {
+    var rate = App.fmt.rate(s.speed);
+    if (s.speedMeasured) {
+      var days = s.measuredAt ? Math.floor((Date.now() / 1000 - s.measuredAt) / 86400) : 0;
+      return html`<span data-tip="Measured ${days < 1 ? 'today' : days === 1 ? 'yesterday' : days + ' days ago'}">${rate}</span>`;
+    }
+    return html`<span class="src-speed--said" data-tip="What the peer says: lull hasn't measured it yet" aria-label="${rate}, as the peer says">~${rate}</span>`;
+  };
   ui.warmArt = function (t) {
     var pic = t && artPic(t.albumId), cur = P.current(); if (!pic) return;
     var sizes = cur ? $$('img[data-art="' + cur.albumId + '"]').map(function (i) { return bucketOf(i.getAttribute('src')); }).filter(Boolean) : [];
