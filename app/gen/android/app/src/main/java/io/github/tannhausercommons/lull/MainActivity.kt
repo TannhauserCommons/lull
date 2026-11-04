@@ -29,14 +29,14 @@ class MainActivity : TauriActivity() {
 }
 
 /**
- * A song, album, artist or playlist shared to lull: lull's open page (an App Link: the whole
- * address, whose `#lull?` part names the item), "Share" from another app (its text holds the
+ * A song, album, artist or playlist shared to lull: an App Link (a share host's page, whose address
+ * names the item, ADR-0034, or lull's older open page, whose `#lull?` part does, ADR-0032; the
+ * whole address either way), "Share" from another app (its text holds the
  * link) or a lull://open?link=… link. Held until the hub's web UI takes it (App.takeSharedLink,
  * at boot and when nudged), which opens it as #/open; a bundled page never asks.
  */
 object SharedLinks {
   private val WEB_LINK = Regex("https?://\\S+")
-  private const val OPEN_PAGE_HOST = "tannhausercommons.github.io"
 
   @Volatile private var pending: String? = null
 
@@ -44,7 +44,9 @@ object SharedLinks {
     val link = when (intent?.action) {
       Intent.ACTION_VIEW -> intent.data?.let {
         when {
-          it.scheme == "https" && it.host == OPEN_PAGE_HOST -> it.toString()
+          // Only the manifest's App Links filters (the open page, the share hosts) send https links
+          // here, so the host needs no second list; the hub reads the link and refuses anything else.
+          it.scheme == "https" -> it.toString()
           it.scheme == "lull" && it.host == "open" -> it.getQueryParameter("link")
           else -> null
         }

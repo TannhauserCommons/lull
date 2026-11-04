@@ -22,8 +22,12 @@
                 <!-- AndroidTV support -->
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
-            <!-- Shared links (MainActivity's SharedLinks): lull's open page (App Links, verified by the
-                 assetlinks.json at tannhausercommons.github.io), lull://open?link=…, and "Share" from any app -->
+            <!-- Shared links (MainActivity's SharedLinks): App Links, lull://open?link=…, and "Share" from any app.
+                 App Links: lull's older open page (ADR-0032, verified by the assetlinks.json at
+                 tannhausercommons.github.io), and each share host in share/hosts.json (ADR-0034), whose Worker
+                 serves the same assetlinks.json: one autoVerify filter per host, pathPrefix /1/
+                 (share/test/hosts.test.mjs checks). On Android 11 and older every autoVerify host must verify,
+                 so a host is added here only once its Worker answers. -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
