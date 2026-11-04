@@ -43,6 +43,20 @@ const CASES: &[(&str, &[&str])] = &[
     ("the weeknd blinding lights", &["track: The Weeknd - Blinding Lights"]),
     ("bts dynamite", &["track: BTS - Dynamite"]),
     ("acdc thunderstruck", &["track: AC/DC - Thunderstruck"]),
+    // Sped-up and instrumental takes: the song, unless the take is typed.
+    ("kill bill sza", &["track: SZA - Kill Bill"]),
+    (
+        "kill bill sped up",
+        &[
+            "track: Hiko - Kill Bill (Sped Up)",
+            "track: Sped Up Guys - Kill Bill (Sped Up)",
+        ],
+    ),
+    ("lose yourself eminem", &["track: Eminem - Lose Yourself"]),
+    (
+        "lose yourself instrumental",
+        &["track: Eminem - Lose Yourself (Instrumental)"],
+    ),
     // Another script.
     ("米津玄師 lemon", &["track: Kenshi Yonezu - Lemon"]),
     // A title many songs share: the famous one.

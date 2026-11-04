@@ -555,8 +555,13 @@ fn rank_rows(q: &Query, m: &Merged, liked: &HashSet<TrackId>, followed: &HashSet
                 && lull_core::ids::loose_artist(&m.songs[i].artist) == lull_core::ids::loose_artist(&album.artist)
         })
     };
+    // Words naming a song's artist and title name the song, whatever playlists say ("lose
+    // yourself eminem", though 8 Mile's playlists say soundtrack).
+    let names_song = songs
+        .first()
+        .is_some_and(|&i| fits[i].fit == Fit::Exact && !fits[i].version && q.names_artist_and_title(&m.songs[i]));
     let work = playlists::work_top(q, &ranked_albums, &m.playlists)
-        .filter(|w| !matches!(w, playlists::WorkTop::Album(i) if named_after_song(&m.albums[*i])));
+        .filter(|w| !names_song && !matches!(w, playlists::WorkTop::Album(i) if named_after_song(&m.albums[*i])));
     let (top, top_album) = match work {
         Some(playlists::WorkTop::Album(i)) => (Some(Top::of("album", m.albums[i].id().0)), Some(i)),
         Some(playlists::WorkTop::Playlist(i)) => (Some(Top::of("playlist", m.playlists[i].link())), None),

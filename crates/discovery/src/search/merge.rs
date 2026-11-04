@@ -544,8 +544,26 @@ impl Query {
             .map(|n| loose_artist(n))
             .collect();
         let (exact, titled) = forms(&names, title);
+        if self.artist_and_title_words(&names, title) {
+            Fit::Exact
+        } else {
+            self.fit(&exact, &titled, text)
+        }
+    }
+
+    /// The words are a song's credited artist and words of its title ("lose yourself eminem"):
+    /// they name that song.
+    pub fn names_artist_and_title(&self, s: &SongHit) -> bool {
+        let names: Vec<String> = crate::radio::credited_names(&s.artist)
+            .iter()
+            .map(|n| loose_artist(n))
+            .collect();
+        self.artist_and_title_words(&names, &s.title)
+    }
+
+    fn artist_and_title_words(&self, names: &[String], title: &str) -> bool {
         let title_words = folded_words(title);
-        let artist_and_title_words = names.iter().filter(|n| !n.is_empty()).any(|n| {
+        names.iter().filter(|n| !n.is_empty()).any(|n| {
             self.loose.iter().any(|l| {
                 let rest = l
                     .strip_prefix(n.as_str())
@@ -559,12 +577,7 @@ impl Query {
                     })
                 })
             })
-        });
-        if artist_and_title_words {
-            Fit::Exact
-        } else {
-            self.fit(&exact, &titled, text)
-        }
+        })
     }
 
     pub fn artist(&self, a: &ArtistHit) -> Fit {
