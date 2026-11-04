@@ -170,9 +170,12 @@ The state shape and methods are DESIGN.md 7.8; the insides:
 - **Streaming state** comes from `stream` events (`finding queued buffering streaming stalled fallback failed`,
   `received/size`, `peer`, `peersFound`, `queuePos`, `failedPeers`), merged with the element's own `playing`/`waiting`.
   `buffered` is `audio.buffered` cut to `received`. A seek may go anywhere for saved songs and up to what has
-  arrived for Soulseek ones (`P.seekable(f)`, `LullRules.seekTo`). Past it, with Settings > Playback's "Jump to where
-  I seek once it has downloaded" (`playback.jumpWhenDownloaded`, on by default), the song plays on and the seek is
-  kept (`ps.seekWait`): the state tab, the mini line and the slider's value say "Waiting for 2:40, about 8 s"
+  arrived for Soulseek ones (`P.seekable(f)`, `LullRules.playable`/`seekTo`): `ps.arrived`, the hub's `ranges` (one
+  part from 0 until a seek ahead, ADR-0014), with what the output holds. Past it, with Settings > Playback's "Jump to
+  where I seek once it has downloaded" (`playback.jumpWhenDownloaded`, on by default), it goes there at once when the
+  hub can start the transfer there (`ps.aheadS`, the event's `seekAheadS`) and the transfer running would take longer
+  than that to get there: the output asks for that byte and the hub fetches from it ([streaming.md](streaming.md#legs)).
+  Otherwise the song plays on and the seek is kept (`ps.seekWait`): the state tab, the mini line and the slider's value say "Waiting for 2:40, about 8 s"
   (`LullRules.seekWaitS`, from the transfer's speed), screen readers hear it, and it lands as soon as those bytes
   are here (`landKept`, on each `stream` event and tick). The next seek replaces it, another song drops it, and
   stepping (arrow keys, Media Session) goes on from it (`P.seekTarget`). With the setting off, a seek past it snaps
@@ -180,8 +183,8 @@ The state shape and methods are DESIGN.md 7.8; the insides:
   range inside the file), so a start the browser maps past `received` (VBR, a big embedded cover) only buffers.
 - **The seek bar's look** is one language in every design and view (the bar, Now Playing, the device waveform, the
   mini line, transfer progress in Activity): played is solid `--seek-played`; arrived but not played is one solid
-  `--seek-buffered` (`--xfer` = `received`, 1 for a saved song; the element's `buffered` ranges lie inside it and draw
-  the same); not arrived is the plain track. While bytes arrive (`.is-transferring`) the arrived part's edge breathes;
+  `--seek-buffered` (`--xfer` = the end of the part from 0, 1 for a saved song; the element's `buffered` ranges and
+  the parts a seek ahead brought further on draw the same, as `.seek__buf`); not arrived is the plain track. While bytes arrive (`.is-transferring`) the arrived part's edge breathes;
   reduced motion stills it. No hatching: a design changes the tokens, not the language.
 - **Errors**: when the element fails, the engine fetches the same URL (`Range: bytes=0-0`) to read the server's
   sentence and shows it (`failed` / `jellyfin-error`).

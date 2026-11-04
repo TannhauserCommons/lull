@@ -19,9 +19,10 @@
 //
 // POST /__fixture/emit { topic, data } sends one server event to every open /api/events stream (with X-Fixture-Client,
 // to that client's streams only).
-// POST /__fixture/trickle { id, bytesPerS } makes that unsaved song a Soulseek transfer arriving at bytesPerS from now (its
-// WAV is 8000 bytes a second of sound): GET /api/stream/<id> serves only what has arrived and holds a range that starts past
-// it until it has, as the hub does, and `stream` events report the transfer twice a second until it is complete.
+// POST /__fixture/trickle { id, bytesPerS, seekAhead } makes that unsaved song a Soulseek transfer arriving at bytesPerS from
+// now (its WAV is 8000 bytes a second of sound): GET /api/stream/<id> serves only what has arrived and holds a range that
+// starts past it until it has, as the hub does, and `stream` events report the transfer twice a second until it is complete.
+// With seekAhead, the transfer starts over where a request waits, as the hub's legs do (ADR-0014).
 // POST /__fixture/art-pending { ids } makes those covers answer 404 "not yet" (no-store), as the hub does while it
 // fetches one; POST /__fixture/art-ready { ids } serves them again and sends `art.ready { keys }`.
 // GET /__fixture/art-requests: cover requests that reached the hub since the last call, by URL (and resets them).
@@ -441,23 +442,45 @@ function trickledSources(id) {
   });
   return [row('fixture-peer', 1.2, L.NOW - 86400, 71), row('says-fast', 8.6, null, 70)];
 }
-const trickles = new Map();   // trackId -> { start (ms), rate (bytes/s), size, timer }
-const arrivedOf = (tr) => Math.min(tr.size, Math.floor(((Date.now() - tr.start) / 1000) * tr.rate));
-function trickle(id, rate) {
+// The transfer runs in legs as the hub's does (ADR-0014): one from the first byte missing; with `seekAhead`, a request
+// waiting 300 ms for a byte more than JUMP_S of transfer away starts a leg there, and the gap fills after it.
+const JUMP_S = 30;
+const trickles = new Map();   // trackId -> { rate (bytes/s), size, parts [[from, to)], front, seekAhead, asks Map, timer }
+const arrived = (tr, pos) => tr.parts.some(([a, b]) => a <= pos && pos < b);
+const endFrom = (tr, pos) => (tr.parts.find(([a, b]) => a <= pos && pos < b) || [0, pos])[1];
+function addPart(tr, a, b) {
+  const all = [...tr.parts, [a, b]].sort((x, y) => x[0] - y[0]), merged = [];
+  for (const r of all) { const last = merged.at(-1); if (last && r[0] <= last[1]) last[1] = Math.max(last[1], r[1]); else merged.push([...r]); }
+  tr.parts = merged;
+}
+function firstMissing(tr) { const p = tr.parts[0]; return p && p[0] === 0 ? (p[1] < tr.size ? p[1] : null) : 0; }
+function step(tr, ms) {
+  const asked = [...tr.asks.values()].at(-1);
+  if (tr.seekAhead && asked && Date.now() - asked.since > 300 && !arrived(tr, asked.at)
+      && !(asked.at >= tr.front && (asked.at - tr.front) / tr.rate <= JUMP_S)) tr.front = asked.at;   // a jump
+  if (tr.front == null) return;
+  const to = Math.min(tr.size, tr.front + Math.round((tr.rate * ms) / 1000));
+  const stop = tr.parts.map(([a]) => a).filter((a) => a > tr.front).sort((x, y) => x - y)[0] ?? tr.size;   // a leg stops at what arrived
+  addPart(tr, tr.front, Math.min(to, stop));
+  tr.front = Math.min(to, stop) >= stop ? firstMissing(tr) : to;
+}
+function trickle(id, rate, seekAhead) {
   const t = L.tracks[id];
   if (!t || t.saved) return { status: 400, body: { error: 'bad_request', message: 'Trickle an unsaved song.' } };
   clearInterval(trickles.get(id)?.timer);
-  const tr = { start: Date.now(), rate, size: 44 + t.duration * RATE };
-  const report = () => {
-    const received = arrivedOf(tr);
+  const tr = { start: Date.now(), rate, size: 44 + t.duration * RATE, parts: [], front: 0, seekAhead: !!seekAhead, asks: new Map(), n: 0 };
+  let ticks = 0;
+  tr.timer = setInterval(() => {
+    step(tr, 100);
+    if (++ticks % 5 && tr.front != null) return;
+    const received = tr.parts.reduce((n, [a, b]) => n + b - a, 0);
     emit('stream', { trackId: id, jobId: 'fixture-' + id + '-' + tr.start, status: 'streaming', peer: 'fixture-peer', format: 'WAV 8 kHz',
-      peersFound: 4, queuePos: 0, received, size: tr.size, speed: received < tr.size ? rate : 0, attempt: 0, failedPeers: [], error: null,
+      peersFound: 4, queuePos: 0, received, size: tr.size, ranges: tr.parts.map(([a, b]) => [a / tr.size, b / tr.size]),
+      speed: tr.front == null ? 0 : rate, seekAheadS: tr.seekAhead ? JUMP_S : null, attempt: 0, failedPeers: [], error: null,
       belowMinimum: false, youtube: false });
-    if (received >= tr.size) clearInterval(tr.timer);
-  };
-  tr.timer = setInterval(report, 500);
+    if (tr.front == null) clearInterval(tr.timer);
+  }, 100);
   trickles.set(id, tr);
-  report();
   return { status: 204 };
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -467,18 +490,27 @@ async function trickleAudio(req, res, id) {
   const start = m && m[1] ? +m[1] : 0, end = m && m[2] ? Math.min(+m[2], tr.size - 1) : tr.size - 1;
   if (start >= tr.size) { res.writeHead(416, { 'content-range': `bytes */${tr.size}` }); return res.end(); }
   let gone = false;
+  const ask = (at) => { const k = ++tr.n; tr.asks.set(k, { at, since: Date.now() }); return () => tr.asks.delete(k); };
   req.on('close', () => { gone = true; });
-  while (!gone && arrivedOf(tr) <= start) await sleep(100);   // a range ahead of the transfer waits for its bytes
+  if (!arrived(tr, start)) {   // a range ahead of the transfer waits for its bytes, asking for them
+    const done = ask(start);
+    while (!gone && !arrived(tr, start)) await sleep(100);
+    done();
+  }
   if (gone) return;
   res.writeHead(m ? 206 : 200, { 'content-type': 'audio/wav', 'accept-ranges': 'bytes', 'content-length': end - start + 1, 'cache-control': 'no-store',
     ...(m ? { 'content-range': `bytes ${start}-${end}/${tr.size}` } : {}) });
   for (let pos = start; pos <= end && !gone;) {
-    const to = Math.min(end + 1, arrivedOf(tr));
+    const to = Math.min(end + 1, endFrom(tr, pos));
     if (to > pos) {
       const chunk = Buffer.alloc(to - pos, 128);
       if (pos < 44) head.copy(chunk, 0, pos, Math.min(44, to));
       res.write(chunk); pos = to;
-    } else await sleep(100);
+    } else {
+      const done = ask(pos);
+      while (!gone && !arrived(tr, pos)) await sleep(100);
+      done();
+    }
   }
   res.end();
 }
@@ -607,7 +639,7 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': 'image/png', 'content-length': png.length, 'cache-control': 'private, max-age=86400', 'x-image-size': size + 'x' + size });
     return res.end(png);
   }
-  if (path === '/__fixture/trickle' && req.method === 'POST') { const b = await readBody(req); const out = trickle(b.id, b.bytesPerS); return send(res, out.status, out.body); }
+  if (path === '/__fixture/trickle' && req.method === 'POST') { const b = await readBody(req); const out = trickle(b.id, b.bytesPerS, b.seekAhead); return send(res, out.status, out.body); }
   if ((m = /^\/api\/stream\/([^/]+)$/.exec(path)) && req.method === 'GET' && trickles.has(m[1])) return trickleAudio(req, res, m[1]);
   if ((m = /^\/api\/(library\/)?stream\/([^/]+)$/.exec(path)) && req.method === 'GET') return audio(req, res, m[2], !!m[1]);
   if ((m = /^\/api\/stream\/([^/]+)$/.exec(path)) && req.method === 'DELETE') return send(res, 204);

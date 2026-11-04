@@ -1920,14 +1920,16 @@
         bytes while the transfer runs (`stream` events report finding, queued, stalled, fallback).
      status: idle | finding | choose | queued | buffering | streaming | stalled | failed | library | ended | jellyfin-error
      `playing` is separate: paused = playing false while streaming or library.
-     Fractions (0-1) of the track: received (bytes transferred), buffered ranges [[from, to], ...].
+     Fractions (0-1) of the track: received (bytes transferred), arrived (the parts the hub has, [[from, to], ...]: one
+     from 0 until a seek ahead starts the transfer elsewhere, ADR-0014), buffered (what the output holds, inside them).
+     aheadS: the hub's `seekAheadS` (a seek further than this many seconds of transfer away is fetched from there), or null.
      seekWait: a seek past what arrived, kept until it arrives ({ fraction }), or null.
      ===================================================================== */
   var P = App.player = {};
   var saved0 = storage('player') || {};
   var ps = P.state = {
     queue: [], index: 0, playing: false, pos: 0, status: 'idle',
-    received: 0, buffered: [], durationKnown: false, seekWait: null,
+    received: 0, arrived: [], buffered: [], aheadS: null, durationKnown: false, seekWait: null,
     peer: null, peersFound: 0, queuePos: 0, fallback: null, failedPeers: [], source: null,
     crossfade: false, shuffle: !!saved0.shuffle, repeat: saved0.repeat || 'off',
     volume: saved0.volume == null ? .7 : saved0.volume, muted: !!saved0.muted, radio: null, context: null, error: null
@@ -1997,7 +1999,7 @@
   function resetTrackState() {
     ps.pos = 0; duration = 0; ps.fallback = null; ps.failedPeers = []; ps.error = null; ps.crossfade = false;
     ps.peer = null; ps.peersFound = 0; ps.queuePos = 0; ps.durationKnown = false; lastRanges = [];
-    ps.belowMinimum = false; ps.choices = null; ps.upgrade = null; ps.seekWait = null;
+    ps.belowMinimum = false; ps.choices = null; ps.upgrade = null; ps.seekWait = null; ps.aheadS = null;
     sound = { playing: false, waiting: false };
   }
   /* begin playing queue[index]: opts { autoplay (default true), at (seconds), reason (how the last song ended), forceSoulseek } */
@@ -2014,12 +2016,13 @@
     ps.source = e.source || null;
     ps.playing = opts.autoplay !== false;
     var library = App.isSaved(e.trackId) && !opts.forceSoulseek;
-    ps.status = library ? 'library' : 'finding'; ps.received = library ? 1 : 0; ps.buffered = []; ps.durationKnown = library;
+    ps.status = library ? 'library' : 'finding'; ps.received = library ? 1 : 0; ps.arrived = library ? [[0, 1]] : []; ps.buffered = [];
+    ps.durationKnown = library;
     if (opts.at) ps.pos = opts.at;
     changed('track');
     itemFor(e, opts.forceSoulseek).then(function (it) {
       if (seq !== loadSeq || !it) return;
-      if (!e.soulseek && ps.status === 'finding') { ps.status = 'library'; ps.received = 1; ps.durationKnown = true; changed('status'); }
+      if (!e.soulseek && ps.status === 'finding') { ps.status = 'library'; ps.received = 1; ps.arrived = [[0, 1]]; ps.durationKnown = true; changed('status'); }
       out.load(it, { at: opts.at || 0, autoplay: ps.playing }).catch(playRefused);
       applyLevels();
       if (out.eagerNext) preloadNext();
@@ -2100,20 +2103,31 @@
     load(i);
   };
 
-  /* ---------- seeking: inside what has arrived, or kept until it arrives ---------- */
-  /* how far a seek may go now (0-1): everything for saved songs, what the transfer delivered for Soulseek ones */
-  function seekLimit() { return LullRules.seekLimit(!!(cur && cur.soulseek), ps.buffered, ps.received); }
-  P.seekable = function (f) { return P.current() ? f <= seekLimit() : false; };
-  /* past what arrived: with "Jump to where I seek once it has downloaded" (Settings > Playback) the song plays on and
-     the seek is kept until its bytes are here (landKept); without, it snaps to the furthest point that arrived, the
-     seek bar shakes and this returns false. The next seek, or another song, replaces a kept one */
+  /* ---------- seeking: inside what has arrived, fetched from there, or kept until it arrives ---------- */
+  /* the parts of the song the hub has (0-1): its ranges, or until its first event what the output buffered from 0 */
+  function arrivedParts() { return ps.arrived.length ? ps.arrived : ps.received ? [[0, ps.received]] : []; }
+  /* where the part arriving from the start ends: the transfer bar's solid part (--xfer) */
+  function arrivedFront() { var a = arrivedParts()[0]; return a && a[0] === 0 ? a[1] : 0; }
+  /* what can play now (0-1): everything for saved songs, what arrived for Soulseek ones */
+  function playable() { return LullRules.playable(!!(cur && cur.soulseek), arrivedParts(), ps.buffered); }
+  P.seekable = function (f) { return P.current() ? playable().some(function (r) { return r[0] <= f && f <= r[1]; }) : false; };
+  /* about how long the transfer takes to bring f, in seconds (null: the speed isn't known) */
+  function waitS(f) {
+    var p = ps.peer;
+    return p ? LullRules.seekWaitS(f, arrivedParts(), (p.sizeMB || 0) * 1e6, (p.speed || 0) * 1e6) : null;
+  }
+  /* past what arrived: with "Jump to where I seek once it has downloaded" (Settings > Playback) it goes there now when
+     the hub can start the transfer there and the transfer running would take longer (the hub fetches from the byte the
+     output asks for); otherwise the song plays on and the seek is kept until its bytes are here (landKept). Without the
+     setting, it snaps to the furthest point that arrived before it, the seek bar shakes and this returns false. The
+     next seek, or another song, replaces a kept one */
   P.seekFraction = function (f) {
     f = clamp(f, 0, 1);
     var dur = P.duration(); if (!dur || !P.current()) return false;
     /* a song restored after a reload (or the app starting) isn't loaded until it plays, and P.play then resumes it at
        ps.pos: a seek before that moves where it will start */
     if (!cur) { ps.pos = f * dur; changed('seek'); return true; }
-    var to = LullRules.seekTo(f, seekLimit(), playback.jumpWhenDownloaded);
+    var to = LullRules.seekTo(f, playable(), playback.jumpWhenDownloaded, waitS(f), ps.aheadS);
     ps.seekWait = to.how === 'waits' ? { fraction: to.fraction } : null;
     if (!ps.seekWait) { ps.pos = to.fraction * dur; out.seek(ps.pos); }
     changed('seek');
@@ -2124,14 +2138,14 @@
   /* a kept seek lands once what arrived reaches it */
   function landKept() {
     var w = ps.seekWait; if (!w || !cur) return;
-    if (LullRules.seekTo(w.fraction, seekLimit(), true).how !== 'now') return;
+    if (LullRules.seekTo(w.fraction, playable(), true, null, null).how !== 'now') return;
     ps.seekWait = null; ps.pos = w.fraction * P.duration(); out.seek(ps.pos);
     changed('seek');
     App.announce('Playing from ' + fmtTime(ps.pos));
   }
   /* about how long a kept seek (or one at f) waits, in words: "about 8 s", or null while the speed isn't known */
   function waitWords(f) {
-    var p = ps.peer, n = p && LullRules.seekWaitS(f, ps.received, (p.sizeMB || 0) * 1e6, (p.speed || 0) * 1e6);
+    var n = waitS(f);
     return n == null ? null : n < 100 ? 'about ' + Math.max(1, n) + ' s' : 'about ' + Math.round(n / 60) + ' min';
   }
   P.seekWaitText = function () {
@@ -2139,11 +2153,12 @@
     var eta = waitWords(w.fraction);
     return 'Waiting for ' + fmtTime(w.fraction * P.duration()) + (eta ? ', ' + eta : '');
   };
-  /* the seek bar's hover tip at f */
+  /* the seek bar's hover tip at f: the time, and when it hasn't arrived what a seek there does */
   P.seekTip = function (f) {
     var at = fmtTime(f * P.duration());
     if (P.seekable(f)) return at;
     if (!playback.jumpWhenDownloaded) return 'Not downloaded yet (' + Math.round(ps.received * 100) + '%)';
+    if (LullRules.seekTo(f, playable(), true, waitS(f), ps.aheadS).how === 'fetches') return at;
     var eta = waitWords(f);
     return at + (eta ? ', downloaded in ' + eta : ', not downloaded yet');
   };
@@ -2426,6 +2441,8 @@
     onUpgrade(e, ev.upgrade);
     var prevPeer = ps.peer && ps.peer.name, t = P.current();
     ps.received = ev.size ? clamp(ev.received / ev.size, 0, 1) : ps.received;
+    ps.arrived = ev.ranges || (ev.size ? [[0, ps.received]] : ps.arrived);   // a hub before ADR-0014 sends no ranges
+    ps.aheadS = ev.seekAheadS == null ? null : ev.seekAheadS;
     ps.peersFound = ev.peersFound || ps.peersFound;
     ps.queuePos = ev.queuePos || 0;
     ps.failedPeers = (ev.failedPeers || []).map(function (f) { return typeof f === 'string' ? { peer: f, at: null } : f; });
@@ -2522,13 +2539,15 @@
       });
   }
 
-  /* buffered = what the output holds (seconds), cut to what the transfer delivered; both as 0-1 of the song */
+  /* buffered = what the output holds (seconds), cut to what arrived; both as 0-1 of the song */
   var lastRanges = [];
   function updateBuffered() {
-    var dur = P.duration(), outR = [];
+    var dur = P.duration(), outR = [], parts = cur && cur.soulseek && ps.arrived.length ? ps.arrived : [[0, cur && cur.soulseek ? ps.received || 1 : 1]];
     if (dur) lastRanges.forEach(function (r) {
-      var a = r[0] / dur, b = Math.min(r[1] / dur, cur && cur.soulseek ? ps.received || 1 : 1);
-      if (b > a) outR.push([clamp(a, 0, 1), clamp(b, 0, 1)]);
+      parts.forEach(function (p) {
+        var a = Math.max(r[0] / dur, p[0]), b = Math.min(r[1] / dur, p[1]);
+        if (b > a) outR.push([clamp(a, 0, 1), clamp(b, 0, 1)]);
+      });
     });
     ps.buffered = outR;
     if (cur && cur.soulseek && !ps.received && outR.length) ps.received = outR[outR.length - 1][1];   // until the first event
@@ -2575,7 +2594,8 @@
     var was = cur; cur = e; nxt = null;
     ps.index = ps.queue.indexOf(e); resetTrackState();
     ps.status = e.soulseek ? (e.complete ? 'streaming' : 'buffering') : 'library';
-    ps.received = e.soulseek && !e.complete ? 0 : 1; ps.durationKnown = !e.soulseek; ps.source = e.source || null;
+    ps.received = e.soulseek && !e.complete ? 0 : 1; ps.arrived = ps.received ? [[0, 1]] : [];
+    ps.durationKnown = !e.soulseek; ps.source = e.source || null;
     letGo(was); applyLevels(); changed('track'); topUpRadio();
     if (out.eagerNext) preloadNext();
   }
@@ -3073,6 +3093,7 @@
     var t = P.current();
     ps.status = App.isSaved(t.id) ? 'library' : 'streaming';
     ps.received = App.isSaved(t.id) ? 1 : 0;
+    ps.arrived = ps.received ? [[0, 1]] : [];
   }
   restore(saved0);
   /* a queue played elsewhere comes back in persist()'s shape (the desktop's native Classic window,
@@ -3139,8 +3160,19 @@
   function setVar(el, name, v) { v = String(v); if (el.style.getPropertyValue(name) !== v) el.style.setProperty(name, v); }
   /* text as a CSS string, for content: (a custom property holding words) */
   App.cssString = function (text) { return '"' + String(text).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\A ') + '"'; };
+  /* the parts drawn as arrived (.seek__buf): what the output holds and what the hub has, merged; the part from the start
+     is the transfer's solid part (--xfer) too, and parts further on come from a seek ahead */
+  function shownParts() {
+    var merged = [];
+    ps.buffered.concat(arrivedParts()).map(function (r) { return [r[0], r[1]]; }).sort(function (x, y) { return x[0] - y[0]; })
+      .forEach(function (r) {
+        var last = merged[merged.length - 1];
+        if (last && r[0] <= last[1]) last[1] = Math.max(last[1], r[1]); else merged.push(r);
+      });
+    return merged;
+  }
   function updateSeeks() {
-    var dur = P.duration() || 1, f = clamp(ps.pos / dur, 0, 1), bk = bufKey(ps.buffered);
+    var dur = P.duration() || 1, f = clamp(ps.pos / dur, 0, 1), parts = shownParts(), bk = bufKey(parts), front = arrivedFront();
     var bufTo = ps.buffered.length ? ps.buffered[ps.buffered.length - 1][1] * dur : 0;
     var valText = fmtTime(ps.pos) + ' of ' + (ps.durationKnown ? '' : 'about ') + fmtTime(dur) + (ps.received < 1 ? ', downloaded to ' + fmtTime(bufTo) : '')
       + (ps.seekWait ? ', waiting for ' + fmtTime(ps.seekWait.fraction * dur) : '');
@@ -3149,12 +3181,12 @@
     ['pbar', 'mini'].forEach(function (s) { var el = document.getElementById(s); if (!el) return; setAttr(el, 'data-playing', !!ps.playing); setVar(el, '--rx', Math.round(ps.received * 100)); });
     $$kept('.seek[data-seek="player"]').forEach(function (el) {
       setVar(el, '--pos', f.toFixed(4));
-      setVar(el, '--xfer', ps.received.toFixed(4));
+      setVar(el, '--xfer', front.toFixed(4));
       if (el.classList.contains('is-transferring') !== transferring) el.classList.toggle('is-transferring', transferring);
       if (el._bk !== bk) {
         el._bk = bk;
         var host = $('.seek__bufs', el);
-        if (host) host.innerHTML = ps.buffered.map(function (r) { return '<i class="seek__buf" style="left:' + (r[0] * 100).toFixed(2) + '%;width:' + ((r[1] - r[0]) * 100).toFixed(2) + '%"></i>'; }).join('');
+        if (host) host.innerHTML = parts.map(function (r) { return '<i class="seek__buf" style="left:' + (r[0] * 100).toFixed(2) + '%;width:' + ((r[1] - r[0]) * 100).toFixed(2) + '%"></i>'; }).join('');
       }
       setAttr(el, 'aria-valuenow', Math.round(f * 100));
       setAttr(el, 'aria-valuetext', valText);
@@ -3165,8 +3197,8 @@
       var moving = ps.playing && ps.status !== 'buffering';
       if (el.classList.contains('is-playing') !== moving) el.classList.toggle('is-playing', moving);
       bars.forEach(function (b, i) {
-        var x = (i + .5) / n, inBuf = ps.buffered.some(function (r) { return x >= r[0] && x <= r[1]; });
-        var c = x <= f ? 'is-played' : inBuf ? 'is-buf' : x <= ps.received ? 'is-xfer' : '';
+        var x = (i + .5) / n, inBuf = parts.some(function (r) { return x >= r[0] && x <= r[1]; });
+        var c = x <= f ? 'is-played' : inBuf ? 'is-buf' : x <= front ? 'is-xfer' : '';
         if (b._c !== c) { if (b._c) b.classList.remove(b._c); if (c) b.classList.add(c); b._c = c; }
       });
       setAttr(el, 'aria-valuenow', Math.round(f * 100));
