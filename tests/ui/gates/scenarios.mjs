@@ -3,7 +3,7 @@
 // print before/after numbers when run by hand (docs/context/quality.md#ui-gates).
 
 import { fileURLToPath } from 'node:url';
-import { composited, ids, openScreen, ownHub, settle, throttle, traced } from './lib.mjs';
+import { composited, ids, loopRate, openScreen, ownHub, settle, throttle, traced } from './lib.mjs';
 
 const playShown = (page) =>
   page.evaluate(() => App.player.playList([...document.querySelectorAll('#view .trow[data-track-id]')].map((r) => r.getAttribute('data-track-id')), 0));
@@ -273,11 +273,12 @@ export async function idle(browser, page, opts, route = '/home') {
 }
 
 // The loops on screen that draw more than they need to (docs/themes.md, Drawing cheaply): each one that never ends must
-// tick at a rate it names (--loop-fps, or a steps() timing of its own), move only by transform and opacity (the
-// compositor's, no repaint), and stay clear of live glass (a backdrop-filter recomputes its blur for every frame
-// that changes anything under or inside it). Named, with the reason, for the failure.
+// change at most 30 times a second, stepped where it is declared (steps(n), or a stepped easing), move only by transform
+// and opacity (the compositor's, no repaint), and stay clear of live glass (a backdrop-filter recomputes its blur for
+// every frame that changes anything under or inside it). Named, with the reason, for the failure.
 export function loops(page) {
-  return page.evaluate(() => {
+  return page.evaluate((src) => {
+    const rate = (0, eval)('(' + src + ')');
     const glass = [...document.querySelectorAll('body *')].filter((e) => {
       const s = getComputedStyle(e), f = s.backdropFilter || s.webkitBackdropFilter;
       return f && f !== 'none' && e.checkVisibility();
@@ -301,15 +302,15 @@ export function loops(page) {
       const name = (a.animationName || 'animation') + ' on ' + t.tagName.toLowerCase() + '.' + [...t.classList].slice(0, 2).join('.') + (e.pseudoElement || '');
       const kf = e.getKeyframes();
       const props = [...new Set(kf.flatMap((k) => Object.keys(k).filter((p) => !['offset', 'easing', 'composite', 'computedOffset'].includes(p))))];
-      const stepped = /steps/.test(e.getTiming().easing) || kf.slice(0, -1).every((k) => /steps/.test(k.easing));
-      if (!stepped) out.push(name + ': ticks every frame (no --loop-fps)');
+      const perSecond = rate(a);
+      if (perSecond > 30.5) out.push(name + ': ' + (perSecond === Infinity ? 'changes every frame (no stepped timing)' : 'changes ' + Math.round(perSecond) + ' times a second'));
       const slow = props.filter((p) => !['transform', 'opacity', 'translate', 'scale', 'rotate'].includes(p));
       if (slow.length) out.push(name + ': repaints (' + slow.join(', ') + ')');
       const under = glass.find((g) => hit(r, g.getBoundingClientRect()));
       if (under) out.push(name + ': under or in live glass (' + under.tagName.toLowerCase() + '.' + [...under.classList].slice(0, 2).join('.') + ')');
     }
     return out;
-  });
+  }, loopRate.toString());
 }
 
 // A long listening session, compressed: the desktop app's bridge stubbed in (desktop-bridge.js), a queue skipped

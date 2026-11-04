@@ -123,6 +123,25 @@ export function summarise(json) {
 // Elements one small DOM change restyles: a class flip, a text change and an insertion, each on its own element at
 // the end of <body>. A design rule that reacts to any change on the page (a :has() over the whole page that ends in
 // a broad selector, a [class*=] test) turns each of these into a restyle of the whole screen.
+// How many times a second a loop that never ends changes, read from its stepped timing (docs/themes.md, Drawing
+// cheaply): steps(n) changes n times an iteration, a stepped easing (a linear() staircase: each value held flat, then a
+// jump) as many times as it has values; any other timing changes every frame (Infinity). Runs in the page, in any
+// engine: pass it as loopRate.toString() and rebuild it there.
+export function loopRate(a) {
+  const changes = (easing) => {
+    const steps = /^steps\((\d+)/.exec(easing || '');
+    if (steps) return +steps[1];
+    if (!/^linear\(/.test(easing || '')) return Infinity;
+    const values = easing.slice(7, -1).split(',').map((s) => s.trim().split(/\s+/)[0]);
+    let n = 1; for (let i = 1; i < values.length; i++) if (values[i] !== values[i - 1]) n++;
+    return values.length >= 2 * n ? n : Infinity;   // each value held over a stretch: a staircase, not a curve
+  };
+  const e = a.effect, t = e.getTiming();
+  const per = t.easing && t.easing !== 'linear' ? changes(t.easing)
+    : e.getKeyframes().slice(0, -1).reduce((sum, k) => sum + changes(k.easing), 0);
+  return per / (t.duration / 1000);
+}
+
 // The layers the compositor keeps for the page as it stands: how many draw, and their area in windows (the window's
 // size each, each layer counted up to one window). Each is a texture kept in GPU memory and drawn again for every frame; a large decoration on a layer of its
 // own (a fixed sky) makes what is painted over it need another as large. The tree comes after a compositing update,

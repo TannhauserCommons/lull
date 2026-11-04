@@ -60,6 +60,9 @@ jobs:
             echo "capture=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # Every stepped easing a loop uses is exactly what scripts/loop-easings.mjs makes (docs/themes.md, Drawing cheaply).
+      - name: Stepped easings
+        run: node scripts/loop-easings.mjs --check web
       # Alone, so the task-length budgets don't share the CPU with screenshots.
       - name: Performance budgets
         working-directory: tests/ui

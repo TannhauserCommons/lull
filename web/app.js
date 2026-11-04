@@ -4504,76 +4504,51 @@
   function announce(msg) { var a = $('#announcer'); if (a) { a.textContent = ''; setTimeout(function () { a.textContent = msg; }, 30); } }
   App.announce = announce;
   App.on('announce', announce);
-  document.addEventListener('visibilitychange', function () { root.classList.toggle('is-hidden', document.hidden); if (!document.hidden) paceAll(); });
+  document.addEventListener('visibilitychange', function () { root.classList.toggle('is-hidden', document.hidden); });
 
-  /* loops at their own rate (docs/themes.md, Drawing cheaply): a loop that never ends and names a rate (--loop-fps on
-     what it animates) changes that many times a second, its easing kept (the steps sample it), and every such loop
-     changes on one shared beat (a sixtieth of a second), so the compositor draws a frame only when one has changed (a
-     twinkle at 10 a second instead of the screen's 165), and loops at 10 and 20 a second together draw no more frames
-     than the faster one */
-  var BEAT = 1000 / 60, paced = new WeakMap();
-  function pace(a) {
-    var e = a.effect, t = e && e.target;
-    if (!t || !(a instanceof window.CSSAnimation) || e.getTiming().iterations !== Infinity) return;
-    var fps = parseFloat(getComputedStyle(t, e.pseudoElement).getPropertyValue('--loop-fps'));
-    if (!(fps > 0)) {                                   // no rate (any more: an edit took it away): runs as written
-      if (paced.has(a)) { e.updateTiming({ easing: 'linear', delay: paced.get(a) }); paced.delete(a); if (a.playbackRate === 0) a.playbackRate = 1; }
-      return;
-    }
-    if (!paced.has(a)) paced.set(a, e.getTiming().delay);
-    /* held still while the page asks it (below), unless it shows something happening (--loop-holds: no) */
-    if (root.classList.contains('is-still') && getComputedStyle(t, e.pseudoElement).getPropertyValue('--loop-holds').trim() !== 'no') { a.playbackRate = 0; return; }
-    if (a.playbackRate === 0) a.playbackRate = 1;
-    var dur = e.getTiming().duration, n = Math.max(1, Math.round(dur / (Math.max(1, Math.round(1000 / fps / BEAT)) * BEAT)));
-    e.updateTiming({ easing: 'steps(' + n + ')' });
-    /* on the beat: the first change lands on a whole step of the page's clock (moved by less than one step) */
+  /* loops on one beat (docs/themes.md, Drawing cheaply). Each loop is stepped by its own CSS from its first frame; this
+     only lines the steps up: as a loop starts, its delay moves by less than one step so its changes fall on whole steps
+     of the page's clock. Loops at 10 and 20 changes a second then change together, and the compositor draws for the
+     faster alone, not for both. A late or missing event costs a few frames, never an unpaced loop */
+  var delays = new WeakMap();
+  function stepMs(a) {                             // the time between a stepped loop's changes, 0 if not stepped
+    var e = a.effect, t = e.getTiming(), n = 0;
+    e.getKeyframes().slice(0, -1).forEach(function (k) {
+      var m = /^steps\((\d+)/.exec(k.easing || ''), lin = /^linear\((.*)\)$/.exec(k.easing || '');
+      if (m) n += +m[1];
+      else if (lin) { var v = lin[1].split(',').map(function (x) { return x.trim().split(/\s+/)[0]; }); for (var i = 1, c = 1; i < v.length; i++) if (v[i] !== v[i - 1]) c++; n += c; }
+      else n = Infinity;
+    });
+    return n > 0 && n < Infinity ? t.duration / n : 0;
+  }
+  function align(a) {
+    if (!(a instanceof window.CSSAnimation) || a.effect.getTiming().iterations !== Infinity) return;
+    var step = stepMs(a); if (!step) return;
+    if (!delays.has(a)) delays.set(a, a.effect.getTiming().delay);
     a.ready.then(function () {
       if (a.startTime == null) return;
-      var step = dur / n, d = paced.get(a), off = ((a.startTime + d) % step + step) % step;
-      e.updateTiming({ delay: d - off });
-    }, function () { /* cancelled before it started: nothing to set */ });
+      var d = delays.get(a), off = ((a.startTime + d) % step + step) % step;
+      a.effect.updateTiming({ delay: d - off });
+    }, function () { /* cancelled before it started */ });
   }
-  /* when a loop starts: on animationstart, and, since WebKitGTK's CI runs left loops started by a change unpaced, after
-     every change to the page too. That look waits for the page to go quiet (QUIET ms with no change: a drag, typing or a
-     list filling in never pays for it as it goes, nor asks for a frame), when its styles are long resolved: reading the
-     page's animations then costs no style or layout work. A browser without these (an old Safari) runs loops as they are */
-  var seen = new WeakSet(), QUIET = 200, quiet = 0, restyled = false;
-  function paceNew() {
-    if (!window.CSSAnimation || !document.getAnimations) return;
-    if (restyled) { restyled = false; paceAll(); }
-    document.getAnimations().forEach(function (a) { if (!seen.has(a)) { seen.add(a); pace(a); } });
-  }
-  function lookSoon() {
-    clearTimeout(quiet);
-    quiet = setTimeout(paceNew, QUIET);
-  }
-  function paceAll() { if (window.CSSAnimation && document.getAnimations) document.getAnimations().forEach(pace); }
-  /* a stylesheet changed (a theme edited on the hub and reloaded, Theme Studio's draft): a loop already running keeps
-     its animation, so a rate it names now (or no longer) takes hold only when every loop is paced again, once the
-     sheet is in (a <style>'s @import loads after its text changes, then fires load) */
-  function sheet(n) { return n && (n.nodeName === 'STYLE' || n.nodeName === 'LINK'); }
-  if (window.MutationObserver) new MutationObserver(function (records) {
-    for (var i = 0; i < records.length && !restyled; i++) restyled = sheet(records[i].target);
-    lookSoon();
-  }).observe(document.documentElement, { subtree: true, childList: true, attributes: true });
-  document.addEventListener('load', function (e) { if (sheet(e.target)) { restyled = true; lookSoon(); } }, true);
+  function alignAll() { if (window.CSSAnimation && document.getAnimations) document.getAnimations().forEach(align); }
   document.addEventListener('animationstart', function (ev) {
-    if (window.CSSAnimation && ev.target.getAnimations) ev.target.getAnimations({ subtree: true }).forEach(function (a) { if (a.effect && a.effect.target === ev.target) { seen.add(a); pace(a); } });
+    if (window.CSSAnimation && ev.target.getAnimations) ev.target.getAnimations({ subtree: true }).forEach(function (a) { if (a.effect && a.effect.target === ev.target) align(a); });
   });
-  App.on('ready', paceAll);   // loops already running before this page's script
+  App.on('ready', alignAll);                       // loops already running before this page's script
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) alignAll(); });   // resumed: realign
 
   /* decorative loops hold still (:root.is-still) while any reason asks: App.still(reason, on), each reason named by
      what asks (the listener's "pause when lull isn't the active window" below; a design or a later setting adds its own).
-     One rule for every trigger: a loop that names a rate holds at its playback rate, so its own CSS (a ticker paused on
-     hover, every loop in a hidden page) keeps the say, and a design's entrances still finish. :root.is-still is a hook
-     too, for a theme that wants to still more (docs/themes.md, Drawing cheaply) */
+     The holding is CSS's, declared with each loop (animation-play-state: var(--loop-play); components.css, Keyframes),
+     so a loop that starts while still is held from its first frame, its own rules (a ticker paused on hover) keep the
+     say, and a design's entrances still finish (docs/themes.md, Drawing cheaply) */
   var stillFor = {};
   App.still = function (reason, on) {
     if (on) stillFor[reason] = true; else delete stillFor[reason];
-    var still = Object.keys(stillFor).length > 0;
-    if (still === root.classList.contains('is-still')) return;
-    root.classList.toggle('is-still', still);
-    paceAll();
+    var was = root.classList.contains('is-still');
+    root.classList.toggle('is-still', Object.keys(stillFor).length > 0);
+    if (was && !root.classList.contains('is-still')) alignAll();   // resumed: realign
   };
   /* "Pause animations when lull isn't the active window" (Settings › Appearance, this device, off by default): the
      window losing focus, to another app or another window, in the desktop app and in a browser. Not on Android, where

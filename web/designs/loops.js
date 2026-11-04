@@ -1,16 +1,17 @@
 /* designs/loops.js: a theme's loops that never end and cost more than they need to (docs/themes.md, Drawing cheaply):
    one that names no rate redraws on every screen refresh (165 times a second on a fast screen) and keeps moving when the
-   listener asks lull to pause animations, since lull paces and holds only loops that set --loop-fps on what they
-   animate (app.js); one that animates more than transform and opacity is drawn again at every step; one under or in
+   listener asks lull to pause animations, since a loop is cheap and holds only when it is stepped where it is declared
+   and held by var(--loop-play) (lull's own, components.css), or names --loop-fps on what it animates, which lull steps
+   and holds (app.js); one that animates more than transform and opacity is drawn again at every step; one under or in
    live glass has the blur worked out again at every step. Theme Studio and importing a theme (screens/appearance.js)
    say so, with the cheaper way, and add a rate where one is missing. A hint, never a refusal: the theme works either way.
    LullLoops.find(css, { also, base, unsure }) -> hints, each { kind, selector, animation, line } and by kind:
-     rate      no --loop-fps: { fps, why, sure, at, insert }
+     rate      neither stepped and held where it is declared nor naming --loop-fps: { fps, why, sure, at, insert }
      repaint   it animates more than transform and opacity: { props, fix }
      glass     it is in an element with a live backdrop-filter (or has one itself): { glass, itself }
      glass-maybe  with `unsure` (no live page to look in), one for every loop the CSS can't place: { loops, glass }
-     also   CSS that is in the page with the theme (lull's components.css, the design it extends): a rate set there
-            on the same selector paces the theme's loop too (--loop-fps is set per element: it doesn't inherit)
+     also   CSS that is in the page with the theme (lull's components.css, the design it extends): a rate or a hold set
+            there on the same selector counts for the theme's loop too (both are set per element: neither inherits)
      base   the design it extends, whose own selectors start :root[data-design="<base>"]
      at     where in css to insert `insert` (`--loop-fps: N;` after the loop's animation declaration)
    LullLoops.apply(css, hints) -> css with every hint's rate added; cost(n) and advice(hint) word them.
@@ -131,10 +132,21 @@
     var d = rule.decls.filter(function (x) { return x.name === '--loop-fps'; }).pop();
     return d ? parseFloat(important(d.value)) > 0 : false;
   }
-  /* every selector a rate is set on, as norm() writes it */
-  function paced(rules) {
+  /* held while lull asks loops to hold still (animation-play-state: var(--loop-play, running)) */
+  function holdIn(rule) {
+    var d = rule.decls.filter(function (x) { return x.name === 'animation-play-state'; }).pop();
+    return !!d && /var\(\s*--loop-play\b/.test(d.value);
+  }
+  /* stepped where it is declared: steps(), or one of lull's stepped easings (--loop-ease-in-out-55) */
+  var STEPPED = /steps\(|step-start|step-end|var\(\s*--loop-/i;
+  function steppedIn(rule, loop) {
+    var t = rule.decls.filter(function (x) { return x.name === 'animation-timing-function'; }).pop();
+    return STEPPED.test(t ? t.value : loop.value);
+  }
+  /* every selector a rate, or a hold, is set on, as norm() writes it */
+  function marked(rules, test) {
     var set = {};
-    rules.forEach(function (r) { if (rateIn(r)) each(r, function (k) { set[k] = true; }); });
+    rules.forEach(function (r) { if (test(r)) each(r, function (k) { set[k] = true; }); });
     return set;
   }
 
@@ -252,7 +264,7 @@
   function find(css, opts) {
     opts = opts || {};
     var own = parse(css || ''), others = (opts.also || []).map(parse);
-    var rated = paced(own.rules), keyframes = {}, glass = {};
+    var rated = marked(own.rules, rateIn), held = marked(own.rules, holdIn), keyframes = {}, glass = {};
     /* glass as the cascade leaves it: a later backdrop-filter: none on the same element takes it away (Glasshouse's baked
        panels) */
     var addGlass = function (rules) {
@@ -261,7 +273,7 @@
         else if (blurs(r, true)) each(r, function (k) { delete glass[k]; });
       });
     };
-    others.forEach(function (o) { Object.assign(rated, paced(o.rules)); Object.assign(keyframes, o.keyframes); addGlass(o.rules); });
+    others.forEach(function (o) { Object.assign(rated, marked(o.rules, rateIn)); Object.assign(held, marked(o.rules, holdIn)); Object.assign(keyframes, o.keyframes); addGlass(o.rules); });
     Object.assign(keyframes, own.keyframes);
     addGlass(own.rules);
     var hints = [], maybe = [];
@@ -270,7 +282,9 @@
       var d = loop.decl, where = { selector: rule.selector.replace(/\s+/g, ' '), animation: loop.name, line: css.slice(0, d.from).split('\n').length };
       var hint = function (kind, more) { hints.push(Object.assign({ kind: kind }, where, more)); };
       var mine = []; each(rule, function (k) { mine.push(k); });
-      if (!rateIn(rule) && !mine.every(function (k) { return rated[k]; })) {
+      var every = function (set) { return mine.every(function (k) { return set[k]; }); };
+      /* a rate named, or stepped in its own animation (a rule that sets the animation sets its timing) and held */
+      if (!rateIn(rule) && !every(rated) && !(steppedIn(rule, loop) && (holdIn(rule) || every(held)))) {
         var s = suggest(rule, loop, keyframes);
         hint('rate', { fps: s.fps, why: s.why, sure: s.sure, at: d.semi >= 0 ? d.semi + 1 : d.to, insert: (d.semi >= 0 ? ' ' : '; ') + '--loop-fps: ' + s.fps + ';' });
       }

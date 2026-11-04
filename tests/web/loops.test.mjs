@@ -61,14 +61,21 @@ test('a loop that ends, or names its rate there or on the same selector elsewher
   assert.deepEqual(brief(L.find('.box { --loop-fps: 20; } .box i { animation: spin 2s infinite; }')), ['.box i spin 20?']);
 });
 
-test('a rate the page sets already paces a theme\'s loop on the same selector: lull\'s, or the design it extends', () => {
-  // components.css paces the playing bars; skydeck paces its sky, written :root[data-design="skydeck"] .sky-specks::before
-  assert.deepEqual(brief(L.find('.is-playing-now .eq i { animation: my-eq .7s ease-in-out infinite alternate; }', { also: [components] })), []);
-  const skydeck = read('web/designs/skydeck/theme.css');
-  const sky = /:root\[data-design="skydeck"\] ([^{]*?)\s*\{[^}]*sd-twinkle[^}]*--loop-fps/.exec(skydeck);
-  assert.ok(sky, 'skydeck paces its twinkle');
-  assert.deepEqual(brief(L.find(`${sky[1]} { animation: my-twinkle 9s ease-in-out infinite alternate; }`, { also: [components, skydeck], base: 'skydeck' })), []);
-  assert.equal(L.find(`${sky[1]} { animation: my-twinkle 9s infinite; }`, { also: [components] }).length, 1, 'without skydeck beside it');
+test('a rate or a hold the page sets on the same selector counts for a theme\'s loop: lull\'s, or the design it extends', () => {
+  // a rate named on the selector elsewhere, written :root[data-design="skydeck"] in the design the theme extends
+  const base = ':root[data-design="skydeck"] .sky-specks::after { --loop-fps: 10; }';
+  assert.deepEqual(brief(L.find('.sky-specks::after { animation: my-twinkle 9s ease-in-out infinite alternate; }', { also: [components, base], base: 'skydeck' })), []);
+  assert.equal(L.find('.sky-specks::after { animation: my-twinkle 9s infinite; }', { also: [components] }).length, 1, 'without it beside it');
+  // lull's own loops step in their animation, so a theme that replaces the animation replaces its steps: unpaced again
+  assert.ok(/\.eq i[^{]*\{[^}]*--loop-ease-in-out-\d+[^}]*--loop-play/.test(components), 'components.css steps and holds the playing bars');
+  assert.deepEqual(brief(L.find('.is-playing-now .eq i { animation: my-eq .7s ease-in-out infinite alternate; }', { also: [components] })), ['.is-playing-now .eq i my-eq 30']);
+  // stepped where it is declared and held there, or held on the same selector elsewhere
+  assert.deepEqual(brief(L.find(`.a { animation: spin 2s steps(40) infinite; animation-play-state: var(--loop-play, running); }
+.b { animation: glow 5.5s var(--loop-ease-in-out-55) infinite alternate; }
+.b { animation-play-state: var(--loop-play, running); }
+.c { animation: spin 2s steps(40) infinite; }
+.d { animation: glow 3s ease-in-out infinite; animation-play-state: var(--loop-play, running); }
+@keyframes spin { to { transform: rotate(1turn); } } @keyframes glow { to { opacity: 0; } }`)), ['.c spin 10', '.d glow 10']);
 });
 
 test('adding the rates paces every loop and changes nothing else', () => {

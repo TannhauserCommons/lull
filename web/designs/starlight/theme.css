@@ -600,7 +600,7 @@
 }
 /* one sky sparkle pinned to the card's corner; it breathes while music plays */
 :root[data-design="starlight"] .sl-hero__spark { --s: 84px; left: -42px; top: -42px; z-index: 2; -webkit-mask: none; mask: none; background: var(--sl-spark-img) center / contain no-repeat; }
-:root[data-design="starlight"] .sl-hero:has(.wave.is-playing) .sl-hero__spark { animation: sl-beat 1s var(--ease-in-out) infinite alternate; --loop-fps: 30; }
+:root[data-design="starlight"] .sl-hero:has(.wave.is-playing) .sl-hero__spark { animation: sl-beat 1s var(--loop-in-out-30) infinite alternate; animation-play-state: var(--loop-play, running); }
 @keyframes sl-beat { from { transform: scale(.82) rotate(-6deg); opacity: .75; } to { transform: scale(1.08) rotate(0); opacity: 1; } }
 /* power on: the stack deals in (lavender layer, then periwinkle), the cream card settles, the art fades up last */
 :root[data-design="starlight"] .sl-hero.is-power-on { animation: sl-deal 620ms var(--ease-out) both; }
@@ -694,10 +694,15 @@
 :root[data-design="starlight"] .sl-sky__map { position: relative; flex: 1; align-self: stretch; }
 :root[data-design="starlight"] .sky-line { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 :root[data-design="starlight"] .sky-line polyline { fill: none; stroke: var(--fg-sky-2); stroke-width: 1.25; stroke-dasharray: 3 5; stroke-linecap: round; opacity: .8; }
+/* the stepped easings this design's loops use: its --ease-in-out (tokens.css), stepped (components.css, Keyframes) */
+:root[data-design="starlight"] {
+  --loop-in-out-30: linear(0 0%, 0 3.333%, 0.001 3.333%, 0.001 6.667%, 0.0041 6.667%, 0.0041 10%, 0.0096 10%, 0.0096 13.333%, 0.0179 13.333%, 0.0179 16.667%, 0.0295 16.667%, 0.0295 20%, 0.045 20%, 0.045 23.333%, 0.065 23.333%, 0.065 26.667%, 0.0905 26.667%, 0.0905 30%, 0.1229 30%, 0.1229 33.333%, 0.1638 33.333%, 0.1638 36.667%, 0.2152 36.667%, 0.2152 40%, 0.2796 40%, 0.2796 43.333%, 0.3587 43.333%, 0.3587 46.667%, 0.451 46.667%, 0.451 50%, 0.549 50%, 0.549 53.333%, 0.6413 53.333%, 0.6413 56.667%, 0.7204 56.667%, 0.7204 60%, 0.7848 60%, 0.7848 63.333%, 0.8362 63.333%, 0.8362 66.667%, 0.8771 66.667%, 0.8771 70%, 0.9095 70%, 0.9095 73.333%, 0.935 73.333%, 0.935 76.667%, 0.955 76.667%, 0.955 80%, 0.9705 80%, 0.9705 83.333%, 0.9821 83.333%, 0.9821 86.667%, 0.9904 86.667%, 0.9904 90%, 0.9959 90%, 0.9959 93.333%, 0.999 93.333%, 0.999 96.667%, 1 96.667%, 1 100%);
+  --loop-in-out-52: linear(0 0%, 0 1.923%, 0.0003 1.923%, 0.0003 3.846%, 0.0013 3.846%, 0.0013 5.769%, 0.0029 5.769%, 0.0029 7.692%, 0.0053 7.692%, 0.0053 9.615%, 0.0086 9.615%, 0.0086 11.538%, 0.0127 11.538%, 0.0127 13.462%, 0.0178 13.462%, 0.0178 15.385%, 0.0239 15.385%, 0.0239 17.308%, 0.0311 17.308%, 0.0311 19.231%, 0.0397 19.231%, 0.0397 21.154%, 0.0496 21.154%, 0.0496 23.077%, 0.0611 23.077%, 0.0611 25%, 0.0743 25%, 0.0743 26.923%, 0.0894 26.923%, 0.0894 28.846%, 0.1067 28.846%, 0.1067 30.769%, 0.1265 30.769%, 0.1265 32.692%, 0.1491 32.692%, 0.1491 34.615%, 0.1748 34.615%, 0.1748 36.538%, 0.2042 36.538%, 0.2042 38.462%, 0.2375 38.462%, 0.2375 40.385%, 0.2754 40.385%, 0.2754 42.308%, 0.318 42.308%, 0.318 44.231%, 0.3655 44.231%, 0.3655 46.154%, 0.4172 46.154%, 0.4172 48.077%, 0.472 48.077%, 0.472 50%, 0.528 50%, 0.528 51.923%, 0.5828 51.923%, 0.5828 53.846%, 0.6345 53.846%, 0.6345 55.769%, 0.682 55.769%, 0.682 57.692%, 0.7246 57.692%, 0.7246 59.615%, 0.7625 59.615%, 0.7625 61.538%, 0.7958 61.538%, 0.7958 63.462%, 0.8252 63.462%, 0.8252 65.385%, 0.8509 65.385%, 0.8509 67.308%, 0.8735 67.308%, 0.8735 69.231%, 0.8933 69.231%, 0.8933 71.154%, 0.9106 71.154%, 0.9106 73.077%, 0.9257 73.077%, 0.9257 75%, 0.9389 75%, 0.9389 76.923%, 0.9504 76.923%, 0.9504 78.846%, 0.9603 78.846%, 0.9603 80.769%, 0.9689 80.769%, 0.9689 82.692%, 0.9761 82.692%, 0.9761 84.615%, 0.9822 84.615%, 0.9822 86.538%, 0.9873 86.538%, 0.9873 88.462%, 0.9914 88.462%, 0.9914 90.385%, 0.9947 90.385%, 0.9947 92.308%, 0.9971 92.308%, 0.9971 94.231%, 0.9987 94.231%, 0.9987 96.154%, 0.9997 96.154%, 0.9997 98.077%, 1 98.077%, 1 100%);
+}
 :root[data-design="starlight"] .sky-star {
   position: absolute; width: 7px; height: 7px; margin: -3.5px; border-radius: 50%; background: var(--sparkle);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--sparkle) 22%, transparent);
-  animation: sl-twinkle 2.6s var(--ease-in-out) calc(var(--i) * -.45s) infinite alternate; --loop-fps: 20;   /* the stagger is whole steps: all change together */
+  animation: sl-twinkle 2.6s var(--loop-in-out-52) calc(var(--i) * -.45s) infinite alternate; animation-play-state: var(--loop-play, running);   /* the stagger is whole steps: all change together */
 }
 :root[data-design="starlight"] .sky-star--now { width: 30px; height: 30px; margin: -15px; border-radius: 0; box-shadow: none; animation: none; background: var(--sl-spark-img) center / contain no-repeat; }
 @keyframes sl-twinkle { from { opacity: .55; transform: scale(.8); } to { opacity: 1; transform: none; } }

@@ -77,8 +77,8 @@ test.describe('lull', () => {
     await page.waitForTimeout(500);
     const focus = (on) => page.evaluate((on) => { document.hasFocus = () => on; dispatchEvent(new Event(on ? 'focus' : 'blur')); }, on);
     const state = () => page.evaluate(() => {
-      const loops = document.getAnimations().filter((a) => a.effect && a.effect.getTiming().iterations === Infinity && a.playState === 'running');
-      const held = (sel) => loops.filter((a) => a.effect.target.matches(sel)).map((a) => a.playbackRate);
+      const loops = document.getAnimations().filter((a) => a.effect && a.effect.getTiming().iterations === Infinity);
+      const held = (sel) => loops.filter((a) => a.effect.target.matches(sel)).map((a) => a.playState);
       return { still: document.documentElement.classList.contains('is-still'), sky: held('.sky-specks'), spinner: held('#gate-spin') };
     });
     const drawn = async () => (await traced(browser, page, () => page.waitForTimeout(2000), { drawn: true })).drawn;
@@ -91,14 +91,14 @@ test.describe('lull', () => {
     await page.evaluate(() => App.setPref('pauseInactive', true));
     st = await state();
     expect(st.still, 'on: lull inactive, the loops hold still').toBe(true);
-    expect(st.sky, 'on: the sky twinkle holds').toEqual([0]);
-    expect(st.spinner, 'on: a spinner keeps going').toEqual([1]);
+    expect(st.sky, 'on: the sky twinkle holds').toEqual(['paused']);
+    expect(st.spinner, 'on: a spinner keeps going').toEqual(['running']);
     await page.evaluate(() => document.getElementById('gate-spin').remove());
     expect(await drawn(), 'on: frames drawn in 2 s while lull is inactive').toBeLessThanOrEqual(2);
     await focus(true);
     st = await state();
     expect(st.still, 'on: lull active again, nothing holds').toBe(false);
-    expect(st.sky, 'on: the sky twinkles again').toEqual([1]);
+    expect(st.sky, 'on: the sky twinkles again').toEqual(['running']);
     expect(await drawn(), 'on: the loops draw again with focus back').toBeGreaterThan(10);
   });
 
