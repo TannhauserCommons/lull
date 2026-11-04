@@ -431,6 +431,7 @@
           </div>
           <div class="lib-album__songs">
           ${gettingList ? ui.emptyState({ art: 'wave', title: 'Getting the tracklist…', text: 'The songs show up here as soon as they arrive.' })
+            : noTracks && sectionError(d, 'tracks', path) ? sectionError(d, 'tracks', path)
             : noTracks ? ui.emptyState({ art: 'moon', title: 'No tracklist found yet', text: 'lull hasn\'t found the songs on this release yet. Soulseek may have them.',
             action: { label: 'Search Soulseek', href: '#/search?q=' + encodeURIComponent(a.artist + ' ' + a.title) } }) : ''}
           ${discs.map(function (list, i) {
@@ -453,10 +454,23 @@
       savedState(a).state !== 'none' ? 'saved songs are in Jellyfin' : 'streaming from Soulseek until you save it'].filter(Boolean).join(', ');
     return (released ? released + ' ' : '') + rest.charAt(0).toUpperCase() + rest.slice(1) + '.';
   }
-  /* an album page that answered `partial: true` gets `album.updated` once the full tracklist is stored: read it again */
+  /* an album page that answered `partial: true` gets `album.updated` once the tracklist has arrived or failed: read it
+     again */
   function mountAlbum(ctx) {
     liveSaveButtons(ctx); liveOn(ctx, ['liked', 'services']);
     ctx.onCleanup(App.on('server:album.updated', function (e) { if (e.albumId === ctx.params.id) M.reload(albumPath(e.albumId)); }));
+    readAgainWhileComing(ctx, albumPath(ctx.params.id), function (d) { return !!d.partial; });
+  }
+  /* A page whose parts are still coming waits for its `*.updated` push, which it can miss: the app asleep or in the
+     background, the event stream down a while (a reconnect re-reads everything anyway). So it reads again when it is
+     seen again, and once after the hub's own bound: every late part has arrived or failed within 90 s (api.md). */
+  var LATE_BOUND_MS = 95000;
+  function readAgainWhileComing(ctx, path, coming) {
+    function again() { var d = M.peek(path); if (d && coming(d)) M.reload(path); }
+    function seen() { if (!document.hidden) again(); }
+    document.addEventListener('visibilitychange', seen);
+    var guard = setTimeout(again, LATE_BOUND_MS);
+    ctx.onCleanup(function () { document.removeEventListener('visibilitychange', seen); clearTimeout(guard); });
   }
 
   /* =====================================================================
@@ -465,7 +479,7 @@
         discography by group, Appears on, Fans also like.
         (GET /api/artists/{id} -> { artist, topTracks, counts, popularVia, albums, discography: { albums, singles,
         compilations, appearsOn }, similar, pending, errors }). A section named in `pending` shows its skeleton until
-        `artist.updated`, when the page is read again and patched in place.
+        `artist.updated`, when the page is read again and patched in place (readAgainWhileComing covers a missed one).
      ===================================================================== */
   var POPULAR_SHOWN = 5;
   var DISCO_GROUPS = [['albums', 'Albums'], ['singles', 'Singles and EPs'], ['compilations', 'Compilations']];
@@ -579,6 +593,7 @@
   function mountArtist(ctx) {
     liveSaveButtons(ctx); liveOn(ctx, ['followed', 'liked', 'services']);
     ctx.onCleanup(App.on('server:artist.updated', function (e) { if (e.artistId === ctx.params.id) M.reload(artistPath(e.artistId)); }));
+    readAgainWhileComing(ctx, artistPath(ctx.params.id), function (d) { return (d.pending || []).length > 0; });
   }
   App.action('lib-popular-more', function (el) {
     var v = artistView[el.getAttribute('data-id')]; if (!v) return;

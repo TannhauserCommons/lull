@@ -484,7 +484,10 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
     photo also glows behind it), then Popular (5 rows, See more for 10, with Last.fm plays at any width) beside About
     (from 960 px of the page), the discography with a filter pill per group (albums, singles and EPs, compilations),
     Appears on and Fans also like. A section the hub names in `pending` shows its skeleton in the same place, and
-    `artist.updated` reads the page again, patched in place.
+    `artist.updated` reads the page again, patched in place. The page doesn't hang on that one push
+    (`readAgainWhileComing`, the album page's `partial` too): it reads again when it is seen again (the app back from
+    the background) and once after the hub's 90 s bound, and a reconnect re-reads everything. A failed section shows
+    its sentence and Try again.
   - **Search:** "Side by side" from `wide`: catalogs on the left, Soulseek on the right.
   - **Short windows:** tighter chrome.
 - **Designs.**

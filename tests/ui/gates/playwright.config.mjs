@@ -51,6 +51,8 @@ export default defineConfig({
     // what loading Classic mode on first use must keep (a browser) and not change (the desktop app)
     { name: 'on-use', testMatch: 'on-use.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     { name: 'now', testMatch: 'now.spec.mjs', fullyParallel: true },
+    // a part still coming never hangs on one push: a missed one is read again, a failed one says so
+    { name: 'pending', testMatch: 'pending.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
     // long lists: every row works, drawn or not (a fixture hub of its own: it likes, downloads and reorders)
     { name: 'lists', testMatch: 'lists.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     // loops at their own rate and held when asked, in Chromium and in WebKit (Linux's WebKitGTK app, Safari)

@@ -10,7 +10,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use axum::Json;
@@ -38,6 +38,59 @@ const TAG_NEW_DAYS: i64 = 90;
 const ALBUM_DEADLINE: Duration = Duration::from_secs(3);
 /// How long the artist and tag pages wait for their sections.
 pub(crate) const PAGE_DEADLINE: Duration = Duration::from_secs(4);
+/// How long a section a page answered without may go on: longer than any one source's own bound
+/// (iTunes waits at most its budget's minute for a turn). Then it ends as failed, so the page's
+/// `*.updated` always follows (api.md).
+pub(crate) const LATE_LIMIT: Duration = Duration::from_secs(90);
+
+/// `section`, ended as failed once it has run `LATE_LIMIT`.
+pub(crate) async fn bounded<T>(section: impl Future<Output = Result<T>>) -> Result<T> {
+    match tokio::time::timeout(LATE_LIMIT, section).await {
+        Ok(answer) => answer,
+        Err(_) => Err(Error::unavailable(
+            "this part",
+            format!("didn't arrive within {} s", LATE_LIMIT.as_secs()),
+        )),
+    }
+}
+
+/// How each page section went the last time it ended, when it failed, by page and section. A
+/// page read again (after `*.updated`) names such a section in `errors` when it is late again,
+/// rather than as still coming: so a section whose source keeps failing slowly ends in "couldn't
+/// load", never in an endless skeleton. A section that arrives clears it.
+#[derive(Default)]
+pub struct Unfinished(Mutex<HashMap<(String, &'static str), String>>);
+
+impl Unfinished {
+    /// Records how a section went when it ended.
+    pub fn ended<T>(&self, page: &str, sections: &[&'static str], answer: &Result<T>) {
+        let mut failed = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        for section in sections {
+            let key = (page.to_owned(), *section);
+            match answer {
+                Ok(_) => failed.remove(&key),
+                Err(e) => failed.insert(key, e.to_string()),
+            };
+        }
+    }
+
+    /// Why the section failed the last time it ended, if it did.
+    pub fn failed(&self, page: &str, section: &'static str) -> Option<String> {
+        let failed = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        failed.get(&(page.to_owned(), section)).cloned()
+    }
+
+    /// A section not in by the page's deadline: still coming (`pending`), or, when it failed
+    /// the last time it ended, in `errors`.
+    pub fn late(&self, page: &str, section: &'static str, pending: &mut Vec<&'static str>, errors: &mut Errors) {
+        match self.failed(page, section) {
+            Some(why) => {
+                errors.insert(section, why);
+            }
+            None => pending.push(section),
+        }
+    }
+}
 
 pub(crate) type Errors = BTreeMap<&'static str, String>;
 
@@ -45,9 +98,12 @@ pub(crate) type Errors = BTreeMap<&'static str, String>;
 pub struct AlbumPage {
     album: Album,
     /// The tracklist wasn't in by the deadline: the tracks lull had are shown, and
-    /// `album.updated` follows when the rest arrives.
+    /// `album.updated` follows when it has arrived or failed.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     partial: bool,
+    /// `tracks` when the tracklist failed the last time it was fetched and is late again.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    errors: Errors,
     entities: Pictured,
 }
 
@@ -74,22 +130,27 @@ pub async fn album(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> R
     known.id = id.clone();
 
     // Filled in a task of its own, so a tracklist that misses the deadline is still fetched,
-    // remembered and announced.
+    // remembered and announced: arrived or failed, within `LATE_LIMIT`.
     let started = Instant::now();
     let (tx, rx) = oneshot::channel();
     let task = (svc.clone(), known.clone());
     svc.ctx.spawn(async move {
         let (svc, known) = task;
-        let filled = fill(&svc, known).await;
+        let album_id = known.id.clone();
+        let filled = bounded(fill(&svc, known)).await;
+        // A page read while it had failed already says so: failing again is no news for it.
+        let news = filled.is_ok() || svc.unfinished.failed(&album_id.0, "tracks").is_none();
+        svc.unfinished.ended(&album_id.0, &["tracks"], &filled);
         let to_enrich = filled.as_ref().ok().filter(|f| f.from_catalog).map(|f| f.album.clone());
-        if let Err(Ok(late)) = tx.send(filled) {
-            tracing::info!(album = %late.album.id, ms = started.elapsed().as_millis() as u64, "album tracklist arrived after the page");
-            svc.ctx.bus.publish("album.updated", AlbumUpdated { album_id: late.album.id });
+        if tx.send(filled).is_err() && news {
+            tracing::info!(album = %album_id, ms = started.elapsed().as_millis() as u64, "album tracklist ended after the page");
+            svc.ctx.bus.publish("album.updated", AlbumUpdated { album_id });
         }
         if let Some(album) = to_enrich {
             enrich(&svc, album).await;
         }
     });
+    let mut errors = Errors::new();
     let (album, tracks, partial) = match tokio::time::timeout(ALBUM_DEADLINE, rx).await {
         Ok(Ok(filled)) => {
             let f = filled?;
@@ -98,7 +159,9 @@ pub async fn album(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> R
         Ok(Err(_)) => return Err(Error::unavailable("discovery", "is restarting")),
         Err(_) => {
             let tracks = svc.store.catalog_album_tracks(id.clone()).await?;
-            (store::with_tracks(known, &tracks), tracks, true)
+            let mut late = Vec::new();
+            svc.unfinished.late(&id.0, "tracks", &mut late, &mut errors);
+            (store::with_tracks(known, &tracks), tracks, !late.is_empty())
         }
     };
     tracing::info!(album = %id, ms = started.elapsed().as_millis() as u64, partial, "album page answered");
@@ -112,6 +175,7 @@ pub async fn album(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> R
     Ok(Json(AlbumPage {
         entities: art::pictured(&svc, entities(tracks, vec![album.clone()], artist)).await?,
         partial,
+        errors,
         album,
     }))
 }
@@ -421,6 +485,40 @@ fn iso_date(unix: i64) -> String {
 
 #[cfg(test)]
 mod tests {
+    use lull_core::{Error, Result};
+
+    use super::{Errors, LATE_LIMIT, Unfinished, bounded};
+
+    #[test]
+    fn a_part_that_failed_late_is_named_failed_when_late_again_never_coming_for_good() {
+        // Live, an artist's discography stayed a skeleton: read again after `artist.updated`, the
+        // part was late again and named still coming, each time.
+        let unfinished = Unfinished::default();
+        let late = |page: &str| {
+            let (mut pending, mut errors) = (Vec::new(), Errors::new());
+            unfinished.late(page, "albums", &mut pending, &mut errors);
+            (pending, errors)
+        };
+        assert_eq!(late("ar-1").0, ["albums"], "never ended: still coming");
+        let failed: Result<()> = Err(Error::unavailable("iTunes", "lull's calls for this minute are spent"));
+        unfinished.ended("ar-1", &["albums", "topTracks"], &failed);
+        let (pending, errors) = late("ar-1");
+        assert!(pending.is_empty());
+        assert!(errors["albums"].contains("calls for this minute are spent"));
+        assert_eq!(late("ar-2").0, ["albums"], "another page's parts are its own");
+        unfinished.ended("ar-1", &["albums"], &Ok(()));
+        assert_eq!(late("ar-1").0, ["albums"], "arrived once: coming again, not failed");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_late_part_ends_within_its_bound() {
+        let hung = bounded(std::future::pending::<Result<()>>()).await;
+        let Err(e) = hung else {
+            unreachable!("a part that never answers can't succeed")
+        };
+        assert!(e.to_string().contains(&format!("within {} s", LATE_LIMIT.as_secs())));
+    }
+
     #[test]
     fn iso_date_matches_the_calendar() {
         assert_eq!(super::iso_date(0), "1970-01-01");

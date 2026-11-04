@@ -9,16 +9,18 @@
 //! - photos for the artist and the similar artists (`photo`), once the covers are known.
 //!
 //! The page answers within `PAGE_DEADLINE`. A section not in by then is named in `pending`, and
-//! `artist.updated` is announced once every late section has ended, so the UI reads the page
-//! again (from the caches the sections filled).
+//! `artist.updated` is announced once every late section has ended (arrived, or failed within
+//! `LATE_LIMIT`), so the UI reads the page again (from the caches the sections filled). A section
+//! that failed the last time it ended is named in `errors` when it is late again
+//! (`pages::Unfinished`). Photos aren't a section: one vetted later arrives with `art.ready`.
 
 pub mod discography;
 pub mod photo;
 pub mod popular;
 
-use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use axum::Json;
 use axum::extract::{Path, State};
@@ -30,7 +32,7 @@ use tokio::time::Instant;
 
 use crate::Service;
 use crate::art::{self, Pictured, PicturedArtist};
-use crate::pages::{Errors, PAGE_DEADLINE, checked};
+use crate::pages::{Errors, PAGE_DEADLINE, bounded, checked};
 use crate::search::catalog::Choice;
 use crate::search::merge::{AlbumHit, SongHit};
 use crate::sources::listenbrainz::Mode;
@@ -116,7 +118,7 @@ pub async fn page(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Re
     // wait for them.
     let mut profile_rx = svc.lastfm().is_some().then(|| {
         let (s, name, mbid) = (svc.clone(), artist.name.clone(), artist.musicbrainz_id.clone());
-        late.run(async move {
+        late.run(&["bio"], async move {
             match s.lastfm() {
                 Some(lastfm) => lastfm.artist(&name, mbid.as_deref()).await,
                 None => Err(off("Last.fm")),
@@ -128,7 +130,7 @@ pub async fn page(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Re
     if !known {
         let found = {
             let (s, name) = (svc.clone(), artist.name.clone());
-            late.run(async move { s.mb.find_artist(&name).await })
+            late.run(&["artist"], async move { s.mb.find_artist(&name).await })
         };
         profile = match profile_rx.take() {
             Some(rx) => Some(wait(until, rx).await),
@@ -137,7 +139,7 @@ pub async fn page(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Re
         match wait(until, found).await {
             Ok(Some(a)) => artist.musicbrainz_id = a.mbid,
             Ok(None) => {}
-            Err(Missing::Late) => pending.push("artist"),
+            Err(Missing::Late) => late.late("artist", &mut pending, &mut errors),
             Err(Missing::Failed(e)) => {
                 errors.insert("artist", e.to_string());
             }
@@ -159,21 +161,21 @@ pub async fn page(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Re
     let (catalog_tx, catalog_rx) = oneshot::channel();
     let (similar_tx, similar_rx) = oneshot::channel();
     let (photos_tx, photos_rx) = oneshot::channel::<Result<()>>();
-    late.open(3);
+    late.open(2);
     {
         let (svc, late, info, artist, held) = (svc.clone(), late.clone(), info.clone(), artist.clone(), id.clone());
         svc.ctx.clone().spawn(async move {
             let (catalog, similar) = tokio::join!(
                 async {
-                    let c = catalog(&svc, &info).await;
+                    let c = bounded(catalog(&svc, &info)).await;
                     let asked = c.as_ref().ok().map(|c| (covers(&c.releases), c.links.deezer));
-                    late.deliver(catalog_tx, c);
+                    late.deliver(catalog_tx, c, &["albums", "topTracks"]);
                     asked
                 },
                 async {
-                    let s = similar_artists(&svc, &info).await;
+                    let s = bounded(similar_artists(&svc, &info)).await;
                     let names = s.as_ref().ok().cloned().unwrap_or_default();
-                    late.deliver(similar_tx, s);
+                    late.deliver(similar_tx, s, &["similar"]);
                     names
                 }
             );
@@ -184,14 +186,19 @@ pub async fn page(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Re
                 deezer: None,
                 covers: Vec::new(),
             }));
-            photo::find(&svc, asks).await;
+            let found = bounded(async {
+                photo::find(&svc, asks).await;
+                Ok(())
+            })
+            .await;
             svc.photos.release(&held);
-            late.deliver(photos_tx, Ok(()));
+            // In time, the page shows it; later, `art.ready` does.
+            let _ = photos_tx.send(found);
         });
     }
     let counted = svc.lastfm().is_some().then(|| {
         let (s, i) = (svc.clone(), info.clone());
-        late.run(async move {
+        late.run(&["topTracks"], async move {
             match s.lastfm() {
                 Some(lastfm) => lastfm.top_tracks(&i.name, i.mbid.as_deref()).await,
                 None => Err(off("Last.fm")),
@@ -217,7 +224,7 @@ pub async fn page(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Re
                 artist.tags = p.tags;
             }
         }
-        Some(Err(Missing::Late)) => pending.push("bio"),
+        Some(Err(Missing::Late)) => late.late("bio", &mut pending, &mut errors),
         Some(Err(Missing::Failed(e))) => {
             errors.insert("bio", e.to_string());
         }
@@ -226,7 +233,8 @@ pub async fn page(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Re
     let catalog = match wait(until, catalog_rx).await {
         Ok(c) => Some(c),
         Err(Missing::Late) => {
-            pending.extend(["albums", "topTracks"]);
+            late.late("albums", &mut pending, &mut errors);
+            late.late("topTracks", &mut pending, &mut errors);
             None
         }
         Err(Missing::Failed(e)) => {
@@ -238,7 +246,7 @@ pub async fn page(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Re
         Some(rx) => match wait(until, rx).await {
             Ok(c) => c,
             Err(Missing::Late) => {
-                pending.push("topTracks");
+                late.late("topTracks", &mut pending, &mut errors);
                 Vec::new()
             }
             Err(Missing::Failed(e)) => {
@@ -251,7 +259,7 @@ pub async fn page(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Re
     let similar = match wait(until, similar_rx).await {
         Ok(s) => s,
         Err(Missing::Late) => {
-            pending.push("similar");
+            late.late("similar", &mut pending, &mut errors);
             Vec::new()
         }
         Err(Missing::Failed(e)) => {
@@ -259,9 +267,8 @@ pub async fn page(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Re
             Vec::new()
         }
     };
-    if let Err(Missing::Late) = wait(until, photos_rx).await {
-        pending.push("image");
-    }
+    // A photo still being vetted isn't waited for again: `art.ready` brings it.
+    let _ = wait(until, photos_rx).await;
     pending.sort_unstable();
     pending.dedup();
 
@@ -574,7 +581,10 @@ struct LateInner {
     svc: Arc<Service>,
     id: ArtistId,
     open: AtomicUsize,
+    /// A section ended after the page answered with news for it: `artist.updated` is due.
     missed: AtomicBool,
+    /// The sections the page named in `errors` as failed before: failing again is no news.
+    failed: Mutex<HashSet<&'static str>>,
 }
 
 impl Late {
@@ -584,7 +594,20 @@ impl Late {
             id,
             open: AtomicUsize::new(0),
             missed: AtomicBool::new(false),
+            failed: Mutex::new(HashSet::new()),
         }))
+    }
+
+    /// A section the page answers without: still coming, or failed the last time it ended.
+    fn late(&self, section: &'static str, pending: &mut Vec<&'static str>, errors: &mut Errors) {
+        self.0.svc.unfinished.late(&self.0.id.0, section, pending, errors);
+        if errors.contains_key(section) {
+            self.0
+                .failed
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .insert(section);
+        }
     }
 
     /// `n` more sections will be delivered.
@@ -592,20 +615,32 @@ impl Late {
         self.0.open.fetch_add(n, Ordering::SeqCst);
     }
 
-    /// Runs a section in a task of its own; its answer is cached even when the page stops waiting.
+    /// Runs the page's `sections` in a task of their own, for `LATE_LIMIT` at most; the answer
+    /// is cached even when the page stops waiting.
     fn run<T: Send + 'static>(
         &self,
+        sections: &'static [&'static str],
         section: impl std::future::Future<Output = Result<T>> + Send + 'static,
     ) -> oneshot::Receiver<Result<T>> {
         let (tx, rx) = oneshot::channel();
         self.open(1);
         let late = self.clone();
-        self.0.svc.ctx.spawn(async move { late.deliver(tx, section.await) });
+        self.0
+            .svc
+            .ctx
+            .spawn(async move { late.deliver(tx, bounded(section).await, sections) });
         rx
     }
 
-    fn deliver<T>(&self, tx: oneshot::Sender<T>, answer: T) {
-        if tx.send(answer).is_err() {
+    /// Hands the page its `sections`, or records that they ended after it answered; the last
+    /// of those announces `artist.updated`.
+    fn deliver<T>(&self, tx: oneshot::Sender<Result<T>>, answer: Result<T>, sections: &[&'static str]) {
+        self.0.svc.unfinished.ended(&self.0.id.0, sections, &answer);
+        // The page names it failed already: failing again tells it nothing new.
+        let failed = self.0.failed.lock().unwrap_or_else(PoisonError::into_inner);
+        let news = answer.is_ok() || !sections.iter().all(|s| failed.contains(s));
+        drop(failed);
+        if tx.send(answer).is_err() && news {
             self.0.missed.store(true, Ordering::SeqCst);
         }
         if self.0.open.fetch_sub(1, Ordering::SeqCst) == 1 && self.0.missed.load(Ordering::SeqCst) {

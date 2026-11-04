@@ -25,5 +25,9 @@ tracing.workspace = true
 # Scales catalog covers to the sizes the UI asks for (the same build as library's).
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
 
+[dev-dependencies]
+# A page part's time bound is tested on paused time, exactly and without waiting.
+tokio = { workspace = true, features = ["test-util"] }
+
 [lints]
 workspace = true

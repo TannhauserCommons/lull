@@ -23,7 +23,11 @@
 // (crates/skins/src/wsz.rs).
 //
 // POST /__fixture/emit { topic, data } sends one server event to every open /api/events stream (with X-Fixture-Client,
-// to that client's streams only).
+// to that client's streams only). POST /__fixture/drop-events ends that client's streams, as a hub restart or a dropped
+// connection does: the browser connects again by itself.
+// POST /__fixture/artist-late { id, pending, errors } makes that artist's page answer with those sections still coming
+// (empty, named in `pending`) and `errors`, for that client; POST /__fixture/artist-in { id } answers it whole again
+// and sends nothing: an `artist.updated` the page never heard.
 // POST /__fixture/trickle { id, bytesPerS, seekAhead } makes that unsaved song a Soulseek transfer arriving at bytesPerS from
 // now (its WAV is 8000 bytes a second of sound): GET /api/stream/<id> serves only what has arrived and holds a range that
 // starts past it until it has, as the hub does, and `stream` events report the transfer twice a second until it is complete.
@@ -264,16 +268,10 @@ const routes = [
     const a = L.albums[m[1]]; if (!a) return err(404, 'not_found', 'lull doesn\'t know this album.');
     return { album: a, entities: entities({ tracks: a.trackIds, albums: [a.id, ...L.albumIds.filter((x) => L.albums[x].artistId === a.artistId)], artists: [a.artistId] }) };
   }],
-  ['GET', /^\/api\/artists\/([^/]+)$/, (m) => {
+  ['GET', /^\/api\/artists\/([^/]+)$/, (m, q, body, client) => {
     const ar = L.artists[m[1]]; if (!ar) return err(404, 'not_found', 'lull doesn\'t know this artist.');
-    const albums = L.albumIds.filter((x) => L.albums[x].artistId === ar.id).sort((a, b) => L.albums[b].year - L.albums[a].year);
-    const top = albums.flatMap((a) => L.albums[a].trackIds).slice(0, 10);
-    const similar = L.artistIds.filter((x) => x !== ar.id && L.artists[x].tags[0] === ar.tags[0]).slice(0, 8);
-    return {
-      artist: ar, topTracks: top, counts: Object.fromEntries(top.map((t, i) => [t, { plays: 90_000 - i * 7000, listeners: 20_000 - i * 1500 }])), popularVia: 'lastfm',
-      albums, discography: { albums: albums.filter((a) => L.albums[a].type === 'album'), singles: albums.filter((a) => L.albums[a].type !== 'album'), compilations: [], appearsOn: [] },
-      similar, entities: entities({ tracks: top, albums, artists: [ar.id, ...similar] }),
-    };
+    const page = artistPage(ar), late = artistLate.get(client + ' ' + ar.id);
+    return late ? lateArtist(page, late) : page;
   }],
   ['GET', /^\/api\/tags\/([^/]+)$/, (m) => {
     const name = decodeURIComponent(m[1]);
@@ -317,6 +315,28 @@ function deepMerge(into, patch) {
   }
 }
 function cap(w) { return w[0].toUpperCase() + w.slice(1); }
+
+/* GET /api/artists/{id}: the whole page */
+function artistPage(ar) {
+  const albums = L.albumIds.filter((x) => L.albums[x].artistId === ar.id).sort((a, b) => L.albums[b].year - L.albums[a].year);
+  const top = albums.flatMap((a) => L.albums[a].trackIds).slice(0, 10);
+  const similar = L.artistIds.filter((x) => x !== ar.id && L.artists[x].tags[0] === ar.tags[0]).slice(0, 8);
+  return {
+    artist: ar, topTracks: top, counts: Object.fromEntries(top.map((t, i) => [t, { plays: 90_000 - i * 7000, listeners: 20_000 - i * 1500 }])), popularVia: 'lastfm',
+    albums, discography: { albums: albums.filter((a) => L.albums[a].type === 'album'), singles: albums.filter((a) => L.albums[a].type !== 'album'), compilations: [], appearsOn: [] },
+    similar, entities: entities({ tracks: top, albums, artists: [ar.id, ...similar] }),
+  };
+}
+/* the page with `late.pending` sections still coming (empty) and `late.errors` failed, as the hub answers a first visit */
+function lateArtist(page, late) {
+  const out = { ...page, pending: late.pending || [], errors: late.errors || {} };
+  const gone = new Set([...out.pending, ...Object.keys(out.errors)]);
+  if (gone.has('albums')) { out.albums = []; out.discography = { albums: [], singles: [], compilations: [], appearsOn: [] }; }
+  if (gone.has('topTracks')) { out.topTracks = []; out.counts = {}; }
+  if (gone.has('similar')) out.similar = [];
+  return out;
+}
+const artistLate = new Map();   // client + ' ' + artist id -> { pending, errors }
 
 function emit(topic, data, only) {
   const line = `event: ${topic}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -699,6 +719,12 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://fixture');
   const path = url.pathname, q = url.searchParams;
   if (path === '/__fixture/emit' && req.method === 'POST') { const b = await readBody(req); emit(b.topic, b.data, req.headers['x-fixture-client']); return send(res, 204); }
+  if (path === '/__fixture/drop-events' && req.method === 'POST') {
+    for (const [stream, c] of clients) if (c === clientOf(req)) { clients.delete(stream); stream.end(); }
+    return send(res, 204);
+  }
+  if (path === '/__fixture/artist-late' && req.method === 'POST') { const b = await readBody(req); artistLate.set(clientOf(req) + ' ' + b.id, b); return send(res, 204); }
+  if (path === '/__fixture/artist-in' && req.method === 'POST') { artistLate.delete(clientOf(req) + ' ' + (await readBody(req)).id); return send(res, 204); }
   if (path === '/api/events') {
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
     res.write(': open\n\n');
@@ -763,7 +789,7 @@ const server = createServer(async (req, res) => {
       if (method !== req.method) continue;
       const mm = re.exec(path);
       if (!mm) continue;
-      const out = fn(mm, q, body);
+      const out = fn(mm, q, body, client);
       if (out && out.status && (out.body !== undefined || out.status === 204)) return send(res, out.status, out.body);
       return send(res, 200, out);
     }

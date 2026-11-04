@@ -143,6 +143,8 @@ pub struct Service {
     resolver: search::resolve::Queue,
     /// Settings > Discovery "adventurousness": radio's steer when the UI sends none.
     adventurousness: RwLock<f64>,
+    /// How page sections that failed went, so a page read again says so (`pages::Unfinished`).
+    unfinished: pages::Unfinished,
 }
 
 pub async fn start(
@@ -183,6 +185,7 @@ pub async fn start(
         youtube,
         resolver: search::resolve::Queue::default(),
         adventurousness: RwLock::new(DEFAULT_STEER),
+        unfinished: pages::Unfinished::default(),
         ctx: ctx.clone(),
     });
     ctx.pictures.set_finder(Arc::new(art::Covers(Arc::downgrade(&svc))));
