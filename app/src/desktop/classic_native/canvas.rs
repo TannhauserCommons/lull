@@ -116,10 +116,13 @@ impl Pen<'_> {
         }
     }
 
-    /// Text in the skin's font, one 5-pixel cell a character, cut at the area's width.
+    /// Text in the skin's font, a 5-pixel cell each, cut at the area's edge (a cell may show in
+    /// part, as in Webamp's marquee); a blank cell leaves what is under it.
     pub fn text(&mut self, text: &str, area: Area) {
-        for (i, c) in text.chars().take((area.width / 5) as usize).enumerate() {
-            self.sprite(font::glyph(c), area.x + 5 * i as u32, area.y);
+        for (i, cell) in font::cells(text).take(area.width.div_ceil(5) as usize).enumerate() {
+            if let Some(glyph) = cell {
+                self.sprite_clipped(glyph, area.x + 5 * i as u32, area.y, area);
+            }
         }
     }
 

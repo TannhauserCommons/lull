@@ -792,66 +792,83 @@ fn hex(value: &str) -> Option<Rgb> {
     Some([channel(0)?, channel(2)?, channel(4)?])
 }
 
-/// The skin's bitmap font: `text.bmp`, capitals only, Latin, digits and some punctuation. Lower case
-/// maps onto the capitals and accents drop; anything else becomes a question mark.
+/// The skin's bitmap font: `text.bmp`, read as Webamp reads it. Every UTF-16 unit of a line is a
+/// cell (Webamp splits its strings so); a letter loses its accent (lodash's `deburr`, which Webamp
+/// uses), case goes, and a character the font hasn't leaves its cell blank: the window's own
+/// picture shows there. Where Webamp leaves a blank for a character the font has a plain stand-in
+/// for (curly quotes, dashes, full-width forms), the stand-in shows.
 pub mod font {
     use super::{Sprite, sprites};
 
-    /// The blank cell at the end of the first row.
-    const SPACE: (u32, u32) = (0, 30);
-    const ROWS: [&str; 3] = [
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ\"@",
+    const ROWS: [&str; 2] = [
+        "abcdefghijklmnopqrstuvwxyz\"@",
         "0123456789\u{2026}.:()-'!_+\\/[]^&%,=$#",
-        "\u{c5}\u{d6}\u{c4}?*",
     ];
 
-    pub fn glyph(character: char) -> Sprite {
-        let (row, column) = cell(character);
-        sprites::glyph(row, column)
+    /// A line as cells, `None` where the cell is blank.
+    pub fn cells(text: &str) -> impl Iterator<Item = Option<Sprite>> + '_ {
+        text.chars().flat_map(|c| {
+            let cell = glyph(c);
+            // A character beyond the first plane is two UTF-16 units: two cells, both blank.
+            let units = if c.len_utf16() == 2 { [None, None] } else { [cell, None] };
+            units.into_iter().take(c.len_utf16())
+        })
     }
 
-    fn cell(character: char) -> (u32, u32) {
+    /// One character's cell, if the font has it.
+    pub fn glyph(character: char) -> Option<Sprite> {
+        cell(character).map(|(row, column)| sprites::glyph(row, column))
+    }
+
+    fn cell(character: char) -> Option<(u32, u32)> {
         let character = fold(character);
-        if character == ' ' {
-            return SPACE;
+        match character {
+            ' ' => return Some((0, 30)),
+            '?' => return Some((2, 3)),
+            '*' => return Some((2, 4)),
+            '<' | '{' => return Some((1, 22)),
+            '>' | '}' => return Some((1, 23)),
+            _ => {}
         }
-        for (row, cells) in ROWS.iter().enumerate() {
-            if let Some(column) = cells.chars().position(|c| c == character) {
-                return (row as u32, column as u32);
-            }
-        }
-        (2, 3)
+        ROWS.iter().enumerate().find_map(|(row, cells)| {
+            let column = cells.chars().position(|c| c == character)?;
+            Some((row as u32, column as u32))
+        })
     }
 
+    /// Lower case, the accent dropped as `deburr` drops it (Latin-1 and Latin Extended-A letters to
+    /// their first plain letter), and the stand-ins.
     fn fold(character: char) -> char {
-        // Full-width forms are ASCII shifted up by 0xFEE0; Japanese and Korean titles use them.
-        let character = match character {
-            '\u{ff01}'..='\u{ff5e}' => char::from_u32(character as u32 - 0xfee0).unwrap_or('?'),
+        let plain = match character {
+            '\u{c0}'..='\u{c6}' | '\u{e0}'..='\u{e6}' | '\u{100}'..='\u{105}' => 'a',
+            '\u{c7}' | '\u{e7}' | '\u{106}'..='\u{10d}' => 'c',
+            '\u{d0}' | '\u{f0}' | '\u{10e}'..='\u{111}' => 'd',
+            '\u{c8}'..='\u{cb}' | '\u{e8}'..='\u{eb}' | '\u{112}'..='\u{11b}' => 'e',
+            '\u{11c}'..='\u{123}' => 'g',
+            '\u{124}'..='\u{127}' => 'h',
+            '\u{cc}'..='\u{cf}' | '\u{ec}'..='\u{ef}' | '\u{128}'..='\u{133}' => 'i',
+            '\u{134}' | '\u{135}' => 'j',
+            '\u{136}'..='\u{138}' => 'k',
+            '\u{139}'..='\u{142}' => 'l',
+            '\u{d1}' | '\u{f1}' | '\u{143}'..='\u{148}' | '\u{14a}' | '\u{14b}' => 'n',
+            '\u{149}' => '\'',
+            '\u{d2}'..='\u{d6}' | '\u{d8}' | '\u{f2}'..='\u{f6}' | '\u{f8}' | '\u{14c}'..='\u{153}' => 'o',
+            '\u{154}'..='\u{159}' => 'r',
+            '\u{df}' | '\u{15a}'..='\u{161}' | '\u{17f}' => 's',
+            '\u{de}' | '\u{fe}' | '\u{162}'..='\u{167}' => 't',
+            '\u{d9}'..='\u{dc}' | '\u{f9}'..='\u{fc}' | '\u{168}'..='\u{173}' => 'u',
+            '\u{174}' | '\u{175}' => 'w',
+            '\u{dd}' | '\u{fd}' | '\u{ff}' | '\u{176}'..='\u{178}' => 'y',
+            '\u{179}'..='\u{17e}' => 'z',
+            // Full-width forms are ASCII shifted up by 0xFEE0; Japanese and Korean titles use them.
+            '\u{ff01}'..='\u{ff5e}' => char::from_u32(character as u32 - 0xfee0).unwrap_or(character),
             '\u{3000}' => ' ',
-            other => other,
-        };
-        match character {
-            'a'..='z' => character.to_ascii_uppercase(),
-            ' ' | '\t' | '\u{a0}' => ' ',
-            '\u{c5}' | '\u{e5}' => '\u{c5}',
-            '\u{d6}' | '\u{f6}' => '\u{d6}',
-            '\u{c4}' | '\u{e4}' => '\u{c4}',
-            '\u{c0}'..='\u{c3}' | '\u{e0}'..='\u{e3}' | '\u{c6}' | '\u{e6}' => 'A',
-            '\u{c7}' | '\u{e7}' => 'C',
-            '\u{c8}'..='\u{cb}' | '\u{e8}'..='\u{eb}' => 'E',
-            '\u{011e}' | '\u{011f}' => 'G',
-            '\u{cc}'..='\u{cf}' | '\u{ec}'..='\u{ef}' | '\u{0130}' | '\u{0131}' => 'I',
-            '\u{d0}' | '\u{f0}' => 'D',
-            '\u{d1}' | '\u{f1}' => 'N',
-            '\u{d2}'..='\u{d5}' | '\u{f2}'..='\u{f5}' | '\u{d8}' | '\u{f8}' => 'O',
-            '\u{d9}'..='\u{dc}' | '\u{f9}'..='\u{fc}' => 'U',
-            '\u{dd}' | '\u{fd}' | '\u{ff}' => 'Y',
-            '\u{df}' | '\u{015e}' | '\u{015f}' => 'S',
             '\u{2018}' | '\u{2019}' | '`' => '\'',
             '\u{201c}' | '\u{201d}' => '"',
             '\u{2013}' | '\u{2014}' => '-',
             other => other,
-        }
+        };
+        plain.to_ascii_lowercase()
     }
 
     #[cfg(test)]
@@ -859,11 +876,25 @@ pub mod font {
         use super::*;
 
         #[test]
-        fn lower_case_accents_and_full_width_forms_share_the_skins_capitals() {
-            assert_eq!(cell('a'), cell('A'));
-            assert_eq!(cell('\u{e9}'), cell('E'));
-            assert_eq!(cell('\u{ff21}'), cell('A'));
-            assert_eq!(cell('\u{4e00}'), cell('?'));
+        fn letters_lose_case_and_accent_as_in_webamp() {
+            assert_eq!(cell('A'), cell('a'));
+            assert_eq!(cell('\u{e9}'), cell('e'));
+            assert_eq!(cell('\u{c4}'), cell('a'));
+            assert_eq!(cell('\u{142}'), cell('l'));
+            assert_eq!(cell('\u{df}'), cell('s'));
+            assert_eq!(cell('\u{ff21}'), cell('a'));
+            assert_eq!(cell('\u{2019}'), cell('\''));
+            assert_eq!(cell('{'), cell('['));
+        }
+
+        #[test]
+        fn what_the_font_hasnt_is_a_blank_cell_a_unit_each() {
+            assert_eq!(cell('\u{4e00}'), None);
+            assert_eq!(cell('\u{416}'), None);
+            assert_eq!(cell('\t'), None);
+            let cells: Vec<_> = cells("a\u{1f3b5}b").collect();
+            assert_eq!(cells.len(), 4);
+            assert_eq!((cells[1], cells[2]), (None, None));
         }
     }
 }

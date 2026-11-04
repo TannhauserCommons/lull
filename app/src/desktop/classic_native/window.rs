@@ -1644,20 +1644,27 @@ impl Marquee {
             self.offset = 0;
             self.moved = Some(now);
         }
-        let mut chars: Vec<char> = self.line.chars().collect();
-        if chars.len() < MARQUEE_CHARS {
-            return self.line.clone();
+        // Counted in UTF-16 units, the skin font's cells.
+        let mut units: Vec<u16> = self.line.encode_utf16().collect();
+        // A line that fits is padded with blanks to the marquee's width, as Webamp's is: a skin's
+        // blank needn't be see-through.
+        if units.len() < MARQUEE_CHARS {
+            let mut line = self.line.clone();
+            line.extend(std::iter::repeat_n(' ', MARQUEE_CHARS - units.len()));
+            return line;
         }
-        chars.extend(MARQUEE_GAP.chars());
+        units.extend(MARQUEE_GAP.encode_utf16());
         let moved = self.moved.get_or_insert(now);
         let steps = (now.saturating_duration_since(*moved).as_millis() / MARQUEE_STEP.as_millis()) as u32;
         if steps > 0 {
             self.offset = self.offset.wrapping_add(steps as usize);
             *moved += MARQUEE_STEP * steps;
         }
-        (0..MARQUEE_CHARS)
-            .map(|i| chars[(self.offset + i) % chars.len()])
-            .collect()
+        let shown: Vec<u16> = (0..MARQUEE_CHARS)
+            .map(|i| units[(self.offset + i) % units.len()])
+            .collect();
+        // A character cut in half by the window is a blank cell, as its halves are.
+        String::from_utf16_lossy(&shown)
     }
 }
 

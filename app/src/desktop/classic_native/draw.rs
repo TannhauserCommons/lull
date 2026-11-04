@@ -327,8 +327,13 @@ fn small_analyser(pen: &mut Pen, view: &View) {
 /// blink. The colon is the bar's own picture.
 pub fn mini_time(pen: &mut Pen, view: &View, x: u32, y: u32) {
     const CELLS: [u32; 5] = [1, 7, 12, 20, 25];
+    let mut put = |c: char, cell: u32| {
+        if let Some(glyph) = font::glyph(c) {
+            pen.sprite(glyph, x + cell, y);
+        }
+    };
     for cell in CELLS {
-        pen.sprite(font::glyph(' '), x + cell, y);
+        put(' ', cell);
     }
     let now = view.now;
     if now.stopped || (!now.playing && view.blink_off) {
@@ -345,7 +350,7 @@ pub fn mini_time(pen: &mut Pen, view: &View, x: u32, y: u32) {
         None => "    ".to_owned(),
     };
     for (cell, c) in CELLS.into_iter().zip(std::iter::once(sign).chain(digits.chars())) {
-        pen.sprite(font::glyph(c), x + cell, y);
+        put(c, cell);
     }
 }
 
