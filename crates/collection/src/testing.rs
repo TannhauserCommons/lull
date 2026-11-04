@@ -35,16 +35,21 @@ impl Library for NoLibrary {
 /// Last.fm as lastfm's rules would have it, minus the account: 14 days, half a track, and a
 /// switch for whether Last.fm is connected. Records what it was asked to queue.
 /// A catalog that knows the songs it was given, by loose artist and title, and counts lookups.
+/// `down` fails every lookup.
 #[derive(Default)]
 pub(crate) struct FakeCatalog {
     pub(crate) songs: std::sync::Mutex<Vec<Track>>,
     pub(crate) lookups: std::sync::atomic::AtomicUsize,
+    pub(crate) down: AtomicBool,
 }
 
 #[async_trait]
 impl Catalog for FakeCatalog {
     async fn find_song(&self, song: &SongQuery) -> Result<Option<Track>> {
         self.lookups.fetch_add(1, Ordering::Relaxed);
+        if self.down.load(Ordering::Relaxed) {
+            return Err(lull_core::Error::unavailable("itunes", "down in this test"));
+        }
         let songs = self.songs.lock().map_err(|_| lull_core::Error::internal("poisoned"))?;
         Ok(songs
             .iter()

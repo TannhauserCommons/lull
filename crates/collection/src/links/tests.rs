@@ -74,7 +74,7 @@ async fn known(svc: &Service, fake: &crate::testing::FakeCatalog, artist: &str, 
 }
 
 #[tokio::test]
-async fn a_link_becomes_a_playlist_of_its_matched_songs_and_lists_the_rest() -> Result<()> {
+async fn a_link_becomes_a_playlist_of_all_its_songs_with_the_unmatched_to_review() -> Result<()> {
     let (svc, mut rx, _, fake) = service_with_fakes().await?;
     let (a, b) = (
         known(&svc, &fake, "Velvet Orchard", "Paper Moon").await?,
@@ -95,8 +95,17 @@ async fn a_link_becomes_a_playlist_of_its_matched_songs_and_lists_the_rest() -> 
         json!({ "matched": 2, "fixed": 0, "skipped": 0, "unmatched": 1 })
     );
     assert_eq!(out["songs"][1]["status"], "unmatched");
+    let named = out["songs"][1]["trackId"].as_str().unwrap_or_default().to_owned();
+    assert_eq!(
+        out["entities"]["tracks"][&named]["title"], "Lost Song",
+        "the unmatched song is in the catalog as the link names it"
+    );
     let playlist = out["playlistId"].as_str().unwrap_or_default().to_owned();
-    assert_eq!(playlist_ids(&svc, &playlist).await?, [a, b]);
+    assert_eq!(
+        playlist_ids(&svc, &playlist).await?,
+        [a, named, b],
+        "every song, in the link's order"
+    );
     let done = published(&mut rx)
         .into_iter()
         .rev()
@@ -106,10 +115,12 @@ async fn a_link_becomes_a_playlist_of_its_matched_songs_and_lists_the_rest() -> 
     assert_eq!(
         (
             done["state"].as_str(),
+            done["songs"].as_u64(),
             done["matched"].as_u64(),
-            done["unmatched"].as_u64()
+            done["unmatched"].as_u64(),
+            done["unlooked"].as_u64()
         ),
-        (Some("done"), Some(2), Some(1))
+        (Some("done"), Some(3), Some(2), Some(1), Some(0))
     );
     assert_eq!(done["playlistId"], json!(playlist));
     let made = svc.ctx.db.call(|c| playlists::all(c)).await?;
@@ -217,6 +228,76 @@ async fn importing_a_link_again_updates_its_playlist_keeps_choices_and_reuses_ma
 }
 
 #[tokio::test]
+async fn a_catalog_that_fails_every_lookup_still_makes_the_playlist() -> Result<()> {
+    let (svc, mut rx, _, fake) = service_with_fakes().await?;
+    fake.down.store(true, Ordering::Relaxed);
+    let out = import_now(
+        &svc,
+        listing(vec![
+            song("spotify:track:1", "Velvet Orchard", "Paper Moon"),
+            song("spotify:track:2", "Nobody Knows", "Lost Song"),
+        ]),
+    )
+    .await?;
+    let playlist = out["playlistId"].as_str().unwrap_or_default().to_owned();
+    assert_eq!(playlist_ids(&svc, &playlist).await?.len(), 2);
+    let done = published(&mut rx)
+        .into_iter()
+        .rev()
+        .find(|e| e.topic == "job")
+        .map(|e| e.data)
+        .unwrap_or_default();
+    assert_eq!(
+        (
+            done["state"].as_str(),
+            done["songs"].as_u64(),
+            done["unlooked"].as_u64()
+        ),
+        (Some("done"), Some(2), Some(2))
+    );
+
+    // Not remembered: the next import asks again.
+    fake.down.store(false, Ordering::Relaxed);
+    let lookups = fake.lookups.load(Ordering::Relaxed);
+    import_now(
+        &svc,
+        listing(vec![song("spotify:track:2", "Nobody Knows", "Lost Song")]),
+    )
+    .await?;
+    assert_eq!(fake.lookups.load(Ordering::Relaxed) - lookups, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn nothing_matched_under_an_older_rule_is_asked_again() -> Result<()> {
+    let (svc, _rx, _, fake) = service_with_fakes().await?;
+    let remember = |song: &'static str, rule: i64| {
+        svc.ctx.db.call(move |c| {
+            c.execute(
+                "INSERT INTO collection_song_matches (song, track_id, checked_at, rule) VALUES (?1, NULL, ?2, ?3)",
+                params![song, lull_core::now(), rule],
+            )?;
+            Ok(())
+        })
+    };
+    remember("spotify:track:1", lull_core::seams::FIND_SONG_RULE - 1).await?;
+    remember("spotify:track:2", lull_core::seams::FIND_SONG_RULE).await?;
+    let a = known(&svc, &fake, "Velvet Orchard", "Paper Moon").await?;
+    let out = import_now(
+        &svc,
+        listing(vec![
+            song("spotify:track:1", "Velvet Orchard", "Paper Moon"),
+            song("spotify:track:2", "Nobody Knows", "Lost Song"),
+        ]),
+    )
+    .await?;
+    assert_eq!(fake.lookups.load(Ordering::Relaxed), 1, "only the older rule's miss");
+    assert_eq!(out["songs"][0]["trackId"], json!(a), "matched under today's rule");
+    assert_eq!(out["songs"][1]["status"], "unmatched");
+    Ok(())
+}
+
+#[tokio::test]
 async fn a_deleted_playlist_is_made_again_by_the_next_import() -> Result<()> {
     let (svc, _rx, _, fake) = service_with_fakes().await?;
     known(&svc, &fake, "Velvet Orchard", "Paper Moon").await?;
@@ -295,18 +376,23 @@ async fn save_the_songs_too_asks_library_and_is_kept_for_the_link() -> Result<()
 
     let out = import_saving(&svc, songs(), Some(true)).await?;
     assert_eq!(out["saveSongs"], true);
+    let named = out["songs"][1]["trackId"].as_str().unwrap_or_default().to_owned();
     assert_eq!(
         save_requests(&mut rx),
-        [vec![a.clone()]],
-        "the playlist's songs, not the unmatched one"
+        [vec![a.clone(), named.clone()]],
+        "the playlist's songs, the unmatched one as named too"
     );
 
-    // A re-import that doesn't say keeps the link's choice; a song kept as named joins the saves.
+    // A re-import that doesn't say keeps the link's choice; a song picked later joins the saves.
     import_saving(&svc, songs(), None).await?;
-    assert_eq!(save_requests(&mut rx), [vec![a.clone()]]);
+    assert_eq!(save_requests(&mut rx), [vec![a.clone(), named.clone()]]);
     let kept = choose_now(&svc, 1, json!({ "choice": "as-is" })).await?;
-    let kept_id = kept["songs"][1]["trackId"].as_str().unwrap_or_default().to_owned();
-    assert_eq!(save_requests(&mut rx), [vec![kept_id]]);
+    assert_eq!(
+        kept["songs"][1]["trackId"],
+        json!(named),
+        "kept as named: the same song"
+    );
+    assert_eq!(save_requests(&mut rx), [vec![named]]);
 
     // Turned off: nothing is asked.
     import_saving(&svc, songs(), Some(false)).await?;

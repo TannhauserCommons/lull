@@ -195,6 +195,13 @@ pub const MIGRATIONS: Migrations = Migrations {
         r#"
         ALTER TABLE collection_links ADD COLUMN save_songs INTEGER NOT NULL DEFAULT 0;
     "#,
+        // A link song the catalog didn't match is in its playlist as the link names it (its
+        // catalog id, links/mod.rs); "nothing matched" is believed only under the matching rule
+        // that said so (matches.rs, `seams::FIND_SONG_RULE`).
+        r#"
+        ALTER TABLE collection_link_songs ADD COLUMN named_id TEXT;
+        ALTER TABLE collection_song_matches ADD COLUMN rule INTEGER NOT NULL DEFAULT 1;
+    "#,
     ],
 };
 

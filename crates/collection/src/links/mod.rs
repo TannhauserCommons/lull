@@ -4,9 +4,11 @@
 //!
 //! - **Matching** each song to the catalog is discovery's (`Catalog::find_song`): the library,
 //!   then the catalog by ISRC or by artist, title and length.
-//! - **Unmatched songs** stay out of the playlist until the listener fixes them (a song picked
-//!   from search, or the song as the link names it) or skips them. Choices are kept by the
-//!   source's id for the song, so they outlive re-imports.
+//! - **Every song the link lists goes in the playlist.** A match is enrichment, not a gate: a song
+//!   the catalog didn't match (or couldn't look up) goes in as the link names it, played by
+//!   searching for it, as an M3U line is, and waits in the review until the listener picks a song
+//!   from search, keeps it as named or skips it. Choices are kept by the source's id for the song,
+//!   so they outlive re-imports.
 //! - **Re-importing** the same link updates its playlist to the link's songs, in the link's
 //!   order. A song matched before is not looked up again.
 
@@ -233,11 +235,12 @@ async fn import(svc: &Arc<Service>, link: &Link, listing: Option<Listing>, job: 
         return Err(empty());
     }
     job.name = listing.name.clone();
-    let matches = match_songs(svc, &listing.songs, job).await?;
+    let (matches, unlooked) = match_songs(svc, &listing.songs, job).await;
     let (key, url, pictures) = (link.key(), link.url(), listing.covers.clone());
-    let done = svc
+    let mut done = svc
         .write(move |tx, events| store(tx, events, &key, &url, &listing, &matches))
         .await?;
+    done.unlooked = unlooked;
     // The playlist is there either way; a picture that can't be had leaves its songs' covers.
     if let Err(e) = covers::from_link(svc, done.playlist_seq, &pictures).await {
         tracing::info!(error = %e, "a link import's cover wasn't kept");
@@ -263,11 +266,11 @@ async fn read(svc: &Service, link: &Link, job: &mut Job) -> Result<Listing> {
     }
 }
 
-/// Each song's track id, `None` when the catalog has no match. A song matched before, by this
-/// link or any other or a preview, keeps its match without a lookup (`matches`). A song whose
-/// lookup fails counts as unmatched (a re-import tries it again); the import fails only when
-/// every lookup does.
-async fn match_songs(svc: &Arc<Service>, songs: &[Song], job: &mut Job) -> Result<Vec<Option<TrackId>>> {
+/// Each song's track id, `None` when the catalog has no match, and how many lookups failed. A
+/// song matched before, by this link or any other or a preview, keeps its match without a lookup
+/// (`matches`). A song whose lookup fails is unmatched (it goes in as named; a re-import tries it
+/// again).
+async fn match_songs(svc: &Arc<Service>, songs: &[Song], job: &mut Job) -> (Vec<Option<TrackId>>, usize) {
     let total = songs.len();
     let mut lookups = stream::iter(songs.iter().cloned())
         .map(|song| {
@@ -275,24 +278,20 @@ async fn match_songs(svc: &Arc<Service>, songs: &[Song], job: &mut Job) -> Resul
             async move { crate::matches::find(&svc, &song).await }
         })
         .buffered(PARALLEL);
-    let (mut matches, mut failures, mut first_error) = (Vec::with_capacity(total), 0, None);
+    let (mut matches, mut failures) = (Vec::with_capacity(total), 0);
     job.matching(0, total, 0);
     while let Some(found) = lookups.next().await {
         match found {
             Ok(id) => matches.push(id),
             Err(e) => {
-                tracing::info!(error = %e, "a link import's song wasn't looked up");
+                tracing::warn!(error = %e, "a link import's song wasn't looked up");
                 failures += 1;
-                first_error.get_or_insert(e);
                 matches.push(None);
             }
         }
         job.matching(matches.len(), total, matches.iter().filter(|m| m.is_some()).count());
     }
-    match first_error {
-        Some(e) if failures == total => Err(e),
-        _ => Ok(matches),
-    }
+    (matches, failures)
 }
 
 /// What a finished import tells Activity.
@@ -301,9 +300,12 @@ struct Done {
     counts: Counts,
     /// Songs asked to be saved (the link's "Save the songs too").
     saving: usize,
+    /// Songs whose lookup failed (among `counts.unmatched`).
+    unlooked: usize,
 }
 
-/// Writes the listing and its matches, then makes or updates the link's playlist.
+/// Writes the listing and its matches, then makes or updates the link's playlist. An unmatched
+/// song is recorded in the catalog as the link names it, its place in the playlist.
 fn store(
     conn: &Connection,
     events: &mut Events,
@@ -320,10 +322,14 @@ fn store(
     let seq: i64 = conn.query_row("SELECT seq FROM collection_links WHERE key = ?1", [key], |r| r.get(0))?;
     conn.execute("DELETE FROM collection_link_songs WHERE link_seq = ?1", [seq])?;
     let mut insert = conn.prepare(
-        "INSERT INTO collection_link_songs (link_seq, pos, song, artist, title, album, duration, isrc, track_id, added_at, picture)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        "INSERT INTO collection_link_songs (link_seq, pos, song, artist, title, album, duration, isrc, track_id, added_at, picture, named_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
     )?;
     for (pos, (song, id)) in listing.songs.iter().zip(matches).enumerate() {
+        let named = match id {
+            Some(_) => None,
+            None => Some(catalog::remember_named(conn, song.named())?.id),
+        };
         insert.execute(params![
             seq,
             pos as i64,
@@ -336,6 +342,7 @@ fn store(
             id.as_ref().map(TrackId::as_str),
             song.added,
             song.picture,
+            named.as_ref().map(TrackId::as_str),
         ])?;
     }
     let desc = match &listing.description {
@@ -354,6 +361,7 @@ fn store(
         playlist_seq,
         counts: counts(&lines),
         saving,
+        unlooked: 0,
     })
 }
 
@@ -474,8 +482,9 @@ impl Job {
                 "done",
                 json!({
                     "pct": 100, "playlistId": format!("pl-{}", d.playlist_seq),
+                    "songs": d.counts.matched + d.counts.fixed + d.counts.unmatched,
                     "matched": d.counts.matched + d.counts.fixed, "unmatched": d.counts.unmatched,
-                    "skipped": d.counts.skipped, "saving": d.saving,
+                    "unlooked": d.unlooked, "skipped": d.counts.skipped, "saving": d.saving,
                 }),
             ),
             (Ok(()), None) => self.publish("failed", json!({ "error": "the import stopped before it finished" })),
@@ -510,6 +519,7 @@ enum Status {
     /// The listener's choice: a song from search, or the song as the link names it.
     Fixed,
     Skipped,
+    /// No catalog match (or no lookup): in the playlist as the link names it, to review.
     Unmatched,
 }
 
@@ -522,7 +532,8 @@ struct Line {
     album: Option<String>,
     duration: Option<u32>,
     status: Status,
-    /// The song in the playlist: the match or the fix. `None` when skipped or unmatched.
+    /// The song in the playlist: the match, the fix, or (unmatched) the song as the link names
+    /// it. `None` when skipped, or unmatched in an import from before unmatched songs went in.
     track_id: Option<TrackId>,
     /// When the source added it (`Song::added`).
     #[serde(skip)]
@@ -553,7 +564,8 @@ fn counts(lines: &[Line]) -> Counts {
 /// The link's songs in order, each with the listener's choice applied.
 fn lines(conn: &Connection, seq: i64) -> Result<Vec<Line>> {
     let mut stmt = conn.prepare(
-        "SELECT s.pos, s.artist, s.title, s.album, s.duration, s.track_id, c.song IS NOT NULL, c.track_id, s.added_at
+        "SELECT s.pos, s.artist, s.title, s.album, s.duration, s.track_id, c.song IS NOT NULL, c.track_id, s.added_at,
+                s.named_id
          FROM collection_link_songs s
          LEFT JOIN collection_link_choices c ON c.link_seq = s.link_seq AND c.song = s.song
          WHERE s.link_seq = ?1 ORDER BY s.pos",
@@ -564,7 +576,7 @@ fn lines(conn: &Connection, seq: i64) -> Result<Vec<Line>> {
             (true, Some(id), _) => (Status::Fixed, Some(id)),
             (true, None, _) => (Status::Skipped, None),
             (false, _, Some(id)) => (Status::Matched, Some(id)),
-            (false, _, None) => (Status::Unmatched, None),
+            (false, _, None) => (Status::Unmatched, r.get(9)?),
         };
         Ok(Line {
             pos: r.get::<_, i64>(0)? as usize,

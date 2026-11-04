@@ -356,7 +356,7 @@ fn start_matching(svc: &Arc<Service>, key: String, songs: Vec<(usize, Song)>) {
         while let Some((pos, song, found)) = lookups.next().await {
             match found {
                 Ok(found) => batch.push((pos, song, found)),
-                Err(e) => tracing::info!(error = %e, "an outside playlist's song wasn't looked up"),
+                Err(e) => tracing::warn!(error = %e, "an outside playlist's song wasn't looked up"),
             }
             if last.elapsed() >= REPORT_EVERY && !batch.is_empty() {
                 announce(&svc, &key, std::mem::take(&mut batch), false).await;
