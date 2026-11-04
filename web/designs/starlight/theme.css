@@ -1019,7 +1019,7 @@
   :root[data-design="starlight"] .now-head { padding: 18px 16px 4px; background-position: 16px 29px; background-size: calc(100% - 32px) 1.5px; }
   :root[data-design="starlight"] .now-head::before { content: "this song"; }
   :root[data-design="starlight"] .now__acts {
-    margin-top: calc(-1 * var(--sp-4)); padding: 8px 16px 18px; border-bottom: var(--stroke) solid var(--line);
+    padding: 8px 16px 18px; border-bottom: var(--stroke) solid var(--line);
     border-radius: 0 0 var(--r-card) var(--r-card); box-shadow: var(--stack-sm); margin-bottom: 12px;
   }
   :root[data-design="starlight"] .now-srccard { border-top: var(--stroke) solid var(--line); border-radius: var(--r-card); padding: 16px; }

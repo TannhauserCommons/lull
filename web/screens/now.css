@@ -17,6 +17,10 @@
 }
 .now-head { grid-area: head; } .now__acts { grid-area: acts; } .now__dev, .now__devc { grid-area: dev; }
 .now-srccard { grid-area: src; } .now-lycard { grid-area: ly; align-self: stretch; } .now-next { grid-area: next; }
+/* the title with its actions, and the source and lyrics windows: grid items of .now__grid like the rest, unless a design
+   lays a pair out as one box of its own (petal: the title band, its actions beside the title while they fit; lull: one
+   column, lyrics above and the source as tall as its content under them) */
+.now__intro, .now__side { display: contents; }
 .now > .sparkle { z-index: 0; }
 /* the docked queue panel already shows what's next */
 .app[data-ctx="docked"] .now-next { display: none; }

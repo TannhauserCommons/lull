@@ -53,6 +53,61 @@ for (const [size, use] of Object.entries(sizes)) {
   });
 }
 
+/* what overlaps on Now Playing: two of its panels (more than the edge two joined windows share), two lines of its
+   heading, the title's words and the action buttons, or a clamped line drawn past its clamp */
+function overlaps() {
+  const box = (e) => {
+    if (!e || !e.getClientRects().length) return null;
+    const s = getComputedStyle(e); if (s.visibility === 'hidden' || s.clipPath !== 'none') return null;
+    const r = e.getBoundingClientRect(); return r.width > 2 && r.height > 2 ? r : null;
+  };
+  const meet = (a, b) => Math.min(Math.min(a.right, b.right) - Math.max(a.left, b.left), Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+  const name = (e) => '.' + [...e.classList].join('.');
+  const view = document.querySelector('#view'), out = [];
+  const panels = ['.now__dev', '.now__devc', '.now-head', '.now__acts', '.now-srccard', '.now-lycard', '.now-next', '.now-qcard']
+    .map((s) => view.querySelector(s)).filter((e) => box(e));
+  for (let i = 0; i < panels.length; i++) for (let j = i + 1; j < panels.length; j++) {
+    const a = box(panels[i]), b = box(panels[j]);
+    const tabs = Math.abs(a.left - b.left) < 1 && Math.abs(a.top - b.top) < 1;   // one window's pages, shown one at a time
+    if (!tabs && meet(a, b) > 2) out.push(`${name(panels[i])} on ${name(panels[j])}`);
+  }
+  const head = view.querySelector('.now-head'), kids = head ? [...head.children].filter((e) => box(e)) : [];
+  for (let i = 0; i < kids.length; i++) for (let j = i + 1; j < kids.length; j++) if (meet(box(kids[i]), box(kids[j])) > 1) out.push(`${name(kids[i])} on ${name(kids[j])}`);
+  const title = view.querySelector('.now-head__title'), acts = box(view.querySelector('.now__acts'));
+  if (title && acts && box(title)) {
+    const words = document.createRange(); words.selectNodeContents(title);
+    if ([...words.getClientRects()].some((r) => r.width && meet(r, acts) > 1)) out.push('the title on the actions');
+  }
+  for (const e of view.querySelectorAll('*')) {
+    const s = getComputedStyle(e);
+    if (s.webkitLineClamp !== 'none' && s.overflowY === 'visible' && box(e) && e.scrollHeight > e.clientHeight + 2) out.push(`${name(e)} draws past its clamp`);
+  }
+  return out;
+}
+const LONG_TITLE = "Part III-Sampson & Shane-Fisher's Legend-The Big Idea";
+
+for (const [size, use] of Object.entries(sizes)) {
+  test.describe(size, () => {
+    test.use(use);
+    for (const design of designs) {
+      test(`a long title overlaps nothing / ${design}`, async ({ page }) => {
+        await openScreen(page, `/album/${ids.album}`, { design, clock: false });
+        await playWithLyricsAsked(page, size === 'phone');
+        await page.evaluate((t) => { App.player.current().title = t; location.hash = '#/now'; }, LONG_TITLE);
+        await page.waitForFunction(() => document.querySelector('.now-ly--page .now-ly__line, .now-ly--page [data-state="none"], .now-head__title'));
+        await page.evaluate(() => document.fonts.ready);
+        expect(await page.evaluate(overlaps), 'overlaps with the source details shut').toEqual([]);
+        const open = page.locator('#view .now-srccard .now-src__toggle:visible');
+        if (await open.count()) {
+          await open.first().click();
+          await page.waitForFunction(() => document.querySelector('#view .now-src__details:not([hidden])'));
+          expect(await page.evaluate(overlaps), 'overlaps with the source details open').toEqual([]);
+        }
+      });
+    }
+  });
+}
+
 test.describe('now column', () => {
   test.use(sizes.wide);
   for (const design of designs) {

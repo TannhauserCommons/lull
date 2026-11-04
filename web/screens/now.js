@@ -863,15 +863,15 @@
     return html`<div class="now" data-tab="${view.tab}" data-page="${view.page}">
       <div class="now__top"><p class="now-head__from">${fromLine()}</p>${ui.iconButton('more', 'More player actions', { 'data-act': 'player-more', 'aria-haspopup': 'menu', cls: 'btn-icon--bare' })}</div>
       <div class="now__grid" id="now-panel" role="region" aria-label="Now Playing">
-        <header class="now-head" data-sec="art" data-now="head-info">${infoHead()}</header>
-        <div class="now__acts" data-sec="art" data-now="acts">${actionRow()}</div>
+        <div class="now__intro"><header class="now-head" data-sec="art" data-now="head-info">${infoHead()}</header>
+          <div class="now__acts" data-sec="art" data-now="acts">${actionRow()}</div></div>
         <div class="now__dev">${hero('full')}
           <p class="now__keys"><span class="now__kg">${ui.keycap('P')}${ui.keycap('N')} skip</span><span class="now__kg">${ui.keycap('Up')}${ui.keycap('Down')} volume</span><span class="now__kg">${ui.keycap('Space')} play</span></p>
         </div>
         <div class="now__devc">${hero('compact')}</div>
         <div class="now__seg">${phoneTabs()}</div>
-        <section class="card now-srccard" data-sec="details" data-now="src" aria-label="Source">${sourceCard()}</section>
-        <section class="card now-lycard" data-sec="lyrics" data-now="lyrics" aria-label="Lyrics">${lyricsBlock('page')}</section>
+        <div class="now__side"><section class="card now-srccard" data-sec="details" data-now="src" aria-label="Source">${sourceCard()}</section>
+          <section class="card now-lycard" data-sec="lyrics" data-now="lyrics" aria-label="Lyrics">${lyricsBlock('page')}</section></div>
         <section class="card now-next" data-sec="art" data-now="next" aria-label="Up next" data-meta="${queueMeta()}">${upNext()}</section>
         <section class="card now-qcard" data-sec="queue" data-now="queue" aria-label="Queue" data-meta="${queueMeta()}">${queueBlock()}</section>
       </div>

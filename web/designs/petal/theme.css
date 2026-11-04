@@ -751,12 +751,15 @@
     grid-template-columns: minmax(340px, 400px) minmax(0, 1fr); grid-template-rows: none;
     grid-template-areas: "head head" "dev q" "src src" "ly ly"; column-gap: 0; row-gap: 20px; align-items: stretch;
   }
-  :root[data-design="petal"] .now-head {
-    padding: 16px 380px 16px 22px; background: var(--pt-band); border: 1.5px solid var(--pt-frame); border-radius: 4px; box-shadow: var(--stack); gap: 2px;
+  /* the title band: the title takes the room the actions leave it, and they drop under it when a long title needs more */
+  :root[data-design="petal"] .now__intro {
+    grid-area: head; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px;
+    padding: 16px 20px 16px 22px; background: var(--pt-band); border: 1.5px solid var(--pt-frame); border-radius: 4px; box-shadow: var(--stack);
   }
+  :root[data-design="petal"] .now-head { flex: 1 1 360px; min-width: 0; gap: 2px; }
   :root[data-design="petal"] .now-head__title { margin: 0; font-size: 2.5rem; }
   :root[data-design="petal"] .now-head__chips { margin-top: 4px; }
-  :root[data-design="petal"] .now__acts { grid-area: head; align-self: center; justify-self: end; margin-right: 20px; }
+  :root[data-design="petal"] .now__acts { flex: none; }
   :root[data-design="petal"] .now-acts .now-acts__btn { width: 44px; padding: 0; }
   :root[data-design="petal"] .now-acts .now-acts__label { display: none; }
   :root[data-design="petal"] .now__dev { display: flex; }
@@ -798,7 +801,7 @@
 }
 @media (max-height: 860px) {
   @container now (min-width: 760px) {
-    :root[data-design="petal"] .now-head { padding-top: 12px; padding-bottom: 12px; }
+    :root[data-design="petal"] .now__intro { padding-top: 12px; padding-bottom: 12px; }
     :root[data-design="petal"] .now-head__title { font-size: 2.25rem; }
     :root[data-design="petal"] .now__grid { row-gap: 16px; }
     :root[data-design="petal"] .pt-win .pt-win__screen { padding-top: 12px; padding-bottom: 8px; }
