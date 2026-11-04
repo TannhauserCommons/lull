@@ -170,13 +170,30 @@ pub fn shaded(pen: &mut Pen, view: &View) {
     if view.held(Control::PlaylistShade) {
         pen.at(sprites::PLAYLIST_UNSHADE_PRESSED, layout::PLAYLIST_SHADE);
     }
+    // Webamp's: the song as `n. Artist - Title` (its number unpadded), cut to 41 cells with an
+    // ellipsis, and its length right-aligned 30 pixels from the edge.
     let index = view.now.index;
-    if let Some(label) = view.list.labels.get(index) {
-        let length = view.list.lengths.get(index).copied().flatten();
-        let line = format!("{label} {}", length.map(clock).unwrap_or_default());
-        pen.text(&line, Area::new(5, 4, right - 10, 6));
+    let Some(label) = view.list.labels.get(index) else {
+        pen.text("[No file]", Area::new(5, 4, WIDTH - 5, 6));
+        return;
+    };
+    let units: Vec<u16> = label.trim_start().encode_utf16().collect();
+    let cells = SHADE_TITLE_CELLS as usize;
+    let title = if units.len() > cells {
+        format!("{}\u{2026}", String::from_utf16_lossy(&units[..cells - 1]))
+    } else {
+        String::from_utf16_lossy(&units)
+    };
+    pen.text(&title, Area::new(5, 4, WIDTH - 5, 6));
+    if let Some(length) = view.list.lengths.get(index).copied().flatten() {
+        let time = clock(length);
+        let width = 5 * time.len() as u32;
+        pen.text(&time, Area::new(WIDTH - 30 - width, 4, width, 6));
     }
 }
+
+/// How many cells the rolled-up playlist's title has (Webamp's `(205 + extra width) / 5`).
+const SHADE_TITLE_CELLS: u32 = 205 / 5;
 
 /// The frame: the title bar's tiles either side of its centred title, the sides, the bottom.
 fn frame(pen: &mut Pen, focused: bool) {
