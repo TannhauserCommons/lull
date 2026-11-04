@@ -143,7 +143,8 @@ reject() {
     for b; do status "${b#*:}" pending "$SPLIT"; done
     retry
   else
-    status "${1#*:}" failure "red: ${FAILED:-a check}; open the run"
+    failed=$(echo ${FAILED:-a check} | sed 's/ /, /g')
+    status "${1#*:}" failure "$failed failed; open the run"
   fi
   git push -q origin --delete "refs/heads/queue-candidate/$GITHUB_RUN_ID" || true
 }
