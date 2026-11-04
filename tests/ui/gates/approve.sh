@@ -16,6 +16,11 @@ done
 echo "ui-gates run $run: $(gh run view "$run" --json url --jq .url)"
 # The other gates may fail on the way (that is for you to read); the pictures are written either way.
 gh run watch "$run" >/dev/null || true
+# The run splits the screens over three machines, each uploading its share (gates-goldens-1..3): together, all of them.
+parts=$(mktemp -d)
+gh run download "$run" --pattern 'gates-goldens-*' --dir "$parts"
 rm -rf tests/ui/gates/goldens/linux
-gh run download "$run" --name gates-goldens --dir tests/ui/gates/goldens/linux
+mkdir -p tests/ui/gates/goldens/linux
+for part in "$parts"/*/; do cp -R "$part". tests/ui/gates/goldens/linux/; done
+rm -rf "$parts"
 echo "goldens: $(find tests/ui/gates/goldens/linux -name '*.png' | wc -l) pictures; review with: git status tests/ui/gates/goldens"

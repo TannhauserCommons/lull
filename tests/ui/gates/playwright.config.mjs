@@ -9,6 +9,10 @@ const port = +(process.env.FIXTURE_PORT || 8790);
 // Goldens are per platform: fonts and anti-aliasing differ between systems, so the committed ones are Linux's (CI)
 // and a run elsewhere compares against pictures it made itself the first time (gitignored).
 const capture = process.env.UI_CAPTURE === '1';
+// GATES picks the projects a run takes: `perf` alone (its task lengths must not share the CPU with screenshots), `rest`
+// (every other project, so a new gate runs in CI and in run.sh without being listed there), or, unset, all of them.
+const group = process.env.GATES;
+const inGroup = (p) => (group === 'perf' ? p.name === 'perf' : group === 'rest' ? p.name !== 'perf' : true);
 
 export default defineConfig({
   testDir: here,
@@ -56,6 +60,6 @@ export default defineConfig({
     // Theme Studio and import: a loop with no rate named, its rate added, the loop paced
     { name: 'theme-loops', testMatch: 'theme-loops.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     { name: 'loops-webkit', testMatch: 'loops.spec.mjs', fullyParallel: true, use: { browserName: 'webkit', viewport: { width: 1440, height: 900 }, launchOptions: {} } },
-  ],
+  ].filter(inGroup),
 });
 
