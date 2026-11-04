@@ -4383,11 +4383,11 @@
       e.updateTiming({ delay: d - off });
     }, function () { /* cancelled before it started: nothing to set */ });
   }
+  /* every loop on what started one, matched by its target alone: matched by name and pseudo-element as well, the playing
+     bars went unpaced in WebKitGTK. Pacing a loop again changes nothing */
   document.addEventListener('animationstart', function (ev) {
     if (!window.CSSAnimation || !ev.target.getAnimations) return;
-    ev.target.getAnimations({ subtree: true }).forEach(function (a) {
-      if (a.animationName === ev.animationName && a.effect.target === ev.target && (a.effect.pseudoElement || '') === ev.pseudoElement) pace(a);
-    });
+    ev.target.getAnimations({ subtree: true }).forEach(function (a) { if (a.effect && a.effect.target === ev.target) pace(a); });
   });
   /* a browser without them (an old Safari) runs loops as they are */
   function paceAll() { if (window.CSSAnimation && document.getAnimations) document.getAnimations().forEach(pace); }
