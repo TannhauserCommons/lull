@@ -9,10 +9,13 @@
 // FIXTURE_THEMES=<dir> serves the theme packages in that folder (<dir>/<id>/theme.json...) as the listener's own, as the
 // hub stores them (docs/themes.md, section 1): GET /api/themes lists them, /api/themes/<id>/<file> serves their files.
 //
-// FIXTURE_SKINS=<dir> is the hub's skins folder (LULL_SKINS_DIR, docs/context/skins.md): GET /api/skins/mine lists the
-// .wsz files in it (read again on every call, so POST /api/skins/mine/rescan answers the same), one per md5, and
-// /api/skins/<md5>.wsz serves them. A file is a skin when it is a zip under 16 MB naming main.bmp, a cruder check than
-// the hub's (crates/skins/src/wsz.rs). Without it, no skins folder is set.
+// Your skins (docs/context/skins.md): the skins the hub keeps start empty and live in memory for the run; POST
+// /api/skins/mine?name= adds one (checked as below, one per md5), DELETE /api/skins/mine/<md5> removes one; both send
+// `skins.mine`, as the hub does.
+// FIXTURE_SKINS=<dir> is the skins folder the hub only reads (LULL_SKINS_DIR): its .wsz files are listed after the
+// hub's (read again on every call, so POST /api/skins/mine/rescan answers the same), one per md5. /api/skins/<md5>.wsz
+// serves either. A file is a skin when it is a zip under 16 MB naming main.bmp, a cruder check than the hub's
+// (crates/skins/src/wsz.rs).
 //
 // POST /__fixture/emit { topic, data } sends one server event to every open /api/events stream (with X-Fixture-Client,
 // to that client's streams only).
@@ -256,7 +259,13 @@ const routes = [
   ['GET', /^\/api\/skins$/, () => ({ items: [], more: false })],
   ['GET', /^\/api\/skins\/favourites$/, () => ({ items: [] })],
   ['GET', /^\/api\/skins\/mine$/, () => mineSkins()],
-  ['POST', /^\/api\/skins\/mine\/rescan$/, () => (SKINS ? mineSkins() : err(404, 'not_found', 'No skins folder is set: LULL_SKINS_DIR.'))],
+  ['POST', /^\/api\/skins\/mine\/rescan$/, () => mineSkins()],
+  ['DELETE', /^\/api\/skins\/mine\/([0-9a-f]{32})$/, (m) => {
+    if (ownSkins.delete(m[1])) { emit('skins.mine', {}); return { status: 204 }; }
+    const there = mineSkins().items.find((i) => i.md5 === m[1]);
+    return there ? err(409, 'conflict', `${there.file} is in your skins folder /skins, which lull only reads: remove it there.`)
+      : err(404, 'not_found', `None of your skins is ${m[1]}.`);
+  }],
 ];
 
 function sortTracks(ids, sort) {
@@ -355,6 +364,27 @@ async function audioFile(req, res, t) {
 }
 
 // ---------- server ----------
+/* the skins the hub keeps: md5 -> { name, file, bytes }, newest last */
+const ownSkins = new Map();
+/* why bytes aren't a classic skin, or null */
+function notSkin(bytes) {
+  if (bytes.length > 16 * 1024 * 1024) return 'it is over 16 MB, which no classic skin is';
+  if (bytes.subarray(0, 2).toString() !== 'PK') return 'the file is not a zip archive';
+  if (!/main\.bmp/i.test(bytes.toString('latin1'))) return 'the archive has no main.bmp, so it is not a classic Winamp skin';
+  return null;
+}
+/* POST /api/skins/mine?name=: 201 { added, item }, 200 when the listener has it already, 400 for a non-skin */
+function addSkin(name, bytes) {
+  const file = (name.split(/[\\/]/).pop().replace(/\.wsz$/i, '').replace(/[<>:"|?*]/g, '').trim() || 'Skin') + '.wsz';
+  const why = notSkin(bytes);
+  if (why) return err(400, 'bad_request', `${file} isn't a classic skin: ${why}.`);
+  const md5 = createHash('md5').update(bytes).digest('hex');
+  const had = mineSkins().items.find((i) => i.md5 === md5);
+  if (had) return { status: 200, body: { added: false, item: had } };
+  ownSkins.set(md5, { file, bytes });
+  emit('skins.mine', {});
+  return { status: 201, body: { added: true, item: mineSkins().items.find((i) => i.md5 === md5) } };
+}
 /* FIXTURE_SKINS as GET /api/skins/mine answers, and each skin's file by md5 */
 function readSkins() {
   const files = readdirSync(SKINS, { recursive: true, withFileTypes: true })
@@ -364,21 +394,21 @@ function readSkins() {
     .sort((a, b) => (a.path < b.path ? -1 : 1));
   const items = [], skipped = [], byMd5 = new Map();
   for (const { file, path } of files) {
-    const bytes = readFileSync(file), name = path.split('/').pop();
-    if (bytes.length > 16 * 1024 * 1024) { skipped.push({ path, why: 'it is over 16 MB, which no classic skin is' }); continue; }
-    if (bytes.subarray(0, 2).toString() !== 'PK') { skipped.push({ path, why: 'the file is not a zip archive' }); continue; }
-    if (!/main\.bmp/i.test(bytes.toString('latin1'))) { skipped.push({ path, why: 'the archive has no main.bmp, so it is not a classic Winamp skin' }); continue; }
+    const bytes = readFileSync(file), name = path.split('/').pop(), why = notSkin(bytes);
+    if (why) { skipped.push({ path, why, source: 'folder' }); continue; }
     const md5 = createHash('md5').update(bytes).digest('hex');
     if (byMd5.has(md5)) continue;
     byMd5.set(md5, file);
-    items.push({ md5, name: name.replace(/\.wsz$/i, '').replaceAll('_', ' ').trim(), file: name, path, size: bytes.length });
+    items.push({ md5, name: name.replace(/\.wsz$/i, '').replaceAll('_', ' ').trim(), file: name, path, size: bytes.length, source: 'folder' });
   }
   return { items, skipped, byMd5 };
 }
 function mineSkins() {
-  if (!SKINS) return { folder: null, watching: false, problem: null, items: [], skipped: [] };
-  const { items, skipped } = readSkins();
-  return { folder: '/skins', watching: true, problem: null, items, skipped };
+  const own = [...ownSkins].map(([md5, s]) => ({ md5, name: s.file.replace(/\.wsz$/i, '').replaceAll('_', ' ').trim(), file: s.file, path: s.file, size: s.bytes.length, source: 'hub' }))
+    .sort((a, b) => (a.path < b.path ? -1 : 1));
+  const folder = SKINS ? readSkins() : { items: [], skipped: [] }, seen = new Set(own.map((i) => i.md5));
+  return { hub: '/data/skins/mine', folder: SKINS ? '/skins' : null, watching: !!SKINS, problem: null,
+    items: [...own, ...folder.items.filter((i) => !seen.has(i.md5))], skipped: folder.skipped };
 }
 
 /* FIXTURE_THEMES' packages as GET /api/themes lists the hub's: each manifest with the slots its files have */
@@ -456,10 +486,16 @@ const server = createServer(async (req, res) => {
   if ((m = /^\/api\/(library\/)?stream\/([^/]+)$/.exec(path)) && req.method === 'GET') return audio(req, res, m[2], !!m[1]);
   if ((m = /^\/api\/stream\/([^/]+)$/.exec(path)) && req.method === 'DELETE') return send(res, 204);
   if (THEMES && (m = /^\/api\/themes\/([a-z0-9-]+)\/(.+)$/.exec(path)) && req.method === 'GET') return files(req, res, '/' + m[2], join(THEMES, m[1]));
-  if (SKINS && (m = /^\/api\/skins\/([0-9a-f]{32})\.wsz$/.exec(path)) && req.method === 'GET') {
-    const file = readSkins().byMd5.get(m[1]);
-    if (!file) return send(res, 404, { error: 'not_found', message: 'The fixture hub has no skin ' + m[1] + '.' });
-    const body = readFileSync(file);
+  if (path === '/api/skins/mine' && req.method === 'POST') {
+    const parts = [];
+    for await (const p of req) parts.push(p);
+    const out = addSkin(q.get('name') || '', Buffer.concat(parts));
+    return send(res, out.status, out.body);
+  }
+  if ((m = /^\/api\/skins\/([0-9a-f]{32})\.wsz$/.exec(path)) && req.method === 'GET' && (ownSkins.has(m[1]) || SKINS)) {
+    const file = ownSkins.has(m[1]) ? null : readSkins().byMd5.get(m[1]);
+    if (!file && !ownSkins.has(m[1])) return send(res, 404, { error: 'not_found', message: 'The fixture hub has no skin ' + m[1] + '.' });
+    const body = file ? readFileSync(file) : ownSkins.get(m[1]).bytes;
     res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': body.length, 'cache-control': 'public, max-age=31536000, immutable' });
     return res.end(body);
   }

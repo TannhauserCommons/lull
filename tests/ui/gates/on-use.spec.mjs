@@ -49,7 +49,8 @@ test.describe('in a browser', () => {
     await openScreen(page, '/home');
     await page.evaluate(() => {
       const dt = new DataTransfer();
-      dt.items.add(new File(['PK\x03\x04 a skin'], 'Night Owl.wsz', { type: 'application/zip' }));
+      // as the fixture hub checks a skin: a zip naming main.bmp (it goes to the hub, which keeps it)
+      dt.items.add(new File(['PK\x03\x04 main.bmp a skin'], 'Night Owl.wsz', { type: 'application/zip' }));
       document.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
     });
     await page.waitForFunction(() => App.classicSkin && App.classicSkin.get() && App.classicSkin.get().name === 'Night Owl');
