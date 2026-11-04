@@ -387,7 +387,7 @@
 }
 :root[data-design="lull"] .header .tray__pill--cache::after { content: attr(data-cache-used) " / " attr(data-cache-cap) " GB"; font-size: .8125rem; white-space: nowrap; }
 /* the cache tile's meter goes with the tray's long words when the header runs out of room (layout.js, data-fit) */
-:root[data-design="lull"] .header .tray__pill--cache:has(> .tray__label-long[data-fit-out])::before { display: none; }
+:root[data-design="lull"] .header[data-fit-gave~="2"] .tray__pill--cache::before { display: none; }
 /* status dots: ringed so they read on any tile; the shape already differs (ok = circle, warn = diamond) */
 :root[data-design="lull"] .tray .sg { width: 15px; height: 15px; margin: 0 -2px; overflow: visible; filter: drop-shadow(1.2px 0 0 #fff9fe) drop-shadow(-1.2px 0 0 #fff9fe) drop-shadow(0 1.2px 0 #fff9fe) drop-shadow(0 -1.2px 0 #fff9fe); }
 /* compact tray (tablet, phone): the worst state in words (.tray__word, "all good" included), never colour alone */

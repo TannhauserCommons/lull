@@ -355,8 +355,10 @@ Every class lull's CSS styles and every `data-*` attribute lull's markup sets, e
 - **Links:** `data-nav` on every nav link, `data-brand` on brand links.
 - **Rows that fit themselves** (section 5, Wide screens): `data-fit-row` on a row (the header, the player bar, its tools,
   the song's chips), `data-fit` on a part that can give way (its value is its order, 1 first), `data-fit-out` on a part
-  that gave way. Style how a part that gave way looks (a nav pill as its icon); lull's own CSS already takes away what
-  must go, and puts it in the "…" menu.
+  that gave way, `data-fit-gave` on the row (the orders that gave way, and `all` once every one did). Style how a part
+  that gave way looks (a nav pill as its icon); lull's own CSS already takes away what must go, and puts it in the "…"
+  menu. To style something else by what gave way, read the row (`.header[data-fit-gave~="2"] …`), not
+  `:has([data-fit-out])`, which restyles the whole page at every step of a fit.
 - **Status tray:** `.tray` with `.tray__pill[data-svc][data-state]`, `data-worst`, `data-cache-used`, `data-cache-cap`, `data-tray`; `data-activity-count` holds the number of running jobs.
 - **Banners:** `.banner`, `.banner-slot`, `.banner-more`, `.is-lead` (the banner a phone shows when the others collapse).
 - **Surfaces:** `.s-sky`, `.s-panel`, `.s-card`, `.s-screen`.

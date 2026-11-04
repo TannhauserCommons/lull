@@ -255,7 +255,15 @@
     });
     var orders = parts.map(function (p) { return +p.getAttribute('data-fit'); })
       .filter(function (o, i, all) { return all.indexOf(o) === i; }).sort(function (a, b) { return a - b; });
-    function give(i, out) { parts.forEach(function (p) { if (+p.getAttribute('data-fit') === orders[i]) p.toggleAttribute('data-fit-out', out); }); }
+    /* the row says what gave way in it (the orders, and "all" once every one did), at each step, for a style that
+       follows a part out (lull's cache meter, the search's padding) and so takes its room with it as the row is measured:
+       a :has([data-fit-out]) would restyle the whole page at every step in a design with a :has() on the shell */
+    function give(i, out) {
+      parts.forEach(function (p) { if (+p.getAttribute('data-fit') === orders[i]) p.toggleAttribute('data-fit-out', out); });
+      var off = orders.filter(function (o) { return parts.some(function (p) { return +p.getAttribute('data-fit') === o && p.hasAttribute('data-fit-out'); }); }),
+        gave = off.join(' ') + (off.length && off.length === orders.length ? ' all' : '');
+      if (row.getAttribute('data-fit-gave') !== gave) row.setAttribute('data-fit-gave', gave);
+    }
     var k = 0, was;
     while (k < orders.length && parts.every(function (p) { return +p.getAttribute('data-fit') !== orders[k] || p.hasAttribute('data-fit-out'); })) k++;
     for (var i = 0; i < orders.length; i++) give(i, i < k);

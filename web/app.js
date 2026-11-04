@@ -160,9 +160,9 @@
     var i, v, names = want.getAttributeNames();
     for (i = 0; i < names.length; i++) { v = want.getAttribute(names[i]); if (old.getAttribute(names[i]) !== v) old.setAttribute(names[i], v); }
     names = old.getAttributeNames();
-    /* data-fit-out is the row fitter's (layout.js), not the markup's: a re-render that kept the words would show a part
-       that gave way again, with nothing to fit the row anew */
-    for (i = names.length - 1; i >= 0; i--) if (!want.hasAttribute(names[i]) && names[i] !== 'data-fit-out') old.removeAttribute(names[i]);
+    /* data-fit-out and data-fit-gave are the row fitter's (layout.js), not the markup's: a re-render that kept the words
+       would show a part that gave way again, with nothing to fit the row anew */
+    for (i = names.length - 1; i >= 0; i--) if (!want.hasAttribute(names[i]) && names[i] !== 'data-fit-out' && names[i] !== 'data-fit-gave') old.removeAttribute(names[i]);
     if (old.nodeName === 'INPUT') {                // properties the user may have changed since the last render
       if (old.checked !== want.checked) old.checked = want.checked;
       if (old.type !== 'file' && old !== document.activeElement && old.value !== want.value) old.value = want.value;

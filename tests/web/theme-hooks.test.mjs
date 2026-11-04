@@ -120,3 +120,22 @@ test('no hook is both stable and internal', () => {
     ...[...stable.attrs].filter((a) => internal.attrs.has(a))];
   assert.equal(both.length, 0, missing('listed as both stable and internal', both));
 });
+
+/* the arguments of a selector's :has()es, parentheses matched */
+function hasArgs(sel) {
+  const out = [];
+  for (let i = sel.indexOf(':has('); i >= 0; i = sel.indexOf(':has(', i + 1)) {
+    let depth = 0, j = i + 4;
+    for (; j < sel.length; j++) { if (sel[j] === '(') depth++; else if (sel[j] === ')' && --depth === 0) break; }
+    out.push(sel.slice(i + 5, j));
+  }
+  return out;
+}
+// Chromium rechecks every :has() up the tree when an attribute named in one changes, so a :has() on the fitter's
+// data-fit-out restyles the whole page at each step of a fit in a design with a :has() on the shell (docs/themes.md,
+// Rows that fit themselves): a style that follows a part out reads its row's data-fit-gave
+test('no style reads a part that gave way through :has()', () => {
+  const bad = [shared, ...designs.map((d) => d.sel)].join('\n').split('\n')
+    .filter((sel) => hasArgs(sel).some((a) => a.includes('data-fit-out')));
+  assert.equal(bad.length, 0, missing('selectors with [data-fit-out] in a :has() (read the row\'s data-fit-gave)', bad));
+});

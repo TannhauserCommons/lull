@@ -1123,8 +1123,8 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
    least: the "/" hint, the tray's long words, the following-and-playlists button (Library has them), the full tray for
    the compact one, the nav pills' labels (their icons and tooltips stay), and last the search's own least width */
 .header :is(.kbd, .tray__label-long, .header__shelf, .tray--full)[data-fit-out], .header .nav-pill[data-fit-out] .nav-pill__label { display: none !important; }
-.header .header__tools:has(> .tray--full[data-fit-out]) > .tray--compact { display: inline-flex !important; }
-.header .search-field:has(.kbd[data-fit-out]) .input { padding-right: 48px; }
+.header .tray--full[data-fit-out] ~ .tray--compact { display: inline-flex !important; }
+.header[data-fit-gave~="1"] .search-field .input { padding-right: 48px; }   /* the "/" hint gave way */
 .header .nav-pill[data-fit-out] { width: 44px; padding: 0; justify-content: center; }
 .header .header__search[data-fit-out] { min-width: 96px !important; }
 /* a placeholder longer than the field ends in an ellipsis instead of being cut */
