@@ -148,12 +148,19 @@ reject() {
   else
     failed=$(echo ${FAILED:-a check} | sed 's/ /, /g')
     status "${1#*:}" failure "$failed failed; open the run"
+    next
   fi
   git push -q origin --delete "refs/heads/queue-candidate/$GITHUB_RUN_ID" || true
 }
 
 # Another run, after this one: the concurrency group holds it until this run ends.
 retry() { gh workflow run queue.yml --repo "$REPO" --ref main; }
+
+# After a verdict, the branches still waiting (left from a split batch, or pushed during the run) get the next
+# run at once; their own pushes' runs may have been dropped while this one held the group.
+next() {
+  if [ -n "$(git ls-remote origin 'refs/heads/queue/*')" ]; then retry; fi
+}
 
 case "${1:-}" in
   plan) plan ;;
