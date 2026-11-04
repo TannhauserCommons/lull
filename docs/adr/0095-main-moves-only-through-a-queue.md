@@ -52,6 +52,8 @@ A ruleset on `main`:
 
 A direct `git push origin HEAD:main` is refused unless the queue already tested that exact commit. Turning the ruleset off in the repository's settings is the owner's escape hatch.
 
+Why a required status and not a list of who may push: on a repository owned by a person, GitHub refuses GitHub Actions as a ruleset's bypass actor ("must be part of the ruleset source or owner organization"), so main can't be limited to the queue's identity. A required status from GitHub Actions does the same job. Probed on 2026-11-04 with a ruleset on test branches only: a commit without the status was refused, a commit the queue had landed was accepted, and the sessions' token can't set a commit status at all.
+
 ### Flaky checks get an owner and a fix
 
 A check that fails without a change to blame gets an owner and a fix at its cause, the same day. It never gets a retry, a re-run until green or a loosened budget. While it is being fixed it stays required; a check that can't be trusted can't guard main. The policy lives in `docs/context/quality.md`.
