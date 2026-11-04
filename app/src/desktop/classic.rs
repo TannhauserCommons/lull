@@ -202,7 +202,7 @@ pub fn window(app: &AppHandle) -> Option<WebviewWindow> {
 /// Open Webamp's window with the queue `main` hands over, then hide `main`. Asked again while it is
 /// open, it comes to the front.
 pub fn open(app: &AppHandle, handoff: Handoff) -> Result<(), String> {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     if crate::desktop::classic_native::is_open() {
         return crate::desktop::classic_native::show(app).map_err(|e| e.to_string());
     }
@@ -224,7 +224,7 @@ pub fn open(app: &AppHandle, handoff: Handoff) -> Result<(), String> {
     {
         return Err(format!("Classic mode plays only from your hub, not {url}"));
     }
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     if crate::desktop::classic_native::chosen() {
         return crate::desktop::classic_native::open(app, handoff, main);
     }

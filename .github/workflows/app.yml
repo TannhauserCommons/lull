@@ -24,8 +24,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  # Tauri's documented Linux build prerequisites (WebKitGTK 4.1, AppIndicator, rsvg for icons, xdo).
-  LINUX_DEPS: libwebkit2gtk-4.1-dev build-essential file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+  # Tauri's documented Linux build prerequisites (WebKitGTK 4.1, AppIndicator, rsvg for icons, xdo), and
+  # ALSA's headers for native Classic's sound (cpal; libopus builds with the runner's CMake).
+  LINUX_DEPS: libwebkit2gtk-4.1-dev build-essential file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev
 
 jobs:
   # A push to main, a pull request, or a run by hand on any branch (its checks, then its bundles).

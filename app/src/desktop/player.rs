@@ -20,7 +20,7 @@ pub struct Action {
 
 /// Run a player action (play-pause, next, previous, like, save, classic) in the window that plays.
 pub fn forward(app: &AppHandle, action: &'static str) -> tauri::Result<()> {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     if crate::desktop::classic_native::is_open() {
         return crate::desktop::classic_native::act(app, action);
     }

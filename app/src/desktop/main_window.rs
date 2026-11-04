@@ -295,7 +295,7 @@ pub fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
 
 /// A second launch, or the tray: the open Classic window or mini player if there is one, else `main`.
 pub fn reveal(app: &AppHandle) -> tauri::Result<()> {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     if crate::desktop::classic_native::is_open() {
         return crate::desktop::classic_native::show(app);
     }

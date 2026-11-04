@@ -1,7 +1,7 @@
 //! Classic's three windows stacked, whatever window holds them: their layout, what the listener
 //! does to them (the pointer, the keys, the menus) and what Winamp would do about it, and each
 //! frame drawn at 1x into the canvas (canvas.rs and a module per window), only the windows that
-//! changed. The platform's window (window.rs on Windows) feeds it the
+//! changed. The platform's window (window.rs on Windows, gtk_window.rs on Linux) feeds it the
 //! pointer in its own pixels and the keys, shows the menus it asks for, and puts on screen what a
 //! frame says changed: scaled up nearest neighbour, the playlist's text drawn over it at the
 //! screen's own size.
@@ -1181,6 +1181,36 @@ fn draw_panel(canvas: &mut Canvas, skin: &Skin, (panel, shaded): (Panel, bool), 
 /// For each of `count` skin pixels and its end, the first physical pixel it covers at `scale`.
 pub fn edges(count: u32, scale: f64) -> Vec<i32> {
     (0..=count).map(|i| (f64::from(i) * scale).ceil() as i32).collect()
+}
+
+/// Skin pixels `[x0, x1)` of the canvas's rows that physical rows `from..to` show, scaled up
+/// nearest neighbour into `pixels`: rows `stride` long, from physical row `from` and column
+/// `columns[x0]`.
+pub fn scale_rows(
+    canvas: &Canvas,
+    (columns, rows): (&[i32], &[i32]),
+    (x0, x1): (u32, u32),
+    (from, to): (i32, i32),
+    pixels: &mut [u32],
+    stride: usize,
+) {
+    let left = columns[x0 as usize];
+    let width = canvas.width as usize;
+    for py in from..to {
+        let sy = skin_at(py, rows) as usize;
+        let source = &canvas.pixels[sy * width..(sy + 1) * width];
+        let at = (py - from) as usize * stride;
+        let Some(row) = pixels.get_mut(at..at + stride) else {
+            return;
+        };
+        for sx in x0..x1 {
+            let (a, b) = (
+                (columns[sx as usize] - left) as usize,
+                (columns[sx as usize + 1] - left) as usize,
+            );
+            row[a.min(stride)..b.min(stride)].fill(source[sx as usize]);
+        }
+    }
 }
 
 /// The skin pixel a physical coordinate falls in: `edges` holds, for each skin pixel, the first

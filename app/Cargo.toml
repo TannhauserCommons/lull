@@ -113,10 +113,13 @@ windows-version = "=0.1.7"
 # The webview behind a window: a hidden `main` tells WebView2 it isn't visible and needs little
 # memory while Classic mode plays. Same version as Tauri's.
 webview2-com = "=0.39.1"
+
+[target.'cfg(any(windows, target_os = "linux"))'.dependencies]
 # Classic mode without a webview (src/desktop/classic_native): Symphonia decodes the songs (MPL-2.0;
 # the royalty-free formats plus MP3 and AAC/ALAC in MP4 and WebM, what the hub serves), cpal plays them
-# (Apache-2.0, WASAPI), image reads the skins' BMP and PNG sheets and zip opens the .wsz (both
-# already in the tree: Tauri's image, build.rs's zip).
+# (Apache-2.0; WASAPI on Windows, ALSA on Linux), image reads the skins' BMP and PNG sheets and zip
+# opens the .wsz (both already in the tree: Tauri's image, build.rs's zip). On Linux the window is
+# GTK's, drawn with Cairo and Pango, all from the gtk crate below.
 symphonia = { version = "=0.5.5", default-features = false, features = ["aac", "alac", "flac", "isomp4", "mkv", "mp3", "ogg", "pcm", "vorbis", "wav"] }
 # Opus, YouTube's format (WebM), which Symphonia can't decode: libopus itself (BSD-3-Clause, built
 # from its bundled source with CMake; notice in licenses/THIRD-PARTY.md) through the `opus` wrapper
@@ -134,7 +137,8 @@ image = { version = "=0.25.10", default-features = false, features = ["bmp", "pn
 zip = { version = "=9.2.1", default-features = false, features = ["deflate"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-# StatusNotifier host check, GNOME button-layout, compositing check. Same version as Tauri's.
+# StatusNotifier host check, GNOME button-layout, compositing check, native Classic's window. Same
+# version as Tauri's.
 gtk = "=0.18.2"
 # Media-key fallback when WebKitGTK ships without Media Session (DESKTOP.md 5).
 tauri-plugin-global-shortcut = "=2.4.1"

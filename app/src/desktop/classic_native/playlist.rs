@@ -9,6 +9,20 @@ use super::canvas::Pen;
 use super::draw::{Control, Focus, Target, View, mini_time, visualiser};
 use super::skin::{Area, Sprite, WIDTH, layout, sprites};
 
+/// The playlist's text, as Webamp sets it: 9 px, half a pixel between letters, and the songs'
+/// times inside a `padding-right: 3px`. The platform's window draws it at the screen's size.
+pub const TEXT_SIZE: f32 = 9.0;
+pub const TEXT_SPACING: f32 = 0.5;
+pub const TIME_PADDING: f32 = 3.0;
+
+/// A row's baseline as CSS places it in a line `line` pixels tall: half the spare height (rounded
+/// down, as Blink does) above the font's ascent, the ascent and descent each rounded to a pixel as
+/// Chrome rounds them.
+pub fn baseline(line: f32, ascent: f32, descent: f32) -> f32 {
+    let (ascent, descent) = (ascent.round(), descent.round());
+    ((line - ascent - descent) / 2.0).floor() + ascent
+}
+
 /// The playlist's height, as Webamp opens it.
 pub const HEIGHT: u32 = 116;
 /// Its resize steps, across and down (Webamp's).

@@ -14,8 +14,9 @@
 #![allow(unsafe_code)]
 
 use super::canvas::{Canvas, TextRun};
+use super::playlist::{TEXT_SIZE, TEXT_SPACING, TIME_PADDING, baseline};
 use super::skin::{Skin, layout};
-use super::ui::{Classic, Effect, Frame, Item, Key, Menu, Mods, Shape, skin_at};
+use super::ui::{Classic, Effect, Frame, Item, Key, Menu, Mods, Shape, scale_rows};
 pub use super::ui::{OnClose, Setup};
 use std::cell::RefCell;
 use std::ffi::c_void;
@@ -62,11 +63,6 @@ const TIMER: usize = 1;
 const BAND: i32 = 64;
 /// Tauri's build puts the app's icon in the executable under this id (IDI_APPLICATION's).
 const APP_ICON: u16 = 32512;
-/// The playlist's text, as Webamp sets it: 9 px, half a pixel between letters.
-const TEXT_SIZE: f32 = 9.0;
-const TEXT_SPACING: f32 = 0.5;
-/// Right of the songs' times (Webamp's `padding-right: 3px`).
-const TIME_PADDING: f32 = 3.0;
 
 thread_local! {
     static OPEN: RefCell<Option<Window>> = const { RefCell::new(None) };
@@ -519,21 +515,7 @@ fn paint(
         let to = (from + band.size.1).min(bottom);
         // SAFETY: GDI finishes with the band (the last copy out of it) before its pixels change.
         let _ = unsafe { GdiFlush() };
-        let pixels = band.pixels();
-        for py in from..to {
-            let sy = skin_at(py, rows) as usize;
-            let width = canvas.width as usize;
-            let source = &canvas.pixels[sy * width..(sy + 1) * width];
-            let at = (py - from) as usize * stride;
-            let row = &mut pixels[at..at + stride];
-            for sx in x0..x1 {
-                let (a, b) = (
-                    (columns[sx as usize] - left) as usize,
-                    (columns[sx as usize + 1] - left) as usize,
-                );
-                row[a..b.min(stride)].fill(source[sx as usize]);
-            }
-        }
+        scale_rows(canvas, (columns, rows), (x0, x1), (from, to), band.pixels(), stride);
         let drawing = !canvas.texts.is_empty() && text.begin(band.dc, band.size);
         for run in canvas.texts.iter().filter(|_| drawing) {
             let area = run.area;
@@ -601,9 +583,6 @@ impl Text {
             fonts
                 .FindFamilyName(&HSTRING::from(family), &mut index, &mut found)
                 .map_err(|e| e.to_string())?;
-            // The line's baseline as CSS places it: half the spare height (rounded down, as Blink
-            // does) above the font's ascent, the ascent and descent each rounded to a pixel as
-            // Chrome rounds them.
             let baseline = if found.as_bool() {
                 let font = fonts
                     .GetFontFamily(index)
@@ -618,9 +597,8 @@ impl Text {
                 let mut metrics = DWRITE_FONT_METRICS::default();
                 font.GetMetrics(&mut metrics);
                 let em = f32::from(metrics.designUnitsPerEm.max(1));
-                let ascent = (f32::from(metrics.ascent) / em * size).round();
-                let descent = (f32::from(metrics.descent) / em * size).round();
-                ((line - ascent - descent) / 2.0).floor() + ascent
+                let (ascent, descent) = (f32::from(metrics.ascent), f32::from(metrics.descent));
+                baseline(line, ascent / em * size, descent / em * size)
             } else {
                 line * 0.75
             };

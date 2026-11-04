@@ -140,9 +140,9 @@ pub fn classic_fit(window: WebviewWindow, width: f64, height: f64, zooms: Vec<f6
 /// window.
 #[tauri::command]
 pub fn classic_back() -> Option<serde_json::Value> {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     return crate::desktop::classic_native::take_back();
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     None
 }
 

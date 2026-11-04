@@ -8,6 +8,7 @@
 
 use super::engine::{Command, Engine, Snapshot, Status, Track};
 use super::hub::Hub;
+#[cfg(windows)]
 use super::smtc::Overlay;
 use crate::desktop::player;
 use crate::desktop::state::{Desktop, NowPlaying};
@@ -42,6 +43,8 @@ pub struct Session {
     /// The marquee's line for each song, as of the queue's revision.
     pub titles: Vec<String>,
     revision: Option<u64>,
+    /// Windows' media overlay (Linux's media keys come through the app's global shortcuts).
+    #[cfg(windows)]
     overlay: Option<Overlay>,
     reported: Option<(NowPlaying, i64)>,
 }
@@ -62,6 +65,7 @@ impl Session {
             engine,
             titles: Vec::new(),
             revision: None,
+            #[cfg(windows)]
             overlay: None,
             reported: None,
         }
@@ -173,6 +177,7 @@ impl Session {
         }
         self.app.state::<Desktop>().set_now_playing(report.clone());
         player::refresh(&self.app);
+        #[cfg(windows)]
         if let Some(overlay) = &self.overlay
             && let Err(e) = overlay.show(&report, track.art.as_deref(), &self.hub)
         {
@@ -199,6 +204,7 @@ impl Session {
     }
 
     /// Windows' media overlay and keys for the window.
+    #[cfg(windows)]
     pub fn attach_overlay(&mut self, overlay: Overlay) {
         self.overlay = Some(overlay);
     }
