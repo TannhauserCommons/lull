@@ -18,13 +18,20 @@ on:
       - "tests/slskd-contract/**"
       - ".github/workflows/slskd-contract.yml"
   workflow_dispatch:
+  # The queue (ADR-0095) runs these checks on its candidate.
+  workflow_call:
+    inputs:
+      ref:
+        description: The commit to check
+        type: string
+        required: true
 
 permissions:
   contents: read
 
 concurrency:
-  group: slskd-contract-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: slskd-contract-${{ inputs.ref || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !inputs.ref }}
 
 jobs:
   resume:
@@ -32,6 +39,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
       - uses: actions/setup-node@v5
         with:
           node-version: "24.11"

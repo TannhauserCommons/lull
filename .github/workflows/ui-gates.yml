@@ -22,13 +22,20 @@ on:
         description: "Write the screens' goldens instead of comparing against them"
         type: boolean
         default: false
+  # The queue (ADR-0095) runs these checks on its candidate.
+  workflow_call:
+    inputs:
+      ref:
+        description: The commit to check
+        type: string
+        required: true
 
 permissions:
   contents: read
 
 concurrency:
-  group: ui-gates-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: ui-gates-${{ inputs.ref || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !inputs.ref }}
 
 jobs:
   # Four machines at once: performance alone on one (its task lengths must not share the CPU), and every other gate
@@ -50,6 +57,8 @@ jobs:
       GATES: ${{ matrix.gates }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
       - uses: actions/setup-node@v5
         with:
           node-version: "24.11"

@@ -1,0 +1,19 @@
+name: queue-kick
+# A push to queue/<topic> starts the queue on main (ADR-0095): run there, its checks read and warm
+# main's caches, which a run on queue/<topic> could do neither of.
+on:
+  push:
+    branches: ["queue/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  kick:
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run queue.yml --repo "$GITHUB_REPOSITORY" --ref main

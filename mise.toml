@@ -52,6 +52,10 @@ run = "sh tests/ui/update-goldens.sh"
 description = "Render every packaged app icon (desktop, web, store, Android) from the masters in design/assets"
 run = "sh scripts/icons/build.sh"
 
+[tasks.ship]
+description = "Land HEAD on main through the queue and wait for its verdict: ship <topic>"
+run = "sh scripts/ship.sh {{arg(i=0)}}"
+
 [tasks.release]
 description = "Set lull's version, commit and tag vX.Y.Z on main; pushing the tag publishes the apps: release X.Y.Z"
 run = "sh scripts/release.sh {{arg(i=0)}}"

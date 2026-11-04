@@ -1,8 +1,10 @@
 name: app
-# The Tauri app (app/). A quick check whenever it, the hub it embeds or its web pieces change;
-# Windows and Linux bundles (x64 and arm64) and the Android APK on a v* tag (attached to the tag's Release,
-# with the signed updater files and latest.json) or by hand (workflow artifacts, no updater files).
-# `mise run release X.Y.Z` makes the tag (scripts/release.sh). Path filters don't apply to tags.
+# The Tauri app (app/). The queue (ADR-0095) runs its checks, and the Android build when Android's
+# parts change, on every candidate that touches the app or the hub it embeds. Windows and Linux bundles
+# (x64 and arm64) and the Android APK on a v* tag (attached to the tag's Release, with the signed updater
+# files and latest.json) or by hand (workflow artifacts, no updater files). A run by hand on main also
+# saves the bundles' caches for the next tag (ADR-0097); the queue starts one when the lockfiles change.
+# `mise run release X.Y.Z` makes the tag (scripts/release.sh).
 on:
   push:
     branches: [main]
@@ -11,16 +13,28 @@ on:
   pull_request:
     paths: ["app/**", "crates/**", "web/desktop/**", "web/assets/icons/**", "scripts/android-*.sh", "rust-toolchain.toml", ".github/workflows/app.yml"]
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: The commit to check
+        type: string
+        required: true
+      checks:
+        description: The app's checks on Linux and Windows
+        type: boolean
+        default: true
+      android:
+        description: The Android build
+        type: boolean
+        default: true
 
 permissions:
   contents: read
 
-# One run at a time per event and ref. A new pull request push cancels the old run. On main, a running
-# run finishes and only the newest push waits behind it: main moves every few minutes, and the
-# Android job (two builds, about half an hour) would otherwise never finish there. A manual run
-# (installers to test) has its own group.
+# One run at a time per event and ref, and per candidate for the queue's. A new pull request push
+# cancels the old run.
 concurrency:
-  group: app-${{ github.event_name }}-${{ github.ref }}
+  group: app-${{ inputs.ref || format('{0}-{1}', github.event_name, github.ref) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -29,9 +43,9 @@ env:
   LINUX_DEPS: libwebkit2gtk-4.1-dev build-essential file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev
 
 jobs:
-  # A push to main, a pull request, or a run by hand on any branch (its checks, then its bundles).
+  # A queue candidate, a pull request, or a run by hand on any branch (its checks, then its bundles).
   check:
-    if: github.ref_type != 'tag'
+    if: github.ref_type != 'tag' && (!inputs.ref || inputs.checks)
     strategy:
       fail-fast: false
       matrix:
@@ -39,6 +53,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y $LINUX_DEPS
       - run: rustup toolchain install
@@ -55,31 +71,8 @@ jobs:
       - working-directory: app
         run: cargo test --locked
 
-  # Whether a push to main changed what every release build compiles: then main builds the bundles
-  # too, only to save their caches for the next tag (ADR-0097). A run by hand on main saves them too.
-  deps:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
-    outputs:
-      changed: ${{ steps.diff.outputs.changed }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-      - id: diff
-        env:
-          BEFORE: ${{ github.event.before }}
-        run: |
-          if git diff --name-only "$BEFORE" HEAD 2>/dev/null \
-            | grep -Eqx 'Cargo\.lock|app/Cargo\.lock|app/Cargo\.toml|rust-toolchain\.toml|\.github/workflows/app\.yml'; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
-
   bundle:
-    needs: deps
-    if: >-
-      !cancelled() && (github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
-      || needs.deps.outputs.changed == 'true')
+    if: ${{ !inputs.ref && (github.ref_type == 'tag' || github.event_name == 'workflow_dispatch') }}
     strategy:
       fail-fast: false
       matrix:
@@ -190,6 +183,7 @@ jobs:
   # scanner), and `clean`, unsigned from a clean clone in another folder. android-compare then requires
   # the two to match except for the signature, which is what lets F-Droid ship the release APK.
   android:
+    if: ${{ !inputs.ref || inputs.android }}
     strategy:
       fail-fast: false
       matrix:
@@ -204,6 +198,8 @@ jobs:
       RUSTUP_HOME: /opt/rustup
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
       # What F-Droid's recipe installs: Debian's rustup and the NDK, then (after the cache) the pinned
       # Rust toolchain and the Tauri CLI from source.
       - name: Toolchains
@@ -233,6 +229,16 @@ jobs:
             /opt/cargo/.crates.toml
             /opt/cargo/.crates2.json
           key: ${{ steps.cargo.outputs.cache-primary-key }}
+      # Gradle's downloads (its distribution and the libraries the APK builds with), never what it built: both
+      # builds still compile everything. Saved only by main, per build (the clean one uses the wrapper).
+      - id: gradle
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper/dists
+          key: android-gradle-${{ matrix.build }}-${{ hashFiles('app/gen/android/**/*.gradle.kts', 'app/gen/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: android-gradle-${{ matrix.build }}-
       - name: Signing key
         if: matrix.build == 'signed'
         env:
@@ -279,10 +285,17 @@ jobs:
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git clone -q "$GITHUB_WORKSPACE" "$RUNNER_TEMP/again"
-          git -C "$RUNNER_TEMP/again" checkout -q "$GITHUB_SHA"
+          git -C "$RUNNER_TEMP/again" checkout -q "$(git rev-parse HEAD)"
           sh "$RUNNER_TEMP/again/scripts/android-build.sh"
           mkdir -p "$RUNNER_TEMP/apk"
           cp "$RUNNER_TEMP/again/app/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk" "$RUNNER_TEMP/apk/"
+      - if: steps.gradle.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper/dists
+          key: ${{ steps.gradle.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v4
         with:
           name: android-build-${{ matrix.build }}
@@ -315,10 +328,7 @@ jobs:
 
   release:
     needs: [bundle, android-compare]
-    # Named outright: `deps`, skipped on a tag, would otherwise skip this too.
-    if: >-
-      !cancelled() && github.ref_type == 'tag'
-      && needs.bundle.result == 'success' && needs.android-compare.result == 'success'
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-24.04
     permissions:
       contents: write

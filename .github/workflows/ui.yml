@@ -27,13 +27,24 @@ on:
         description: "Write the goldens instead of comparing against them"
         type: boolean
         default: false
+  # The queue (ADR-0095) runs these checks on its candidate.
+  workflow_call:
+    inputs:
+      ref:
+        description: The commit to check
+        type: string
+        required: true
+      image-artifact:
+        description: The artifact holding the image to test, built once by the queue (`docker save`)
+        type: string
+        default: ""
 
 permissions:
   contents: read
 
 concurrency:
-  group: ui-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: ui-${{ inputs.ref || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !inputs.ref }}
 
 env:
   # The hub in the image listens here (tests/ui/run-hub.sh); the stub slskd next to it on :5030.
@@ -46,13 +57,25 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
       - uses: actions/setup-node@v5
         with:
           node-version: "24.11"
           cache: npm
           cache-dependency-path: tests/ui/package-lock.json
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
+      # The queue's image (the one it will publish), or one built here.
+      - if: inputs.image-artifact != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.image-artifact }}
+          path: ${{ runner.temp }}
+      - if: inputs.image-artifact != ''
+        run: docker load -i "$RUNNER_TEMP/lull-image.tar" && docker tag lull:candidate lull:ui
+      - if: inputs.image-artifact == ''
+        uses: docker/setup-buildx-action@v3
+      - if: inputs.image-artifact == ''
+        uses: docker/build-push-action@v6
         with:
           context: .
           load: true

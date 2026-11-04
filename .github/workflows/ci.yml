@@ -5,19 +5,28 @@ on:
   pull_request:
   # The checks on any branch, by hand (`gh workflow run ci --ref <branch>`); only main publishes.
   workflow_dispatch:
+  # The queue (ADR-0095) runs these checks on its candidate.
+  workflow_call:
+    inputs:
+      ref:
+        description: The commit to check
+        type: string
+        required: true
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: ci-${{ inputs.ref || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !inputs.ref }}
 
 jobs:
   check:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
       - run: rustup toolchain install
       # Only main saves (ADR-0097): another ref's cache can't be read by anyone else.
       - uses: Swatinem/rust-cache@v2

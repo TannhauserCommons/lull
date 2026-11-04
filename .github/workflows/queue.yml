@@ -1,0 +1,201 @@
+name: queue
+# The only thing that moves main (ADR-0095). Sessions push to queue/<topic> (`mise run ship`); queue-kick
+# starts this on main, so its checks read and warm main's caches. One run at a time: it rebases every
+# waiting branch onto main (scripts/queue.sh plan), runs the checks the candidate's diff needs, and
+# fast-forwards main only when they are green. Then it publishes what main's pushes used to start: the
+# image it tested, Pages, and the bundles' caches. Red: main stays, and the branch's tip says why.
+on:
+  workflow_dispatch:
+  # A safety net: a kick lost while GitHub was down would otherwise wait for the next push.
+  schedule:
+    - cron: "*/30 * * * *"
+
+permissions:
+  contents: read
+
+# Never cancelled. Actions keeps one run waiting and drops older waiting ones; nothing is lost, because
+# every run takes every branch waiting in queue/.
+concurrency:
+  group: queue
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      statuses: write
+    outputs:
+      candidate: ${{ steps.plan.outputs.candidate }}
+      branches: ${{ steps.plan.outputs.branches }}
+      ci: ${{ steps.plan.outputs.ci }}
+      ui_gates: ${{ steps.plan.outputs.ui_gates }}
+      ui: ${{ steps.plan.outputs.ui }}
+      app: ${{ steps.plan.outputs.app }}
+      android: ${{ steps.plan.outputs.android }}
+      slskd: ${{ steps.plan.outputs.slskd }}
+      image: ${{ steps.plan.outputs.image }}
+      pages: ${{ steps.plan.outputs.pages }}
+      warm: ${{ steps.plan.outputs.warm }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      # lull's history has one author and committer: rebased commits keep their author and get this.
+      - run: |
+          git config user.name TannhauserCommons
+          git config user.email 350945459+TannhauserCommons@users.noreply.github.com
+      # From a copy: the plan checks out every branch's tree under it.
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: cp scripts/queue.sh "$RUNNER_TEMP/" && sh "$RUNNER_TEMP/queue.sh" plan
+
+  ci:
+    needs: plan
+    if: needs.plan.outputs.candidate != '' && needs.plan.outputs.ci == 'true'
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.plan.outputs.candidate }}
+
+  ui-gates:
+    needs: plan
+    if: needs.plan.outputs.candidate != '' && needs.plan.outputs.ui_gates == 'true'
+    uses: ./.github/workflows/ui-gates.yml
+    with:
+      ref: ${{ needs.plan.outputs.candidate }}
+
+  app:
+    needs: plan
+    if: needs.plan.outputs.candidate != '' && (needs.plan.outputs.app == 'true' || needs.plan.outputs.android == 'true')
+    uses: ./.github/workflows/app.yml
+    with:
+      ref: ${{ needs.plan.outputs.candidate }}
+      checks: ${{ needs.plan.outputs.app == 'true' }}
+      android: ${{ needs.plan.outputs.android == 'true' }}
+
+  slskd-contract:
+    needs: plan
+    if: needs.plan.outputs.candidate != '' && needs.plan.outputs.slskd == 'true'
+    uses: ./.github/workflows/slskd-contract.yml
+    with:
+      ref: ${{ needs.plan.outputs.candidate }}
+
+  # The hub's image, built once: ui tests it and land publishes it, so what ships is what was tested.
+  image:
+    needs: plan
+    if: needs.plan.outputs.candidate != '' && (needs.plan.outputs.image == 'true' || needs.plan.outputs.ui == 'true')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.plan.outputs.candidate }}
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          tags: lull:candidate
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ needs.plan.outputs.candidate }}
+            org.opencontainers.image.title=lull
+            org.opencontainers.image.licenses=AGPL-3.0-only
+          outputs: type=docker,dest=${{ runner.temp }}/lull-image.tar
+          secrets: |
+            lastfm_key=${{ secrets.LULL_LASTFM_API_KEY }}
+            lastfm_secret=${{ secrets.LULL_LASTFM_API_SECRET }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image
+          path: ${{ runner.temp }}/lull-image.tar
+          retention-days: 1
+
+  ui:
+    needs: [plan, image]
+    if: needs.plan.outputs.candidate != '' && needs.plan.outputs.ui == 'true'
+    uses: ./.github/workflows/ui.yml
+    with:
+      ref: ${{ needs.plan.outputs.candidate }}
+      image-artifact: image
+
+  land:
+    needs: [plan, ci, ui-gates, app, slskd-contract, image, ui]
+    # Green means every check the diff needed passed; a check it didn't need is skipped.
+    if: >-
+      !cancelled() && needs.plan.outputs.candidate != ''
+      && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      statuses: write
+      packages: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE: ${{ needs.plan.outputs.candidate }}
+          BRANCHES: ${{ needs.plan.outputs.branches }}
+        run: sh scripts/queue.sh land
+      - if: needs.image.result == 'success' && needs.plan.outputs.image == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: image
+          path: ${{ runner.temp }}
+      - if: needs.image.result == 'success' && needs.plan.outputs.image == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      # :main and :sha-<short>, as before the queue; the homelab pins :main (homelab ADR-0028).
+      - name: Publish the image it tested
+        if: needs.image.result == 'success' && needs.plan.outputs.image == 'true'
+        env:
+          CANDIDATE: ${{ needs.plan.outputs.candidate }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          docker load -i "$RUNNER_TEMP/lull-image.tar"
+          image="ghcr.io/$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')/lull"
+          for tag in main "sha-$(echo "$CANDIDATE" | cut -c1-7)"; do
+            docker tag lull:candidate "$image:$tag"
+            docker push -q "$image:$tag"
+          done
+          digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$image:main")
+          echo "Pushed $digest" >> "$GITHUB_STEP_SUMMARY"
+      # Pushes made with the job's token start no workflows, so the run starts what main's pushes did.
+      - if: needs.plan.outputs.pages == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" --ref main
+      - if: needs.plan.outputs.warm == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run app.yml --repo "$GITHUB_REPOSITORY" --ref main
+
+  reject:
+    needs: [plan, ci, ui-gates, app, slskd-contract, image, ui]
+    if: >-
+      !cancelled() && needs.plan.outputs.candidate != ''
+      && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      statuses: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v5
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE: ${{ needs.plan.outputs.candidate }}
+          BRANCHES: ${{ needs.plan.outputs.branches }}
+          FAILED: >-
+            ${{ needs.ci.result == 'failure' && 'ci ' || '' }}${{ needs.ui-gates.result == 'failure' && 'ui-gates ' || ''
+            }}${{ needs.app.result == 'failure' && 'app ' || '' }}${{ needs.slskd-contract.result == 'failure' && 'slskd-contract ' || ''
+            }}${{ needs.image.result == 'failure' && 'image ' || '' }}${{ needs.ui.result == 'failure' && 'ui' || '' }}
+        run: sh scripts/queue.sh reject
