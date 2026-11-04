@@ -61,6 +61,9 @@ The way to do it (app.js, beside the router):
   asks for hub.js for Library, Sources and Devices).
 - Panels and dialogs call their helper before building (`App.needEq().then(...)`), and a section drawn inside an
   always-loaded screen shows a placeholder until its code arrives (Settings > Appearance > Classic).
+- An action on a start screen whose work is rare loads that work when asked, behind a one-line stub: importing or
+  deleting a theme and the check of a theme's loops (screens/your-themes.js, from appearance.js; Theme Studio asks
+  for the check through `App.themeLoops`).
 - The way in fetches ahead: the `SOON` table in app.js lists, for each, where the pointer or focus goes and what it
   loads, so the first click doesn't wait (Classic, Stats, the hub's settings). Classic, which the W key opens
   without warning, also loads once the page is idle.
