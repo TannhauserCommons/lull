@@ -74,7 +74,7 @@ struct Player {
 }
 
 impl Player {
-    fn act(&self, action: &str) {
+    fn act(&self, action: &'static str) {
         if let Err(e) = super::act(&self.app, action) {
             eprintln!("lull: media key {action}: {e}");
         }
