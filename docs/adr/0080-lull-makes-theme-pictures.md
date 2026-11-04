@@ -18,10 +18,13 @@ The sketch can't look like the theme, however well it is drawn:
 
 ## Decision
 
-**lull makes the picture itself, once, and the hub keeps it.**
-- When Settings › Appearance lists a listener's theme that has no picture of its own (`preview` false) and no picture made for its current files, the page makes one: it loads Home in that theme in one hidden, off-screen frame at 1280×800 with motion reduced, waits for fonts and covers, draws day and night (the modes the theme has) to 320×200 WebP, sends them to the hub and removes the frame. One theme at a time, after the screen has settled. Never a live frame per card.
-- Every way a theme changes leads here: an import, a Theme Studio save, the author editing the folder on the hub, a new lull version (a theme's look depends on the lull it runs on). Whichever device opens Appearance next makes the new picture; every other device just shows it.
-- A device that can't make one (no WebP encoding) leaves it to the next. Until a picture exists, the card shows the sketch.
+**lull makes the picture itself when the theme is made, and the hub keeps it.**
+- **How a picture is drawn:** Home in that theme, in one off-screen frame at 1280×800 with motion reduced; once its fonts and covers are in, day and night (the modes the theme has) are drawn to 320×200 WebP and sent to the hub with the `rev` they show, then the frame goes. One theme at a time. Never a live frame per card.
+- **When it is made, first:** the page that saves a theme in Theme Studio or imports one (a dropped file or "Import a theme") draws its pictures right away, in the background, for the `rev` the hub answered the save or import with. The save or import finishes first and never waits for it; a later save drops a draw still pending for the earlier one.
+- **Why a fresh frame, there too:** Studio's two previews are drawn at the sheet's size, on whatever screen and size the author picked, with the draft as a separate sheet, so a picture taken from them wouldn't match one drawn anywhere else; an import has no page of the theme loaded at all. The off-screen frame loads the app files the page already has cached, so it costs about the same either way, and every picture is drawn the same way.
+- **When it is made, as a fallback:** when Settings › Appearance lists a listener's theme with no picture of its own (`preview` false) and none made for its current `rev`. That covers the changes made with no lull page open (the author editing the folder on the hub, a new lull version: a theme's look depends on the lull it runs on) and a picture that didn't get made at creation (the page closed mid-draw, a 409 because the theme changed meanwhile). It starts once the screen has settled.
+- **Keeping the device responsive:** the frame runs on the page's own thread, so it starts when the page is idle, and the drawing yields between steps (styles, fonts, images, each mode), so on a slow phone a tap or a key goes first. Studio's own previews keep working throughout.
+- A device that can't make one (no WebP encoding) leaves it to the next Appearance visit elsewhere. Until a picture exists, the card shows the sketch.
 
 **A picture the author made still wins.** `preview: true` and the package's own files are unchanged, and lull never writes into a theme's package.
 
@@ -29,7 +32,7 @@ The sketch can't look like the theme, however well it is drawn:
 - `<data dir>/theme-pictures/<id>/<rev>-<mode>.webp`, outside `<data dir>/themes/`. So making one never fires `theme.changed` (devices using the theme don't reload it), and an exported `.lulltheme` never carries a picture of the listener's own library.
 - `rev` names the theme's current files: the fingerprint the live-reload watcher already keeps (names, sizes, modification times) with the lull version. Any change to the theme gives a new `rev`.
 - **API:**
-  - `GET /api/themes`: each listener theme gains `rev` and `pictures`, the modes that have a picture made for that `rev` (`[]` when none).
+  - `GET /api/themes`: each listener theme gains `rev` and `pictures`, the modes that have a picture made for that `rev` (`[]` when none). The manifest an import or a save answers with carries them too, so the page that made the change knows which `rev` to draw.
   - `GET /api/theme-pictures/{id}/{rev}-{mode}.webp`: the picture, cached as immutable (its name changes with the theme).
   - `PUT /api/theme-pictures/{id}/{rev}-{mode}.webp` (body: a WebP, 320×200, up to 256 KB): stores it. 409 when `rev` is no longer the theme's (it changed while the picture was being made, so a picture of old files is never kept); 400 for anything but a 320×200 WebP or a mode the theme doesn't have. Pictures of older revs of that theme are deleted.
   - Deleting a theme deletes its pictures.
@@ -47,5 +50,5 @@ The sketch can't look like the theme, however well it is drawn:
 ## Consequences
 
 - **A made picture shows the listener's own Home** (their recommendations and covers), drawn by whichever device made it. A touch device's picture shows what touch shows (no hover-only controls); the difference is small at 320×200.
-- **The first visit after a change costs one hidden page load** on the device that makes it (about a second on a laptop, a few on a slow phone), once per theme change for the whole hub, not per device.
+- **A save or an import costs one extra off-screen draw** on the device that made it (about a second on a laptop, a few on a slow phone), in the background; a change made outside lull costs the same on the first device that opens Appearance after it. Once per theme change for the whole hub, not per device.
 - **`docs/themes.md`** says authors no longer need a picture (theirs still wins), and `api.md` lists the new fields and endpoints. The fixture hub models them, and lists the built-in designs first as the real hub does.
