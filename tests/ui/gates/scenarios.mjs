@@ -225,10 +225,27 @@ export async function playing(browser, page, opts, route = '/home') {
 }
 
 // Nothing playing, nothing moving: what the page costs at rest.
+// each animation the trace says couldn't run on the compositor: its name, its element and Chromium's reasons (a bitmask:
+// CompositorAnimations::FailureReason) and properties
+function offTheCompositor(events) {
+  // in time order: an id is used again once its animation ends, so a reason belongs to the one that began last with it
+  const anim = events.filter((e) => e.name === 'Animation').sort((x, y) => x.ts - y.ts), named = {}, out = new Set();
+  for (const e of anim) {
+    const id = e.id2?.local ?? e.id, d = e.args?.data;
+    if (e.ph === 'b' && d) named[id] = `${d.displayName || 'animation'} on ${d.nodeName || '?'}`;
+    else if (d?.compositeFailed) out.add(`${named[id] || 'an animation'} (reasons ${d.compositeFailed}${d.unsupportedProperties ? ', ' + d.unsupportedProperties.join(' ') : ''})`);
+  }
+  return [...out];
+}
+
 export async function idle(browser, page, opts, route = '/home') {
   // as a listener leaves it: the desktop app's bridge in (its windows are fed while they're open), a song loaded and
   // paused, the pointer off the page
   await page.addInitScript({ path: fileURLToPath(new URL('./desktop-bridge.js', import.meta.url)) });
+  /* from the start, the animations Chromium couldn't hand to the compositor and why (blink.animations: an animation
+     says so as it starts, before the measured window): a loop that runs on the main thread draws main-thread frames at
+     rest, and this names it when they show up */
+  await browser.startTracing(page, { categories: ['blink.animations'] });
   await openScreen(page, `/album/${ids.album}`, opts);
   await playShown(page);
   await page.waitForFunction(() => App.player.state.playing && App.player.state.pos > 0.3);
@@ -257,9 +274,11 @@ export async function idle(browser, page, opts, route = '/home') {
       && document.getAnimations().every((a) => a.playState !== 'running' || a.effect?.getTiming().iterations === Infinity
         || a.timeline?.constructor.name !== 'DocumentTimeline' || !shown(a.effect?.target));
   }, null, { polling: 100, timeout: 5000 }).catch(() => {});
+  const offCompositor = offTheCompositor(JSON.parse((await browser.stopTracing()).toString()).traceEvents || []);
   await throttle(page, opts.rate);
   const s = await traced(browser, page, () => page.waitForTimeout(2000), { drawn: true });
   s.perSecondMs = s.busyMs / 2;
+  s.offCompositor = offCompositor;
   // what was moving, to name the cause when frames show up at rest
   s.animations = await page.evaluate(() => [...new Set(document.getAnimations().filter((a) => a.playState === 'running').map((a) => {
     const t = a.effect?.target, kf = a.effect?.getKeyframes?.() || [];
