@@ -22,7 +22,9 @@
 // POST /__fixture/trickle { id, bytesPerS, seekAhead } makes that unsaved song a Soulseek transfer arriving at bytesPerS from
 // now (its WAV is 8000 bytes a second of sound): GET /api/stream/<id> serves only what has arrived and holds a range that
 // starts past it until it has, as the hub does, and `stream` events report the transfer twice a second until it is complete.
-// With seekAhead, the transfer starts over where a request waits, as the hub's legs do (ADR-0014).
+// With seekAhead, the transfer starts over where a request waits, as the hub's legs do (ADR-0014). With file (a path), the
+// song's bytes are that file's, as the browser reads a real MP3, M4A or FLAC; GET /__fixture/reads?id= lists the offsets
+// the browser asked for, with when.
 // POST /__fixture/art-pending { ids } makes those covers answer 404 "not yet" (no-store), as the hub does while it
 // fetches one; POST /__fixture/art-ready { ids } serves them again and sends `art.ready { keys }`.
 // GET /__fixture/art-requests: cover requests that reached the hub since the last call, by URL (and resets them).
@@ -57,6 +59,7 @@ const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.webmanifest': 'application/manifest+json',
   '.ico': 'image/x-icon', '.txt': 'text/plain', '.jpg': 'image/jpeg', '.wsz': 'application/zip',
+  '.mp3': 'audio/mpeg', '.flac': 'audio/flac', '.m4a': 'audio/mp4', '.ogg': 'audio/ogg',
 };
 
 // ---------- state a session can change (likes, follows, playlists, settings) ----------
@@ -464,11 +467,13 @@ function step(tr, ms) {
   addPart(tr, tr.front, Math.min(to, stop));
   tr.front = Math.min(to, stop) >= stop ? firstMissing(tr) : to;
 }
-function trickle(id, rate, seekAhead) {
+function trickle(id, rate, seekAhead, file) {
   const t = L.tracks[id];
   if (!t || t.saved) return { status: 400, body: { error: 'bad_request', message: 'Trickle an unsaved song.' } };
   clearInterval(trickles.get(id)?.timer);
-  const tr = { start: Date.now(), rate, size: 44 + t.duration * RATE, parts: [], front: 0, seekAhead: !!seekAhead, asks: new Map(), n: 0 };
+  const bytes = file ? readFileSync(file) : null;
+  const tr = { start: Date.now(), rate, size: bytes ? bytes.length : 44 + t.duration * RATE, bytes, type: file ? TYPES[extname(file)] : 'audio/wav',
+    parts: [], front: 0, seekAhead: !!seekAhead, asks: new Map(), n: 0, reads: [] };
   let ticks = 0;
   tr.timer = setInterval(() => {
     step(tr, 100);
@@ -485,9 +490,10 @@ function trickle(id, rate, seekAhead) {
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function trickleAudio(req, res, id) {
-  const tr = trickles.get(id), head = wavHeader(tr.size - 44);
+  const tr = trickles.get(id), head = tr.bytes ? null : wavHeader(tr.size - 44);
   const m = /bytes=(\d*)-(\d*)/.exec(req.headers.range || '');
   const start = m && m[1] ? +m[1] : 0, end = m && m[2] ? Math.min(+m[2], tr.size - 1) : tr.size - 1;
+  tr.reads.push([start, Date.now() - tr.start]);
   if (start >= tr.size) { res.writeHead(416, { 'content-range': `bytes */${tr.size}` }); return res.end(); }
   let gone = false;
   const ask = (at) => { const k = ++tr.n; tr.asks.set(k, { at, since: Date.now() }); return () => tr.asks.delete(k); };
@@ -498,13 +504,13 @@ async function trickleAudio(req, res, id) {
     done();
   }
   if (gone) return;
-  res.writeHead(m ? 206 : 200, { 'content-type': 'audio/wav', 'accept-ranges': 'bytes', 'content-length': end - start + 1, 'cache-control': 'no-store',
+  res.writeHead(m ? 206 : 200, { 'content-type': tr.type, 'accept-ranges': 'bytes', 'content-length': end - start + 1, 'cache-control': 'no-store',
     ...(m ? { 'content-range': `bytes ${start}-${end}/${tr.size}` } : {}) });
   for (let pos = start; pos <= end && !gone;) {
     const to = Math.min(end + 1, endFrom(tr, pos));
     if (to > pos) {
-      const chunk = Buffer.alloc(to - pos, 128);
-      if (pos < 44) head.copy(chunk, 0, pos, Math.min(44, to));
+      const chunk = tr.bytes ? tr.bytes.subarray(pos, to) : Buffer.alloc(to - pos, 128);
+      if (head && pos < 44) head.copy(chunk, 0, pos, Math.min(44, to));
       res.write(chunk); pos = to;
     } else {
       const done = ask(pos);
@@ -639,7 +645,8 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': 'image/png', 'content-length': png.length, 'cache-control': 'private, max-age=86400', 'x-image-size': size + 'x' + size });
     return res.end(png);
   }
-  if (path === '/__fixture/trickle' && req.method === 'POST') { const b = await readBody(req); const out = trickle(b.id, b.bytesPerS, b.seekAhead); return send(res, out.status, out.body); }
+  if (path === '/__fixture/reads') { const tr = trickles.get(q.get('id')); return send(res, 200, tr ? { size: tr.size, reads: tr.reads } : null); }
+  if (path === '/__fixture/trickle' && req.method === 'POST') { const b = await readBody(req); const out = trickle(b.id, b.bytesPerS, b.seekAhead, b.file); return send(res, out.status, out.body); }
   if ((m = /^\/api\/stream\/([^/]+)$/.exec(path)) && req.method === 'GET' && trickles.has(m[1])) return trickleAudio(req, res, m[1]);
   if ((m = /^\/api\/(library\/)?stream\/([^/]+)$/.exec(path)) && req.method === 'GET') return audio(req, res, m[2], !!m[1]);
   if ((m = /^\/api\/stream\/([^/]+)$/.exec(path)) && req.method === 'DELETE') return send(res, 204);
