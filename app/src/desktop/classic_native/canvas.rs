@@ -1,5 +1,6 @@
-//! What Classic's windows are drawn into: one bitmap at 1x, 275 pixels wide and as tall as the
-//! windows stacked (main, equaliser, playlist), premultiplied BGRA like the window's own. A pen
+//! What Classic's windows are drawn into: one bitmap at 1x, as wide as the widest window (275
+//! pixels, or the playlist resized wider) and as tall as the windows stacked (main, equaliser,
+//! playlist), premultiplied BGRA like the window's own. A pen
 //! draws one window's sprites, fills and skin-font text at that window's place in it. The
 //! playlist's song names are in a system font, drawn at the screen's own size: the canvas only
 //! lists them (`TextRun`) for the window to draw once it has scaled the rest.
@@ -7,6 +8,7 @@
 use super::skin::{Area, Bitmap, Mask, Rgb, Skin, Sprite, WIDTH, font};
 
 pub struct Canvas {
+    pub width: u32,
     pub height: u32,
     pub pixels: Vec<u32>,
     pub texts: Vec<TextRun>,
@@ -23,28 +25,29 @@ pub struct TextRun {
 }
 
 impl Canvas {
-    pub fn new(height: u32) -> Self {
+    pub fn new(width: u32, height: u32) -> Self {
         Self {
+            width,
             height,
-            pixels: vec![0; (WIDTH * height) as usize],
+            pixels: vec![0; (width * height) as usize],
             texts: Vec::new(),
         }
     }
 
-    /// The stack is `height` rows tall: a new height starts from nothing.
-    pub fn resize(&mut self, height: u32) {
-        if height != self.height {
-            self.height = height;
+    /// The stack is `width` by `height`: a new size starts from nothing.
+    pub fn resize(&mut self, width: u32, height: u32) {
+        if (width, height) != (self.width, self.height) {
+            (self.width, self.height) = (width, height);
             self.pixels.clear();
-            self.pixels.resize((WIDTH * height) as usize, 0);
+            self.pixels.resize((width * height) as usize, 0);
             self.texts.clear();
         }
     }
 
     /// Wipes the rows of a window about to be drawn again, its text with them.
     pub fn clear(&mut self, top: u32, height: u32) {
-        let start = (top * WIDTH) as usize;
-        let end = (((top + height) * WIDTH) as usize).min(self.pixels.len());
+        let start = (top * self.width) as usize;
+        let end = (((top + height) * self.width) as usize).min(self.pixels.len());
         self.pixels[start.min(end)..end].fill(0);
         self.texts.retain(|run| run.area.y < top || run.area.y >= top + height);
     }
@@ -74,7 +77,7 @@ impl Pen<'_> {
     /// A sprite with its top left at `x`, `y` of this window. Whatever part of it the sheet doesn't
     /// hold (skins are not always the sizes the table expects) is left as it was, as Winamp did.
     pub fn sprite(&mut self, sprite: Sprite, x: u32, y: u32) {
-        self.sprite_clipped(sprite, x, y, Area::new(0, 0, WIDTH, self.canvas.height));
+        self.sprite_clipped(sprite, x, y, Area::new(0, 0, self.canvas.width, self.canvas.height));
     }
 
     pub fn at(&mut self, sprite: Sprite, area: Area) {
@@ -89,7 +92,7 @@ impl Pen<'_> {
         let width = sprite.width.min(sheet.width.saturating_sub(sprite.x));
         let height = sprite.height.min(sheet.height.saturating_sub(sprite.y));
         let left = x.max(clip.x);
-        let right = (x + width).min(clip.x + clip.width).min(WIDTH);
+        let right = (x + width).min(clip.x + clip.width).min(self.canvas.width);
         if left >= right {
             return;
         }
@@ -99,7 +102,7 @@ impl Pen<'_> {
                 continue;
             }
             let from = (sy * sheet.width + sprite.x + (left - x)) as usize;
-            let to = ((self.top + wy) * WIDTH + left) as usize;
+            let to = ((self.top + wy) * self.canvas.width + left) as usize;
             let count = (right - left) as usize;
             self.canvas.pixels[to..to + count].copy_from_slice(&sheet.pixels[from..from + count]);
         }
@@ -111,7 +114,7 @@ impl Pen<'_> {
             let Some(start) = self.index(x, row) else {
                 continue;
             };
-            let end = start + width.min(WIDTH - x) as usize;
+            let end = start + width.min(self.canvas.width - x) as usize;
             self.canvas.pixels[start..end].fill(value);
         }
     }
@@ -154,16 +157,21 @@ impl Pen<'_> {
         let Some(mask) = mask else {
             return;
         };
-        let start = (self.top * WIDTH) as usize;
-        let end = (((self.top + height) * WIDTH) as usize).min(self.canvas.pixels.len());
+        // The skin's shapes are for windows 275 pixels wide, as the main window and the
+        // equaliser always are.
+        let width = self.canvas.width as usize;
+        let start = (self.top * self.canvas.width) as usize;
+        let end = (((self.top + height) * self.canvas.width) as usize).min(self.canvas.pixels.len());
         for (i, pixel) in self.canvas.pixels[start..end].iter_mut().enumerate() {
-            if !mask.contains(i) {
+            let (x, y) = (i % width, i / width);
+            if x >= WIDTH as usize || !mask.contains(y * WIDTH as usize + x) {
                 *pixel = 0;
             }
         }
     }
 
     fn index(&self, x: u32, y: u32) -> Option<usize> {
-        (x < WIDTH && self.top + y < self.canvas.height).then(|| ((self.top + y) * WIDTH + x) as usize)
+        (x < self.canvas.width && self.top + y < self.canvas.height)
+            .then(|| ((self.top + y) * self.canvas.width + x) as usize)
     }
 }

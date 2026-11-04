@@ -4,7 +4,8 @@
 // song loaded and stopped, the equaliser on and flat, and per LULL_SCENE (both sides read it): `stopped` (the default,
 // volume 75 %), `sliders` (volume 30 %, balance 60 % left), `shaded` (those, the three windows rolled up) or `unicode`
 // (a song named in Cyrillic, Japanese, an accent, a curly quote and an emoji, short enough not to scroll) or `menus`
-// (the playlist's REM menu open, the pointer on its second button). Writes, per skin, Webamp's picture, a side-by-side (Webamp, native, their difference in red) and a line of
+// (the playlist's REM menu open, the pointer on its second button), `resized` (the playlist 3 steps wider, 2 taller) or
+// `resized-even` (4 wider, 1 taller). Writes, per skin, Webamp's picture, a side-by-side (Webamp, native, their difference in red) and a line of
 // report.json: how many pixels differ in each window.
 //   LULL_SCENE=<scene> node tests/ui/classic-compare.mjs <skins dir> <native renders dir> <out dir> [name filter]
 import { chromium } from '@playwright/test';
@@ -24,14 +25,17 @@ const SCENES = {
   sliders: { volume: 30, balance: -60, shaded: false },
   shaded: { volume: 30, balance: -60, shaded: true },
   menus: { volume: 75, balance: 0, shaded: false, menu: true },
+  resized: { volume: 75, balance: 0, shaded: false, playlist: [3, 2] },
+  'resized-even': { volume: 75, balance: 0, shaded: false, playlist: [4, 1] },
   unicode: { volume: 75, balance: 0, shaded: false, artist: '\u041a\u043e\u043c\u0435\u0442\u0430', title: '\u9759\u304b \u2019\u00e9 \u{1f3b5}', still: true },
 };
 const SCENE = { artist: 'Velvet Comet', title: 'Static Season', seconds: 280, ...SCENES[process.env.LULL_SCENE || 'stopped'] };
 if (!SCENE.volume) { console.error('LULL_SCENE is one of', Object.keys(SCENES).join(', ')); process.exit(2); }
 /* the windows stacked, each [name, top, bottom] */
 const WINDOWS = [];
+const [WIDE, TALL] = SCENE.playlist || [0, 0], WIDTH = 275 + 25 * WIDE;
 for (const name of ['main', 'equalizer', 'playlist']) {
-  const height = SCENE.shaded ? 14 : 116;
+  const height = SCENE.shaded ? 14 : name === 'playlist' ? 116 + 29 * TALL : 116;
   const top = WINDOWS.length ? WINDOWS[WINDOWS.length - 1][2] : 0;
   WINDOWS.push([name, top, top + height]);
 }
@@ -49,10 +53,10 @@ function silence() {
 }
 
 const page_ = `<!doctype html><meta charset="utf-8"><style>html,body{margin:0;background:transparent;overflow:hidden}
-#stage{position:absolute;left:0;top:0;width:275px;height:${HEIGHT}px}</style><div id="stage"></div><script src="/webamp.js"></script>`;
+#stage{position:absolute;left:0;top:0;width:${WIDTH}px;height:${HEIGHT}px}</style><div id="stage"></div><script src="/webamp.js"></script>`;
 
 const browser = await chromium.launch();
-const context = await browser.newContext({ viewport: { width: 275, height: HEIGHT }, deviceScaleFactor: 1 });
+const context = await browser.newContext({ viewport: { width: WIDTH, height: HEIGHT }, deviceScaleFactor: 1 });
 await context.route('http://compare.local/**', (route) => {
   const path = decodeURIComponent(new URL(route.request().url()).pathname);
   if (path === '/') return route.fulfill({ contentType: 'text/html', body: page_ });
@@ -68,14 +72,14 @@ for (const file of readdirSync(skins).filter((f) => f.endsWith('.wsz') && (!only
   const name = file.slice(0, -4), page = await context.newPage();
   try {
     await page.goto('http://compare.local/');
-    await page.evaluate(async ({ file, SCENE, WINDOWS }) => {
+    await page.evaluate(async ({ file, SCENE, WINDOWS, WIDE, TALL }) => {
       const webamp = new window.Webamp({
         initialSkin: { url: '/skins/' + file },
         initialTracks: [{ url: '/song.wav', metaData: { artist: SCENE.artist, title: SCENE.title }, duration: SCENE.seconds }],
         windowLayout: {
           main: { position: { top: WINDOWS[0][1], left: 0 }, shadeMode: SCENE.shaded },
           equalizer: { position: { top: WINDOWS[1][1], left: 0 }, shadeMode: SCENE.shaded },
-          playlist: { position: { top: WINDOWS[2][1], left: 0 }, size: { extraWidth: 0, extraHeight: 0 }, shadeMode: SCENE.shaded },
+          playlist: { position: { top: WINDOWS[2][1], left: 0 }, size: { extraWidth: WIDE, extraHeight: TALL }, shadeMode: SCENE.shaded },
         },
         enableHotkeys: false,
       });
@@ -83,7 +87,7 @@ for (const file of readdirSync(skins).filter((f) => f.endsWith('.wsz') && (!only
       if (webamp.skinIsLoaded) await webamp.skinIsLoaded();
       webamp.store.dispatch({ type: 'SET_VOLUME', volume: SCENE.volume });
       webamp.store.dispatch({ type: 'SET_BALANCE', balance: SCENE.balance });
-    }, { file, SCENE, WINDOWS });
+    }, { file, SCENE, WINDOWS, WIDE, TALL });
     await page.waitForTimeout(600);                                   // the skin's CSS and sprites applied
     if (SCENE.menu) {                                                 // REM's button, then its second button
       const top = WINDOWS[2][1] + 86;
@@ -94,19 +98,19 @@ for (const file of readdirSync(skins).filter((f) => f.endsWith('.wsz') && (!only
       await page.mouse.move(43 + 11, top - 2 * 18 + 9);
       await page.waitForTimeout(100);
     }
-    const shot = await page.screenshot({ clip: { x: 0, y: 0, width: 275, height: HEIGHT }, omitBackground: true });
+    const shot = await page.screenshot({ clip: { x: 0, y: 0, width: WIDTH, height: HEIGHT }, omitBackground: true });
     writeFileSync(join(out, name + '.webamp.png'), shot);
-    const result = await page.evaluate(async ({ shot, native, WINDOWS, MASKS, HEIGHT }) => {
+    const result = await page.evaluate(async ({ shot, native, WINDOWS, MASKS, WIDTH, HEIGHT }) => {
       const load = (src) => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = src; });
       const [a, b] = await Promise.all([load(shot), load(native)]);
-      const pixels = (img) => { const c = new OffscreenCanvas(275, HEIGHT), g = c.getContext('2d'); g.drawImage(img, 0, 0); return g.getImageData(0, 0, 275, HEIGHT).data; };
+      const pixels = (img) => { const c = new OffscreenCanvas(WIDTH, HEIGHT), g = c.getContext('2d'); g.drawImage(img, 0, 0); return g.getImageData(0, 0, WIDTH, HEIGHT).data; };
       const pa = pixels(a), pb = pixels(b);
-      const sheet = new OffscreenCanvas(275 * 3 + 8, HEIGHT), g = sheet.getContext('2d');
-      g.drawImage(a, 0, 0); g.drawImage(b, 279, 0);
-      const diff = g.createImageData(275, HEIGHT), counts = {};
+      const sheet = new OffscreenCanvas(WIDTH * 3 + 8, HEIGHT), g = sheet.getContext('2d');
+      g.drawImage(a, 0, 0); g.drawImage(b, WIDTH + 4, 0);
+      const diff = g.createImageData(WIDTH, HEIGHT), counts = {};
       for (const [w] of WINDOWS) counts[w] = 0;
-      for (let i = 0; i < 275 * HEIGHT; i++) {
-        const x = i % 275, y = Math.floor(i / 275), k = i * 4;
+      for (let i = 0; i < WIDTH * HEIGHT; i++) {
+        const x = i % WIDTH, y = Math.floor(i / WIDTH), k = i * 4;
         if (MASKS.some(([mx, my, mw, mh]) => x >= mx && x < mx + mw && y >= my && y < my + mh)) { diff.data.set([0, 0, 96, 255], k); continue; }
         const visibleA = pa[k + 3] > 127, visibleB = pb[k + 3] > 127;
         const same = visibleA === visibleB && (!visibleA ||
@@ -115,12 +119,12 @@ for (const file of readdirSync(skins).filter((f) => f.endsWith('.wsz') && (!only
         diff.data.set(same ? [grey, grey, grey, 255] : [255, 0, 0, 255], k);
         if (!same) counts[WINDOWS.find(([, top, bottom]) => y >= top && y < bottom)[0]]++;
       }
-      g.putImageData(diff, 558, 0);
+      g.putImageData(diff, 2 * WIDTH + 8, 0);
       const blob = await sheet.convertToBlob({ type: 'image/png' });
       const bytes = new Uint8Array(await blob.arrayBuffer());
       let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
       return { counts, sheet: btoa(s) };
-    }, { shot: 'data:image/png;base64,' + shot.toString('base64'), native: '/native/' + name + '.png', WINDOWS, MASKS, HEIGHT });
+    }, { shot: 'data:image/png;base64,' + shot.toString('base64'), native: '/native/' + name + '.png', WINDOWS, MASKS, WIDTH, HEIGHT });
     writeFileSync(join(out, name + '.side.png'), Buffer.from(result.sheet, 'base64'));
     report.push({ skin: name, differ: result.counts });
     console.log(name.padEnd(34), JSON.stringify(result.counts));

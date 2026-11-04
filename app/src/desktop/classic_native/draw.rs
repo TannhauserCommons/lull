@@ -45,6 +45,8 @@ pub enum Control {
     /// A song's row, by its place in the queue.
     PlaylistRow(usize),
     PlaylistScroll,
+    /// The corner the playlist is resized by.
+    PlaylistResize,
     /// ADD, REM, SEL, MISC, LIST along the bottom.
     PlaylistMenu(usize),
     /// A button of one of those menus, open: the menu, then the button from the top.
@@ -94,6 +96,7 @@ pub struct View<'a> {
     pub playlist_open: bool,
     pub eq: &'a Equaliser,
     pub list: &'a super::playlist::List,
+    pub playlist: super::playlist::Size,
 }
 
 impl View<'_> {

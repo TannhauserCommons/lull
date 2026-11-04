@@ -277,6 +277,8 @@ pub mod sprites {
         PLAYLIST_RIGHT_TILE = (PlEdit, 31, 42, 20, 29);
         PLAYLIST_BOTTOM_LEFT = (PlEdit, 0, 72, 125, 38);
         PLAYLIST_BOTTOM_RIGHT = (PlEdit, 126, 72, 150, 38);
+        PLAYLIST_BOTTOM_TILE = (PlEdit, 179, 0, 25, 38);
+        PLAYLIST_VISUALIZER = (PlEdit, 205, 0, 75, 38);
         PLAYLIST_SCROLL_HANDLE = (PlEdit, 52, 53, 8, 18);
         PLAYLIST_SCROLL_HANDLE_PRESSED = (PlEdit, 61, 53, 8, 18);
         PLAYLIST_CLOSE_PRESSED = (PlEdit, 52, 42, 9, 9);

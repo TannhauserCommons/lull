@@ -143,6 +143,8 @@ struct Panels {
     main_shade: bool,
     eq_shade: bool,
     playlist_shade: bool,
+    /// The playlist's size (its corner drags it bigger).
+    playlist_size: playlist::Size,
 }
 
 impl Panels {
@@ -160,7 +162,11 @@ impl Panels {
             top += height;
         }
         if self.playlist {
-            stack.push((Panel::Playlist, top, rolled(self.playlist_shade, playlist::HEIGHT)));
+            stack.push((
+                Panel::Playlist,
+                top,
+                rolled(self.playlist_shade, self.playlist_size.height()),
+            ));
         }
         stack
     }
@@ -176,6 +182,15 @@ impl Panels {
 
     fn height(&self) -> u32 {
         self.stack().iter().map(|(_, _, h)| h).sum()
+    }
+
+    /// As wide as the widest window: the main window's and the equaliser's 275, or the playlist's.
+    fn width(&self) -> u32 {
+        if self.playlist {
+            self.playlist_size.width()
+        } else {
+            WIDTH
+        }
     }
 
     /// The window a row of the stack is in, and the row in it.
@@ -256,6 +271,10 @@ struct Classic {
     pressed: Option<(Target, u32)>,
     over: bool,
     seeking: Option<f64>,
+    /// The playlist's size when its corner was grabbed, and where the pointer was (client pixels).
+    resizing: Option<(playlist::Size, (i32, i32))>,
+    /// Where the left button last went down, in client pixels.
+    pointer: (i32, i32),
     /// The balance slider, -1 to 1: this window's alone, as the page has none.
     balance: f64,
     remaining: bool,
@@ -295,10 +314,11 @@ pub fn open(setup: Setup, on_close: OnClose) -> Result<(), String> {
         main_shade: false,
         eq_shade: false,
         playlist_shade: false,
+        playlist_size: playlist::Size::default(),
     };
     let scale = setup.size * setup.dpi;
-    let (columns, rows) = (edges(WIDTH, scale), edges(panels.height(), scale));
-    let size = (columns[WIDTH as usize], rows[rows.len() - 1]);
+    let (columns, rows) = (edges(panels.width(), scale), edges(panels.height(), scale));
+    let size = (columns[panels.width() as usize], rows[rows.len() - 1]);
     let text = Text::new(&setup.skin.playlist.font, scale)?;
     let hwnd = create(setup.at, size)?;
     crate::desktop::platform::add_thumb_buttons_to(setup.session.app(), hwnd.0 as isize);
@@ -327,7 +347,7 @@ pub fn open(setup: Setup, on_close: OnClose) -> Result<(), String> {
         band,
         screen,
         shape: None,
-        canvas: Canvas::new(panels.height()),
+        canvas: Canvas::new(panels.width(), panels.height()),
         shown: Vec::new(),
         shown_texts: Vec::new(),
         prints: [None; 3],
@@ -345,6 +365,8 @@ pub fn open(setup: Setup, on_close: OnClose) -> Result<(), String> {
         pressed: None,
         over: false,
         seeking: None,
+        resizing: None,
+        pointer: (0, 0),
         balance: 0.0,
         remaining: false,
         marquee: Marquee::default(),
@@ -357,7 +379,7 @@ pub fn open(setup: Setup, on_close: OnClose) -> Result<(), String> {
     classic.snapshot = classic.session.snapshot();
     classic.relist();
     let index = classic.snapshot.index;
-    classic.list.show(index);
+    classic.list.show(index, classic.panels.playlist_size);
     classic.render();
     OPEN.with_borrow_mut(|open| *open = Some(classic));
     // SAFETY: a window this thread owns.
@@ -582,6 +604,7 @@ impl Classic {
                 return Effect::Handled;
             }
             WM_LBUTTONDOWN => {
+                self.pointer = coordinates(lparam);
                 let (x, y) = self.client_to_skin(lparam);
                 self.press(x, y, false)
             }
@@ -599,6 +622,16 @@ impl Classic {
                 let (x, y) = self.client_to_skin(lparam);
                 self.hover_menu(x, y);
                 Effect::Handled
+            }
+            WM_MOUSEMOVE if self.resizing.is_some() => {
+                self.resize_playlist(lparam);
+                Effect::Handled
+            }
+            WM_LBUTTONUP if self.resizing.is_some() => {
+                self.resize_playlist(lparam);
+                self.resizing = None;
+                self.pressed = None;
+                Effect::Release
             }
             WM_MOUSEMOVE if self.pressed.is_some() => {
                 let (x, y) = self.client_to_skin(lparam);
@@ -634,7 +667,7 @@ impl Classic {
         let target = match panel {
             Panel::Main => draw::main_at(x, local, shaded),
             Panel::Eq => eqwin::at(x, local, shaded),
-            Panel::Playlist => playlist::at(x, local, shaded, &self.list),
+            Panel::Playlist => playlist::at(x, local, shaded, &self.list, self.panels.playlist_size),
         };
         Some((panel, local, target))
     }
@@ -662,6 +695,11 @@ impl Classic {
             Control::Time => {
                 self.remaining = !self.remaining;
                 return Effect::Handled;
+            }
+            Control::PlaylistResize => {
+                self.resizing = Some((self.panels.playlist_size, self.pointer));
+                self.pressed = Some((target, self.panels.top(panel)));
+                return Effect::Capture;
             }
             Control::PlaylistRow(row) => {
                 let effect = self.click_row(row, double);
@@ -773,10 +811,17 @@ impl Classic {
             Control::Position => self.seeking = Some(across),
             Control::EqPreamp => self.equalise(|eq| eq.preamp = Some(eqwin::decibels(1.0 - down))),
             Control::EqBand(band) => self.equalise(|eq| eq.bands[band] = eqwin::decibels(1.0 - down)),
-            Control::PlaylistRow(_) => self.dropping = Some(playlist::row_at(y.max(0.0) as u32, &self.list)),
+            Control::PlaylistRow(_) => {
+                self.dropping = Some(playlist::row_at(
+                    y.max(0.0) as u32,
+                    &self.list,
+                    self.panels.playlist_size,
+                ))
+            }
             Control::PlaylistScroll => {
-                let room = self.list.labels.len().saturating_sub(List::rows());
-                self.list.scroll_to((down * room as f64).round() as usize);
+                let size = self.panels.playlist_size;
+                let room = self.list.labels.len().saturating_sub(size.rows());
+                self.list.scroll_to((down * room as f64).round() as usize, size);
             }
             _ => {
                 self.over = x >= f64::from(area.x)
@@ -1057,6 +1102,24 @@ impl Classic {
         };
     }
 
+    /// The playlist's corner, dragged: Webamp's whole steps from where it was grabbed, counted in
+    /// skin pixels from the pointer itself, so the window can grow past its edge. Rolled up, it
+    /// only widens.
+    fn resize_playlist(&mut self, lparam: LPARAM) {
+        let Some((from, (x0, y0))) = self.resizing else {
+            return;
+        };
+        let (x, y) = coordinates(lparam);
+        let scale = self.size * self.dpi;
+        let mut size = from.dragged(f64::from(x - x0) / scale, f64::from(y - y0) / scale);
+        if self.panels.playlist_shade {
+            size.tall = from.tall;
+        }
+        self.panels.playlist_size = size;
+        let scroll = self.list.scroll;
+        self.list.scroll_to(scroll, size);
+    }
+
     /// A line in the marquee for a few seconds.
     fn say(&mut self, line: &str) {
         self.notice = Some((line.to_owned(), Instant::now()));
@@ -1101,7 +1164,7 @@ impl Classic {
         self.list.labels = labels;
         self.list.lengths = lengths;
         let scroll = self.list.scroll;
-        self.list.scroll_to(scroll);
+        self.list.scroll_to(scroll, self.panels.playlist_size);
     }
 
     /// The wheel scrolls the playlist under the pointer, else turns the volume.
@@ -1110,7 +1173,7 @@ impl Classic {
         if let Some((Panel::Playlist, _, _)) = self.target_at(x, y) {
             let rows = (-notches * WHEEL_ROWS).round() as isize;
             let first = self.list.scroll.saturating_add_signed(rows);
-            self.list.scroll_to(first);
+            self.list.scroll_to(first, self.panels.playlist_size);
         } else {
             self.volume(self.snapshot.volume + 0.05 * notches);
         }
@@ -1228,10 +1291,10 @@ impl Classic {
         let blink_off = self
             .paused_since
             .is_some_and(|since| (clock - since).as_secs() % 2 == 1);
-        let height = self.panels.height();
-        self.canvas.resize(height);
-        if self.rows.len() != height as usize + 1 {
-            self.resize(height);
+        let (width, height) = (self.panels.width(), self.panels.height());
+        self.canvas.resize(width, height);
+        if self.rows.len() != height as usize + 1 || self.columns.len() != width as usize + 1 {
+            self.resize(width, height);
         }
         let view = View {
             now: &now,
@@ -1250,6 +1313,7 @@ impl Classic {
             playlist_open: self.panels.playlist,
             eq: &self.snapshot.eq,
             list: &self.list,
+            playlist: self.panels.playlist_size,
         };
         let mut drawn = Vec::new();
         for (slot, (panel, top, rows)) in self.panels.stack().into_iter().enumerate() {
@@ -1274,13 +1338,13 @@ impl Classic {
         }
         let dirty = drawn
             .iter()
-            .filter_map(|&(from, to)| changed(&self.canvas.pixels, &self.shown, from, to))
+            .filter_map(|&(from, to)| changed(&self.canvas.pixels, &self.shown, width, (from, to)))
             .chain(texts_changed(&self.canvas.texts, &self.shown_texts))
             .reduce(union);
         if let Some(dirty) = dirty {
             self.present(dirty);
             if self.shown.len() == self.canvas.pixels.len() {
-                let (from, to) = ((dirty.1 * WIDTH) as usize, (dirty.3 * WIDTH) as usize);
+                let (from, to) = ((dirty.1 * width) as usize, (dirty.3 * width) as usize);
                 self.shown[from..to].copy_from_slice(&self.canvas.pixels[from..to]);
             } else {
                 self.shown.clone_from(&self.canvas.pixels);
@@ -1296,13 +1360,13 @@ impl Classic {
         }
     }
 
-    /// The stack's height or the size changed: the window takes its new size, and all of it is
-    /// drawn again.
-    fn resize(&mut self, height: u32) {
+    /// The stack's width or height or the size changed: the window takes its new size, and all of
+    /// it is drawn again.
+    fn resize(&mut self, width: u32, height: u32) {
         let scale = self.size * self.dpi;
-        self.columns = edges(WIDTH, scale);
+        self.columns = edges(width, scale);
         self.rows = edges(height, scale);
-        let size = (self.columns[WIDTH as usize], self.rows[height as usize]);
+        let size = (self.columns[width as usize], self.rows[height as usize]);
         if size.0 != self.band.size.0 {
             match Surface::new((size.0, BAND)) {
                 Ok(band) => self.band = band,
@@ -1335,7 +1399,7 @@ impl Classic {
     /// window drawn with no transparency is a plain rectangle.
     fn reshape(&mut self) {
         self.shape = Some(self.panels);
-        let region = shape(&self.canvas.pixels).map(|pieces| {
+        let region = shape(&self.canvas.pixels, self.canvas.width).map(|pieces| {
             // SAFETY: regions this makes; each piece is deleted once merged into `whole`, which
             // Windows owns once it is the window's.
             unsafe {
@@ -1373,7 +1437,7 @@ impl Classic {
             let r = paint.rcPaint;
             if r.right > r.left && r.bottom > r.top && !self.shown.is_empty() {
                 let x0 = skin_at(r.left, &self.columns);
-                let x1 = (skin_at(r.right - 1, &self.columns) + 1).min(WIDTH);
+                let x1 = (skin_at(r.right - 1, &self.columns) + 1).min(self.canvas.width);
                 let y0 = skin_at(r.top, &self.rows);
                 let y1 = (skin_at(r.bottom - 1, &self.rows) + 1).min(self.canvas.height);
                 if x1 > x0 && y1 > y0 {
@@ -1473,7 +1537,8 @@ fn paint(
         let pixels = band.pixels();
         for py in from..to {
             let sy = skin_at(py, rows) as usize;
-            let source = &canvas.pixels[sy * WIDTH as usize..(sy + 1) * WIDTH as usize];
+            let width = canvas.width as usize;
+            let source = &canvas.pixels[sy * width..(sy + 1) * width];
             let at = (py - from) as usize * stride;
             let row = &mut pixels[at..at + stride];
             for sx in x0..x1 {
@@ -1529,11 +1594,11 @@ fn skin_at(physical: i32, edges: &[i32]) -> u32 {
 /// The canvas's drawn pixels as rectangles of skin pixels `(x0, y0, x1, y1)`, end exclusive: runs of
 /// a row, each carried down while the rows below have the same run. None when nothing is
 /// transparent (the window is a plain rectangle).
-fn shape(pixels: &[u32]) -> Option<Vec<(u32, u32, u32, u32)>> {
+fn shape(pixels: &[u32], width: u32) -> Option<Vec<(u32, u32, u32, u32)>> {
     if pixels.iter().all(|p| p >> 24 != 0) {
         return None;
     }
-    let width = WIDTH as usize;
+    let width = width as usize;
     let mut done = Vec::new();
     // Runs still growing down: x0, x1 and the row they began on.
     let mut open: Vec<(u32, u32, u32)> = Vec::new();
@@ -1573,15 +1638,15 @@ fn shape(pixels: &[u32]) -> Option<Vec<(u32, u32, u32, u32)>> {
 
 /// The part of rows `from..to` of the frame that differs from the one on screen, as skin pixels
 /// `[x0, x1) x [y0, y1)`; all of them when nothing of this shape is on screen yet.
-fn changed(frame: &[u32], shown: &[u32], from: u32, to: u32) -> Option<(u32, u32, u32, u32)> {
+fn changed(frame: &[u32], shown: &[u32], width: u32, (from, to): (u32, u32)) -> Option<(u32, u32, u32, u32)> {
     if shown.len() != frame.len() {
-        return Some((0, from, WIDTH, to));
+        return Some((0, from, width, to));
     }
-    let (start, end) = ((from * WIDTH) as usize, (to * WIDTH) as usize);
-    let (mut x0, mut y0, mut x1, mut y1) = (WIDTH, to, 0, from);
+    let (start, end) = ((from * width) as usize, (to * width) as usize);
+    let (mut x0, mut y0, mut x1, mut y1) = (width, to, 0, from);
     for (i, (a, b)) in frame[start..end].iter().zip(&shown[start..end]).enumerate() {
         if a != b {
-            let (x, y) = (i as u32 % WIDTH, from + i as u32 / WIDTH);
+            let (x, y) = (i as u32 % width, from + i as u32 / width);
             (x0, y0, x1, y1) = (x0.min(x), y0.min(y), x1.max(x + 1), y1.max(y + 1));
         }
     }
@@ -2065,11 +2130,15 @@ mod tests {
         // Volume, balance, whether the windows are rolled up, and the song's artist and title.
         let scene = std::env::var("LULL_SCENE");
         let (volume, balance, shaded, (artist, title)) = match scene.as_deref() {
-            Err(_) | Ok("stopped" | "menus") => (0.75, 0.0, false, SCENE_SONG),
+            Err(_) | Ok("stopped" | "menus" | "resized" | "resized-even") => (0.75, 0.0, false, SCENE_SONG),
             Ok("sliders") => (0.3, -0.6, false, SCENE_SONG),
             Ok("shaded") => (0.3, -0.6, true, SCENE_SONG),
             Ok("unicode") => (0.75, 0.0, false, SCENE_UNICODE),
-            Ok(other) => return Err(format!("no scene {other}: stopped, sliders, shaded, unicode or menus")),
+            Ok(other) => {
+                return Err(format!(
+                    "no scene {other}: stopped, sliders, shaded, unicode, menus, resized or resized-even"
+                ));
+            }
         };
         // REM open, the pointer on its second button, the playlist the selected window.
         let menus = scene.as_deref() == Ok("menus");
@@ -2082,6 +2151,11 @@ mod tests {
             main_shade: shaded,
             eq_shade: shaded,
             playlist_shade: shaded,
+            playlist_size: match scene.as_deref() {
+                Ok("resized") => playlist::Size { wide: 3, tall: 2 },
+                Ok("resized-even") => playlist::Size { wide: 4, tall: 1 },
+                _ => playlist::Size::default(),
+            },
         };
         let now = Now {
             duration: Some(SCENE_SECONDS),
@@ -2120,6 +2194,7 @@ mod tests {
             playlist_open: true,
             eq: &eq,
             list: &list,
+            playlist: panels.playlist_size,
         };
         let mut done = 0;
         for entry in std::fs::read_dir(&inn).map_err(|e| e.to_string())?.flatten() {
@@ -2133,12 +2208,13 @@ mod tests {
                 _ => Skin::from_archive(&bytes, Some(&base))?,
             };
             let height = panels.height();
-            let mut canvas = Canvas::new(height);
+            let width = panels.width();
+            let mut canvas = Canvas::new(width, height);
             for (panel, top, rows) in panels.stack() {
                 draw_panel(&mut canvas, &skin, (panel, panels.shaded(panel)), top, rows, &view);
             }
-            let (columns, rows) = (edges(WIDTH, 1.0), edges(height, 1.0));
-            let size = (WIDTH as i32, height as i32);
+            let (columns, rows) = (edges(width, 1.0), edges(height, 1.0));
+            let size = (width as i32, height as i32);
             let (mut band, mut target) = (Surface::new(size)?, Surface::new(size)?);
             let text = Text::new(&skin.playlist.font, 1.0)?;
             paint(
@@ -2147,7 +2223,7 @@ mod tests {
                 &mut band,
                 &text,
                 target.dc,
-                (0, 0, WIDTH, height),
+                (0, 0, width, height),
             );
             // SAFETY: the copy into `target` is done before its pixels are read.
             let _ = unsafe { GdiFlush() };
@@ -2167,7 +2243,7 @@ mod tests {
             image::save_buffer(
                 out.join(format!("{name}.png")),
                 &rgba,
-                WIDTH,
+                width,
                 height,
                 image::ColorType::Rgba8,
             )
@@ -2221,6 +2297,7 @@ mod tests {
             main_shade: false,
             eq_shade: true,
             playlist_shade: false,
+            playlist_size: playlist::Size::default(),
         };
         let stack: Vec<_> = panels.stack().iter().map(|(p, top, _)| (*p, *top)).collect();
         assert_eq!(stack, [(Panel::Eq, 0), (Panel::Playlist, layout::SHADE_HEIGHT)]);
@@ -2233,13 +2310,13 @@ mod tests {
     fn the_window_is_cut_to_what_the_skin_draws() {
         let width = WIDTH as usize;
         let mut pixels = vec![0xff00_0000u32; width * 6];
-        assert_eq!(shape(&pixels), None, "drawn everywhere: no shape");
+        assert_eq!(shape(&pixels, WIDTH), None, "drawn everywhere: no shape");
         // A notch in rows 2 and 3, columns 10 to 19, and the last row only half drawn.
         for y in 2..4 {
             pixels[y * width + 10..y * width + 20].fill(0);
         }
         pixels[5 * width + 100..6 * width].fill(0);
-        let mut pieces = shape(&pixels).unwrap_or_default();
+        let mut pieces = shape(&pixels, WIDTH).unwrap_or_default();
         pieces.sort_unstable();
         assert_eq!(
             pieces,
@@ -2257,12 +2334,12 @@ mod tests {
     fn only_the_changed_pixels_go_to_the_screen() {
         let shown = vec![0u32; (WIDTH * HEIGHT) as usize];
         let mut frame = shown.clone();
-        assert_eq!(changed(&frame, &shown, 0, HEIGHT), None);
+        assert_eq!(changed(&frame, &shown, WIDTH, (0, HEIGHT)), None);
         frame[(50 * WIDTH + 30) as usize] = 1;
         frame[(52 * WIDTH + 40) as usize] = 1;
-        assert_eq!(changed(&frame, &shown, 0, HEIGHT), Some((30, 50, 41, 53)));
-        assert_eq!(changed(&frame, &shown, 60, HEIGHT), None);
-        assert_eq!(changed(&frame, &[], 10, 20), Some((0, 10, WIDTH, 20)));
+        assert_eq!(changed(&frame, &shown, WIDTH, (0, HEIGHT)), Some((30, 50, 41, 53)));
+        assert_eq!(changed(&frame, &shown, WIDTH, (60, HEIGHT)), None);
+        assert_eq!(changed(&frame, &[], WIDTH, (10, 20)), Some((0, 10, WIDTH, 20)));
     }
 
     #[test]
@@ -2285,6 +2362,7 @@ mod tests {
             main_shade: false,
             eq_shade: false,
             playlist_shade: false,
+            playlist_size: playlist::Size::default(),
         };
         assert_eq!(panels.height(), 348);
         assert_eq!(panels.at(120), Some((Panel::Eq, 4)));
