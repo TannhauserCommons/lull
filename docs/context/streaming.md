@@ -21,7 +21,7 @@ A finished copy already in the stream cache plays at once, whatever the `below` 
    - no new bytes have arrived for Settings › Sources' stall timeout (`stallTimeout`, 15 s by default; shown as `stalled` after 5 s);
    - slskd reports the transfer failed.
 5. **Fall back** to the next copy in the same order. A stall is remembered against the peer (ranking demotes it); an offline peer or a long queue is not. A fetch gives up after 5 peers. Peers whose queue is longer than `maxPeerQueue` are never picked automatically.
-6. **Done:** slskd moves the file to its downloads folder. Its final path comes from slskd's `DownloadFileComplete` event; the cache records it, and slskd's transfer record is removed.
+6. **Done:** slskd moves the file to its downloads folder. Its final path comes from slskd's `DownloadFileComplete` event; the cache records it, and slskd's transfer record is removed. slskd marks the transfer Succeeded before it moves the file and raises that event, so lull asks for the path again each second, for up to 60 s, rather than failing the song in that moment; a reader keeps reading the file it has open meanwhile.
 
 **YouTube.** With Settings › Sources › YouTube on, the player's fetch (and a preload) turns to YouTube when no peer delivers, or none starts within `waitS` (`fallback`), or starts with YouTube while an upgrade fetch gets Soulseek's best copy beside it (`startFast`). The YouTube copy is one more attempt (`attempt` goes up), written into the cache and served the same way: [youtube.md](youtube.md#modes).
 

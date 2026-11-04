@@ -45,6 +45,8 @@ use crate::sources::{self, Bar, Lesser, Ranked, Source, Sources};
 /// Received bytes after which a stream counts as playing rather than buffering.
 const BUFFERED: u64 = 256 * 1024;
 const POLL: Duration = Duration::from_secs(1);
+/// slskd reports a download done just before it moves the file and says where: this long at most.
+const LAND_WAIT: Duration = Duration::from_secs(60);
 /// A peer that hasn't accepted the request by now is skipped.
 const START_TIMEOUT: Duration = Duration::from_secs(20);
 /// Waiting in a peer's queue longer than this moves on to the next source.
@@ -1590,13 +1592,25 @@ impl Fetcher {
         }
     }
 
+    /// Where slskd put a finished download. slskd marks a transfer Succeeded before it moves the
+    /// file to its downloads folder and says where (its `DownloadFileComplete` event, slskd 0.26's
+    /// `DownloadService`), so a look in between finds nothing yet: lull asks again each `POLL`, up
+    /// to `LAND_WAIT`, while a reader keeps reading the file it has open (on Linux the handle
+    /// follows the file through the move; one that has to reopen waits for the new path).
     async fn finished_path(&self, t: &Transfer) -> Result<PathBuf> {
-        let reported = self.slskd.finished_path(&t.id).await?.ok_or_else(|| {
-            Error::upstream(
-                "soulseek",
-                format!("slskd finished {} but did not say where it put it", t.filename),
-            )
-        })?;
+        let since = Instant::now();
+        let reported = loop {
+            if let Some(reported) = self.slskd.finished_path(&t.id).await? {
+                break reported;
+            }
+            if since.elapsed() >= LAND_WAIT {
+                return Err(Error::upstream(
+                    "soulseek",
+                    format!("slskd finished {} but did not say where it put it", t.filename),
+                ));
+            }
+            tokio::time::sleep(POLL).await;
+        };
         let path = self
             .layout
             .read()
@@ -2148,5 +2162,157 @@ mod tests {
             matches!(below(Purpose::Stream, &rules, false), Below::Ask),
             "once the player streams it, the listener is asked"
         );
+    }
+
+    mod against_slskd {
+        use std::collections::HashMap;
+        use std::sync::{Arc, RwLock};
+        use std::time::Duration;
+
+        use async_trait::async_trait;
+        use lull_core::events::Bus;
+        use lull_core::ids::{AlbumId, ArtistId, TrackId};
+        use lull_core::model::{SourceRef, Track};
+        use lull_core::seams::Youtube;
+        use lull_core::status::Status as Services;
+        use lull_core::youtube::{Found, Want};
+        use lull_core::{Error, Result};
+
+        use super::super::{Fetch, Fetcher, Status};
+        use crate::cache::Cache;
+        use crate::fake_slskd::{Fake, Peer};
+        use crate::peers::Peers;
+        use crate::rules::Current;
+        use crate::search::Searches;
+        use crate::sources::Sources;
+
+        const REMOTE: &str = "Music\\Artist\\Album\\01 - Song.mp3";
+
+        struct NoYoutube;
+
+        #[async_trait]
+        impl Youtube for NoYoutube {
+            async fn find(&self, _: &Track, _: Want) -> Result<Option<Found>> {
+                Ok(None)
+            }
+            async fn download(&self, _: &SourceRef, _: &std::path::Path) -> Result<()> {
+                Err(Error::unavailable("youtube", "not in tests"))
+            }
+        }
+
+        fn track() -> Track {
+            Track {
+                id: TrackId("t-1".into()),
+                title: "Song".into(),
+                artist_id: ArtistId("ar-1".into()),
+                artist: "Artist".into(),
+                album_id: AlbumId("al-1".into()),
+                album: "Album".into(),
+                year: None,
+                no: Some(1),
+                disc: None,
+                duration: Some(200),
+                tags: Vec::new(),
+                saved: false,
+                file: None,
+            }
+        }
+
+        async fn fetcher(fake: &Fake) -> Result<Fetcher> {
+            let db = lull_core::db::Db::memory()?;
+            db.migrate(&crate::MIGRATIONS)?;
+            let bus = Bus::new();
+            let cache = Cache::new(db.clone(), Services::new(bus.clone()), fake.root.clone(), u64::MAX / 2);
+            let peers = Peers::load(db.clone()).await?;
+            let sources = Sources::new(peers.clone(), Vec::new());
+            let searches = Searches::new(fake.slskd.clone(), bus.clone(), db, sources.clone());
+            Ok(Fetcher::new(
+                fake.slskd.clone(),
+                Arc::new(RwLock::new(fake.layout.clone())),
+                cache,
+                peers,
+                sources,
+                searches,
+                bus,
+                Current::default(),
+                Arc::new(NoYoutube),
+            ))
+        }
+
+        async fn ended(f: &Arc<Fetch>) -> Result<super::super::Progress> {
+            let mut rx = f.progress();
+            let ended = tokio::time::timeout(Duration::from_secs(30), rx.wait_for(|p| p.ended())).await;
+            Ok(ended
+                .map_err(|_| Error::internal("the fetch never ended"))?
+                .map_err(|_| Error::internal("gone"))?
+                .clone())
+        }
+
+        #[tokio::test]
+        async fn a_download_slskd_calls_done_before_it_has_moved_the_file_still_lands_whole() -> Result<()> {
+            let bytes: Vec<u8> = (0..300_000).map(|i| (i % 251) as u8).collect();
+            // slskd reads Succeeded two seconds before it moves the file and says where: lull
+            // looks once a second, so it sees the transfer done with nowhere to find it yet.
+            let peer = Peer {
+                per_tick: 32_768,
+                reported: 800_000.0,
+                overwrite: false,
+                settles: Duration::from_secs(2),
+            };
+            let fake = Fake::start(HashMap::from([(REMOTE.to_owned(), bytes.clone())]), peer)
+                .await
+                .map_err(|e| Error::internal(e.to_string()))?;
+            let fetcher = fetcher(&fake).await?;
+            let pick = SourceRef {
+                user: "peer".into(),
+                path: REMOTE.into(),
+                size: bytes.len() as u64,
+            };
+            let f = fetcher.stream(track(), Some(pick)).await?;
+            let p = ended(&f).await?;
+            assert_eq!(p.status, Status::Done, "the fetch failed: {:?}", p.error);
+            let path = p.path.ok_or_else(|| Error::internal("no file"))?;
+            assert_eq!(std::fs::read(&path).map_err(|e| Error::internal(e.to_string()))?, bytes);
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn a_reader_streaming_the_song_as_slskd_finishes_and_moves_it_gets_every_byte() -> Result<()> {
+            let bytes: Vec<u8> = (0..600_000).map(|i| (i % 251) as u8).collect();
+            let peer = Peer {
+                per_tick: 8_192,
+                reported: 400_000.0,
+                overwrite: false,
+                settles: Duration::from_secs(2),
+            };
+            let fake = Fake::start(HashMap::from([(REMOTE.to_owned(), bytes.clone())]), peer)
+                .await
+                .map_err(|e| Error::internal(e.to_string()))?;
+            let fetcher = fetcher(&fake).await?;
+            let pick = SourceRef {
+                user: "peer".into(),
+                path: REMOTE.into(),
+                size: bytes.len() as u64,
+            };
+            let f = fetcher.stream(track(), Some(pick)).await?;
+            // The player's request from the start, read while the transfer runs, finishes and
+            // the file moves under it.
+            let resp = crate::stream::serve(f.clone(), &axum::http::HeaderMap::new()).await?;
+            let body = tokio::time::timeout(
+                Duration::from_secs(30),
+                axum::body::to_bytes(resp.into_body(), usize::MAX),
+            )
+            .await
+            .map_err(|_| Error::internal("the body never ended"))?
+            .map_err(|e| Error::internal(format!("the body failed: {e}")))?;
+            assert!(
+                body.as_ref() == bytes.as_slice(),
+                "{} of {} bytes, or different ones",
+                body.len(),
+                bytes.len()
+            );
+            assert_eq!(ended(&f).await?.status, Status::Done);
+            Ok(())
+        }
     }
 }

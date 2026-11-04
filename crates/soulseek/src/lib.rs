@@ -7,6 +7,8 @@ mod albums;
 mod api;
 mod budget;
 mod cache;
+#[cfg(test)]
+mod fake_slskd;
 mod fetch;
 mod files;
 mod layout;
