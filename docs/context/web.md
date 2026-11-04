@@ -379,9 +379,13 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
 - **Now Playing says the same in every design:** title, artist, album, the quality badge and where it plays from,
   on the page at any size (on phones the Art tab's by-line carries the album) and in the Now column; a design may
   restyle them, never drop one (the `now` gate).
-- **Player bar.** The transport is centred on the bar: the side columns are equal in every design, so nothing the
-  sides show or hide moves it. Every control has a fixed slot (toggles show pressed or not, the crossfade tag floats
-  above the tools); only the room the bar has moves tools into the "…" menu, which lists every one of them. The seek
+- **Player bar.** The song with its Like and Save, the transport, the listening tools. The transport is centred on the
+  bar (its padding is even): both sides are as wide as the tools need, and no wider than leaves the middle
+  `--fit-centre-min`, so the middle takes every pixel left and nothing stands empty beside the tools. They widen only
+  as far as keeps the song's chips that the most room would show (layout.js sets `--fit-side` on `[data-fit-sides]`
+  from its `[data-fit-side]` row; the song's side keeps `--fit-side-min`). Every control has a fixed slot (toggles
+  show pressed or not, the crossfade tag floats above the tools); only the room the bar has moves tools into the "…"
+  menu, which lists every one of them, and the volume slider into a popover over its button. The seek
   keeps one length: the time cells are as wide as the song's duration reads (`--time-ch`) and a design's status
   caption has one slot sized for its longest word.
 - **Rows that fit themselves** (layout.js). The header, the player bar, its tools and the song's chips lay themselves
@@ -402,11 +406,23 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
     changes, so in a design with a `.app:has(…) .view` rule each step of the fit restyled the whole page (5 ms a
     step in Starlight).
   - What giving way means is the component's (components.css, `!important`, so a design draws it but can't undo it):
-    the header drops the "/" hint (1), the tray's long words (2), the following-and-playlists button (3), the full
-    tray for the compact one (4), the nav pills' labels (5: Playlists, Stats; 6: Home, Library), and last lets the
-    search narrow (7). The bar's tools leave for the "…" menu: the volume slider (1), Device view (2), Classic (3),
-    Lyrics (4), Devices (5), Save (6), Like (7). The song's chips drop the source (1), "below minimum" (2), the format
-    (3), and Private keeps its eye (4).
+    the header drops the "/" hint (1), the tray's long words (2), the full tray for the compact one (4), the nav
+    pills' labels (5: Playlists, Stats; 6: Home, Library), lets the search narrow without its placeholder (7), and
+    last the compact tray's word (8); its buttons never go, for nothing else opens what they open. The bar's tools
+    leave for the "…" menu: Device view (2), Classic (3), Lyrics (4), Devices (5); the volume slider (1) becomes a
+    popover over its button, shown while the pointer is on either or the slider has focus (the button opens it from
+    the keyboard, Escape goes back; the wheel over the button turns it). The song's chips drop the source (1),
+    "below minimum" (2), the format (3), and Private keeps its eye (4); what the source and format open is the "…"
+    menu's Show source.
+  - The song side (`.pbar__now`) is a row of its own: "Playing from" (1), then Like and Save together (2), then, with
+    nothing playing, the Private pill's word (4). What decides is the song's words: the title and artist
+    (`[data-fit-keep]`) keep `--fit-keep` (10ch, components.css) or all of themselves when shorter, so the side's parts
+    give way before either shows less. Like and Save are in the "…" menu, and the title opens where the song plays from.
+  - What doesn't fit, by one rule for every row: content past the row's content box; content past the edge of a box
+    around the row that clips (up to the row it fits with); a box in the row that clips content of its own; a part
+    whose words are cut short (text-overflow: ellipsis, to the fraction of a pixel: a part shows whole or gives way
+    whole); and words that keep a width shown narrower. A box that cuts its own text short on purpose (a long title)
+    is not clipping anything that should give way.
   - A part a design takes out of the row's flow (glasshouse floats the tray into the rail) never gives way; a design
     that lays a row out with `display: contents` (lull's desk bar) hands its parts to the row around it.
   - Width rules are for genuine layout changes only: the shells (640, 1100, 1360) and content that rearranges by the

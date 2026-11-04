@@ -430,7 +430,7 @@
 :root[data-design="lull"] .pbar__now { gap: 12px; padding-left: 6px; }
 /* the bar holds three lines: "Playing from" rides on the artist's (the artist, a dot, the place's icon and name; its words stay
    for screen readers) */
-:root[data-design="lull"] .pbar__text { flex: 1; grid-template-columns: fit-content(60%) minmax(0, 1fr); grid-template-areas: "title title" "artist from" "badges badges"; }
+:root[data-design="lull"] .pbar__text { flex: 1; grid-template-columns: minmax(0, max-content) minmax(0, 1fr); grid-template-areas: "title title" "artist from" "badges badges"; }   /* the artist first, whole if it can be; "Playing from" has what is left, and gives way whole when that isn't enough (layout.js) */
 :root[data-design="lull"] .pbar__title { grid-area: title; }
 :root[data-design="lull"] .pbar__artist { grid-area: artist; }
 :root[data-design="lull"] .pbar__badges { grid-area: badges; }
@@ -459,23 +459,25 @@
 @media (min-width: 1100px) {
   :root[data-design="lull"] .pbar {
     /* the song and the seek give up room before anything else; a part that gives way (layout.js, data-fit: the tiles,
-       Devices, Save, Like, the volume slider) takes its track with it, so the bar always fits its width */
-    grid-template-columns: minmax(140px, 1fr) auto auto minmax(240px, 1.35fr) auto minmax(40px, 150px) 40px auto auto 12px repeat(4, auto);
-    grid-template-areas: "now like ctl seek save vol more nc cn . t1 t2 t3 t4"; gap: 0 4px;
+       Devices, the volume slider) takes its track with it, so the bar always fits its width; Like and Save sit with the
+       song */
+    grid-template-columns: minmax(212px, 1fr) auto minmax(240px, 1.35fr) minmax(40px, 150px) 40px auto auto var(--sp-2) repeat(4, auto);   /* the song: 140 px of words beside its Like and Save */
+    grid-template-areas: "now ctl seek vol more nc cn . t1 t2 t3 t4"; gap: 0 var(--sp-1);
+    /* the tray's shelf: the tiles sit as far from the window, and from the tray's end, as they do from its top and
+       bottom (48 px tiles in the 80 px bar): a gap, the spacer and a gap on the window's side, the padding on the end */
+    padding-right: calc(var(--sp-4) - var(--stroke));
   }
   /* the Now Playing column toggle and lull Connect's device picker get their own columns inside the bar, instead of
      falling onto a second row below the window or onto the first tray tile. The toggle shows wherever the window is
      wide enough for the column (ADR-0007), whatever the panel does, so its column only changes at that width */
   :root[data-design="lull"] .pbar .pbar__nowcol { grid-area: nc; }
   :root[data-design="lull"] .pbar [data-act="connect"] { grid-area: cn; }
-  :root[data-design="lull"] .pbar > .region-title { grid-area: 1 / 1 / 2 / 10; }
+  :root[data-design="lull"] .pbar > .region-title { grid-area: 1 / now-start / 2 / cn-end; }   /* the window ends where the tray's shelf begins, by name: a track added or taken away doesn't move it */
   :root[data-design="lull"] .pbar__centre, :root[data-design="lull"] .pbar__tools { display: contents; }
   :root[data-design="lull"] .pbar__now { grid-area: now; }
   :root[data-design="lull"] .pbar__controls { grid-area: ctl; padding: 0 14px 0 8px; }
   :root[data-design="lull"] .pbar__seek { grid-area: seek; }
   :root[data-design="lull"] .pbar__xfade { position: static; grid-area: seek; justify-self: end; align-self: start; margin-top: 9px; }
-  :root[data-design="lull"] .pbar [data-act="like"] { grid-area: like; }
-  :root[data-design="lull"] .pbar [data-act="save"] { grid-area: save; }
   :root[data-design="lull"] .pbar .vol { grid-area: vol; min-width: 0; }
   :root[data-design="lull"] .pbar .vol .seek { min-width: 0; }
   :root[data-design="lull"] .pbar [data-act="player-more"] { grid-area: more; }
@@ -507,7 +509,6 @@
   :root[data-design="lull"] .pbar__now { grid-area: now; padding: 4px 0 0 8px; }
   :root[data-design="lull"] .pbar__controls { grid-area: ctl; padding-top: 4px; }
   :root[data-design="lull"] .pbar__tools { grid-area: tools; padding: 4px 8px 0 0; }
-  :root[data-design="lull"] .pbar .vol { display: none; }
   :root[data-design="lull"] .pbar__seek { grid-area: seek; grid-template-columns: auto auto minmax(0, 1fr) auto; padding: 0 16px 6px 14px; }
   /* beside the seek here, so one fixed slot (the longest caption, "streaming from peer · 100% received", ends in an
      ellipsis) keeps the seek one length whatever the stream says */

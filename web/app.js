@@ -1175,6 +1175,18 @@
       .map(function (k) { return ' ' + k + '="' + esc(attrs[k]) + '"'; }).join('');
     return raw('<button class="btn-icon' + (attrs.cls ? ' ' + attrs.cls : '') + '" aria-label="' + esc(label) + '" data-tip="' + esc(label) + '"' + extra + '>' + window.icon(name) + '</button>');
   };
+  /* the player's Save for a song, as its saving stands: drawn with the song (renderBar) and kept so between renders */
+  function saveLook(t) {
+    var sv = state.saves[t.id], saved = App.isSaved(t.id), failed = sv && sv.status === 'failed', saving = sv && sv.status === 'saving';
+    return {
+      saved: saved, icon: saved ? 'saved' : failed ? 'warning' : 'save', step: saving ? sv.step + '/5' : '',
+      label: saved ? 'Saved to library' : saving ? 'Saving, step ' + sv.step + ' of 5' : failed ? 'Save failed, retry' : 'Save to library (Shift+S)'
+    };
+  }
+  function saveButton(t) {
+    var look = saveLook(t);
+    return html`<button class="btn-icon btn-icon--bare" data-act="save" data-bind="save" data-id="${t.id}" aria-pressed="${String(look.saved)}" aria-label="${look.label}" data-tip="${look.label}">${icon(look.icon)}${look.step ? html`<span class="pbar__save-step" aria-hidden="true">${look.step}</span>` : ''}</button>`;
+  }
   ui.likeButton = function (id, cls) {
     var on = App.isLiked(id), t = M.track(id);
     return html`<button class="btn-icon btn-icon--bare ${on ? 'is-liked' : ''} ${cls || ''}" data-act="like" data-id="${id}" data-like="${id}" aria-pressed="${on ? 'true' : 'false'}" aria-label="Like ${t ? t.title : ''}" data-tip="${on ? 'Liked' : 'Like'}">${icon(on ? 'heart-fill' : 'heart')}</button>`;
@@ -1333,12 +1345,12 @@
   ui.placeMark = function (key) { return raw(placePlaying(key) ? PLACE_MARK : ''); };
   /* "Playing from <name>": the place the song plays from, as a link that opens it at the song (App.goPlaying); radio
      and the listener's own queue open the queue. Empty while nothing plays from anywhere. */
-  ui.playingFrom = function (cls, label) {
+  ui.playingFrom = function (cls, label, opts) {
     var c = App.player.playingFrom(); if (!c) return '';
     var path = App.placePath(c), name = App.placeName(c);
     var inner = html`${icon(App.placeIcon(c), null, 'ic-16')}<span class="from__text"><span class="from__label">${label || 'Playing from'}</span> <b>${name}</b></span>`;
-    return path ? html`<a class="from ${cls}" href="#${path}" data-act="go-playing" data-tip="Show the song in ${name}">${inner}</a>`
-      : html`<button class="from ${cls}" data-act="go-playing" data-tip="Show the queue">${inner}</button>`;
+    return path ? html`<a class="from ${cls}" href="#${path}" data-act="go-playing" data-tip="Show the song in ${name}" ${fitAttr(opts)}>${inner}</a>`
+      : html`<button class="from ${cls}" data-act="go-playing" data-tip="Show the queue" ${fitAttr(opts)}>${inner}</button>`;
   };
   App.syncPlaces = function (root) {
     var key = App.placeKey(App.player.playingFrom()), playing = App.player.state.playing;
@@ -3601,11 +3613,12 @@
       var from = P.playingFrom(), fromPath = from && App.placePath(from);
       nowMarkup = html`<span class="cover-zoom"><a class="bezel-thumb" href="#/now" aria-label="Open Now Playing: ${t.title}" data-tip="Now Playing">${ui.cover(t, 52, { hero: true })}</a>${ui.coverZoom(t.id)}</span>
         <div class="pbar__text">
-          ${ui.playingFrom('pbar__from')}
-          <div class="pbar__title">${fromPath ? html`<a href="#${fromPath}" data-act="go-playing" data-tip="Show the song in ${App.placeName(from)}">${t.title}</a>` : html`<a href="#/album/${t.albumId}">${t.title}</a>`}</div>
-          <div class="pbar__artist"><a href="#/artist/${t.artistId}">${t.artist}</a></div>
+          ${ui.playingFrom('pbar__from', null, { fit: 1 })}
+          <div class="pbar__title" data-fit-keep>${fromPath ? html`<a href="#${fromPath}" data-act="go-playing" data-tip="Show the song in ${App.placeName(from)}">${t.title}</a>` : html`<a href="#/album/${t.albumId}">${t.title}</a>`}</div>
+          <div class="pbar__artist" data-fit-keep><a href="#/artist/${t.artistId}">${t.artist}</a></div>
           <div class="pbar__badges" data-fit-row>${playingYoutube() ? '' : ui.sourceBadge(t, { button: true, fit: 1 })}${playingFormat(t) ? ui.qualityChip(playingFormat(t), { solid: true, button: true, id: t.id, fit: 3 }) : ''}${ps.belowMinimum ? ui.belowBadge({ fit: 2 }) : ''}${priv}</div>
-        </div>`;
+        </div>
+        <div class="pbar__acts" data-fit="2">${ui.likeButton(t.id)}${saveButton(t)}</div>`;
     }
     patch(now, nowMarkup);
     /* the song side's words changed: the bar fits again (only then: a queue change re-renders the bar too) */
@@ -3641,18 +3654,14 @@
       b.setAttribute('aria-label', label); b.setAttribute('data-tip', label + ' (R)');
       $('use', b).setAttribute('href', '#i-' + (ps.repeat === 'one' ? 'repeat-one' : 'repeat'));
     });
-    $$kept('[data-bind="like"]').forEach(function (b) {
-      if (!t) { b.disabled = true; b.removeAttribute('data-like'); b.setAttribute('aria-pressed', 'false'); b.classList.remove('is-liked'); $('use', b).setAttribute('href', '#i-heart'); return; } b.disabled = false;
-      b.setAttribute('data-like', t.id); b.setAttribute('data-id', t.id); b.removeAttribute('aria-pressed');
-    });
+    /* the song's Save button (beside it, in the bar's song side): as its saving stands, between renders */
     $$kept('[data-bind="save"]').forEach(function (b) {
       if (!t) { b.disabled = true; return; } b.disabled = false;
-      var sv = state.saves[t.id], saved = App.isSaved(t.id), stp = $('.pbar__save-step', b);
-      var label = saved ? 'Saved to library' : sv && sv.status === 'saving' ? 'Saving, step ' + sv.step + ' of 5' : sv && sv.status === 'failed' ? 'Save failed, retry' : 'Save to library (Shift+S)';
-      b.setAttribute('aria-label', label); b.setAttribute('data-tip', label); b.setAttribute('data-id', t.id);
-      $('use', b).setAttribute('href', '#i-' + (saved ? 'saved' : sv && sv.status === 'failed' ? 'warning' : 'save'));
-      b.setAttribute('aria-pressed', String(saved));
-      if (sv && sv.status === 'saving') { if (!stp) { stp = document.createElement('span'); stp.className = 'pbar__save-step'; stp.setAttribute('aria-hidden', 'true'); b.appendChild(stp); } stp.textContent = sv.step + '/5'; }
+      var look = saveLook(t), stp = $('.pbar__save-step', b);
+      b.setAttribute('aria-label', look.label); b.setAttribute('data-tip', look.label); b.setAttribute('data-id', t.id);
+      $('use', b).setAttribute('href', '#i-' + look.icon);
+      b.setAttribute('aria-pressed', String(look.saved));
+      if (look.step) { if (!stp) { stp = document.createElement('span'); stp.className = 'pbar__save-step'; stp.setAttribute('aria-hidden', 'true'); b.appendChild(stp); } stp.textContent = look.step; }
       else if (stp) stp.remove();
     });
     $$kept('[data-bind="mute"]').forEach(function (b) {

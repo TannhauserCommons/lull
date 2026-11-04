@@ -1225,11 +1225,18 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
    ===================================================================== */
 .pbar {
   grid-area: bar; position: relative; z-index: var(--z-bar); height: var(--bar-h); margin: 0 0 21px;
-  display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 1.5fr) minmax(0, 1fr); align-items: center; gap: min(var(--sp-6), 2%);
-  padding: 0 14px 0 10px; border: var(--stroke) solid var(--edge); border-radius: var(--r-panel); box-shadow: var(--stack-1l);
+  /* the song, the transport, the tools: both sides as wide as the tools need (layout.js sets --fit-side, after the
+     tools gave way to keep --fit-centre-min for the middle; the song's side keeps --fit-side-min), the middle every
+     pixel left, so the transport stays centred and nothing stands empty */
+  --fit-centre-min: 360px; --fit-side-min: 260px;
+  display: grid; grid-template-columns: minmax(0, var(--fit-side, 1fr)) minmax(0, 1fr) minmax(0, var(--fit-side, 1fr)); align-items: center; gap: min(var(--sp-6), 2%);
+  padding: 0 12px; border: var(--stroke) solid var(--edge); border-radius: var(--r-panel); box-shadow: var(--stack-1l);   /* even, so the middle is the bar's middle */
 }
 .pbar__now { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
 .pbar__text { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; }   /* its chips never widen it */
+/* the song's own: Like and Save beside it (the tools keep what is for listening) */
+.pbar__acts { display: flex; align-items: center; gap: 2px; flex: none; }
+.pbar__acts .btn-icon .ic { width: 20px; height: 20px; }
 .pbar__title { display: flex; align-items: center; gap: 6px; min-width: 0; font: var(--t-row); }
 .pbar__title > a, .pbar__title > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pbar__title a:hover, .pbar__artist a:hover { text-decoration: underline; text-underline-offset: 3px; }
@@ -1272,7 +1279,7 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 .pbar__centre { display: grid; justify-items: center; gap: 2px; min-width: 0; }
 .pbar__controls { display: flex; align-items: center; gap: var(--sp-3); }
 .pbar__controls .btn-icon .ic { width: 22px; height: 22px; }
-.pbar__seek { width: 100%; max-width: 640px; }
+.pbar__seek { width: 100%; }
 .pbar__seek .seek { height: 24px; }
 .pbar__tools { position: relative; display: flex; align-items: center; justify-content: flex-end; gap: 2px; min-width: 0; max-width: 100%; }   /* never wider than its column: it fits itself (data-fit) */
 .pbar__tools .btn-icon .ic { width: 20px; height: 20px; }
@@ -1407,9 +1414,8 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
   .nav-item { width: 48px; justify-content: center; padding: 0; }
   .nav-item__label, .rail__scroll, .rail__foot { display: none; }
   .nav-item .badge-count { position: absolute; top: -4px; right: -6px; }
-  /* tablet: the song keeps a little room, the transport its own, the tools what is left (and give way to fit it) */
-  .pbar { grid-template-columns: minmax(120px, 1fr) auto minmax(0, max-content); gap: var(--sp-4); }
-  .pbar__centre { width: min(360px, 40vw); }
+  /* tablet: the middle may be narrower before the tools give way */
+  .pbar { --fit-centre-min: 280px; --fit-side-min: 200px; gap: var(--sp-4); }
   .pbar__now { overflow: hidden; }
   .header__search { flex: 1 1 280px; }
   .app:not([data-ctx="docked"]) .ctx { top: 16px; }

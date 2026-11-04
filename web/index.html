@@ -136,10 +136,10 @@
   <div class="ctx-scrim" id="ctx-scrim" aria-hidden="true"></div>
 
   <!-- player bar: desktop + tablet -->
-  <section class="pbar s-panel" id="pbar" aria-label="Player" data-drop="play" data-region="playerbar" data-fit-row>
+  <section class="pbar s-panel" id="pbar" aria-label="Player" data-drop="play" data-region="playerbar" data-fit-row data-fit-sides>
     <span class="region-title" aria-hidden="true">now playing</span>
     <div class="pbar__state" id="pbar-state" role="status" aria-live="polite" hidden></div>
-    <div class="pbar__now" id="pbar-now"></div>
+    <div class="pbar__now" id="pbar-now" data-fit-row></div>
     <div class="pbar__centre">
       <div class="pbar__controls">
         <button class="btn-icon btn-icon--bare" data-act="shuffle" data-bind="shuffle" aria-pressed="false" aria-label="Shuffle" data-tip="Shuffle (S)"><svg class="ic" aria-hidden="true"><use href="#i-shuffle"/></svg></button>
@@ -158,10 +158,8 @@
         <span class="seek-row__time" data-bind="dur">0:00</span>
       </div>
     </div>
-    <div class="pbar__tools" data-fit-row>
+    <div class="pbar__tools" data-fit-row data-fit-side>
       <span class="pbar__xfade" data-bind="xfade" hidden><i></i>xfade<span class="vh">Crossfade active</span></span>
-      <button class="btn-icon btn-icon--bare" data-fit="7" data-act="like" data-bind="like" aria-label="Like (L)" data-tip="Like (L)"><svg class="ic" aria-hidden="true"><use href="#i-heart"/></svg></button>
-      <button class="btn-icon btn-icon--bare" data-fit="6" data-act="save" data-bind="save" aria-label="Save to library" data-tip="Save (Shift+S)"><svg class="ic" aria-hidden="true"><use href="#i-save"/></svg></button>
       <button class="btn-icon btn-icon--bare is-wide" data-fit="4" data-act="toggle-panel" data-tab="lyrics" aria-label="Lyrics" data-tip="Lyrics (Y)"><svg class="ic" aria-hidden="true"><use href="#i-lyrics"/></svg></button>
       <button class="btn-icon btn-icon--bare" data-act="toggle-panel" data-tab="queue" aria-label="Queue" data-tip="Queue (Q)"><svg class="ic" aria-hidden="true"><use href="#i-queue"/></svg></button>
       <button class="btn-icon btn-icon--bare is-wide" data-fit="3" data-act="classic" aria-label="Classic mode" data-tip="Classic mode (W)"><svg class="ic" aria-hidden="true"><use href="#i-classic"/></svg></button>

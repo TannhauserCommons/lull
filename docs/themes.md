@@ -124,8 +124,9 @@ Go beyond tokens with any selector. These hooks are the theme API: they stay put
 have (a docked panel, the Now column, the text size and a long title count as much as the window): each part that can
 give way has an order (`data-fit`), and when a row runs out of room its parts give way in that order and come back with
 room. So a theme never writes `@media (min-width: 1100px) and (max-width: 1359px)` to hide a tool or shrink a pill: style
-`[data-fit-out]` for how a part looks once it gave way, keep the bar's side columns equal (`minmax(0, 1fr)`) and let a
-part's track be `auto`, so a part that gives way takes its room with it. Width rules are for genuine layout changes: the
+`[data-fit-out]` for how a part looks once it gave way, leave the bar's columns to lull (both sides are
+`var(--fit-side)`, as wide as the tools need, so the transport stays centred; a design may set `--fit-centre-min` and
+`--fit-side-min` on `.pbar`) and let a part's track be `auto`, so a part that gives way takes its room with it. Width rules are for genuine layout changes: the
 shell breakpoints (640, 1100 and 1360 px) and content that rearranges by its container's room (`@container`).
 `mise run check:ui` sweeps every width from 360 to 2560 px for the built-in designs (docs/context/quality.md#ui-gates).
 
