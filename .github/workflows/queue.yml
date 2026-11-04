@@ -64,6 +64,16 @@ jobs:
     with:
       ref: ${{ needs.plan.outputs.candidate }}
 
+  # Every candidate: its files and every commit message, the rebased ones included (privacy.yml, AGENTS.md Boundaries).
+  privacy:
+    needs: plan
+    if: needs.plan.outputs.candidate != ''
+    uses: ./.github/workflows/privacy.yml
+    with:
+      ref: ${{ needs.plan.outputs.candidate }}
+    secrets:
+      PRIVATE_PATTERNS: ${{ secrets.PRIVATE_PATTERNS }}
+
   ui-gates:
     needs: plan
     if: needs.plan.outputs.candidate != '' && needs.plan.outputs.ui_gates == 'true'
@@ -129,7 +139,7 @@ jobs:
       image-artifact: image
 
   land:
-    needs: [plan, ci, ui-gates, app, slskd-contract, image, ui]
+    needs: [plan, privacy, ci, ui-gates, app, slskd-contract, image, ui]
     # Green means every check the diff needed passed; a check it didn't need is skipped.
     if: >-
       !cancelled() && needs.plan.outputs.candidate != ''
@@ -194,7 +204,7 @@ jobs:
         run: gh workflow run app.yml --repo "$GITHUB_REPOSITORY" --ref main
 
   reject:
-    needs: [plan, ci, ui-gates, app, slskd-contract, image, ui]
+    needs: [plan, privacy, ci, ui-gates, app, slskd-contract, image, ui]
     if: >-
       !cancelled() && needs.plan.outputs.candidate != ''
       && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
@@ -210,7 +220,7 @@ jobs:
           CANDIDATE: ${{ needs.plan.outputs.candidate }}
           BRANCHES: ${{ needs.plan.outputs.branches }}
           FAILED: >-
-            ${{ needs.ci.result == 'failure' && 'ci ' || '' }}${{ needs.ui-gates.result == 'failure' && 'ui-gates ' || ''
+            ${{ needs.privacy.result == 'failure' && 'privacy ' || '' }}${{ needs.ci.result == 'failure' && 'ci ' || '' }}${{ needs.ui-gates.result == 'failure' && 'ui-gates ' || ''
             }}${{ needs.app.result == 'failure' && 'app ' || '' }}${{ needs.slskd-contract.result == 'failure' && 'slskd-contract ' || ''
             }}${{ needs.image.result == 'failure' && 'image ' || '' }}${{ needs.ui.result == 'failure' && 'ui' || '' }}
         run: sh scripts/queue.sh reject
