@@ -182,6 +182,43 @@ export const chromeNow = () => {
       const p = seen(a, reg), q = seen(b, reg);
       if (Math.min(p.right, q.right) - Math.max(p.left, q.left) > 2 && Math.min(p.bottom, q.bottom) - Math.max(p.top, q.top) > 2) out.push(`${name}: ${label(a)} on ${label(b)}`);
     }
+    /* what a control holds may spill out of it onto another (a state chip laid out past its link): content in the
+       control's flow past its box (its scroll width counts generated content too: lull's chip was an ::after; read only
+       where all it holds is in its flow), and each
+       box laid out inside it, against every other control. Laid out, not absolutely placed: a ring or a badge set over
+       a button is drawn there on purpose. Drawn, not shown: a box hidden from screen readers still covers what is under
+       it */
+    const drawn = (e) => {
+      if (!e.getClientRects().length) return false;
+      const r = e.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return false;
+      for (let a = e; a && a !== document.body; a = a.parentElement) {
+        const s = getComputedStyle(a); if (s.visibility === 'hidden' || s.display === 'none' || +s.opacity === 0) return false;
+      }
+      return !e.closest('.vh, [hidden]');
+    };
+    const placed = (d, a) => { for (let e = d; e && e !== a; e = e.parentElement) { const p = getComputedStyle(e).position; if (p === 'absolute' || p === 'fixed') return true; } return false; };
+    const onAnother = (a, p) => ctrls.find((b) => {
+      if (b === a || a.contains(b) || b.contains(a)) return false;
+      const fa = a.closest('.search-field'); if (fa && fa === b.closest('.search-field')) return false;
+      const q = seen(b, reg);
+      return Math.min(p.right, q.right) - Math.max(p.left, q.left) > 2 && Math.min(p.bottom, q.bottom) - Math.max(p.top, q.top) > 2;
+    });
+    for (const a of ctrls) {
+      const s = getComputedStyle(a), r = a.getBoundingClientRect();
+      // a placed ring, or a pseudo-element placed to widen a hit area, counts in the scroll width too
+      const inFlow = ![a, ...a.querySelectorAll('*')].some((d) => (d !== a && placed(d, a)) || ['::before', '::after'].some((pe) => {
+        const ps = getComputedStyle(d, pe); return ps.content !== 'none' && (ps.position === 'absolute' || ps.position === 'fixed');
+      }));
+      if (s.overflowX === 'visible' && inFlow && a.scrollWidth > a.clientWidth + 1) {
+        const b = onAnother(a, { left: r.right, right: r.left + a.scrollWidth, top: r.top, bottom: r.bottom });
+        if (b) { out.push(`${name}: ${label(a)} runs onto ${label(b)}`); continue; }
+      }
+      for (const d of a.querySelectorAll('*')) {
+        if (d.closest('svg') || !drawn(d) || placed(d, a)) continue;
+        const b = onAnother(a, seen(d, reg));
+        if (b) { out.push(`${name}: ${label(a)}'s ${label(d)} on ${label(b)}`); break; }
+      }
+    }
     const walker = document.createTreeWalker(reg, NodeFilter.SHOW_TEXT);
     for (let t = walker.nextNode(); t; t = walker.nextNode()) {
       const el = t.parentElement;

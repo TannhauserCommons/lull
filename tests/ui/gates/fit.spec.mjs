@@ -162,6 +162,27 @@ for (const design of designs) {
       }
     });
 
+    // the phone's mini player while a song streams from Soulseek (the fixture's slow transfer): what a design draws
+    // for that state (lull's "streaming" chip) fits beside the song's line or gives way, never over a button
+    test(`phone mini player, a song streaming / ${design} / ${theme}`, async ({ page }) => {
+      await watchObservers(page);
+      await page.setViewportSize({ width: 620, height: 800 });
+      await openScreen(page, '/home', { design, theme });
+      const album = await page.evaluate(() => App.data.api('/api/feed').then((f) => f.newReleases[0]));
+      await page.evaluate((id) => { location.hash = '#/album/' + id; }, album);
+      const track = await page.waitForSelector('#view .trow[data-track-id]').then((r) => r.getAttribute('data-track-id'));
+      await page.request.post('/__fixture/trickle', { data: { id: track, bytesPerS: 2000 } });
+      await page.evaluate((id) => App.player.playTrack(id, [id]), track);
+      await page.waitForSelector('#mini .seek--line.is-transferring');
+      const found = new Map();
+      for (let w = 620; w >= 360; w -= 20) {
+        await page.setViewportSize({ width: w, height: 800 });
+        await drawnAt(page, w);
+        for (const p of await chrome(page)) found.set(p, [...(found.get(p) || []), w]);
+      }
+      expect([...found].map(([p, ws]) => `${p} at ${ws.join(', ')} px`), 'the mini player while a song streams').toEqual([]);
+    });
+
     test(`desktop mini player / ${design} / ${theme}`, async ({ page }) => {
       // the device window opens 340 px wide, the strip is a fixed 540 x 90 (app/src/desktop/mini.rs)
       for (const [view, width] of [['mini', 340], ['strip', 540]]) {
