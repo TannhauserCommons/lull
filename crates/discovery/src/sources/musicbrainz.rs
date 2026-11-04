@@ -12,9 +12,16 @@ use serde::{Deserialize, Serialize};
 
 use super::cache::{Cache, DAY, HOUR};
 use super::{ArtistInfo, Breaker, CALL_TIMEOUT, Release, Song, Switch, top_tags, year};
-use crate::search::merge::{AlbumHit, ArtistHit, Found, SongHit};
+use crate::search::merge::{AlbumHit, ArtistHit, Found, SongHit, popularity};
 
 const SERVICE: &str = "MusicBrainz";
+/// Releases at which a release group (Nirvana's Nevermind has 100) or a recording (Radiohead's
+/// "Creep", 130) scores 1 on `popularity`'s scale. MusicBrainz's search can't sort by fame, but
+/// how often a work was released is a count, not a guess like a catalog's order.
+const FULL_RELEASES: f64 = 100.0;
+/// Release groups asked for per submitted query: dozens share a title ("Nevermind": 145), and
+/// the search's own order doesn't put the famous one first, so the counts must rank them.
+const RELEASE_GROUPS: &str = "100";
 const WS: &str = "https://musicbrainz.org/ws/2";
 /// Search scores below this are a different artist or release.
 const MIN_SCORE: u8 = 90;
@@ -449,8 +456,9 @@ impl MusicBrainz {
             .await
     }
 
-    /// Catalog search for a submitted query: release groups by title, so EPs and albums only
-    /// MusicBrainz knows (Bandcamp releases) are found by name. Paced after the recording search.
+    /// Catalog search for a submitted query: release groups by title, so albums the fast
+    /// catalog lacks (Apple has no Nevermind) and EPs only MusicBrainz knows (Bandcamp releases)
+    /// are found by name. Paced after the recording search.
     pub async fn search_releases(&self, q: &str) -> Result<Found> {
         self.switch.check()?;
         let words = normalize(q);
@@ -460,7 +468,10 @@ impl MusicBrainz {
         self.cache
             .get(format!("mb:search-releases:{words}"), DAY, || async {
                 let query = format!("releasegroup:\"{words}\" OR releasegroup:({words})");
-                release_groups(self.get("release-group", &[("query", &query), ("limit", "15")]).await?)
+                release_groups(
+                    self.get("release-group", &[("query", &query), ("limit", RELEASE_GROUPS)])
+                        .await?,
+                )
             })
             .await
     }
@@ -525,6 +536,8 @@ pub fn release_groups(body: serde_json::Value) -> Result<Found> {
         first_release_date: Option<String>,
         #[serde(default)]
         artist_credit: Vec<Credit>,
+        /// How many releases the group has.
+        count: Option<u64>,
     }
     let found: Found_ =
         serde_json::from_value(body).map_err(|e| Error::upstream(SERVICE, format!("unexpected search answer: {e}")))?;
@@ -542,7 +555,7 @@ pub fn release_groups(body: serde_json::Value) -> Result<Found> {
                     mbid: Some(g.id),
                     title: g.title,
                     artist,
-                    popularity: 0.0,
+                    popularity: g.count.map_or(0.0, |n| popularity(n, FULL_RELEASES)),
                     source: None,
                 })
             })
@@ -637,6 +650,8 @@ pub fn recordings(body: serde_json::Value) -> Result<Found> {
         if released && r.releases.is_empty() {
             continue;
         }
+        // How often the recording was released: "Creep" on Pablo Honey and 129 more.
+        let known = popularity(r.releases.len() as u64, FULL_RELEASES);
         let home = r.releases.iter().min_by_key(|rel| preference(rel));
         let group = home.and_then(|h| h.release_group.as_ref());
         let art = group.map(|g| crate::art::cover_archive(&g.id));
@@ -651,7 +666,8 @@ pub fn recordings(body: serde_json::Value) -> Result<Found> {
                 kind: kind(group),
                 date: home.date.clone().filter(|d| !d.is_empty()),
                 mbid: Some(group.id.clone()),
-                popularity: 0.0,
+                // Known from one of its songs: a share of the song's, as for iTunes's albums.
+                popularity: known * 0.5,
                 art: art.clone(),
                 source: None,
             });
@@ -680,7 +696,7 @@ pub fn recordings(body: serde_json::Value) -> Result<Found> {
             duration: r.length.map(|ms| (ms / 1000) as u32).filter(|s| *s > 0),
             isrcs: r.isrcs,
             mbid: Some(r.id),
-            popularity: 0.0,
+            popularity: known,
             art,
             album_source: None,
             artist,

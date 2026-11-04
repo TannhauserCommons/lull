@@ -14,7 +14,7 @@ use serde_json::Value;
 
 use super::merge::{Found, Merged, Query};
 use super::{Ranked, rank_rows};
-use crate::sources::{deezer, itunes};
+use crate::sources::{deezer, itunes, musicbrainz};
 
 /// Each query, and the top results that are what the listener meant ("kind: artist - title").
 const CASES: &[(&str, &[&str])] = &[
@@ -223,4 +223,46 @@ fn a_song_comes_before_its_other_versions_unless_one_is_typed() {
         }
     }
     assert!(wrong.is_empty(), "{} wrong:\n{}", wrong.len(), wrong.join("\n"));
+}
+
+/// What the fast catalog lacks: Apple has no Nirvana for "nevermind" and only the acoustic take
+/// for "radiohead creep". MusicBrainz fills them after the first answer (and in it, once its
+/// answer is kept), ranked by how often each was released, as its search can't sort by fame.
+#[test]
+fn musicbrainz_fills_what_apple_lacks_ranked_by_how_often_it_was_released() {
+    let (recorded, gaps): (Value, Value) = (
+        recorded(),
+        serde_json::from_str(include_str!("fixtures/query-set-gaps.json")).unwrap_or(Value::Null),
+    );
+    let q = "nevermind";
+    let mut m = merged(q, &recorded[q]);
+    let groups = musicbrainz::release_groups(gaps[q]["musicbrainz-release-group"].clone()).unwrap_or_default();
+    m.add(super::release_groups_kept(q, groups));
+    let r = ranked(q, &m);
+    let first_album = r
+        .albums
+        .first()
+        .map(|&i| format!("{} - {}", m.albums[i].artist, m.albums[i].title));
+    assert_eq!(
+        first_album.as_deref(),
+        Some("Nirvana - Nevermind"),
+        "100 releases, its namesakes 1 or 2"
+    );
+    assert_eq!(top_line(&r, &m), "album: Nirvana - Nevermind");
+
+    let q = "radiohead creep";
+    let mut m = merged(q, &recorded[q]);
+    let songs = musicbrainz::recordings(gaps[q]["musicbrainz-recording"].clone()).unwrap_or_default();
+    m.add(super::recordings_kept(q, songs));
+    let r = ranked(q, &m);
+    let first = r
+        .songs
+        .first()
+        .map(|&i| format!("{} - {} [{}]", m.songs[i].artist, m.songs[i].title, m.songs[i].album));
+    assert_eq!(
+        first.as_deref(),
+        Some("Radiohead - Creep [Pablo Honey]"),
+        "on 130 releases"
+    );
+    assert_eq!(top_line(&r, &m), "track: Radiohead - Creep");
 }
