@@ -8,7 +8,8 @@
 //   can't tell). The five built-in designs get none of these.
 
 import { expect, test } from '@playwright/test';
-import { openScreen } from './lib.mjs';
+import { ids, openScreen } from './lib.mjs';
+import { failingAlbum } from '../fixture-hub/library.mjs';
 
 // falling petals: two pseudo-elements on the page, drifting down forever
 const PETALS = `/* falling petals */
@@ -20,6 +21,7 @@ body::after { left: 70%; animation-duration: 13s; }
 // the petals' loops in a page: the rate each names, whether it is stepped, its playback rate (0 = held)
 const DESIGNS = ['lull', 'skydeck', 'starlight', 'petal', 'glasshouse'];
 const OK = 'Every loop names its rate, moves by transform and opacity, and stays off glass on this screen.';
+const WORDS_OK = 'Every state the player shows is in words that hold for every song.';
 const petals = (frame) => frame.evaluate(() => document.getAnimations().filter((a) => a.animationName === 'petal-fall').map((a) => {
   const e = a.effect, cs = getComputedStyle(e.target, e.pseudoElement);
   return { fps: parseFloat(cs.getPropertyValue('--loop-fps')) || 0, stepped: /steps/.test(e.getTiming().easing), rate: a.playbackRate };
@@ -150,5 +152,101 @@ for (const design of DESIGNS) {
       await page.waitForTimeout(2500);                        // the previews' loops started and looked at
       await expect(list).toHaveText(OK);
     }
+    await expect(page.locator('[data-studio-words]')).toHaveText(WORDS_OK);
   });
 }
+
+// The player's words (docs/themes.md, The player's words): each state on #pbar, #mini and the mini player windows in
+// lull's own words (data-status-text, and --status-text for anything drawn inside), the hub's reason for a failure among
+// them, so a theme shows the right reason for every song instead of one of its own. A theme that words a reason of its
+// own for such a state is told so, and offered lull's own words.
+const CANNED = `/* the failed song's label, as themes wrote it */
+.pbar[data-status="failed"] .pbar__seek::before { content: "\\26A0  no peer answered"; color: #c0336a; }
+`;
+const STATES = [
+  ['finding', { peersFound: 4 }, /^Finding a source, 4 peers answered/],
+  ['queued', { peer: { name: 'mira' }, queuePos: 3 }, /^Queued at peer mira, position 3/],
+  ['stalled', { peer: { name: 'mira', rank: 1 }, peersFound: 5 }, /^Peer stalled, switching to the next source/],
+  ['choose', {}, /^No copy meets your streaming minimum/],
+  ['failed', { error: 'YouTube couldn’t find this song' }, /^YouTube couldn’t find this song$/],
+  ['jellyfin-error', { error: 'the file is missing' }, /^Library item unavailable: the file is missing$/],
+  ['streaming', { peer: { name: 'YouTube' } }, /^Streaming from YouTube$/],
+  ['ended', {}, /^End of queue$/],
+];
+// the player put in `status` with `fields`, and what #pbar and #mini then carry
+const inState = (page, status, fields) => page.evaluate(([status, fields]) => {
+  Object.assign(App.player.state, { seekWait: null, crossfade: null }, fields, { status });
+  App.emit('player', 'status');
+  const bar = document.querySelector('#pbar'), mini = document.querySelector('#mini');
+  return { status: bar.dataset.status, text: bar.dataset.statusText, mini: mini.dataset.statusText,
+    prop: getComputedStyle(bar).getPropertyValue('--status-text').trim(), inside: getComputedStyle(bar.querySelector('.pbar__seek')).getPropertyValue('--status-text').trim() };
+}, [status, fields]);
+
+test('the player says each state in its own words, for a theme to show', async ({ page }) => {
+  await openScreen(page, `/album/${ids.album}`, { clock: false });
+  await page.evaluate(() => App.player.playList([...document.querySelectorAll('#view .trow[data-track-id]')].map((r) => r.getAttribute('data-track-id')), 0));
+  await page.waitForFunction(() => App.player.current());
+  await page.evaluate(() => App.player.pause());
+  for (const [status, fields, words] of STATES) {
+    const got = await inState(page, status, fields);
+    expect(got.status, status).toBe(status);
+    expect(got.text, status).toMatch(words);
+    expect(got.mini, `${status}: the mini player`).toBe(got.text);
+    expect(got.prop, `${status}: --status-text`).toBe(JSON.stringify(got.text));
+    expect(got.inside, `${status}: inherited inside the bar`).toBe(got.prop);
+  }
+  // a theme's rule shows them, its own sign kept: right for this failure, and for the next one's different reason
+  await page.addStyleTag({ content: '.pbar[data-status="failed"] .pbar__seek::before { content: "\\26A0  " var(--status-text) !important; }' });
+  const shown = () => page.evaluate(() => getComputedStyle(document.querySelector('.pbar__seek'), '::before').content);
+  await inState(page, 'failed', { error: 'YouTube couldn’t find this song' });
+  expect(await shown()).toBe('"⚠ YouTube couldn’t find this song"');
+  await inState(page, 'failed', { error: 'No peer delivered this song.' });
+  expect(await shown()).toBe('"⚠ No peer delivered this song."');
+});
+
+test('a song that fails for real carries the hub\'s reason in the player\'s words', async ({ page }) => {
+  await openScreen(page, `/album/${failingAlbum}`, { clock: false });
+  await page.evaluate(() => App.player.playList([...document.querySelectorAll('#view .trow[data-track-id]')].map((r) => r.getAttribute('data-track-id')), 0));
+  await page.waitForFunction(() => document.querySelector('#pbar').dataset.status === 'failed', null, { timeout: 15_000 });
+  const got = await page.evaluate(() => ({ text: document.querySelector('#pbar').dataset.statusText, tab: document.querySelector('#pbar-state').textContent }));
+  expect(got.text).toBeTruthy();
+  expect(got.tab).toContain(got.text);
+});
+
+test('Theme Studio names a reason a theme words for itself, and puts lull\'s own words in its place', async ({ page }, info) => {
+  await openScreen(page, '/settings/appearance', { clock: false });
+  await page.getByRole('button', { name: 'Open Theme Studio' }).click();
+  const words = page.locator('[data-studio-words]');
+  await expect(words).toHaveText(WORDS_OK);
+  await page.locator('[data-studio-tab="css"]').click();
+  await page.locator('[data-studio="css"]').fill(CANNED);
+  await expect(words.locator('h4')).toHaveText(['Its own reasons']);
+  await expect(words).toContainText('“⚠ no peer answered” on .pbar[data-status="failed"] .pbar__seek::before, line 2, for the failed state.');
+  await expect(words).toContainText('a song can fail because no peer answered, because YouTube couldn’t find it');
+  await words.locator('xpath=..').screenshot({ path: info.outputPath('studio-words.png') });
+  await page.getByRole('button', { name: 'Use lull’s own words on .pbar[data-status="failed"] .pbar__seek::before' }).click();
+  await expect(page.locator('[data-studio="css"]')).toHaveValue(CANNED.replace('"\\26A0  no peer answered"', '"\\26A0  " var(--status-text)'));
+  await expect(words).toHaveText(WORDS_OK);
+  // the preview's bar, its song failing for a reason that has nothing to do with peers, says that reason
+  const frame = page.frames().find((f) => /index\.html#\/home\?.*theme=day/.test(f.url()));
+  await expect.poll(() => frame.evaluate(() => !!(window.App && App.player && document.querySelector('#studio-draft')?.textContent.includes('var(--status-text)')))).toBe(true);
+  await frame.evaluate((album) => { location.hash = '#/album/' + album; }, ids.album);
+  await frame.waitForSelector('#view .trow[data-track-id]');
+  await frame.evaluate(() => App.player.playList([...document.querySelectorAll('#view .trow[data-track-id]')].map((r) => r.getAttribute('data-track-id')), 0));
+  await frame.waitForFunction(() => App.player.current(), null, { timeout: 10_000 });
+  await frame.evaluate(() => { App.player.pause(); Object.assign(App.player.state, { status: 'failed', error: 'YouTube couldn’t find this song' }); App.emit('player', 'status'); });
+  expect(await frame.evaluate(() => getComputedStyle(document.querySelector('.pbar__seek'), '::before').content)).toBe('"⚠ YouTube couldn’t find this song"');
+  await frame.locator('#pbar').screenshot({ path: info.outputPath('studio-words-preview.png') });
+});
+
+test('an imported theme that words a reason for itself is offered lull\'s own words', async ({ page }, info) => {
+  const stored = await importing(page, 'canned', 'Canned', CANNED);
+  await page.locator('[data-theme-file]').setInputFiles(drop('canned'));
+  const dialog = page.getByRole('dialog', { name: 'Canned gives reasons of its own' });
+  await expect(dialog).toContainText('Canned works as it is; changing it makes it right for every song.');
+  await expect(dialog).toContainText('“⚠ no peer answered” on .pbar[data-status="failed"] .pbar__seek::before, for the failed state.');
+  await dialog.screenshot({ path: info.outputPath('import-words.png') });
+  await dialog.getByRole('button', { name: 'Use lull’s own words' }).click();
+  await expect(page.locator('.toast').filter({ hasText: 'Canned shows lull’s own words now' })).toBeVisible();
+  expect(stored.css).toBe(CANNED.replace('"\\26A0  no peer answered"', '"\\26A0  " var(--status-text)'));
+});

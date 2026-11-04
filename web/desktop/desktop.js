@@ -403,7 +403,7 @@
         as the 'player' event; the buttons go back to it as 'mini' events and it runs them as its own actions.
      ===================================================================== */
   var S = { track: null, art: null, playing: false, liked: false, pos: 0, duration: 0, durationKnown: true,
-    buffered: [], received: 1, shuffle: false, repeat: 'off', volume: 1 };
+    buffered: [], received: 1, shuffle: false, repeat: 'off', volume: 1, status: 'idle', statusText: '' };
   var FALLBACK_ART = '../assets/fallback-art-256.png';
   var BARS = 40;
   function barHeight(i) { return (0.32 + 0.6 * Math.abs(Math.sin(i * 1.7) * Math.cos(i * .43))).toFixed(2); }
@@ -491,6 +491,13 @@
   function paintPlayer(scope) {
     var f = frac();
     $$('[data-dk-player]', scope).forEach(function (el) {
+      /* the player's state and its words, as the web UI's bar has them (docs/themes.md: data-status-text, --status-text) */
+      var status = S.status || 'idle', words = S.statusText || '';
+      if (el.getAttribute('data-status') !== status) el.setAttribute('data-status', status);
+      if (el.getAttribute('data-status-text') !== words) {
+        el.setAttribute('data-status-text', words);
+        el.style.setProperty('--status-text', '"' + words.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\A ') + '"');
+      }
       $$('.wave', el).forEach(function (w) {
         w.style.setProperty('--pos', f.toFixed(4));
         w.classList.toggle('is-playing', S.playing);
@@ -804,7 +811,8 @@
         playing: !!ps.playing, liked: !!(id && App.isLiked(id)),
         pos: Math.floor(ps.pos || 0), duration: P.duration() || 0, durationKnown: ps.durationKnown !== false,
         buffered: ps.buffered || [], received: ps.received == null ? 1 : Math.floor(ps.received * 100) / 100,
-        shuffle: !!ps.shuffle, repeat: ps.repeat || 'off', volume: ps.muted ? 0 : ps.volume };
+        shuffle: !!ps.shuffle, repeat: ps.repeat || 'off', volume: ps.muted ? 0 : ps.volume,
+        status: t ? ps.status || 'idle' : 'idle', statusText: t && ps.status !== 'idle' ? P.stateWords() : '' };
     };
     /* the cover goes on its own, once per song: inside the snapshot, a 100 KB data URL crossed to the mini player with
        every position update (four a second), and the page's memory grew by tens of MB a minute */

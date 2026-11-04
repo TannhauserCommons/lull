@@ -261,6 +261,52 @@
     });
   }
 
+  /* ---------- a state's words ----------
+     states whose reason changes: a failure (no peer answered, YouTube couldn't find the song, the library's file is gone,
+     what the hub said), and finding, queueing, buffering and streaming a song (from a peer, YouTube, the library). A theme that
+     writes a reason of its own for one is right for some songs and wrong for the rest. lull puts its own words for the
+     state on the player bar, the mini player and the mini player windows: data-status-text, and --status-text, which
+     every element inside them inherits. Words that name no cause ("stopped", "couldn't play this song") are the theme's */
+  var VARIES = /\[\s*data-status\s*([~|^$*]?=)\s*(['"]?)(failed|jellyfin-error|stalled|choose|finding|queued|buffering|streaming)\2\s*(i\s*)?\]/i;
+  var CAUSE = /\b(peers?|soulseek|slsk|youtube|jellyfin|library|network|internet|offline|time[ds]? ?out|not found|unavailable|blocked|rate.?limit|connection|disconnected|server|upstream|no (?:copy|copies|match(?:es)?|results?|answer))\b/i;
+  var PLAYER = /pbar|#mini\b|\.mini\b|data-dk-player/;
+  var STRING = /(["'])((?:\\[\s\S]|(?!\1)[^\\\n])*)\1/g;
+  function unescape(text) {
+    return text.replace(/\\([0-9a-fA-F]{1,6})[ \t]?|\\([\s\S])/g, function (m, hex, ch) { return hex ? String.fromCodePoint(parseInt(hex, 16) || 0xfffd) : ch; });
+  }
+  /* the hint for a rule that words a reason of its own for a state that varies, or null; with the edit to lull's own
+     words where the rule draws inside the player (its state on the player itself, not in a :has(), and nothing but
+     one string to replace), else the advice where to show them */
+  function statusWords(rule, css) {
+    var content = rule.decls.filter(function (d) { return d.name === 'content'; }).pop();
+    if (!content) return null;
+    var sels = commas(rule.selector), varying = sels.map(function (sel) { return VARIES.exec(sel); });
+    if (!varying.some(Boolean)) return null;
+    var value = important(content.value), text = '', strings = [], m;
+    STRING.lastIndex = 0;
+    while ((m = STRING.exec(value))) { strings.push(m); text += unescape(m[2]); }
+    if (!/[A-Za-z]/.test(text) || !CAUSE.test(text)) return null;
+    var state = varying.filter(Boolean)[0][3].toLowerCase();
+    var hint = { kind: 'status-words', selector: rule.selector.replace(/\s+/g, ' '), words: text.replace(/\s+/g, ' ').trim(), state: state,
+      line: css.slice(0, content.from).split('\n').length };
+    var simple = strings.length === 1 && value.replace(STRING, '').trim() === '' && sels.every(function (sel, i) {
+      var v = varying[i]; if (!v) return false;
+      var depth = 0; for (var k = 0; k < v.index; k++) { if (sel[k] === '(') depth++; else if (sel[k] === ')') depth--; }
+      if (depth) return false;                                   // the state in a :has() or :is(): drawn elsewhere
+      var start = sel.lastIndexOf(' ', v.index) + 1, rest = sel.slice(v.index);
+      var end = v.index + (/[\s>+~]/.exec(rest) || { index: rest.length }).index;
+      return PLAYER.test(sel.slice(start, end)) && !/[+~]/.test(sel.slice(end).replace(/\([^)]*\)|\[[^\]]*\]/g, ''));
+    });
+    if (simple) {
+      var at = content.from + css.slice(content.from).indexOf(':') + 1;
+      while (/\s/.test(css[at])) at++;
+      var raw = strings[0], lead = /^(?:\\[0-9a-fA-F]{1,6}[ \t]?|\\[^0-9a-fA-F\n]|[^A-Za-z\\])*/.exec(raw[2])[0];
+      hint.at = at; hint.to = at + value.length;
+      hint.insert = (lead ? raw[1] + lead + raw[1] + ' ' : '') + 'var(--status-text)';
+    }
+    return hint;
+  }
+
   function find(css, opts) {
     opts = opts || {};
     var own = parse(css || ''), others = (opts.also || []).map(parse);
@@ -278,6 +324,7 @@
     addGlass(own.rules);
     var hints = [], maybe = [];
     own.rules.forEach(function (rule) {
+      var said = statusWords(rule, css); if (said) hints.push(said);
       var loop = loopIn(rule); if (!loop || fallback(rule, own.rules)) return;
       var d = loop.decl, where = { selector: rule.selector.replace(/\s+/g, ' '), animation: loop.name, line: css.slice(0, d.from).split('\n').length };
       var hint = function (kind, more) { hints.push(Object.assign({ kind: kind }, where, more)); };
@@ -300,10 +347,10 @@
     if (maybe.length) hints.push({ kind: 'glass-maybe', loops: maybe, glass: Object.keys(glass).map(function (k) { return glass[k]; }) });
     return hints;
   }
-  /* the edits the hints carry (rates), each where its loop is written */
+  /* the edits the hints carry (a rate added, lull's own words in place of a theme's), each where it is written */
   function apply(css, hints) {
     return hints.filter(function (h) { return h.insert; }).sort(function (a, b) { return b.at - a.at; })
-      .reduce(function (out, h) { return out.slice(0, h.at) + h.insert + out.slice(h.at); }, css);
+      .reduce(function (out, h) { return out.slice(0, h.at) + h.insert + out.slice(h.to != null ? h.to : h.at); }, css);
   }
 
   /* the box a loop draws in, now: an element's own; a pseudo-element's from its styles where they pin it down (fixed, or
@@ -377,6 +424,11 @@
   function say(kind, n) {
     var one = n === 1;
     if (kind === 'rate') return { title: 'No rate', lead: cost(n) };
+    if (kind === 'status-words') {
+      return { title: 'Its own reasons', lead: (one ? 'It writes a reason of its own' : 'They write reasons of their own') + ' for what the player is doing, but the reason changes from song to song: ' +
+        'a song can fail because no peer answered, because YouTube couldn\u2019t find it, or because your library\u2019s file is gone, so fixed words are wrong some of the time. ' +
+        'lull puts its own words for the state on the player bar, the mini player and the mini player windows, right for every reason: content: var(--status-text) shows them.' };
+    }
     if (kind === 'repaint') {
       return { title: 'Redrawn at every step', lead: (one ? 'It changes something' : 'They change something') + ' lull has to draw again at every step of the loop, on the thread that runs the app. ' +
         'Moving and fading (transform and opacity) cost almost nothing: the screen does those by itself. lull can’t rewrite ' +

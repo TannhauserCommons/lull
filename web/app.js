@@ -3113,6 +3113,15 @@
     }
   };
 
+  /* the state in words, whatever the state, for a theme to show (docs/themes.md: data-status-text, --status-text): the
+     state tab's line where there is one, the hub's reason for a failure among them; else what plays from where */
+  P.stateWords = function () {
+    var line = P.statusText(); if (line) return line;
+    if (ps.status === 'streaming') return 'Streaming from ' + (ps.peer && ps.peer.name ? ps.peer.name : 'a peer');
+    if (ps.status === 'library') return cur && cur.local ? 'Playing from this device' : 'Playing from your library';
+    return '';
+  };
+
   /* =====================================================================
      9. Live bindings: seek bars, waveforms, data-bind text, rows (playing / liked / saved)
      ===================================================================== */
@@ -3128,6 +3137,8 @@
   }
   function setAttr(el, name, v) { v = String(v); if (el.getAttribute(name) !== v) el.setAttribute(name, v); }
   function setVar(el, name, v) { v = String(v); if (el.style.getPropertyValue(name) !== v) el.style.setProperty(name, v); }
+  /* text as a CSS string, for content: (a custom property holding words) */
+  App.cssString = function (text) { return '"' + String(text).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\A ') + '"'; };
   function updateSeeks() {
     var dur = P.duration() || 1, f = clamp(ps.pos / dur, 0, 1), bk = bufKey(ps.buffered);
     var bufTo = ps.buffered.length ? ps.buffered[ps.buffered.length - 1][1] * dur : 0;
@@ -3614,6 +3625,11 @@
     var st = ps.status, idle = !t || st === 'idle';
     bar.setAttribute('data-status', idle ? 'idle' : st);
     mini.setAttribute('data-status', idle ? 'idle' : st);
+    /* the state's own words, for a theme to show (docs/themes.md: data-status-text, and --status-text, which every
+       element inside inherits): what the state tab says, the hub's reason for a failure among them, so a theme never
+       has to word a reason of its own and get it wrong for the others */
+    var words = idle ? '' : P.stateWords();
+    [bar, mini].forEach(function (el) { setAttr(el, 'data-status-text', words); setVar(el, '--status-text', App.cssString(words)); });
     var now = $('#pbar-now');
     /* private listening shows with the track, wherever the design puts it: the bar's tools are laid out per design */
     var priv = state.privateListening ? html`<a class="pbar__private" href="#/settings/privacy" aria-label="Private listening is on. Open its setting" data-tip="Private listening: nothing you play here is recorded or scrobbled" data-fit="4">${icon('eye-off')}<span class="pbar__private-label">Private</span></a>` : '';

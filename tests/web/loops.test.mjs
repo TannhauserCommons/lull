@@ -165,3 +165,49 @@ test('a loop kept as the fallback that @supports turns off is left alone', () =>
   assert.equal(L.find(pulse + '@supports (anchor-name: --a) { .tray .other { animation: none; } }').length, 1, 'another element');
   assert.equal(L.find(pulse + '.tray .led.on { animation: none; }').length, 1, 'not a fallback: switched off everywhere it matches');
 });
+
+// A reason a theme words for itself on a state whose reason changes from song to song (the failed song's "no peer
+// answered", wrong whenever YouTube or the library was the trouble): named, and replaced by lull's own words
+// (--status-text) where the rule draws inside the player.
+const CANNED = '.pbar[data-status="failed"] .pbar__seek::before { content: "\\26A0  no peer answered"; color: var(--heart); }\n';
+
+test('a reason a theme words for itself on a state whose reason varies is named, and lull\'s own words offered', () => {
+  const [h] = L.find(CANNED);
+  assert.equal(h.kind, 'status-words');
+  assert.equal(h.words, '⚠ no peer answered');
+  assert.equal(h.state, 'failed');
+  assert.equal(h.line, 1);
+  const fixed = L.apply(CANNED, [h]);
+  assert.equal(fixed, '.pbar[data-status="failed"] .pbar__seek::before { content: "\\26A0  " var(--status-text); color: var(--heart); }\n', 'its own sign kept');
+  assert.deepEqual(L.find(fixed), []);
+  assert.match(L.say('status-words', 1).lead, /var\(--status-text\)/);
+
+  const words = (css) => L.find(css).filter((x) => x.kind === 'status-words').map((x) => `${x.state}: ${x.words}${x.insert ? ' -> ' + x.insert : ' (no fix)'}`);
+  assert.deepEqual(words([
+    "#mini[data-status='jellyfin-error'] .mini__chip::before { content: 'library offline' !important }",
+    '.pbar:is([data-status="stalled"], [data-status="finding"]) .pbar__seek::before { content: "waiting on a peer"; }',
+    '[data-dk-player][data-status="buffering"]::after { content: "buffering from Soulseek" }',
+    '.app:has(> .pbar[data-status="failed"]) .now-dev__page::after { content: "YouTube said no"; }',
+    '.pbar[data-status="queued"] + .x::before { content: "queued at a peer"; }',
+    '.pbar[data-status="failed"] .pbar__seek::before { content: "no copy " attr(data-x); }',
+    '.pbar[data-status="streaming"] .pbar__seek::before { content: "streaming from a peer"; }',
+  ].join('\n')), [
+    "jellyfin-error: library offline -> var(--status-text)",
+    'stalled: waiting on a peer (no fix)',                          // in an :is(): lull can't tell where it draws
+    'buffering: buffering from Soulseek -> var(--status-text)',
+    'failed: YouTube said no (no fix)',                              // drawn on Now Playing, outside the player
+    'queued: queued at a peer (no fix)',                             // on a sibling of the bar
+    'failed: no copy (no fix)',                                      // more than one string to replace
+    'streaming: streaming from a peer -> var(--status-text)',       // YouTube streams too
+  ]);
+});
+
+test('words that name no cause, and states whose words don\'t vary, are the theme\'s', () => {
+  assert.deepEqual(L.find([
+    '.pbar[data-status="failed"] .pbar__seek::before { content: "\\26A0  couldn\'t play this song"; }',
+    '.pbar:is([data-status="failed"], [data-status="choose"]) .pbar__seek::before { content: "\\25cb  stopped"; }',
+    '.app:has(> .pbar[data-status="failed"]) .now-dev__page::after { content: "all sources failed"; }',
+    '.pbar[data-status="library"] .pbar__seek::before { content: "\\25cf  library"; }',
+    '.pbar[data-status="failed"] .pbar__seek::before { content: "\\26A0  " var(--status-text); }',
+  ].join('\n')), []);
+});

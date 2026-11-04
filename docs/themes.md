@@ -106,7 +106,8 @@ Go beyond tokens with any selector. These hooks are the theme API: they stay put
 | `.app[data-screen]` | `home`, `search`, `now`, `library`, `liked`, `history`, `following`, `album`, `artist`, `tag`, `playlists`, `playlist`, `stats`, `settings`, `classic`... |
 | `.app[data-route]`, `.app[data-view]`, `.app[data-ctx]` | nav key; `page` or `now`; `docked`, `open`, `closed` |
 | `[data-act]`, `[data-nav]` | every control's action (`play`, `next`, `like`, `shuffle`...) and nav target (`home`, `library`...) |
-| `#pbar` / `#mini` `[data-status]`, `[data-playing]` | player state (`idle`, `streaming`, `buffering`, `failed`...) |
+| `#pbar` / `#mini` `[data-status]`, `[data-playing]` | player state (`idle`, `finding`, `queued`, `buffering`, `stalled`, `choose`, `streaming`, `library`, `failed`, `jellyfin-error`, `ended`); the desktop app's mini player windows have it too, on `[data-dk-player]` |
+| `#pbar` / `#mini` / `[data-dk-player]` `[data-status-text]`, `--status-text` | the state's own words: what the state tab says, the hub's reason for a failure among them ("YouTube couldn't find this song"); while a song simply plays, where from ("Streaming from YouTube", "Playing from your library"). `content: var(--status-text)` shows them on anything inside (the property is a CSS string every element inside inherits); `attr(data-status-text)` only on the element itself. See **The player's words** below |
 | `.mini__chip` | an empty part beside the mini player's song line, hidden unless your theme shows it and words it (`::before { content: ... }`, from `#mini[data-status]`); it gives way when the line needs the room, so never place it over the buttons |
 | Classes | the BEM blocks: `.card` (`.card-head`, `.card-head__title`), `.btn` (`--primary`, `--quiet`, `--sm`), `.btn-icon`, `.btn-gloss`, `.cover` (`.c1`-`.c8` recipes, `.has-art`; `.cover--artist` with `.cover__mono`, the artist's initial shown while it has no photo, in the design's display face), `.trow`, `.tile`, `.chip`, `.pill-filter`, `.seg`, `.input`, `.seek`, `.wave`, `.device`, `.empty`, `.sheet`, `.dialog`, `.toast`, `.banner`, `.nav-item`, `.nav-pill`, `.tab`, `.region-title` (hidden window titles you can show). Every other class and attribute, stable or internal, is in section 11 |
 
@@ -158,6 +159,11 @@ Prefer `@container main` to `@media`: it follows the main area, so it stays righ
 **Parts with states of their own.** These hold rules a theme must keep, so style them, don't rebuild them:
 
 - **The song row's number cell** (`.trow__num`) shows one thing at a time: the number (`.trow__n`), Play (`.trow__play`) under the pointer or keyboard focus, or the playing bars (`.eq`, drawn in `.trow.is-playing` only). Under 520 px the cell is gone and the cover is the playing marker (`.trow.is-playing .trow__art::after`).
+- **The player's words.** A state's reason changes from song to song: a song fails because no peer answered, because YouTube couldn't find it, or because the library's file is gone, and it streams or buffers from a peer, YouTube or the library. So don't write a reason of your own for a state (`"no peer answered"` is wrong for every other failure): show lull's, `--status-text`, or words that name no cause ("stopped", "couldn't play this song"). For the failed state, keeping your own warning sign:
+  ```css
+  .pbar[data-status="failed"] .pbar__seek::before { content: "\26A0  " var(--status-text); }
+  ```
+  `--status-text` is set on `#pbar`, `#mini` and the mini player windows' `[data-dk-player]`, so it reaches what is drawn inside them; outside them (Now Playing's own parts), say what happened without a reason. Theme Studio and importing a theme name a rule that gives a cause of its own for such a state (failed, jellyfin-error, stalled, choose, finding, queued, buffering, streaming), and where it draws inside the player, **Use lull's own words** puts `var(--status-text)` in its place. It's a hint: the theme works either way.
 - **The playing bars** (`.eq`, three `<i>`) move only inside `.is-playing-now` (sound is coming out), and stand still while paused. Animate them with `transform` only.
 - **The place playing** (a tile, a rail playlist, a search result, a menu item: `[data-place].is-playing-place`) gets `.place-mark` (the bars, plus a hidden "(playing)") before its title. "Playing from" is `.from` (icon, `.from__label`, the place's name in `b`): `.pbar__from` in the player bar, `.mini__from` in the phone mini player, `.now-head__from` on Now Playing. Clicking it opens the place, where the playing row is lit for 1.8 s with `.is-revealed`.
 - **Covers.** `.cover` holds a recipe (`.c1`-`.c8`, drawn on `::before`/`::after`) until its picture loads; then `.has-art` hides the recipe. A cover still waiting for the hub keeps its recipe, so a recipe must look finished on its own. `.mosaic` is a playlist's 2×2 of covers, and `.mosaic--one` holds one picture: the playlist's own, or the one album its songs share.
@@ -404,7 +410,7 @@ Every class lull's CSS styles and every `data-*` attribute lull's markup sets, e
   - `.is-liked`, `.is-selected`, `.is-on`, `.is-open`, `.is-wide` (the player bar's view tools: Lyrics, Classic, Device view), `.is-dragging`, `.is-drop-target`;
   - `.is-applied`, `.is-bad` (Classic skins);
   - `.is-out` (Now Playing's slide while the song changes).
-- **Player status:** `data-status` (`#pbar`, `#mini`, an album's save status), `data-playing`, `data-state`.
+- **Player status:** `data-status` (`#pbar`, `#mini`, the mini player windows' `[data-dk-player]`, an album's save status), `data-status-text` (`#pbar`, `#mini`, `[data-dk-player]`, with `--status-text`), `data-playing`, `data-state`.
 
 ### Home and Search
 

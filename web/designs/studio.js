@@ -73,6 +73,7 @@
         </div>
         <section class="studio__check" aria-labelledby="studio-check-h"><h3 class="studio__h" id="studio-check-h">Contrast</h3><ul class="studio__warnings" role="list" data-studio-warnings><li>${'Checking...'}</li></ul></section>
         <section class="studio__check" aria-labelledby="studio-loops-h"><h3 class="studio__h" id="studio-loops-h">Loops</h3><div data-studio-loops aria-live="polite"><ul class="studio__warnings" role="list"><li>${'Checking...'}</li></ul></div></section>
+        <section class="studio__check" aria-labelledby="studio-words-h"><h3 class="studio__h" id="studio-words-h">Player words</h3><div data-studio-words aria-live="polite"><ul class="studio__warnings" role="list"><li>${'Checking...'}</li></ul></div></section>
       </div>
       <div class="studio__stage">
         <div class="studio__bar">
@@ -392,19 +393,30 @@
       showLoops();
     }, 1500);
   }
+  /* the loops, under Loops, and the reasons a theme words for itself, under Player words: each fix lull can make (a
+     rate, its own words) a button, by the hint's place in S.loops.hints */
   function showLoops() {
-    var host = $('[data-studio-loops]', S.el); if (!host || !S.loops) return;
+    var loops = $('[data-studio-loops]', S.el), words = $('[data-studio-words]', S.el); if (!loops || !S.loops) return;
+    var own = S.loops.hints.map(function (h, n) { return Object.assign({ n: n }, h); });
     /* what the previews show adds to what the CSS says: a loop it already places inside glass isn't named twice */
-    var inGlass = S.loops.hints.filter(function (h) { return h.kind === 'glass'; }).map(function (h) { return h.animation; });
-    var hints = S.loops.hints.concat((S.live || []).filter(function (g) { return inGlass.indexOf(g.animation) < 0; }));
-    host.innerHTML = String(hints.length ? App.themeLoopsList(hints, { lines: true, add: function (h, i) {
-      return html`<button type="button" class="btn btn--sm" data-studio-loop="${i}" aria-label="${'Add --loop-fps: ' + h.fps + ' to ' + h.selector}">Add it</button>`;
-    } }) : html`<ul class="studio__warnings" role="list"><li class="studio__ok">${icon('check', null, 'ic-16')}<span>Every loop names its rate, moves by transform and opacity, and stays off glass on this screen.</span></li></ul>`);
+    var inGlass = own.filter(function (h) { return h.kind === 'glass'; }).map(function (h) { return h.animation; });
+    var looping = own.filter(function (h) { return h.kind !== 'status-words'; })
+      .concat((S.live || []).filter(function (g) { return inGlass.indexOf(g.animation) < 0; }));
+    var saying = own.filter(function (h) { return h.kind === 'status-words'; });
+    var add = function (h) {
+      var words = h.kind === 'status-words';
+      return html`<button type="button" class="btn btn--sm" data-studio-loop="${h.n}" aria-label="${words ? 'Use lull’s own words on ' + h.selector : 'Add --loop-fps: ' + h.fps + ' to ' + h.selector}">${words ? 'Use lull’s own words' : 'Add it'}</button>`;
+    };
+    var ok = function (text) { return html`<ul class="studio__warnings" role="list"><li class="studio__ok">${icon('check', null, 'ic-16')}<span>${text}</span></li></ul>`; };
+    loops.innerHTML = String(looping.length ? App.themeLoopsList(looping, { lines: true, add: add })
+      : ok('Every loop names its rate, moves by transform and opacity, and stays off glass on this screen.'));
+    words.innerHTML = String(saying.length ? App.themeLoopsList(saying, { lines: true, add: add })
+      : ok('Every state the player shows is in words that hold for every song.'));
   }
-  function addRate(i) {
-    var h = S.loops && S.loops.css === S.draft.css && S.loops.hints[i]; if (!h) return;
+  function addRate(n) {
+    var h = S.loops && S.loops.css === S.draft.css && S.loops.hints[n]; if (!h) return;
     setCss(LullLoops.apply(S.draft.css, [h]), true);
-    App.announce('Added --loop-fps: ' + h.fps + ' to ' + h.selector);
+    App.announce(h.kind === 'status-words' ? 'Now lull’s own words on ' + h.selector : 'Added --loop-fps: ' + h.fps + ' to ' + h.selector);
   }
 
   /* ---------- save: theme.json, then theme.css (the hub checks the whole package each time) ---------- */

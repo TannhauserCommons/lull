@@ -189,3 +189,21 @@ test('the unreachable page shows how the wrapper reconnects, and keeps no timer 
   expect(await page.evaluate(() => window.__bridge.last.window_action)).toEqual({ request: { action: 'retry' } });
   await expect(label).toHaveText('trying now');
 });
+
+// The player's words reach the mini player windows too (docs/themes.md, The player's words): main's snapshot carries the
+// state and lull's words for it, set on [data-dk-player] as data-status, data-status-text and --status-text.
+test('the mini player windows carry the player\'s state and its words, for a theme to show', async ({ page }) => {
+  await openWrapper(page, 'view=mini&design=lull&theme=day&opaque=1', null);
+  await page.waitForSelector('[data-dk-player]');
+  const snap = (status, statusText) => ({ track: { id: 't', title: 'Song', artist: 'Artist', format: 'FLAC', lossless: true }, playing: false, liked: false,
+    pos: 10, duration: 100, durationKnown: true, buffered: [], received: 1, shuffle: false, repeat: 'off', volume: .5, status, statusText });
+  const read = () => page.evaluate(() => {
+    const el = document.querySelector('[data-dk-player]');
+    return { status: el.dataset.status, text: el.dataset.statusText, prop: getComputedStyle(el).getPropertyValue('--status-text').trim() };
+  });
+  expect(await read()).toEqual({ status: 'idle', text: '', prop: '""' });
+  for (const [status, words] of [['failed', 'YouTube couldn’t find this song'], ['buffering', 'Loading from your library'], ['streaming', 'Streaming from "mira"']]) {
+    await page.evaluate((s) => window.__bridge.fire('player', s), snap(status, words));
+    expect(await read(), status).toEqual({ status, text: words, prop: JSON.stringify(words) });
+  }
+});

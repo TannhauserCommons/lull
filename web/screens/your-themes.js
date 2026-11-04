@@ -58,7 +58,7 @@
     });
   };
   /* opts: { lines: say each loop's line, add(hint, i): an Add it for a rate } */
-  var GROUPS = [['rate'], ['repaint'], ['glass', 'glass-live', 'glass-maybe']];
+  var GROUPS = [['rate'], ['repaint'], ['glass', 'glass-live', 'glass-maybe'], ['status-words']];
   App.themeLoopsList = function (hints, opts) {
     opts = opts || {};
     var where = function (h) { return html`<b>${h.animation || 'A loop'}</b> on <code>${h.selector}</code>${opts.lines && h.line ? ', line ' + h.line : ''}`; };
@@ -67,6 +67,10 @@
       if (h.kind === 'rate') return html`<li class="studio__warn">${ic}<span>${where(h)}. ${LullLoops.advice(h)}</span>${opts.add ? opts.add(h, i) : ''}</li>`;
       if (h.kind === 'repaint') return html`<li class="studio__warn">${ic}<span>${where(h)} changes ${h.props.map(function (p, j) { return html`${j ? ', ' : ''}<code>${p}</code>`; })}. ${h.fix}</span></li>`;
       if (h.kind === 'glass') return html`<li class="studio__warn">${ic}<span>${where(h)}${h.itself ? ' blurs what’s behind it itself.' : html` sits inside <code>${h.glass}</code>.`}</span></li>`;
+      if (h.kind === 'status-words') {
+        return html`<li class="studio__warn">${ic}<span><b>“${h.words}”</b> on <code>${h.selector}</code>${opts.lines && h.line ? ', line ' + h.line : ''}, for the <code>${h.state}</code> state.${h.insert ? ''
+          : ' It is drawn outside the player, where lull’s words aren’t: say what happened without a reason (“stopped”, “couldn’t play this song”), or draw it inside the player bar or the mini player.'}</span>${h.insert && opts.add ? opts.add(h, i) : ''}</li>`;
+      }
       if (h.kind === 'glass-live') return html`<li class="studio__warn">${ic}<span><b>${h.animation}</b> on <code>${h.target}</code> ${h.exact ? 'passes' : 'may pass'} under <code>${h.glass}</code> on ${h.screen}, in the ${h.modes.join(' and ')} preview${h.modes.length > 1 ? 's' : ''}.</span></li>`;
       return html`<li class="studio__warn studio__warn--maybe">${ic}<span>lull can’t tell from the CSS alone whether ${h.loops.map(function (l, j) { return html`${j ? (j === h.loops.length - 1 ? ' or ' : ', ') : ''}<b>${l.animation || 'a loop'}</b>`; })} pass${h.loops.length === 1 ? 'es' : ''} under the glass of ${h.glass.slice(0, 3).map(function (g, j) { return html`${j ? ', ' : ''}<code>${g}</code>`; })}${h.glass.length > 3 ? ' and more' : ''}. Theme Studio checks it on its live preview.</span></li>`;
     };
@@ -85,19 +89,27 @@
       return App.loopCheck(css, item.extends, { unsure: true }).then(function (hints) {
         var sure = hints.filter(function (h) { return h.kind !== 'glass-maybe'; });
         if (!sure.length) return;                                // only a "can't tell": nothing to bother anyone with
-        var loops = {}, rates = hints.filter(function (h) { return h.kind === 'rate'; });
-        sure.forEach(function (h) { loops[h.selector + '|' + h.animation] = true; });
-        var n = Object.keys(loops).length;
-        var d = App.openDialog({ title: (n === 1 ? 'A loop' : n + ' loops') + ' in ' + item.name + ' could draw less',
-          body: html`<p class="prose">${item.name} works as it is; changing ${n === 1 ? 'it' : 'them'} makes it lighter on this device.</p>${App.themeLoopsList(hints)}`,
-          foot: rates.length ? html`<button class="btn" data-close>Not now</button><button class="btn btn--primary" data-add-rates>${rates.length === 1 ? 'Add it' : 'Add them'}</button>`
+        /* loops that could draw less, and words a theme gives as reasons of its own: what it is, what changing it
+           buys, and the fixes lull can make (a rate, its own words) in one go */
+        var loops = {}, words = sure.filter(function (h) { return h.kind === 'status-words'; }), fixes = hints.filter(function (h) { return h.insert; });
+        sure.forEach(function (h) { if (h.kind !== 'status-words') loops[h.selector + '|' + h.animation] = true; });
+        var n = Object.keys(loops).length, both = n && words.length;
+        var title = both ? 'A few things in ' + item.name + ' to look at' : n ? (n === 1 ? 'A loop' : n + ' loops') + ' in ' + item.name + ' could draw less'
+          : item.name + ' gives reasons of its own';
+        var buys = [n ? 'lighter on this device' : '', words.length ? 'right for every song' : ''].filter(Boolean).join(' and ');
+        var rates = fixes.every(function (h) { return h.kind === 'rate'; }), lullWords = fixes.every(function (h) { return h.kind === 'status-words'; });
+        var label = rates ? (fixes.length === 1 ? 'Add it' : 'Add them') : lullWords ? 'Use lull’s own words' : 'Make these changes';
+        var d = App.openDialog({ title: title,
+          body: html`<p class="prose">${item.name} works as it is; changing ${sure.length === 1 ? 'it' : 'them'} makes it ${buys}.</p>${App.themeLoopsList(hints)}`,
+          foot: fixes.length ? html`<button class="btn" data-close>Not now</button><button class="btn btn--primary" data-add-rates>${label}</button>`
             : html`<button class="btn btn--primary" data-close>OK</button>` });
         var add = $('[data-add-rates]', d.el);
         if (add) add.addEventListener('click', function () {
           d.close();
-          M.api(path, { method: 'PUT', body: LullLoops.apply(css, rates) }).then(function () {
-            App.toast((rates.length === 1 ? 'Added its rate to ' : 'Added their rates to ') + item.name, { kind: 'ok', icon: 'check' });
-          }, function (err) { App.toast('Couldn\'t add the rates: ' + err.message, { kind: 'error' }); });
+          M.api(path, { method: 'PUT', body: LullLoops.apply(css, fixes) }).then(function () {
+            App.toast(rates ? (fixes.length === 1 ? 'Added its rate to ' : 'Added their rates to ') + item.name
+              : lullWords ? item.name + ' shows lull’s own words now' : 'Updated ' + item.name, { kind: 'ok', icon: 'check' });
+          }, function (err) { App.toast('Couldn\'t change ' + item.name + ': ' + err.message, { kind: 'error' }); });
         });
       });
     }).catch(function (err) { console.warn('lull: couldn\'t check the loops in ' + item.name, err); });
