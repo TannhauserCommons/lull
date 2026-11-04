@@ -3,8 +3,10 @@
 // song playing, each loop that never ends changes at most 30 times a second, stepped where it is declared, from its
 // first frame, whatever the screen's refresh rate; and while the page asks loops to hold still (:root.is-still,
 // App.still), each decorative one is paused and only those that show progress (lull's spinners, loading sheens and
-// transfer edges) keep going, all moving again after. perf.spec counts the frames themselves (Chromium's trace); this
-// proves the property where no trace can be read. docs/context/quality.md#ui-gates.
+// transfer edges) keep going, all moving again after. A theme's loop declared the older way (--loop-fps, --loop-holds:
+// no) is stepped to its rate and held by lull, so themes written to that contract keep working. perf.spec counts the
+// frames themselves (Chromium's trace); this proves the property where no trace can be read.
+// docs/context/quality.md#ui-gates.
 
 import { expect, test } from '@playwright/test';
 import { designs, ids, loopRate, openScreen, themes } from './lib.mjs';
@@ -24,7 +26,7 @@ const loops = (page) => page.evaluate(([src, progress]) => {
         name: (a.animationName || 'animation') + ' on ' + t.tagName.toLowerCase() + '.' + [...t.classList].slice(0, 2).join('.') + (a.effect.pseudoElement || ''),
         perSecond: rate(a),
         progress: !!t.closest(progress),
-        paused: a.playState === 'paused',
+        paused: a.playState === 'paused' || a.playbackRate === 0,   // held by its CSS, or (a theme's --loop-fps loop) by lull
       };
     });
 }, [loopRate.toString(), PROGRESS]);
@@ -52,3 +54,23 @@ for (const design of designs) {
     });
   }
 }
+
+// a listener's theme that names its loops' rates the older way: stepped to them as they start, held when asked unless
+// they show progress, moving again after
+test('a theme\'s loops that name a rate (--loop-fps) are stepped to it and held when asked', async ({ page }) => {
+  await openScreen(page, '/home', { design: 'petal', theme: 'day' });
+  await page.addStyleTag({ content: `@keyframes gate-bloom { to { transform: rotate(40deg); opacity: .4; } }
+    .gate-bloom { position: fixed; left: 20px; top: 20px; width: 12px; height: 12px; background: pink; animation: gate-bloom 2.5s ease-in-out infinite alternate; --loop-fps: 12; }
+    .gate-bloom--progress { left: 40px; --loop-holds: no; }` });
+  await page.evaluate(() => { for (const c of ['gate-bloom', 'gate-bloom gate-bloom--progress']) { const d = document.createElement('i'); d.className = c; document.body.appendChild(d); } });
+  await page.waitForTimeout(800);
+  const theirs = async () => (await loops(page)).filter((l) => /^gate-bloom/.test(l.name));
+  let now = await theirs();
+  expect(now.map((l) => Math.round(l.perSecond)), 'the theme\'s loops change 12 times a second, as they name').toEqual([12, 12]);
+  await page.evaluate(() => App.still('gate', true));
+  now = await theirs();
+  expect(now.map((l) => l.paused), 'held when asked, but the one that shows progress').toEqual([true, false]);
+  await page.evaluate(() => App.still('gate', false));
+  now = await theirs();
+  expect(now.map((l) => l.paused), 'moving again after').toEqual([false, false]);
+});

@@ -4512,7 +4512,8 @@
      faster alone, not for both. A late or missing event costs a few frames, never an unpaced loop */
   var delays = new WeakMap();
   function stepMs(a) {                             // the time between a stepped loop's changes, 0 if not stepped
-    var e = a.effect, t = e.getTiming(), n = 0;
+    var e = a.effect, t = e.getTiming(), n = 0, own = /^steps\((\d+)/.exec(t.easing || '');
+    if (own) return t.duration / +own[1];            // stepped here, from its --loop-fps
     e.getKeyframes().slice(0, -1).forEach(function (k) {
       var m = /^steps\((\d+)/.exec(k.easing || ''), lin = /^linear\((.*)\)$/.exec(k.easing || '');
       if (m) n += +m[1];
@@ -4521,8 +4522,30 @@
     });
     return n > 0 && n < Infinity ? t.duration / n : 0;
   }
+  /* a theme's loop that names its rate the older way (--loop-fps, docs/themes.md) is stepped to it here, as it starts,
+     and holds still while :root.is-still unless it shows progress (--loop-holds: no): the contract themes were written
+     to. Its CSS can't do this (its timing doesn't know its duration), and a late start event leaves it unpaced until the
+     event arrives, so lull's own loops step in their CSS instead */
+  var rated = new WeakSet();
+  function named(a) {
+    var e = a.effect, cs = getComputedStyle(e.target, e.pseudoElement), fps = parseFloat(cs.getPropertyValue('--loop-fps'));
+    if (!(fps > 0)) {                                 // no rate (any more: an edit took it away): it runs as written
+      if (rated.has(a)) {
+        rated.delete(a); e.updateTiming({ easing: 'linear' }); if (a.playbackRate === 0) a.playbackRate = 1;
+        if (delays.has(a)) { e.updateTiming({ delay: delays.get(a) }); delays.delete(a); }
+      }
+      return false;
+    }
+    rated.add(a);
+    if (root.classList.contains('is-still') && cs.getPropertyValue('--loop-holds').trim() !== 'no') { a.playbackRate = 0; return true; }
+    if (a.playbackRate === 0) a.playbackRate = 1;
+    var dur = e.getTiming().duration;
+    e.updateTiming({ easing: 'steps(' + Math.max(1, Math.round(dur * fps / 1000)) + ')' });
+    return true;
+  }
   function align(a) {
     if (!(a instanceof window.CSSAnimation) || a.effect.getTiming().iterations !== Infinity) return;
+    if (named(a) && a.playbackRate === 0) return;
     var step = stepMs(a); if (!step) return;
     if (!delays.has(a)) delays.set(a, a.effect.getTiming().delay);
     a.ready.then(function () {
@@ -4537,6 +4560,14 @@
   });
   App.on('ready', alignAll);                       // loops already running before this page's script
   document.addEventListener('visibilitychange', function () { if (!document.hidden) alignAll(); });   // resumed: realign
+  /* a stylesheet changed (a theme edited on the hub and reloaded, Theme Studio's draft): a loop already running keeps
+     its animation, so a rate it names now (or no longer) takes hold when the sheet is in: at once for a sheet's text,
+     on load for what it imports. Styles live in <head>, so only it is watched: nothing else on the page pays */
+  function sheet(n) { return n && (n.nodeName === 'STYLE' || n.nodeName === 'LINK'); }
+  function sheets(r) { return sheet(r.target) || sheet(r.target.parentNode) || [].some.call(r.addedNodes, sheet) || [].some.call(r.removedNodes, sheet); }
+  if (window.MutationObserver && document.head) new MutationObserver(function (records) { if (records.some(sheets)) alignAll(); })
+    .observe(document.head, { childList: true, subtree: true, characterData: true });
+  document.addEventListener('load', function (e) { if (sheet(e.target)) alignAll(); }, true);
 
   /* decorative loops hold still (:root.is-still) while any reason asks: App.still(reason, on), each reason named by
      what asks (the listener's "pause when lull isn't the active window" below; a design or a later setting adds its own).
@@ -4548,7 +4579,7 @@
     if (on) stillFor[reason] = true; else delete stillFor[reason];
     var was = root.classList.contains('is-still');
     root.classList.toggle('is-still', Object.keys(stillFor).length > 0);
-    if (was && !root.classList.contains('is-still')) alignAll();   // resumed: realign
+    if (was !== root.classList.contains('is-still')) alignAll();   // themes' named loops hold or go; resumed ones realign
   };
   /* "Pause animations when lull isn't the active window" (Settings › Appearance, this device, off by default): the
      window losing focus, to another app or another window, in the desktop app and in a browser. Not on Android, where

@@ -461,7 +461,10 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
     scripts/loop-easings.mjs prints and checks them), so it changes as often as its motion needs from its first frame,
     whatever the engine or the screen's refresh rate, with no script watching the page. `App.still(reason, on)` sets
     `:root.is-still` while any reason holds, and that sets `--loop-play: paused`, which each decorative loop takes as
-    its `animation-play-state`; progress loops leave it out. The one reason so far is the device pref `pauseInactive`
+    its `animation-play-state`; progress loops leave it out. A theme's loop that names `--loop-fps` (the contract themes
+    were written to) is stepped to it by app.js as it starts and held at playback rate 0 while still, unless it sets
+    `--loop-holds: no`; as each loop starts, app.js also moves its delay by under a step so loops change on one beat.
+    The one reason so far is the device pref `pauseInactive`
     ("Pause animations when lull isn't the active window", off by default): the window has no focus (`blur`, `focus`,
     `document.hasFocus()`), in the desktop app and a browser, never on Android. `.sky-specks` is absolute, not fixed,
     so it isn't a window-sized compositor layer forcing the app over it onto another.

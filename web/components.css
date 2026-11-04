@@ -1438,6 +1438,9 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
    transfer) leaves it out and keeps going
    ===================================================================== */
 @property --loop-play { syntax: "running | paused"; inherits: true; initial-value: running; }
+/* the older way a theme names a loop's rate and that it shows progress (docs/themes.md): app.js steps and holds those */
+@property --loop-fps { syntax: "<number>"; inherits: false; initial-value: 0; }
+@property --loop-holds { syntax: "yes | no"; inherits: false; initial-value: yes; }
 :root.is-still { --loop-play: paused; }
 :root {
   --loop-ease-in-out-27: linear(0 0%, 0 3.704%, 0.0028 3.704%, 0.0028 7.407%, 0.0116 7.407%, 0.0116 11.111%, 0.0264 11.111%, 0.0264 14.815%, 0.0476 14.815%, 0.0476 18.519%, 0.0753 18.519%, 0.0753 22.222%, 0.1096 22.222%, 0.1096 25.926%, 0.1503 25.926%, 0.1503 29.63%, 0.1973 29.63%, 0.1973 33.333%, 0.2499 33.333%, 0.2499 37.037%, 0.3076 37.037%, 0.3076 40.741%, 0.3693 40.741%, 0.3693 44.444%, 0.4339 44.444%, 0.4339 48.148%, 0.5 48.148%, 0.5 51.852%, 0.5661 51.852%, 0.5661 55.556%, 0.6307 55.556%, 0.6307 59.259%, 0.6924 59.259%, 0.6924 62.963%, 0.7501 62.963%, 0.7501 66.667%, 0.8027 66.667%, 0.8027 70.37%, 0.8497 70.37%, 0.8497 74.074%, 0.8904 74.074%, 0.8904 77.778%, 0.9247 77.778%, 0.9247 81.481%, 0.9524 81.481%, 0.9524 85.185%, 0.9736 85.185%, 0.9736 88.889%, 0.9884 88.889%, 0.9884 92.593%, 0.9972 92.593%, 0.9972 96.296%, 1 96.296%, 1 100%);
