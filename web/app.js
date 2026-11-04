@@ -4383,21 +4383,24 @@
       e.updateTiming({ delay: d - off });
     }, function () { /* cancelled before it started: nothing to set */ });
   }
-  /* when a loop starts. Not from animationstart alone: in WebKitGTK's CI runs loops started by a change went unpaced,
-     so every change to the page is also followed by a look for loops not seen yet, once the frame it made is drawn
-     (styles are resolved then, so reading the page's animations forces no style or layout work; a new loop draws one
-     frame at most unpaced). animationstart covers what starts with no change to the page (a media query). A browser
-     without these (an old Safari) runs loops as they are */
-  var seen = new WeakSet(), looking = false;
+  /* when a loop starts: on animationstart, and, since WebKitGTK's CI runs left loops started by a change unpaced, after
+     every change to the page too. That look waits for the page to go quiet (QUIET ms with no change: a drag, typing or a
+     list filling in never pays for it as it goes, nor asks for a frame), when its styles are long resolved: reading the
+     page's animations then costs no style or layout work. A browser without these (an old Safari) runs loops as they are */
+  var seen = new WeakSet(), QUIET = 200, quiet = 0;
   function paceNew() {
-    looking = false;
     if (!window.CSSAnimation || !document.getAnimations) return;
     document.getAnimations().forEach(function (a) { if (!seen.has(a)) { seen.add(a); pace(a); } });
   }
-  function lookSoon() { if (!looking) { looking = true; requestAnimationFrame(function () { setTimeout(paceNew, 0); }); } }
+  function lookSoon() {
+    clearTimeout(quiet);
+    quiet = setTimeout(paceNew, QUIET);
+  }
   function paceAll() { if (window.CSSAnimation && document.getAnimations) document.getAnimations().forEach(pace); }
   if (window.MutationObserver) new MutationObserver(lookSoon).observe(document.documentElement, { subtree: true, childList: true, attributes: true });
-  document.addEventListener('animationstart', lookSoon);
+  document.addEventListener('animationstart', function (ev) {
+    if (window.CSSAnimation && ev.target.getAnimations) ev.target.getAnimations({ subtree: true }).forEach(function (a) { if (a.effect && a.effect.target === ev.target) { seen.add(a); pace(a); } });
+  });
   App.on('ready', paceAll);   // loops already running before this page's script
 
   /* decorative loops hold still (:root.is-still) while any reason asks: App.still(reason, on), each reason named by
