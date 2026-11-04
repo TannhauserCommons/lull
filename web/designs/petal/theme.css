@@ -506,7 +506,7 @@
   border-width: 1.5px; border-color: var(--pt-frame); border-radius: 5px 5px 0 0;
 }
 /* failed: the bar says so too (label and a hatched seek track in --down) */
-:root[data-design="petal"] .pbar[data-status="failed"] .pbar__text::before { content: "\26A0\FE0E  no peer answered"; color: var(--down); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:root[data-design="petal"] .pbar[data-status="failed"] .pbar__text::before { content: "\26A0\FE0E  couldn't play this song"; color: var(--down); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 :root[data-design="petal"] .pbar[data-status="failed"] .seek__track {
   background: repeating-linear-gradient(-45deg, color-mix(in srgb, var(--down) 55%, transparent) 0 1.5px, transparent 1.5px 4.243px) 0 0 / 6px 6px;
   box-shadow: inset 0 0 0 1px var(--down);

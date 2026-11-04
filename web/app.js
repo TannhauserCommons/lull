@@ -2453,7 +2453,7 @@
       case 'failed':
         if (ps.playing) skipFailed(cur);
         ps.status = 'failed'; ps.playing = false; out.pause(); ps.seekWait = null;
-        ps.error = ev.error || 'Couldn\'t play: no peer responded';
+        ps.error = ev.error || 'Couldn\'t play this song';
         cur.resolve = 'none';
         break;
     }
@@ -3103,7 +3103,7 @@
         return ps.fallback ? 'Switching to ' + ps.fallback.to + ' (' + ps.fallback.n + (ps.fallback.of ? ' of ' + ps.fallback.of : '') + ')' : 'Buffering from ' + peer;
       case 'stalled': return 'Peer stalled, switching to the next source (' + ((ps.peer ? ps.peer.rank : 1) + 1) + of + ')';
       case 'choose': return 'No copy meets your streaming minimum: pick one or skip';
-      case 'failed': return ps.error || 'Couldn\'t play: no peer responded';
+      case 'failed': return ps.error || 'Couldn\'t play this song';
       case 'jellyfin-error': return 'Library item unavailable' + (ps.error ? ': ' + ps.error : '');
       case 'ended': return 'End of queue';
       default:
