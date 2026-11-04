@@ -166,8 +166,8 @@
           '<div class="device__facts"><span class="q-chip ' + (t.lossless ? 'q-chip--ll' : 'q-chip--ly') + ' q-chip--solid">' + esc(t.format) + '</span></div></div></div></div>' +
         '<p class="sl-mini__times"><b data-dk-pos>0:00</b><span data-dk-dur>0:00</span></p>' +
         String(ctx.parts.wave()) +
-        '<div class="sl-mini__keys">' + k('shuffle', 'Shuffle', 'shuffle', ' aria-pressed="false"') + k('prev', 'Previous', 'prev') +
-          '<button class="btn-gloss btn-gloss--52" data-dk="play" aria-label="' + (ctx.playing ? 'Pause' : 'Play') + '" data-tip="' + (ctx.playing ? 'Pause' : 'Play') + '">' +
+        '<div class="sl-mini__keys">' + k('shuffle', 'Shuffle', 'shuffle', ' aria-pressed="false"') + k('previous', 'Previous', 'prev') +
+          '<button class="btn-gloss btn-gloss--52" data-dk="play-pause" aria-label="' + (ctx.playing ? 'Pause' : 'Play') + '" data-tip="' + (ctx.playing ? 'Pause' : 'Play') + '">' +
             ic(ctx.playing ? 'pause' : 'play', ctx.playing ? '' : 'ic-play') + '</button>' +
           k('next', 'Next', 'next') + k('repeat', 'Repeat', 'repeat', ' aria-pressed="true"') + '</div>' +
         '<div class="sl-mini__foot">' +

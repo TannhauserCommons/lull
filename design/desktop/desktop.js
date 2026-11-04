@@ -366,12 +366,12 @@
       '<div class="device__brand">' + wordmark() + '</div></div>' +
       '<div class="device__controls"><div class="dpad">' +
       '<button class="dpad__btn dpad__btn--up" data-dk="vol-up" aria-label="Volume up" data-tip="Volume up">' + ic('plus') + '</button>' +
-      '<button class="dpad__btn dpad__btn--left" data-dk="prev" aria-label="Previous" data-tip="Previous">' + ic('prev') + '</button>' +
+      '<button class="dpad__btn dpad__btn--left" data-dk="previous" aria-label="Previous" data-tip="Previous">' + ic('prev') + '</button>' +
       '<span class="dpad__hub"></span>' +
       '<button class="dpad__btn dpad__btn--right" data-dk="next" aria-label="Next" data-tip="Next">' + ic('next') + '</button>' +
       '<button class="dpad__btn dpad__btn--down" data-dk="vol-down" aria-label="Volume down" data-tip="Volume down">' + ic('minus') + '</button></div>' +
       '<div class="device__ab"><span class="device__key device__key--b"><button class="btn-gloss btn-gloss--48' + (P.liked[P.i] ? ' is-liked' : '') + '" data-dk="like" aria-pressed="' + !!P.liked[P.i] + '" aria-label="Like" data-tip="Like">' + likeIcon() + '</button>like</span>' +
-      '<span class="device__key device__key--a"><button class="btn-gloss" data-dk="play" aria-label="' + (P.playing ? 'Pause' : 'Play') + '" data-tip="' + (P.playing ? 'Pause' : 'Play') + '">' + playIcon() + '</button><span data-dk-play-label>' + (P.playing ? 'pause' : 'play') + '</span></span></div></div>' +
+      '<span class="device__key device__key--a"><button class="btn-gloss" data-dk="play-pause" aria-label="' + (P.playing ? 'Pause' : 'Play') + '" data-tip="' + (P.playing ? 'Pause' : 'Play') + '">' + playIcon() + '</button><span data-dk-play-label>' + (P.playing ? 'pause' : 'play') + '</span></span></div></div>' +
       '<div class="device__pills"><button class="device__pill device__pill--shuffle" data-dk="shuffle" aria-pressed="' + P.shuffle + '"><i></i>shuffle</button>' +
       '<button class="device__pill device__pill--repeat" data-dk="repeat" aria-pressed="' + P.repeat + '"><i></i>repeat</button></div>' +
       '<div class="device__grill" aria-hidden="true">' + grill + '</div></section></div>';
@@ -384,8 +384,8 @@
       '<button class="bezel-thumb" data-dk="full" aria-label="Open full window" data-tip="Open full window" data-dk-thumb>' + cover(t, 40) + '</button>' +
       '<div class="dk-strip__text" data-tauri-drag-region aria-live="polite"><div class="dk-strip__title" data-dk-title>' + esc(t.title) + '</div><div class="dk-strip__artist" data-dk-artist>' + esc(t.artist) + '</div></div>' +
       '<div class="dk-strip__keys">' +
-      '<button class="btn-icon btn-icon--bare" data-dk="prev" aria-label="Previous" data-tip="Previous">' + ic('prev') + '</button>' +
-      '<button class="btn-gloss btn-gloss--40" data-dk="play" aria-label="' + (P.playing ? 'Pause' : 'Play') + '" data-tip="' + (P.playing ? 'Pause' : 'Play') + '">' + playIcon() + '</button>' +
+      '<button class="btn-icon btn-icon--bare" data-dk="previous" aria-label="Previous" data-tip="Previous">' + ic('prev') + '</button>' +
+      '<button class="btn-gloss btn-gloss--40" data-dk="play-pause" aria-label="' + (P.playing ? 'Pause' : 'Play') + '" data-tip="' + (P.playing ? 'Pause' : 'Play') + '">' + playIcon() + '</button>' +
       '<button class="btn-icon btn-icon--bare" data-dk="next" aria-label="Next" data-tip="Next">' + ic('next') + '</button>' +
       '<button class="btn-icon btn-icon--bare btn-icon--sm' + (P.liked[P.i] ? ' is-liked' : '') + '" data-dk="like" aria-pressed="' + !!P.liked[P.i] + '" aria-label="Like" data-tip="Like">' + likeIcon() + '</button>' +
       '<span class="dk-sep" aria-hidden="true"></span>' +
@@ -412,7 +412,7 @@
         s.style.setProperty('--pos', f.toFixed(4)); s.style.setProperty('--xfer', t.recv);
         var buf = $('[data-dk-buf]', s); buf.style.left = '0'; buf.style.width = (t.buf / t.dur * 100) + '%';
       });
-      $$('[data-dk="play"]', el).forEach(function (b) {
+      $$('[data-dk="play-pause"]', el).forEach(function (b) {
         var label = P.playing ? 'Pause' : 'Play';
         b.innerHTML = playIcon(); b.setAttribute('aria-label', label); b.setAttribute('data-tip', label);
       });
@@ -458,9 +458,9 @@
      5. One delegated handler for everything above
      ===================================================================== */
   var mini = {
-    play: function (s) { P.playing = !P.playing; paintPlayer(s); announce(P.playing ? 'Playing' : 'Paused'); },
+    'play-pause': function (s) { P.playing = !P.playing; paintPlayer(s); announce(P.playing ? 'Playing' : 'Paused'); },
     next: function (s) { changeTrack(s, 1); },
-    prev: function (s) { if (P.pos > 3) { P.pos = 0; paintPlayer(s); } else changeTrack(s, -1); },
+    previous: function (s) { if (P.pos > 3) { P.pos = 0; paintPlayer(s); } else changeTrack(s, -1); },
     like: function (s) { P.liked[P.i] = !P.liked[P.i]; paintPlayer(s); announce(P.liked[P.i] ? 'Liked' : 'Removed from liked'); },
     'vol-up': function (s) { P.volume = Math.min(1, P.volume + .1); vol(s); },
     'vol-down': function (s) { P.volume = Math.max(0, P.volume - .1); vol(s); },

@@ -204,7 +204,8 @@ Live hooks a custom hero must keep: `data-now="title|artist|album|format"` (text
 `[data-act="play|prev|next|shuffle|repeat|like"]`. `parts.playButton()` / `parts.likeButton()` are already wired. A hero
 that drops the device screen must still show the source, format and streaming state: put `parts.facts()` (source badge,
 quality chip, peer fact) in a `data-now="facts"` element and `parts.state()` in a `data-now="state"` element.
-A custom mini player keeps `data-dk-player` on its root, `data-dk="play|prev|next|like|shuffle|repeat|seek|full|mini-close|vol-up|vol-down"`,
+A custom mini player keeps `data-dk-player` on its root, `data-dk="play-pause|previous|next|like|shuffle|repeat|seek|full|mini-close|vol-up|vol-down"`
+(the keys `web/desktop/mini-keys.json` lists; the hub refuses a slot naming any other, and `data-act`'s `play` and `prev` are not among them),
 `data-dk-now`, `data-dk-pos`, `data-dk-dur`, and `data-tauri-drag-region` on the body (never on the seek strip).
 
 ### 3.6 Adding a design

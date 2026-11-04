@@ -131,8 +131,8 @@
         '</div>' +
         '<div class="pt-win__lcd" aria-hidden="true"><span class="pt-win__lcdtext">.:: <b data-dk-pos>1:24</b>/<span data-dk-dur>~3:52</span> :: <span data-dk-vol>vol 70%</span> ::.</span></div>' +
         '<div class="pt-win__deck">' +
-          k('shuffle', 'Shuffle', 'shuffle', ' aria-pressed="false"') + k('prev', 'Previous', 'prev') +
-          '<button class="btn-gloss btn-gloss--56" data-dk="play" aria-label="' + (playing ? 'Pause' : 'Play') + '" data-tip="' + (playing ? 'Pause' : 'Play') + '">' + ic(playing ? 'pause' : 'play', playing ? '' : 'ic-play') + '</button>' +
+          k('shuffle', 'Shuffle', 'shuffle', ' aria-pressed="false"') + k('previous', 'Previous', 'prev') +
+          '<button class="btn-gloss btn-gloss--56" data-dk="play-pause" aria-label="' + (playing ? 'Pause' : 'Play') + '" data-tip="' + (playing ? 'Pause' : 'Play') + '">' + ic(playing ? 'pause' : 'play', playing ? '' : 'ic-play') + '</button>' +
           k('next', 'Next', 'next') + k('repeat', 'Repeat', 'repeat', ' aria-pressed="true"') +
         '</div>' +
         '<div class="pt-mini__foot">' +

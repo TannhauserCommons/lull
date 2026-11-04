@@ -714,7 +714,7 @@
     linear-gradient(var(--pt-lcd-ink) 0 0) 20px 100% / 3px 4px no-repeat;
 }
 :root[data-design="petal"] .pt-win:has([data-bind="play"][aria-label="Pause"]) .pt-win__lcd::before,
-:root[data-design="petal"] .pt-mini:has([data-dk="play"][aria-label="Pause"]) .pt-win__lcd::before { animation: pt-vu 1.2s steps(4, end) infinite; }
+:root[data-design="petal"] .pt-mini:has([data-dk="play-pause"][aria-label="Pause"]) .pt-win__lcd::before { animation: pt-vu 1.2s steps(4, end) infinite; }
 @keyframes pt-vu { 50% { transform: scaleY(.55); transform-origin: bottom; } }
 :root[data-design="petal"] .pt-win__lcdtext { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 :root[data-design="petal"] .pt-win__lcd b { font-weight: 400; color: var(--fg); }
