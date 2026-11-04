@@ -15,7 +15,7 @@
 #![allow(unsafe_code)]
 
 use super::canvas::{Canvas, TextRun};
-use super::draw::{self, Control, Target, View};
+use super::draw::{self, Control, Focus, Target, View};
 use super::engine::{Command, Snapshot, Status};
 use super::eq::presets;
 use super::eqwin;
@@ -23,17 +23,29 @@ use super::playlist::{self, List};
 use super::queue::Repeat;
 use super::session::Session;
 use super::skin::{HEIGHT, Skin, WIDTH, layout};
-use super::vis::{Analyser, FFT_SAMPLES};
+use super::vis::{Analyser, BARS, Bar, FFT_SAMPLES};
 use std::cell::RefCell;
 use std::ffi::c_void;
 use std::time::{Duration, Instant};
-use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows::Win32::Graphics::Direct2D::Common::{D2D1_ALPHA_MODE_IGNORE, D2D1_COLOR_F, D2D1_PIXEL_FORMAT};
+use windows::Win32::Graphics::Direct2D::{
+    D2D1_DRAW_TEXT_OPTIONS_CLIP, D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT,
+    D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_SOFTWARE, D2D1_RENDER_TARGET_USAGE_GDI_COMPATIBLE,
+    D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE, D2D1CreateFactory, ID2D1DCRenderTarget, ID2D1Factory,
+};
+use windows::Win32::Graphics::DirectWrite::{
+    DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_METRICS, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
+    DWRITE_FONT_WEIGHT_NORMAL, DWRITE_LINE_SPACING_METHOD_UNIFORM, DWRITE_TEXT_ALIGNMENT_LEADING,
+    DWRITE_TEXT_ALIGNMENT_TRAILING, DWRITE_TEXT_METRICS, DWRITE_TEXT_RANGE, DWRITE_TRIMMING,
+    DWRITE_TRIMMING_GRANULARITY_CHARACTER, DWRITE_WORD_WRAPPING_NO_WRAP, DWriteCreateFactory, IDWriteFactory,
+    IDWriteInlineObject, IDWriteTextFormat, IDWriteTextLayout, IDWriteTextLayout1,
+};
+use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Gdi::{
-    ANTIALIASED_QUALITY, BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BeginPaint, BitBlt, CLIP_DEFAULT_PRECIS, ClientToScreen,
-    CombineRgn, CreateCompatibleDC, CreateDIBSection, CreateFontW, CreateRectRgn, DEFAULT_CHARSET, DIB_RGB_COLORS,
-    DT_LEFT, DT_NOPREFIX, DT_RIGHT, DT_SINGLELINE, DT_VCENTER, DeleteDC, DeleteObject, DrawTextW, EndPaint,
-    FF_DONTCARE, FW_NORMAL, GdiFlush, GetDC, HBITMAP, HDC, HFONT, HGDIOBJ, OUT_DEFAULT_PRECIS, PAINTSTRUCT, RGN_OR,
-    SRCCOPY, SelectObject, SetBkMode, SetTextCharacterExtra, SetTextColor, SetWindowRgn, TRANSPARENT,
+    BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BeginPaint, BitBlt, ClientToScreen, CombineRgn, CreateCompatibleDC,
+    CreateDIBSection, CreateRectRgn, DIB_RGB_COLORS, DeleteDC, DeleteObject, EndPaint, GdiFlush, GetDC, HBITMAP, HDC,
+    HGDIOBJ, PAINTSTRUCT, RGN_OR, SRCCOPY, SelectObject, SetWindowRgn,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -43,12 +55,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CS_DBLCLKS, CS_OWNDC, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow,
     HMENU, HTCAPTION, IDC_ARROW, KillTimer, LoadCursorW, LoadIconW, MF_CHECKED, MF_POPUP, MF_SEPARATOR, MF_STRING,
     RegisterClassExW, SW_MINIMIZE, SW_SHOWNORMAL, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER, SendMessageW,
-    SetForegroundWindow, SetTimer, SetWindowPos, ShowWindow, TPM_NONOTIFY, TPM_RETURNCMD, TrackPopupMenuEx,
-    WA_INACTIVE, WM_ACTIVATE, WM_CLOSE, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
-    WM_MOUSEWHEEL, WM_NCLBUTTONDBLCLK, WM_NCLBUTTONDOWN, WM_PAINT, WM_RBUTTONUP, WM_TIMER, WNDCLASSEXW,
-    WS_EX_APPWINDOW, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU,
+    SetForegroundWindow, SetTimer, SetWindowPos, ShowWindow, TPM_NONOTIFY, TPM_RETURNCMD, TrackPopupMenuEx, WM_CLOSE,
+    WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCLBUTTONDBLCLK,
+    WM_NCLBUTTONDOWN, WM_PAINT, WM_RBUTTONUP, WM_TIMER, WNDCLASSEXW, WS_EX_APPWINDOW, WS_MINIMIZEBOX, WS_POPUP,
+    WS_SYSMENU,
 };
-use windows::core::{HSTRING, PCWSTR, w};
+use windows::core::{BOOL, HSTRING, Interface, PCWSTR, w};
 
 const CLASS: PCWSTR = w!("lull-classic");
 const TIMER: usize = 1;
@@ -68,8 +80,10 @@ const NOTICE: Duration = Duration::from_secs(8);
 /// Tauri's build puts the app's icon in the executable under this id (IDI_APPLICATION's).
 const APP_ICON: u16 = 32512;
 /// The playlist's text, as Webamp sets it: 9 px, half a pixel between letters.
-const TEXT_SIZE: f64 = 9.0;
-const TEXT_SPACING: f64 = 0.5;
+const TEXT_SIZE: f32 = 9.0;
+const TEXT_SPACING: f32 = 0.5;
+/// Right of the songs' times (Webamp's `padding-right: 3px`).
+const TIME_PADDING: f32 = 3.0;
 /// Rows a wheel notch scrolls the playlist, as Windows' lists do.
 const WHEEL_ROWS: f64 = 3.0;
 
@@ -201,7 +215,10 @@ struct Classic {
     panels: Panels,
     list: List,
     analyser: Analyser,
-    focused: bool,
+    /// The analyser's last bars: paused, they hold still, as Webamp's do.
+    bars: [Bar; BARS],
+    /// The selected window of the three (Webamp's focus).
+    focus: Focus,
     /// The control held down and its window's top in the stack; for a button, whether the pointer
     /// is still on it.
     pressed: Option<(Target, u32)>,
@@ -213,7 +230,8 @@ struct Classic {
     /// The row a selection by Shift-click runs from, and the row a drag of songs is over.
     anchor: usize,
     dropping: Option<usize>,
-    started: Instant,
+    /// When the song was paused, for the time's blink.
+    paused_since: Option<Instant>,
     tick: Duration,
 }
 
@@ -246,6 +264,7 @@ pub fn open(setup: Setup, on_close: OnClose) -> Result<(), String> {
     let scale = setup.size * setup.dpi;
     let (columns, rows) = (edges(WIDTH, scale), edges(panels.height(), scale));
     let size = (columns[WIDTH as usize], rows[rows.len() - 1]);
+    let text = Text::new(&setup.skin.playlist.font, scale)?;
     let hwnd = create(setup.at, size)?;
     crate::desktop::platform::add_thumb_buttons_to(setup.session.app(), hwnd.0 as isize);
     let mut session = setup.session;
@@ -265,7 +284,7 @@ pub fn open(setup: Setup, on_close: OnClose) -> Result<(), String> {
     };
     let mut classic = Classic {
         hwnd,
-        text: Text::new(&setup.skin.playlist.font, scale),
+        text,
         skin: setup.skin,
         session,
         on_close: Some(on_close),
@@ -286,7 +305,8 @@ pub fn open(setup: Setup, on_close: OnClose) -> Result<(), String> {
         panels,
         list: List::default(),
         analyser: Analyser::default(),
-        focused: true,
+        bars: [Bar::default(); BARS],
+        focus: Focus::Main,
         pressed: None,
         over: false,
         seeking: None,
@@ -295,7 +315,7 @@ pub fn open(setup: Setup, on_close: OnClose) -> Result<(), String> {
         notice: setup.said.map(|said| (said, Instant::now())),
         anchor: 0,
         dropping: None,
-        started: Instant::now(),
+        paused_since: None,
         tick: ANIMATE,
     };
     classic.snapshot = classic.session.snapshot();
@@ -345,7 +365,7 @@ pub fn set_skin(skin: Result<(Skin, Option<String>), String>) {
         };
         match skin {
             Ok((skin, said)) => {
-                classic.text = Text::new(&skin.playlist.font, classic.size * classic.dpi);
+                classic.retext(&skin.playlist.font);
                 classic.skin = skin;
                 classic.notice = said.map(|said| (said, Instant::now()));
                 classic.shown.clear();
@@ -555,10 +575,6 @@ impl Classic {
                 self.wheel(notches, lparam)
             }
             WM_KEYDOWN => self.key(wparam.0 as u16),
-            WM_ACTIVATE => {
-                self.focused = (wparam.0 & 0xffff) as u32 != WA_INACTIVE;
-                Effect::Default
-            }
             WM_CLOSE => Effect::Close,
             _ => return Effect::Default,
         };
@@ -581,6 +597,11 @@ impl Classic {
     fn press(&mut self, x: u32, y: u32, double: bool) -> Effect {
         let Some((panel, _, target)) = self.target_at(x, y) else {
             return Effect::Default;
+        };
+        self.focus = match panel {
+            Panel::Main => Focus::Main,
+            Panel::Eq => Focus::Equaliser,
+            Panel::Playlist => Focus::Playlist,
         };
         let Some(target) = target else {
             if double {
@@ -673,12 +694,12 @@ impl Classic {
         };
         let area = target.area;
         let (x, y) = (f64::from(x), f64::from(y) - f64::from(top));
-        let along = |at: f64, start: u32, length: u32| {
-            let travel = f64::from(length - target.knob);
+        let along = |at: f64, start: u32| {
+            let travel = f64::from(target.travel.max(1));
             ((at - f64::from(start) - f64::from(target.knob) / 2.0) / travel).clamp(0.0, 1.0)
         };
-        let across = along(x, area.x, area.width);
-        let down = along(y, area.y, area.height);
+        let across = along(x, area.x);
+        let down = along(y, area.y);
         match target.control {
             Control::Volume => self.volume(across),
             Control::Position => self.seeking = Some(across),
@@ -887,8 +908,17 @@ impl Classic {
     /// Winamp's Double Size: 2x, or 1x from there; lull opens Classic at it next time too.
     fn double_size(&mut self) {
         self.size = if self.size >= 2.0 { 1.0 } else { 2.0 };
-        self.text = Text::new(&self.skin.playlist.font, self.size * self.dpi);
+        let font = self.skin.playlist.font.clone();
+        self.retext(&font);
         self.rows.clear();
+    }
+
+    /// The playlist's text in `font` at the window's size; failing that, as it was.
+    fn retext(&mut self, font: &str) {
+        match Text::new(font, self.size * self.dpi) {
+            Ok(text) => self.text = text,
+            Err(e) => eprintln!("lull: Classic playlist text: {e}"),
+        }
     }
 
     fn remove_selected(&mut self) {
@@ -989,13 +1019,15 @@ impl Classic {
             self.relist();
         }
         let now = self.session.now(&self.snapshot);
-        let samples = if now.playing {
-            self.session.engine.tap(FFT_SAMPLES)
-        } else {
-            Vec::new()
-        };
         let clock = Instant::now();
-        let bars = self.analyser.step(&samples, clock);
+        if now.stopped {
+            self.analyser = Analyser::default();
+            self.bars = [Bar::default(); BARS];
+        } else if now.playing {
+            let samples = self.session.engine.tap(FFT_SAMPLES);
+            self.bars = self.analyser.step(&samples, clock);
+        }
+        let bars = self.bars;
         self.notice = self.notice.take().filter(|(_, at)| at.elapsed() < NOTICE);
         let line = match (
             &now.said,
@@ -1010,7 +1042,16 @@ impl Classic {
             (None, None, None, None) => String::new(),
         };
         let marquee = self.marquee.show(&line, clock);
-        let blink_off = (clock - self.started).as_millis() / 500 % 2 == 1;
+        // Paused, the time blinks as Webamp's does: on for the first second, then off in odd
+        // seconds and on in even ones.
+        if now.playing || now.stopped {
+            self.paused_since = None;
+        } else {
+            self.paused_since.get_or_insert(clock);
+        }
+        let blink_off = self
+            .paused_since
+            .is_some_and(|since| (clock - since).as_secs() % 2 == 1);
         let height = self.panels.height();
         self.canvas.resize(height);
         if self.rows.len() != height as usize + 1 {
@@ -1020,7 +1061,7 @@ impl Classic {
             now: &now,
             marquee: &marquee,
             volume: self.snapshot.volume,
-            focused: self.focused,
+            focus: self.focus,
             pressed: self.pressed.filter(|_| self.over).map(|(t, _)| t.control),
             seeking: self.seeking,
             remaining: self.remaining,
@@ -1042,16 +1083,14 @@ impl Classic {
             } else {
                 continue;
             }
-            self.canvas.clear(top, rows);
-            let mut pen = self.canvas.pen(&self.skin, top);
-            match (panel, self.panels.shaded(panel)) {
-                (Panel::Main, false) => draw::main(&mut pen, &view),
-                (Panel::Main, true) => draw::main_shaded(&mut pen, &view),
-                (Panel::Eq, false) => eqwin::window(&mut pen, &view),
-                (Panel::Eq, true) => eqwin::shaded(&mut pen, &view),
-                (Panel::Playlist, false) => playlist::window(&mut pen, &view),
-                (Panel::Playlist, true) => playlist::shaded(&mut pen, &view),
-            }
+            draw_panel(
+                &mut self.canvas,
+                &self.skin,
+                (panel, self.panels.shaded(panel)),
+                top,
+                rows,
+                &view,
+            );
         }
         if self.shape != Some(self.panels) {
             self.reshape();
@@ -1071,7 +1110,7 @@ impl Classic {
             }
             self.shown_texts.clone_from(&self.canvas.texts);
         }
-        let moving = now.playing || !self.analyser.settled() || self.seeking.is_some() || self.pressed.is_some();
+        let moving = now.playing || self.seeking.is_some() || self.pressed.is_some();
         let tick = if moving { ANIMATE } else { IDLE };
         if tick != self.tick {
             self.tick = tick;
@@ -1168,62 +1207,15 @@ impl Classic {
         }
     }
 
-    /// Scales skin pixels `[x0, x1) x [y0, y1)` up into the band, a band of rows at a time, draws
-    /// the playlist's text over them at the screen's size, and copies each band to the window
-    /// through `dc`.
-    fn paint(&mut self, dc: HDC, (x0, y0, x1, y1): (u32, u32, u32, u32)) {
-        let (left, right) = (self.columns[x0 as usize], self.columns[x1 as usize]);
-        let (top, bottom) = (self.rows[y0 as usize], self.rows[y1 as usize]);
-        let stride = self.band.size.0 as usize;
-        let mut from = top;
-        while from < bottom {
-            let to = (from + self.band.size.1).min(bottom);
-            // SAFETY: GDI finishes with the band (the last copy out of it) before its pixels change.
-            let _ = unsafe { GdiFlush() };
-            let pixels = self.band.pixels();
-            for py in from..to {
-                let sy = skin_at(py, &self.rows) as usize;
-                let source = &self.canvas.pixels[sy * WIDTH as usize..(sy + 1) * WIDTH as usize];
-                let at = (py - from) as usize * stride;
-                let row = &mut pixels[at..at + stride];
-                for sx in x0..x1 {
-                    let (a, b) = (
-                        (self.columns[sx as usize] - left) as usize,
-                        (self.columns[sx as usize + 1] - left) as usize,
-                    );
-                    row[a..b.min(stride)].fill(source[sx as usize]);
-                }
-            }
-            for run in &self.canvas.texts {
-                let area = run.area;
-                let at = RECT {
-                    left: self.columns[area.x as usize] - left,
-                    top: self.rows[area.y as usize] - from,
-                    right: self.columns[(area.x + area.width) as usize] - left,
-                    bottom: self.rows[(area.y + area.height) as usize] - from,
-                };
-                if at.left < right - left && at.right > 0 && at.top < to - from && at.bottom > 0 {
-                    self.text.draw(self.band.dc, run, at);
-                }
-            }
-            // SAFETY: the band's bitmap is selected into its DC; `dc` is the window's.
-            if let Err(e) = unsafe {
-                BitBlt(
-                    dc,
-                    left,
-                    from,
-                    right - left,
-                    to - from,
-                    Some(self.band.dc),
-                    0,
-                    0,
-                    SRCCOPY,
-                )
-            } {
-                eprintln!("lull: Classic window didn't update: {e}");
-            }
-            from = to;
-        }
+    fn paint(&mut self, dc: HDC, rect: (u32, u32, u32, u32)) {
+        paint(
+            &self.canvas,
+            (&self.columns, &self.rows),
+            &mut self.band,
+            &self.text,
+            dc,
+            rect,
+        );
     }
 
     fn client_to_screen(&self, x: i32, y: i32) -> POINT {
@@ -1249,6 +1241,78 @@ impl Classic {
         let (x, y) = coordinates(lparam);
         let origin = self.client_to_screen(0, 0);
         (skin_at(x - origin.x, &self.columns), skin_at(y - origin.y, &self.rows))
+    }
+}
+
+/// One window of the stack (shaded or not) into the canvas, `rows` high from `top`.
+fn draw_panel(canvas: &mut Canvas, skin: &Skin, (panel, shaded): (Panel, bool), top: u32, rows: u32, view: &View) {
+    canvas.clear(top, rows);
+    let mut pen = canvas.pen(skin, top);
+    match (panel, shaded) {
+        (Panel::Main, false) => draw::main(&mut pen, view),
+        (Panel::Main, true) => draw::main_shaded(&mut pen, view),
+        (Panel::Eq, false) => eqwin::window(&mut pen, view),
+        (Panel::Eq, true) => eqwin::shaded(&mut pen, view),
+        (Panel::Playlist, false) => playlist::window(&mut pen, view),
+        (Panel::Playlist, true) => playlist::shaded(&mut pen, view),
+    }
+}
+
+/// Scales skin pixels `[x0, x1) x [y0, y1)` of the canvas up into `band` (`columns` and `rows`: where
+/// each skin pixel starts at the screen's size), a band of rows at a time, draws the playlist's text
+/// over them at the screen's size, and copies each band to `dc`.
+fn paint(
+    canvas: &Canvas,
+    (columns, rows): (&[i32], &[i32]),
+    band: &mut Surface,
+    text: &Text,
+    dc: HDC,
+    (x0, y0, x1, y1): (u32, u32, u32, u32),
+) {
+    let (left, right) = (columns[x0 as usize], columns[x1 as usize]);
+    let (top, bottom) = (rows[y0 as usize], rows[y1 as usize]);
+    let stride = band.size.0 as usize;
+    let column = text.column(&canvas.texts);
+    let mut from = top;
+    while from < bottom {
+        let to = (from + band.size.1).min(bottom);
+        // SAFETY: GDI finishes with the band (the last copy out of it) before its pixels change.
+        let _ = unsafe { GdiFlush() };
+        let pixels = band.pixels();
+        for py in from..to {
+            let sy = skin_at(py, rows) as usize;
+            let source = &canvas.pixels[sy * WIDTH as usize..(sy + 1) * WIDTH as usize];
+            let at = (py - from) as usize * stride;
+            let row = &mut pixels[at..at + stride];
+            for sx in x0..x1 {
+                let (a, b) = (
+                    (columns[sx as usize] - left) as usize,
+                    (columns[sx as usize + 1] - left) as usize,
+                );
+                row[a..b.min(stride)].fill(source[sx as usize]);
+            }
+        }
+        let drawing = !canvas.texts.is_empty() && text.begin(band.dc, band.size);
+        for run in canvas.texts.iter().filter(|_| drawing) {
+            let area = run.area;
+            let at = RECT {
+                left: columns[area.x as usize] - left,
+                top: rows[area.y as usize] - from,
+                right: columns[(area.x + area.width) as usize] - left,
+                bottom: rows[(area.y + area.height) as usize] - from,
+            };
+            if at.left < right - left && at.right > 0 && at.top < to - from && at.bottom > 0 {
+                text.draw(run, at, column);
+            }
+        }
+        if drawing {
+            text.end();
+        }
+        // SAFETY: the band's bitmap is selected into its DC; `dc` is the window's.
+        if let Err(e) = unsafe { BitBlt(dc, left, from, right - left, to - from, Some(band.dc), 0, 0, SRCCOPY) } {
+            eprintln!("lull: Classic window didn't update: {e}");
+        }
+        from = to;
     }
 }
 
@@ -1342,7 +1406,7 @@ fn fingerprint(panel: Panel, top: u32, shaded: bool, view: &View) -> u64 {
         panel as u8,
         top,
         shaded,
-        view.focused,
+        view.focus,
         view.pressed.map(|c| format!("{c:?}")),
     )
         .hash(&mut h);
@@ -1451,70 +1515,232 @@ impl Marquee {
     }
 }
 
-/// The playlist's text, in the skin's font (`pledit.txt`) at the screen's size, greyscale-smoothed
-/// over the skin's pixels.
+/// The playlist's text as the browser draws Webamp's: DirectWrite (through Direct2D, into the
+/// band's DC), greyscale-smoothed, in the skin's font (`pledit.txt`) or Arial when this computer
+/// hasn't it (Webamp's `font-family: <font>, Arial, sans-serif`), 9 px with 0.5 px between letters,
+/// each 13 px row laid out as CSS lays out a line of that height; titles too long end in an
+/// ellipsis, and characters the font hasn't come from the system's fallback fonts.
 struct Text {
-    font: HFONT,
-    spacing: i32,
+    write: IDWriteFactory,
+    format: IDWriteTextFormat,
+    ellipsis: IDWriteInlineObject,
+    target: ID2D1DCRenderTarget,
+    scale: f32,
 }
 
 impl Text {
-    fn new(face: &str, scale: f64) -> Self {
-        let height = -(TEXT_SIZE * scale).round() as i32;
-        // SAFETY: a font made from plain values and a name that outlives the call; deleted in Drop.
-        let font = unsafe {
-            CreateFontW(
-                height,
-                0,
-                0,
-                0,
-                FW_NORMAL.0 as i32,
-                0,
-                0,
-                0,
-                DEFAULT_CHARSET,
-                OUT_DEFAULT_PRECIS,
-                CLIP_DEFAULT_PRECIS,
-                ANTIALIASED_QUALITY,
-                FF_DONTCARE.0 as u32,
-                &HSTRING::from(face),
-            )
-        };
-        Self {
-            font,
-            spacing: (TEXT_SPACING * scale).round() as i32,
-        }
-    }
-
-    /// One line into `dc` (the band's), in `at`.
-    fn draw(&self, dc: HDC, run: &TextRun, mut at: RECT) {
-        if at.right <= at.left || at.bottom <= at.top {
-            return;
-        }
-        let mut words: Vec<u16> = run.text.encode_utf16().collect();
-        let align = if run.right { DT_RIGHT } else { DT_LEFT };
-        let [r, g, b] = run.color.map(u32::from);
-        // SAFETY: `dc` has a bitmap selected; the font outlives the call and is put back after.
+    fn new(face: &str, scale: f64) -> Result<Self, String> {
+        let scale = scale as f32;
+        let size = TEXT_SIZE * scale;
+        let line = layout::PLAYLIST_ROW_HEIGHT as f32 * scale;
+        // SAFETY: plain factory calls; every out-pointer is a local that lives through its call.
         unsafe {
-            let previous = SelectObject(dc, self.font.into());
-            SetTextColor(dc, COLORREF(b << 16 | g << 8 | r));
-            SetBkMode(dc, TRANSPARENT);
-            SetTextCharacterExtra(dc, self.spacing);
-            DrawTextW(
-                dc,
-                &mut words,
-                &mut at,
-                align | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX,
-            );
-            SelectObject(dc, previous);
+            let write: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).map_err(|e| e.to_string())?;
+            let fonts = {
+                let mut fonts = None;
+                write
+                    .GetSystemFontCollection(&mut fonts, false)
+                    .map_err(|e| e.to_string())?;
+                fonts.ok_or("no system fonts")?
+            };
+            let (mut index, mut found) = (0, BOOL::default());
+            fonts
+                .FindFamilyName(&HSTRING::from(face), &mut index, &mut found)
+                .map_err(|e| e.to_string())?;
+            let family = if found.as_bool() { face } else { "Arial" };
+            fonts
+                .FindFamilyName(&HSTRING::from(family), &mut index, &mut found)
+                .map_err(|e| e.to_string())?;
+            // The line's baseline as CSS places it: half the spare height (rounded down, as Blink
+            // does) above the font's ascent, the ascent and descent each rounded to a pixel as
+            // Chrome rounds them.
+            let baseline = if found.as_bool() {
+                let font = fonts
+                    .GetFontFamily(index)
+                    .and_then(|f| {
+                        f.GetFirstMatchingFont(
+                            DWRITE_FONT_WEIGHT_NORMAL,
+                            DWRITE_FONT_STRETCH_NORMAL,
+                            DWRITE_FONT_STYLE_NORMAL,
+                        )
+                    })
+                    .map_err(|e| e.to_string())?;
+                let mut metrics = DWRITE_FONT_METRICS::default();
+                font.GetMetrics(&mut metrics);
+                let em = f32::from(metrics.designUnitsPerEm.max(1));
+                let ascent = (f32::from(metrics.ascent) / em * size).round();
+                let descent = (f32::from(metrics.descent) / em * size).round();
+                ((line - ascent - descent) / 2.0).floor() + ascent
+            } else {
+                line * 0.75
+            };
+            let format = write
+                .CreateTextFormat(
+                    &HSTRING::from(family),
+                    None,
+                    DWRITE_FONT_WEIGHT_NORMAL,
+                    DWRITE_FONT_STYLE_NORMAL,
+                    DWRITE_FONT_STRETCH_NORMAL,
+                    size,
+                    w!("en-us"),
+                )
+                .map_err(|e| e.to_string())?;
+            format
+                .SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)
+                .map_err(|e| e.to_string())?;
+            format
+                .SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, line, baseline)
+                .map_err(|e| e.to_string())?;
+            let ellipsis = write.CreateEllipsisTrimmingSign(&format).map_err(|e| e.to_string())?;
+            let draw: ID2D1Factory =
+                D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None).map_err(|e| e.to_string())?;
+            let target = draw
+                .CreateDCRenderTarget(&D2D1_RENDER_TARGET_PROPERTIES {
+                    r#type: D2D1_RENDER_TARGET_TYPE_SOFTWARE,
+                    pixelFormat: D2D1_PIXEL_FORMAT {
+                        format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                        alphaMode: D2D1_ALPHA_MODE_IGNORE,
+                    },
+                    dpiX: 96.0,
+                    dpiY: 96.0,
+                    usage: D2D1_RENDER_TARGET_USAGE_GDI_COMPATIBLE,
+                    minLevel: D2D1_FEATURE_LEVEL_DEFAULT,
+                })
+                .map_err(|e| e.to_string())?;
+            Ok(Self {
+                write,
+                format,
+                ellipsis,
+                target,
+                scale,
+            })
         }
     }
-}
 
-impl Drop for Text {
-    fn drop(&mut self) {
-        // SAFETY: the font this made, deleted once.
-        let _ = unsafe { DeleteObject(self.font.into()) };
+    /// `text` laid out in `width` (a single line), letters spaced.
+    fn layout(&self, text: &str, width: f32, height: f32) -> windows::core::Result<IDWriteTextLayout> {
+        let words: Vec<u16> = text.encode_utf16().collect();
+        // SAFETY: the words outlive the call; the layout is this function's own.
+        unsafe {
+            let layout = self
+                .write
+                .CreateTextLayout(&words, &self.format, width.max(0.0), height)?;
+            let range = DWRITE_TEXT_RANGE {
+                startPosition: 0,
+                length: words.len() as u32,
+            };
+            layout
+                .cast::<IDWriteTextLayout1>()?
+                .SetCharacterSpacing(0.0, TEXT_SPACING * self.scale, 0.0, range)?;
+            Ok(layout)
+        }
+    }
+
+    /// The durations' column, as wide as the widest time in sight and its 3 px padding (Webamp's
+    /// flex column), in physical pixels.
+    fn column(&self, runs: &[TextRun]) -> f32 {
+        let widest = runs
+            .iter()
+            .filter(|run| run.right)
+            .filter_map(|run| {
+                let layout = self.layout(&run.text, f32::MAX, f32::MAX).ok()?;
+                let mut metrics = DWRITE_TEXT_METRICS::default();
+                // SAFETY: a layout this made, measured into a local.
+                unsafe { layout.GetMetrics(&mut metrics).ok()? };
+                Some(metrics.widthIncludingTrailingWhitespace)
+            })
+            .fold(0.0, f32::max);
+        if widest > 0.0 {
+            widest + TIME_PADDING * self.scale
+        } else {
+            0.0
+        }
+    }
+
+    /// Begins drawing into `dc` (the band's, `size` big); `false` when it can't.
+    fn begin(&self, dc: HDC, size: (i32, i32)) -> bool {
+        let all = RECT {
+            left: 0,
+            top: 0,
+            right: size.0,
+            bottom: size.1,
+        };
+        // SAFETY: `dc` has the band's bitmap selected for as long as this drawing lasts.
+        match unsafe { self.target.BindDC(dc, &all) } {
+            Ok(()) => {
+                // SAFETY: the target is bound; EndDraw (`end`) follows.
+                unsafe {
+                    self.target.BeginDraw();
+                    self.target.SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
+                }
+                true
+            }
+            Err(e) => {
+                eprintln!("lull: Classic playlist text: {e}");
+                false
+            }
+        }
+    }
+
+    /// One row's title (left, ending in an ellipsis before the durations' `column`) or time
+    /// (right, inside the column's padding), in `at`.
+    fn draw(&self, run: &TextRun, at: RECT, column: f32) {
+        let (left, right, align) = if run.right {
+            (
+                at.right as f32 - column,
+                at.right as f32 - TIME_PADDING * self.scale,
+                DWRITE_TEXT_ALIGNMENT_TRAILING,
+            )
+        } else {
+            (at.left as f32, at.right as f32 - column, DWRITE_TEXT_ALIGNMENT_LEADING)
+        };
+        let height = (at.bottom - at.top) as f32;
+        let Ok(layout) = self.layout(&run.text, right - left, height) else {
+            return;
+        };
+        let [r, g, b] = run.color.map(|c| f32::from(c) / 255.0);
+        let trimming = DWRITE_TRIMMING {
+            granularity: DWRITE_TRIMMING_GRANULARITY_CHARACTER,
+            delimiter: 0,
+            delimiterCount: 0,
+        };
+        // SAFETY: a layout and a brush this made, drawn between `begin` and `end`.
+        let drawn = unsafe {
+            layout
+                .SetTextAlignment(align)
+                .and_then(|()| {
+                    if run.right {
+                        Ok(())
+                    } else {
+                        layout.SetTrimming(&trimming, &self.ellipsis)
+                    }
+                })
+                .and_then(|()| {
+                    self.target
+                        .CreateSolidColorBrush(&D2D1_COLOR_F { r, g, b, a: 1.0 }, None)
+                })
+                .map(|brush| {
+                    self.target.DrawTextLayout(
+                        windows_numerics::Vector2 {
+                            X: left,
+                            Y: at.top as f32,
+                        },
+                        &layout,
+                        &brush,
+                        D2D1_DRAW_TEXT_OPTIONS_CLIP,
+                    );
+                })
+        };
+        if let Err(e) = drawn {
+            eprintln!("lull: Classic playlist text: {e}");
+        }
+    }
+
+    fn end(&self) {
+        // SAFETY: ends the drawing `begin` began.
+        if let Err(e) = unsafe { self.target.EndDraw(None, None) } {
+            eprintln!("lull: Classic playlist text: {e}");
+        }
     }
 }
 

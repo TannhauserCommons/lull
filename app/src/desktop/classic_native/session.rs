@@ -114,15 +114,18 @@ impl Session {
         self.report(snapshot);
     }
 
-    /// The playlist's lines: `1. Artist - Title` and the length, for each song.
+    /// The playlist's lines: `1. Artist - Title` and the length, for each song; the numbers
+    /// padded with spaces to the widest, as Webamp's are (` 9.` beside `10.`).
     pub fn lines(&self, snapshot: &Snapshot) -> (Vec<String>, Vec<Option<f64>>) {
+        let width = snapshot.queue.len().to_string().len();
         snapshot
             .queue
             .iter()
             .enumerate()
             .map(|(i, e)| {
                 let t = self.engine.track(&e.track_id).unwrap_or_default();
-                (title_line(i, &t.artist, &t.title, None), t.duration)
+                let number = format!("{:>width$}", i + 1);
+                (format!("{number}. {}", song_name(&t.artist, &t.title)), t.duration)
             })
             .unzip()
     }
@@ -245,13 +248,18 @@ fn now_playing(track: &Track, snapshot: &Snapshot) -> NowPlaying {
     }
 }
 
-/// Winamp's marquee line: `3. Artist - Title (4:05)`.
-fn title_line(index: usize, artist: &str, title: &str, duration: Option<f64>) -> String {
-    let name = if artist.is_empty() {
+/// A song as the playlist and the marquee name it: `Artist - Title`, or the title alone.
+fn song_name(artist: &str, title: &str) -> String {
+    if artist.is_empty() {
         title.to_owned()
     } else {
         format!("{artist} - {title}")
-    };
+    }
+}
+
+/// Winamp's marquee line: `3. Artist - Title (4:05)`.
+fn title_line(index: usize, artist: &str, title: &str, duration: Option<f64>) -> String {
+    let name = song_name(artist, title);
     match duration {
         Some(d) => format!("{}. {name} ({}:{:02})", index + 1, d as u32 / 60, d as u32 % 60),
         None => format!("{}. {name}", index + 1),

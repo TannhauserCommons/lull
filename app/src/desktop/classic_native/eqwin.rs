@@ -7,24 +7,31 @@
 //! `src/ui/winamp/equalizer.rs` (MIT, credited in app/licenses/THIRD-PARTY.md).
 
 use super::canvas::Pen;
-use super::draw::{Control, Target, View};
+use super::draw::{Control, Focus, Target, View};
 use super::eq::{BANDS, MAX_DB};
 use super::skin::{Area, HEIGHT, layout, sprites};
 
-/// A slider's thumb, and how far it travels.
+/// A slider's thumb, and how far it travels: Webamp's slider is 62 pixels high in its 63-pixel
+/// track.
 const THUMB: u32 = 11;
-const TRAVEL: u32 = layout::EQ_PREAMP.height - THUMB;
+const TRAVEL: u32 = layout::EQ_PREAMP.height - 1 - THUMB;
 /// The curve: a point every so many pixels across the graph, starting this far in.
 const GRAPH_STEP: u32 = 12;
 const GRAPH_PAD: u32 = 2;
 
 /// The equaliser window's control under a point of it; `None` is the window itself, which drags.
 pub fn at(x: u32, y: u32, shaded: bool) -> Option<Target> {
-    let button = |control, area| Target { control, area, knob: 0 };
+    let button = |control, area| Target {
+        control,
+        area,
+        knob: 0,
+        travel: 0,
+    };
     let slider = |control, area| Target {
         control,
         area,
         knob: THUMB,
+        travel: TRAVEL,
     };
     let mut controls = vec![
         button(Control::EqClose, layout::EQ_CLOSE),
@@ -35,6 +42,7 @@ pub fn at(x: u32, y: u32, shaded: bool) -> Option<Target> {
             control: Control::Volume,
             area: layout::EQ_SHADE_VOLUME,
             knob: 3,
+            travel: layout::EQ_SHADE_VOLUME.width - 3,
         });
     } else {
         controls.extend([
@@ -59,18 +67,16 @@ pub fn decibels(fraction: f64) -> f64 {
 
 pub fn window(pen: &mut Pen, view: &View) {
     pen.sprite(sprites::EQ_BACKGROUND, 0, 0);
-    let bar = if view.focused {
+    let bar = if view.focus == Focus::Equaliser {
         sprites::EQ_TITLE_BAR_ACTIVE
     } else {
         sprites::EQ_TITLE_BAR_INACTIVE
     };
     pen.at(bar, layout::EQ_TITLE_BAR);
-    let close = if view.held(Control::EqClose) {
-        sprites::EQ_CLOSE_BUTTON_PRESSED
-    } else {
-        sprites::EQ_CLOSE_BUTTON
-    };
-    pen.at(close, layout::EQ_CLOSE);
+    // Its buttons pressed only: at rest the title bar's own picture of them shows, as in Webamp.
+    if view.held(Control::EqClose) {
+        pen.at(sprites::EQ_CLOSE_BUTTON_PRESSED, layout::EQ_CLOSE);
+    }
     if view.held(Control::EqShade) {
         pen.at(sprites::EQ_SHADE_BUTTON_PRESSED, layout::EQ_SHADE);
     }
@@ -113,7 +119,7 @@ pub fn window(pen: &mut Pen, view: &View) {
 /// Rolled up: its bar, the volume as a small slider (its thumb changes look by thirds), balance
 /// centred, and its buttons.
 pub fn shaded(pen: &mut Pen, view: &View) {
-    let bar = if view.focused {
+    let bar = if view.focus == Focus::Equaliser {
         sprites::EQ_SHADE_BAR_ACTIVE
     } else {
         sprites::EQ_SHADE_BAR_INACTIVE
@@ -122,12 +128,9 @@ pub fn shaded(pen: &mut Pen, view: &View) {
     if view.held(Control::EqShade) {
         pen.at(sprites::EQ_UNSHADE_BUTTON_PRESSED, layout::EQ_SHADE);
     }
-    let close = if view.held(Control::EqClose) {
-        sprites::EQ_SHADE_CLOSE_BUTTON_PRESSED
-    } else {
-        sprites::EQ_SHADE_CLOSE_BUTTON
-    };
-    pen.at(close, layout::EQ_CLOSE);
+    if view.held(Control::EqClose) {
+        pen.at(sprites::EQ_SHADE_CLOSE_BUTTON_PRESSED, layout::EQ_CLOSE);
+    }
     let volume = view.volume.clamp(0.0, 1.0);
     let thumb = match volume {
         v if v < 1.0 / 3.0 => sprites::EQ_SHADE_VOLUME_THUMB_LOW,
@@ -159,7 +162,8 @@ fn slider(pen: &mut Pen, area: Area, value: f64, held: bool) {
     } else {
         sprites::EQ_THUMB
     };
-    let y = area.y + ((1.0 - value) * f64::from(TRAVEL)).round() as u32;
+    // Rounded down, as Webamp places its handle.
+    let y = area.y + ((1.0 - value) * f64::from(TRAVEL)).floor() as u32;
     pen.sprite(thumb, area.x + 1, y);
 }
 

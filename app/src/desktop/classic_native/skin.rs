@@ -176,13 +176,9 @@ pub mod sprites {
 
         TITLE_BAR_ACTIVE = (TitleBar, 27, 0, 275, 14);
         TITLE_BAR_INACTIVE = (TitleBar, 27, 15, 275, 14);
-        OPTIONS_BUTTON = (TitleBar, 0, 0, 9, 9);
         OPTIONS_BUTTON_PRESSED = (TitleBar, 0, 9, 9, 9);
-        MINIMIZE_BUTTON = (TitleBar, 9, 0, 9, 9);
         MINIMIZE_BUTTON_PRESSED = (TitleBar, 9, 9, 9, 9);
-        SHADE_BUTTON = (TitleBar, 0, 18, 9, 9);
         SHADE_BUTTON_PRESSED = (TitleBar, 9, 18, 9, 9);
-        CLOSE_BUTTON = (TitleBar, 18, 0, 9, 9);
         CLOSE_BUTTON_PRESSED = (TitleBar, 18, 9, 9, 9);
         CLUTTER_BAR = (TitleBar, 304, 0, 8, 43);
 
@@ -216,12 +212,8 @@ pub mod sprites {
         WORK_INDICATOR_OFF = (PlayPaus, 36, 0, 3, 9);
         WORK_INDICATOR_ON = (PlayPaus, 39, 0, 3, 9);
 
-        // Skins without `nums_ex` have no minus sign: Winamp borrowed the middle bar of the 2 and,
-        // to clear it, the same row of the 1.
+        // Skins without `nums_ex` have no minus sign: Winamp borrowed the middle bar of the 2.
         NUMBERS_MINUS = (Numbers, 20, 6, 5, 1);
-        NUMBERS_NO_MINUS = (Numbers, 9, 6, 5, 1);
-        NUMBERS_BLANK = (Numbers, 90, 0, 9, 13);
-        NUMS_EX_BLANK = (NumsEx, 90, 0, 9, 13);
         NUMS_EX_MINUS = (NumsEx, 99, 0, 9, 13);
 
         EQ_ON = (ShufRep, 0, 73, 23, 12);
@@ -243,7 +235,6 @@ pub mod sprites {
         EQ_BACKGROUND = (EqMain, 0, 0, 275, 116);
         EQ_TITLE_BAR_ACTIVE = (EqMain, 0, 134, 275, 14);
         EQ_TITLE_BAR_INACTIVE = (EqMain, 0, 149, 275, 14);
-        EQ_CLOSE_BUTTON = (EqMain, 0, 116, 9, 9);
         EQ_CLOSE_BUTTON_PRESSED = (EqMain, 0, 125, 9, 9);
         EQ_ON_OFF = (EqMain, 10, 119, 26, 12);
         EQ_ON_OFF_PRESSED = (EqMain, 128, 119, 26, 12);
@@ -265,7 +256,6 @@ pub mod sprites {
         EQ_SHADE_BAR_INACTIVE = (EqEx, 0, 15, 275, 14);
         EQ_SHADE_BUTTON_PRESSED = (EqEx, 1, 38, 9, 9);
         EQ_UNSHADE_BUTTON_PRESSED = (EqEx, 1, 47, 9, 9);
-        EQ_SHADE_CLOSE_BUTTON = (EqEx, 11, 38, 9, 9);
         EQ_SHADE_CLOSE_BUTTON_PRESSED = (EqEx, 11, 47, 9, 9);
         EQ_SHADE_VOLUME_THUMB_LOW = (EqEx, 1, 30, 3, 7);
         EQ_SHADE_VOLUME_THUMB_MIDDLE = (EqEx, 4, 30, 3, 7);
@@ -450,7 +440,8 @@ pub mod layout {
     /// The time display's digit cells, left to right.
     pub const TIME_DIGITS: [Area; 4] = [MINUTE_TENS, MINUTE_ONES, SECOND_TENS, SECOND_ONES];
     /// How far a slider's thumb travels: the track's width less the thumb's.
-    pub const VOLUME_TRAVEL: u32 = VOLUME.width - 14;
+    /// The thumb's travel: Webamp's slider is 3 pixels narrower than the track's picture.
+    pub const VOLUME_TRAVEL: u32 = VOLUME.width - 3 - 14;
     pub const POSITION_TRAVEL: u32 = POSITION.width - 29;
 }
 

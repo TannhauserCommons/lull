@@ -106,11 +106,6 @@ impl Analyser {
         }
         self.bars
     }
-
-    /// Whether every bar and peak has come to rest: nothing moves until there is sound again.
-    pub fn settled(&self) -> bool {
-        self.falloff.iter().all(|f| *f <= 0.0) && self.peaks.iter().all(|p| *p == 0)
-    }
 }
 
 /// The analyser's FFT, as Winamp's source has it: 512 samples under a Hann window, 256 magnitudes
@@ -262,10 +257,11 @@ mod tests {
         assert!(bars.iter().any(|b| b.height > 0));
         let silence = [0.0; FFT_SAMPLES];
         let mut now = start;
+        let mut bars = bars;
         for _ in 0..600 {
             now += STEP;
-            analyser.step(&silence, now);
+            bars = analyser.step(&silence, now);
         }
-        assert!(analyser.settled());
+        assert!(bars.iter().all(|b| b.height == 0 && b.peak.is_none_or(|p| p == 0)));
     }
 }

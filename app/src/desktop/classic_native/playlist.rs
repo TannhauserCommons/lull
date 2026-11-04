@@ -6,8 +6,8 @@
 //! `src/ui/winamp/playlist.rs` (MIT, credited in app/licenses/THIRD-PARTY.md).
 
 use super::canvas::Pen;
-use super::draw::{Control, Target, View};
-use super::skin::{Area, WIDTH, layout, sprites};
+use super::draw::{Control, Focus, Target, View, mini_time};
+use super::skin::{Area, Sprite, WIDTH, layout, sprites};
 
 /// The playlist's height, as Webamp opens it.
 pub const HEIGHT: u32 = 116;
@@ -44,8 +44,8 @@ impl List {
     }
 }
 
-/// The list's own area, between the frame's tiles.
-fn list_area() -> Area {
+/// The middle of the window between the frame's tiles, on the list's background.
+fn middle_area() -> Area {
     Area::new(
         layout::PLAYLIST_LEFT_WIDTH,
         layout::PLAYLIST_TITLE_HEIGHT,
@@ -53,6 +53,20 @@ fn list_area() -> Area {
         HEIGHT - layout::PLAYLIST_TITLE_HEIGHT - layout::PLAYLIST_BOTTOM_HEIGHT,
     )
 }
+
+/// The rows' area: the middle less Webamp's 3 px above and below.
+fn list_area() -> Area {
+    let middle = middle_area();
+    Area::new(
+        middle.x,
+        middle.y + LIST_PADDING,
+        middle.width,
+        middle.height - 2 * LIST_PADDING,
+    )
+}
+
+/// Above and below the rows (Webamp's `padding: 3px 0`).
+const LIST_PADDING: u32 = 3;
 
 /// The row a point of the playlist is on (past the last song: the end), for a drag.
 pub fn row_at(y: u32, list: &List) -> usize {
@@ -63,7 +77,7 @@ pub fn row_at(y: u32, list: &List) -> usize {
 
 /// The scroll bar's column, between the list and the right edge.
 fn scroll_area() -> Area {
-    let list = list_area();
+    let list = middle_area();
     Area::new(layout::PLAYLIST_SCROLL_X, list.y, 8, list.height)
 }
 
@@ -84,7 +98,12 @@ fn mini_transport() -> [(Control, Area); 6] {
 
 /// The playlist's control under a point of it; `None` is the window itself, which drags.
 pub fn at(x: u32, y: u32, shaded: bool, list: &List) -> Option<Target> {
-    let button = |control, area| Target { control, area, knob: 0 };
+    let button = |control, area| Target {
+        control,
+        area,
+        knob: 0,
+        travel: 0,
+    };
     let mut controls = vec![
         button(Control::PlaylistClose, layout::PLAYLIST_CLOSE),
         button(Control::PlaylistShade, layout::PLAYLIST_SHADE),
@@ -102,6 +121,7 @@ pub fn at(x: u32, y: u32, shaded: bool, list: &List) -> Option<Target> {
             control: Control::PlaylistScroll,
             area: scroll_area(),
             knob: layout::PLAYLIST_SCROLL_HANDLE_HEIGHT,
+            travel: scroll_area().height - layout::PLAYLIST_SCROLL_HANDLE_HEIGHT,
         });
         let area = list_area();
         if area.contains(x, y) {
@@ -119,7 +139,7 @@ pub fn at(x: u32, y: u32, shaded: bool, list: &List) -> Option<Target> {
 }
 
 pub fn window(pen: &mut Pen, view: &View) {
-    frame(pen, view.focused);
+    frame(pen, view.focus == Focus::Playlist);
     if view.held(Control::PlaylistClose) {
         pen.at(sprites::PLAYLIST_CLOSE_PRESSED, layout::PLAYLIST_CLOSE);
     }
@@ -141,7 +161,7 @@ pub fn shaded(pen: &mut Pen, view: &View) {
         pen.sprite_clipped(sprites::PLAYLIST_SHADE_TILE, x, 0, run);
         x += layout::PLAYLIST_TILE_WIDTH;
     }
-    let corner = if view.focused {
+    let corner = if view.focus == Focus::Playlist {
         sprites::PLAYLIST_SHADE_RIGHT_ACTIVE
     } else {
         sprites::PLAYLIST_SHADE_RIGHT
@@ -171,25 +191,26 @@ fn frame(pen: &mut Pen, focused: bool) {
     } else {
         (PLAYLIST_TOP_LEFT, PLAYLIST_TITLE, PLAYLIST_TOP_TILE, PLAYLIST_TOP_RIGHT)
     };
-    let tile = layout::PLAYLIST_TILE_WIDTH;
-    let inner = WIDTH - 2 * tile - 100;
-    let (left, right) = (inner / 2, inner - inner / 2);
+    // Webamp's title bar: the left corner, a 12 px spacer, a fill, the title, a 13 px spacer, a
+    // fill and the right corner; the spacers tiled from their left, the fills from their right,
+    // sharing what width is left.
+    let (tile, height) = (layout::PLAYLIST_TILE_WIDTH, layout::PLAYLIST_TITLE_HEIGHT);
+    let fills = WIDTH - 2 * tile - TITLE_SPACERS.0 - TITLE_SPACERS.1 - TITLE_WIDTH;
+    let (left_fill, right_fill) = (fills / 2, fills - fills / 2);
     pen.sprite(top_left, 0, 0);
-    let left_run = Area::new(tile, 0, left, layout::PLAYLIST_TITLE_HEIGHT);
     let mut x = tile;
-    while x < tile + left {
-        pen.sprite_clipped(top_tile, x, 0, left_run);
-        x += tile;
+    for (width, from_right) in [(TITLE_SPACERS.0, false), (left_fill, true)] {
+        tile_across(pen, top_tile, Area::new(x, 0, width, height), from_right);
+        x += width;
     }
-    pen.sprite(title, tile + left, 0);
-    let right_run = Area::new(tile + left + 100, 0, right, layout::PLAYLIST_TITLE_HEIGHT);
-    let mut x = tile + left + 100;
-    while x < WIDTH - tile {
-        pen.sprite_clipped(top_tile, x, 0, right_run);
-        x += tile;
+    pen.sprite(title, x, 0);
+    x += TITLE_WIDTH;
+    for (width, from_right) in [(TITLE_SPACERS.1, false), (right_fill, true)] {
+        tile_across(pen, top_tile, Area::new(x, 0, width, height), from_right);
+        x += width;
     }
     pen.sprite(top_right, WIDTH - tile, 0);
-    let middle = Area::new(0, layout::PLAYLIST_TITLE_HEIGHT, WIDTH, list_area().height);
+    let middle = Area::new(0, layout::PLAYLIST_TITLE_HEIGHT, WIDTH, middle_area().height);
     let mut y = middle.y;
     while y < middle.y + middle.height {
         pen.sprite_clipped(PLAYLIST_LEFT_TILE, 0, y, middle);
@@ -201,12 +222,36 @@ fn frame(pen: &mut Pen, focused: bool) {
     pen.sprite(PLAYLIST_BOTTOM_RIGHT, 125, bottom);
 }
 
+/// The title bar's spacers either side of the title, and the title.
+const TITLE_SPACERS: (u32, u32) = (12, 13);
+const TITLE_WIDTH: u32 = 100;
+
+/// `sprite` tiled across `run` from its left edge, or from its right one: CSS's background at
+/// `left` or `right`.
+fn tile_across(pen: &mut Pen, sprite: Sprite, run: Area, from_right: bool) {
+    let step = sprite.width;
+    if step == 0 || run.width == 0 {
+        return;
+    }
+    let end = run.x + run.width;
+    let mut x = if from_right {
+        end.saturating_sub(run.width.div_ceil(step) * step)
+    } else {
+        run.x
+    };
+    while x < end {
+        pen.sprite_clipped(sprite, x, run.y, run);
+        x += step;
+    }
+}
+
 /// The rows in sight on the skin's background: selected ones on their colour, the playing one in
 /// its own.
 fn rows(pen: &mut Pen, view: &View) {
     let style = pen.skin.playlist.clone();
+    let middle = middle_area();
+    pen.fill(middle.x, middle.y, middle.width, middle.height, style.normal_background);
     let area = list_area();
-    pen.fill(area.x, area.y, area.width, area.height, style.normal_background);
     let list = view.list;
     for (slot, index) in (list.scroll..list.labels.len()).take(List::rows()).enumerate() {
         let y = area.y + slot as u32 * layout::PLAYLIST_ROW_HEIGHT;
@@ -224,21 +269,12 @@ fn rows(pen: &mut Pen, view: &View) {
         } else {
             style.normal
         };
+        // The row's title and time; the window lays them out in two columns as Webamp's flex
+        // does, the times' as wide as the widest in sight (window.rs `Text::column`).
+        let row = Area::new(area.x, y, area.width, layout::PLAYLIST_ROW_HEIGHT);
         let time = list.lengths[index].map(clock).unwrap_or_default();
-        let room = area.width - 4;
-        pen.system_text(
-            &time,
-            Area::new(area.x + 2, y, room, layout::PLAYLIST_ROW_HEIGHT),
-            color,
-            true,
-        );
-        let label_room = room.saturating_sub(5 * time.len() as u32 + 4);
-        pen.system_text(
-            &list.labels[index],
-            Area::new(area.x + 2, y, label_room, layout::PLAYLIST_ROW_HEIGHT),
-            color,
-            false,
-        );
+        pen.system_text(&time, row, color, true);
+        pen.system_text(&list.labels[index], row, color, false);
     }
 }
 
@@ -261,8 +297,8 @@ fn scrollbar(pen: &mut Pen, view: &View) {
     pen.sprite(handle, area.x, area.y + y);
 }
 
-/// In the bottom bar, in the skin's font: the selected songs' time and the whole list's, and how
-/// far into the playing song.
+/// In the bottom bar, in the skin's font: the selected songs' time and the whole list's, and the
+/// small clock.
 fn times(pen: &mut Pen, view: &View) {
     let bottom = HEIGHT - layout::PLAYLIST_BOTTOM_HEIGHT;
     let list = view.list;
@@ -274,24 +310,18 @@ fn times(pen: &mut Pen, view: &View) {
         .filter(|(_, s)| **s)
         .filter_map(|(l, _)| *l)
         .sum();
-    let running = format!("{}/{}", clock(selected), clock(total));
+    // Padded with blanks to 18 cells, as Webamp's is: a skin's blank needn't be see-through.
+    let running = format!("{:<18}", format!("{}/{}", clock(selected), clock(total)));
     let (x, dy) = layout::PLAYLIST_RUNNING_TIME;
     pen.text(&running, Area::new(x, bottom + dy, 5 * running.len() as u32, 6));
-    if !view.now.stopped {
-        let elapsed = clock(view.now.position);
-        let (x, dy) = layout::PLAYLIST_TRACK_TIME;
-        pen.text(&elapsed, Area::new(x, bottom + dy, 5 * elapsed.len() as u32, 6));
-    }
+    let (x, dy) = layout::PLAYLIST_TRACK_TIME;
+    mini_time(pen, view, x, bottom + dy);
 }
 
-/// `m:ss`, or `h:mm:ss` past an hour.
+/// A song's length as Webamp writes it: minutes, however many, and seconds (`62:05`).
 fn clock(seconds: f64) -> String {
     let s = seconds.max(0.0) as u64;
-    if s >= 3600 {
-        format!("{}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60)
-    } else {
-        format!("{}:{:02}", s / 60, s % 60)
-    }
+    format!("{}:{:02}", s / 60, s % 60)
 }
 
 #[cfg(test)]
@@ -314,7 +344,7 @@ mod tests {
     }
 
     #[test]
-    fn times_read_the_way_winamps_did() {
-        assert_eq!((clock(65.4), clock(3725.0)), ("1:05".to_owned(), "1:02:05".to_owned()));
+    fn times_read_the_way_webamps_do() {
+        assert_eq!((clock(65.4), clock(3725.0)), ("1:05".to_owned(), "62:05".to_owned()));
     }
 }
