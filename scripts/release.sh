@@ -26,7 +26,9 @@ repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 # The newest green commit: the queue's status (ADR-0095), or before the queue, every check run passed.
 green() {
   for sha in $(git rev-list --first-parent -n 200 origin/main); do
-    queue=$(gh api "repos/$repo/commits/$sha/statuses" --jq '[.[] | select(.context == "queue")][0].state // ""')
+    # Only GitHub Actions can set it: main's ruleset requires it from there (ADR-0095).
+    queue=$(gh api "repos/$repo/commits/$sha/statuses" \
+      --jq '[.[] | select(.context == "queue" and .creator.login == "github-actions[bot]")][0].state // ""')
     [ "$queue" = success ] && { echo "$sha"; return; }
     [ -z "$queue" ] || continue
     runs=$(gh api "repos/$repo/commits/$sha/check-runs?per_page=100" \
