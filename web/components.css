@@ -1241,6 +1241,7 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
    states below: a later layer can't bring it back) */
 .pbar :is(.btn-icon, .seek)[data-fit-out], .pbar__badges > [data-fit-out]:not(.pbar__private) { display: none !important; }
 .pbar__private[data-fit-out] .pbar__private-label { display: none !important; }
+.pbar__private[data-fit-out] { padding-inline: 7px; }   /* the eye alone sits in the middle of its pill, as wide as before */
 .pbar__centre { display: grid; justify-items: center; gap: 2px; min-width: 0; }
 .pbar__controls { display: flex; align-items: center; gap: var(--sp-3); }
 .pbar__controls .btn-icon .ic { width: 22px; height: 22px; }
