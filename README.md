@@ -12,7 +12,7 @@ A self-hosted music player for one listener who runs Jellyfin.
 **Find and play**
 - **One search, two sources.** Your library answers at once. Soulseek results stream in, merged into one row per song across peers and grouped into albums.
 - **Ranked sources.** Each source is scored on format against your preferred formats, peer speed, free upload slot and queue length; lull picks the best, or you choose. A transfer that stalls falls back to the next peer by itself.
-- **Honest streaming.** The seek bar shows what has arrived, and you can seek only within it. Finding, queued, buffering, stalled, falling back and failed each look different.
+- **Honest streaming.** The seek bar shows what has arrived, and you can seek anywhere in it: past what has arrived, lull fetches the song from that point, and a notch marks where it lands until it plays there. Finding, queued, buffering, stalled, falling back and failed each look different.
 - **A capped stream cache** (`LULL_CACHE_MAX_GB`). The oldest unused audio is evicted first, and nothing playing or being saved is ever evicted.
 
 **Save**
