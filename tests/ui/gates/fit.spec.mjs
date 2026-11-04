@@ -97,6 +97,23 @@ for (const design of designs) {
       expect(report, 'the chrome at some width\n' + [...seen].map(([w, g]) => `at ${w} px: ${g}`).join('\n')).toEqual([]);
     });
 
+    // nothing playing, private listening on: the song side holds only the Private pill, which shows whole or keeps
+    // its eye, never clipped by the side's edge (tablet's song side clips what runs out of it)
+    test(`player bar, nothing playing, private listening / ${design} / ${theme}`, async ({ page }) => {
+      await watchObservers(page);
+      await openScreen(page, '/home', { design, theme });
+      await page.evaluate(() => App.store.set('privateListening', true));
+      const found = new Map();
+      for (let w = 1400; w >= 640; w -= 20) {
+        await page.setViewportSize({ width: w, height: 900 });
+        await drawnAt(page, w);
+        for (const p of await chrome(page)) found.set(p, [...(found.get(p) || []), w]);
+        const clipped = await page.evaluate(() => { const n = document.querySelector('#pbar-now'); return n.scrollWidth > n.clientWidth + 1 ? `the song side runs ${n.scrollWidth - n.clientWidth} px past its edge` : ''; });
+        if (clipped) found.set(clipped, [...(found.get(clipped) || []), w]);
+      }
+      expect([...found].map(([p, ws]) => `${p} at ${ws.join(', ')} px`), 'the idle bar with private listening on').toEqual([]);
+    });
+
     // the rows fit again by themselves when their text widens in place (a label that grew; no row changes size) and
     // when a font arrives with wider or narrower letters (a design's own, on first use): two frames on, they are as a
     // fresh fit of everything leaves them, and what gave way comes back when the narrower font does
