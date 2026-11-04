@@ -399,3 +399,63 @@ async fn save_the_songs_too_asks_library_and_is_kept_for_the_link() -> Result<()
     assert!(save_requests(&mut rx).is_empty());
     Ok(())
 }
+
+#[tokio::test]
+async fn a_match_an_older_rule_made_to_another_take_is_corrected_but_a_pick_stays() -> Result<()> {
+    // Rule 2 let a missing length pass: a line "Shelter (Them Jeans Drum Edit)" matched the
+    // plain "Shelter", and the owner heard the original.
+    let (svc, _rx, _, fake) = service_with_fakes().await?;
+    let plain = known(&svc, &fake, "The xx", "Shelter").await?;
+    let edit = known(&svc, &fake, "The xx", "Shelter (Them Jeans Drum Edit)").await?;
+    let other = known(&svc, &fake, "Velvet Orchard", "Paper Moon").await?;
+    let matched = |song: &'static str, id: String, rule: i64| {
+        svc.ctx.db.call(move |c| {
+            c.execute(
+                "INSERT INTO collection_song_matches (song, track_id, checked_at, rule) VALUES (?1, ?2, ?3, ?4)",
+                params![song, id, lull_core::now(), rule],
+            )?;
+            Ok(())
+        })
+    };
+    let old = lull_core::seams::FIND_SONG_RULE - 1;
+    matched("spotify:track:1", plain.clone(), old).await?;
+    matched("spotify:track:2", other.clone(), old).await?;
+    matched("spotify:track:3", plain.clone(), old).await?;
+    let lengthless = |key: &str, title: &str| Song {
+        duration: None,
+        ..song(key, "The xx", title)
+    };
+    let out = import_now(
+        &svc,
+        listing(vec![
+            lengthless("spotify:track:1", "Shelter (Them Jeans Drum Edit)"),
+            song("spotify:track:2", "Velvet Orchard", "Paper Moon"),
+            lengthless("spotify:track:3", "Shelter (Live)"),
+        ]),
+    )
+    .await?;
+    // The listener picked the plain song for the live line: their pick, not a match.
+    choose_now(&svc, 2, json!({ "choice": "track", "trackId": plain })).await?;
+    let id = out["playlistId"].as_str().unwrap_or_default().to_owned();
+    assert_eq!(
+        playlist_ids(&svc, &id).await?,
+        [plain.clone(), other.clone(), plain.clone()]
+    );
+
+    let changed = crate::matches::recheck(&svc).await?;
+    assert_eq!(
+        changed, 2,
+        "the edit's and the live line's matches; Paper Moon's stands"
+    );
+    assert_eq!(
+        playlist_ids(&svc, &id).await?,
+        [edit, other, plain],
+        "the edit line plays the edit; the listener's pick stays"
+    );
+    assert_eq!(
+        crate::matches::recheck(&svc).await?,
+        0,
+        "checked once under today's rule"
+    );
+    Ok(())
+}

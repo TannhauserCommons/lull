@@ -50,13 +50,16 @@ impl Catalog for FakeCatalog {
             return Err(lull_core::Error::unavailable("itunes", "down in this test"));
         }
         let songs = self.songs.lock().map_err(|_| lull_core::Error::internal("poisoned"))?;
-        Ok(songs
-            .iter()
-            .find(|t| {
-                lull_core::ids::loose_artist(&t.artist) == lull_core::ids::loose_artist(&song.artist)
-                    && lull_core::ids::loose_title(&t.title) == lull_core::ids::loose_title(&song.title)
-            })
-            .cloned())
+        Ok(songs.iter().find(|t| self.same_take(song, t)).cloned())
+    }
+
+    /// Loose artist and title, and the same words in the title's brackets: discovery's rule in
+    /// short, enough to tell "Shelter (Them Jeans Drum Edit)" from "Shelter".
+    fn same_take(&self, song: &SongQuery, t: &Track) -> bool {
+        let tags = |s: &str| lull_core::ids::normalize(s.split_once('(').map_or("", |(_, rest)| rest));
+        lull_core::ids::loose_artist(&t.artist) == lull_core::ids::loose_artist(&song.artist)
+            && lull_core::ids::loose_title(&t.title) == lull_core::ids::loose_title(&song.title)
+            && tags(&t.title) == tags(&song.title)
     }
 }
 

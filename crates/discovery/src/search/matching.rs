@@ -49,6 +49,10 @@ impl Catalog for Service {
         let pictured = describe(self, &merged, &[0], &[], &[]).await?;
         Ok(pictured.tracks.get(&id).cloned())
     }
+
+    fn same_take(&self, song: &SongQuery, track: &Track) -> bool {
+        is_wanted(&super::saved(track.clone()), &wanted(song))
+    }
 }
 
 impl Service {

@@ -171,10 +171,15 @@ pub trait Catalog: Send + Sync {
     /// its id resolves. `None` when nothing matches. Waits its turn within the catalog's rate
     /// limits, leaving room for the listener's own searches.
     async fn find_song(&self, song: &model::SongQuery) -> Result<Option<Track>>;
+
+    /// Whether `track` is the song by today's rule, without a lookup: for matches an older
+    /// `FIND_SONG_RULE` made, which collection re-checks.
+    fn same_take(&self, song: &model::SongQuery, track: &Track) -> bool;
 }
 
 /// The version of `Catalog::find_song`'s rule: bump it with any change to the rule. Collection
 /// keeps "nothing matched" under it, so a rule that matches more isn't answered with yesterday's
-/// misses.
+/// misses; and a match an older rule made that today's rule doesn't take (`Catalog::same_take`)
+/// is looked up again, the listener's own picks aside.
 /// 3: an edit or a live take is not the original when a length is missing (`merge::same_take`).
 pub const FIND_SONG_RULE: i64 = 3;

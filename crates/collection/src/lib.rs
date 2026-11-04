@@ -239,7 +239,7 @@ pub async fn start(
     // Subscribe before anything can publish, so no scrobble or save is missed.
     ctx.spawn(record_events(ctx.clone(), ctx.bus.subscribe()));
     settings::announce(ctx).await?;
-    Ok(Arc::new(Service {
+    let svc = Arc::new(Service {
         ctx: ctx.clone(),
         library,
         scrobbles,
@@ -249,7 +249,18 @@ pub async fn start(
         youtube,
         linking: Mutex::default(),
         previewing: Mutex::default(),
-    }))
+    });
+    // Matches an older matching rule made, re-checked once by today's (a rule changes with a
+    // release).
+    let checking = svc.clone();
+    ctx.spawn(async move {
+        match matches::recheck(&checking).await {
+            Ok(0) => {}
+            Ok(n) => tracing::info!(changed = n, "imported songs matched again by today's rule"),
+            Err(e) => tracing::warn!(error = %e, "re-checking imported songs' matches"),
+        }
+    });
+    Ok(svc)
 }
 
 /// `/api/likes`, `/api/follows`, `/api/plays`, `/api/history`, `/api/playlists/...`, `/api/stats`, `/api/settings`, `/api/sync`.

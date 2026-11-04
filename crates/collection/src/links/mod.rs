@@ -365,6 +365,36 @@ fn store(
     })
 }
 
+/// A song's match changed (`matches::recheck`): every link listing it takes the new match (or,
+/// with none, the song as the link names it), and its playlist is refilled; a listener's pick for
+/// the song stays first (`lines`).
+pub(crate) fn rematched(conn: &Connection, events: &mut Events, song: &Song, found: Option<TrackId>) -> Result<()> {
+    let named = match &found {
+        Some(_) => None,
+        None => Some(catalog::remember_named(conn, song.named())?.id),
+    };
+    let links: Vec<(i64, String, String)> = conn
+        .prepare(
+            "SELECT DISTINCT l.seq, l.name, l.key FROM collection_link_songs s
+             JOIN collection_links l ON l.seq = s.link_seq WHERE s.song = ?1",
+        )?
+        .query_map([&song.key], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    conn.execute(
+        "UPDATE collection_link_songs SET track_id = ?2, named_id = ?3 WHERE song = ?1",
+        params![
+            song.key,
+            found.as_ref().map(TrackId::as_str),
+            named.as_ref().map(TrackId::as_str)
+        ],
+    )?;
+    for (seq, name, key) in links {
+        let desc = format!("Imported from {}.", Link::from_key(&key)?.url());
+        fill_playlist(conn, events, seq, &name, &desc)?;
+    }
+    Ok(())
+}
+
 /// Asks library to save `ids` (`saves.request`, after the change commits) when the link's "Save
 /// the songs too" is on; how many were asked for.
 fn ask_saves(conn: &Connection, events: &mut Events, seq: i64, ids: Vec<TrackId>) -> Result<usize> {
