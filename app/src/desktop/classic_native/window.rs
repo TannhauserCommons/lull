@@ -33,15 +33,15 @@ use windows::Win32::Graphics::Gdi::{
     CombineRgn, CreateCompatibleDC, CreateDIBSection, CreateFontW, CreateRectRgn, DEFAULT_CHARSET, DIB_RGB_COLORS,
     DT_LEFT, DT_NOPREFIX, DT_RIGHT, DT_SINGLELINE, DT_VCENTER, DeleteDC, DeleteObject, DrawTextW, EndPaint,
     FF_DONTCARE, FW_NORMAL, GdiFlush, GetDC, HBITMAP, HDC, HFONT, HGDIOBJ, OUT_DEFAULT_PRECIS, PAINTSTRUCT, RGN_OR,
-    ReleaseDC, SRCCOPY, SelectObject, SetBkMode, SetTextCharacterExtra, SetTextColor, SetWindowRgn, TRANSPARENT,
+    SRCCOPY, SelectObject, SetBkMode, SetTextCharacterExtra, SetTextColor, SetWindowRgn, TRANSPARENT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, ReleaseCapture, SetCapture, VK_CONTROL, VK_DELETE, VK_DOWN, VK_LEFT, VK_RIGHT, VK_SHIFT, VK_UP,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CS_DBLCLKS, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow, HMENU,
-    HTCAPTION, IDC_ARROW, KillTimer, LoadCursorW, LoadIconW, MF_CHECKED, MF_POPUP, MF_SEPARATOR, MF_STRING,
+    AppendMenuW, CS_DBLCLKS, CS_OWNDC, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow,
+    HMENU, HTCAPTION, IDC_ARROW, KillTimer, LoadCursorW, LoadIconW, MF_CHECKED, MF_POPUP, MF_SEPARATOR, MF_STRING,
     RegisterClassExW, SW_MINIMIZE, SW_SHOWNORMAL, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER, SendMessageW,
     SetForegroundWindow, SetTimer, SetWindowPos, ShowWindow, TPM_NONOTIFY, TPM_RETURNCMD, TrackPopupMenuEx,
     WA_INACTIVE, WM_ACTIVATE, WM_CLOSE, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
@@ -178,6 +178,8 @@ struct Classic {
     /// A band of the window at the screen's size, its whole width and `BAND` rows: what changed is
     /// scaled into it and copied to the window a band at a time.
     band: Surface,
+    /// The window's own DC (its class's CS_OWNDC), for as long as the window lives.
+    screen: HDC,
     /// The windows' layout the shape Windows cuts the window to was made for: none since the size
     /// or the skin changed. Skins' sheets are opaque, so only the layout and the skin change it.
     shape: Option<Panels>,
@@ -251,6 +253,8 @@ pub fn open(setup: Setup, on_close: OnClose) -> Result<(), String> {
         Ok(overlay) => session.attach_overlay(overlay),
         Err(e) => eprintln!("lull: no media keys for Classic: {e}"),
     }
+    // SAFETY: a window this thread just made; its class owns the DC, so it is never released.
+    let screen = unsafe { GetDC(Some(hwnd)) };
     let band = match Surface::new((size.0, BAND)) {
         Ok(band) => band,
         Err(e) => {
@@ -267,6 +271,7 @@ pub fn open(setup: Setup, on_close: OnClose) -> Result<(), String> {
         on_close: Some(on_close),
         favourites: setup.favourites,
         band,
+        screen,
         shape: None,
         canvas: Canvas::new(panels.height()),
         shown: Vec::new(),
@@ -377,7 +382,9 @@ fn create(at: (i32, i32), size: (i32, i32)) -> Result<HWND, String> {
         let module = GetModuleHandleW(None).map_err(|e| e.to_string())?;
         let class = WNDCLASSEXW {
             cbSize: size_of::<WNDCLASSEXW>() as u32,
-            style: CS_DBLCLKS,
+            // Its own DC, kept: a window cut to a region otherwise works out what of it shows on
+            // every GetDC, about as long as the frame's copy itself.
+            style: CS_DBLCLKS | CS_OWNDC,
             lpfnWndProc: Some(procedure),
             hInstance: module.into(),
             hIcon: LoadIconW(Some(module.into()), PCWSTR(APP_ICON as usize as *const u16)).unwrap_or_default(),
@@ -1138,12 +1145,7 @@ impl Classic {
 
     /// Shows skin pixels `[x0, x1) x [y0, y1)` of the canvas in the window now.
     fn present(&mut self, dirty: (u32, u32, u32, u32)) {
-        // SAFETY: the window's own DC, released once painted.
-        unsafe {
-            let dc = GetDC(Some(self.hwnd));
-            self.paint(dc, dirty);
-            ReleaseDC(Some(self.hwnd), dc);
-        }
+        self.paint(self.screen, dirty);
     }
 
     /// Windows asks for a part of the window again (shown, restored, uncovered).
