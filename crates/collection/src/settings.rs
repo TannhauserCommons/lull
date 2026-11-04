@@ -51,6 +51,9 @@ struct Playback {
     radio_when_queue_ends: bool,
     /// How many queued songs the player asks soulseek to preload, 0-3.
     prefetch_count: u32,
+    /// A seek past what has arrived of a streaming song waits for those bytes while the song
+    /// plays on, instead of stopping at what arrived (web/player-rules.js `seekTo`).
+    jump_when_downloaded: bool,
 }
 
 impl Default for Playback {
@@ -63,6 +66,7 @@ impl Default for Playback {
             volume_step: 5,
             radio_when_queue_ends: true,
             prefetch_count: 2,
+            jump_when_downloaded: true,
         }
     }
 }
