@@ -7,6 +7,7 @@
 //! screen's own size.
 
 use super::canvas::{Canvas, TextRun};
+use super::dock;
 use super::draw::{self, Control, Focus, Target, View};
 use super::engine::{Command, Snapshot, Status};
 use super::eq::{self, presets};
@@ -54,15 +55,21 @@ pub struct Setup {
 /// What happens once the listener leaves Classic: the session as it is then, and the size.
 pub type OnClose = Box<dyn FnOnce(Session, f64)>;
 
-/// The three windows, top to bottom.
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Panel {
+/// The three windows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Panel {
     Main,
     Eq,
     Playlist,
 }
 
 impl Panel {
+    pub const ALL: [Panel; 3] = [Panel::Main, Panel::Eq, Panel::Playlist];
+
+    fn index(self) -> usize {
+        self as usize
+    }
+
     /// This window as the selected one.
     fn focus(self) -> Focus {
         match self {
@@ -87,29 +94,6 @@ struct Panels {
 }
 
 impl Panels {
-    /// The windows that show: each with its top and height in the stack.
-    fn stack(&self) -> Vec<(Panel, u32, u32)> {
-        let rolled = |shade: bool, height: u32| if shade { layout::SHADE_HEIGHT } else { height };
-        let (mut stack, mut top) = (Vec::new(), 0);
-        if self.main {
-            top = rolled(self.main_shade, HEIGHT);
-            stack.push((Panel::Main, 0, top));
-        }
-        if self.eq {
-            let height = rolled(self.eq_shade, HEIGHT);
-            stack.push((Panel::Eq, top, height));
-            top += height;
-        }
-        if self.playlist {
-            stack.push((
-                Panel::Playlist,
-                top,
-                rolled(self.playlist_shade, self.playlist_size.height()),
-            ));
-        }
-        stack
-    }
-
     /// Whether a window shows (Webamp's windows open or closed).
     fn shown(&mut self, panel: Panel) -> &mut bool {
         match panel {
@@ -119,32 +103,12 @@ impl Panels {
         }
     }
 
-    fn height(&self) -> u32 {
-        self.stack().iter().map(|(_, _, h)| h).sum()
-    }
-
-    /// As wide as the widest window: the main window's and the equaliser's 275, or the playlist's.
-    fn width(&self) -> u32 {
-        if self.playlist {
-            self.playlist_size.width()
-        } else {
-            WIDTH
+    fn showing(&self, panel: Panel) -> bool {
+        match panel {
+            Panel::Main => self.main,
+            Panel::Eq => self.eq,
+            Panel::Playlist => self.playlist,
         }
-    }
-
-    /// The window a row of the stack is in, and the row in it.
-    fn at(&self, y: u32) -> Option<(Panel, u32)> {
-        self.stack()
-            .into_iter()
-            .find(|(_, top, height)| y >= *top && y < top + height)
-            .map(|(panel, top, _)| (panel, y - top))
-    }
-
-    fn top(&self, panel: Panel) -> u32 {
-        self.stack()
-            .into_iter()
-            .find(|(p, _, _)| *p == panel)
-            .map_or(0, |(_, top, _)| top)
     }
 
     fn shaded(&self, panel: Panel) -> bool {
@@ -154,6 +118,81 @@ impl Panels {
             Panel::Playlist => self.playlist_shade,
         }
     }
+
+    /// A window's size in skin pixels, rolled up or not.
+    fn size(&self, panel: Panel) -> (u32, u32) {
+        let rolled = |height: u32| {
+            if self.shaded(panel) {
+                layout::SHADE_HEIGHT
+            } else {
+                height
+            }
+        };
+        match panel {
+            Panel::Main | Panel::Eq => (WIDTH, rolled(HEIGHT)),
+            Panel::Playlist => (self.playlist_size.width(), rolled(self.playlist_size.height())),
+        }
+    }
+}
+
+/// One of the windows as it is drawn: its canvas at 1x, where its skin pixels fall at the screen's
+/// size, and what is on screen.
+pub struct Pane {
+    pub canvas: Canvas,
+    /// For each skin column and row, the first physical one it covers (the last entry is the size).
+    pub columns: Vec<i32>,
+    pub rows: Vec<i32>,
+    /// The frame on screen, at 1x: what the next one is compared with.
+    shown: Vec<u32>,
+    shown_texts: Vec<TextRun>,
+    /// Its fingerprint when it was last drawn.
+    print: Option<u64>,
+    /// Whether the shape it was last cut to still holds: none since the size or the skin changed.
+    /// Skins' sheets are opaque, so only those change it.
+    shaped: bool,
+}
+
+impl Pane {
+    fn new() -> Self {
+        Self {
+            canvas: Canvas::new(0, 0),
+            columns: Vec::new(),
+            rows: Vec::new(),
+            shown: Vec::new(),
+            shown_texts: Vec::new(),
+            print: None,
+            shaped: false,
+        }
+    }
+
+    /// The pane's physical size.
+    fn physical(&self) -> (i32, i32) {
+        (
+            self.columns.last().copied().unwrap_or(0),
+            self.rows.last().copied().unwrap_or(0),
+        )
+    }
+
+    /// A point of its window as the skin pixel it falls in.
+    fn skin_point(&self, (x, y): (i32, i32)) -> (u32, u32) {
+        (skin_at(x, &self.columns), skin_at(y, &self.rows))
+    }
+
+    /// Nothing of what's on screen is compared with: all of it is drawn again, and cut again.
+    fn forget(&mut self) {
+        self.shown.clear();
+        self.shown_texts.clear();
+        self.print = None;
+        self.shaped = false;
+    }
+}
+
+/// The windows being dragged: which, from where the pointer was (desktop pixels), and where all
+/// the windows were then.
+struct Drag {
+    moving: Vec<usize>,
+    from: (i32, i32),
+    places: [(i32, i32); 3],
 }
 
 /// The popup menus.
@@ -175,24 +214,24 @@ pub struct Classic {
     pub session: Session,
     pub on_close: Option<OnClose>,
     favourites: Vec<(String, String)>,
-    /// The windows' layout the window's shape was made for: none since the size or the skin
-    /// changed. Skins' sheets are opaque, so only the layout and the skin change it.
-    shape: Option<Panels>,
-    pub canvas: Canvas,
-    /// The frame on screen, at 1x: what the next one is compared with.
-    shown: Vec<u32>,
-    shown_texts: Vec<TextRun>,
-    /// Each window's fingerprint when it was last drawn, top to bottom.
-    prints: [Option<u64>; 3],
+    /// The three windows as drawn, in `Panel` order.
+    panes: [Pane; 3],
+    /// Each window's top left on the desktop, physical pixels, shown or not.
+    places: [(i32, i32); 3],
+    /// The scale the windows were last laid out at, and the sizes they had (skin pixels).
+    laid_out: Option<(f64, [(u32, u32); 3])>,
+    /// Whether the platform lets the windows be placed (Wayland doesn't): if not, the platform
+    /// moves each and they don't dock.
+    pub places_windows: bool,
+    /// The work areas of the desktop's monitors, for snapping and for keeping windows on them.
+    areas: Vec<dock::Rect>,
+    drag: Option<Drag>,
     /// The player as of this frame, and the queue's revision the playlist shows.
     snapshot: Snapshot,
     revision: Option<u64>,
     /// Classic's size (1x to 3x), and the monitor's own scale on top.
     pub size: f64,
     pub dpi: f64,
-    /// For each skin column and row, the first physical one it covers (the last entry is the size).
-    pub columns: Vec<i32>,
-    pub rows: Vec<i32>,
     panels: Panels,
     list: List,
     analyser: Analyser,
@@ -200,12 +239,11 @@ pub struct Classic {
     bars: [Bar; BARS],
     /// The selected window of the three (Webamp's focus).
     focus: Focus,
-    /// The control held down and its window's top in the stack; for a button, whether the pointer
-    /// is still on it.
-    pressed: Option<(Target, u32)>,
+    /// The control held down and its window; for a button, whether the pointer is still on it.
+    pressed: Option<(Target, Panel)>,
     over: bool,
     seeking: Option<f64>,
-    /// The playlist's size when its corner was grabbed, and where the pointer was (window pixels).
+    /// The playlist's size when its corner was grabbed, and where the pointer was (desktop pixels).
     resizing: Option<(playlist::Size, (i32, i32))>,
     /// The balance slider, -1 to 1: this window's alone, as the page has none.
     balance: f64,
@@ -225,7 +263,8 @@ pub enum Effect {
     /// Not the stack's: the platform's own handling.
     Default,
     Handled,
-    /// The listener pressed on a window's own body: the platform moves it.
+    /// The listener pressed on a window's own body where the windows can't be placed: the
+    /// platform moves it.
     Move,
     /// The pointer is held on a control: its moves and release come here even off the window.
     Capture,
@@ -236,16 +275,26 @@ pub enum Effect {
     Menu(Menu, (i32, i32)),
 }
 
-/// What the platform's window does after a frame, in this order: take a new size, a new shape,
-/// put the changed part on screen, set its timer to a new pace.
+/// What the platform's windows do after a frame: each shows or hides, goes to its place, takes a
+/// new size and a new shape, puts its changed part on screen, in this order; the timer takes a
+/// new pace.
 #[derive(Default)]
 pub struct Frame {
+    pub panes: [PaneFrame; 3],
+    pub tick: Option<Duration>,
+}
+
+/// One window's part of a frame.
+#[derive(Default)]
+pub struct PaneFrame {
+    pub shown: bool,
+    /// Its top left on the desktop, physical pixels.
+    pub at: (i32, i32),
     /// Physical pixels.
     pub size: Option<(i32, i32)>,
     pub shape: Option<Shape>,
-    /// Skin pixels `[x0, x1) x [y0, y1)` of the canvas.
+    /// Skin pixels `[x0, x1) x [y0, y1)` of its canvas.
     pub dirty: Option<(u32, u32, u32, u32)>,
-    pub tick: Option<Duration>,
 }
 
 /// Rectangles of physical pixels `(x0, y0, x1, y1)` a window is cut to; none: the whole window.
@@ -292,23 +341,25 @@ impl Classic {
             playlist_shade: false,
             playlist_size: playlist::Size::default(),
         };
+        // Stacked as Webamp opens them: the equaliser under the main window, the playlist under it.
         let scale = setup.size * setup.dpi;
+        let (x, y) = setup.at;
+        let height = edges(HEIGHT, scale).last().copied().unwrap_or(0);
         let mut classic = Classic {
             skin: setup.skin,
             session: setup.session,
             on_close: Some(on_close),
             favourites: setup.favourites,
-            shape: None,
-            canvas: Canvas::new(panels.width(), panels.height()),
-            shown: Vec::new(),
-            shown_texts: Vec::new(),
-            prints: [None; 3],
+            panes: [Pane::new(), Pane::new(), Pane::new()],
+            places: [(x, y), (x, y + height), (x, y + 2 * height)],
+            laid_out: None,
+            places_windows: true,
+            areas: Vec::new(),
+            drag: None,
             snapshot: Snapshot::default(),
             revision: None,
             size: setup.size,
             dpi: setup.dpi,
-            columns: edges(panels.width(), scale),
-            rows: edges(panels.height(), scale),
             panels,
             list: List::default(),
             analyser: Analyser::default(),
@@ -335,32 +386,39 @@ impl Classic {
         classic
     }
 
-    /// The window's size now, physical pixels.
-    pub fn physical_size(&self) -> (i32, i32) {
-        (
-            self.columns.last().copied().unwrap_or(0),
-            self.rows.last().copied().unwrap_or(0),
-        )
+    /// The widest window's physical width, for a band a window's rows are drawn in.
+    pub fn widest(&self) -> i32 {
+        self.panes.iter().map(|p| p.physical().0).max().unwrap_or(0).max(1)
     }
 
-    /// The window under a point of the stack, the row in it, and its control there.
-    fn target_at(&self, x: u32, y: u32) -> Option<(Panel, u32, Option<Target>)> {
-        let (panel, local) = self.panels.at(y)?;
+    /// A window as drawn: its canvas and where its pixels fall.
+    pub fn pane(&self, panel: Panel) -> &Pane {
+        &self.panes[panel.index()]
+    }
+
+    /// The control under a point of a window (skin pixels); `None` is the window itself, which
+    /// drags.
+    fn target_at(&self, panel: Panel, x: u32, y: u32) -> Option<Target> {
         let shaded = self.panels.shaded(panel);
-        let target = match panel {
-            Panel::Main => draw::main_at(x, local, shaded),
-            Panel::Eq => eqwin::at(x, local, shaded),
-            Panel::Playlist => playlist::at(x, local, shaded, &self.list, self.panels.playlist_size),
-        };
-        Some((panel, local, target))
+        match panel {
+            Panel::Main => draw::main_at(x, y, shaded),
+            Panel::Eq => eqwin::at(x, y, shaded),
+            Panel::Playlist => playlist::at(x, y, shaded, &self.list, self.panels.playlist_size),
+        }
     }
 
-    /// The left button down at `at` (the window's own pixels), twice for a double click.
-    pub fn pointer_down(&mut self, at: (i32, i32), double: bool, mods: Mods) -> Effect {
-        let (x, y) = self.skin_point(at);
-        let Some((panel, _, target)) = self.target_at(x, y) else {
-            return Effect::Default;
-        };
+    /// The left button down on a window at `at` (its own pixels; `screen`, the desktop's), twice
+    /// for a double click.
+    pub fn pointer_down(
+        &mut self,
+        panel: Panel,
+        at: (i32, i32),
+        screen: (i32, i32),
+        double: bool,
+        mods: Mods,
+    ) -> Effect {
+        let (x, y) = self.pane(panel).skin_point(at);
+        let target = self.target_at(panel, x, y);
         // A press anywhere but on the open menu closes it, as a click outside Webamp's does.
         let control = target.map(|t| t.control);
         if !matches!(control, Some(Control::PlaylistMenuItem(..)))
@@ -372,9 +430,23 @@ impl Classic {
         self.focus = panel.focus();
         let Some(target) = target else {
             if double {
-                return self.double_click_title(x, y);
+                return self.double_click_title(panel, x, y);
             }
-            return Effect::Move;
+            if !self.places_windows {
+                return Effect::Move;
+            }
+            // The main window brings what is docked to it; the others come away alone.
+            let windows = self.rects();
+            let moving = match panel {
+                Panel::Main => dock::docked_set(&windows, panel.index()),
+                _ => vec![panel.index()],
+            };
+            self.drag = Some(Drag {
+                moving,
+                from: screen,
+                places: self.places,
+            });
+            return Effect::Capture;
         };
         match target.control {
             Control::Time => {
@@ -382,15 +454,15 @@ impl Classic {
                 return Effect::Handled;
             }
             Control::PlaylistResize => {
-                self.resizing = Some((self.panels.playlist_size, at));
-                self.pressed = Some((target, self.panels.top(panel)));
+                self.resizing = Some((self.panels.playlist_size, screen));
+                self.pressed = Some((target, panel));
                 return Effect::Capture;
             }
             Control::PlaylistRow(row) => {
                 let effect = self.click_row(row, double, mods);
                 // A single press on a song may drag the selected songs elsewhere in the list.
                 if !double && row < self.list.labels.len() {
-                    self.pressed = Some((target, self.panels.top(panel)));
+                    self.pressed = Some((target, panel));
                     self.dropping = Some(row);
                     return Effect::Capture;
                 }
@@ -398,37 +470,48 @@ impl Classic {
             }
             _ => {}
         }
-        self.pressed = Some((target, self.panels.top(panel)));
+        self.pressed = Some((target, panel));
         self.over = true;
         self.drag(x, y);
         Effect::Capture
     }
 
-    /// A double click the platform reports on a window's title bar (it began a move first).
-    pub fn title_double_click(&mut self, at: (i32, i32)) -> Effect {
-        let (x, y) = self.skin_point(at);
-        self.double_click_title(x, y)
+    /// A double click the platform reports on a window's title bar (it began a move first: where
+    /// windows can't be placed).
+    #[cfg(target_os = "linux")]
+    pub fn title_double_click(&mut self, panel: Panel, at: (i32, i32)) -> Effect {
+        let (x, y) = self.pane(panel).skin_point(at);
+        self.double_click_title(panel, x, y)
     }
 
-    /// The pointer moved to `at`: a held control follows it, the open menu lights what it is over,
-    /// the playlist's corner resizes.
-    pub fn pointer_move(&mut self, at: (i32, i32)) {
-        if self.resizing.is_some() {
-            return self.resize_playlist(at);
+    /// The pointer moved over a window to `at` (its own pixels; `screen`, the desktop's): dragged
+    /// windows go with it, a held control follows it, the open menu lights what it is over, the
+    /// playlist's corner resizes.
+    pub fn pointer_move(&mut self, panel: Panel, at: (i32, i32), screen: (i32, i32)) {
+        if self.drag.is_some() {
+            return self.move_windows(screen);
         }
-        let (x, y) = self.skin_point(at);
+        if self.resizing.is_some() {
+            return self.resize_playlist(screen);
+        }
+        let (x, y) = self.pane(panel).skin_point(at);
         if self.pressed.is_some() {
             self.drag(x, y);
         }
         if self.list.menu.is_some() {
-            self.hover_menu(x, y);
+            self.hover_menu(panel, x, y);
         }
     }
 
-    /// The left button up at `at`.
-    pub fn pointer_up(&mut self, at: (i32, i32)) -> Effect {
+    /// The left button up over a window at `at` (its own pixels; `screen`, the desktop's).
+    pub fn pointer_up(&mut self, panel: Panel, at: (i32, i32), screen: (i32, i32)) -> Effect {
+        if self.drag.is_some() {
+            self.move_windows(screen);
+            self.drag = None;
+            return Effect::Release;
+        }
         if self.resizing.is_some() {
-            self.resize_playlist(at);
+            self.resize_playlist(screen);
             self.resizing = None;
             self.pressed = None;
             return Effect::Release;
@@ -436,9 +519,54 @@ impl Classic {
         if self.pressed.is_none() {
             return Effect::Default;
         }
-        let (x, y) = self.skin_point(at);
+        let (x, y) = self.pane(panel).skin_point(at);
         self.drag(x, y);
         self.release()
+    }
+
+    /// The dragged windows where the pointer has taken them, snapped to the others and to the work
+    /// areas' edges.
+    fn move_windows(&mut self, screen: (i32, i32)) {
+        let Some(drag) = &self.drag else {
+            return;
+        };
+        let by = (screen.0 - drag.from.0, screen.1 - drag.from.1);
+        let mut windows = self.rects();
+        for (i, window) in windows.iter_mut().enumerate() {
+            if let Some(w) = window {
+                (w.x, w.y) = drag.places[i];
+            }
+        }
+        let (dx, dy) = dock::dragged(&windows, &drag.moving, by, &self.areas, dock::snap_distance(self.dpi));
+        for &i in &drag.moving {
+            self.places[i] = (drag.places[i].0 + dx, drag.places[i].1 + dy);
+        }
+    }
+
+    /// The windows that show, where they are now (closed ones `None`), in `Panel` order.
+    fn rects(&self) -> Vec<Option<dock::Rect>> {
+        Panel::ALL
+            .iter()
+            .map(|&panel| {
+                let (width, height) = self.pane(panel).physical();
+                let (x, y) = self.places[panel.index()];
+                self.panels
+                    .showing(panel)
+                    .then_some(dock::Rect::new(x, y, width, height))
+            })
+            .collect()
+    }
+
+    /// The desktop's monitors' work areas changed (or are first known): windows left off every
+    /// one come back, the main window's docked set together.
+    pub fn set_areas(&mut self, areas: Vec<dock::Rect>) {
+        self.areas = areas;
+        let windows = self.rects();
+        let together = dock::docked_set(&windows, Panel::Main.index());
+        for (i, (dx, dy)) in dock::on_screen(&windows, &together, &self.areas) {
+            self.places[i].0 += dx;
+            self.places[i].1 += dy;
+        }
     }
 
     /// The right button: the Options menu there.
@@ -446,22 +574,15 @@ impl Classic {
         Effect::Menu(Menu::Options, at)
     }
 
-    /// A point of the window as the skin pixel of the stack it falls in.
-    fn skin_point(&self, (x, y): (i32, i32)) -> (u32, u32) {
-        (skin_at(x, &self.columns), skin_at(y, &self.rows))
-    }
-
     /// A double click on a window's title bar rolls it up or down (Winamp's shade).
-    fn double_click_title(&mut self, x: u32, y: u32) -> Effect {
-        let Some((panel, local, target)) = self.target_at(x, y) else {
-            return Effect::Handled;
-        };
+    fn double_click_title(&mut self, panel: Panel, x: u32, y: u32) -> Effect {
+        let target = self.target_at(panel, x, y);
         let title = if panel == Panel::Playlist && !self.panels.playlist_shade {
             layout::PLAYLIST_TITLE_HEIGHT
         } else {
             layout::SHADE_HEIGHT
         };
-        if target.is_none() && local < title {
+        if target.is_none() && y < title {
             self.toggle_shade(panel);
         }
         Effect::Handled
@@ -472,12 +593,12 @@ impl Classic {
     fn toggle_window(&mut self, panel: Panel) {
         let open = !*self.panels.shown(panel);
         *self.panels.shown(panel) = open;
-        let stack = self.panels.stack();
-        let Some((first, _, _)) = stack.first() else {
+        let showing: Vec<Panel> = Panel::ALL.into_iter().filter(|&p| self.panels.showing(p)).collect();
+        let Some(first) = showing.first() else {
             *self.panels.shown(panel) = true;
             return;
         };
-        if !stack.iter().any(|(p, _, _)| p.focus() == self.focus) {
+        if !showing.iter().any(|p| p.focus() == self.focus) {
             self.focus = first.focus();
         }
     }
@@ -521,11 +642,11 @@ impl Classic {
     /// The held control follows the pointer: a slider takes its value, a button looks pressed while
     /// the pointer is on it.
     fn drag(&mut self, x: u32, y: u32) {
-        let Some((target, top)) = self.pressed else {
+        let Some((target, _)) = self.pressed else {
             return;
         };
         let area = target.area;
-        let (x, y) = (f64::from(x), f64::from(y) - f64::from(top));
+        let (x, y) = (f64::from(x), f64::from(y));
         let along = |at: f64, start: u32| {
             let travel = f64::from(target.travel.max(1));
             ((at - f64::from(start) - f64::from(target.knob) / 2.0) / travel).clamp(0.0, 1.0)
@@ -563,7 +684,7 @@ impl Classic {
     }
 
     fn release(&mut self) -> Effect {
-        let Some((target, top)) = self.pressed.take() else {
+        let Some((target, panel)) = self.pressed.take() else {
             return Effect::Release;
         };
         if let (Control::PlaylistRow(grabbed), Some(dropped)) = (target.control, self.dropping.take()) {
@@ -581,18 +702,19 @@ impl Classic {
                 self.send(Command::Seek(fraction * length));
             }
         } else if self.over {
-            return self.click(target, top);
+            return self.click(target, panel);
         }
         Effect::Release
     }
 
     /// A button, clicked: Winamp's own meaning for each.
-    fn click(&mut self, target: Target, top: u32) -> Effect {
+    fn click(&mut self, target: Target, panel: Panel) -> Effect {
         let now = &self.snapshot;
         let area = target.area;
+        let pane = self.pane(panel);
         let below = (
-            self.columns[area.x as usize],
-            self.rows[((top + area.y + area.height) as usize).min(self.rows.len() - 1)],
+            pane.columns[area.x as usize],
+            pane.rows[((area.y + area.height) as usize).min(pane.rows.len() - 1)],
         );
         if target.control == Control::Marquee && matches!(now.status, Status::Choose(_)) {
             return Effect::Menu(Menu::Choose, below);
@@ -770,7 +892,6 @@ impl Classic {
     /// Winamp's Double Size: 2x, or 1x from there; lull opens Classic at it next time too.
     fn double_size(&mut self) {
         self.size = if self.size >= 2.0 { 1.0 } else { 2.0 };
-        self.rows.clear();
     }
 
     /// A button of an open playlist menu, Webamp's meaning for each. What lull's queue can't do
@@ -807,17 +928,16 @@ impl Classic {
     }
 
     /// The pointer over an open playlist menu lights the button under it.
-    fn hover_menu(&mut self, x: u32, y: u32) {
+    fn hover_menu(&mut self, panel: Panel, x: u32, y: u32) {
         let open = self.list.menu;
-        self.list.hover = match self.target_at(x, y) {
-            Some((
-                _,
-                _,
+        self.list.hover = match (panel, self.target_at(panel, x, y)) {
+            (
+                Panel::Playlist,
                 Some(Target {
                     control: Control::PlaylistMenuItem(menu, item),
                     ..
                 }),
-            )) if Some(menu) == open => Some(item),
+            ) if Some(menu) == open => Some(item),
             _ => None,
         };
     }
@@ -886,11 +1006,10 @@ impl Classic {
         self.list.scroll_to(scroll, self.panels.playlist_size);
     }
 
-    /// The wheel, turned `notches` with the pointer at `at`: it scrolls the playlist under it, else
-    /// turns the volume.
-    pub fn wheel(&mut self, notches: f64, at: (i32, i32)) -> Effect {
-        let (x, y) = self.skin_point(at);
-        if let Some((Panel::Playlist, _, _)) = self.target_at(x, y) {
+    /// The wheel, turned `notches` over a window: over the playlist it scrolls it, else it turns
+    /// the volume.
+    pub fn wheel(&mut self, panel: Panel, notches: f64) -> Effect {
+        if panel == Panel::Playlist {
             let rows = (-notches * WHEEL_ROWS).round() as isize;
             let first = self.list.scroll.saturating_add_signed(rows);
             self.list.scroll_to(first, self.panels.playlist_size);
@@ -1011,11 +1130,7 @@ impl Classic {
         let blink_off = self
             .paused_since
             .is_some_and(|since| (clock - since).as_secs() % 2 == 1);
-        let (width, height) = (self.panels.width(), self.panels.height());
-        self.canvas.resize(width, height);
-        if self.rows.len() != height as usize + 1 || self.columns.len() != width as usize + 1 {
-            frame.size = Some(self.resize(width, height));
-        }
+        self.lay_out(&mut frame);
         let view = View {
             now: &now,
             marquee: &marquee,
@@ -1036,43 +1151,45 @@ impl Classic {
             list: &self.list,
             playlist: self.panels.playlist_size,
         };
-        let mut drawn = Vec::new();
-        for (slot, (panel, top, rows)) in self.panels.stack().into_iter().enumerate() {
-            let print = Some(fingerprint(panel, top, self.panels.shaded(panel), &view));
-            if self.shown.is_empty() || self.prints[slot] != print {
-                self.prints[slot] = print;
-                drawn.push((top, top + rows));
-            } else {
+        for panel in Panel::ALL {
+            let i = panel.index();
+            let out = &mut frame.panes[i];
+            out.shown = self.panels.showing(panel);
+            out.at = self.places[i];
+            if !out.shown {
                 continue;
             }
-            draw_panel(
-                &mut self.canvas,
-                &self.skin,
-                (panel, self.panels.shaded(panel)),
-                top,
-                rows,
-                &view,
-            );
-        }
-        if self.shape != Some(self.panels) {
-            frame.shape = Some(self.reshape());
-        }
-        let dirty = drawn
-            .iter()
-            .filter_map(|&(from, to)| changed(&self.canvas.pixels, &self.shown, width, (from, to)))
-            .chain(texts_changed(&self.canvas.texts, &self.shown_texts))
-            .reduce(union);
-        frame.dirty = dirty;
-        if let Some(dirty) = dirty {
-            if self.shown.len() == self.canvas.pixels.len() {
-                let (from, to) = ((dirty.1 * width) as usize, (dirty.3 * width) as usize);
-                self.shown[from..to].copy_from_slice(&self.canvas.pixels[from..to]);
-            } else {
-                self.shown.clone_from(&self.canvas.pixels);
+            let shaded = self.panels.shaded(panel);
+            let print = Some(fingerprint(panel, shaded, &view));
+            let pane = &mut self.panes[i];
+            let drawn = pane.shown.is_empty() || pane.print != print;
+            if drawn {
+                pane.print = print;
+                draw_panel(&mut pane.canvas, &self.skin, (panel, shaded), &view);
             }
-            self.shown_texts.clone_from(&self.canvas.texts);
+            if !pane.shaped {
+                pane.shaped = true;
+                out.shape = Some(cut(pane));
+            }
+            let (width, height) = (pane.canvas.width, pane.canvas.height);
+            let pixels = drawn
+                .then(|| changed(&pane.canvas.pixels, &pane.shown, width, (0, height)))
+                .flatten();
+            out.dirty = pixels
+                .into_iter()
+                .chain(texts_changed(&pane.canvas.texts, &pane.shown_texts))
+                .reduce(union);
+            if let Some(dirty) = out.dirty {
+                if pane.shown.len() == pane.canvas.pixels.len() {
+                    let (from, to) = ((dirty.1 * width) as usize, (dirty.3 * width) as usize);
+                    pane.shown[from..to].copy_from_slice(&pane.canvas.pixels[from..to]);
+                } else {
+                    pane.shown.clone_from(&pane.canvas.pixels);
+                }
+                pane.shown_texts.clone_from(&pane.canvas.texts);
+            }
         }
-        let moving = now.playing || self.seeking.is_some() || self.pressed.is_some();
+        let moving = now.playing || self.seeking.is_some() || self.pressed.is_some() || self.drag.is_some();
         let tick = if moving { ANIMATE } else { IDLE };
         if tick != self.tick {
             self.tick = tick;
@@ -1081,46 +1198,60 @@ impl Classic {
         frame
     }
 
-    /// The stack's width or height or the size changed: the window's new size, physical pixels,
-    /// and all of it drawn again.
-    fn resize(&mut self, width: u32, height: u32) -> (i32, i32) {
+    /// Each window at its size now and at the scale now: one that changed size is laid out again
+    /// (and all of it drawn), what is docked to its bottom and right moving with the change; a new
+    /// scale keeps the windows where they were around the main window.
+    fn lay_out(&mut self, frame: &mut Frame) {
         let scale = self.size * self.dpi;
-        self.columns = edges(width, scale);
-        self.rows = edges(height, scale);
-        // What was on screen was another shape: nothing of it is compared with, all of it is drawn.
-        self.shown.clear();
-        self.shown_texts.clear();
-        self.prints = [None; 3];
-        self.shape = None;
-        (self.columns[width as usize], self.rows[height as usize])
+        let sizes = Panel::ALL.map(|panel| self.panels.size(panel));
+        let before = self.laid_out.replace((scale, sizes));
+        let rects = self.rects();
+        let mut grown = Vec::new();
+        for (i, &(width, height)) in sizes.iter().enumerate() {
+            if before.is_some_and(|(s, old)| s == scale && old[i] == (width, height)) {
+                continue;
+            }
+            let pane = &mut self.panes[i];
+            pane.canvas.resize(width, height);
+            pane.columns = edges(width, scale);
+            pane.rows = edges(height, scale);
+            pane.forget();
+            frame.panes[i].size = Some(pane.physical());
+            grown.push(i);
+        }
+        match before {
+            Some((old, _)) if old != scale => {
+                let main = self.places[Panel::Main.index()];
+                let at = |p: i32, from: i32| from + (f64::from(p - from) * scale / old).round() as i32;
+                for place in &mut self.places {
+                    *place = (at(place.0, main.0), at(place.1, main.1));
+                }
+            }
+            Some(_) => {
+                for i in grown {
+                    let Some(was) = rects[i] else {
+                        continue;
+                    };
+                    for (j, (dx, dy)) in dock::resized(&self.rects(), i, was) {
+                        self.places[j].0 += dx;
+                        self.places[j].1 += dy;
+                    }
+                }
+            }
+            None => {}
+        }
     }
 
-    /// The window cut to the skin's shapes as drawn (outside them the canvas is transparent), as
-    /// rectangles of physical pixels; a window drawn with no transparency is a plain rectangle.
-    fn reshape(&mut self) -> Shape {
-        self.shape = Some(self.panels);
-        let pieces = shape(&self.canvas.pixels, self.canvas.width)?;
-        let (columns, rows) = (&self.columns, &self.rows);
-        let physical = |(x0, y0, x1, y1): (u32, u32, u32, u32)| {
-            (
-                columns[x0 as usize],
-                rows[y0 as usize],
-                columns[x1 as usize],
-                rows[y1 as usize],
-            )
-        };
-        Some(pieces.into_iter().map(physical).collect())
-    }
-
-    /// The skin pixels a part of the window `(x0, y0, x1, y1)` (its own pixels, end exclusive)
-    /// shows, for the platform to put on screen again; none before the first frame.
-    pub fn covering(&self, (x0, y0, x1, y1): (i32, i32, i32, i32)) -> Option<(u32, u32, u32, u32)> {
-        if self.shown.is_empty() || x1 <= x0 || y1 <= y0 {
+    /// The skin pixels a part of a window `(x0, y0, x1, y1)` (its own pixels, end exclusive)
+    /// shows, for the platform to put on screen again; none before its first frame.
+    pub fn covering(&self, panel: Panel, (x0, y0, x1, y1): (i32, i32, i32, i32)) -> Option<(u32, u32, u32, u32)> {
+        let pane = self.pane(panel);
+        if pane.shown.is_empty() || x1 <= x0 || y1 <= y0 {
             return None;
         }
-        let (sx0, sy0) = self.skin_point((x0, y0));
-        let (sx1, sy1) = self.skin_point((x1 - 1, y1 - 1));
-        let (sx1, sy1) = ((sx1 + 1).min(self.canvas.width), (sy1 + 1).min(self.canvas.height));
+        let (sx0, sy0) = pane.skin_point((x0, y0));
+        let (sx1, sy1) = pane.skin_point((x1 - 1, y1 - 1));
+        let (sx1, sy1) = ((sx1 + 1).min(pane.canvas.width), (sy1 + 1).min(pane.canvas.height));
         (sx1 > sx0 && sy1 > sy0).then_some((sx0, sy0, sx1, sy1))
     }
 
@@ -1141,8 +1272,9 @@ impl Classic {
             Ok((skin, said)) => {
                 self.skin = skin;
                 self.notice = said.map(|said| (said, Instant::now()));
-                self.shown.clear();
-                self.shape = None;
+                for pane in &mut self.panes {
+                    pane.forget();
+                }
             }
             Err(why) => self.notice = Some((format!("Couldn't load the skin: {why}"), Instant::now())),
         }
@@ -1164,10 +1296,10 @@ fn skipped(index: usize, count: usize, round: bool, songs: isize) -> Option<usiz
     }
 }
 
-/// One window of the stack (shaded or not) into the canvas, `rows` high from `top`.
-fn draw_panel(canvas: &mut Canvas, skin: &Skin, (panel, shaded): (Panel, bool), top: u32, rows: u32, view: &View) {
-    canvas.clear(top, rows);
-    let mut pen = canvas.pen(skin, top);
+/// A window (rolled up or not) into its canvas.
+fn draw_panel(canvas: &mut Canvas, skin: &Skin, (panel, shaded): (Panel, bool), view: &View) {
+    canvas.clear(0, canvas.height);
+    let mut pen = canvas.pen(skin, 0);
     match (panel, shaded) {
         (Panel::Main, false) => draw::main(&mut pen, view),
         (Panel::Main, true) => draw::main_shaded(&mut pen, view),
@@ -1217,6 +1349,22 @@ pub fn scale_rows(
 /// physical one it covers.
 pub fn skin_at(physical: i32, edges: &[i32]) -> u32 {
     edges.partition_point(|&e| e <= physical).saturating_sub(1) as u32
+}
+
+/// A window cut to the skin's shapes as drawn (outside them its canvas is transparent), as
+/// rectangles of physical pixels; a window drawn with no transparency is a plain rectangle.
+fn cut(pane: &Pane) -> Shape {
+    let pieces = shape(&pane.canvas.pixels, pane.canvas.width)?;
+    let (columns, rows) = (&pane.columns, &pane.rows);
+    let physical = |(x0, y0, x1, y1): (u32, u32, u32, u32)| {
+        (
+            columns[x0 as usize],
+            rows[y0 as usize],
+            columns[x1 as usize],
+            rows[y1 as usize],
+        )
+    };
+    Some(pieces.into_iter().map(physical).collect())
 }
 
 /// The canvas's drawn pixels as rectangles of skin pixels `(x0, y0, x1, y1)`, end exclusive: runs of
@@ -1284,17 +1432,10 @@ fn changed(frame: &[u32], shown: &[u32], width: u32, (from, to): (u32, u32)) -> 
 /// What a window shows, in one number: the window is drawn again only when it changes. The
 /// analyser moves the main window's every frame while it plays; the equaliser and the playlist
 /// change when the listener touches them (the playlist's clock once a second).
-fn fingerprint(panel: Panel, top: u32, shaded: bool, view: &View) -> u64 {
+fn fingerprint(panel: Panel, shaded: bool, view: &View) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::hash::DefaultHasher::new();
-    (
-        panel as u8,
-        top,
-        shaded,
-        view.focus,
-        view.pressed.map(|c| format!("{c:?}")),
-    )
-        .hash(&mut h);
+    (panel as u8, shaded, view.focus, view.pressed.map(|c| format!("{c:?}"))).hash(&mut h);
     let now = view.now;
     match panel {
         Panel::Main => {
@@ -1545,21 +1686,25 @@ pub mod scenes {
                 Ok(skin) if skin.complete() => skin,
                 _ => Skin::from_archive(&bytes, Some(&base))?,
             };
-            let height = panels.height();
-            let width = panels.width();
-            let mut canvas = Canvas::new(width, height);
-            for (panel, top, rows) in panels.stack() {
-                draw_panel(&mut canvas, &skin, (panel, panels.shaded(panel)), top, rows, &view);
-            }
-            let painted = paint(&skin, &canvas)?;
-            let rgba: Vec<u8> = painted
-                .iter()
-                .zip(&canvas.pixels)
-                .flat_map(|(p, drawn)| {
+            // Each window drawn and painted on its own, then stacked as the harness's Webamp stacks
+            // them: one image as wide as the widest.
+            let sizes = Panel::ALL.map(|panel| panels.size(panel));
+            let width = sizes.iter().map(|s| s.0).max().unwrap_or(WIDTH);
+            let height = sizes.iter().map(|s| s.1).sum();
+            let mut rgba = vec![0u8; (width * height * 4) as usize];
+            let mut top = 0;
+            for (panel, (w, h)) in Panel::ALL.into_iter().zip(sizes) {
+                let mut canvas = Canvas::new(w, h);
+                draw_panel(&mut canvas, &skin, (panel, panels.shaded(panel)), &view);
+                let painted = paint(&skin, &canvas)?;
+                for (i, (p, drawn)) in painted.iter().zip(&canvas.pixels).enumerate() {
+                    let (x, y) = (i as u32 % w, top + i as u32 / w);
                     let alpha = if drawn >> 24 == 0 { 0 } else { 255 };
-                    [(p >> 16) as u8, (p >> 8) as u8, *p as u8, alpha]
-                })
-                .collect();
+                    let at = ((y * width + x) * 4) as usize;
+                    rgba[at..at + 4].copy_from_slice(&[(p >> 16) as u8, (p >> 8) as u8, *p as u8, alpha]);
+                }
+                top += h;
+            }
             let name = path
                 .file_stem()
                 .map(|s| s.to_string_lossy().into_owned())
@@ -1618,7 +1763,7 @@ mod tests {
     }
 
     #[test]
-    fn a_window_closed_leaves_the_others_stacked_and_the_last_stays() {
+    fn each_window_has_its_size_rolled_up_or_not() {
         let mut panels = Panels {
             main: false,
             eq: true,
@@ -1626,13 +1771,14 @@ mod tests {
             main_shade: false,
             eq_shade: true,
             playlist_shade: false,
-            playlist_size: playlist::Size::default(),
+            playlist_size: playlist::Size { wide: 1, tall: 1 },
         };
-        let stack: Vec<_> = panels.stack().iter().map(|(p, top, _)| (*p, *top)).collect();
-        assert_eq!(stack, [(Panel::Eq, 0), (Panel::Playlist, layout::SHADE_HEIGHT)]);
-        panels.eq = false;
-        panels.playlist = false;
-        assert!(panels.stack().is_empty());
+        assert_eq!(panels.size(Panel::Main), (WIDTH, HEIGHT));
+        assert_eq!(panels.size(Panel::Eq), (WIDTH, layout::SHADE_HEIGHT));
+        assert_eq!(panels.size(Panel::Playlist), (300, 145));
+        panels.playlist_shade = true;
+        assert_eq!(panels.size(Panel::Playlist), (300, layout::SHADE_HEIGHT));
+        assert!(!panels.showing(Panel::Main) && panels.showing(Panel::Eq));
     }
 
     #[test]
@@ -1680,25 +1826,6 @@ mod tests {
         let long = "1. Someone - A title far too long for Winamp's marquee";
         assert!(marquee.show(long, start).starts_with("1. Some"));
         assert!(marquee.show(long, start + MARQUEE_STEP * 3).starts_with("Someone"));
-    }
-
-    #[test]
-    fn the_windows_stack_and_roll_up() {
-        let mut panels = Panels {
-            main: true,
-            eq: true,
-            playlist: true,
-            main_shade: false,
-            eq_shade: false,
-            playlist_shade: false,
-            playlist_size: playlist::Size::default(),
-        };
-        assert_eq!(panels.height(), 348);
-        assert_eq!(panels.at(120), Some((Panel::Eq, 4)));
-        panels.main_shade = true;
-        panels.eq = false;
-        assert_eq!(panels.height(), 14 + 116);
-        assert_eq!(panels.at(20), Some((Panel::Playlist, 6)));
     }
 
     #[test]

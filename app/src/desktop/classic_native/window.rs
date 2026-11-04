@@ -14,9 +14,10 @@
 #![allow(unsafe_code)]
 
 use super::canvas::{Canvas, TextRun};
+use super::dock::Rect;
 use super::playlist::{TEXT_SIZE, TEXT_SPACING, TIME_PADDING, baseline};
 use super::skin::{Skin, layout};
-use super::ui::{Classic, Effect, Frame, Item, Key, Menu, Mods, Shape, scale_rows};
+use super::ui::{Classic, Effect, Frame, Item, Key, Menu, Mods, PaneFrame, Panel, Shape, scale_rows};
 pub use super::ui::{OnClose, Setup};
 use std::cell::RefCell;
 use std::ffi::c_void;
@@ -38,8 +39,9 @@ use windows::Win32::Graphics::DirectWrite::{
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Gdi::{
     BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BeginPaint, BitBlt, ClientToScreen, CombineRgn, CreateCompatibleDC,
-    CreateDIBSection, CreateRectRgn, DIB_RGB_COLORS, DeleteDC, DeleteObject, EndPaint, GdiFlush, GetDC, HBITMAP, HDC,
-    HGDIOBJ, PAINTSTRUCT, RGN_OR, SRCCOPY, ScreenToClient, SelectObject, SetWindowRgn,
+    CreateDIBSection, CreateRectRgn, DIB_RGB_COLORS, DeleteDC, DeleteObject, EndPaint, EnumDisplayMonitors, GdiFlush,
+    GetDC, GetMonitorInfoW, HBITMAP, HDC, HGDIOBJ, HMONITOR, MONITORINFO, PAINTSTRUCT, RGN_OR, SRCCOPY, SelectObject,
+    SetWindowRgn,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -49,11 +51,11 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CS_DBLCLKS, CS_OWNDC, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow,
     HMENU, HTCAPTION, IDC_ARROW, KillTimer, LoadCursorW, LoadIconW, MF_CHECKED, MF_POPUP, MF_SEPARATOR, MF_STRING,
-    RegisterClassExW, SW_MINIMIZE, SW_SHOWNORMAL, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER, SendMessageW,
-    SetForegroundWindow, SetTimer, SetWindowPos, ShowWindow, TPM_NONOTIFY, TPM_RETURNCMD, TrackPopupMenuEx, WM_CLOSE,
-    WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCLBUTTONDBLCLK,
-    WM_NCLBUTTONDOWN, WM_PAINT, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_TIMER, WNDCLASSEXW, WS_EX_APPWINDOW, WS_MINIMIZEBOX,
-    WS_POPUP, WS_SYSMENU,
+    RegisterClassExW, SW_HIDE, SW_MINIMIZE, SW_RESTORE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW,
+    SetForegroundWindow, SetTimer, SetWindowPos, ShowWindow, TPM_NONOTIFY, TPM_RETURNCMD, TrackPopupMenuEx,
+    WINDOW_EX_STYLE, WM_CLOSE, WM_DISPLAYCHANGE, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCLBUTTONDOWN, WM_PAINT, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_SYSKEYDOWN, WM_TIMER,
+    WNDCLASSEXW, WS_EX_APPWINDOW, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU,
 };
 use windows::core::{BOOL, HSTRING, Interface, PCWSTR, w};
 
@@ -68,73 +70,123 @@ thread_local! {
     static OPEN: RefCell<Option<Window>> = const { RefCell::new(None) };
 }
 
-/// The stack and the Win32 window showing it.
+/// The stack and the Win32 windows showing it, one a panel.
 struct Window {
-    hwnd: HWND,
     classic: Classic,
-    /// A band of the window at the screen's size, its whole width and `BAND` rows: what changed is
-    /// scaled into it and copied to the window a band at a time.
+    /// The main window's (on the taskbar), the equaliser's and the playlist's, which the main one
+    /// owns: they minimise with it and stay off the taskbar.
+    panes: [Pane; 3],
+    /// A band of a window at the screen's size, the widest window's width and `BAND` rows: what
+    /// changed is scaled into it and copied to its window a band at a time.
     band: Surface,
-    /// The window's own DC (its class's CS_OWNDC), for as long as the window lives.
-    screen: HDC,
     text: Text,
     /// The font and scale `text` was made for.
     text_style: (String, f64),
 }
 
-/// Opens the window. Main thread only.
+/// One Win32 window, and what it shows now.
+struct Pane {
+    hwnd: HWND,
+    /// Its own DC (its class's CS_OWNDC), for as long as it lives.
+    screen: HDC,
+    shown: bool,
+    at: (i32, i32),
+    size: (i32, i32),
+}
+
+/// Opens the windows. Main thread only.
 pub fn open(setup: Setup, on_close: OnClose) -> Result<(), String> {
     if OPEN.with_borrow(Option::is_some) {
         return Err("Classic mode is open already".into());
     }
-    let at = setup.at;
-    let classic = Classic::new(setup, on_close);
-    let size = classic.physical_size();
+    let mut classic = Classic::new(setup, on_close);
     let (font, scale) = classic.text_style();
     let text_style = (font.to_owned(), scale);
     let text = Text::new(font, scale)?;
-    let hwnd = create(at, size)?;
-    crate::desktop::platform::add_thumb_buttons_to(classic.session.app(), hwnd.0 as isize);
-    let mut classic = classic;
-    match super::smtc::Overlay::new(hwnd, classic.session.app().clone()) {
+    let main = create(None)?;
+    let mut hwnds = vec![main];
+    for _ in 1..3 {
+        match create(Some(main)) {
+            Ok(hwnd) => hwnds.push(hwnd),
+            Err(e) => {
+                destroy(&hwnds);
+                return Err(e);
+            }
+        }
+    }
+    crate::desktop::platform::add_thumb_buttons_to(classic.session.app(), main.0 as isize);
+    match super::smtc::Overlay::new(main, classic.session.app().clone()) {
         Ok(overlay) => classic.session.attach_overlay(overlay),
         Err(e) => eprintln!("lull: no media keys for Classic: {e}"),
     }
-    // SAFETY: a window this thread just made; its class owns the DC, so it is never released.
-    let screen = unsafe { GetDC(Some(hwnd)) };
-    let band = match Surface::new((size.0, BAND)) {
+    let band = match Surface::new((1, BAND)) {
         Ok(band) => band,
         Err(e) => {
-            // SAFETY: the window was just created on this thread and nothing else holds it.
-            let _ = unsafe { DestroyWindow(hwnd) };
+            destroy(&hwnds);
             return Err(e);
         }
     };
+    // SAFETY: windows this thread just made; their class owns their DCs, never released.
+    let panes = [0, 1, 2].map(|i| Pane {
+        hwnd: hwnds[i],
+        screen: unsafe { GetDC(Some(hwnds[i])) },
+        shown: false,
+        at: (i32::MIN, i32::MIN),
+        size: (0, 0),
+    });
+    classic.set_areas(work_areas());
     let mut window = Window {
-        hwnd,
         classic,
+        panes,
         band,
-        screen,
         text,
         text_style,
     };
     window.render();
     OPEN.with_borrow_mut(|open| *open = Some(window));
     // SAFETY: a window this thread owns.
-    unsafe {
-        let _ = ShowWindow(hwnd, SW_SHOWNORMAL);
-        let _ = SetForegroundWindow(hwnd);
-    }
+    let _ = unsafe { SetForegroundWindow(main) };
     Ok(())
 }
 
-/// Brings the window forward (the tray, a second launch). Main thread only.
+/// Destroys windows this thread made.
+fn destroy(hwnds: &[HWND]) {
+    for &hwnd in hwnds.iter().rev() {
+        // SAFETY: a window this thread made, held by nothing else.
+        let _ = unsafe { DestroyWindow(hwnd) };
+    }
+}
+
+/// The desktop's monitors' work areas (the screen less the taskbar), physical pixels.
+fn work_areas() -> Vec<Rect> {
+    unsafe extern "system" fn each(monitor: HMONITOR, _: HDC, _: *mut RECT, areas: LPARAM) -> BOOL {
+        let mut info = MONITORINFO {
+            cbSize: size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        // SAFETY: `areas` is the Vec `work_areas` passed for this call; the monitor is Windows' own.
+        unsafe {
+            if GetMonitorInfoW(monitor, &mut info).as_bool() {
+                let r = info.rcWork;
+                let areas = &mut *(areas.0 as *mut Vec<Rect>);
+                areas.push(Rect::new(r.left, r.top, r.right - r.left, r.bottom - r.top));
+            }
+        }
+        BOOL(1)
+    }
+    let mut areas: Vec<Rect> = Vec::new();
+    // SAFETY: the callback only runs during this call, while `areas` lives.
+    let _ = unsafe { EnumDisplayMonitors(None, None, Some(each), LPARAM(&mut areas as *mut Vec<Rect> as isize)) };
+    areas
+}
+
+/// Brings the windows forward (the tray, a second launch). Main thread only.
 pub fn show() {
-    if let Some(hwnd) = OPEN.with_borrow(|open| open.as_ref().map(|w| w.hwnd)) {
+    if let Some(main) = OPEN.with_borrow(|open| open.as_ref().map(|w| w.panes[0].hwnd)) {
         // SAFETY: a window this thread owns.
         unsafe {
-            let _ = ShowWindow(hwnd, SW_SHOWNORMAL);
-            let _ = SetForegroundWindow(hwnd);
+            let _ = ShowWindow(main, SW_RESTORE);
+            let _ = SetForegroundWindow(main);
         }
     }
 }
@@ -167,12 +219,10 @@ pub fn close() {
     let Some(window) = OPEN.with_borrow_mut(Option::take) else {
         return;
     };
-    // SAFETY: a window this thread owns; its state is out of the thread-local already, so the
-    // messages destroying it sends find nothing to borrow.
-    unsafe {
-        let _ = KillTimer(Some(window.hwnd), TIMER);
-        let _ = DestroyWindow(window.hwnd);
-    }
+    // SAFETY: windows this thread owns; their state is out of the thread-local already, so the
+    // messages destroying them send find nothing to borrow.
+    let _ = unsafe { KillTimer(Some(window.panes[0].hwnd), TIMER) };
+    destroy(&window.panes.each_ref().map(|p| p.hwnd));
     let mut classic = window.classic;
     let size = classic.size;
     if let Some(on_close) = classic.on_close.take() {
@@ -180,7 +230,8 @@ pub fn close() {
     }
 }
 
-fn create(at: (i32, i32), size: (i32, i32)) -> Result<HWND, String> {
+/// One of the windows: the main one, or one it owns.
+fn create(owner: Option<HWND>) -> Result<HWND, String> {
     // SAFETY: plain Win32 calls with static strings; the class is registered once per process
     // (a second registration fails harmlessly and the first stands).
     unsafe {
@@ -198,16 +249,21 @@ fn create(at: (i32, i32), size: (i32, i32)) -> Result<HWND, String> {
             ..Default::default()
         };
         RegisterClassExW(&class);
+        let taskbar = if owner.is_none() {
+            WS_EX_APPWINDOW
+        } else {
+            WINDOW_EX_STYLE(0)
+        };
         CreateWindowExW(
-            WS_EX_APPWINDOW,
+            taskbar,
             CLASS,
             w!("lull classic"),
             WS_POPUP | WS_SYSMENU | WS_MINIMIZEBOX,
-            at.0,
-            at.1,
-            size.0,
-            size.1,
-            None,
+            0,
+            0,
+            1,
+            1,
+            owner,
             None,
             Some(module.into()),
             None,
@@ -220,7 +276,10 @@ unsafe extern "system" fn procedure(hwnd: HWND, message: u32, wparam: WPARAM, lp
     // Borrowed already: Windows called back from inside a call this window made. That message gets
     // the default handling.
     let effect = OPEN.with(|open| match open.try_borrow_mut().as_deref_mut() {
-        Ok(Some(window)) if window.hwnd == hwnd => window.handle(message, wparam, lparam),
+        Ok(Some(window)) => match window.panes.iter().position(|p| p.hwnd == hwnd) {
+            Some(i) => window.handle(Panel::ALL[i], message, wparam, lparam),
+            None => Effect::Default,
+        },
         _ => Effect::Default,
     });
     // SAFETY: calls on this thread's own window, with the borrow above ended.
@@ -248,7 +307,9 @@ unsafe extern "system" fn procedure(hwnd: HWND, message: u32, wparam: WPARAM, lp
             }
             Effect::Minimize => {
                 let _ = ReleaseCapture();
-                let _ = ShowWindow(hwnd, SW_MINIMIZE);
+                if let Some(main) = OPEN.with_borrow(|open| open.as_ref().map(|w| w.panes[0].hwnd)) {
+                    let _ = ShowWindow(main, SW_MINIMIZE);
+                }
                 LRESULT(0)
             }
             Effect::Close => {
@@ -321,31 +382,32 @@ unsafe fn build_menu(items: &[Item]) -> windows::core::Result<HMENU> {
 }
 
 impl Window {
-    fn handle(&mut self, message: u32, wparam: WPARAM, lparam: LPARAM) -> Effect {
+    fn handle(&mut self, panel: Panel, message: u32, wparam: WPARAM, lparam: LPARAM) -> Effect {
+        let hwnd = self.panes[panel as usize].hwnd;
+        let at = coordinates(lparam);
+        let screen = || {
+            let mut point = POINT { x: at.0, y: at.1 };
+            // SAFETY: a window this thread owns, and a point to convert in place.
+            let _ = unsafe { ClientToScreen(hwnd, &mut point) };
+            (point.x, point.y)
+        };
         let effect = match message {
             WM_TIMER => Effect::Handled,
             WM_PAINT => {
-                self.repaint();
+                self.repaint(panel);
                 return Effect::Handled;
             }
-            WM_LBUTTONDOWN => self.classic.pointer_down(coordinates(lparam), false, mods()),
-            WM_LBUTTONDBLCLK => self.classic.pointer_down(coordinates(lparam), true, mods()),
-            // Windows reports a double click on a window's body as one on its caption: the first
-            // click started a move.
-            WM_NCLBUTTONDBLCLK => {
-                let at = self.screen_point(lparam);
-                self.classic.title_double_click(at)
-            }
+            WM_LBUTTONDOWN => self.classic.pointer_down(panel, at, screen(), false, mods()),
+            WM_LBUTTONDBLCLK => self.classic.pointer_down(panel, at, screen(), true, mods()),
             WM_MOUSEMOVE => {
-                self.classic.pointer_move(coordinates(lparam));
+                self.classic.pointer_move(panel, at, screen());
                 Effect::Handled
             }
-            WM_LBUTTONUP => self.classic.pointer_up(coordinates(lparam)),
-            WM_RBUTTONUP => self.classic.right_click(coordinates(lparam)),
+            WM_LBUTTONUP => self.classic.pointer_up(panel, at, screen()),
+            WM_RBUTTONUP => self.classic.right_click(at),
             WM_MOUSEWHEEL => {
                 let notches = f64::from((wparam.0 >> 16) as u16 as i16) / 120.0;
-                let at = self.screen_point(lparam);
-                self.classic.wheel(notches, at)
+                self.classic.wheel(panel, notches)
             }
             WM_KEYDOWN | WM_SYSKEYDOWN => match key(wparam.0 as u16) {
                 Some(key) => self.classic.key(
@@ -357,6 +419,11 @@ impl Window {
                 ),
                 None => Effect::Default,
             },
+            // A monitor added, gone or resized, the taskbar moved: no window stays off them all.
+            WM_DISPLAYCHANGE | WM_SETTINGCHANGE => {
+                self.classic.set_areas(work_areas());
+                Effect::Default
+            }
             WM_CLOSE => Effect::Close,
             _ => return Effect::Default,
         };
@@ -364,14 +431,9 @@ impl Window {
         effect
     }
 
-    /// A frame of the stack, and what it says the window does about it.
+    /// A frame of the stack, and what it says the windows do about it.
     fn render(&mut self) {
-        let Frame {
-            size,
-            shape,
-            dirty,
-            tick,
-        } = self.classic.render();
+        let Frame { panes, tick } = self.classic.render();
         let (font, scale) = self.classic.text_style();
         if (font, scale) != (self.text_style.0.as_str(), self.text_style.1) {
             match Text::new(font, scale) {
@@ -380,93 +442,106 @@ impl Window {
             }
             self.text_style = (font.to_owned(), scale);
         }
-        if let Some(size) = size {
-            self.resize(size);
-        }
-        if let Some(shape) = shape {
-            self.reshape(shape);
-        }
-        if let Some(dirty) = dirty {
-            self.paint(self.screen, dirty);
-        }
-        if let Some(tick) = tick {
-            // SAFETY: a window this thread owns; replaces the running timer.
-            unsafe { SetTimer(Some(self.hwnd), TIMER, tick.as_millis() as u32, None) };
-        }
-    }
-
-    /// The window at its new size, physical pixels, with a band as wide.
-    fn resize(&mut self, size: (i32, i32)) {
-        if size.0 != self.band.size.0 {
-            match Surface::new((size.0, BAND)) {
+        let widest = self.classic.widest();
+        if widest != self.band.size.0 {
+            match Surface::new((widest, BAND)) {
                 Ok(band) => self.band = band,
                 Err(e) => eprintln!("lull: Classic window: {e}"),
             }
         }
-        // SAFETY: a window this thread owns; only its size changes.
-        let resized = unsafe {
-            SetWindowPos(
-                self.hwnd,
-                None,
-                0,
-                0,
-                size.0,
-                size.1,
-                SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
-            )
-        };
-        if let Err(e) = resized {
-            eprintln!("lull: Classic window didn't resize: {e}");
+        for (i, frame) in panes.into_iter().enumerate() {
+            self.apply(Panel::ALL[i], frame);
+        }
+        if let Some(tick) = tick {
+            // SAFETY: a window this thread owns; replaces the running timer.
+            unsafe { SetTimer(Some(self.panes[0].hwnd), TIMER, tick.as_millis() as u32, None) };
         }
     }
 
-    /// Cuts the window to these rectangles; none: the whole window.
-    fn reshape(&mut self, pieces: Shape) {
-        let region = pieces.map(|pieces| {
-            // SAFETY: regions this makes; each piece is deleted once merged into `whole`, which
-            // Windows owns once it is the window's.
-            unsafe {
-                let whole = CreateRectRgn(0, 0, 0, 0);
-                for (x0, y0, x1, y1) in pieces {
-                    let piece = CreateRectRgn(x0, y0, x1, y1);
-                    CombineRgn(Some(whole), Some(whole), Some(piece), RGN_OR);
-                    let _ = DeleteObject(piece.into());
-                }
-                whole
+    /// A window's part of a frame: shown or hidden, its place, size, shape and what changed.
+    fn apply(&mut self, panel: Panel, frame: PaneFrame) {
+        let pane = &mut self.panes[panel as usize];
+        let hwnd = pane.hwnd;
+        if !frame.shown {
+            if pane.shown {
+                pane.shown = false;
+                // SAFETY: a window this thread owns.
+                let _ = unsafe { ShowWindow(hwnd, SW_HIDE) };
             }
-        });
-        // SAFETY: a window this thread owns; Windows takes the region (none: the whole window).
-        if unsafe { SetWindowRgn(self.hwnd, region, false) } == 0 {
-            eprintln!("lull: Classic window's shape: {}", windows::core::Error::from_thread());
+            return;
+        }
+        if let Some(size) = frame.size {
+            pane.size = size;
+        }
+        if frame.size.is_some() || frame.at != pane.at {
+            pane.at = frame.at;
+            let (x, y, (w, h)) = (pane.at.0, pane.at.1, pane.size);
+            // SAFETY: a window this thread owns; only its place and size change.
+            if let Err(e) = unsafe { SetWindowPos(hwnd, None, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE) } {
+                eprintln!("lull: Classic window didn't move: {e}");
+            }
+        }
+        if let Some(shape) = frame.shape {
+            reshape(hwnd, shape);
+        }
+        if let Some(dirty) = frame.dirty {
+            let dc = self.panes[panel as usize].screen;
+            self.paint(panel, dc, dirty);
+        }
+        let pane = &mut self.panes[panel as usize];
+        if !pane.shown {
+            pane.shown = true;
+            // SAFETY: a window this thread owns.
+            let _ = unsafe { ShowWindow(hwnd, SW_SHOWNOACTIVATE) };
         }
     }
 
-    /// Windows asks for a part of the window again (shown, restored, uncovered).
-    fn repaint(&mut self) {
+    /// Windows asks for a part of a window again (shown, restored, uncovered).
+    fn repaint(&mut self, panel: Panel) {
+        let hwnd = self.panes[panel as usize].hwnd;
         let mut paint = PAINTSTRUCT::default();
         // SAFETY: a window this thread owns; EndPaint ends what BeginPaint began.
         unsafe {
-            let dc = BeginPaint(self.hwnd, &mut paint);
+            let dc = BeginPaint(hwnd, &mut paint);
             let r = paint.rcPaint;
-            if let Some(rect) = self.classic.covering((r.left, r.top, r.right, r.bottom)) {
-                self.paint(dc, rect);
+            if let Some(rect) = self.classic.covering(panel, (r.left, r.top, r.right, r.bottom)) {
+                self.paint(panel, dc, rect);
             }
-            let _ = EndPaint(self.hwnd, &paint);
+            let _ = EndPaint(hwnd, &paint);
         }
     }
 
-    fn paint(&mut self, dc: HDC, rect: (u32, u32, u32, u32)) {
-        let c = &self.classic;
-        paint(&c.canvas, (&c.columns, &c.rows), &mut self.band, &self.text, dc, rect);
+    fn paint(&mut self, panel: Panel, dc: HDC, rect: (u32, u32, u32, u32)) {
+        let pane = self.classic.pane(panel);
+        paint(
+            &pane.canvas,
+            (&pane.columns, &pane.rows),
+            &mut self.band,
+            &self.text,
+            dc,
+            rect,
+        );
     }
+}
 
-    /// A point of the screen (the wheel's, a caption's double click) as one of the window's own.
-    fn screen_point(&self, lparam: LPARAM) -> (i32, i32) {
-        let (x, y) = coordinates(lparam);
-        let mut point = POINT { x, y };
-        // SAFETY: a window this thread owns, and a point to convert in place.
-        let _ = unsafe { ScreenToClient(self.hwnd, &mut point) };
-        (point.x, point.y)
+/// Cuts a window to these rectangles; none: the whole window.
+fn reshape(hwnd: HWND, pieces: Shape) {
+    let region = pieces.map(|pieces| {
+        // SAFETY: regions this makes; each piece is deleted once merged into `whole`, which
+        // Windows owns once it is the window's.
+        unsafe {
+            let whole = CreateRectRgn(0, 0, 0, 0);
+            for (x0, y0, x1, y1) in pieces {
+                let piece = CreateRectRgn(x0, y0, x1, y1);
+                CombineRgn(Some(whole), Some(whole), Some(piece), RGN_OR);
+                let _ = DeleteObject(piece.into());
+            }
+            whole
+        }
+    });
+    // SAFETY: a window this thread owns; Windows takes the region (none: the whole window).
+    if unsafe { SetWindowRgn(hwnd, region, true) } == 0 {
+        eprintln!("lull: Classic window's shape: {}", windows::core::Error::from_thread());
     }
 }
 

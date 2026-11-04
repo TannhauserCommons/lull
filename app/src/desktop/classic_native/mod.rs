@@ -10,6 +10,7 @@
 mod align;
 mod canvas;
 mod deck;
+mod dock;
 mod draw;
 mod engine;
 mod eq;
