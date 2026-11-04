@@ -27,6 +27,7 @@ mod skin;
 mod smtc;
 #[cfg(test)]
 mod testhub;
+mod ui;
 mod vis;
 mod window;
 
