@@ -442,12 +442,6 @@
 
   /* reason popover: every reason for the item, the data source, and the three feedback actions */
   var REASON_ICON = { like: 'heart-fill', tag: 'sparkle', listeners: 'peer', fresh: 'bell' };
-  function reasonText(r) {
-    if (r.kind === 'like') return html`You play <b>${r.name}</b> a lot and liked several of their songs this month.`;
-    if (r.kind === 'listeners') return html`People who play <b>${r.name}</b> also play this a lot.`;
-    if (r.kind === 'fresh') return html`<b>${r.name}</b> released this recently, and you follow them.`;
-    return html`It sits in <b>${r.name}</b>, a tag you follow and play often.`;
-  }
   App.hooks.reason = function (anchor, r) {
     var p = r.item ? pickFor(r.item) : null, t = r.item ? M.track(r.item) : null;
     var reasons = p && p.reasons && p.reasons.length ? p.reasons : [{ kind: r.kind, name: r.name, ref: r.ref }];
@@ -457,7 +451,7 @@
     App.popover(anchor, html`<div class="popover__head">${icon('sparkle')}<span>why this?</span></div>
       <div class="popover__body disc-why">
         ${t ? html`<p class="disc-why__item">${t.title}, ${t.artist}</p>` : ''}
-        <ul class="disc-why__list">${reasons.map(function (x) { return html`<li>${icon(REASON_ICON[x.kind] || 'sparkle')}<span>${reasonText(x)}</span></li>`; })}</ul>
+        <ul class="disc-why__list">${reasons.map(function (x) { return html`<li>${icon(REASON_ICON[x.kind] || 'sparkle')}<span>${ui.reasonText(x)}</span></li>`; })}</ul>
         ${via ? html`<p class="disc-why__via">via ${via}</p>` : ''}
       </div>
       <div class="popover__actions">

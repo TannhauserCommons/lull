@@ -1150,14 +1150,23 @@
   /* reason chip: { kind: like|tag|listeners|fresh, name, ref }, opts { more: n, via, itemId } */
   var REASON = {
     like: ['heart-fill', 'Because you like '], tag: ['sparkle', 'Tag: '],
-    listeners: ['peer', 'Popular with listeners of '], fresh: ['bell', 'Fresh from ']
+    listeners: ['peer', 'Popular with '], fresh: ['bell', 'Fresh from ']
   };
   ui.reasonChip = function (reason, opts) {
     opts = opts || {}; var r = REASON[reason.kind] || REASON.tag;
-    var tail = reason.kind === 'fresh' ? ', an artist you follow' : '';
+    var tail = reason.kind === 'fresh' && App.isFollowed(reason.ref) ? ', an artist you follow' : '';
     var chip = html`<button class="chip-reason" data-act="reason" data-kind="${reason.kind}" data-ref="${reason.ref || ''}" data-name="${reason.name}" data-via="${opts.via || ''}" data-item="${opts.itemId || ''}" aria-haspopup="dialog">${icon(r[0])}<span>${r[1]}<span class="chip-reason__name">${reason.name}</span>${tail}</span></button>`;
     if (opts.more) return html`<span class="cluster">${chip}<button class="chip-more" data-act="reason" data-kind="${reason.kind}" data-ref="${reason.ref || ''}" data-name="${reason.name}" data-via="${opts.via || ''}" data-item="${opts.itemId || ''}" aria-label="${opts.more} more reason${opts.more > 1 ? 's' : ''}">+${opts.more}</button></span>`;
     return chip;
+  };
+
+  /* why an item was suggested, saying only what is true: a follow only when there is one */
+  ui.reasonText = function (r) {
+    var followed = !!r.ref && App.isFollowed(r.ref);
+    if (r.kind === 'like') return html`Similar to <b>${r.name}</b>, ${followed ? 'an artist you follow' : 'an artist you like'}.`;
+    if (r.kind === 'listeners') return html`Played a lot by listeners whose taste is like yours.`;
+    if (r.kind === 'fresh') return html`New from <b>${r.name}</b>, ${followed ? 'an artist you follow' : 'an artist you like'}.`;
+    return html`It sits in <b>${r.name}</b>, ${followed ? 'a tag you follow' : 'a tag that runs through the artists you like'}.`;
   };
 
   /* section label: lowercase text + hairline rule + optional quiet action { label, href | act } or end markup (a status) */
@@ -3787,11 +3796,7 @@
 
   /* default reason popover (discover screen may replace App.hooks.reason) */
   function defaultReasonPopover(anchor, r) {
-    var expl = { like: 'You like songs by ' + r.name + '.',
-      tag: 'This sits in ' + r.name + ', a tag you follow or play.',
-      listeners: 'People who play ' + r.name + ' also play this.',
-      fresh: r.name + ' released this recently, and you follow them.' }[r.kind] || '';
-    App.popover(anchor, html`<div class="popover__head">why this?</div><div class="popover__body"><p>${expl}</p><p class="t-micro fg-2" style="margin-top:6px">via ${r.via || 'ListenBrainz'}</p></div>
+    App.popover(anchor, html`<div class="popover__head">why this?</div><div class="popover__body"><p>${ui.reasonText(r)}</p><p class="t-micro fg-2" style="margin-top:6px">via ${r.via || 'ListenBrainz'}</p></div>
       <div class="popover__actions"><button class="btn btn--sm" data-act="more-like" data-id="${r.item || ''}">More like this</button><button class="btn btn--sm" data-act="less-like" data-id="${r.item || ''}">Less like this</button>${r.kind === 'tag' ? '' : html`<button class="btn btn--sm" data-act="hide-artist" data-id="${r.ref}">Hide this artist</button>`}</div>`,
       { label: 'Why this was suggested' });
   }
