@@ -289,8 +289,10 @@ pub struct Classic {
     /// Whether the platform lets the windows be placed (Wayland doesn't): if not, the platform
     /// moves each and they don't dock.
     pub places_windows: bool,
-    /// The work areas of the desktop's monitors, for snapping and for keeping windows on them.
+    /// The work areas of the desktop's monitors, for snapping and for keeping windows on them, and
+    /// whether the windows are to be brought back on them at the next frame (once laid out).
     areas: Vec<dock::Rect>,
+    recheck: bool,
     drag: Option<Drag>,
     /// The player as of this frame, and the queue's revision the playlist shows.
     snapshot: Snapshot,
@@ -433,6 +435,7 @@ impl Classic {
             laid_out: None,
             places_windows: true,
             areas: Vec::new(),
+            recheck: false,
             drag: None,
             snapshot: Snapshot::default(),
             revision: None,
@@ -642,10 +645,16 @@ impl Classic {
             .collect()
     }
 
-    /// The desktop's monitors' work areas changed (or are first known): windows left off every
-    /// one come back, the main window's docked set together.
+    /// The desktop's monitors' work areas changed (or are first known): at the next frame, once
+    /// the windows have their sizes, those left off every one come back, the main window's docked
+    /// set together.
     pub fn set_areas(&mut self, areas: Vec<dock::Rect>) {
         self.areas = areas;
+        self.recheck = true;
+    }
+
+    /// The windows left off every work area, back on one.
+    fn back_on_screen(&mut self) {
         let windows = self.rects();
         let together = dock::docked_set(&windows, Panel::Main.index());
         for (i, (dx, dy)) in dock::on_screen(&windows, &together, &self.areas) {
@@ -1216,6 +1225,9 @@ impl Classic {
             .paused_since
             .is_some_and(|since| (clock - since).as_secs() % 2 == 1);
         self.lay_out(&mut frame);
+        if std::mem::take(&mut self.recheck) {
+            self.back_on_screen();
+        }
         let view = View {
             now: &now,
             marquee: &marquee,
