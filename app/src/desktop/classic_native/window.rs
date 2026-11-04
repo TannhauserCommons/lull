@@ -49,7 +49,8 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyState, ReleaseCapture, SetCapture, VK_CONTROL, VK_DELETE, VK_DOWN, VK_LEFT, VK_RIGHT, VK_SHIFT, VK_UP,
+    GetKeyState, ReleaseCapture, SetCapture, VK_CONTROL, VK_DELETE, VK_DOWN, VK_LEFT, VK_NUMPAD0, VK_RIGHT, VK_SHIFT,
+    VK_UP,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CS_DBLCLKS, CS_OWNDC, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow,
@@ -57,8 +58,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     RegisterClassExW, SW_MINIMIZE, SW_SHOWNORMAL, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER, SendMessageW,
     SetForegroundWindow, SetTimer, SetWindowPos, ShowWindow, TPM_NONOTIFY, TPM_RETURNCMD, TrackPopupMenuEx, WM_CLOSE,
     WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCLBUTTONDBLCLK,
-    WM_NCLBUTTONDOWN, WM_PAINT, WM_RBUTTONUP, WM_TIMER, WNDCLASSEXW, WS_EX_APPWINDOW, WS_MINIMIZEBOX, WS_POPUP,
-    WS_SYSMENU,
+    WM_NCLBUTTONDOWN, WM_PAINT, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_TIMER, WNDCLASSEXW, WS_EX_APPWINDOW, WS_MINIMIZEBOX,
+    WS_POPUP, WS_SYSMENU,
 };
 use windows::core::{BOOL, HSTRING, Interface, PCWSTR, w};
 
@@ -117,9 +118,21 @@ enum Panel {
     Playlist,
 }
 
+impl Panel {
+    /// This window as the selected one.
+    fn focus(self) -> Focus {
+        match self {
+            Panel::Main => Focus::Main,
+            Panel::Eq => Focus::Equaliser,
+            Panel::Playlist => Focus::Playlist,
+        }
+    }
+}
+
 /// Which windows show, and which are rolled up.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Panels {
+    main: bool,
     eq: bool,
     playlist: bool,
     main_shade: bool,
@@ -131,8 +144,11 @@ impl Panels {
     /// The windows that show: each with its top and height in the stack.
     fn stack(&self) -> Vec<(Panel, u32, u32)> {
         let rolled = |shade: bool, height: u32| if shade { layout::SHADE_HEIGHT } else { height };
-        let mut stack = vec![(Panel::Main, 0, rolled(self.main_shade, HEIGHT))];
-        let mut top = stack[0].2;
+        let (mut stack, mut top) = (Vec::new(), 0);
+        if self.main {
+            top = rolled(self.main_shade, HEIGHT);
+            stack.push((Panel::Main, 0, top));
+        }
         if self.eq {
             let height = rolled(self.eq_shade, HEIGHT);
             stack.push((Panel::Eq, top, height));
@@ -142,6 +158,15 @@ impl Panels {
             stack.push((Panel::Playlist, top, rolled(self.playlist_shade, playlist::HEIGHT)));
         }
         stack
+    }
+
+    /// Whether a window shows (Webamp's windows open or closed).
+    fn shown(&mut self, panel: Panel) -> &mut bool {
+        match panel {
+            Panel::Main => &mut self.main,
+            Panel::Eq => &mut self.eq,
+            Panel::Playlist => &mut self.playlist,
+        }
     }
 
     fn height(&self) -> u32 {
@@ -255,6 +280,7 @@ pub fn open(setup: Setup, on_close: OnClose) -> Result<(), String> {
         return Err("Classic mode is open already".into());
     }
     let panels = Panels {
+        main: true,
         eq: true,
         playlist: true,
         main_shade: false,
@@ -574,7 +600,8 @@ impl Classic {
                 let notches = f64::from((wparam.0 >> 16) as u16 as i16) / 120.0;
                 self.wheel(notches, lparam)
             }
-            WM_KEYDOWN => self.key(wparam.0 as u16),
+            WM_KEYDOWN => self.key(wparam.0 as u16, false),
+            WM_SYSKEYDOWN => self.key(wparam.0 as u16, true),
             WM_CLOSE => Effect::Close,
             _ => return Effect::Default,
         };
@@ -598,11 +625,7 @@ impl Classic {
         let Some((panel, _, target)) = self.target_at(x, y) else {
             return Effect::Default;
         };
-        self.focus = match panel {
-            Panel::Main => Focus::Main,
-            Panel::Eq => Focus::Equaliser,
-            Panel::Playlist => Focus::Playlist,
-        };
+        self.focus = panel.focus();
         let Some(target) = target else {
             if double {
                 return self.double_click_title(x, y);
@@ -646,6 +669,21 @@ impl Classic {
             self.toggle_shade(panel);
         }
         Effect::Handled
+    }
+
+    /// A window on or off, but never the last one: with nothing showing, nothing could be clicked.
+    /// The selected window, closed, gives way to the first that shows.
+    fn toggle_window(&mut self, panel: Panel) {
+        let open = !*self.panels.shown(panel);
+        *self.panels.shown(panel) = open;
+        let stack = self.panels.stack();
+        let Some((first, _, _)) = stack.first() else {
+            *self.panels.shown(panel) = true;
+            return;
+        };
+        if !stack.iter().any(|(p, _, _)| p.focus() == self.focus) {
+            self.focus = first.focus();
+        }
     }
 
     fn toggle_shade(&mut self, panel: Panel) {
@@ -751,21 +789,10 @@ impl Classic {
             self.columns[area.x as usize],
             self.rows[((top + area.y + area.height) as usize).min(self.rows.len() - 1)],
         );
-        let command = match target.control {
-            Control::Previous => Some(Command::Previous),
-            // Play on a playing song starts it again.
-            Control::Play if now.playing => Some(Command::Seek(0.0)),
-            Control::Play => Some(Command::Play),
-            Control::Pause if now.playing => Some(Command::Pause),
-            Control::Pause if !now.stopped => Some(Command::Play),
-            Control::Stop => Some(Command::Stop),
-            Control::Next => Some(Command::Next),
-            Control::Shuffle => Some(Command::Shuffle(!now.shuffle)),
-            Control::Repeat => Some(Command::CycleRepeat),
-            Control::Marquee if matches!(now.status, Status::Choose(_)) => return Effect::Menu(Menu::Choose, below),
-            _ => None,
-        };
-        if let Some(command) = command {
+        if target.control == Control::Marquee && matches!(now.status, Status::Choose(_)) {
+            return Effect::Menu(Menu::Choose, below);
+        }
+        if let Some(command) = self.transport(target.control) {
             self.send(command);
             return Effect::Release;
         }
@@ -775,8 +802,8 @@ impl Classic {
             Control::Shade => self.toggle_shade(Panel::Main),
             Control::EqShade => self.toggle_shade(Panel::Eq),
             Control::PlaylistShade => self.toggle_shade(Panel::Playlist),
-            Control::EqWindow | Control::EqClose => self.panels.eq = !self.panels.eq,
-            Control::PlaylistWindow | Control::PlaylistClose => self.panels.playlist = !self.panels.playlist,
+            Control::EqWindow | Control::EqClose => self.toggle_window(Panel::Eq),
+            Control::PlaylistWindow | Control::PlaylistClose => self.toggle_window(Panel::Playlist),
             Control::EqOn => self.equalise(|eq| eq.on = !eq.on),
             Control::EqAuto => self.equalise(|eq| {
                 eq.preamp = match eq.preamp {
@@ -791,6 +818,24 @@ impl Classic {
             _ => {}
         }
         Effect::Release
+    }
+
+    /// The transport's buttons, shuffle and repeat, Winamp's meaning for each (the keys' too).
+    fn transport(&self, control: Control) -> Option<Command> {
+        let now = &self.snapshot;
+        Some(match control {
+            Control::Previous => Command::Previous,
+            // Play on a playing song starts it again.
+            Control::Play if now.playing => Command::Seek(0.0),
+            Control::Play => Command::Play,
+            Control::Pause if now.playing => Command::Pause,
+            Control::Pause if !now.stopped => Command::Play,
+            Control::Stop => Command::Stop,
+            Control::Next => Command::Next,
+            Control::Shuffle => Command::Shuffle(!now.shuffle),
+            Control::Repeat => Command::CycleRepeat,
+            _ => return None,
+        })
     }
 
     fn menu_items(&self, menu: Menu) -> Vec<Item> {
@@ -970,43 +1015,75 @@ impl Classic {
         Effect::Handled
     }
 
-    /// Winamp's keys: Z X C V B for the transport, arrows for a few seconds and the volume, Ctrl+D
-    /// for Double Size, Delete for the selected songs.
-    fn key(&mut self, key: u16) -> Effect {
-        let (playing, position, volume) = (self.snapshot.playing, self.snapshot.position, self.snapshot.volume);
+    /// Webamp's keys (its hotkeys, the numeric keypad's too): Z X C V B and the keypad's 4 5 6 for
+    /// the transport, R and S for repeat and shuffle, arrows (keypad 7 9 8 2) for 5 seconds and the
+    /// volume, keypad 1 and 3 for ten songs back or on; Ctrl+D Double Size, Ctrl+R the list
+    /// reversed, Ctrl+T the time counting down; Alt+W, Alt+G and Alt+E a window on or off. Delete
+    /// takes the selected songs out.
+    fn key(&mut self, key: u16, alt: bool) -> Effect {
+        let (position, volume) = (self.snapshot.position, self.snapshot.volume);
         // SAFETY: reads this thread's keyboard state.
         let control = unsafe { GetKeyState(i32::from(VK_CONTROL.0)) } < 0;
-        let letter = |c: u8| key == u16::from(c);
+        let is = |c: u8| key == u16::from(c);
+        let pad = |n: u16| key == VK_NUMPAD0.0 + n;
+        if alt {
+            let panel = match key {
+                _ if is(b'W') => Panel::Main,
+                _ if is(b'G') => Panel::Eq,
+                _ if is(b'E') => Panel::Playlist,
+                _ => return Effect::Default,
+            };
+            self.toggle_window(panel);
+            return Effect::Handled;
+        }
+        if control {
+            match key {
+                _ if is(b'D') => self.double_size(),
+                _ if is(b'R') => {
+                    let rows: Vec<usize> = (0..self.list.labels.len()).rev().collect();
+                    self.send(Command::Reorder(rows, 0));
+                }
+                _ if is(b'T') => self.remaining = !self.remaining,
+                _ => return Effect::Default,
+            }
+            return Effect::Handled;
+        }
         let command = match key {
-            _ if letter(b'Z') => Command::Previous,
-            _ if letter(b'X') && playing => Command::Seek(0.0),
-            _ if letter(b'X') => Command::Play,
-            _ if letter(b'C') && playing => Command::Pause,
-            _ if letter(b'C') => Command::Play,
-            _ if letter(b'V') => Command::Stop,
-            _ if letter(b'B') => Command::Next,
-            _ if letter(b'D') && control => {
-                self.double_size();
-                return Effect::Handled;
+            _ if is(b'Z') || pad(4) => self.transport(Control::Previous),
+            _ if is(b'X') || pad(5) => self.transport(Control::Play),
+            _ if is(b'C') => self.transport(Control::Pause),
+            _ if is(b'V') => self.transport(Control::Stop),
+            _ if is(b'B') || pad(6) => self.transport(Control::Next),
+            _ if is(b'R') => self.transport(Control::Repeat),
+            _ if is(b'S') => self.transport(Control::Shuffle),
+            _ if pad(1) => self.skip(-10),
+            _ if pad(3) => self.skip(10),
+            k if k == VK_LEFT.0 || pad(7) => Some(Command::Seek((position - 5.0).max(0.0))),
+            k if k == VK_RIGHT.0 || pad(9) => Some(Command::Seek(position + 5.0)),
+            k if k == VK_UP.0 || pad(8) => {
+                self.volume(volume + 0.01);
+                None
             }
-            k if k == VK_LEFT.0 => Command::Seek((position - 5.0).max(0.0)),
-            k if k == VK_RIGHT.0 => Command::Seek(position + 5.0),
-            k if k == VK_UP.0 => {
-                self.volume(volume + 0.02);
-                return Effect::Handled;
-            }
-            k if k == VK_DOWN.0 => {
-                self.volume(volume - 0.02);
-                return Effect::Handled;
+            k if k == VK_DOWN.0 || pad(2) => {
+                self.volume(volume - 0.01);
+                None
             }
             k if k == VK_DELETE.0 => {
                 self.remove_selected();
-                return Effect::Handled;
+                None
             }
             _ => return Effect::Default,
         };
-        self.send(command);
+        if let Some(command) = command {
+            self.send(command);
+        }
         Effect::Handled
+    }
+
+    /// Ten songs on or back (the keypad's 3 and 1).
+    fn skip(&self, songs: isize) -> Option<Command> {
+        let (index, count) = (self.snapshot.index, self.snapshot.queue.len());
+        skipped(index, count, self.snapshot.repeat != Repeat::Off, songs).map(Command::Jump)
     }
 
     /// Draws a frame at 1x and puts on screen what changed. The timer then runs at the pace the
@@ -1241,6 +1318,21 @@ impl Classic {
         let (x, y) = coordinates(lparam);
         let origin = self.client_to_screen(0, 0);
         (skin_at(x - origin.x, &self.columns), skin_at(y - origin.y, &self.rows))
+    }
+}
+
+/// The song `songs` on or back from `index` in a list of `count`, as Webamp's keypad goes: round
+/// the list with repeat on, else no further than its ends, and none from the last song on or the
+/// first back.
+fn skipped(index: usize, count: usize, round: bool, songs: isize) -> Option<usize> {
+    let last = count.checked_sub(1)?;
+    let to = index as isize + songs;
+    if round {
+        Some(to.rem_euclid(count as isize) as usize)
+    } else if (index == last && songs > 0) || (index == 0 && songs < 0) {
+        None
+    } else {
+        Some(to.clamp(0, last as isize) as usize)
     }
 }
 
@@ -1830,6 +1922,7 @@ mod tests {
         let read = |p: &std::path::Path| std::fs::read(p).map_err(|e| format!("{}: {e}", p.display()));
         let base = Skin::from_archive(&read(&inn.join(format!("{BASE_MD5}.wsz")))?, None)?;
         let panels = Panels {
+            main: true,
             eq: true,
             playlist: true,
             main_shade: false,
@@ -1935,6 +2028,35 @@ mod tests {
     const BASE_MD5: &str = "5e4f10275dcb1fb211d4a8b4f1bda236";
 
     #[test]
+    fn the_keypad_skips_ten_songs_as_webamps_does() {
+        assert_eq!(skipped(2, 30, false, 10), Some(12));
+        assert_eq!(skipped(25, 30, false, 10), Some(29));
+        assert_eq!(skipped(29, 30, false, 10), None);
+        assert_eq!(skipped(3, 30, false, -10), Some(0));
+        assert_eq!(skipped(0, 30, false, -10), None);
+        assert_eq!(skipped(25, 30, true, 10), Some(5));
+        assert_eq!(skipped(3, 30, true, -10), Some(23));
+        assert_eq!(skipped(0, 0, true, 10), None);
+    }
+
+    #[test]
+    fn a_window_closed_leaves_the_others_stacked_and_the_last_stays() {
+        let mut panels = Panels {
+            main: false,
+            eq: true,
+            playlist: true,
+            main_shade: false,
+            eq_shade: true,
+            playlist_shade: false,
+        };
+        let stack: Vec<_> = panels.stack().iter().map(|(p, top, _)| (*p, *top)).collect();
+        assert_eq!(stack, [(Panel::Eq, 0), (Panel::Playlist, layout::SHADE_HEIGHT)]);
+        panels.eq = false;
+        panels.playlist = false;
+        assert!(panels.stack().is_empty());
+    }
+
+    #[test]
     fn the_window_is_cut_to_what_the_skin_draws() {
         let width = WIDTH as usize;
         let mut pixels = vec![0xff00_0000u32; width * 6];
@@ -1983,6 +2105,7 @@ mod tests {
     #[test]
     fn the_windows_stack_and_roll_up() {
         let mut panels = Panels {
+            main: true,
             eq: true,
             playlist: true,
             main_shade: false,
