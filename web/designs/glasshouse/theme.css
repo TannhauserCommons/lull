@@ -257,7 +257,11 @@
   :root[data-design="glasshouse"] .sys-stats .sys-head::after { content: "counting satellites\A one play at a time_" / ""; }
   :root[data-design="glasshouse"] .sys-settings::after { content: "turn the dials,\A keep the static low_" / ""; top: 4px; }
   :root[data-design="glasshouse"] .sys-welcome__head::after { content: "three steps,\A then the night is yours_" / ""; }
-  :root[data-design="glasshouse"] .now-head::after { content: "static on the line,\A moon on the glass_" / ""; top: 44px; }
+  /* the song's title is as long as the song makes it: the caption has a column of its own beside the title and artist
+     lines, so a long title wraps before it instead of running under it */
+  :root[data-design="glasshouse"] .now-head { grid-template-columns: minmax(0, 1fr) max-content; column-gap: 24px; }
+  :root[data-design="glasshouse"] .now-head > * { grid-column: 1; }
+  :root[data-design="glasshouse"] .now-head::after { content: "static on the line,\A moon on the glass_" / ""; position: static; grid-column: 2; grid-row: 2 / span 2; align-self: start; }
   /* page windows: the caption types onto the glass on its own line under the title bar, built from the page's own meta.
      The window keeps that line for it (1.4rem: .875rem at the captions' 1.6 line height), so it never sits on the
      hero or, on a two-column album page, on the first song */
