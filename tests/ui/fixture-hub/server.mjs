@@ -63,6 +63,8 @@ const WEB = process.env.LULL_WEB || join(here, '..', '..', '..', 'web');
 const PORT = +(process.argv[2] || process.env.FIXTURE_PORT || 8790);
 const THEMES = process.env.FIXTURE_THEMES || null;
 const SKINS = process.env.FIXTURE_SKINS || null;
+// The switches that are on, as the hub's LULL_FLAGS names them (ADR-0096): off unless a feature's own spec turns its own on.
+const FLAGS = (process.env.LULL_FLAGS || '').split(',').map((n) => n.trim()).filter(Boolean);
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -133,7 +135,7 @@ function logPlay(kind, playId, body) {
 
 // ---------- routes: [method, regex, handler(match, query, body) -> { status?, body } | body] ----------
 const routes = [
-  ['GET', /^\/health$/, () => ({ version: '0.0.0-fixture', services: SERVICES })],
+  ['GET', /^\/health$/, () => ({ version: '0.0.0-fixture', services: SERVICES, flags: FLAGS })],
   ['GET', /^\/api\/ping$/, () => ({ status: 204 })],
   ['GET', /^\/api\/setup$/, () => ({ claimed: true, soulseekManaged: false, steps: { library: true, soulseek: true, lastfm: true } })],
   ['GET', /^\/api\/devices$/, () => ({

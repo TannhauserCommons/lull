@@ -40,7 +40,7 @@ ADR-0002; how it works: [hub.md](hub.md). A device token travels as the HttpOnly
 
 | Method + path | Returns |
 |---|---|
-| `GET /health` (open) | `{ version, services: { soulseek, library, lastfm, cache: { state: ok\|warn\|down\|off, detail, extra } } }`. Always 200 while serving |
+| `GET /health` (open) | `{ version, services: { soulseek, library, lastfm, cache: { state: ok\|warn\|down\|off, detail, extra } }, flags: [name] }`. `flags`: the switches `LULL_FLAGS` turns on (ADR-0096), usually none. Always 200 while serving |
 | `GET /api/ping` | 204, or 401 without a valid device token (the UI then shows pairing). A cookie-carried token gets its cookie renewed (browsers cap a cookie at 400 days) |
 | `GET /api/events` | Server-sent events, one per bus event: `event: <topic>`, `data: <json>`. `resync` means the client missed events and refetches what it shows. The connection marks its device online (lull Connect). It ends when the hub restarts its crates (after `hub.restarting`; reconnect) or when its device is unpaired |
 | `GET /api/setup` (open) | `{ claimed: bool, soulseekManaged: bool, steps: { library: bool, soulseek: bool, lastfm: bool } }`. `claimed`: a browser or app is paired. A step is `true` when done: that service reports `ok` or `warn` in `/health`; `false` means first run still needs it. `soulseekManaged`: lull runs this slskd (`LULL_SLSKD_CONFIG_FILE`, the desktop app), so the Soulseek account is set in lull with `LULL_SOULSEEK_USERNAME` and `LULL_SOULSEEK_PASSWORD`; otherwise it is configured where slskd runs, and setup shows slskd's connection state |

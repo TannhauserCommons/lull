@@ -4439,8 +4439,11 @@
   }
   /* App.server: { reachable, version, authorized, checked } -- read by the banners, the pairing gate (setup.js) and
      Settings > App. `checked`: /api/ping has answered once, so `authorized` is known. */
-  App.server = { reachable: true, version: null, authorized: true, checked: false };
+  App.server = { reachable: true, version: null, authorized: true, checked: false, flags: [] };
   function setServer(patch) { Object.assign(App.server, patch); App.emit('server', App.server); }
+  /* switches for work that landed unfinished (ADR-0096, lull_core::flags): on only when the hub's LULL_FLAGS names
+     them, read from /health; a feature behind one re-renders on the 'server' event */
+  App.flag = function (name) { return App.server.flags.indexOf(name) !== -1; };
   M.onUnauthorized = function () { if (App.server.authorized) setServer({ authorized: false }); };
   M.onSettled = function () { if (booted) renderRoute(true); };
 
@@ -4448,7 +4451,7 @@
   function loadHealth() {
     return fetch(M.url('/health'), { credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (h) {
       var changedVersion = App.server.version && App.server.version !== h.version;
-      setServer({ reachable: true, version: h.version });
+      setServer({ reachable: true, version: h.version, flags: h.flags || [] });
       if (events && events.readyState === EventSource.CLOSED && App.server.authorized) connectEvents();
       Object.keys(h.services || {}).forEach(function (k) { applyService(k, h.services[k]); });
       if (changedVersion) App.emit('pwa', { kind: 'update' });

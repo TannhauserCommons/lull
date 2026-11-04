@@ -72,7 +72,8 @@ Each area has one owner at a time. Edit only what your brief says you own.
    | 0090-0094 | hub |
    | 0095-0099 | quality |
 
-7. **Never push red.** If `main` is red because of you, fix or revert at once. If it's red because of someone else, rebase again later; don't fix their area.
+7. **Big work lands switched off** (ADR-0096). Add a `Flag` to `lull_core::flags` in the work's first commit; the hub asks `ctx.config.flags.on(&X)`, the web UI `App.flag('x')`. With it off, lull must be exactly what it was: no new request, element, setting or cost, so the goldens and budgets don't move. You try it with `LULL_FLAGS=x` (the hub's environment, or `PATCH /api/config`; the fixture hub reads the same variable). Finishing the work removes the flag and the code paths for off; `grep -rn "flags.on(\|App.flag(" crates web` lists what is still dark.
+8. **Never push red.** If `main` is red because of you, fix or revert at once. If it's red because of someone else, rebase again later; don't fix their area.
 8. **Something you need is in another owner's area?** Use what exists (the seams, events, api.md). If it truly needs changing, stop and ask; don't edit it.
 
 ## Local development

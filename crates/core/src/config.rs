@@ -28,6 +28,8 @@ pub struct Config {
     /// The listener's own Winamp skins for Classic mode (`.wsz` files, in any subfolder), read
     /// only. Unset: Classic offers the Winamp Skin Museum and the device's own files alone.
     pub skins_dir: Option<PathBuf>,
+    /// The switches that are on (`LULL_FLAGS`, ADR-0096); all are off by default.
+    pub flags: crate::flags::Flags,
 }
 
 /// The programs YouTube needs (docs/context/youtube.md). The image and the desktop app ship both,
@@ -297,6 +299,7 @@ impl Config {
                 deno: v.or("LULL_DENO", "deno").into(),
             },
             skins_dir: v.opt("LULL_SKINS_DIR").map(PathBuf::from),
+            flags: crate::flags::Flags::parse(&v.or("LULL_FLAGS", "")).map_err(|e| invalid("LULL_FLAGS", e))?,
         };
         match v.0.into_keys().next() {
             Some(unknown) => Err(ConfigError::Unknown(unknown)),

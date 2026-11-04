@@ -152,6 +152,7 @@ async fn crates(State(hub): State<Arc<Hub>>, req: Request) -> Response {
 
 /// Always 200 while the process serves: a dependency being down is reported, not fatal.
 async fn health(State(hub): State<Arc<Hub>>) -> Json<serde_json::Value> {
-    let status = hub.ctx().await.status;
-    Json(serde_json::json!({ "version": env!("CARGO_PKG_VERSION"), "services": status.snapshot() }))
+    let ctx = hub.ctx().await;
+    let flags: Vec<&str> = ctx.config.flags.names().collect();
+    Json(serde_json::json!({ "version": env!("CARGO_PKG_VERSION"), "services": ctx.status.snapshot(), "flags": flags }))
 }

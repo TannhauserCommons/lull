@@ -9,6 +9,7 @@ pub mod devices;
 pub mod error;
 pub mod etag;
 pub mod events;
+pub mod flags;
 pub mod http;
 pub mod ids;
 pub mod model;
