@@ -1355,7 +1355,8 @@
       else if (kind === 'card') out.push('<div class="card" aria-hidden="true"><div class="skel skel--title" style="width:30%;margin-bottom:16px"></div>' + ui.skeleton('row', 3) + '</div>');
       else out.push('<div class="skel skel--text" style="width:' + (60 + (i * 13) % 35) + '%;margin:8px 0"></div>');
     }
-    return raw('<div class="skel-group" aria-busy="true" aria-label="Loading">' + out.join('') + '</div>');
+    /* a loading placeholder is an indeterminate progress bar: its name needs that role (a labelled div has none) */
+    return raw('<div class="skel-group" role="progressbar" aria-busy="true" aria-label="Loading">' + out.join('') + '</div>');
   };
   ui.sparkle = function (style) { return raw('<span class="sparkle" aria-hidden="true" style="' + esc(style || '') + '"></span>'); };
   /* the plain wordmark (device bezel); with `where`, the design's brand slot (token gate: 'desktop').
