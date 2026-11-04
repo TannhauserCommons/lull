@@ -30,7 +30,8 @@ A music app for one listener who hosts it themselves (PROJECT.md). It streams fr
 ## Engineering rules
 
 - **Quality over development cost.** When making technical decisions, do not give much weight to development cost. Instead, prefer quality, simplicity, robustness, scalability, and long term maintainability.
-- **Surgical.** Touch only what the task needs: no speculative refactors, no unrelated cleanups.
+- **Surgical.** Touch only what the task needs: no speculative refactors, no unrelated cleanups. Visual defects seen while testing are the exception (next rule).
+- **Pixel-perfect when testing end to end.** When end-to-end testing, be picky about the UI you see and be obsessed with pixel perfection. If something clearly looks off, even if it is not directly related to what you are doing, try to get it fixed along the way.
 - **One source of truth.** A fact lives in one place, and everything else reads it.
 - **Fix the cause, where it starts.** Don't use special cases, arbitrary size or threshold changes, retries, sleeps, weakened checks, or error suppression to hide symptoms. Trace the failure to its origin and correct it there.
 - **Then fix its siblings.** When the underlying cause is shared or likely to exist elsewhere, search for other occurrences and fix every confirmed instance. Keep the search proportional to the likelihood and impact of recurrence. Don't perform repository-wide searches for clearly isolated defects. `docs/context/INDEX.md` names where each kind of code lives: callers of the fixed code, and its parallel copies (the five designs, the crates, Windows, Linux and Android). Search those places for the cause's pattern with `rg` instead of reading files.
