@@ -54,6 +54,14 @@ for (const design of designs) {
     // when a font arrives with wider or narrower letters (a design's own, on first use): two frames on, they are as a
     // fresh fit of everything leaves them, and what gave way comes back when the narrower font does
     test(`header and player bar / ${design} / ${theme}: content that grows in place fits at once`, async ({ page }) => {
+      // to name a failure's kind: how many times the page's resize observers ran, and what threw, since a change
+      await page.addInitScript(() => {
+        window.__ro = 0; window.__errors = [];
+        const RO = window.ResizeObserver;
+        window.ResizeObserver = class extends RO { constructor(cb) { super((entries, o) => { window.__ro++; try { cb(entries, o); } catch (e) { window.__errors.push(String(e && e.stack || e)); throw e; } }); } };
+        window.addEventListener('error', (e) => window.__errors.push(String(e.message)));
+      });
+      const since = () => page.evaluate(() => { const r = `resize callbacks ${window.__ro}, errors ${JSON.stringify(window.__errors)}`; window.__ro = 0; return r; });
       await openScreen(page, `/album/${ids.album}`, { design, theme });
       await page.dblclick('.tlist .trow:nth-child(1) .trow__dur');
       await page.waitForFunction(() => App.player.current());
@@ -74,18 +82,19 @@ for (const design of designs) {
         await page.setViewportSize({ width: w, height: 900 });
         await frames(page);
         // a label that grew: wider text everywhere in the rows
+        await since();
         await page.evaluate(() => { const s = document.createElement('style'); s.id = 'gate-wide'; s.textContent = '.header *, #pbar * { letter-spacing: .14em !important; }'; document.head.appendChild(s); });
         await frames(page);
-        let now = await out(), at = await geometry(page);
-        expect(now, `${w} px, the text wider: fitted already (${at})`).toEqual(await fresh());
+        let now = await out(), at = await geometry(page), why = await since();
+        expect(now, `${w} px, the text wider: fitted already (${at}; ${why})`).toEqual(await fresh());
         await page.evaluate(() => document.getElementById('gate-wide').remove());
         // fonts arriving: a narrow one, a wider one, a narrow one again
         await font(`gate-narrow-${w}`); await frames(page);
         const before = await out();
         expect(before, `${w} px, a font arrives: fitted already`).toEqual(await fresh());
-        await font('gate-wide'); await frames(page);
-        now = await out(); at = await geometry(page);
-        expect(now, `${w} px, a wider font arrives: fitted already (${at})`).toEqual(await fresh());
+        await since(); await font('gate-wide'); await frames(page);
+        now = await out(); at = await geometry(page); why = await since();
+        expect(now, `${w} px, a wider font arrives: fitted already (${at}; ${why})`).toEqual(await fresh());
         await font(`gate-narrow-${w}-again`); await frames(page);
         now = await out();
         expect(now, `${w} px, the narrower font again: fitted already`).toEqual(await fresh());
