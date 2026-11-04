@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 use axum::Extension;
 use axum::extract::rejection::JsonRejection;
@@ -12,7 +13,8 @@ use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use lull_core::devices::Device;
 use lull_core::ids::TrackId;
-use lull_core::model::SourceRef;
+use lull_core::model::{SourceRef, Track};
+use lull_core::youtube::{self, Mode, Want};
 use lull_core::{Error, Result};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -78,7 +80,64 @@ async fn sources(State(svc): State<Arc<Service>>, Path(id): Path<String>, Query(
         });
         searching = true;
     }
-    Ok(Json(json!({ "sources": ranked, "done": !searching })))
+    let youtube = match purpose {
+        Purpose::Stream => youtube_row(&svc, &track).await,
+        Purpose::Save => YoutubeRow::Off,
+    };
+    let (youtube, finding) = match youtube {
+        YoutubeRow::Off => (Value::Null, false),
+        YoutubeRow::Finding => (Value::Null, true),
+        YoutubeRow::Found(row) => (row, false),
+    };
+    Ok(Json(
+        json!({ "sources": ranked, "youtube": youtube, "done": !searching && !finding }),
+    ))
+}
+
+/// How long the picker's answer waits for YouTube's match; past it the match goes on and the
+/// next ask gets it (`done: false` until then).
+const YOUTUBE_WAIT: Duration = Duration::from_millis(400);
+
+enum YoutubeRow {
+    /// YouTube is off, or nothing matches.
+    Off,
+    Finding,
+    Found(Value),
+}
+
+/// The song's YouTube copy as the picker lists it, when Settings › Sources › YouTube is on: the
+/// copy the player's YouTube path would play (the streaming cap's), with its chip ("YouTube ·
+/// Opus 160"). Lossy and exempt from the minimum, it has no score: the picker lists it after
+/// the peers.
+async fn youtube_row(svc: &Service, track: &Track) -> YoutubeRow {
+    let rules = svc.rules.get();
+    if rules.youtube.mode == Mode::Off {
+        return YoutubeRow::Off;
+    }
+    let (yt, track, want) = (
+        svc.fetcher.youtube.clone(),
+        track.clone(),
+        Want::Stream {
+            max_kbps: rules.stream.max_kbps,
+        },
+    );
+    let duration = track.duration;
+    // Its own task: a match still running when the wait ends goes on, and is remembered.
+    let find = tokio::spawn(async move { yt.find(&track, want).await });
+    match tokio::time::timeout(YOUTUBE_WAIT, find).await {
+        Err(_) => YoutubeRow::Finding,
+        Ok(Ok(Ok(Some(found)))) => match youtube::Copy::of(&found.source) {
+            Some(copy) => YoutubeRow::Found(json!({
+                "peer": found.source.user,
+                "path": found.source.path,
+                "sizeBytes": found.source.size,
+                "format": copy.facts(found.source.size, duration).format,
+                "official": found.official,
+            })),
+            None => YoutubeRow::Off,
+        },
+        Ok(_) => YoutubeRow::Off,
+    }
 }
 
 #[derive(Deserialize)]
@@ -95,7 +154,7 @@ async fn stream(
 ) -> Result<Response> {
     let track = svc.track(&TrackId(id)).await?;
     let pick = match (pick.peer, pick.path) {
-        (Some(peer), Some(path)) => Some(known_source(&svc, &track, peer, path)?),
+        (Some(peer), Some(path)) => Some(known_source(&svc, &track, peer, path).await?),
         (None, None) => None,
         _ => return Err(Error::BadRequest("peer and path go together".into())),
     };
@@ -144,13 +203,25 @@ async fn switch(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// A picked source must be one a search reported: its size comes from there.
-fn known_source(svc: &Service, track: &lull_core::model::Track, peer: String, path: String) -> Result<SourceRef> {
+/// A picked source must be one a search reported: its size comes from there. A YouTube pick is
+/// the song's YouTube match (remembered from the picker's ask).
+async fn known_source(svc: &Service, track: &Track, peer: String, path: String) -> Result<SourceRef> {
     let wanted = SourceRef {
         user: peer,
         path,
         size: 0,
     };
+    if youtube::is_youtube(&wanted) {
+        let want = Want::Stream {
+            max_kbps: svc.rules.get().stream.max_kbps,
+        };
+        return match svc.fetcher.youtube.find(track, want).await? {
+            Some(found) if found.source.path == wanted.path => Ok(found.source),
+            _ => Err(Error::NotFound(
+                "YouTube no longer offers that copy of this song; pick again".into(),
+            )),
+        };
+    }
     svc.sources.get(track, &wanted).map(|s| s.source_ref()).ok_or_else(|| {
         Error::NotFound(format!(
             "{} is not a known source for this song; search again",

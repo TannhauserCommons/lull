@@ -73,13 +73,14 @@
   /* ---------- a track's Soulseek sources: ranked by the server, asked again until `done` ---------- */
   /* the copies in the order the streaming profile takes them, or with forSave the saving one (ADR-0008) */
   function sourcesPath(id, forSave) { return '/api/tracks/' + encodeURIComponent(id) + '/sources' + (forSave ? '?for=save' : ''); }
-  /* onUpdate({ sources, done }) after each answer, or onUpdate({ error }); returns stop() */
+  /* onUpdate({ sources, youtube, done }) after each answer (youtube: the song's YouTube copy while YouTube is on), or
+     onUpdate({ error }); returns stop() */
   function watchSources(id, onUpdate, forSave) {
     var timer = null, stopped = false;
     (function ask() {
       M.api(sourcesPath(id, forSave)).then(function (res) {
         if (stopped) return;
-        onUpdate({ sources: res.sources || [], done: !!res.done });
+        onUpdate({ sources: res.sources || [], youtube: res.youtube || null, done: !!res.done });
         if (!res.done) timer = setTimeout(ask, SOURCES_POLL_MS);
       }, function (err) { if (!stopped) onUpdate({ error: err }); });
     })();
@@ -1106,12 +1107,26 @@
       <span class="disc-src__score" role="cell" tabindex="0" data-tip="${tip}" aria-label="Score ${s.score} of 100: ${tip}"><span class="score" style="--s:${(s.score / 100).toFixed(2)}"><i></i></span><span class="px">${s.score}</span></span>
     </div>`;
   }
+  /* the song's YouTube copy (docs/context/youtube.md): after the peers whatever the sort, as it is lossy and has no
+     score; never "below minimum", as YouTube copies carry their own chip instead */
+  function youtubeRow(t, y, first) {
+    var f = fmt(y.format);
+    return html`<div class="src-row disc-src__youtube" role="row">
+      <span class="disc-src__peer" role="cell"><button class="src-row__peer" data-act="disc-use-youtube" data-id="${t.id}" ${first ? raw('autofocus') : ''}
+        aria-label="Play from YouTube, ${f.label}, lossy">${icon('globe')}<span class="ellipsis">YouTube</span></button>
+        <span class="disc-src__note">lossy${y.official ? ', official upload' : ''}</span></span>
+      <span role="cell">${ui.qualityChip(y.format)}</span>
+      <span class="src-row__opt" role="cell">${y.sizeBytes ? size(y.sizeBytes / 1e6) : ''}</span>
+      <span class="src-row__opt" role="cell"></span><span class="src-row__opt" role="cell"></span><span class="src-row__opt" role="cell"></span>
+      <span class="disc-src__score" role="cell"></span>
+    </div>`;
+  }
   function pickerRows(t, pk) {
     if (!pk.sources) {
       return pk.error ? ui.emptyState({ art: 'star', title: 'Couldn\'t load sources', text: pk.error.message, action: { label: 'Try again', act: 'disc-src-retry' } })
         : ui.skeleton('row', 3);
     }
-    if (!pk.sources.length && pk.done) {
+    if (!pk.sources.length && pk.done && !pk.youtube) {
       return ui.emptyState({ art: 'moon', title: 'No peer shares this right now', text: 'Soulseek peers come and go. Ask again in a while.',
         action: { label: 'Search again', act: 'disc-src-retry' } });
     }
@@ -1121,6 +1136,7 @@
         <span class="src-row__opt" role="columnheader">size</span><span class="src-row__opt" role="columnheader">speed</span>
         <span class="src-row__opt" role="columnheader">slot</span><span class="src-row__opt" role="columnheader">queue</span><span role="columnheader">score</span></div>
       ${sortedSources(t, pk).map(function (r, n) { return srcRow(t, r.s, r.i, notes[r.s.peer], n === 0); })}
+      ${pk.youtube ? youtubeRow(t, pk.youtube, !pk.sources.length) : ''}
       ${pk.error ? html`<div class="src-row disc-src__more" role="row"><span role="cell">${icon('warning', null, 'ic-16')}Stopped asking peers: ${pk.error.message}
           <button class="btn btn--quiet btn--sm" data-act="disc-src-retry">Ask again</button></span></div>`
         : !pk.done ? html`<div class="src-row disc-src__more" role="row"><span role="cell"><span class="spin-ring" aria-hidden="true"></span>Still searching: more peers may answer</span></div>` : ''}
@@ -1149,7 +1165,7 @@
   function openPicker(trackId, o) {
     var t = M.track(trackId); if (!t) return null;
     var forSave = !!(o && o.forSave), choose = !!(o && o.choose);
-    var pk = picker = { trackId: trackId, forSave: forSave, choose: choose, sources: null, done: false, error: null, sort: 'score', stop: null, closed: false };
+    var pk = picker = { trackId: trackId, forSave: forSave, choose: choose, sources: null, youtube: null, done: false, error: null, sort: 'score', stop: null, closed: false };
     var sheet;
     function repaint() {
       if (pk.closed) return;
@@ -1161,7 +1177,7 @@
       pk.error = null; repaint();
       pk.stop = watchSources(trackId, function (res) {
         var wasDone = pk.done;
-        if (res.error) pk.error = res.error; else { pk.sources = res.sources; pk.done = res.done; }
+        if (res.error) pk.error = res.error; else { pk.sources = res.sources; pk.youtube = res.youtube; pk.done = res.done; }
         repaint();
         if (pk.done && !wasDone) App.announce('Search finished: ' + plural(pk.sources.length, 'source'));
       }, forSave);
@@ -1189,8 +1205,14 @@
       return;
     }
     P.useSource(pk.trackId, sourceFor(s));
-    App.toast((note ? 'Trying ' + s.peer + ' again, ' : 'Playing from ' + s.peer + ', ') + fmt(s.format).label, { icon: 'soulseek' });
+    /* a YouTube copy's format already names YouTube ("YouTube · Opus 160") */
+    var label = s.peer === 'YouTube' ? String(s.format).replace(/^YouTube · /, '') : fmt(s.format).label;
+    App.toast((note ? 'Trying ' + s.peer + ' again, ' : 'Playing from ' + s.peer + ', ') + label, { icon: s.peer === 'YouTube' ? 'globe' : 'soulseek' });
   }
+  App.action('disc-use-youtube', function () {
+    var pk = picker; if (!pk || !pk.youtube) return;
+    App.closeTop(); useSource(pk, pk.youtube);
+  });
   App.action('disc-use-source', function (el) {
     var pk = picker, s = pk && pk.sources && pk.sources[+el.getAttribute('data-i')]; if (!s) return;
     var note = failedNotes(pk.trackId, pk.sources)[s.peer];

@@ -35,7 +35,7 @@
 `fetch.rs::route` decides per fetch:
 
 - **A save** gets the copy it named. `Transfers::save_candidate` never names a YouTube copy while any Soulseek copy is known; with `saves` on and none known, it names YouTube's AAC copy (the save pipeline can't tag WebM) as meeting the minimum, so `wait` doesn't hold it back. Auto-upgrade judges the saved file and replaces it once a peer has a passing copy.
-- **The listener's pick** of a peer plays that peer.
+- **The listener's pick** of a peer plays that peer. Pick a source lists the song's YouTube copy too while YouTube is on (any mode but `off`): one row after the peers, its chip ("YouTube · Opus 160"), "lossy", no score and never below the minimum; the copy the streaming path would play, matched in the background when the picker opens (`done: false` until then). Picking it plays YouTube (`?peer=YouTube&path=`), checked against the song's match.
 - **`fallback`:** Soulseek as usual; YouTube when it fails (no peer shares it, none passes and the `below` rule gives up, every peer failed) or when no peer is sending `waitS` after the fetch began (still finding, queued, or between peers). The Soulseek attempt is cancelled in slskd first. Preloads do the same.
 - **`startFast`:** the player's fetch finds the YouTube copy, starts an **upgrade** fetch (the saving profile's order, so the best copy), and plays YouTube. If YouTube has no match or fails, the upgrade is dropped and the player's fetch looks on Soulseek itself; when that fails too, the error says why for both ("no peer shares this song right now; YouTube: no YouTube upload matches this song"). A preload fetches Soulseek's copy (YouTube's only when Soulseek has none) and warms the YouTube match, so playing it still starts at once.
 

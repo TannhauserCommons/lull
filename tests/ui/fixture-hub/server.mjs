@@ -235,7 +235,7 @@ const routes = [
   ['GET', /^\/api\/tracks\/([^/]+)$/, (m) => (L.tracks[m[1]] ? { track: L.tracks[m[1]], entities: entities({ tracks: [m[1]], albums: albumsOf([m[1]]) }) } : err(404, 'not_found', 'lull doesn\'t know this song.'))],
   // A trickling song has two copies (ADR-0015): one the peer says is fast that lull never measured, one lull measured
   // yesterday; any other song has none, so the gates' screens stay as they are.
-  ['GET', /^\/api\/tracks\/([^/]+)\/sources$/, (m) => ({ sources: trickles.has(m[1]) ? trickledSources(m[1]) : [], done: true })],
+  ['GET', /^\/api\/tracks\/([^/]+)\/sources$/, (m) => ({ sources: trickles.has(m[1]) ? trickledSources(m[1]) : [], youtube: youtubeCopy(m[1]), done: true })],
   ['PUT', /^\/api\/stream\/prefetch$/, () => ({ status: 204 })],
 
   // discovery
@@ -463,6 +463,11 @@ async function audioFile(req, res, t) {
 }
 
 // ---------- a Soulseek transfer arriving slowly (POST /__fixture/trickle) ----------
+// The song's YouTube copy while Settings › Sources › YouTube is on, as the hub lists it beside the peers.
+function youtubeCopy(id) {
+  if (state.settings.sources.youtube.mode === 'off' || !L.tracks[id]) return null;
+  return { peer: 'YouTube', path: `youtube:fixture${id.replace(/[^A-Za-z0-9]/g, '')}:251.webm`, sizeBytes: 4_100_000, format: 'YouTube · Opus 160', official: true };
+}
 function trickledSources(id) {
   const t = L.tracks[id], size = trickles.get(id).size;
   const row = (peer, speed, measuredAt, score) => ({
