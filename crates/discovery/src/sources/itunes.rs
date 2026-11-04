@@ -22,7 +22,7 @@ use tokio::sync::Notify;
 use tokio::time::Instant;
 
 use super::cache::{Cache, DAY};
-use super::{AlbumSource, Song, year};
+use super::{AlbumSource, ArtistSource, Song, year};
 use crate::artist::discography::{Entry, Origin};
 use crate::search::merge::{AlbumHit, ArtistHit, Found, SongHit};
 
@@ -151,7 +151,8 @@ impl Itunes {
     /// The songs of an album (`collectionId`) in order: one `lookup` call, kept a week. Fails
     /// while the budget is spent, so the album page asks MusicBrainz instead.
     pub async fn tracklist(&self, collection: u64) -> Result<Vec<Song>> {
-        let key = format!("it:tracklist:{}:{collection}", self.country);
+        // "-ids": answers kept before songs carried their artist's id are asked again.
+        let key = format!("it:tracklist-ids:{}:{collection}", self.country);
         self.cache
             .get(key, KEEP_TRACKLIST_S, || async {
                 if !self.budget().take(Instant::now()) {
@@ -627,6 +628,7 @@ impl Budget {
 struct Raw {
     wrapper_type: Option<String>,
     track_name: Option<String>,
+    artist_id: Option<u64>,
     artist_name: Option<String>,
     collection_id: Option<u64>,
     collection_name: Option<String>,
@@ -728,6 +730,8 @@ pub fn tracklist(body: Value) -> Result<Vec<Song>> {
                 disc: r.disc_number.filter(|_| r.disc_count.is_some_and(|n| n > 1)),
                 duration_s: r.track_time_millis.map(|ms| (ms / 1000) as u32).filter(|s| *s > 0),
                 tags: Vec::new(),
+                artist_source: r.artist_id.map(ArtistSource::Itunes),
+                isrc: None,
             })
         })
         .collect();

@@ -401,6 +401,8 @@ impl MusicBrainz {
                             disc,
                             duration_s: t.length.map(|ms| (ms / 1000) as u32),
                             tags: group.tags.clone(),
+                            artist_source: None,
+                            isrc: None,
                         }
                     })
                     .collect())

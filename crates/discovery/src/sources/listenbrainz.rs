@@ -354,6 +354,8 @@ fn song(mbid: &str, meta: &Value) -> Option<Song> {
         disc: None,
         duration_s: meta["recording"]["length"].as_u64().map(|ms| (ms / 1000) as u32),
         tags: top_tags(counted, 6),
+        artist_source: None,
+        isrc: None,
     })
 }
 

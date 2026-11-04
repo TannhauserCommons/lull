@@ -1123,6 +1123,8 @@ mod tests {
                 disc: None,
                 duration_s: None,
                 tags: Vec::new(),
+                artist_source: None,
+                isrc: None,
             },
             reason: Reason {
                 kind: ReasonKind::Tag,

@@ -193,6 +193,8 @@ impl SongHit {
             disc: None,
             duration_s: self.duration,
             tags: Vec::new(),
+            artist_source: None,
+            isrc: None,
         }
     }
 

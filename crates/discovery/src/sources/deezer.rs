@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::cache::{Cache, DAY};
-use super::{AlbumSource, Song};
+use super::{AlbumSource, ArtistSource, Song};
 use crate::artist::discography::{Entry, Origin};
 use crate::search::merge::{AlbumHit, ArtistHit, Found, PlaylistHit, SongHit, popularity};
 
@@ -274,7 +274,8 @@ impl Deezer {
     /// where Deezer's catalog is closed.
     pub async fn tracklist(&self, album: u64) -> Result<Vec<Song>> {
         self.cache
-            .get(format!("dz:tracklist:{album}"), KEEP_TRACKLIST_S, || async {
+            // "-ids": answers kept before songs carried their artist's id and ISRC are asked again.
+            .get(format!("dz:tracklist-ids:{album}"), KEEP_TRACKLIST_S, || async {
                 tracklist(self.get(&format!("album/{album}/tracks"), &[("limit", "200")]).await?)
             })
             .await
@@ -362,6 +363,13 @@ impl<T: serde::de::DeserializeOwned> Page<T> {
 
 #[derive(Deserialize)]
 struct Named {
+    name: String,
+}
+
+/// An artist as a track names it: its id and name.
+#[derive(Deserialize)]
+struct RawNamed {
+    id: u64,
     name: String,
 }
 
@@ -539,7 +547,8 @@ pub fn tracklist(body: Value) -> Result<Vec<Song>> {
         duration: Option<u32>,
         track_position: Option<u32>,
         disk_number: Option<u32>,
-        artist: Named,
+        isrc: Option<String>,
+        artist: RawNamed,
     }
     let raw = Page::<Raw>::of(body, "album tracks")?;
     let discs = raw.iter().any(|t| t.disk_number.is_some_and(|d| d > 1));
@@ -558,6 +567,8 @@ pub fn tracklist(body: Value) -> Result<Vec<Song>> {
             disc: t.disk_number.filter(|_| discs),
             duration_s: t.duration.filter(|d| *d > 0),
             tags: Vec::new(),
+            artist_source: Some(ArtistSource::Deezer(t.artist.id)),
+            isrc: t.isrc.filter(|i| !i.is_empty()),
         })
         .collect();
     songs.sort_by_key(|s| (s.disc.unwrap_or(1), s.no.unwrap_or(u32::MAX)));

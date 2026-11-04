@@ -374,6 +374,8 @@ pub fn songs(v: &Value) -> Vec<Song> {
                 disc: None,
                 duration_s: seconds.map(|d| d as u32),
                 tags: Vec::new(),
+                artist_source: None,
+                isrc: None,
             })
         })
         .collect()

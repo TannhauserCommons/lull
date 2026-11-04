@@ -395,6 +395,8 @@ async fn record(svc: &Service, item: Item) -> Result<Opened> {
                         disc: None,
                         duration_s: duration,
                         tags: Vec::new(),
+                        artist_source: None,
+                        isrc: None,
                     };
                     let release = (!song.album.is_empty()).then(|| Release {
                         mbid: None,

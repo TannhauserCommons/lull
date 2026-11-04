@@ -12,7 +12,7 @@ use tokio::time::Instant;
 
 use super::Board;
 use super::merge::{self, AlbumHit, ArtistHit, Fit, Found, Kind, Merged, Query, Score, SongHit};
-use crate::sources::{AlbumSource, deezer, itunes, lastfm, musicbrainz};
+use crate::sources::{AlbumSource, ArtistSource, deezer, itunes, lastfm, musicbrainz};
 
 fn fixture(name: &str) -> Value {
     let text = match name {
@@ -709,6 +709,11 @@ fn an_itunes_lookup_is_the_albums_tracklist_in_order() {
         (1..=8).collect::<Vec<_>>()
     );
     assert_eq!(songs[1].title, "You Can't Run From Me");
+    assert_eq!(
+        songs[2].artist_source,
+        Some(ArtistSource::Itunes(1_689_784_894)),
+        "each song names its artist by Apple's id, exact unlike the name (BIJI)"
+    );
 }
 
 #[test]
@@ -725,6 +730,8 @@ fn a_deezer_album_answer_is_its_tracklist_in_order() {
         ]
     );
     assert!(songs.iter().all(|s| s.artist == "Daft Punk" && s.disc.is_none()));
+    assert!(songs.iter().all(|s| s.artist_source == Some(ArtistSource::Deezer(27))));
+    assert_eq!(songs[0].isrc.as_deref(), Some("GBDUW0000053"));
 }
 
 /// Deezer's artists for one of the recorded near-match queries.

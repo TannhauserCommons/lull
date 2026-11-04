@@ -38,6 +38,22 @@ pub struct Song {
     pub disc: Option<u32>,
     pub duration_s: Option<u32>,
     pub tags: Vec<String>,
+    /// The catalog's own id for the song's artist, where the catalog gives one: exact, unlike
+    /// the name.
+    #[serde(default)]
+    pub artist_source: Option<ArtistSource>,
+    #[serde(default)]
+    pub isrc: Option<String>,
+}
+
+/// A catalog's artist id (`Song::artist_source`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase", tag = "source", content = "id")]
+pub enum ArtistSource {
+    /// Apple's `artistId`.
+    Itunes(u64),
+    /// Deezer's artist id.
+    Deezer(u64),
 }
 
 /// A release group (album, EP, single) as the sources describe it.
