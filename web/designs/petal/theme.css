@@ -163,10 +163,11 @@
 :root[data-design="petal"] .sky-specks { display: none; }
 :root[data-design="petal"] ::selection { background: var(--peri); color: var(--ink); }
 
-/* poster titles end in a pixel heart (img 04 "...♡"); uppercase micro-labels */
+/* poster titles end in a pixel heart (img 04 "...♡"); uppercase micro-labels. The heart is the room of a word joiner
+   and two no-break spaces, so it stays on the line of the title's last word and never wraps alone onto its own */
 :root[data-design="petal"] :is(.t-display, .lib-pl__title, .now-head__title)::after {
-  content: ""; display: inline-block; width: .38em; height: .34em; margin-left: .2em; vertical-align: .06em;
-  background: var(--heart); -webkit-mask: var(--px-heart) center / contain no-repeat; mask: var(--px-heart) center / contain no-repeat;
+  content: "\2060\00a0\00a0" / ""; display: inline; margin-left: .05em; letter-spacing: 0;
+  background: var(--heart); -webkit-mask: var(--px-heart) left .15em bottom .42em / .38em .34em no-repeat; mask: var(--px-heart) left .15em bottom .42em / .38em .34em no-repeat;
 }
 :root[data-design="petal"] .card .lib-pl__title::after { background: var(--pink-ink); }
 :root[data-design="petal"] :is(.lib-kicker, .card-head__title, .lib-th, .label-rule--sm > h2, .label-rule--sm > h3, .label-rule--sm .label-rule__text) {
