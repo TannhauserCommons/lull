@@ -19,7 +19,10 @@ A finished copy already in the stream cache plays at once, whatever the `below` 
    - it hasn't accepted the request within 20 s;
    - it has kept the transfer queued for 30 s;
    - no new bytes have arrived for Settings › Sources' stall timeout (`stallTimeout`, 15 s by default; shown as `stalled` after 5 s);
-   - slskd reports the transfer failed.
+   - slskd reports the transfer failed;
+   - after 10 s of sending it delivers under 1.25 times the song's rate (its size over its length) and an untried copy is expected to be twice as fast (ADR-0015, [soulseek.md](soulseek.md#ranking)); not for a copy the listener picked or a save named, and not remembered as a stall.
+
+   However it ends, a transfer that sent 1 MB or for 10 s leaves its rate in the peer's record.
 5. **Fall back** to the next copy in the same order. A stall is remembered against the peer (ranking demotes it); an offline peer or a long queue is not. A fetch gives up after 5 peers. Peers whose queue is longer than `maxPeerQueue` are never picked automatically.
 6. **Done:** slskd moves the file to its downloads folder. Its final path comes from slskd's `DownloadFileComplete` event; the cache records it, and slskd's transfer record is removed. slskd marks the transfer Succeeded before it moves the file and raises that event, so lull asks for the path again each second, for up to 60 s, rather than failing the song in that moment; a reader keeps reading the file it has open meanwhile.
 

@@ -87,6 +87,19 @@ pub const MIGRATIONS: Migrations = Migrations {
             PRIMARY KEY (artist, album)
         );
     "#,
+        r#"
+        -- How fast each peer actually sent to this hub (ADR-0015): a running average of its
+        -- transfers' rates in bytes a second, each weighted down by half every 7 days, and what
+        -- the peer said its speed was when last measured (0: unknown), to calibrate peers not
+        -- measured yet.
+        CREATE TABLE soulseek_speeds (
+            user        TEXT PRIMARY KEY,
+            rate        REAL NOT NULL,
+            weight      REAL NOT NULL,
+            reported    REAL NOT NULL,
+            measured_at INTEGER NOT NULL    -- unix seconds
+        );
+    "#,
     ],
 };
 

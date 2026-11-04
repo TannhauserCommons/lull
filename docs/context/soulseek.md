@@ -130,11 +130,17 @@ The score runs from 0 to 100 and is the sum of four factors (`rank.rs`):
 | Factor | Points |
 |---|---|
 | format | Up to 40 by position in `LULL_PREFERRED_FORMATS`, minus 8 per step down. Lossy formats are scaled by bitrate over 320 kbps; hi-res lossless takes ×0.95. A format not in the list gets 0. |
-| speed | Up to 30, full at 3.3 MB/s |
+| speed | Up to 30, full at 3.3 MB/s, by the rate lull expects (below) |
 | slot | 15 with a free upload slot, else 4 |
 | queue | 15 with a free slot, else 15 − 2 × queue length |
 
 A peer that stalled on lull in the last 7 days loses 25 points (`factors.stalled`) and is flagged `stalledBefore`; a finished transfer from it clears the record. `preferred` marks the first preferred format.
+
+**Speed is measured, not taken on trust (ADR-0015).** A peer's own figure (its search answer's `uploadSpeed`, the server's average of its past uploads) is often far off.
+- **What lull remembers:** how fast each peer actually sent, in `soulseek_speeds` (`peers.rs`). The rate is slskd's `averageSpeed` for each transfer that sent 1 MB or for 10 s, however it ended. It is kept as an average whose old measurements weigh half as much every 7 days.
+- **What ranking expects:** the measured rate. With none, the peer's own figure, scaled by the median of measured over reported across peers with both (once 5 have).
+- **The picker:** a measured speed shows plainly with when in its tip, and an unmeasured one as "~8.6 MB/s", the peer's own figure.
+- **A slow source gives way:** once a transfer has sent for 10 s, if it delivers under 1.25 times the song's rate and an untried copy is expected to be twice as fast, the fetch moves on (streaming.md). Never for the listener's pick or a save's named copy.
 
 ## Source rules
 
@@ -142,7 +148,7 @@ The listener's streaming and saving profiles (ADR-0008, `lull_core::quality`) ar
 
 1. **Gate.** A copy `meets` the profile's minimum by `Quality::meets` with the format from its extension (`quality::format_of`: `.aif` is AIFF). Its bitrate is the peer's, else worked out from size and length (the file's, else the song's); a lossy file of unknown bitrate fails a floor.
 2. **Order.** Copies that pass come first, then the rest, each by the profile's `pick`:
-   - `fastest`: the score, then speed;
+   - `fastest`: the score, then the expected speed;
    - `highest`: lossless first (hi-res above CD), then bitrate; the score breaks ties.
 
    **Streaming cap.** With `stream.maxKbps` set (128, 192, 256 or 320; 0 = none), streaming takes copies within the cap before copies above it, among passing copies and among the rest; lossless counts as above any cap, and a lossy copy of unknown bitrate as within it (`Quality::within`). Copies above it are marked `aboveMax`. It is a preference, not a gate: when only copies above the cap pass, one of them plays. Saving has no cap.

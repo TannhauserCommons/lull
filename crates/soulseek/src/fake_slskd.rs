@@ -37,6 +37,8 @@ struct Shared {
     layout: Layout,
     root: PathBuf,
     peer: Peer,
+    /// Peers whose pace differs from `peer`'s.
+    paces: HashMap<String, usize>,
     transfers: Mutex<HashMap<String, Transfer>>,
     events: Mutex<Vec<Value>>,
     next: Mutex<u32>,
@@ -47,6 +49,8 @@ struct Transfer {
     filename: String,
     state: &'static str,
     bytes: u64,
+    /// Where the peer started sending from, and when: slskd's averageSpeed is what came since.
+    from: (u64, std::time::Instant),
     task: Option<Arc<tokio::task::AbortHandle>>,
 }
 
@@ -55,8 +59,6 @@ struct Transfer {
 pub struct Peer {
     /// Bytes sent every `TICK`.
     pub per_tick: usize,
-    /// The speed slskd reports, bytes a second.
-    pub reported: f64,
     /// slskd set to `retry.partial: overwrite`: every download starts over from byte 0.
     pub overwrite: bool,
     /// How long after a transfer reads `Succeeded` slskd moves the file and says where.
@@ -66,6 +68,15 @@ pub struct Peer {
 impl Fake {
     /// slskd serving `files` (remote path to bytes) from one peer.
     pub async fn start(files: HashMap<String, Vec<u8>>, peer: Peer) -> std::io::Result<Fake> {
+        Fake::start_with(files, peer, HashMap::new()).await
+    }
+
+    /// The same, with `paces` (user to bytes a tick) for peers that send at another pace.
+    pub async fn start_with(
+        files: HashMap<String, Vec<u8>>,
+        peer: Peer,
+        paces: HashMap<String, usize>,
+    ) -> std::io::Result<Fake> {
         let root = std::env::temp_dir().join(format!("lull-fake-slskd-{}-{}", std::process::id(), rand_id()));
         std::fs::create_dir_all(root.join("incomplete"))?;
         std::fs::create_dir_all(root.join("complete"))?;
@@ -73,6 +84,7 @@ impl Fake {
         let shared = Arc::new(Shared {
             files,
             layout: layout.clone(),
+            paces,
             root: root.clone(),
             peer,
             transfers: Mutex::default(),
@@ -131,23 +143,23 @@ async fn enqueue(
         Ok(m) if m.len() > 0 && !s.peer.overwrite => m.len(),
         _ => 0,
     };
-    let task = tokio::spawn(download(s.clone(), id.clone(), path, filename.clone(), bytes, at)).abort_handle();
+    let pace = s.paces.get(&user).copied().unwrap_or(s.peer.per_tick);
+    let task = tokio::spawn(download(s.clone(), id.clone(), path, filename.clone(), bytes, at, pace)).abort_handle();
     let t = Transfer {
         filename: filename.clone(),
         state: "InProgress",
         bytes: at,
+        from: (at, std::time::Instant::now()),
         task: Some(Arc::new(task)),
     };
     if let Ok(mut all) = s.transfers.lock() {
         all.insert(id.clone(), t.clone());
     }
-    Ok(axum::Json(
-        json!({ "batch": { "transfers": [view(&id, &t, s.peer.reported)] } }),
-    ))
+    Ok(axum::Json(json!({ "batch": { "transfers": [view(&id, &t)] } })))
 }
 
 /// The peer sends from `at`: appended (resume) or written from a fresh file (overwrite).
-async fn download(s: Arc<Shared>, id: String, path: PathBuf, filename: String, bytes: Vec<u8>, at: u64) {
+async fn download(s: Arc<Shared>, id: String, path: PathBuf, filename: String, bytes: Vec<u8>, at: u64, pace: usize) {
     let open = async {
         if let Some(dir) = path.parent() {
             tokio::fs::create_dir_all(dir).await?;
@@ -164,7 +176,7 @@ async fn download(s: Arc<Shared>, id: String, path: PathBuf, filename: String, b
     let Ok(mut file) = open.await else { return };
     let mut pos = at as usize;
     while pos < bytes.len() {
-        let end = (pos + s.peer.per_tick).min(bytes.len());
+        let end = (pos + pace).min(bytes.len());
         if file.write_all(&bytes[pos..end]).await.is_err() || file.flush().await.is_err() {
             return;
         }
@@ -195,7 +207,8 @@ async fn download(s: Arc<Shared>, id: String, path: PathBuf, filename: String, b
     }
 }
 
-fn view(id: &str, t: &Transfer, speed: f64) -> Value {
+fn view(id: &str, t: &Transfer) -> Value {
+    let speed = (t.bytes - t.from.0) as f64 / t.from.1.elapsed().as_secs_f64().max(0.001);
     json!({
         "id": id, "filename": t.filename, "state": t.state, "bytesTransferred": t.bytes,
         "averageSpeed": speed, "placeInQueue": null, "exception": null,
@@ -206,7 +219,7 @@ async fn list(State(s): State<Arc<Shared>>, UrlPath(_user): UrlPath<String>) -> 
     let files: Vec<Value> = s
         .transfers
         .lock()
-        .map(|all| all.iter().map(|(id, t)| view(id, t, s.peer.reported)).collect())
+        .map(|all| all.iter().map(|(id, t)| view(id, t)).collect())
         .unwrap_or_default();
     axum::Json(json!({ "directories": [{ "files": files }] }))
 }
@@ -217,7 +230,7 @@ async fn one(
 ) -> Result<axum::Json<Value>, StatusCode> {
     let all = s.transfers.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     all.get(&id)
-        .map(|t| axum::Json(view(&id, t, s.peer.reported)))
+        .map(|t| axum::Json(view(&id, t)))
         .ok_or(StatusCode::NOT_FOUND)
 }
 

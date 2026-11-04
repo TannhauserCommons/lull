@@ -45,6 +45,18 @@ use crate::sources::{self, Bar, Lesser, Ranked, Source, Sources};
 /// Received bytes after which a stream counts as playing rather than buffering.
 const BUFFERED: u64 = 256 * 1024;
 const POLL: Duration = Duration::from_secs(1);
+/// A source's live rate is judged once it has sent this long: slskd's average (Soulseek.NET's,
+/// updated once a second with α 0.2) still holds 11 % of its first second's rate after ten.
+const SLOW_AFTER: Duration = Duration::from_secs(10);
+/// A source sending under this many times what the song needs gives way: the song plays at 1x,
+/// and the margin covers the average's wobble and what the player reads ahead.
+const SLOWER_THAN: f64 = 1.25;
+/// ...to a copy expected at least this many times as fast: worth a new request's start-up and the
+/// listener's rebuffer, and well clear of how far an expectation can be off.
+const FASTER_BY: f64 = 2.0;
+/// A transfer's rate is remembered once at least this much came (or it sent for `SLOW_AFTER`):
+/// before, the connection's start-up is most of it.
+const MEASURE_MIN: u64 = 1_000_000;
 /// slskd reports a download done just before it moves the file and says where: this long at most.
 const LAND_WAIT: Duration = Duration::from_secs(60);
 /// A peer that hasn't accepted the request by now is skipped.
@@ -240,6 +252,9 @@ enum Skip {
     Stalled(String),
     /// The peer is offline or refused: try the next one, no grudge.
     Unavailable(String),
+    /// The peer sends slower than the song plays, and another is expected to be much faster: its
+    /// measured rate demotes it, no stall is recorded (ADR-0015).
+    Slow(String),
 }
 
 #[derive(Clone)]
@@ -1253,12 +1268,21 @@ impl Fetcher {
             // Counted across sources (YouTube included): a reader of an older attempt has the
             // wrong file.
             let attempt = f.now().attempt + 1;
-            match self.attempt(f, attempt, &next, &mut stop).await {
+            // A copy named for this fetch (the listener's pick, a save's) is kept however slow;
+            // otherwise the fastest copy left is what a slow one could give way to.
+            let faster = match pick {
+                Some(_) => 0.0,
+                None => {
+                    let (left, _) = self.untried(f, &tried, &self.rules.get());
+                    left.iter().map(|r| r.expected).fold(0.0, f64::max)
+                }
+            };
+            match self.attempt(f, attempt, &next, faster, &mut stop).await {
                 Ok(path) => return Ok(path),
                 Err(Ok(skip)) => {
                     let (reason, stalled) = match skip {
                         Skip::Stalled(r) => (r, true),
-                        Skip::Unavailable(r) => (r, false),
+                        Skip::Unavailable(r) | Skip::Slow(r) => (r, false),
                     };
                     tracing::info!(peer = %next.user, reason, "falling back to the next source");
                     if stalled && let Err(e) = self.peers.stalled(&next.user).await {
@@ -1426,12 +1450,15 @@ impl Fetcher {
         }
     }
 
-    /// One transfer from one source, watched until it finishes, stalls or is stopped.
+    /// One transfer from one source, watched until it finishes, stalls, proves slower than the
+    /// song when a copy expected at `faster` bytes a second is left, or is stopped. However it
+    /// ends, the rate it sent at is remembered against the peer (ADR-0015).
     async fn attempt(
         &self,
         f: &Fetch,
         attempt: u32,
         source: &Source,
+        faster: f64,
         stop: &mut watch::Receiver<bool>,
     ) -> Result<PathBuf, Result<Skip, Stop>> {
         self.cache
@@ -1473,6 +1500,16 @@ impl Fetcher {
         let mut last_bytes = (0u64, Instant::now());
         let mut recorded = false;
         let mut was_running = false;
+        // When the peer started sending, and what was on disk then (a resumed partial).
+        let mut sending: Option<(Instant, u64)> = None;
+        // What the song needs, bytes a second: slower, and it outruns its own download.
+        let needs = f
+            .track
+            .duration
+            .or(source.length)
+            .filter(|&d| d > 0)
+            .map_or(0.0, |d| source.size as f64 / f64::from(d));
+        let mut last: Option<Transfer> = None;
         loop {
             tokio::select! {
                 _ = tokio::time::sleep(POLL) => {}
@@ -1482,7 +1519,11 @@ impl Fetcher {
                     if let Ok(t) = self.slskd.download(&source.user, &transfer.id).await
                         && t.phase() == Phase::Succeeded
                     {
+                        self.measure(source, &t, sending, t.bytes_transferred).await;
                         return self.finish(f, source, &t).await.map_err(|e| Err(Stop::Failed(reason(&e))));
+                    }
+                    if let Some(t) = &last {
+                        self.measure(source, t, sending, last_bytes.0).await;
                     }
                     if let Err(e) = self.slskd.cancel(&source.user, &transfer.id).await {
                         tracing::warn!(error = %e, "cancelling a transfer in slskd");
@@ -1511,8 +1552,26 @@ impl Fetcher {
             if received > last_bytes.0 || (running && !was_running) {
                 last_bytes = (received, Instant::now());
             }
+            if running && sending.is_none() {
+                sending = Some((Instant::now(), received));
+            }
             was_running = running;
             let quiet = last_bytes.1.elapsed();
+            last = Some(t.clone());
+            let rate = t.average_speed.max(0.0);
+            if running
+                && sending.is_some_and(|(since, _)| since.elapsed() >= SLOW_AFTER)
+                && rate < needs * SLOWER_THAN
+                && faster >= rate * FASTER_BY
+            {
+                self.measure(source, &t, sending, received).await;
+                self.give_up(source, &t).await;
+                return Err(Ok(Skip::Slow(format!(
+                    "{} sent {} KB/s, slower than the song plays",
+                    source.user,
+                    (rate / 1000.0).round()
+                ))));
+            }
             match t.phase() {
                 Phase::Starting if begun.elapsed() > START_TIMEOUT => {
                     self.give_up(source, &t).await;
@@ -1528,11 +1587,13 @@ impl Fetcher {
                     return Err(Ok(Skip::Unavailable(format!("{} kept us queued{pos}", source.user))));
                 }
                 Phase::InProgress if quiet > rules.stall_timeout() => {
+                    self.measure(source, &t, sending, received).await;
                     self.give_up(source, &t).await;
                     let pct = received.saturating_mul(100) / source.size.max(1);
                     return Err(Ok(Skip::Stalled(format!("{} stalled at {pct}%", source.user))));
                 }
                 Phase::Failed => {
+                    self.measure(source, &t, sending, received).await;
                     let why = t
                         .exception
                         .as_deref()
@@ -1540,6 +1601,8 @@ impl Fetcher {
                     return Err(Ok(Skip::Stalled(format!("{}: {why}", source.user))));
                 }
                 Phase::Succeeded => {
+                    self.measure(source, &t, sending, t.bytes_transferred.max(received))
+                        .await;
                     return self
                         .finish(f, source, &t)
                         .await
@@ -1584,6 +1647,24 @@ impl Fetcher {
             tracing::debug!(error = %e, "removing a finished transfer from slskd's list");
         }
         Ok(path)
+    }
+
+    /// Remembers how fast the peer sent this transfer: slskd's average over the bytes that flowed
+    /// (queue time excluded), once enough came to judge it: `MEASURE_MIN`, or `SLOW_AFTER` of
+    /// sending, so a slow peer given up on is remembered too.
+    async fn measure(&self, source: &Source, t: &Transfer, sending: Option<(Instant, u64)>, received: u64) {
+        let Some((since, from)) = sending else { return };
+        let judged = received.saturating_sub(from) >= MEASURE_MIN || since.elapsed() >= SLOW_AFTER;
+        if !judged || t.average_speed <= 0.0 {
+            return;
+        }
+        if let Err(e) = self
+            .peers
+            .sent(&source.user, t.average_speed, source.upload_speed)
+            .await
+        {
+            tracing::warn!(error = %e, "remembering a peer's speed");
+        }
     }
 
     async fn give_up(&self, source: &Source, t: &Transfer) {
@@ -2184,7 +2265,7 @@ mod tests {
         use crate::peers::Peers;
         use crate::rules::Current;
         use crate::search::Searches;
-        use crate::sources::Sources;
+        use crate::sources::{Source, Sources};
 
         const REMOTE: &str = "Music\\Artist\\Album\\01 - Song.mp3";
 
@@ -2255,7 +2336,6 @@ mod tests {
             // looks once a second, so it sees the transfer done with nowhere to find it yet.
             let peer = Peer {
                 per_tick: 32_768,
-                reported: 800_000.0,
                 overwrite: false,
                 settles: Duration::from_secs(2),
             };
@@ -2281,7 +2361,6 @@ mod tests {
             let bytes: Vec<u8> = (0..600_000).map(|i| (i % 251) as u8).collect();
             let peer = Peer {
                 per_tick: 8_192,
-                reported: 400_000.0,
                 overwrite: false,
                 settles: Duration::from_secs(2),
             };
@@ -2312,6 +2391,195 @@ mod tests {
                 bytes.len()
             );
             assert_eq!(ended(&f).await?.status, Status::Done);
+            Ok(())
+        }
+
+        /// A copy as a search answer offers it: `claims` is the speed the peer reports, MB/s.
+        fn offered(user: &str, size: u64, claims: f64) -> Source {
+            Source {
+                user: user.into(),
+                path: REMOTE.into(),
+                size,
+                ext: "mp3".into(),
+                facts: lull_core::model::FileFacts {
+                    format: "MP3 320".into(),
+                    codec: "MP3".into(),
+                    lossless: false,
+                    khz: Some(44.1),
+                    bits: None,
+                    kbps: Some(320),
+                    size_bytes: Some(size),
+                },
+                upload_speed: (claims * 1_000_000.0) as u64,
+                free_slot: true,
+                queue: 0,
+                length: Some(20),
+            }
+        }
+
+        /// A 2 MB song of 20 s (it needs 100 KB/s), from a peer that claims 8.6 MB/s and sends
+        /// 50 KB/s, and one that claims 4.7 MB/s and sends about 1 MB/s.
+        async fn liar_and_honest() -> Result<(Fake, Fetcher, Track, Vec<u8>)> {
+            let bytes: Vec<u8> = (0..2_000_000).map(|i| (i % 251) as u8).collect();
+            let peer = Peer {
+                per_tick: 20_000,
+                overwrite: false,
+                settles: Duration::from_millis(100),
+            };
+            let fake = Fake::start_with(
+                HashMap::from([(REMOTE.to_owned(), bytes.clone())]),
+                peer,
+                HashMap::from([("liar".to_owned(), 1_000)]),
+            )
+            .await
+            .map_err(|e| Error::internal(e.to_string()))?;
+            let fetcher = fetcher(&fake).await?;
+            let song = Track {
+                duration: Some(20),
+                ..track()
+            };
+            let size = bytes.len() as u64;
+            fetcher.sources.add(HashMap::from([(
+                song.id.clone(),
+                vec![offered("liar", size, 8.6), offered("honest", size, 4.7)],
+            )]));
+            Ok((fake, fetcher, song, bytes))
+        }
+
+        #[tokio::test]
+        async fn a_peer_sending_slower_than_the_song_gives_way_and_is_ranked_by_what_it_sent_next_time() -> Result<()> {
+            let (_fake, fetcher, song, bytes) = liar_and_honest().await?;
+            let f = fetcher.stream(song.clone(), None).await?;
+            let p = ended(&f).await?;
+            assert_eq!(p.status, Status::Done, "{:?}", p.error);
+            assert_eq!(
+                p.source.as_ref().map(|s| s.user.as_str()),
+                Some("honest"),
+                "the slow peer gave way"
+            );
+            assert_eq!(
+                p.failed_peers.iter().map(|f| f.peer.as_str()).collect::<Vec<_>>(),
+                ["liar"]
+            );
+            assert!(
+                !fetcher.peers.stalled_before("liar"),
+                "slow is remembered as a speed, not a stall"
+            );
+            let path = p.path.ok_or_else(|| Error::internal("no file"))?;
+            assert_eq!(std::fs::read(&path).map_err(|e| Error::internal(e.to_string()))?, bytes);
+            // Next time, the measured 50 KB/s ranks it under the honest peer's figure.
+            let ranked = fetcher.sources.ordered(
+                &song.id,
+                song.duration,
+                &fetcher.rules.get(),
+                super::super::Purpose::Stream,
+            );
+            assert_eq!(ranked.first().map(|r| r.peer.as_str()), Some("honest"));
+            let liar = ranked
+                .iter()
+                .find(|r| r.peer == "liar")
+                .ok_or_else(|| Error::internal("no liar"))?;
+            assert!(
+                liar.speed_measured && liar.speed < 0.2,
+                "shown as measured: {} MB/s",
+                liar.speed
+            );
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn a_peer_the_listener_picked_is_kept_however_slow() -> Result<()> {
+            let (_fake, fetcher, song, _) = liar_and_honest().await?;
+            let pick = SourceRef {
+                user: "liar".into(),
+                path: REMOTE.into(),
+                size: 2_000_000,
+            };
+            let f = fetcher.stream(song, Some(pick)).await?;
+            tokio::time::sleep(Duration::from_secs(13)).await;
+            let p = f.now();
+            assert_eq!(p.source.as_ref().map(|s| s.user.as_str()), Some("liar"));
+            assert!(p.failed_peers.is_empty(), "{:?}", p.failed_peers);
+            Ok(())
+        }
+
+        /// Plays the fetch as a listener would, from the progress it reports: starts at 256 KB, plays
+        /// at the song's rate, stalls when it reaches what has arrived and resumes 2 s of song later.
+        /// Returns seconds to first sound, the stalls, and seconds stalled.
+        async fn listen(f: &Arc<Fetch>, size: f64, seconds: f64) -> (f64, u32, f64) {
+            let rate = size / seconds;
+            let start = tokio::time::Instant::now();
+            let (mut first, mut stalls, mut stalled, mut pos, mut playing, mut attempt) = (None, 0, 0.0, 0.0, false, 0);
+            let tick = Duration::from_millis(50);
+            while pos < size && start.elapsed() < Duration::from_secs(120) {
+                tokio::time::sleep(tick).await;
+                let p = f.now();
+                // A new source restarts the file: the player reopens at the same place.
+                let arrived = if p.attempt == attempt { p.received as f64 } else { 0.0 };
+                attempt = p.attempt.max(attempt);
+                let have = if p.status == Status::Done { size } else { arrived };
+                if playing {
+                    pos += rate * tick.as_secs_f64();
+                    if pos >= have && have < size {
+                        playing = false;
+                        stalls += 1;
+                    }
+                } else if have >= (pos + 2.0 * rate).min(size) && have >= 256_000.0 {
+                    first.get_or_insert(start.elapsed().as_secs_f64());
+                    playing = true;
+                } else if first.is_some() {
+                    stalled += tick.as_secs_f64();
+                }
+            }
+            (first.unwrap_or(f64::NAN), stalls, stalled)
+        }
+
+        /// The before/after for ADR-0015, printed: `cargo test -p lull-soulseek before_and_after -- --ignored --nocapture`.
+        /// Before: the peer's own figures rank the liar first and nothing makes it give way (as a
+        /// pick, which the give-way rule leaves alone, it plays as the old fetch did). After: the
+        /// first play gives way after 10 s; the second is ranked by what each peer sent.
+        #[tokio::test]
+        #[ignore = "a report, about two minutes"]
+        async fn before_and_after_a_peer_that_claims_fast_and_sends_slow() -> Result<()> {
+            let (_fake, fetcher, song, bytes) = liar_and_honest().await?;
+            let size = bytes.len() as f64;
+            let liar = SourceRef {
+                user: "liar".into(),
+                path: REMOTE.into(),
+                size: bytes.len() as u64,
+            };
+            let f = fetcher.stream(song.clone(), Some(liar)).await?;
+            let before = listen(&f, size, 20.0).await;
+            fetcher.cancel_fetch(&f);
+            // A fresh hub's first play of the song, then a second play once lull has measured both.
+            let (fake2, fetcher2, song2, _) = liar_and_honest().await?;
+            let f = fetcher2.stream(song2.clone(), None).await?;
+            let first = listen(&f, size, 20.0).await;
+            ended(&f).await?;
+            fetcher2.cancel_fetch(&f);
+            fetcher2.forget(&f);
+            // Played again from Soulseek, not the cache: what is measured decides the order.
+            fetcher2
+                .cache
+                .forget(&SourceRef {
+                    user: "honest".into(),
+                    path: REMOTE.into(),
+                    size: bytes.len() as u64,
+                })
+                .await?;
+            for e in std::fs::read_dir(fake2.root.join("complete")).map_err(|e| Error::internal(e.to_string()))? {
+                let path = e.map_err(|e| Error::internal(e.to_string()))?.path();
+                std::fs::remove_file(path).map_err(|e| Error::internal(e.to_string()))?;
+            }
+            let f = fetcher2.stream(song2, None).await?;
+            let second = listen(&f, size, 20.0).await;
+            for (what, (first_sound, stalls, stalled)) in [
+                ("before", before),
+                ("after, first play", first),
+                ("after, measured", second),
+            ] {
+                println!("{what:>18}: first sound {first_sound:.1} s, {stalls} stalls, {stalled:.1} s stalled");
+            }
             Ok(())
         }
     }

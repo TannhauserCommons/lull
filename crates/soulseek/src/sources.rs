@@ -85,8 +85,17 @@ pub struct Ranked {
     pub path: String,
     pub format: String,
     pub size_bytes: u64,
-    /// MB/s, one decimal.
+    /// MB/s, one decimal: what lull measured from the peer, else what the peer reports.
     pub speed: f32,
+    /// `speed` is lull's measurement (ADR-0015), not the peer's own figure.
+    pub speed_measured: bool,
+    /// When it was last measured (unix seconds).
+    pub measured_at: Option<i64>,
+    /// Bytes a second ranking expects: measured, else the report as reports have proved here.
+    #[serde(skip)]
+    pub expected: f64,
+    /// The same in MB/s, one decimal: what the picker sorts by speed on.
+    pub expected_speed: f32,
     pub free_slot: bool,
     pub queue: u32,
     pub score: u8,
@@ -172,6 +181,8 @@ impl Sources {
 
     pub fn rank(&self, s: Source) -> Ranked {
         let stalled_before = self.peers.stalled_before(&s.user);
+        let (expected, measured) = self.peers.expected(&s.user, s.upload_speed);
+        let shown = measured.map_or(s.upload_speed as f64, |m| m.rate);
         let factors = rank::factors(
             &Offer {
                 ext: &s.ext,
@@ -179,7 +190,7 @@ impl Sources {
                 kbps: s.facts.kbps,
                 khz: s.facts.khz,
                 bits: s.facts.bits,
-                upload_speed: s.upload_speed,
+                speed: expected as u64,
                 free_slot: s.free_slot,
                 queue: s.queue,
                 stalled_before,
@@ -191,7 +202,11 @@ impl Sources {
             path: s.path.clone(),
             format: s.facts.format.clone(),
             size_bytes: s.size,
-            speed: (s.upload_speed as f32 / 100_000.0).round() / 10.0,
+            speed: (shown as f32 / 100_000.0).round() / 10.0,
+            speed_measured: measured.is_some(),
+            measured_at: measured.map(|m| m.at),
+            expected,
+            expected_speed: (expected as f32 / 100_000.0).round() / 10.0,
             free_slot: s.free_slot,
             queue: s.queue,
             score: factors.score(),
@@ -219,7 +234,7 @@ pub fn order(mut ranked: Vec<Ranked>, duration: Option<u32>, rules: &Rules, purp
         r.queue_too_long = r.source.queue_too_long(rules.max_peer_queue);
         r.above_max = !r.source.quality(duration).within(cap);
     }
-    let fastest = |a: &Ranked, b: &Ranked| b.score.cmp(&a.score).then(b.speed.total_cmp(&a.speed));
+    let fastest = |a: &Ranked, b: &Ranked| b.score.cmp(&a.score).then(b.expected.total_cmp(&a.expected));
     ranked.sort_by(|a, b| {
         a.queue_too_long
             .cmp(&b.queue_too_long)
@@ -307,7 +322,7 @@ mod tests {
                 kbps: source.facts.kbps,
                 khz: source.facts.khz,
                 bits: source.facts.bits,
-                upload_speed: source.upload_speed,
+                speed: source.upload_speed,
                 free_slot,
                 queue,
                 stalled_before: false,
@@ -320,6 +335,10 @@ mod tests {
             format: source.facts.format.clone(),
             size_bytes: source.size,
             speed: mbps,
+            speed_measured: false,
+            measured_at: None,
+            expected: source.upload_speed as f64,
+            expected_speed: mbps,
             free_slot,
             queue,
             score: factors.score(),

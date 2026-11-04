@@ -26,8 +26,9 @@ pub struct Offer<'a> {
     pub kbps: Option<u32>,
     pub khz: Option<f32>,
     pub bits: Option<u8>,
-    /// Bytes per second, as the peer advertises.
-    pub upload_speed: u64,
+    /// Bytes per second lull expects from the peer: what it measured, else the peer's own
+    /// figure as such figures have proved on this hub (ADR-0015).
+    pub speed: u64,
     pub free_slot: bool,
     pub queue: u32,
     pub stalled_before: bool,
@@ -54,7 +55,7 @@ impl Factors {
 pub fn factors(offer: &Offer, preferred: &[String]) -> Factors {
     Factors {
         format: format_points(offer, preferred),
-        speed: (offer.upload_speed as f32 / 1_000_000.0 / FULL_SPEED_MBPS * SPEED_MAX)
+        speed: (offer.speed as f32 / 1_000_000.0 / FULL_SPEED_MBPS * SPEED_MAX)
             .round()
             .min(SPEED_MAX) as u8,
         slot: if offer.free_slot { SLOT_FREE } else { SLOT_BUSY },
@@ -104,7 +105,7 @@ mod tests {
             kbps: Some(if lossless { 1000 } else { 320 }),
             khz: Some(44.1),
             bits: lossless.then_some(16),
-            upload_speed: 2_000_000,
+            speed: 2_000_000,
             free_slot: true,
             queue: 0,
             stalled_before: false,
@@ -167,7 +168,7 @@ mod tests {
         assert_eq!(sum, i16::from(f.score()));
         // Speed saturates: a fast peer can't buy back a bad format.
         let fast = Offer {
-            upload_speed: 50_000_000,
+            speed: 50_000_000,
             ..offer("flac")
         };
         assert_eq!(factors(&fast, &prefs()).speed, SPEED_MAX as u8);
