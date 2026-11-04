@@ -4376,7 +4376,10 @@
     var e = a.effect, t = e && e.target;
     if (!t || !(a instanceof window.CSSAnimation) || e.getTiming().iterations !== Infinity) return;
     var fps = parseFloat(getComputedStyle(t, e.pseudoElement).getPropertyValue('--loop-fps'));
-    if (!(fps > 0)) return;
+    if (!(fps > 0)) {                                   // no rate (any more: an edit took it away): runs as written
+      if (paced.has(a)) { e.updateTiming({ easing: 'linear', delay: paced.get(a) }); paced.delete(a); if (a.playbackRate === 0) a.playbackRate = 1; }
+      return;
+    }
     if (!paced.has(a)) paced.set(a, e.getTiming().delay);
     /* held still while the page asks it (below), unless it shows something happening (--loop-holds: no) */
     if (root.classList.contains('is-still') && getComputedStyle(t, e.pseudoElement).getPropertyValue('--loop-holds').trim() !== 'no') { a.playbackRate = 0; return; }
@@ -4394,9 +4397,10 @@
      every change to the page too. That look waits for the page to go quiet (QUIET ms with no change: a drag, typing or a
      list filling in never pays for it as it goes, nor asks for a frame), when its styles are long resolved: reading the
      page's animations then costs no style or layout work. A browser without these (an old Safari) runs loops as they are */
-  var seen = new WeakSet(), QUIET = 200, quiet = 0;
+  var seen = new WeakSet(), QUIET = 200, quiet = 0, restyled = false;
   function paceNew() {
     if (!window.CSSAnimation || !document.getAnimations) return;
+    if (restyled) { restyled = false; paceAll(); }
     document.getAnimations().forEach(function (a) { if (!seen.has(a)) { seen.add(a); pace(a); } });
   }
   function lookSoon() {
@@ -4404,7 +4408,15 @@
     quiet = setTimeout(paceNew, QUIET);
   }
   function paceAll() { if (window.CSSAnimation && document.getAnimations) document.getAnimations().forEach(pace); }
-  if (window.MutationObserver) new MutationObserver(lookSoon).observe(document.documentElement, { subtree: true, childList: true, attributes: true });
+  /* a stylesheet changed (a theme edited on the hub and reloaded, Theme Studio's draft): a loop already running keeps
+     its animation, so a rate it names now (or no longer) takes hold only when every loop is paced again, once the
+     sheet is in (a <style>'s @import loads after its text changes, then fires load) */
+  function sheet(n) { return n && (n.nodeName === 'STYLE' || n.nodeName === 'LINK'); }
+  if (window.MutationObserver) new MutationObserver(function (records) {
+    for (var i = 0; i < records.length && !restyled; i++) restyled = sheet(records[i].target);
+    lookSoon();
+  }).observe(document.documentElement, { subtree: true, childList: true, attributes: true });
+  document.addEventListener('load', function (e) { if (sheet(e.target)) { restyled = true; lookSoon(); } }, true);
   document.addEventListener('animationstart', function (ev) {
     if (window.CSSAnimation && ev.target.getAnimations) ev.target.getAnimations({ subtree: true }).forEach(function (a) { if (a.effect && a.effect.target === ev.target) { seen.add(a); pace(a); } });
   });
