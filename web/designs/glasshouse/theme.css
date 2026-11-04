@@ -314,7 +314,8 @@
   /* glass that stays put over the wallpaper (the shell's panels; the queue while docked) frosts it without blurring it
      every frame: the wallpaper's smooth layers again under the tint, fixed to the window as the sky is, and the stars and
      lens rings left out, as a blur this wide wipes them out (docs/themes.md, Drawing cheaply). So does the AIMP window,
-     whose ticker would have its blur redone 20 times a second at rest; it repaints as the page scrolls, which costs less.
+     whose ticker would have its blur redone 20 times a second at rest, and a card showing the empty state's blinking caret
+     (Now Playing's lyrics card with no lyrics); it repaints as the page scrolls, which costs less.
      The other windows move over the wallpaper as the page scrolls, and a fixed wallpaper under each would repaint them
      all on every scroll frame, so they blur live, as do a sheet, a menu, a toast and the queue sliding over the page:
      what is under them moves. Each rule weighs what the glass rule above weighs (:where), so a window's own fill wins */
@@ -323,7 +324,7 @@
     background-attachment: scroll, scroll, var(--gh-wall-at);
     -webkit-backdrop-filter: none; backdrop-filter: none;
   }
-  :root[data-design="glasshouse"] :is(.card.gh-aimp) {
+  :root[data-design="glasshouse"] :is(.card.gh-aimp, .card:has(.gh-caret)) {
     background: linear-gradient(128deg, var(--gh-sheen) 0%, transparent 36%),
       linear-gradient(180deg, var(--gh-glass-card) 0%, var(--gh-glass-card-2) 100%), var(--gh-wall);
     background-attachment: scroll, scroll, var(--gh-wall-at);
