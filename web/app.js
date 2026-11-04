@@ -2119,6 +2119,8 @@
     var eta = waitWords(f);
     return at + (eta ? ', downloaded in ' + eta : ', not downloaded yet');
   };
+  /* a seek past what has arrived is kept until it has, rather than stopping where the download is */
+  P.seeksAhead = function () { return !!playback.jumpWhenDownloaded; };
   /* where the listener asked to be: a kept seek's time, else where the song is. Seeking by steps goes on from there */
   P.seekTarget = function () { return ps.seekWait ? ps.seekWait.fraction * P.duration() : ps.pos; };
   P.seek = function (sec) { return P.seekFraction(sec / (P.duration() || 1)); };

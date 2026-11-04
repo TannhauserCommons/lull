@@ -524,7 +524,8 @@
     clearTimeout(st.autoT); st.autoT = setTimeout(function () { st.auto = false; }, smooth ? 700 : 60);
   }
   /* a line can be jumped to only inside what has arrived (the engine's rule, P.seekable) */
-  function lineSeekable(line) { return P.seekable(+line.getAttribute('data-t') / (P.duration() || 1)); }
+  /* a click on a line seeks there: now when that part arrived, or kept (or fetched) until it has, by Settings > Playback */
+  function lineSeekable(line) { return P.seekable(+line.getAttribute('data-t') / (P.duration() || 1)) || P.seeksAhead(); }
   function lyUpdate(sc, jump) {
     var st = sc._ly, lines = st.lines; if (!lines.length) return;
     var p = ps.pos + .15, i = -1;
@@ -537,13 +538,14 @@
       st.cur = i;
       if (!lyAway[st.key] && (i >= 0 || jump)) lyScroll(sc, lines[Math.max(i, 0)], !jump);
     }
-    // lines outside the downloaded part cannot be jumped to: say so on hover / focus
+    // a line's tip says what a click on it does, also outside the downloaded part
     var bk = ps.buffered.map(function (r) { return r.join('-'); }).join('|') + '/' + ps.received;
     if (bk !== st.bk) {
       st.bk = bk;
       lines.forEach(function (l) {
         var ok = lineSeekable(l);
-        l.setAttribute('data-tip', ok ? 'Jump to ' + fmtTime(+l.getAttribute('data-t')) : 'Not downloaded yet (' + Math.round(ps.received * 100) + '%)');
+        var tip = P.seekTip(+l.getAttribute('data-t') / (P.duration() || 1));
+        l.setAttribute('data-tip', ok ? 'Jump to ' + tip : tip);
         l.classList.toggle('is-far', !ok);
       });
     }
