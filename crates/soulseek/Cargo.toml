@@ -24,8 +24,8 @@ fs4 = "=1.1.0"
 futures-util = "=0.3.34"
 
 [dev-dependencies]
-# A fake slskd on a local port (recover.rs tests).
-tokio = { workspace = true, features = ["net"] }
+# A fake slskd on a local port (recover.rs tests); paused time for waits that last minutes (stream.rs tests).
+tokio = { workspace = true, features = ["net", "test-util"] }
 
 [lints]
 workspace = true
