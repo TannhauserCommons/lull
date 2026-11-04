@@ -33,7 +33,7 @@
   /* "2 of 7" ("2/7" with sep '/') once the number of answering peers is known, else "2" */
   function rankOf(n, sep) { return ps.peer && ps.peer.of ? n + (sep || ' of ') + ps.peer.of : String(n); }
   function nextRank() { return (ps.peer ? ps.peer.rank : 1) + 1; }
-  function mbps(v) { return Math.round((+v || 0) * 10) / 10 + ' MB/s'; }
+  var mbps = App.fmt.rate;
   /* a peer that failed: { peer, at } (at = % received, when the server says) */
   function stalledAt(f) { return f.at != null ? f.peer + ' at ' + f.at + '%' : f.peer; }
   /* the ranked source row of the peer now streaming: the one picked by hand, else its row in the fetched list */

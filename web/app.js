@@ -174,6 +174,10 @@
     mb = +mb || 0;
     return mb >= 1000 ? (Math.round(mb / 100) / 10) + ' GB' : (mb >= 100 ? Math.round(mb) : Math.round(mb * 10) / 10) + ' MB';
   }
+  function fmtRate(mbs) {                   // "1.4 MB/s" / "48 KB/s": a slow peer is never "0 MB/s"
+    mbs = +mbs || 0;
+    return mbs > 0 && mbs < 0.1 ? Math.round(mbs * 1000) + ' KB/s' : Math.round(mbs * 10) / 10 + ' MB/s';
+  }
   function fmtClock(sec) {                  // "00:36:12" (album heads, media-player LCDs)
     sec = Math.max(0, Math.round(sec || 0));
     return [Math.floor(sec / 3600), Math.floor(sec / 60) % 60, sec % 60].map(function (n) { return String(n).padStart(2, '0'); }).join(':');
@@ -196,7 +200,7 @@
   function albumLine(a) {
     return a ? 'Tracks: ' + a.trackIds.length + '  Duration: ' + fmtClock(a.duration) + (a.sizeMB ? '  Size: ' + fmtSize(a.sizeMB) : '') : '';
   }
-  App.fmt = { time: fmtTime, date: fmtDate, length: fmtLength, size: fmtSize, clock: fmtClock, formatLine: formatLine, albumLine: albumLine };
+  App.fmt = { time: fmtTime, date: fmtDate, length: fmtLength, size: fmtSize, rate: fmtRate, clock: fmtClock, formatLine: formatLine, albumLine: albumLine };
   App.storage = storage; App.data = M; App.clamp = clamp; App.uid = nextId;
 
   /* =====================================================================

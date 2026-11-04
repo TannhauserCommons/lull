@@ -29,7 +29,7 @@
   }
   /* one comparable number per format (the picker's quality sort): any lossless file outranks any lossy one */
   function quality(label) { var f = fmt(label); return f.lossless ? 1e4 + (f.bits || 16) * (f.khz || 44.1) : f.kbps || 0; }
-  function mbps(v) { return (Math.round((v || 0) * 10) / 10) + ' MB/s'; }
+  var mbps = App.fmt.rate;
   function plural(n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')); }
   function isPhone() { return window.innerWidth < 640; }
   function thousands(n) { return n >= 1e6 ? (Math.round(n / 1e5) / 10) + 'M' : n >= 1000 ? (Math.round(n / 100) / 10) + 'k' : String(n); }
