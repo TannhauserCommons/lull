@@ -2090,9 +2090,6 @@ mod tests {
                 ..StreamEvent::default()
             }))
         };
-        let _ = engine.heard_to.send(event(0));
-        // The engine hears events on its tick (250 ms).
-        std::thread::sleep(Duration::from_millis(600));
         let fetches = || {
             hub.book
                 .lock()
@@ -2100,12 +2097,17 @@ mod tests {
                 .unwrap_or(0)
         };
         let before = fetches();
-        // The first event of a fetch only says which attempt it is: nothing reopens.
-        assert_eq!(before, fetches());
-        let _ = engine.heard_to.send(event(1));
+        let _ = engine.heard_to.send(event(0));
+        // The engine hears events on its tick (250 ms). The first event of a fetch only says which
+        // attempt it is: nothing reopens.
         std::thread::sleep(Duration::from_millis(600));
-        listen(&output, 0.5);
-        assert!(fetches() > before, "a new attempt opens the song again");
+        assert_eq!(fetches(), before);
+        let _ = engine.heard_to.send(event(1));
+        // A busy machine may take a few ticks to reopen it.
+        assert!(
+            listen_until(&output, || fetches() > before),
+            "a new attempt opens the song again"
+        );
         assert!(engine.snapshot().position > 1.0, "it carried on from where it was");
         Ok(())
     }
