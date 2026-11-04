@@ -26,8 +26,8 @@ use tokio::time::Instant;
 use crate::sources::listenbrainz::Mode;
 use crate::sources::{ArtistInfo, Release, Song};
 use crate::store::{self, entities};
-use crate::taste::{self, Taste};
-use crate::{Service, art, mix};
+use crate::taste::Taste;
+use crate::{Service, art, mix, radio};
 
 const STALE_AFTER_S: i64 = 6 * 3600;
 const NEW_RELEASES: usize = 12;
@@ -589,18 +589,34 @@ async fn build(svc: &Arc<Service>) -> Result<(Built, Answers)> {
 }
 
 /// Fresh releases (last 30 days, every size of artist) by followed and liked artists, then
-/// those tagged with followed and liked tags, the best `RELEASE_CANDIDATES`. The second half is
-/// a release's artist name when it is "fresh from an artist you like".
+/// those tagged with followed tags or tags that run through liked artists (`Taste::dig_tags`:
+/// never an umbrella genre, which matches the charts), the best `RELEASE_CANDIDATES`. Nothing the
+/// listener has met already, and no reissue: neither is news. The second half is a release's
+/// artist name when it is "fresh from an artist you like".
 async fn new_releases(
     svc: &Service,
     taste: &Taste,
     followed: &[(ArtistId, String)],
     followed_tags: &[String],
 ) -> Result<Vec<(Release, Option<String>)>> {
-    let fresh = svc.lb.fresh_releases().await?;
+    Ok(rank_releases(
+        svc.lb.fresh_releases().await?,
+        taste,
+        followed,
+        followed_tags,
+    ))
+}
+
+/// `new_releases`' choice among the fresh releases, best first.
+fn rank_releases(
+    fresh: Vec<Release>,
+    taste: &Taste,
+    followed: &[(ArtistId, String)],
+    followed_tags: &[String],
+) -> Vec<(Release, Option<String>)> {
     let followed: HashSet<&ArtistId> = followed.iter().map(|(id, _)| id).collect();
     let liked: HashMap<&ArtistId, f64> = taste.top_artists(60).map(|a| (&a.id, a.weight)).collect();
-    let mut tags: HashMap<String, f64> = taste.top_tags(8).cloned().collect();
+    let mut tags: HashMap<String, f64> = taste.dig_tags().take(8).cloned().collect();
     for t in followed_tags {
         *tags.entry(t.to_lowercase()).or_default() += 1.0;
     }
@@ -609,7 +625,7 @@ async fn new_releases(
         .into_iter()
         .filter_map(|r| {
             let id = ArtistId::of(&r.artist);
-            if taste.hidden.contains(&id) {
+            if taste.hidden.contains(&id) || taste.knows_release(&r.artist, &r.title) || is_reissue(&r.title) {
                 return None;
             }
             let by_artist = if followed.contains(&id) {
@@ -630,12 +646,19 @@ async fn new_releases(
         .collect();
     scored.sort_by(|a, b| b.0.total_cmp(&a.0));
     let mut seen = HashSet::new();
-    Ok(scored
+    scored
         .into_iter()
         .filter(|(_, r, _)| seen.insert(AlbumId::of(&r.artist, &r.title)))
         .take(RELEASE_CANDIDATES)
         .map(|(_, r, why)| (r, why))
-        .collect())
+        .collect()
+}
+
+/// A release of music already out: "Paper Sun (remastered 2026)", "… (2026 Reissue)".
+fn is_reissue(title: &str) -> bool {
+    lull_core::ids::normalize(title)
+        .split(' ')
+        .any(|w| matches!(w, "remaster" | "remastered" | "reissue" | "reissued"))
 }
 
 /// Picks from four sources, interleaved so no one source or artist dominates: similar artists
@@ -721,15 +744,26 @@ async fn picks(
     let mut fresh = Vec::new();
     for (release, artist) in releases.iter().filter(|r| r.1.is_some()).take(3) {
         match svc.mb.tracklist(release).await {
-            Ok(tracks) => fresh.extend(tracks.into_iter().next().map(|song| Candidate {
-                song,
-                reason: Reason {
-                    kind: ReasonKind::Fresh,
-                    name: artist.clone().unwrap_or_default(),
-                    reference: Some(ArtistId::of(&release.artist).0),
-                },
-                via: "MusicBrainz releases",
-            })),
+            // The first song of it the listener hasn't met, an original when there is one.
+            Ok(tracks) => fresh.extend(
+                originals_first(
+                    tracks
+                        .into_iter()
+                        .filter(|s| !taste.knows_song(&s.artist, &s.title))
+                        .collect(),
+                )
+                .into_iter()
+                .next()
+                .map(|song| Candidate {
+                    song,
+                    reason: Reason {
+                        kind: ReasonKind::Fresh,
+                        name: artist.clone().unwrap_or_default(),
+                        reference: Some(ArtistId::of(&release.artist).0),
+                    },
+                    via: "MusicBrainz releases",
+                }),
+            ),
             Err(e) => failures.push(e),
         }
     }
@@ -744,6 +778,12 @@ async fn picks(
         tracing::info!(failed = failures.len(), first = %failures[0], "some pick sources failed");
     }
     chosen
+}
+
+/// Originals before remixes, sped-up and live takes, each in its order (`radio::is_version`).
+fn originals_first(mut songs: Vec<Song>) -> Vec<Song> {
+    songs.sort_by_key(|s| radio::is_version(&s.title));
+    songs
 }
 
 /// Recordings by artists similar to `name` (not by `name`), via ListenBrainz artist radio.
@@ -772,11 +812,11 @@ pub async fn artist_mbid(svc: &Service, name: &str) -> Result<Option<String>> {
     Ok(svc.mb.find_artist(name).await?.and_then(|a| a.mbid))
 }
 
-/// Tags to dig in: followed ones and the strongest specific liked ones; on a cold start, three
-/// of the cold-start tags, a different three each day.
+/// Tags to dig in: followed ones and the strongest that run through liked artists; on a cold
+/// start, three of the cold-start tags, a different three each day.
 fn pick_tags(taste: &Taste, followed: &[String]) -> Vec<String> {
     let mut tags: Vec<String> = followed.iter().take(3).cloned().collect();
-    for (t, _) in taste.top_tags(20).filter(|(t, _)| taste::is_specific(t)) {
+    for (t, _) in taste.dig_tags() {
         if tags.len() >= 4 {
             break;
         }
@@ -793,10 +833,12 @@ fn pick_tags(taste: &Taste, followed: &[String]) -> Vec<String> {
     tags
 }
 
-/// Round-robin over the sources, one track per artist, nothing the listener already knows,
-/// and (except fresh releases) no artist they already like: picks are for finding new ones.
+/// Round-robin over the sources, one track per artist, originals first, nothing the listener
+/// already knows (on any release), and (except fresh releases) no artist they already like:
+/// picks are for finding new ones.
 fn interleave(mut pools: Vec<Vec<Candidate>>, taste: &Taste) -> Vec<Candidate> {
     for pool in &mut pools {
+        pool.sort_by_key(|c| radio::is_version(&c.song.title));
         pool.reverse(); // pop() takes from the front
     }
     let mut artists = HashSet::new();
@@ -808,6 +850,7 @@ fn interleave(mut pools: Vec<Vec<Candidate>>, taste: &Taste) -> Vec<Candidate> {
                 let weight = taste.artist_weight(&t.artist_id);
                 let familiar = weight > 0.0 && c.reason.kind != ReasonKind::Fresh;
                 if taste.known.contains(&t.id)
+                    || taste.knows_song(&c.song.artist, &c.song.title)
                     || taste.hidden.contains(&t.artist_id)
                     || weight < 0.0
                     || familiar
@@ -851,10 +894,7 @@ async fn starters(
     for t in followed_tags.iter().take(2) {
         out.push(starter("tag", t, format!("{t} radio"), "a tag you follow"));
     }
-    if let Some((t, _)) = taste
-        .top_tags(20)
-        .find(|(t, _)| taste::is_specific(t) && !followed_tags.contains(t))
-    {
+    if let Some((t, _)) = taste.dig_tags().find(|(t, _)| !followed_tags.contains(t)) {
         out.push(starter("tag", t, format!("{t} radio"), "a tag you play a lot"));
     }
     let week_ago = lull_core::now() - 7 * 86_400;
@@ -982,7 +1022,135 @@ mod tests {
 
     use lull_core::ids::AlbumId;
 
-    use super::{NEW_RELEASES, Shelved, answered, next_to_ask, shown};
+    use lull_core::ids::{ArtistId, TrackId};
+
+    use super::{
+        Candidate, NEW_RELEASES, Reason, ReasonKind, Shelved, answered, interleave, next_to_ask, rank_releases, shown,
+    };
+    use crate::sources::{Release, Song};
+    use crate::taste::{Mark, Named, Signals, Taste};
+
+    const NOW: i64 = 1_800_000_000;
+
+    /// A listener who liked three chillwave artists and one artist whose only tags are a
+    /// namesake's, and one song of an artist new releases may come from.
+    fn listener() -> Taste {
+        let like = |artist: &str, title: &str| Mark {
+            track: TrackId::of(artist, "", title),
+            artist: artist.into(),
+            at: NOW,
+        };
+        let mut signals = Signals {
+            likes: vec![
+                like("Glow Tape", "a"),
+                like("Tidal Bloom", "b"),
+                like("Night Arcade", "c"),
+                like("Namesake", "d"),
+            ],
+            songs: vec![Named {
+                artist: "Glow Tape & Mira Vale".into(),
+                title: "Paper Sun".into(),
+                album: String::new(),
+            }],
+            ..Default::default()
+        };
+        for artist in ["Glow Tape", "Tidal Bloom", "Night Arcade"] {
+            signals
+                .artist_tags
+                .insert(ArtistId::of(artist), vec!["chillwave".into(), "hip hop".into()]);
+        }
+        signals
+            .artist_tags
+            .insert(ArtistId::of("Namesake"), vec!["kurdish".into()]);
+        Taste::build(&signals, NOW)
+    }
+
+    fn fresh(artist: &str, title: &str, tags: &[&str]) -> Release {
+        Release {
+            mbid: None,
+            title: title.into(),
+            artist: artist.into(),
+            artist_mbid: None,
+            kind: Some("Album".into()),
+            date: None,
+            tags: tags.iter().map(|t| (*t).to_owned()).collect(),
+        }
+    }
+
+    #[test]
+    fn new_releases_are_news_in_the_tags_the_listener_likes() {
+        // Live, the shelf held chart releases matched on "hip hop" and "pop", two songs the
+        // listener had already liked, and two 2026 remasters of 20-year-old songs.
+        let ranked = rank_releases(
+            vec![
+                fresh("Chart Star", "Platinum", &["hip hop"]),
+                fresh("Oud Ensemble", "Mountains", &["kurdish"]),
+                fresh("Glow Tape", "Paper Sun", &[]),
+                fresh("Glow Tape", "Old Hit (remastered 2026)", &[]),
+                fresh("Glow Tape", "Second Light", &[]),
+                fresh("Unknown Coast", "Haze", &["chillwave"]),
+            ],
+            &listener(),
+            &[],
+            &[],
+        );
+        let titles: Vec<&str> = ranked.iter().map(|(r, _)| r.title.as_str()).collect();
+        assert_eq!(
+            titles,
+            ["Second Light", "Haze"],
+            "a liked artist's new album, then a tag running through liked artists; never an umbrella \
+             genre, one artist's label, a known song or a reissue"
+        );
+        assert_eq!(
+            ranked[0].1.as_deref(),
+            Some("Glow Tape"),
+            "fresh from an artist you like"
+        );
+    }
+
+    fn candidate(artist: &str, title: &str) -> Candidate {
+        Candidate {
+            song: Song {
+                mbid: None,
+                title: title.into(),
+                artist: artist.into(),
+                artist_mbid: None,
+                album: "Somewhere".into(),
+                album_artist: None,
+                album_mbid: None,
+                year: None,
+                no: None,
+                disc: None,
+                duration_s: None,
+                tags: Vec::new(),
+            },
+            reason: Reason {
+                kind: ReasonKind::Tag,
+                name: "chillwave".into(),
+                reference: Some("chillwave".into()),
+            },
+            via: "ListenBrainz tags",
+        }
+    }
+
+    #[test]
+    fn picks_are_originals_the_listener_hasnt_heard() {
+        let pool = vec![
+            candidate("Mira Vale", "Paper Sun"),
+            candidate("Soft Static", "Drift (Night Arcade remix)"),
+            candidate("Wave Cellar", "Lanterns at Noon (sped up)"),
+            candidate("Pale Harbor", "Lanterns"),
+        ];
+        let picks: Vec<String> = interleave(vec![pool], &listener())
+            .into_iter()
+            .map(|c| c.song.title)
+            .collect();
+        assert_eq!(
+            picks,
+            ["Lanterns", "Drift (Night Arcade remix)", "Lanterns at Noon (sped up)"],
+            "a song liked on another release isn't news; other takes come after the originals"
+        );
+    }
 
     fn release(n: usize, saved: bool) -> Shelved {
         Shelved {

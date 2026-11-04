@@ -20,11 +20,13 @@ Owner: Discovery session (`crates/discovery/src/taste.rs`). Small, on-device and
 ## Artists and tags
 
 - **Artist weight:** each signal adds its weight to its artist (`ArtistId::of(name)`).
-- **Tag weight:** the same weight is shared evenly among the track's tags (catalog), or the artist's tags (from artist pages) when the track has none. Following a tag adds +4.0 to that tag.
+- **Tags an artist carries:** those of its tracks the signals name (catalog), or its own (from artist pages) for a signal whose track has none, or that names no track.
+- **Tag weight:** the sum of the weights of the artists carrying it, so a tag weighs how much of what the listener likes it runs through, however many other tags those artists have. Following a tag adds +4.0 to that tag. (Sharing a signal's weight among its tags made one song tagged only "rapper", or one artist's two labels, the strongest tags.)
+- **Tags dug into** (`Taste::dig_tags`, for picks, radio starters and tag-matched new releases): specific ones carried by at least 2 liked artists (`TAG_ARTISTS`), plus followed tags. One artist's labels are that artist, often a namesake's.
 - **Umbrella genres** (rock, pop, electronic…) stay in the profile, but picks and radio never seed from them (see [discovery.md](discovery.md)).
 - **Hidden artists** (`hide-artist`) are left out of the model and filtered from the feed and radio.
 - **Negative artists:** an artist below zero (mostly skipped, less-like) is never picked.
-- **Known tracks:** tracks already played or liked are not offered as picks.
+- **Known songs:** songs already played or liked are not offered as picks, on any release and by any artist of the credit (`ids::loose_artist` + `loose_title`, credits split as radio splits them), and a fresh release is left off the shelf when a song of it, or the song a single is named after, is known.
 
 ## Where it is used
 
@@ -36,4 +38,4 @@ Owner: Discovery session (`crates/discovery/src/taste.rs`). Small, on-device and
 
 `POST /api/taste/reset` stores `taste_reset_at = now`, deletes saves and feedback, and ignores plays and likes from before it. Follows, hidden artists and the Last.fm history stay. They are standing choices, undone where they are made: unfollow, Settings > Last.fm "use my history".
 
-Tests (`taste.rs`): decay at one and ten half-lives, follows not fading, completion vs skip weights, tag sharing, hidden artists.
+Tests (`taste.rs`): decay at one and ten half-lives, follows not fading, completion vs skip weights, tags counted by the liked artists carrying them, known songs across releases, hidden artists.

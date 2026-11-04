@@ -17,7 +17,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::sources::{AlbumSource, ArtistInfo, Release, Song, year};
-use crate::taste::{Feedback, Mark, Play, Signals};
+use crate::taste::{Feedback, Mark, Named, Play, Signals};
 
 /// Plays older than this no longer count (at a 45-day half-life they weigh under 0.4%).
 const SIGNAL_WINDOW_S: i64 = 365 * 86_400;
@@ -532,6 +532,19 @@ pub fn signals(c: &Connection, now: i64) -> Result<Signals> {
             Ok((r.get(0)?, r.get::<_, i64>(1)?.max(0) as u64))
         })?,
         hidden: hidden(c)?,
+        songs: rows(
+            c,
+            "SELECT artist, title, album FROM plays WHERE started_at >= ?1
+             UNION SELECT artist, title, album FROM likes",
+            [since],
+            |r| {
+                Ok(Named {
+                    artist: r.get(0)?,
+                    title: r.get(1)?,
+                    album: r.get(2)?,
+                })
+            },
+        )?,
         ..Default::default()
     };
     let tracks: HashSet<TrackId> = s
@@ -585,12 +598,14 @@ pub fn hidden(c: &Connection) -> Result<HashSet<ArtistId>> {
     .collect())
 }
 
-/// The plays of the last `days` (skips left out), as (track, artist, plays, last played),
-/// most played first.
+/// The plays of the last `days` that were heard (to the end or past half, as the taste model
+/// counts them), as (track, artist, plays, last played), most played first. A play that ended
+/// at once (a stream that never started, a queue skipped through) isn't listening.
 pub fn recent_plays(c: &Connection, now: i64, days: i64) -> Result<Vec<(TrackId, String, u32, i64)>> {
     rows(
         c,
-        "SELECT track_id, artist, COUNT(*), MAX(started_at) FROM plays WHERE started_at >= ?1 AND skipped = 0
+        "SELECT track_id, artist, COUNT(*), MAX(started_at) FROM plays
+         WHERE started_at >= ?1 AND (completed = 1 OR (duration_s > 0 AND played_s * 2 >= duration_s))
          GROUP BY track_id ORDER BY COUNT(*) DESC, MAX(started_at) DESC",
         [now - days * 86_400],
         |r| Ok((TrackId(r.get(0)?), r.get(1)?, r.get(2)?, r.get(3)?)),
@@ -628,4 +643,34 @@ fn rows<T>(
     let mut stmt = c.prepare_cached(sql)?;
     let out = stmt.query_map(args, f)?.collect::<rusqlite::Result<Vec<T>>>()?;
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use lull_core::Result;
+    use rusqlite::Connection;
+
+    use super::recent_plays;
+
+    #[test]
+    fn played_lately_counts_only_plays_that_were_heard() -> Result<()> {
+        // Live, 83 plays of one song that ended at 0 s (test traffic) made a "played 80 times
+        // lately" radio starter.
+        let c = Connection::open_in_memory()?;
+        c.execute_batch(
+            "CREATE TABLE plays (track_id TEXT, artist TEXT, started_at INTEGER, played_s INTEGER,
+                                 duration_s INTEGER, completed INTEGER, skipped INTEGER);
+             INSERT INTO plays VALUES
+               ('t-loop', 'Velvet Orchard', 100, 0, 285, 0, 0), ('t-loop', 'Velvet Orchard', 120, 0, 285, 0, 0),
+               ('t-loop', 'Velvet Orchard', 140, 0, 285, 0, 0), ('t-loop', 'Velvet Orchard', 160, 285, 285, 1, 0),
+               ('t-half', 'Glow Tape', 200, 150, 280, 0, 0), ('t-half', 'Glow Tape', 300, 160, 280, 0, 0),
+               ('t-skip', 'Pale Harbor', 400, 20, 200, 0, 1);",
+        )?;
+        let plays: Vec<(String, u32)> = recent_plays(&c, 1_000, 1)?
+            .into_iter()
+            .map(|(id, _, n, _)| (id.0, n))
+            .collect();
+        assert_eq!(plays, [("t-half".to_owned(), 2), ("t-loop".to_owned(), 1)]);
+        Ok(())
+    }
 }

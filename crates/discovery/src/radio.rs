@@ -33,7 +33,22 @@ const BATCH: usize = 12;
 /// Places a remix or live take behind every original in a batch.
 const VERSION_PENALTY: f64 = 10_000.0;
 /// Words in a title's brackets or " - " suffix that make it another take of a song.
-const VERSION_WORDS: &[&str] = &["remix", "rmx", "live", "edit", "mix", "version", "dub", "remixed"];
+const VERSION_WORDS: &[&str] = &[
+    "remix",
+    "rmx",
+    "live",
+    "edit",
+    "mix",
+    "version",
+    "dub",
+    "remixed",
+    "sped",
+    "slowed",
+    "mashup",
+    "instrumental",
+    "demo",
+    "acoustic",
+];
 /// Candidates looked at per call (one metadata request).
 const POOL: usize = 50;
 /// Per artist in one batch, except the seed artist of an artist radio.
@@ -338,8 +353,9 @@ async fn by_artist(svc: &Service, credit: &str, tags: &[String], steer: f64, pop
         .unwrap_or_else(|| Error::NotFound(format!("No music source knows {credit} well enough for a radio yet."))))
 }
 
-/// Whether a title names another take of a song: a remix, live take, edit, mix, version or
-/// dub in its brackets or " - " suffix ("Talamak (Tom Lown Remix)", "So Many Details - Live").
+/// Whether a title names another take of a song: a remix, live, sped-up, slowed, acoustic or
+/// instrumental take, edit, mix, mashup, demo, version or dub in its brackets or " - " suffix
+/// ("Talamak (Tom Lown Remix)", "So Many Details - Live", "Drift (sped up)").
 pub fn is_version(title: &str) -> bool {
     let mut tagged = String::new();
     let mut depth = 0usize;
@@ -729,6 +745,10 @@ mod tests {
         assert!(is_version("Talamak (Tom Lown Remix)"));
         assert!(is_version("So Many Details - Live at KEXP"));
         assert!(is_version("Rose Quartz [Midland Version]"));
+        assert!(is_version("Drift (sped up)"));
+        assert!(is_version("Paper Sun (Night Arcade Mashup)"));
+        assert!(is_version("Lanterns (instrumental)"));
+        assert!(is_version("Haze (demo)"));
         assert!(!is_version("Live and Let Die"), "the word in the title itself");
         assert!(!is_version("Dub Be Good to Me"));
         assert!(!is_version("Mix Tape (feat. Neon Wren)"));

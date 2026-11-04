@@ -33,10 +33,10 @@ Built in the background; the first build happens while the first caller waits (t
 
 | Shelf | From |
 |---|---|
-| `newReleases` | ListenBrainz fresh releases (30 days, every size). Ranked: followed artists, then liked artists (taste), then releases tagged with followed or liked tags (albums and EPs above singles). Only what can play: of the best 30, the 12 best that are saved or that Soulseek peers share (`feed::check_shelf`). Remembered answers (`Transfers::album_known`) fill the shelf at once; then `album_available` searches one release at a time, best first, and never for one ranked below a full shelf. The build waits 3 s for answers; later ones re-serve the shelf and announce `feed.updated`. A release without an answer is never shown, so the shelf is empty rather than wrong while Soulseek can't say; those are asked again every 5 minutes (free while Soulseek is offline or its checks wait). A stored feed loaded after a restart is checked again |
-| `picks` | Four pools, interleaved round-robin. One track per artist. Nothing already played or liked, nothing by hidden or disliked artists. Except fresh releases, no artist the listener already likes. 12. |
-| `radioStarters` | Top artist, followed tags, the strongest liked tag not followed, the track played 3+ times this week; on a cold start, three cold-start tags |
-| `jumpBackIn` | Albums played (not skipped) in the last 30 days, most recent first (5), then the month's most played artist |
+| `newReleases` | ListenBrainz fresh releases (30 days, every size). Ranked: followed artists, then liked artists (taste), then releases tagged with followed tags or tags dug into (`Taste::dig_tags`: specific, on 2+ liked artists; albums and EPs above singles). Never a release the listener has met (a known song of it, or the song a single is named after) or a reissue ("remastered", "reissue" in the title). Only what can play: of the best 30, the 12 best that are saved or that Soulseek peers share (`feed::check_shelf`). Remembered answers (`Transfers::album_known`) fill the shelf at once; then `album_available` searches one release at a time, best first, and never for one ranked below a full shelf. The build waits 3 s for answers; later ones re-serve the shelf and announce `feed.updated`. A release without an answer is never shown, so the shelf is empty rather than wrong while Soulseek can't say; those are asked again every 5 minutes (free while Soulseek is offline or its checks wait). A stored feed loaded after a restart is checked again |
+| `picks` | Four pools, interleaved round-robin. One track per artist, originals before other takes (`radio::is_version`). Nothing already played or liked (on any release), nothing by hidden or disliked artists. Except fresh releases, no artist the listener already likes. 12. |
+| `radioStarters` | Top artist, followed tags, the strongest tag dug into that isn't followed, the track heard 3+ times this week; on a cold start, three cold-start tags |
+| `jumpBackIn` | Albums heard in the last 30 days, most recent first (5), then the month's most played artist. *Heard* is the taste model's play: to the end or past half; a play that ended at once isn't one |
 | `followedTags` | `follows` at serve time |
 | `coldStartTags` | A fixed list of niche tags across genres (`feed.rs`) |
 
@@ -45,9 +45,11 @@ The four pick pools:
 | Pool | Reason | via |
 |---|---|---|
 | Artist radio (medium, 0-60% popularity) from the top 4 liked artists, minus the seed | `like` (seed artist) | `ListenBrainz similar artists` |
-| Tag radio at 0-50% popularity for followed tags, then the top liked *specific* tags (4 tags; 3 rotating cold-start tags when nothing is known) | `tag` | `ListenBrainz tags` |
+| Tag radio at 0-50% popularity for followed tags, then the tags dug into (4 tags; 3 rotating cold-start tags when nothing is known) | `tag` | `ListenBrainz tags` |
 | CF recommendations (only with `LULL_LISTENBRAINZ_USER`) | `listeners` ("listeners like you", no `ref`) | `ListenBrainz recommendations` |
-| First track of up to 3 fresh releases by followed or liked artists | `fresh` | `MusicBrainz releases` |
+| The first song the listener doesn't know (an original when there is one) of up to 3 fresh releases by followed or liked artists | `fresh` | `MusicBrainz releases` |
+
+The UI words a reason by what it is and says "you follow" only for a follow (`ui.reasonText`).
 
 `errors` names a shelf only when it came back empty because a source failed. Partial failures are logged.
 
@@ -68,7 +70,7 @@ Umbrella genres (rock, pop, electronic, hip hop, indie…: `taste::UMBRELLA_TAGS
   - sets the popularity window: 0 is 40-100%, 1 is 0-50%;
   - nudges liked artists up (familiar) or down (adventurous).
 - **Each call returns 12 tracks:** at most 2 per artist (except the seed artist), minus `exclude`, hidden and disliked artists.
-- **Originals first:** a title whose brackets or " - " suffix say remix, live, edit, mix, version or dub ("Talamak (Tom Lown Remix)") only fills a batch after every original, unless the seed track is such a take.
+- **Originals first:** a title whose brackets or " - " suffix say remix, live, edit, mix, version, dub, sped up, slowed, mashup, instrumental, demo or acoustic ("Talamak (Tom Lown Remix)", "Drift (sped up)") only fills a batch after every original, unless the seed track is such a take.
 
 ## Pages
 
