@@ -61,18 +61,44 @@
     return html`<div id="sys-glass">${K.switchRow('desktop.glass', 'See-through window', glassHelp())}</div>`;
   }
   function repaintGlass() { if (onAppearance()) K.repaint('#sys-glass', desk ? K.switchRow('desktop.glass', 'See-through window', glassHelp()) : ''); }
-  /* design preview card: the package's screenshot (assets/preview-{day,night}.webp, when d.preview) over a tiny
-     picture of the shell (rail / topnav / dock) in its swatches, which shows while the image loads or when there is none */
+  /* design preview card: the theme's picture, day or night as the device shows (a theme with one mode shows that one),
+     over a tiny picture of the shell (rail / topnav / dock) in its swatches, which shows while the image loads or when
+     there is no picture yet */
   function designCard(name, on) {
-    var d = App.designs[name], sw = d.swatches;
-    var pv = new URL(Designs.packageUrl(name) + 'assets/preview', location.href).href;   // absolute: a url() in a custom property resolves against the stylesheet that uses it
-    var shot = d.preview ? ';--pv-day:url("' + pv + '-day.webp");--pv-night:url("' + pv + '-night.webp")' : '';
+    var d = App.designs[name], sw = d.swatches, modes = d.modes || ['day', 'night'];
+    var day = picture(d, modes.indexOf('day') >= 0 ? 'day' : 'night'), night = picture(d, modes.indexOf('night') >= 0 ? 'night' : 'day');
+    var shot = day && night ? ';--pv-day:url("' + day + '");--pv-night:url("' + night + '")' : '';
     return html`<button type="button" class="sys-design" role="radio" aria-checked="${on ? 'true' : 'false'}" tabindex="${on ? '0' : '-1'}" data-value="${name}"
       style="${'--d1:' + sw[0] + ';--d2:' + sw[1] + ';--d3:' + sw[2] + ';--d4:' + sw[3] + shot}">
-      <span class="sys-design__pv${d.preview ? ' has-shot' : ''}" data-shell="${d.shell}" aria-hidden="true"><i class="sys-design__nav"></i><i class="sys-design__win"><b></b><b></b><b></b></i><i class="sys-design__win sys-design__win--b"><b></b><b></b></i><i class="sys-design__bar"><b></b></i><i class="sys-design__dock"></i></span>
+      <span class="sys-design__pv${shot ? ' has-shot' : ''}" data-shell="${d.shell}" aria-hidden="true"><i class="sys-design__nav"></i><i class="sys-design__win"><b></b><b></b><b></b></i><i class="sys-design__win sys-design__win--b"><b></b><b></b></i><i class="sys-design__bar"><b></b></i><i class="sys-design__dock"></i></span>
       <span class="sys-design__name">${d.label}${icon('check', null, 'ic-16 sys-design__check')}</span>
       <span class="sys-design__desc">${d.description || (d.author ? 'By ' + d.author : 'Your theme')}</span></button>`;
   }
+  /* a mode's picture, absolute (a url() in a custom property resolves against the stylesheet that uses it): the package's
+     own (assets/preview-<mode>.webp: the built-ins', or an author's), else the one lull made of the theme's files now */
+  function picture(d, mode) {
+    if (d.preview) return new URL(Designs.packageUrl(d.id) + 'assets/preview-' + mode + '.webp', location.href).href;
+    if (d.rev && d.pictures.indexOf(mode) >= 0) return new URL(M.url('/api/theme-pictures/' + encodeURIComponent(d.id) + '/' + d.rev + '-' + mode + '.webp'), location.href).href;
+    return null;
+  }
+  /* a listener's theme with no picture of its own and none made of its files now gets one, drawn on this device in the
+     background (screens/theme-pictures.js, ADR-0080): right after it is imported or saved in Theme Studio, and here for a
+     change made with no lull page open (its folder edited on the hub, a new lull) or a picture that didn't get made.
+     Once per theme and rev on a page; a picture that fails waits for the theme's next change or the next visit.
+     opts.later: the theme just changed somewhere else, where the page that changed it is likely drawing it now, so this
+     one waits and asks the hub again before drawing (screens/theme-pictures.js). */
+  var asked = {};
+  App.themePictures = function (m, opts) {
+    if (!m || m.builtIn || m.preview || !m.rev) return;
+    var have = m.pictures || [], modes = (m.modes || ['day', 'night']).filter(function (x) { return have.indexOf(x) < 0; });
+    if (!modes.length || asked[m.id + ' ' + m.rev]) return;
+    asked[m.id + ' ' + m.rev] = true;
+    App.needScript('screens/theme-pictures.js', 'theme pictures').then(function () {
+      App.makeThemePictures({ id: m.id, rev: m.rev, label: m.label || m.name }, modes, opts);
+    }, function (err) { console.warn('lull: theme pictures', err); });
+  };
+  App.on('themePictures', function () { Designs.refresh().then(function () { if (onAppearance()) App.refresh(); }, function () {}); });
+
   /* the listener's themes: edit in Theme Studio, export, delete; import by drop or file */
   function myThemes() {
     var mine = App.designOrder.filter(function (n) { return !App.designs[n].builtIn; });
@@ -89,7 +115,8 @@
   function secAppearance() {
     var p = App.prefs();
     loadCss();
-    if (!listed) { listed = true; Designs.refresh().then(function () { if (onAppearance()) App.refresh(); }, function () {}); }
+    if (!listed) { listed = true; Designs.refresh().then(function () { fresh = true; if (onAppearance()) App.refresh(); }, function () {}); }
+    else if (fresh) App.designOrder.forEach(function (n) { App.themePictures(App.designs[n], { later: !!changed[n] }); });
     return html`<div class="sys-row sys-row--stack"><div class="sys-row__text"><span class="sys-row__label" id="sys-design-l">Design</span><span class="sys-row__help">The whole look: colours, type, window chrome and layout. Applies at once on this device.</span></div>
         <div class="sys-row__ctl"><div class="sys-designs" role="radiogroup" aria-labelledby="sys-design-l" data-key="device.design">${App.designOrder.map(function (n) { return designCard(n, n === p.design); })}</div></div></div>
       ${row('Theme', 'Match system follows your device. T switches day and night anywhere.', choice('device.theme', 'Theme', [['system', 'Match system'], ['day', 'Day'], ['night', 'Night']]))}
@@ -110,6 +137,8 @@
     return App.ui.skeleton('card', 1);
   }
   var listed = false;                              // GET /api/themes once per page; theme.changed keeps it current
+  var fresh = false;                               // the list is the hub's, so each theme's rev is its files' now
+  var changed = {};                                // themes this page heard change (theme.changed)
   function onAppearance() { return /^\/settings\/appearance/.test(App.current.path); }
 
   App.settingsSections.appearance = secAppearance;
@@ -121,6 +150,7 @@
   /* ---------- live reload: a stored theme's files changed on the hub ---------- */
   App.on('server:theme.changed', function (e) {
     var id = e && e.id;
+    if (id) changed[id] = true;
     Designs.refresh().then(function () {
       if (id === Designs.current && !App.designs[id]) { App.setDesign(Designs.fallback); return; }   // deleted while in use
       return Designs.reload(id).then(function (inUse) { if (inUse) App.setDesign(Designs.current, true); });

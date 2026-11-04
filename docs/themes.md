@@ -35,11 +35,13 @@ A folder, or a `.lulltheme` file (a zip of that folder):
 - `api`: the theme API version you wrote for (section 9). Today it is `1`.
 - `extends`: a built-in design (`lull`, `skydeck`, `starlight`, `petal`, `glasshouse`) whose CSS and slots load first, or `null` to start from the base look alone.
 - `shell`: the layout on desktop and tablet: `rail` (a side menu), `topnav` (pills in the header) or `dock`. Phones always use the tab bar.
-- `swatches`: page, surface, accent and ink colours (`#rrggbb`) for the picker card in Settings › Appearance.
+- `swatches`: page, surface, accent and ink colours (`#rrggbb`) for the sketch on the picker card in Settings › Appearance, shown until the card has its picture.
 - `modes`: `["day", "night"]`, or just one. A one-mode theme ignores the day/night switch.
-- Optional: `description`, `preview` (true when `assets/preview-day.webp` and `-night.webp` exist, 320×200), `coverVariety` (section 5), `window` (a see-through window in the desktop app, section 12). The hub fills in `slots` itself.
+- Optional: `description`, `preview` (true when you made the picker card's pictures yourself, `assets/preview-day.webp` and `-night.webp`, 320×200; without them lull makes them from your theme, ADR-0080), `coverVariety` (section 5), `window` (a see-through window in the desktop app, section 12). The hub fills in `slots` itself.
 
 **Installing one:** drop the `.lulltheme` on Settings › Appearance › Your themes, or make it in Theme Studio there. Both store it on your hub in `<data dir>/themes/<id>/`, so every device can pick it. You can also edit the files in that folder directly: open devices reload the theme within a second.
+
+**Its card in Settings › Appearance** shows a picture of Home in your theme, day and night, which lull draws itself right after an import or a Theme Studio save, and on the next visit to Appearance after any other change (an edit in the folder, a new lull). The hub keeps it beside the theme, never in its package. A picture you ship yourself (`preview`) is shown instead.
 
 **Safe mode:** add `?theme=safe` to the address (`https://your-hub/?theme=safe`) to boot the default design, whatever this device had picked. The device keeps it from then on, so a theme that broke the app stays away until you pick it again. Deleting a theme moves every device using it back to the default too, including one that was off at the time (at its next start).
 
