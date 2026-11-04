@@ -112,11 +112,8 @@ pub struct Service {
     jobs: Arc<Jobs>,
     naming: Template,
     art_dir: PathBuf,
-    /// Cover lookups outside the library, running or recently failed (art.rs).
-    lookups: Arc<art::Lookups>,
-    /// Covers fetched before anyone asks, and `art.ready` when one comes in (art.rs).
+    /// Own covers read before anyone asks (art.rs).
     warmer: Arc<lull_core::warm::Warmer>,
-    ready: Arc<lull_core::art::Ready>,
     /// This service, for background work started from `&self` (the `Library` seam's warming).
     me: std::sync::Weak<Service>,
     /// Wakes the sync loop early (a save waits for Jellyfin, a rescan finished).
@@ -149,7 +146,6 @@ pub async fn start(ctx: &Ctx, transfers: Arc<dyn Transfers>) -> Result<Arc<Servi
     let svc = Arc::new_cyclic(|me| Service {
         me: me.clone(),
         warmer: lull_core::warm::Warmer::start(ctx, WARM_WORKERS),
-        ready: lull_core::art::Ready::new(ctx.bus.clone(), ctx.shutdown.clone()),
         ctx: ctx.clone(),
         transfers,
         mode: library.mode,
@@ -165,7 +161,6 @@ pub async fn start(ctx: &Ctx, transfers: Arc<dyn Transfers>) -> Result<Arc<Servi
         jobs,
         naming,
         art_dir: ctx.config.data_dir.join("art"),
-        lookups: Arc::default(),
         wake: Notify::new(),
         connects: connect::Pending::default(),
         switching: Arc::default(),
@@ -188,12 +183,12 @@ pub async fn start(ctx: &Ctx, transfers: Arc<dyn Transfers>) -> Result<Arc<Servi
     }
     save::resume(&svc);
     ctx.spawn(art::follow_playing(svc.clone(), ctx.bus.subscribe()));
+    ctx.spawn(art::follow_screens(svc.clone()));
     ctx.spawn(art::warm_library(svc.clone()));
     Ok(svc)
 }
 
-/// Covers fetched at once in the background (MusicBrainz's pace serialises the outside lookups
-/// anyway; the second keeps saved albums' local covers coming meanwhile).
+/// Own covers read at once in the background (a Jellyfin fetch, a folder read).
 const WARM_WORKERS: usize = 2;
 
 /// `/api/tracks/{id}`, `/api/library/...`, `/api/jellyfin/...`, `/api/art/{id}`, `/api/saves/...`,

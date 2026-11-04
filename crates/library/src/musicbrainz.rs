@@ -131,21 +131,6 @@ struct RecordingSearch {
     recordings: Vec<Recording>,
 }
 
-#[derive(Deserialize)]
-struct GroupSearch {
-    #[serde(rename = "release-groups", default)]
-    release_groups: Vec<GroupHit>,
-}
-
-#[derive(Deserialize)]
-struct GroupHit {
-    id: String,
-    #[serde(default)]
-    score: u32,
-    #[serde(rename = "primary-type")]
-    primary_type: Option<String>,
-}
-
 /// Recordings by this artist with this title, each with the releases it is on.
 pub async fn search_recordings(http: &Http, title: &str, artist: &str) -> Result<Vec<Recording>> {
     let query = format!("recording:{} AND artist:{}", phrase(title), phrase(artist));
@@ -160,23 +145,6 @@ pub async fn release(http: &Http, mbid: &str) -> Result<Release> {
         &[("inc", "recordings+artist-credits+labels+release-groups+genres")],
     )
     .await
-}
-
-/// The release groups an album known only by name may be (cover art for albums that aren't
-/// saved), most likely first.
-pub async fn release_groups(http: &Http, artist: &str, album: &str) -> Result<Vec<String>> {
-    let query = format!("releasegroup:{} AND artist:{}", phrase(album), phrase(artist));
-    let found: GroupSearch = get(http, "release-group", &[("query", &query), ("limit", "5")]).await?;
-    Ok(likely_groups(found.release_groups))
-}
-
-/// MusicBrainz scores 100 for an exact title and artist; below 90 is usually another album.
-/// Among close hits an album comes first: a self-titled EP or single scores the same, and
-/// often has no cover of its own.
-fn likely_groups(mut hits: Vec<GroupHit>) -> Vec<String> {
-    hits.retain(|g| g.score >= 90);
-    hits.sort_by_key(|g| (std::cmp::Reverse(g.score), g.primary_type.as_deref() != Some("Album")));
-    hits.into_iter().map(|g| g.id).collect()
 }
 
 async fn get<T: serde::de::DeserializeOwned>(http: &Http, path: &str, query: &[(&str, &str)]) -> Result<T> {
@@ -293,30 +261,4 @@ pub fn tag_set(release: &Release, recording: &str, disc: Option<u32>, track: Opt
             album_artist: release.artist_credit.first().map(|c| c.artist.id.clone()),
         },
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn hit(id: &str, score: u32, kind: Option<&str>) -> GroupHit {
-        GroupHit {
-            id: id.into(),
-            score,
-            primary_type: kind.map(str::to_owned),
-        }
-    }
-
-    #[test]
-    fn a_same_titled_album_is_tried_before_its_ep() {
-        // Seen live: "Psychic Chasms" the EP (no cover) and the album both score 100, EP first.
-        let hits = vec![
-            hit("rg-ep", 100, Some("EP")),
-            hit("rg-album", 100, Some("Album")),
-            hit("rg-single", 95, Some("Single")),
-            hit("rg-other", 80, Some("Album")),
-            hit("rg-unknown", 100, None),
-        ];
-        assert_eq!(likely_groups(hits), ["rg-album", "rg-ep", "rg-unknown", "rg-single"]);
-    }
 }

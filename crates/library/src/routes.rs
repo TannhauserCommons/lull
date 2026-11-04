@@ -316,11 +316,7 @@ async fn cover(State(svc): Svc, Path(id): Path<String>, Query(q): Query<ArtQuery
 }
 
 pub async fn cover_response(svc: &Service, id: &AlbumId, size: u32) -> Result<Response> {
-    Ok(match art::cover(svc, id, size).await? {
-        art::Cover::Image(bytes) => lull_core::art::response(bytes),
-        art::Cover::NotYet => lull_core::art::not_yet(id.as_str()),
-        art::Cover::None(left) => lull_core::art::none(id.as_str(), left),
-    })
+    Ok(art::cover(svc, id, size).await?.into_response(id.as_str()))
 }
 
 // ---------- rescan and duplicates ----------
