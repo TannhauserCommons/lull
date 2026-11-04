@@ -2178,7 +2178,8 @@ mod tests {
     fn a_long_title_scrolls_a_character_a_step_and_a_short_one_stays() {
         let mut marquee = Marquee::default();
         let start = Instant::now();
-        assert_eq!(marquee.show("1. Short", start), "1. Short");
+        // Padded to the marquee's 31 cells with blanks, as Webamp's is.
+        assert_eq!(marquee.show("1. Short", start), format!("{:<31}", "1. Short"));
         let long = "1. Someone - A title far too long for Winamp's marquee";
         assert!(marquee.show(long, start).starts_with("1. Some"));
         assert!(marquee.show(long, start + MARQUEE_STEP * 3).starts_with("Someone"));
