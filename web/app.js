@@ -3380,7 +3380,7 @@
       return html`<span class="tray__pill" data-svc="${k}" data-state="${s[k].state}">${ui.statusGlyph(s[k].state)}${s[k].label}${extra}</span>`;
     })}<span class="tray__pill tray__pill--cache" data-svc="cache" data-state="${c.state}" ${cacheAttrs}>${ui.statusGlyph(c.state)}<span class="tray__label-long" data-fit="2">cache&nbsp;</span>${gb}</span>`;
     var worst = trayWorst();
-    var compact = html`<span class="tray__pill" data-worst="${worst.state}">${['soulseek', 'library', 'lastfm'].map(function (k) { return ui.statusGlyph(s[k].state); })}<span class="tray__word">${worst.word}</span>${c.capGB ? html`<span class="tray__gb">${c.usedGB}G</span>` : ''}</span>`;
+    var compact = html`<span class="tray__pill" data-worst="${worst.state}">${['soulseek', 'library', 'lastfm'].map(function (k) { return ui.statusGlyph(s[k].state); })}<span class="tray__word" data-fit="8">${worst.word}</span>${c.capGB ? html`<span class="tray__gb">${c.usedGB}G</span>` : ''}</span>`;
     $$('[data-tray]').forEach(function (b) {
       b.innerHTML = String(b.getAttribute('data-tray') === 'compact' ? compact : full);
       b.setAttribute('aria-label', trayLabel());

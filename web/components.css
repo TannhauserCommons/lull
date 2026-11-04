@@ -1122,13 +1122,15 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 .header { grid-area: head; display: flex; align-items: center; gap: var(--sp-3); min-width: 0; padding: 0 0 12px 16px; }
 .header__search { flex: 1 1 360px; max-width: 520px; min-width: 220px; }
 /* parts of the header that give way when it runs out of room (layout.js, data-fit), after the search has shrunk to its
-   least: the "/" hint, the tray's long words, the following-and-playlists button (Library has them), the full tray for
-   the compact one, the nav pills' labels (their icons and tooltips stay), and last the search's own least width */
-.header :is(.kbd, .tray__label-long, .header__shelf, .tray--full)[data-fit-out], .header .nav-pill[data-fit-out] .nav-pill__label { display: none !important; }
+   least: the "/" hint, the tray's long words, the full tray for the compact one, the nav pills' labels (their icons and
+   tooltips stay), the search's own least width and its placeholder, and last the compact tray's word */
+.header :is(.kbd, .tray__label-long, .tray--full, .tray__word)[data-fit-out], .header .nav-pill[data-fit-out] .nav-pill__label { display: none !important; }
 .header .tray--full[data-fit-out] ~ .tray--compact { display: inline-flex !important; }
 .header[data-fit-gave~="1"] .search-field .input { padding-right: 48px; }   /* the "/" hint gave way */
 .header .nav-pill[data-fit-out] { width: 44px; padding: 0; justify-content: center; }
 .header .header__search[data-fit-out] { min-width: 96px !important; }
+/* narrowed, its placeholder would show a letter or two ("S..."): the magnifier says search, the field keeps its name */
+.header .header__search[data-fit-out] .input::placeholder { color: transparent; }
 /* a placeholder longer than the field ends in an ellipsis instead of being cut */
 .search-field .input { text-overflow: ellipsis; }
 .header__brand { display: none; }
