@@ -1277,11 +1277,15 @@ version = "0.2.1"
 dependencies = [
  "axum",
  "lull-core",
+ "md-5",
+ "notify",
  "rusqlite",
  "serde",
  "serde_json",
  "tokio",
+ "tower",
  "tracing",
+ "walkdir",
 ]
 
 [[package]]

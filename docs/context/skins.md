@@ -1,4 +1,4 @@
-# Skins: Winamp Skin Museum proxy, `.wsz` cache, favourites
+# Skins: Winamp Skin Museum proxy, `.wsz` cache, favourites, your skins folder
 
 `crates/skins`, for Classic mode (DESIGN.md §12). Endpoints: [api.md](api.md#collection-cratescollection-cratesskins).
 
@@ -31,6 +31,14 @@
 - **Size cap: 16 MiB.** Classic skins are a few hundred KB.
 - **Storage.** Files are cached at `<LULL_DATA_DIR>/skins/<md5>.wsz`, written to a `.part` file then renamed so a reader never sees half a file. The cache is not capped: it only grows by skins the listener opened.
 - **Favourites** (`skins_favourites`) store the museum's metadata when added, so the favourites list renders offline. `downloaded` in any list means the file is in the cache, for the skin browser's offline view.
+
+## Your skins folder
+
+- **What it is.** `LULL_SKINS_DIR` (optional; settable in the app too) names a folder of the listener's own `.wsz` files on the hub. The deploy kit mounts `SKINS_DIR` there read-only, at `/skins` (an empty volume when unset). lull never writes to it.
+- **The read.** Every `.wsz` under it (any case, any subfolder, links followed, hidden folders skipped) is checked as a download is (`wsz.rs`: a zip naming `main.bmp`, at most 16 MiB; a bigger file is refused by its size, unread) and named by the md5 of its bytes, as the museum names skins. The same skin in two places is listed once, at its first path in name order. A file that isn't a skin is listed under `skipped` with why, and logged once when it is first read; it never fails the list.
+- **Reading again.** A watcher reads the folder again 2 s after changes settle; `POST /api/skins/mine/rescan` reads it at once (some network mounts send the watcher nothing: `watching: false`). Each read stats every file, but opens only those whose size or modification time changed: `skins_folder` keeps each file's md5 or problem by `(LULL_SKINS_DIR, path)`, so a restart doesn't read a large folder again; rows of a folder no longer configured are dropped. A read that finds something else publishes `skins.mine`.
+- **Serving.** `GET /api/skins/{md5}.wsz` looks in the folder first, then the museum cache. The bytes are checked against the md5 on every serve, because the answer is `immutable`: a file changed since the read is not served under its old md5, and the folder is read again.
+- **No screenshots.** Folder skins have a name (the file name, `_` as spaces) and path only.
 
 ## In the web UI and the app (`web/screens/skins.js`, `classic.js`, `desktop/webamp-session.js`, `desktop/winamp.js`)
 

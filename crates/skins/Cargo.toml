@@ -16,6 +16,16 @@ serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+# The skins folder: names each skin by the md5 of its bytes, as the museum does. Already in the tree.
+md-5 = "=0.10.6"
+# The skins folder: walks LULL_SKINS_DIR. Already in the tree (library).
+walkdir = "=2.5.0"
+# The skins folder: watches LULL_SKINS_DIR so added and removed skins show. Already in the tree (library).
+notify = "=8.2.1"
+
+[dev-dependencies]
+# Driving the router in tests (`oneshot`). Already in the tree through axum.
+tower = { version = "=0.5.3", features = ["util"] }
 
 [lints]
 workspace = true

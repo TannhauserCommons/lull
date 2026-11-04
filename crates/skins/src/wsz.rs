@@ -71,45 +71,46 @@ fn u32_at(b: &[u8], i: usize) -> Option<u32> {
     Some(u32::from_le_bytes(b.get(i..i + 4)?.try_into().ok()?))
 }
 
+/// A stored (uncompressed) zip of `files`, laid out as zip writers do.
+#[cfg(test)]
+pub(crate) fn zip(files: &[(&str, &[u8])]) -> Vec<u8> {
+    let (mut out, mut central) = (Vec::new(), Vec::new());
+    for (name, data) in files {
+        let offset = out.len() as u32;
+        let (n, len) = (name.len() as u16, data.len() as u32);
+        out.extend(0x0403_4b50u32.to_le_bytes());
+        out.extend([20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        out.extend(len.to_le_bytes());
+        out.extend(len.to_le_bytes());
+        out.extend(n.to_le_bytes());
+        out.extend(0u16.to_le_bytes());
+        out.extend(name.as_bytes());
+        out.extend(*data);
+
+        central.extend(CENTRAL_ENTRY.to_le_bytes());
+        central.extend([20, 0, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        central.extend(len.to_le_bytes());
+        central.extend(len.to_le_bytes());
+        central.extend(n.to_le_bytes());
+        central.extend([0u8; 12]);
+        central.extend(offset.to_le_bytes());
+        central.extend(name.as_bytes());
+    }
+    let (start, size, count) = (out.len() as u32, central.len() as u32, files.len() as u16);
+    out.extend(central);
+    out.extend(EOCD.to_le_bytes());
+    out.extend([0, 0, 0, 0]);
+    out.extend(count.to_le_bytes());
+    out.extend(count.to_le_bytes());
+    out.extend(size.to_le_bytes());
+    out.extend(start.to_le_bytes());
+    out.extend(0u16.to_le_bytes());
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// A stored (uncompressed) zip of `files`, laid out as zip writers do.
-    fn zip(files: &[(&str, &[u8])]) -> Vec<u8> {
-        let (mut out, mut central) = (Vec::new(), Vec::new());
-        for (name, data) in files {
-            let offset = out.len() as u32;
-            let (n, len) = (name.len() as u16, data.len() as u32);
-            out.extend(0x0403_4b50u32.to_le_bytes());
-            out.extend([20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-            out.extend(len.to_le_bytes());
-            out.extend(len.to_le_bytes());
-            out.extend(n.to_le_bytes());
-            out.extend(0u16.to_le_bytes());
-            out.extend(name.as_bytes());
-            out.extend(*data);
-
-            central.extend(CENTRAL_ENTRY.to_le_bytes());
-            central.extend([20, 0, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-            central.extend(len.to_le_bytes());
-            central.extend(len.to_le_bytes());
-            central.extend(n.to_le_bytes());
-            central.extend([0u8; 12]);
-            central.extend(offset.to_le_bytes());
-            central.extend(name.as_bytes());
-        }
-        let (start, size, count) = (out.len() as u32, central.len() as u32, files.len() as u16);
-        out.extend(central);
-        out.extend(EOCD.to_le_bytes());
-        out.extend([0, 0, 0, 0]);
-        out.extend(count.to_le_bytes());
-        out.extend(count.to_le_bytes());
-        out.extend(size.to_le_bytes());
-        out.extend(start.to_le_bytes());
-        out.extend(0u16.to_le_bytes());
-        out
-    }
 
     #[test]
     fn a_skin_needs_main_bmp_in_any_folder_and_case() {

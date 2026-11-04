@@ -1,6 +1,7 @@
 //! Classic mode skins: Winamp Skin Museum search (proxied), `.wsz` download, validation and
-//! cache, and favourites (docs/context/skins.md).
+//! cache, favourites, and the listener's own skins folder (docs/context/skins.md).
 
+mod folder;
 mod museum;
 mod wsz;
 
@@ -13,7 +14,7 @@ use axum::extract::rejection::QueryRejection;
 use axum::extract::{Path, Query, State};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, put};
+use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use lull_core::db::Migrations;
 use lull_core::{Ctx, Error, Result};
@@ -21,11 +22,13 @@ use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use crate::folder::Folder;
 use crate::museum::{Museum, SERVICE};
 
 pub const MIGRATIONS: Migrations = Migrations {
     owner: "skins",
-    steps: &[r#"
+    steps: &[
+        r#"
         -- What the drawer shows for a favourite, so the list works while the museum is away.
         CREATE TABLE skins_favourites (
             md5             TEXT PRIMARY KEY,
@@ -35,7 +38,21 @@ pub const MIGRATIONS: Migrations = Migrations {
             nsfw            INTEGER NOT NULL,
             added_at        INTEGER NOT NULL
         );
-    "#],
+    "#,
+        r#"
+        -- The skins folder (LULL_SKINS_DIR) as last read: a rescan reads again only the files
+        -- whose size or time changed.
+        CREATE TABLE skins_folder (
+            root      TEXT NOT NULL,       -- LULL_SKINS_DIR when read; rows of another are dropped
+            path      TEXT NOT NULL,       -- under it, '/'-separated
+            size      INTEGER NOT NULL,
+            modified  INTEGER NOT NULL,    -- ns since 1970; -1: unknown, so always read again
+            md5       TEXT,                -- NULL when the file isn't a skin,
+            problem   TEXT,                -- and this says why
+            PRIMARY KEY (root, path)
+        );
+    "#,
+    ],
 };
 
 /// Classic skins are a few hundred KB; anything far bigger is not one.
@@ -46,6 +63,8 @@ pub struct Service {
     museum: Museum,
     /// `<data dir>/skins/<md5>.wsz`: validated downloads, kept for good (a skin never changes).
     dir: PathBuf,
+    /// The listener's own skins (`LULL_SKINS_DIR`), when set.
+    folder: Option<Arc<Folder>>,
 }
 
 pub async fn start(ctx: &Ctx) -> Result<Arc<Service>> {
@@ -53,10 +72,12 @@ pub async fn start(ctx: &Ctx) -> Result<Arc<Service>> {
     tokio::fs::create_dir_all(&dir)
         .await
         .map_err(|e| Error::internal(format!("create {}: {e}", dir.display())))?;
+    let folder = ctx.config.skins_dir.clone().map(|root| Folder::start(ctx, root));
     Ok(Arc::new(Service {
         ctx: ctx.clone(),
         museum: Museum::new(ctx.http.clone()),
         dir,
+        folder,
     }))
 }
 
@@ -65,6 +86,8 @@ pub fn router(svc: Arc<Service>) -> Router {
     Router::new()
         .route("/api/skins", get(search))
         .route("/api/skins/favourites", get(favourites))
+        .route("/api/skins/mine", get(mine))
+        .route("/api/skins/mine/rescan", post(rescan))
         .route(
             "/api/skins/favourites/{md5}",
             put(add_favourite).delete(remove_favourite),
@@ -186,18 +209,55 @@ async fn remove_favourite(State(svc): State<Arc<Service>>, Path(md5): Path<Strin
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// `GET /api/skins/{md5}.wsz`: from the cache, else downloaded from the museum, validated and cached.
-/// The museum's files send no CORS headers, so Webamp loads them from here, same origin.
+/// `GET /api/skins/mine`: the skins folder's skins, once it has been read.
+async fn mine(State(svc): State<Arc<Service>>) -> Json<Value> {
+    let Some(folder) = &svc.folder else {
+        return Json(json!({ "folder": null, "watching": false, "problem": null, "items": [], "skipped": [] }));
+    };
+    let listing = folder.listing().await;
+    Json(mine_answer(folder, &listing))
+}
+
+/// `POST /api/skins/mine/rescan`: reads the folder now (for a folder whose changes the hub can't see).
+async fn rescan(State(svc): State<Arc<Service>>) -> Result<Json<Value>> {
+    let folder = svc
+        .folder
+        .as_ref()
+        .ok_or_else(|| Error::NotFound("No skins folder is set: LULL_SKINS_DIR.".into()))?;
+    let listing = folder.rescan().await?;
+    Ok(Json(mine_answer(folder, &listing)))
+}
+
+fn mine_answer(folder: &Folder, listing: &folder::Listing) -> Value {
+    json!({
+        "folder": folder.root().display().to_string(),
+        "watching": folder.watching(),
+        "problem": listing.problem,
+        "items": listing.items,
+        "skipped": listing.skipped,
+    })
+}
+
+/// `GET /api/skins/{md5}.wsz`: from the skins folder, else the cache, else downloaded from the
+/// museum, validated and cached. The museum's files send no CORS headers, so Webamp loads them
+/// from here, same origin.
 async fn download(State(svc): State<Arc<Service>>, Path(file): Path<String>) -> Result<Response> {
     let md5 = file
         .strip_suffix(".wsz")
         .ok_or_else(|| Error::NotFound(format!("No skin file {file}.")))
         .and_then(valid_md5)?;
+    let mine = match &svc.folder {
+        Some(folder) => folder.file(&md5).await,
+        None => None,
+    };
     let path = svc.path(&md5);
-    let bytes = match tokio::fs::read(&path).await {
-        Ok(bytes) => bytes,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => svc.fetch(&md5).await?,
-        Err(e) => return Err(Error::internal(format!("read {}: {e}", path.display()))),
+    let bytes = match mine {
+        Some(bytes) => bytes,
+        None => match tokio::fs::read(&path).await {
+            Ok(bytes) => bytes,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => svc.fetch(&md5).await?,
+            Err(e) => return Err(Error::internal(format!("read {}: {e}", path.display()))),
+        },
     };
     Ok((
         [
@@ -307,4 +367,108 @@ fn display_name(file: &str) -> String {
         _ => file,
     };
     stem.replace('_', " ").trim().to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use axum::body::Body;
+    use axum::http::Request;
+    use lull_core::config::Config;
+    use lull_core::db::{self, Db};
+    use lull_core::events::Bus;
+    use lull_core::http::Http;
+    use lull_core::status::Status;
+    use tower::ServiceExt;
+
+    use super::*;
+    use crate::wsz::zip;
+
+    async fn hub(skins: &std::path::Path, data: &std::path::Path) -> Result<Arc<Service>> {
+        let vars: BTreeMap<String, String> = [
+            ("LULL_SLSKD_URL", "http://slskd"),
+            ("LULL_SLSKD_API_KEY", "k"),
+            ("LULL_DATA_DIR", &data.to_string_lossy()),
+            ("LULL_SKINS_DIR", &skins.to_string_lossy()),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        .collect();
+        let config = Config::from_vars(vars).map_err(|e| Error::internal(e.to_string()))?;
+        let db = Db::memory()?;
+        db.migrate(&db::CORE)?;
+        db.migrate(&MIGRATIONS)?;
+        let bus = Bus::new();
+        start(&Ctx {
+            config: Arc::new(config),
+            db,
+            http: Http::new()?,
+            status: Status::new(bus.clone()),
+            bus,
+            shutdown: Default::default(),
+        })
+        .await
+    }
+
+    async fn call(app: &Router, method: &str, uri: &str) -> (StatusCode, Vec<u8>) {
+        let req = Request::builder().method(method).uri(uri).body(Body::empty());
+        let Ok(Ok(res)) = (match req {
+            Ok(req) => app.clone().oneshot(req).await.map(Ok),
+            Err(e) => Ok(Err(e)),
+        }) else {
+            return (StatusCode::IM_A_TEAPOT, Vec::new());
+        };
+        let status = res.status();
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap_or_default();
+        (status, body.to_vec())
+    }
+
+    fn json_of(body: &[u8]) -> Value {
+        serde_json::from_slice(body).unwrap_or(Value::Null)
+    }
+
+    #[tokio::test]
+    async fn the_skins_folder_is_listed_served_and_read_again_when_asked() -> Result<()> {
+        let root = std::env::temp_dir().join(format!("lull-skins-api-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let (skins, data) = (root.join("skins"), root.join("data"));
+        let _ = std::fs::create_dir_all(skins.join("Bento"));
+        let bento = zip(&[("main.bmp", b"BM bento")]);
+        let _ = std::fs::write(skins.join("Bento/Bento_Classified.wsz"), &bento);
+        let _ = std::fs::write(skins.join("broken.wsz"), b"<html>404</html>");
+        let app = router(hub(&skins, &data).await?);
+
+        let (status, body) = call(&app, "GET", "/api/skins/mine").await;
+        let listed = json_of(&body);
+        let md5 = listed["items"][0]["md5"].as_str().unwrap_or_default().to_owned();
+        let (served, bytes) = call(&app, "GET", &format!("/api/skins/{md5}.wsz")).await;
+
+        let plum = zip(&[("main.bmp", b"BM plum")]);
+        let _ = std::fs::write(skins.join("plum.wsz"), &plum);
+        let _ = std::fs::remove_file(skins.join("broken.wsz"));
+        let (_, body) = call(&app, "POST", "/api/skins/mine/rescan").await;
+        let again = json_of(&body);
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(listed["folder"], json!(skins.display().to_string()));
+        assert_eq!(listed["items"].as_array().map(Vec::len), Some(1));
+        assert_eq!(listed["items"][0]["name"], "Bento Classified");
+        assert_eq!(listed["items"][0]["path"], "Bento/Bento_Classified.wsz");
+        assert_eq!(listed["skipped"][0]["path"], "broken.wsz");
+        assert_eq!(listed["skipped"][0]["why"], "the file is not a zip archive");
+        assert_eq!((served, bytes), (StatusCode::OK, bento));
+        let names: Vec<&str> = again["items"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|i| i["file"].as_str())
+            .collect();
+        assert_eq!(names, vec!["Bento_Classified.wsz", "plum.wsz"]);
+        assert_eq!(again["skipped"], json!([]));
+        Ok(())
+    }
 }
