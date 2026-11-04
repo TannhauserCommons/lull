@@ -200,7 +200,9 @@ pub enum Command {
     Reorder(Vec<usize>, usize),
     /// A copy picked for a song waiting in `choose`.
     Choose(Value),
-    Liked(String, bool),
+    /// The tray's Like (on or off) and Save, for the playing song.
+    Like,
+    Save,
     Quit,
 }
 
@@ -603,11 +605,8 @@ impl Run {
                 self.queue_changed();
             }
             Command::Choose(source) => self.choose(source),
-            Command::Liked(id, on) => {
-                if let Some(track) = lock(&self.catalogue).get_mut(&id) {
-                    track.liked = on;
-                }
-            }
+            Command::Like => self.like(),
+            Command::Save => self.save(),
             Command::Quit => {}
         }
         self.publish();
@@ -1053,6 +1052,53 @@ impl Run {
             "queueIndex": (!self.queue.queue.is_empty()).then_some(self.queue.index),
         });
         self.call("POST", "/api/devices/me/state".into(), Some(body));
+    }
+
+    /// Like, or unlike, the playing song: the hub at once, the outbox when it's out of reach, undone
+    /// when the hub says no (app.js `setLiked` through the outbox).
+    fn like(&mut self) {
+        let Some(id) = self.queue.queue.get(self.queue.index).map(|e| e.track_id.clone()) else {
+            return;
+        };
+        let on = {
+            let mut catalogue = lock(&self.catalogue);
+            let Some(track) = catalogue.get_mut(&id) else {
+                return;
+            };
+            track.liked = !track.liked;
+            track.liked
+        };
+        let (hub, ops, catalogue) = (self.hub.clone(), self.plays.ops.clone(), self.catalogue.clone());
+        self.plays.spawn(move || match hub.like(&id, on) {
+            Ok(()) => {}
+            Err(Failure::Offline) => lock(&ops).push(json!({ "op": "like", "trackId": id, "liked": on })),
+            Err(Failure::Refused(why)) => {
+                eprintln!("lull: Classic like refused: {why}");
+                if let Some(track) = lock(&catalogue).get_mut(&id) {
+                    track.liked = !on;
+                }
+            }
+        });
+    }
+
+    /// Save the playing song into the library (app.js `App.saves.start`). The outbox doesn't keep
+    /// saves, so neither does this.
+    fn save(&mut self) {
+        let unsaved = self
+            .queue
+            .queue
+            .get(self.queue.index)
+            .map(|e| e.track_id.clone())
+            .filter(|id| !lock(&self.catalogue).get(id).is_some_and(|t| t.saved));
+        let Some(id) = unsaved else {
+            return;
+        };
+        let hub = self.hub.clone();
+        self.plays.spawn(move || {
+            if let Err(e) = hub.save(&id) {
+                eprintln!("lull: Classic save: {e:?}");
+            }
+        });
     }
 
     /// The listener picked one of the copies a `choose` offered: the song plays from it.
@@ -1704,6 +1750,14 @@ impl Plays {
         }
     }
 
+    /// Another call that must be done before the page takes the queue back (a like).
+    fn spawn(&mut self, work: impl FnOnce() + Send + 'static) {
+        match std::thread::Builder::new().name("classic-hub".into()).spawn(work) {
+            Ok(thread) => self.threads.push(thread),
+            Err(e) => eprintln!("lull: Classic can't reach the hub: {e}"),
+        }
+    }
+
     fn end(&mut self, load: u64, played: f64, how: How) {
         if let Some(end) = self.ends.remove(&load) {
             let _ = end.send((played, how));
@@ -1795,6 +1849,17 @@ mod tests {
         sound
     }
 
+    /// Plays on until `done`, or for at most 20 s of sound (a slow machine gets the time it needs).
+    fn listen_until(output: &Manual, mut done: impl FnMut() -> bool) -> bool {
+        for _ in 0..40 {
+            if done() {
+                return true;
+            }
+            listen(output, 0.5);
+        }
+        done()
+    }
+
     fn hub(settings: Value) -> Option<TestHub> {
         TestHub::start(Book {
             settings,
@@ -1807,7 +1872,9 @@ mod tests {
         let hub = hub(json!({})).ok_or("no hub")?;
         let (engine, output) =
             player(&hub, &[("a", true, Some(2.0)), ("b", true, Some(2.0))], Repeat::Off).ok_or("no player")?;
-        let sound = listen(&output, 5.0);
+        let mut sound = listen(&output, 5.0);
+        listen_until(&output, || engine.snapshot().index == 1);
+        sound.extend(listen(&output, 0.5));
         let first = sound.iter().position(|s| s.abs() > 0.01).unwrap_or(sound.len());
         // From the first sound to the second song's end, never a stretch of silence (a gap).
         let silent = sound[first..first + 3 * RATE as usize * 2]
@@ -1850,12 +1917,15 @@ mod tests {
         let hub = hub(json!({})).ok_or("no hub")?;
         let (engine, output) =
             player(&hub, &[("gone", false, None), ("b", true, Some(3.0))], Repeat::Off).ok_or("no player")?;
-        std::thread::sleep(Duration::from_millis(1000));
-        assert!(matches!(engine.snapshot().status, Status::Failed(ref why) if why.contains("No peer")));
-        std::thread::sleep(Duration::from_millis(2000));
-        listen(&output, 1.0);
-        let now = engine.snapshot();
-        assert_eq!((now.index, now.playing), (1, true));
+        let failed = || matches!(engine.snapshot().status, Status::Failed(ref why) if why.contains("No peer"));
+        assert!(listen_until(&output, failed));
+        let started = Instant::now();
+        assert!(listen_until(&output, || engine.snapshot().index == 1));
+        assert!(
+            started.elapsed() >= Duration::from_millis(2000),
+            "after a beat, not at once"
+        );
+        assert!(engine.snapshot().playing);
         drop(engine);
         std::thread::sleep(Duration::from_millis(300));
         assert!(hub.calls("POST", "/api/plays").iter().all(|p| p["trackId"] != "gone"));
@@ -1873,8 +1943,9 @@ mod tests {
             ("u2", false, Some(1.0)),
         ];
         let (engine, output) = player(&hub, &songs, Repeat::Off).ok_or("no player")?;
-        listen(&output, 1.0);
-        std::thread::sleep(Duration::from_millis(1200));
+        assert!(listen_until(&output, || !hub
+            .calls("PUT", "/api/stream/prefetch")
+            .is_empty()));
         assert_eq!(
             hub.calls("PUT", "/api/stream/prefetch").last(),
             Some(&json!({ "tracks": ["u1", "u2"] }))
@@ -1899,7 +1970,7 @@ mod tests {
             })
             .ok();
         let (engine, output) = player(&hub, &[("a", true, Some(1.0))], Repeat::Off).ok_or("no player")?;
-        listen(&output, 2.5);
+        assert!(listen_until(&output, || engine.snapshot().index == 1));
         let now = engine.snapshot();
         assert_eq!(
             now.queue.iter().map(|e| e.track_id.as_str()).collect::<Vec<_>>(),
@@ -1915,7 +1986,7 @@ mod tests {
     fn repeat_one_replays_the_song_as_a_new_play() -> Result<(), String> {
         let hub = hub(json!({})).ok_or("no hub")?;
         let (engine, output) = player(&hub, &[("a", true, Some(3.0))], Repeat::One).ok_or("no player")?;
-        listen(&output, 4.5);
+        assert!(listen_until(&output, || hub.calls("POST", "/api/plays").len() >= 2));
         assert_eq!(engine.snapshot().index, 0);
         drop(engine);
         std::thread::sleep(Duration::from_millis(300));
@@ -1962,6 +2033,171 @@ mod tests {
         listen(&output, 0.5);
         assert!(fetches() > before, "a new attempt opens the song again");
         assert!(engine.snapshot().position > 1.0, "it carried on from where it was");
+        Ok(())
+    }
+
+    fn stream_event(id: &str, received: u64, upgrade: Option<Upgrade>) -> Heard {
+        Heard::Stream(Box::new(StreamEvent {
+            track_id: id.into(),
+            job_id: Some("j".into()),
+            status: "streaming".into(),
+            attempt: Some(0),
+            received: Some(received),
+            size: Some(1000),
+            upgrade,
+            ..StreamEvent::default()
+        }))
+    }
+
+    #[test]
+    fn a_better_copy_is_lined_up_and_switched_to_mid_song() -> Result<(), String> {
+        let hub = hub(json!({})).ok_or("no hub")?;
+        let (engine, output) = player(&hub, &[("s", false, Some(60.0))], Repeat::Off).ok_or("no player")?;
+        // The song is noise; the better copy is the same noise from a rip that starts 0.2 s later.
+        hub.book
+            .lock()
+            .map(|mut b| {
+                b.songs
+                    .insert("s".into(), Serve::Whole(super::super::testhub::noise(60.0, 0.0)));
+                b.copies.insert("s".into(), super::super::testhub::noise(60.0, 0.2));
+            })
+            .map_err(|e| e.to_string())?;
+        listen(&output, 1.0);
+        let upgrade = Upgrade {
+            peer: "better".into(),
+            path: "rips/s.flac".into(),
+            received: Some(1000),
+            size: Some(1000),
+            ready: true,
+            ..Upgrade::default()
+        };
+        let _ = engine.heard_to.send(stream_event("s", 1000, Some(upgrade)));
+        for _ in 0..40 {
+            listen(&output, 1.0);
+            if !hub.calls("POST", "/api/stream/s/switch").is_empty() {
+                break;
+            }
+        }
+        assert_eq!(
+            hub.calls("POST", "/api/stream/s/switch").first(),
+            Some(&json!({ "peer": "better", "path": "rips/s.flac" }))
+        );
+        let before = engine.snapshot().position;
+        listen(&output, 2.0);
+        let after = engine.snapshot();
+        assert!(after.position > before, "the song carried on in its own time");
+        assert_eq!(after.notice.as_deref(), Some("Switched to a better copy"));
+        Ok(())
+    }
+
+    #[test]
+    fn listening_privately_records_nothing_to_end() -> Result<(), String> {
+        let hub = TestHub::start(Book {
+            settings: json!({}),
+            private: true,
+            ..Book::default()
+        })
+        .ok_or("no hub")?;
+        let (engine, output) =
+            player(&hub, &[("a", true, Some(1.0)), ("b", true, Some(1.0))], Repeat::Off).ok_or("no player")?;
+        assert!(listen_until(&output, || hub.calls("POST", "/api/plays").len() >= 2));
+        drop(engine);
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(!hub.calls("POST", "/api/plays").is_empty());
+        assert!(hub.calls("PATCH", "/api/plays/").is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn a_seek_past_what_has_arrived_is_held_at_its_edge() -> Result<(), String> {
+        let hub = hub(json!({})).ok_or("no hub")?;
+        let (engine, output) = player(&hub, &[("s", false, Some(20.0))], Repeat::Off).ok_or("no player")?;
+        listen(&output, 0.5);
+        let _ = engine.heard_to.send(stream_event("s", 100, None));
+        std::thread::sleep(Duration::from_millis(600));
+        engine.send(Command::Seek(15.0));
+        std::thread::sleep(Duration::from_millis(600));
+        listen(&output, 0.2);
+        let now = engine.snapshot();
+        assert!(
+            now.position < 2.5,
+            "held inside the tenth that has arrived: {}",
+            now.position
+        );
+        assert_eq!(now.notice.as_deref(), Some("The song hasn't arrived that far yet"));
+        Ok(())
+    }
+
+    #[test]
+    fn plays_the_hub_cant_take_go_back_for_the_outbox() -> Result<(), String> {
+        let hub = TestHub::start(Book {
+            settings: json!({}),
+            unreachable: vec!["/api/plays".into()],
+            ..Book::default()
+        })
+        .ok_or("no hub")?;
+        let (engine, output) = player(&hub, &[("a", true, Some(5.0))], Repeat::Off).ok_or("no player")?;
+        listen(&output, 2.0);
+        let back = engine.finish().ok_or("no hand-back")?;
+        for thread in back.threads {
+            let _ = thread.join();
+        }
+        let ops = lock(&back.ops).clone();
+        let op = ops.first().ok_or("no op")?;
+        assert_eq!((op["op"].clone(), op["trackId"].clone()), (json!("play"), json!("a")));
+        assert_eq!(
+            (op["completed"].clone(), op["skipped"].clone()),
+            (json!(false), json!(false))
+        );
+        assert!(op["startedAt"].as_u64().is_some_and(|t| t > 0) && op["playedS"].as_f64().is_some());
+        Ok(())
+    }
+
+    #[test]
+    fn lull_connect_hears_what_plays() -> Result<(), String> {
+        let hub = hub(json!({})).ok_or("no hub")?;
+        let (engine, output) =
+            player(&hub, &[("a", true, Some(3.0)), ("b", true, Some(3.0))], Repeat::Off).ok_or("no player")?;
+        assert!(listen_until(&output, || !hub
+            .calls("POST", "/api/devices/me/state")
+            .is_empty()));
+        let state = hub.calls("POST", "/api/devices/me/state");
+        let last = state.last().ok_or("no state")?;
+        assert_eq!(
+            (
+                last["trackId"].clone(),
+                last["queue"].clone(),
+                last["queueIndex"].clone()
+            ),
+            (json!("a"), json!(["a", "b"]), json!(0))
+        );
+        drop(engine);
+        Ok(())
+    }
+
+    #[test]
+    fn a_like_reaches_the_hub_or_waits_in_the_outbox() -> Result<(), String> {
+        let hub = hub(json!({})).ok_or("no hub")?;
+        let (engine, output) = player(&hub, &[("a", true, Some(5.0))], Repeat::Off).ok_or("no player")?;
+        listen(&output, 0.5);
+        engine.send(Command::Like);
+        assert!(listen_until(&output, || !hub.calls("PUT", "/api/likes/a").is_empty()));
+        assert!(engine.track("a").is_some_and(|t| t.liked));
+        hub.book
+            .lock()
+            .map(|mut b| b.unreachable = vec!["/api/likes".into()])
+            .map_err(|e| e.to_string())?;
+        engine.send(Command::Like);
+        listen(&output, 0.5);
+        let back = engine.finish().ok_or("no hand-back")?;
+        for thread in back.threads {
+            let _ = thread.join();
+        }
+        // The unlike couldn't reach the hub: it waits in the outbox, as the page's would.
+        assert_eq!(
+            lock(&back.ops).first(),
+            Some(&json!({ "op": "like", "trackId": "a", "liked": false }))
+        );
         Ok(())
     }
 }

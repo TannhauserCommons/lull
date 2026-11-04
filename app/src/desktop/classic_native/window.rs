@@ -323,15 +323,6 @@ pub fn act(action: &str) {
     }
 }
 
-/// A command for the player from elsewhere on the main thread (a like the hub refused).
-pub fn send(command: Command) {
-    OPEN.with_borrow(|open| {
-        if let Some(classic) = open.as_ref() {
-            classic.session.engine.send(command);
-        }
-    });
-}
-
 /// Another skin, fetched for the Options menu; or why it couldn't be. Main thread only.
 pub fn set_skin(skin: Result<(Skin, Option<String>), String>) {
     OPEN.with_borrow_mut(|open| {

@@ -24,6 +24,12 @@ pub struct Book {
     pub radio: Vec<String>,
     /// How many times each song's stream was asked for.
     pub fetches: HashMap<String, usize>,
+    /// Better copies, by song: what `/api/stream/{id}/copy` streams.
+    pub copies: HashMap<String, Vec<u8>>,
+    /// This device listens privately: plays are answered with no id.
+    pub private: bool,
+    /// Calls to paths starting with these are dropped unanswered, as a hub out of reach would.
+    pub unreachable: Vec<String>,
     /// Every call but the songs': method, path, body.
     pub calls: Vec<(String, String, Value)>,
 }
@@ -92,6 +98,15 @@ fn answer(stream: TcpStream, book: &Mutex<Book>) {
     let body: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
     let path = target.split('?').next().unwrap_or("").to_owned();
     let mut out = stream;
+    if let Some(id) = path.strip_prefix("/api/stream/").and_then(|p| p.strip_suffix("/copy"))
+        && method == "GET"
+    {
+        let copy = lock(book).copies.get(id).cloned();
+        return song(&mut out, copy.map(Serve::Whole), headers.get("range"));
+    }
+    if lock(book).unreachable.iter().any(|p| path.starts_with(p.as_str())) {
+        return;
+    }
     if let Some(id) = path
         .strip_prefix("/api/stream/")
         .or_else(|| path.strip_prefix("/api/library/stream/"))
@@ -110,6 +125,7 @@ fn answer(stream: TcpStream, book: &Mutex<Book>) {
         book.calls.push((method.clone(), path.clone(), body));
         match (method.as_str(), path.as_str()) {
             ("GET", "/api/settings") => Some(book.settings.clone()),
+            ("POST", "/api/plays") if book.private => Some(json!({ "playId": null, "private": true })),
             ("POST", "/api/plays") => Some(json!({ "playId": format!("p{}", book.calls.len()) })),
             ("GET", "/api/radio") => {
                 let items = book.radio.clone();
@@ -183,10 +199,35 @@ fn song(out: &mut TcpStream, serve: Option<Serve>, range: Option<&String>) {
     let _ = out.write_all(&bytes[from..]);
 }
 
+/// A WAV of music-like noise (no two stretches alike, its level swelling), `seconds` long, starting
+/// `late` seconds into it: two of them with different `late` are two rips of one song.
+pub fn noise(seconds: f64, late: f64) -> Vec<u8> {
+    let rate = 48_000.0;
+    let mut x: u32 = 0x9e37_79b9;
+    let all: Vec<f64> = (0..((seconds + late + 1.0) * rate) as usize)
+        .map(|i| {
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            (f64::from(x) / f64::from(u32::MAX) - 0.5) * (0.6 + 0.4 * (i as f64 / 9_000.0).sin())
+        })
+        .collect();
+    let skip = (late * rate) as usize;
+    wav(&all[skip..skip + (seconds * rate) as usize])
+}
+
 /// A WAV of a tone: `seconds` long at 48 kHz, stereo, 16-bit, its level `level`.
 pub fn tone(seconds: f64, hz: f64, level: f64) -> Vec<u8> {
+    let samples: Vec<f64> = (0..(seconds * 48_000.0) as usize)
+        .map(|i| (i as f64 / 48_000.0 * hz * std::f64::consts::TAU).sin() * level)
+        .collect();
+    wav(&samples)
+}
+
+/// Mono samples (-1 to 1) as a 48 kHz stereo 16-bit WAV.
+fn wav(samples: &[f64]) -> Vec<u8> {
     let rate = 48_000u32;
-    let frames = (seconds * f64::from(rate)) as u32;
+    let frames = samples.len() as u32;
     let data = frames * 4;
     let mut wav = Vec::with_capacity(44 + data as usize);
     wav.extend_from_slice(b"RIFF");
@@ -201,8 +242,8 @@ pub fn tone(seconds: f64, hz: f64, level: f64) -> Vec<u8> {
     wav.extend_from_slice(&16u16.to_le_bytes());
     wav.extend_from_slice(b"data");
     wav.extend_from_slice(&data.to_le_bytes());
-    for i in 0..frames {
-        let s = ((f64::from(i) / f64::from(rate) * hz * std::f64::consts::TAU).sin() * level * 32_000.0) as i16;
+    for sample in samples {
+        let s = (sample * 32_000.0) as i16;
         wav.extend_from_slice(&s.to_le_bytes());
         wav.extend_from_slice(&s.to_le_bytes());
     }

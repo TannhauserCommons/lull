@@ -150,10 +150,7 @@ fn go_back(app: AppHandle, session: Session, size: f64, page: Option<String>) {
             for thread in threads {
                 let _ = thread.join();
             }
-            let ops: Vec<Value> = ops
-                .iter()
-                .flat_map(|o| std::mem::take(&mut *o.lock().unwrap_or_else(std::sync::PoisonError::into_inner)))
-                .collect();
+            let ops = std::mem::take(&mut *ops.lock().unwrap_or_else(std::sync::PoisonError::into_inner));
             value["ops"] = Value::Array(ops);
             value["size"] = size.into();
             *BACK.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(value);

@@ -7,12 +7,11 @@
 //! It lives on the main thread with the window, which calls `tick` on every frame.
 
 use super::engine::{Command, Engine, Snapshot, Status, Track};
-use super::hub::{Failure, Hub};
+use super::hub::Hub;
 use super::smtc::Overlay;
 use crate::desktop::player;
 use crate::desktop::state::{Desktop, NowPlaying};
 use serde_json::{Value, json};
-use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -45,10 +44,6 @@ pub struct Session {
     revision: Option<u64>,
     overlay: Option<Overlay>,
     reported: Option<(NowPlaying, i64)>,
-    /// Likes the hub couldn't take, for the page's outbox; songs saved here.
-    ops: Arc<Mutex<Vec<Value>>>,
-    saved: Arc<Mutex<HashSet<String>>>,
-    threads: Vec<JoinHandle<()>>,
 }
 
 /// What Classic hands back to the page when it closes (web/screens/classic.js `takeBack`).
@@ -56,11 +51,7 @@ pub struct Handback {
     pub value: Value,
     /// Calls still telling the hub about the last play and likes; the ops are complete once done.
     pub threads: Vec<JoinHandle<()>>,
-    pub ops: Vec<Arc<Mutex<Vec<Value>>>>,
-}
-
-fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    pub ops: Arc<Mutex<Vec<Value>>>,
 }
 
 impl Session {
@@ -73,9 +64,6 @@ impl Session {
             revision: None,
             overlay: None,
             reported: None,
-            ops: Arc::default(),
-            saved: Arc::default(),
-            threads: Vec::new(),
         }
     }
 
@@ -157,7 +145,7 @@ impl Session {
             artist: track.artist.clone(),
             playing: snapshot.playing,
             liked: track.liked,
-            saved: track.saved || lock(&self.saved).contains(&track.id),
+            saved: track.saved,
             connected: snapshot.reachable,
             id: track.id.clone(),
             artist_id: track.artist_id.clone(),
@@ -197,56 +185,11 @@ impl Session {
             "stop" => Command::Stop,
             "next" => Command::Next,
             "previous" => Command::Previous,
-            "like" => return self.like(&snapshot),
-            "save" => return self.save(&snapshot),
+            "like" => Command::Like,
+            "save" => Command::Save,
             other => return eprintln!("lull: Classic has no {other}"),
         };
         self.engine.send(command);
-    }
-
-    /// Like, or unlike, the playing song: the hub at once, or the outbox when it's out of reach
-    /// (app.js `setLiked` through the outbox). A refusal undoes it.
-    fn like(&mut self, snapshot: &Snapshot) {
-        let Some(track) = self.playing_track(snapshot) else {
-            return;
-        };
-        let on = !track.liked;
-        self.engine.send(Command::Liked(track.id.clone(), on));
-        let (hub, ops, app, id) = (self.hub.clone(), self.ops.clone(), self.app.clone(), track.id);
-        self.spawn(move || match hub.like(&id, on) {
-            Ok(()) => {}
-            Err(Failure::Offline) => lock(&ops).push(json!({ "op": "like", "trackId": id, "liked": on })),
-            Err(Failure::Refused(why)) => {
-                eprintln!("lull: Classic like refused: {why}");
-                let undo = app.run_on_main_thread(move || super::window::send(Command::Liked(id, !on)));
-                if let Err(e) = undo {
-                    eprintln!("lull: Classic like: {e}");
-                }
-            }
-        });
-    }
-
-    /// Save the playing song into the library. The page's outbox doesn't keep saves, so neither
-    /// does this.
-    fn save(&mut self, snapshot: &Snapshot) {
-        let Some(track) = self.playing_track(snapshot).filter(|t| !t.saved) else {
-            return;
-        };
-        let (hub, saved, id) = (self.hub.clone(), self.saved.clone(), track.id);
-        self.spawn(move || match hub.save(&id) {
-            Ok(()) => {
-                lock(&saved).insert(id);
-            }
-            Err(Failure::Offline) => eprintln!("lull: Classic save: the hub is out of reach"),
-            Err(Failure::Refused(why)) => eprintln!("lull: Classic save refused: {why}"),
-        });
-    }
-
-    fn spawn(&mut self, work: impl FnOnce() + Send + 'static) {
-        match std::thread::Builder::new().name("classic-hub".into()).spawn(work) {
-            Ok(thread) => self.threads.push(thread),
-            Err(e) => eprintln!("lull: Classic can't reach the hub: {e}"),
-        }
     }
 
     /// Windows' media overlay and keys for the window.
@@ -269,14 +212,7 @@ impl Session {
     /// Classic closes: the player stops (the play ends, stopped) and the queue goes back in the
     /// page's saved shape (app.js `persist`), with what it plays and the outbox's ops.
     pub fn hand_back(self) -> Option<Handback> {
-        let Session {
-            engine,
-            ops,
-            mut threads,
-            ..
-        } = self;
-        let back = engine.finish()?;
-        threads.extend(back.threads);
+        let back = self.engine.finish()?;
         let queue = &back.queue;
         let value = json!({
             "player": {
@@ -296,8 +232,8 @@ impl Session {
         });
         Some(Handback {
             value,
-            threads,
-            ops: vec![back.ops, ops],
+            threads: back.threads,
+            ops: back.ops,
         })
     }
 }
