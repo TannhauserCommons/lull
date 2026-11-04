@@ -40,7 +40,7 @@
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { readFile, stat } from 'node:fs/promises';
+import { appendFile, readFile, stat } from 'node:fs/promises';
 import { deflateSync } from 'node:zlib';
 import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -113,6 +113,11 @@ const SERVICES = {
   youtube: { state: 'off', detail: 'YouTube is off' },
 };
 
+// FIXTURE_PLAYS_LOG=<file>: each play's start and end, one JSON line each, to compare players' listening history
+function logPlay(kind, playId, body) {
+  if (process.env.FIXTURE_PLAYS_LOG) appendFile(process.env.FIXTURE_PLAYS_LOG, JSON.stringify({ kind, playId, body }) + '\n').catch(() => {});
+}
+
 // ---------- routes: [method, regex, handler(match, query, body) -> { status?, body } | body] ----------
 const routes = [
   ['GET', /^\/health$/, () => ({ version: '0.0.0-fixture', services: SERVICES })],
@@ -168,8 +173,8 @@ const routes = [
     const all = L.history.flatMap((d) => d.items);
     return { days: q.get('before') ? [] : L.history, next: null, entities: entities({ tracks: all.map((i) => i.trackId), albums: albumsOf(all.map((i) => i.trackId)) }) };
   }],
-  ['POST', /^\/api\/plays$/, () => ({ playId: String(++state.plays) })],
-  ['PATCH', /^\/api\/plays\/(.+)$/, (m) => ({ playId: m[1] })],
+  ['POST', /^\/api\/plays$/, (m, q, body) => { const playId = String(++state.plays); logPlay('start', playId, body); return { playId }; }],
+  ['PATCH', /^\/api\/plays\/(.+)$/, (m, q, body) => { logPlay('end', m[1], body); return { playId: m[1] }; }],
   ['GET', /^\/api\/stats$/, () => {
     const top = L.trackIds.slice(0, 10);
     return {
