@@ -1402,6 +1402,7 @@
     return html`<div class="seek ${opts.cls || ''}" data-seek="${opts.bind || 'player'}" role="slider" tabindex="0" aria-label="${opts.label || 'Seek'}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="">
       <div class="seek__track"><div class="seek__xfer"></div><div class="seek__bufs"></div><div class="seek__played"></div></div>
       <div class="seek__rail"><div class="seek__knob"></div></div>
+      <div class="seek__target" aria-hidden="true"></div>
       <div class="seek__tip" aria-hidden="true"></div>
     </div>`;
   };
@@ -2128,7 +2129,7 @@
        ps.pos: a seek before that moves where it will start */
     if (!cur) { ps.pos = f * dur; changed('seek'); return true; }
     var to = LullRules.seekTo(f, playable(), playback.jumpWhenDownloaded, waitS(f), ps.aheadS);
-    ps.seekWait = to.how === 'waits' ? { fraction: to.fraction } : null;
+    ps.seekWait = to.how === 'waits' ? { fraction: to.fraction, since: Date.now() } : null;
     if (!ps.seekWait) { ps.pos = to.fraction * dur; out.seek(ps.pos); }
     changed('seek');
     if (to.how === 'waits') App.emit('seek-kept', ps.seekWait);
@@ -2148,6 +2149,13 @@
     var n = waitS(f);
     return n == null ? null : n < 100 ? 'about ' + Math.max(1, n) + ' s' : 'about ' + Math.round(n / 60) + ' min';
   }
+  /* a wait worth words: one that has lasted 3 s (under that a pause reads as a blip), or that will last over 8 s (past
+     that a listener wonders if the click worked); a shorter one shows only as the seek bar's notch */
+  P.seekWaitLong = function () {
+    var w = ps.seekWait; if (!w) return false;
+    var n = waitS(w.fraction);
+    return Date.now() - w.since >= 3000 || n == null || n > 8;
+  };
   P.seekWaitText = function () {
     var w = ps.seekWait; if (!w) return null;
     var eta = waitWords(w.fraction);
@@ -3128,7 +3136,7 @@
       case 'jellyfin-error': return 'Library item unavailable' + (ps.error ? ': ' + ps.error : '');
       case 'ended': return 'End of queue';
       default:
-        if (ps.seekWait) return P.seekWaitText();
+        if (ps.seekWait && P.seekWaitLong()) return P.seekWaitText();
         if (ps.crossfade) { var n = nxt && M.track(nxt.trackId); return 'Crossfading into ' + (n ? n.title : 'the next song'); }
         return null;
     }
@@ -3181,8 +3189,12 @@
     var transferring = ps.received < 1 && (ps.status === 'streaming' || ps.status === 'buffering');
     // player bar + mini: play state and the received percentage (an integer, usable as counter(rx) in CSS)
     ['pbar', 'mini'].forEach(function (s) { var el = document.getElementById(s); if (!el) return; setAttr(el, 'data-playing', !!ps.playing); setVar(el, '--rx', Math.round(ps.received * 100)); });
+    var going = ps.seekWait ? ps.seekWait.fraction : null;
     $$kept('.seek[data-seek="player"]').forEach(function (el) {
       setVar(el, '--pos', f.toFixed(4));
+      // a seek on its way: a notch where it lands
+      if (el.classList.contains('is-going') !== (going != null)) el.classList.toggle('is-going', going != null);
+      if (going != null) setVar(el, '--target', going.toFixed(4));
       setVar(el, '--xfer', front.toFixed(4));
       if (el.classList.contains('is-transferring') !== transferring) el.classList.toggle('is-transferring', transferring);
       if (el._bk !== bk) {
@@ -3695,11 +3707,12 @@
         : st === 'jellyfin-error' ? html`<button class="btn btn--quiet" data-act="try-soulseek">Try Soulseek instead</button>`
         : st === 'stalled' || (st === 'buffering' && ps.fallback) ? html`<button class="btn btn--quiet" data-act="pick-source">Choose manually</button>`
         : st === 'ended' ? html`<button class="btn btn--quiet" data-act="start-radio-current">Start radio</button>` : '';
-      var ic = err ? 'warning' : st === 'finding' || st === 'queued' || st === 'buffering' ? 'soulseek' : st === 'stalled' ? 'refresh' : ps.seekWait ? 'clock' : ps.crossfade ? 'shuffle' : 'info';
+      var ic = err ? 'warning' : st === 'finding' || st === 'queued' || st === 'buffering' ? 'soulseek' : st === 'stalled' ? 'refresh' : ps.seekWait && P.seekWaitLong() ? 'clock' : ps.crossfade ? 'shuffle' : 'info';
       /* a kept seek's line counts down with every stream event: the tab is a live region, so screen readers hear it
          once from the announcer (seek-kept) instead of at each change */
-      patch(stEl, html`${icon(ic)}<span ${raw(ps.seekWait ? 'aria-hidden="true"' : '')}>${line}</span>${acts}`);
-      stEl.classList.toggle('is-error', err); stEl.classList.toggle('is-seek-wait', !!ps.seekWait); stEl.hidden = false;
+      var waiting = ps.seekWait && P.seekWaitLong();
+      patch(stEl, html`${icon(ic)}<span ${raw(waiting ? 'aria-hidden="true"' : '')}>${line}</span>${acts}`);
+      stEl.classList.toggle('is-error', err); stEl.classList.toggle('is-seek-wait', !!waiting); stEl.hidden = false;
     } else { stEl.hidden = true; stEl.innerHTML = ''; }
     // transport
     var busy = st === 'finding' || st === 'queued' || st === 'buffering' || st === 'stalled';
@@ -3739,7 +3752,7 @@
     /* the artist, and where the song plays from (the whole text opens Now Playing, whose "Playing from" opens it);
        "your queue" goes without saying */
     var miniFrom = !idle && P.playingFrom(); if (miniFrom && miniFrom.kind === 'queue') miniFrom = null;
-    patch($('#mini-sub'), idle ? 'Search or pick something from Home' : line && (st !== 'streaming' && st !== 'library' || ps.seekWait) ? esc(line)
+    patch($('#mini-sub'), idle ? 'Search or pick something from Home' : line && (st !== 'streaming' && st !== 'library' || ps.seekWait && P.seekWaitLong()) ? esc(line)
       : html`<span class="mini__artist">${t.artist}</span>${miniFrom ? html`<span class="mini__from">${App.placeName(miniFrom)}</span>` : ''}`);
     var mt = $('#mini-thumb'); patch(mt, idle ? '<span></span>' : ui.cover(t, 40, { hero: true })); mt.classList.toggle('bezel-thumb--empty', idle);
     App.syncRows();

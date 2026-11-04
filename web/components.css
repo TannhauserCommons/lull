@@ -549,6 +549,13 @@ button.trow__title:hover { text-decoration: underline; text-underline-offset: 3p
 }
 .seek__tip.is-on { opacity: 1; }
 .seek--line { height: 2px; min-width: 0; pointer-events: none; }      /* mini-player top edge: 2 px line, no knob, not interactive */
+/* a seek on its way (its part arriving, or a transfer starting there): a still notch where it lands, placed as the knob
+   is; still rather than breathing, since it may show while nothing plays */
+.seek__target { position: absolute; left: 0; top: 50%; width: 0; height: 0; transform: translateX(calc(var(--target, 0) * 100cqw)); pointer-events: none; visibility: hidden; }
+.seek__target::before { content: ""; position: absolute; left: -1px; top: -8px; width: 2px; height: 16px; border-radius: 1px; background: var(--seek-played); opacity: .6; }
+.seek.is-going .seek__target { visibility: visible; }
+.seek--line .seek__target { top: 1px; }
+.seek--line .seek__target::before { top: -3px; height: 6px; }
 .seek--line .seek__track { top: 0; margin: 0; height: 2px; border-radius: 0; box-shadow: none; background: var(--divider); }
 .seek--line .seek__rail { display: none; }
 .seek-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--sp-3); }

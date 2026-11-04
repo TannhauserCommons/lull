@@ -153,6 +153,7 @@
         <div class="seek" data-seek="player" role="slider" tabindex="0" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
           <div class="seek__track"><div class="seek__xfer"></div><div class="seek__bufs"></div><div class="seek__played"></div></div>
           <div class="seek__rail"><div class="seek__knob"></div></div>
+          <div class="seek__target" aria-hidden="true"></div>
           <div class="seek__tip" aria-hidden="true"></div>
         </div>
         <span class="seek-row__time" data-bind="dur">0:00</span>
@@ -181,6 +182,7 @@
   <section class="mini s-panel" id="mini" aria-label="Now playing" data-drop="play" data-region="mini">
     <div class="seek seek--line" data-seek="player" aria-hidden="true">
       <div class="seek__track"><div class="seek__xfer"></div><div class="seek__bufs"></div><div class="seek__played"></div></div>
+      <div class="seek__target"></div>
     </div>
     <a class="bezel-thumb" id="mini-thumb" href="#/now" aria-label="Open Now Playing"></a>
     <a class="mini__text" href="#/now" data-fit-row><span class="mini__title" id="mini-title"></span><span class="mini__sub" id="mini-sub" data-fit-keep></span><span class="mini__chip" data-fit="1" aria-hidden="true"></span></a>
