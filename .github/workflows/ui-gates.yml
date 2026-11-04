@@ -48,7 +48,7 @@ jobs:
       - working-directory: tests/ui
         run: |
           npm ci --no-audit --no-fund
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps chromium webkit
 
       - id: mode
         name: Compare or capture
@@ -78,6 +78,11 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: tests/ui
         run: npx playwright test -c gates/playwright.config.mjs --project now
+      # Every loop at the rate it names, and held when asked, in Chromium and WebKit (WebKitGTK here) (gates/loops.spec.mjs).
+      - name: Loops in Chromium and WebKit
+        if: ${{ !cancelled() }}
+        working-directory: tests/ui
+        run: npx playwright test -c gates/playwright.config.mjs --project loops --project loops-webkit
 
       - uses: actions/upload-artifact@v4
         if: ${{ always() && steps.mode.outputs.capture == 'true' }}

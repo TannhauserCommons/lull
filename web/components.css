@@ -102,7 +102,7 @@
   position: absolute; inset: -7px; border-radius: 50%; border: 2px dashed var(--play-ring);
   opacity: 0; pointer-events: none; transition: opacity var(--dur-1);
 }
-.is-buffering > .btn-gloss__spin, .btn-gloss.is-buffering .btn-gloss__spin { opacity: 1; animation: spin 2.4s linear infinite; --loop-fps: 30; }
+.is-buffering > .btn-gloss__spin, .btn-gloss.is-buffering .btn-gloss__spin { opacity: 1; animation: spin 2.4s linear infinite; --loop-fps: 30; --loop-holds: no; }
 :root[data-motion="reduce"] .btn-gloss:active { transform: none; background: var(--mocha-edge); }
 @media (prefers-reduced-motion: reduce) { .btn-gloss:active { transform: none; } }
 
@@ -192,7 +192,7 @@ button.src-badge::after { content: ""; position: absolute; inset: -10px -2px; }
 /* queue resolve state */
 .resolve { display: inline-flex; align-items: center; gap: 6px; font: var(--t-micro); color: var(--fg-2); white-space: nowrap; }
 .resolve .ic { width: 16px; height: 16px; }
-.spin-ring { width: 14px; height: 14px; border-radius: 50%; border: 2px dashed currentColor; flex: none; animation: spin 2.4s linear infinite; --loop-fps: 30; }
+.spin-ring { width: 14px; height: 14px; border-radius: 50%; border: 2px dashed currentColor; flex: none; animation: spin 2.4s linear infinite; --loop-fps: 30; --loop-holds: no; }
 
 /* scrobble status: glyph visible, text in aria-label + tooltip */
 .scrobble { display: inline-grid; place-items: center; width: 28px; height: 28px; color: var(--fg-2); border-radius: 50%; }
@@ -509,7 +509,7 @@ button.trow__title:hover { text-decoration: underline; text-underline-offset: 3p
   background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--seek-buffered) 45%, var(--seek-played)));
   transform: translateX(calc(var(--xfer) * 100cqw));
 }
-.seek.is-transferring .seek__track::after { animation: xfer-edge 1.4s ease-in-out infinite alternate; --loop-fps: 20; }
+.seek.is-transferring .seek__track::after { animation: xfer-edge 1.4s ease-in-out infinite alternate; --loop-fps: 20; --loop-holds: no; }
 .seek__played { position: absolute; inset: 0; background: var(--seek-played); transform-origin: left; transform: scaleX(var(--pos)); }
 /* the knob rides a zero-size rail moved by a transform on its own layer (100cqw = the seek's width), in whole pixels:
    the knob is drawn once and moved whole. At a fraction of a pixel its circle edge blurs smoothly across while the
@@ -967,7 +967,7 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 .progress--xfer::after {
   content: ""; position: absolute; top: 0; bottom: 0; left: -12px; width: 12px; pointer-events: none;
   background: linear-gradient(90deg, transparent, var(--bg)); transform: translateX(calc(var(--p, 0) * 100cqw));
-  animation: xfer-edge 1.4s ease-in-out infinite alternate; --loop-fps: 20;
+  animation: xfer-edge 1.4s ease-in-out infinite alternate; --loop-fps: 20; --loop-holds: no;
 }
 .progress--failed > i { background: var(--down); }
 
@@ -975,7 +975,7 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
    Skeletons (shown after 150 ms; one sheen sweep loop, none in reduced motion)
    ===================================================================== */
 .skel { position: relative; overflow: hidden; background: var(--skel); border-radius: var(--r-thumb); animation: skel-in 1ms 150ms both; }
-.skel::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, var(--skel-hi), transparent); transform: translateX(-100%); animation: sheen 1.4s ease-in-out infinite; --loop-fps: 30; }
+.skel::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, var(--skel-hi), transparent); transform: translateX(-100%); animation: sheen 1.4s ease-in-out infinite; --loop-fps: 30; --loop-holds: no; }
 .skel--text { height: 12px; border-radius: 6px; }
 .skel--title { height: 16px; border-radius: 8px; }
 .skel--chip { height: 24px; width: 96px; border-radius: var(--r-pill); }
@@ -1414,9 +1414,11 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 /* =====================================================================
    Keyframes (loops pause when the document is hidden: :root.is-hidden). A loop that never ends names the rate it
    changes at, --loop-fps on what it animates (app.js steps it there, on the page's shared beat; docs/themes.md,
-   Drawing cheaply): its own, never inherited from a parent's
+   Drawing cheaply): its own, never inherited from a parent's. Such a loop holds still while :root.is-still, unless it
+   shows something happening (a spinner, a loading sheen, a transfer: --loop-holds: no)
    ===================================================================== */
 @property --loop-fps { syntax: "<number>"; inherits: false; initial-value: 0; }
+@property --loop-holds { syntax: "yes | no"; inherits: false; initial-value: yes; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes xfer-edge { from { opacity: .15; } to { opacity: .7; } }
 @keyframes breathe { to { transform: scaleY(.82); } }

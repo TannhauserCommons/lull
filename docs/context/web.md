@@ -446,6 +446,14 @@ A bigger window reveals more; nothing is stretched. Layout is CSS: container que
     and WebView2 draw their native bar there, so those are only set for Firefox.
   - Each design adds its own wide-screen touches in its `design` layer, using the same `data-size` and container
     names.
+  - Loops (app.js, docs/themes.md "Drawing cheaply"): a loop that never ends and names `--loop-fps` is stepped to that
+    rate on one shared beat (effect-level `steps()`, its easing kept), so it draws as many frames a second whatever the
+    screen's refresh rate. `App.still(reason, on)` holds every such loop still (playback rate 0, so CSS keeps its own
+    play-state) while any reason holds, and sets `:root.is-still`; a loop that shows progress sets
+    `--loop-holds: no`. The one reason so far is the device pref `pauseInactive` ("Pause animations when lull isn't
+    the active window", off by default): the window has no focus (`blur`, `focus`, `document.hasFocus()`), in the
+    desktop app and a browser, never on Android. `.sky-specks` is absolute, not fixed, so it isn't a window-sized
+    compositor layer forcing the app over it onto another.
 
 ### Equaliser
 

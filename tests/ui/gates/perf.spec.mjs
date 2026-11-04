@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
-import { designs, ids, openScreen, restyleFanOut } from './lib.mjs';
+import { designs, ids, openScreen, restyleFanOut, traced } from './lib.mjs';
 import * as S from './scenarios.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -66,6 +66,41 @@ for (const design of designs) {
 
 test.describe('lull', () => {
   const o = opts('lull');
+
+  // "Pause animations when lull isn't the active window" (Settings › Appearance): off by default, so a window behind
+  // another keeps its loops; on, the decorative loops hold still while the window has no focus (no frames drawn), a
+  // spinner keeps going, and all of it moves again with focus back. The window's focus is played by document.hasFocus
+  // and the window's blur and focus events, as the desktop app's webview and a browser send them
+  test('decorative loops hold still while lull is not the active window, only when asked', async ({ browser, page }) => {
+    await openScreen(page, '/home', { design: 'skydeck', theme: 'night' });
+    await page.evaluate(() => { const s = document.createElement('span'); s.className = 'spin-ring'; s.style.cssText = 'position:fixed;left:8px;bottom:8px'; s.id = 'gate-spin'; document.body.appendChild(s); });
+    await page.waitForTimeout(500);
+    const focus = (on) => page.evaluate((on) => { document.hasFocus = () => on; dispatchEvent(new Event(on ? 'focus' : 'blur')); }, on);
+    const state = () => page.evaluate(() => {
+      const loops = document.getAnimations().filter((a) => a.effect && a.effect.getTiming().iterations === Infinity && a.playState === 'running');
+      const held = (sel) => loops.filter((a) => a.effect.target.matches(sel)).map((a) => a.playbackRate);
+      return { still: document.documentElement.classList.contains('is-still'), sky: held('.sky-specks'), spinner: held('#gate-spin') };
+    });
+    const drawn = async () => (await traced(browser, page, () => page.waitForTimeout(2000), { drawn: true })).drawn;
+    const defaults = await page.evaluate(() => App.prefs().pauseInactive);
+    expect(defaults, 'the setting is off by default').toBe(false);
+    await focus(false);
+    let st = await state();
+    expect(st.still, 'off: nothing holds still while another window is active').toBe(false);
+    expect(await drawn(), 'off: the loops draw while another window is active').toBeGreaterThan(10);
+    await page.evaluate(() => App.setPref('pauseInactive', true));
+    st = await state();
+    expect(st.still, 'on: lull inactive, the loops hold still').toBe(true);
+    expect(st.sky, 'on: the sky twinkle holds').toEqual([0]);
+    expect(st.spinner, 'on: a spinner keeps going').toEqual([1]);
+    await page.evaluate(() => document.getElementById('gate-spin').remove());
+    expect(await drawn(), 'on: frames drawn in 2 s while lull is inactive').toBeLessThanOrEqual(2);
+    await focus(true);
+    st = await state();
+    expect(st.still, 'on: lull active again, nothing holds').toBe(false);
+    expect(st.sky, 'on: the sky twinkles again').toEqual([1]);
+    expect(await drawn(), 'on: the loops draw again with focus back').toBeGreaterThan(10);
+  });
 
   test('startup', async ({ browser, page }) => {
     const s = await S.startup(browser, page, o);

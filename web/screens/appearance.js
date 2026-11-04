@@ -1,5 +1,5 @@
 /* screens/appearance.js.
-   Settings > Appearance: design, theme, motion, text size, the desktop app's see-through window (LullDesktop.glass) and
+   Settings > Appearance: design, theme, motion (and pausing animations while lull isn't the active window), text size, the desktop app's see-through window (LullDesktop.glass) and
    the layout's reset, all per device (App.setPref); the
    listener's own themes (import by drag and drop, export, delete) and the way into Theme Studio (designs/studio.js,
    ADR-0004, docs/themes.md); Classic mode's group, which screens/skins.js builds (App.classicSettings). Live reload
@@ -19,6 +19,7 @@
   custom['device.theme'] = { get: function () { return App.prefs().theme; }, set: function (v) { App.setPref('theme', v === 'system' ? null : v); } };
   custom['device.motion'] = { get: function () { return App.prefs().motion; }, set: function (v) { App.setPref('motion', v); } };
   custom['device.textSize'] = { get: function () { return App.prefs().textSize; }, set: function (v) { App.setPref('textSize', v); } };
+  custom['device.pauseInactive'] = { get: function () { return App.prefs().pauseInactive; }, set: function (v) { App.setPref('pauseInactive', !!v); } };
 
   /* the desktop app's see-through window (app/src/desktop/glass.rs): the listener's switch, stored by the app on this
      computer, and what the window shows now. An app older than the switch has no row. desktop.js loads after this file,
@@ -94,6 +95,7 @@
       ${row('Theme', 'Match system follows your device. T switches day and night anywhere.', choice('device.theme', 'Theme', [['system', 'Match system'], ['day', 'Day'], ['night', 'Night']]))}
       ${glassRow()}
       ${row('Motion', 'Reduced swaps slides and loops for quick fades. Full ignores the system setting.', choice('device.motion', 'Motion', [['system', 'Match system'], ['reduce', 'Reduced'], ['full', 'Full']]))}
+      ${window.LullNative ? '' : K.switchRow('device.pauseInactive', 'Pause animations when ' + App.product + ' isn\'t the active window', 'Twinkles, the sky and other decoration hold still while you use another window, even one beside it. Spinners and progress keep moving. This device only.')}
       ${row('Text size', 'Scales all text and spacing on this device.', choice('device.textSize', 'Text size', [[90, 'Smaller'], [100, 'Default'], [112, 'Larger'], [125, 'Largest']], 'sys-seg--4'))}
       ${group('layout')}
       ${row('Reset layout', 'Puts the side panel, the Now Playing column, and side-by-side search back as they came. This device only.', html`<button class="btn btn--sm" data-act="layout-reset">${icon('undo', null, 'ic-16')}Reset layout</button>`)}

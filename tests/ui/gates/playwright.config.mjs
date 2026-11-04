@@ -1,5 +1,5 @@
 // The UI gates: performance budgets, key screens against their goldens, and accessibility, all on the fixture hub
-// (../fixture-hub), so they need only Node and Chromium: `mise run check:ui`. docs/context/quality.md#ui-gates.
+// (../fixture-hub), so they need only Node, Chromium and WebKit: `mise run check:ui`. docs/context/quality.md#ui-gates.
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from '@playwright/test';
@@ -49,6 +49,9 @@ export default defineConfig({
     { name: 'now', testMatch: 'now.spec.mjs', fullyParallel: true },
     // long lists: every row works, drawn or not (a fixture hub of its own: it likes, downloads and reorders)
     { name: 'lists', testMatch: 'lists.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
+    // loops at their own rate and held when asked, in Chromium and in WebKit (Linux's WebKitGTK app, Safari)
+    { name: 'loops', testMatch: 'loops.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
+    { name: 'loops-webkit', testMatch: 'loops.spec.mjs', fullyParallel: true, use: { browserName: 'webkit', viewport: { width: 1440, height: 900 }, launchOptions: {} } },
   ],
 });
 

@@ -309,9 +309,10 @@
     App.emit('prefs', p);
   }
   App.prefs = function () {
-    return { theme: prefs.theme || 'system', motion: prefs.motion || 'system', textSize: +prefs.textSize || 100, design: Designs.current };
+    return { theme: prefs.theme || 'system', motion: prefs.motion || 'system', textSize: +prefs.textSize || 100, design: Designs.current, pauseInactive: !!prefs.pauseInactive };
   };
-  /* keys: theme ('day'|'night'|null), motion ('reduce'|'full'|'system'), textSize (90|100|112|125), design (name) */
+  /* keys: theme ('day'|'night'|null), motion ('reduce'|'full'|'system'), textSize (90|100|112|125), design (name),
+     pauseInactive (true: decorative loops hold still while lull isn't the active window) */
   App.setPref = function (key, value, temporary) {
     if (key === 'design') { App.setDesign(value, temporary); return; }
     prefs[key] = value; applyPrefs(prefs);
@@ -4370,6 +4371,9 @@
     var fps = parseFloat(getComputedStyle(t, e.pseudoElement).getPropertyValue('--loop-fps'));
     if (!(fps > 0)) return;
     if (!paced.has(a)) paced.set(a, e.getTiming().delay);
+    /* held still while the page asks it (below), unless it shows something happening (--loop-holds: no) */
+    if (root.classList.contains('is-still') && getComputedStyle(t, e.pseudoElement).getPropertyValue('--loop-holds').trim() !== 'no') { a.playbackRate = 0; return; }
+    if (a.playbackRate === 0) a.playbackRate = 1;
     var dur = e.getTiming().duration, n = Math.max(1, Math.round(dur / (Math.max(1, Math.round(1000 / fps / BEAT)) * BEAT)));
     e.updateTiming({ easing: 'steps(' + n + ')' });
     /* on the beat: the first change lands on a whole step of the page's clock (moved by less than one step) */
@@ -4388,6 +4392,28 @@
   /* a browser without them (an old Safari) runs loops as they are */
   function paceAll() { if (window.CSSAnimation && document.getAnimations) document.getAnimations().forEach(pace); }
   App.on('ready', paceAll);   // loops already running before this page's script
+
+  /* decorative loops hold still (:root.is-still) while any reason asks: App.still(reason, on), each reason named by
+     what asks (the listener's "pause when lull isn't the active window" below; a design or a later setting adds its own).
+     One rule for every trigger: a loop that names a rate holds at its playback rate, so its own CSS (a ticker paused on
+     hover, every loop in a hidden page) keeps the say, and a design's entrances still finish. :root.is-still is a hook
+     too, for a theme that wants to still more (docs/themes.md, Drawing cheaply) */
+  var stillFor = {};
+  App.still = function (reason, on) {
+    if (on) stillFor[reason] = true; else delete stillFor[reason];
+    var still = Object.keys(stillFor).length > 0;
+    if (still === root.classList.contains('is-still')) return;
+    root.classList.toggle('is-still', still);
+    paceAll();
+  };
+  /* "Pause animations when lull isn't the active window" (Settings › Appearance, this device, off by default): the
+     window losing focus, to another app or another window, in the desktop app and in a browser. Not on Android, where
+     an app in sight is the active one */
+  function inactive() { App.still('inactive', !!prefs.pauseInactive && !window.LullNative && !document.hasFocus()); }
+  window.addEventListener('blur', inactive);
+  window.addEventListener('focus', inactive);
+  App.on('prefs', inactive);
+  inactive();
 
   /* a link shared to the Android app ("Share", lull://open?link=…) waits in the shell until this page takes it: at boot,
      and when the shell nudges a running page. It opens as #/open (discover.js). */
