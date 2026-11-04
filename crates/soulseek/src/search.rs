@@ -720,13 +720,20 @@ impl Searches {
     /// handed out in the catalog, and builds the result rows with their entities.
     async fn results(&self, merged: Merged) -> Result<(Vec<Row>, Entities)> {
         let Merged { songs, folders, .. } = merged;
-        self.sources
-            .add(songs.iter().map(|(id, s)| (id.clone(), s.sources.clone())).collect());
+        let songs = by_song(songs);
+        // Every folder's id for a song plays its copies: an album row lists its own.
+        self.sources.add(
+            songs
+                .iter()
+                .flat_map(|s| s.ids().map(|id| (id.clone(), s.song.sources.clone())))
+                .collect(),
+        );
 
-        let mut rows: Vec<(Song, Ranked)> = songs
-            .into_values()
+        let mut rows: Vec<(Same, Ranked)> = songs
+            .into_iter()
             .filter_map(|s| {
                 let best = s
+                    .song
                     .sources
                     .iter()
                     .cloned()
@@ -735,11 +742,17 @@ impl Searches {
                 Some((s, best))
             })
             .collect();
-        rows.sort_by(|(a, ra), (b, rb)| b.sources.len().cmp(&a.sources.len()).then(rb.score.cmp(&ra.score)));
+        rows.sort_by(|(a, ra), (b, rb)| {
+            b.song
+                .sources
+                .len()
+                .cmp(&a.song.sources.len())
+                .then(rb.score.cmp(&ra.score))
+        });
         rows.truncate(MAX_SONGS);
         let albums = albums(folders, &self.sources);
 
-        let mut wanted: Vec<TrackId> = rows.iter().map(|(s, _)| s.track.id.clone()).collect();
+        let mut wanted: Vec<TrackId> = rows.iter().flat_map(|(s, _)| s.ids().cloned()).collect();
         wanted.extend(albums.iter().flat_map(|a| a.album.track_ids.iter().cloned()));
         // Without the library (down, or not wired yet) rows simply carry no duplicate notes.
         let saved: HashMap<TrackId, Track> = match self.library.get() {
@@ -752,11 +765,12 @@ impl Searches {
 
         let mut entities = Entities::default();
         let mut out = Vec::with_capacity(rows.len() + albums.len());
-        for (mut song, best) in rows {
+        for (same, best) in rows {
+            // A saved copy under any folder's id is this song saved.
+            let saved_copy = same.ids().find_map(|id| saved.get(id));
+            let mut song = same.song;
             song.track.file = Some(best.source.facts.clone());
-            let dup = saved
-                .get(&song.track.id)
-                .map(|t| dup_kind(&best.source.facts, t.file.as_ref()));
+            let dup = saved_copy.map(|t| dup_kind(&best.source.facts, t.file.as_ref()));
             out.push(Row::Track {
                 track_id: song.track.id.clone(),
                 sources: song.sources.len(),
@@ -957,6 +971,57 @@ pub fn merge(responses: &[slskd::Response]) -> Merged {
     Merged { songs, folders, files }
 }
 
+/// One song from several folders and peers: "Creep" in Pablo Honey, in "1993 pablo honey" and on
+/// a best-of are one row (live, a peer's folder names made 9 rows of it among 182). A song's
+/// `TrackId` names its album, so each folder's copy has an id of its own; `also` holds the others'.
+struct Same {
+    song: Song,
+    also: Vec<TrackId>,
+}
+
+impl Same {
+    fn ids(&self) -> impl Iterator<Item = &TrackId> {
+        std::iter::once(&self.song.track.id).chain(&self.also)
+    }
+}
+
+/// The songs as one per song: files are the same song when `matching` says so (artist and title
+/// loosely, a slip allowed, lengths within 6 s; a remix or acoustic take is another), named
+/// after the copy the most peers share. A peer counts once per song, as within a folder.
+fn by_song(songs: HashMap<TrackId, Song>) -> Vec<Same> {
+    let mut songs: Vec<Song> = songs.into_values().collect();
+    songs.sort_by(|a, b| {
+        b.sources
+            .len()
+            .cmp(&a.sources.len())
+            .then_with(|| a.track.id.0.cmp(&b.track.id.0))
+    });
+    let mut same: Vec<Same> = Vec::new();
+    // Only songs of the same loose title, spacing aside, are compared.
+    let mut by_title: HashMap<String, Vec<usize>> = HashMap::new();
+    for song in songs {
+        let key: String = lull_core::ids::loose_title(&song.track.title).split(' ').collect();
+        let titled = by_title.entry(key).or_default();
+        let wanted = |s: &Same| Wanted::of(&s.song.track).matches(&song.track, song.track.duration, "");
+        match titled.iter().copied().find(|&i| wanted(&same[i])) {
+            Some(i) => {
+                let s = &mut same[i];
+                for src in song.sources {
+                    if !s.song.sources.iter().any(|have| have.user == src.user) {
+                        s.song.sources.push(src);
+                    }
+                }
+                s.also.push(song.track.id);
+            }
+            None => {
+                titled.push(same.len());
+                same.push(Same { song, also: Vec::new() });
+            }
+        }
+    }
+    same
+}
+
 fn song_of(r: &slskd::Response, f: &slskd::File) -> Option<(Track, Source)> {
     let ext = files::extension(&f.filename)?;
     let facts = files::facts(
@@ -1103,6 +1168,62 @@ mod tests {
     use axum::routing::{get, post};
 
     type Test = std::result::Result<(), Box<dyn std::error::Error>>;
+
+    #[test]
+    fn one_song_in_many_folders_is_one_row() {
+        // Live, "radiohead creep" listed Radiohead - Creep 9 times, once per folder name.
+        let file = |path: &str, length: u32| slskd::File {
+            filename: path.into(),
+            size: 30_000_000,
+            bit_rate: Some(1_000),
+            bit_depth: Some(16),
+            sample_rate: Some(44_100),
+            length: Some(length),
+            is_variable_bit_rate: None,
+        };
+        let peer = |name: &str, files: Vec<slskd::File>| slskd::Response {
+            username: name.into(),
+            has_free_upload_slot: true,
+            queue_length: 0,
+            upload_speed: 1_000_000,
+            files,
+        };
+        let responses = [
+            peer(
+                "a",
+                vec![
+                    file("music\\Radiohead\\Pablo Honey\\02 Creep.flac", 238),
+                    file("music\\Radiohead\\Pablo Honey\\03 How Do You.flac", 132),
+                ],
+            ),
+            peer("b", vec![file("Music\\Radiohead\\Unknown Album\\Creep.flac", 239)]),
+            peer(
+                "c",
+                vec![
+                    file("share\\Radiohead\\The Best Of\\01 Creep.flac", 237),
+                    file("share\\Radiohead\\The Best Of\\05 Creep (Acoustic).flac", 258),
+                    file("share\\Radiohead\\Itch\\04 Creep (Live).flac", 300),
+                ],
+            ),
+        ];
+        let merged = merge(&responses);
+        let creeps = |titles: Vec<&str>| titles.iter().filter(|t| **t == "Creep").count();
+        assert_eq!(
+            creeps(merged.songs.values().map(|s| s.track.title.as_str()).collect()),
+            3,
+            "each folder's copy has an id of its own"
+        );
+        let songs = by_song(merged.songs);
+        let titles: Vec<&str> = songs.iter().map(|s| s.song.track.title.as_str()).collect();
+        assert_eq!(creeps(titles.clone()), 1, "{titles:?}");
+        assert_eq!(
+            songs.len(),
+            4,
+            "the acoustic and live takes are other songs: {titles:?}"
+        );
+        let creep = songs.iter().find(|s| s.song.track.title == "Creep");
+        assert_eq!(creep.map(|s| (s.song.sources.len(), s.ids().count())), Some((3, 3)));
+    }
 
     /// slskd as seen live: it says `Completed` before its last step writes the responses. With
     /// `finalizes` false that step never succeeds ("Failed to finalize search").
