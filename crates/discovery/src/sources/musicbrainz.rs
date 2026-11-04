@@ -138,6 +138,22 @@ impl MusicBrainz {
 
     /// The artist called `name`, when MusicBrainz is sure enough.
     pub async fn find_artist(&self, name: &str) -> Result<Option<ArtistInfo>> {
+        Ok(self.named(name).await?.into_iter().next())
+    }
+
+    /// The MBID of the one artist MusicBrainz is sure is called `name`: `None` when it knows
+    /// none, or several (a namesake's photo is worse than none).
+    pub async fn sole_artist(&self, name: &str) -> Result<Option<String>> {
+        let mut named = self.named(name).await?.into_iter();
+        Ok(match (named.next(), named.next()) {
+            (Some(only), None) => only.mbid,
+            _ => None,
+        })
+    }
+
+    /// The artists MusicBrainz scores as strong matches for `name` and calls exactly that, best
+    /// first. Kept a month.
+    async fn named(&self, name: &str) -> Result<Vec<ArtistInfo>> {
         self.switch.check()?;
         #[derive(Deserialize)]
         struct Found {
@@ -149,7 +165,7 @@ impl MusicBrainz {
             name: String,
             score: Option<u8>,
         }
-        let key = format!("mb:find-artist:{}", normalize_artist(name));
+        let key = format!("mb:artists-named:{}", normalize_artist(name));
         self.cache
             .get(key, 30 * DAY, || async {
                 let found: Found = self
@@ -162,11 +178,12 @@ impl MusicBrainz {
                     .artists
                     .into_iter()
                     .filter(|a| a.score.unwrap_or(0) >= MIN_SCORE)
-                    .find(|a| normalize_artist(&a.name) == normalize_artist(name))
+                    .filter(|a| normalize_artist(&a.name) == normalize_artist(name))
                     .map(|a| ArtistInfo {
                         mbid: Some(a.id),
                         name: a.name,
-                    }))
+                    })
+                    .collect())
             })
             .await
     }

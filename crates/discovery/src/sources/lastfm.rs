@@ -7,6 +7,7 @@ use std::sync::Arc;
 use lull_core::config::Secret;
 use lull_core::http::{self, Http};
 use lull_core::ids::{normalize, normalize_artist};
+use lull_core::pictures::LASTFM_IMAGES;
 use lull_core::{Error, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -237,6 +238,23 @@ impl LastFm {
             .await
     }
 
+    /// An album's cover by name, as a picture source (`lull_core::pictures::sized`): Last.fm's
+    /// own picture of it, `None` when it has none. Kept a month.
+    pub async fn album_cover(&self, artist: &str, title: &str) -> Result<Option<String>> {
+        let key = format!("lfm:album-cover:{}:{}", normalize_artist(artist), normalize(title));
+        self.cache
+            .get(key, 30 * DAY, || async {
+                let body = self
+                    .call(
+                        "album.getInfo",
+                        &[("artist", artist), ("album", title), ("autocorrect", "1")],
+                    )
+                    .await?;
+                Ok(cover_source(&body))
+            })
+            .await
+    }
+
     /// A paced read. "Not found" comes back as an empty object, so callers see no data.
     async fn call(&self, method: &str, params: &[(&str, &str)]) -> Result<Value> {
         let call = self.breaker.call()?;
@@ -270,6 +288,20 @@ impl LastFm {
         .await;
         call.end(answer)
     }
+}
+
+/// The album's largest picture in an `album.getInfo` answer, with its size as `{size}`. Last.fm's
+/// grey star stands for "no picture".
+pub fn cover_source(body: &Value) -> Option<String> {
+    const NO_PICTURE: &str = "2a96cbd8b46e442fc41c2b86b821562f";
+    let largest = list(&body["album"]["image"])
+        .iter()
+        .rev()
+        .filter_map(|i| i["#text"].as_str().map(str::to_owned))
+        .find(|u| !u.is_empty())?;
+    let rest = largest.strip_prefix(LASTFM_IMAGES)?;
+    let file = rest.rsplit('/').next()?;
+    (!file.starts_with(NO_PICTURE)).then(|| format!("{LASTFM_IMAGES}{{size}}/{file}"))
 }
 
 /// Last.fm gives a single item as an object and several as an array.
@@ -419,7 +451,27 @@ fn plain_text(html: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_disambiguation, plain_text};
+    use super::{cover_source, is_disambiguation, plain_text};
+
+    #[test]
+    fn an_albums_cover_is_its_largest_picture_at_any_size_and_the_star_is_none() {
+        // Live (2026-11-04), album.getInfo listed 34s to mega, the largest at 300x300; the CDN
+        // serves 174s, 300x300 and the original from one file name.
+        let body = serde_json::json!({ "album": { "image": [
+            { "size": "small", "#text": "https://lastfm.freetls.fastly.net/i/u/34s/6a5c.png" },
+            { "size": "extralarge", "#text": "https://lastfm.freetls.fastly.net/i/u/300x300/6a5c.png" },
+            { "size": "mega", "#text": "" },
+        ] } });
+        assert_eq!(
+            cover_source(&body).as_deref(),
+            Some("https://lastfm.freetls.fastly.net/i/u/{size}/6a5c.png")
+        );
+        let star = serde_json::json!({ "album": { "image": [
+            { "size": "extralarge", "#text": "https://lastfm.freetls.fastly.net/i/u/300x300/2a96cbd8b46e442fc41c2b86b821562f.png" },
+        ] } });
+        assert_eq!(cover_source(&star), None);
+        assert_eq!(cover_source(&serde_json::json!({})), None, "not found");
+    }
 
     #[test]
     fn summaries_lose_the_read_more_link() {

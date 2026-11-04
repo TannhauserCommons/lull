@@ -127,8 +127,6 @@ pub struct Service {
     /// Deezer, or iTunes plus Deezer's artists where Deezer is closed.
     catalog: search::catalog::Catalog,
     searches: search::Searches,
-    /// Pictures for `/api/catalog/art`: cache, fetches, the warm queue.
-    pictures: Arc<art::Pictures>,
     /// Artist photos waiting to be vetted.
     photos: artist::photo::Queue,
     /// Only with Last.fm API credentials configured; read through `lastfm()`.
@@ -154,7 +152,6 @@ pub async fn start(
     youtube: Arc<dyn Youtube>,
 ) -> Result<Arc<Service>> {
     let cache = Cache::new(ctx.db.clone());
-    let (photos, photo_queue) = artist::photo::Queue::new();
     cache.prune().await?;
     let svc = Arc::new(Service {
         store: Store::new(ctx.db.clone(), library),
@@ -173,8 +170,7 @@ pub async fn start(
         wikidata: Wikidata::new(ctx.http.clone(), cache.clone()),
         catalog: search::catalog::Catalog::default(),
         searches: search::Searches::default(),
-        pictures: art::Pictures::new(ctx, cache.clone()),
-        photos,
+        photos: artist::photo::Queue::default(),
         lastfm: ctx
             .config
             .lastfm
@@ -189,8 +185,10 @@ pub async fn start(
         adventurousness: RwLock::new(DEFAULT_STEER),
         ctx: ctx.clone(),
     });
+    ctx.pictures.set_finder(Arc::new(art::Covers(Arc::downgrade(&svc))));
     ctx.spawn(listen(svc.clone(), ctx.bus.subscribe()));
-    ctx.spawn(artist::photo::work(svc.clone(), photo_queue));
+    ctx.spawn(artist::photo::work(svc.clone()));
+    ctx.spawn(artist::photo::follow_screens(svc.clone()));
     ctx.spawn(feed::keep_fresh(svc.clone()));
     ctx.spawn(search::catalog::keep_choosing(svc.clone()));
     ctx.spawn(search::resolve::work(svc.clone()));

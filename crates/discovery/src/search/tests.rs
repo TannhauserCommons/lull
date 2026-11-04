@@ -366,12 +366,15 @@ fn deezer_answers_become_rows_with_pictures_and_kinds() {
     );
     assert!(artists[0].popularity > artists[1].popularity);
     assert_eq!(
-        crate::art::sized(artists[0].image.as_deref().unwrap_or_default(), 256)
+        lull_core::pictures::sized(artists[0].image.as_deref().unwrap_or_default(), 256)
             .matches("256x256")
             .count(),
         1
     );
-    assert!(crate::art::sized("https://coverartarchive.org/release-group/x/front-{size}", 96).ends_with("front-250"));
+    assert!(
+        lull_core::pictures::sized("https://coverartarchive.org/release-group/x/front-{size}", 96)
+            .ends_with("front-250")
+    );
 }
 
 #[test]

@@ -22,7 +22,6 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::Service;
-use crate::art;
 use crate::open::{self, Item};
 use crate::sources::cache::DAY;
 use crate::sources::itunes::{Entity, Listing};
@@ -246,7 +245,7 @@ async fn known_picture(svc: &Service, shared: &Shared) -> Result<Option<String>>
             svc.ctx.db.call(move |c| crate::artist::photo::image_of(c, &id)).await?
         }
     };
-    Ok(source.map(|s| art::sized(&s, ARTWORK_PX)))
+    Ok(source.map(|s| lull_core::pictures::sized(&s, ARTWORK_PX)))
 }
 
 /// Last.fm's page for it: `/music/<artist>[/_/<track> | /<album>]`, each name one encoded

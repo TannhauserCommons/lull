@@ -9,18 +9,22 @@
 //! Without either, the artist has no photo and each design draws its own fallback. The verdict
 //! is kept in `discovery_artist_photos` (a photo a month, "none" a week). Only a vetted photo is
 //! ever advertised or served: the picture search records in the catalog may be a cover. An
-//! artist a response names before it is vetted (search, feed, tag pages) is queued (`Queue`),
-//! so its photo shows from a later read.
+//! artist drawn without a photo is reported by the screen it is on (ADR-0033) and queued
+//! (`Queue`): the best-placed are vetted first, a batch at a time, and one that left every
+//! screen is dropped (it is reported again when it comes back). A photo found is announced
+//! (`art.ready` with its `image`), so the pages show it without reading anything again. An
+//! artist without an MBID gets one when MusicBrainz knows exactly one artist of that name, so
+//! Wikidata can be asked.
 
 use std::collections::HashSet;
-use std::path::Path as FsPath;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use lull_core::Result;
 use lull_core::ids::ArtistId;
 use lull_core::model::Artist;
+use lull_core::pictures::Route;
+use lull_core::{Result, catalog};
 use rusqlite::{Connection, OptionalExtension, params};
-use tokio::sync::mpsc;
+use tokio::sync::{Notify, broadcast};
 use tokio::task::JoinSet;
 
 use crate::Service;
@@ -36,8 +40,6 @@ const SAME_BITS: u32 = 10;
 const COVERS: usize = 8;
 /// The size pictures are compared at.
 const PROBE: u32 = 96;
-/// Artists waiting to be vetted; beyond this, a response's artists wait for a later one.
-const QUEUE: usize = 64;
 /// Artists vetted together (one Wikidata query).
 const BATCH: usize = 12;
 
@@ -55,74 +57,108 @@ pub fn image_of(c: &Connection, id: &ArtistId) -> Result<Option<String>> {
 }
 
 /// Artists to vet in the background, and those being vetted, so none is vetted twice at once.
+#[derive(Default)]
 pub struct Queue {
-    tx: mpsc::Sender<Artist>,
-    queued: Mutex<HashSet<ArtistId>>,
+    waiting: Mutex<HashSet<ArtistId>>,
+    arrived: Notify,
+    /// Artists whose page vets them itself (with its covers).
+    held: Mutex<HashSet<ArtistId>>,
     vetting: Mutex<HashSet<ArtistId>>,
 }
 
 impl Queue {
-    pub fn new() -> (Self, mpsc::Receiver<Artist>) {
-        let (tx, rx) = mpsc::channel(QUEUE);
-        let q = Queue {
-            tx,
-            queued: Mutex::default(),
-            vetting: Mutex::default(),
-        };
-        (q, rx)
-    }
-
     /// Keeps `ask` from queuing an artist whose page vets it itself (with its covers).
     pub fn hold(&self, id: &ArtistId) {
-        self.queued
+        self.held
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .insert(id.clone());
     }
 
     pub fn release(&self, id: &ArtistId) {
-        self.queued.lock().unwrap_or_else(PoisonError::into_inner).remove(id);
+        self.held.lock().unwrap_or_else(PoisonError::into_inner).remove(id);
     }
 
-    /// Queues artists no verdict names yet; a full queue drops them until a later response.
-    pub fn ask(&self, artists: Vec<Artist>) {
-        let mut queued = self.queued.lock().unwrap_or_else(PoisonError::into_inner);
-        for a in artists {
-            if queued.contains(&a.id) {
-                continue;
-            }
-            let id = a.id.clone();
-            if self.tx.try_send(a).is_ok() {
-                queued.insert(id);
-            }
-        }
+    /// Queues artists a screen shows without a photo.
+    pub fn ask(&self, artists: impl IntoIterator<Item = ArtistId>) {
+        let held = self.held.lock().unwrap_or_else(PoisonError::into_inner);
+        self.waiting
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend(artists.into_iter().filter(|a| !held.contains(a)));
+        self.arrived.notify_one();
+    }
+
+    /// The best-placed waiting artists, `BATCH` at most; those no screen shows any more go.
+    fn next_batch(&self, rank: impl Fn(&ArtistId) -> Option<lull_core::pictures::Rank>) -> Vec<ArtistId> {
+        let mut waiting = self.waiting.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut ranked: Vec<_> = waiting.iter().filter_map(|id| Some((rank(id)?, id.clone()))).collect();
+        ranked.sort();
+        let batch: Vec<ArtistId> = ranked.into_iter().take(BATCH).map(|(_, id)| id).collect();
+        let keep: HashSet<ArtistId> = waiting
+            .iter()
+            .filter(|id| rank(id).is_some() && !batch.contains(id))
+            .cloned()
+            .collect();
+        *waiting = keep;
+        batch
     }
 }
 
-/// Vets queued artists a batch at a time, for as long as the hub runs.
-pub async fn work(svc: Arc<Service>, mut rx: mpsc::Receiver<Artist>) {
-    while let Some(first) = rx.recv().await {
-        let mut batch = vec![first];
-        while batch.len() < BATCH
-            && let Ok(more) = rx.try_recv()
-        {
-            batch.push(more);
+/// Vets queued artists a batch at a time, best placed on screen first, for as long as the hub
+/// runs.
+pub async fn work(svc: Arc<Service>) {
+    loop {
+        let arrived = svc.photos.arrived.notified();
+        let batch = svc.photos.next_batch(|id| svc.ctx.pictures.rank(id.as_str()));
+        if batch.is_empty() {
+            arrived.await;
+            continue;
         }
-        {
-            let mut queued = svc.photos.queued.lock().unwrap_or_else(PoisonError::into_inner);
-            for a in &batch {
-                queued.remove(&a.id);
+        let artists = svc
+            .ctx
+            .db
+            .call(move |c| {
+                let mut found = Vec::new();
+                for id in &batch {
+                    found.extend(catalog::artist(c, id)?);
+                }
+                Ok(found)
+            })
+            .await;
+        let mut asks = Vec::new();
+        for mut artist in artists.unwrap_or_default() {
+            if artist.musicbrainz_id.is_none() {
+                artist.musicbrainz_id = svc.mb.sole_artist(&artist.name).await.unwrap_or_else(|e| {
+                    tracing::debug!(error = %e, "no MBID for an artist's photo this time");
+                    None
+                });
             }
-        }
-        let asks = batch
-            .into_iter()
-            .map(|artist| Ask {
+            asks.push(Ask {
                 artist,
                 deezer: None,
                 covers: Vec::new(),
-            })
-            .collect();
+            });
+        }
         find(&svc, asks).await;
+    }
+}
+
+/// Queues the artists screens show without a photo (`Shown` size 0), for as long as the hub runs.
+pub async fn follow_screens(svc: Arc<Service>) {
+    let mut rx = svc.ctx.pictures.shown();
+    loop {
+        let shown = match rx.recv().await {
+            Ok(shown) => shown.to_vec(),
+            Err(broadcast::error::RecvError::Lagged(_)) => svc.ctx.pictures.on_screen(),
+            Err(broadcast::error::RecvError::Closed) => return,
+        };
+        svc.photos.ask(
+            shown
+                .into_iter()
+                .filter(|s| s.route == Route::Catalog && s.size == 0 && s.id.starts_with(ArtistId::PREFIX))
+                .map(|s| ArtistId(s.id)),
+        );
     }
 }
 
@@ -256,7 +292,8 @@ async fn photo(svc: &Service, ask: &Ask, wiki: Option<WikiArtist>) -> Option<Opt
     Some(Some(picture))
 }
 
-/// The verdict, kept; the pictures cached for the old source are dropped.
+/// The verdict, kept. When it changed, the pictures cached for the old source go, and a new photo
+/// is announced with its URL.
 async fn record(svc: &Service, id: &ArtistId, image: Option<String>) {
     let (key, stored) = (id.clone(), image.clone());
     let changed = svc
@@ -273,7 +310,10 @@ async fn record(svc: &Service, id: &ArtistId, image: Option<String>) {
         })
         .await;
     match changed {
-        Ok(true) => forget_files(svc.pictures.dir(), id.as_str()).await,
+        Ok(true) => {
+            let url = image.as_deref().map(|source| crate::art::image_url(id, source));
+            svc.ctx.pictures.replaced(id.as_str(), url).await;
+        }
         Ok(false) => {}
         Err(e) => tracing::warn!(error = %e, "could not keep an artist photo verdict"),
     }
@@ -281,8 +321,8 @@ async fn record(svc: &Service, id: &ArtistId, image: Option<String>) {
 
 /// A small copy's difference hash, or `None` when it can't be fetched or read.
 async fn hash_of(svc: &Service, source: &str) -> Option<u64> {
-    let url = crate::art::sized(source, PROBE);
-    match crate::art::fetch(&svc.ctx, &url).await {
+    let url = lull_core::pictures::sized(source, PROBE);
+    match lull_core::pictures::fetch(&svc.ctx.http, &url).await {
         Ok(Some(bytes)) => dhash(&bytes),
         Ok(None) => None,
         Err(e) => {
@@ -308,14 +348,6 @@ pub fn dhash(bytes: &[u8]) -> Option<u64> {
 
 pub fn same_picture(a: u64, b: u64) -> bool {
     (a ^ b).count_ones() <= SAME_BITS
-}
-
-/// Removes every cached size of a picture, and "the source has none".
-pub async fn forget_files(dir: &FsPath, id: &str) {
-    for size in crate::art::SIZES {
-        let _ = tokio::fs::remove_file(dir.join(format!("{id}-{size}"))).await;
-    }
-    let _ = tokio::fs::remove_file(crate::art::none_file(dir, id)).await;
 }
 
 #[cfg(test)]

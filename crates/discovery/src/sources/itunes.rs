@@ -14,7 +14,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use lull_core::http::Http;
-use lull_core::ids::normalize_artist;
+use lull_core::ids::{loose_artist, loose_title, normalize, normalize_artist};
 use lull_core::{Error, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -200,6 +200,48 @@ impl Itunes {
             serde_json::from_value(body).map_err(|e| Error::upstream(SERVICE, format!("unexpected answer: {e}")))?;
         Ok(page.results)
     }
+}
+
+impl Itunes {
+    /// An album's cover by name, as a picture source (`{size}x{size}bb`), from the calls searches
+    /// leave spare (it waits behind everything a listener is looking at); `None` when the store
+    /// has no album of that artist and title. Kept a month.
+    pub async fn album_cover(&self, artist: &str, title: &str) -> Result<Option<String>> {
+        let key = format!(
+            "it:album-cover:{}:{}:{}",
+            self.country,
+            normalize_artist(artist),
+            normalize(title)
+        );
+        if let Some(found) = self.cache.fresh(key.clone(), 30 * DAY).await? {
+            return Ok(found);
+        }
+        self.wait_turn(Need::Background).await?;
+        let term = format!("{artist} {title}");
+        let body: Value = self
+            .http
+            .json(SERVICE, |c| {
+                c.get(API).query(&[
+                    ("term", term.as_str()),
+                    ("entity", "album"),
+                    ("limit", "5"),
+                    ("country", self.country.as_str()),
+                ])
+            })
+            .await?;
+        let found = cover_of(albums(body)?, artist, title);
+        self.cache.put(key, &found).await?;
+        Ok(found)
+    }
+}
+
+/// The cover of the album that is this artist's and this title, among search's albums.
+fn cover_of(found: Found, artist: &str, title: &str) -> Option<String> {
+    found
+        .albums
+        .into_iter()
+        .find(|a| loose_artist(&a.artist) == loose_artist(artist) && loose_title(&a.title) == loose_title(title))
+        .and_then(|a| a.art)
 }
 
 impl Itunes {
