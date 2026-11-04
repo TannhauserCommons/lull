@@ -36,6 +36,13 @@ pub struct StreamEvent {
     /// The transfer's speed, bytes a second.
     #[serde(default)]
     pub speed: Option<f64>,
+    /// The parts of the song the hub has, as fractions: one from 0 until a seek ahead (ADR-0014).
+    #[serde(default)]
+    pub ranges: Option<Vec<(f64, f64)>>,
+    /// A seek further than this many seconds of transfer away is fetched from there; none while
+    /// the hub can't start the transfer mid-file.
+    #[serde(default)]
+    pub seek_ahead_s: Option<f64>,
     #[serde(default)]
     pub attempt: Option<u32>,
     #[serde(default)]

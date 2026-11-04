@@ -192,45 +192,66 @@ pub fn radio(
 /// Kept back from what has arrived, so the output doesn't stall the moment a seek lands.
 pub const SEEK_MARGIN: f64 = 0.01;
 
-/// How far a seek may go (0-1 of the song): all of it, or for a Soulseek song still arriving, what
-/// the output holds (`buffered`, ranges of 0-1) or what the transfer delivered, less the margin.
-pub fn seek_limit(soulseek: bool, buffered: &[(f64, f64)], received: f64) -> f64 {
+/// What of the song can play now (parts of 0-1): all of it, or for a Soulseek song still
+/// arriving, the parts the hub has (`arrived`: one from 0 until a seek ahead, ADR-0014) and what the
+/// output holds (`buffered`), merged, each less the margin at its end (a part reaching the end
+/// keeps it).
+pub fn playable(soulseek: bool, arrived: &[(f64, f64)], buffered: &[(f64, f64)]) -> Vec<(f64, f64)> {
     if !soulseek {
-        return 1.0;
+        return vec![(0.0, 1.0)];
     }
-    let end = buffered.iter().fold(0.0, |m: f64, r| m.max(r.1));
-    end.max(if received >= 1.0 { 1.0 } else { received - SEEK_MARGIN })
+    let mut all: Vec<(f64, f64)> = arrived.iter().chain(buffered).copied().collect();
+    all.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut merged: Vec<(f64, f64)> = Vec::new();
+    for r in all {
+        match merged.last_mut() {
+            Some(last) if r.0 <= last.1 => last.1 = last.1.max(r.1),
+            _ => merged.push(r),
+        }
+    }
+    merged
+        .into_iter()
+        .map(|(a, b)| (a, if b >= 1.0 { 1.0 } else { b - SEEK_MARGIN }))
+        .filter(|(a, b)| b > a)
+        .collect()
 }
 
 /// What a seek does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SeekHow {
-    /// Inside the limit: it lands now.
+    /// Inside what can play: it lands now.
     Now,
-    /// Past it, with Settings > Playback's "Jump to where I seek once it has downloaded" on: the
-    /// song plays on and the seek is kept, to land once the limit reaches it.
+    /// Past it, where the hub can start the transfer (`aheadS`) and the transfer running would
+    /// take longer to get there: it lands now, and the hub fetches from the byte asked for.
+    Fetches,
+    /// Otherwise: the song plays on and the seek is kept, to land once that far has arrived.
     Waits,
-    /// Past it with that off: it lands just inside the limit.
-    Snapped,
 }
 
-/// Where a seek to `fraction` goes, and how (`waits`: the setting above).
-pub fn seek_to(fraction: f64, limit: f64, waits: bool) -> (f64, SeekHow) {
+/// Where a seek to `fraction` goes, and how: `wait_s` is how long the transfer running takes to
+/// get there (unknown counts as longer), `ahead_s` the hub's `seekAheadS`.
+pub fn seek_to(fraction: f64, playable: &[(f64, f64)], wait_s: Option<f64>, ahead_s: Option<f64>) -> (f64, SeekHow) {
     let fraction = fraction.clamp(0.0, 1.0);
-    if fraction <= limit {
-        (fraction, SeekHow::Now)
-    } else if waits {
-        (fraction, SeekHow::Waits)
+    let how = if playable.iter().any(|r| r.0 <= fraction && fraction <= r.1) {
+        SeekHow::Now
+    } else if ahead_s.is_some_and(|ahead| wait_s.is_none_or(|wait| wait > ahead)) {
+        SeekHow::Fetches
     } else {
-        ((limit - 0.004).max(0.0), SeekHow::Snapped)
-    }
+        SeekHow::Waits
+    };
+    (fraction, how)
 }
 
-/// About how long a kept seek to `fraction` waits, in whole seconds rounded up: the bytes still to
-/// come before it lands (`received` of `size` so far), at the transfer's `speed` in bytes a second;
-/// none while the speed isn't known.
-pub fn seek_wait_s(fraction: f64, received: f64, size: f64, speed: f64) -> Option<f64> {
-    let left = ((fraction + SEEK_MARGIN).min(1.0) - received) * size;
+/// About how long the transfer takes to bring a seek at `fraction` (and the margin), in whole
+/// seconds rounded up: the bytes from the end of the part arriving toward it, at the transfer's
+/// `speed` in bytes a second; none while the speed isn't known.
+pub fn seek_wait_s(fraction: f64, arrived: &[(f64, f64)], size: f64, speed: f64) -> Option<f64> {
+    let to = (fraction + SEEK_MARGIN).min(1.0);
+    let from = arrived
+        .iter()
+        .filter(|r| r.0 <= to)
+        .fold(0.0, |m: f64, r| m.max(r.1.min(to)));
+    let left = (to - from) * size;
     if left <= 0.0 {
         return Some(0.0);
     }
@@ -393,7 +414,7 @@ mod tests {
             "crossfadeLengthS",
             "upcoming",
             "radio",
-            "seekLimit",
+            "playable",
             "seekTo",
             "seekWaitS",
             "switchNow",
@@ -559,27 +580,32 @@ mod tests {
 
     #[test]
     fn seeks_and_better_copies_follow_the_pages() -> Result<(), String> {
-        each("seekLimit", |c| {
-            let buffered: Vec<(f64, f64)> = serde_json::from_value(c["buffered"].clone()).map_err(|e| e.to_string())?;
-            Ok(json!(seek_limit(
+        let parts = |v: &Value| serde_json::from_value::<Vec<(f64, f64)>>(v.clone()).map_err(|e| e.to_string());
+        each("playable", |c| {
+            Ok(json!(playable(
                 flag(&c["soulseek"])?,
-                &buffered,
-                num(&c["received"])?
+                &parts(&c["arrived"])?,
+                &parts(&c["buffered"])?
             )))
         })?;
         each("seekTo", |c| {
-            let (fraction, how) = seek_to(num(&c["fraction"])?, num(&c["limit"])?, flag(&c["waits"])?);
+            let (fraction, how) = seek_to(
+                num(&c["fraction"])?,
+                &parts(&c["playable"])?,
+                opt(&c["waitS"]),
+                opt(&c["aheadS"]),
+            );
             let how = match how {
                 SeekHow::Now => "now",
+                SeekHow::Fetches => "fetches",
                 SeekHow::Waits => "waits",
-                SeekHow::Snapped => "snapped",
             };
             Ok(json!({ "fraction": fraction, "how": how }))
         })?;
         each("seekWaitS", |c| {
             let wait = seek_wait_s(
                 num(&c["fraction"])?,
-                num(&c["received"])?,
+                &parts(&c["arrived"])?,
                 num(&c["size"])?,
                 num(&c["speed"])?,
             );
