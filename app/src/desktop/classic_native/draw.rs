@@ -368,8 +368,14 @@ fn sliders(pen: &mut Pen, view: &View) {
     let x = layout::VOLUME.x + (level * f64::from(layout::VOLUME_TRAVEL)).round() as u32;
     pen.sprite(thumb, x, layout::VOLUME.y + 1);
     // Balance stays centred: Classic's player plays both channels as they are.
-    pen.at(sprites::balance_frame(0), layout::BALANCE);
-    pen.sprite(sprites::BALANCE_THUMB, layout::BALANCE.x + 12, layout::BALANCE.y + 1);
+    let (track, thumb) = if pen.skin.has_balance() {
+        (sprites::balance_frame(0), sprites::BALANCE_THUMB)
+    } else {
+        (sprites::volume_frame(0), sprites::VOLUME_THUMB)
+    };
+    let area = layout::BALANCE;
+    pen.sprite_clipped(track, area.x, area.y, area);
+    pen.sprite(thumb, area.x + 12, area.y + 1);
     let eq = [
         sprites::EQ_OFF,
         sprites::EQ_OFF_PRESSED,

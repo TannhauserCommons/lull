@@ -114,8 +114,8 @@ impl Sheet {
         }
     }
 
-    /// What stands in when the skin lacks this sheet, as Winamp did: balance is cut from the volume
-    /// sheet, and either digit sheet serves for the other.
+    /// What stands in when the skin lacks this sheet, as Winamp did: the volume slider's pictures
+    /// serve for balance (`Skin::has_balance`), and either digit sheet for the other.
     fn substitute(self) -> Option<Sheet> {
         match self {
             Sheet::Balance => Some(Sheet::Volume),
@@ -652,6 +652,12 @@ impl Skin {
         Sheet::ALL
             .iter()
             .all(|&s| self.sheets.contains_key(&s) || s.substitute().is_some_and(|t| self.sheets.contains_key(&t)))
+    }
+
+    /// Whether the skin has a balance slider of its own; if not, the volume slider's pictures stand
+    /// in, whole, as Webamp has them.
+    pub fn has_balance(&self) -> bool {
+        self.sheets.contains_key(&Sheet::Balance)
     }
 
     pub fn has_extended_digits(&self) -> bool {
