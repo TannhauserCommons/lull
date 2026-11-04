@@ -25,6 +25,9 @@ pub struct Config {
     pub lastfm: Option<LastFm>,
     pub discovery: Discovery,
     pub youtube: Youtube,
+    /// The listener's own Winamp skins for Classic mode (`.wsz` files, in any subfolder), read
+    /// only. Unset: Classic offers the Winamp Skin Museum and the device's own files alone.
+    pub skins_dir: Option<PathBuf>,
 }
 
 /// The programs YouTube needs (docs/context/youtube.md). The image and the desktop app ship both,
@@ -293,6 +296,7 @@ impl Config {
                 ytdlp: v.or("LULL_YTDLP", "yt-dlp").into(),
                 deno: v.or("LULL_DENO", "deno").into(),
             },
+            skins_dir: v.opt("LULL_SKINS_DIR").map(PathBuf::from),
         };
         match v.0.into_keys().next() {
             Some(unknown) => Err(ConfigError::Unknown(unknown)),
