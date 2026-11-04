@@ -22,12 +22,15 @@ const loops = (page) => page.evaluate(() => document.getAnimations()
       holds: cs.getPropertyValue('--loop-holds').trim() !== 'no',
       stepped: /steps/.test(e.getTiming().easing) || kf.slice(0, -1).every((k) => /steps/.test(k.easing)),
       rate: a.playbackRate,
+      // to name a failure's kind: how long it has run, and whether its start reached the page as an event
+      since: Math.round(a.currentTime || 0) + ' ms in, ' + ((window.__gateStarts || {})[a.animationName] ? 'its start event seen' : 'no start event'),
     };
   }));
 
 for (const design of designs) {
   for (const theme of themes) {
     test(`${design} / ${theme}: every loop at its own rate, held when asked`, async ({ page }) => {
+      await page.addInitScript(() => { window.__gateStarts = {}; document.addEventListener('animationstart', (e) => { window.__gateStarts[e.animationName] = true; }, true); });
       await openScreen(page, `/album/${ids.album}`, { design, theme });
       await page.evaluate(() => App.player.playList([...document.querySelectorAll('#view .trow[data-track-id]')].map((r) => r.getAttribute('data-track-id')), 0));
       await page.waitForFunction(() => App.player.state.playing, null, { timeout: 10_000 }).catch(() => {});
@@ -35,7 +38,7 @@ for (const design of designs) {
         await page.evaluate((r) => { location.hash = r; }, route);
         await page.waitForTimeout(1200);
         const now = await loops(page);
-        expect(now.filter((l) => !(l.fps > 0) || !l.stepped).map((l) => l.name), `loops on ${route} that tick every frame (no --loop-fps)`).toEqual([]);
+        expect(now.filter((l) => !(l.fps > 0) || !l.stepped).map((l) => `${l.name} (${l.fps ? 'names ' + l.fps + ', not stepped' : 'names no rate'}; ${l.since})`), `loops on ${route} that tick every frame`).toEqual([]);
         await page.evaluate(() => App.still('gate', true));
         const held = await loops(page);
         expect(held.filter((l) => l.holds && l.rate !== 0).map((l) => l.name), `decorative loops on ${route} still moving while held`).toEqual([]);
