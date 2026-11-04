@@ -1,5 +1,5 @@
 //! One song being played: its own thread fetches it from the hub (remote.rs), Symphonia decodes it
-//! (Opus, YouTube's format, through opus-decoder: Symphonia has none), and it is resampled to the
+//! (Opus, YouTube's format, through libopus: Symphonia has none), and it is resampled to the
 //! output's rate and kept a little ahead for the mixer, which takes it frame by frame. A deck plays
 //! the current song; another may hold the next (for gapless and crossfade) or a better copy of the
 //! current one (to switch to without a jump), as the web player's two decks do.
@@ -375,11 +375,11 @@ fn open(song: &Song, token: &str, at: f64) -> Result<Opened, Refused> {
     })
 }
 
-/// A song's decoder: Symphonia's, or opus-decoder for Opus.
+/// A song's decoder: Symphonia's, or libopus for Opus.
 enum Sound {
     Symphonia(Box<dyn Decoder>),
     Opus {
-        decoder: Box<opus_decoder::OpusDecoder>,
+        decoder: opus::Decoder,
         channels: usize,
         pcm: Vec<f32>,
     },
@@ -394,9 +394,14 @@ impl Sound {
                 .map_err(|e| format!("can't play this kind of song: {e}"));
         }
         let channels = params.channels.map_or(2, |c| c.count()).clamp(1, 2);
-        let decoder = opus_decoder::OpusDecoder::new(OPUS_RATE, channels).map_err(|e| e.to_string())?;
+        let layout = if channels == 1 {
+            opus::Channels::Mono
+        } else {
+            opus::Channels::Stereo
+        };
+        let decoder = opus::Decoder::new(OPUS_RATE, layout).map_err(|e| e.to_string())?;
         Ok(Sound::Opus {
-            decoder: Box::new(decoder),
+            decoder,
             channels,
             pcm: vec![0.0; OPUS_MAX_FRAMES * channels],
         })
@@ -405,9 +410,9 @@ impl Sound {
     fn reset(&mut self) {
         match self {
             Sound::Symphonia(decoder) => decoder.reset(),
-            Sound::Opus { decoder, channels, .. } => {
-                if let Ok(fresh) = opus_decoder::OpusDecoder::new(OPUS_RATE, *channels) {
-                    **decoder = fresh;
+            Sound::Opus { decoder, .. } => {
+                if let Err(e) = decoder.reset_state() {
+                    eprintln!("lull: Opus decoder: {e}");
                 }
             }
         }

@@ -110,9 +110,10 @@ webview2-com = "=0.39.1"
 # (Apache-2.0, WASAPI), image reads the skins' BMP and PNG sheets and zip opens the .wsz (both
 # already in the tree: Tauri's image, build.rs's zip).
 symphonia = { version = "=0.5.5", default-features = false, features = ["aac", "alac", "flac", "isomp4", "mkv", "mp3", "ogg", "pcm", "vorbis", "wav"] }
-# Opus, YouTube's format (WebM), which Symphonia can't decode: pure Rust, no C, RFC 8251's
-# conformance vectors pass (MIT or Apache-2.0).
-opus-decoder = "=0.1.1"
+# Opus, YouTube's format (WebM), which Symphonia can't decode: libopus itself (BSD-3-Clause, built
+# from its bundled source with CMake; notice in licenses/THIRD-PARTY.md) through the `opus` wrapper
+# (MIT or Apache-2.0). A pure-Rust decoder measured 20 % of a core playing; libopus 0.4 %.
+opus = "=0.4.0"
 # A skin kept on the device comes from the page as base64. Already in Tauri's tree.
 base64 = "=0.23.1"
 # Every song resampled to the output's rate, so songs follow each other without a gap and crossfade

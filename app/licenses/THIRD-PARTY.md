@@ -33,6 +33,23 @@ lull bundles Deno, unmodified: the JavaScript runtime yt-dlp needs for YouTube.
   > THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 - Binaries: the release's `deno-x86_64-pc-windows-msvc.zip` and `deno-x86_64-unknown-linux-gnu.zip`, checked by sha256 when lull is built (`app/build.rs`)
 
+## libopus 1.6.1
+
+lull's native Classic window decodes Opus (YouTube's format) with libopus, built into the app from its source (through the `opusic-sys` crate, 0.7.6).
+
+- Project: https://opus-codec.org/
+- Copyright 2001-2023 Xiph.Org, Skype Limited, Octasic, Jean-Marc Valin, Timothy B. Terriberry, CSIRO, Gregory Maxwell, Mark Borgerding, Erik de Castro Lopo, Mozilla, Amazon
+- Licence: BSD-3-Clause:
+
+  > Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+  >
+  > - Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+  > - Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+  > - Neither the name of Internet Society, IETF or IETF Trust, nor the names of specific contributors, may be used to endorse or promote products derived from this software without specific prior written permission.
+  >
+  > THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+- Opus is subject to the royalty-free patent licences specified at https://datatracker.ietf.org/ipr/1524/ (Xiph.Org Foundation), https://datatracker.ietf.org/ipr/1914/ (Microsoft Corporation) and https://datatracker.ietf.org/ipr/1526/ (Broadcom Corporation).
+
 ## Spotifast (parts of its source)
 
 lull's native Classic window (`app/src/desktop/classic_native`) adapts code from Spotifast: its tables of where each part of a Winamp skin sits, its readers for `region.txt`, `viscolor.txt` and `pledit.txt`, its bitmap-font folding, its spectrum analyser, and its drawing of the equaliser (curve and sliders) and playlist (frame and positions).
