@@ -37,7 +37,7 @@
 - **A save** gets the copy it named. `Transfers::save_candidate` never names a YouTube copy while any Soulseek copy is known; with `saves` on and none known, it names YouTube's AAC copy (the save pipeline can't tag WebM) as meeting the minimum, so `wait` doesn't hold it back. Auto-upgrade judges the saved file and replaces it once a peer has a passing copy.
 - **The listener's pick** of a peer plays that peer.
 - **`fallback`:** Soulseek as usual; YouTube when it fails (no peer shares it, none passes and the `below` rule gives up, every peer failed) or when no peer is sending `waitS` after the fetch began (still finding, queued, or between peers). The Soulseek attempt is cancelled in slskd first. Preloads do the same.
-- **`startFast`:** the player's fetch finds the YouTube copy, starts an **upgrade** fetch (the saving profile's order, so the best copy), and plays YouTube. If YouTube has no match or fails, the upgrade is dropped and the player's fetch looks on Soulseek itself. A preload fetches Soulseek's copy (YouTube's only when Soulseek has none) and warms the YouTube match, so playing it still starts at once.
+- **`startFast`:** the player's fetch finds the YouTube copy, starts an **upgrade** fetch (the saving profile's order, so the best copy), and plays YouTube. If YouTube has no match or fails, the upgrade is dropped and the player's fetch looks on Soulseek itself; when that fails too, the error says why for both ("no peer shares this song right now; YouTube: no YouTube upload matches this song"). A preload fetches Soulseek's copy (YouTube's only when Soulseek has none) and warms the YouTube match, so playing it still starts at once.
 
 **The current play never jumps.** Upgrades live in their own map, out of the player's way: a seek joins the YouTube fetch, and the upgrade's bytes go to the cache only. A save started while YouTube plays the song runs there too. A preload still waiting for a peer when the song is played steps aside as the upgrade. A YouTube copy that has played through (its length plus a minute after it began, nobody reading) gives way to a cached Soulseek copy on the next play; until then a request is the same play seeking.
 
@@ -51,13 +51,13 @@ A YouTube copy's chip is its own: `YouTube · Opus 160`, `YouTube · AAC 128` (`
 
 ## Matching
 
-`find` remembers its answer per song and strictness in `youtube_matches` (a match for 30 days, no match for a day).
+`find` remembers its answer per song and strictness in `youtube_matches` (a match for 30 days, no match for a day; a migration forgets the misses when the rules below find more). A match with no audio lull can stream is an error that says so, not a miss.
 
 1. **YouTube Music songs** for "artist title" (`music.youtube.com/search#songs`, first 5, no extraction): those whose title matches are extracted, at most 2, and judged on the full facts.
 2. **Videos** (`ytsearch8:`, first 8 with channel and length): judged, best first; at most 2 extracted and judged again.
 
 An upload is the song when (`matching.rs`):
-- **the title matches** after `split` reads it (packaging brackets like "(Official Audio)" and quality tags like "HD 1080p" dropped, a " | …" tail and a leading "<show> Soundtrack - " dropped, an "Artist - " or "Artist • " prefix split off, a repeated artist and whole-title quotes dropped), with `ids::loose_title` and one slip per 8 letters; numbers must agree;
+- **the title matches** after `split` reads it (packaging brackets like "(Official Audio)", a translation's "(Sub.Español)" and quality tags like "HD 1080p" dropped, a " | …" tail and a leading "<show> Soundtrack - " dropped, an "Artist - " or "Artist • " prefix split off, a repeated artist and whole-title quotes dropped), with `ids::loose_title` and one slip per 8 letters; numbers must agree. A fan's "Title - Artist" reads the other way round when only that reading is the song and its artist (Clairo's "mount airy, georgia" is on YouTube only as such uploads);
 - **the artist matches** YouTube's music metadata, the title's artist part, the channel ("- Topic", "VEVO", " Official", " Music" dropped), or the title itself;
 - **the length agrees** within the strictness's slack;
 - **it is no other version**: live (or a recorded live stream), cover, nightcore, sped up, slowed, reverb, 8D, karaoke, instrumental, remix, acoustic, piano, reaction and the like are refused unless the song's artist, title or album has the word.

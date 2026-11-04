@@ -43,8 +43,8 @@ const OTHER_VERSION: &[&[&str]] = &[
 ];
 
 /// Bracketed parts of an upload's title that say nothing about the recording: "(Official
-/// Audio)", "[HD]", "(Lyric Video)". A bracket with any of these words is dropped before the
-/// title is compared.
+/// Audio)", "[HD]", "(Lyric Video)", a translation's "(Sub.Español)" or "(Letra)". A bracket
+/// with any of these words is dropped before the title is compared.
 const PACKAGING: &[&str] = &[
     "official",
     "audio",
@@ -64,6 +64,10 @@ const PACKAGING: &[&str] = &[
     "color",
     "coded",
     "full",
+    "sub",
+    "subs",
+    "letra",
+    "legendado",
 ];
 
 /// One spelling slip allowed per this many letters, as soulseek's matching allows.
@@ -138,8 +142,10 @@ pub fn judge(wanted: &Wanted, c: &Candidate, strictness: Match) -> Option<i32> {
     if strictness == Match::Official && !official {
         return None;
     }
-    let (artist_part, title_part) = split(&c.title);
-    let title = loose_title(&c.track.clone().unwrap_or(title_part));
+    let (title, artist_part) = match &c.track {
+        Some(track) => (loose_title(track), split(&c.title).0),
+        None => reading(wanted, split(&c.title)),
+    };
     if !same_title(&title, &wanted.title) {
         return None;
     }
@@ -169,6 +175,22 @@ pub fn judge(wanted: &Wanted, c: &Candidate, strictness: Match) -> Option<i32> {
         score -= 10;
     }
     Some(score)
+}
+
+/// The upload's title and artist part, read "Artist - Title"; or a fan's "Title - Artist"
+/// ("mount airy, georgia - clairo") when only that reading names the song and its artist.
+fn reading(wanted: &Wanted, (artist_part, title_part): (Option<String>, String)) -> (String, Option<String>) {
+    let title = loose_title(&title_part);
+    match artist_part {
+        Some(first)
+            if !same_title(&title, &wanted.title)
+                && same_title(&loose_title(&first), &wanted.title)
+                && loose_artist(&title_part) == wanted.artist =>
+        {
+            (loose_title(&first), Some(title_part))
+        }
+        artist_part => (title, artist_part),
+    }
 }
 
 /// The title alone, for YouTube Music's song results, which name no artist or length until the
@@ -450,6 +472,43 @@ mod tests {
         assert!(
             judge(&fishes(), &found[0], Match::Close).is_some(),
             "a fan upload of the song"
+        );
+    }
+
+    #[test]
+    fn a_fan_upload_titled_song_first_or_with_a_translation_is_the_song() {
+        // YouTube's search for this song on 2026-11-04: YouTube Music lists none of its songs as it,
+        // so these are all there is.
+        let airy = song("Clairo", "mount airy, georgia", "mount airy, georgia", 251);
+        let found = [
+            upload("mount airy, georgia - october 18th, 2018", "Claire Cottrill", 252),
+            upload("Clairo - mount airy, georgia (Sub.Español)", "Pololo96", 252),
+            upload("20 years / Georgia - Clairo | Lyrics", "Burntrice", 203),
+            upload("clairo - mount airy, georgia / LOVE GALORE", "internal heaven", 442),
+            upload("mount airy, georgia - clairo", "707vegas", 252),
+        ];
+        let order: Vec<&str> = ranked(&airy, &found, Match::Close)
+            .iter()
+            .map(|c| c.channel.as_str())
+            .collect();
+        assert_eq!(order, ["Pololo96", "707vegas"]);
+        assert!(
+            judge(
+                &fishes(),
+                &upload("Weird Fishes / Arpeggi - Radiohead", "x", 318),
+                Match::Close
+            )
+            .is_some(),
+            "song first, then the artist"
+        );
+        assert!(
+            judge(
+                &fishes(),
+                &upload("Weird Fishes / Arpeggi - Someone Else", "x", 318),
+                Match::Close
+            )
+            .is_none(),
+            "song first, then another artist"
         );
     }
 

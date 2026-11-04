@@ -34,7 +34,8 @@ use crate::ytdlp::{Problem, Ytdlp};
 
 pub const MIGRATIONS: Migrations = Migrations {
     owner: "youtube",
-    steps: &[r#"
+    steps: &[
+        r#"
         -- The upload matched to a song under one strictness; video_id NULL: nothing matched.
         CREATE TABLE youtube_matches (
             track_id    TEXT NOT NULL,
@@ -45,7 +46,12 @@ pub const MIGRATIONS: Migrations = Migrations {
             PRIMARY KEY (track_id, strictness)
         );
         CREATE INDEX youtube_matches_video ON youtube_matches(video_id);
-    "#],
+    "#,
+        r#"
+        -- Matching reads a fan's "Title - Artist" and translated uploads now: misses are looked for again.
+        DELETE FROM youtube_matches WHERE video_id IS NULL;
+    "#,
+    ],
 };
 
 /// Searches and extractions start at least this far apart, lull-wide.
@@ -128,8 +134,10 @@ impl Youtube for Service {
         let Some(m) = matched else { return Ok(None) };
         let (info, _) = search::info(self, &m.video, false).await.map_err(|p| self.failed(p))?;
         let Some(chosen) = formats::choose(&info, want, settings.format) else {
-            tracing::info!(video = %m.video, "no audio stream lull can stream from this upload");
-            return Ok(None);
+            return Err(Error::upstream(
+                "youtube",
+                format!("the matching upload ({}) has no audio lull can stream", m.video),
+            ));
         };
         Ok(Some(Found {
             source: chosen.copy.source_ref(chosen.size),
