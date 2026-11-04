@@ -144,11 +144,8 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - env:
-          GH_TOKEN: ${{ github.token }}
-          CANDIDATE: ${{ needs.plan.outputs.candidate }}
-          BRANCHES: ${{ needs.plan.outputs.branches }}
-        run: sh scripts/queue.sh land
+      # The tested image goes up under its commit's tag before main moves, so a landed commit always has one;
+      # it takes the :main tag (the homelab pins :main, homelab ADR-0028) only once main is at that commit.
       - if: needs.image.result == 'success' && needs.plan.outputs.image == 'true'
         uses: actions/download-artifact@v4
         with:
@@ -160,8 +157,8 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      # :main and :sha-<short>, as before the queue; the homelab pins :main (homelab ADR-0028).
-      - name: Publish the image it tested
+      - id: image
+        name: Push the image it tested under its commit
         if: needs.image.result == 'success' && needs.plan.outputs.image == 'true'
         env:
           CANDIDATE: ${{ needs.plan.outputs.candidate }}
@@ -169,18 +166,29 @@ jobs:
         run: |
           docker load -i "$RUNNER_TEMP/lull-image.tar"
           image="ghcr.io/$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')/lull"
-          for tag in main "sha-$(echo "$CANDIDATE" | cut -c1-7)"; do
-            docker tag lull:candidate "$image:$tag"
-            docker push -q "$image:$tag"
-          done
-          digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$image:main")
-          echo "Pushed $digest" >> "$GITHUB_STEP_SUMMARY"
+          docker tag lull:candidate "$image:sha-$(echo "$CANDIDATE" | cut -c1-7)"
+          docker push -q "$image:sha-$(echo "$CANDIDATE" | cut -c1-7)"
+          echo "name=$image" >> "$GITHUB_OUTPUT"
+      - id: land
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE: ${{ needs.plan.outputs.candidate }}
+          BRANCHES: ${{ needs.plan.outputs.branches }}
+        run: sh scripts/queue.sh land
+      - name: The image is main's
+        if: steps.land.outputs.landed == 'true' && steps.image.outputs.name != ''
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+        run: |
+          docker tag lull:candidate "$IMAGE:main"
+          docker push -q "$IMAGE:main"
+          echo "Pushed $(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE:main")" >> "$GITHUB_STEP_SUMMARY"
       # Pushes made with the job's token start no workflows, so the run starts what main's pushes did.
-      - if: needs.plan.outputs.pages == 'true'
+      - if: steps.land.outputs.landed == 'true' && needs.plan.outputs.pages == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" --ref main
-      - if: needs.plan.outputs.warm == 'true'
+      - if: steps.land.outputs.landed == 'true' && needs.plan.outputs.warm == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run app.yml --repo "$GITHUB_REPOSITORY" --ref main

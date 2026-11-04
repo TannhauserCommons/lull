@@ -123,9 +123,11 @@ land() {
   if ! git push -q origin "$CANDIDATE:refs/heads/main"; then
     echo "main moved during the run; trying again"
     git push -q origin --delete "refs/heads/queue-candidate/$GITHUB_RUN_ID" || true
+    out landed false
     retry
     return
   fi
+  out landed true
   for b in $BRANCHES; do
     topic=${b%%:*} tip=${b#*:}
     status "$tip" success "landed in main at $(short "$CANDIDATE")"
