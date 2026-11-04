@@ -51,9 +51,6 @@ struct Playback {
     radio_when_queue_ends: bool,
     /// How many queued songs the player asks soulseek to preload, 0-3.
     prefetch_count: u32,
-    /// A seek past what has arrived of a streaming song waits for those bytes while the song
-    /// plays on, instead of stopping at what arrived (web/player-rules.js `seekTo`).
-    jump_when_downloaded: bool,
 }
 
 impl Default for Playback {
@@ -66,7 +63,6 @@ impl Default for Playback {
             volume_step: 5,
             radio_when_queue_ends: true,
             prefetch_count: 2,
-            jump_when_downloaded: true,
         }
     }
 }
@@ -518,7 +514,8 @@ mod tests {
         };
         db.migrate(&first)?;
         db.call(|conn| {
-            let old = r#"{"discovery":{"adventurousness":0.7,"on":{"discogs":false,"lastfm":false}}}"#;
+            let old = r#"{"discovery":{"adventurousness":0.7,"on":{"discogs":false,"lastfm":false}},
+                "playback":{"prefetchCount":3,"jumpWhenDownloaded":false}}"#;
             conn.execute("INSERT INTO collection_settings (id, json) VALUES (1, ?1)", [old])?;
             Ok(())
         })
@@ -527,6 +524,7 @@ mod tests {
         let prefs = db.call(|conn| load(conn)).await?;
         assert_eq!(prefs.discovery.adventurousness, 0.7);
         assert!(!prefs.discovery.on.lastfm);
+        assert_eq!(prefs.playback.prefetch_count, 3);
         Ok(())
     }
 

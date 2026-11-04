@@ -202,6 +202,11 @@ pub const MIGRATIONS: Migrations = Migrations {
         ALTER TABLE collection_link_songs ADD COLUMN named_id TEXT;
         ALTER TABLE collection_song_matches ADD COLUMN rule INTEGER NOT NULL DEFAULT 1;
     "#,
+        // `playback.jumpWhenDownloaded` went with seek-ahead (ADR-0014): a seek past what has
+        // arrived always goes there; stored settings must still parse.
+        r#"
+        UPDATE collection_settings SET json = json_remove(json, '$.playback.jumpWhenDownloaded');
+    "#,
     ],
 };
 
