@@ -1,11 +1,11 @@
 //! Classic mode without a webview (Windows and Linux; a test build chosen with
 //! `LULL_CLASSIC=native`): the skin's three windows drawn natively (ui.rs, draw.rs, eqwin.rs,
-//! playlist.rs, skin.rs) in the platform's own window (window.rs: Win32; gtk_window.rs: GTK, on X11
-//! and Wayland), with its own player (engine.rs) and what the web UI would do around it (session.rs:
-//! listening history, Like and Save, the tray, the taskbar's buttons, Discord; smtc.rs: Windows'
-//! media overlay and keys), so `main`'s webview can close, and WebView2 or WebKitGTK with it, while
-//! Classic plays. Leaving Classic builds `main` again on the page it was on, and that page takes the
-//! queue back (`classic_back`) as it takes it from Webamp's window.
+//! playlist.rs, skin.rs) in the platform's own windows (window.rs: Win32; gtk_window.rs: GTK, on
+//! X11 and Wayland), with its own player (engine.rs) and what the web UI would do around it
+//! (session.rs: listening history, Like and Save, the tray, the taskbar's buttons, Discord; smtc.rs
+//! and mpris.rs: the system's media overlay and keys), so `main`'s webview can close, and WebView2
+//! or WebKitGTK with it, while Classic plays. Leaving Classic builds `main` again on the page it was
+//! on, and that page takes the queue back (`classic_back`) as it takes it from Webamp's window.
 
 mod align;
 mod canvas;
@@ -19,6 +19,8 @@ mod events;
 mod hub;
 mod listen;
 mod mixer;
+#[cfg(target_os = "linux")]
+mod mpris;
 mod output;
 mod playlist;
 mod queue;

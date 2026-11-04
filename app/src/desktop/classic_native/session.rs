@@ -1,6 +1,7 @@
 //! What Classic does around its player for the window and the tray, so nothing waits on the web UI
 //! while `main` is closed: Like and Save from the tray, what plays for the tray, the taskbar's
-//! buttons and Discord (`set_now_playing`, player.rs) and Windows' media overlay (smtc.rs), and the
+//! buttons and Discord (`set_now_playing`, player.rs) and the system's media overlay (smtc.rs on
+//! Windows, mpris.rs on Linux), and the
 //! queue handed back to the page in its own saved shape when Classic closes. The player itself, its
 //! listening history included, is the engine's (engine.rs).
 //!
@@ -8,6 +9,8 @@
 
 use super::engine::{Command, Engine, Snapshot, Status, Track};
 use super::hub::Hub;
+#[cfg(target_os = "linux")]
+use super::mpris::Overlay;
 #[cfg(windows)]
 use super::smtc::Overlay;
 use crate::desktop::player;
@@ -43,8 +46,7 @@ pub struct Session {
     /// The marquee's line for each song, as of the queue's revision.
     pub titles: Vec<String>,
     revision: Option<u64>,
-    /// Windows' media overlay (Linux's media keys come through the app's global shortcuts).
-    #[cfg(windows)]
+    /// Windows' media overlay, Linux's media panel (MPRIS).
     overlay: Option<Overlay>,
     reported: Option<(NowPlaying, i64)>,
 }
@@ -65,7 +67,6 @@ impl Session {
             engine,
             titles: Vec::new(),
             revision: None,
-            #[cfg(windows)]
             overlay: None,
             reported: None,
         }
@@ -177,7 +178,6 @@ impl Session {
         }
         self.app.state::<Desktop>().set_now_playing(report.clone());
         player::refresh(&self.app);
-        #[cfg(windows)]
         if let Some(overlay) = &self.overlay
             && let Err(e) = overlay.show(&report, track.art.as_deref(), &self.hub)
         {
@@ -203,8 +203,7 @@ impl Session {
         self.engine.send(command);
     }
 
-    /// Windows' media overlay and keys for the window.
-    #[cfg(windows)]
+    /// The system's media overlay and keys for the windows: Windows', Linux's MPRIS.
     pub fn attach_overlay(&mut self, overlay: Overlay) {
         self.overlay = Some(overlay);
     }

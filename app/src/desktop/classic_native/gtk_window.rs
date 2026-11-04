@@ -70,6 +70,10 @@ pub fn open(mut setup: Setup, on_close: OnClose) -> Result<(), String> {
     let scale = main.scale_factor().max(1);
     setup.dpi = f64::from(scale);
     let mut classic = Classic::new(setup, on_close);
+    match super::mpris::Overlay::new(classic.session.app().clone()) {
+        Ok(overlay) => classic.session.attach_overlay(overlay),
+        Err(e) => eprintln!("lull: no media keys for Classic: {e}"),
+    }
     classic.places_windows = !gdk::Display::default().is_some_and(|d| d.type_().name().contains("Wayland"));
     classic.set_areas(work_areas(scale));
     let (font, size) = classic.text_style();

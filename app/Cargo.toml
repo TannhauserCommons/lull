@@ -142,6 +142,9 @@ zip = { version = "=9.2.1", default-features = false, features = ["deflate"] }
 gtk = "=0.18.2"
 # Media-key fallback when WebKitGTK ships without Media Session (DESKTOP.md 5).
 tauri-plugin-global-shortcut = "=2.4.1"
+# Native Classic's media keys and panel (MPRIS on the session bus). Already in the tree through
+# tauri-plugin-single-instance, same version and features.
+zbus = "=5.19.0"
 # prctl(PR_SET_PDEATHSIG): slskd stops when the app does, even after a crash. Already in Tauri's tree.
 libc = "=0.2.191"
 # The page's process dying (web-process-terminated), so the window recovers (recovery.rs). Wry's
