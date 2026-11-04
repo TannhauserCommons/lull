@@ -32,23 +32,6 @@ use crate::{Service, mix, taste};
 const BATCH: usize = 12;
 /// Places a remix or live take behind every original in a batch.
 const VERSION_PENALTY: f64 = 10_000.0;
-/// Words in a title's brackets or " - " suffix that make it another take of a song.
-const VERSION_WORDS: &[&str] = &[
-    "remix",
-    "rmx",
-    "live",
-    "edit",
-    "mix",
-    "version",
-    "dub",
-    "remixed",
-    "sped",
-    "slowed",
-    "mashup",
-    "instrumental",
-    "demo",
-    "acoustic",
-];
 /// Candidates looked at per call (one metadata request).
 const POOL: usize = 50;
 /// Per artist in one batch, except the seed artist of an artist radio.
@@ -356,28 +339,9 @@ async fn by_artist(svc: &Service, credit: &str, tags: &[String], steer: f64, pop
 /// Whether a title names another take of a song: a remix, live, sped-up, slowed, acoustic or
 /// instrumental take, edit, mix, mashup, demo, version or dub in its brackets or " - " suffix
 /// ("Talamak (Tom Lown Remix)", "So Many Details - Live", "Drift (sped up)").
+/// Search's list of version words is the one list (`merge::names_a_version`).
 pub fn is_version(title: &str) -> bool {
-    let mut tagged = String::new();
-    let mut depth = 0usize;
-    for c in title.chars() {
-        match c {
-            '(' | '[' => depth += 1,
-            ')' | ']' => depth = depth.saturating_sub(1),
-            _ if depth > 0 => {
-                tagged.push(c);
-                continue;
-            }
-            _ => continue,
-        }
-        tagged.push(' ');
-    }
-    if let Some((_, suffix)) = title.split_once(" - ") {
-        tagged.push(' ');
-        tagged.push_str(suffix);
-    }
-    lull_core::ids::normalize(&tagged)
-        .split(' ')
-        .any(|w| VERSION_WORDS.contains(&w))
+    crate::search::merge::names_a_version(title)
 }
 
 /// The artists in a credit, best first: the whole credit, the part before "feat.", "ft.",

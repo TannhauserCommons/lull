@@ -831,3 +831,28 @@ fn deezers_playlist_search_gives_title_owner_size_and_picture_in_its_order() {
     assert_eq!(first.link(), format!("deezer:playlist:{}", first.id));
     assert_eq!(found[2].rank, 2);
 }
+
+#[test]
+fn a_version_is_named_by_its_tags_or_a_live_release_never_by_the_title_itself() {
+    let q = Query::new("paul mccartney");
+    let version = |s: SongHit| Score::song(&q, &s).version;
+    assert!(!version(song(
+        "Paul McCartney & Wings",
+        "Live and Let Die",
+        "Wings Greatest",
+        Some(192)
+    )));
+    assert!(version(song(
+        "Paul McCartney & Wings",
+        "Live and Let Die (Live)",
+        "Wings Over America",
+        Some(195)
+    )));
+    assert!(version(song(
+        "Paul McCartney",
+        "Live and Let Die",
+        "Live at the Cavern Club",
+        Some(190)
+    )));
+    assert!(version(song("Paul McCartney", "Coming Up [Midland Version]", "", None)));
+}

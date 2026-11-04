@@ -48,13 +48,14 @@ const OVERSHADOWED_SHARE: u64 = 10;
 const MISSPELT_WORD_LETTERS: usize = 5;
 const MISSPELT_PHRASE_LETTERS: usize = 8;
 /// Words in a bracket or " - " suffix that make a title another performance or mix of the song
-/// it names ("(Live)", "[Daft Punk Remix]", "(Acoustic)", "- Radio Edit", "(Originally
-/// Performed By Adele)", "(Lullaby Rendition of Queen)"). Remasters and "feat." are the same
-/// recording (`ids::loose_title` drops them).
+/// it names ("(Live)", "[Daft Punk Remix]", "(Acoustic)", "- Radio Edit", "[Midland Version]",
+/// "(Originally Performed By Adele)", "(Lullaby Rendition of Queen)"). Remasters and "feat."
+/// are the same recording (`ids::loose_title` drops them). Search and radio read this one list.
 const VERSION_TAGS: &[&str] = &[
     "live",
     "remix",
     "remixes",
+    "mashup",
     "remixed",
     "rmx",
     "mix",
@@ -79,6 +80,7 @@ const VERSION_TAGS: &[&str] = &[
     "lofi",
     "take",
     "rehearsal",
+    "version",
 ];
 /// Each further take of a song by its own artist in the answers (a deluxe edition, a best-of, a
 /// live take, an official remix) closes this share of the gap between its popularity and full
@@ -385,7 +387,7 @@ fn fill_song(row: &mut SongHit, hit: SongHit, may_rename: bool) -> bool {
     if row.album_source.is_none() && loose_title(&row.album) == loose_title(&hit.album) {
         row.album_source = hit.album_source;
     }
-    let names_version = |s: &SongHit| [&s.title, &s.album].iter().any(|t| names_a_version(t));
+    let names_version = |s: &SongHit| names_a_version(&s.title) || !release_versions(&s.album).is_empty();
     if may_rename && row.saved.is_none() && hit.saved.is_some() {
         row.saved = hit.saved;
         row.title = hit.title;
@@ -569,15 +571,16 @@ impl Query {
         self.fit(&[loose_artist(&a.name)], &[], &[&a.name])
     }
 
-    /// The title (or its release) is another version than the words name: a live take, a remix,
-    /// an acoustic or instrumental one, a cover's "(Originally Performed By …)", unless the
-    /// listener typed that word ("hotel california live").
-    fn other_version(&self, texts: &[&str]) -> bool {
+    /// The words (of a title or a release, `version_words`) make another version than the
+    /// words typed name: a live take, a remix, an acoustic or instrumental one, a cover's
+    /// "(Originally Performed By …)", unless the listener typed that word ("hotel california
+    /// live").
+    fn other_version(&self, words: &[String]) -> bool {
         let typed = |w: &String| {
             self.words.contains(w)
                 || (self.words.iter().any(|t| t == "unplugged") && matches!(w.as_str(), "live" | "acoustic"))
         };
-        texts.iter().any(|t| version_words(t).iter().any(|w| !typed(w)))
+        words.iter().any(|w| !typed(w))
     }
 }
 
@@ -637,18 +640,26 @@ fn misspelt_phrase(typed: &str, s: &str) -> bool {
     d > 0 && d <= 2 && d * MISSPELT_PHRASE_LETTERS <= typed.chars().count()
 }
 
-/// The words that make a title or release another version of a song than the one it names: the
-/// version tags of its brackets and suffixes, and "live" for a concert ("Live at Reading").
-fn version_words(s: &str) -> Vec<String> {
-    let (_, mut tags) = without_versions(s);
-    if normalize(s).starts_with("live ") {
-        tags.push("live".into());
-    }
-    tags
+/// The words that make a title another version of the song it names: the version tags of its
+/// brackets and " - " suffix ("Talamak (Tom Lown Remix)", "So Many Details - Live at KEXP"),
+/// never its own words ("Live and Let Die", "Dub Be Good to Me").
+fn version_words(title: &str) -> Vec<String> {
+    without_versions(title).1
 }
 
-fn names_a_version(s: &str) -> bool {
-    !version_words(s).is_empty()
+/// Whether a title names another take of a song (`version_words`).
+pub fn names_a_version(title: &str) -> bool {
+    !version_words(title).is_empty()
+}
+
+/// The words that make a release another version of its songs: its tags, and "live" for a
+/// concert ("Live at Reading", "Live At SoFi Stadium").
+fn release_versions(release: &str) -> Vec<String> {
+    let mut words = version_words(release);
+    if normalize(release).starts_with("live ") {
+        words.push("live".into());
+    }
+    words
 }
 
 /// The text without its brackets and " - " suffixes that name another version of the song, and
@@ -750,7 +761,7 @@ impl Score {
     pub fn song(q: &Query, s: &SongHit) -> Self {
         Score {
             fit: q.song(s),
-            version: q.other_version(&[&s.title, &s.album]),
+            version: q.other_version(&[version_words(&s.title), release_versions(&s.album)].concat()),
             popularity: s.popularity,
             lean: 0.0,
         }
@@ -763,7 +774,7 @@ impl Score {
             .is_some_and(|k| k.eq_ignore_ascii_case("album") || k.eq_ignore_ascii_case("compilation"));
         Score {
             fit: q.album(a),
-            version: q.other_version(&[&a.title]),
+            version: q.other_version(&release_versions(&a.title)),
             popularity: a.popularity,
             lean: if full_length { LEAN_FULL_LENGTH } else { LEAN_RELEASE },
         }
