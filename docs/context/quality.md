@@ -72,6 +72,10 @@ Raise a budget only with a measured reason a listener would accept, in the commi
 
 **A feature's code loads where it is used** (web.md, Code loads where it is used): a screen or panel's script and styles load on its first use, so a feature doesn't spend the start's transfer budget, and a budget isn't raised to fit code that could load on use. The on-use gate (below) fails on a new file at start that `gates/start-files.json` doesn't list with its reason. A file already at start can still grow: when Lighthouse's transfer goes over, find what in it only one screen uses and move that out (Stats left system.js this way) before reaching for the budget.
 
+## Checks on a branch
+
+The checks run on every push to main and every pull request. On any other branch, run them by hand: `gh workflow run ci --ref <branch>` (fmt, clippy, tests, the web's tests), `app` (the app's checks on Linux and Windows, then the four desktop bundles and the APK as artifacts) and `ui-gates`. Only main publishes: the image (`:main`, `:sha-<short>`) and Pages run only for `refs/heads/main`, a Release only for a `v*` tag.
+
 ## UI gates
 
 `mise run check:ui` (CI: `.github/workflows/ui-gates.yml` on every change to `web/` or `tests/ui/`). Node and Chromium only, about ten minutes: no image, no hub, no outside service. Run it before pushing a `web/` change.

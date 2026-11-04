@@ -28,8 +28,9 @@ env:
   LINUX_DEPS: libwebkit2gtk-4.1-dev build-essential file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 
 jobs:
+  # A push to main, a pull request, or a run by hand on any branch (its checks, then its bundles).
   check:
-    if: github.ref_type != 'tag' && github.event_name != 'workflow_dispatch'
+    if: github.ref_type != 'tag'
     strategy:
       fail-fast: false
       matrix:

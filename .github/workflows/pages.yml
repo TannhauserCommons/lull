@@ -22,6 +22,8 @@ concurrency:
 
 jobs:
   deploy:
+    # Only main's site is published, by hand too.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       pages: write
