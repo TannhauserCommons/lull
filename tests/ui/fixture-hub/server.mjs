@@ -19,6 +19,9 @@
 //
 // POST /__fixture/emit { topic, data } sends one server event to every open /api/events stream (with X-Fixture-Client,
 // to that client's streams only).
+// POST /__fixture/trickle { id, bytesPerS } makes that unsaved song a Soulseek transfer arriving at bytesPerS from now (its
+// WAV is 8000 bytes a second of sound): GET /api/stream/<id> serves only what has arrived and holds a range that starts past
+// it until it has, as the hub does, and `stream` events report the transfer twice a second until it is complete.
 // POST /__fixture/art-pending { ids } makes those covers answer 404 "not yet" (no-store), as the hub does while it
 // fetches one; POST /__fixture/art-ready { ids } serves them again and sends `art.ready { keys }`.
 // GET /__fixture/art-requests: cover requests that reached the hub since the last call, by URL (and resets them).
@@ -61,7 +64,7 @@ const state = {
   follows: { artists: L.artistIds.slice(0, 6), tags: L.tags.slice(0, 3) },
   playlists: structuredClone(L.playlists),
   settings: {
-    playback: { gapless: true, crossfade: 0, normalisation: 'off', loudnessTarget: -14, volumeStep: 5, radioWhenQueueEnds: false, prefetchCount: 2 },
+    playback: { gapless: true, crossfade: 0, normalisation: 'off', loudnessTarget: -14, volumeStep: 5, radioWhenQueueEnds: false, prefetchCount: 2, jumpWhenDownloaded: true },
     sources: {
       maxPeerQueue: 20, stallTimeout: 15,
       stream: { below: 'playBest', maxKbps: 0, minimum: { formats: [], kbps: 192, losslessOnly: false }, pick: 'fastest' },
@@ -133,6 +136,11 @@ const routes = [
   ] })],
   ['GET', /^\/api\/settings$/, () => state.settings],
   ['PATCH', /^\/api\/settings$/, (m, q, body) => { deepMerge(state.settings, body || {}); return state.settings; }],
+  // every fixture song has its album pictured, so each known id resolves at once and none is due a lookup
+  ['POST', /^\/api\/catalog\/resolve$/, (m, q, body) => {
+    const known = ((body && body.trackIds) || []).filter((id) => L.tracks[id]).slice(0, 200);
+    return { entities: entities({ tracks: known, albums: albumsOf(known) }) };
+  }],
   ['GET', /^\/api\/themes$/, () => ({ items: THEMES ? themeItems() : [] })],
   ['GET', /^\/api\/lastfm$/, () => ({ configured: true, connected: true, user: 'fixture', scrobbling: true, useHistory: true, queued: 0 })],
   ['GET', /^\/api\/youtube$/, () => ({ state: 'off', detail: 'YouTube is off', mode: 'off', ytdlp: { version: null, updated: false, pinnedVersion: null, latest: null, checkedAt: null, error: null }, backoffUntil: null })],
@@ -409,6 +417,49 @@ async function audioFile(req, res, t) {
   res.end(body.subarray(start, end + 1));
 }
 
+// ---------- a Soulseek transfer arriving slowly (POST /__fixture/trickle) ----------
+const trickles = new Map();   // trackId -> { start (ms), rate (bytes/s), size, timer }
+const arrivedOf = (tr) => Math.min(tr.size, Math.floor(((Date.now() - tr.start) / 1000) * tr.rate));
+function trickle(id, rate) {
+  const t = L.tracks[id];
+  if (!t || t.saved) return { status: 400, body: { error: 'bad_request', message: 'Trickle an unsaved song.' } };
+  clearInterval(trickles.get(id)?.timer);
+  const tr = { start: Date.now(), rate, size: 44 + t.duration * RATE };
+  const report = () => {
+    const received = arrivedOf(tr);
+    emit('stream', { trackId: id, jobId: 'fixture-' + id + '-' + tr.start, status: 'streaming', peer: 'fixture-peer', format: 'WAV 8 kHz',
+      peersFound: 4, queuePos: 0, received, size: tr.size, speed: received < tr.size ? rate : 0, attempt: 0, failedPeers: [], error: null,
+      belowMinimum: false, youtube: false });
+    if (received >= tr.size) clearInterval(tr.timer);
+  };
+  tr.timer = setInterval(report, 500);
+  trickles.set(id, tr);
+  report();
+  return { status: 204 };
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function trickleAudio(req, res, id) {
+  const tr = trickles.get(id), head = wavHeader(tr.size - 44);
+  const m = /bytes=(\d*)-(\d*)/.exec(req.headers.range || '');
+  const start = m && m[1] ? +m[1] : 0, end = m && m[2] ? Math.min(+m[2], tr.size - 1) : tr.size - 1;
+  if (start >= tr.size) { res.writeHead(416, { 'content-range': `bytes */${tr.size}` }); return res.end(); }
+  let gone = false;
+  req.on('close', () => { gone = true; });
+  while (!gone && arrivedOf(tr) <= start) await sleep(100);   // a range ahead of the transfer waits for its bytes
+  if (gone) return;
+  res.writeHead(m ? 206 : 200, { 'content-type': 'audio/wav', 'accept-ranges': 'bytes', 'content-length': end - start + 1, 'cache-control': 'no-store',
+    ...(m ? { 'content-range': `bytes ${start}-${end}/${tr.size}` } : {}) });
+  for (let pos = start; pos <= end && !gone;) {
+    const to = Math.min(end + 1, arrivedOf(tr));
+    if (to > pos) {
+      const chunk = Buffer.alloc(to - pos, 128);
+      if (pos < 44) head.copy(chunk, 0, pos, Math.min(44, to));
+      res.write(chunk); pos = to;
+    } else await sleep(100);
+  }
+  res.end();
+}
+
 // ---------- server ----------
 /* the skins the hub keeps: md5 -> { name, file, bytes }, newest last */
 const ownSkins = new Map();
@@ -533,6 +584,8 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': 'image/png', 'content-length': png.length, 'cache-control': 'private, max-age=86400', 'x-image-size': size + 'x' + size });
     return res.end(png);
   }
+  if (path === '/__fixture/trickle' && req.method === 'POST') { const b = await readBody(req); const out = trickle(b.id, b.bytesPerS); return send(res, out.status, out.body); }
+  if ((m = /^\/api\/stream\/([^/]+)$/.exec(path)) && req.method === 'GET' && trickles.has(m[1])) return trickleAudio(req, res, m[1]);
   if ((m = /^\/api\/(library\/)?stream\/([^/]+)$/.exec(path)) && req.method === 'GET') return audio(req, res, m[2], !!m[1]);
   if ((m = /^\/api\/stream\/([^/]+)$/.exec(path)) && req.method === 'DELETE') return send(res, 204);
   if (THEMES && (m = /^\/api\/themes\/([a-z0-9-]+)\/(.+)$/.exec(path)) && req.method === 'GET') return files(req, res, '/' + m[2], join(THEMES, m[1]));
