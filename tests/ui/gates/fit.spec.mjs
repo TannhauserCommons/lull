@@ -15,9 +15,12 @@ const frames = (page) => page.evaluate(() => new Promise((r) => requestAnimation
 // the header and the bar as they stand, to name the cause when a width fails: each part's box and whether it gave way
 const geometry = (page) => page.evaluate(() => 'fonts ' + document.fonts.status + ' | ' + ['.header', '#pbar'].map((sel) => {
   const row = document.querySelector(sel); if (!row) return '';
-  const box = (e) => { const r = e.getBoundingClientRect(); return Math.round(r.left) + '-' + Math.round(r.right); };
-  return sel + ' ' + box(row) + ' (scroll ' + row.scrollWidth + ' of ' + row.clientWidth + '): ' + [...row.children].map((c) =>
-    String(c.getAttribute('class') || c.tagName).split(' ')[0] + (c.hasAttribute('data-fit-out') ? ' (out)' : '') + ' ' + box(c)).join(', ');
+  // to a hundredth of a pixel: a row on the edge of fitting is decided by fractions; a row's children, and those of
+  // its last (the tools, where the parts that give way sit)
+  const box = (e) => { const r = e.getBoundingClientRect(); return r.left.toFixed(2) + '-' + r.right.toFixed(2); };
+  const kids = (el) => [...el.children].map((c) => String(c.getAttribute('class') || c.tagName).split(' ')[0] + (c.hasAttribute('data-fit-out') ? ' (out)' : '') + ' ' + box(c));
+  const last = row.lastElementChild;
+  return sel + ' ' + box(row) + ' (scroll ' + row.scrollWidth + ' of ' + row.clientWidth + '): ' + kids(row).join(', ') + (last ? ' [in ' + String(last.className).split(' ')[0] + ': ' + kids(last).join(', ') + ']' : '');
 }).join(' | '));
 
 for (const design of designs) {
@@ -86,7 +89,8 @@ for (const design of designs) {
         await page.evaluate(() => { const s = document.createElement('style'); s.id = 'gate-wide'; s.textContent = '.header *, #pbar * { letter-spacing: .14em !important; }'; document.head.appendChild(s); });
         await frames(page);
         let now = await out(), at = await geometry(page), why = await since();
-        expect(now, `${w} px, the text wider: fitted already (${at}; ${why})`).toEqual(await fresh());
+        let refit = await fresh(), atRefit = await geometry(page);
+        expect(now, `${w} px, the text wider: fitted already (${at}; ${why}; after a fresh fit: ${atRefit})`).toEqual(refit);
         await page.evaluate(() => document.getElementById('gate-wide').remove());
         // fonts arriving: a narrow one, a wider one, a narrow one again
         await font(`gate-narrow-${w}`); await frames(page);
@@ -94,7 +98,8 @@ for (const design of designs) {
         expect(before, `${w} px, a font arrives: fitted already`).toEqual(await fresh());
         await since(); await font('gate-wide'); await frames(page);
         now = await out(); at = await geometry(page); why = await since();
-        expect(now, `${w} px, a wider font arrives: fitted already (${at}; ${why})`).toEqual(await fresh());
+        refit = await fresh(); atRefit = await geometry(page);
+        expect(now, `${w} px, a wider font arrives: fitted already (${at}; ${why}; after a fresh fit: ${atRefit})`).toEqual(refit);
         await font(`gate-narrow-${w}-again`); await frames(page);
         now = await out();
         expect(now, `${w} px, the narrower font again: fitted already`).toEqual(await fresh());
