@@ -136,6 +136,7 @@ land() {
       || echo "queue/$topic moved since it was tested; it stays queued"
   done
   git push -q origin --delete "refs/heads/queue-candidate/$GITHUB_RUN_ID" || true
+  next
 }
 
 reject() {
