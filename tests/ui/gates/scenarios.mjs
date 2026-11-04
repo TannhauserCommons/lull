@@ -3,7 +3,7 @@
 // print before/after numbers when run by hand (docs/context/quality.md#ui-gates).
 
 import { fileURLToPath } from 'node:url';
-import { ids, openScreen, ownHub, settle, throttle, traced } from './lib.mjs';
+import { composited, ids, openScreen, ownHub, settle, throttle, traced } from './lib.mjs';
 
 const playShown = (page) =>
   page.evaluate(() => App.player.playList([...document.querySelectorAll('#view .trow[data-track-id]')].map((r) => r.getAttribute('data-track-id')), 0));
@@ -268,6 +268,7 @@ export async function idle(browser, page, opts, route = '/home') {
     return (a.animationName || a.transitionProperty || 'animation') + ' on ' + (t ? t.tagName.toLowerCase() + '.' + [...t.classList].slice(0, 2).join('.') : '?') + (a.effect?.pseudoElement || '') + ': ' + props.join(',') + timeline;
   }))]);
   s.loops = await loops(page);
+  s.composited = await composited(page);
   return s;
 }
 

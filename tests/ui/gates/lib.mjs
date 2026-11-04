@@ -123,6 +123,28 @@ export function summarise(json) {
 // Elements one small DOM change restyles: a class flip, a text change and an insertion, each on its own element at
 // the end of <body>. A design rule that reacts to any change on the page (a :has() over the whole page that ends in
 // a broad selector, a [class*=] test) turns each of these into a restyle of the whole screen.
+// The layers the compositor keeps for the page as it stands: how many draw, and their area in windows (the window's
+// size each, each layer counted up to one window). Each is a texture kept in GPU memory and drawn again for every frame; a large decoration on a layer of its
+// own (a fixed sky) makes what is painted over it need another as large. The tree comes after a compositing update,
+// forced by a probe that is then removed and left out.
+export async function composited(page) {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('LayerTree.enable');
+  const tree = () => new Promise((res) => {
+    const on = (m) => { if (m.layers) { cdp.off('LayerTree.layerTreeDidChange', on); res(m.layers); } };
+    cdp.on('LayerTree.layerTreeDidChange', on);
+    page.evaluate(() => { const d = document.createElement('div'); d.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;will-change:transform'; document.body.appendChild(d); requestAnimationFrame(() => requestAnimationFrame(() => d.remove())); });
+    setTimeout(() => res(null), 5000);
+  });
+  await tree(); await page.waitForTimeout(200);
+  const layers = (await tree()) || [];
+  const { w, h } = await page.evaluate(() => ({ w: innerWidth, h: innerHeight }));
+  const drawing = layers.filter((l) => l.drawsContent && !(l.width === 1 && l.height === 1));
+  await cdp.detach();
+  // a list's scrolling layer is as long as the list, but only what is near the window is drawn: each counts a window at most
+  return { layers: drawing.length, windows: +(drawing.reduce((s, l) => s + Math.min(l.width, w) * Math.min(l.height, h), 0) / (w * h)).toFixed(2) };
+}
+
 export async function restyleFanOut(browser, page) {
   const out = {};
   for (const kind of ['class', 'text', 'insert']) {

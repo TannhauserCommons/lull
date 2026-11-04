@@ -9,6 +9,7 @@
     "hoverLongestMs": 180,
     "idleFrames": 4,
     "idleDrawnFrames": 44,
+    "compositedWindows": { "lull": 3.7, "skydeck": 4.8, "starlight": 3.3, "petal": 3.7, "glasshouse": 7 },
     "playingMsPerSecond": 220,
     "tickRestyleElements": 200,
     "startupLongestMs": 600,

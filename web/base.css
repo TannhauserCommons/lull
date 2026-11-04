@@ -123,7 +123,11 @@
   }
 
   /* night sky / day sky: a few CSS star specks, no images */
-  .sky-specks { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+  /* absolute, not fixed: the page itself never scrolls (.app is the window's height and scrolls inside), so it covers the
+     same window, and it is drawn into the page's own layer. A fixed sky is a layer of its own as large as the window,
+     and the app painted over it needs another (docs/themes.md, Drawing cheaply). It clips what a design hangs past its
+     edges (a sparkle half off the window, a layer that drifts), as the window did, so nothing in it makes the page scroll */
+  .sky-specks { position: absolute; inset: 0; z-index: 0; overflow: clip; pointer-events: none; }
   .sky-specks::before {
     content: ""; position: absolute; inset: 0;
     background-image:

@@ -49,6 +49,7 @@ for (const design of designs) {
           expect(s.frames, `main-thread frames in 2 s at rest on ${route}; running: ${s.animations.join(' | ')}`).toBeLessThanOrEqual(B.idleFrames);
           expect(s.loops, `loops drawn dearly at rest on ${route}`).toEqual([]);
           expect(s.drawn, `frames drawn in 2 s at rest on ${route}; running: ${s.animations.join(' | ')}`).toBeLessThanOrEqual(B.idleDrawnFrames);
+          expect(s.composited.windows, `composited layers at rest on ${route}, in windows of area (${s.composited.layers} layers)`).toBeLessThanOrEqual(B.compositedWindows[design]);
           await context.close();
         }
       });
