@@ -30,8 +30,9 @@ A music app for one listener who hosts it themselves (PROJECT.md). It streams fr
 ## Engineering rules
 
 - **Quality over development cost.** When making technical decisions, do not give much weight to development cost. Instead, prefer quality, simplicity, robustness, scalability, and long term maintainability.
-- **Surgical.** Touch only what the task needs: no speculative refactors, no unrelated cleanups. Visual defects seen while testing are the exception (next rule).
+- **Surgical.** Touch only what the task needs: no speculative refactors, no unrelated cleanups. Visual defects, lint, and failing or flaky tests you come across are the exceptions (next two rules).
 - **Pixel-perfect when testing end to end.** When end-to-end testing, be picky about the UI you see and be obsessed with pixel perfection. If something clearly looks off, even if it is not directly related to what you are doing, try to get it fixed along the way.
+- **Same standard for engineering.** Apply that same high standard to engineering excellence: lint, test failures, and test flakiness. If you see one, even if it is not caused by what you are working on right now, still get it fixed.
 - **One source of truth.** A fact lives in one place, and everything else reads it.
 - **Fix the cause, where it starts.** Don't use special cases, arbitrary size or threshold changes, retries, sleeps, weakened checks, or error suppression to hide symptoms. Trace the failure to its origin and correct it there.
 - **Then fix its siblings.** When the underlying cause is shared or likely to exist elsewhere, search for other occurrences and fix every confirmed instance. Keep the search proportional to the likelihood and impact of recurrence. Don't perform repository-wide searches for clearly isolated defects. `docs/context/INDEX.md` names where each kind of code lives: callers of the fixed code, and its parallel copies (the five designs, the crates, Windows, Linux and Android). Search those places for the cause's pattern with `rg` instead of reading files.
