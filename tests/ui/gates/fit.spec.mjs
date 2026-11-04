@@ -50,6 +50,7 @@ const watchObservers = (page) => page.addInitScript(() => {
   const note = (records) => records.forEach((r) => {
     const t = r.target.nodeType === 1 ? r.target : r.target.parentElement; if (!t || !t.closest('.header, #pbar')) return;
     if (r.type === 'attributes' && /^data-fit-(out|gave)$/.test(r.attributeName)) return;
+    if (r.type === 'attributes' && r.attributeName === 'style' && t.id === 'pbar') return;   // --fit-side
     const k = String(t.className && t.className.baseVal === undefined ? t.className : t.tagName).split(' ')[0] + ' ' + (r.type === 'attributes' ? r.attributeName : r.type);
     window.__changes[k] = (window.__changes[k] || 0) + 1;
   });

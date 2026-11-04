@@ -224,12 +224,54 @@
   /* the row's content is wider than the row: its scroll width, or any box laid out in it (through display: contents)
      reaching past its content box on either side, into its padding or beyond (a row that packs toward its end
      overflows at its start, which the scroll width doesn't count; content in the end padding counts in the scroll
-     width only from the padding's edge), or, in a flex row, its children's widths and gaps */
+     width only from the padding's edge), or, in a flex row, its children's widths and gaps. Content clipped counts as
+     content that doesn't fit: a box laid out in the row past the edge of a box around it that clips (overflow hidden or
+     clip, up to the row it fits with: the song's chips in the bar's song side), and a box in the row that clips content
+     of its own (the song side holding the Private pill while nothing plays). A box that cuts its text short on purpose
+     (text-overflow: ellipsis: a long title) or scrolls is not clipping anything that should give way */
+  function clips(s) { return (s.overflowX === 'hidden' || s.overflowX === 'clip') && s.textOverflow !== 'ellipsis'; }
+  /* a part is shown whole or not at all: one whose words are cut short (text-overflow: ellipsis, in it or on it: the
+     place "Playing from" names) doesn't fit, so what gives way before it does, and then it does. A field's own text
+     (the search as typed) is the listener's, not the part's */
+  /* words that keep a readable width ([data-fit-keep], its --fit-keep: the song's title and artist): narrower than that,
+     or than all of them when they are shorter, they crowd their row, and its parts give way to make room */
+  function crowded(k) {
+    if (!k.getClientRects().length) return false;
+    var full = [k].concat($$('*', k)).reduce(function (w, e) { return Math.max(w, e.scrollWidth); }, 0);
+    return k.clientWidth + 1 < Math.min(full, parseFloat(getComputedStyle(k).getPropertyValue('--fit-keep')) || 0);
+  }
+  function cut(p) {
+    if (p.hasAttribute('data-fit-out')) return false;
+    return [p].concat($$('*', p)).some(function (e) {
+      if (e.nodeName === 'INPUT' || e.nodeName === 'TEXTAREA' || e.scrollWidth < e.clientWidth) return false;
+      var s = getComputedStyle(e); if (s.textOverflow !== 'ellipsis') return false;
+      if (e.scrollWidth > e.clientWidth) return true;
+      /* the browser draws the ellipsis for any overflow, a fraction of a pixel too, which whole-pixel widths round
+         away: then the words' own width, to the fraction, read with them let out for the measure (an ellipsis cuts
+         the boxes a range reports) */
+      var r = e.getBoundingClientRect(), inner = r.width - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight) - parseFloat(s.borderLeftWidth) - parseFloat(s.borderRightWidth);
+      var was = e.style.getPropertyValue('overflow'), prio = e.style.getPropertyPriority('overflow');
+      e.style.setProperty('overflow', 'visible', 'important');
+      var range = document.createRange(); range.selectNodeContents(e);
+      var rects = range.getClientRects(), right = r.left;
+      for (var i = 0; i < rects.length; i++) right = Math.max(right, rects[i].right);
+      if (was) e.style.setProperty('overflow', was, prio); else e.style.removeProperty('overflow');
+      return right - r.left - parseFloat(s.paddingLeft) - parseFloat(s.borderLeftWidth) > inner + .01;
+    });
+  }
   function overflows(row) {
     if (row.scrollWidth > row.clientWidth + 1) return true;
     var cs = getComputedStyle(row), r = row.getBoundingClientRect();
     var left = r.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft) - 1;
     var right = r.right - parseFloat(cs.borderRightWidth) - parseFloat(cs.paddingRight) + 1;
+    for (var a = row.parentElement, top = rootOf(row); a && row !== top; a = a.parentElement) {
+      var as = getComputedStyle(a);
+      if (clips(as)) {
+        var ar = a.getBoundingClientRect();
+        left = Math.max(left, ar.left + parseFloat(as.borderLeftWidth) - 1); right = Math.min(right, ar.right - parseFloat(as.borderRightWidth) + 1);
+      }
+      if (a === top) break;
+    }
     var flex = cs.display.indexOf('flex') >= 0, need = 0, n = 0, out = false;
     (function walk(box) {
       Array.prototype.forEach.call(box.children, function (c) {
@@ -239,11 +281,31 @@
         if (s.display === 'none' || s.position === 'absolute' || s.position === 'fixed') return;
         var b = c.getBoundingClientRect();
         if (b.width && (b.right > right || b.left < left)) { out = true; return; }
+        if (clips(s) && c.scrollWidth > c.clientWidth + 1) { out = true; return; }
         need += b.width + parseFloat(s.marginLeft) + parseFloat(s.marginRight); n++;
       });
     })(row);
     if (out) return true;
     return flex && need + (parseFloat(cs.columnGap) || 0) * Math.max(0, n - 1) > right - left - 1;
+  }
+  /* how far a row's content runs past its content box (the measure overflows() tests), in pixels */
+  function lack(row) {
+    var cs = getComputedStyle(row), r = row.getBoundingClientRect();
+    var left = r.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft);
+    var right = r.right - parseFloat(cs.borderRightWidth) - parseFloat(cs.paddingRight);
+    var over = Math.max(0, row.scrollWidth - row.clientWidth), need = 0, n = 0;
+    (function walk(box) {
+      Array.prototype.forEach.call(box.children, function (c) {
+        var s = getComputedStyle(c);
+        if (s.display === 'contents') { walk(c); return; }
+        if (s.display === 'none' || s.position === 'absolute' || s.position === 'fixed') return;
+        var b = c.getBoundingClientRect();
+        if (b.width) over = Math.max(over, b.right - right, left - b.left);
+        need += b.width + parseFloat(s.marginLeft) + parseFloat(s.marginRight); n++;
+      });
+    })(row);
+    if (cs.display.indexOf('flex') >= 0) over = Math.max(over, need + (parseFloat(cs.columnGap) || 0) * Math.max(0, n - 1) - (right - left));
+    return over;
   }
   /* the parts that give way first are out (orders 1..k, together); fit moves k from where the row stands: further while
      the row overflows, back while it fits with one order more shown. Returns whether k moved */
@@ -268,8 +330,10 @@
     while (k < orders.length && parts.every(function (p) { return +p.getAttribute('data-fit') !== orders[k] || p.hasAttribute('data-fit-out'); })) k++;
     for (var i = 0; i < orders.length; i++) give(i, i < k);
     was = k;
-    if (overflows(row)) { while (k < orders.length && overflows(row)) give(k++, true); }
-    else while (k > 0) { give(k - 1, false); if (overflows(row)) { give(k - 1, true); break; } k--; }
+    var keep = $$('[data-fit-keep]', row).filter(function (k) { return fitRowOf(k) === row; });
+    function over() { return overflows(row) || parts.some(cut) || keep.some(crowded); }
+    if (over()) { while (k < orders.length && over()) give(k++, true); }
+    else while (k > 0) { give(k - 1, false); if (over()) { give(k - 1, true); break; } k--; }
     return k !== was;
   }
   /* a row and the rows inside it fit together: from all shown, outer rows first (document order: an inner row's width
@@ -278,11 +342,61 @@
   function rootOf(row) { for (var a = row.parentElement; a; a = a.parentElement) if (a.hasAttribute('data-fit-row')) row = a; return row; }
   function settle(root) {
     var rows = [root].concat($$('[data-fit-row]', root));
-    rows.forEach(function (r) { $$('[data-fit-out]', r).forEach(function (p) { p.removeAttribute('data-fit-out'); }); });
-    for (var pass = 0, moved = true; moved && pass < 4; pass++) {
-      moved = false;
-      rows.forEach(function (r) { if (fit(r)) moved = true; });
+    function passes() {
+      for (var pass = 0, moved = true; moved && pass < 4; pass++) {
+        moved = false;
+        rows.forEach(function (r) { if (fit(r)) moved = true; });
+      }
     }
+    /* in whole pixels, as every width the sides are tried at: the search below halves between whole widths */
+    var side = root.hasAttribute('data-fit-sides') && $('[data-fit-side]', root), most = side ? Math.floor(sideMost(root)) : 0;
+    if (side) root.style.setProperty('--fit-side', most + 'px');
+    rows.forEach(function (r) { $$('[data-fit-out]', r).forEach(function (p) { p.removeAttribute('data-fit-out'); }); });
+    passes();
+    if (side) {
+      /* what gave way with the most room; at the tools' width the song's side may have to give way more (its badges),
+         so the sides widen by as much as those parts' rows then run over with them shown, to the narrowest width at
+         which nothing gives way that the most room kept (by halves from there, where a row took less than all of it) */
+      var kept = $$('[data-fit-out]', root),
+        min = Math.ceil(parseFloat(getComputedStyle(root).getPropertyValue('--fit-side-min')) || 0),
+        lo = Math.max(0, Math.min(most, Math.max(need(side), min)));
+      function more() { return $$('[data-fit-out]', root).filter(function (p) { return kept.indexOf(p) < 0; }); }
+      function at(w) { root.style.setProperty('--fit-side', w + 'px'); passes(); return more().length > 0; }
+      if (at(lo)) {
+        var hit = [];
+        more().forEach(function (p) { var r = fitRowOf(p); if (hit.indexOf(r) < 0) hit.push(r); p.removeAttribute('data-fit-out'); });
+        var hi = Math.min(most, Math.ceil(lo + Math.max.apply(Math, hit.map(lack))));
+        if (at(hi)) { lo = hi; hi = most; while (hi - lo > 1) { var mid = Math.floor((lo + hi) / 2); if (at(mid)) lo = mid; else hi = mid; } at(hi); }
+      }
+    }
+  }
+  /* a row in three columns with mirrored sides ([data-fit-sides]: the player bar) has sides exactly as wide as its side
+     row needs ([data-fit-side]: the tools), once that has given way to fit the most room the middle can spare
+     (--fit-centre-min kept for it). Its CSS takes the width from --fit-side for both sides, so the middle gets every
+     pixel left and stays centred: no gap beside the tools at any width. A design that lays the row out its own way
+     doesn't use --fit-side, and nothing changes for it */
+  function sideMost(root) {
+    var cs = getComputedStyle(root), inner = root.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight),
+      tracks = cs.gridTemplateColumns.split(' ').map(parseFloat),
+      /* the gap as laid out: a design may give it as min() or a percentage, which getComputedStyle hands back unresolved;
+         the tracks fill the row (the middle one is 1fr), so what they leave is the gaps */
+      gap = tracks.length === 3 && tracks.every(isFinite) ? (inner - tracks[0] - tracks[1] - tracks[2]) / 2 : parseFloat(cs.columnGap) || 0;
+    return Math.max(0, (inner - (parseFloat(cs.getPropertyValue('--fit-centre-min')) || 0) - 2 * gap) / 2);
+  }
+  /* the width a row takes with its content: its boxes (through display: contents), their margins, its gaps, its padding
+     and border (Skydeck's dock is outlined) */
+  function need(row) {
+    var cs = getComputedStyle(row), n = 0,
+      w = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
+    (function walk(box) {
+      Array.prototype.forEach.call(box.children, function (c) {
+        var s = getComputedStyle(c);
+        if (s.display === 'contents') { walk(c); return; }
+        if (s.display === 'none' || s.position === 'absolute' || s.position === 'fixed') return;
+        w += c.getBoundingClientRect().width + parseFloat(s.marginLeft) + parseFloat(s.marginRight); n++;
+      });
+    })(row);
+    return Math.ceil(w + (parseFloat(cs.columnGap) || 0) * Math.max(0, n - 1));
   }
   /* rows fit again when they resize, and when what is in them does without the row resizing (a web font arriving with
      wider letters than the fallback's, a label that changed): the observer watches each row, its children and its
@@ -294,7 +408,7 @@
       if (!row) return;
       /* a part or child that resized in a row that still fits needs nothing when it is a part that gave way (fit's own
          doing) or nothing in the row has given way (all shown, nothing to bring back). Read after layout: no cost */
-      if (!own && !overflows(row) && (e.target.hasAttribute('data-fit-out') || !$('[data-fit-out]', row))) return;
+      if (!own && !overflows(row) && !(e.target.hasAttribute('data-fit') && cut(e.target)) && (e.target.hasAttribute('data-fit-out') || !$('[data-fit-out]', row))) return;
       var root = rootOf(row); if (roots.indexOf(root) < 0) roots.push(root);
     });
     roots.forEach(settle);
