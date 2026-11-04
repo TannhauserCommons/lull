@@ -13,7 +13,7 @@ use lull_core::ids::{loose_title, normalize};
 use serde_json::Value;
 
 use super::merge::{Found, Merged, Query};
-use super::{Ranked, rank_rows};
+use super::{Board, Ranked, rank_rows};
 use crate::sources::{deezer, itunes, musicbrainz};
 
 /// Each query, and the top results that are what the listener meant ("kind: artist - title").
@@ -29,6 +29,7 @@ const CASES: &[(&str, &[&str])] = &[
     ("bohemian rapsody", &["track: Queen - Bohemian Rhapsody"]),
     // Partial titles.
     ("smells like teen", &["track: Nirvana - Smells Like Teen Spirit"]),
+    ("smells like teen spirit", &["track: Nirvana - Smells Like Teen Spirit"]),
     ("stairway to", &["track: Led Zeppelin - Stairway to Heaven"]),
     ("bohemian rhap", &["track: Queen - Bohemian Rhapsody"]),
     // Artist and title, either order.
@@ -279,4 +280,41 @@ fn musicbrainz_fills_what_apple_lacks_ranked_by_how_often_it_was_released() {
         "on 130 releases"
     );
     assert_eq!(top_line(&r, &m), "track: Radiohead - Creep");
+}
+
+/// A slow source's answer is kept (MusicBrainz's a day), so a repeat search has it before its
+/// first answer, where the first search had it after. Its rows go after the first answer's
+/// either way: the same words show one list, top result included.
+#[test]
+fn a_search_and_its_repeat_show_one_list() {
+    let (recorded, gaps): (Value, Value) = (
+        recorded(),
+        serde_json::from_str(include_str!("fixtures/query-set-gaps.json")).unwrap_or(Value::Null),
+    );
+    let q = "smells like teen spirit";
+    let query = Query::new(q);
+    let (liked, followed) = (HashSet::new(), HashSet::new());
+    let musicbrainz = || {
+        let found = musicbrainz::recordings(gaps[q]["musicbrainz-recording"].clone()).unwrap_or_default();
+        super::recordings_kept(q, found)
+    };
+    assert!(!musicbrainz().songs.is_empty(), "MusicBrainz's recorded answer");
+
+    // The first search: MusicBrainz answers after the first answer (`search.more`).
+    let mut first = merged(q, &recorded[q]);
+    let mut shown = Board::first(rank_rows(&query, &first, &liked, &followed));
+    first.freeze();
+    first.add(musicbrainz());
+    shown.add(rank_rows(&query, &first, &liked, &followed));
+
+    // The repeat: MusicBrainz's kept answer is in before the first answer.
+    let mut again = merged(q, &recorded[q]);
+    let repeat = super::first_board(&query, &mut again, vec![musicbrainz()], &liked, &followed);
+    assert_eq!(repeat, shown);
+
+    // Ranked in with the rest, as before, the repeat showed another list.
+    let mut together = merged(q, &recorded[q]);
+    together.add(musicbrainz());
+    let before = Board::first(rank_rows(&query, &together, &liked, &followed));
+    assert_ne!(before.songs, shown.songs[..before.songs.len()]);
 }

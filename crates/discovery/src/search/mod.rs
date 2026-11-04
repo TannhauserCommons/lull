@@ -85,6 +85,9 @@ struct RunState {
     errors: BTreeMap<Source, String>,
     /// What answers and `search.more` have shown; `None` until the first answer.
     board: Option<Board>,
+    /// Slow sources' answers that came before the first answer (kept from an earlier search):
+    /// they go after its rows (`first_board`).
+    held: Vec<Found>,
 }
 
 /// A playlist row of an answer (`playlists.rs`): not an entity, as it isn't in lull's catalog.
@@ -400,7 +403,12 @@ async fn arrive(svc: &Service, run: &Run, source: Source, found: Result<Found>) 
             if let Some(problem) = found.problem.take() {
                 st.errors.insert(source, problem);
             }
-            st.merged.add(found)
+            if st.board.is_none() && !FAST.contains(&source) {
+                st.held.push(found);
+                Touched::default()
+            } else {
+                st.merged.add(found)
+            }
         }
         Err(e) => {
             tracing::info!(query = %run.query, ?source, error = %e, "a search source failed");
@@ -461,15 +469,19 @@ struct View {
 /// board, which go after it, and its entities also carry shown rows that gained facts. Every
 /// later answer is the board as it stands.
 async fn view(svc: &Service, query: &str, st: &mut RunState, touched: Option<&Touched>) -> Result<View> {
-    let RunState { merged: m, board, .. } = st;
+    let RunState {
+        merged: m, board, held, ..
+    } = st;
     let rows = match (board.as_ref(), touched) {
         (Some(shown), None) => shown.clone(),
         _ => {
             let (liked, followed) = svc.store.own().await?;
-            let ranked = rank_rows(&Query::new(query), m, &liked, &followed);
+            let q = Query::new(query);
             match board {
-                Some(shown) => shown.add(ranked),
-                None => board.insert(Board::first(ranked)).clone(),
+                Some(shown) => shown.add(rank_rows(&q, m, &liked, &followed)),
+                None => board
+                    .insert(first_board(&q, m, std::mem::take(held), &liked, &followed))
+                    .clone(),
             }
         }
     };
@@ -514,6 +526,29 @@ async fn view(svc: &Service, query: &str, st: &mut RunState, touched: Option<&To
         artists: rows.artists.iter().map(|&i| m.artists[i].id()).collect(),
         entities,
     })
+}
+
+/// A run's first answer: the fast sources' rows ranked, then what slow sources had sent by then
+/// after them, as if it had come as `search.more`. A slow source's answer is kept (MusicBrainz
+/// for a day), so the same words searched again have it at once; ranked in with the rest, it
+/// gave a repeat search another top result and order than the first ("nevermind": Nirvana's
+/// album first only on the second search).
+fn first_board(
+    q: &Query,
+    m: &mut Merged,
+    held: Vec<Found>,
+    liked: &HashSet<TrackId>,
+    followed: &HashSet<ArtistId>,
+) -> Board {
+    let mut board = Board::first(rank_rows(q, m, liked, followed));
+    if !held.is_empty() {
+        m.freeze();
+        for found in held {
+            m.add(found);
+        }
+        board.add(rank_rows(q, m, liked, followed));
+    }
+    board
 }
 
 /// Every row so far, best first (positions in `Merged`), and the top result.
