@@ -16,6 +16,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
+use crate::artist::identity::{Evidence, IdRow, Ids, Source};
 use crate::sources::{AlbumSource, ArtistInfo, Release, Song, year};
 use crate::taste::{Feedback, Mark, Named, Play, Signals};
 
@@ -53,20 +54,9 @@ impl Store {
 
     /// Releases as albums, remembered so their ids resolve later. A release already known keeps
     /// what is known (its tracks), and saved state comes from its catalog tracks. Their artists
-    /// are remembered too, with the MBID the release names, so an album's artist link opens the
-    /// right artist.
+    /// are remembered by name: the MBID a release names is its artist's, not necessarily the
+    /// listener's artist of that name (`artist::identity`).
     pub async fn albums(&self, releases: Vec<Release>) -> Result<Vec<Album>> {
-        let credited: Vec<Artist> = releases
-            .iter()
-            .filter(|r| r.artist_mbid.is_some())
-            .map(|r| {
-                artist(ArtistInfo {
-                    mbid: r.artist_mbid.clone(),
-                    name: r.artist.clone(),
-                })
-            })
-            .collect();
-        self.artists(credited).await?;
         self.remember_albums(releases.into_iter().map(album).collect()).await
     }
 
@@ -84,7 +74,7 @@ impl Store {
                         })
                     })
                     .collect();
-                merge_put(c, "discovery_artists", artists, |a| &a.id.0, merge_artist)?;
+                put_artists(c, artists)?;
                 let albums = merge_put(c, "discovery_albums", albums, |a| &a.id.0, merge_album)?;
                 let ids: Vec<AlbumId> = albums.iter().map(|a| a.id.clone()).collect();
                 Ok((albums, catalog_members(c, &ids)?))
@@ -167,8 +157,179 @@ impl Store {
 
     /// Artists, remembered so their ids resolve later; what is known already fills gaps.
     pub async fn artists(&self, artists: Vec<Artist>) -> Result<Vec<Artist>> {
+        self.db.call(move |c| put_artists(c, artists)).await
+    }
+
+    /// The exact ids lull holds for the artist (`artist::identity`).
+    pub async fn artist_ids(&self, id: ArtistId) -> Result<Ids> {
+        self.db.call(move |c| artist_ids(c, &id)).await
+    }
+
+    /// When the listener's evidence for the artist was last weighed (`artist::identity`).
+    pub async fn ids_checked(&self, id: ArtistId) -> Result<Option<i64>> {
         self.db
-            .call(move |c| merge_put(c, "discovery_artists", artists, |a| &a.id.0, merge_artist))
+            .call(move |c| {
+                Ok(c.query_row(
+                    "SELECT checked_at FROM discovery_artist_checked WHERE artist_id = ?1",
+                    [&id.0],
+                    |r| r.get(0),
+                )
+                .optional()?)
+            })
+            .await
+    }
+
+    /// Replaces the artist's ids with what the listener's evidence decided (`checked` when it
+    /// was weighed). An artist whose MBID changes or goes loses the tags stored for it and its
+    /// photo's verdict: they were that MBID's (or a name's), so its photo is vetted again.
+    pub async fn set_artist_ids(&self, id: ArtistId, ids: Ids, checked: i64) -> Result<()> {
+        self.db.call(move |c| replace_ids(c, &id, &ids, checked)).await
+    }
+
+    /// Adds ids the artist has no id of that source for yet; returns the ids it then has. A
+    /// new MBID drops what was kept for the old one (none), as `set_artist_ids` does.
+    pub async fn add_artist_ids(&self, id: ArtistId, rows: Vec<IdRow>) -> Result<Ids> {
+        self.db
+            .call(move |c| {
+                let tx = c.transaction()?;
+                let before = artist_ids(&tx, &id)?;
+                for row in &rows {
+                    if before.get(row.source).is_none() {
+                        put_artist_id(&tx, &id, row)?;
+                    }
+                }
+                let after = artist_ids(&tx, &id)?;
+                if before.mbid() != after.mbid() {
+                    forget_named(&tx, &id)?;
+                }
+                tx.commit()?;
+                Ok(after)
+            })
+            .await
+    }
+
+    /// The artist's own tags (MusicBrainz's, by its MBID), replacing what was kept.
+    pub async fn set_artist_tags(&self, id: ArtistId, tags: Vec<String>) -> Result<()> {
+        let json = serde_json::to_string(&tags).map_err(|e| Error::internal(format!("tags json: {e}")))?;
+        self.db
+            .call(move |c| {
+                c.execute(
+                    "UPDATE discovery_artists SET json = json_set(json, '$.tags', json(?2)) WHERE id = ?1",
+                    params![id.0, json],
+                )?;
+                Ok(())
+            })
+            .await
+    }
+
+    /// A song's own tags, where the catalog has none (`catalog::remember_found` fills gaps).
+    pub async fn set_track_tags(&self, id: TrackId, tags: Vec<String>) -> Result<()> {
+        self.db
+            .call(move |c| {
+                if let Some(mut track) = catalog::track(c, &id)? {
+                    track.tags = tags;
+                    record(c, vec![track])?;
+                }
+                Ok(())
+            })
+            .await
+    }
+
+    /// The artists among `ids` that hold any id already.
+    pub async fn identified(&self, ids: Vec<ArtistId>) -> Result<HashSet<ArtistId>> {
+        self.db
+            .call(move |c| {
+                let mut found = HashSet::new();
+                let mut stmt = c.prepare_cached("SELECT 1 FROM discovery_artist_ids WHERE artist_id = ?1 LIMIT 1")?;
+                for id in ids {
+                    if stmt.exists([&id.0])? {
+                        found.insert(id);
+                    }
+                }
+                Ok(found)
+            })
+            .await
+    }
+
+    /// The MBID the saved files' tags give the artist (the library's own record of it).
+    pub async fn library_mbid(&self, id: &ArtistId) -> Result<Option<String>> {
+        Ok(self
+            .library_artists()
+            .await?
+            .into_iter()
+            .find(|a| a.id == *id)
+            .and_then(|a| a.musicbrainz_id))
+    }
+
+    /// The library's artists, each with the MBID its saved files' tags give, if any.
+    pub async fn library_artists(&self) -> Result<Vec<Artist>> {
+        self.library.artists().await
+    }
+
+    /// A value discovery keeps in `discovery_state`.
+    pub async fn state(&self, key: &'static str) -> Result<Option<String>> {
+        self.db
+            .call(move |c| {
+                Ok(
+                    c.query_row("SELECT value FROM discovery_state WHERE key = ?1", [key], |r| r.get(0))
+                        .optional()?,
+                )
+            })
+            .await
+    }
+
+    pub async fn set_state(&self, key: &'static str, value: &'static str) -> Result<()> {
+        self.db
+            .call(move |c| {
+                c.execute(
+                    "INSERT INTO discovery_state (key, value) VALUES (?1, ?2)
+                     ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    [key, value],
+                )?;
+                Ok(())
+            })
+            .await
+    }
+
+    /// Every remembered artist: (id, name).
+    pub async fn remembered_artists(&self) -> Result<Vec<(ArtistId, String)>> {
+        self.db
+            .call(|c| {
+                rows(c, "SELECT json FROM discovery_artists", [], |r| r.get::<_, String>(0)).map(|all| {
+                    all.iter()
+                        .filter_map(|j| serde_json::from_str::<Artist>(j).ok())
+                        .map(|a| (a.id, a.name))
+                        .collect()
+                })
+            })
+            .await
+    }
+
+    /// The songs the listener played or liked, with their artist credit.
+    pub async fn listener_songs(&self) -> Result<Vec<(TrackId, String)>> {
+        self.db
+            .call(|c| {
+                rows(
+                    c,
+                    "SELECT track_id, artist FROM plays UNION SELECT track_id, artist FROM likes",
+                    [],
+                    |r| Ok((TrackId(r.get(0)?), r.get(1)?)),
+                )
+            })
+            .await
+    }
+
+    /// The ISRC a source named for the track (`catalog::hint_isrc`), if any.
+    pub async fn isrc(&self, id: TrackId) -> Result<Option<String>> {
+        self.db
+            .call(move |c| {
+                Ok(c.query_row(
+                    "SELECT isrc FROM catalog_resolutions WHERE track_id = ?1 AND isrc IS NOT NULL",
+                    [id.0],
+                    |r| r.get(0),
+                )
+                .optional()?)
+            })
             .await
     }
 
@@ -199,16 +360,16 @@ impl Store {
     pub async fn artist_ref(&self, id: ArtistId) -> Result<Option<Artist>> {
         self.db
             .call(move |c| {
-                if let Some(artist) = get::<Artist>(c, "discovery_artists", &id.0)? {
-                    return Ok(Some(artist));
-                }
-                let track = catalog_by_artist(c, &id)?;
-                Ok(track.map(|t| {
-                    artist(ArtistInfo {
-                        mbid: None,
-                        name: t.artist,
-                    })
-                }))
+                let found = match get::<Artist>(c, "discovery_artists", &id.0)? {
+                    Some(artist) => Some(artist),
+                    None => catalog_by_artist(c, &id)?.map(|t| {
+                        artist(ArtistInfo {
+                            mbid: None,
+                            name: t.artist,
+                        })
+                    }),
+                };
+                found.map(|a| identified(c, a)).transpose()
             })
             .await
     }
@@ -345,7 +506,8 @@ pub fn artist(a: ArtistInfo) -> Artist {
         tags: Vec::new(),
         listeners: None,
         bio: None,
-        musicbrainz_id: a.mbid,
+        // Who the artist is comes from its identity, never with a name (`artist::identity`).
+        musicbrainz_id: None,
     }
 }
 
@@ -395,8 +557,101 @@ fn merge_artist(old: Artist, mut new: Artist) -> Artist {
     }
     new.listeners = new.listeners.or(old.listeners);
     new.bio = new.bio.or(old.bio);
-    new.musicbrainz_id = new.musicbrainz_id.or(old.musicbrainz_id);
     new
+}
+
+/// Stores artists, merged with what is stored, and returns them as the store has them. Who an
+/// artist is comes only from its ids (`artist::identity`): an MBID a source gives with a name
+/// isn't kept, and an artist without an MBID keeps no artist tags (a name's tags may be any
+/// namesake's; MusicBrainz's by MBID are the artist's).
+fn put_artists(c: &Connection, mut artists: Vec<Artist>) -> Result<Vec<Artist>> {
+    let mut confirmed = HashSet::new();
+    for a in &mut artists {
+        a.musicbrainz_id = None;
+        if artist_ids(c, &a.id)?.mbid().is_some() {
+            confirmed.insert(a.id.clone());
+        } else {
+            a.tags.clear();
+        }
+    }
+    let merge = |old, new| {
+        let mut merged = merge_artist(old, new);
+        if !confirmed.contains(&merged.id) {
+            merged.tags.clear();
+        }
+        merged
+    };
+    let stored = merge_put(c, "discovery_artists", artists, |a| &a.id.0, merge)?;
+    stored.into_iter().map(|a| identified(c, a)).collect()
+}
+
+/// The artist with the MBID its identity holds (none when it holds none).
+fn identified(c: &Connection, mut a: Artist) -> Result<Artist> {
+    a.musicbrainz_id = artist_ids(c, &a.id)?.mbid().map(str::to_owned);
+    Ok(a)
+}
+
+fn artist_ids(c: &Connection, id: &ArtistId) -> Result<Ids> {
+    let rows = rows(
+        c,
+        "SELECT source, id, evidence FROM discovery_artist_ids WHERE artist_id = ?1",
+        [&id.0],
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)),
+    )?;
+    let mut ids = Ids::default();
+    for (source, value, evidence) in rows {
+        // A row an older build wrote that no longer parses is left out.
+        if let (Ok(source), Ok(evidence)) = (
+            serde_json::from_value::<Source>(serde_json::Value::String(source)),
+            serde_json::from_str::<Evidence>(&evidence),
+        ) {
+            ids.set(IdRow {
+                source,
+                id: value,
+                evidence,
+            });
+        }
+    }
+    Ok(ids)
+}
+
+fn replace_ids(c: &mut Connection, id: &ArtistId, ids: &Ids, checked: i64) -> Result<()> {
+    let tx = c.transaction()?;
+    let before = artist_ids(&tx, id)?;
+    tx.execute("DELETE FROM discovery_artist_ids WHERE artist_id = ?1", [&id.0])?;
+    for row in ids.rows() {
+        put_artist_id(&tx, id, row)?;
+    }
+    tx.execute(
+        "INSERT INTO discovery_artist_checked (artist_id, checked_at) VALUES (?1, ?2)
+         ON CONFLICT(artist_id) DO UPDATE SET checked_at = excluded.checked_at",
+        params![id.0, checked],
+    )?;
+    if before.mbid() != ids.mbid() {
+        forget_named(&tx, id)?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+fn put_artist_id(c: &Connection, id: &ArtistId, row: &IdRow) -> Result<()> {
+    let evidence = serde_json::to_string(&row.evidence).map_err(|e| Error::internal(format!("evidence json: {e}")))?;
+    c.execute(
+        "INSERT INTO discovery_artist_ids (artist_id, source, id, evidence) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(artist_id, source) DO UPDATE SET id = excluded.id, evidence = excluded.evidence",
+        params![id.0, row.source.as_str(), row.id, evidence],
+    )?;
+    Ok(())
+}
+
+/// Drops what was kept for an artist's old MBID: its tags and its photo's verdict.
+fn forget_named(c: &Connection, id: &ArtistId) -> Result<()> {
+    c.execute(
+        "UPDATE discovery_artists SET json = json_set(json, '$.tags', json('[]')) WHERE id = ?1",
+        [&id.0],
+    )?;
+    c.execute("DELETE FROM discovery_artist_photos WHERE artist_id = ?1", [&id.0])?;
+    Ok(())
 }
 
 /// Stores rows by id, merging each with what is stored; returns the merged rows.
@@ -648,9 +903,59 @@ fn rows<T>(
 #[cfg(test)]
 mod tests {
     use lull_core::Result;
+    use lull_core::ids::ArtistId;
+    use lull_core::model::Artist;
     use rusqlite::Connection;
 
-    use super::recent_plays;
+    use super::{artist, artist_ids, put_artists, recent_plays, replace_ids};
+    use crate::artist::identity::{Evidence, IdRow, Ids, Source};
+    use crate::sources::ArtistInfo;
+
+    fn discovery_db() -> Result<Connection> {
+        let c = Connection::open_in_memory()?;
+        for step in crate::MIGRATIONS.steps {
+            c.execute_batch(step)?;
+        }
+        Ok(c)
+    }
+
+    fn tagged(name: &str, mbid: &str, tags: &[&str]) -> Artist {
+        let mut a = artist(ArtistInfo {
+            mbid: None,
+            name: name.into(),
+        });
+        a.musicbrainz_id = Some(mbid.into());
+        a.tags = tags.iter().map(|t| (*t).to_owned()).collect();
+        a
+    }
+
+    #[test]
+    fn an_artist_is_who_its_ids_say_never_what_comes_with_its_name() -> Result<()> {
+        // Live, Last.fm's MBID for "DOUDOU" (Doudou Masta's) came with the name, and its tags
+        // (hip hop, reggae) led the listener's taste.
+        let mut c = discovery_db()?;
+        let stored = put_artists(&c, vec![tagged("DOUDOU", "562b88d2-masta", &["hip hop", "reggae"])])?;
+        assert_eq!(stored[0].musicbrainz_id, None, "an MBID given with a name isn't kept");
+        assert!(stored[0].tags.is_empty(), "without an MBID of its own, no artist tags");
+
+        let id = ArtistId::of("DOUDOU");
+        let mut ids = Ids::default();
+        ids.set(IdRow {
+            source: Source::Musicbrainz,
+            id: "f0fa7600-group".into(),
+            evidence: Evidence::Link { source: Source::Itunes },
+        });
+        replace_ids(&mut c, &id, &ids, 100)?;
+        let stored = put_artists(&c, vec![tagged("DOUDOU", "562b88d2-masta", &["mandopop"])])?;
+        assert_eq!(stored[0].musicbrainz_id.as_deref(), Some("f0fa7600-group"));
+        assert_eq!(stored[0].tags, ["mandopop"], "its MBID is its own: its tags count");
+
+        replace_ids(&mut c, &id, &Ids::default(), 200)?;
+        assert!(artist_ids(&c, &id)?.is_empty());
+        let stored = put_artists(&c, vec![tagged("DOUDOU", "x", &[])])?;
+        assert!(stored[0].tags.is_empty(), "the MBID gone, its tags go with it");
+        Ok(())
+    }
 
     #[test]
     fn played_lately_counts_only_plays_that_were_heard() -> Result<()> {

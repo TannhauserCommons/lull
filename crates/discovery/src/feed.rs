@@ -23,8 +23,9 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::time::Instant;
 
+use crate::artist::identity;
 use crate::sources::listenbrainz::Mode;
-use crate::sources::{ArtistInfo, Release, Song};
+use crate::sources::{ArtistInfo, ArtistSource, Release, Song};
 use crate::store::{self, entities};
 use crate::taste::Taste;
 use crate::{Service, art, mix, radio};
@@ -599,12 +600,26 @@ async fn new_releases(
     followed: &[(ArtistId, String)],
     followed_tags: &[String],
 ) -> Result<Vec<(Release, Option<String>)>> {
-    Ok(rank_releases(
-        svc.lb.fresh_releases().await?,
-        taste,
-        followed,
-        followed_tags,
-    ))
+    let fresh = svc.lb.fresh_releases().await?;
+    offer_release_artists(svc, &fresh).await;
+    Ok(rank_releases(fresh, taste, followed, followed_tags))
+}
+
+/// ListenBrainz names a release's artist by its MBID: offered as who that artist is
+/// (`artist::identity::offer`), for a credit of one artist.
+async fn offer_release_artists(svc: &Service, releases: &[Release]) {
+    let offers = releases
+        .iter()
+        .filter(|r| radio::credited_names(&r.artist).len() == 1)
+        .filter_map(|r| {
+            let mbid = r.artist_mbid.as_ref()?;
+            let row = identity::IdRow::recommended(identity::Source::Musicbrainz, mbid, "ListenBrainz fresh releases");
+            Some((r.artist.clone(), row))
+        })
+        .collect();
+    if let Err(e) = identity::offer(svc, offers).await {
+        tracing::info!(error = %e, "fresh releases' artist ids not kept");
+    }
 }
 
 /// `new_releases`' choice among the fresh releases, best first.
@@ -676,15 +691,30 @@ async fn picks(
     let mut pending: Vec<(String, Reason, &'static str)> = Vec::new();
 
     for seed in taste.top_artists(4) {
-        match similar_to(svc, &seed.name).await {
-            Ok(found) => pending.extend(found.into_iter().map(|mbid| {
-                let reason = Reason {
-                    kind: ReasonKind::Like,
-                    name: seed.name.clone(),
-                    reference: Some(seed.id.0.clone()),
-                };
-                (mbid, reason, "ListenBrainz similar artists")
-            })),
+        let reason = Reason {
+            kind: ReasonKind::Like,
+            name: seed.name.clone(),
+            reference: Some(seed.id.0.clone()),
+        };
+        match similar_to(svc, &seed.id).await {
+            Ok(Similar::Recordings(found)) => pending.extend(
+                found
+                    .into_iter()
+                    .map(|mbid| (mbid, reason.clone(), "ListenBrainz similar artists")),
+            ),
+            Ok(Similar::Songs(songs)) => {
+                radio::offer(svc, &songs, "Deezer radio").await;
+                pools.push(
+                    songs
+                        .into_iter()
+                        .map(|song| Candidate {
+                            song,
+                            reason: reason.clone(),
+                            via: "Deezer radio",
+                        })
+                        .collect(),
+                );
+            }
             Err(e) => failures.push(e),
         }
     }
@@ -724,6 +754,7 @@ async fn picks(
         .await
     {
         Ok(songs) => {
+            radio::offer(svc, &songs, "ListenBrainz").await;
             let by_mbid: HashMap<String, Song> = songs.into_iter().filter_map(|s| Some((s.mbid.clone()?, s))).collect();
             // One pool per seed (artist, tag, recommendations), so the round-robin mixes them.
             let mut by_seed: BTreeMap<(&'static str, String), Vec<Candidate>> = BTreeMap::new();
@@ -786,30 +817,34 @@ fn originals_first(mut songs: Vec<Song>) -> Vec<Song> {
     songs
 }
 
-/// Recordings by artists similar to `name` (not by `name`), via ListenBrainz artist radio.
-async fn similar_to(svc: &Service, name: &str) -> Result<Vec<String>> {
-    let Some(mbid) = artist_mbid(svc, name).await? else {
-        return Ok(Vec::new());
-    };
-    let found = svc.lb.artist_radio(&mbid, Mode::Medium, 6, 1, (0, 60)).await?;
-    Ok(found
-        .into_iter()
-        .filter(|p| p.artist_mbid != mbid)
-        .map(|p| p.recording_mbid)
-        .collect())
+/// Songs by artists similar to a liked one (not by it), by its exact ids (`artist::identity`):
+/// ListenBrainz's artist radio by its MBID (recordings, for `ListenBrainz::songs`), else Deezer's
+/// radio by its Deezer id. Without either, none.
+enum Similar {
+    Recordings(Vec<String>),
+    Songs(Vec<Song>),
 }
 
-/// An artist's MBID: remembered from an earlier page, else looked up on MusicBrainz.
-pub async fn artist_mbid(svc: &Service, name: &str) -> Result<Option<String>> {
-    if let Some(mbid) = svc
-        .store
-        .artist_ref(ArtistId::of(name))
-        .await?
-        .and_then(|a| a.musicbrainz_id)
-    {
-        return Ok(Some(mbid));
+async fn similar_to(svc: &Service, id: &ArtistId) -> Result<Similar> {
+    let ids = identity::ids(svc, id).await?;
+    if let Some(mbid) = ids.mbid() {
+        let found = svc.lb.artist_radio(mbid, Mode::Medium, 6, 1, (0, 60)).await?;
+        return Ok(Similar::Recordings(
+            found
+                .into_iter()
+                .filter(|p| p.artist_mbid != mbid)
+                .map(|p| p.recording_mbid)
+                .collect(),
+        ));
     }
-    Ok(svc.mb.find_artist(name).await?.and_then(|a| a.mbid))
+    let Some(deezer) = ids.deezer() else {
+        return Ok(Similar::Songs(Vec::new()));
+    };
+    let mut songs = svc.deezer.radio(deezer).await?;
+    songs.retain(|s| s.artist_source != Some(ArtistSource::Deezer(deezer)));
+    mix::shuffle(&mut songs, mix::seed());
+    songs.truncate(6);
+    Ok(Similar::Songs(songs))
 }
 
 /// Tags to dig in: followed ones and the strongest that run through liked artists; on a cold

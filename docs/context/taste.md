@@ -20,7 +20,7 @@ Owner: Discovery session (`crates/discovery/src/taste.rs`). Small, on-device and
 ## Artists and tags
 
 - **Artist weight:** each signal adds its weight to its artist (`ArtistId::of(name)`).
-- **Tags an artist carries:** those of its tracks the signals name (catalog), or its own (from artist pages) for a signal whose track has none, or that names no track.
+- **Tags an artist carries:** those of its tracks the signals name (the catalog's, else Last.fm's `track.getTopTags` for that artist and title), or its own for a signal whose track has none, or that names no track. An artist's own tags are MusicBrainz's by its MBID, and only by an MBID its [ids](discovery.md#artist-identity) hold. **Identity is ids, never names:** a name's tags may be any namesake's (Last.fm's artist pages are per name, so its artist tags never count), and the listener's own songs decide who their artists are before any recommender; nothing may fall back to a name.
 - **Tag weight:** the sum of the weights of the artists carrying it, so a tag weighs how much of what the listener likes it runs through, however many other tags those artists have. Following a tag adds +4.0 to that tag. (Sharing a signal's weight among its tags made one song tagged only "rapper", or one artist's two labels, the strongest tags.)
 - **Tags dug into** (`Taste::dig_tags`, for picks, radio starters and tag-matched new releases): specific ones carried by at least 2 liked artists (`TAG_ARTISTS`), plus followed tags. One artist's labels are that artist, often a namesake's.
 - **Umbrella genres** (rock, pop, electronic…) stay in the profile, but picks and radio never seed from them (see [discovery.md](discovery.md)).

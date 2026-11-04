@@ -1,11 +1,11 @@
 //! `GET /api/artists/{id}`: an artist page as complete as a streaming service's. Who the artist
-//! is comes first (the MBID a release named, else Last.fm's, else MusicBrainz's); then, side by
-//! side, each in a task of its own:
-//! - the catalog: MusicBrainz's links (tags, and the iTunes and Deezer artists it points to,
-//!   which tell namesakes apart), iTunes's artist lookup, Deezer where it is open, and
-//!   MusicBrainz's release groups, merged into one discography (`discography`);
+//! is comes first: the exact ids lull holds for it (`identity`), never its name. Then, side by
+//! side, each in a task of its own and each from whichever id serves it:
+//! - the catalog: iTunes's artist lookup by its Apple id, Deezer's albums by its Deezer id where
+//!   Deezer is open, and MusicBrainz's release groups and tags by its MBID, merged into one
+//!   discography (`discography`);
 //! - Last.fm's play counts, placed on the catalog's songs (`popular`);
-//! - similar artists (Last.fm, else ListenBrainz);
+//! - similar artists (ListenBrainz by its MBID, else Deezer's related artists by its id);
 //! - photos for the artist and the similar artists (`photo`), once the covers are known.
 //!
 //! The page answers within `PAGE_DEADLINE`. A section not in by then is named in `pending`, and
@@ -15,6 +15,7 @@
 //! (`pages::Unfinished`). Photos aren't a section: one vetted later arrives with `art.ready`.
 
 pub mod discography;
+pub mod identity;
 pub mod photo;
 pub mod popular;
 
@@ -113,10 +114,27 @@ pub async fn page(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Re
     // This page vets the artist's photo against its covers; the background queue leaves it be.
     svc.photos.hold(&id);
 
-    // Who the artist is: Last.fm's profile (asked by MBID when known) and, without an MBID,
-    // MusicBrainz's artist of that name, side by side. With the MBID known, the sections don't
-    // wait for them.
-    let mut profile_rx = svc.lastfm().is_some().then(|| {
+    // Who the artist is: its exact ids. The first time takes a few paced lookups; ids not in by
+    // the deadline are kept for the next view.
+    let ids = {
+        let (s, id) = (svc.clone(), id.clone());
+        late.run(&["artist"], async move { identity::ids(&s, &id).await })
+    };
+    let ids = match wait(until, ids).await {
+        Ok(ids) => ids,
+        Err(Missing::Late) => {
+            late.late("artist", &mut pending, &mut errors);
+            identity::Ids::default()
+        }
+        Err(Missing::Failed(e)) => {
+            errors.insert("artist", e.to_string());
+            identity::Ids::default()
+        }
+    };
+    artist.musicbrainz_id = ids.mbid().map(str::to_owned);
+    // Last.fm's profile (by MBID when there is one) for its bio and listeners: Last.fm's pages
+    // are per name, so its tags may be any namesake's and never count.
+    let profile_rx = svc.lastfm().is_some().then(|| {
         let (s, name, mbid) = (svc.clone(), artist.name.clone(), artist.musicbrainz_id.clone());
         late.run(&["bio"], async move {
             match s.lastfm() {
@@ -125,32 +143,6 @@ pub async fn page(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Re
             }
         })
     });
-    let known = artist.musicbrainz_id.is_some();
-    let mut profile = None;
-    if !known {
-        let found = {
-            let (s, name) = (svc.clone(), artist.name.clone());
-            late.run(&["artist"], async move { s.mb.find_artist(&name).await })
-        };
-        profile = match profile_rx.take() {
-            Some(rx) => Some(wait(until, rx).await),
-            None => None,
-        };
-        match wait(until, found).await {
-            Ok(Some(a)) => artist.musicbrainz_id = a.mbid,
-            Ok(None) => {}
-            Err(Missing::Late) => late.late("artist", &mut pending, &mut errors),
-            Err(Missing::Failed(e)) => {
-                errors.insert("artist", e.to_string());
-            }
-        }
-        if artist.musicbrainz_id.is_none()
-            && let Some(Ok(p)) = &profile
-        {
-            artist.musicbrainz_id = p.mbid.clone();
-            errors.remove("artist");
-        }
-    }
     let info = ArtistInfo {
         mbid: artist.musicbrainz_id.clone(),
         name: artist.name.clone(),
@@ -163,27 +155,38 @@ pub async fn page(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Re
     let (photos_tx, photos_rx) = oneshot::channel::<Result<()>>();
     late.open(2);
     {
-        let (svc, late, info, artist, held) = (svc.clone(), late.clone(), info.clone(), artist.clone(), id.clone());
+        let (svc, late, info, artist, held, ids) = (
+            svc.clone(),
+            late.clone(),
+            info.clone(),
+            artist.clone(),
+            id.clone(),
+            ids.clone(),
+        );
         svc.ctx.clone().spawn(async move {
             let (catalog, similar) = tokio::join!(
                 async {
-                    let c = bounded(catalog(&svc, &info)).await;
-                    let asked = c.as_ref().ok().map(|c| (covers(&c.releases), c.links.deezer));
+                    let c = bounded(catalog(&svc, &info, &ids)).await;
+                    let asked = c.as_ref().ok().map(|c| covers(&c.releases));
                     late.deliver(catalog_tx, c, &["albums", "topTracks"]);
                     asked
                 },
                 async {
-                    let s = bounded(similar_artists(&svc, &info)).await;
+                    let s = bounded(similar_artists(&svc, &ids)).await;
                     let names = s.as_ref().ok().cloned().unwrap_or_default();
                     late.deliver(similar_tx, s, &["similar"]);
                     names
                 }
             );
-            let (covers, deezer) = catalog.unwrap_or_default();
-            let mut asks = vec![photo::Ask { artist, deezer, covers }];
+            let covers = catalog.unwrap_or_default();
+            let mut asks = vec![photo::Ask {
+                artist,
+                deezer: ids.deezer(),
+                covers,
+            }];
             asks.extend(similar.into_iter().map(|a| photo::Ask {
-                artist: store::artist(a),
-                deezer: None,
+                deezer: a.deezer,
+                artist: store::artist(a.info),
                 covers: Vec::new(),
             }));
             let found = bounded(async {
@@ -205,12 +208,10 @@ pub async fn page(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Re
             }
         })
     });
-    if known {
-        profile = match profile_rx.take() {
-            Some(rx) => Some(wait(until, rx).await),
-            None => None,
-        };
-    }
+    let profile = match profile_rx {
+        Some(rx) => Some(wait(until, rx).await),
+        None => None,
+    };
 
     // A profile asked by name can be a namesake's: one naming another MBID isn't this artist's.
     match profile {
@@ -221,7 +222,6 @@ pub async fn page(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Re
             } else {
                 artist.listeners = p.listeners;
                 artist.bio = p.bio;
-                artist.tags = p.tags;
             }
         }
         Some(Err(Missing::Late)) => late.late("bio", &mut pending, &mut errors),
@@ -314,9 +314,11 @@ pub async fn page(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Re
         list.push(album.id.clone());
     }
 
+    let similar: Vec<Similar> = similar.into_iter().take(SIMILAR).collect();
+    identity::offer(&svc, similar.iter().filter_map(Similar::offered).collect()).await?;
     let similar = svc
         .store
-        .artists(similar.into_iter().take(SIMILAR).map(store::artist).collect())
+        .artists(similar.into_iter().map(|a| store::artist(a.info)).collect())
         .await?;
     let mut all_artists = svc.store.artists(vec![artist.clone()]).await?;
     all_artists.extend(similar.iter().cloned());
@@ -343,75 +345,38 @@ pub async fn page(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Re
     }))
 }
 
-/// Everything the catalogs know of the artist, the sources side by side. One failing leaves the
-/// others; all failing is an error.
-async fn catalog(svc: &Service, info: &ArtistInfo) -> Result<Catalog> {
+/// Everything the catalogs know of the artist, each by the artist's own id there, side by side.
+/// One failing leaves the others; all failing is an error.
+async fn catalog(svc: &Service, info: &ArtistInfo, ids: &identity::Ids) -> Result<Catalog> {
     let open = svc.catalog.choice() == Choice::Deezer;
-    let (stores, from_musicbrainz) = tokio::join!(
+    let (links, from_itunes, from_deezer, from_musicbrainz) = tokio::join!(
         async {
-            let (links, itunes, deezer) = tokio::join!(
-                async {
-                    match &info.mbid {
-                        Some(mbid) => svc.mb.artist_links(mbid).await,
-                        None => Ok(Links::default()),
-                    }
-                },
-                svc.itunes.artists(&info.name),
-                async {
-                    if open {
-                        svc.deezer.artists_named(&info.name).await
-                    } else {
-                        Ok(Vec::new())
-                    }
+            match &info.mbid {
+                Some(mbid) => svc.mb.artist_links(mbid).await,
+                None => Ok(Links::default()),
+            }
+        },
+        async {
+            match ids.itunes() {
+                Some(id) => svc.itunes.artist_catalog(id).await.map(Some),
+                None => Ok(None),
+            }
+        },
+        async {
+            match ids.deezer() {
+                Some(id) if open => {
+                    let (releases, top) = tokio::join!(svc.deezer.artist_releases(id), svc.deezer.artist_top(id));
+                    Ok(Some((releases?, top?)))
                 }
-            );
-            let links = links.unwrap_or_else(|e| {
-                tracing::info!(error = %e, "artist links from MusicBrainz missing");
-                Links::default()
-            });
-            // The linked artist, else the store's best-known one of that name; Deezer's only
-            // when it is the only one of that name.
-            let itunes = itunes.map(|found| match links.itunes {
-                Some(id) => found
-                    .into_iter()
-                    .find(|a| a.id == id)
-                    .or(Some(crate::sources::itunes::StoreArtist {
-                        id,
-                        name: info.name.clone(),
-                    })),
-                None => found.into_iter().next(),
-            });
-            let deezer = deezer.map(|found| {
-                links.deezer.or(match found.as_slice() {
-                    [only] => Some(only.id),
-                    _ => None,
-                })
-            });
-            let (from_itunes, from_deezer) = tokio::join!(
-                async {
-                    match itunes {
-                        Ok(Some(a)) => svc.itunes.artist_catalog(a.id).await.map(|c| Some((a.name, c))),
-                        Ok(None) => Ok(None),
-                        Err(e) => Err(e),
-                    }
-                },
-                async {
-                    match deezer {
-                        Ok(Some(id)) if open => {
-                            let (releases, top) =
-                                tokio::join!(svc.deezer.artist_releases(id), svc.deezer.artist_top(id));
-                            Ok(Some((releases?, top?)))
-                        }
-                        Ok(_) => Ok(None),
-                        Err(e) => Err(e),
-                    }
-                }
-            );
-            (links, from_itunes, from_deezer)
+                _ => Ok(None),
+            }
         },
         svc.mb.discography(info)
     );
-    let (links, from_itunes, from_deezer) = stores;
+    let links = links.unwrap_or_else(|e| {
+        tracing::info!(error = %e, "artist links from MusicBrainz missing");
+        Links::default()
+    });
     let mut out = Catalog {
         links,
         ..Catalog::default()
@@ -427,8 +392,14 @@ async fn catalog(svc: &Service, info: &ArtistInfo) -> Result<Catalog> {
         Err(e) => failed.push(e),
     }
     match from_itunes {
-        Ok(Some((name, c))) => {
-            out.store_name = Some(name);
+        Ok(Some(c)) => {
+            // How the store writes the name ("BIJI"): its songs credited to the artist alone.
+            let id = ArtistId::of(&info.name);
+            out.store_name = c
+                .songs
+                .iter()
+                .find(|s| ArtistId::of(&s.artist) == id)
+                .map(|s| s.artist.clone());
             out.releases.extend(c.releases);
             out.songs_via = out.songs_via.or((!c.songs.is_empty()).then_some("itunes"));
             out.songs.extend(
@@ -535,37 +506,63 @@ fn song_hit(s: Song) -> SongHit {
     }
 }
 
-/// Last.fm's similar artists when configured, else ListenBrainz's.
-async fn similar_artists(svc: &Service, artist: &ArtistInfo) -> Result<Vec<ArtistInfo>> {
-    let similar = match (svc.lastfm(), &artist.mbid) {
-        (Some(lastfm), mbid) => lastfm.similar_artists(&artist.name, mbid.as_deref()).await?,
-        (None, Some(mbid)) => svc.lb.similar_artists(mbid).await?,
-        (None, None) => Vec::new(),
-    };
-    let similar = without_credits(&artist.name, similar);
-    Ok(similar.into_iter().take(SIMILAR).collect())
+/// A similar artist, with the id the recommender named it by.
+#[derive(Clone)]
+struct Similar {
+    info: ArtistInfo,
+    deezer: Option<u64>,
+    by: &'static str,
 }
 
-/// Last.fm lists credit strings among similar artists ("Kalman Chodakiewitz, Eli Shiffman &
-/// Petite Meller" beside Petite Meller): a name made of several artists, one of them listed
-/// already or the page's own, isn't an artist of its own.
-fn without_credits(artist: &str, similar: Vec<ArtistInfo>) -> Vec<ArtistInfo> {
-    let listed: std::collections::HashSet<String> = similar
-        .iter()
-        .map(|a| normalize_artist(&a.name))
-        .chain([normalize_artist(artist)])
-        .collect();
-    similar
-        .into_iter()
-        .filter(|a| {
-            let names = crate::radio::credited_names(&a.name);
-            names.len() < 3
-                || !names
-                    .iter()
-                    .skip(1)
-                    .any(|n| listed.contains(&normalize_artist(n)) && normalize_artist(n) != normalize_artist(&a.name))
-        })
-        .collect()
+impl Similar {
+    /// Its id, for `identity::offer`: a recommender's own id for the artist it names.
+    fn offered(&self) -> Option<(String, identity::IdRow)> {
+        let row = match (&self.info.mbid, self.deezer) {
+            (Some(mbid), _) => identity::IdRow::recommended(identity::Source::Musicbrainz, mbid, self.by),
+            (None, Some(id)) => identity::IdRow::recommended(identity::Source::Deezer, id, self.by),
+            (None, None) => return None,
+        };
+        Some((self.info.name.clone(), row))
+    }
+}
+
+/// ListenBrainz's similar artists by the artist's MBID, else Deezer's related artists by its
+/// Deezer id (answered where the catalog is closed too). With neither id, none: a name's
+/// similar artists may be any namesake's.
+async fn similar_artists(svc: &Service, ids: &identity::Ids) -> Result<Vec<Similar>> {
+    let mut similar: Vec<Similar> = Vec::new();
+    if let Some(mbid) = ids.mbid() {
+        similar = svc
+            .lb
+            .similar_artists(mbid)
+            .await?
+            .into_iter()
+            .map(|info| Similar {
+                info,
+                deezer: None,
+                by: "ListenBrainz similar artists",
+            })
+            .collect();
+    }
+    if similar.is_empty()
+        && let Some(id) = ids.deezer()
+    {
+        similar = svc
+            .deezer
+            .related(id)
+            .await?
+            .into_iter()
+            .map(|a| Similar {
+                info: ArtistInfo {
+                    mbid: None,
+                    name: a.name,
+                },
+                deezer: Some(a.id),
+                by: "Deezer related artists",
+            })
+            .collect();
+    }
+    Ok(similar)
 }
 
 fn off(service: &'static str) -> Error {
@@ -676,28 +673,6 @@ mod tests {
     use super::discography::{self, Group};
     use super::popular;
     use crate::sources::itunes::artist_catalog;
-
-    #[test]
-    fn credit_strings_are_not_similar_artists() {
-        let names = [
-            "Naser Razzazi",
-            "Kalman Chodakiewitz, Eli Shiffman & Petite Meller",
-            "Petite Meller",
-            "Simon & Garfunkel",
-        ];
-        let similar = names
-            .iter()
-            .map(|n| crate::sources::ArtistInfo {
-                mbid: None,
-                name: (*n).into(),
-            })
-            .collect();
-        let kept: Vec<String> = super::without_credits("Biji", similar)
-            .into_iter()
-            .map(|a| a.name)
-            .collect();
-        assert_eq!(kept, ["Naser Razzazi", "Petite Meller", "Simon & Garfunkel"]);
-    }
 
     #[test]
     fn bijis_page_holds_everything_search_finds() {

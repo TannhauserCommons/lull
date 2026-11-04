@@ -2,6 +2,7 @@
 //! groups by name, discographies, tracklists, tags, and recent releases by tag. The limit is
 //! one request per second per IP on average; going over gets every request a 503.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use lull_core::http::{self, Http};
@@ -143,58 +144,6 @@ impl MusicBrainz {
         }
     }
 
-    /// The artist called `name`, when MusicBrainz is sure enough.
-    pub async fn find_artist(&self, name: &str) -> Result<Option<ArtistInfo>> {
-        Ok(self.named(name).await?.into_iter().next())
-    }
-
-    /// The MBID of the one artist MusicBrainz is sure is called `name`: `None` when it knows
-    /// none, or several (a namesake's photo is worse than none).
-    pub async fn sole_artist(&self, name: &str) -> Result<Option<String>> {
-        let mut named = self.named(name).await?.into_iter();
-        Ok(match (named.next(), named.next()) {
-            (Some(only), None) => only.mbid,
-            _ => None,
-        })
-    }
-
-    /// The artists MusicBrainz scores as strong matches for `name` and calls exactly that, best
-    /// first. Kept a month.
-    async fn named(&self, name: &str) -> Result<Vec<ArtistInfo>> {
-        self.switch.check()?;
-        #[derive(Deserialize)]
-        struct Found {
-            artists: Vec<Raw>,
-        }
-        #[derive(Deserialize)]
-        struct Raw {
-            id: String,
-            name: String,
-            score: Option<u8>,
-        }
-        let key = format!("mb:artists-named:{}", normalize_artist(name));
-        self.cache
-            .get(key, 30 * DAY, || async {
-                let found: Found = self
-                    .get(
-                        "artist",
-                        &[("query", &format!("artist:{}", phrase(name))), ("limit", "5")],
-                    )
-                    .await?;
-                Ok(found
-                    .artists
-                    .into_iter()
-                    .filter(|a| a.score.unwrap_or(0) >= MIN_SCORE)
-                    .filter(|a| normalize_artist(&a.name) == normalize_artist(name))
-                    .map(|a| ArtistInfo {
-                        mbid: Some(a.id),
-                        name: a.name,
-                    })
-                    .collect())
-            })
-            .await
-    }
-
     /// The artist's tags and genres, most used first, and its pages elsewhere: the iTunes and
     /// Deezer artists MusicBrainz links it to, which tell apart artists of the same name. One
     /// call.
@@ -234,6 +183,75 @@ impl MusicBrainz {
                         .find_map(|u| linked_id(u, &["music.apple.com/", "itunes.apple.com/"])),
                     deezer: urls.iter().find_map(|u| linked_id(u, &["deezer.com/"])),
                 })
+            })
+            .await
+    }
+
+    /// The artists MusicBrainz links from each of these page URLs (an artist's Apple Music or
+    /// Deezer page): exact, unlike a name. One call for all of them; a URL MusicBrainz doesn't
+    /// know is absent. Kept a month.
+    pub async fn url_artists(&self, resources: Vec<String>) -> Result<HashMap<String, Vec<ArtistInfo>>> {
+        self.switch.check()?;
+        if resources.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let mut sorted = resources;
+        sorted.sort();
+        sorted.dedup();
+        self.cache
+            .get(format!("mb:url-artists:{}", sorted.join(" ")), 30 * DAY, || async {
+                let query: Vec<(&str, &str)> = sorted
+                    .iter()
+                    .map(|r| ("resource", r.as_str()))
+                    .chain([("inc", "artist-rels")])
+                    .collect();
+                match self.get::<serde_json::Value>("url", &query).await {
+                    Ok(body) => url_artists(body),
+                    // Asked for one URL it doesn't know, MusicBrainz answers 404.
+                    Err(Error::NotFound(_)) => Ok(HashMap::new()),
+                    Err(e) => Err(e),
+                }
+            })
+            .await
+    }
+
+    /// The artist credit of each recording with this ISRC, each artist with its MBID. Kept a
+    /// month.
+    pub async fn isrc_credits(&self, isrc: &str) -> Result<Vec<Vec<ArtistInfo>>> {
+        self.switch.check()?;
+        #[derive(Deserialize)]
+        struct Found {
+            #[serde(default)]
+            recordings: Vec<Recording>,
+        }
+        #[derive(Deserialize)]
+        #[serde(rename_all = "kebab-case")]
+        struct Recording {
+            #[serde(default)]
+            artist_credit: Vec<Credit>,
+        }
+        self.cache
+            .get(format!("mb:isrc-credits:{isrc}"), 30 * DAY, || async {
+                match self
+                    .get::<Found>(&format!("isrc/{isrc}"), &[("inc", "artist-credits")])
+                    .await
+                {
+                    Ok(found) => Ok(found
+                        .recordings
+                        .into_iter()
+                        .map(|r| {
+                            r.artist_credit
+                                .into_iter()
+                                .map(|c| ArtistInfo {
+                                    mbid: Some(c.artist.id),
+                                    name: c.name,
+                                })
+                                .collect()
+                        })
+                        .collect()),
+                    Err(Error::NotFound(_)) => Ok(Vec::new()),
+                    Err(e) => Err(e),
+                }
             })
             .await
     }
@@ -493,6 +511,46 @@ impl MusicBrainz {
             e => e,
         })
     }
+}
+
+/// A `url` lookup's answer (one URL object for one resource, `urls` for several) as each URL's
+/// linked artists.
+fn url_artists(body: serde_json::Value) -> Result<HashMap<String, Vec<ArtistInfo>>> {
+    #[derive(Deserialize)]
+    struct Url {
+        resource: String,
+        #[serde(default)]
+        relations: Vec<Relation>,
+    }
+    #[derive(Deserialize)]
+    struct Relation {
+        artist: Option<RelatedArtist>,
+    }
+    #[derive(Deserialize)]
+    struct RelatedArtist {
+        id: String,
+        name: String,
+    }
+    let urls: std::result::Result<Vec<Url>, _> = match body.get("urls") {
+        Some(list) => serde_json::from_value(list.clone()),
+        None => serde_json::from_value(body).map(|u| vec![u]),
+    };
+    let urls = urls.map_err(|e| Error::upstream(SERVICE, format!("unexpected url answer: {e}")))?;
+    Ok(urls
+        .into_iter()
+        .map(|u| {
+            let artists = u
+                .relations
+                .into_iter()
+                .filter_map(|r| r.artist)
+                .map(|a| ArtistInfo {
+                    mbid: Some(a.id),
+                    name: a.name,
+                })
+                .collect();
+            (u.resource, artists)
+        })
+        .collect())
 }
 
 /// Release groups that aren't music to play: broadcasts, interviews, spoken word ("Interview

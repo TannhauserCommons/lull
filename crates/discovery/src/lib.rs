@@ -109,6 +109,29 @@ pub const MIGRATIONS: Migrations = Migrations {
             checked_at  INTEGER NOT NULL
         );
     "#,
+        r#"
+        -- Who an artist is (artist/identity.rs): the exact ids lull holds for it, one per
+        -- source (itunes, deezer, musicbrainz), each with the evidence it came from
+        -- (artist::identity::Evidence as JSON). The only place an artist's ids are kept:
+        -- discovery_artists' JSON no longer holds an MBID.
+        CREATE TABLE discovery_artist_ids (
+            artist_id  TEXT NOT NULL,
+            source     TEXT NOT NULL,
+            id         TEXT NOT NULL,
+            evidence   TEXT NOT NULL,
+            PRIMARY KEY (artist_id, source)
+        );
+        -- When the listener's own evidence for an artist was last weighed.
+        CREATE TABLE discovery_artist_checked (
+            artist_id   TEXT PRIMARY KEY,
+            checked_at  INTEGER NOT NULL
+        );
+        -- Every artist is identified again (artist::identity::recheck): until then none has an
+        -- MBID or artist tags, which were taken from names.
+        UPDATE discovery_artists SET json = json_set(json, '$.musicbrainzId', NULL, '$.tags', json('[]'));
+        -- Photos were vetted with those MBIDs (Wikidata's photo of a namesake): vetted again.
+        DELETE FROM discovery_artist_photos;
+    "#,
     ],
 };
 
@@ -195,6 +218,7 @@ pub async fn start(
     ctx.spawn(listen(svc.clone(), ctx.bus.subscribe()));
     ctx.spawn(artist::photo::work(svc.clone()));
     ctx.spawn(artist::photo::follow_screens(svc.clone()));
+    ctx.spawn(artist::identity::recheck(svc.clone()));
     ctx.spawn(feed::keep_fresh(svc.clone()));
     ctx.spawn(search::catalog::keep_choosing(svc.clone()));
     ctx.spawn(search::resolve::work(svc.clone()));

@@ -131,6 +131,24 @@ impl LastFm {
             .await
     }
 
+    /// A song's own tags (`track.getTopTags`, by artist and title), most used first: a song's,
+    /// not every artist's of that name. Kept a month.
+    pub async fn track_tags(&self, artist: &str, title: &str) -> Result<Vec<String>> {
+        let key = format!("lfm:track-tags:{}:{}", normalize_artist(artist), normalize(title));
+        self.cache
+            .get(key, 30 * DAY, || async {
+                let body = self
+                    .call("track.getTopTags", &[("artist", artist), ("track", title)])
+                    .await?;
+                let counted = list(&body["toptags"]["tag"])
+                    .iter()
+                    .filter_map(|t| Some((t["name"].as_str()?.to_owned(), t["count"].as_i64().unwrap_or(0))))
+                    .collect();
+                Ok(top_tags(counted, 8))
+            })
+            .await
+    }
+
     /// Radio without ListenBrainz: an artist's most played tracks.
     pub async fn artist_top_tracks(&self, name: &str) -> Result<Vec<Song>> {
         self.cache

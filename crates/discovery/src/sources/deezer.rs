@@ -6,7 +6,6 @@
 //! `total` above zero: that is reported, not mistaken for "nothing found".
 
 use lull_core::http::{DEEZER, Http};
-use lull_core::ids::{normalize, normalize_artist};
 use lull_core::{Error, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -181,35 +180,6 @@ impl Deezer {
         open(&self.http.json(SERVICE, |c| c.get(format!("{API}/infos"))).await?)
     }
 
-    /// The artists called `name`: the exact name (ignoring case), else the same without a
-    /// leading "the" ("The Prodigy" is not the rapper Prodigy). Several can share a name; the
-    /// caller tells them apart.
-    pub async fn artists_named(&self, name: &str) -> Result<Vec<DeezerArtist>> {
-        self.cache
-            .get(format!("dz:artists-named:{}", normalize(name)), 7 * DAY, || async {
-                let found: Vec<DeezerArtist> = Page::<RawArtist>::of(
-                    self.get("search/artist", &[("q", name), ("limit", "10")]).await?,
-                    "artists",
-                )?
-                .into_iter()
-                .filter_map(RawArtist::artist)
-                .collect();
-                let exact: Vec<DeezerArtist> = found
-                    .iter()
-                    .filter(|a| normalize(&a.name) == normalize(name))
-                    .cloned()
-                    .collect();
-                if !exact.is_empty() {
-                    return Ok(exact);
-                }
-                Ok(found
-                    .into_iter()
-                    .filter(|a| normalize_artist(&a.name) == normalize_artist(name))
-                    .collect())
-            })
-            .await
-    }
-
     /// One artist by id (answers where the catalog is closed too).
     pub async fn artist(&self, id: u64) -> Result<Option<DeezerArtist>> {
         self.cache
@@ -267,6 +237,64 @@ impl Deezer {
                     }
                 }
                 Ok(covers)
+            })
+            .await
+    }
+
+    /// The artists Deezer relates to an artist (by id; it answers where the catalog is closed),
+    /// most related first. Kept a week.
+    pub async fn related(&self, id: u64) -> Result<Vec<DeezerArtist>> {
+        self.cache
+            .get(format!("dz:related:{id}"), 7 * DAY, || async {
+                let found = Page::<RawArtist>::of(
+                    self.get(&format!("artist/{id}/related"), &[("limit", "30")]).await?,
+                    "related artists",
+                )?;
+                Ok(found.into_iter().filter_map(RawArtist::artist).collect())
+            })
+            .await
+    }
+
+    /// The artist's Deezer radio (by id; it answers where the catalog is closed): its songs and
+    /// those of artists like it, each with its artist's id. Kept a day.
+    pub async fn radio(&self, id: u64) -> Result<Vec<Song>> {
+        #[derive(Deserialize)]
+        struct Raw {
+            title: String,
+            duration: Option<u32>,
+            isrc: Option<String>,
+            artist: RawNamed,
+            album: Option<RawRadioAlbum>,
+        }
+        #[derive(Deserialize)]
+        struct RawRadioAlbum {
+            title: String,
+        }
+        self.cache
+            .get(format!("dz:radio:{id}"), DAY, || async {
+                let tracks = Page::<Raw>::of(
+                    self.get(&format!("artist/{id}/radio"), &[("limit", "50")]).await?,
+                    "radio",
+                )?;
+                Ok(tracks
+                    .into_iter()
+                    .map(|t| Song {
+                        mbid: None,
+                        title: t.title,
+                        artist: t.artist.name,
+                        artist_mbid: None,
+                        album: t.album.map(|a| a.title).unwrap_or_default(),
+                        album_artist: None,
+                        album_mbid: None,
+                        year: None,
+                        no: None,
+                        disc: None,
+                        duration_s: t.duration.filter(|d| *d > 0),
+                        tags: Vec::new(),
+                        artist_source: Some(ArtistSource::Deezer(t.artist.id)),
+                        isrc: t.isrc.filter(|i| !i.is_empty()),
+                    })
+                    .collect())
             })
             .await
     }

@@ -147,12 +147,26 @@ impl Itunes {
     /// The songs of an album (`collectionId`) in order: one `lookup` call, kept a week. Fails
     /// while the budget is spent, so the album page asks MusicBrainz instead.
     pub async fn tracklist(&self, collection: u64) -> Result<Vec<Song>> {
+        self.tracklist_for(collection, None).await
+    }
+
+    /// `tracklist`, for work nobody is looking at (identifying artists): it waits for what
+    /// searches leave spare of the budget, served last, rather than failing when it is spent.
+    pub async fn tracklist_in_turn(&self, collection: u64) -> Result<Vec<Song>> {
+        self.tracklist_for(collection, Some(Need::Background)).await
+    }
+
+    async fn tracklist_for(&self, collection: u64, need: Option<Need>) -> Result<Vec<Song>> {
         // "-ids": answers kept before songs carried their artist's id are asked again.
         let key = format!("it:tracklist-ids:{}:{collection}", self.country);
         self.cache
             .get(key, KEEP_TRACKLIST_S, || async {
-                if !self.budget().take(Instant::now()) {
-                    return Err(Error::unavailable(SERVICE, "lull's calls for this minute are spent"));
+                match need {
+                    Some(need) => self.wait_turn(need).await?,
+                    None if !self.budget().take(Instant::now()) => {
+                        return Err(Error::unavailable(SERVICE, "lull's calls for this minute are spent"));
+                    }
+                    None => {}
                 }
                 let id = collection.to_string();
                 let body: Value = self
@@ -273,51 +287,6 @@ impl Itunes {
         Ok(Found::default())
     }
 
-    /// The store's artists called `name` (case and a leading "the" aside), best known first. Kept
-    /// a month: an artist's id doesn't change.
-    pub async fn artists(&self, name: &str) -> Result<Vec<StoreArtist>> {
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Raw {
-            artist_id: Option<u64>,
-            artist_name: Option<String>,
-        }
-        #[derive(Deserialize)]
-        struct Page {
-            results: Vec<Raw>,
-        }
-        let key = format!("it:artists:{}:{}", self.country, normalize_artist(name));
-        self.cache
-            .get(key, 30 * DAY, || async {
-                self.wait_turn(Need::Whole).await?;
-                let body: Value = self
-                    .http
-                    .json(SERVICE, |c| {
-                        c.get(API).query(&[
-                            ("term", name),
-                            ("entity", "musicArtist"),
-                            ("limit", "10"),
-                            ("country", self.country.as_str()),
-                        ])
-                    })
-                    .await?;
-                let page: Page = serde_json::from_value(body)
-                    .map_err(|e| Error::upstream(SERVICE, format!("unexpected answer: {e}")))?;
-                Ok(page
-                    .results
-                    .into_iter()
-                    .filter_map(|r| {
-                        Some(StoreArtist {
-                            id: r.artist_id?,
-                            name: r.artist_name?,
-                        })
-                    })
-                    .filter(|a| normalize_artist(&a.name) == normalize_artist(name))
-                    .collect())
-            })
-            .await
-    }
-
     /// What the store has of an artist (`artistId`): its releases and the ones it appears on,
     /// and its songs, most played first as far as Apple's order says. Two `lookup` calls, kept a
     /// day; they wait for what searches leave spare of the budget (the page shows them late).
@@ -389,13 +358,6 @@ impl Drop for Waiting<'_> {
         self.1.budget().leave(self.0);
         self.1.turn.notify_waiters();
     }
-}
-
-/// An artist in the store.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct StoreArtist {
-    pub id: u64,
-    pub name: String,
 }
 
 /// `artist_catalog`'s answer.

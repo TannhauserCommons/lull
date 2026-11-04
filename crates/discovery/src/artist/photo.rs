@@ -2,8 +2,8 @@
 //! (live, BIJI's "photo" was the Cyberpunk: Edgerunners 2 cover), and several artists share a
 //! name, so a picture is taken only when it is surely this artist's:
 //! 1. Wikimedia Commons, by way of Wikidata's item for the artist's MBID;
-//! 2. else Deezer's picture of the Deezer artist MusicBrainz or Wikidata links to (or the only
-//!    one of that name), when it is none of the artist's covers (`same_picture` on small
+//! 2. else Deezer's picture of the artist's own Deezer id (`identity`) or the one Wikidata links
+//!    its MBID to, when it is none of the artist's covers (`same_picture` on small
 //!    copies of the picture and of the covers lull knows: the discography's, Deezer radio's).
 //!
 //! Without either, the artist has no photo and each design draws its own fallback. The verdict
@@ -12,9 +12,8 @@
 //! artist drawn without a photo is reported by the screen it is on (ADR-0033) and queued
 //! (`Queue`): the best-placed are vetted first, a batch at a time, and one that left every
 //! screen is dropped (it is reported again when it comes back). A photo found is announced
-//! (`art.ready` with its `image`), so the pages show it without reading anything again. An
-//! artist without an MBID gets one when MusicBrainz knows exactly one artist of that name, so
-//! Wikidata can be asked.
+//! (`art.ready` with its `image`), so the pages show it without reading anything again. The MBID
+//! Wikidata is asked about is the artist's confirmed one (`identity`), never one found by name.
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -128,15 +127,15 @@ pub async fn work(svc: Arc<Service>) {
             .await;
         let mut asks = Vec::new();
         for mut artist in artists.unwrap_or_default() {
-            if artist.musicbrainz_id.is_none() {
-                artist.musicbrainz_id = svc.mb.sole_artist(&artist.name).await.unwrap_or_else(|e| {
-                    tracing::debug!(error = %e, "no MBID for an artist's photo this time");
-                    None
-                });
-            }
+            // Its own ids (`identity`): the MBID a search row carries may be a namesake's.
+            let ids = svc.store.artist_ids(artist.id.clone()).await.unwrap_or_else(|e| {
+                tracing::debug!(error = %e, "no ids for an artist's photo this time");
+                Default::default()
+            });
+            artist.musicbrainz_id = ids.mbid().map(str::to_owned);
             asks.push(Ask {
                 artist,
-                deezer: None,
+                deezer: ids.deezer(),
                 covers: Vec::new(),
             });
         }
@@ -247,16 +246,10 @@ async fn photo(svc: &Service, ask: &Ask, wiki: Option<WikiArtist>) -> Option<Opt
     if let Some(image) = wiki.image {
         return Some(Some(image));
     }
+    // The artist's own Deezer id, or the one Wikidata links its MBID to; never one found by name.
     let deezer = match ask.deezer.or(wiki.deezer) {
         Some(id) => svc.deezer.artist(id).await,
-        None => svc.deezer.artists_named(&ask.artist.name).await.map(|named| {
-            // Two artists of one name and no link between them: neither picture is surely this one.
-            let mut named = named.into_iter();
-            match (named.next(), named.next()) {
-                (Some(only), None) => Some(only),
-                _ => None,
-            }
-        }),
+        None => return Some(None),
     };
     let deezer = match deezer {
         Ok(Some(d)) => d,

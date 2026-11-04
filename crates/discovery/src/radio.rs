@@ -2,12 +2,14 @@
 //! from familiar (0) to adventurous (1); the taste model orders them.
 //!
 //! - **ListenBrainz first** (5 s at most): artist radio for similar artists, tag radio within a
-//!   popularity window. An artist radio needs the artist's MBID. A credit ("A feat. B & C") is
-//!   tried whole, then artist by artist, each name through what lull remembers, MusicBrainz (a
-//!   transient error retried once), then Last.fm. When none names an MBID, or ListenBrainz has
-//!   nothing for it, Last.fm's similar artists and the seed's tags lead into ListenBrainz instead.
+//!   popularity window. Who the artist is comes from its exact ids (`artist::identity`), never
+//!   its name; a credit ("A feat. B & C") is tried whole, then artist by artist. An artist radio
+//!   needs its MBID; with only a Deezer id, Deezer's radio of that id stands in. Without either,
+//!   or when ListenBrainz has no artist radio for it, the seed's own tags lead into tag radio
+//!   (a track's, or those of the listener's songs by the artist).
 //! - **Then Last.fm** when ListenBrainz gave nothing (down, slow or empty): similar tracks, the
-//!   top tracks of the artist and of similar artists, or the tag's top tracks.
+//!   top tracks of the similar artists of an artist with an MBID, the similar tracks of the
+//!   listener's songs by one without, or the tag's top tracks.
 //! - **Then the saved library:** songs matching the artist or tag.
 //! - **About 8 s at most** in all. The answer is an error only when no source answered: 503 with
 //!   the reason, or 404 when they answered with nothing.
@@ -22,9 +24,10 @@ use lull_core::{Error, Result};
 use serde::Deserialize;
 use tokio::time::Instant;
 
-use crate::sources::Song;
+use crate::artist::identity::{self, IdRow, Ids, Source};
 use crate::sources::lastfm::LastFm;
 use crate::sources::listenbrainz::{Mode, Popularity};
+use crate::sources::{ArtistSource, Song};
 use crate::store::entities;
 use crate::{Service, mix, taste};
 
@@ -67,6 +70,11 @@ struct Known {
     tags: Vec<String>,
     /// The artist whose radio this is: more than `PER_ARTIST` of theirs are fine.
     artist: Option<ArtistId>,
+    /// The credited artist's exact ids (track and artist seeds; `artist::identity`).
+    ids: Ids,
+    /// The titles of the listener's songs by an artist without an MBID (artist seeds): Last.fm's
+    /// radio starts from them, as no id of its names this artist there.
+    songs: Vec<String>,
 }
 
 pub async fn next(
@@ -76,9 +84,16 @@ pub async fn next(
     exclude: HashSet<TrackId>,
 ) -> Result<(Vec<TrackId>, Entities)> {
     let taste = svc.taste().await?;
+    let started = Instant::now();
     let seed = known(svc, seed).await?;
+    // Finding who the seed's artist is counts against the radio's time.
+    let spent = started.elapsed();
+    let budget = Budget {
+        listenbrainz: BUDGET.listenbrainz.saturating_sub(spent),
+        total: BUDGET.total.saturating_sub(spent),
+    };
     let tracks = gather(
-        BUDGET,
+        budget,
         from_listenbrainz(svc, &seed, steer),
         svc.lastfm().map(|lastfm| from_lastfm(svc, lastfm, &seed, steer)),
         from_library(svc, &seed),
@@ -135,6 +150,8 @@ async fn known(svc: &Service, seed: Seed) -> Result<Known> {
             title: None,
             tags: Vec::new(),
             artist: None,
+            ids: Ids::default(),
+            songs: Vec::new(),
         }),
         SeedKind::Artist => {
             let artist = svc
@@ -142,12 +159,20 @@ async fn known(svc: &Service, seed: Seed) -> Result<Known> {
                 .artist_ref(ArtistId(seed.id.clone()))
                 .await?
                 .ok_or_else(|| Error::NotFound(format!("Artist {} is unknown to lull.", seed.id)))?;
+            let ids = credited_ids(svc, &artist.name).await;
+            let (songs, mut tags) = match ids.mbid() {
+                Some(_) => (Vec::new(), Vec::new()),
+                None => listener_songs(svc, &artist.id).await?,
+            };
+            tags.extend(artist.tags);
             Ok(Known {
                 kind: seed.kind,
                 name: artist.name,
                 title: None,
-                tags: artist.tags,
+                tags,
                 artist: Some(artist.id),
+                ids,
+                songs,
             })
         }
         SeedKind::Track => {
@@ -158,13 +183,49 @@ async fn known(svc: &Service, seed: Seed) -> Result<Known> {
                 .ok_or_else(|| Error::NotFound(format!("Track {} is unknown to lull.", seed.id)))?;
             Ok(Known {
                 kind: seed.kind,
+                ids: credited_ids(svc, &track.artist).await,
                 name: track.artist,
                 title: Some(track.title),
                 tags: track.tags,
                 artist: None,
+                songs: Vec::new(),
             })
         }
     }
+}
+
+/// The exact ids of the credit's first artist lull holds any for, within ListenBrainz's time.
+/// Ids not decided by then are none for this batch (their lookups are cached for the next).
+async fn credited_ids(svc: &Service, credit: &str) -> Ids {
+    let names = credited_names(credit);
+    let found = resolve(&names, |name| async move {
+        let ids = identity::ids(svc, &ArtistId::of(&name)).await?;
+        Ok((!ids.is_empty()).then_some(ids))
+    });
+    match tokio::time::timeout(BUDGET.listenbrainz, found).await {
+        Ok((ids, failure)) => {
+            if let Some(e) = failure {
+                tracing::info!(credit, error = %e, "radio without one artist's ids");
+            }
+            ids.unwrap_or_default()
+        }
+        Err(_) => Ids::default(),
+    }
+}
+
+/// The titles of the listener's songs credited to the artist, and their tags.
+async fn listener_songs(svc: &Service, id: &ArtistId) -> Result<(Vec<String>, Vec<String>)> {
+    let (mut titles, mut tags) = (Vec::new(), Vec::new());
+    for (track, artist) in svc.store.listener_songs().await? {
+        if ArtistId::of(&artist) != *id {
+            continue;
+        }
+        if let Some(t) = svc.store.track(track).await? {
+            titles.push(t.title);
+            tags.extend(t.tags);
+        }
+    }
+    Ok((titles, tags))
 }
 
 /// How long the radio's sources get.
@@ -236,12 +297,23 @@ where
 
 /// ListenBrainz's radio for the seed, as catalog tracks.
 async fn from_listenbrainz(svc: &Service, seed: &Known, steer: f64) -> Result<Vec<Track>> {
+    if seed.kind != SeedKind::Tag
+        && seed.ids.mbid().is_none()
+        && let Some(id) = seed.ids.deezer()
+    {
+        // No MBID for ListenBrainz: Deezer's radio of the artist's own Deezer id.
+        let mut songs = svc.deezer.radio(id).await?;
+        offer(svc, &songs, "Deezer radio").await;
+        mix::shuffle(&mut songs, mix::seed());
+        songs.truncate(POOL);
+        return svc.store.tracks(songs).await;
+    }
     let pop = popularity(steer);
     let mut mbids = match seed.kind {
         SeedKind::Tag => svc.lb.tag_radio(&seed.name, pop, 100).await?,
-        SeedKind::Artist => by_artist(svc, &seed.name, &seed.tags, steer, pop).await?,
+        SeedKind::Artist => by_artist(svc, seed, steer, pop).await?,
         SeedKind::Track => {
-            let mut found = by_artist(svc, &seed.name, &seed.tags, steer, pop).await?;
+            let mut found = by_artist(svc, seed, steer, pop).await?;
             if let Some(tag) = seed.tags.iter().find(|t| taste::is_specific(t)) {
                 // A bonus on top of the artist's radio: its failure doesn't stop the radio.
                 match svc.lb.tag_radio(tag, pop, 50).await {
@@ -255,34 +327,65 @@ async fn from_listenbrainz(svc: &Service, seed: &Known, steer: f64) -> Result<Ve
     mix::shuffle(&mut mbids, mix::seed());
     mbids.truncate(POOL);
     let songs = svc.lb.songs(&mbids).await?;
+    offer(svc, &songs, "ListenBrainz radio").await;
     svc.store.tracks(songs).await
 }
 
-/// Last.fm's radio for the seed: similar tracks, the artist's and similar artists' top tracks,
-/// or the tag's top tracks.
+/// The ids a source named its songs' artists by, offered as who those artists are
+/// (`identity::offer`): ListenBrainz's MBIDs, Deezer's artist ids. ListenBrainz names a
+/// credit's first artist, so its MBID is the credit's only when the credit is one artist.
+pub async fn offer(svc: &Service, songs: &[Song], by: &str) {
+    let offers = songs
+        .iter()
+        .filter_map(|s| {
+            let alone = credited_names(&s.artist).len() == 1;
+            let row = match (&s.artist_mbid, s.artist_source) {
+                (Some(mbid), _) if alone => IdRow::recommended(Source::Musicbrainz, mbid, by),
+                (Some(_), _) => return None,
+                (None, Some(ArtistSource::Deezer(id))) => IdRow::recommended(Source::Deezer, id, by),
+                (None, Some(ArtistSource::Itunes(id))) => IdRow::recommended(Source::Itunes, id, by),
+                (None, None) => return None,
+            };
+            Some((s.artist.clone(), row))
+        })
+        .collect();
+    if let Err(e) = identity::offer(svc, offers).await {
+        tracing::info!(error = %e, "a source's artist ids not kept");
+    }
+}
+
+/// Last.fm's radio for the seed: similar tracks, the top tracks of the similar artists of an
+/// artist with an MBID (asked by it), the similar tracks of the listener's songs by one without,
+/// or the tag's top tracks. A name alone never leads to an artist's similar artists.
 async fn from_lastfm(svc: &Service, lastfm: &LastFm, seed: &Known, steer: f64) -> Result<Vec<Track>> {
     let artist = main_and_featured(&seed.name).0;
-    let mut songs = match (seed.kind, &seed.title) {
-        (SeedKind::Tag, _) => lastfm.tag_top_tracks(&seed.name).await?,
-        (SeedKind::Track, Some(title)) => {
+    let mut songs = match (seed.kind, &seed.title, seed.ids.mbid()) {
+        (SeedKind::Tag, _, _) => lastfm.tag_top_tracks(&seed.name).await?,
+        (SeedKind::Track, Some(title), mbid) => {
             let similar = lastfm.similar_tracks(artist, title).await?;
-            if similar.is_empty() {
-                around_artist(lastfm, artist, steer).await?
-            } else {
-                similar
+            match mbid {
+                Some(mbid) if similar.is_empty() => around_artist(lastfm, artist, mbid, steer).await?,
+                _ => similar,
             }
         }
-        _ => around_artist(lastfm, artist, steer).await?,
+        (_, _, Some(mbid)) => around_artist(lastfm, artist, mbid, steer).await?,
+        (_, _, None) => {
+            let mut similar = Vec::new();
+            for title in seed.songs.iter().take(LASTFM_SIMILAR) {
+                similar.extend(lastfm.similar_tracks(artist, title).await?);
+            }
+            similar
+        }
     };
     mix::shuffle(&mut songs, mix::seed());
     songs.truncate(POOL);
     svc.store.tracks(songs).await
 }
 
-/// The artist's top tracks and those of a few similar artists: the closest when familiar,
-/// further down Last.fm's list when adventurous.
-async fn around_artist(lastfm: &LastFm, artist: &str, steer: f64) -> Result<Vec<Song>> {
-    let similar = lastfm.similar_artists(artist, None).await?;
+/// The artist's top tracks and those of a few similar artists (by its confirmed MBID): the
+/// closest when familiar, further down Last.fm's list when adventurous.
+async fn around_artist(lastfm: &LastFm, artist: &str, mbid: &str, steer: f64) -> Result<Vec<Song>> {
+    let similar = lastfm.similar_artists(artist, Some(mbid)).await?;
     let skip = (similar.len().saturating_sub(LASTFM_SIMILAR) as f64 * quantized(steer) * 0.5) as usize;
     let mut songs: Vec<Song> = lastfm.artist_top_tracks(artist).await?.into_iter().take(4).collect();
     for other in similar.iter().skip(skip).take(LASTFM_SIMILAR) {
@@ -308,32 +411,30 @@ async fn from_library(svc: &Service, seed: &Known) -> Vec<Track> {
     saved
 }
 
-/// Recordings for an artist radio on `credit`, else from its similar artists and `tags`.
-async fn by_artist(svc: &Service, credit: &str, tags: &[String], steer: f64, pop: Popularity) -> Result<Vec<String>> {
-    let names = credited_names(credit);
-    let (mbid, mut failure) = resolve(
-        &names,
-        |name| remembered_mbid(svc, name),
-        |name| musicbrainz_mbid(svc, name),
-        |name| lastfm_mbid(svc, name),
-    )
-    .await;
-    if let Some(mbid) = mbid {
-        match svc.lb.artist_radio(&mbid, mode(steer), 15, 4, pop).await {
+/// Recordings for an artist radio on the seed's confirmed artist, else tag radio on its own
+/// tags.
+async fn by_artist(svc: &Service, seed: &Known, steer: f64, pop: Popularity) -> Result<Vec<String>> {
+    let mut failure = None;
+    if let Some(mbid) = seed.ids.mbid() {
+        match svc.lb.artist_radio(mbid, mode(steer), 15, 4, pop).await {
             Ok(picks) if !picks.is_empty() => return Ok(picks.into_iter().map(|p| p.recording_mbid).collect()),
-            Ok(_) => tracing::info!(
-                credit,
-                "ListenBrainz has no artist radio; using similar artists and tags"
-            ),
+            Ok(_) => tracing::info!(credit = %seed.name, "ListenBrainz has no artist radio; using the seed's tags"),
             Err(e) => failure = Some(e),
         }
     }
-    let found = around(svc, main_and_featured(credit).0, tags, steer, pop, &mut failure).await;
-    if !found.is_empty() {
-        return Ok(found);
+    if let Some(tag) = seed.tags.iter().find(|t| taste::is_specific(t)) {
+        match svc.lb.tag_radio(tag, pop, 50).await {
+            Ok(found) if !found.is_empty() => return Ok(found),
+            Ok(_) => {}
+            Err(e) => failure = Some(e),
+        }
     }
-    Err(failure
-        .unwrap_or_else(|| Error::NotFound(format!("No music source knows {credit} well enough for a radio yet."))))
+    Err(failure.unwrap_or_else(|| {
+        Error::NotFound(format!(
+            "No music source knows {} well enough for a radio yet.",
+            seed.name
+        ))
+    }))
 }
 
 /// Whether a title names another take of a song: a remix, live, sped-up, slowed, acoustic or
@@ -387,112 +488,22 @@ pub(crate) fn main_and_featured(credit: &str) -> (&str, &str) {
     }
 }
 
-/// The first MBID any lookup names for `names`, in order: what lull remembers, MusicBrainz (once
-/// it has failed, it isn't asked again), then Last.fm. Also MusicBrainz's failure, if any.
-pub async fn resolve<R, M, L, RF, MF, LF>(
-    names: &[String],
-    remembered: R,
-    musicbrainz: M,
-    lastfm: L,
-) -> (Option<String>, Option<Error>)
+/// The first name's answer among `names`, in order, and the last lookup failure, if any. A name
+/// whose identity can't be decided now doesn't stop the others.
+pub async fn resolve<T, I, IF>(names: &[String], identify: I) -> (Option<T>, Option<Error>)
 where
-    R: Fn(String) -> RF,
-    M: Fn(String) -> MF,
-    L: Fn(String) -> LF,
-    RF: Future<Output = Option<String>>,
-    MF: Future<Output = Result<Option<String>>>,
-    LF: Future<Output = Option<String>>,
+    I: Fn(String) -> IF,
+    IF: Future<Output = Result<Option<T>>>,
 {
-    for name in names {
-        if let Some(mbid) = remembered(name.clone()).await {
-            return (Some(mbid), None);
-        }
-    }
     let mut failure = None;
     for name in names {
-        let mut found = musicbrainz(name.clone()).await;
-        if matches!(found, Err(Error::Unavailable { .. } | Error::Upstream { .. })) {
-            // One retry: a dropped connection is usually gone a moment later.
-            found = musicbrainz(name.clone()).await;
-        }
-        match found {
-            Ok(Some(mbid)) => return (Some(mbid), None),
+        match identify(name.clone()).await {
+            Ok(Some(found)) => return (Some(found), failure),
             Ok(None) => {}
-            Err(e) => {
-                tracing::info!(artist = %name, error = %e, "radio goes on without MusicBrainz");
-                failure = Some(e);
-                break;
-            }
-        }
-    }
-    for name in names {
-        if let Some(mbid) = lastfm(name.clone()).await {
-            return (Some(mbid), failure);
+            Err(e) => failure = Some(e),
         }
     }
     (None, failure)
-}
-
-async fn remembered_mbid(svc: &Service, name: String) -> Option<String> {
-    svc.store
-        .artist_ref(ArtistId::of(&name))
-        .await
-        .ok()
-        .flatten()
-        .and_then(|a| a.musicbrainz_id)
-}
-
-async fn musicbrainz_mbid(svc: &Service, name: String) -> Result<Option<String>> {
-    if !svc.mb.switch.is_on() {
-        return Ok(None);
-    }
-    match svc.mb.find_artist(&name).await {
-        Ok(found) => Ok(found.and_then(|a| a.mbid)),
-        Err(Error::NotFound(_)) => Ok(None),
-        Err(e) => Err(e),
-    }
-}
-
-async fn lastfm_mbid(svc: &Service, name: String) -> Option<String> {
-    svc.lastfm()?.artist(&name, None).await.ok()?.mbid
-}
-
-/// Radio without the artist's own: the artist radio of Last.fm's most similar artist that has an
-/// MBID, and tag radio for the first specific tag of the seed or the artist. Failures are kept
-/// in `failure` for when nothing at all answers.
-async fn around(
-    svc: &Service,
-    name: &str,
-    tags: &[String],
-    steer: f64,
-    pop: Popularity,
-    failure: &mut Option<Error>,
-) -> Vec<String> {
-    let mut found = Vec::new();
-    let mut tags: Vec<String> = tags.to_vec();
-    if let Some(lastfm) = svc.lastfm() {
-        match lastfm.similar_artists(name, None).await {
-            Ok(similar) => {
-                if let Some(mbid) = similar.into_iter().find_map(|a| a.mbid) {
-                    match svc.lb.artist_radio(&mbid, mode(steer), 15, 4, pop).await {
-                        Ok(picks) => found.extend(picks.into_iter().map(|p| p.recording_mbid)),
-                        Err(e) => *failure = Some(e),
-                    }
-                }
-            }
-            Err(e) => *failure = Some(e),
-        }
-        if let Ok(profile) = lastfm.artist(name, None).await {
-            tags.extend(profile.tags);
-        }
-    }
-    if let Some(tag) = tags.iter().find(|t| taste::is_specific(t)) {
-        match svc.lb.tag_radio(tag, pop, 50).await {
-            Ok(more) => found.extend(more),
-            Err(e) => *failure = Some(e),
-        }
-    }
-    found
 }
 
 /// Familiar radio stays close to the seed; adventurous radio goes further out.
@@ -633,74 +644,34 @@ mod tests {
     #[tokio::test]
     async fn a_feat_credit_finds_its_main_artist() {
         let names = credited_names("Shawn Chrystopher feat. Cults & Ashly");
-        let (mbid, failure) = resolve(
-            &names,
-            |_| async { None },
-            |name| async move { Ok((name == "Shawn Chrystopher").then(|| "mbid-shawn".to_owned())) },
-            |_| async { None },
-        )
+        let (mbid, failure) = resolve(&names, |name| async move {
+            Ok((name == "Shawn Chrystopher").then(|| "mbid-shawn".to_owned()))
+        })
         .await;
         assert_eq!(mbid.as_deref(), Some("mbid-shawn"));
         assert!(failure.is_none());
     }
 
     #[tokio::test]
-    async fn with_musicbrainz_down_last_fm_names_the_artist_after_one_retry() {
-        let names = credited_names("Shawn Chrystopher feat. Cults & Ashly");
+    async fn an_identity_that_cant_be_decided_now_leaves_the_next_name_with_the_reason_kept() {
         let asked = Cell::new(0);
-        let (mbid, failure) = resolve(
-            &names,
-            |_| async { None },
-            |_| {
-                asked.set(asked.get() + 1);
-                async { Err(Error::unavailable("MusicBrainz", "error sending request")) }
-            },
-            |name| async move { (name == "Shawn Chrystopher").then(|| "mbid-from-lastfm".to_owned()) },
-        )
+        let (mbid, failure) = resolve(&credited_names("Nobody feat. Anybody"), |name| {
+            asked.set(asked.get() + 1);
+            async move {
+                match name.as_str() {
+                    "Anybody" => Ok(Some("mbid-anybody".to_owned())),
+                    _ => Err(Error::unavailable("MusicBrainz", "error sending request")),
+                }
+            }
+        })
         .await;
-        assert_eq!(mbid.as_deref(), Some("mbid-from-lastfm"));
+        assert_eq!(mbid.as_deref(), Some("mbid-anybody"));
+        assert!(failure.is_some_and(|e| e.to_string().contains("MusicBrainz")));
         assert_eq!(
             asked.get(),
-            2,
-            "one retry, then MusicBrainz isn't asked for the other names"
+            3,
+            "the whole credit, its main part, then the featured artist"
         );
-        assert!(failure.is_some());
-    }
-
-    #[tokio::test]
-    async fn a_transient_musicbrainz_error_is_retried_once() {
-        let asked = Cell::new(0);
-        let (mbid, failure) = resolve(
-            &["Radiohead".to_owned()],
-            |_| async { None },
-            |_| {
-                asked.set(asked.get() + 1);
-                let first = asked.get() == 1;
-                async move {
-                    if first {
-                        Err(Error::unavailable("MusicBrainz", "error sending request"))
-                    } else {
-                        Ok(Some("mbid-radiohead".to_owned()))
-                    }
-                }
-            },
-            |_| async { None },
-        )
-        .await;
-        assert_eq!((mbid.as_deref(), failure.is_none()), (Some("mbid-radiohead"), true));
-    }
-
-    #[tokio::test]
-    async fn with_nothing_naming_the_artist_the_radio_falls_back_with_the_reason_kept() {
-        let (mbid, failure) = resolve(
-            &credited_names("Nobody feat. Anybody"),
-            |_| async { None },
-            |_| async { Err(Error::unavailable("MusicBrainz", "error sending request")) },
-            |_| async { None },
-        )
-        .await;
-        assert!(mbid.is_none());
-        assert!(failure.is_some_and(|e| e.to_string().contains("MusicBrainz")));
     }
 
     #[test]
