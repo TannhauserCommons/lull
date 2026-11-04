@@ -56,7 +56,8 @@ fn snapshot(dir: &Path) -> Snapshot {
     out
 }
 
-fn fingerprint(dir: &Path, h: &mut DefaultHasher) {
+/// Also a theme's `rev`, which names the pictures made of it (pictures.rs).
+pub(crate) fn fingerprint(dir: &Path, h: &mut DefaultHasher) {
     let Ok(entries) = fs::read_dir(dir) else { return };
     let mut entries: Vec<_> = entries.flatten().collect();
     entries.sort_by_key(|e| e.file_name());

@@ -1,6 +1,6 @@
 # ADR-0080: lull makes each theme's picture itself, and the hub keeps it beside the theme
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-04
 
 ## Context
@@ -19,11 +19,11 @@ The sketch can't look like the theme, however well it is drawn:
 ## Decision
 
 **lull makes the picture itself when the theme is made, and the hub keeps it.**
-- **How a picture is drawn:** Home in that theme, in one off-screen frame at 1280×800 with motion reduced; once its fonts and covers are in, day and night (the modes the theme has) are drawn to 320×200 WebP and sent to the hub with the `rev` they show, then the frame goes. One theme at a time. Never a live frame per card.
+- **How a picture is drawn:** Home in that theme, in one off-screen frame at 1440×900 with motion reduced; once its fonts and covers are in, day and night (the modes the theme has) are drawn to 320×200 WebP, of the page's top left 1152×720 as the built-in designs' pictures are framed, and sent to the hub with the `rev` they show, then the frame goes. One theme at a time. Never a live frame per card.
 - **When it is made, first:** the page that saves a theme in Theme Studio or imports one (a dropped file or "Import a theme") draws its pictures right away, in the background, for the `rev` the hub answered the save or import with. The save or import finishes first and never waits for it; a later save drops a draw still pending for the earlier one.
 - **Why a fresh frame, there too:** Studio's two previews are drawn at the sheet's size, on whatever screen and size the author picked, with the draft as a separate sheet, so a picture taken from them wouldn't match one drawn anywhere else; an import has no page of the theme loaded at all. The off-screen frame loads the app files the page already has cached, so it costs about the same either way, and every picture is drawn the same way.
 - **When it is made, as a fallback:** when Settings › Appearance lists a listener's theme with no picture of its own (`preview` false) and none made for its current `rev`. That covers the changes made with no lull page open (the author editing the folder on the hub, a new lull version: a theme's look depends on the lull it runs on) and a picture that didn't get made at creation (the page closed mid-draw, a 409 because the theme changed meanwhile). It starts once the screen has settled.
-- **Keeping the device responsive:** the frame runs on the page's own thread, so it starts when the page is idle, and the drawing yields between steps (styles, fonts, images, each mode), so on a slow phone a tap or a key goes first. Studio's own previews keep working throughout.
+- **Keeping the device responsive:** the frame runs on the page's own thread. Copying styles, fonts and images yields as it goes. The steps no script can split (the frame's start, its change to night, the browser drawing the SVG) each wait until the page is idle and nothing was tapped, typed or scrolled for 1.5 s, so on a slow phone none starts while the listener is using the page. Measured at a 4× slower CPU, keys pressed every 0.4 s: none waits on a picture, except a key pressed as a step has just started, which waits for that step (0.3 s at most); the rest of the picture follows once the keys stop. Studio's own previews keep working throughout.
 - A device that can't make one (no WebP encoding) leaves it to the next Appearance visit elsewhere. Until a picture exists, the card shows the sketch.
 
 **A picture the author made still wins.** `preview: true` and the package's own files are unchanged, and lull never writes into a theme's package.
@@ -50,5 +50,6 @@ The sketch can't look like the theme, however well it is drawn:
 ## Consequences
 
 - **A made picture shows the listener's own Home** (their recommendations and covers), drawn by whichever device made it. A touch device's picture shows what touch shows (no hover-only controls); the difference is small at 320×200.
-- **A save or an import costs one extra off-screen draw** on the device that made it (about a second on a laptop, a few on a slow phone), in the background; a change made outside lull costs the same on the first device that opens Appearance after it. Once per theme change for the whole hub, not per device.
+- **A save or an import costs one extra off-screen draw** on the device that made it (about a second on a laptop, a few on a slow phone), in the background; a change made outside lull costs the same on the first device that opens Appearance after it. Once per theme change for the whole hub, not per device: another page showing Appearance when a theme changes waits 10 s and asks the hub again before drawing, so the page that made the change draws it alone.
+- **The off-screen frame is a whole lull page,** as Theme Studio's previews are: while it lives it reports this device's state and the covers on its screen to the hub like any open page. A page drawn only to be looked at not acting as a device is a change of its own, for both.
 - **`docs/themes.md`** says authors no longer need a picture (theirs still wins), and `api.md` lists the new fields and endpoints. The fixture hub models them, and lists the built-in designs first as the real hub does.
