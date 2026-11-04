@@ -29,7 +29,7 @@
   --t-lyric: 800 1.3125rem/1.35 var(--f-ui);
   --t-lyric-cur: 900 1.75rem/1.2 var(--f-ui);
   /* shape */
-  --r-chip: 5px; --r-thumb: 8px; --r-art: 10px; --r-input: 12px; --r-panel: 14px; --r-card: 14px;
+  --tag-h: 21px; --r-chip: 5px; --r-thumb: 8px; --r-art: 10px; --r-input: 12px; --r-panel: 14px; --r-card: 14px;
   --r-device: 18px 18px 48px 18px; --r-bezel: 10px 10px 30px 10px;
   --stroke: 1.5px; --icon-stroke: 1.8;
   --stack-off-1: 5px; --stack-off-2: 10px;
@@ -549,14 +549,15 @@
 /* the current Library segment keeps the screens' selected pill (that rule out-ranked the one above before cascade layers) */
 :root[data-design="lull"] .lib-segs a.pill-filter[aria-current="page"] { background: var(--peri); color: var(--ink); border-color: var(--line); }
 :root[data-design="lull"] .pill-filter[aria-pressed="true"] .lib-count { color: #fff; font-weight: 800; }
-:root[data-design="lull"] .badge { height: 21px; padding: 0 8px 0 5px; font: 800 .71875rem/1 var(--f-ui); border-width: var(--stroke); }
+:root[data-design="lull"] .badge { padding: 0 8px 0 5px; font: 800 .71875rem/1 var(--f-ui); border-width: var(--stroke); }
 :root[data-design="lull"] .badge .ic { width: 13px; height: 13px; stroke-width: 2.4; }
 :root[data-design="lull"] .badge-saved { background: var(--l-ribbon); border-color: var(--l-ribbon); color: #fff; }
 :root[data-design="lull"] .badge-slsk { border-color: var(--l-slsk); color: var(--l-muted); }
 :root[data-design="lull"] .badge-new { padding: 0; background: none; color: var(--reason-fg); font: 900 .75rem/1 var(--f-ui); letter-spacing: 0; }
+:root[data-design="lull"] .tile__meta { --tag-h: 12px; }   /* on a cover tile the mark is a line of text */
 :root[data-design="lull"] .badge-new::before { content: "\2726\00a0"; }
 :root[data-design="lull"] .badge-count { background: var(--pink); color: #2b2650; }
-:root[data-design="lull"] .q-chip { height: 21px; padding: 0 6px; border-radius: 5px; border: var(--stroke) solid var(--l-rule); background: var(--l-card); color: var(--q-lossy); font: 900 .6875rem/1 var(--f-ui); letter-spacing: .02em; }
+:root[data-design="lull"] .q-chip { padding: 0 6px; border-radius: 5px; border: var(--stroke) solid var(--l-rule); background: var(--l-card); color: var(--q-lossy); font: 900 .6875rem/1 var(--f-ui); letter-spacing: .02em; }
 :root[data-design="lull"] .q-chip--ll { color: var(--q-lossless); border-color: color-mix(in srgb, var(--q-lossless) 55%, var(--l-rule)); }
 :root[data-design="lull"] .q-chip--ll::before { width: 5px; height: 5px; margin-top: 0; }
 :root[data-design="lull"] .q-chip--solid.q-chip--ll, :root[data-design="lull"] .q-chip--solid.q-chip--ly { background: var(--l-card); color: var(--q-lossless); border-color: color-mix(in srgb, var(--q-lossless) 55%, var(--l-rule)); }
@@ -1237,8 +1238,8 @@
 :root[data-design="lull"] .lull-np .device__now > .cover { display: none; }
 :root[data-design="lull"] .lull-np .device__title { font: 900 1.1875rem/1.2 var(--f-ui); }
 :root[data-design="lull"] .lull-np .device__artist { font: 700 .8125rem/1.3 var(--f-ui); color: var(--l-screen-ink); opacity: 1; }
-:root[data-design="lull"] .lull-np .device__facts { margin-top: 10px; gap: 6px; flex-direction: column; align-items: flex-start; }
-:root[data-design="lull"] .lull-np .device__fact, :root[data-design="lull"] .lull-np .q-chip { height: 22px; padding: 0 8px; border-radius: 5px; border: 1px solid rgba(255, 255, 255, .55); background: rgba(255, 255, 255, .1); color: var(--l-screen-ink); font: 800 .75rem/1 var(--f-ui); }
+:root[data-design="lull"] .lull-np .device__facts { margin-top: 10px; gap: 6px; flex-direction: column; align-items: flex-start; --tag-h: 22px; }
+:root[data-design="lull"] .lull-np .device__fact, :root[data-design="lull"] .lull-np .q-chip { padding: 0 8px; border-radius: 5px; border: 1px solid rgba(255, 255, 255, .55); background: rgba(255, 255, 255, .1); color: var(--l-screen-ink); font: 800 .75rem/1 var(--f-ui); }
 :root[data-design="lull"] .lull-np .q-chip--ll::before { background: var(--l-screen-ink); }
 :root[data-design="lull"] .lull-np .device__kv { font: 700 .8125rem/1.25 var(--f-ui); gap: 5px 12px; }
 :root[data-design="lull"] .lull-np .wave { grid-area: wave; height: 48px; margin-top: 2px; gap: 2px; }

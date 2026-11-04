@@ -148,10 +148,23 @@ button.chip:hover, a.chip:hover { background: var(--lilac); }
 .pill-filter .ic { width: 16px; height: 16px; }
 
 /* =====================================================================
+   Tags: the small labelled boxes that sit side by side (source badge, quality chip, Private, the "new" mark,
+   the device's facts). One box for them all, so tags in a row are one height on one centre line: a design
+   sets --tag-h, never a tag's own height
+   ===================================================================== */
+.badge, .q-chip, .badge-new, .device__fact, .pbar__private, .mini__private {
+  box-sizing: border-box; display: inline-flex; align-items: center; flex: none; height: var(--tag-h); vertical-align: middle;
+}
+/* a wrapper that holds only a tag (the source badge's span in rows and button in the player bar, an album's status, a
+   source's format) is only the tag's box: a line box of its own would stand taller than the tag and lift it off the
+   centre line */
+.src-badge, [data-lib-album-status], .src-row__format { display: inline-flex; vertical-align: middle; }
+
+/* =====================================================================
    Badges
    ===================================================================== */
 .badge {
-  display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px 0 6px; flex: none;
+  gap: 5px; padding: 0 9px 0 6px;
   border-radius: var(--r-pill); border: var(--stroke-thin) solid var(--edge);
   font: 800 .75rem/1 var(--f-ui); white-space: nowrap;
 }
@@ -161,7 +174,7 @@ button.chip:hover, a.chip:hover { background: var(--lilac); }
 .badge-below { background: transparent; color: var(--fg); border-color: var(--warn); }
 .badge-below .ic { color: var(--warn); }
 .src-row.is-below .src-row__peer { color: var(--fg-2); }
-.badge-new { display: inline-block; padding: 3px 6px 2px; border-radius: var(--r-chip); background: var(--pink); color: var(--ink); font: var(--t-px); letter-spacing: var(--t-px-track); }
+.badge-new { padding: 3px 6px 2px; border-radius: var(--r-chip); background: var(--pink); color: var(--ink); font: var(--t-px); letter-spacing: var(--t-px-track); }
 .badge-count {
   display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--r-pill);
   background: var(--pink); color: var(--ink); font: 800 .75rem/1 var(--f-ui); font-variant-numeric: tabular-nums;
@@ -169,7 +182,7 @@ button.chip:hover, a.chip:hover { background: var(--lilac); }
 
 /* quality chip: outlined in lists; solid only in the player bar and on the device screen */
 .q-chip {
-  display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 1px 8px 0; flex: none;
+  gap: 6px; padding: 1px 8px 0;
   border-radius: var(--r-chip); border: var(--stroke-thin) solid var(--edge); color: var(--q-ly);
   font: var(--t-px); letter-spacing: var(--t-px-track); white-space: nowrap; background: transparent;
 }
@@ -866,7 +879,7 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 .device__title { font: 800 1.2rem/1.2 var(--f-ui); }
 .device__artist { font: 700 .9375rem/1.3 var(--f-ui); color: var(--fg-2); }
 .device__facts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: var(--sp-2); }
-.device__fact { display: inline-flex; align-items: center; height: 24px; padding: 2px 6px 0; border-radius: var(--r-chip); border: var(--stroke-thin) solid var(--lavender); font: var(--t-px); color: var(--fg); }
+.device__fact { padding: 2px 6px 0; border-radius: var(--r-chip); border: var(--stroke-thin) solid var(--lavender); font: var(--t-px); color: var(--fg); }
 .device__kv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px var(--sp-4); font: var(--t-px); }
 .device__kv dt { color: var(--fg-2); } .device__kv dd { margin: 0; color: var(--fg); text-align: right; }
 .device__brand { display: flex; justify-content: center; padding: 8px 0 0; }
@@ -1247,7 +1260,7 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 .pbar__state.is-error > .ic { color: var(--heart); }
 /* "xfade" while a crossfade runs: a tag above the tools, so the buttons don't shift as it comes and goes */
 .pbar__xfade { position: absolute; right: 8px; bottom: calc(100% + 2px); display: inline-flex; align-items: center; gap: 4px; font: var(--t-px); color: var(--fg-2); }
-.pbar__private, .mini__private { display: inline-flex; align-items: center; gap: 4px; flex: none; padding: 2px 8px 2px 6px; border: 1px solid var(--accent-ui); border-radius: 999px; background: var(--panel); color: var(--fg-panel); font: var(--t-px); text-decoration: none; white-space: nowrap; }
+.pbar__private, .mini__private { gap: 4px; padding: 0 8px 0 6px; border: 1px solid var(--accent-ui); border-radius: 999px; background: var(--panel); color: var(--fg-panel); font: var(--t-px); text-decoration: none; white-space: nowrap; }
 .pbar__private { align-self: center; }
 .pbar__private .ic, .mini__private .ic { flex: none; width: 14px; min-width: 14px; height: 14px; color: var(--accent-ui); }
 .pbar__xfade i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-ui); }

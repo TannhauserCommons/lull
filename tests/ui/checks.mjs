@@ -75,6 +75,36 @@ export function squeezed(page) {
   });
 }
 
+// Null when tags side by side (components.css, Tags) are one height on one centre line; else the first row that is not,
+// with each tag's height and centre. A row's tags are those on one line of the same parent, past a wrapper that only
+// holds one (the source badge's span): the wrapper's own line box once lifted the badge 1.25 px off its neighbours.
+export function unevenTags(page) {
+  return page.evaluate(() => {
+    const TAGS = '.badge, .q-chip, .badge-new, .device__fact, .pbar__private, .mini__private';
+    const shown = (el) => {
+      const r = el.getBoundingClientRect(), s = getComputedStyle(el);
+      return r.width > 1 && r.height > 1 && s.visibility !== 'hidden' && s.clipPath === 'none';
+    };
+    const rowOf = (el) => { let p = el.parentElement; while (p.children.length === 1 && p.parentElement) p = p.parentElement; return p; };
+    const rows = new Map();
+    for (const el of document.querySelectorAll(TAGS)) {
+      if (!shown(el)) continue;
+      const box = el.getBoundingClientRect(), tag = { el, h: box.height, cy: (box.top + box.bottom) / 2 };
+      const lines = rows.get(rowOf(el)) || [];
+      const line = lines.find((l) => Math.abs(l[0].cy - tag.cy) < 6);
+      line ? line.push(tag) : lines.push([tag]);
+      rows.set(rowOf(el), lines);
+    }
+    for (const line of [...rows.values()].flat()) {
+      const hs = line.map((t) => t.h), cs = line.map((t) => t.cy);
+      if (line.length > 1 && (Math.max(...hs) - Math.min(...hs) > 0.5 || Math.max(...cs) - Math.min(...cs) > 0.5)) {
+        return line.map((t) => `.${t.el.classList[0]} ${t.h.toFixed(1)}px tall, centre ${t.cy.toFixed(1)}`).join(' | ');
+      }
+    }
+    return null;
+  });
+}
+
 // Null when nothing sticks out sideways; else the widest offender, to name it in the failure.
 export function overflow(page) {
   return page.evaluate(() => {

@@ -19,7 +19,7 @@
     ['Stroke', 'length', [['stroke', 0, 6, 'px'], ['stroke-thin', 0, 4, 'px']]],
     ['Stacks (elevation)', 'length', [['stack-off-1', 0, 20, 'px'], ['stack-off-2', 0, 40, 'px']]],
     ['Motion', 'length', [['dur-1', 0, 600, 'ms'], ['dur-2', 0, 800, 'ms'], ['dur-3', 0, 1000, 'ms'], ['dur-4', 0, 1600, 'ms']]],
-    ['Layout', 'length', [['rail', 160, 360, 'px'], ['ctx', 240, 480, 'px'], ['bar-h', 56, 140, 'px']]]
+    ['Layout', 'length', [['rail', 160, 360, 'px'], ['ctx', 240, 480, 'px'], ['bar-h', 56, 140, 'px'], ['tag-h', 16, 32, 'px']]]
   ];
   /* [fg, bg, what, minimum ratio]: text pairs need 4.5, rings and glyphs 3 */
   var PAIRS = [['fg-sky', 'sky', 'Text on the page', 4.5], ['fg-sky-2', 'sky', 'Quiet text on the page', 4.5],

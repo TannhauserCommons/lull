@@ -360,7 +360,7 @@
     var list = r.data.sources || [];
     var rows = list.map(function (s, i) {
       var on = !!(ps.peer && ps.peer.name === s.peer && id === P.currentId());
-      return html`<div class="src-row${s.preferred ? ' is-preferred' : ''}${s.stalledBefore ? ' is-failed' : ''}" role="listitem"><span class="src-row__peer">${icon('peer')}${s.peer}</span><span>${ui.qualityChip(s.format)}</span><span class="src-row__opt">${mbps(s.speed)}</span><span class="score" style="--s:${(s.score || 0) / 100}" data-tip="score ${s.score}"><i></i></span>
+      return html`<div class="src-row${s.preferred ? ' is-preferred' : ''}${s.stalledBefore ? ' is-failed' : ''}" role="listitem"><span class="src-row__peer">${icon('peer')}${s.peer}</span><span class="src-row__format">${ui.qualityChip(s.format)}</span><span class="src-row__opt">${mbps(s.speed)}</span><span class="score" style="--s:${(s.score || 0) / 100}" data-tip="score ${s.score}"><i></i></span>
         <button class="btn btn--sm" data-act="now-use-source" data-id="${id}" data-si="${i}" aria-label="${on ? 'Playing' : 'Use'} ${s.peer}${s.stalledBefore ? ', stalled before' : ''}" ${on ? raw('aria-current="true"') : ''} data-fk="use-${i}">${on ? 'Playing' : 'Use'}</button></div>`;
     });
     return html`${head}${list.length ? html`<div class="src-table now-src__table" role="list" aria-label="Sources for ${t ? t.title : 'this song'}">${rows}</div>`

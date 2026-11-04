@@ -1,9 +1,10 @@
 // Key screens in every design and theme at a phone, a laptop and a wide window, on the fixture hub: each must load
-// without errors or failed requests, keep inside the window, give every title room, and match its golden.
+// without errors or failed requests, keep inside the window, give every title room, line up
+// the tags side by side, and match its golden.
 // Approving an intended change: docs/context/quality.md#ui-gates.
 
 import { expect, test } from '@playwright/test';
-import { overflow, settle, squeezed, watch } from '../checks.mjs';
+import { overflow, settle, squeezed, unevenTags, watch } from '../checks.mjs';
 import { designs, NOW, screens, themes } from './lib.mjs';
 
 const sizes = {
@@ -27,6 +28,7 @@ for (const [size, use] of Object.entries(sizes)) {
 
             expect.soft(await overflow(page), 'content wider than the viewport').toBeNull();
             expect.soft(await squeezed(page), 'a title squeezed to a few letters').toBeNull();
+            expect.soft(await unevenTags(page), 'tags side by side of different heights or off one centre line').toBeNull();
             expect.soft(problems.console, 'console errors').toEqual([]);
             expect.soft(problems.requests, 'failed requests').toEqual([]);
             await expect(page).toHaveScreenshot(`${size}/${name}-${design}-${theme}.png`);
