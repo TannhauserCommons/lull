@@ -1,6 +1,6 @@
 # ADR-0032: lull links are lull's open page, with ids after the `#`
 
-- Status: accepted
+- Status: accepted; its link format is replaced for new links by [ADR-0034](0034-lull-links-are-cards-served-from-cloudflare.md), and every link it describes still opens
 - Date: 2026-11-03 (the open page accepted by the listener the same day)
 
 ## Context
