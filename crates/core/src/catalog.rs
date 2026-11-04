@@ -171,6 +171,39 @@ pub fn album_art(conn: &Connection, id: &AlbumId) -> Result<Option<String>> {
     picture(conn, "SELECT art FROM catalog_albums WHERE id = ?1", id.as_str())
 }
 
+/// Records the cover found for an album lull knew only by name (`art` with `{size}`), on its
+/// catalog record, or on a record of its own named after a song on it. `false` when lull knows
+/// neither.
+pub fn found_album_art(conn: &Connection, id: &AlbumId, art: &str) -> Result<bool> {
+    if conn.execute(
+        "UPDATE catalog_albums SET art = ?2 WHERE id = ?1",
+        params![id.as_str(), art],
+    )? > 0
+    {
+        return Ok(true);
+    }
+    let Some(song) = track_on_album(conn, id)? else {
+        return Ok(false);
+    };
+    let album = Album {
+        id: id.clone(),
+        title: song.album.clone(),
+        artist_id: song.artist_id.clone(),
+        artist: song.artist.clone(),
+        year: None,
+        kind: None,
+        released: None,
+        label: None,
+        tags: Vec::new(),
+        saved: crate::model::Saved::None,
+        track_ids: vec![song.id],
+        duration: None,
+        musicbrainz_id: None,
+    };
+    remember_album(conn, &album, Some(art))?;
+    Ok(true)
+}
+
 /// Records or refreshes an artist, like `remember_album`; `image` is an outside photo URL.
 pub fn remember_artist(conn: &Connection, artist: &Artist, image: Option<&str>) -> Result<()> {
     let json = serde_json::to_string(artist).map_err(|e| Error::internal(format!("artist json: {e}")))?;

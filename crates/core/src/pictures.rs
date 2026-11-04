@@ -153,14 +153,14 @@ impl Shown {
         } else {
             return Err(bad());
         };
-        let (kind, hex) = id.split_once('-').ok_or_else(bad)?;
         let kind_ok = match route {
-            Route::Catalog => matches!(kind, "al" | "ar" | "pls"),
-            Route::Library => kind == "al",
+            Route::Catalog => is_id(id),
+            Route::Library => id.starts_with("al-") && is_id(id),
         };
-        if !kind_ok || hex.is_empty() || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        if !kind_ok {
             return Err(bad());
         }
+        let kind = id.split('-').next().unwrap_or_default();
         if !(SIZES.contains(&size) || (size == 0 && kind == "ar")) {
             return Err(Error::BadRequest(format!("{pic}: size must be one lull serves")));
         }
@@ -170,6 +170,13 @@ impl Shown {
             size,
         })
     }
+}
+
+/// A picture id: `al-`, `ar-` or `pls-` and hex. Ids become file names, so nothing else is.
+pub fn is_id(id: &str) -> bool {
+    id.split_once('-').is_some_and(|(kind, hex)| {
+        matches!(kind, "al" | "ar" | "pls") && !hex.is_empty() && hex.bytes().all(|b| b.is_ascii_hexdigit())
+    })
 }
 
 /// What a request for a picture gets.
@@ -234,6 +241,9 @@ impl Pictures {
     /// fetched, waiting at most `WAIT`; `Err(NotFound)` when lull has no picture for `id`.
     pub async fn get(&self, id: &str, size: u32) -> Result<Answer> {
         art::check(size)?;
+        if !is_id(id) {
+            return Err(Error::NotFound(format!("lull has no picture for {id}")));
+        }
         if let Some(bytes) = self.cached(id, size).await {
             return Ok(Answer::Image(bytes));
         }
@@ -260,6 +270,9 @@ impl Pictures {
     /// screen shows and what plays. Its place comes from the screen (or `set_playing`); with
     /// neither it is dropped before it starts.
     pub async fn want(&self, id: &str, size: u32) {
+        if !is_id(id) || !SIZES.contains(&size) {
+            return;
+        }
         if self.cached(id, size).await.is_some() || self.none_left(id).await.is_some() {
             return;
         }
@@ -320,11 +333,12 @@ impl Pictures {
         self.lock().ranks.get(id).copied()
     }
 
-    /// The playing song's album, then the next songs', each with the sizes to have ready: they go
-    /// first, and replace what played before.
-    pub async fn set_playing(&self, albums: Vec<(String, Vec<u32>)>) {
+    /// The playing song's album, then the next songs', each with the sizes to have ready, as
+    /// `owner` (the crate that serves them) sees them: they go first, and replace what `owner`
+    /// said played before.
+    pub async fn set_playing(&self, owner: &'static str, albums: Vec<(String, Vec<u32>)>) {
         self.lock()
-            .set_playing(albums.iter().map(|(id, _)| id.clone()).collect());
+            .set_playing(owner, albums.iter().map(|(id, _)| id.clone()).collect());
         for (id, sizes) in albums {
             for size in sizes {
                 self.want(&id, size).await;
@@ -366,6 +380,9 @@ impl Pictures {
 
     /// Removes every cached size of `id`, and "none".
     pub async fn forget(&self, id: &str) {
+        if !is_id(id) {
+            return;
+        }
         for size in SIZES {
             let _ = tokio::fs::remove_file(self.file(id, size)).await;
         }
@@ -564,7 +581,8 @@ enum Pick {
 struct Queue {
     seq: u64,
     screens: HashMap<String, Screen>,
-    playing: Vec<String>,
+    /// Per crate, the albums it serves for what plays now and next.
+    playing: HashMap<&'static str, Vec<String>>,
     /// The best place of every picture on a current screen or playing.
     ranks: HashMap<String, Rank>,
     waiting: HashMap<String, Job>,
@@ -620,8 +638,8 @@ impl Queue {
         Some(new)
     }
 
-    fn set_playing(&mut self, albums: Vec<String>) {
-        self.playing = albums;
+    fn set_playing(&mut self, owner: &'static str, albums: Vec<String>) {
+        self.playing.insert(owner, albums);
         self.rerank(Instant::now());
     }
 
@@ -647,7 +665,7 @@ impl Queue {
                 .and_modify(|r| *r = (*r).min(rank))
                 .or_insert(rank);
         };
-        for (pos, id) in self.playing.iter().enumerate() {
+        for (pos, id) in self.playing.values().flat_map(|l| l.iter().enumerate()) {
             put(
                 id,
                 Rank {
@@ -831,15 +849,23 @@ impl Queue {
     }
 }
 
-/// The source URL at its best for `size`, scaled down after. The Cover Art Archive has its own
-/// sizes: the smallest thumbnail that covers the request (250 counts for 256), else its original.
-/// Deezer is asked for at most `DEEZER_LARGEST`; iTunes, Last.fm and Wikimedia Commons serve any
-/// size up to their original and never more.
+/// The source URL at its best for `size`, scaled down after. The Cover Art Archive and Last.fm
+/// have their own sizes: the smallest that covers the request (250 counts for 256), else the
+/// original. Deezer is asked for at most `DEEZER_LARGEST`; iTunes and Wikimedia Commons serve
+/// any size up to their original and never more.
 pub fn sized(source: &str, size: u32) -> String {
     if source.starts_with("https://coverartarchive.org/") {
         return match art::archive_size(size) {
             Some(thumbnail) => source.replace("{size}", &thumbnail.to_string()),
             None => source.replace("-{size}", ""),
+        };
+    }
+    if source.starts_with(LASTFM_IMAGES) {
+        // Checked 2026-11-04: any other size answers the original.
+        return match size {
+            0..=174 => source.replace("{size}", "174s"),
+            175..=300 => source.replace("{size}", "300x300"),
+            _ => source.replace("{size}/", ""),
         };
     }
     let size = if source.contains(".dzcdn.net/") {
@@ -849,6 +875,9 @@ pub fn sized(source: &str, size: u32) -> String {
     };
     source.replace("{size}", &size.to_string())
 }
+
+/// Last.fm's pictures, as a source: `…/i/u/{size}/<file>` (`sized`).
+pub const LASTFM_IMAGES: &str = "https://lastfm.freetls.fastly.net/i/u/";
 
 /// The largest Deezer picture asked for. Its CDN serves up to 1900 px whatever the master is,
 /// and 1400 px is the smallest master it takes from labels, so this size is never blown up.
@@ -873,7 +902,7 @@ pub async fn fetch(http: &Http, url: &str) -> Result<Option<Vec<u8>>> {
         "Wikimedia Commons"
     } else if url.contains(".dzcdn.net/") {
         "Deezer"
-    } else if url.contains(".fastly.net/i/u/") {
+    } else if url.starts_with(LASTFM_IMAGES) {
         "Last.fm"
     } else {
         "picture host"
@@ -971,7 +1000,7 @@ mod tests {
         let now = Instant::now();
         q.report("phone", 1, on(&["v-old"]), on(&["n-old"]), now);
         q.report("laptop", 1, on(&["v1", "v2"]), on(&["n1"]), now);
-        q.set_playing(vec!["p".into()]);
+        q.set_playing("discovery", vec!["p".into()]);
         for id in ["n-old", "q", "v2", "n1", "v-old", "p", "v1"] {
             fetch_of(&mut q, id, id == "q");
         }
@@ -1022,6 +1051,40 @@ mod tests {
             ["d", "a"],
             "the retry takes the screen's new place"
         );
+    }
+
+    #[test]
+    fn each_source_is_asked_for_its_best_at_the_size() {
+        let archive = "https://coverartarchive.org/release-group/0f3c0c64-5b0c/front-{size}";
+        assert!(sized(archive, 96).ends_with("front-250"));
+        assert!(sized(archive, 256).ends_with("front-250"));
+        assert!(sized(archive, 512).ends_with("front-500"));
+        assert!(sized(archive, 1024).ends_with("front-1200"));
+        assert!(sized(archive, 2048).ends_with("/0f3c0c64-5b0c/front"), "the original");
+        let deezer = "https://cdn-images.dzcdn.net/images/cover/d06e/{size}x{size}-000000-80-0-0.jpg";
+        assert!(sized(deezer, 1024).contains("/1024x1024-"));
+        // Live, its CDN answered 403 above 1900 px and may blow up a small master below that.
+        assert!(sized(deezer, 2048).contains("/1400x1400-"));
+        let itunes = "https://is1-ssl.mzstatic.com/image/thumb/x/1.png/{size}x{size}bb.jpg";
+        // Live, iTunes answered 2048 at 2048 px and 5000 at its 4000 px original.
+        assert!(sized(itunes, 2048).ends_with("/2048x2048bb.jpg"));
+        let lastfm = "https://lastfm.freetls.fastly.net/i/u/{size}/0a1b.jpg";
+        assert!(sized(lastfm, 96).ends_with("/i/u/174s/0a1b.jpg"));
+        assert!(sized(lastfm, 256).ends_with("/i/u/300x300/0a1b.jpg"));
+        assert!(sized(lastfm, 512).ends_with("/i/u/0a1b.jpg"), "the original");
+    }
+
+    #[test]
+    fn an_archive_thumbnail_falls_back_to_the_original() {
+        assert_eq!(
+            archive_original("https://coverartarchive.org/release-group/0f3c0c64-5b0c/front-1200").as_deref(),
+            Some("https://coverartarchive.org/release-group/0f3c0c64-5b0c/front")
+        );
+        assert_eq!(
+            archive_original("https://coverartarchive.org/release-group/0f3c0c64-5b0c/front"),
+            None
+        );
+        assert_eq!(archive_original("https://cdn.example/1200"), None);
     }
 
     #[test]
