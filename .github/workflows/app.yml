@@ -42,9 +42,11 @@ jobs:
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y $LINUX_DEPS
       - run: rustup toolchain install
+      # Only main saves (ADR-0097): another ref's cache can't be read by anyone else.
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: app
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: node --check web/desktop/desktop.js
       - working-directory: app
         run: cargo fmt --check
@@ -53,8 +55,31 @@ jobs:
       - working-directory: app
         run: cargo test --locked
 
+  # Whether a push to main changed what every release build compiles: then main builds the bundles
+  # too, only to save their caches for the next tag (ADR-0097). A run by hand on main saves them too.
+  deps:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if git diff --name-only "$BEFORE" HEAD 2>/dev/null \
+            | grep -Eqx 'Cargo\.lock|app/Cargo\.lock|app/Cargo\.toml|rust-toolchain\.toml|\.github/workflows/app\.yml'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
   bundle:
-    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    needs: deps
+    if: >-
+      !cancelled() && (github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+      || needs.deps.outputs.changed == 'true')
     strategy:
       fail-fast: false
       matrix:
@@ -85,9 +110,12 @@ jobs:
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y $LINUX_DEPS
       - run: rustup toolchain install
+      # Main warms what a tag restores (ADR-0097): a tag can read main's caches, never another tag's.
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: app
+          key: ${{ matrix.arch }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: actions/setup-node@v5
         with:
           node-version: "24.11"
@@ -156,11 +184,16 @@ jobs:
             app/target/release/bundle/updater-*.json
 
   # Android: the APK for arm64 phones, built the way F-Droid builds it (packaging/fdroid/): in
-  # F-Droid's build image, by scripts/android-build.sh, with the toolchains pinned. A v* tag signs it
-  # with the release keystore; other runs with a throwaway key (an APK to try). Every run also checks
-  # that no non-free library got in (the Gradle dependency tree and F-Droid's scanner) and that a clean
-  # clone in another folder builds the same APK, which is what lets F-Droid ship the release APK.
+  # F-Droid's build image, by scripts/android-build.sh, with the toolchains pinned. Two builds side by
+  # side: `signed` (a v* tag signs it with the release keystore, other runs with a throwaway key: an APK
+  # to try), which also checks that no non-free library got in (the Gradle dependency tree and F-Droid's
+  # scanner), and `clean`, unsigned from a clean clone in another folder. android-compare then requires
+  # the two to match except for the signature, which is what lets F-Droid ship the release APK.
   android:
+    strategy:
+      fail-fast: false
+      matrix:
+        build: [signed, clean]
     runs-on: ubuntu-24.04
     container:
       image: registry.gitlab.com/fdroid/fdroidserver:buildserver@sha256:1ea8bef1820bff06c2974e31b4fc4c79c364cd24231b86e71fa4b926797e0dac
@@ -176,9 +209,10 @@ jobs:
       - name: Toolchains
         run: |
           apt-get update -qq
-          apt-get install -y -qq --no-install-recommends build-essential rustup sdkmanager apksigcopier fdroidserver
+          apt-get install -y -qq --no-install-recommends build-essential rustup sdkmanager fdroidserver
           sdkmanager --install "ndk;28.2.13676358"
-      # Saved as soon as the Tauri CLI is built, not at the end: a push to main cancels the run before.
+      # Saved as soon as the Tauri CLI is built, not at the end, and only by main's signed build: a
+      # tag or a branch reads main's.
       - id: cargo
         uses: actions/cache/restore@v4
         with:
@@ -190,7 +224,7 @@ jobs:
           key: android-cargo-${{ hashFiles('app/Cargo.lock', 'app/package.json', 'rust-toolchain.toml') }}
           restore-keys: android-cargo-
       - run: sh scripts/android-toolchains.sh
-      - if: steps.cargo.outputs.cache-hit != 'true'
+      - if: steps.cargo.outputs.cache-hit != 'true' && matrix.build == 'signed' && github.ref == 'refs/heads/main'
         uses: actions/cache/save@v4
         with:
           path: |
@@ -200,6 +234,7 @@ jobs:
             /opt/cargo/.crates2.json
           key: ${{ steps.cargo.outputs.cache-primary-key }}
       - name: Signing key
+        if: matrix.build == 'signed'
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -219,12 +254,17 @@ jobs:
           keyAlias=$ANDROID_KEY_ALIAS
           keyPassword=$ANDROID_KEY_PASSWORD
           EOF
-      # As F-Droid's scanner does before its build: no prebuilt Gradle wrapper. The clean clone below
-      # keeps it, so the two builds also cover both ways Gradle starts.
-      - run: |
+      # As F-Droid's scanner does before its build: no prebuilt Gradle wrapper. The clean clone keeps
+      # it, so the two builds also cover both ways Gradle starts.
+      - name: Signed build
+        if: matrix.build == 'signed'
+        run: |
           rm app/gen/android/gradlew app/gen/android/gradlew.bat app/gen/android/gradle/wrapper/gradle-wrapper.jar
           sh scripts/android-build.sh
+          mkdir -p "$RUNNER_TEMP/apk"
+          cp app/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk "$RUNNER_TEMP/apk/"
       - name: No non-free libraries
+        if: matrix.build == 'signed'
         run: |
           apk=app/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
           (cd app/gen/android && ./gradlew -q :app:dependencies --configuration universalReleaseRuntimeClasspath) > "$RUNNER_TEMP/deps.txt"
@@ -233,28 +273,52 @@ jobs:
             echo "::error::A non-free Google library is in the APK's dependencies (F-Droid can't ship it)"; exit 1
           fi
           fdroid scanner --exit-code "$apk"
-      # F-Droid builds the tag unsigned from its own clone and publishes the release APK only when the
-      # two match except for the signature (packaging/fdroid/, Binaries). So does this.
-      - name: Same APK from a clean clone elsewhere
+      # F-Droid builds the tag unsigned from its own clone, in its own folder.
+      - name: Clean build from a clone elsewhere
+        if: matrix.build == 'clean'
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git clone -q "$GITHUB_WORKSPACE" "$RUNNER_TEMP/again"
           git -C "$RUNNER_TEMP/again" checkout -q "$GITHUB_SHA"
           sh "$RUNNER_TEMP/again/scripts/android-build.sh"
-          apksigcopier compare app/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk \
-            --unsigned "$RUNNER_TEMP/again/app/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk"
+          mkdir -p "$RUNNER_TEMP/apk"
+          cp "$RUNNER_TEMP/again/app/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk" "$RUNNER_TEMP/apk/"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-build-${{ matrix.build }}
+          if-no-files-found: error
+          path: ${{ runner.temp }}/apk/*.apk
+
+  # F-Droid publishes the release APK only when its own unsigned build matches it except for the
+  # signature (packaging/fdroid/, Binaries). So does this.
+  android-compare:
+    needs: android
+    runs-on: ubuntu-24.04
+    container:
+      image: registry.gitlab.com/fdroid/fdroidserver:buildserver@sha256:1ea8bef1820bff06c2974e31b4fc4c79c364cd24231b86e71fa4b926797e0dac
+    steps:
+      - run: apt-get update -qq && apt-get install -y -qq --no-install-recommends apksigcopier
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: android-build-*
+          path: apk
+          merge-multiple: true
+      - run: apksigcopier compare apk/app-universal-release.apk --unsigned apk/app-universal-release-unsigned.apk
       - run: |
           if [ "$GITHUB_REF_TYPE" = tag ]; then name="lull-${GITHUB_REF_NAME#v}-android-arm64.apk"; else name=lull-android-arm64-test.apk; fi
-          cp app/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk "app/$name"
+          mkdir out && cp apk/app-universal-release.apk "out/$name"
       - uses: actions/upload-artifact@v4
         with:
           name: lull-android
           if-no-files-found: error
-          path: app/lull-*.apk
+          path: out/lull-*.apk
 
   release:
-    needs: [bundle, android]
-    if: github.ref_type == 'tag'
+    needs: [bundle, android-compare]
+    # Named outright: `deps`, skipped on a tag, would otherwise skip this too.
+    if: >-
+      !cancelled() && github.ref_type == 'tag'
+      && needs.bundle.result == 'success' && needs.android-compare.result == 'success'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -264,6 +328,7 @@ jobs:
           sparse-checkout: scripts
       - uses: actions/download-artifact@v4
         with:
+          pattern: lull-*
           path: bundles
           merge-multiple: true
       # Each artifact keeps the bundler's folders (nsis/, deb/, appimage/...): the Release takes the
