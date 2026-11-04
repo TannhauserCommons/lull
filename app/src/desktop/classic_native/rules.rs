@@ -189,24 +189,52 @@ pub fn radio(
     (seed, active && left < RADIO_AHEAD)
 }
 
+/// Kept back from what has arrived, so the output doesn't stall the moment a seek lands.
+pub const SEEK_MARGIN: f64 = 0.01;
+
 /// How far a seek may go (0-1 of the song): all of it, or for a Soulseek song still arriving, what
-/// the output holds (`buffered`, ranges of 0-1) or what the transfer delivered.
+/// the output holds (`buffered`, ranges of 0-1) or what the transfer delivered, less the margin.
 pub fn seek_limit(soulseek: bool, buffered: &[(f64, f64)], received: f64) -> f64 {
     if !soulseek {
         return 1.0;
     }
     let end = buffered.iter().fold(0.0, |m: f64, r| m.max(r.1));
-    end.max(if received >= 1.0 { 1.0 } else { received - 0.01 })
+    end.max(if received >= 1.0 { 1.0 } else { received - SEEK_MARGIN })
 }
 
-/// Where a seek to `fraction` lands, and whether it went where asked: past the limit, just inside it.
-pub fn seek_to(fraction: f64, limit: f64) -> (f64, bool) {
+/// What a seek does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SeekHow {
+    /// Inside the limit: it lands now.
+    Now,
+    /// Past it, with Settings > Playback's "Jump to where I seek once it has downloaded" on: the
+    /// song plays on and the seek is kept, to land once the limit reaches it.
+    Waits,
+    /// Past it with that off: it lands just inside the limit.
+    Snapped,
+}
+
+/// Where a seek to `fraction` goes, and how (`waits`: the setting above).
+pub fn seek_to(fraction: f64, limit: f64, waits: bool) -> (f64, SeekHow) {
     let fraction = fraction.clamp(0.0, 1.0);
     if fraction <= limit {
-        (fraction, true)
+        (fraction, SeekHow::Now)
+    } else if waits {
+        (fraction, SeekHow::Waits)
     } else {
-        ((limit - 0.004).max(0.0), false)
+        ((limit - 0.004).max(0.0), SeekHow::Snapped)
     }
+}
+
+/// About how long a kept seek to `fraction` waits, in whole seconds rounded up: the bytes still to
+/// come before it lands (`received` of `size` so far), at the transfer's `speed` in bytes a second;
+/// none while the speed isn't known.
+pub fn seek_wait_s(fraction: f64, received: f64, size: f64, speed: f64) -> Option<f64> {
+    let left = ((fraction + SEEK_MARGIN).min(1.0) - received) * size;
+    if left <= 0.0 {
+        return Some(0.0);
+    }
+    (speed > 0.0).then(|| (left / speed).ceil())
 }
 
 /// What a better copy offered while a song plays does now.
@@ -367,6 +395,7 @@ mod tests {
             "radio",
             "seekLimit",
             "seekTo",
+            "seekWaitS",
             "switchNow",
             "quiet",
             "levelMatch",
@@ -408,6 +437,7 @@ mod tests {
             ("SWITCH_FADE_S", json!(SWITCH_FADE_S)),
             ("SWITCH_QUIET_S", json!(SWITCH_QUIET_S)),
             ("SWITCH_GLIDE_S", json!(SWITCH_GLIDE_S)),
+            ("SEEK_MARGIN", json!(SEEK_MARGIN)),
         ];
         let theirs = rules["constants"].as_object().ok_or("no constants")?;
         assert_eq!(theirs.len(), ours.len(), "every shared timing is here");
@@ -538,8 +568,22 @@ mod tests {
             )))
         })?;
         each("seekTo", |c| {
-            let (fraction, ok) = seek_to(num(&c["fraction"])?, num(&c["limit"])?);
-            Ok(json!({ "fraction": fraction, "ok": ok }))
+            let (fraction, how) = seek_to(num(&c["fraction"])?, num(&c["limit"])?, flag(&c["waits"])?);
+            let how = match how {
+                SeekHow::Now => "now",
+                SeekHow::Waits => "waits",
+                SeekHow::Snapped => "snapped",
+            };
+            Ok(json!({ "fraction": fraction, "how": how }))
+        })?;
+        each("seekWaitS", |c| {
+            let wait = seek_wait_s(
+                num(&c["fraction"])?,
+                num(&c["received"])?,
+                num(&c["size"])?,
+                num(&c["speed"])?,
+            );
+            Ok(json!(wait))
         })?;
         each("switchNow", |c| {
             let now = switch_now(

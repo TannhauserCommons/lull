@@ -33,6 +33,9 @@ pub struct StreamEvent {
     pub received: Option<u64>,
     #[serde(default)]
     pub size: Option<u64>,
+    /// The transfer's speed, bytes a second.
+    #[serde(default)]
+    pub speed: Option<f64>,
     #[serde(default)]
     pub attempt: Option<u32>,
     #[serde(default)]

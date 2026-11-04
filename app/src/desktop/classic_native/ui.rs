@@ -1119,7 +1119,9 @@ impl Classic {
     /// reversed, Ctrl+T the time counting down; Alt+W, Alt+G and Alt+E a window on or off. Delete
     /// takes the selected songs out.
     pub fn key(&mut self, key: Key, mods: Mods) -> Effect {
-        let (position, volume) = (self.snapshot.position, self.snapshot.volume);
+        // Steps go on from a seek kept until that far has arrived, not from where the song plays.
+        let position = self.snapshot.kept.unwrap_or(self.snapshot.position);
+        let volume = self.snapshot.volume;
         let is = |c: u8| key == Key::Letter(c);
         let pad = |n: u8| key == Key::Pad(n);
         if mods.alt {

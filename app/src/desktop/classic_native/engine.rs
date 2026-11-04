@@ -57,6 +57,8 @@ pub struct Playback {
     pub loudness_target: f64,
     pub radio_when_queue_ends: bool,
     pub prefetch_count: usize,
+    /// "Jump to where I seek once it has downloaded": a seek past what has arrived waits for it.
+    pub jump_when_downloaded: bool,
 }
 
 impl Default for Playback {
@@ -68,6 +70,7 @@ impl Default for Playback {
             loudness_target: -14.0,
             radio_when_queue_ends: true,
             prefetch_count: 2,
+            jump_when_downloaded: true,
         }
     }
 }
@@ -96,6 +99,7 @@ impl Playback {
             prefetch_count: v(&pb["prefetchCount"])
                 .as_u64()
                 .map_or(defaults.prefetch_count, |n| n.min(3) as usize),
+            jump_when_downloaded: v(&pb["jumpWhenDownloaded"]) != Value::Bool(false),
         }
     }
 }
@@ -163,6 +167,8 @@ pub struct Snapshot {
     pub reachable: bool,
     /// Winamp's Stop: paused at the start, the time blank.
     pub stopped: bool,
+    /// Where a seek kept until that far has arrived will land, seconds: steps go on from there.
+    pub kept: Option<f64>,
 }
 
 pub enum Command {
@@ -352,9 +358,12 @@ struct Loaded {
     source: Option<super::queue::Source>,
     job: Option<String>,
     attempt: u32,
-    /// How much of it is here, as a fraction, and whether all of it is.
+    /// How much of it is here, as a fraction, and whether all of it is; its size in bytes and the
+    /// transfer's speed, while it arrives.
     received: f64,
     complete: bool,
+    size: Option<u64>,
+    speed: Option<f64>,
     /// The song's own time is the deck's less this (a better copy's own timeline).
     offset: f64,
 }
@@ -444,6 +453,9 @@ struct Run {
     prefetch: (Vec<String>, Option<Instant>),
     connect: Connect,
     notice: Option<(String, Instant)>,
+    /// A seek past what has arrived, kept (0-1 of the playing song) to land once it has: one at a
+    /// time, the next seek replacing it (app.js `P.seek`).
+    kept: Option<f64>,
     random: std::hash::RandomState,
     draws: u64,
 }
@@ -503,6 +515,7 @@ impl Run {
             prefetch: (Vec::new(), None),
             connect: Connect::default(),
             notice: None,
+            kept: None,
             random: std::hash::RandomState::new(),
             draws: 0,
             // set below
@@ -713,6 +726,7 @@ impl Run {
             return;
         };
         let was = self.current.take();
+        self.kept = None;
         self.queue.index = index;
         self.loads += 1;
         self.better = None;
@@ -781,6 +795,8 @@ impl Run {
             attempt: 0,
             received: if soulseek { 0.0 } else { 1.0 },
             complete: !soulseek,
+            size: None,
+            speed: None,
             offset: 0.0,
         }
     }
@@ -820,31 +836,91 @@ impl Run {
         self.current.as_ref().map_or(0.0, Loaded::position)
     }
 
-    /// A seek, held inside what has arrived of a song still arriving (app.js `P.seek`): past it,
-    /// the song goes to the edge of what is here and says so.
+    /// A seek (app.js `P.seek`): inside what has arrived of a song still arriving, it lands now;
+    /// past it, with Settings' "Jump to where I seek once it has downloaded" on, the song plays on
+    /// and the seek is kept to land once that far has arrived; with it off, the song goes to the
+    /// edge of what is here and says so.
     fn seek(&mut self, seconds: f64) {
+        self.kept = None;
+        let mut to = seconds.max(0.0);
+        let mut snapped = false;
+        if let Some((limit, length)) = self.seek_limit() {
+            let (fraction, how) = rules::seek_to(to / length, limit, self.settings.jump_when_downloaded);
+            match how {
+                rules::SeekHow::Waits => {
+                    self.kept = Some(fraction);
+                    return self.say_waiting(fraction, length);
+                }
+                rules::SeekHow::Snapped => snapped = true,
+                rules::SeekHow::Now => {}
+            }
+            to = fraction * length;
+        }
+        self.seek_now(to);
+        if snapped {
+            self.notice("The song hasn't arrived that far yet".into());
+        }
+    }
+
+    /// How far a seek may go now (0-1 of the playing song), and its length: what the deck holds,
+    /// and what the transfer delivered (a song done arriving: all of it).
+    fn seek_limit(&self) -> Option<(f64, f64)> {
+        let current = self.current.as_ref()?;
+        let length = current.deck.duration().filter(|l| *l > 0.0)?;
+        let buffered = (current.position() + current.deck.buffered()) / length;
+        let arriving = current.soulseek && !current.complete;
+        Some((
+            rules::seek_limit(arriving, &[(0.0, buffered)], current.received),
+            length,
+        ))
+    }
+
+    /// The playing song to `seconds`, now.
+    fn seek_now(&mut self, seconds: f64) {
         let Some(current) = self.current.as_ref() else {
             return;
         };
-        let duration = current.deck.duration();
-        let mut to = seconds.max(0.0);
-        let mut held = false;
-        if let Some(length) = duration.filter(|l| *l > 0.0) {
-            // What the deck holds, and what the transfer delivered (a song done arriving: all of it).
-            let buffered = (current.position() + current.deck.buffered()) / length;
-            let arriving = current.soulseek && !current.complete;
-            let limit = rules::seek_limit(arriving, &[(0.0, buffered)], current.received);
-            let (fraction, ok) = rules::seek_to(to / length, limit);
-            to = fraction * length;
-            held = !ok;
-        }
         lock(&self.mixer).abandon_fade();
-        current.deck.seek(to + current.offset);
-        if held {
-            self.notice("The song hasn't arrived that far yet".into());
-        }
+        current.deck.seek(seconds + current.offset);
         self.abandon_switch();
         self.connect_soon();
+    }
+
+    /// A kept seek, every tick and stream event: it lands once what has arrived reaches it ("Playing
+    /// from 2:40"), else says how long it waits; it goes with the setting turned off.
+    fn land_kept(&mut self) {
+        let Some(target) = self.kept else {
+            return;
+        };
+        if !self.settings.jump_when_downloaded {
+            self.kept = None;
+            return;
+        }
+        let Some((limit, length)) = self.seek_limit() else {
+            return;
+        };
+        match rules::seek_to(target, limit, true).1 {
+            rules::SeekHow::Now => {
+                self.kept = None;
+                self.seek_now(target * length);
+                self.notice(format!("Playing from {}", clock(target * length)));
+            }
+            _ => self.say_waiting(target, length),
+        }
+    }
+
+    /// "Waiting for 2:40, about 8 s" (the page's words), or without the wait while the transfer's
+    /// speed isn't known.
+    fn say_waiting(&mut self, target: f64, length: f64) {
+        let wait = self.current.as_ref().and_then(|c| {
+            let size = c.size? as f64;
+            rules::seek_wait_s(target, c.received, size, c.speed.unwrap_or(0.0))
+        });
+        let at = clock(target * length);
+        self.notice(match wait {
+            Some(seconds) if seconds > 0.0 => format!("Waiting for {at}, about {seconds} s"),
+            _ => format!("Waiting for {at}"),
+        });
     }
 
     /// Ends the open play, as the hub records it.
@@ -1174,6 +1250,7 @@ impl Run {
         if reopen {
             self.reopen();
         }
+        self.land_kept();
         // A copy offered again keeps its tries and its verdict; another starts afresh; none offered
         // is none (app.js `onUpgrade`). One being lined up or switched to carries on.
         self.better = match (self.better.take(), event.upgrade.clone()) {
@@ -1203,6 +1280,7 @@ impl Run {
             "streaming" if heard || !self.playing => Status::Streaming,
             "streaming" => Status::Buffering,
             "failed" => {
+                self.kept = None;
                 if self.playing {
                     self.failed_at = Some(Instant::now());
                 }
@@ -1281,6 +1359,7 @@ impl Run {
             }
         }
         self.decks();
+        self.land_kept();
         if let Some(answer) = self.radio.as_ref().and_then(|r| r.try_recv().ok()) {
             self.radio = None;
             self.radio_answered(answer);
@@ -1680,6 +1759,10 @@ impl Run {
             notice: self.notice.as_ref().map(|(n, _)| n.clone()),
             reachable: self.plays.reachable(),
             stopped: self.stopped,
+            kept: self
+                .kept
+                .zip(self.current.as_ref().and_then(|c| c.deck.duration()))
+                .map(|(fraction, length)| fraction * length),
         };
         *lock(&self.shared.snapshot) = snapshot;
     }
@@ -1726,6 +1809,8 @@ fn adopt(loaded: &mut Loaded, event: &StreamEvent) -> bool {
         loaded.received = fraction;
         loaded.complete = fraction >= 1.0;
     }
+    loaded.size = event.size.or(loaded.size);
+    loaded.speed = event.speed.or(loaded.speed);
     let attempt = event.attempt.unwrap_or(0);
     if loaded.job != event.job_id {
         loaded.job = event.job_id.clone();
@@ -1737,6 +1822,12 @@ fn adopt(loaded: &mut Loaded, event: &StreamEvent) -> bool {
     } else {
         false
     }
+}
+
+/// Seconds as the page writes a time in its words: `2:40`.
+fn clock(seconds: f64) -> String {
+    let s = seconds.max(0.0) as u64;
+    format!("{}:{:02}", s / 60, s % 60)
 }
 
 /// The playing song's id, for the better copy's switch.
@@ -2206,8 +2297,33 @@ mod tests {
     }
 
     #[test]
-    fn a_seek_past_what_has_arrived_is_held_at_its_edge() -> Result<(), String> {
+    fn a_seek_past_what_has_arrived_waits_for_it_then_lands() -> Result<(), String> {
         let hub = hub(json!({})).ok_or("no hub")?;
+        let (engine, output) = player(&hub, &[("s", false, Some(20.0))], Repeat::Off).ok_or("no player")?;
+        listen(&output, 0.5);
+        let _ = engine.heard_to.send(stream_event("s", 100, None));
+        std::thread::sleep(Duration::from_millis(600));
+        engine.send(Command::Seek(15.0));
+        std::thread::sleep(Duration::from_millis(600));
+        listen(&output, 0.2);
+        let now = engine.snapshot();
+        assert!(now.position < 2.5, "plays on where it was: {}", now.position);
+        assert_eq!(now.kept, Some(15.0), "the seek is kept");
+        assert_eq!(now.notice.as_deref(), Some("Waiting for 0:15"));
+        // All of it arrives: the kept seek lands.
+        let _ = engine.heard_to.send(stream_event("s", 1000, None));
+        assert!(
+            listen_until(&output, || engine.snapshot().position >= 15.0),
+            "landed where it was asked"
+        );
+        let now = engine.snapshot();
+        assert_eq!((now.kept, now.notice.as_deref()), (None, Some("Playing from 0:15")));
+        Ok(())
+    }
+
+    #[test]
+    fn a_seek_past_what_has_arrived_is_held_at_its_edge_with_jumping_off() -> Result<(), String> {
+        let hub = hub(json!({ "playback": { "jumpWhenDownloaded": false } })).ok_or("no hub")?;
         let (engine, output) = player(&hub, &[("s", false, Some(20.0))], Repeat::Off).ok_or("no player")?;
         listen(&output, 0.5);
         let _ = engine.heard_to.send(stream_event("s", 100, None));
