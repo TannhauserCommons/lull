@@ -51,6 +51,7 @@ What there is to work with:
 
 **What starts a leg.**
 - **The browser's own request is the trigger.** It asks for byte X. Its demuxer's time-to-byte guess is better than the page's linear one, and it is what will be read.
+- **The player decides whether to ask.** `stream` events carry `seekAheadS`: how many seconds of transfer away a seek must be for the hub to start a leg there (10 with another peer, 30 with only the same one), or `null`. A seek past what has arrived and further than that goes there at once, and the output's request starts the leg. A nearer one, or one with `null`, is kept until the bytes arrive (the waiting that ships in 0.2.2). The hub applies the same thresholds to the byte it is asked for, so the two agree.
 - **Jumping costs a new transfer request,** about 1-3 s with a free slot, so a leg starts only when it wins. The running leg must be more than `JUMP_S` (10 s, measured at its current speed) away from X, and X must not already be on its way.
 - **Probes collapse.** A request that starts in a gap waits 300 ms before it starts a leg. A newer request on the same song replaces an older one's leg plan. One seek gives one leg.
 - **Order of legs:** first the leg the listener is waiting for. After it reaches the end of the file (or the next range), the gap nearest after the playing position, then the others in order. A gap is filled by a leg that starts a little inside the range before it (64 KiB), so the overlap can be compared.
@@ -83,7 +84,7 @@ What there is to work with:
 - **slskd's size check.** slskd sends the size from the search, and the peer refuses a mismatch (`TransferSizeMismatchException`). A leg uses the same size as the first one, so a peer whose file changed fails the leg, not the song.
 - **Relying on slskd's resume.** This is documented behaviour (`retry.partial`), not an API made for ranges. A future slskd could change it. The pin keeps the tested version, the contract test fails a deliberate upgrade that changes it, and the detection above turns an slskd the listener runs into waiting rather than wrong bytes.
 - **More transfers in slskd's list.** Each leg is a transfer record. lull cancels a leg with `remove=true`, as it cancels its fetches today, so the record goes with it.
-- **Disk.** Sparse files on Linux. On Windows (the desktop app's bundled slskd and cache), lull marks its own file sparse. slskd's file for a leg at X is extended before slskd opens it, so lull marks that sparse too.
+- **Disk.** On Linux the holes take no space. On Windows (the desktop app's bundled slskd and cache) they are zeros on disk: lull's file grows to the furthest byte a leg brought, and slskd's file for a leg at X takes X bytes until the leg ends. Both are within the twice-the-copy room made before the fetch, so it is bounded; marking the files sparse would need a Windows-only system call for no change in that bound.
 
 ## Alternatives
 
