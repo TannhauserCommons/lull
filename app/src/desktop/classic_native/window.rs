@@ -1812,7 +1812,127 @@ impl Drop for Surface {
 
 #[cfg(test)]
 mod tests {
+    use super::super::session::Now;
     use super::*;
+
+    /// The side-by-side with Webamp (tests/ui/classic-compare.mjs): every `.wsz` in
+    /// `LULL_SKINS_IN` drawn as the window draws it at 1x, the three windows stacked, one song
+    /// loaded and stopped, volume 75 %, the equaliser on and flat, into `<name>.png` in
+    /// `LULL_RENDERS_OUT`. A skin missing pieces takes them from base-2.91 (`BASE_MD5.wsz`, in the
+    /// same folder), as the window does. Run by hand: `cargo test render_skins -- --ignored`.
+    #[test]
+    #[ignore = "renders a folder of skins: LULL_SKINS_IN, LULL_RENDERS_OUT"]
+    fn render_skins() -> Result<(), String> {
+        let (inn, out) = match (std::env::var("LULL_SKINS_IN"), std::env::var("LULL_RENDERS_OUT")) {
+            (Ok(i), Ok(o)) => (std::path::PathBuf::from(i), std::path::PathBuf::from(o)),
+            _ => return Err("set LULL_SKINS_IN and LULL_RENDERS_OUT".into()),
+        };
+        let read = |p: &std::path::Path| std::fs::read(p).map_err(|e| format!("{}: {e}", p.display()));
+        let base = Skin::from_archive(&read(&inn.join(format!("{BASE_MD5}.wsz")))?, None)?;
+        let panels = Panels {
+            eq: true,
+            playlist: true,
+            main_shade: false,
+            eq_shade: false,
+            playlist_shade: false,
+        };
+        let now = Now {
+            duration: Some(SCENE_SECONDS),
+            stopped: true,
+            ..Now::default()
+        };
+        let eq = crate::desktop::classic::Equaliser {
+            on: true,
+            bands: [0.0; 10],
+            preamp: Some(0.0),
+        };
+        let list = playlist::List {
+            labels: vec![format!("1. {SCENE_ARTIST} - {SCENE_TITLE}")],
+            lengths: vec![Some(SCENE_SECONDS)],
+            selected: vec![false],
+            scroll: 0,
+        };
+        let bars = [Bar::default(); BARS];
+        let marquee = format!("1. {SCENE_ARTIST} - {SCENE_TITLE} (4:40)");
+        let view = View {
+            now: &now,
+            marquee: &marquee,
+            volume: 0.75,
+            focus: Focus::Main,
+            pressed: None,
+            seeking: None,
+            remaining: false,
+            blink_off: false,
+            bars: &bars,
+            shuffle: false,
+            repeat: false,
+            eq_open: true,
+            playlist_open: true,
+            eq: &eq,
+            list: &list,
+        };
+        let mut done = 0;
+        for entry in std::fs::read_dir(&inn).map_err(|e| e.to_string())?.flatten() {
+            let path = entry.path();
+            if path.extension().is_none_or(|e| e != "wsz") {
+                continue;
+            }
+            let bytes = read(&path)?;
+            let skin = match Skin::from_archive(&bytes, None) {
+                Ok(skin) if skin.complete() => skin,
+                _ => Skin::from_archive(&bytes, Some(&base))?,
+            };
+            let height = panels.height();
+            let mut canvas = Canvas::new(height);
+            for (panel, top, rows) in panels.stack() {
+                draw_panel(&mut canvas, &skin, (panel, panels.shaded(panel)), top, rows, &view);
+            }
+            let (columns, rows) = (edges(WIDTH, 1.0), edges(height, 1.0));
+            let size = (WIDTH as i32, height as i32);
+            let (mut band, mut target) = (Surface::new(size)?, Surface::new(size)?);
+            let text = Text::new(&skin.playlist.font, 1.0)?;
+            paint(
+                &canvas,
+                (&columns, &rows),
+                &mut band,
+                &text,
+                target.dc,
+                (0, 0, WIDTH, height),
+            );
+            // SAFETY: the copy into `target` is done before its pixels are read.
+            let _ = unsafe { GdiFlush() };
+            let rgba: Vec<u8> = target
+                .pixels()
+                .iter()
+                .zip(&canvas.pixels)
+                .flat_map(|(p, drawn)| {
+                    let alpha = if drawn >> 24 == 0 { 0 } else { 255 };
+                    [(p >> 16) as u8, (p >> 8) as u8, *p as u8, alpha]
+                })
+                .collect();
+            let name = path
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            image::save_buffer(
+                out.join(format!("{name}.png")),
+                &rgba,
+                WIDTH,
+                height,
+                image::ColorType::Rgba8,
+            )
+            .map_err(|e| e.to_string())?;
+            done += 1;
+        }
+        eprintln!("rendered {done} skins into {}", out.display());
+        Ok(())
+    }
+
+    /// The scene both sides draw (tests/ui/classic-compare.mjs has the same).
+    const SCENE_ARTIST: &str = "Velvet Comet";
+    const SCENE_TITLE: &str = "Static Season";
+    const SCENE_SECONDS: f64 = 280.0;
+    const BASE_MD5: &str = "5e4f10275dcb1fb211d4a8b4f1bda236";
 
     #[test]
     fn the_window_is_cut_to_what_the_skin_draws() {
