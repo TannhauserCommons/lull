@@ -193,7 +193,7 @@
   content: ""; position: absolute; left: -13px; top: 50%; width: 18px; height: 18px; margin-top: -9px; background: var(--sd-star) center / contain no-repeat;
 }
 :root[data-design="skydeck"] .rail :is(.label-rule--sm > h2, .label-rule--sm > h3) { font: var(--sd-caps); letter-spacing: .2em; text-transform: uppercase; color: var(--ink-2); }
-:root[data-design="skydeck"] :is(.rail__tags .chip, .rail .pill-filter) { background: var(--panel); border: 1px solid var(--sd-ink); color: var(--sd-ink); }
+:root[data-design="skydeck"] .rail .pill-filter { background: var(--panel); border: 1px solid var(--sd-ink); color: var(--sd-ink); }
 :root[data-design="skydeck"] .rail__foot { color: var(--ink-2); }
 /* the icon rail (tablet): no numerals, no printed name */
 @media (max-width: 1099px) {
@@ -311,6 +311,12 @@
   :root[data-design="skydeck"] :is(.card-head h2, .card .label-rule > h2)::before { width: 12px; height: 12px; }
 }
 :root[data-design="skydeck"] .chip-reason { border: 1px dashed var(--sd-pink); }
+/* chips (tags, follows, the equaliser's presets, Sources' formats) are printed slips of the card, ruled in ink, wherever
+   they sit; a chip or filter pill that is on is inked in, as the menu's place and the segmented controls are */
+:root[data-design="skydeck"] .chip { background: var(--panel); border: 1px solid var(--sd-ink); color: var(--sd-ink); }
+:root[data-design="skydeck"] :is(button.chip, a.chip):hover:not([aria-pressed="true"], .is-on) { background: var(--panel-2); }
+:root[data-design="skydeck"] :is(.chip[aria-pressed="true"], .chip.is-on, .pill-filter[aria-pressed="true"]) { background: var(--sd-ink); color: var(--panel); border-color: var(--sd-ink); }
+:root[data-design="skydeck"] .pill-filter[aria-pressed="true"] .lib-count { color: var(--sd-pink-lt); }
 :root[data-design="skydeck"] .btn--primary { background: var(--sd-ink); color: var(--panel); border-color: var(--sd-ink); }
 :root[data-design="skydeck"] .btn--primary:hover { background: #3d3570; }
 /* segmented controls and switches, inked */
@@ -529,9 +535,9 @@
 :root[data-design="skydeck"] .pbar .btn-gloss { --size: 48px; }
 :root[data-design="skydeck"] .pbar__centre { gap: 0; align-self: stretch; align-content: center; }
 :root[data-design="skydeck"] .pbar__controls { gap: 14px; }
-/* a toggle that is on gets the star under it */
-:root[data-design="skydeck"] :is(.pbar__controls, .sd-wheel__keys) .btn-icon[aria-pressed] { position: relative; }
-:root[data-design="skydeck"] :is(.pbar__controls, .sd-wheel__keys) .btn-icon[aria-pressed="true"]::after {
+/* a toggle that is on gets the star under it (anywhere on the player card, and on the wheel) */
+:root[data-design="skydeck"] :is(.pbar, .sd-wheel__keys) .btn-icon[aria-pressed] { position: relative; }
+:root[data-design="skydeck"] :is(.pbar, .sd-wheel__keys) .btn-icon[aria-pressed="true"]:not(.is-liked)::after {
   content: ""; position: absolute; left: 50%; bottom: -1px; width: 12px; height: 12px; margin-left: -6px; background: var(--sd-star) center / contain no-repeat;
 }
 /* the scale: hour ticks every tenth of the song, quarter ticks between, the played part inked pink along the baseline,
