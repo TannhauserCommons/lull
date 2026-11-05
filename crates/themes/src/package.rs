@@ -28,6 +28,9 @@ const MAX_ASSET_BYTES: usize = 4 * 1024 * 1024;
 const MAX_CSS_BYTES: usize = 1024 * 1024;
 const MAX_SLOT_BYTES: usize = 64 * 1024;
 const MAX_MANIFEST_BYTES: usize = 16 * 1024;
+/// The words a manifest shows a listener, at most this many characters each (docs/themes.md section 1). Theme
+/// Studio counts against the same numbers (`Designs.limits`, written from these by this crate's tests).
+pub const TEXT_LIMITS: [(&str, usize); 3] = [("name", 60), ("author", 60), ("description", 280)];
 /// Fonts, images, and the licence texts that come with fonts.
 const ASSET_TYPES: &[&str] = &[
     "woff2", "woff", "ttf", "otf", "png", "jpg", "jpeg", "gif", "webp", "avif", "svg", "txt",
@@ -168,7 +171,10 @@ pub fn validate(files: &Files, origin: Origin) -> Result<Manifest> {
 
 fn check_manifest(m: &Manifest, origin: Origin) -> Result<()> {
     if !valid_id(&m.id) {
-        return Err(bad("theme.json: id is 1-40 lowercase letters, digits and dashes"));
+        return Err(bad(format!(
+            "theme.json: id {:?} is not 1-40 lowercase letters, digits and dashes",
+            m.id
+        )));
     }
     if origin == Origin::Listener && BUILT_IN.contains(&m.id.as_str()) {
         return Err(bad(format!(
@@ -176,13 +182,14 @@ fn check_manifest(m: &Manifest, origin: Origin) -> Result<()> {
             m.id
         )));
     }
-    if m.name.trim().is_empty() || m.name.chars().count() > 60 {
-        return Err(bad("theme.json: name is 1-60 characters"));
+    if m.name.trim().is_empty() {
+        return Err(bad("theme.json: name is empty; a theme has a name"));
     }
-    if m.author.chars().count() > 60 || m.description.chars().count() > 200 {
-        return Err(bad(
-            "theme.json: author is at most 60 characters, description at most 200",
-        ));
+    for ((field, max), text) in TEXT_LIMITS.into_iter().zip([&m.name, &m.author, &m.description]) {
+        let n = text.chars().count();
+        if n > max {
+            return Err(bad(format!("theme.json: {field} is {n} characters, at most {max}")));
+        }
     }
     if m.api == 0 || m.api > API {
         return Err(bad(format!(
@@ -882,6 +889,67 @@ mod tests {
         let mut files = package("", &[]);
         files.insert("../escape.css".into(), Vec::new());
         assert!(refused(&files).contains("plain relative path"));
+    }
+
+    #[test]
+    fn each_text_over_its_limit_is_refused_by_name_with_its_length() {
+        let with = |field: &str, text: String| {
+            let mut m =
+                serde_json::from_slice::<serde_json::Value>(&package("", &[])["theme.json"]).unwrap_or_default();
+            m[field] = text.into();
+            let mut files = package("", &[]);
+            files.insert("theme.json".into(), m.to_string().into_bytes());
+            files
+        };
+        let words = |n: usize| "a ".repeat(n).chars().take(n).collect::<String>();
+        assert!(validate(&with("description", words(280)), Origin::Listener).is_ok());
+        assert_eq!(
+            refused(&with("description", words(281))),
+            "theme.json: description is 281 characters, at most 280"
+        );
+        assert_eq!(
+            refused(&with("author", words(61))),
+            "theme.json: author is 61 characters, at most 60"
+        );
+        assert_eq!(
+            refused(&with("name", "é".repeat(61))),
+            "theme.json: name is 61 characters, at most 60"
+        );
+        assert_eq!(
+            refused(&with("name", " ".into())),
+            "theme.json: name is empty; a theme has a name"
+        );
+    }
+
+    #[test]
+    fn designs_js_counts_against_the_limits_this_crate_checks() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../web/designs/designs.js");
+        let have = std::fs::read_to_string(&path).unwrap_or_default();
+        let limits = TEXT_LIMITS
+            .iter()
+            .map(|(field, max)| format!("{field}: {max}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let line = format!("  D.limits = {{ {limits} }};  // characters, as the hub checks them (crates/themes)");
+        let want = have
+            .lines()
+            .map(|l| {
+                if l.starts_with("  D.limits = ") {
+                    line.as_str()
+                } else {
+                    l
+                }
+            })
+            .map(|l| format!("{l}\n"))
+            .collect::<String>();
+        if std::env::var_os("LULL_WRITE_PACKAGES").is_some() {
+            assert!(std::fs::write(&path, &want).is_ok(), "write {}", path.display());
+        }
+        let have = std::fs::read_to_string(&path).unwrap_or_default();
+        assert!(
+            have.contains(&format!("\n{line}\n")) && have == want,
+            "web/designs/designs.js: D.limits is stale: run LULL_WRITE_PACKAGES=1 cargo test -p lull-themes"
+        );
     }
 
     #[test]

@@ -160,7 +160,8 @@ label.sys-row { cursor: pointer; }
 .sys-design:hover { background: var(--bg-2); }
 .sys-design[aria-checked="true"] { background: var(--peri); color: var(--ink); box-shadow: 0 4px 0 -2px var(--stack-1), 0 4px 0 0 var(--line); }
 .sys-design__name { display: flex; align-items: center; gap: 6px; margin: 6px 4px 0; font: 800 1rem/1.2 var(--f-ui); }
-.sys-design__desc { margin: 0 4px; font: var(--t-meta); color: var(--fg-2); }
+/* two lines of the description, the rest clipped with an ellipsis (screen readers hear it whole) */
+.sys-design__desc { margin: 0 4px; font: var(--t-meta); color: var(--fg-2); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
 .sys-design[aria-checked="true"] .sys-design__desc { color: var(--ink); }
 .sys-design__check { margin-left: auto; visibility: hidden; }
 .sys-design[aria-checked="true"] .sys-design__check { visibility: visible; }

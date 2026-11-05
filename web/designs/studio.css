@@ -21,7 +21,11 @@
 .studio__side { display: flex; flex-direction: column; gap: var(--sp-4); min-height: 0; overflow: auto; padding: 2px 4px var(--sp-4) 2px; }
 .studio__meta { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
 .studio__meta .field:first-child { grid-column: 1 / -1; }
-.studio__meta .field:nth-child(n + 3) { grid-column: 1 / -1; }
+.studio__meta .field:nth-child(n + 4) { grid-column: 1 / -1; }
+.studio__label { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); }
+.studio__count { font: var(--t-meta); color: var(--fg-2); }
+.studio__count.is-over { font-weight: 800; color: var(--down); }
+.studio__meta .input[aria-invalid="true"] { border-color: var(--down); box-shadow: inset 0 0 0 1px var(--down); }
 .studio__tabs { width: 100%; }
 .studio__h { margin: 0 0 var(--sp-2); font: italic 800 .875rem/1.2 var(--f-ui); color: var(--fg-2); }
 .studio__state { margin-right: auto; font: var(--t-meta); color: var(--fg-2); }

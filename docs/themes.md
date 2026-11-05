@@ -32,12 +32,23 @@ A folder, or a `.lulltheme` file (a zip of that folder):
 ```
 
 - `id`: 1-40 lowercase letters, digits and dashes; not a built-in design's name.
+- `name`: 1-60 characters, the card's title. `author` (optional): at most 60 characters.
 - `api`: the theme API version you wrote for (section 9). Today it is `1`.
 - `extends`: a built-in design (`lull`, `skydeck`, `starlight`, `petal`, `glasshouse`) whose CSS and slots load first, or `null` to start from the base look alone.
 - `shell`: the layout on desktop and tablet: `rail` (a side menu), `topnav` (pills in the header) or `dock`. Phones always use the tab bar.
 - `swatches`: page, surface, accent and ink colours (`#rrggbb`) for the sketch on the picker card in Settings › Appearance, shown until the card has its picture.
 - `modes`: `["day", "night"]`, or just one. A one-mode theme ignores the day/night switch.
-- Optional: `description`, `preview` (true when you made the picker card's pictures yourself, `assets/preview-day.webp` and `-night.webp`, 320×200; without them lull makes them from your theme, ADR-0080), `coverVariety` (section 5), `window` (a see-through window in the desktop app, section 12). The hub fills in `slots` itself.
+- Optional: `description`, at most 280 characters, `preview` (true when you made the picker card's pictures yourself, `assets/preview-day.webp` and `-night.webp`, 320×200; without them lull makes them from your theme, ADR-0080), `coverVariety` (section 5), `window` (a see-through window in the desktop app, section 12). The hub fills in `slots` itself.
+
+**How long the words may be.** The picker card shows the name on one line and the first two lines of the description, and clips the rest with an ellipsis; Theme Studio and screen readers have the whole of it. So the description is a blurb, a sentence for the theme by day and one by night, and 280 characters holds that with room to spare. The limits keep a package's words a card's words, not a page; the hub refuses a package over any of them and says which field and by how much (`theme.json: description is 318 characters, at most 280`). Theme Studio counts each one while you type and won't save or export past it.
+
+**Before you share one,** check it as the hub's import does:
+
+```sh
+cargo run -p lull-themes --bin lull-theme-check -- my-theme.lulltheme my-theme/
+```
+
+It prints `ok` or the reason the import would give, for each `.lulltheme` or package folder; a script that packs themes runs it on what it made.
 
 **Installing one:** drop the `.lulltheme` on Settings › Appearance › Your themes, or make it in Theme Studio there. Both store it on your hub in `<data dir>/themes/<id>/`, so every device can pick it. You can also edit the files in that folder directly: open devices reload the theme within a second.
 

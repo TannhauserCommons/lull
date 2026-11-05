@@ -23,6 +23,17 @@
   /* the product name: every shipped string (titles, brand link names, copy) reads it from here */
   D.product = 'lull';
   D.API = 1;                                     // the theme API this build speaks (docs/themes.md, versioning)
+  D.limits = { name: 60, author: 60, description: 280 };  // characters, as the hub checks them (crates/themes)
+  /* what the hub would refuse in a manifest's words, in its words ("description is 281 characters, at most 280"), or null:
+     Theme Studio checks before it saves, so what it makes always imports */
+  D.textProblem = function (m) {
+    if (!String(m.name || '').trim()) return 'name is empty; a theme has a name';
+    for (var k in D.limits) {
+      var n = Array.from(String(m[k] || '')).length;           // characters, as the hub counts them
+      if (n > D.limits[k]) return k + ' is ' + n + ' characters, at most ' + D.limits[k];
+    }
+    return null;
+  };
   D.builtIn = ['lull', 'skydeck', 'starlight', 'petal', 'glasshouse'];
   D.fallback = 'lull';
   /* id -> { id, label, description, author, api, extends, shell, swatches, modes, preview, builtIn, slots, coverVariety, window,

@@ -131,6 +131,13 @@ pub fn manifest_json(m: &Manifest) -> Result<Vec<u8>> {
     Ok(json)
 }
 
+/// A package folder's files by path inside it.
+pub(crate) fn folder(root: &Path) -> Result<Files> {
+    let mut files = Files::new();
+    collect(root, root, &mut files)?;
+    Ok(files)
+}
+
 fn collect(root: &Path, dir: &Path, files: &mut Files) -> Result<()> {
     for entry in fs::read_dir(dir).map_err(io_err)? {
         let entry = entry.map_err(io_err)?;

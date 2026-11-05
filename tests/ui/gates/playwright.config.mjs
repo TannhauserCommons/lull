@@ -64,6 +64,8 @@ export default defineConfig({
     // a theme's card shows a picture lull drew of it (ADR-0080), in Chromium and in WebKit (the Linux app's engine)
     { name: 'theme-pictures', testMatch: 'theme-pictures.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     { name: 'theme-pictures-webkit', testMatch: 'theme-pictures.spec.mjs', use: { browserName: 'webkit', viewport: { width: 1440, height: 900 }, launchOptions: {} } },
+    // Theme Studio won't save or export a name, author or description longer than the hub takes
+    { name: 'theme-text', testMatch: 'theme-text.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     { name: 'loops-webkit', testMatch: 'loops.spec.mjs', fullyParallel: true, use: { browserName: 'webkit', viewport: { width: 1440, height: 900 }, launchOptions: {} } },
   ].filter(inGroup),
 });

@@ -40,6 +40,17 @@ const BUILT_IN_MANIFESTS: [&str; 5] = [
     include_str!("../../../web/designs/glasshouse/theme.json"),
 ];
 
+/// Checks a package as the hub's import does, from a `.lulltheme` or a package folder, and returns its id: a package
+/// lull's own tooling makes passes here before anyone shares it (`cargo run -p lull-themes --bin lull-theme-check`).
+pub fn check(path: &std::path::Path) -> Result<String> {
+    let files = if path.is_dir() {
+        store::folder(path)?
+    } else {
+        archive::read(&std::fs::read(path).map_err(|e| Error::BadRequest(format!("{}: {e}", path.display())))?)?
+    };
+    package::validate(&files, package::Origin::Listener).map(|m| m.id)
+}
+
 pub struct Service {
     store: Store,
     /// The pictures lull made of each theme (ADR-0080), beside the packages

@@ -56,12 +56,14 @@
     return html`<div class="studio">
       <div class="studio__side">
         <div class="studio__meta">
-          <label class="field"><span class="field__label">Name</span><input class="input" data-studio="name" value="${d.name}" maxlength="60" autocomplete="off"></label>
+          ${text('name', 'Name', d.name)}
+          ${text('author', 'By', d.author)}
           <label class="field"><span class="field__label">Start from</span><select class="input" data-studio="extends">${Designs.builtIn.map(function (n) {
             return html`<option value="${n}" ${n === d.extends ? raw('selected') : ''}>${App.designs[n].label}</option>`;
           })}<option value="" ${!d.extends ? raw('selected') : ''}>Nothing (base tokens only)</option></select></label>
           <div class="field"><span class="field__label" id="studio-shell-l">Layout</span>${seg('shell', 'studio-shell-l', [['rail', 'Rail'], ['topnav', 'Top bar'], ['dock', 'Dock']], d.shell)}</div>
           <div class="field"><span class="field__label" id="studio-modes-l">Modes</span>${seg('modes', 'studio-modes-l', [['day,night', 'Day and night'], ['day', 'Day only'], ['night', 'Night only']], d.modes.join(','))}</div>
+          ${text('description', 'Description', d.description)}
         </div>
         <div class="seg studio__tabs" role="tablist" aria-label="Edit" style="--n:2;--i:0"><span class="seg__ind" aria-hidden="true"></span>
           <button class="seg__btn" role="tab" id="studio-t-tokens" aria-controls="studio-p-tokens" aria-selected="true" data-studio-tab="tokens">Tokens</button>
@@ -86,6 +88,20 @@
       </div>
     </div>`;
   }
+  /* a manifest text with its count against the hub's limit beside the label (no maxlength: a paste is never cut short) */
+  function text(key, label, value) {
+    var box = key === 'description'
+      ? html`<textarea class="input" rows="3" data-studio="${key}" aria-describedby="${'studio-n-' + key}">${value}</textarea>`
+      : html`<input class="input" data-studio="${key}" value="${value}" autocomplete="off" aria-describedby="${'studio-n-' + key}">`;
+    return html`<label class="field"><span class="studio__label"><span class="field__label">${label}</span><span class="studio__count num" id="${'studio-n-' + key}" data-studio-count="${key}"></span></span>${box}</label>`;
+  }
+  function count(key) {
+    var el = S && $('[data-studio-count="' + key + '"]', S.el); if (!el) return;
+    var n = Array.from(S.draft[key] || '').length, max = Designs.limits[key], over = n > max;
+    el.textContent = n + ' / ' + max;
+    el.classList.toggle('is-over', over);
+    $('[data-studio="' + key + '"]', S.el).setAttribute('aria-invalid', over ? 'true' : 'false');
+  }
   function seg(key, labelledBy, options, cur, label) {
     var i = Math.max(0, options.map(function (o) { return o[0]; }).indexOf(cur));
     return html`<div class="seg" role="radiogroup" ${labelledBy ? raw('aria-labelledby="' + labelledBy + '"') : raw('aria-label="' + esc(label) + '"')} data-studio-seg="${key}" style="--n:${options.length};--i:${i}"><span class="seg__ind" aria-hidden="true"></span>${options.map(function (o, j) {
@@ -106,6 +122,7 @@
     el.addEventListener('change', onInput);
     el.addEventListener('click', onClick);
     el.addEventListener('keydown', onKey);
+    Object.keys(Designs.limits).forEach(count);
     var ta = $('[data-studio="css"]', el);
     ta.addEventListener('scroll', function () { $('[data-studio-lines]', el).scrollTop = ta.scrollTop; });
     $$('[data-studio-frame]', el).forEach(function (f) {
@@ -177,7 +194,7 @@
 
   function onInput(e) {
     var t = e.target, k = t.getAttribute('data-studio'), tok = t.getAttribute('data-token');
-    if (k === 'name') { S.draft.name = t.value; S.dirty = true; state(); }
+    if (k in Designs.limits) { S.draft[k] = t.value; S.dirty = true; count(k); state(); }
     else if (k === 'extends' && e.type === 'change') { S.draft.extends = t.value || null; if (t.value) S.draft.shell = App.designs[t.value].shell; S.dirty = true; showSeg('shell', S.draft.shell); loadFrames(); state(); }
     else if (k === 'route' && e.type === 'change') { S.route = t.value; S.frames.forEach(function (f) { if (f.contentWindow) f.contentWindow.location.hash = '#/' + S.route; }); lookLive(); }
     else if (k === 'css') { S.draft.css = t.value; lineNumbers(); S.dirty = true; state(); repaint(); }
@@ -437,7 +454,14 @@
   }
   function save() {
     if (!S) return Promise.resolve(null);
-    var id = S.id || slug(S.draft.name), css = S.draft.css;
+    var id = S.id || slug(S.draft.name), css = S.draft.css, problem = Designs.textProblem(Object.assign({}, S.draft, { name: S.draft.name.trim() || 'My theme' }));
+    if (problem) {                                 // the hub would refuse it, and an export of it would fail every import
+      state('Not saved');
+      App.toast('Couldn\'t save the theme: ' + problem[0].toUpperCase() + problem.slice(1) + '.', { kind: 'error', sticky: true });
+      var at = Object.keys(Designs.limits).filter(function (k) { return problem.indexOf(k + ' ') === 0; })[0];
+      if (at) $('[data-studio="' + at + '"]', S.el).focus();
+      return Promise.resolve(null);
+    }
     state('Saving...');
     return M.api('/api/themes/' + id + '/theme.json', { method: 'PUT', body: JSON.stringify(manifest(id)) })
       .then(function () { return M.api('/api/themes/' + id + '/theme.css', { method: 'PUT', body: css }); })
