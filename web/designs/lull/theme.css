@@ -82,6 +82,7 @@
 /* check: --l-muted on --sky 4.5 */
 /* check: --link on --l-card 4.5 */
 /* check: --l-tile-ink on --l-tile 4.5 */
+/* check: --l-key-ink on color-mix(--l-tile 38%, --l-card) 4.5 (a chip) */
 /* check: --l-band-ink on --l-tray 4.5 (titles pressed into the plastic) */
 /* check: #ffffff on --l-ribbon 4.5 */
 /* check: --reason-fg on --reason-bg 4.5 */
@@ -193,6 +194,15 @@
   /* a pale gel key (not pressed): the same construction as the pressed one, in the tile's periwinkle */
   --l-gel-pale: var(--l-hi), linear-gradient(180deg, color-mix(in srgb, var(--l-tile) 80%, #fff) 0%, var(--l-tile) 58%, color-mix(in srgb, var(--l-tile) 86%, #2b2650) 100%);
   --l-gel-pale-edge: color-mix(in srgb, var(--l-tile) 55%, #2b2650);
+  /* material by role: every control of a kind takes its role's gel, wherever it sits, so a new button is candy too.
+     key: a control at rest (pale gel); key-on: pressed, current or the main action (violet gel); key-danger (pink gel) */
+  --l-key: var(--l-gel-pale); --l-key-sm: var(--l-hi-sm), linear-gradient(180deg, color-mix(in srgb, var(--l-tile) 80%, #fff) 0%, var(--l-tile) 58%, color-mix(in srgb, var(--l-tile) 86%, #2b2650) 100%);
+  --l-key-hover: var(--l-hi), linear-gradient(180deg, color-mix(in srgb, var(--l-tile-hi) 70%, #fff) 0%, color-mix(in srgb, var(--l-tile) 60%, var(--l-tile-hi)) 58%, color-mix(in srgb, var(--l-tile) 86%, #2b2650) 100%);
+  --l-key-edge: var(--l-gel-pale-edge); --l-key-ink: var(--l-tile-ink);
+  --l-key-lift: inset 0 -2px 4px rgba(255, 255, 255, .3), 0 2px 0 rgba(20, 10, 70, .3);
+  --l-key-on: var(--l-hi), var(--l-gloss); --l-key-on-sm: var(--l-hi-sm), var(--l-gloss); --l-key-on-edge: var(--l-gloss-edge);
+  --l-key-on-lift: inset 0 -2px 4px var(--l-gloss-glow), 0 2px 0 rgba(20, 10, 70, .3);
+  --l-key-danger: var(--l-hi), var(--l-pink-gloss); --l-key-danger-edge: var(--l-pink-edge);
   --l-orb-shine: radial-gradient(circle at 50% 30%, rgba(255, 255, 255, .95) 0 1.4px, transparent 3px);
   /* the candy plastic: a lit top lip and a darker foot, fine moulded ribs, over the tint (the wallpaper shows through) */
   --l-candy:
@@ -392,16 +402,14 @@
 /* every key on the menubar is a gel pill: pale periwinkle gel, then violet gel when it is the one you're on or is on.
    Same shape, edge and shine either way, so pressing only deepens the colour */
 :root[data-design="lull"] .nav-pill, :root[data-design="lull"] .header .btn-icon, :root[data-design="lull"] .header .tray__pill {
-  height: 40px; border-radius: 999px; border: var(--stroke) solid var(--l-gel-pale-edge); color: var(--l-tile-ink);
-  background: var(--l-gel-pale); box-shadow: inset 0 -2px 4px rgba(255, 255, 255, .3), 0 2px 0 rgba(20, 10, 70, .3);
+  height: 40px; border-radius: 999px; border: var(--stroke) solid var(--l-key-edge); color: var(--l-key-ink);
+  background: var(--l-key); box-shadow: var(--l-key-lift);
 }
 :root[data-design="lull"] .nav-pill { padding: 0 14px 0 11px; font: 800 .875rem/1 var(--f-ui); gap: 7px; }
 :root[data-design="lull"] .nav-pill .ic { width: 18px; height: 18px; }
 /* a pill that gave way (layout.js, data-fit) is a square tile with its icon */
 :root[data-design="lull"] .header .nav-pill[data-fit-out] { width: 40px; }
-:root[data-design="lull"] .nav-pill:hover, :root[data-design="lull"] .header .btn-icon:hover, :root[data-design="lull"] .header .tray:hover .tray__pill {
-  background: var(--l-hi), linear-gradient(180deg, color-mix(in srgb, var(--l-tile-hi) 70%, #fff) 0%, color-mix(in srgb, var(--l-tile) 60%, var(--l-tile-hi)) 58%, color-mix(in srgb, var(--l-tile) 86%, #2b2650) 100%);
-}
+:root[data-design="lull"] .nav-pill:hover, :root[data-design="lull"] .header .btn-icon:hover, :root[data-design="lull"] .header .tray:hover .tray__pill { background: var(--l-key-hover); }
 :root[data-design="lull"] .nav-pill[aria-current="page"], :root[data-design="lull"] .header .btn-icon[aria-current="page"], :root[data-design="lull"] .header .btn-icon[data-act="theme"] {
   background: var(--l-hi), var(--l-gloss); color: #fff; border-color: var(--l-gloss-edge);
   box-shadow: inset 0 -2px 4px var(--l-gloss-glow), 0 2px 0 rgba(20, 10, 70, .3); text-shadow: 0 1px 0 rgba(40, 25, 110, .55);
@@ -594,35 +602,49 @@
 }
 
 /* =====================================================================
-   Buttons, chips, badges (flat, outlined: img 01 / 05)
+   Buttons, chips, badges. What you press is a gel key (the roles above): buttons, icon keys, filter pills, keyboard
+   keys. Tags and chips are candy stickers, flat and lightly tinted with a lit edge: labels you can follow, not keys
+   (a chip that is on turns gel). A quiet button and a bare icon key stay text and glyph, as they sit in rows and bars;
+   badges stay flat and outlined (img 01 / 05)
    ===================================================================== */
-:root[data-design="lull"] .btn { min-height: 36px; padding: 0 15px; border-width: var(--stroke); font: 800 .875rem/1.1 var(--f-ui); background: var(--l-card); }
-:root[data-design="lull"] .btn:hover { background: var(--l-card-2); }
+:root[data-design="lull"] .btn {
+  min-height: 36px; padding: 0 15px; border: var(--stroke) solid var(--l-key-edge); border-radius: 999px; font: 800 .875rem/1.1 var(--f-ui);
+  background: var(--l-key); color: var(--l-key-ink); box-shadow: var(--l-key-lift);
+}
+:root[data-design="lull"] .btn:hover { background: var(--l-key-hover); }
+:root[data-design="lull"] .btn:active { transform: translateY(1px); }
 :root[data-design="lull"] .btn--sm { min-height: 30px; padding: 0 12px; font-size: .8125rem; }
-:root[data-design="lull"] .btn--quiet { background: transparent; border-color: transparent; padding: 0 6px; }
+:root[data-design="lull"] .btn--quiet { background: transparent; border-color: transparent; padding: 0 6px; color: var(--link); box-shadow: none; }
 :root[data-design="lull"] .btn--quiet:hover { background: transparent; }
-:root[data-design="lull"] .btn--danger { background: var(--heart); border-color: var(--heart); color: var(--l-card); }
-:root[data-design="lull"] .btn-icon { width: 36px; height: 36px; border-width: var(--stroke); border-color: var(--l-rule); }
-:root[data-design="lull"] .btn-icon--bare { border-color: transparent; }
-:root[data-design="lull"] .btn-icon:hover { background: var(--l-card-2); }
-:root[data-design="lull"] .btn-icon[aria-pressed="true"] { color: var(--link); }
+:root[data-design="lull"] .btn--danger, :root[data-design="lull"] .btn--danger:hover { background: var(--l-key-danger); border-color: var(--l-key-danger-edge); color: #fff; text-shadow: 0 1px 0 rgba(90, 20, 60, .55); box-shadow: var(--l-key-on-lift); }
+:root[data-design="lull"] .btn-icon { width: 36px; height: 36px; border: var(--stroke) solid var(--l-key-edge); background: var(--l-key); color: var(--l-key-ink); box-shadow: var(--l-key-lift); }
+:root[data-design="lull"] .btn-icon:hover { background: var(--l-key-hover); }
+:root[data-design="lull"] .btn-icon[aria-pressed="true"]:not(.is-liked) { background: var(--l-key-on); border-color: var(--l-key-on-edge); color: #fff; box-shadow: var(--l-key-on-lift); }
+:root[data-design="lull"] .btn-icon[aria-pressed="true"]::after { display: none; }
+:root[data-design="lull"] .btn-icon--bare { border-color: transparent; background: transparent; color: inherit; box-shadow: none; }
+:root[data-design="lull"] .btn-icon--bare:hover { background: color-mix(in srgb, var(--l-tile) 30%, transparent); }
+:root[data-design="lull"] .btn-icon--bare[aria-pressed="true"]:not(.is-liked) { background: transparent; border-color: transparent; color: var(--link); box-shadow: none; }
+:root[data-design="lull"] .btn-icon--bare[aria-pressed="true"]:not(.is-liked)::after { display: block; }
 :root[data-design="lull"] .btn-icon__badge { background: var(--pink); color: #2b2650; border-color: var(--l-card); }
 :root[data-design="lull"] .chip {
-  min-height: 26px; padding: 2px 11px; border: var(--stroke) solid var(--l-rule); background: var(--l-card); color: var(--link);
-  font: 700 .8125rem/1.2 var(--f-ui);
+  min-height: 26px; padding: 2px 11px; border: 1px solid color-mix(in srgb, var(--l-key-edge) 55%, transparent); color: var(--l-key-ink);
+  background: color-mix(in srgb, var(--l-tile) 38%, var(--l-card)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .55); font: 700 .8125rem/1.2 var(--f-ui);
 }
-:root[data-design="lull"] button.chip:hover, :root[data-design="lull"] a.chip:hover { background: var(--l-card-2); border-color: var(--l-edge); }
-:root[data-design="lull"] .chip[aria-pressed="true"], :root[data-design="lull"] .chip.is-on { background: var(--l-tile); color: var(--l-tile-ink); border-color: var(--l-edge); }
+:root[data-design="lull"] button.chip:hover, :root[data-design="lull"] a.chip:hover { background: color-mix(in srgb, var(--l-tile) 62%, var(--l-card)); }
+:root[data-design="lull"] .chip[aria-pressed="true"], :root[data-design="lull"] .chip.is-on { background: var(--l-key-on-sm); color: #fff; border-color: var(--l-key-on-edge); text-shadow: 0 1px 0 rgba(40, 25, 110, .55); }
 :root[data-design="lull"] .chip-reason {
   padding: 4px 10px 4px 8px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--pink) 60%, transparent);
   background: var(--reason-bg); color: var(--reason-fg); font: 700 .78125rem/1.3 var(--f-ui);
 }
 :root[data-design="lull"] .chip-reason__name, :root[data-design="lull"] .s-card .chip-reason__name { color: var(--reason-fg); font-weight: 900; text-decoration-color: color-mix(in srgb, var(--reason-fg) 55%, transparent); }
 :root[data-design="lull"] .chip-more { height: 24px; border-color: color-mix(in srgb, var(--pink) 60%, transparent); background: var(--reason-bg); color: var(--reason-fg); font-weight: 900; }
-:root[data-design="lull"] .pill-filter { min-height: 30px; padding: 0 13px; border: var(--stroke) solid var(--l-rule); background: var(--l-card); color: var(--link); font: 800 .8125rem/1 var(--f-ui); }
-:root[data-design="lull"] .pill-filter:hover { background: var(--l-card-2); border-color: var(--l-edge); }
+:root[data-design="lull"] .pill-filter {
+  min-height: 30px; padding: 0 13px; border: var(--stroke) solid var(--l-key-edge); background: var(--l-key-sm); color: var(--l-key-ink);
+  box-shadow: inset 0 -1px 2px rgba(255, 255, 255, .3), 0 1px 0 rgba(20, 10, 70, .25); font: 800 .8125rem/1 var(--f-ui);
+}
+:root[data-design="lull"] .pill-filter:hover { background: var(--l-key-hover); }
 /* the current Library segment keeps the screens' selected pill (that rule out-ranked the one above before cascade layers) */
-:root[data-design="lull"] .lib-segs a.pill-filter[aria-current="page"] { background: var(--peri); color: var(--ink); border-color: var(--line); }
+:root[data-design="lull"] .lib-segs a.pill-filter[aria-current="page"] { background: var(--l-key-on-sm); color: #fff; border-color: var(--l-key-on-edge); text-shadow: 0 1px 0 rgba(40, 25, 110, .55); }
 :root[data-design="lull"] .pill-filter[aria-pressed="true"] .lib-count { color: #fff; font-weight: 800; }
 :root[data-design="lull"] .badge { padding: 0 8px 0 5px; font: 800 .71875rem/1 var(--f-ui); border-width: var(--stroke); }
 :root[data-design="lull"] .badge .ic { stroke-width: 2.4; }
@@ -636,7 +658,7 @@
 :root[data-design="lull"] .q-chip--ll { color: var(--q-lossless); border-color: color-mix(in srgb, var(--q-lossless) 55%, var(--l-rule)); }
 :root[data-design="lull"] .q-chip--ll::before { width: 5px; height: 5px; margin-top: 0; }
 :root[data-design="lull"] .q-chip--solid.q-chip--ll, :root[data-design="lull"] .q-chip--solid.q-chip--ly { background: var(--l-card); color: var(--q-lossless); border-color: color-mix(in srgb, var(--q-lossless) 55%, var(--l-rule)); }
-:root[data-design="lull"] .kbd { min-width: 22px; height: 22px; padding: 0 6px; border-radius: 6px; background: var(--l-card); color: var(--link); border: var(--stroke) solid var(--l-rule); box-shadow: none; font: 900 .6875rem/1 var(--f-ui); }
+:root[data-design="lull"] .kbd { min-width: 22px; height: 22px; padding: 0 6px; border-radius: 6px; background: var(--l-key-sm); color: var(--l-key-ink); border: var(--stroke) solid var(--l-key-edge); box-shadow: 0 1px 0 rgba(20, 10, 70, .25); font: 900 .6875rem/1 var(--f-ui); }
 :root[data-design="lull"] .tooltip { background: var(--ink); color: #fff; border-radius: 8px; font: 800 .75rem/1.3 var(--f-ui); }
 :root[data-design="lull"][data-theme="night"] .tooltip { background: #f4efff; color: #2b2650; }
 /* phones have no hover, and a tooltip that a sheet's opening focus raises would float far from its button: the
@@ -667,10 +689,10 @@
 :root[data-design="lull"] .btn-gloss.is-liked, :root[data-design="lull"] .btn-gloss[data-act="like"] { background: var(--l-pink-gloss); border-color: var(--l-pink-edge); color: #fff; }
 :root[data-design="lull"] .btn-gloss__spin { border-color: var(--l-gloss-edge); }
 :root[data-design="lull"] .btn--primary, :root[data-design="lull"] .pill-filter[aria-pressed="true"] {
-  background: var(--l-hi-sm), var(--l-gloss); color: #fff; border-color: var(--l-gloss-edge); text-shadow: 0 1px 0 rgba(40, 25, 110, .55);
-  box-shadow: inset 0 -2px 4px var(--l-gloss-glow); margin-bottom: 0;
+  background: var(--l-key-on); color: #fff; border-color: var(--l-key-on-edge); text-shadow: 0 1px 0 rgba(40, 25, 110, .55);
+  box-shadow: var(--l-key-on-lift); margin-bottom: 0;
 }
-:root[data-design="lull"] .btn--primary:hover { background: var(--l-hi), var(--l-gloss); filter: brightness(1.06); }
+:root[data-design="lull"] .btn--primary:hover { background: var(--l-key-on); filter: brightness(1.06); }
 :root[data-design="lull"] .btn--primary:active { transform: translateY(1px); box-shadow: inset 0 -1px 2px var(--l-gloss-glow); }
 :root[data-design="lull"] .btn--primary .ic { filter: drop-shadow(0 1px 0 rgba(40, 25, 110, .5)); }
 /* holographic foil (img 03's CD rainbow) on the lull pill and the chosen design: hovering turns a conic sheen across
@@ -682,7 +704,7 @@
   transition: --l-foil .9s var(--ease-out);
 }
 :root[data-design="lull"] [data-brand]:is(:hover, :focus-visible) .lull-wm { --l-foil: 150deg; background: var(--l-foil-bg), var(--l-hi), var(--l-gloss); }
-:root[data-design="lull"] .btn--primary.btn-save[data-state="saved"] { background: var(--l-card); color: var(--fg); border-color: var(--l-edge); text-shadow: none; box-shadow: none; }
+:root[data-design="lull"] .btn--primary.btn-save[data-state="saved"] { background: var(--l-key); color: var(--l-key-ink); border-color: var(--l-key-edge); text-shadow: none; box-shadow: var(--l-key-lift); }
 
 /* =====================================================================
    Cards: white paper inside windows (img 05 content panel), section ribbons (img 05 bars)
@@ -1787,7 +1809,7 @@
     background: var(--l-candy); border: var(--stroke) solid var(--tray-edge); border-radius: 16px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22);
   }
   /* the tabs are gel keys like the menubar's: pale, then violet for the one you're on */
-  :root[data-design="lull"] .tab { border-radius: 14px; background: var(--l-gel-pale); color: var(--l-tile-ink); box-shadow: inset 0 -2px 4px rgba(255, 255, 255, .3), 0 0 0 var(--stroke) var(--l-gel-pale-edge); font: 800 .75rem/1 var(--f-ui); }
+  :root[data-design="lull"] .tab { border-radius: 14px; background: var(--l-key); color: var(--l-key-ink); box-shadow: inset 0 -2px 4px rgba(255, 255, 255, .3), 0 0 0 var(--stroke) var(--l-key-edge); font: 800 .75rem/1 var(--f-ui); }
   :root[data-design="lull"] .tab .ic, :root[data-design="lull"] .tab[aria-current="page"] .ic { width: 22px; height: 22px; padding: 0; background: none; box-shadow: none; color: inherit; }
   :root[data-design="lull"] .tab[aria-current="page"] { background: var(--l-hi), var(--l-gloss); color: #fff; box-shadow: inset 0 -2px 4px var(--l-gloss-glow), 0 0 0 var(--stroke) var(--l-gloss-edge); text-shadow: 0 1px 0 rgba(40, 25, 110, .55); }
   :root[data-design="lull"] .toast-region { bottom: calc(var(--mini-h) + var(--tab-h) + 40px + env(safe-area-inset-bottom)); }
