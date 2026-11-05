@@ -567,6 +567,11 @@ Copies that don't line up (other masters, edits, loops) never switch mid-song: S
     are "Only on Soulseek". The same moment asks `/api/search?q=…&submitted=1`, which adds MusicBrainz release groups
     by title to the catalog run; its answer merges like `search.more`.
   - The Files tab lists the raw songs and folders. It appears only when `settings.search.showFiles` is on.
+  - **Esc is a real back.** In a field with words, the first Esc clears them (either field; the header's keeps focus).
+    The next Esc, or one with focus anywhere else on search, returns to the page search was opened from, where it was
+    (above), past every search entry (each submitted search is one): entries carry `history.state.lullAt`, how far into
+    the tab's history they are, and the router knows each one's path. With nothing before search (a fresh load), Home.
+    An open menu, popover, dialog or panel takes Esc first. Gate: `tests/ui/gates/search-esc.spec.mjs`.
   - Older hubs: an old-shape answer from `/api/search` shows "Search needs a newer hub". So does a 404 from
     `/api/soulseek/search`.
 - **Settings > Sources.**
@@ -793,5 +798,7 @@ The hub serves every cover and photo at 96, 256, 512, 1024 and 2048 px, scaled d
   scrolls, types or clicks. A new entry starts at the top. Screens get it for free: keep "Show all" and paging state
   outside the render (as library.js `limits` does), give list items one of those attributes, and rewrite the URL in
   place with `history.replaceState(history.state, ...)` so the entry keeps its id.
+  When the header's search field took focus from the page (`/`, a click), the control that had it is the one recorded.
+  While it holds, a focused row a redraw replaces is focused again (focus fell to the page).
 - **Live values write only on change** (`setText`, `setAttr`, `setVar` in app.js section 9): the clock ticks four
   times a second, and an identical write still costs a style and layout pass.

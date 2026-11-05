@@ -52,6 +52,8 @@ export default defineConfig({
     { name: 'on-use', testMatch: 'on-use.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     { name: 'open', testMatch: 'open.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     { name: 'now', testMatch: 'now.spec.mjs', fullyParallel: true },
+    // Esc on search goes back to the page before it, where it was
+    { name: 'search-esc', testMatch: 'search-esc.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
     // a part still coming never hangs on one push: a missed one is read again, a failed one says so
     { name: 'pending', testMatch: 'pending.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
     // "Save songs you like": a single like saves on the hub, a batch asks first, turning it on asks about earlier likes

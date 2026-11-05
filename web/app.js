@@ -513,14 +513,21 @@
      again for that entry (Back, Forward, a reload: kept in sessionStorage) goes back there; a new entry starts at the
      top. What a read adds after the first render is waited for, until the listener scrolls, types or 4 s pass. Every
      page gets this from the router; a screen that rewrites its URL in place passes history.state on. */
-  var spots = {}, spotOrder = [], shownEntry = null, returnTo = null, entrySeq = 0;
+  var spots = {}, spotOrder = [], shownEntry = null, returnTo = null, entrySeq = 0, shownAt = null, pathAt = {};
   try { var keptSpots = JSON.parse(sessionStorage.getItem('lull:spots')); if (keptSpots && keptSpots.order) { spots = keptSpots.spots; spotOrder = keptSpots.order; } } catch (e) { /* storage off */ }
   function entryId() {
     var st = history.state && typeof history.state === 'object' ? history.state : null;
     if (st && st.lullEntry) return st.lullEntry;
     var id = Date.now().toString(36) + '-' + (++entrySeq);
-    try { history.replaceState(Object.assign({}, st, { lullEntry: id }), ''); } catch (e) { return null; }
+    try { history.replaceState(Object.assign({}, st, { lullEntry: id, lullAt: shownAt == null ? 0 : shownAt + 1 }), ''); } catch (e) { return null; }
     return id;
+  }
+  /* Esc on search (web.md, Search): lullAt is an entry's place in the tab's history */
+  var beforeSearch = null;
+  document.addEventListener('focusin', function (e) { if (e.target.id === 'header-search') beforeSearch = e.relatedTarget; });
+  function leaveSearch() {
+    for (var i = shownAt - 1; i >= 0; i--) if (pathAt[i] !== '/search') { history.go(i - shownAt); return; }
+    App.go('/home', { replace: true });
   }
   /* an element named so it can be found again in a fresh render: the nearest of it and its parents with an
      identifying attribute, and which of the page's matches it is */
@@ -539,6 +546,7 @@
   function recordSpot(entry, view) {
     if (!entry || !view.firstElementChild) return;
     var box = view.getBoundingClientRect(), a = document.activeElement, spot = { top: view.scrollTop };
+    if (a && a.id === 'header-search') a = beforeSearch;
     /* a few points a third down: the first may fall in a gap between tiles */
     for (var i = 0; i < ANCHOR_AT.length && !spot.anchor; i++) {
       var at = document.elementFromPoint(box.left + box.width * ANCHOR_AT[i][0], box.top + box.height * ANCHOR_AT[i][1]);
@@ -561,10 +569,11 @@
     if (r.entry !== shownEntry || Date.now() > r.until) { returnTo = null; return; }
     var el = findMark(r.anchor, view);
     if (el) { placeAnchor(view, el, r.offset); fixAnchor(view, el, r.offset); } else view.scrollTop = r.top;
-    if (r.focus) {
+    var a = document.activeElement;
+    if (r.focus && (!a || a === document.body || a === view)) {   // again if a redraw took its row
       var f = findMark(r.focus, view);
       if (f && !(f.tabIndex >= 0 && f.matches('a[href], button, [tabindex]'))) f = $(r.href ? '[href="' + CSS.escape(r.href) + '"]' : r.act ? '[data-act="' + r.act + '"]' : 'a[href], button', f);
-      if (f) { f.focus({ preventScroll: true }); if (r.selected) f.classList.add('is-selected'); r.focus = null; }
+      if (f) { f.focus({ preventScroll: true }); if (r.selected) f.classList.add('is-selected'); }
     }
   }
   /* the anchor back at its offset from the top of the view. Rows off screen have only an estimated height until they
@@ -590,6 +599,7 @@
   function awaitSpot(view) { spotSizes.disconnect(); if ((returnTo || reveal) && view.firstElementChild) spotSizes.observe(view.firstElementChild); }
   /* the listener's own scroll, key or click takes over from both */
   function stopReturning() { returnTo = null; anchorFix = null; reveal = null; spotSizes.disconnect(); }
+  document.addEventListener('focusout', function (e) { if (returnTo && returnTo.focus && !e.relatedTarget) setTimeout(settleSpot); });
   ['wheel', 'touchstart', 'keydown', 'pointerdown'].forEach(function (type) { document.addEventListener(type, stopReturning, { capture: true, passive: true }); });
 
   /* "Playing from" (App.goPlaying): the place the song plays from, opened at the song, which is scrolled to the middle,
@@ -678,8 +688,8 @@
       view.scrollTop = 0;
       if (lastPath !== null && !(route && route.keepFocus)) view.focus({ preventScroll: true });
     }
-    if (arrived) { shownEntry = entry; anchorFix = null; returnTo = spot ? Object.assign({ entry: entry, until: Date.now() + 4000 }, spot) : null; }
-    lastPath = loc.path;
+    if (arrived) { shownEntry = entry; shownAt = history.state && history.state.lullAt || 0; anchorFix = null; returnTo = spot ? Object.assign({ entry: entry, until: Date.now() + 4000 }, spot) : null; }
+    lastPath = loc.path; if (shownAt != null) pathAt[shownAt] = loc.path;
     App.syncRows();
     App.emit('route', App.current);
     settleSpot(); settleReveal();
@@ -4318,6 +4328,7 @@
       if (escapeTop()) return;
       var mode = $('#app').getAttribute('data-ctx');
       if (mode === 'open') { App.closePanel(); return; }
+      if (App.current.path === '/search') { leaveSearch(); return; }
       if (App.current.route && App.current.route.view === 'now' && window.innerWidth < 640) { App.back(); return; }
       return;
     }
@@ -4627,7 +4638,7 @@
   };
 
   /* clearing the header field on the search page clears the search too, as the page's own field does */
-  function clearedSearch() { if (App.current.path === '/search' && App.current.query.q) App.go('/search'); }
+  function clearedSearch() { if (App.current.path === '/search' && App.current.query.q) App.go('/search', { replace: true }); }
   function toggleClear() { var i = $('#header-search'), c = $('#header-search-clear'); if (c) c.hidden = !i.value; }
   function wireHeader() {
     var input = $('#header-search'); if (!input) return;
@@ -4641,7 +4652,7 @@
     });
     input.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') { e.preventDefault(); clearTimeout(t); var q = input.value.trim(); App.go('/search' + (q ? '?q=' + encodeURIComponent(q) : '')); }
-      if (e.key === 'Escape') { clearTimeout(t); input.value = ''; toggleClear(); input.blur(); clearedSearch(); }
+      if (e.key === 'Escape') { clearTimeout(t); if (!input.value) { input.blur(); return; } e.stopPropagation(); input.value = ''; toggleClear(); clearedSearch(); }
     });
     App.on('route', function (r) { if (r.path === '/search' && document.activeElement !== input) { input.value = r.query.q || ''; toggleClear(); } });
   }
