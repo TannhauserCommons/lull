@@ -7,18 +7,20 @@
   "shell": "rail",
   "swatches": [
     "#414759",
-    "#f2e3d1",
-    "#b6c7f5",
-    "#856e74"
+    "#f4e8d6",
+    "#9c3f7e",
+    "#2b2550"
   ],
   "modes": [
     "day",
     "night"
   ],
-  "description": "A pocket handheld under a moonlit dusk sky, with cream trays.",
+  "description": "A star wheel printed in indigo ink on cream card, held up to a dusk or moonlit sky.",
   "preview": true,
   "slots": [
     "emptyArt",
+    "miniPlayer.device",
+    "nowHero.compact",
     "nowHero.full"
   ]
 }

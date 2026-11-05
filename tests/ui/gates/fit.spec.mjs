@@ -1,12 +1,12 @@
 // The chrome fits at any width: in every design and theme, with a song loaded, the window is narrowed from 2560 to
 // 360 px and widened back, 20 px at a time, and the header, the player bar, the mini player and the tab bar are
 // checked at each step (checks.mjs `chrome`): nothing outside its bar or the window, no control on another, no text
-// cut off, every essential there. The header and the bar fit themselves (layout.js, data-fit), so no design needs a
+// cut off, every essential there; and Home's rows show every cover whole (`clippedCovers`). The header and the bar fit themselves (layout.js, data-fit), so no design needs a
 // width band to patch them; a new one that would is caught here. The desktop app's mini player is checked at its
 // own sizes. docs/context/quality.md#ui-gates.
 
 import { expect, test } from '@playwright/test';
-import { chrome, chromeNow } from '../checks.mjs';
+import { chrome, chromeNow, clippedCovers } from '../checks.mjs';
 import { designs, ids, openScreen, themes } from './lib.mjs';
 
 const widths = [];
@@ -92,6 +92,9 @@ for (const design of designs) {
           seen.set(w, `${at}\n    next frame: ${next.join('; ') || 'fits'}; settled: ${settled.join('; ') || 'fits'}`);
         }
         for (const p of now) found.set(p, [...(found.get(p) || []), w]);
+        // Home's rows at this width: a cover's round window or ring cut by the shelf that scrolls it (checks.mjs)
+        const cut = await clippedCovers(page);
+        if (cut) found.set(cut, [...(found.get(cut) || []), w]);
       }
       const report = [...found].map(([p, ws]) => `${p} at ${[...new Set(ws)].sort((a, b) => a - b).join(', ')} px`);
       expect(report, 'the chrome at some width\n' + [...seen].map(([w, g]) => `at ${w} px: ${g}`).join('\n')).toEqual([]);

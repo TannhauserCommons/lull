@@ -36,7 +36,7 @@ drawn in CSS or original SVG. Screenshots: [screenshots/](screenshots/).
 | Design | Shell | Home theme | Extra fonts | Slots overridden |
 |---|---|---|---|---|
 | `lull` (default) | `topnav` | day | Audiowide | brand, coverArt, emptyArt, homeLead, nowHero |
-| `skydeck` | `rail` | night | none (base Nunito + Jersey 10) | emptyArt, nowHero |
+| `skydeck` | `rail` | night | none (base Nunito) | emptyArt, nowHero, miniPlayer |
 | `starlight` | `rail` | night | Jost, DM Mono | brand, coverArt, emptyArt, homeLead, nowHero, miniPlayer |
 | `petal` | `topnav` | day | Nunito Sans | brand, coverArt, emptyArt, nowHero, miniPlayer |
 | `glasshouse` | `dock` | night | Instrument Serif, IBM Plex Mono | brand, emptyArt, homeLead, nowHero |
@@ -52,11 +52,17 @@ and a queue window that fill the desk; slanted indigo ribbons as section heads; 
 chips; the hatched "not downloaded yet" seek. Fonts: Audiowide for the wordmark and window titles, Nunito for the rest
 (machine facts in Nunito 800, no pixel face).
 
-**skydeck** (images 01 + 02). A pocket handheld under a dusk sky: cream cartridge cards stacked on periwinkle, the
-player chrome built like a toy console (periwinkle body, mauve bezel, mocha LCD, glossy mauve keys), and a sky with a
-moon, horizon glow and placed sparkles. The shared base styles are closest to this design; its layer finishes them. Signature moments: the Now
-Playing handheld with a cartridge in its slot, power LED and D-pad; the player bar as the handheld turned sideways with
-the seek inside an LCD strip; widget panels with periwinkle head bands. Fonts: Nunito (UI) and Jersey 10 (pixel face).
+**skydeck** (images 01 + 02). The star wheel: the pocket handheld under a dusk sky became a planisphere, the round star
+finder held up to the evening sky, printed in deep indigo ink on cream card. The sky is dusk by day (lavender down to a
+rose and apricot horizon, a pearl sun in cloud) and moonlit navy by night, with star dust that twinkles. Every tray and
+card is cream card with a printed double rule; the rail and side panel are pinned in a corner, and the menu is printed
+like the hours on the wheel's rim (I, II, III...), the current place inked in with a pink pointer star. Every cover is
+seen through a round window; section titles are spaced capitals led by a star. Signature moments: Now Playing as the
+wheel itself (the song's waveform printed round the dial and lit as it plays, a needle with a star on its tip pointing
+at now, the stars turning under it as the song goes on); the player bar as the holder card, the cover in a round window
+whose printed scale turns with the song, the seek a printed ruler with a pink star riding it; the desktop mini player
+as a pocket wheel; empty states as a small wheel with nothing charted yet. Fonts: Nunito (UI; machine facts are
+printed small capitals).
 
 **starlight** (image 01). A starry-night poster: a slate sky of lit crumpled paper and fine stars, every surface a
 cream tray stacked on lavender then periwinkle layers, burgundy caps titles, thin periwinkle line icons. Day is "dawn"

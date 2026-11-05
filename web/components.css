@@ -231,7 +231,8 @@ button.src-badge::after { content: ""; position: absolute; inset: -10px -2px; }
 .card:focus-visible { outline-offset: 3px; }
 
 /* lowercase label + hairline rule that fills the row (+ optional quiet action) */
-.label-rule { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; margin: 0 0 var(--sp-3); }
+/* its actions wrap under the title when a narrow card has no room for them beside it, never past the card's edge */
+.label-rule { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-3); min-width: 0; margin: 0 0 var(--sp-3); }
 .label-rule > h2, .label-rule > h3, .label-rule__text { font: var(--t-h2); letter-spacing: var(--t-h2-track); white-space: nowrap; color: var(--fg); }
 .label-rule::after { content: ""; order: 1; flex: 1; min-width: 16px; height: 1.5px; background: var(--rule, var(--edge)); }
 .label-rule > .btn--quiet, .label-rule > a, .label-rule > .label-rule__end { order: 2; flex: none; }
