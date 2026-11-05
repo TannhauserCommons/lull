@@ -90,7 +90,10 @@ plan() {
 $waiting
 EOF
   [ -n "$eligible" ] || { out candidate ""; return; }
-  if $split; then eligible=$(printf '%s' "$eligible" | head -n 1); else eligible=$(printf '%s' "$eligible" | head -n "$MAX_BATCH"); fi
+  # A topic asked for first (queue.yml's `first`) goes alone, ahead of the rest: one that fixes what every batch trips on.
+  first=$(printf '%s' "$eligible" | awk -v t="${FIRST:-}" '$1 == t' | head -n 1)
+  if [ -n "$first" ]; then eligible=$first
+  elif $split; then eligible=$(printf '%s' "$eligible" | head -n 1); else eligible=$(printf '%s' "$eligible" | head -n "$MAX_BATCH"); fi
 
   cand=$base branches=""
   while read -r topic tip; do

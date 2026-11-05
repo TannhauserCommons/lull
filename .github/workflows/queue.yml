@@ -6,6 +6,11 @@ name: queue
 # image it tested, Pages, the share Worker, and the bundles' caches. Red: main stays, and the branch's tip says why.
 on:
   workflow_dispatch:
+    inputs:
+      first:
+        description: "A topic to test alone before the rest, when it helps every batch after it (queue/<topic>)"
+        type: string
+        default: ""
   # A safety net: a kick lost while GitHub was down would otherwise wait for the next push.
   schedule:
     - cron: "*/30 * * * *"
@@ -53,6 +58,7 @@ jobs:
       - id: plan
         env:
           GH_TOKEN: ${{ github.token }}
+          FIRST: ${{ inputs.first }}
         run: cp scripts/queue.sh "$RUNNER_TEMP/" && sh "$RUNNER_TEMP/queue.sh" plan
 
   # A called workflow gets at most its caller's permissions, checked before any job is skipped: app's release job
@@ -267,3 +273,28 @@ jobs:
             ${{ contains(fromJSON('["failure", "cancelled"]'), needs.image.result) && 'image ' || '' }}
             ${{ contains(fromJSON('["failure", "cancelled"]'), needs.ui.result) && 'ui ' || '' }}
         run: sh scripts/queue.sh reject
+
+  # A run that a job ended (a GitHub API error in plan or land, say) starts no other, and the branches waiting would sit
+  # until the next push or the half-hourly schedule. The verdicts chain the queue themselves; this covers a run that
+  # never reached one. Three failed runs in a row are the queue's own fault, not a blip: the schedule tries again then.
+  next:
+    needs: [plan, land, reject]
+    if: always() && contains(needs.*.result, 'failure')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          waiting=$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/heads/queue/" --jq length)
+          [ "$waiting" -gt 0 ] || { echo "nothing waiting"; exit 0; }
+          # This run isn't finished yet: the two before it decide.
+          before=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/queue.yml/runs?status=completed&per_page=20" \
+            --jq "[.workflow_runs[] | select(.id != $GITHUB_RUN_ID and .conclusion != \"cancelled\" and .conclusion != \"skipped\")][0:2] | map(.conclusion) | join(\" \")")
+          if [ "$before" = "failure failure" ]; then
+            echo "::warning::three queue runs failed in a row: left to the schedule, look at the queue"; exit 0
+          fi
+          gh workflow run queue.yml --repo "$GITHUB_REPOSITORY" --ref main
