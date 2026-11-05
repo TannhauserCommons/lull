@@ -1,6 +1,6 @@
 # ADR-0095: main moves only through a queue that tests what it lands
 
-- Status: accepted
+- Status: accepted; in force since 2026-11-05 (the cutover, 9705ae7d, and main's ruleset)
 - Date: 2026-11-04
 
 ## Context
