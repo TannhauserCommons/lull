@@ -7,7 +7,8 @@
 // Run: node --test tests/web
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -27,9 +28,10 @@ const files = walk(WEB);
 const read = (f) => readFileSync(join(WEB, f), 'utf8');
 const designCss = (f) => DESIGNS.some((d) => f === `designs/${d}/theme.css`);
 const generated = (f) => DESIGNS.some((d) => f === `designs/${d}.js`);    // theme.json + slots, written by lull-themes
+const hooksJs = (f) => f === 'designs/hooks.js';                            // this reference, written by the test below
 
 const sharedCss = files.filter((f) => f.endsWith('.css') && !designCss(f));
-const markup = files.filter((f) => /\.(js|html)$/.test(f) && !generated(f) && !f.endsWith('.min.js'));
+const markup = files.filter((f) => /\.(js|html)$/.test(f) && !generated(f) && !hooksJs(f) && !f.endsWith('.min.js'));
 
 /* the selectors of a stylesheet (comments and strings dropped, declarations skipped) */
 function selectors(css) {
@@ -138,4 +140,47 @@ test('no style reads a part that gave way through :has()', () => {
   const bad = [shared, ...designs.map((d) => d.sel)].join('\n').split('\n')
     .filter((sel) => hasArgs(sel).some((a) => a.includes('data-fit-out')));
   assert.equal(bad.length, 0, missing('selectors with [data-fit-out] in a :has() (read the row\'s data-fit-gave)', bad));
+});
+
+/* the classes lull's markup sets: class="" (with the quoted names inside its ${}), className, classList */
+function markupClasses() {
+  const out = new Set(), word = /^[a-zA-Z_][\w-]*$/;
+  const add = (text) => text.split(/\s+/).forEach((w) => { if (word.test(w)) out.add(w); });
+  const quoted = (text) => { for (const s of text.matchAll(/'([^'\n]*)'/g)) add(s[1]); };
+  for (const f of markup) {
+    const src = read(f);
+    for (const m of src.matchAll(/class(?:Name)?\s*=\s*"((?:[^"$]|\$\{(?:[^{}]|\{[^{}]*\})*\})*)"/g)) {
+      add(m[1].replace(/\$\{(?:[^{}]|\{[^{}]*\})*\}/g, (e) => { quoted(e); return ' '; }));
+    }
+    for (const m of src.matchAll(/classList\.(?:add|remove|toggle|contains)\(([^)]*)\)/g)) quoted(m[1]);
+    for (const m of src.matchAll(/className\s*\+?=\s*([^;\n]*)/g)) quoted(m[1]);
+  }
+  return out;
+}
+// Theme Studio and an import warn about a theme's rules for hooks lull moved, removed or keeps internal
+// (web/designs/hooks.js): it carries this reference, and the names lull's markup sets that it doesn't list
+test('designs/hooks.js carries the hook reference and the names lull sets', () => {
+  const path = join(WEB, 'designs/hooks.js');
+  const sorted = (s) => [...s].sort();
+  const isListed = (kind, n) => known(kind, kind === 'classes' ? block(n) : n);
+  const data = {
+    stable: { classes: sorted(stable.classes), attrs: sorted(stable.attrs) },
+    internal: { classes: sorted(internal.classes), attrs: sorted(internal.attrs) },
+    classes: sorted([...markupClasses()].filter((c) => !isListed('classes', c))),
+    attrs: sorted([...attrsOf(source)].filter((a) => !isListed('attrs', a))),
+    prefixes: sorted(new Set(dynamic)),
+  };
+  const line = `  var HOOKS = ${JSON.stringify(data)};`;
+  const have = readFileSync(path, 'utf8');
+  const want = have.split('\n').map((l) => (l.startsWith('  var HOOKS = ') ? line : l)).join('\n');
+  if (process.env.LULL_WRITE_PACKAGES) writeFileSync(path, want);
+  assert.ok(readFileSync(path, 'utf8') === want && want.includes(`\n${line}\n`),
+    'web/designs/hooks.js: HOOKS is stale: run LULL_WRITE_PACKAGES=1 node --test tests/web/theme-hooks.test.mjs');
+});
+
+test('every hook lull moved is in docs/themes.md, Hooks that changed', () => {
+  const { MOVED } = createRequire(import.meta.url)('../../web/designs/hooks.js');
+  const at = docs.indexOf('### Hooks that changed'), part = at < 0 ? '' : docs.slice(at, docs.indexOf('\n## ', at));
+  const bad = MOVED.filter((m) => !part.includes(m.since) || !part.includes(m.name)).map((m) => `${m.since} ${m.name}`);
+  assert.equal(bad.length, 0, missing('moves docs/themes.md section 9, Hooks that changed, doesn\'t list', bad));
 });

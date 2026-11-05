@@ -281,6 +281,12 @@ In the browser every template is also sanitized (DOMPurify), and the page's Cont
 - Renaming or removing any of them, or changing what one means, is a breaking change: it raises `api`, and the release notes say what moved. A theme written for an older `api` keeps loading; whatever it relied on that moved is ignored, never an error.
 - Built-in designs' own classes (`.lull-*`, `.sd-*`, `.sl-*`, `.pt-*`, `.gh-*`) are not part of the API; extend a design for its look, but target the hooks above in your own rules.
 
+### Hooks that changed
+
+Theme Studio (when it opens a theme, and each time it saves) and an import tell you, in plain words, when a theme styles one of these, a class or `data-*` attribute that is in neither lull nor the theme's own slots, or one of section 11's internal hooks. It's a warning: the theme still loads, and only the rules named stop doing anything.
+
+- **2026-11-04, Like and Save in the player bar:** `.pbar [data-act="like"]` and `.pbar [data-act="save"]` moved next to the song, inside `.pbar__acts`, so a `grid-area` (or `grid-column`, `grid-row`, `order`) on them no longer places them. Place `.pbar__acts` to move both; restyle them with `.pbar__acts .btn-icon`.
+
 ## 10. A complete theme: checklist
 
 Go through this before you share a theme, and before a built-in design ships. The five built-in designs meet all of it.

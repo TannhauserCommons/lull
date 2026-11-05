@@ -53,9 +53,9 @@
     return css.length;
   }
   var GROUPS = /^@(media|supports|layer|container|scope|document|starting-style)\b/i, KEYFRAMES = /^@(-webkit-)?keyframes\s+(\S+)/i;
-  /* { rules: [{ selector, decls: [{ name, value, from, to, semi }], supports }], keyframes: { name: body } }: a
+  /* { rules: [{ selector, decls: [{ name, value, from, to, semi }], supports, at }], keyframes: { name: body } }: a
      declaration's text runs from `from` to `to`, and `semi` is where its ; is (-1 for the last one, written without);
-     `supports` when the rule is inside an @supports block */
+     `supports` when the rule is inside an @supports block; `at` where its selector starts */
   function parse(css) {
     var out = { rules: [], keyframes: {} };
     (function block(i, end, supports) {
@@ -67,7 +67,7 @@
         var shut = close(css, stop), m;
         if (GROUPS.test(prelude)) block(stop + 1, shut, supports || /^@supports\b/i.test(prelude));
         else if ((m = KEYFRAMES.exec(prelude))) out.keyframes[unquote(m[2])] = css.slice(stop + 1, shut);
-        else if (prelude && prelude[0] !== '@') out.rules.push({ selector: prelude, decls: decls(stop + 1, shut), supports: !!supports });
+        else if (prelude && prelude[0] !== '@') out.rules.push({ selector: prelude, decls: decls(stop + 1, shut), supports: !!supports, at: start(css, i, stop) });
         i = shut + 1;
       }
     })(0, css.length, false);
@@ -87,6 +87,11 @@
       }
       return list;
     }
+  }
+  /* where the text from i to end starts, past white space and comments */
+  function start(css, i, end) {
+    while (i < end) { var n = skip(css, i); if (n !== i) { i = n; continue; } if (!/\s/.test(css[i])) break; i++; }
+    return i;
   }
   function strip(s) { return s.replace(/\/\*[\s\S]*?(\*\/|$)/g, ' '); }
   function unquote(s) { return s.replace(/^(['"])(.*)\1$/, '$2'); }
@@ -438,7 +443,7 @@
       'Move the loop out from under the glass, or bake the glass: draw what’s behind it into the glass’s own background, so nothing is blurred live (“Bake what’s static” in the theme guide).' };
   }
 
-  var api = { find: find, apply: apply, underGlass: underGlass, cost: cost, advice: advice, say: say };
+  var api = { find: find, apply: apply, underGlass: underGlass, cost: cost, advice: advice, say: say, parse: parse };
   root.LullLoops = api;
   if (typeof module === 'object' && module.exports) module.exports = api;
 })(typeof self !== 'undefined' ? self : this);

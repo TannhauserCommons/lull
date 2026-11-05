@@ -5,8 +5,11 @@
    App.loopCheck(css, base, opts) resolves to the hints for a theme's CSS, read beside what its loops share the page
    with: lull's components.css and the built-in design it extends, each fetched once (opts.unsure: say where the CSS
    alone can't tell whether a loop passes under glass). App.themeLoopsList(hints, opts) words them in groups, for Theme
-   Studio (which adds what it finds in its live previews) and for an imported theme, which App.loopsAfterImport checks
-   once it is in and offers the rates. A hint, never a block: the theme works either way. */
+   Studio (which adds what it finds in its live previews) and for an imported theme, which App.checkAfterImport checks
+   once it is in and offers the rates. A hint, never a block: the theme works either way.
+   App.hookCheck(css, slots) resolves to what the theme styles that lull moved, removed or keeps internal
+   (designs/hooks.js), App.themeHooksList(hints, opts) words it; App.themeSlots(item) reads a stored theme's slot
+   templates, whose own names that check leaves alone. Checked once, at an import and in Theme Studio. */
 (function () {
   'use strict';
   var html = App.html, M = App.data, icon = App.icon, $ = App.$;
@@ -24,7 +27,7 @@
         }
         if (r.status !== 200) throw new Error(r.body.message || 'The hub answered ' + r.status);
         App.toast('Added ' + r.body.name, { kind: 'ok', icon: 'sparkle', action: 'Use it', onAction: function () { App.setPref('design', r.body.id); } });
-        App.loopsAfterImport(r.body);
+        App.checkAfterImport(r.body);
         App.themePictures(r.body);
         return Designs.refresh().then(function () { if (onAppearance()) App.refresh(); });
       })
@@ -58,6 +61,31 @@
       return LullLoops.find(css, { also: got.slice(1), base: base, unsure: !!(opts && opts.unsure) });
     });
   };
+  /* ---------- hooks lull moved, removed or keeps internal ---------- */
+  App.hookCheck = function (css, slots) {
+    return Promise.all([App.needScript(Designs.base + 'loops.js', 'the loop check'), App.needScript(Designs.base + 'hooks.js', 'the hook check')])
+      .then(function () { return LullHooks.find(css, { slots: slots }); });
+  };
+  App.themeSlots = function (item) {
+    return Promise.all((item.slots || []).map(function (name) {
+      return M.api('/api/themes/' + encodeURIComponent(item.id) + '/slots/' + encodeURIComponent(name) + '.html').then(String, function () { return ''; });
+    }));
+  };
+  /* opts: { lines: name each rule and its line (Theme Studio, beside the CSS), else how many rules */
+  App.themeHooksList = function (hints, opts) {
+    opts = opts || {};
+    var short = function (sel) { return sel.length > 60 ? sel.slice(0, 57) + '…' : sel; };
+    var item = function (h) {
+      var w = LullHooks.words(h), n = h.rules.length, shown = h.rules.slice(0, 3);
+      var where = opts.lines ? html`${shown.map(function (r, j) { return html`${j ? ', ' : ' ('}line ${r.line}: <code>${short(r.selector)}</code>`; })}${n > shown.length ? ' and ' + (n - shown.length) + ' more' : ''})`
+        : ' (' + n + (n === 1 ? ' rule)' : ' rules)');
+      return html`<li class="studio__warn">${icon(h.kind === 'internal' ? 'info' : 'warning', null, 'ic-16')}<span><b>${h.name}</b>${where}. ${w.what} ${w.then}</span></li>`;
+    };
+    var changed = hints.filter(function (h) { return h.kind !== 'internal'; }), internal = hints.filter(function (h) { return h.kind === 'internal'; });
+    return html`${changed.length ? html`<h4 class="studio__sub">Changed in lull</h4><ul class="studio__warnings" role="list">${changed.map(item)}</ul>` : ''}${
+      internal.length ? html`<h4 class="studio__sub">lull’s internal parts</h4><ul class="studio__warnings" role="list">${internal.map(item)}</ul>` : ''}`;
+  };
+
   /* opts: { lines: say each loop's line, add(hint, i): an Add it for a rate } */
   var GROUPS = [['rate'], ['repaint'], ['glass', 'glass-live', 'glass-maybe'], ['status-words']];
   App.themeLoopsList = function (hints, opts) {
@@ -84,24 +112,30 @@
         <ul class="studio__warnings" role="list">${group.map(function (x) { return item(x.h, x.i); })}</ul>`;
     })}`;
   };
-  App.loopsAfterImport = function (item) {
+  /* an imported theme, once it is in: its loops that could draw less (with the fixes lull can make) and what it styles
+     that lull moved, removed or keeps internal, in one dialog, only when there is something to say */
+  App.checkAfterImport = function (item) {
     var path = '/api/themes/' + encodeURIComponent(item.id) + '/theme.css';
     M.api(path).then(function (css) {
-      return App.loopCheck(css, item.extends, { unsure: true }).then(function (hints) {
-        var sure = hints.filter(function (h) { return h.kind !== 'glass-maybe'; });
-        if (!sure.length) return;                                // only a "can't tell": nothing to bother anyone with
+      return Promise.all([App.loopCheck(css, item.extends, { unsure: true }), App.themeSlots(item).then(function (slots) { return App.hookCheck(css, slots); })]).then(function (got) {
+        var hints = got[0], hooks = got[1];
+        var sure = hints.filter(function (h) { return h.kind !== 'glass-maybe'; });     // a "can't tell" alone bothers no one
+        if (!sure.length && !hooks.length) return;
         /* loops that could draw less, and words a theme gives as reasons of its own: what it is, what changing it
            buys, and the fixes lull can make (a rate, its own words) in one go */
         var loops = {}, words = sure.filter(function (h) { return h.kind === 'status-words'; }), fixes = hints.filter(function (h) { return h.insert; });
         sure.forEach(function (h) { if (h.kind !== 'status-words') loops[h.selector + '|' + h.animation] = true; });
-        var n = Object.keys(loops).length, both = n && words.length;
-        var title = both ? 'A few things in ' + item.name + ' to look at' : n ? (n === 1 ? 'A loop' : n + ' loops') + ' in ' + item.name + ' could draw less'
-          : item.name + ' gives reasons of its own';
+        var n = Object.keys(loops).length, both = n && words.length, changed = hooks.some(function (h) { return h.kind !== 'internal'; });
+        var title = (both || ((n || words.length) && hooks.length)) ? 'A few things in ' + item.name + ' to look at'
+          : n ? (n === 1 ? 'A loop' : n + ' loops') + ' in ' + item.name + ' could draw less'
+          : words.length ? item.name + ' gives reasons of its own'
+          : changed ? item.name + ' styles parts lull has changed' : item.name + ' styles lull’s internal parts';
         var buys = [n ? 'lighter on this device' : '', words.length ? 'right for every song' : ''].filter(Boolean).join(' and ');
         var rates = fixes.every(function (h) { return h.kind === 'rate'; }), lullWords = fixes.every(function (h) { return h.kind === 'status-words'; });
         var label = rates ? (fixes.length === 1 ? 'Add it' : 'Add them') : lullWords ? 'Use lull’s own words' : 'Make these changes';
         var d = App.openDialog({ title: title,
-          body: html`<p class="prose">${item.name} works as it is; changing ${sure.length === 1 ? 'it' : 'them'} makes it ${buys}.</p>${App.themeLoopsList(hints)}`,
+          body: html`<p class="prose">${sure.length ? item.name + ' works as it is; changing ' + (sure.length === 1 ? 'it' : 'them') + ' makes it ' + buys + '.' : item.name + ' works as it is.'}${
+            hooks.length ? ' Theme Studio shows the line of each rule named here.' : ''}</p>${sure.length ? App.themeLoopsList(hints) : ''}${App.themeHooksList(hooks)}`,
           foot: fixes.length ? html`<button class="btn" data-close>Not now</button><button class="btn btn--primary" data-add-rates>${label}</button>`
             : html`<button class="btn btn--primary" data-close>OK</button>` });
         var add = $('[data-add-rates]', d.el);
@@ -113,6 +147,6 @@
           }, function (err) { App.toast('Couldn\'t change ' + item.name + ': ' + err.message, { kind: 'error' }); });
         });
       });
-    }).catch(function (err) { console.warn('lull: couldn\'t check the loops in ' + item.name, err); });
+    }).catch(function (err) { console.warn('lull: couldn\'t check ' + item.name, err); });
   };
 })();

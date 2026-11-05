@@ -76,6 +76,7 @@
         <section class="studio__check" aria-labelledby="studio-check-h"><h3 class="studio__h" id="studio-check-h">Contrast</h3><ul class="studio__warnings" role="list" data-studio-warnings><li>${'Checking...'}</li></ul></section>
         <section class="studio__check" aria-labelledby="studio-loops-h"><h3 class="studio__h" id="studio-loops-h">Loops</h3><div data-studio-loops aria-live="polite"><ul class="studio__warnings" role="list"><li>${'Checking...'}</li></ul></div></section>
         <section class="studio__check" aria-labelledby="studio-words-h"><h3 class="studio__h" id="studio-words-h">Player words</h3><div data-studio-words aria-live="polite"><ul class="studio__warnings" role="list"><li>${'Checking...'}</li></ul></div></section>
+        <section class="studio__check" aria-labelledby="studio-hooks-h"><h3 class="studio__h" id="studio-hooks-h">Hooks</h3><div data-studio-hooks aria-live="polite"><ul class="studio__warnings" role="list"><li>${'Checking...'}</li></ul></div></section>
       </div>
       <div class="studio__stage">
         <div class="studio__bar">
@@ -204,6 +205,7 @@
     if (ta && ta.value !== css) ta.value = css;
     lineNumbers();
     if (dirty) { S.dirty = true; state(); }
+    else checkHooks();
     repaint();
   }
   function lineNumbers() {
@@ -414,6 +416,16 @@
       lookLive();
     }, function (err) { console.warn('lull: couldn\'t check the theme\'s loops', err); });
   }
+  /* what the theme styles that lull moved, removed or keeps internal: once when Studio opens the theme and at each save
+     (designs/hooks.js), never while typing; the theme saves either way */
+  function checkHooks() {
+    var css = S.draft.css, item = S.id ? App.designs[S.id] : null;
+    App.themeHooks(css, item).then(function (hints) {
+      var box = S && $('[data-studio-hooks]', S.el); if (!box) return;
+      box.innerHTML = String(hints.length ? html`<p class="field__help">${S.id ? 'As saved' : 'As it is now'}, checked at each save.</p>${App.themeHooksList(hints, { lines: true })}`
+        : html`<ul class="studio__warnings" role="list"><li class="studio__ok">${icon('check', null, 'ic-16')}<span>Every class and data-* attribute it styles is one lull or its own slots have, and none is lull’s internal plumbing.</span></li></ul>`);
+    }, function (err) { console.warn('lull: couldn\'t check the theme\'s hooks', err); });
+  }
   /* the previews' loops under glass, once they have started (and been paced) after a change */
   var liveTimer = 0;
   function lookLive() {
@@ -493,6 +505,7 @@
         App.themePictures(saved);                  // its card's picture, of what was just saved (ADR-0080)
         if (!S) return id;
         S.id = id; S.dirty = false; state();
+        checkHooks();
         App.announce('Saved ' + S.draft.name);
         return Designs.refresh().then(function () { return id; });
       })

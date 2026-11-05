@@ -164,6 +164,11 @@
   function needThemes() { return App.needScript('screens/your-themes.js', 'Your themes'); }
   function importFile(file) { needThemes().then(function () { App.importTheme(file); }, function (err) { App.toast('Couldn\'t import ' + file.name + ': ' + err.message, { kind: 'error' }); }); }
   App.themeLoops = function (css, base, opts) { return needThemes().then(function () { return App.loopCheck(css, base, opts); }); };
+  /* what a theme's CSS styles that lull moved, removed or keeps internal, beside its stored slots (item: its D.list entry,
+     or null for a theme not saved yet); App.themeHooksList comes with it */
+  App.themeHooks = function (css, item) {
+    return needThemes().then(function () { return (item ? App.themeSlots(item) : Promise.resolve([])).then(function (slots) { return App.hookCheck(css, slots); }); });
+  };
   document.addEventListener('change', function (e) {
     var f = e.target.closest && e.target.closest('[data-theme-file]');
     if (f && f.files && f.files[0]) { importFile(f.files[0]); f.value = ''; }
