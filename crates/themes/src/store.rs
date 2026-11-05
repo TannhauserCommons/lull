@@ -46,23 +46,50 @@ impl Store {
         self.dir.join(id).join("theme.json").is_file()
     }
 
+    /// A stored theme's manifest, its `slots` the slot templates in its folder now, whatever theme.json lists: a
+    /// package put in the folder by hand (unzipped, or edited) never went through `put`, which writes that list, and
+    /// a page loads only the templates the list names.
     pub fn manifest(&self, id: &str) -> Result<Manifest> {
         let raw = fs::read(self.dir.join(id).join("theme.json")).map_err(|e| match e.kind() {
             io::ErrorKind::NotFound => Error::NotFound(format!("no theme {id}")),
             _ => io_err(e),
         })?;
-        let m: Manifest = serde_json::from_slice(&raw).map_err(|e| Error::BadRequest(format!("theme.json: {e}")))?;
+        let mut m: Manifest =
+            serde_json::from_slice(&raw).map_err(|e| Error::BadRequest(format!("theme.json: {e}")))?;
         if m.id != id {
             return Err(Error::BadRequest(format!(
                 "theme.json says id {:?} in folder {id}",
                 m.id
             )));
         }
+        m.slots = self.slots(id);
         Ok(m)
     }
 
-    /// One file of a stored theme; `path` is already checked to be plain (no `..`).
+    /// The slot templates in a theme's folder (`slots/<slot>[.<variant>].html`), by name, as `package::validate` lists them.
+    fn slots(&self, id: &str) -> Vec<String> {
+        let mut names: Vec<String> = fs::read_dir(self.dir.join(id).join("slots"))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
+            .filter_map(|e| {
+                let file = e.file_name().to_string_lossy().into_owned();
+                file.strip_suffix(".html")
+                    .filter(|n| package::slot_known(n))
+                    .map(str::to_owned)
+            })
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// One file of a stored theme; `path` is already checked to be plain (no `..`). theme.json is the
+    /// manifest as `manifest` reads it.
     pub fn file(&self, id: &str, path: &str) -> Result<Vec<u8>> {
+        if path == "theme.json" {
+            return manifest_json(&self.manifest(id)?);
+        }
         fs::read(self.dir.join(id).join(path)).map_err(|e| match e.kind() {
             io::ErrorKind::NotFound => Error::NotFound(format!("theme {id} has no {path}")),
             _ => io_err(e),
@@ -77,6 +104,9 @@ impl Store {
         }
         let mut files = Files::new();
         collect(&root, &root, &mut files)?;
+        if let Ok(m) = self.manifest(id) {
+            files.insert("theme.json".into(), manifest_json(&m)?);
+        }
         Ok(files)
     }
 
@@ -154,4 +184,47 @@ fn collect(root: &Path, dir: &Path, files: &mut Files) -> Result<()> {
 
 fn io_err(e: io::Error) -> Error {
     Error::internal(format!("themes folder: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_theme_put_in_the_folder_by_hand_lists_the_slot_templates_it_has() {
+        let dir = std::env::temp_dir().join(format!("lull-theme-store-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let theme = dir.join("relay");
+        assert!(fs::create_dir_all(theme.join("slots")).is_ok());
+        // unzipped from a .lulltheme whose theme.json has no `slots`, as an author writes it; one stale entry besides
+        let manifest = br##"{ "id": "relay", "name": "Relay", "api": 1, "extends": null, "shell": "rail",
+            "swatches": ["#141516", "#d6d3c9", "#ffa53d", "#ffb24a"], "modes": ["day", "night"], "slots": ["homeLead"] }"##;
+        assert!(fs::write(theme.join("theme.json"), manifest).is_ok());
+        for file in [
+            "brand.html",
+            "nowHero.full.html",
+            "miniPlayer.device.html",
+            "notes.txt",
+            "sidebar.html",
+        ] {
+            assert!(fs::write(theme.join("slots").join(file), "<b></b>").is_ok());
+        }
+        let store = Store { dir: dir.clone() };
+        let want = ["brand", "miniPlayer.device", "nowHero.full"];
+        assert!(store.manifest("relay").is_ok_and(|m| m.slots == want));
+        let served = store
+            .file("relay", "theme.json")
+            .ok()
+            .and_then(|b| serde_json::from_slice::<Manifest>(&b).ok());
+        assert!(served.is_some_and(|m| m.slots == want), "GET theme.json lists them too");
+        assert!(
+            store
+                .files("relay")
+                .ok()
+                .and_then(|f| serde_json::from_slice::<Manifest>(&f["theme.json"]).ok())
+                .is_some_and(|m| m.slots == want),
+            "and so does an export"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

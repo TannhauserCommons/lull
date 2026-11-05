@@ -69,6 +69,8 @@ export default defineConfig({
     { name: 'theme-pictures-webkit', testMatch: 'theme-pictures.spec.mjs', use: { browserName: 'webkit', viewport: { width: 1440, height: 900 }, launchOptions: {} } },
     // Theme Studio won't save or export a name, author or description longer than the hub takes
     { name: 'theme-text', testMatch: 'theme-text.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
+    // a listener's theme shows its slots however it reached the hub, and a device's stale copy of its manifest catches up
+    { name: 'theme-slots', testMatch: 'theme-slots.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     { name: 'loops-webkit', testMatch: 'loops.spec.mjs', fullyParallel: true, use: { browserName: 'webkit', viewport: { width: 1440, height: 900 }, launchOptions: {} } },
   ].filter(inGroup),
 });

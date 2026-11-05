@@ -607,7 +607,8 @@
     else if (!m || !m.builtIn) root.setAttribute('data-booting', '');
     if (link && !design && m && m.shell) link.disabled = true;
     setUserCss(id);
-    if (m && !m.builtIn && m.shell && !D.packages) getJson(D.packageUrl(id) + 'theme.json').catch(function (e) { if (e.status === 404) forget(id); });
+    var asked = m && !m.builtIn && m.shell && !D.packages ? getJson(D.packageUrl(id) + 'theme.json') : null;
+    if (asked) asked.catch(function (e) { if (e.status === 404) forget(id); });
     booting = prepare(id).then(function () {
       applyAttrs(id); setUserCss(id);
       if (link) { var d = designOf(id); link.disabled = !d; if (d) link.setAttribute('href', D.base + d + '/theme.css'); }
@@ -617,7 +618,18 @@
       if (e && e.status === 404) forget(id);
       return prepare(to).then(function () { applyAttrs(to); setUserCss(to); if (link) { link.disabled = false; link.setAttribute('href', D.base + to + '/theme.css'); } });
     }).then(function () { root.removeAttribute('data-booting'); });
+    if (asked) Promise.all([asked, booting]).then(function (r) { stale(id, r[0]); }, function () {});
   };
+  /* the page booted from this device's copy of the theme's manifest; when the hub's differs (its files changed while
+     no page was open to hear theme.changed, or an older hub listed no slots), the theme loads again from the hub's */
+  function stale(id, j) {
+    var m = D.list[id]; if (!m || j.id !== id) return;
+    var mine = JSON.stringify(raw(m)), keep = { rev: m.rev, pictures: m.pictures };   // theme.json has neither
+    absorb(Object.assign({}, j, keep), false);
+    if (JSON.stringify(raw(m)) === mine) return;
+    cacheList();
+    D.reload(id).then(function (inUse) { if (inUse && window.App && App.setDesign) App.setDesign(D.current, true); });
+  }
   /* this device's theme ('lull:prefs'.design); app.js keeps the rest of the prefs */
   function pick(id) {
     var p = store('prefs') || {};

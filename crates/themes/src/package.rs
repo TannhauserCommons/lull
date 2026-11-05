@@ -328,7 +328,7 @@ fn kind(path: &str) -> Result<Kind> {
     }
 }
 
-fn slot_known(name: &str) -> bool {
+pub(crate) fn slot_known(name: &str) -> bool {
     let (slot, variant) = name.split_once('.').map_or((name, None), |(s, v)| (s, Some(v)));
     SLOTS
         .iter()

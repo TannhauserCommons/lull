@@ -836,6 +836,13 @@ const server = createServer(async (req, res) => {
   if ((m = /^\/api\/(library\/)?stream\/([^/]+)$/.exec(path)) && req.method === 'GET') return audio(req, res, m[2], !!m[1]);
   if ((m = /^\/api\/stream\/([^/]+)\/output-error$/.exec(path)) && req.method === 'POST') return outputError(res, m[1], (await readBody(req)).jobId);
   if ((m = /^\/api\/stream\/([^/]+)$/.exec(path)) && req.method === 'DELETE') return send(res, 204);
+  if (THEMES && (m = /^\/api\/themes\/([a-z0-9-]+)\/theme\.json$/.exec(path)) && req.method === 'GET') {
+    // the hub's manifest, its slots the templates in the folder (crates/themes store.rs)
+    const item = themeItem(m[1]);
+    if (!item) return send(res, 404, { error: 'not_found', message: `no theme ${m[1]}` });
+    const { builtIn, rev, pictures, ...manifest } = item;
+    return send(res, 200, manifest);
+  }
   if (THEMES && (m = /^\/api\/themes\/([a-z0-9-]+)\/(.+)$/.exec(path)) && req.method === 'GET') return files(req, res, '/' + m[2], join(THEMES, m[1]));
   if (THEMES && (m = /^\/api\/theme-pictures\/([a-z0-9-]+)\/([0-9a-f]{16}-(?:day|night))\.webp$/.exec(path)) && req.method === 'GET') {
     const webp = themePictures.get(`${m[1]}/${m[2]}`);

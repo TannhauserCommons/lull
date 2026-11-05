@@ -239,7 +239,7 @@ ADR-0004; format, hooks and slots: [themes.md](../themes.md). Built-in designs a
 | `GET /api/theme-pictures/{id}/{rev}-{mode}.webp` | The picture lull made of the theme for its picker card, cached as immutable (the name changes with the theme). Kept in `<data_dir>/theme-pictures/<id>/`, outside the package |
 | `PUT /api/theme-pictures/{id}/{rev}-{mode}.webp` (body: a 320×200 WebP, up to 256 KB) | 204; the theme's pictures of other revs are deleted. 409 when `rev` is no longer the theme's (it changed while the picture was drawn); 400 for anything but a 320×200 WebP or a mode the theme lacks |
 
-The hub derives a stored manifest's `slots` from `slots/`. Any change to a stored theme's files, by these endpoints or on disk, publishes `theme.changed` within a second.
+The hub derives a stored manifest's `slots` from `slots/` each time it reads one (the list, `theme.json`, an export), so a theme unzipped into the folder by hand lists its templates too. Any change to a stored theme's files, by these endpoints or on disk, publishes `theme.changed` within a second.
 
 ## Subsonic (`crates/subsonic`)
 
