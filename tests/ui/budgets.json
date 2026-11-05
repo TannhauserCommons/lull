@@ -1,33 +1,33 @@
 {
-  "note": "Pre-themes baseline (run 41312904377: median of 3 mobile runs on the CI hub with the fixture library) plus margin. shippedBytes (what lull ships, not the hub's live answers: shipped.mjs): main's measured bytes + 1,000 B on every route, set again to the new main + 1,000 B by a change that passes it, with its measured reason. LCP +25%, CLS +0.025, TBT floored at 150 ms because lab TBT of 0-90 ms is noise. Budgets move only with a reason the user would accept: docs/context/quality.md#budgets. benchmarkIndex: the runner speed (Lighthouse's benchmark) they are met on, main's own runs 3,555-4,013; lighthouse.sh slows each runner's CPU 4x times its speed over it, so every runner plays the same device. settings/playback 361,225 B: main's 358,618 B (queue run 42098937660) + 1,607 B for Settings' own file, screens/settings-fit.js (749 B, brotli, and its 650 B of response headers) and the 208 B every page loads with it (designs.js 114 B, system.js 51 B, app.js 43 B), + 1,000 B: docs/context/quality.md#budgets.",
+  "note": "Pre-themes baseline (run 41312904377: median of 3 mobile runs on the CI hub with the fixture library) plus margin. shippedBytes (what lull ships, not the hub's live answers nor Chrome's own icon fetches: shipped.mjs): main's measured bytes + 1,000 B on every route, set again to the new main + 1,000 B by a change that passes it, with its measured reason. LCP +25%, CLS +0.025, TBT floored at 150 ms because lab TBT of 0-90 ms is noise. Budgets move only with a reason the user would accept: docs/context/quality.md#budgets. benchmarkIndex: the runner speed (Lighthouse's benchmark) they are met on, main's own runs 3,555-4,013; lighthouse.sh slows each runner's CPU 4x times its speed over it, so every runner plays the same device. settings/playback 361,225 B: main's 358,618 B (queue run 42098937660) + 1,607 B for Settings' own file, screens/settings-fit.js (749 B, brotli, and its 650 B of response headers) and the 208 B every page loads with it (designs.js 114 B, system.js 51 B, app.js 43 B), + 1,000 B: docs/context/quality.md#budgets.",
   "benchmarkIndex": 3900,
   "routes": {
     "home": {
-      "shippedBytes": 356811,
+      "shippedBytes": 335169,
       "lcpMs": 4650,
       "tbtMs": 150,
       "cls": 0.025
     },
     "search": {
-      "shippedBytes": 356811,
+      "shippedBytes": 335169,
       "lcpMs": 4350,
       "tbtMs": 150,
       "cls": 0.025
     },
     "library/albums": {
-      "shippedBytes": 372989,
+      "shippedBytes": 351347,
       "lcpMs": 4600,
       "tbtMs": 150,
       "cls": 0.025
     },
     "now": {
-      "shippedBytes": 356811,
+      "shippedBytes": 335169,
       "lcpMs": 4500,
       "tbtMs": 150,
       "cls": 0.09
     },
     "settings/playback": {
-      "shippedBytes": 361225,
+      "shippedBytes": 339583,
       "lcpMs": 4500,
       "tbtMs": 150,
       "cls": 0.025
