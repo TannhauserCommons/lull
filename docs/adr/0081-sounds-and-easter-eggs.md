@@ -188,7 +188,7 @@ The same everywhere, from the same files:
 ### Easter eggs: triggers and reactions a package declares
 
 lull has no easter egg of its own in code. An egg is a declaration in a pack (`eggs` in `pack.json`): **when** its
-conditions all hold, lull plays its **reaction**. lull's own ten surprises are the `default` pack's declarations, and
+conditions all hold, lull plays its **reaction**. lull's own surprises are the `default` pack's declarations, and
 a design's pack re-declares the ones it gives its own sound or look; an author has every one of their powers.
 Authors write no JavaScript (themes never run code), only these declarations, which the hub validates on import.
 
@@ -203,7 +203,7 @@ Authors write no JavaScript (themes never run code), only these declarations, wh
 | Condition | Parameters | Holds |
 |---|---|---|
 | `clock` | `from`, `to` (`HH:MM[:SS]`, the device's time; may wrap past midnight), `date` (`MM-DD`, or a list), `weekday` (`mon`...`sun`, or a list), `countdown` (true: `--egg-count` is the seconds left until `to`) | while the time is inside |
-| `words` | `in` (`title`, `artist`, `album`; a list), `any` (1-20 words, whole words, any case, a plural counts) | while a song whose words match is the current one; `data-egg-word` is the word |
+| `words` | `in` (`title`, `artist`, `album`; a list), `any` (1-40 words in any language and script; matched as whole words, ignoring case and accents, and inside the text for scripts written without spaces, such as Chinese, Japanese or Thai) | while a song whose words match is the current one; `data-egg-word` is the word |
 | `repeat` | `times` (2-100) | the current song has played through `times` times in a row |
 | `gesture` | `on` (`brand`, `cover`, `title`: the logo, the playing cover, the playing title), `taps` (2-12), `within` (s, at most 5) | at the tap that completes the count |
 | `milestone` | `of` (`likes`, `plays`, `saves`), `at` (a number or a list) | as the count reaches one of them; `--egg-count` is that number |
@@ -235,7 +235,7 @@ Authors write no JavaScript (themes never run code), only these declarations, wh
 | `night-owl` | a song playing between 3 and 4 in the morning, once a night |
 | `new-year` | the last 10 s before midnight on 31 December (a countdown), then "Happy new year" |
 | `birthday` | lull's birthday, 31 October, all day |
-| `word` | a song with `moon`, `rain`, `star`, `sun`, `snow`, `night`, `sea`, `storm`, `fire` or `dream` in its title, while it plays |
+| `moon`, `rain`, `star`, `sun`, `snow`, `night`, `sea`, `storm`, `fire`, `dream` | a song with that word in its title, in a dozen languages and scripts, while it plays (one egg each, so a theme styles the idea whatever the language) |
 | `still` | no input for 3 minutes while a song plays on Now Playing: the logo breathes slowly, until the next input |
 | `on-repeat` | the same song played through 10 times in a row |
 | `credits` | the logo tapped 7 times within 3 s: opens the credits |
