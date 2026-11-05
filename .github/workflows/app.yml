@@ -368,7 +368,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          sparse-checkout: scripts
+          sparse-checkout: |
+            scripts
+            fastlane
       - uses: actions/download-artifact@v4
         with:
           pattern: lull-*
@@ -388,9 +390,16 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
+        # The Release says what's new as the stores do: the tag's fastlane notes (ADR-0098), else GitHub's list.
         run: |
+          code=$(echo "${TAG#v}" | awk -F. '{ print $1 * 1000000 + $2 * 1000 + $3 }')
+          notes=fastlane/metadata/android/en-US/changelogs/$code.txt
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
-            || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "lull $TAG" --generate-notes
+            || if [ -f "$notes" ]; then
+              gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "lull $TAG" --notes-file "$notes"
+            else
+              gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "lull $TAG" --generate-notes
+            fi
           gh release upload "$TAG" bundles/* --repo "$GITHUB_REPOSITORY" --clobber
 
   # The same installers on SourceForge, with each platform's default download (sourceforge.yml).

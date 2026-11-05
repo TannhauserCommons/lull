@@ -25,7 +25,7 @@ A music app for one listener who hosts it themselves (PROJECT.md). It streams fr
 | Run locally (settings in `.env`, see `deploy/.env.example`) | `mise run dev` |
 | Container image | `mise run image` |
 | Land your commits on main | `mise run ship <topic>` |
-| Cut a release | `mise run release X.Y.Z` |
+| Cut a release (on the owner's word only) | `gh workflow run release.yml -f version=X.Y.Z` (quality.md) |
 
 **On this Windows workstation:** set `CARGO_TARGET_DIR` to a folder outside `Desktop` (e.g. `%LOCALAPPDATA%\cargo-target\<your-worktree>`). C dependencies (bundled SQLite, TLS) fail to compile under `Desktop` with `D8050`. Use one target dir per worktree so parallel builds don't block each other; they still share compiled dependencies through the workstation's sccache (`~/.cargo/config.toml` `rustc-wrapper`), so only your own crates compile.
 

@@ -37,6 +37,7 @@ jobs:
       slskd: ${{ steps.plan.outputs.slskd }}
       image: ${{ steps.plan.outputs.image }}
       pages: ${{ steps.plan.outputs.pages }}
+      notes: ${{ steps.plan.outputs.notes }}
       youtube_contract: ${{ steps.plan.outputs.youtube_contract }}
       share: ${{ steps.plan.outputs.share }}
       warm: ${{ steps.plan.outputs.warm }}
@@ -230,6 +231,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run share.yml --repo "$GITHUB_REPOSITORY" --ref main
+      - if: steps.land.outputs.landed == 'true' && needs.plan.outputs.notes == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run release-draft.yml --repo "$GITHUB_REPOSITORY" --ref main
       - if: steps.land.outputs.landed == 'true' && needs.plan.outputs.warm == 'true'
         env:
           GH_TOKEN: ${{ github.token }}

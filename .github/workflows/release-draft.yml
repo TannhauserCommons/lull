@@ -1,0 +1,43 @@
+name: release-draft
+# Keeps the GitHub draft release "Next release" current (ADR-0098): what landed since the last release, by area, which
+# areas' batches are complete, the proposed version and the 500-character notes (scripts/release-notes.mjs). The queue
+# starts it after landing a feat or fix; by hand too. A person's batch name and edited notes stay.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-draft
+  cancel-in-progress: false
+
+jobs:
+  draft:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24.11"
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          prev="$RUNNER_TEMP/previous.md" next="$RUNNER_TEMP/next.md"
+          id=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq '[.[] | select(.draft and .name == "Next release")][0].id // empty')
+          if [ -n "$id" ]; then
+            gh api "repos/$GITHUB_REPOSITORY/releases/$id" --jq .body > "$prev"
+            node scripts/release-notes.mjs draft "$prev" > "$next"
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$id" -F "body=@$next" >/dev/null
+          else
+            node scripts/release-notes.mjs draft > "$next"
+            gh api -X POST "repos/$GITHUB_REPOSITORY/releases" -f tag_name=next -f "name=Next release" -F draft=true \
+              -F "body=@$next" >/dev/null
+          fi
+          cat "$next" >> "$GITHUB_STEP_SUMMARY"

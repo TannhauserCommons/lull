@@ -59,6 +59,8 @@ checks() { # <base> <candidate>
   want youtube_contract '^crates/discovery/src/search/youtube_music\.rs$'
   # The share Worker (ADR-0034): tested whenever it or a file it serves changes, deployed after landing.
   want share '^(share/|site/|web/assets/app-icon\.svg$|web/assets/fallback-art-512\.png$|web/fonts/nunito-latin\.woff2$|packaging/android/assetlinks\.json$|app/gen/android/app/src/main/AndroidManifest\.xml$)'
+  # A feat or fix landed: the next release's draft is redrawn (ADR-0098).
+  if git log --format=%s "$1..$2" | grep -Eq '^(feat|fix)\('; then out notes true; else out notes false; fi
   # What every release build compiles: main builds the bundles then, to warm their caches (ADR-0097).
   want warm '^(Cargo\.lock|app/Cargo\.lock|app/Cargo\.toml|rust-toolchain\.toml)$'
 }

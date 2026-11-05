@@ -1,0 +1,127 @@
+name: release
+# Cuts a release on the owner's word (ADR-0098): the integrator session runs this when the owner says to release, or the
+# owner runs it from the Actions tab or the GitHub app. scripts/release.sh makes the release commit on main's newest
+# green commit (ADR-0097) with the draft's notes and tags it; then the tag starts app.yml (installers, updater files,
+# APK, the GitHub Release), the version commit goes to the queue, and the hub's image of the tag is published as
+# :X.Y.Z and :latest for self-hosters. `rehearse` does everything but push and publish.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "The version, X.Y.Z (the draft proposes one)"
+        required: true
+        type: string
+      rehearse:
+        description: "Make the release commit and tag in the runner only: push and publish nothing"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      statuses: read
+      actions: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      commit: ${{ steps.tag.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24.11"
+      - run: rustup toolchain install
+      # release.sh sets the version with `cargo update --offline`: the registry has to be here first.
+      - run: cargo fetch --locked && cargo fetch --locked --manifest-path app/Cargo.toml
+      - run: |
+          git config user.name TannhauserCommons
+          git config user.email 350945459+TannhauserCommons@users.noreply.github.com
+      # The draft's notes, as a person left them, are what's new (release.sh takes the file when it is there).
+      - name: Notes from the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -eu
+          echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]{1,3}\.[0-9]{1,3}$' || { echo "::error::give the version as X.Y.Z"; exit 1; }
+          code=$(echo "$VERSION" | awk -F. '{ print $1 * 1000000 + $2 * 1000 + $3 }')
+          gh api "repos/$GITHUB_REPOSITORY/releases" --jq '[.[] | select(.draft and .name == "Next release")][0].body // empty' \
+            > "$RUNNER_TEMP/draft.md"
+          [ -s "$RUNNER_TEMP/draft.md" ] || { echo "::error::no 'Next release' draft: run release-draft first"; exit 1; }
+          mkdir -p fastlane/metadata/android/en-US/changelogs
+          node scripts/release-notes.mjs notes "$RUNNER_TEMP/draft.md" > "fastlane/metadata/android/en-US/changelogs/$code.txt"
+          sed 's/^/  /' "fastlane/metadata/android/en-US/changelogs/$code.txt"
+      - id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -eu
+          TZ=UTC sh scripts/release.sh "$VERSION"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse "v$VERSION^{commit}")" >> "$GITHUB_OUTPUT"
+          git log -1 --stat "v$VERSION" >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish the tag, queue the version, build the apps
+        if: ${{ !inputs.rehearse }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -eu
+          git push origin "$TAG" "$TAG^{commit}:refs/heads/queue/release-${TAG#v}"
+          # Pushes with the job's token start no workflow: start the two that a person's push would.
+          gh workflow run app.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"
+          gh workflow run queue.yml --repo "$GITHUB_REPOSITORY" --ref main
+          # The next landing drafts the release after this one.
+          id=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq '[.[] | select(.draft and .name == "Next release")][0].id // empty')
+          [ -z "$id" ] || gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$id"
+
+  # Self-hosters follow releases: the hub's image of the tag, as :X.Y.Z and :latest. :main stays the queue's.
+  image:
+    needs: tag
+    if: ${{ !inputs.rehearse }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - id: image
+        run: echo "name=ghcr.io/$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')/lull" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.image.outputs.name }}:${{ inputs.version }}
+            ${{ steps.image.outputs.name }}:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ needs.tag.outputs.commit }}
+            org.opencontainers.image.version=${{ inputs.version }}
+            org.opencontainers.image.title=lull
+            org.opencontainers.image.licenses=AGPL-3.0-only
+          secrets: |
+            lastfm_key=${{ secrets.LULL_LASTFM_API_KEY }}
+            lastfm_secret=${{ secrets.LULL_LASTFM_API_SECRET }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
