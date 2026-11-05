@@ -1,6 +1,6 @@
-//! `.lulltheme` files: a zip of one package. Import reads at most the package limit, whatever the
-//! zip claims, and accepts the files at the root or inside one top-level folder (how most zip tools
-//! pack a folder).
+//! `.lulltheme` and `.lullpack` files: a zip of one package. Import reads at most the package
+//! limit, whatever the zip claims, and accepts the files at the root or inside one top-level folder
+//! (how most zip tools pack a folder).
 
 use std::io::{Cursor, Read, Write};
 
@@ -10,8 +10,14 @@ use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 use crate::package::{Files, MAX_PACKAGE_BYTES};
 
-pub fn read(bytes: &[u8]) -> Result<Files> {
-    let mut zip = ZipArchive::new(Cursor::new(bytes)).map_err(|_| bad("the file is not a .lulltheme (a zip)"))?;
+/// The package in a zip whose manifest is `manifest` (`theme.json`, `pack.json`).
+pub fn read(bytes: &[u8], manifest: &str) -> Result<Files> {
+    let what = if manifest == "pack.json" {
+        ".lullpack"
+    } else {
+        ".lulltheme"
+    };
+    let mut zip = ZipArchive::new(Cursor::new(bytes)).map_err(|_| bad(format!("the file is not a {what} (a zip)")))?;
     let mut files = Files::new();
     let mut budget = MAX_PACKAGE_BYTES as u64;
     for i in 0..zip.len() {
@@ -34,7 +40,7 @@ pub fn read(bytes: &[u8]) -> Result<Files> {
         budget -= data.len() as u64;
         files.insert(name, data);
     }
-    Ok(unwrap_folder(files))
+    Ok(unwrap_folder(files, manifest))
 }
 
 pub fn write(files: &Files) -> Result<Vec<u8>> {
@@ -49,8 +55,8 @@ pub fn write(files: &Files) -> Result<Vec<u8>> {
 
 /// `mytheme/theme.json`, `mytheme/theme.css`... -> `theme.json`, `theme.css`... when every file
 /// shares that one folder and the package isn't at the root already.
-fn unwrap_folder(files: Files) -> Files {
-    if files.contains_key("theme.json") {
+fn unwrap_folder(files: Files, manifest: &str) -> Files {
+    if files.contains_key(manifest) {
         return files;
     }
     let first = files
@@ -87,8 +93,11 @@ mod tests {
             ("assets/fonts/a.woff2".to_owned(), vec![0, 1, 2, 3]),
         ]);
         let zip = write(&files).unwrap_or_default();
-        assert_eq!(read(&zip).ok(), Some(files.clone()));
+        assert_eq!(read(&zip, "theme.json").ok(), Some(files.clone()));
         let nested: Files = files.iter().map(|(k, v)| (format!("mine/{k}"), v.clone())).collect();
-        assert_eq!(read(&write(&nested).unwrap_or_default()).ok(), Some(files));
+        assert_eq!(
+            read(&write(&nested).unwrap_or_default(), "theme.json").ok(),
+            Some(files)
+        );
     }
 }

@@ -86,6 +86,7 @@ Topic → payload. Published on the bus and streamed to the browser. Owners add 
 | `device.command` | hub | `{ deviceId, action, value, from }`: only the device named acts on it |
 | `device.online` | hub | `{ deviceId, online }`: the device's first event stream opened, or its last one closed (or it was unpaired) |
 | `theme.changed` | themes | `{ id }`: a stored theme's files changed; devices using it reload its CSS |
+| `pack.changed` | themes | `{ id }`: a stored standalone pack's files changed (a theme's pack changing fires `theme.changed`); devices using it refetch `GET /api/packs` |
 | `skins.mine` | skins | `{}`: Your skins are something else now (a skin added or deleted, a change in a folder, a rescan); refetch `GET /api/skins/mine` |
 | `library.source` | library | `{ mode: folder\|jellyfin, state: switching\|done\|failed, detail }`: a switch of the library source (`mode` is the target). `done` is followed by `hub.restart` |
 | `search.more` | discovery | `{ query, artists, albums, tracks, playlists, errors?, entities, done }`: catalog additions for a running `/api/search` query (only ids not shown yet, best first), appended by the UI without reordering shown rows. `entities` also refreshes shown rows that gained facts (art, length); `errors` is every failed source so far; `done: true` on the last |
@@ -233,16 +234,33 @@ ADR-0004; format, hooks and slots: [themes.md](../themes.md). Built-in designs a
 
 | Method + path | Returns |
 |---|---|
-| `GET /api/themes` | `{ items: [{ id, name, author, api, extends, shell, swatches, modes, description, preview, slots, coverVariety, builtIn }] }`: the five designs, then the listener's themes (a folder whose `theme.json` no longer reads is left out and logged), each with `rev` (16 hex: its files now and this lull's version) and `pictures` (the modes lull has a picture of for that `rev`, ADR-0080) |
-| `GET /api/themes/{id}/{path}` | A file of a stored theme (`theme.json`, `theme.css`, `slots/*.html`, `assets/*`), ETag'd, `no-cache`, served under a sandboxing CSP |
+| `GET /api/themes` | `{ items: [{ id, name, author, api, extends, shell, swatches, modes, description, preview, slots, coverVariety, builtIn, pack }] }`: the five designs, then the listener's themes (a folder whose `theme.json` no longer reads is left out and logged), each with `rev` (16 hex: its files now and this lull's version) and `pictures` (the modes lull has a picture of for that `rev`, ADR-0080). `pack`: the theme carries a sound and easter-egg pack (always `false` for a built-in design, whose pack is `/packs/<id>/`) |
+| `GET /api/themes/{id}/{path}` | A file of a stored theme (`theme.json`, `theme.css`, `slots/*.html`, `assets/*`, and its pack's `pack.json`, `pack.css`, `sounds/*.ogg` as `audio/ogg`), ETag'd, `no-cache`, served under a sandboxing CSP |
 | `POST /api/themes[?replace=true]` (body: a `.lulltheme` zip, up to 16 MB) | 200 manifest (with `builtIn: false`, `rev` and `pictures`): stored under the id its `theme.json` names. 409 when that id exists, unless `replace` |
 | `PUT /api/themes/{id}` (body: a `.lulltheme`) or `PUT /api/themes/{id}/{path}` (one file, from Theme Studio) | 200 manifest. A new theme starts with its `theme.json` (it gets an empty `theme.css`). Every write is checked as the whole package it makes: 400 names what's wrong (missing `theme.json`, an unknown field, a newer `api`, a script or handler, an outside URL, a file with no place in a theme) |
 | `DELETE /api/themes/{id}` | 204; its pictures go too |
+| `PUT /api/themes/{id}/pack` (body: a `.lullpack`) | 200 theme (as listed): that pack becomes the theme's, replacing its `pack.json`, `pack.css`, `sounds/` and `slots/egg.*.html`. The pack's `id`, `name` and `author` are dropped (the theme's apply); 400 as for any theme write, or for a file that is no pack's |
+| `DELETE /api/themes/{id}/pack` | 204: the theme without its pack. 404 when it has none |
 | `GET /api/themes/{id}.lulltheme` | The package as a zip, for sharing |
 | `GET /api/theme-pictures/{id}/{rev}-{mode}.webp` | The picture lull made of the theme for its picker card, cached as immutable (the name changes with the theme). Kept in `<data_dir>/theme-pictures/<id>/`, outside the package |
 | `PUT /api/theme-pictures/{id}/{rev}-{mode}.webp` (body: a 320×200 WebP, up to 256 KB) | 204; the theme's pictures of other revs are deleted. 409 when `rev` is no longer the theme's (it changed while the picture was drawn); 400 for anything but a 320×200 WebP or a mode the theme lacks |
 
 The hub derives a stored manifest's `slots` from `slots/` each time it reads one (the list, `theme.json`, an export), so a theme unzipped into the folder by hand lists its templates too. Any change to a stored theme's files, by these endpoints or on disk, publishes `theme.changed` within a second.
+
+### Sound and easter-egg packs
+
+ADR-0081. A pack is a `pack.json` (`id`, `name`, `author`, `api`, `description`, `sounds`, `eggs`), Ogg Opus or Vorbis files in `sounds/`, an optional `pack.css` and `slots/egg.<name>.html`; what it may declare (events, egg conditions and their parameters, limits) is `web/packs/vocabulary.json`, which the hub validates by. It lives inside a theme package (without `id`, `name`, `author`: the theme's apply) or on its own as a `.lullpack` zip, stored in `<data_dir>/packs/<id>/`. The built-in packs (`default` and one per design) are static files of the UI (`/packs/<id>/pack.json`, `/packs/<id>/sounds/*.ogg` as `audio/ogg`, listed in `/packs/index.json`), never listed here; a built-in pack id in a path is a 404.
+
+| Method + path | Returns |
+|---|---|
+| `GET /api/packs` | `{ packs: [{ id, name, author, description, source: pack\|theme, theme, rev, sounds, eggs, css, slots }] }`: the listener's packs, then each stored theme's that carries one (`source: theme`, `theme` its id, `id` the theme's too, its name and author; `description` the pack's, else the theme's). `sounds`: event -> a URL, a list of URLs (taken in turn), `{ url, loop: true }` or `null` (silent on purpose). `eggs`: as declared, with `sound` a URL or `{ url, loop: true }`. `css`: `pack.css`'s URL or `null`. `slots`: the egg names with a `slots/egg.<name>.html`. URLs are `/api/packs/{id}/...` or `/api/themes/{id}/...`; `rev` (16 hex) changes with any of the files. A folder whose `pack.json` no longer reads is left out and logged |
+| `GET /api/packs/{id}/{path}` | A file of a stored pack, ETag'd, `no-cache` (`.ogg` as `audio/ogg`) |
+| `POST /api/packs[?replace=true]` (body: a `.lullpack`, up to 16 MB) | 200 the pack as listed, stored under the id its `pack.json` names. 409 when that id exists, unless `replace` |
+| `PUT /api/packs/{id}` (body: a `.lullpack`) or `PUT /api/packs/{id}/{path}` (one file: a replaced sound, the listener's own pack) | 200 the pack as listed. A new pack starts with its `pack.json`. Every write is checked as the whole pack it makes: 400 names the file and what's wrong (below) |
+| `DELETE /api/packs/{id}` | 204 |
+| `GET /api/packs/{id}.lullpack` | The pack as a zip, for sharing |
+
+A pack is refused (400, the message names the file and lists what is allowed) for: a field, event, condition, condition parameter or `once` lull doesn't know; a value out of its range (times `HH:MM[:SS]` or `24:00`, dates `MM-DD`, words of 1-40 letters, marks or digits in any script with `'` or `-`); a loop on any event but `buffering`, or on an egg's sound unless it plays `instead` of the buffering loop (a `player` condition); a `line` with a `{{...}}` other than `{{count}}` and `{{word}}`; a `go` that isn't `#/...`; a file that isn't Ogg Opus or Vorbis (read from its pages, not its name), a sound nothing names or a named one missing; a sound over 128 KB or sounds over 1 MB in all; a sound longer than its use allows (read from the last Ogg granule: 2 s for an event, 6 s for `boot` and an egg's sound, 20 s for the buffering loop or an egg's loop); `pack.css` or an egg slot breaking a theme's rules (themes.md section 8), or a slot for an egg the pack doesn't declare. A stored pack's files changing, by these endpoints or on disk, publishes `pack.changed` within a second.
 
 ## Subsonic (`crates/subsonic`)
 

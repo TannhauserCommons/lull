@@ -1,5 +1,6 @@
 //! Live reload: publishes `theme.changed { id }` when any file of a stored theme changes, appears
-//! or goes away, whoever changed it (Theme Studio, an import, or the listener's own editor). It
+//! or goes away, whoever changed it (Theme Studio, an import, or the listener's own editor), and
+//! `pack.changed { id }` for a stored pack the same way. It
 //! polls once a second: a few `stat` calls, and it works the same on bind mounts, network shares
 //! and every OS, where change notifications don't.
 
@@ -15,7 +16,8 @@ use crate::package;
 
 const EVERY: Duration = Duration::from_secs(1);
 
-pub fn spawn(ctx: &Ctx, dir: PathBuf) {
+/// Watches the packages in `dir`, publishing `topic` (`theme.changed`, `pack.changed`) for each change.
+pub fn spawn(ctx: &Ctx, dir: PathBuf, topic: &'static str) {
     let bus = ctx.bus.clone();
     ctx.spawn(async move {
         let mut seen = scan(dir.clone()).await;
@@ -25,15 +27,15 @@ pub fn spawn(ctx: &Ctx, dir: PathBuf) {
             tick.tick().await;
             let now = scan(dir.clone()).await;
             for id in changed(&seen, &now) {
-                tracing::debug!(theme = %id, "theme changed on disk");
-                bus.publish("theme.changed", serde_json::json!({ "id": id }));
+                tracing::debug!(package = %id, topic, "package changed on disk");
+                bus.publish(topic, serde_json::json!({ "id": id }));
             }
             seen = now;
         }
     });
 }
 
-/// Theme id -> a fingerprint of its files (paths, sizes, modification times).
+/// Package id -> a fingerprint of its files (paths, sizes, modification times).
 type Snapshot = BTreeMap<String, u64>;
 
 async fn scan(dir: PathBuf) -> Snapshot {

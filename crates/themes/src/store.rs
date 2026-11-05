@@ -1,6 +1,6 @@
 //! The listener's themes on disk: `<data dir>/themes/<id>/`, one folder per package, written whole
 //! (a temporary folder renamed into place) so a reader never sees half a theme. Folders starting
-//! with a dot are this module's work in progress.
+//! with a dot are this module's work in progress. Standalone packs (packs.rs) are kept the same way.
 
 use std::fs;
 use std::io;
@@ -102,8 +102,7 @@ impl Store {
         if !root.is_dir() {
             return Err(Error::NotFound(format!("no theme {id}")));
         }
-        let mut files = Files::new();
-        collect(&root, &root, &mut files)?;
+        let mut files = read_folder(&root)?;
         if let Ok(m) = self.manifest(id) {
             files.insert("theme.json".into(), manifest_json(&m)?);
         }
@@ -116,33 +115,7 @@ impl Store {
         let mut files = files;
         // the stored manifest lists the slots actually present (theme.json is derived on write)
         files.insert("theme.json".into(), manifest_json(&manifest)?);
-        let stamp = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_nanos());
-        let tmp = self.dir.join(format!(".new-{}-{stamp}", manifest.id));
-        let old = self.dir.join(format!(".old-{}-{stamp}", manifest.id));
-        let target = self.dir.join(&manifest.id);
-        let written = (|| -> io::Result<()> {
-            for (path, data) in &files {
-                let file = tmp.join(path);
-                if let Some(parent) = file.parent() {
-                    fs::create_dir_all(parent)?;
-                }
-                fs::write(file, data)?;
-            }
-            if target.exists() {
-                fs::rename(&target, &old)?;
-            }
-            fs::rename(&tmp, &target)
-        })();
-        if let Err(e) = written {
-            let _ = fs::remove_dir_all(&tmp);
-            if old.exists() && !target.exists() {
-                let _ = fs::rename(&old, &target);
-            }
-            return Err(io_err(e));
-        }
-        if old.exists() {
-            fs::remove_dir_all(&old).map_err(io_err)?;
-        }
+        write_folder(&self.dir, &manifest.id, &files)?;
         Ok(manifest)
     }
 
@@ -161,8 +134,41 @@ pub fn manifest_json(m: &Manifest) -> Result<Vec<u8>> {
     Ok(json)
 }
 
-/// A package folder's files by path inside it.
-pub(crate) fn folder(root: &Path) -> Result<Files> {
+/// Writes `<dir>/<id>/` whole: into a temporary folder renamed into place, so a reader never sees
+/// half a package, and the old one is back if anything fails.
+pub fn write_folder(dir: &Path, id: &str, files: &Files) -> Result<()> {
+    let stamp = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_nanos());
+    let tmp = dir.join(format!(".new-{id}-{stamp}"));
+    let old = dir.join(format!(".old-{id}-{stamp}"));
+    let target = dir.join(id);
+    let written = (|| -> io::Result<()> {
+        for (path, data) in files {
+            let file = tmp.join(path);
+            if let Some(parent) = file.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(file, data)?;
+        }
+        if target.exists() {
+            fs::rename(&target, &old)?;
+        }
+        fs::rename(&tmp, &target)
+    })();
+    if let Err(e) = written {
+        let _ = fs::remove_dir_all(&tmp);
+        if old.exists() && !target.exists() {
+            let _ = fs::rename(&old, &target);
+        }
+        return Err(io_err(e));
+    }
+    if old.exists() {
+        fs::remove_dir_all(&old).map_err(io_err)?;
+    }
+    Ok(())
+}
+
+/// Every file under `root`, by its path inside it.
+pub fn read_folder(root: &Path) -> Result<Files> {
     let mut files = Files::new();
     collect(root, root, &mut files)?;
     Ok(files)
@@ -182,7 +188,7 @@ fn collect(root: &Path, dir: &Path, files: &mut Files) -> Result<()> {
     Ok(())
 }
 
-fn io_err(e: io::Error) -> Error {
+pub fn io_err(e: io::Error) -> Error {
     Error::internal(format!("themes folder: {e}"))
 }
 

@@ -7,6 +7,8 @@ use std::collections::BTreeMap;
 use lull_core::{Error, Result};
 use serde::{Deserialize, Serialize};
 
+use crate::pack::{self, Home};
+
 /// The theme API this hub speaks. A package asking for more needs a newer lull.
 pub const API: u32 = 1;
 
@@ -117,7 +119,8 @@ pub fn valid_id(id: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == b'-')
 }
 
-/// Checks a whole package and returns its manifest, with `slots` set from the files present.
+/// Checks a whole package and returns its manifest, with `slots` set from the files present. A
+/// pack the theme carries (`pack.json` and its files) is checked by [`pack::validate`].
 pub fn validate(files: &Files, origin: Origin) -> Result<Manifest> {
     if files.len() > MAX_FILES {
         return Err(bad(format!(
@@ -143,7 +146,7 @@ pub fn validate(files: &Files, origin: Origin) -> Result<Manifest> {
     let mut slots = Vec::new();
     for (path, bytes) in files {
         match kind(path)? {
-            Kind::Manifest => {}
+            Kind::Manifest | Kind::Pack => {}
             Kind::Css => check_css(path, text(path, bytes, MAX_CSS_BYTES)?, files)?,
             Kind::Slot(name) => {
                 check_slot(path, text(path, bytes, MAX_SLOT_BYTES)?)?;
@@ -167,6 +170,7 @@ pub fn validate(files: &Files, origin: Origin) -> Result<Manifest> {
             }
         }
     }
+    pack::validate(files, Home::Theme)?;
     manifest.slots = slots;
     Ok(manifest)
 }
@@ -285,21 +289,24 @@ fn is_hex_colour(s: &str) -> bool {
 
 enum Kind {
     Manifest,
+    /// `pack.json`, `pack.css`, `sounds/`, `slots/egg.*.html`: the theme's pack
+    Pack,
     Css,
     Slot(String),
-    Asset { svg: bool },
+    Asset {
+        svg: bool,
+    },
 }
 
 /// Where a path may sit in a package. Anything else is refused by name.
 fn kind(path: &str) -> Result<Kind> {
-    let segments: Vec<&str> = path.split('/').collect();
-    let plain = |s: &&str| {
-        !s.is_empty() && !s.starts_with('.') && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
-    };
-    if !segments.iter().all(plain) || segments.len() > 5 {
+    if !plain_path(path) {
         return Err(bad(format!("{path:?} is not a plain relative path")));
     }
-    match segments.as_slice() {
+    if pack::is_pack_file(path) {
+        return Ok(Kind::Pack);
+    }
+    match path.split('/').collect::<Vec<_>>().as_slice() {
         ["theme.json"] => Ok(Kind::Manifest),
         ["theme.css"] => Ok(Kind::Css),
         ["slots", file] => {
@@ -323,9 +330,19 @@ fn kind(path: &str) -> Result<Kind> {
             Ok(Kind::Asset { svg: ext == "svg" })
         }
         _ => Err(bad(format!(
-            "{path} has no place in a theme (theme.json, theme.css, slots/*.html, assets/)"
+            "{path} has no place in a theme (theme.json, theme.css, slots/*.html, assets/, and a pack's pack.json, \
+             pack.css, sounds/*.ogg, slots/egg.<name>.html)"
         ))),
     }
+}
+
+/// Up to five plain segments: letters, digits, `.`, `_` and `-`, none starting with a dot.
+pub(crate) fn plain_path(path: &str) -> bool {
+    let segments: Vec<&str> = path.split('/').collect();
+    segments.len() <= 5
+        && segments.iter().all(|s| {
+            !s.is_empty() && !s.starts_with('.') && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+        })
 }
 
 pub(crate) fn slot_known(name: &str) -> bool {
@@ -339,7 +356,7 @@ fn slot_names() -> String {
     SLOTS.iter().map(|(s, _)| *s).collect::<Vec<_>>().join(", ")
 }
 
-fn text<'a>(path: &str, bytes: &'a [u8], max: usize) -> Result<&'a str> {
+pub(crate) fn text<'a>(path: &str, bytes: &'a [u8], max: usize) -> Result<&'a str> {
     if bytes.len() > max {
         return Err(bad(format!("{path} is over {} KB", max / 1024)));
     }
@@ -347,7 +364,7 @@ fn text<'a>(path: &str, bytes: &'a [u8], max: usize) -> Result<&'a str> {
 }
 
 /// CSS may load only from the package (relative URLs to files in it) or `data:`.
-fn check_css(path: &str, css: &str, files: &Files) -> Result<()> {
+pub(crate) fn check_css(path: &str, css: &str, files: &Files) -> Result<()> {
     let css = strip_comments(css);
     let lower = css.to_ascii_lowercase();
     for (needle, why) in [
@@ -385,7 +402,7 @@ fn check_css(path: &str, css: &str, files: &Files) -> Result<()> {
 }
 
 /// A slot template is static markup: no scripts, handlers, styles, embeds or links out of the app.
-fn check_slot(path: &str, html: &str) -> Result<()> {
+pub(crate) fn check_slot(path: &str, html: &str) -> Result<()> {
     let lower = html.to_ascii_lowercase();
     for tag in [
         "<script",
@@ -595,7 +612,7 @@ fn attribute_values(lower: &str, attr: &str) -> Vec<String> {
     out
 }
 
-fn bad(msg: impl Into<String>) -> Error {
+pub(crate) fn bad(msg: impl Into<String>) -> Error {
     Error::BadRequest(msg.into())
 }
 

@@ -19,6 +19,13 @@ tracing.workspace = true
 zip = { version = "=9.2.1", default-features = false, features = ["deflate-flate2"] }
 # zip's deflate backend: flate2's default pure-Rust one (miniz_oxide), already in the tree
 flate2 = "=1.1.10"
+# A pack's egg words in any script: Unicode's XID_Continue table tells combining marks from
+# punctuation, which std can't. Tiny, no dependencies, already in the tree through proc-macro2
+unicode-ident = "=1.0.27"
+
+[dev-dependencies]
+# Driving the router in tests (`oneshot`). Already in the tree through axum.
+tower = { version = "=0.5.3", features = ["util"] }
 
 [lints]
 workspace = true

@@ -495,3 +495,29 @@ async fn enqueue_hands_the_songs_to_the_device_named_and_only_enqueue_carries_so
     let _ = std::fs::remove_dir_all(dir);
     Ok(())
 }
+
+#[tokio::test]
+async fn the_built_in_packs_are_served_as_sound_and_json_and_the_sounds_as_they_are() -> Result<(), BoxError> {
+    let (hub, dir) = test_hub().await?;
+    for (path, want) in [
+        ("/packs/default/sounds/play.ogg", "audio/ogg"),
+        ("/packs/default/pack.json", "application/json"),
+        ("/packs/vocabulary.json", "application/json"),
+    ] {
+        let req = Request::get(path)
+            .header(header::ACCEPT_ENCODING, "br, gzip")
+            .body(Body::empty())?;
+        let res = router(hub.clone()).oneshot(req).await?;
+        let header = |name| res.headers().get(name).and_then(|v| v.to_str().ok()).map(str::to_owned);
+        assert_eq!(
+            (res.status(), header(header::CONTENT_TYPE).as_deref()),
+            (StatusCode::OK, Some(want)),
+            "{path}"
+        );
+        if want == "audio/ogg" {
+            assert_eq!(header(header::CONTENT_ENCODING), None, "{path}");
+        }
+    }
+    let _ = std::fs::remove_dir_all(dir);
+    Ok(())
+}
