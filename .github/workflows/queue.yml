@@ -138,6 +138,24 @@ jobs:
       ref: ${{ needs.plan.outputs.candidate }}
       image-artifact: image
 
+  # Beside the checks: the first red one ends the run with its verdict (scripts/queue.sh watch).
+  watch:
+    needs: plan
+    if: needs.plan.outputs.candidate != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      statuses: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v5
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE: ${{ needs.plan.outputs.candidate }}
+          BRANCHES: ${{ needs.plan.outputs.branches }}
+        run: cp scripts/queue.sh "$RUNNER_TEMP/" && sh "$RUNNER_TEMP/queue.sh" watch
+
   land:
     needs: [plan, privacy, ci, ui-gates, app, slskd-contract, image, ui]
     # Green means every check the diff needed passed; a check it didn't need is skipped.

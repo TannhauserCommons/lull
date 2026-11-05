@@ -153,6 +153,24 @@ reject() {
   git push -q origin --delete "refs/heads/queue-candidate/$GITHUB_RUN_ID" || true
 }
 
+# Ends the run as soon as one check fails, instead of after the slowest (ui takes about 15 minutes): the verdict and
+# the next run come at once. Returns when no check is left running, green or not yet created.
+watch() {
+  [ -n "${CANDIDATE:-}" ] || die "no candidate"
+  while :; do
+    jobs=$(gh api "repos/$REPO/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" \
+      --jq '.jobs[] | select(.name | test("^(plan|watch|land|reject)$") | not) | [.name, .status, (.conclusion // "")] | @tsv')
+    failed=$(printf '%s\n' "$jobs" | awk -F'\t' '$3 == "failure" || $3 == "cancelled" { split($1, a, " / "); print a[1] }' | sort -u | tr '\n' ' ')
+    if [ -n "$failed" ]; then
+      FAILED=$failed reject
+      gh run cancel "$GITHUB_RUN_ID" --repo "$REPO"
+      return
+    fi
+    printf '%s\n' "$jobs" | awk -F'\t' '$2 != "completed"' | grep -q . || return 0
+    sleep 20
+  done
+}
+
 # Another run, after this one: the concurrency group holds it until this run ends.
 retry() { gh workflow run queue.yml --repo "$REPO" --ref main; }
 
@@ -166,5 +184,6 @@ case "${1:-}" in
   plan) plan ;;
   land) land ;;
   reject) reject ;;
-  *) die "usage: queue.sh plan|land|reject" ;;
+  watch) watch ;;
+  *) die "usage: queue.sh plan|watch|land|reject" ;;
 esac
