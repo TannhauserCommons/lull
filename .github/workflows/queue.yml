@@ -186,7 +186,7 @@ jobs:
         with:
           fetch-depth: 0
       # The tested image goes up under its commit's tag before main moves, so a landed commit always has one;
-      # it takes the :main tag (the homelab pins :main, homelab ADR-0028) only once main is at that commit.
+      # it takes the :main tag (what installs following main pull) only once main is at that commit.
       - if: needs.image.result == 'success' && needs.plan.outputs.image == 'true'
         uses: actions/download-artifact@v4
         with:
