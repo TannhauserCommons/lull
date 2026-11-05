@@ -14,7 +14,7 @@ The owner's choice, in their words: "batch releases grouping new updates". A rel
 ### A standing draft of the next release, grouped by area
 
 `release-draft.yml` keeps one GitHub draft Release, titled "Next release", up to date. It runs after every landing that brought a `feat` or `fix` (the queue starts it), and by hand. It holds:
-- **The proposed version:** the minor number goes up when a feature landed, the patch number when only fixes did.
+- **The proposed version:** the next patch, as lull's releases have gone so far (0.2.1 to 0.2.4, features and all). Whoever runs the release may give another.
 - **The landed updates since the last release, grouped by area.** The area comes from the commit's scope, through one table in `scripts/release-notes.sh`:
 
   | Area | Scopes |

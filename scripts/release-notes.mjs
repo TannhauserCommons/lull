@@ -49,10 +49,10 @@ function landed(since) {
   return [...groups.values()].filter((g) => g.feats.length || g.fixes.length);
 }
 
-function proposedVersion(since, groups) {
+// The next patch: lull's releases have gone up by patch, features and all. A person may choose another in release.yml.
+function proposedVersion(since) {
   const [x, y, z] = since.replace(/^v/, '').split('.').map(Number);
-  const ready = groups.filter((g) => !g.waiting.length);
-  return ready.some((g) => g.feats.length) ? `${x}.${y + 1}.0` : `${x}.${y}.${z + 1}`;
+  return `${x}.${y}.${z + 1}`;
 }
 
 function draftNotes(batch, groups) {
@@ -95,7 +95,7 @@ function draft(prevFile) {
     `<!-- Set the batch's name on the first line ("the new designs"); it leads the notes. Edit the notes below as`,
     `you like: both stay. The rest is rewritten after every landing (scripts/release-notes.mjs, ADR-0098). -->`,
     '',
-    `**Proposed: ${proposedVersion(since, groups)}** (since ${since}, at ${git('rev-parse', '--short', 'HEAD')})`,
+    `**Proposed: ${proposedVersion(since)}** (since ${since}, at ${git('rev-parse', '--short', 'HEAD')})`,
     '',
     groups.length ? groups.map(area).join('\n\n') : 'Nothing for listeners since the last release.',
     '',
@@ -114,5 +114,5 @@ else if (cmd === 'notes') {
   const m = readFileSync(file, 'utf8').match(NOTES);
   if (!m) die(`${file} has no notes block`);
   console.log(m[1]);
-} else if (cmd === 'version') console.log(proposedVersion(lastRelease(), landed(lastRelease())));
+} else if (cmd === 'version') console.log(proposedVersion(lastRelease()));
 else die('usage: release-notes.mjs draft [previous] | notes <draft> | version');
