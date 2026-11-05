@@ -318,6 +318,25 @@ impl Slskd {
             .collect())
     }
 
+    /// Whether the Soulseek server answers this session: it is asked for `username`'s status, which it answers for any
+    /// name, so the round trip involves the server alone, no peer. slskd waits 5 s for the reply and answers 500 "The
+    /// wait timed out" when none comes, while its own state still says logged in: that is a session gone stale
+    /// (docs/context/soulseek.md#stale-sessions; tests/slskd-contract proves both answers on the pinned slskd).
+    pub async fn server_answers(&self, username: &str) -> Result<bool> {
+        let resp = self.send(Method::GET, &["users", username, "status"], None).await?;
+        if resp.status() == StatusCode::INTERNAL_SERVER_ERROR {
+            let said = resp.text().await.unwrap_or_default();
+            return match said.contains("timed out") {
+                true => Ok(false),
+                false => Err(Error::upstream(
+                    SERVICE,
+                    format!("answered 500: {}", said.trim_matches('"')),
+                )),
+            };
+        }
+        http::ok(SERVICE, resp).map(|_| true)
+    }
+
     /// slskd's most recent log lines, oldest first. Needs the administrator role; empty without it.
     pub async fn recent_log(&self) -> Result<Vec<LogRecord>> {
         match self.get(&["logs", "live"]).await {
@@ -567,6 +586,51 @@ async fn decode<T: DeserializeOwned>(resp: reqwest::Response) -> Result<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// slskd's answers to a status check, as the pinned slskd gives them (tests/slskd-contract, `liveness`).
+    #[tokio::test]
+    async fn the_server_answers_or_its_silence_shows_as_slskds_timeout()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
+        use axum::http::StatusCode as S;
+        use axum::{Router, routing::get};
+        let app = Router::new()
+            .route(
+                "/api/v0/users/alive/status",
+                get(|| async { axum::Json(json!({ "isPrivileged": false, "presence": "Online" })) }),
+            )
+            .route(
+                "/api/v0/users/stale/status",
+                get(|| async {
+                    (
+                        S::INTERNAL_SERVER_ERROR,
+                        "\"The wait timed out after 5000 milliseconds\"",
+                    )
+                }),
+            )
+            .route(
+                "/api/v0/users/broken/status",
+                get(|| async {
+                    (
+                        S::INTERNAL_SERVER_ERROR,
+                        "\"Object reference not set to an instance of an object.\"",
+                    )
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let url = format!("http://{}", listener.local_addr()?);
+        tokio::spawn(async move { axum::serve(listener, app).await });
+        let slskd = Slskd::new(Http::new()?, &url, Secret::new("key"))?;
+        assert!(slskd.server_answers("alive").await?, "an answer: the session is alive");
+        assert!(
+            !slskd.server_answers("stale").await?,
+            "slskd's wait timed out: the server is silent"
+        );
+        assert!(
+            slskd.server_answers("broken").await.is_err(),
+            "any other failure is slskd's, not the server's silence"
+        );
+        Ok(())
+    }
 
     #[test]
     fn a_log_message_reads_as_one_short_plain_sentence() {

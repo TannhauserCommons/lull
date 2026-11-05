@@ -49,15 +49,10 @@ impl Lane {
         }
     }
 
-    /// How many searches in a row no peer answered stop this lane until one is answered
-    /// again: the server may be throttling us, and more searches only prolong it. The player
-    /// and the listener always get theirs.
-    fn paused_after(self) -> Option<usize> {
-        match self {
-            Lane::Play | Lane::Listener => None,
-            Lane::Prefetch => Some(crate::recover::UNANSWERED),
-            Lane::Prewarm | Lane::Availability => Some(2),
-        }
+    /// Whether this lane waits while the Soulseek server isn't answering the session: its
+    /// searches would only go unheard. The player and the listener always get theirs.
+    fn waits_for_the_server(self) -> bool {
+        !matches!(self, Lane::Play | Lane::Listener)
     }
 }
 
@@ -133,16 +128,16 @@ impl Drop for Waiting<'_> {
 }
 
 impl Budget {
-    /// Waits for this search's turn and counts it as started. `false` when its lane is
-    /// paused because the latest `unanswered` searches in a row got no answer: don't search.
-    pub async fn admit(&self, priority: &Priority, unanswered: impl Fn() -> usize) -> bool {
+    /// Waits for this search's turn and counts it as started. `false` when its lane waits for a
+    /// server that isn't `answering` (the connection's status check): don't search.
+    pub async fn admit(&self, priority: &Priority, answering: impl Fn() -> bool) -> bool {
         let mut waiting = Waiting {
             budget: self,
             lane: None,
         };
         loop {
             let lane = priority.get();
-            if lane.paused_after().is_some_and(|n| unanswered() >= n) {
+            if lane.waits_for_the_server() && !answering() {
                 return false;
             }
             {
@@ -215,16 +210,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn background_kinds_stop_while_no_peer_answers_but_the_player_never_does() {
+    async fn background_kinds_wait_while_the_server_is_silent_but_the_player_never_does() {
         let budget = Budget::default();
-        let silent = || 2;
+        let silent = || false;
         assert!(!budget.admit(&Priority::new(Lane::Availability), silent).await);
         assert!(!budget.admit(&Priority::new(Lane::Prewarm), silent).await);
+        assert!(!budget.admit(&Priority::new(Lane::Prefetch), silent).await);
+        assert!(budget.admit(&Priority::new(Lane::Play), silent).await);
+        assert!(budget.admit(&Priority::new(Lane::Listener), silent).await);
         assert!(
-            budget.admit(&Priority::new(Lane::Prefetch), silent).await,
-            "until 3 in a row"
+            budget.admit(&Priority::new(Lane::Prewarm), || true).await,
+            "the server answers: on they go"
         );
-        assert!(budget.admit(&Priority::new(Lane::Play), || 20).await);
         let raised = Priority::new(Lane::Availability);
         raised.raise(Lane::Play);
         assert_eq!(raised.get(), Lane::Play, "the player joined it");

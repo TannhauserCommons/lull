@@ -26,7 +26,7 @@
 
 - **Auth and status.** Auth is `X-API-Key: LULL_SLSKD_API_KEY` against `/api/v0`. The `soulseek` status reads `GET /application` (any key may read it); `/server` and `/options` need the administrator role. States:
   - `ok`: logged in;
-  - `warn`: reconnecting, or connected with a problem: lull can't see slskd's folders, shares don't match `LULL_SHARE`, or searches get no answers (below);
+  - `warn`: reconnecting, or connected with a problem: lull can't see slskd's folders, shares don't match `LULL_SHARE`, or the Soulseek server isn't answering the session (below);
   - `down`: slskd unreachable, the key rejected, or slskd [stuck mid-transition](#stuck-transitions).
 - **The account of an slskd lull runs** (`account.rs`, ADR-0002). With `LULL_SLSKD_CONFIG_FILE` (the desktop app's sidecar), every start writes `LULL_SOULSEEK_USERNAME`/`PASSWORD` into that `slskd.yml`, which holds nothing else. When the file changed, lull waits up to 60 s for slskd to reload it, then logs in again (or out, when the account was removed). Details: [hub.md](hub.md).
 - **State flags.** slskd sends state fields as comma-separated flag names (`Completed, Succeeded`, `Queued, Remotely`). A transfer slskd will retry itself still reads `Completed, Errored` while it waits, with `nextAttemptAt` set; lull treats that as queued. Only `Completed` without `nextAttemptAt` is final.
@@ -34,12 +34,13 @@
 
 ## Stale sessions
 
-The Soulseek server can keep a session that slskd reports as logged in while none of its searches reach peers; seen on the homelab on 2026-10-31, and cured by a fresh login (`recover.rs`).
-- **The trigger.** 3 searches in a row get no answer from any peer.
+The Soulseek server can keep a session that slskd reports as logged in while the server answers nothing on it; seen on the homelab on 2026-10-31, and cured by a fresh login (`recover.rs`).
+- **The check.** Every connection check (15 s apart) asks slskd for our own user's status (`GET /users/<own name>/status`, `Slskd::server_answers`). The server answers that for any name, so the round trip involves the server alone: no peer, no song, nothing anyone has to share. Answered (200) means the session is alive. With the server silent, slskd answers 500 "The wait timed out after 5000 milliseconds" while its own state still says `Connected, LoggedIn`. `tests/slskd-contract` proves both on the pinned slskd, and that a fresh login is answered again. Searches nobody answered are not a sign of anything: a song nobody shares gets none.
+- **The trigger.** 2 checks in a row unanswered (one can be a slow moment). Any other failure of the check is slskd's, says so in the status, and changes nothing.
 - **The fix.** lull asks slskd for a fresh login (`DELETE /server`, then `PUT /server`, whose watchdog retries until it's in).
 - **Limits.** At most once per 15 minutes, never while a song is transferring (a new login drops peer connections), and logged as a warning.
-- **The status** says what happened ("logged in again at 04:05 UTC…") until a search is answered again. While a fresh login isn't due, it quotes slskd's latest warning instead: its first sentence, at most 120 characters, without .NET's exception type or stack trace, and in plain words for the common ones ("couldn't reach the peer (timed out)" for `GetUserEndPoint` timeouts; `slskd::plain`). The status ends up in the app-wide banner, so the full text is only in diagnostics. A transfer's failure reason is shortened the same way.
-- **Diagnostics.** `GET /api/soulseek/diagnostics` shows slskd's own state, how recent searches ended, and its latest log lines.
+- **The status** says the server isn't answering, and when lull logs in again ("lull logged in again at 04:05 UTC and tries again at 04:20 UTC"), until a check is answered; then it is `ok`. It quotes slskd's latest warning too: its first sentence, at most 120 characters, without .NET's exception type or stack trace, and in plain words for the common ones ("couldn't reach the peer (timed out)" for `GetUserEndPoint` timeouts; `slskd::plain`). The status ends up in the app-wide banner, so the full text is only in diagnostics. A transfer's failure reason is shortened the same way.
+- **Diagnostics.** `GET /api/soulseek/diagnostics` shows slskd's own state, how recent searches ended (for reading, never counted), and its latest log lines.
 - **No setting needed.** slskd's connection watchdog has none: it starts by itself after an unexpected disconnect and stops once connected. It deliberately doesn't start after "another client logged in", so lull doesn't fight a second login either.
 
 ## Stuck transitions
@@ -84,25 +85,25 @@ Search is a catalog search owned by discovery (`/api/search`, ADR-0008); Soulsee
 
 The Soulseek server throttles an account that searches too often: seen live on 2026-11-02, when several players, preloads and pre-warming searched about once every 5 s, after which no peer answered and peers' addresses timed out (`GetUserEndPoint … timed out`). So every network search asks `budget.rs` for a turn first.
 
-| Lane, highest priority first | Waits while the searches started in the last minute number | Paused after this many unanswered searches in a row |
+| Lane, highest priority first | Waits while the searches started in the last minute number | Waits while the server isn't answering |
 |---|---|---|
-| `Play`: the song playing, being saved, or whose copies the picker lists | 30 | never |
-| `Prefetch`: songs queued next ([streaming.md](streaming.md#preloading)), and a better copy's one more search ([streaming.md](streaming.md#better-copies)) | 24 | 3 |
-| `Listener`: the listener's own search | 24 | never |
-| `Prewarm`: the catalog's top results | 12 | 2 |
-| `Availability`: whether peers share an album | 6 | 2 |
+| `Play`: the song playing, being saved, or whose copies the picker lists | 30 | no |
+| `Prefetch`: songs queued next ([streaming.md](streaming.md#preloading)), and a better copy's one more search ([streaming.md](streaming.md#better-copies)) | 24 | yes |
+| `Listener`: the listener's own search | 24 | no |
+| `Prewarm`: the catalog's top results | 12 | yes |
+| `Availability`: whether peers share an album | 6 | yes |
 
 - **Rate.** Searches start at least 1 s apart and at most 30 in any minute, all lanes together; a lane waits once the minute's count reaches its ceiling, so the gap is kept for the lanes above it.
 - **Order.** A search waits while one of a higher lane waits. A search a higher lane joins (the player asking for a song a preload is searching) takes that lane.
-- **Pausing.** Once the latest searches got no answer from any peer, the background lanes don't search (the song is skipped, availability answers `None`) until a search is answered again; the player and the listener always search, and those are what show the server answering again (and what [stale-session recovery](#stale-sessions) counts).
-- **Album checks nobody answered don't count** toward pausing, recovery or the status: most likely nobody shares that album, which is the answer the check wants. Counting them paused every check after the first two niche releases (seen live on 2026-11-02), so the new releases shelf got no answers. Album checks have their own wait instead: after 2 searches in the last 10 minutes with none answered, they answer `None` without searching until a search is answered.
+- **Waiting for the server.** While the connection's [check](#stale-sessions) finds the server silent, the background lanes don't search (the song is skipped, availability answers `None`): their searches would go unheard. The player and the listener always search. Searches nobody answered never pause anything: they used to (until 2026-11), and a few songs or albums nobody shares paused every background search and could start a fresh login.
+- **Throttling** is kept away by the rate alone: the ceilings above are what stopped it on 2026-11-02.
 
 ## Albums
 
 `Transfers::album_available(artist, album)` (`albums.rs`) tells discovery whether peers share an album, so new releases nobody shares can be hidden. `album_known` gives only the remembered answer and never searches.
 - **Remembered** in `soulseek_albums` by loose artist and title (`ids::loose_*`): found for 7 days, not found for 1 (fresh releases appear on Soulseek within days). A remembered answer comes back at once, even while Soulseek is offline.
 - **Otherwise one search** for `artist album` in the `Availability` lane, early-stopped like a resolve search, one album at a time. Shared means a peer folder ([merged](#search) as for album rows) whose album and artist [match](#matching) by the same rules as a song's title and artist; one file of it is enough (singles and EPs are albums too). What it finds is kept as sources.
-- **`None`** while Soulseek is offline, while the lane is paused or album checks [wait](#search-budget), when slskd lost the answers, or when nobody answered and no search has been answered in the last 10 minutes either (a stale session, not an answer). None of these is remembered.
+- **`None`** while Soulseek is offline, while the server isn't answering the session ([stale sessions](#stale-sessions): then nobody answering says nothing about the album), or when slskd lost the answers. None of these is remembered. A search the server relays that no peer answers is an answer: nobody shares the album.
 - **Slow when cold.** An unremembered album takes a search, a few seconds, queued behind every other kind of search; callers should not hold a page for it.
 
 ## Matching

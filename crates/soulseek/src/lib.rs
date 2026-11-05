@@ -135,7 +135,8 @@ pub struct Service {
     fetcher: Fetcher,
     cache: Cache,
     rules: Current,
-    /// The last fresh login lull asked for: when (to space them out) and its unix time.
+    /// The last fresh login lull asked for because the server was silent: when (to space them out)
+    /// and its unix time.
     relogged: Mutex<Option<(std::time::Instant, i64)>>,
     /// Songs being saved: pinned in the cache until their save ends.
     saving: Mutex<HashMap<TrackId, Pin>>,
@@ -344,6 +345,7 @@ async fn watch_connection(svc: Arc<Service>, layout: Arc<RwLock<Layout>>) {
     let config = &svc.ctx.config.soulseek;
     let mut was_online = false;
     let mut stuck = recover::Stuck::default();
+    let mut silent = 0; // the server's unanswered status checks in a row
     loop {
         let mut extra = Value::Null;
         let server = svc.slskd.server().await;
@@ -375,7 +377,7 @@ async fn watch_connection(svc: Arc<Service>, layout: Arc<RwLock<Layout>>) {
                     ));
                 }
                 problems.extend(share::mismatch(&svc.slskd, config.share).await);
-                problems.extend(unanswered_searches(&svc).await);
+                problems.extend(liveness(&svc, server.username.as_deref(), &mut silent).await);
                 let who = server.username.map(|u| format!(" as {u}")).unwrap_or_default();
                 match problems.is_empty() {
                     true => (State::Ok, format!("Connected{who}")),
@@ -400,6 +402,9 @@ async fn watch_connection(svc: Arc<Service>, layout: Arc<RwLock<Layout>>) {
             Err(e) => (State::Down, e.to_string()),
         };
         let online = state != State::Down && detail.starts_with("Connected");
+        if !online {
+            silent = 0; // a session that isn't logged in has nothing to answer yet
+        }
         svc.online.store(online, Ordering::Relaxed);
         was_online = online;
         svc.ctx.status.set("soulseek", state, detail, extra);
@@ -407,41 +412,75 @@ async fn watch_connection(svc: Arc<Service>, layout: Arc<RwLock<Layout>>) {
     }
 }
 
-/// Searches no peer answers while slskd says it's logged in: the searches don't reach the
-/// network, or the answers don't reach slskd. Seen live as a stale server session that a fresh
-/// login cures, so lull asks for one when it's due (`recover`), and otherwise says what's wrong,
-/// with slskd's own latest warning. After a fresh login, the status says so until a search is
-/// answered again.
-async fn unanswered_searches(svc: &Service) -> Option<String> {
+/// Whether the Soulseek server answers this session (`Slskd::server_answers`): the one sign of a
+/// session gone stale while slskd still says it's logged in (docs/context/soulseek.md#stale-sessions).
+/// Every search lane but the listener's and the player's waits while it doesn't. When it stays
+/// silent `recover::SILENT_CHECKS` checks in a row, lull asks slskd to log in again, spaced out and
+/// never mid-transfer. `None` while it answers; otherwise what the status says.
+async fn liveness(svc: &Service, username: Option<&str>, silent: &mut u32) -> Option<String> {
+    let me = username?;
+    match svc.slskd.server_answers(me).await {
+        Ok(true) => {
+            *silent = 0;
+            svc.searches.set_answering(true);
+            None
+        }
+        Ok(false) => {
+            *silent += 1;
+            svc.searches.set_answering(false);
+            Some(silence(svc, *silent).await)
+        }
+        Err(e) => {
+            // slskd failed to ask, which says nothing about the server: searches go on as they were
+            tracing::warn!(error = %e, "asking slskd whether the Soulseek server answers");
+            Some(format!(
+                "lull couldn't ask slskd whether the Soulseek server answers: {e}"
+            ))
+        }
+    }
+}
+
+/// The server let `silent` status checks in a row go unanswered: log in again when it's due, and
+/// say so, with slskd's own latest warning.
+async fn silence(svc: &Service, silent: u32) -> String {
     let last = svc.relogged.lock().ok().and_then(|l| *l);
-    let since = last.map_or(0, |(_, at)| at);
-    let n = svc.searches.unanswered_since(since);
-    if n < recover::UNANSWERED {
-        return match last {
-            Some((_, at)) if !svc.searches.answered_since(at) => Some(format!(
-                "logged in again at {} because searches got no answers; waiting for the next search",
-                recover::clock(at)
-            )),
-            _ => None,
+    if recover::reconnect_due(silent, last.map(|(when, _)| when.elapsed()), svc.fetcher.transferring()) {
+        tracing::warn!(
+            checks = silent,
+            "the Soulseek server doesn't answer; asking slskd to log in again"
+        );
+        return match svc
+            .slskd
+            .relogin("lull: the Soulseek server stopped answering; logging in again")
+            .await
+        {
+            Ok(()) => {
+                let at = lull_core::now();
+                if let Ok(mut l) = svc.relogged.lock() {
+                    *l = Some((std::time::Instant::now(), at));
+                }
+                format!(
+                    "the Soulseek server stopped answering, so lull logged in again at {}",
+                    recover::clock(at)
+                )
+            }
+            Err(e) => format!("the Soulseek server stopped answering, and logging in again failed: {e}"),
         };
     }
-    let since_last = last.map(|(when, _)| when.elapsed());
-    if recover::reconnect_due(n, since_last, svc.fetcher.transferring()) {
-        let reason = format!("lull: the last {n} searches got no answers; logging in again");
-        tracing::warn!(
-            searches = n,
-            "Soulseek searches get no answers; asking slskd to log in again"
-        );
-        return Some(match svc.slskd.relogin(&reason).await {
-            Ok(()) => {
-                if let Ok(mut l) = svc.relogged.lock() {
-                    *l = Some((std::time::Instant::now(), lull_core::now()));
-                }
-                format!("the last {n} searches got no answers, so lull asked slskd to log in again")
-            }
-            Err(e) => format!("the last {n} searches got no answers, and logging in again failed: {e}"),
-        });
-    }
+    let next = if silent < recover::SILENT_CHECKS {
+        "lull checks again in a moment".to_owned()
+    } else if svc.fetcher.transferring() {
+        "lull logs in again once nothing is transferring".to_owned()
+    } else {
+        match last {
+            Some((_, at)) => format!(
+                "lull logged in again at {} and tries again at {}",
+                recover::clock(at),
+                recover::clock(at + recover::EVERY.as_secs() as i64)
+            ),
+            None => "lull logs in again shortly".to_owned(),
+        }
+    };
     let said = match svc.slskd.recent_log().await {
         Ok(log) => log
             .into_iter()
@@ -450,15 +489,10 @@ async fn unanswered_searches(svc: &Service) -> Option<String> {
             .map(|l| format!("; slskd's latest warning: {}", l.summary())),
         Err(e) => Some(format!("; slskd's log can't be read: {e}")),
     };
-    let wait = if svc.fetcher.transferring() {
-        "lull logs in again once nothing is transferring"
-    } else {
-        "lull logs in again at most every 15 minutes"
-    };
-    Some(format!(
-        "the last {n} searches got no answers from any peer ({wait}){}",
+    format!(
+        "the Soulseek server isn't answering ({next}){}",
         said.unwrap_or_default()
-    ))
+    )
 }
 
 async fn housekeeping(svc: Arc<Service>) {

@@ -1,8 +1,9 @@
 //! Recovering Soulseek sessions (docs/context/soulseek.md#stale-sessions).
-//! - **Stale:** the server can keep a session that reports "logged in" while none of its
-//!   searches reach peers; a fresh login cures it. When several searches in a row get no answer
-//!   at all, lull asks slskd to log in again, at most every `EVERY`, and never while a song is
-//!   transferring (a new login drops peer connections).
+//! - **Stale:** the server can keep a session that slskd still reports as logged in while the
+//!   server answers nothing on it; a fresh login cures it. lull asks the server for its own status
+//!   at every check (`Slskd::server_answers`: the server alone answers it, no peer), and when it
+//!   lets `SILENT_CHECKS` in a row go unanswered, asks slskd to log in again, at most every
+//!   `EVERY`, and never while a song is transferring (a new login drops peer connections).
 //! - **Stuck:** slskd can stop halfway through a transition, logged out, with its own watchdog
 //!   off (seen live 2026-11-01: "Disconnecting" for 40 minutes after an exception). After
 //!   `STUCK_AFTER` lull forces fresh logins, backing off, then asks slskd to restart itself, and
@@ -17,16 +18,16 @@ use lull_core::config::SlskdWebLogin;
 
 use crate::slskd::{Server, Slskd};
 
-/// Searches in a row that no peer answered before lull acts. One silent search can be a rare
-/// query; three popular-enough ones in a row are the session.
-pub const UNANSWERED: usize = 3;
+/// Status checks in a row the server left unanswered before lull logs in again: each waits 5 s
+/// for the server, so two in a row (a check apart) are a silent session, not a slow moment.
+pub const SILENT_CHECKS: u32 = 2;
 /// At most one fresh login this often, so a quiet network never turns into a reconnect loop.
 pub const EVERY: Duration = Duration::from_secs(15 * 60);
 
-/// Whether to log in again now: the session looks stale, the last attempt is long enough ago,
-/// and nothing would be cut off.
-pub fn reconnect_due(unanswered: usize, since_last: Option<Duration>, transferring: bool) -> bool {
-    unanswered >= UNANSWERED && since_last.is_none_or(|d| d >= EVERY) && !transferring
+/// Whether to log in again now: the server is silent, the last attempt is long enough ago, and
+/// nothing would be cut off.
+pub fn reconnect_due(silent_checks: u32, since_last: Option<Duration>, transferring: bool) -> bool {
+    silent_checks >= SILENT_CHECKS && since_last.is_none_or(|d| d >= EVERY) && !transferring
 }
 
 /// Logged out and mid-transition for this long is stuck, not reconnecting.
@@ -463,16 +464,16 @@ mod tests {
     }
 
     #[test]
-    fn logs_in_again_only_after_repeated_silence_and_never_in_a_loop_or_mid_song() {
-        // A rare query or two that nobody answered: leave the session alone.
-        assert!(!reconnect_due(UNANSWERED - 1, None, false));
-        // Silence that keeps happening: act, the first time and again after the pause.
-        assert!(reconnect_due(UNANSWERED, None, false));
-        assert!(reconnect_due(UNANSWERED + 4, Some(EVERY), false));
-        // Too soon after the last fresh login: wait, however many searches went unanswered.
-        assert!(!reconnect_due(UNANSWERED + 10, Some(EVERY - MIN), false));
+    fn logs_in_again_only_once_the_server_stays_silent_and_never_in_a_loop_or_mid_song() {
+        // One unanswered check: a slow moment, leave the session alone.
+        assert!(!reconnect_due(SILENT_CHECKS - 1, None, false));
+        // The server stays silent: act, the first time and again after the pause.
+        assert!(reconnect_due(SILENT_CHECKS, None, false));
+        assert!(reconnect_due(SILENT_CHECKS + 4, Some(EVERY), false));
+        // Too soon after the last fresh login: wait, however long the silence.
+        assert!(!reconnect_due(SILENT_CHECKS + 10, Some(EVERY - MIN), false));
         // A song is transferring: a new login would cut it off.
-        assert!(!reconnect_due(UNANSWERED, None, true));
+        assert!(!reconnect_due(SILENT_CHECKS, None, true));
         assert_eq!(clock(1_793_505_900), "04:05 UTC");
     }
 }

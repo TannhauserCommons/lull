@@ -5,7 +5,7 @@
 // 4-byte code; peer init bodies ('P'/'F' connection openers) start with a 1-byte code. Strings are a 4-byte length
 // and UTF-8 bytes. A transfer ('F') connection drops framing after its init: raw token, raw offset, raw file bytes.
 
-export const Server = { Login: 1, SetListenPort: 2, GetPeerAddress: 3, ConnectToPeer: 18, GetUserStats: 36, CheckPrivileges: 92 };
+export const Server = { Login: 1, SetListenPort: 2, GetPeerAddress: 3, GetStatus: 7, ConnectToPeer: 18, GetUserStats: 36, CheckPrivileges: 92 };
 export const Peer = { TransferRequest: 40, TransferResponse: 41, QueueDownload: 43, PlaceInQueueResponse: 44, PlaceInQueueRequest: 51 };
 export const Init = { PierceFirewall: 0, PeerInit: 1 };
 export const Direction = { Download: 0, Upload: 1 };

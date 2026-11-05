@@ -1,14 +1,15 @@
 # slskd contract
 
-lull seeks ahead in a Soulseek song by sizing slskd's incomplete file to X before it enqueues the download, and streams a song by reading that file while slskd writes it. This test proves the pinned slskd (`deploy/compose.yaml`, `app/build.rs`) still behaves the way both need. ADR-0014 and ADR-0062 have the reasoning.
+lull seeks ahead in a Soulseek song by sizing slskd's incomplete file to X before it enqueues the download, streams a song by reading that file while slskd writes it, and tells a stale Soulseek session by asking the server for its own status. This test proves the pinned slskd (`deploy/compose.yaml`, `app/build.rs`) still behaves the way all three need. ADR-0014 and ADR-0062 have the reasoning.
 
 ## What it proves
 
-It runs the real slskd against a stand-in Soulseek server and a stand-in peer. Both are Node, speaking the protocol as Soulseek.NET 10.0.2 does. It checks three cases:
+It runs the real slskd against a stand-in Soulseek server and a stand-in peer. Both are Node, speaking the protocol as Soulseek.NET 10.0.2 does. It checks four cases:
 
 - **resume** (slskd's default settings): the incomplete file is pre-sized to 1 MiB of `0xAB` at the path slskd uses. The peer must be asked for offset 1 MiB. The finished file must be that pre-fill followed by the peer's bytes from 1 MiB on.
 - **overwrite** (`transfers.download.retry.partial: overwrite`): with the same setup, the peer must be asked for offset 0, and the file must be the peer's whole file.
 - **stream** (the default settings, nothing pre-sized): the peer sends slowly. While slskd downloads, the incomplete file must open for reading the way lull opens it (Node's open, like Rust's, shares read, write and delete), and its first bytes must be the peer's. The file stays open while slskd finishes and moves it to its downloads folder, then must read to the end as the peer's file. Stock slskd on Windows fails this with a sharing violation (lull's "os error 32"), which is why the Windows app bundles lull's build of it (`app/slskd/`).
+- **liveness**, how lull tells a session gone stale ([soulseek.md](../../docs/context/soulseek.md#stale-sessions)): our own user's status, which only the server answers, comes back as 200. With the server silent on that session, slskd answers 500 "timed out" after its 5 s wait. After lull's fresh login (`DELETE`, then `PUT /server`), it is answered again.
 
 Any difference exits non-zero with one sentence saying what differed. slskd's log tail is printed with it.
 
@@ -17,7 +18,7 @@ Any difference exits non-zero with one sentence saying what differed. slskd's lo
 | File | What it is |
 |---|---|
 | `run.mjs` | The runner: starts the stand-ins and slskd, enqueues the file through slskd's API, then checks the result |
-| `server.mjs` | The stand-in server: login, the peer's address, and the two stats questions slskd asks after login |
+| `server.mjs` | The stand-in server: login, the peer's address, a user's status, and the two stats questions slskd asks after login; `silence()` makes the sessions open now go stale |
 | `peer.mjs` | The stand-in peer: queues the request, then opens the transfer and records the offset it is asked for |
 | `protocol.mjs` | Message framing and the codes used |
 

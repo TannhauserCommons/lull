@@ -5,6 +5,10 @@
 // - GetPeerAddress: GetUserEndPointAsync waits for the reply naming that user; IP 0.0.0.0 / port 0 means offline.
 // - GetUserStats and CheckPrivileges: slskd asks both right after login (Application.Client_LoggedIn). Unanswered,
 //   they only time out into a logged error, but answering keeps slskd's log clean.
+// - GetStatus: GetUserStatusAsync waits for the reply naming that user: its presence (2: online) and privileges. The
+//   server answers it for any name, so it is a round trip with the server alone, no peer involved.
+// silence() leaves the sessions open now as they are and answers nothing more on them: a session gone stale, as lull
+// has seen one live. A fresh login is a new connection, and is answered.
 // Everything else (SetListenPort, SharedFoldersAndFiles, HaveNoParents, ConnectToPeer for the indirect race, ...)
 // needs no reply and is ignored.
 
@@ -16,6 +20,7 @@ export async function startServer({ host }) {
   const events = new EventEmitter();
   const peers = new Map(); // username -> { ip, port }
   const sockets = new Set();
+  const silent = new Set(); // the sockets of sessions gone stale
 
   const server = createServer((socket) => {
     sockets.add(socket);
@@ -30,6 +35,7 @@ export async function startServer({ host }) {
       const r = new Reader(await reader.frame());
       const code = r.int();
       trace('server <-', code);
+      if (silent.has(socket)) continue;
 
       if (code === Server.Login) {
         const username = r.string();
@@ -45,6 +51,9 @@ export async function startServer({ host }) {
         const username = r.string();
         // Soulseek.NET reads: speed (int), upload count (long), files (int), directories (int).
         socket.write(new Builder(Server.GetUserStats).string(username).int(0).long(0).int(0).int(0).build());
+      } else if (code === Server.GetStatus) {
+        const username = r.string();
+        socket.write(new Builder(Server.GetStatus).string(username).int(2).byte(0).build());
       } else if (code === Server.CheckPrivileges) {
         socket.write(new Builder(Server.CheckPrivileges).int(0).build());
       }
@@ -58,6 +67,8 @@ export async function startServer({ host }) {
     events,
     /** Where slskd will be told a user is; set before slskd asks. */
     setPeer(username, ip, port) { peers.set(username, { ip, port }); },
+    /** The sessions open now go stale: answered no more, and kept open. */
+    silence() { for (const s of sockets) silent.add(s); },
     close() { server.close(); for (const s of sockets) s.destroy(); },
   };
 }

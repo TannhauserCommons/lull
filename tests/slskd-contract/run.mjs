@@ -16,6 +16,10 @@
 //   stream     the peer sends slowly; while slskd downloads, the incomplete file is opened and read the way lull
 //              reads it (Node's open, like Rust's, shares read, write and delete), and the bytes so far are the
 //              peer's; the file stays open while slskd finishes and moves it, then reads to the end as the peer's.
+// And how lull tells a session gone stale (docs/context/soulseek.md#stale-sessions):
+//   liveness   our own user's status is the server's to answer alone: slskd passes the answer on (200); with the
+//              server silent on that session it answers 500 "timed out" after its 5 s wait, and after lull's fresh
+//              login (DELETE then PUT /server) the server answers again.
 // Exits non-zero with one sentence saying what differed.
 //
 // Usage:
@@ -113,11 +117,90 @@ async function main() {
 
   try {
     for (const c of CASES) await runCase(c, { slskd, server, peer, file, listenPort });
+    await liveness({ slskd, server, listenPort });
   } finally {
     server.close();
     peer.close();
   }
-  console.log(`\nPASS: slskd resumes a download from a pre-sized incomplete file (asked for ${X}), starts again from 0 with retry.partial: overwrite, and lets its file be read while it downloads and moves it.`);
+  console.log(`\nPASS: slskd resumes a download from a pre-sized incomplete file (asked for ${X}), starts again from 0 with retry.partial: overwrite, and lets its file be read while it downloads and moves it;`
+    + ' it passes on the server\'s answer to our own status, times out when the server is silent, and is answered again after a fresh login.');
+}
+
+/** slskd's settings for logging in to the stand-in server, the same for every case. */
+function slskdEnv({ slskd, server, listenPort, httpPort, apiKey }) {
+  return {
+    SLSKD_SLSK_ADDRESS: slskd.network.serverHost,
+    SLSKD_SLSK_PORT: String(server.port),
+    SLSKD_SLSK_USERNAME: ME,
+    SLSKD_SLSK_PASSWORD: 'contract',
+    SLSKD_SLSK_LISTEN_PORT: String(listenPort),
+    SLSKD_HTTP_PORT: String(httpPort),
+    SLSKD_NO_HTTPS: 'true',
+    SLSKD_API_KEY: apiKey,
+    SLSKD_NO_VERSION_CHECK: 'true',
+    SLSKD_SLSK_NO_DNET: 'true',
+  };
+}
+
+/**
+ * How lull knows the server still answers a session (crates/soulseek, `Slskd::server_answers`): GET
+ * users/<own name>/status, which the server answers alone, no peer. A silent server must read as 500 "timed out",
+ * and lull's fresh login must get answers again.
+ */
+async function liveness({ slskd, server, listenPort }) {
+  const log = (msg) => console.log(`[liveness] ${msg}`);
+  const work = await realpath(await mkdtemp(join(tmpdir(), 'slskd-contract-')));
+  const httpPort = await freePort();
+  const apiKey = randomBytes(16).toString('hex');
+  const api = (path, init = {}) => fetch(`http://127.0.0.1:${httpPort}/api/v0/${path}`, {
+    ...init, headers: { 'X-API-Key': apiKey, 'Content-Type': 'application/json', ...init.headers },
+  });
+  const status = async () => {
+    const r = await api(`users/${encodeURIComponent(ME)}/status`);
+    return { code: r.status, text: await r.text() };
+  };
+  let running = null;
+  try {
+    await mkdir(join(work, 'app'));
+    for (const dir of ['downloads', 'incomplete']) await mkdir(join(work, 'transfers', dir), { recursive: true });
+    const loggedIn = nextEvent(server.events, 'login', (u) => u === ME);
+    running = await slskd.start({ work, httpPort, listenPort, env: slskdEnv({ slskd, server, listenPort, httpPort, apiKey }) });
+    const step = (what, ms, promise) => withDeadline(what, ms, promise, running.exited);
+    await step('slskd to log in to the stand-in server', 120_000, loggedIn);
+    await step('slskd\'s API', 60_000, until(async () => (await api('application').catch(() => null))?.ok));
+
+    let s = await status();
+    if (s.code !== 200 || !/"presence":\s*"Online"/.test(s.text)) {
+      throw new ContractError(`liveness: slskd did not pass on the server's answer to our own status (HTTP ${s.code}: ${s.text}), which is how lull knows a session is alive.`);
+    }
+    log(`the server answers: HTTP ${s.code} ${s.text}`);
+
+    server.silence();
+    s = await status();
+    if (s.code !== 500 || !/timed out/i.test(s.text)) {
+      throw new ContractError(`liveness: with the server silent, slskd answered our status with HTTP ${s.code}: ${s.text}; lull reads only 500 "timed out" as a silent server.`);
+    }
+    const app = await (await api('application')).json();
+    log(`the server silent: HTTP ${s.code} ${s.text}; slskd's own state meanwhile: ${app.server?.state}`);
+
+    const again = nextEvent(server.events, 'login', (u) => u === ME);
+    for (const [method, body] of [['DELETE', JSON.stringify('contract: the server stopped answering')], ['PUT', undefined]]) {
+      const r = await api('server', { method, body });
+      if (!r.ok) throw new ContractError(`liveness: slskd refused ${method} /server (HTTP ${r.status}), lull's fresh login.`);
+    }
+    await step('slskd to log in again', 60_000, again);
+    s = await step('the server to answer our status again', 30_000, until(async () => {
+      const x = await status();
+      return x.code === 200 && x;
+    }));
+    log(`after a fresh login: HTTP ${s.code} ${s.text}`);
+  } catch (e) {
+    if (running) console.error(`--- last lines of slskd's log (liveness) ---\n${await running.logs()}---`);
+    throw e;
+  } finally {
+    if (running) await running.stop();
+    await rm(work, { recursive: true, force: true }).catch(() => {});
+  }
 }
 
 async function runCase(c, { slskd, server, peer, file, listenPort }) {
@@ -150,23 +233,7 @@ async function runCase(c, { slskd, server, peer, file, listenPort }) {
     const onOffset = (e) => { if (e.filename === c.remote) offsets.push(e.offset); };
     peer.events.on('offset', onOffset);
 
-    running = await slskd.start({
-      work,
-      httpPort,
-      listenPort,
-      env: {
-        SLSKD_SLSK_ADDRESS: slskd.network.serverHost,
-        SLSKD_SLSK_PORT: String(server.port),
-        SLSKD_SLSK_USERNAME: ME,
-        SLSKD_SLSK_PASSWORD: 'contract',
-        SLSKD_SLSK_LISTEN_PORT: String(listenPort),
-        SLSKD_HTTP_PORT: String(httpPort),
-        SLSKD_NO_HTTPS: 'true',
-        SLSKD_API_KEY: apiKey,
-        SLSKD_NO_VERSION_CHECK: 'true',
-        SLSKD_SLSK_NO_DNET: 'true',
-      },
-    });
+    running = await slskd.start({ work, httpPort, listenPort, env: slskdEnv({ slskd, server, listenPort, httpPort, apiKey }) });
     const step = (what, ms, promise) => withDeadline(what, ms, promise, running.exited);
 
     await step('slskd to log in to the stand-in server', 120_000, loggedIn);
