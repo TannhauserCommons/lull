@@ -509,6 +509,9 @@
       ${row('Which uploads count', 'Official audio comes from YouTube Music or the artist\'s own channel. Close also takes other uploads of the same song and length. Loose allows lengths up to 15 seconds apart. Live, cover, sped-up and nightcore versions never count unless the song is one.',
         choice('sources.youtube.match', 'Which uploads count', [['official', 'Official audio only'], ['close', 'Close'], ['loose', 'Loose']], 'sys-seg--wrap'), { when: 'youtube', hidden: off, cls: 'sys-row--stack' })}
       <div data-when="youtube" ${off ? raw('hidden') : ''}>${switchRow('sources.youtube.saves', 'Save from YouTube', 'When no Soulseek peer has a song, Save keeps the YouTube copy (AAC). Upgrade saved songs replaces it once a good Soulseek copy turns up. Saves never use YouTube while a peer has the song.')}</div>
+      <div data-when="youtube" ${off ? raw('hidden') : ''}>${cfgField('LULL_ACOUSTID_KEY', 'AcoustID key', 'Checks songs no store has a preview of. Optional, free at acoustid.org.')}
+        ${switchRow('sources.youtube.contribute', 'Contribute to AcoustID', 'Songs you confirm that AcoustID lacks are sent to it under your user key, so other servers can check them. Off: nothing is sent.')}
+        ${cfgField('LULL_ACOUSTID_USER_KEY', 'AcoustID user key')}</div>
       ${switchRow('sources.youtube.autoUpdate', 'Keep yt-dlp up to date', 'lull reaches YouTube with a program called yt-dlp, and YouTube changes often. The server fetches the newest version once a day, checks it, and keeps the built-in one in case the new one fails.')}
       ${row('YouTube now', '', html`<div class="sys-inline sys-inline--col"><div id="sys-youtube" aria-live="polite">${youtubeState()}</div><button class="btn btn--sm" data-act="sys-ytdlp-update" ${get('sources.youtube.autoUpdate') ? '' : raw('disabled')}>${icon('refresh')}Check for a new yt-dlp</button></div>`, { cls: 'sys-row--stack' })}`;
   }

@@ -31,6 +31,7 @@ fn routes() -> Router<Arc<Service>> {
     Router::new()
         .route("/api/soulseek/search", get(search))
         .route("/api/tracks/{id}/sources", get(sources))
+        .route("/api/tracks/{id}/verify", post(verify))
         .route("/api/stream/prefetch", put(prefetch))
         .route("/api/stream/{id}", get(stream).delete(stop))
         .route("/api/stream/{id}/copy", get(copy))
@@ -200,6 +201,49 @@ async fn switch(
 ) -> Result<StatusCode> {
     let Json(copy) = body.map_err(|e| Error::BadRequest(e.body_text()))?;
     svc.fetcher.adopt(&TrackId(id), &copy.source_ref(), false)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Answer {
+    /// "yes" or "no".
+    answer: String,
+}
+
+/// "Right song?" for the YouTube copy playing unverified (ADR-0016): yes makes it the song's
+/// reference; no refuses it, and the player's next opening of the song takes the next copy.
+async fn verify(
+    State(svc): State<Arc<Service>>,
+    Path(id): Path<String>,
+    body: std::result::Result<Json<Answer>, JsonRejection>,
+) -> Result<StatusCode> {
+    let Json(a) = body.map_err(|e| Error::BadRequest(e.body_text()))?;
+    let yes = match a.answer.as_str() {
+        "yes" => true,
+        "no" => false,
+        _ => return Err(Error::BadRequest("answer is yes or no".into())),
+    };
+    let track = svc.track(&TrackId(id)).await?;
+    let copy = svc
+        .fetcher
+        .playing_copy(&track.id)
+        .filter(youtube::is_youtube)
+        .ok_or_else(|| Error::Conflict("no YouTube copy of this song is playing".into()))?;
+    let file = svc
+        .cache
+        .complete(&track.id)
+        .await?
+        .into_iter()
+        .find(|e| e.source.user == copy.user && e.source.path == copy.path);
+    let copy = file.as_ref().map_or(copy, |e| e.source.clone());
+    svc.fetcher
+        .youtube
+        .confirm(&track, &copy, file.as_ref().map(|e| e.path.as_path()), yes)
+        .await?;
+    if !yes {
+        svc.fetcher.refused(&track.id, &copy).await?;
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 

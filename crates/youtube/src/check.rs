@@ -17,7 +17,7 @@ use std::time::Duration;
 use lull_core::http::Limit;
 use lull_core::ids::{loose_artist, loose_title};
 use lull_core::model::Track;
-use lull_core::seams::Previews;
+use lull_core::seams::{Copies, Library, Previews};
 use lull_core::youtube::{Format, Reference, Want};
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
@@ -33,6 +33,8 @@ const VERDICT_FOR: i64 = 30 * 86_400;
 const UNCHECKED_FOR: i64 = 86_400;
 const REFERENCE_FOR: i64 = 30 * 86_400;
 const NO_REFERENCE_FOR: i64 = 86_400;
+/// The library's file read for its print: 4 minutes of a 24-bit FLAC fit.
+const LIBRARY_MAX: usize = 96 * 1024 * 1024;
 /// A preview is about 1 MB; anything much larger isn't one.
 const PREVIEW_MAX: usize = 4 * 1024 * 1024;
 const PREVIEW_TIME: Duration = Duration::from_secs(20);
@@ -45,6 +47,7 @@ const FILE_SPAN_S: f64 = 240.0;
 /// are idle here (a store that answers nothing).
 const IDLE_AFTER: u32 = 10;
 const ACOUSTID: &str = "https://api.acoustid.org/v2/lookup";
+const ACOUSTID_SUBMIT: &str = "https://api.acoustid.org/v2/submit";
 /// AcoustID asks for at most 3 requests a second.
 const ACOUSTID_LIMIT: Limit = Limit {
     service: "acoustid",
@@ -119,6 +122,8 @@ pub fn takes(verdict: Verdict, words_agree: bool) -> Option<bool> {
 #[derive(Default)]
 pub struct Checks {
     previews: OnceLock<Arc<dyn Previews>>,
+    library: OnceLock<Arc<dyn Library>>,
+    copies: OnceLock<Arc<dyn Copies>>,
     running: Mutex<HashMap<(String, String), Pending>>,
     counts: Mutex<Counts>,
 }
@@ -149,6 +154,14 @@ impl Checks {
         let _ = self.previews.set(previews);
     }
 
+    pub fn bind_library(&self, library: Arc<dyn Library>) {
+        let _ = self.library.set(library);
+    }
+
+    pub fn bind_copies(&self, copies: Arc<dyn Copies>) {
+        let _ = self.copies.set(copies);
+    }
+
     pub fn counts(&self) -> Counts {
         self.counts.lock().map(|c| *c).unwrap_or_default()
     }
@@ -160,12 +173,22 @@ impl Checks {
     }
 }
 
-/// A reference's fingerprint, as kept.
+/// A reference's fingerprint, as kept. `source`: "listener", "library", "apple", "deezer",
+/// "soulseek" or "youtube" (an official upload); `key` names the file it came from.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Kept {
     source: String,
     id: String,
     print: String,
+    #[serde(default)]
+    key: String,
+}
+
+/// What a check leaves out of the references: the copy being checked.
+#[derive(Clone, Copy)]
+enum Itself<'a> {
+    Upload(&'a str),
+    File(&'a Path),
 }
 
 /// The upload's verdict for the track: remembered, else measured now (one check per upload at
@@ -204,25 +227,29 @@ pub async fn played(svc: &Service, track: &Track, video: &str, path: &Path) -> O
     if let Some(v) = remembered(svc, track, video).await {
         return takes(v, true);
     }
-    let refs = references(svc, track).await;
-    let v = if refs.is_empty() {
-        Verdict::Unchecked
-    } else {
+    let refs = references(svc, track, Itself::Upload(video)).await;
+    let print = {
         let path = path.to_owned();
         match tokio::task::spawn_blocking(move || sound::print_file(&path, Some(FILE_SPAN_S))).await {
-            Ok(Ok(print)) => against(&refs, &print),
+            Ok(Ok(print)) => Some(print),
             Ok(Err(why)) => {
                 tracing::info!(video, why, "can't fingerprint the YouTube copy");
-                Verdict::Unchecked
+                None
             }
-            Err(_) => Verdict::Unchecked,
+            Err(_) => None,
         }
     };
+    let (v, reference) = print.as_ref().map_or((Verdict::Unchecked, None), |p| against(&refs, p));
     svc.checks.count(|c| {
         c.checked += u32::from(v != Verdict::Unchecked);
         c.refused += u32::from(matches!(v, Verdict::Other(_)));
     });
-    let reference = refs.first().map(|r| format!("{}:{}", r.source, r.id));
+    // The artist's own upload anchors the song's fan uploads from now on (ADR-0016).
+    if let Some(p) = &print
+        && !matches!(v, Verdict::Other(_))
+    {
+        keep_print(svc, &official_key(track, video), &p.items).await;
+    }
     remember(svc, track, video, v, reference).await;
     if let Verdict::Other(score) = v {
         tracing::info!(track = %track.id, video, score, "the official YouTube copy isn't the song by its sound");
@@ -236,7 +263,7 @@ pub async fn played(svc: &Service, track: &Track, video: &str, path: &Path) -> O
 
 /// A downloaded file (a Soulseek copy) against the track's references.
 pub async fn file(svc: &Service, track: &Track, path: &Path) -> Option<bool> {
-    let refs = references(svc, track).await;
+    let refs = references(svc, track, Itself::File(path)).await;
     if refs.is_empty() {
         return None;
     }
@@ -246,7 +273,7 @@ pub async fn file(svc: &Service, track: &Track, path: &Path) -> Option<bool> {
         .ok()?
         .map_err(|why| tracing::debug!(why, "fingerprinting a Soulseek copy"))
         .ok()?;
-    let v = against(&refs, &print);
+    let (v, _) = against(&refs, &print);
     svc.checks.count(|c| {
         c.checked += 1;
         c.refused += u32::from(matches!(v, Verdict::Other(_)));
@@ -255,7 +282,7 @@ pub async fn file(svc: &Service, track: &Track, path: &Path) -> Option<bool> {
 }
 
 async fn measure(svc: &Service, track: &Track, video: &str) -> Result<Verdict, Problem> {
-    let refs = references(svc, track).await;
+    let refs = references(svc, track, Itself::Upload(video)).await;
     let acoustid = svc.ctx.config.youtube.acoustid_key.clone();
     if refs.is_empty() && acoustid.is_none() {
         remember(svc, track, video, Verdict::Unchecked, None).await;
@@ -286,10 +313,7 @@ async fn measure(svc: &Service, track: &Track, video: &str) -> Result<Verdict, P
             Some("acoustid".to_owned()),
         )
     } else {
-        (
-            against(&refs, &print),
-            refs.first().map(|r| format!("{}:{}", r.source, r.id)),
-        )
+        against(&refs, &print)
     };
     svc.checks.count(|c| {
         c.checked += 1;
@@ -299,14 +323,220 @@ async fn measure(svc: &Service, track: &Track, video: &str) -> Result<Verdict, P
     Ok(v)
 }
 
-/// The best verdict over the references: a copy is the recording when any of them says so.
-fn against(refs: &[Kept], print: &Print) -> Verdict {
+/// The best verdict over the references, and which one gave it: a copy is the recording when
+/// any of them says so.
+fn against(refs: &[Kept], print: &Print) -> (Verdict, Option<String>) {
     refs.iter()
-        .filter_map(|r| sound::decode(&r.print))
-        .filter_map(|r| sound::align(&r, &print.items))
-        .map(|s| s.score)
-        .min_by(f64::total_cmp)
-        .map_or(Verdict::Unchecked, Verdict::of)
+        .filter_map(|r| Some((r, sound::align(&sound::decode(&r.print)?, &print.items)?.score)))
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map_or((Verdict::Unchecked, None), |(r, score)| {
+            (Verdict::of(score), Some(format!("{}:{}", r.source, r.id)))
+        })
+}
+
+/// The references a copy is checked against (ADR-0016), in order: the listener's own copy
+/// (confirmed copies, the saved library file), the catalog's previews, and two or more of the
+/// song's Soulseek copies that match each other. With no catalog preview, any one Soulseek copy
+/// and the artist's own uploads that played count too. The copy being checked is never its own
+/// reference.
+async fn references(svc: &Service, track: &Track, itself: Itself<'_>) -> Vec<Kept> {
+    let mut refs = own_refs(svc, track).await;
+    let catalog = catalog_refs(svc, track).await;
+    let soulseek = soulseek_refs(svc, track, itself).await;
+    let official = match itself {
+        Itself::Upload(video) => prints_like(svc, &format!("youtube:{}:", track.id.as_str()))
+            .await
+            .into_iter()
+            .filter(|k| !k.key.ends_with(&format!(":{video}")))
+            .collect(),
+        Itself::File(_) => prints_like(svc, &format!("youtube:{}:", track.id.as_str())).await,
+    };
+    refs.extend(chosen(catalog, soulseek, official));
+    refs
+}
+
+/// Which of the catalog's previews, Soulseek's copies and the artist's own uploads count: the
+/// previews; Soulseek copies that match another peer's copy; and, with no preview, any one
+/// Soulseek copy and the artist's own uploads.
+fn chosen(catalog: Vec<Kept>, soulseek: Vec<Kept>, official: Vec<Kept>) -> Vec<Kept> {
+    let none_from_catalog = catalog.is_empty();
+    let mut refs = catalog;
+    refs.extend(agreeing(&soulseek));
+    if none_from_catalog {
+        for k in soulseek.into_iter().chain(official) {
+            if !refs.iter().any(|r| r.key == k.key) {
+                refs.push(k);
+            }
+        }
+    }
+    refs
+}
+
+/// The Soulseek copies among `copies` that match another peer's copy: strong evidence together.
+fn agreeing(copies: &[Kept]) -> Vec<Kept> {
+    let prints: Vec<Option<Vec<u32>>> = copies.iter().map(|k| sound::decode(&k.print)).collect();
+    copies
+        .iter()
+        .enumerate()
+        .filter(|(i, k)| {
+            copies.iter().enumerate().any(|(j, other)| {
+                j != *i
+                    && other.id != k.id
+                    && matches!((&prints[*i], &prints[j]), (Some(a), Some(b))
+                        if sound::align(a, b).is_some_and(|s| Zone::of(s.score) == Zone::Same))
+            })
+        })
+        .map(|(_, k)| k.clone())
+        .collect()
+}
+
+/// Confirmed copies and the saved library file.
+async fn own_refs(svc: &Service, track: &Track) -> Vec<Kept> {
+    let mut refs = prints_like(svc, &format!("listener:{}:", track.id.as_str())).await;
+    if let Some(k) = library_ref(svc, track).await {
+        refs.push(k);
+    }
+    refs
+}
+
+/// The song's saved library file, fingerprinted once (its first 4 minutes).
+async fn library_ref(svc: &Service, track: &Track) -> Option<Kept> {
+    let library = svc.checks.library.get()?.clone();
+    let key = format!("library:{}", track.id.as_str());
+    if let Some(items) = kept_print(svc, &key).await {
+        return Some(kept("library", track.id.as_str(), &key, &items));
+    }
+    let saved = library.saved(std::slice::from_ref(&track.id)).await.ok()?;
+    if saved.is_empty() {
+        return None;
+    }
+    let resp = library.stream(&track.id, None).await.ok()?;
+    let bytes = axum::body::to_bytes(resp.into_body(), LIBRARY_MAX).await.ok()?;
+    let dir = svc.dir.join("check");
+    tokio::fs::create_dir_all(&dir).await.ok()?;
+    let path = dir.join(format!("library-{}", plain(track.id.as_str())));
+    tokio::fs::write(&path, &bytes).await.ok()?;
+    let p = path.clone();
+    let print = tokio::task::spawn_blocking(move || sound::print_file(&p, Some(FILE_SPAN_S)))
+        .await
+        .ok()?;
+    let _ = tokio::fs::remove_file(&path).await;
+    let print = print
+        .map_err(|why| tracing::debug!(why, "fingerprinting the library's copy"))
+        .ok()?;
+    keep_print(svc, &key, &print.items).await;
+    Some(kept("library", track.id.as_str(), &key, &print.items))
+}
+
+/// The song's finished Soulseek copies, each fingerprinted once (but the one being checked).
+async fn soulseek_refs(svc: &Service, track: &Track, itself: Itself<'_>) -> Vec<Kept> {
+    let Some(copies) = svc.checks.copies.get().cloned() else {
+        return Vec::new();
+    };
+    let mut refs = Vec::new();
+    for (source, path) in copies.finished(track).await {
+        if matches!(itself, Itself::File(p) if p == path) {
+            continue;
+        }
+        let key = format!("soulseek:{}\n{}", source.user, source.path);
+        let items = match kept_print(svc, &key).await {
+            Some(items) => items,
+            None => {
+                let p = path.clone();
+                let Ok(Ok(print)) = tokio::task::spawn_blocking(move || sound::print_file(&p, Some(FILE_SPAN_S))).await
+                else {
+                    continue;
+                };
+                keep_print(svc, &key, &print.items).await;
+                print.items
+            }
+        };
+        refs.push(kept("soulseek", &source.user, &key, &items));
+    }
+    refs
+}
+
+fn kept(source: &str, id: &str, key: &str, items: &[u32]) -> Kept {
+    Kept {
+        source: source.to_owned(),
+        id: id.to_owned(),
+        print: sound::encode(items),
+        key: key.to_owned(),
+    }
+}
+
+/// The key an official upload's print is kept under for the song.
+fn official_key(track: &Track, video: &str) -> String {
+    format!("youtube:{}:{video}", track.id.as_str())
+}
+
+/// The key a copy the listener confirmed is kept under for the song.
+pub fn listener_key(track: &Track, copy: &str) -> String {
+    format!("listener:{}:{copy}", track.id.as_str())
+}
+
+async fn kept_print(svc: &Service, key: &str) -> Option<Vec<u32>> {
+    let key = key.to_owned();
+    let text: Option<String> = svc
+        .ctx
+        .db
+        .call(move |c| {
+            Ok(
+                c.query_row("SELECT print FROM youtube_prints WHERE key = ?1", params![key], |r| {
+                    r.get(0)
+                })
+                .optional()?,
+            )
+        })
+        .await
+        .ok()
+        .flatten();
+    sound::decode(&text?)
+}
+
+/// Kept prints whose key starts with `prefix`, as references.
+async fn prints_like(svc: &Service, prefix: &str) -> Vec<Kept> {
+    let (like, source) = (
+        format!("{prefix}%"),
+        prefix.split(':').next().unwrap_or_default().to_owned(),
+    );
+    let rows: Vec<(String, String)> = svc
+        .ctx
+        .db
+        .call(move |c| {
+            let mut q = c.prepare("SELECT key, print FROM youtube_prints WHERE key LIKE ?1")?;
+            let rows = q.query_map(params![like], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+        })
+        .await
+        .unwrap_or_default();
+    rows.into_iter()
+        .map(|(key, print)| Kept {
+            id: key.rsplit(':').next().unwrap_or_default().to_owned(),
+            source: source.clone(),
+            print,
+            key,
+        })
+        .collect()
+}
+
+pub async fn keep_print(svc: &Service, key: &str, items: &[u32]) {
+    let (key, print) = (key.to_owned(), sound::encode(items));
+    let stored = svc
+        .ctx
+        .db
+        .call(move |c| {
+            c.execute(
+                "INSERT INTO youtube_prints (key, print, checked_at) VALUES (?1, ?2, ?3)
+                 ON CONFLICT(key) DO UPDATE SET print = excluded.print, checked_at = excluded.checked_at",
+                params![key, print, lull_core::now()],
+            )?;
+            Ok(())
+        })
+        .await;
+    if let Err(e) = stored {
+        tracing::warn!(error = %e, "keeping a fingerprint");
+    }
 }
 
 /// The upload's AAC audio in `<data>/youtube/check`, for fingerprinting.
@@ -330,8 +560,8 @@ async fn copy_file(svc: &Service, video: &str) -> Result<PathBuf, Problem> {
     Ok(dest)
 }
 
-/// The track's reference prints: kept, else the catalog's previews fetched and fingerprinted.
-async fn references(svc: &Service, track: &Track) -> Vec<Kept> {
+/// The catalog's reference prints: kept, else its previews fetched and fingerprinted.
+async fn catalog_refs(svc: &Service, track: &Track) -> Vec<Kept> {
     let id = track.id.as_str().to_owned();
     let kept: Option<(String, i64)> = svc
         .ctx
@@ -372,6 +602,7 @@ async fn references(svc: &Service, track: &Track) -> Vec<Kept> {
     for r in found {
         match print_preview(svc, &r).await {
             Ok(print) => refs.push(Kept {
+                key: format!("{}:{}", r.source, r.id),
                 source: r.source,
                 id: r.id,
                 print: sound::encode(&print.items),
@@ -465,6 +696,81 @@ async fn remembered(svc: &Service, track: &Track, video: &str) -> Option<Verdict
         VERDICT_FOR
     };
     (lull_core::now() - at < keep).then_some(v)
+}
+
+/// The listener's answer for an upload no reference could check (ADR-0016). Yes: the song, and
+/// its file the song's reference from now on. No: never offered for the song again.
+pub async fn confirm(svc: &Service, track: &Track, video: &str, path: Option<&Path>, yes: bool) {
+    let listener = Some("listener".to_owned());
+    if !yes {
+        remember(svc, track, video, Verdict::Other(1.0), listener).await;
+        if let Err(e) = search::forget_match(svc, track).await {
+            tracing::warn!(error = %e, "dropping a YouTube match");
+        }
+        return;
+    }
+    remember(svc, track, video, Verdict::Same(0.0), listener).await;
+    let Some(path) = path.map(Path::to_owned) else { return };
+    let whole = match tokio::task::spawn_blocking(move || sound::print_file(&path, None)).await {
+        Ok(Ok(print)) => print,
+        Ok(Err(why)) => return tracing::info!(video, why, "can't fingerprint the confirmed copy"),
+        Err(_) => return,
+    };
+    let span = whole.items.len().min((FILE_SPAN_S / sound::item_s()) as usize);
+    keep_print(svc, &listener_key(track, video), &whole.items[..span]).await;
+    contribute(svc, track, &whole).await;
+}
+
+/// With "Contribute to AcoustID" on and both keys set, a confirmed song AcoustID didn't know is
+/// submitted: its whole fingerprint, length, and the catalog's artist, title and album.
+async fn contribute(svc: &Service, track: &Track, print: &Print) {
+    let config = &svc.ctx.config.youtube;
+    let (Some(client), Some(user)) = (&config.acoustid_key, &config.acoustid_user_key) else {
+        return;
+    };
+    if !svc.settings().contribute {
+        return;
+    }
+    if acoustid_verdict(svc, client.expose(), track, print).await != Verdict::Unchecked {
+        return;
+    }
+    svc.ctx.http.window(ACOUSTID_LIMIT).await;
+    let form = submission(client.expose(), user.expose(), track, print);
+    let body = match reqwest::Url::parse_with_params(ACOUSTID_SUBMIT, &form) {
+        Ok(u) => u.query().unwrap_or_default().to_owned(),
+        Err(_) => return,
+    };
+    let sent: Result<Value, _> = svc
+        .ctx
+        .http
+        .json("acoustid", |c| {
+            c.post(ACOUSTID_SUBMIT)
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .body(body.clone())
+        })
+        .await;
+    match sent {
+        Ok(a) if a["status"] == "ok" => tracing::info!(track = %track.id, "submitted the song to AcoustID"),
+        Ok(a) => tracing::info!(answer = %a, "AcoustID refused the submission"),
+        Err(e) => tracing::info!(error = %e, "submitting to AcoustID"),
+    }
+}
+
+/// AcoustID's submission form for one confirmed copy.
+fn submission(client: &str, user: &str, track: &Track, print: &Print) -> Vec<(&'static str, String)> {
+    let mut form = vec![
+        ("client", client.to_owned()),
+        ("user", user.to_owned()),
+        ("format", "json".to_owned()),
+        ("duration.0", (print.seconds.round() as u64).to_string()),
+        ("fingerprint.0", sound::acoustid_form(&print.items)),
+        ("track.0", track.title.clone()),
+        ("artist.0", track.artist.clone()),
+    ];
+    if !track.album.is_empty() {
+        form.push(("album.0", track.album.clone()));
+    }
+    form
 }
 
 /// Whether the upload was found not to be the song: such an upload is never offered for it.
@@ -581,6 +887,7 @@ mod tests {
         let refs = [Kept {
             source: "apple".into(),
             id: "1".into(),
+            key: "apple:1".into(),
             print: sound::encode(&p[reference]),
         }];
         against(
@@ -590,6 +897,7 @@ mod tests {
                 seconds: 0.0,
             },
         )
+        .0
     }
 
     #[test]
@@ -659,6 +967,105 @@ mod tests {
         assert_eq!(takes(Verdict::Unchecked, true), None);
     }
 
+    /// The youtube service on an in-memory database and its own data folder (nothing reaches
+    /// YouTube until asked).
+    async fn service(name: &str) -> std::result::Result<(Arc<Service>, PathBuf), Box<dyn std::error::Error>> {
+        let data = std::env::temp_dir().join(format!("lull-check-{name}-{}", std::process::id()));
+        let mut vars: std::collections::BTreeMap<String, String> =
+            [("LULL_SLSKD_URL", "http://slskd"), ("LULL_SLSKD_API_KEY", "k")]
+                .into_iter()
+                .map(|(k, v)| (k.to_owned(), v.to_owned()))
+                .collect();
+        vars.insert("LULL_DATA_DIR".into(), data.to_string_lossy().into_owned());
+        for k in ["LULL_YTDLP", "LULL_DENO"] {
+            if let Ok(v) = std::env::var(k) {
+                vars.insert(k.into(), v);
+            }
+        }
+        let config = lull_core::config::Config::from_vars(vars)?;
+        let db = lull_core::db::Db::memory()?;
+        for m in [&lull_core::db::CORE, &crate::MIGRATIONS] {
+            db.migrate(m)?;
+        }
+        let ctx = lull_core::Ctx::new(config, db, lull_core::http::Http::new()?, lull_core::events::Bus::new());
+        Ok((crate::start(&ctx).await?, data))
+    }
+
+    fn song() -> Track {
+        Track {
+            id: TrackId("t-song".into()),
+            title: "Song".into(),
+            artist_id: ArtistId("a".into()),
+            artist: "Artist".into(),
+            album_id: AlbumId("al".into()),
+            album: String::new(),
+            year: None,
+            no: None,
+            disc: None,
+            duration: Some(20),
+            tags: vec![],
+            saved: false,
+            file: None,
+        }
+    }
+
+    /// A 20 s WAV of a rising tone.
+    fn tone(path: &Path) -> std::io::Result<()> {
+        let rate = 11_025u32;
+        let samples: Vec<i16> = (0..rate * 20)
+            .map(|i| {
+                let t = f64::from(i) / f64::from(rate);
+                ((t * (300.0 + 40.0 * t) * std::f64::consts::TAU).sin() * 12_000.0) as i16
+            })
+            .collect();
+        let data_len = (samples.len() * 2) as u32;
+        let mut wav = Vec::new();
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&(36 + data_len).to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        for v in [
+            16u32.to_le_bytes().to_vec(),
+            1u16.to_le_bytes().to_vec(),
+            1u16.to_le_bytes().to_vec(),
+        ] {
+            wav.extend_from_slice(&v);
+        }
+        wav.extend_from_slice(&rate.to_le_bytes());
+        wav.extend_from_slice(&(rate * 2).to_le_bytes());
+        wav.extend_from_slice(&2u16.to_le_bytes());
+        wav.extend_from_slice(&16u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&data_len.to_le_bytes());
+        for v in samples {
+            wav.extend_from_slice(&v.to_le_bytes());
+        }
+        std::fs::write(path, wav)
+    }
+
+    #[tokio::test]
+    async fn the_listeners_yes_makes_the_copy_the_songs_reference_and_a_no_refuses_it()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let (svc, data) = service("confirm").await?;
+        let track = song();
+        let file = data.join("upload.wav");
+        tone(&file)?;
+        assert!(own_refs(&svc, &track).await.is_empty(), "no reference before");
+        confirm(&svc, &track, "fanupload01", Some(&file), true).await;
+        let refs = own_refs(&svc, &track).await;
+        assert_eq!(refs.iter().map(|k| k.source.as_str()).collect::<Vec<_>>(), ["listener"]);
+        assert!(matches!(
+            remembered(&svc, &track, "fanupload01").await,
+            Some(Verdict::Same(_))
+        ));
+        // The confirmed copy now checks the song's other copies: itself, it matches.
+        let print = sound::print_file(&file, None)?;
+        assert!(matches!(against(&refs, &print).0, Verdict::Same(_)));
+        confirm(&svc, &track, "fanupload02", None, false).await;
+        assert!(refused(&svc, &track, "fanupload02").await);
+        let _ = std::fs::remove_dir_all(&data);
+        Ok(())
+    }
+
     /// Apple's preview of the track, as discovery's `Previews` gives it, found by the trial.
     struct OnePreview(&'static str);
 
@@ -696,25 +1103,7 @@ mod tests {
     #[ignore = "network: Apple's preview and two YouTube downloads"]
     async fn the_live_check_takes_the_topic_upload_and_refuses_a_namesake()
     -> std::result::Result<(), Box<dyn std::error::Error>> {
-        let data = std::env::temp_dir().join(format!("lull-check-live-{}", std::process::id()));
-        let mut vars: std::collections::BTreeMap<String, String> =
-            [("LULL_SLSKD_URL", "http://slskd"), ("LULL_SLSKD_API_KEY", "k")]
-                .into_iter()
-                .map(|(k, v)| (k.to_owned(), v.to_owned()))
-                .collect();
-        vars.insert("LULL_DATA_DIR".into(), data.to_string_lossy().into_owned());
-        for k in ["LULL_YTDLP", "LULL_DENO"] {
-            if let Ok(v) = std::env::var(k) {
-                vars.insert(k.into(), v);
-            }
-        }
-        let config = lull_core::config::Config::from_vars(vars)?;
-        let db = lull_core::db::Db::memory()?;
-        for m in [&lull_core::db::CORE, &crate::MIGRATIONS] {
-            db.migrate(m)?;
-        }
-        let ctx = lull_core::Ctx::new(config, db, lull_core::http::Http::new()?, lull_core::events::Bus::new());
-        let svc = crate::start(&ctx).await?;
+        let (svc, data) = service("live").await?;
         svc.use_previews(Arc::new(OnePreview("Germany+Germany+LENA")));
         let track = Track {
             id: TrackId("t-lena".into()),
@@ -738,6 +1127,77 @@ mod tests {
         assert!(refused(&svc, &track, "8QSgNM9yNjo").await, "remembered");
         let _ = std::fs::remove_dir_all(&data);
         Ok(())
+    }
+
+    fn ref_of(source: &str, id: &str, print: &str) -> Kept {
+        kept(source, id, &format!("{source}:{id}"), &prints()[print])
+    }
+
+    #[test]
+    fn two_peers_copies_that_match_are_a_reference_one_alone_only_without_a_preview() {
+        // The trial's uploads stand in for peers' files: two of one recording agree, a sped-up
+        // edit doesn't.
+        let a = ref_of("soulseek", "peer-a", "apocalypse.lyrics");
+        let b = ref_of("soulseek", "peer-b", "apocalypse.instrumental");
+        let c = ref_of("soulseek", "peer-c", "apocalypse.sped-up");
+        let agree: Vec<String> = agreeing(&[a.clone(), b.clone(), c.clone()])
+            .into_iter()
+            .map(|k| k.id)
+            .collect();
+        assert_eq!(agree, ["peer-a", "peer-b"]);
+        let preview = ref_of("apple", "1", "apocalypse.apple");
+        let official = ref_of("youtube", "topicupload", "apocalypse.lyrics");
+        let ids = |v: Vec<Kept>| v.into_iter().map(|k| k.id).collect::<Vec<_>>();
+        // With a preview: the preview and the agreeing pair, never a copy alone.
+        assert_eq!(
+            ids(chosen(vec![preview.clone()], vec![c.clone()], vec![official.clone()])),
+            ["1"]
+        );
+        assert_eq!(
+            ids(chosen(vec![preview], vec![a.clone(), b.clone()], vec![])),
+            ["1", "peer-a", "peer-b"]
+        );
+        // With none: any one copy, and the artist's own upload.
+        assert_eq!(ids(chosen(vec![], vec![c], vec![official])), ["peer-c", "topicupload"]);
+    }
+
+    #[tokio::test]
+    async fn without_acoustid_keys_or_the_switch_nothing_is_sent() -> std::result::Result<(), Box<dyn std::error::Error>>
+    {
+        let (svc, data) = service("nokeys").await?;
+        let print = Print {
+            items: prints()["lena.topic"].clone(),
+            seconds: 161.0,
+        };
+        // No application key: the lookup is skipped at once, and so is any submission.
+        let quick = Duration::from_millis(200);
+        assert_eq!(
+            tokio::time::timeout(quick, acoustid_verdict(&svc, "", &song(), &print)).await?,
+            Verdict::Unchecked
+        );
+        tokio::time::timeout(quick, contribute(&svc, &song(), &print)).await?;
+        let _ = std::fs::remove_dir_all(&data);
+        Ok(())
+    }
+
+    #[test]
+    fn a_submission_names_the_catalogs_song_and_its_whole_fingerprint() {
+        let print = Print {
+            items: prints()["lena.topic"].clone(),
+            seconds: 161.4,
+        };
+        let mut track = song();
+        track.album = "Electrolove".into();
+        let form: HashMap<&str, String> = submission("app", "me", &track, &print).into_iter().collect();
+        assert_eq!(form["client"], "app");
+        assert_eq!(form["user"], "me");
+        assert_eq!(form["duration.0"], "161");
+        assert_eq!(
+            (form["track.0"].as_str(), form["artist.0"].as_str()),
+            ("Song", "Artist")
+        );
+        assert_eq!(form["album.0"], "Electrolove");
+        assert!(!form["fingerprint.0"].is_empty());
     }
 
     #[test]

@@ -2008,7 +2008,7 @@
   function resetTrackState() {
     ps.pos = 0; duration = 0; ps.fallback = null; ps.failedPeers = []; ps.error = null; ps.crossfade = false;
     ps.peer = null; ps.peersFound = 0; ps.queuePos = 0; ps.durationKnown = false; lastRanges = [];
-    ps.belowMinimum = false; ps.choices = null; ps.upgrade = null; ps.seekWait = null; ps.aheadS = null;
+    ps.belowMinimum = false; ps.unverified = false; ps.choices = null; ps.upgrade = null; ps.seekWait = null; ps.aheadS = null;
     sound = { playing: false, waiting: false };
   }
   /* begin playing queue[index]: opts { autoplay (default true), at (seconds), reason (how the last song ended), forceSoulseek } */
@@ -2472,7 +2472,7 @@
       ps.peer = { name: ev.peer, rank: ps.failedPeers.length + 1, of: ps.peersFound || null, speed: ev.speed ? ev.speed / 1e6 : (ps.peer && ps.peer.speed) || 0,
         format: ev.format || (ps.source && ps.source.format) || t.format, sizeMB: ev.size ? ev.size / 1e6 : t.sizeMB };
     }
-    ps.belowMinimum = !!ev.belowMinimum;
+    ps.belowMinimum = !!ev.belowMinimum; ps.unverified = !!ev.unverified;
     var heard = sound.playing && !sound.waiting;
     switch (ev.status) {
       /* streaming `below: ask`: no copy passes the minimum; the listener picks one of `choices` (or skips) */
@@ -3716,7 +3716,7 @@
           ${ui.playingFrom('pbar__from', null, { fit: 1 })}
           <div class="pbar__title" data-fit-keep>${fromPath ? html`<a href="#${fromPath}" data-act="go-playing" data-tip="Show the song in ${App.placeName(from)}">${t.title}</a>` : html`<a href="#/album/${t.albumId}">${t.title}</a>`}</div>
           <div class="pbar__artist" data-fit-keep><a href="#/artist/${t.artistId}">${t.artist}</a></div>
-          <div class="pbar__badges" data-fit-row>${playingYoutube() ? '' : ui.sourceBadge(t, { button: true, fit: 1 })}${playingFormat(t) ? ui.qualityChip(playingFormat(t), { solid: true, button: true, id: t.id, fit: 3 }) : ''}${ps.belowMinimum ? ui.belowBadge({ fit: 2 }) : ''}${priv}</div>
+          <div class="pbar__badges" data-fit-row>${playingYoutube() ? '' : ui.sourceBadge(t, { button: true, fit: 1 })}${playingFormat(t) ? ui.qualityChip(playingFormat(t), { solid: true, button: true, id: t.id, fit: 3 }) : ''}${ps.belowMinimum ? ui.belowBadge({ fit: 2 }) : ''}${playingYoutube() && ps.unverified ? html`<span class="pbar__ask" data-fit="5"><span class="pbar__ask-q" data-fit="2">Unverified. Right song?</span><button class="btn btn--quiet btn--sm" data-act="verify" data-answer="yes" aria-label="Right song: yes" data-tip="Unverified copy. Right song?">Yes</button><button class="btn btn--quiet btn--sm" data-act="verify" data-answer="no" aria-label="Right song: no, play another copy" data-tip="Unverified copy. Right song?">No</button></span>` : ''}${priv}</div>
         </div>
         <div class="pbar__acts" data-fit="2">${ui.likeButton(t.id)}${saveButton(t)}</div>`;
     }
@@ -4071,6 +4071,14 @@
     'add-to-playlist': function (el) { App.hooks.addToPlaylist(ids(el), el); },
     'show-sources': function (el) { App.hooks.sourcePicker(el.getAttribute('data-id')); },
     'pick-source': function () { var t = P.current(); if (t) App.hooks.sourcePicker(t.id); },
+    /* "Right song?" for a YouTube copy no reference could check (ADR-0016): no plays the next copy */
+    'verify': function (el) {
+      var t = P.current(), yes = el.getAttribute('data-answer') === 'yes'; if (!t) return;
+      M.api('/api/tracks/' + encodeURIComponent(t.id) + '/verify', { method: 'POST', body: { answer: yes ? 'yes' : 'no' } }).then(function () {
+        ps.unverified = false; changed('status');
+        if (!yes) load(ps.index, { at: ps.pos, autoplay: ps.playing, keepPlay: true });
+      }, function (err) { App.toast(err.message, { kind: 'error' }); });
+    },
     'source-details': function () { App.hooks.sourceDetails(); },
     'reason': function (el) {
       App.hooks.reason(el, { kind: el.getAttribute('data-kind'), ref: el.getAttribute('data-ref'), name: el.getAttribute('data-name'),

@@ -27,7 +27,7 @@
       "cls": 0.09
     },
     "settings/playback": {
-      "transferBytes": 361500,
+      "transferBytes": 361900,
       "lcpMs": 4500,
       "tbtMs": 150,
       "cls": 0.025

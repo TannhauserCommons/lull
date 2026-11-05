@@ -62,6 +62,10 @@ pub struct Settings {
     pub wait_s: u32,
     /// Fetch the newest stable yt-dlp into the data folder; the pinned one stays the fallback.
     pub auto_update: bool,
+    /// When the listener confirms a copy AcoustID didn't know ("Right song? Yes"), submit its
+    /// fingerprint and the catalog's names to AcoustID, so other hubs can check it (ADR-0016).
+    /// Needs `LULL_ACOUSTID_KEY` and the listener's `LULL_ACOUSTID_USER_KEY`. Off by default.
+    pub contribute: bool,
 }
 
 impl Default for Settings {
@@ -73,6 +77,7 @@ impl Default for Settings {
             matching: Match::Close,
             wait_s: 20,
             auto_update: true,
+            contribute: false,
         }
     }
 }

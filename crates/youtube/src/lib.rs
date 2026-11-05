@@ -24,7 +24,7 @@ use axum::Router;
 use lull_core::db::Migrations;
 use lull_core::ids::TrackId;
 use lull_core::model::{SourceRef, Track};
-use lull_core::seams::{Previews, Youtube};
+use lull_core::seams::{Copies, Library, Previews, Youtube};
 use lull_core::status::State;
 use lull_core::youtube::{Copy, Found, FoundPlaylist, FoundSong, Listing, Mode, Settings, Want};
 use lull_core::{Ctx, Error, Result};
@@ -74,6 +74,16 @@ pub const MIGRATIONS: Migrations = Migrations {
         -- Fan uploads matched before sound checks are found again, checked before they play;
         -- official ones are checked the next time they play.
         DELETE FROM youtube_matches WHERE official = 0;
+    "#,
+        r#"
+        -- Fingerprints of the song's own copies, references for its others (ADR-0016): keys
+        -- "listener:<track>:<copy>", "library:<track>", "soulseek:<peer>\n<path>",
+        -- "youtube:<track>:<video>" (an official upload that played).
+        CREATE TABLE youtube_prints (
+            key         TEXT PRIMARY KEY,
+            print       TEXT NOT NULL,             -- base64 of little-endian fingerprint items
+            checked_at  INTEGER NOT NULL
+        );
     "#,
     ],
 };
@@ -149,6 +159,16 @@ impl Service {
     pub fn use_previews(self: &Arc<Self>, previews: Arc<dyn Previews>) {
         self.checks.bind(previews);
         self.report();
+    }
+
+    /// The saved library and soulseek's cached copies: the song's own copies are references
+    /// for its others (ADR-0016).
+    pub fn use_library(&self, library: Arc<dyn Library>) {
+        self.checks.bind_library(library);
+    }
+
+    pub fn use_copies(&self, copies: Arc<dyn Copies>) {
+        self.checks.bind_copies(copies);
     }
 }
 
@@ -231,6 +251,12 @@ impl Youtube for Service {
     async fn checked(&self, track: &Track, source: &SourceRef, path: &Path) -> Option<bool> {
         let copy = Copy::of(source)?;
         check::played(self, track, &copy.video, path).await
+    }
+
+    async fn confirm(&self, track: &Track, source: &SourceRef, path: Option<&Path>, yes: bool) -> Result<()> {
+        let copy = Copy::of(source).ok_or_else(|| Error::BadRequest("only a YouTube copy is asked about".into()))?;
+        check::confirm(self, track, &copy.video, path, yes).await;
+        Ok(())
     }
 
     async fn check_file(&self, track: &Track, path: &Path) -> Option<bool> {

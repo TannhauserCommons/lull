@@ -1257,6 +1257,8 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 .pbar__from b { font-weight: 800; color: var(--fg); }
 .pbar__from .ic { width: 14px; height: 14px; }
 .pbar__badges { display: flex; align-items: center; gap: 6px; margin-top: 3px; min-height: 24px; min-width: 0; }
+.pbar__ask { display: inline-flex; align-items: center; gap: 4px; font-size: .75rem; color: var(--fg-2); white-space: nowrap; }
+.pbar__ask-q[data-fit-out] { display: none; }
 /* parts of the bar that give way when it runs out of room (layout.js, data-fit). Making room never takes a function away:
    the tools leave for the "…" menu, which lists every one of them; the volume slider moves into a popover over the volume
    button (below); the chips go (the source and quality are one click away in Now Playing); Private keeps its eye and its

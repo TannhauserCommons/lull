@@ -45,6 +45,7 @@ pub const KEYS: &[Key] = &[
     Key::secret("LULL_LASTFM_API_KEY"),
     Key::secret("LULL_LASTFM_API_SECRET"),
     Key::secret("LULL_ACOUSTID_KEY"),
+    Key::secret("LULL_ACOUSTID_USER_KEY"),
     Key::plain("LULL_LISTENBRAINZ_USER"),
     Key::secret("LULL_LISTENBRAINZ_TOKEN"),
     Key::plain("LULL_CATALOG_COUNTRY"),

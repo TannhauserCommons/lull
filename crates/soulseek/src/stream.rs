@@ -274,6 +274,7 @@ mod tests {
             below: false,
             choices: Vec::new(),
             ahead: None,
+            unverified: false,
         }
     }
 

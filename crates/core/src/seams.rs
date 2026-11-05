@@ -177,11 +177,27 @@ pub trait Youtube: Send + Sync {
         None
     }
 
+    /// The listener's answer to "Right song?" for a copy no reference could check (ADR-0016):
+    /// yes makes the copy (its file at `path`) the song's reference; no refuses it for the song,
+    /// and the next `find` gives the next copy.
+    async fn confirm(&self, _track: &Track, _source: &SourceRef, _path: Option<&Path>, _yes: bool) -> Result<()> {
+        Err(Error::unavailable("youtube", "this hub can't check copies"))
+    }
+
     /// Whether the audio file at `path` (a Soulseek copy, downloaded) is the song by its sound,
     /// against the same references: `None` when there is no reference or the file can't be read.
     async fn check_file(&self, _track: &Track, _path: &Path) -> Option<bool> {
         None
     }
+}
+
+/// The song's finished copies lull holds, for checking other copies by their sound (ADR-0016):
+/// a peer's file the song rule took is a reference for YouTube uploads. Implemented by
+/// `soulseek`, handed to `youtube` once soulseek has started.
+#[async_trait]
+pub trait Copies: Send + Sync {
+    /// Soulseek copies of the track whose whole file is in the stream cache, with where.
+    async fn finished(&self, track: &Track) -> Vec<(SourceRef, PathBuf)>;
 }
 
 /// The catalog's previews of a track, for checking copies by their sound (ADR-0016).

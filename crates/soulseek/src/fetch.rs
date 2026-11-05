@@ -142,6 +142,9 @@ pub struct Progress {
     /// than this many seconds to get there; `None` while it can't (ADR-0014). The player reads
     /// it to choose between going there now and keeping the seek.
     pub ahead: Option<u32>,
+    /// A YouTube copy no reference could check by its sound: the player asks the listener
+    /// ("Right song?", ADR-0016).
+    pub unverified: bool,
 }
 
 impl Progress {
@@ -159,6 +162,7 @@ impl Progress {
             peers_found: 0,
             below: false,
             choices: Vec::new(),
+            unverified: false,
             ahead: None,
         }
     }
@@ -1399,7 +1403,24 @@ impl Fetcher {
             }
             return Err(Stop::Failed(NOT_THE_SONG.into()));
         }
+        if verdict.is_none() {
+            self.update(f, |p| p.unverified = true);
+        }
         Ok(path)
+    }
+
+    /// The copy the song's live fetch has now.
+    pub fn playing_copy(&self, track: &TrackId) -> Option<SourceRef> {
+        self.live(track)?.now().source.map(|s| s.source_ref())
+    }
+
+    /// The listener said a copy isn't the song ("Right song? No", ADR-0016): it leaves the cache
+    /// and the song's live fetch lets go of it, so the player's next opening takes the next copy.
+    pub async fn refused(&self, track: &TrackId, copy: &SourceRef) -> Result<()> {
+        if let Some(f) = self.live(track).filter(|f| holds(f, copy)) {
+            self.forget(&f);
+        }
+        self.cache.forget(copy).await
     }
 
     /// A Soulseek copy that arrived is checked by its sound, out of the way (ADR-0016): one that
@@ -1635,7 +1656,8 @@ impl Fetcher {
             || p.ahead != before.ahead
             || p.queue_pos != before.queue_pos
             || p.attempt != before.attempt
-            || p.failed_peers.len() != before.failed_peers.len();
+            || p.failed_peers.len() != before.failed_peers.len()
+            || p.unverified != before.unverified;
         if !moved {
             return;
         }
@@ -1881,6 +1903,7 @@ pub fn stream_event(f: &Fetch, p: &Progress) -> serde_json::Value {
         "belowMinimum": p.below,
         "seekAheadS": p.ahead,
         "youtube": p.source.as_ref().is_some_and(|s| youtube::is_youtube(&s.source_ref())),
+        "unverified": p.unverified,
     });
     if p.status == Status::Choosing {
         event["choices"] = json!(p.choices);
@@ -2517,6 +2540,58 @@ mod tests {
             let offer = fetcher.player_event(&yt, &yt.now());
             assert_eq!(offer["upgrade"]["peer"], "mp3peer", "{offer}");
             assert_eq!(offer["upgrade"]["ready"], true);
+            Ok(())
+        }
+
+        /// Uploads no reference can check: the first, then (once it is refused) the second.
+        struct Unchecked {
+            finds: std::sync::atomic::AtomicUsize,
+        }
+
+        #[async_trait]
+        impl Youtube for Unchecked {
+            async fn find(&self, _: &Track, _: Want) -> Result<Option<Found>> {
+                let n = self.finds.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                Ok(Some(Found {
+                    source: upload(if n == 0 { "firstupload" } else { "otherupload" }),
+                    title: "Song".into(),
+                    channel: "a fan".into(),
+                    official: false,
+                }))
+            }
+            async fn download(&self, _: &SourceRef, dest: &std::path::Path) -> Result<()> {
+                std::fs::write(dest, vec![7u8; SIZE as usize]).map_err(|e| Error::internal(e.to_string()))
+            }
+        }
+
+        #[tokio::test]
+        async fn a_copy_no_reference_checks_plays_unverified_and_a_no_moves_the_song_on() -> Result<()> {
+            let peer = Peer {
+                per_tick: 32_768,
+                overwrite: false,
+                reported: None,
+                settles: Duration::ZERO,
+            };
+            let fake = Fake::start(HashMap::new(), peer)
+                .await
+                .map_err(|e| Error::internal(e.to_string()))?;
+            let mut rules = Rules::default();
+            rules.youtube.mode = lull_core::youtube::Mode::StartFast;
+            let youtube = Arc::new(Unchecked {
+                finds: Default::default(),
+            });
+            let fetcher = with_youtube(&fake, rules, youtube).await?;
+            let f = fetcher.stream(track(), None).await?;
+            let p = ended(&f).await?;
+            assert_eq!(p.status, Status::Done, "{:?}", p.error);
+            assert!(p.unverified, "the player asks: right song?");
+            assert_eq!(super::super::stream_event(&f, &p)["unverified"], true);
+            // "No": the copy leaves, and the song's next opening takes the next upload.
+            let first = upload("firstupload");
+            fetcher.refused(&track().id, &first).await?;
+            let next = ended(&fetcher.stream(track(), None).await?).await?;
+            let playing = next.source.map(|s| s.source_ref().path).unwrap_or_default();
+            assert!(playing.contains("otherupload"), "{playing}");
             Ok(())
         }
 

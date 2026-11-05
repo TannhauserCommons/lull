@@ -244,6 +244,23 @@ impl Service {
 }
 
 #[async_trait]
+impl lull_core::seams::Copies for Service {
+    async fn finished(&self, track: &Track) -> Vec<(SourceRef, PathBuf)> {
+        match self.cache.complete(&track.id).await {
+            Ok(entries) => entries
+                .into_iter()
+                .filter(|e| !youtube::is_youtube(&e.source))
+                .map(|e| (e.source, e.path))
+                .collect(),
+            Err(e) => {
+                tracing::debug!(error = %e, "the song's finished copies");
+                Vec::new()
+            }
+        }
+    }
+}
+
+#[async_trait]
 impl Transfers for Service {
     async fn complete(&self, track: &TrackId, source: &SourceRef) -> Result<PathBuf> {
         let t = self.track(track).await?;

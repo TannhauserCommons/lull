@@ -87,6 +87,21 @@ CPU is per check on one core of that desktop; a small home server is likely 3 to
 - **Soulseek:** measured on fixture files (MP3 320 and FLAC made from the trial's uploads, no Soulseek involved): 0.3 s (MP3) and 0.23 s (FLAC) of one core per song, no download, the reference reused per song; scores 0.008 to 0.063 against the song's preview. So it is on, in the background.
 - **Matches made before** by fan uploads are found again, checked; official ones are checked the next time they play.
 
+## Update 2026-11-05: references for songs no catalog has
+
+The owner (2026-11-05: "Yes, add them"): songs that Apple, Deezer and AcoustID all lack get references from what lull itself holds, and the listener decides only as the last resort. No tier loosens today's refusals: version words and far-off lengths refuse as before, and a candidate the words refuse is never put to the listener.
+
+References, in order (`check::references`); a copy is the song when its sound matches any of them (the three zones above):
+1. **The listener's own copy:** the song's saved library file (fingerprinted once, its first 4 minutes), and any copy the listener confirmed ("Right song? Yes").
+2. **The catalog's previews** (Apple, then Deezer), as before.
+3. **Soulseek's copies:** the song's finished Soulseek copies in the cache, each one a peer's file the song rule took (artist, title, version-aware, length within 6 s). One copy is a reference; two or more peers' copies that match each other are strong evidence and stand even against a catalog preview that disagrees. The other way round, a Soulseek copy is checked against the song's verified official YouTube upload.
+4. **The artist's own uploads:** an official upload (a Topic channel, the artist's channel, YouTube Music's song, YouTube's music metadata) that was fingerprinted while it played is a reference for fan uploads, as an official upload anchors agreement.
+5. **AcoustID** (with `LULL_ACOUSTID_KEY`), for a YouTube upload no reference above covers.
+
+**Asking the listener, last:** a copy no reference covers, that today's word rules take, plays marked "Unverified" on its source chip, with a quiet "Right song? Yes / No" beside it. Nothing pops up, and it can be ignored. Yes keeps a verdict and makes that copy the song's reference (1). No refuses that copy for the song and moves the song to the next copy. Answers are this hub's. YouTube copies only: a Soulseek copy the words took was already a peer's file of that name and length, and asking about every niche song's file would nag.
+
+**Contributing to AcoustID** (Settings › Sources › YouTube, off by default): when the listener confirms a song AcoustID didn't know, the hub submits the copy's fingerprint and length with the catalog's artist, title and album, so other hubs can verify it. It needs the application key and the listener's own AcoustID user key (`LULL_ACOUSTID_USER_KEY`, Settings). Nothing is sent with the switch off.
+
 ## Alternatives
 
 - **Sound alone, with words and length only as hints:** what the owner asked for first; it accepts 18 of 159 wrong copies here, every one an instrumental, karaoke, a loop or a take sung over the record. The words that name them stay a refusal.
