@@ -219,8 +219,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CANDIDATE: ${{ needs.plan.outputs.candidate }}
           BRANCHES: ${{ needs.plan.outputs.branches }}
+          # Named whether they failed or were cancelled (a job past its time limit ends cancelled).
           FAILED: >-
-            ${{ needs.privacy.result == 'failure' && 'privacy ' || '' }}${{ needs.ci.result == 'failure' && 'ci ' || '' }}${{ needs.ui-gates.result == 'failure' && 'ui-gates ' || ''
-            }}${{ needs.app.result == 'failure' && 'app ' || '' }}${{ needs.slskd-contract.result == 'failure' && 'slskd-contract ' || ''
-            }}${{ needs.image.result == 'failure' && 'image ' || '' }}${{ needs.ui.result == 'failure' && 'ui' || '' }}
+            ${{ contains(fromJSON('["failure", "cancelled"]'), needs.privacy.result) && 'privacy ' || '' }}
+            ${{ contains(fromJSON('["failure", "cancelled"]'), needs.ci.result) && 'ci ' || '' }}
+            ${{ contains(fromJSON('["failure", "cancelled"]'), needs.ui-gates.result) && 'ui-gates ' || '' }}
+            ${{ contains(fromJSON('["failure", "cancelled"]'), needs.app.result) && 'app ' || '' }}
+            ${{ contains(fromJSON('["failure", "cancelled"]'), needs.slskd-contract.result) && 'slskd-contract ' || '' }}
+            ${{ contains(fromJSON('["failure", "cancelled"]'), needs.image.result) && 'image ' || '' }}
+            ${{ contains(fromJSON('["failure", "cancelled"]'), needs.ui.result) && 'ui ' || '' }}
         run: sh scripts/queue.sh reject
