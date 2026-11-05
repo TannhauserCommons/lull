@@ -56,6 +56,10 @@ checks() { # <base> <candidate>
 
 plan() {
   git fetch -q origin '+refs/heads/queue/*:refs/remotes/origin/queue/*' '+refs/heads/main:refs/remotes/origin/main'
+  # One run at a time, so any other run's candidate is left from a run that was cancelled.
+  for ref in $(git ls-remote origin 'refs/heads/queue-candidate/*' | cut -f2); do
+    [ "$ref" = "refs/heads/queue-candidate/$GITHUB_RUN_ID" ] || git push -q origin --delete "$ref" || true
+  done
   base=$(git rev-parse origin/main)
   # Oldest first, by when the tip was committed.
   waiting=$(git for-each-ref --sort=committerdate --format='%(refname:strip=4) %(objectname)' refs/remotes/origin/queue/)
