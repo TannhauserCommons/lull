@@ -277,7 +277,10 @@ const routes = [
     // each followed tag with the tags that come with it on this month's releases ("you might like")
     if (shape === 'related') {
       const others = L.tags.filter((t) => !feed.followedTags.includes(t));
-      return { ...feed, entities: { ...feed.entities, tags: feed.followedTags.map((t, i) => ({ id: t, name: t, related: others.slice(i * 2, i * 2 + 2) })) } };
+      // the first pick by an artist not followed, its reason with what the listener did, as the hub counts it
+      const at = feed.picks.findIndex((p) => p.reasons[0].kind === 'like' && !state.follows.artists.includes(p.reasons[0].ref));
+      const picks = feed.picks.map((p, i) => (i !== at ? p : { ...p, reasons: [{ ...p.reasons[0], evidence: { plays: 14 } }] }));
+      return { ...feed, picks, entities: { ...feed.entities, tags: feed.followedTags.map((t, i) => ({ id: t, name: t, related: others.slice(i * 2, i * 2 + 2) })) } };
     }
     return feed;
   }],

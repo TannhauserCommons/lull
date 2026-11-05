@@ -27,7 +27,7 @@ use crate::artist::identity;
 use crate::sources::listenbrainz::Mode;
 use crate::sources::{ArtistInfo, ArtistSource, Release, Song};
 use crate::store::{self, entities};
-use crate::taste::Taste;
+use crate::taste::{Evidence, Taste};
 use crate::{Service, art, mix, pages, radio};
 
 const STALE_AFTER_S: i64 = 6 * 3600;
@@ -112,6 +112,10 @@ pub struct Reason {
     /// The artist id or tag the reason names; absent when it names neither.
     #[serde(rename = "ref", skip_serializing_if = "Option::is_none")]
     pub reference: Option<String>,
+    /// What the listener did that the reason rests on (`Taste::evidence`): an artist's plays,
+    /// likes, saves, follow, saved albums and Last.fm plays; a tag's liked artists and follow.
+    #[serde(default, skip_serializing_if = "Evidence::is_empty")]
+    pub evidence: Evidence,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -769,6 +773,7 @@ async fn picks(
             kind: ReasonKind::Like,
             name: seed.name.clone(),
             reference: Some(seed.id.0.clone()),
+            evidence: taste.evidence(&seed.id),
         };
         match similar_to(svc, &seed.id).await {
             Ok(Similar::Recordings(found)) => pending.extend(
@@ -801,6 +806,7 @@ async fn picks(
                         kind: ReasonKind::Tag,
                         name: tag.clone(),
                         reference: Some(tag.clone()),
+                        evidence: taste.tag_evidence(&tag, followed_tags.contains(&tag)),
                     };
                     (mbid, reason, "ListenBrainz tags")
                 }));
@@ -815,6 +821,7 @@ async fn picks(
                     kind: ReasonKind::Listeners,
                     name: "listeners like you".into(),
                     reference: None,
+                    evidence: Evidence::default(),
                 };
                 (mbid, reason, "ListenBrainz recommendations")
             })),
@@ -865,6 +872,7 @@ async fn picks(
                         kind: ReasonKind::Fresh,
                         name: artist.clone().unwrap_or_default(),
                         reference: Some(ArtistId::of(&release.artist).0),
+                        evidence: taste.evidence(&ArtistId::of(&release.artist)),
                     },
                     via: "MusicBrainz releases",
                 }),
@@ -1273,6 +1281,7 @@ mod tests {
                 kind: ReasonKind::Tag,
                 name: "chillwave".into(),
                 reference: Some("chillwave".into()),
+                evidence: Default::default(),
             },
             via: "ListenBrainz tags",
         }

@@ -1,6 +1,7 @@
 // Home's parts the hub fills for the listener it knows (docs/context/discovery.md#home-feed):
 // - a first run (the feed's `cold`) offers tags and the artists of its starter picks to follow;
-// - each followed tag brings the tags that come with it ("you might like"), whatever pages were opened before.
+// - each followed tag brings the tags that come with it ("you might like"), whatever pages were opened before;
+// - a pick's "why" says what the listener did (the reason's evidence), never more.
 
 import { expect, test } from '@playwright/test';
 import { openScreen } from './lib.mjs';
@@ -28,4 +29,13 @@ test('a followed tag brings the tags that come with it, with no tag page opened'
   const tags = page.locator('[data-region="tags"]');
   await expect(tags).toContainText('you might like');
   await expect(tags.locator('.cluster .chip').first()).toBeVisible();
+});
+
+test('a pick says why from what the listener did', async ({ page, request }) => {
+  await feedOf(page, request, 'related');
+  await openScreen(page, '/home');
+  const feed = await page.evaluate(() => App.data.api('/api/feed'));
+  const pick = feed.picks.find((p) => p.reasons[0].evidence);
+  await page.locator(`[data-region="picks"] .chip-reason[data-item="${pick.trackId}"]`).click();
+  await expect(page.locator('.disc-why')).toContainText(`Similar to ${pick.reasons[0].name}. You've played them 14 times.`);
 });

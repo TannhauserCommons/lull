@@ -5,7 +5,7 @@
 use std::collections::{HashMap, HashSet};
 
 use lull_core::ids::{AlbumId, ArtistId, TrackId, loose_artist, loose_title};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::radio::credited_names;
 
@@ -136,6 +136,43 @@ pub fn is_specific(tag: &str) -> bool {
 /// namesake's, or a single song tagged "rapper") are that artist, not a taste.
 pub const TAG_ARTISTS: usize = 2;
 
+/// What the listener did that an artist's weight (or a tag's) comes from, as a reason says it
+/// (`feed::Reason::evidence`): counts, never a guess. Zero and false are left out of the API.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Evidence {
+    /// Songs of the artist heard (to the end or past half) in the last year.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub plays: u32,
+    /// Its songs liked.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub liked: u32,
+    /// Its songs saved through lull.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub saved: u32,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub followed: bool,
+    /// Its albums in the saved library.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub library: u32,
+    /// Plays in the Last.fm history.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub lastfm: u32,
+    /// For a tag: the liked artists that carry it.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub artists: u32,
+}
+
+impl Evidence {
+    pub fn is_empty(&self) -> bool {
+        *self == Evidence::default()
+    }
+}
+
+fn is_zero(n: &u32) -> bool {
+    *n == 0
+}
+
 /// `[id, weight]` pairs, as Stats shows them.
 pub type Weights<K> = Vec<(K, f64)>;
 
@@ -161,19 +198,27 @@ pub struct Taste {
     known_songs: HashSet<(String, String)>,
     /// Albums the listener played or liked a song from.
     known_albums: HashSet<AlbumId>,
+    /// What each artist's weight comes from.
+    evidence: HashMap<ArtistId, Evidence>,
 }
 
 impl Taste {
     pub fn build(s: &Signals, now: i64) -> Taste {
         let mut acc = Accumulator::new(s);
         for p in &s.plays {
-            acc.add(&p.artist, Some(&p.track), play_weight(p) * fade(now - p.at));
+            let w = play_weight(p);
+            acc.add(&p.artist, Some(&p.track), w * fade(now - p.at));
+            if w > 0.0 {
+                acc.note(&p.artist, |e| e.plays += 1);
+            }
         }
         for m in &s.likes {
             acc.add(&m.artist, Some(&m.track), weight::LIKE * fade(now - m.at));
+            acc.note(&m.artist, |e| e.liked += 1);
         }
         for m in &s.saves {
             acc.add(&m.artist, Some(&m.track), weight::SAVE * fade(now - m.at));
+            acc.note(&m.artist, |e| e.saved += 1);
         }
         for f in &s.feedback {
             let sign = if f.positive { 1.0 } else { -1.0 };
@@ -181,20 +226,24 @@ impl Taste {
         }
         for a in &s.followed_artists {
             acc.add(a, None, weight::FOLLOW);
+            acc.note(a, |e| e.followed = true);
         }
         let most = s.history.iter().map(|(_, n)| *n).max().unwrap_or(0);
         for (artist, plays) in &s.history {
             acc.add(artist, None, weight::HISTORY * log_share(*plays, most));
+            acc.note(artist, |e| e.lastfm = u32::try_from(*plays).unwrap_or(u32::MAX));
         }
         let most = s.library.iter().map(|(_, n)| *n).max().unwrap_or(0);
         for (artist, albums) in &s.library {
             acc.add(artist, None, weight::LIBRARY * log_share(*albums, most));
+            acc.note(artist, |e| e.library = u32::try_from(*albums).unwrap_or(u32::MAX));
         }
 
         let (mut tags, tag_artists) = acc.tag_weights();
         for t in &s.followed_tags {
             *tags.entry(t.to_lowercase()).or_default() += weight::FOLLOW;
         }
+        let evidence = std::mem::take(&mut acc.evidence);
         let mut artists: Vec<Weighted> = acc
             .artists
             .into_iter()
@@ -221,6 +270,24 @@ impl Taste {
                 .filter(|n| !n.album.is_empty())
                 .map(|n| AlbumId::of(&n.artist, &n.album))
                 .collect(),
+            evidence,
+        }
+    }
+
+    /// What the artist's weight comes from.
+    pub fn evidence(&self, id: &ArtistId) -> Evidence {
+        self.evidence.get(id).cloned().unwrap_or_default()
+    }
+
+    /// What a tag's weight comes from: the liked artists that carry it, and a follow.
+    pub fn tag_evidence(&self, tag: &str, followed: bool) -> Evidence {
+        Evidence {
+            artists: self
+                .tag_artists
+                .get(tag)
+                .map_or(0, |n| u32::try_from(*n).unwrap_or(u32::MAX)),
+            followed,
+            ..Evidence::default()
         }
     }
 
@@ -280,6 +347,7 @@ struct Accumulator<'a> {
     artists: HashMap<ArtistId, (String, f64)>,
     /// The tags each artist carries: those of its tracks the signals name, else its own.
     carried: HashMap<ArtistId, HashSet<String>>,
+    evidence: HashMap<ArtistId, Evidence>,
 }
 
 impl<'a> Accumulator<'a> {
@@ -288,7 +356,17 @@ impl<'a> Accumulator<'a> {
             signals,
             artists: HashMap::new(),
             carried: HashMap::new(),
+            evidence: HashMap::new(),
         }
+    }
+
+    /// Records what the listener did with the artist (a hidden one isn't kept).
+    fn note(&mut self, artist: &str, change: impl FnOnce(&mut Evidence)) {
+        let id = ArtistId::of(artist);
+        if artist.is_empty() || self.signals.hidden.contains(&id) {
+            return;
+        }
+        change(self.evidence.entry(id).or_default());
     }
 
     /// Each tag weighs what the artists carrying it weigh, together, and counts the liked ones:
@@ -439,6 +517,63 @@ mod tests {
             taste.artists[0].name, "Quiet Ferns",
             "two songs heard outweigh the whole shelf"
         );
+    }
+
+    #[test]
+    fn a_reason_counts_what_the_listener_did_and_nothing_else() {
+        // "An artist you like" was said of one only ever played; now the reason says what it was.
+        let like = |artist: &str| Mark {
+            track: TrackId::of(artist, "", "song"),
+            artist: artist.into(),
+            at: NOW,
+        };
+        let mut signals = Signals {
+            plays: vec![
+                play("Glow Tape", "a", 1, true, false),
+                play("Glow Tape", "b", 2, true, false),
+                play("Glow Tape", "c", 3, false, true),
+            ],
+            likes: vec![like("Pale Harbor")],
+            followed_artists: vec!["Quiet Ferns".into()],
+            library: vec![("Velvet Orchard".into(), 4)],
+            ..Default::default()
+        };
+        for a in ["Glow Tape", "Pale Harbor"] {
+            signals.artist_tags.insert(ArtistId::of(a), vec!["dream pop".into()]);
+        }
+        let taste = Taste::build(&signals, NOW);
+        let e = |a: &str| taste.evidence(&ArtistId::of(a));
+        assert_eq!(
+            e("Glow Tape"),
+            Evidence {
+                plays: 2,
+                ..Evidence::default()
+            },
+            "a skip isn't a play heard"
+        );
+        assert_eq!(
+            e("Pale Harbor"),
+            Evidence {
+                liked: 1,
+                ..Evidence::default()
+            }
+        );
+        assert_eq!(
+            e("Quiet Ferns"),
+            Evidence {
+                followed: true,
+                ..Evidence::default()
+            }
+        );
+        assert_eq!(
+            e("Velvet Orchard"),
+            Evidence {
+                library: 4,
+                ..Evidence::default()
+            }
+        );
+        assert!(e("Nobody").is_empty());
+        assert_eq!(taste.tag_evidence("dream pop", false).artists, 2);
     }
 
     #[test]

@@ -42,6 +42,8 @@ Built in the background; the first build happens while the first caller waits (t
 | `cold` | Built with nothing known of the listener (nothing played, liked or followed): Home shows its first-run screen |
 | `coldStartArtists` | On a first run, the artists of the starter tags' picks (6), to follow from the first-run screen |
 
+Each reason carries its `evidence` (`taste::Evidence`): what the listener did with the seed artist or tag, as counts. The web says the strongest true one ("Similar to Clairo. You've played them 14 times."; a follow, then likes, plays, saves, saved albums, Last.fm history), never "an artist you like" of one only played.
+
 The four pick pools:
 
 | Pool | Reason | via |

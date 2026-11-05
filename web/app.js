@@ -1174,13 +1174,26 @@
     return chip;
   };
 
-  /* why an item was suggested, saying only what is true: a follow only when there is one */
+  /* why an item was suggested, saying only what is true: the reason's evidence (what the listener did, counted by the
+     hub), the strongest first; a follow only when there is one */
+  function times(n, one, many) { return n === 1 ? one : n + ' ' + many; }
+  function artistWhy(e, followed) {
+    if (followed || e.followed) return 'You follow them.';
+    if (e.liked) return 'You\'ve liked ' + times(e.liked, 'one of their songs', 'of their songs') + '.';
+    if (e.plays) return 'You\'ve played them ' + times(e.plays, 'once', 'times') + '.';
+    if (e.saved) return 'You\'ve saved ' + times(e.saved, 'one of their songs', 'of their songs') + '.';
+    if (e.library) return 'You have ' + times(e.library, 'one of their albums', 'of their albums') + '.';
+    if (e.lastfm) return 'They\'re a favourite in your Last.fm history.';
+    return 'An artist you like.';
+  }
   ui.reasonText = function (r) {
-    var followed = !!r.ref && App.isFollowed(r.ref);
-    if (r.kind === 'like') return html`Similar to <b>${r.name}</b>, ${followed ? 'an artist you follow' : 'an artist you like'}.`;
+    var e = r.evidence || {}, followed = !!r.ref && App.isFollowed(r.ref);
+    if (r.kind === 'like') return html`Similar to <b>${r.name}</b>. ${artistWhy(e, followed)}`;
     if (r.kind === 'listeners') return html`Played a lot by listeners whose taste is like yours.`;
-    if (r.kind === 'fresh') return html`New from <b>${r.name}</b>, ${followed ? 'an artist you follow' : 'an artist you like'}.`;
-    return html`It sits in <b>${r.name}</b>, ${followed ? 'a tag you follow' : 'a tag that runs through the artists you like'}.`;
+    if (r.kind === 'fresh') return html`New from <b>${r.name}</b>. ${artistWhy(e, followed)}`;
+    if (followed || e.followed) return html`It sits in <b>${r.name}</b>, a tag you follow.`;
+    if (e.artists) return html`It sits in <b>${r.name}</b>, which runs through ${times(e.artists, 'an artist', 'artists')} you like.`;
+    return html`It sits in <b>${r.name}</b>, a tag that runs through the artists you like.`;
   };
 
   /* section label: lowercase text + hairline rule + optional quiet action { label, href | act } or end markup (a status) */
