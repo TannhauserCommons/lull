@@ -280,7 +280,8 @@ const routes = [
       followedTags: state.follows.tags, coldStartTags: L.tags.slice(0, 8),
       entities: entities({ tracks: picks, albums: [...fresh, ...L.albumIds.slice(0, 4), ...albumsOf(picks)], artists: L.artistIds.slice(0, 10) }),
     };
-    const shape = feedShapes.get(client);
+    // FIXTURE_FEED_SHAPE: every client's feed in that shape (themes:check of a state the plain feed doesn't show)
+    const shape = feedShapes.get(client) || process.env.FIXTURE_FEED_SHAPE;
     // a first run: nothing known of the listener, the starter tags' picks and their artists
     if (shape === 'cold') return { ...feed, cold: true, followedTags: [], jumpBackIn: [], newReleases: [], coldStartArtists: L.artistIds.slice(0, 6) };
     // where the first picks can play from, as the hub's checks found (one with no copy anywhere)
