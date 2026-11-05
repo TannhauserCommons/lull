@@ -1,0 +1,61 @@
+{
+  "about": "The one list of what a pack may declare (ADR-0081, docs/themes.md section 13): the hub validates packs by it (crates/themes), the page's sound engine and easter eggs follow it (web/sounds.js, web/eggs.js), and scripts/sounds renders the built-in packs by it.",
+  "api": 1,
+  "events": ["boot", "play", "pause", "skip", "seek", "buffering", "found", "stalled", "saved", "liked", "queued", "error", "design", "classic"],
+  "loops": ["buffering"],
+  "background": ["found", "stalled", "saved", "error"],
+  "offByDefault": ["seek"],
+  "conditions": {
+    "clock": {
+      "from": { "type": "time" },
+      "to": { "type": "time" },
+      "date": { "type": "date", "list": true },
+      "weekday": { "type": "enum", "values": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"], "list": true },
+      "countdown": { "type": "bool" }
+    },
+    "words": {
+      "in": { "type": "enum", "values": ["title", "artist", "album"], "list": true, "required": true },
+      "any": { "type": "word", "list": true, "min": 1, "max": 20, "required": true }
+    },
+    "repeat": {
+      "times": { "type": "int", "min": 2, "max": 100, "required": true }
+    },
+    "gesture": {
+      "on": { "type": "enum", "values": ["brand", "cover", "title"], "required": true },
+      "taps": { "type": "int", "min": 2, "max": 12, "required": true },
+      "within": { "type": "number", "min": 0.5, "max": 5, "required": true }
+    },
+    "milestone": {
+      "of": { "type": "enum", "values": ["likes", "plays", "saves"], "required": true },
+      "at": { "type": "int", "min": 1, "max": 1000000, "list": true, "required": true }
+    },
+    "player": {
+      "status": { "type": "enum", "values": ["idle", "finding", "queued", "buffering", "stalled", "choose", "streaming", "library", "failed", "jellyfin-error", "ended"], "list": true },
+      "playing": { "type": "bool" },
+      "screen": { "type": "enum", "values": ["home", "search", "now", "library", "liked", "history", "following", "album", "artist", "tag", "playlists", "playlist", "stats", "settings"], "list": true },
+      "idle": { "type": "number", "min": 5, "max": 3600 },
+      "held": { "type": "number", "min": 1, "max": 3600 }
+    },
+    "event": {
+      "on": { "type": "enum", "values": ["boot", "play", "pause", "skip", "seek", "found", "stalled", "saved", "liked", "queued", "error", "design", "classic"], "required": true }
+    },
+    "chance": {
+      "one_in": { "type": "int", "min": 2, "max": 1000, "required": true }
+    }
+  },
+  "moments": ["gesture", "milestone", "event", "repeat"],
+  "once": ["always", "song", "session", "day", "night", "week", "year"],
+  "slotFields": ["count", "word", "title", "artist", "hour"],
+  "limits": {
+    "soundBytes": 131072,
+    "packSoundBytes": 1048576,
+    "eggs": 32,
+    "nameLength": 40,
+    "lineLength": 80,
+    "cueSeconds": 2,
+    "longSeconds": 6,
+    "loopSeconds": 20,
+    "forSeconds": [0.5, 600],
+    "forDefault": 4
+  }
+}

@@ -1,0 +1,133 @@
+{
+  "id": "glasshouse",
+  "name": "After midnight",
+  "author": "lull",
+  "api": 1,
+  "description": "Glass chimes, a glossy start-up swell, and soft wind.",
+  "sounds": {
+    "boot": "sounds/boot.ogg",
+    "play": "sounds/play.ogg",
+    "pause": "sounds/pause.ogg",
+    "skip": "sounds/skip.ogg",
+    "seek": "sounds/seek.ogg",
+    "buffering": {
+      "file": "sounds/buffering.ogg",
+      "loop": true
+    },
+    "found": "sounds/found.ogg",
+    "stalled": "sounds/stalled.ogg",
+    "saved": "sounds/saved.ogg",
+    "liked": "sounds/liked.ogg",
+    "queued": "sounds/queued.ogg",
+    "error": "sounds/error.ogg",
+    "design": "sounds/design.ogg",
+    "classic": "sounds/classic.ogg"
+  },
+  "eggs": [
+    {
+      "name": "night-owl",
+      "when": [
+        {
+          "clock": {
+            "from": "03:00",
+            "to": "04:00"
+          }
+        },
+        {
+          "player": {
+            "playing": true
+          }
+        }
+      ],
+      "once": "night",
+      "sound": "sounds/night-owl.ogg"
+    },
+    {
+      "name": "new-year",
+      "when": [
+        {
+          "clock": {
+            "date": "12-31",
+            "from": "23:59:50",
+            "to": "24:00",
+            "countdown": true
+          }
+        }
+      ],
+      "line": "{{count}}",
+      "once": "year",
+      "sound": "sounds/new-year.ogg"
+    },
+    {
+      "name": "birthday",
+      "when": [
+        {
+          "clock": {
+            "date": "10-31"
+          }
+        }
+      ],
+      "once": "year",
+      "sound": "sounds/birthday.ogg"
+    },
+    {
+      "name": "milestone",
+      "when": [
+        {
+          "milestone": {
+            "of": "likes",
+            "at": [
+              100,
+              500,
+              1000
+            ]
+          }
+        }
+      ],
+      "line": "{{count}} liked songs",
+      "for": 6,
+      "once": "always",
+      "sound": "sounds/milestone.ogg"
+    },
+    {
+      "name": "long-wait",
+      "when": [
+        {
+          "player": {
+            "status": [
+              "finding",
+              "queued",
+              "buffering"
+            ],
+            "playing": false,
+            "held": 20
+          }
+        }
+      ],
+      "instead": true,
+      "once": "song",
+      "sound": {
+        "file": "sounds/long-wait.ogg",
+        "loop": true
+      }
+    },
+    {
+      "name": "rare-boot",
+      "when": [
+        {
+          "event": {
+            "on": "boot"
+          }
+        },
+        {
+          "chance": {
+            "one_in": 40
+          }
+        }
+      ],
+      "instead": true,
+      "once": "always",
+      "sound": "sounds/rare-boot.ogg"
+    }
+  ]
+}
