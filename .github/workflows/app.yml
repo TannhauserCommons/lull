@@ -272,8 +272,12 @@ jobs:
       # it, so the two builds also cover both ways Gradle starts.
       - name: Signed build
         if: matrix.build == 'signed'
+        env:
+          # Writing the checksums anew: the old ones would stop the build at what they lack.
+          WRITE_CHECKSUMS: ${{ inputs.gradle-verification }}
         run: |
           rm app/gen/android/gradlew app/gen/android/gradlew.bat app/gen/android/gradle/wrapper/gradle-wrapper.jar
+          if [ "$WRITE_CHECKSUMS" = true ]; then rm -f app/gen/android/gradle/verification-metadata.xml; fi
           sh scripts/android-build.sh
           mkdir -p "$RUNNER_TEMP/apk"
           cp app/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk "$RUNNER_TEMP/apk/"
