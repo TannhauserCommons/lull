@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-sound-quiet"
+description = "Enables the sound_quiet command without any pre-configured scope."
+commands.allow = ["sound_quiet"]
+
+[[permission]]
+identifier = "deny-sound-quiet"
+description = "Denies the sound_quiet command without any pre-configured scope."
+commands.deny = ["sound_quiet"]

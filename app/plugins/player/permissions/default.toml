@@ -1,7 +1,7 @@
 "$schema" = "schemas/schema.json"
 
 [default]
-description = "Everything the web UI's native player and downloads use (docs/context/web.md, output interface)."
+description = "Everything the web UI's native player and downloads use (docs/context/web.md, output interface), and the phone's quiet for its sounds (ADR-0081)."
 permissions = [
   "allow-load",
   "allow-play",
@@ -15,6 +15,7 @@ permissions = [
   "allow-download-remove",
   "allow-download-list",
   "allow-download-usage",
+  "allow-sound-quiet",
   "allow-registerListener",
   "allow-remove-listener",
 ]

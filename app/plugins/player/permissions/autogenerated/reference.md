@@ -1,6 +1,6 @@
 ## Default Permission
 
-Everything the web UI's native player and downloads use (docs/context/web.md, output interface).
+Everything the web UI's native player and downloads use (docs/context/web.md, output interface), and the phone's quiet for its sounds (ADR-0081).
 
 #### This default permission set includes the following:
 
@@ -16,6 +16,7 @@ Everything the web UI's native player and downloads use (docs/context/web.md, ou
 - `allow-download-remove`
 - `allow-download-list`
 - `allow-download-usage`
+- `allow-sound-quiet`
 - `allow-registerListener`
 - `allow-remove-listener`
 
@@ -414,6 +415,32 @@ Enables the set_volume command without any pre-configured scope.
 <td>
 
 Denies the set_volume command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`lull-player:allow-sound-quiet`
+
+</td>
+<td>
+
+Enables the sound_quiet command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`lull-player:deny-sound-quiet`
+
+</td>
+<td>
+
+Denies the sound_quiet command without any pre-configured scope.
 
 </td>
 </tr>

@@ -1,5 +1,5 @@
-//! Linux: what the desktop session offers (DESKTOP.md 2.2, 3, 4, 5). Read on the main thread, where
-//! GTK lives.
+//! Linux: what the desktop session offers (DESKTOP.md 2.2, 3, 4, 5), and what the UI sounds need
+//! (ADR-0081). Read on the main thread, where GTK lives.
 
 use crate::desktop::glass::Material;
 use crate::desktop::main_window::report;
@@ -67,6 +67,50 @@ pub fn button_layout() -> Option<String> {
     const SCHEMA: &str = "org.gnome.desktop.wm.preferences";
     gio::SettingsSchemaSource::default()?.lookup(SCHEMA, true)?;
     Some(gio::Settings::new(SCHEMA).string("button-layout").to_string())
+}
+
+/// GNOME's event sounds (`org.gnome.desktop.sound event-sounds`). Kept for the life of the app on
+/// the GTK thread: GSettings tells only a live object about changes.
+const SOUND: &str = "org.gnome.desktop.sound";
+thread_local! {
+    static SOUND_SETTINGS: std::cell::OnceCell<gio::Settings> = const { std::cell::OnceCell::new() };
+}
+
+/// Calls `changed` with "GNOME's event sounds are off" now, then again whenever that switch changes:
+/// the listener asked for quiet, and lull's UI sounds rest. On the main thread. A desktop without
+/// GNOME's schema has no such switch: never quiet (asking GSettings for a missing schema aborts, so
+/// look it up first).
+pub fn follow_event_sounds(changed: impl Fn(bool) + 'static) {
+    const KEY: &str = "event-sounds";
+    if gio::SettingsSchemaSource::default()
+        .and_then(|source| source.lookup(SOUND, true))
+        .is_none()
+    {
+        changed(false);
+        return;
+    }
+    let settings = gio::Settings::new(SOUND);
+    changed(!settings.boolean(KEY));
+    settings.connect_changed(Some(KEY), move |settings, key| changed(!settings.boolean(key)));
+    SOUND_SETTINGS.with(|kept| {
+        let _ = kept.set(settings);
+    });
+}
+
+/// One of lull's own windows has the focus: any of this process's GTK windows is active (`main`, the
+/// mini player, the Classic window, native Classic's windows). Asks the GTK thread, so never call it
+/// from there.
+pub fn any_window_active(app: &AppHandle) -> bool {
+    let (answer, answered) = std::sync::mpsc::channel();
+    let asked = app.run_on_main_thread(move || {
+        use gtk::prelude::*;
+        let active = gtk::Window::list_toplevels()
+            .iter()
+            .filter_map(|widget| widget.downcast_ref::<gtk::Window>())
+            .any(|window| window.is_active());
+        let _ = answer.send(active);
+    });
+    asked.is_ok() && answered.recv().unwrap_or(false)
 }
 
 /// Transparent windows need a compositor (X11 without one has no alpha visual).

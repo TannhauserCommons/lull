@@ -1,6 +1,7 @@
 //! Windows: the tray glyph follows the taskbar's theme, not the app's (DESKTOP.md 4), the sidecar
 //! dies with the app, a hidden `main` tells WebView2 so, a see-through `main` shows the system's
-//! glass, and links open in the browser.
+//! glass, links open in the browser, and the UI sounds hear the sound scheme and which window is in
+//! front (ADR-0081).
 //! `SystemUsesLightTheme` is that theme; Tauri's ThemeChanged follows the app theme instead, so a
 //! thread waits on the registry key and swaps the glyph when it changes.
 #![allow(unsafe_code)]
@@ -13,12 +14,14 @@ use windows::Win32::UI::Controls::MARGINS;
 use windows_sys::Win32::Foundation::ERROR_SUCCESS;
 use windows_sys::Win32::System::Registry::{
     HKEY, HKEY_CURRENT_USER, KEY_NOTIFY, KEY_READ, KEY_SET_VALUE, REG_NOTIFY_CHANGE_LAST_SET, REG_OPTION_NON_VOLATILE,
-    REG_SZ, RRF_RT_REG_DWORD, RegCloseKey, RegCreateKeyExW, RegGetValueW, RegNotifyChangeKeyValue, RegOpenKeyExW,
-    RegSetValueExW,
+    REG_SZ, RRF_RT_REG_DWORD, RRF_RT_REG_SZ, RegCloseKey, RegCreateKeyExW, RegGetValueW, RegNotifyChangeKeyValue,
+    RegOpenKeyExW, RegSetValueExW,
 };
 use windows_sys::w;
 
-const PERSONALIZE: *const u16 = w!(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+const PERSONALIZE: &str = r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
+/// Its default value names the sound scheme: `.None` is "No Sounds" (Control Panel › Sound › Sounds).
+const SCHEMES: &str = r"AppEvents\Schemes";
 
 /// A light taskbar. Without the value (Windows 10 before 1903) the taskbar is dark.
 pub fn light_taskbar() -> bool {
@@ -32,13 +35,15 @@ pub fn transparency_effects() -> bool {
 
 /// A DWORD under the Personalize key, if it is there.
 fn personalize(name: *const u16) -> Option<u32> {
+    let path = wide(PERSONALIZE);
     let mut value: u32 = 0;
     let mut size = size_of::<u32>() as u32;
-    // SAFETY: a DWORD read into a u32 of the size we pass; the strings are static and null-terminated.
+    // SAFETY: a DWORD read into a u32 of the size we pass; the strings are null-terminated and
+    // outlive the call.
     let status = unsafe {
         RegGetValueW(
             HKEY_CURRENT_USER,
-            PERSONALIZE,
+            path.as_ptr(),
             name,
             RRF_RT_REG_DWORD,
             null_mut(),
@@ -47,6 +52,60 @@ fn personalize(name: *const u16) -> Option<u32> {
         )
     };
     (status == ERROR_SUCCESS).then_some(value)
+}
+
+/// The sound scheme is "No Sounds": the listener asked Windows for quiet, and lull's UI sounds rest.
+/// Without the value (no scheme chosen) it isn't.
+pub fn no_sounds() -> bool {
+    const NONE: &str = ".None";
+    let path = wide(SCHEMES);
+    // Room for ".None" and its null; a longer name doesn't fit, and isn't ".None" either.
+    let mut name = [0u16; 8];
+    let mut size = size_of_val(&name) as u32;
+    // SAFETY: a REG_SZ read into a buffer of the size we pass; a null value name reads the key's
+    // default value; the path is null-terminated and outlives the call.
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            path.as_ptr(),
+            std::ptr::null(),
+            RRF_RT_REG_SZ,
+            null_mut(),
+            name.as_mut_ptr().cast::<c_void>(),
+            &mut size,
+        )
+    };
+    let read = (size as usize / 2).min(name.len());
+    status == ERROR_SUCCESS && String::from_utf16_lossy(&name[..read]).trim_end_matches('\0') == NONE
+}
+
+/// Calls `changed` with `no_sounds` now, then again whenever the sound scheme changes, for the life
+/// of the app.
+pub fn follow_sound_scheme(changed: impl Fn(bool) + Send + 'static) {
+    changed(no_sounds());
+    watch_key(SCHEMES, "the sound scheme", move || changed(no_sounds()));
+}
+
+/// One of lull's own windows is in front: the foreground window belongs to this process and shows
+/// (`main`, the mini player, the Classic window, native Classic's windows, a dialog of lull's). The
+/// tray's hidden window, which Windows puts in front while the tray's menu is open, doesn't count:
+/// it stays there after the menu closes, until another window comes forward. Any thread.
+pub fn foreground_is_ours() -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId, IsWindowVisible};
+    let mut process = 0u32;
+    // SAFETY: plain queries; the process id is written into a u32 that outlives the call. A null
+    // window (none in front, or a desktop switch) leaves it 0, which is never ours.
+    let visible = unsafe {
+        let front = GetForegroundWindow();
+        GetWindowThreadProcessId(front, Some(&raw mut process));
+        IsWindowVisible(front).as_bool()
+    };
+    visible && process == std::process::id()
+}
+
+/// `s` as a null-terminated UTF-16 string for the Win32 API.
+fn wide(s: &str) -> Vec<u16> {
+    s.encode_utf16().chain(Some(0)).collect()
 }
 
 /// What `main` can show here without lag (measured on Windows 10 22H2: docs/context/desktop.md):
@@ -131,7 +190,6 @@ pub fn register_scheme(scheme: &str, exe: &std::path::Path) -> Result<(), String
 /// One string value under `HKEY_CURRENT_USER\<path>` (the key made when missing); `""` names the
 /// key's default value.
 fn set_string(path: &str, name: &str, value: &str) -> Result<(), String> {
-    let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
     let (path, name, value) = (wide(path), wide(name), wide(value));
     let mut key: HKEY = null_mut();
     // SAFETY: null-terminated strings that outlive the call; `key` is closed below.
@@ -165,12 +223,19 @@ fn set_string(path: &str, name: &str, value: &str) -> Result<(), String> {
 
 /// Calls `changed` after every write under the Personalize key, for the life of the app.
 pub fn watch_taskbar(changed: impl Fn() + Send + 'static) {
-    std::thread::spawn(move || {
+    watch_key(PERSONALIZE, "the taskbar theme", changed);
+}
+
+/// Calls `changed`, from a thread of its own, after every write to a value of the key at
+/// `HKEY_CURRENT_USER\<path>` (not its subkeys), for the life of the app.
+fn watch_key(path: &'static str, what: &'static str, changed: impl Fn() + Send + 'static) {
+    let spawned = std::thread::Builder::new().name("registry".into()).spawn(move || {
+        let path = wide(path);
         let mut key: HKEY = null_mut();
         // SAFETY: opens a key we close below; `key` is only used on this thread.
-        let opened = unsafe { RegOpenKeyExW(HKEY_CURRENT_USER, PERSONALIZE, 0, KEY_NOTIFY | KEY_READ, &mut key) };
+        let opened = unsafe { RegOpenKeyExW(HKEY_CURRENT_USER, path.as_ptr(), 0, KEY_NOTIFY | KEY_READ, &mut key) };
         if opened != ERROR_SUCCESS {
-            eprintln!("lull: can't watch the taskbar theme (error {opened})");
+            eprintln!("lull: can't watch {what} (error {opened})");
             return;
         }
         // SAFETY: synchronous wait on the open key; returns once a value under it changes.
@@ -180,6 +245,9 @@ pub fn watch_taskbar(changed: impl Fn() + Send + 'static) {
         // SAFETY: the key opened above.
         unsafe { RegCloseKey(key) };
     });
+    if let Err(e) = spawned {
+        eprintln!("lull: can't watch {what}: {e}");
+    }
 }
 
 /// Puts `child` in a job object that Windows closes, killing the child, when lull exits for any

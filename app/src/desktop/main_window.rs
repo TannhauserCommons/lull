@@ -46,6 +46,8 @@ const HUB_PERMISSIONS: &[&str] = &[
     "allow-resume-after-crash",
     "allow-window-glass",
     "allow-set-theme-package",
+    "allow-window-front",
+    "allow-sound-quiet",
 ];
 
 /// What Webamp's page in the Classic window may call (classic.rs): fit and show its window (at its

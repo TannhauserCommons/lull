@@ -55,6 +55,10 @@
         return on('download-' + type, type === 'done' ? function (d) { fn(withArt(d)); } : fn);
       }
     }),
+    /* the UI sounds (ADR-0081): the phone asks for quiet (ringer on silent or vibrate, touch sounds off). quiet() is a
+       Promise of a boolean; onQuiet(fn) hears each change and returns the function that stops it */
+    quiet: function () { return call('sound_quiet').then(function (r) { return !!r.quiet; }); },
+    onQuiet: function (fn) { return on('sound-quiet', function (d) { fn(!!d.quiet); }); },
     /* this app's own updates (src/mobile/update.rs): a newer release's APK opens in the browser */
     updates: Object.freeze({
       status: function () { return command('app_update'); },

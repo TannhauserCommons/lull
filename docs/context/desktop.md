@@ -33,7 +33,8 @@ The Tauri v2 project in `app/` (its own Cargo workspace; ADR-0006) shows the hub
 | `app/src/desktop/links.rs`, `signin.rs` | Other sites open in the browser; Last.fm's sign-in goes there and comes back through a one-time listener |
 | `app/src/desktop/discord.rs` | Discord Rich Presence over Discord's IPC pipe; `APPLICATION_ID` is lull's Discord application |
 | `app/src/desktop/settings.rs` | The desktop's settings: the hub choice and this app's token, window options |
-| `app/src/desktop/platform/` | Windows taskbar theme and transparency effects (registry watch), the window's glass (DWM, window-vibrancy; a KWin property on Linux), slskd's job object, the taskbar's thumbnail buttons (`taskbar.rs`, glyphs drawn in `glyphs.rs`), a sleeping webview, the browser; Linux tray host, button layout, compositing, media keys |
+| `app/src/desktop/sounds.rs` | What the web UI's sounds need (ADR-0081): whether one of lull's windows is in front, and whether the system asks for quiet (below) |
+| `app/src/desktop/platform/` | Windows taskbar theme, transparency effects and sound scheme (registry watch), which window is in front, the window's glass (DWM, window-vibrancy; a KWin property on Linux), slskd's job object, the taskbar's thumbnail buttons (`taskbar.rs`, glyphs drawn in `glyphs.rs`), a sleeping webview, the browser; Linux tray host, button layout, compositing, media keys, GNOME's event sounds |
 | `app/build.rs` | Stages the web files the bundled page needs into `app/dist/`; fetches slskd, yt-dlp and Deno (sha256-pinned) into `app/binaries/`; declares command permissions |
 | `app/tauri.conf.json`, `tauri.windows.conf.json`, `tauri.linux.conf.json` | Shared config (updater key and endpoint, the asset protocol Android's download covers use, scoped to `**/lull-art/*`, and the bundled pages' CSP: Tauri leaves its `style-src` alone, since a nonce it adds would make browsers ignore `'unsafe-inline'` and drop every `style="…"` the pages render; `font-src` and `img-src` take `data:`, which is how a listener's theme brings its fonts and pictures); the desktop configs add the slskd, yt-dlp and Deno sidecars and slskd's licence |
 | `app/licenses/THIRD-PARTY.md` | slskd's AGPL notice (shipped next to the app with slskd's `LICENSE`), yt-dlp's and Deno's |
@@ -148,6 +149,7 @@ The web UI never calls Tauri directly. It uses `window.LullDesktop` from `deskto
 - `windowAction('change-server')`: Settings > App, "Change hub…" (the welcome page).
 - `updates`: this app's own version and updates (Settings > App, "This app", above "Your server"). `status()`, `check()` and `install()` resolve to `{ current, state: idle | checking | current | downloading | ready | failed, version?, received?, total?, error? }` (`install()` resolves to nothing: the app restarts; it rejects when the install failed); `on(fn)` hears every change. `check()` resolves once GitHub has answered; a download goes on, reported through `on`. Android's `window.LullNative.updates` has the same calls without `on` (android.md).
 - `tailscale()` and `tailscaleServe()`, only when `hub` is `local`: Settings > App's "Reach this hub from anywhere" row (see Tailscale above). Both resolve to `{ installed, running, url, serving }`; `tailscaleServe()` rejects with Tailscale's own message. Call `tailscaleServe()` only from the listener's click: it changes their Tailscale.
+- `front()` and `onFront(fn)`, `quiet()` and `onQuiet(fn)`: the UI sounds (ADR-0081), in `main`'s web UI. `front()` resolves to true while one of lull's windows has the focus (`main`, the mini player, the Classic window, native Classic's), and `onFront` hears `fn(true | false)` when that changes. `quiet()` resolves to true while the system asks for quiet (Windows: the sound scheme is No Sounds; GNOME: event sounds off; never elsewhere on Linux), and `onQuiet` hears each change. They exist only in the app (`inWrapper`), not in a browser or on Android (Android's quiet is `window.LullNative`'s, android.md). See Sounds below.
 
 `desktop.js` does the rest itself in the wrapper: title bar, Ctrl+Shift+M, the close dialog, tray and mini-player actions, `set_now_playing`, and design and theme reports. It sends `set_now_playing` on player events, not as the song plays: a new position goes out only when it jumped.
 
@@ -171,6 +173,8 @@ The web UI never calls Tauri directly. It uses `window.LullDesktop` from `deskto
 | `theme_package` | `{ id }` → that package, if it is the one `main` handed over, else null | bundled page |
 | `reconnect_status` | → `{ attempt, trying, error, nextIn }` while the app is reconnecting to the hub, else null: for an unreachable page that opens after it began | bundled page |
 | `app_update`, `app_update_check`, `app_update_install` | → the update report above; install → nothing (restarts) or an error | hub origin (`main`) |
+| `window_front` | → `true` while one of lull's windows has the focus | hub origin (`main`) |
+| `sound_quiet` | → `true` while the system asks for quiet | hub origin (`main`) |
 
 The hub origin gets its capabilities at runtime when the app first loads it: one for `main`, a smaller one for the Classic window (`core:window` show, size, focus, minimise, drag; events; `window_action`, `classic_handoff`, `classic_fit`). An origin used earlier in the same run keeps its grant until restart (Tauri can't revoke one).
 
@@ -190,6 +194,8 @@ The hub origin gets its capabilities at runtime when the app first loads it: one
 | `ask-close` | Rust → `main` | none: show "keep playing in the tray?" |
 | `app-update` | Rust → all | the update report, on every change of the check (progress per whole percent) |
 | `glass` | Rust → `main` | `{ material, held }`, when what `main` shows changed without the page asking (the listener's switch, Windows' transparency effects) |
+| `window-front` | Rust → `main` | `{ front }`: lull came to the front or left it, once the focus has stayed put for 150 ms |
+| `sound-quiet` | Rust → `main` | `{ quiet }`: the system began or stopped asking for quiet |
 
 ## Behaviour worth knowing
 
@@ -257,6 +263,9 @@ The hub origin gets its capabilities at runtime when the app first loads it: one
   - **Linux.** A window gets an alpha channel only when it is made. `main` is made with one when the stored request would be granted (a compositor is needed). Blur is KWin's `_KDE_NET_WM_BLUR_BEHIND_REGION` on X11; GNOME and Wayland get clear glass only.
   - **The title bar.** On Windows it is always lull's own, so nothing changes. On Linux the native frame or lull's own (`ownTitlebar`) stays as set.
   - **Bundled pages** in `main` (welcome, unreachable) don't take part: they paint their wallpaper, so the window looks solid.
+- **Sounds** (`sounds.rs`, ADR-0081): `main`'s page plays every UI sound, the mini player's presses and Classic mode's included, while `main` itself may be hidden, so the app tells it two things:
+  - **In front:** every Tauri window's focus change wakes a thread that waits until the focus has stayed put for 150 ms (moving from `main` to the mini player is one window losing it and another taking it), then asks the system and says `window-front` if the answer changed. Windows: the foreground window is this process's and shows (the tray's hidden window, in front while its menu is open, doesn't count). Linux: any of this process's GTK windows is active. Both count native Classic's windows; `main` doesn't exist while they're open, and its new page asks `window_front` when it loads.
+  - **Quiet:** Windows' sound scheme (`HKCU\AppEvents\Schemes`' default value is `.None`, "No Sounds"), followed by a registry watch like the Personalize one; GNOME's `org.gnome.desktop.sound event-sounds` off, followed through GSettings (no other Linux desktop has a switch lull reads).
 - **Window state:** the plugin restores size, position and maximised for `main`, `mini`, `strip` and `classic` (the mini player's and Classic's pages then fit their size). Visibility and decorations are always the wrapper's choice.
 
 ## Known limits

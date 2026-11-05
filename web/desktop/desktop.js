@@ -20,6 +20,11 @@
                                                      queue; fn(message) hears what Webamp's window reports
      classicBack()                                   the queue the native Classic window hands this page when it closes
                                                      (null if none): a Promise
+     front() / onFront(fn)                           main's web UI: one of lull's windows has the focus (a Promise of a
+                                                     boolean); fn(boolean) hears each change once the focus settles
+     quiet() / onQuiet(fn)                           main's web UI: the system asks for quiet (Windows' No Sounds scheme,
+                                                     GNOME's event sounds off): a Promise of a boolean; fn hears changes
+                                                     (front and quiet exist only in the app: ADR-0081's UI sounds)
      mountPage()                                     wrapper.html: render the view named in the hash
    window.__LULL_DESKTOP__ ({ os, titlebar, layout }) is set by the wrapper before any page script runs. */
 (function () {
@@ -81,6 +86,19 @@
     install: function () { return invoke('app_update_install'); },
     on: function (fn) { T.event.listen('app-update', function (e) { fn(e.payload); }).catch(logFailure('update events')); }
   } : null;
+  /* the UI sounds (ADR-0081, app/src/desktop/sounds.rs): main's page plays them all, the mini player's and Classic
+     mode's included, so it asks the app whether any of lull's windows is in front, and whether the system asks for
+     quiet. Only main hears the changes. */
+  if (D.inWrapper) {
+    D.front = function () { return invoke('window_front'); };
+    D.onFront = function (fn) {
+      T.event.listen('window-front', function (e) { fn(!!e.payload.front); }).catch(logFailure('front events'));
+    };
+    D.quiet = function () { return invoke('sound_quiet'); };
+    D.onQuiet = function (fn) {
+      T.event.listen('sound-quiet', function (e) { fn(!!e.payload.quiet); }).catch(logFailure('quiet events'));
+    };
+  }
 
   /* caption glyphs: OS-convention shapes, 10x10, 1 px (Windows draws these at 10 px) */
   var GLYPH = {

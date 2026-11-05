@@ -188,6 +188,8 @@ fn main() -> io::Result<()> {
             "window_glass",
             "set_theme_package",
             "theme_package",
+            "window_front",
+            "sound_quiet",
             "reconnect_status",
         ]),
     ))

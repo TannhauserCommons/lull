@@ -19,6 +19,7 @@ mod recovery;
 mod settings;
 mod signin;
 mod slskd;
+mod sounds;
 mod state;
 mod tailscale;
 mod theme;
@@ -74,6 +75,8 @@ pub fn run() {
             commands::window_glass,
             commands::set_theme_package,
             commands::theme_package,
+            commands::window_front,
+            commands::sound_quiet,
             crate::reconnect::reconnect_status,
         ])
         .setup(setup)
@@ -109,6 +112,7 @@ fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     platform::follow_personalize(handle);
+    sounds::start(handle);
     remember_appearance(handle);
     open_links::register(handle);
     if let Some(link) = open_links::from_args(&std::env::args().collect::<Vec<_>>()) {
@@ -136,6 +140,9 @@ fn remember_appearance(app: &tauri::AppHandle) {
 }
 
 fn on_window_event(window: &Window, event: &WindowEvent) {
+    if let WindowEvent::Focused(_) = event {
+        sounds::focus_moved(window.app_handle());
+    }
     if window.label() == main_window::LABEL {
         main_window::on_window_event(window, event);
     }

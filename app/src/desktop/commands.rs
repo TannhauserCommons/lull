@@ -11,6 +11,7 @@ use crate::desktop::platform;
 use crate::desktop::player;
 use crate::desktop::recovery::{self, Resume};
 use crate::desktop::settings::{HubChoice, MiniStyle};
+use crate::desktop::sounds;
 use crate::desktop::state::{Desktop, NowPlaying};
 use crate::desktop::tailscale::{self, Status};
 use crate::desktop::theme;
@@ -368,6 +369,22 @@ pub fn window_glass(app: AppHandle, request: Option<Request>) -> Grant {
 #[tauri::command]
 pub fn set_theme_package(app: AppHandle, package: Option<theme::Package>) -> Result<(), String> {
     theme::hand_over(&app, package)
+}
+
+/// The web UI in `main`: one of lull's windows has the focus, so its sounds may play (ADR-0081).
+/// Later changes come as `window-front`.
+#[tauri::command]
+pub async fn window_front(app: AppHandle) -> Result<bool, String> {
+    spawn_blocking(move || sounds::front(&app))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// The web UI in `main`: the system asks for quiet (Windows' "No Sounds" scheme, GNOME's event sounds
+/// off), so its sounds rest (ADR-0081). Later changes come as `sound-quiet`.
+#[tauri::command]
+pub fn sound_quiet(app: AppHandle) -> bool {
+    sounds::quiet(&app)
 }
 
 /// A bundled page: the listener's theme `main` handed over, if it is `id`.

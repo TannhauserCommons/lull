@@ -103,6 +103,8 @@ class PlayerPlugin(private val activity: Activity) : Plugin(activity) {
         Engine.init(activity)
         Engine.emit = { event, payload -> trigger(event, payload) }
         downloads = Downloads(activity) { event, payload -> trigger(event, payload) }
+        SoundQuiet.init(activity)
+        SoundQuiet.emit = { quiet -> trigger("sound-quiet", JSObject().put("quiet", quiet)) }
     }
 
     /** From Rust before the web UI loads: the hub's token for streams, downloads and the WebView. */
@@ -202,6 +204,10 @@ class PlayerPlugin(private val activity: Activity) : Plugin(activity) {
 
     @Command
     fun downloadUsage(invoke: Invoke) = onMain(invoke) { downloads.usage() }
+
+    /** The phone asks for quiet (ADR-0081): `{ quiet }`. Changes come as the `sound-quiet` event. */
+    @Command
+    fun soundQuiet(invoke: Invoke) = onMain(invoke) { JSObject().put("quiet", SoundQuiet.now()) }
 
     /**
      * The connect page's QR scanner: ZXing's camera screen, which asks for the camera itself. Resolves

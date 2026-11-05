@@ -76,6 +76,27 @@ pub fn transparency_effects() -> bool {
     true
 }
 
+/// One of lull's own windows has the focus (sounds.rs): `main`, the mini player, the Classic window
+/// or native Classic's. Never on the main thread (Linux asks GTK's).
+pub fn lull_in_front(app: &AppHandle) -> bool {
+    #[cfg(windows)]
+    {
+        let _ = app;
+        windows::foreground_is_ours()
+    }
+    #[cfg(target_os = "linux")]
+    return linux::any_window_active(app);
+}
+
+/// Calls `changed` with whether the system asks for quiet now, then again whenever that changes
+/// (sounds.rs): Windows' "No Sounds" scheme, GNOME's event sounds off. On the main thread.
+pub fn follow_quiet(changed: impl Fn(bool) + Send + 'static) {
+    #[cfg(windows)]
+    windows::follow_sound_scheme(changed);
+    #[cfg(target_os = "linux")]
+    linux::follow_event_sounds(changed);
+}
+
 /// A hidden `main` while Classic mode plays (main_window::sleep). On Linux, WebKitGTK already
 /// stops drawing a hidden window.
 pub fn set_webview_awake(window: &WebviewWindow, awake: bool) -> tauri::Result<()> {
