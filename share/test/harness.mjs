@@ -39,8 +39,9 @@ export async function start(net) {
   }));
   await mf.ready;
   return {
-    get: (path, { ip = '192.0.2.1', method = 'GET' } = {}) =>
-      mf.dispatchFetch(HOST + path, { method, headers: { 'cf-connecting-ip': ip }, redirect: 'manual' }),
+    /** `country` is where Cloudflare places the client (request.cf.country). */
+    get: (path, { ip = '192.0.2.1', method = 'GET', country = 'US' } = {}) =>
+      mf.dispatchFetch(HOST + path, { method, headers: { 'cf-connecting-ip': ip }, cf: { country }, redirect: 'manual' }),
     dispose: () => mf.dispose(),
   };
 }

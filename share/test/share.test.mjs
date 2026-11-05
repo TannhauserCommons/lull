@@ -13,7 +13,7 @@ const STORE_ART = 'https://is1-ssl.mzstatic.com/image/thumb/Music/dummy/100x100b
 
 /** iTunes knows the album; its CDN serves the cover at the size asked. */
 function storeKnowsIt(net) {
-  net.on(/^https:\/\/itunes\.apple\.com\/lookup\?id=1440823517$/, () => json({ results: [{ artworkUrl100: STORE_ART }] }));
+  net.on(/^https:\/\/itunes\.apple\.com\/lookup\?id=1440823517&country=US$/, () => json({ results: [{ artworkUrl100: STORE_ART }] }));
   net.on(/^https:\/\/is1-ssl\.mzstatic\.com\/.*\/600x600bb\.jpg$/, () => picture('itunes'));
 }
 
@@ -116,6 +116,17 @@ test('with no picture anywhere, the cover is lull\'s card, never a broken image'
     const card = readFileSync(new URL('../../web/assets/fallback-art-512.png', import.meta.url));
     assert.deepEqual(Buffer.from(await res.arrayBuffer()), card);
     assert.equal(net.count(/mzstatic/), 0, 'another artist\'s album is never taken by its name');
+  });
+});
+
+test('an album the US store doesn\'t list is looked up in the store of whoever opened the link', async () => {
+  const net = internet();
+  net.on(/itunes\.apple\.com\/lookup\?id=1440823517&country=US$/, () => json({ resultCount: 0, results: [] }));
+  net.on(/itunes\.apple\.com\/lookup\?id=1440823517&country=IN$/, () => json({ results: [{ artworkUrl100: STORE_ART }] }));
+  net.on(/mzstatic\.com/, () => picture('itunes'));
+  await withWorker(net, async (w) => {
+    assert.equal(await (await w.get('/1/album/Portishead/Dummy/cover?it=1440823517', { country: 'IN' })).text(), 'picture:itunes');
+    assert.ok(net.asked.every((u) => !u.includes('lull.share-host')), 'the link never says where its sender is');
   });
 });
 

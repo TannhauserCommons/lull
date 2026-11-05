@@ -28,7 +28,9 @@ export default {
       return new Response('Only GET and HEAD.\n', { status: 405, headers: { allow: 'GET, HEAD' } });
     }
     const url = new URL(request.url);
-    const origin = hosts.canonical ? 'https://' + hosts.canonical : url.origin;
+    // The canonical host names a listed host's pages (a domain added later); a share host someone runs for
+    // themselves, from this same code, names its own.
+    const origin = hosts.canonical && hosts.hosts.includes(url.hostname) ? 'https://' + hosts.canonical : url.origin;
     const item = parse(url);
     if (item?.cover) return cover(request, env, ctx, item, origin);
     if (!(await allowed(request, env))) return html(tooMany(), 429, 'no-store', { 'retry-after': '60' });
@@ -87,7 +89,7 @@ async function cover(request, env, ctx, item, origin) {
   // Over the limit, a card rather than an error: a cover never breaks.
   if (!(await allowed(request, env))) return card(env, request, CARD_BRIEFLY);
 
-  const subject = subjectOf(item);
+  const subject = { ...subjectOf(item), store: storeOf(request) };
   const key = subjectKey(subject);
   let found = remembered(key) || (await lookup(env, key, subject));
   if (found?.url) {
@@ -106,6 +108,12 @@ async function cover(request, env, ctx, item, origin) {
   if (!found) return card(env, request, CARD_BRIEFLY);
   remember(key, found);
   return card(env, request, CARD_CACHE);
+}
+
+/** The iTunes store of whoever opened the link: Cloudflare's country for the request, when it is one. */
+function storeOf(request) {
+  const country = request.cf?.country;
+  return typeof country === 'string' && /^[A-Z]{2}$/.test(country) ? country : null;
 }
 
 /** The Cover object's answer, or null when it took longer than a crawler waits (it finishes for the next request)

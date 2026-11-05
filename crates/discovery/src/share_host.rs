@@ -2,8 +2,10 @@
 //! as a card (`share/`, a Cloudflare Worker). Names are exact, each one percent-encoded path segment; ids are
 //! public catalogue ids. Never the hub's address, the listener or the time.
 //!
-//! `share/hosts.json` lists the hosts and names the canonical one. Until it names one (the Worker isn't
-//! deployed yet), `link` answers `None` and lull keeps writing ADR-0032's links (`open::link`).
+//! `share/hosts.json` lists lull's own share hosts and names the canonical one, where links are written.
+//! Until it names one (the Worker isn't deployed yet), `link` answers `None` and lull keeps writing
+//! ADR-0032's links (`open::link`). Links are read by their shape on any host, so a share host someone runs
+//! for themselves from `share/` opens in every lull too.
 
 use std::sync::LazyLock;
 
@@ -45,7 +47,7 @@ pub fn link(item: &Item, extra: &Extra) -> Result<Option<String>> {
     Ok(hosts()?.canonical.as_deref().map(|host| link_on(host, item, extra)))
 }
 
-/// The item a share host's link names; `None` for a link on any other host.
+/// The item a share host's link names; `None` for a link that isn't one (another service's).
 pub fn read(url: &Url) -> Result<Option<Item>> {
     read_on(url, &hosts()?.hosts)
 }
@@ -116,9 +118,12 @@ fn deezer(source: &Option<AlbumSource>) -> Option<String> {
 }
 
 fn read_on(url: &Url, hosts: &[String]) -> Result<Option<Item>> {
-    let on_host = url.host_str().is_some_and(|h| hosts.iter().any(|known| known == h));
     let segments: Vec<&str> = url.path_segments().map(|s| s.collect()).unwrap_or_default();
-    if !on_host || segments.first() != Some(&VERSION) {
+    // On one of lull's hosts every /1/ address is a link; on any other, one shaped as a link to a song,
+    // album or artist is (a share host someone runs for themselves).
+    let listed = url.host_str().is_some_and(|h| hosts.iter().any(|known| known == h));
+    let shaped = matches!(segments.get(1), Some(&("song" | "album" | "artist")));
+    if url.scheme() != "https" || segments.first() != Some(&VERSION) || !(listed || shaped) {
         return Ok(None);
     }
     let broken = || Error::BadRequest("That lull link is cut short or names nothing lull knows.".into());
@@ -275,9 +280,30 @@ mod tests {
     }
 
     #[test]
-    fn only_the_share_hosts_links_are_read_and_a_broken_one_says_so() {
-        let other = Url::parse("https://example.org/1/artist/Portishead").ok();
-        assert!(other.is_some_and(|u| matches!(read_on(&u, &[HOST.to_owned()]), Ok(None))));
+    fn any_share_hosts_links_are_read_and_a_broken_one_says_so() {
+        let elsewhere = |link: &str| {
+            Url::parse(link)
+                .ok()
+                .map(|u| read_on(&u, &[HOST.to_owned()]).ok().flatten())
+        };
+        assert_eq!(
+            elsewhere("https://share.example.org/1/artist/Portishead"),
+            Some(Some(Item::Artist {
+                name: "Portishead".into(),
+                mbid: None
+            })),
+            "a share host someone runs for themselves"
+        );
+        assert_eq!(
+            elsewhere("https://example.org/1/news/today"),
+            Some(None),
+            "not shaped as a link"
+        );
+        assert_eq!(
+            elsewhere("http://example.org/1/artist/Portishead"),
+            Some(None),
+            "share hosts are https"
+        );
         for broken in [
             "https://lull.share-host.invalid/1/song/OnlyAnArtist",
             "https://lull.share-host.invalid/1/podcast/a/b",

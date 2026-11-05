@@ -20,6 +20,13 @@ Measured or documented constraints (Cloudflare docs, 2026-11-04):
 
 ## Decision
 
+### For every lull, in every market
+
+Share links serve every lull install, not one hub:
+- **A link names only public catalogue facts**, so the Worker needs nothing from the hub that made it: any listener's hub writes links any page, card and lull can open.
+- **Covers resolve wherever the link is opened.** A hub's iTunes ids come from its own store, which can be any country. The Worker looks an id up in the US store and then in the store of whoever opened the link (Cloudflare's country for the request), and searches names in that store. The sender's store is never put in the link: it would say where they are. Deezer ids, MBIDs and Last.fm names are the same everywhere.
+- **Anyone may run a share host** from `share/` on their own Cloudflare account. Every lull reads `/1/` links by their shape on any https host, so those links open in every lull too. Only lull's own hosts get App Links and are named in `share/hosts.json`.
+
 ### One Worker, `share/`
 
 - A Cloudflare Worker in the lull repository (`share/`), with static assets and two Durable Object classes, deployed by CI with `wrangler`.
@@ -68,11 +75,11 @@ Every name is HTML-escaped. The page has the same strict CSP, `no-referrer` and 
 A song's cover is its album's. Covers are keyed by the album (its best id, else its normalised album artist and title), so every song on an album shares one lookup.
 
 **Albums and songs:**
-1. iTunes `lookup` by `ic` (a song) or `it` (an album). The store's cover at 600 px.
+1. iTunes `lookup` by `ic` (a song) or `it` (an album), in the US store, then in the opener's store. The store's cover at 600 px.
 2. Deezer `album/<dz>`. Its cover at 600 px.
 3. The Cover Art Archive, `release-group/<mb>/front-500`. Exact, but slow from some places, so it comes after the fast sources.
 4. Last.fm `album.getInfo` by album artist and album. Uses a Worker secret, `LASTFM_API_KEY`.
-5. iTunes search by names, taking only a listing whose artist and album title are the same as the link's once case, accents and punctuation are set aside. Last, because a name can find the wrong album. The hub's looser rule (`share::best`) isn't copied into the Worker: a cover that might be another album's is worse than lull's card.
+5. iTunes search by names in the opener's store, taking only a listing whose artist and album title are the same as the link's once case, accents and punctuation are set aside. Last, because a name can find the wrong album. The hub's looser rule (`share::best`) isn't copied into the Worker: a cover that might be another album's is worse than lull's card.
 
 **Artists:**
 1. Deezer `artist/<dz>`.
@@ -134,8 +141,8 @@ A song's cover is its album's. Covers are keyed by the album (its best id, else 
 - **`share/hosts.json` is the one list of share hosts,** and names which is canonical.
   - Until the owner has picked the account subdomain and the Worker is deployed, it lists no host and names none canonical. The hub then keeps writing ADR-0032's links, and the manifest has no new filter: an `autoVerify` host that can't verify would, on Android 11 and older, stop the open page's App Link verifying too.
   - Tests use a placeholder host, `lull.share-host.invalid`.
-  - The hub compiles it in. `open.rs` reads `/1/` links on any host in it, and `share.rs` writes links on the canonical one.
-  - The Worker puts the canonical host in `og:url`.
+  - The hub compiles it in, and `share.rs` writes links on the canonical host. `open.rs` reads `/1/` links on any https host (above).
+  - The Worker puts the canonical host in `og:url` when it serves one of these hosts; a share host someone runs for themselves names its own.
   - A test checks that the Android manifest lists every host.
 - **A domain is added, never swapped:** add it to the list and the manifest, attach it to the Worker, then make it canonical.
 - **The `workers.dev` address keeps serving every link forever,** and isn't redirected. If a domain lapses, links on it fail, but every link on `workers.dev` still opens and the canonical host can go back.

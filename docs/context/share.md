@@ -6,17 +6,19 @@ lull links that chat apps show as cards, served by a Cloudflare Worker on the fr
 
 | Path | What it is |
 | --- | --- |
-| `share/hosts.json` | The one list of share hosts, and the canonical one. The hub compiles it in; the Worker puts the canonical host in `og:url`; `test/hosts.test.mjs` checks the app's manifest claims each host |
+| `share/hosts.json` | The one list of lull's own share hosts, and the canonical one. The hub compiles it in and writes links on the canonical host; the Worker names it in `og:url` when serving a listed host (else its own); `test/hosts.test.mjs` checks the app's manifest claims each host |
 | `share/src/index.js` | Routes: the page, its `…/cover`, the per-client limit. Everything else is a static file |
 | `share/src/link.js` | Reading and writing `/1/<kind>/<names>?<ids>`; the album or artist a cover is looked up for (`subjectKey`) |
 | `share/src/page.js` | The page: `site/open.html` with the card's tags and the item for `site/open.js`; the 404 and 429 pages |
-| `share/src/sources.js` | The cover chain: iTunes, Deezer, the Cover Art Archive, Last.fm, iTunes by name; Deezer and Wikidata for artists |
+| `share/src/sources.js` | The cover chain: iTunes (the US store, then the opener's: `request.cf.country`), Deezer, the Cover Art Archive, Last.fm, iTunes by name; Deezer and Wikidata for artists |
 | `share/src/objects.js` | Durable Objects: `Cover` (one per album or artist: one lookup at a time, keeps the address found) and `Gate` (each service's budget, worldwide) |
 | `share/build.mjs` | Gathers the static files into `share/public/` from where they live (`site/`, `web/`, `packaging/android/assetlinks.json`, `share/static/`). Run by wrangler before every build |
 | `share/test/` | `share.test.mjs` runs wrangler's own bundle in Miniflare with every outside service faked (`harness.mjs`); `hosts.test.mjs` |
 | `.github/workflows/share.yml` | `test`; `deploy` on a dispatch on main |
 
 ## The link
+
+For every lull install, in any market (ADR-0034, "For every lull"): links hold public facts only, never the sender's store or hub; every lull reads a `/1/` link on any https host, so a share host someone runs from `share/` works too.
 
 `https://<host>/1/song/<artist>/<title>?al=&aa=&len=&it=&ic=&dz=&mb=`, `/1/album/<artist>/<title>?it=&dz=&mb=`, `/1/artist/<name>?dz=&mb=`.
 - **Names** are exact, each one segment encoded as `encodeURIComponent` does (the hub's `share_host::encode` matches it), so the hub's link is the Worker's canonical one.

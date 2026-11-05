@@ -88,11 +88,18 @@ function storeCover(artwork100) {
   return artwork100 && artwork100.includes('100x100bb') ? artwork100.replace('100x100bb', `${SIZE}x${SIZE}bb`) : null;
 }
 
+/** By id in the US store, then in the store of whoever opened the link (`s.store`): the sender's hub may use any
+    store, and an album some stores don't list keeps its id. The sender's store is never in a link: it says where
+    they are. */
 async function itunesLookup(s, { gate }) {
   const id = s.it || s.track;
   if (!id) return null;
-  const body = await json(`https://itunes.apple.com/lookup?id=${id}`, 'itunes', gate);
-  return picture(storeCover(body?.results?.[0]?.artworkUrl100), 'itunes');
+  for (const store of ['US', ...(s.store && s.store !== 'US' ? [s.store] : [])]) {
+    const body = await json(`https://itunes.apple.com/lookup?id=${id}&country=${store}`, 'itunes', gate);
+    const cover = storeCover(body?.results?.[0]?.artworkUrl100);
+    if (cover) return picture(cover, 'itunes');
+  }
+  return null;
 }
 itunesLookup.service = 'itunes';
 
@@ -103,7 +110,7 @@ async function itunesSearch(s, { gate }) {
   const title = album ? s.album : s.song;
   const artist = album ? s.artist : s.songArtist;
   if (!title) return null;
-  const q = new URLSearchParams({ term: `${artist} ${title}`, entity: album ? 'album' : 'song', limit: '10' });
+  const q = new URLSearchParams({ term: `${artist} ${title}`, entity: album ? 'album' : 'song', limit: '10', country: s.store || 'US' });
   const body = await json(`https://itunes.apple.com/search?${q}`, 'itunes', gate);
   const same = (body?.results || []).find((r) =>
     loose(r.artistName || '') === loose(artist) && loose((album ? r.collectionName : r.trackName) || '') === loose(title));
