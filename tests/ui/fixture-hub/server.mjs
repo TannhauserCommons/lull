@@ -235,7 +235,11 @@ const routes = [
   ['GET', /^\/api\/tracks\/([^/]+)$/, (m) => (L.tracks[m[1]] ? { track: L.tracks[m[1]], entities: entities({ tracks: [m[1]], albums: albumsOf([m[1]]) }) } : err(404, 'not_found', 'lull doesn\'t know this song.'))],
   // A trickling song has two copies (ADR-0015): one the peer says is fast that lull never measured, one lull measured
   // yesterday; any other song has none, so the gates' screens stay as they are.
-  ['GET', /^\/api\/tracks\/([^/]+)\/sources$/, (m) => ({ sources: trickles.has(m[1]) ? trickledSources(m[1]) : [], youtube: youtubeCopy(m[1]), done: true })],
+  ['GET', /^\/api\/tracks\/([^/]+)\/sources$/, (m) => {
+    const sources = trickles.has(m[1]) ? trickledSources(m[1]) : [], youtube = youtubeCopy(m[1]);
+    // the hub's own sentence for an empty answer (soulseek api.rs, NO_PEER)
+    return { sources, youtube, done: true, why: !sources.length && !youtube ? 'No Soulseek peer shares this song right now.' : null };
+  }],
   ['PUT', /^\/api\/stream\/prefetch$/, () => ({ status: 204 })],
 
   // discovery

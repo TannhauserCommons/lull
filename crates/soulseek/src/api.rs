@@ -91,10 +91,16 @@ async fn sources(State(svc): State<Arc<Service>>, Path(id): Path<String>, Query(
         YoutubeRow::Finding => (Value::Null, true),
         YoutubeRow::Found(row) => (row, false),
     };
+    let done = !searching && !finding;
+    // The hub's sentence for an empty answer: the web words no fact of its own.
+    let why = (done && ranked.is_empty() && youtube.is_null()).then_some(NO_PEER);
     Ok(Json(
-        json!({ "sources": ranked, "youtube": youtube, "done": !searching && !finding }),
+        json!({ "sources": ranked, "youtube": youtube, "done": done, "why": why }),
     ))
 }
+
+/// Why the sources answer is empty once the search for the song has ended.
+const NO_PEER: &str = "No Soulseek peer shares this song right now.";
 
 /// How long the picker's answer waits for YouTube's match; past it the match goes on and the
 /// next ask gets it (`done: false` until then).

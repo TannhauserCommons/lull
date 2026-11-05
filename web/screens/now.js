@@ -292,7 +292,7 @@
     if (ps.status === 'buffering' && (ps.fallback || fromLibrary(t))) return html`${icon(ps.fallback ? 'refresh' : 'saved')}<span>${P.statusText()}</span>`;
     switch (ps.status) {
       case 'library': return html`${icon('saved')}<span>Playing from <b>your library</b></span>${ui.qualityChip(t.format, { solid: true })}<span class="source-card__stat">jellyfin</span>`;
-      case 'jellyfin-error': return html`${icon('warning')}<span><b>Library item unavailable.</b> ${ps.error || 'Jellyfin can\'t find the file.'}</span><button class="btn btn--sm" data-act="try-soulseek" data-fk="src-try">Try Soulseek instead</button>`;
+      case 'jellyfin-error': return html`${icon('warning')}<span><b>Library item unavailable.</b> ${ps.error || ''}</span><button class="btn btn--sm" data-act="try-soulseek" data-fk="src-try">Try Soulseek instead</button>`;
       case 'finding': return html`${icon('soulseek')}<span>Finding a source, <b>${ps.peersFound}</b> peers answered</span>`;
       case 'choose': return html`${icon('warning')}<span><b>No copy meets your streaming minimum.</b> Pick one or skip.</span><button class="btn btn--sm" data-act="pick-source" data-fk="src-choose">Pick a copy</button>`;
       case 'queued': return html`${icon('clock')}<span>Queued at <b>${peerName()}</b>${ps.queuePos ? ', position ' + ps.queuePos : ''}</span>`;
@@ -364,7 +364,7 @@
         <button class="btn btn--sm" data-act="now-use-source" data-id="${id}" data-si="${i}" aria-label="${on ? 'Playing' : 'Use'} ${s.peer}${s.stalledBefore ? ', stalled before' : ''}" ${on ? raw('aria-current="true"') : ''} data-fk="use-${i}">${on ? 'Playing' : 'Use'}</button></div>`;
     });
     return html`${head}${list.length ? html`<div class="src-table now-src__table" role="list" aria-label="Sources for ${t ? t.title : 'this song'}">${rows}</div>`
-      : html`<p class="now-src__line">${icon('info')}<span>No peer has this song right now.</span></p>`}
+      : r.data.why ? html`<p class="now-src__line">${icon('info')}<span>${r.data.why}</span></p>` : ''}
       ${r.data.done ? '' : html`<p class="now-src__line">${icon('soulseek')}<span>Still searching Soulseek, more peers may answer.</span></p>${reload('Refresh')}`}`;
   }
   function sourceCard() {
@@ -767,7 +767,7 @@
       case 'transferring': return { meta: html`${icon('soulseek', null, 'ic-16')}<span>${j.peer}, ${mbps(j.speed)}, ${pct}%</span>`, extra: html`<div class="progress progress--xfer" style="--p:${pct / 100}"><i></i></div>`, acts: cancel };
       case 'queued': return { meta: html`${icon('clock', null, 'ic-16')}<span>Queued at ${j.peer}${j.queuePos ? ', position ' + j.queuePos : ''}</span>`, extra: html`<div class="progress" style="--p:0"><i></i></div>`, acts: cancel };
       case 'stalled': return { meta: html`${icon('refresh', null, 'ic-16')}<span>${j.peer} stalled at ${pct}%</span>`, extra: html`<div class="progress" style="--p:${pct / 100}"><i></i></div>`, acts: cancel };
-      case 'failed': return { meta: html`${ui.statusGlyph('down', 'Failed')}<span>${j.error || 'Transfer failed'}</span>`, extra: html`<div class="progress progress--failed" style="--p:${pct / 100}"><i></i></div>`,
+      case 'failed': return { meta: html`${ui.statusGlyph('down', 'Failed')}<span>${j.error || ''}</span>`, extra: html`<div class="progress progress--failed" style="--p:${pct / 100}"><i></i></div>`,
         acts: html`${actBtn('refresh', 'Retry transfer', 'now-job-retry', j)}${j.trackId ? actBtn('soulseek', 'Pick another source', 'show-sources', j, 'data-id="' + App.esc(j.trackId) + '"') : ''}` };
       case 'cancelled': return { meta: html`${icon('close', null, 'ic-16')}<span>Cancelled at ${pct}%</span>`, extra: '', acts: actBtn('refresh', 'Start again', 'now-job-retry', j) };
       default: return { meta: html`${ui.statusGlyph('ok', 'Done')}<span>${j.peer ? 'Transferred from ' + j.peer : 'Transferred'}</span>`, extra: '', acts: '' };
@@ -781,7 +781,7 @@
     return { meta: j.belowMinimum ? ui.belowBadge() : '', extra: ui.pipeline(j.step || 1, j.status, j.error), acts: acts || '' };
   }
   function otherParts(j, st) {
-    if (st === 'failed') return { meta: html`${ui.statusGlyph('down', 'Failed')}<span>${j.error || 'Failed'}</span>`, extra: '', acts: '' };
+    if (st === 'failed') return { meta: html`${ui.statusGlyph('down', 'Failed')}<span>${j.error || ''}</span>`, extra: '', acts: '' };
     if (st === 'active') return { meta: html`<span class="spin-ring" aria-hidden="true"></span><span>${j.detail || (j.pct != null ? 'Importing, ' + Math.round(j.pct * (j.pct <= 1 ? 100 : 1)) + '%' : 'Running')}</span>`, extra: '', acts: '' };
     if (j.kind === 'import' && 'added' in j) {        // listening history (POST /api/import/history)
       return { meta: html`${ui.statusGlyph('ok', 'Done')}<span>${j.added || 0} plays added${j.duplicates ? ', ' + j.duplicates + ' already there' : ''}${j.invalid ? ', ' + j.invalid + ' unreadable' : ''}</span>`, extra: '', acts: '' };

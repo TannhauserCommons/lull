@@ -80,7 +80,7 @@
     (function ask() {
       M.api(sourcesPath(id, forSave)).then(function (res) {
         if (stopped) return;
-        onUpdate({ sources: res.sources || [], youtube: res.youtube || null, done: !!res.done });
+        onUpdate({ sources: res.sources || [], youtube: res.youtube || null, done: !!res.done, why: res.why || null });
         if (!res.done) timer = setTimeout(ask, SOURCES_POLL_MS);
       }, function (err) { if (!stopped) onUpdate({ error: err }); });
     })();
@@ -1127,7 +1127,7 @@
         : ui.skeleton('row', 3);
     }
     if (!pk.sources.length && pk.done && !pk.youtube) {
-      return ui.emptyState({ art: 'moon', title: 'No peer shares this right now', text: 'Soulseek peers come and go. Ask again in a while.',
+      return ui.emptyState({ art: 'moon', title: pk.why || '', text: 'Soulseek peers come and go. Ask again in a while.',
         action: { label: 'Search again', act: 'disc-src-retry' } });
     }
     var notes = failedNotes(t.id, pk.sources);
@@ -1177,7 +1177,7 @@
       pk.error = null; repaint();
       pk.stop = watchSources(trackId, function (res) {
         var wasDone = pk.done;
-        if (res.error) pk.error = res.error; else { pk.sources = res.sources; pk.youtube = res.youtube; pk.done = res.done; }
+        if (res.error) pk.error = res.error; else { pk.sources = res.sources; pk.youtube = res.youtube; pk.done = res.done; pk.why = res.why; }
         repaint();
         if (pk.done && !wasDone) App.announce('Search finished: ' + plural(pk.sources.length, 'source'));
       }, forSave);
@@ -1368,8 +1368,9 @@
     var id = el.getAttribute('data-id'), t = M.track(id); if (!t) return;
     var fail = function (err) { App.toast('Couldn\'t offer a better copy of ' + t.title + ': ' + err.message, { kind: 'error' }); };
     var row = S.peerSongs[id];
-    (row && row.best ? Promise.resolve(row.best) : M.api(sourcesPath(id, true)).then(function (res) { return (res.sources || [])[0]; })).then(function (best) {
-      if (!best) { App.toast('No peer shares ' + t.title + ' right now', { icon: 'no-source' }); return; }
+    var why = null;
+    (row && row.best ? Promise.resolve(row.best) : M.api(sourcesPath(id, true)).then(function (res) { why = res.why; return (res.sources || [])[0]; })).then(function (best) {
+      if (!best) { App.toast(t.title + (why ? ': ' + why : ''), { icon: 'no-source' }); return; }
       var offered = { peer: best.peer, path: best.path, size: best.sizeBytes };
       savedCopy(id, offered).then(function (d) {
         var cand = { format: best.format, sizeMB: best.sizeBytes ? best.sizeBytes / 1e6 : null, peer: best.peer, speed: best.speed };
@@ -1385,17 +1386,17 @@
   /* --- save sheet: the 5 steps, the error, and what to do about it --- */
   var RECOVER = {
     transfer: function (id, s) {
-      return { text: s.error || 'The transfer stopped before the file was complete.', actions: html`
+      return { text: s.error || '', actions: html`
         <button class="btn btn--primary" data-act="disc-save-retry" data-id="${id}">${icon('refresh')}Retry the transfer</button>
         <button class="btn" data-act="disc-save-pick" data-id="${id}">${icon('soulseek')}Pick a source</button>` };
     },
     match: function (id, s) {
-      return { text: s.error || 'MusicBrainz found several releases and none is a sure fit.', actions: html`
+      return { text: s.error || '', actions: html`
         <button class="btn btn--primary" data-act="disc-release" data-id="${id}">Pick the right release</button>
         <button class="btn" data-act="disc-rel-skip" data-id="${id}">Save with existing tags</button>` };
     },
     write: function (id, s) {
-      return { text: s.error || 'Couldn\'t write the file to your library.', actions: html`
+      return { text: s.error || '', actions: html`
         <button class="btn btn--primary" data-act="disc-save-retry" data-id="${id}">${icon('refresh')}Retry</button>
         <a class="btn" href="#/settings/library" data-close>Library settings</a>` };
     }

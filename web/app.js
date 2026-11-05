@@ -1458,8 +1458,7 @@
       var c = status === 'saved' || i < step ? 'is-done' : i === step ? (status === 'failed' ? 'is-failed' : 'is-current') : '';
       segs.push(html`<span class="pipeline__seg ${c}" aria-hidden="true">${c === 'is-done' ? icon('check') : c === 'is-failed' ? icon('close') : ''}</span>`);
     }
-    var text = status === 'saved' ? 'Saved to your library' : status === 'failed' ? (error || 'Step failed: ' + M.saveSteps[step - 1])
-      : status === 'waiting' ? (error || 'No copy meets your saving minimum yet. Looking again by itself.') : M.saveSteps[step - 1];
+    var text = status === 'saved' ? 'Saved to your library' : status === 'failed' || status === 'waiting' ? error || '' : M.saveSteps[step - 1];
     return html`<div class="pipeline-wrap" role="group" aria-label="Save progress"><div class="pipeline">${segs}</div>
       <div class="pipeline__text" aria-live="polite"><span class="pipeline__step">${status === 'saved' ? 'done' : 'step ' + step + ' of 5'}</span><span class="pipeline__label">${text}</span></div></div>`;
   };

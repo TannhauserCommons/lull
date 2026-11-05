@@ -1811,7 +1811,7 @@
     if (j.state === 'done') linkPlaylistChanged(j.playlistId);
     if (!linkJobs[j.jobId]) return;
     delete linkJobs[j.jobId];
-    if (j.state === 'failed') { App.toast('Couldn\'t import ' + j.name + ': ' + (j.error || 'the import failed'), { kind: 'error', icon: 'warning' }); return; }
+    if (j.state === 'failed') { App.toast('Couldn\'t import ' + j.name + (j.error ? ': ' + j.error : ''), { kind: 'error', icon: 'warning' }); return; }
     App.toast('Imported ' + j.name + ' into your playlists: ' + App.linkImportSummary(j),
       { kind: j.unmatched ? null : 'ok', icon: 'import', action: j.unmatched ? 'Review' : 'Open', onAction: function () {
         if (j.unmatched) openLinkReview(j.link); else App.go('/playlist/' + j.playlistId);
