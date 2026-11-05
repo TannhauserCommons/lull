@@ -1,9 +1,13 @@
-/* starlight: image 01 brought to life. A deep slate sky of crumpled paper and fine stars, cream trays stacked on
-   lavender + periwinkle layers, burgundy caps titles, thin periwinkle line icons, an outlined circular play, filled
-   periwinkle hearts. Night is home; day is "dawn" (lavender sky over a peach horizon, the same cream trays).
-   Sections: fonts, tokens, art, sky, surfaces + stack, type, buttons, chips, covers, rows / tiles / seek / inputs,
-   shell (rail, wordmark, header, tray, context panel, player bar), Now Playing, Home, Library, Settings + Stats,
-   overlays, Classic, desktop pages + mini player, tablet, phone.
+/* starlight: the poster. A gallery poster of a starry night: a slate sky of lit crumpled paper and fine stars, every
+   surface a square-cornered cream print stacked on lavender + periwinkle sleeves, headlines in huge thin caps, labels in
+   DM Mono, thin periwinkle line icons. Night is home; day is "dawn" (lavender sky over a peach horizon, the same prints).
+   The navigation is a constellation (a star per place on a dotted line, a bright 4-point star where you are), the
+   player bar a concert ticket, Now Playing two posters side by side (the song's print and its lyrics), Home a headline
+   with your queue drawn in the sky and numbered sections.
+   Sections: fonts, tokens, sky, prints (surfaces), type, buttons, chips, covers, rows and tiles, seek and tabs, inputs,
+   the rail, the header and tray, the side panel, the player bar (the ticket), Now Playing, Home, Library and pages,
+   Settings and Stats, overlays, empty states, Classic, desktop pages and the mini player, the icon rail (tablet),
+   phone, the Now column.
    Every rule is scoped under :root[data-design="starlight"]. Fonts: Jost + DM Mono (SIL OFL 1.1, fonts/).
    Art lives in art/*.svg (hand-editable SVG: sky paper, star fields, sparkles, eight cover scenes).
    !important appears only where the base sets the value inline (sky sparkle positions, --cover-size). */
@@ -45,27 +49,34 @@
   --sl-down-on-cream: #a3324f;  /* errors on cream trays (both themes) */
   --skel: #e2d3c0; --skel-hi: #ecdfcf;
 
-  /* type: Jost for everything readable, DM Mono for machine facts; one display weight (500) for every page title */
+  /* type: Jost for everything readable, DM Mono for machine facts and printed labels. A page's title is the poster's
+     headline (thin caps, huge); lyrics are poster lines (thin, large) */
   --f-ui: "Jost", ui-sans-serif, system-ui, sans-serif;
   --f-px: "DM Mono", ui-monospace, monospace;
-  --t-display: 500 2.75rem/1.05 var(--f-ui);   --t-display-track: .02em;
-  --t-title-xl: 500 2.25rem/1.05 var(--f-ui);  --t-title-xl-track: .01em;
+  --t-display: 300 clamp(2.75rem, 6.5cqi, 4.75rem)/.9 var(--f-ui);   --t-display-track: .01em;
+  --t-title-xl: 300 2.5rem/1 var(--f-ui);      --t-title-xl-track: .01em;
   --t-h2: 500 1.125rem/1.25 var(--f-ui);       --t-h2-track: 0;
   --t-row: 600 1rem/1.2 var(--f-ui);
   --t-body: 400 1rem/1.5 var(--f-ui);
   --t-meta: 400 .875rem/1.35 var(--f-ui);      --t-meta-track: .01em;
   --t-micro: 500 .8125rem/1.3 var(--f-ui);     --t-micro-track: .01em;
   --t-px: 400 .8125rem/1 var(--f-px);          --t-px-track: .02em;
-  --t-lyric: 400 1.375rem/1.5 var(--f-ui);
-  --t-lyric-cur: 500 1.625rem/1.35 var(--f-ui);
+  --t-lyric: 300 1.5rem/1.35 var(--f-ui);
+  --t-lyric-cur: 400 1.75rem/1.25 var(--f-ui);
 
-  /* shape: the stack is two offset layers, each with its own outline (img 01) */
-  --tag-h: 22px; --r-chip: 6px; --r-thumb: 10px; --r-art: 14px; --r-input: 999px; --r-panel: 24px; --r-card: 26px;
+  /* shape: prints, not cards: square paper corners on every tray and frame (pills and keys stay round); the stack is
+     two offset sleeves, each with its own outline (img 01) */
+  --tag-h: 22px; --r-chip: 6px; --r-thumb: 3px; --r-art: 4px; --r-input: 999px; --r-panel: 6px; --r-card: 6px;
   --stroke: 1.5px; --stroke-thin: 1.25px; --icon-stroke: 1.5;
   --stack-off-1: 7px; --stack-off-2: 14px;
   --stack-reserve: 20px;
   --sl-layer: 0 5px 0 -1.5px var(--stack-1), 0 5px 0 0 var(--line);          /* one lavender layer: pills, search */
+  /* a print's sleeves: big (heroes), medium (tiles, picks), small (thumbs in the bar and rows) */
   --sl-sleeves: 7px 7px 0 -1.5px var(--stack-1), 7px 7px 0 0 var(--sl-frame), 14px 14px 0 -1.5px var(--stack-2), 14px 14px 0 0 var(--sl-frame);
+  --sl-print: 5px 5px 0 -1.5px var(--stack-1), 5px 5px 0 0 var(--sl-frame), 10px 10px 0 -1.5px var(--stack-2), 10px 10px 0 0 var(--sl-frame);
+  --sl-print-sm: 3px 3px 0 -1px var(--stack-1), 3px 3px 0 0 var(--sl-frame), 6px 6px 0 -1px var(--stack-2), 6px 6px 0 0 var(--sl-frame);
+  /* a print's paper edge: a hairline inset from the sheet's edge, as a printed poster's border (unblurred: no layer) */
+  --sl-edge: inset 0 0 0 6px var(--bg), inset 0 0 0 7px color-mix(in srgb, var(--line) 38%, transparent);
 
   /* art */
   --sl-paper: url("assets/art/paper-dawn.svg");
@@ -141,6 +152,12 @@
    inputs on cream: check: --ink-2 on --cream-2 4.5     check: --sl-accent on --cream-2 4.5
    failed play line on the hero: check: --sl-title on --cream 4.5 (above) */
 
+/* the stepped easings this design's loops use: its --ease-in-out (tokens.css), stepped (components.css, Keyframes) */
+:root[data-design="starlight"] {
+  --loop-in-out-30: linear(0 0%, 0 3.33333%, 0.001 3.33333%, 0.001 6.66667%, 0.0041 6.66667%, 0.0041 10%, 0.0096 10%, 0.0096 13.33333%, 0.0179 13.33333%, 0.0179 16.66667%, 0.0295 16.66667%, 0.0295 20%, 0.045 20%, 0.045 23.33333%, 0.065 23.33333%, 0.065 26.66667%, 0.0905 26.66667%, 0.0905 30%, 0.1229 30%, 0.1229 33.33333%, 0.1638 33.33333%, 0.1638 36.66667%, 0.2152 36.66667%, 0.2152 40%, 0.2796 40%, 0.2796 43.33333%, 0.3587 43.33333%, 0.3587 46.66667%, 0.451 46.66667%, 0.451 50%, 0.549 50%, 0.549 53.33333%, 0.6413 53.33333%, 0.6413 56.66667%, 0.7204 56.66667%, 0.7204 60%, 0.7848 60%, 0.7848 63.33333%, 0.8362 63.33333%, 0.8362 66.66667%, 0.8771 66.66667%, 0.8771 70%, 0.9095 70%, 0.9095 73.33333%, 0.935 73.33333%, 0.935 76.66667%, 0.955 76.66667%, 0.955 80%, 0.9705 80%, 0.9705 83.33333%, 0.9821 83.33333%, 0.9821 86.66667%, 0.9904 86.66667%, 0.9904 90%, 0.9959 90%, 0.9959 93.33333%, 0.999 93.33333%, 0.999 96.66667%, 1 96.66667%, 1 100%);
+  --loop-in-out-52: linear(0 0%, 0 1.92308%, 0.0003 1.92308%, 0.0003 3.84615%, 0.0013 3.84615%, 0.0013 5.76923%, 0.0029 5.76923%, 0.0029 7.69231%, 0.0053 7.69231%, 0.0053 9.61538%, 0.0086 9.61538%, 0.0086 11.53846%, 0.0127 11.53846%, 0.0127 13.46154%, 0.0178 13.46154%, 0.0178 15.38462%, 0.0239 15.38462%, 0.0239 17.30769%, 0.0311 17.30769%, 0.0311 19.23077%, 0.0397 19.23077%, 0.0397 21.15385%, 0.0496 21.15385%, 0.0496 23.07692%, 0.0611 23.07692%, 0.0611 25%, 0.0743 25%, 0.0743 26.92308%, 0.0894 26.92308%, 0.0894 28.84615%, 0.1067 28.84615%, 0.1067 30.76923%, 0.1265 30.76923%, 0.1265 32.69231%, 0.1491 32.69231%, 0.1491 34.61538%, 0.1748 34.61538%, 0.1748 36.53846%, 0.2042 36.53846%, 0.2042 38.46154%, 0.2375 38.46154%, 0.2375 40.38462%, 0.2754 40.38462%, 0.2754 42.30769%, 0.318 42.30769%, 0.318 44.23077%, 0.3655 44.23077%, 0.3655 46.15385%, 0.4172 46.15385%, 0.4172 48.07692%, 0.472 48.07692%, 0.472 50%, 0.528 50%, 0.528 51.92308%, 0.5828 51.92308%, 0.5828 53.84615%, 0.6345 53.84615%, 0.6345 55.76923%, 0.682 55.76923%, 0.682 57.69231%, 0.7246 57.69231%, 0.7246 59.61538%, 0.7625 59.61538%, 0.7625 61.53846%, 0.7958 61.53846%, 0.7958 63.46154%, 0.8252 63.46154%, 0.8252 65.38462%, 0.8509 65.38462%, 0.8509 67.30769%, 0.8735 67.30769%, 0.8735 69.23077%, 0.8933 69.23077%, 0.8933 71.15385%, 0.9106 71.15385%, 0.9106 73.07692%, 0.9257 73.07692%, 0.9257 75%, 0.9389 75%, 0.9389 76.92308%, 0.9504 76.92308%, 0.9504 78.84615%, 0.9603 78.84615%, 0.9603 80.76923%, 0.9689 80.76923%, 0.9689 82.69231%, 0.9761 82.69231%, 0.9761 84.61538%, 0.9822 84.61538%, 0.9822 86.53846%, 0.9873 86.53846%, 0.9873 88.46154%, 0.9914 88.46154%, 0.9914 90.38462%, 0.9947 90.38462%, 0.9947 92.30769%, 0.9971 92.30769%, 0.9971 94.23077%, 0.9987 94.23077%, 0.9987 96.15385%, 0.9997 96.15385%, 0.9997 98.07692%, 1 98.07692%, 1 100%);
+}
+
 /* =====================================================================
    The sky: one 1600 px sheet of lit crumpled paper blended soft-light into the washes (fixed, never tiled, so no
    seams), a 1600 px star field with dark paper flecks, big 4-point sparkles with a soft bloom.
@@ -177,7 +194,7 @@
 /* words on the sky get a sky-coloured halo; reset on every cream surface */
 :root[data-design="starlight"] .view, :root[data-design="starlight"] .rail, :root[data-design="starlight"] .header { text-shadow: 0 0 2px var(--sky), 0 0 5px var(--sky); }
 :root[data-design="starlight"] :is(.card, .s-card, .s-panel:not(.rail), .sl-hero, .now-head, .now__acts, .sys-nav, .input,
-  .nav-item[aria-current="page"], .pill-filter[aria-pressed="true"], .lib-segs a[aria-current="page"], .btn, .tray, .toast) { text-shadow: none; }
+  .pill-filter[aria-pressed="true"], .btn, .tray, .toast) { text-shadow: none; }
 /* the shell sparkles (their position and size are inline styles in index.html, hence !important): one large blooming
    star in the gutter left of the content (img 01 left of the second card), one at the right margin, one at the top edge */
 :root[data-design="starlight"] .sky-specks > .sparkle {
@@ -188,7 +205,8 @@
 :root[data-design="starlight"] .sky-specks > .sparkle:nth-child(3) { --s: 40px !important; left: auto !important; right: 356px !important; bottom: auto !important; top: -8px !important; }
 
 /* =====================================================================
-   Surfaces. Cream trays everywhere content lives (both themes), on the two-layer stack.
+   Prints: cream sheets everywhere content lives (both themes), square-cornered, a printed hairline inside the edge,
+   on the two-sleeve stack.
    ===================================================================== */
 :root[data-design="starlight"] :is(.s-card, .card, .pbar, .ctx, .nowcol, .mini, .sl-hero, .now-head, .now__acts, .sys-nav, .sl-mini__card, .dk-strip) {
   --bg: var(--cream); --bg-2: var(--cream-2); --bg-3: var(--cream-3);
@@ -203,35 +221,39 @@
 :root[data-design="starlight"] .card { border-width: var(--stroke); border-radius: var(--r-card); }
 /* a field error is an error, not a hint: the danger ink, not the periwinkle link */
 :root[data-design="starlight"] .field__error { color: var(--sl-down); }
-:root[data-design="starlight"] :is(.pbar, .ctx, .nowcol, .sl-hero, .sys-nav, .sl-mini__card) {
-  border: var(--stroke) solid var(--line); box-shadow: var(--sl-stack);
-}
-:root[data-design="starlight"] :is(.pbar, .ctx, .nowcol) { border-radius: var(--r-panel); }
-:root[data-design="starlight"] :is(.ctx, .nowcol) { margin-bottom: 30px; }
-:root[data-design="starlight"] .pbar { margin-bottom: 26px; }
-/* --sl-stack is declared on each tray (not on :root) so a tray's own --sl-o1 / --sl-o2 move its layers */
-:root[data-design="starlight"] :is(.pbar, .ctx, .nowcol, .sl-hero, .sys-nav, .sl-mini__card, .card[data-region], .sys-design) {
+:root[data-design="starlight"] :is(.ctx, .nowcol, .sl-hero, .sys-nav, .sl-mini__card) { border: var(--stroke) solid var(--line); }
+:root[data-design="starlight"] :is(.ctx, .nowcol) { border-radius: var(--r-panel); margin-bottom: 30px; }
+/* --sl-stack is declared on each print (not on :root) so a print's own --sl-o1 / --sl-o2 move its sleeves */
+:root[data-design="starlight"] :is(.ctx, .nowcol, .sl-hero, .sys-nav, .sl-mini__card, .card[data-region], .lib-card, .sys-card, .sys-design) {
   --sl-stack: 0 var(--sl-o1) 0 -2px var(--stack-1), 0 var(--sl-o1) 0 0 var(--line), 0 var(--sl-o2) 0 -2px var(--stack-2), 0 var(--sl-o2) 0 0 var(--line);
 }
-/* the stack is physical: a tray under the pointer sinks 3 px onto its lavender layer, the periwinkle layer peeks out */
+:root[data-design="starlight"] :is(.ctx, .nowcol, .sys-nav, .sl-mini__card, .card[data-region], .lib-card, .sys-card) { box-shadow: var(--sl-edge), var(--sl-stack); }
+:root[data-design="starlight"] :is(.lib-card, .sys-card) { margin-bottom: var(--stack-reserve); }
+/* the stack is physical: a print under the pointer sinks 3 px onto its lavender sleeve, the periwinkle one peeks out */
 @media (hover: hover) and (prefers-reduced-motion: no-preference) {
-  :root[data-design="starlight"]:not([data-motion="reduce"]) :is(.card[data-region], .sl-hero:not(.sl-hero--compact), .lib-card) {
+  :root[data-design="starlight"]:not([data-motion="reduce"]) :is(.card[data-region], .sl-hero:not(.sl-hero--compact)) {
     transition: transform var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
   }
   :root[data-design="starlight"]:not([data-motion="reduce"]) :is(.card[data-region], .sl-hero:not(.sl-hero--compact)):hover {
     --sl-o1: 4px; --sl-o2: 13px; transform: translateY(3px);
   }
 }
-:root[data-design="starlight"] .card[data-region] { box-shadow: var(--sl-stack); }
+
+/* the boxes and rows inside a print are cut square too */
+:root[data-design="starlight"] :is(.inset, .lib-notice, .sys-note, .disc-scan, .disc-issue, .disc-agg, .disc-recover, .disc-dup__card, .now-q__radio,
+  .disc-starter, .disc-recent, .disc-alt, .disc-aggl__row, .disc-rel__row, .disc-cold__artist, .disc-step, .lib-pick, .lib-imp__row, .lib-linkrev__hit,
+  .sys-pal__opt, .now-act__row, .now-ly__line) { border-radius: var(--r-thumb); }
 
 /* line icons are thin periwinkle on cream */
 :root[data-design="starlight"] :is(.card, .s-card, .pbar, .ctx, .nowcol, .mini) .btn-icon { color: var(--sl-icon); }
 :root[data-design="starlight"] .btn-icon:is(.is-liked, [aria-pressed="true"]) { color: var(--heart); }
 
 /* =====================================================================
-   Type voice: caps titles in burgundy, caps artist lines, lowercase labels with a hairline
+   Type voice: a page's title is the poster's headline (thin caps, huge); song titles in burgundy caps, artist lines in
+   spaced caps; a print's heading in thin spaced caps over a hairline; small labels printed in DM Mono caps
    ===================================================================== */
-:root[data-design="starlight"] :is(.t-display, .t-title-xl) { text-transform: uppercase; font-weight: 500; }
+:root[data-design="starlight"] :is(.t-display, .t-title-xl) { text-transform: uppercase; }
+:root[data-design="starlight"] .t-display { overflow-wrap: break-word; }
 :root[data-design="starlight"] :is(.trow__title, .tile__title, .pbar__title, .mini__title, .disc-pick__title, .disc-starter__title) {
   text-transform: uppercase; letter-spacing: .03em; font-weight: 600;
 }
@@ -241,17 +263,25 @@
 :root[data-design="starlight"] :is(.trow__artist, .tile__by, .pbar__artist, .mini__sub, .disc-pick__by) {
   text-transform: uppercase; letter-spacing: .05em; font-size: .78rem; font-weight: 400;
 }
-/* card heads: "new releases ------" (lowercase, regular, a slate-periwinkle hairline) */
-:root[data-design="starlight"] :is(.label-rule > h2, .label-rule > h3, .label-rule__text) { font: 400 1rem/1.3 var(--f-ui); letter-spacing: .01em; color: var(--fg); }
-:root[data-design="starlight"] .label-rule::after { height: 1.5px; }
-:root[data-design="starlight"] .label-rule--sm :is(> h2, > h3, .label-rule__text) { font: 400 .875rem/1.2 var(--f-ui); color: var(--fg-2); }
+/* a print's heading: "PICKED FOR YOU ------" in thin spaced caps; a small group label in DM Mono caps */
+:root[data-design="starlight"] :is(.label-rule > h2, .label-rule > h3, .label-rule__text) {
+  font: 300 1.25rem/1.15 var(--f-ui); letter-spacing: .14em; text-transform: uppercase; color: var(--fg);
+}
+:root[data-design="starlight"] .label-rule::after { height: 1px; }
+:root[data-design="starlight"] :is(.label-rule--sm, .rail__section .label-rule) > :is(h2, h3),
+:root[data-design="starlight"] :is(.label-rule--sm, .rail__section .label-rule) .label-rule__text {
+  font: 400 .75rem/1.3 var(--f-px); letter-spacing: .14em; color: var(--fg-2);
+}
 :root[data-design="starlight"] .card > .card-head { margin-bottom: var(--sp-4); }
+/* the line under a page's headline (what the page holds): DM Mono after a short rule, as Home's week line */
+:root[data-design="starlight"] :is(.lib-head__sub, .sys-lede, .disc-hello__sum) { font: 400 .875rem/1.5 var(--f-px); letter-spacing: .02em; color: var(--fg-2); }
+:root[data-design="starlight"] :is(.lib-head__sub, .disc-hello__sum) { padding-left: 58px; text-indent: -58px; }
+:root[data-design="starlight"] :is(.lib-head__sub, .disc-hello__sum)::before { content: ""; display: inline-block; width: 44px; height: 1px; margin-right: 14px; vertical-align: .3em; text-indent: 0; background: currentColor; }
+:root[data-design="starlight"] :is(.lib-kicker, .disc-top__kind, .disc-dup__label, .sys-pal__glabel) { font: 400 .75rem/1.3 var(--f-px); letter-spacing: .14em; text-transform: uppercase; color: var(--fg-2); }
 :root[data-design="starlight"] .btn--quiet { font-weight: 500; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 4px; }
 :root[data-design="starlight"] .link { font-weight: 600; }
 /* the base's italic heavy labels become the quiet lowercase label voice */
 :root[data-design="starlight"] :is(.dup-note, .disc-src__note) { font: italic 400 .8125rem/1.3 var(--f-ui); }
-:root[data-design="starlight"] :is(.lib-kicker, .disc-dup__label, .sys-pal__glabel) { font: 400 .9375rem/1.2 var(--f-ui); color: var(--fg-2); }
-:root[data-design="starlight"] .now-head__from { font: 400 .9375rem/1.25 var(--f-ui); }
 :root[data-design="starlight"] .disc-hello__sum b { font-weight: 600; }
 :root[data-design="starlight"] :is(.now-q__mark, .trow__artist .resolve, .trow__artist .dup-better, .trow__artist .dup-note) {
   text-transform: none; letter-spacing: 0; font: 500 .75rem/1 var(--f-ui);
@@ -301,22 +331,21 @@
 :root[data-design="starlight"] .chip-reason__name { color: var(--link); font-weight: 600; text-decoration: underline 1px; text-underline-offset: 3px; }
 :root[data-design="starlight"] .chip-more { border-color: transparent; font-weight: 600; }
 :root[data-design="starlight"] .pill-filter { font: 500 .875rem/1 var(--f-ui); border-width: var(--stroke); }
-:root[data-design="starlight"] :is(.pill-filter[aria-pressed="true"], .lib-segs a.pill-filter[aria-current="page"]) {
+:root[data-design="starlight"] .pill-filter[aria-pressed="true"] {
   background: var(--cream); color: var(--ink); border-color: var(--line); box-shadow: 0 3px 0 -1px var(--stack-1), 0 3px 0 0 var(--line);
 }
 :root[data-design="starlight"] .badge { font: 500 .75rem/1 var(--f-ui); letter-spacing: .01em; border-width: var(--stroke-thin); }
 :root[data-design="starlight"] .badge-saved { background: #dfe6fb; color: var(--ink); border-color: #9aa7d6; }
-:root[data-design="starlight"] .q-chip { padding: 1px 6px 0; font: 400 .75rem/1 var(--f-px); letter-spacing: .02em; border-radius: 5px; }
+:root[data-design="starlight"] .q-chip { padding: 1px 6px 0; font: 400 .75rem/1 var(--f-px); letter-spacing: .02em; border-radius: 3px; }
 :root[data-design="starlight"] .q-chip--ll::before { width: 5px; height: 5px; margin-top: -1px; }
 :root[data-design="starlight"] .q-chip--solid:is(.q-chip--ll, .q-chip--ly) { background: transparent; color: var(--q-ll); border-color: var(--q-ll); }
 :root[data-design="starlight"] .q-chip--solid.q-chip--ly { color: var(--q-ly); border-color: var(--edge); }
 :root[data-design="starlight"] .s-screen .q-chip--solid.q-chip--ll { background: var(--indigo); border-color: var(--indigo); color: var(--lilac); }
 :root[data-design="starlight"] .s-screen .q-chip--solid.q-chip--ly { background: var(--ink); border-color: var(--ink); color: var(--cream); }
-:root[data-design="starlight"] .badge-new { font: 500 .75rem/1 var(--f-px); padding: 4px 6px 3px; letter-spacing: .04em; }
-:root[data-design="starlight"] .tile__meta { --tag-h: 19px; }   /* on a cover tile the sticker is smaller */
+:root[data-design="starlight"] .badge-new { font: 500 .75rem/1 var(--f-px); padding: 4px 6px 3px; letter-spacing: .04em; border-radius: 3px; }
+:root[data-design="starlight"] .tile__meta { --tag-h: 19px; font: 400 .75rem/1.2 var(--f-px); }   /* on a cover tile the sticker is smaller */
 :root[data-design="starlight"] .badge-count { font: 600 .75rem/1 var(--f-ui); }
-:root[data-design="starlight"] .tile__meta { font: 400 .75rem/1.2 var(--f-px); }
-:root[data-design="starlight"] .kbd { font: 400 .75rem/1 var(--f-px); min-width: 24px; height: 24px; padding: 1px 6px 0; border-width: var(--stroke-thin); }
+:root[data-design="starlight"] .kbd { font: 400 .75rem/1 var(--f-px); min-width: 24px; height: 24px; padding: 1px 6px 0; border-width: var(--stroke-thin); border-radius: 3px; }
 
 /* =====================================================================
    Covers: eight watercolour scenes (art/c1-c8.svg) drawn on ::before, a paper grain and a light inner frame line on
@@ -347,19 +376,26 @@
 :root[data-design="starlight"] .mosaic .cover::after { box-shadow: none; }
 /* real art replaces the scene; the inner frame line (not the grain) stays on top of it, and so does the hero's shooting star */
 :root[data-design="starlight"] .cover.has-art::after { display: block; z-index: 2; background: none; }
+/* the cover viewer: the picture hung as a print on its sleeves, its label in caps under it */
+:root[data-design="starlight"] .cover-view__art { border-radius: var(--r-art); box-shadow: var(--sl-sleeves); }
+:root[data-design="starlight"] .cover-view__title { font: 300 1.75rem/1.1 var(--f-ui); letter-spacing: .04em; text-transform: uppercase; }
+:root[data-design="starlight"] .cover-view__by { font: 400 .8125rem/1.3 var(--f-px); letter-spacing: .14em; text-transform: uppercase; }
 
 /* =====================================================================
-   Track rows (img 01 rows: framed art, caps burgundy title, caps artist, filled hearts), tiles, seek, toggles, inputs
+   Song rows: a poster's tracklist (framed art, caps burgundy title, caps artist, filled hearts, a hairline between
+   lines, DM Mono numbers and times); tiles are framed prints on their sleeves with a wall label under them
    ===================================================================== */
-:root[data-design="starlight"] .trow { border-radius: 16px; }
+:root[data-design="starlight"] .trow { border-radius: var(--r-thumb); }
+:root[data-design="starlight"] .tlist:not(.tlist--dense) > .trow + .trow { box-shadow: inset 0 1px 0 var(--divider, var(--sl-divider)); }
 :root[data-design="starlight"] .trow .cover { border-radius: var(--r-thumb); }
-:root[data-design="starlight"] .trow__title { font-size: 1rem; border-radius: 6px; }
+:root[data-design="starlight"] .trow__title { font-size: 1rem; border-radius: 3px; }
 :root[data-design="starlight"] .trow__title:focus-visible { outline-offset: 3px; }
 :root[data-design="starlight"] :is(.trow__num, .trow__dur) { font: 400 .8125rem/1 var(--f-px); }
 :root[data-design="starlight"] :is(.trow__album, .trow__added) { font: 400 .875rem/1.3 var(--f-ui); }
 :root[data-design="starlight"] .trow__sources { font: 400 .8125rem/1.2 var(--f-ui); }
 :root[data-design="starlight"] .eq { color: var(--accent-ui); }
 :root[data-design="starlight"] :is(.trow__like, .btn-icon).is-liked .ic { fill: currentColor; }
+:root[data-design="starlight"] :is(.trow, .disc-pick).is-revealed { box-shadow: inset 0 0 0 1.5px var(--link); }
 /* img 01 rows carry title, artist and heart only: a chip every row repeats is said once by the page instead
    (album page: "Saved" + format sit in the header; artist page: the source). A row that differs keeps its chip. */
 /* the screen test sits in the list's own compound too: selectors match right to left, so without it every song row's
@@ -375,7 +411,10 @@
   :root[data-design="starlight"] .disc-search .trow__badges { justify-self: start; margin-top: 2px; }
 }
 
+:root[data-design="starlight"] .tile__art { margin: 0 10px 18px 0; }
+:root[data-design="starlight"] .tile__art .cover { border-radius: var(--r-thumb); box-shadow: var(--sl-print); }
 :root[data-design="starlight"] .tile__title { font-size: .9375rem; }
+:root[data-design="starlight"] .tile__by { letter-spacing: .12em; }
 :root[data-design="starlight"] .tile__play { background: var(--cream); color: var(--sl-accent); border: var(--stroke) solid var(--sl-accent); width: 38px; height: 38px; right: 8px; bottom: 8px; }
 :root[data-design="starlight"] .tile__play:hover { background: var(--sl-accent); color: var(--cream); }
 /* horizontal shelves fade at the trailing edge, so a cut card reads as "more this way" */
@@ -385,39 +424,73 @@
 /* jump back in: two whole cards and 40 % of the third, never a sliver */
 :root[data-design="starlight"] .disc-shelf--sm { grid-auto-columns: max(120px, calc((100% - 2 * var(--sp-5)) / 2.4)); }
 
+/* =====================================================================
+   Seek, toggles, tabs
+   ===================================================================== */
 /* seek: a thin line with a filled dot (img 01); transfer hatch and buffered ranges stay readable */
 :root[data-design="starlight"] .seek__track { height: 4px; margin-top: -2px; border-radius: 2px; box-shadow: inset 0 0 0 1px var(--seek-line); background: var(--sl-seek-empty, var(--sl-track)); }
 :root[data-design="starlight"] .seek__knob { left: -7px; top: -7px; width: 14px; height: 14px; border: 0; box-shadow: 0 0 0 2px var(--bg); }
 :root[data-design="starlight"] :is(.s-sky, .s-panel:not(.pbar):not(.ctx):not(.mini)) .seek__track { --sl-seek-empty: color-mix(in srgb, var(--seek-line) 45%, transparent); }
 :root[data-design="starlight"] .seek-row__time { font: 400 .8125rem/1 var(--f-px); }
+:root[data-design="starlight"] .switch { border-width: var(--stroke); }
 
-:root[data-design="starlight"] :is(.switch, .seg) { border-width: var(--stroke); }
-:root[data-design="starlight"] .seg__ind { background: var(--cream); box-shadow: inset 0 0 0 var(--stroke) var(--line), 0 3px 0 -1px var(--stack-1), 0 3px 0 0 var(--line); }
-:root[data-design="starlight"] .seg__btn { font: 400 .875rem/1 var(--f-ui); }
-:root[data-design="starlight"] .seg__btn:is([aria-selected="true"], [aria-pressed="true"]) { font-weight: 600; }
+/* tabs are a poster's printed index: the choices in spaced caps on a hairline, the one chosen underlined and marked
+   with a 4-point star (lull places the mark, .seg__ind, on the chosen tab) */
+:root[data-design="starlight"] .seg { padding: 0 0 6px; border: 0; border-radius: 0; background: none; box-shadow: inset 0 -1px 0 var(--rule, var(--sl-rule)); }
+:root[data-design="starlight"] .seg__ind { top: auto; bottom: 0; height: 2px; border-radius: 0; background: var(--accent-ui); box-shadow: none; }
+:root[data-design="starlight"] .seg__ind::after {
+  content: ""; position: absolute; left: 50%; bottom: 100%; width: 12px; height: 12px; margin: 0 0 -5px -6px; background: var(--accent-ui);
+  -webkit-mask: var(--mask-sparkle) center / contain no-repeat; mask: var(--mask-sparkle) center / contain no-repeat;
+}
+:root[data-design="starlight"] .seg__btn { min-height: 34px; padding: 0 10px 4px; border-radius: 3px; font: 500 .75rem/1 var(--f-ui); letter-spacing: .16em; text-transform: uppercase; color: var(--fg-2); }
+:root[data-design="starlight"] .seg__btn:hover { color: var(--fg); }
+:root[data-design="starlight"] .seg__btn:is([aria-selected="true"], [aria-pressed="true"], [aria-checked="true"]) { color: var(--fg); font-weight: 600; }
 
-/* inputs: search fields are cream pills on one lavender layer, wherever they sit */
+/* =====================================================================
+   Inputs: search fields are cream pills on one lavender layer, wherever they sit
+   ===================================================================== */
 :root[data-design="starlight"] .input { border-width: var(--stroke); font: 400 1rem/1 var(--f-ui); }
-:root[data-design="starlight"] textarea.input { border-radius: 16px; }
+:root[data-design="starlight"] textarea.input { border-radius: var(--r-card); }
 :root[data-design="starlight"] .search-field { margin-bottom: 5px; }
 :root[data-design="starlight"] .search-field .input { background: var(--cream); color: var(--ink); border-color: var(--line); box-shadow: var(--sl-layer); }
 :root[data-design="starlight"] .search-field .input::placeholder { color: var(--ink-2); }
 :root[data-design="starlight"] .search-field > .ic { color: var(--sl-icon); }
 :root[data-design="starlight"] .search-field .kbd { background: var(--cream); color: var(--ink-2); border-color: var(--line); box-shadow: 0 2px 0 var(--line); }
-:root[data-design="starlight"] .search-field .search-field__clear { --focus: var(--indigo); color: var(--sl-icon); }
+:root[data-design="starlight"] .search-field .btn-icon.search-field__clear { --bg: var(--cream); --bg-2: var(--cream-2); --focus: var(--indigo); color: var(--sl-icon); border-color: transparent; background: transparent; }
 :root[data-design="starlight"] .search-field__clear:hover { background: var(--cream-2); }
 
 /* =====================================================================
-   Shell: the rail on the sky
+   The rail: the navigation is a constellation on the sky. One star per place on a dotted line, the place you are on
+   a bright 4-point star; the labels in spaced caps. From 1100 px, where the rail has its words (the icon rail keeps
+   its icons, below)
    ===================================================================== */
 :root[data-design="starlight"] .rail { background: transparent; border: 0; box-shadow: none; }
 :root[data-design="starlight"] .rail__head { padding: 20px 18px 14px 12px; }
-:root[data-design="starlight"] .rail__nav { padding: 4px 4px 2px; gap: 4px; }
-:root[data-design="starlight"] .nav-item { font: 400 1.0625rem/1 var(--f-ui); color: var(--fg); border-width: var(--stroke); border-radius: 999px; min-height: 38px; padding: 0 16px; }
 :root[data-design="starlight"] .nav-item .ic { color: var(--fg-2); }
-:root[data-design="starlight"] .nav-item:hover { background: var(--sky-deep); }
-:root[data-design="starlight"] .nav-item[aria-current="page"] { background: var(--cream); color: var(--ink); border-color: var(--line); font-weight: 500; box-shadow: var(--sl-layer); margin-bottom: 5px; }
-:root[data-design="starlight"] .nav-item[aria-current="page"] .ic { color: var(--sl-icon); }
+@media (min-width: 1100px) {
+  :root[data-design="starlight"] .rail__nav { position: relative; gap: 0; padding: 6px 4px 8px; }
+  :root[data-design="starlight"] .rail__nav::before {
+    content: ""; position: absolute; left: 30px; top: 28px; bottom: 30px; width: 1px; pointer-events: none;
+    background: repeating-linear-gradient(180deg, var(--fg-sky-2) 0 3px, transparent 3px 7px); opacity: .75;
+  }
+  :root[data-design="starlight"] .nav-item {
+    min-height: 40px; margin: 0; padding: 0 12px 0 48px; border: 0; border-radius: 3px; background: none; box-shadow: none;
+    font: 400 .875rem/1 var(--f-ui); letter-spacing: .2em; text-transform: uppercase; color: var(--fg-sky-2);
+  }
+  :root[data-design="starlight"] .nav-item > .ic { display: none; }
+  :root[data-design="starlight"] .nav-item::before {
+    content: ""; position: absolute; left: 22px; top: 50%; width: 9px; height: 9px; margin-top: -4.5px; border-radius: 50%;
+    background: var(--sky); box-shadow: inset 0 0 0 1.5px var(--fg-sky-2); transition: transform var(--dur-2) var(--ease-out);
+  }
+  :root[data-design="starlight"] .nav-item:hover { background: none; color: var(--fg-sky); }
+  :root[data-design="starlight"] .nav-item:hover::before { background: var(--fg-sky-2); transform: scale(1.25); }
+  :root[data-design="starlight"] .nav-item[aria-current="page"] { color: var(--fg-sky); font-weight: 500; letter-spacing: .22em; }
+  :root[data-design="starlight"] .nav-item[aria-current="page"]::before {
+    left: 15.5px; width: 22px; height: 22px; margin-top: -11px; border-radius: 0; box-shadow: none; background: var(--sparkle);
+    -webkit-mask: var(--mask-sparkle) center / contain no-repeat; mask: var(--mask-sparkle) center / contain no-repeat;
+  }
+  :root[data-design="starlight"] .nav-item .badge-count { letter-spacing: 0; }
+}
 /* the scroller fades at the bottom only while there is more below (scroll-driven; no fade where unsupported),
    and rows snap so a playlist is either whole or clearly behind the fade */
 :root[data-design="starlight"] :is(.rail__scroll, .ctx__body) {
@@ -432,14 +505,13 @@
 :root[data-design="starlight"] .rail__list > li { scroll-snap-align: end; }
 :root[data-design="starlight"] .rail__section { padding: 12px 10px 2px 12px; }
 :root[data-design="starlight"] .rail__section .label-rule { --rule: color-mix(in srgb, var(--edge) 60%, transparent); }
-:root[data-design="starlight"] .rail__section .label-rule :is(> *, .label-rule__text) { font: 400 .9375rem/1.2 var(--f-ui); color: var(--fg-2); }
 :root[data-design="starlight"] .rail__tags { gap: 6px; padding: 8px 8px 4px 10px; }
 :root[data-design="starlight"] .rail__tags .chip { min-height: 28px; padding: 0 10px; font-size: .8125rem; }
 :root[data-design="starlight"] .rail__list { padding: 4px 2px; }
-:root[data-design="starlight"] .rail__pl { min-height: 44px; padding-block: 4px; border-radius: 14px; }
+:root[data-design="starlight"] .rail__pl { min-height: 44px; padding-block: 4px; border-radius: 3px; }
 :root[data-design="starlight"] .rail__pl .mosaic { --cover-size: 34px !important; }
 :root[data-design="starlight"] .rail__pl b { font: 400 .9375rem/1.2 var(--f-ui); }
-:root[data-design="starlight"] .rail__pl small { font: 400 .8125rem/1.2 var(--f-ui); color: var(--fg-2); }
+:root[data-design="starlight"] .rail__pl small { font: 400 .75rem/1.2 var(--f-px); color: var(--fg-2); }
 :root[data-design="starlight"] .rail__pl:hover { background: var(--sky-deep); }
 :root[data-design="starlight"] .rail__pl[aria-current="page"] { background: transparent; box-shadow: inset 0 0 0 var(--stroke) var(--edge); }
 :root[data-design="starlight"] .rail__foot { border-top: 0; padding: 4px 12px 10px; }
@@ -460,7 +532,7 @@
 :root[data-design="starlight"][data-theme="night"] :is(.card, .dialog, .sheet) .sl-mark { color: var(--fg); --sparkle: #b2589b; }
 
 /* =====================================================================
-   Shell: header, the status tray, context panel, player bar
+   The header and the status tray
    ===================================================================== */
 :root[data-design="starlight"] .header__search .input { height: 46px; }
 :root[data-design="starlight"] .header .btn-icon { background: transparent; color: var(--fg-sky); border-color: var(--edge); }
@@ -478,22 +550,33 @@
 :root[data-design="starlight"] .tray__count::before { content: "· "; color: var(--fg-sky-2); }
 /* the compact pill (tablet, phone) shows the worst state in words (.tray__word) instead of the cache figure: one glyph + "last.fm queued" */
 :root[data-design="starlight"] .tray--compact .tray__pill { font-size: 0; gap: 6px; }
-:root[data-design="starlight"] .tray--compact .sg { margin: 0 -4px; }
-:root[data-design="starlight"] .tray--compact .sg { display: none; }
+:root[data-design="starlight"] .tray--compact .sg { display: none; margin: 0 -4px; }
 :root[data-design="starlight"] .tray--compact:not(:has(.sg--warn, .sg--down)) .sg:first-of-type,
 :root[data-design="starlight"] .tray--compact:not(:has(.sg--down)) .sg--warn:not(.sg--warn ~ .sg--warn),
 :root[data-design="starlight"] .tray--compact .sg--down:not(.sg--down ~ .sg--down) { display: block; }
 :root[data-design="starlight"] .tray--compact .tray__gb { display: none; }
 :root[data-design="starlight"] .tray--compact .tray__word { display: inline; font: 400 .8125rem/1 var(--f-px); }
 
-/* context panel: a cream tray, Queue / Lyrics / Activity as an outlined pill track; the list scrolls inside with a fade
-   while more is below, and the queue ends on a label-rule foot ("7 songs, 26 min") so the panel never ends mid-row */
-:root[data-design="starlight"] .ctx__head { padding: 14px 14px 8px; }
-:root[data-design="starlight"] .ctx__body { padding: 4px 14px 16px; }
-:root[data-design="starlight"] .ctx .label-rule :is(> h2, > h3) { font-size: .9375rem; }
+/* =====================================================================
+   The side panel: a print holding the evening's programme. Queue / Lyrics / Activity as the poster's printed index
+   (above, Tabs), "playing from" and the group labels printed in DM Mono caps, the songs a tracklist with hairlines;
+   the list scrolls inside with a fade while more is below, and the queue ends on a printed foot ("12 songs, 1 h 3 min")
+   so the panel never ends mid-row
+   ===================================================================== */
+:root[data-design="starlight"] .ctx__head { gap: 6px; padding: 18px 14px 6px 18px; }
+:root[data-design="starlight"] .ctx__body { padding: 8px 14px 16px; }
+:root[data-design="starlight"] .ctx .label-rule { margin-top: 10px; }
+:root[data-design="starlight"] .now-q__from { margin: 4px 4px 10px; font: 400 .6875rem/1.4 var(--f-px); letter-spacing: .12em; text-transform: uppercase; color: var(--fg-2); }
+:root[data-design="starlight"] .now-q__from b { font-weight: 500; color: var(--fg); }
+:root[data-design="starlight"] .now-q__from .ic { color: var(--sl-icon); }
+:root[data-design="starlight"] .now-q__count { font: 400 .75rem/1 var(--f-px); color: var(--fg-2); }
+:root[data-design="starlight"] .now-q__row + .now-q__row { box-shadow: inset 0 1px 0 var(--divider); }
+:root[data-design="starlight"] .now-q__row.is-playing { background: none; }
+:root[data-design="starlight"] .now-q__row.is-playing .cover { box-shadow: var(--sl-print-sm); }
+:root[data-design="starlight"] .now-q__row:is(:hover, :focus-within) { background: var(--bg-2); }
 :root[data-design="starlight"] .app:not([data-panel="strip"]) .ctx:has(#ctx-tab-queue[aria-selected="true"])[data-meta]:not([data-meta=""])::after {
-  content: "in the queue: " attr(data-meta); flex: none; margin: 0 16px; padding: 9px 2px 14px; border-top: 1.5px solid var(--sl-rule);
-  font: 400 .875rem/1.2 var(--f-ui); color: var(--fg-2);
+  content: "in the queue \2014  " attr(data-meta); flex: none; margin: 0 18px 8px; padding: 10px 2px 10px; border-top: 1px solid var(--sl-rule);
+  font: 400 .6875rem/1.3 var(--f-px); letter-spacing: .12em; text-transform: uppercase; color: var(--fg-2); white-space: pre;
 }
 /* queue: the radio card is one quiet block; Steer opens while the pointer or focus is inside it */
 :root[data-design="starlight"] .now-q__radio { gap: 0; padding: 8px 8px 8px 14px; border: var(--stroke) solid var(--divider); background: var(--bg-2); }
@@ -504,90 +587,207 @@
 :root[data-design="starlight"] .now-q__radio:not(:hover):not(:focus-within) .now-q__steer { display: none; }
 /* queue and search rows: status words wrap under the title line's end, the artist keeps its width */
 :root[data-design="starlight"] :is(.now-q__row, .disc-search .trow) .trow__artist { flex-wrap: wrap; row-gap: 2px; }
+/* the collapsed strip: a narrow print, its icons on the constellation's dotted line */
+:root[data-design="starlight"] .ctx__strip { gap: 6px; }
 
-/* player bar: a cream tray on two layers; caps title, outlined transport */
-:root[data-design="starlight"] .pbar { padding: 0 16px; }
+/* =====================================================================
+   The player bar is a concert ticket, in two rows: the song, the outlined transport and a stub (behind a
+   perforation) holding the tools in a printed box; then the seek as its own full-width row across the face, a
+   star-chart line (dotted where nothing has arrived, solid where it has, the place you are a 4-point star) headed by
+   the state in DM Mono. Notched corners and perforation notches are a mask on the plate (the bar's region title) and
+   on the two tickets under it, never on the bar: what floats above it (the state tab, the volume popover) stays whole.
+   The perforation follows the tools' column (--fit-side, which layout.js sets from the three columns of row one).
+   A liked song has a heart printed on its ticket, beside the show's name (#pbar[data-liked]).
+   ===================================================================== */
 :root[data-design="starlight"] .bezel-thumb { padding: 0; background: transparent; border: 0; border-radius: var(--r-thumb); }
 :root[data-design="starlight"] .bezel-thumb .cover { --cover-size: 58px; border-radius: var(--r-thumb); }
 :root[data-design="starlight"] .bezel-thumb:hover { background: transparent; }
 :root[data-design="starlight"] .bezel-thumb:hover .cover { border-color: var(--sl-accent); }
 :root[data-design="starlight"] .bezel-thumb--empty > span { background: var(--cream-2); border: var(--stroke) dashed var(--line); }
-:root[data-design="starlight"] .pbar__title { font-size: 1.0625rem; }
 :root[data-design="starlight"] .pbar__controls .btn-icon .ic { width: 22px; height: 22px; }
-:root[data-design="starlight"] .pbar__tools { gap: 0; }
 /* the state line rides the bar's top edge as a slim tab of night sky (cream words), so it never hides a cream card's text;
    on Now Playing the hero says it instead */
 :root[data-design="starlight"] .pbar__state {
   --fg: #f2e3d1; --fg-2: #d4d3ee; --link: #c9d6fa; --focus: #fff9fe; --heart: #f4a7bb;
-  background: var(--sl-night-card); color: var(--fg); border-color: var(--line); font: 500 .8125rem/1.3 var(--f-ui);
+  background: var(--sl-night-card); color: var(--fg); border-color: var(--line); border-radius: 3px 3px 0 0; font: 500 .8125rem/1.3 var(--f-ui);
   padding: 4px 8px 3px 12px; bottom: calc(100% + 1px); border-bottom: 0;
 }
 :root[data-design="starlight"] .pbar__state .btn--quiet { color: var(--link); }
-:root[data-design="starlight"] .app:has(> :where(.pbar) > .pbar__state:not([hidden])) .view { padding-bottom: 44px; }
-:root[data-design="starlight"] .app:has(#view .sl-hero) .pbar__state { display: none; }
+:root[data-design="starlight"]:is([data-player="finding"], [data-player="queued"], [data-player="buffering"], [data-player="stalled"], [data-player="choose"], [data-player="failed"], [data-player="jellyfin-error"], [data-player="ended"]) .view { padding-bottom: 44px; }
+:root[data-design="starlight"] .app[data-screen="now"] .pbar__state { display: none; }
+@media (min-width: 640px) {
+  :root[data-design="starlight"] { --bar-h: 122px; }
+  :root[data-design="starlight"] .pbar {
+    --tk-r: 14px; --tk-p: 8px; --tk-pad: 30px; --fit-centre-min: 280px;
+    --tk-x: calc(100% - var(--tk-pad) - var(--fit-side, 30%) - 14px);
+    --sl-ticket:
+      radial-gradient(circle at 0 0, #0000 var(--tk-r), #000 calc(var(--tk-r) + .5px)),
+      radial-gradient(circle at 100% 0, #0000 var(--tk-r), #000 calc(var(--tk-r) + .5px)),
+      radial-gradient(circle at 0 100%, #0000 var(--tk-r), #000 calc(var(--tk-r) + .5px)),
+      radial-gradient(circle at 100% 100%, #0000 var(--tk-r), #000 calc(var(--tk-r) + .5px)),
+      radial-gradient(circle at var(--tk-x) 0, #0000 var(--tk-p), #000 calc(var(--tk-p) + .5px)),
+      radial-gradient(circle at var(--tk-x) 100%, #0000 var(--tk-p), #000 calc(var(--tk-p) + .5px));
+    grid-template-rows: minmax(0, 1fr) auto; grid-template-areas: "now ctl tools" "seek seek tools"; row-gap: 4px; column-gap: 28px;
+    margin-bottom: 26px; padding: 14px var(--tk-pad) 12px; background: none; border: 0; border-radius: 0; box-shadow: none;
+  }
+  :root[data-design="starlight"] .pbar__centre { display: contents; }
+  :root[data-design="starlight"] .pbar__now { grid-area: now; gap: 16px; }
+  :root[data-design="starlight"] .pbar__controls { grid-area: ctl; justify-self: center; }
+  :root[data-design="starlight"] .pbar > .region-title, :root[data-design="starlight"] .pbar::before, :root[data-design="starlight"] .pbar::after {
+    content: ""; display: block; position: absolute; inset: 0; pointer-events: none;
+    -webkit-mask: var(--sl-ticket); mask: var(--sl-ticket); -webkit-mask-composite: source-in; mask-composite: intersect;
+  }
+  /* the plate: cream, a printed double border, the notches' edges and the dashed perforation */
+  :root[data-design="starlight"] .pbar > .region-title {
+    z-index: -1; font-size: 0; background-color: var(--bg);
+    background-image:
+      radial-gradient(circle at 0 0, var(--line) calc(var(--tk-r) + 1.5px), #0000 calc(var(--tk-r) + 2px)),
+      radial-gradient(circle at 100% 0, var(--line) calc(var(--tk-r) + 1.5px), #0000 calc(var(--tk-r) + 2px)),
+      radial-gradient(circle at 0 100%, var(--line) calc(var(--tk-r) + 1.5px), #0000 calc(var(--tk-r) + 2px)),
+      radial-gradient(circle at 100% 100%, var(--line) calc(var(--tk-r) + 1.5px), #0000 calc(var(--tk-r) + 2px)),
+      radial-gradient(circle at var(--tk-x) 0, var(--line) calc(var(--tk-p) + 1.5px), #0000 calc(var(--tk-p) + 2px)),
+      radial-gradient(circle at var(--tk-x) 100%, var(--line) calc(var(--tk-p) + 1.5px), #0000 calc(var(--tk-p) + 2px)),
+      linear-gradient(var(--sl-rule) 50%, #0000 0);
+    background-size: auto, auto, auto, auto, auto, auto, 1.5px 8px;
+    background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, var(--tk-x) 0;
+    background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, repeat-y;
+    box-shadow: inset 0 0 0 1.5px var(--line), inset 0 0 0 6px var(--bg), inset 0 0 0 7px color-mix(in srgb, var(--line) 40%, transparent);
+  }
+  /* the tickets under it show only below its edge (through the notches they would read as holes filled in) */
+  :root[data-design="starlight"] .pbar::before { z-index: -2; transform: translateY(7px); clip-path: inset(calc(100% - 7px) 0 0 0); background: var(--stack-1); box-shadow: inset 0 0 0 1.5px var(--line); }
+  :root[data-design="starlight"] .pbar::after { z-index: -3; transform: translateY(14px); clip-path: inset(calc(100% - 7px) 0 0 0); background: var(--stack-2); box-shadow: inset 0 0 0 1.5px var(--line); }
+  /* where the song plays from: DM Mono caps over the title; where the stub has the room (the desktop's bar, from
+     1100 px) it is printed across the stub's top instead, as a ticket names its show. The place's name is its own
+     ellipsis box, so a long playlist name ends in "..." inside the stub */
+  :root[data-design="starlight"] .pbar__from { font: 400 .6875rem/1.2 var(--f-px); letter-spacing: .1em; text-transform: uppercase; color: var(--fg-2); }
+  :root[data-design="starlight"] .pbar__from b { font-weight: 500; color: var(--fg); }
+  :root[data-design="starlight"] .pbar__from .ic { color: var(--sl-icon); }
+  :root[data-design="starlight"] .pbar[data-liked="true"] .pbar__from .from__text::after {
+    content: ""; flex: none; width: 11px; height: 10px; margin-left: 2px; align-self: center; background: var(--sl-heart);
+    -webkit-mask: var(--mask-pixel-heart) center / contain no-repeat; mask: var(--mask-pixel-heart) center / contain no-repeat;
+  }
+  @media (min-width: 1100px) {
+    :root[data-design="starlight"] .pbar__from { position: absolute; top: 13px; right: var(--tk-pad); width: var(--fit-side, 30%); justify-content: center; margin: 0; letter-spacing: .16em; }
+    :root[data-design="starlight"] .pbar__from .from__text { display: flex; gap: .6em; min-width: 0; white-space: nowrap; }
+    :root[data-design="starlight"] .pbar__from .from__label { flex: none; }
+    :root[data-design="starlight"] .pbar__from b { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  }
+  /* the song: a small framed print on its sleeves, the title in burgundy caps */
+  :root[data-design="starlight"] .pbar .bezel-thumb .cover { --cover-size: 60px; box-shadow: var(--sl-print-sm); }
+  :root[data-design="starlight"] .pbar__title { font-size: 1.125rem; letter-spacing: .06em; }
+  /* the tools: a printed box in the stub */
+  :root[data-design="starlight"] .pbar__tools { grid-area: tools; align-self: center; gap: 0; margin-top: 12px; padding: 2px 6px; border: 1px solid color-mix(in srgb, var(--line) 70%, transparent); border-radius: 3px; background: color-mix(in srgb, var(--bg-2) 60%, transparent); }
+  :root[data-design="starlight"] .pbar__tools .btn-icon { width: 38px; height: 38px; }
+  /* the seek row: the state, the time, the star-chart line, the length */
+  :root[data-design="starlight"] .pbar__seek { grid-area: seek; grid-template-columns: auto auto minmax(0, 1fr) auto; column-gap: 12px; }
+  :root[data-design="starlight"] .pbar__seek::before {
+    content: "\2726  now playing"; min-width: 11.5em; padding-right: 12px; border-right: 1px solid var(--sl-rule); white-space: pre;
+    font: 400 .6875rem/1.6 var(--f-px); letter-spacing: .14em; text-transform: uppercase; color: var(--sl-title);
+  }
+  :root[data-design="starlight"] .pbar[data-playing="false"] .pbar__seek::before { content: "\2726  paused"; }
+  :root[data-design="starlight"] .pbar__seek:has(.is-transferring)::before { counter-reset: rx var(--rx); content: "\2726  streaming " counter(rx) "%"; }
+  :root[data-design="starlight"] .pbar:is([data-status="finding"], [data-status="queued"]) .pbar__seek::before { content: "\2726  finding"; }
+  :root[data-design="starlight"] .pbar:is([data-status="buffering"], [data-status="stalled"]) .pbar__seek::before { content: "\2726  waiting"; }
+  :root[data-design="starlight"] .pbar[data-status="failed"] .pbar__seek::before { content: "\26A0  couldn\2019t play"; }
+  :root[data-design="starlight"] .pbar[data-status="idle"] .pbar__seek::before { content: "\2726  nothing yet"; color: var(--fg-2); }
+  :root[data-design="starlight"] .pbar__seek .seek { height: 26px; }
+  :root[data-design="starlight"] .pbar__seek .seek__track {
+    height: 2px; margin-top: -1px; border-radius: 0; box-shadow: none;
+    background: repeating-linear-gradient(90deg, var(--line) 0 2px, transparent 2px 6px);
+  }
+  :root[data-design="starlight"] .pbar__seek .seek__knob {
+    left: -11px; top: -11px; width: 22px; height: 22px; border: 0; border-radius: 0; box-shadow: none; background: var(--sl-accent);
+    -webkit-mask: var(--mask-sparkle) center / contain no-repeat; mask: var(--mask-sparkle) center / contain no-repeat;
+  }
+}
 
 /* =====================================================================
-   Now Playing hero (slots/nowHero): the top card of img 01
+   Now Playing hero (slots/nowHero): the poster. A cream sheet: the art hung as a framed print on two sleeves, then
+   where it plays from, the title set huge in thin caps, a gallery label under it (DM Mono: the album, the time, the
+   source facts); on a phone also the seek line and the outlined transport (from 640 px the bar's ticket has them).
+   A liked song has its heart printed after "playing from" (.now__dev[data-liked]); the corner star turns a quarter
+   over the song (--song-pos) and breathes while sound plays (:root[data-playing]).
    ===================================================================== */
 :root[data-design="starlight"] .sl-hero {
-  position: relative; max-width: none; width: 100%;
-  display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, .9fr); gap: var(--sp-6); align-items: stretch;
-  padding: 26px; border-radius: var(--r-card); margin-bottom: var(--stack-reserve);
+  position: relative; max-width: none; width: 100%; box-shadow: var(--sl-stack);
+  display: grid; grid-template-columns: minmax(0, 1fr) min(280px, 36%);
+  grid-template-areas: "from art" "song art" "label label" "seek seek" "ctl ctl" "trouble trouble";
+  grid-template-rows: auto 1fr auto auto auto auto; column-gap: clamp(20px, 4cqi, 44px); align-items: start;
+  padding: 26px 30px 22px; border-radius: var(--r-card); margin-bottom: var(--stack-reserve);
 }
-:root[data-design="starlight"] .sl-hero__info { position: relative; z-index: 1; display: grid; align-content: center; min-width: 0; }
-:root[data-design="starlight"] .sl-hero__from { display: flex; align-items: center; gap: var(--sp-3); margin: 0 0 var(--sp-3); font: 400 .9375rem/1.3 var(--f-ui); color: var(--fg); }
+/* the print's paper edge: a hairline inset from the sheet's edge */
+:root[data-design="starlight"] .sl-hero:not(.sl-hero--compact)::before {
+  content: ""; position: absolute; inset: 9px; border: 1px solid color-mix(in srgb, var(--line) 55%, transparent); pointer-events: none;
+}
+:root[data-design="starlight"] .sl-hero__from {
+  grid-area: from; position: relative; z-index: 1; display: flex; align-items: center; gap: var(--sp-3); min-width: 0; margin: 4px 0 0;
+  font: 400 .8125rem/1.3 var(--f-px); letter-spacing: .06em; text-transform: uppercase; color: var(--fg-2);
+}
 :root[data-design="starlight"] .sl-hero__from > .ic { display: none; }
 :root[data-design="starlight"] .sl-hero__from > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-:root[data-design="starlight"] .sl-hero__from b { font-weight: 500; }
-:root[data-design="starlight"] .sl-hero__from::after { content: ""; flex: 1; min-width: 24px; height: 1.5px; background: var(--sl-rule); }
-:root[data-design="starlight"] .sl-hero__from > span::after {           /* the little heart after the label (img 01), in pixels (img 04) */
+:root[data-design="starlight"] .sl-hero__from b { font-weight: 500; color: var(--fg); }
+:root[data-design="starlight"] .sl-hero__from::after { content: ""; flex: 1; min-width: 24px; height: 1px; background: var(--sl-rule); }
+:root[data-design="starlight"] .now__dev[data-liked="true"] .sl-hero__from > span::after {   /* the heart printed after the label (img 01), in pixels (img 04) */
   content: ""; display: inline-block; width: 13px; height: 12px; margin: 0 0 -1px 8px; background: var(--sl-heart);
   -webkit-mask: var(--mask-pixel-heart) center / contain no-repeat; mask: var(--mask-pixel-heart) center / contain no-repeat;
 }
-:root[data-design="starlight"] .sl-hero__song { position: relative; min-width: 0; }
-:root[data-design="starlight"] .sl-hero .device__title {
-  margin: 0; font: 500 clamp(2rem, 4.4vw, 3.25rem)/1.02 var(--f-ui); letter-spacing: .01em; text-transform: uppercase; color: var(--sl-title);
-  overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+:root[data-design="starlight"] .sl-hero__song { grid-area: song; position: relative; z-index: 1; min-width: 0; align-self: end; margin-top: 18px; }
+:root[data-design="starlight"] .sl-hero:not(.sl-hero--compact) .device__title {
+  margin: 0; font: 300 clamp(2.5rem, 9.5cqi, 6rem)/.9 var(--f-ui); letter-spacing: -.005em; text-transform: uppercase; color: var(--sl-title);
+  text-wrap: balance; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
 }
-:root[data-design="starlight"] .sl-hero .device__artist {
-  margin: 8px 0 0; padding-right: 7.5rem; font: 400 1.125rem/1.3 var(--f-ui); letter-spacing: .04em; text-transform: uppercase; color: var(--fg);
+:root[data-design="starlight"] .sl-hero:not(.sl-hero--compact) .device__artist {
+  margin: 14px 0 0; font: 400 clamp(1rem, 2.2cqi, 1.375rem)/1.25 var(--f-ui); letter-spacing: .22em; text-transform: uppercase; color: var(--fg);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 :root[data-design="starlight"] .sl-hero:not(.sl-hero--compact) .sl-hero__song .wave { display: none; }
-:root[data-design="starlight"] .sl-hero__time { justify-self: end; margin: -1.55rem 0 0; display: flex; gap: 6px; font: 400 1rem/1.3 var(--f-px); color: var(--fg); font-variant-numeric: tabular-nums; }
+/* the gallery label: a ruled strip under the title, the album and the time in DM Mono, the source facts at its end */
+:root[data-design="starlight"] .sl-hero__label {
+  grid-area: label; position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 18px;
+  margin-top: 22px; padding: 10px 0; border-block: 1px solid var(--sl-rule);
+}
+:root[data-design="starlight"] .sl-hero__plate { display: flex; align-items: baseline; gap: 10px; min-width: 0; margin: 0; font: 400 .875rem/1.3 var(--f-px); color: var(--fg); }
+:root[data-design="starlight"] .sl-hero__plate > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root[data-design="starlight"] .sl-hero__k { flex: none; font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; color: var(--fg-2); }
+:root[data-design="starlight"] .sl-hero__time { margin: 0; display: flex; gap: 6px; font: 400 .9375rem/1.3 var(--f-px); color: var(--fg); font-variant-numeric: tabular-nums; }
 :root[data-design="starlight"] .sl-hero__of { color: var(--fg-2); }
 /* source + format + streaming state (spec principles 3-4): the device screen's facts, as one quiet line */
-:root[data-design="starlight"] .sl-hero__facts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 10px 0 0; min-height: 24px; }
+:root[data-design="starlight"] .sl-hero__facts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-height: 24px; }
+:root[data-design="starlight"] .sl-hero__facts[data-track=""] { display: none; }
 :root[data-design="starlight"] .sl-hero__facts .device__facts { display: contents; }
-:root[data-design="starlight"] .sl-hero__state { font: 500 .875rem/1.2 var(--f-ui); letter-spacing: .04em; color: var(--sl-title); }
-:root[data-design="starlight"] .sl-hero__facts .device__fact { border-color: var(--line); color: var(--fg-2); }
+:root[data-design="starlight"] .sl-hero__state { font: 400 .8125rem/1.2 var(--f-px); letter-spacing: .06em; text-transform: uppercase; color: var(--sl-title); }
+:root[data-design="starlight"] .sl-hero__facts .device__fact { border-color: var(--line); color: var(--fg-2); border-radius: 3px; }
 :root[data-design="starlight"] .sl-hero__facts .now-sbtn { display: none; }   /* failed / ended fixes live in the trouble line and transport */
-:root[data-design="starlight"] .sl-hero__seek { height: 32px; margin-top: 6px; }
-:root[data-design="starlight"] .sl-hero__seek .seek__track { height: 4px; margin-top: -2px; background: var(--sl-track); }
-:root[data-design="starlight"] .sl-hero__seek .seek__knob { width: 16px; height: 16px; left: -8px; top: -8px; }
-:root[data-design="starlight"] .sl-hero__ctl { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); max-width: 420px; margin: 6px auto 0; }
+:root[data-design="starlight"] .sl-hero__seek { grid-area: seek; position: relative; z-index: 1; height: 32px; margin-top: 8px; }
+:root[data-design="starlight"] .sl-hero__seek .seek__track { height: 2px; margin-top: -1px; background: var(--sl-track); }
+:root[data-design="starlight"] .sl-hero__seek .seek__knob {   /* the place you are is the ticket's 4-point star */
+  left: -11px; top: -11px; width: 22px; height: 22px; border-radius: 0; box-shadow: none; background: var(--sl-accent);
+  -webkit-mask: var(--mask-sparkle) center / contain no-repeat; mask: var(--mask-sparkle) center / contain no-repeat;
+}
+:root[data-design="starlight"] .sl-hero__ctl { grid-area: ctl; position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); width: min(100%, 440px); margin: 2px auto 0; }
 :root[data-design="starlight"] .sl-hero__ctl .btn-icon { width: 44px; height: 44px; color: var(--sl-icon); }
 :root[data-design="starlight"] .sl-hero__ctl .btn-icon .ic { width: 24px; height: 24px; }
 :root[data-design="starlight"] .sl-hero__ctl .btn-icon.is-liked { color: var(--heart); }
 /* a failed play takes the seek line's slot: a burgundy line with a warning glyph, its fixes where the transport was */
-:root[data-design="starlight"] .sl-hero__trouble { display: none; }
-:root[data-design="starlight"] .app:has(> .pbar[data-status="failed"]) .sl-hero__trouble--failed,
-:root[data-design="starlight"] .app:has(> .pbar[data-status="jellyfin-error"]) .sl-hero__trouble--jellyfin { display: grid; gap: 14px; margin-top: 14px; }
-:root[data-design="starlight"] .app:has(> .pbar:is([data-status="failed"], [data-status="jellyfin-error"])) .sl-hero:not(.sl-hero--compact) :is(.sl-hero__seek, .sl-hero__ctl, .sl-hero__time) { display: none; }
+:root[data-design="starlight"] .sl-hero__trouble { display: none; grid-area: trouble; position: relative; z-index: 1; }
+:root[data-design="starlight"][data-player="failed"] .sl-hero__trouble--failed,
+:root[data-design="starlight"][data-player="jellyfin-error"] .sl-hero__trouble--jellyfin { display: grid; gap: 14px; margin-top: 14px; }
+:root[data-design="starlight"]:is([data-player="failed"], [data-player="jellyfin-error"]) .sl-hero:not(.sl-hero--compact) :is(.sl-hero__seek, .sl-hero__ctl, .sl-hero__time) { display: none; }
 :root[data-design="starlight"] .sl-hero__err {
   display: flex; align-items: center; gap: 10px; margin: 0; padding-bottom: 12px; border-bottom: 1.5px solid var(--sl-title);
   font: 500 1.0625rem/1.3 var(--f-ui); color: var(--sl-title);
 }
 :root[data-design="starlight"] .sl-hero__err .ic { width: 22px; height: 22px; flex: none; }
 :root[data-design="starlight"] .sl-hero__fix { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-/* the art panel: a framed picture on two sleeves, with a soft moon glow bleeding onto the cream */
-:root[data-design="starlight"] .sl-hero__art { position: relative; min-height: 220px; margin: 0 14px 14px 0; }
+/* the art: a framed print hung on two sleeves, a soft moon glow bleeding onto the cream behind it */
+:root[data-design="starlight"] .sl-hero__art { grid-area: art; position: relative; z-index: 0; min-width: 0; aspect-ratio: 1; margin: 6px 14px 14px 0; }
 :root[data-design="starlight"] .sl-hero__art::before {
   content: ""; position: absolute; inset: -40px -30px -30px -90px; z-index: 0; pointer-events: none;
   background: radial-gradient(closest-side, rgba(182, 178, 226, .8), rgba(195, 194, 226, .35) 55%, rgba(195, 194, 226, 0));
 }
-:root[data-design="starlight"] .sl-hero__art .cover { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; aspect-ratio: auto; border-radius: 20px; box-shadow: var(--sl-sleeves); }
-:root[data-design="starlight"] .sl-hero__art .now-dev__slot { position: absolute; inset: 0; width: auto; height: auto; border-radius: 20px; margin: 0; border: var(--stroke) dashed var(--line); background: var(--cream-2); }
+:root[data-design="starlight"] .sl-hero__art > * { position: absolute; inset: 0; }
+:root[data-design="starlight"] .sl-hero__art .cover { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; aspect-ratio: auto; box-shadow: var(--sl-sleeves); }
+:root[data-design="starlight"] .sl-hero__art .now-dev__slot { position: absolute; inset: 0; width: auto; height: auto; border-radius: var(--r-art); margin: 0; border: var(--stroke) dashed var(--line); background: var(--cream-2); }
 /* a shooting star crosses the art's sky once each time a song starts (the cover is new markup per track) */
 :root[data-design="starlight"] .sl-hero__art .cover::after {
   inset: auto; left: 14%; top: 18%; width: 30%; height: 6px; border-radius: 3px; box-shadow: none; opacity: 0; transform: rotate(22deg);
@@ -598,56 +798,103 @@
 @keyframes sl-shoot {
   from { left: 6%; top: 10%; opacity: 0; } 20% { opacity: 1; } to { left: 52%; top: 44%; opacity: 0; }
 }
-/* one sky sparkle pinned to the card's corner; it breathes while music plays */
-:root[data-design="starlight"] .sl-hero__spark { --s: 84px; left: -42px; top: -42px; z-index: 2; -webkit-mask: none; mask: none; background: var(--sl-spark-img) center / contain no-repeat; }
-:root[data-design="starlight"] .sl-hero:has(.wave.is-playing) .sl-hero__spark { animation: sl-beat 1s var(--loop-in-out-30) infinite alternate; animation-play-state: var(--loop-play, running); }
-@keyframes sl-beat { from { transform: scale(.82) rotate(-6deg); opacity: .75; } to { transform: scale(1.08) rotate(0); opacity: 1; } }
-/* power on: the stack deals in (lavender layer, then periwinkle), the cream card settles, the art fades up last */
+/* the diptych's poster is a portrait sheet (the phone's is too, below): the print on top, then where it plays from,
+   the title and the label. From 640 px the bar's ticket is the seek and the transport, so the poster doesn't repeat
+   them; a phone's Now Playing keeps them (its mini player gives way there) */
+@container now (min-width: 620px) {
+  :root[data-design="starlight"] .sl-hero:not(.sl-hero--compact) {
+    grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-template-areas: "art" "from" "song" "label" "seek" "ctl" "trouble";
+    padding: 22px 24px 20px;
+  }
+  /* the print stays square: as wide as the sheet allows, as tall as the window can spare */
+  :root[data-design="starlight"] .sl-hero__art { width: min(100% - 14px, clamp(150px, 30vh, 440px)); justify-self: start; margin: 0 14px 28px 0; }
+  :root[data-design="starlight"] .sl-hero:not(.sl-hero--compact) .sl-hero__song { margin-top: 10px; }
+  :root[data-design="starlight"] .sl-hero:not(.sl-hero--compact) .device__title { font-size: clamp(2.25rem, 15cqi, 4.5rem); }
+  :root[data-design="starlight"] .sl-hero:not(.sl-hero--compact) .device__artist { margin-top: 10px; letter-spacing: .14em; }
+  :root[data-design="starlight"] .sl-hero__label { margin-top: 16px; }
+}
+@media (min-width: 640px) {
+  :root[data-design="starlight"] .sl-hero:not(.sl-hero--compact) :is(.sl-hero__seek, .sl-hero__ctl) { display: none; }
+  :root[data-design="starlight"] .sl-hero:not(.sl-hero--compact) .sl-hero__label { border-bottom: 0; padding-bottom: 0; }
+}
+/* one sky sparkle pinned to the sheet's corner: it turns a quarter over the song (a 4-point star ends where it began)
+   and breathes while sound plays */
+:root[data-design="starlight"] .now__dev > .sl-hero { --song-pos: inherit; }
+:root[data-design="starlight"] .sl-hero__spark {
+  --s: 84px; left: -42px; top: -42px; z-index: 2; -webkit-mask: none; mask: none; background: var(--sl-spark-img) center / contain no-repeat;
+  --song-pos: inherit; rotate: calc(var(--song-pos) * .25turn);
+}
+:root[data-design="starlight"][data-playing="true"] .sl-hero__spark { animation: sl-beat 1s var(--loop-in-out-30) infinite alternate; animation-play-state: var(--loop-play, running); }
+@keyframes sl-beat { from { transform: scale(.82); opacity: .75; } to { transform: scale(1.08); opacity: 1; } }
+/* power on: the stack deals in (lavender sleeve, then periwinkle), the sheet settles, the art fades up last */
 :root[data-design="starlight"] .sl-hero.is-power-on { animation: sl-deal 620ms var(--ease-out) both; }
-:root[data-design="starlight"] .sl-hero.is-power-on > :is(.sl-hero__info, .sl-hero__art) { animation: sl-fade 600ms var(--ease-out) 180ms both; }
+:root[data-design="starlight"] .sl-hero.is-power-on > :is(.sl-hero__song, .sl-hero__label, .sl-hero__art) { animation: sl-fade 600ms var(--ease-out) 180ms both; }
 :root[data-design="starlight"] .sl-hero.is-power-on .sl-hero__art { animation-delay: 300ms; }
 @keyframes sl-deal { 0% { --sl-o1: 0px; --sl-o2: 0px; transform: translateY(10px); } 45% { --sl-o1: 7px; --sl-o2: 3px; } 100% { --sl-o1: 7px; --sl-o2: 14px; transform: none; } }
 @keyframes sl-fade { from { opacity: 0; transform: scale(.985); } to { opacity: 1; transform: none; } }
 
-/* compact hero: one cream row (phone Lyrics / Queue / Details) */
-:root[data-design="starlight"] .sl-hero--compact { grid-template-columns: 56px minmax(0, 1fr) auto; gap: var(--sp-3); align-items: center; padding: 12px; border-radius: 22px; box-shadow: var(--stack-sm); margin-bottom: 12px; }
-:root[data-design="starlight"] .sl-hero--compact .device__title { font: 600 1rem/1.2 var(--f-ui); letter-spacing: .03em; -webkit-line-clamp: 2; }
-:root[data-design="starlight"] .sl-hero--compact .device__artist { margin: 2px 0 0; padding: 0; font: 400 .78rem/1.3 var(--f-ui); letter-spacing: .05em; }
+/* compact hero: one cream strip (phone Lyrics / Queue / Details) */
+:root[data-design="starlight"] .sl-hero--compact { grid-template-columns: 56px minmax(0, 1fr) auto; grid-template-areas: none; grid-template-rows: none; gap: var(--sp-3); align-items: center; padding: 12px; box-shadow: var(--stack-sm); margin-bottom: 12px; }
+:root[data-design="starlight"] .sl-hero--compact .sl-hero__song { grid-area: auto; margin: 0; align-self: center; }
+:root[data-design="starlight"] .sl-hero--compact .device__title { font: 600 1rem/1.2 var(--f-ui); letter-spacing: .03em; text-transform: uppercase; color: var(--sl-title); -webkit-line-clamp: 2; }
+:root[data-design="starlight"] .sl-hero--compact .device__artist { margin: 2px 0 0; padding: 0; font: 400 .78rem/1.3 var(--f-ui); letter-spacing: .05em; text-transform: uppercase; }
 :root[data-design="starlight"] .sl-hero--compact .wave { height: 18px; margin-top: 6px; }
 :root[data-design="starlight"] :is(.sl-hero--compact, .sl-mini) .wave__bar { background: var(--sl-track); box-shadow: inset 0 0 0 1px var(--line); }   /* hollow = not downloaded yet */
 :root[data-design="starlight"] :is(.sl-hero--compact, .sl-mini) .wave__bar.is-played { background: var(--sl-played); box-shadow: none; }
 :root[data-design="starlight"] :is(.sl-hero--compact, .sl-mini) .wave__bar:is(.is-buf, .is-xfer) { background: var(--sl-buf); box-shadow: none; }
 :root[data-design="starlight"] .sl-hero--compact .wave__head { background: var(--sl-title); }
-:root[data-design="starlight"] .sl-hero__thumb .cover { --cover-size: 56px; border-radius: var(--r-thumb); }
+:root[data-design="starlight"] .sl-hero__thumb .cover { --cover-size: 56px; box-shadow: var(--sl-print-sm); }
 :root[data-design="starlight"] .sl-hero__keys { display: flex; align-items: center; gap: 2px; }
 :root[data-design="starlight"] .sl-hero__keys .btn-icon { width: 36px; height: 36px; color: var(--sl-icon); }
 
-/* the Now Playing page: hero across the top; lyrics left; right, one cream "about this song" tray
-   (meta + tags, actions, source and save progress) on the stack, then up next */
-:root[data-design="starlight"] .now { max-width: 1240px; }
+/* the Now Playing page is a diptych: the poster (the print over the title, a portrait sheet) beside the lyrics set as
+   poster lines, the two as tall as each other and both in view; under them one cream "about this song" print (meta +
+   tags, actions, source and save progress), then up next. A wide page (the panel shut, wide windows) takes that print
+   as a third column beside them */
+:root[data-design="starlight"] .now { max-width: 1720px; }
 :root[data-design="starlight"] .now__grid {
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); grid-template-rows: auto auto auto auto 1fr;
-  grid-template-areas: "dev dev" "ly head" "ly acts" "ly src" "ly next"; column-gap: var(--sp-6); row-gap: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); grid-template-rows: auto auto auto auto auto;
+  grid-template-areas: "dev ly" "head head" "acts acts" "src src" "next next"; column-gap: var(--sp-6); row-gap: 0;
 }
-:root[data-design="starlight"] .now__dev { margin-bottom: var(--sp-5); }
-:root[data-design="starlight"] :is(.now-lycard, .now-qcard) { align-self: start; }
+@container now (min-width: 1100px) {
+  :root[data-design="starlight"] .now__grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) minmax(280px, 340px); grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-areas: "dev ly head" "dev ly acts" "dev ly src" "next next next";
+  }
+}
+@container now (max-width: 619px) {
+  :root[data-design="starlight"] .now__grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-template-areas: "dev" "head" "acts" "src" "ly" "next"; }
+  :root[data-design="starlight"] .now-lycard { min-height: 440px; }
+  :root[data-design="starlight"] .now__dev { max-width: none; }
+}
+:root[data-design="starlight"] .now__dev { min-width: 0; margin-bottom: var(--sp-5); }
+:root[data-design="starlight"] .now-qcard { align-self: start; }
+/* the lyrics are as tall as the poster beside them, and scroll inside it */
+:root[data-design="starlight"] .now-lycard { align-self: stretch; min-height: 0; margin-bottom: var(--sp-5); }
+:root[data-design="starlight"] .now-lycard .now-ly__view { min-height: 200px; }
 :root[data-design="starlight"] .now-next { margin-top: var(--sp-2); }
 :root[data-design="starlight"] .now__keys { display: none; }
 :root[data-design="starlight"] .now-head__title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 :root[data-design="starlight"] .now-head > .now-head__from { display: none; }
+/* "about this song": the print's heading drawn on its own top edge (a rule behind it), so it reads as one print with
+   the actions and the source under it */
 :root[data-design="starlight"] .now-head {
   position: relative; gap: var(--sp-3); padding: 20px 22px 8px; border: var(--stroke) solid var(--line); border-bottom: 0; border-radius: var(--r-card) var(--r-card) 0 0;
-  background: linear-gradient(var(--sl-rule), var(--sl-rule)) 22px 31px / calc(100% - 44px) 1.5px no-repeat, var(--bg);
+  background: linear-gradient(var(--sl-rule), var(--sl-rule)) 22px 31px / calc(100% - 44px) 1px no-repeat, var(--bg);
 }
-:root[data-design="starlight"] .now-head::before { content: "about this song"; justify-self: start; padding-right: 12px; background: var(--bg); font: 400 .9375rem/1.3 var(--f-ui); color: var(--fg); }
+:root[data-design="starlight"] .now-head::before { content: "about this song"; justify-self: start; padding-right: 12px; background: var(--bg); font: 300 1.25rem/1.15 var(--f-ui); letter-spacing: .14em; text-transform: uppercase; color: var(--fg); }
 :root[data-design="starlight"] .now-head__by { margin: 0; font: 400 1rem/1.4 var(--f-ui); }
 :root[data-design="starlight"] .now__acts { padding: 6px 18px 14px; border-inline: var(--stroke) solid var(--line); }
 :root[data-design="starlight"] .now__acts .now-acts { gap: 6px; }
 :root[data-design="starlight"] .now-srccard { border-top: 0; border-radius: 0 0 var(--r-card) var(--r-card); padding: 0 22px 22px; }
-:root[data-design="starlight"] .now-srccard .source-card { border: var(--stroke) solid var(--divider); }
-:root[data-design="starlight"] .now-lycard { min-height: 440px; }
-:root[data-design="starlight"] :is(.now-ly__line, .now-ly__plain p) { font-weight: 400; }
-:root[data-design="starlight"] .now-ly__line.is-current { font-weight: 500; box-shadow: inset 2px 0 0 var(--heart); }
+:root[data-design="starlight"] .now-srccard .source-card { border: var(--stroke) solid var(--divider); border-radius: var(--r-thumb); }
+/* lyrics are set as poster lines: thin and large, the line sung in burgundy with a star before it */
+:root[data-design="starlight"] :is(.now-ly__line, .now-ly__plain p) { font-weight: 300; }
+:root[data-design="starlight"] .now-ly__line.is-current { position: relative; font-weight: 400; color: var(--sl-title); }
+:root[data-design="starlight"] .now-ly__line.is-current::before {
+  content: ""; position: absolute; left: -2px; top: .55em; width: 12px; height: 12px; background: var(--sl-accent);
+  -webkit-mask: var(--mask-sparkle) center / contain no-repeat; mask: var(--mask-sparkle) center / contain no-repeat;
+}
 /* the lyric scroller: 24 px of padding keep the first line clear at rest; lines snap, and the top fade is fully clear for
    its first 22 px, so a line scrolled past the top is a fading ghost, never a sliced line */
 :root[data-design="starlight"] .now-ly__scroll {
@@ -657,60 +904,77 @@
 :root[data-design="starlight"] .now-ly__line { scroll-snap-align: start; }
 /* save progress: five segments of img 01's seek rule; done fills with the accent, the running step is hatched */
 :root[data-design="starlight"] .pipeline { gap: 5px; }
-:root[data-design="starlight"] .pipeline__seg { height: 7px; border: 0; border-radius: 4px; background: var(--sl-track); }
+:root[data-design="starlight"] .pipeline__seg { height: 7px; border: 0; border-radius: 0; background: var(--sl-track); }
 :root[data-design="starlight"] .pipeline__seg .ic { display: none; }
 :root[data-design="starlight"] .pipeline__seg.is-done { background: var(--sl-accent); }
 :root[data-design="starlight"] .pipeline__seg.is-current { background: var(--sl-buf); }
 :root[data-design="starlight"] .pipeline__seg.is-failed { background: var(--down); }
 :root[data-design="starlight"] .pipeline__seg.is-skipped { background: repeating-linear-gradient(90deg, var(--sl-track) 0 4px, transparent 4px 7px); }
 :root[data-design="starlight"] .pipeline__label { font: 500 .875rem/1.3 var(--f-ui); }
-@container now (max-width: 719px) {
-  :root[data-design="starlight"] .now__grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-template-areas: "dev" "head" "acts" "src" "ly" "next"; }
-  :root[data-design="starlight"] .now__dev { max-width: none; }
-}
 
 /* =====================================================================
-   Home: a printable poster. A caps line on the sky ("✦ GOOD EVENING") beside your queue drawn as a constellation,
-   then the newest release as img 01's top card, then "picked for you" as img 01's lower card, then radio and the rest.
+   Home: the poster. The greeting is its headline, one word a line in thin caps, your queue a constellation in the sky
+   beside it (the playing song a 4-point star that turns with the song); the week's line under it in DM Mono after a
+   short rule; then numbered sections: "01 PICKED FOR YOU", each a print in a numbered series.
    ===================================================================== */
 :root[data-design="starlight"] .disc-home { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 28px; }
 :root[data-design="starlight"] .disc-home > * { grid-column: 1 / -1; }
 :root[data-design="starlight"] .disc-home > .disc-hello { display: contents; }
 :root[data-design="starlight"] .disc-home > .disc-hello > * { grid-column: 1 / -1; }
 :root[data-design="starlight"] .disc-home > .disc-hello h1 {
-  grid-row: 1; display: inline-flex; align-items: center; gap: 10px; margin: 4px 0 0; font: 500 1.375rem/1.2 var(--f-ui); letter-spacing: .16em;
+  grid-row: 1; position: relative; display: block; width: min-content; margin: 2px 0 0; padding-right: .3em;
+  font: 300 clamp(2.75rem, 11cqi, 7rem)/.86 var(--f-ui); letter-spacing: .01em; text-transform: uppercase; color: var(--fg-sky);
 }
 :root[data-design="starlight"] .disc-home > .disc-hello h1::before {
-  content: ""; width: 18px; height: 18px; flex: none; background: var(--sparkle);
+  content: ""; position: absolute; right: -.05em; top: -.08em; width: .28em; height: .28em; background: var(--sparkle);
   -webkit-mask: var(--mask-sparkle) center / contain no-repeat; mask: var(--mask-sparkle) center / contain no-repeat;
 }
 :root[data-design="starlight"] .disc-home > .disc-hello h1 .sparkle { display: none; }
-:root[data-design="starlight"] .disc-home > .disc-hello .disc-hello__sum { grid-row: 2; margin: 4px 0 22px; font: 400 1rem/1.45 var(--f-ui); color: var(--fg-sky-2); }
+:root[data-design="starlight"] .disc-home > .disc-hello .disc-hello__sum { grid-row: 2; margin: 18px 0 30px; color: var(--fg-sky-2); }
 :root[data-design="starlight"] .disc-home:has(> .disc-lead) > .disc-hello > h1 { grid-column: 1; }
-/* your queue as a constellation (slots/homeLead): beside the greeting on the sky, decorative (the queue panel
-   lists the same songs); the dashed line matches the constellation cover, the playing song is the 4-point sparkle */
-:root[data-design="starlight"] .disc-home > .disc-lead { grid-column: 2; grid-row: 1; align-self: center; height: 34px; margin: 0 8px -12px 0; }
-:root[data-design="starlight"] .sl-sky { display: flex; align-items: center; gap: 18px; height: 100%; }
-:root[data-design="starlight"] .sl-sky__map { position: relative; flex: 1; align-self: stretch; }
+/* your queue as a constellation (slots/homeLead): beside the headline on the sky, decorative (the queue panel lists
+   the same songs); the dashed line matches the constellation cover, the playing song is the 4-point sparkle, which
+   turns a quarter over the song (--song-pos, written on .disc-lead, inherited down to it) */
+:root[data-design="starlight"] .disc-home > .disc-lead { grid-column: 2; grid-row: 1; align-self: stretch; min-height: 120px; margin: 4px 0 0; }
+:root[data-design="starlight"] .sl-sky { display: flex; flex-direction: column-reverse; align-items: stretch; gap: 10px; height: 100%; }
+:root[data-design="starlight"] .sl-sky__map { position: relative; flex: 1; align-self: stretch; margin: 10px 10px 4px 24px; }
+:root[data-design="starlight"] .disc-lead :is(.sl-sky, .sl-sky__map, .sl-sky__map *) { --song-pos: inherit; }
 :root[data-design="starlight"] .sky-line { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 :root[data-design="starlight"] .sky-line polyline { fill: none; stroke: var(--fg-sky-2); stroke-width: 1.25; stroke-dasharray: 3 5; stroke-linecap: round; opacity: .8; }
-/* the stepped easings this design's loops use: its --ease-in-out (tokens.css), stepped (components.css, Keyframes) */
-:root[data-design="starlight"] {
-  --loop-in-out-30: linear(0 0%, 0 3.33333%, 0.001 3.33333%, 0.001 6.66667%, 0.0041 6.66667%, 0.0041 10%, 0.0096 10%, 0.0096 13.33333%, 0.0179 13.33333%, 0.0179 16.66667%, 0.0295 16.66667%, 0.0295 20%, 0.045 20%, 0.045 23.33333%, 0.065 23.33333%, 0.065 26.66667%, 0.0905 26.66667%, 0.0905 30%, 0.1229 30%, 0.1229 33.33333%, 0.1638 33.33333%, 0.1638 36.66667%, 0.2152 36.66667%, 0.2152 40%, 0.2796 40%, 0.2796 43.33333%, 0.3587 43.33333%, 0.3587 46.66667%, 0.451 46.66667%, 0.451 50%, 0.549 50%, 0.549 53.33333%, 0.6413 53.33333%, 0.6413 56.66667%, 0.7204 56.66667%, 0.7204 60%, 0.7848 60%, 0.7848 63.33333%, 0.8362 63.33333%, 0.8362 66.66667%, 0.8771 66.66667%, 0.8771 70%, 0.9095 70%, 0.9095 73.33333%, 0.935 73.33333%, 0.935 76.66667%, 0.955 76.66667%, 0.955 80%, 0.9705 80%, 0.9705 83.33333%, 0.9821 83.33333%, 0.9821 86.66667%, 0.9904 86.66667%, 0.9904 90%, 0.9959 90%, 0.9959 93.33333%, 0.999 93.33333%, 0.999 96.66667%, 1 96.66667%, 1 100%);
-  --loop-in-out-52: linear(0 0%, 0 1.92308%, 0.0003 1.92308%, 0.0003 3.84615%, 0.0013 3.84615%, 0.0013 5.76923%, 0.0029 5.76923%, 0.0029 7.69231%, 0.0053 7.69231%, 0.0053 9.61538%, 0.0086 9.61538%, 0.0086 11.53846%, 0.0127 11.53846%, 0.0127 13.46154%, 0.0178 13.46154%, 0.0178 15.38462%, 0.0239 15.38462%, 0.0239 17.30769%, 0.0311 17.30769%, 0.0311 19.23077%, 0.0397 19.23077%, 0.0397 21.15385%, 0.0496 21.15385%, 0.0496 23.07692%, 0.0611 23.07692%, 0.0611 25%, 0.0743 25%, 0.0743 26.92308%, 0.0894 26.92308%, 0.0894 28.84615%, 0.1067 28.84615%, 0.1067 30.76923%, 0.1265 30.76923%, 0.1265 32.69231%, 0.1491 32.69231%, 0.1491 34.61538%, 0.1748 34.61538%, 0.1748 36.53846%, 0.2042 36.53846%, 0.2042 38.46154%, 0.2375 38.46154%, 0.2375 40.38462%, 0.2754 40.38462%, 0.2754 42.30769%, 0.318 42.30769%, 0.318 44.23077%, 0.3655 44.23077%, 0.3655 46.15385%, 0.4172 46.15385%, 0.4172 48.07692%, 0.472 48.07692%, 0.472 50%, 0.528 50%, 0.528 51.92308%, 0.5828 51.92308%, 0.5828 53.84615%, 0.6345 53.84615%, 0.6345 55.76923%, 0.682 55.76923%, 0.682 57.69231%, 0.7246 57.69231%, 0.7246 59.61538%, 0.7625 59.61538%, 0.7625 61.53846%, 0.7958 61.53846%, 0.7958 63.46154%, 0.8252 63.46154%, 0.8252 65.38462%, 0.8509 65.38462%, 0.8509 67.30769%, 0.8735 67.30769%, 0.8735 69.23077%, 0.8933 69.23077%, 0.8933 71.15385%, 0.9106 71.15385%, 0.9106 73.07692%, 0.9257 73.07692%, 0.9257 75%, 0.9389 75%, 0.9389 76.92308%, 0.9504 76.92308%, 0.9504 78.84615%, 0.9603 78.84615%, 0.9603 80.76923%, 0.9689 80.76923%, 0.9689 82.69231%, 0.9761 82.69231%, 0.9761 84.61538%, 0.9822 84.61538%, 0.9822 86.53846%, 0.9873 86.53846%, 0.9873 88.46154%, 0.9914 88.46154%, 0.9914 90.38462%, 0.9947 90.38462%, 0.9947 92.30769%, 0.9971 92.30769%, 0.9971 94.23077%, 0.9987 94.23077%, 0.9987 96.15385%, 0.9997 96.15385%, 0.9997 98.07692%, 1 98.07692%, 1 100%);
-}
 :root[data-design="starlight"] .sky-star {
   position: absolute; width: 7px; height: 7px; margin: -3.5px; border-radius: 50%; background: var(--sparkle);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--sparkle) 22%, transparent);
   animation: sl-twinkle 2.6s var(--loop-in-out-52) calc(var(--i) * -.45s) infinite alternate; animation-play-state: var(--loop-play, running);   /* the stagger is whole steps: all change together */
 }
-:root[data-design="starlight"] .sky-star--now { width: 30px; height: 30px; margin: -15px; border-radius: 0; box-shadow: none; animation: none; background: var(--sl-spark-img) center / contain no-repeat; }
+:root[data-design="starlight"] .sky-star--now {
+  width: 40px; height: 40px; margin: -20px; border-radius: 0; box-shadow: none; animation: none; background: var(--sl-spark-img) center / contain no-repeat;
+  rotate: calc(var(--song-pos) * .25turn);
+}
 @keyframes sl-twinkle { from { opacity: .55; transform: scale(.8); } to { opacity: 1; transform: none; } }
-:root[data-design="starlight"] .sl-sky__label { flex: none; display: flex; align-items: center; gap: 10px; font: 400 .9375rem/1 var(--f-ui); color: var(--fg-sky-2); }
-/* the release card: the first album is the feature (giant caps title, caps artist; play ring, Save and Radio on one row
-   under the meta, as img 01 does); the other three sit in a compact row under a hairline */
+:root[data-design="starlight"] .sl-sky__label { flex: none; align-self: flex-end; display: flex; align-items: center; gap: 10px; font: 400 .75rem/1 var(--f-px); letter-spacing: .12em; text-transform: uppercase; color: var(--fg-sky-2); }
+/* numbered sections: every Home module is headed "01 NEW RELEASES", a print in a numbered series */
+:root[data-design="starlight"] .disc-modules { counter-reset: sl-sec; }
+:root[data-design="starlight"] .disc-mod { counter-increment: sl-sec; }
+:root[data-design="starlight"] .disc-mod > .card > .card-head::before {
+  content: counter(sl-sec, decimal-leading-zero); order: -1; align-self: center; font: 400 .8125rem/1 var(--f-px); letter-spacing: .04em; color: var(--fg-2);
+}
+:root[data-design="starlight"] .disc-mod > .card > .card-head > .card-head__title {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: clamp(1.125rem, 4.2cqi, 1.625rem); line-height: 1;
+}
+@container section (max-width: 560px) {
+  :root[data-design="starlight"] .disc-mod > .card > .card-head::before { display: none; }
+  /* the title keeps its words: its links wrap to a line of their own, under the rule */
+  :root[data-design="starlight"] .disc-mod > .card > .card-head { flex-wrap: wrap; row-gap: 2px; }
+  :root[data-design="starlight"] .disc-mod > .card > .card-head::after { display: none; }
+  :root[data-design="starlight"] .disc-mod > .card > .card-head > .card-head__title { flex: 1 0 100%; font-size: 1.0625rem; letter-spacing: .08em; }
+  :root[data-design="starlight"] .disc-mod > .card > .card-head > :is(.card-head__title, .card-head__meta) + :is(.btn, a) { margin-left: -8px; }
+}
+/* a module with nothing to show is one line: its number, its name, what would fill it */
+:root[data-design="starlight"] .disc-empty h2 { font: 300 1.125rem/1.2 var(--f-ui); letter-spacing: .14em; text-transform: uppercase; }
+:root[data-design="starlight"] .disc-mod > .card > .disc-empty > h2::before { content: counter(sl-sec, decimal-leading-zero); margin-right: 12px; font: 400 .8125rem/1 var(--f-px); letter-spacing: .04em; color: var(--fg-2); }
+/* the release card: the first album is the feature (giant thin caps title, caps artist; play ring, Save and Radio on
+   one row under the meta, as img 01 does); the other three sit in a compact row under a hairline */
 :root[data-design="starlight"] .disc-card[data-region="new"] { padding-bottom: 22px; }
-:root[data-design="starlight"] .disc-card[data-region="new"]:has(.disc-shelf > .tile) > .card-head { margin-right: calc(42% + 28px); }
 :root[data-design="starlight"] .disc-card[data-region="new"]::after {
   content: ""; position: absolute; left: -44px; top: -44px; width: 88px; height: 88px; pointer-events: none; background: var(--sl-spark-img) center / contain no-repeat;
 }
@@ -719,23 +983,23 @@
 }
 :root[data-design="starlight"] .disc-card[data-region="new"] .tile { grid-template-columns: 52px minmax(0, 1fr); column-gap: 12px; row-gap: 1px; align-content: center; }
 :root[data-design="starlight"] .disc-card[data-region="new"] .tile__art { grid-row: 1 / span 3; margin: 0; align-self: center; }
-:root[data-design="starlight"] .disc-card[data-region="new"] .tile__art .cover { border-radius: var(--r-thumb); }
+:root[data-design="starlight"] .disc-card[data-region="new"] .tile__art .cover { box-shadow: var(--sl-print-sm); }
 :root[data-design="starlight"] .disc-card[data-region="new"] .tile .tile__play { width: 30px; height: 30px; right: -8px; bottom: -8px; opacity: 0; }
 :root[data-design="starlight"] .disc-card[data-region="new"] .tile .tile__play .ic { width: 13px; height: 13px; }
 :root[data-design="starlight"] .disc-card[data-region="new"] .tile:is(:hover, :focus-within) .tile__play { opacity: 1; }
 :root[data-design="starlight"] .disc-card[data-region="new"] .tile__title { font-size: .875rem; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-:root[data-design="starlight"] .disc-card[data-region="new"] .tile__by { font-size: .72rem; }
+:root[data-design="starlight"] .disc-card[data-region="new"] .tile__by { font-size: .72rem; letter-spacing: .05em; }
 :root[data-design="starlight"] .disc-card[data-region="new"] .tile__meta { margin: 2px 0 0; font-size: .6875rem; }
 :root[data-design="starlight"] .disc-card[data-region="new"] .tile__meta .badge-new { --tag-h: 16px; padding: 3px 5px 2px; font-size: .6875rem; }
 :root[data-design="starlight"] .disc-card[data-region="new"] .tile:first-child {
   grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) minmax(220px, 42%); grid-template-rows: auto auto auto 1fr; column-gap: 0; row-gap: 0;
-  min-height: 150px; align-content: start; padding-bottom: 20px; margin-bottom: 4px; border-bottom: 1.5px solid var(--divider);
+  min-height: 150px; align-content: start; padding-bottom: 20px; margin-bottom: 4px; border-bottom: 1px solid var(--divider);
 }
 :root[data-design="starlight"] .disc-card[data-region="new"] .tile:first-child .tile__art { display: contents; }
-:root[data-design="starlight"] .disc-card[data-region="new"] .tile:first-child .tile__art > a { grid-column: 2; grid-row: 1 / span 4; display: block; margin: -46px 14px 14px 28px; border-radius: 20px; }
-:root[data-design="starlight"] .disc-card[data-region="new"] .tile:first-child .tile__art .cover { width: 100%; height: 100%; min-height: 176px; aspect-ratio: auto; border-radius: 20px; box-shadow: var(--sl-sleeves); }
+:root[data-design="starlight"] .disc-card[data-region="new"] .tile:first-child .tile__art > a { grid-column: 2; grid-row: 1 / span 4; display: block; margin: 0 14px 14px 28px; }
+:root[data-design="starlight"] .disc-card[data-region="new"] .tile:first-child .tile__art .cover { width: 100%; height: 100%; min-height: 176px; aspect-ratio: auto; box-shadow: var(--sl-sleeves); }
 :root[data-design="starlight"] .disc-card[data-region="new"] .tile:first-child .tile__title {
-  grid-column: 1; grid-row: 1; font: 500 clamp(2.125rem, 2.75vw, 3rem)/1.02 var(--f-ui); letter-spacing: .01em; -webkit-line-clamp: 2;
+  grid-column: 1; grid-row: 1; font: 300 clamp(2.25rem, 6cqi, 3.5rem)/.95 var(--f-ui); letter-spacing: .01em; -webkit-line-clamp: 2;
 }
 :root[data-design="starlight"] .disc-card[data-region="new"] .tile:first-child .tile__by { grid-column: 1; grid-row: 2; margin-top: 8px; font-size: 1.0625rem; letter-spacing: .05em; color: var(--fg); }
 :root[data-design="starlight"] .disc-card[data-region="new"] .tile:first-child .tile__meta { grid-column: 1; grid-row: 3; align-self: center; margin: 18px 0 0 72px; font-size: .8125rem; }
@@ -746,104 +1010,165 @@
 }
 :root[data-design="starlight"] .disc-card[data-region="new"] .tile:first-child .tile__play:hover { background: var(--sl-accent); color: var(--bg); }
 :root[data-design="starlight"] .disc-card[data-region="new"] .tile:first-child .tile__play .ic { width: 20px; height: 20px; }
-/* picked for you = img 01's lower card: two columns of framed art, caps title, caps artist, the reason as one quiet line, heart right */
+/* picked for you is a gallery wall: each pick a framed print on its sleeves, hung in a staggered row (every other one
+   lower), the caps title and artist under it like a wall label, the reason in a quiet line; Like and More are pinned
+   to the print's top corner, each on its own cream disc */
 :root[data-design="starlight"] .disc-card[data-region="picks"]::after {
   content: ""; position: absolute; right: -36px; bottom: -22px; width: 68px; height: 68px; pointer-events: none; background: var(--sl-spark-img) center / contain no-repeat;
 }
-:root[data-design="starlight"] .disc-picks { gap: 4px 16px; }
+:root[data-design="starlight"] .disc-picks { grid-template-columns: repeat(auto-fill, minmax(min(124px, 100%), 1fr)); gap: 26px 20px; align-items: start; padding: 4px 14px 14px 0; }
+@container section (min-width: 600px) { :root[data-design="starlight"] .disc-picks { grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); } }
 :root[data-design="starlight"] .disc-pick {
-  grid-template-columns: 80px minmax(0, 1fr) auto; grid-template-rows: auto auto; grid-template-areas: "art main end" "art why end";
-  align-items: center; column-gap: 14px; padding: 10px 6px 10px 10px; border-radius: 18px;
+  grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: none; grid-template-areas: "art art" "main main" "why why";
+  align-items: start; column-gap: 4px; padding: 0; border-radius: 0; background: none;
 }
-:root[data-design="starlight"] .disc-pick__art { align-self: center; }
-:root[data-design="starlight"] .disc-pick__art .cover { --cover-size: 80px !important; border-radius: var(--r-art); }
-:root[data-design="starlight"] .disc-pick__play { right: -6px; bottom: -6px; background: var(--bg); color: var(--sl-accent); border-color: var(--sl-accent); }
-:root[data-design="starlight"] .disc-pick__main { align-self: end; padding: 0; }
-:root[data-design="starlight"] .disc-pick__title { font: 600 1rem/1.2 var(--f-ui); letter-spacing: .025em; }
-:root[data-design="starlight"] .disc-pick__by { margin-top: 2px; color: var(--fg); font-size: .8125rem; }
-:root[data-design="starlight"] .disc-pick__why { align-self: start; margin-top: 6px; flex-wrap: nowrap; min-width: 0; }
+:root[data-design="starlight"] .disc-pick:is(:hover, :focus-within) { background: none; }
+:root[data-design="starlight"] .disc-picks > .disc-pick:nth-child(even) { margin-top: 30px; }
+:root[data-design="starlight"] .disc-pick__art { margin: 0 10px 18px 0; }
+:root[data-design="starlight"] .disc-pick__art .cover { --cover-size: 100% !important; width: 100%; height: auto; aspect-ratio: 1; box-shadow: var(--sl-print); }
+:root[data-design="starlight"] .disc-pick__play { right: 8px; bottom: 8px; width: 40px; height: 40px; background: var(--bg); color: var(--sl-accent); border-color: var(--sl-accent); }
+:root[data-design="starlight"] .disc-pick__main { align-self: start; padding: 0; }
+:root[data-design="starlight"] .disc-pick__title { font: 600 .9375rem/1.2 var(--f-ui); letter-spacing: .05em; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+:root[data-design="starlight"] .disc-pick__by { margin-top: 3px; color: var(--fg); font: 400 .75rem/1.2 var(--f-ui); letter-spacing: .12em; }
+:root[data-design="starlight"] .disc-pick__end { grid-area: art; z-index: 1; flex-direction: row; gap: 6px; align-self: start; justify-self: end; margin: 8px 18px 0 0; }
+:root[data-design="starlight"] .disc-pick__end .btn-icon { width: 32px; height: 32px; background: var(--bg); border: 1px solid var(--line); border-radius: 50%; opacity: 1; }
+:root[data-design="starlight"] .disc-pick__end .btn-icon .ic { width: 17px; height: 17px; }
+:root[data-design="starlight"] .disc-pick__end .btn-icon:hover { background: var(--bg-2); }
+:root[data-design="starlight"] .disc-pick__why { align-self: start; flex-wrap: nowrap; min-width: 0; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--divider); }
 :root[data-design="starlight"] .disc-pick__why > .cluster { min-width: 0; flex-wrap: nowrap; align-items: center; gap: 4px; }
-:root[data-design="starlight"] .disc-pick .chip-reason { min-width: 0; max-width: 100%; min-height: 26px; padding: 0 2px; background: transparent; color: var(--fg-2); }
+:root[data-design="starlight"] .disc-pick .chip-reason { min-width: 0; max-width: 100%; min-height: 22px; padding: 0 2px; background: transparent; color: var(--fg-2); font-size: .75rem; }
 :root[data-design="starlight"] .disc-pick .chip-reason > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 :root[data-design="starlight"] .disc-pick .chip-reason .ic { width: 12px; height: 12px; flex: none; }
 :root[data-design="starlight"] .disc-pick .chip-reason:hover { background: var(--bg-3); }
 :root[data-design="starlight"] .disc-pick .chip-more { min-height: 22px; padding: 0 6px; background: var(--sl-chip); color: var(--link-on-cream); font: 500 .75rem/1 var(--f-px); }
-:root[data-design="starlight"] .disc-pick__end { flex-direction: column; align-self: center; gap: 0; margin-right: -6px; }
-:root[data-design="starlight"] .disc-pick__end .btn-icon:not(.is-liked):not([data-act="like"]) { opacity: .75; }
 /* radio starters: two columns of rows with outlined play rings */
 @container disc (min-width: 560px) { :root[data-design="starlight"] .disc-starters { grid-template-columns: 1fr 1fr; column-gap: var(--sp-5); } }
-@container disc (max-width: 720px) { :root[data-design="starlight"] .disc-picks { grid-template-columns: minmax(0, 1fr); } }
 :root[data-design="starlight"] .disc-starter__play { border-color: var(--sl-accent); color: var(--sl-accent); }
 :root[data-design="starlight"] .disc-starter__title { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 /* tags you follow: the description may take two lines instead of an ellipsis */
 :root[data-design="starlight"] .disc-tag__desc { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 
 /* =====================================================================
-   Library: playlist page with img 04's table rhythm (caps column heads, a rule, roomy rows)
+   Library and its pages. The page's headline over a horizontal constellation of its sections (a star per section on
+   a dotted line, the one open a 4-point star); an album, artist, tag or playlist head is a poster: the cover hung as
+   a framed print on its sleeves, the kicker printed in DM Mono, the title in thin caps
    ===================================================================== */
+:root[data-design="starlight"] .lib-head { align-items: end; }
+:root[data-design="starlight"] .lib-head__sub { margin-top: 18px; }
+:root[data-design="starlight"] .lib-segs ul { gap: 0; padding: 8px 2px 4px; }
+:root[data-design="starlight"] .lib-segs li { position: relative; }
+:root[data-design="starlight"] .lib-segs li::before {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 10px; height: 1px; pointer-events: none;
+  background: repeating-linear-gradient(90deg, var(--fg-sky-2) 0 3px, transparent 3px 7px); opacity: .75;
+}
+:root[data-design="starlight"] .lib-segs li:first-child::before { left: 50%; }
+:root[data-design="starlight"] .lib-segs li:last-child::before { right: 50%; }
+:root[data-design="starlight"] .lib-segs a.pill-filter {
+  position: relative; min-height: 46px; align-items: flex-start; padding: 6px 14px 22px; border: 0; border-radius: 3px; background: none; box-shadow: none;
+  font: 400 .8125rem/1 var(--f-ui); letter-spacing: .18em; text-transform: uppercase; color: var(--fg-sky-2);
+}
+:root[data-design="starlight"] .lib-segs a.pill-filter::after {
+  content: ""; position: absolute; left: 50%; bottom: 6px; width: 9px; height: 9px; margin-left: -4.5px; border-radius: 50%;
+  background: var(--sky); box-shadow: inset 0 0 0 1.5px var(--fg-sky-2); transition: transform var(--dur-2) var(--ease-out);
+}
+:root[data-design="starlight"] .lib-segs a.pill-filter:hover { background: none; color: var(--fg-sky); }
+:root[data-design="starlight"] .lib-segs a.pill-filter:hover::after { background: var(--fg-sky-2); transform: scale(1.25); }
+:root[data-design="starlight"] .lib-segs a.pill-filter[aria-current="page"] { background: none; border: 0; box-shadow: none; color: var(--fg-sky); font-weight: 500; }
+:root[data-design="starlight"] .lib-segs a.pill-filter[aria-current="page"]::after {
+  bottom: -1px; width: 22px; height: 22px; margin-left: -11px; border-radius: 0; box-shadow: none; background: var(--sparkle);
+  -webkit-mask: var(--mask-sparkle) center / contain no-repeat; mask: var(--mask-sparkle) center / contain no-repeat;
+}
+:root[data-design="starlight"] .lib-count { font: 400 .75rem/1 var(--f-px); letter-spacing: .06em; }
+:root[data-design="starlight"] .lib-grid { row-gap: 26px; }
+/* the poster heads: album, artist, tag, playlist */
+:root[data-design="starlight"] :is(.lib-hero, .lib-pl__head) > :is(.cover, .mosaic) { border-radius: var(--r-art); box-shadow: var(--sl-sleeves); }
+:root[data-design="starlight"] .lib-title { font: 300 clamp(2.5rem, 7cqi, 4.5rem)/.92 var(--f-ui); }
+:root[data-design="starlight"] .lib-hero__by { font: 400 1rem/1.3 var(--f-ui); letter-spacing: .2em; text-transform: uppercase; }
+:root[data-design="starlight"] .lib-hero__facts .px { font: 400 .8125rem/1.3 var(--f-px); letter-spacing: .04em; color: var(--fg-2); }
+:root[data-design="starlight"] .lib-pl__title { font: 300 clamp(2.25rem, 6cqi, 4rem)/.95 var(--f-ui); }
 :root[data-design="starlight"] .lib-pl__title::after {
-  content: ""; display: inline-block; width: .5em; height: .45em; margin-left: .35em; background: var(--sl-heart);
+  content: ""; display: inline-block; width: .32em; height: .3em; margin-left: .3em; background: var(--sl-heart);
   -webkit-mask: var(--mask-pixel-heart) center / contain no-repeat; mask: var(--mask-pixel-heart) center / contain no-repeat;
 }
-:root[data-design="starlight"] .lib-thead { border-bottom: 1.5px solid var(--sl-rule); }
-:root[data-design="starlight"] .lib-th { font: 500 .75rem/1 var(--f-ui); letter-spacing: .1em; text-transform: uppercase; }
-:root[data-design="starlight"] .lib-hero__by { font: 400 1.125rem/1.3 var(--f-ui); letter-spacing: .05em; text-transform: uppercase; }
-:root[data-design="starlight"] .lib-hero .cover { box-shadow: var(--sl-sleeves); }
+:root[data-design="starlight"] .lib-thead { border-bottom: 1px solid var(--sl-rule); }
+:root[data-design="starlight"] :is(.lib-th, .lib-th__btn) { font: 400 .6875rem/1 var(--f-px); letter-spacing: .14em; text-transform: uppercase; }
+:root[data-design="starlight"] .lib-disc { font: 400 .75rem/1.3 var(--f-px); letter-spacing: .14em; text-transform: uppercase; color: var(--fg-2); }
+:root[data-design="starlight"] .lib-day { font: 400 .75rem/1.3 var(--f-px); letter-spacing: .14em; text-transform: uppercase; }
 @media (min-width: 640px) {
   :root[data-design="starlight"] .lib-hero:has(> .lib-hero__info > .lib-actions) { row-gap: 8px; align-items: start; align-content: start; }
   :root[data-design="starlight"] .lib-hero:has(> .lib-hero__info > .lib-actions) > .lib-hero__info { display: contents; }
   :root[data-design="starlight"] .lib-hero:has(> .lib-hero__info > .lib-actions) > .lib-hero__info > * { grid-column: 2; justify-self: start; margin-top: 0; margin-bottom: 0; }
   :root[data-design="starlight"] .lib-hero:has(> .lib-hero__info > .lib-actions) > :is(.cover, .mosaic) { grid-row: 1 / span 5; align-self: center; margin-bottom: 14px; }
   :root[data-design="starlight"] .lib-hero:has(> .lib-hero__info > .lib-actions) > .lib-hero__info > .lib-actions {
-    grid-column: 1 / -1; justify-self: stretch; flex-wrap: wrap; gap: 8px; margin-top: 10px;   /* wraps: in the two-column album page the hero is only ~380 px wide */
+    grid-column: 1 / -1; justify-self: stretch; flex-wrap: wrap; gap: 8px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--divider);   /* wraps: in the two-column album page the hero is only ~380 px wide */
   }
   :root[data-design="starlight"] .lib-hero__info > .lib-actions .lib-actions__icons { margin-left: auto; gap: 4px; }
 }
 :root[data-design="starlight"] .btn-save[data-state="library"] { border-style: solid; background: var(--sl-chip); color: var(--ink); border-color: var(--line); }
 
 /* =====================================================================
-   Settings and Stats
+   Settings and Stats. The sections are a constellation on their print (as the rail: a star per section on a dotted
+   line, the one open a 4-point star, the names in spaced caps); the design picker hangs each design as a framed print
    ===================================================================== */
-:root[data-design="starlight"] .sys-nav { padding: 10px; border-radius: var(--r-card); margin-bottom: var(--stack-reserve); }
-:root[data-design="starlight"] .sys-nav ul { gap: 2px; }
-:root[data-design="starlight"] .sys-nav__item { border-radius: 999px; padding: 8px 14px; border: var(--stroke) solid transparent; color: var(--fg); }
-:root[data-design="starlight"] .sys-nav__item:hover { background: var(--bg-2); }
-:root[data-design="starlight"] .sys-nav__item .ic { color: var(--sl-icon); }
-:root[data-design="starlight"] .sys-nav__label { font: 400 1rem/1.25 var(--f-ui); }
+:root[data-design="starlight"] .sys-nav { padding: 14px 10px; border-radius: var(--r-card); margin-bottom: var(--stack-reserve); }
+:root[data-design="starlight"] .sys-nav ul { position: relative; gap: 0; }
+:root[data-design="starlight"] .sys-nav ul::before {
+  content: ""; position: absolute; left: 21px; top: 22px; bottom: 22px; width: 1px; pointer-events: none;
+  background: repeating-linear-gradient(180deg, var(--sl-rule) 0 3px, transparent 3px 7px);
+}
+:root[data-design="starlight"] .sys-nav__item { position: relative; min-height: 42px; padding: 8px 12px; border: 0; border-radius: 3px; background: none; box-shadow: none; color: var(--fg-2); }
+:root[data-design="starlight"] .sys-nav__item > .ic:first-child { visibility: hidden; }
+:root[data-design="starlight"] .sys-nav__item::before {
+  content: ""; position: absolute; left: 17px; top: 50%; width: 9px; height: 9px; margin-top: -4.5px; border-radius: 50%;
+  background: var(--bg); box-shadow: inset 0 0 0 1.5px var(--sl-icon); transition: transform var(--dur-2) var(--ease-out);
+}
+:root[data-design="starlight"] .sys-nav__item:hover { background: none; color: var(--fg); }
+:root[data-design="starlight"] .sys-nav__item:hover::before { background: var(--sl-icon); transform: scale(1.25); }
+:root[data-design="starlight"] .sys-nav__label { font: 400 .8125rem/1.25 var(--f-ui); letter-spacing: .12em; text-transform: uppercase; }
 :root[data-design="starlight"] .sys-nav__desc { color: var(--fg-2); }
-:root[data-design="starlight"] .sys-nav__item[aria-current="page"] { background: var(--sl-chip); color: var(--ink); border-color: var(--line); box-shadow: 0 4px 0 -1.5px var(--stack-1), 0 4px 0 0 var(--line); margin-bottom: 5px; }
+:root[data-design="starlight"] .sys-nav__item:is([aria-current="page"], .sys-nav__item--default) { background: none; box-shadow: none; color: var(--fg); }
 :root[data-design="starlight"] .sys-nav__item[aria-current="page"] .sys-nav__label { font-weight: 600; }
+:root[data-design="starlight"] .sys-nav__item[aria-current="page"]::before {
+  left: 10.5px; width: 22px; height: 22px; margin-top: -11px; border-radius: 0; box-shadow: none; background: var(--sl-accent);
+  -webkit-mask: var(--mask-sparkle) center / contain no-repeat; mask: var(--mask-sparkle) center / contain no-repeat;
+}
 /* the index on phone has no current section, so nothing is lit there; side by side, the section shown is lit */
-:root[data-design="starlight"] .sys-nav__item--default { background: transparent; box-shadow: none; }
 @container sys (min-width: 640px) {
-  :root[data-design="starlight"] .sys-nav__item--default { background: var(--sl-chip); color: var(--ink); border-color: var(--line); box-shadow: 0 4px 0 -1.5px var(--stack-1), 0 4px 0 0 var(--line); margin-bottom: 5px; }
+  :root[data-design="starlight"] .sys-nav__item--default .sys-nav__label { font-weight: 600; }
+  :root[data-design="starlight"] .sys-nav__item--default::before {
+    left: 10.5px; width: 22px; height: 22px; margin-top: -11px; border-radius: 0; box-shadow: none; background: var(--sl-accent);
+    -webkit-mask: var(--mask-sparkle) center / contain no-repeat; mask: var(--mask-sparkle) center / contain no-repeat;
+  }
 }
-/* the design picker (base shows each design's screenshot): the card in use is lifted on its stack and tagged */
-:root[data-design="starlight"] .sys-design[aria-checked="true"] { background: var(--cream); color: var(--ink); }
-:root[data-design="starlight"] .sys-design[aria-checked="true"] { box-shadow: var(--sl-stack); margin-bottom: 14px; }
+:root[data-design="starlight"] .sys-row__label { font-weight: 500; }
+:root[data-design="starlight"] .sys-gate__title { font: 300 1.5rem/1.15 var(--f-ui); letter-spacing: .12em; text-transform: uppercase; }
+/* the design picker: each design a framed print; the one in use is lifted on its stack and stamped "in use" */
+:root[data-design="starlight"] .sys-design { border-radius: var(--r-card); }
+:root[data-design="starlight"] .sys-design__pv { border-color: var(--sl-frame); border-radius: var(--r-thumb); }
+:root[data-design="starlight"] .sys-design[aria-checked="true"] { background: var(--cream); color: var(--ink); box-shadow: var(--sl-stack); margin-bottom: 14px; }
 :root[data-design="starlight"] .sys-design[aria-checked="true"]::before {
-  content: "in use"; position: absolute; top: -11px; left: 14px; padding: 3px 10px; border: var(--stroke) solid var(--line); border-radius: 999px;
-  background: var(--sl-accent); color: var(--cream); font: 500 .75rem/1 var(--f-ui); letter-spacing: .04em;
+  content: "in use"; position: absolute; top: -10px; left: 14px; padding: 4px 10px 3px; border: 1px solid var(--line); border-radius: 3px;
+  background: var(--sl-accent); color: var(--cream); font: 400 .6875rem/1 var(--f-px); letter-spacing: .14em; text-transform: uppercase;
 }
-:root[data-design="starlight"] .sys-design__name { font: 600 1rem/1.2 var(--f-ui); }
-:root[data-design="starlight"] .sys-design__pv { border-color: var(--sl-frame); }
+:root[data-design="starlight"] .sys-design__name { font: 500 .9375rem/1.2 var(--f-ui); letter-spacing: .12em; text-transform: uppercase; }
 :root[data-design="starlight"] .sys-tile.card { padding: var(--sp-3); }
-:root[data-design="starlight"] .sys-tile__value { font: 500 2rem/1.1 var(--f-ui); letter-spacing: 0; }
+:root[data-design="starlight"] .sys-tile__value { font: 300 2.25rem/1.05 var(--f-ui); letter-spacing: 0; }
 :root[data-design="starlight"] :is(.sys-tile__sub, .sys-tile small) { font-size: .75rem; text-wrap: pretty; }
+:root[data-design="starlight"] .sys-tile__label { font: 400 .6875rem/1.3 var(--f-px); letter-spacing: .14em; text-transform: uppercase; }
 :root[data-design="starlight"] .lib-listhead__title { text-transform: uppercase; }
 :root[data-design="starlight"] .card .sys-bars__name { text-transform: uppercase; letter-spacing: .03em; font-size: .9375rem; color: var(--sl-title); }
 :root[data-design="starlight"] .sys-bars__val { font: 400 .875rem/1.2 var(--f-px); }
 :root[data-design="starlight"] .sys-bars__val .fg-2 { font-weight: 400; }
 
 /* =====================================================================
-   Overlays: sheets, dialogs, popovers, menus are cream trays on the stack; toasts are a scrap of night sky
+   Overlays: sheets, dialogs, popovers and menus are cream prints with the printed edge; toasts are a scrap of night sky
    ===================================================================== */
 :root[data-design="starlight"] :is(.sheet, .dialog) { border-width: var(--stroke); }
-:root[data-design="starlight"] .dialog { box-shadow: var(--stack); border-radius: var(--r-card); }
-:root[data-design="starlight"] .sheet__title { display: flex; align-items: center; gap: var(--sp-3); font: 400 1.125rem/1.25 var(--f-ui); }
-:root[data-design="starlight"] .sheet__title::after { content: ""; flex: 1; min-width: 16px; height: 1.5px; background: var(--sl-rule); }
+:root[data-design="starlight"] .dialog { box-shadow: var(--sl-edge), var(--stack); border-radius: var(--r-card); }
+:root[data-design="starlight"] .sheet__title { display: flex; align-items: center; gap: var(--sp-3); font: 300 1.375rem/1.2 var(--f-ui); letter-spacing: .12em; text-transform: uppercase; }
+:root[data-design="starlight"] .sheet__title::after { content: ""; flex: 1; min-width: 16px; height: 1px; background: var(--sl-rule); }
 :root[data-design="starlight"] .sheet__head { position: relative; }
-/* desktop and tablet: a sheet is a centred tray on its full stack (the phone keeps the bottom sheet) */
+/* desktop and tablet: a sheet is a centred print on its full stack (the phone keeps the bottom sheet) */
 @media (min-width: 640px) {
   :root[data-design="starlight"] .sheet {
     top: 50%; bottom: auto; width: min(720px, calc(100% - 48px)); max-height: min(84dvh, 860px);
@@ -857,13 +1182,14 @@
 @media (min-width: 640px) and (prefers-reduced-motion: reduce) {
   :root[data-design="starlight"]:not([data-motion="full"]) .sheet { transform: translate(-50%, -50%); }
 }
-:root[data-design="starlight"] :is(.popover, .menu) { border-width: var(--stroke); border-radius: 20px; }
-:root[data-design="starlight"] .menu__item { font: 400 .9375rem/1.2 var(--f-ui); }
+:root[data-design="starlight"] :is(.popover, .menu) { border-width: var(--stroke); border-radius: var(--r-card); }
+:root[data-design="starlight"] .menu__item { font: 400 .9375rem/1.2 var(--f-ui); border-radius: var(--r-thumb); }
 :root[data-design="starlight"] .menu__item .ic { color: var(--sl-icon); }
-:root[data-design="starlight"] .popover__head { font: 500 1rem/1.25 var(--f-ui); }
+:root[data-design="starlight"] .menu__sep { background: var(--divider); }
+:root[data-design="starlight"] .popover__head { font: 400 .75rem/1.3 var(--f-px); letter-spacing: .14em; text-transform: uppercase; }
 :root[data-design="starlight"] .toast {
   --bg: var(--sl-night-card); --bg-2: #353b50; --fg: #f2e3d1; --fg-2: #d4d3ee; --link: #c9d6fa; --edge: #a9adc4; --focus: #fff9fe;
-  background: var(--bg); color: var(--fg); border: var(--stroke) solid var(--line); border-radius: 18px; font: 500 .9375rem/1.35 var(--f-ui);
+  background: var(--bg); color: var(--fg); border: var(--stroke) solid var(--line); border-radius: var(--r-card); font: 500 .9375rem/1.35 var(--f-ui);
   box-shadow: 0 6px 0 -1.5px var(--stack-1), 0 6px 0 0 var(--line), 0 12px 0 -1.5px var(--stack-2), 0 12px 0 0 var(--line); margin-bottom: 12px;
 }
 :root[data-design="starlight"] .toast > .ic { color: #fff9fe; }
@@ -875,10 +1201,13 @@
 @media (min-width: 1100px) {
   :root[data-design="starlight"][data-shell="rail"] .toast-region { left: calc(var(--rail) + 16px); bottom: calc(var(--bar-h) + 42px); transform: none; }
 }
-:root[data-design="starlight"] .banner { font: 500 .9375rem/1.35 var(--f-ui); border-width: var(--stroke); border-radius: 18px; }
-:root[data-design="starlight"] .tooltip { font: 500 .8125rem/1.3 var(--f-ui); }
-:root[data-design="starlight"] .empty__title { font: 500 1.125rem/1.25 var(--f-ui); }
-/* empty states: a small dotted constellation (slots/emptyArt) */
+:root[data-design="starlight"] .banner { font: 500 .9375rem/1.35 var(--f-ui); border-width: var(--stroke); border-radius: var(--r-card); }
+:root[data-design="starlight"] .tooltip { font: 500 .8125rem/1.3 var(--f-ui); border-radius: var(--r-thumb); }
+
+/* =====================================================================
+   Empty states: a small dotted constellation (slots/emptyArt), its title in thin caps
+   ===================================================================== */
+:root[data-design="starlight"] .empty__title { font: 300 1.375rem/1.2 var(--f-ui); letter-spacing: .1em; text-transform: uppercase; }
 :root[data-design="starlight"] .empty__art .sl-empty { stroke: none; }
 /* one constellation per empty state: a heart when the title is about liked songs, else the one for its art */
 :root[data-design="starlight"] .sl-empty { display: none; }
@@ -887,7 +1216,6 @@
 :root[data-design="starlight"] .sl-empty--slot[data-art="slot"]:not([data-title*="liked" i]),
 :root[data-design="starlight"] .sl-empty--wave[data-art="wave"]:not([data-title*="liked" i]),
 :root[data-design="starlight"] .sl-empty--star[data-art="star"]:not([data-title*="liked" i]) { display: block; }
-:root[data-design="starlight"] .sl-hero__facts[data-track=""] { display: none; }
 :root[data-design="starlight"] .sl-empty__line { fill: none; stroke: var(--sl-rule); stroke-width: 1.4; stroke-dasharray: 2.5 3.5; }
 :root[data-design="starlight"] .sl-empty__stars { fill: var(--sl-icon); }
 :root[data-design="starlight"] .sl-empty__spark { fill: var(--sl-accent); }
@@ -900,35 +1228,36 @@
 :root[data-design="starlight"] .cls-scrim { opacity: 1; }
 
 /* =====================================================================
-   Desktop pages: first-run connect fields are cream wells; the mini player (slots/miniPlayer) and the strip
+   Desktop pages: first-run connect fields are cream wells; the mini player (slots/miniPlayer) is a small portrait
+   poster, the strip a ticket
    ===================================================================== */
 :root[data-design="starlight"] .dk-form .input { background: var(--cream-2); color: var(--ink); border-color: var(--line); }
 :root[data-design="starlight"] .dk-form .input::placeholder { color: var(--ink-2); }
-:root[data-design="starlight"] .sl-mini__card { position: relative; width: 316px; display: grid; gap: 10px; padding: 14px 16px 16px; border-radius: var(--r-card); margin-bottom: 20px; }
+:root[data-design="starlight"] .sl-mini__card { position: relative; width: 316px; display: grid; gap: 10px; padding: 16px 18px 16px; border-radius: var(--r-card); margin-bottom: 20px; }
 :root[data-design="starlight"] .sl-mini__head { display: flex; align-items: center; gap: 8px; }
-:root[data-design="starlight"] .sl-mini__label { font: 400 .9375rem/1 var(--f-ui); }
-:root[data-design="starlight"] .sl-mini__rule { flex: 1; height: 1.5px; background: var(--sl-rule); align-self: center; }
+:root[data-design="starlight"] .sl-mini__label { font: 400 .6875rem/1 var(--f-px); letter-spacing: .14em; text-transform: uppercase; color: var(--fg-2); }
+:root[data-design="starlight"] .sl-mini__rule { flex: 1; height: 1px; background: var(--sl-rule); align-self: center; }
 :root[data-design="starlight"] .sl-mini .dk-mini__win { color: var(--sl-icon); }
 :root[data-design="starlight"] .sl-mini .dk-mini__win:hover { background: var(--bg-2); }
 :root[data-design="starlight"] .sl-mini .dk-mini__now { grid-template-columns: minmax(0, 1fr); gap: 12px; }
-:root[data-design="starlight"] .sl-mini .dk-mini__now .cover {
-  width: calc(100% - 12px); aspect-ratio: 1.5; border-radius: 16px; margin-bottom: 10px;
-  box-shadow: 6px 6px 0 -1.5px var(--stack-1), 6px 6px 0 0 var(--sl-frame), 12px 12px 0 -1.5px var(--stack-2), 12px 12px 0 0 var(--sl-frame);
-}
+:root[data-design="starlight"] .sl-mini .dk-mini__now .cover { width: calc(100% - 12px); aspect-ratio: 1.5; margin-bottom: 10px; box-shadow: var(--sl-print); }
 :root[data-design="starlight"] .sl-mini .device__title {
-  font: 500 1.75rem/1.05 var(--f-ui); text-transform: uppercase; letter-spacing: .01em; color: var(--sl-title);
+  font: 300 1.875rem/1 var(--f-ui); text-transform: uppercase; letter-spacing: .01em; color: var(--sl-title);
   overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
 }
-:root[data-design="starlight"] .sl-mini .device__artist { margin-top: 4px; font: 400 .875rem/1.3 var(--f-ui); letter-spacing: .05em; text-transform: uppercase; }
+:root[data-design="starlight"] .sl-mini .device__artist { margin-top: 6px; font: 400 .8125rem/1.3 var(--f-ui); letter-spacing: .16em; text-transform: uppercase; }
 :root[data-design="starlight"] .sl-mini .device__facts { display: flex; gap: 6px; margin-top: 8px; }
 :root[data-design="starlight"] .sl-mini .device__fact { display: none; }
 :root[data-design="starlight"] .sl-mini__times { display: flex; justify-content: space-between; margin: 2px 0 -6px; font: 400 .8125rem/1 var(--f-px); color: var(--fg-2); }
 :root[data-design="starlight"] .sl-mini__times b { font-weight: 400; color: var(--fg); }
-/* the waveform drawn as img 01's seek line: flat 3 px segments, a dot for the head */
-:root[data-design="starlight"] .sl-mini .wave { height: 22px; gap: 0; align-items: center; --wave-head: 14px; }
+/* the waveform drawn as the ticket's star-chart line: flat 3 px segments, a 4-point star for the head */
+:root[data-design="starlight"] .sl-mini .wave { height: 22px; gap: 0; align-items: center; --wave-head: 18px; }
 :root[data-design="starlight"] .sl-mini .wave__bar { height: 3px; border-radius: 0; animation: none; }
 :root[data-design="starlight"] .sl-mini .wave__rail { top: 0; }
-:root[data-design="starlight"] .sl-mini .wave__head { top: 50%; bottom: auto; height: 14px; margin-top: -7px; border-radius: 50%; background: var(--sl-accent); box-shadow: 0 0 0 2px var(--bg); }
+:root[data-design="starlight"] .sl-mini .wave__head {
+  top: 50%; bottom: auto; height: 18px; margin-top: -9px; border-radius: 0; background: var(--sl-accent); box-shadow: none;
+  -webkit-mask: var(--mask-sparkle) center / contain no-repeat; mask: var(--mask-sparkle) center / contain no-repeat;
+}
 :root[data-design="starlight"] .sl-mini__keys { display: flex; align-items: center; justify-content: space-between; padding: 0 2px; }
 :root[data-design="starlight"] :is(.sl-mini__keys, .dk-strip__keys) .btn-icon { color: var(--sl-icon); }
 :root[data-design="starlight"] .sl-mini__keys .btn-icon:is(.is-liked, [aria-pressed="true"]) { color: var(--heart); }
@@ -936,14 +1265,18 @@
 :root[data-design="starlight"] .sl-mini__foot .btn-icon { width: 32px; height: 32px; color: var(--sl-icon); }
 :root[data-design="starlight"] .sl-mini__foot .btn-icon.is-liked { color: var(--heart); }
 :root[data-design="starlight"] .sl-mini__vol { display: flex; align-items: center; gap: 4px; font: 400 .8125rem/1 var(--f-px); color: var(--fg-2); }
-:root[data-design="starlight"] .sl-mini .dk-mini__note { left: 16px; right: 16px; bottom: auto; top: 46px; background: var(--ink); color: var(--cream); font: 500 .8125rem/1.3 var(--f-ui); }
-:root[data-design="starlight"] .dk-strip { border-color: var(--line); box-shadow: var(--stack-sm); }
-:root[data-design="starlight"] .dk-strip .bezel-thumb .cover { --cover-size: 44px; }
+:root[data-design="starlight"] .sl-mini .dk-mini__note { left: 16px; right: 16px; bottom: auto; top: 46px; background: var(--ink); color: var(--cream); font: 500 .8125rem/1.3 var(--f-ui); border-radius: var(--r-thumb); }
+:root[data-design="starlight"] .dk-strip { border-color: var(--line); border-radius: var(--r-card); box-shadow: var(--sl-edge), var(--stack-sm); }
+:root[data-design="starlight"] .dk-strip .bezel-thumb .cover { --cover-size: 44px; box-shadow: var(--sl-print-sm); }
 :root[data-design="starlight"] .dk-strip__title { font: 600 .9375rem/1.2 var(--f-ui); text-transform: uppercase; letter-spacing: .03em; color: var(--sl-title); }
 :root[data-design="starlight"] .dk-strip__artist { text-transform: uppercase; letter-spacing: .05em; font-size: .75rem; }
+:root[data-design="starlight"] :is(.dk-card, .dk-modal) { border-radius: var(--r-card); box-shadow: var(--sl-edge), var(--stack); }
+:root[data-design="starlight"] .dk-card__title { font: 300 1.5rem/1.15 var(--f-ui); letter-spacing: .12em; text-transform: uppercase; }
+:root[data-design="starlight"] .dk-status { border-radius: var(--r-thumb); font-weight: 500; }
 
 /* =====================================================================
-   Tablet (640-1099): the icon rail keeps the wordmark's sparkle; picks and search rows stop truncating
+   The icon rail (640-1099): the wordmark's sparkle, each place an outlined key, the one open a cream key on its
+   lavender layer; picks and search rows stop truncating
    ===================================================================== */
 @media (max-width: 1099px) {
   :root[data-design="starlight"] .sky-specks > .sparkle:nth-child(1) { left: 52px !important; top: 62% !important; --s: 64px !important; }
@@ -951,8 +1284,12 @@
 @media (min-width: 640px) and (max-width: 1099px) {
   :root[data-design="starlight"] .rail__head .wordmark.sl-mark { font-size: 2rem; width: auto; height: auto; }
   :root[data-design="starlight"] .rail__head .sl-mark__word { display: none; }
-  :root[data-design="starlight"] .nav-item { width: 48px; min-height: 48px; padding: 0; }
+  :root[data-design="starlight"] .rail__nav { padding: 4px 4px 2px; gap: 4px; }
+  :root[data-design="starlight"] .nav-item { width: 48px; min-height: 48px; padding: 0; border-width: var(--stroke); border-radius: 999px; color: var(--fg); }
   :root[data-design="starlight"] .nav-item .ic { width: 22px; height: 22px; color: var(--fg); }
+  :root[data-design="starlight"] .nav-item:hover { background: var(--sky-deep); }
+  :root[data-design="starlight"] .nav-item[aria-current="page"] { background: var(--cream); color: var(--ink); border-color: var(--line); box-shadow: var(--sl-layer); margin-bottom: 5px; }
+  :root[data-design="starlight"] .nav-item[aria-current="page"] .ic { color: var(--sl-icon); }
   :root[data-design="starlight"] .pbar__now { min-width: 0; }   /* it was 250: the title ran out of its column over the transport at 640 to 800 px; the base look clips it */
   :root[data-design="starlight"] .pbar__controls { gap: 4px; }   /* the five transport buttons in 232 px (they were 264 px at 12 px in a 230 px column, and Repeat ran onto Like); the centre itself takes what the sides leave (layout.js, --fit-side) */
   :root[data-design="starlight"] .header__search .input { font-size: .9375rem; }
@@ -960,7 +1297,8 @@
 }
 
 /* =====================================================================
-   Phone
+   Phone: the tab bar is a printed index on the sky (the place open marked with a 4-point star over its icon), the
+   mini player a small ticket, Now Playing the poster on its own with its index of tabs under it
    ===================================================================== */
 @media (max-width: 639px) {
   :root[data-design="starlight"] .header .sl-mark { font-size: 1.125rem; }
@@ -969,18 +1307,24 @@
   :root[data-design="starlight"] .sky-specks > .sparkle:nth-child(1) { left: auto !important; right: -8px !important; top: 36% !important; --s: 60px !important; }
   :root[data-design="starlight"] .sky-specks > .sparkle:nth-child(2) { display: none; }
   :root[data-design="starlight"] .sky-specks > .sparkle:nth-child(3) { right: 44% !important; top: -6px !important; --s: 30px !important; }
-  :root[data-design="starlight"] .sys-tile__value { font-size: 1.5rem; white-space: nowrap; }
-  :root[data-design="starlight"] .mini { border: var(--stroke) solid var(--line); border-radius: 20px; box-shadow: var(--stack-sm); margin: 0 10px 18px; overflow: visible; }
+  :root[data-design="starlight"] .sys-tile__value { font-size: 1.75rem; white-space: nowrap; }
+  :root[data-design="starlight"] .mini { border: var(--stroke) solid var(--line); border-radius: var(--r-card); box-shadow: var(--sl-edge), var(--stack-sm); margin: 0 10px 18px; overflow: visible; }
   :root[data-design="starlight"] .mini > .seek--line { left: 18px; right: 18px; top: -1px; }
-  :root[data-design="starlight"] .mini .bezel-thumb .cover { --cover-size: 42px; }
-  :root[data-design="starlight"] .tabbar { background: var(--sky-deep); border-top: var(--stroke) solid var(--edge); }
-  :root[data-design="starlight"] .tab { font: 500 .75rem/1 var(--f-ui); }
-  :root[data-design="starlight"] .tab[aria-current="page"] .ic { background: var(--cream); color: var(--ink); box-shadow: inset 0 0 0 var(--stroke) var(--line); }
+  :root[data-design="starlight"] .mini .bezel-thumb .cover { --cover-size: 42px; box-shadow: var(--sl-print-sm); }
+  :root[data-design="starlight"] .tabbar { background: var(--sky-deep); border-top: 1px solid var(--edge); }
+  :root[data-design="starlight"] .tab { position: relative; font: 500 .6875rem/1 var(--f-ui); letter-spacing: .12em; text-transform: uppercase; }
+  :root[data-design="starlight"] .tab[aria-current="page"] { color: var(--fg-sky); }
+  :root[data-design="starlight"] .tab[aria-current="page"] .ic { background: none; color: var(--fg-sky); box-shadow: none; }
+  :root[data-design="starlight"] .tab[aria-current="page"]::before {
+    content: ""; position: absolute; left: 50%; top: 2px; width: 12px; height: 12px; margin-left: 12px; background: var(--sparkle);
+    -webkit-mask: var(--mask-sparkle) center / contain no-repeat; mask: var(--mask-sparkle) center / contain no-repeat;
+  }
   /* home */
   :root[data-design="starlight"] .disc-lead { display: none; }
-  :root[data-design="starlight"] .disc-home > .disc-hello h1 { margin-top: 2px; font-size: 1.125rem; }
-  :root[data-design="starlight"] .disc-home > .disc-hello .disc-hello__sum { margin-bottom: 18px; font-size: .9375rem; }
-  :root[data-design="starlight"] .disc-card[data-region="new"]:has(.disc-shelf > .tile) > .card-head { margin-right: 0; }
+  :root[data-design="starlight"] .disc-home > .disc-hello .disc-hello__sum { margin-bottom: 22px; }
+  /* the page's line: the short rule over it, not beside it (no room for a hanging rule) */
+  :root[data-design="starlight"] :is(.lib-head__sub, .disc-hello__sum) { padding-left: 0; text-indent: 0; }
+  :root[data-design="starlight"] :is(.lib-head__sub, .disc-hello__sum)::before { display: block; margin: 0 0 8px; }
   :root[data-design="starlight"] .disc-card[data-region="new"]::after { left: auto; right: -26px; top: -34px; width: 66px; height: 66px; }
   :root[data-design="starlight"] .disc-card[data-region="new"] .disc-shelf { grid-template-columns: minmax(0, 1fr); gap: 8px; }
   :root[data-design="starlight"] .disc-card[data-region="new"] .tile:first-child { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto auto auto; }
@@ -990,34 +1334,36 @@
   :root[data-design="starlight"] .disc-card[data-region="new"] .tile:first-child .tile__by { grid-row: 3; grid-column: 1 / -1; }
   :root[data-design="starlight"] .disc-card[data-region="new"] .tile:first-child .tile__meta { grid-row: 4; grid-column: 1 / -1; }
   :root[data-design="starlight"] .disc-card[data-region="new"] .tile:first-child .tile__play { grid-row: 4; }
-  :root[data-design="starlight"] .disc-pick { grid-template-columns: 72px minmax(0, 1fr) auto; column-gap: 12px; padding: 8px 4px; }
-  :root[data-design="starlight"] .disc-pick__art .cover { --cover-size: 72px !important; }
   :root[data-design="starlight"] .disc-card[data-region="picks"]::after { right: -10px; }
-  /* search: the filter chips scroll with a trailing fade; the top result's actions wrap (Play album full width,
-     then Open folder and Save as keys) and the Soulseek status is one short line */
+  /* search: the filter chips scroll with a trailing fade; the top result's actions wrap (its first action full width,
+     the others share the next line) and the Soulseek status is one short line */
   :root[data-design="starlight"] .disc-filters { -webkit-mask: linear-gradient(90deg, #000 calc(100% - 44px), transparent); mask: linear-gradient(90deg, #000 calc(100% - 44px), transparent); padding-right: 44px; }
-  :root[data-design="starlight"] .disc-top__actions { display: grid; grid-template-columns: 1fr 1fr 44px; gap: 10px 8px; }
-  :root[data-design="starlight"] .disc-top__actions > .btn--primary { grid-column: 1 / 3; justify-content: center; }
-  :root[data-design="starlight"] .disc-top__actions > .btn-icon { grid-column: 3; grid-row: 1; }
-  :root[data-design="starlight"] .disc-top__actions > :is(.btn, .btn-save):not(.btn--primary) ~ :is(.btn, .btn-save):not(.btn--primary) { grid-column: 2 / 4; }
+  :root[data-design="starlight"] .disc-top__actions { display: flex; flex-wrap: wrap; gap: 10px 8px; }
+  :root[data-design="starlight"] .disc-top__actions > .btn--primary { flex: 1 0 100%; justify-content: center; }
+  :root[data-design="starlight"] .disc-top__actions > :is(.btn, .btn-save):not(.btn--primary) { flex: 1 1 0; min-width: 0; padding: 0 10px; font-size: .875rem; justify-content: center; }
+  :root[data-design="starlight"] .disc-top__actions > :is(.btn, .btn-save) > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   :root[data-design="starlight"] .disc-scan__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   :root[data-design="starlight"] .disc-scan > .btn { grid-row: 2; grid-column: 2 / -1; justify-self: start; margin-left: -8px; }
-  :root[data-design="starlight"] .sl-hero__fix .btn { padding: 0 12px; }
-  :root[data-design="starlight"] .disc-top__actions > :is(.btn, .btn-save) { min-width: 0; padding: 0 10px; font-size: .875rem; justify-content: center; }
-  :root[data-design="starlight"] .disc-top__actions > :is(.btn, .btn-save) > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  /* Now Playing: the art sits on its sleeves, the card holds the song; tags and actions share one cream tray */
-  :root[data-design="starlight"] .sl-hero:not(.sl-hero--compact) { grid-template-columns: minmax(0, 1fr); padding: 14px 14px 18px; gap: var(--sp-4); }
-  :root[data-design="starlight"] .sl-hero__art { order: -1; min-height: 0; aspect-ratio: 1.2; margin: 0 12px 12px 0; }
+  /* library: the sections' constellation scrolls sideways under the headline */
+  :root[data-design="starlight"] .lib-segs a.pill-filter { padding-inline: 12px; letter-spacing: .14em; }
+  /* Now Playing: the poster alone (the print, the title, the label, the seek and the transport); tags and actions
+     share one cream print under it */
+  :root[data-design="starlight"] .sl-hero:not(.sl-hero--compact) {
+    grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-template-areas: "art" "from" "song" "label" "seek" "ctl" "trouble";
+    padding: 18px 18px 18px; row-gap: 0;
+  }
+  :root[data-design="starlight"] .sl-hero__art { aspect-ratio: 1.25; margin: 0 14px 30px 0; }
   :root[data-design="starlight"] .sl-hero__art::before { inset: -20px; }
   :root[data-design="starlight"] .sl-hero__spark { --s: 64px; left: auto; right: -26px; top: -34px; }
-  :root[data-design="starlight"] .sl-hero:not(.sl-hero--compact) .device__title { font-size: 2rem; }
-  :root[data-design="starlight"] .sl-hero:not(.sl-hero--compact) .device__artist { font-size: 1rem; padding-right: 6.5rem; }
-  :root[data-design="starlight"] .sl-hero__time { font-size: .875rem; margin-top: -1.35rem; }
+  :root[data-design="starlight"] .sl-hero:not(.sl-hero--compact) .sl-hero__song { margin-top: 12px; }
+  :root[data-design="starlight"] .sl-hero:not(.sl-hero--compact) .device__artist { letter-spacing: .12em; }
+  :root[data-design="starlight"] .sl-hero__label { margin-top: 16px; }
+  :root[data-design="starlight"] .sl-hero__fix .btn { padding: 0 12px; }
   :root[data-design="starlight"] .sl-hero--compact { padding: 10px; }
   :root[data-design="starlight"] .now__grid { display: flex; }
   :root[data-design="starlight"] .now__top .now-head__from { visibility: hidden; }
-  :root[data-design="starlight"] .now-head { padding: 18px 16px 4px; background-position: 16px 29px; background-size: calc(100% - 32px) 1.5px; }
-  :root[data-design="starlight"] .now-head::before { content: "this song"; }
+  :root[data-design="starlight"] .now-head { padding: 18px 16px 4px; background-position: 16px 29px; background-size: calc(100% - 32px) 1px; }
+  :root[data-design="starlight"] .now-head::before { content: "this song"; font-size: 1.0625rem; }
   :root[data-design="starlight"] .now__acts {
     padding: 8px 16px 18px; border-bottom: var(--stroke) solid var(--line);
     border-radius: 0 0 var(--r-card) var(--r-card); box-shadow: var(--stack-sm); margin-bottom: 12px;
@@ -1026,10 +1372,15 @@
 }
 
 /* =====================================================================
-   Wide screens (ADR-0007): the Now Playing column is one more cream card on the sky (above), its label set like the
-   cards' small caps rule
+   Wide screens (ADR-0007): the Now Playing column is one more cream print on the sky, its label printed in DM Mono
    ===================================================================== */
-:root[data-design="starlight"] .nowcol__head { padding: 14px 10px 6px 18px; }
-:root[data-design="starlight"] .nowcol__title { font: 400 .9375rem/1.2 var(--f-ui); color: var(--fg); }
+:root[data-design="starlight"] .nowcol__head { padding: 16px 10px 6px 18px; }
+:root[data-design="starlight"] .nowcol__title { font: 400 .75rem/1.2 var(--f-px); letter-spacing: .14em; text-transform: uppercase; color: var(--fg-2); }
+:root[data-design="starlight"] .nowcol__art .cover { box-shadow: var(--sl-print); }
+:root[data-design="starlight"] .nowcol__song { font: 300 1.75rem/1.05 var(--f-ui); text-transform: uppercase; color: var(--sl-title); }
+:root[data-design="starlight"] .nowcol__artist { letter-spacing: .14em; text-transform: uppercase; }
+:root[data-design="starlight"] .nowcol__album { font-family: var(--f-px); }
+:root[data-design="starlight"] .nowcol__from { font: 400 .6875rem/1.4 var(--f-px); letter-spacing: .12em; text-transform: uppercase; color: var(--fg-2); }
+:root[data-design="starlight"] .nowcol__from b { font-weight: 500; color: var(--fg); }
 
 }
