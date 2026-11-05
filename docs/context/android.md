@@ -33,7 +33,7 @@ One recipe, run the same way by CI, F-Droid and anyone else (ADR-0061): `sh scri
   - `signed`, with a throwaway key (artifact `lull-android-arm64-test.apk`, installable for testing; uninstall a release first), without the Gradle wrapper as F-Droid builds; its Gradle dependency tree (printed in the log) has no Google Play Services, Firebase or ML Kit, and `fdroid scanner` finds no non-free library in the APK;
   - `clean`, unsigned from a clean clone in another folder, wrapper included; `android-compare` then requires `apksigcopier compare` to match the two.
 
-  Both keep Gradle's downloads between runs, never what they compiled.
+  Both keep Gradle's downloads between runs (`GRADLE_USER_HOME=/opt/gradle`, cached from main), never what they compiled. Gradle checks every dependency, cached or downloaded, against `app/gen/android/gradle/verification-metadata.xml` (SHA-256), and fails on one it doesn't list. After a dependency changes, write the file again: `gh workflow run app.yml --ref <branch> -f gradle-verification=true`, then commit the `gradle-verification-metadata` artifact's file with the change.
   
   A `v*` tag signs with the release keystore and attaches `lull-<version>-android-arm64.apk` to the tag's Release; `latest.json` points at it (`android.url`). Obtainium can follow those releases too.
 - **Locally:** the Android SDK, NDK 28.2.13676358 (`NDK_HOME`) and a JDK 17 or newer, then the two scripts; or `npx tauri android dev` in `app/` with a phone attached (npm's CLI: Gradle's Rust task calls `npm run tauri` unless `LULL_TAURI_CLI=cargo`). This workstation has no NDK on purpose (disk): build in F-Droid's image with Docker instead, or in CI.
