@@ -401,13 +401,3 @@ jobs:
               gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "lull $TAG" --generate-notes
             fi
           gh release upload "$TAG" bundles/* --repo "$GITHUB_REPOSITORY" --clobber
-
-  # The same installers on SourceForge, with each platform's default download (sourceforge.yml).
-  sourceforge:
-    needs: release
-    uses: ./.github/workflows/sourceforge.yml
-    with:
-      tag: ${{ github.ref_name }}
-    secrets:
-      SOURCEFORGE_SSH_KEY: ${{ secrets.SOURCEFORGE_SSH_KEY }}
-      SOURCEFORGE_API_KEY: ${{ secrets.SOURCEFORGE_API_KEY }}
