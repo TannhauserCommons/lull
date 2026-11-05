@@ -408,8 +408,15 @@ struct RawTrack {
     duration: Option<u32>,
     rank: Option<u64>,
     isrc: Option<String>,
-    artist: Named,
+    artist: TrackArtist,
     album: RawTrackAlbum,
+}
+
+/// A search answer's artist of a track: its name, and its id when the answer gives one.
+#[derive(Deserialize)]
+struct TrackArtist {
+    id: Option<u64>,
+    name: String,
 }
 
 #[derive(Deserialize)]
@@ -563,6 +570,7 @@ fn hit(t: RawTrack) -> SongHit {
         popularity: t.rank.map_or(0.0, |r| popularity(r, FULL_RANK)),
         art: t.album.md5_image.as_deref().and_then(|m| picture("cover", m)),
         album_source: t.album.id.map(AlbumSource::Deezer),
+        artist_source: t.artist.id.map(ArtistSource::Deezer),
         ..SongHit::default()
     }
 }
@@ -634,6 +642,7 @@ pub fn artists_of(body: Value) -> Result<Vec<ArtistHit>> {
             image: a.image(),
             popularity: a.nb_fan.map_or(0.0, |f| popularity(f, FULL_FANS)),
             audience: a.nb_fan,
+            sources: a.id.map(ArtistSource::Deezer).into_iter().collect(),
             name: a.name,
             mbid: None,
         })

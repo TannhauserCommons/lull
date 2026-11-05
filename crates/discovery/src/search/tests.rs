@@ -893,3 +893,32 @@ fn a_gap_fillers_other_take_is_its_own_row_and_lends_no_plays() {
         "the edit takes the edit's plays; the original is a row of its own"
     );
 }
+
+#[test]
+fn a_rows_artist_ids_come_from_its_catalog_never_from_the_name() {
+    // Artist pages and taste tell artists by exact catalog ids, never by name.
+    let apple = itunes::songs(json!({ "results": [
+        { "wrapperType": "track", "trackName": "Creep", "artistName": "Radiohead", "artistId": 657515,
+          "collectionName": "Pablo Honey", "trackTimeMillis": 238000 }
+    ] }))
+    .unwrap_or_default();
+    assert_eq!(apple.songs[0].artist_source, Some(ArtistSource::Itunes(657_515)));
+    assert_eq!(apple.songs[0].song().artist_source, Some(ArtistSource::Itunes(657_515)));
+    let deezer = deezer::artists_of(fixture("deezer-artist")).unwrap_or_default();
+    assert!(
+        matches!(deezer[0].sources[..], [ArtistSource::Deezer(_)]),
+        "{:?}",
+        deezer[0].sources
+    );
+    // Merged with another source's row for the same song, the row keeps its catalog's id; a row
+    // whose source gives none gets none, whatever its name.
+    let mut m = Merged::default();
+    m.add(apple);
+    m.add(Found {
+        songs: vec![song("Radiohead", "Creep", "Pablo Honey", Some(238))],
+        ..Found::default()
+    });
+    assert_eq!(m.songs.len(), 1);
+    assert_eq!(m.songs[0].artist_source, Some(ArtistSource::Itunes(657_515)));
+    assert_eq!(song("Radiohead", "Creep", "", None).artist_source, None);
+}

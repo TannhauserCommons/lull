@@ -742,6 +742,7 @@ pub fn recordings(body: serde_json::Value) -> Result<Found> {
                     popularity: 0.0,
                     image: None,
                     audience: None,
+                    sources: Vec::new(),
                 });
             }
         }
@@ -757,6 +758,7 @@ pub fn recordings(body: serde_json::Value) -> Result<Found> {
             popularity: known,
             art,
             album_source: None,
+            artist_source: None,
             artist,
             album_artist,
         });

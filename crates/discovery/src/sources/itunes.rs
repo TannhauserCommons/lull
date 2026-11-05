@@ -661,6 +661,7 @@ pub fn songs(body: Value) -> Result<Found> {
             popularity,
             art,
             album_source: source,
+            artist_source: r.artist_id.map(ArtistSource::Itunes),
             ..SongHit::default()
         });
     }

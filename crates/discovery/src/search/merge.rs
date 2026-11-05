@@ -25,7 +25,7 @@ use lull_core::ids::{AlbumId, ArtistId, TrackId, loose_artist, loose_title, norm
 use lull_core::model::Track;
 use serde::{Deserialize, Serialize};
 
-use crate::sources::{AlbumSource, ArtistInfo, Release, Song};
+use crate::sources::{AlbumSource, ArtistInfo, ArtistSource, Release, Song};
 use crate::store;
 
 /// Lengths within this many seconds are the same recording.
@@ -187,6 +187,10 @@ pub struct SongHit {
     /// The album in the catalog that found the song, for its tracklist.
     #[serde(default)]
     pub album_source: Option<AlbumSource>,
+    /// The catalog's own id for the song's artist (Apple's `artistId`, Deezer's artist id), from
+    /// the row the source gave, never from the name.
+    #[serde(default)]
+    pub artist_source: Option<ArtistSource>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -216,6 +220,9 @@ pub struct ArtistHit {
     /// Fans or listeners, the larger known.
     #[serde(default)]
     pub audience: Option<u64>,
+    /// The catalogs' own ids for the artist, from the rows they gave, never from the name.
+    #[serde(default)]
+    pub sources: Vec<ArtistSource>,
 }
 
 /// A count (fans, listeners, Deezer rank) on a 0..1 log scale where `full` reaches 1.
@@ -238,8 +245,8 @@ impl SongHit {
             disc: None,
             duration_s: self.duration,
             tags: Vec::new(),
-            artist_source: None,
-            isrc: None,
+            artist_source: self.artist_source,
+            isrc: self.isrcs.first().cloned(),
         }
     }
 
@@ -474,6 +481,7 @@ fn fill_song(row: &mut SongHit, hit: SongHit, may_rename: bool) -> bool {
         // The song itself, not its live or remixed release ("Dynamite (Live)" on a concert).
         row.title = hit.title;
         row.artist = hit.artist;
+        row.artist_source = hit.artist_source.or(row.artist_source);
         row.album = hit.album;
         row.album_artist = hit.album_artist;
         row.album_kind = hit.album_kind.clone();
@@ -486,6 +494,8 @@ fn fill_song(row: &mut SongHit, hit: SongHit, may_rename: bool) -> bool {
         row.album_source = hit.album_source;
     }
     row.album_kind = row.album_kind.take().or(hit.album_kind);
+    // The same song by the same loose artist: another catalog's id for that artist.
+    row.artist_source = row.artist_source.or(hit.artist_source);
     row.year = row.year.or(hit.year);
     row.duration = row.duration.or(hit.duration);
     row.mbid = row.mbid.take().or(hit.mbid);
@@ -516,6 +526,11 @@ fn fill_artist(row: &mut ArtistHit, hit: ArtistHit) -> bool {
     row.image = row.image.take().or(hit.image);
     row.popularity = row.popularity.max(hit.popularity);
     row.audience = row.audience.max(hit.audience);
+    for source in hit.sources {
+        if !row.sources.contains(&source) {
+            row.sources.push(source);
+        }
+    }
     *row != before
 }
 
