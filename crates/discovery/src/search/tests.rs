@@ -922,3 +922,24 @@ fn a_rows_artist_ids_come_from_its_catalog_never_from_the_name() {
     assert_eq!(m.songs[0].artist_source, Some(ArtistSource::Itunes(657_515)));
     assert_eq!(song("Radiohead", "Creep", "", None).artist_source, None);
 }
+
+#[test]
+fn a_search_hands_each_rows_catalog_id_to_the_artist_it_stored_for_the_row() {
+    // What describe() gives Store::artist_sources: keyed by the artist lull stored for each row.
+    let deezer = deezer::artists_of(fixture("deezer-artist")).unwrap_or_default();
+    let artist_hits = &deezer[..1];
+    let artist_rows: Vec<_> = artist_hits.iter().map(|a| crate::store::artist(a.info())).collect();
+    let mut creep = song("Radiohead", "Creep", "Pablo Honey", Some(238));
+    creep.artist_source = Some(ArtistSource::Itunes(657_515));
+    let fan = song("Some Fan", "Creep", "", Some(238));
+    let song_hits = [&creep, &fan];
+    let song_rows: Vec<_> = song_hits.iter().map(|h| crate::store::track(h.song())).collect();
+    let ids = super::artist_ids(&artist_rows, artist_hits, &song_rows, &song_hits);
+    let mut want: Vec<_> = artist_hits[0]
+        .sources
+        .iter()
+        .map(|&s| (artist_rows[0].id.clone(), s))
+        .collect();
+    want.push((song_rows[0].artist_id.clone(), ArtistSource::Itunes(657_515)));
+    assert_eq!(ids, want, "artist rows first; a row without its catalog's id adds none");
+}

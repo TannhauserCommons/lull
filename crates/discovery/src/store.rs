@@ -239,7 +239,6 @@ impl Store {
     /// only an artist lull holds no id for and has not weighed the listener's evidence of (that
     /// evidence decides, and replaces a seed when first weighed): the artist's first source in
     /// the rows, unless the rows give two ids of it, which cancel.
-    #[expect(dead_code, reason = "search's describe() calls it; remove this when it does")]
     pub async fn artist_sources(&self, rows: Vec<(ArtistId, ArtistSource)>) -> Result<()> {
         if rows.is_empty() {
             return Ok(());

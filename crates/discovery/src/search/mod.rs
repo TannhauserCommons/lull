@@ -34,7 +34,7 @@ use std::time::Duration;
 use axum::Json;
 use axum::extract::{Query as Params, State};
 use lull_core::ids::{AlbumId, ArtistId, TrackId};
-use lull_core::model::Track;
+use lull_core::model::{Artist, Track};
 use lull_core::{Error, Result};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, Notify};
@@ -42,9 +42,10 @@ use tokio::time::Instant;
 
 use crate::Service;
 use crate::art::{self, Pictured};
+use crate::sources::ArtistSource;
 use crate::store::{self, entities};
 use catalog::Choice;
-use merge::{Fit, Found, Kind, Merged, Query, Score, SongHit, Source, Touched};
+use merge::{ArtistHit, Fit, Found, Kind, Merged, Query, Score, SongHit, Source, Touched};
 
 /// The longest the first answer waits for the fast sources.
 const FIRST_ANSWER: Duration = Duration::from_millis(1500);
@@ -766,14 +767,35 @@ impl Board {
 
 /// Entities for rows: tracks recorded in the catalog with saved state, albums (the rows' and
 /// the tracks') and artists remembered with their pictures, so their ids resolve later.
+/// Each row's own catalog id for the artist it shows, keyed by the artist lull stored for the row
+/// (`Store::artist_sources`): artist rows first, then songs'. A row whose catalog gives none adds
+/// nothing; no name is compared.
+fn artist_ids(
+    artist_rows: &[Artist],
+    artist_hits: &[ArtistHit],
+    song_rows: &[Track],
+    song_hits: &[&SongHit],
+) -> Vec<(ArtistId, ArtistSource)> {
+    artist_rows
+        .iter()
+        .zip(artist_hits)
+        .flat_map(|(row, hit)| hit.sources.iter().map(|&s| (row.id.clone(), s)))
+        .chain(
+            song_rows
+                .iter()
+                .zip(song_hits)
+                .filter_map(|(t, hit)| Some((t.artist_id.clone(), hit.artist_source?))),
+        )
+        .collect()
+}
+
 async fn describe(svc: &Service, m: &Merged, songs: &[usize], albums: &[usize], artists: &[usize]) -> Result<Pictured> {
     let mut tracks: Vec<Track> = songs.iter().filter_map(|&i| m.songs[i].saved.clone()).collect();
-    let found: Vec<_> = songs
-        .iter()
-        .filter(|&&i| m.songs[i].saved.is_none())
-        .map(|&i| m.songs[i].song())
-        .collect();
-    tracks.extend(svc.store.tracks(found).await?);
+    let found: Vec<usize> = songs.iter().copied().filter(|&i| m.songs[i].saved.is_none()).collect();
+    let found_tracks = svc
+        .store
+        .tracks(found.iter().map(|&i| m.songs[i].song()).collect())
+        .await?;
 
     let album_hits: Vec<_> = albums
         .iter()
@@ -798,6 +820,10 @@ async fn describe(svc: &Service, m: &Merged, songs: &[usize], albums: &[usize], 
         .store
         .artists(artist_hits.iter().map(|a| store::artist(a.info())).collect())
         .await?;
+    let song_hits: Vec<&SongHit> = found.iter().map(|&i| &m.songs[i]).collect();
+    let artist_ids = artist_ids(&artist_rows, &artist_hits, &found_tracks, &song_hits);
+    svc.store.artist_sources(artist_ids).await?;
+    tracks.extend(found_tracks);
     svc.store
         .remember_pictures(
             album_rows
