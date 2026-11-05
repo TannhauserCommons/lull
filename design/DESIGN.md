@@ -71,12 +71,16 @@ outlined transport, framed art); eight hand-editable cover scenes (`designs/star
 a constellation" beside the Home greeting; a shooting star across the hero art per new song. Fonts: Jost (UI), DM Mono
 (machine facts); the wordmark is SVG outlines (from Poiret One, OFL), so that font is not shipped.
 
-**petal** (images 04 + 03). A pink pixel-art music zine: white pages framed by 1-2 px blush rules on a blush desk,
-light poster titles with a pixel heart, uppercase micro-labels, hard pixel shadows and original pixel art
-(`designs/petal/art/*.svg`, grid-aligned rects you can edit by hand). Night is wine-plum. Signature moments: the
-Now Playing hero as a glossy pale "lull player" window (image 03) with a now / source / save tab strip; the playlist
-page as image 04's table (# / title / album / date added / time, pink hearts); source scores as five pixel stars.
-Fonts: Nunito Sans (UI), the base Jersey 10 for badges, keycaps and the LCD strip.
+**petal** (images 04 + 03). The pixel zine: everything is cut from paper with a pixel knife, each window, card and key
+a 2 px ring with notched corners and a hard stepped pink shadow (drawn from `--line` and `--stack-2`), on a dithered
+pink desk. The page is ruled notebook paper with a pink margin and binder holes; the menu is a row of index tabs
+standing on it, the open one joined to the page; titles are big pixel letters with a hard shadow; covers are taped
+snapshots (a heart sticker while the song is liked, a star while it is saved), Home's cards carry washi tape. Original
+pixel art (`designs/petal/assets/art/*.svg`, grid-aligned rects you can edit by hand). Night is wine-plum. Signature
+moments: the player bar as a strip of paper with tabs on its top edge (what the player does, then the tools) and its
+seek a row of hearts filling up; Now Playing as a zine spread, the "lull player" window on the left page (a bunny that
+hops along its title bar as the song goes) and the song's name and lyrics written on the right one, the line being
+sung marked with a highlighter. Fonts: Nunito Sans (UI), the base Jersey 10 for titles, tabs, labels and the LCD strip.
 
 **glasshouse** (images 03 + 05 + 01). A silvery-glass Y2K media desktop after midnight: misty wallpaper with stars and
 typewriter captions, frosted silver windows with aero title bars and glossy beads, desktop-icon navigation and a
