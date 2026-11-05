@@ -2974,6 +2974,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
+ "unicode-ident",
  "zip",
 ]
 
