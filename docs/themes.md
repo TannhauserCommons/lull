@@ -313,7 +313,7 @@ Also a window narrowed past each `data-size` step. Nothing may scroll sideways, 
 **Motion:**
 - **Cheap to run:** animate `transform` and `opacity` only, so it runs off the main thread on a slow phone.
 - **Cheap to draw:** each loop is stepped where it is declared (`steps(n)` or a `--loop-*` stepped easing), moves only what moves, and stays off live glass; glass over your own wallpaper is baked (section 5, Drawing cheaply).
-- **Calm by default:** one signature moment at most. Loops only while they mean something, such as the playing bars while sound comes out.
+- **As much as you like, within its cost:** how much moves is yours to choose; the bound is that it stays smooth on a cheap device (the checks above, and the perf gates for the built-in designs).
 - **Off under reduced motion:** nothing moves under `:root[data-motion="reduce"]`, or under the system's reduced-motion setting unless `data-motion="full"`. lull's base CSS already stops animations and travel there; don't undo it with `!important`.
 - **Paused when hidden:** loops pause on `:root.is-hidden` (the page is hidden).
 - **Still when asked:** a decorative loop takes `animation-play-state: var(--loop-play, running)`, which pauses on `:root.is-still`, or names its rate with `--loop-fps`, which lull holds; a progress loop leaves the first out, or sets `--loop-holds: no` (section 5, Drawing cheaply).

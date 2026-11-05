@@ -1,5 +1,6 @@
-/* lull: a Y2K pastel desktop. Every view is a titled window with a
-   glossy title bar and three orbs, framed by mocha trays top and bottom. Gloss only on things you press.
+/* lull: a Y2K candy desktop. Everything is moulded in see-through grape candy plastic: a menubar across the top, the
+   taskbar player along the foot, and every window's shell, its title pressed into the plastic beside three orbs. The
+   pages inside are light paper. Windows overlap like real ones, big titles are chrome, gloss only on things you press.
    Day is home; night is a lavender-indigo Y2K night with the same windows.
    Layer over the base (tokens.css, base.css, components.css, screens). API: docs/themes.md. */
 
@@ -43,7 +44,7 @@
 
   /* theme: day. "sky" = the window body, "panel" = white panels inside it; the wallpaper is --l-wall */
   --sky: var(--l-win); --sky-deep: #ece7fd; --panel: var(--l-card); --panel-2: #efeafe;
-  --tray: var(--l-tray); --tray-edge: #6b585e;
+  --tray: var(--l-tray); --tray-edge: #3d3491;
   --fg-sky: #2b2650; --fg-sky-2: #5a4e8a; --fg-panel: #2b2650; --fg-panel-2: #5a4e8a;
   --link: #5544aa; --accent-ui: #5544aa; --heart: #9c3f7e; --edge: #7772b4; --focus: #3d3491;
   --seek-played: #3a3196; --seek-buffered: #8f84da; --seek-line: #7772b4;
@@ -52,10 +53,9 @@
   --scrim: #2b2650; --scrim-alpha: .35; --gloss-ring-w: 0px;
 
   /* lull's own (--l-win / --l-tray feed --sky / --tray so the theme change can animate them, see "Night falls") */
-  --l-win: #f7f4ff; --l-tray: #856e74;
+  --l-win: #f7f4ff; --l-tray: #5a4ab8;
   --l-wall: #e4def9; --l-wall-2: #fce8f3; --l-wall-3: #b6c7f5; --l-wall-4: #ecc6d8;
   --l-frame: #e4def9; --l-edge: #7772b4;
-  --l-bar: #b6c7f5; --l-bar-hi: #e3eafd; --l-bar-ink: #2b2650; --l-bar-line: rgba(255, 255, 255, .8);
   --l-card: #fdfcff; --l-card-2: #f1edfd; --l-rule: #d6cef6; --l-hatch: #cfc7ee;
   --l-muted: #6e5560; --l-ribbon: #5544aa;
   --l-tile: #b6c7f5; --l-tile-hi: #e9f5ff; --l-tile-ink: #2b2650;
@@ -69,6 +69,11 @@
   --l-shell: linear-gradient(180deg, #d4defb 0%, #b6c7f5 55%, #a9bcf0 100%); --l-shell-hi: #e9f5ff;
   --l-screen-ink: #fff9fe; --l-ink-dim: #7772b4; --l-warn-ink: #7a2f62;
   --l-hl: #c4d1f7;
+  /* the readout's LCD: mocha by day, ink-blue by night; its glow is the caption's and the gel's light end */
+  --l-lcd: #4a3b42; --l-lcd-glow: #e6dcff;
+  --l-chrome: linear-gradient(180deg, #2b2650 0%, #4a3fa3 38%, #7b6ce0 50%, #3a3196 54%, #5544aa 78%, #2b2650 100%);
+  --l-tube: linear-gradient(180deg, rgba(43, 38, 80, .16), rgba(255, 255, 255, .6) 60%, rgba(255, 255, 255, .9));
+  --l-gel: linear-gradient(180deg, #c3b8ff 0%, #7b6ce0 30%, #4a3fa3 70%, #6e5ed4 100%); --l-gel-buf: #b9adf7;
 }
 /* check: --fg-sky on --sky 4.5 */
 /* check: --fg-sky-2 on --sky 4.5 */
@@ -77,7 +82,7 @@
 /* check: --l-muted on --sky 4.5 */
 /* check: --link on --l-card 4.5 */
 /* check: --l-tile-ink on --l-tile 4.5 */
-/* check: --l-bar-ink on --l-bar 4.5 */
+/* check: --l-band-ink on --l-tray 4.5 (titles pressed into the plastic) */
 /* check: #ffffff on --l-ribbon 4.5 */
 /* check: --reason-fg on --reason-bg 4.5 */
 /* check: --heart on --l-card 3 */
@@ -95,6 +100,10 @@
 /* check: #fff9fe on --tray 4.5 */
 /* check: --l-switch on --sky 3 */
 /* check: --fg-sky on --l-hl 4.5 */
+/* check: --l-screen-ink on --l-lcd 4.5 */
+/* check: --l-lcd-glow on --l-lcd 4.5 */
+/* check: #ffb0c6 on --l-lcd 4.5 */
+/* check: #2b2650..#7b6ce0 (chrome, day) on --sky 3 at its lightest band: display sizes only */
 
 /* =====================================================================
    Tokens: night (lavender-indigo Y2K night). Every theme token set above is set again here.
@@ -105,7 +114,7 @@
   --card-seek-played: #fff9fe; --card-seek-buffered: #8c88d8;
   --sky: var(--l-win); --sky-deep: #33366c; --panel: var(--l-card); --panel-2: #444985;
   --tray: var(--l-tray); --tray-edge: #0f1029;
-  --l-win: #2a2c5a; --l-tray: #1a1b3a;
+  --l-win: #2a2c5a; --l-tray: #221d5c;
   --fg-sky: #f4efff; --fg-sky-2: #cdc4f7; --fg-panel: #f4efff; --fg-panel-2: #cdc4f7;
   --link: #cfc0ff; --accent-ui: #b6c7f5; --heart: #f3b0d9; --edge: #8f92dc; --focus: #fff9fe;
   --seek-played: #fff9fe; --seek-buffered: #8c88d8; --seek-line: #8f92dc;
@@ -114,7 +123,6 @@
   --scrim: #0c0d24; --scrim-alpha: .62; --gloss-ring-w: 0px;
   --l-wall: #1d1f45; --l-wall-2: #4a3c8c; --l-wall-3: #2b3b80; --l-wall-4: #5b3a7c;
   --l-frame: #3c3f7c; --l-edge: #9194de;
-  --l-bar: #5a56b8; --l-bar-hi: #8f88e4; --l-bar-ink: #fff9fe; --l-bar-line: rgba(255, 255, 255, .34);
   --l-card: #3a3e78; --l-card-2: #444985; --l-rule: #575ca0; --l-hatch: #5c61a6;
   --l-muted: #c4bde0; --l-ribbon: #6252cc;
   --l-tile: #464b8c; --l-tile-hi: #6268b0; --l-tile-ink: #f6f2ff;
@@ -128,7 +136,12 @@
   --l-shell: linear-gradient(180deg, #6a6fcc 0%, #5257ac 55%, #4a4f9f 100%); --l-shell-hi: #9aa0e6;
   --l-screen-ink: #f2eefe; --l-ink-dim: #a7a3d8; --l-warn-ink: #ffd6ec;
   --l-hl: #4f4fa8;
+  --l-lcd: #121334; --l-lcd-glow: #d6ccff;
+  --l-chrome: linear-gradient(180deg, #ffffff 0%, #e4def9 36%, #8f88e4 50%, #fff9fe 56%, #cfc0ff 80%, #ffffff 100%);
+  --l-tube: linear-gradient(180deg, rgba(0, 0, 0, .35), rgba(255, 255, 255, .1) 60%, rgba(255, 255, 255, .22));
+  --l-gel: linear-gradient(180deg, #ffffff 0%, #d6ccff 30%, #a796e6 70%, #cfc0ff 100%); --l-gel-buf: #6268b0;
 }
+/* check: #8f88e4..#ffffff (chrome, night) on --sky 3 at its darkest band: display sizes only */
 /* status inks: lull night has no cream cards, so "connected", "done" and warnings sit on navy and take light tones.
    Set on body, not :root, because the base pairs (status on cream) still describe the shared tokens. */
 :root[data-design="lull"][data-theme="night"] body { --ok: #8fdcb4; --warn: #f2c879; --down: #ffb0c6; }
@@ -142,23 +155,21 @@
 /* check: #1a1b3a on #b6c7f5 4.5 */
 
 /* Night falls: the surface tokens are registered colours, so flipping data-theme animates the desk instead of
-   cutting: title bars and tiles dusk first, then the windows, then the wallpaper. Only while data-theme-fade is set
+   cutting: the plastic and tiles dusk first, then the windows, then the wallpaper. Only while data-theme-fade is set
    (Designs.applyTheme, for a flip the listener sees), so a page that loads into its theme never fades. Reduced
    motion: instant. */
 @property --l-wall { syntax: "<color>"; inherits: true; initial-value: #e4def9; }
 @property --l-wall-2 { syntax: "<color>"; inherits: true; initial-value: #fce8f3; }
 @property --l-wall-3 { syntax: "<color>"; inherits: true; initial-value: #b6c7f5; }
 @property --l-wall-4 { syntax: "<color>"; inherits: true; initial-value: #ecc6d8; }
-@property --l-bar { syntax: "<color>"; inherits: true; initial-value: #b6c7f5; }
-@property --l-bar-hi { syntax: "<color>"; inherits: true; initial-value: #e3eafd; }
 @property --l-tile { syntax: "<color>"; inherits: true; initial-value: #b6c7f5; }
-@property --l-tray { syntax: "<color>"; inherits: true; initial-value: #856e74; }
+@property --l-tray { syntax: "<color>"; inherits: true; initial-value: #5a4ab8; }
 @property --l-frame { syntax: "<color>"; inherits: true; initial-value: #e4def9; }
 @property --l-win { syntax: "<color>"; inherits: true; initial-value: #f7f4ff; }
 @property --l-card { syntax: "<color>"; inherits: true; initial-value: #fdfcff; }
 @property --l-card-2 { syntax: "<color>"; inherits: true; initial-value: #f1edfd; }
 :root[data-design="lull"][data-theme-fade] {
-  transition: --l-bar .5s ease, --l-bar-hi .5s ease, --l-tile .5s ease, --l-tray .6s ease,
+  transition: --l-tile .5s ease, --l-tray .6s ease,
     --l-frame .7s .1s ease, --l-win .7s .1s ease, --l-card .7s .1s ease, --l-card-2 .7s .1s ease,
     --l-wall .9s .2s ease, --l-wall-2 .9s .25s ease, --l-wall-3 .9s .3s ease, --l-wall-4 .9s .35s ease;
 }
@@ -168,12 +179,31 @@
 
 /* shared recipes (built from the theme tokens above, so they follow the theme) */
 :root[data-design="lull"] {
-  /* gloss highlight band: a light ellipse over the top 40%, as a background layer (pseudo elements stay free) */
-  --l-hi: linear-gradient(180deg, rgba(255, 244, 255, .74), rgba(255, 244, 255, 0)) 50% 2px / 74% 30% no-repeat;
-  /* small pills (< 36px): a thin glint only, so it never sits under the cap height */
-  --l-hi-sm: linear-gradient(180deg, rgba(255, 244, 255, .6), rgba(255, 244, 255, 0)) 50% 1.5px / 70% 4px no-repeat;
+  /* gel gloss, Vista style, as background layers (pseudo elements stay free): the top half lit, ending in a crisp
+     horizon across the middle, and a soft glow rising from the foot. Each layer fills the whole box, so the box's own
+     rounding shapes the shine: one recipe for every gel part, whatever its shape. It fades out above the middle, where
+     the words sit */
+  --l-hi:
+    linear-gradient(180deg, rgba(255, 255, 255, .58) 0%, rgba(255, 255, 255, .18) 30%, rgba(255, 255, 255, .08) 49%, transparent 50%),
+    radial-gradient(90% 50% at 50% 104%, rgba(235, 225, 255, .5), transparent 72%);
+  /* small pills (< 36px): the same, softer */
+  --l-hi-sm:
+    linear-gradient(180deg, rgba(255, 255, 255, .5) 0%, rgba(255, 255, 255, .14) 30%, rgba(255, 255, 255, .06) 49%, transparent 50%),
+    radial-gradient(90% 50% at 50% 104%, rgba(235, 225, 255, .38), transparent 72%);
+  /* a pale gel key (not pressed): the same construction as the pressed one, in the tile's periwinkle */
+  --l-gel-pale: var(--l-hi), linear-gradient(180deg, color-mix(in srgb, var(--l-tile) 80%, #fff) 0%, var(--l-tile) 58%, color-mix(in srgb, var(--l-tile) 86%, #2b2650) 100%);
+  --l-gel-pale-edge: color-mix(in srgb, var(--l-tile) 55%, #2b2650);
   --l-orb-shine: radial-gradient(circle at 50% 30%, rgba(255, 255, 255, .95) 0 1.4px, transparent 3px);
-  --l-bar-bg: linear-gradient(180deg, var(--l-bar-hi) 0%, var(--l-bar) 52%, var(--l-bar) 100%);
+  /* the candy plastic: a lit top lip and a darker foot, fine moulded ribs, over the tint (the wallpaper shows through) */
+  --l-candy:
+    linear-gradient(180deg, rgba(255, 255, 255, .34) 0 1px, rgba(255, 255, 255, .16) 1px, rgba(255, 255, 255, .02) 46%, transparent 52%, rgba(0, 0, 0, .1) 100%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, .06) 0 1px, transparent 1px 5px),
+    color-mix(in oklch, var(--l-tray) 90%, transparent);
+  /* a window whose title is a child: a candy shell (a 38 px title band, 7 px sides) around a paper body, drawn as
+     the border and padding boxes, so the shell needs no wrapper; its first child lifts into the band */
+  --l-pane: linear-gradient(var(--sky), var(--sky)) padding-box, var(--l-candy) border-box;
+  --l-pane-shadow: 0 0 0 1px color-mix(in srgb, #2b2650 60%, transparent), 0 4px 0 -1px color-mix(in srgb, #2b2650 55%, transparent), 0 8px 14px -10px rgba(43, 38, 80, .6);
+  --l-band-ink: #fff9fe; --l-band-glow: 0 1px 0 rgba(20, 10, 70, .55);
   /* 45 degree hatch on a 6 px tile: seamless, so it can march (live "received" tape) */
   --l-hatch-bg: repeating-linear-gradient(-45deg, var(--l-hatch) 0 1.5px, transparent 1.5px 4.243px) 0 0 / 6px 6px;
   --l-win-stack: 0 4px 0 -1.5px var(--stack-1), 0 4px 0 0 var(--l-edge);
@@ -193,7 +223,7 @@
 :root[data-design="lull"][data-theme="night"] :is(.ctx, .nowcol):not(:focus-within), :root[data-design="lull"][data-theme="night"] .app:has(:is(.ctx, .nowcol):focus-within) .main { --l-orb-1: #7d84b8; --l-orb-2: #8a83bd; --l-orb-3: #a58ab4; }
 
 /* =====================================================================
-   Desk: wallpaper (img 02 pastel / night: violet sky with stars)
+   Desk: wallpaper (img 02 pastel / night: violet sky with stars), glass bubbles drifting on it
    ===================================================================== */
 :root[data-design="lull"], :root[data-design="lull"] body, :root[data-design="lull"] .cls-scrim {
   background:
@@ -206,18 +236,34 @@
 /* starfield: an irregular tile of specks plus three 4-point sparkles (img 01); day: soft white with a violet glow */
 :root[data-design="lull"] .sky-specks::before { background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='520' height='420'%3E%3Cg fill='%23fff9fe'%3E%3Ccircle cx='335' cy='81' r='1.5' opacity='0.45'/%3E%3Ccircle cx='78' cy='278' r='0.8' opacity='0.75'/%3E%3Ccircle cx='63' cy='263' r='1' opacity='0.45'/%3E%3Ccircle cx='92' cy='226' r='1.5' opacity='0.45'/%3E%3Ccircle cx='250' cy='50' r='1.5' opacity='0.45'/%3E%3Ccircle cx='130' cy='118' r='0.6' opacity='1'/%3E%3Ccircle cx='410' cy='29' r='1' opacity='0.45'/%3E%3Ccircle cx='140' cy='152' r='1.5' opacity='0.6'/%3E%3Ccircle cx='124' cy='296' r='1' opacity='1'/%3E%3Ccircle cx='189' cy='56' r='1' opacity='0.75'/%3E%3Ccircle cx='103' cy='284' r='0.8' opacity='1'/%3E%3Ccircle cx='65' cy='320' r='1' opacity='0.9'/%3E%3Ccircle cx='441' cy='401' r='1.2' opacity='0.9'/%3E%3Ccircle cx='468' cy='189' r='1' opacity='0.6'/%3E%3Ccircle cx='188' cy='361' r='1' opacity='0.45'/%3E%3Ccircle cx='311' cy='272' r='1.8' opacity='0.75'/%3E%3Ccircle cx='463' cy='151' r='0.8' opacity='0.45'/%3E%3Ccircle cx='432' cy='88' r='1.2' opacity='0.6'/%3E%3Ccircle cx='504' cy='219' r='0.6' opacity='0.45'/%3E%3Ccircle cx='325' cy='178' r='1.2' opacity='1'/%3E%3Ccircle cx='512' cy='300' r='1.8' opacity='0.45'/%3E%3Ccircle cx='99' cy='142' r='1.8' opacity='0.45'/%3E%3Ccircle cx='66' cy='378' r='1' opacity='1'/%3E%3Ccircle cx='460' cy='149' r='1.5' opacity='0.75'/%3E%3Ccircle cx='27' cy='240' r='1.2' opacity='0.6'/%3E%3Ccircle cx='123' cy='256' r='0.6' opacity='0.6'/%3E%3Cpath d='M0-7c.4 4.4 2.6 6.6 7 7-4.4.4-6.6 2.6-7 7-.4-4.4-2.6-6.6-7-7 4.4-.4 6.6-2.6 7-7z' transform='translate(130,64) scale(0.9)'/%3E%3Cpath d='M0-7c.4 4.4 2.6 6.6 7 7-4.4.4-6.6 2.6-7 7-.4-4.4-2.6-6.6-7-7 4.4-.4 6.6-2.6 7-7z' transform='translate(402,250) scale(0.7)'/%3E%3Cpath d='M0-7c.4 4.4 2.6 6.6 7 7-4.4.4-6.6 2.6-7 7-.4-4.4-2.6-6.6-7-7 4.4-.4 6.6-2.6 7-7z' transform='translate(262,380) scale(0.55)'/%3E%3C/g%3E%3C/svg%3E") 0 0 / 520px 420px; opacity: .9; }
 :root[data-design="lull"][data-theme="day"] .sky-specks::before { opacity: .85; filter: drop-shadow(0 0 1.5px rgba(123, 106, 224, .7)); }
+/* glass bubbles on the wallpaper, drawn once on the page's own layer (docs/themes.md, Drawing cheaply): the layer's
+   own background, under the starfield, so they share its layer instead of needing one more over it */
+:root[data-design="lull"] .sky-specks {
+  --b-rim: color-mix(in srgb, var(--l-edge) 40%, transparent);
+  background:
+    radial-gradient(circle at 34% 30%, rgba(255, 255, 255, .95) 0 3%, rgba(255, 255, 255, .28) 9%, transparent 26%, color-mix(in srgb, var(--l-wall-3) 55%, transparent) 58%, var(--b-rim) 68.5%, transparent 70%) 4% 22% / 220px 220px no-repeat,
+    radial-gradient(circle at 34% 30%, rgba(255, 255, 255, .95) 0 3%, rgba(255, 255, 255, .28) 9%, transparent 26%, color-mix(in srgb, var(--l-wall-2) 70%, transparent) 58%, var(--b-rim) 68.5%, transparent 70%) 96% 12% / 300px 300px no-repeat,
+    radial-gradient(circle at 34% 30%, rgba(255, 255, 255, .95) 0 4%, rgba(255, 255, 255, .3) 10%, transparent 28%, color-mix(in srgb, var(--l-wall-4) 60%, transparent) 58%, var(--b-rim) 68.5%, transparent 70%) 58% 96% / 140px 140px no-repeat,
+    radial-gradient(circle at 34% 30%, rgba(255, 255, 255, .95) 0 5%, transparent 30%, color-mix(in srgb, #b9adf7 80%, transparent) 58%, var(--b-rim) 68.5%, transparent 70%) 34% 0 / 90px 90px no-repeat,
+    radial-gradient(circle at 34% 30%, rgba(255, 255, 255, .95) 0 5%, transparent 30%, color-mix(in srgb, #f6cee4 80%, transparent) 58%, var(--b-rim) 68.5%, transparent 70%) 71% 100% / 120px 120px no-repeat,
+    radial-gradient(circle at 34% 30%, rgba(255, 255, 255, .95) 0 5%, transparent 30%, color-mix(in srgb, #b6c7f5 80%, transparent) 58%, var(--b-rim) 68.5%, transparent 70%) 12% 100% / 76px 76px no-repeat,
+    radial-gradient(circle at 34% 30%, rgba(255, 255, 255, .95) 0 5%, transparent 30%, color-mix(in srgb, var(--l-wall-2) 60%, transparent) 58%, var(--b-rim) 68.5%, transparent 70%) 84% 72% / 96px 96px no-repeat;
+}
 
 /* =====================================================================
-   Windows: shared frame, title bar (orbs, title, right-hand meta), body
+   Windows: a candy shell (the title band with its orbs, title and right-hand meta, 7 px sides) around a paper body.
+   The side window stands in front of the main one, overlapping its edge and set a little lower, as a second window
+   dropped on the desk would; the main window keeps its words clear of the part it covers
    ===================================================================== */
-:root[data-design="lull"] .main, :root[data-design="lull"] .ctx {
-  background: var(--l-frame); border: var(--stroke) solid var(--l-edge); border-radius: 14px; padding: 4px;
-  box-shadow: var(--l-win-stack); margin-bottom: 18px;
+:root[data-design="lull"] :is(.main, .ctx, .nowcol) {
+  padding: 0 7px 7px; border: var(--stroke) solid color-mix(in srgb, #2b2650 60%, transparent); border-radius: 16px; margin-bottom: 16px;
+  background: var(--l-candy);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), inset 0 -2px 0 rgba(20, 10, 70, .25), 0 4px 0 -1px color-mix(in srgb, #2b2650 55%, transparent), 0 8px 14px -10px rgba(43, 38, 80, .6);
 }
-:root[data-design="lull"] .main::before, :root[data-design="lull"] .ctx > .region-title, :root[data-design="lull"] .lull-win__bar {
-  display: flex; align-items: center; flex: none; height: 30px; padding: 0 12px 0 68px; border-radius: 10px 10px 4px 4px;
-  background: var(--l-orbs), var(--l-bar-bg); box-shadow: inset 0 1px 0 var(--l-bar-line), inset 0 -1px 0 rgba(43, 38, 80, .1);
-  color: var(--l-bar-ink); font: 400 .8125rem/1 var(--f-disp); letter-spacing: .04em; text-transform: lowercase; white-space: nowrap;
+/* the title band: the shells' own (.main::before, the panel's region title, the column's head) and the panes' heads */
+:root[data-design="lull"] .main::before, :root[data-design="lull"] :is(.ctx > .region-title, .nowcol__head, .lull-win__bar, .sheet__head) {
+  display: flex; align-items: center; flex: none; height: 38px; padding: 0 12px 0 72px; border-radius: 0; background: var(--l-orbs);
+  color: var(--l-band-ink); font: 400 .9375rem/1 var(--f-disp); letter-spacing: .06em; text-transform: lowercase; white-space: nowrap; text-shadow: var(--l-band-glow);
 }
 /* the bar names the kind of window ("discover", "search", "album"); the live meta sits on the right */
 :root[data-design="lull"] .main::before { content: "lull"; }
@@ -237,19 +283,23 @@
 :root[data-design="lull"] .app[data-screen="settings"] .main::before { content: "settings"; }
 :root[data-design="lull"] .app[data-screen="welcome"] .main::before { content: "welcome"; }
 :root[data-design="lull"] .main::after {
-  content: attr(data-meta); position: absolute; top: 4px; right: 16px; height: 30px; display: flex; align-items: center; pointer-events: none;
-  color: var(--l-bar-ink); font: 800 .75rem/1 var(--f-ui); white-space: nowrap;
+  content: attr(data-meta); position: absolute; top: 0; right: 16px; height: 38px; display: flex; align-items: center; pointer-events: none;
+  color: var(--l-band-ink); font: 800 .75rem/1 var(--f-ui); white-space: nowrap; text-shadow: var(--l-band-glow);
 }
 /* routes without a live meta keep a quiet fact that never goes stale */
 :root[data-design="lull"] .app[data-screen="library"] .main[data-meta=""]::after, :root[data-design="lull"] .app[data-screen="playlists"] .main[data-meta=""]::after { content: "saved on your server"; }
 :root[data-design="lull"] .app[data-screen="settings"] .main[data-meta=""]::after { content: "this device + server"; }
+@media (min-width: 640px) {
+  :root[data-design="lull"] .app[data-ctx="docked"] { --l-overlap: 26px; }
+  :root[data-design="lull"] .app[data-ctx="docked"] .ctx { z-index: 2; margin: 18px 0 16px calc(-1 * var(--l-overlap) - 16px); }
+  :root[data-design="lull"] .app[data-ctx="docked"] .main::after { right: calc(var(--l-overlap) + 16px); }
+  :root[data-design="lull"] .app[data-ctx="docked"] .main > .view { padding-right: calc(22px + var(--l-overlap)); }
+}
 /* scrollbars in the window edge's violet on every surface (base.css draws them) */
 :root[data-design="lull"], :root[data-design="lull"] :is(.s-sky, .s-panel, .s-card, .card, .s-screen) { --scroll-thumb: var(--l-edge); }
 :root[data-design="lull"] .view {
-  margin-top: 4px; border-radius: 4px 4px 10px 10px; background: var(--sky); padding: 16px 22px 36px;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, #fff 65%, transparent);
+  border-radius: 10px; background: var(--sky); padding: 16px 22px 36px;
 }
-:root[data-design="lull"][data-theme="night"] .view { box-shadow: inset 0 0 0 1px rgba(195, 194, 226, .1); }
 /* whatever the fold cuts reads as "scroll for more": a fade riding the window's foot. Sticky, so it never clips focus
    rings or fixed children the way a mask on the scroller would (the sticky edge sits at the content box, so bottom is
    minus the view's bottom padding). It shows only while there is more below: a scroll-driven animation runs only
@@ -271,14 +321,14 @@
 :root[data-design="lull"] .app[data-ctx="docked"] .ctx { position: relative; }
 :root[data-design="lull"] .ctx > .region-title { padding-right: 44px; }
 :root[data-design="lull"] .ctx > .region-meta {
-  display: block; position: absolute; top: 4px; right: 44px; line-height: 30px; pointer-events: none;
-  color: var(--l-bar-ink); font: 800 .75rem/30px var(--f-ui); white-space: nowrap;
+  display: block; position: absolute; top: 0; right: 44px; pointer-events: none;
+  color: var(--l-band-ink); font: 800 .75rem/38px var(--f-ui); white-space: nowrap; text-shadow: var(--l-band-glow);
 }
-:root[data-design="lull"] .ctx__head { position: static; margin-top: 4px; padding: 10px 10px 4px; border-radius: 4px 4px 0 0; background: var(--sky); }
+:root[data-design="lull"] .ctx__head { position: static; padding: 10px 10px 4px; border-radius: 10px 10px 0 0; background: var(--sky); }
 :root[data-design="lull"] .ctx__head .seg { min-height: 0; }
 :root[data-design="lull"] .ctx__head .seg__btn { min-height: 28px; font-size: .8125rem; }
 :root[data-design="lull"] .ctx__head .badge-count { min-width: 16px; height: 16px; font-size: .625rem; }
-:root[data-design="lull"] .ctx__head [data-act="close-panel"] { position: absolute; top: 7px; right: 10px; width: 24px; height: 24px; color: var(--l-bar-ink); }
+:root[data-design="lull"] .ctx__head [data-act="close-panel"] { position: absolute; top: 7px; right: 10px; width: 24px; height: 24px; color: var(--l-band-ink); }
 :root[data-design="lull"] .ctx__head [data-act="close-panel"] .ic { width: 15px; height: 15px; }
 :root[data-design="lull"] .ctx__head [data-act="close-panel"]:hover { background: rgba(255, 255, 255, .35); }
 :root[data-design="lull"] .ctx__body {
@@ -314,7 +364,8 @@
 /* check: --reason-fg on --reason-bg 4.5 */
 
 /* =====================================================================
-   Top strip (topnav shell): mocha tray with tiles (img 02 status bar)
+   Menubar (topnav shell): candy plastic with tiles pressed into it (img 02 status bar); from 640 px it meets the
+   window's edges, as the taskbar does
    ===================================================================== */
 :root[data-design="lull"] .wordmark.lull-wm {
   --wm-1: #fff; display: inline-flex; align-items: center; height: 38px; padding: 0 20px 0 15px; border-radius: 999px; isolation: isolate;
@@ -322,29 +373,38 @@
   font: 400 1.3125rem/1 var(--f-disp); letter-spacing: .02em; color: #fff; text-shadow: 0 1px 0 rgba(40, 25, 110, .6), 0 0 1.5px #2f2580, 0 0 3px rgba(47, 37, 128, .55);
 }
 :root[data-design="lull"] .lull-wm .wordmark__spark { position: relative; right: auto; top: -.42em; margin-left: 1px; width: .55em; height: .55em; background: #fff9fe; }
-@media (min-width: 640px) {
-  :root[data-design="lull"] .app { padding: 12px 16px 0; column-gap: 16px; }
-  :root[data-design="lull"] .app:not([data-ctx="docked"]) .ctx { top: 84px; bottom: calc(var(--bar-h) + 30px); }
-}
 :root[data-design="lull"] .header {
-  min-height: 54px; margin-bottom: 14px; padding: 6px; gap: 6px; background: var(--tray); color: #fff9fe;
+  min-height: 54px; margin-bottom: 14px; padding: 6px; gap: 6px; background: var(--l-candy); color: #fff9fe;
   border: var(--stroke) solid var(--tray-edge); border-radius: 16px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22);
+}
+@media (min-width: 640px) {
+  :root[data-design="lull"] .app { padding: 0 16px; column-gap: 16px; }
+  :root[data-design="lull"] .app:not([data-ctx="docked"]) .ctx { top: 92px; bottom: calc(var(--bar-h) + 28px); }
+  :root[data-design="lull"] .header {
+    margin: 0 -16px 16px; padding: 7px 12px 8px; min-height: 58px; border-width: 0 0 var(--stroke); border-radius: 0 0 20px 20px;
+    box-shadow: inset 0 -1px 0 rgba(255, 255, 255, .18), 0 6px 18px -8px rgba(43, 38, 80, .45);
+  }
+  :root[data-design="lull"] .header__brand .wordmark.lull-wm { height: 42px; padding: 0 22px 0 17px; font-size: 1.4375rem; box-shadow: inset 0 -3px 6px var(--l-gloss-glow), 0 2px 0 var(--l-gloss-edge); }
 }
 :root[data-design="lull"] .header__brand { margin-right: 0; }
 :root[data-design="lull"] .header__brand a { display: block; border-radius: 999px; }
 :root[data-design="lull"] .header__nav { gap: 6px; }
+/* every key on the menubar is a gel pill: pale periwinkle gel, then violet gel when it is the one you're on or is on.
+   Same shape, edge and shine either way, so pressing only deepens the colour */
 :root[data-design="lull"] .nav-pill, :root[data-design="lull"] .header .btn-icon, :root[data-design="lull"] .header .tray__pill {
-  height: 40px; border-radius: 10px; border: 0; background: var(--l-tile); color: var(--l-tile-ink);
-  box-shadow: inset 0 1px 0 var(--l-tile-hi), 0 1px 0 rgba(0, 0, 0, .12);
+  height: 40px; border-radius: 999px; border: var(--stroke) solid var(--l-gel-pale-edge); color: var(--l-tile-ink);
+  background: var(--l-gel-pale); box-shadow: inset 0 -2px 4px rgba(255, 255, 255, .3), 0 2px 0 rgba(20, 10, 70, .3);
 }
 :root[data-design="lull"] .nav-pill { padding: 0 14px 0 11px; font: 800 .875rem/1 var(--f-ui); gap: 7px; }
 :root[data-design="lull"] .nav-pill .ic { width: 18px; height: 18px; }
 /* a pill that gave way (layout.js, data-fit) is a square tile with its icon */
 :root[data-design="lull"] .header .nav-pill[data-fit-out] { width: 40px; }
-:root[data-design="lull"] .nav-pill:hover, :root[data-design="lull"] .header .btn-icon:hover, :root[data-design="lull"] .header .tray:hover .tray__pill { background: color-mix(in srgb, var(--l-tile) 82%, #fff); }
+:root[data-design="lull"] .nav-pill:hover, :root[data-design="lull"] .header .btn-icon:hover, :root[data-design="lull"] .header .tray:hover .tray__pill {
+  background: var(--l-hi), linear-gradient(180deg, color-mix(in srgb, var(--l-tile-hi) 70%, #fff) 0%, color-mix(in srgb, var(--l-tile) 60%, var(--l-tile-hi)) 58%, color-mix(in srgb, var(--l-tile) 86%, #2b2650) 100%);
+}
 :root[data-design="lull"] .nav-pill[aria-current="page"], :root[data-design="lull"] .header .btn-icon[aria-current="page"], :root[data-design="lull"] .header .btn-icon[data-act="theme"] {
-  border-radius: 999px; background: var(--l-hi), var(--l-gloss); color: #fff; border: var(--stroke) solid var(--l-gloss-edge);
-  box-shadow: inset 0 -2px 4px var(--l-gloss-glow); text-shadow: 0 1px 0 rgba(40, 25, 110, .55);
+  background: var(--l-hi), var(--l-gloss); color: #fff; border-color: var(--l-gloss-edge);
+  box-shadow: inset 0 -2px 4px var(--l-gloss-glow), 0 2px 0 rgba(20, 10, 70, .3); text-shadow: 0 1px 0 rgba(40, 25, 110, .55);
 }
 :root[data-design="lull"] .header .btn-icon { width: 40px; }
 :root[data-design="lull"] .header .btn-icon__badge { top: -6px; right: -6px; border-color: var(--tray-edge); }
@@ -365,18 +425,18 @@
 :root[data-design="lull"] .header .tray--full .tray__pill[data-svc="soulseek"]::before { content: "Soulseek"; font-size: .8125rem; }
 :root[data-design="lull"] .header .tray--full .tray__pill[data-svc="library"]::before { content: "Library"; font-size: .8125rem; }
 :root[data-design="lull"] .header .tray--full .tray__pill[data-svc="lastfm"]::before { content: "Last.fm"; font-size: .8125rem; }
-:root[data-design="lull"] .header .tray--full .tray__pill:first-child { border-radius: 10px 0 0 10px; padding-left: 11px; }
-:root[data-design="lull"] .header .tray--full .tray__pill:nth-child(2) { border-radius: 0; }
-:root[data-design="lull"] .header .tray--full .tray__pill:nth-child(3) { border-radius: 0 10px 10px 0; padding-right: 11px; }
+:root[data-design="lull"] .header .tray--full .tray__pill:first-child { border-radius: 999px 0 0 999px; border-right-width: 0; padding-left: 13px; }
+:root[data-design="lull"] .header .tray--full .tray__pill:nth-child(2) { border-radius: 0; border-inline-width: 0; }
+:root[data-design="lull"] .header .tray--full .tray__pill:nth-child(3) { border-radius: 0 999px 999px 0; border-left-width: 0; padding-right: 13px; }
 :root[data-design="lull"] .header .tray--full .tray__pill:nth-child(2), :root[data-design="lull"] .header .tray--full .tray__pill:nth-child(3) { margin-left: -6px; }
-:root[data-design="lull"] .header .tray:focus-visible { outline-offset: 3px; border-radius: 10px; }
+:root[data-design="lull"] .header .tray:focus-visible { outline-offset: 3px; border-radius: 999px; }
 :root[data-design="lull"] .header .tray__pill[data-state="warn"]:not([data-svc="lastfm"]), :root[data-design="lull"] .header .tray__pill[data-state="down"] { color: var(--l-warn-ink); }
 :root[data-design="lull"] .header .tray--full .tray__label-long { display: none; }
 :root[data-design="lull"] .header .tray__count {
   display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
   background: var(--pink); color: #2b2650; font: 900 .6875rem/1 var(--f-ui);
 }
-:root[data-design="lull"] .header .tray__pill--cache { padding: 0 12px; border-radius: 10px; font-size: 0; }
+:root[data-design="lull"] .header .tray__pill--cache { padding: 0 14px; font-size: 0; }
 :root[data-design="lull"] .header .tray__pill--cache > .sg, :root[data-design="lull"] .header .tray__pill--cache .tray__label-long { display: none; }
 :root[data-design="lull"] .header .tray__pill--cache::before {
   content: ""; width: 44px; height: 8px; border-radius: 9px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--l-edge) 70%, transparent);
@@ -394,32 +454,125 @@
 :root[data-design="lull"] .tray--compact .tray__gb { display: none; }
 :root[data-design="lull"] .tray--compact .tray__word { display: inline; margin-left: 2px; font: 800 .8125rem/1 var(--f-ui); }
 :root[data-design="lull"] .tray--compact .tray__pill:not([data-worst="ok"]) .tray__word { color: var(--l-warn-ink); }
-/* focus on the mocha trays: a light ring (the dark default would vanish on mocha) */
+/* focus on the candy trays: a light ring (the dark default would vanish on mocha) */
 :root[data-design="lull"] .header, :root[data-design="lull"] .tabbar { --focus: #fff9fe; }
 /* the wordmark elsewhere (device brand etc.) */
 :root[data-design="lull"] .wordmark { font: 400 1.375rem/1 var(--f-disp); letter-spacing: .02em; }
 
 /* =====================================================================
-   Player dock: a mocha tray holding the light player window and four glossy tiles
-   (lyrics, queue, classic, device). Desk grid: now + like | transport | seek group | save, volume, more || tiles.
-   Tablet: two rows inside the same light window (now + transport + tools, then the seek group).
+   Player: the taskbar. A candy deck along the window's foot in two rows. Above: the song on a paper card, the
+   transport in a gel capsule centred on the bar, the tools on a paper tray. Below: the readout, a dark LCD strip as wide as the bar holding what the stream is doing, the
+   times, and the seek as a glass tube filling with gel. While nothing plays the readout folds away.
    ===================================================================== */
-:root[data-design="lull"] .pbar {
-  height: var(--bar-h); margin: 0 0 12px; padding: 6px; column-gap: 0;
-  background: var(--tray); border: var(--stroke) solid var(--tray-edge); border-radius: 18px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
-}
-/* the light player window, drawn by the region title behind the controls */
-:root[data-design="lull"] .pbar > .region-title {
-  display: block; grid-area: 1 / 1 / -1 / -1; align-self: stretch; font-size: 0; border-radius: 13px;
-  background: var(--sky); box-shadow: inset 0 0 0 1px color-mix(in srgb, #fff 55%, transparent), 0 0 0 var(--stroke) var(--tray-edge);
-}
-:root[data-design="lull"][data-theme="night"] .pbar > .region-title { box-shadow: inset 0 0 0 1px rgba(195, 194, 226, .12), 0 0 0 var(--stroke) var(--tray-edge); }
-:root[data-design="lull"] .pbar > :not(.region-title):not(.pbar__state) { position: relative; z-index: 1; }
-/* the state line (finding, queued, stalled, failed): a little lavender strip with its actions, floating just above
-   the tray. It used to grow the tray a shelf, which pushed every window up 40 px each time a Soulseek song started
-   and back down when it played; floating, nothing else moves. */
 @media (min-width: 640px) {
+  :root[data-design="lull"] { --bar-h: 128px; }
+  :root[data-design="lull"]:has(> :where(body) > :where(.app) > .pbar[data-status="idle"]) { --bar-h: 86px; }
+  :root[data-design="lull"] .pbar {
+    --fit-centre-min: 300px; --fit-side-min: 230px;
+    height: var(--bar-h); margin: 0 -16px; padding: 10px 14px 11px; gap: 9px 18px;
+    grid-template-rows: minmax(0, 1fr) auto; grid-template-areas: "now ctl tools" "seek seek seek";
+    border: 0; border-top: var(--stroke) solid var(--tray-edge); border-radius: 22px 22px 0 0;
+    background: var(--l-candy); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .3), 0 -3px 9px -5px rgba(43, 38, 80, .5);
+  }
+  :root[data-design="lull"] .pbar[data-status="idle"] { grid-template-rows: minmax(0, 1fr); grid-template-areas: "now ctl tools"; }
+  :root[data-design="lull"] .pbar[data-status="idle"] .pbar__seek { display: none; }
+  :root[data-design="lull"] .pbar__centre { display: contents; }
+
+  /* the song's card */
+  :root[data-design="lull"] .pbar__now {
+    grid-area: now; align-self: stretch; gap: 10px; min-width: 0; padding: 5px 8px 5px 6px; border-radius: 14px;
+    background: var(--sky); color: var(--fg-panel);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, #fff 55%, transparent), inset 0 -2px 0 color-mix(in srgb, var(--l-edge) 30%, transparent), 0 2px 0 rgba(20, 10, 70, .35);
+  }
+  :root[data-design="lull"] .pbar__text { flex: 1; grid-template-columns: minmax(0, max-content) minmax(0, 1fr); grid-template-areas: "title title" "artist from" "badges badges"; }   /* the artist first, whole if it can be; "Playing from" has what is left, and gives way whole when that isn't enough (layout.js) */
+  :root[data-design="lull"] .pbar__title { grid-area: title; }
+  :root[data-design="lull"] .pbar__artist { grid-area: artist; }
+  :root[data-design="lull"] .pbar__badges { grid-area: badges; margin-top: 2px; }
+  :root[data-design="lull"] .pbar__from { grid-area: from; margin: 0; font: var(--t-meta); }
+  :root[data-design="lull"] .pbar__from::before { content: "\00b7"; margin: 0 6px; color: var(--fg-2); }
+  :root[data-design="lull"] .pbar__from .from__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  :root[data-design="lull"] .pbar__acts .btn-icon { width: 34px; height: 34px; }
+  :root[data-design="lull"] .pbar .bezel-thumb { padding: 0; background: none; border: 0; border-radius: 10px; }
+  :root[data-design="lull"] .pbar .bezel-thumb .cover { --cover-size: 58px; border-radius: 9px; border-color: var(--l-edge); }
+  :root[data-design="lull"] .pbar .bezel-thumb:hover { background: none; }
+  /* the transport: prev, play and next share one gel capsule, the play orb standing proud of it; shuffle and repeat
+     are small gel buttons either side */
+  :root[data-design="lull"] .pbar__controls { grid-area: ctl; position: relative; justify-self: center; gap: 10px; }
+  :root[data-design="lull"] .pbar__controls > [data-act="shuffle"] { margin-right: 8px; }
+  :root[data-design="lull"] .pbar__controls > [data-act="repeat"] { margin-left: 8px; }
+  :root[data-design="lull"] .pbar__controls::before {
+    content: ""; position: absolute; z-index: -1; left: 50%; top: 50%; width: 168px; height: 46px; translate: -50% -50%; border-radius: 999px;
+    background: var(--l-hi), linear-gradient(180deg, color-mix(in srgb, var(--l-tile) 60%, #fff), var(--l-tile) 55%, color-mix(in srgb, var(--l-tile) 85%, #000));
+    border: var(--stroke) solid var(--l-gloss-edge); box-shadow: inset 0 -2px 4px rgba(20, 10, 70, .18), 0 2px 0 rgba(20, 10, 70, .35);
+  }
+  :root[data-design="lull"] .pbar__controls > .btn-icon { color: var(--l-tile-ink); }
+  :root[data-design="lull"] .pbar__controls > :is([data-act="shuffle"], [data-act="repeat"]) {
+    width: 38px; height: 38px; border-radius: 50%; background: var(--l-hi-sm), var(--sky); color: var(--fg-panel); border: var(--stroke) solid var(--l-gloss-edge);
+    box-shadow: 0 2px 0 rgba(20, 10, 70, .35);
+  }
+  :root[data-design="lull"] .pbar__controls > :is([data-act="shuffle"], [data-act="repeat"])[aria-pressed="true"] { background: var(--l-hi), var(--l-gloss); color: #fff; }
+  :root[data-design="lull"] .pbar__controls > :is([data-act="shuffle"], [data-act="repeat"]) .ic { width: 18px; height: 18px; }
+  :root[data-design="lull"] .pbar .btn-gloss { --size: 62px; box-shadow: inset 0 -3px 6px var(--l-gloss-glow), 0 3px 0 var(--l-gloss-edge), 0 6px 14px -4px rgba(20, 10, 70, .5); }
+
+  /* the tools on their paper tray: square keys, pressed ones in gel */
+  :root[data-design="lull"] .pbar__tools {
+    grid-area: tools; justify-self: end; align-self: center; height: 52px; gap: 3px; padding: 0 6px; border-radius: 14px;
+    background: var(--sky); color: var(--fg-panel);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, #fff 55%, transparent), inset 0 -2px 0 color-mix(in srgb, var(--l-edge) 30%, transparent), 0 2px 0 rgba(20, 10, 70, .35);
+  }
+  :root[data-design="lull"] .pbar__tools .btn-icon { width: 40px; height: 40px; border-radius: 10px; }
+  :root[data-design="lull"] .pbar__tools .btn-icon:hover { background: var(--l-card-2); }
+  :root[data-design="lull"] .pbar__tools .btn-icon:is([aria-pressed="true"], .is-on) { background: var(--l-hi), var(--l-gloss); color: #fff; box-shadow: inset 0 -2px 4px var(--l-gloss-glow); }
+  :root[data-design="lull"] .pbar__tools .btn-icon:is([aria-pressed="true"], .is-on):hover { background: var(--l-hi), var(--l-gloss); }
+
+  /* the readout: a dark LCD strip as wide as the bar; its caption says what the stream is doing, in lull's own words */
+  :root[data-design="lull"] .pbar__seek {
+    grid-area: seek; max-width: none; display: grid; grid-template-columns: 12.5em auto minmax(0, 1fr) auto; column-gap: 12px; align-items: center;
+    height: 30px; padding: 0 14px; border-radius: 10px; color: var(--l-screen-ink);
+    --fg: var(--l-screen-ink); --fg-2: var(--l-screen-ink);
+    background:
+      repeating-linear-gradient(180deg, rgba(255, 255, 255, .04) 0 1px, transparent 1px 3px),
+      linear-gradient(180deg, color-mix(in srgb, var(--l-lcd) 82%, #fff), var(--l-lcd) 45%);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, .45), inset 0 0 0 1px rgba(0, 0, 0, .35), 0 1px 0 rgba(255, 255, 255, .35);
+  }
+  :root[data-design="lull"] .pbar__seek::before {
+    content: "\25CF  now playing"; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--l-lcd-glow); font: 400 .75rem/1 var(--f-disp); letter-spacing: .08em; text-transform: lowercase;
+  }
+  :root[data-design="lull"] .pbar[data-playing="false"] .pbar__seek::before { content: "\2016  paused"; }
+  /* while sound plays the readout's dot is a lit gel LED: its glow, painted once, breathes (scale and opacity, 10
+     changes a second, held while lull isn't in front) */
+  :root[data-design="lull"] .pbar__seek { position: relative; }
+  :root[data-design="lull"] .pbar__seek::after {
+    content: ""; position: absolute; left: 8px; top: 50%; width: 20px; height: 20px; margin-top: -10px; border-radius: 50%; pointer-events: none;
+    background: radial-gradient(circle, #fff 0 2px, var(--l-lcd-glow) 3px, color-mix(in srgb, var(--l-lcd-glow) 45%, transparent) 5px, transparent 10px);
+    opacity: 0;
+  }
+  @keyframes lull-led { from { opacity: .35; transform: scale(.7); } to { opacity: 1; transform: scale(1); } }
+  :root[data-design="lull"] .pbar[data-playing="true"]:is([data-status="streaming"], [data-status="library"]) .pbar__seek::after {
+    animation: lull-led 2.7s var(--loop-ease-in-out-27) infinite alternate; animation-play-state: var(--loop-play, running);
+  }
+  /* while bytes still arrive the caption also says how much is in (--rx is the received %, an integer) */
+  :root[data-design="lull"] .pbar__seek:has(.is-transferring)::before { counter-reset: rx var(--rx); content: "\25CF  streaming \00b7  " counter(rx) "%"; }
+  :root[data-design="lull"] .pbar[data-playing="false"] .pbar__seek:has(.is-transferring)::before { content: "\2016  paused \00b7  " counter(rx) "%"; }
+  :root[data-design="lull"] .pbar[data-status="finding"] .pbar__seek::before { content: "\25CC  finding a source"; }
+  :root[data-design="lull"] .pbar[data-status="buffering"] .pbar__seek::before { content: "\25CC  buffering"; }
+  :root[data-design="lull"] .pbar[data-status="failed"] .pbar__seek::before { content: "\26A0  couldn't play this song"; color: #ffb0c6; }
+  :root[data-design="lull"] .pbar__seek .seek-row__time { color: var(--l-screen-ink); font: 400 .75rem/1 var(--f-disp); letter-spacing: .04em; font-variant-numeric: tabular-nums; }
+  :root[data-design="lull"] .pbar__seek .seek { height: 22px; }
+  :root[data-design="lull"] .pbar__seek .seek__track { height: 10px; margin-top: -5px; background: linear-gradient(180deg, rgba(0, 0, 0, .4), rgba(255, 255, 255, .1) 70%, rgba(255, 255, 255, .22)); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .26), inset 0 2px 3px rgba(0, 0, 0, .35); }
+  :root[data-design="lull"] .pbar__seek .seek__played { background: linear-gradient(180deg, transparent 0 2px, rgba(255, 255, 255, .7) 2px 3.5px, transparent 3.5px), linear-gradient(180deg, #ffffff 0%, var(--l-lcd-glow) 35%, #8f84ef 75%, #cfc0ff 100%); }
+  :root[data-design="lull"] .pbar__seek :is(.seek__xfer, .seek__buf) { background: rgba(214, 204, 255, .13); }
+  :root[data-design="lull"] .pbar__seek .seek__knob { width: 18px; height: 18px; left: -9px; top: -9px; }
+  :root[data-design="lull"] .pbar__seek .seek:focus-visible { outline-color: var(--l-screen-ink); }
+  :root[data-design="lull"] .pbar[data-status="failed"] .seek__track {
+    background: repeating-linear-gradient(-45deg, rgba(255, 176, 198, .5) 0 1.5px, transparent 1.5px 4.243px) 0 0 / 6px 6px;
+    box-shadow: inset 0 0 0 1px #ffb0c6;
+  }
+  :root[data-design="lull"] .pbar__xfade { position: absolute; right: 22px; bottom: 46px; }
+
+  /* the state line (finding, queued, stalled, failed): a little paper strip with its actions, floating just above the
+     taskbar, so nothing else moves when a Soulseek song starts */
   :root[data-design="lull"] .pbar__state {
     bottom: calc(100% + 6px); max-width: min(720px, 70%); height: 32px; padding: 0 8px 0 10px; gap: 10px;
     border: var(--stroke) solid var(--tray-edge); border-radius: 10px; background: var(--sky); color: var(--fg-panel);
@@ -427,103 +580,17 @@
   }
   :root[data-design="lull"] .pbar__state .btn--quiet { color: var(--link); }
 }
-:root[data-design="lull"] .pbar__now { gap: 12px; padding-left: 6px; }
-/* the bar holds three lines: "Playing from" rides on the artist's (the artist, a dot, the place's icon and name; its words stay
-   for screen readers) */
-:root[data-design="lull"] .pbar__text { flex: 1; grid-template-columns: minmax(0, max-content) minmax(0, 1fr); grid-template-areas: "title title" "artist from" "badges badges"; }   /* the artist first, whole if it can be; "Playing from" has what is left, and gives way whole when that isn't enough (layout.js) */
-:root[data-design="lull"] .pbar__title { grid-area: title; }
-:root[data-design="lull"] .pbar__artist { grid-area: artist; }
-:root[data-design="lull"] .pbar__badges { grid-area: badges; }
-:root[data-design="lull"] .pbar__from { grid-area: from; margin: 0; font: var(--t-meta); }
-:root[data-design="lull"] .pbar__from::before { content: "\00b7"; margin: 0 6px; color: var(--fg-2); }
-:root[data-design="lull"] .pbar__from .from__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-:root[data-design="lull"] .bezel-thumb { padding: 0; background: none; border: 0; border-radius: 10px; }
-:root[data-design="lull"] .bezel-thumb .cover { --cover-size: 54px; border-radius: 9px; border-color: var(--l-edge); }
-:root[data-design="lull"] .bezel-thumb:hover { background: none; }
-:root[data-design="lull"] .pbar__controls { gap: 6px; }
-:root[data-design="lull"] .pbar .btn-gloss { --size: 52px; }
-:root[data-design="lull"] .pbar__seek .seek { height: 22px; }
-/* the seek group is headed by what the stream is doing, in words that hold whatever the source (a peer, YouTube, the
-   library): the reason, where there is one, is the state tab's (lull's own words: --status-text) */
-:root[data-design="lull"] .pbar__seek { max-width: none; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 8px; align-items: center; }
-:root[data-design="lull"] .pbar__seek::before { content: "now playing"; grid-column: 1 / -1; margin: 0 0 1px 2px; color: var(--link); font: 800 .75rem/1.2 var(--f-ui); }
-:root[data-design="lull"] .pbar[data-playing="false"] .pbar__seek::before { content: "paused"; }
-/* while bytes still arrive the head also says how much is in (--rx is the received %, an integer) */
-:root[data-design="lull"] .pbar__seek:has(.is-transferring)::before { counter-reset: rx var(--rx); content: "streaming \00b7  " counter(rx) "% received"; }
-:root[data-design="lull"] .pbar[data-playing="false"] .pbar__seek:has(.is-transferring)::before { content: "paused \00b7  " counter(rx) "% received"; }
-:root[data-design="lull"] .pbar[data-status="finding"] .pbar__seek::before { content: "finding a source"; }
-:root[data-design="lull"] .pbar[data-status="buffering"] .pbar__seek::before { content: "buffering"; }
-:root[data-design="lull"] .pbar[data-status="failed"] .pbar__seek::before { content: "\26A0  couldn't play this song"; color: var(--heart); }
-:root[data-design="lull"] .pbar[data-status="failed"] .seek__track, :root[data-design="lull"] .mini[data-status="failed"] .seek__track {
+/* the readout's LCD: mocha by day, ink-blue by night; its glow is the caption's and the gel's light end */
+:root[data-design="lull"] { --l-lcd: #4a3b42; --l-lcd-glow: #e6dcff; }
+:root[data-design="lull"][data-theme="night"] { --l-lcd: #121334; --l-lcd-glow: #d6ccff; }
+/* check: --l-screen-ink on --l-lcd 4.5 */
+/* check: --l-lcd-glow on --l-lcd 4.5 */
+/* check: #ffb0c6 on --l-lcd 4.5 */
+/* the idle hint ("Search or pick something from Home") never runs out of the bar, however narrow the song's column */
+:root[data-design="lull"] .pbar__idle > span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+:root[data-design="lull"] .mini[data-status="failed"] .seek__track {
   background: repeating-linear-gradient(-45deg, color-mix(in srgb, var(--heart) 55%, transparent) 0 1.5px, transparent 1.5px 4.243px) 0 0 / 6px 6px;
   box-shadow: inset 0 0 0 1px var(--heart);
-}
-@media (min-width: 1100px) {
-  :root[data-design="lull"] .pbar {
-    /* the song and the seek give up room before anything else; a part that gives way (layout.js, data-fit: the tiles,
-       Devices, the volume slider) takes its track with it, so the bar always fits its width. The song and the seek share the
-       room evenly, the song with a fixed track besides as wide as its Like and Save (--acts-room, from their own sizes):
-       inside the share the buttons took the words' room, and the source and quality chips gave way at 1440 px beside a
-       366 px seek. Fixed, so the transport stands where it does whether a song is loaded or the buttons gave way; the
-       words take the buttons' room when they do */
-    --pbar-act: 36px; --acts-room: calc(2 * var(--pbar-act) + 2px + 12px);   /* the two buttons, their gap, and the gap before them */
-    grid-template-columns: minmax(126px, 1fr) var(--acts-room) auto minmax(240px, 1fr) minmax(40px, 150px) 40px auto auto var(--sp-2) repeat(4, auto);   /* the song: 140 px of words once Like and Save gave way */
-    grid-template-areas: "now now ctl seek vol more nc cn . t1 t2 t3 t4"; gap: 0 var(--sp-1);
-    /* the tray's shelf: the tiles sit as far from the window, and from the tray's end, as they do from its top and
-       bottom (48 px tiles in the 80 px bar): a gap, the spacer and a gap on the window's side, the padding on the end */
-    padding-right: calc(var(--sp-4) - var(--stroke));
-  }
-  /* the Now Playing column toggle and lull Connect's device picker get their own columns inside the bar, instead of
-     falling onto a second row below the window or onto the first tray tile. The toggle shows wherever the window is
-     wide enough for the column (ADR-0007), whatever the panel does, so its column only changes at that width */
-  :root[data-design="lull"] .pbar .pbar__nowcol { grid-area: nc; }
-  :root[data-design="lull"] .pbar [data-act="connect"] { grid-area: cn; }
-  :root[data-design="lull"] .pbar > .region-title { grid-area: 1 / now-start / 2 / cn-end; }   /* the window ends where the tray's shelf begins, by name: a track added or taken away doesn't move it */
-  :root[data-design="lull"] .pbar__centre, :root[data-design="lull"] .pbar__tools { display: contents; }
-  :root[data-design="lull"] .pbar__now { grid-area: now; }
-  :root[data-design="lull"] .pbar__acts .btn-icon { width: var(--pbar-act); height: var(--pbar-act); }
-  :root[data-design="lull"] .pbar__controls { grid-area: ctl; padding: 0 14px 0 8px; }
-  :root[data-design="lull"] .pbar__seek { grid-area: seek; }
-  :root[data-design="lull"] .pbar__xfade { position: static; grid-area: seek; justify-self: end; align-self: start; margin-top: 9px; }
-  :root[data-design="lull"] .pbar .vol { grid-area: vol; min-width: 0; }
-  :root[data-design="lull"] .pbar .vol .seek { min-width: 0; }
-  :root[data-design="lull"] .pbar [data-act="player-more"] { grid-area: more; }
-  :root[data-design="lull"] .pbar [data-act="toggle-panel"].is-wide { grid-area: t1; }
-  :root[data-design="lull"] .pbar [data-act="toggle-panel"]:not(.is-wide) { grid-area: t2; }
-  :root[data-design="lull"] .pbar [data-act="classic"] { grid-area: t3; }
-  :root[data-design="lull"] .pbar [data-act="open-now"] { grid-area: t4; }
-  /* the four tray tiles: periwinkle squares; pressed = gloss */
-  :root[data-design="lull"] .pbar [data-act="toggle-panel"], :root[data-design="lull"] .pbar [data-act="classic"], :root[data-design="lull"] .pbar [data-act="open-now"] {
-    display: inline-grid; width: 48px; height: 48px; border-radius: 12px; border: 0; color: var(--l-tile-ink); background: var(--l-tile);
-    box-shadow: inset 0 1px 0 var(--l-tile-hi), 0 2px 0 rgba(0, 0, 0, .18);
-  }
-  :root[data-design="lull"] .pbar [data-act="toggle-panel"]:hover, :root[data-design="lull"] .pbar [data-act="classic"]:hover, :root[data-design="lull"] .pbar [data-act="open-now"]:hover { background: color-mix(in srgb, var(--l-tile) 82%, #fff); }
-  :root[data-design="lull"] .pbar [data-act="toggle-panel"][aria-pressed="true"], :root[data-design="lull"] .pbar [data-act="toggle-panel"].is-on {
-    background: var(--l-hi), var(--l-gloss); color: #fff; box-shadow: inset 0 -2px 4px var(--l-gloss-glow), 0 0 0 var(--stroke) var(--l-gloss-edge);
-  }
-  :root[data-design="lull"] .pbar [data-act="toggle-panel"] .ic, :root[data-design="lull"] .pbar [data-act="classic"] .ic, :root[data-design="lull"] .pbar [data-act="open-now"] .ic { width: 22px; height: 22px; }
-  :root[data-design="lull"] .pbar [data-act="toggle-panel"]:focus-visible, :root[data-design="lull"] .pbar [data-act="classic"]:focus-visible, :root[data-design="lull"] .pbar [data-act="open-now"]:focus-visible { outline-color: #fff9fe; outline-offset: 3px; }
-}
-/* the idle hint ("Search or pick something from Home") never runs out of the bar, however narrow the song's column */
-:root[data-design="lull"] .pbar__idle > span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
-@media (min-width: 640px) and (max-width: 1099px) {
-  :root[data-design="lull"] { --bar-h: 116px; }
-  :root[data-design="lull"] .pbar {
-    grid-template-columns: minmax(120px, 1fr) auto minmax(0, max-content); grid-template-rows: 1fr auto;   /* the tools give way (data-fit) */
-    grid-template-areas: "now ctl tools" "seek seek seek"; gap: 0 8px; padding: 6px;
-  }
-  :root[data-design="lull"] .pbar__centre { display: contents; }
-  :root[data-design="lull"] .pbar__now { grid-area: now; padding: 4px 0 0 8px; }
-  :root[data-design="lull"] .pbar__controls { grid-area: ctl; padding-top: 4px; }
-  :root[data-design="lull"] .pbar__tools { grid-area: tools; padding: 4px 8px 0 0; }
-  :root[data-design="lull"] .pbar__seek { grid-area: seek; grid-template-columns: auto auto minmax(0, 1fr) auto; padding: 0 16px 6px 14px; }
-  /* beside the seek here, so one fixed slot (the longest caption, "streaming from peer · 100% received", ends in an
-     ellipsis) keeps the seek one length whatever the stream says */
-  :root[data-design="lull"] .pbar__seek::before { grid-column: auto; width: 14em; margin: 0 6px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  /* nothing playing: the seek row would be blank, so the bar is one row tall (the desk bar's 80 px) until a song loads */
-  :root[data-design="lull"]:has(> :where(body) > :where(.app) > .pbar[data-status="idle"]) { --bar-h: 80px; }
-  :root[data-design="lull"] .pbar[data-status="idle"] { grid-template-rows: 1fr; grid-template-areas: "now ctl tools"; }
-  :root[data-design="lull"] .pbar[data-status="idle"] .pbar__seek { display: none; }
 }
 
 /* =====================================================================
@@ -590,8 +657,11 @@
   background: var(--l-gloss); border: var(--stroke) solid var(--l-gloss-edge); color: #fff;
   box-shadow: inset 0 -2px 5px var(--l-gloss-glow), 0 2px 0 rgba(43, 38, 80, .18);
 }
-:root[data-design="lull"] .btn-gloss::before { left: 18%; right: 18%; top: 4%; height: 40%; background: linear-gradient(180deg, rgba(255, 244, 255, .9), rgba(255, 244, 255, .1)); }
-:root[data-design="lull"] .btn-gloss::after { display: none; }
+:root[data-design="lull"] .btn-gloss::before {
+  left: 6%; right: 6%; top: 3%; height: 50%; border-radius: 50% 50% 46% 46% / 64% 64% 36% 36%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .78), rgba(255, 255, 255, .22) 92%, rgba(255, 255, 255, .06));
+}
+:root[data-design="lull"] .btn-gloss::after { left: 18%; right: 18%; top: auto; bottom: 4%; height: 30%; border-radius: 50%; background: radial-gradient(closest-side, rgba(235, 225, 255, .6), transparent); }
 :root[data-design="lull"] .btn-gloss .ic { filter: drop-shadow(0 1px 0 rgba(40, 25, 110, .5)); }
 :root[data-design="lull"] .btn-gloss:active { box-shadow: inset 0 -1px 3px var(--l-gloss-glow); }
 :root[data-design="lull"] .btn-gloss.is-liked, :root[data-design="lull"] .btn-gloss[data-act="like"] { background: var(--l-pink-gloss); border-color: var(--l-pink-edge); color: #fff; }
@@ -636,9 +706,18 @@
   color: #fff; font: italic 800 .875rem/28px var(--f-ui); letter-spacing: .01em;
 }
 :root[data-design="lull"] .card > .label-rule.card-head > .card-head__title::first-letter { text-transform: uppercase; }
-:root[data-design="lull"] .card > .label-rule.card-head { gap: 12px; margin-bottom: 14px; }
+:root[data-design="lull"] .card > .label-rule.card-head { flex-wrap: wrap; gap: 6px 12px; margin-bottom: 14px; }
+/* the ribbon is wider than a plain title: when the head's links don't fit beside it (a phone), the last wraps under
+   them, still at the right (the rule takes the room while they share a line) */
+:root[data-design="lull"] .card > .label-rule.card-head > :is(.btn--quiet, a) { margin-left: auto; }
 :root[data-design="lull"] .card > .label-rule.card-head > .btn--quiet, :root[data-design="lull"] .card > .label-rule.card-head > a { font-size: .8125rem; }
 
+/* chrome titles: Home's greeting, Now Playing's title and the big page heads are pressed in chrome */
+:root[data-design="lull"] :is(.disc-hello h1, .now-head .now-head__title, .lib-hero .lib-title) {
+  background: var(--l-chrome); -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 1px 0 color-mix(in srgb, #fff 70%, transparent));
+}
+:root[data-design="lull"][data-theme="night"] :is(.disc-hello h1, .now-head .now-head__title, .lib-hero .lib-title) { filter: drop-shadow(0 2px 0 rgba(13, 12, 40, .7)); }
 /* =====================================================================
    Tiles: tall stacked paper cards (img 01 stack, as on "For you")
    ===================================================================== */
@@ -708,12 +787,19 @@
 :root[data-design="lull"] .eq { color: var(--link); }
 
 /* =====================================================================
-   Seek: the shared language (plain track = not arrived, lavender = arrived, violet = played) in a rounded tape; glossy knob
+   Seek: the shared language (plain = not arrived, paler = arrived, violet = played) as a glass tube filling with
+   gel, a lit stripe along the gel; a glossy knob
    ===================================================================== */
-:root[data-design="lull"] .seek__track { height: 8px; margin-top: -4px; border-radius: 9px; box-shadow: inset 0 0 0 1px var(--l-rule); }
-:root[data-design="lull"] .seek__played { background: var(--seek-played); border-radius: 9px; }
-:root[data-design="lull"] .seek__knob { width: 16px; height: 16px; left: -8px; top: -8px; border: var(--stroke) solid var(--l-gloss-edge); background: var(--l-hi), var(--l-gloss); box-shadow: none; }
-:root[data-design="lull"] .seek--line .seek__track { height: 3px; border-radius: 0; box-shadow: none; }
+:root[data-design="lull"] .seek__track {
+  height: 12px; margin-top: -6px; border-radius: 9px; background: var(--l-tube);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--l-edge) 80%, transparent), inset 0 2px 3px rgba(43, 38, 80, .22);
+}
+:root[data-design="lull"] .seek__played { border-radius: 9px; background: linear-gradient(180deg, transparent 0 2px, rgba(255, 255, 255, .55) 2px 4px, transparent 4px), var(--l-gel); }
+:root[data-design="lull"] :is(.seek__xfer, .seek__buf) { background: color-mix(in srgb, var(--l-gel-buf) 70%, transparent); }
+:root[data-design="lull"] .seek__knob { width: 20px; height: 20px; left: -10px; top: -10px; border: var(--stroke) solid var(--l-gloss-edge); background: var(--l-hi), var(--l-gloss); box-shadow: none; }
+:root[data-design="lull"] .seek--line .seek__track { height: 3px; border-radius: 0; box-shadow: none; background: var(--divider); }
+:root[data-design="lull"] .seek--line .seek__played { background: var(--seek-played); }
+:root[data-design="lull"] .seek--line :is(.seek__xfer, .seek__buf) { background: var(--seek-buffered); }
 :root[data-design="lull"] .vol .seek__track { background: var(--l-rule); }
 :root[data-design="lull"] .seek-row__time { font: 800 .75rem/1 var(--f-ui); color: var(--l-muted); }
 :root[data-design="lull"] .seek__tip { background: var(--ink); color: #fff; border-radius: 8px; font: 800 .75rem/1.2 var(--f-ui); }
@@ -758,26 +844,26 @@
 :root[data-design="lull"] .range--centred::-moz-range-progress { background: transparent; }
 
 /* =====================================================================
-   Overlays: sheets and dialogs are windows; popovers, menus and toasts are small paper panels
+   Overlays: sheets, dialogs and toasts are candy windows (panes); popovers and menus are small paper panels
    ===================================================================== */
-:root[data-design="lull"] .sheet, :root[data-design="lull"] .dialog { background: var(--sky); border: var(--stroke) solid var(--l-edge); padding: 4px; box-shadow: inset 0 0 0 4px var(--l-frame), var(--l-win-stack); }
-:root[data-design="lull"] .sheet { padding-bottom: calc(4px + env(safe-area-inset-bottom)); }
+:root[data-design="lull"] .sheet, :root[data-design="lull"] .dialog { padding: 0; border: solid transparent; border-width: 38px 7px 7px; background: var(--l-pane); box-shadow: var(--l-pane-shadow); }
+:root[data-design="lull"] .sheet { border-bottom-width: calc(7px + env(safe-area-inset-bottom)); }
 /* desktop / tablet: a sheet is a centred window like a dialog; the frame closes at the bottom (img 05 bevel) */
 @media (min-width: 640px) {
-  :root[data-design="lull"] .sheet { top: 50%; bottom: auto; max-height: calc(100dvh - 48px); border-bottom: var(--stroke) solid var(--l-edge); border-radius: 14px; opacity: 0; transform: translate(-50%, calc(-50% + 14px)); transition: transform var(--dur-3) var(--ease-out), opacity var(--dur-2); }
+  :root[data-design="lull"] .sheet { top: 50%; bottom: auto; max-height: calc(100dvh - 48px); border-bottom-width: 7px; border-radius: 16px; opacity: 0; transform: translate(-50%, calc(-50% + 14px)); transition: transform var(--dur-3) var(--ease-out), opacity var(--dur-2); }
   :root[data-design="lull"] .sheet.is-open { opacity: 1; transform: translate(-50%, -50%); }
   :root[data-design="lull"][data-motion="reduce"] .sheet { transform: translate(-50%, -50%); }
   @media (prefers-reduced-motion: reduce) { :root[data-design="lull"]:not([data-motion="full"]) .sheet { transform: translate(-50%, -50%); } }
 }
-:root[data-design="lull"] .dialog { max-height: calc(100dvh - 48px); border-radius: 14px; }
+:root[data-design="lull"] .dialog { max-height: calc(100dvh - 48px); border-radius: 16px; }
 :root[data-design="lull"] .sheet__head {
-  min-height: 30px; padding: 0 4px 0 70px; border-radius: 10px 10px 4px 4px; gap: 8px;
-  background: var(--l-orbs), var(--l-bar-bg); box-shadow: inset 0 1px 0 var(--l-bar-line); color: var(--l-bar-ink);
+  min-height: 38px; margin: -38px -7px 0; padding-right: 6px; gap: 8px;
 }
-:root[data-design="lull"] .sheet__title { font: 400 .8125rem/1.2 var(--f-disp); letter-spacing: .04em; text-transform: lowercase; color: var(--l-bar-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-:root[data-design="lull"] .sheet__head .btn-icon { width: 26px; height: 26px; color: var(--l-bar-ink); border-color: transparent; }
+:root[data-design="lull"] .sheet__title { font: inherit; letter-spacing: inherit; text-transform: lowercase; color: var(--l-band-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root[data-design="lull"] .sheet__head .btn-icon { width: 26px; height: 26px; color: var(--l-band-ink); border-color: transparent; }
 :root[data-design="lull"] .sheet__head .btn-icon:hover { background: rgba(255, 255, 255, .35); }
 :root[data-design="lull"] .sheet__body, :root[data-design="lull"] .sheet__foot { background: none; }
+:root[data-design="lull"] .sheet__body { border-radius: 10px 10px 0 0; }
 :root[data-design="lull"] .sheet__body { padding: 16px 20px 18px; }
 :root[data-design="lull"] .sheet__foot { border-top: 1px solid var(--l-rule); padding: 12px 16px 12px; }
 :root[data-design="lull"] .sheet__handle { background: var(--l-edge); margin: 2px auto 4px; }
@@ -794,20 +880,20 @@
    end. While one shows, the window above that slot (the side window when docked, else the main one) lifts its foot
    by the toasts' height, so a toast never covers a frame or a row. */
 @media (min-width: 640px) {
-  :root[data-design="lull"] .toast-region { left: auto; right: 16px; bottom: calc(var(--bar-h) + 26px); transform: none; width: min(var(--ctx), calc(100vw - 32px)); gap: 10px; }
-  :root[data-design="lull"]:has(#toasts > .toast) :is(.app[data-ctx="docked"] .ctx, .app:not([data-ctx="docked"]) .main) { margin-bottom: 104px; }
-  :root[data-design="lull"]:has(#toasts > .toast + .toast) :is(.app[data-ctx="docked"] .ctx, .app:not([data-ctx="docked"]) .main) { margin-bottom: 190px; }
-  :root[data-design="lull"]:has(#toasts > .toast + .toast + .toast) :is(.app[data-ctx="docked"] .ctx, .app:not([data-ctx="docked"]) .main) { margin-bottom: 276px; }
+  :root[data-design="lull"] .toast-region { left: auto; right: 16px; bottom: calc(var(--bar-h) + 16px); transform: none; width: min(var(--ctx), calc(100vw - 32px)); gap: 10px; }
+  :root[data-design="lull"]:has(#toasts > .toast) :is(.app[data-ctx="docked"] .ctx, .app:not([data-ctx="docked"]) .main) { margin-bottom: 122px; }
+  :root[data-design="lull"]:has(#toasts > .toast + .toast) :is(.app[data-ctx="docked"] .ctx, .app:not([data-ctx="docked"]) .main) { margin-bottom: 218px; }
+  :root[data-design="lull"]:has(#toasts > .toast + .toast + .toast) :is(.app[data-ctx="docked"] .ctx, .app:not([data-ctx="docked"]) .main) { margin-bottom: 314px; }
 }
 :root[data-design="lull"] .toast {
-  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; column-gap: 10px; padding: 4px 8px 8px 4px;
-  background: var(--sky); border: var(--stroke) solid var(--l-edge); border-radius: 14px; box-shadow: inset 0 0 0 4px var(--l-frame), var(--l-win-stack);
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; column-gap: 10px; padding: 0 8px 8px 0;
+  border: solid transparent; border-width: 30px 7px 7px; border-radius: 16px; background: var(--l-pane); box-shadow: var(--l-pane-shadow);
   font: 800 .875rem/1.35 var(--f-ui); color: var(--fg-panel);
 }
 :root[data-design="lull"] .toast::before {
-  content: "note"; grid-column: 1 / -1; display: flex; align-items: center; height: 24px; margin: 0 -4px 6px 0; padding-left: 62px; border-radius: 10px 10px 4px 4px;
-  background: var(--l-orbs), var(--l-bar-bg); background-position: 9px 50%, 9px 50%, 27px 50%, 27px 50%, 45px 50%, 45px 50%, 0 0;
-  box-shadow: inset 0 1px 0 var(--l-bar-line); color: var(--l-bar-ink); font: 400 .75rem/1 var(--f-disp); letter-spacing: .04em;
+  content: "note"; grid-column: 1 / -1; display: flex; align-items: center; height: 30px; margin: -30px -15px 8px -7px; padding-left: 64px;
+  background: var(--l-orbs); background-position: 9px 50%, 9px 50%, 27px 50%, 27px 50%, 45px 50%, 45px 50%;
+  color: var(--l-band-ink); font: 400 .8125rem/1 var(--f-disp); letter-spacing: .06em; text-shadow: var(--l-band-glow);
 }
 :root[data-design="lull"] .toast--ok::before { content: "done"; }
 :root[data-design="lull"] .toast--error::before { content: "oops"; }
@@ -871,25 +957,21 @@
 :root[data-design="lull"] .skel::after { background: linear-gradient(90deg, transparent, var(--skel-hi), transparent); }
 
 /* =====================================================================
-   Window cards (desk and tablet): a card that stands on the desk (Now Playing) gets a frame + title bar; on a phone
-   the same cards are flat sections under ribbons. Recipe: sky body, 4px lavender frame painted as an inset shadow, the head becomes the bar.
+   Window cards (desk and tablet): a card that stands on the desk (Now Playing) is a pane, its head lifted into the
+   title band; on a phone the same cards are flat sections under ribbons.
    ===================================================================== */
 @media (min-width: 640px) {
-  :root[data-design="lull"] .now .card {
-    background: var(--sky); border: var(--stroke) solid var(--l-edge); border-radius: 14px; padding: 4px 4px 14px;
-    box-shadow: inset 0 0 0 4px var(--l-frame), var(--l-win-stack); margin-bottom: 18px;
-  }
+  :root[data-design="lull"] .now .card { padding: 14px 0; margin-bottom: 18px; border: solid transparent; border-width: 38px 7px 7px; border-radius: 16px; background: var(--l-pane); box-shadow: var(--l-pane-shadow); }
   :root[data-design="lull"] .now .card > .card-head, :root[data-design="lull"] .now .card > .card-head--hidden {
-    display: flex; height: 30px; margin: 0 0 14px; padding: 0 12px 0 68px; border-radius: 10px 10px 4px 4px;
-    background: var(--l-orbs), var(--l-bar-bg); box-shadow: inset 0 1px 0 var(--l-bar-line), 0 4px 0 var(--l-frame);
+    display: flex; height: 38px; margin: -52px -7px 14px; padding: 0 12px 0 72px; background: var(--l-orbs);
   }
   :root[data-design="lull"] .now .card > .card-head::after { display: none; }
   :root[data-design="lull"] .now .card > .card-head > .card-head__title, :root[data-design="lull"] .now .card > .card-head--hidden > .card-head__title {
     display: block; height: auto; padding: 0; background: none; clip-path: none; border-radius: 0;
-    color: var(--l-bar-ink); font: 400 .8125rem/30px var(--f-disp); letter-spacing: .04em; text-transform: lowercase;
+    color: var(--l-band-ink); font: 400 .9375rem/38px var(--f-disp); letter-spacing: .06em; text-transform: lowercase; text-shadow: var(--l-band-glow);
   }
   :root[data-design="lull"] .now .card > .card-head > .card-head__title::first-letter { text-transform: none; }
-  :root[data-design="lull"] .now .card > .card-head > .btn--quiet { margin-left: auto; color: var(--l-bar-ink); font-size: .75rem; min-height: 24px; }
+  :root[data-design="lull"] .now .card > .card-head > .btn--quiet { margin-left: auto; color: var(--l-band-ink); font-size: .75rem; min-height: 24px; text-shadow: var(--l-band-glow); }
   :root[data-design="lull"] .now .card > :not(.card-head) { margin-left: 14px; margin-right: 14px; }
 }
 
@@ -898,10 +980,10 @@
    At 1440x900 those first three sections sit above the fold.
    ===================================================================== */
 :root[data-design="lull"] .disc-home { display: flex; flex-direction: column; max-width: none; }
-:root[data-design="lull"] .disc-hello { order: 0; display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 12px; margin: 0 0 12px; padding-right: 0; }
-:root[data-design="lull"] .disc-hello h1 { margin: 0; font: 900 1.25rem/1.2 var(--f-ui); letter-spacing: -.01em; }
+:root[data-design="lull"] .disc-hello { order: 0; display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; margin: 2px 0 18px; padding-right: 0; }
+:root[data-design="lull"] .disc-hello h1 { margin: 0; padding-bottom: 2px; font: 400 2.5rem/1.05 var(--f-disp); letter-spacing: -.01em; }
 :root[data-design="lull"] .disc-hello h1 .sparkle { display: none; }
-:root[data-design="lull"] .disc-hello__sum { font: 700 .8125rem/1.4 var(--f-ui); color: var(--fg-2); }
+:root[data-design="lull"] .disc-hello__sum { padding: 5px 12px; border-radius: 999px; background: var(--reason-bg); color: var(--reason-fg); font: 800 .8125rem/1.3 var(--f-ui); }
 :root[data-design="lull"] .disc-card, :root[data-design="lull"] .disc-search .card { background: transparent; border: 0; border-radius: 0; box-shadow: none; padding: 0; margin-bottom: 16px; }
 :root[data-design="lull"] .disc-card > .label-rule { margin-bottom: 10px; }
 
@@ -920,6 +1002,32 @@
   background: var(--l-card); transform: translateY(-3px);
   box-shadow: 0 7px 0 -1.5px var(--stack-1), 0 7px 0 0 var(--l-edge), 0 13px 0 -1.5px var(--stack-2), 0 13px 0 0 var(--l-edge);
 }
+/* For you: each pick is a CD jewel case. A smoked spine with moulded ridges on the left, the cover under clear plastic
+   (a diagonal sheen across it), and the paper insert below with the title and the reason sticker */
+:root[data-design="lull"] .disc-pick { padding: 0 0 10px; overflow: visible; }
+:root[data-design="lull"] .disc-pick__art {
+  position: relative; display: block; padding: 6px 6px 6px 18px; border-radius: 12px 12px 4px 4px;
+  background:
+    repeating-linear-gradient(180deg, rgba(255, 255, 255, .22) 0 1px, transparent 1px 4px) 5px 8px / 6px calc(100% - 16px) no-repeat,
+    linear-gradient(90deg, color-mix(in srgb, var(--l-tray) 92%, #000) 0 15px, rgba(255, 255, 255, .5) 15px 16px, color-mix(in srgb, var(--l-frame) 80%, #fff) 16px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .7), inset 0 -1px 0 rgba(43, 38, 80, .2);
+}
+:root[data-design="lull"][data-theme="night"] .disc-pick__art { background: repeating-linear-gradient(180deg, rgba(255, 255, 255, .16) 0 1px, transparent 1px 4px) 5px 8px / 6px calc(100% - 16px) no-repeat, linear-gradient(90deg, #12122e 0 15px, rgba(255, 255, 255, .25) 15px 16px, #3c3f7c 16px); }
+:root[data-design="lull"] .disc-pick__art .cover { aspect-ratio: 1; border-radius: 3px; }
+:root[data-design="lull"] .disc-pick__art::after {
+  content: ""; position: absolute; inset: 6px 6px 6px 18px; border-radius: 3px; pointer-events: none;
+  background: linear-gradient(118deg, rgba(255, 255, 255, .5) 0%, rgba(255, 255, 255, .14) 24%, transparent 25% 60%, rgba(255, 255, 255, .1) 61%, transparent 75%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .4);
+}
+:root[data-design="lull"] .disc-pick__main, :root[data-design="lull"] .disc-pick__why { padding-inline: 10px; }
+:root[data-design="lull"] .disc-pick__end { right: 10px; }
+/* the case opens a little toward you on hover (its lid hinges on the spine), and settles back. A flat skew, not a 3D
+   turn: a 3D transform keeps the case on a layer of its own, and everything painted over it on more */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-design="lull"]:not([data-motion="reduce"]) .disc-pick__art { transition: transform var(--dur-3) var(--ease-spring); transform-origin: 0 50%; }
+  :root[data-design="lull"]:not([data-motion="reduce"]) .disc-pick:is(:hover, :focus-within) .disc-pick__art { transform: skewY(-2.5deg) scaleX(.97); }
+}
+
 /* a ring around the whole card, plus a mark on the focused control: the title and artist get a focus-coloured
    underline (an outline would be clipped by the title's two-line clamp), the buttons and reason chips their own ring */
 :root[data-design="lull"] .disc-pick:focus-within { outline: 2px solid var(--focus); outline-offset: 3px; }
@@ -940,7 +1048,12 @@
 :root[data-design="lull"] .disc-pick__why > :first-child { position: relative; transition: transform var(--dur-2) var(--ease-spring), box-shadow var(--dur-2) var(--ease-out); }
 :root[data-design="lull"] .disc-pick .cluster:has(.chip-more) > .chip-reason { border: 0; background: none; }
 :root[data-design="lull"] .disc-pick .chip-reason { gap: 4px; padding: 4px 8px 4px 6px; font-size: .75rem; text-transform: lowercase; hyphens: manual; overflow-wrap: normal; }
-:root[data-design="lull"] .disc-pick .chip-reason__name { text-transform: none; white-space: nowrap; text-decoration: none; }
+/* the name keeps its own line, wraps between its words when longer than the sticker, and stops at two lines (a long
+   artist would otherwise stretch its card down past the others) */
+:root[data-design="lull"] .disc-pick .chip-reason__name {
+  display: -webkit-inline-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; max-width: 100%; vertical-align: top;
+  text-transform: none; text-decoration: none;
+}
 :root[data-design="lull"] .disc-pick .chip-reason:hover .chip-reason__name { text-decoration: underline; }
 :root[data-design="lull"] .disc-pick .chip-more { flex: none; height: 20px; min-width: 0; margin: 0 6px 4px -4px; padding: 0 6px; border: 0; border-radius: 999px; background: var(--l-card); font-size: .6875rem; }
 /* sticker peel on hover / focus: lifts, tilts, gets a white die-cut edge, and a sparkle pops once at its corner */
@@ -1089,14 +1202,15 @@
 }
 :root[data-design="lull"] .lull-desk { display: grid; gap: 20px; }
 :root[data-design="lull"] .lull-desk__win {
-  padding: 4px 4px 10px; background: var(--sky); color: var(--fg-panel); border: var(--stroke) solid var(--l-edge); border-radius: 14px;
-  box-shadow: inset 0 0 0 4px var(--l-frame), var(--l-win-stack), 0 16px 28px -10px rgba(43, 38, 80, .28);
+  padding: 0 0 10px; color: var(--fg-panel); border: solid transparent; border-width: 38px 7px 7px; border-radius: 16px;
+  background: var(--l-pane); box-shadow: var(--l-pane-shadow);
 }
+:root[data-design="lull"] .lull-desk__win > .lull-win__bar { margin: -38px -7px 0; }
 :root[data-design="lull"] .lull-desk__today { transform: rotate(-1.5deg); }
 :root[data-design="lull"] .lull-desk__date { display: flex; align-items: center; gap: 14px; margin: 0; padding: 10px 16px 2px; }
 :root[data-design="lull"] .lull-desk__date b { font: 400 3.25rem/1 var(--f-disp); color: var(--l-ribbon); }
 :root[data-design="lull"] .lull-desk__date span { font: 800 .9375rem/1.3 var(--f-ui); color: var(--fg-2); }
-:root[data-design="lull"] .lull-desk__pocket { transform: rotate(2deg); background: var(--l-shell); box-shadow: inset 0 0 0 4px var(--l-frame), inset 0 6px 0 var(--l-shell-hi), var(--l-card-stack), 0 18px 30px -10px rgba(43, 38, 80, .32); }
+:root[data-design="lull"] .lull-desk__pocket { transform: rotate(2deg); background: var(--l-shell) padding-box, var(--l-candy) border-box; }
 :root[data-design="lull"] .lull-desk__screen {
   display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 12px; margin: 10px 10px 0; padding: 10px;
   border-radius: 10px 10px 22px 10px; background: var(--screen); color: var(--l-screen-ink); box-shadow: inset 0 2px 0 rgba(0, 0, 0, .2);
@@ -1140,15 +1254,15 @@
     --np-w: min(468px, 54%); grid-template-columns: var(--np-w) minmax(0, 1fr); column-gap: 16px; row-gap: 0;
     grid-template-rows: auto auto minmax(auto, 1fr); grid-template-areas: "dev ly" "head ly" "acts ly";   /* the action row never overlaps the chips: a too-short window scrolls */
   }
-  /* the left window's plate (frame + body) sits behind hero, head and actions */
+  /* the left window's plate (a pane: the pocket's title bar sits in its band) lies behind hero, head and actions */
   :root[data-design="lull"] .now__grid::before {
     content: ""; grid-area: 1 / 1 / 4 / 2; align-self: stretch; height: auto; z-index: 0;
-    background: var(--sky); border: var(--stroke) solid var(--l-edge); border-radius: 14px; box-shadow: inset 0 0 0 4px var(--l-frame), var(--l-win-stack);
+    border: solid transparent; border-width: 38px 7px 7px; border-radius: 16px; background: var(--l-pane); box-shadow: var(--l-pane-shadow);
   }
   :root[data-design="lull"] .now__dev, :root[data-design="lull"] .now-head, :root[data-design="lull"] .now__acts { position: relative; z-index: 1; min-width: 0; }
-  :root[data-design="lull"] .now__dev { margin: 4px 4px 0; }
-  :root[data-design="lull"] .now-head { padding: 14px 22px 0; }
-  :root[data-design="lull"] .now__acts { align-self: end; padding: 14px 22px 18px; }
+  :root[data-design="lull"] .now__dev { margin: 0; }
+  :root[data-design="lull"] .now-head { padding: 14px 29px 0; }
+  :root[data-design="lull"] .now__acts { align-self: end; padding: 14px 29px 25px; }
   :root[data-design="lull"] .now-acts { gap: 6px; flex-wrap: wrap; }
   :root[data-design="lull"] .now-acts .btn { min-height: 34px; padding: 0 12px; font-size: .8125rem; }
   :root[data-design="lull"] .now-acts__label { display: inline; }
@@ -1167,8 +1281,9 @@
     :root[data-design="lull"] .now-head__chips > .chip ~ .chip { display: inline-flex; }
     :root[data-design="lull"] .now-head__chips > .chip:nth-child(n+4), :root[data-design="lull"] .now-head__chips > :not(.chip):nth-child(n+4) { display: none; }
   }
-  /* a short window (the 1280x800 default): a smaller screen art keeps the action row above the fold */
-  @media (max-height: 859px) {
+  /* a window under 960 px tall (the 1280x800 default, a 1440x900 laptop): a smaller screen art keeps the action row
+     above the fold, with the taskbar's two rows below it */
+  @media (max-height: 959px) {
     :root[data-design="lull"] .now__grid { min-height: 560px; }
     :root[data-design="lull"] .lull-np .lull-np__screen { grid-template-columns: 132px minmax(0, 1fr); }
     :root[data-design="lull"] .lull-np .lull-np__screen .wave { height: 40px; }
@@ -1206,16 +1321,35 @@
 :root[data-design="lull"] .lull-np__bar { justify-content: space-between; padding-right: 6px; }
 :root[data-design="lull"] .lull-np .device__led {
   position: static; display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 9px; border-radius: 999px;
-  background: color-mix(in srgb, var(--l-card) 70%, transparent); border: 1px dashed var(--l-bar-ink); color: var(--l-bar-ink);
+  background: rgba(20, 10, 70, .25); border: 1px dashed var(--l-band-ink); color: var(--l-band-ink);
   font: 800 .6875rem/1 var(--f-ui); letter-spacing: .02em; text-transform: none;
 }
 :root[data-design="lull"] .lull-np .device__led i { width: 6px; height: 6px; border-radius: 50%; background: var(--l-switch); box-shadow: none; }
-:root[data-design="lull"][data-theme="night"] .lull-np .device__led { background: rgba(23, 26, 54, .45); }
-:root[data-design="lull"] .lull-np__shell {
-  position: relative; margin: 12px 12px 0; padding: 12px 12px 10px; border: var(--stroke) solid var(--l-edge); border-radius: 18px 18px 46px 18px;
-  background: var(--l-shell); box-shadow: inset 0 1.5px 0 var(--l-shell-hi), 0 5px 0 -1.5px var(--stack-1), 0 5px 0 0 var(--l-edge), 0 10px 0 -1.5px var(--stack-2), 0 10px 0 0 var(--l-edge);
-  color: var(--l-tile-ink);
+/* the pocket is see-through candy plastic: the board inside shows through the tinted shell. The board is one picture,
+   drawn once: faint in the shell, and again on a layer that lights the traces up while sound plays (10 changes a
+   second, held while lull isn't in front) */
+:root[data-design="lull"] {
+  --l-board: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='120' fill='none' stroke='%23fff' stroke-width='1.2'%3E%3Cpath d='M0 20h40l10 10h50l8-8h52M0 70h24l12-12h40M76 58v40l10 10h74M120 0v22M30 120V90l14-14h30M140 58h20'/%3E%3Cg%3E%3Ccircle cx='40' cy='20' r='2.5'/%3E%3Ccircle cx='108' cy='22' r='2.5'/%3E%3Ccircle cx='76' cy='58' r='2.5'/%3E%3Ccircle cx='30' cy='90' r='2.5'/%3E%3Ccircle cx='140' cy='58' r='2.5'/%3E%3C/g%3E%3C/svg%3E") 0 0 / 160px 120px;
+  --l-pocket: color-mix(in srgb, #8f84ef 72%, transparent), color-mix(in srgb, #5f4fc0 82%, transparent);
+  --l-board-faint: .22;
 }
+:root[data-design="lull"][data-theme="night"] { --l-pocket: color-mix(in srgb, #6a6fcc 72%, transparent), color-mix(in srgb, #2b2f78 86%, transparent); --l-board-faint: .16; }
+:root[data-design="lull"] .lull-np__shell {
+  position: relative; isolation: isolate; margin: 14px 12px 0; padding: 12px 12px 10px; border: var(--stroke) solid #43389c; border-radius: 18px 18px 46px 18px; color: #fff9fe;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .5) 0 1.5px, rgba(255, 255, 255, .2) 1.5px, transparent 34%), linear-gradient(180deg, var(--l-pocket));
+  box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, .55), inset 0 -10px 22px -10px rgba(20, 10, 70, .45), 0 5px 0 -1.5px var(--stack-1), 0 5px 0 0 var(--l-edge), 0 18px 30px -12px rgba(43, 38, 80, .5);
+}
+/* check: #fff9fe on #5f4fc0 4.5 (the pocket's mark) */
+:root[data-design="lull"] .lull-np__shell::before, :root[data-design="lull"] .lull-np__shell::after {
+  content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none; background: var(--l-board);
+}
+:root[data-design="lull"] .lull-np__shell::before { opacity: var(--l-board-faint); }
+:root[data-design="lull"] .lull-np__shell::after { opacity: 0; }
+@keyframes lull-board { to { opacity: .6; } }
+:root[data-design="lull"][data-playing="true"] .lull-np__shell::after {
+  animation: lull-board 4.2s var(--loop-ease-in-out-42) infinite alternate; animation-play-state: var(--loop-play, running);
+}
+
 :root[data-design="lull"] .lull-np__screen {
   --now-art: 0px;
   display: grid; grid-template-columns: minmax(140px, 192px) minmax(0, 1fr); grid-template-areas: "art head" "art page" "wave wave" "times times";
@@ -1312,13 +1446,9 @@
 :root[data-design="lull"] :is(.lull-np, .dk-mini) .device__pill[aria-pressed="true"] { background: var(--l-hi), var(--l-gloss); color: #fff; border-color: var(--l-gloss-edge); text-shadow: 0 1px 0 rgba(40, 25, 110, .55); box-shadow: 0 2px 0 var(--l-gloss-edge); }
 :root[data-design="lull"] :is(.lull-np, .dk-mini) .device__pill[aria-pressed="true"] > i { background: #fff; box-shadow: none; }
 :root[data-design="lull"][data-theme="night"] :is(.lull-np, .dk-mini) .device__pill:not([aria-pressed="true"]) { background: var(--sky); color: #f4efff; }
-:root[data-design="lull"] .lull-np__mark { margin-right: auto; white-space: nowrap; font: italic 400 .9375rem/1 var(--f-disp); letter-spacing: .05em; color: #3d3491; }
-:root[data-design="lull"] .lull-np__mark em { color: #5544aa; }
-:root[data-design="lull"][data-theme="night"] .lull-np__mark { color: #fff9fe; }
-:root[data-design="lull"][data-theme="night"] .lull-np__mark em { color: #e4def9; }
+:root[data-design="lull"] .lull-np__mark { margin-right: auto; white-space: nowrap; font: italic 400 .9375rem/1 var(--f-disp); letter-spacing: .05em; }
 :root[data-design="lull"] .lull-np__grill { display: grid; grid-template-columns: repeat(5, 4px); gap: 4px; margin: 0 8px 0 4px; transform: rotate(-28deg); }
-:root[data-design="lull"] .lull-np__grill i { width: 4px; height: 4px; border-radius: 50%; background: rgba(43, 38, 80, .38); }
-:root[data-design="lull"][data-theme="night"] .lull-np__grill i { background: rgba(255, 249, 254, .35); }
+:root[data-design="lull"] .lull-np__grill i { width: 4px; height: 4px; border-radius: 50%; background: rgba(255, 249, 254, .45); }
 
 /* motion: the windows boot in a stagger, the screen powers on (a soft CRT glow), one glint crosses it */
 @keyframes lull-boot { from { opacity: 0; transform: translateY(10px) scale(.985); } to { opacity: 1; transform: none; } }
@@ -1348,7 +1478,7 @@
 }
 :root[data-design="lull"] .now-ly__lines { padding-block: 48px; }
 :root[data-design="lull"] .now-lycard .now-ly__head .label-rule { display: none; }
-:root[data-design="lull"] .now-lycard .now-ly__head { position: absolute; top: 4px; right: 10px; z-index: 2; min-height: 30px; }
+:root[data-design="lull"] .now-lycard .now-ly__head { position: absolute; top: -33px; right: 2px; z-index: 2; min-height: 30px; }
 :root[data-design="lull"] .now-ly__tag { border-radius: 5px; border-width: var(--stroke); font: 800 .6875rem/1 var(--f-ui); padding: 4px 7px; background: color-mix(in srgb, var(--l-card) 70%, transparent); }
 :root[data-design="lull"] .now-lycard { position: relative; }
 :root[data-design="lull"] .now-lycard .now-ly__view { margin: 0; }
@@ -1411,17 +1541,20 @@
    screen, then the Now window's transport row (shuffle | prev, play, next | repeat) and a slim row (vol -, like, vol +) */
 :root[data-design="lull"] .dk-mini .device {
   --device-w: 320px; display: grid; grid-template-columns: minmax(0, 1fr) repeat(5, auto) minmax(0, 1fr); align-items: center; gap: 12px 10px;
-  padding: 38px 10px 14px; border-radius: 14px; background: var(--sky); box-shadow: inset 0 0 0 4px var(--l-frame), var(--l-win-stack);
+  padding: 4px 3px 7px; border: solid transparent; border-width: 38px 7px 7px; border-radius: 16px; background: var(--l-pane);
+  box-shadow: 0 0 0 1px color-mix(in srgb, #2b2650 60%, transparent);
 }
 :root[data-design="lull"] .dk-mini .device::before {
-  content: "lull mini"; position: absolute; left: 4px; right: 4px; top: 4px; display: flex; align-items: center; height: 30px; padding: 0 12px 0 68px;
-  border-radius: 10px 10px 4px 4px; background: var(--l-orbs), var(--l-bar-bg); box-shadow: inset 0 1px 0 var(--l-bar-line), inset 0 -1px 0 rgba(43, 38, 80, .1);
-  color: var(--l-bar-ink); font: 400 .8125rem/1 var(--f-disp); letter-spacing: .04em; pointer-events: none;
+  content: "lull mini"; position: absolute; left: -7px; right: -7px; top: -38px; display: flex; align-items: center; height: 38px; padding: 0 12px 0 72px;
+  background: var(--l-orbs); color: var(--l-band-ink); font: 400 .9375rem/1 var(--f-disp); letter-spacing: .06em; text-shadow: var(--l-band-glow); pointer-events: none;
 }
-:root[data-design="lull"] .dk-mini__head { z-index: 1; left: 150px; right: 10px; top: 5px; height: 28px; }
+:root[data-design="lull"] .dk-mini__head { z-index: 1; left: 150px; right: 0; top: -33px; height: 28px; }
+:root[data-design="lull"] .dk-mini__head .btn-icon { color: var(--l-band-ink); }
+/* the strip: a slice of the taskbar, a paper bar in a candy frame */
+:root[data-design="lull"] .dk-strip { border: 6px solid transparent; border-radius: 16px; background: linear-gradient(var(--sky), var(--sky)) padding-box, var(--l-candy) border-box; box-shadow: var(--l-pane-shadow); }
 :root[data-design="lull"] .dk-mini__led { display: none; }
-:root[data-design="lull"] .dk-mini__win { color: var(--l-bar-ink); }
-:root[data-design="lull"] .dk-mini__win:hover { background: color-mix(in srgb, var(--l-bar-ink) 14%, transparent); }
+:root[data-design="lull"] .dk-mini__win { color: var(--l-band-ink); }
+:root[data-design="lull"] .dk-mini__win:hover { background: rgba(255, 255, 255, .2); }
 :root[data-design="lull"] .dk-mini .device__bezel { grid-column: 1 / -1; min-width: 0; padding: 0; border: 0; background: none; }
 :root[data-design="lull"] .dk-mini .device__screen { border-radius: 10px; box-shadow: inset 0 2px 0 rgba(0, 0, 0, .18); }
 :root[data-design="lull"] .dk-mini :is(.device__brand, .device__grill, .dpad__hub) { display: none; }
@@ -1519,24 +1652,10 @@
 }
 /* artist page: the antenna glyph before each artist name already says "Soulseek", so the badge stops repeating it */
 :root[data-design="lull"] .app[data-screen="artist"] .trow .badge-slsk { display: none; }
-/* wide (the shared two-column artist page, ADR-0007): a smaller orb hero, and the discography as release rows */
+/* wide (the shared two-column artist page, ADR-0007): a smaller orb hero, three releases to a shelf */
 @container main (min-width: 1100px) {
   :root[data-design="lull"] .app[data-screen="artist"] .lib-hero { --lib-art: 168px; }
   :root[data-design="lull"] .app[data-screen="artist"] .lib-card .shelf { grid-auto-columns: calc((100% - 32px) / 3); }
-  /* discography as release rows (cover, title, artist, year and kind, play), like Home's new releases */
-  :root[data-design="lull"] .app[data-screen="artist"] .lib-cols > .lib-card:nth-child(2) .shelf { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr); gap: 2px; overflow: visible; padding: 0; }
-  :root[data-design="lull"] .app[data-screen="artist"] .lib-cols > .lib-card:nth-child(2) .tile {
-    position: relative; display: grid; grid-template-columns: 64px minmax(0, 1fr); grid-template-areas: "art title" "art by" "art meta";
-    align-content: center; column-gap: 14px; min-height: 76px; padding: 6px 52px 6px 6px; margin: 0; background: none; border: 0; border-radius: 12px; box-shadow: none; transform: none;
-  }
-  :root[data-design="lull"] .app[data-screen="artist"] .lib-cols > .lib-card:nth-child(2) .tile:is(:hover, :focus-within) { background: color-mix(in srgb, var(--l-tile) 26%, transparent); transform: none; box-shadow: none; }
-  :root[data-design="lull"] .app[data-screen="artist"] .lib-cols > .lib-card:nth-child(2) .tile__art { display: contents; }
-  :root[data-design="lull"] .app[data-screen="artist"] .lib-cols > .lib-card:nth-child(2) .tile__art > :first-child { grid-area: art; }
-  :root[data-design="lull"] .app[data-screen="artist"] .lib-cols > .lib-card:nth-child(2) .tile__art .cover { width: 64px; border-radius: 8px; }
-  :root[data-design="lull"] .app[data-screen="artist"] .lib-cols > .lib-card:nth-child(2) .tile__title { grid-area: title; }
-  :root[data-design="lull"] .app[data-screen="artist"] .lib-cols > .lib-card:nth-child(2) .tile__by { grid-area: by; }
-  :root[data-design="lull"] .app[data-screen="artist"] .lib-cols > .lib-card:nth-child(2) .tile__meta { grid-area: meta; }
-  :root[data-design="lull"] .app[data-screen="artist"] .lib-cols > .lib-card:nth-child(2) .tile__play { right: 10px; top: 50%; bottom: auto; margin-top: -18px; opacity: 1; transform: none; }
 }
 /* album page: the hero already shows the cover, artist, format and "in library", so rows keep the title and put the
    file facts in the middle column; a source badge shows only when it is not "saved" */
@@ -1568,12 +1687,11 @@
    ===================================================================== */
 /* stats: the five numbers are little widget windows (img 02 side panels): the label is the title bar */
 :root[data-design="lull"] .sys-tile.card {
-  gap: 0; padding: 4px 4px 12px; background: var(--sky); border: var(--stroke) solid var(--l-edge); border-radius: 14px;
-  box-shadow: inset 0 0 0 4px var(--l-frame), var(--l-win-stack);
+  gap: 0; padding: 0 0 12px; border: solid transparent; border-width: 30px 7px 7px; border-radius: 16px; background: var(--l-pane); box-shadow: var(--l-pane-shadow);
 }
 :root[data-design="lull"] .sys-tile__label {
-  height: 26px; margin-bottom: 8px; padding: 0 10px; gap: 6px; border-radius: 10px 10px 4px 4px; background: var(--l-bar-bg);
-  box-shadow: inset 0 1px 0 var(--l-bar-line); color: var(--l-bar-ink); font: 400 .75rem/1 var(--f-disp); letter-spacing: .04em; text-transform: lowercase;
+  height: 30px; margin: -30px -7px 10px; padding: 0 12px; gap: 6px; color: var(--l-band-ink); text-shadow: var(--l-band-glow);
+  font: 400 .8125rem/1 var(--f-disp); letter-spacing: .06em; text-transform: lowercase;
 }
 :root[data-design="lull"] .sys-tile__label .ic { width: 14px; height: 14px; }
 :root[data-design="lull"] .sys-tile__value, :root[data-design="lull"] .sys-tile__sub { padding: 0 12px; }
@@ -1649,7 +1767,7 @@
 }
 
 /* =====================================================================
-   Phone: mocha tray header, the view is one window sheet, glossy mini player, mocha tab tray
+   Phone: candy header, the view is one window sheet, glossy mini player in a candy frame, candy tab tray
    ===================================================================== */
 @media (max-width: 639px) {
   :root[data-design="lull"] .header { margin: calc(8px + env(safe-area-inset-top)) 10px 10px; padding: 5px 6px 5px 5px; min-height: 50px; }
@@ -1658,7 +1776,7 @@
   :root[data-design="lull"] .main { margin: 0 10px 10px; }
   :root[data-design="lull"] .view { padding: 16px 14px 24px; }
   :root[data-design="lull"] .mini {
-    margin: 0 10px 8px; padding: 0 6px 0 4px; height: 64px; background: var(--sky); border: 5px solid var(--tray); border-radius: 16px;
+    margin: 0 10px 8px; padding: 0 6px 0 4px; height: 64px; background: var(--sky); border: 5px solid color-mix(in oklch, var(--l-tray) 92%, transparent); border-radius: 16px;
     box-shadow: 0 0 0 var(--stroke) var(--tray-edge);
   }
   :root[data-design="lull"] .mini .bezel-thumb .cover { --cover-size: 42px; border-radius: 8px; }
@@ -1666,9 +1784,10 @@
   :root[data-design="lull"] .mini .seek--line .seek__track { height: 3px; }
   :root[data-design="lull"] .tabbar {
     margin: 0 10px calc(10px + env(safe-area-inset-bottom)); padding: 5px; gap: 5px; height: 60px;
-    background: var(--tray); border: var(--stroke) solid var(--tray-edge); border-radius: 16px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22);
+    background: var(--l-candy); border: var(--stroke) solid var(--tray-edge); border-radius: 16px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22);
   }
-  :root[data-design="lull"] .tab { border-radius: 11px; background: var(--l-tile); color: var(--l-tile-ink); box-shadow: inset 0 1px 0 var(--l-tile-hi); font: 800 .75rem/1 var(--f-ui); }
+  /* the tabs are gel keys like the menubar's: pale, then violet for the one you're on */
+  :root[data-design="lull"] .tab { border-radius: 14px; background: var(--l-gel-pale); color: var(--l-tile-ink); box-shadow: inset 0 -2px 4px rgba(255, 255, 255, .3), 0 0 0 var(--stroke) var(--l-gel-pale-edge); font: 800 .75rem/1 var(--f-ui); }
   :root[data-design="lull"] .tab .ic, :root[data-design="lull"] .tab[aria-current="page"] .ic { width: 22px; height: 22px; padding: 0; background: none; box-shadow: none; color: inherit; }
   :root[data-design="lull"] .tab[aria-current="page"] { background: var(--l-hi), var(--l-gloss); color: #fff; box-shadow: inset 0 -2px 4px var(--l-gloss-glow), 0 0 0 var(--stroke) var(--l-gloss-edge); text-shadow: 0 1px 0 rgba(40, 25, 110, .55); }
   :root[data-design="lull"] .toast-region { bottom: calc(var(--mini-h) + var(--tab-h) + 40px + env(safe-area-inset-bottom)); }
@@ -1676,9 +1795,9 @@
   :root[data-design="lull"] .app[data-view="now"] .main { margin-top: calc(8px + env(safe-area-inset-top)); }
   :root[data-design="lull"] .main:has(> :where(.view) > .now)::before { content: "now playing"; }
   :root[data-design="lull"] .main:has(> :where(.view) > .now)::after { display: none; }
-  :root[data-design="lull"] .app[data-view="now"] .sheet-bar { position: absolute; top: 4px; right: 6px; z-index: 2; display: block; height: 30px; padding: 0; background: none; }
+  :root[data-design="lull"] .app[data-view="now"] .sheet-bar { position: absolute; top: 4px; right: 12px; z-index: 2; display: block; height: 30px; padding: 0; background: none; }
   :root[data-design="lull"] .app[data-view="now"] .sheet-bar .sheet__handle { display: none; }
-  :root[data-design="lull"] .app[data-view="now"] .sheet-bar .btn-icon { width: 30px; height: 30px; color: var(--l-bar-ink); }
+  :root[data-design="lull"] .app[data-view="now"] .sheet-bar .btn-icon { width: 30px; height: 30px; color: var(--l-band-ink); }
   :root[data-design="lull"] .app[data-view="now"] .view { padding-top: 12px; }
   :root[data-design="lull"] .now__top { margin: 0 0 8px; }
   :root[data-design="lull"] .now__top .now-head__from { padding-left: 0; justify-content: flex-start; }
@@ -1692,7 +1811,7 @@
   :root[data-design="lull"] .now-acts .btn { flex-direction: column; justify-content: center; gap: 3px; width: auto; min-height: 56px; padding: 6px 2px; border-radius: 14px; font: 800 .6875rem/1.15 var(--f-ui); text-align: center; white-space: normal; }
   :root[data-design="lull"] .now-acts .btn .ic { width: 18px; height: 18px; }
   :root[data-design="lull"] .now-acts__label { display: block; }
-  :root[data-design="lull"] .lull-np__bar { display: none; }
+  :root[data-design="lull"] .lull-np > .lull-np__bar { display: none; }
   /* the sheet's title bar is the page's, so the status pill ("paused", "stalled") sits on the pocket's foot instead */
   :root[data-design="lull"] .lull-np__state { display: inline-flex; }
   :root[data-design="lull"] .lull-np__shell { margin: 0; }
@@ -1753,18 +1872,14 @@
 
 /* =====================================================================
    Wide screens (ADR-0007): the shared layout reveals more; lull keeps its look. The Now Playing column is one more
-   window (orb title bar, sky body), its orbs dimmed like the side window's while focus is elsewhere. The collapsed
+   window (its shell is the Windows section's), its orbs dimmed like the side window's while focus is elsewhere. The collapsed
    side window keeps its frame as a slim window edge.
    ===================================================================== */
-:root[data-design="lull"] .nowcol { background: var(--l-frame); border: var(--stroke) solid var(--l-edge); border-radius: 14px; padding: 4px; box-shadow: var(--l-win-stack); }
-:root[data-design="lull"] .nowcol__head {
-  height: 30px; padding: 0 4px 0 68px; border-radius: 10px 10px 4px 4px;
-  background: var(--l-orbs), var(--l-bar-bg); box-shadow: inset 0 1px 0 var(--l-bar-line), inset 0 -1px 0 rgba(43, 38, 80, .1);
-}
-:root[data-design="lull"] .nowcol__title { color: var(--l-bar-ink); font: 400 .8125rem/1 var(--f-disp); letter-spacing: .04em; text-transform: lowercase; }
-:root[data-design="lull"] .nowcol__head .btn-icon { width: 26px; height: 26px; color: var(--l-bar-ink); }
-:root[data-design="lull"] .nowcol__body { margin-top: 4px; border-radius: 4px 4px 10px 10px; background: var(--sky); padding: 14px; }
-:root[data-design="lull"] .nowcol__strip { border-radius: 10px; background: var(--l-bar-bg); }
+:root[data-design="lull"] .nowcol__head { padding-right: 4px; }
+:root[data-design="lull"] .nowcol__title { color: var(--l-band-ink); font: inherit; letter-spacing: inherit; text-transform: lowercase; }
+:root[data-design="lull"] .nowcol__head .btn-icon { width: 26px; height: 26px; color: var(--l-band-ink); }
+:root[data-design="lull"] .nowcol__body { border-radius: 10px; background: var(--sky); padding: 14px; }
+:root[data-design="lull"] .nowcol__strip { border-radius: 10px; }
 /* ultra: the desk widgets get a little more room on the wallpaper */
 @media (min-width: 2400px) { :root[data-design="lull"] { --l-desk-w: 330px; } }
 
