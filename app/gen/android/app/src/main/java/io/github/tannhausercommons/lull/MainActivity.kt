@@ -32,29 +32,39 @@ class MainActivity : TauriActivity() {
  * A song, album, artist or playlist shared to lull: an App Link (a share host's page, whose address
  * names the item, ADR-0034, or lull's older open page, whose `#lull?` part does, ADR-0032; the
  * whole address either way), "Share" from another app (its text holds the
- * link) or a lull://open?link=… link. Held until the hub's web UI takes it (App.takeSharedLink,
- * at boot and when nudged), which opens it as #/open; a bundled page never asks.
+ * link) or a lull://open?link=… link, which may also ask lull to add it to the queue (`do=queue`,
+ * from a share page's Add to queue). Held until the hub's web UI takes it (App.takeSharedLink, at
+ * boot and when nudged), which opens it as #/open; a bundled page never asks. `take` answers the
+ * link alone, as before, so a hub's older web UI still opens it; `takeAction` answers what was asked.
  */
 object SharedLinks {
   private val WEB_LINK = Regex("https?://\\S+")
 
   @Volatile private var pending: String? = null
+  @Volatile private var pendingAction: String = ""
 
   fun receive(intent: Intent?) {
+    var action = ""
     val link = when (intent?.action) {
       Intent.ACTION_VIEW -> intent.data?.let {
         when {
           // Only the manifest's App Links filters (the open page, the share hosts) send https links
           // here, so the host needs no second list; the hub reads the link and refuses anything else.
           it.scheme == "https" -> it.toString()
-          it.scheme == "lull" && it.host == "open" -> it.getQueryParameter("link")
+          it.scheme == "lull" && it.host == "open" -> {
+            if (it.getQueryParameter("do") == "queue") action = "queue"
+            it.getQueryParameter("link")
+          }
           else -> null
         }
       }
       Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)?.let { WEB_LINK.find(it)?.value }
       else -> null
     }
-    if (link != null && WEB_LINK.matches(link)) pending = link
+    if (link != null && WEB_LINK.matches(link)) {
+      pending = link
+      pendingAction = action
+    }
   }
 
   @JavascriptInterface
@@ -62,6 +72,14 @@ object SharedLinks {
     val link = pending ?: ""
     pending = null
     return link
+  }
+
+  /** What the link that `take` answered asks for: "queue", or "" to open it. */
+  @JavascriptInterface
+  fun takeAction(): String {
+    val action = pendingAction
+    pendingAction = ""
+    return action
   }
 
   fun nudge(webView: WebView) {

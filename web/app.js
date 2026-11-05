@@ -635,7 +635,8 @@
         target.addEventListener(type, fn, opts);
         cleanups.push(function () { target.removeEventListener(type, fn, opts); });
       } };
-    App.current = { path: loc.path, params: params, query: loc.query, route: route };
+    /* first: the page loaded on this route (nothing shown before it in this page) */
+    App.current = { path: loc.path, params: params, query: loc.query, route: route, first: lastPath === null };
 
     var markup;
     if (!route) markup = notFound(loc.path);
@@ -2262,11 +2263,13 @@
     queueChanged();
     App.toast(ids.length > 1 ? ids.length + ' songs will play next' : 'Playing next: ' + titleOf(ids[0]), { icon: 'queue' });
   };
-  P.addToQueue = function (ids) {
+  /* opts.paused: with nothing loaded, the first song waits paused rather than playing (a share page's Add to queue
+     never starts music on its own) */
+  P.addToQueue = function (ids, opts) {
     ids = [].concat(ids);
     var at = ps.queue.length ? nextUpEnd() : 0;
     ps.queue.splice.apply(ps.queue, [at, 0].concat(ids.map(function (id) { return entry(id, 'next'); })));
-    if (ps.status === 'idle') load(0);
+    if (ps.status === 'idle') load(0, { autoplay: !(opts && opts.paused) });
     queueChanged();
     App.toast(ids.length > 1 ? 'Added ' + ids.length + ' songs to the queue' : 'Added to queue: ' + titleOf(ids[0]), { icon: 'queue' });
   };
@@ -4722,10 +4725,13 @@
   inactive();
 
   /* a link shared to the Android app ("Share", lull://open?link=…) waits in the shell until this page takes it: at boot,
-     and when the shell nudges a running page. It opens as #/open (discover.js). */
+     and when the shell nudges a running page. It opens as #/open (discover.js), or joins the queue when a share page's
+     Add to queue asked (takeAction "queue"; an older app has no takeAction and only opens) */
   App.takeSharedLink = function () {
-    var link = window.lullLinks && typeof window.lullLinks.take === 'function' ? window.lullLinks.take() : '';
-    if (link) App.go('/open?link=' + encodeURIComponent(link));
+    var shell = window.lullLinks;
+    var link = shell && typeof shell.take === 'function' ? shell.take() : '';
+    var queue = shell && typeof shell.takeAction === 'function' && shell.takeAction() === 'queue';
+    if (link) App.go('/open?link=' + encodeURIComponent(link) + (queue ? '&do=queue' : ''));
   };
 
   var booted = false;

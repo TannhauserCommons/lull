@@ -23,6 +23,8 @@
   <section id="opening" hidden>
     <p class="note" role="status" id="opening-text"></p>
     <div class="actions">
+      <button type="button" class="primary" id="open-there" hidden>Open in your lull</button>
+      <button type="button" id="queue-there" hidden>Add to its queue</button>
       <button type="button" id="other-lull">Use a different lull</button>
       <button type="button" class="quiet" id="stay">Stay on this page</button>
     </div>
@@ -32,6 +34,7 @@
     <p class="note" role="status" id="no-app" hidden>The lull app isn&rsquo;t on this phone yet. Get it below, or open this in lull in the browser.</p>
     <div class="actions">
       <a class="primary" id="app" href="#">Open in the lull app</a>
+      <a id="app-queue" href="#" hidden>Add to queue</a>
       <button type="button" id="browser">Open in lull in the browser</button>
     </div>
     <form id="hub-form" hidden novalidate>
@@ -39,7 +42,10 @@
       <input id="hub" type="url" inputmode="url" autocomplete="url" placeholder="https://lull.example.ts.net" spellcheck="false" aria-describedby="hub-help hub-error">
       <p class="help" id="hub-help">The address you open lull at. It stays in this browser and is never sent to this page.</p>
       <p class="error" id="hub-error" role="alert"></p>
-      <button type="submit" class="primary">Open it there</button>
+      <div class="actions">
+        <button type="submit" class="primary" value="open">Open it there</button>
+        <button type="submit" id="queue-submit" value="queue" hidden>Add to its queue</button>
+      </div>
     </form>
   </section>
 
