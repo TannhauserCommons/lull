@@ -22,8 +22,9 @@ Contents: 1 Principles · 2 The five designs · 3 Architecture · 4 Tokens · 5 
   what has arrived waits for it, saying for what time and about how long, while the song plays on (or, with that
   setting off, stops where the download is). Finding, queued, buffering, stalled-and-falling-back and failed are distinct states.
 - **Nothing is dead.** Every visible control does something: an action, a sheet, a toast or a state. No "coming soon".
-- **Calm by default.** One orchestrated moment per design (Now Playing opening), small functional motion elsewhere,
-  all of it off under reduced motion.
+- **Motion is the design's own, within its cost.** How much moves, and how, is each design's choice. The bound is
+  cost: it stays smooth on a cheap device, which the perf gates measure (section 9), and all of it stops under
+  reduced motion and while lull is hidden.
 - **Accessible in every design and theme:** text 4.5:1, large text and UI parts 3:1, visible focus, full keyboard use.
 
 ## 2. The five designs
@@ -557,13 +558,13 @@ and petal's `.pv-flip` mirrors the whole `.cover` (limit it to covers without ar
 
 ## 9. Motion
 
-- Each design has one orchestrated moment on opening Now Playing (base: device power-on with a scanline sweep; lull:
-  windows boot in a stagger with one glint; starlight: the card stack deals in and a shooting star crosses the art;
-  glasshouse: a light sweep crosses the LCD as the track slides in).
-- Functional motion only elsewhere: glasshouse's cards fade-rise 8 px on route change, press sinks, sheets slide, popovers fade-rise 4 px, segment indicators slide, the
-  transfer hatch drifts only while bytes arrive, waveform bars breathe only while playing, sparkles twinkle (max 5 per
-  view), lyrics scroll the current line into place, a 240 ms shake when seeking past what is downloaded.
-- Only `transform` and `opacity` animate; keyframes only for loops; loops pause under `:root.is-hidden`.
+- **How much moves is the design's choice;** what bounds it is cost. A design may move as much as it likes, and react
+  to anything the player and the page expose, as long as it stays smooth on a cheap device: the perf gates check
+  it (docs/context/quality.md#ui-gates), at rest, while playing, and in every engine.
+- **How it moves:** paint once, then only move, scale or fade (`transform` and `opacity`) what was painted. Every
+  endless loop is stepped where it is declared and holds still when asked (docs/themes.md, Drawing cheaply); loops
+  pause under `:root.is-hidden`. What is drawn afresh at every step (an animated shadow, filter or background) has to
+  prove in the gates that it is just as light.
 - **Reduced motion** (OS setting, or Settings > Appearance > Motion, which sets `:root[data-motion="reduce"]`;
   `data-motion="full"` overrides the OS): base.css stops every animation and limits transitions to colour / opacity
   (120 ms), so anything a design adds obeys it automatically. JS checks `App.reducedMotion()` (scroll behaviour, track
