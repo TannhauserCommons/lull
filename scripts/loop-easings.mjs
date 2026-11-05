@@ -23,11 +23,14 @@ function bezier([x1, y1, x2, y2]) {
 }
 const num = (v, d) => String(+v.toFixed(d));
 
+// Loops that share a beat change on the same frame (app.js lines their steps up), so their steps must fall on the same
+// instants: a step's place to 3 decimals of a percent was up to 0.03 ms off, and a frame clock landing in that gap (a
+// steady 60 Hz keeps landing there) drew each of a pair's changes on its own frame. To 5 decimals it is 0.0003 ms off.
 export function staircase(curve, n) {
   const ease = bezier(CURVES[curve]), stops = [];
   for (let i = 0; i < n; i++) {
     const v = num(n === 1 ? 0 : ease(i / (n - 1)), 4);
-    stops.push(`${v} ${num((i / n) * 100, 3)}%`, `${v} ${num(((i + 1) / n) * 100, 3)}%`);
+    stops.push(`${v} ${num((i / n) * 100, 5)}%`, `${v} ${num(((i + 1) / n) * 100, 5)}%`);
   }
   return `linear(${stops.join(', ')})`;
 }
