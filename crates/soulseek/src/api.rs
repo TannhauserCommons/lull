@@ -32,6 +32,7 @@ fn routes() -> Router<Arc<Service>> {
         .route("/api/soulseek/search", get(search))
         .route("/api/tracks/{id}/sources", get(sources))
         .route("/api/tracks/{id}/verify", post(verify))
+        .route("/api/stream/{id}/output-error", post(output_error))
         .route("/api/stream/prefetch", put(prefetch))
         .route("/api/stream/{id}", get(stream).delete(stop))
         .route("/api/stream/{id}/copy", get(copy))
@@ -202,6 +203,30 @@ async fn switch(
     let Json(copy) = body.map_err(|e| Error::BadRequest(e.body_text()))?;
     svc.fetcher.adopt(&TrackId(id), &copy.source_ref(), false)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OutputError {
+    #[serde(rename = "jobId", default)]
+    job_id: Option<String>,
+}
+
+/// The player's audio failed while it followed a job: the job's own state answers, with its
+/// reason; a copy that arrived but this device can't play is recorded on the job. 404 for a job
+/// the hub no longer knows. Never starts or restarts a transfer.
+async fn output_error(
+    State(svc): State<Arc<Service>>,
+    Path(id): Path<String>,
+    device: Option<Extension<Device>>,
+    body: std::result::Result<Json<OutputError>, JsonRejection>,
+) -> Result<Json<Value>> {
+    let Json(b) = body.map_err(|e| Error::BadRequest(e.body_text()))?;
+    let device = device.map(|Extension(d)| d.name).unwrap_or_default();
+    svc.fetcher
+        .output_error(&TrackId(id), b.job_id.as_deref(), &device)
+        .map(Json)
+        .ok_or_else(|| Error::NotFound("the hub no longer knows that job".into()))
 }
 
 #[derive(Deserialize)]

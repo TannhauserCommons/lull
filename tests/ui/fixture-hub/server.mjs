@@ -421,6 +421,17 @@ function chunk(type, data) {
   return Buffer.concat([Buffer.from(u32(data.length)), td, Buffer.from(u32((c ^ 0xffffffff) >>> 0))]);
 }
 
+// The hub's own reason for a song no peer delivers, YouTube's part included (fetch.rs).
+const FAIL_REASON = 'no peer shares this song right now; YouTube: no YouTube upload matches this song';
+/* POST /api/stream/<id>/output-error { jobId }: the job's state answers (soulseek/src/fetch.rs, Fetcher::output_error) */
+function outputError(res, id, jobId) {
+  const t = L.tracks[id];
+  jobId = jobId || (t && t.albumId === L.failingAlbum ? 'fixture-fail-' : 'fixture-broken-') + id;
+  if (!t) return send(res, 404, { error: 'not_found', message: 'The hub no longer knows that job.' });
+  if (t.albumId === L.failingAlbum) return send(res, 200, { trackId: id, jobId, status: 'failed', attempt: 0, error: FAIL_REASON });
+  return send(res, 200, { trackId: id, jobId, status: 'streaming', attempt: 0, error: null, unplayable: "this copy can't be played in this player (WAV 8 kHz)" });
+}
+
 // ---------- audio: a quiet 8 kHz 8-bit WAV as long as the song, with Range ----------
 const RATE = 8000;
 function wavHeader(n) {
@@ -432,7 +443,17 @@ function wavHeader(n) {
 function audio(req, res, id, library) {
   const t = L.tracks[id];
   if (!t || (library && !t.saved)) return send(res, 404, { error: 'not_found', message: 'Not saved.' });
-  if (t.albumId === L.failingAlbum) return send(res, 502, { error: 'upstream', message: 'No peer delivered this song.' });
+  // As the hub: the song's job sends a stream event when it opens, and its outcome is the job's (POST .../output-error).
+  if (t.albumId === L.failingAlbum) {
+    emit('stream', { trackId: id, jobId: 'fixture-fail-' + id, status: 'finding', attempt: 0, peersFound: 0, received: 0, size: 0 });
+    return send(res, 502, { error: 'upstream', message: FAIL_REASON });
+  }
+  if (t.albumId === L.brokenAlbum && !library) {
+    emit('stream', { trackId: id, jobId: 'fixture-broken-' + id, status: 'streaming', attempt: 0, peer: 'fixture-peer', format: 'WAV 8 kHz', received: 4096, size: 4096 });
+    const junk = Buffer.alloc(4096, 0x5a);
+    res.writeHead(200, { 'content-type': 'audio/wav', 'accept-ranges': 'bytes', 'content-length': junk.length });
+    return res.end(junk);
+  }
   if (AUDIO_DIR) return audioFile(req, res, t);
   const n = t.duration * RATE, total = 44 + n;
   let start = 0, end = total - 1;
@@ -768,6 +789,7 @@ const server = createServer(async (req, res) => {
   if (path === '/__fixture/trickle' && req.method === 'POST') { const b = await readBody(req); const out = trickle(b.id, b.bytesPerS, b.seekAhead, b.file); return send(res, out.status, out.body); }
   if ((m = /^\/api\/stream\/([^/]+)$/.exec(path)) && req.method === 'GET' && trickles.has(m[1])) return trickleAudio(req, res, m[1]);
   if ((m = /^\/api\/(library\/)?stream\/([^/]+)$/.exec(path)) && req.method === 'GET') return audio(req, res, m[2], !!m[1]);
+  if ((m = /^\/api\/stream\/([^/]+)\/output-error$/.exec(path)) && req.method === 'POST') return outputError(res, m[1], (await readBody(req)).jobId);
   if ((m = /^\/api\/stream\/([^/]+)$/.exec(path)) && req.method === 'DELETE') return send(res, 204);
   if (THEMES && (m = /^\/api\/themes\/([a-z0-9-]+)\/(.+)$/.exec(path)) && req.method === 'GET') return files(req, res, '/' + m[2], join(THEMES, m[1]));
   if (THEMES && (m = /^\/api\/theme-pictures\/([a-z0-9-]+)\/([0-9a-f]{16}-(?:day|night))\.webp$/.exec(path)) && req.method === 'GET') {

@@ -96,6 +96,8 @@ export const savedIds = trackIds.filter((id) => tracks[id].saved);
 export const savedAlbumIds = Object.keys(albums).filter((id) => albums[id].saved === 'all');
 // streaming this album fails: no peer has it (the player's failed state)
 export const failingAlbum = Object.keys(albums)[149];
+// this album's songs arrive, but as bytes no browser can decode (a copy that can't be played here)
+export const brokenAlbum = Object.keys(albums)[148];
 export const albumIds = Object.keys(albums);
 export { artistIds };
 

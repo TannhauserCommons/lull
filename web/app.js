@@ -2097,7 +2097,7 @@
       if (cur !== e || ps.status !== 'failed') return;
       var i = nextIndex(false); if (i < 0 || i === ps.index) return;
       var t = M.track(e.trackId);
-      App.toast('Skipped ' + (t ? t.title : 'a song') + ': ' + (ps.error || 'no peer shares it right now'), { icon: 'soulseek' });
+      App.toast('Skipped ' + (t ? t.title : 'a song') + (ps.error ? ': ' + ps.error : ''), { icon: 'soulseek' });
       P.next();
     }, LullRules.SKIP_FAILED_MS);
   }
@@ -2492,7 +2492,7 @@
       case 'failed':
         if (ps.playing) skipFailed(cur);
         ps.status = 'failed'; ps.playing = false; out.pause(); ps.seekWait = null;
-        ps.error = ev.error || 'Couldn\'t play this song';
+        ps.error = ev.error || null;
         cur.resolve = 'none';
         break;
     }
@@ -2574,24 +2574,32 @@
     ps.buffered = outR;
     if (cur && cur.soulseek && !ps.received && outR.length) ps.received = outR[outR.length - 1][1];   // until the first event
   }
-  /* the output failed: ask the hub why (the body says it in a sentence), then show it */
+  /* the output failed. A Soulseek or YouTube song's outcome is its job's (the hub's one record of it): the player tells the
+     hub, which answers with the job's state, its own reason in it, and records a copy that arrived but can't be played
+     here. The player adds no reason of its own; only "can't reach the lull server" is its to say. */
   function onOutputError(e, msg) {
     if (e.resumeAt && e === cur) { e.resumeAt = 0; ps.pos = 0; load(ps.index, { at: 0 }); return; }   // see P.play
     var t = P.current();
-    /* a Soulseek stream's own `stream` events carry the hub's sentence (a failed event sets ps.error); asking the stream
-       URL again would start another transfer and answer about that one instead (409) */
+    function show(status, text) {
+      if (e !== cur || P.current() !== t) return;
+      ps.playing = false; ps.status = status; ps.error = text; out.pause();
+      changed('status');
+    }
+    if (e.soulseek) {
+      M.api('/api/stream/' + encodeURIComponent(e.trackId) + '/output-error', { method: 'POST', body: e.job ? { jobId: e.job } : {} }).then(function (ans) {
+        if (e !== cur || !ans) return;
+        if (!e.job) { e.job = ans.jobId; e.attempt = ans.attempt || 0; }
+        if (ans.status === 'failed') onStreamEvent(ans);
+        else show('failed', ans.unplayable || ps.error);
+      }, function (err) { show('failed', err.status === 0 ? err.message : ps.error); });
+      return;
+    }
     var why = e.local ? Promise.resolve(msg || 'The downloaded file can\'t be played')
-      : e.soulseek ? Promise.resolve(ps.error || msg || 'No peer delivered this song')
       : fetch(e.url, { headers: { Range: 'bytes=0-0' }, credentials: 'same-origin' }).then(function (res) {
         if (res.ok) return msg || 'This file can\'t be played here';
         return res.json().then(function (b) { return b.message; }, function () { return 'The server answered ' + res.status; });
       }, function () { return 'Can\'t reach the lull server'; });
-    why.then(function (text) {
-      if (e !== cur || P.current() !== t) return;
-      ps.playing = false; ps.error = text;
-      ps.status = e.soulseek ? 'failed' : 'jellyfin-error';
-      changed('status');
-    });
+    why.then(function (text) { show('jellyfin-error', text); });
   }
 
   /* ---------- gapless and crossfade: the output continues into the entry set as next ---------- */
@@ -3146,7 +3154,7 @@
         return ps.fallback ? 'Switching to ' + ps.fallback.to + ' (' + ps.fallback.n + (ps.fallback.of ? ' of ' + ps.fallback.of : '') + ')' : 'Buffering from ' + peer;
       case 'stalled': return 'Peer stalled, switching to the next source (' + ((ps.peer ? ps.peer.rank : 1) + 1) + of + ')';
       case 'choose': return 'No copy meets your streaming minimum: pick one or skip';
-      case 'failed': return ps.error || 'Couldn\'t play this song';
+      case 'failed': return ps.error || '';
       case 'jellyfin-error': return 'Library item unavailable' + (ps.error ? ': ' + ps.error : '');
       case 'ended': return 'End of queue';
       default:

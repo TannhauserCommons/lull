@@ -145,6 +145,10 @@ pub struct Progress {
     /// A YouTube copy no reference could check by its sound: the player asks the listener
     /// ("Right song?", ADR-0016).
     pub unverified: bool,
+    /// A device whose browser or app couldn't play this copy ("this copy can't be played in
+    /// <device> (<format>)"): the job's record of it, for Activity and the device that said so.
+    /// Other devices' playback is untouched.
+    pub unplayable: Option<String>,
 }
 
 impl Progress {
@@ -163,6 +167,7 @@ impl Progress {
             below: false,
             choices: Vec::new(),
             unverified: false,
+            unplayable: None,
             ahead: None,
         }
     }
@@ -339,6 +344,8 @@ pub struct Fetcher {
     upgrades: Arc<Mutex<HashMap<TrackId, Arc<Fetch>>>>,
     /// Ended fetches, newest last, for the Activity panel.
     ended: Arc<Mutex<VecDeque<serde_json::Value>>>,
+    /// The latest fetches that ended, for a player asking what became of its job.
+    ended_fetches: Arc<Mutex<VecDeque<Arc<Fetch>>>>,
     /// slskd resumes a download where lull sized its file: until one is seen not to (an slskd
     /// set to overwrite partial files), legs may start anywhere (ADR-0014).
     resumes: Arc<AtomicBool>,
@@ -378,6 +385,7 @@ impl Fetcher {
             live: Arc::default(),
             upgrades: Arc::default(),
             ended: Arc::default(),
+            ended_fetches: Arc::default(),
             resumes: Arc::new(AtomicBool::new(true)),
             next: Arc::default(),
         }
@@ -1122,6 +1130,12 @@ impl Fetcher {
                 ended.pop_front();
             }
         }
+        if let Ok(mut ended) = self.ended_fetches.lock() {
+            ended.push_back(f.clone());
+            while ended.len() > HISTORY {
+                ended.pop_front();
+            }
+        }
         // A stopped fetch leaves even when it finished at the last moment: nobody is playing it.
         // So does a finished one nobody plays or saves (a preload, an upgrade): its file stays in
         // the cache, unpinned, and playing it later starts from there at once.
@@ -1409,6 +1423,31 @@ impl Fetcher {
         Ok(path)
     }
 
+    /// The player's audio failed while it followed job `job_id` (ADR-0008: the job is the one
+    /// record of a song's outcome). A job that failed answers its own state, its reason in it;
+    /// one whose copy arrived records that `device` can't play it, for Activity, and answers
+    /// that. Without a job id (the audio failed before the player heard of its job), the song's
+    /// live job, else its latest. `None`: a job the hub no longer knows.
+    pub fn output_error(&self, track: &TrackId, job_id: Option<&str>, device: &str) -> Option<serde_json::Value> {
+        let is = |f: &Arc<Fetch>| match job_id {
+            Some(id) => f.job_id == id,
+            None => f.track.id == *track,
+        };
+        let f = match job_id {
+            Some(_) => self.all().into_iter().find(is),
+            None => self.live.lock().ok()?.get(track).cloned(),
+        }
+        .or_else(|| self.ended_fetches.lock().ok()?.iter().rev().find(|f| is(f)).cloned())?;
+        if f.now().status != Status::Failed {
+            let format = f.now().source.map(|s| s.facts.format).unwrap_or_default();
+            let on = if device.is_empty() { "this player" } else { device };
+            let why = format!("this copy can't be played in {on} ({format})");
+            tracing::info!(track = %f.track.id, job = f.job_id, why, "a device can't play the copy");
+            self.update(&f, |p| p.unplayable = Some(why.clone()));
+        }
+        Some(stream_event(&f, &f.now()))
+    }
+
     /// The copy the song's live fetch has now.
     pub fn playing_copy(&self, track: &TrackId) -> Option<SourceRef> {
         self.live(track)?.now().source.map(|s| s.source_ref())
@@ -1657,7 +1696,8 @@ impl Fetcher {
             || p.queue_pos != before.queue_pos
             || p.attempt != before.attempt
             || p.failed_peers.len() != before.failed_peers.len()
-            || p.unverified != before.unverified;
+            || p.unverified != before.unverified
+            || p.unplayable != before.unplayable;
         if !moved {
             return;
         }
@@ -1904,6 +1944,7 @@ pub fn stream_event(f: &Fetch, p: &Progress) -> serde_json::Value {
         "seekAheadS": p.ahead,
         "youtube": p.source.as_ref().is_some_and(|s| youtube::is_youtube(&s.source_ref())),
         "unverified": p.unverified,
+        "unplayable": p.unplayable,
     });
     if p.status == Status::Choosing {
         event["choices"] = json!(p.choices);
@@ -1938,6 +1979,7 @@ fn job_row(f: &Fetch, p: &Progress) -> serde_json::Value {
         "queuePos": p.queue_pos,
         "started": f.started,
         "error": p.error,
+        "unplayable": p.unplayable,
     })
 }
 
@@ -2592,6 +2634,58 @@ mod tests {
             let next = ended(&fetcher.stream(track(), None).await?).await?;
             let playing = next.source.map(|s| s.source_ref().path).unwrap_or_default();
             assert!(playing.contains("otherupload"), "{playing}");
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn the_job_answers_why_a_song_stopped_and_records_a_device_that_cant_play_it() -> Result<()> {
+            // The hub failed the song: its own reason answers, YouTube's part included, unchanged.
+            let peer = Peer {
+                per_tick: 32_768,
+                overwrite: false,
+                reported: None,
+                settles: Duration::ZERO,
+            };
+            let fake = Fake::start(HashMap::from([(REMOTE.to_owned(), vec![5u8; 50_000])]), peer)
+                .await
+                .map_err(|e| Error::internal(e.to_string()))?;
+            let mut rules = Rules::default();
+            rules.youtube.mode = lull_core::youtube::Mode::StartFast;
+            let fetcher = fetcher(&fake, rules).await?;
+            let failed = fetcher.stream(track(), None).await?;
+            let p = ended(&failed).await?;
+            assert_eq!(p.status, Status::Failed);
+            let answer = fetcher
+                .output_error(&track().id, Some(&failed.job_id), "Kitchen")
+                .ok_or_else(|| Error::internal("no answer"))?;
+            assert_eq!(answer["status"], "failed");
+            assert_eq!(answer["error"], serde_json::json!(p.error));
+            assert!(
+                answer["error"].as_str().is_some_and(|e| e.contains("YouTube:")),
+                "{answer}"
+            );
+            assert_eq!(answer["unplayable"], serde_json::Value::Null);
+            // The copy arrived, but this device can't play it: recorded on the job.
+            let pick = SourceRef {
+                user: "peer".into(),
+                path: REMOTE.into(),
+                size: 50_000,
+            };
+            let done = fetcher.stream(track(), Some(pick)).await?;
+            assert_eq!(ended(&done).await?.status, Status::Done);
+            let answer = fetcher
+                .output_error(&track().id, Some(&done.job_id), "Kitchen")
+                .ok_or_else(|| Error::internal("no answer"))?;
+            assert_eq!(answer["status"], "streaming");
+            let why = answer["unplayable"].as_str().unwrap_or_default();
+            assert!(why.starts_with("this copy can't be played in Kitchen"), "{why}");
+            assert_eq!(done.now().unplayable.as_deref(), Some(why), "the job's own record");
+            assert!(fetcher.output_error(&track().id, Some("job-gone"), "Kitchen").is_none());
+            // Before the player heard of its job: the song's own.
+            let latest = fetcher
+                .output_error(&track().id, None, "Kitchen")
+                .ok_or_else(|| Error::internal("no answer"))?;
+            assert_eq!(latest["jobId"], serde_json::json!(done.job_id));
             Ok(())
         }
 

@@ -124,3 +124,31 @@ test.describe('now column', () => {
     });
   }
 });
+
+// Why a song stopped is its job's, the hub's one record (docs/context/streaming.md, A song's outcome): the bar shows the
+// hub's reason, a copy this browser can't decode as the hub recorded it, and only an unreachable hub in the player's words.
+const playAlbum = async (page, album) => {
+  await openScreen(page, `/album/${album}`, { clock: false });
+  await page.evaluate(() => App.player.playList([...document.querySelectorAll('#view .trow[data-track-id]')].map((r) => r.getAttribute('data-track-id')), 0));
+  await page.waitForFunction(() => document.querySelector('#pbar').dataset.status === 'failed', null, { timeout: 15_000 });
+  return page.evaluate(() => document.querySelector('#pbar').dataset.statusText);
+};
+
+test('a song the hub failed shows the hub\'s own reason, YouTube\'s part included', async ({ page }) => {
+  const { failingAlbum } = await import('../fixture-hub/library.mjs');
+  const text = await playAlbum(page, failingAlbum);
+  expect(text).toBe('no peer shares this song right now; YouTube: no YouTube upload matches this song');
+});
+
+test('a copy this browser can\'t decode shows what the hub recorded for its job', async ({ page }) => {
+  const { brokenAlbum } = await import('../fixture-hub/library.mjs');
+  const text = await playAlbum(page, brokenAlbum);
+  expect(text).toBe('this copy can\'t be played in this player (WAV 8 kHz)');
+});
+
+test('with the hub out of reach, the bar says only that', async ({ page }) => {
+  const { failingAlbum } = await import('../fixture-hub/library.mjs');
+  await page.route('**/api/stream/*/output-error', (route) => route.abort('internetdisconnected'));
+  const text = await playAlbum(page, failingAlbum);
+  expect(text).toBe('Can\'t reach the lull server. Check your connection.');
+});

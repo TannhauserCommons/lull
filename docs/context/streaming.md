@@ -52,6 +52,15 @@ A Soulseek copy arrives in **legs** (`fetch/legs.rs`, ADR-0014): each is one sls
 - **When a jump is allowed.** It gives the peer's upload slot back, so only when slskd resumes where lull sizes the file, the peer's search answer said it had a free slot, and no leg of this copy has waited in its queue. And only in a file the browser seeks with one read: MP3, M4A (its index at the end is fetched by a leg too), a FLAC file with a SEEKTABLE block. A FLAC file without one, and Ogg, are bisected, a dozen reads one after another that would each start a leg, so they wait for the transfer instead; a FLAC file's block headers are read as they arrive, and until they have, it doesn't jump. `stream` events carry `seekAheadS`: 10 while another peer can take a jump, 30 while only the same peer can, `null` while neither can, so the player chooses between going to a seek now and keeping it ([web.md](web.md)).
 - **An slskd set to overwrite** (`retry.partial: overwrite`, possible on an existing slskd): it starts a leg over from byte 0. lull sees it (the file shorter than X, or its first bytes no longer the hole) and copies that leg from 0, which is still the copy's own bytes. Seeking ahead is then off until the hub restarts, and legs run to the end rather than stop at bytes that arrived.
 
+## A song's outcome
+
+Why a song stopped is its job's: the fetch's progress (`status`, `error`) is the one record, which `stream` events, Activity's `job` rows and `GET /api/jobs` all show. The player adds no reason of its own.
+- **The hub failed the song** (no peer delivered it, YouTube found nothing): the job's `failed` event carries the hub's sentence, YouTube's part included.
+- **The player's audio failed** (a 502 the player can't read, a copy its browser or app can't decode, a response that broke off): it tells the hub, `POST /api/stream/{trackId}/output-error { jobId? }` (`Fetcher::output_error`). A failed job answers with its own event, unchanged. One whose copy arrived records that this device can't play it (`unplayable`: "this copy can't be played in <device> (<format>)") on the job, for Activity, and answers with that; other devices' playback is untouched. Without a job id (the audio failed before the player heard of its job), the song's live job answers, else its latest. Nothing is started or restarted.
+- **The hub can't be reached:** the one sentence the player says itself ("Can't reach the lull server").
+
+Before (2026-11-05), the player's own "No peer delivered this song" covered every failure it hadn't heard the hub's reason for, a browser's decode error included.
+
 ## Better copies
 
 When the copy the player streams is a lesser one, the best copy by the streaming profile is fetched beside it, and the player switches to it mid-song without an audible jump (ADR-0013). Settings › Sources › "Switch to a better copy while a song plays" (`sources.switchToBetter`, on by default) turns it off.
