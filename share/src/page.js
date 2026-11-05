@@ -68,6 +68,7 @@ export function tooMany() {
 <meta name="robots" content="noindex">
 <meta name="color-scheme" content="light dark">
 <title>Too many at once · lull</title>
+<link rel="stylesheet" href="/look.css">
 <link rel="stylesheet" href="/open.css">
 </head>
 <body>

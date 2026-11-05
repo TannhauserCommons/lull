@@ -47,6 +47,7 @@ test('a song link is a page whose tags give a chat app its card, with no outside
       page: 'https://song.link/i/1440823733', cover: COVER,
     });
     assert.match(html, /<script src="\/open\.js" defer>/, 'the open page\'s files are named from the root');
+    assert.match(html, /<link rel="stylesheet" href="\/look\.css">/, 'lull\'s own look, for everyone');
     assert.doesNotMatch(html, /(href|src)="(open\.|app-icon)/);
     assert.equal(net.asked.length, 0, 'the page needs nobody else');
   });

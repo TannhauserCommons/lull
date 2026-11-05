@@ -12,7 +12,7 @@ lull links that chat apps show as cards, served by a Cloudflare Worker on the fr
 | `share/src/page.js` | The page: `site/open.html` with the card's tags and the item for `site/open.js`; the 404 and 429 pages |
 | `share/src/sources.js` | The cover chain: iTunes (the US store, then the opener's: `request.cf.country`), Deezer, the Cover Art Archive, Last.fm, iTunes by name; Deezer and Wikidata for artists |
 | `share/src/objects.js` | Durable Objects: `Cover` (one per album or artist: one lookup at a time, keeps the address found) and `Gate` (each service's budget, worldwide) |
-| `share/build.mjs` | Gathers the static files into `share/public/` from where they live (`site/`, `web/`, `packaging/android/assetlinks.json`, `share/static/`). Run by wrangler before every build |
+| `share/build.mjs` | Gathers the static files into `share/public/` from where they live (`site/`, `web/`, `packaging/android/assetlinks.json`, `share/static/`), and writes `look.css`: lull's base tokens from `web/tokens.css`, the night block as a `prefers-color-scheme` rule. The page (`site/open.css`) is drawn with those tokens, its card as the app's card surface (`--cream`, `--ink`, `--link-on-cream`, `--line`), the same for everyone. Run by wrangler before every build, and by `pages.yml` |
 | `share/test/` | `share.test.mjs` runs wrangler's own bundle in Miniflare with every outside service faked (`harness.mjs`); `hosts.test.mjs` |
 | `.github/workflows/share.yml` | `test`; `deploy` on a dispatch on main |
 
