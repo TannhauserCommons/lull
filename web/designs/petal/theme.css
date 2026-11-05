@@ -1,25 +1,35 @@
-/* petal: pink pixel playlist (img 04) + glassy pink player window (img 03).
-   Nunito Sans light poster titles and uppercase micro-labels, the base pixel face (Jersey 10) for badges, keycaps and
-   the LCD strip, 1-2 px blush rules, hard pixel shadows, original pixel art (art/*.svg are the sources:
-   plain grid-aligned rects, edit them by hand). Every rule is scoped under :root[data-design="petal"].
-   Order: fonts, tokens (day, night), contrast checks, page + type, components, shell, screens. */
+/* petal: the pixel zine. Everything is cut from paper with a pixel knife: every window, card and key is a 2 px ring with
+   notched corners and a hard pink shadow, on a dithered pink desk. The page is a sheet of ruled notebook paper with a
+   pink margin and binder holes; the menu is a row of index tabs standing on it, the open one joined to the page; titles
+   are big pixel letters with a hard shadow; covers are taped snapshots, cards carry washi tape. The player is a strip of
+   the same paper with tabs on its top edge (what it does, then the tools), and its seek is a row of hearts filling up.
+   Now Playing is a zine spread: the player window on the left page, the song's name and its lyrics on the right one.
+
+   Frames are drawn from tokens, so a theme that extends petal recolours them: the ring is --line (--pt-ring on a part
+   that wants another), the hard shadow --stack-2 (through --stack, --stack-sm and --stack-1l), the paper --panel, the
+   desk --sky and --sky-deep. Pixel art (assets/art/*.svg) is plain grid-aligned rects: edit it by hand.
+   Every rule is scoped under :root[data-design="petal"]. Order: fonts, tokens, the pixel knife, page and type,
+   components, shell, player, screens, Now Playing, the desktop app's pages. */
 
 /* The whole file is the `design` cascade layer (ADR-0004); a listener's theme in `user` wins over it. */
 @layer design {
 
 
-/* ---------- fonts (SIL OFL 1.1, licence in fonts/) ---------- */
+/* ---------- fonts (SIL OFL 1.1, licence in fonts/); the pixel face is the base Jersey 10 (--f-px) ---------- */
 @font-face {
   font-family: "Nunito Sans"; font-style: normal; font-weight: 200 1000; font-display: swap;
   src: url("assets/fonts/nunito-sans-latin.woff2") format("woff2");
 }
 
-/* ---------- tokens: day + everything theme-invariant ---------- */
+/* =====================================================================
+   Tokens: day, and everything the same in both themes
+   ===================================================================== */
 :root[data-design="petal"] {
   --f-ui: "Nunito Sans", system-ui, sans-serif;
-  --t-display: 300 3.25rem/1.04 var(--f-ui);   --t-display-track: -.03em;
-  --t-title-xl: 300 2.75rem/1.06 var(--f-ui);  --t-title-xl-track: -.025em;
-  --t-h2: 700 1.125rem/1.25 var(--f-ui);       --t-h2-track: -.005em;
+  --f-zine: "Jersey 10", "Nunito Sans", system-ui, sans-serif;   /* titles, tabs, labels: the pixel face; scripts it lacks fall back to the UI face */
+  --t-display: 400 4rem/.9 var(--f-zine);      --t-display-track: .01em;
+  --t-title-xl: 400 3.25rem/.92 var(--f-zine); --t-title-xl-track: .01em;
+  --t-h2: 400 1.5rem/1 var(--f-zine);          --t-h2-track: .02em;
   --t-row: 650 1rem/1.3 var(--f-ui);
   --t-body: 500 1rem/1.5 var(--f-ui);
   --t-meta: 500 .875rem/1.35 var(--f-ui);      --t-meta-track: .005em;
@@ -27,50 +37,46 @@
   --t-lyric: 500 1.25rem/1.5 var(--f-ui);
   --t-lyric-cur: 750 1.5rem/1.4 var(--f-ui);
   --t-px: 750 .8125rem/1.2 var(--f-ui);        --t-px-track: .02em;   /* machine facts read as tabular Nunito */
-  --t-pixel: 400 1.1875rem/1 var(--f-px);                              /* the pixel face, for accents only */
-  --t-label: 800 .75rem/1 var(--f-ui);                                 /* uppercase micro-labels (img 04 PLAYLIST, TITLE) */
+  --t-pixel: 400 1.1875rem/1 var(--f-zine);                            /* the pixel face at text size */
+  --t-label: 400 1.0625rem/1 var(--f-zine);                            /* labels and card heads */
 
-  --tag-h: 22px; --r-chip: 3px; --r-thumb: 3px; --r-art: 4px; --r-input: 4px; --r-panel: 6px; --r-card: 4px; --r-pill: 4px;
-  --r-device: 6px; --r-bezel: 4px;
-  --stroke: 1.5px; --stroke-thin: 1px; --icon-stroke: 1.75;
-  --stack: 4px 4px 0 0 var(--pt-shadow);
-  --stack-sm: 3px 3px 0 0 var(--pt-shadow);
-  --stack-1l: 3px 3px 0 0 var(--pt-shadow);
-  --stack-press: 1px 1px 0 0 var(--pt-shadow);
+  /* cut with a pixel knife: no radius anywhere, a 2 px ring, hard shadows in steps (never blurred) */
+  --tag-h: 22px;
+  --r-chip: 0; --r-thumb: 0; --r-art: 0; --r-input: 0; --r-panel: 0; --r-card: 0; --r-pill: 0; --r-device: 0; --r-bezel: 0;
+  --stroke: 2px; --stroke-thin: 1px; --icon-stroke: 1.75;
+  /* the 4 px shadow of a window, stepped at its corners as a pixel drawing is (three hard boxes); 2 px for a key */
+  --stack: 2px 2px 0 0 var(--stack-2), 5px 3px 0 -1px var(--stack-2), 3px 5px 0 -1px var(--stack-2);
+  --stack-sm: 3px 3px 0 -1px var(--stack-2);
+  --stack-1l: var(--stack-sm);
+  --stack-press: none;
   --stack-reserve: 8px;
 
-  /* pixel ornaments as masks (data URIs: masks cannot load files on file://): heart 9x8, sparkle 7x7, star 8x7, tri 7x4 */
+  /* pixel ornaments as masks (data URIs: masks cannot load files on file://): heart 9x8, sparkle 7x7, star 8x7,
+     triangle 7x4, check 8x7 */
   --px-heart: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 8' shape-rendering='crispEdges'%3E%3Cpath d='M1 1h2v1H1zM6 1h2v1H6zM0 2h4v1H0zM5 2h4v1H5zM0 3h9v2H0zM1 5h7v1H1zM2 6h5v1H2zM3 7h3v1H3z'/%3E%3C/svg%3E");
   --px-spark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 7 7' shape-rendering='crispEdges'%3E%3Cpath d='M3 0h1v2H3zM2 2h3v1H2zM0 3h7v1H0zM2 4h3v1H2zM3 5h1v2H3z'/%3E%3C/svg%3E");
   --px-star: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 7' shape-rendering='crispEdges'%3E%3Cpath d='M3 0h1v2H3zM0 2h7v1H0zM1 3h5v1H1zM2 4h3v1H2zM1 5h2v1H1zM4 5h2v1H4zM1 6h1v1H1zM5 6h1v1H5z'/%3E%3C/svg%3E");
   --px-tri: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 7 4' shape-rendering='crispEdges'%3E%3Cpath d='M0 0h7v1H0zM1 1h5v1H1zM2 2h3v1H2zM3 3h1v1H3z'/%3E%3C/svg%3E");
   --px-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 7' shape-rendering='crispEdges'%3E%3Cpath d='M6 0h2v2H6zM5 2h2v1H5zM0 3h2v1H0zM4 3h2v1H4zM1 4h4v1H1zM2 5h2v1H2zM2 6h1v1H2z'/%3E%3C/svg%3E");
 
-  /* gloss (play, like, window orbs): the same pink in both themes */
-  --gl-hi: #fff1f8; --gl-mid: #f6bddc; --gl-low: #e58fc0; --gl-edge: #c25b98; --gl-ink: #7a2860;
-  --pt-orbs:
-    radial-gradient(circle at 6px 6px, var(--gl-hi) 0 1.5px, var(--gl-low) 2px 5px, var(--gl-edge) 5.5px 6px, transparent 6.5px),
-    radial-gradient(circle at 23px 6px, var(--gl-hi) 0 1.5px, var(--gl-mid) 2px 5px, var(--gl-edge) 5.5px 6px, transparent 6.5px),
-    radial-gradient(circle at 40px 6px, var(--gl-hi) 0 1.5px, var(--pc-3) 2px 5px, var(--gl-edge) 5.5px 6px, transparent 6.5px);
-  /* pixel-art pinks and plums, theme-invariant (art/*.svg uses the same set) */
+  /* pixel-art pinks and plums, the same in both themes (art/*.svg uses the same set) */
   --pc-1: #fff4fa; --pc-2: #fde4f1; --pc-3: #f6cee4; --pc-4: #eab2d4; --pc-5: #e58fc0; --pc-6: #8e4a7e; --pc-7: #4a2342; --pc-8: #2c1428;
-  --dusk: #5a2e50; --dusk-deep: #3a1d33;
-  /* window mascot sprite inks (slots) */
+  /* the window mascot's inks (slots) */
   --pt-px-line: #9c3f7e; --pt-px-fill: #ffffff; --pt-px-ear: #f6cee4; --pt-px-cheek: #eab2d4; --pt-px-eye: #2c1428;
 
   /* palette (day) */
-  --cream: #fffbfd; --cream-2: #fcf0f6; --cream-3: #f8e2ee;
-  --ink: #4a3542; --ink-2: #7a5f70; --link-on-cream: #9c3f7e;
+  --cream: #fffdfe; --cream-2: #fcf0f6; --cream-3: #f8e2ee;
+  --ink: #4a3542; --ink-2: #765b6c; --link-on-cream: #9c3f7e;
   --peri: #f9cee6; --peri-deep: #dd9fc9; --lav: #f3d6e7; --lavender: #fbe3f0; --lilac: #fff7fb; --indigo: #8a3270; --star: #ffffff;
   --pink: #dd9fc9; --pink-soft: #fce8f3; --pink-ink: #9c3f7e; --pink-light: #f6cee4;
   --mauve: #e6b3d2; --mocha: #b5578f; --mocha-edge: #7e3a66; --screen: #6e3a5e;
-  --line: #c46fa5; --stack-1: #f3d6e7; --stack-2: #dd9fc9;
+  --line: #a64d88; --stack-1: #f3d6e7; --stack-2: #eaa3cb;          /* the ring and the hard shadow */
   --ok: #2f6b4f; --warn: #7a5200; --down: #a3324f;
   --skel: #f6dbe9; --skel-hi: #fcecf4; --wave-dim: #b98aa8;
   --card-seek-played: #5e1f4c; --card-seek-buffered: #c46fa5;
 
-  /* theme (day) */
-  --sky: #fce8f3; --sky-deep: #f8dcec; --panel: #fffafd; --panel-2: #fbeef5;
+  /* theme (day): the desk is --sky dithered with --sky-deep, the paper is --panel */
+  --sky: #fbe3ef; --sky-deep: #f8d8e8; --panel: #fffdfe; --panel-2: #fbeef5;
   --tray: #fbeef5; --tray-edge: #e9c8dd;
   --fg-sky: #4a3542; --fg-sky-2: #765b6c; --fg-panel: #4a3542; --fg-panel-2: #765b6c;
   --link: #9c3f7e; --accent-ui: #9c3f7e; --heart: #b3609a; --edge: #b9649d; --focus: #8a3270;
@@ -82,34 +88,36 @@
   --scrim: #3a1d33; --scrim-alpha: .35;
   --gloss-ring-w: 0px;
 
-  /* petal-only (day) */
-  --pt-rule: #e9c8dd;     /* 1-1.5 px frame rule (decorative; controls use --edge) */
-  --pt-frame: #dd9fc9;    /* stronger pink frame for windows and covers */
-  --pt-band: #fdf1f7;     /* card heads, page header bands */
-  --pt-blush: #fce8f3;    /* img 04 playlist header band */
-  --pt-row: #f7dee2;      /* img 03 current row */
-  --pt-shadow: #f2cfe2;   /* hard pixel offset shadow */
-  --pt-dot: #f5d2e5;      /* page dot grid */
-  --pt-bar-1: #ffffff; --pt-bar-2: #fff7fb; --pt-bar-3: #f8d8e9; --pt-bar-4: #fdeaf4; --pt-bar-line: #eebbd7;   /* gloss title bar */
+  /* the zine (day) */
+  --pt-rule: #e9c8dd;     /* dashed rules inside the paper (decorative; controls use the ring) */
+  --pt-frame: #dd9fc9;    /* the soft ring: tags, covers, the LCD's edges */
+  --pt-ruled: #f6dce9; --pt-margin: #f0a3c6;   /* notebook lines and the margin's double line */
+  --pt-blush: #fce8f3;    /* a playlist's header band */
+  --pt-row: #f7dee2;      /* the playing row */
+  --pt-photo: #fffdfe;    /* a snapshot's white border */
+  --pt-tb-a: #fad3e7; --pt-tb-b: #eba4ca; --pt-tb-ink: #4a1d3e;   /* a window's striped title bar */
+  --pt-key-hi: #fde4f1; --pt-key-ink: #6e2358;                      /* the pink keys (on --peri) */
+  --pt-tab-1: #f9cee6; --pt-tab-2: #e9d6f7; --pt-tab-3: #cdeedf; --pt-tab-4: #fbeac0;   /* index tabs and stickers */
+  --pt-heart-0: #f1c8dd; --pt-heart-1: #dd96c2; --pt-heart-2: #a8457f;   /* seek hearts: not here yet, arrived, played */
+  --pt-tape: color-mix(in srgb, #f6b3d6 78%, transparent); --pt-tape-2: color-mix(in srgb, #cfe9f5 80%, transparent);
   --pt-lcd: #fbe6f1; --pt-lcd-ink: #6e2c5c; --pt-lcd-dim: #eecadc;
   --pt-sky-art: url("assets/art/sky.svg");
   --pt-hero: url("assets/art/hero.svg"); --pt-hero-sleep: url("assets/art/hero-sleep.svg");
-  --pt-clouds: url("assets/art/clouds.svg");
   color-scheme: light;
 }
 
-/* ---------- tokens: night (wine-plum, a static pixel star field, no glow) ---------- */
+/* ---------- night: wine-plum paper on a dark dithered desk, a static pixel star field ---------- */
 :root[data-design="petal"][data-theme="night"] {
-  --cream: #36202f; --cream-2: #412838; --cream-3: #4c3044;
+  --cream: #2c1827; --cream-2: #3a2134; --cream-3: #4c3044;
   --ink: #fbeaf4; --ink-2: #dfb8cf; --link-on-cream: #f5a9d6;
   --peri: #6a3360; --peri-deep: #9a4f86; --lav: #4a2b44; --lavender: #43263d; --lilac: #24121f; --indigo: #f2b6da; --star: #fff0f8;
   --pink: #8c4377; --pink-soft: #43253c; --pink-ink: #f4a8d4; --pink-light: #6d2f5c;
   --mauve: #c77fae; --mocha: #e8a3cd; --mocha-edge: #f3c6e0; --screen: #f6d6e8;
-  --line: #b26b98; --stack-1: #4a2b44; --stack-2: #9a4f86;
+  --line: #e58fc0; --stack-1: #4a2b44; --stack-2: #5e2452;
   --ok: #93d8b2; --warn: #f2c879; --down: #ff9db5;
   --skel: #412838; --skel-hi: #4e3147; --wave-dim: #c99bb8;
   --card-seek-played: #fff0f8; --card-seek-buffered: #b0628f;
-  --sky: #22131e; --sky-deep: #2e1a29; --panel: #2c1827; --panel-2: #3a2134;
+  --sky: #1f111b; --sky-deep: #25141f; --panel: #2c1827; --panel-2: #3a2134;
   --tray: #3a2134; --tray-edge: #5a3350;
   --fg-sky: #fbeaf4; --fg-sky-2: #dfb8cf; --fg-panel: #fbeaf4; --fg-panel-2: #dfb8cf;
   --link: #f5a9d6; --accent-ui: #f5a9d6; --heart: #f4a8d4; --edge: #b26b98; --focus: #fff0f8;
@@ -119,59 +127,126 @@
   --play-ring: #b26b98; --wordmark-2: #f5a9d6;
   --sparkle: #f6cee4; --speck: #5a3350;
   --scrim: #12090f; --scrim-alpha: .6;
-  --pt-rule: #5a3350; --pt-frame: #8c4a7a; --pt-band: #3f2539; --pt-blush: #4a2b44; --pt-row: #5a3350; --pt-shadow: #150a12; --pt-dot: #331c2d;
-  --pt-bar-1: #73406a; --pt-bar-2: #5c3354; --pt-bar-3: #44273f; --pt-bar-4: #4d2c47; --pt-bar-line: #8c4a7a;
+  --pt-rule: #5a3350; --pt-frame: #a0578a; --pt-ruled: #3d2337; --pt-margin: #9a4f86;
+  --pt-blush: #4a2b44; --pt-row: #5a3350; --pt-photo: #f6d6e8;
+  --pt-tb-a: #8c4377; --pt-tb-b: #7c3a69; --pt-tb-ink: #fff0f8;
+  --pt-key-hi: #7d416f; --pt-key-ink: #fff0f8;
+  --pt-tab-1: #6a3360; --pt-tab-2: #4f3468; --pt-tab-3: #2e5145; --pt-tab-4: #5e4a27;
+  --pt-heart-0: #4f2d48; --pt-heart-1: #9a4f86; --pt-heart-2: #f7b3dc;
+  --pt-tape: color-mix(in srgb, #c25b98 70%, transparent); --pt-tape-2: color-mix(in srgb, #6a8fb0 70%, transparent);
   --pt-lcd: #24121f; --pt-lcd-ink: #f6cee4; --pt-lcd-dim: #4a2b44;
   --pt-px-line: #e58fc0;
   --pt-sky-art: url("assets/art/sky-night.svg");
   --pt-hero: url("assets/art/hero-night.svg"); --pt-hero-sleep: url("assets/art/hero-night-sleep.svg");
-  --pt-clouds: url("assets/art/clouds-night.svg");
   color-scheme: dark;
 }
-/* the header scene sleeps (ears down, z z) unless something is playing; the same in both themes */
-:root[data-design="petal"]:not(:has([data-act="play"][aria-label="Pause"])) { --pt-hero: var(--pt-hero-sleep); }
 
 /* ---------- contrast checks for colours that are not plain token pairs (day and night) ---------- */
-/* check: #7a2860 on #e58fc0 3 */          /* gloss icon on the darkest stop */
-/* check: #7a2860 on #f6bddc 4.5 */        /* gloss icon on the middle stop */
-/* check: --ink on --pt-band 4.5 */        /* card heads, page header bands */
-/* check: --ink-2 on --pt-band 4.5 */
-/* check: --link on --pt-band 4.5 */
-/* check: --edge on --pt-band 3 */         /* outlined controls in header bands */
-/* check: --ink on --pt-blush 4.5 */       /* playlist header band (inside the cream card) */
+/* check: --line on --panel 3 */            /* the ring around every control */
+/* check: --pt-key-ink on --peri 4.5 */     /* the pink keys */
+/* check: --pt-key-ink on --pt-key-hi 4.5 */
+/* check: --pt-tb-ink on --pt-tb-b 4.5 */   /* title bars, on the darker stripe */
+/* check: --pt-tb-ink on --pt-tb-a 4.5 */
+/* check: --fg-sky on --pt-tab-1 4.5 */     /* index tabs and stickers */
+/* check: --fg-sky on --pt-tab-2 4.5 */
+/* check: --fg-sky on --pt-tab-3 4.5 */
+/* check: --fg-sky on --pt-tab-4 4.5 */
+/* check: --fg-sky on --sky-deep 4.5 */     /* the wordmark on the desk */
+/* check: --ink on --pt-blush 4.5 */        /* a playlist's header band */
 /* check: --ink-2 on --pt-blush 4.5 */
 /* check: --link-on-cream on --pt-blush 4.5 */
-/* check: --ink on --pt-row 4.5 */         /* current queue row (img 03 band) */
+/* check: --ink on --pt-row 4.5 */          /* the playing row */
 /* check: --link-on-cream on --pt-row 4.5 */
-/* check: --fg-sky on --pt-bar-3 4.5 */    /* window titles on the darkest gloss stop */
-/* check: --fg-sky on --pt-bar-1 4.5 */
-/* check: --fg-sky-2 on --pt-bar-2 4.5 */
-/* check: --pt-lcd-ink on --pt-lcd 4.5 */  /* LCD strip */
+/* check: --pt-lcd-ink on --pt-lcd 4.5 */   /* the LCD strip */
 /* check: --fg-sky on --pt-lcd 4.5 */
-/* check: --down on --panel 4.5 */          /* failed label in the player bar */
+/* check: --pt-heart-2 on --panel 3 */      /* the played hearts */
+/* check: --seek-played on --pt-heart-0 3 */
+/* check: --down on --panel 4.5 */          /* a failed song's label */
+
+/* =====================================================================
+   The pixel knife: one ring for every window and control, drawn in the background's border box so its colour is a
+   token (--pt-ring, --line by default): a top and bottom edge, a left and right edge, each stopping 2 px short of the
+   corners, which stay cut. The paper is the element's own background-color, clipped inside the ring (the last layer).
+   So a part's paper changes with background-color; a rule that sets the `background` shorthand would erase its ring.
+   These rules weigh nothing (:where), so any rule of a part's own restyles it.
+   ===================================================================== */
+:root[data-design="petal"] :where(.card, .ctx, .nowcol, .pt-win, .sheet, .dialog, .popover, .menu, .toast, .banner, .main,
+  .pbar > .region-title, .mini, .now-qcard, .btn:not(.btn--quiet), .btn-gloss, .btn-icon:not(.btn-icon--bare), .chip,
+  .pill-filter, .input, .seg, .tray, .kbd, .badge, .q-chip, .lib-sort, .pt-win__key, .pbar__controls .btn-icon, .tile__play,
+  .dk-strip, .dk-choice, .sys-nav, .sys-design, .drop-overlay__label, .cls-card, .tooltip) {
+  --pt-ring: var(--line);
+  border: 2px solid transparent; border-radius: 0;
+  background-image: linear-gradient(var(--pt-ring) 2px, transparent 0 calc(100% - 2px), var(--pt-ring) 0),
+    linear-gradient(90deg, var(--pt-ring) 2px, transparent 0 calc(100% - 2px), var(--pt-ring) 0), none;
+  background-position: 2px 0, 0 2px, 0 0; background-size: calc(100% - 4px) 100%, 100% calc(100% - 4px), auto;
+  background-repeat: no-repeat; background-origin: border-box; background-clip: border-box, border-box, padding-box;
+}
+/* windows stand on the desk with the 4 px shadow, things that float or press with the 2 px one */
+:root[data-design="petal"] :where(.card, .ctx, .nowcol, .pt-win, .sheet, .dialog, .main, .pbar > .region-title, .now-qcard, .sys-nav, .drop-overlay__label) { box-shadow: var(--stack); }
+:root[data-design="petal"] :where(.popover, .menu, .toast, .banner, .mini, .dk-strip, .dk-choice, .tooltip) { box-shadow: var(--stack-sm); }
+:root[data-design="petal"] :where(.btn:not(.btn--quiet), .btn-icon:not(.btn-icon--bare), .chip, .pill-filter, .input, .seg, .tray, .lib-sort, .sys-design, .cls-card) { box-shadow: none; }
+/* tags are drawn with the soft ring: they state a fact, they are not pressed */
+:root[data-design="petal"] :where(.badge, .q-chip, .kbd, .tooltip) { --pt-ring: var(--pt-frame); }
+/* index tabs: the same ring with no bottom edge, so a tab stands on the paper it belongs to */
+:root[data-design="petal"] :where(.nav-pill, .ctx__head .seg__btn, .pt-win__page, .lib-segs a.pill-filter, .now-seg .seg__btn, .pbar__tools > :is(.btn-icon, .vol), .pbar::before, .pbar__state) {
+  --pt-ring: var(--line);
+  border: 2px solid transparent; border-bottom: 0; border-radius: 0;
+  background-image: linear-gradient(var(--pt-ring) 2px, transparent 0), linear-gradient(90deg, var(--pt-ring) 2px, transparent 0 calc(100% - 2px), var(--pt-ring) 0), none;
+  background-position: 2px 0, 0 2px, 0 0; background-size: calc(100% - 4px) 100%, 100% calc(100% - 2px), auto;
+  background-repeat: no-repeat; background-origin: border-box; background-clip: border-box, border-box, padding-box;
+  box-shadow: none;
+}
+
+/* keys: pink paper keys with the 2 px shadow, pressed flat. The gloss buttons (play, like) are keys too, and so is a
+   danger button, the main action of a dialog that removes something (it keeps its own plum ink) */
+:root[data-design="petal"] :where(.btn--primary, .btn--danger, .btn-gloss, .pt-win__key, .pbar__controls .btn-icon, .tile__play) {
+  box-shadow: var(--stack-sm); transition: transform var(--dur-press) var(--ease-out), background-color var(--dur-1);
+}
+:root[data-design="petal"] :where(.btn--primary, .btn-gloss) { background-color: var(--peri); color: var(--pt-key-ink); }
+:root[data-design="petal"] :where(.btn--primary, .btn-gloss):hover { background-color: var(--pt-key-hi); }
+:root[data-design="petal"] :where(.pt-win__key, .pbar__controls .btn-icon, .tile__play) { background-color: var(--panel); color: var(--link); }
+:root[data-design="petal"] :where(.pt-win__key, .pbar__controls .btn-icon, .tile__play):is(:hover, [aria-pressed="true"]) { background-color: var(--peri); color: var(--pt-key-ink); }
+:root[data-design="petal"] :where(.btn--primary, .btn--danger, .btn-gloss, .pt-win__key, .pbar__controls .btn-icon, .tile__play):active { transform: translate(2px, 2px); box-shadow: none; }
+:root[data-design="petal"] :is(.btn--primary, .btn--danger) { margin-bottom: 2px; }
+:root[data-design="petal"] .btn-gloss::before { inset: 4px 4px auto; height: 2px; border-radius: 0; background: var(--pt-key-hi); opacity: 1; z-index: 0; }   /* the key's lit top edge */
+:root[data-design="petal"] .btn-gloss::after { display: none; }
+:root[data-design="petal"] .btn-gloss .ic { stroke-width: 2; }
+:root[data-design="petal"] :where(.btn-gloss.is-liked .ic, .btn-gloss [href="#i-heart-fill"]) { fill: currentColor; }
+:root[data-design="petal"] .btn-gloss.is-liked { color: var(--pt-key-ink); }
+/* buffering: a dashed square round the key, blinking. It shows something happening, so it never holds still: it names
+   its rate and says so (--loop-holds: no), as a progress loop does (docs/themes.md, Drawing cheaply) */
+:root[data-design="petal"] .btn-gloss__spin { inset: -6px; border-radius: 0; border-color: var(--line); }
+:root[data-design="petal"] :is(.is-buffering > .btn-gloss__spin, .btn-gloss.is-buffering .btn-gloss__spin) { animation: pt-blink 1.2s steps(1, end) infinite; --loop-fps: 2; --loop-holds: no; }
+@keyframes pt-blink { 50% { opacity: 0; } }
+/* an icon key that is pressed (shuffle, repeat) keeps a pixel dot under its icon */
+:root[data-design="petal"] .btn-icon[aria-pressed="true"]::after { border-radius: 0; }
 
 /* =====================================================================
    Page and type
    ===================================================================== */
-/* blush desk with a dot grid and sparse pixel sparkles (day); wine-plum pixel star field (night) */
+/* the desk: --sky dithered with --sky-deep (a 2 px checker), pixel sparkles over it */
 :root[data-design="petal"] body,
 :root[data-design="petal"] .cls-scrim {
   background-color: var(--sky);
-  background-image: var(--pt-sky-art), radial-gradient(circle at 1px 1px, var(--pt-dot) 1px, transparent 1.6px);
-  background-size: 480px 480px, 24px 24px;
+  background-image: var(--pt-sky-art), conic-gradient(var(--sky) 25%, var(--sky-deep) 0 50%, var(--sky) 0 75%, var(--sky-deep) 0);
+  background-size: 480px 480px, 4px 4px;
 }
 :root[data-design="petal"] .sky-specks { display: none; }
 :root[data-design="petal"] ::selection { background: var(--peri); color: var(--ink); }
 
-/* poster titles end in a pixel heart (img 04 "...♡"); uppercase micro-labels. The heart is the room of a word joiner
-   and two no-break spaces, so it stays on the line of the title's last word and never wraps alone onto its own */
+/* titles are set in the pixel face, big, with a hard shadow, and end in a pixel heart. The heart is the room of a
+   word joiner and two no-break spaces, so it stays on the line of the title's last word and never wraps alone */
+:root[data-design="petal"] :is(.t-display, .t-title-xl, .lib-pl__title, .now-head__title, .disc-hello h1, .lib-head h1, .sys-head h1, .sys-welcome__head h1, .lib-hero h1) {
+  font-family: var(--f-zine); font-weight: 400; text-shadow: 3px 3px 0 var(--stack-2); letter-spacing: .01em;
+}
 :root[data-design="petal"] :is(.t-display, .lib-pl__title, .now-head__title)::after {
   content: "\2060\00a0\00a0" / ""; display: inline; margin-left: .05em; letter-spacing: 0;
   background: var(--heart); -webkit-mask: var(--px-heart) left .15em bottom .42em / .38em .34em no-repeat; mask: var(--px-heart) left .15em bottom .42em / .38em .34em no-repeat;
 }
 :root[data-design="petal"] .card .lib-pl__title::after { background: var(--pink-ink); }
+/* labels: the pixel face, a little tracked */
 :root[data-design="petal"] :is(.lib-kicker, .card-head__title, .lib-th, .label-rule--sm > h2, .label-rule--sm > h3, .label-rule--sm .label-rule__text) {
-  font: var(--t-label); text-transform: uppercase; letter-spacing: .14em;
+  font: var(--t-label); text-transform: uppercase; letter-spacing: .08em;
 }
 :root[data-design="petal"] :is(.lib-kicker, .lib-th, .label-rule--sm > h2, .label-rule--sm > h3, .label-rule--sm .label-rule__text) { color: var(--fg-2); }
 :root[data-design="petal"] .lib-kicker { margin-bottom: 6px; }
@@ -179,38 +254,22 @@
 :root[data-design="petal"] :is(.t-px, .px) { font-variant-numeric: tabular-nums; }
 
 /* =====================================================================
-   Buttons, chips, badges. Filled chip = state (Saved, new, current); outlined chip = fact (format, sources)
+   Buttons, chips, badges. A filled tag is a state (Saved, new, current); an outlined one a fact (format, sources)
    ===================================================================== */
-:root[data-design="petal"] .btn { font: 700 .9375rem/1.1 var(--f-ui); border-width: 1.5px; }
-:root[data-design="petal"] .btn--primary { box-shadow: 2px 2px 0 0 var(--pt-frame); margin-bottom: 2px; }
-:root[data-design="petal"] .btn--primary:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 0 var(--pt-frame); }
-/* settled / disabled buttons ("In library", "Applied"): solid outline, a pixel check, no dashes */
+:root[data-design="petal"] .btn { font: 700 .9375rem/1.1 var(--f-ui); }
+:root[data-design="petal"] .btn--quiet { border-color: transparent; }
+/* settled and disabled buttons ("In library", "Applied"): the soft ring, a pixel check, never dashes */
 :root[data-design="petal"] :is(.btn:disabled, .btn[aria-disabled="true"], .btn-save[data-state="library"]) {
-  border-style: solid; border-color: var(--pt-frame); background: transparent; color: var(--fg-2); box-shadow: none;
+  --pt-ring: var(--pt-frame); background-color: transparent; color: var(--fg-2); box-shadow: none;
 }
 :root[data-design="petal"] :is(.btn:disabled, .btn[aria-disabled="true"], .btn-save[data-state="library"]) > .ic { display: none; }
 :root[data-design="petal"] :is(.btn:disabled, .btn[aria-disabled="true"], .btn-save[data-state="library"])::after {
   content: ""; order: -1; width: 12px; height: 11px; flex: none; background: currentColor;
   -webkit-mask: var(--px-check) center / contain no-repeat; mask: var(--px-check) center / contain no-repeat;
 }
-:root[data-design="petal"] .btn-icon { border-color: var(--pt-frame); }
-:root[data-design="petal"] .btn-icon--bare { border-color: transparent; }
-:root[data-design="petal"] :is(.btn-icon__badge, .badge-count) { border-radius: 3px; }
-:root[data-design="petal"] .btn-icon__badge { border-color: var(--edge); }
-
-/* gloss: pale pink glass circle with a deep rose icon (img 03 transport, img 04 play circle) */
-:root[data-design="petal"] .btn-gloss {
-  background: radial-gradient(130% 100% at 50% 12%, var(--gl-hi) 0%, var(--gl-mid) 46%, var(--gl-low) 100%);
-  border: 1.5px solid var(--gl-edge); color: var(--gl-ink);
-  box-shadow: 0 2px 0 var(--gl-edge), 0 0 0 var(--gloss-ring-w) var(--play-ring);
-}
-:root[data-design="petal"] .btn-gloss::before { top: 6%; height: 40%; left: 18%; right: 18%; background: linear-gradient(180deg, #ffffff, transparent); opacity: .9; }
-:root[data-design="petal"] .btn-gloss::after { background: radial-gradient(ellipse at 50% 100%, color-mix(in srgb, #ffffff 55%, transparent), transparent 70%); }
-:root[data-design="petal"] .btn-gloss:active { box-shadow: 0 0 0 var(--gl-edge); transform: translateY(2px); }
-:root[data-design="petal"] .btn-gloss.is-liked { color: var(--gl-ink); }
-:root[data-design="petal"] .btn-gloss .ic { stroke-width: 2; }
-:root[data-design="petal"] :is(.btn-gloss.is-liked .ic, .btn-gloss [href="#i-heart-fill"]) { fill: currentColor; }
-:root[data-design="petal"] .btn-gloss__spin { border-color: var(--gl-edge); }
+:root[data-design="petal"] .btn-icon:not(.btn-icon--bare) { background-color: var(--panel); color: var(--link); }
+:root[data-design="petal"] .btn-icon:not(.btn-icon--bare):hover { background-color: var(--panel-2); }
+:root[data-design="petal"] :is(.btn-icon__badge, .badge-count) { border-radius: 0; border-color: var(--line); }
 
 /* like: a 3-frame pixel heart burst plus five petals falling 40 px in steps (both off under reduced motion, base.css) */
 :root[data-design="petal"] [data-act="like"].is-liked { position: relative; }
@@ -232,40 +291,51 @@
 @keyframes pt-burst { 0% { opacity: 1; transform: scale(.6); } 66% { opacity: 1; transform: scale(1.25); } 100% { opacity: 0; transform: scale(1.5); } }
 @keyframes pt-petals { 0% { opacity: 1; transform: translateY(0); } 70% { opacity: 1; } 100% { opacity: 0; transform: translateY(40px); } }
 
-:root[data-design="petal"] .chip { border-color: var(--pt-frame); background: var(--lavender); font: 700 .8125rem/1.2 var(--f-ui); min-height: 28px; }
-:root[data-design="petal"] :is(button.chip, a.chip):hover { background: var(--peri); }
+:root[data-design="petal"] .chip { background-color: var(--lavender); font: 700 .8125rem/1.2 var(--f-ui); min-height: 28px; }
+:root[data-design="petal"] :is(button.chip, a.chip):hover { background-color: var(--peri); }
 /* a pressed chip (a follow, a preset) is state: filled and lifted, as a pressed filter pill */
-:root[data-design="petal"] :is(.chip[aria-pressed="true"], .chip.is-on) { background: var(--peri); box-shadow: 2px 2px 0 0 var(--pt-frame); }
-:root[data-design="petal"] .chip-reason { border-radius: 3px; border-style: solid; border-color: var(--pt-rule); background: var(--reason-bg); }
-:root[data-design="petal"] .chip-more { border-radius: 3px; border-color: var(--pt-frame); }
-:root[data-design="petal"] .pill-filter { border-width: 1.5px; font: 700 .875rem/1 var(--f-ui); }
-:root[data-design="petal"] .pill-filter[aria-pressed="true"] { box-shadow: 2px 2px 0 0 var(--pt-frame); }
-:root[data-design="petal"] .badge { border-radius: 3px; font: 800 .75rem/1 var(--f-ui); }
-:root[data-design="petal"] .badge-slsk { border-style: solid; background: transparent; }
-:root[data-design="petal"] .badge-new { border-radius: 3px; padding: 2px 6px 1px; font: var(--t-pixel); letter-spacing: .04em; }
-:root[data-design="petal"] .q-chip { border-radius: 3px; padding: 0 6px; font: 800 .75rem/1 var(--f-ui); letter-spacing: .04em; font-variant-numeric: tabular-nums; }
-:root[data-design="petal"] .q-chip--solid { background: transparent; color: var(--q-lossless); border-color: currentColor; }
+:root[data-design="petal"] :is(.chip[aria-pressed="true"], .chip.is-on, .pill-filter[aria-pressed="true"]) { background-color: var(--peri); box-shadow: var(--stack-sm); }
+/* the reason a song was picked is highlighted, not boxed */
+:root[data-design="petal"] .chip-reason { border: 0; border-radius: 0; padding: 3px 8px; background: var(--reason-bg); box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--heart) 45%, transparent); }
+:root[data-design="petal"] .chip-more { border-radius: 0; border-color: var(--line); }
+:root[data-design="petal"] .pill-filter { font: 700 .875rem/1 var(--f-ui); }
+:root[data-design="petal"] .badge { font: 800 .75rem/1 var(--f-ui); }
+:root[data-design="petal"] .badge-slsk { background-color: transparent; }
+:root[data-design="petal"] .badge-new { padding: 2px 6px 1px; font: var(--t-pixel); letter-spacing: .04em; }
+:root[data-design="petal"] .q-chip { padding: 0 6px; font: 800 .75rem/1 var(--f-ui); letter-spacing: .04em; font-variant-numeric: tabular-nums; }
+:root[data-design="petal"] .q-chip--solid { background-color: transparent; color: var(--q-lossless); }
 :root[data-design="petal"] .q-chip--solid.q-chip--ly { color: var(--q-lossy); }
-:root[data-design="petal"] .kbd { border-radius: 3px; box-shadow: 0 2px 0 var(--pt-frame); border-color: var(--edge); font: var(--t-pixel); font-size: 1.125rem; }
+:root[data-design="petal"] .kbd { box-shadow: 0 2px 0 var(--pt-frame); font: var(--t-pixel); font-size: 1.125rem; }
 
 /* =====================================================================
-   Cards: cream frames with a blush head band (img 04 header strip, img 03 window)
+   Cards: paper taped into the zine, a dashed rule under the head
    ===================================================================== */
-:root[data-design="petal"] .card { border: 1.5px solid var(--pt-frame); --rule: var(--pt-rule); --divider: var(--pt-rule); }
+:root[data-design="petal"] .card { --rule: var(--pt-rule); --divider: var(--pt-rule); margin-bottom: calc(var(--stack-reserve) + 4px); }
 :root[data-design="petal"] :is(.card > .card-head:not(.card-head--hidden), .now-srccard > .card-head--hidden) {
-  display: flex; align-items: center; min-height: 42px; margin: calc(-1 * var(--card-pad)) calc(-1 * var(--card-pad)) var(--sp-4); padding: 0 10px 0 16px;
-  background: var(--pt-band); border-bottom: 1px solid var(--pt-rule); border-radius: 3px 3px 0 0;
+  display: flex; align-items: center; flex-wrap: wrap; column-gap: 12px; min-height: 40px; margin: calc(-1 * var(--card-pad)) calc(-1 * var(--card-pad)) var(--sp-4); padding: 4px 12px 4px 16px;
+  border-bottom: 2px dashed var(--pt-rule);
 }
 :root[data-design="petal"] .card--flush > .card-head:not(.card-head--hidden) { margin: 0; }
 :root[data-design="petal"] .card > .card-head::after { display: none; }
-:root[data-design="petal"] .card-head__title { display: inline-flex; align-items: center; gap: 9px; color: var(--fg); }
+:root[data-design="petal"] .card-head__title { display: inline-flex; align-items: center; gap: 9px; font: 400 1.375rem/1 var(--f-zine); letter-spacing: .06em; color: var(--fg); }
 :root[data-design="petal"] .card-head__title::before {
-  content: ""; width: 11px; height: 10px; flex: none; background: var(--pink-ink);
+  content: ""; width: 14px; height: 12px; flex: none; background: var(--pink-ink);
   -webkit-mask: var(--px-heart) center / contain no-repeat; mask: var(--px-heart) center / contain no-repeat;
 }
-:root[data-design="petal"] .card-head > :is(.btn--quiet, a) { margin-left: auto; }
-:root[data-design="petal"] .inset { border-radius: 4px; }
-:root[data-design="petal"] .source-card { border-radius: 4px; border: 1px solid var(--pt-rule); }
+:root[data-design="petal"] .card-head > :is(.btn--quiet, a):first-of-type { margin-left: auto; }
+:root[data-design="petal"] .card-head > :is(.btn--quiet, a) { padding-inline: 4px; }
+:root[data-design="petal"] .inset { border-radius: 0; }
+:root[data-design="petal"] .source-card { border-radius: 0; border: 2px dashed var(--pt-rule); }
+/* Home's cards carry washi tape over their top edge, on alternate sides */
+:root[data-design="petal"] .disc-card { position: relative; }
+:root[data-design="petal"] .disc-card::after {
+  content: ""; position: absolute; top: -12px; left: 34px; width: 92px; height: 22px; transform: rotate(-4deg); pointer-events: none;
+  background: repeating-linear-gradient(90deg, var(--pt-tape) 0 8px, color-mix(in srgb, var(--pt-tape) 55%, transparent) 8px 12px);
+}
+:root[data-design="petal"] .disc-mod:nth-child(even) .disc-card::after {
+  left: auto; right: 40px; transform: rotate(5deg);
+  background: repeating-linear-gradient(45deg, var(--pt-tape-2) 0 6px, color-mix(in srgb, var(--pt-tape-2) 50%, transparent) 6px 12px);
+}
 
 /* =====================================================================
    Covers: 24x24 pixel scenes (art/c1-c8.svg), the same in both themes: rainbow cloud, striped sun, heart balloon,
@@ -273,7 +343,7 @@
    and gives round covers (artists, radio starters) one of six pixel characters (art/p1-p6.svg) in a square frame.
    ===================================================================== */
 :root[data-design="petal"] .cover {
-  border: 1.5px solid var(--pt-frame); background: var(--pc-3) none center / 100% 100% no-repeat; image-rendering: pixelated;
+  border: 2px solid var(--pt-frame); border-radius: 0; background: var(--pc-3) none center / 100% 100% no-repeat; image-rendering: pixelated;
 }
 :root[data-design="petal"] .cover--xs { border-width: 1px; }
 :root[data-design="petal"] .cover::before, :root[data-design="petal"] .cover::after { display: none; }
@@ -287,7 +357,7 @@
 :root[data-design="petal"] .c6 { background-image: url("assets/art/c6.svg"); }
 :root[data-design="petal"] .c7 { background-image: url("assets/art/c7.svg"); }
 :root[data-design="petal"] .c8 { background-image: url("assets/art/c8.svg"); }
-:root[data-design="petal"] .cover--round { border-radius: 4px; }
+:root[data-design="petal"] .cover--round { border-radius: 0; }
 :root[data-design="petal"] .cover--round[data-look="0"] { background-image: url("assets/art/p1.svg"); }   /* bunny */
 :root[data-design="petal"] .cover--round[data-look="1"] { background-image: url("assets/art/p2.svg"); }   /* cat */
 :root[data-design="petal"] .cover--round[data-look="2"] { background-image: url("assets/art/p3.svg"); }   /* bear */
@@ -297,32 +367,59 @@
 /* an artist without a photo: its initial in the pixel face on a soft checkerboard, never a stand-in picture */
 :root[data-design="petal"] .cover--artist:not(.has-art) { background-image: conic-gradient(var(--pc-2) 25%, var(--pc-3) 0 50%, var(--pc-2) 0 75%, var(--pc-3) 0); background-size: 25% 25%; }
 :root[data-design="petal"] .cover__mono { font: var(--t-pixel); font-size: 62cqi; line-height: 1; color: var(--pc-6); text-shadow: .06em .06em 0 var(--pc-4); }
-:root[data-design="petal"] .mosaic { border: 2px solid var(--pt-frame); border-radius: 3px; background: var(--pt-frame); gap: 2px; }
+:root[data-design="petal"] .mosaic { border: 2px solid var(--line); border-radius: 0; background: var(--line); gap: 2px; }
 :root[data-design="petal"] .mosaic .cover { border: 0; }
+/* snapshots: a cover that is the picture of a place or of the song playing is a photo, in a white border (--snap-w) with
+   a soft ring round it and the hard shadow (--snap-o) on the desk, tilted where it is taped on */
+:root[data-design="petal"] :is(.lib-hero > .cover, .lib-ahero .cover, .lib-pl__head > .mosaic, .tile__art .cover, .bezel-thumb .cover, .bezel-thumb--empty > span,
+  .pt-win .device__now .cover, .pt-win--compact .cover, .pt-mini .dk-mini__now .cover, .empty__art) {
+  --snap-w: 4px; --snap-o: 6px;
+  border: 0; border-radius: 0;
+  box-shadow: 0 0 0 var(--snap-w) var(--pt-photo), 0 0 0 calc(var(--snap-w) + 2px) var(--pt-frame), var(--snap-o) var(--snap-o) 0 calc(var(--snap-w) + 2px) var(--stack-2);
+}
+:root[data-design="petal"] :is(.lib-hero > .cover, .lib-ahero .cover, .lib-pl__head > .mosaic) { --snap-w: 6px; --snap-o: 10px; margin: 8px; }
+/* a row of snapshots scrolls, and clips what passes its edges: it keeps room for their frame on every side (6 px of
+   border and ring) and for the shadow below and to the right (6 px more), so the first and last are never cut */
+:root[data-design="petal"] .shelf { padding: 6px 12px 12px 6px; scroll-padding-inline: 6px 12px; }
+:root[data-design="petal"] .lib-hero > .cover { transform: rotate(-2deg); }
+:root[data-design="petal"] .bezel-thumb { padding: 0; border: 0; background: none; }
+:root[data-design="petal"] .bezel-thumb--empty > span { background: repeating-linear-gradient(45deg, var(--pt-rule) 0 2px, transparent 2px 6px) var(--panel); }
+/* stickers on the playing song's snapshot: a heart while it is liked, a gold star while it is saved (data-liked,
+   data-saved on the player and the hero); they sit inside the photo's corners */
+:root[data-design="petal"] :is(.pbar, .mini, .now__dev, .now__devc)[data-liked="true"] :is(.bezel-thumb, .device__now, .now-devc__art) .cover::after,
+:root[data-design="petal"] :is(.pbar, .mini, .now__dev, .now__devc)[data-saved="true"] :is(.bezel-thumb, .device__now, .now-devc__art) .cover::before {
+  content: ""; display: block; position: absolute; z-index: 2; width: clamp(11px, 20%, 26px); height: auto; aspect-ratio: 9 / 8; border: 0; border-radius: 0;
+  inset: 6% auto auto 6%; background: var(--heart); -webkit-mask: var(--px-heart) center / contain no-repeat; mask: var(--px-heart) center / contain no-repeat;
+}
+:root[data-design="petal"] :is(.pbar, .mini, .now__dev, .now__devc)[data-saved="true"] :is(.bezel-thumb, .device__now, .now-devc__art) .cover::before {
+  inset: auto 6% 6% auto; aspect-ratio: 8 / 7; background: #f0b43c; -webkit-mask-image: var(--px-star); mask-image: var(--px-star);
+}
 /* skeleton covers are pale pixel checkerboards */
 :root[data-design="petal"] :is(.skel--cover, .skel-tile .skel:first-child) {
   background: conic-gradient(var(--skel-hi) 25%, var(--skel) 0 50%, var(--skel-hi) 0 75%, var(--skel) 0) 0 0 / 8px 8px;
-  border-radius: 3px;
+  border-radius: 0;
 }
 
 /* =====================================================================
-   Track rows and tables (img 04 list, img 03 pink numbered rows), tiles
+   Lists: ruled with pixel dashes, the playing row marked like a highlighter; tables; tiles; the source picker
    ===================================================================== */
-:root[data-design="petal"] .trow { border-radius: 3px; }
-:root[data-design="petal"] .trow__num { font: 800 .875rem/1 var(--f-ui); font-variant-numeric: tabular-nums; color: var(--link); }
-:root[data-design="petal"] .trow.is-playing { background: var(--pt-row); box-shadow: inset 3px 0 0 var(--pt-frame); }
+:root[data-design="petal"] .trow { border-radius: 0; }
+:root[data-design="petal"] .tlist .trow { background-image: linear-gradient(90deg, var(--pt-rule) 50%, transparent 0); background-size: 6px 2px; background-repeat: repeat-x; background-position: 0 100%; }
+:root[data-design="petal"] .trow:hover { background-color: var(--bg-2); }
+:root[data-design="petal"] .trow.is-playing { background-color: var(--pt-row); box-shadow: inset 4px 0 0 var(--heart); }
 :root[data-design="petal"] .trow.is-selected { box-shadow: inset 0 0 0 2px var(--focus); }
+:root[data-design="petal"] .trow__num, :root[data-design="petal"] .now-qcard .now-q__row::after { font: 400 1.125rem/1 var(--f-zine); font-variant-numeric: tabular-nums; color: var(--link); }
 :root[data-design="petal"] .trow__dur { font: 650 .875rem/1 var(--f-ui); font-variant-numeric: tabular-nums; }
 :root[data-design="petal"] .trow__like .btn-icon:not(.is-liked) { color: var(--fg-2); }
 :root[data-design="petal"] .trow__sources { font-variant-numeric: tabular-nums; }
-/* mid-width lists (album pages beside the queue): badges drop to a line under the title (img 03 "MP3 :: 48 kHz") */
+/* mid-width lists (album pages beside the queue): badges drop to a line under the title */
 @container tlist (min-width: 521px) and (max-width: 759px) {
   :root[data-design="petal"] .trow { grid-template-columns: 32px var(--art) minmax(0, 1fr) auto 52px 40px; row-gap: 4px;
     grid-template-areas: "num art main like dur more" "num art badges badges badges badges"; }
   :root[data-design="petal"] :is(.trow__num, .trow__art) { align-self: center; }
   :root[data-design="petal"] .trow__badges { justify-content: flex-start; flex-wrap: wrap; }
 }
-:root[data-design="petal"] .lib-thead { border-bottom: 2px solid var(--pt-frame); margin-bottom: 6px; }
+:root[data-design="petal"] .lib-thead { border-bottom: 2px solid var(--line); margin-bottom: 6px; }
 :root[data-design="petal"] .lib-th:is([aria-sort="ascending"], [aria-sort="descending"]) { color: var(--link); }
 /* the sorted column's pixel triangle replaces the arrow icon, pointing the way it sorts */
 :root[data-design="petal"] .lib-th__btn .ic { display: none; }
@@ -332,13 +429,21 @@
 }
 :root[data-design="petal"] .lib-th:is([aria-sort="ascending"], [aria-sort="descending"]) .lib-th__btn::after { background: var(--link); }
 :root[data-design="petal"] .lib-th[aria-sort="ascending"] .lib-th__btn::after { transform: scaleY(-1); }
-:root[data-design="petal"] .tile__meta { gap: 6px; overflow: hidden; font: 650 .8125rem/1 var(--f-ui); letter-spacing: 0; }
 
-/* source picker: score as five pixel stars (img 03 ratings) */
+/* tiles: covers as snapshots in a white border; the play key sits on the photo's corner */
+:root[data-design="petal"] .tile__art .cover { width: 100%; height: auto; aspect-ratio: 1; }
+:root[data-design="petal"] .tile__art { margin: 6px 6px var(--sp-4); }
+:root[data-design="petal"] .tile__play { right: 6px; bottom: 6px; width: 36px; height: 36px; border-radius: 0; }
+:root[data-design="petal"] .tile__play::before { border-radius: 0; }
+:root[data-design="petal"] .tile__title { line-height: 1.3; height: 1.3em; }
+:root[data-design="petal"] .tile__meta { gap: 6px; overflow: hidden; font: 650 .8125rem/1 var(--f-ui); letter-spacing: 0; }
+:root[data-design="petal"] .tile__meta .badge-new { padding: 2px 4px 1px; }
+
+/* the source picker: a score is five pixel stars */
 :root[data-design="petal"] .score { width: 74px; height: 13px; border-radius: 0; background: var(--pt-rule); overflow: visible;
   -webkit-mask: var(--px-star) 0 0 / 15px 13px repeat-x; mask: var(--px-star) 0 0 / 15px 13px repeat-x; }
 :root[data-design="petal"] .score > i { transform: none; background: var(--link); clip-path: inset(0 calc((1 - var(--s, .5)) * 100%) 0 0); }
-:root[data-design="petal"] .src-row { border-radius: 3px; }
+:root[data-design="petal"] .src-row { border-radius: 0; }
 :root[data-design="petal"] :is(.src-row.is-preferred, .src-row[aria-checked="true"], .src-row.is-selected) { background: var(--pt-row); }
 @container tlist (max-width: 700px) {   /* phone: stars only, three columns that stay inside the sheet */
   :root[data-design="petal"] .disc-src .src-row { grid-template-columns: minmax(0, 1fr) auto auto; }
@@ -347,109 +452,194 @@
 }
 
 /* =====================================================================
-   Seek, wave, tabs, inputs, toggles, save pipeline
+   Seek and sliders, wave, tabs, inputs, toggles, the save pipeline
    ===================================================================== */
-:root[data-design="petal"] .seek__track { height: 6px; margin-top: -3px; border-radius: 3px; box-shadow: inset 0 0 0 1px var(--seek-line); }
-:root[data-design="petal"] .seek__knob { width: 14px; height: 14px; left: -7px; top: -7px; border-width: 2px; }
-:root[data-design="petal"] .seek__tip { border-radius: 3px; }
+/* the song's seek, wherever it is: a row of hearts filling up (not here yet, arrived, played), a bigger heart riding on
+   them as its knob */
+:root[data-design="petal"] .seek__track { border-radius: 0; box-shadow: inset 0 0 0 1px var(--seek-line); }
+:root[data-design="petal"] :is(.pbar, .now) .seek:not(.seek--line, .vol .seek) .seek__track {
+  height: 14px; margin-top: -7px; box-shadow: none; background: var(--pt-heart-0);
+  -webkit-mask: var(--px-heart) 0 50% / 16px 14px space no-repeat; mask: var(--px-heart) 0 50% / 16px 14px space no-repeat;
+}
+:root[data-design="petal"] :is(.pbar, .now) .seek:not(.seek--line, .vol .seek) :is(.seek__xfer, .seek__buf) { background: var(--pt-heart-1); }
+:root[data-design="petal"] :is(.pbar, .now) .seek:not(.seek--line, .vol .seek) .seek__played { background: var(--pt-heart-2); }
+:root[data-design="petal"] .seek__knob {
+  width: 24px; height: 22px; left: -12px; top: -12px; border: 0; border-radius: 0; box-shadow: none; background: var(--seek-played);
+  -webkit-mask: var(--px-heart) center / contain no-repeat; mask: var(--px-heart) center / contain no-repeat;
+}
+:root[data-design="petal"] .vol .seek__track { height: 8px; margin-top: -4px; }
+:root[data-design="petal"] .vol .seek__knob { width: 14px; height: 13px; left: -7px; top: -7px; }
+:root[data-design="petal"] .seek__tip { border-radius: 0; }
 :root[data-design="petal"] .seek-row__time { font: 700 .8125rem/1 var(--f-ui); font-variant-numeric: tabular-nums; }
-:root[data-design="petal"] .seg { border-width: 1.5px; padding: 3px; }
-:root[data-design="petal"] .seg__ind { border-radius: 3px; box-shadow: inset 0 0 0 1.5px var(--pt-frame); }
-:root[data-design="petal"] .seg__btn { border-radius: 3px; font: 700 .875rem/1 var(--f-ui); }
-:root[data-design="petal"] .input { border-width: 1.5px; font: 500 1rem/1 var(--f-ui); }
-:root[data-design="petal"] .switch, :root[data-design="petal"] .switch::after { border-radius: 999px; }
-:root[data-design="petal"] .progress { border-radius: 2px; }
+:root[data-design="petal"] .seek--line .seek__track { box-shadow: none; }
+/* the waves (Now Playing's window, the mini player): bars of stacked pixel blocks, cut by lines of the paper laid over
+   them (one still layer: the bars breathe under it) */
+:root[data-design="petal"] :is(.pt-win, .pt-mini) .wave::after {
+  content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: repeating-linear-gradient(0deg, transparent 0 3px, var(--panel) 3px 4px);
+}
+:root[data-design="petal"] :is(.pt-win, .pt-mini) .wave__bar { background: var(--pt-rule); border-radius: 0; }
+:root[data-design="petal"] :is(.pt-win, .pt-mini) .wave__bar.is-played { background: var(--heart); }
+:root[data-design="petal"] :is(.pt-win, .pt-mini) .wave__bar:is(.is-buf, .is-xfer) { background: var(--pt-frame); }
+:root[data-design="petal"] :is(.pt-win, .pt-mini) .wave__head { background: var(--link); border-radius: 0; }
+:root[data-design="petal"] :is(.pt-win, .pt-mini) .wave-times { font: 700 .8125rem/1 var(--f-ui); font-variant-numeric: tabular-nums; color: var(--fg-2); }
+:root[data-design="petal"] .pt-win .wave-times b { color: var(--fg); }
+
+/* sliders (crossfade, the equaliser, the queue's steer): a square track in the ring, a pixel heart for a knob, as the
+   seek's and the volume's */
+:root[data-design="petal"] .range::-webkit-slider-runnable-track { border-radius: 0; box-shadow: inset 0 0 0 2px var(--line); }
+:root[data-design="petal"] .range::-moz-range-track { border-radius: 0; box-shadow: inset 0 0 0 2px var(--line); }
+:root[data-design="petal"] .range::-moz-range-progress { border-radius: 0; }
+:root[data-design="petal"] .range::-webkit-slider-thumb {
+  width: 20px; height: 18px; margin-top: -5px; border: 0; border-radius: 0; box-shadow: none; background: var(--seek-played);
+  -webkit-mask: var(--px-heart) center / contain no-repeat; mask: var(--px-heart) center / contain no-repeat;
+}
+:root[data-design="petal"] .range::-moz-range-thumb {
+  width: 20px; height: 18px; border: 0; border-radius: 0; box-shadow: none; background: var(--seek-played);
+  mask: var(--px-heart) center / contain no-repeat;
+}
+
+:root[data-design="petal"] .seg { padding: 3px; }
+:root[data-design="petal"] .seg__ind { border-radius: 0; box-shadow: inset 0 0 0 2px var(--line); }
+:root[data-design="petal"] .seg__btn { border-radius: 0; font: 700 .875rem/1 var(--f-ui); }
+:root[data-design="petal"] .input { font: 500 1rem/1 var(--f-ui); }
+:root[data-design="petal"] .switch, :root[data-design="petal"] .switch::after { border-radius: 0; }
+:root[data-design="petal"] .progress { border-radius: 0; }
 /* save pipeline: five labelled pixel steps, shown once a save has started (not an empty meter under a percentage) */
 :root[data-design="petal"] .pipeline { display: flex; gap: 6px; }
-:root[data-design="petal"] .pipeline__seg { width: 12px; height: 12px; border-radius: 0; border-width: 1.5px; }
+:root[data-design="petal"] .pipeline__seg { width: 12px; height: 12px; border-radius: 0; border-width: 2px; }
 :root[data-design="petal"] .pipeline__seg .ic { display: none; }
 :root[data-design="petal"] .pipeline:not(:has(.is-done, .is-current, .is-failed)) { display: none; }
 :root[data-design="petal"] .pipeline-wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
-:root[data-design="petal"] .pipeline__step { font: var(--t-label); text-transform: uppercase; letter-spacing: .12em; }
+:root[data-design="petal"] .pipeline__step { font: var(--t-label); text-transform: uppercase; letter-spacing: .1em; }
 
 /* =====================================================================
-   Overlays: windows with a gloss title band (img 03); the toast is a small window over the bar's left end
+   Overlays: windows with a striped title bar; the toast is a note pinned over the bar's left end
    ===================================================================== */
-:root[data-design="petal"] :is(.sheet, .dialog) { border: 1.5px solid var(--pt-frame); box-shadow: var(--stack); }
-:root[data-design="petal"] :is(.sheet__head, .popover__head) {
-  background: linear-gradient(180deg, var(--pt-bar-1) 0%, var(--pt-bar-2) 46%, var(--pt-bar-3) 47%, var(--pt-bar-4) 100%);
-  border-bottom: 1px solid var(--pt-bar-line); border-radius: 5px 5px 0 0; padding-bottom: var(--sp-3);
+/* every window's title bar: two stripes of pink, the window's three pixel boxes on the left (two outlined, a heart-pink
+   one), the real controls on the right */
+:root[data-design="petal"] :is(.ctx > .region-title, .pt-win__bar, .nowcol__head, .sheet__head, .popover__head, .now-qcard > .card-head--hidden) {
+  display: flex; align-items: center; gap: 10px; flex: none; min-height: 34px; padding: 0 10px 0 12px; border-radius: 0; box-shadow: none;
+  border-bottom: 2px solid var(--line); color: var(--pt-tb-ink);
+  background: repeating-linear-gradient(180deg, var(--pt-tb-a) 0 2px, var(--pt-tb-b) 2px 4px);
 }
-:root[data-design="petal"] .sheet__head::before { content: ""; flex: none; width: 46px; height: 12px; margin-right: 10px; align-self: center; background: var(--pt-orbs); }
-:root[data-design="petal"] .sheet__title { font: 800 .8125rem/1.2 var(--f-ui); text-transform: uppercase; letter-spacing: .16em; }
-:root[data-design="petal"] .sheet__foot { border-top-color: var(--pt-rule); }
-:root[data-design="petal"] :is(.popover, .menu) { border: 1.5px solid var(--pt-frame); box-shadow: var(--stack-sm); }
-:root[data-design="petal"] .menu__item { border-radius: 3px; font: 650 .9375rem/1.2 var(--f-ui); }
+:root[data-design="petal"] :is(.ctx > .region-title, .nowcol__head, .sheet__head)::before, :root[data-design="petal"] .pt-win__dots {
+  content: ""; flex: none; width: 44px; height: 12px;
+  background: linear-gradient(var(--pt-tb-ink) 0 0) 0 0 / 12px 2px no-repeat, linear-gradient(var(--pt-tb-ink) 0 0) 0 10px / 12px 2px no-repeat,
+    linear-gradient(var(--pt-tb-ink) 0 0) 0 0 / 2px 12px no-repeat, linear-gradient(var(--pt-tb-ink) 0 0) 10px 0 / 2px 12px no-repeat,
+    linear-gradient(var(--panel) 0 0) 2px 2px / 8px 8px no-repeat,
+    linear-gradient(var(--pt-tb-ink) 0 0) 16px 0 / 12px 2px no-repeat, linear-gradient(var(--pt-tb-ink) 0 0) 16px 10px / 12px 2px no-repeat,
+    linear-gradient(var(--pt-tb-ink) 0 0) 16px 0 / 2px 12px no-repeat, linear-gradient(var(--pt-tb-ink) 0 0) 26px 0 / 2px 12px no-repeat,
+    linear-gradient(var(--panel) 0 0) 18px 2px / 8px 8px no-repeat,
+    linear-gradient(var(--heart) 0 0) 32px 0 / 12px 12px no-repeat;
+}
+:root[data-design="petal"] :is(.sheet, .dialog) { background-color: var(--panel); }
+:root[data-design="petal"] .sheet__head { padding-bottom: 0; }
+:root[data-design="petal"] :is(.sheet__title, .popover__head) { font: 400 1.125rem/1.1 var(--f-zine); text-transform: uppercase; letter-spacing: .1em; color: var(--pt-tb-ink); }
+:root[data-design="petal"] :is(.sheet__head, .popover__head) .btn-icon { color: var(--pt-tb-ink); }
+:root[data-design="petal"] .sheet__foot { border-top: 2px dashed var(--pt-rule); }
+:root[data-design="petal"] .menu__item { border-radius: 0; font: 650 .9375rem/1.2 var(--f-ui); }
 :root[data-design="petal"] .menu__item .ic { color: var(--link); }
-:root[data-design="petal"] .tooltip { border-radius: 3px; font: 700 .8125rem/1.3 var(--f-ui); }
-:root[data-design="petal"] .banner { border: 1.5px solid var(--pt-frame); border-radius: 5px; }
+:root[data-design="petal"] .tooltip { background-color: var(--panel); color: var(--fg-panel); font: 700 .8125rem/1.3 var(--f-ui); }
+:root[data-design="petal"] .banner { background-color: var(--panel); }
+/* toasts: a small window with a striped strip and a pixel heart, over the player bar's left end */
 @media (min-width: 640px) {
   :root[data-design="petal"] .toast-region { left: 24px; transform: none; bottom: calc(var(--bar-h) + 34px); width: min(400px, calc(100vw - 48px)); }
 }
-:root[data-design="petal"] .toast { position: relative; padding: 30px 8px 8px 14px; border: 1.5px solid var(--pt-frame); border-radius: 5px; box-shadow: var(--stack-1l); overflow: hidden; }
-:root[data-design="petal"] .toast::before {   /* gloss title strip with orbs and a pixel heart */
-  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 22px; border-bottom: 1px solid var(--pt-bar-line);
-  background: var(--pt-orbs), linear-gradient(180deg, var(--pt-bar-1) 0%, var(--pt-bar-2) 46%, var(--pt-bar-3) 47%, var(--pt-bar-4) 100%);
-  background-position: 8px 5px, 8px 5px, 8px 5px, 0 0; background-size: 46px 12px, 46px 12px, 46px 12px, auto; background-repeat: no-repeat;
+:root[data-design="petal"] .toast { position: relative; padding: 26px 8px 8px 14px; background-color: var(--panel); overflow: hidden; }
+:root[data-design="petal"] .toast::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 18px; border-bottom: 2px solid var(--line);
+  background: repeating-linear-gradient(180deg, var(--pt-tb-a) 0 2px, var(--pt-tb-b) 2px 4px);
 }
 :root[data-design="petal"] .toast::after {
-  content: ""; position: absolute; right: 10px; top: 6px; width: 11px; height: 10px; background: var(--heart);
+  content: ""; position: absolute; right: 10px; top: 4px; width: 11px; height: 10px; background: var(--pt-tb-ink);
   -webkit-mask: var(--px-heart) center / contain no-repeat; mask: var(--px-heart) center / contain no-repeat;
 }
 :root[data-design="petal"] .toast > .ic { color: var(--link); }
 
-/* empty and error states: 28x22 pixel scenes (bunny asleep on a cloud, tangled cassette, star with a ?, flat EQ) */
-:root[data-design="petal"] .empty__art { width: 112px; height: 88px; border: 1.5px solid var(--pt-frame); border-radius: 4px; box-shadow: var(--stack-sm); overflow: hidden; }
+/* empty and error states: 28x22 pixel scenes (bunny asleep on a cloud, tangled cassette, star with a ?, flat EQ),
+   taped into the page as a snapshot */
+:root[data-design="petal"] .empty__art { --snap-w: 5px; --snap-o: 8px; width: 112px; height: 88px; transform: rotate(-3deg); overflow: hidden; margin-bottom: 20px; }
 :root[data-design="petal"] .pt-empty { display: block; width: 100%; height: 100%; background: var(--pc-2) url("assets/art/empty-moon.svg") center / 100% 100% no-repeat; image-rendering: pixelated; }
 :root[data-design="petal"] .pt-empty--slot { background-image: url("assets/art/empty-slot.svg"); }
 :root[data-design="petal"] .pt-empty--star { background-image: url("assets/art/empty-star.svg"); }
 :root[data-design="petal"] .pt-empty--wave { background-image: url("assets/art/empty-wave.svg"); }
 :root[data-design="petal"] .pt-empty:is([data-title*="couldn" i], [data-title*="could not" i], [data-title*="failed" i], [data-title*="error" i], [data-title*="went wrong" i], [data-title*="unreachable" i]) { background-image: url("assets/art/empty-slot.svg"); }   /* errors: the tangled cassette */
+:root[data-design="petal"] .empty__title { font: 400 1.75rem/1 var(--f-zine); letter-spacing: .02em; text-shadow: 2px 2px 0 var(--stack-2); }
+
+/* square everything the knife hasn't reached: hover fields, bare icon keys, lyric lines, switches, the selected-segment mark */
+:root[data-design="petal"] :is(.btn-icon--bare, .disc-pick, .disc-starter, .now-ly__line, .now-ly__line.is-current, .menu__item, .rail__pl, .src-row, .seg__ind, .seg__btn, .tooltip, .switch, .switch::after, .sys-heat__cell, .cover--round, .search-field__clear, .now-ly__tag, .pbar__save-step, .bezel-thumb, .bezel-thumb .cover, .progress, .sys-design) { border-radius: 0; }
 
 /* =====================================================================
-   Shell: top strip with img 03 tabs, the context panel as a window, the img 04 player bar
+   Shell: the wordmark, index tabs standing on the page, the status tray, the page itself
    ===================================================================== */
-:root[data-design="petal"] .wordmark.pt-mark { padding: 0; gap: 6px; align-items: center; font: 300 1.75rem/1 var(--f-ui); letter-spacing: -.04em; color: var(--fg); }
+:root[data-design="petal"] .wordmark.pt-mark { padding: 0; gap: 6px; align-items: center; font: 400 2.25rem/1 var(--f-zine); letter-spacing: .02em; color: var(--fg); text-shadow: 2px 2px 0 var(--stack-2); }
 :root[data-design="petal"] .pt-px { flex: none; color: inherit; }
-:root[data-design="petal"] .pt-mark .pt-px { width: 15px; height: 12px; color: var(--heart); margin-top: 4px; }
-:root[data-design="petal"] .header .btn-icon { border-color: var(--pt-frame); color: var(--link); }
-:root[data-design="petal"] .header .btn-icon:hover { background: var(--panel-2); }
+:root[data-design="petal"] .pt-mark .pt-px { width: 18px; height: 14px; color: var(--heart); }
 :root[data-design="petal"] .search-field > .ic { color: var(--link); }
-:root[data-design="petal"] .search-field .input { border-radius: 3px; text-overflow: ellipsis; }
-:root[data-design="petal"] .search-field__clear { width: 28px; height: 28px; min-width: 0; border-radius: 3px; }
+:root[data-design="petal"] .search-field .input { text-overflow: ellipsis; background-color: var(--panel); }
+:root[data-design="petal"] .search-field__clear { width: 28px; height: 28px; min-width: 0; }
 
 @media (min-width: 640px) {
   :root[data-design="petal"][data-shell="topnav"] .header {
-    min-height: 60px; padding: 7px 8px 7px 18px; border: 1.5px solid var(--pt-frame); border-radius: var(--r-panel);
-    box-shadow: var(--stack-1l); margin-bottom: 16px;
-    background: linear-gradient(180deg, var(--pt-bar-1) 0%, var(--panel) 50%);
+    position: relative; z-index: 3; min-height: 58px; margin: 0; padding: 0 4px 0 6px; align-items: center; background: none; border: 0; box-shadow: none;
   }
-  /* img 03 tabs: uppercase text; the current one is a blush tab with a pink frame */
+  :root[data-design="petal"][data-shell="topnav"] .header__nav { align-self: stretch; align-items: flex-end; gap: 4px; }
+  /* the menu: one index tab per place, each its own colour; the open one is paper, taller, joined to the page under it
+     (the page and the panels rise 2 px under the header, so the tab's paper covers their ring), a pixel heart pinned on it */
   :root[data-design="petal"] .nav-pill {
-    height: 38px; padding: 0 12px; gap: 0; border: 1.5px solid transparent; border-radius: 3px;
-    font: var(--t-label); font-size: .78rem; text-transform: uppercase; letter-spacing: .11em; color: var(--fg);
+    position: relative; height: 40px; padding: 4px 16px 0; gap: 6px; background-color: var(--pt-tab-1);
+    font: 400 1.25rem/1 var(--f-zine); text-transform: uppercase; letter-spacing: .06em; color: var(--fg-sky);
+    transition: transform var(--dur-1) var(--ease-out);
   }
-  :root[data-design="petal"] .nav-pill .ic { display: none; }
-  :root[data-design="petal"] .nav-pill:hover { background: var(--bg-2); }
-  :root[data-design="petal"] :is(.nav-pill[aria-current="page"], .header .btn-icon[aria-current="page"]) { background: var(--peri); color: var(--ink); border-color: var(--pt-frame); }
-  :root[data-design="petal"] .nav-pill[aria-current="page"] { box-shadow: 2px 2px 0 0 var(--pt-frame); }
+  :root[data-design="petal"] .header__nav > .nav-pill:nth-child(4n+2) { background-color: var(--pt-tab-2); }
+  :root[data-design="petal"] .header__nav > .nav-pill:nth-child(4n+3) { background-color: var(--pt-tab-3); }
+  :root[data-design="petal"] .header__nav > .nav-pill:nth-child(4n+4) { background-color: var(--pt-tab-4); }
+  :root[data-design="petal"] .nav-pill:hover { transform: translateY(-3px); }
+  :root[data-design="petal"] .nav-pill:not([data-fit-out]) .ic { display: none; }
+  :root[data-design="petal"] .nav-pill[aria-current="page"] { z-index: 1; height: 48px; transform: none; background-color: var(--panel); color: var(--fg-sky); }
+  :root[data-design="petal"] .nav-pill[aria-current="page"]::before {
+    content: ""; position: absolute; inset: auto auto calc(100% + 2px) 50%; width: 14px; height: 12px; margin-left: -7px; background: var(--heart);
+    -webkit-mask: var(--px-heart) center / contain no-repeat; mask: var(--px-heart) center / contain no-repeat;
+  }
+  /* a tab that gave way (layout.js, data-fit) is an icon tab */
+  :root[data-design="petal"] .header .nav-pill[data-fit-out] { width: 44px; padding: 4px 0 0; justify-content: center; }
+  :root[data-design="petal"] .header .nav-pill[data-fit-out] .ic { display: block; }
   :root[data-design="petal"][data-shell="topnav"] .header__search { flex: 1 1 300px; max-width: 380px; }
-  :root[data-design="petal"][data-shell="topnav"] .header__search .input { height: 40px; background: var(--panel-2); }
+  :root[data-design="petal"][data-shell="topnav"] .header__search .input { height: 40px; }
+  :root[data-design="petal"] .header .btn-icon[aria-current="page"] { background-color: var(--peri); color: var(--ink); }
+
+  /* the page: one sheet of ruled paper in a pixel frame, a pink double margin, three binder holes down its left */
+  :root[data-design="petal"] .main { margin-top: -2px; margin-bottom: 25px; background-color: var(--panel); }
+  :root[data-design="petal"] .view {
+    padding: 22px 26px 40px 70px;
+    background:
+      linear-gradient(90deg, transparent 46px, var(--pt-margin) 46px 48px, transparent 48px 52px, var(--pt-margin) 52px 53px, transparent 53px),
+      repeating-linear-gradient(180deg, transparent 0 30px, var(--pt-ruled) 30px 32px);
+    background-attachment: local;
+  }
+  :root[data-design="petal"] .main::before {   /* the holes stay put while the page scrolls */
+    content: ""; position: absolute; z-index: 2; left: 14px; top: 0; bottom: 0; width: 14px; pointer-events: none;
+    background:
+      linear-gradient(var(--sky-deep) 0 0) 2px 50% / 10px 14px no-repeat, linear-gradient(var(--sky-deep) 0 0) 0 50% / 14px 10px no-repeat,
+      linear-gradient(var(--sky-deep) 0 0) 2px 18% / 10px 14px no-repeat, linear-gradient(var(--sky-deep) 0 0) 0 18% / 14px 10px no-repeat,
+      linear-gradient(var(--sky-deep) 0 0) 2px 82% / 10px 14px no-repeat, linear-gradient(var(--sky-deep) 0 0) 0 82% / 14px 10px no-repeat;
+  }
+  :root[data-design="petal"] .app { column-gap: 22px; padding-top: 10px; }
 }
-/* a tab that gave way (layout.js, data-fit) is an icon tab */
-:root[data-design="petal"] .header .nav-pill[data-fit-out] { width: 40px; padding: 0; }
-:root[data-design="petal"] .header .nav-pill[data-fit-out] .ic { display: block; }
 @media (min-width: 640px) and (max-width: 1099px) {    /* tablet: icon tabs; the heart alone stands for the brand */
-  :root[data-design="petal"] .nav-pill { padding: 0 10px; }
-  :root[data-design="petal"] .nav-pill .ic { display: block; }
-  :root[data-design="petal"] .header__brand .wordmark.pt-mark { font-size: 0; width: auto; height: auto; }
+  :root[data-design="petal"] .nav-pill { padding: 4px 12px 0; }
+  :root[data-design="petal"] .header__brand .wordmark.pt-mark { font-size: 0; text-shadow: none; }
   :root[data-design="petal"] .header__brand .pt-mark .pt-px { width: 27px; height: 21px; margin: 0; }
   :root[data-design="petal"][data-shell="topnav"] .header__search { min-width: 140px; }
+  :root[data-design="petal"] .view { padding-left: 64px; }
 }
 
-/* status tray: small pixel pills; compact (tablet, phone, 1100-1359): one pill with a pixel heart when all is well */
-:root[data-design="petal"] .tray { border-radius: 4px; border-width: 1.5px; padding: 3px; gap: 3px; }
-:root[data-design="petal"] .tray__pill { height: 28px; border-radius: 3px; padding: 0 9px 0 8px; gap: 6px; font: 750 .8125rem/1 var(--f-ui); letter-spacing: .01em; font-variant-numeric: tabular-nums; }
+/* the status tray: small pixel pills in one ring; compact (tablet, phone, 1100-1359): one pill with a pixel heart when
+   all is well */
+:root[data-design="petal"] .tray { padding: 3px; gap: 3px; background-color: var(--panel); }
+:root[data-design="petal"] .tray__pill { height: 28px; border-radius: 0; padding: 0 9px 0 8px; gap: 6px; font: 750 .8125rem/1 var(--f-ui); letter-spacing: .01em; font-variant-numeric: tabular-nums; }
+:root[data-design="petal"] .tray__pill .sg { border-radius: 0; }
 :root[data-design="petal"] .tray--full .tray__pill:last-child::after { content: "B"; margin-left: -6px; }
 :root[data-design="petal"] .tray:hover .tray__pill { background: var(--pink-light); }
 :root[data-design="petal"] .tray--compact .sg--ok { display: none; }
@@ -458,136 +648,220 @@
   content: ""; width: 11px; height: 10px; background: var(--heart); -webkit-mask: var(--px-heart) center / contain no-repeat; mask: var(--px-heart) center / contain no-repeat;
 }
 
-/* gloss title bar shared by the context panel and every petal window: orbs left, the real controls right */
-:root[data-design="petal"] :is(.ctx > .region-title, .pt-win__bar, .nowcol__head) {
-  display: flex; align-items: center; gap: 10px; flex: none; height: 36px; padding: 0 10px 0 12px;
-  border-bottom: 1px solid var(--pt-bar-line); border-radius: 5px 5px 0 0; color: var(--fg-sky);
-  background: linear-gradient(180deg, var(--pt-bar-1) 0%, var(--pt-bar-2) 46%, var(--pt-bar-3) 47%, var(--pt-bar-4) 100%);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, #ffffff 70%, transparent);
-  font: var(--t-label); text-transform: uppercase; letter-spacing: .16em;
-}
-:root[data-design="petal"] .ctx > .region-title::before, :root[data-design="petal"] .nowcol__head::before, :root[data-design="petal"] .pt-win__dots { content: ""; flex: none; width: 46px; height: 12px; background: var(--pt-orbs); }
-:root[data-design="petal"] :is(.ctx, .nowcol) { border: 1.5px solid var(--pt-frame); box-shadow: var(--stack-1l); }
+/* the side panel: a pixel window whose tabs are index tabs standing on its paper */
+:root[data-design="petal"] :is(.ctx, .nowcol) { background-color: var(--panel); }
+@media (min-width: 640px) { :root[data-design="petal"] :is(.ctx, .nowcol) { margin-top: -2px; } }
 :root[data-design="petal"] .app[data-ctx="docked"] .ctx { position: relative; }
 :root[data-design="petal"] .ctx > .region-title { font-size: 0; letter-spacing: 0; }   /* the tabs below name the panel */
 :root[data-design="petal"] .ctx > .region-meta {
-  display: block; position: absolute; top: 12px; right: 52px; font: 750 .75rem/1 var(--f-ui); color: var(--fg-sky-2); font-variant-numeric: tabular-nums;
+  display: block; position: absolute; top: 12px; right: 52px; font: 750 .75rem/1 var(--f-ui); color: var(--pt-tb-ink); font-variant-numeric: tabular-nums;
 }
-/* the panel's close button sits in the title bar */
-:root[data-design="petal"] .ctx__head > .btn-icon { position: absolute; top: 2px; right: 6px; width: 32px; height: 32px; color: var(--fg-sky); }
-/* panel tabs as img 03 tabs: flat, uppercase, the current one joins the body */
-:root[data-design="petal"] .ctx__head { display: flex; align-items: flex-end; padding: 8px 10px 0; border-bottom: 1.5px solid var(--pt-frame); background: var(--bg-2); }
-:root[data-design="petal"] .ctx__head .seg { border: 0; padding: 0; background: transparent; gap: 3px; align-items: end; }
+/* the panel's own buttons (two panes, close) sit in the title bar */
+:root[data-design="petal"] .ctx__head > .btn-icon { position: absolute; top: 1px; right: 6px; width: 32px; height: 32px; color: var(--pt-tb-ink); }
+:root[data-design="petal"] .ctx__head > .ctx__split { right: 40px; }
+:root[data-design="petal"] .ctx__head { display: flex; align-items: flex-end; padding: 8px 10px 0; border-bottom: 2px solid var(--line); background: var(--panel); }
+:root[data-design="petal"] .ctx__head .seg { border: 0; padding: 0; background: transparent; gap: 3px; align-items: end; box-shadow: none; }
 :root[data-design="petal"] .ctx__head .seg__ind { display: none; }
 :root[data-design="petal"] :is(.ctx__head .seg__btn, .pt-win__page, .lib-segs a.pill-filter) {
-  min-height: 32px; padding: 0 12px; margin-bottom: -1.5px; border: 1px solid var(--pt-rule); border-bottom: 0; border-radius: 4px 4px 0 0;
-  background: var(--bg-3); color: var(--fg-2); box-shadow: none; font: var(--t-label); text-transform: uppercase; letter-spacing: .12em;
+  min-height: 32px; padding: 0 12px; margin-bottom: -2px; background-color: var(--pt-tab-2); color: var(--fg);
+  font: 400 1.0625rem/1 var(--f-zine); text-transform: uppercase; letter-spacing: .08em;
 }
-:root[data-design="petal"] :is(.ctx__head .seg__btn[aria-selected="true"], .lib-segs a.pill-filter[aria-current="page"]) {
-  background: var(--bg); color: var(--fg); border: 1.5px solid var(--pt-frame); border-bottom: 1.5px solid var(--bg);
+:root[data-design="petal"] :is(.ctx__head .seg__btn[aria-selected="true"], .lib-segs a.pill-filter[aria-current="page"], .now[data-page="now"] [data-p="now"], .now[data-page="source"] [data-p="source"], .now[data-page="save"] [data-p="save"]) {
+  background-color: var(--panel); color: var(--fg);
 }
-:root[data-design="petal"] .ctx__body { -webkit-mask: linear-gradient(180deg, #000 calc(100% - 28px), transparent); mask: linear-gradient(180deg, #000 calc(100% - 28px), transparent); padding-bottom: 28px; }
+:root[data-design="petal"] .ctx__body { background: var(--panel); -webkit-mask: linear-gradient(180deg, #000 calc(100% - 28px), transparent); mask: linear-gradient(180deg, #000 calc(100% - 28px), transparent); padding-bottom: 28px; }
+:root[data-design="petal"] .ctx-scrim { background: var(--scrim); }
 
-/* player bar (img 04): the label above the title on the same left edge ("Playing from <place>", a link; the failure
-   while a song failed); title; artist + facts on one line */
-:root[data-design="petal"] .pbar { border: 1.5px solid var(--pt-frame); box-shadow: var(--stack-1l); }
+/* the Now Playing column is a pixel window: the striped bar with its name in the pixel face, its keys at the right */
+:root[data-design="petal"] .nowcol__title { font: 400 1.125rem/1 var(--f-zine); letter-spacing: .1em; text-transform: uppercase; color: inherit; }
+:root[data-design="petal"] .nowcol__head .btn-icon { width: 28px; height: 28px; color: var(--pt-tb-ink); }
+
+/* =====================================================================
+   The player bar: a strip of zine paper with index tabs on its top edge. Three rows: the tabs (a label tab saying what
+   the player does, or lull's own words while a state needs them; the tools as tabs on the right, the volume a tab of its
+   own; a pressed tool is a tab joined to the paper), the song (a taped snapshot, its title in the pixel face) with the
+   pixel keys centred and a cassette sticker on wide desks, then the seek as a row of hearts, the times at its ends. The
+   paper is the region title, laid behind the rows.
+   ===================================================================== */
 :root[data-design="petal"] .pbar > .region-title { display: none; }
-:root[data-design="petal"] .pbar__text { grid-template-columns: minmax(0, auto) auto; grid-template-areas: "lbl lbl" "title title" "artist badges"; column-gap: 8px; row-gap: 0; align-items: center; justify-content: start; }
-:root[data-design="petal"] .pbar__from, :root[data-design="petal"] .pbar[data-status="failed"] .pbar__text::before { grid-area: lbl; margin-bottom: 3px; font: 700 .75rem/1 var(--f-ui); color: var(--fg-panel-2); }
+/* the song's words: the label above the title on the same left edge ("Playing from <place>", a link; the failure while
+   a song failed); the title; the artist and its facts on one line */
+:root[data-design="petal"] .pbar__text { grid-template-columns: minmax(0, auto) auto; grid-template-areas: "lbl lbl" "title title" "artist badges"; column-gap: 8px; row-gap: 2px; align-items: center; justify-content: start; }
+:root[data-design="petal"] .pbar__from, :root[data-design="petal"] .pbar[data-status="failed"] .pbar__text::before { grid-area: lbl; margin-bottom: 1px; font: 700 .75rem/1 var(--f-ui); color: var(--fg-panel-2); }
 :root[data-design="petal"] .pbar__from b { font-weight: 800; color: var(--fg); }
 :root[data-design="petal"] .pbar[data-status="failed"] .pbar__from { display: none; }
 :root[data-design="petal"] .pbar__title { grid-area: title; font-size: 1.0625rem; }
 :root[data-design="petal"] .pbar__artist { grid-area: artist; min-width: 0; }
 :root[data-design="petal"] .pbar__badges { grid-area: badges; margin: 0; min-height: 0; }
-:root[data-design="petal"] .pbar__controls { gap: 10px; }
 :root[data-design="petal"] :is(.pbar__controls, .pbar__title, .pbar__tools) .btn-icon { color: var(--link); }
-:root[data-design="petal"] .pbar__state {   /* the whole reason stays readable: the actions drop under it when the bar is narrow */
-  max-width: min(760px, calc(100% - 24px)); flex-wrap: wrap; justify-content: center; row-gap: 4px; white-space: normal;
-  border-width: 1.5px; border-color: var(--pt-frame); border-radius: 5px 5px 0 0;
-}
-/* failed: the bar says so too (label and a hatched seek track in --down) */
+/* failed: the bar says so in the label's place (words that name no cause), the hearts hatched in --down */
 :root[data-design="petal"] .pbar[data-status="failed"] .pbar__text::before { content: "\26A0\FE0E  couldn't play this song"; color: var(--down); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-:root[data-design="petal"] .pbar[data-status="failed"] .seek__track {
-  background: repeating-linear-gradient(-45deg, color-mix(in srgb, var(--down) 55%, transparent) 0 1.5px, transparent 1.5px 4.243px) 0 0 / 6px 6px;
-  box-shadow: inset 0 0 0 1px var(--down);
-}
-:root[data-design="petal"] .pbar__state .btn--quiet { min-height: 26px; padding: 0 8px; border: 1.5px solid var(--pt-frame); border-radius: 3px; background: var(--bg); }
-:root[data-design="petal"] .pbar__state .btn--quiet:hover { background: var(--peri); }
-:root[data-design="petal"] .app:has(> :where(.pbar) > .pbar__state:not([hidden])) .view { padding-bottom: 56px; }   /* the error tab never covers the page */
-@media (max-width: 1099px) { :root[data-design="petal"] .app:has(> :where(.pbar) > .pbar__state:not([hidden])) .view { padding-bottom: 88px; } }   /* two-line tab */
-:root[data-design="petal"] .bezel-thumb { padding: 3px; border-radius: 3px; border: 1.5px solid var(--pt-frame); background: var(--panel); }
-:root[data-design="petal"] .bezel-thumb .cover { border-radius: 2px; border-color: var(--pt-rule); }
-:root[data-design="petal"] .bezel-thumb:hover { background: var(--panel-2); }
-:root[data-design="petal"] .pbar__save-step { border-radius: 2px; }
+:root[data-design="petal"] .pbar[data-status="failed"] .seek:not(.seek--line, .vol .seek) .seek__track { background: color-mix(in srgb, var(--down) 35%, var(--panel)); }
+:root[data-design="petal"] .pbar[data-status="failed"] .seek:not(.seek--line, .vol .seek) :is(.seek__played, .seek__xfer, .seek__buf) { background: var(--down); }
+/* the state's words: a tab of their own, the whole reason readable (the actions wrap under it when the tab is narrow) */
+:root[data-design="petal"] .pbar__state { flex-wrap: wrap; row-gap: 4px; white-space: normal; background-color: var(--panel); color: var(--fg); }
+:root[data-design="petal"] .pbar__state.is-error { background-color: var(--pt-tab-1); }
+:root[data-design="petal"] .pbar__state .btn--quiet { min-height: 26px; padding: 0 8px; background-color: var(--panel); }
+:root[data-design="petal"] .pbar__state .btn--quiet:hover { background-color: var(--peri); text-decoration: none; }
+:root[data-design="petal"] .pbar__save-step { right: -6px; bottom: -6px; }
 @media (max-width: 1099px) { :root[data-design="petal"] .pbar__badges { display: none; } }
 
-/* phone shell: header, mini player and tab bar as white bars with pink rules */
-@media (max-width: 639px) {
-  :root[data-design="petal"] .header { background: var(--panel); border-bottom: 1.5px solid var(--pt-frame); margin-bottom: 8px; padding-bottom: 8px; }
+@media (min-width: 640px) {
+  :root[data-design="petal"] { --bar-h: 158px; }
+  :root[data-design="petal"] .app[data-height="short"] { --bar-h: 136px; }
+  :root[data-design="petal"] .pbar {
+    padding: 0 18px 12px; margin-bottom: 18px; border: 0; background: none; box-shadow: none;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); grid-template-rows: 38px minmax(0, 1fr) 30px;
+    grid-template-areas: "lbl tools tools" "now ctl deco" "seek seek seek"; column-gap: 20px; row-gap: 0; align-items: center;
+  }
+  :root[data-design="petal"] .app[data-height="short"] .pbar { grid-template-rows: 34px minmax(0, 1fr) 26px; padding-bottom: 8px; }
+  :root[data-design="petal"] .pbar > .region-title {   /* the paper */
+    display: block; position: absolute; left: 0; right: 4px; top: 36px; bottom: 4px; z-index: 0; font-size: 0; background-color: var(--panel);
+  }
+  :root[data-design="petal"] .app[data-height="short"] .pbar > .region-title { top: 32px; }
+  :root[data-design="petal"] .pbar > :not(.region-title):not(.pbar__state), :root[data-design="petal"] .pbar__centre > * { position: relative; z-index: 1; }
+
+  /* the label tab: what the player is doing, in words that name no cause */
+  :root[data-design="petal"] .pbar::before {
+    content: "\2665  now playing" / ""; grid-area: lbl; justify-self: start; align-self: end; position: relative; z-index: 1; margin: 0 0 -2px -4px;
+    height: 34px; padding: 0 16px; display: flex; align-items: center; background-color: var(--pt-tab-1);
+    font: 400 1.25rem/1 var(--f-zine); letter-spacing: .06em; color: var(--fg-sky); white-space: nowrap;
+  }
+  :root[data-design="petal"] .pbar[data-playing="false"]::before { content: "\2665  paused" / ""; }
+  :root[data-design="petal"] .pbar[data-status="idle"]::before { content: "\2665  lull player" / ""; }
+  :root[data-design="petal"] .app[data-height="short"] .pbar::before { height: 30px; }
+  /* while lull has words for the state (finding, a failure, a kept seek...), they are the tab, in the label's place; it
+     grows upward when the reason and its actions need two lines */
+  :root[data-design="petal"] .pbar:has(> .pbar__state:not([hidden]))::before { visibility: hidden; }
+  :root[data-design="petal"] .pbar__state {
+    left: 14px; bottom: calc(100% - 38px); transform: none; z-index: 2; min-height: 34px; max-width: calc(100% - var(--fit-side, 50%) - 56px);
+    padding: 4px 10px 4px 12px; font: 700 .875rem/1.25 var(--f-ui);
+  }
+  :root[data-design="petal"] .app[data-height="short"] .pbar__state { bottom: calc(100% - 34px); min-height: 30px; }
+
+  /* the tools: one index tab each, standing on the paper's top edge */
+  :root[data-design="petal"] .pbar__tools { grid-area: tools; justify-self: end; align-self: end; align-items: flex-end; gap: 3px; margin-bottom: -2px; }
+  :root[data-design="petal"] .pbar__tools > :is(.btn-icon, .vol) { height: 34px; background-color: var(--pt-tab-2); color: var(--fg-sky); }
+  :root[data-design="petal"] .pbar__tools > .btn-icon { width: 42px; }
+  :root[data-design="petal"] .pbar__tools > :nth-child(3n) { background-color: var(--pt-tab-3); }
+  :root[data-design="petal"] .pbar__tools > :nth-child(3n+1) { background-color: var(--pt-tab-4); }
+  :root[data-design="petal"] .pbar__tools > .btn-icon:hover { background-color: var(--pt-tab-1); }
+  :root[data-design="petal"] .pbar__tools > .btn-icon:is([aria-pressed="true"], .is-on) { height: 36px; margin-bottom: -2px; background-color: var(--panel); color: var(--link); }
+  :root[data-design="petal"] .pbar__tools > .vol { display: inline-flex; align-items: center; gap: 2px; padding: 0 10px 0 2px; background-color: var(--pt-tab-1); }
+  :root[data-design="petal"] .pbar__tools > .vol > .btn-icon { width: 34px; height: 30px; }
+  :root[data-design="petal"] .app[data-height="short"] .pbar__tools > :is(.btn-icon, .vol) { height: 30px; }
+  /* the volume slider that gave way opens just above its tab */
+  :root[data-design="petal"] .pbar .vol > .seek[data-fit-out] { bottom: calc(100% + 8px); right: -10px; border-radius: 0; background-color: var(--panel); }
+  :root[data-design="petal"] .pbar .vol > .seek[data-fit-out]::after { height: 10px; }
+  :root[data-design="petal"] .pbar__xfade { position: absolute; right: 0; bottom: calc(100% + 6px); }
+
+  /* the song: a taped snapshot and its title in the pixel face; a liked song gets a heart sticker on its corner, a
+     saved one a star */
+  :root[data-design="petal"] .pbar__now { grid-area: now; gap: 16px; padding-left: 4px; }
+    :root[data-design="petal"] .pbar .bezel-thumb :is(.cover, span) { --cover-size: 60px; transform: rotate(-4deg); }
+  :root[data-design="petal"] .pbar__title { font: 400 1.75rem/1 var(--f-zine); letter-spacing: .02em; }
+
+  /* the keys: paper keys, PLAY a big pink one */
+  :root[data-design="petal"] .pbar__controls { grid-area: ctl; gap: 8px; }
+  :root[data-design="petal"] .pbar__centre { display: contents; }
+  :root[data-design="petal"] .pbar__controls .btn-icon { width: 42px; height: 42px; }
+  :root[data-design="petal"] .pbar .btn-gloss { --size: 58px; margin: 0 4px; }
+  :root[data-design="petal"] .app[data-height="short"] .pbar .btn-gloss { --size: 50px; }
+
+  /* the seek: the paper's last line, a row of hearts filling up */
+  :root[data-design="petal"] .pbar__seek { grid-area: seek; align-self: center; column-gap: 14px; padding: 0 4px; }
+  :root[data-design="petal"] .pbar__seek .seek-row__time { font: 400 1.25rem/1 var(--f-zine); color: var(--fg); }
+
+  /* a cassette sticker on the empty side, on desks wide enough for it */
+  :root[data-design="petal"] .pbar::after {
+    content: ""; grid-area: deco; justify-self: end; position: relative; z-index: 1; width: 58px; height: 58px; margin-right: 18px;
+    background: var(--pc-3) url("assets/art/c8.svg") center / 100% 100% no-repeat; image-rendering: pixelated;
+    transform: rotate(6deg); box-shadow: 0 0 0 4px var(--pt-photo), 0 0 0 6px var(--pt-frame), 5px 5px 0 6px var(--stack-2); pointer-events: none;
+  }
 }
-:root[data-design="petal"] .mini { border: 1.5px solid var(--pt-frame); border-radius: 5px; box-shadow: var(--stack-1l); overflow: hidden; }
-:root[data-design="petal"] .mini .bezel-thumb { border-radius: 3px; }
-:root[data-design="petal"] .mini .seek { border-radius: 0; }
-:root[data-design="petal"] .mini .seek__track { border-radius: 0; box-shadow: none; }
-:root[data-design="petal"] .tabbar { border-top: 1.5px solid var(--pt-frame); }
-:root[data-design="petal"] .tab { font: 800 .6875rem/1 var(--f-ui); text-transform: uppercase; letter-spacing: .1em; }
-:root[data-design="petal"] .tab .ic { border-radius: 3px; }
-:root[data-design="petal"] .tab[aria-current="page"] .ic { box-shadow: inset 0 0 0 1.5px var(--pt-frame); }
+@media (min-width: 640px) and (max-width: 1359px) { :root[data-design="petal"] .pbar::after { display: none; } }
+:root[data-design="petal"] .bezel-thumb { padding: 0; border: 0; background: none; }   /* the snapshot is the cover's own white border */
+/* the phone: a paper header with the ring under it, the mini player a small pixel window, the tab bar a striped strip */
+@media (max-width: 639px) {
+  :root[data-design="petal"] .header { background: var(--panel); border-bottom: 2px solid var(--line); margin-bottom: 8px; padding-bottom: 8px; }
+  :root[data-design="petal"] .wordmark.pt-mark { font-size: 2rem; }
+  :root[data-design="petal"] .view { background: repeating-linear-gradient(180deg, transparent 0 30px, var(--pt-ruled) 30px 32px) var(--panel); background-attachment: local; }
+  :root[data-design="petal"] .tabbar { border-top: 2px solid var(--line); background: repeating-linear-gradient(180deg, var(--pt-tb-a) 0 2px, var(--pt-tb-b) 2px 4px); }
+  :root[data-design="petal"] .tab { font: 400 .9375rem/1 var(--f-zine); text-transform: uppercase; letter-spacing: .08em; color: var(--pt-tb-ink); }
+  :root[data-design="petal"] .tab .ic { border-radius: 0; }
+  :root[data-design="petal"] .tab[aria-current="page"] .ic { background: var(--panel); box-shadow: inset 0 0 0 2px var(--line); color: var(--fg-sky); }
+}
+:root[data-design="petal"] .mini { background-color: var(--panel); overflow: hidden; }
+:root[data-design="petal"] .mini .bezel-thumb :is(.cover, span) { --snap-w: 3px; --snap-o: 3px; transform: rotate(-3deg); }
+:root[data-design="petal"] .mini__title { font: 400 1.25rem/1.05 var(--f-zine); letter-spacing: .02em; }
+:root[data-design="petal"] .mini .seek--line { height: 4px; }
+:root[data-design="petal"] .mini .seek--line .seek__played { background: var(--pt-heart-2); }
 
 /* =====================================================================
-   Page headers: one img 04 header band on every page (kicker, poster title, summary)
+   Page headers: the title written straight on the paper, the kicker a sticker in the colour of its place's tab
    ===================================================================== */
-:root[data-design="petal"] :is(.disc-hello, .lib-head, .sys-head, .sys-welcome__head, .sys-settings__title) {
-  position: relative; margin: 0 0 22px; padding: 18px 24px; background: var(--pt-band); border: 1.5px solid var(--pt-frame);
-  border-radius: 4px; box-shadow: var(--stack);
-}
+:root[data-design="petal"] :is(.disc-hello, .lib-head, .sys-head, .sys-welcome__head, .sys-settings__title) { position: relative; margin: 0 0 22px; padding: 6px 0 4px; }
 :root[data-design="petal"] :is(.disc-hello h1, .lib-head h1, .sys-head h1, .sys-welcome__head h1)::before {
-  content: var(--pt-kicker, "") / ""; display: block; margin: 0 0 10px; font: var(--t-label); letter-spacing: .16em; text-transform: uppercase; color: var(--fg-2);
+  content: var(--pt-kicker, "") / ""; display: block; width: max-content; margin: 0 0 14px; padding: 3px 9px 2px; background: var(--pt-kicker-bg, var(--pt-tab-3)); color: var(--fg-sky);
+  font: 400 1.125rem/1 var(--f-zine); letter-spacing: .1em; text-transform: uppercase; text-shadow: none; transform: rotate(-2deg);
 }
-:root[data-design="petal"] .disc-hello { --pt-kicker: "for you"; margin-bottom: 34px; }   /* room for the peeking bunny */
-:root[data-design="petal"] .lib-head { --pt-kicker: "your collection"; align-items: center; }
+:root[data-design="petal"] .disc-hello { --pt-kicker: "for you"; --pt-kicker-bg: var(--pt-tab-3); }
+:root[data-design="petal"] .lib-head { --pt-kicker: "your collection"; --pt-kicker-bg: var(--pt-tab-2); align-items: center; }
 :root[data-design="petal"] .app[data-screen="tag"] .lib-head { --pt-kicker: "tag"; }
-:root[data-design="petal"] .sys-head { --pt-kicker: "your listening"; }
-:root[data-design="petal"] .sys-welcome__head { --pt-kicker: "hello"; }
+:root[data-design="petal"] .app[data-screen="playlists"] .lib-head { --pt-kicker-bg: var(--pt-tab-3); }
+:root[data-design="petal"] .sys-head { --pt-kicker: "your listening"; --pt-kicker-bg: var(--pt-tab-4); }
+:root[data-design="petal"] .sys-welcome__head { --pt-kicker: "hello"; --pt-kicker-bg: var(--pt-tab-1); }
 :root[data-design="petal"] .sys-settings__title { display: block; }
+:root[data-design="petal"] .lib-head h1 { font-size: 3.25rem; line-height: .92; }
 
-/* the header scene (art/hero*.svg): a 40x24 pixel illustration that follows the theme and sleeps while paused */
+/* the header scene (art/hero*.svg): a 40x24 pixel illustration, a snapshot taped onto the page; it follows the theme and
+   sleeps (ears down, z z) unless something is playing */
 :root[data-design="petal"] :is(.disc-hello:not(.disc-hello--search), .sys-welcome__head) {
-  display: grid; grid-template-columns: 200px minmax(0, 1fr); column-gap: 26px; align-items: center; padding: 16px 24px 16px 16px;
+  display: grid; grid-template-columns: 228px minmax(0, 1fr); column-gap: 32px; align-items: center; margin-bottom: 26px;
 }
 :root[data-design="petal"] :is(.disc-hello:not(.disc-hello--search), .sys-welcome__head)::before {
-  content: ""; grid-row: 1 / span 2; width: 200px; aspect-ratio: 40 / 24; border: 2px solid var(--pt-frame); border-radius: 3px;
-  background: var(--pc-3) var(--pt-hero) center / 100% 100% no-repeat; image-rendering: pixelated; box-shadow: 3px 3px 0 0 var(--pt-shadow);
+  content: ""; grid-row: 1 / span 2; width: 200px; aspect-ratio: 40 / 24; margin: 10px 14px 14px 10px; transform: rotate(-3deg);
+  background: var(--pc-3) var(--pt-hero) center / 100% 100% no-repeat; image-rendering: pixelated;
+  box-shadow: 0 0 0 10px var(--pt-photo), 0 0 0 12px var(--pt-frame), 14px 14px 0 12px var(--stack-2);
 }
-:root[data-design="petal"] .sys-welcome .sys-welcome__head { grid-template-columns: minmax(0, 1fr) 200px; padding: 16px 16px 16px 24px; }
+:root[data-design="petal"]:not([data-playing="true"]) :is(.disc-hello:not(.disc-hello--search), .sys-welcome__head)::before { background-image: var(--pt-hero-sleep); }
+:root[data-design="petal"] .disc-hello:not(.disc-hello--search)::after {   /* tape on the snapshot */
+  content: ""; position: absolute; left: 70px; top: -8px; width: 86px; height: 20px; transform: rotate(4deg); pointer-events: none;
+  background: repeating-linear-gradient(90deg, var(--pt-tape) 0 8px, color-mix(in srgb, var(--pt-tape) 55%, transparent) 8px 12px);
+}
+:root[data-design="petal"] .sys-welcome .sys-welcome__head { grid-template-columns: minmax(0, 1fr) 228px; }
 :root[data-design="petal"] .sys-welcome .sys-welcome__head::before { grid-column: 2; }
 :root[data-design="petal"] :is(.disc-hello, .sys-welcome__head) h1 { margin: 0; align-self: end; }
+:root[data-design="petal"] .disc-hello h1 { font-size: 5rem; line-height: .82; }
 :root[data-design="petal"] .disc-hello h1 .sparkle { display: none; }
-:root[data-design="petal"] :is(.disc-hello__sum, .sys-welcome__head .sys-lede) { align-self: start; margin: 8px 0 0; font: 500 1.0625rem/1.45 var(--f-ui); }
+:root[data-design="petal"] :is(.disc-hello__sum, .sys-welcome__head .sys-lede) { align-self: start; margin: 10px 0 0; font: 600 1.125rem/1.5 var(--f-ui); }
 @media (max-width: 639px) {
-  :root[data-design="petal"] :is(.disc-hello, .lib-head, .sys-head, .sys-welcome__head, .sys-settings__title) { padding: 12px 14px; box-shadow: none; margin-bottom: 16px; }
-  :root[data-design="petal"] :is(.disc-hello:not(.disc-hello--search), .sys-welcome__head) { grid-template-columns: 96px minmax(0, 1fr); column-gap: 14px; padding: 12px; }
-  :root[data-design="petal"] :is(.disc-hello:not(.disc-hello--search), .sys-welcome__head)::before { width: 96px; grid-column: 1; }
-  :root[data-design="petal"] :is(.disc-hello h1, .lib-head h1, .sys-head h1, .sys-welcome__head h1)::before { margin-bottom: 4px; }
+  :root[data-design="petal"] :is(.disc-hello, .lib-head, .sys-head, .sys-welcome__head, .sys-settings__title) { margin-bottom: 16px; }
+  :root[data-design="petal"] :is(.disc-hello:not(.disc-hello--search), .sys-welcome__head) { grid-template-columns: 104px minmax(0, 1fr); column-gap: 20px; }
+  :root[data-design="petal"] :is(.disc-hello:not(.disc-hello--search), .sys-welcome__head)::before { width: 88px; grid-column: 1; margin: 6px; box-shadow: 0 0 0 5px var(--pt-photo), 0 0 0 7px var(--pt-frame), 6px 6px 0 7px var(--stack-2); }
+  :root[data-design="petal"] .disc-hello:not(.disc-hello--search)::after { left: 30px; width: 50px; height: 14px; top: -4px; }
+  :root[data-design="petal"] .disc-hello h1 { font-size: 3rem; }
+  :root[data-design="petal"] .lib-head h1 { font-size: 2.5rem; }
+  :root[data-design="petal"] :is(.disc-hello h1, .lib-head h1, .sys-head h1, .sys-welcome__head h1)::before { margin-bottom: 8px; font-size: 1rem; }
   :root[data-design="petal"] :is(.disc-hello__sum, .sys-welcome__head .sys-lede) { grid-column: 1 / -1; margin-top: 10px; font-size: .9375rem; }
 }
 
 /* =====================================================================
    Home
    ===================================================================== */
-@media (min-width: 640px) {   /* new releases: equal tiles, as many as the module fits (more as it widens), one title line, the play button inside the cover */
-  :root[data-design="petal"] [data-region="new"] .disc-shelf { grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; padding-right: 0; overflow: visible; }
+@media (min-width: 640px) {   /* new releases: equal tiles, as many as the module fits (more as it widens), one title line, the play key inside the cover */
+  :root[data-design="petal"] [data-region="new"] .disc-shelf { grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 20px; padding-right: 0; overflow: visible; }
 }
-:root[data-design="petal"] .disc-shelf { gap: 16px; }
+:root[data-design="petal"] .disc-modules { row-gap: 8px; }
+:root[data-design="petal"] .disc-mod { padding-top: 14px; }
+:root[data-design="petal"] .disc-shelf { gap: 20px; }
 :root[data-design="petal"] .disc-shelf--sm { grid-auto-columns: 132px; }
 @media (max-width: 639px) { :root[data-design="petal"] .disc-shelf { grid-auto-columns: 136px; } }
-:root[data-design="petal"] .tile__art .cover { width: 100%; height: auto; aspect-ratio: 1; }
-:root[data-design="petal"] .tile__play { right: 6px; bottom: 6px; width: 36px; height: 36px; border-color: var(--pt-frame); color: var(--link); box-shadow: 2px 2px 0 0 var(--pt-shadow); }
-:root[data-design="petal"] .tile__title { line-height: 1.3; height: 1.3em; }
-:root[data-design="petal"] .tile__meta .badge-new { padding: 2px 4px 1px; }
+/* shelf snapshots lean a little, each its own way */
+:root[data-design="petal"] .disc-shelf > :nth-child(3n+1) .tile__art { transform: rotate(-1.5deg); }
+:root[data-design="petal"] .disc-shelf > :nth-child(3n+2) .tile__art { transform: rotate(1deg); }
 :root[data-design="petal"] .disc-starter .cover { width: 50px; height: 50px; }
 /* the pixel bunny peeks over the radio starters card, paws on its frame */
-:root[data-design="petal"] .disc-card[data-region="radio"] { position: relative; }
 :root[data-design="petal"] .disc-card[data-region="radio"]::before {
   content: ""; position: absolute; right: 24px; top: -29px; width: 32px; height: 32px; z-index: 1; pointer-events: none;
   background: url("assets/art/peek.svg") center / 100% 100% no-repeat; image-rendering: pixelated;
@@ -595,14 +869,14 @@
 @media (max-width: 1099px) { :root[data-design="petal"] .disc-card[data-region="radio"]::before { display: none; } }
 
 /* =====================================================================
-   Search: the page header band (no scene), then a short top-result band and a full-width songs table
+   Search: the page header (no scene), then a short top-result card and a full-width songs table
    ===================================================================== */
-:root[data-design="petal"] .disc-hello--search { --pt-kicker: "library + soulseek"; margin: 0 0 16px; }
-:root[data-design="petal"] .disc-hello--search .disc-hello__sum { max-width: none; margin: 8px 0 0; font: 500 1.0625rem/1.45 var(--f-ui); }
-:root[data-design="petal"] .disc-q .input { height: 48px; border-color: var(--pt-frame); box-shadow: var(--stack-sm); }
+:root[data-design="petal"] .disc-hello--search { --pt-kicker: "library + soulseek"; --pt-kicker-bg: var(--pt-tab-2); margin: 0 0 16px; }
+:root[data-design="petal"] .disc-hello--search .disc-hello__sum { max-width: none; margin: 8px 0 0; }
+:root[data-design="petal"] .disc-q .input { height: 48px; box-shadow: var(--stack-sm); }
 :root[data-design="petal"] .disc-top .disc-top__body { grid-template-columns: 72px minmax(0, 1fr); gap: 16px; }
 :root[data-design="petal"] .disc-top .disc-top__body > .cover { width: 72px; height: 72px; }
-:root[data-design="petal"] .disc-top__title { font-size: 1.5rem; }
+:root[data-design="petal"] .disc-top__title { font: 400 2rem/1 var(--f-zine); letter-spacing: .02em; }
 :root[data-design="petal"] .disc-top__badges { margin-top: 4px; }
 @media (min-width: 900px) {
   :root[data-design="petal"] .disc-top__actions { margin: 0; flex: none; }
@@ -610,308 +884,319 @@
 @media (max-width: 639px) {   /* phone: the top result is one 72 px row with its Play button; the rest is in the songs below */
   :root[data-design="petal"] .disc-top .disc-top__body { grid-template-columns: 56px minmax(0, 1fr); gap: 12px; }
   :root[data-design="petal"] .disc-top .disc-top__body > .cover { width: 56px; height: 56px; }
-  :root[data-design="petal"] .disc-top__title { font-size: 1.0625rem; font-weight: 700; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  :root[data-design="petal"] .disc-top__title { font-size: 1.5rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   :root[data-design="petal"] :is(.disc-top__badges, .disc-top__kind) { display: none; }
   :root[data-design="petal"] .disc-top__actions { margin: 0; }
   :root[data-design="petal"] .disc-top__actions > :not(.btn--primary) { display: none; }
 }
 
 /* =====================================================================
-   Library: sub-nav as an img 03 tab strip; count chips stay filters
+   Library: the sub-nav is a row of index tabs standing on its rule; count chips stay filters
    ===================================================================== */
-:root[data-design="petal"] .lib-segs ul { gap: 3px; padding: 4px 2px 0; border-bottom: 1.5px solid var(--pt-frame); }
+:root[data-design="petal"] .lib-segs ul { gap: 3px; padding: 4px 2px 0; border-bottom: 2px solid var(--line); }
 :root[data-design="petal"] .lib-segs a.pill-filter { min-height: 34px; }
+:root[data-design="petal"] .lib-segs a.pill-filter:nth-child(4n+2), :root[data-design="petal"] .lib-segs li:nth-child(4n+2) a.pill-filter { background-color: var(--pt-tab-3); }
+:root[data-design="petal"] .lib-segs li:nth-child(4n+3) a.pill-filter { background-color: var(--pt-tab-4); }
+:root[data-design="petal"] .lib-segs li:nth-child(4n) a.pill-filter { background-color: var(--pt-tab-1); }
+:root[data-design="petal"] .lib-segs a.pill-filter[aria-current="page"] { background-color: var(--panel); }
+:root[data-design="petal"] .lib-sort { background-color: var(--peri); color: var(--ink); padding: 0 10px; }
 
-/* playlist page = img 04: blush header band, poster title, outlined circle play, pink filled sort, ruled table */
-:root[data-design="petal"] .lib-pl__head { position: relative; background: var(--pt-blush); border-bottom: 1.5px solid var(--pt-frame); border-radius: 3px 3px 0 0; }
-:root[data-design="petal"] .lib-pl__head > .mosaic { border-radius: 2px; box-shadow: 4px 4px 0 0 var(--pt-shadow); }
-:root[data-design="petal"] .lib-pl__title { font: 300 clamp(2rem, 9vw, 3.5rem)/1.04 var(--f-ui); letter-spacing: -.03em; }
-:root[data-design="petal"] .lib-pl__bar > .btn--primary {
-  width: 56px; height: 56px; min-height: 0; padding: 0; gap: 0; border-radius: 50%; font-size: 0;
-  background: var(--peri); border: 2px solid var(--pink); color: var(--link); box-shadow: none;
-}
+/* a playlist's page: a blush header band, the poster title, the pink play key, a ruled table */
+:root[data-design="petal"] .lib-pl__head { position: relative; background: var(--pt-blush); border-bottom: 2px solid var(--line); }
+:root[data-design="petal"] .lib-pl__title { font: 400 clamp(2.25rem, 9vw, 4rem)/.92 var(--f-zine); letter-spacing: .01em; }
+:root[data-design="petal"] .lib-pl__bar > .btn--primary { width: 56px; height: 56px; min-height: 0; padding: 0; gap: 0; font-size: 0; }
 :root[data-design="petal"] .lib-pl__bar > .btn--primary .ic { width: 24px; height: 24px; margin-left: 3px; fill: currentColor; }
-:root[data-design="petal"] .lib-sort { background: var(--peri); border: 1.5px solid var(--pt-frame); border-radius: 3px; color: var(--ink); padding: 0 10px; }
 :root[data-design="petal"] .lib-pl-list .trow { --art: 56px; min-height: 76px; }
-@media (max-width: 639px) {   /* img 04 layout on phone: the mosaic left of the title */
-  :root[data-design="petal"] .lib-pl__head { grid-template-columns: 112px minmax(0, 1fr); gap: 16px; align-items: start; }
-  :root[data-design="petal"] .lib-pl__head > .mosaic { width: 112px; }
+@media (max-width: 639px) {   /* phone: the snapshot left of the title */
+  :root[data-design="petal"] .lib-pl__head { grid-template-columns: 116px minmax(0, 1fr); gap: 14px; align-items: start; }
+  :root[data-design="petal"] .lib-pl__head > .mosaic { width: 100px; }
   :root[data-design="petal"] .lib-pl__head .lib-bio { grid-column: 1 / -1; }
-  :root[data-design="petal"] .lib-pl__bar .btn-save { width: 44px; height: 44px; min-height: 0; padding: 0; border-radius: 50%; justify-content: center; }
+  :root[data-design="petal"] .lib-pl__bar .btn-save { width: 44px; height: 44px; min-height: 0; padding: 0; justify-content: center; }
   :root[data-design="petal"] .lib-pl__bar .btn-save > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
 
 /* =====================================================================
-   Now Playing: the petal player window (slots/nowHero)
+   Now Playing: a zine spread. The left page is the player window (slots/nowHero: a taped snapshot of the cover, the
+   screen, the LCD strip, the keys); the right page carries the song's name in big pixel letters and the lyrics written
+   on the ruled paper, the line being sung marked with a highlighter. With nothing docked and room for it, the queue is
+   a third column; the source card sits under the player, so the lyrics have the rest of the page.
    ===================================================================== */
+:root[data-design="petal"] .now { max-width: none; }
 :root[data-design="petal"] .pt-win {
-  --bg: var(--cream); --bg-2: var(--cream-2); --bg-3: var(--cream-3); --fg: var(--ink); --fg-2: var(--ink-2);
+  --bg: var(--panel); --bg-2: var(--cream-2); --bg-3: var(--cream-3); --fg: var(--ink); --fg-2: var(--ink-2);
   --link: var(--link-on-cream); --edge: var(--line); --focus: var(--indigo); --heart: var(--pink-ink); --accent-ui: var(--link-on-cream);
   --seek-played: var(--card-seek-played); --seek-buffered: var(--card-seek-buffered); --divider: var(--pt-rule);
   position: relative; display: flex; flex-direction: column; width: 100%; max-width: none; margin: 0; padding: 0;
-  background: var(--bg); color: var(--fg); border: 1.5px solid var(--pt-frame); border-radius: var(--r-panel); box-shadow: var(--stack);
+  background-color: var(--panel); color: var(--fg);
 }
-:root[data-design="petal"] .pt-win__title { display: inline-flex; align-items: center; gap: 8px; }
-:root[data-design="petal"] .pt-win__title .pt-px { width: 11px; height: 9px; color: var(--link); }
-/* the mascot: a sitting pixel bunny, ears up while playing, lop ears and shut eyes while paused, "z z" when idle */
+:root[data-design="petal"] .pt-win__bar { container: pt-bar / inline-size; }
+:root[data-design="petal"] .pt-win__title { display: inline-flex; align-items: center; gap: 8px; padding: 2px 10px; background: var(--panel); color: var(--fg); font: 400 1.25rem/1 var(--f-zine); letter-spacing: .06em; text-transform: lowercase; }
+:root[data-design="petal"] .pt-win__title .pt-px { width: 11px; height: 9px; color: var(--heart); }
+/* the mascot: a sitting pixel bunny, ears up while music plays, lop ears and shut eyes while paused, "z z" with nothing
+   to play. It hops along the title bar as the song goes (--song-pos, in hundredths: one small step each) */
 :root[data-design="petal"] .pt-win__mascot { display: inline-flex; align-items: flex-end; gap: 4px; height: 26px; margin-left: auto; }
+:root[data-design="petal"] :is(.now__dev, .pt-mini) :is(.pt-win, .pt-win__bar) { --song-pos: inherit; }
+:root[data-design="petal"] :is(.now__dev, .pt-mini) .pt-win__mascot { --song-pos: inherit; translate: calc((var(--song-pos) - 1) * max(0px, 100cqi - 242px)); }
 :root[data-design="petal"] .pt-bun { width: 26px; height: 26px; }
 :root[data-design="petal"] .pt-bun--up { display: none; }
-:root[data-design="petal"] .pt-win:has([data-bind="play"][aria-label="Pause"]) .pt-bun--up { display: block; }
-:root[data-design="petal"] .pt-win:has([data-bind="play"][aria-label="Pause"]) .pt-bun--down { display: none; }
-:root[data-design="petal"] .pt-win__zz { display: none; font: var(--t-pixel); font-size: 1.125rem; color: var(--fg-2); text-transform: none; letter-spacing: 0; }
-:root[data-design="petal"] .pt-win:has(.now-dev__idle) .pt-win__zz { display: inline; }
-:root[data-design="petal"] .pt-win__tabs { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; padding: 8px 12px 0; border-bottom: 1.5px solid var(--pt-frame); background: var(--bg-2); }
+:root[data-design="petal"][data-playing="true"] .pt-win .pt-bun--up { display: block; }
+:root[data-design="petal"][data-playing="true"] .pt-win .pt-bun--down { display: none; }
+:root[data-design="petal"] .pt-win__zz { display: none; font: var(--t-pixel); font-size: 1.125rem; color: var(--pt-tb-ink); text-transform: none; letter-spacing: 0; }
+:root[data-design="petal"][data-player="idle"] .pt-win .pt-win__zz { display: inline; }
+/* the screen's page tabs (now, source, save) stand on the screen's paper */
+:root[data-design="petal"] .pt-win__tabs { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; padding: 8px 12px 0; border-bottom: 2px solid var(--line); background: var(--panel); }
 :root[data-design="petal"] .pt-win__pages { position: relative; display: flex; gap: 3px; }
 :root[data-design="petal"] .pt-win__pages::before { content: ""; position: absolute; inset: -6px -2px 0; }
 :root[data-design="petal"] .pt-win__page { display: inline-flex; align-items: center; min-height: 30px; }
-:root[data-design="petal"] :is(.now[data-page="now"] [data-p="now"], .now[data-page="source"] [data-p="source"], .now[data-page="save"] [data-p="save"]) {
-  background: var(--bg); color: var(--fg); border: 1.5px solid var(--pt-frame); border-bottom: 1.5px solid var(--bg);
-}
 :root[data-design="petal"] .pt-win__pages:hover .pt-win__page { color: var(--fg); }
-:root[data-design="petal"] .pt-win__pages:focus-visible { outline-offset: 2px; border-radius: 4px; }
+:root[data-design="petal"] .pt-win__pages:focus-visible { outline-offset: 2px; }
 :root[data-design="petal"] .pt-win__head { min-width: 0; padding-bottom: 8px; font: 750 .8125rem/1 var(--f-ui); color: var(--fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 :root[data-design="petal"] .pt-win .pt-win__screen {
-  --bg: var(--cream); --bg-2: var(--cream-2); --bg-3: var(--cream-3); --fg: var(--ink); --fg-2: var(--ink-2);
+  --bg: var(--panel); --bg-2: var(--cream-2); --bg-3: var(--cream-3); --fg: var(--ink); --fg-2: var(--ink-2);
   --link: var(--link-on-cream); --edge: var(--pt-frame); --focus: var(--indigo); --accent-ui: var(--link-on-cream); --divider: var(--pt-rule);
   flex: 1; min-height: 0; margin: 0; padding: 16px 16px 12px; border: 0; border-radius: 0; box-shadow: none; background: var(--bg); color: var(--fg);
 }
 :root[data-design="petal"] .pt-win .device__screen::after { display: none; }
-:root[data-design="petal"] .pt-win .device__now .cover { border-color: var(--pt-frame); border-width: 2px; border-radius: 3px; box-shadow: 3px 3px 0 0 var(--pt-shadow); }
-:root[data-design="petal"] .pt-win .device__title { font: 700 1.25rem/1.2 var(--f-ui); color: var(--fg); }
+:root[data-design="petal"] .pt-win .device__title { font: 400 2rem/1.15 var(--f-zine); letter-spacing: .02em; color: var(--fg); }
 :root[data-design="petal"] .pt-win .device__artist { font: 600 .9375rem/1.3 var(--f-ui); color: var(--link); }
-:root[data-design="petal"] .pt-win .device__fact { border-radius: 3px; border-color: var(--pt-frame); color: var(--fg); font: var(--t-px); }
+:root[data-design="petal"] .pt-win .device__fact { border-radius: 0; border-color: var(--pt-frame); color: var(--fg); font: var(--t-px); }
 :root[data-design="petal"] .pt-win .device__kv { font: var(--t-px); line-height: 1.25; }
-:root[data-design="petal"] :is(.pt-win, .pt-mini) .wave__bar { background: var(--pt-rule); border-radius: 0; }
-:root[data-design="petal"] :is(.pt-win, .pt-mini) .wave__bar.is-played { background: var(--seek-played); }
-:root[data-design="petal"] :is(.pt-win, .pt-mini) .wave__bar:is(.is-buf, .is-xfer) { background: var(--pt-frame); }
 :root[data-design="petal"] .pt-win .wave { height: 44px; }
-:root[data-design="petal"] .pt-win .wave__head { background: var(--link); }
-:root[data-design="petal"] :is(.pt-win .wave-times, .pt-mini .wave-times) { font: 700 .8125rem/1 var(--f-ui); font-variant-numeric: tabular-nums; color: var(--fg-2); }
-:root[data-design="petal"] .pt-win .wave-times b { color: var(--fg); }
-
-/* LCD strip (img 03 ".:: 3:15 :: title :: MP3 ::."): pixel face, 1 px scanlines, stepped VU blocks from the play state */
+/* the LCD strip (".:: 3:15 :: library :: rx 100% ::."): pixel face, 1 px scanlines, five VU blocks stepping while music plays */
 :root[data-design="petal"] .pt-win__lcd {
   display: flex; align-items: center; gap: 10px; padding: 5px 12px; min-height: 34px; overflow: hidden;
   background: repeating-linear-gradient(180deg, transparent 0 2px, color-mix(in srgb, var(--pt-lcd-dim) 45%, transparent) 2px 3px), var(--pt-lcd);
-  border-top: 1px solid var(--pt-rule); border-bottom: 1px solid var(--pt-rule);
+  border-top: 2px solid var(--line); border-bottom: 2px solid var(--line);
   font: var(--t-pixel); letter-spacing: .03em; color: var(--pt-lcd-ink); white-space: nowrap;
 }
-:root[data-design="petal"] .pt-win__lcd::before {   /* VU: five pixel blocks, stepping while music plays */
+:root[data-design="petal"] .pt-win__lcd::before {
   content: ""; flex: none; width: 23px; height: 14px; order: -1; transform-origin: bottom;
   background: linear-gradient(var(--pt-lcd-ink) 0 0) 0 100% / 3px 4px no-repeat, linear-gradient(var(--pt-lcd-ink) 0 0) 5px 100% / 3px 8px no-repeat,
     linear-gradient(var(--pt-lcd-ink) 0 0) 10px 100% / 3px 6px no-repeat, linear-gradient(var(--pt-lcd-ink) 0 0) 15px 100% / 3px 10px no-repeat,
     linear-gradient(var(--pt-lcd-ink) 0 0) 20px 100% / 3px 4px no-repeat;
 }
-:root[data-design="petal"] .pt-win:has([data-bind="play"][aria-label="Pause"]) .pt-win__lcd::before,
-:root[data-design="petal"] .pt-mini:has([data-dk="play-pause"][aria-label="Pause"]) .pt-win__lcd::before { animation: pt-vu 1.2s steps(4, end) infinite; animation-play-state: var(--loop-play, running); }
 /* only transform moves (the origin is set on the blocks), so the compositor runs it without restyling the page */
+:root[data-design="petal"][data-playing="true"] .pt-win .pt-win__lcd::before,
+:root[data-design="petal"] .pt-mini[data-playing="true"] .pt-win__lcd::before { animation: pt-vu 1.2s steps(4, end) infinite; animation-play-state: var(--loop-play, running); }
 @keyframes pt-vu { 50% { transform: scaleY(.55); } }
 :root[data-design="petal"] .pt-win__lcdtext { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 :root[data-design="petal"] .pt-win__lcd b { font-weight: 400; color: var(--fg); }
 :root[data-design="petal"] .pt-win__kbd { display: inline-flex; gap: 4px; flex: none; }
 :root[data-design="petal"] .pt-win__kbd .kbd { height: 22px; min-width: 22px; padding: 0 5px; font-size: 1rem; }
 
-/* transport: one row, heart | shuffle prev PLAY next repeat | - +. The keys are the middle column between two equal
-   ones, so PLAY is on the window's centre line whatever the heart and the volume keys measure */
-:root[data-design="petal"] .pt-win__deck {
-  display: flex; align-items: center; gap: 6px; padding: 12px;
-  background: linear-gradient(180deg, var(--bg-2), var(--bg)); border-radius: 0 0 5px 5px;
-}
+/* the keys: one row, heart | shuffle prev PLAY next repeat | - +. The keys are the middle column between two equal ones,
+   so PLAY is on the window's centre line whatever the heart and the volume keys measure */
+:root[data-design="petal"] .pt-win__deck { display: flex; align-items: center; gap: 6px; padding: 12px; background: var(--panel); }
 :root[data-design="petal"] .now-dev > .pt-win__deck { display: grid; grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr); }
 :root[data-design="petal"] .now-dev > .pt-win__deck > .pt-win__like { grid-column: 1; justify-self: start; }
 :root[data-design="petal"] .now-dev > .pt-win__deck > .pt-win__keys { grid-column: 2; }
 :root[data-design="petal"] .now-dev > .pt-win__deck > .pt-win__vol { grid-column: 3; justify-self: end; }
 :root[data-design="petal"] .pt-win__keys { display: inline-flex; align-items: center; gap: 4px; }
 :root[data-design="petal"] .pt-win__play { margin: 0 4px; }
-:root[data-design="petal"] .pt-win__key { width: 36px; height: 36px; border: 1.5px solid var(--pt-frame); background: var(--bg); color: var(--link); }
-:root[data-design="petal"] .pt-win__key:hover { background: var(--peri); }
-:root[data-design="petal"] .pt-win__key[aria-pressed="true"] { background: var(--peri); color: var(--ink); }
+:root[data-design="petal"] .pt-win__key { width: 36px; height: 36px; }
 :root[data-design="petal"] .pt-win__vol { display: inline-flex; align-items: center; gap: 4px; }
-:root[data-design="petal"] .pt-win__vol .pt-win__key { width: 30px; height: 30px; border-radius: 3px; }
+:root[data-design="petal"] .pt-win__vol .pt-win__key { width: 30px; height: 30px; }
 :root[data-design="petal"] .now__keys { display: none; }   /* the keycaps live in the LCD strip */
-/* narrow window: volume drops (hardware keys and the bar have it). Under 396 px the keys (232), two sides as wide as the
-   volume keys (64), the gaps and the padding (36) don't fit, and PLAY would leave the centre line */
+/* a narrow window: the volume keys go (the hardware keys and the bar have it). Under 396 px the keys (232), two sides as
+   wide as the volume keys (64), the gaps and the padding (36) don't fit, and PLAY would leave the centre line */
 @container dev (max-width: 395.98px) {
   :root[data-design="petal"] .pt-win__vol { display: none; }
 }
+/* the screen's own buttons (failed: retry, pick another source) are pink keys */
+:root[data-design="petal"] .pt-win .now-sbtn { min-height: 30px; padding: 0 12px; background-color: var(--peri); color: var(--pt-key-ink); font: 700 .875rem/1 var(--f-ui); box-shadow: var(--stack-sm); border-radius: 0; border: 2px solid var(--line); }
+:root[data-design="petal"] .pt-win .now-sbtn::first-letter { text-transform: uppercase; }
+:root[data-design="petal"] .pt-win .now-sbtn:hover { background-color: var(--pt-key-hi); }
 
-/* compact window (phone Lyrics / Queue / Details): [cover] [title / artist] [play] */
-:root[data-design="petal"] .pt-win--compact .pt-win__bar { height: 30px; }
+/* the compact window (phone Lyrics / Queue / Details): [cover] [title / artist] [keys] */
+:root[data-design="petal"] .pt-win--compact .pt-win__bar { min-height: 30px; }
 :root[data-design="petal"] .pt-win__row { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 12px; }
 :root[data-design="petal"] .pt-win--compact .pt-win__screen { padding: 0; min-width: 0; overflow: hidden; }
-:root[data-design="petal"] .pt-win--compact .device__title { font-size: 1.0625rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:root[data-design="petal"] .pt-win--compact .device__title { font-size: 1.375rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 :root[data-design="petal"] .pt-win--compact :is(.wave, .wave-times) { display: none; }
-:root[data-design="petal"] .pt-win--compact .cover { border-color: var(--pt-frame); border-width: 2px; }
+:root[data-design="petal"] .pt-win--compact .cover { --snap-w: 3px; --snap-o: 3px; }
 :root[data-design="petal"] .pt-win--compact .device__artist { color: var(--link); }
 
-/* the page: a title band, then one window of panes (img 03): player | lyrics | playlist. With the queue panel docked
-   the panel is the third pane; below 1000 px the playlist pane sits beside the player and lyrics go below. */
+/* the queue's own window (beside the spread, and the phone's Queue tab): the striped bar, the rows on its paper */
+:root[data-design="petal"] .now-qcard { padding: 0; overflow: hidden; background-color: var(--panel); }
+:root[data-design="petal"] .now-qcard > .card-head--hidden { margin: 0; padding: 0 12px 0 14px; }
+:root[data-design="petal"] .now-qcard > .card-head--hidden .card-head__title { color: var(--pt-tb-ink); }
+:root[data-design="petal"] .now-qcard .now-q { padding: 0 10px 10px; }
+/* lyrics anywhere: the line being sung is marked with a highlighter, one stroke per line of text */
+:root[data-design="petal"] .now-ly__line.is-current {
+  box-shadow: none; color: var(--fg);
+  background: linear-gradient(transparent 40%, color-mix(in srgb, var(--pink) 70%, transparent) 40% 88%, transparent 88%) 0 6px / 100% 1lh repeat-y;
+}
+
+/* the spread */
 @container now (min-width: 760px) {
   :root[data-design="petal"] .now__grid {
-    grid-template-columns: minmax(340px, 400px) minmax(0, 1fr); grid-template-rows: none;
-    grid-template-areas: "head head" "dev q" "src src" "ly ly"; column-gap: 0; row-gap: 20px; align-items: stretch;
+    grid-template-columns: minmax(360px, 42%) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas: "dev head" "dev ly" "src ly"; column-gap: 34px; row-gap: 16px; align-items: start;
   }
-  /* the title band: the title takes the room the actions leave it, and they drop under it when a long title needs more */
-  :root[data-design="petal"] .now__intro {
-    grid-area: head; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px;
-    padding: 16px 20px 16px 22px; background: var(--pt-band); border: 1.5px solid var(--pt-frame); border-radius: 4px; box-shadow: var(--stack);
+  :root[data-design="petal"] .now__dev { display: flex; }
+  /* the title: written on the page, its actions under it */
+  :root[data-design="petal"] .now__intro { grid-area: head; display: flex; flex-direction: column; align-items: flex-start; gap: 14px; padding: 4px 0 0; }
+  :root[data-design="petal"] .now-head { flex: none; width: 100%; min-width: 0; gap: 2px; }
+  /* as big as the spread allows; a long name keeps three lines (the window and the bar say it again) */
+  :root[data-design="petal"] .now-head__title {
+    margin: 0; padding: 0 4px 4px 0; font-size: clamp(3rem, 6.5cqi, 4.5rem); line-height: .9;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;
   }
-  :root[data-design="petal"] .now-head { flex: 1 1 360px; min-width: 0; gap: 2px; }
-  :root[data-design="petal"] .now-head__title { margin: 0; font-size: 2.5rem; }
   :root[data-design="petal"] .now-head__chips { margin-top: 4px; }
   :root[data-design="petal"] .now__acts { flex: none; }
   :root[data-design="petal"] .now-acts .now-acts__btn { width: 44px; padding: 0; }
   :root[data-design="petal"] .now-acts .now-acts__label { display: none; }
-  :root[data-design="petal"] .now__dev { display: flex; }
-  :root[data-design="petal"] .now__dev .pt-win { border-radius: 6px 0 0 6px; box-shadow: 0 4px 0 0 var(--pt-shadow); }
-  :root[data-design="petal"] .now__dev .pt-win__bar { border-radius: 5px 0 0 0; }
-  /* every other pane: a cream column with its own gloss bar, joined to the player on the left */
-  :root[data-design="petal"] :is(.now-qcard, .now-lycard) {
-    display: flex; flex-direction: column; height: 0; min-height: 100%; padding: 0; margin-left: -1.5px; overflow: hidden;
-    border-radius: 0 6px 6px 0; box-shadow: var(--stack);
+  /* the cover: a big snapshot taped onto the screen */
+  :root[data-design="petal"] .pt-win .device__now { grid-template-columns: minmax(150px, 46%) minmax(0, 1fr); gap: 22px; align-items: center; padding: 8px 0 6px 8px; }
+  :root[data-design="petal"] .pt-win .device__now .cover { --snap-w: 6px; --snap-o: 8px; width: 100%; height: auto; aspect-ratio: 1; transform: rotate(-3deg); }
+  /* the screen's pages are as tall as that snapshot: 46% of the screen (the window less its ring and padding, 44 px) */
+  :root[data-design="petal"] .pt-win .now-dev__page { height: max(var(--now-page-h), calc((100cqi - 44px) * .46 + 24px)); }
+  /* the lyrics: on the page itself, a sticker for their name; their lines sit on the paper's rules */
+  :root[data-design="petal"] .now-lycard {
+    grid-area: ly; display: flex; flex-direction: column; position: relative; align-self: stretch; height: 0; min-height: 100%; margin: 0; padding: 0;
+    border: 0; background: none; box-shadow: none; overflow: visible;
   }
-  :root[data-design="petal"] .now-qcard { grid-area: q; }
-  :root[data-design="petal"] :is(.now-qcard, .now-lycard) > .card-head--hidden {
-    display: flex; align-items: center; flex: none; height: 36px; padding: 0 12px 0 14px; margin: 0; border-bottom: 1px solid var(--pt-bar-line); border-radius: 0;
-    background: linear-gradient(180deg, var(--pt-bar-1) 0%, var(--pt-bar-2) 46%, var(--pt-bar-3) 47%, var(--pt-bar-4) 100%);
-    box-shadow: inset 0 1px 0 color-mix(in srgb, #ffffff 70%, transparent); color: var(--fg-sky);
+  :root[data-design="petal"] .now-lycard > .card-head--hidden {
+    display: flex; align-items: center; flex: none; align-self: flex-start; height: 30px; padding: 0 12px; margin: 0 0 4px; border: 0;
+    background: var(--pt-tab-2); color: var(--fg-sky); transform: rotate(-2deg);
   }
-  :root[data-design="petal"] :is(.now-qcard, .now-lycard) > .card-head--hidden .card-head__title { letter-spacing: .16em; color: var(--fg-sky); }
-  :root[data-design="petal"] :is(.now-qcard, .now-lycard) .card-head__meta { display: inline; margin-left: auto; font: 750 .75rem/1 var(--f-ui); color: var(--fg-sky-2); }
-  /* the playlist pane (img 03): radio strip, pink numbered rows, a toolbar foot */
+  :root[data-design="petal"] .now-lycard > .card-head--hidden .card-head__title { color: var(--fg-sky); }
+  :root[data-design="petal"] .now-lycard .card-head__meta { display: inline; margin-left: 10px; font: 750 .75rem/1 var(--f-ui); color: var(--fg-2); }
+  :root[data-design="petal"] .now-lycard .now-ly { flex: 1; min-height: 0; padding: 0; }
+  :root[data-design="petal"] .now-lycard .now-ly__head { position: absolute; top: 0; right: 0; min-height: 28px; }
+  :root[data-design="petal"] .now-ly__head .label-rule { display: none; }
+  :root[data-design="petal"] .now-lycard .now-ly__view { min-height: 0; -webkit-mask: linear-gradient(180deg, transparent, #000 28px calc(100% - 28px), transparent); mask: linear-gradient(180deg, transparent, #000 28px calc(100% - 28px), transparent); }   /* lines fade at the edges */
+  :root[data-design="petal"] .now-lycard .now-ly__line { padding: 0 10px; font-weight: 600; line-height: max(32px, 1.4em); }
+  :root[data-design="petal"] .now-lycard .now-ly__line.is-current { font-weight: 800; background-position: 0 0; }
+  /* the queue: a pixel window of its own, numbered pink rows, a toolbar foot */
+  :root[data-design="petal"] .now-qcard { grid-area: q; flex-direction: column; height: 0; min-height: 100%; }
+  :root[data-design="petal"] .now-qcard > .card-head--hidden .card-head__title { letter-spacing: .1em; }
+  :root[data-design="petal"] .now-qcard .card-head__meta { display: inline; margin-left: auto; font: 750 .75rem/1 var(--f-ui); color: var(--pt-tb-ink); }
   :root[data-design="petal"] .now-qcard .now-q { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-  :root[data-design="petal"] .now-qcard .now-q__radio { margin: 0; padding: 8px 14px; border-radius: 0; background: var(--bg-2); border-bottom: 1.5px solid var(--pt-frame); }
+  :root[data-design="petal"] .now-qcard .now-q__radio { margin: 0; padding: 8px 14px; border-radius: 0; background: var(--bg-2); border-bottom: 2px solid var(--line); }
   :root[data-design="petal"] .now-qcard :is(.now-q__keep, .now-q__steer, .now-q__hint, .now-q__err) { display: none; }
   :root[data-design="petal"] .now-qcard .now-q__list { flex: 1; min-height: 0; overflow: auto; padding: 6px 8px 10px; counter-reset: pq; }
-  :root[data-design="petal"] .now-qcard .now-q__foot { margin: 0; padding: 8px 12px; border-top: 1px solid var(--pt-rule); background: var(--bg-2); }
+  :root[data-design="petal"] .now-qcard .now-q__foot { margin: 0; padding: 8px 12px; border-top: 2px dashed var(--pt-rule); background: var(--bg-2); }
   :root[data-design="petal"] .now-qcard .now-q__group { margin: 8px 0 2px; }
   :root[data-design="petal"] .now-qcard .now-q__row { counter-increment: pq; grid-template-columns: 30px var(--art) minmax(0, 1fr) 36px; grid-template-areas: "num art main more"; min-height: 52px; }
-  :root[data-design="petal"] .now-qcard .now-q__row::after {
-    content: counter(pq) "."; grid-area: num; align-self: center; justify-self: end; padding-right: 4px;
-    font: 800 .875rem/1 var(--f-ui); font-variant-numeric: tabular-nums; color: var(--link);
-  }
-  /* the lyrics pane: label tag in the bar, lines scroll inside, size buttons in the foot */
-  :root[data-design="petal"] .now-lycard { position: relative; }
-  :root[data-design="petal"] .now-lycard .now-ly { flex: 1; min-height: 0; padding: 0 18px 10px; }
-  :root[data-design="petal"] .now-lycard .now-ly__head { position: absolute; top: 4px; right: 12px; min-height: 28px; }
-  :root[data-design="petal"] .now-lycard:has(.card-head__meta:not(:empty)) .now-ly__head { right: auto; left: 110px; }
-  :root[data-design="petal"] .now-ly__head .label-rule { display: none; }
+  :root[data-design="petal"] .now-qcard .now-q__row::after { content: counter(pq) "."; grid-area: num; align-self: center; justify-self: end; padding-right: 4px; }
   :root[data-design="petal"] .now-next { display: none; }
-  :root[data-design="petal"] .now-srccard { align-self: start; }
+  :root[data-design="petal"] .now-srccard { grid-area: src; align-self: start; }
 }
 @media (max-height: 860px) {
   @container now (min-width: 760px) {
-    :root[data-design="petal"] .now__intro { padding-top: 12px; padding-bottom: 12px; }
-    :root[data-design="petal"] .now-head__title { font-size: 2.25rem; }
-    :root[data-design="petal"] .now__grid { row-gap: 16px; }
+    :root[data-design="petal"] .now-head__title { font-size: clamp(2.75rem, 5.5cqi, 3.75rem); }
+    :root[data-design="petal"] .now__grid { row-gap: 12px; }
     :root[data-design="petal"] .pt-win .pt-win__screen { padding-top: 12px; padding-bottom: 8px; }
     :root[data-design="petal"] .pt-win .wave { height: 36px; }
   }
 }
-/* lyrics below the window (760-999, nothing docked): a full card again */
-@container now (min-width: 760px) and (max-width: 999px) {
-  :root[data-design="petal"] .app:not([data-ctx="docked"]) .now-lycard { height: auto; min-height: 420px; margin-left: 0; border-radius: 6px; }
-  :root[data-design="petal"] .app:not([data-ctx="docked"]) .now-lycard > .card-head--hidden { border-radius: 5px 5px 0 0; }
-}
-/* three panes: player | lyrics | playlist */
+/* three columns: player | lyrics | queue, with nothing docked (narrower, the side panel has the queue) */
 @container now (min-width: 1000px) {
   :root[data-design="petal"] .app:not([data-ctx="docked"]) .now__grid {
-    grid-template-columns: minmax(340px, 400px) minmax(0, 1fr) minmax(300px, 380px); grid-template-areas: "head head head" "dev ly q" "src src src";
+    grid-template-columns: minmax(360px, 36%) minmax(0, 1fr) minmax(280px, 340px); grid-template-areas: "dev head head" "dev ly q" "src ly q";
   }
-  :root[data-design="petal"] .app:not([data-ctx="docked"]) .now-lycard { border-radius: 0; box-shadow: 0 4px 0 0 var(--pt-shadow); }
+  :root[data-design="petal"] .app:not([data-ctx="docked"]) .now-qcard { display: flex; }
 }
-/* the queue panel is docked beside the page: player | lyrics here, the panel is the playlist */
+/* the queue panel is docked beside the page: it is the queue */
 :root[data-design="petal"] .app[data-ctx="docked"] .now-qcard { display: none; }
-@container now (min-width: 760px) {
-  :root[data-design="petal"] .app[data-ctx="docked"] .now__grid { grid-template-areas: "head head" "dev ly" "src src"; }
-}
-:root[data-design="petal"] .now { max-width: none; }
-:root[data-design="petal"] .now-ly__tag { border-radius: 3px; }
-:root[data-design="petal"] .now-lycard .now-ly__view { min-height: 0; -webkit-mask: linear-gradient(180deg, transparent, #000 28px calc(100% - 28px), transparent); mask: linear-gradient(180deg, transparent, #000 28px calc(100% - 28px), transparent); }   /* lines fade at the edges */
-/* the screen's own buttons (failed: retry, pick source) are real buttons */
-:root[data-design="petal"] .pt-win .now-sbtn { min-height: 30px; padding: 0 12px; border: 1.5px solid var(--pt-frame); border-radius: 3px; background: var(--peri); color: var(--ink); font: 700 .875rem/1 var(--f-ui); box-shadow: 2px 2px 0 0 var(--pt-frame); }
-:root[data-design="petal"] .pt-win .now-sbtn::first-letter { text-transform: uppercase; }
-:root[data-design="petal"] .pt-win .now-sbtn:hover { background: var(--pink-light); }
-:root[data-design="petal"] .now-src__save { margin-top: 14px; }
-:root[data-design="petal"] .now-srccard > .card-head--hidden { margin: -16px -16px 14px; }   /* the source card pads 16, not --card-pad */
 /* "Following" keeps its word at every width (a lone check means nothing out of context) */
 :root[data-design="petal"] .now-acts .now-acts__btn[data-act="follow"] { width: auto; padding: 0 14px; }
 :root[data-design="petal"] .now-acts .now-acts__btn[data-act="follow"] .now-acts__label { display: inline; }
+:root[data-design="petal"] .now-src__save { margin-top: 14px; }
+:root[data-design="petal"] .now-srccard > .card-head--hidden { margin: -16px -16px 14px; }   /* the source card pads 16, not --card-pad */
 
-/* phone Now: the Art / Lyrics / Queue / Details tabs come first, then a big cover; actions on a 2 x 2 grid */
+/* the phone: the Art / Lyrics / Queue / Details tabs are index tabs, then the window with a big cover; actions on a 2 x 2 grid */
 @media (max-width: 639px) {
   :root[data-design="petal"] .now__seg { order: 0; }
-  :root[data-design="petal"] .now-seg { border: 0; padding: 0; background: transparent; gap: 3px; border-bottom: 1.5px solid var(--pt-frame); border-radius: 0; }
+  :root[data-design="petal"] .now-seg { border: 0; padding: 0; background: transparent; gap: 3px; border-bottom: 2px solid var(--line); box-shadow: none; }
   :root[data-design="petal"] .now-seg .seg__ind { display: none; }
   :root[data-design="petal"] .now-seg .seg__btn {
-    min-height: 36px; margin-bottom: -1.5px; border: 1px solid var(--pt-rule); border-bottom: 0; border-radius: 4px 4px 0 0;
-    background: var(--bg-3); color: var(--fg-2); font: var(--t-label); text-transform: uppercase; letter-spacing: .1em;
+    min-height: 36px; margin-bottom: -2px; background-color: var(--pt-tab-2); color: var(--fg); font: 400 1.0625rem/1 var(--f-zine); text-transform: uppercase; letter-spacing: .08em;
   }
-  :root[data-design="petal"] .now-seg .seg__btn[aria-selected="true"] { background: var(--panel); color: var(--fg); border: 1.5px solid var(--pt-frame); border-bottom: 1.5px solid var(--panel); }
+  :root[data-design="petal"] .now-seg .seg__btn[aria-selected="true"] { background-color: var(--panel); }
   :root[data-design="petal"] .pt-win__tabs, :root[data-design="petal"] .pt-win__kbd { display: none; }
   :root[data-design="petal"] .now-dev.pt-win { padding: 0; margin: 0; }
-  :root[data-design="petal"] .pt-win .device__now { grid-template-columns: minmax(0, 1fr); justify-items: center; text-align: center; gap: 12px; }
-  :root[data-design="petal"] .pt-win .device__now .cover { width: min(232px, 64vw); height: auto; aspect-ratio: 1; }
+  :root[data-design="petal"] .pt-win .device__now { grid-template-columns: minmax(0, 1fr); justify-items: center; text-align: center; gap: 14px; padding-top: 6px; }
+  :root[data-design="petal"] .pt-win .device__now .cover { width: min(232px, 64vw); height: auto; aspect-ratio: 1; transform: rotate(-2deg); }
   :root[data-design="petal"] .pt-win .device__facts { justify-content: center; }
   :root[data-design="petal"] .pt-win--compact .pt-win__keys > :not([data-now="ca"]) { display: none; }
   :root[data-design="petal"] .now-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   :root[data-design="petal"] .now-acts > * { width: 100%; justify-content: center; }
   :root[data-design="petal"] .now-acts .now-acts__btn[data-act="classic"] { display: none; }
+  :root[data-design="petal"] .now-head__title { font-size: 2.75rem; }
   :root[data-design="petal"] .now { --now-page-h: 340px; padding-bottom: calc(24px + env(safe-area-inset-bottom)); }   /* the page holds the big cover */
 }
 
-/* the handheld device (other designs' mini player fallback) */
-:root[data-design="petal"] .device { border: 1.5px solid var(--pt-frame); box-shadow: var(--stack-sm); }
-:root[data-design="petal"] .device__bezel { border-width: 1.5px; }
+/* the handheld device (other designs' mini player, the fallback) */
+:root[data-design="petal"] .device { border: 2px solid var(--line); box-shadow: var(--stack-sm); }
+:root[data-design="petal"] .device__bezel { border-width: 2px; }
 
-/* desktop mini window: a tiny petal player (slots/miniPlayer) */
+/* =====================================================================
+   The desktop app's pages: the mini player is a tiny petal window (slots/miniPlayer), the strip a slip of paper with
+   the song's hearts along its top edge
+   ===================================================================== */
 :root[data-design="petal"] .pt-mini { padding: 10px; }
 :root[data-design="petal"] .pt-mini .pt-win { height: 100%; }
 :root[data-design="petal"] .pt-mini .pt-bun { display: block; }
 :root[data-design="petal"] .pt-mini[data-playing="true"] .pt-bun--down, :root[data-design="petal"] .pt-mini[data-playing="false"] .pt-bun--up { display: none; }
 :root[data-design="petal"] .pt-mini__win { display: inline-flex; gap: 2px; }
-:root[data-design="petal"] .pt-mini__win .pt-win__key { width: 26px; height: 26px; border: 0; background: transparent; }
-:root[data-design="petal"] .pt-mini__screen { flex: 1; display: grid; grid-template-rows: auto auto minmax(56px, 1fr) auto; gap: 12px; padding: 12px 14px; }
-:root[data-design="petal"] .pt-mini__head { font: 700 .75rem/1 var(--f-ui); color: var(--fg-2); }
-:root[data-design="petal"] .pt-mini .dk-mini__now { display: grid; grid-template-columns: 124px minmax(0, 1fr); gap: 12px; align-items: center; }
-:root[data-design="petal"] .pt-mini .dk-mini__now .cover { width: 124px; height: 124px; border-width: 2px; box-shadow: 3px 3px 0 0 var(--pt-shadow); }
-:root[data-design="petal"] .pt-mini .device__title { font: 700 1.0625rem/1.2 var(--f-ui); }
-:root[data-design="petal"] .pt-mini .device__artist { font: 600 .875rem/1.3 var(--f-ui); color: var(--link); margin-bottom: 6px; }
+:root[data-design="petal"] .pt-mini__win .pt-win__key { width: 26px; height: 26px; border: 0; background: transparent; box-shadow: none; color: var(--pt-tb-ink); }
+:root[data-design="petal"] .pt-mini__screen {
+  flex: 1; display: grid; grid-template-rows: auto auto minmax(56px, 1fr) auto; gap: 12px; padding: 12px 14px;
+  background: repeating-linear-gradient(180deg, transparent 0 30px, var(--pt-ruled) 30px 32px) var(--panel);
+}
+:root[data-design="petal"] .pt-mini__head { justify-self: start; padding: 3px 8px 2px; background: var(--pt-tab-3); color: var(--fg-sky); font: 400 1rem/1 var(--f-zine); letter-spacing: .08em; text-transform: uppercase; transform: rotate(-2deg); }
+:root[data-design="petal"] .pt-mini .dk-mini__now { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 14px; align-items: center; }
+:root[data-design="petal"] .pt-mini .dk-mini__now .cover { --snap-w: 5px; --snap-o: 7px; width: 108px; height: 108px; margin: 8px 12px 12px 8px; transform: rotate(-3deg); }
+:root[data-design="petal"] .pt-mini .device__title { font: 400 1.75rem/1.15 var(--f-zine); letter-spacing: .02em; }
+:root[data-design="petal"] .pt-mini .device__artist { font: 600 .875rem/1.3 var(--f-ui); color: var(--link); margin: 4px 0 6px; }
 :root[data-design="petal"] .pt-mini .wave { width: 100%; height: 72px; align-self: center; }
 :root[data-design="petal"] .pt-mini .wave-times { display: flex; justify-content: space-between; }
-:root[data-design="petal"] .pt-mini .pt-win__deck { justify-content: center; border-top: 1px solid var(--pt-rule); border-radius: 0; }
-:root[data-design="petal"] .pt-mini__foot { display: flex; align-items: center; justify-content: space-between; padding: 8px 14px 12px; }
-:root[data-design="petal"] .pt-mini__vol { font: 700 .8125rem/1 var(--f-ui); color: var(--fg-2); }
-:root[data-design="petal"] .dk-strip { border: 1.5px solid var(--pt-frame); border-radius: 5px; }
+:root[data-design="petal"] .pt-mini .pt-win__deck { justify-content: center; }
+:root[data-design="petal"] .pt-mini__foot { display: flex; align-items: center; justify-content: space-between; padding: 8px 14px 12px; border-top: 2px dashed var(--pt-rule); }
+:root[data-design="petal"] .pt-mini__vol { font: 400 1.125rem/1 var(--f-zine); letter-spacing: .06em; color: var(--fg-2); }
+:root[data-design="petal"] .dk-strip { background-color: var(--panel); }
+:root[data-design="petal"] .dk-strip > .seek--line { left: 10px; right: 14px; top: -9px; height: 14px; }
+:root[data-design="petal"] .dk-strip > .seek--line .seek__track {
+  height: 12px; background: var(--pt-heart-0); -webkit-mask: var(--px-heart) 0 50% / 14px 12px space no-repeat; mask: var(--px-heart) 0 50% / 14px 12px space no-repeat;
+}
+:root[data-design="petal"] .dk-strip > .seek--line :is(.seek__xfer, .seek__buf) { background: var(--pt-heart-1); }
+:root[data-design="petal"] .dk-strip > .seek--line .seek__played { background: var(--pt-heart-2); }
+:root[data-design="petal"] .dk-strip .bezel-thumb { margin-left: 6px; }
+:root[data-design="petal"] .dk-strip .bezel-thumb .cover { --snap-w: 3px; --snap-o: 4px; transform: rotate(-4deg); }
+:root[data-design="petal"] .dk-strip__title { font: 400 1.375rem/1 var(--f-zine); letter-spacing: .02em; }
+:root[data-design="petal"] .dk-strip__keys .btn-icon { color: var(--link); }
+:root[data-design="petal"] .dk-strip__keys .dk-sep { background: var(--pt-rule); width: 2px; }
+/* the welcome, connect and unreachable pages: a card of zine paper on the desk (a .card), its choices pink keys */
+:root[data-design="petal"] .dk-choice { background-color: var(--panel); }
+:root[data-design="petal"] .dk-choice:hover:not(:disabled) { background-color: var(--peri); }
+:root[data-design="petal"] .dk-card__title { font: 400 1.75rem/1 var(--f-zine); letter-spacing: .02em; text-shadow: 2px 2px 0 var(--stack-2); }
+:root[data-design="petal"] .dk-status { border-radius: 0; }
 
 /* =====================================================================
-   Classic: Webamp alone on the blush desk; the skin cards in Settings keep petal's pixel corners
+   Classic: Webamp alone on the pink desk; the skin cards in Settings keep petal's knife
    ===================================================================== */
 :root[data-design="petal"] .cls-scrim { opacity: 1; }
-:root[data-design="petal"] .cls-card { border-radius: 4px; }
-:root[data-design="petal"] .cls-shot { border-radius: 2px; }
+:root[data-design="petal"] .cls-card { background-color: var(--panel); }
+:root[data-design="petal"] .cls-shot { border-radius: 0; }
 
 /* =====================================================================
-   Stats, settings, welcome
+   Stats, Settings, Welcome
    ===================================================================== */
-:root[data-design="petal"] .sys-tile__value { font: 300 2.125rem/1.1 var(--f-ui); letter-spacing: -.03em; }
-:root[data-design="petal"] .sys-tile__label { font: var(--t-label); text-transform: uppercase; letter-spacing: .12em; color: var(--fg-2); }
+:root[data-design="petal"] .sys-tile__value { font: 400 2.5rem/1 var(--f-zine); letter-spacing: .02em; text-shadow: 2px 2px 0 var(--stack-2); }
+:root[data-design="petal"] .sys-tile__label { font: var(--t-label); text-transform: uppercase; letter-spacing: .1em; color: var(--fg-2); }
 :root[data-design="petal"] .sys-tile__label .ic { color: var(--link); }
 :root[data-design="petal"] .sys-bars { gap: 10px; }
 :root[data-design="petal"] .sys-bar { height: 8px; border-radius: 0; background: repeating-linear-gradient(90deg, var(--pt-rule) 0 6px, transparent 6px 8px); }
 :root[data-design="petal"] .sys-bar > i { border-radius: 0; background: repeating-linear-gradient(90deg, var(--link) 0 6px, transparent 6px 8px); }
-:root[data-design="petal"] .sys-heat__cell { border-radius: 1px; }
 :root[data-design="petal"] .sys-stats .sys-lede { max-width: 40ch; }
-@media (max-width: 639px) { :root[data-design="petal"] .sys-tile__value { font-size: 1.75rem; white-space: nowrap; } }
+@media (max-width: 639px) { :root[data-design="petal"] .sys-tile__value { font-size: 2rem; white-space: nowrap; } }
 :root[data-design="petal"] .sys-welcome__card { max-width: none; }
-
-/* =====================================================================
-   Wide screens (ADR-0007): the Now Playing column is a petal window: the gloss bar with orbs (above), its name in the
-   bar's small caps, the window keys at the right
-   ===================================================================== */
-:root[data-design="petal"] .nowcol { border-radius: 6px; }
-:root[data-design="petal"] .nowcol__title { font: inherit; color: inherit; letter-spacing: inherit; }
-:root[data-design="petal"] .nowcol__head .btn-icon { width: 28px; height: 28px; }
+/* Settings: its menu a pixel window, the section open marked like the playing row; the design picker's cards are keys */
+:root[data-design="petal"] .sys-nav { background-color: var(--panel); }
+:root[data-design="petal"] .sys-nav [aria-current="page"] { border-radius: 0; background: var(--pt-row); box-shadow: inset 4px 0 0 var(--heart); }
+:root[data-design="petal"] .sys-design { background-color: var(--panel); }
+:root[data-design="petal"] .sys-design[aria-checked="true"] { background-color: var(--peri); color: var(--ink); box-shadow: var(--stack-sm); }
 
 }

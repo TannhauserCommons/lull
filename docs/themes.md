@@ -104,6 +104,8 @@ Set any of these in `:root` (both modes) or `:root[data-theme="day"]` / `[data-t
 
 Components read semantic tokens (`--bg`, `--fg`, `--fg-2`, `--link`, `--edge`, `--focus`...) that the surfaces `.s-sky`, `.s-panel`, `.s-card` and `.s-screen` map from the ones above, so a surface's text always pairs with its own background.
 
+The built-in designs draw from these tokens too, so a theme that `extends` one recolours its look with them. Petal's pixel frames are an example: the ring with cut corners round every window and control is `--line`, its hard stepped shadow is `--stack-2` (through `--stack`, `--stack-sm` and `--stack-1l`, which petal redefines as those pixel shadows), the paper inside is `--panel` and the dithered desk `--sky` with `--sky-deep`. Petal paints the ring in the background's border box, under the part's own paper, so recolour a framed part's paper with `background-color`: the `background` shorthand would erase its ring.
+
 ## 5. Stable hooks for full CSS
 
 Go beyond tokens with any selector. These hooks are the theme API: they stay put across lull versions (section 9).
@@ -447,7 +449,7 @@ Every class lull's CSS styles and every `data-*` attribute lull's markup sets, e
 - **The page:** `.now` (`data-tab`: `art` `lyrics` `queue` `details` on a phone; `data-page`: `now` `source` `save`), `data-sec` (which tab a section belongs to).
 - **The hero:** `.now-head`, `.now-acts`, `.now-dev` and `.now-devc` (the hero and its compact form), `data-now` (live parts of a hero, section 6), `data-like`, `.now-slide`, `.now-osd`, `.now-sbtn` (a button on the device screen).
 - **The cards:** `.now-ly` and `.now-lycard` (lyrics), `.now-q` and `.now-qcard` (the queue), `.now-next`, `.now-src` and `.now-srccard` (the source), `.now-seg` (the phone tabs).
-- **Pairs a design may lay out as one box:** `.now__intro` (`.now-head` and the actions after it) and `.now__side` (`.now-srccard` and `.now-lycard`). Each is `display: contents` until a design gives it a box, so the parts stay items of the page's grid; give it one to place the pair together and let the layout space them (lull stacks the lyrics over the source in `.now__side`; petal sets the title and its actions side by side in `.now__intro`), never fixed heights or offsets guessed from the other's size.
+- **Pairs a design may lay out as one box:** `.now__intro` (`.now-head` and the actions after it) and `.now__side` (`.now-srccard` and `.now-lycard`). Each is `display: contents` until a design gives it a box, so the parts stay items of the page's grid; give it one to place the pair together and let the layout space them (lull stacks the lyrics over the source in `.now__side`; petal writes the title on the page with its actions under it in `.now__intro`), never fixed heights or offsets guessed from the other's size.
 
 ### Library and pages
 
