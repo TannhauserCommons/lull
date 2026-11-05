@@ -155,6 +155,8 @@ fn build(taste: &Taste, l: &Listener, last: &[Pick], recent: &mut RecentPicks, r
             track_id: store::track(c.song).id,
             reasons: vec![c.reason],
             via: c.via.to_owned(),
+            avail: Vec::new(),
+            no_source: false,
         })
         .collect();
     picks.extend(carried);

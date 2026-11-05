@@ -106,6 +106,13 @@ pub struct Pick {
     pub reasons: Vec<Reason>,
     /// The source, shown in the reason popover.
     pub via: String,
+    /// Where a copy was found (`check_picks`): `soulseek`, `youtube`, or both. Filled after the
+    /// build, each answer announced by `feed.avail`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub avail: Vec<String>,
+    /// Every source checked has no copy: Home shows "Search again".
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_source: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -385,7 +392,69 @@ async fn rebuild(svc: &Arc<Service>) -> Result<Built> {
         },
     );
     svc.ctx.spawn(keep_checking(svc.clone(), answers));
+    svc.ctx.spawn(check_picks(svc.clone(), built.feed.updated));
     Ok(built)
+}
+
+/// Where each pick shown can play from, after the build, one at a time and never before Home
+/// is served: Soulseek (a known source at once, else a search in the search budget's lowest
+/// lane), and YouTube unless it is off (a flat search judged by playback's rule, behind the
+/// listener's own yt-dlp work). Both remember their answers, so a pick carried over or shown
+/// again costs nothing. Each answer is announced by `feed.avail { trackId, avail, noSource }`;
+/// a newer build stops this one's checks.
+async fn check_picks(svc: Arc<Service>, updated: i64) {
+    let todo: Vec<TrackId> = match svc.feed.current.read().await.as_ref() {
+        Some(b) if b.feed.updated == updated => b
+            .feed
+            .picks
+            .iter()
+            .filter(|p| p.avail.is_empty() && !p.no_source)
+            .map(|p| p.track_id.clone())
+            .collect(),
+        _ => return,
+    };
+    for id in todo {
+        let Ok(Some(track)) = svc.store.track(id.clone()).await else {
+            continue;
+        };
+        let soulseek = svc.transfers.song_available(&track).await.ok().flatten();
+        let youtube = svc.youtube.available(&track).await.ok().flatten();
+        let (avail, no_source) = verdict(soulseek, youtube);
+        if avail.is_empty() && !no_source {
+            continue;
+        }
+        {
+            let mut current = svc.feed.current.write().await;
+            let Some(b) = current.as_mut().filter(|b| b.feed.updated == updated) else {
+                return;
+            };
+            if let Some(p) = b.feed.picks.iter_mut().find(|p| p.track_id == id) {
+                p.avail = avail.clone();
+                p.no_source = no_source;
+            }
+        }
+        svc.ctx.bus.publish(
+            "feed.avail",
+            serde_json::json!({ "trackId": id, "avail": avail, "noSource": no_source }),
+        );
+    }
+    let current = svc.feed.current.write().await;
+    if let Some(b) = current.as_ref().filter(|b| b.feed.updated == updated)
+        && let Err(e) = persist(&svc, b).await
+    {
+        tracing::warn!(error = %e, "keeping the picks' sources");
+    }
+}
+
+/// Where a pick can play from, by each source's answer (`None`: it can't say, or is off), and
+/// whether none has a copy. YouTube off answers nothing, so Soulseek's "none" is the answer then.
+fn verdict(soulseek: Option<bool>, youtube: Option<bool>) -> (Vec<String>, bool) {
+    let avail: Vec<String> = [("soulseek", soulseek), ("youtube", youtube)]
+        .into_iter()
+        .filter(|(_, found)| *found == Some(true))
+        .map(|(source, _)| source.to_owned())
+        .collect();
+    (avail, soulseek == Some(false) && youtube != Some(true))
 }
 
 /// Stores the feed, served after a restart. Callers hold `current`'s write lock, so the stored
@@ -621,6 +690,8 @@ async fn build(svc: &Arc<Service>) -> Result<(Built, Answers)> {
             track_id: t.id.clone(),
             reasons: vec![c.reason],
             via: c.via.to_owned(),
+            avail: Vec::new(),
+            no_source: false,
         })
         .collect();
     let seeds: Vec<(TrackId, &str, String)> = picks
@@ -1336,6 +1407,16 @@ mod tests {
             via: "ListenBrainz tags",
             edge: false,
         }
+    }
+
+    #[test]
+    fn a_pick_says_where_it_plays_and_none_only_when_every_source_checked_has_none() {
+        let v = |s, y| super::verdict(s, y);
+        assert_eq!(v(Some(true), Some(true)), (vec!["soulseek".into(), "youtube".into()], false));
+        assert_eq!(v(Some(false), Some(true)), (vec!["youtube".into()], false));
+        assert_eq!(v(Some(false), Some(false)), (vec![], true));
+        assert_eq!(v(Some(false), None), (vec![], true), "YouTube off: Soulseek's answer stands");
+        assert_eq!(v(None, None), (vec![], false), "nobody could say: no mark, no Search again");
     }
 
     #[test]

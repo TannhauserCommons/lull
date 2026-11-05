@@ -239,17 +239,25 @@
     var playable = picks.filter(function (p) { return !p.noSource || H.found[p.trackId]; }).map(function (p) { return p.trackId; });
     return html`${head}<ul class="disc-picks${more ? ' disc-picks--all' : ''}" data-ids="${playable.join(',')}">${picks.map(pickItem)}</ul>`;
   }
+  /* where a pick can play from (the feed's `avail`, filled after the build by `feed.avail`): a quiet mark a theme may
+     restyle, move or hide (.pick-avail, [data-avail]; themes.md section 11) */
+  var AVAIL = { soulseek: 'Soulseek', youtube: 'YouTube' };
+  function availMark(avail) {
+    if (!avail || !avail.length) return '';
+    var label = 'On ' + avail.map(function (s) { return AVAIL[s]; }).join(' and ');
+    return html`<span class="pick-avail" role="img" aria-label="${label}" data-tip="${label}">${avail.map(function (s) { return html`<span class="pick-avail__src" data-src="${s}">${icon(s)}</span>`; })}</span>`;
+  }
   function pickItem(p) {
     var t = M.track(p.trackId), reasons = p.reasons || [];
     var noSrc = p.noSource && !H.found[t.id], finding = H.finding === t.id;
-    return html`<li class="disc-pick${noSrc ? ' is-nosource' : ''}" data-track-id="${t.id}">
+    return html`<li class="disc-pick${noSrc ? ' is-nosource' : ''}" data-track-id="${t.id}" ${p.avail ? raw('data-avail="' + p.avail.join(' ') + '"') : ''}>
       <div class="disc-pick__art">${ui.cover(t, 64)}${noSrc ? '' : html`<button class="disc-pick__play" data-act="play-track" data-id="${t.id}" tabindex="-1" aria-label="Play ${t.title}" data-tip="Play">${icon('play')}</button>`}</div>
       <div class="disc-pick__main">
         ${noSrc ? html`<span class="disc-pick__title">${t.title}</span>` : html`<button class="disc-pick__title" data-act="play-track" data-id="${t.id}">${t.title}</button>`}
         <a class="disc-pick__by" href="#/artist/${t.artistId}">${t.artist}</a>
       </div>
       <div class="disc-pick__end">${ui.likeButton(t.id)}<button class="btn-icon btn-icon--bare" data-act="disc-pick-menu" data-id="${t.id}" aria-haspopup="menu" aria-label="More actions for ${t.title}" data-tip="More">${icon('more')}</button></div>
-      <div class="disc-pick__why">${reasons[0] ? ui.reasonChip(reasons[0], { more: reasons.length - 1, via: p.via, itemId: t.id }) : ''}
+      <div class="disc-pick__why">${reasons[0] ? ui.reasonChip(reasons[0], { more: reasons.length - 1, via: p.via, itemId: t.id }) : ''}${availMark(p.avail)}
         ${noSrc ? html`<div class="disc-pick__nosrc">
           ${finding ? html`<span class="resolve" role="status"><span class="spin-ring" aria-hidden="true"></span>Searching Soulseek</span>`
             : html`<span class="resolve">${icon('no-source')}No source found yet</span>`}
@@ -444,6 +452,13 @@
   function mountHome(ctx) {
     /* the hub rebuilt the feed, or a shelf filled in later (new releases once Soulseek has answered): fetch it again */
     ctx.onCleanup(App.on('server:feed.updated', function () { if (!H.building) M.reload(FEED); }));   // old shelves stay until it answers
+    /* one pick's sources came in: that pick, in place (a pick with none gets "Search again") */
+    ctx.onCleanup(App.on('server:feed.avail', function (e) {
+      var p = list(M.peek(FEED), 'picks').filter(function (x) { return x.trackId === e.trackId; })[0];
+      if (!p) return;
+      p.avail = e.avail; p.noSource = e.noSource;
+      paintShelf('picks');
+    }));
     ctx.onCleanup(App.on('store', function (keys) {
       var feed = M.peek(FEED);
       if (!feed || H.building || isCold(feed)) return;

@@ -44,6 +44,8 @@ Built in the background; the first build happens while the first caller waits (t
 
 Each reason carries its `evidence` (`taste::Evidence`): what the listener did with the seed artist or tag, as counts. The web says the strongest true one ("Similar to Clairo. You've played them 14 times."; a follow, then likes, plays, saves, saved albums, Last.fm history), never "an artist you like" of one only played.
 
+**Where a pick plays** (`feed::check_picks`): after a build, never before Home is served, each pick shown is checked, one at a time. Soulseek is asked first (`Transfers::song_available`: a song with known sources answers at once, a remembered answer too, otherwise one search in the search budget's lowest lane, kept 7 days if found and 1 if not). YouTube is asked unless it is off (`Youtube::available`: a remembered match or answer at once, otherwise one flat video search, each result judged by playback's own rule, with no extraction; kept 30 days if found and 1 if not; one check at a time, started only while no other yt-dlp run is in flight). The pick then carries `avail` (`soulseek`, `youtube`, or both), or `noSource` when every source checked has none (Home: "Search again"), announced one by one as `feed.avail`. A pick carried over or shown again costs nothing. Measured on six real songs: 3.9 s and one request a song for the YouTube check, against 7.7 s and two (a YouTube Music search and an extraction) for playback's own match.
+
 The four pick pools:
 
 | Pool | Reason | via |

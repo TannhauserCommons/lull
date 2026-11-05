@@ -24,6 +24,7 @@ mod rules;
 mod search;
 mod share;
 mod slskd;
+mod songs;
 mod sources;
 mod stream;
 
@@ -107,6 +108,15 @@ pub const MIGRATIONS: Migrations = Migrations {
         -- back, whose length is what arrived.
         ALTER TABLE soulseek_files ADD COLUMN ranges TEXT;
     "#,
+        r#"
+        -- Whether peers share a song (Transfers::song_available, songs.rs), for shelves'
+        -- availability marks: found answers are used for 7 days, not found for 1.
+        CREATE TABLE soulseek_songs (
+            track_id    TEXT PRIMARY KEY,
+            available   INTEGER NOT NULL,
+            checked_at  INTEGER NOT NULL          -- unix seconds
+        );
+    "#,
     ],
 };
 
@@ -133,6 +143,8 @@ pub struct Service {
     prefetch: prefetch::Lists,
     /// Album availability is checked one album at a time.
     album_checks: tokio::sync::Mutex<()>,
+    /// One song checked at a time (`songs::available`).
+    song_checks: tokio::sync::Mutex<()>,
 }
 
 /// `youtube` is the second source: fetches turn to it by the listener's mode (docs/context/youtube.md).
@@ -181,6 +193,7 @@ pub async fn start(ctx: &Ctx, youtube: Arc<dyn Youtube>) -> Result<Arc<Service>>
         saving: Mutex::default(),
         prefetch: prefetch::Lists::default(),
         album_checks: tokio::sync::Mutex::new(()),
+        song_checks: tokio::sync::Mutex::new(()),
     });
     ctx.status
         .set("soulseek", State::Down, "Connecting to slskd", Value::Null);
@@ -317,6 +330,10 @@ impl Transfers for Service {
 
     async fn album_known(&self, artist: &str, album: &str) -> Result<Option<bool>> {
         albums::known(self, artist, album).await
+    }
+
+    async fn song_available(&self, track: &Track) -> Result<Option<bool>> {
+        songs::available(self, track).await
     }
 }
 

@@ -2,7 +2,9 @@
 // - a first run (the feed's `cold`) offers tags and the artists of its starter picks to follow;
 // - each followed tag brings the tags that come with it ("you might like"), whatever pages were opened before;
 // - a pick's "why" says what the listener did (the reason's evidence), never more;
-// - Refresh picks builds a new shelf on the hub and waits for it, and says when the next one can be made (hourly).
+// - Refresh picks builds a new shelf on the hub and waits for it, and says when the next one can be made (hourly);
+// - each pick says quietly where it can play from, as the hub's checks come in (`feed.avail`), and one with no copy
+//   anywhere offers "Search again".
 
 import { expect, test } from '@playwright/test';
 import { openScreen } from './lib.mjs';
@@ -51,4 +53,21 @@ test('Refresh picks builds a new shelf and waits for it; again within the hour s
   await expect(picks.locator('.disc-pick').first()).toBeVisible();      // back once feed.updated brought the feed
   await picks.getByRole('button', { name: 'Refresh picks' }).click();
   await expect(page.locator('.toast', { hasText: /Fresh ones in (an hour|\d+ minutes)/ })).toBeVisible();
+});
+
+test('a pick says where it can play from, and one with no copy offers Search again', async ({ page, request }) => {
+  await feedOf(page, request, 'avail');
+  await openScreen(page, '/home');
+  const picks = page.locator('[data-region="picks"] .disc-pick');
+  await expect(picks.nth(0)).toHaveAttribute('data-avail', 'soulseek');
+  await expect(picks.nth(1).locator('.pick-avail')).toHaveAttribute('aria-label', 'On Soulseek and YouTube');
+  await expect(picks.nth(2).locator('.pick-avail__src[data-src="youtube"]')).toBeVisible();
+  const none = page.locator('[data-region="picks"] .disc-pick.is-nosource');      // listed after the playable ones
+  await expect(none).toHaveCount(1);
+  await expect(none.getByRole('button', { name: 'Search again' })).toBeVisible();
+  // a check answered after Home drew the shelf
+  const id = await picks.nth(3).getAttribute('data-track-id');
+  const headers = { 'x-fixture-client': `${test.info().testId}:${test.info().repeatEachIndex}` };
+  await request.post('/__fixture/emit', { data: { topic: 'feed.avail', data: { trackId: id, avail: ['soulseek'], noSource: false } }, headers });
+  await expect(page.locator(`[data-region="picks"] .disc-pick[data-track-id="${id}"]`)).toHaveAttribute('data-avail', 'soulseek');
 });

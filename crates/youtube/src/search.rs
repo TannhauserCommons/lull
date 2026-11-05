@@ -40,6 +40,66 @@ pub struct Matched {
     pub official: bool,
 }
 
+/// Whether an upload is the song, for a shelf's availability mark (`Youtube::available`): a
+/// remembered match or miss answers at once; otherwise one flat video search, each result judged
+/// by playback's own rule (`matching::ranked`: title, artist, length within the strictness's
+/// slack), with no extraction. Remembered apart from playback's matches, which prefer YouTube
+/// Music's official audio and confirm it by extraction when the song is played.
+pub async fn available(svc: &Service, track: &Track, strictness: Match) -> Result<bool, Problem> {
+    let known = remembered(svc, track, strictness)
+        .await
+        .map_err(|e| Problem::Other(e.to_string()))?;
+    if let Some(m) = known {
+        return Ok(m.is_some());
+    }
+    let (id, how) = (track.id.as_str().to_owned(), strictness_key(strictness));
+    let checked: Option<bool> = {
+        let (id, how) = (id.clone(), how);
+        svc.ctx
+            .db
+            .call(move |c| {
+                let row: Option<(bool, i64)> = c
+                    .query_row(
+                        "SELECT available, checked_at FROM youtube_available WHERE track_id = ?1 AND strictness = ?2",
+                        params![id, how],
+                        |r| Ok((r.get(0)?, r.get(1)?)),
+                    )
+                    .optional()?;
+                let now = lull_core::now();
+                Ok(row
+                    .and_then(|(found, at)| (now - at < if found { FOUND_FOR } else { MISSING_FOR }).then_some(found)))
+            })
+            .await
+            .map_err(|e| Problem::Other(e.to_string()))?
+    };
+    if let Some(found) = checked {
+        return Ok(found);
+    }
+    let wanted = Wanted::of(track);
+    let videos = flat(
+        svc,
+        &format!("ytsearch{VIDEO_RESULTS}:{}", Wanted::query(track)),
+        VIDEO_RESULTS,
+    )
+    .await?;
+    let found = !matching::ranked(&wanted, &videos, strictness).is_empty();
+    svc.ctx
+        .db
+        .call(move |c| {
+            let now = lull_core::now();
+            c.execute(
+                "INSERT INTO youtube_available (track_id, strictness, available, checked_at) VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(track_id, strictness) DO UPDATE SET available = excluded.available, checked_at = excluded.checked_at",
+                params![id, how, found, now],
+            )?;
+            c.execute("DELETE FROM youtube_available WHERE checked_at < ?1", [now - FOUND_FOR])?;
+            Ok(())
+        })
+        .await
+        .map_err(|e| Problem::Other(e.to_string()))?;
+    Ok(found)
+}
+
 /// The remembered answer for the song under this strictness: `Some(None)` = nothing matched.
 pub async fn remembered(svc: &Service, track: &Track, strictness: Match) -> Result<Option<Option<Matched>>> {
     let (id, how) = (track.id.as_str().to_owned(), strictness_key(strictness));

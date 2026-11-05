@@ -88,6 +88,9 @@ button.disc-pick__title:hover { text-decoration: underline; text-underline-offse
 .disc-pick__why { grid-area: why; display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); min-width: 0; margin-top: var(--sp-2); }
 .disc-pick__why > .cluster { flex-wrap: nowrap; align-items: flex-start; }       /* "+1" stays beside its chip */
 .disc-pick__end { grid-area: end; display: flex; align-items: center; margin-right: -4px; }
+/* where a pick plays from: quiet, at the end of the reason row (themes may restyle, move or hide it) */
+.pick-avail { display: inline-flex; gap: 2px; margin-left: auto; color: var(--fg-3); }
+.pick-avail .ic { width: 14px; height: 14px; }
 .disc-pick__end .btn-icon { width: 36px; height: 36px; }
 .disc-pick.is-nosource .disc-pick__art .cover { filter: saturate(.35); }
 .disc-pick__nosrc { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); margin-top: var(--sp-2); }

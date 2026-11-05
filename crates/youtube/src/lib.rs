@@ -29,6 +29,7 @@ use lull_core::status::State;
 use lull_core::youtube::{Copy, Found, FoundPlaylist, FoundSong, Listing, Mode, Settings, Want};
 use lull_core::{Ctx, Error, Result};
 use serde_json::{Value, json};
+use std::sync::atomic::Ordering;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Semaphore;
 
@@ -85,6 +86,18 @@ pub const MIGRATIONS: Migrations = Migrations {
             checked_at  INTEGER NOT NULL
         );
     "#,
+        r#"
+        -- Whether an upload is the song under one strictness, for shelves' availability marks
+        -- (search::available): from one flat video search judged by playback's rule, without
+        -- the extraction playback's own match makes. Found kept 30 days, not found 1.
+        CREATE TABLE youtube_available (
+            track_id    TEXT NOT NULL,
+            strictness  TEXT NOT NULL,
+            available   INTEGER NOT NULL,
+            checked_at  INTEGER NOT NULL,          -- unix seconds
+            PRIMARY KEY (track_id, strictness)
+        );
+    "#,
     ],
 };
 
@@ -111,9 +124,31 @@ pub struct Service {
     downloads: Semaphore,
     /// One search per song at a time: a preload and the player asking together search once.
     finding: Mutex<std::collections::HashMap<TrackId, Arc<tokio::sync::Mutex<()>>>>,
+    /// Availability checks (`available`): one at a time, so a lookup is always free for what
+    /// the listener does...
+    availability: Semaphore,
+    /// ...and only while nothing else runs: yt-dlp runs in flight, and those of them checks.
+    running: std::sync::atomic::AtomicUsize,
+    checking: std::sync::atomic::AtomicUsize,
     updates: update::State,
     /// Sound checks (ADR-0016).
     checks: check::Checks,
+}
+
+/// Counts one in flight for as long as it lives.
+struct Counted<'a>(&'a std::sync::atomic::AtomicUsize);
+
+impl<'a> Counted<'a> {
+    fn on(n: &'a std::sync::atomic::AtomicUsize) -> Self {
+        n.fetch_add(1, Ordering::SeqCst);
+        Counted(n)
+    }
+}
+
+impl Drop for Counted<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -143,6 +178,9 @@ pub async fn start(ctx: &Ctx) -> Result<Arc<Service>> {
         lookups: Semaphore::new(LOOKUPS_AT_ONCE),
         downloads: Semaphore::new(DOWNLOADS_AT_ONCE),
         finding: Mutex::default(),
+        availability: Semaphore::new(1),
+        running: Default::default(),
+        checking: Default::default(),
         updates: update::State::default(),
         checks: check::Checks::default(),
     });
@@ -241,6 +279,29 @@ impl Youtube for Service {
         Ok(found)
     }
 
+    async fn available(&self, track: &Track) -> Result<Option<bool>> {
+        let settings = self.settings();
+        if settings.mode == Mode::Off || self.backed_off().is_err() {
+            return Ok(None);
+        }
+        let _one = self
+            .availability
+            .acquire()
+            .await
+            .map_err(|_| Error::internal("youtube availability checks closed"))?;
+        // Behind everything the listener waits on: a check starts only once no other yt-dlp
+        // run is in flight (a play, a preload, a search), however long that takes.
+        while self.running.load(Ordering::SeqCst) > self.checking.load(Ordering::SeqCst) {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+        let _counted = Counted::on(&self.checking);
+        let found = search::available(self, track, settings.matching)
+            .await
+            .map_err(|p| self.failed(p))?;
+        self.succeeded();
+        Ok(Some(found))
+    }
+
     async fn search_songs(&self, query: &str) -> Result<Vec<FoundSong>> {
         self.backed_off()?;
         let found = search::songs(self, query).await.map_err(|p| self.failed(p))?;
@@ -318,6 +379,7 @@ impl Service {
             .acquire()
             .await
             .map_err(|_| Problem::Other("youtube lookups closed".into()))?;
+        let _counted = Counted::on(&self.running);
         self.ctx.http.pace("youtube", PACE).await;
         match self.ytdlp.output(args, limit, partial).await {
             Err(Problem::Broken(why)) if self.ytdlp.current().updated => {

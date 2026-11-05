@@ -283,6 +283,11 @@ const routes = [
     const shape = feedShapes.get(client);
     // a first run: nothing known of the listener, the starter tags' picks and their artists
     if (shape === 'cold') return { ...feed, cold: true, followedTags: [], jumpBackIn: [], newReleases: [], coldStartArtists: L.artistIds.slice(0, 6) };
+    // where the first picks can play from, as the hub's checks found (one with no copy anywhere)
+    if (shape === 'avail') {
+      const marks = [{ avail: ['soulseek'] }, { avail: ['soulseek', 'youtube'] }, { avail: ['youtube'] }, { noSource: true }];
+      return { ...feed, picks: feed.picks.map((p, i) => ({ ...p, ...(marks[i] || {}) })) };
+    }
     // each followed tag with the tags that come with it on this month's releases ("you might like")
     if (shape === 'related') {
       const others = L.tags.filter((t) => !feed.followedTags.includes(t));

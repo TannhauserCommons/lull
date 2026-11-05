@@ -548,6 +548,33 @@ impl Searches {
         Ok(Some(shared))
     }
 
+    /// Whether any source is known for the song (no search).
+    pub fn knows(&self, track: &Track) -> bool {
+        self.sources.known(track)
+    }
+
+    /// Whether peers share the song, for availability marks on shelves (`Transfers::song_available`):
+    /// a known source answers at once; otherwise one search in the `Availability` lane, whose
+    /// sources stay known for playing it. `None` when that lane is paused, or no peer has answered
+    /// lately (the server may be throttling the account).
+    pub async fn song_shared(&self, track: &Track) -> Result<Option<bool>> {
+        if self.sources.known(track) {
+            return Ok(Some(true));
+        }
+        self.turn(Lane::Availability).await;
+        if self.checks_unheard() {
+            return Ok(None);
+        }
+        self.search_song(track, Lane::Availability).await?;
+        if self.sources.known(track) {
+            return Ok(Some(true));
+        }
+        if !self.answered_since(lull_core::now() - ANSWERED_LATELY_S) {
+            return Ok(None);
+        }
+        Ok(Some(false))
+    }
+
     /// Whether a search that may still add sources for this song is running.
     pub fn searching_for(&self, track: &Track) -> bool {
         let text = Wanted::query(track);

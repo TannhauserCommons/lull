@@ -443,6 +443,7 @@ Every class lull's CSS styles and every `data-*` attribute lull's markup sets, e
   - `.disc-home`, `.disc-hello` (the greeting band), `.disc-lead` (the `homeLead` slot);
   - modules: `.disc-modules`, `.disc-mod` (`data-module`), `.disc-card`;
   - their contents: `.disc-picks`, `.disc-shelf`, `.disc-rel`, `.disc-starters`, `.disc-starter`, `.disc-jump`, `.disc-tags`, `.disc-tag`;
+  - where a pick can play from: `[data-avail]` on `.disc-pick` (`soulseek`, `youtube`, or both, space-separated; absent until lull knows) and its mark `.pick-avail`, one `.pick-avail__src` per source (`data-src`: `soulseek` `youtube`). Quiet by default (14 px glyphs in `--fg-3` at the end of the pick's reason row, `.disc-pick__why`); restyle it, move it with `order`, or hide it (`display: none`). A pick no source has shows "Search again";
   - loading and empty: `.disc-skel-shelf`, `.disc-picks-skel`, `.disc-cold`, `.disc-empty`.
 - **Search:**
   - the page: `.disc-search`, `.disc-q` (the search field on phones), `.disc-tabs`, `.disc-filters`, `.disc-recents`, `.disc-recent`;

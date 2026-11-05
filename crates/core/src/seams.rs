@@ -133,6 +133,13 @@ pub trait Transfers: Send + Sync {
     async fn album_known(&self, _artist: &str, _album: &str) -> Result<Option<bool>> {
         Ok(None)
     }
+
+    /// Whether Soulseek peers share a song, for a shelf's availability mark: a song with known
+    /// sources answers at once, a remembered answer too; otherwise this searches, in the search
+    /// budget's lowest lane. `None` when Soulseek can't answer now.
+    async fn song_available(&self, _track: &Track) -> Result<Option<bool>> {
+        Ok(None)
+    }
 }
 
 /// YouTube through yt-dlp. Implemented by `youtube`, handed to `soulseek`, whose fetches write
@@ -143,6 +150,14 @@ pub trait Youtube: Send + Sync {
     /// YouTube unless a recent answer is remembered. `None` when no upload matches;
     /// `Unavailable` while YouTube is backed off (a sign-in check, too many requests).
     async fn find(&self, track: &Track, want: Want) -> Result<Option<Found>>;
+
+    /// Whether an upload is the song by the listener's match rules, for a shelf's availability
+    /// mark: a remembered answer at once, else one flat video search judged by playback's rule
+    /// (no extraction), behind anything the listener waits on. `None` when YouTube is off or
+    /// backed off.
+    async fn available(&self, _track: &Track) -> Result<Option<bool>> {
+        Ok(None)
+    }
 
     /// Writes the copy's audio to `dest` front to back, the native stream with no transcoding,
     /// and returns once all of it is there. Dropping the future stops the download.
