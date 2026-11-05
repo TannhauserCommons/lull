@@ -26,7 +26,7 @@
           return;
         }
         if (r.status !== 200) throw new Error(r.body.message || 'The hub answered ' + r.status);
-        App.toast('Added ' + r.body.name, { kind: 'ok', icon: 'sparkle', action: 'Use it', onAction: function () { App.setPref('design', r.body.id); } });
+        App.toast('Added ' + r.body.name, { confirms: 'theme', kind: 'ok', icon: 'sparkle', action: 'Use it', onAction: function () { App.setPref('design', r.body.id); } });
         App.checkAfterImport(r.body);
         App.themePictures(r.body);
         return Designs.refresh().then(function () { if (onAppearance()) App.refresh(); });

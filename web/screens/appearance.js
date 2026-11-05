@@ -19,6 +19,7 @@
   custom['device.theme'] = { get: function () { return App.prefs().theme; }, set: function (v) { App.setPref('theme', v === 'system' ? null : v); } };
   custom['device.motion'] = { get: function () { return App.prefs().motion; }, set: function (v) { App.setPref('motion', v); } };
   custom['device.textSize'] = { get: function () { return App.prefs().textSize; }, set: function (v) { App.setPref('textSize', v); } };
+  custom['device.confirmations'] = { get: function () { return App.prefs().confirmations; }, set: function (v) { App.setPref('confirmations', v); } };
   custom['device.pauseInactive'] = { get: function () { return App.prefs().pauseInactive; }, set: function (v) { App.setPref('pauseInactive', !!v); } };
 
   /* the desktop app's see-through window (app/src/desktop/glass.rs): the listener's switch, stored by the app on this
@@ -123,6 +124,7 @@
       ${glassRow()}
       ${row('Motion', 'Reduced swaps slides and loops for quick fades. Full ignores the system setting.', choice('device.motion', 'Motion', [['system', 'Match system'], ['reduce', 'Reduced'], ['full', 'Full']]))}
       ${window.LullNative ? '' : K.switchRow('device.pauseInactive', 'Pause animations when ' + App.product + ' isn\'t the active window', 'Twinkles, the sky and other decoration hold still while you use another window, even one beside it. Spinners and progress keep moving. This device only.')}
+      ${row('Confirmations', 'The notes that say a thing you did is done: added to the queue, liked, saved, copied. Quiet keeps them off the screen; errors and what lull is doing still show, and a screen reader still hears them.', choice('device.confirmations', 'Confirmations', [['show', 'Show'], ['quiet', 'Quiet']]))}
       ${row('Text size', 'Scales all text and spacing on this device.', choice('device.textSize', 'Text size', [[90, 'Smaller'], [100, 'Default'], [112, 'Larger'], [125, 'Largest']], 'sys-seg--4'))}
       ${group('layout')}
       ${row('Reset layout', 'Puts the side panel, the Now Playing column, and side-by-side search back as they came. This device only.', html`<button class="btn btn--sm" data-act="layout-reset">${icon('undo', null, 'ic-16')}Reset layout</button>`)}
@@ -205,7 +207,7 @@
   App.action('layout-reset', function () {
     App.confirm({ title: 'Reset the layout?', text: 'The side panel and the Now Playing column go back to their widths, search to one list and Home to its first order, all sections shown. Only on this device.', confirm: 'Reset' }, function () {
       App.layout.reset();
-      App.toast('Layout reset', { icon: 'undo' });
+      App.toast('Layout reset', { confirms: 'layout', icon: 'undo' });
     });
   });
   App.action('theme-edit', function (el) { openStudio(el.getAttribute('data-id')); });

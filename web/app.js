@@ -267,7 +267,7 @@
     var on = force === undefined ? !state.liked[id] : !!force;
     setLiked([id], on);
     App.toast(on ? 'Added to Liked songs' : 'Removed from Liked songs', {
-      icon: on ? 'heart-fill' : 'heart', action: 'Undo', onAction: function () { App.toggleLike(id, !on); }, quiet: true
+      confirms: on ? 'like' : 'unlike', together: on ? liked : unliked, icon: on ? 'heart-fill' : 'heart', action: 'Undo', onAction: function () { App.toggleLike(id, !on); }, quiet: true
     });
   };
   /* setLiked(ids, on): many at once (album and selection actions). With "Save songs you like" on
@@ -300,7 +300,7 @@
     var a = M.artist(id), name = a ? a.name : id;
     App.store.update('followed', function (f) { if (on) f[id] = true; else delete f[id]; });
     App.emit('follow', { id: id, followed: on });
-    App.toast(on ? 'Following ' + name : 'Unfollowed ' + name, { icon: 'follow', action: 'Undo', onAction: function () { App.toggleFollow(id, !on); } });
+    App.toast(on ? 'Following ' + name : 'Unfollowed ' + name, { confirms: 'follow', icon: 'follow', action: 'Undo', onAction: function () { App.toggleFollow(id, !on); } });
     /* following an artist sends its name: the server derives the id from it and refuses a mismatch */
     var body = on && kind === 'artist' ? { name: name } : undefined;
     App.outbox.call('/api/follows/' + kind + '/' + encodeURIComponent(id), { method: on ? 'PUT' : 'DELETE', body: body },
@@ -325,10 +325,12 @@
     App.emit('prefs', p);
   }
   App.prefs = function () {
-    return { theme: prefs.theme || 'system', motion: prefs.motion || 'system', textSize: +prefs.textSize || 100, design: Designs.current, pauseInactive: !!prefs.pauseInactive };
+    return { theme: prefs.theme || 'system', motion: prefs.motion || 'system', textSize: +prefs.textSize || 100, design: Designs.current, pauseInactive: !!prefs.pauseInactive,
+      confirmations: prefs.confirmations === 'quiet' ? 'quiet' : 'show' };
   };
   /* keys: theme ('day'|'night'|null), motion ('reduce'|'full'|'system'), textSize (90|100|112|125), design (name),
-     pauseInactive (true: decorative loops hold still while lull isn't the active window) */
+     pauseInactive (true: decorative loops hold still while lull isn't the active window),
+     confirmations ('show' | 'quiet': toasts that only confirm what the listener asked, ADR-0040) */
   App.setPref = function (key, value, temporary) {
     if (key === 'design') { App.setDesign(value, temporary); return; }
     prefs[key] = value; applyPrefs(prefs);
@@ -1819,11 +1821,22 @@
   }, true);
   window.addEventListener('scroll', hideTip, true);
 
-  /* toast(message, { icon, action, onAction, kind: info|ok|error, sticky }) -> { close }.
-     Auto-dismiss 6 s (paused on hover/focus); errors with an action stay until dismissed. */
+  /* toast(message, { icon, action, onAction, kind: info|ok|error, sticky, confirms, n, together }) -> { el, close }.
+     Auto-dismiss 6 s (paused on hover/focus); errors with an action stay until dismissed.
+     Confirmations (ADR-0040): `confirms` names the group of a toast that only confirms what the listener just asked
+     (queued, liked, saved, copied...); the code that raises it decides, and a toast without it is an alert, always
+     shown. One of a group while another is on screen updates it instead of stacking: `n` is how many things this one
+     did (1), `together(total)` words them all ("Added 3 songs to the queue"), and its Undo undoes every one, newest
+     first. With Confirmations: Quiet (Settings > Appearance, per device) a confirmation isn't shown, only said to a
+     screen reader. */
+  var confirming = {};                                     // group -> the open toast's { add(msg, o) }
   App.toast = function (msg, o) {
     o = o || {};
     App.emit('toast', o);                                  // the UI sounds hear an error (web/sounds.js)
+    if (o.confirms && o.kind !== 'error') {
+      if (prefs.confirmations === 'quiet') { announce(msg); return { el: null, close: function () {} }; }
+      if (confirming[o.confirms]) return confirming[o.confirms].add(msg, o);
+    }
     var region = $('#toasts');
     var el = document.createElement('div');
     el.className = 'toast s-card' + (o.kind ? ' toast--' + o.kind : '');
@@ -1841,12 +1854,29 @@
     el.addEventListener('mouseleave', function () { paused = false; arm(); });
     el.addEventListener('focusin', function () { paused = true; clearTimeout(timer); });
     el.addEventListener('focusout', function () { paused = false; arm(); });
+    var undo = o.onAction ? [o.onAction] : [];               // a collapsed group's actions, oldest first
     el.addEventListener('click', function (e) {
-      if (e.target.closest('[data-toast-action]')) { close(); if (o.onAction) o.onAction(); }
+      if (e.target.closest('[data-toast-action]')) { close(); undo.slice().reverse().forEach(function (fn) { fn(); }); }
       else if (e.target.closest('[data-toast-close]')) close();
     });
+    var handle = { el: el, close: close };
+    if (o.confirms && o.kind !== 'error') {
+      var group = o.confirms, total = o.n || 1, closeOne = close;
+      close = handle.close = function () { if (confirming[group] === handle) delete confirming[group]; closeOne(); };
+      handle.add = function (msg2, o2) {
+        total += o2.n || 1;
+        $('.toast__msg', el).textContent = o2.together ? o2.together(total) : msg2;   // the live region says it again
+        if (o2.onAction) {
+          undo.push(o2.onAction);
+          if (!$('[data-toast-action]', el)) $('[data-toast-close]', el).insertAdjacentHTML('beforebegin', String(html`<button class="btn btn--quiet btn--sm" data-toast-action>${o2.action}</button>`));
+        }
+        arm();
+        return handle;
+      };
+      confirming[group] = handle;
+    }
     arm();
-    return { el: el, close: close };
+    return handle;
   };
 
   /* banners (degraded / offline): App.banner.show({ id, kind: warn|down|info|ok, icon, text, action: { label, run }, dismissible })
@@ -1933,7 +1963,7 @@
       var s = state.saves[id]; if (!s || !s.jobId) { setSave(id, null); return Promise.resolve(); }
       return M.api('/api/saves/' + encodeURIComponent(s.jobId), { method: 'DELETE' }).then(function () {
         setSave(id, null); var t = M.track(id);
-        App.toast('Stopped saving ' + (t ? t.title : 'the song'), { icon: 'close' });
+        App.toast('Stopped saving ' + (t ? t.title : 'the song'), { confirms: 'save', icon: 'close' });
       }, function (err) { App.toast('Couldn\'t stop that save: ' + err.message, { kind: 'error' }); });
     },
     set: function (id, rec) { setSave(id, rec); }
@@ -1941,7 +1971,7 @@
   function startSaves(ids, opts) {
     if (!ids.length) return;
     ids.forEach(function (id) { setSave(id, { step: 1, status: 'saving', pct: 0 }); });
-    if (ids.length > 1) App.toast('Saving ' + ids.length + ' songs to your library', { icon: 'save' });
+    if (ids.length > 1) App.toast('Saving ' + ids.length + ' songs to your library', { confirms: 'save', icon: 'save' });
     /* the playing song is saved from the peer it streams from, so the transfer is not started twice */
     var source = Object.assign({}, opts.source), cur = P.currentId();
     if (ps.source && ids.indexOf(cur) >= 0 && !source[cur]) source[cur] = { peer: ps.source.peer, path: ps.source.path, size: ps.source.sizeBytes };
@@ -1976,7 +2006,7 @@
     if (status !== 'saved' || (was && was.status === 'saved')) return;
     M.patchTrack(e.trackId, { saved: true });
     var t = M.track(e.trackId);
-    App.toast('Saved to library: ' + (t ? t.title : 'one song'), { kind: 'ok', icon: 'saved', action: t ? 'Show' : null,
+    App.toast('Saved to library: ' + (t ? t.title : 'one song'), { confirms: 'saved', n: 1, together: function (n) { return 'Saved ' + n + ' songs to your library'; }, kind: 'ok', icon: 'saved', action: t ? 'Show' : null,
       onAction: function () { App.go('/album/' + t.albumId); } });
     App.announce('Saved ' + (t ? t.title : 'the song') + ' to your library');
   }
@@ -2315,6 +2345,10 @@
     P.playList(ids, ids.indexOf(id), opts);
   };
   function titleOf(id) { var t = M.track(id); return t ? t.title : 'one song'; }
+  /* the words of confirmations collapsed into one toast (ADR-0040) */
+  function queued(n) { return 'Added ' + n + ' songs to the queue'; }
+  function liked(n) { return 'Liked ' + n + ' songs'; }
+  function unliked(n) { return 'Removed ' + n + ' songs from Liked songs'; }
   /* the listener's own picks go to "next up", right after the playing song: Play next at its front, Add to queue at
      its end. They play before the context continues and outlive a new context (playList). */
   function nextUpEnd() { var at = ps.index + 1; while (ps.queue[at] && ps.queue[at].group === 'next') at++; return at; }
@@ -2323,7 +2357,7 @@
     ps.queue.splice.apply(ps.queue, [at, 0].concat(ids.map(function (id) { return entry(id, 'next'); })));
     if (ps.status === 'idle') load(0);
     queueChanged();
-    App.toast(ids.length > 1 ? ids.length + ' songs will play next' : 'Playing next: ' + titleOf(ids[0]), { icon: 'queue' });
+    App.toast(ids.length > 1 ? ids.length + ' songs will play next' : 'Playing next: ' + titleOf(ids[0]), { confirms: 'queue', n: ids.length, together: queued, icon: 'queue' });
   };
   /* opts.paused: with nothing loaded, the first song waits paused rather than playing (a share page's Add to queue
      never starts music on its own) */
@@ -2333,13 +2367,13 @@
     ps.queue.splice.apply(ps.queue, [at, 0].concat(ids.map(function (id) { return entry(id, 'next'); })));
     if (ps.status === 'idle') load(0, { autoplay: !(opts && opts.paused) });
     queueChanged();
-    App.toast(ids.length > 1 ? 'Added ' + ids.length + ' songs to the queue' : 'Added to queue: ' + titleOf(ids[0]), { icon: 'queue' });
+    App.toast(ids.length > 1 ? 'Added ' + ids.length + ' songs to the queue' : 'Added to queue: ' + titleOf(ids[0]), { confirms: 'queue', n: ids.length, together: queued, icon: 'queue' });
   };
   P.removeAt = function (i) {
     if (i === ps.index) { App.toast('That song is playing. Skip it instead.', { icon: 'info' }); return; }
     var removed = ps.queue.splice(i, 1)[0]; if (i < ps.index) ps.index--;
     queueChanged();
-    App.toast('Removed from queue', { icon: 'trash', action: 'Undo', onAction: function () {
+    App.toast('Removed from queue', { confirms: 'queue-remove', together: function (n) { return 'Removed ' + n + ' songs from the queue'; }, icon: 'trash', action: 'Undo', onAction: function () {
       ps.queue.splice(i, 0, removed); if (i <= ps.index) ps.index++; queueChanged();
     } });
   };
@@ -2356,7 +2390,7 @@
   P.clear = function () {
     var before = ps.queue.slice(), beforeIndex = ps.index, playingEntry = ps.queue[ps.index];
     ps.queue = playingEntry ? [playingEntry] : []; ps.index = 0; queueChanged();
-    App.toast('Queue cleared', { icon: 'trash', action: 'Undo', onAction: function () { ps.queue = before; ps.index = beforeIndex; queueChanged(); } });
+    App.toast('Queue cleared', { confirms: 'queue-remove', icon: 'trash', action: 'Undo', onAction: function () { ps.queue = before; ps.index = beforeIndex; queueChanged(); } });
   };
   /* manual source choice (source picker): useSource(trackId, { peer, path, format, sizeBytes, speed }). The playing
      song switches mid-song (ADR-0008): the chosen peer's stream reopens at the same time, as the same play. */
@@ -2461,7 +2495,7 @@
         if (seed.kind === 'track') ids = [seed.id].concat(ids.filter(function (id) { return id !== seed.id; }));
         if (!ids.length) { App.toast('No radio for ' + name + ' yet: nothing similar was found', { icon: 'radio' }); resolve(false); return; }
         P.playList(ids, 0, { radio: { name: name, seed: seed, keepsAdding: true, steer: .4 }, context: radioPlace(from, name) });
-        App.toast('Radio: ' + name + ', keeps adding songs', { icon: 'radio' });
+        App.toast('Radio: ' + name + ', keeps adding songs', { confirms: 'radio', icon: 'radio' });
         resolve(true);
       }, function (err) { if (live) { settle(); resolve(failed(err.message)); } });
     });
@@ -4001,7 +4035,7 @@
     }
     var skipped = ids.length - adding.length;
     App.savePlaylistOrder(plId, before.concat(adding)).then(function () {
-      App.toast('Added to ' + p.name + (skipped ? ' (' + skipped + ' already in it)' : ''), { icon: 'playlists', action: 'Undo', onAction: function () { App.savePlaylistOrder(plId, before); } });
+      App.toast('Added to ' + p.name + (skipped ? ' (' + skipped + ' already in it)' : ''), { confirms: 'playlist:' + p.id, n: ids.length - skipped, together: function (n) { return 'Added ' + n + ' songs to ' + p.name; }, icon: 'playlists', action: 'Undo', onAction: function () { App.savePlaylistOrder(plId, before); } });
     }, function (err) { App.toast('Couldn\'t add to ' + p.name + ': ' + err.message, { kind: 'error' }); });
   }
   App.addToPlaylist = addToPlaylist;
@@ -4082,7 +4116,7 @@
       { label: 'Add to queue', icon: 'plus', run: function () { P.addToQueue(list); } },
       { label: 'Add to playlist', icon: 'playlists', run: function () { App.hooks.addToPlaylist(list); } },
       unsaved.length ? { label: 'Save to library', icon: 'save', run: function () { App.saves.start(unsaved); } } : null,
-      unliked.length ? { label: 'Like', icon: 'heart', run: function () { setLiked(unliked, true); App.toast('Added ' + unliked.length + ' to Liked songs', { icon: 'heart-fill' }); } } : null,
+      unliked.length ? { label: 'Like', icon: 'heart', run: function () { setLiked(unliked, true); App.toast('Added ' + unliked.length + ' to Liked songs', { confirms: 'like', n: unliked.length, together: liked, icon: 'heart-fill' }); } } : null,
       { label: 'Download', icon: 'download', run: function () { App.downloads.keep({ kind: 'track', id: list[0] }, list); } }
     ].filter(Boolean), { label: 'Actions for ' + list.length + ' songs' });
   }
@@ -4124,7 +4158,7 @@
     'play-track': function (el) { var id = el.getAttribute('data-id'); P.playTrack(id, listIds(el)); },
     'play-album': function (el) {
       var id = el.getAttribute('data-id');
-      withAlbum(id, function (list) { var a = M.album(id); P.playList(list, 0, { context: App.place('album', id, a.title) }); App.toast('Playing ' + a.title, { icon: 'play' }); });
+      withAlbum(id, function (list) { var a = M.album(id); P.playList(list, 0, { context: App.place('album', id, a.title) }); App.toast('Playing ' + a.title, { confirms: 'play', icon: 'play' }); });
     },
     'shuffle-album': function (el) {
       var id = el.getAttribute('data-id');
@@ -4167,13 +4201,13 @@
       App.hooks.reason(el, { kind: el.getAttribute('data-kind'), ref: el.getAttribute('data-ref'), name: el.getAttribute('data-name'),
         via: el.getAttribute('data-via'), item: el.getAttribute('data-item') });
     },
-    'more-like': function (el) { feedback('more-like', el.getAttribute('data-id'), function () { App.toast('Got it: more like this in your feed', { icon: 'sparkle' }); }); },
-    'less-like': function (el) { feedback('less-like', el.getAttribute('data-id'), function () { App.toast('Got it: less like this', { icon: 'info' }); }); },
+    'more-like': function (el) { feedback('more-like', el.getAttribute('data-id'), function () { App.toast('Got it: more like this in your feed', { confirms: 'taste', icon: 'sparkle' }); }); },
+    'less-like': function (el) { feedback('less-like', el.getAttribute('data-id'), function () { App.toast('Got it: less like this', { confirms: 'taste', icon: 'info' }); }); },
     'hide-artist': function (el) {
       var id = el.getAttribute('data-id'), a = M.artist(id);
       feedback('hide-artist', id, function () {
         App.store.update('hiddenArtists', function (h) { h[id] = true; });
-        App.toast('Hidden ' + (a ? a.name : 'the artist') + ' from your feed', { icon: 'info' });
+        App.toast('Hidden ' + (a ? a.name : 'the artist') + ' from your feed', { confirms: 'taste', icon: 'info' });
       });
     },
     'track-menu': function (el) {
@@ -4186,7 +4220,7 @@
     /* the volume button mutes; when the bar had no room for its slider and the pointer isn't showing it (the keyboard),
        it opens the slider instead (M still mutes) */
     'mute': function (el) { var vol = el.closest('.vol'), slider = vol && $('.seek[data-fit-out]', vol); if (slider && !vol.matches(':hover')) slider.focus(); else P.toggleMute(); },
-    'retry-search': function () { P.retry(); App.toast('Searching Soulseek again', { icon: 'refresh' }); },
+    'retry-search': function () { P.retry(); App.toast('Searching Soulseek again', { confirms: 'retry', icon: 'refresh' }); },
     'try-soulseek': function () { P.trySoulseek(); },
     'reload-read': function (el) { var path = el.getAttribute('data-id'); if (path) M.reload(path); else { M.invalidate(); App.refresh(); } },
     'toggle-panel': function (el) { App.togglePanel(el.getAttribute('data-tab')); },
@@ -4237,7 +4271,7 @@
   App.copyLink = function (link, said, answer, failed) {
     answer = answer || link;
     clipboardWrite(link).then(function () {
-      answer.then(function (r) { App.toast(said(r), { icon: 'link' }); });
+      answer.then(function (r) { App.toast(said(r), { confirms: 'copy', icon: 'link' }); });
     }, function () {
       link.then(copyFailed, function (err) { App.toast(failed(err), { kind: 'error', icon: 'link' }); });
     });
@@ -4413,9 +4447,9 @@
       case 'n': case 'N': P.next(); break;
       case 'p': case 'P': P.prev(); break;
       case 'm': case 'M': P.toggleMute(); break;
-      case 's': P.setShuffle(); App.toast(ps.shuffle ? 'Shuffle on' : 'Shuffle off', { icon: 'shuffle' }); break;
+      case 's': P.setShuffle(); App.toast(ps.shuffle ? 'Shuffle on' : 'Shuffle off', { confirms: 'shuffle', icon: 'shuffle' }); break;
       case 'S': if (P.currentId()) App.saves.start([P.currentId()]); break;
-      case 'r': case 'R': P.cycleRepeat(); App.toast({ off: 'Repeat off', all: 'Repeat all', one: 'Repeat one' }[ps.repeat], { icon: ps.repeat === 'one' ? 'repeat-one' : 'repeat' }); break;
+      case 'r': case 'R': P.cycleRepeat(); App.toast({ off: 'Repeat off', all: 'Repeat all', one: 'Repeat one' }[ps.repeat], { confirms: 'repeat', icon: ps.repeat === 'one' ? 'repeat-one' : 'repeat' }); break;
       case 'l': case 'L': if (P.currentId()) App.toggleLike(P.currentId()); break;
       case 'q': case 'Q': App.togglePanel('queue'); break;
       case 'y': case 'Y': App.togglePanel('lyrics'); break;

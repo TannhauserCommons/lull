@@ -276,7 +276,7 @@
     kept[key] = k; saveKept(k);
     var missing = ids.filter(function (id) { return !D.has(id); });
     enqueue(missing);
-    if (c.kind !== 'track') App.toast(missing.length ? 'Downloading ' + missing.length + (missing.length === 1 ? ' song' : ' songs') : 'Already on this device', { icon: 'download' });
+    if (c.kind !== 'track') App.toast(missing.length ? 'Downloading ' + missing.length + (missing.length === 1 ? ' song' : ' songs') : 'Already on this device', missing.length ? { confirms: 'download', n: missing.length, together: function (n) { return 'Downloading ' + n + ' songs'; }, icon: 'download' } : { icon: 'download' });
   };
   /* stop keeping a collection: its songs go unless another kept collection still has them */
   D.unkeep = function (key) {
@@ -332,7 +332,7 @@
     var key = el.getAttribute('data-dl'), ids = el.getAttribute('data-ids').split(',').filter(Boolean);
     if (kept[key]) {
       App.confirm({ title: 'remove the download?', text: 'The songs leave this device unless another download keeps them. They still play from your hub when it can be reached.', confirm: 'Remove', danger: true },
-        function () { D.unkeep(key).then(function () { App.toast('Removed from this device', { icon: 'trash' }); }); });
+        function () { D.unkeep(key).then(function () { App.toast('Removed from this device', { confirms: 'device-remove', together: function (n) { return 'Removed ' + n + ' from this device'; }, icon: 'trash' }); }); });
       return;
     }
     D.keep({ kind: el.getAttribute('data-kind'), id: el.getAttribute('data-id') }, ids);

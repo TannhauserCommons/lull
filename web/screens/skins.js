@@ -489,7 +489,7 @@
   function chose(s) {
     choose(s);
     if (choseToast) choseToast.close();
-    choseToast = App.toast(s.name + ' is your Classic skin', { icon: 'check', kind: 'ok', action: 'Open Classic', onAction: function () { App.go('/classic'); } });
+    choseToast = App.toast(s.name + ' is your Classic skin', { confirms: 'skin', icon: 'check', kind: 'ok', action: 'Open Classic', onAction: function () { App.go('/classic'); } });
     App.announce(s.name + ' is your Classic skin');
   }
 
@@ -625,7 +625,7 @@
   App.action('cls-in-use', function (el) { var s = findSkin(el.getAttribute('data-id')); if (s) App.toast(s.name + ' is already your Classic skin', { icon: 'check' }); });
   App.action('cls-base', function () {
     choose(null);
-    App.toast('Classic mode uses Webamp\'s base skin', { icon: 'undo' });
+    App.toast('Classic mode uses Webamp\'s base skin', { confirms: 'skin', icon: 'undo' });
     var f = $('#cls-choice [data-act="cls-random"]'); if (f) f.focus();
   });
   App.action('cls-look', function (el) {
@@ -660,8 +660,8 @@
       text: 'Your hub deletes the file, so it goes from Your skins on every device.' + (inUse(s) ? ' Classic mode here goes back to Webamp\'s base skin.' : '') }, function () {
       M.api('/api/skins/mine/' + encodeURIComponent(s.md5), { method: 'DELETE' }).then(function () {
         S.mine.items = S.mine.items.filter(function (x) { return x.md5 !== s.md5; });
-        if (inUse(s)) { choose(null); App.toast('Deleted ' + s.name + '. Classic mode uses Webamp\'s base skin.', { icon: 'trash' }); }
-        else { renderList(); App.toast('Deleted ' + s.name + ' from your hub', { icon: 'trash' }); }
+        if (inUse(s)) { choose(null); App.toast('Deleted ' + s.name + '. Classic mode uses Webamp\'s base skin.', { confirms: 'skin', icon: 'trash' }); }
+        else { renderList(); App.toast('Deleted ' + s.name + ' from your hub', { confirms: 'skin', icon: 'trash' }); }
         var l = $('#cls-list'); if (l) l.focus();
       }, function (err) { App.toast('Couldn\'t delete ' + s.name + ': ' + err.message, { kind: 'error', icon: 'warning' }); });
     });
@@ -685,7 +685,7 @@
     var on = !isFavourite(s);
     setFavourite(s, on);
     if (S.tab === 'favourites' && !on) {
-      App.toast('Removed ' + s.name + ' from favourites', { icon: 'star', action: 'Undo', onAction: function () { setFavourite(s, true); } });
+      App.toast('Removed ' + s.name + ' from favourites', { confirms: 'skin-fav', icon: 'star', action: 'Undo', onAction: function () { setFavourite(s, true); } });
     } else App.announce(on ? s.name + ' added to favourites' : s.name + ' removed from favourites');
     if (!$('[data-act="cls-fav"][data-id="' + s.md5 + '"]')) { var l = $('#cls-list'); if (l) l.focus(); }
   });
@@ -694,8 +694,8 @@
     if (!s || !s.local) return;
     L.dropLocal(s.md5).then(function () {
       S.local = S.local.filter(function (x) { return x.md5 !== s.md5; });
-      if (inUse(s)) { choose(null); App.toast('Removed ' + s.name + '. Classic mode uses Webamp\'s base skin.', { icon: 'trash' }); }
-      else { renderList(); App.toast('Removed ' + s.name + ' from this device', { icon: 'trash' }); }
+      if (inUse(s)) { choose(null); App.toast('Removed ' + s.name + '. Classic mode uses Webamp\'s base skin.', { confirms: 'skin', icon: 'trash' }); }
+      else { renderList(); App.toast('Removed ' + s.name + ' from this device', { confirms: 'skin', icon: 'trash' }); }
       var l = $('#cls-list'); if (l) l.focus();
     }, function (err) { App.toast('Couldn\'t remove ' + s.name + ': ' + err.message, { kind: 'error', icon: 'warning' }); });
   });

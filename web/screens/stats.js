@@ -173,7 +173,7 @@
   function refreshTaste() { M.reload(TASTE); }
   App.action('sys-play-top', function (el) {
     var ids = $('[data-ids]', el.closest('.sys-card')).getAttribute('data-ids').split(',');
-    P.playList(ids, 0); App.toast('Playing your top songs', { icon: 'play' });
+    P.playList(ids, 0); App.toast('Playing your top songs', { confirms: 'play', icon: 'play' });
   });
   App.action('sys-taste-why', function (el) {
     var kind = el.getAttribute('data-kind'), id = el.getAttribute('data-id'), w = el.getAttribute('data-weight');
@@ -197,7 +197,7 @@
     App.closePopover();
     M.api('/api/feedback', { method: 'POST', body: { kind: 'less-like', id: id } }).then(function () {
       refreshTaste();
-      App.toast('Turned down ' + name, { icon: 'minus' });
+      App.toast('Turned down ' + name, { confirms: 'taste', icon: 'minus' });
     }, function (err) { App.toast('Couldn\'t turn down ' + name + ': ' + err.message, { kind: 'error' }); });
   });
   App.action('sys-taste-reset', function () {

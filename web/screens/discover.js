@@ -397,7 +397,7 @@
     M.api('/api/feedback', { method: 'POST', body: { kind: 'less-like', id: id } }).then(function () {
       var wasPick = !!pickFor(id);
       if (wasPick) { H.dismissed[id] = true; paintShelf('picks'); }
-      App.toast('Got it: less like this' + (wasPick ? ', and removed from your picks' : ''), { icon: 'info' });
+      App.toast('Got it: less like this' + (wasPick ? ', and removed from your picks' : ''), { confirms: 'taste', icon: 'info' });
     }, function (err) { App.toast('Couldn\'t send that to your feed: ' + err.message, { kind: 'error' }); });
   }
   App.action('disc-less', function (el) { lessLike(el.getAttribute('data-id')); });
@@ -440,7 +440,7 @@
       });
     })).then(function () {
       M.invalidate([FEED]); refreshHome();
-      App.toast('Following ' + plural(ids.length, 'pick') + '. Your feed is building from them.', { kind: 'ok', icon: 'sparkle' });
+      App.toast('Following ' + plural(ids.length, 'pick') + '. Your feed is building from them.', { confirms: 'follow', kind: 'ok', icon: 'sparkle' });
     }, function (err) {
       refreshHome();
       App.toast('Couldn\'t follow your picks: ' + err.message, { kind: 'error' });
@@ -996,12 +996,12 @@
   App.action('disc-recent-remove', function (el) {
     var q = el.getAttribute('data-q');
     App.store.update('recentSearches', function (r) { var i = r.indexOf(q); if (i >= 0) r.splice(i, 1); });
-    App.toast('Removed ' + q + ' from recent searches', { icon: 'trash', action: 'Undo', onAction: function () { addRecent(q); } });
+    App.toast('Removed ' + q + ' from recent searches', { confirms: 'recents', icon: 'trash', action: 'Undo', onAction: function () { addRecent(q); } });
   });
   App.action('disc-recent-clear', function () {
     var before = (App.store.get('recentSearches') || []).slice();
     App.store.set('recentSearches', []);
-    App.toast('Cleared recent searches', { icon: 'trash', action: 'Undo', onAction: function () { App.store.set('recentSearches', before); } });
+    App.toast('Cleared recent searches', { confirms: 'recents', icon: 'trash', action: 'Undo', onAction: function () { App.store.set('recentSearches', before); } });
   });
 
   /* =====================================================================
@@ -1201,13 +1201,13 @@
   function useSource(pk, s, note) {
     if (pk.forSave) {
       App.saves.retry(pk.trackId, { peer: s.peer, path: s.path, size: s.sizeBytes });
-      App.toast('Retrying the save from ' + s.peer + ', ' + fmt(s.format).label, { icon: 'soulseek' });
+      App.toast('Retrying the save from ' + s.peer + ', ' + fmt(s.format).label, { confirms: 'source', icon: 'soulseek' });
       return;
     }
     P.useSource(pk.trackId, sourceFor(s));
     /* a YouTube copy's format already names YouTube ("YouTube · Opus 160") */
     var label = s.peer === 'YouTube' ? String(s.format).replace(/^YouTube · /, '') : fmt(s.format).label;
-    App.toast((note ? 'Trying ' + s.peer + ' again, ' : 'Playing from ' + s.peer + ', ') + label, { icon: s.peer === 'YouTube' ? 'globe' : 'soulseek' });
+    App.toast((note ? 'Trying ' + s.peer + ' again, ' : 'Playing from ' + s.peer + ', ') + label, { confirms: 'source', icon: s.peer === 'YouTube' ? 'globe' : 'soulseek' });
   }
   App.action('disc-use-youtube', function () {
     var pk = picker; if (!pk || !pk.youtube) return;
@@ -1359,8 +1359,8 @@
   App.action('disc-dup', function (el) {
     var d = dupDone; dupDone = null; if (!d) return;
     var choice = el.getAttribute('data-choice'), label = fmt(d.cand.format).label, title = d.existing.title;
-    if (choice === 'keep') App.toast('Kept the saved copy of ' + title, { icon: 'saved' });
-    else App.toast(choice === 'replace' ? 'Replacing ' + title + ' with ' + label : 'Saving a second copy of ' + title + ', ' + label, { icon: 'save' });
+    if (choice === 'keep') App.toast('Kept the saved copy of ' + title, { confirms: 'save', icon: 'saved' });
+    else App.toast(choice === 'replace' ? 'Replacing ' + title + ' with ' + label : 'Saving a second copy of ' + title + ', ' + label, { confirms: 'save', icon: 'save' });
     d.onChoice(choice);
   });
   /* a saved song that peers share in better quality: offer the best source the server ranks, compared by the library */
@@ -1439,7 +1439,7 @@
   App.action('disc-save-pick', function (el) { openPicker(el.getAttribute('data-id'), { forSave: true }); });
   /* the file is on disk; Jellyfin only needs to pick it up (progress arrives as `save` events) */
   App.action('disc-rescan', function () {
-    M.api('/api/library/rescan', { method: 'POST' }).then(function () { App.toast('Asked Jellyfin to rescan', { icon: 'refresh' }); },
+    M.api('/api/library/rescan', { method: 'POST' }).then(function () { App.toast('Asked Jellyfin to rescan', { confirms: 'rescan', icon: 'refresh' }); },
       function (err) { App.toast('Couldn\'t ask Jellyfin to rescan: ' + err.message, { kind: 'error' }); });
   });
 
@@ -1490,7 +1490,7 @@
   function chooseRelease(id, body, ok) {
     var jobId = jobOf(id);
     if (!jobId) { App.toast('This song has no save waiting for a release', { kind: 'error' }); return; }
-    M.api('/api/saves/' + encodeURIComponent(jobId) + '/release', { method: 'POST', body: body }).then(function () { App.toast(ok, { icon: 'check', kind: 'ok' }); },
+    M.api('/api/saves/' + encodeURIComponent(jobId) + '/release', { method: 'POST', body: body }).then(function () { App.toast(ok, { confirms: 'release', icon: 'check', kind: 'ok' }); },
       function (err) { App.toast('Couldn\'t use that release: ' + err.message, { kind: 'error' }); });
   }
   App.action('disc-release', function (el) { openReleasePicker(el.getAttribute('data-id')); });

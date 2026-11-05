@@ -608,7 +608,7 @@
     App.confirm({ title: 'disconnect Last.fm?', text: 'Scrobbling stops' + (q ? ' and ' + q + ' queued scrobbles are dropped' : '') + '. Recommendations stop using your Last.fm history.', confirm: 'Disconnect', danger: true }, function () {
       M.api(LASTFM, { method: 'DELETE' }).then(function () {
         M.reload(LASTFM);
-        App.toast('Last.fm disconnected', { icon: 'radio' });
+        App.toast('Last.fm disconnected', { confirms: 'lastfm', icon: 'radio' });
       }, function (err) { App.toast('Couldn\'t disconnect Last.fm: ' + err.message, { kind: 'error' }); });
     });
   });
@@ -1011,7 +1011,7 @@
       { label: 'Go to Settings', icon: 'settings', run: go('/settings') },
       { label: 'Toggle Classic mode', icon: 'classic', keys: ['W'], run: function () { App.go(App.current.path === '/classic' ? '/home' : '/classic'); } },
       { label: night ? 'Switch to day theme' : 'Switch to night theme', icon: night ? 'sun' : 'moon', keys: ['T'], run: App.toggleTheme },
-      { label: reduced ? 'Turn full motion on' : 'Reduce motion', icon: 'equaliser', run: function () { App.setPref('motion', reduced ? 'full' : 'reduce'); App.toast(reduced ? 'Full motion on' : 'Reduced motion on', { icon: 'equaliser' }); } },
+      { label: reduced ? 'Turn full motion on' : 'Reduce motion', icon: 'equaliser', run: function () { App.setPref('motion', reduced ? 'full' : 'reduce'); App.toast(reduced ? 'Full motion on' : 'Reduced motion on', { confirms: 'motion', icon: 'equaliser' }); } },
       { label: playing ? 'Pause' : 'Play', icon: playing ? 'pause' : 'play', keys: ['Space'], run: function () { P.toggle(); } },
       { label: 'Next song', icon: 'next', keys: ['N'], run: function () { P.next(); } },
       { label: 'Previous song', icon: 'prev', keys: ['P'], run: function () { P.prev(); } },
@@ -1054,7 +1054,7 @@
     var k = knownItems();
     var cmds = commands().filter(function (c) { return hit(c.label); }).slice(0, 6);
     var songs = k.tracks.filter(function (t) { return hit(t.title + ' ' + t.artist); }).slice(0, 4).map(function (t) {
-      return { label: t.title, sub: t.artist, cover: t, run: function () { P.playTrack(t.id); App.toast('Playing ' + t.title, { icon: 'play' }); } };
+      return { label: t.title, sub: t.artist, cover: t, run: function () { P.playTrack(t.id); App.toast('Playing ' + t.title, { confirms: 'play', icon: 'play' }); } };
     });
     var albums = k.albums.filter(function (a) { return hit(a.title + ' ' + a.artist); }).slice(0, 3).map(function (a) { return { label: a.title, sub: 'Album by ' + a.artist, cover: a, run: go('/album/' + a.id) }; });
     var artists = k.artists.filter(function (a) { return hit(a.name); }).slice(0, 3).map(function (a) { return { label: a.name, sub: 'Artist', cover: a, round: true, run: go('/artist/' + a.id) }; });
