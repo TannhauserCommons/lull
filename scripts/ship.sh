@@ -29,7 +29,9 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   state=$(printf '%s' "$st" | cut -f1) desc=$(printf '%s' "$st" | cut -f2) url=$(printf '%s' "$st" | cut -f3)
   [ "$desc" = "$last" ] || { [ -z "$desc" ] || echo "  $desc"; last=$desc; }
   case "$state" in
-    success) echo "landed: $desc"; exit 0 ;;
+    # The candidate's own "tested in the queue" comes just before main moves; only "landed" (or "already in main")
+    # says it did.
+    success) case "$desc" in landed*|already*) echo "landed: $desc"; exit 0 ;; esac ;;
     failure|error) echo "red: $desc" >&2; echo "  $url" >&2; exit 1 ;;
   esac
   sleep 20
