@@ -81,15 +81,21 @@ const CATEGORIES = ['devtools.timeline', 'disabled-by-default-devtools.timeline'
 //   restyled   elements restyled by each style pass, largest first
 //   marked     the same restyle counts between console.timeStamp('gate-start') and ('gate-end'), when present (not
 //              performance.mark: the fixed clock the gates install replaces `performance`)
-export async function traced(browser, page, fn, { drawn = false } = {}) {
-  await browser.startTracing(page, { categories: drawn ? [...CATEGORIES, 'disabled-by-default-devtools.timeline.frame'] : CATEGORIES });
+// With { why: true } it also traces animations and invalidations, and keeps every event (`events`) with the page's
+// main thread (`thread`), for a gate to say what made the frames it counts.
+export async function traced(browser, page, fn, { drawn = false, why = false } = {}) {
+  const categories = [...CATEGORIES, ...(drawn ? ['disabled-by-default-devtools.timeline.frame'] : []),
+    ...(why ? ['blink.animations', 'disabled-by-default-devtools.timeline.invalidationTracking'] : [])];
+  await browser.startTracing(page, { categories });
   let raw;
   try {
     await fn();
   } finally {
     raw = await browser.stopTracing();
   }
-  return summarise(JSON.parse(raw.toString()));
+  const json = JSON.parse(raw.toString()), s = summarise(json);
+  if (why) s.events = json.traceEvents || json;
+  return s;
 }
 
 // Wait until the page's compositor has drawn nothing for `ms` (giving up after `within`): a change just made is on
@@ -117,6 +123,7 @@ export function summarise(json) {
   const marks = events.filter((e) => e.name === 'TimeStamp' && /^gate-(start|end)$/.test(e.args?.data?.message)).map((e) => e.ts).sort((a, b) => a - b);
   const count = (e) => e.args?.elementCount ?? 0;
   return {
+    thread: page,
     tasks: tasks.sort((a, b) => b - a),
     longestMs: tasks.length ? Math.max(...tasks) : 0,
     busyMs: tasks.reduce((a, b) => a + b, 0),

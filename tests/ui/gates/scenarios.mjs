@@ -238,6 +238,40 @@ function offTheCompositor(events) {
   return [...out];
 }
 
+// What made a traced window's main-thread frames, for the message of a count that fails (a frame at rest is rare and
+// comes and goes, so the failure itself has to name it): the animations that began, ended or left the compositor in
+// the window, what was invalidated and why, the script that ran, and frames another renderer committed
+function whatRan(events, thread) {
+  const pid = (thread || '').split(':')[0], on = (e) => `${e.pid}:${e.tid}` === thread;
+  const top = (counts, n) => Object.entries(counts).sort((x, y) => y[1] - x[1]).slice(0, n).map(([k, c]) => (c > 1 ? `${k} x${c}` : k));
+  const tally = (list, key) => list.reduce((c, e) => { const k = key(e); if (k) c[k] = (c[k] || 0) + 1; return c; }, {});
+  const anim = events.filter((e) => e.name === 'Animation' && String(e.pid) === pid);
+  const began = tally(anim.filter((e) => e.ph === 'b'), (e) => `${e.args?.data?.displayName || 'animation'} on ${e.args?.data?.nodeName || '?'}`);
+  const ended = anim.filter((e) => e.ph === 'e').length;
+  const invalid = tally(events.filter((e) => String(e.pid) === pid && /InvalidationTracking$/.test(e.name)), (e) => {
+    const d = e.args?.data || {};
+    return `${e.name.replace(/InvalidationTracking$/, '').replace(/^StyleRecalc|^StyleInvalidator/, 'Style')} ${d.nodeName || '?'}${d.reason ? ' (' + d.reason + ')' : ''}`;
+  });
+  const script = tally(events.filter((e) => on(e) && e.ph === 'X'), (e) => {
+    const d = e.args?.data || {};
+    if (e.name === 'EventDispatch') return 'event ' + d.type;
+    if (e.name === 'TimerFire') return 'timer';
+    if (e.name === 'FireAnimationFrame') return 'requestAnimationFrame';
+    if (e.name === 'FunctionCall') return `${d.functionName || 'function'} (${(d.url || '').split('/').pop()}:${d.lineNumber ?? '?'})`;
+    return null;
+  });
+  const elsewhere = events.filter((e) => e.name === 'Commit' && e.ph === 'X' && !on(e)).length;
+  const parts = [];
+  if (Object.keys(began).length) parts.push('animations begun: ' + top(began, 6).join(', '));
+  if (ended) parts.push(ended + ' ended');
+  const off = offTheCompositor(events.filter((e) => String(e.pid) === pid));
+  if (off.length) parts.push('off the compositor: ' + off.join(', '));
+  if (Object.keys(invalid).length) parts.push('invalidated: ' + top(invalid, 6).join(', '));
+  if (Object.keys(script).length) parts.push('ran: ' + top(script, 5).join(', '));
+  if (elsewhere) parts.push(elsewhere + ' frames committed by another renderer');
+  return parts.join('; ') || 'no animation, invalidation or script in the trace';
+}
+
 export async function idle(browser, page, opts, route = '/home') {
   // as a listener leaves it: the desktop app's bridge in (its windows are fed while they're open), a song loaded and
   // paused, the pointer off the page
@@ -276,7 +310,9 @@ export async function idle(browser, page, opts, route = '/home') {
   }, null, { polling: 100, timeout: 5000 }).catch(() => {});
   const offCompositor = offTheCompositor(JSON.parse((await browser.stopTracing()).toString()).traceEvents || []);
   await throttle(page, opts.rate);
-  const s = await traced(browser, page, () => page.waitForTimeout(2000), { drawn: true });
+  const s = await traced(browser, page, () => page.waitForTimeout(2000), { drawn: true, why: true });
+  s.why = whatRan(s.events, s.thread);
+  delete s.events;
   s.perSecondMs = s.busyMs / 2;
   s.offCompositor = offCompositor;
   // what was moving, to name the cause when frames show up at rest
