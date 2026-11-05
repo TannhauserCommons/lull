@@ -169,7 +169,7 @@
    Wallpaper (img 03 + 01). The features sit where the windows are, so the frosted glass has something to blur:
    a steel bloom behind the main column, a rose bloom behind the queue, img 03's lens rings through the middle,
    a moon halo top right. A dark (day: pale) mist band down the left keeps the desktop-icon captions legible.
-   Stars and lens drift slowly with the page scroll (scroll-driven; static under reduced motion).
+   Stars and lens stand still: a drift tied to the page scroll is sampled on the main thread on every frame, even at rest.
    ===================================================================== */
 :root[data-design="glasshouse"],
 :root[data-design="glasshouse"] body { background: var(--gh-wall-0); }
@@ -191,7 +191,7 @@
 :root[data-design="glasshouse"] .sky-specks {
   background: var(--gh-wall);
 }
-/* lens rings (img 03's eye, abstracted) and the star field: two drifting layers */
+/* lens rings (img 03's eye, abstracted) and the star field */
 :root[data-design="glasshouse"] .sky-specks::after {
   content: ""; position: absolute; inset: -60px 0;
   background:
@@ -219,14 +219,6 @@
 /* the wallpaper sparkles stay off: they would land on titles or window edges, and the two that sat behind the docked
    queue showed through its frost as a glow of about 2 %, which the glass drawn from the wallpaper (below) covers */
 :root[data-design="glasshouse"] .sky-specks .sparkle { display: none; }
-@supports (animation-timeline: scroll()) {
-  :root[data-design="glasshouse"] body { timeline-scope: --gh-scroll; }
-  :root[data-design="glasshouse"] .view { scroll-timeline: --gh-scroll block; }
-  :root[data-design="glasshouse"] .sky-specks::before { animation: gh-drift-stars linear both; animation-timeline: --gh-scroll; }
-  :root[data-design="glasshouse"] .sky-specks::after { animation: gh-drift-lens linear both; animation-timeline: --gh-scroll; }
-}
-@keyframes gh-drift-stars { to { transform: translateY(-80px); } }
-@keyframes gh-drift-lens { to { transform: translateY(-36px); } }
 
 /* typewriter captions (img 03 "close the world, open the next."): decorative pseudo text with empty alt text
    (content: "..." / ""), placed in each screen's own heading so it types in again on every route change and
