@@ -294,7 +294,11 @@ export async function idle(browser, page, opts, route = '/home') {
 // The loops on screen that draw more than they need to (docs/themes.md, Drawing cheaply): each one that never ends must
 // change at most 30 times a second, stepped where it is declared (steps(n), or a stepped easing), move only by transform
 // and opacity (the compositor's, no repaint), and stay clear of live glass (a backdrop-filter recomputes its blur for
-// every frame that changes anything under or inside it). Named, with the reason, for the failure.
+// every frame that changes anything under or inside it). A scroll-driven effect (an animation-timeline of scroll() or
+// view(), a fade at a list's foot) changes only as the page scrolls, so its rate and glass don't count at rest; but one
+// that animates anything besides transform and opacity runs on the main thread, which services it every frame, scrolled
+// or not: a main-thread frame at every refresh, at rest. That is read from its keyframes, the same on every runner,
+// where the frames it costs depend on the runner. Named, with the reason, for the failure.
 export function loops(page) {
   return page.evaluate((src) => {
     const rate = (0, eval)('(' + src + ')');
@@ -303,11 +307,25 @@ export function loops(page) {
       return f && f !== 'none' && e.checkVisibility();
     });
     const hit = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom && a.width && a.height;
+    // what each @keyframes animates, read from the sheets: getKeyframes() leaves custom properties out (Starlight's
+    // scroll fade animated --sl-fade, which the compositor can't run, and read as animating nothing)
+    const animates = new Map();
+    const walk = (rules) => {
+      for (const rule of rules) {
+        if (rule instanceof CSSKeyframesRule) {
+          const set = animates.get(rule.name) || new Set();
+          for (const k of rule.cssRules) for (let i = 0; i < k.style.length; i++) if (k.style[i] !== 'animation-timing-function') set.add(k.style[i]);
+          animates.set(rule.name, set);
+        } else if (rule.cssRules) walk(rule.cssRules);
+      }
+    };
+    for (const sheet of document.styleSheets) { try { walk(sheet.cssRules); } catch { /* another origin's sheet */ } }
+    const kebab = (p) => p.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
     const out = [];
     for (const a of document.getAnimations()) {
       const e = a.effect, t = e?.target;
-      if (!t || a.playState !== 'running' || e.getTiming().iterations !== Infinity) continue;
-      if (a.timeline && a.timeline.constructor.name !== 'DocumentTimeline') continue;     // scroll-driven: still at rest
+      const scrolled = a.timeline && a.timeline.constructor.name !== 'DocumentTimeline';
+      if (!t || a.playState !== 'running' || (!scrolled && e.getTiming().iterations !== Infinity)) continue;
       if (!t.checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true })) continue;
       // what of it shows: its box clipped by every box that clips it (a ticker's long track shows only in its strip)
       const r = t.getBoundingClientRect().toJSON();
@@ -319,11 +337,17 @@ export function loops(page) {
       r.width = r.right - r.left; r.height = r.bottom - r.top;
       if (r.width <= 0 || r.height <= 0 || r.bottom <= 0 || r.top >= innerHeight || r.right <= 0 || r.left >= innerWidth) continue;
       const name = (a.animationName || 'animation') + ' on ' + t.tagName.toLowerCase() + '.' + [...t.classList].slice(0, 2).join('.') + (e.pseudoElement || '');
-      const kf = e.getKeyframes();
-      const props = [...new Set(kf.flatMap((k) => Object.keys(k).filter((p) => !['offset', 'easing', 'composite', 'computedOffset'].includes(p))))];
+      const props = [...new Set([
+        ...e.getKeyframes().flatMap((k) => Object.keys(k).filter((p) => !['offset', 'easing', 'composite', 'computedOffset'].includes(p)).map(kebab)),
+        ...(animates.get(a.animationName) || []),
+      ])];
+      const slow = props.filter((p) => !['transform', 'opacity', 'translate', 'scale', 'rotate'].includes(p));
+      if (scrolled) {
+        if (slow.length) out.push(name + ' (' + a.timeline.constructor.name + '): runs on the main thread, every frame (' + slow.join(', ') + ')');
+        continue;
+      }
       const perSecond = rate(a);
       if (perSecond > 30.5) out.push(name + ': ' + (perSecond === Infinity ? 'changes every frame (no stepped timing)' : 'changes ' + Math.round(perSecond) + ' times a second'));
-      const slow = props.filter((p) => !['transform', 'opacity', 'translate', 'scale', 'rotate'].includes(p));
       if (slow.length) out.push(name + ': repaints (' + slow.join(', ') + ')');
       const under = glass.find((g) => hit(r, g.getBoundingClientRect()));
       if (under) out.push(name + ': under or in live glass (' + under.tagName.toLowerCase() + '.' + [...under.classList].slice(0, 2).join('.') + ')');
