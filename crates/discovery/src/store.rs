@@ -272,6 +272,15 @@ impl Store {
             .and_then(|a| a.musicbrainz_id))
     }
 
+    /// The saved library's artists and how many of their albums it holds (taste's `library`).
+    pub async fn library_albums(&self) -> Result<Vec<(String, u64)>> {
+        let mut counts: BTreeMap<String, u64> = BTreeMap::new();
+        for album in self.library.albums(None).await? {
+            *counts.entry(album.artist).or_default() += 1;
+        }
+        Ok(counts.into_iter().collect())
+    }
+
     /// The library's artists, each with the MBID its saved files' tags give, if any.
     pub async fn library_artists(&self) -> Result<Vec<Artist>> {
         self.library.artists().await

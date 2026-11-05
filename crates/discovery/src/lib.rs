@@ -253,7 +253,15 @@ impl Service {
     }
 
     async fn taste(&self) -> Result<Taste> {
-        let signals = self.ctx.db.call(|c| store::signals(c, lull_core::now())).await?;
+        let mut signals = self.ctx.db.call(|c| store::signals(c, lull_core::now())).await?;
+        // A library that can't be read now (Jellyfin away) only leaves its seeds out this once.
+        signals.library = match self.store.library_albums().await {
+            Ok(library) => library,
+            Err(e) => {
+                tracing::info!(error = %e, "taste without the library this time");
+                Vec::new()
+            }
+        };
         Ok(Taste::build(&signals, lull_core::now()))
     }
 }

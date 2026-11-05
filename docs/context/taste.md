@@ -14,6 +14,7 @@ Owner: Discovery session (`crates/discovery/src/taste.rs`). Small, on-device and
 | More like this / less like this | `POST /api/feedback` → `discovery_feedback` | ±3.0 | yes |
 | Followed artist or tag | core `follows` | +4.0 | no |
 | Last.fm history (top 100 artists, 12 months) | `lastfm.history` event → `discovery_history` | up to +2.0, log of plays relative to the top artist | no (refreshed daily) |
+| The saved library (every saved artist) | `Library::albums` at each taste build | up to +1.0, log of saved albums relative to the artist with most: about one song heard to the end, so a library is a taste before anything is played and listening soon leads | no (it is what is saved now) |
 
 **Fading:** a signal of age `d` days counts `0.5^(d/45)`, a 45-day half-life. Plays older than 365 days are not read; they would count under 0.4%.
 
@@ -36,6 +37,6 @@ Owner: Discovery session (`crates/discovery/src/taste.rs`). Small, on-device and
 
 ## Reset
 
-`POST /api/taste/reset` stores `taste_reset_at = now`, deletes saves and feedback, and ignores plays and likes from before it. Follows, hidden artists and the Last.fm history stay. They are standing choices, undone where they are made: unfollow, Settings > Last.fm "use my history".
+`POST /api/taste/reset` stores `taste_reset_at = now`, deletes saves and feedback, and ignores plays and likes from before it. Follows, hidden artists, the Last.fm history and the saved library stay. They are standing choices, undone where they are made: unfollow, Settings > Last.fm "use my history".
 
 Tests (`taste.rs`): decay at one and ten half-lives, follows not fading, completion vs skip weights, tags counted by the liked artists carrying them, known songs across releases, hidden artists.

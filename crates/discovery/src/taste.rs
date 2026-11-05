@@ -27,6 +27,10 @@ pub mod weight {
     pub const FOLLOW: f64 = 4.0;
     /// The most played artist in the Last.fm history; others scale down by log plays.
     pub const HISTORY: f64 = 2.0;
+    /// The artist with the most saved albums; others scale down by log albums. About one song
+    /// heard to the end: what the listener keeps says who they are before they have played
+    /// anything here, and their listening soon outweighs it.
+    pub const LIBRARY: f64 = 1.0;
 }
 
 /// Everything the model learns from, as plain data (read by `store`, built here).
@@ -41,6 +45,8 @@ pub struct Signals {
     pub followed_tags: Vec<String>,
     /// Last.fm history: artist and play count.
     pub history: Vec<(String, u64)>,
+    /// The saved library: artist and how many of their albums it holds.
+    pub library: Vec<(String, u64)>,
     pub hidden: HashSet<ArtistId>,
     /// The songs played or liked, by name: the same song on another release is still known.
     pub songs: Vec<Named>,
@@ -179,6 +185,10 @@ impl Taste {
         let most = s.history.iter().map(|(_, n)| *n).max().unwrap_or(0);
         for (artist, plays) in &s.history {
             acc.add(artist, None, weight::HISTORY * log_share(*plays, most));
+        }
+        let most = s.library.iter().map(|(_, n)| *n).max().unwrap_or(0);
+        for (artist, albums) in &s.library {
+            acc.add(artist, None, weight::LIBRARY * log_share(*albums, most));
         }
 
         let (mut tags, tag_artists) = acc.tag_weights();
@@ -394,6 +404,41 @@ mod tests {
         assert!(weight_of(&taste, "Long Ago") < 0.01, "ten half-lives is all but gone");
         assert_eq!(weight_of(&taste, "Followed Years Ago"), weight::FOLLOW);
         assert_eq!(taste.artists[0].name, "Followed Years Ago");
+    }
+
+    #[test]
+    fn a_saved_library_is_a_taste_before_anything_is_played_and_listening_soon_leads() {
+        // A listener who connected 2,000 albums and played nothing here got random starter tags.
+        let mut signals = Signals {
+            library: vec![
+                ("Velvet Orchard".into(), 40),
+                ("Glow Tape".into(), 3),
+                ("Pale Harbor".into(), 1),
+            ],
+            ..Default::default()
+        };
+        signals
+            .artist_tags
+            .insert(ArtistId::of("Velvet Orchard"), vec!["dream pop".into()]);
+        let taste = Taste::build(&signals, NOW);
+        assert!(!taste.is_empty(), "not a first run");
+        assert_eq!(taste.artists[0].name, "Velvet Orchard", "the most kept leads");
+        assert!(weight_of(&taste, "Velvet Orchard") <= weight::LIBRARY + 1e-9);
+        assert!(
+            weight_of(&taste, "Pale Harbor") > 0.0,
+            "every saved artist counts a little"
+        );
+        assert_eq!(taste.top_tags(1).next().map(|(t, _)| t.as_str()), Some("dream pop"));
+
+        signals.plays = vec![
+            play("Quiet Ferns", "a", 0, true, false),
+            play("Quiet Ferns", "b", 0, true, false),
+        ];
+        let taste = Taste::build(&signals, NOW);
+        assert_eq!(
+            taste.artists[0].name, "Quiet Ferns",
+            "two songs heard outweigh the whole shelf"
+        );
     }
 
     #[test]
