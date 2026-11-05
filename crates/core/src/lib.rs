@@ -14,6 +14,7 @@ pub mod http;
 pub mod ids;
 pub mod model;
 pub mod pictures;
+pub mod process;
 pub mod quality;
 pub mod seams;
 pub mod settings;
