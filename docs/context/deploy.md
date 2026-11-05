@@ -51,4 +51,4 @@ Only lull and `init` start.
 
 ## Updating
 
-`IMAGE_TAG=latest` follows lull's releases (from 0.2.3), and `X.Y.Z` pins one; `main` follows every change lull's queue lands, and `sha-<commit>` pins one of those. The slskd and gluetun images are pinned in `compose.yaml` and move with lull's releases, because lull reads slskd's file layout (`crates/soulseek/src/layout.rs`).
+`IMAGE_TAG=latest` follows lull's releases (from 0.2.4, the first made by release.yml), and `X.Y.Z` pins one; `main` follows every change lull's queue lands, and `sha-<commit>` pins one of those. The slskd and gluetun images are pinned in `compose.yaml` and move with lull's releases, because lull reads slskd's file layout (`crates/soulseek/src/layout.rs`).

@@ -7,7 +7,7 @@
 
 lull is for every listener, not only the owner's hub. Changes reach the others only through releases: the desktop app and its built-in hub, the Android app (directly and through F-Droid), and self-hosters' images. Since the queue (ADR-0095) and releases from the newest green commit (ADR-0097), a release costs one command and about 20 minutes of CI, so how often to release is now a choice, not a cost.
 
-The owner's choice, in their words: "batch releases grouping new updates". A release is a batch of updates that belong together, such as the new designs, or search and discovery, not a fixed weekly clock. 0.2.3 waits until the designs land.
+The owner's choice, in their words: "batch releases grouping new updates". A release is a batch of updates that belong together, such as the new designs, or search and discovery, not a fixed weekly clock. 0.2.3 went out on 2026-11-05 with what was on main; the designs are 0.2.4.
 
 ## Decision
 
