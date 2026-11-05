@@ -2,14 +2,17 @@ name: slskd-contract
 # The pinned slskd resumes a download from a pre-sized incomplete file, and overwrites when told to (ADR-0014,
 # "A contract test guards the resume"). The real image against stand-in Soulseek server and peer
 # (tests/slskd-contract, Node only, no packages). Runs whenever the pin or the code that relies on it changes.
+# Also lull's slskd for Windows (ADR-0062): its recipe still builds the bytes app/build.rs pins.
 on:
   pull_request:
     paths:
       - "deploy/compose.yaml"
       - "app/build.rs"
+      - "app/slskd/**"
       - "crates/soulseek/**"
       - "tests/slskd-contract/**"
       - ".github/workflows/slskd-contract.yml"
+      - ".github/workflows/slskd-windows.yml"
   workflow_dispatch:
   # The queue (ADR-0095) runs these checks on its candidate.
   workflow_call:
@@ -38,3 +41,8 @@ jobs:
         with:
           node-version: "24.11"
       - run: node tests/slskd-contract/run.mjs
+
+  windows-build:
+    uses: ./.github/workflows/slskd-windows.yml
+    with:
+      ref: ${{ inputs.ref || github.sha }}

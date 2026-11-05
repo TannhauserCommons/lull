@@ -1,0 +1,13 @@
+diff --git a/src/slskd/Transfers/Downloads/DownloadService.cs b/src/slskd/Transfers/Downloads/DownloadService.cs
+index cb9423b..3869728 100644
+--- a/src/slskd/Transfers/Downloads/DownloadService.cs
++++ b/src/slskd/Transfers/Downloads/DownloadService.cs
+@@ -1388,7 +1388,7 @@ namespace slskd.Transfers.Downloads
+                                     {
+                                         Access = System.IO.FileAccess.Write,
+                                         Mode = shouldResume ? System.IO.FileMode.Append : System.IO.FileMode.Create,
+-                                        Share = System.IO.FileShare.None, // exclusive access for the duration of the download
++                                        Share = System.IO.FileShare.Read, // others may read the download as it arrives (lull streams it); writing stays exclusive
+                                         UnixCreateMode = unixFileMode,
+                                     })),
+                             size: transfer.Size,

@@ -51,7 +51,7 @@ checks() { # <base> <candidate>
   want ui '^(web/|crates/server/src/web\.rs$|tests/ui/|scripts/web-dist/|Dockerfile$)'
   want app '^(app/|crates/|web/desktop/|web/assets/icons/|rust-toolchain\.toml$)'
   want android '^(app/gen/android/|app/src/mobile/|app/build\.rs$|app/Cargo\.(toml|lock)$|app/tauri\.android\.conf\.json$|scripts/android-|rust-toolchain\.toml$)'
-  want slskd '^(deploy/compose\.yaml$|app/build\.rs$|crates/soulseek/|tests/slskd-contract/)'
+  want slskd '^(deploy/compose\.yaml$|app/build\.rs$|app/slskd/|crates/soulseek/|tests/slskd-contract/)'
   # What reaches the image: the hub's code, the web UI it embeds, and how both are built.
   want image '^(crates/|web/|share/hosts\.json$|Cargo\.(toml|lock)$|rust-toolchain\.toml$|Dockerfile$|\.dockerignore$|scripts/vendor-web\.sh$|scripts/web-dist/)'
   want pages '^(site/|web/assets/app-icon\.svg$|web/fonts/nunito-latin\.woff2$)'
