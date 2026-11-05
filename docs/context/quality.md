@@ -16,6 +16,8 @@ Main moves only through the queue (ADR-0095). `mise run ship <topic>` pushes `HE
 
 **Speed.** Rust caches are saved only from main (the queue runs there) and read everywhere; the image's dependencies are a cargo-chef layer; Android's two builds run side by side.
 
+**Android's clean build stays honest with cached dependencies.** It proves that lull's own sources give the same APK from a fresh clone in another folder, as F-Droid's build will: those sources are compiled from nothing in both builds. The third-party libraries they link come from Gradle's cache (so Maven Central's per-runner limit can't fail a build), and Gradle checks each one against the SHA-256 in `gradle/verification-metadata.xml`, so a cached library is byte for byte the one F-Droid downloads. What the check could miss is only what F-Droid's own download would differ in, and the checksums rule that out.
+
 ## Flaky checks
 
 A check that fails without a change to blame is a bug with an owner: whoever owns its area (the table in workspace.md, or the integrator), named that day. It gets a fix at its cause, the same day. It never gets a retry, a re-run until green, a sleep, or a loosened budget, and it stays required while it is fixed: a check that can't be trusted can't guard main. The fix's commit says what made it flaky and how the fix was proven (the same check green on runs that used to fail).
