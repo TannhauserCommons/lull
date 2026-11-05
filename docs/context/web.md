@@ -36,6 +36,7 @@ setup.js     the pairing gate, #/pair/<code>, first-run setup (/setup), library.
 skins.js     Classic mode's skin and size, per device (App.classicSkin, App.classicSize), and Settings > Appearance >
              Classic: the size, the skin browser, .wsz files kept on this device, the NSFW switch (docs/context/skins.md)
 stats.js     Stats and the taste profile (/stats), with stats.css; loaded on the first visit, built with system.js's kit
+open.js      opening a shared link (#/open?link=, and a share page's Add to queue); loaded on the first link
 classic.js   Classic mode: Webamp alone, in an iframe on a stage in a browser, or in the desktop app's own window
 vendor/      Webamp bundle and the QR encoder (qrcode-generator), copied by scripts/vendor-web.sh, gitignored
 desktop/     the desktop app's wrapper pages and bridge (`LullDesktop`), owned by the Apps session
@@ -702,7 +703,7 @@ One "Copy link" per item, and it works for anyone:
   opens the listener's lull or offers the public page. Never this hub's address.
 - **Playlists** imported from a link copy that link (`GET /api/import/links`); an outside preview's Copy link copies
   its page. One made in lull has no page to share and says so (Export as M3U sends it).
-- **Opening** (`App.openLink`, `#/open?link=`, discover.js): a link pasted in search, or handed over by the apps'
+- **Opening** (`#/open?link=`, screens/open.js, loaded on the first link so the start doesn't carry it): a link pasted in search, or handed over by the apps'
   `lull://open?link=…`, opens this hub's own page for what it names (`GET /api/open`); playlist links open as their
   preview (`#/outside/`). A song opens on its album and plays when a click or key brought it there (sticky user
   activation), else a toast offers Play. Without lull, the link is just the public page.

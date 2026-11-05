@@ -4147,7 +4147,7 @@
      "Copy link" copies one link that works for anyone: lull's open page (site/, ADR-0032) followed by `#lull?`, the
      song's names and public ids, and its public page (song.link, which opens in every music app, or Last.fm), from
      GET /api/share/{kind}/{id} (kind track | album | artist). Clicked, the open page opens the listener's lull or
-     offers the public page; any lull opens it as its own page (App.openLink, on another hub too); never this hub's
+     offers the public page; any lull opens it as its own page (#/open, screens/open.js, on another hub too); never this hub's
      address. A playlist's link is the page it was imported from. The clipboard write
      starts inside the click, with the text still on its way (ClipboardItem takes a promise), so the browser allows
      it once the hub has answered. */
@@ -4732,7 +4732,7 @@
   inactive();
 
   /* a link shared to the Android app ("Share", lull://open?link=…) waits in the shell until this page takes it: at boot,
-     and when the shell nudges a running page. It opens as #/open (discover.js), or joins the queue when a share page's
+     and when the shell nudges a running page. It opens as #/open (screens/open.js), or joins the queue when a share page's
      Add to queue asked (takeAction "queue"; an older app has no takeAction and only opens) */
   App.takeSharedLink = function () {
     var shell = window.lullLinks;

@@ -1,4 +1,4 @@
-// A share page's Add to queue (docs/adr/0034; discover.js, #/open?link=…&do=queue), whichever way it reaches lull (the
+// A share page's Add to queue (docs/adr/0034; screens/open.js, #/open?link=…&do=queue), whichever way it reaches lull (the
 // Android app, the desktop app, lull in the browser): the song, or the album's songs, join "next up" without playing or
 // interrupting anything, of the listener's device playing now (Connect's enqueue) or else of this one, and lull goes
 // back to the screen it showed, or Home when it opened on the link.
@@ -34,7 +34,7 @@ test('while another of the listener\'s devices plays, the song joins that device
   await page.context().setExtraHTTPHeaders(headers);
   await openScreen(page, screens.settings);
   await request.post('/__fixture/emit', { headers, data: { topic: 'device.state', data: { deviceId: 'd-phone', trackId: null, position: 0, playing: true } } });
-  await expect.poll(() => page.evaluate(() => App.connect.playingElsewhere()?.id ?? null)).toBe('d-phone');
+  await expect.poll(() => page.evaluate(() => App.connect.byId('d-phone')?.state?.playing ?? false)).toBe(true);
 
   const sent = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith('/api/devices/d-phone/command'));
   await page.evaluate((route) => { location.hash = route; }, queueing(SONG));
