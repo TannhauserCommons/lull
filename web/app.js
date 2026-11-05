@@ -2455,8 +2455,9 @@
     /* a fallback to another peer ends the old response: reopen the stream and seek back to where we were.
        The first event of a fetch only says which attempt the response already belongs to (the hub sends one on
        every opening, also for a song that fell back long ago; and the better copy switched to counts its own), so
-       it is adopted, not reopened */
-    if (e.job !== ev.jobId) { e.job = ev.jobId; e.attempt = ev.attempt || 0; }
+       it is adopted, not reopened; then only that job's events count */
+    if (!e.job) { e.job = ev.jobId; e.attempt = ev.attempt || 0; }
+    else if (e.job !== ev.jobId) return;               // another fetch of the song
     else if (ev.attempt > e.attempt) { e.attempt = ev.attempt; if (e === cur) reopen(); }
     if (e === nxt) { e.resolve = ev.status === 'failed' ? 'none' : ev.status === 'streaming' ? 'ready' : 'resolving'; changed('queue'); return; }
     onUpgrade(e, ev.upgrade);
@@ -2547,7 +2548,7 @@
         switching = false;
         if (cur !== e) return;
         if (r.switched) {
-          e.url = url; e.complete = up.pct >= 1;
+          e.url = url; e.complete = up.pct >= 1; e.job = null;
           ps.upgrade = { peer: up.peer, path: up.path, format: up.format, pct: up.pct, state: 'switched', from: from, at: at, residualMs: r.residualMs, offsetS: r.offsetS };
           App.toast('Switched to a better copy' + (up.format ? ': ' + up.format : ''), { icon: 'soulseek', kind: 'ok' });
         } else if (r.why === 'mismatch') {
@@ -2605,7 +2606,7 @@
     var e = ps.queue[i], lead = LullRules.preloadLead(playback.crossfade, cur.soulseek, ps.received);
     if (!out.eagerNext && !LullRules.preloadNow(lead, P.duration(), ps.pos)) return;
     if (nxt === e) return;
-    var was = nxt; nxt = e; letGo(was);
+    var was = nxt; nxt = e; letGo(was); e.job = null; e.attempt = null;
     if (e.resolve === 'resolved') { e.resolve = 'resolving'; changed('queue'); }
     itemFor(e).then(function (it) { if (it && nxt === e) out.setNext(it); });
   }

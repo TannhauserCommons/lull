@@ -199,6 +199,9 @@ pub struct Fetch {
     on_youtube: AtomicBool,
     /// The listener picked this copy: it is never switched away from by itself.
     picked: AtomicBool,
+    /// The copy the listener picked to start this fetch: asking for the song with that pick
+    /// again (the player reopening it after a fallback) is this fetch, whichever peer sends now.
+    picked_copy: std::sync::OnceLock<SourceRef>,
     /// An upgrade's bar: it fetches only a copy better than the one the player has.
     bar: Option<Bar>,
     /// Woken when the last response reading it ends.
@@ -423,7 +426,11 @@ impl Fetcher {
         };
         if let Some(f) = live {
             let current = f.now().source.map(|s| s.source_ref());
-            if pick.is_none() || pick == current {
+            // The pick this fetch started with is this fetch, though it fell back to another peer
+            // since: the player reopens the song after every fallback with its pick still in the
+            // address, and replacing the fetch then started the stalled peer again, in a loop.
+            let started_with = pick.is_some() && pick.as_ref() == f.picked_copy.get();
+            if pick.is_none() || pick == current || started_with {
                 // Start fast: a preload still waiting for a peer becomes the upgrade, and
                 // YouTube starts the song below.
                 if !(pick.is_none() && mode == Mode::StartFast && self.make_way(&f)) {
@@ -451,12 +458,13 @@ impl Fetcher {
             // player still learns which copy it is, and whether it's below the minimum.
             Some(entry) => {
                 let on_youtube = youtube::is_youtube(&entry.source);
+                let playing = entry.source.clone();
                 let f = self.cached(track.clone(), entry).await?;
                 f.picked.store(pick.is_some(), Ordering::Relaxed);
                 want(&f, |w| w.streaming = true);
                 self.bus.publish("stream", self.player_event(&f, &f.now()));
                 if on_youtube && mode == Mode::StartFast {
-                    self.upgrade_later(track).await?;
+                    self.upgrade_later(track, playing).await?;
                 }
                 self.better_later(&f);
                 return Ok(f);
@@ -504,9 +512,11 @@ impl Fetcher {
         false
     }
 
-    /// Start fast: fetches Soulseek's best copy (the saving profile's) in the background, for
-    /// later plays and saves, unless one is running or a Soulseek copy is already cached.
-    async fn upgrade_later(&self, track: Track) -> Result<()> {
+    /// Start fast: fetches Soulseek's best copy in the background, for this play and later
+    /// ones, unless one is running or a Soulseek copy is already cached. With "Switch to a
+    /// better copy" on it is the streaming profile's (within its cap), so the player can move
+    /// to it mid-song; off, the saving profile's, for later plays and saves.
+    async fn upgrade_later(&self, track: Track, playing: SourceRef) -> Result<()> {
         if self.upgrade(&track.id).is_some() {
             return Ok(());
         }
@@ -514,7 +524,21 @@ impl Fetcher {
         if cached.is_some_and(|e| !youtube::is_youtube(&e.source)) {
             return Ok(());
         }
-        if let Some(f) = self.start_upgrade(track, Purpose::Save, None) {
+        // The saving profile's copy (a FLAC) above a streaming cap is never offered to the
+        // player, and held the song's one upgrade, so no better copy ever came mid-song. With
+        // switching on it is the better copy `better_later` would fetch: Soulseek's, by the
+        // streaming profile.
+        let (purpose, bar) = if self.rules.get().switch_to_better {
+            let bar = Bar {
+                playing,
+                why: Lesser::Youtube,
+                avoid: Vec::new(),
+            };
+            (Purpose::Stream, Some(bar))
+        } else {
+            (Purpose::Save, None)
+        };
+        if let Some(f) = self.start_upgrade(track, purpose, bar) {
             tracing::info!(track = %f.track.id, job = f.job_id, "fetching Soulseek's copy while YouTube plays");
         }
         Ok(())
@@ -995,6 +1019,7 @@ impl Fetcher {
             last_read: Mutex::new(Instant::now()),
             on_youtube: AtomicBool::new(false),
             picked: AtomicBool::new(false),
+            picked_copy: std::sync::OnceLock::new(),
             bar,
             unread: Notify::new(),
             asked: Mutex::default(),
@@ -1038,6 +1063,9 @@ impl Fetcher {
         let f = self.new_fetch(track, purpose, Progress::new(Status::Finding), wanted, slot);
         f.picked
             .store(pick.is_some() && purpose == Purpose::Stream, Ordering::Relaxed);
+        if let Some(p) = &pick {
+            let _ = f.picked_copy.set(p.clone());
+        }
         self.spawn(f.clone(), pick);
         f
     }
@@ -1136,7 +1164,7 @@ impl Fetcher {
     /// Start fast: the YouTube copy plays now, and Soulseek's best copy is fetched beside it.
     async fn youtube_first(&self, f: &Fetch, stop: &mut watch::Receiver<bool>) -> Result<PathBuf, Stop> {
         let copy = self.youtube_copy(f, stop).await?;
-        if let Err(e) = self.upgrade_later(f.track.clone()).await {
+        if let Err(e) = self.upgrade_later(f.track.clone(), copy.clone()).await {
             tracing::warn!(error = %e, "starting the Soulseek upgrade");
         }
         self.youtube_plays(f, copy, stop).await
@@ -2308,6 +2336,187 @@ mod tests {
             let p = ended(&fetcher.stream(track(), Some(upload("wrongupload"))).await?).await?;
             assert_eq!(p.status, Status::Done, "{:?}", p.error);
             assert_eq!(p.attempt, 1);
+            Ok(())
+        }
+
+        /// One official upload of the song, always the song.
+        struct OneUpload;
+
+        #[async_trait]
+        impl Youtube for OneUpload {
+            async fn find(&self, _: &Track, _: Want) -> Result<Option<Found>> {
+                Ok(Some(Found {
+                    source: upload("rightupload"),
+                    title: "Song".into(),
+                    channel: "Artist - Topic".into(),
+                    official: true,
+                }))
+            }
+            async fn download(&self, _: &SourceRef, dest: &std::path::Path) -> Result<()> {
+                std::fs::write(dest, vec![7u8; SIZE as usize]).map_err(|e| Error::internal(e.to_string()))
+            }
+        }
+
+        fn shared(user: &str, path: &str, size: u64, ext: &str, kbps: Option<u32>, lossless: bool) -> Source {
+            Source {
+                user: user.into(),
+                path: path.into(),
+                size,
+                ext: ext.into(),
+                facts: lull_core::model::FileFacts {
+                    format: ext.to_uppercase(),
+                    codec: ext.to_uppercase(),
+                    lossless,
+                    khz: Some(44.1),
+                    bits: lossless.then_some(16),
+                    kbps,
+                    size_bytes: Some(size),
+                },
+                upload_speed: 2_000_000,
+                free_slot: true,
+                queue: 0,
+                length: Some(200),
+            }
+        }
+
+        #[tokio::test]
+        async fn a_picked_flac_that_plays_beside_start_fasts_upgrade_plays_on_with_one_transfer() -> Result<()> {
+            // The owner's path (2026-11-05): start fast plays the YouTube copy, then the listener
+            // picks a peer's FLAC in Pick a source. It played, then fetches from that peer failed
+            // and started again about 1,400 times.
+            const FLAC: &str = "Music\\Artist\\Album\\01 - Song.flac";
+            let bytes: Vec<u8> = (0..1_500_000).map(|i| (i % 251) as u8).collect();
+            let peer = Peer {
+                per_tick: 16_384,
+                overwrite: false,
+                reported: None,
+                settles: Duration::ZERO,
+            };
+            let fake = Fake::start(HashMap::from([(FLAC.to_owned(), bytes.clone())]), peer)
+                .await
+                .map_err(|e| Error::internal(e.to_string()))?;
+            let mut rules = Rules::default();
+            rules.youtube.mode = lull_core::youtube::Mode::StartFast;
+            let fetcher = with_youtube(&fake, rules, Arc::new(OneUpload)).await?;
+            let flac = shared("trisska", FLAC, bytes.len() as u64, "flac", None, true);
+            fetcher.sources.add(HashMap::from([(track().id, vec![flac.clone()])]));
+            // The YouTube copy plays; start fast fetches Soulseek's copy beside it.
+            let yt = fetcher.stream(track(), None).await?;
+            let _ = ended(&yt).await?;
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            // The listener picks the FLAC.
+            let picked = fetcher.stream(track(), Some(flac.source_ref())).await?;
+            let p = ended(&picked).await?;
+            assert_eq!(p.status, Status::Done, "{:?}", p.error);
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            let starts = fake.starts_of("trisska");
+            assert!(
+                starts.len() <= 2,
+                "the peer was asked {} times: {starts:?}",
+                starts.len()
+            );
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn a_picked_peer_that_stalls_falls_back_once_and_the_players_reopen_starts_nothing_new() -> Result<()> {
+            // The picked peer stalls, the fetch falls back to another peer (a new attempt), and the
+            // player reopens the song with its pick, as it does on every new attempt.
+            const FLAC: &str = "Music\\Artist\\Album\\01 - Song.flac";
+            let bytes: Vec<u8> = (0..600_000).map(|i| (i % 251) as u8).collect();
+            let peer = Peer {
+                per_tick: 16_384,
+                overwrite: false,
+                reported: None,
+                settles: Duration::ZERO,
+            };
+            let fake = Fake::start_with(
+                HashMap::from([(FLAC.to_owned(), bytes.clone())]),
+                peer,
+                HashMap::from([("trisska".to_owned(), 0)]),
+            )
+            .await
+            .map_err(|e| Error::internal(e.to_string()))?;
+            let rules = Rules {
+                stall_timeout: 1,
+                ..Rules::default()
+            };
+            let fetcher = with_youtube(&fake, rules, Arc::new(NoYoutube)).await?;
+            let picked = shared("trisska", FLAC, bytes.len() as u64, "flac", None, true);
+            let other = shared("goodpeer", FLAC, bytes.len() as u64, "flac", None, true);
+            fetcher
+                .sources
+                .add(HashMap::from([(track().id, vec![picked.clone(), other])]));
+            let mut f = fetcher.stream(track(), Some(picked.source_ref())).await?;
+            let mut jobs = vec![f.job_id.clone()];
+            let mut seen = 0;
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+            while !f.now().ended() && tokio::time::Instant::now() < deadline {
+                let mut rx = f.progress();
+                let _ = tokio::time::timeout(Duration::from_millis(500), rx.changed()).await;
+                let attempt = f.now().attempt;
+                if attempt > seen {
+                    seen = attempt;
+                    // The player's reopen: the same song, its pick still in the address.
+                    f = fetcher.stream(track(), Some(picked.source_ref())).await?;
+                    if !jobs.contains(&f.job_id) {
+                        jobs.push(f.job_id.clone());
+                        seen = 0;
+                    }
+                }
+            }
+            assert!(jobs.len() == 1, "{} fetches started: {jobs:?}", jobs.len());
+            let p = f.now();
+            assert_eq!(p.status, Status::Done, "{:?}", p.error);
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn start_fasts_copy_beside_youtube_keeps_to_the_streaming_cap_and_is_offered() -> Result<()> {
+            // The owner streams at most 320 kbps: the copy fetched beside YouTube is the MP3 320,
+            // not the FLAC the saving profile would take, and the player is offered it mid-song.
+            const FLAC: &str = "Music\\Artist\\Album\\01 - Song.flac";
+            const MP3: &str = "Music\\Artist\\Album\\01 - Song.mp3";
+            let flac_bytes: Vec<u8> = (0..900_000).map(|i| (i % 251) as u8).collect();
+            let mp3_bytes: Vec<u8> = (0..300_000).map(|i| (i % 241) as u8).collect();
+            let peer = Peer {
+                per_tick: 16_384,
+                overwrite: false,
+                reported: None,
+                settles: Duration::ZERO,
+            };
+            let fake = Fake::start(
+                HashMap::from([
+                    (FLAC.to_owned(), flac_bytes.clone()),
+                    (MP3.to_owned(), mp3_bytes.clone()),
+                ]),
+                peer,
+            )
+            .await
+            .map_err(|e| Error::internal(e.to_string()))?;
+            let mut rules = Rules::default();
+            rules.youtube.mode = lull_core::youtube::Mode::StartFast;
+            rules.stream.max_kbps = 320;
+            let fetcher = with_youtube(&fake, rules, Arc::new(OneUpload)).await?;
+            let flac = shared("lossless", FLAC, flac_bytes.len() as u64, "flac", None, true);
+            let mp3 = shared("mp3peer", MP3, mp3_bytes.len() as u64, "mp3", Some(320), false);
+            fetcher.sources.add(HashMap::from([(track().id, vec![flac, mp3])]));
+            let yt = fetcher.stream(track(), None).await?;
+            let mut up = None;
+            for _ in 0..100 {
+                up = fetcher.upgrade(&track().id);
+                if up.is_some() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            let up = up.ok_or_else(|| Error::internal("no copy fetched beside"))?;
+            ended(&up).await?;
+            let got = up.now().source.map(|s| s.ext).unwrap_or_default();
+            assert_eq!(got, "mp3", "the copy within the cap");
+            let offer = fetcher.player_event(&yt, &yt.now());
+            assert_eq!(offer["upgrade"]["peer"], "mp3peer", "{offer}");
+            assert_eq!(offer["upgrade"]["ready"], true);
             Ok(())
         }
 
