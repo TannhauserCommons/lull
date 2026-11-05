@@ -495,6 +495,10 @@
       /* the player's state and its words, as the web UI's bar has them (docs/themes.md: data-status-text, --status-text) */
       var status = S.status || 'idle', words = S.statusText || '';
       if (el.getAttribute('data-status') !== status) el.setAttribute('data-status', status);
+      /* play state and the song's place in hundredths, as the web UI gives them (docs/themes.md: data-playing, --song-pos) */
+      if (el.getAttribute('data-playing') !== String(!!S.playing)) el.setAttribute('data-playing', String(!!S.playing));
+      var step = String(Math.floor(f * 100) / 100);
+      if (el.style.getPropertyValue('--song-pos') !== step) el.style.setProperty('--song-pos', step);
       if (el.getAttribute('data-status-text') !== words) {
         el.setAttribute('data-status-text', words);
         el.style.setProperty('--status-text', '"' + words.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\A ') + '"');

@@ -3194,6 +3194,16 @@
   }
   /* what a transfer bar draws (0-1): the solid part from the start, and the parts drawn as arrived */
   P.transferBar = function () { return { front: arrivedFront(), parts: shownParts() }; };
+  /* the song's place, 0 to 1 in hundredths, for a design to draw with (docs/themes.md: --song-pos). Written only when it
+     moves a hundredth, and only on the few parts a design draws it on. It isn't inherited (components.css): a value
+     every element inherits restyles all of them at each step, a long playlist's thousands or a hero's hundreds */
+  var SONG_POS_AT = '#pbar, #mini, .sky-specks, .now__dev, .now__devc, .disc-lead', songStep = null, songAt = null;
+  function paintSongPos(f) {
+    var step = Math.floor(f * 100) / 100, at = $$kept(SONG_POS_AT);
+    if (step === songStep && at === songAt) return;   // the same step on the same parts: nothing to write
+    songStep = step; songAt = at;
+    at.forEach(function (el) { setVar(el, '--song-pos', step); });
+  }
   function updateSeeks() {
     var dur = P.duration() || 1, f = clamp(ps.pos / dur, 0, 1), parts = shownParts(), bk = bufKey(parts), front = arrivedFront();
     var bufTo = ps.buffered.length ? ps.buffered[ps.buffered.length - 1][1] * dur : 0;
@@ -3202,6 +3212,8 @@
     var transferring = ps.received < 1 && (ps.status === 'streaming' || ps.status === 'buffering');
     // player bar + mini: play state and the received percentage (an integer, usable as counter(rx) in CSS)
     ['pbar', 'mini'].forEach(function (s) { var el = document.getElementById(s); if (!el) return; setAttr(el, 'data-playing', !!ps.playing); setVar(el, '--rx', Math.round(ps.received * 100)); });
+    setAttr(document.documentElement, 'data-playing', !!ps.playing);
+    paintSongPos(f);
     var going = ps.seekWait ? ps.seekWait.fraction : null;
     $$kept('.seek[data-seek="player"]').forEach(function (el) {
       setVar(el, '--pos', f.toFixed(4));
@@ -3255,6 +3267,10 @@
       r.classList.toggle('is-playing-now', on && ps.playing);
     });
     App.syncPlaces();
+    /* the playing song's liked and saved state on the player and on Now Playing's hero, for a design to react to
+       (docs/themes.md: data-liked, data-saved): it changes with a like, a save or the song, and is written only then */
+    var liked = !!cur && App.isLiked(cur), saved = !!cur && App.isSaved(cur);
+    $$kept('#pbar, #mini, .now__dev, .now__devc').forEach(function (el) { setAttr(el, 'data-liked', liked); setAttr(el, 'data-saved', saved); });
     $$('[data-like]').forEach(function (b) {
       var id = b.getAttribute('data-like'), on = App.isLiked(id);
       if (b.getAttribute('aria-pressed') === String(on)) return;
@@ -3676,6 +3692,9 @@
     var st = ps.status, idle = !t || st === 'idle';
     bar.setAttribute('data-status', idle ? 'idle' : st);
     mini.setAttribute('data-status', idle ? 'idle' : st);
+    /* the same state on the page's root, for a design to draw from anywhere (docs/themes.md: data-player): it changes
+       a few times a song, and a rule that reads it restyles only what it selects */
+    setAttr(document.documentElement, 'data-player', idle ? 'idle' : st);
     /* the state's own words, for a theme to show (docs/themes.md: data-status-text, and --status-text, which every
        element inside inherits): what the state tab says, the hub's reason for a failure among them, so a theme never
        has to word a reason of its own and get it wrong for the others */

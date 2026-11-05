@@ -109,6 +109,9 @@ Go beyond tokens with any selector. These hooks are the theme API: they stay put
 | `.app[data-route]`, `.app[data-view]`, `.app[data-ctx]` | nav key; `page` or `now`; `docked`, `open`, `closed` |
 | `[data-act]`, `[data-nav]` | every control's action (`play`, `next`, `like`, `shuffle`...) and nav target (`home`, `library`...) |
 | `#pbar` / `#mini` `[data-status]`, `[data-playing]` | player state (`idle`, `finding`, `queued`, `buffering`, `stalled`, `choose`, `streaming`, `library`, `failed`, `jellyfin-error`, `ended`); the desktop app's mini player windows have it too, on `[data-dk-player]` |
+| `:root[data-player]`, `:root[data-playing]` | the same state and whether sound is playing, on the page's root, so anything anywhere can follow them (`:root[data-playing="true"] .my-moon`) without a `:has()` on the player |
+| `#pbar`, `#mini`, `.now__dev`, `.now__devc` `[data-liked]`, `[data-saved]` | whether the playing song is liked and saved (`true` or `false`), on the player and Now Playing's hero; they change only with a like, a save or the song |
+| `--song-pos` | where the song is, `0` to `1` in hundredths, written only when it moves a hundredth, and only on `#pbar`, `#mini`, `.sky-specks`, Now Playing's hero (`.now__dev`, `.now__devc`), Home's `.disc-lead` and the mini player windows' `[data-dk-player]`: draw with it there (`rotate: calc(var(--song-pos) * 1turn)`, `translate`, `scale`, `opacity`). It isn't inherited: a part inside them, or a pseudo-element, that draws with it says `--song-pos: inherit` (each level between too). So a step restyles only what draws with it, never a whole hero, player or page |
 | `#pbar` / `#mini` / `[data-dk-player]` `[data-status-text]`, `--status-text` | the state's own words: what the state tab says, the hub's reason for a failure among them ("YouTube couldn't find this song"); while a song simply plays, where from ("Streaming from YouTube", "Playing from your library"). `content: var(--status-text)` shows them on anything inside (the property is a CSS string every element inside inherits); `attr(data-status-text)` only on the element itself. See **The player's words** below |
 | `.mini__chip` | an empty part beside the mini player's song line, hidden unless your theme shows it and words it (`::before { content: ... }`, from `#mini[data-status]`); it gives way when the line needs the room, so never place it over the buttons |
 | Classes | the BEM blocks: `.card` (`.card-head`, `.card-head__title`), `.btn` (`--primary`, `--quiet`, `--sm`), `.btn-icon`, `.btn-gloss`, `.cover` (`.c1`-`.c8` recipes, `.has-art`; `.cover--artist` with `.cover__mono`, the artist's initial shown while it has no photo, in the design's display face), `.trow`, `.tile`, `.chip`, `.pill-filter`, `.seg`, `.input`, `.seek`, `.wave`, `.device`, `.empty`, `.sheet`, `.dialog`, `.toast`, `.banner`, `.nav-item`, `.nav-pill`, `.tab`, `.region-title` (hidden window titles you can show). Every other class and attribute, stable or internal, is in section 11 |
@@ -352,6 +355,7 @@ Every class lull's CSS styles and every `data-*` attribute lull's markup sets, e
   - `data-classic` (`on` while the Classic stage is open);
   - `data-theme-fade` (set for a moment while the listener flips day and night, so a design can animate the change);
   - `data-titlebar` and `data-window-inactive` (the desktop app);
+  - `data-player` (the player's state, as `#pbar[data-status]`) and `data-playing` (`true` while sound plays);
   - `data-window` (`mica` `acrylic` `blur` `transparent`: the desktop app's window shows the desktop behind the page, section 12; absent while it is solid) and `data-window-preview` (the browser's preview of it, over a black and white checkerboard);
   - `.is-hidden` on `:root` (the page is hidden: loops pause);
   - `.is-still` on `:root` (decorative loops hold still: the listener's "Pause animations when lull isn't the active window", section 5, Drawing cheaply);
@@ -412,7 +416,7 @@ Every class lull's CSS styles and every `data-*` attribute lull's markup sets, e
   - `.is-liked`, `.is-selected`, `.is-on`, `.is-open`, `.is-wide` (the player bar's view tools: Lyrics, Classic, Device view), `.is-dragging`, `.is-drop-target`;
   - `.is-applied`, `.is-bad` (Classic skins);
   - `.is-out` (Now Playing's slide while the song changes).
-- **Player status:** `data-status` (`#pbar`, `#mini`, the mini player windows' `[data-dk-player]`, an album's save status), `data-status-text` (`#pbar`, `#mini`, `[data-dk-player]`, with `--status-text`), `data-playing`, `data-state`.
+- **Player status:** `data-status` (`#pbar`, `#mini`, the mini player windows' `[data-dk-player]`, an album's save status), `data-status-text` (`#pbar`, `#mini`, `[data-dk-player]`, with `--status-text`), `data-playing` (also on `:root`, with `data-player`), `data-state`, `data-liked` and `data-saved` (the playing song's, on `#pbar`, `#mini`, `.now__dev`, `.now__devc`); `--song-pos` (the song's place in hundredths, on the parts section 5 names).
 
 ### Home and Search
 

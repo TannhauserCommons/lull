@@ -1082,6 +1082,10 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
    read it. They don't inherit, so a drag frame restyles those few elements; a change to the inherited --ctx or
    --now-w restyles every element on the page (20-30 ms a frame on a long list). Release saves --ctx / --now-w */
 @property --ctx-drag { syntax: "*"; inherits: false; }
+/* the song's place (app.js paintSongPos, docs/themes.md: --song-pos): not inherited, so a step restyles the few parts it
+   is written on and the ones a design opts in with `--song-pos: inherit`, never everything inside them (a Now Playing
+   hero holds hundreds of elements) */
+@property --song-pos { syntax: "<number>"; inherits: false; initial-value: 0; }
 @property --now-drag { syntax: "*"; inherits: false; }
 .app[data-ctx="docked"] {
   grid-template-columns: var(--rail) minmax(560px, 1fr) var(--ctx-drag, var(--ctx));
