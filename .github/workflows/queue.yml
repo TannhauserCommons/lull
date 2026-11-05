@@ -181,6 +181,8 @@ jobs:
       statuses: write
       packages: write
       actions: write
+    outputs:
+      chained: ${{ steps.land.outputs.chained }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -217,34 +219,35 @@ jobs:
           BRANCHES: ${{ needs.plan.outputs.branches }}
         run: sh scripts/queue.sh land
       - name: The image is main's
-        if: steps.land.outputs.landed == 'true' && steps.image.outputs.name != ''
+        if: ${{ !cancelled() && steps.land.outputs.landed == 'true' && steps.image.outputs.name != '' }}
         env:
           IMAGE: ${{ steps.image.outputs.name }}
         run: |
           docker tag lull:candidate "$IMAGE:main"
           docker push -q "$IMAGE:main"
           echo "Pushed $(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE:main")" >> "$GITHUB_STEP_SUMMARY"
-      # Pushes made with the job's token start no workflows, so the run starts what main's pushes did.
-      - if: steps.land.outputs.landed == 'true' && needs.plan.outputs.pages == 'true'
+      # Pushes made with the job's token start no workflows, so the run starts what main's pushes did. Once main has
+      # moved, these run even if the land step broke off after the push: the landed commit gets its image all the same.
+      - if: ${{ !cancelled() && steps.land.outputs.landed == 'true' && needs.plan.outputs.pages == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" --ref main
-      - if: steps.land.outputs.landed == 'true' && needs.plan.outputs.youtube_contract == 'true'
+        run: sh scripts/queue.sh dispatch pages.yml
+      - if: ${{ !cancelled() && steps.land.outputs.landed == 'true' && needs.plan.outputs.youtube_contract == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run youtube-music-contract.yml --repo "$GITHUB_REPOSITORY" --ref main
-      - if: steps.land.outputs.landed == 'true' && needs.plan.outputs.share == 'true'
+        run: sh scripts/queue.sh dispatch youtube-music-contract.yml
+      - if: ${{ !cancelled() && steps.land.outputs.landed == 'true' && needs.plan.outputs.share == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run share.yml --repo "$GITHUB_REPOSITORY" --ref main
-      - if: steps.land.outputs.landed == 'true' && needs.plan.outputs.notes == 'true'
+        run: sh scripts/queue.sh dispatch share.yml
+      - if: ${{ !cancelled() && steps.land.outputs.landed == 'true' && needs.plan.outputs.notes == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run release-draft.yml --repo "$GITHUB_REPOSITORY" --ref main
-      - if: steps.land.outputs.landed == 'true' && needs.plan.outputs.warm == 'true'
+        run: sh scripts/queue.sh dispatch release-draft.yml
+      - if: ${{ !cancelled() && steps.land.outputs.landed == 'true' && needs.plan.outputs.warm == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run app.yml --repo "$GITHUB_REPOSITORY" --ref main
+        run: sh scripts/queue.sh dispatch app.yml
 
   reject:
     needs: [plan, privacy, ci, ui-gates, app, slskd-contract, share, image, ui]
@@ -276,25 +279,17 @@ jobs:
 
   # A run that a job ended (a GitHub API error in plan or land, say) starts no other, and the branches waiting would sit
   # until the next push or the half-hourly schedule. The verdicts chain the queue themselves; this covers a run that
-  # never reached one. Three failed runs in a row are the queue's own fault, not a blip: the schedule tries again then.
+  # never reached one, and a landing whose request for the next run GitHub kept failing. Three failed runs in a row are
+  # the queue's own fault, not a blip: the schedule tries again then.
   next:
     needs: [plan, land, reject]
-    if: always() && contains(needs.*.result, 'failure')
+    if: always() && (contains(needs.*.result, 'failure') || needs.land.outputs.chained == 'false')
     runs-on: ubuntu-24.04
     permissions:
       contents: read
       actions: write
     steps:
+      - uses: actions/checkout@v5
       - env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -eu
-          waiting=$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/heads/queue/" --jq length)
-          [ "$waiting" -gt 0 ] || { echo "nothing waiting"; exit 0; }
-          # This run isn't finished yet: the two before it decide.
-          before=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/queue.yml/runs?status=completed&per_page=20" \
-            --jq "[.workflow_runs[] | select(.id != $GITHUB_RUN_ID and .conclusion != \"cancelled\" and .conclusion != \"skipped\")][0:2] | map(.conclusion) | join(\" \")")
-          if [ "$before" = "failure failure" ]; then
-            echo "::warning::three queue runs failed in a row: left to the schedule, look at the queue"; exit 0
-          fi
-          gh workflow run queue.yml --repo "$GITHUB_REPOSITORY" --ref main
+        run: sh scripts/queue.sh rescue
