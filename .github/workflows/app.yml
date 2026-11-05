@@ -283,9 +283,12 @@ jobs:
         if: matrix.build == 'signed' && inputs.gradle-verification
         working-directory: app/gen/android
         # The libraries the APK resolves, without the Rust tasks (they use none, and run only inside the Tauri CLI):
-        # arm64 alone, as android-build.sh builds.
+        # arm64 alone, as android-build.sh builds. From an empty Gradle home, so every file a fresh build reads is
+        # fetched and written down, not only those this run happens to resolve again.
+        env:
+          GRADLE_USER_HOME: ${{ runner.temp }}/gradle-fresh
         run: |
-          ./gradlew --write-verification-metadata sha256 :app:assembleUniversalRelease \
+          ./gradlew --write-verification-metadata sha256 --refresh-dependencies :app:assembleUniversalRelease \
             -PtargetList=aarch64 -PabiList=arm64-v8a -ParchList=arm64 \
             -x rustBuildUniversalRelease -x rustBuildArm64Release
       - if: matrix.build == 'signed' && inputs.gradle-verification
