@@ -71,3 +71,11 @@ test('a pick says where it can play from, and one with no copy offers Search aga
   await request.post('/__fixture/emit', { data: { topic: 'feed.avail', data: { trackId: id, avail: ['soulseek'], noSource: false } }, headers });
   await expect(page.locator(`[data-region="picks"] .disc-pick[data-track-id="${id}"]`)).toHaveAttribute('data-avail', 'soulseek');
 });
+
+test('a new release no peer shares yet says so quietly', async ({ page, request }) => {
+  await feedOf(page, request, 'avail');
+  await openScreen(page, '/home');
+  const tiles = page.locator('[data-region="new"] .tile');
+  await expect(tiles.first().locator('.rel-unshared')).toHaveText('Not shared yet');
+  await expect(tiles.nth(1).locator('.rel-unshared')).toHaveCount(0);
+});

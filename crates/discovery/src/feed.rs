@@ -26,7 +26,7 @@ use tokio::time::Instant;
 use crate::artist::identity;
 use crate::picking::{self, Candidate, Fared, PICKS};
 use crate::sources::listenbrainz::Mode;
-use crate::sources::{ArtistInfo, ArtistSource, Release, Song};
+use crate::sources::{AlbumSource, ArtistInfo, ArtistSource, Release, Song};
 use crate::store::{self, entities};
 use crate::taste::{Evidence, Taste};
 use crate::{Service, art, mix, pages, radio};
@@ -94,6 +94,10 @@ pub struct Feed {
     /// On a first run, artists of the starter tags' picks, to follow from the first-run screen.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cold_start_artists: Vec<ArtistId>,
+    /// New releases shown that no Soulseek peer shares yet: by artists the listener follows or
+    /// likes, shown quietly as not shared (`Shelved::playable`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unshared: Vec<AlbumId>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
     pub errors: BTreeMap<String, String>,
     pub entities: Entities,
@@ -202,9 +206,11 @@ pub struct Shelved {
 }
 
 impl Shelved {
-    /// Can go on the shelf: saved, or peers share it. A release without an answer can't.
+    /// Can go on the shelf: saved, or peers share it, or by an artist the listener follows or
+    /// likes even when no peer shares it yet (shown quietly as not shared, `releaseAvail`). A
+    /// release without an answer can't.
     fn playable(&self) -> bool {
-        self.saved || self.available == Some(true)
+        self.saved || self.available == Some(true) || (self.liked && self.available == Some(false))
     }
 }
 
@@ -243,7 +249,14 @@ pub async fn get(State(svc): State<Arc<Service>>) -> Result<Json<serde_json::Val
     if lull_core::now() - built.feed.updated > STALE_AFTER_S || follows != built.follows {
         refresh_soon(&svc);
     }
+    let unshared: Vec<AlbumId> = built
+        .shelf
+        .iter()
+        .filter(|c| !c.saved && c.available == Some(false) && built.feed.new_releases.contains(&c.id))
+        .map(|c| c.id.clone())
+        .collect();
     let mut feed = built.feed;
+    feed.unshared = unshared;
     feed.followed_tags = followed_tags;
     // Hiding takes effect at once; the rebuild catches up with the rest.
     feed.picks.retain(|p| {
@@ -648,11 +661,11 @@ async fn build(svc: &Arc<Service>) -> Result<(Built, Answers)> {
     let cold = taste.is_empty();
     let mut errors = BTreeMap::new();
 
-    let (releases, related) = new_releases(svc, &taste, &followed_artists, &followed_tags)
+    let (releases, related, release_sources) = new_releases(svc, &taste, &followed_artists, &followed_tags)
         .await
         .unwrap_or_else(|e| {
             errors.insert("newReleases".into(), e.to_string());
-            (Vec::new(), BTreeMap::new())
+            (Vec::new(), BTreeMap::new(), HashMap::new())
         });
     // An automatic rebuild keeps up to half the last shelf's picks not taken yet; Refresh none.
     let refresh = svc.feed.refreshing.swap(false, Ordering::SeqCst);
@@ -725,6 +738,12 @@ async fn build(svc: &Arc<Service>) -> Result<(Built, Answers)> {
             .drain(..recent_picks.shelves.len() - picking::SHELVES);
     }
     let albums = svc.store.albums(releases.iter().map(|r| r.0.clone()).collect()).await?;
+    // The catalog album each own release came from, so its page asks that catalog.
+    let sources: Vec<(AlbumId, AlbumSource)> = albums
+        .iter()
+        .filter_map(|a| Some((a.id.clone(), *release_sources.get(&AlbumId::of(&a.artist, &a.title))?)))
+        .collect();
+    svc.store.remember_sources(sources).await?;
     let mut shelf: Vec<Shelved> = albums
         .iter()
         .zip(&releases)
@@ -784,6 +803,7 @@ async fn build(svc: &Arc<Service>) -> Result<(Built, Answers)> {
             cold_start_tags: COLD_START_TAGS.iter().map(|t| (*t).to_owned()).collect(),
             cold,
             cold_start_artists,
+            unshared: Vec::new(),
             errors,
             entities: entities(all_tracks, all_albums, artists),
         },
@@ -815,13 +835,128 @@ async fn new_releases(
     followed: &[(ArtistId, String)],
     followed_tags: &[String],
 ) -> Result<Releases> {
-    let fresh = svc.lb.fresh_releases().await?;
+    let mut fresh = svc.lb.fresh_releases().await?;
     offer_release_artists(svc, &fresh).await;
     let related = related_tags(&fresh, followed_tags);
-    Ok((rank_releases(fresh, taste, followed, followed_tags), related))
+    let (own, sources) = own_releases(svc, taste, followed).await;
+    fresh.extend(own);
+    let fans = fans_of(svc, taste).await;
+    Ok((
+        rank_releases(fresh, taste, followed, followed_tags, &fans),
+        related,
+        sources,
+    ))
 }
 
-type Releases = (Vec<(Release, Option<String>)>, BTreeMap<String, Vec<String>>);
+type Releases = (
+    Vec<(Release, Option<String>)>,
+    BTreeMap<String, Vec<String>>,
+    HashMap<AlbumId, AlbumSource>,
+);
+
+/// Artists whose own new releases are asked of the catalogs: followed ones first, then the
+/// strongest established, each artist's answer kept a day.
+const OWN_RELEASES_ARTISTS: usize = 30;
+/// Established artists whose similar artists count as "fans of your artists" (`fans_of`).
+const FANS_OF: usize = 6;
+/// Days a release counts as new.
+const NEW_DAYS: i64 = 30;
+
+/// The listener's own artists' releases of the last `NEW_DAYS`, by their exact ids: Deezer's
+/// albums by the Deezer id, else Apple's by the Apple id, in the storefront lull is set up with
+/// (`LULL_CATALOG_COUNTRY`); never chosen by where anyone is. The ones the artist leads only (not
+/// those it appears on), each with its catalog album for the tracklist. A lookup that fails
+/// leaves that artist out of this build.
+async fn own_releases(
+    svc: &Service,
+    taste: &Taste,
+    followed: &[(ArtistId, String)],
+) -> (Vec<Release>, HashMap<AlbumId, AlbumSource>) {
+    let since = pages::iso_date(lull_core::now() - NEW_DAYS * 86_400);
+    let mut artists: Vec<(ArtistId, String)> = followed.to_vec();
+    for a in taste.seed_artists(OWN_RELEASES_ARTISTS) {
+        if !artists.iter().any(|(id, _)| *id == a.id) {
+            artists.push((a.id.clone(), a.name.clone()));
+        }
+    }
+    artists.truncate(OWN_RELEASES_ARTISTS);
+    let (mut out, mut sources) = (Vec::new(), HashMap::new());
+    for (id, name) in artists {
+        let Ok(ids) = identity::ids(svc, &id).await else {
+            continue;
+        };
+        let entries = match (ids.deezer(), ids.itunes()) {
+            (Some(dz), _) => svc.deezer.artist_releases(dz).await,
+            (None, Some(it)) => svc.itunes.artist_catalog(it).await.map(|c| c.releases),
+            (None, None) => continue,
+        };
+        let entries = match entries {
+            Ok(entries) => entries,
+            Err(e) => {
+                tracing::info!(error = %e, artist = %name, "an artist's own new releases weren't read");
+                continue;
+            }
+        };
+        for e in entries {
+            let new = e
+                .album
+                .date
+                .as_deref()
+                .is_some_and(|d| d.len() >= 10 && *d >= *since.as_str());
+            if e.own == Some(false) || !new {
+                continue;
+            }
+            let artist = if e.album.artist.is_empty() {
+                name.clone()
+            } else {
+                e.album.artist.clone()
+            };
+            let release = Release {
+                mbid: e.album.mbid.clone(),
+                title: e.album.title.clone(),
+                artist,
+                artist_mbid: None,
+                kind: e.album.kind.clone(),
+                date: e.album.date.clone(),
+                tags: Vec::new(),
+            };
+            if let Some(source) = e.album.source {
+                sources.insert(AlbumId::of(&release.artist, &release.title), source);
+            }
+            out.push(release);
+        }
+    }
+    (out, sources)
+}
+
+/// The artists fans of the listener's own artists also play: the similar artists of the
+/// strongest established ones, by their exact ids (ListenBrainz by the MBID, built from many
+/// listeners' co-listening; else Deezer's related artists by the Deezer id). New releases by
+/// them are "popular among fans of your artists".
+async fn fans_of(svc: &Service, taste: &Taste) -> HashSet<ArtistId> {
+    let mut out = HashSet::new();
+    for a in taste.seed_artists(FANS_OF) {
+        let Ok(ids) = identity::ids(svc, &a.id).await else {
+            continue;
+        };
+        let names: Vec<String> = match (ids.mbid(), ids.deezer()) {
+            (Some(mbid), _) => svc
+                .lb
+                .similar_artists(mbid)
+                .await
+                .map(|v| v.into_iter().map(|x| x.name).collect()),
+            (None, Some(dz)) => svc
+                .deezer
+                .related(dz)
+                .await
+                .map(|v| v.into_iter().map(|x| x.name).collect()),
+            (None, None) => continue,
+        }
+        .unwrap_or_default();
+        out.extend(names.iter().map(|n| ArtistId::of(n)).filter(|id| *id != a.id));
+    }
+    out
+}
 
 /// For each followed tag, the specific tags most often on the same fresh releases: from the
 /// releases the feed reads anyway, so no source is asked for them.
@@ -863,9 +998,10 @@ fn rank_releases(
     taste: &Taste,
     followed: &[(ArtistId, String)],
     followed_tags: &[String],
+    fans: &HashSet<ArtistId>,
 ) -> Vec<(Release, Option<String>)> {
     let followed: HashSet<&ArtistId> = followed.iter().map(|(id, _)| id).collect();
-    let liked: HashMap<&ArtistId, f64> = taste.top_artists(60).map(|a| (&a.id, a.weight)).collect();
+    let liked: HashMap<&ArtistId, f64> = taste.seed_artists(60).map(|a| (&a.id, a.weight)).collect();
     let mut tags: HashMap<String, f64> = taste.dig_tags().take(8).cloned().collect();
     for t in followed_tags {
         *tags.entry(t.to_lowercase()).or_default() += 1.0;
@@ -885,10 +1021,14 @@ fn rank_releases(
             };
             let by_tag: f64 = r.tags.iter().filter_map(|t| tags.get(t)).sum();
             let fuller = matches!(r.kind.as_deref(), Some("Album" | "EP"));
-            let score = match (by_artist, by_tag > 0.0) {
-                (Some(s), _) => s,
-                (None, true) => 10.0 + by_tag + if fuller { 5.0 } else { 0.0 },
-                (None, false) => return None,
+            // Nothing else: a release matching none of the listener's artists, their fans' artists
+            // or their tags isn't news to them.
+            let by_fans = fans.contains(&id);
+            let score = match (by_artist, by_fans, by_tag > 0.0) {
+                (Some(s), _, _) => s,
+                (None, true, _) => 30.0 + by_tag + if fuller { 5.0 } else { 0.0 },
+                (None, false, true) => 10.0 + by_tag + if fuller { 5.0 } else { 0.0 },
+                (None, false, false) => return None,
             };
             let why = by_artist.map(|_| r.artist.clone());
             Some((score, r, why))
@@ -1346,6 +1486,7 @@ mod tests {
             &listener(),
             &[],
             &[],
+            &HashSet::new(),
         );
         let titles: Vec<&str> = ranked.iter().map(|(r, _)| r.title.as_str()).collect();
         assert_eq!(
@@ -1359,6 +1500,50 @@ mod tests {
             Some("Glow Tape"),
             "fresh from an artist you like"
         );
+    }
+
+    #[test]
+    fn a_release_is_news_only_by_the_listeners_artists_their_fans_artists_or_their_tags() {
+        // Fans of the listener's artists also play Night Garden: its new EP is news; Chart Star's
+        // isn't, however popular, and an obscure one by a fan artist is as welcome as any.
+        let fans = HashSet::from([ArtistId::of("Night Garden"), ArtistId::of("Tiny Room")]);
+        let ranked = rank_releases(
+            vec![
+                fresh("Chart Star", "Platinum", &["hip hop"]),
+                fresh("Night Garden", "Moths", &[]),
+                fresh("Tiny Room", "Demo Tape", &[]),
+                fresh("Glow Tape", "Second Light", &[]),
+            ],
+            &listener(),
+            &[],
+            &[],
+            &fans,
+        );
+        let titles: Vec<&str> = ranked.iter().map(|(r, _)| r.title.as_str()).collect();
+        assert_eq!(titles, ["Second Light", "Moths", "Demo Tape"]);
+        assert!(
+            ranked[1].1.is_none(),
+            "a fan artist's release isn't \"fresh from an artist you like\""
+        );
+    }
+
+    #[test]
+    fn a_liked_artists_release_nobody_shares_yet_is_shown_and_an_unanswered_one_isnt() {
+        let shelf = |liked, available| Shelved {
+            id: AlbumId::of("Glow Tape", &format!("{liked} {available:?}")),
+            artist: "Glow Tape".into(),
+            title: format!("{liked} {available:?}"),
+            liked,
+            saved: false,
+            available,
+        };
+        let shelf = vec![
+            shelf(true, Some(false)),
+            shelf(true, None),
+            shelf(false, Some(false)),
+            shelf(false, Some(true)),
+        ];
+        assert_eq!(shown(&shelf), [shelf[0].id.clone(), shelf[3].id.clone()]);
     }
 
     #[test]
@@ -1412,11 +1597,22 @@ mod tests {
     #[test]
     fn a_pick_says_where_it_plays_and_none_only_when_every_source_checked_has_none() {
         let v = |s, y| super::verdict(s, y);
-        assert_eq!(v(Some(true), Some(true)), (vec!["soulseek".into(), "youtube".into()], false));
+        assert_eq!(
+            v(Some(true), Some(true)),
+            (vec!["soulseek".into(), "youtube".into()], false)
+        );
         assert_eq!(v(Some(false), Some(true)), (vec!["youtube".into()], false));
         assert_eq!(v(Some(false), Some(false)), (vec![], true));
-        assert_eq!(v(Some(false), None), (vec![], true), "YouTube off: Soulseek's answer stands");
-        assert_eq!(v(None, None), (vec![], false), "nobody could say: no mark, no Search again");
+        assert_eq!(
+            v(Some(false), None),
+            (vec![], true),
+            "YouTube off: Soulseek's answer stands"
+        );
+        assert_eq!(
+            v(None, None),
+            (vec![], false),
+            "nobody could say: no mark, no Search again"
+        );
     }
 
     #[test]

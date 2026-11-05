@@ -471,7 +471,7 @@ pub(crate) fn checked(id: String, prefix: &str) -> Result<String> {
 }
 
 /// Unix seconds to YYYY-MM-DD (UTC), by Howard Hinnant's civil-from-days.
-fn iso_date(unix: i64) -> String {
+pub(crate) fn iso_date(unix: i64) -> String {
     let z = unix.div_euclid(86_400) + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z - era * 146_097;

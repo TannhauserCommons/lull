@@ -304,7 +304,8 @@ impl Taste {
             .into_iter()
             .map(|(id, (name, weight))| Weighted { id, name, weight })
             .collect();
-        artists.sort_by(|a, b| b.weight.total_cmp(&a.weight));
+        // Ties by name, so the same signals always make the same profile (and the same picks).
+        artists.sort_by(|a, b| b.weight.total_cmp(&a.weight).then_with(|| a.name.cmp(&b.name)));
         let mut tags: Vec<(String, f64)> = tags.into_iter().collect();
         tags.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
         let known = s.plays.iter().map(|p| &p.track).chain(s.likes.iter().map(|m| &m.track));

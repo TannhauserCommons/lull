@@ -286,7 +286,7 @@ const routes = [
     // where the first picks can play from, as the hub's checks found (one with no copy anywhere)
     if (shape === 'avail') {
       const marks = [{ avail: ['soulseek'] }, { avail: ['soulseek', 'youtube'] }, { avail: ['youtube'] }, { noSource: true }];
-      return { ...feed, picks: feed.picks.map((p, i) => ({ ...p, ...(marks[i] || {}) })) };
+      return { ...feed, picks: feed.picks.map((p, i) => ({ ...p, ...(marks[i] || {}) })), unshared: feed.newReleases.slice(0, 1) };
     }
     // each followed tag with the tags that come with it on this month's releases ("you might like")
     if (shape === 'related') {

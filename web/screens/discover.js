@@ -194,7 +194,8 @@
     if (issue) return html`${head}${issue}`;
     var albums = list(feed, 'newReleases').filter(function (id) { return M.album(id); });
     if (!albums.length) return emptyLine('new', 'new releases', 'Nothing new from artists you follow yet.');
-    return html`${head}<div class="shelf disc-shelf${more ? ' disc-shelf--grid' : ''}">${albums.map(function (id) { return ui.releaseTile(id); })}</div>`;
+    var unshared = list(feed, 'unshared');
+    return html`${head}<div class="shelf disc-shelf${more ? ' disc-shelf--grid' : ''}">${albums.map(function (id) { return ui.releaseTile(id, unshared.indexOf(id) >= 0 ? { mark: html`<span class="rel-unshared">Not shared yet</span>` } : null); })}</div>`;
   }
 
   function seedArt(seed, px) {

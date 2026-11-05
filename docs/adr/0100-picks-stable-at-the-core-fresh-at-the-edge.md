@@ -60,12 +60,12 @@ The full notes are kept with the work that led here.
 | Listener | Event | Now | Before (main's rules) |
 |---|---|---|---|
 | Steady, one genre | Next automatic build | 50% of picks change; seed shift 0.000; 3 edge picks | Seeds the same every build |
-| Wide, eclectic | 7 days of builds | 9 seed artists over the week; 50% turnover | 4 seed artists every build |
+| Wide, eclectic | 7 days of builds | 8 seed artists over the week; 50% turnover | 4 seed artists every build |
 | Binges a new artist | One day of 40 plays | Seed shift 0.000; the artist doesn't seed | Seed shift 0.200 |
 | Binges a new artist | 3 such days | It starts to seed (about 1% of draws) | n/a |
 | One stray play, unusual genre | Next build | Seed shift 0.000 | 0.000 |
 | New listener | Nothing / a library | Starter tags / library artists seed | Starter tags / starter tags |
-| Back after 4 months | First day back | Seed shift 0.012; the library and follows still seed | n/a |
+| Back after 4 months | First day back | Seed shift 0.000; the library and follows still seed | n/a |
 | Back after 4 months | A week | The new listening leads | n/a |
 | Heavy skipper (60% skips) | A month | 12 picks; held back only after skips on 2+ days | n/a |
 

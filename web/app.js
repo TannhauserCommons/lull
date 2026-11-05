@@ -1428,7 +1428,7 @@
         <button class="tile__play" data-act="play-album" data-id="${album.id}" aria-label="Play ${album.title}" data-tip="Play">${icon('play')}</button></div>
       <div class="tile__title"><a href="#/album/${album.id}" data-place-at>${ui.placeMark(key)}${album.title}</a></div>
       <div class="tile__by"><a href="#/artist/${album.artistId}">${album.artist}</a></div>
-      <div class="tile__meta">${album.isNew && opts.showNew !== false ? ui.newBadge() : ''}<span>${album.type.toLowerCase()}${album.released ? ', ' + fmtDate(album.released) : ''}</span></div>
+      <div class="tile__meta">${album.isNew && opts.showNew !== false ? ui.newBadge() : ''}<span>${album.type.toLowerCase()}${album.released ? ', ' + fmtDate(album.released) : ''}</span>${opts.mark || ''}</div>
     </div>`;
   };
 

@@ -83,7 +83,7 @@ pub fn choose_seeds(
         .seed_artists(SEED_POOL)
         .map(|a| (a, a.weight * fared.factor("artist", &a.id.0)))
         .collect();
-    artists.sort_by(|a, b| b.1.total_cmp(&a.1));
+    artists.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.name.cmp(&b.0.name)));
     let rest = artists.split_off(CORE_ARTISTS.min(artists.len()));
     let mut out = Seeds {
         artists: artists
@@ -107,14 +107,14 @@ pub fn choose_seeds(
             )
         })
         .collect();
-    tags.sort_by(|a, b| b.1.total_cmp(&a.1));
+    tags.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     let mut dug: Vec<(String, f64)> = taste
         .dig_tags()
         .filter(|(t, _)| !followed.contains(t))
         .take(SEED_POOL)
         .map(|(t, w)| (t.clone(), w * fared.factor("tag", t)))
         .collect();
-    dug.sort_by(|a, b| b.1.total_cmp(&a.1));
+    dug.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     tags.extend(dug);
     let rest = tags.split_off(CORE_TAGS.min(tags.len()));
     out.tags = tags.into_iter().map(|(t, _)| (t, false)).collect();
