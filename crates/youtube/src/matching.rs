@@ -114,9 +114,19 @@ impl Wanted {
         }
     }
 
-    /// The words to search YouTube for.
+    /// The words to search YouTube's videos for.
     pub fn query(track: &Track) -> String {
         format!("{} {}", track.artist, track.title)
+    }
+
+    /// The words to search YouTube Music's songs for: the artist's name quoted, so it is read as
+    /// one name. Unquoted, "Germany Germany LENA" is the country and the singer Lena, and the
+    /// song is not among the songs playback looks at. Quoted, 46 of 47 songs were found where
+    /// playback looks, against 45 (2026-11-05; the miss is on YouTube Music under no name).
+    /// Videos keep the plain words: fans spell names their own way, and quoting there was no
+    /// better.
+    pub fn music_query(track: &Track) -> String {
+        format!("\"{}\" {}", track.artist.replace('"', ""), track.title)
     }
 }
 
@@ -809,5 +819,71 @@ mod tests {
             "{:?}",
             plays.first()
         );
+    }
+
+    /// An upload as its full extraction reads: YouTube's music metadata on official audio.
+    fn extracted(title: &str, channel: &str, artist: &str, duration: u32) -> Candidate {
+        Candidate {
+            track: Some(title.into()),
+            artists: vec![artist.into()],
+            ..upload(title, channel, duration)
+        }
+    }
+
+    #[test]
+    fn a_song_named_like_a_famous_namesake_plays_only_its_own_upload() {
+        // Germany Germany's "LENA" (Electrolove, 2:41 at Apple). The Topic upload as yt-dlp
+        // extracted it on 2026-11-05; the namesakes are the uploads YouTube's searches offered.
+        let lena = song("Germany Germany", "LENA", "Electrolove", 161);
+        let topic = extracted("LENA", "Germany Germany - Topic", "Germany Germany", 162);
+        assert!(topic.official(&lena));
+        assert!(judge(&lena, &topic, Match::Official).is_some(), "its own Topic upload");
+        let namesakes = [
+            // Same title, another artist, even at nearly the same length.
+            extracted("Lena", "Malte Wilsen - Topic", "Malte Wilsen", 165),
+            extracted("Lena", "Mike Rain - Topic", "Mike Rain", 170),
+            upload(
+                "Lena - Satellite - Germany 🇩🇪 Official Music Video - Eurovision 2010",
+                "Eurovision Song Contest",
+                182,
+            ),
+            upload("Lena - Happy  (The Voice Kids )", "LenaBig Fan", 100),
+        ];
+        for c in &namesakes {
+            assert!(judge(&lena, c, Match::Loose).is_none(), "{c:?}");
+        }
+        // A fan's re-upload of the song itself, but another cut: refused at any strictness.
+        let recut = upload("Germany Germany - LENA", "synthwave archive", 190);
+        assert!(judge(&lena, &recut, Match::Loose).is_none());
+        let found: Vec<Candidate> = namesakes.iter().cloned().chain([recut, topic]).collect();
+        let plays = ranked(&lena, &found, Match::Close);
+        assert_eq!(
+            plays.iter().map(|c| c.channel.as_str()).collect::<Vec<_>>(),
+            ["Germany Germany - Topic"]
+        );
+    }
+
+    #[test]
+    fn youtube_music_is_asked_for_the_artists_name_as_one_phrase() {
+        // "Germany Germany LENA" reads to YouTube as the country and the singer Lena: on
+        // 2026-11-05 neither its five YouTube Music songs nor its eight videos held the song.
+        // With the name quoted, YouTube Music's first song is it. Videos keep the plain words.
+        let track = Track {
+            id: TrackId("t".into()),
+            title: "LENA".into(),
+            artist_id: ArtistId("a".into()),
+            artist: "Germany Germany".into(),
+            album_id: AlbumId("al".into()),
+            album: "Electrolove".into(),
+            year: None,
+            no: None,
+            disc: None,
+            duration: Some(161),
+            tags: vec![],
+            saved: false,
+            file: None,
+        };
+        assert_eq!(Wanted::music_query(&track), "\"Germany Germany\" LENA");
+        assert_eq!(Wanted::query(&track), "Germany Germany LENA");
     }
 }

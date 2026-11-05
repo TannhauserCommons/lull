@@ -90,7 +90,8 @@ fn strictness_key(m: Match) -> &'static str {
 pub async fn search(svc: &Service, track: &Track, strictness: Match) -> Result<Option<Matched>, Problem> {
     let wanted = Wanted::of(track);
     let query = Wanted::query(track);
-    let mut songs = reqwest::Url::parse_with_params("https://music.youtube.com/search", [("q", query.as_str())])
+    let music_query = Wanted::music_query(track);
+    let mut songs = reqwest::Url::parse_with_params("https://music.youtube.com/search", [("q", music_query.as_str())])
         .map_err(|e| Problem::Other(format!("search address: {e}")))?;
     songs.set_fragment(Some("songs"));
     let listed = flat(svc, songs.as_str(), MUSIC_RESULTS).await?;

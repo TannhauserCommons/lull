@@ -53,7 +53,7 @@ A YouTube copy's chip is its own: `YouTube · Opus 160`, `YouTube · AAC 128` (`
 
 `find` remembers its answer per song and strictness in `youtube_matches` (a match for 30 days, no match for a day; a migration forgets the misses when the rules below find more). A match with no audio lull can stream is an error that says so, not a miss.
 
-1. **YouTube Music songs** for "artist title" (`music.youtube.com/search#songs`, first 5, no extraction): those whose title matches are extracted, at most 2, and judged on the full facts.
+1. **YouTube Music songs** for `"artist" title`, the name quoted so it reads as one name (unquoted, "Germany Germany LENA" was the country and the singer Lena, and the song wasn't among the 5) (`music.youtube.com/search#songs`, first 5, no extraction): those whose title matches are extracted, at most 2, and judged on the full facts.
 2. **Videos** (`ytsearch8:`, first 8 with channel and length): judged, best first; at most 2 extracted and judged again.
 
 An upload is the song when (`matching.rs`):
