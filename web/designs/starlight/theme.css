@@ -144,6 +144,7 @@
    check: --sl-ok on --sky 3                 check: --sl-warn on --sky 3
    check: --sl-down on --sky 3               check: --edge on --sl-wash-1 3
    field errors: check: --sl-down-on-cream on --cream 4.5     check: --sl-down-on-cream on --cream-2 4.5     check: --sl-down on --sky 4.5
+   danger key: check: --cream on --sl-down-on-cream 4.5     check: #f2e3d1 on #8c2a44 4.5
    check: --fg-sky-2 on --sky-deep 4.5       check: --link on --sl-wash-1 4.5
    check: --link on --sky 4.5                check: --fg-sky-2 on --sky 4.5
    toast (a scrap of night sky in both themes):
@@ -297,6 +298,13 @@
 }
 :root[data-design="starlight"] .btn--primary:hover { background: #33447d; }
 :root[data-design="starlight"] .btn--primary:active { box-shadow: 0 2px 0 -1.5px var(--stack-1), 0 2px 0 0 var(--line); }
+:root[data-design="starlight"] .btn--danger:not(:disabled) {   /* a confirm's main action, when it deletes: the primary's print, in the error ink */
+  background: var(--sl-down-on-cream); color: var(--cream); border-color: var(--ink);
+  box-shadow: 0 4px 0 -1.5px var(--stack-1), 0 4px 0 0 var(--line); margin-bottom: 4px;
+}
+:root[data-design="starlight"] .btn--danger:not(:disabled):hover { background: #8c2a44; }
+:root[data-design="starlight"] .btn--danger:not(:disabled):active { transform: translateY(2px); box-shadow: 0 2px 0 -1.5px var(--stack-1), 0 2px 0 0 var(--line); }
+:root[data-design="starlight"][data-motion="reduce"] .btn--danger:not(:disabled):active { transform: none; }
 :root[data-design="starlight"] .btn[aria-pressed="true"]:not(.btn--primary) { background: var(--sl-chip); color: var(--ink); border-color: var(--line); }
 :root[data-design="starlight"] .btn-icon { border-width: var(--stroke); }
 :root[data-design="starlight"] .btn-icon[aria-pressed="true"]::after { bottom: 1px; }
@@ -1185,6 +1193,7 @@
 :root[data-design="starlight"] :is(.popover, .menu) { border-width: var(--stroke); border-radius: var(--r-card); }
 :root[data-design="starlight"] .menu__item { font: 400 .9375rem/1.2 var(--f-ui); border-radius: var(--r-thumb); }
 :root[data-design="starlight"] .menu__item .ic { color: var(--sl-icon); }
+:root[data-design="starlight"] .menu__item--danger, :root[data-design="starlight"] .menu__item--danger .ic { color: var(--sl-down); }   /* not the periwinkle a reason chip's ink became */
 :root[data-design="starlight"] .menu__sep { background: var(--divider); }
 :root[data-design="starlight"] .popover__head { font: 400 .75rem/1.3 var(--f-px); letter-spacing: .14em; text-transform: uppercase; }
 :root[data-design="starlight"] .toast {
