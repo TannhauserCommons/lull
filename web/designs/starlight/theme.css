@@ -21,8 +21,7 @@
 @font-face { font-family: "DM Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url("assets/fonts/dmmono-400-latin.woff2") format("woff2"); }
 @font-face { font-family: "DM Mono"; font-style: normal; font-weight: 500; font-display: swap; src: url("assets/fonts/dmmono-500-latin.woff2") format("woff2"); }
 
-/* animatable lengths: the scroll fade of the rail and the queue, the hero stack dealing in */
-@property --sl-fade { syntax: "<length>"; inherits: false; initial-value: 0px; }
+/* animatable lengths: the hero stack dealing in */
 @property --sl-o1 { syntax: "<length>"; inherits: true; initial-value: 7px; }
 @property --sl-o2 { syntax: "<length>"; inherits: true; initial-value: 14px; }
 
@@ -499,17 +498,15 @@
   }
   :root[data-design="starlight"] .nav-item .badge-count { letter-spacing: 0; }
 }
-/* the scroller fades at the bottom only while there is more below (scroll-driven; no fade where unsupported),
-   and rows snap so a playlist is either whole or clearly behind the fade */
+/* the scroller fades into the sky at its foot, and keeps the fade's depth as room after its last row: while there is
+   more below, rows fade out there; at the end the last one rests whole above it. Painted once: no scroll-driven
+   animation, which (animating the mask's length) the main thread had to sample at every frame the stars drew. Rows
+   snap so a playlist is either whole or clearly behind the fade */
 :root[data-design="starlight"] :is(.rail__scroll, .ctx__body) {
-  --sl-fade: 0px;
+  --sl-fade: 40px; padding-bottom: var(--sl-fade); scroll-padding-bottom: var(--sl-fade);
   -webkit-mask: linear-gradient(180deg, #000 calc(100% - var(--sl-fade)), transparent); mask: linear-gradient(180deg, #000 calc(100% - var(--sl-fade)), transparent);
 }
-@supports (animation-timeline: scroll()) {
-  :root[data-design="starlight"] :is(.rail__scroll, .ctx__body) { animation: sl-more-below linear both; animation-timeline: scroll(self); }
-}
-@keyframes sl-more-below { 0%, 92% { --sl-fade: 40px; } 100% { --sl-fade: 0px; } }
-:root[data-design="starlight"] .rail__scroll { padding-bottom: 12px; scroll-snap-type: y proximity; scroll-padding-bottom: 12px; }
+:root[data-design="starlight"] .rail__scroll { scroll-snap-type: y proximity; }
 :root[data-design="starlight"] .rail__list > li { scroll-snap-align: end; }
 :root[data-design="starlight"] .rail__section { padding: 12px 10px 2px 12px; }
 :root[data-design="starlight"] .rail__section .label-rule { --rule: color-mix(in srgb, var(--edge) 60%, transparent); }
@@ -572,7 +569,7 @@
    so the panel never ends mid-row
    ===================================================================== */
 :root[data-design="starlight"] .ctx__head { gap: 6px; padding: 18px 14px 6px 18px; }
-:root[data-design="starlight"] .ctx__body { padding: 8px 14px 16px; }
+:root[data-design="starlight"] .ctx__body { padding: 8px 14px var(--sl-fade); }
 :root[data-design="starlight"] .ctx .label-rule { margin-top: 10px; }
 :root[data-design="starlight"] .now-q__from { margin: 4px 4px 10px; font: 400 .6875rem/1.4 var(--f-px); letter-spacing: .12em; text-transform: uppercase; color: var(--fg-2); }
 :root[data-design="starlight"] .now-q__from b { font-weight: 500; color: var(--fg); }
