@@ -1,0 +1,58 @@
+name: slskd-windows-publish
+# Builds lull's slskd for Windows (slskd-windows, ADR-0062) and attaches the zips to a pre-release, slskd-<build>,
+# where app/build.rs downloads them. Run by hand on main only; it refuses a release that exists. Its own workflow,
+# never called: it needs to write, and the queue (which calls slskd-windows) grants only read.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/slskd-windows.yml
+    with:
+      ref: ${{ github.sha }}
+
+  publish:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: slskd-windows
+          path: zips
+      # Never mistaken for a lull release: the tag is outside v* (F-Droid, the release scripts), it is a pre-release
+      # and not latest (the updater reads releases/latest), and its page says what it is. AGPL: it names the source
+      # and shows the patch.
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD: ${{ needs.build.outputs.build }}
+        run: |
+          tag=$(sed -n 's/^UPSTREAM_TAG=//p' app/slskd/build.sh)
+          commit=$(sed -n 's/^UPSTREAM_COMMIT=//p' app/slskd/build.sh)
+          here="https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_SHA"
+          {
+            echo "**Not a lull release.** This is slskd $tag, a program lull's Windows app bundles, with one line changed by lull. Get lull itself from its own releases (tagged v*)."
+            echo
+            echo "**What changed:** slskd opens the file it is downloading so that others may read it while it arrives (FileShare.Read, where slskd has FileShare.None). Writing it stays slskd's alone. Without this, Windows stops lull streaming a song while slskd downloads it. Nothing else differs."
+            echo
+            echo "**Source** (slskd is AGPL-3.0):"
+            echo "- slskd's own source at tag [$tag](https://github.com/slskd/slskd/tree/$tag), commit $commit"
+            echo "- lull's patch: [app/slskd/share-for-reading.patch]($here/app/slskd/share-for-reading.patch), shown below"
+            echo "- how it is built: [app/slskd/build.sh]($here/app/slskd/build.sh), run by this repository's slskd-windows workflow, which builds twice and checks both give these bytes"
+            echo
+            echo "Each zip holds slskd.exe, slskd's LICENSE, a NOTICE of the change and the patch. lull's Windows app downloads them when it is built, checked by sha256 (app/build.rs)."
+            echo
+            echo "~~~diff"
+            cat app/slskd/share-for-reading.patch
+            echo "~~~"
+          } > notes.md
+          gh release create "slskd-$BUILD" zips/slskd-*.zip \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --latest=false \
+            --title "slskd $BUILD: a component of lull's Windows app, not a lull release" \
+            --notes-file notes.md

@@ -1,21 +1,21 @@
 name: slskd-windows
 # lull's slskd for Windows (ADR-0062): app/slskd/build.sh, run twice in different folders, must give the same
-# bytes, and the bytes app/build.rs pins once it pins this build. The queue runs it when the recipe or the pin
-# changes. Run by hand on main with `publish`, it attaches the zips to a pre-release, slskd-<build>, where
-# app/build.rs downloads them; pre-release, so the app's updater (releases/latest) never sees it.
+# bytes, and the bytes app/build.rs pins once it pins this build. The slskd contract calls it when the recipe or
+# the pin changes; slskd-windows-publish calls it before attaching the zips to a release. Read-only on purpose:
+# the queue calls it, and a called workflow may ask for no more than its caller grants, checked before any job
+# is skipped (one asking for write here stopped every queue run).
 on:
   workflow_dispatch:
-    inputs:
-      publish:
-        description: Attach the zips to the slskd-<build> pre-release (main only; refuses one that exists)
-        type: boolean
-        default: false
   workflow_call:
     inputs:
       ref:
         description: The commit to check
         type: string
         required: true
+    outputs:
+      build:
+        description: The build's name, such as 0.26.2-lull.1
+        value: ${{ jobs.build.outputs.build }}
 
 permissions:
   contents: read
@@ -59,46 +59,3 @@ jobs:
           name: slskd-windows
           path: ${{ runner.temp }}/first/slskd-*.zip
           retention-days: 7
-
-  publish:
-    needs: build
-    if: github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v4
-        with:
-          name: slskd-windows
-          path: zips
-      # Never mistaken for a lull release: the tag is outside v* (F-Droid, the release scripts), it is a pre-release
-      # and not latest (the updater reads releases/latest), and its page says what it is. AGPL: it names the source
-      # and shows the patch.
-      - env:
-          GH_TOKEN: ${{ github.token }}
-          BUILD: ${{ needs.build.outputs.build }}
-        run: |
-          tag=$(sed -n 's/^UPSTREAM_TAG=//p' app/slskd/build.sh)
-          commit=$(sed -n 's/^UPSTREAM_COMMIT=//p' app/slskd/build.sh)
-          here="https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_SHA"
-          {
-            echo "**Not a lull release.** This is slskd $tag, a program lull's Windows app bundles, with one line changed by lull. Get lull itself from its own releases (tagged v*)."
-            echo
-            echo "**What changed:** slskd opens the file it is downloading so that others may read it while it arrives (FileShare.Read, where slskd has FileShare.None). Writing it stays slskd's alone. Without this, Windows stops lull streaming a song while slskd downloads it. Nothing else differs."
-            echo
-            echo "**Source** (slskd is AGPL-3.0):"
-            echo "- slskd's own source at tag [$tag](https://github.com/slskd/slskd/tree/$tag), commit $commit"
-            echo "- lull's patch: [app/slskd/share-for-reading.patch]($here/app/slskd/share-for-reading.patch), shown below"
-            echo "- how it is built: [app/slskd/build.sh]($here/app/slskd/build.sh), run by this repository's slskd-windows workflow, which builds twice and checks both give these bytes"
-            echo
-            echo "Each zip holds slskd.exe, slskd's LICENSE, a NOTICE of the change and the patch. lull's Windows app downloads them when it is built, checked by sha256 (app/build.rs)."
-            echo
-            echo "~~~diff"
-            cat app/slskd/share-for-reading.patch
-            echo "~~~"
-          } > notes.md
-          gh release create "slskd-$BUILD" zips/slskd-*.zip \
-            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --latest=false \
-            --title "slskd $BUILD: a component of lull's Windows app, not a lull release" \
-            --notes-file notes.md
