@@ -1,0 +1,46 @@
+name: ui-browsers
+description: >-
+  Playwright's browsers and the system packages they need (and any others asked for), from the Actions cache when it
+  has them. A runner's Ubuntu mirror can be slow: on 2026-11-04 one fetched these 114 MB at 78 kB/s for 24 minutes, and
+  its gates job ran out of time before a test. Only main's runs save (the queue runs there); other refs read main's.
+inputs:
+  browsers:
+    description: Playwright's browsers, e.g. "chromium webkit"
+    required: true
+  packages:
+    description: Other Ubuntu packages to install with them
+    default: ""
+runs:
+  using: composite
+  steps:
+    # apt keeps what it downloads in a folder the cache can read and restore (its own is root's).
+    - shell: bash
+      run: |
+        mkdir -p "$HOME/apt-cache/partial"
+        sudo chown _apt "$HOME/apt-cache/partial"
+        printf 'Dir::Cache::Archives "%s/apt-cache";\nAPT::Keep-Downloaded-Packages "true";\n' "$HOME" \
+          | sudo tee /etc/apt/apt.conf.d/99-ui-browsers-cache >/dev/null
+    - id: cache
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          ~/apt-cache/*.deb
+          ~/.cache/ms-playwright
+        key: ui-browsers-${{ runner.os }}-${{ runner.arch }}-${{ inputs.browsers }}-${{ inputs.packages }}-${{ hashFiles('tests/ui/package-lock.json') }}
+        restore-keys: ui-browsers-${{ runner.os }}-${{ runner.arch }}-${{ inputs.browsers }}-${{ inputs.packages }}-
+    - shell: bash
+      working-directory: tests/ui
+      env:
+        BROWSERS: ${{ inputs.browsers }}
+        PACKAGES: ${{ inputs.packages }}
+      run: |
+        # shellcheck disable=SC2086
+        npx playwright install --with-deps $BROWSERS
+        if [ -n "$PACKAGES" ]; then sudo apt-get install -y $PACKAGES; fi
+    - if: steps.cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          ~/apt-cache/*.deb
+          ~/.cache/ms-playwright
+        key: ${{ steps.cache.outputs.cache-primary-key }}

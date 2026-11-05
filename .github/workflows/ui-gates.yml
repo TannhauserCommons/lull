@@ -69,9 +69,10 @@ jobs:
       - name: Webamp and the QR encoder (Classic mode, pairing)
         run: sh scripts/vendor-web.sh
       - working-directory: tests/ui
-        run: |
-          npm ci --no-audit --no-fund
-          npx playwright install --with-deps ${{ matrix.browsers }}
+        run: npm ci --no-audit --no-fund
+      - uses: ./.github/actions/ui-browsers
+        with:
+          browsers: ${{ matrix.browsers }}
 
       - id: mode
         name: Compare or capture

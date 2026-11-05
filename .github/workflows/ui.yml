@@ -82,11 +82,12 @@ jobs:
           tags: lull:ui
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - working-directory: tests/ui
-        run: |
-          npm ci --no-audit --no-fund
-          npx playwright install --with-deps chromium
+        run: npm ci --no-audit --no-fund
+      - uses: ./.github/actions/ui-browsers
+        with:
+          browsers: chromium
+          packages: ffmpeg
 
       - name: Start the hub on a fixture library and a stub slskd
         working-directory: tests/ui
