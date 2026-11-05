@@ -1,7 +1,6 @@
 {
   "id": "glass-playerbar",
   "name": "Glass player bar",
-  "author": "lull",
   "api": 1,
   "extends": "lull",
   "shell": "rail",

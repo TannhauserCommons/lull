@@ -28,9 +28,11 @@ const MAX_ASSET_BYTES: usize = 4 * 1024 * 1024;
 const MAX_CSS_BYTES: usize = 1024 * 1024;
 const MAX_SLOT_BYTES: usize = 64 * 1024;
 const MAX_MANIFEST_BYTES: usize = 16 * 1024;
-/// The words a manifest shows a listener, at most this many characters each (docs/themes.md section 1). Theme
-/// Studio counts against the same numbers (`Designs.limits`, written from these by this crate's tests).
-pub const TEXT_LIMITS: [(&str, usize); 3] = [("name", 60), ("author", 60), ("description", 280)];
+/// The words a manifest shows a listener, at most this many characters each (docs/themes.md section 1): bounds
+/// against a manifest made to bloat every list it is in, far past any card. How much of it a screen shows is the
+/// screen's to decide (the picker card clips the description). Theme Studio checks the same numbers (`Designs.limits`,
+/// written from these by this crate's tests).
+pub const TEXT_LIMITS: [(&str, usize); 3] = [("name", 200), ("author", 200), ("description", 2000)];
 /// Fonts, images, and the licence texts that come with fonts.
 const ASSET_TYPES: &[&str] = &[
     "woff2", "woff", "ttf", "otf", "png", "jpg", "jpeg", "gif", "webp", "avif", "svg", "txt",
@@ -902,22 +904,46 @@ mod tests {
             files
         };
         let words = |n: usize| "a ".repeat(n).chars().take(n).collect::<String>();
-        assert!(validate(&with("description", words(280)), Origin::Listener).is_ok());
+        assert!(validate(&with("description", words(2000)), Origin::Listener).is_ok());
         assert_eq!(
-            refused(&with("description", words(281))),
-            "theme.json: description is 281 characters, at most 280"
+            refused(&with("description", words(2001))),
+            "theme.json: description is 2001 characters, at most 2000"
         );
         assert_eq!(
-            refused(&with("author", words(61))),
-            "theme.json: author is 61 characters, at most 60"
+            refused(&with("author", words(201))),
+            "theme.json: author is 201 characters, at most 200"
         );
         assert_eq!(
-            refused(&with("name", "é".repeat(61))),
-            "theme.json: name is 61 characters, at most 60"
+            refused(&with("name", "é".repeat(201))),
+            "theme.json: name is 201 characters, at most 200"
         );
         assert_eq!(
             refused(&with("name", " ".into())),
             "theme.json: name is empty; a theme has a name"
+        );
+    }
+
+    #[test]
+    fn a_listeners_theme_copied_from_a_built_in_with_a_long_description_imports_as_it_is() {
+        // a friend's theme, begun from a copy of a built-in design's folder: lull's name as its author, the hub's
+        // own `slots` list, and a description of two full sentences, longer than the picker card shows
+        let description = format!(
+            "{} {}",
+            "a day sentence ".repeat(7).trim(),
+            "and a night one ".repeat(7).trim()
+        );
+        let manifest = serde_json::json!({
+            "id": "friends", "name": "Friend's", "author": "lull", "api": 1, "extends": null, "shell": "rail",
+            "swatches": ["#f8b2d3", "#fff3f9", "#e0337f", "#2a1031"], "modes": ["day", "night"],
+            "description": description, "slots": ["brand"],
+        });
+        let mut files = package("", &[("brand", "<b>Friend's</b>")]);
+        files.insert("theme.json".into(), manifest.to_string().into_bytes());
+        assert!(description.chars().count() > 200);
+        let checked = validate(&files, Origin::Listener);
+        assert!(
+            checked.as_ref().is_ok_and(|m| m.description == description),
+            "{checked:?}"
         );
     }
 

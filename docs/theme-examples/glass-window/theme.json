@@ -1,7 +1,6 @@
 {
   "id": "glass-window",
   "name": "Glass window",
-  "author": "lull",
   "api": 1,
   "extends": "lull",
   "shell": "rail",

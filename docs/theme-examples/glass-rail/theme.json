@@ -1,7 +1,6 @@
 {
   "id": "glass-rail",
   "name": "Glass rail",
-  "author": "lull",
   "api": 1,
   "extends": "lull",
   "shell": "rail",

@@ -106,7 +106,7 @@
         <div class="sys-row__text"><span class="sys-row__label">Your themes</span><span class="sys-row__help">Stored on your hub, so every device can use them. Drop a .lulltheme file here to add one, or make one in Theme Studio.</span></div>
         <div class="sys-row__ctl">${mine.length ? html`<ul class="sys-themes__list" role="list">${mine.map(function (n) {
           var d = App.designs[n];
-          return html`<li class="sys-themes__item"><span class="sys-themes__name">${d.label}</span><span class="sys-themes__meta">${d.extends ? 'on ' + App.designs[d.extends].label : 'from scratch'}${d.author ? ', by ' + d.author : ''}</span>
+          return html`<li class="sys-themes__item"><span class="sys-themes__name">${d.label}</span><span class="sys-themes__meta">${d.extends ? 'on ' + App.designs[d.extends].label : 'from scratch'}${d.author ? ', by ' + d.author : ''}</span>${d.description ? html`<span class="sys-themes__desc">${d.description}</span>` : ''}
             <span class="sys-themes__acts"><button class="btn btn--sm btn--quiet" data-act="theme-edit" data-id="${n}">${icon('edit', null, 'ic-16')}Edit</button><a class="btn btn--sm btn--quiet" href="${'api/themes/' + n + '.lulltheme'}" download="${n + '.lulltheme'}">${icon('export', null, 'ic-16')}Export</a><button class="btn-icon btn-icon--sm btn-icon--bare" data-act="theme-delete" data-id="${n}" aria-label="${'Delete ' + d.label}" data-tip="Delete">${icon('trash', null, 'ic-16')}</button></span></li>`;
         })}</ul>` : ''}
           <div class="cluster"><button class="btn btn--primary btn--sm" data-act="theme-studio">${icon('sparkle', null, 'ic-16')}Open Theme Studio</button>

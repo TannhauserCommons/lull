@@ -23,7 +23,7 @@
   /* the product name: every shipped string (titles, brand link names, copy) reads it from here */
   D.product = 'lull';
   D.API = 1;                                     // the theme API this build speaks (docs/themes.md, versioning)
-  D.limits = { name: 60, author: 60, description: 280 };  // characters, as the hub checks them (crates/themes)
+  D.limits = { name: 200, author: 200, description: 2000 };  // characters, as the hub checks them (crates/themes)
   /* what the hub would refuse in a manifest's words, in its words ("description is 281 characters, at most 280"), or null:
      Theme Studio checks before it saves, so what it makes always imports */
   D.textProblem = function (m) {

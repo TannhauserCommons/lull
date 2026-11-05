@@ -32,15 +32,15 @@ A folder, or a `.lulltheme` file (a zip of that folder):
 ```
 
 - `id`: 1-40 lowercase letters, digits and dashes; not a built-in design's name.
-- `name`: 1-60 characters, the card's title. `author` (optional): at most 60 characters.
+- `name`: the card's title. `author` (optional): your name. A theme begun from a copy of a built-in design still says `lull` until you change it, and Theme Studio leaves it for you to sign.
 - `api`: the theme API version you wrote for (section 9). Today it is `1`.
 - `extends`: a built-in design (`lull`, `skydeck`, `starlight`, `petal`, `glasshouse`) whose CSS and slots load first, or `null` to start from the base look alone.
 - `shell`: the layout on desktop and tablet: `rail` (a side menu), `topnav` (pills in the header) or `dock`. Phones always use the tab bar.
 - `swatches`: page, surface, accent and ink colours (`#rrggbb`) for the sketch on the picker card in Settings › Appearance, shown until the card has its picture.
 - `modes`: `["day", "night"]`, or just one. A one-mode theme ignores the day/night switch.
-- Optional: `description`, at most 280 characters, `preview` (true when you made the picker card's pictures yourself, `assets/preview-day.webp` and `-night.webp`, 320×200; without them lull makes them from your theme, ADR-0080), `coverVariety` (section 5), `window` (a see-through window in the desktop app, section 12). The hub fills in `slots` itself.
+- Optional: `description`, `preview` (true when you made the picker card's pictures yourself, `assets/preview-day.webp` and `-night.webp`, 320×200; without them lull makes them from your theme, ADR-0080), `coverVariety` (section 5), `window` (a see-through window in the desktop app, section 12). The hub fills in `slots` itself.
 
-**How long the words may be.** The picker card shows the name on one line and the first two lines of the description, and clips the rest with an ellipsis; Theme Studio and screen readers have the whole of it. So the description is a blurb, a sentence for the theme by day and one by night, and 280 characters holds that with room to spare. The limits keep a package's words a card's words, not a page; the hub refuses a package over any of them and says which field and by how much (`theme.json: description is 318 characters, at most 280`). Theme Studio counts each one while you type and won't save or export past it.
+**How long the words may be.** As long as they need to be: each screen shows what fits. The picker card shows the name and the first two lines of the description, and clips the rest with an ellipsis; Your themes, Theme Studio and screen readers have all of it. Theme Studio tells you when the card will clip the description; that is a hint, never a reason not to save. The hub refuses only text no theme needs, a guard against a manifest made to bloat every list it is in: a name or author over 200 characters, a description over 2,000. It says which and by how much (`theme.json: description is 2001 characters, at most 2000`).
 
 **Before you share one,** check it as the hub's import does:
 

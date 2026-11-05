@@ -10,7 +10,8 @@
   padding: var(--sp-2) var(--sp-3); border: var(--stroke-thin) solid var(--divider); border-radius: var(--r-art);
 }
 .sys-themes__name { font: var(--t-row); }
-.sys-themes__meta { grid-column: 1; font: var(--t-meta); color: var(--fg-2); }
+.sys-themes__meta, .sys-themes__desc { grid-column: 1; font: var(--t-meta); color: var(--fg-2); }
+.sys-themes__desc { margin-top: 2px; }
 .sys-themes__acts { grid-column: 2; grid-row: 1 / span 2; display: flex; align-items: center; gap: var(--sp-1); }
 
 /* ---------- Theme Studio: a wide sheet, controls left, the two previews right ---------- */
@@ -23,8 +24,8 @@
 .studio__meta .field:first-child { grid-column: 1 / -1; }
 .studio__meta .field:nth-child(n + 4) { grid-column: 1 / -1; }
 .studio__label { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); }
-.studio__count { font: var(--t-meta); color: var(--fg-2); }
-.studio__count.is-over { font-weight: 800; color: var(--down); }
+.studio__count { font: var(--t-meta); font-weight: 800; color: var(--down); }
+.studio__count[hidden], .studio .field__help[hidden] { display: none; }
 .studio__meta .input[aria-invalid="true"] { border-color: var(--down); box-shadow: inset 0 0 0 1px var(--down); }
 .studio__tabs { width: 100%; }
 .studio__h { margin: 0 0 var(--sp-2); font: italic 800 .875rem/1.2 var(--f-ui); color: var(--fg-2); }

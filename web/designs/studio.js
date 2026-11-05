@@ -35,7 +35,7 @@
     var base = stored ? stored.extends : (App.designs[Designs.current].builtIn ? Designs.current : App.designs[Designs.current].extends) || Designs.fallback;
     S = { id: stored ? id : null, dirty: false, tab: 'tokens', route: 'home', phone: false, frames: [],
       draft: { name: stored ? stored.label : 'My ' + App.designs[base].label, extends: base, shell: stored ? stored.shell : App.designs[base].shell,
-        modes: stored ? stored.modes.slice() : ['day', 'night'], description: stored ? stored.description : '', author: stored ? stored.author : '', css: '',
+        modes: stored ? stored.modes.slice() : ['day', 'night'], description: stored ? stored.description : '', author: maker(stored), css: '',
         /* what Studio doesn't edit stays as the theme has it */
         coverVariety: !!(stored && stored.coverVariety), window: stored ? stored.window : null } };
     var sheet = App.openSheet({ title: 'Theme Studio', wide: true, className: 'studio-sheet', body: studioBody(), foot: studioFoot(),
@@ -43,7 +43,7 @@
         el.style.width = 'min(1600px, 100%)'; el.style.maxWidth = 'none'; el.style.height = 'min(940px, calc(100dvh - 24px))';
         S.el = el; mountStudio();
       },
-      onClose: function () { S = null; } });
+      onClose: function () { S = null; if (probe) probe.remove(); } });
     S.close = sheet.close;
     if (stored) {
       M.api('/api/themes/' + encodeURIComponent(id) + '/theme.css').then(function (css) { setCss(css, false); })
@@ -57,7 +57,7 @@
       <div class="studio__side">
         <div class="studio__meta">
           ${text('name', 'Name', d.name)}
-          ${text('author', 'By', d.author)}
+          ${text('author', 'By', d.author, 'Your name')}
           <label class="field"><span class="field__label">Start from</span><select class="input" data-studio="extends">${Designs.builtIn.map(function (n) {
             return html`<option value="${n}" ${n === d.extends ? raw('selected') : ''}>${App.designs[n].label}</option>`;
           })}<option value="" ${!d.extends ? raw('selected') : ''}>Nothing (base tokens only)</option></select></label>
@@ -88,19 +88,43 @@
       </div>
     </div>`;
   }
-  /* a manifest text with its count against the hub's limit beside the label (no maxlength: a paste is never cut short) */
-  function text(key, label, value) {
+  /* who made a listener's theme: lull made only the built-in designs, so a theme begun from a copy of one, which still
+     says lull, is the listener's to sign */
+  function maker(stored) {
+    var a = stored ? stored.author || '' : '';
+    return a.trim().toLowerCase() === Designs.product ? '' : a;
+  }
+  /* a manifest text, never cut short (no maxlength). Only past the hub's bound is it an error, with its count; a
+     description longer than the picker card shows gets a hint, since the card clips it and Your themes shows it all */
+  function text(key, label, value, placeholder) {
+    var id = 'studio-f-' + key, said = 'studio-n-' + key + (key === 'description' ? ' studio-h-description' : '');
     var box = key === 'description'
-      ? html`<textarea class="input" rows="3" data-studio="${key}" aria-describedby="${'studio-n-' + key}">${value}</textarea>`
-      : html`<input class="input" data-studio="${key}" value="${value}" autocomplete="off" aria-describedby="${'studio-n-' + key}">`;
-    return html`<label class="field"><span class="studio__label"><span class="field__label">${label}</span><span class="studio__count num" id="${'studio-n-' + key}" data-studio-count="${key}"></span></span>${box}</label>`;
+      ? html`<textarea class="input" rows="3" id="${id}" data-studio="${key}" aria-describedby="${said}">${value}</textarea>`
+      : html`<input class="input" id="${id}" data-studio="${key}" value="${value}" placeholder="${placeholder || ''}" autocomplete="off" aria-describedby="${said}">`;
+    var hint = key === 'description' ? html`<span class="field__help" id="studio-h-description" data-studio-hint hidden>The picker card shows its first two lines. Your themes shows all of it.</span>` : '';
+    return html`<div class="field"><span class="studio__label"><label class="field__label" for="${id}">${label}</label><span class="studio__count num" id="${'studio-n-' + key}" data-studio-count="${key}" hidden></span></span>${box}${hint}</div>`;
   }
   function count(key) {
     var el = S && $('[data-studio-count="' + key + '"]', S.el); if (!el) return;
     var n = Array.from(S.draft[key] || '').length, max = Designs.limits[key], over = n > max;
-    el.textContent = n + ' / ' + max;
-    el.classList.toggle('is-over', over);
+    el.hidden = !over; el.textContent = over ? n + ' / ' + max : '';
     $('[data-studio="' + key + '"]', S.el).setAttribute('aria-invalid', over ? 'true' : 'false');
+    var hint = key === 'description' && $('[data-studio-hint]', S.el);
+    if (hint) hint.hidden = over || !cardClips(S.draft.description);
+  }
+  /* whether the picker card cuts a description short at its narrowest, by Settings > Appearance's own rules */
+  var probe;
+  function cardClips(desc) {
+    if (!desc) return false;
+    if (!probe) {
+      probe = document.createElement('div');
+      probe.className = 'sys-designs'; probe.setAttribute('aria-hidden', 'true');
+      probe.style.cssText = 'position: fixed; left: -10000px; top: 0; width: 196px; visibility: hidden; pointer-events: none';
+      probe.innerHTML = '<div class="sys-design"><span class="sys-design__desc"></span></div>';
+    }
+    if (!probe.isConnected) document.body.appendChild(probe);
+    var d = probe.firstChild.firstChild; d.textContent = desc;
+    return d.scrollHeight > d.clientHeight + 1;
   }
   function seg(key, labelledBy, options, cur, label) {
     var i = Math.max(0, options.map(function (o) { return o[0]; }).indexOf(cur));
