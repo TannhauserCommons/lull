@@ -330,9 +330,11 @@
 :root[data-design="lull"] .ctx { width: auto; }
 :root[data-design="lull"] .app[data-ctx="docked"] .ctx { position: relative; }
 :root[data-design="lull"] .ctx > .region-title { padding-right: 44px; }
+/* the meta keeps to the band right of the title (its longest, "activity", ends 4.5rem past the orbs) and ellipsises
+   there: Lyrics' meta is the song's title, which can be any length */
 :root[data-design="lull"] .ctx > .region-meta {
-  display: block; position: absolute; top: 0; right: 44px; pointer-events: none;
-  color: var(--l-band-ink); font: 800 .75rem/38px var(--f-ui); white-space: nowrap; text-shadow: var(--l-band-glow);
+  display: block; position: absolute; top: 0; left: calc(92px + 4.5rem); right: 44px; pointer-events: none; text-align: right;
+  color: var(--l-band-ink); font: 800 .75rem/38px var(--f-ui); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: var(--l-band-glow);
 }
 :root[data-design="lull"] .ctx__head { position: static; padding: 10px 10px 4px; border-radius: 10px 10px 0 0; background: var(--sky); }
 :root[data-design="lull"] .ctx__head .seg { min-height: 0; }

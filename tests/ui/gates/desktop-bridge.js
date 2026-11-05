@@ -15,7 +15,10 @@ window.__bridge = { calls: {}, bytes: {}, largest: {}, heard: {}, answers: {}, l
     }
     return Promise.resolve(name === 'desktop_settings' ? {} : null);
   }
-  var win = { minimize: note, toggleMaximize: note, close: note, onFocusChanged: function () { return Promise.resolve(function () {}); }, listen: function () { return Promise.resolve(function () {}); } };
+  var unlisten = function () { return Promise.resolve(function () {}); };
+  // the main window's own calls too (desktop.js with __LULL_DESKTOP__ set, as the app's title bar draws it)
+  var win = { minimize: note, toggleMaximize: note, close: note, onFocusChanged: unlisten, onResized: unlisten, listen: unlisten,
+    isMaximized: function () { return Promise.resolve(false); }, setSize: note, focus: note };
   window.__bridge.fire = function (name, payload) { (window.__bridge.heard[name] || []).forEach(function (fn) { fn({ payload: payload }); }); };
   window.__TAURI__ = {
     core: { invoke: note },
