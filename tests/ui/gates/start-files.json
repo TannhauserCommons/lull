@@ -17,6 +17,8 @@
     "eq.js": "the device's equaliser, applied from the first song",
     "player-rules.js": "the player's rules, which the player follows from the first song",
     "app.js": "the router, the shell and the player",
+    "sound-rules.js": "the UI sounds' rules, which the start-up sound already follows",
+    "sounds.js": "the UI sounds: the start-up sound plays once per app start, and every press can sound from the first one",
     "layout.js": "size classes and the panels",
     "connect.js": "lull Connect: this device reports what it plays, and takes commands, from the start",
     "offline.js": "downloads, and their covers without the hub",

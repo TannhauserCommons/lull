@@ -77,6 +77,8 @@ export default defineConfig({
     { name: 'theme-slots', testMatch: 'theme-slots.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     // a theme styling hooks lull moved, removed or keeps internal is told so, at import and in Theme Studio
     { name: 'theme-hooks', testMatch: 'theme-hooks.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
+    // the UI sounds: once per start, never over music or on a reload, the buffering loop gone as the song sounds
+    { name: 'sounds', testMatch: 'sounds.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     { name: 'loops-webkit', testMatch: 'loops.spec.mjs', fullyParallel: true, use: { browserName: 'webkit', viewport: { width: 1440, height: 900 }, launchOptions: {} } },
   ].filter(inGroup),
 });

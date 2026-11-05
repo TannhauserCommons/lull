@@ -1,0 +1,28 @@
+{
+  "packs": [
+    {
+      "id": "default",
+      "css": true
+    },
+    {
+      "id": "lull",
+      "css": false
+    },
+    {
+      "id": "skydeck",
+      "css": false
+    },
+    {
+      "id": "starlight",
+      "css": false
+    },
+    {
+      "id": "petal",
+      "css": false
+    },
+    {
+      "id": "glasshouse",
+      "css": false
+    }
+  ]
+}

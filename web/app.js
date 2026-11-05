@@ -1797,6 +1797,7 @@
      Auto-dismiss 6 s (paused on hover/focus); errors with an action stay until dismissed. */
   App.toast = function (msg, o) {
     o = o || {};
+    App.emit('toast', o);                                  // the UI sounds hear an error (web/sounds.js)
     var region = $('#toasts');
     var el = document.createElement('div');
     el.className = 'toast s-card' + (o.kind ? ' toast--' + o.kind : '');
@@ -1980,7 +1981,12 @@
   P.currentId = function () { var q = ps.queue[ps.index]; return q ? q.trackId : null; };
   P.duration = function () { var t = P.current(); return duration || (t ? t.duration : 0); };
   P.upNext = function (n) { return ps.queue.slice(ps.index + 1, ps.index + 1 + (n || 2)).map(function (q) { return M.track(q.trackId); }).filter(Boolean); };
-  function changed(kind) { App.emit('player', kind || 'state'); persistSoon(); }
+  function changed(kind) { App.emit('player', kind || 'state'); noteHeard(); persistSoon(); }
+  /* music is heard: the listener wants it playing and sound is coming out (not waiting for data). P.heard() and the
+     `heard` event (true or false, on each change) are what the UI sounds keep quiet for (ADR-0081). */
+  var heardWas = false;
+  P.heard = function () { return !!(ps.playing && sound && sound.playing && !sound.waiting); };
+  function noteHeard() { var h = P.heard(); if (h !== heardWas) { heardWas = h; App.emit('heard', h); } }
 
   /* playback settings (Settings > Playback; GET /api/settings), defaults until the server answers */
   var playback = { gapless: true, crossfade: 0, normalisation: 'off', loudnessTarget: -14, radioWhenQueueEnds: true, volumeStep: 5, prefetchCount: 2,
@@ -2681,6 +2687,7 @@
     trackListening(d.position, d.playing);
     ps.pos = d.position;
     sound = { playing: d.playing, waiting: d.waiting };
+    noteHeard();
     if (d.playing && !d.waiting && (ps.status === 'finding' || ps.status === 'queued' || ps.status === 'buffering' || ps.status === 'stalled' || ps.status === 'library' || ps.status === 'streaming')) {
       ps.status = cur.soulseek ? 'streaming' : 'library'; ps.error = null;
       beginPlay(P.current());

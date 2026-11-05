@@ -206,7 +206,7 @@ Authors write no JavaScript (themes never run code), only these declarations, wh
 | `words` | `in` (`title`, `artist`, `album`; a list), `any` (1-40 words in any language and script; matched as whole words, ignoring case and accents, and inside the text for scripts written without spaces, such as Chinese, Japanese or Thai) | while a song whose words match is the current one; `data-egg-word` is the word |
 | `repeat` | `times` (2-100) | the current song has played through `times` times in a row |
 | `gesture` | `on` (`brand`, `cover`, `title`: the logo, the playing cover, the playing title), `taps` (2-12), `within` (s, at most 5) | at the tap that completes the count |
-| `milestone` | `of` (`likes`, `plays`, `saves`), `at` (a number or a list) | as the count reaches one of them; `--egg-count` is that number |
+| `milestone` | `of` (`likes`, `follows`: what every device of the hub knows), `at` (a number or a list) | as the count reaches one of them; `--egg-count` is that number |
 | `player` | `status` (a player status, or a list), `playing` (true: sound is coming out), `screen` (a `data-screen`), `idle` (s with no tap, key or scroll), `held` (s they have held together) | while all of them hold |
 | `event` | `on` (a sound event: `boot`, `liked`...) | at that event |
 | `chance` | `one_in` (2-1000) | once per check, with that chance (used with `event` or a moment's condition) |

@@ -800,6 +800,17 @@ textarea.input { height: auto; min-height: 96px; padding: var(--sp-3) var(--sp-4
 .toast--error > .ic { color: var(--down); }
 .toast--ok > .ic { color: var(--ok); }
 
+/* an easter egg's stage (ADR-0081, eggs.js): above the page, under nothing the listener uses, taking no pointer; it
+   exists only while an egg is live. Its line of words sits where toasts do; a pack's slot boxes ([data-egg-of]) are
+   placed by the pack's own CSS. */
+.egg-stage { position: fixed; inset: 0; z-index: var(--z-toast); pointer-events: none; }
+.egg-line {
+  position: absolute; left: 50%; bottom: calc(var(--bar-h) + 40px); transform: translateX(-50%); max-width: calc(100vw - 32px);
+  margin: 0; padding: 8px 16px; border: var(--stroke) solid var(--line); border-radius: var(--r-pill);
+  background: var(--panel); color: var(--fg-panel); box-shadow: var(--stack-sm); font: 700 .9375rem/1.35 var(--f-ui);
+}
+.egg-line[hidden] { display: none; }
+
 .banner {
   position: relative; display: flex; align-items: center; gap: var(--sp-3); min-height: 48px; padding: 6px 8px 6px 18px;
   border: var(--stroke) solid var(--line); border-radius: 14px; font: 700 .9375rem/1.35 var(--f-ui); overflow: hidden;

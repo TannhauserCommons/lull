@@ -1,0 +1,34 @@
+/* lull's own surprises, as the default pack draws them (ADR-0081): small and quiet, in any design. A design's pack or a
+   theme draws its own with the same hooks: :root[data-egg~="<name>"], --egg-count, data-egg-word, .egg-line. */
+
+/* 3 in the morning: the logo nods off */
+:root[data-egg~="night-owl"] .wordmark { opacity: .7; }
+:root[data-egg~="night-owl"] .wordmark::after { content: "z"; margin-left: .12em; font-size: .6em; vertical-align: super; }
+
+/* lull's birthday: a star by the logo, all day */
+:root[data-egg~="birthday"] .wordmark::after { content: "\2726"; margin-left: .2em; font-size: .7em; vertical-align: super; }
+
+/* a word in the playing song's title: its sign after the title in the player bar */
+:root[data-egg~="moon"] { --egg-sign: "\263E"; }
+:root[data-egg~="rain"] { --egg-sign: "\2602"; }
+:root[data-egg~="star"] { --egg-sign: "\2726"; }
+:root[data-egg~="sun"] { --egg-sign: "\2600"; }
+:root[data-egg~="snow"] { --egg-sign: "\2744"; }
+:root[data-egg~="night"] { --egg-sign: "\2727"; }
+:root[data-egg~="sea"] { --egg-sign: "\223F"; }
+:root[data-egg~="storm"] { --egg-sign: "\2608"; }
+:root[data-egg~="fire"] { --egg-sign: "\2604"; }
+:root[data-egg~="dream"] { --egg-sign: "\2601"; }
+:root[data-egg] .pbar__title > a::after { content: var(--egg-sign, none); margin-left: .35em; font-weight: 400; opacity: .75; }
+
+/* left alone with a song on Now Playing: the logo breathes, slowly (10 changes a second) */
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-motion="reduce"])[data-egg~="still"] .wordmark {
+    animation: lull-egg-breathe 5.5s var(--loop-ease-in-out-55) infinite alternate;
+    animation-play-state: var(--loop-play, running);
+  }
+}
+@keyframes lull-egg-breathe { to { transform: scale(1.05); opacity: .8; } }
+
+/* the last seconds of the year: the countdown, large */
+:root[data-egg~="new-year"] .egg-line { font: var(--t-title-xl); padding: 8px 24px; }

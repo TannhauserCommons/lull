@@ -329,6 +329,7 @@
      (screens/appearance.js, owned by the themes work: docs/context/workspace.md). */
   App.settingsSections = App.settingsSections || {};
   App.settingsKit = { row: row, choice: choice, showChoice: showChoice, switchRow: switchRow, group: group, custom: custom, get: get, effects: effects,
+    range: range, fmtRange: fmtRange,
     statusLine: statusLine, spinnerLine: spinnerLine, lockedValue: lockedValue, readError: readError, repaint: repaint,
     cfgField: cfgField, cfgNotice: cfgNotice, cfgItem: cfgItem, cfgSave: cfgSave, clause: clause,
     num: num, hours: hours, pct: pct, share: share };
@@ -345,6 +346,7 @@
     ['privacy', 'Privacy', 'eye-off', 'Private listening on this device'],
     ['devices', 'Devices', 'connect', 'Paired devices, add one, Subsonic apps'],
     ['appearance', 'Appearance', 'sun', 'Design, theme, motion, text size, Classic skins'],
+    ['sounds', 'Sounds', 'bell', 'Sounds, sound packs, hidden surprises'],
     ['shortcuts', 'Shortcuts', 'keyboard', 'Every keyboard shortcut'],
     ['app', 'App', 'device', 'Install, version, server health']
   ];
@@ -940,8 +942,13 @@
      (App.hubKit) load it too; once both are here a section renders at once */
   var HUB_SECTIONS = { sources: true, library: true, devices: true };
   App.needSettingsFit = function () { return App.needScript('screens/settings-fit.js', 'Settings'); };
+  /* Settings > Sounds comes with its own file too (screens/sounds-settings.js), as it opens */
   function settingsNeeds(params) {
-    var load = [App.settingsFit ? null : App.needSettingsFit(), HUB_SECTIONS[params.section] && !App.hubKit ? App.needHub() : null].filter(Boolean);
+    var load = [
+      App.settingsFit ? null : App.needSettingsFit(),
+      HUB_SECTIONS[params.section] && !App.hubKit ? App.needHub() : null,
+      params.section === 'sounds' && !App.settingsSections.sounds ? App.needScript('screens/sounds-settings.js', 'Sound settings') : null
+    ].filter(Boolean);
     return load.length ? Promise.all(load) : null;
   }
   App.route('/settings/:section?', { need: settingsNeeds, render: renderSettings, mount: mountSettings, nav: 'settings', title: function (ctx) { var s = sectionOf(ctx.params.section); return s ? s[1] + ' settings' : 'Settings'; } });

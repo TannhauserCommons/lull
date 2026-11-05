@@ -456,6 +456,7 @@
       root.classList.remove('is-closed'); root.removeAttribute('inert');
     }
     document.documentElement.setAttribute('data-classic', 'on');
+    App.emit('classic', true);                                 // lull's own sounds rest while Classic is open (sounds.js)
     $('#app').setAttribute('inert', ''); $('#app').setAttribute('aria-hidden', 'true');
     requestAnimationFrame(function () { requestAnimationFrame(function () { if (open) root.classList.add('is-on'); }); });
     later(function () { if (open) root.focus({ preventScroll: true }); }, 60);
@@ -483,6 +484,7 @@
     root.classList.remove('is-on');
     root.classList.add('is-closed'); root.setAttribute('inert', '');
     document.documentElement.removeAttribute('data-classic');
+    App.emit('classic', false);
     $('#app').removeAttribute('inert'); $('#app').removeAttribute('aria-hidden');
   }
 
@@ -517,6 +519,7 @@
       });
     }).then(function () {                                       // the window starts Webamp where the app was
       windowWasPlaying = h.playing;
+      App.emit('classic', true);
       if (h.playing) P.pause();
     });
   }
@@ -539,6 +542,7 @@
     else if (m.type === 'listened' && windowListen) {
       windowListen.listened = m.seconds; windowListen.end(m.how); windowListen = null;
     } else if (m.type === 'back') {
+      App.emit('classic', false);
       if (m.back) takeBack(m.back);
       else if (windowWasPlaying) P.play();                      // Webamp never started: carry on here
     }

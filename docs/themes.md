@@ -16,6 +16,7 @@ A folder, or a `.lulltheme` file (a zip of that folder):
 | `theme.css` | yes | Any CSS; may be empty |
 | `slots/<slot>.html` | no | Your markup for a slot (section 6) |
 | `assets/` | no | Fonts, images and font licence texts, used from `theme.css` as `url("assets/...")` |
+| `pack.json`, `sounds/`, `pack.css`, `slots/egg.*.html` | no | The theme's sounds and easter eggs (section 13) |
 
 ```json
 {
@@ -269,7 +270,7 @@ Themes never run code, and never reach outside your hub. The hub refuses a packa
 
 - a `<script>`, an event handler (`onclick=`...), `<style>`, `<iframe>`, `<form>` or a `javascript:` URL in a slot, or a link that leaves the app (slot links are `#/...`);
 - a URL to another site in `theme.css` (`url(https://...)`, `//host`, `@import`), or a `url()` to a file the package doesn't have; use `assets/` or `data:`;
-- an SVG with a script or outside reference, or any file that isn't `theme.json`, `theme.css`, `slots/*.html` or a font, image or `.txt` in `assets/`;
+- an SVG with a script or outside reference, or any file that isn't `theme.json`, `theme.css`, `slots/*.html`, a font, image or `.txt` in `assets/`, or a pack's files (section 13: `pack.json`, `pack.css`, `sounds/*.ogg`);
 - a `theme.json` field lull doesn't know, a `window` material it doesn't know (section 12), or an `api` newer than this lull.
 
 In the browser every template is also sanitized (DOMPurify), and the page's Content-Security-Policy only loads fonts, images and styles from the hub itself (`'self'`, `data:`, `blob:`).
@@ -487,6 +488,7 @@ Every class lull's CSS styles and every `data-*` attribute lull's markup sets, e
 - **Classic:**
   - the stage: `.cls-desk`, `.cls-scrim`, `.cls-back`, `.cls-busy`, `.cls-failed`;
   - Classic's section in Settings: `.cls-now`, `.cls-browser`, `.cls-grid`, `.cls-card`, `.cls-shot`, `.cls-skel-shot`, `.cls-pop`, `.cls-look`, `.cls-nsfw`, `.cls-note`, `.cls-meta`, `.cls-attrib`, `.cls-more`, `.cls-folder`, `.cls-skipped`.
+- **Easter eggs** (section 13): `data-egg` on `:root` (the live eggs' names), `data-egg-word`, `--egg-count`; `.egg-stage` (the layer an egg draws in) with `.egg-line` (its words) and `[data-egg-of]` (an egg slot's box).
 - **Desktop app pages:**
   - the mini windows: `.dk-mini`, `.dk-strip`, `.dk-strip-wrap`, `.dk-art`;
   - window chrome: `.dk-titlebar`, `.dk-caption`, `.dk-glyph`, `.dk-tip`;
@@ -514,7 +516,7 @@ lull's plumbing: these may change in any release.
   - values and wiring: `data-kind`, `data-name`, `data-label`, `data-dir`, `data-pos`, `data-group`, `data-item`, `data-via`, `data-what`, `data-job`, `data-mode`, `data-choice`, `data-close`, `data-yes`, `data-form`, `data-url`, `data-text`, `data-why-text` (the why popover's sentence, filled in once `screens/why.js` arrives), `data-msg`, `data-locked-msg`, `data-placeholder`, `data-cmd`, `data-device`, `data-remote`;
   - lists, filters and banners: `data-filters`, `data-issue`, `data-more`, `data-out`, `data-period`, `data-range`, `data-pick`, `data-pick-new`, `data-pick-made`, `data-pick-again`, `data-pick-done`, `data-sync`, `data-save-btn`, `data-save-songs`, `data-src-badge`, `data-src-mini`, `data-dl`, `data-cold-count`, `data-banner`, `data-banner-*`, `data-toast-*`, `data-cover-*`, `data-scan*`, `data-now-qlist`, `data-now-steer`, `data-fill` (a long list's row whose contents are drawn only near the screen: empty `<li>` while far from it);
   - Settings controls: `data-cfg`, `data-switch`, `data-step`, `data-stepper`, `data-min`, `data-max`, `data-unit`, `data-weight`, `data-when`, `data-format`, `data-formats`;
-  - screens with their own wiring: `data-imp-*`, `data-lib-*`, `data-linkrev*`, `data-rev-*`, `data-cx*`, `data-studio*`, `data-drop-theme`, `data-theme-file`, `data-add-rates`, `data-skin`, `data-skin-file`, `data-webamp`, `data-eq*`, `data-token`, `data-token-reset`;
+  - screens with their own wiring: `data-pack`, `data-imp-*`, `data-lib-*`, `data-linkrev*`, `data-rev-*`, `data-cx*`, `data-studio*`, `data-drop-theme`, `data-theme-file`, `data-add-rates`, `data-skin`, `data-skin-file`, `data-webamp`, `data-eq*`, `data-token`, `data-token-reset`;
   - the desktop app's pages: `data-attempt`, `data-dk-attempt`, `data-dk-close`, `data-dk-connect`, `data-dk-error`, `data-dk-found`, `data-dk-offline`, `data-dk-retry-status`, `data-dk-welcome`.
 
 ## 12. A see-through window
@@ -603,3 +605,115 @@ The hub checks the field when you install a theme and refuses one it doesn't kno
 
 **Staying fast.** The system draws the glass; lull adds nothing that runs while the window is idle. `backdrop-filter` in your CSS blurs the page, not the desktop, and costs work on every frame that scrolls under it: keep it off large areas.
 
+## 13. Sounds and easter eggs: packs
+
+A theme can sound like its world and hide small surprises, and so can a pack on its own that a listener adds to any
+look. Both are declarations: no code, checked by the hub as a theme is. The decision behind it is ADR-0081.
+
+### What a pack is
+
+A pack is a `pack.json` with the files it names:
+
+| File | What |
+|---|---|
+| `pack.json` | The sounds and the easter eggs (below) |
+| `sounds/*.ogg` | Ogg Opus or Ogg Vorbis, each named by `pack.json` |
+| `pack.css` | Optional: your eggs' looks. The same rules as `theme.css`, loaded after it, in the `user` layer |
+| `slots/egg.<name>.html` | Optional: markup an egg shows while it is live, with the fields `{{count}}`, `{{word}}`, `{{title}}`, `{{artist}}`, `{{hour}}` and the `icon` part |
+
+- **In a theme:** put them beside `theme.json`. `pack.json` then has no `id`, `name` or `author` (the theme's are used). Importing the theme brings its sounds and eggs.
+- **On its own:** a `.lullpack` file, a zip of them, with `id`, `name`, `author` and an optional `description` in `pack.json`. Settings › Sounds imports it, and so does dropping it on Your themes or Theme Studio.
+
+```json
+{
+  "id": "rain-on-glass", "name": "Rain on glass", "author": "you", "api": 1,
+  "sounds": {
+    "play": "sounds/tap.ogg",
+    "skip": ["sounds/flick-1.ogg", "sounds/flick-2.ogg"],
+    "buffering": { "file": "sounds/drizzle.ogg", "loop": true },
+    "seek": null
+  },
+  "eggs": [
+    { "name": "rainy-song", "when": [{ "words": { "in": ["title"], "any": ["rain", "lluvia", "pluie", "雨"] } }],
+      "sound": "sounds/thunder-far.ogg", "line": "Rain on the way", "once": "song" }
+  ]
+}
+```
+
+lull's own packs are in `web/packs/` (`default` and one per design), made by `scripts/sounds/` from code. Read
+`web/packs/default/pack.json` and `pack.css` to see every egg lull has and how it draws them.
+
+### Sounds
+
+| Event | When |
+|---|---|
+| `boot` | lull starts: once per app start, never on a reload |
+| `play`, `pause` | the listener presses play or pause |
+| `skip` | the listener moves to the next or the previous song |
+| `seek` | the listener lets go of the seek bar (off until the listener turns it on) |
+| `buffering` | a loop while lull waits for sound (finding, queued, buffering), only in silence |
+| `found` | a song lull was finding has a source |
+| `stalled` | a transfer stalled |
+| `saved` | a song the listener saved is in the library |
+| `liked` | the listener likes a song |
+| `queued` | the listener adds to the queue |
+| `error` | a song failed, or an action the listener took failed |
+| `design` | the listener switches design or theme |
+| `classic` | Classic mode opens |
+
+- A sound is a file, a list of files (lull takes them in turn, so a press repeated never sounds mechanical), or
+  `{ "file", "loop": true }` for `buffering`. `null` silences an event on purpose; an event you leave out comes from
+  the pack under yours.
+- **Keep them short:** at most 2 s (`boot` and an egg's sound 6 s, a loop 20 s), 128 KB a file, 1 MB in all.
+- **Loudness is lull's:** it levels every sound as it decodes it, to one quiet peak and loudness, and the listener sets
+  the volume. Make yours as loud as you like; nobody hears one pack louder than another.
+- **What lull guarantees,** whatever a pack declares: no sound but play and pause over music (the listener can allow
+  more), the loop never over music and gone the moment the song sounds, nothing while lull isn't in front (but the
+  four the listener asks to hear in the background), nothing while the system asks for quiet or reduced motion, and
+  nothing while Classic mode is open.
+
+### Which pack a sound comes from
+
+Per device, from the top: a sound the listener replaced; the packs they added, in their order; the look's pack (your
+theme's, else the design it extends); then `default`. A sound comes from the first pack that has it. Eggs come from
+every pack that is on; two that declare the same `name` are one egg, the higher pack's declaration winning. So a
+theme re-declares one of lull's eggs to give it its own sound or look without a second copy of it.
+
+### Easter eggs
+
+An egg is `{ "name", "when": [conditions], ...reaction }`: when all its conditions hold, lull plays its reaction.
+
+| Condition | Parameters | Holds |
+|---|---|---|
+| `clock` | `from`, `to` (`HH:MM[:SS]`, the device's time; may wrap past midnight; `to` may be `"24:00"`), `date` (`MM-DD`, or a list), `weekday` (`mon`...`sun`, or a list), `countdown` (true: `--egg-count` is the seconds left until `to`) | while the time is inside. A window past midnight belongs to the date it starts on |
+| `words` | `in` (`title`, `artist`, `album`; a list), `any` (1-40 words, any language and script) | while the current song's words match: whole words, ignoring case and accents, and inside the text for scripts written without spaces. No plural is assumed: list the forms you want. `data-egg-word` is the word as you wrote it |
+| `repeat` | `times` (2-100) | the current song has played through that many times in a row |
+| `gesture` | `on` (`brand`, `cover`, `title`), `taps` (2-12), `within` (s, 0.5-5) | at the tap that completes the count |
+| `milestone` | `of` (`likes`, `follows`), `at` (a number or a list) | as the count reaches one; `--egg-count` is that number |
+| `player` | `status` (a player status or a list), `playing` (true: sound is coming out), `screen` (a `data-screen` or a list), `idle` (s without a tap, key or scroll), `held` (s these have held together) | while they all hold |
+| `event` | `on` (a sound event) | at that event |
+| `chance` | `one_in` (2-1000) | with that chance, each time the rest hold |
+
+| Reaction | What |
+|---|---|
+| `name` | Required. While the egg is live, `:root[data-egg~="<name>"]` (several may be live at once), with `--egg-count` and `data-egg-word` on `:root` when its conditions give one. Style it in `pack.css` or `theme.css` |
+| `sound` | A file played under the sound rules. With `"instead": true` it takes the place of the sound of the `event` that fired it, or, as `{ "file", "loop": true }` with a `player` condition, of the buffering loop while the egg is live |
+| `line` | Words lull shows in `.egg-line` and reads out politely, with `{{count}}` and `{{word}}` |
+| `go` | An in-app place to open (`#/credits`, lull's credits) |
+| `for` | Seconds it stays live after its conditions stop holding, or after a moment (0.5-600, 4 to start) |
+| `once` | `always`, `song` (the default), `session`, `day`, `night` (18:00 to 06:00), `week`, `year`: it fires at most once in each |
+
+A slot `slots/egg.<name>.html` is drawn into `.egg-stage` while the egg is live, in a box `[data-egg-of="<name>"]` you
+place with your CSS. `.egg-stage` covers the window, above the page, and takes no pointer.
+
+**Rare and never in the way.** An egg never fires while a dialog or sheet is open, and every live egg ends at the
+listener's next tap or key. Hidden surprises in Settings › Sounds turns them all off; behind its spoiler each has its
+own switch and a Try it button, and so does Theme Studio's list of your theme's eggs. **Cheap by construction:** lull
+checks conditions on what already happens (a song or status change, a like, a tap on the three targets, one timer for
+the next clock edge), never by polling. Your looks follow section 5's rules (Drawing cheaply) and stay still under
+reduced motion; a loop in an egg's look takes `animation-play-state: var(--loop-play, running)` like any other.
+
+**What the hub refuses**, naming the problem: a file that isn't Ogg (read from its headers), a sound nothing names or
+a name with no file, an event, condition, parameter or field lull doesn't know (the message lists those it does), a
+value out of its range, a sound too long or too large, more than 32 eggs, an egg slot for an egg the pack doesn't
+declare, and `pack.css` or a slot under section 8's rules.

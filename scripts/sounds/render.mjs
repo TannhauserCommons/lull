@@ -12,7 +12,7 @@
 
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -107,6 +107,12 @@ async function renderAll() {
     }
   } finally { rmSync(tmp, { recursive: true, force: true }); }
   writeFileSync(FINGERPRINTS, JSON.stringify(prints, null, 2) + '\n');
+  writeFileSync(join(OUT, 'index.json'), index());
+}
+
+/** web/packs/index.json: the built-in packs the page knows, and which carry a hand-written pack.css */
+function index() {
+  return JSON.stringify({ packs: PACKS.map((id) => ({ id, css: existsSync(join(OUT, id, 'pack.css')) })) }, null, 2) + '\n';
 }
 
 function existingPrints() { try { return JSON.parse(readFileSync(FINGERPRINTS, 'utf8')); } catch { return {}; } }
@@ -125,6 +131,7 @@ export async function check() {
     const json = readFileSync(join(OUT, id, 'pack.json'), 'utf8');
     if (json !== JSON.stringify(manifest(meta, sounds), null, 2) + '\n') problems.push(`${id}/pack.json is stale`);
   }
+  if (readFileSync(join(OUT, 'index.json'), 'utf8') !== index()) problems.push('web/packs/index.json is stale');
   return problems;
 }
 
