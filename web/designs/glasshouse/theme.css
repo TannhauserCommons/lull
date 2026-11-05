@@ -903,8 +903,9 @@
   display: flex; align-items: center; height: var(--gh-barh); flex: none; padding: 0 10px 0 12px;
   font: 600 .8125rem/1 var(--f-px); letter-spacing: .03em;
 }
-:root[data-design="glasshouse"] .ctx > .region-meta { position: absolute; z-index: 1; top: 0; right: 62px; max-width: 46%; height: var(--gh-barh); display: flex; align-items: center;
-  overflow: hidden; white-space: nowrap; font: 500 .75rem/1 var(--f-px); color: var(--gh-bar-ink); text-shadow: 0 1px 0 var(--gh-bar-shadow); }
+/* one line that ellipsises: Lyrics' meta is the song's title, which can be any length */
+:root[data-design="glasshouse"] .ctx > .region-meta { position: absolute; z-index: 1; top: 0; right: 62px; max-width: 46%; height: var(--gh-barh); display: block;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: 500 .75rem/var(--gh-barh) var(--f-px); color: var(--gh-bar-ink); text-shadow: 0 1px 0 var(--gh-bar-shadow); }
 :root[data-design="glasshouse"] .ctx > .region-title::after { content: ""; flex: 1; height: 11px; background: var(--gh-beads) right center / 41px 11px no-repeat; }
 :root[data-design="glasshouse"] .ctx__head { padding: 10px 10px 6px; }
 :root[data-design="glasshouse"] .ctx .label-rule--sm {

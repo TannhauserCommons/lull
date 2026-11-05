@@ -5,6 +5,7 @@
 // width band to patch them; a new one that would is caught here. The desktop app's mini player is checked at its
 // own sizes. docs/context/quality.md#ui-gates.
 
+import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import { chrome, chromeNow, clippedCovers } from '../checks.mjs';
 import { designs, ids, openScreen, themes } from './lib.mjs';
@@ -201,6 +202,46 @@ for (const design of designs) {
       expect([...found].map(([p, ws]) => `${p} at ${ws.join(', ')} px`), 'the mini player while a song streams').toEqual([]);
     });
 
+    // the side panel's title strip names the panel and carries its meta: on Lyrics the meta is the song's title, which
+    // can be any length (lull's ran over the word "lyrics", Petal's wrapped over its window keys). Each tab, with a long
+    // title playing: the meta stays clear of the title's text and the panel's own buttons, inside the panel, on one
+    // line, and ellipsises when it is cut
+    test(`side panel strip, a long song title / ${design} / ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await openScreen(page, `/album/${ids.album}`, { design, theme });
+      await page.dblclick('.tlist .trow:nth-child(1) .trow__dur');
+      await page.waitForFunction(() => App.player.current());
+      await page.evaluate(() => { App.player.current().title = 'A Rusty Dream (from Cyberpunk: Edgerunners 2) - Extended Night Drive Version, Live at the Harbour'; location.hash = '#/home'; });
+      await page.waitForTimeout(500);
+      const found = [];
+      for (const w of [2560, 1440, 1280]) {
+        await page.setViewportSize({ width: w, height: 900 });
+        await frames(page);
+        for (const tab of ['queue', 'lyrics', 'activity']) {
+          // the tab as a press picks it (app.js hears clicks on the document), whether or not the panel shows now
+          if (!(await page.evaluate((tab) => { const b = document.querySelector(`[data-ctx-tab="${tab}"]`); if (b) b.click(); return !!b; }, tab))) continue;
+          await frames(page);
+          const p = await page.evaluate(() => {
+            const shown = (e) => { if (!e) return null; const s = getComputedStyle(e), r = e.getBoundingClientRect(); return s.display !== 'none' && s.visibility !== 'hidden' && r.width > 0 && r.height > 0 && parseFloat(s.fontSize) > 0 ? r : null; };
+            const hit = (a, b) => a.left < b.right - 0.5 && a.right > b.left + 0.5 && a.top < b.bottom - 0.5 && a.bottom > b.top + 0.5;
+            const ctx = shown(document.querySelector('#ctx')), m = document.querySelector('#ctx-meta'), mr = shown(m);
+            if (!ctx || !mr || !m.textContent.trim()) return [];
+            const out = [], t = document.querySelector('#ctx-title');
+            const rg = document.createRange(); rg.selectNodeContents(t); const tr = rg.getBoundingClientRect();
+            if (shown(t) && tr.width > 0 && hit(mr, tr)) out.push('the meta runs over the title');
+            for (const k of document.querySelectorAll('#ctx .ctx__head > .btn-icon')) { const kr = shown(k); if (kr && hit(mr, kr)) out.push(`the meta runs under ${k.getAttribute('aria-label')}`); }
+            if (mr.left < ctx.left - 0.5 || mr.right > ctx.right + 0.5) out.push('the meta runs out of the panel');
+            const s = getComputedStyle(m), mt = document.createRange(); mt.selectNodeContents(m);
+            if (new Set([...mt.getClientRects()].filter((r) => r.width > 0).map((r) => Math.round(r.top))).size > 1) out.push('the meta wraps');
+            if (m.scrollWidth > m.clientWidth + 1 && s.textOverflow !== 'ellipsis') out.push('the meta is cut without an ellipsis');
+            return out;
+          });
+          for (const x of p) found.push(`${tab} at ${w} px: ${x}`);
+        }
+      }
+      expect(found, 'the side panel strip with a long song title').toEqual([]);
+    });
+
     test(`desktop mini player / ${design} / ${theme}`, async ({ page }) => {
       // the device window opens 340 px wide, the strip is a fixed 540 x 90 (app/src/desktop/mini.rs)
       for (const [view, width] of [['mini', 340], ['strip', 540]]) {
@@ -212,4 +253,34 @@ for (const design of designs) {
       }
     });
   }
+}
+
+// the desktop app's window on Windows draws its own minimise, maximise and close buttons over the page's top right corner
+// (desktop.js, 138 x 32 px): the header keeps clear of them at every width, whatever a design sets for the header's
+// margin and padding (desktop.css), with the chrome checks as above. lull's header once ran under them
+for (const design of designs) {
+  test(`header beside the desktop window's buttons / ${design}`, async ({ page }) => {
+    await page.addInitScript({ path: fileURLToPath(new URL('./desktop-bridge.js', import.meta.url)) });
+    await page.addInitScript(() => { window.__LULL_DESKTOP__ = { os: 'win', titlebar: 'win' }; });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openScreen(page, `/album/${ids.album}`, { design });
+    await page.dblclick('.tlist .trow:nth-child(1) .trow__dur');
+    await page.waitForFunction(() => App.player.current());
+    await page.evaluate(() => { location.hash = '#/home'; });
+    await page.waitForSelector('.dk-caption');
+    const found = new Map();
+    for (let w = 2560; w >= 480; w -= 40) {     // the window is never narrower than 480 px (app/src/desktop/main_window.rs)
+      await page.setViewportSize({ width: w, height: 900 });
+      await frames(page);
+      const under = await page.evaluate(() => {
+        const c = document.querySelector('.dk-caption').getBoundingClientRect();
+        return [...document.querySelectorAll('.header :is(a, button, input, [tabindex], .tray)')].filter((e) => {
+          const r = e.getBoundingClientRect(), s = getComputedStyle(e);
+          return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && r.right > c.left + 0.5 && r.left < c.right && r.top < c.bottom && r.bottom > c.top;
+        }).map((e) => `${e.getAttribute('aria-label') || String(e.className).split(' ')[0]} under the window's buttons`);
+      });
+      for (const p of [...under, ...await chrome(page)]) found.set(p, [...(found.get(p) || []), w]);
+    }
+    expect([...found].map(([p, ws]) => `${p} at ${ws.join(', ')} px`), "the header in the desktop app's window").toEqual([]);
+  });
 }

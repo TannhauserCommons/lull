@@ -653,8 +653,11 @@
 @media (min-width: 640px) { :root[data-design="petal"] :is(.ctx, .nowcol) { margin-top: -2px; } }
 :root[data-design="petal"] .app[data-ctx="docked"] .ctx { position: relative; }
 :root[data-design="petal"] .ctx > .region-title { font-size: 0; letter-spacing: 0; }   /* the tabs below name the panel */
+/* the meta keeps to the bar between the window keys and the panel's own buttons (two panes, close), on one line that
+   ellipsises: Lyrics' meta is the song's title, which can be any length */
 :root[data-design="petal"] .ctx > .region-meta {
-  display: block; position: absolute; top: 12px; right: 52px; font: 750 .75rem/1 var(--f-ui); color: var(--pt-tb-ink); font-variant-numeric: tabular-nums;
+  display: block; position: absolute; top: 12px; left: 64px; right: 80px; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font: 750 .75rem/1 var(--f-ui); color: var(--pt-tb-ink); font-variant-numeric: tabular-nums;
 }
 /* the panel's own buttons (two panes, close) sit in the title bar */
 :root[data-design="petal"] .ctx__head > .btn-icon { position: absolute; top: 1px; right: 6px; width: 32px; height: 32px; color: var(--pt-tb-ink); }

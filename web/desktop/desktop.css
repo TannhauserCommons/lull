@@ -27,15 +27,17 @@
 /* the shell's 16 px top margin stays draggable (data-tauri-drag-region) */
 .dk-dragstrip { position: fixed; top: 0; left: 0; right: 138px; height: 16px; z-index: calc(var(--z-overlay) - 1); }
 
-/* header makes room for the caption buttons (138 px wide, measured from the window edge) */
+/* header makes room for the caption buttons (138 px wide, measured from the window edge). This sheet sits in the
+   screens layer, under the designs, so the room is !important: a design or a listener's theme that sets the header's
+   margin or padding, or the shell's, must not put its keys under the window's own buttons */
 @media (max-width: 639px), (min-width: 820px) {
-  :root[data-titlebar="win"] .header { padding-right: 138px; }
+  :root[data-titlebar="win"] .header { padding-right: 138px !important; }
   /* topnav / dock shells draw the header as a strip: the strip itself stops short of the caption buttons */
-  :root[data-titlebar="win"][data-shell="topnav"] .header, :root[data-titlebar="win"][data-shell="dock"] .header { padding-right: 8px; margin-right: 130px; }
+  :root[data-titlebar="win"][data-shell="topnav"] .header, :root[data-titlebar="win"][data-shell="dock"] .header { padding-right: 8px !important; margin-right: 130px !important; }
 }
 /* 640-819: a tablet header can't spare 138 px, so the caption buttons get their own 32 px strip above the shell */
 @media (min-width: 640px) and (max-width: 819px) {
-  :root[data-titlebar="win"] #app { padding-top: 32px; }
+  :root[data-titlebar="win"] #app { padding-top: 32px !important; }
   :root[data-titlebar="win"] .dk-dragstrip { height: 32px; }
 }
 @media (max-width: 1439px) { :root[data-titlebar="win"] .header .tray__label-long { display: none; } }   /* give the search its width back */
