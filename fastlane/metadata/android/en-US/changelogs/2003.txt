@@ -1,0 +1,8 @@
+* Search puts the right result first and finds songs only on YouTube
+* Pick a source shows every copy from every folder, plus YouTube
+* Artists are told apart by exact IDs, in every Apple store
+* Discovery picks from styles your liked artists share, skips reissues and songs you have, and says why
+* Imported playlists fix songs matched to the wrong version
+* Themes get a picture when saved or imported
+* Artist and album pages never load forever
+* Source and quality labels fit laptop widths
