@@ -1,0 +1,9 @@
+# Which commits reach listeners, and under which area a release lists them (ADR-0098). One row per area: its id
+# (a switch in lull_core::flags names one), its name in the draft, and the commit scopes it gathers. The last row's
+# scopes never reach a listener. A feat or fix commit with a scope missing here fails the draft, so add it here.
+search	Search and discovery	discovery search youtube lastfm lyrics links
+playing	Playing and sources	soulseek streaming library collection player art pictures
+designs	Designs and themes	web designs design themes skins glasshouse ui
+apps	The apps	app desktop android
+hub	The hub	hub server core subsonic deploy image
+-	Not for listeners	queue ship release ci docs test build adr agents fastlane privacy quality readme site

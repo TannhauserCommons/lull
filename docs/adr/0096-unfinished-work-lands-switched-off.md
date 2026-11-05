@@ -11,7 +11,7 @@ The 0.2.2 release waited on features that were half done. Work that takes days e
 
 ### One list of switches, in core
 
-`lull_core::flags` holds every switch as a constant list: its name (`kebab-case`), one line on what it turns on, and the session or area that owns it. Each is **off unless turned on**. The list is the single source of truth: the hub, the web UI and the tests all read it.
+`lull_core::flags` holds every switch as a constant list: its name (`kebab-case`), one line on what it turns on, the session or area that owns it, and the release area it belongs to (ADR-0098). Each is **off unless turned on**. The list is the single source of truth: the hub, the web UI and the tests all read it.
 
 - **The hub** asks `ctx.config.flags.on(&flags::NAME)`: a constant, so a typo doesn't compile.
 - **Turning one on** is the setting `LULL_FLAGS` (a comma-separated list of names), set in the hub's environment or stored through `PATCH /api/config` like any other `LULL_*` key (ADR-0002); Settings shows no control for it. A name that isn't a switch stops the hub starting, as an unknown `LULL_*` key does.

@@ -7,12 +7,15 @@
 
 use std::collections::BTreeSet;
 
-/// One switch: its name in `LULL_FLAGS` and the web UI, what it turns on, and who finishes it.
+/// One switch: its name in `LULL_FLAGS` and the web UI, what it turns on, who finishes it, and the release area
+/// it belongs to (an id in `scripts/release-areas.tsv`): an area with a switch left is a batch not yet complete
+/// (ADR-0098).
 #[derive(Debug, PartialEq, Eq)]
 pub struct Flag {
     pub name: &'static str,
     pub about: &'static str,
     pub owner: &'static str,
+    pub area: &'static str,
 }
 
 /// Every switch there is. Empty while nothing is unfinished.
@@ -62,6 +65,7 @@ mod tests {
         name: "deep-cuts",
         about: "a test switch",
         owner: "tests",
+        area: "search",
     };
     const KNOWN: &[&Flag] = &[&DEEP_CUTS];
 
@@ -78,6 +82,21 @@ mod tests {
     fn a_name_that_is_not_a_switch_is_refused() {
         let err = parse_in("deep-cuts,deepcuts", KNOWN).err().unwrap_or_default();
         assert!(err.contains("\"deepcuts\"") && err.contains("deep-cuts"), "{err:?}");
+    }
+
+    /// The release areas' ids (ADR-0098), one source for the switches and the release draft.
+    fn area_ids() -> Vec<&'static str> {
+        include_str!("../../../scripts/release-areas.tsv")
+            .lines()
+            .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
+            .filter_map(|l| l.split('\t').next())
+            .filter(|id| *id != "-")
+            .collect()
+    }
+
+    #[test]
+    fn the_release_areas_have_ids() {
+        assert_eq!(area_ids(), ["search", "playing", "designs", "apps", "hub"]);
     }
 
     #[test]
@@ -99,6 +118,12 @@ mod tests {
                 flag.name
             );
             assert!(seen.insert(flag.name), "{} is listed twice", flag.name);
+            assert!(
+                area_ids().contains(&flag.area),
+                "{}'s area {:?} isn't in scripts/release-areas.tsv",
+                flag.name,
+                flag.area
+            );
         }
     }
 }
