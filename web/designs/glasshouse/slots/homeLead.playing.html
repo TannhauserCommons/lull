@@ -1,11 +1,12 @@
-<!-- Home's first object: an AIMP-style media window. LCD deck on the left, the current song + up next as a numbered
+<!-- Home's first object: an AIMP-style media window. LCD deck on the left (the cover glowing its own colour into the
+     LCD from a blurred copy behind it), the current song + up next as a numbered
      list with mono format lines on the right, a header strip (Tracks / Duration / Size) and a ticker on the bottom edge.
      The skin tabs: the current skin is plain text, the other one a button on the shared "theme" action; theme.css shows
      the right pair for :root[data-theme]. The ticker runs twice, so a translateX(-50%) loop is seamless. -->
 <section class="card gh-aimp" aria-labelledby="gh-aimp-h">
   <div class="card-head gh-aimp__bar"><h2 class="card-head__title" id="gh-aimp-h">{{product}} :: now spinning</h2><span class="gh-skin" role="group" aria-label="Theme"><span class="gh-skin__tab gh-skin__cur gh-skin--dark">dark<span class="vh"> (current theme)</span></span><button class="gh-skin__tab gh-skin__btn gh-skin--dark" data-act="theme" data-tip="Dark theme">dark<span class="vh"> theme</span></button><span class="gh-skin__tab gh-skin__cur gh-skin--light">light<span class="vh"> (current theme)</span></span><button class="gh-skin__tab gh-skin__btn gh-skin--light" data-act="theme" data-tip="Light theme">light<span class="vh"> theme</span></button></span></div>
   <div class="gh-aimp__deck">
-    <div class="gh-aimp__lcd"><lull-part name="cover" size="152"></lull-part><div class="gh-aimp__meta"><p class="gh-aimp__title">{{title}}</p><p class="gh-aimp__artist">{{artist}}</p><p class="gh-aimp__fmt">{{format}}</p></div><p class="gh-aimp__time"><b data-bind="pos">0:00</b> / <span data-bind="dur">0:00</span></p></div>
+    <div class="gh-aimp__lcd"><span class="gh-aimp__glow" aria-hidden="true"><lull-part name="cover" size="152"></lull-part></span><lull-part name="cover" size="152"></lull-part><div class="gh-aimp__meta"><p class="gh-aimp__title">{{title}}</p><p class="gh-aimp__artist">{{artist}}</p><p class="gh-aimp__fmt">{{format}}</p></div><p class="gh-aimp__time"><b data-bind="pos">0:00</b> / <span data-bind="dur">0:00</span></p></div>
     <div class="gh-aimp__keys"><button class="btn-icon" data-act="prev" aria-label="Previous" data-tip="Previous (P)"><lull-part name="icon" icon="prev"></lull-part></button><lull-part name="play-button" size="56"></lull-part><button class="btn-icon" data-act="next" aria-label="Next" data-tip="Next (N)"><lull-part name="icon" icon="next"></lull-part></button><span class="gh-aimp__like"><lull-part name="like-button"></lull-part></span></div>
   </div>
   <div class="gh-aimp__list">
