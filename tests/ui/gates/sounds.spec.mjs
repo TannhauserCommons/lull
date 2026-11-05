@@ -2,8 +2,14 @@
 // a reload, nothing but play and pause sounds while music plays, the buffering loop is gone the moment the song sounds,
 // and nothing sounds while the page is hidden. Every sound the page starts is read from Web Audio itself (each buffer
 // source started or stopped), named by the page's `sound` event.
-import { expect, test } from '@playwright/test';
-import { openScreen } from './lib.mjs';
+import { expect, test as base } from '@playwright/test';
+import { openScreen, ownHub } from './lib.mjs';
+
+// a fixture hub of its own: a slow transfer is per song on a hub, and another gate's (fit.spec) must not reset this one's
+const test = base.extend({
+  hub: [async ({}, use) => { const hub = await ownHub(); await use(hub); hub.close(); }, { scope: 'worker' }],
+  baseURL: async ({ hub }, use) => use(hub.url),
+});
 
 async function listen(page, { standalone = false } = {}) {
   await page.addInitScript((standalone) => {

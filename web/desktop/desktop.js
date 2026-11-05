@@ -759,6 +759,7 @@
     var playingId = function () { return classicNow ? classicNow.id : P.currentId(); };
     var run = function (a, detail) {
       var id = playingId(), ps = P.state;
+      if (App.sounds) App.sounds.pressed();              // a press in the tray or a mini player: the listener's (sounds.js)
       switch (a) {
         case 'play-pause': return P.toggle();
         case 'next': return P.next();

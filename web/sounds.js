@@ -292,10 +292,26 @@
   App.on('server:pack.changed', function () { load(); });
   App.on('server:theme.changed', function () { load(); });
 
-  /* the app's windows and the system's quiet (the desktop app and Android report them; a browser can't) */
-  var bridge = window.LullDesktop || (window.LullNative && window.LullNative.sound) || null;
-  if (bridge && bridge.onFront) bridge.onFront(function (v) { appFront = !!v; updateLoop(); });
-  if (bridge && bridge.onQuiet) bridge.onQuiet(function (v) { systemQuiet = !!v; updateLoop(); });
+  /* the app's windows and the system's quiet: the desktop app (LullDesktop, from desktop.js, which loads after this
+     file) and Android (LullNative) report them; a browser can't. Asked again whenever the page comes back in sight, as a
+     backgrounded Android app may not hear the change. */
+  var bridge = null;
+  function connect() {
+    if (bridge) return;
+    var D2 = window.LullDesktop, N = window.LullNative;
+    bridge = D2 && D2.quiet ? D2 : N && N.quiet ? N : null;
+    if (!bridge) return;
+    if (bridge.front) {
+      bridge.front().then(function (v) { appFront = !!v; updateLoop(); }, function () {});
+      bridge.onFront(function (v) { appFront = !!v; updateLoop(); });
+    }
+    askQuiet();
+    bridge.onQuiet(function (v) { systemQuiet = !!v; updateLoop(); });
+  }
+  function askQuiet() { if (bridge) bridge.quiet().then(function (v) { systemQuiet = !!v; updateLoop(); }, function () {}); }
+  connect();
+  App.on('ready', connect);
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') askQuiet(); });
 
   /* ---------- the start-up sound: once per app start, never on a reload, never late ---------- */
   var started = false;
