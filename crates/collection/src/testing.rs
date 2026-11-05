@@ -1,4 +1,5 @@
-//! A collection on an in-memory database with no library, and a way to see what it published.
+//! A collection on an in-memory database with a library of what a test saved, and a way to see
+//! what it published.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -19,15 +20,38 @@ use tokio::sync::broadcast::Receiver;
 
 use crate::{MIGRATIONS, Service};
 
-struct NoLibrary;
+/// A library holding only the songs a test says it saved.
+#[derive(Default)]
+pub(crate) struct FakeLibrary {
+    pub(crate) saved: std::sync::Mutex<Vec<TrackId>>,
+}
 
 #[async_trait]
-impl Library for NoLibrary {
+impl Library for FakeLibrary {
     async fn search(&self, _: &str, _: usize) -> Result<Vec<Track>> {
         Ok(Vec::new())
     }
-    async fn saved(&self, _: &[TrackId]) -> Result<Vec<Track>> {
-        Ok(Vec::new())
+    async fn saved(&self, ids: &[TrackId]) -> Result<Vec<Track>> {
+        let saved = self.saved.lock().map_err(|_| lull_core::Error::internal("poisoned"))?;
+        Ok(ids
+            .iter()
+            .filter(|id| saved.contains(id))
+            .map(|id| Track {
+                id: id.clone(),
+                title: String::new(),
+                artist_id: lull_core::ids::ArtistId::of(""),
+                artist: String::new(),
+                album_id: lull_core::ids::AlbumId::of("", ""),
+                album: String::new(),
+                year: None,
+                no: None,
+                disc: None,
+                duration: None,
+                tags: Vec::new(),
+                saved: true,
+                file: None,
+            })
+            .collect())
     }
 }
 
@@ -127,6 +151,17 @@ pub(crate) async fn service_with_lastfm() -> Result<(Arc<Service>, Receiver<Even
 }
 
 pub(crate) async fn service_with_fakes() -> Result<(Arc<Service>, Receiver<Event>, Arc<FakeLastfm>, Arc<FakeCatalog>)> {
+    let (svc, rx, lastfm, catalog, _) = service_with_library().await?;
+    Ok((svc, rx, lastfm, catalog))
+}
+
+pub(crate) async fn service_with_library() -> Result<(
+    Arc<Service>,
+    Receiver<Event>,
+    Arc<FakeLastfm>,
+    Arc<FakeCatalog>,
+    Arc<FakeLibrary>,
+)> {
     // Each service writes files (playlist covers) into a folder of its own.
     static DIRS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let data = std::env::temp_dir().join(format!(
@@ -149,9 +184,10 @@ pub(crate) async fn service_with_fakes() -> Result<(Arc<Service>, Receiver<Event
     let ctx = Ctx::new(config, db, Http::new()?, bus);
     let lastfm = Arc::new(FakeLastfm::default());
     let fake_catalog = Arc::new(FakeCatalog::default());
+    let library = Arc::new(FakeLibrary::default());
     let svc = Arc::new(Service {
         ctx,
-        library: Arc::new(NoLibrary),
+        library: library.clone(),
         scrobbles: lastfm.clone(),
         sent: Default::default(),
         importing: AtomicBool::new(false),
@@ -160,7 +196,7 @@ pub(crate) async fn service_with_fakes() -> Result<(Arc<Service>, Receiver<Event
         linking: Default::default(),
         previewing: Default::default(),
     });
-    Ok((svc, rx, lastfm, fake_catalog))
+    Ok((svc, rx, lastfm, fake_catalog, library))
 }
 
 /// Records a song in the catalog, as search would have, and returns its id.

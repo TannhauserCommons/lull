@@ -18,9 +18,7 @@ pub async fn star(svc: &Service, p: &Params, liked: bool) -> Result<Reply, Fail>
     if ids.is_empty() {
         return Err(Fail::missing("id"));
     }
-    for id in &ids {
-        svc.collection.set_liked(id, liked).await?;
-    }
+    svc.collection.set_liked(&ids, liked).await?;
     Ok(Reply::empty())
 }
 

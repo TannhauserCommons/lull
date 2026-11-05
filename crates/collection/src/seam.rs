@@ -26,10 +26,16 @@ impl Collection for Service {
             .await
     }
 
-    async fn set_liked(&self, track: &TrackId, liked: bool) -> Result<()> {
-        let track = track.clone();
-        self.write(move |tx, events| likes::set(tx, events, &track, liked, lull_core::now()))
-            .await
+    async fn set_liked(&self, tracks: &[TrackId], liked: bool) -> Result<()> {
+        let tracks = tracks.to_vec();
+        let how = likes::How::of(tracks.len() > 1);
+        self.write(move |tx, events| {
+            let now = lull_core::now();
+            tracks
+                .iter()
+                .try_for_each(|t| likes::set(tx, events, t, liked, now, how))
+        })
+        .await
     }
 
     async fn playlists(&self) -> Result<Vec<Playlist>> {

@@ -114,7 +114,7 @@ data, ever.
 | Fact | Source of truth | Kept current by |
 |---|---|---|
 | tracks, albums, artists | server entities | every response (`M.absorb`) |
-| liked, followed | `GET /api/likes`, `/api/follows` -> `App.store` `liked`, `followed` | `App.toggleLike`, `App.setLiked`, `App.toggleFollow` (PUT/DELETE); `like` / `follow` events from other devices |
+| liked, followed | `GET /api/likes`, `/api/follows` -> `App.store` `liked`, `followed` | `App.toggleLike`, `App.setLiked`, `App.toggleFollow` (PUT/DELETE); `like` / `follow` events from other devices. `App.setLiked` of several songs sends them as a batch (`?batch=true`); with Save songs you like on (`library.autoSaveLikes`, read with the playback settings and kept by the `settings` event) it then asks once "Save these N too?" (ADR-0099). That question and Settings › Library and saving's rows (the switch, the one-time question about earlier likes, "Liked songs not saved" with Save them) are `screens/hub.js`'s, loaded only where they are used, so the start pages carry none of it |
 | playlists | `GET /api/playlists` -> store `playlists` (= `M.playlists`) | `App.createPlaylist`, `App.savePlaylistOrder`, `App.addToPlaylist`; how each is shown (`sort`) by `App.setPlaylistSort` (shown at once, kept by `PUT /api/playlists/{id}/sort` for every device; a failure keeps it for this visit and says so) |
 | saves | store `saves` `{ trackId: { jobId, step, status, pct, error, kind, nocover } }`, seeded from unfinished save rows of `GET /api/jobs` | `App.saves.start(ids, { mode, source })` (`mode` = the duplicate dialog's separate/replace), `retry`, `save` events |
 | activity | `GET /api/jobs` -> store `activity` (rows keyed `id` = jobId) | `job`, `transfer` events |

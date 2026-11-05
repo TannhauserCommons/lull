@@ -12,6 +12,10 @@
 | 4 Tagging and writing | Copy, tag, rename into place (below) | `write`: unreadable file, no permission, disk full |
 | 5 Pick-up | Jellyfin mode: ask Jellyfin to scan the music library; the job is `done` once the song is in the library. Folder mode: the folder index reads the file at once | Jellyfin mode never fails: the file is saved, the job is `pending` (below). Folder mode: `write` if the file can't be read back as the song; a retry only reads it again |
 
+## Saving what you like
+
+With Save songs you like on (`library.autoSaveLikes`, [ADR-0099](../adr/0099-liking-a-song-can-save-it.md)), a song liked on its own is saved through `saves.request`, as a playlist import's "Save the songs too": no source is named, so the saving profile picks below, and a streamed or prefetched copy that passes it becomes the saved file with no second download. Songs liked together, and earlier likes, are saved only on the listener's word (`POST /api/likes/save`).
+
 ## Picking the copy
 
 Without the listener's pick, step 1 asks Soulseek for the saving profile's copy (`Transfers::save_candidate`, ADR-0008). Soulseek searches when it knows no copy, and reuses the one the song streamed from when that passes ([soulseek.md](soulseek.md#source-rules)). When no copy passes the saving minimum, the profile's `below` decides:

@@ -60,8 +60,10 @@ pub trait Library: Send + Sync {
 pub trait Collection: Send + Sync {
     /// Liked tracks, newest first.
     async fn liked(&self) -> Result<Vec<TrackId>>;
-    /// Likes or unlikes; the same `like` events go out as from the web UI.
-    async fn set_liked(&self, track: &TrackId, liked: bool) -> Result<()>;
+    /// Likes or unlikes, in one change; the same `like` events go out as from the web UI.
+    /// Several tracks are one action liking many: none is saved by itself, whatever
+    /// `library.autoSaveLikes` says (ADR-0099).
+    async fn set_liked(&self, tracks: &[TrackId], liked: bool) -> Result<()>;
     async fn playlists(&self) -> Result<Vec<Playlist>>;
     async fn playlist(&self, id: &str) -> Result<Option<Playlist>>;
     async fn create_playlist(&self, name: &str, tracks: &[TrackId]) -> Result<Playlist>;

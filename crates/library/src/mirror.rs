@@ -66,10 +66,9 @@ async fn import_once(svc: &Arc<Service>) -> Result<()> {
 
     let liked: HashSet<TrackId> = collection.liked().await?.into_iter().collect();
     let favourites = songs_of(svc, &jellyfin.favourite_audio().await?);
-    let new_likes: Vec<&TrackId> = favourites.iter().filter(|id| !liked.contains(*id)).collect();
-    for id in &new_likes {
-        collection.set_liked(id, true).await?;
-    }
+    let new_likes: Vec<TrackId> = favourites.iter().filter(|id| !liked.contains(*id)).cloned().collect();
+    // One import: Jellyfin's favourites are its own saved songs, so none is saved again.
+    collection.set_liked(&new_likes, true).await?;
 
     let mut playlists = 0;
     for (jf_id, name) in jellyfin.playlists().await? {

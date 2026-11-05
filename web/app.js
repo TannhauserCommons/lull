@@ -270,19 +270,31 @@
       icon: on ? 'heart-fill' : 'heart', action: 'Undo', onAction: function () { App.toggleLike(id, !on); }, quiet: true
     });
   };
-  /* setLiked(ids, on): many at once (album and selection actions) */
+  /* setLiked(ids, on): many at once (album and selection actions). With "Save songs you like" on
+     (library.autoSaveLikes) the hub saves a song liked on its own; songs liked together are a batch it saves none of,
+     so this asks once "Save these N too?" (ADR-0099). A batch that isn't saved waits in Settings as "liked, not saved". */
   function setLiked(ids, on) {
+    var batch = ids.length > 1;
     App.store.update('liked', function (l) { ids.forEach(function (id) { if (on) l[id] = true; else delete l[id]; }); });
     ids.forEach(function (id) { App.emit('like', { id: id, liked: on, track: M.track(id) }); });
     Promise.all(ids.map(function (id) {
-      return App.outbox.call('/api/likes/' + encodeURIComponent(id), { method: on ? 'PUT' : 'DELETE' }, { op: 'like', trackId: id, liked: on });
-    })).catch(function (err) {
+      var op = { op: 'like', trackId: id, liked: on };
+      if (batch && on) op.batch = true;
+      return App.outbox.call('/api/likes/' + encodeURIComponent(id) + (batch && on ? '?batch=true' : ''), { method: on ? 'PUT' : 'DELETE' }, op);
+    })).then(function () {
+      // the question comes with Settings' hub code (screens/hub.js), loaded only when it is asked
+      if (on && batch && autoSaveLikes) App.needHub().then(function () { App.hubKit.offerSaves(ids); }, function () {});
+    }, function (err) {
       App.store.update('liked', function (l) { ids.forEach(function (id) { if (on) delete l[id]; else l[id] = true; }); });
       ids.forEach(function (id) { App.emit('like', { id: id, liked: !on, track: M.track(id) }); });
       App.toast('Couldn\'t ' + (on ? 'like' : 'unlike') + ': ' + err.message, { kind: 'error' });
     });
   }
   App.setLiked = setLiked;
+  /* whether liking a song saves it too (Settings › Library and saving): read at start (loadSettings) and kept by the
+     `settings` event, any device's change included */
+  var autoSaveLikes = false;
+  App.on('server:settings', function (stored) { if (stored && stored.library) autoSaveLikes = stored.library.autoSaveLikes === true; });
   App.toggleFollow = function (id, force) {
     var on = force === undefined ? !state.followed[id] : !!force, kind = /^ar-/.test(id) ? 'artist' : 'tag';
     var a = M.artist(id), name = a ? a.name : id;
@@ -4527,6 +4539,7 @@
   }
   function applyPlaybackSettings(s) {
     var pb = (s && s.playback) || {}, v = function (x) { return x && typeof x === 'object' && 'value' in x ? x.value : x; };
+    autoSaveLikes = !!(s && s.library && v(s.library.autoSaveLikes) === true);
     App.setPlayback({ gapless: v(pb.gapless) !== false, crossfade: +v(pb.crossfade) || 0, normalisation: v(pb.normalisation) || 'off',
       loudnessTarget: +v(pb.loudnessTarget) || -14, radioWhenQueueEnds: v(pb.radioWhenQueueEnds) !== false, volumeStep: +v(pb.volumeStep) || 5,
       prefetchCount: v(pb.prefetchCount) == null ? 2 : +v(pb.prefetchCount), switchToBetter: !s || !s.sources || v(s.sources.switchToBetter) !== false });

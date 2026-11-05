@@ -88,7 +88,7 @@ const state = {
       preferredFormats: { source: 'config', value: ['flac', 'mp3', 'opus'] },
     },
     search: { showFiles: false },
-    library: { duplicatePolicy: 'ask', musicFolder: { source: 'config', value: '/music' } },
+    library: { duplicatePolicy: 'ask', autoSaveLikes: false, musicFolder: { source: 'config', value: '/music' } },
     sharing: { uploadSlots: 3, uploadLimitKBs: 500, mode: { source: 'config', value: 'library' } },
     discovery: { adventurousness: 0.4, on: { listenbrainz: true, musicbrainz: true, lastfm: true } },
     cache: { capGB: { source: 'config', value: 10 }, usedGB: 1.2 },
@@ -155,8 +155,12 @@ const routes = [
     SKINS ? { key: 'LULL_SKINS_DIR', value: '/skins', set: true, source: 'env', secret: false, restart: true }
       : { key: 'LULL_SKINS_DIR', value: null, set: false, source: 'default', secret: false, restart: true },
   ] })],
-  ['GET', /^\/api\/settings$/, () => state.settings],
-  ['PATCH', /^\/api\/settings$/, (m, q, body) => { deepMerge(state.settings, body || {}); return state.settings; }],
+  // a test's own changes (X-Fixture-Client) stay its own, over everyone's settings; the hub tells every device
+  ['GET', /^\/api\/settings$/, (m, q, body, client) => settingsOf(client)],
+  ['PATCH', /^\/api\/settings$/, (m, q, body, client) => {
+    if (client) { const own = ownSettings.get(client) || {}; deepMerge(own, body || {}); ownSettings.set(client, own); } else deepMerge(state.settings, body || {});
+    const now = settingsOf(client); if (client) emit('settings', now, client); return now;
+  }],
   // every fixture song has its album pictured, so each known id resolves at once and none is due a lookup
   ['POST', /^\/api\/catalog\/resolve$/, (m, q, body) => {
     const known = ((body && body.trackIds) || []).filter((id) => L.tracks[id]).slice(0, 200);
@@ -174,7 +178,18 @@ const routes = [
 
   // collection
   ['GET', /^\/api\/likes$/, (m, q) => ({ items: page(state.likes, q), total: state.likes.length, entities: entities({ tracks: page(state.likes, q), albums: albumsOf(page(state.likes, q)) }) })],
-  ['PUT', /^\/api\/likes\/(.+)$/, (m) => { if (!state.likes.includes(m[1])) state.likes.unshift(m[1]); emit('like', { trackId: m[1], liked: true }); return { status: 204 }; }],
+  // liked songs the library doesn't hold, and saving them (ADR-0099): what a test asked is kept as its own
+  ['GET', /^\/api\/likes\/unsaved$/, (m, q, body, client) => { const items = unsavedLikes(client); return { items, total: items.length }; }],
+  ['POST', /^\/api\/likes\/save$/, (m, q, body, client) => {
+    const wanted = body && body.trackIds, ids = unsavedLikes(client).filter((id) => !wanted || wanted.includes(id));
+    likeLog(client).saved.push(...ids); return { asked: ids.length };
+  }],
+  ['PUT', /^\/api\/likes\/(.+)$/, (m, q, body, client) => {
+    // a test's own likes stay its own; without a scope, everyone's
+    if (client) likeLog(client).likes.push({ trackId: m[1], batch: q.get('batch') === 'true' });
+    else if (!state.likes.includes(m[1])) state.likes.unshift(m[1]);
+    emit('like', { trackId: m[1], liked: true }, client || undefined); return { status: 204 };
+  }],
   ['DELETE', /^\/api\/likes\/(.+)$/, (m) => { state.likes = state.likes.filter((t) => t !== m[1]); emit('like', { trackId: m[1], liked: false }); return { status: 204 }; }],
   ['GET', /^\/api\/follows$/, () => ({ ...state.follows, entities: entities({ artists: state.follows.artists }) })],
   ['GET', /^\/api\/playlists$/, () => ({ items: state.playlists, total: state.playlists.length, entities: entities({ tracks: state.playlists.flatMap((p) => p.items.slice(0, 4).map((i) => i.trackId)), albums: albumsOf(state.playlists.flatMap((p) => p.items.slice(0, 4).map((i) => i.trackId))) }) })],
@@ -363,6 +378,12 @@ function emit(topic, data, only) {
   for (const [res, client] of clients) if (only === undefined || client === only) res.write(line);
 }
 const clientOf = (req) => req.headers['x-fixture-client'] || '';
+const ownSettings = new Map();   // fixture client -> its own settings changes
+function settingsOf(client) { const out = structuredClone(state.settings); if (ownSettings.has(client)) deepMerge(out, structuredClone(ownSettings.get(client))); return out; }
+const likeLogs = new Map();      // fixture client -> { likes: [{ trackId, batch }], saved: [ids asked to save] }
+function likeLog(client) { if (!likeLogs.has(client)) likeLogs.set(client, { likes: [], saved: [] }); return likeLogs.get(client); }
+const unsavedLikes = (client) => [...new Set([...likeLog(client).likes.map((l) => l.trackId), ...state.likes])]
+  .filter((id) => !L.savedIds.includes(id) && !likeLog(client).saved.includes(id));
 /* a comment on every open stream every 15 s, as the hub's keep-alive (crates/server/src/events.rs): a client that
    stopped listening finds out at the next one */
 setInterval(() => { for (const res of clients.keys()) res.write(': keep-alive\n\n'); }, 15000).unref();
@@ -765,6 +786,12 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://fixture');
   const path = url.pathname, q = url.searchParams;
   if (path === '/__fixture/emit' && req.method === 'POST') { const b = await readBody(req); emit(b.topic, b.data, req.headers['x-fixture-client']); return send(res, 204); }
+  if (path === '/__fixture/likes-log' && req.method === 'GET') return send(res, 200, likeLog(clientOf(req)));
+  // songs neither saved nor liked, with their entities: what a like may save
+  if (path === '/__fixture/unsaved-songs' && req.method === 'GET') {
+    const out = L.trackIds.filter((id) => !L.tracks[id].saved && !state.likes.includes(id)).slice(0, +(q.get('n') || 3));
+    return send(res, 200, { items: out, entities: entities({ tracks: out, albums: albumsOf(out) }) });
+  }
   if (path === '/__fixture/drop-events' && req.method === 'POST') {
     for (const [stream, c] of clients) if (c === clientOf(req)) { clients.delete(stream); stream.end(); }
     return send(res, 204);

@@ -117,6 +117,9 @@ struct SearchPrefs {
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 struct LibraryPrefs {
     duplicate_policy: DuplicatePolicy,
+    /// Liking a song saves it too, as Save would (`likes`, ADR-0099). Off by default: a save
+    /// takes disk and peers' bandwidth, and a like is often only taste.
+    auto_save_likes: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
@@ -360,6 +363,11 @@ async fn change(State(svc): State<Arc<Service>>, body: Result<Json<Value>, JsonR
         .await?;
     svc.ctx.bus.publish("settings", &prefs);
     respond(&svc.ctx, &prefs).map(Json)
+}
+
+/// Whether liking a song saves it too (`library.autoSaveLikes`).
+pub(crate) fn auto_save_likes(conn: &Connection) -> Result<bool> {
+    Ok(load(conn)?.library.auto_save_likes)
 }
 
 fn load(conn: &Connection) -> Result<Prefs> {

@@ -532,6 +532,47 @@
       </section></div>`;
   }
 
+  /* ---------- Settings > Library and saving: "Save songs you like" (library.autoSaveLikes, ADR-0099). Turning it on
+     never saves earlier likes unasked; it asks once. Liked songs the library doesn't hold (earlier ones, or many liked at
+     once) wait under the switch to be saved. Here, not in system.js, so only the section that shows it loads it. ---------- */
+  var UNSAVED = '/api/likes/unsaved';
+  function plural(n, word) { return n === 1 ? '1 ' + word : K.num(n) + ' ' + word + 's'; }
+  function likedUnsaved() {
+    if (!K.get('library.autoSaveLikes')) return '';
+    var r = M.get(UNSAVED), n = r.data ? r.data.total : 0;
+    return n ? K.row('Liked songs not saved', plural(n, 'liked song') + ' aren\'t in your library.', html`<button class="btn btn--sm" data-act="sys-save-liked">${icon('save')}Save them</button>`) : '';
+  }
+  function likeSaves() {
+    if (K.get('library.autoSaveLikes') == null) return '';       // a hub without it
+    return html`${K.switchRow('library.autoSaveLikes', 'Save songs you like', 'Liking a song saves it to your library too, as Save does, in the quality your saving profile asks for. Liking many at once asks first.')}
+      <div id="sys-liked-unsaved" aria-live="polite">${likedUnsaved()}</div>`;
+  }
+  function saveLiked() {
+    M.api('/api/likes/save', { method: 'POST', body: {} }).then(function (res) {
+      App.toast(res.asked ? 'Saving ' + plural(res.asked, 'liked song') : 'Your liked songs are all saved', { icon: 'save' });
+      M.reload(UNSAVED);
+    }, function (err) { App.toast('Couldn\'t save your liked songs: ' + err.message, { kind: 'error' }); });
+  }
+  App.action('sys-save-liked', function (el) { el.disabled = true; saveLiked(); });
+  /* songs liked together are a batch the hub saves none of: asked once (App.setLiked) */
+  function offerSaves(ids) {
+    var unsaved = ids.filter(function (id) { var s = App.saves.get(id); return !App.isSaved(id) && !(s && s.status === 'saving'); });
+    if (!unsaved.length) return;
+    var n = unsaved.length === 1 ? 'this song' : 'these ' + unsaved.length;
+    App.toast('Save ' + n + ' too?', { icon: 'save', action: 'Save', sticky: true, onAction: function () { App.saves.start(unsaved); } });
+  }
+  K.effects['library.autoSaveLikes'] = function (on) {
+    var box = $('#sys-liked-unsaved'); if (box) box.innerHTML = String(likedUnsaved());
+    if (!on) return;
+    M.api(UNSAVED).then(function (res) {
+      if (!res.total) return;
+      App.confirm({ title: 'also save the songs you liked before?', text: plural(res.total, 'song') + ' you liked earlier aren\'t in your library. From now on, liking a song saves it.', confirm: 'Save ' + plural(res.total, 'song') }, saveLiked);
+    }, function () {});
+  };
+  ['server:save', 'server:like'].forEach(function (topic) {
+    App.on(topic, function () { if ($('#sys-liked-unsaved')) M.reload(UNSAVED); });
+  });
+
   App.hubKit = { librarySource: librarySource, soulseekRows: soulseekRows, soulseekForm: function () { return html`<div id="hub-slsk">${soulseekForm()}</div>`; },
-    httpsNote: httpsNote, deviceName: deviceName, devices: devices, gateForm: gateForm, setupPage: renderSetup };
+    httpsNote: httpsNote, deviceName: deviceName, devices: devices, gateForm: gateForm, setupPage: renderSetup, likeSaves: likeSaves, offerSaves: offerSaves };
 })();

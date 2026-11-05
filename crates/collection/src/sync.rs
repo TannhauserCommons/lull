@@ -52,7 +52,13 @@ enum Op {
         skipped: bool,
     },
     #[serde(rename = "like")]
-    Like { track_id: TrackId, liked: bool },
+    Like {
+        track_id: TrackId,
+        liked: bool,
+        /// Part of one action liking many songs (`likes::How`).
+        #[serde(default)]
+        batch: bool,
+    },
     #[serde(rename = "follow")]
     Follow {
         kind: Kind,
@@ -211,7 +217,7 @@ fn run(conn: &Connection, events: &mut Events, device: &str, at: i64, op: Op) ->
             };
             plays::record(conn, events, device, &track_id, started_at, &end)?;
         }
-        Op::Like { track_id, liked } => likes::set(conn, events, &track_id, liked, at)?,
+        Op::Like { track_id, liked, batch } => likes::set(conn, events, &track_id, liked, at, likes::How::of(batch))?,
         Op::Follow {
             kind,
             id,
@@ -312,6 +318,41 @@ mod tests {
 
     async fn count(svc: &Service, sql: &'static str) -> Result<i64> {
         svc.ctx.db.call(move |c| Ok(c.query_row(sql, [], |r| r.get(0))?)).await
+    }
+
+    #[tokio::test]
+    async fn likes_tapped_offline_save_as_single_likes_and_a_batch_doesnt() -> Result<()> {
+        let (svc, mut rx) = testing::service().await?;
+        let device = testing::device(&svc, false).await?.id;
+        svc.ctx
+            .db
+            .call(|c| {
+                c.execute(
+                    r#"INSERT INTO collection_settings (id, json) VALUES (1, '{"library":{"autoSaveLikes":true}}')"#,
+                    [],
+                )?;
+                Ok(())
+            })
+            .await?;
+        let (a, b, c) = (
+            testing::known_song(&svc, "Velvet Orchard", "Tapped").await?,
+            testing::known_song(&svc, "Velvet Orchard", "Also Tapped").await?,
+            testing::known_song(&svc, "Velvet Orchard", "Selected").await?,
+        );
+        let at = lull_core::now() - 3600;
+        let ops = json!([
+            { "id": "op-a", "at": at, "op": "like", "trackId": a, "liked": true },
+            { "id": "op-b", "at": at + 60, "op": "like", "trackId": b, "liked": true },
+            { "id": "op-c", "at": at + 90, "op": "like", "trackId": c, "liked": true, "batch": true },
+        ]);
+        apply_all(&svc, &device, batch(ops)).await?;
+        let asked: Vec<Value> = testing::published(&mut rx)
+            .into_iter()
+            .filter(|e| e.topic == "saves.request")
+            .map(|e| e.data["trackIds"].clone())
+            .collect();
+        assert_eq!(asked, [json!([a]), json!([b])]);
+        Ok(())
     }
 
     #[tokio::test]

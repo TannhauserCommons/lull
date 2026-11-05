@@ -569,6 +569,7 @@
       ${cfgField('LULL_NAMING', 'Folder and file names', 'Saved songs are named from this template: {artist}, {album}, {year}, {disc}, {track:02}, {title}, {ext}.')}
       <div id="sys-naming">${namingBox()}</div>
       ${row('When a song is already saved', 'What Save does when the library has the same song.', choice('library.duplicatePolicy', 'Duplicate policy', [['ask', 'Ask each time'], ['keep', 'Keep existing'], ['replace', 'Replace if better']], 'sys-seg--wrap'))}
+      ${App.hubKit.likeSaves()}
       ${row('Rescan library', 'Picks up files added to the music folder outside lull.', html`<div class="sys-inline sys-inline--col"><button class="btn" data-act="jellyfin-rescan">${icon('refresh')}Rescan library now</button><div id="sys-rescan" class="sys-rescan" aria-live="polite">${rescanStatus()}</div></div>`)}`;
   }
 

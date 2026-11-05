@@ -129,7 +129,7 @@ impl Collection for FakeCollection {
     async fn liked(&self) -> Result<Vec<TrackId>> {
         Ok(vec![])
     }
-    async fn set_liked(&self, _track: &TrackId, _liked: bool) -> Result<()> {
+    async fn set_liked(&self, _tracks: &[TrackId], _liked: bool) -> Result<()> {
         Ok(())
     }
     async fn playlists(&self) -> Result<Vec<Playlist>> {
