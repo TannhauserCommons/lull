@@ -40,6 +40,10 @@ run = [
 description = "The UI gates CI runs on web/ changes: performance budgets, key screens, accessibility (Node and Chromium only)"
 run = "sh tests/ui/gates/run.sh"
 
+[tasks."themes:check"]
+description = "A quick look at screens in every theme (the built-ins and LULL_THEMES_DIR's), desktop and phone, day and night, with the fit checks and one contact sheet: themes:check <route>..."
+run = "node tests/ui/themes-check.mjs"
+
 [tasks."ui:approve"]
 description = "Approve how the key screens look now: capture the UI gates' goldens on CI into tests/ui/gates/goldens/linux"
 run = "sh tests/ui/gates/approve.sh"
