@@ -282,9 +282,12 @@ jobs:
       - name: Write Gradle's dependency checksums
         if: matrix.build == 'signed' && inputs.gradle-verification
         working-directory: app/gen/android
-        env:
-          LULL_TAURI_CLI: cargo
-        run: ./gradlew --write-verification-metadata sha256 :app:assembleUniversalRelease
+        # The libraries the APK resolves, without the Rust tasks (they use none, and run only inside the Tauri CLI):
+        # arm64 alone, as android-build.sh builds.
+        run: |
+          ./gradlew --write-verification-metadata sha256 :app:assembleUniversalRelease \
+            -PtargetList=aarch64 -PabiList=arm64-v8a -ParchList=arm64 \
+            -x rustBuildUniversalRelease -x rustBuildArm64Release
       - if: matrix.build == 'signed' && inputs.gradle-verification
         uses: actions/upload-artifact@v4
         with:
