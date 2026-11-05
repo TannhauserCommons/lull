@@ -917,6 +917,95 @@ pub fn hidden(c: &Connection) -> Result<HashSet<ArtistId>> {
     .collect())
 }
 
+/// How long a pick's seed is remembered, and its picks' outcomes count: judged over weeks.
+const SEED_DAYS: i64 = 180;
+/// How sure a seed's score is: it counts n/(n + `SEED_PRIOR`) of itself after n picks with an
+/// outcome, so one lucky or unlucky pick barely moves it.
+const SEED_PRIOR: f64 = 3.0;
+
+/// Remembers what suggested each pick shown (`kind` artist or tag, `seed` its id or name); a
+/// pick shown again keeps its first seed. Seeds older than `SEED_DAYS` are forgotten.
+pub fn remember_pick_seeds(c: &Connection, seeds: &[(TrackId, &str, String)], now: i64) -> Result<()> {
+    c.execute(
+        "DELETE FROM discovery_pick_seeds WHERE shown_at < ?1",
+        [now - SEED_DAYS * 86_400],
+    )?;
+    let mut stmt = c.prepare_cached(
+        "INSERT INTO discovery_pick_seeds (track_id, kind, seed, shown_at) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(track_id) DO NOTHING",
+    )?;
+    for (track, kind, seed) in seeds {
+        stmt.execute(params![track.as_str(), kind, seed, now])?;
+    }
+    Ok(())
+}
+
+/// How each seed's picks fared since they were shown, one score per (kind, seed). Coming back
+/// counts most: per pick, heard +0.5, heard again on a later day +2, liked or saved +2, skipped
+/// −0.5, each fading as taste's signals do; then a seed's sum is shrunk by its number of picks
+/// with an outcome (`SEED_PRIOR`). Only what came after the last taste reset counts.
+pub fn seed_outcomes(c: &Connection, now: i64) -> Result<HashMap<(String, String), f64>> {
+    let since = reset_at(c)?.max(now - SEED_DAYS * 86_400);
+    let plays = rows(
+        c,
+        "SELECT s.kind, s.seed, s.track_id, p.started_at, p.completed, p.skipped, p.played_s, p.duration_s
+         FROM discovery_pick_seeds s JOIN plays p ON p.track_id = s.track_id AND p.started_at >= s.shown_at
+         WHERE p.started_at >= ?1 ORDER BY p.started_at",
+        [since],
+        |r| {
+            let (completed, skipped, played, duration): (bool, bool, u32, u32) =
+                (r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?);
+            let heard = completed || (duration > 0 && played.saturating_mul(2) >= duration);
+            Ok((
+                (r.get(0)?, r.get(1)?),
+                r.get::<_, String>(2)?,
+                r.get::<_, i64>(3)?,
+                heard,
+                skipped,
+            ))
+        },
+    )?;
+    let kept = rows(
+        c,
+        "SELECT s.kind, s.seed, s.track_id, l.liked_at FROM discovery_pick_seeds s
+         JOIN likes l ON l.track_id = s.track_id AND l.liked_at >= s.shown_at WHERE l.liked_at >= ?1
+         UNION ALL
+         SELECT s.kind, s.seed, s.track_id, v.at FROM discovery_pick_seeds s
+         JOIN discovery_saves v ON v.track_id = s.track_id AND v.at >= s.shown_at WHERE v.at >= ?1",
+        [since],
+        |r| Ok(((r.get(0)?, r.get(1)?), r.get::<_, String>(2)?, r.get::<_, i64>(3)?)),
+    )?;
+    // Per pick: its seed, its score, and the days it was heard on.
+    type Fare = ((String, String), f64, HashSet<i64>);
+    let mut picks: HashMap<String, Fare> = HashMap::new();
+    for (seed, track, at, heard, skipped) in plays {
+        let entry = picks.entry(track).or_insert_with(|| (seed, 0.0, HashSet::new()));
+        let day = at.div_euclid(86_400);
+        let fade = crate::taste::fade(now - at);
+        if heard {
+            let first = entry.2.is_empty();
+            if entry.2.insert(day) {
+                entry.1 += if first { 0.5 } else { 2.0 } * fade;
+            }
+        } else if skipped {
+            entry.1 -= 0.5 * fade;
+        }
+    }
+    for (seed, track, at) in kept {
+        picks.entry(track).or_insert_with(|| (seed, 0.0, HashSet::new())).1 += 2.0 * crate::taste::fade(now - at);
+    }
+    let mut seeds: HashMap<(String, String), (f64, usize)> = HashMap::new();
+    for (seed, score, _) in picks.into_values() {
+        let s = seeds.entry(seed).or_default();
+        s.0 += score;
+        s.1 += 1;
+    }
+    Ok(seeds
+        .into_iter()
+        .map(|(seed, (score, n))| (seed, score * n as f64 / (n as f64 + SEED_PRIOR)))
+        .collect())
+}
+
 /// The plays of the last `days` that were heard (to the end or past half, as the taste model
 /// counts them), as (track, artist, plays, last played), most played first. A play that ended
 /// at once (a stream that never started, a queue skipped through) isn't listening.
@@ -971,7 +1060,10 @@ mod tests {
     use lull_core::model::Artist;
     use rusqlite::Connection;
 
-    use super::{artist, artist_ids, put_artists, recent_plays, replace_ids, seed_from_search};
+    use super::{
+        artist, artist_ids, put_artists, recent_plays, remember_pick_seeds, replace_ids, seed_from_search,
+        seed_outcomes,
+    };
     use crate::artist::identity::{Evidence, IdRow, Ids, Source};
     use crate::sources::{ArtistInfo, ArtistSource};
 
@@ -1063,6 +1155,58 @@ mod tests {
             "the listener's evidence decided: none"
         );
         assert_eq!(artist_ids(&c, &held)?, ids, "what lull holds stays");
+        Ok(())
+    }
+
+    #[test]
+    fn a_seed_counts_returns_most_and_one_pick_barely_moves_it() -> Result<()> {
+        let c = discovery_db()?;
+        c.execute_batch(
+            "CREATE TABLE plays (track_id TEXT, artist TEXT, started_at INTEGER, played_s INTEGER,
+                                 duration_s INTEGER, completed INTEGER, skipped INTEGER);
+             CREATE TABLE likes (track_id TEXT, artist TEXT, title TEXT, album TEXT, liked_at INTEGER);",
+        )?;
+        let now = 1_800_000_000;
+        let day = 86_400;
+        let t = |s: &str| TrackId(s.to_owned());
+        remember_pick_seeds(
+            &c,
+            &[
+                (t("t-back"), "artist", "ar-back".into()),
+                (t("t-once"), "artist", "ar-once".into()),
+                (t("t-skip"), "tag", "chillwave".into()),
+                (t("t-early"), "tag", "slowcore".into()),
+            ],
+            now - 3 * day,
+        )?;
+        c.execute_batch(&format!(
+            "INSERT INTO plays VALUES
+               ('t-back', 'A', {d0}, 200, 200, 1, 0), ('t-back', 'A', {d0} + 600, 200, 200, 1, 0),
+               ('t-back', 'A', {d1}, 200, 200, 1, 0),
+               ('t-once', 'B', {d0}, 200, 200, 1, 0),
+               ('t-skip', 'C', {d0}, 10, 200, 0, 1),
+               ('t-early', 'D', {before}, 200, 200, 1, 0);",
+            d0 = now - 2 * day,
+            d1 = now - day,
+            before = now - 5 * day,
+        ))?;
+        let scores = seed_outcomes(&c, now)?;
+        let score = |k: &str, s: &str| scores.get(&(k.to_owned(), s.to_owned())).copied().unwrap_or(0.0);
+        // One pick each: a score counts a quarter of itself (n / (n + 3)).
+        assert!(
+            (score("artist", "ar-back") - 2.5 / 4.0).abs() < 0.02,
+            "heard, and back on a later day"
+        );
+        assert!(
+            (score("artist", "ar-once") - 0.5 / 4.0).abs() < 0.01,
+            "heard once; the same day again adds nothing"
+        );
+        assert!((score("tag", "chillwave") + 0.5 / 4.0).abs() < 0.01, "skipped");
+        assert_eq!(
+            score("tag", "slowcore"),
+            0.0,
+            "a play before the pick was shown isn't the pick's"
+        );
         Ok(())
     }
 

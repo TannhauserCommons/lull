@@ -8,6 +8,7 @@ mod feed;
 mod mix;
 mod open;
 mod pages;
+mod picking;
 mod radio;
 mod search;
 mod share;
@@ -133,6 +134,17 @@ pub const MIGRATIONS: Migrations = Migrations {
         -- Photos were vetted with those MBIDs (Wikidata's photo of a namesake): vetted again.
         DELETE FROM discovery_artist_photos;
     "#,
+        r#"
+        -- What suggested each pick (picking.rs): its seed artist or tag, so how the pick fared
+        -- (heard, heard again on a later day, liked, saved, skipped) counts for or against that
+        -- seed (store::seed_outcomes).
+        CREATE TABLE discovery_pick_seeds (
+            track_id  TEXT PRIMARY KEY,
+            kind      TEXT NOT NULL,
+            seed      TEXT NOT NULL,
+            shown_at  INTEGER NOT NULL
+        );
+    "#,
     ],
 };
 
@@ -234,6 +246,7 @@ pub fn router(svc: Arc<Service>) -> Router {
         .route("/api/catalog/art/{id}", get(art::get))
         .route("/api/catalog/resolve", axum::routing::post(search::resolve::post))
         .route("/api/feed", get(feed::get))
+        .route("/api/feed/refresh", post(feed::refresh))
         .route("/api/share/{kind}/{id}", get(share::get))
         .route("/api/open", get(open::open))
         .route("/api/radio", get(radio_tracks))

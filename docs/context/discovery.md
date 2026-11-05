@@ -28,13 +28,13 @@ Owner: Discovery session (`crates/discovery`). Source choice and why: [ADR-0030]
 
 Built in the background; the first build happens while the first caller waits (tens of seconds, paced). Then:
 - kept in memory and in `discovery_state` (served after a restart);
-- rebuilt when six hours old, when follows change, or after feedback or a taste reset;
+- rebuilt when six hours old, when follows change, after feedback or a taste reset, and on the listener's Refresh (`POST /api/feed/refresh`, at most hourly, a whole new shelf);
 - hidden artists are filtered at serve time.
 
 | Shelf | From |
 |---|---|
 | `newReleases` | ListenBrainz fresh releases (30 days, every size). Ranked: followed artists, then liked artists (taste), then releases tagged with followed tags or tags dug into (`Taste::dig_tags`: specific, on 2+ liked artists; albums and EPs above singles). Never a release the listener has met (a known song of it, or the song a single is named after) or a reissue ("remastered", "reissue" in the title). Only what can play: of the best 30, the 12 best that are saved or that Soulseek peers share (`feed::check_shelf`). Remembered answers (`Transfers::album_known`) fill the shelf at once; then `album_available` searches one release at a time, best first, and never for one ranked below a full shelf. The build waits 3 s for answers; later ones re-serve the shelf and announce `feed.updated`. A release without an answer is never shown, so the shelf is empty rather than wrong while Soulseek can't say; those are asked again every 5 minutes (free while Soulseek is offline or its checks wait). A stored feed loaded after a restart is checked again |
-| `picks` | Four pools, interleaved round-robin. One track per artist, originals before other takes (`radio::is_version`). Nothing already played or liked (on any release), nothing by hidden or disliked artists. Except fresh releases, no artist the listener already likes. 12. |
+| `picks` | Stable at the core, fresh at the edge ([ADR-0100](../adr/0100-picks-stable-at-the-core-fresh-at-the-edge.md), `picking.rs`): the 3 strongest established artists and 2 strongest tags always seed, 1 more artist and up to 2 more tags are drawn from the next ones (to the 12th); about a fifth of the shelf comes from the edge (3 for a listener of few tags, 2 for a broad one). One track per artist, originals before other takes (`radio::is_version`). Nothing already played or liked (on any release), nothing by hidden or held-back artists, nothing the last 3 shelves showed as new. Except fresh releases, no artist the listener already likes. An automatic rebuild keeps up to half the last shelf's picks not taken (a pick gives way after 3 shelves); Refresh keeps none. How each seed's picks fared moves its weight between half and twice (`store::seed_outcomes`: heard +0.5, heard again on a later day +2, liked or saved +2, skipped −0.5, shrunk by n/(n+3)). 12. |
 | `radioStarters` | Top artist, followed tags, the strongest tag dug into that isn't followed, the track heard 3+ times this week; on a cold start, three cold-start tags |
 | `jumpBackIn` | Albums heard in the last 30 days, most recent first (5), then the month's most played artist that lull knows by its exact [ids](#artist-identity) (of the 5 most played; a credit like "A feat. B" holds none of its own). *Heard* is the taste model's play: to the end or past half; a play that ended at once isn't one |
 | `followedTags` | `follows` at serve time. Each comes as a tag entity (`entities.tags`) with `related`: the specific tags on 2+ of this month's fresh releases that carry it, most often first, never a followed one (4; `feed::related_tags`, from the releases the feed reads anyway). Home's "you might like" |
@@ -48,8 +48,8 @@ The four pick pools:
 
 | Pool | Reason | via |
 |---|---|---|
-| Artist radio (medium, 0-60% popularity) from the top 4 liked artists by their MBID, else 6 songs of Deezer's radio by their Deezer id, minus the seed's own ([identity](#artist-identity)) | `like` (seed artist) | `ListenBrainz similar artists`, `Deezer radio` |
-| Tag radio at 0-50% popularity for followed tags, then the tags dug into (4 tags; 3 rotating cold-start tags when nothing is known) | `tag` | `ListenBrainz tags` |
+| Artist radio (medium, 0-60% popularity) from the seed artists (core and edge, above) by their MBID, else 6 songs of Deezer's radio by their Deezer id, minus the seed's own ([identity](#artist-identity)) | `like` (seed artist) | `ListenBrainz similar artists`, `Deezer radio` |
+| Tag radio at 0-50% popularity for the seed tags (core and edge, above; 3 rotating cold-start tags when nothing is known) | `tag` | `ListenBrainz tags` |
 | CF recommendations (only with `LULL_LISTENBRAINZ_USER`) | `listeners` ("listeners like you", no `ref`) | `ListenBrainz recommendations` |
 | The first song the listener doesn't know (an original when there is one) of up to 3 fresh releases by followed or liked artists | `fresh` | `MusicBrainz releases` |
 

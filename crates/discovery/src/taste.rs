@@ -34,7 +34,7 @@ pub mod weight {
 }
 
 /// Everything the model learns from, as plain data (read by `store`, built here).
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Signals {
     pub plays: Vec<Play>,
     pub likes: Vec<Mark>,
@@ -136,6 +136,16 @@ pub fn is_specific(tag: &str) -> bool {
 /// namesake's, or a single song tagged "rapper") are that artist, not a taste.
 pub const TAG_ARTISTS: usize = 2;
 
+/// Damping, so one day can't swing the profile (docs/context/taste.md#damping): a day of
+/// listening counts, not each play. At most this many heard plays per artist per day count...
+pub const HEARD_PER_DAY: u32 = 3;
+/// ...and this many skips.
+pub const SKIPS_PER_DAY: u32 = 2;
+/// Separate days an artist must be heard on before it is established (seeds picks, carries its
+/// tags), unless the listener acted on it (a like, a save, a follow, "more like this", saved
+/// albums, the Last.fm history).
+pub const ESTABLISHED_DAYS: usize = 2;
+
 /// What the listener did that an artist's weight (or a tag's) comes from, as a reason says it
 /// (`feed::Reason::evidence`): counts, never a guess. Zero and false are left out of the API.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -200,50 +210,95 @@ pub struct Taste {
     known_albums: HashSet<AlbumId>,
     /// What each artist's weight comes from.
     evidence: HashMap<ArtistId, Evidence>,
+    /// Artists the listener came back to (`ESTABLISHED_DAYS`) or acted on: only they seed picks
+    /// and count for a tag.
+    established: HashSet<ArtistId>,
+    /// Artists kept out of picks and radio: "less like this", or skipped on 2 or more days. A
+    /// skip or two on one day doesn't hold an artist back.
+    held_back: HashSet<ArtistId>,
 }
 
 impl Taste {
     pub fn build(s: &Signals, now: i64) -> Taste {
         let mut acc = Accumulator::new(s);
-        for p in &s.plays {
+        // A day at a time per artist, earliest first: the first plays of a day count.
+        let mut plays: Vec<&Play> = s.plays.iter().collect();
+        plays.sort_by_key(|p| p.at);
+        let mut today: HashMap<(ArtistId, i64, bool), u32> = HashMap::new();
+        for p in plays {
             let w = play_weight(p);
-            acc.add(&p.artist, Some(&p.track), w * fade(now - p.at));
+            let day = p.at.div_euclid(86_400);
+            let id = ArtistId::of(&p.artist);
+            let n = today.entry((id.clone(), day, w > 0.0)).or_default();
+            *n += 1;
+            let counts = if w > 0.0 {
+                *n <= HEARD_PER_DAY
+            } else {
+                w == 0.0 || *n <= SKIPS_PER_DAY
+            };
+            if counts {
+                acc.add(&p.artist, Some(&p.track), w * fade(now - p.at));
+            }
             if w > 0.0 {
                 acc.note(&p.artist, |e| e.plays += 1);
+                acc.heard_days.entry(id).or_default().insert(day);
+            } else if w < 0.0 {
+                acc.skip_days.entry(id).or_default().insert(day);
             }
         }
         for m in &s.likes {
             acc.add(&m.artist, Some(&m.track), weight::LIKE * fade(now - m.at));
             acc.note(&m.artist, |e| e.liked += 1);
+            acc.acted(&m.artist);
         }
         for m in &s.saves {
             acc.add(&m.artist, Some(&m.track), weight::SAVE * fade(now - m.at));
             acc.note(&m.artist, |e| e.saved += 1);
+            acc.acted(&m.artist);
         }
         for f in &s.feedback {
             let sign = if f.positive { 1.0 } else { -1.0 };
             acc.add(&f.artist, f.track.as_ref(), sign * weight::FEEDBACK * fade(now - f.at));
+            if f.positive {
+                acc.acted(&f.artist);
+            } else {
+                acc.disliked.insert(ArtistId::of(&f.artist));
+            }
         }
         for a in &s.followed_artists {
             acc.add(a, None, weight::FOLLOW);
             acc.note(a, |e| e.followed = true);
+            acc.acted(a);
         }
         let most = s.history.iter().map(|(_, n)| *n).max().unwrap_or(0);
         for (artist, plays) in &s.history {
             acc.add(artist, None, weight::HISTORY * log_share(*plays, most));
             acc.note(artist, |e| e.lastfm = u32::try_from(*plays).unwrap_or(u32::MAX));
+            acc.acted(artist);
         }
         let most = s.library.iter().map(|(_, n)| *n).max().unwrap_or(0);
         for (artist, albums) in &s.library {
             acc.add(artist, None, weight::LIBRARY * log_share(*albums, most));
             acc.note(artist, |e| e.library = u32::try_from(*albums).unwrap_or(u32::MAX));
+            acc.acted(artist);
         }
+        acc.settle();
 
         let (mut tags, tag_artists) = acc.tag_weights();
         for t in &s.followed_tags {
             *tags.entry(t.to_lowercase()).or_default() += weight::FOLLOW;
         }
         let evidence = std::mem::take(&mut acc.evidence);
+        let established = std::mem::take(&mut acc.established);
+        let held_back: HashSet<ArtistId> = acc
+            .artists
+            .iter()
+            .filter(|(id, (_, w))| {
+                *w < 0.0 && (acc.disliked.contains(*id) || acc.skip_days.get(*id).is_some_and(|d| d.len() >= 2))
+            })
+            .map(|(id, _)| id.clone())
+            .chain(acc.disliked.iter().cloned())
+            .collect();
         let mut artists: Vec<Weighted> = acc
             .artists
             .into_iter()
@@ -271,7 +326,23 @@ impl Taste {
                 .map(|n| AlbumId::of(&n.artist, &n.album))
                 .collect(),
             evidence,
+            established,
+            held_back,
         }
+    }
+
+    /// The best-liked artists that may seed picks: established ones (heard on separate days, or
+    /// acted on), strongest first.
+    pub fn seed_artists(&self, n: usize) -> impl Iterator<Item = &Weighted> {
+        self.artists
+            .iter()
+            .filter(|a| a.weight > 0.0 && self.established.contains(&a.id))
+            .take(n)
+    }
+
+    /// Whether the artist is kept out of picks: "less like this", or skipped on separate days.
+    pub fn held_back(&self, id: &ArtistId) -> bool {
+        self.held_back.contains(id)
     }
 
     /// What the artist's weight comes from.
@@ -348,6 +419,13 @@ struct Accumulator<'a> {
     /// The tags each artist carries: those of its tracks the signals name, else its own.
     carried: HashMap<ArtistId, HashSet<String>>,
     evidence: HashMap<ArtistId, Evidence>,
+    /// The days each artist was heard on, and skipped on.
+    heard_days: HashMap<ArtistId, HashSet<i64>>,
+    skip_days: HashMap<ArtistId, HashSet<i64>>,
+    /// Artists the listener acted on, and those they asked for less of.
+    acted: HashSet<ArtistId>,
+    disliked: HashSet<ArtistId>,
+    established: HashSet<ArtistId>,
 }
 
 impl<'a> Accumulator<'a> {
@@ -357,7 +435,29 @@ impl<'a> Accumulator<'a> {
             artists: HashMap::new(),
             carried: HashMap::new(),
             evidence: HashMap::new(),
+            heard_days: HashMap::new(),
+            skip_days: HashMap::new(),
+            acted: HashSet::new(),
+            disliked: HashSet::new(),
+            established: HashSet::new(),
         }
+    }
+
+    fn acted(&mut self, artist: &str) {
+        if !artist.is_empty() {
+            self.acted.insert(ArtistId::of(artist));
+        }
+    }
+
+    /// Decides who is established, once every signal is in.
+    fn settle(&mut self) {
+        let returned = self
+            .heard_days
+            .iter()
+            .filter(|(_, days)| days.len() >= ESTABLISHED_DAYS)
+            .map(|(id, _)| id.clone());
+        self.established = self.acted.iter().cloned().chain(returned).collect();
+        self.established.retain(|id| !self.signals.hidden.contains(id));
     }
 
     /// Records what the listener did with the artist (a hidden one isn't kept).
@@ -369,8 +469,9 @@ impl<'a> Accumulator<'a> {
         change(self.evidence.entry(id).or_default());
     }
 
-    /// Each tag weighs what the artists carrying it weigh, together, and counts the liked ones:
-    /// a tag on many liked artists beats one artist's labels, however few labels that artist has.
+    /// Each tag weighs what the artists carrying it weigh, together, and counts the liked,
+    /// established ones: a tag on many liked artists beats one artist's labels, and a stray play
+    /// never unlocks a tag.
     fn tag_weights(&self) -> (HashMap<String, f64>, HashMap<String, usize>) {
         let mut weights: HashMap<String, f64> = HashMap::new();
         let mut liked: HashMap<String, usize> = HashMap::new();
@@ -378,7 +479,7 @@ impl<'a> Accumulator<'a> {
             let w = self.artists.get(id).map_or(0.0, |a| a.1);
             for t in tags {
                 *weights.entry(t.clone()).or_default() += w;
-                if w > 0.0 {
+                if w > 0.0 && self.established.contains(id) {
                     *liked.entry(t.clone()).or_default() += 1;
                 }
             }

@@ -354,7 +354,18 @@
     M.reload(FEED);
   }
   App.action('disc-retry-shelf', function (el) { reloadFeed([el.getAttribute('data-id')]); });
-  App.action('disc-refresh-picks', function () { reloadFeed(['picks']); });
+  /* Refresh picks builds a whole new shelf on the hub (POST /api/feed/refresh, at most hourly); the shelf shows its skeleton
+     until `feed.updated` brings it. Again too soon keeps these picks and says when new ones can be made. */
+  App.action('disc-refresh-picks', function () {
+    var r = M.get(FEED);
+    M.api('/api/feed/refresh', { method: 'POST' }).then(function (res) {
+      if (!res.building) { App.toast('These picks are new. Fresh ones in ' + whenMinutes(res.retryInS) + '.', { icon: 'info' }); return; }
+      H.reloading = { shelves: ['picks'], data: r.data, error: r.error };
+      paintShelf('picks');
+      App.announce('Making new picks');
+    }, function (err) { App.toast('Couldn\'t make new picks: ' + err.message, { kind: 'error' }); });
+  });
+  function whenMinutes(s) { var m = Math.ceil(s / 60); return m >= 60 ? 'an hour' : m <= 1 ? 'a minute' : m + ' minutes'; }
   /* See all / Show less: a Home shelf grows in place to show everything the feed holds */
   App.action('disc-expand-new', function () { H.expanded.new = !H.expanded.new; paintShelf('newReleases'); });
   App.action('disc-expand-picks', function () { H.expanded.picks = !H.expanded.picks; paintShelf('picks'); });

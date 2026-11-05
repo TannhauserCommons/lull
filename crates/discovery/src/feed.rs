@@ -24,6 +24,7 @@ use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::time::Instant;
 
 use crate::artist::identity;
+use crate::picking::{self, Candidate, Fared, PICKS};
 use crate::sources::listenbrainz::Mode;
 use crate::sources::{ArtistInfo, ArtistSource, Release, Song};
 use crate::store::{self, entities};
@@ -41,7 +42,9 @@ const AVAILABILITY_LIMIT: Duration = Duration::from_secs(600);
 /// How long releases Soulseek couldn't answer for (offline, searches unanswered) wait before
 /// they are asked again. Asking a paused or offline Soulseek costs no search.
 const RECHECK: Duration = Duration::from_secs(5 * 60);
-const PICKS: usize = 12;
+/// How soon Refresh may build the feed again: a build asks ListenBrainz, Deezer and MusicBrainz
+/// again, and the owner's rule is a real rebuild at most hourly.
+const REFRESH_EVERY: Duration = Duration::from_secs(3600);
 /// Artists offered to follow on a first run.
 const COLD_START_ARTISTS: usize = 6;
 /// Most played artists looked at for Jump back in's one artist.
@@ -165,6 +168,16 @@ struct Built {
     /// Tags that come with each followed tag on this month's releases (Home's "you might like").
     #[serde(default)]
     related: BTreeMap<String, Vec<String>>,
+    /// The picks of the last shelves (`picking::carry`).
+    #[serde(default)]
+    recent: RecentPicks,
+}
+
+/// The picks of the last `picking::SHELVES` shelves, oldest first: a pick on all of them gives
+/// way, and none of them comes back as a new pick.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RecentPicks {
+    pub shelves: Vec<Vec<TrackId>>,
 }
 
 /// A fresh release that may go on the shelf.
@@ -193,6 +206,10 @@ pub struct Feeds {
     current: RwLock<Option<Built>>,
     building: Mutex<()>,
     queued: AtomicBool,
+    /// The queued rebuild is the listener's Refresh: it keeps none of the last shelf.
+    refreshing: AtomicBool,
+    /// When the listener's Refresh last built the feed (`refresh`).
+    refreshed: Mutex<Option<Instant>>,
     /// Which shelf `check_shelf` asks about: a newer one stops the older check.
     shelf_checks: AtomicU64,
 }
@@ -263,7 +280,26 @@ fn keep_named_albums(feed: &mut Feed) {
     feed.entities.albums.retain(|id, _| named.contains(id));
 }
 
-/// Rebuilds in the background (once, however often it is asked while one is queued).
+/// `POST /api/feed/refresh`: builds the feed again now with a whole new shelf of picks;
+/// `feed.updated` says when it is in. `{ building: true }`, or `{ building: false, retryInS }`
+/// when Refresh built one less than `REFRESH_EVERY` ago.
+pub async fn refresh(State(svc): State<Arc<Service>>) -> Json<serde_json::Value> {
+    let now = Instant::now();
+    let mut last = svc.feed.refreshed.lock().await;
+    if let Some(at) = *last
+        && now.duration_since(at) < REFRESH_EVERY
+    {
+        let wait = REFRESH_EVERY - now.duration_since(at);
+        return Json(serde_json::json!({ "building": false, "retryInS": wait.as_secs().max(1) }));
+    }
+    *last = Some(now);
+    svc.feed.refreshing.store(true, Ordering::SeqCst);
+    refresh_soon(&svc);
+    Json(serde_json::json!({ "building": true }))
+}
+
+/// Rebuilds in the background (once, however often it is asked while one is queued). A build that
+/// fails still announces `feed.updated`, so a screen waiting for it shows the feed it has.
 pub fn refresh_soon(svc: &Arc<Service>) {
     if svc.feed.queued.swap(true, Ordering::SeqCst) {
         return;
@@ -275,6 +311,8 @@ pub fn refresh_soon(svc: &Arc<Service>) {
         svc.feed.queued.store(false, Ordering::SeqCst);
         if let Err(e) = rebuild(&svc).await {
             tracing::warn!(error = %e, "feed rebuild failed");
+            let updated = svc.feed.current.read().await.as_ref().map_or(0, |b| b.feed.updated);
+            svc.ctx.bus.publish("feed.updated", Updated { updated });
         }
     });
 }
@@ -523,13 +561,6 @@ fn from_follows(shelf: &[Shelved], shown: &[AlbumId]) -> usize {
     shelf.iter().filter(|c| c.liked && shown.contains(&c.id)).count()
 }
 
-/// A pick before it is a track: the song, why, and from where.
-struct Candidate {
-    song: Song,
-    reason: Reason,
-    via: &'static str,
-}
-
 async fn build(svc: &Arc<Service>) -> Result<(Built, Answers)> {
     let now = lull_core::now();
     let taste = svc.taste().await?;
@@ -554,12 +585,36 @@ async fn build(svc: &Arc<Service>) -> Result<(Built, Answers)> {
             errors.insert("newReleases".into(), e.to_string());
             (Vec::new(), BTreeMap::new())
         });
-    let candidates = picks(svc, &taste, &followed_tags, &releases, &mut errors).await;
+    // An automatic rebuild keeps up to half the last shelf's picks not taken yet; Refresh none.
+    let refresh = svc.feed.refreshing.swap(false, Ordering::SeqCst);
+    let last = svc.feed.current.read().await.clone();
+    let mut recent_picks = last.as_ref().map(|b| b.recent.clone()).unwrap_or_default();
+    let carried = match (&last, refresh) {
+        (Some(b), false) => {
+            let artists = b
+                .feed
+                .entities
+                .tracks
+                .iter()
+                .map(|(id, t)| (id.clone(), t.artist_id.clone()))
+                .collect();
+            picking::carry(&b.feed.picks, &artists, &taste, &recent_picks)
+        }
+        _ => Vec::new(),
+    };
+    let skip: HashSet<TrackId> = recent_picks.shelves.iter().flatten().cloned().collect();
+    let fared = Fared(svc.ctx.db.call(move |c| store::seed_outcomes(c, now)).await?);
+    let wanted = Wanted {
+        slots: PICKS - carried.len(),
+        skip: &skip,
+        fared: &fared,
+    };
+    let candidates = picks(svc, &taste, &followed_tags, &releases, wanted, &mut errors).await;
 
     // Entities: picks as catalog tracks, releases as albums, seeds as artists.
     let pick_songs: Vec<Song> = candidates.iter().map(|c| c.song.clone()).collect();
-    let tracks = svc.store.tracks(pick_songs).await?;
-    let picks: Vec<Pick> = candidates
+    let mut tracks = svc.store.tracks(pick_songs).await?;
+    let mut picks: Vec<Pick> = candidates
         .into_iter()
         .zip(&tracks)
         .map(|(c, t)| Pick {
@@ -568,6 +623,36 @@ async fn build(svc: &Arc<Service>) -> Result<(Built, Answers)> {
             via: c.via.to_owned(),
         })
         .collect();
+    let seeds: Vec<(TrackId, &str, String)> = picks
+        .iter()
+        .filter_map(|p| {
+            let r = p.reasons.first()?;
+            let kind = match r.kind {
+                ReasonKind::Like => "artist",
+                ReasonKind::Tag => "tag",
+                ReasonKind::Listeners | ReasonKind::Fresh => return None,
+            };
+            Some((p.track_id.clone(), kind, r.reference.clone()?))
+        })
+        .collect();
+    svc.ctx
+        .db
+        .call(move |c| store::remember_pick_seeds(c, &seeds, now))
+        .await?;
+    for p in carried {
+        if let Some(t) = svc.store.track(p.track_id.clone()).await? {
+            tracks.push(t);
+            picks.push(p);
+        }
+    }
+    recent_picks
+        .shelves
+        .push(picks.iter().map(|p| p.track_id.clone()).collect());
+    if recent_picks.shelves.len() > picking::SHELVES {
+        recent_picks
+            .shelves
+            .drain(..recent_picks.shelves.len() - picking::SHELVES);
+    }
     let albums = svc.store.albums(releases.iter().map(|r| r.0.clone()).collect()).await?;
     let mut shelf: Vec<Shelved> = albums
         .iter()
@@ -635,6 +720,7 @@ async fn build(svc: &Arc<Service>) -> Result<(Built, Answers)> {
         shelf,
         cold,
         related,
+        recent: recent_picks,
     };
     Ok((built, answers))
 }
@@ -754,32 +840,49 @@ fn is_reissue(title: &str) -> bool {
         .any(|w| matches!(w, "remaster" | "remastered" | "reissue" | "reissued"))
 }
 
-/// Picks from four sources, interleaved so no one source or artist dominates: similar artists
-/// of liked ones, deep cuts from liked tags (low popularity on purpose), ListenBrainz's
+/// What a build wants of `picks`: how many, what not to pick again, how seeds fared.
+struct Wanted<'a> {
+    slots: usize,
+    skip: &'a HashSet<TrackId>,
+    fared: &'a Fared,
+}
+
+/// Picks from four sources (`picking` chooses the seeds and mixes them): similar artists of
+/// liked ones, deep cuts from liked tags (low popularity on purpose), ListenBrainz's
 /// recommendations, and the first track of fresh releases by liked artists.
 async fn picks(
     svc: &Service,
     taste: &Taste,
     followed_tags: &[String],
     releases: &[(Release, Option<String>)],
+    wanted: Wanted<'_>,
     errors: &mut BTreeMap<String, String>,
 ) -> Vec<Candidate> {
     let mut failures = Vec::new();
     let mut pools: Vec<Vec<Candidate>> = Vec::new();
-    let mut pending: Vec<(String, Reason, &'static str)> = Vec::new();
+    let mut pending: Vec<(String, Reason, &'static str, bool)> = Vec::new();
+    let draw = mix::seed();
+    let seeds = picking::choose_seeds(
+        taste,
+        followed_tags,
+        wanted.fared,
+        COLD_START_TAGS,
+        lull_core::now(),
+        draw,
+    );
 
-    for seed in taste.top_artists(4) {
+    for (id, name, edge) in &seeds.artists {
         let reason = Reason {
             kind: ReasonKind::Like,
-            name: seed.name.clone(),
-            reference: Some(seed.id.0.clone()),
-            evidence: taste.evidence(&seed.id),
+            name: name.clone(),
+            reference: Some(id.0.clone()),
+            evidence: taste.evidence(id),
         };
-        match similar_to(svc, &seed.id).await {
+        match similar_to(svc, id).await {
             Ok(Similar::Recordings(found)) => pending.extend(
                 found
                     .into_iter()
-                    .map(|mbid| (mbid, reason.clone(), "ListenBrainz similar artists")),
+                    .map(|mbid| (mbid, reason.clone(), "ListenBrainz similar artists", *edge)),
             ),
             Ok(Similar::Songs(songs)) => {
                 radio::offer(svc, &songs, "Deezer radio").await;
@@ -790,6 +893,7 @@ async fn picks(
                             song,
                             reason: reason.clone(),
                             via: "Deezer radio",
+                            edge: *edge,
                         })
                         .collect(),
                 );
@@ -797,18 +901,18 @@ async fn picks(
             Err(e) => failures.push(e),
         }
     }
-    for tag in pick_tags(taste, followed_tags) {
-        match svc.lb.tag_radio(&tag, (0, 50), 30).await {
+    for (tag, edge) in &seeds.tags {
+        match svc.lb.tag_radio(tag, (0, 50), 30).await {
             Ok(mut found) => {
-                mix::shuffle(&mut found, mix::seed());
+                mix::shuffle(&mut found, draw);
                 pending.extend(found.into_iter().take(6).map(|mbid| {
                     let reason = Reason {
                         kind: ReasonKind::Tag,
                         name: tag.clone(),
                         reference: Some(tag.clone()),
-                        evidence: taste.tag_evidence(&tag, followed_tags.contains(&tag)),
+                        evidence: taste.tag_evidence(tag, followed_tags.contains(tag)),
                     };
-                    (mbid, reason, "ListenBrainz tags")
+                    (mbid, reason, "ListenBrainz tags", *edge)
                 }));
             }
             Err(e) => failures.push(e),
@@ -823,7 +927,7 @@ async fn picks(
                     reference: None,
                     evidence: Evidence::default(),
                 };
-                (mbid, reason, "ListenBrainz recommendations")
+                (mbid, reason, "ListenBrainz recommendations", false)
             })),
             Err(e) => failures.push(e),
         }
@@ -839,12 +943,13 @@ async fn picks(
             let by_mbid: HashMap<String, Song> = songs.into_iter().filter_map(|s| Some((s.mbid.clone()?, s))).collect();
             // One pool per seed (artist, tag, recommendations), so the round-robin mixes them.
             let mut by_seed: BTreeMap<(&'static str, String), Vec<Candidate>> = BTreeMap::new();
-            for (mbid, reason, via) in pending {
+            for (mbid, reason, via, edge) in pending {
                 if let Some(song) = by_mbid.get(&mbid) {
                     by_seed.entry((via, reason.name.clone())).or_default().push(Candidate {
                         song: song.clone(),
                         reason,
                         via,
+                        edge,
                     });
                 }
             }
@@ -875,6 +980,7 @@ async fn picks(
                         evidence: taste.evidence(&ArtistId::of(&release.artist)),
                     },
                     via: "MusicBrainz releases",
+                    edge: false,
                 }),
             ),
             Err(e) => failures.push(e),
@@ -882,7 +988,8 @@ async fn picks(
     }
     pools.push(fresh);
 
-    let chosen = interleave(pools, taste);
+    let edge = picking::edge_share(taste, wanted.slots);
+    let chosen = picking::mix(pools, taste, wanted.skip, wanted.slots, edge, draw);
     if chosen.is_empty()
         && let Some(e) = failures.first()
     {
@@ -929,63 +1036,6 @@ async fn similar_to(svc: &Service, id: &ArtistId) -> Result<Similar> {
     Ok(Similar::Songs(songs))
 }
 
-/// Tags to dig in: followed ones and the strongest that run through liked artists; on a cold
-/// start, three of the cold-start tags, a different three each day.
-fn pick_tags(taste: &Taste, followed: &[String]) -> Vec<String> {
-    let mut tags: Vec<String> = followed.iter().take(3).cloned().collect();
-    for (t, _) in taste.dig_tags() {
-        if tags.len() >= 4 {
-            break;
-        }
-        if !tags.contains(t) {
-            tags.push(t.clone());
-        }
-    }
-    if tags.is_empty() {
-        let day = (lull_core::now() / 86_400) as usize;
-        tags = (0..3)
-            .map(|i| COLD_START_TAGS[(day * 3 + i) % COLD_START_TAGS.len()].to_owned())
-            .collect();
-    }
-    tags
-}
-
-/// Round-robin over the sources, one track per artist, originals first, nothing the listener
-/// already knows (on any release), and (except fresh releases) no artist they already like:
-/// picks are for finding new ones.
-fn interleave(mut pools: Vec<Vec<Candidate>>, taste: &Taste) -> Vec<Candidate> {
-    for pool in &mut pools {
-        pool.sort_by_key(|c| radio::is_version(&c.song.title));
-        pool.reverse(); // pop() takes from the front
-    }
-    let mut artists = HashSet::new();
-    let mut out = Vec::new();
-    while out.len() < PICKS && pools.iter().any(|p| !p.is_empty()) {
-        for pool in &mut pools {
-            while let Some(c) = pool.pop() {
-                let t = store::track(c.song.clone());
-                let weight = taste.artist_weight(&t.artist_id);
-                let familiar = weight > 0.0 && c.reason.kind != ReasonKind::Fresh;
-                if taste.known.contains(&t.id)
-                    || taste.knows_song(&c.song.artist, &c.song.title)
-                    || taste.hidden.contains(&t.artist_id)
-                    || weight < 0.0
-                    || familiar
-                    || !artists.insert(t.artist_id)
-                {
-                    continue;
-                }
-                out.push(c);
-                break;
-            }
-            if out.len() >= PICKS {
-                break;
-            }
-        }
-    }
-    out
-}
-
 /// Radio starters: the top artist, followed and liked tags, the song on repeat this week.
 async fn starters(
     svc: &Service,
@@ -996,7 +1046,7 @@ async fn starters(
     let mut out = Vec::new();
     let mut artists = Vec::new();
     let mut tracks = Vec::new();
-    if let Some(top) = taste.top_artists(1).next() {
+    if let Some(top) = taste.seed_artists(1).next() {
         out.push(starter(
             "artist",
             &top.id.0,
@@ -1156,9 +1206,9 @@ mod tests {
     use lull_core::ids::{ArtistId, TrackId};
 
     use super::{
-        Candidate, NEW_RELEASES, Reason, ReasonKind, Shelved, answered, interleave, next_to_ask, rank_releases,
-        related_tags, shown,
+        Candidate, NEW_RELEASES, Reason, ReasonKind, Shelved, answered, next_to_ask, rank_releases, related_tags, shown,
     };
+    use crate::picking;
     use crate::sources::{Release, Song};
     use crate::taste::{Mark, Named, Signals, Taste};
 
@@ -1284,6 +1334,7 @@ mod tests {
                 evidence: Default::default(),
             },
             via: "ListenBrainz tags",
+            edge: false,
         }
     }
 
@@ -1295,14 +1346,17 @@ mod tests {
             candidate("Wave Cellar", "Lanterns at Noon (sped up)"),
             candidate("Pale Harbor", "Lanterns"),
         ];
-        let picks: Vec<String> = interleave(vec![pool], &listener())
+        let picks: Vec<String> = picking::mix(vec![pool], &listener(), &HashSet::new(), 12, 0, 7)
             .into_iter()
             .map(|c| c.song.title)
             .collect();
+        assert_eq!(picks[0], "Lanterns", "a song liked on another release isn't news");
+        let mut others = picks[1..].to_vec();
+        others.sort();
         assert_eq!(
-            picks,
-            ["Lanterns", "Drift (Night Arcade remix)", "Lanterns at Noon (sped up)"],
-            "a song liked on another release isn't news; other takes come after the originals"
+            others,
+            ["Drift (Night Arcade remix)", "Lanterns at Noon (sped up)"],
+            "other takes come after the originals"
         );
     }
 

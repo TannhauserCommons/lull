@@ -105,7 +105,7 @@ pub async fn next(
     let mut ranked: Vec<(f64, Track)> = tracks
         .into_iter()
         .filter(|t| !exclude.contains(&t.id) && !taste.hidden.contains(&t.artist_id))
-        .filter(|t| taste.artist_weight(&t.artist_id) >= 0.0)
+        .filter(|t| !taste.held_back(&t.artist_id))
         .enumerate()
         .map(|(i, t)| {
             // Shuffled order, nudged towards known artists when familiar and away when adventurous.

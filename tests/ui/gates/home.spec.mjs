@@ -1,7 +1,8 @@
 // Home's parts the hub fills for the listener it knows (docs/context/discovery.md#home-feed):
 // - a first run (the feed's `cold`) offers tags and the artists of its starter picks to follow;
 // - each followed tag brings the tags that come with it ("you might like"), whatever pages were opened before;
-// - a pick's "why" says what the listener did (the reason's evidence), never more.
+// - a pick's "why" says what the listener did (the reason's evidence), never more;
+// - Refresh picks builds a new shelf on the hub and waits for it, and says when the next one can be made (hourly).
 
 import { expect, test } from '@playwright/test';
 import { openScreen } from './lib.mjs';
@@ -38,4 +39,16 @@ test('a pick says why from what the listener did', async ({ page, request }) => 
   const pick = feed.picks.find((p) => p.reasons[0].evidence);
   await page.locator(`[data-region="picks"] .chip-reason[data-item="${pick.trackId}"]`).click();
   await expect(page.locator('.disc-why')).toContainText(`Similar to ${pick.reasons[0].name}. You've played them 14 times.`);
+});
+
+test('Refresh picks builds a new shelf and waits for it; again within the hour says when', async ({ page, request }) => {
+  await feedOf(page, request, 'related');
+  await openScreen(page, '/home');
+  const picks = page.locator('[data-region="picks"]');
+  const asked = page.waitForRequest((r) => r.url().endsWith('/api/feed/refresh') && r.method() === 'POST');
+  await picks.getByRole('button', { name: 'Refresh picks' }).click();
+  await asked;
+  await expect(picks.locator('.disc-pick').first()).toBeVisible();      // back once feed.updated brought the feed
+  await picks.getByRole('button', { name: 'Refresh picks' }).click();
+  await expect(page.locator('.toast', { hasText: /Fresh ones in (an hour|\d+ minutes)/ })).toBeVisible();
 });

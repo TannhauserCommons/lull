@@ -259,6 +259,15 @@ const routes = [
   ['PUT', /^\/api\/stream\/prefetch$/, () => ({ status: 204 })],
 
   // discovery
+  // Refresh picks: a whole new shelf "now" (the fixture's feed is the same), announced a moment later; again within the
+  // hour, not
+  ['POST', /^\/api\/feed\/refresh$/, (m, q, body, client) => {
+    const last = refreshedAt.get(client), now = Date.now();
+    if (last && now - last < 3600000) return { building: false, retryInS: Math.ceil((3600000 - (now - last)) / 1000) };
+    refreshedAt.set(client, now);
+    setTimeout(() => emit('feed.updated', { updated: L.NOW }, client || undefined), 300);
+    return { building: true };
+  }],
   ['GET', /^\/api\/feed$/, (m, q, body, client) => {
     const picks = L.trackIds.filter((_, i) => i % 97 === 1).slice(0, 12);
     const fresh = L.albumIds.slice(-12, -2).reverse();   // the catalog's albums, none saved
@@ -397,6 +406,7 @@ function likeLog(client) { if (!likeLogs.has(client)) likeLogs.set(client, { lik
 const unsavedLikes = (client) => [...new Set([...likeLog(client).likes.map((l) => l.trackId), ...state.likes])]
   .filter((id) => !L.savedIds.includes(id) && !likeLog(client).saved.includes(id));
 const feedShapes = new Map();    // fixture client -> 'cold' | 'related': the feed it is served
+const refreshedAt = new Map();   // fixture client -> when its Refresh last built (ms)
 /* a comment on every open stream every 15 s, as the hub's keep-alive (crates/server/src/events.rs): a client that
    stopped listening finds out at the next one */
 setInterval(() => { for (const res of clients.keys()) res.write(': keep-alive\n\n'); }, 15000).unref();

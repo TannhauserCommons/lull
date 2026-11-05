@@ -16,6 +16,8 @@ Owner: Discovery session (`crates/discovery/src/taste.rs`). Small, on-device and
 | Last.fm history (top 100 artists, 12 months) | `lastfm.history` event → `discovery_history` | up to +2.0, log of plays relative to the top artist | no (refreshed daily) |
 | The saved library (every saved artist) | `Library::albums` at each taste build | up to +1.0, log of saved albums relative to the artist with most: about one song heard to the end, so a library is a taste before anything is played and listening soon leads | no (it is what is saved now) |
 
+**Damping** ([ADR-0100](../adr/0100-picks-stable-at-the-core-fresh-at-the-edge.md)): a day of listening counts, not each play. At most 3 heard plays and 2 skips per artist per day count. An artist is *established* (seeds picks, counts for a tag's 2 liked artists) once heard on 2 separate days, or acted on: a like, a save, a follow, "more like this", saved albums, the Last.fm history. An artist is held back from picks and radio for skips only after skips on 2 or more days, or after "less like this". So a binge day or a stray play barely moves the picks, and coming back is what does.
+
 **Fading:** a signal of age `d` days counts `0.5^(d/45)`, a 45-day half-life. Plays older than 365 days are not read; they would count under 0.4%.
 
 ## Artists and tags
