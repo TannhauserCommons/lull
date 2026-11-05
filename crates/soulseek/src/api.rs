@@ -141,6 +141,8 @@ async fn youtube_row(svc: &Service, track: &Track) -> YoutubeRow {
                 "sizeBytes": found.source.size,
                 "format": copy.facts(found.source.size, duration).format,
                 "official": found.official,
+                // A song cut from a full-album upload: where in the album it is, in seconds.
+                "section": copy.section.map(|(from, to)| [from / 1000, to.div_ceil(1000)]),
             })),
             None => YoutubeRow::Off,
         },

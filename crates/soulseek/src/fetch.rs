@@ -2007,6 +2007,7 @@ mod tests {
             video: "LUjGtyYEi90".into(),
             format: "251".into(),
             ext: "webm".into(),
+            section: None,
         }
         .source_ref(5_730_310);
         let mut yt = youtube::Settings::default();
@@ -2064,6 +2065,7 @@ mod tests {
             video: "LUjGtyYEi90".into(),
             format: "140".into(),
             ext: "m4a".into(),
+            section: None,
         }
         .source_ref(5_152_490);
         let s = bare_source(&r, Some(318));
@@ -2145,6 +2147,7 @@ mod tests {
             video: "LUjGtyYEi90".into(),
             format: "251".into(),
             ext: "webm".into(),
+            section: None,
         }
         .source_ref(5_730_310);
         let from_youtube = playing(copy_of(&yt, "webm"), Status::Done, 0, 0);
@@ -2176,6 +2179,7 @@ mod tests {
                 video: "LUjGtyYEi90".into(),
                 format: "251".into(),
                 ext: "webm".into(),
+                section: None,
             }
             .source_ref(5_730_310),
             ..entry("x", "mp3", 400)
@@ -2311,6 +2315,7 @@ mod tests {
                 video: video.into(),
                 format: "140".into(),
                 ext: "m4a".into(),
+                section: None,
             }
             .source_ref(SIZE)
         }

@@ -13,6 +13,7 @@
 | `youtube/src/check.rs` | Sound checks: references, verdicts, the background check of official copies, AcoustID ([Sound checks](#sound-checks)) |
 | `youtube/src/sound.rs` | Decoding, fingerprinting (Chromaprint's algorithm) and aligning a preview in a copy |
 | `youtube/src/formats.rs` | Which audio stream to take |
+| `youtube/src/cut.rs` | A full-album upload's track list, the song in it, and cutting its audio out ([Full-album uploads](#full-album-uploads)) |
 | `youtube/src/playlist.rs` | Listing a playlist for link imports |
 | `youtube/src/ytdlp.rs` | Running yt-dlp, its errors in plain words |
 | `youtube/src/update.rs` | Keep yt-dlp up to date |
@@ -58,6 +59,7 @@ A YouTube copy's chip is its own: `YouTube · Opus 160`, `YouTube · AAC 128` (`
 
 1. **YouTube Music songs** for `"artist" title`, the name quoted so it reads as one name (unquoted, "Germany Germany LENA" was the country and the singer Lena, and the song wasn't among the 5) (`music.youtube.com/search#songs`, first 5, no extraction): those whose title matches are extracted, at most 2, and judged on the full facts.
 2. **Videos** (`ytsearch8:`, first 8 with channel and length): judged, best first, then those only their sound could take (`plausible`); at most 3 extracted and judged again.
+3. **Full-album uploads**, when neither found the song ([below](#full-album-uploads)).
 
 Each extracted upload then goes through `search::consider`: official and taken by the words, it is the match at once, and its sound is checked while it plays; any other the words take, or that could be the song (`plausible`: no other-version words, length within a quarter, the song's title in its title), is checked first ([Sound checks](#sound-checks)), at most 2 per search. An upload found not to be the song is never taken for it.
 
@@ -87,9 +89,15 @@ Whether a copy is the song by its sound ([ADR-0016](../adr/0016-checking-a-copy-
 - **Soulseek copies:** a file that arrived is checked out of the way (`Youtube::check_file`, its first 4 minutes, about 0.3 s of one core): one that isn't the song is never offered for it again (`Sources::mark_wrong`) and leaves the cache. The play goes on.
 - **Cost:** about 0.2 s of one core per AAC check (a fan upload, plus its 4 MB download), about 1.2 s per Opus one (an official copy, no download); a preview is about 1 MB, once per track. YouTube asked this project's workstation for a sign-in check after about 500 downloads in two hours (the trial): checks never add a download for an official copy for that reason.
 
+## Full-album uploads
+
+Some songs are on YouTube only inside an upload of their whole album (Mabisyo's "What Are We?"). The last matching step (`search::album`, `cut.rs`) searches `ytsearch5:artist album` and takes uploads at least twice the song's length (and 10 minutes) whose title has the album's; at most 2 are extracted, and the one whose artist agrees (official only, under Official) gives its track list: YouTube's chapters, else the timestamps in its description, each running to the next. The song is the one entry whose title matches (numbering like "03." dropped) and whose length agrees within the strictness's slack; no entry, or two, and the upload is passed over. Its bounds are the evidence, so a cut is never sound-checked and never "Unverified" (ADR-0016's update of 2026-11-05).
+
+The match keeps its section (`youtube_matches.section_from`, `section_to`, in ms), and the copy names it: `youtube:<video>~<from_ms>-<to_ms>:140.aac`. The album's AAC (itag 140) is downloaded once into `<data>/youtube/albums/<video>.m4a`, one download per video however many of its songs play at once, and kept a day; each song is its AAC frames copied out into raw AAC (ADTS, `.aac`, `audio/aac`), with no re-encoding (frame-accurate, about 23 ms), in `albums/<video>~<from>-<to>.aac`, then into the stream cache like any copy. Measured 2026-11-05: a 40-minute album is 39 MB in about 3 s, a song's cut a few milliseconds. A saved cut is tagged like any file (lofty writes ADTS's ID3v2).
+
 ## Formats
 
-`formats.rs`: audio-only HTTPS streams with an exact `filesize` (the cache serves byte ranges against it while the download runs), no DRM, not YouTube's `-drc` copies, the original language track. Opus is WebM, AAC is M4A: `content-type` `audio/webm` or `audio/mp4`.
+`formats.rs`: audio-only HTTPS streams with an exact `filesize` (the cache serves byte ranges against it while the download runs), no DRM, not YouTube's `-drc` copies, the original language track. Opus is WebM, AAC is M4A: `content-type` `audio/webm` or `audio/mp4`. A song cut from a full-album upload is raw AAC (ADTS), `audio/aac`.
 
 ## Downloads
 

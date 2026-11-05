@@ -180,15 +180,21 @@ pub struct Listed {
 pub struct Copy {
     pub video: String,
     pub format: String,
-    /// `webm` (Opus) or `m4a` (AAC).
+    /// `webm` (Opus), `m4a` (AAC), or `aac` (AAC frames cut from a full-album upload).
     pub ext: String,
+    /// A song cut from a full-album upload: where it starts and ends in it (milliseconds),
+    /// written `<video>~<from>-<to>` in the path (ADR-0016, Full-album uploads).
+    pub section: Option<(u32, u32)>,
 }
 
 impl Copy {
     pub fn source_ref(&self, size: u64) -> SourceRef {
         SourceRef {
             user: PEER.to_owned(),
-            path: format!("{SCHEME}{}:{}.{}", self.video, self.format, self.ext),
+            path: match self.section {
+                Some((from, to)) => format!("{SCHEME}{}~{from}-{to}:{}.{}", self.video, self.format, self.ext),
+                None => format!("{SCHEME}{}:{}.{}", self.video, self.format, self.ext),
+            },
             size,
         }
     }
@@ -202,16 +208,26 @@ impl Copy {
         let (video, file) = rest.split_once(':')?;
         let (format, ext) = file.rsplit_once('.')?;
         let plain = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
-        (plain(video) && plain(format) && matches!(ext, "webm" | "m4a")).then(|| Copy {
+        let (video, section) = match video.split_once('~') {
+            Some((v, at)) => {
+                let (from, to) = at.split_once('-')?;
+                let (from, to): (u32, u32) = (from.parse().ok()?, to.parse().ok()?);
+                (v, (from < to && ext == "aac").then_some((from, to))?.into())
+            }
+            None => (video, None),
+        };
+        let known = matches!(ext, "webm" | "m4a") || (ext == "aac" && section.is_some());
+        (plain(video) && plain(format) && known).then(|| Copy {
             video: video.to_owned(),
             format: format.to_owned(),
             ext: ext.to_owned(),
+            section,
         })
     }
 
     pub fn codec(&self) -> &'static str {
         match self.ext.as_str() {
-            "m4a" => "AAC",
+            "m4a" | "aac" => "AAC",
             _ => "Opus",
         }
     }
@@ -237,7 +253,7 @@ impl Copy {
             format: format!("{PEER} · {} {kbps}", self.codec()),
             codec: self.codec().to_owned(),
             lossless: false,
-            khz: Some(if self.ext == "m4a" { 44.1 } else { 48.0 }),
+            khz: Some(if self.ext == "webm" { 48.0 } else { 44.1 }),
             bits: None,
             kbps: Some(kbps),
             size_bytes: Some(size),
@@ -260,6 +276,7 @@ mod tests {
             video: "LUjGtyYEi90".into(),
             format: "251".into(),
             ext: "webm".into(),
+            section: None,
         };
         let r = copy.source_ref(5_730_310);
         assert_eq!(r.path, "youtube:LUjGtyYEi90:251.webm");
@@ -279,6 +296,30 @@ mod tests {
             !is_youtube(&odd),
             "only plain ids, so a path can't leave the cache folder"
         );
+    }
+
+    #[test]
+    fn a_song_cut_from_a_full_album_upload_names_its_section() {
+        let cut = Copy {
+            video: "4rCUGWGHzWw".into(),
+            format: "140".into(),
+            ext: "aac".into(),
+            section: Some((0, 294_000)),
+        };
+        let r = cut.source_ref(4_700_000);
+        assert_eq!(r.path, "youtube:4rCUGWGHzWw~0-294000:140.aac");
+        assert_eq!(Copy::of(&r), Some(cut.clone()));
+        assert_eq!(cut.facts(r.size, Some(294)).format, "YouTube · AAC 128");
+        let backwards = SourceRef {
+            path: "youtube:4rCUGWGHzWw~9-3:140.aac".into(),
+            ..r.clone()
+        };
+        assert_eq!(Copy::of(&backwards), None);
+        let whole = SourceRef {
+            path: "youtube:4rCUGWGHzWw:140.aac".into(),
+            ..r
+        };
+        assert_eq!(Copy::of(&whole), None, "an .aac is only ever a cut");
     }
 
     #[test]

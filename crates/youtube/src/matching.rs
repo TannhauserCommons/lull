@@ -118,6 +118,18 @@ impl Wanted {
         }
     }
 
+    /// Whether a length (seconds) is the song's, within `slack_s`; any length is, when the song's
+    /// isn't known.
+    pub fn length_agrees(&self, length: u32, slack_s: u32) -> bool {
+        self.duration.is_none_or(|d| d.abs_diff(length) <= slack_s)
+    }
+
+    /// The song's album, for finding a full-album upload.
+    pub fn album_words(track: &Track) -> Option<String> {
+        let album = track.album.trim();
+        (!album.is_empty()).then(|| format!("{} {album}", track.artist))
+    }
+
     /// The words to search YouTube's videos for.
     pub fn query(track: &Track) -> String {
         format!("{} {}", track.artist, track.title)
@@ -266,8 +278,14 @@ pub fn title_matches(wanted: &Wanted, raw_title: &str) -> bool {
             || same_title(&loose_title(raw_title), &wanted.title))
 }
 
+/// Whether the upload is by the song's artist: its music metadata, its title's artist part, its
+/// channel, or its title (a full-album upload: "Mabisyo - What Are We?").
+pub fn by_artist(wanted: &Wanted, c: &Candidate) -> bool {
+    artist_agrees(wanted, c, split(&c.title).0.as_deref())
+}
+
 /// How far the upload's length may be from the song's.
-fn slack_s(strictness: Match) -> u32 {
+pub fn slack_s(strictness: Match) -> u32 {
     match strictness {
         Match::Official | Match::Close => 5,
         Match::Loose => 15,

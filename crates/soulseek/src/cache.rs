@@ -177,7 +177,11 @@ impl Cache {
         tokio::fs::create_dir_all(&dir)
             .await
             .map_err(|e| Error::unavailable("cache", format!("can't create {}: {e}", dir.display())))?;
-        Ok(dir.join(format!("{}.{}.{}", copy.video, copy.format, copy.ext)))
+        let video = match copy.section {
+            Some((from, to)) => format!("{}~{from}-{to}", copy.video),
+            None => copy.video.clone(),
+        };
+        Ok(dir.join(format!("{video}.{}.{}", copy.format, copy.ext)))
     }
 
     async fn entries_for(&self, track: &TrackId) -> Result<Vec<Entry>> {
@@ -440,6 +444,7 @@ mod tests {
             video: "LUjGtyYEi90".into(),
             format: "251".into(),
             ext: "webm".into(),
+            section: None,
         };
         let yt = copy.source_ref(3);
         for (source, path, used_at) in [

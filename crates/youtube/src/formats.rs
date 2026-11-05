@@ -21,6 +21,11 @@ pub struct Info {
     pub live_status: Option<String>,
     #[serde(default)]
     pub formats: Vec<Stream>,
+    /// The upload's chapters: a full-album upload's track list (`cut`).
+    #[serde(default)]
+    pub chapters: Option<Vec<crate::cut::Chapter>>,
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -81,6 +86,7 @@ pub fn choose(info: &Info, want: Want, preferred: Format) -> Option<Chosen> {
                 video: info.id.clone(),
                 format: pick.format_id.clone(),
                 ext: pick.ext.clone(),
+                section: None,
             },
             size: pick.filesize?,
         })

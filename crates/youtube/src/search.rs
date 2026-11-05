@@ -15,7 +15,8 @@ use serde::Deserialize;
 use crate::formats::Info;
 use crate::matching::{self, Candidate, Wanted};
 use crate::ytdlp::Problem;
-use crate::{Service, check};
+use crate::{Service, check, cut};
+use lull_core::ids::loose_title;
 
 /// A match is good for a month; "no upload matches" is asked again after a day.
 const FOUND_FOR: i64 = 30 * 86_400;
@@ -28,6 +29,9 @@ const VIDEO_RESULTS: u32 = 8;
 const EXTRACT_AT_MOST: usize = 2;
 /// Uploads whose sound is checked before one is taken, per search.
 const CHECK_AT_MOST: usize = 2;
+/// Full-album uploads looked at for a song no upload has alone; one is at least this long (s).
+const ALBUM_RESULTS: u32 = 5;
+const ALBUM_AT_LEAST_S: u32 = 600;
 /// Uploads a song search reads (search's last gap-filler).
 const SONG_SEARCH_RESULTS: u32 = 10;
 const SEARCH_TIME: Duration = Duration::from_secs(40);
@@ -38,6 +42,9 @@ const EXTRACT_TIME: Duration = Duration::from_secs(60);
 pub struct Matched {
     pub video: String,
     pub official: bool,
+    /// The song inside a full-album upload: where it starts and ends (ms), from the upload's
+    /// own track list (`cut`).
+    pub section: Option<(u32, u32)>,
 }
 
 /// Whether an upload is the song, for a shelf's availability mark (`Youtube::available`): a
@@ -106,17 +113,25 @@ pub async fn remembered(svc: &Service, track: &Track, strictness: Match) -> Resu
     svc.ctx
         .db
         .call(move |c| {
-            let row: Option<(Option<String>, bool, i64)> = c
+            type Row = (Option<String>, bool, i64, Option<u32>, Option<u32>);
+            let row: Option<Row> = c
                 .query_row(
-                    "SELECT video_id, official, checked_at FROM youtube_matches WHERE track_id = ?1 AND strictness = ?2",
+                    "SELECT video_id, official, checked_at, section_from, section_to FROM youtube_matches
+                     WHERE track_id = ?1 AND strictness = ?2",
                     params![id, how],
-                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
                 )
                 .optional()?;
             let now = lull_core::now();
-            Ok(row.and_then(|(video, official, at)| {
+            Ok(row.and_then(|(video, official, at, from, to)| {
                 let fresh = now - at < if video.is_some() { FOUND_FOR } else { MISSING_FOR };
-                fresh.then(|| video.map(|video| Matched { video, official }))
+                fresh.then(|| {
+                    video.map(|video| Matched {
+                        video,
+                        official,
+                        section: from.zip(to),
+                    })
+                })
             }))
         })
         .await
@@ -125,15 +140,18 @@ pub async fn remembered(svc: &Service, track: &Track, strictness: Match) -> Resu
 pub async fn remember(svc: &Service, track: &Track, strictness: Match, found: Option<&Matched>) -> Result<()> {
     let (id, how) = (track.id.as_str().to_owned(), strictness_key(strictness));
     let (video, official) = (found.map(|m| m.video.clone()), found.is_some_and(|m| m.official));
+    let section = found.and_then(|m| m.section);
+    let (from, to) = (section.map(|s| s.0), section.map(|s| s.1));
     svc.ctx
         .db
         .call(move |c| {
             c.execute(
-                "INSERT INTO youtube_matches (track_id, strictness, video_id, official, checked_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5)
+                "INSERT INTO youtube_matches (track_id, strictness, video_id, official, checked_at, section_from, section_to)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
                  ON CONFLICT(track_id, strictness) DO UPDATE SET video_id = excluded.video_id,
-                   official = excluded.official, checked_at = excluded.checked_at",
-                params![id, how, video, official, lull_core::now()],
+                   official = excluded.official, checked_at = excluded.checked_at,
+                   section_from = excluded.section_from, section_to = excluded.section_to",
+                params![id, how, video, official, lull_core::now(), from, to],
             )?;
             Ok(())
         })
@@ -177,6 +195,48 @@ pub async fn search(svc: &Service, track: &Track, strictness: Match) -> Result<O
             return Ok(Some(m));
         }
     }
+    album(svc, track, &wanted, strictness).await
+}
+
+/// No upload of the song alone: a full-album upload whose own track list (chapters, else the
+/// description's timestamps) names the song at its length (`cut`). The list is the evidence, so
+/// its sound isn't checked (ADR-0016); without one that names the song, no copy.
+async fn album(svc: &Service, track: &Track, wanted: &Wanted, strictness: Match) -> Result<Option<Matched>, Problem> {
+    let Some(words) = Wanted::album_words(track) else {
+        return Ok(None);
+    };
+    let album = loose_title(&track.album);
+    let shortest = track.duration.unwrap_or(0).saturating_mul(2).max(ALBUM_AT_LEAST_S);
+    let found = flat(svc, &format!("ytsearch{ALBUM_RESULTS}:{words}"), ALBUM_RESULTS).await?;
+    let albums = found
+        .iter()
+        .filter(|c| c.duration.is_none_or(|d| d >= shortest) && loose_title(&c.title).contains(&album));
+    for c in albums.take(EXTRACT_AT_MOST) {
+        let info = match extract(svc, &format!("https://www.youtube.com/watch?v={}", c.id)).await {
+            Ok(info) => info,
+            Err(Problem::Gone(_)) => continue,
+            Err(p) => return Err(p),
+        };
+        if check::refused(svc, track, &info.id).await {
+            continue;
+        }
+        let upload = candidate(&info, false);
+        if !matching::by_artist(wanted, &upload) || (strictness == Match::Official && !upload.official(wanted)) {
+            continue;
+        }
+        let list = cut::track_list(
+            info.chapters.as_deref().unwrap_or_default(),
+            info.description.as_deref().unwrap_or_default(),
+            info.duration.unwrap_or_default(),
+        );
+        if let Some(section) = cut::song_in(&list, wanted, matching::slack_s(strictness)) {
+            return Ok(Some(Matched {
+                official: upload.official(wanted),
+                video: info.id,
+                section: Some(section),
+            }));
+        }
+    }
     Ok(None)
 }
 
@@ -215,6 +275,7 @@ async fn consider(
     let matched = Matched {
         official,
         video: info.id.clone(),
+        section: None,
     };
     if judged && official {
         return Ok(Some(matched));

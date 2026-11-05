@@ -102,6 +102,14 @@ References, in order (`check::references`); a copy is the song when its sound ma
 
 **Contributing to AcoustID** (Settings › Sources › YouTube, off by default): when the listener confirms a song AcoustID didn't know, the hub submits the copy's fingerprint and length with the catalog's artist, title and album, so other hubs can verify it. It needs the application key and the listener's own AcoustID user key (`LULL_ACOUSTID_USER_KEY`, Settings). Nothing is sent with the switch off.
 
+## Update 2026-11-05: songs cut from full-album uploads
+
+Some songs are on YouTube only inside an upload of their whole album. The owner (2026-11-05): such a song plays as a cut of that upload, in the same release as the tiers above, and:
+- **A cut needs no sound check when its bounds are reliable:** YouTube's chapters, else the upload's description timestamps, with an entry whose title matches the song (loosely, as an upload's title) and whose length agrees within the strictness's slack. That entry is the evidence; the cut is taken out of the fingerprint path (no check, no "Unverified" question).
+- **Neither gives a reliable match: the upload is given up** for that song. No fingerprint search through a long video for a song with no track list.
+
+As built: youtube.md#full-album-uploads. The album's audio is downloaded once per video and each song's AAC frames copied out without re-encoding, as yt-dlp's own sections need ffmpeg, which lull doesn't ship.
+
 ## Alternatives
 
 - **Sound alone, with words and length only as hints:** what the owner asked for first; it accepts 18 of 159 wrong copies here, every one an instrumental, karaoke, a loop or a take sung over the record. The words that name them stay a refusal.

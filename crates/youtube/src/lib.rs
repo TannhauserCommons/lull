@@ -6,6 +6,7 @@
 
 mod api;
 mod check;
+mod cut;
 mod formats;
 mod matching;
 mod playlist;
@@ -98,6 +99,11 @@ pub const MIGRATIONS: Migrations = Migrations {
             PRIMARY KEY (track_id, strictness)
         );
     "#,
+        r#"
+        -- A song cut from a full-album upload: where it lies in the upload (ms; ADR-0016).
+        ALTER TABLE youtube_matches ADD COLUMN section_from INTEGER;
+        ALTER TABLE youtube_matches ADD COLUMN section_to INTEGER;
+    "#,
     ],
 };
 
@@ -112,6 +118,8 @@ const BACKOFF_MAX: Duration = Duration::from_secs(6 * 3600);
 const HOUSEKEEPING: Duration = Duration::from_secs(15 * 60);
 /// Unpacked yt-dlp runs left behind by a cancelled download are removed after this long.
 const LEFTOVERS: Duration = Duration::from_secs(30 * 60);
+/// A full-album upload's audio and its songs' cuts are kept this long (`cut`).
+const ALBUMS_FOR: Duration = Duration::from_secs(24 * 3600);
 
 pub struct Service {
     ctx: Ctx,
@@ -133,6 +141,8 @@ pub struct Service {
     updates: update::State,
     /// Sound checks (ADR-0016).
     checks: check::Checks,
+    /// One fetch of a full-album upload's audio at a time, per upload.
+    albums: Mutex<std::collections::HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 /// Counts one in flight for as long as it lives.
@@ -163,7 +173,7 @@ struct Backoff {
 
 pub async fn start(ctx: &Ctx) -> Result<Arc<Service>> {
     let dir = ctx.config.data_dir.join("youtube");
-    for sub in ["info", "cache", "tmp", "deno", "bin", "check"] {
+    for sub in ["info", "cache", "tmp", "deno", "bin", "check", "albums"] {
         tokio::fs::create_dir_all(dir.join(sub))
             .await
             .map_err(|e| Error::internal(format!("creating {}: {e}", dir.join(sub).display())))?;
@@ -183,6 +193,7 @@ pub async fn start(ctx: &Ctx) -> Result<Arc<Service>> {
         checking: Default::default(),
         updates: update::State::default(),
         checks: check::Checks::default(),
+        albums: Mutex::default(),
     });
     svc.report();
     // Subscribed before collection starts, so its start-up `settings` arrives (ADR-0050).
@@ -225,6 +236,16 @@ impl Youtube for Service {
         self.backed_off()?;
         let matched = self.matched(track, &settings).await?;
         let Some(m) = matched else { return Ok(None) };
+        if let Some(section) = m.section {
+            let (copy, size) = self.cut_copy(&m.video, section).await.map_err(|p| self.failed(p))?;
+            let (info, _) = search::info(self, &m.video, false).await.map_err(|p| self.failed(p))?;
+            return Ok(Some(Found {
+                source: copy.source_ref(size),
+                title: info.title.clone(),
+                channel: info.channel.clone().or(info.uploader.clone()).unwrap_or_default(),
+                official: m.official,
+            }));
+        }
         let (info, _) = search::info(self, &m.video, false).await.map_err(|p| self.failed(p))?;
         let Some(chosen) = formats::choose(&info, want, settings.format) else {
             return Err(Error::upstream(
@@ -244,6 +265,14 @@ impl Youtube for Service {
         let copy =
             Copy::of(source).ok_or_else(|| Error::BadRequest(format!("{} is not a YouTube copy", source.path)))?;
         self.backed_off()?;
+        if let Some(section) = copy.section {
+            self.cut_copy(&copy.video, section).await.map_err(|p| self.failed(p))?;
+            let from = cut::cut_path(&self.dir, &copy.video, section.0, section.1);
+            tokio::fs::copy(&from, dest)
+                .await
+                .map_err(|e| Error::internal(format!("copying the song's cut: {e}")))?;
+            return Ok(());
+        }
         let _turn = self
             .downloads
             .acquire()
@@ -311,6 +340,10 @@ impl Youtube for Service {
 
     async fn checked(&self, track: &Track, source: &SourceRef, path: &Path) -> Option<bool> {
         let copy = Copy::of(source)?;
+        // A song cut from a full-album upload: the upload's own track list is the evidence.
+        if copy.section.is_some() {
+            return Some(true);
+        }
         check::played(self, track, &copy.video, path).await
     }
 
@@ -337,6 +370,55 @@ impl Youtube for Service {
 impl Service {
     pub fn settings(&self) -> Settings {
         self.settings.read().map(|s| s.clone()).unwrap_or_default()
+    }
+
+    /// A song cut from a full-album upload (`cut`): the upload's AAC audio fetched once for all its
+    /// songs (kept in `<data>/youtube/albums` a day), the song's frames copied into a file of its
+    /// own. Its copy and size.
+    async fn cut_copy(&self, video: &str, section: (u32, u32)) -> Result<(Copy, u64), Problem> {
+        let copy = Copy {
+            video: video.to_owned(),
+            format: "140".into(),
+            ext: "aac".into(),
+            section: Some(section),
+        };
+        let path = cut::cut_path(&self.dir, video, section.0, section.1);
+        if let Ok(m) = tokio::fs::metadata(&path).await
+            && m.len() > 0
+        {
+            return Ok((copy, m.len()));
+        }
+        let lock = {
+            let mut albums = self.albums.lock().map_err(|_| Problem::Other("youtube lock".into()))?;
+            albums.entry(video.to_owned()).or_default().clone()
+        };
+        let _one = lock.lock().await;
+        let album = cut::album_path(&self.dir, video);
+        if !album.is_file() {
+            let (info, json) = search::info(self, video, false).await?;
+            let chosen = formats::choose(&info, Want::Save, lull_core::youtube::Format::Aac)
+                .ok_or_else(|| Problem::Other("the album upload has no AAC audio".into()))?;
+            let part = album.with_extension("part");
+            {
+                let _turn = self
+                    .downloads
+                    .acquire()
+                    .await
+                    .map_err(|_| Problem::Other("youtube downloads closed".into()))?;
+                self.pipe(&json, &chosen.copy.format, &part, chosen.size)
+                    .await
+                    .map_err(|(_, p)| p)?;
+            }
+            tokio::fs::rename(&part, &album)
+                .await
+                .map_err(|e| Problem::Other(format!("keeping the album's audio: {e}")))?;
+        }
+        let (from, to) = (album, path);
+        let size = tokio::task::spawn_blocking(move || cut::cut(&from, section.0, section.1, &to))
+            .await
+            .map_err(|e| Problem::Other(format!("cutting the song: {e}")))?
+            .map_err(Problem::Other)?;
+        Ok((copy, size))
     }
 
     /// The remembered match, else a search (one per song at a time).
@@ -602,6 +684,7 @@ async fn housekeeping(svc: Arc<Service>) {
         tokio::time::sleep(HOUSEKEEPING).await;
         remove_older(&svc.dir.join("info"), search::INFO_FOR).await;
         remove_older(&svc.dir.join("tmp"), LEFTOVERS).await;
+        remove_older(&svc.dir.join("albums"), ALBUMS_FOR).await;
     }
 }
 
