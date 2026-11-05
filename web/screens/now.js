@@ -1075,7 +1075,7 @@
     App.createPlaylist({ name: name, desc: 'Saved from the queue.' }).then(function (p) {
       if (!p) return;                                         // createPlaylist already said why
       return App.savePlaylistOrder(p.id, ids).then(function () {
-        App.toast('Saved ' + ids.length + ' songs as playlist "' + name + '"', { confirms: 'playlist-edit', icon: 'playlists', action: 'Open', onAction: function () { App.go('/playlist/' + p.id); } });
+        App.toast('Saved ' + ids.length + ' songs as playlist "' + name + '"', { confirms: true, group: 'playlist-edit', icon: 'playlists', action: 'Open', onAction: function () { App.go('/playlist/' + p.id); } });
       }, function (err) { App.toast('Couldn\'t add the songs to "' + name + '": ' + err.message, { kind: 'error' }); });
     });
   });
@@ -1084,7 +1084,7 @@
     if (!ids.length) { App.toast('Everything in the queue is already in your library', { icon: 'saved' }); return; }
     App.saves.start(ids);
     if (App.discover && ids.length > 1) App.discover.openAggregate('your queue', ids);
-    else App.toast('Saving ' + ids.length + ' songs to your library', { confirms: 'save', icon: 'save', action: 'Show', onAction: function () { App.openPanel('activity'); } });
+    else App.toast('Saving ' + ids.length + ' songs to your library', { confirms: true, group: 'save', icon: 'save', action: 'Show', onAction: function () { App.openPanel('activity'); } });
   });
   App.action('now-radio-keep', function () {
     var on = !(ps.radio && ps.radio.keepsAdding);
@@ -1094,11 +1094,11 @@
   App.action('now-radio-stop', function () {
     var before = ps.radio;
     P.setRadio(null);
-    App.toast('Radio stopped. The queue stays.', { confirms: 'radio', icon: 'radio', action: 'Undo', onAction: function () { P.setRadio(before); } });
+    App.toast('Radio stopped. The queue stays.', { group: 'radio', icon: 'radio', action: 'Undo', onAction: function () { P.setRadio(before); } });
   });
   App.action('now-radio-retry', function () {
     withFocus('radio-keep', function () { P.setRadio({ error: null }); });
-    App.toast('Looking for more radio songs', { confirms: 'radio', icon: 'radio' });
+    App.toast('Looking for more radio songs', { confirms: true, group: 'radio', icon: 'radio' });
   });
   /* the slider only repaints while it moves; the steer goes to the engine on release (which re-fills the radio) */
   document.addEventListener('input', function (e) {
@@ -1109,7 +1109,7 @@
     var r = e.target.closest && e.target.closest('[data-now-steer]'); if (!r || !ps.radio) return;
     var v = +r.value / 100;
     withFocus('radio-steer', function () { P.setRadio({ steer: v }); });
-    App.toast('Radio steering: ' + steerText(v).toLowerCase() + '. Upcoming songs will follow.', { confirms: 'radio', icon: 'radio' });
+    App.toast('Radio steering: ' + steerText(v).toLowerCase() + '. Upcoming songs will follow.', { confirms: true, group: 'radio', icon: 'radio' });
   });
 
   // activity
@@ -1131,7 +1131,7 @@
     M.api('/api/jobs', { method: 'DELETE' }).then(function () {
       var saves = App.store.get('saves') || {};
       Object.keys(saves).forEach(function (id) { if (saves[id].status === 'saved') App.saves.set(id, null); });
-      App.toast('Cleared finished jobs', { confirms: 'jobs', icon: 'check' });
+      App.toast('Cleared finished jobs', { confirms: true, group: 'jobs', icon: 'check' });
       return App.loadJobs();
     }, toastError);
   });
@@ -1139,11 +1139,11 @@
     var j = findJob(el.getAttribute('data-job')); if (!j) return;
     if (j.kind === 'save') {
       adoptSave(j); App.saves.retry(j.trackId);
-      App.toast('Retrying save: ' + jobTitle(j), { confirms: 'jobs', icon: 'refresh' });
+      App.toast('Retrying save: ' + jobTitle(j), { confirms: true, group: 'jobs', icon: 'refresh' });
       return;
     }
     M.api('/api/transfers/' + encodeURIComponent(j.id) + '/retry', { method: 'POST' }).then(function () {
-      App.toast('Retrying transfer: ' + jobTitle(j), { confirms: 'jobs', icon: 'soulseek' });
+      App.toast('Retrying transfer: ' + jobTitle(j), { confirms: true, group: 'jobs', icon: 'soulseek' });
     }, toastError);
   });
   /* a transfer is cancelled with DELETE /api/transfers/{id}; for a save, DELETE /api/saves/{jobId}: a waiting save
@@ -1152,7 +1152,7 @@
     var j = findJob(el.getAttribute('data-job')); if (!j) return;
     if (j.kind === 'transfer') {
       M.api('/api/transfers/' + encodeURIComponent(j.id), { method: 'DELETE' }).then(function () {
-        App.toast('Transfer cancelled: ' + jobTitle(j), { confirms: 'jobs', icon: 'close' });
+        App.toast('Transfer cancelled: ' + jobTitle(j), { group: 'jobs', icon: 'close' });
       }, toastError);
       return;
     }

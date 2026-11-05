@@ -13,14 +13,29 @@ over the music, an update ready. Hiding those would hide what is wrong or what l
 
 ## Decision
 
-**The code that raises a note says whether it is a confirmation.** `App.toast(message, { confirms: '<group>' })` marks
-a note that only says an action did what the listener asked: queued, liked, followed, saved, added to a playlist,
-copied, downloaded, removed, a switch flipped. Everything else is an alert: errors (never a confirmation, whatever
-the call says), status (radio starting, a source switched, a song skipped), notes that say why nothing happened
-("Already in your library", "This playlist is empty"), results the listener waits for (an import's counts, a found
-source) and prompts (install, update). A note that says nothing is an alert, so a new one is never hidden by mistake.
+**The code that raises a note says whether it is a confirmation.** `App.toast(message, { confirms: true })` marks a
+note that only says an action did what the listener asked: queued, liked, followed, saved, added to a playlist,
+copied, downloaded, a switch flipped. Everything else is an alert, and a note that says nothing is an alert, so a new
+one is never hidden by mistake:
+- **errors**, never a confirmation whatever the call says;
+- **a destructive action whose note is the way back:** a playlist deleted, the queue cleared, songs removed from the
+  queue, a playlist, the library or this device, downloads removed, skins deleted, recent searches cleared, radio
+  stopped, a transfer cancelled, many likes removed at once. Its Undo, or just the word that it happened, must never
+  be hidden;
+- **anything security-relevant:** a device paired or unpaired, Last.fm disconnected;
+- **status** (radio starting, a source switched, a song skipped), notes that say why nothing happened ("Already in
+  your library", "This playlist is empty"), results the listener waits for (an import's counts, a found source) and
+  prompts (install, update).
 
-**Confirmations of a group collapse.** One raised while another of its group is on screen updates that note instead
+A note that says both directions is a confirmation only in the harmless one: "Added to Library" is, "Removed from your
+library" isn't.
+
+The destructive ones are alerts rather than a third kind ("undoable"): a kind Quiet never hides is what an alert
+already is, and a third kind would have to be kept apart from both forever. What they share with confirmations is
+collapsing, which is its own option.
+
+**Notes of a group collapse,** confirmations and alerts alike (`group: '<name>'`). One raised while another of its
+group is on screen updates that note instead
 of stacking: its words count up (`n`, the things this one did, and `together(total)`, the words for them all: "Added
 3 songs to the queue"), its timer starts again, and its Undo undoes every one of them, newest first. The groups are
 what reads as one thing: the queue's additions, likes, unlikes, one playlist's additions, removals from the queue or
@@ -49,8 +64,8 @@ notes may want to keep, and one who doesn't turns that sound off where every oth
 
 ## Consequences
 
-- **A new toast decides what it is:** pass `confirms` for a confirmation (and `n` and `together` when it collapses
-  with others of its group); leave it out for anything the listener must see.
-- **With Quiet, an Undo is gone with its note.** What was done is undone where it is shown (the heart, the queue's
-  remove); Settings says what Quiet hides.
+- **A new toast decides what it is:** `confirms: true` for a confirmation, nothing for anything the listener must
+  see; `group` (with `n` and `together`) when it collapses with others of its kind.
+- **With Quiet, a confirmation's Undo goes with it,** which is why only the harmless ones are confirmations: what
+  they did is undone where it is shown (the heart, the queue's remove). A destructive note keeps its Undo on screen.
 - **Themes need nothing new:** a collapsed note is the same `.toast`, its words changing in `.toast__msg`.

@@ -207,7 +207,7 @@
   App.action('layout-reset', function () {
     App.confirm({ title: 'Reset the layout?', text: 'The side panel and the Now Playing column go back to their widths, search to one list and Home to its first order, all sections shown. Only on this device.', confirm: 'Reset' }, function () {
       App.layout.reset();
-      App.toast('Layout reset', { confirms: 'layout', icon: 'undo' });
+      App.toast('Layout reset', { confirms: true, group: 'layout', icon: 'undo' });
     });
   });
   App.action('theme-edit', function (el) { openStudio(el.getAttribute('data-id')); });

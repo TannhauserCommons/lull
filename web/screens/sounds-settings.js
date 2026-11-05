@@ -154,7 +154,7 @@
         }
         if (r.status !== 200 && r.status !== 201) throw new Error(r.body.message || 'The hub answered ' + r.status);
         set({ packs: [r.body.id].concat(st().packs.filter(function (x) { return x !== r.body.id; })) });
-        App.toast('Added ' + r.body.name, { confirms: 'theme', kind: 'ok', icon: 'bell' });
+        App.toast('Added ' + r.body.name, { confirms: true, group: 'theme', kind: 'ok', icon: 'bell' });
         return SND.reload().then(function () { if (/^\/settings\/sounds/.test(App.current.path)) App.refresh(); });
       })
       .catch(function (err) { App.toast('Couldn\'t import ' + file.name + ': ' + err.message, { kind: 'error' }); });

@@ -341,7 +341,7 @@
       confirm: d.kind === 'subsonic' ? 'Revoke' : 'Unpair', danger: true }, function () {
       M.api(DEVICES + '/' + encodeURIComponent(d.id), { method: 'DELETE' }).then(function () {
         if (me) { App.checkPairing(); return; }
-        C.reload(); App.toast(d.name + (d.kind === 'subsonic' ? ': password revoked' : ' unpaired'), { confirms: 'device', icon: 'trash' });
+        C.reload(); App.toast(d.name + (d.kind === 'subsonic' ? ': password revoked' : ' unpaired'), { group: 'device', icon: 'trash' });
       }, function (err) { App.toast('Couldn\'t unpair ' + d.name + ': ' + err.message, { kind: 'error' }); });
     });
   }
@@ -412,7 +412,7 @@
   App.action('hub-copy', function (el) {
     var text = el.getAttribute('data-text');
     (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject(new Error('no clipboard'))).then(function () {
-      App.toast('Copied', { confirms: 'copy', icon: 'copy' });
+      App.toast('Copied', { confirms: true, group: 'copy', icon: 'copy' });
     }, function () { App.toast('Couldn\'t copy here. Select the text and copy it instead.', { kind: 'error' }); });
   });
 
@@ -445,7 +445,7 @@
   App.store.subscribe(function (keys) {
     if (keys.indexOf('devices') < 0) return;
     if (pairing && devices().some(function (d) { return pairing.known.indexOf(d.id) < 0; })) {
-      pairing.dlg.close(); App.toast('Paired a new device', { confirms: 'device', kind: 'ok', icon: 'connect' });
+      pairing.dlg.close(); App.toast('Paired a new device', { group: 'device', kind: 'ok', icon: 'connect' });
     }
     if ($('#hub-devices')) repaintDevices();
   });
