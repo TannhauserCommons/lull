@@ -74,7 +74,7 @@ Raise a budget only with a measured reason a listener would accept, in the commi
 
 ## Checks on a branch
 
-The checks run on every push to main and every pull request. On any other branch, run them by hand: `gh workflow run ci --ref <branch>` (fmt, clippy, tests, the web's tests), `app` (the app's checks on Linux and Windows, then the four desktop bundles and the APK as artifacts) and `ui-gates`. Only main publishes: the image (`:main`, `:sha-<short>`) and Pages run only for `refs/heads/main`, a Release only for a `v*` tag.
+The checks run on every push to main and every pull request. On any other branch, run them by hand: `gh workflow run ci --ref <branch>` (fmt, clippy, tests, the web's tests), `app` (the app's checks on Linux and Windows, then the four desktop bundles and the APK as artifacts) and `ui-gates`. Only main publishes: the image (`:main`, `:sha-<short>`) and Pages run only for `refs/heads/main`, a Release only for a `v*` tag. A change to a workflow in `.github/workflows/` is tested by the queue with main's copy of each workflow (Actions reads a called workflow at the calling commit), so run a changed workflow on its branch by hand before it queues.
 
 ## Privacy
 
