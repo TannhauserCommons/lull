@@ -10,7 +10,7 @@ from, how the player plays, and the rules screens follow. The endpoint contract 
 ```
 index.html   tokens.css base.css components.css screens/{discover,now,library,system}.css designs/<name>/design.css (last)
              designs/designs.js + the pre-paint script (design, theme, motion, text size)
-             icons.js data.js align.js eq.js player-rules.js app.js layout.js connect.js offline.js screens/{discover,now,library,system,appearance}.js
+             icons.js data.js align.js eq.js player-rules.js app.js sound-rules.js sounds.js layout.js connect.js offline.js screens/{discover,now,library,system,appearance}.js
              screens/setup.js
              the desktop app only (window.__TAURI__): screens/classic.css desktop/desktop.css
              desktop/webamp-session.js screens/{skins,classic}.js desktop/desktop.js, from the start, as its crash
@@ -28,6 +28,14 @@ eq.js        window.LullEq: the equaliser's settings (per device), its curve and
              pure but for storage and chain(), tested by tests/web/eq.test.mjs. Loaded by desktop/winamp.html too
 app.js       window.App: router, render helpers, overlays, save pipeline, player engine, shell, actions,
              keyboard, Media Session, drag and drop, server events + boot
+sound-rules.js  window.LullSoundRules: the UI sounds' rules (ADR-0081: what may sound, which pack it comes from, levelling,
+             the device's sound settings), pure, tested by tests/web/sound-rules.test.mjs
+sounds.js    App.sounds: the UI sounds. Their own Web Audio context (made on the first tap, sleeping when idle), the packs
+             that are on (web/packs/ and GET /api/packs), the moments that sound (presses, player states, saves, errors),
+             the buffering loop only in silence; App.player.heard() and the `heard` event are what it keeps quiet for
+egg-rules.js, eggs.js  window.LullEggRules (pure, tests/web/egg-rules.test.mjs) and App.eggs: the easter eggs the packs
+             declare, loaded once the page is idle (App.needEggs); the hidden #/credits page
+screens/sounds-settings.js  Settings > Sounds, loaded as it opens: the switches, each sound, the packs, the surprises
 layout.js    ADR-0007: size classes, App.layout (lull:layout), resize handles, the Now Playing column host
 sw.js        service worker (app shell for offline start); manifest.webmanifest
 hub.js       the hub's own settings: library source (folder / Jellyfin), Soulseek account, Settings > Devices (App.hubKit);
