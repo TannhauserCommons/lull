@@ -40,7 +40,7 @@ GitHub's own merge queue needs an organisation. lull lives under the user accoun
   A queue change (`.github/`, `scripts/queue*`) runs them all. The check workflows become reusable (`workflow_call` with the candidate's commit); they keep `workflow_dispatch` for a branch's checks by hand and `pull_request` for outside contributors.
 - **One image, tested and shipped.** When the diff reaches the hub, one job builds the image once. `ui` tests that image, and after landing the same image is pushed as `:main` and `:sha-<short>`. The image a listener runs is the one the UI checks passed.
 - **Green: main fast-forwards.** The run sets the commit status `queue` to success on the candidate, pushes it to main as a fast-forward, deletes each landed branch (only if its tip is still what was tested), publishes the image, and starts Pages when `site/` changed. Pushes made by the run's own token start no workflows, so the run starts what main's pushes used to start.
-- **Only the queue publishes.** No workflow publishes the image or starts Pages on a push to main any more (`ci`'s image job goes, and Pages runs only when the queue starts it), and the ruleset below refuses a direct push anyway. So the image the homelab pins is always one the queue tested.
+- **Only the queue publishes.** No workflow publishes the image or starts Pages on a push to main any more (`ci`'s image job goes, and Pages runs only when the queue starts it), and the ruleset below refuses a direct push anyway. So every image an install pulls, `:main` or a release's, is one the queue tested.
 - **Red: main stays.** A single branch's red sets `queue` to failure on its tip, with the failing run's link; `mise run ship` prints it. The branch waits until its owner pushes a fix to it. A red batch of several is split: each branch is retried alone, oldest first, so one bad change never holds the others back.
 
 ### Main is protected as far as a user's public repository allows
@@ -68,7 +68,7 @@ A check that fails without a change to blame gets an owner and a fix at its caus
 
 ## Consequences
 
-- **Main is always green,** so anything that wants "the newest good lull" takes main's tip: the homelab's pin (homelab ADR-0028) and releases (ADR-0097).
+- **Main is always green,** so anything that wants "the newest good lull" takes main's tip: an install that follows `:main`, and releases (ADR-0097), which every other install follows.
 - **A change lands in about the time its slowest check takes,** as now, plus a minute to rebase and publish. Batching keeps that true when sessions push at once. The image is built once instead of twice (`ci` and `ui` each built it).
 - **Sessions no longer rebase and push main themselves.** AGENTS.md and workspace.md say `mise run ship`. A branch that conflicts is the session's to rebase and push again.
 - **Branch checks by hand still work** (`gh workflow run ci --ref <branch>`), for a change not ready to queue.

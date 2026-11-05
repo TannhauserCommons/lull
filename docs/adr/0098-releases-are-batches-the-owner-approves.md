@@ -38,7 +38,7 @@ The owner is not expected to run workflows. They say "release it" in chat, for t
 
 ### Self-hosters follow releases
 
-`release.yml` also builds the hub's image from the tag and publishes it as `:X.Y.Z` and `:latest`. `:main` and `:sha-<short>` stay what the queue publishes, for the homelab and anyone who wants every landing. `deploy/` and docs/context/deploy.md point self-hosters at `:latest`.
+`release.yml` also builds the hub's image from the tag and publishes it as `:X.Y.Z` and `:latest`. `:main` and `:sha-<short>` stay what the queue publishes, for anyone who wants every landing, such as an install kept for testing. `deploy/` and docs/context/deploy.md point self-hosters at `:latest`.
 
 ## Rejected
 
