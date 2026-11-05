@@ -664,8 +664,8 @@
 :root[data-design="lull"] .tooltip { background: var(--ink); color: #fff; border-radius: 8px; font: 800 .75rem/1.3 var(--f-ui); }
 :root[data-design="lull"][data-theme="night"] .tooltip { background: #f4efff; color: #2b2650; }
 /* phones have no hover, and a tooltip that a sheet's opening focus raises would float far from its button: the
-   accessible names already say it all */
-@media (max-width: 639px) { :root[data-design="lull"] .tooltip { display: none; } }
+   accessible names already say it all. One a tap asked for (cut-off words shown whole) stays */
+@media (max-width: 639px) { :root[data-design="lull"] .tooltip:not(.tooltip--asked) { display: none; } }
 :root[data-design="lull"] .dup-better { color: var(--reason-fg); }
 /* score meter: a hatched track and a solid fill, at least 3:1 apart in both themes */
 :root[data-design="lull"] .score { height: 7px; background: var(--l-received); box-shadow: inset 0 0 0 1px var(--l-rule); }

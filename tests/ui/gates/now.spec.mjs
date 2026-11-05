@@ -152,3 +152,32 @@ test('with the hub out of reach, the bar says only that', async ({ page }) => {
   const text = await playAlbum(page, failingAlbum);
   expect(text).toBe('Can\'t reach the lull server. Check your connection.');
 });
+
+// The reason is cut off where the bar is narrow (the state tab on a laptop, the mini player on a phone): its tooltip has it
+// whole, on hover, on keyboard focus and on a tap, in a design that hides tooltips on phones too.
+const tipText = (page) => page.evaluate(() => { const t = document.getElementById('tooltip');
+  return t && t.classList.contains('is-on') && t.getBoundingClientRect().width > 0 ? t.textContent : null; });
+
+test.describe('the reason a song stopped, cut off in the bar', () => {
+  test.use(sizes.laptop);
+  test('is whole in its tooltip on hover and on keyboard focus', async ({ page }) => {
+    const { failingAlbum } = await import('../fixture-hub/library.mjs');
+    const text = await playAlbum(page, failingAlbum);
+    const line = page.locator('#pbar-state .pbar__state-line');
+    expect(await line.evaluate((el) => el.scrollWidth > el.clientWidth), 'the fixture\'s reason is cut off in the tab').toBe(true);
+    await line.hover(); await expect.poll(() => tipText(page)).toBe(text);
+    await page.mouse.move(5, 5); await page.mouse.down(); await page.mouse.up();
+    await page.keyboard.press('Shift'); await line.focus(); await expect.poll(() => tipText(page)).toBe(text);
+  });
+});
+
+test.describe('the reason a song stopped, cut off in the mini player', () => {
+  test.use(sizes.phone);
+  test('is whole on a tap, and the title still opens Now Playing', async ({ page }) => {
+    const { failingAlbum } = await import('../fixture-hub/library.mjs');
+    const text = await playAlbum(page, failingAlbum);
+    await page.tap('#mini-sub'); await expect.poll(() => tipText(page)).toBe(text);
+    expect(await page.evaluate(() => location.hash)).not.toContain('/now');
+    await page.tap('#mini-title'); await expect.poll(() => page.evaluate(() => location.hash)).toContain('/now');
+  });
+});

@@ -402,7 +402,7 @@ Every class lull's CSS styles and every `data-*` attribute lull's markup sets, e
 ### Components
 
 - **Buttons:** `.btn`, `.btn-icon`, `.btn-gloss`, `.btn-save` (`data-state`), `.kbd`, `.switch`, `.switch-row`.
-- **Every control:** `data-act` names its action, `data-tip` its tooltip, `data-bind` the player state it shows. `data-answer` (`yes`, `no`) is the player bar's "Right song?" answer (`.pbar__ask`, internal).
+- **Every control:** `data-act` names its action, `data-tip` its tooltip (with `data-tip-cut`, words that show it only while they are cut off, and on a tap: the state tab's line, the mini player's; a tooltip a tap showed is `.tooltip--asked`, which a theme that hides tooltips on phones should still show), `data-bind` the player state it shows. `data-answer` (`yes`, `no`) is the player bar's "Right song?" answer (`.pbar__ask`, internal).
 - **Chips and badges:** `.chip`, `.chip-reason`, `.chip-more`, `.pill-filter`, `.badge`, `.badge-saved`, `.badge-slsk`, `.badge-new`, `.badge-count`, `.badge-below`, `.q-chip`, `.src-badge` (`data-was`: `saved` `slsk`), `.dup-note`, `.dup-better`, `.resolve`, `.scrobble`, `.sg`, `.spin-ring`.
 - **Cards:** `.card` (`data-head`: `rule` `hidden`; `data-meta`), `.card-head`, `.label-rule`, `.inset`, `.source-card`, `.disc-pick` (a Home pick).
 - **Covers:** `.cover`, `.c1`, `.c2`, `.c3`, `.c4`, `.c5`, `.c6`, `.c7`, `.c8`, `.has-art`, `data-look` (cover variety), `.mosaic`, `.bezel-thumb`, `.cover-zoom`, `.cover-view`.

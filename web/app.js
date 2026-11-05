@@ -1757,13 +1757,16 @@
   var lastW = window.innerWidth;              // close on real width changes only (not the phone keyboard)
   window.addEventListener('resize', function () { if (window.innerWidth !== lastW) { lastW = window.innerWidth; App.closePopover(); } });
 
-  /* tooltip: any element with data-tip (icon-only buttons always have one); dark cream-on-ink */
+  /* tooltip: any element with data-tip (icon-only buttons always have one); dark cream-on-ink. data-tip-cut: only while
+     the element's words are cut off, and on a tap too (.tooltip--asked, which phone designs keep) */
   var tipEl = null, tipTimer = null, tipFor = null;
-  function showTip(target) {
+  function cutOff(el) { return el.scrollWidth > el.clientWidth + 1; }
+  function showTip(target, asked) {
     var text = target.getAttribute('data-tip'); if (!text) return;
+    if (target.hasAttribute('data-tip-cut') && !cutOff(target)) return;
     var lbl = target.querySelector('.nav-item__label'); if (lbl && lbl.offsetParent) return;   // rail labels visible: no tooltip
     if (!tipEl) { tipEl = document.createElement('div'); tipEl.className = 'tooltip'; tipEl.setAttribute('role', 'tooltip'); tipEl.id = 'tooltip'; document.body.appendChild(tipEl); }
-    setText(tipEl, text); tipFor = target;
+    setText(tipEl, text); tipFor = target; tipEl.classList.toggle('tooltip--asked', !!asked);
     var r = target.getBoundingClientRect();
     tipEl.style.left = '0px'; tipEl.style.top = '0px'; tipEl.classList.add('is-on');
     var w = tipEl.offsetWidth, h = tipEl.offsetHeight;
@@ -1783,6 +1786,11 @@
   });
   document.addEventListener('focusout', hideTip);
   document.addEventListener('pointerdown', hideTip);
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest && e.target.closest('[data-tip-cut]');
+    if (!t || !cutOff(t)) return;
+    e.preventDefault(); e.stopPropagation(); showTip(t, true);
+  }, true);
   window.addEventListener('scroll', hideTip, true);
 
   /* toast(message, { icon, action, onAction, kind: info|ok|error, sticky }) -> { close }.
@@ -3770,7 +3778,8 @@
       /* a kept seek's line counts down with every stream event: the tab is a live region, so screen readers hear it
          once from the announcer (sayKept) instead of at each change */
       var waiting = ps.seekWait && P.seekWaitLong();
-      patch(stEl, html`${icon(ic)}<span ${raw(waiting ? 'aria-hidden="true"' : '')}>${line}</span>${acts}`);
+      /* cut off in a narrow tab, the line's tooltip has it whole; a failure's reason takes keyboard focus too */
+      patch(stEl, html`${icon(ic)}<span class="pbar__state-line" data-tip="${line}" data-tip-cut ${raw(waiting ? 'aria-hidden="true"' : err ? 'tabindex="0"' : '')}>${line}</span>${acts}`);
       stEl.classList.toggle('is-error', err); stEl.classList.toggle('is-seek-wait', !!waiting); stEl.hidden = false;
     } else { stEl.hidden = true; stEl.innerHTML = ''; }
     // transport
@@ -3811,7 +3820,11 @@
     /* the artist, and where the song plays from (the whole text opens Now Playing, whose "Playing from" opens it);
        "your queue" goes without saying */
     var miniFrom = !idle && P.playingFrom(); if (miniFrom && miniFrom.kind === 'queue') miniFrom = null;
-    patch($('#mini-sub'), idle ? 'Search or pick something from Home' : line && (st !== 'streaming' && st !== 'library' || ps.seekWait && P.seekWaitLong()) ? esc(line)
+    var miniLine = !idle && line && (st !== 'streaming' && st !== 'library' || ps.seekWait && P.seekWaitLong()), miniSub = $('#mini-sub');
+    /* a tap on the cut-off line shows it whole; the title still opens Now Playing */
+    if (miniLine) { setAttr(miniSub, 'data-tip', line); setAttr(miniSub, 'data-tip-cut', ''); }
+    else { miniSub.removeAttribute('data-tip'); miniSub.removeAttribute('data-tip-cut'); }
+    patch(miniSub, idle ? 'Search or pick something from Home' : miniLine ? esc(line)
       : html`<span class="mini__artist">${t.artist}</span>${miniFrom ? html`<span class="mini__from">${App.placeName(miniFrom)}</span>` : ''}`);
     var mt = $('#mini-thumb'); patch(mt, idle ? '<span></span>' : ui.cover(t, 40, { hero: true })); mt.classList.toggle('bezel-thumb--empty', idle);
     App.syncRows();
