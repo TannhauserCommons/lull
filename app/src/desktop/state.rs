@@ -5,6 +5,7 @@ use crate::desktop::classic::Held;
 use crate::desktop::discord::Presence;
 use crate::desktop::glass::{Grant, Material};
 use crate::desktop::local_hub::LocalHub;
+use crate::desktop::open_links::Shared;
 use crate::desktop::settings::{HubChoice, Settings};
 use crate::desktop::theme::Package;
 use crate::desktop::tray::Tray;
@@ -76,7 +77,7 @@ pub struct Desktop {
     /// Hub origins already given their IPC capability this run.
     granted: Mutex<HashSet<String>>,
     /// A shared link handed to the app, until the hub's web UI opens it (open_links.rs).
-    link: Mutex<Option<String>>,
+    link: Mutex<Option<Shared>>,
     pub platform: Platform,
     pub tray: OnceLock<Tray>,
     /// Set once the hub on this computer runs; it stops only when the app quits.
@@ -217,11 +218,11 @@ impl Desktop {
     }
 
     /// The newest link handed over wins.
-    pub fn hold_link(&self, link: String) {
+    pub fn hold_link(&self, link: Shared) {
         *lock(&self.link) = Some(link);
     }
 
-    pub fn take_link(&self) -> Option<String> {
+    pub fn take_link(&self) -> Option<Shared> {
         lock(&self.link).take()
     }
 }

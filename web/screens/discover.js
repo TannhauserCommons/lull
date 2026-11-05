@@ -946,13 +946,17 @@
          MusicBrainz, Last.fm, and the ids after a lull link's `#lull?`); a playlist link opens as its preview
          (#/outside). A pasted link in search lands here, as do the apps' lull:// links. A song opens on its album and
          plays when a click or key brought it here; otherwise a toast offers it.
+         `do=queue` (a share page's Add to queue, through the apps or the browser): a song or an album joins next up
+         without playing or interrupting anything (with nothing loaded, the first waits paused), and lull goes back to
+         the screen it showed, or Home when it opened on this link.
      ===================================================================== */
   var PLAYLIST_LINK = /[?&]list=|\/playlist\/|\/sets\/|open\.spotify\.com\/album\//;
   function isLink(q) { return /^https?:\/\/\S+$/i.test(q) || /^(song|album)\.link\/\S+$/i.test(q); }
-  function openLink(link) {
+  function openLink(link, how) {
     if (PLAYLIST_LINK.test(link) && link.indexOf('#lull?') < 0) { App.go('/outside/' + encodeURIComponent(link), { replace: true }); return; }
     M.api('/api/open?link=' + encodeURIComponent(link)).then(function (r) {
       M.absorb(r.entities);
+      if (how === 'queue' && r.kind !== 'artist') return enqueueOpened(r);
       if (r.kind === 'artist') return App.go('/artist/' + r.id, { replace: true });
       if (r.kind === 'album') return App.go('/album/' + r.id, { replace: true });
       var t = M.track(r.id);
@@ -967,12 +971,27 @@
     });
   }
   App.openLink = openLink;
+  function enqueueOpened(r) {
+    var ids = r.kind === 'album' ? App.albumTracks(r.id) : Promise.resolve([r.id]);
+    return ids.then(function (list) {
+      leaveOpen();
+      if (list.length) P.addToQueue(list, { paused: true });
+      else App.toast('That album has no songs to add yet', { icon: 'info' });
+    });
+  }
+  /* back from #/open to the screen lull showed before, or Home when lull opened on the link (a tab the share page
+     opened): nothing else to see here */
+  var openedFirst = false;
+  function leaveOpen() {
+    if (openedFirst) App.go('/home', { replace: true }); else history.back();
+  }
   function renderOpen() {
     return html`<div class="view__inner"><section class="card disc-card" aria-busy="true">${ui.labelRule('opening the link')}${ui.skeleton('row', 3)}</section></div>`;
   }
   function mountOpen(ctx) {
     var link = (ctx.query.link || '').trim();
-    if (link) openLink(link); else App.go('/search', { replace: true });
+    openedFirst = App.current.first;
+    if (link) openLink(link, ctx.query.do); else App.go('/search', { replace: true });
   }
 
   /* search actions */

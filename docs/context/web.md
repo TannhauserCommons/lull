@@ -705,6 +705,10 @@ One "Copy link" per item, and it works for anyone:
   `lull://open?link=…`, opens this hub's own page for what it names (`GET /api/open`); playlist links open as their
   preview (`#/outside/`). A song opens on its album and plays when a click or key brought it there (sticky user
   activation), else a toast offers Play. Without lull, the link is just the public page.
+- **Add to queue** (`#/open?link=…&do=queue`: a share page's Add to queue, through the apps' hand-off or the browser):
+  a song, or an album's songs (`App.albumTracks`), join next up (`P.addToQueue` with `paused`: with nothing loaded the
+  first waits paused, never playing on its own), then lull goes back to the screen it showed, or Home when the page
+  loaded on that route (`App.current.first`). An artist link just opens. `gates/open.spec.mjs`.
 
 The clipboard write starts inside the click with the text still on its way (`ClipboardItem` with a promise), so it
 keeps the click's permission while the hub answers (`App.copyLink`). No link (404, hub unreachable) is an error toast

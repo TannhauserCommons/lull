@@ -270,6 +270,19 @@ const routes = [
     setTimeout(() => emit('search.results', { searchId, query: words(q.get('q')), files: 0, peers: 0, done: true, results: [], entities: {}, onlySoulseek: [] }), 50);
     return { searchId, soulseek: null, entities: {} };
   }],
+  // A share host's /1/ link to a song or an album, read by its names (the hub reads every kind of link: discovery's
+  // open.rs); anything else is a 404, as the hub answers a link to something it can't find.
+  ['GET', /^\/api\/open$/, (m, q) => {
+    let u;
+    try { u = new URL(q.get('link') || ''); } catch { return err(400, 'bad_request', 'That isn\'t a link.'); }
+    const [v, kind, artist, title] = u.pathname.split('/').slice(1).map(decodeURIComponent);
+    const named = (x) => x.artist === artist && x.title === title;
+    const track = v === '1' && kind === 'song' && L.trackIds.find((t) => named(L.tracks[t]));
+    if (track) return { kind: 'track', id: track, entities: entities({ tracks: [track], albums: albumsOf([track]) }) };
+    const album = v === '1' && kind === 'album' && L.albumIds.find((a) => named(L.albums[a]));
+    if (album) return { kind: 'album', id: album, entities: entities({ albums: [album] }) };
+    return err(404, 'not_found', 'That song, album or artist isn\'t there any more.');
+  }],
   ['GET', /^\/api\/albums\/([^/]+)$/, (m) => {
     const a = L.albums[m[1]]; if (!a) return err(404, 'not_found', 'lull doesn\'t know this album.');
     return { album: a, entities: entities({ tracks: a.trackIds, albums: [a.id, ...L.albumIds.filter((x) => L.albums[x].artistId === a.artistId)], artists: [a.artistId] }) };

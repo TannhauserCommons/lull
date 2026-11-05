@@ -58,3 +58,20 @@ test('a share host link keeps its ids: only the app=none it came back with is dr
   assert.equal(intent.fallback, link + '&app=none');
   assert.equal(O.linkOf(intent.fallback), link);
 });
+
+test('Add to queue asks lull to queue it beside the link, never inside it', () => {
+  const link = 'https://lull.share-host.invalid/1/album/Portishead/Dummy?it=1440823517';
+  const intent = chromeReads(O.appUrl(link, true, 'queue'));
+  const data = new URL(intent.data);
+  assert.equal(data.searchParams.get('link'), link, 'the shared link arrives whole');
+  assert.equal(data.searchParams.get('do'), 'queue', 'MainActivity reads do beside it');
+  assert.equal(intent.fallback, link + '&app=none', 'no app: back to the page, which offers the rest');
+  assert.equal(new URL(O.appUrl(link, false, 'queue')).searchParams.get('do'), 'queue');
+  const hub = new URL(O.hubUrl('https://lull.example.test', link, 'queue'));
+  const route = new URLSearchParams(hub.hash.slice(hub.hash.indexOf('?') + 1));
+  assert.ok(hub.hash.startsWith('#/open?'), hub.hash);
+  assert.equal(route.get('link'), link);
+  assert.equal(route.get('do'), 'queue');
+  assert.equal(new URL(O.appUrl(link, false)).searchParams.get('do'), null, 'Open asks nothing more');
+  assert.equal(new URL(O.appUrl(link, false, 'play')).searchParams.get('do'), null, 'nothing but queue is asked');
+});

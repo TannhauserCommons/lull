@@ -130,6 +130,12 @@ A song's cover is its album's. Covers are keyed by the album (its best id, else 
   An in-app browser (Discord's) may not hand App Links to the app; that button is for it.
 - **iOS** isn't in scope.
 
+### Add to queue (2026-11-05, asked for by a listener)
+
+- **For a song or an album the page offers Add to queue beside Open,** through the same paths: the app's intent URL or `lull://open`, or the listener's lull in the browser, each with `do=queue` beside the link. The shared link itself never carries it.
+- **lull adds it to next up without playing or leaving the screen it showed;** with nothing loaded, the first song waits paused. Started by the link (the app wasn't running), it opens on Home with the song queued.
+- **The page no longer acts on its own for a song or an album:** a remembered lull isn't opened after a moment, and a computer isn't asked "Open lull?" on load, since either would take the choice away. An artist, with nothing to queue, opens as before.
+
 ### One page script, two hosts
 
 - `site/open.js` stays the one script. It reads the item from the `#lull?` part (old links) or from a JSON block the Worker writes into the page (new links).
