@@ -1,24 +1,26 @@
-<!-- the poster's top card: label + rule, giant caps title, caps artist + time, seek line with a dot, outlined transport
-     row, art panel on the right. A failed play swaps the seek line and transport for a burgundy failure line and its
-     fixes (theme.css, from .pbar[data-status]). Live parts keep the now.js hooks. -->
+<!-- the poster: a cream sheet with the art hung as a framed print on two sleeves, then where it plays from, the title
+     set huge in thin caps, and a gallery label (album, time, format in DM Mono); on a phone also the seek line and the
+     outlined transport. A failed play swaps them for a burgundy failure line and its fixes (theme.css, from
+     :root[data-player]). Live parts keep the now.js hooks. -->
 <div class="sl-hero now-dev" role="group" aria-label="Now playing"><span class="sparkle sl-hero__spark" aria-hidden="true"></span>
-  <div class="sl-hero__info">
-    <p class="sl-hero__from now-head__from"><lull-part name="playing-from"></lull-part></p>
-    <div class="sl-hero__song" data-now="c-screen"><lull-part name="compact" pick='[data-now="c-screen"]' inner></lull-part></div>
+  <p class="sl-hero__from now-head__from"><lull-part name="playing-from"></lull-part></p>
+  <div class="sl-hero__song" data-now="c-screen"><lull-part name="compact" pick='[data-now="c-screen"]' inner></lull-part></div>
+  <div class="sl-hero__art" data-now="c-art"><lull-part name="cover" size="56"></lull-part></div>
+  <div class="sl-hero__label">
+    <p class="sl-hero__plate"><span class="sl-hero__k" aria-hidden="true">album</span><span data-now="album">{{album}}</span></p>
     <p class="sl-hero__time"><span data-bind="pos">0:00</span><span class="sl-hero__of" aria-hidden="true">/</span><span data-bind="dur">0:00</span></p>
     <div class="sl-hero__facts" data-track="{{trackId}}"><span class="sl-hero__state" data-now="state"><lull-part name="state"></lull-part></span><span class="device__facts" data-now="facts"><lull-part name="facts"></lull-part></span></div>
-    <lull-part name="seek" cls="sl-hero__seek"></lull-part>
-    <div class="sl-hero__ctl" role="group" aria-label="Transport">
-      <button class="btn-icon btn-icon--bare" data-act="shuffle" aria-label="Shuffle (S)" data-tip="Shuffle (S)" data-bind="shuffle" aria-pressed="{{shuffle}}"><lull-part name="icon" icon="shuffle"></lull-part></button><button class="btn-icon btn-icon--bare" data-act="prev" aria-label="Previous (P)" data-tip="Previous (P)"><lull-part name="icon" icon="prev"></lull-part></button><lull-part name="play-button" size="64"></lull-part><button class="btn-icon btn-icon--bare" data-act="next" aria-label="Next (N)" data-tip="Next (N)"><lull-part name="icon" icon="next"></lull-part></button><button class="btn-icon btn-icon--bare" data-act="repeat" aria-label="{{repeatLabel}} (R)" data-tip="{{repeatLabel}} (R)" data-bind="repeat" aria-pressed="{{repeatOn}}"><lull-part name="icon" icon="{{repeatIcon}}"></lull-part></button><button class="btn-icon btn-icon--bare sl-like {{likeClass}}" data-act="like" data-bind="like" data-id="{{trackId}}" data-like="{{trackId}}" aria-pressed="{{liked}}" aria-label="Like (L)" data-tip="Like"><lull-part name="icon" icon="{{likeIcon}}"></lull-part></button>
-    </div>
-    <div class="sl-hero__trouble sl-hero__trouble--failed">
-      <p class="sl-hero__err"><lull-part name="icon" icon="warning"></lull-part><span>{{error}}</span></p>
-      <div class="sl-hero__fix"><button class="btn btn--primary btn--sm" data-act="retry-search"><lull-part name="icon" icon="refresh"></lull-part>Retry search</button><button class="btn btn--sm" data-act="pick-source">Pick another source</button><button class="btn-icon btn-icon--bare" data-act="next" aria-label="Skip (N)" data-tip="Skip (N)"><lull-part name="icon" icon="next"></lull-part></button></div>
-    </div>
-    <div class="sl-hero__trouble sl-hero__trouble--jellyfin">
-      <p class="sl-hero__err"><lull-part name="icon" icon="warning"></lull-part><span>Jellyfin isn't answering</span></p>
-      <div class="sl-hero__fix"><button class="btn btn--primary btn--sm" data-act="try-soulseek"><lull-part name="icon" icon="soulseek"></lull-part>Try Soulseek instead</button></div>
-    </div>
   </div>
-  <div class="sl-hero__art" data-now="c-art"><lull-part name="cover" size="56"></lull-part></div>
+  <lull-part name="seek" cls="sl-hero__seek"></lull-part>
+  <div class="sl-hero__ctl" role="group" aria-label="Transport">
+    <button class="btn-icon btn-icon--bare" data-act="shuffle" aria-label="Shuffle (S)" data-tip="Shuffle (S)" data-bind="shuffle" aria-pressed="{{shuffle}}"><lull-part name="icon" icon="shuffle"></lull-part></button><button class="btn-icon btn-icon--bare" data-act="prev" aria-label="Previous (P)" data-tip="Previous (P)"><lull-part name="icon" icon="prev"></lull-part></button><lull-part name="play-button" size="64"></lull-part><button class="btn-icon btn-icon--bare" data-act="next" aria-label="Next (N)" data-tip="Next (N)"><lull-part name="icon" icon="next"></lull-part></button><button class="btn-icon btn-icon--bare" data-act="repeat" aria-label="{{repeatLabel}} (R)" data-tip="{{repeatLabel}} (R)" data-bind="repeat" aria-pressed="{{repeatOn}}"><lull-part name="icon" icon="{{repeatIcon}}"></lull-part></button><button class="btn-icon btn-icon--bare sl-like {{likeClass}}" data-act="like" data-bind="like" data-id="{{trackId}}" data-like="{{trackId}}" aria-pressed="{{liked}}" aria-label="Like (L)" data-tip="Like"><lull-part name="icon" icon="{{likeIcon}}"></lull-part></button>
+  </div>
+  <div class="sl-hero__trouble sl-hero__trouble--failed">
+    <p class="sl-hero__err"><lull-part name="icon" icon="warning"></lull-part><span>{{error}}</span></p>
+    <div class="sl-hero__fix"><button class="btn btn--primary btn--sm" data-act="retry-search"><lull-part name="icon" icon="refresh"></lull-part>Retry search</button><button class="btn btn--sm" data-act="pick-source">Pick another source</button><button class="btn-icon btn-icon--bare" data-act="next" aria-label="Skip (N)" data-tip="Skip (N)"><lull-part name="icon" icon="next"></lull-part></button></div>
+  </div>
+  <div class="sl-hero__trouble sl-hero__trouble--jellyfin">
+    <p class="sl-hero__err"><lull-part name="icon" icon="warning"></lull-part><span>Jellyfin isn't answering</span></p>
+    <div class="sl-hero__fix"><button class="btn btn--primary btn--sm" data-act="try-soulseek"><lull-part name="icon" icon="soulseek"></lull-part>Try Soulseek instead</button></div>
+  </div>
 </div>
