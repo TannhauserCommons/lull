@@ -44,13 +44,20 @@ async function appearance(browser) {
 }
 test.afterEach(async ({ browser }) => { for (const c of browser.contexts()) await c.close(); });
 
-/* the card's picture for each mode once it is the made one ({ day, night } URLs), within the time a draw takes */
-async function madePictures(page, id) {
-  const card = page.locator(`.sys-design[data-value="${id}"]`);
-  await expect(card.locator('.sys-design__pv')).toHaveClass(/has-shot/, { timeout: DRAWN });
-  const style = await card.getAttribute('style');
-  const url = (mode) => /url\("([^"]+)"\)/.exec(style.split('--pv-' + mode + ':')[1])[1];
-  return { day: url('day'), night: url('night') };
+/* the card's made picture for each mode ({ day, night } URLs), or null while it shows none: its class and its style read
+   in one go, from the same render (a save renders the card again, for the new rev, before that rev has a picture) */
+function shown(page, id) {
+  return page.locator(`.sys-design[data-value="${id}"]`).evaluate((card) => {
+    if (!card.querySelector('.sys-design__pv').classList.contains('has-shot')) return null;
+    const url = (mode) => card.style.getPropertyValue('--pv-' + mode).match(/url\("([^"]+)"\)/)[1];
+    return { day: url('day'), night: url('night') };
+  });
+}
+/* the card's picture once it is the made one, and (with `not`) a different one from that, within the time a draw takes */
+async function madePictures(page, id, not) {
+  let got = null;
+  await expect.poll(async () => { got = await shown(page, id); return !!got && got.day !== not; }, { timeout: DRAWN }).toBe(true);
+  return got;
 }
 /* a picture as the hub serves it: its size, its mean colour, and how much its lower third varies (the page drawn to its
    foot: a page laid out for a shorter window leaves flat background there) */
@@ -106,8 +113,7 @@ test('a Theme Studio save draws the card again from what was saved', async ({ br
   await page.locator('[data-studio-tab="css"]').click();
   await page.locator('[data-studio="css"]').fill(veil('rgba(220, 40, 140, .6)', 'rgba(20, 0, 10, .85)'));
   await page.locator('[data-studio-act="save"]').click();
-  await expect.poll(async () => (await madePictures(page, 'meadow')).day, { timeout: DRAWN }).not.toBe(before.day);
-  const after = await look(page, (await madePictures(page, 'meadow')).day);
+  const after = await look(page, (await madePictures(page, 'meadow', before.day)).day);
   expect(green(after.mean), 'the new picture shows the saved pink, not the old green').toBeLessThan(-40);
 });
 
