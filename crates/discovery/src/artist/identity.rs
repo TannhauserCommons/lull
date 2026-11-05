@@ -11,10 +11,12 @@
 //! - **credits that carry ids:** an ISRC's recordings, whose credit is that one artist, or lists
 //!   it among others by an MBID that links to one of its catalog ids;
 //! - **recommenders' own ids** (`offer`): ListenBrainz's recording and release artists, Deezer's
-//!   related artists and radio, Last.fm's similar artists that come with an MBID.
+//!   related artists and radio, Last.fm's similar artists that come with an MBID;
+//! - **search rows' own ids** (`Store::artist_sources`): a catalog's artist row, a song row's
+//!   artist.
 //!
 //! The listener's songs come first: an artist they have songs of takes only the ids those give
-//! (and their links), and a recommender's id never joins it. A recommender seeds an artist lull
+//! (and their links), and a recommender's or search's id never joins it. A recommender or search seeds an artist lull
 //! holds no id for; another source joins only through a link. Two different ids of one source
 //! cancel each other. No name is compared anywhere. Each feature uses whichever id serves it.
 
@@ -75,6 +77,8 @@ pub enum Evidence {
     Isrc { isrc: String },
     /// A recommender named the artist by this id.
     Recommended { by: String },
+    /// A search row (the catalog's own artist row, or a song's) named the artist by this id.
+    Searched,
 }
 
 /// One id of an artist.

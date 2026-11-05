@@ -3,7 +3,7 @@
 //! and turning source records into the UI's entities, recorded in the catalog with saved state
 //! from the `Library` seam.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 use lull_core::catalog;
@@ -17,7 +17,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::artist::identity::{Evidence, IdRow, Ids, Source};
-use crate::sources::{AlbumSource, ArtistInfo, Release, Song, year};
+use crate::sources::{AlbumSource, ArtistInfo, ArtistSource, Release, Song, year};
 use crate::taste::{Feedback, Mark, Named, Play, Signals};
 
 /// Plays older than this no longer count (at a 45-day half-life they weigh under 0.4%).
@@ -233,6 +233,18 @@ impl Store {
                 Ok(())
             })
             .await
+    }
+
+    /// Search rows' own catalog ids for the artists they show (`search::describe`). One seeds
+    /// only an artist lull holds no id for and has not weighed the listener's evidence of (that
+    /// evidence decides, and replaces a seed when first weighed): the artist's first source in
+    /// the rows, unless the rows give two ids of it, which cancel.
+    #[expect(dead_code, reason = "search's describe() calls it; remove this when it does")]
+    pub async fn artist_sources(&self, rows: Vec<(ArtistId, ArtistSource)>) -> Result<()> {
+        if rows.is_empty() {
+            return Ok(());
+        }
+        self.db.call(move |c| seed_from_search(c, rows)).await
     }
 
     /// The artists among `ids` that hold any id already.
@@ -634,6 +646,50 @@ fn replace_ids(c: &mut Connection, id: &ArtistId, ids: &Ids, checked: i64) -> Re
     Ok(())
 }
 
+/// The seeds search rows give (`Store::artist_sources`).
+fn seed_from_search(c: &mut Connection, rows: Vec<(ArtistId, ArtistSource)>) -> Result<()> {
+    let mut seeds: Vec<(ArtistId, Source, BTreeSet<String>)> = Vec::new();
+    for (artist, source) in rows {
+        let (from, id) = match source {
+            ArtistSource::Itunes(id) => (Source::Itunes, id.to_string()),
+            ArtistSource::Deezer(id) => (Source::Deezer, id.to_string()),
+        };
+        match seeds.iter_mut().find(|(a, _, _)| *a == artist) {
+            Some((_, first, ids)) if *first == from => {
+                ids.insert(id);
+            }
+            Some(_) => {}
+            None => seeds.push((artist, from, BTreeSet::from([id]))),
+        }
+    }
+    let tx = c.transaction()?;
+    for (artist, source, ids) in seeds {
+        let mut ids = ids.into_iter();
+        let (Some(id), None) = (ids.next(), ids.next()) else {
+            continue;
+        };
+        let held = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM discovery_artist_ids WHERE artist_id = ?1)
+                 OR EXISTS(SELECT 1 FROM discovery_artist_checked WHERE artist_id = ?1)",
+            [&artist.0],
+            |r| r.get::<_, bool>(0),
+        )?;
+        if !held {
+            put_artist_id(
+                &tx,
+                &artist,
+                &IdRow {
+                    source,
+                    id,
+                    evidence: Evidence::Searched,
+                },
+            )?;
+        }
+    }
+    tx.commit()?;
+    Ok(())
+}
+
 fn put_artist_id(c: &Connection, id: &ArtistId, row: &IdRow) -> Result<()> {
     let evidence = serde_json::to_string(&row.evidence).map_err(|e| Error::internal(format!("evidence json: {e}")))?;
     c.execute(
@@ -903,13 +959,13 @@ fn rows<T>(
 #[cfg(test)]
 mod tests {
     use lull_core::Result;
-    use lull_core::ids::ArtistId;
+    use lull_core::ids::{ArtistId, TrackId};
     use lull_core::model::Artist;
     use rusqlite::Connection;
 
-    use super::{artist, artist_ids, put_artists, recent_plays, replace_ids};
+    use super::{artist, artist_ids, put_artists, recent_plays, replace_ids, seed_from_search};
     use crate::artist::identity::{Evidence, IdRow, Ids, Source};
-    use crate::sources::ArtistInfo;
+    use crate::sources::{ArtistInfo, ArtistSource};
 
     fn discovery_db() -> Result<Connection> {
         let c = Connection::open_in_memory()?;
@@ -954,6 +1010,51 @@ mod tests {
         assert!(artist_ids(&c, &id)?.is_empty());
         let stored = put_artists(&c, vec![tagged("DOUDOU", "x", &[])])?;
         assert!(stored[0].tags.is_empty(), "the MBID gone, its tags go with it");
+        Ok(())
+    }
+
+    #[test]
+    fn a_search_rows_id_seeds_only_an_artist_lull_knows_nothing_of() -> Result<()> {
+        // An artist opened from search had no id, so no discography: the rows carry their own.
+        let mut c = discovery_db()?;
+        let (fresh, clash, weighed, held) = (
+            ArtistId::of("Velvet Orchard"),
+            ArtistId::of("Glow Tape"),
+            ArtistId::of("Pale Harbor"),
+            ArtistId::of("Quiet Ferns"),
+        );
+        replace_ids(&mut c, &weighed, &Ids::default(), 100)?;
+        let mut ids = Ids::default();
+        ids.set(IdRow {
+            source: Source::Itunes,
+            id: "11".into(),
+            evidence: Evidence::Song {
+                track: TrackId("t-1".into()),
+            },
+        });
+        replace_ids(&mut c, &held, &ids, 100)?;
+
+        seed_from_search(
+            &mut c,
+            vec![
+                (fresh.clone(), ArtistSource::Deezer(7)),
+                (fresh.clone(), ArtistSource::Itunes(8)),
+                (clash.clone(), ArtistSource::Itunes(1)),
+                (clash.clone(), ArtistSource::Itunes(2)),
+                (weighed.clone(), ArtistSource::Deezer(3)),
+                (held.clone(), ArtistSource::Deezer(4)),
+            ],
+        )?;
+        let got = artist_ids(&c, &fresh)?;
+        assert_eq!(got.deezer(), Some(7));
+        assert_eq!(got.itunes(), None, "another source joins only through a link");
+        assert_eq!(got.rows()[0].evidence, Evidence::Searched);
+        assert!(artist_ids(&c, &clash)?.is_empty(), "two ids of one source cancel");
+        assert!(
+            artist_ids(&c, &weighed)?.is_empty(),
+            "the listener's evidence decided: none"
+        );
+        assert_eq!(artist_ids(&c, &held)?, ids, "what lull holds stays");
         Ok(())
     }
 
