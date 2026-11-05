@@ -499,6 +499,11 @@
   /* several at once (a drop): every .wsz is kept as a skin, and the library imports the first other file (one
      playlist at a time) */
   App.openFiles = function (files) {
+    /* a .lullpack is sounds and surprises (ADR-0081): Settings > Sounds' code imports it */
+    files.filter(function (f) { return /\.lullpack$/i.test(f.name); }).forEach(function (f) {
+      App.needScript('screens/sounds-settings.js', 'Sound settings').then(function () { App.importPack(f); }, function (err) { App.toast(err.message, { kind: 'error' }); });
+    });
+    files = files.filter(function (f) { return !/\.lullpack$/i.test(f.name); });
     var skins = files.filter(function (f) { return /\.wsz$/i.test(f.name); });
     var other = files.filter(function (f) { return skins.indexOf(f) < 0; })[0];
     if (other) App.hooks.importFile(other);
@@ -4483,7 +4488,7 @@
   document.addEventListener('drop', function (e) {
     if (isFileDrag(e)) {
       e.preventDefault(); fileDepth = 0; $('#drop-overlay').classList.remove('is-on');
-      App.openFiles([].slice.call(e.dataTransfer.files));
+      if (!e.lullTaken) App.openFiles([].slice.call(e.dataTransfer.files));   // a part that took the drop itself (Theme Studio's pack)
       return;
     }
     var t = e.target.closest && e.target.closest('[data-drop]');

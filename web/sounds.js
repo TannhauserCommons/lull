@@ -68,9 +68,11 @@
     };
   }
   var packsBase = new URL('packs/', document.baseURI).href, builtInCss = {};
-  var loading = null;
+  var loading = null, readAll = false, allRead = false;      // readAll: every built-in pack, for Settings to offer (else those that can be on)
   /* the vocabulary, the built-in packs that can be on, and the hub's (the listener's and themes'); again on a change */
-  function load() {
+  function load(all) {
+    if (all) readAll = true;
+    var everyOne = readAll;
     var index = builtIn.length ? Promise.resolve() : getJson(packsBase + 'index.json').then(function (j) {
       builtIn = j.packs.map(function (p) { return p.id; });
       j.packs.forEach(function (p) { if (p.css) builtInCss[p.id] = true; });
@@ -78,7 +80,7 @@
     loading = Promise.all([
       vocab ? Promise.resolve(vocab) : getJson(packsBase + 'vocabulary.json'),
       index.then(function () {
-        return Promise.all(builtIn.filter(wanted).map(function (id) {
+        return Promise.all(builtIn.filter(function (id) { return readAll || wanted(id); }).map(function (id) {
           if (known[id]) return null;
           return getJson(packsBase + id + '/pack.json').then(function (p) {
             if (builtInCss[id]) p.css = 'pack.css';
@@ -100,6 +102,7 @@
       })
     ]).then(function (r) {
       vocab = r[0];
+      if (everyOne) allRead = true;
       applyCss(); App.emit('sounds', 'packs'); updateLoop(); warm();
     }, function (err) { console.warn('lull\'s sounds didn\'t load', err); loading = null; });
     return loading;
@@ -333,9 +336,11 @@
       if (settings.surprises && !App.eggs) App.needEggs().then(null, function () {});
     },
     vocab: function () { return vocab; },
-    load: function () { return loading || load(); },
+    load: function (all) { return all && !readAll ? load(true) : loading || load(); },
     reload: load,
     known: function () { return known; },
+    /* every built-in pack has been read (Settings offers them all) */
+    allRead: function () { return allRead; },
     stack: stack,
     look: lookPack,
     /* what Settings plays to let the listener hear a sound: always, at the device's sound volume */

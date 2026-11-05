@@ -75,6 +75,7 @@
         </div>
         <section class="studio__check" aria-labelledby="studio-check-h"><h3 class="studio__h" id="studio-check-h">Contrast</h3><ul class="studio__warnings" role="list" data-studio-warnings><li>${'Checking...'}</li></ul></section>
         <section class="studio__check" aria-labelledby="studio-loops-h"><h3 class="studio__h" id="studio-loops-h">Loops</h3><div data-studio-loops aria-live="polite"><ul class="studio__warnings" role="list"><li>${'Checking...'}</li></ul></div></section>
+        <section class="studio__check" aria-labelledby="studio-pack-h"><h3 class="studio__h" id="studio-pack-h">Sounds and surprises</h3><div data-studio-pack aria-live="polite">${packPanel()}</div></section>
         <section class="studio__check" aria-labelledby="studio-words-h"><h3 class="studio__h" id="studio-words-h">Player words</h3><div data-studio-words aria-live="polite"><ul class="studio__warnings" role="list"><li>${'Checking...'}</li></ul></div></section>
         <section class="studio__check" aria-labelledby="studio-hooks-h"><h3 class="studio__h" id="studio-hooks-h">Hooks</h3><div data-studio-hooks aria-live="polite"><ul class="studio__warnings" role="list"><li>${'Checking...'}</li></ul></div></section>
       </div>
@@ -146,6 +147,9 @@
     el.addEventListener('input', onInput);
     el.addEventListener('change', onInput);
     el.addEventListener('click', onClick);
+    /* a .lullpack dropped anywhere on Studio becomes this theme's sounds and surprises */
+    el.addEventListener('drop', function (e) { var f = packIn(e); if (f) { e.lullTaken = true; addPack(f); } });   // app.js: not imported again
+    App.sounds.load().then(paintPack);
     el.addEventListener('keydown', onKey);
     Object.keys(Designs.limits).forEach(count);
     var ta = $('[data-studio="css"]', el);
@@ -220,6 +224,7 @@
 
   function onInput(e) {
     var t = e.target, k = t.getAttribute('data-studio'), tok = t.getAttribute('data-token');
+    if (k === 'pack-file' && e.type === 'change') { if (t.files[0]) addPack(t.files[0]); t.value = ''; return; }
     if (k in Designs.limits) { S.draft[k] = t.value; S.dirty = true; count(k); state(); }
     else if (k === 'extends' && e.type === 'change') { S.draft.extends = t.value || null; if (t.value) S.draft.shell = App.designs[t.value].shell; S.dirty = true; showSeg('shell', S.draft.shell); loadFrames(); state(); }
     else if (k === 'route' && e.type === 'change') { S.route = t.value; S.frames.forEach(function (f) { if (f.contentWindow) f.contentWindow.location.hash = '#/' + S.route; }); lookLive(); }
@@ -252,7 +257,10 @@
     if (loop) { addRate(+loop); return; }
     var reset = b.getAttribute('data-token-reset');
     if (reset) { setToken(reset, b.getAttribute('data-mode'), null); return; }
+    var egg = b.getAttribute('data-studio-egg');
+    if (egg) { tryEgg(egg); return; }
     var act = b.getAttribute('data-studio-act');
+    if (act === 'pack-remove') removePack();
     if (act === 'save') save();
     if (act === 'use') save().then(function (id) { if (id) App.setPref('design', id); });
     if (act === 'export') save().then(function (id) { if (id) location.href = M.url('/api/themes/' + id + '.lulltheme'); });
@@ -515,5 +523,43 @@
         return null;
       });
   }
+  /* ---------- sounds and surprises: the theme's pack (docs/themes.md section 13) ---------- */
+  function themePack() { return S && S.id ? App.sounds.known()['theme:' + S.id] : null; }
+  function packPanel() {
+    if (!S || !S.id) return html`<p class="field__help">Save the theme, then add a .lullpack: its sounds and surprises come with the theme wherever it goes.</p>`;
+    var p = themePack(), eggs = p ? p.eggs : [], n = p ? Object.keys(p.sounds).length : 0;
+    return html`${p ? html`<p class="field__help">${n} ${n === 1 ? 'sound' : 'sounds'}, ${eggs.length} ${eggs.length === 1 ? 'surprise' : 'surprises'}. Try one in the previews:</p>
+        <ul class="studio__warnings" role="list">${eggs.map(function (g) { return html`<li><button type="button" class="btn btn--quiet btn--sm" data-studio-egg="${g.name}">Try ${g.name}</button></li>`; })}</ul>`
+      : html`<p class="field__help">None yet. Add a .lullpack, or drop one here.</p>`}
+      <span class="cluster"><label class="btn btn--sm">${icon('import', null, 'ic-16')}${p ? 'Replace' : 'Add'} a .lullpack<input class="vh" type="file" accept=".lullpack,.zip" data-studio="pack-file"></label>
+      ${p ? html`<button type="button" class="btn btn--quiet btn--sm" data-studio-act="pack-remove">Remove</button>` : ''}</span>`;
+  }
+  function paintPack() { var el = S && $('[data-studio-pack]', S.el); if (el) App.patch(el, String(packPanel())); }
+  function packIn(e) {
+    var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    return f && /\.lullpack$/i.test(f.name) ? f : null;
+  }
+  function addPack(file) {
+    (S.id && !S.dirty ? Promise.resolve(S.id) : save()).then(function (id) {
+      if (!id) return;
+      return fetch(M.url('/api/themes/' + encodeURIComponent(id) + '/pack'), { method: 'PUT', body: file, credentials: 'same-origin' })
+        .then(function (r) { return r.ok ? null : r.json().then(function (j) { throw new Error(j.message || 'The hub answered ' + r.status); }); })
+        .then(function () { App.announce('Added the sounds and surprises of ' + file.name); return App.sounds.reload(); })
+        .then(paintPack);
+    }).catch(function (err) { App.toast('Couldn\'t add ' + file.name + ': ' + err.message, { kind: 'error', sticky: true }); });
+  }
+  function removePack() {
+    M.api('/api/themes/' + encodeURIComponent(S.id) + '/pack', { method: 'DELETE' }).then(function () { return App.sounds.reload(); }).then(paintPack,
+      function (err) { App.toast('Couldn\'t remove the pack: ' + err.message, { kind: 'error' }); });
+  }
+  /* an egg fired by hand in both previews, whatever its conditions (they show the saved theme, its pack included) */
+  function tryEgg(name) {
+    S.frames.forEach(function (f) {
+      var w = f.contentWindow;
+      if (!w || !w.App || !w.App.sounds) return;
+      w.App.sounds.reload().then(function () { return w.App.needEggs(); }).then(function () { w.App.eggs.fire(name); });
+    });
+  }
+
   App.themeStudio = openStudio;
 })();

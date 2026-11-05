@@ -103,14 +103,14 @@
   function myThemes() {
     var mine = App.designOrder.filter(function (n) { return !App.designs[n].builtIn; });
     return html`<div class="sys-row sys-row--stack sys-themes" data-drop-theme>
-        <div class="sys-row__text"><span class="sys-row__label">Your themes</span><span class="sys-row__help">Stored on your hub, so every device can use them. Drop a .lulltheme file here to add one, or make one in Theme Studio.</span></div>
+        <div class="sys-row__text"><span class="sys-row__label">Your themes</span><span class="sys-row__help">Stored on your hub, so every device can use them. Drop a .lulltheme file here to add one, or make one in Theme Studio. A .lullpack adds sounds and surprises.</span></div>
         <div class="sys-row__ctl">${mine.length ? html`<ul class="sys-themes__list" role="list">${mine.map(function (n) {
           var d = App.designs[n];
           return html`<li class="sys-themes__item"><span class="sys-themes__name">${d.label}</span><span class="sys-themes__meta">${d.extends ? 'on ' + App.designs[d.extends].label : 'from scratch'}${d.author ? ', by ' + d.author : ''}</span>${d.description ? html`<span class="sys-themes__desc">${d.description}</span>` : ''}
             <span class="sys-themes__acts"><button class="btn btn--sm btn--quiet" data-act="theme-edit" data-id="${n}">${icon('edit', null, 'ic-16')}Edit</button><a class="btn btn--sm btn--quiet" href="${'api/themes/' + n + '.lulltheme'}" download="${n + '.lulltheme'}">${icon('export', null, 'ic-16')}Export</a><button class="btn-icon btn-icon--sm btn-icon--bare" data-act="theme-delete" data-id="${n}" aria-label="${'Delete ' + d.label}" data-tip="Delete">${icon('trash', null, 'ic-16')}</button></span></li>`;
         })}</ul>` : ''}
           <div class="cluster"><button class="btn btn--primary btn--sm" data-act="theme-studio">${icon('sparkle', null, 'ic-16')}Open Theme Studio</button>
-          <label class="btn btn--sm">${icon('import', null, 'ic-16')}Import a theme<input class="vh" type="file" accept=".lulltheme,.zip" data-theme-file></label></div></div></div>`;
+          <label class="btn btn--sm">${icon('import', null, 'ic-16')}Import a theme<input class="vh" type="file" accept=".lulltheme,.lullpack,.zip" data-theme-file></label></div></div></div>`;
   }
   function secAppearance() {
     var p = App.prefs();
@@ -162,7 +162,12 @@
      cheaply) load the first time they are asked for, so a start never fetches them. App.themeLoops(css, base, opts)
      resolves to a theme's hints once it is in, for Theme Studio; App.themeLoopsList comes with it */
   function needThemes() { return App.needScript('screens/your-themes.js', 'Your themes'); }
-  function importFile(file) { needThemes().then(function () { App.importTheme(file); }, function (err) { App.toast('Couldn\'t import ' + file.name + ': ' + err.message, { kind: 'error' }); }); }
+  function importFile(file) {
+    // a .lullpack is sounds and surprises (Settings > Sounds keeps them): it comes with that section's code
+    var load = /\.lullpack$/i.test(file.name) ? App.needScript('screens/sounds-settings.js', 'Sound settings').then(function () { App.importPack(file); })
+      : needThemes().then(function () { App.importTheme(file); });
+    load.then(null, function (err) { App.toast('Couldn\'t import ' + file.name + ': ' + err.message, { kind: 'error' }); });
+  }
   App.themeLoops = function (css, base, opts) { return needThemes().then(function () { return App.loopCheck(css, base, opts); }); };
   /* what a theme's CSS styles that lull moved, removed or keeps internal, beside its stored slots (item: its D.list entry,
      or null for a theme not saved yet); App.themeHooksList comes with it */

@@ -884,6 +884,8 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': 'image/webp', 'content-length': webp.length, 'cache-control': 'private, max-age=31536000, immutable' });
     return res.end(webp);
   }
+  // the listener's sound and surprise packs (ADR-0081): none here; lull's own are the static web/packs
+  if (path === '/api/packs' && req.method === 'GET') return send(res, 200, { packs: [] });
   if (THEMES && (path === '/api/themes' || /^\/api\/(themes|theme-pictures)\/[a-z0-9-]+\/.+$/.test(path)) && ['POST', 'PUT'].includes(req.method)) return themeWrite(req, res, path, q);
   if (path === '/api/skins/mine' && req.method === 'POST') {
     const parts = [];

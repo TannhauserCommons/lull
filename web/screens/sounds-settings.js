@@ -45,8 +45,8 @@
 
   App.settingsSections.sounds = function () {
     var vocab = SND.vocab();
-    if (!vocab) {
-      SND.load().then(function () { if (/^\/settings\/sounds/.test(App.current.path)) App.refresh(); });
+    if (!vocab || !SND.allRead()) {
+      SND.load(true).then(function () { if (/^\/settings\/sounds/.test(App.current.path)) App.refresh(); });
       return App.ui.skeleton('text', 6);
     }
     var on = st().on;
@@ -102,11 +102,11 @@
         var p = known[id], added = st().packs.indexOf(id) >= 0, isOn = on.indexOf(id) >= 0;
         var what = id === look ? 'Your look\'s pack' : id === 'default' ? 'lull\'s own, under every other' : 'Added';
         return html`<li class="sys-row"><div class="sys-row__text"><span class="sys-row__label">${p.name}${p.author ? html` <span class="fg-2">by ${p.author}</span>` : ''}</span><span class="sys-row__help">${what}${p.description ? '. ' + p.description : ''}</span></div>
-          <div class="sys-row__ctl cluster">
+          <div class="sys-row__ctl"><span class="cluster">
             ${added && i > 0 ? html`<button type="button" class="btn-icon btn-icon--sm" data-act="pack-up" data-id="${id}" aria-label="Move ${p.name} up">${icon('chevron-up', null, 'ic-16')}</button>` : ''}
             ${added ? html`<button type="button" class="btn btn--quiet btn--sm" data-act="pack-remove" data-id="${id}">Remove</button>` : ''}
             <button type="button" class="switch" role="switch" aria-checked="${isOn ? 'true' : 'false'}" aria-label="${p.name}" data-act="pack-toggle" data-id="${id}"></button>
-          </div></li>`;
+          </span></div></li>`;
       })}</ul>
       <div class="cluster">
         ${others.length ? html`<button type="button" class="btn btn--sm" data-act="pack-add" aria-haspopup="menu">${icon('plus', null, 'ic-16')}Add a pack</button>` : ''}
@@ -175,27 +175,35 @@
     return html`<details class="sys-surprises"><summary class="btn btn--quiet btn--sm">Show the surprises (spoilers)</summary>
       ${names.map(function (n) {
         var g = eggs[n], p = SND.known()[g.pack];
-        return row(n, 'From ' + (p ? p.name : g.pack) + '. ' + when(g), html`<span class="cluster">
-          <button type="button" class="btn btn--quiet btn--sm" data-act="egg-try" data-name="${n}">Try it</button>
-          <button type="button" class="switch" role="switch" aria-checked="${st().eggsOff[n] ? 'false' : 'true'}" aria-label="${n}" data-act="egg-toggle" data-name="${n}"></button></span>`);
+        return row(label(n), when(g) + '. From ' + (p ? p.name : g.pack), html`<span class="cluster">
+          <button type="button" class="btn btn--quiet btn--sm" data-act="egg-try" data-name="${n}" aria-label="Try ${label(n)}">Try it</button>
+          <button type="button" class="switch" role="switch" aria-checked="${st().eggsOff[n] ? 'false' : 'true'}" aria-label="${label(n)}" data-act="egg-toggle" data-name="${n}"></button></span>`);
       })}</details>`;
   }
+  /* an egg's name as words: "long-wait" -> "Long wait" */
+  function label(n) { var w = n.replace(/-/g, ' '); return w.charAt(0).toUpperCase() + w.slice(1); }
+  /* "12-31" in this device's language ("31 December") */
+  function day(mmdd) {
+    var p = mmdd.split('-');
+    return new Date(2000, +p[0] - 1, +p[1]).toLocaleDateString(undefined, { day: 'numeric', month: 'long' });
+  }
+  var TARGETS = { brand: 'logo', cover: 'playing cover', title: 'playing title' };
   /* an egg's conditions in words, for the spoiler list */
   function when(g) {
     return g.when.map(function (c) {
       var k = Object.keys(c)[0], p = c[k], list = function (v) { return [].concat(v).join(', '); };
       switch (k) {
-        case 'clock': return (p.date ? 'on ' + list(p.date) + ' ' : '') + (p.weekday ? 'on ' + list(p.weekday) + ' ' : '') + (p.from || p.to ? 'from ' + (p.from || '00:00') + ' to ' + (p.to || '24:00') : 'all day');
+        case 'clock': return (p.date ? 'on ' + [].concat(p.date).map(day).join(', ') + ' ' : '') + (p.weekday ? 'on ' + list(p.weekday) + ' ' : '') + (p.from || p.to ? 'from ' + (p.from || '00:00') + ' to ' + (p.to || '24:00') : 'all day');
         case 'words': return 'a ' + list(p.in) + ' with ' + list(p.any);
         case 'repeat': return 'the same song ' + p.times + ' times in a row';
-        case 'gesture': return p.taps + ' taps on the ' + p.on + ' within ' + p.within + ' s';
+        case 'gesture': return p.taps + ' taps on the ' + TARGETS[p.on] + ' within ' + p.within + ' s';
         case 'milestone': return 'your ' + list(p.at) + ' ' + p.of;
         case 'player': return 'the player ' + [p.status && list(p.status), p.playing === true && 'playing', p.playing === false && 'silent', p.screen && 'on ' + list(p.screen), p.idle && 'left alone ' + p.idle + ' s', p.held && 'for ' + p.held + ' s'].filter(Boolean).join(', ');
         case 'event': return 'at ' + ((WORDS[p.on] || [p.on])[0]).toLowerCase();
         case 'chance': return 'one time in ' + p.one_in;
         default: return k;
       }
-    }).join('; ');
+    }).map(function (t, i) { return i ? t : t.charAt(0).toUpperCase() + t.slice(1); }).join('; ');
   }
   App.action('egg-toggle', function (el) {
     var n = el.getAttribute('data-name'), off = Object.assign({}, st().eggsOff);
