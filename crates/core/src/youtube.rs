@@ -112,6 +112,20 @@ pub struct Listing {
     pub songs: Vec<Listed>,
 }
 
+/// A song a YouTube video search found, read from an upload as playback reads it, for search's
+/// last gap-filler (a song only fans have uploaded).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FoundSong {
+    pub artist: String,
+    pub title: String,
+    /// Seconds, the upload's.
+    pub duration: Option<u32>,
+    /// The upload it was read from.
+    pub video: String,
+    /// From a Topic channel, VEVO, or the artist's own channel.
+    pub official: bool,
+}
+
 /// A playlist a YouTube search found, for search's Playlists section.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FoundPlaylist {

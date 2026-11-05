@@ -353,3 +353,41 @@ fn a_namesakes_plays_rank_nothing_but_itself() {
     assert!(adele(&m).is_some());
     assert_eq!(adele(&m), adele(&itunes_only));
 }
+
+/// A song nothing but fans' uploads have: the catalog and YouTube Music answer other songs, and
+/// YouTube's own uploads, read and judged as playback reads and judges them, are the last
+/// gap-filler.
+#[test]
+fn a_song_only_fans_uploaded_comes_from_youtubes_uploads() {
+    let q = "clairo mount airy georgia";
+    let mut m = merged(q, &recorded()[q]);
+    assert!(
+        !m.answers(&Query::new(q)),
+        "nothing the catalog or YouTube Music found holds the words"
+    );
+    // `Youtube::search_songs`'s answer for these words (youtube::matching's
+    // a_song_only_fans_uploaded_is_found_by_a_video_search_and_plays_its_upload).
+    let found = |artist: &str, title: &str, duration: u32, video: &str| lull_core::youtube::FoundSong {
+        artist: artist.into(),
+        title: title.into(),
+        duration: Some(duration),
+        video: video.into(),
+        official: false,
+    };
+    let uploads = vec![
+        found("mount airy, georgia", "october 18th, 2018", 252, "vNftlyt96Kk"),
+        found("Clairo", "mount airy, georgia", 252, "ZjYjrTh-5nI"),
+        found("clairo", "wine", 150, "JOSURqqrrCc"),
+    ];
+    m.absorb(super::uploads_found(q, uploads));
+    let r = ranked(q, &m);
+    let first = r
+        .songs
+        .first()
+        .map(|&i| format!("{} - {}", m.songs[i].artist, m.songs[i].title));
+    assert_eq!(first.as_deref(), Some("Clairo - mount airy, georgia"));
+    assert!(
+        m.songs.iter().all(|s| s.title != "wine"),
+        "only uploads holding the words"
+    );
+}

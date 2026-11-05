@@ -83,6 +83,8 @@ struct Run {
     failed: AtomicBool,
     /// The release-group search has been started (`submitted`).
     albums_asked: AtomicBool,
+    /// YouTube's uploads have been asked for (`arrive`: nothing else holds the words).
+    uploads_asked: AtomicBool,
 }
 
 #[derive(Default)]
@@ -229,6 +231,7 @@ impl Searches {
             arrived: Notify::new(),
             failed: AtomicBool::new(false),
             albums_asked: AtomicBool::new(false),
+            uploads_asked: AtomicBool::new(false),
         });
         runs.insert(query, run.clone());
         drop(runs);
@@ -344,6 +347,7 @@ async fn fetch(svc: &Service, source: Source, q: &str) -> Result<Found> {
             ..Found::default()
         }),
         // A gap-filler fails soft: it answers nothing, and says so, but the run stands.
+        Source::YoutubeUploads => youtube_uploads(svc, q).await,
         Source::YoutubeMusic => Ok(svc.youtube_music.search(q).await.unwrap_or_else(|e| Found {
             problem: Some(e.to_string()),
             ..Found::default()
@@ -396,6 +400,41 @@ async fn youtube_playlists(svc: &Service, q: &str) -> Result<Vec<merge::Playlist
         .await
 }
 
+/// The songs YouTube's uploads hold for `q` (`Youtube::search_songs`: read and judged as playback
+/// reads and judges them), as a gap-filler's rows holding the words: they add only what the rest
+/// lack, after the rows of the same fit. Kept a day; a yt-dlp search takes seconds.
+async fn youtube_uploads(svc: &Service, q: &str) -> Result<Found> {
+    let songs: Vec<lull_core::youtube::FoundSong> = svc
+        .cache
+        .get(format!("yt:songs:{q}"), crate::sources::cache::DAY, || async {
+            svc.youtube.search_songs(q).await
+        })
+        .await?;
+    Ok(uploads_found(q, songs))
+}
+
+/// YouTube's songs as a gap-filler's rows: those holding every word typed.
+fn uploads_found(q: &str, songs: Vec<lull_core::youtube::FoundSong>) -> Found {
+    let query = Query::new(q);
+    let songs: Vec<SongHit> = songs
+        .into_iter()
+        .map(|s| SongHit {
+            title: s.title,
+            artist: s.artist,
+            duration: s.duration,
+            ..SongHit::default()
+        })
+        .filter(|s| query.song(s) >= Fit::Words)
+        .collect();
+    Found {
+        fillers: Some(Box::new(Found {
+            songs,
+            ..Found::default()
+        })),
+        ..Found::default()
+    }
+}
+
 fn saved(t: Track) -> SongHit {
     SongHit {
         title: t.title.clone(),
@@ -409,7 +448,7 @@ fn saved(t: Track) -> SongHit {
 }
 
 /// Merges a source's answer; after the first answer, announces what it added.
-async fn arrive(svc: &Service, run: &Run, source: Source, found: Result<Found>) {
+async fn arrive(svc: &Arc<Service>, run: &Arc<Run>, source: Source, found: Result<Found>) {
     let mut st = run.state.lock().await;
     st.pending.remove(&source);
     let touched = match found {
@@ -417,18 +456,14 @@ async fn arrive(svc: &Service, run: &Run, source: Source, found: Result<Found>) 
             if let Some(problem) = found.problem.take() {
                 st.errors.insert(source, problem);
             }
-            if source == Source::YoutubeMusic {
-                if st.pending.contains(&run.songs) {
-                    st.gap = Some(found);
-                    Touched::default()
-                } else {
-                    merge::fill_gaps(&mut st.merged, found)
-                }
+            if source == Source::YoutubeMusic && st.pending.contains(&run.songs) {
+                st.gap = Some(found);
+                Touched::default()
             } else if st.board.is_none() && !FAST.contains(&source) {
                 st.held.push(found);
                 Touched::default()
             } else {
-                st.merged.add(found)
+                st.merged.absorb(found)
             }
         }
         Err(e) => {
@@ -443,6 +478,18 @@ async fn arrive(svc: &Service, run: &Run, source: Source, found: Result<Found>) 
         Some(gap) => touched.and(merge::fill_gaps(&mut st.merged, gap)),
         None => touched,
     };
+    // The catalog and YouTube Music have answered and nothing holds the words typed: YouTube's
+    // own uploads are the last gap-filler ("clairo mount airy georgia": only fans uploaded it).
+    let asked = |s: &Source| !st.pending.contains(s);
+    if asked(&run.songs)
+        && asked(&Source::YoutubeMusic)
+        && run.query.chars().count() >= SLOW_SOURCES_FROM
+        && !st.merged.answers(&Query::new(&run.query))
+        && !run.uploads_asked.swap(true, Ordering::Relaxed)
+    {
+        st.pending.insert(Source::YoutubeUploads);
+        start(svc, run, Source::YoutubeUploads);
+    }
     if st.board.is_some() {
         match view(svc, &run.query, &mut st, Some(&touched)).await {
             Ok(v) => svc.ctx.bus.publish(
@@ -570,7 +617,7 @@ fn first_board(
     if !held.is_empty() {
         m.freeze();
         for found in held {
-            m.add(found);
+            m.absorb(found);
         }
         board.add(rank_rows(q, m, liked, followed));
     }

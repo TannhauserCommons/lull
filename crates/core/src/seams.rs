@@ -11,7 +11,7 @@ use crate::error::{Error, Result};
 use crate::ids::{AlbumId, ArtistId, TrackId};
 use crate::model::{self, Album, Artist, PlayReport, Playlist, PlaylistEdit, SourceRef, Track};
 use crate::quality::SaveCandidate;
-use crate::youtube::{Found, FoundPlaylist, Listing, Want};
+use crate::youtube::{Found, FoundPlaylist, FoundSong, Listing, Want};
 
 /// The saved library. Implemented by `library`, from a music folder or Jellyfin (ADR-0003).
 #[async_trait]
@@ -157,6 +157,14 @@ pub trait Youtube: Send + Sync {
     /// search's Playlists section (YouTube Music's own search lists the same community
     /// playlists, without their names). Whatever YouTube's play mode; `Unavailable` while backed off.
     async fn search_playlists(&self, _query: &str, _limit: usize) -> Result<Vec<FoundPlaylist>> {
+        Ok(Vec::new())
+    }
+
+    /// The songs a YouTube video search for `query` finds, in YouTube's order: each upload read
+    /// as a song and kept only when playback would take it for that song (the same reading and
+    /// judging, so a song search offers plays). For search's last gap-filler; `Unavailable` while
+    /// backed off.
+    async fn search_songs(&self, _query: &str) -> Result<Vec<FoundSong>> {
         Ok(Vec::new())
     }
 }

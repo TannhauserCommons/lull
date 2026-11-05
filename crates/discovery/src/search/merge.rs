@@ -106,6 +106,9 @@ pub enum Source {
     /// YouTube Music's search, for what the catalog lacks (`youtube_music`).
     #[serde(rename = "youtube-music")]
     YoutubeMusic,
+    /// YouTube's video uploads read as songs, the last gap-filler (`Youtube::search_songs`).
+    #[serde(rename = "youtube-uploads")]
+    YoutubeUploads,
 }
 
 impl Source {
@@ -119,6 +122,7 @@ impl Source {
             Source::DeezerPlaylists => "Deezer's playlists",
             Source::YoutubePlaylists => "YouTube's playlists",
             Source::YoutubeMusic => "YouTube Music",
+            Source::YoutubeUploads => "YouTube",
         }
     }
 }
@@ -423,6 +427,21 @@ fn add_gaps(m: &mut Merged, mut found: Found) -> Touched {
 }
 
 impl Merged {
+    /// An answer as its kind asks: a gap-filler's (one carrying `fillers`) only adds what the
+    /// rows lack (`fill_gaps`); any other merges as it is.
+    pub fn absorb(&mut self, found: Found) -> Touched {
+        if found.fillers.is_some() {
+            fill_gaps(self, found)
+        } else {
+            self.add(found)
+        }
+    }
+
+    /// A row holds every word typed (or is them): no gap left for the last gap-filler to fill.
+    pub fn answers(&self, q: &Query) -> bool {
+        self.songs.iter().any(|s| q.song(s) >= Fit::Words) || self.albums.iter().any(|a| q.album(a) >= Fit::Words)
+    }
+
     /// Only a gap-filler's list has this song (`fill_gaps`).
     pub fn filler_song(&self, i: usize) -> bool {
         self.filler_songs.contains(&i)

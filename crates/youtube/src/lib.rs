@@ -24,7 +24,7 @@ use lull_core::ids::TrackId;
 use lull_core::model::{SourceRef, Track};
 use lull_core::seams::Youtube;
 use lull_core::status::State;
-use lull_core::youtube::{Copy, Found, FoundPlaylist, Listing, Mode, Settings, Want};
+use lull_core::youtube::{Copy, Found, FoundPlaylist, FoundSong, Listing, Mode, Settings, Want};
 use lull_core::{Ctx, Error, Result};
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -182,6 +182,13 @@ impl Youtube for Service {
     async fn search_playlists(&self, query: &str, limit: usize) -> Result<Vec<FoundPlaylist>> {
         self.backed_off()?;
         let found = playlist::search(self, query, limit).await.map_err(|p| self.failed(p))?;
+        self.succeeded();
+        Ok(found)
+    }
+
+    async fn search_songs(&self, query: &str) -> Result<Vec<FoundSong>> {
+        self.backed_off()?;
+        let found = search::songs(self, query).await.map_err(|p| self.failed(p))?;
         self.succeeded();
         Ok(found)
     }

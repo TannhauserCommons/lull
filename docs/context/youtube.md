@@ -66,6 +66,8 @@ An upload is the song when (`matching.rs`):
 
 Score: official +40, YouTube Music +10, exact title +5, minus 3 per second off, a music video (not audio) −10.
 
+
+**Search's last gap-filler** (`Youtube::search_songs`, `matching::songs_of`): one flat video search (10 uploads, no extraction), each upload read as playback reads it (`read_upload`), a fan's "Title - Artist" turned round when the other uploads put its title part first more often (playback has the song it wants to tell; a search has the other uploads), and kept only when `judge` takes the upload for the song it reads as (close: the length its own, other versions refused). What search offers is what playback plays.
 ## Formats
 
 `formats.rs`: audio-only HTTPS streams with an exact `filesize` (the cache serves byte ranges against it while the download runs), no DRM, not YouTube's `-drc` copies, the original language track. Opus is WebM, AAC is M4A: `content-type` `audio/webm` or `audio/mp4`.

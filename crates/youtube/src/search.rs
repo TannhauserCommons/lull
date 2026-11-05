@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use lull_core::model::Track;
-use lull_core::youtube::Match;
+use lull_core::youtube::{FoundSong, Match};
 use lull_core::{Error, Result};
 use rusqlite::{OptionalExtension, params};
 use serde::Deserialize;
@@ -26,6 +26,8 @@ pub const INFO_FOR: Duration = Duration::from_secs(4 * 3600);
 const MUSIC_RESULTS: u32 = 5;
 const VIDEO_RESULTS: u32 = 8;
 const EXTRACT_AT_MOST: usize = 2;
+/// Uploads a song search reads (search's last gap-filler).
+const SONG_SEARCH_RESULTS: u32 = 10;
 const SEARCH_TIME: Duration = Duration::from_secs(40);
 const EXTRACT_TIME: Duration = Duration::from_secs(60);
 
@@ -110,6 +112,18 @@ pub async fn search(svc: &Service, track: &Track, strictness: Match) -> Result<O
         }
     }
     Ok(None)
+}
+
+/// Search's last gap-filler: the songs a YouTube video search for `query` finds, read and judged as
+/// playback reads and judges uploads (`matching::songs_of`). One flat search, no extraction.
+pub async fn songs(svc: &Service, query: &str) -> Result<Vec<FoundSong>, Problem> {
+    let found = flat(
+        svc,
+        &format!("ytsearch{SONG_SEARCH_RESULTS}:{query}"),
+        SONG_SEARCH_RESULTS,
+    )
+    .await?;
+    Ok(matching::songs_of(&found))
 }
 
 /// Extracts one upload and judges it on its full facts: music metadata, exact length.

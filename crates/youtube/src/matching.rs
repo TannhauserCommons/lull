@@ -3,9 +3,11 @@
 //! takes, covers, sped-up, slowed and nightcore versions are refused unless the song is one
 //! (docs/context/youtube.md#matching).
 
+use std::collections::HashMap;
+
 use lull_core::ids::{loose_artist, loose_title, normalize};
 use lull_core::model::Track;
-use lull_core::youtube::Match;
+use lull_core::youtube::{FoundSong, Match};
 
 /// Words that make another recording when the upload has them and the song doesn't. Each entry
 /// is a run of words in the upload's normalized title.
@@ -94,6 +96,21 @@ impl Wanted {
             title: loose_title(&track.title),
             words,
             duration: track.duration.filter(|d| *d > 0),
+        }
+    }
+
+    /// A song by its artist, title and length alone (an upload's reading). Its words are the
+    /// title's without version tags, so a reading "georgia (instagram live)" is no live song.
+    pub fn named(artist: &str, title: &str, duration: Option<u32>) -> Self {
+        let title = loose_title(title);
+        Wanted {
+            artist: loose_artist(artist),
+            words: normalize(&format!("{artist} {title}"))
+                .split(' ')
+                .map(str::to_owned)
+                .collect(),
+            title,
+            duration: duration.filter(|d| *d > 0),
         }
     }
 
@@ -267,6 +284,58 @@ pub fn read_upload(
         },
     };
     (!artist.is_empty() && !song.is_empty()).then_some((artist, song, official))
+}
+
+/// The songs among a video search's uploads, for search's last gap-filler: each upload read as a
+/// song (`read_upload`), or as a fan's "Title - Artist" when the other uploads put its title part
+/// first more often ("mount airy, georgia - clairo" beside "Clairo - mount airy, georgia" and
+/// "clairo - wine"; playback tells the two apart by the song it wants, a search by the other
+/// uploads), and kept
+/// only when `judge` takes the upload for the song it reads as: what search offers, playback
+/// plays, and a live take, a cover or a sped-up upload is no song here as it is none there. One
+/// song per reading, in YouTube's order.
+pub fn songs_of(found: &[Candidate]) -> Vec<FoundSong> {
+    let reads: Vec<Option<(String, String, bool)>> = found
+        .iter()
+        .map(|c| {
+            read_upload(
+                &c.title,
+                &c.channel,
+                c.artists.first().map(String::as_str),
+                c.track.as_deref(),
+            )
+        })
+        .collect();
+    let key = |artist: &str, title: &str| (loose_artist(artist), loose_title(title));
+    // How often each name stands as an upload's artist: the name more uploads put first is the
+    // artist ("clairo" in seven, "mount airy, georgia" in two).
+    let mut as_artist: HashMap<String, usize> = HashMap::new();
+    for (artist, _, _) in reads.iter().flatten() {
+        *as_artist.entry(loose_artist(artist)).or_default() += 1;
+    }
+    let artist_count = |name: &str| as_artist.get(&loose_artist(name)).copied().unwrap_or(0);
+    let mut songs: Vec<FoundSong> = Vec::new();
+    for (c, read) in found.iter().zip(reads) {
+        let Some((artist, title, official)) = read else {
+            continue;
+        };
+        let reversed = !official && artist_count(&title) > artist_count(&artist);
+        let (artist, title) = if reversed { (title, artist) } else { (artist, title) };
+        if judge(&Wanted::named(&artist, &title, c.duration), c, Match::Close).is_none() {
+            continue;
+        }
+        if songs.iter().any(|s| key(&s.artist, &s.title) == key(&artist, &title)) {
+            continue;
+        }
+        songs.push(FoundSong {
+            artist,
+            title,
+            duration: c.duration,
+            video: c.id.clone(),
+            official,
+        });
+    }
+    songs
 }
 
 /// "Angel HD 1080p": quality tags at the end, outside brackets, dropped (not the whole title).
@@ -683,6 +752,62 @@ mod tests {
                 Some("Breezin'")
             ),
             named("Sweet Medicine", "Breezin'", true)
+        );
+    }
+
+    #[test]
+    fn a_song_only_fans_uploaded_is_found_by_a_video_search_and_plays_its_upload() {
+        // Live, "clairo mount airy georgia": Apple and YouTube Music lack the song; YouTube's video
+        // search for it, 2026-11-05 (first 12 results).
+        let found = [
+            upload("mount airy, georgia - october 18th, 2018", "Claire Cottrill", 252),
+            upload("Clairo - mount airy, georgia (Sub.Español)", "Pololo96", 252),
+            upload("20 years / Georgia - Clairo | Lyrics", "Burntrice", 203),
+            upload("clairo - mount airy, georgia / LOVE GALORE", "internal heaven", 442),
+            upload("mount airy, georgia - clairo", "707vegas", 252),
+            upload("clairo - wine", "DECM", 150),
+            upload("Clairo - For Now", "David Dean Burkhart", 206),
+            upload(
+                "clairo - georgia (22/03/2020 instagram live unreleased song)",
+                "yee yee",
+                156,
+            ),
+            upload("Clairo - Intern", "randomshitstuff", 129),
+            upload(
+                "clairo mount airy georgia - october 18th, 2018 filp (inspired by clay10).wav",
+                "omos",
+                251,
+            ),
+            upload("clairo - thumbs", "Matt Hall", 104),
+            upload("Appleville Clairo (9/12/2020)", "Claire Cottrill", 428),
+        ];
+        let songs = songs_of(&found);
+        let named: Vec<(&str, &str)> = songs.iter().map(|s| (s.artist.as_str(), s.title.as_str())).collect();
+        // The translated upload reads as the song, and the fan's "Title - Artist" joins it.
+        let song = songs
+            .iter()
+            .find(|s| loose_artist(&s.artist) == "clairo" && loose_title(&s.title) == "mount airy georgia")
+            .ok_or_else(|| format!("{named:?}"));
+        let Ok(song) = song else { unreachable!("{named:?}") };
+        assert_eq!(
+            named
+                .iter()
+                .filter(|(_, t)| loose_title(t) == "mount airy georgia")
+                .count(),
+            1,
+            "one song for both spellings: {named:?}"
+        );
+        // Another take is no song here, as it is none for playback.
+        assert!(!named.iter().any(|(_, t)| t.contains("georgia (")), "{named:?}");
+        // Playback takes an upload of what search offers, by its own judging.
+        let wanted = Wanted::named(&song.artist, &song.title, song.duration);
+        let plays = ranked(&wanted, &found, Match::Close);
+        assert!(
+            plays
+                .first()
+                .is_some_and(|c| c.channel == "Pololo96" || c.channel == "707vegas"),
+            "{:?}",
+            plays.first()
         );
     }
 }
