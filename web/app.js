@@ -470,7 +470,8 @@
   var SOON = [
     ['[data-act="classic"]', function () { return App.needClassic(); }],
     ['a[href^="#/settings/library"], a[href^="#/settings/devices"], a[href^="#/settings/sources"]', function () { return App.needHub(); }],
-    ['a[href^="#/stats"]', function () { return App.needStats(); }]
+    ['a[href^="#/stats"]', function () { return App.needStats(); }],
+    ['a[href^="#/settings"]', function () { return App.needSettingsFit(); }]
   ];
   function soon(e) {
     if (!e.target.closest) return;

@@ -242,6 +242,25 @@ for (const design of designs) {
       expect(found, 'the side panel strip with a long song title').toEqual([]);
     });
 
+    // Settings' tab list on a short laptop window (a 1080p screen at 125%: 1536 x 864): stuck beside a section that
+    // scrolls, it fits in the view and its last tab can be reached, scrolling the list itself where it must (screens/
+    // settings-fit.js, with --view-h). Before, its end hid until the section had scrolled to its own end.
+    test(`settings tab list on a short window / ${design} / ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width: 1536, height: 864 });
+      await openScreen(page, '/settings/playback', { design, theme });
+      const at = await page.evaluate(() => {
+        const view = document.querySelector('#view'), nav = document.querySelector('.sys-nav');
+        view.scrollTop = (view.scrollHeight - view.clientHeight) / 2;                 // mid-section: a sticky list is stuck
+        [nav, ...nav.querySelectorAll('*')].forEach((e) => { e.scrollTop = e.scrollHeight; }); // and scrolled to its end, where it scrolls
+        const v = view.getBoundingClientRect(), n = nav.getBoundingClientRect(), tabs = nav.querySelectorAll('.sys-nav__item');
+        const last = tabs[tabs.length - 1].getBoundingClientRect();
+        const stuck = getComputedStyle(nav).position === 'sticky' && n.top >= v.top - 1;
+        return { stuck, fits: n.bottom <= v.bottom + 1, lastShows: last.top >= Math.max(v.top, n.top) - 1 && last.bottom <= Math.min(v.bottom, n.bottom) + 1 };
+      });
+      // a design that lets the list scroll with the page (not sticky) shows every tab on the way; a stuck one must fit
+      if (at.stuck) expect(at, 'the stuck tab list fits in the view and shows its last tab').toEqual({ stuck: true, fits: true, lastShows: true });
+    });
+
     test(`desktop mini player / ${design} / ${theme}`, async ({ page }) => {
       // the device window opens 340 px wide, the strip is a fixed 540 x 90 (app/src/desktop/mini.rs)
       for (const [view, width] of [['mini', 340], ['strip', 540]]) {

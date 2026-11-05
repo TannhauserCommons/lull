@@ -5,7 +5,8 @@
 // bar or the window, two on each other, text cut off, an essential missing; anything sticking out sideways; a clamp
 // that doesn't clip; a squeezed title; console errors), and one contact sheet shows them all:
 // tests/ui/themes-check/index.html. It exits 1 when a check finds something. A route is a key screen's name (home,
-// search, playlist, album, now, settings) or a path (/settings/appearance). On the fixture hub, with a copy of the
+// search, playlist, album, now, settings) or a path (/settings/appearance); `--size 1536x864` draws the desktop at that
+// size instead (a laptop at 125%, a short window). On the fixture hub, with a copy of the
 // theme folder, so nothing is written to it. A few minutes at most; the gates are the full matrix.
 
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -21,9 +22,16 @@ const OUT = join(here, 'themes-check');
 const VIEWPORTS = { desktop: { viewport: { width: 1440, height: 900 } }, phone: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } };
 const PARALLEL = 4;
 
-const routes = process.argv.slice(2).map((r) => screens[r] || (r.startsWith('/') ? r : '/' + r));
+const args = process.argv.slice(2), sized = args.indexOf('--size');
+if (sized >= 0) {
+  const m = /^(\d+)x(\d+)$/.exec(args[sized + 1] || '');
+  if (!m) { console.error('--size is WIDTHxHEIGHT, as 1536x864'); process.exit(2); }
+  VIEWPORTS.desktop = { viewport: { width: +m[1], height: +m[2] } };
+  args.splice(sized, 2);
+}
+const routes = args.map((r) => screens[r] || (r.startsWith('/') ? r : '/' + r));
 if (!routes.length) {
-  console.error(`usage: mise run themes:check -- <route> [<route>...]   (a path, or one of ${Object.keys(screens).join(', ')})`);
+  console.error(`usage: mise run themes:check -- [--size WxH] <route> [<route>...]   (a path, or one of ${Object.keys(screens).join(', ')})`);
   process.exit(2);
 }
 
@@ -111,7 +119,7 @@ writeFileSync(join(OUT, 'index.html'), `<!doctype html><meta charset="utf-8"><me
   td.none { color: GrayText; font-size: 12px; }
 </style>
 <h1>Themes check</h1>
-<p>${results.length} pictures, ${failed.length ? `<strong style="color:var(--bad)">${failed.length} with something to look at</strong>` : 'nothing found by the checks'}; ${Math.round((Date.now() - started) / 1000)} s. Built-in designs, then the themes in LULL_THEMES_DIR, with a song in the player.</p>
+<p>Desktop at ${VIEWPORTS.desktop.viewport.width}×${VIEWPORTS.desktop.viewport.height}, phone at ${VIEWPORTS.phone.viewport.width}×${VIEWPORTS.phone.viewport.height}. ${results.length} pictures, ${failed.length ? `<strong style="color:var(--bad)">${failed.length} with something to look at</strong>` : 'nothing found by the checks'}; ${Math.round((Date.now() - started) / 1000)} s. Built-in designs, then the themes in LULL_THEMES_DIR, with a song in the player.</p>
 ${routes.map((route) => `<h2>${esc(route)}</h2><table><thead><tr><th></th>${cols.map((c) => `<th>${c.size}, ${c.mode}</th>`).join('')}</tr></thead><tbody>
 ${looks.map((d) => `<tr><th scope="row">${esc(d.id)}${mine.some((m) => m.id === d.id) ? '' : '<br><small>built in</small>'}</th>${cols.map((c) => cell(results.find((r) => r.route === route && r.design === d.id && r.size === c.size && r.mode === c.mode))).join('')}</tr>`).join('\n')}
 </tbody></table>`).join('\n')}

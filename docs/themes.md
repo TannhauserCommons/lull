@@ -378,7 +378,7 @@ Every class lull's CSS styles and every `data-*` attribute lull's markup sets, e
   - `data-panel` (`strip`), `data-panel-split` and `data-two` (Queue and Lyrics as two panes), `data-nowcol` (`open` `strip`), `data-nowcol-ok`;
   - `.is-resizing` (a resize handle is being dragged).
 - **Regions:** `data-region` (section 5), `.region-title`, `.region-meta`.
-- **Shell parts:** `.rail`, `.header`, `.main`, `.view`, `.ctx` (with `data-ctx-tab` on its tab buttons), `.ctx-scrim`, `.nowcol`, `.pbar`, `.mini`, `.tabbar`, `.tab`, `.nav-item`, `.nav-pill`, `.wordmark`, `.brand` (the default brand slot), `.skip-link`, `.sky-specks`, `.col-resize` (a resize handle, `data-resize`).
+- **Shell parts:** `.rail`, `.header`, `.main`, `.view` (with `--view-h` once Settings has opened: its height below its top padding, where something sticky at its top ends), `.ctx` (with `data-ctx-tab` on its tab buttons), `.ctx-scrim`, `.nowcol`, `.pbar`, `.mini`, `.tabbar`, `.tab`, `.nav-item`, `.nav-pill`, `.wordmark`, `.brand` (the default brand slot), `.skip-link`, `.sky-specks`, `.col-resize` (a resize handle, `data-resize`).
 - **Links:** `data-nav` on every nav link, `data-brand` on brand links.
 - **Rows that fit themselves** (section 5, Wide screens): `data-fit-row` on a row (the header, the player bar, its tools,
   the song's chips), `data-fit` on a part that can give way (its value is its order, 1 first), `data-fit-out` on a part

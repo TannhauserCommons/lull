@@ -899,9 +899,15 @@
       if (!/^#\/settings\/app\b/.test(location.hash)) desk = null;   // leaving Settings > App: read the wrapper again next visit
     });
   }
-  /* the sections built from screens/hub.js (App.hubKit) load it on entry; the others render at once */
+  /* Settings' own fits (screens/settings-fit.js) load on entry, and the sections built from screens/hub.js
+     (App.hubKit) load it too; once both are here a section renders at once */
   var HUB_SECTIONS = { sources: true, library: true, devices: true };
-  App.route('/settings/:section?', { need: function (params) { return HUB_SECTIONS[params.section] && !App.hubKit ? App.needHub() : null; }, render: renderSettings, mount: mountSettings, nav: 'settings', title: function (ctx) { var s = sectionOf(ctx.params.section); return s ? s[1] + ' settings' : 'Settings'; } });
+  App.needSettingsFit = function () { return App.needScript('screens/settings-fit.js', 'Settings'); };
+  function settingsNeeds(params) {
+    var load = [App.settingsFit ? null : App.needSettingsFit(), HUB_SECTIONS[params.section] && !App.hubKit ? App.needHub() : null].filter(Boolean);
+    return load.length ? Promise.all(load) : null;
+  }
+  App.route('/settings/:section?', { need: settingsNeeds, render: renderSettings, mount: mountSettings, nav: 'settings', title: function (ctx) { var s = sectionOf(ctx.params.section); return s ? s[1] + ' settings' : 'Settings'; } });
 
   /* =====================================================================
      3. Shortcuts overlay (?): grouped keycaps + filter
