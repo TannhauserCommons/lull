@@ -12,7 +12,7 @@ lull links that chat apps show as cards, served by a Cloudflare Worker on the fr
 | `share/src/page.js` | The page: `site/open.html` with the card's tags and the item for `site/open.js`; the 404 and 429 pages |
 | `share/src/sources.js` | The cover chain: iTunes (the US store, then the opener's: `request.cf.country`), Deezer, the Cover Art Archive, Last.fm, iTunes by name; Deezer and Wikidata for artists |
 | `share/src/objects.js` | Durable Objects: `Cover` (one per album or artist: one lookup at a time, keeps the address found) and `Gate` (each service's budget, worldwide) |
-| `share/build.mjs` | Gathers the static files into `share/public/` from where they live (`site/`, `web/`, `packaging/android/assetlinks.json`, `share/static/`). Run by wrangler before every build |
+| `share/build.mjs` | Gathers the static files into `share/public/` from where they live (`site/`, `web/`, `packaging/android/assetlinks.json`, `share/static/`), and writes the looks: `look.css` (lull's base tokens from `web/tokens.css`), `look/<design>.css` (a built-in design's colour tokens, day and night, and its UI font's faces, from its `theme.css`) and `look/designs.json` (name and accent). Night blocks become `prefers-color-scheme` rules. Run by wrangler before every build, and by `pages.yml` |
 | `share/test/` | `share.test.mjs` runs wrangler's own bundle in Miniflare with every outside service faked (`harness.mjs`); `hosts.test.mjs` |
 | `.github/workflows/share.yml` | `test`; `deploy` on a dispatch on main |
 
@@ -22,6 +22,7 @@ For every lull install, in any market (ADR-0034, "For every lull"): links hold p
 
 `https://<host>/1/song/<artist>/<title>?al=&aa=&len=&it=&ic=&dz=&mb=`, `/1/album/<artist>/<title>?it=&dz=&mb=`, `/1/artist/<name>?dz=&mb=`.
 - **Names** are exact, each one segment encoded as `encodeURIComponent` does (the hub's `share_host::encode` matches it), so the hub's link is the Worker's canonical one.
+- **`d`:** the sharer's built-in design (`look/designs.json` lists the valid ones; anything else is dropped). The page gets `data-design`, `look/<design>.css` and the design's accent as `theme-color`. The web UI adds it when it copies a link (app.js `withDesign`: this device's design, or the one its theme extends).
 - **Ids:** `it` the item's iTunes id (a song's track, an album's collection), `ic` a song's album's iTunes id, `dz` the album's (or artist's) Deezer id, `mb` the release group's (or artist's) MBID; `al`, `aa`, `len` a song's album, album artist and length. Malformed ids are dropped on both sides.
 - **The public page** is derived: `song.link/i/<it>`, `album.link/i/<it>`, else Last.fm by name.
 

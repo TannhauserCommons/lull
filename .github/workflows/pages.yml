@@ -1,6 +1,7 @@
 # lull's public "open" page (site/, ADR-0032) on GitHub Pages: https://tannhausercommons.github.io/lull/open.
-# The repository's Pages source must be "GitHub Actions" (Settings > Pages). lull's icon and font come from web/,
-# so the page has no copy of its own.
+# The repository's Pages source must be "GitHub Actions" (Settings > Pages). The share Worker's build gathers its
+# files (the page, lull's icon, font and base tokens from web/), so both hosts serve the same page and it has no
+# copy of its own.
 name: pages
 
 # The queue starts it when a landed change touches the site (ADR-0095); by hand too.
@@ -27,12 +28,15 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}open
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24.11"
       - name: Assemble the site
         run: |
+          node share/build.mjs
           mkdir -p _site
-          cp site/open.html site/open.css site/open.js _site/
-          cp web/assets/app-icon.svg web/fonts/nunito-latin.woff2 _site/
-          touch _site/.nojekyll
+          cd share/public && cp open.html open.css open.js look.css app-icon.svg nunito-latin.woff2 ../../_site/
+          touch ../../_site/.nojekyll
       - uses: actions/upload-pages-artifact@v4
       - id: deployment
         uses: actions/deploy-pages@v4

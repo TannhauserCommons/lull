@@ -698,7 +698,8 @@ One "Copy link" per item, and it works for anyone:
   `GET /api/share/{kind}/{id}`: a share host's page that chat apps show as a card (ADR-0034), or, until there is one,
   lull's open page (`site/`, ADR-0032) followed by `#lull?`; either names the item and the public ids lull knows, and
   leads to the public page (song.link, which opens in every music app, or Last.fm). Clicked, the page
-  opens the listener's lull or offers the public page. Never this hub's address.
+  opens the listener's lull or offers the public page. Never this hub's address. A share host's link gets `d=`, the
+  built-in design this device shows (or the one its theme extends), so the page is drawn in it (share.md).
 - **Playlists** imported from a link copy that link (`GET /api/import/links`); an outside preview's Copy link copies
   its page. One made in lull has no page to share and says so (Export as M3U sends it).
 - **Opening** (`App.openLink`, `#/open?link=`, discover.js): a link pasted in search, or handed over by the apps'

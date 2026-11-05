@@ -1,11 +1,13 @@
 // A lull link (docs/adr/0034): /1/<kind>/<names>[/cover]?<ids>. Everything a page or a cover needs is read
 // from the address, checked here, and trusted after: names are exact, ids keep their form or are dropped.
 
+import designs from '../public/look/designs.json';
+
 /** The names each kind carries in its path, and the ids (query keys) it may carry, in the order links write them. */
 const KINDS = {
-  song: { names: ['artist', 'title'], keys: ['al', 'aa', 'len', 'it', 'ic', 'dz', 'mb'] },
-  album: { names: ['artist', 'title'], keys: ['it', 'dz', 'mb'] },
-  artist: { names: ['artist'], keys: ['dz', 'mb'] },
+  song: { names: ['artist', 'title'], keys: ['al', 'aa', 'len', 'it', 'ic', 'dz', 'mb', 'd'] },
+  album: { names: ['artist', 'title'], keys: ['it', 'dz', 'mb', 'd'] },
+  artist: { names: ['artist'], keys: ['dz', 'mb', 'd'] },
 };
 const VERSION = '1';
 const MAX_NAME = 200;
@@ -17,6 +19,8 @@ const CHECK = {
   len: (v) => (DIGITS.test(v) && +v > 0 && +v <= 86400 ? v : null),
   it: id, ic: id, dz: id,
   mb: (v) => (MBID.test(v.toLowerCase()) ? v.toLowerCase() : null),
+  // the sharer's built-in design, which the page is drawn in (look/<design>.css); any other value: lull's look
+  d: (v) => (Object.hasOwn(designs, v) ? v : null),
 };
 
 function id(v) { return DIGITS.test(v) ? v : null; }

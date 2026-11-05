@@ -4137,17 +4137,32 @@
     'skip': function () { $('#view').focus(); }
   });
   /* ---------- copying links ----------
-     "Copy link" copies one link that works for anyone: lull's open page (site/, ADR-0032) followed by `#lull?`, the
-     song's names and public ids, and its public page (song.link, which opens in every music app, or Last.fm), from
-     GET /api/share/{kind}/{id} (kind track | album | artist). Clicked, the open page opens the listener's lull or
-     offers the public page; any lull opens it as its own page (App.openLink, on another hub too); never this hub's
-     address. A playlist's link is the page it was imported from. The clipboard write
+     "Copy link" copies one link that works for anyone, from GET /api/share/{kind}/{id} (kind track | album | artist):
+     a share host's page naming the song and its public ids (ADR-0034), or lull's open page followed by `#lull?` and
+     them (ADR-0032), either leading to its public page (song.link, which opens in every music app, or Last.fm).
+     Clicked, the page opens the listener's lull or offers the public page; any lull opens it as its own page
+     (App.openLink, on another hub too); never this hub's address. A share host's page is drawn in this device's
+     design (`d=`, shareDesign). A playlist's link is the page it was imported from. The clipboard write
      starts inside the click, with the text still on its way (ClipboardItem takes a promise), so the browser allows
      it once the hub has answered. */
   var SHARE_NOUN = { track: 'song', album: 'album', artist: 'artist' };
+  /* the built-in design a share page is drawn in: this device's, or the one its theme extends; a theme extending none
+     gives none, and the page is lull's own look. Nothing else about a theme leaves the hub (ADR-0034). */
+  function shareDesign() {
+    var m = Designs.list[Designs.current];
+    var id = m && (m.builtIn ? m.id : m.extends);
+    return Designs.builtIn.indexOf(id) >= 0 ? id : null;
+  }
+  /* a share host's link (/1/…) with `d=`; ADR-0032's links name their ids after `#` and stay as they are */
+  function withDesign(link) {
+    var d = shareDesign(), u;
+    try { u = new URL(link); } catch (e) { return link; }
+    if (!d || !/^\/1\//.test(u.pathname) || u.hash) return link;
+    return link + (u.search ? '&' : '?') + 'd=' + d;
+  }
   App.copyShareLink = function (kind, id) {
     var share = M.api('/api/share/' + kind + '/' + encodeURIComponent(id));
-    App.copyLink(share.then(function (r) { return r.link; }), function (r) {
+    App.copyLink(share.then(function (r) { return withDesign(r.link); }), function (r) {
       return 'Link copied: it opens in lull, and as ' + (r.source === 'lastfm' ? 'the Last.fm page' : 'a page for every music app') + ' without it';
     }, share, function (err) {
       return err.status === 404 ? 'There\'s no link for this ' + SHARE_NOUN[kind] + '.' : 'Couldn\'t make a link: ' + err.message;

@@ -66,6 +66,31 @@ test('names are exact and escaped; a malformed id is dropped, not trusted', asyn
   });
 });
 
+test('a link naming the sharer\'s design draws the page in it; any other value is lull\'s look', async () => {
+  const designs = JSON.parse(readFileSync(new URL('../public/look/designs.json', import.meta.url), 'utf8'));
+  await withWorker(internet(), async (w) => {
+    const html = await (await w.get(SONG + '&d=petal')).text();
+    assert.match(html, /<html lang="en" data-design="petal">/);
+    assert.match(html, /<link rel="stylesheet" href="\/look\.css">\n<link rel="stylesheet" href="\/look\/petal\.css">/);
+    assert.equal(metaOf(html, 'theme-color'), designs.petal.accent, 'Discord\'s edge in the design\'s accent');
+    assert.equal(metaOf(html, 'og:url'), HOST + SONG + '&d=petal');
+    const look = await w.get('/look/petal.css');
+    assert.equal(look.status, 200);
+    const css = await look.text();
+    assert.match(css, /:root\[data-design="petal"\] \{/);
+    assert.match(css, /@media \(prefers-color-scheme: dark\) \{ :root\[data-design="petal"\]/, 'night by the viewer\'s setting');
+    assert.doesNotMatch(css, /url\("assets\//, 'no design picture is named');
+    const font = /url\("(petal\/[^"]+\.woff2)"\)/.exec(css)[1];
+    assert.equal((await w.get('/look/' + font)).status, 200, 'its UI font is served beside it');
+
+    for (const d of ['nope', '../x', 'Petal']) {
+      const other = await (await w.get(SONG + '&d=' + encodeURIComponent(d))).text();
+      assert.doesNotMatch(other, /data-design|look\/[a-z]/, d);
+      assert.equal(metaOf(other, 'og:url'), HOST + SONG, d);
+    }
+  });
+});
+
 test('an address that names nothing is a 404 page with lull\'s card', async () => {
   await withWorker(internet(), async (w) => {
     for (const path of ['/', '/1/song/OnlyAnArtist', '/2/song/a/b', '/1/song/a/b/c', '/1/podcast/a/b']) {

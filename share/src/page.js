@@ -2,9 +2,11 @@
 // serves for older links) with the tags chat apps build a card from, and the item handed to site/open.js.
 // Made from the address alone: no outside call, so the card's words never depend on anyone else being up.
 
+import designs from '../public/look/designs.json';
 import { coverUrl, pageUrl, publicPage } from './link.js';
 
-/** lull's primary colour (site/open.css --primary), which Discord draws along a card's edge. */
+/** lull's primary colour, which Discord draws along a card's edge; a link naming the sharer's design (`d`) gets that
+    design's accent (its theme.json's third swatch) instead. */
 const ACCENT = '#3d3491';
 const TYPES = { song: 'music.song', album: 'music.album', artist: 'profile' };
 
@@ -33,7 +35,7 @@ export function page(template, origin, item) {
     meta('name', 'twitter:title', title),
     meta('name', 'twitter:description', description),
     meta('name', 'twitter:image', cover),
-    meta('name', 'theme-color', ACCENT),
+    meta('name', 'theme-color', ids.d ? designs[ids.d].accent : ACCENT),
     ...(ids.len ? [meta('property', 'music:duration', ids.len)] : []),
   ];
   const handed = {
@@ -44,7 +46,7 @@ export function page(template, origin, item) {
     page: publicPage(item),
     cover: new URL(cover).pathname + new URL(cover).search,
   };
-  return fill(template, tags, handed);
+  return fill(template, tags, handed, ids.d);
 }
 
 /** The page for an address that names nothing: the open page says so, and the card is lull's. */
@@ -68,6 +70,7 @@ export function tooMany() {
 <meta name="robots" content="noindex">
 <meta name="color-scheme" content="light dark">
 <title>Too many at once · lull</title>
+<link rel="stylesheet" href="/look.css">
 <link rel="stylesheet" href="/open.css">
 </head>
 <body>
@@ -81,12 +84,18 @@ export function tooMany() {
 `;
 }
 
-/** The open page with these tags in place of its title, its files at this host's root, and `item` for open.js. */
-function fill(template, tags, item) {
+/** The open page with these tags in place of its title, its files at this host's root, `item` for open.js, and the
+    sharer's design's look on top of lull's. */
+function fill(template, tags, item, design) {
   let html = template
     .replace(/<title>[^<]*<\/title>/, tags.join('\n'))
     // GitHub Pages serves the page beside its files; here a page's address is deeper, so they are named from the root.
     .replace(/\b(href|src)="(?![a-z]+:|\/|#)([^"]+)"/g, '$1="/$2"');
+  if (design) {
+    html = html
+      .replace('<html lang="en">', `<html lang="en" data-design="${design}">`)
+      .replace('<link rel="stylesheet" href="/look.css">', `<link rel="stylesheet" href="/look.css">\n<link rel="stylesheet" href="/look/${design}.css">`);
+  }
   if (item) html = html.replace('</head>', `<script type="application/json" id="lull-item">${json(item)}</script>\n</head>`);
   return html;
 }

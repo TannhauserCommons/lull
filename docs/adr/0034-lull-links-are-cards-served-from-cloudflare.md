@@ -136,6 +136,17 @@ A song's cover is its album's. Covers are keyed by the album (its best id, else 
 - **lull adds it to next up without playing or leaving the screen it showed;** with nothing loaded, the first song waits paused. Started by the link (the app wasn't running), it opens on Home with the song queued.
 - **The page no longer acts on its own for a song or an album:** a remembered lull isn't opened after a moment, and a computer isn't asked "Open lull?" on load, since either would take the choice away. An artist, with nothing to queue, opens as before.
 
+### The page in the sharer's design (2026-11-05, asked for by a listener)
+
+- **A link may name the sharer's built-in design:** `d=<design>` (lull, skydeck, starlight, petal, glasshouse), added by the web UI when it copies a share host's link, since the design is chosen per device and the hub doesn't know it. It says which of five looks the sharer uses and nothing else; an unknown value is lull's look.
+- **The page takes the design's own colours and type,** generated from the app's CSS at build (`share/build.mjs`): `look.css` is lull's base tokens (`web/tokens.css`), on every page; `look/<design>.css` is that design's colour tokens, day and night, and the faces of its UI font. The share card is drawn with the app's card tokens (`--cream`, `--ink`, `--link-on-cream`, `--line`), the pair every design keeps readable in both modes. Night follows the viewer's own setting. A few KB of CSS, and at most one font file, per design.
+- **Not the app's screens:** a design's whole CSS (74 to 177 KB) styles the app's own markup, so its pictures, glass and title faces stay in the app.
+- **The chat card:** only Discord's edge (`theme-color`, the design's accent) follows it. The picture stays the cover; drawing a themed card would need a rasterizer the free plan's 10 ms of CPU doesn't fit.
+- **A listener's own theme** travels as the built-in design it extends, or as lull's look when it extends none. Nothing else about it leaves the hub. Rejected:
+  - its four swatch colours in the link: closer, but a one-off palette ties one person's links together, and it reaches only colours;
+  - its picture (ADR-0080) or its package on the share host: the hub would have to contact the share host (tying a hub's address to its links), anyone could upload, and the picture shows the sharer's own Home.
+- **GitHub Pages' copy** of the page, for older links, is assembled by the same build, so it has the base tokens too.
+
 ### One page script, two hosts
 
 - `site/open.js` stays the one script. It reads the item from the `#lull?` part (old links) or from a JSON block the Worker writes into the page (new links).
