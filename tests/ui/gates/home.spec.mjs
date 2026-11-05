@@ -79,3 +79,17 @@ test('a new release no peer shares yet says so quietly', async ({ page, request 
   await expect(tiles.first().locator('.rel-unshared')).toHaveText('Not shared yet');
   await expect(tiles.nth(1).locator('.rel-unshared')).toHaveCount(0);
 });
+
+test('a slow connection still opens the why popover at once, with the full sentence once it is in', async ({ page, request }) => {
+  await feedOf(page, request, 'related');
+  // the sentences' code held back 2 s: the popover must not wait for it
+  await page.route('**/screens/why.js*', async (route) => { await new Promise((r) => setTimeout(r, 2000)); await route.continue(); });
+  await openScreen(page, '/home');
+  const feed = await page.evaluate(() => App.data.api('/api/feed'));
+  const pick = feed.picks.find((p) => p.reasons[0].evidence);
+  const opened = Date.now();
+  await page.locator(`[data-region="picks"] .chip-reason[data-item="${pick.trackId}"]`).click();
+  await expect(page.locator('.disc-why')).toContainText(pick.reasons[0].name, { timeout: 500 });
+  expect(Date.now() - opened).toBeLessThan(1500);
+  await expect(page.locator('.disc-why')).toContainText("You've played them 14 times.", { timeout: 5000 });
+});

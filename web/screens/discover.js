@@ -238,16 +238,13 @@
         html`<a class="btn btn--quiet btn--sm" href="#/following">Browse tags</a>`);
     }
     var playable = picks.filter(function (p) { return !p.noSource || H.found[p.trackId]; }).map(function (p) { return p.trackId; });
+    if (!App.availMark && picks.some(function (p) { return p.avail && p.avail.length; })) App.needAvail().then(function () { paintShelf('picks'); }, function () {});
     return html`${head}<ul class="disc-picks${more ? ' disc-picks--all' : ''}" data-ids="${playable.join(',')}">${picks.map(pickItem)}</ul>`;
   }
-  /* where a pick can play from (the feed's `avail`, filled after the build by `feed.avail`): a quiet mark a theme may
-     restyle, move or hide (.pick-avail, [data-avail]; themes.md section 11) */
-  var AVAIL = { soulseek: 'Soulseek', youtube: 'YouTube' };
-  function availMark(avail) {
-    if (!avail || !avail.length) return '';
-    var label = 'On ' + avail.map(function (s) { return AVAIL[s]; }).join(' and ');
-    return html`<span class="pick-avail" role="img" aria-label="${label}" data-tip="${label}">${avail.map(function (s) { return html`<span class="pick-avail__src" data-src="${s}">${icon(s)}</span>`; })}</span>`;
-  }
+  /* where a pick can play from (the feed's `avail`, filled after the build by `feed.avail`): its mark's code
+     (screens/avail.js) loads with the first answer; until then the pick carries only [data-avail] */
+  App.needAvail = function () { return App.needScript('screens/avail.js', 'where picks play from'); };
+  function availMark(avail) { return App.availMark ? App.availMark(avail) : ''; }
   function pickItem(p) {
     var t = M.track(p.trackId), reasons = p.reasons || [];
     var noSrc = p.noSource && !H.found[t.id], finding = H.finding === t.id;
@@ -458,7 +455,8 @@
       var p = list(M.peek(FEED), 'picks').filter(function (x) { return x.trackId === e.trackId; })[0];
       if (!p) return;
       p.avail = e.avail; p.noSource = e.noSource;
-      paintShelf('picks');
+      if (App.availMark || !e.avail.length) paintShelf('picks');
+      else App.needAvail().then(function () { paintShelf('picks'); }, function () {});
     }));
     ctx.onCleanup(App.on('store', function (keys) {
       var feed = M.peek(FEED);
@@ -476,10 +474,13 @@
     var artist = t ? M.artist(t.artistId) : (r.kind !== 'tag' && r.ref ? M.artist(r.ref) : null);
     /* feedback takes a track or an artist id; a tag reason, or "listeners like you" (no ref), has only the item */
     var target = r.item || (/^ar-/.test(r.ref || '') ? r.ref : ''), via = r.via || (p && p.via);
+    function list() { return html`${reasons.map(function (x) { return html`<li>${icon(REASON_ICON[x.kind] || 'sparkle')}<span>${ui.reasonText(x)}</span></li>`; })}`; }
+    // the sentences may still be on their way (screens/why.js): the reasons' names until they are in
+    App.needWhy().then(function () { var l = $('.disc-why__list'); if (l) l.innerHTML = String(list()); }, function () {});
     App.popover(anchor, html`<div class="popover__head">${icon('sparkle')}<span>why this?</span></div>
       <div class="popover__body disc-why">
         ${t ? html`<p class="disc-why__item">${t.title}, ${t.artist}</p>` : ''}
-        <ul class="disc-why__list">${reasons.map(function (x) { return html`<li>${icon(REASON_ICON[x.kind] || 'sparkle')}<span>${ui.reasonText(x)}</span></li>`; })}</ul>
+        <ul class="disc-why__list">${list()}</ul>
         ${via ? html`<p class="disc-why__via">via ${via}</p>` : ''}
       </div>
       <div class="popover__actions">
