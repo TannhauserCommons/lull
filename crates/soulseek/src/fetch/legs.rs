@@ -605,8 +605,8 @@ impl Fetcher {
     }
 
     /// slskd finished the leg. It says so before it moves the file to its downloads folder, so
-    /// the rest comes from the leg's open file while it reads (on Linux it follows the file through
-    /// the move), then from where slskd put it. Once slskd names that place, its file and record
+    /// the rest comes from the leg's open file while it reads (it follows the file through the move:
+    /// Windows allows the move because lull opens it sharing delete), then from where slskd put it. Once slskd names that place, its file and record
     /// go. `None`: slskd hasn't named it yet; ask again on the next look.
     async fn land(
         &self,

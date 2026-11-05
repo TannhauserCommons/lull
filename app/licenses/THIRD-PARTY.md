@@ -2,13 +2,14 @@
 
 ## slskd 0.26.2
 
-lull bundles slskd, unmodified, as the Soulseek client of the hub on your computer.
+lull bundles slskd as the Soulseek client of the hub on your computer.
 
+- **On Linux, unmodified:** the release's `slskd-0.26.2-linux-x64.zip` (or `-linux-arm64.zip`), checked by sha256 when lull is built (`app/build.rs`).
+- **On Windows, modified by lull (2026-11-05):** slskd opens a file it is downloading so that lull may read it while it arrives (`FileShare.Read` instead of `FileShare.None`), so lull can play a Soulseek song while slskd downloads it. Nothing else differs. Built from slskd's 0.26.2 tag with https://github.com/TannhauserCommons/lull/blob/main/app/slskd/share-for-reading.patch, by the recipe in https://github.com/TannhauserCommons/lull/tree/main/app/slskd, and published as the `slskd-0.26.2-lull.1` pre-release of lull. Each zip also holds the patch and a NOTICE.
 - Project: https://github.com/slskd/slskd
-- Copyright: the slskd contributors
+- Copyright: JP Dillingham and the slskd contributors
 - Licence: GNU Affero General Public License v3.0, in `slskd-LICENSE.txt` next to this file
-- Source code of this exact version: https://github.com/slskd/slskd/tree/0.26.2
-- Binaries: the release's `slskd-0.26.2-win-x64.zip` and `slskd-0.26.2-linux-x64.zip`, checked by sha256 when lull is built (`app/build.rs`)
+- Source code of the version both are built from: https://github.com/slskd/slskd/tree/0.26.2
 
 ## yt-dlp 2026.10.26
 

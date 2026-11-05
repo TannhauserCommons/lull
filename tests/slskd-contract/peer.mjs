@@ -16,14 +16,18 @@ import { createConnection, createServer } from 'node:net';
 import { EventEmitter } from 'node:events';
 import { Builder, Direction, Init, Peer, Reader, SocketReader, int32, trace } from './protocol.mjs';
 
+/** A paced file arrives at 64 KiB every 100 ms, about 640 KiB a second: a few seconds for a song-sized file. */
+const PACE = { bytes: 64 * 1024, everyMs: 100 };
+
 /**
  * @param {object} o
  * @param {string} o.username   who we are on the stand-in network
  * @param {string} o.host       the interface to listen on
  * @param {Map<string, Buffer>} o.files   remote filename -> contents
  * @param {{host: string, port: number}} o.downloader   where slskd's listen port is reachable from here
+ * @param {Set<string>} [o.paced]   files sent slowly (PACE), so a test can look at slskd's file while it arrives
  */
-export async function startPeer({ username, host, files, downloader }) {
+export async function startPeer({ username, host, files, downloader, paced = new Set() }) {
   const events = new EventEmitter();
   const sockets = new Set();
   const offered = new Map(); // our upload token -> filename, between steps 3 and 5
@@ -119,7 +123,15 @@ export async function startPeer({ username, host, files, downloader }) {
     events.emit('offset', { filename, offset, connection });
 
     const closed = new Promise((resolve) => socket.once('close', resolve));
-    socket.write(file.subarray(Math.min(offset, file.length)));
+    const rest = file.subarray(Math.min(offset, file.length));
+    if (paced.has(filename)) {
+      for (let at = 0; at < rest.length && !socket.destroyed; at += PACE.bytes) {
+        socket.write(rest.subarray(at, at + PACE.bytes));
+        await new Promise((r) => setTimeout(r, PACE.everyMs));
+      }
+    } else {
+      socket.write(rest);
+    }
     await closed; // slskd closes once it has read everything; closing first could race its last read
     events.emit('served', { filename, offset, bytes: file.length - offset, connection });
   }

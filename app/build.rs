@@ -25,28 +25,30 @@ const STAGED: &[&str] = &[
     "assets",
 ];
 
-/// The slskd the deploy kit runs too (ADR-0010). Bump the version and every hash together; the
-/// hashes are the release's own (`gh release view <v> --repo slskd/slskd --json assets`).
-const SLSKD_VERSION: &str = "0.26.2";
+/// The slskd the deploy kit runs too (ADR-0010), 0.26.2. Linux gets slskd's own release, checked by
+/// the release's own hashes (`gh release view <v> --repo slskd/slskd --json assets`). Windows gets
+/// lull's build of it (ADR-0062, `app/slskd/`): the same release with one line changed, so lull can
+/// read a song while slskd downloads it; its hashes are what `.github/workflows/slskd-windows.yml`
+/// builds, every time. Bump every entry together, and the deploy kit's image.
 const SLSKD: &[Sidecar] = &[
     Sidecar {
         target: "x86_64-pc-windows-msvc",
-        asset: "win-x64",
-        sha256: "ffe186ecbedce15bf19b6a690c6213c669f34acc793ef53aa92390a5cd9c48f0",
+        url: "https://github.com/TannhauserCommons/lull/releases/download/slskd-0.26.2-lull.1/slskd-0.26.2-lull.1-win-x64.zip",
+        sha256: "40fe12e039047564865722671ff24a30e7513eec8aa4e7a5cb09819bbf9fbfe7",
     },
     Sidecar {
         target: "x86_64-unknown-linux-gnu",
-        asset: "linux-x64",
+        url: "https://github.com/slskd/slskd/releases/download/0.26.2/slskd-0.26.2-linux-x64.zip",
         sha256: "53102e91e0123f62d17627d5e02a24d9dcd08a165e75182c0f1d76d087510f37",
     },
     Sidecar {
         target: "aarch64-pc-windows-msvc",
-        asset: "win-arm64",
-        sha256: "9ec6903048fa6484cbda1a428302b326be163a0d901eed17988507e53a39e9cc",
+        url: "https://github.com/TannhauserCommons/lull/releases/download/slskd-0.26.2-lull.1/slskd-0.26.2-lull.1-win-arm64.zip",
+        sha256: "1d582f1845b0fb9e4580654595f9a610d945c43a06c16671b72aa57f74ad14dd",
     },
     Sidecar {
         target: "aarch64-unknown-linux-gnu",
-        asset: "linux-arm64",
+        url: "https://github.com/slskd/slskd/releases/download/0.26.2/slskd-0.26.2-linux-arm64.zip",
         sha256: "b8acb302df08f7751f2068c779380dec136882adb5af82a081cd0ead8f028a51",
     },
 ];
@@ -54,7 +56,8 @@ const BINARIES: &str = "binaries";
 
 struct Sidecar {
     target: &'static str,
-    asset: &'static str,
+    /// The release zip; tests/slskd-contract reads these three lines too.
+    url: &'static str,
     sha256: &'static str,
 }
 
@@ -227,8 +230,8 @@ fn fetch_slskd(target: &str) -> io::Result<()> {
         .ok_or_else(|| io::Error::other(format!("no slskd build is pinned for {target}; add it to build.rs")))?;
     let dir = Path::new(BINARIES);
     fs::create_dir_all(dir)?;
-    let name = format!("slskd-{SLSKD_VERSION}-{}.zip", sidecar.asset);
-    let zip = dir.join(&name);
+    let name = sidecar.url.rsplit('/').next().unwrap_or(sidecar.url);
+    let zip = dir.join(name);
     let exe_suffix = if target.contains("windows") { ".exe" } else { "" };
     let exe = dir.join(format!("slskd-{target}{exe_suffix}"));
     let stamp = dir.join(format!("slskd-{target}.sha256"));
@@ -240,8 +243,8 @@ fn fetch_slskd(target: &str) -> io::Result<()> {
     let bytes = match fs::read(&zip) {
         Ok(bytes) if sha256(&bytes) == sidecar.sha256 => bytes,
         _ => {
-            let url = format!("https://github.com/slskd/slskd/releases/download/{SLSKD_VERSION}/{name}");
-            let bytes = download(&url)?;
+            let url = sidecar.url;
+            let bytes = download(url)?;
             let got = sha256(&bytes);
             if got != sidecar.sha256 {
                 return Err(io::Error::other(format!(

@@ -25,9 +25,9 @@ What there is to work with:
 
 **slskd is pinned, by decision (owner, 2026-11-04).** lull depends on how this slskd resumes, so it ships the version that does it and never another one by itself.
 - **The compose kit** names `slskd/slskd:0.26.2` by tag and digest (`deploy/compose.yaml`).
-- **The desktop app's sidecar** stays at 0.26.2 with the release's own hashes (`app/build.rs`, desktop.md).
+- **The desktop app's sidecar** stays at 0.26.2 with the release's own hashes (`app/build.rs`, desktop.md). On Windows it is lull's build of that release since ADR-0062, pinned the same way.
 - **Nothing updates it automatically.** lull has no dependency bot, and the homelab's Renovate leaves slskd alone (homelab e196868).
-- **A deliberate upgrade** (an upstream security fix, say) is taken by hand: tag, digest, `SLSKD_VERSION` and its hashes change in one commit, which lands only once the contract test below passes against the new version.
+- **A deliberate upgrade** (an upstream security fix, say) is taken by hand: tag, digest, the sidecar's URLs and hashes (and lull's Windows build of it, ADR-0062) change in one commit, which lands only once the contract test below passes against the new version.
 - **An slskd the listener already runs** (the kit's third shape) is theirs: lull detects what it does (above) and waits instead of seeking ahead when its resume differs.
 
 **A contract test guards the resume.** It runs in CI against the pinned image, so an slskd that changes this fails CI instead of failing quietly for listeners.

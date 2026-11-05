@@ -42,6 +42,20 @@ jobs:
           node-version: "24.11"
       - run: node tests/slskd-contract/run.mjs
 
+  # The binary the Windows app bundles (app/build.rs), run as the app runs it: Windows enforces how slskd opens the
+  # file it downloads, so streaming is checked there (ADR-0062).
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24.11"
+      - run: node tests/slskd-contract/run.mjs --native
+
   windows-build:
     uses: ./.github/workflows/slskd-windows.yml
     with:
