@@ -73,4 +73,6 @@ A check that fails without a change to blame gets an owner and a fix at its caus
 - **Sessions no longer rebase and push main themselves.** AGENTS.md and workspace.md say `mise run ship`. A branch that conflicts is the session's to rebase and push again.
 - **Branch checks by hand still work** (`gh workflow run ci --ref <branch>`), for a change not ready to queue.
 - **Open to what may come next** (researched, not yet decided): a flake list where a gate that fails then passes is quarantined with an owner and a removal date; flagging a change that edits goldens or gate thresholds together with the code they judge; actions pinned by commit hash. Each would be a step in `queue.sh` or a check in its own workflow, without changing how the queue lands.
-- **The queue is a single point of failure.** If it is broken, the owner turns the ruleset off and pushes the fix directly; the fix's first queue run then tests itself.
+- **A change to the checks is tested with main's checks.** Actions reads a called workflow at the commit that calls it, so the queue runs main's `.github/workflows/`; a changed workflow is run by hand on its branch before it queues (quality.md).
+- **A red check ends the run at once.** A watch job beside the checks gives the verdict on the first failure and cancels the rest, so a red batch is split minutes sooner.
+- **The queue is a single point of failure.** If it is broken, the owner turns the ruleset off and pushes the fix directly; the queue's next runs then run the fixed copy.
