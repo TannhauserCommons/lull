@@ -147,6 +147,7 @@ const routes = [
   })],
   ['PATCH', /^\/api\/devices\/me$/, () => ({ status: 204 })],
   ['POST', /^\/api\/devices\/me\/state$/, () => ({ status: 204 })],
+  ['POST', /^\/api\/devices\/([^/]+)\/command$/, () => ({ status: 204 })],
   ['GET', /^\/api\/config$/, () => ({ items: [
     { key: 'LULL_PUBLIC_URL', value: null, set: false, source: 'default', secret: false, restart: true },
     { key: 'LULL_SLSKD_URL', value: 'http://slskd:5030', set: true, source: 'env', secret: false, restart: true },

@@ -238,13 +238,21 @@ enum Action {
     Volume,
     /// The target sends its state to the caller and pauses; the caller plays on.
     Takeover,
+    /// The target adds `tracks` to its queue's "next up", without interrupting what plays (a share
+    /// page's Add to queue, opened on another of the listener's devices).
+    Enqueue,
 }
+
+/// The most songs one `enqueue` carries (an album, or a long one).
+const ENQUEUE_MAX: usize = 500;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CommandBody {
     action: Action,
     value: Option<f64>,
+    /// Track ids, for `enqueue` only.
+    tracks: Option<Vec<String>>,
 }
 
 /// `POST /api/devices/{id}/command`: forwarded to that device as `device.command`.
@@ -258,12 +266,38 @@ async fn command(
     if matches!(body.action, Action::Seek | Action::Volume) && body.value.is_none() {
         return Err(Error::BadRequest("seek and volume need a value.".into()));
     }
+    match (body.action, &body.tracks) {
+        (Action::Enqueue, Some(tracks)) if (1..=ENQUEUE_MAX).contains(&tracks.len()) => {
+            if let Some(bad) = tracks.iter().find(|t| !is_track_id(t)) {
+                return Err(Error::BadRequest(format!("{bad} isn't a song's id.")));
+            }
+        }
+        (Action::Enqueue, _) => {
+            return Err(Error::BadRequest(format!(
+                "enqueue needs tracks: 1 to {ENQUEUE_MAX} song ids."
+            )));
+        }
+        (_, Some(_)) => return Err(Error::BadRequest("Only enqueue takes tracks.".into())),
+        (_, None) => {}
+    }
     if !hub.online.is_online(&id) {
         return Err(Error::Conflict("That device isn't connected.".into()));
     }
     hub.ctx().await.bus.publish(
         "device.command",
-        json!({ "deviceId": id, "action": body.action, "value": body.value, "from": me.id }),
+        json!({ "deviceId": id, "action": body.action, "value": body.value, "tracks": body.tracks, "from": me.id }),
     );
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Shaped as a song's id (`ids::TrackId`: `t-` and a short plain token). The device that enqueues
+/// reads each from the hub, which answers only the songs it knows.
+fn is_track_id(id: &str) -> bool {
+    id.strip_prefix(lull_core::ids::TrackId::PREFIX).is_some_and(|rest| {
+        !rest.is_empty()
+            && rest.len() <= 64
+            && rest
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    })
 }

@@ -426,3 +426,72 @@ async fn json_goes_out_compressed_and_the_event_stream_as_it_is() -> Result<(), 
     let _ = std::fs::remove_dir_all(dir);
     Ok(())
 }
+
+#[tokio::test]
+async fn enqueue_hands_the_songs_to_the_device_named_and_only_enqueue_carries_songs() -> Result<(), BoxError> {
+    let (hub, dir) = test_hub().await?;
+    let (_, cookie, _) = call(
+        &hub,
+        send(
+            "POST",
+            "/api/setup/claim",
+            Auth::None,
+            json!({ "code": SETUP_CODE, "name": "Laptop" }),
+        )?,
+    )
+    .await?;
+    let laptop = cookie_token(cookie);
+    let (_, _, issued) = call(&hub, send("POST", "/api/pair/codes", Auth::Cookie(&laptop), json!({}))?).await?;
+    let pair = json!({ "code": issued["code"], "name": "Phone", "kind": "app" });
+    let (_, _, phone) = call(&hub, send("POST", "/api/pair", Auth::None, pair)?).await?;
+    let phone_id = phone["device"]["id"].as_str().unwrap_or_default().to_owned();
+    let bus = hub.ctx().await.bus.clone();
+    let _online = hub.online.join(&phone_id, &bus);
+    let mut events = bus.subscribe();
+    let command = |body: Value| {
+        send(
+            "POST",
+            &format!("/api/devices/{phone_id}/command"),
+            Auth::Cookie(&laptop),
+            body,
+        )
+    };
+
+    // The laptop opened a share page's Add to queue while the phone plays: the phone hears it, songs and all.
+    let tracks = json!(["t-0123456789abcdef", "t-fedcba9876543210"]);
+    let sent = call(&hub, command(json!({ "action": "enqueue", "tracks": tracks }))?).await?;
+    assert_eq!(sent.0, StatusCode::NO_CONTENT);
+    let heard = loop {
+        let e = events.recv().await?;
+        if e.topic == "device.command" {
+            break e.data;
+        }
+    };
+    assert_eq!(
+        (&heard["deviceId"], &heard["action"]),
+        (&json!(phone_id), &json!("enqueue"))
+    );
+    assert_eq!(heard["tracks"], tracks);
+
+    // Anything else is refused in words, and nothing is sent.
+    for body in [
+        json!({ "action": "enqueue" }),
+        json!({ "action": "enqueue", "tracks": [] }),
+        json!({ "action": "enqueue", "tracks": ["al-0123456789abcdef"] }),
+        json!({ "action": "enqueue", "tracks": ["t-<script>"] }),
+        json!({ "action": "play", "tracks": ["t-0123456789abcdef"] }),
+    ] {
+        assert_eq!(
+            call(&hub, command(body.clone())?).await?.0,
+            StatusCode::BAD_REQUEST,
+            "{body}"
+        );
+    }
+    let too_many: Vec<String> = (0..501).map(|i| format!("t-{i:016x}")).collect();
+    let refused = call(&hub, command(json!({ "action": "enqueue", "tracks": too_many }))?).await?;
+    assert_eq!(refused.0, StatusCode::BAD_REQUEST);
+    assert!(events.try_recv().is_err(), "nothing refused was sent");
+
+    let _ = std::fs::remove_dir_all(dir);
+    Ok(())
+}

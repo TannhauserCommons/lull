@@ -3,7 +3,8 @@
      by `device.online` and `device.state` events. Settings > Devices (hub.js) reads it too.
    - This device reports its state to POST /api/devices/me/state when it changes: at once on a new song, play or
      pause, otherwise at most once a second; an unchanged state is sent again only as the slow heartbeat.
-   - `device.command` events for this device drive the engine; `takeover` reports at once and pauses.
+   - `device.command` events for this device drive the engine; `takeover` reports at once and pauses; `enqueue` adds
+     songs to next up without interrupting (a share page's Add to queue, opened on another of the listener's devices).
    - The picker (App.connect.open(anchor)): the devices, a remote's controls, and "Play here" (takeover). */
 (function () {
   'use strict';
@@ -86,6 +87,12 @@
         send(true); P.pause();
         App.toast(name + ' took over the music', { icon: 'connect' });
         break;
+      case 'enqueue':
+        learnTracks(e.tracks || []).then(function () {
+          var known = (e.tracks || []).filter(function (id) { return M.track(id); });
+          if (known.length) P.addToQueue(known, { paused: true });
+        });
+        break;
     }
   });
 
@@ -107,6 +114,15 @@
       .catch(function (err) { App.toast('Couldn\'t reach ' + d.name + ': ' + err.message, { kind: 'error' }); throw err; });
   }
   C.command = command;
+  /* the listener's device playing now, other than this one (the newest report that says it plays), or null */
+  C.playingElsewhere = function () {
+    return C.others().filter(function (d) { return d.state && d.state.playing; })
+      .sort(function (a, b) { return b.state.recv - a.state.recv; })[0] || null;
+  };
+  /* songs into another device's next up (the hub takes up to 500 at once); the caller words what happened */
+  C.enqueue = function (d, ids) {
+    return M.api(DEVICES + '/' + encodeURIComponent(d.id) + '/command', { method: 'POST', body: { action: 'enqueue', tracks: ids.slice(0, 500) } });
+  };
   /* the ids a remote state names that this device hasn't seen: read them so the queue can play here */
   function learnTracks(ids) {
     var unknown = ids.filter(function (id, i) { return !M.track(id) && ids.indexOf(id) === i; });

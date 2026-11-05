@@ -134,6 +134,7 @@ A song's cover is its album's. Covers are keyed by the album (its best id, else 
 
 - **For a song or an album the page offers Add to queue beside Open,** through the same paths: the app's intent URL or `lull://open`, or the listener's lull in the browser, each with `do=queue` beside the link. The shared link itself never carries it.
 - **lull adds it to next up without playing or leaving the screen it showed;** with nothing loaded, the first song waits paused. Started by the link (the app wasn't running), it opens on Home with the song queued.
+- **It joins the queue of whichever of the listener's devices is playing:** the queue lives in each device's player, so when the device the link opened on isn't playing and another is, lull sends it there (lull Connect's `enqueue` command), with a toast naming that device.
 - **The page no longer acts on its own for a song or an album:** a remembered lull isn't opened after a moment, and a computer isn't asked "Open lull?" on load, since either would take the choice away. An artist, with nothing to queue, opens as before.
 
 ### One page script, two hosts

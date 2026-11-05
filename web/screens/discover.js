@@ -947,8 +947,9 @@
          (#/outside). A pasted link in search lands here, as do the apps' lull:// links. A song opens on its album and
          plays when a click or key brought it here; otherwise a toast offers it.
          `do=queue` (a share page's Add to queue, through the apps or the browser): a song or an album joins next up
-         without playing or interrupting anything (with nothing loaded, the first waits paused), and lull goes back to
-         the screen it showed, or Home when it opened on this link.
+         without playing or interrupting anything: of the listener's device playing now when this one isn't (Connect's
+         enqueue), else here (with nothing loaded, the first waits paused). lull goes back to the screen it showed, or
+         Home when it opened on this link.
      ===================================================================== */
   var PLAYLIST_LINK = /[?&]list=|\/playlist\/|\/sets\/|open\.spotify\.com\/album\//;
   function isLink(q) { return /^https?:\/\/\S+$/i.test(q) || /^(song|album)\.link\/\S+$/i.test(q); }
@@ -975,8 +976,13 @@
     var ids = r.kind === 'album' ? App.albumTracks(r.id) : Promise.resolve([r.id]);
     return ids.then(function (list) {
       leaveOpen();
-      if (list.length) P.addToQueue(list, { paused: true });
-      else App.toast('That album has no songs to add yet', { icon: 'info' });
+      if (!list.length) return App.toast('That album has no songs to add yet', { icon: 'info' });
+      var there = !P.state.playing && App.connect.playingElsewhere();
+      if (!there) return P.addToQueue(list, { paused: true });
+      App.connect.enqueue(there, list).then(function () {
+        var what = list.length > 1 ? list.length + ' songs' : M.track(list[0]).title;
+        App.toast('Added to ' + there.name + '\'s queue: ' + what, { icon: 'connect' });
+      }, function () { P.addToQueue(list, { paused: true }); });
     });
   }
   /* back from #/open to the screen lull showed before, or Home when lull opened on the link (a tab the share page

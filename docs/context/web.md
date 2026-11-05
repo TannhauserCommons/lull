@@ -304,7 +304,8 @@ Settings > Devices renders from it.
   often `server` fires while the device list loads. A 404 (a hub without Connect) stops it until the next resync or
   hub restart.
 - **Commands**: `device.command` for this device runs `play pause next prev seek volume`; `takeover` reports
-  at once, pauses and says who took over.
+  at once, pauses and says who took over; `enqueue` reads the songs it hasn't seen and adds them to next up without
+  interrupting. `C.playingElsewhere()` and `C.enqueue(d, ids)` send one (a share page's Add to queue, discover.js).
 - **Picker** (`data-act="connect"`: the player bar, Now's action row): a popover, a sheet on phones. Picking a
   device opens its controls (play/pause, skip, seek, volume; positions move by the time since its report).
   **Play here** sends `takeover`, waits up to 3 s for the fresh `device.state`, reads tracks this device hasn't
@@ -706,7 +707,8 @@ One "Copy link" per item, and it works for anyone:
   preview (`#/outside/`). A song opens on its album and plays when a click or key brought it there (sticky user
   activation), else a toast offers Play. Without lull, the link is just the public page.
 - **Add to queue** (`#/open?link=…&do=queue`: a share page's Add to queue, through the apps' hand-off or the browser):
-  a song, or an album's songs (`App.albumTracks`), join next up (`P.addToQueue` with `paused`: with nothing loaded the
+  a song, or an album's songs (`App.albumTracks`), join next up: of the listener's device playing now when this one
+  isn't (Connect's `enqueue`, a toast naming it), else here (`P.addToQueue` with `paused`: with nothing loaded the
   first waits paused, never playing on its own), then lull goes back to the screen it showed, or Home when the page
   loaded on that route (`App.current.first`). An artist link just opens. `gates/open.spec.mjs`.
 
