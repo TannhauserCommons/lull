@@ -1,12 +1,19 @@
-/* skydeck: a pocket handheld under a dusk sky (moodboard img 01 + 02).
-   The base CSS already is skydeck; this layer adds
-   - the sky: day = lavender to blush with cloud puffs and a pearl sun, night = mottled paper navy with a moon,
-   - console chrome: the player bar is the handheld turned sideways (cart slot, keys, LCD strip, dock), LED tray,
-     periwinkle head bands on panels and sheets, LCD read-outs (stats, toasts, facts, status),
-   - cartridges: Now Playing has one seated in the device, library heroes are cartridges, empty states ask for one,
-   - the backlight: night LCDs glow, day LCDs are reflective (pixel grid).
-   Ornaments live next to this file as readable SVG (sky-day.svg, sky-night.svg, sparkle-*.svg).
-   Fonts: base only (Nunito + Jersey 10). Every rule is scoped to :root[data-design="skydeck"]. */
+/* skydeck: the star wheel. The pocket handheld under a dusk sky is a planisphere, the round star finder you hold up to
+   the evening sky, printed in deep indigo ink on cream card:
+   - the sky: dusk by day (lavender down to a rose and apricot horizon, a pearl sun in cloud), moonlit navy by night,
+     star dust that twinkles;
+   - the holders: rail, side panel, Now column, player and every card are cream card with a printed double rule, and
+     the rail and panel are pinned in a corner; the menu is printed like the hours on the wheel's rim (I, II, III...);
+   - round windows: every cover is seen through one, ringed in ink; section titles are spaced capitals led by a star;
+   - the player is the holder card: the cover in a round window ringed by the printed scale (it turns as the song goes),
+     play an inked wheel, the seek a printed ruler with a pink star riding it;
+   - Now Playing is the wheel itself (slots/nowHero.*): the song's waveform printed round the dial, lit as it plays, a
+     needle with a star on its tip pointing at now, and the stars turning under it as the song goes on. Empty states
+     show a small wheel with nothing charted yet (slots/emptyArt); the desktop mini player is a pocket wheel
+     (slots/miniPlayer.device).
+   Ornaments live next to this file as readable SVG (b-rim, b-disc, b-star, sky-day, sky-night, sparkle-*).
+   Fonts: base only (Nunito; machine facts are printed small capitals, not pixels). Every rule is scoped to
+   :root[data-design="skydeck"]. */
 
 /* The whole file is the `design` cascade layer (ADR-0004); a listener's theme in `user` wins over it. */
 @layer design {
@@ -17,54 +24,40 @@
    ===================================================================== */
 :root[data-design="skydeck"] {
   --ctx: 344px; --bar-h: 100px;
-  --sky: #e4def9; --sky-deep: #d6cdf3;
-  --panel: #fbf9ff; --panel-2: #eee9fd;
-  --fg-sky: #2b2550; --fg-sky-2: #5b5478;
-  --fg-panel: #2b2550; --fg-panel-2: #5b5478;
-  --stack-2: #8fa3e0;
-  --tray: #c3c2e2; --tray-edge: #8f8bb0;
+  /* the card: cream, printed in indigo ink (the same card by day and night; only the sky changes) */
+  --ink: #2b2550; --ink-2: #5b4f6e; --line: #3a3460; --link-on-cream: #445796;
+  --cream: #f4e8d6; --cream-2: #eadbc6; --cream-3: #dfcbb0;
+  --panel: #f4e8d6; --panel-2: #eadbc6; --fg-panel: #2b2550; --fg-panel-2: #5b4f6e;
+  --stack-1: var(--peri); --stack-2: #7d93d6;
   --scrim: #2b2550; --scrim-alpha: .45;
-  /* skydeck-only */
-  --sd-band: #b6c7f5; --sd-band-ink: #2b2550; --sd-band-ink-2: #3d3491;
-  --sd-panel-edge: #8f8bb0;
-  --sd-shelf: #d6cdf3; --sd-shelf-edge: #a9a3cf;
-  --sd-glow: #fff9fe; --sd-glow-2: #f9dcefb3;
-  --sd-console: linear-gradient(180deg, #c6d3f8 0%, var(--peri) 30%, #adbff2 100%);
-  --sd-console-lo: #9db0ea;
-  --sd-bar-stack: 0 6px 0 -2px var(--lav), 0 6px 0 0 var(--line);
-  --sd-lcd-tex: repeating-linear-gradient(90deg, #fff9fe0a 0 1px, transparent 1px 3px),
-    repeating-linear-gradient(0deg, #fff9fe0a 0 1px, transparent 1px 3px);
-  --sd-lcd-glow: inset 0 0 0 transparent;
-  --sd-key-rim: 0 0 0 transparent;
+  /* the sky (page) by day */
+  --sky: #e4def9; --sky-deep: #d6cdf3; --fg-sky: #2b2550; --fg-sky-2: #5b5478;
+  --tray: #c3c2e2; --tray-edge: #8f8bb0;
+  /* skydeck-only: the ink and the printed parts */
+  --sd-ink: #2b2550; --sd-soft: #2b255066; --sd-faint: #2b25502e;
+  --sd-pink: #9c3f7e; --sd-pink-lt: #f6cee4;
+  --sd-rim: url("assets/b-rim.svg"); --sd-disc: url("assets/b-disc.svg"); --sd-star: url("assets/b-star.svg");
+  --sd-rule: inset 0 0 0 5px var(--bg), inset 0 0 0 6px var(--sd-soft);      /* the printed double rule inside a card */
+  --sd-lift: 0 5px 0 -2px var(--stack-1), 0 5px 0 0 var(--sd-ink);         /* a card lifted off the one under it */
+  --sd-caps: 900 .6875rem/1.1 var(--f-ui);                                    /* spaced capitals: labels, captions */
+  --sd-moon-room: 250px;                                                      /* room a heading leaves the sun or moon */
+  /* machine facts are printed small capitals, not pixels */
+  --t-px: 900 .75rem/1.1 var(--f-ui); --t-px-track: .1em;
+  /* dusk: lavender overhead, rose and apricot at the horizon */
   --sd-sky-bg:
-    radial-gradient(38% 22% at 8% 100%, #ffffffcc 0%, #ffffff00 70%),
-    radial-gradient(30% 18% at 30% 104%, #ffffffb3 0%, #ffffff00 70%),
-    radial-gradient(34% 20% at 74% 102%, #ffffffbf 0%, #ffffff00 70%),
-    radial-gradient(26% 16% at 96% 96%, #ffffffa6 0%, #ffffff00 70%),
+    radial-gradient(38% 20% at 8% 100%, #ffffffb3 0%, #ffffff00 70%),
+    radial-gradient(34% 18% at 74% 102%, #ffffffa6 0%, #ffffff00 70%),
     radial-gradient(34% 26% at 80% 6%, #fff9fea6 0%, #fff9fe00 70%),
-    linear-gradient(180deg, #e4def9 0%, #e6dff9 52%, #eee0f5 74%, #f6e1ee 100%);
+    linear-gradient(180deg, #dcd5f7 0%, #e3daf7 38%, #efd9ec 66%, #f7dcd7 86%, #f9dfcb 100%);
   --sd-moon: url("assets/sky-day.svg");
   --sd-spark: url("assets/sparkle-pink.svg");
-  --sd-spark-c: url("assets/sparkle-cream.svg");
 }
 :root[data-design="skydeck"][data-theme="night"] {
-  --sky: #414759; --sky-deep: #2a2f40;
-  --panel: #2a2f40; --panel-2: #353b50;
-  --fg-sky: #f2e3d1; --fg-sky-2: #c3c2e2;
-  --fg-panel: #f2e3d1; --fg-panel-2: #c3c2e2;
-  --stack-2: #5a75b5;
+  --stack-1: #8d9bd6; --stack-2: #4d5f9e;
+  --sky: #414759; --sky-deep: #2a2f40; --fg-sky: #f2e3d1; --fg-sky-2: #c3c2e2;
   --tray: #262c3e; --tray-edge: #a9adc4;
   --scrim: #161a28; --scrim-alpha: .55;
-  --sd-band: #526dad; --sd-band-ink: #fff9fe; --sd-band-ink-2: #e4def9;
-  --sd-panel-edge: #a9adc4;
-  --sd-shelf: #262c3e; --sd-shelf-edge: #6f7493;
-  --sd-glow: #c3c2e24d; --sd-glow-2: #c3c2e21f;
-  --sd-console: linear-gradient(180deg, #b6c7f5 0%, #a6b8ee 14%, #9fb2ea 100%);
-  --sd-console-lo: #8b9fdc;
-  --sd-bar-stack: 0 6px 0 -2px var(--lav), 0 6px 0 0 var(--line), 0 12px 0 -2px var(--peri-deep), 0 12px 0 0 var(--line);
-  --sd-lcd-tex: linear-gradient(transparent, transparent);
-  --sd-lcd-glow: inset 0 0 22px #f6cee41f;
-  --sd-key-rim: 0 0 0 1px #e4def966;
+  /* moonlit navy, mottled like printed paper */
   --sd-sky-bg:
     radial-gradient(70% 30% at 50% 104%, #6d6491b3 0%, #6d649100 75%),
     radial-gradient(30% 22% at 14% 22%, #535a70a6 0%, #535a7000 70%),
@@ -77,49 +70,25 @@
   --sd-moon: url("assets/sky-night.svg");
   --sd-spark: url("assets/sparkle-star.svg");
 }
-/* Contrast pairs the script cannot derive (gradients, local tokens):
-   sky stops (text sits on the sky):
-   check: #5b5478 on #f6e1ee 4.5
-   check: #2b2550 on #f6e1ee 4.5
-   check: #c3c2e2 on #20263a 4.5
-   check: #c3c2e2 on #4a4a63 4.5
-   console body (player bar, mini, device), day #adbff2 is the darkest stop, night #9fb2ea:
-   check: --ink on --peri 4.5
-   check: #433a6b on #adbff2 4.5
-   check: #433a6b on #9fb2ea 4.5
-   check: --ink on #9fb2ea 4.5
-   check: --indigo on #9fb2ea 3
-   check: #8f3573 on #9fb2ea 3
-   check: #4f5370 on #9fb2ea 3
-   dock track (lavender, both themes):
-   check: --ink on --lav 4.5
-   check: #433a6b on --lav 4.5
-   check: --indigo on --lav 3
-   check: --pink-ink on --lav 3
-   LCDs (mocha screen) and their keys:
-   check: --lilac on --screen 4.5
-   check: #f9dcec on --screen 4.5
-   check: --star on --mocha-edge 4.5
-   check: --lilac on --mocha-edge 4.5
-   check: --peri on --screen 3
-   check: #b9e6c9 on --screen 3
-   check: --pink-light on --screen 3
-   head bands:
-   check: --sd-band-ink on --sd-band 4.5
-   check: --sd-band-ink-2 on --sd-band 3
-   tray: warn pill, down pill, LED rings:
-   check: --ink on --pink-soft 4.5
-   check: #f9dcec on --screen 4.5
-   check: #3b3345 on --peri 3
-   library shelf (tabs):
-   check: --fg-sky on --sd-shelf 4.5
-   cartridge label + bezel wordmark (debossed ink):
-   check: --ink on --cream 4.5
-   check: #2b2550 on --mauve 3
-   check: --indigo on --mauve 3 */
+@media (max-width: 1099px) { :root[data-design="skydeck"] { --sd-moon-room: 130px; } }
+@media (max-width: 639px) { :root[data-design="skydeck"] { --sd-moon-room: 0px; } }
+/* every surface that is card: its own colours, so text on it pairs with it (the sky's are the page's) */
+:root[data-design="skydeck"] :is(.card, .rail, .ctx, .nowcol, .pbar, .mini, .tabbar, .sheet, .dialog, .menu, .popover, .toast, .sd-wheel, .sd-mini, .dk-strip, .dk-card) {
+  --bg: var(--cream); --bg-2: var(--cream-2); --fg: var(--sd-ink); --fg-2: var(--ink-2);
+  --edge: var(--sd-ink); --link: var(--link-on-cream); --accent-ui: var(--sd-ink); --focus: var(--sd-pink); --heart: var(--sd-pink);
+  --divider: var(--sd-faint); --seek-played: var(--sd-pink); --seek-buffered: #cdbfe8; --seek-line: var(--sd-ink);
+  --q-ll: var(--sd-ink); --q-ly: var(--ink-2);
+}
+/* Contrast (text 4.5, parts 3), in both themes: the card is the same cream by day and night.
+   check: #2b2550 on #f4e8d6 4.5 · #5b4f6e on #eadbc6 4.5 · #9c3f7e on #f4e8d6 4.5 · #445796 on #f4e8d6 4.5
+   check: #f4e8d6 on #2b2550 4.5 · #f6cee4 on #2b2550 4.5 (the inked current place and its numeral)
+   sky stops (the page's own text sits on the sky):
+   check: #5b5478 on #f9dfcb 4.5 · #2b2550 on #f9dfcb 4.5 · #c3c2e2 on #20263a 4.5 · #c3c2e2 on #4a4a63 4.5
+   tray: warn pill, down pill:
+   check: --ink on --pink-soft 4.5 · #f4e8d6 on #2b2550 4.5 */
 
 /* =====================================================================
-   2. The sky: gradient + mottling, star dust, sparkles, moon or sun
+   2. The sky: dusk or moonlit navy, star dust that twinkles, the sun or moon with a constellation
    ===================================================================== */
 :root[data-design="skydeck"], :root[data-design="skydeck"] body { background: var(--sky); }
 :root[data-design="skydeck"] body { background: var(--sd-sky-bg) fixed; }
@@ -129,9 +98,8 @@
 :root[data-design="skydeck"] {
   --loop-ease-in-out-70: linear(0 0%, 0 1.42857%, 0.0004 1.42857%, 0.0004 2.85714%, 0.0016 2.85714%, 0.0016 4.28571%, 0.0036 4.28571%, 0.0036 5.71429%, 0.0065 5.71429%, 0.0065 7.14286%, 0.0102 7.14286%, 0.0102 8.57143%, 0.0148 8.57143%, 0.0148 10%, 0.0203 10%, 0.0203 11.42857%, 0.0267 11.42857%, 0.0267 12.85714%, 0.0339 12.85714%, 0.0339 14.28571%, 0.0421 14.28571%, 0.0421 15.71429%, 0.0512 15.71429%, 0.0512 17.14286%, 0.0613 17.14286%, 0.0613 18.57143%, 0.0722 18.57143%, 0.0722 20%, 0.0841 20%, 0.0841 21.42857%, 0.0969 21.42857%, 0.0969 22.85714%, 0.1107 22.85714%, 0.1107 24.28571%, 0.1254 24.28571%, 0.1254 25.71429%, 0.1409 25.71429%, 0.1409 27.14286%, 0.1574 27.14286%, 0.1574 28.57143%, 0.1747 28.57143%, 0.1747 30%, 0.1929 30%, 0.1929 31.42857%, 0.212 31.42857%, 0.212 32.85714%, 0.2318 32.85714%, 0.2318 34.28571%, 0.2523 34.28571%, 0.2523 35.71429%, 0.2736 35.71429%, 0.2736 37.14286%, 0.2955 37.14286%, 0.2955 38.57143%, 0.3181 38.57143%, 0.3181 40%, 0.3412 40%, 0.3412 41.42857%, 0.3648 41.42857%, 0.3648 42.85714%, 0.3888 42.85714%, 0.3888 44.28571%, 0.4131 44.28571%, 0.4131 45.71429%, 0.4377 45.71429%, 0.4377 47.14286%, 0.4626 47.14286%, 0.4626 48.57143%, 0.4875 48.57143%, 0.4875 50%, 0.5125 50%, 0.5125 51.42857%, 0.5374 51.42857%, 0.5374 52.85714%, 0.5623 52.85714%, 0.5623 54.28571%, 0.5869 54.28571%, 0.5869 55.71429%, 0.6112 55.71429%, 0.6112 57.14286%, 0.6352 57.14286%, 0.6352 58.57143%, 0.6588 58.57143%, 0.6588 60%, 0.6819 60%, 0.6819 61.42857%, 0.7045 61.42857%, 0.7045 62.85714%, 0.7264 62.85714%, 0.7264 64.28571%, 0.7477 64.28571%, 0.7477 65.71429%, 0.7682 65.71429%, 0.7682 67.14286%, 0.788 67.14286%, 0.788 68.57143%, 0.8071 68.57143%, 0.8071 70%, 0.8253 70%, 0.8253 71.42857%, 0.8426 71.42857%, 0.8426 72.85714%, 0.8591 72.85714%, 0.8591 74.28571%, 0.8746 74.28571%, 0.8746 75.71429%, 0.8893 75.71429%, 0.8893 77.14286%, 0.9031 77.14286%, 0.9031 78.57143%, 0.9159 78.57143%, 0.9159 80%, 0.9278 80%, 0.9278 81.42857%, 0.9387 81.42857%, 0.9387 82.85714%, 0.9488 82.85714%, 0.9488 84.28571%, 0.9579 84.28571%, 0.9579 85.71429%, 0.9661 85.71429%, 0.9661 87.14286%, 0.9733 87.14286%, 0.9733 88.57143%, 0.9797 88.57143%, 0.9797 90%, 0.9852 90%, 0.9852 91.42857%, 0.9898 91.42857%, 0.9898 92.85714%, 0.9935 92.85714%, 0.9935 94.28571%, 0.9964 94.28571%, 0.9964 95.71429%, 0.9984 95.71429%, 0.9984 97.14286%, 0.9996 97.14286%, 0.9996 98.57143%, 1 98.57143%, 1 100%);
   --loop-ease-in-out-40: linear(0 0%, 0 2.5%, 0.0013 2.5%, 0.0013 5%, 0.0051 5%, 0.0051 7.5%, 0.0116 7.5%, 0.0116 10%, 0.0208 10%, 0.0208 12.5%, 0.0328 12.5%, 0.0328 15%, 0.0476 15%, 0.0476 17.5%, 0.0654 17.5%, 0.0654 20%, 0.086 20%, 0.086 22.5%, 0.1096 22.5%, 0.1096 25%, 0.136 25%, 0.136 27.5%, 0.1653 27.5%, 0.1653 30%, 0.1973 30%, 0.1973 32.5%, 0.2318 32.5%, 0.2318 35%, 0.2686 35%, 0.2686 37.5%, 0.3076 37.5%, 0.3076 40%, 0.3484 40%, 0.3484 42.5%, 0.3906 42.5%, 0.3906 45%, 0.4339 45%, 0.4339 47.5%, 0.4779 47.5%, 0.4779 50%, 0.5221 50%, 0.5221 52.5%, 0.5661 52.5%, 0.5661 55%, 0.6094 55%, 0.6094 57.5%, 0.6516 57.5%, 0.6516 60%, 0.6924 60%, 0.6924 62.5%, 0.7314 62.5%, 0.7314 65%, 0.7682 65%, 0.7682 67.5%, 0.8027 67.5%, 0.8027 70%, 0.8347 70%, 0.8347 72.5%, 0.864 72.5%, 0.864 75%, 0.8904 75%, 0.8904 77.5%, 0.914 77.5%, 0.914 80%, 0.9346 80%, 0.9346 82.5%, 0.9524 82.5%, 0.9524 85%, 0.9672 85%, 0.9672 87.5%, 0.9792 87.5%, 0.9792 90%, 0.9884 90%, 0.9884 92.5%, 0.9949 92.5%, 0.9949 95%, 0.9987 95%, 0.9987 97.5%, 1 97.5%, 1 100%);
-  --loop-ease-in-out-36: linear(0 0%, 0 2.77778%, 0.0016 2.77778%, 0.0016 5.55556%, 0.0063 5.55556%, 0.0063 8.33333%, 0.0144 8.33333%, 0.0144 11.11111%, 0.0259 11.11111%, 0.0259 13.88889%, 0.0409 13.88889%, 0.0409 16.66667%, 0.0595 16.66667%, 0.0595 19.44444%, 0.0817 19.44444%, 0.0817 22.22222%, 0.1075 22.22222%, 0.1075 25%, 0.1368 25%, 0.1368 27.77778%, 0.1697 27.77778%, 0.1697 30.55556%, 0.2059 30.55556%, 0.2059 33.33333%, 0.2452 33.33333%, 0.2452 36.11111%, 0.2873 36.11111%, 0.2873 38.88889%, 0.3319 38.88889%, 0.3319 41.66667%, 0.3784 41.66667%, 0.3784 44.44444%, 0.4265 44.44444%, 0.4265 47.22222%, 0.4754 47.22222%, 0.4754 50%, 0.5246 50%, 0.5246 52.77778%, 0.5735 52.77778%, 0.5735 55.55556%, 0.6216 55.55556%, 0.6216 58.33333%, 0.6681 58.33333%, 0.6681 61.11111%, 0.7127 61.11111%, 0.7127 63.88889%, 0.7548 63.88889%, 0.7548 66.66667%, 0.7941 66.66667%, 0.7941 69.44444%, 0.8303 69.44444%, 0.8303 72.22222%, 0.8632 72.22222%, 0.8632 75%, 0.8925 75%, 0.8925 77.77778%, 0.9183 77.77778%, 0.9183 80.55556%, 0.9405 80.55556%, 0.9405 83.33333%, 0.9591 83.33333%, 0.9591 86.11111%, 0.9741 86.11111%, 0.9741 88.88889%, 0.9856 88.88889%, 0.9856 91.66667%, 0.9937 91.66667%, 0.9937 94.44444%, 0.9984 94.44444%, 0.9984 97.22222%, 1 97.22222%, 1 100%);
 }
-/* three placed sparkles + star dust, denser in the top 240 px */
+/* three placed sparkles + star dust, denser in the top 240 px; the whole sky twinkles, 10 changes a second */
 :root[data-design="skydeck"] .sky-specks::after {
   content: ""; position: absolute; inset: 0; pointer-events: none;
   background-image:
@@ -148,116 +116,132 @@
   background-repeat: no-repeat, no-repeat, no-repeat, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat, repeat, repeat, repeat;
   background-size: 20px 20px, 14px 14px, 26px 26px, 61px 240px, 83px 240px, 109px 240px, 137px 240px, 163px 240px, 170px 150px, 260px 230px, 210px 190px, 290px 270px;
   background-position: 8px calc(100% - 132px), calc(100% - 4px) 56%, calc(100% - 30px) 92px, 0 0, 17px 0, 40px 0, 5px 0, 90px 0, 0 0, 0 0, 0 0, 0 0;
-  opacity: .75; animation: sd-twinkle 7s var(--loop-ease-in-out-70) infinite alternate; animation-play-state: var(--loop-play, running);   /* the whole sky: 10 changes a second, not one a frame */
+  opacity: .75; animation: sd-twinkle 7s var(--loop-ease-in-out-70) infinite alternate; animation-play-state: var(--loop-play, running);
 }
 :root[data-design="skydeck"][data-theme="night"] .sky-specks::after { opacity: .9; }
+@keyframes sd-twinkle { from { opacity: .6; } to { opacity: 1; } }
+/* loops rest in hidden tabs */
 :root.is-hidden[data-design="skydeck"] .sky-specks::after,
 :root.is-hidden[data-design="skydeck"] .tray .sg--down,
-:root.is-hidden[data-design="skydeck"] .tray__pill:has(.sg--down)::before,
-:root.is-hidden[data-design="skydeck"] .sd-empty__cursor,
-:root.is-hidden[data-design="skydeck"] .sd-empty:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i]) .sd-empty__lcd::before { animation-play-state: paused; }   /* loops rest in hidden tabs */
-@keyframes sd-twinkle { from { opacity: .6; } to { opacity: 1; } }
+:root.is-hidden[data-design="skydeck"] .tray__pill:has(.sg--down)::before { animation-play-state: paused; }
 
-/* moon (night) or pearl sun + clouds (day) with a constellation, in the empty top-right of the page;
-   hidden where a hero card owns that space */
+/* the pearl sun in cloud (day) or the moon (night) with a constellation, in the empty top right of the page; hidden
+   where a hero card owns that space. Headings beside it leave it room (--sd-moon-room) */
 :root[data-design="skydeck"] .main::before {
   content: ""; position: absolute; z-index: 0; top: -12px; right: 14px; width: 310px; height: 140px;
   background: var(--sd-moon) right top / contain no-repeat; pointer-events: none;
 }
 :root[data-design="skydeck"] .main:has(> :where(.view) > .now, > :where(.view) > :where(.view__inner) > :is(.lib-page, .lib-head))::before { display: none; }
 :root[data-design="skydeck"] .view { z-index: 1; }
-
-/* one big cream sparkle kisses the top-right corner of the page's first card (img 01) */
-:root[data-design="skydeck"] .view .card:first-of-type:not(.card .card, .now .card, .sys-tile, .lib-page)::after {
-  content: ""; position: absolute; z-index: 2; top: -15px; right: -13px; width: 30px; height: 30px; pointer-events: none;
-  background: var(--sd-spark-c) center / contain no-repeat; filter: drop-shadow(0 0 4px #fff9fe80);
-}
-:root[data-design="skydeck"][data-theme="day"] .view .card:first-of-type:not(.card .card, .now .card, .sys-tile, .lib-page)::after {
-  background-image: var(--sd-spark); filter: none;
-}
-
+:root[data-design="skydeck"] :is(.disc-hello, .sys-head) { padding-right: var(--sd-moon-room); }
 @media (max-width: 1099px) { :root[data-design="skydeck"] .main::before { width: 150px; height: 120px; background-size: 310px 140px; } }
 @media (max-width: 639px) { :root[data-design="skydeck"] .main::before { display: none; } }
-/* the scrolling view fades at its bottom edge instead of slicing a row under the player bar */
+/* the scrolling view dissolves into the sky at its bottom edge instead of slicing what runs on under the player bar;
+   the fade is as tall as the view's bottom padding, so at the end of the page nothing is faded */
 @media (min-width: 640px) {
   :root[data-design="skydeck"] .view {
-    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 26px), transparent);
-    mask-image: linear-gradient(to bottom, #000 calc(100% - 26px), transparent);
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent);
   }
 }
 
 /* =====================================================================
-   3. Panels: rail + context panel as img 02 widgets (periwinkle head band)
+   3. The holders: rail, side panel and Now column are cream card with a printed double rule, pinned in a corner;
+      the menu is printed like the hours on the wheel's rim
    ===================================================================== */
-:root[data-design="skydeck"] .rail,
-:root[data-design="skydeck"] .ctx { border-color: var(--sd-panel-edge); }
+:root[data-design="skydeck"] :is(.rail, .ctx, .nowcol, .pbar, .mini, .tabbar) { background: var(--panel); color: var(--sd-ink); border: 1.5px solid var(--sd-ink); }
+:root[data-design="skydeck"] :is(.rail, .ctx, .nowcol) { box-shadow: var(--sd-rule), var(--sd-lift); border-radius: 22px; }
 :root[data-design="skydeck"] .rail { position: relative; }
-:root[data-design="skydeck"] .rail__head,
-:root[data-design="skydeck"] .ctx__head {
-  background: var(--sd-band); border-bottom: var(--stroke) solid var(--line); margin-bottom: 8px; box-shadow: inset 0 1.5px 0 #ffffff55;
+/* the pin that holds the card: an ink ring in the top corner */
+:root[data-design="skydeck"] .rail::before,
+:root[data-design="skydeck"] .ctx::after {
+  content: ""; position: absolute; z-index: 3; top: 12px; right: 13px; width: 13px; height: 13px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, var(--pin, var(--panel)) 0 2.5px, var(--sd-ink) 3px 4px, #d8c3a6 4.5px 5px, var(--sd-ink) 5.5px 6.5px, transparent 7px);
 }
-:root[data-design="skydeck"] .rail__head { padding: 14px 18px 12px 20px; }
-:root[data-design="skydeck"] .ctx__head { border-radius: calc(var(--r-panel) - 2px) calc(var(--r-panel) - 2px) 0 0; padding: 10px 10px 10px 12px; }
-:root[data-design="skydeck"] .ctx__head > .btn-icon { color: var(--sd-band-ink); }
-:root[data-design="skydeck"] .ctx__head > .btn-icon:hover { background: #ffffff33; }
-/* brand "lull" on the band: ink name, pink spark */
-:root[data-design="skydeck"] .rail__head .brand { --wm-1: var(--sd-band-ink); --wm-spark: var(--pink-ink); }
-:root[data-design="skydeck"][data-theme="night"] .rail__head .brand { --wm-spark: var(--pink-light); }
-:root[data-design="skydeck"] .nav-item[aria-current="page"] { box-shadow: 0 3px 0 -1px var(--peri-deep), 0 3px 0 0 var(--line); margin-bottom: 3px; }
-/* long lists fade out at the panel's bottom edge instead of being cut mid-row */
-:root[data-design="skydeck"] .rail__scroll,
-:root[data-design="skydeck"] .ctx__body {
+/* while sound plays the pins' heads are lit pink, and rest again with it (:root[data-playing], written at play and pause) */
+:root[data-design="skydeck"][data-playing="true"] :is(.rail, .ctx) { --pin: #e58bbf; }
+:root[data-design="skydeck"] :is(.rail__head, .ctx__head) { background: none; box-shadow: none; border-bottom: 1.5px dotted var(--sd-soft); margin: 0 12px 6px; }
+:root[data-design="skydeck"] .rail__head { padding: 18px 8px 12px; flex-direction: column; align-items: flex-start; gap: 4px; }
+:root[data-design="skydeck"] .rail__head .brand { --wm-1: var(--sd-ink); --wm-spark: var(--sd-pink); }
+/* the card's printed name under the wordmark */
+:root[data-design="skydeck"] .rail__head::after {
+  content: "star wheel \00b7  no. 7"; white-space: pre; padding-left: 20px; min-height: 16px; display: flex; align-items: center;
+  font: var(--sd-caps); letter-spacing: .2em; text-transform: uppercase; color: var(--ink-2);
+  background: var(--sd-rim) 0 50% / 15px 15px no-repeat;
+}
+:root[data-design="skydeck"] .ctx__head { padding: 10px 6px; border-radius: 0; }
+:root[data-design="skydeck"] .ctx__head > .btn-icon { color: var(--sd-ink); }
+:root[data-design="skydeck"] .ctx__head > .btn-icon:hover { background: var(--panel-2); }
+/* long lists fade out at the card's bottom edge instead of being cut mid-row */
+:root[data-design="skydeck"] :is(.rail__scroll, .ctx__body) {
   -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
   mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
 }
-/* tablet icon rail: a tiny console sits in the empty foot (img 02 left widget) */
-@media (min-width: 640px) and (max-width: 1099px) {
-  :root[data-design="skydeck"] .rail::after {
-    content: ""; position: absolute; left: 50%; bottom: 18px; width: 44px; height: 64px; transform: translateX(-50%); pointer-events: none;
-    border: var(--stroke) solid var(--line); border-radius: 8px 8px 16px 8px;
-    background:
-      radial-gradient(circle at 9px 54px, var(--mocha) 0 4px, transparent 4.5px),
-      radial-gradient(circle at 31px 52px, var(--pink) 0 4px, transparent 4.5px),
-      radial-gradient(circle at 6px 5px, var(--pink) 0 2px, transparent 2.5px),
-      linear-gradient(var(--screen), var(--screen)) 6px 10px / 28px 24px no-repeat,
-      linear-gradient(var(--mauve), var(--mauve)) 3px 7px / 34px 30px no-repeat,
-      var(--sd-console);
-    box-shadow: 0 4px 0 -2px var(--lav), 0 4px 0 0 var(--line);
-  }
+/* the menu: each place a numeral on the rim; the place you're at is inked in, with the pointer star */
+:root[data-design="skydeck"] .rail__nav { counter-reset: sd-hour; gap: 0; padding: 4px 14px 8px 18px; }
+:root[data-design="skydeck"] .nav-item {
+  counter-increment: sd-hour; min-height: 42px; border: 0; border-radius: 12px; border-bottom: 1px dotted var(--sd-soft);
+  font: 800 .9375rem/1 var(--f-ui); letter-spacing: .02em; color: var(--sd-ink); box-shadow: none; margin: 0;
+}
+:root[data-design="skydeck"] .nav-item::after {
+  content: counter(sd-hour, upper-roman); margin-left: auto; font: 700 .75rem/1 Georgia, "Times New Roman", serif; letter-spacing: .08em; color: var(--ink-2);
+}
+:root[data-design="skydeck"] .nav-item:hover { background: var(--panel-2); }
+:root[data-design="skydeck"] .nav-item[aria-current="page"] { background: var(--sd-ink); color: var(--panel); border-bottom-color: transparent; }
+:root[data-design="skydeck"] .nav-item[aria-current="page"]::after { color: var(--sd-pink-lt); }
+:root[data-design="skydeck"] .nav-item[aria-current="page"]::before {
+  content: ""; position: absolute; left: -13px; top: 50%; width: 18px; height: 18px; margin-top: -9px; background: var(--sd-star) center / contain no-repeat;
+}
+:root[data-design="skydeck"] .rail :is(.label-rule--sm > h2, .label-rule--sm > h3) { font: var(--sd-caps); letter-spacing: .2em; text-transform: uppercase; color: var(--ink-2); }
+:root[data-design="skydeck"] :is(.rail__tags .chip, .rail .pill-filter) { background: var(--panel); border: 1px solid var(--sd-ink); color: var(--sd-ink); }
+:root[data-design="skydeck"] .rail__foot { color: var(--ink-2); }
+/* the icon rail (tablet): no numerals, no printed name */
+@media (max-width: 1099px) {
+  :root[data-design="skydeck"] :is(.nav-item, .rail__head)::after { display: none; }
+  :root[data-design="skydeck"] .rail__nav { padding: 4px 8px; }
+  :root[data-design="skydeck"] .nav-item[aria-current="page"]::before { left: -9px; width: 14px; height: 14px; margin-top: -7px; }
 }
 
 /* =====================================================================
-   4. Header: search pill + roomy LED status tray (img 02 top bar)
+   4. Header: the search slot and the service stamps stand on the sky
    ===================================================================== */
-:root[data-design="skydeck"] .header__search .input { box-shadow: inset 0 2px 0 var(--panel-2); }
-:root[data-design="skydeck"] .tray { padding: 4px; gap: 5px; box-shadow: inset 0 2px 0 #00000014; }
+:root[data-design="skydeck"] .header__search .input {
+  background: var(--panel); color: var(--sd-ink); border: 1.5px solid var(--sd-ink); box-shadow: var(--sd-lift);
+}
+:root[data-design="skydeck"] .header__search .input::placeholder { color: var(--ink-2); }
+:root[data-design="skydeck"] .header__search > .ic { color: var(--sd-ink); z-index: 1; }
+:root[data-design="skydeck"] .header__search .kbd { background: var(--panel-2); color: var(--sd-ink); border-color: var(--sd-ink); }
+:root[data-design="skydeck"] .header__tools > .btn-icon {
+  background: var(--panel); color: var(--sd-ink); border: 1.5px solid var(--sd-ink); box-shadow: var(--sd-lift); --focus: var(--sd-pink);
+}
+:root[data-design="skydeck"] .header__tools > .btn-icon:hover { background: var(--panel-2); }
+/* the status tray: one printed stamp a service, an LED in each. Severity reads by the stamp (ok = card, warn = pink,
+   down = inked) and by the LED's shape: ok round, warn a diamond, down slashed and pulsing */
+:root[data-design="skydeck"] .tray { background: none; box-shadow: none; border: 0; padding: 0 0 5px; gap: 6px; }
 :root[data-design="skydeck"] .tray__pill {
-  height: 32px; padding: 1px 15px 0 12px; gap: 0; font-size: 1.25rem; letter-spacing: .05em;
-  box-shadow: inset 0 1.5px 0 #e9f5ff, inset 0 -2px 0 #9fb2ea;
+  height: 32px; padding: 0 13px 0 10px; gap: 0; border-radius: 10px; background: var(--panel); color: var(--sd-ink); border: 1.5px solid var(--sd-ink);
+  font: 900 .6875rem/1 var(--f-ui); letter-spacing: .16em; text-transform: uppercase; box-shadow: var(--sd-lift);
 }
-:root[data-design="skydeck"] .tray:hover .tray__pill[data-state="ok"] { background: #c9d6fa; }
-/* severity reads by pill colour too: ok = periwinkle, warn = pink soft, down = a dark LCD pill */
-:root[data-design="skydeck"] .tray__pill[data-state="warn"] { background: var(--pink-soft); box-shadow: inset 0 1.5px 0 #fff, inset 0 -2px 0 #efc6dd; }
-:root[data-design="skydeck"] .tray__pill[data-state="down"] {
-  background: var(--screen); color: #f9dcec; box-shadow: inset 0 2px 0 #00000033, inset 0 0 0 1.5px var(--mocha-edge), var(--sd-lcd-glow);
-}
-/* status glyphs become LEDs: ok = round, warn = diamond, down = slashed and pulsing (shape, not only colour) */
+:root[data-design="skydeck"] .tray:hover .tray__pill[data-state="ok"] { background: var(--panel-2); }
+:root[data-design="skydeck"] .tray__pill[data-state="warn"] { background: var(--pink-soft); color: var(--sd-ink); }
+:root[data-design="skydeck"] :is(.tray__pill[data-state="down"], .tray--compact .tray__pill[data-worst="down"]) { background: var(--sd-ink); color: var(--panel); }
 :root[data-design="skydeck"] .tray .sg {
   --led: #7fd6a0; width: 9px; height: 9px; margin: -1px 9px 0 0; border-radius: 50%; color: transparent;
-  background: radial-gradient(circle at 35% 30%, #ffffffb3 0 18%, transparent 30%), var(--led);
-  box-shadow: 0 0 0 1.5px #3b3345, 0 0 5px 2px color-mix(in srgb, var(--led) 55%, transparent);
+  background: radial-gradient(circle at 35% 30%, #ffffffb3 0 18%, transparent 30%), var(--led); box-shadow: 0 0 0 1.5px var(--sd-ink);
 }
 :root[data-design="skydeck"] .tray .sg--warn { --led: #f2c46b; width: 8px; height: 8px; border-radius: 1.5px; transform: rotate(45deg); }
 :root[data-design="skydeck"] .tray .sg--down {
-  --led: #f08fb2; background: linear-gradient(135deg, var(--led) 0 40%, #3b3345 40% 60%, var(--led) 60%);
+  --led: #f08fb2; background: linear-gradient(135deg, var(--led) 0 40%, var(--sd-ink) 40% 60%, var(--led) 60%); box-shadow: 0 0 0 1.5px var(--panel);
   animation: sd-led-down-paint 2s var(--loop-ease-in-out-40) infinite alternate; animation-play-state: var(--loop-play, running);
 }
-@keyframes sd-led-down-paint { from { box-shadow: 0 0 0 1.5px #3b3345, 0 0 2px 1px #f08fb233; } to { box-shadow: 0 0 0 1.5px #3b3345, 0 0 7px 3px #f08fb2a6; } }
-/* the pulse is a glow around the LED that grows and brightens, drawn by the LED's pill (the LED is an icon: no pseudo
-   element of its own) and anchored to it, on its own layer moved by transform and opacity: the compositor runs it, where
-   the box-shadow above repainted the header 60 times a second (kept where anchors aren't) */
+@keyframes sd-led-down-paint { from { box-shadow: 0 0 0 1.5px var(--panel), 0 0 2px 1px #f08fb233; } to { box-shadow: 0 0 0 1.5px var(--panel), 0 0 7px 3px #f08fb2a6; } }
+:root[data-design="skydeck"] .tray--compact .sg { margin-right: 7px; }
+:root[data-design="skydeck"] .tray--compact .sg:last-of-type { margin-right: 10px; }
+/* the down LED's pulse: a glow round it that grows and brightens, drawn by its stamp (the LED is an icon: no pseudo
+   element of its own) and anchored to it, moved by transform and opacity, so the compositor runs it, where the
+   box-shadow above repaints the header at every step (kept where anchors aren't) */
 @supports (anchor-name: --a) and (anchor-scope: --a) {
-  :root[data-design="skydeck"] .tray .sg.sg--down { animation: none; box-shadow: 0 0 0 1.5px #3b3345; anchor-name: --sd-down; }
+  :root[data-design="skydeck"] .tray .sg.sg--down { animation: none; anchor-name: --sd-down; }
   :root[data-design="skydeck"] .tray__pill:has(.sg--down) { position: relative; anchor-scope: --sd-down; }
   :root[data-design="skydeck"] .tray__pill:has(.sg--down)::before {
     content: ""; position: absolute; position-anchor: --sd-down; top: anchor(top); left: anchor(left); width: anchor-size(width); height: anchor-size(height);
@@ -266,19 +250,12 @@
   }
 }
 @keyframes sd-led-down { from { opacity: .3; transform: scale(.7); } to { opacity: 1; transform: none; } }
-/* compact tray (tablet, phone): one LCD pill of LEDs + cache; when something is wrong the cache gives way to .tray__word */
-:root[data-design="skydeck"] .tray--compact .tray__pill {
-  background: var(--screen); color: var(--lilac); padding: 1px 12px 0 12px;
-  box-shadow: inset 0 2px 0 #00000026, inset 0 0 0 1.5px var(--mocha-edge), var(--sd-lcd-glow);
-}
-:root[data-design="skydeck"] .tray--compact .sg { margin-right: 7px; box-shadow: 0 0 0 1.5px var(--mocha-edge), 0 0 5px 2px color-mix(in srgb, var(--led) 55%, transparent); }
-:root[data-design="skydeck"] .tray--compact .sg:last-of-type { margin-right: 10px; }
-:root[data-design="skydeck"] .tray--compact .tray__pill[data-worst="down"] { color: #f9dcec; }
 
 /* =====================================================================
-   5. Covers and tiles: light inner line (img 01 thumbs), a moon or sun per recipe, mocha play keys
+   5. Covers: every picture through a round window
    ===================================================================== */
 :root[data-design="skydeck"] .cover { box-shadow: inset 0 0 0 1px #fff9fe59; }
+/* the recipes' motifs, a moon or sun each, as on the sky */
 :root[data-design="skydeck"] .c1::before { box-shadow: 0 0 0 7px #fff9fe2e, 0 0 0 15px #fff9fe14; }
 :root[data-design="skydeck"] .c2 { --cv: linear-gradient(180deg, #e9d9f6 0%, var(--pink-soft) 30%, var(--pink) 100%); }
 :root[data-design="skydeck"] .c2::before {
@@ -299,25 +276,50 @@
     radial-gradient(circle at 30% 36%, #fff9fe 0 10%, #fff9fe40 10.5% 16%, transparent 16.5%);
 }
 :root[data-design="skydeck"] .c8::before { box-shadow: 0 -1px 0 #fff9fe80; }
-/* check: --lilac on --mocha 3 (tile play glyph) */
-:root[data-design="skydeck"] .tile__play {
-  background: var(--mocha); color: var(--lilac); border-color: var(--mocha-edge);
-  box-shadow: inset 0 2px 0 #a48a93, 0 2px 0 var(--mocha-edge), var(--sd-key-rim);
+/* the round window of a tile, a pick, a radio starter, a playlist's or a tag's four covers and the Liked list's head:
+   a margin of card and an ink
+   rim. Both are drawn inside the cover's own box (its border, and its outline laid over the border's outer edge),
+   never round it: a shelf scrolls, so it clips at its padding box, and a rim drawn outside the cover was cut along the
+   row's edge (checks.mjs clippedCovers keeps it so) */
+:root[data-design="skydeck"] :is(.tile, .disc-pick, .disc-starter, .lib-tile) > .cover,
+:root[data-design="skydeck"] :is(.tile, .disc-pick, .lib-tile) :is(.cover, .mosaic):not(.trow *, .mosaic *),
+:root[data-design="skydeck"] :is(.lib-tagcard__art > .mosaic, .lib-listhead__art, .nowcol .cover-zoom .cover) {
+  border-radius: 50%; border: 4.5px solid var(--bg, var(--cream)); outline: 1.5px solid var(--sd-ink); outline-offset: -1.5px; box-shadow: none;
 }
-:root[data-design="skydeck"] .tile__play:hover { background: var(--mocha-edge); }
+/* every other cover is a small round window of its own (rows, the queue, Stats' lists); a playlist's four covers fill
+   their window, and the cover viewer shows the whole picture */
+:root[data-design="skydeck"] .cover { border-radius: 50%; }
+:root[data-design="skydeck"] :is(.mosaic, .cover-view__art) .cover { border-radius: 0; }
+/* the playing row's marker (where the number column is gone) rings its round window, and the rail's playlists are
+   round windows too */
+:root[data-design="skydeck"] .trow.is-playing .trow__art::after { border-radius: 50%; box-shadow: inset 0 0 0 2.5px var(--sd-pink); }
+:root[data-design="skydeck"] .rail__pl .mosaic { border-radius: 50%; }
+:root[data-design="skydeck"] .tile__play { background: var(--sd-ink); color: var(--panel); border-color: var(--sd-ink); box-shadow: 0 0 0 2px var(--panel); }
+:root[data-design="skydeck"] .tile__play:hover { background: var(--sd-pink); }
 
 /* =====================================================================
-   6. Cards, LCD read-outs and the backlight
+   6. Cards: printed inserts with a double rule, titles in spaced capitals led by a star
    ===================================================================== */
-/* a light inner rim like the paper edge of img 01 */
-:root[data-design="skydeck"] .card { box-shadow: inset 0 1.5px 0 #fffaf2, var(--stack); }
-/* every mocha LCD: reflective pixel grid by day, a warm backlight at night; the theme switch fades it */
-:root[data-design="skydeck"] :is(.device__screen, .pbar__seek, .pbar__state, .sys-tile.card, .toast, .tray__pill, .sd-empty__lcd) {
-  transition: box-shadow 300ms var(--ease-out), background-color 300ms var(--ease-out);
+:root[data-design="skydeck"] .card { --line: var(--sd-ink); --rule: var(--sd-soft); border: 1.5px solid var(--sd-ink); box-shadow: var(--sd-rule), var(--stack); }
+:root[data-design="skydeck"] :is(.card-head h2, .card .label-rule > h2, .card .label-rule > h3) {
+  display: inline-flex; align-items: center; gap: 8px; font: 900 .875rem/1.2 var(--f-ui); letter-spacing: .18em; text-transform: uppercase; color: var(--sd-ink);
 }
+:root[data-design="skydeck"] :is(.card-head h2, .card .label-rule > h2)::before { content: ""; flex: none; width: 15px; height: 15px; background: var(--sd-star) center / contain no-repeat; }
+:root[data-design="skydeck"] .label-rule::after { height: 0; border-top: 1.5px dotted var(--sd-soft); background: none; }
+@media (max-width: 639px) {
+  :root[data-design="skydeck"] :is(.card-head h2, .card .label-rule > h2) { letter-spacing: .04em; font-size: .75rem; gap: 5px; }
+  :root[data-design="skydeck"] :is(.card-head h2, .card .label-rule > h2)::before { width: 12px; height: 12px; }
+}
+:root[data-design="skydeck"] .chip-reason { border: 1px dashed var(--sd-pink); }
+:root[data-design="skydeck"] .btn--primary { background: var(--sd-ink); color: var(--panel); border-color: var(--sd-ink); }
+:root[data-design="skydeck"] .btn--primary:hover { background: #3d3570; }
+/* segmented controls and switches, inked */
+:root[data-design="skydeck"] .seg { border-color: var(--sd-ink); }
+:root[data-design="skydeck"] .seg__ind { background: var(--sd-ink); border-color: var(--sd-ink); box-shadow: none; }
+:root[data-design="skydeck"] .seg__btn:is([aria-selected="true"], [aria-pressed="true"], [aria-checked="true"]) { color: var(--panel); }
 
 /* rows: the hero (or the search card) states format and saved once; rows keep only what differs.
-   Hidden facts stay readable to screen readers (visually-hidden, not display: none). */
+   Hidden facts stay readable to screen readers (visually hidden, not display: none). */
 :root[data-design="skydeck"] :is(.lib, .disc-songs) .trow__badges .badge-saved,
 :root[data-design="skydeck"] .lib-page ~ * .trow__badges .q-chip--ll,
 :root[data-design="skydeck"] .lib-page .trow__badges .q-chip--ll {
@@ -328,93 +330,76 @@
 :root[data-design="skydeck"] .lib .trow__badges .q-chip:not(.q-chip--ly) { border-color: transparent; background: none; color: var(--fg-2); padding-inline: 2px; }
 :root[data-design="skydeck"] .lib .trow__badges .q-chip:not(.q-chip--ly)::before { display: none; }
 
-/* ---------- library heroes are cartridges: grip ridges, a cut corner, the cover on a label sticker,
-   the facts on a little LCD ---------- */
-:root[data-design="skydeck"] .view .lib-page.card {
-  clip-path: polygon(26px 0, 100% 0, 100% calc(100% + 24px), 0 calc(100% + 24px), 0 26px);
+/* library heads: the cover in a round window ringed twice by the printed rim, the rims inside the art's own track (its
+   margin), so the title beside it keeps the page's gap; the facts printed as a caption */
+:root[data-design="skydeck"] :is(.lib-hero > .cover, .lib-hero > .mosaic, .lib-pl__head > .mosaic) {
+  width: calc(var(--lib-art) - 40px); margin: 20px; border-radius: 50%; border: 0;
+  box-shadow: 0 0 0 5px var(--cream), 0 0 0 6.5px var(--sd-ink), 0 0 0 18px var(--cream), 0 0 0 19.5px var(--sd-ink);
 }
-:root[data-design="skydeck"] .view .lib-page.card::before {      /* grip ridges on the top edge */
-  content: ""; position: absolute; top: 9px; left: 50%; width: min(34%, 260px); height: 9px; transform: translateX(-50%); pointer-events: none;
-  background: repeating-linear-gradient(180deg, #bfa68a 0 1.5px, #fffaf2 1.5px 3.5px); border-radius: 1px; height: 12px;
+:root[data-design="skydeck"] :is(.lib-kicker, .lib-pl__facts, .lib-hero__facts > .px) {
+  display: inline-flex; align-items: center; gap: 10px; width: fit-content; font: var(--sd-caps); font-style: normal; letter-spacing: .18em; text-transform: uppercase; color: var(--ink-2);
 }
-:root[data-design="skydeck"] .view .lib-page.card::after {       /* the stroke along the cut corner */
-  content: ""; position: absolute; top: 0; left: 0; width: 37px; height: var(--stroke); background: var(--line);
-  transform-origin: 0 0; transform: translate(0, 26px) rotate(-45deg); pointer-events: none;
-}
-:root[data-design="skydeck"] .lib-hero > .cover,
-:root[data-design="skydeck"] .lib-hero > .mosaic,
-:root[data-design="skydeck"] .lib-pl__head > .mosaic {
-  box-shadow: inset 0 0 0 1px #fff9fe59, 0 0 0 8px #fffaf2, 0 0 0 9px var(--ink-2), 0 6px 0 4px var(--cream-3), 0 6px 0 5px var(--ink-2);
-}
-:root[data-design="skydeck"] .lib-hero > .cover.cover--round { box-shadow: inset 0 0 0 1px #fff9fe59, 0 0 0 8px #fffaf2, 0 0 0 9px var(--ink-2); }
-:root[data-design="skydeck"] .lib-pl__head { padding-top: calc(var(--card-pad) + 14px); }
-:root[data-design="skydeck"] .lib-page > .lib-hero { margin-top: 14px; }
-/* the facts read out on a little LCD */
-:root[data-design="skydeck"] .lib-kicker,
-:root[data-design="skydeck"] .lib-pl__facts,
-:root[data-design="skydeck"] .lib-hero__facts > .px {
-  display: inline-flex; align-items: center; gap: 10px; width: fit-content; padding: 3px 12px 1px; border-radius: 8px 8px 13px 8px;
-  background: var(--sd-lcd-tex), var(--screen); color: var(--lilac); font: var(--t-px); letter-spacing: var(--t-px-track);
-  box-shadow: inset 0 2px 0 #00000033, inset 0 0 0 1.5px var(--mocha-edge), var(--sd-lcd-glow);
-}
-:root[data-design="skydeck"] .lib-kicker { margin-bottom: 8px; font-style: normal; }
+:root[data-design="skydeck"] .lib-kicker { margin-bottom: 8px; }
+:root[data-design="skydeck"] .lib-kicker::before { content: ""; width: 14px; height: 14px; background: var(--sd-star) center / contain no-repeat; }
 :root[data-design="skydeck"] .lib-pl__facts > * { color: inherit; font: inherit; }
-:root[data-design="skydeck"] .lib-pl__upd { color: #f9dcec; }
-:root[data-design="skydeck"] .lib-pl__upd::before { content: "\00b7"; margin-right: 10px; color: var(--lavender); }
+:root[data-design="skydeck"] .lib-pl__upd { color: var(--sd-pink); }
+:root[data-design="skydeck"] .lib-pl__upd::before { content: "\00b7"; margin-right: 10px; color: var(--ink-2); }
 /* "In library" is a state, not an action: a quiet status line */
 :root[data-design="skydeck"] .lib-actions .btn-save[data-state="library"] {
   border-color: transparent; background: none; box-shadow: none; color: var(--fg-2); padding-inline: 6px; font-weight: 700;
 }
-
-/* ---------- library tabs: a cartridge shelf (one row, scrolls, fades at the edge) ---------- */
+/* the library's tabs: inked pills on a card strip; on a phone one row that scrolls and fades at its edge, wider they
+   wrap, so the place you're at is never under the fade */
 :root[data-design="skydeck"] .lib-segs ul {
   gap: 4px; padding: 5px; width: fit-content; max-width: 100%; border-radius: 18px;
-  background: var(--sd-shelf); border: var(--stroke) solid var(--sd-shelf-edge); box-shadow: inset 0 2px 0 #00000014;
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
-  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  background: var(--panel); border: 1.5px solid var(--sd-ink); box-shadow: var(--sd-lift);
 }
-:root[data-design="skydeck"] .lib-segs a.pill-filter { flex: none; min-height: 36px; border-color: transparent; background: none; color: var(--fg-sky); box-shadow: none; }
-:root[data-design="skydeck"] .lib-segs a.pill-filter:hover { background: #ffffff33; }
-:root[data-design="skydeck"] .lib-segs a.pill-filter[aria-current="page"] {
-  background: var(--sd-console); color: var(--ink); border-color: var(--line); border-radius: 12px 12px 16px 12px;
-  box-shadow: inset 0 1.5px 0 #e9f5ff, 0 3px 0 -1px var(--peri-deep), 0 3px 0 0 var(--line);
+@media (min-width: 640px) { :root[data-design="skydeck"] .lib-segs ul { flex-wrap: wrap; } }
+@media (max-width: 639px) {
+  :root[data-design="skydeck"] .lib-segs { margin-inline: 0; }   /* the strip is a card of its own: it keeps the page's gutter, never bleeds to the edge */
+  :root[data-design="skydeck"] .lib-segs ul {
+    padding: 5px;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  }
 }
+:root[data-design="skydeck"] .lib-segs a.pill-filter { flex: none; min-height: 36px; border-color: transparent; background: none; color: var(--sd-ink); box-shadow: none; }
+:root[data-design="skydeck"] .lib-segs a.pill-filter:hover { background: var(--panel-2); }
+:root[data-design="skydeck"] .lib-segs a.pill-filter[aria-current="page"] { background: var(--sd-ink); color: var(--panel); border-color: var(--sd-ink); border-radius: 12px; }
 
-/* ---------- stats: tiles read out on little LCDs in a mauve bezel (img 02 clock blocks), bars as pixel blocks ---------- */
-:root[data-design="skydeck"] .sys-tile.card {
-  --bg: var(--screen); --fg: var(--lilac); --fg-2: var(--lavender); --focus: var(--star);
-  background: linear-gradient(118deg, #fff9fe00 0 62%, #fff9fe0f 62% 76%, #fff9fe00 76%), var(--sd-lcd-tex), var(--screen); color: var(--lilac);
-  border-color: var(--mocha-edge); border-radius: 14px 14px 26px 14px; padding: 15px 18px 16px;
-  box-shadow: inset 0 0 0 5px var(--mauve), inset 0 0 0 6.5px var(--mocha-edge), inset 0 9px 0 #00000024, var(--sd-lcd-glow), 0 5px 0 -2px var(--stack-1), 0 5px 0 0 var(--line);
-}
-:root[data-design="skydeck"] .sys-tile__value { font: 400 2.5rem/1 var(--f-px); letter-spacing: .02em; color: var(--star); }
-:root[data-design="skydeck"] .sys-tile__label { color: #f9dcec; }
+/* stats: printed tiles, a big numeral over a dotted rule; bars inked */
+:root[data-design="skydeck"] .sys-tile.card { border-radius: 20px; box-shadow: var(--sd-rule), var(--sd-lift); }
+:root[data-design="skydeck"] .sys-tile__value { font: 900 2.375rem/1 var(--f-ui); letter-spacing: -.02em; color: var(--sd-ink); white-space: nowrap; }
+:root[data-design="skydeck"] .sys-tile__label { color: var(--sd-pink); font: var(--sd-caps); letter-spacing: .18em; text-transform: uppercase; }
 :root[data-design="skydeck"] .sys-tile__sub { text-wrap: balance; }
-:root[data-design="skydeck"] .sys-bar { height: 10px; border-radius: 3px; background: var(--sd-lcd-tex), var(--screen); box-shadow: inset 0 1.5px 0 #00000033; }
-:root[data-design="skydeck"] .sys-bar > i {
-  border-radius: 2px; background: repeating-linear-gradient(90deg, var(--peri) 0 7px, transparent 7px 9px);
+:root[data-design="skydeck"] .sys-bar { height: 10px; border-radius: 3px; background: var(--cream-2); box-shadow: inset 0 0 0 1px var(--sd-soft); }
+:root[data-design="skydeck"] .sys-bar > i { border-radius: 2px; background: var(--sd-ink); }
+:root[data-design="skydeck"] .sys-bars__row:first-child .sys-bar > i { background: var(--sd-pink); }
+/* five tiles in a row while each has room for its numeral, then 3 + 2, then two a row */
+@container main (max-width: 900px) {
+  :root[data-design="skydeck"] .sys-tile__value { font-size: 1.875rem; }
 }
-:root[data-design="skydeck"] .sys-bars__row:first-child .sys-bar > i { background: repeating-linear-gradient(90deg, var(--pink-light) 0 7px, transparent 7px 9px); }
-@media (min-width: 600px) and (max-width: 1099px) {        /* five tiles as 3 + 2, no orphan */
+@media (min-width: 600px) and (max-width: 1099px) {
   :root[data-design="skydeck"] .sys-tiles { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px 14px; }
   :root[data-design="skydeck"] .sys-tile.card { grid-column: span 2; }
   :root[data-design="skydeck"] .sys-tile.card:nth-child(n+4) { grid-column: span 3; }
-  :root[data-design="skydeck"] .sys-tile__value { font-size: 2.125rem; }
 }
 @media (max-width: 599px) {
   :root[data-design="skydeck"] .sys-tiles { grid-template-columns: 1fr 1fr; gap: 12px; }
-  :root[data-design="skydeck"] .sys-tile.card,
-  :root[data-design="skydeck"] .sys-tile.card:nth-child(n+4) { grid-column: auto; padding: 13px 14px 14px; }
+  :root[data-design="skydeck"] :is(.sys-tile.card, .sys-tile.card:nth-child(n+4)) { grid-column: auto; padding: 13px 14px 14px; }
   :root[data-design="skydeck"] .sys-tile.card:last-child:nth-child(odd) { grid-column: 1 / -1; }
   :root[data-design="skydeck"] .sys-tile__value { font-size: 2rem; }
   :root[data-design="skydeck"] .sys-tile__sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }
 
+/* Settings: its menu inked like the rail's; the design picker's chosen card inked too */
+:root[data-design="skydeck"] .sys-nav a[aria-current="page"] { background: var(--sd-ink); color: var(--cream); border-color: var(--sd-ink); box-shadow: none; }
+:root[data-design="skydeck"] .sys-design[aria-checked="true"] { background: var(--cream-2); border-color: var(--sd-ink); box-shadow: 0 0 0 1.5px var(--sd-ink); }
+
 /* =====================================================================
-   7. Home and search
+   7. Home and Search
    ===================================================================== */
-/* home with the queue docked (main column 700-979 px): new releases beside radio starters as a list, so
-   "picked for you" starts above the fold; the shelf shows 2.5 covers and fades at its edge to say it scrolls */
+/* Home with the queue docked (main column 700-979 px): radio starters as a tight list, so the next module starts sooner */
 @container disc (min-width: 700px) and (max-width: 979px) {
   :root[data-design="skydeck"] .disc-home .disc-starter { grid-template-columns: 40px minmax(0, 1fr) 36px; min-height: 56px; gap: 10px; padding: 4px 4px 4px 2px; }
   :root[data-design="skydeck"] .disc-home .disc-starter > .cover { --cover-size: 40px !important; }   /* inline --cover-size from the markup */
@@ -423,7 +408,7 @@
 }
 :root[data-design="skydeck"] .disc-hello { margin-bottom: var(--sp-4); }
 
-/* search: one compact top result, rows with one quiet pixel line of facts, then the Soulseek section */
+/* search: one compact top result, rows with one quiet line of facts, then the Soulseek section */
 @media (min-width: 640px) {
   :root[data-design="skydeck"] .disc-top .disc-top__body { flex: 1 1 300px; grid-template-columns: 64px minmax(0, 1fr); gap: var(--sp-4); align-items: center; }
   :root[data-design="skydeck"] .disc-top .disc-top__body > .cover { --cover-size: 64px !important; }   /* inline --cover-size from the markup */
@@ -440,9 +425,7 @@
 :root[data-design="skydeck"] .disc-songs .trow__artist { flex-wrap: wrap; }
 :root[data-design="skydeck"] .disc-songs .trow__artist .dup-better { flex-basis: 100%; margin-left: 0; }
 :root[data-design="skydeck"] .disc-songs .trow__badges { gap: 8px; }
-:root[data-design="skydeck"] .disc-songs .trow__badges .q-chip--ll {
-  border-color: transparent; background: none; padding: 0; color: var(--fg-2); font: var(--t-px); letter-spacing: var(--t-px-track);
-}
+:root[data-design="skydeck"] .disc-songs .trow__badges .q-chip--ll { border-color: transparent; background: none; padding: 0; color: var(--fg-2); font: var(--t-px); letter-spacing: var(--t-px-track); }
 :root[data-design="skydeck"] .disc-songs .trow__badges .q-chip--ll::before { display: none; }
 :root[data-design="skydeck"] .disc-songs .trow__sources { font: var(--t-px); letter-spacing: var(--t-px-track); color: var(--fg-2); }
 /* section labels inside the songs list: "in your library", then "on soulseek" where peers' rows start */
@@ -453,404 +436,385 @@
 :root[data-design="skydeck"] .disc-songs .trow:has(.badge-saved) + .trow:not(:has(.badge-saved))::before,
 :root[data-design="skydeck"] .disc-songs .tlist > .trow:first-child:not(:has(.badge-saved))::before {
   content: "in your library"; position: absolute; left: 6px; top: -24px; pointer-events: none;
-  font: var(--t-px); letter-spacing: var(--t-px-track); color: var(--fg-2);
+  font: var(--t-px); letter-spacing: var(--t-px-track); text-transform: uppercase; color: var(--fg-2);
 }
 :root[data-design="skydeck"] .disc-songs .trow:has(.badge-saved) + .trow:not(:has(.badge-saved))::before,
 :root[data-design="skydeck"] .disc-songs .tlist > .trow:first-child:not(:has(.badge-saved))::before { content: "on soulseek"; }
 @media (max-width: 1099px) {
-  :root[data-design="skydeck"] .disc-songs .trow__badges .q-chip--ll,
-  :root[data-design="skydeck"] .disc-songs .trow__sources { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  :root[data-design="skydeck"] .disc-songs :is(.trow__badges .q-chip--ll, .trow__sources) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
 @media (max-width: 639px) {
-  :root[data-design="skydeck"] .disc-top .disc-top__actions { flex-wrap: nowrap; gap: 8px; }
-  :root[data-design="skydeck"] .disc-top .disc-top__actions > .btn { flex: 1 1 auto; padding-inline: 12px; }
   :root[data-design="skydeck"] .disc-top .disc-top__body { grid-template-columns: 72px minmax(0, 1fr); }
   :root[data-design="skydeck"] .disc-top .disc-top__body > .cover { --cover-size: 72px !important; }  /* inline --cover-size from the markup */
 }
 
 /* =====================================================================
-   8. Overlays: sheets and dialogs (head band), scrim, toasts (an LCD message)
+   8. Overlays: sheets, dialogs, menus and toasts are printed slips
    ===================================================================== */
+:root[data-design="skydeck"] :is(.sheet, .dialog) { background: var(--cream); color: var(--sd-ink); border-color: var(--sd-ink); }
 :root[data-design="skydeck"] :is(.sheet, .dialog) > .sheet__head {
-  background: var(--peri); color: var(--ink); border-bottom: var(--stroke) solid var(--line);
+  background: none; color: var(--sd-ink); border-bottom: 1.5px dotted var(--sd-soft); box-shadow: none;
   border-radius: calc(var(--r-panel) - 2px) calc(var(--r-panel) - 2px) 0 0; padding-top: 12px; padding-bottom: 12px; margin-bottom: 10px;
-  box-shadow: inset 0 2px 0 #e9f5ff; --fg: var(--ink); --focus: var(--indigo);
 }
-:root[data-design="skydeck"] :is(.sheet, .dialog) > .sheet__head .btn-icon { color: var(--ink); border-color: transparent; }
-:root[data-design="skydeck"] :is(.sheet, .dialog) > .sheet__head .btn-icon:hover { background: #ffffff59; }
+:root[data-design="skydeck"] :is(.sheet, .dialog) > .sheet__head .btn-icon { color: var(--sd-ink); border-color: transparent; }
+:root[data-design="skydeck"] :is(.sheet, .dialog) > .sheet__head .btn-icon:hover { background: var(--cream-2); }
 :root[data-design="skydeck"] .sheet { overflow: hidden; }
-/* desktop: every sheet and dialog floats inside the window with 32 px air under it; its body scrolls */
+/* desktop: every sheet and dialog floats inside the window with 32 px air under it, lifted off the sky; its body scrolls */
 @media (min-width: 640px) {
   :root[data-design="skydeck"] :is(.sheet, .dialog) { max-height: calc(100dvh - 96px); }
-  :root[data-design="skydeck"] .sheet {
-    bottom: 32px; border-bottom: var(--stroke) solid var(--line); border-radius: var(--r-panel);
-    box-shadow: 0 6px 0 -2px var(--lav), 0 6px 0 0 var(--line); padding-bottom: 0;
-  }
+  :root[data-design="skydeck"] .sheet { bottom: 32px; border-bottom: 1.5px solid var(--sd-ink); border-radius: var(--r-panel); box-shadow: var(--sd-lift); padding-bottom: 0; }
   :root[data-design="skydeck"]:not([data-motion="reduce"]) .sheet:not(.is-open) { transform: translate(-50%, calc(100% + 48px)); }
 }
-@media (max-width: 639px) {
-  :root[data-design="skydeck"] .sheet:has(> .sheet__handle) { background-image: linear-gradient(var(--peri) 0 12px, transparent 12px); }
-  :root[data-design="skydeck"] .sheet > .sheet__handle + .sheet__head { border-radius: 0; box-shadow: none; }
-}
+:root[data-design="skydeck"] :is(.menu, .popover) { border: 1.5px solid var(--sd-ink); box-shadow: inset 0 0 0 4px var(--bg), inset 0 0 0 5px var(--sd-faint), var(--sd-lift); }
 :root[data-design="skydeck"] .toast {
-  --bg: var(--screen); --bg-2: var(--mocha); --fg: var(--lilac); --fg-2: var(--lavender);
-  --link: #f9dcec; --edge: var(--lavender); --focus: var(--star); --divider: var(--mocha);
-  background: linear-gradient(115deg, #fff9fe00 0 62%, #fff9fe10 62% 76%, #fff9fe00 76%), var(--sd-lcd-tex), var(--screen); color: var(--lilac);
-  border: 3px solid var(--mauve); outline: var(--stroke) solid var(--mocha-edge); outline-offset: 0;
-  border-radius: 14px 14px 24px 14px; margin-bottom: 9px;
-  box-shadow: inset 0 3px 0 #00000024, var(--sd-lcd-glow), 0 7px 0 -2px var(--lav), 0 7px 0 0 var(--line);
+  background: var(--cream); color: var(--sd-ink); border: 1.5px solid var(--sd-ink); border-radius: 16px; margin-bottom: 9px;
+  box-shadow: inset 0 0 0 4px var(--cream), inset 0 0 0 5px var(--sd-soft), var(--sd-lift);
 }
-:root[data-design="skydeck"] .toast:focus-visible { outline-color: var(--star); }
-:root[data-design="skydeck"] .toast .btn-icon { color: var(--lilac); }
-:root[data-design="skydeck"] .toast .btn-icon:hover { background: var(--mocha); }
-:root[data-design="skydeck"] .toast--error > .ic { color: var(--pink-light); }
-:root[data-design="skydeck"] .toast--ok > .ic { color: #b9e6c9; }
+:root[data-design="skydeck"] .toast .btn-icon { color: var(--sd-ink); }
+:root[data-design="skydeck"] .toast .btn-icon:hover { background: var(--cream-2); }
+:root[data-design="skydeck"] .toast--error > .ic { color: var(--sd-pink); }
+:root[data-design="skydeck"] .toast--ok > .ic { color: #2f7a52; }   /* check: #2f7a52 on #f4e8d6 3 */
 
 /* =====================================================================
-   9. Empty and error states: a little handheld asking for a cartridge (slots/emptyArt)
+   9. Empty states: a star wheel with nothing charted yet (slots/emptyArt.html)
    ===================================================================== */
-:root[data-design="skydeck"] .empty__art:has(.sd-empty) { width: 132px; height: auto; display: grid; place-items: center; }
+:root[data-design="skydeck"] .empty__art:has(.sd-empty) { width: 128px; height: 128px; display: grid; place-items: center; }
+:root[data-design="skydeck"] .empty__art:has(.sd-empty) .sparkle { display: none; }
 :root[data-design="skydeck"] .sd-empty {
-  position: relative; display: grid; justify-items: center; width: 112px; height: 150px; padding: 10px 10px 0;
-  border: var(--stroke) solid var(--line); border-radius: 12px 12px 30px 12px;
-  background: var(--sd-console); box-shadow: inset 0 2px 0 #e9f5ff, inset 0 -3px 0 var(--sd-console-lo), 0 5px 0 -2px var(--lav), 0 5px 0 0 var(--line);
+  position: relative; display: block; width: 116px; height: 116px; border-radius: 26px; background: var(--cream); border: 1.5px solid var(--sd-ink);
+  box-shadow: inset 0 0 0 4px var(--cream), inset 0 0 0 5px var(--sd-soft), var(--sd-lift);
 }
-:root[data-design="skydeck"] .sd-empty__bezel { width: 100%; padding: 6px; border-radius: 8px 8px 16px 8px; background: var(--mauve); box-shadow: inset 0 1.5px 0 #c9adb1; }
-:root[data-design="skydeck"] .sd-empty__lcd {
-  position: relative; display: grid; place-content: center; height: 58px; padding: 0 6px; overflow: hidden; border-radius: 5px;
-  background: var(--sd-lcd-tex), var(--screen); color: var(--lilac); text-align: center;
-  font: 400 1.125rem/.95 var(--f-px); letter-spacing: .04em; text-transform: uppercase;
-  box-shadow: inset 0 0 0 1.5px var(--mocha-edge), inset 0 3px 0 #00000024, var(--sd-lcd-glow);
+:root[data-design="skydeck"] .sd-empty__disc { position: absolute; inset: 14px; border-radius: 50%; background: var(--sd-disc) center / cover; box-shadow: 0 0 0 1.5px var(--sd-ink); }
+:root[data-design="skydeck"] .sd-empty__disc::after {     /* an oval window, the rest of the disc under the card */
+  content: ""; position: absolute; inset: -1px; border-radius: 50%;
+  background: radial-gradient(ellipse 46% 34% at 50% 44%, transparent 98%, var(--cream) 100%);
 }
-/* the LCD line: the first that fits wins (no signal, no songs, press play, then by art); errors drop the cursor */
-:root[data-design="skydeck"] .sd-lcd { display: none; }
-:root[data-design="skydeck"] .sd-empty:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i]) .sd-lcd--fail,
-:root[data-design="skydeck"] .sd-empty:not(:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i])):is([data-title*="drag songs" i], [data-title*="drop to add" i], [data-title*="no songs yet" i]) .sd-lcd--drop,
-:root[data-design="skydeck"] .sd-empty:not(:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i]), :is([data-title*="drag songs" i], [data-title*="drop to add" i], [data-title*="no songs yet" i])):is([data-title*="playing" i], [data-title*="played" i], [data-title*="listening" i], [data-title*="queued" i], [data-title*="instrumental" i]) .sd-lcd--play,
-:root[data-design="skydeck"] .sd-empty:not(:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i]), :is([data-title*="drag songs" i], [data-title*="drop to add" i], [data-title*="no songs yet" i]), :is([data-title*="playing" i], [data-title*="played" i], [data-title*="listening" i], [data-title*="queued" i], [data-title*="instrumental" i]))[data-art="slot"] .sd-lcd--slot,
-:root[data-design="skydeck"] .sd-empty:not(:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i]), :is([data-title*="drag songs" i], [data-title*="drop to add" i], [data-title*="no songs yet" i]), :is([data-title*="playing" i], [data-title*="played" i], [data-title*="listening" i], [data-title*="queued" i], [data-title*="instrumental" i]))[data-art="moon"] .sd-lcd--moon,
-:root[data-design="skydeck"] .sd-empty:not(:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i]), :is([data-title*="drag songs" i], [data-title*="drop to add" i], [data-title*="no songs yet" i]), :is([data-title*="playing" i], [data-title*="played" i], [data-title*="listening" i], [data-title*="queued" i], [data-title*="instrumental" i]), [data-art="slot"], [data-art="moon"]) .sd-lcd--empty { display: inline; }
-:root[data-design="skydeck"] .sd-empty:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i]) .sd-empty__cursor { display: none; }
-:root[data-design="skydeck"] .sd-empty__cursor { display: inline-block; width: .5em; height: 2px; margin-left: 2px; background: currentColor; vertical-align: baseline; animation: sd-blink 1.1s steps(1) infinite; animation-play-state: var(--loop-play, running);; }
-@keyframes sd-blink { 50% { opacity: 0; } }
-:root[data-design="skydeck"] .sd-empty__keys { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 12px 6px 0; }
-:root[data-design="skydeck"] .sd-empty__dpad {
-  width: 26px; height: 26px; background:
-    linear-gradient(var(--mocha), var(--mocha)) center / 26px 9px no-repeat,
-    linear-gradient(var(--mocha), var(--mocha)) center / 9px 26px no-repeat;
-}
-:root[data-design="skydeck"] .sd-empty__ab { display: flex; gap: 5px; transform: rotate(-20deg); }
-:root[data-design="skydeck"] .sd-empty__ab i { width: 14px; height: 14px; border-radius: 50%; background: var(--mocha); box-shadow: inset 0 1.5px 0 #a48a93; }
-:root[data-design="skydeck"] .sd-empty__ab i + i { background: var(--pink); box-shadow: inset 0 1.5px 0 #f6cee4; }
-/* no signal: analogue static on the LCD, two frames */
-:root[data-design="skydeck"] .sd-empty:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i]) .sd-empty__lcd { color: #f9dcec; }
-:root[data-design="skydeck"] .sd-empty:is([data-title*="couldn't" i], [data-title*="snag" i], [data-title*="unavailable" i], [data-title*="isn't here" i], [data-title*="nothing lives" i], [data-title*="offline" i], [data-title*="down" i]) .sd-empty__lcd::before {
-  content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .35;
-  background: repeating-linear-gradient(0deg, #fff9fe33 0 1px, transparent 1px 3px), repeating-linear-gradient(90deg, #00000026 0 2px, transparent 2px 5px);
-  /* moved as a layer, not by background-position (a repaint each step): 3 px wider and 1 px taller up and left, the
-     pattern set back to where it was, so a shift of the layer is the shift of each set of lines, and the LCD clips it */
-  inset: -1px 0 0 -3px; background-position: 3px 1px;
-  animation: sd-static .24s steps(2) infinite; animation-play-state: var(--loop-play, running);
-}
-@keyframes sd-static { 50% { transform: translate(3px, 1px); } }
-:root[data-design="skydeck"] .empty__art:has(.sd-empty) .sparkle { top: 0; right: 4px; }
+:root[data-design="skydeck"] .sd-empty[data-art="star"] .sd-empty__disc { transform: rotate(120deg); }
+:root[data-design="skydeck"] .sd-empty[data-art="wave"] .sd-empty__disc { transform: rotate(220deg); }
+:root[data-design="skydeck"] .sd-empty__needle { position: absolute; left: 57px; top: 22px; width: 2px; height: 36px; background: var(--sd-pink); }
+:root[data-design="skydeck"] .sd-empty__needle::before { content: ""; position: absolute; left: -7px; top: -8px; width: 16px; height: 16px; background: var(--sd-star) center / contain no-repeat; }
+:root[data-design="skydeck"] .sd-empty__needle::after { content: ""; position: absolute; left: -4px; bottom: -5px; width: 10px; height: 10px; border-radius: 50%; background: var(--cream); box-shadow: inset 0 0 0 2px var(--sd-ink); }
 
 /* =====================================================================
-   10. Player bar: the handheld turned sideways (cart slot + title | keys over an LCD strip | dock)
+   10. The player: the holder card with a round window for the cover, an inked play wheel and the printed scale
    ===================================================================== */
-:root[data-design="skydeck"] .pbar,
-:root[data-design="skydeck"] .mini {
-  --bg: var(--peri); --bg-2: #a6b9ef; --bg-3: #98acea;
-  --fg: var(--ink); --fg-2: #433a6b; --link: var(--indigo); --accent-ui: var(--indigo); --heart: var(--pink-ink);
-  --edge: #4f5370; --focus: var(--indigo); --divider: #9fb1e8;
-  --q-ll: var(--indigo); --q-ly: #433a6b; --rsn-bg: var(--pink-soft); --rsn-fg: var(--pink-ink);
-  --seek-played: var(--indigo); --seek-buffered: #7489c4; --seek-line: #4f5370;
-  background: var(--sd-console); color: var(--ink); border-color: var(--line);
-}
-:root[data-design="skydeck"][data-theme="night"] :is(.pbar, .mini) { --heart: #8f3573; }   /* a deeper pink on the darker night body */
 :root[data-design="skydeck"] .pbar {
-  gap: min(var(--sp-5), 2%);   /* its columns are the shared ones: sides as wide as the tools need, the transport centred */
-  border-radius: 22px 22px 44px 22px; padding: 0 14px;
-  box-shadow: inset 0 2px 0 #e9f5ff, inset 0 -3px 0 var(--sd-console-lo), var(--sd-bar-stack);
+  gap: min(var(--sp-5), 2%); border-radius: 24px; padding: 0 16px;
+  box-shadow: inset 0 0 0 6px var(--panel), inset 0 0 0 7px var(--sd-soft), 0 6px 0 -2px var(--stack-1), 0 6px 0 0 var(--sd-ink), 0 12px 0 -2px var(--stack-2), 0 12px 0 0 var(--sd-ink);
 }
-:root[data-design="skydeck"] .pbar .pbar__title { font-size: 1.125rem; }
-/* the thumb sits in a cart slot with a lip */
-:root[data-design="skydeck"] .pbar .bezel-thumb { box-shadow: 0 -4px 0 -1px var(--sd-console-lo), 0 -4px 0 0 var(--line); }
-:root[data-design="skydeck"][data-theme="day"] .pbar .bezel-thumb { background: var(--peri-deep); border-color: var(--line); }
-:root[data-design="skydeck"] .pbar__centre { gap: 6px; align-self: stretch; align-content: center; }
-:root[data-design="skydeck"] .pbar .btn-gloss { --size: 50px; }
-/* shuffle / repeat: a pink LED under the key when it is on */
-:root[data-design="skydeck"] .pbar__controls .btn-icon[aria-pressed] { position: relative; }
-:root[data-design="skydeck"] .pbar__controls .btn-icon[aria-pressed="true"]::after {
-  content: ""; position: absolute; left: 50%; bottom: 1px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%;
-  background: var(--pink-ink); box-shadow: 0 0 0 1px #fff9fe99, 0 0 5px 1px #dd9fc9;
+:root[data-design="skydeck"] .pbar .pbar__title { font: 900 1.0625rem/1.25 var(--f-ui); }
+:root[data-design="skydeck"] .pbar__from { font: 900 .625rem/1.2 var(--f-ui); letter-spacing: .16em; text-transform: uppercase; }
+/* the round window, ringed by the printed scale; the scale turns a full round over the song (--song-pos, in hundredths,
+   so it moves once every hundredth of the song), and a liked song gets the pink star on its rim */
+:root[data-design="skydeck"] :is(.pbar__now, .pbar .cover-zoom) { --song-pos: inherit; }
+:root[data-design="skydeck"] .pbar .cover-zoom { position: relative; margin: 0 10px 0 8px; }
+:root[data-design="skydeck"] .pbar .cover-zoom::before {
+  content: ""; position: absolute; inset: -11px; background: var(--sd-rim) center / contain no-repeat; pointer-events: none;
+  --song-pos: inherit; rotate: calc(var(--song-pos) * 1turn);
 }
-/* the LCD strip holding the seek, a state caption and pixel times */
-:root[data-design="skydeck"] .pbar__seek {
-  --seek-played: var(--lilac); --seek-buffered: var(--peri); --seek-line: var(--lav); --bg: var(--screen);
-  --fg-2: var(--lavender); --focus: var(--star);
-  max-width: none; height: 30px; padding: 0 12px; border-radius: 10px 10px 16px 10px;
-  background: linear-gradient(115deg, #fff9fe00 0 58%, #fff9fe12 58% 72%, #fff9fe00 72%), var(--sd-lcd-tex), var(--screen);
-  border: var(--stroke) solid var(--mocha-edge); box-shadow: inset 0 2px 0 #00000026, var(--sd-lcd-glow);
+:root[data-design="skydeck"] .pbar[data-liked="true"] .cover-zoom::after {
+  content: ""; position: absolute; z-index: 2; right: -12px; top: -12px; width: 18px; height: 18px; pointer-events: none;
+  background: var(--sd-star) center / contain no-repeat;
 }
-:root[data-design="skydeck"] .pbar__seek:has(.seek:focus-visible:not([data-pointer])) { outline: 2px solid var(--indigo); outline-offset: 2px; }   /* keyboard focus only, not a click (app.js data-pointer) */
-:root[data-design="skydeck"] .pbar__seek .seek:focus-visible { outline: none; }
-:root[data-design="skydeck"] .pbar__seek .seek { height: 26px; }
-:root[data-design="skydeck"] .pbar__seek .seek-row__time { font: var(--t-px); letter-spacing: var(--t-px-track); color: var(--lilac); }
-@media (min-width: 1100px) {
-  :root[data-design="skydeck"] .pbar__seek { grid-template-columns: auto auto minmax(0, 1fr) auto; }
-  /* the state caption takes only the room its word needs ("○ paused" is shorter than "● streaming"), so the seek has
-     the rest; a longer word than 13.5ch ends in an ellipsis */
-  :root[data-design="skydeck"] .pbar__seek::before {
-    content: ""; box-sizing: content-box; max-width: 13.5ch; padding-right: 10px; border-right: 1px solid #9c8790;
-    font: var(--t-px); letter-spacing: var(--t-px-track); color: #f9dcec; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  :root[data-design="skydeck"] .pbar[data-status="streaming"] .pbar__seek::before { content: "\25cf  streaming"; }
-  :root[data-design="skydeck"] .pbar[data-status="library"] .pbar__seek::before { content: "\25cf  library"; }
-  :root[data-design="skydeck"] .pbar[data-playing="false"]:is([data-status="streaming"], [data-status="library"]) .pbar__seek::before { content: "\25cb  paused"; }
-  :root[data-design="skydeck"] .pbar:is([data-status="finding"], [data-status="queued"], [data-status="fallback"]) .pbar__seek::before { content: "\25cc  finding"; }
-  :root[data-design="skydeck"] .pbar:is([data-status="buffering"], [data-status="stalled"]) .pbar__seek::before { content: "\25cc  buffering"; }
-  :root[data-design="skydeck"] .pbar:is([data-status="failed"], [data-status="jellyfin-error"], [data-status="choose"]) .pbar__seek::before { content: "\25cb  stopped"; }
-  :root[data-design="skydeck"] .pbar[data-status="ended"] .pbar__seek::before { content: "\25cb  ended"; }
+:root[data-design="skydeck"] :is(.pbar, .mini, .dk-strip) .bezel-thumb { padding: 0; background: var(--panel); border: 0; border-radius: 50%; box-shadow: 0 0 0 1.5px var(--sd-ink); }
+:root[data-design="skydeck"] :is(.pbar, .mini, .dk-strip) .bezel-thumb .cover { border-radius: 50%; border: 0; }
+:root[data-design="skydeck"] :is(.pbar, .mini) .bezel-thumb--empty > span { border: 0; border-radius: 50%; background: var(--sd-disc) center / cover; }
+/* play: an inked wheel with the rim printed round it */
+:root[data-design="skydeck"] .btn-gloss { background: var(--sd-ink); color: var(--panel); border: 0; box-shadow: 0 0 0 3px var(--panel), 0 0 0 4.5px var(--sd-ink); }
+:root[data-design="skydeck"] .btn-gloss::before { left: -16%; right: -16%; top: -16%; bottom: -16%; height: auto; border-radius: 50%; background: var(--sd-rim) center / contain no-repeat; }
+:root[data-design="skydeck"] .btn-gloss::after { display: none; }
+:root[data-design="skydeck"] .btn-gloss:hover { background: #3d3570; }
+:root[data-design="skydeck"] .btn-gloss:active { transform: translateY(2px); }
+:root[data-design="skydeck"] .btn-gloss.is-liked { background: var(--sd-pink); }
+:root[data-design="skydeck"] .pbar .btn-gloss { --size: 48px; }
+:root[data-design="skydeck"] .pbar__centre { gap: 0; align-self: stretch; align-content: center; }
+:root[data-design="skydeck"] .pbar__controls { gap: 14px; }
+/* a toggle that is on gets the star under it */
+:root[data-design="skydeck"] :is(.pbar__controls, .sd-wheel__keys) .btn-icon[aria-pressed] { position: relative; }
+:root[data-design="skydeck"] :is(.pbar__controls, .sd-wheel__keys) .btn-icon[aria-pressed="true"]::after {
+  content: ""; position: absolute; left: 50%; bottom: -1px; width: 12px; height: 12px; margin-left: -6px; background: var(--sd-star) center / contain no-repeat;
 }
-/* the dock: one recessed lavender track holding the right-hand keys, level with the LCD strip */
-:root[data-design="skydeck"] .pbar__tools {
-  --bg-2: #d3d2ee; --edge: #6f6c94;
-  align-self: end; margin-bottom: 14px; justify-self: end; height: 40px; padding: 0 var(--sp-2); gap: 0;   /* the same inset at every width (the tools give way, not the dock's padding) */
-  background: var(--lav); border: var(--stroke) solid #8f8bb0; border-radius: 14px 14px 22px 14px;
-  box-shadow: inset 0 2px 0 #00000017, 0 1.5px 0 #e9f5ff;
+/* the scale: hour ticks every tenth of the song, quarter ticks between, the played part inked pink along the baseline,
+   a star rides it as the knob */
+:root[data-design="skydeck"] :is(.pbar__seek, .sd-wheel) .seek[data-seek="player"] { height: 28px; }
+:root[data-design="skydeck"] .seek[data-seek="player"] .seek__track {
+  top: auto; bottom: 7px; margin: 0; height: 14px; border-radius: 0; box-shadow: none;
+  background:
+    linear-gradient(var(--sd-ink), var(--sd-ink)) 0 100% / 100% 1.5px no-repeat,
+    repeating-linear-gradient(90deg, var(--sd-ink) 0 1.5px, transparent 1.5px 10%) 0 100% / 100% 12px no-repeat,
+    repeating-linear-gradient(90deg, var(--sd-soft) 0 1px, transparent 1px 2.5%) 0 100% / 100% 6px no-repeat;
 }
-:root[data-design="skydeck"] .pbar__tools > .btn-icon--bare,
-:root[data-design="skydeck"] .pbar__tools .vol > .btn-icon--bare { width: 34px; height: 34px; }
-:root[data-design="skydeck"] .pbar .btn-icon--bare:hover { background: #ffffff40; }
-:root[data-design="skydeck"] .pbar__tools .btn-icon--bare:hover { background: #ffffff73; }
-:root[data-design="skydeck"] .pbar__tools .vol { gap: 2px; }
-/* status line: shown on the LCD strip itself (anchor positioning; older engines keep the base tab).
-   Failed: the reason in full plus short keys; the full labels stay the accessible names. A seek kept until it has
-   downloaded keeps the base tab: the song plays on, so the LCD stays to seek with. */
+:root[data-design="skydeck"] .seek[data-seek="player"] :is(.seek__played, .seek__xfer, .seek__buf) { top: auto; bottom: 0; height: 4px; }
+:root[data-design="skydeck"] .seek[data-seek="player"] .seek__played { inset: auto 0 0 0; }
+:root[data-design="skydeck"] .seek[data-seek="player"] .seek__rail { top: auto; bottom: 8px; }
+:root[data-design="skydeck"] .seek[data-seek="player"] .seek__knob {
+  left: -11px; top: -11px; width: 22px; height: 22px; border: 0; border-radius: 0; box-shadow: none; background: var(--sd-star) center / contain no-repeat;
+}
+:root[data-design="skydeck"] .seek[data-seek="player"]:focus-visible:not([data-pointer]) { outline: 2px solid var(--sd-pink); outline-offset: 3px; border-radius: 6px; }
+:root[data-design="skydeck"] :is(.pbar__seek .seek-row__time, .sd-wheel__time) { font: 900 .8125rem/1 var(--f-ui); letter-spacing: .06em; font-variant-numeric: tabular-nums; color: var(--sd-ink); }
+/* the volume: a short scale of its own */
+:root[data-design="skydeck"] .vol .seek .seek__track { height: 4px; margin-top: -2px; border-radius: 0; box-shadow: inset 0 0 0 1px var(--sd-ink); background: var(--panel); }
+:root[data-design="skydeck"] .vol .seek .seek__played { background: var(--sd-ink); }
+:root[data-design="skydeck"] .vol .seek .seek__knob { width: 12px; height: 12px; left: -6px; top: -6px; background: var(--panel); border: 2px solid var(--sd-ink); box-shadow: none; }
+:root[data-design="skydeck"] .pbar__tools { gap: 0; }
+:root[data-design="skydeck"] .pbar .btn-icon--bare:hover { background: var(--panel-2); }
+/* the status line: a printed slip on the card's top edge */
 :root[data-design="skydeck"] .pbar__state {
-  background: var(--sd-lcd-tex), var(--screen); color: var(--lilac); border-color: var(--mocha-edge);
-  font: var(--t-px); letter-spacing: var(--t-px-track);
-  --fg: var(--lilac); --fg-2: var(--lavender); --link: #f9dcec; --focus: var(--star); --heart: var(--pink-light); --bg-2: var(--mocha);
+  background: var(--panel); color: var(--sd-ink); border: 1.5px solid var(--sd-ink); border-bottom: 0; border-radius: 12px 12px 0 0;
+  font: 900 .6875rem/1.2 var(--f-ui); letter-spacing: .12em; text-transform: uppercase;
 }
-:root[data-design="skydeck"] .pbar__state > .ic { color: var(--pink-light); }
-:root[data-design="skydeck"] .pbar__state.is-error { color: #f9dcec; }
-:root[data-design="skydeck"] .pbar__state.is-error > span { flex: none; }
-:root[data-design="skydeck"] .pbar__state .btn--quiet {
-  color: #f9dcec; font: var(--t-px); letter-spacing: var(--t-px-track); text-decoration: underline; text-underline-offset: 3px; min-height: 22px;
-}
-:root[data-design="skydeck"] .pbar__state .btn--quiet:hover { background: var(--mocha-edge); }
-:root[data-design="skydeck"] .pbar__state .btn--quiet:is([data-act="retry-search"], [data-act="pick-source"], [data-act="next"]) { font-size: 0; }
-:root[data-design="skydeck"] .pbar__state .btn--quiet:is([data-act="retry-search"], [data-act="pick-source"], [data-act="next"])::after { font: var(--t-px); letter-spacing: var(--t-px-track); }
-:root[data-design="skydeck"] .pbar__state .btn--quiet[data-act="retry-search"]::after { content: "retry"; }
-:root[data-design="skydeck"] .pbar__state .btn--quiet[data-act="pick-source"]::after { content: "source"; }
-:root[data-design="skydeck"] .pbar__state .btn--quiet[data-act="next"]::after { content: "skip"; }
-@supports (anchor-name: --a) {
-  :root[data-design="skydeck"] .pbar__seek { anchor-name: --sd-lcd; }
-  :root[data-design="skydeck"] .pbar__state:not(.is-seek-wait) {
-    position: absolute; position-anchor: --sd-lcd; left: anchor(left); right: anchor(right); top: anchor(top); bottom: anchor(bottom);
-    transform: none; max-width: none; z-index: 2; justify-content: center; gap: 6px; padding: 1px 10px 0;
-    border: var(--stroke) solid var(--mocha-edge); border-radius: 10px 10px 16px 10px; box-shadow: inset 0 2px 0 #00000026, var(--sd-lcd-glow);
-  }
-}
+:root[data-design="skydeck"] .pbar__state > .ic { color: var(--sd-pink); }
+:root[data-design="skydeck"] .pbar__state .btn--quiet { color: var(--sd-pink); font: inherit; text-decoration: underline; text-underline-offset: 3px; }
 
-/* ---------- mini player (phone): a mini console strip ---------- */
-:root[data-design="skydeck"] .mini {
-  border-radius: 16px 16px 26px 16px; box-shadow: inset 0 2px 0 #e9f5ff, 0 4px 0 -2px var(--lav), 0 4px 0 0 var(--line); overflow: visible;
-}
-:root[data-design="skydeck"] .mini > .seek--line { left: 14px; right: 22px; top: -1px; }
+/* the phone: the mini player is a strip of the card, its scale along the top; the tab bar is printed too */
+:root[data-design="skydeck"] .mini { border-radius: 18px; box-shadow: inset 0 0 0 4px var(--panel), inset 0 0 0 5px var(--sd-soft), var(--sd-lift); overflow: visible; }
+:root[data-design="skydeck"] .mini > .seek--line { left: 18px; right: 18px; top: -1px; }
+:root[data-design="skydeck"] .mini > .seek--line .seek__track { background: var(--sd-faint); height: 3px; }
+:root[data-design="skydeck"] .mini .seek--line .seek__played { background: var(--sd-pink); }
+:root[data-design="skydeck"] .mini__title { font-weight: 900; }
+:root[data-design="skydeck"] .tabbar { border: 0; border-top: 1.5px solid var(--sd-ink); box-shadow: inset 0 5px 0 var(--panel), inset 0 6px 0 var(--sd-faint); }
+:root[data-design="skydeck"] .tab { color: var(--ink-2); font: 900 .6875rem/1 var(--f-ui); letter-spacing: .12em; text-transform: uppercase; }
+:root[data-design="skydeck"] .tab[aria-current="page"] { color: var(--sd-ink); }
+:root[data-design="skydeck"] .tab[aria-current="page"] .ic { background: var(--sd-ink); color: var(--panel); box-shadow: none; }
 
 /* =====================================================================
-   11. The handheld (Now Playing, desktop mini player window)
+   11. Now Playing: the wheel (slots/nowHero.full.html, .compact.html)
    ===================================================================== */
-:root[data-design="skydeck"] .device {
-  background: linear-gradient(180deg, #c8d4f9 0%, var(--peri) 18%, #b1c2f3 70%, #a9bbf0 100%);
-  box-shadow: inset 0 2px 0 #e9f5ff, inset 2px 0 0 #d3ddfa, inset 0 -4px 0 #9aaeea, var(--stack-sm);
+:root[data-design="skydeck"] .now { max-width: 1320px; }
+:root[data-design="skydeck"] .now__dev { position: relative; }
+:root[data-design="skydeck"] .sd-wheel {
+  position: relative; display: grid; justify-items: center; gap: 10px; padding: 18px 22px 20px;
+  background: var(--cream); color: var(--sd-ink); border: 1.5px solid var(--sd-ink); border-radius: 28px;
+  box-shadow: inset 0 0 0 6px var(--cream), inset 0 0 0 7px var(--sd-soft), 0 7px 0 -2px var(--stack-1), 0 7px 0 0 var(--sd-ink), 0 14px 0 -2px var(--stack-2), 0 14px 0 0 var(--sd-ink);
 }
-:root[data-design="skydeck"] .device__led i { background: var(--pink); box-shadow: 0 0 0 1.5px var(--mocha-edge), 0 0 0 4px #dd9fc94d; }
-:root[data-design="skydeck"] .device__bezel { box-shadow: inset 0 2px 0 #c9adb1, inset 0 -2px 0 #9c7f85; }
-:root[data-design="skydeck"] .device__screen {
-  background: linear-gradient(118deg, #fff9fe00 0 60%, #fff9fe0f 60% 74%, #fff9fe00 74%), var(--sd-lcd-tex), var(--screen);
-  box-shadow: inset 0 0 0 var(--stroke) var(--mocha-edge), inset 0 4px 0 #00000024, var(--sd-lcd-glow);
+:root[data-design="skydeck"] .sd-wheel__cap { margin: 0; font: var(--sd-caps); letter-spacing: .24em; text-transform: uppercase; color: var(--ink-2); }
+:root[data-design="skydeck"] .sd-wheel__cap span { color: var(--sd-pink); }
+:root[data-design="skydeck"] .sd-dial { position: relative; width: min(100%, 330px); aspect-ratio: 1; container-type: inline-size; }
+:root[data-design="skydeck"] .sd-dial__rim { position: absolute; inset: 0; background: var(--sd-rim) center / contain no-repeat; pointer-events: none; }
+/* the wave is the dial: a round disc whose bars are printed round the pin */
+:root[data-design="skydeck"] .sd-dial .wave {
+  position: absolute; inset: 9%; height: auto; display: block; gap: 0; border-radius: 50%; isolation: isolate;
+  box-shadow: 0 0 0 1.5px var(--sd-ink);
 }
-/* the LCD backlight warms up while a track plays */
-:root[data-design="skydeck"] .now:has(.wave.is-playing) .now-dev .device__screen {
-  box-shadow: inset 0 0 0 var(--stroke) var(--mocha-edge), inset 0 4px 0 #00000024, inset 0 0 34px #f6cee42e;
+/* the stars: they turn a quarter round over the song, with the song's place in hundredths (--song-pos, written on the
+   hero and inherited down to here only), so they move when the song does and restyle four elements a step */
+:root[data-design="skydeck"] :is(.now__dev .sd-wheel, .sd-wheel .sd-dial, .sd-dial .wave) { --song-pos: inherit; }
+:root[data-design="skydeck"] .sd-dial .wave::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; border-radius: 50%; background: var(--sd-disc) center / cover;
+  --song-pos: inherit; rotate: calc(var(--song-pos) * -90deg);
 }
-/* the wordmark is printed on the bezel in debossed ink (Game Boy style) */
-:root[data-design="skydeck"] .device__brand .brand { --wm-1: #2b2550; --wm-spark: var(--pink-light); text-shadow: 0 1px 0 #d2b9bd; }
-:root[data-design="skydeck"] .device__select { background: var(--mocha-edge); color: var(--star); }
-:root[data-design="skydeck"] .device__select:hover { background: #4d3d44; }
-:root[data-design="skydeck"] .dpad { filter: drop-shadow(0 3px 0 var(--mocha-edge)); }
-:root[data-design="skydeck"] .dpad__btn { box-shadow: inset 0 1.5px 0 #a48a93, var(--sd-key-rim); }
-:root[data-design="skydeck"] .dpad__btn:active { transform: translateY(2px); box-shadow: inset 0 2px 0 #00000026; }
-:root[data-design="skydeck"] .dpad__hub { display: grid; place-items: center; }
-:root[data-design="skydeck"] .dpad__hub::after { margin: 0; width: 16px; height: 16px; box-shadow: inset 0 2px 0 #00000033; }
-:root[data-design="skydeck"] .device__key .btn-gloss:active { transform: translateY(2px); }
-/* select / start: the pill and its label tilt together, with room between them (img 02) */
-:root[data-design="skydeck"] .device__pills { gap: 34px; padding-top: 22px; }
-:root[data-design="skydeck"] .device__pill { gap: 8px; transform: rotate(-22deg); }
-:root[data-design="skydeck"] .device__pill > i { box-shadow: inset 0 1.5px 0 #ffffffaa, 0 2px 0 var(--mocha-edge), var(--sd-key-rim); transition: box-shadow var(--dur-1), transform var(--dur-press) var(--ease-out); }
-:root[data-design="skydeck"] .device__pill:active > i { transform: translateY(2px); box-shadow: inset 0 1.5px 0 #ffffffaa; }
-:root[data-design="skydeck"] .device__pill[aria-pressed="true"] > i { box-shadow: inset 0 0 0 3px var(--mocha-edge), 0 2px 0 var(--mocha-edge); }
-:root[data-design="skydeck"] .device__grill { grid-template-columns: repeat(6, 6px); gap: 7px; transform: rotate(-28deg); right: 34px; bottom: 34px; }
-:root[data-design="skydeck"] .device__grill i { width: 6px; height: 26px; border-radius: 3px; background: var(--mocha); box-shadow: inset 0 2px 0 var(--mocha-edge); }
-:root[data-design="skydeck"] .device__grill i:nth-child(n+7) { display: none; }
-/* rim: just the LED and "power"; play state lives on the LCD only */
-:root[data-design="skydeck"] .now-dev .device__led [data-now="led"] { display: none; }
-:root[data-design="skydeck"] .now-dev .device__led::after { content: "power"; }
-:root[data-design="skydeck"] .now-dev .device__led { top: 7px; }
-/* while playing, the LED's glow breathes: a ring outside the LED's rim that grows and brightens. It is its own layer
-   animated by transform and opacity, so the compositor runs it (a box-shadow animation repainted the device 60 times
-   a second) */
-:root[data-design="skydeck"] .now-dev .device__led i { position: relative; }
-:root[data-design="skydeck"] .now:has(.wave.is-playing) .device__led i { box-shadow: 0 0 0 1.5px var(--mocha-edge); }
-:root[data-design="skydeck"] .now:has(.wave.is-playing) .device__led i::after {
-  content: ""; position: absolute; inset: -1.5px; border-radius: 50%; box-shadow: 0 0 0 4.5px #dd9fc966;
-  animation: sd-led 1.8s var(--loop-ease-in-out-36) infinite alternate; animation-play-state: var(--loop-play, running);
+:root[data-design="skydeck"] .sd-dial .wave__bar {
+  position: absolute; left: calc(50% - .65cqw); bottom: calc(50% + 29cqw); width: 1.3cqw; min-width: 0; height: calc(1.5cqw + var(--h) * 14cqw);
+  border-radius: 1cqw; transform-origin: 50% calc(100% + 29cqw); background: #f2e3d147;
 }
-@keyframes sd-led { from { opacity: .5; transform: scale(.8); } to { opacity: 1; transform: none; } }
-
-/* failed: the LCD drops to a "no signal" screen (glyph, words, a flat line for the waveform) */
-:root[data-design="skydeck"] .app:has(> .pbar[data-status="failed"]) .now-dev [data-now="head"] { color: #f9dcec; font-weight: 800; }
-:root[data-design="skydeck"] .app:has(> .pbar[data-status="failed"]) .now-dev .device__now { visibility: hidden; }
-:root[data-design="skydeck"] .app:has(> .pbar[data-status="failed"]) .now-dev__page { position: relative; }
-:root[data-design="skydeck"] .app:has(> .pbar[data-status="failed"]) .now-dev__page::before,
-:root[data-design="skydeck"] .app:has(> .pbar[data-status="failed"]) .now-dev__page::after {
-  position: absolute; left: 0; right: 0; text-align: center; font-family: var(--f-px); letter-spacing: .04em; color: #f9dcec;
+:root[data-design="skydeck"] .sd-dial .wave__bar.is-played { background: var(--sd-pink-lt); }
+:root[data-design="skydeck"] .sd-dial .wave__bar:is(.is-buf, .is-xfer) { background: #b6c7f5a6; }
+:root[data-design="skydeck"] .sd-dial .wave.is-playing .wave__bar.is-played { animation: none; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(1) { rotate: 3deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(2) { rotate: 9deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(3) { rotate: 15deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(4) { rotate: 21deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(5) { rotate: 27deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(6) { rotate: 33deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(7) { rotate: 39deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(8) { rotate: 45deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(9) { rotate: 51deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(10) { rotate: 57deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(11) { rotate: 63deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(12) { rotate: 69deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(13) { rotate: 75deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(14) { rotate: 81deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(15) { rotate: 87deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(16) { rotate: 93deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(17) { rotate: 99deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(18) { rotate: 105deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(19) { rotate: 111deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(20) { rotate: 117deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(21) { rotate: 123deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(22) { rotate: 129deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(23) { rotate: 135deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(24) { rotate: 141deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(25) { rotate: 147deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(26) { rotate: 153deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(27) { rotate: 159deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(28) { rotate: 165deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(29) { rotate: 171deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(30) { rotate: 177deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(31) { rotate: 183deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(32) { rotate: 189deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(33) { rotate: 195deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(34) { rotate: 201deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(35) { rotate: 207deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(36) { rotate: 213deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(37) { rotate: 219deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(38) { rotate: 225deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(39) { rotate: 231deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(40) { rotate: 237deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(41) { rotate: 243deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(42) { rotate: 249deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(43) { rotate: 255deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(44) { rotate: 261deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(45) { rotate: 267deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(46) { rotate: 273deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(47) { rotate: 279deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(48) { rotate: 285deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(49) { rotate: 291deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(50) { rotate: 297deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(51) { rotate: 303deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(52) { rotate: 309deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(53) { rotate: 315deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(54) { rotate: 321deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(55) { rotate: 327deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(56) { rotate: 333deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(57) { rotate: 339deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(58) { rotate: 345deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(59) { rotate: 351deg; }
+:root[data-design="skydeck"] .sd-dial .wave__bar:nth-child(60) { rotate: 357deg; }
+/* the needle: from the pin to the rim, pointing at now (the wave's own --pos, which lull moves with the song) */
+:root[data-design="skydeck"] .sd-dial .wave__rail {
+  top: 1%; bottom: 50%; left: calc(50% - 1px); width: 2px; z-index: 1; transform: rotate(calc(var(--pos) * 360deg)); transform-origin: 50% 100%; will-change: transform;
 }
-:root[data-design="skydeck"] .app:has(> .pbar[data-status="failed"]) .now-dev__page::before { content: "\26a0\FE0E  no signal"; top: calc(50% - 30px); font-size: 2rem; line-height: 1; }
-:root[data-design="skydeck"] .app:has(> .pbar[data-status="failed"]) .now-dev__page::after { content: "all sources failed"; top: calc(50% + 8px); font-size: 1.25rem; line-height: 1; color: var(--lilac); }
-:root[data-design="skydeck"] .app:has(> .pbar[data-status="failed"]) .now-dev .device__screen { background-image: repeating-linear-gradient(0deg, #fff9fe12 0 1px, transparent 1px 3px); }
-:root[data-design="skydeck"] .app:has(> .pbar[data-status="failed"]) .now-dev .wave__rail { visibility: hidden; }
-:root[data-design="skydeck"] .app:has(> .pbar[data-status="failed"]) .now-dev .wave__bar { height: 1px !important; min-height: 0; background: var(--lavender); }   /* bar heights are inline */
-
-/* the cartridge seated in the top slot (slots/nowHero): grey-lilac plastic, grip ridges, notch, cream label with
-   the live cover + title; it lifts and reseats on track change */
-:root[data-design="skydeck"] .now { isolation: isolate; max-width: 1320px; }
-:root[data-design="skydeck"] .now__dev { position: relative; padding-top: 50px; }
-:root[data-design="skydeck"] .now__dev > .device { z-index: 1; }
-:root[data-design="skydeck"] .sd-cart {
-  position: absolute; z-index: 0; top: 0; left: 50%; width: min(60%, 240px); height: 76px; transform: translateX(-50%);
-  border: var(--stroke) solid var(--line); border-radius: 9px 9px 4px 4px;
-  background: linear-gradient(180deg, #aea8c8 0%, #9d97b8 30%, #948db1 100%);
-  box-shadow: inset 0 2px 0 #cdc8e0, inset -3px 0 0 #8a83a8, inset 3px 0 0 #a9a3c3;
-  transition: transform var(--dur-2) var(--ease-out);
+:root[data-design="skydeck"] .sd-dial .wave__head { background: var(--sd-pink-lt); }
+:root[data-design="skydeck"] .sd-dial .wave__head::after {
+  content: ""; position: absolute; left: 50%; top: -9px; width: 20px; height: 20px; margin-left: -10px; background: var(--sd-star) center / contain no-repeat;
 }
-:root[data-design="skydeck"] .sd-cart::before {             /* notch on the left edge */
-  content: ""; position: absolute; left: -2px; top: 24px; width: 6px; height: 16px; border-radius: 0 4px 4px 0;
-  background: #7d769c; border: var(--stroke) solid var(--line); border-left: 0;
+:root[data-design="skydeck"] .sd-dial .wave:focus-visible { outline: 2px solid var(--sd-pink); outline-offset: 6px; }
+/* the cover in the middle, held by the pin */
+:root[data-design="skydeck"] .sd-dial__art {
+  position: absolute; z-index: 2; inset: 29%; border-radius: 50%; display: grid; box-shadow: 0 0 0 4px var(--cream), 0 0 0 5.5px var(--sd-ink);
 }
-:root[data-design="skydeck"] .sd-cart__grip {
-  position: absolute; left: 28%; right: 28%; top: 5px; height: 8px; border-radius: 1px;
-  background: repeating-linear-gradient(180deg, #7d769c 0 1.5px, #c6c1dc 1.5px 3px, transparent 3px 3.5px);
+:root[data-design="skydeck"] .sd-dial__art :is(.cover, .now-dev__slot) { --cover-size: 100% !important; width: 100%; height: 100%; margin: 0; border: 0; border-radius: 50%; }   /* inline --cover-size from the markup */
+:root[data-design="skydeck"] .sd-dial__art .now-dev__slot { background: var(--sd-disc) center / cover; }
+:root[data-design="skydeck"] .sd-dial__art::after {
+  content: ""; position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, var(--sd-ink) 0 2px, var(--cream) 2.5px 4.5px, var(--sd-ink) 5px 7px);
 }
-:root[data-design="skydeck"] .sd-cart__label {
-  position: absolute; left: 14px; right: 12px; top: 16px; height: 30px; display: flex; align-items: center; gap: 7px;
-  padding: 0 8px 0 3px; background: var(--cream); border: 1px solid var(--ink); border-radius: 4px 4px 2px 2px;
-  box-shadow: inset 0 -3px 0 #e6cfb6; overflow: hidden;
-}
-:root[data-design="skydeck"] .sd-cart__art { flex: none; display: grid; }
-:root[data-design="skydeck"] .sd-cart__art .cover { --cover-size: 23px !important; border-radius: 3px; border-width: 1px; }   /* inline --cover-size from the markup */
-:root[data-design="skydeck"] .sd-cart__art .now-dev__slot { width: 23px; height: 23px; margin: 0; border-radius: 3px; border-color: var(--line); }
-:root[data-design="skydeck"] .sd-cart__title { min-width: 0; flex: 1; display: block; overflow: hidden; }
-:root[data-design="skydeck"] .sd-cart__title .now-slide { display: block; }
-:root[data-design="skydeck"] .sd-cart__title .device__title {
-  margin: 1px 0 0; font: var(--t-px); letter-spacing: var(--t-px-track); color: var(--ink);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-:root[data-design="skydeck"] .sd-cart__title :is(.device__artist, .wave) { display: none; }
-:root[data-design="skydeck"] .sd-cart:has(.now-slide.is-out) { transform: translate(-50%, -9px); }
-
-/* moonlight halo behind the device, with two sparkles kissing its corners (img 01) */
-:root[data-design="skydeck"] .now__dev::after {
-  content: ""; position: absolute; z-index: -1; left: 50%; top: 50%; width: 150%; aspect-ratio: 1; transform: translate(-50%, -50%);
-  pointer-events: none; background: radial-gradient(closest-side, var(--sd-glow) 0 58%, var(--sd-glow-2) 80%, transparent 100%);
-}
-:root[data-design="skydeck"] .now__dev::before {
-  content: ""; position: absolute; z-index: 2; inset: 30px -14px -2px -16px; pointer-events: none;
-  background: var(--sd-spark-c) 0 22px / 26px 26px no-repeat, var(--sd-spark-c) 100% calc(100% - 64px) / 16px 16px no-repeat;
-  filter: drop-shadow(0 0 4px #fff9fe99);
-}
-:root[data-design="skydeck"][data-theme="day"] .now__dev::before { background-image: var(--sd-spark), var(--sd-spark); filter: none; }
-
-/* desktop / tablet: the device is sized by the window height so it keeps its floor and the key hint row;
-   the lyrics card ends above the bar and fades */
+/* nothing could play: the wheel goes dark (the stars dim, the waveform unlit, the needle down at rest); the state's
+   own words say what happened (.sd-wheel__state) */
+:root[data-design="skydeck"]:is([data-player="failed"], [data-player="jellyfin-error"]) .sd-dial .wave::before { opacity: .35; }
+:root[data-design="skydeck"]:is([data-player="failed"], [data-player="jellyfin-error"]) .sd-dial .wave__bar { background: #f2e3d126; }
+:root[data-design="skydeck"]:is([data-player="failed"], [data-player="jellyfin-error"]) .sd-dial .wave__rail { visibility: hidden; }
+:root[data-design="skydeck"] .sd-wheel__read { display: grid; justify-items: center; gap: 6px; }
+:root[data-design="skydeck"] .sd-wheel__time { display: flex; align-items: baseline; gap: 8px; margin: 0; font-size: 1rem; }
+:root[data-design="skydeck"] .sd-wheel__of { font: var(--sd-caps); letter-spacing: .2em; text-transform: uppercase; color: var(--ink-2); }
+:root[data-design="skydeck"] .sd-wheel__facts { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; margin: 0; }
+:root[data-design="skydeck"] .sd-wheel__state { font: var(--sd-caps); letter-spacing: .18em; text-transform: uppercase; color: var(--sd-pink); }
+:root[data-design="skydeck"] .sd-wheel__facts .device__facts { display: inline-flex; gap: 6px; align-items: center; }
+:root[data-design="skydeck"] .sd-wheel > .seek { width: 100%; }
+:root[data-design="skydeck"] .sd-wheel__keys { display: flex; align-items: center; justify-content: center; gap: 14px; padding-top: 4px; }
+:root[data-design="skydeck"] .sd-wheel__keys .btn-icon { color: var(--sd-ink); }
+:root[data-design="skydeck"] .sd-wheel__keys .btn-icon:hover { background: var(--cream-2); }
+:root[data-design="skydeck"] .sd-wheel__like { position: absolute; top: 14px; right: 16px; }
+:root[data-design="skydeck"] .sd-wheel__like .btn-gloss { --size: 40px; background: var(--cream); color: var(--sd-pink); box-shadow: 0 0 0 1.5px var(--sd-ink); }
+:root[data-design="skydeck"] .sd-wheel__like .btn-gloss::before { display: none; }
+:root[data-design="skydeck"] .sd-wheel__like .btn-gloss.is-liked { background: var(--sd-pink); color: var(--cream); }
+/* the compact wheel (phone tabs, short screens) */
+:root[data-design="skydeck"] .sd-wheel--compact { grid-template-columns: auto minmax(0, 1fr) auto; justify-items: stretch; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 20px; }
+:root[data-design="skydeck"] .sd-wheel__win { display: grid; border-radius: 50%; margin: 6px; box-shadow: 0 0 0 3px var(--cream), 0 0 0 4.5px var(--sd-ink); }
+:root[data-design="skydeck"] .sd-wheel__win .cover { border-radius: 50%; border: 0; }
+:root[data-design="skydeck"] .sd-wheel__song { min-width: 0; }
+:root[data-design="skydeck"] .sd-wheel__song .device__title { margin: 0; font: 900 1rem/1.25 var(--f-ui); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:root[data-design="skydeck"] .sd-wheel__song .device__artist { margin: 0; font: var(--t-meta); color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:root[data-design="skydeck"] .sd-wheel__song .wave { display: none; }
+:root[data-design="skydeck"] .sd-wheel--compact .sd-wheel__keys { gap: 4px; padding: 0; }
+/* the page round the wheel: the title large, the actions round printed keys, the lyrics a card that fades at its foot */
+:root[data-design="skydeck"] .now-head__title { font: 900 2.5rem/1.05 var(--f-ui); letter-spacing: -.02em; }
+:root[data-design="skydeck"] .now-head__from { font: var(--sd-caps); letter-spacing: .16em; text-transform: uppercase; }
+:root[data-design="skydeck"] .now__keys .kbd { background: var(--cream); color: var(--sd-ink); border-color: var(--sd-ink); }
 @media (min-width: 640px) {
-  :root[data-design="skydeck"] .now__keys { margin-top: 10px; }
+  :root[data-design="skydeck"] .now-acts .btn:not(.btn--primary, .btn-save) { border-color: var(--sd-ink); }
   :root[data-design="skydeck"] .now-lycard { max-height: calc(100dvh - 470px); min-height: 300px; overflow: hidden; }
   :root[data-design="skydeck"] .now-lycard .now-ly__view {
     -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 26px), transparent);
     mask-image: linear-gradient(to bottom, #000 calc(100% - 26px), transparent);
   }
-  /* the source card: before a save starts, its five empty steps are not drawn, so they never contradict the
-     stream's own progress ("87% of 30.2 MB"); the "not saved" line stays */
   :root[data-design="skydeck"] .now-srccard .pipeline:not(:has(.is-done, .is-current, .is-failed)) { display: none; }
+  :root[data-design="skydeck"] .now__keys { margin-top: 26px; }
 }
-/* short windows: the device column scales down as one object (zoom keeps its proportions and hit areas) */
-@media (min-width: 640px) and (max-height: 1000px) { :root[data-design="skydeck"] .now__dev { zoom: .86; } }
-@media (min-width: 640px) and (max-height: 820px) { :root[data-design="skydeck"] .now__dev { zoom: .76; } }
-/* action keys under the title, labelled like the device keys */
-@media (min-width: 640px) {
-  :root[data-design="skydeck"] .now-acts { align-items: flex-start; gap: 10px; }
-  :root[data-design="skydeck"] .now-acts .btn-save { margin-right: 6px; }
-  :root[data-design="skydeck"] .now-acts__btn {
-    width: 58px; height: auto; min-height: 0; padding: 0; display: grid; justify-items: center; gap: 3px;
-    border: 0; background: none; box-shadow: none; color: var(--fg); font: var(--t-px); letter-spacing: var(--t-px-track);
-  }
-  :root[data-design="skydeck"] .now-acts__btn > .ic {
-    box-sizing: content-box; width: 20px; height: 20px; padding: 10px; border-radius: 50%;
-    border: var(--stroke) solid var(--edge); background: var(--panel); color: var(--fg-panel);
-    box-shadow: 0 3px 0 -1px var(--stack-1), 0 3px 0 0 var(--line); transition: transform var(--dur-press) var(--ease-out);
-  }
-  :root[data-design="skydeck"] .now-acts__btn:hover > .ic { background: var(--panel-2); }
-  :root[data-design="skydeck"] .now-acts__btn:active > .ic { transform: translateY(2px); box-shadow: 0 1px 0 0 var(--line); }
-  :root[data-design="skydeck"] .now-acts__btn[aria-pressed="true"] > .ic { background: var(--peri); color: var(--ink); }
-  :root[data-design="skydeck"] .now-acts__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  :root[data-design="skydeck"] .now-acts__btn::after { color: var(--fg-sky); }
-  :root[data-design="skydeck"] .now-acts__btn[data-act="add-to-playlist"]::after { content: "add"; }
-  :root[data-design="skydeck"] .now-acts__btn[data-act="connect"]::after { content: "devices"; }
-  :root[data-design="skydeck"] .now-acts__btn[data-act="start-radio"]::after { content: "radio"; }
-  :root[data-design="skydeck"] .now-acts__btn[data-act="follow"]::after { content: "follow"; }
-  :root[data-design="skydeck"] .now-acts__btn[data-act="classic"]::after { content: "classic"; }
-  :root[data-design="skydeck"] .now-acts__btn:focus-visible { outline: none; }
-  :root[data-design="skydeck"] .now-acts__btn:focus-visible > .ic { outline: 2px solid var(--focus); outline-offset: 2px; }
-}
-/* phone: the Art tab turns the LCD into a big cover; title and an even grid of actions under the device */
+/* short windows: the wheel shrinks as one object */
+@media (min-width: 640px) and (max-height: 820px) { :root[data-design="skydeck"] .now__dev { zoom: .86; } }
 @media (max-width: 639px) {
-  :root[data-design="skydeck"] .now__dev { padding-top: 38px; }
-  :root[data-design="skydeck"] .now__dev::before { display: none; }       /* sparkle budget: the sky already has its five */
-  :root[data-design="skydeck"] .sd-cart { height: 64px; width: min(58%, 210px); }
-  :root[data-design="skydeck"] .sd-cart__label { top: 13px; height: 26px; }
-  :root[data-design="skydeck"] .sd-cart__grip { top: 4px; height: 6px; }
-  :root[data-design="skydeck"] .sd-cart::before { top: 18px; height: 13px; }
-  :root[data-design="skydeck"] .sd-cart__art .cover,
-  :root[data-design="skydeck"] .sd-cart__art .now-dev__slot { --cover-size: 19px !important; width: 19px; height: 19px; }   /* inline --cover-size */
-  :root[data-design="skydeck"] .now-dev .dpad__hub::after { width: 13px; height: 13px; }
-  :root[data-design="skydeck"] .now-dev .device__led { top: 1px; }
-  :root[data-design="skydeck"] .now-dev .device__pills { padding-top: 14px; gap: 30px; }
-  :root[data-design="skydeck"] .now[data-tab="art"] .now-dev { --now-page-h: 196px; }
-  :root[data-design="skydeck"] .now[data-tab="art"] .now-dev .device__now { --now-art: 176px; grid-template-columns: 1fr; justify-items: center; }
-  :root[data-design="skydeck"] .now[data-tab="art"] .now-dev .now-dev__meta { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  :root[data-design="skydeck"] .sd-wheel:not(.sd-wheel--compact) { padding: 14px 14px 16px; }
+  :root[data-design="skydeck"] .sd-dial { width: min(100%, 290px); }
   :root[data-design="skydeck"] .now[data-tab="art"] .now-head__title {
     position: static; width: auto; height: auto; overflow: visible; clip-path: none; white-space: normal;
-    margin: 0; font: italic 900 1.625rem/1.1 var(--f-ui); letter-spacing: -.01em; color: var(--fg-sky);
+    margin: 0; font: 900 1.625rem/1.1 var(--f-ui); color: var(--fg-sky);
   }
-  :root[data-design="skydeck"] .now[data-tab="art"] .now-head__by { margin: 4px 0 10px; }
   :root[data-design="skydeck"] .now-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   :root[data-design="skydeck"] .now-acts .btn { justify-content: center; width: auto; }
   :root[data-design="skydeck"] .now-acts .btn-save { grid-column: 1 / -1; }
 }
 
 /* =====================================================================
-   12. Classic: Webamp alone on the sky; its status boxes are the console's LCD readouts
+   12. Classic: Webamp alone on the sky; its status boxes are printed slips
    ===================================================================== */
 :root[data-design="skydeck"] .cls-scrim { opacity: 1; background: var(--sd-sky-bg); }
-:root[data-design="skydeck"] .cls-desk .s-card { --bg: var(--mocha-edge); --bg-2: #4d3d44; --fg: var(--lilac); --fg-2: var(--lavender); --edge: var(--lavender); --link: #f9dcec; --focus: var(--star); }
+:root[data-design="skydeck"] .cls-desk .s-card {
+  --bg: var(--cream); --bg-2: var(--cream-2); --fg: var(--sd-ink); --fg-2: var(--ink-2); --edge: var(--sd-ink); --link: var(--link-on-cream); --focus: var(--sd-pink);
+  border: 1.5px solid var(--sd-ink); box-shadow: var(--sd-rule), var(--sd-lift);
+}
 
 /* =====================================================================
-   Wide screens (ADR-0007): the Now Playing column is a tray like the side panel, edged the same
+   13. The desktop app's pages: the pocket wheel (mini player, slots/miniPlayer.device.html), the strip, and the
+       connect and unreachable cards
    ===================================================================== */
-:root[data-design="skydeck"] .nowcol { border-color: var(--sd-panel-edge); }
+:root[data-design="skydeck"] .sd-mini {
+  position: relative; width: 300px; display: grid; justify-items: center; gap: 8px; margin-bottom: 14px; padding: 12px 16px 16px;
+  background: var(--cream); color: var(--sd-ink); border: 1.5px solid var(--sd-ink); border-radius: 26px;
+  box-shadow: inset 0 0 0 5px var(--cream), inset 0 0 0 6px var(--sd-soft), var(--sd-lift);
+}
+:root[data-design="skydeck"] .sd-mini__head { justify-self: stretch; display: flex; align-items: center; gap: 6px; }
+:root[data-design="skydeck"] .sd-mini__cap { flex: 1; align-self: stretch; display: flex; align-items: center; gap: 6px; padding-left: 2px; font: var(--sd-caps); letter-spacing: .22em; text-transform: uppercase; color: var(--ink-2); }
+:root[data-design="skydeck"] .sd-mini__cap::before { content: ""; width: 13px; height: 13px; border-radius: 50%; background: radial-gradient(circle, var(--cream) 0 2.5px, var(--sd-ink) 3px 4px, #d8c3a6 4.5px 5px, var(--sd-ink) 5.5px 6.5px, transparent 7px); }
+:root[data-design="skydeck"] .sd-mini .dk-mini__win { color: var(--sd-ink); }
+:root[data-design="skydeck"] .sd-mini .dk-mini__win:hover { background: var(--cream-2); }
+/* the window: the cover through the round window, ringed by the printed scale, which turns a round over the song (the
+   window's --song-pos); the star on top points at now */
+:root[data-design="skydeck"] :is(.sd-mini, .sd-mini__now) { --song-pos: inherit; }
+:root[data-design="skydeck"] .sd-mini__now { position: relative; justify-self: stretch; display: grid; grid-template-rows: 148px auto; justify-items: center; gap: 6px; min-width: 0; }
+:root[data-design="skydeck"] .sd-mini__now::before {
+  content: ""; position: absolute; left: calc(50% - 74px); top: 0; width: 148px; height: 148px; background: var(--sd-rim) center / contain no-repeat; pointer-events: none;
+  --song-pos: inherit; rotate: calc(var(--song-pos) * 1turn);
+}
+:root[data-design="skydeck"] .sd-mini__now::after { content: ""; position: absolute; left: 50%; top: -9px; width: 20px; height: 20px; margin-left: -10px; background: var(--sd-star) center / contain no-repeat; pointer-events: none; }
+/* desktop.js writes the cover and the song into [data-dk-now] at each song: both are laid out by the window above */
+:root[data-design="skydeck"] .sd-mini :is([data-dk-now], .dk-mini__now) { display: contents; }
+:root[data-design="skydeck"] .sd-mini .dk-mini__now > :is(.cover, .now-dev__slot) {
+  grid-row: 1; align-self: center; --cover-size: 84px; width: 84px; height: 84px; border: 0; border-radius: 50%;
+  box-shadow: 0 0 0 4px var(--cream), 0 0 0 5.5px var(--sd-ink);
+}
+:root[data-design="skydeck"] .sd-mini .dk-mini__now > div { grid-row: 2; justify-self: stretch; display: grid; justify-items: center; gap: 2px; min-width: 0; text-align: center; }
+:root[data-design="skydeck"] .sd-mini .device__title { max-width: 100%; font: 900 1rem/1.25 var(--f-ui); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:root[data-design="skydeck"] .sd-mini .device__artist { max-width: 100%; font: var(--t-meta); color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:root[data-design="skydeck"] .sd-mini .device__facts { display: flex; gap: 6px; justify-content: center; margin-top: 4px; }
+:root[data-design="skydeck"] .sd-mini .device__fact { font: var(--sd-caps); letter-spacing: .14em; text-transform: uppercase; color: var(--ink-2); }
+:root[data-design="skydeck"] .sd-mini__times { justify-self: stretch; display: flex; justify-content: space-between; margin: 0; font: 900 .75rem/1 var(--f-ui); letter-spacing: .06em; font-variant-numeric: tabular-nums; }
+:root[data-design="skydeck"] .sd-mini__times span { color: var(--ink-2); }
+/* the seek is the printed scale, as in the player: the waveform's bars are its ticks, inked where it has played */
+:root[data-design="skydeck"] .sd-mini .wave { justify-self: stretch; height: 18px; gap: 2px; align-items: flex-end; --wave-head: 16px; border-bottom: 1.5px solid var(--sd-ink); }
+:root[data-design="skydeck"] .sd-mini .wave__bar { height: calc(3px + var(--h) * 9px) !important; min-height: 0; border-radius: 0; background: var(--sd-soft); animation: none; }   /* bar heights are inline */
+:root[data-design="skydeck"] .sd-mini .wave__bar.is-played { background: var(--sd-pink); }
+:root[data-design="skydeck"] .sd-mini .wave__bar:is(.is-buf, .is-xfer) { background: #9fb0e0; }
+:root[data-design="skydeck"] .sd-mini .wave__head { top: auto; bottom: -9px; height: 16px; border-radius: 0; background: var(--sd-star) center / contain no-repeat; }
+:root[data-design="skydeck"] .sd-mini .wave:focus-visible { outline: 2px solid var(--sd-pink); outline-offset: 4px; }
+:root[data-design="skydeck"] .sd-mini__keys { justify-self: stretch; display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 0; }
+:root[data-design="skydeck"] :is(.sd-mini__keys, .sd-mini__foot, .dk-strip__keys) .btn-icon { color: var(--sd-ink); }
+:root[data-design="skydeck"] :is(.sd-mini__keys, .sd-mini__foot, .dk-strip__keys) .btn-icon:hover { background: var(--cream-2); }
+:root[data-design="skydeck"] .sd-mini__keys .btn-icon[aria-pressed] { position: relative; }
+:root[data-design="skydeck"] .sd-mini__keys .btn-icon[aria-pressed="true"]::after {
+  content: ""; position: absolute; left: 50%; bottom: -1px; width: 12px; height: 12px; margin-left: -6px; background: var(--sd-star) center / contain no-repeat;
+}
+:root[data-design="skydeck"] .sd-mini__foot { justify-self: stretch; display: flex; align-items: center; justify-content: space-between; border-top: 1.5px dotted var(--sd-soft); padding-top: 6px; }
+:root[data-design="skydeck"] .sd-mini__foot .btn-icon.is-liked { color: var(--sd-pink); }
+:root[data-design="skydeck"] .sd-mini__vol { display: flex; align-items: center; gap: 4px; font: var(--sd-caps); letter-spacing: .14em; text-transform: uppercase; color: var(--ink-2); }
+:root[data-design="skydeck"] .sd-mini .dk-mini__note { left: 18px; right: 18px; top: 44px; bottom: auto; background: var(--sd-ink); color: var(--cream); font: var(--sd-caps); letter-spacing: .14em; text-transform: uppercase; }
+/* the strip: a slip of the card */
+:root[data-design="skydeck"] .dk-strip { background: var(--cream); color: var(--sd-ink); border: 1.5px solid var(--sd-ink); border-radius: 18px; box-shadow: inset 0 0 0 4px var(--cream), inset 0 0 0 5px var(--sd-faint), var(--sd-lift); }
+:root[data-design="skydeck"] .dk-strip .bezel-thumb { margin-left: 6px; }
+:root[data-design="skydeck"] .dk-strip__title { font: 900 .9375rem/1.2 var(--f-ui); }
+:root[data-design="skydeck"] .dk-strip > .seek--line .seek__track { background: var(--sd-faint); height: 3px; }
+:root[data-design="skydeck"] .dk-strip > .seek--line .seek__played { background: var(--sd-pink); }
+/* connect, unreachable and close-to-tray: the same printed card on the sky */
+:root[data-design="skydeck"] .dk-card { background: var(--cream); color: var(--sd-ink); border: 1.5px solid var(--sd-ink); box-shadow: var(--sd-rule), var(--sd-lift); }
 
 }

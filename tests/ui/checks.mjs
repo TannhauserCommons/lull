@@ -119,6 +119,57 @@ export function unclippedClamps(page) {
   });
 }
 
+// Null when every cover shows whole in the rows and lists that scroll it; else the first one cut, with what draws round it
+// and the side cut. A scroller clips at its padding box only because it scrolls, so what a design draws round a cover
+// (a ring of box-shadow, an outline: Skydeck's round windows) is cut there unless the cover's own box holds it, or the
+// row leaves room for it. Across the scroller's axis that is a defect wherever the cover sits; along it, only where the
+// scroller's content starts or ends (a cover half scrolled out of a shelf is cut by design). A frame that clips on
+// purpose (overflow hidden or clip) is left alone. clippedCoversNow is the check itself, to run inside the page.
+export function clippedCovers(page) { return page.evaluate(clippedCoversNow); }
+export const clippedCoversNow = () => {
+  const px = (v) => parseFloat(v) || 0;
+  // how far past each side of its box a cover draws: its outer shadows (offset, blur and spread: a shadow offset down
+  // and to the right, a stack of sleeves, reaches past the bottom and right only) and its outline (every side)
+  const reach = (s) => {
+    const r = { top: 0, right: 0, bottom: 0, left: 0 };
+    if (s.boxShadow !== 'none') for (const sh of s.boxShadow.split(/,(?![^(]*\))/)) {
+      if (/inset/.test(sh)) continue;
+      const [x = 0, y = 0, blur = 0, spread = 0] = sh.replace(/(rgba?|color)\([^)]*\)|#[0-9a-f]+/gi, '').trim().split(/\s+/).map(px);
+      const out = spread + blur;
+      r.top = Math.max(r.top, out - y); r.bottom = Math.max(r.bottom, out + y);
+      r.left = Math.max(r.left, out - x); r.right = Math.max(r.right, out + x);
+    }
+    if (s.outlineStyle !== 'none') { const o = px(s.outlineWidth) + px(s.outlineOffset); for (const k in r) r[k] = Math.max(r[k], o); }
+    for (const k in r) r[k] -= 0.5;
+    return r;
+  };
+  const name = (e) => `${e.tagName.toLowerCase()}.${[...e.classList].join('.')}`;
+  for (const c of document.querySelectorAll('.cover, .mosaic')) {
+    if (!c.getClientRects().length || c.closest('[hidden], .vh')) continue;
+    const s = getComputedStyle(c), b = c.getBoundingClientRect();
+    if (s.visibility === 'hidden' || b.width < 8) continue;
+    const ring = reach(s); if (Math.max(ring.top, ring.right, ring.bottom, ring.left) <= 0) continue;
+    for (let a = c.parentElement; a && a !== document.body; a = a.parentElement) {
+      const as = getComputedStyle(a), scroll = (o) => o === 'auto' || o === 'scroll';
+      if (!scroll(as.overflowX) && !scroll(as.overflowY)) continue;
+      const ab = a.getBoundingClientRect();
+      const box = { left: ab.left + px(as.borderLeftWidth), right: ab.left + px(as.borderLeftWidth) + a.clientWidth, top: ab.top + px(as.borderTopWidth), bottom: ab.top + px(as.borderTopWidth) + a.clientHeight };
+      const alongX = a.scrollWidth > a.clientWidth + 1, alongY = a.scrollHeight > a.clientHeight + 1;
+      // where the cover sits in the scroller's content, from its start and end
+      const fromTop = b.top - box.top + a.scrollTop, toBottom = a.scrollHeight - (b.bottom - box.top + a.scrollTop);
+      const fromLeft = b.left - box.left + a.scrollLeft, toRight = a.scrollWidth - (b.right - box.left + a.scrollLeft);
+      const cut = [];
+      if (ring.top > 0 && (alongY ? fromTop < ring.top : b.top - ring.top < box.top)) cut.push('top');
+      if (ring.bottom > 0 && (alongY ? toBottom < ring.bottom : b.bottom + ring.bottom > box.bottom)) cut.push('bottom');
+      if (ring.left > 0 && (alongX ? fromLeft < ring.left : b.left - ring.left < box.left)) cut.push('left');
+      if (ring.right > 0 && (alongX ? toRight < ring.right : b.right + ring.right > box.right)) cut.push('right');
+      if (cut.length) return `${name(c)} draws ${cut.map((k) => `${(ring[k] + 0.5).toFixed(1)} px past its ${k}`).join(' and ')}, cut by the scrolling ${name(a)}`;
+      break;   // the nearest scroller is the one that clips it: a cover scrolled out of a row isn't cut by the page
+    }
+  }
+  return null;
+};
+
 // Null when nothing sticks out sideways; else the widest offender, to name it in the failure.
 export function overflow(page) {
   return page.evaluate(() => {
