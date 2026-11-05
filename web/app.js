@@ -3398,6 +3398,7 @@
     return $$('.seg__btn', s).filter(function (b) { return SEG_PICKED.some(function (a) { return b.getAttribute(a) === 'true'; }); })[0];
   }
   function placeSeg(s) {
+    if (App.fitSeg) App.fitSeg(s);                            // Settings' choices wrap when they don't fit (screens/settings-fit.js)
     var b = segPicked(s), ind = $('.seg__ind', s), sr = s.getBoundingClientRect();
     if (!b || !ind || !sr.width) return;                     // nothing picked (the CSS hides it), or not rendered
     var k = Math.abs(sr.width - s.offsetWidth) > 1 ? s.offsetWidth / sr.width : 1, br = b.getBoundingClientRect();   // k undoes a scaled ancestor
@@ -3440,7 +3441,7 @@
     touched.forEach(function (s) { if (s.isConnected) { watchSeg(s); placeSeg(s); } });
     segMarks.takeRecords();
   });
-  segMarks.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: SEG_PICKED.concat('style') });
+  segMarks.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: SEG_PICKED.concat('style', 'data-cols') });
   $$('.seg').forEach(function (s) { watchSeg(s); placeSeg(s); });
 
   /* =====================================================================

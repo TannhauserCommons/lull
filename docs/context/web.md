@@ -37,8 +37,8 @@ skins.js     Classic mode's skin and size, per device (App.classicSkin, App.clas
              Classic: the size, the skin browser, .wsz files kept on this device, the NSFW switch (docs/context/skins.md)
 stats.js     Stats and the taste profile (/stats), with stats.css; loaded on the first visit, built with system.js's kit
 open.js      opening a shared link (#/open?link=, and a share page's Add to queue); loaded on the first link
-settings-fit.js  what keeps Settings whole in any window (its tab list on a short one), its rules inside (one
-             file: each one the hub serves costs a page its headers);
+settings-fit.js  what keeps Settings whole in any window (its tab list on a short one, a choice wider than its row),
+             its rules inside (one file: each one the hub serves costs a page its headers);
              loaded with the Settings route (App.needSettingsFit), so no other screen pays for it
 classic.js   Classic mode: Webamp alone, in an iframe on a stage in a browser, or in the desktop app's own window
 vendor/      Webamp bundle and the QR encoder (qrcode-generator), copied by scripts/vendor-web.sh, gitignored

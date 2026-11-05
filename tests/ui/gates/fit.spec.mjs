@@ -8,7 +8,7 @@
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import { chrome, chromeNow, clippedCovers } from '../checks.mjs';
-import { designs, ids, openScreen, themes } from './lib.mjs';
+import { designs, ids, openScreen, settle, themes } from './lib.mjs';
 
 const widths = [];
 for (let w = 2560; w >= 360; w -= 20) widths.push(w);
@@ -259,6 +259,29 @@ for (const design of designs) {
       });
       // a design that lets the list scroll with the page (not sticky) shows every tab on the way; a stuck one must fit
       if (at.stuck) expect(at, 'the stuck tab list fits in the view and shows its last tab').toEqual({ stuck: true, fits: true, lastShows: true });
+    });
+
+    // Settings' choices on a phone at the largest text size: a choice whose buttons don't fit its row side by side wraps
+    // (two to a row, else one; app.js fitSeg), so no choice runs past its row, and the indicator stays on the picked one
+    test(`settings choices on a phone at the largest text / ${design} / ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await openScreen(page, '/settings/appearance', { design, theme });
+      await page.evaluate(() => App.setPref('textSize', 125));
+      await settle(page);
+      await frames(page);
+      const bad = await page.evaluate(() => [...document.querySelectorAll('.sys-seg')].flatMap((seg) => {
+        const row = seg.closest('.sys-row').getBoundingClientRect(), key = seg.getAttribute('data-key'), out = [];
+        const btns = [...seg.querySelectorAll('.seg__btn')], picked = btns.find((b) => b.getAttribute('aria-checked') === 'true');
+        if (btns.some((b) => b.getBoundingClientRect().right > row.right + 1)) out.push(`${key}: a choice runs past its row`);
+        const ind = seg.querySelector('.seg__ind');
+        if (picked && ind && getComputedStyle(ind).display !== 'none') {
+          const i = ind.getBoundingClientRect(), b = picked.getBoundingClientRect();
+          // across it the picked button's width; down, from its top to just below it (a design may draw it as a line underneath)
+          if (Math.abs(i.left - b.left) > 2 || Math.abs(i.right - b.right) > 2 || i.top < b.top - 2 || i.top > b.bottom + 8) out.push(`${key}: the indicator is off the picked choice`);
+        }
+        return out;
+      }));
+      expect(bad).toEqual([]);
     });
 
     test(`desktop mini player / ${design} / ${theme}`, async ({ page }) => {
