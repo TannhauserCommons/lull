@@ -1,5 +1,6 @@
 {
-  "note": "Pre-themes baseline (run 41312904377: median of 3 mobile runs on the CI hub with the fixture library) plus margin: transfer +10%, LCP +25%, CLS +0.025, TBT floored at 150 ms because lab TBT of 0-90 ms is noise. Budgets move only with a reason the user would accept: docs/context/quality.md#budgets.",
+  "note": "Pre-themes baseline (run 41312904377: median of 3 mobile runs on the CI hub with the fixture library) plus margin: transfer +10%, LCP +25%, CLS +0.025, TBT floored at 150 ms because lab TBT of 0-90 ms is noise. Budgets move only with a reason the user would accept: docs/context/quality.md#budgets. benchmarkIndex: the runner speed (Lighthouse's benchmark) they are met on, main's own runs 3,555-4,013; lighthouse.sh slows each runner's CPU 4x times its speed over it, so every runner plays the same device.",
+  "benchmarkIndex": 3900,
   "routes": {
     "home": {
       "transferBytes": 360500,

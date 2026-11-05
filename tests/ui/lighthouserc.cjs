@@ -1,7 +1,7 @@
-// Performance budgets for one route, on Lighthouse's mobile profile (simulated slow 4G, 4x CPU
-// slowdown): `LHCI_ROUTE=home npx lhci autorun --config=lighthouserc.cjs`. lighthouse.sh runs it for
-// every route in budgets.json, one at a time, because lhci drops the #fragment from URLs and would
-// treat the routes as one page. Why the budgets sit where they do: docs/context/quality.md#budgets.
+// Performance budgets for one route, on Lighthouse's mobile profile (simulated slow 4G, the CPU slowed
+// to the budgets' device): `sh lighthouse.sh`, which runs it for every route in budgets.json, one at a
+// time, because lhci drops the #fragment from URLs and would treat the routes as one page, and sets
+// LHCI_CPU_SLOWDOWN for the runner it is on. Why the budgets sit where they do: docs/context/quality.md#budgets.
 const fs = require('fs');
 const path = require('path');
 
@@ -10,6 +10,8 @@ const route = process.env.LHCI_ROUTE;
 const { routes } = require('./budgets.json');
 if (!routes[route]) throw new Error(`LHCI_ROUTE must be one of: ${Object.keys(routes).join(', ')}`);
 const b = routes[route];
+const cpu = +process.env.LHCI_CPU_SLOWDOWN;
+if (!(cpu > 0)) throw new Error('LHCI_CPU_SLOWDOWN is set by lighthouse.sh for the runner it is on: run that');
 
 // The device cookie global-setup saved, once the hub has pairing (ADR-0002); empty before.
 let cookie = '';
@@ -26,6 +28,7 @@ module.exports = {
       numberOfRuns: 3,
       settings: {
         chromeFlags: '--no-sandbox --headless=new',
+        throttling: { cpuSlowdownMultiplier: cpu },
         extraHeaders: cookie ? JSON.stringify({ Cookie: cookie }) : undefined,
       },
     },

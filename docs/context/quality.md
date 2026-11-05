@@ -63,7 +63,9 @@ The rest is the Webamp bundle, fonts, SVG and images. Brotli over the old raw tr
 
 ## Budgets
 
-Lighthouse CI on the mobile profile (simulated slow 4G, 4x CPU), three runs per route, the median asserted. `lighthouse.sh` runs `lighthouserc.cjs` once per route in `budgets.json` (`home`, `search`, `library/albums`, `now`, `settings/playback`), because lhci drops the `#fragment` and would merge the routes into one page. Per route: `total-byte-weight` (transfer size), largest contentful paint, total blocking time, cumulative layout shift.
+Lighthouse CI on the mobile profile (simulated slow 4G, the CPU slowed to one device), three runs per route, the median asserted. `lighthouse.sh` runs `lighthouserc.cjs` once per route in `budgets.json` (`home`, `search`, `library/albums`, `now`, `settings/playback`), because lhci drops the `#fragment` and would merge the routes into one page. Per route: `total-byte-weight` (transfer size), largest contentful paint, total blocking time, cumulative layout shift.
+
+**The same device on every runner.** Lighthouse slows the CPU by a fixed factor on top of the machine it is on, and GitHub's runners differ by 2x: in a day of queue runs its benchmark of the runner (`benchmarkIndex`) went from 1,900 to 4,000, and /now's blocking time with it, 30 ms on a fast runner and 120-170 ms on a slow one for the same code, failing the 150 ms budget on slow runners only. `lighthouse.sh` measures the runner first (Lighthouse's benchmark, the median of three loads) and slows the CPU 4x times its speed over `budgets.json`'s `benchmarkIndex`, the speed the budgets are met on (3,900, `main`'s own runs before the queue: 3,555-4,013). A runner at 3,900 runs at 4x as before, one at 2,000 at 2x: both play the same device, so a page's own extra work shows the same on every runner and no runner fails a page another passes.
 
 **Measured** on the CI hub with the fixture library (run 41315307272, `main` with theme packages, minified and brotli-compressed, median of three):
 
