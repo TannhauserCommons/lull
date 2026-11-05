@@ -21,5 +21,6 @@ status=0
 for route in $(node -p "Object.keys(require('./budgets.json').routes).join(' ')"); do
   echo "== $route"
   LHCI_ROUTE=$route npx lhci autorun --config=lighthouserc.cjs || status=1
+  node shipped.mjs "$route" || status=1
 done
 exit $status

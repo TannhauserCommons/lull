@@ -34,7 +34,7 @@ module.exports = {
     },
     assert: {
       assertions: {
-        'total-byte-weight': ['error', { maxNumericValue: b.transferBytes, aggregationMethod: 'median' }],
+        // shipped bytes: shipped.mjs, after this (total-byte-weight counts the hub's live answers too, which vary)
         'largest-contentful-paint': ['error', { maxNumericValue: b.lcpMs, aggregationMethod: 'median' }],
         'total-blocking-time': ['error', { maxNumericValue: b.tbtMs, aggregationMethod: 'median' }],
         'cumulative-layout-shift': ['error', { maxNumericValue: b.cls, aggregationMethod: 'median' }],
