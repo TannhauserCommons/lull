@@ -135,6 +135,8 @@ struct Map {
     titled: HashMap<String, HashSet<TrackId>>,
     /// Songs a search for the song itself has looked for lately (`searched`).
     searched: HashMap<TrackId, Instant>,
+    /// Copies whose sound turned out not to be the song (ADR-0016), by (peer, path).
+    wrong: HashMap<TrackId, HashSet<(String, String)>>,
 }
 
 struct Held {
@@ -160,7 +162,9 @@ impl Sources {
     pub fn add(&self, found: HashMap<TrackId, Vec<Source>>) {
         let Ok(mut map) = self.inner.write() else { return };
         let now = Instant::now();
-        let Map { held, titled, searched } = &mut *map;
+        let Map {
+            held, titled, searched, ..
+        } = &mut *map;
         held.retain(|_, h| now.duration_since(h.seen) < KEEP_FOR);
         titled.retain(|_, ids| {
             ids.retain(|id| held.contains_key(id));
@@ -190,7 +194,10 @@ impl Sources {
         let Ok(map) = self.inner.read() else {
             return Vec::new();
         };
+        let wrong = map.wrong.get(&track.id);
+        let is_wrong = |s: &Source| wrong.is_some_and(|w| w.contains(&(s.user.clone(), s.path.clone())));
         let mut pool: Vec<Source> = map.held.get(&track.id).map(|h| h.sources.clone()).unwrap_or_default();
+        pool.retain(|s| !is_wrong(s));
         let wanted = Wanted::of(track);
         // In one order, so ties in the profile's order don't shuffle between asks.
         let mut ids: Vec<&TrackId> = map
@@ -205,7 +212,7 @@ impl Sources {
         for s in others.flat_map(|h| &h.sources) {
             let is_song =
                 || files::song(&s.path).is_some_and(|f| wanted.matches_named(&f.artist, &f.title, s.length, &s.path));
-            if !pool.iter().any(|p| p.user == s.user && p.path == s.path) && is_song() {
+            if !pool.iter().any(|p| p.user == s.user && p.path == s.path) && !is_wrong(s) && is_song() {
                 pool.push(s.clone());
             }
         }
@@ -216,6 +223,16 @@ impl Sources {
     /// across some of its files (an album's, another query's).
     pub fn searched(&self, track: &TrackId) -> bool {
         self.inner.read().is_ok_and(|m| m.searched.contains_key(track))
+    }
+
+    /// A copy whose sound isn't the song: never offered for it again (until the hub restarts).
+    pub fn mark_wrong(&self, track: &TrackId, copy: &SourceRef) {
+        if let Ok(mut map) = self.inner.write() {
+            map.wrong
+                .entry(track.clone())
+                .or_default()
+                .insert((copy.user.clone(), copy.path.clone()));
+        }
     }
 
     pub fn mark_searched(&self, track: &TrackId) {

@@ -50,5 +50,10 @@ fn body(svc: &Service) -> Value {
             "error": checked.error,
         },
         "backoffUntil": svc.backoff_until(),
+        "soundChecks": {
+            "counts": svc.checks.counts(),
+            "idle": svc.checks.counts().idle(),
+            "acoustid": svc.ctx.config.youtube.acoustid_key.is_some(),
+        },
     })
 }

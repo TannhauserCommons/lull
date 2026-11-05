@@ -95,6 +95,30 @@ impl Itunes {
         Ok(found)
     }
 
+    /// Songs for `q` with their previews and Apple's ids, for checking a copy by its sound
+    /// (ADR-0016): kept a week, with the calls left spare by everything a listener is looking at.
+    pub async fn previews(&self, q: &str) -> Result<Vec<Previewed>> {
+        let key = format!("it:previews:{}:{q}", self.country);
+        if let Some(found) = self.cache.fresh(key.clone(), KEEP_MATCH_S).await? {
+            return Ok(found);
+        }
+        self.wait_turn(Need::Background).await?;
+        let body: Value = self
+            .http
+            .json(SERVICE, |c| {
+                c.get(API).query(&[
+                    ("term", q),
+                    ("entity", "song"),
+                    ("limit", SONGS),
+                    ("country", self.country.as_str()),
+                ])
+            })
+            .await?;
+        let found = previewed(body)?;
+        self.cache.put(key, &found).await?;
+        Ok(found)
+    }
+
     /// Songs for `q` with the albums they are on, and albums by their own name, each call waiting
     /// its turn of the budget. Album search failing, or not getting a turn within `ALBUM_WAIT`,
     /// leaves the songs, and is named in `problem`.
@@ -588,6 +612,8 @@ impl Budget {
 #[serde(rename_all = "camelCase")]
 struct Raw {
     wrapper_type: Option<String>,
+    track_id: Option<u64>,
+    preview_url: Option<String>,
     track_name: Option<String>,
     artist_id: Option<u64>,
     artist_name: Option<String>,
@@ -615,6 +641,39 @@ struct RawAlbum {
 #[derive(Deserialize)]
 struct Page {
     results: Vec<Raw>,
+}
+
+/// A catalog song with its own id and 30 s preview.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Previewed {
+    pub hit: SongHit,
+    pub id: u64,
+    pub url: String,
+}
+
+/// An `entity=song` answer's songs that have a preview, as search reads them (so a row's id is
+/// the track id search gives it).
+pub fn previewed(body: Value) -> Result<Vec<Previewed>> {
+    let page: Page = serde_json::from_value(body.clone())
+        .map_err(|e| Error::upstream(SERVICE, format!("unexpected answer: {e}")))?;
+    let previews: Vec<(Option<u64>, Option<String>)> = page
+        .results
+        .into_iter()
+        .filter(|r| r.track_name.is_some() && r.artist_name.is_some())
+        .map(|r| (r.track_id, r.preview_url))
+        .collect();
+    Ok(songs(body)?
+        .songs
+        .into_iter()
+        .zip(previews)
+        .filter_map(|(hit, (id, url))| {
+            Some(Previewed {
+                hit,
+                id: id?,
+                url: url.filter(|u| u.starts_with("https://"))?,
+            })
+        })
+        .collect())
 }
 
 /// An `entity=song` answer as rows. Apple orders by relevance and gives no counts, so the

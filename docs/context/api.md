@@ -116,7 +116,7 @@ ADR-0012, [youtube.md](youtube.md). Its copies play through `GET /api/stream/{tr
 
 | Method + path | Returns |
 |---|---|
-| `GET /api/youtube` | `{ state: ok\|warn\|down\|off, detail, mode, ytdlp: { version, updated, pinnedVersion, latest, checkedAt, error }, backoffUntil }`. `state` and `detail` are the `youtube` status (`off` while the mode is off; `warn` while backing off, with a plain sentence such as "YouTube is asking for a sign-in check, try later"; `down` when yt-dlp won't run). `version` is the yt-dlp in use, `updated` whether the hub fetched it, `latest` and `checkedAt` (unix s) the last update check, `error` why it failed. `backoffUntil`: unix s, or null |
+| `GET /api/youtube` | `{ state: ok\|warn\|down\|off, detail, mode, ytdlp: { version, updated, pinnedVersion, latest, checkedAt, error }, backoffUntil, soundChecks: { counts: { checked, refused, withoutReference, withReference }, idle, acoustid } }`. `soundChecks` (youtube.md#sound-checks): counts since the hub started; `idle` while no track looked up has a reference; `acoustid` whether `LULL_ACOUSTID_KEY` is set. `state` and `detail` are the `youtube` status (`off` while the mode is off; `warn` while backing off, with a plain sentence such as "YouTube is asking for a sign-in check, try later"; `down` when yt-dlp won't run). `version` is the yt-dlp in use, `updated` whether the hub fetched it, `latest` and `checkedAt` (unix s) the last update check, `error` why it failed. `backoffUntil`: unix s, or null |
 | `POST /api/youtube/update` | The same body, after checking for a newer yt-dlp now (and installing it). 409 while `sources.youtube.autoUpdate` is off |
 
 ## App releases (`latest.json`)

@@ -23,6 +23,12 @@ tracing.workspace = true
 futures-util = "=0.3.34"
 # Checking a yt-dlp release against its published SHA2-256SUMS before it is used.
 sha2 = "0.11.1"
+# Checking a copy is the song by its sound (ADR-0016): Chromaprint's fingerprints, and decoding
+# AAC/M4A, MP3, FLAC, Vorbis, ALAC and WAV, all in Rust.
+rusty-chromaprint = "=0.3.0"
+# YouTube's Opus, which symphonia doesn't decode (MIT, no FFI).
+ruopus = "=0.1.2"
+symphonia = { version = "=0.5.5", default-features = false, features = ["aac", "isomp4", "mp3", "flac", "mkv", "ogg", "vorbis", "wav", "pcm", "alac", "opt-simd"] }
 
 [lints]
 workspace = true

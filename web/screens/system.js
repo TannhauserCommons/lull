@@ -482,7 +482,16 @@
       : y.updated ? 'Using yt-dlp ' + y.version + ', fetched by the server' + (y.pinnedVersion ? ' (built in: ' + y.pinnedVersion + ').' : '.')
       : 'Using the built-in yt-dlp ' + y.version + '.';
     var checked = y.checkedAt ? ' Last checked ' + new Date(y.checkedAt * 1000).toLocaleString() + (y.latest ? '; the newest is ' + y.latest + '.' : '.') : '';
-    return html`<div>${statusLine(d.state, d.detail)}</div><span class="sys-row__help">${using}${checked}${y.error ? ' ' + y.error : ''}</span>`;
+    return html`<div>${statusLine(d.state, d.detail)}</div><span class="sys-row__help">${using}${checked}${y.error ? ' ' + y.error : ''}${soundChecks(d.soundChecks)}</span>`;
+  }
+  /* sound checks (ADR-0016): soundChecks = { counts: { checked, refused, withoutReference, withReference }, idle, acoustid } */
+  function soundChecks(s) {
+    if (!s || !s.counts) return '';
+    var c = s.counts;
+    if (s.idle) return ' Sound checks are idle here: the store has no previews of the songs looked up, so copies are matched by their titles and lengths.';
+    if (!c.checked) return '';
+    return ' Since the server started, ' + c.checked + (c.checked === 1 ? ' copy was' : ' copies were') + ' checked by their sound' +
+      (c.refused ? ', and ' + c.refused + ' turned out not to be the song.' : '.');
   }
   App.action('sys-ytdlp-update', function (el) {
     var before = yt && yt.data && yt.data.ytdlp ? yt.data.ytdlp.version : null;
@@ -506,9 +515,10 @@
       ${row('Wait for Soulseek', 'How long a song waits for a Soulseek peer before YouTube plays it.', range('sources.youtube.waitS', 'Wait for Soulseek, seconds', 5, 120, 5), { when: 'youtube-wait', hidden: mode !== 'fallback', cls: 'sys-row--sub' })}
       ${row('Format', 'Opus sounds a little better for its size. AAC plays on more devices. Either way it is YouTube\'s own audio, never converted.',
         choice('sources.youtube.format', 'YouTube format', [['opus', 'Opus'], ['aac', 'AAC']]), { when: 'youtube', hidden: off })}
-      ${row('Which uploads count', 'Official audio comes from YouTube Music or the artist\'s own channel. Close also takes other uploads of the same song and length. Loose allows lengths up to 15 seconds apart. Live, cover, sped-up and nightcore versions never count unless the song is one.',
+      ${row('Which uploads count', 'Official audio comes from YouTube Music or the artist\'s own channel. Close also takes other uploads of the same song and length. Loose allows lengths up to 15 seconds apart. Live, cover, sped-up and nightcore versions never count unless the song is one. Where the store has a preview of the song, an upload\'s sound is checked against it too: a fan upload before it plays, an official one while it plays.',
         choice('sources.youtube.match', 'Which uploads count', [['official', 'Official audio only'], ['close', 'Close'], ['loose', 'Loose']], 'sys-seg--wrap'), { when: 'youtube', hidden: off, cls: 'sys-row--stack' })}
       <div data-when="youtube" ${off ? raw('hidden') : ''}>${switchRow('sources.youtube.saves', 'Save from YouTube', 'When no Soulseek peer has a song, Save keeps the YouTube copy (AAC). Upgrade saved songs replaces it once a good Soulseek copy turns up. Saves never use YouTube while a peer has the song.')}</div>
+      <div data-when="youtube" ${off ? raw('hidden') : ''}>${cfgField('LULL_ACOUSTID_KEY', 'AcoustID key', 'Each YouTube copy is checked by its sound against the store\'s 30-second preview of the song. For songs no store has a preview of, an AcoustID application key (free for non-commercial use, from acoustid.org) lets the server look the copy up there too. Optional.')}</div>
       ${switchRow('sources.youtube.autoUpdate', 'Keep yt-dlp up to date', 'lull reaches YouTube with a program called yt-dlp, and YouTube changes often. The server fetches the newest version once a day, checks it, and keeps the built-in one in case the new one fails.')}
       ${row('YouTube now', '', html`<div class="sys-inline sys-inline--col"><div id="sys-youtube" aria-live="polite">${youtubeState()}</div><button class="btn btn--sm" data-act="sys-ytdlp-update" ${get('sources.youtube.autoUpdate') ? '' : raw('disabled')}>${icon('refresh')}Check for a new yt-dlp</button></div>`, { cls: 'sys-row--stack' })}`;
   }

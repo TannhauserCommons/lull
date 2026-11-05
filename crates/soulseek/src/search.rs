@@ -1272,6 +1272,11 @@ mod tests {
             size: 0,
         };
         assert!(sources.get(&playing, &flac).is_some());
+        // A copy whose sound turned out not to be the song (ADR-0016) is never offered for it again.
+        sources.mark_wrong(&playing.id, &flac);
+        assert!(sources.get(&playing, &flac).is_none());
+        let after = sources.ordered(&playing, &crate::rules::Rules::default(), crate::rules::Purpose::Stream);
+        assert_eq!(after.len(), 6, "the others stay");
         Ok(())
     }
 

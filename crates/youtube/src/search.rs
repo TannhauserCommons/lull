@@ -12,10 +12,10 @@ use lull_core::{Error, Result};
 use rusqlite::{OptionalExtension, params};
 use serde::Deserialize;
 
-use crate::Service;
 use crate::formats::Info;
 use crate::matching::{self, Candidate, Wanted};
 use crate::ytdlp::Problem;
+use crate::{Service, check};
 
 /// A match is good for a month; "no upload matches" is asked again after a day.
 const FOUND_FOR: i64 = 30 * 86_400;
@@ -26,6 +26,8 @@ pub const INFO_FOR: Duration = Duration::from_secs(4 * 3600);
 const MUSIC_RESULTS: u32 = 5;
 const VIDEO_RESULTS: u32 = 8;
 const EXTRACT_AT_MOST: usize = 2;
+/// Uploads whose sound is checked before one is taken, per search.
+const CHECK_AT_MOST: usize = 2;
 /// Uploads a song search reads (search's last gap-filler).
 const SONG_SEARCH_RESULTS: u32 = 10;
 const SEARCH_TIME: Duration = Duration::from_secs(40);
@@ -86,7 +88,9 @@ fn strictness_key(m: Match) -> &'static str {
     }
 }
 
-/// Searches YouTube for the song: YouTube Music's songs, then videos.
+/// Searches YouTube for the song: YouTube Music's songs, then videos. An upload today's words
+/// take that is official plays at once (its sound is checked while it plays); any other is
+/// checked before it is taken (`consider`).
 pub async fn search(svc: &Service, track: &Track, strictness: Match) -> Result<Option<Matched>, Problem> {
     let wanted = Wanted::of(track);
     let query = Wanted::query(track);
@@ -94,25 +98,91 @@ pub async fn search(svc: &Service, track: &Track, strictness: Match) -> Result<O
     let mut songs = reqwest::Url::parse_with_params("https://music.youtube.com/search", [("q", music_query.as_str())])
         .map_err(|e| Problem::Other(format!("search address: {e}")))?;
     songs.set_fragment(Some("songs"));
+    let mut checks = CHECK_AT_MOST;
     let listed = flat(svc, songs.as_str(), MUSIC_RESULTS).await?;
     let titled = listed.iter().filter(|c| matching::title_matches(&wanted, &c.title));
     for c in titled.take(EXTRACT_AT_MOST) {
         let url = format!("https://music.youtube.com/watch?v={}", c.id);
-        if let Some(m) = confirm(svc, &wanted, &url, true, strictness).await? {
+        if let Some(m) = consider(svc, track, &wanted, &url, true, strictness, &mut checks).await? {
             return Ok(Some(m));
         }
     }
     let videos = flat(svc, &format!("ytsearch{VIDEO_RESULTS}:{query}"), VIDEO_RESULTS).await?;
-    for c in matching::ranked(&wanted, &videos, strictness)
+    for c in matching::candidates(&wanted, &videos, strictness)
         .into_iter()
-        .take(EXTRACT_AT_MOST)
+        .take(EXTRACT_AT_MOST + 1)
     {
         let url = format!("https://www.youtube.com/watch?v={}", c.id);
-        if let Some(m) = confirm(svc, &wanted, &url, false, strictness).await? {
+        if let Some(m) = consider(svc, track, &wanted, &url, false, strictness, &mut checks).await? {
             return Ok(Some(m));
         }
     }
     Ok(None)
+}
+
+/// One upload, on its full facts (music metadata, exact length) and its sound (ADR-0016):
+/// - official and taken by the words: taken now, checked while it plays;
+/// - otherwise checked first, when the words take it or it could be the song (`plausible`):
+///   the recording is taken however it is titled, another master or mix of it when the words
+///   agree, another recording never;
+/// - no reference to check against (or no checks left): the words decide, as before.
+async fn consider(
+    svc: &Service,
+    track: &Track,
+    wanted: &Wanted,
+    url: &str,
+    music: bool,
+    strictness: Match,
+    checks: &mut usize,
+) -> Result<Option<Matched>, Problem> {
+    let info = match extract(svc, url).await {
+        Ok(info) => info,
+        Err(Problem::Gone(why)) => {
+            tracing::debug!(url, why, "skipping an upload YouTube won't give");
+            return Ok(None);
+        }
+        Err(p) => return Err(p),
+    };
+    if check::refused(svc, track, &info.id).await {
+        return Ok(None);
+    }
+    let c = candidate(&info, music);
+    let official = c.official(wanted);
+    if strictness == Match::Official && !official {
+        return Ok(None);
+    }
+    let judged = matching::judge(wanted, &c, strictness).is_some();
+    let matched = Matched {
+        official,
+        video: info.id.clone(),
+    };
+    if judged && official {
+        return Ok(Some(matched));
+    }
+    if !judged && !matching::plausible(wanted, &c) {
+        return Ok(None);
+    }
+    if *checks == 0 {
+        return Ok(judged.then_some(matched));
+    }
+    *checks -= 1;
+    let verdict = match check::verdict(svc, track, &info.id).await {
+        Ok(v) => v,
+        Err(p @ (Problem::BotCheck | Problem::RateLimited | Problem::Broken(_))) => return Err(p),
+        Err(p) => {
+            tracing::info!(
+                video = info.id,
+                problem = p.plain(),
+                "couldn't check the upload's sound"
+            );
+            check::Verdict::Unchecked
+        }
+    };
+    Ok(match check::takes(verdict, judged) {
+        Some(true) => Some(matched),
+        Some(false) => None,
+        None => judged.then_some(matched),
+    })
 }
 
 /// Search's last gap-filler: the songs a YouTube video search for `query` finds, read and judged as
@@ -125,29 +195,6 @@ pub async fn songs(svc: &Service, query: &str) -> Result<Vec<FoundSong>, Problem
     )
     .await?;
     Ok(matching::songs_of(&found))
-}
-
-/// Extracts one upload and judges it on its full facts: music metadata, exact length.
-async fn confirm(
-    svc: &Service,
-    wanted: &Wanted,
-    url: &str,
-    music: bool,
-    strictness: Match,
-) -> Result<Option<Matched>, Problem> {
-    let info = match extract(svc, url).await {
-        Ok(info) => info,
-        Err(Problem::Gone(why)) => {
-            tracing::debug!(url, why, "skipping an upload YouTube won't give");
-            return Ok(None);
-        }
-        Err(p) => return Err(p),
-    };
-    let c = candidate(&info, music);
-    Ok(matching::judge(wanted, &c, strictness).map(|_| Matched {
-        official: c.official(wanted),
-        video: info.id,
-    }))
 }
 
 /// The upload's extraction, from disk while it's fresh, else from YouTube.
@@ -258,6 +305,19 @@ pub fn plain_id(id: &str) -> bool {
 }
 
 /// An upload YouTube no longer gives is forgotten, so the next find searches again.
+/// Drops the song's match, whatever its strictness: its upload turned out not to be the song.
+pub async fn forget_match(svc: &Service, track: &Track) -> Result<()> {
+    let id = track.id.as_str().to_owned();
+    svc.ctx
+        .db
+        .call(move |c| {
+            c.execute("DELETE FROM youtube_matches WHERE track_id = ?1", params![id])?;
+            Ok(())
+        })
+        .await
+        .map_err(|e| Error::internal(format!("forgetting a YouTube match: {e}")))
+}
+
 pub async fn forget(svc: &Service, video: &str) -> Result<()> {
     let video = video.to_owned();
     svc.ctx

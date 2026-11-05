@@ -125,6 +125,16 @@ impl Deezer {
             .await
     }
 
+    /// Songs for `q` with their previews and Deezer's ids, for checking a copy by its sound
+    /// (ADR-0016): kept a week. Where Deezer's catalog is closed its tracks have no preview.
+    pub async fn previews(&self, q: &str) -> Result<Vec<super::itunes::Previewed>> {
+        self.cache
+            .get(format!("dz:previews:{q}"), 7 * DAY, || async {
+                previewed(self.get("search/track", &[("q", q), ("limit", "25")]).await?)
+            })
+            .await
+    }
+
     /// The song with this ISRC (12 letters and digits), kept a month. A lookup by ISRC answers
     /// even where Deezer's catalog is closed.
     pub async fn by_isrc(&self, isrc: &str) -> Result<Option<SongHit>> {
@@ -404,6 +414,8 @@ struct RawNamed {
 
 #[derive(Deserialize)]
 struct RawTrack {
+    id: Option<u64>,
+    preview: Option<String>,
     title: String,
     duration: Option<u32>,
     rank: Option<u64>,
@@ -558,6 +570,17 @@ pub fn playlists_of(body: Value) -> Result<Vec<PlaylistHit>> {
 
 pub fn songs(body: Value) -> Result<Vec<SongHit>> {
     Ok(Page::<RawTrack>::of(body, "tracks")?.into_iter().map(hit).collect())
+}
+
+/// A `search/track` answer's songs that have a preview.
+pub fn previewed(body: Value) -> Result<Vec<super::itunes::Previewed>> {
+    Ok(Page::<RawTrack>::of(body, "tracks")?
+        .into_iter()
+        .filter_map(|t| {
+            let (id, url) = (t.id?, t.preview.clone().filter(|u| u.starts_with("https://"))?);
+            Some(super::itunes::Previewed { hit: hit(t), id, url })
+        })
+        .collect())
 }
 
 fn hit(t: RawTrack) -> SongHit {

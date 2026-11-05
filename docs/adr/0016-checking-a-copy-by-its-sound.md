@@ -1,6 +1,6 @@
-# ADR-0016: Checking a copy is the song by its sound (draft, not built)
+# ADR-0016: Checking a copy is the song by its sound
 
-- Status: proposed (draft for the owner to decide; nothing built for the hub)
+- Status: accepted (the owner, 2026-11-05: "Yes, build it", after the trial's numbers below)
 - Date: 2026-11-05
 
 ## Context
@@ -62,20 +62,30 @@ CPU is per check on one core of that desktop; a small home server is likely 3 to
 - **Strong copies** (YouTube Music songs, Topic channels, uploads with YouTube's music metadata, the artist's own channel): no change to the time before sound. The check runs on the bytes as they arrive and is done 2 to 3 s after the first ones.
 - **Weak copies** (fan uploads): the check comes before the sound. It needs the audio up to the end of the preview (75 s of the song at the median, 100 s at p90), then 0.2 s of work. Estimated from the steps above, not timed end to end in a hub: about 1.5 s added at the median and about 3 s at p90.
 
-## Decision (proposed)
+## Decision
 
 **Ship with changes**: the check is reliable for what it can hear, fast enough, and adds no wait for official copies. It doesn't replace the words that name a version, and it needs the right reference.
 
 - **Where:** in the hub, in the youtube crate, after `judge` and before a copy is offered: the hub picks copies, keeps them, and is where every device's play comes from.
-- **Libraries:** rusty-chromaprint (MIT, pure Rust, Chromaprint's algorithm 2: AcoustID-compatible fingerprints) and symphonia (pure Rust) for AAC, MP3, FLAC, Vorbis, ALAC and WAV, which covers YouTube's M4A and nearly every Soulseek file. Opus: the check reads YouTube's AAC copy (140), the fastest pure-Rust path, rather than the Opus copy lull plays: a second download of about 4 MB, cut once the preview's end has arrived (about 2 MB). Pure-Rust Opus decoders work (ruopus) but are young and about 8 times slower; libopus would be a C dependency.
+- **Libraries:** rusty-chromaprint (MIT, pure Rust, Chromaprint's algorithm 2: AcoustID-compatible fingerprints) and symphonia (pure Rust) for AAC, MP3, FLAC, Vorbis, ALAC and WAV, which covers YouTube's M4A and nearly every Soulseek file. Opus (what lull plays): ruopus (MIT, pure Rust), about 8 times slower than AAC but with no second download; libopus would be a C dependency. A fan upload, checked before it plays, is read on its AAC copy (140).
 - **The reference:** Apple's preview of the song's own Apple track, by its id where the catalog row has one, never a search by name. Then Deezer's preview by its id where Deezer answers. AcoustID only once a key exists, as a second opinion for songs Apple lacks. No reference: today's rules, unchanged.
 - **Alignment:** slide the preview over every offset of the upload (brute force: 0.5 ms), keep the best; an overlap of at least 15 s counts.
 - **Thresholds (three zones):** under 0.15, the same recording. From 0.15 to 0.25, another master or mix of it: taken when today's rule also takes it. 0.25 and over: another recording, refused whatever its title says.
 - **Words and length:** version words that the song lacks (live, karaoke, instrumental, sped up, slowed, remix, extended...) still refuse, because the sound can't hear a missing voice. Length refuses only beyond a quarter of the song (another cut, a loop, a compilation); within that it orders. Title and artist readings order the copies once the sound agrees.
-- **Caching:** a verdict per (upload, catalog track): the score, the reference's id and when, kept a month like a match (`youtube_matches` gains a score column). That is a stored-data change: it waits for the owner's go-ahead.
+- **Caching:** a verdict per (upload, catalog track): the score, the reference's id and when, kept a month like a match. Built as its own table, `youtube_checks` (a refused upload needs remembering too, not only the match), with the references' fingerprints per track in `youtube_references`.
 - **What the listener sees:** a strong copy plays at once. If its check fails, which never happened for an official copy here, the copy is dropped for that song: the next play takes the next copy, and a song playing now moves to it at a quiet moment where ADR-0013 can line it up. A weak copy shows "Checking the YouTube copy…" for its 1.5 to 3 s, then plays. On a miss, the next upload is checked; none left is today's "No copy matched the song". Pick a source shows each YouTube copy's verdict ("Matches the song" / "Didn't match").
 - **Soulseek:** check too, in the background, once a transfer has the preview's span: the bytes are local, decoding is cheap, and a mislabelled file is a wrong copy that filename rules can't catch. A miss marks that copy wrong for the song; it never blocks a play. Not measured here (no Soulseek searches were made for this).
 - **Politeness:** previews come from Apple's CDN at one per song, cached with the verdict; no extra YouTube searches, and at most one extra AAC download per weak upload checked.
+
+## As built (2026-11-05)
+
+- **The reference is the catalog row that is the track:** lull's track id is made of the artist, album and title, so discovery's `Previews` keeps only the Apple (then Deezer) row whose own artist, album and title make that id. No new id is stored for tracks.
+- **An official copy is checked on the file that plays** (Opus through ruopus, pure Rust, about 1.2 s of one core per song), not on a second AAC download as drafted: during the trial YouTube asked the workstation for a sign-in check after about 500 downloads in two hours, and start fast plays every new song from YouTube. Fan uploads, checked before they play, still take their AAC copy.
+- **A miss on an official copy** fails soulseek's YouTube attempt once the download is done and the check has answered; the fetch takes the next copy `find` gives, and the player, which reopens a song on a new attempt, moves to it. A copy the listener picked plays as it is.
+- **No reference** (Apple's search answers nothing for Korea's storefront; songs only fans uploaded): today's rules, and the `youtube` status says sound checks are idle once 10 tracks were looked up without one.
+- **AcoustID** is behind `LULL_ACOUSTID_KEY` (Settings › Sources › YouTube), skipped without it.
+- **Soulseek:** measured on fixture files (MP3 320 and FLAC made from the trial's uploads, no Soulseek involved): 0.3 s (MP3) and 0.23 s (FLAC) of one core per song, no download, the reference reused per song; scores 0.008 to 0.063 against the song's preview. So it is on, in the background.
+- **Matches made before** by fan uploads are found again, checked; official ones are checked the next time they play.
 
 ## Alternatives
 

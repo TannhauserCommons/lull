@@ -81,6 +81,11 @@ const UNLIST_GRACE: Duration = Duration::from_secs(10);
 const HISTORY: usize = 50;
 /// A YouTube download is looked at this often: it arrives in a second or two.
 const YOUTUBE_POLL: Duration = Duration::from_millis(250);
+/// Why a YouTube attempt ends when its copy's sound isn't the song (ADR-0016): the next copy
+/// plays, and the player reopens the song on it.
+const NOT_THE_SONG: &str = "the YouTube copy isn't the song by its sound";
+/// YouTube copies tried in turn when one turns out not to be the song.
+const YOUTUBE_COPIES: usize = 2;
 /// yt-dlp may extract the upload again before its first byte; silence counts after this.
 const YOUTUBE_START: Duration = Duration::from_secs(30);
 /// A better copy arriving at least this many times faster than it plays can be switched to
@@ -1061,6 +1066,9 @@ impl Fetcher {
 
     async fn run(self, f: Arc<Fetch>, pick: Option<SourceRef>) {
         let outcome = self.attempts(&f, pick).await;
+        if let Ok(path) = &outcome {
+            self.check_soulseek_copy(&f, path);
+        }
         self.update(&f, |p| match outcome {
             Ok(path) => {
                 p.status = Status::Done;
@@ -1106,7 +1114,8 @@ impl Fetcher {
             prefetch_only,
             f.bar.is_some(),
         ) {
-            Route::Youtube(copy) => self.youtube_attempt(f, &copy, &mut stop).await,
+            // A copy the listener picked plays as it is.
+            Route::Youtube(copy) => self.youtube_attempt(f, &copy, false, &mut stop).await,
             Route::Soulseek => self.soulseek(f, pick, stop).await,
             Route::SoulseekThenYoutube(wait) => self.soulseek_then_youtube(f, wait, true, &mut stop).await,
             Route::YoutubeFirst => match self.youtube_first(f, &mut stop).await {
@@ -1130,7 +1139,29 @@ impl Fetcher {
         if let Err(e) = self.upgrade_later(f.track.clone()).await {
             tracing::warn!(error = %e, "starting the Soulseek upgrade");
         }
-        self.youtube_attempt(f, &copy, stop).await
+        self.youtube_plays(f, copy, stop).await
+    }
+
+    /// The YouTube copy, and when its sound turns out not to be the song, the next one `find`
+    /// gives (the first is dropped for the song by then): a new attempt, which the player
+    /// reopens the song on.
+    async fn youtube_plays(
+        &self,
+        f: &Fetch,
+        first: SourceRef,
+        stop: &mut watch::Receiver<bool>,
+    ) -> Result<PathBuf, Stop> {
+        let mut copy = first;
+        for left in (0..YOUTUBE_COPIES).rev() {
+            match self.youtube_attempt(f, &copy, true, stop).await {
+                Err(Stop::Failed(why)) if why == NOT_THE_SONG && left > 0 => {
+                    tracing::info!(track = %f.track.id, copy = copy.path, "moving the song to the next YouTube copy");
+                    copy = self.youtube_copy(f, stop).await?;
+                }
+                done => return done,
+            }
+        }
+        Err(Stop::Failed(NOT_THE_SONG.into()))
     }
 
     /// Soulseek, and YouTube when no peer delivers the song: none shares it, none passes the
@@ -1182,7 +1213,7 @@ impl Fetcher {
         tracing::info!(track = %f.track.id, why, "playing from YouTube instead");
         let tried = async {
             let copy = self.youtube_copy(f, stop).await?;
-            self.youtube_attempt(f, &copy, stop).await
+            self.youtube_plays(f, copy, stop).await
         };
         match tried.await {
             Err(Stop::Failed(yt)) => Err(Stop::Failed(format!("{why}; YouTube: {yt}"))),
@@ -1210,10 +1241,14 @@ impl Fetcher {
 
     /// One YouTube download into the cache, watched like a transfer: the file grows front to
     /// back and readers serve it as it does. A finished copy in the cache is used as it is.
+    /// With `check`, the attempt ends only once the copy's sound check says it is the song (an
+    /// official copy is checked while it plays, ADR-0016); one that isn't ends it with
+    /// `NOT_THE_SONG`.
     async fn youtube_attempt(
         &self,
         f: &Fetch,
         copy_ref: &SourceRef,
+        check: bool,
         stop: &mut watch::Receiver<bool>,
     ) -> Result<PathBuf, Stop> {
         f.on_youtube.store(true, Ordering::Relaxed);
@@ -1240,7 +1275,7 @@ impl Fetcher {
                 p.path = Some(e.path.clone());
                 p.status = Status::Streaming;
             });
-            return Ok(e.path);
+            return self.youtube_checked(f, copy_ref, check, e.path, stop).await;
         }
         self.cache.make_room(copy_ref.size).await.map_err(failed)?;
         let dest = self.cache.youtube_file(&copy).await.map_err(failed)?;
@@ -1277,7 +1312,7 @@ impl Fetcher {
                     if let Err(e) = self.cache.report().await {
                         tracing::warn!(error = %e, "measuring the stream cache");
                     }
-                    return Ok(dest.clone());
+                    return self.youtube_checked(f, copy_ref, check, dest.clone(), stop).await;
                 }
                 () = tokio::time::sleep(YOUTUBE_POLL) => {}
                 // Dropping the download stops yt-dlp; a partial file stays recorded, so evictable.
@@ -1311,6 +1346,59 @@ impl Fetcher {
                 };
             });
         }
+    }
+
+    /// The copy's file once its sound check (if one runs) says it is the song; a copy that
+    /// isn't leaves the cache.
+    async fn youtube_checked(
+        &self,
+        f: &Fetch,
+        copy_ref: &SourceRef,
+        check: bool,
+        path: PathBuf,
+        stop: &mut watch::Receiver<bool>,
+    ) -> Result<PathBuf, Stop> {
+        if !check {
+            return Ok(path);
+        }
+        let verdict = tokio::select! {
+            v = self.youtube.checked(&f.track, copy_ref, &path) => v,
+            () = stopped(stop) => return Err(Stop::Cancelled),
+        };
+        if verdict == Some(false) {
+            if let Err(e) = self.cache.forget(copy_ref).await {
+                tracing::warn!(error = %e, "dropping a YouTube copy that isn't the song");
+            }
+            return Err(Stop::Failed(NOT_THE_SONG.into()));
+        }
+        Ok(path)
+    }
+
+    /// A Soulseek copy that arrived is checked by its sound, out of the way (ADR-0016): one that
+    /// isn't the song is never offered for it again and leaves the cache. The play goes on.
+    fn check_soulseek_copy(&self, f: &Fetch, path: &std::path::Path) {
+        let Some(copy) = f.now().source.map(|s| s.source_ref()) else {
+            return;
+        };
+        if youtube::is_youtube(&copy) {
+            return;
+        }
+        let (youtube, sources, cache, track, path) = (
+            self.youtube.clone(),
+            self.sources.clone(),
+            self.cache.clone(),
+            f.track.clone(),
+            path.to_owned(),
+        );
+        tokio::spawn(async move {
+            if youtube.check_file(&track, &path).await == Some(false) {
+                tracing::info!(track = %track.id, peer = copy.user, path = copy.path, "a Soulseek copy isn't the song by its sound");
+                sources.mark_wrong(&track.id, &copy);
+                if let Err(e) = cache.forget(&copy).await {
+                    tracing::warn!(error = %e, "dropping a Soulseek copy that isn't the song");
+                }
+            }
+        });
     }
 
     /// Peers in the profile's order, falling back from one to the next.
@@ -2115,6 +2203,112 @@ mod tests {
                 .map_err(|_| Error::internal("the fetch never ended"))?
                 .map_err(|_| Error::internal("gone"))?
                 .clone())
+        }
+
+        /// Two uploads of the song: `find` gives the first until it is dropped for the song, then
+        /// the second. The first's sound isn't the song (ADR-0016).
+        struct TwoUploads {
+            finds: std::sync::atomic::AtomicUsize,
+        }
+
+        const SIZE: u64 = 40_000;
+
+        fn upload(video: &str) -> SourceRef {
+            lull_core::youtube::Copy {
+                video: video.into(),
+                format: "140".into(),
+                ext: "m4a".into(),
+            }
+            .source_ref(SIZE)
+        }
+
+        #[async_trait]
+        impl Youtube for TwoUploads {
+            async fn find(&self, _: &Track, _: Want) -> Result<Option<Found>> {
+                let n = self.finds.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                Ok(Some(Found {
+                    source: upload(if n == 0 { "wrongupload" } else { "rightupload" }),
+                    title: "Song".into(),
+                    channel: "Artist - Topic".into(),
+                    official: true,
+                }))
+            }
+            async fn download(&self, _: &SourceRef, dest: &std::path::Path) -> Result<()> {
+                std::fs::write(dest, vec![7u8; SIZE as usize]).map_err(|e| Error::internal(e.to_string()))
+            }
+            async fn checked(&self, _: &Track, source: &SourceRef, _: &std::path::Path) -> Option<bool> {
+                Some(!source.path.contains("wrongupload"))
+            }
+        }
+
+        async fn with_youtube(fake: &Fake, rules: Rules, youtube: Arc<dyn Youtube>) -> Result<Fetcher> {
+            let db = lull_core::db::Db::memory()?;
+            db.migrate(&crate::MIGRATIONS)?;
+            let bus = Bus::new();
+            let cache = Cache::new(db.clone(), Services::new(bus.clone()), fake.root.clone(), u64::MAX / 2);
+            let peers = Peers::load(db.clone()).await?;
+            let sources = Sources::new(peers.clone(), Vec::new());
+            let searches = Searches::new(fake.slskd.clone(), bus.clone(), db, sources.clone());
+            Ok(Fetcher::new(
+                fake.slskd.clone(),
+                Arc::new(RwLock::new(fake.layout.clone())),
+                cache,
+                peers,
+                sources,
+                searches,
+                bus,
+                Current::from(rules),
+                youtube,
+            ))
+        }
+
+        #[tokio::test]
+        async fn an_official_youtube_copy_that_isnt_the_song_gives_way_to_the_next() -> Result<()> {
+            let peer = Peer {
+                per_tick: 32_768,
+                overwrite: false,
+                reported: None,
+                settles: Duration::ZERO,
+            };
+            let fake = Fake::start(HashMap::new(), peer)
+                .await
+                .map_err(|e| Error::internal(e.to_string()))?;
+            let mut rules = Rules::default();
+            rules.youtube.mode = lull_core::youtube::Mode::StartFast;
+            let youtube = Arc::new(TwoUploads {
+                finds: Default::default(),
+            });
+            let fetcher = with_youtube(&fake, rules, youtube).await?;
+            let p = ended(&fetcher.stream(track(), None).await?).await?;
+            assert_eq!(p.status, Status::Done, "{:?}", p.error);
+            let playing = p.source.map(|s| s.source_ref().path).unwrap_or_default();
+            assert!(playing.contains("rightupload"), "{playing}");
+            // A second attempt: the player reopens the song on it.
+            assert_eq!(p.attempt, 2);
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn a_youtube_copy_the_listener_picked_plays_whatever_its_check_says() -> Result<()> {
+            let peer = Peer {
+                per_tick: 32_768,
+                overwrite: false,
+                reported: None,
+                settles: Duration::ZERO,
+            };
+            let fake = Fake::start(HashMap::new(), peer)
+                .await
+                .map_err(|e| Error::internal(e.to_string()))?;
+            let mut rules = Rules::default();
+            rules.youtube.mode = lull_core::youtube::Mode::StartFast;
+            let youtube = Arc::new(TwoUploads {
+                finds: Default::default(),
+            });
+            let fetcher = with_youtube(&fake, rules, youtube).await?;
+            let p = ended(&fetcher.stream(track(), Some(upload("wrongupload"))).await?).await?;
+            assert_eq!(p.status, Status::Done, "{:?}", p.error);
+            assert_eq!(p.attempt, 1);
+            Ok(())
         }
 
         #[tokio::test]

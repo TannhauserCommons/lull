@@ -7,9 +7,11 @@
 | File | Holds |
 |---|---|
 | `core/src/youtube.rs` | The settings, `Copy` (how a YouTube copy is named as a `SourceRef`), its quality chip |
-| `core/src/seams.rs` | `Youtube`: `find(track, want)`, `download(source, dest)` and `playlist(url, from, count)` |
+| `core/src/seams.rs` | `Youtube`: `find(track, want)`, `download(source, dest)`, `playlist(url, from, count)`, `checked(track, source)` and `check_file(track, path)`; `Previews` (discovery's, the references) |
 | `youtube/src/search.rs` | Searching, confirming by full extraction, remembered matches, kept extractions |
 | `youtube/src/matching.rs` | Whether an upload is the song, and how good a copy it is |
+| `youtube/src/check.rs` | Sound checks: references, verdicts, the background check of official copies, AcoustID ([Sound checks](#sound-checks)) |
+| `youtube/src/sound.rs` | Decoding, fingerprinting (Chromaprint's algorithm) and aligning a preview in a copy |
 | `youtube/src/formats.rs` | Which audio stream to take |
 | `youtube/src/playlist.rs` | Listing a playlist for link imports |
 | `youtube/src/ytdlp.rs` | Running yt-dlp, its errors in plain words |
@@ -54,7 +56,9 @@ A YouTube copy's chip is its own: `YouTube · Opus 160`, `YouTube · AAC 128` (`
 `find` remembers its answer per song and strictness in `youtube_matches` (a match for 30 days, no match for a day; a migration forgets the misses when the rules below find more). A match with no audio lull can stream is an error that says so, not a miss.
 
 1. **YouTube Music songs** for `"artist" title`, the name quoted so it reads as one name (unquoted, "Germany Germany LENA" was the country and the singer Lena, and the song wasn't among the 5) (`music.youtube.com/search#songs`, first 5, no extraction): those whose title matches are extracted, at most 2, and judged on the full facts.
-2. **Videos** (`ytsearch8:`, first 8 with channel and length): judged, best first; at most 2 extracted and judged again.
+2. **Videos** (`ytsearch8:`, first 8 with channel and length): judged, best first, then those only their sound could take (`plausible`); at most 3 extracted and judged again.
+
+Each extracted upload then goes through `search::consider`: official and taken by the words, it is the match at once, and its sound is checked while it plays; any other the words take, or that could be the song (`plausible`: no other-version words, length within a quarter, the song's title in its title), is checked first ([Sound checks](#sound-checks)), at most 2 per search. An upload found not to be the song is never taken for it.
 
 An upload is the song when (`matching.rs`):
 - **the title matches** after `split` reads it (packaging brackets like "(Official Audio)", a translation's "(Sub.Español)" and quality tags like "HD 1080p" dropped, a " | …" tail and a leading "<show> Soundtrack - " dropped, an "Artist - " or "Artist • " prefix split off, a repeated artist and whole-title quotes dropped), with `ids::loose_title` and one slip per 8 letters; numbers must agree. A fan's "Title - Artist" reads the other way round when only that reading is the song and its artist (Clairo's "mount airy, georgia" is on YouTube only as such uploads);
@@ -68,6 +72,19 @@ Score: official +40, YouTube Music +10, exact title +5, minus 3 per second off, 
 
 
 **Search's last gap-filler** (`Youtube::search_songs`, `matching::songs_of`): one flat video search (10 uploads, no extraction), each upload read as playback reads it (`read_upload`), a fan's "Title - Artist" turned round when the other uploads put its title part first more often (playback has the song it wants to tell; a search has the other uploads), and kept only when `judge` takes the upload for the song it reads as (close: the length its own, other versions refused). What search offers is what playback plays.
+## Sound checks
+
+Whether a copy is the song by its sound ([ADR-0016](../adr/0016-checking-a-copy-by-its-sound.md); measured with `tests/fingerprint-trial`).
+
+- **References:** the catalog's own 30 s previews of the track (`Previews`, implemented in `discovery/src/search/previews.rs`): the Apple row, then the Deezer row, whose artist, album and title make the track's id, as search made it. A row found by name alone isn't one: Apple holds re-recordings under the same title. Each lookup waits for spare catalog calls (iTunes `Need::Background`) and is kept a week; the previews' fingerprints are kept per track in `youtube_references` a month (none: a day).
+- **The check:** the copy is decoded and fingerprinted (symphonia; YouTube's Opus through ruopus; rusty-chromaprint), and each preview slid over it for the offset with the fewest differing bits (at least 15 s overlapping); the score is that bit error rate. Under 0.15: the recording, taken however it is titled. 0.15 to 0.25: another master or mix, taken when the words agree (`judge`). 0.25 and over: another recording, never taken. The words still refuse what the sound can't hear: an instrumental or karaoke of the record sounds the same (`check::takes`).
+- **When:** a fan upload is checked before `find` gives it, on its AAC copy (the save format, itag 140) downloaded into `<data>/youtube/check` and removed after. An official upload the words take plays at once and is checked on the file that plays, once soulseek has downloaded it (`Youtube::checked`, `check::played`), so it costs YouTube nothing more; the attempt waits for that verdict. A miss drops the song's match and fails that attempt with "the YouTube copy isn't the song by its sound"; the fetch takes the next copy `find` gives, a new attempt the player reopens the song on. A copy the listener picked plays as it is.
+- **Verdicts** are kept per (track, upload) in `youtube_checks` (`same`, `near`, `other`, `unchecked`, with the score and the reference) a month; `unchecked` a day.
+- **No reference** (a store that answers nothing, as Apple's search does for Korea's storefront; a song only fans uploaded): the words decide, as before. After 10 tracks looked up with no reference and none with one, the `youtube` status says sound checks are idle.
+- **AcoustID** (`LULL_ACOUSTID_KEY`, optional): with no catalog reference, the upload's whole fingerprint is looked up (at most 3 requests a second); AcoustID sure (score 0.8+) of a recording with the song's title and artist is the recording, sure of other names only is another recording. Without the key, skipped.
+- **Soulseek copies:** a file that arrived is checked out of the way (`Youtube::check_file`, its first 4 minutes, about 0.3 s of one core): one that isn't the song is never offered for it again (`Sources::mark_wrong`) and leaves the cache. The play goes on.
+- **Cost:** about 0.2 s of one core per AAC check (a fan upload, plus its 4 MB download), about 1.2 s per Opus one (an official copy, no download); a preview is about 1 MB, once per track. YouTube asked this project's workstation for a sign-in check after about 500 downloads in two hours (the trial): checks never add a download for an official copy for that reason.
+
 ## Formats
 
 `formats.rs`: audio-only HTTPS streams with an exact `filesize` (the cache serves byte ranges against it while the download runs), no DRM, not YouTube's `-drc` copies, the original language track. Opus is WebM, AAC is M4A: `content-type` `audio/webm` or `audio/mp4`.
@@ -94,4 +111,4 @@ Score: official +40, YouTube Music +10, exact title +5, minus 3 per second off, 
 
 ## Status
 
-`youtube`: `off` while the mode is off; `ok` "Ready, with yt-dlp 2026.10.26 (built in)"; `warn` while backing off; `down` when yt-dlp isn't installed or won't run. `extra { version, pinnedVersion, updated, backoffUntil }`.
+`youtube`: `off` while the mode is off; `ok` "Ready, with yt-dlp 2026.10.26 (built in)", with ". Sound checks are idle: …" added while no track looked up has a reference ([Sound checks](#sound-checks)); `warn` while backing off; `down` when yt-dlp isn't installed or won't run. `extra { version, pinnedVersion, updated, backoffUntil, soundChecks: { checked, refused, withoutReference, withReference } }` (since the hub started).

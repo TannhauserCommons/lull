@@ -5,10 +5,12 @@
 //! YouTube asks for a sign-in check or says lull asked too often.
 
 mod api;
+mod check;
 mod formats;
 mod matching;
 mod playlist;
 mod search;
+mod sound;
 mod update;
 mod ytdlp;
 
@@ -22,7 +24,7 @@ use axum::Router;
 use lull_core::db::Migrations;
 use lull_core::ids::TrackId;
 use lull_core::model::{SourceRef, Track};
-use lull_core::seams::Youtube;
+use lull_core::seams::{Previews, Youtube};
 use lull_core::status::State;
 use lull_core::youtube::{Copy, Found, FoundPlaylist, FoundSong, Listing, Mode, Settings, Want};
 use lull_core::{Ctx, Error, Result};
@@ -51,6 +53,28 @@ pub const MIGRATIONS: Migrations = Migrations {
         -- Matching reads a fan's "Title - Artist" and translated uploads now: misses are looked for again.
         DELETE FROM youtube_matches WHERE video_id IS NULL;
     "#,
+        r#"
+        -- An upload's sound against the track's references (ADR-0016): same, near (another master
+        -- or mix), other (another recording), or unchecked (no reference, unreadable audio).
+        CREATE TABLE youtube_checks (
+            track_id    TEXT NOT NULL,
+            video_id    TEXT NOT NULL,
+            verdict     TEXT NOT NULL,
+            score       REAL,                      -- bit error rate at the best offset
+            reference   TEXT,                      -- "apple:<id>", "deezer:<id>", "acoustid"
+            checked_at  INTEGER NOT NULL,          -- unix seconds
+            PRIMARY KEY (track_id, video_id)
+        );
+        -- The catalog's previews of a track, fingerprinted: [{ source, id, print }]; [] = none.
+        CREATE TABLE youtube_references (
+            track_id    TEXT PRIMARY KEY,
+            refs        TEXT NOT NULL,
+            checked_at  INTEGER NOT NULL
+        );
+        -- Fan uploads matched before sound checks are found again, checked before they play;
+        -- official ones are checked the next time they play.
+        DELETE FROM youtube_matches WHERE official = 0;
+    "#,
     ],
 };
 
@@ -78,6 +102,8 @@ pub struct Service {
     /// One search per song at a time: a preload and the player asking together search once.
     finding: Mutex<std::collections::HashMap<TrackId, Arc<tokio::sync::Mutex<()>>>>,
     updates: update::State,
+    /// Sound checks (ADR-0016).
+    checks: check::Checks,
 }
 
 #[derive(Debug, Clone)]
@@ -92,7 +118,7 @@ struct Backoff {
 
 pub async fn start(ctx: &Ctx) -> Result<Arc<Service>> {
     let dir = ctx.config.data_dir.join("youtube");
-    for sub in ["info", "cache", "tmp", "deno", "bin"] {
+    for sub in ["info", "cache", "tmp", "deno", "bin", "check"] {
         tokio::fs::create_dir_all(dir.join(sub))
             .await
             .map_err(|e| Error::internal(format!("creating {}: {e}", dir.join(sub).display())))?;
@@ -108,6 +134,7 @@ pub async fn start(ctx: &Ctx) -> Result<Arc<Service>> {
         downloads: Semaphore::new(DOWNLOADS_AT_ONCE),
         finding: Mutex::default(),
         updates: update::State::default(),
+        checks: check::Checks::default(),
     });
     svc.report();
     // Subscribed before collection starts, so its start-up `settings` arrives (ADR-0050).
@@ -115,6 +142,14 @@ pub async fn start(ctx: &Ctx) -> Result<Arc<Service>> {
     ctx.spawn(update::run(svc.clone()));
     ctx.spawn(housekeeping(svc.clone()));
     Ok(svc)
+}
+
+impl Service {
+    /// The catalog's previews, once discovery runs: sound checks start then (ADR-0016).
+    pub fn use_previews(self: &Arc<Self>, previews: Arc<dyn Previews>) {
+        self.checks.bind(previews);
+        self.report();
+    }
 }
 
 /// `GET /api/youtube`, `POST /api/youtube/update`.
@@ -191,6 +226,15 @@ impl Youtube for Service {
         let found = search::songs(self, query).await.map_err(|p| self.failed(p))?;
         self.succeeded();
         Ok(found)
+    }
+
+    async fn checked(&self, track: &Track, source: &SourceRef, path: &Path) -> Option<bool> {
+        let copy = Copy::of(source)?;
+        check::played(self, track, &copy.video, path).await
+    }
+
+    async fn check_file(&self, track: &Track, path: &Path) -> Option<bool> {
+        check::file(self, track, path).await
     }
 
     async fn playlist(&self, url: &str, from: usize, count: usize) -> Result<Listing> {
@@ -386,6 +430,7 @@ impl Service {
                 "pinnedVersion": self.ytdlp.pinned_version(),
                 "updated": bin.updated,
                 "backoffUntil": self.backoff_until(),
+                "soundChecks": self.checks.counts(),
             }),
         );
     }
@@ -410,7 +455,12 @@ impl Service {
             );
         }
         let how = if bin.updated { "kept up to date" } else { "built in" };
-        (State::Ok, format!("Ready, with yt-dlp {version} ({how})"))
+        let checks = if self.checks.counts().idle() {
+            ". Sound checks are idle: the catalog's store here has no previews of the songs looked up, so copies are matched by their titles and lengths"
+        } else {
+            ""
+        };
+        (State::Ok, format!("Ready, with yt-dlp {version} ({how}){checks}"))
     }
 
     fn backoff_until(&self) -> Option<i64> {

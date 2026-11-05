@@ -42,6 +42,10 @@ const OTHER_VERSION: &[&[&str]] = &[
     &["hour"],
     &["hours"],
     &["concert"],
+    // A fan's hour-long loop of the song, a vocals-only track: they sound like the song.
+    &["extended"],
+    &["acapella"],
+    &["a", "cappella"],
 ];
 
 /// Bracketed parts of an upload's title that say nothing about the recording: "(Official
@@ -218,6 +222,36 @@ fn reading(wanted: &Wanted, (artist_part, title_part): (Option<String>, String))
         }
         artist_part => (title, artist_part),
     }
+}
+
+/// Could the upload be the song, for its sound to tell (ADR-0016)? Nothing in its title names
+/// another version, it is no live stream, its length is within a quarter of the song's, and the
+/// song's title is in its title (or its music metadata). Who uploaded it and how its title reads
+/// decide nothing more: its sound does. Words still refuse what the sound can't hear (an
+/// instrumental, karaoke) and lengths far off (another cut, a loop).
+pub fn plausible(wanted: &Wanted, c: &Candidate) -> bool {
+    if another_version(wanted, c) {
+        return false;
+    }
+    if let (Some(want), Some(have)) = (wanted.duration, c.duration)
+        && have.abs_diff(want) * 4 > want
+    {
+        return false;
+    }
+    let title = c.track.as_deref().map_or_else(|| loose_title(&c.title), loose_title);
+    !wanted.title.is_empty() && contains_words(&title, &wanted.title)
+}
+
+/// Uploads to look at in turn: those today's words take (best first), then those only their
+/// sound could take, in the search's order.
+pub fn candidates<'a>(wanted: &Wanted, found: &'a [Candidate], strictness: Match) -> Vec<&'a Candidate> {
+    let mut list = ranked(wanted, found, strictness);
+    let more: Vec<&Candidate> = found
+        .iter()
+        .filter(|c| !list.iter().any(|l| l.id == c.id) && plausible(wanted, c))
+        .collect();
+    list.extend(more);
+    list
 }
 
 /// The title alone, for YouTube Music's song results, which name no artist or length until the
@@ -861,6 +895,55 @@ mod tests {
             plays.iter().map(|c| c.channel.as_str()).collect::<Vec<_>>(),
             ["Germany Germany - Topic"]
         );
+    }
+
+    #[test]
+    fn uploads_the_words_refuse_are_left_to_their_sound_unless_their_title_names_another_take() {
+        // From the trial (2026-11-05): right uploads today's words refuse, each the recording by
+        // its sound, and wrong ones only the words or the length can tell.
+        let spirit = song("Nirvana", "Smells Like Teen Spirit", "Nevermind", 301);
+        let video = upload(
+            "Nirvana - Smells Like Teen Spirit (Official Music Video)",
+            "Nirvana",
+            278,
+        );
+        assert!(judge(&spirit, &video, Match::Close).is_none(), "23 s off");
+        assert!(plausible(&spirit, &video), "its sound decides");
+        let space = song("Beach House", "Space Song", "Depression Cherry", 320);
+        let fan = upload("Space Song", "janken", 321);
+        assert!(judge(&space, &fan, Match::Close).is_none(), "no artist in sight");
+        assert!(plausible(&space, &fan));
+        // The sound can't hear a removed vocal or tell a loop: these stay refused.
+        let instrumental = upload(
+            "Beach House - Space Song (Filtered Instrumental)",
+            "beach house edits",
+            321,
+        );
+        assert!(!plausible(&space, &instrumental));
+        let lights = song("The Weeknd", "Blinding Lights", "After Hours", 200);
+        let extended = upload(
+            "The Weeknd - Blinding Lights (Extended Version)",
+            "Extended Version",
+            642,
+        );
+        assert!(!plausible(&lights, &extended), "another take, and three times as long");
+        let loop_ = upload("The Weeknd - Blinding Lights", "fan", 600);
+        assert!(!plausible(&lights, &loop_), "far off in length");
+        // Another song altogether never comes up.
+        assert!(!plausible(
+            &lights,
+            &upload("The Weeknd - Save Your Tears", "The Weeknd", 215)
+        ));
+        // Judged ones come first, then the ones only their sound could take.
+        let found = [
+            fan.clone(),
+            upload("Beach House - Space Song (Official Audio)", "Beach House - Topic", 320),
+        ];
+        let order: Vec<&str> = candidates(&space, &found, Match::Close)
+            .iter()
+            .map(|c| c.channel.as_str())
+            .collect();
+        assert_eq!(order, ["Beach House - Topic", "janken"]);
     }
 
     #[test]

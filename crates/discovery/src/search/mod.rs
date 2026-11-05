@@ -19,6 +19,7 @@ pub mod catalog;
 mod matching;
 pub mod merge;
 mod playlists;
+mod previews;
 #[cfg(test)]
 mod query_set;
 pub mod resolve;

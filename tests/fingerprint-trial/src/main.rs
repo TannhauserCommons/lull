@@ -117,6 +117,15 @@ fn best(short: &[u32], long: &[u32]) -> (f64, i64, usize) {
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let config = Configuration::preset_test2();
+    // `--print <file>...`: each file's fingerprint as base64 of little-endian items (test fixtures).
+    if args.first().map(String::as_str) == Some("--print") {
+        for f in &args[1..] {
+            let p = print(f, &config).expect("prints");
+            let bytes: Vec<u8> = p.fp.iter().flat_map(|i| i.to_le_bytes()).collect();
+            println!("{}", serde_json::json!({ "file": f, "seconds": p.seconds, "items": b64(&bytes) }));
+        }
+        return;
+    }
     let item = config.item_duration_in_seconds() as f64;
     let reference = match print(&args[0], &config) {
         Ok(p) => p,
@@ -151,4 +160,16 @@ fn main() {
         };
         println!("{out}");
     }
+}
+
+fn b64(bytes: &[u8]) -> String {
+    const B: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for c in bytes.chunks(3) {
+        let n = (u32::from(c[0]) << 16) | (u32::from(*c.get(1).unwrap_or(&0)) << 8) | u32::from(*c.get(2).unwrap_or(&0));
+        for i in 0..4 {
+            out.push(if i <= c.len() { B[(n >> (18 - 6 * i) & 63) as usize] as char } else { '=' });
+        }
+    }
+    out
 }

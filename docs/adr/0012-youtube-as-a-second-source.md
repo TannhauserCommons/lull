@@ -40,3 +40,7 @@ Facts that shaped it, checked on 2026-11-02 with yt-dlp 2026.10.26:
 ## Update 2026-11-03: the play may move to the better copy
 
 With Settings › Sources › "Switch to a better copy while a song plays" on (the default), a song YouTube plays (start fast or a fallback) moves to Soulseek's copy once it is ready, lined up and crossfaded so it doesn't jump: [ADR-0013](0013-switching-to-a-better-copy-mid-song.md). With it off, the current play never jumps, as above.
+
+## Update 2026-11-05: a copy is checked by its sound
+
+Matching by words now has a second check: each upload's sound against the catalog's 30 s preview of the song. Fan uploads are checked before they play, official ones while they play; a re-recording or another song under the right title is refused, and a right upload titled oddly is taken: [ADR-0016](0016-checking-a-copy-by-its-sound.md).

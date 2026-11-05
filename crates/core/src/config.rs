@@ -41,6 +41,9 @@ pub struct Youtube {
     pub ytdlp: PathBuf,
     /// The JavaScript runtime yt-dlp needs for YouTube.
     pub deno: PathBuf,
+    /// An AcoustID application key: songs no catalog has a preview of are then looked up there
+    /// when a YouTube copy's sound is checked (ADR-0016). Unset: that step is skipped.
+    pub acoustid_key: Option<Secret>,
 }
 
 #[derive(Debug, Clone)]
@@ -297,6 +300,7 @@ impl Config {
             youtube: Youtube {
                 ytdlp: v.or("LULL_YTDLP", "yt-dlp").into(),
                 deno: v.or("LULL_DENO", "deno").into(),
+                acoustid_key: v.opt("LULL_ACOUSTID_KEY").map(Secret),
             },
             skins_dir: v.opt("LULL_SKINS_DIR").map(PathBuf::from),
             flags: crate::flags::Flags::parse(&v.or("LULL_FLAGS", "")).map_err(|e| invalid("LULL_FLAGS", e))?,

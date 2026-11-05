@@ -96,6 +96,18 @@ pub struct Found {
     pub official: bool,
 }
 
+/// A catalog's own 30 s preview of a track, the reference a copy's sound is checked against
+/// (ADR-0016). The catalog row is the track itself: its artist, album and title make the track's id.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Reference {
+    /// "apple" or "deezer".
+    pub source: String,
+    /// The catalog's id for the track.
+    pub id: String,
+    /// The preview's audio (AAC from Apple, MP3 from Deezer).
+    pub url: String,
+}
+
 /// A page of a playlist yt-dlp lists (YouTube, YouTube Music, SoundCloud), for link imports.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Listing {

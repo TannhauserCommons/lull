@@ -11,7 +11,7 @@ use crate::error::{Error, Result};
 use crate::ids::{AlbumId, ArtistId, TrackId};
 use crate::model::{self, Album, Artist, PlayReport, Playlist, PlaylistEdit, SourceRef, Track};
 use crate::quality::SaveCandidate;
-use crate::youtube::{Found, FoundPlaylist, FoundSong, Listing, Want};
+use crate::youtube::{Found, FoundPlaylist, FoundSong, Listing, Reference, Want};
 
 /// The saved library. Implemented by `library`, from a music folder or Jellyfin (ADR-0003).
 #[async_trait]
@@ -167,6 +167,32 @@ pub trait Youtube: Send + Sync {
     async fn search_songs(&self, _query: &str) -> Result<Vec<FoundSong>> {
         Ok(Vec::new())
     }
+
+    /// Whether a copy `find` gave is the song by its sound (ADR-0016), judged on its file at
+    /// `path` once downloaded: `Some(false)` when it isn't (the copy is dropped for the song, and
+    /// the next `find` gives the next one), `None` when no check could say (no reference, a file
+    /// it can't read). A fan upload was checked before `find` gave it; an official one is checked
+    /// on the file that plays, so it costs YouTube nothing more.
+    async fn checked(&self, _track: &Track, _source: &SourceRef, _path: &Path) -> Option<bool> {
+        None
+    }
+
+    /// Whether the audio file at `path` (a Soulseek copy, downloaded) is the song by its sound,
+    /// against the same references: `None` when there is no reference or the file can't be read.
+    async fn check_file(&self, _track: &Track, _path: &Path) -> Option<bool> {
+        None
+    }
+}
+
+/// The catalog's previews of a track, for checking copies by their sound (ADR-0016).
+/// Implemented by `discovery`, handed to `youtube` once discovery has started.
+#[async_trait]
+pub trait Previews: Send + Sync {
+    /// The catalog rows that are this very track (artist, album and title make its id) with a
+    /// preview: Apple's, then Deezer's where Deezer answers. Empty when none has one (a store
+    /// that answers nothing, a song only fans uploaded). Background work: it waits for the
+    /// catalog calls the listener's own searches leave.
+    async fn previews(&self, track: &Track) -> Result<Vec<Reference>>;
 }
 
 /// lull's catalog (iTunes or Deezer search, ADR-0008) for songs another service names.
