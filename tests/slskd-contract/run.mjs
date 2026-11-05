@@ -27,7 +27,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { createServer } from 'node:net';
-import { access, mkdir, mkdtemp, open, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, open, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { arch, tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { startServer } from './server.mjs';
@@ -122,7 +122,10 @@ async function main() {
 
 async function runCase(c, { slskd, server, peer, file, listenPort }) {
   const log = (msg) => console.log(`[${c.name}] ${msg}`);
-  const work = await mkdtemp(join(tmpdir(), 'slskd-contract-'));
+  // Its long name: slskd refuses a file whose path Path.GetFullPath changes, and on Windows that expands 8.3 names,
+  // which the temp folder can have (C:\Users\RUNNER~1\... on GitHub's runners). The app's folders come from the
+  // known-folder API, which gives long names.
+  const work = await realpath(await mkdtemp(join(tmpdir(), 'slskd-contract-')));
   const httpPort = await freePort();
   const apiKey = randomBytes(16).toString('hex');
   const api = `http://127.0.0.1:${httpPort}`;
