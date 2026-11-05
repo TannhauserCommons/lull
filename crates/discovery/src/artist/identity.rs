@@ -536,20 +536,30 @@ where
     })
 }
 
-/// The page URLs MusicBrainz may link a catalog artist from: Apple's in the hub's store country,
-/// the US and the UK ones (MusicBrainz keeps the storefront an editor linked: BIJI's is the UK
-/// one), its old iTunes form, and Deezer's. All name the same Apple id.
+/// Apple Music's storefronts. MusicBrainz keeps the storefront an editor linked an artist's page
+/// on (BIJI's is the UK one, a Japanese artist's often the Japanese one), whatever the listener's
+/// own: every one is asked, in the one call (MusicBrainz takes them all).
+const STOREFRONTS: &[&str] = &[
+    "ae", "ag", "ai", "al", "am", "ao", "ar", "at", "au", "az", "ba", "bb", "be", "bf", "bg", "bh", "bj", "bm", "bn",
+    "bo", "br", "bs", "bt", "bw", "by", "bz", "ca", "cd", "cg", "ch", "ci", "cl", "cm", "cn", "co", "cr", "cv", "cy",
+    "cz", "de", "dk", "dm", "do", "dz", "ec", "ee", "eg", "es", "fi", "fj", "fm", "fr", "ga", "gb", "gd", "ge", "gh",
+    "gm", "gr", "gt", "gw", "gy", "hk", "hn", "hr", "hu", "id", "ie", "il", "in", "iq", "is", "it", "jm", "jo", "jp",
+    "ke", "kg", "kh", "kn", "kr", "kw", "ky", "kz", "la", "lb", "lc", "lk", "lr", "lt", "lu", "lv", "ly", "ma", "md",
+    "me", "mg", "mk", "ml", "mm", "mn", "mo", "mr", "ms", "mt", "mu", "mv", "mw", "mx", "my", "mz", "na", "ne", "ng",
+    "ni", "nl", "no", "np", "nr", "nz", "om", "pa", "pe", "pg", "ph", "pk", "pl", "pt", "pw", "py", "qa", "ro", "rs",
+    "ru", "rw", "sa", "sb", "sc", "se", "sg", "si", "sk", "sl", "sn", "sr", "sv", "sz", "tc", "td", "th", "tj", "tm",
+    "tn", "to", "tr", "tt", "tw", "tz", "ua", "ug", "us", "uy", "uz", "vc", "ve", "vg", "vn", "vu", "ws", "xk", "ye",
+    "za", "zm", "zw",
+];
+
+/// The page URLs MusicBrainz may link a catalog artist from: Apple's on every storefront (the
+/// hub's first), its old iTunes form, and Deezer's. All name the same id.
 pub fn resources(source: ArtistSource, country: &str) -> Vec<String> {
     match source {
         ArtistSource::Itunes(id) => {
-            let mut countries = vec![country.to_lowercase()];
-            for c in ["us", "gb"] {
-                if !countries.iter().any(|k| k == c) {
-                    countries.push(c.into());
-                }
-            }
-            let mut urls: Vec<String> = countries
-                .iter()
+            let own = country.to_lowercase();
+            let mut urls: Vec<String> = std::iter::once(own.as_str())
+                .chain(STOREFRONTS.iter().copied().filter(|c| *c != own))
                 .map(|c| format!("https://music.apple.com/{c}/artist/{id}"))
                 .collect();
             urls.push(format!("https://itunes.apple.com/us/artist/id{id}"));
@@ -748,6 +758,112 @@ mod tests {
                 isrc: "QZABC2600001".into()
             })
         );
+        Ok(())
+    }
+
+    // Other libraries than the one lull was first measured on: other scripts and storefronts,
+    // artists only one source knows. Invented names and ids.
+    const LISA_APPLE: u64 = 5_550_001;
+    const LISA: &str = "6100aaaa-0000-4000-8000-0000000000a1";
+    const ONLY_DEEZER: u64 = 6_660_001;
+    const ONLY_DEEZER_MBID: &str = "6100aaaa-0000-4000-8000-0000000000d1";
+    const ONLY_MB: &str = "6100aaaa-0000-4000-8000-0000000000e1";
+
+    /// MusicBrainz's links for those: an Apple page linked on the Japanese storefront only, a
+    /// Deezer artist with no Apple page.
+    async fn other_urls(asked: Vec<String>) -> Result<HashMap<String, Vec<ArtistInfo>>> {
+        let known = HashMap::from([
+            (
+                format!("https://music.apple.com/jp/artist/{LISA_APPLE}"),
+                vec![artist("Лиса", LISA)],
+            ),
+            (
+                format!("https://www.deezer.com/artist/{ONLY_DEEZER}"),
+                vec![artist("Nuit Blanche", ONLY_DEEZER_MBID)],
+            ),
+        ]);
+        Ok(asked
+            .into_iter()
+            .filter_map(|u| Some((u.clone(), known.get(&u)?.clone())))
+            .collect())
+    }
+
+    async fn other_links(mbid: String) -> Result<Links> {
+        Ok(match mbid.as_str() {
+            ONLY_DEEZER_MBID => Links {
+                deezer: Some(ONLY_DEEZER),
+                ..Links::default()
+            },
+            _ => Links::default(),
+        })
+    }
+
+    #[tokio::test]
+    async fn an_apple_page_linked_on_another_storefront_than_the_hubs_is_found() -> Result<()> {
+        // A hub in Germany, an artist whose page an editor linked on the Japanese storefront.
+        let listened = Listened {
+            catalog: vec![song(ArtistSource::Itunes(LISA_APPLE))],
+            ..Listened::default()
+        };
+        let ids = decide(&listened, "DE", other_urls, other_links, no_credits).await?;
+        assert_eq!(ids.mbid(), Some(LISA));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn namesakes_in_any_script_are_told_apart_by_their_ids_alone() -> Result<()> {
+        // Two Apple artists named "ミラ" among the listener's songs: neither is surely it.
+        let two = decide(
+            &Listened {
+                catalog: vec![song(ArtistSource::Itunes(7_001)), song(ArtistSource::Itunes(7_002))],
+                ..Listened::default()
+            },
+            "JP",
+            other_urls,
+            other_links,
+            no_credits,
+        )
+        .await?;
+        assert!(two.is_empty());
+        // The listener's "Лиса" is theirs; a recommender's "Лиса" (another Лиса's id) never joins
+        // it, and seeds a "Lisa" lull holds nothing for: another name, another record.
+        assert_ne!(ArtistId::of("Лиса"), ArtistId::of("Lisa"));
+        let row = |id: &str| IdRow::recommended(Source::Musicbrainz, id, "ListenBrainz");
+        let kept = accepted(
+            vec![("Лиса".into(), row("another-lisa")), ("Lisa".into(), row("lisa"))],
+            &HashSet::from([ArtistId::of("Лиса")]),
+            &HashSet::new(),
+        );
+        assert_eq!(kept, [(ArtistId::of("Lisa"), row("lisa"))]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn an_artist_only_on_deezer_is_its_deezer_id_and_what_links_to_it() -> Result<()> {
+        // Where Apple doesn't carry the artist: its Deezer song gives the id, MusicBrainz's link
+        // from the Deezer page the MBID; no Apple id is made up.
+        let listened = Listened {
+            catalog: vec![song(ArtistSource::Deezer(ONLY_DEEZER))],
+            ..Listened::default()
+        };
+        let ids = decide(&listened, "FR", other_urls, other_links, no_credits).await?;
+        assert_eq!(
+            (ids.deezer(), ids.mbid(), ids.itunes()),
+            (Some(ONLY_DEEZER), Some(ONLY_DEEZER_MBID), None)
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn an_artist_only_on_musicbrainz_is_its_librarys_mbid() -> Result<()> {
+        // A library of rips no catalog sells: the files' MBID is all there is, and enough for
+        // its discography, similar artists and tags.
+        let listened = Listened {
+            library: Some(ONLY_MB.into()),
+            ..Listened::default()
+        };
+        let ids = decide(&listened, "BR", other_urls, other_links, no_credits).await?;
+        assert_eq!((ids.mbid(), ids.itunes(), ids.deezer()), (Some(ONLY_MB), None, None));
         Ok(())
     }
 
