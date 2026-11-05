@@ -11,6 +11,11 @@ on:
   pull_request:
     paths: ["app/**", "crates/**", "web/desktop/**", "web/assets/icons/**", "scripts/android-*.sh", "rust-toolchain.toml", ".github/workflows/app.yml"]
   workflow_dispatch:
+    inputs:
+      gradle-verification:
+        description: "Write Gradle's dependency checksums (gradle/verification-metadata.xml) from the Android build, after a dependency changes"
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       ref:
@@ -70,7 +75,7 @@ jobs:
         run: cargo test --locked
 
   bundle:
-    if: ${{ !inputs.ref && (github.ref_type == 'tag' || github.event_name == 'workflow_dispatch') }}
+    if: ${{ !inputs.ref && !inputs.gradle-verification && (github.ref_type == 'tag' || github.event_name == 'workflow_dispatch') }}
     strategy:
       fail-fast: false
       matrix:
@@ -193,6 +198,10 @@ jobs:
       ANDROID_HOME: /opt/android-sdk
       NDK_HOME: /opt/android-sdk/ndk/28.2.13676358
       CARGO_HOME: /opt/cargo
+      # Gradle's downloads in a folder of their own, by an absolute path: the cache action inside this container
+      # resolves `~` to another home than the steps' HOME (/github/home), so `~/.gradle` saved nothing and every
+      # build fetched everything from Maven Central, which limits shared runners (HTTP 429).
+      GRADLE_USER_HOME: /opt/gradle
       RUSTUP_HOME: /opt/rustup
     steps:
       - uses: actions/checkout@v5
@@ -233,8 +242,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: |
-            ~/.gradle/caches/modules-2
-            ~/.gradle/wrapper/dists
+            /opt/gradle/caches/modules-2
+            /opt/gradle/wrapper/dists
+            /github/home/.cache/gradlew-fdroid
           key: android-gradle-${{ matrix.build }}-${{ hashFiles('app/gen/android/**/*.gradle.kts', 'app/gen/android/gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: android-gradle-${{ matrix.build }}-
       - name: Signing key
@@ -267,6 +277,20 @@ jobs:
           sh scripts/android-build.sh
           mkdir -p "$RUNNER_TEMP/apk"
           cp app/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk "$RUNNER_TEMP/apk/"
+      # Gradle checks every dependency against these checksums, downloaded or from the cache; after a dependency
+      # changes, a run by hand with gradle-verification writes them again (docs/context/android.md).
+      - name: Write Gradle's dependency checksums
+        if: matrix.build == 'signed' && inputs.gradle-verification
+        working-directory: app/gen/android
+        env:
+          LULL_TAURI_CLI: cargo
+        run: ./gradlew --write-verification-metadata sha256 :app:assembleUniversalRelease
+      - if: matrix.build == 'signed' && inputs.gradle-verification
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-verification-metadata
+          path: app/gen/android/gradle/verification-metadata.xml
+          if-no-files-found: error
       - name: No non-free libraries
         if: matrix.build == 'signed'
         run: |
@@ -291,8 +315,9 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: |
-            ~/.gradle/caches/modules-2
-            ~/.gradle/wrapper/dists
+            /opt/gradle/caches/modules-2
+            /opt/gradle/wrapper/dists
+            /github/home/.cache/gradlew-fdroid
           key: ${{ steps.gradle.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v4
         with:
