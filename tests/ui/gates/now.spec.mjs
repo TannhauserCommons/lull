@@ -128,6 +128,8 @@ test.describe('now column', () => {
 // Why a song stopped is its job's, the hub's one record (docs/context/streaming.md, A song's outcome): the bar shows the
 // hub's reason, a copy this browser can't decode as the hub recorded it, and only an unreachable hub in the player's words.
 const playAlbum = async (page, album) => {
+  // its own client on the fixture hub: a test playing the same song at the same time doesn't reopen this one's
+  await page.context().setExtraHTTPHeaders({ 'x-fixture-client': `${test.info().testId}:${test.info().repeatEachIndex}` });
   await openScreen(page, `/album/${album}`, { clock: false });
   await page.evaluate(() => App.player.playList([...document.querySelectorAll('#view .trow[data-track-id]')].map((r) => r.getAttribute('data-track-id')), 0));
   await page.waitForFunction(() => document.querySelector('#pbar').dataset.status === 'failed', null, { timeout: 15_000 });

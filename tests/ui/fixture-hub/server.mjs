@@ -512,12 +512,13 @@ function audio(req, res, id, library) {
   const t = L.tracks[id];
   if (!t || (library && !t.saved)) return send(res, 404, { error: 'not_found', message: 'Not saved.' });
   // As the hub: the song's job sends a stream event when it opens, and its outcome is the job's (POST .../output-error).
+  // Its event goes to the page that asked (X-Fixture-Client): pages playing the same song at once don't hear each other's.
   if (t.albumId === L.failingAlbum) {
-    emit('stream', { trackId: id, jobId: 'fixture-fail-' + id, status: 'finding', attempt: 0, peersFound: 0, received: 0, size: 0 });
+    emit('stream', { trackId: id, jobId: 'fixture-fail-' + id, status: 'finding', attempt: 0, peersFound: 0, received: 0, size: 0 }, clientOf(req));
     return send(res, 502, { error: 'upstream', message: FAIL_REASON });
   }
   if (t.albumId === L.brokenAlbum && !library) {
-    emit('stream', { trackId: id, jobId: 'fixture-broken-' + id, status: 'streaming', attempt: 0, peer: 'fixture-peer', format: 'WAV 8 kHz', received: 4096, size: 4096 });
+    emit('stream', { trackId: id, jobId: 'fixture-broken-' + id, status: 'streaming', attempt: 0, peer: 'fixture-peer', format: 'WAV 8 kHz', received: 4096, size: 4096 }, clientOf(req));
     const junk = Buffer.alloc(4096, 0x5a);
     res.writeHead(200, { 'content-type': 'audio/wav', 'accept-ranges': 'bytes', 'content-length': junk.length });
     return res.end(junk);
