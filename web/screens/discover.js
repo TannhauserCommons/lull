@@ -305,10 +305,10 @@
       ${related.length ? html`${ui.labelRule('you might like', { level: 'h3', sm: true })}<div class="cluster">${related.map(function (id) { return ui.tagChip(id, { toggle: true, pressed: false }); })}</div>` : ''}`;
   }
 
-  /* cold start: the server had nothing to go on (no picks, no history, nothing followed) and offers tags to begin with */
+  /* cold start: the hub built the feed with nothing to go on (`cold`: nothing played, liked or followed) and offers
+     tags, and the artists of its starter picks, to begin with */
   function isCold(feed) {
-    return !list(feed, 'picks').length && !list(feed, 'jumpBackIn').length && !list(feed, 'followedTags').length &&
-      !Object.keys(feed.errors || {}).length && list(feed, 'coldStartTags').length > 0;
+    return !!feed.cold && list(feed, 'coldStartTags').length > 0;
   }
   function renderCold(feed) {
     var tags = list(feed, 'coldStartTags'), artists = list(feed, 'coldStartArtists').map(M.artist).filter(Boolean);

@@ -259,10 +259,10 @@ const routes = [
   ['PUT', /^\/api\/stream\/prefetch$/, () => ({ status: 204 })],
 
   // discovery
-  ['GET', /^\/api\/feed$/, () => {
+  ['GET', /^\/api\/feed$/, (m, q, body, client) => {
     const picks = L.trackIds.filter((_, i) => i % 97 === 1).slice(0, 12);
     const fresh = L.albumIds.slice(-12, -2).reverse();   // the catalog's albums, none saved
-    return {
+    const feed = {
       updated: L.NOW - 600, summary: 'Dreamy guitars and late synths this week.',
       newReleases: fresh,
       picks: picks.map((trackId, i) => ({ trackId, reasons: [i % 2 ? { kind: 'tag', name: L.tracks[trackId].tags[0] } : { kind: 'like', name: L.tracks[trackId].artist, ref: L.tracks[trackId].artistId }], via: 'listenbrainz' })),
@@ -271,6 +271,15 @@ const routes = [
       followedTags: state.follows.tags, coldStartTags: L.tags.slice(0, 8),
       entities: entities({ tracks: picks, albums: [...fresh, ...L.albumIds.slice(0, 4), ...albumsOf(picks)], artists: L.artistIds.slice(0, 10) }),
     };
+    const shape = feedShapes.get(client);
+    // a first run: nothing known of the listener, the starter tags' picks and their artists
+    if (shape === 'cold') return { ...feed, cold: true, followedTags: [], jumpBackIn: [], newReleases: [], coldStartArtists: L.artistIds.slice(0, 6) };
+    // each followed tag with the tags that come with it on this month's releases ("you might like")
+    if (shape === 'related') {
+      const others = L.tags.filter((t) => !feed.followedTags.includes(t));
+      return { ...feed, entities: { ...feed.entities, tags: feed.followedTags.map((t, i) => ({ id: t, name: t, related: others.slice(i * 2, i * 2 + 2) })) } };
+    }
+    return feed;
   }],
   ['GET', /^\/api\/search$/, (m, q) => {
     const w = words(q.get('q'));
@@ -384,6 +393,7 @@ const likeLogs = new Map();      // fixture client -> { likes: [{ trackId, batch
 function likeLog(client) { if (!likeLogs.has(client)) likeLogs.set(client, { likes: [], saved: [] }); return likeLogs.get(client); }
 const unsavedLikes = (client) => [...new Set([...likeLog(client).likes.map((l) => l.trackId), ...state.likes])]
   .filter((id) => !L.savedIds.includes(id) && !likeLog(client).saved.includes(id));
+const feedShapes = new Map();    // fixture client -> 'cold' | 'related': the feed it is served
 /* a comment on every open stream every 15 s, as the hub's keep-alive (crates/server/src/events.rs): a client that
    stopped listening finds out at the next one */
 setInterval(() => { for (const res of clients.keys()) res.write(': keep-alive\n\n'); }, 15000).unref();
@@ -792,6 +802,7 @@ const server = createServer(async (req, res) => {
     const out = L.trackIds.filter((id) => !L.tracks[id].saved && !state.likes.includes(id)).slice(0, +(q.get('n') || 3));
     return send(res, 200, { items: out, entities: entities({ tracks: out, albums: albumsOf(out) }) });
   }
+  if (path === '/__fixture/feed-shape' && req.method === 'POST') { feedShapes.set(clientOf(req), (await readBody(req)).shape); return send(res, 204); }
   if (path === '/__fixture/drop-events' && req.method === 'POST') {
     for (const [stream, c] of clients) if (c === clientOf(req)) { clients.delete(stream); stream.end(); }
     return send(res, 204);

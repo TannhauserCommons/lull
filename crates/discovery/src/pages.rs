@@ -432,22 +432,23 @@ async fn tag_artists_from_radio(svc: &Service, tag: &str) -> Result<Vec<ArtistIn
         .collect())
 }
 
-/// Specific tags that appear alongside `tag` on at least two of its releases, most often first.
-fn co_tags(tag: &str, releases: &[Release]) -> Vec<String> {
+/// Specific tags that appear alongside `tag` on at least two of its releases, most often first
+/// (then by name).
+pub(crate) fn co_tags(tag: &str, releases: &[Release]) -> Vec<String> {
     let mut counts: HashMap<&str, i64> = HashMap::new();
     for t in releases.iter().flat_map(|r| &r.tags) {
         if t != tag && taste::is_specific(t) {
             *counts.entry(t).or_default() += 1;
         }
     }
-    top_tags(
-        counts
-            .into_iter()
-            .filter(|(_, n)| *n >= 2)
-            .map(|(t, n)| (t.to_owned(), n))
-            .collect(),
-        8,
-    )
+    let mut counted: Vec<(String, i64)> = counts
+        .into_iter()
+        .filter(|(_, n)| *n >= 2)
+        .map(|(t, n)| (t.to_owned(), n))
+        .collect();
+    // By name first, so tags as common come in one order every time (`top_tags` sorts stably).
+    counted.sort_by(|a, b| a.0.cmp(&b.0));
+    top_tags(counted, 8)
 }
 
 /// Keeps a section's value, or records why it is missing.

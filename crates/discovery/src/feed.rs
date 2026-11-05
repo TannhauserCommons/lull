@@ -28,7 +28,7 @@ use crate::sources::listenbrainz::Mode;
 use crate::sources::{ArtistInfo, ArtistSource, Release, Song};
 use crate::store::{self, entities};
 use crate::taste::Taste;
-use crate::{Service, art, mix, radio};
+use crate::{Service, art, mix, pages, radio};
 
 const STALE_AFTER_S: i64 = 6 * 3600;
 const NEW_RELEASES: usize = 12;
@@ -42,6 +42,12 @@ const AVAILABILITY_LIMIT: Duration = Duration::from_secs(600);
 /// they are asked again. Asking a paused or offline Soulseek costs no search.
 const RECHECK: Duration = Duration::from_secs(5 * 60);
 const PICKS: usize = 12;
+/// Artists offered to follow on a first run.
+const COLD_START_ARTISTS: usize = 6;
+/// Most played artists looked at for Jump back in's one artist.
+const JUMP_ARTIST_TRIES: usize = 5;
+/// Tags shown beside a followed one ("you might like").
+const RELATED_TAGS: usize = 4;
 /// Niche and micro-genre tags offered on first run, across the map rather than the charts.
 const COLD_START_TAGS: &[&str] = &[
     "dream pop",
@@ -79,6 +85,12 @@ pub struct Feed {
     pub jump_back_in: Vec<Jump>,
     pub followed_tags: Vec<String>,
     pub cold_start_tags: Vec<String>,
+    /// Built with nothing known of the listener: Home shows its first-run screen.
+    #[serde(default)]
+    pub cold: bool,
+    /// On a first run, artists of the starter tags' picks, to follow from the first-run screen.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cold_start_artists: Vec<ArtistId>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
     pub errors: BTreeMap<String, String>,
     pub entities: Entities,
@@ -146,6 +158,9 @@ struct Built {
     /// Built with nothing known of the listener (the summary says so).
     #[serde(default)]
     cold: bool,
+    /// Tags that come with each followed tag on this month's releases (Home's "you might like").
+    #[serde(default)]
+    related: BTreeMap<String, Vec<String>>,
 }
 
 /// A fresh release that may go on the shelf.
@@ -216,9 +231,17 @@ pub async fn get(State(svc): State<Arc<Service>>) -> Result<Json<serde_json::Val
             .is_none_or(|a| !hidden.contains(&a.artist_id))
     });
     keep_named_albums(&mut feed);
+    let tags: Vec<serde_json::Value> = feed
+        .followed_tags
+        .iter()
+        .filter_map(|t| Some(serde_json::json!({ "id": t, "name": t, "related": built.related.get(t)? })))
+        .collect();
     let entities = art::pictured(&svc, std::mem::take(&mut feed.entities)).await?;
     let mut answer = serde_json::to_value(feed).map_err(|e| Error::internal(format!("feed json: {e}")))?;
     answer["entities"] = serde_json::to_value(entities).map_err(|e| Error::internal(format!("feed json: {e}")))?;
+    if !tags.is_empty() {
+        answer["entities"]["tags"] = serde_json::Value::Array(tags);
+    }
     Ok(Json(answer))
 }
 
@@ -521,11 +544,11 @@ async fn build(svc: &Arc<Service>) -> Result<(Built, Answers)> {
     let cold = taste.is_empty();
     let mut errors = BTreeMap::new();
 
-    let releases = new_releases(svc, &taste, &followed_artists, &followed_tags)
+    let (releases, related) = new_releases(svc, &taste, &followed_artists, &followed_tags)
         .await
         .unwrap_or_else(|e| {
             errors.insert("newReleases".into(), e.to_string());
-            Vec::new()
+            (Vec::new(), BTreeMap::new())
         });
     let candidates = picks(svc, &taste, &followed_tags, &releases, &mut errors).await;
 
@@ -565,6 +588,26 @@ async fn build(svc: &Arc<Service>) -> Result<(Built, Answers)> {
     let summary = summary(cold, from_follows(&shelf, &new_releases), &picks);
     let mut artists = starter_artists;
     artists.extend(jump_artists);
+    // On a first run the picks come from the starter tags: their artists are offered to follow.
+    let cold_start_artists: Vec<ArtistId> = if cold {
+        let mut seen = HashSet::new();
+        let named: Vec<Artist> = tracks_of(&picks, &tracks)
+            .filter(|t| seen.insert(t.artist_id.clone()))
+            .take(COLD_START_ARTISTS)
+            .map(|t| {
+                store::artist(ArtistInfo {
+                    mbid: None,
+                    name: t.artist.clone(),
+                })
+            })
+            .collect();
+        let named = svc.store.artists(named).await?;
+        let ids = named.iter().map(|a| a.id.clone()).collect();
+        artists.extend(named);
+        ids
+    } else {
+        Vec::new()
+    };
     let mut all_albums = albums.clone();
     all_albums.extend(jump_albums);
     let mut all_tracks = tracks;
@@ -579,30 +622,61 @@ async fn build(svc: &Arc<Service>) -> Result<(Built, Answers)> {
             jump_back_in: jumps,
             followed_tags,
             cold_start_tags: COLD_START_TAGS.iter().map(|t| (*t).to_owned()).collect(),
+            cold,
+            cold_start_artists,
             errors,
             entities: entities(all_tracks, all_albums, artists),
         },
         follows,
         shelf,
         cold,
+        related,
     };
     Ok((built, answers))
+}
+
+/// The catalog tracks the picks name, in their order.
+fn tracks_of<'a>(picks: &'a [Pick], tracks: &'a [Track]) -> impl Iterator<Item = &'a Track> {
+    picks
+        .iter()
+        .filter_map(move |p| tracks.iter().find(|t| t.id == p.track_id))
 }
 
 /// Fresh releases (last 30 days, every size of artist) by followed and liked artists, then
 /// those tagged with followed tags or tags that run through liked artists (`Taste::dig_tags`:
 /// never an umbrella genre, which matches the charts), the best `RELEASE_CANDIDATES`. Nothing the
 /// listener has met already, and no reissue: neither is news. The second half is a release's
-/// artist name when it is "fresh from an artist you like".
+/// artist name when it is "fresh from an artist you like". With them, the tags that come with
+/// each followed tag on these releases (`related_tags`).
 async fn new_releases(
     svc: &Service,
     taste: &Taste,
     followed: &[(ArtistId, String)],
     followed_tags: &[String],
-) -> Result<Vec<(Release, Option<String>)>> {
+) -> Result<Releases> {
     let fresh = svc.lb.fresh_releases().await?;
     offer_release_artists(svc, &fresh).await;
-    Ok(rank_releases(fresh, taste, followed, followed_tags))
+    let related = related_tags(&fresh, followed_tags);
+    Ok((rank_releases(fresh, taste, followed, followed_tags), related))
+}
+
+type Releases = (Vec<(Release, Option<String>)>, BTreeMap<String, Vec<String>>);
+
+/// For each followed tag, the specific tags most often on the same fresh releases: from the
+/// releases the feed reads anyway, so no source is asked for them.
+fn related_tags(fresh: &[Release], followed: &[String]) -> BTreeMap<String, Vec<String>> {
+    followed
+        .iter()
+        .filter_map(|tag| {
+            let tagged: Vec<Release> = fresh.iter().filter(|r| r.tags.contains(tag)).cloned().collect();
+            let related: Vec<String> = pages::co_tags(tag, &tagged)
+                .into_iter()
+                .filter(|t| !followed.contains(t))
+                .take(RELATED_TAGS)
+                .collect();
+            (!related.is_empty()).then(|| (tag.clone(), related))
+        })
+        .collect()
 }
 
 /// ListenBrainz names a release's artist by its MBID: offered as who that artist is
@@ -965,7 +1039,8 @@ fn starter(kind: &str, id: &str, title: String, sub: &str) -> Starter {
     }
 }
 
-/// Albums played lately, most recent first, then the most played artist of the month.
+/// Albums played lately, most recent first, then the most played artist of the month that lull
+/// knows by its exact ids.
 async fn jump_back_in(
     svc: &Service,
     recent: &[(TrackId, String, u32, i64)],
@@ -1006,16 +1081,29 @@ async fn jump_back_in(
     for (_, artist, n, _) in recent {
         *plays.entry(artist).or_default() += n;
     }
-    if let Some((artist, _)) = plays.into_iter().max_by_key(|(_, n)| *n) {
+    let mut by_plays: Vec<(&str, u32)> = plays.into_iter().collect();
+    by_plays.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+    // The most played artist lull knows by its exact ids, so its page and photo are that
+    // artist's (a credit like "A feat. B" holds none of its own).
+    for (artist, _) in by_plays.into_iter().take(JUMP_ARTIST_TRIES) {
         let a = store::artist(ArtistInfo {
             mbid: None,
             name: artist.to_owned(),
         });
+        match identity::ids(svc, &a.id).await {
+            Ok(ids) if !ids.is_empty() => {}
+            Ok(_) => continue,
+            Err(e) => {
+                tracing::info!(error = %e, artist, "jump back in: who the artist is isn't known now");
+                continue;
+            }
+        }
         jumps.push(Jump {
             kind: "artist".into(),
             id: a.id.0.clone(),
         });
         artists.push(a);
+        break;
     }
     let albums = svc.store.remember_albums(albums).await?;
     let artists = svc.store.artists(artists).await?;
@@ -1060,7 +1148,8 @@ mod tests {
     use lull_core::ids::{ArtistId, TrackId};
 
     use super::{
-        Candidate, NEW_RELEASES, Reason, ReasonKind, Shelved, answered, interleave, next_to_ask, rank_releases, shown,
+        Candidate, NEW_RELEASES, Reason, ReasonKind, Shelved, answered, interleave, next_to_ask, rank_releases,
+        related_tags, shown,
     };
     use crate::sources::{Release, Song};
     use crate::taste::{Mark, Named, Signals, Taste};
@@ -1141,6 +1230,25 @@ mod tests {
             Some("Glow Tape"),
             "fresh from an artist you like"
         );
+    }
+
+    #[test]
+    fn a_followed_tag_brings_the_tags_its_releases_share_never_a_followed_or_broad_one() {
+        // Home's "you might like" was empty unless the tag's page had been opened that visit.
+        let fresh = vec![
+            fresh("Velvet Orchard", "One", &["shoegaze", "dream pop", "rock"]),
+            fresh("Glow Tape", "Two", &["shoegaze", "dream pop", "slowcore"]),
+            fresh("Pale Harbor", "Three", &["shoegaze", "slowcore", "city pop"]),
+            fresh("Quiet Ferns", "Four", &["city pop"]),
+        ];
+        let followed = ["shoegaze".to_owned(), "city pop".to_owned()];
+        let related = related_tags(&fresh, &followed);
+        assert_eq!(
+            related["shoegaze"],
+            ["dream pop", "slowcore"],
+            "on two releases or more, specific only"
+        );
+        assert!(!related.contains_key("city pop"), "nothing comes with it twice");
     }
 
     fn candidate(artist: &str, title: &str) -> Candidate {
