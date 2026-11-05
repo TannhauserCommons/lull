@@ -1,9 +1,19 @@
-<!-- the default device re-dressed as the media window: DARK / LIGHT skin tabs on its title edge and a ticker footer
-     (title, format, key hints) where the grill was. Every hook is the default device's own, so now.js keeps driving it. -->
-<div class="device now-dev gh-np" role="group" aria-label="Player device" style="--device-w:100%">
-  <lull-part name="device" pick=".device__led"></lull-part><span class="gh-skin" role="group" aria-label="Theme"><span class="gh-skin__tab gh-skin__cur gh-skin--dark">dark<span class="vh"> (current theme)</span></span><button class="gh-skin__tab gh-skin__btn gh-skin--dark" data-act="theme" data-tip="Dark theme">dark<span class="vh"> theme</span></button><span class="gh-skin__tab gh-skin__cur gh-skin--light">light<span class="vh"> (current theme)</span></span><button class="gh-skin__tab gh-skin__btn gh-skin--light" data-act="theme" data-tip="Light theme">light<span class="vh"> theme</span></button></span>
-  <lull-part name="device" pick=".device__bezel"></lull-part>
-  <lull-part name="device" pick=".device__controls"></lull-part>
-  <lull-part name="device" pick=".device__pills"></lull-part>
-  <div class="gh-ticker gh-np__ticker" aria-hidden="true"><div class="gh-ticker__track"><span class="gh-ticker__run">.:: <span data-now="artist"></span> - <span data-now="title"></span> <i>::</i> <span data-now="format"></span> <i>::</i> <b>P</b>/<b>N</b> skip <i>::</i> <b>&uarr;</b><b>&darr;</b> vol <i>::</i> <b>space</b> play ::.</span><span class="gh-ticker__run">.:: <span data-now="artist"></span> - <span data-now="title"></span> <i>::</i> <span data-now="format"></span> <i>::</i> <b>P</b>/<b>N</b> skip <i>::</i> <b>&uarr;</b><b>&darr;</b> vol <i>::</i> <b>space</b> play ::.</span></div></div>
+<!-- Now Playing as a stage: the cover floats on the night with its own colour glowing behind it and its reflection on
+     the glass under it, the like orb on its corner; under the cover, the media window built from the default device's
+     own live parts (LED, screen with its pages, waveform and times) with DARK / LIGHT skin tabs on its title edge and a
+     ticker footer, so every data-now hook keeps working. Where the player console stands under the stage (tablet and up)
+     its transport is the page's (one rose orb); a phone has no console here, so the window keeps its own keys row
+     (shuffle | prev, play, next | repeat). Both art wrappers are c-art, which now.js refreshes on every track change. -->
+<div class="gh-np" role="group" aria-label="Player">
+  <div class="gh-np__stage" aria-hidden="true">
+    <span class="gh-np__glow" data-now="c-art"><lull-part name="cover" size="100%"></lull-part></span>
+    <span class="gh-np__art" data-now="c-art"><lull-part name="cover" size="100%"></lull-part></span>
+  </div>
+  <span class="gh-np__like"><lull-part name="device" pick=".device__key--b"></lull-part></span>
+  <div class="device now-dev gh-np__win" style="--device-w:100%">
+    <lull-part name="device" pick=".device__led"></lull-part><span class="gh-skin" role="group" aria-label="Theme"><span class="gh-skin__tab gh-skin__cur gh-skin--dark">dark<span class="vh"> (current theme)</span></span><button class="gh-skin__tab gh-skin__btn gh-skin--dark" data-act="theme" data-tip="Dark theme">dark<span class="vh"> theme</span></button><span class="gh-skin__tab gh-skin__cur gh-skin--light">light<span class="vh"> (current theme)</span></span><button class="gh-skin__tab gh-skin__btn gh-skin--light" data-act="theme" data-tip="Light theme">light<span class="vh"> theme</span></button></span>
+    <lull-part name="device" pick=".device__bezel"></lull-part>
+    <div class="gh-np__keys"><lull-part name="device" pick=".device__pill--shuffle"></lull-part><lull-part name="device" pick=".dpad__btn--left"></lull-part><lull-part name="device" pick=".device__key--a"></lull-part><lull-part name="device" pick=".dpad__btn--right"></lull-part><lull-part name="device" pick=".device__pill--repeat"></lull-part></div>
+    <div class="gh-ticker gh-np__ticker" aria-hidden="true"><div class="gh-ticker__track"><span class="gh-ticker__run">.:: <span data-now="artist"></span> - <span data-now="title"></span> <i>::</i> <span data-now="format"></span> <i>::</i> <b>P</b>/<b>N</b> skip <i>::</i> <b>&uarr;</b><b>&darr;</b> vol <i>::</i> <b>space</b> play ::.</span><span class="gh-ticker__run">.:: <span data-now="artist"></span> - <span data-now="title"></span> <i>::</i> <span data-now="format"></span> <i>::</i> <b>P</b>/<b>N</b> skip <i>::</i> <b>&uarr;</b><b>&darr;</b> vol <i>::</i> <b>space</b> play ::.</span></div></div>
+  </div>
 </div>
