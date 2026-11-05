@@ -1,0 +1,6 @@
+# Every program lull starts goes through lull_core::process::command, which keeps a console program
+# from opening a console window on Windows.
+disallowed-methods = [
+    { path = "std::process::Command::new", reason = "use lull_core::process::command: it never opens a console window on Windows" },
+    { path = "tokio::process::Command::new", reason = "use tokio::process::Command::from(lull_core::process::command(..)): it never opens a console window on Windows" },
+]

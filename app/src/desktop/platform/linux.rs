@@ -27,7 +27,7 @@ pub fn register_scheme(scheme: &str, exe: &std::path::Path) -> Result<(), String
     );
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     std::fs::write(dir.join(&name), entry).map_err(|e| format!("{name}: {e}"))?;
-    let status = std::process::Command::new("xdg-mime")
+    let status = lull_core::process::command("xdg-mime")
         .arg("default")
         .arg(&name)
         .arg(format!("x-scheme-handler/{scheme}"))

@@ -151,14 +151,13 @@ impl Ytdlp {
 
 /// `--version` of a yt-dlp binary, or `None` when it doesn't run.
 pub async fn version_of(path: &Path, dir: &Path) -> Option<String> {
-    let mut cmd = Command::new(path);
+    let mut cmd = Command::from(lull_core::process::command(path));
     cmd.arg("--version")
         .envs(env(dir))
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .stdin(Stdio::null())
         .kill_on_drop(true);
-    no_window(&mut cmd);
     let out = tokio::time::timeout(Duration::from_secs(60), cmd.output())
         .await
         .ok()?
@@ -168,7 +167,7 @@ pub async fn version_of(path: &Path, dir: &Path) -> Option<String> {
 }
 
 fn command(exe: &Path, deno: &Path, dir: &Path, args: &[&str]) -> Command {
-    let mut cmd = Command::new(exe);
+    let mut cmd = Command::from(lull_core::process::command(exe));
     // No config files, no cookies, no accounts; few retries, so a 429 isn't hammered.
     cmd.args(["--ignore-config", "--color", "never", "--no-update"])
         .args(["--socket-timeout", "15", "--retries", "3", "--extractor-retries", "1"])
@@ -180,7 +179,6 @@ fn command(exe: &Path, deno: &Path, dir: &Path, args: &[&str]) -> Command {
         .args(args)
         .envs(env(dir))
         .kill_on_drop(true);
-    no_window(&mut cmd);
     cmd
 }
 
@@ -201,14 +199,6 @@ fn env(dir: &Path) -> [(&'static str, PathBuf); 4] {
         ("TMP", dir.join("tmp")),
         ("DENO_DIR", dir.join("deno")),
     ]
-}
-
-/// A console program started by the desktop app must not open a console window.
-fn no_window(cmd: &mut Command) {
-    #[cfg(windows)]
-    cmd.creation_flags(0x0800_0000);
-    #[cfg(not(windows))]
-    let _ = cmd;
 }
 
 fn broken(path: &Path, e: &std::io::Error) -> Problem {

@@ -146,7 +146,7 @@ pub fn open_in_browser(url: &Url) -> Result<(), String> {
     #[cfg(windows)]
     return windows::open_in_browser(url);
     #[cfg(not(windows))]
-    std::process::Command::new("xdg-open")
+    lull_core::process::command("xdg-open")
         .arg(url.as_str())
         .spawn()
         .map(drop)

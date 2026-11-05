@@ -3,6 +3,7 @@
 //! phones need to install the web app. Nothing changes until the listener presses the button in
 //! Settings; the app only reads Tailscale's state before that.
 
+use lull_core::process::command;
 use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::path::PathBuf;
@@ -52,7 +53,7 @@ pub fn status(port: u16) -> Status {
 /// Runs `tailscale serve --bg <port>` and reports the result.
 pub fn serve(port: u16) -> Result<Status, String> {
     let cli = cli().ok_or("Tailscale isn't installed on this computer")?;
-    let output = run_with_timeout(Command::new(&cli).args(["serve", "--bg", &port.to_string()]))?;
+    let output = run_with_timeout(command(&cli).args(["serve", "--bg", &port.to_string()]))?;
     if !output.status.success() {
         let said = String::from_utf8_lossy(&output.stderr);
         let said = if said.trim().is_empty() {
@@ -129,7 +130,7 @@ fn serves(cli: &PathBuf, port: u16) -> bool {
 }
 
 fn json<T: for<'de> Deserialize<'de>>(cli: &PathBuf, args: &[&str]) -> Option<T> {
-    let output = run_with_timeout(Command::new(cli).args(args)).ok()?;
+    let output = run_with_timeout(command(cli).args(args)).ok()?;
     if !output.status.success() {
         return None;
     }

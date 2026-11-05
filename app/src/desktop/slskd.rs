@@ -8,7 +8,7 @@
 //! line, secrets in env (not in the process list).
 
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -225,7 +225,7 @@ fn spawn(fixed: &Fixed, launch: &Launch) -> Result<Child, String> {
     if !config.exists() {
         std::fs::write(&config, "").map_err(|e| format!("create {}: {e}", config.display()))?;
     }
-    let mut cmd = Command::new(&fixed.exe);
+    let mut cmd = lull_core::process::command(&fixed.exe);
     cmd.arg("--app-dir")
         .arg(&fixed.app_dir)
         .args(["--http-ip-address", "127.0.0.1", "--http-port", &fixed.port.to_string()])
