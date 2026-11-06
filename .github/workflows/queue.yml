@@ -46,6 +46,8 @@ jobs:
       youtube_contract: ${{ steps.plan.outputs.youtube_contract }}
       share: ${{ steps.plan.outputs.share }}
       warm: ${{ steps.plan.outputs.warm }}
+      build_release: ${{ steps.plan.outputs.build_release }}
+      build_changes: ${{ steps.plan.outputs.build_changes }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -126,6 +128,11 @@ jobs:
         with:
           context: .
           tags: lull:candidate
+          # What the hub says it is between releases: "0.2.4 + 12 changes (abc1234)" (lull_core::build).
+          build-args: |
+            LULL_BUILD_RELEASE=${{ needs.plan.outputs.build_release }}
+            LULL_BUILD_CHANGES=${{ needs.plan.outputs.build_changes }}
+            LULL_BUILD_COMMIT=${{ needs.plan.outputs.candidate }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ needs.plan.outputs.candidate }}

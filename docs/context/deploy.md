@@ -52,3 +52,5 @@ Only lull and `init` start.
 ## Updating
 
 `IMAGE_TAG=latest`, the default, follows lull's releases (from 0.2.4, the first made by release.yml), and `X.Y.Z` pins one; `main` follows every change lull's queue lands, and `sha-<commit>` pins one of those. The slskd and gluetun images are pinned in `compose.yaml` and move with lull's releases, because lull reads slskd's file layout (`crates/soulseek/src/layout.rs`).
+
+Settings › App shows the server's version and whether a newer release is out. An image from `main` says what it holds, for example **lull 0.2.4 + 12 changes (abc1234)**, and that it follows the latest changes; the queue works this out from git when it builds the image (`build_version` in `scripts/queue.sh`, `lull_core::build`). Updating is `docker compose pull` and `docker compose up -d` where the server runs.

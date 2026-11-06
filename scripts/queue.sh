@@ -86,6 +86,24 @@ checks() { # <base> <candidate>
   if git log --format=%s "$1..$2" | grep -Eq '^(feat|fix)\('; then out notes true; else out notes false; fi
   # What every release build compiles: main builds the bundles then, to warm their caches (ADR-0097).
   want warm '^(Cargo\.lock|app/Cargo\.lock|app/Cargo\.toml|rust-toolchain\.toml)$'
+  build_version "$2"
+}
+
+# What the image of a commit says it is (lull_core::build): the newest release it holds everything of, and the
+# changes since. A release's tag is its version commit on top of the green commit it was cut from, and that version
+# commit reaches main later, rebased, so the tag itself is seldom in main's history: the commit it was cut from is.
+# Release version commits aren't counted as changes.
+build_version() { # <commit>
+  git fetch -q --tags origin || true
+  for tag in $(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname); do
+    git merge-base --is-ancestor "$tag^" "$1" 2>/dev/null || continue
+    if git merge-base --is-ancestor "$tag" "$1"; then from=$tag; else from="$tag^"; fi
+    out build_release "${tag#v}"
+    out build_changes "$(git rev-list --count --invert-grep --grep='^build(release): lull ' "$from..$1")"
+    return
+  done
+  out build_release ""
+  out build_changes ""
 }
 
 plan() {

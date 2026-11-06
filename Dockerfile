@@ -31,6 +31,9 @@ COPY --from=recipe /src/recipe.json recipe.json
 RUN cargo chef cook --release --locked --bin lull --recipe-path recipe.json
 COPY . .
 COPY --from=web /src/dist web
+# What the hub says it is (lull_core::build): the queue passes main's release, changes since and commit; a
+# release's build passes none and is the version in Cargo.toml. After the dependency layer, so it stays cached.
+ARG LULL_BUILD_RELEASE= LULL_BUILD_CHANGES= LULL_BUILD_COMMIT= LULL_BUILD_INSTALL=docker
 # lull's own Last.fm app key is compiled in when the build passes it (core::config), so a listener
 # only clicks Connect. Optional: a build without these secrets just has no built-in key.
 RUN --mount=type=secret,id=lastfm_key,env=LULL_LASTFM_API_KEY \
