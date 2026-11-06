@@ -1,7 +1,8 @@
-/* lull: a Y2K candy desktop. Everything is moulded in see-through grape candy plastic: a menubar across the top, the
-   taskbar player along the foot, and every window's shell, its title pressed into the plastic beside three orbs. The
-   pages inside are light paper. Windows overlap like real ones, big titles are chrome, gloss only on things you press.
-   Day is home; night is a lavender-indigo Y2K night with the same windows.
+/* lull: an Aero-era candy desktop. Everything is moulded in see-through grape glass: a menubar across the top, the
+   taskbar player along the foot, and every window's shell, its title pressed into the glass beside three orbs. The
+   pages inside are light, airy paper. Windows overlap like real ones, big titles are chrome, gel only on things you
+   press, and soap bubbles live inside the boxes made for them. Day is home; night is a lavender-indigo night with the
+   same windows.
    Layer over the base (tokens.css, base.css, components.css, screens). API: docs/themes.md. */
 
 /* The whole file is the `design` cascade layer (ADR-0004); a listener's theme in `user` wins over it. */
@@ -39,7 +40,7 @@
   --ink: #2b2650; --ink-2: #5a4e8a; --link-on-cream: #5544aa;
   --cream: #fdfcff; --cream-2: #f1edfd; --cream-3: #e6e0fb;
   --line: #7772b4; --stack-1: #c3c2e2; --stack-2: #5a75b5;
-  --screen: #66535a; --skel: #e4def9; --skel-hi: #f4f1ff;
+  --screen: #463c82; --skel: #e4def9; --skel-hi: #f4f1ff;
   --card-seek-played: #3a3196; --card-seek-buffered: #8f84da;
 
   /* theme: day. "sky" = the window body, "panel" = white panels inside it; the wallpaper is --l-wall */
@@ -53,7 +54,7 @@
   --scrim: #2b2650; --scrim-alpha: .35; --gloss-ring-w: 0px;
 
   /* lull's own (--l-win / --l-tray feed --sky / --tray so the theme change can animate them, see "Night falls") */
-  --l-win: #f7f4ff; --l-tray: #5a4ab8;
+  --l-win: #f7f4ff; --l-tray: #6a52d6;
   --l-wall: #e4def9; --l-wall-2: #fce8f3; --l-wall-3: #b6c7f5; --l-wall-4: #ecc6d8;
   --l-frame: #e4def9; --l-edge: #7772b4;
   --l-card: #fdfcff; --l-card-2: #f1edfd; --l-rule: #d6cef6; --l-hatch: #cfc7ee;
@@ -68,9 +69,9 @@
   --l-orb-1: #7f9be0; --l-orb-2: #a593e4; --l-orb-3: #d68fc0;
   --l-shell: linear-gradient(180deg, #d4defb 0%, #b6c7f5 55%, #a9bcf0 100%); --l-shell-hi: #e9f5ff;
   --l-screen-ink: #fff9fe; --l-ink-dim: #7772b4; --l-warn-ink: #7a2f62;
-  --l-hl: #c4d1f7;
+  --l-hl: #c4d1f7; --l-sky-top: #e6ebff; --l-gl: .17;
   /* the readout's LCD: mocha by day, ink-blue by night; its glow is the caption's and the gel's light end */
-  --l-lcd: #4a3b42; --l-lcd-glow: #e6dcff;
+  --l-lcd: #2f2a63; --l-lcd-glow: #e6dcff;
   --l-chrome: linear-gradient(180deg, #2b2650 0%, #4a3fa3 38%, #7b6ce0 50%, #3a3196 54%, #5544aa 78%, #2b2650 100%);
   --l-tube: linear-gradient(180deg, rgba(43, 38, 80, .16), rgba(255, 255, 255, .6) 60%, rgba(255, 255, 255, .9));
   --l-gel: linear-gradient(180deg, #c3b8ff 0%, #7b6ce0 30%, #4a3fa3 70%, #6e5ed4 100%); --l-gel-buf: #b9adf7;
@@ -136,7 +137,7 @@
   --l-orb-1: #7c9ae4; --l-orb-2: #a796e6; --l-orb-3: #e09ac8;
   --l-shell: linear-gradient(180deg, #6a6fcc 0%, #5257ac 55%, #4a4f9f 100%); --l-shell-hi: #9aa0e6;
   --l-screen-ink: #f2eefe; --l-ink-dim: #a7a3d8; --l-warn-ink: #ffd6ec;
-  --l-hl: #4f4fa8;
+  --l-hl: #4f4fa8; --l-sky-top: #32367a; --l-gl: .07;
   --l-lcd: #121334; --l-lcd-glow: #d6ccff;
   --l-chrome: linear-gradient(180deg, #ffffff 0%, #e4def9 36%, #8f88e4 50%, #fff9fe 56%, #cfc0ff 80%, #ffffff 100%);
   --l-tube: linear-gradient(180deg, rgba(0, 0, 0, .35), rgba(255, 255, 255, .1) 60%, rgba(255, 255, 255, .22));
@@ -164,7 +165,7 @@
 @property --l-wall-3 { syntax: "<color>"; inherits: true; initial-value: #b6c7f5; }
 @property --l-wall-4 { syntax: "<color>"; inherits: true; initial-value: #ecc6d8; }
 @property --l-tile { syntax: "<color>"; inherits: true; initial-value: #b6c7f5; }
-@property --l-tray { syntax: "<color>"; inherits: true; initial-value: #5a4ab8; }
+@property --l-tray { syntax: "<color>"; inherits: true; initial-value: #6a52d6; }
 @property --l-frame { syntax: "<color>"; inherits: true; initial-value: #e4def9; }
 @property --l-win { syntax: "<color>"; inherits: true; initial-value: #f7f4ff; }
 @property --l-card { syntax: "<color>"; inherits: true; initial-value: #fdfcff; }
@@ -204,11 +205,11 @@
   --l-key-on-lift: inset 0 -2px 4px var(--l-gloss-glow), 0 2px 0 rgba(20, 10, 70, .3);
   --l-key-danger: var(--l-hi), var(--l-pink-gloss); --l-key-danger-edge: var(--l-pink-edge);
   --l-orb-shine: radial-gradient(circle at 50% 30%, rgba(255, 255, 255, .95) 0 1.4px, transparent 3px);
-  /* the candy plastic: a lit top lip and a darker foot, fine moulded ribs, over the tint (the wallpaper shows through) */
+  /* the candy glass: a lit top lip, a glare across it and a darker foot over the tint (the wallpaper shows through) */
   --l-candy:
-    linear-gradient(180deg, rgba(255, 255, 255, .34) 0 1px, rgba(255, 255, 255, .16) 1px, rgba(255, 255, 255, .02) 46%, transparent 52%, rgba(0, 0, 0, .1) 100%),
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, .06) 0 1px, transparent 1px 5px),
-    color-mix(in oklch, var(--l-tray) 90%, transparent);
+    linear-gradient(112deg, transparent 0 30%, rgba(255, 255, 255, var(--l-gl)) 30% 42%, transparent 42% 50%, rgba(255, 255, 255, calc(var(--l-gl) / 2)) 50% 55%, transparent 55%),
+    linear-gradient(180deg, rgba(255, 255, 255, .5) 0 1px, rgba(255, 255, 255, .2) 1px, rgba(255, 255, 255, .04) 48%, transparent 52%, rgba(0, 0, 0, .12) 100%),
+    color-mix(in oklch, var(--l-tray) 92%, transparent);
   /* a window whose title is a child: a candy shell (a 38 px title band, 7 px sides) around a paper body, drawn as
      the border and padding boxes, so the shell needs no wrapper; its first child lifts into the band */
   --l-pane: linear-gradient(var(--sky), var(--sky)) padding-box, var(--l-candy) border-box;
@@ -216,8 +217,9 @@
   --l-band-ink: #fff9fe; --l-band-glow: 0 1px 0 rgba(20, 10, 70, .55);
   /* 45 degree hatch on a 6 px tile: seamless, so it can march (live "received" tape) */
   --l-hatch-bg: repeating-linear-gradient(-45deg, var(--l-hatch) 0 1.5px, transparent 1.5px 4.243px) 0 0 / 6px 6px;
-  --l-win-stack: 0 4px 0 -1.5px var(--stack-1), 0 4px 0 0 var(--l-edge);
-  --l-card-stack: 0 5px 0 -1.5px var(--stack-1), 0 5px 0 0 var(--l-edge), 0 10px 0 -1.5px var(--stack-2), 0 10px 0 0 var(--l-edge);
+  --l-win-stack: inset 0 0 0 1px rgba(255, 255, 255, .8), 0 2px 3px rgba(43, 38, 80, .16), 0 10px 20px -10px rgba(90, 70, 210, .5);
+  --l-card-stack: inset 0 0 0 1px rgba(255, 255, 255, .85), 0 2px 3px rgba(43, 38, 80, .14), 0 14px 24px -12px rgba(90, 70, 210, .55);
+  --l-card-lift: inset 0 0 0 1px #fff, 0 3px 5px rgba(43, 38, 80, .14), 0 22px 30px -12px rgba(90, 70, 210, .6);
   --l-spark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23fff' d='M12 0c.6 6.6 5.4 11.4 12 12-6.6.6-11.4 5.4-12 12-.6-6.6-5.4-11.4-12-12C6.6 11.4 11.4 6.6 12 0z'/%3E%3C/svg%3E");
 }
 /* three title-bar orbs (img 05), drawn as background layers, decorative. Declared again on the two desk windows so
@@ -244,29 +246,15 @@
   background-color: var(--l-wall);
 }
 /* starfield: an irregular tile of specks plus three 4-point sparkles (img 01); day: soft white with a violet glow */
-:root[data-design="lull"] .sky-specks::before { background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='520' height='420'%3E%3Cg fill='%23fff9fe'%3E%3Ccircle cx='335' cy='81' r='1.5' opacity='0.45'/%3E%3Ccircle cx='78' cy='278' r='0.8' opacity='0.75'/%3E%3Ccircle cx='63' cy='263' r='1' opacity='0.45'/%3E%3Ccircle cx='92' cy='226' r='1.5' opacity='0.45'/%3E%3Ccircle cx='250' cy='50' r='1.5' opacity='0.45'/%3E%3Ccircle cx='130' cy='118' r='0.6' opacity='1'/%3E%3Ccircle cx='410' cy='29' r='1' opacity='0.45'/%3E%3Ccircle cx='140' cy='152' r='1.5' opacity='0.6'/%3E%3Ccircle cx='124' cy='296' r='1' opacity='1'/%3E%3Ccircle cx='189' cy='56' r='1' opacity='0.75'/%3E%3Ccircle cx='103' cy='284' r='0.8' opacity='1'/%3E%3Ccircle cx='65' cy='320' r='1' opacity='0.9'/%3E%3Ccircle cx='441' cy='401' r='1.2' opacity='0.9'/%3E%3Ccircle cx='468' cy='189' r='1' opacity='0.6'/%3E%3Ccircle cx='188' cy='361' r='1' opacity='0.45'/%3E%3Ccircle cx='311' cy='272' r='1.8' opacity='0.75'/%3E%3Ccircle cx='463' cy='151' r='0.8' opacity='0.45'/%3E%3Ccircle cx='432' cy='88' r='1.2' opacity='0.6'/%3E%3Ccircle cx='504' cy='219' r='0.6' opacity='0.45'/%3E%3Ccircle cx='325' cy='178' r='1.2' opacity='1'/%3E%3Ccircle cx='512' cy='300' r='1.8' opacity='0.45'/%3E%3Ccircle cx='99' cy='142' r='1.8' opacity='0.45'/%3E%3Ccircle cx='66' cy='378' r='1' opacity='1'/%3E%3Ccircle cx='460' cy='149' r='1.5' opacity='0.75'/%3E%3Ccircle cx='27' cy='240' r='1.2' opacity='0.6'/%3E%3Ccircle cx='123' cy='256' r='0.6' opacity='0.6'/%3E%3Cpath d='M0-7c.4 4.4 2.6 6.6 7 7-4.4.4-6.6 2.6-7 7-.4-4.4-2.6-6.6-7-7 4.4-.4 6.6-2.6 7-7z' transform='translate(130,64) scale(0.9)'/%3E%3Cpath d='M0-7c.4 4.4 2.6 6.6 7 7-4.4.4-6.6 2.6-7 7-.4-4.4-2.6-6.6-7-7 4.4-.4 6.6-2.6 7-7z' transform='translate(402,250) scale(0.7)'/%3E%3Cpath d='M0-7c.4 4.4 2.6 6.6 7 7-4.4.4-6.6 2.6-7 7-.4-4.4-2.6-6.6-7-7 4.4-.4 6.6-2.6 7-7z' transform='translate(262,380) scale(0.55)'/%3E%3C/g%3E%3C/svg%3E") 0 0 / 520px 420px; opacity: .9; }
+:root[data-design="lull"] .sky-specks::before { background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='520' height='420'%3E%3Cg fill='%23fff9fe'%3E%3Ccircle cx='335' cy='81' r='1.5' opacity='0.45'/%3E%3Ccircle cx='63' cy='263' r='1' opacity='0.45'/%3E%3Ccircle cx='250' cy='50' r='1.5' opacity='0.45'/%3E%3Ccircle cx='410' cy='29' r='1' opacity='0.45'/%3E%3Ccircle cx='124' cy='296' r='1' opacity='1'/%3E%3Ccircle cx='103' cy='284' r='0.8' opacity='1'/%3E%3Ccircle cx='441' cy='401' r='1.2' opacity='0.9'/%3E%3Ccircle cx='188' cy='361' r='1' opacity='0.45'/%3E%3Ccircle cx='463' cy='151' r='0.8' opacity='0.45'/%3E%3Ccircle cx='504' cy='219' r='0.6' opacity='0.45'/%3E%3Ccircle cx='512' cy='300' r='1.8' opacity='0.45'/%3E%3Ccircle cx='66' cy='378' r='1' opacity='1'/%3E%3Ccircle cx='27' cy='240' r='1.2' opacity='0.6'/%3E%3Cpath d='M0-7c.4 4.4 2.6 6.6 7 7-4.4.4-6.6 2.6-7 7-.4-4.4-2.6-6.6-7-7 4.4-.4 6.6-2.6 7-7z' transform='translate(130,64) scale(0.9)'/%3E%3Cpath d='M0-7c.4 4.4 2.6 6.6 7 7-4.4.4-6.6 2.6-7 7-.4-4.4-2.6-6.6-7-7 4.4-.4 6.6-2.6 7-7z' transform='translate(402,250) scale(0.7)'/%3E%3Cpath d='M0-7c.4 4.4 2.6 6.6 7 7-4.4.4-6.6 2.6-7 7-.4-4.4-2.6-6.6-7-7 4.4-.4 6.6-2.6 7-7z' transform='translate(262,380) scale(0.55)'/%3E%3C/g%3E%3C/svg%3E") 0 0 / 520px 420px; opacity: .9; }
 :root[data-design="lull"][data-theme="day"] .sky-specks::before { opacity: .85; filter: drop-shadow(0 0 1.5px rgba(123, 106, 224, .7)); }
-/* glass bubbles on the wallpaper, drawn once on the page's own layer (docs/themes.md, Drawing cheaply): the layer's
-   own background, under the starfield, so they share its layer instead of needing one more over it */
-:root[data-design="lull"] .sky-specks {
-  --b-rim: color-mix(in srgb, var(--l-edge) 40%, transparent);
-  background:
-    radial-gradient(circle at 34% 30%, rgba(255, 255, 255, .95) 0 3%, rgba(255, 255, 255, .28) 9%, transparent 26%, color-mix(in srgb, var(--l-wall-3) 55%, transparent) 58%, var(--b-rim) 68.5%, transparent 70%) 4% 22% / 220px 220px no-repeat,
-    radial-gradient(circle at 34% 30%, rgba(255, 255, 255, .95) 0 3%, rgba(255, 255, 255, .28) 9%, transparent 26%, color-mix(in srgb, var(--l-wall-2) 70%, transparent) 58%, var(--b-rim) 68.5%, transparent 70%) 96% 12% / 300px 300px no-repeat,
-    radial-gradient(circle at 34% 30%, rgba(255, 255, 255, .95) 0 4%, rgba(255, 255, 255, .3) 10%, transparent 28%, color-mix(in srgb, var(--l-wall-4) 60%, transparent) 58%, var(--b-rim) 68.5%, transparent 70%) 58% 96% / 140px 140px no-repeat,
-    radial-gradient(circle at 34% 30%, rgba(255, 255, 255, .95) 0 5%, transparent 30%, color-mix(in srgb, #b9adf7 80%, transparent) 58%, var(--b-rim) 68.5%, transparent 70%) 34% 0 / 90px 90px no-repeat,
-    radial-gradient(circle at 34% 30%, rgba(255, 255, 255, .95) 0 5%, transparent 30%, color-mix(in srgb, #f6cee4 80%, transparent) 58%, var(--b-rim) 68.5%, transparent 70%) 71% 100% / 120px 120px no-repeat,
-    radial-gradient(circle at 34% 30%, rgba(255, 255, 255, .95) 0 5%, transparent 30%, color-mix(in srgb, #b6c7f5 80%, transparent) 58%, var(--b-rim) 68.5%, transparent 70%) 12% 100% / 76px 76px no-repeat,
-    radial-gradient(circle at 34% 30%, rgba(255, 255, 255, .95) 0 5%, transparent 30%, color-mix(in srgb, var(--l-wall-2) 60%, transparent) 58%, var(--b-rim) 68.5%, transparent 70%) 84% 72% / 96px 96px no-repeat;
-}
-
 /* =====================================================================
    Windows: a candy shell (the title band with its orbs, title and right-hand meta, 7 px sides) around a paper body.
-   The side window stands in front of the main one, overlapping its edge and set a little lower, as a second window
-   dropped on the desk would; the main window keeps its words clear of the part it covers
+   The side window stands beside the main one, set a little lower, as a second window
+   dropped on the desk would, with a clear gap between their frames
    ===================================================================== */
 :root[data-design="lull"] :is(.main, .ctx, .nowcol) {
-  padding: 0 7px 7px; border: var(--stroke) solid color-mix(in srgb, #2b2650 60%, transparent); border-radius: 16px; margin-bottom: 16px;
+  padding: 0 7px 7px; border: var(--stroke) solid color-mix(in srgb, #2b2650 60%, transparent); border-radius: 20px; margin-bottom: 16px;
   background: var(--l-candy);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), inset 0 -2px 0 rgba(20, 10, 70, .25), 0 4px 0 -1px color-mix(in srgb, #2b2650 55%, transparent), 0 8px 14px -10px rgba(43, 38, 80, .6);
 }
@@ -300,16 +288,25 @@
 :root[data-design="lull"] .app[data-screen="library"] .main[data-meta=""]::after, :root[data-design="lull"] .app[data-screen="playlists"] .main[data-meta=""]::after { content: "saved on your server"; }
 :root[data-design="lull"] .app[data-screen="settings"] .main[data-meta=""]::after { content: "this device + server"; }
 @media (min-width: 640px) {
-  :root[data-design="lull"] .app[data-ctx="docked"] { --l-overlap: 26px; }
-  :root[data-design="lull"] .app[data-ctx="docked"] .ctx { z-index: 2; margin: 18px 0 16px calc(-1 * var(--l-overlap) - 16px); }
-  :root[data-design="lull"] .app[data-ctx="docked"] .main::after { right: calc(var(--l-overlap) + 16px); }
-  :root[data-design="lull"] .app[data-ctx="docked"] .main > .view { padding-right: calc(22px + var(--l-overlap)); }
+  /* a window on the desk is as tall as its page, up to the desk's foot: a short page leaves the wallpaper showing below it */
+  :root[data-design="lull"] .app:not([data-screen="now"]) .main { align-self: start; max-height: 100%; min-height: 280px; }
+  :root[data-design="lull"] .app[data-ctx="docked"] .ctx { margin: 18px 0 16px; }
 }
 /* scrollbars in the window edge's violet on every surface (base.css draws them) */
-:root[data-design="lull"], :root[data-design="lull"] :is(.s-sky, .s-panel, .s-card, .card, .s-screen) { --scroll-thumb: var(--l-edge); }
+:root[data-design="lull"], :root[data-design="lull"] :is(.s-sky, .s-panel, .s-card, .card, .s-screen) { --scroll-thumb: var(--l-gel); }
 :root[data-design="lull"] .view {
-  border-radius: 10px; background: var(--sky); padding: 16px 22px 36px;
+  border-radius: 13px; background: linear-gradient(180deg, var(--l-sky-top), var(--sky) 360px); padding: 16px 22px 36px;
 }
+/* the aurora is the light under the window's glass: one place on every page, the top right of the paper where the title band
+   meets it, brighter while sound plays and drifting (10 changes a second) with it. A picture loaded only where it is drawn */
+@container main (min-width: 1100px) {
+  :root[data-design="lull"] .app:not([data-screen="now"]) .view { isolation: isolate; }
+  :root[data-design="lull"] .app:not([data-screen="now"]) .view::before {
+    content: ""; position: absolute; z-index: -1; top: 0; right: 0; width: min(52%, 960px); height: 330px; pointer-events: none;
+    background: url(assets/aurora.webp) 100% 0 / 100% 100% no-repeat; opacity: var(--l-glow, .5); transition: opacity 2s;
+  }
+}
+:root[data-design="lull"][data-playing="true"] { --l-glow: .95; }
 /* whatever the fold cuts reads as "scroll for more": a fade riding the window's foot. Sticky, so it never clips focus
    rings or fixed children the way a mask on the scroller would (the sticky edge sits at the content box, so bottom is
    minus the view's bottom padding). It shows only while there is more below: a scroll-driven animation runs only
@@ -336,7 +333,7 @@
   display: block; position: absolute; top: 0; left: calc(92px + 4.5rem); right: 44px; pointer-events: none; text-align: right;
   color: var(--l-band-ink); font: 800 .75rem/38px var(--f-ui); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: var(--l-band-glow);
 }
-:root[data-design="lull"] .ctx__head { position: static; padding: 10px 10px 4px; border-radius: 10px 10px 0 0; background: var(--sky); }
+:root[data-design="lull"] .ctx__head { position: static; padding: 10px 10px 4px; border-radius: 13px 13px 0 0; background: var(--l-sky-top); }
 :root[data-design="lull"] .ctx__head .seg { min-height: 0; }
 :root[data-design="lull"] .ctx__head .seg__btn { min-height: 28px; font-size: .8125rem; }
 :root[data-design="lull"] .ctx__head .badge-count { min-width: 16px; height: 16px; font-size: .625rem; }
@@ -344,7 +341,7 @@
 :root[data-design="lull"] .ctx__head [data-act="close-panel"] .ic { width: 15px; height: 15px; }
 :root[data-design="lull"] .ctx__head [data-act="close-panel"]:hover { background: rgba(255, 255, 255, .35); }
 :root[data-design="lull"] .ctx__body {
-  flex: 1; background: var(--sky); border-radius: 0 0 10px 10px; padding: 8px 10px 14px;
+  flex: 1; background: linear-gradient(var(--l-sky-top), var(--sky) 240px); border-radius: 0 0 13px 13px; padding: 8px 10px 14px;
 }
 /* queue window: the radio is a 40 px pink strip (name, "keeps adding", switch). Steer and Stop drop down
    from it as a little paper panel while the strip is hovered or holds focus, so the queue keeps its rows and ends
@@ -387,7 +384,7 @@
 :root[data-design="lull"] .lull-wm .wordmark__spark { position: relative; right: auto; top: -.42em; margin-left: 1px; width: .55em; height: .55em; background: #fff9fe; }
 :root[data-design="lull"] .header {
   min-height: 54px; margin-bottom: 14px; padding: 6px; gap: 6px; background: var(--l-candy); color: #fff9fe;
-  border: var(--stroke) solid var(--tray-edge); border-radius: 16px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22);
+  border: var(--stroke) solid var(--tray-edge); border-radius: 20px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22);
 }
 @media (min-width: 640px) {
   :root[data-design="lull"] .app { padding: 0 16px; column-gap: 16px; }
@@ -523,6 +520,9 @@
   :root[data-design="lull"] .pbar__controls > :is([data-act="shuffle"], [data-act="repeat"])[aria-pressed="true"] { background: var(--l-hi), var(--l-gloss); color: #fff; }
   :root[data-design="lull"] .pbar__controls > :is([data-act="shuffle"], [data-act="repeat"]) .ic { width: 18px; height: 18px; }
   :root[data-design="lull"] .pbar .btn-gloss { --size: 62px; box-shadow: inset 0 -3px 6px var(--l-gloss-glow), 0 3px 0 var(--l-gloss-edge), 0 6px 14px -4px rgba(20, 10, 70, .5); }
+  /* the music wakes the deck: the play orb glows while sound plays, and a liked song's card carries a pink rim */
+  :root[data-design="lull"][data-playing="true"] .pbar .btn-gloss { box-shadow: inset 0 -3px 6px var(--l-gloss-glow), 0 3px 0 var(--l-gloss-edge), 0 0 18px 2px var(--l-gloss-glow); }
+  :root[data-design="lull"] .pbar[data-liked="true"] .pbar__now { box-shadow: inset 0 0 0 1.5px var(--pink), 0 2px 0 rgba(20, 10, 70, .35); }
 
   /* the tools on their paper tray: square keys, pressed ones in gel */
   :root[data-design="lull"] .pbar__tools {
@@ -591,7 +591,7 @@
   :root[data-design="lull"] .pbar__state .btn--quiet { color: var(--link); }
 }
 /* the readout's LCD: mocha by day, ink-blue by night; its glow is the caption's and the gel's light end */
-:root[data-design="lull"] { --l-lcd: #4a3b42; --l-lcd-glow: #e6dcff; }
+:root[data-design="lull"] { --l-lcd: #2f2a63; --l-lcd-glow: #e6dcff; }
 :root[data-design="lull"][data-theme="night"] { --l-lcd: #121334; --l-lcd-glow: #d6ccff; }
 /* check: --l-screen-ink on --l-lcd 4.5 */
 /* check: --l-lcd-glow on --l-lcd 4.5 */
@@ -719,15 +719,14 @@
 }
 :root[data-design="lull"] .card { border: var(--stroke) solid var(--l-edge); border-radius: 14px; box-shadow: var(--l-win-stack); margin-bottom: 18px; padding: var(--card-pad); }
 :root[data-design="lull"] .inset { background: var(--l-card-2); border-radius: 12px; }
-:root[data-design="lull"] .label-rule::after { height: 7px; background: var(--l-hatch-bg); }
+:root[data-design="lull"] .label-rule::after { height: 2px; border-radius: 2px; background: linear-gradient(90deg, var(--l-rule), transparent); }
 :root[data-design="lull"] .label-rule > h2, :root[data-design="lull"] .label-rule > h3, :root[data-design="lull"] .label-rule__text { font: 800 1.0625rem/1.2 var(--f-ui); }
 :root[data-design="lull"] .label-rule--sm > h2, :root[data-design="lull"] .label-rule--sm > h3, :root[data-design="lull"] .label-rule--sm .label-rule__text { font: italic 800 .8125rem/1.2 var(--f-ui); color: var(--fg-2); }
-/* ribbon: slanted indigo tab, sparkle | label (img 05 section bar) */
+/* ribbon: a gel capsule, sparkle | label */
 :root[data-design="lull"] .card > .label-rule.card-head > .card-head__title {
-  display: block; height: 28px; padding: 0 26px 0 40px; border-radius: 6px 0 0 6px;
-  background: var(--l-spark) 12px 50% / 13px 13px no-repeat, linear-gradient(rgba(255, 255, 255, .55), rgba(255, 255, 255, .55)) 32px 50% / 1px 14px no-repeat, var(--l-ribbon);
-  clip-path: polygon(0 0, 100% 0, calc(100% - 13px) 100%, 0 100%);
-  color: #fff; font: italic 800 .875rem/28px var(--f-ui); letter-spacing: .01em;
+  display: block; height: 28px; padding: 0 18px 0 40px; border-radius: 999px; border: var(--stroke) solid var(--l-gloss-edge); box-sizing: border-box;
+  background: var(--l-spark) 12px 50% / 13px 13px no-repeat, linear-gradient(rgba(255, 255, 255, .55), rgba(255, 255, 255, .55)) 32px 50% / 1px 14px no-repeat, var(--l-hi-sm), var(--l-gloss);
+  box-shadow: inset 0 -2px 4px var(--l-gloss-glow); color: #fff; font: italic 800 .875rem/25px var(--f-ui); letter-spacing: .01em; text-shadow: 0 1px 0 rgba(40, 25, 110, .55);
 }
 :root[data-design="lull"] .card > .label-rule.card-head > .card-head__title::first-letter { text-transform: uppercase; }
 :root[data-design="lull"] .card > .label-rule.card-head { flex-wrap: wrap; gap: 6px 12px; margin-bottom: 14px; }
@@ -750,7 +749,7 @@
   gap: 1px; padding: 8px 8px 11px; background: var(--l-card); border: var(--stroke) solid var(--l-edge); border-radius: 14px;
   box-shadow: var(--l-card-stack); margin-bottom: 10px; transition: transform var(--dur-3) var(--ease-spring), box-shadow var(--dur-3) var(--ease-spring);
 }
-:root[data-design="lull"] .tile:hover { transform: translateY(-3px); box-shadow: 0 7px 0 -1.5px var(--stack-1), 0 7px 0 0 var(--l-edge), 0 13px 0 -1.5px var(--stack-2), 0 13px 0 0 var(--l-edge); }
+:root[data-design="lull"] .tile:hover { transform: translateY(-3px); box-shadow: var(--l-card-lift); }
 :root[data-design="lull"] .tile__art { margin-bottom: 8px; }
 :root[data-design="lull"] .tile__art .cover { border-radius: 10px; }
 :root[data-design="lull"] .tile__title, :root[data-design="lull"] .tile__by, :root[data-design="lull"] .tile__meta { padding: 0 2px; }
@@ -874,12 +873,14 @@
 :root[data-design="lull"] .sheet { border-bottom-width: calc(7px + env(safe-area-inset-bottom)); }
 /* desktop / tablet: a sheet is a centred window like a dialog; the frame closes at the bottom (img 05 bevel) */
 @media (min-width: 640px) {
-  :root[data-design="lull"] .sheet { top: 50%; bottom: auto; max-height: calc(100dvh - 48px); border-bottom-width: 7px; border-radius: 16px; opacity: 0; transform: translate(-50%, calc(-50% + 14px)); transition: transform var(--dur-3) var(--ease-out), opacity var(--dur-2); }
+  :root[data-design="lull"] .sheet { top: 50%; bottom: auto; max-height: calc(100dvh - 48px); border-bottom-width: 7px; border-radius: 20px; opacity: 0; transform: translate(-50%, calc(-50% + 14px)); transition: transform var(--dur-3) var(--ease-out), opacity var(--dur-2); }
   :root[data-design="lull"] .sheet.is-open { opacity: 1; transform: translate(-50%, -50%); }
   :root[data-design="lull"][data-motion="reduce"] .sheet { transform: translate(-50%, -50%); }
   @media (prefers-reduced-motion: reduce) { :root[data-design="lull"]:not([data-motion="full"]) .sheet { transform: translate(-50%, -50%); } }
 }
-:root[data-design="lull"] .dialog { max-height: calc(100dvh - 48px); border-radius: 16px; }
+:root[data-design="lull"] .dialog { max-height: calc(100dvh - 48px); border-radius: 20px; }
+:root[data-design="lull"] .dialog::after { content: ""; position: absolute; right: -30px; bottom: -30px; width: 60px; height: 60px; pointer-events: none; background: url(assets/bubble.webp) 0 0 / 100% no-repeat; }
+:root[data-design="lull"] :focus-visible { outline-width: 3px; outline-offset: 3px; }
 :root[data-design="lull"] .sheet__head {
   min-height: 38px; margin: -38px -7px 0; padding-right: 6px; gap: 8px;
 }
@@ -887,7 +888,7 @@
 :root[data-design="lull"] .sheet__head .btn-icon { width: 26px; height: 26px; color: var(--l-band-ink); border-color: transparent; }
 :root[data-design="lull"] .sheet__head .btn-icon:hover { background: rgba(255, 255, 255, .35); }
 :root[data-design="lull"] .sheet__body, :root[data-design="lull"] .sheet__foot { background: none; }
-:root[data-design="lull"] .sheet__body { border-radius: 10px 10px 0 0; }
+:root[data-design="lull"] .sheet__body { border-radius: 13px 13px 0 0; }
 :root[data-design="lull"] .sheet__body { padding: 16px 20px 18px; }
 :root[data-design="lull"] .sheet__foot { border-top: 1px solid var(--l-rule); padding: 12px 16px 12px; }
 :root[data-design="lull"] .sheet__handle { background: var(--l-edge); margin: 2px auto 4px; }
@@ -905,13 +906,14 @@
    by the toasts' height, so a toast never covers a frame or a row. */
 @media (min-width: 640px) {
   :root[data-design="lull"] .toast-region { left: auto; right: 16px; bottom: calc(var(--bar-h) + 16px); transform: none; width: min(var(--ctx), calc(100vw - 32px)); gap: 10px; }
-  :root[data-design="lull"]:has(#toasts > .toast) :is(.app[data-ctx="docked"] .ctx, .app:not([data-ctx="docked"]) .main) { margin-bottom: 122px; }
-  :root[data-design="lull"]:has(#toasts > .toast + .toast) :is(.app[data-ctx="docked"] .ctx, .app:not([data-ctx="docked"]) .main) { margin-bottom: 218px; }
-  :root[data-design="lull"]:has(#toasts > .toast + .toast + .toast) :is(.app[data-ctx="docked"] .ctx, .app:not([data-ctx="docked"]) .main) { margin-bottom: 314px; }
+  :root[data-design="lull"]:has(#toasts > .toast) { --l-lift: 126px; }
+  :root[data-design="lull"]:has(#toasts > .toast + .toast) { --l-lift: 242px; }
+  :root[data-design="lull"]:has(#toasts > .toast + .toast + .toast) { --l-lift: 358px; }
+  :root[data-design="lull"] :is(.app[data-ctx="docked"] .ctx, .app[data-panel="strip"] .main, .app:not([data-ctx="docked"]) .main) { margin-bottom: var(--l-lift, 16px); }
 }
 :root[data-design="lull"] .toast {
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; column-gap: 10px; padding: 0 8px 8px 0;
-  border: solid transparent; border-width: 30px 7px 7px; border-radius: 16px; background: var(--l-pane); box-shadow: var(--l-pane-shadow);
+  border: solid transparent; border-width: 30px 7px 7px; border-radius: 20px; background: var(--l-pane); box-shadow: var(--l-pane-shadow);
   font: 800 .875rem/1.35 var(--f-ui); color: var(--fg-panel);
 }
 :root[data-design="lull"] .toast::before {
@@ -966,7 +968,7 @@
 
 /* empty states sit flat on the window: the pocket illustration (emptyArt slot), the message, one gloss pill */
 :root[data-design="lull"] .empty { padding: 28px 16px 20px; }
-:root[data-design="lull"] .empty__art { width: 140px; height: 110px; color: var(--link); }
+:root[data-design="lull"] .empty__art { width: 140px; height: 110px; color: var(--link); background: url(assets/bubble.webp) 50% 50% / 132px no-repeat; }
 :root[data-design="lull"] .empty__title { font: 900 1.25rem/1.2 var(--f-ui); }
 :root[data-design="lull"] .lull-empty .lull-empty__shell { fill: var(--l-tile); stroke: var(--l-edge); stroke-width: 1.5; }
 :root[data-design="lull"] .lull-empty .lull-empty__screen { fill: var(--screen); stroke: none; }
@@ -985,10 +987,12 @@
    title band; on a phone the same cards are flat sections under ribbons.
    ===================================================================== */
 @media (min-width: 640px) {
-  :root[data-design="lull"] .now .card { padding: 14px 0; margin-bottom: 18px; border: solid transparent; border-width: 38px 7px 7px; border-radius: 16px; background: var(--l-pane); box-shadow: var(--l-pane-shadow); }
+  :root[data-design="lull"] .now .card { padding: 14px 0; margin-bottom: 18px; border: solid transparent; border-width: 38px 7px 7px; border-radius: 20px; background: var(--l-pane); box-shadow: var(--l-pane-shadow); }
   :root[data-design="lull"] .now .card > .card-head, :root[data-design="lull"] .now .card > .card-head--hidden {
     display: flex; height: 38px; margin: -52px -7px 14px; padding: 0 12px 0 72px; background: var(--l-orbs);
   }
+  /* the lyrics window holds the same light, at the top right of its paper */
+  :root[data-design="lull"] .now .now-lycard { background: url(assets/aurora.webp) 100% 0 / min(60%, 720px) 300px no-repeat padding-box, var(--l-pane); }
   :root[data-design="lull"] .now .card > .card-head::after { display: none; }
   :root[data-design="lull"] .now .card > .card-head > .card-head__title, :root[data-design="lull"] .now .card > .card-head--hidden > .card-head__title {
     display: block; height: auto; padding: 0; background: none; clip-path: none; border-radius: 0;
@@ -1010,12 +1014,33 @@
 :root[data-design="lull"] .disc-hello__sum { padding: 5px 12px; border-radius: 999px; background: var(--reason-bg); color: var(--reason-fg); font: 800 .8125rem/1.3 var(--f-ui); }
 :root[data-design="lull"] .disc-card, :root[data-design="lull"] .disc-search .card { background: transparent; border: 0; border-radius: 0; box-shadow: none; padding: 0; margin-bottom: 16px; }
 :root[data-design="lull"] .disc-card > .label-rule { margin-bottom: 10px; }
+/* the shared layout flows the modules in columns by the window's width; the gadget column takes room from them, so
+   the count follows the page's own width instead (two from 1100 px, three from 1812 px, where the gadgets stand
+   beside them), and the picks are the page's row of covers across all of them */
+:root[data-design="lull"] .disc-modules { column-count: 1; column-gap: 36px; }
+@container disc (min-width: 1100px) { :root[data-design="lull"] .disc-modules { column-count: 2; } }
+@container disc (min-width: 1812px) { :root[data-design="lull"] .disc-modules { column-count: 3; } }
+:root[data-design="lull"] .disc-mod[data-module="picks"] { column-span: all; }
+:root[data-design="lull"] .disc-hello { position: relative; }
+/* while sound plays the aurora and the greeting row's bubbles drift, held when lull is not in front, still under reduced motion */
+@keyframes lull-drift { to { transform: translate(-48px, 8px); } }
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-design="lull"][data-playing="true"]:not([data-motion="reduce"]) :is(.view::before, .disc-hello::after) { animation: lull-drift 7s ease-in-out infinite alternate; --loop-fps: 10; animation-play-state: var(--loop-play, running); }
+}
+/* soap bubbles: one shader-baked picture (assets/bubble.webp), drawn only where a page has the room for them, inside the
+   boxes made for them, so nothing ever cuts one and a phone never downloads it */
+@container main (min-width: 1100px) {
+  :root[data-design="lull"] :is(.disc-home, .disc-search) > .disc-hello::after {
+    content: ""; position: absolute; right: 0; top: -8px; width: 190px; height: 68px; pointer-events: none;
+    background: url(assets/bubble.webp) 100% 50% / 60px no-repeat, url(assets/bubble.webp) 58% 6% / 34px no-repeat, url(assets/bubble.webp) 20% 92% / 22px no-repeat;
+  }
+}
 
 /* For you: five tall paper cards in view (a sixth scrolls in; six in view on wide desks), art + title + artist +
    the reason chip pinned to the foot */
 :root[data-design="lull"] .disc-home .disc-picks {
   --picks: 5; grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: calc((100% - (var(--picks) - 1) * 16px) / var(--picks)); gap: 16px;
-  overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; padding: 2px 2px 14px; margin: 0 -2px;
+  overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; padding: 4px 6px 34px; margin: 0 -6px -20px; scroll-padding-inline: 6px;
 }
 :root[data-design="lull"] .disc-pick {
   position: relative; display: flex; flex-direction: column; align-items: stretch; gap: 0; padding: 8px 8px 10px; scroll-snap-align: start;
@@ -1024,7 +1049,7 @@
 }
 :root[data-design="lull"] .disc-pick:hover, :root[data-design="lull"] .disc-pick:focus-within {
   background: var(--l-card); transform: translateY(-3px);
-  box-shadow: 0 7px 0 -1.5px var(--stack-1), 0 7px 0 0 var(--l-edge), 0 13px 0 -1.5px var(--stack-2), 0 13px 0 0 var(--l-edge);
+  box-shadow: var(--l-card-lift);
 }
 /* For you: each pick is a CD jewel case. A smoked spine with moulded ridges on the left, the cover under clear plastic
    (a diagonal sheen across it), and the paper insert below with the title and the reason sticker */
@@ -1173,7 +1198,7 @@
   grid-template-columns: 44px minmax(0, 1fr) auto; grid-template-areas: "art title act" "art text act"; justify-items: start; align-items: center;
   column-gap: 14px; row-gap: 2px; padding: 4px 6px; text-align: left; border: 0; background: none;
 }
-:root[data-design="lull"] .disc-card > .empty .empty__art { grid-area: art; width: 44px; height: 44px; margin: 0; }
+:root[data-design="lull"] .disc-card > .empty .empty__art { grid-area: art; width: 44px; height: 44px; margin: 0; background-size: 46px; }
 :root[data-design="lull"] .disc-card > .empty .empty__art svg { width: 44px; height: 44px; }
 :root[data-design="lull"] .disc-card > .empty .empty__art .sparkle { display: none; }
 :root[data-design="lull"] .disc-card > .empty .empty__title { grid-area: title; margin: 0; font: 900 .9375rem/1.25 var(--f-ui); }
@@ -1182,6 +1207,14 @@
 
 /* search results (desk): core lays them out (the top result beside the songs in .disc-cat__lead, then the shelves,
    side by side with the Soulseek column when split); lull only makes the top result a compact card */
+@container disc (min-width: 1100px) {
+  :root[data-design="lull"] .disc-search div:has(> .disc-cat__lead) { display: grid; grid-template-columns: minmax(300px, .8fr) minmax(0, 1.5fr); column-gap: var(--sp-6); align-items: start; }
+  :root[data-design="lull"] .disc-search div:has(> .disc-cat__lead) > .disc-cat__lead { display: contents; }
+  :root[data-design="lull"] .disc-search div:has(> .disc-cat__lead) > .card, :root[data-design="lull"] .disc-search .disc-top { grid-column: 1; min-width: 0; }
+  /* a shelf in the narrower column scrolls sideways: it fades at its edge instead of cutting a card in half */
+  :root[data-design="lull"] .disc-search div:has(> .disc-cat__lead) > .card .shelf { padding-right: 36px; -webkit-mask: linear-gradient(90deg, #000 calc(100% - 36px), transparent); mask: linear-gradient(90deg, #000 calc(100% - 36px), transparent); }
+  :root[data-design="lull"] .disc-search div:has(> .disc-cat__lead) .disc-songs { grid-column: 2; grid-row: 1 / span 9; }
+}
 @media (min-width: 1100px) {
   :root[data-design="lull"] .disc-top__body { grid-template-columns: 96px minmax(0, 1fr); gap: 16px; }
   /* core sizes the top cover inline (112px) */
@@ -1207,34 +1240,45 @@
 @container section (min-width: 1040px) { :root[data-design="lull"] .disc-home .disc-picks { --picks: 6; } }
 
 /* =====================================================================
-   Desk widgets (homeLead slot, >= 1700 px): the discover window hands 300 px back to the wallpaper and three little
-   windows float there (img 02): a "today" sticker, the pocket mini (tilted 2 degrees), "up next"
+   Gadgets (homeLead slot): a column of little windows at the right of the discover window's paper, as a sidebar holds
+   them. They are part of the page, so no panel or strip can stand over them, and the column appears whenever the
+   window has room for it (a container query on the window, so a docked queue or the Now column count)
    ===================================================================== */
+:root[data-design="lull"] { --l-desk-w: 280px; }
 :root[data-design="lull"] .disc-lead { display: none; }
-@media (min-width: 1700px) {
-  :root[data-design="lull"] { --l-desk-w: 290px; }
-  /* .disc-home's inline-size container would be the widgets' containing block; at this width nothing on Home uses
-     its container queries (the lull grids query their module, `section`) */
-  :root[data-design="lull"] .disc-home { container-type: normal; }
-  /* the widgets hang off the discover window's edge, in the room it hands back: placed against .main, with the view
-     static so neither its scroll nor its clip applies. The Now Playing column takes that room when it is open. */
-  :root[data-design="lull"] .app[data-screen="home"]:not([data-nowcol]) .main { margin-right: calc(var(--l-desk-w) + 22px); }
-  :root[data-design="lull"] .app[data-screen="home"]:not([data-nowcol]) #view { position: static; }
-  :root[data-design="lull"] .app:not([data-nowcol]) .disc-lead { display: block; position: absolute; z-index: 1; top: 8px; left: calc(100% + 22px); width: var(--l-desk-w); }
-  /* a docked queue already leads with the playing song: the pocket would be a third copy beside the player bar */
-  :root[data-design="lull"] .app[data-ctx="docked"] .lull-desk__pocket { display: none; }
+@container main (min-width: 1380px) {
+  :root[data-design="lull"] .app:is([data-panel="strip"], :not([data-ctx="docked"])) .disc-home { display: grid; grid-template-columns: minmax(0, 1fr) var(--l-desk-w); grid-template-rows: auto 1fr; column-gap: 32px; align-items: start; }
+  :root[data-design="lull"] .app:is([data-panel="strip"], :not([data-ctx="docked"])) .disc-hello { grid-area: 1 / 1; }
+  :root[data-design="lull"] .app:is([data-panel="strip"], :not([data-ctx="docked"])) .disc-modules { grid-area: 2 / 1; }
+  :root[data-design="lull"] .app:is([data-panel="strip"], :not([data-ctx="docked"])) .disc-lead { display: block; grid-area: 1 / 2 / 3; align-self: stretch; }
 }
-:root[data-design="lull"] .lull-desk { display: grid; gap: 20px; }
+/* an open queue already leads with the playing song: the pocket would be a third copy beside the player bar */
+:root[data-design="lull"] .app[data-ctx="docked"]:not([data-panel="strip"]) .lull-desk__pocket { display: none; }
+:root[data-design="lull"] .lull-desk { display: flex; flex-direction: column; gap: 16px; }
+:root[data-design="lull"][data-theme="night"] :is(.lull-desk__tank, .disc-hello::after) { opacity: .85; }
+/* the column ends in a glass tank of three bubbles that rise as the song goes (--song-pos): at the foot when a song starts,
+   at the top when it ends. Each stays whole inside the tank */
+:root[data-design="lull"] .lull-desk__tank {
+  position: relative; height: 170px; border-radius: 18px; --song-pos: inherit;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--l-tile-hi) 70%, transparent), color-mix(in srgb, var(--l-tile) 30%, transparent));
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .6), inset 0 -18px 28px -18px rgba(120, 100, 230, .35), 0 0 0 1px var(--l-rule);
+}
+:root[data-design="lull"] .lull-desk__tank i {
+  --song-pos: inherit; position: absolute; bottom: 8px; width: var(--d); height: var(--d); background: url(assets/bubble.webp) 0 0 / 100%;
+  translate: 0 calc(var(--song-pos, 0) * var(--rise) * -1); transition: translate 2.4s linear;
+}
+:root[data-design="lull"] .lull-desk__tank i:nth-child(1) { left: 14%; --d: 64px; --rise: 90px; }
+:root[data-design="lull"] .lull-desk__tank i:nth-child(2) { left: 52%; --d: 44px; --rise: 110px; }
+:root[data-design="lull"] .lull-desk__tank i:nth-child(3) { left: 76%; --d: 28px; --rise: 126px; }
 :root[data-design="lull"] .lull-desk__win {
-  padding: 0 0 10px; color: var(--fg-panel); border: solid transparent; border-width: 38px 7px 7px; border-radius: 16px;
+  padding: 0 0 10px; color: var(--fg-panel); border: solid transparent; border-width: 30px 6px 6px; border-radius: 18px;
   background: var(--l-pane); box-shadow: var(--l-pane-shadow);
 }
-:root[data-design="lull"] .lull-desk__win > .lull-win__bar { margin: -38px -7px 0; }
-:root[data-design="lull"] .lull-desk__today { transform: rotate(-1.5deg); }
+:root[data-design="lull"] .lull-desk__win > .lull-win__bar { height: 30px; margin: -30px -6px 0; padding: 0 14px; background: none; font-size: .8125rem; }
 :root[data-design="lull"] .lull-desk__date { display: flex; align-items: center; gap: 14px; margin: 0; padding: 10px 16px 2px; }
 :root[data-design="lull"] .lull-desk__date b { font: 400 3.25rem/1 var(--f-disp); color: var(--l-ribbon); }
 :root[data-design="lull"] .lull-desk__date span { font: 800 .9375rem/1.3 var(--f-ui); color: var(--fg-2); }
-:root[data-design="lull"] .lull-desk__pocket { transform: rotate(2deg); background: var(--l-shell) padding-box, var(--l-candy) border-box; }
+:root[data-design="lull"] .lull-desk__pocket { background: var(--l-shell) padding-box, var(--l-candy) border-box; }
 :root[data-design="lull"] .lull-desk__screen {
   display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 12px; margin: 10px 10px 0; padding: 10px;
   border-radius: 10px 10px 22px 10px; background: var(--screen); color: var(--l-screen-ink); box-shadow: inset 0 2px 0 rgba(0, 0, 0, .2);
@@ -1250,7 +1294,6 @@
   justify-self: start; margin-top: 4px; padding: 3px 7px; border-radius: 5px; border: 1px solid rgba(255, 255, 255, .55); background: rgba(255, 255, 255, .1);
 }
 /* this week: two numbers, a 24-bar listening sparkline (peak hour in pink), a Stats pill */
-:root[data-design="lull"] .lull-desk__week { transform: rotate(-1deg); }
 :root[data-design="lull"] .lull-desk__week[data-week="false"], :root[data-design="lull"] .lull-desk__meta small:empty { display: none; }
 :root[data-design="lull"] .lull-desk__nums { display: grid; gap: 2px; margin: 10px 14px 8px; }
 :root[data-design="lull"] .lull-desk__nums b { font: 900 1.375rem/1.1 var(--f-ui); color: var(--fg-panel); }
@@ -1281,7 +1324,7 @@
   /* the left window's plate (a pane: the pocket's title bar sits in its band) lies behind hero, head and actions */
   :root[data-design="lull"] .now__grid::before {
     content: ""; grid-area: 1 / 1 / 4 / 2; align-self: stretch; height: auto; z-index: 0;
-    border: solid transparent; border-width: 38px 7px 7px; border-radius: 16px; background: var(--l-pane); box-shadow: var(--l-pane-shadow);
+    border: solid transparent; border-width: 38px 7px 7px; border-radius: 20px; background: var(--l-pane); box-shadow: var(--l-pane-shadow);
   }
   :root[data-design="lull"] .now__dev, :root[data-design="lull"] .now-head, :root[data-design="lull"] .now__acts { position: relative; z-index: 1; min-width: 0; }
   :root[data-design="lull"] .now__dev { margin: 0; }
@@ -1304,6 +1347,17 @@
     :root[data-design="lull"] .now-head .now-head__chips > * { order: 4; }
     :root[data-design="lull"] .now-head__chips > .chip ~ .chip { display: inline-flex; }
     :root[data-design="lull"] .now-head__chips > .chip:nth-child(n+4), :root[data-design="lull"] .now-head__chips > :not(.chip):nth-child(n+4) { display: none; }
+  }
+  /* a tall window: the pocket's screen grows with it, so the left window has no gap between its title block and its keys */
+  @media (min-height: 960px) {
+    :root[data-design="lull"] .now .lull-np .wave { height: clamp(48px, 6vh, 90px); }
+    :root[data-design="lull"] .now .now-head .now-head__title { font-size: clamp(1.875rem, 3.4vh, 2.5rem); }
+  }
+  /* a very tall window (1440 and up): the screen stacks, the art across its whole width above the title, so the left window's height has something to hold */
+  @media (min-height: 1200px) {
+    :root[data-design="lull"] .now .lull-np .lull-np__screen { grid-template-columns: minmax(0, 1fr); grid-template-areas: "art" "head" "page" "wave" "times"; grid-template-rows: auto; }
+    :root[data-design="lull"] .now .lull-np__art { max-width: 340px; justify-self: center; width: 100%; }
+    :root[data-design="lull"] .now .lull-np .device__page-head { justify-content: flex-end; }
   }
   /* a window under 960 px tall (the 1280x800 default, a 1440x900 laptop): a smaller screen art keeps the action row
      above the fold, with the taskbar's two rows below it */
@@ -1361,7 +1415,7 @@
 :root[data-design="lull"] .lull-np__shell {
   position: relative; isolation: isolate; margin: 14px 12px 0; padding: 12px 12px 10px; border: var(--stroke) solid #43389c; border-radius: 18px 18px 46px 18px; color: #fff9fe;
   background: linear-gradient(180deg, rgba(255, 255, 255, .5) 0 1.5px, rgba(255, 255, 255, .2) 1.5px, transparent 34%), linear-gradient(180deg, var(--l-pocket));
-  box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, .55), inset 0 -10px 22px -10px rgba(20, 10, 70, .45), 0 5px 0 -1.5px var(--stack-1), 0 5px 0 0 var(--l-edge), 0 18px 30px -12px rgba(43, 38, 80, .5);
+  box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, .55), inset 0 -10px 22px -10px rgba(20, 10, 70, .45), 0 2px 3px rgba(43, 38, 80, .2), 0 18px 30px -12px rgba(43, 38, 80, .5);
 }
 /* check: #fff9fe on #5f4fc0 4.5 (the pocket's mark) */
 :root[data-design="lull"] .lull-np__shell::before, :root[data-design="lull"] .lull-np__shell::after {
@@ -1472,6 +1526,9 @@
 :root[data-design="lull"][data-theme="night"] :is(.lull-np, .dk-mini) .device__pill:not([aria-pressed="true"]) { background: var(--sky); color: #f4efff; }
 :root[data-design="lull"] .lull-np__mark { margin-right: auto; white-space: nowrap; font: italic 400 .9375rem/1 var(--f-disp); letter-spacing: .05em; }
 :root[data-design="lull"] .lull-np__grill { display: grid; grid-template-columns: repeat(5, 4px); gap: 4px; margin: 0 8px 0 4px; transform: rotate(-28deg); }
+/* the speaker grill turns once over the song (--song-pos, opted in down the chain), a record in a pocket */
+:root[data-design="lull"] :is(.lull-np, .lull-np__shell, .lull-np__foot, .lull-np__grill) { --song-pos: inherit; }
+:root[data-design="lull"] .lull-np__grill { rotate: calc(var(--song-pos, 0) * 1turn); transition: rotate 2.4s linear; }
 :root[data-design="lull"] .lull-np__grill i { width: 4px; height: 4px; border-radius: 50%; background: rgba(255, 249, 254, .45); }
 
 /* motion: the windows boot in a stagger, the screen powers on (a soft CRT glow), one glint crosses it */
@@ -1524,6 +1581,9 @@
   text-decoration: underline var(--l-hl) .42em; text-underline-offset: -.24em; text-decoration-skip-ink: none;
 }
 :root[data-design="lull"] .now-ly__foot { border-top-color: var(--l-rule); }
+/* a wide window sets its words larger: the lyrics window is a column of a thousand pixels or more */
+@container main (min-width: 1500px) { :root[data-design="lull"] .now-lycard .now-ly { --ly-size: calc(1.5rem + var(--ly-step, 0) * .125rem); } }
+@container main (min-width: 2100px) { :root[data-design="lull"] .now-lycard .now-ly { --ly-size: calc(1.75rem + var(--ly-step, 0) * .125rem); } }
 /* a song that couldn't play has no words to follow (why it couldn't is the player's to say) */
 :root[data-design="lull"]:has(> :where(body) > :where(.app) > .pbar[data-status="failed"]) .now-lycard :is(.now-ly__view, .now-ly__foot) { display: none; }
 :root[data-design="lull"]:has(> :where(body) > :where(.app) > .pbar[data-status="failed"]) .now-lycard .now-ly::after {
@@ -1565,22 +1625,23 @@
    screen, then the Now window's transport row (shuffle | prev, play, next | repeat) and a slim row (vol -, like, vol +) */
 :root[data-design="lull"] .dk-mini .device {
   --device-w: 320px; display: grid; grid-template-columns: minmax(0, 1fr) repeat(5, auto) minmax(0, 1fr); align-items: center; gap: 12px 10px;
-  padding: 4px 3px 7px; border: solid transparent; border-width: 38px 7px 7px; border-radius: 16px; background: var(--l-pane);
+  padding: 4px 3px 7px; border: solid transparent; border-width: 38px 7px 7px; border-radius: 20px; background: var(--l-pane);
   box-shadow: 0 0 0 1px color-mix(in srgb, #2b2650 60%, transparent);
 }
 :root[data-design="lull"] .dk-mini .device::before {
   content: "lull mini"; position: absolute; left: -7px; right: -7px; top: -38px; display: flex; align-items: center; height: 38px; padding: 0 12px 0 72px;
   background: var(--l-orbs); color: var(--l-band-ink); font: 400 .9375rem/1 var(--f-disp); letter-spacing: .06em; text-shadow: var(--l-band-glow); pointer-events: none;
 }
+:root[data-design="lull"] .dk-mini .device::after { content: ""; position: absolute; left: 4px; right: 4px; bottom: 10px; height: 46px; pointer-events: none; background: url(assets/bubble.webp) 0 50% / 40px no-repeat, url(assets/bubble.webp) 100% 50% / 30px no-repeat; }
 :root[data-design="lull"] .dk-mini__head { z-index: 1; left: 150px; right: 0; top: -33px; height: 28px; }
 :root[data-design="lull"] .dk-mini__head .btn-icon { color: var(--l-band-ink); }
 /* the strip: a slice of the taskbar, a paper bar in a candy frame */
-:root[data-design="lull"] .dk-strip { border: 6px solid transparent; border-radius: 16px; background: linear-gradient(var(--sky), var(--sky)) padding-box, var(--l-candy) border-box; box-shadow: var(--l-pane-shadow); }
+:root[data-design="lull"] .dk-strip { border: 6px solid transparent; border-radius: 20px; background: url(assets/aurora.webp) 100% 0 / 60% 100% no-repeat padding-box, linear-gradient(var(--sky), var(--sky)) padding-box, var(--l-candy) border-box; box-shadow: var(--l-pane-shadow); }
 :root[data-design="lull"] .dk-mini__led { display: none; }
 :root[data-design="lull"] .dk-mini__win { color: var(--l-band-ink); }
 :root[data-design="lull"] .dk-mini__win:hover { background: rgba(255, 255, 255, .2); }
 :root[data-design="lull"] .dk-mini .device__bezel { grid-column: 1 / -1; min-width: 0; padding: 0; border: 0; background: none; }
-:root[data-design="lull"] .dk-mini .device__screen { border-radius: 10px; box-shadow: inset 0 2px 0 rgba(0, 0, 0, .18); }
+:root[data-design="lull"] .dk-mini .device__screen { background: url(assets/aurora.webp) 100% 0 / 100% 100% no-repeat, var(--screen); border-radius: 10px; box-shadow: inset 0 2px 0 rgba(0, 0, 0, .18); }
 :root[data-design="lull"] .dk-mini :is(.device__brand, .device__grill, .dpad__hub) { display: none; }
 :root[data-design="lull"] .dk-mini :is(.device__controls, .dpad, .device__ab, .device__pills) { display: contents; }
 :root[data-design="lull"] .dk-mini .device__key { font-size: 0; }
@@ -1621,7 +1682,7 @@
   font: italic 800 .75rem/1.2 var(--f-ui); letter-spacing: .01em;
 }
 :root[data-design="lull"] .lib-hero > .cover, :root[data-design="lull"] .lib-hero > .mosaic, :root[data-design="lull"] .lib-pl__head > .mosaic { box-shadow: var(--l-card-stack); margin-bottom: 10px; border-color: var(--l-edge); }
-:root[data-design="lull"] .lib-hero > .cover--round { box-shadow: 0 5px 0 -1.5px var(--stack-1), 0 5px 0 0 var(--l-edge); }
+:root[data-design="lull"] .lib-hero > .cover--round { box-shadow: var(--l-card-stack); }
 /* playlist page: a mixtape J-card. The cover is a little pile of four stickers (img 01 offsets) beside the title
    block, a cassette sits at the right (decorative), rows are 52 px and the column header steps aside (the
    "Custom order" menu sorts) */
@@ -1662,6 +1723,14 @@
 @container lib (max-width: 1153px) {
   :root[data-design="lull"] .lib .lib-pl__head { padding-right: 24px; }
   :root[data-design="lull"] .lib-pl__head::after { display: none; }
+}
+/* playlists: the import blocks stand beside the cards in a wide library, so the row of cards is never half empty */
+@container lib (min-width: 1200px) {
+  :root[data-design="lull"] .app[data-screen="playlists"] .lib-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 440px); column-gap: 40px; align-items: start; }
+  :root[data-design="lull"] .app[data-screen="playlists"] .lib-card > .lib-rule { grid-column: 1 / -1; }
+  :root[data-design="lull"] .app[data-screen="playlists"] .lib-card > .lib-grid { grid-column: 1; grid-row: 2 / span 2; grid-template-columns: repeat(auto-fit, minmax(200px, 300px)); justify-content: start; }
+  :root[data-design="lull"] .app[data-screen="playlists"] .lib-card > .lib-link-card { grid-column: 2; grid-row: 2; }
+  :root[data-design="lull"] .app[data-screen="playlists"] .lib-card > .lib-dropzone { grid-column: 2; grid-row: 3; flex-wrap: wrap; justify-content: center; }
 }
 /* library index: a ribbon would only repeat the active tab, so its label is kept for screen readers only and the
    sort rides at the end of the filter or button row (with no such row, as on Artists, the link keeps its own line) */
@@ -1711,7 +1780,7 @@
    ===================================================================== */
 /* stats: the five numbers are little widget windows (img 02 side panels): the label is the title bar */
 :root[data-design="lull"] .sys-tile.card {
-  gap: 0; padding: 0 0 12px; border: solid transparent; border-width: 30px 7px 7px; border-radius: 16px; background: var(--l-pane); box-shadow: var(--l-pane-shadow);
+  gap: 0; padding: 0 0 12px; border: solid transparent; border-width: 30px 7px 7px; border-radius: 20px; background: var(--l-pane); box-shadow: var(--l-pane-shadow);
 }
 :root[data-design="lull"] .sys-tile__label {
   height: 30px; margin: -30px -7px 10px; padding: 0 12px; gap: 6px; color: var(--l-band-ink); text-shadow: var(--l-band-glow);
@@ -1726,9 +1795,10 @@
 /* the lists and the clock sit flat on the window under ribbons; a dotted rule parts the two columns */
 :root[data-design="lull"] .sys-page .card.sys-card, :root[data-design="lull"] .sys-welcome__card.card, :root[data-design="lull"] .sys-empty-stats.card, :root[data-design="lull"] .sys-settings .sys-section.card { background: transparent; border: 0; border-radius: 0; box-shadow: none; padding: 0; margin-bottom: 22px; }
 :root[data-design="lull"] .sys-grid { column-gap: 0; margin-top: 18px; }
+/* settings and stats fill the window: the shared page stops at 1180 px, which leaves the right of a wide window empty */
+:root[data-design="lull"] :is(.sys-settings, .sys-stats) { max-width: none; }
+:root[data-design="lull"] .sys-grid { column-gap: 56px; }
 @media (min-width: 1100px) {
-  :root[data-design="lull"] .sys-grid > .sys-card:not(.sys-span):nth-child(odd) { padding-right: 24px; }
-  :root[data-design="lull"] .sys-grid > .sys-card:not(.sys-span):nth-child(even) { padding-left: 24px; border-left: 2px dotted var(--l-rule); }
   /* the whole stats spread fits one desk: 72 px number windows (value and note side by side), the top four of each
      list in 44 px rows, and the listening clock above the fold */
   :root[data-design="lull"] .sys-tile.card { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; padding-bottom: 8px; }
@@ -1749,6 +1819,20 @@
 }
 
 /* settings: a control-panel list on lavender beside flat sections */
+/* on a short window the section list tightens so every row, the lit one included, is whole inside its box */
+@media (max-height: 820px) { :root[data-design="lull"] .sys-nav__item { min-height: 28px; padding-block: 3px; } }
+/* a section's rows run in as many columns as the room holds (their order and sub-rows stay together); what is wide by
+   nature (a heading, a stack, a picture) spans them all, so a heading always sits above the rows it names */
+@container sys (min-width: 1280px) {
+  :root[data-design="lull"] .sys-section { column-width: 520px; column-gap: 56px; }
+  :root[data-design="lull"] .sys-section :is(.sys-row, .sys-group, .sys-section > *) { break-inside: avoid; }
+  :root[data-design="lull"] .sys-section > :is(.label-rule, .sys-group, .sys-row--stack, .sys-note, .sys-card__lede, .sys-lede, .sys-usage, .eqp, .hub-lib, .sys-keys__groups, div:not([class]), details, ul) { column-span: all; }
+  :root[data-design="lull"] .sys-section > div:not([class]):has(> .sys-row) { column-width: 520px; column-gap: 56px; }
+  :root[data-design="lull"] .sys-section > div:not([class]) > .sys-group { column-span: all; }
+  :root[data-design="lull"] .sys-section [class~="sys-sounds"] { column-span: all; column-width: 520px; column-gap: 56px; }
+  :root[data-design="lull"] [class~="sys-sounds"] > * { break-inside: avoid; }
+  :root[data-design="lull"] .sys-keys__groups { columns: 3 340px; column-gap: 56px; }
+}
 :root[data-design="lull"] .sys-nav { background: var(--l-frame); border: 0; border-radius: 12px; box-shadow: inset 0 0 0 var(--stroke) var(--l-rule); }
 /* the item shown as selected (current, or Playback beside the list) keeps its own colours under the pointer */
 :root[data-design="lull"] .sys-nav__item:not(.sys-nav__item--default, [aria-current="page"]):hover { background: color-mix(in srgb, var(--l-tile) 40%, transparent); }
@@ -1800,15 +1884,16 @@
   :root[data-design="lull"] .main { margin: 0 10px 10px; }
   :root[data-design="lull"] .view { padding: 16px 14px 24px; }
   :root[data-design="lull"] .mini {
-    margin: 0 10px 8px; padding: 0 6px 0 4px; height: 64px; background: var(--sky); border: 5px solid color-mix(in oklch, var(--l-tray) 92%, transparent); border-radius: 16px;
+    margin: 0 10px 8px; padding: 0 6px 0 4px; height: 64px; background: var(--sky); border: 5px solid color-mix(in oklch, var(--l-tray) 92%, transparent); border-radius: 20px;
     box-shadow: 0 0 0 var(--stroke) var(--tray-edge);
   }
+  :root[data-design="lull"] .mini .bezel-thumb { padding: 0; background: none; border: 0; border-radius: 9px; }
   :root[data-design="lull"] .mini .bezel-thumb .cover { --cover-size: 42px; border-radius: 8px; }
   :root[data-design="lull"] .mini .btn-gloss { --size: 42px; }
   :root[data-design="lull"] .mini .seek--line .seek__track { height: 3px; }
   :root[data-design="lull"] .tabbar {
     margin: 0 10px calc(10px + env(safe-area-inset-bottom)); padding: 5px; gap: 5px; height: 60px;
-    background: var(--l-candy); border: var(--stroke) solid var(--tray-edge); border-radius: 16px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22);
+    background: var(--l-candy); border: var(--stroke) solid var(--tray-edge); border-radius: 20px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22);
   }
   /* the tabs are gel keys like the menubar's: pale, then violet for the one you're on */
   :root[data-design="lull"] .tab { border-radius: 14px; background: var(--l-key); color: var(--l-key-ink); box-shadow: inset 0 -2px 4px rgba(255, 255, 255, .3), 0 0 0 var(--stroke) var(--l-key-edge); font: 800 .75rem/1 var(--f-ui); }
@@ -1872,14 +1957,17 @@
   /* home: two cards and a peek of the third; titles keep two lines' room so every card's rows line up, the reason
      sticker (with "+1" inline at its end) sits on the foot; releases in one column */
   :root[data-design="lull"] .disc-home .disc-picks, :root[data-design="lull"] .disc-home .disc-picks-skel .skel-group { grid-auto-columns: 150px; }
-  :root[data-design="lull"] .disc-pick__main { grid-template-rows: minmax(2.35rem, auto); }
-  :root[data-design="lull"] .disc-pick__title { align-self: start; }
   /* "+1" rides on the sticker's corner like a count badge, so the reason keeps the sticker's whole width */
   :root[data-design="lull"] .disc-pick .chip-more { position: absolute; top: -9px; right: -7px; margin: 0; box-shadow: 0 0 0 1.5px var(--reason-bg); }
   :root[data-design="lull"] .disc-home .disc-shelf, :root[data-design="lull"] .disc-home .disc-skel-shelf .skel-group { grid-template-columns: minmax(0, 1fr); }
   :root[data-design="lull"] .disc-home [data-region="radio"] .skel-group { grid-template-columns: minmax(0, 1fr); }
   /* horizontal chip rows fade at the edge instead of cutting a chip in half */
-  :root[data-design="lull"] :is(.disc-filters, .lib-segs ul) { -webkit-mask: linear-gradient(90deg, #000 calc(100% - 28px), transparent); mask: linear-gradient(90deg, #000 calc(100% - 28px), transparent); }
+  :root[data-design="lull"] .lib-segs ul { flex-wrap: wrap; }
+  :root[data-design="lull"] :is(.disc-filters, .disc-picks) { -webkit-mask: linear-gradient(90deg, #000 calc(100% - 28px), transparent); mask: linear-gradient(90deg, #000 calc(100% - 28px), transparent); }
+  /* a list that counts plays gives the title the row: the count rides under it */
+  :root[data-design="lull"] .tlist--plays .trow { grid-template-columns: var(--art) minmax(0, 1fr) 34px 40px; grid-template-areas: "art main like more" "art badges like more"; }
+  :root[data-design="lull"] .tlist--plays .trow__badges { justify-content: flex-start; }
+  :root[data-design="lull"] .tlist--plays .trow__plays { margin-left: 0; }
   /* rows: titles take two lines, "better than saved" drops to its own line so the artist stays whole */
   :root[data-design="lull"] .trow__title, :root[data-design="lull"] .tile__title, :root[data-design="lull"] .tile__title a { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
   :root[data-design="lull"] .trow__artist { flex-wrap: wrap; row-gap: 0; }
@@ -1902,9 +1990,9 @@
 :root[data-design="lull"] .nowcol__head { padding-right: 4px; }
 :root[data-design="lull"] .nowcol__title { color: var(--l-band-ink); font: inherit; letter-spacing: inherit; text-transform: lowercase; }
 :root[data-design="lull"] .nowcol__head .btn-icon { width: 26px; height: 26px; color: var(--l-band-ink); }
-:root[data-design="lull"] .nowcol__body { border-radius: 10px; background: var(--sky); padding: 14px; }
-:root[data-design="lull"] .nowcol__strip { border-radius: 10px; }
-/* ultra: the desk widgets get a little more room on the wallpaper */
-@media (min-width: 2400px) { :root[data-design="lull"] { --l-desk-w: 330px; } }
+:root[data-design="lull"] .nowcol__body { border-radius: 13px; background: linear-gradient(var(--l-sky-top), var(--sky) 240px); padding: 14px; }
+:root[data-design="lull"] .nowcol__strip { border-radius: 13px; }
+/* ultra: the gadget column gets a little more room */
+@media (min-width: 2400px) { :root[data-design="lull"] { --l-desk-w: 320px; } }
 
 }
