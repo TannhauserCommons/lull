@@ -148,7 +148,9 @@ EOF
   checks "$base" "$cand"
 }
 
-# Stacks the given "<topic> <tip>" lines onto $cand, adding each that rebases cleanly to $branches.
+# Stacks the given "<topic> <tip>" lines onto $cand, adding each that rebases cleanly to $branches. A topic that
+# conflicts only with topics stacked ahead of it isn't red: it waits for them, and the run after their verdict tries
+# it again. Only a conflict with main itself goes back to its owner.
 build() {
   while read -r topic tip; do
     [ -n "$topic" ] || continue
@@ -160,6 +162,11 @@ build() {
     git checkout -q --detach "$tip"
     if git rebase -q --onto "$cand" "$fork" 2>/dev/null; then
       new=$(git rev-parse HEAD)
+      if [ "$new" = "$cand" ] && [ "$cand" != "$base" ]; then
+        # Its commits are all in a topic ahead of it (one stacked on another): it lands with that one.
+        echo "queue/$topic: held whole by $(ahead "$fork" "$tip") ahead of it"
+        continue
+      fi
       if [ "$new" = "$cand" ]; then
         echo "queue/$topic: already in main"
         git push -q origin --delete "refs/heads/queue/$topic" || true
@@ -170,12 +177,33 @@ build() {
       status "$tip" pending "testing with $(git rev-list --count "$base..$cand") commits on main"
     else
       git rebase --abort
-      echo "queue/$topic: conflicts with main"
-      status "$tip" failure "conflicts with main: rebase on origin/main and push again"
+      if [ "$cand" != "$base" ] && git rebase -q --onto "$base" "$fork" 2>/dev/null; then
+        names=$(ahead "$fork" "$tip")
+        echo "queue/$topic: conflicts with $names ahead of it, not with main; tried again after their verdict"
+        status "$tip" pending "waits for $names: they change the same lines; tried again after their verdict"
+      else
+        git rebase --abort 2>/dev/null || true
+        echo "queue/$topic: conflicts with main"
+        status "$tip" failure "conflicts with main: rebase on origin/main and push again"
+      fi
     fi
   done <<EOF
 $1
 EOF
+}
+
+# The topics on $branches that change a file <fork>..<tip> changes (all of them, when none does), as "queue/a, queue/b".
+ahead() {
+  mine=$(git diff --name-only "$1" "$2")
+  names="" all=""
+  for b in $branches; do
+    t=${b%%:*} tt=${b#*:}
+    all="$all, queue/$t"
+    theirs=$(git diff --name-only "$(git merge-base "$base" "$tt")" "$tt")
+    if printf '%s\n' "$theirs" | grep -qxF "$mine"; then names="$names, queue/$t"; fi
+  done
+  names=${names:-$all}
+  echo "${names#, }"
 }
 
 land() {
