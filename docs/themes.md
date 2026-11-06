@@ -641,7 +641,8 @@ A pack is a `pack.json` with the files it names:
 ```
 
 lull's own packs are in `web/packs/` (`default` and one per design), made by `scripts/sounds/` from code. Read
-`web/packs/default/pack.json` and `pack.css` to see every egg lull has and how it draws them.
+`web/packs/default/pack.json` and `pack.css` to see every egg lull has and how it draws them; a design's pack draws
+lull's eggs its own way in its `pack.css`, and adds a few of its own.
 
 ### Sounds
 
