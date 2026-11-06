@@ -76,8 +76,9 @@ checks() { # <base> <candidate>
   want app '^(app/|crates/|web/desktop/|web/assets/icons/|rust-toolchain\.toml$)'
   want android '^(app/gen/android/|app/src/mobile/|app/build\.rs$|app/Cargo\.(toml|lock)$|app/tauri\.android\.conf\.json$|scripts/android-|rust-toolchain\.toml$)'
   want slskd '^(deploy/compose\.yaml$|app/build\.rs$|app/slskd/|crates/soulseek/|tests/slskd-contract/)'
-  # The Linux server package (ADR-0090): the hub it carries, the programs app/build.rs pins for it, how it is built.
-  want package '^(crates/|app/build\.rs$|app/licenses/|packaging/linux/|tests/hub-contract/|Cargo\.(toml|lock)$|rust-toolchain\.toml$)'
+  # The Linux server package (ADR-0090): how it is built, the programs app/build.rs pins for it, the contract, and the
+  # hub code only the package runs (its own slskd, its commands). Any other hub change reaches it in main-full.yml.
+  want package '^(packaging/linux/|tests/hub-contract/|app/build\.rs$|app/licenses/|crates/server/src/(managed/|cli/|admin\.rs$|kit\.rs$|launch\.rs$))'
   # What reaches the image: the hub's code, the web UI it embeds, and how both are built.
   want image '^(crates/|web/|share/hosts\.json$|Cargo\.(toml|lock)$|rust-toolchain\.toml$|Dockerfile$|\.dockerignore$|scripts/vendor-web\.sh$|scripts/web-dist/)'
   want pages '^(site/|web/assets/app-icon\.svg$|web/fonts/nunito-latin\.woff2$)'
