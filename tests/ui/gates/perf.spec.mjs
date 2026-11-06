@@ -46,7 +46,9 @@ for (const design of designs) {
         for (const route of ['/home', `/playlist/${ids.longPlaylist}`, '/now']) {
           const context = await browser.newContext({ baseURL, viewport: { width: 1440, height: 900 }, serviceWorkers: 'block' }), page = await context.newPage();
           const s = await S.idle(browser, page, { ...opts(design), theme }, route);
-          expect(s.frames, `main-thread frames in 2 s at rest on ${route}; in them: ${s.why}; running at the end: ${s.animations.join(' | ')}; missed the compositor at least once since load: ${s.offCompositor.join(' | ') || 'none'}`).toBeLessThanOrEqual(B.idleFrames);
+          // too many: which animation draws them, found by holding each still (S.whoDraws)
+          const who = s.frames > B.idleFrames ? await S.whoDraws(browser, page) : '';
+          expect(s.frames, `main-thread frames in 2 s at rest on ${route}; in them: ${s.why}; ${who}; running at the end: ${s.animations.join(' | ')}; missed the compositor at least once since load: ${s.offCompositor.join(' | ') || 'none'}`).toBeLessThanOrEqual(B.idleFrames);
           expect(s.loops, `loops drawn dearly at rest on ${route}`).toEqual([]);
           expect(s.drawn, `frames drawn in 2 s at rest on ${route}; running: ${s.animations.join(' | ')}`).toBeLessThanOrEqual(B.idleDrawnFrames);
           expect(s.composited.windows, `composited layers at rest on ${route}, in windows of area (${s.composited.layers} layers)`).toBeLessThanOrEqual(B.compositedWindows[design]);

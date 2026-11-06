@@ -327,6 +327,31 @@ export async function idle(browser, page, opts, route = '/home') {
   return s;
 }
 
+/* Which running animation draws main-thread frames at rest, for a count that fails. The restyles a trace shows don't
+   say: Chromium restyles every running loop in every frame the main thread draws, composited or not, so a loop the
+   compositor runs shows up in a frame something else drew. Holding loops still does say: all at once (frames that go on
+   come from something else), then each alone (the one whose hold stops them is the one the main thread runs), then all
+   let go, which makes Chromium decide afresh where each runs (frames that stop then were a decision it made once, at a
+   moment it couldn't composite, and kept). A second each, counted the same way */
+export async function whoDraws(browser, page) {
+  const count = async () => (await traced(browser, page, () => page.waitForTimeout(1000))).frames;
+  const names = await page.evaluate(() => (window.__gateRunning = document.getAnimations().filter((a) => a.playState === 'running')).map((a) => {
+    const t = a.effect?.target;
+    return `${a.animationName || a.transitionProperty || 'animation'} on ${t ? t.tagName.toLowerCase() + '.' + [...t.classList].slice(0, 2).join('.') : '?'}${a.effect?.pseudoElement || ''}`;
+  }));
+  const hold = (which, on) => page.evaluate(([which, on]) => window.__gateRunning.forEach((a, i) => { if (which < 0 || i === which) on ? a.pause() : a.play(); }), [which, on]);
+  await hold(-1, true);
+  const all = await count();
+  await hold(-1, false);
+  const each = [];
+  for (let i = 0; i < names.length; i++) {
+    await hold(i, true);
+    each.push(`${names[i]} ${await count()}`);
+    await hold(i, false);
+  }
+  return `frames in 1 s with every running animation held: ${all}; with each held alone: ${each.join(', ') || 'none running'}; all let go again: ${await count()}`;
+}
+
 // The loops on screen that draw more than they need to (docs/themes.md, Drawing cheaply): each one that never ends must
 // change at most 30 times a second, stepped where it is declared (steps(n), or a stepped easing), move only by transform
 // and opacity (the compositor's, no repaint), and stay clear of live glass (a backdrop-filter recomputes its blur for
