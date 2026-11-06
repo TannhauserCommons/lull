@@ -1,0 +1,320 @@
+/* lull's surprises, as the Aero desk draws them (ADR-0081): soap bubbles, gel orbs, a pane of glass catching the light.
+   Everything is drawn from gradients and a little inline SVG in slots/, nothing is downloaded, and only transform and
+   opacity move. The pack's own eggs (nudge, bubbles, future, buddy) and lull's, redrawn: a design's pack loads after
+   the default pack, so what is set here wins. Under reduced motion every egg stands still in the pose it ends in. */
+
+[data-egg-of] { position: absolute; inset: 0; overflow: clip; --eg-a: #7f9be0; --eg-b: #a593e4; --eg-c: #e09ac8; --eg-d: #8fe3f0; --eg-e: #fff9fe; }
+
+/* where the bottom of the desk's work ends: the taskbar on a desk, the mini player and the tabs on a phone */
+:root[data-egg] { --eg-bar: var(--bar-h, 96px); }
+@media (max-width: 639px) { :root[data-egg] { --eg-bar: calc(var(--mini-h, 64px) + var(--tab-h, 60px) + 26px + env(safe-area-inset-bottom, 0px)); } }
+
+/* ---------- the line: a glass pill with a gel lip, the same in every egg ---------- */
+.egg-line {
+  width: max-content; padding: 9px 22px 10px; border: 1.5px solid color-mix(in srgb, #2b2650 60%, transparent); border-radius: 999px; text-align: center;
+  color: #fff9fe; font: 400 1rem/1.25 var(--f-disp, "Audiowide", "Nunito", ui-rounded, sans-serif); letter-spacing: .02em; text-shadow: 0 1px 0 rgba(20, 10, 70, .55);
+  background:
+    linear-gradient(112deg, transparent 0 30%, rgba(255, 255, 255, .17) 30% 42%, transparent 42% 50%, rgba(255, 255, 255, .08) 50% 55%, transparent 55%),
+    linear-gradient(180deg, rgba(255, 255, 255, .5) 0 1px, rgba(255, 255, 255, .2) 1px, rgba(255, 255, 255, .05) 48%, transparent 52%, rgba(0, 0, 0, .12) 100%),
+    #5a47c9;
+  box-shadow: inset 0 -3px 6px rgba(215, 200, 255, .38), 0 2px 0 rgba(20, 10, 70, .32), 0 10px 22px -8px rgba(43, 38, 80, .6);
+  bottom: calc(var(--eg-bar) + 40px);
+}
+
+/* ---------- lull's own eggs ---------- */
+
+/* 3 in the morning: the logo nods off, its sparkle a crescent moon, and a z hangs over it */
+:root[data-design="lull"][data-egg~="night-owl"] .wordmark { opacity: .72; transform-origin: 22% 100%; }
+:root[data-design="lull"][data-egg~="night-owl"] .wordmark .wordmark__spark { display: none; }
+:root[data-design="lull"][data-egg~="night-owl"] .wordmark::after {
+  content: ""; display: block; width: .78em; height: .78em; margin: .3em 0 0 .14em; border-radius: 50%; transform: rotate(-30deg);
+  box-shadow: inset -.26em -.08em 0 -.02em #ffe9a8;
+}
+:root[data-design="lull"][data-egg~="night-owl"] .wordmark::before {
+  content: "zZ"; position: absolute; right: 7px; top: 3px; font: 400 .5em/1 var(--f-disp); letter-spacing: 0; color: #fff9fe;
+  text-shadow: 0 0 6px #b9a7ff, 0 0 2px #fff, 0 1px 0 rgba(20, 10, 70, .6); transform: translate(0, 0);
+}
+
+/* lull's birthday: the logo's sparkle turns gold and grows, and a pop of confetti leaves it */
+:root[data-design="lull"][data-egg~="birthday"] .wordmark::after { content: none; }
+:root[data-design="lull"][data-egg~="birthday"] .lull-wm .wordmark__spark { background: #ffe9a8; scale: 1.45; }
+
+/* the countdown: a glass orb that holds the number */
+:root[data-egg~="new-year"] .egg-line {
+  top: 40%; bottom: auto; transform: translate(-50%, -50%); display: grid; place-items: center; width: clamp(128px, 15vw, 196px); aspect-ratio: 1; padding: 0 0 .06em; border-radius: 50%;
+  font: 400 clamp(3.4rem, 6.4vw, 5.6rem)/1 var(--f-disp, "Audiowide", "Nunito", sans-serif); letter-spacing: 0; border-color: #43389c;
+  background:
+    radial-gradient(circle at 33% 22%, rgba(255, 255, 255, .85) 0 4%, rgba(255, 255, 255, 0) 24%),
+    radial-gradient(90% 55% at 50% 108%, rgba(235, 225, 255, .6), transparent 70%),
+    linear-gradient(180deg, #b8adf7 0%, #6e5ed4 24%, #5a4ac0 52%, #5042b2 76%, #8373de 100%);
+  box-shadow: inset 0 -6px 12px rgba(215, 200, 255, .5), 0 0 0 6px rgba(190, 170, 255, .28), 0 0 44px 10px rgba(170, 150, 255, .55);
+}
+:root[data-egg~="new-year-hello"] .egg-line { font-size: 1.5rem; padding: 12px 30px 13px; }
+
+/* a word in the song's title: its sign, a small gel orb after the title in the player bar */
+:root[data-design="lull"][data-egg] .pbar__title > a::after {
+  display: inline-grid; place-items: center; min-width: 1.6em; height: 1.6em; margin-left: .5em; padding: 0 .15em; vertical-align: middle; border-radius: 999px;
+  font-size: .8em; line-height: 1; font-weight: 400; opacity: 1; color: #fff; text-shadow: 0 1px 0 rgba(20, 10, 70, .6);
+  background: var(--l-hi-sm, none), var(--l-gloss, #5a4ac0); border: 1px solid var(--l-gloss-edge, #43389c); box-shadow: inset 0 -2px 3px var(--l-gloss-glow, rgba(215, 200, 255, .6));
+}
+:root[data-design="lull"]:is([data-egg~="sun"], [data-egg~="fire"], [data-egg~="star"]) .pbar__title > a::after {
+  background: var(--l-hi-sm, none), var(--l-pink-gloss, #c66fa8); border-color: var(--l-pink-edge, #8e3f74); box-shadow: inset 0 -2px 3px rgba(255, 220, 240, .6);
+}
+:root[data-egg~="future"] { --egg-sign: "\25C8"; }
+
+/* left alone on Now Playing: the logo breathes, and a ring of light breathes round it */
+:root[data-design="lull"][data-egg~="still"] .wordmark::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; box-shadow: 0 0 0 3px rgba(255, 255, 255, .55), 0 0 22px 7px rgba(225, 210, 255, .95); opacity: .85;
+}
+
+/* ---------- the pieces slots are made of ---------- */
+.lull-egg-bub, .lull-egg-bubbles i, .lull-egg-word {
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 30% 24%, rgba(255, 255, 255, .95) 0 4%, rgba(255, 255, 255, 0) 16%),
+    radial-gradient(circle at 70% 84%, rgba(255, 255, 255, .5), rgba(255, 255, 255, 0) 24%),
+    radial-gradient(circle, rgba(255, 255, 255, .05) 50%, rgba(166, 190, 255, .3) 69%, rgba(255, 166, 226, .38) 85%, rgba(150, 236, 255, .62) 100%),
+    conic-gradient(from 30deg, rgba(255, 170, 226, .24), rgba(160, 200, 255, .22), rgba(166, 255, 236, .22), rgba(255, 236, 170, .2), rgba(255, 170, 226, .24));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .62), 0 0 18px rgba(170, 150, 255, .4);
+}
+
+/* ---------- a word's bubble: it lifts off the player bar with the word's picture inside ---------- */
+.lull-egg-word {
+  --tint: #cfc0ff; position: absolute; left: 26px; bottom: calc(var(--eg-bar) + 8px); width: 68px; height: 68px; display: grid; place-items: center;
+  background-color: color-mix(in srgb, var(--tint) 26%, rgb(74 63 163 / .86));
+}
+.lull-egg-word svg { width: 70%; height: 70%; display: block; }
+[data-egg-of="moon"] .lull-egg-word { --tint: #ffe9a8; }
+[data-egg-of="rain"] .lull-egg-word { --tint: #9fd6ff; }
+[data-egg-of="star"] .lull-egg-word { --tint: #fff2a0; }
+[data-egg-of="sun"] .lull-egg-word { --tint: #ffcf6e; }
+[data-egg-of="snow"] .lull-egg-word { --tint: #d6f0ff; }
+[data-egg-of="night"] .lull-egg-word { --tint: #5a55c8; }
+[data-egg-of="sea"] .lull-egg-word { --tint: #7fe0e8; }
+[data-egg-of="storm"] .lull-egg-word { --tint: #a58ff0; }
+[data-egg-of="fire"] .lull-egg-word { --tint: #ff9f7a; }
+[data-egg-of="dream"] .lull-egg-word { --tint: #f6b6ee; }
+
+/* ---------- confetti: gel dots that leave the logo ---------- */
+.lull-egg-confetti i {
+  position: absolute; left: 64px; top: 28px; width: 15px; height: 15px; margin: -7px 0 0 -7px; border-radius: 50%; --c: var(--eg-b);
+  background: radial-gradient(circle at 34% 26%, #fff 0 12%, rgba(255, 255, 255, 0) 38%), var(--c);
+  box-shadow: inset 0 -2px 2px rgba(20, 10, 70, .18); transform: translate(var(--x), var(--y)) rotate(var(--r)); opacity: .9;
+}
+.lull-egg-confetti i:nth-child(3n) { width: 21px; height: 10px; border-radius: 4px; margin-top: -5px; }
+.lull-egg-confetti i:nth-child(5n + 1) { --c: var(--eg-c); }
+.lull-egg-confetti i:nth-child(5n + 2) { --c: var(--eg-a); }
+.lull-egg-confetti i:nth-child(5n + 3) { --c: var(--eg-d); }
+.lull-egg-confetti i:nth-child(5n + 4) { --c: #ffe9a8; }
+
+.lull-egg-confetti i:nth-child(1) { --x: 238px; --y: 218px; --r: -392deg; animation-delay: 0.21s; }
+.lull-egg-confetti i:nth-child(2) { --x: 509px; --y: 194px; --r: -101deg; animation-delay: 0.01s; }
+.lull-egg-confetti i:nth-child(3) { --x: 180px; --y: 150px; --r: 329deg; animation-delay: 0.01s; }
+.lull-egg-confetti i:nth-child(4) { --x: 579px; --y: 488px; --r: -414deg; animation-delay: 0.14s; }
+.lull-egg-confetti i:nth-child(5) { --x: 682px; --y: 301px; --r: -268deg; animation-delay: 0.07s; }
+.lull-egg-confetti i:nth-child(6) { --x: 230px; --y: 123px; --r: -170deg; animation-delay: 0.03s; }
+.lull-egg-confetti i:nth-child(7) { --x: 215px; --y: 208px; --r: -412deg; animation-delay: 0.14s; }
+.lull-egg-confetti i:nth-child(8) { --x: 342px; --y: 372px; --r: 103deg; animation-delay: 0.12s; }
+.lull-egg-confetti i:nth-child(9) { --x: 154px; --y: 362px; --r: -172deg; animation-delay: 0.17s; }
+.lull-egg-confetti i:nth-child(10) { --x: 494px; --y: 219px; --r: 163deg; animation-delay: 0.18s; }
+.lull-egg-confetti i:nth-child(11) { --x: 722px; --y: 232px; --r: 316deg; animation-delay: 0.04s; }
+.lull-egg-confetti i:nth-child(12) { --x: 679px; --y: 308px; --r: -382deg; animation-delay: 0.19s; }
+.lull-egg-confetti i:nth-child(13) { --x: 541px; --y: 429px; --r: 177deg; animation-delay: 0.15s; }
+.lull-egg-confetti i:nth-child(14) { --x: 339px; --y: 389px; --r: 12deg; animation-delay: 0.12s; }
+.lull-egg-confetti i:nth-child(15) { --x: 138px; --y: 272px; --r: 372deg; animation-delay: 0.07s; }
+.lull-egg-confetti i:nth-child(16) { --x: 517px; --y: 236px; --r: 405deg; animation-delay: 0.09s; }
+.lull-egg-confetti i:nth-child(17) { --x: 344px; --y: 324px; --r: 48deg; animation-delay: 0.03s; }
+.lull-egg-confetti i:nth-child(18) { --x: 386px; --y: 252px; --r: -375deg; animation-delay: 0.04s; }
+.lull-egg-confetti i:nth-child(19) { --x: 298px; --y: 189px; --r: 341deg; animation-delay: 0.22s; }
+.lull-egg-confetti i:nth-child(20) { --x: 396px; --y: 195px; --r: 239deg; animation-delay: 0.24s; }
+.lull-egg-confetti i:nth-child(21) { --x: 265px; --y: 116px; --r: -63deg; animation-delay: 0.00s; }
+.lull-egg-confetti i:nth-child(22) { --x: 140px; --y: 281px; --r: -242deg; animation-delay: 0.10s; }
+
+/* ---------- fireworks: three bursts of light for the first seconds of the year ---------- */
+.lull-egg-burst { position: absolute; width: 0; height: 0; }
+.lull-egg-burst:nth-child(1) { left: 24%; top: 26%; }
+.lull-egg-burst:nth-child(2) { left: 70%; top: 20%; --s: .7s; }
+.lull-egg-burst:nth-child(3) { left: 47%; top: 36%; --s: 1.4s; }
+.lull-egg-burst i {
+  position: absolute; left: -13px; top: -3px; width: 26px; height: 6px; border-radius: 6px; --c: #fff9fe; box-shadow: 0 0 8px 1px var(--c);
+  background: linear-gradient(90deg, transparent, var(--c)); transform: rotate(var(--a)) translateX(90px); opacity: .9;
+}
+.lull-egg-burst i:nth-child(3n + 1) { --c: var(--eg-c); }
+.lull-egg-burst i:nth-child(3n + 2) { --c: var(--eg-d); }
+.lull-egg-burst i:nth-child(4n) { --c: #ffe9a8; }
+.lull-egg-burst i:nth-child(1) { --a: 0.0deg; }
+.lull-egg-burst i:nth-child(2) { --a: 25.7deg; }
+.lull-egg-burst i:nth-child(3) { --a: 51.4deg; }
+.lull-egg-burst i:nth-child(4) { --a: 77.1deg; }
+.lull-egg-burst i:nth-child(5) { --a: 102.9deg; }
+.lull-egg-burst i:nth-child(6) { --a: 128.6deg; }
+.lull-egg-burst i:nth-child(7) { --a: 154.3deg; }
+.lull-egg-burst i:nth-child(8) { --a: 180.0deg; }
+.lull-egg-burst i:nth-child(9) { --a: 205.7deg; }
+.lull-egg-burst i:nth-child(10) { --a: 231.4deg; }
+.lull-egg-burst i:nth-child(11) { --a: 257.1deg; }
+.lull-egg-burst i:nth-child(12) { --a: 282.9deg; }
+.lull-egg-burst i:nth-child(13) { --a: 308.6deg; }
+.lull-egg-burst i:nth-child(14) { --a: 334.3deg; }
+
+/* ---------- a disc, spinning ---------- */
+.lull-egg-cd { position: absolute; left: 50%; bottom: calc(var(--eg-bar) + 96px); width: 96px; height: 96px; margin-left: -48px; }
+.lull-egg-cd i {
+  display: block; width: 100%; height: 100%; border-radius: 50%;
+  background:
+    radial-gradient(circle, transparent 0 17%, rgba(255, 255, 255, .85) 17.5% 20%, rgba(255, 255, 255, .18) 20.5% 31%, transparent 31.5%),
+    conic-gradient(from 10deg, #ffd0ec, #b6c7f5 14%, #bff3f7 25%, #fff6c8 37%, #ffd0ec 50%, #b6c7f5 64%, #bff3f7 75%, #fff6c8 87%, #ffd0ec);
+  -webkit-mask: radial-gradient(circle, transparent 0 8%, #000 8.6%); mask: radial-gradient(circle, transparent 0 8%, #000 8.6%);
+}
+.lull-egg-cd::after {
+  content: ""; position: absolute; inset: 0; border-radius: 50%; box-shadow: inset 0 0 0 1.5px rgba(43, 38, 80, .5), 0 8px 18px -8px rgba(43, 38, 80, .7);
+  background: conic-gradient(from 0deg, rgba(255, 255, 255, 0) 0 8%, rgba(255, 255, 255, .55) 12%, rgba(255, 255, 255, 0) 17% 58%, rgba(255, 255, 255, .4) 62%, rgba(255, 255, 255, 0) 67%);
+  -webkit-mask: radial-gradient(circle, transparent 0 8%, #000 8.6%); mask: radial-gradient(circle, transparent 0 8%, #000 8.6%);
+}
+
+/* ---------- hearts: pink gel, rising ---------- */
+.lull-egg-hearts i {
+  position: absolute; bottom: calc(var(--eg-bar) + 10px); left: var(--x); width: var(--w); height: var(--w); transform: translate(0, calc(var(--up) * -1)); opacity: .9;
+  background: radial-gradient(circle at 32% 26%, #fff 0 8%, rgba(255, 255, 255, 0) 30%), radial-gradient(90% 50% at 50% 104%, rgba(255, 235, 248, .6), transparent 72%),
+    linear-gradient(180deg, #fbd9ec 0%, #e3a0cb 24%, #c66fa8 54%, #b35d97 78%, #e09ac6 100%);
+  -webkit-mask: var(--heart) center / contain no-repeat; mask: var(--heart) center / contain no-repeat;
+  --heart: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 21.5S3 15.6 3 9.2A5.2 5.2 0 0 1 12 6a5.2 5.2 0 0 1 9 3.2c0 6.4-9 12.3-9 12.3z'/%3E%3C/svg%3E");
+}
+.lull-egg-hearts i:nth-child(1) { --x: 34%; --w: 58px; --up: 420px; animation-delay: 0.00s; animation-duration: 2.9s; }
+.lull-egg-hearts i:nth-child(2) { --x: 41%; --w: 38px; --up: 340px; animation-delay: 0.22s; animation-duration: 3.3s; }
+.lull-egg-hearts i:nth-child(3) { --x: 47%; --w: 68px; --up: 470px; animation-delay: 0.44s; animation-duration: 3.7s; }
+.lull-egg-hearts i:nth-child(4) { --x: 52%; --w: 44px; --up: 360px; animation-delay: 0.66s; animation-duration: 2.9s; }
+.lull-egg-hearts i:nth-child(5) { --x: 58%; --w: 62px; --up: 440px; animation-delay: 0.88s; animation-duration: 3.3s; }
+.lull-egg-hearts i:nth-child(6) { --x: 63%; --w: 36px; --up: 320px; animation-delay: 1.10s; animation-duration: 3.7s; }
+.lull-egg-hearts i:nth-child(7) { --x: 39%; --w: 46px; --up: 300px; animation-delay: 1.32s; animation-duration: 2.9s; }
+.lull-egg-hearts i:nth-child(8) { --x: 55%; --w: 54px; --up: 390px; animation-delay: 1.54s; animation-duration: 3.3s; }
+.lull-egg-hearts i:nth-child(9) { --x: 45%; --w: 34px; --up: 280px; animation-delay: 1.76s; animation-duration: 3.7s; }
+
+/* ---------- the busy ring: the glowing circle a system turned while it thought ---------- */
+.lull-egg-busy { position: absolute; left: 50%; bottom: calc(var(--eg-bar) + 50px); width: 48px; height: 48px; margin-left: -24px; border-radius: 50%; box-shadow: 0 0 20px 4px rgba(150, 190, 255, .55), inset 0 0 0 1.5px rgba(255, 255, 255, .5); }
+.lull-egg-busy i {
+  display: block; width: 100%; height: 100%; border-radius: 50%;
+  background: conic-gradient(from 0deg, rgba(143, 227, 240, 0) 0 30%, rgba(143, 227, 240, .35) 55%, #8fe3f0 88%, #fff 100%);
+  -webkit-mask: radial-gradient(circle, transparent 0 14px, #000 15px 23px, transparent 24px); mask: radial-gradient(circle, transparent 0 14px, #000 15px 23px, transparent 24px);
+}
+.lull-egg-busy::after { content: ""; position: absolute; inset: 10px; border-radius: 50%; background: radial-gradient(circle at 34% 26%, rgba(255, 255, 255, .9) 0 8%, rgba(255, 255, 255, 0) 38%), radial-gradient(circle, rgba(166, 190, 255, .4), rgba(120, 100, 220, .5)); }
+
+/* ---------- the start-up bloom: rings of glass opening from the middle of the desk ---------- */
+.lull-egg-bloom { position: absolute; left: 50%; top: 46%; width: 0; height: 0; }
+.lull-egg-bloom i { position: absolute; left: -160px; top: -160px; width: 320px; height: 320px; border-radius: 50%; box-shadow: inset 0 0 0 5px rgba(255, 255, 255, .85), inset 0 0 50px 12px rgba(190, 170, 255, .55), 0 0 50px 10px rgba(190, 170, 255, .5); transform: scale(.9); opacity: .55; }
+.lull-egg-bloom i:nth-child(1) { box-shadow: inset 0 0 0 5px rgba(255, 190, 235, .9), inset 0 0 50px 12px rgba(255, 170, 226, .5), 0 0 50px 10px rgba(255, 170, 226, .45); }
+.lull-egg-bloom i:nth-child(3) { box-shadow: inset 0 0 0 5px rgba(190, 245, 255, .9), inset 0 0 50px 12px rgba(143, 227, 240, .5), 0 0 50px 10px rgba(143, 227, 240, .45); }
+.lull-egg-bloom b { position: absolute; left: -230px; top: -230px; width: 460px; height: 460px; border-radius: 50%; background: radial-gradient(circle, rgba(255, 255, 255, .55), rgba(190, 170, 255, .22) 40%, transparent 70%); opacity: .6; }
+
+/* ---------- bubbles: the old screen saver, rising up the glass ---------- */
+.lull-egg-bubbles i { position: absolute; bottom: calc(var(--s) * -1); left: var(--l); width: var(--s); height: var(--s); transform: translate(0, calc(var(--y0) * -1vh)); opacity: .85; }
+.lull-egg-bubbles i:nth-child(1) { --l: 7%; --s: 96px; --y0: 40; --dx: -30px; --d: 22s; --n: 440; animation-delay: -0s; }
+.lull-egg-bubbles i:nth-child(2) { --l: 16%; --s: 52px; --y0: 70; --dx: 24px; --d: 17s; --n: 340; animation-delay: -7s; }
+.lull-egg-bubbles i:nth-child(3) { --l: 26%; --s: 138px; --y0: 20; --dx: 40px; --d: 27s; --n: 540; animation-delay: -14s; }
+.lull-egg-bubbles i:nth-child(4) { --l: 38%; --s: 64px; --y0: 62; --dx: -26px; --d: 19s; --n: 380; animation-delay: -2s; }
+.lull-egg-bubbles i:nth-child(5) { --l: 47%; --s: 112px; --y0: 34; --dx: 18px; --d: 24s; --n: 480; animation-delay: -4s; }
+.lull-egg-bubbles i:nth-child(6) { --l: 58%; --s: 44px; --y0: 80; --dx: -34px; --d: 16s; --n: 320; animation-delay: -3s; }
+.lull-egg-bubbles i:nth-child(7) { --l: 67%; --s: 150px; --y0: 14; --dx: -20px; --d: 28s; --n: 560; animation-delay: -14s; }
+.lull-egg-bubbles i:nth-child(8) { --l: 77%; --s: 72px; --y0: 52; --dx: 36px; --d: 20s; --n: 400; animation-delay: -9s; }
+.lull-egg-bubbles i:nth-child(9) { --l: 86%; --s: 100px; --y0: 28; --dx: -40px; --d: 25s; --n: 500; animation-delay: -6s; }
+.lull-egg-bubbles i:nth-child(10) { --l: 93%; --s: 56px; --y0: 66; --dx: 22px; --d: 18s; --n: 360; animation-delay: -9s; }
+
+/* ---------- a glint across the glass: light slides over every window, and sparkles come out ---------- */
+.lull-egg-glint i { position: absolute; top: -20vh; left: 0; width: 22vw; height: 140vh; transform: translateX(-30vw) rotate(16deg); opacity: 0;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, .32) 42%, rgba(205, 190, 255, .42) 58%, rgba(255, 255, 255, 0)); }
+.lull-egg-glint i:nth-child(2) { width: 7vw; margin-left: 24vw; }
+.lull-egg-glint b { position: absolute; width: 26px; height: 26px; background: #fff9fe; opacity: .9;
+  -webkit-mask: var(--spark) center / contain no-repeat; mask: var(--spark) center / contain no-repeat;
+  --spark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 0c.6 6.6 5.4 11.4 12 12-6.6.6-11.4 5.4-12 12-.6-6.6-5.4-11.4-12-12C6.6 11.4 11.4 6.6 12 0z'/%3E%3C/svg%3E"); }
+.lull-egg-glint b:nth-of-type(1) { left: 18%; top: 14%; } .lull-egg-glint b:nth-of-type(2) { left: 42%; top: 9%; width: 18px; height: 18px; }
+.lull-egg-glint b:nth-of-type(3) { left: 61%; top: 22%; width: 34px; height: 34px; } .lull-egg-glint b:nth-of-type(4) { left: 79%; top: 12%; }
+.lull-egg-glint b:nth-of-type(5) { left: 33%; top: 44%; width: 20px; height: 20px; } .lull-egg-glint b:nth-of-type(6) { left: 88%; top: 40%; width: 22px; height: 22px; }
+
+/* ---------- the buddy: a gel orb that looks in when nobody is about, and its speech bubble ---------- */
+.lull-egg-buddy { position: absolute; left: 26px; bottom: calc(var(--eg-bar) + 10px); width: 78px; height: 78px; }
+.lull-egg-buddy__orb {
+  position: relative; display: block; width: 100%; height: 100%; border-radius: 50%; border: 1.5px solid #43389c;
+  background: radial-gradient(circle at 33% 20%, rgba(255, 255, 255, .85) 0 5%, rgba(255, 255, 255, 0) 22%), radial-gradient(90% 50% at 50% 106%, rgba(235, 225, 255, .6), transparent 72%),
+    linear-gradient(180deg, #b8adf7 0%, #6e5ed4 24%, #5a4ac0 52%, #5042b2 76%, #8373de 100%);
+  box-shadow: inset 0 -5px 9px rgba(215, 200, 255, .5), 0 0 0 4px rgba(190, 170, 255, .26), 0 8px 18px -6px rgba(43, 38, 80, .65);
+}
+.lull-egg-buddy__orb b { position: absolute; top: 38%; width: 13px; height: 19px; border-radius: 50%; background: radial-gradient(circle at 36% 62%, #2b2650 0 36%, transparent 40%), #fff9fe; transform-origin: 50% 60%; }
+.lull-egg-buddy__orb b:nth-child(1) { left: 28%; } .lull-egg-buddy__orb b:nth-child(2) { right: 28%; }
+.lull-egg-buddy__orb s { position: absolute; left: 36%; right: 36%; top: 64%; height: 9px; border: 0 solid #fff9fe; border-bottom-width: 2.5px; border-radius: 0 0 14px 14px; }
+:root[data-egg~="buddy"] .egg-line {
+  left: 118px; bottom: calc(var(--eg-bar) + 40px); transform: none; max-width: min(360px, calc(100vw - 150px)); text-align: left; border-radius: 22px 22px 22px 6px;
+  background: linear-gradient(180deg, #fff 0, #f4efff); color: #2b2650; text-shadow: none; border-color: #5544aa; font: 800 .9375rem/1.3 var(--f-ui, "Nunito", sans-serif); letter-spacing: 0;
+  box-shadow: inset 0 -3px 5px rgba(165, 147, 228, .3), 0 3px 0 rgba(43, 38, 80, .35), 0 12px 24px -10px rgba(43, 38, 80, .6);
+}
+:root[data-egg~="buddy"] .egg-line::before { content: ""; position: absolute; left: -9px; bottom: 6px; width: 16px; height: 16px; background: #f4efff; border: 1.5px solid #5544aa; border-width: 0 0 1.5px 1.5px; transform: skewX(-24deg) rotate(0deg); border-radius: 0 0 0 5px; }
+
+@media (prefers-reduced-motion: no-preference) {
+  /* the line pops in, like a tooltip on glass */
+  .egg-line { animation: eg-pop .45s cubic-bezier(.3, 1.45, .5, 1) both; }
+  /* the nod: the logo drops its head slowly (10 changes a second) */
+  :root:not([data-motion="reduce"])[data-egg~="night-owl"] .wordmark { animation: eg-nod 5.5s var(--loop-ease-in-out-55) infinite alternate; animation-play-state: var(--loop-play, running); }
+  :root:not([data-motion="reduce"])[data-egg~="night-owl"] .wordmark::before { animation: eg-zz 4.2s var(--loop-ease-in-out-42) infinite alternate; animation-play-state: var(--loop-play, running); }
+  :root:not([data-motion="reduce"])[data-egg~="still"] .wordmark::before { animation: eg-halo 5.5s var(--loop-ease-in-out-55) infinite alternate; animation-play-state: var(--loop-play, running); }
+  :root:not([data-motion="reduce"])[data-egg~="still"] .wordmark { animation: lull-egg-breathe 5.5s var(--loop-ease-in-out-55) infinite alternate; animation-play-state: var(--loop-play, running); }
+  :root:not([data-motion="reduce"])[data-egg~="birthday"] .lull-wm .wordmark__spark { animation: eg-twinkle 2.7s var(--loop-ease-in-out-27) infinite alternate; animation-play-state: var(--loop-play, running); }
+  :root:not([data-motion="reduce"]) .lull-egg-word { animation: eg-lift 5.6s cubic-bezier(.25, .6, .3, 1) both; }
+  :root:not([data-motion="reduce"]) .lull-egg-confetti i { animation: eg-conf 2.9s cubic-bezier(.12, .7, .3, 1) both; }
+  :root:not([data-motion="reduce"]) .lull-egg-burst i { animation: eg-spark 1.9s cubic-bezier(.1, .7, .3, 1) var(--s, 0s) both; }
+  :root:not([data-motion="reduce"]) .lull-egg-cd { animation: eg-cd-in .8s cubic-bezier(.3, 1.4, .5, 1) both; }
+  :root:not([data-motion="reduce"]) .lull-egg-cd i { animation: eg-spin 2.4s steps(48) infinite; animation-play-state: var(--loop-play, running); }
+  :root:not([data-motion="reduce"]) .lull-egg-hearts i { animation: eg-heart 3.3s cubic-bezier(.2, .6, .4, 1) both; }
+  :root:not([data-motion="reduce"]) .lull-egg-busy i { animation: eg-spin 1.2s steps(24) infinite; }
+  :root:not([data-motion="reduce"]) .lull-egg-bloom i { animation: eg-ring 3.2s cubic-bezier(.2, .7, .3, 1) both; }
+  :root:not([data-motion="reduce"]) .lull-egg-bloom i:nth-child(2) { animation-delay: .35s; } :root:not([data-motion="reduce"]) .lull-egg-bloom i:nth-child(3) { animation-delay: .7s; }
+  :root:not([data-motion="reduce"]) .lull-egg-bloom b { animation: eg-bloom 3.4s ease-out both; }
+  :root:not([data-motion="reduce"]) .lull-egg-bubbles i { animation: eg-rise var(--d) steps(var(--n)) infinite; animation-play-state: var(--loop-play, running); }
+  :root:not([data-motion="reduce"]) .lull-egg-glint i { animation: eg-sweep 2s cubic-bezier(.4, 0, .3, 1) both; }
+  :root:not([data-motion="reduce"]) .lull-egg-glint i:nth-child(2) { animation-delay: .18s; }
+  :root:not([data-motion="reduce"]) .lull-egg-glint b { animation: eg-star 1.4s ease-out both; }
+  :root:not([data-motion="reduce"]) .lull-egg-glint b:nth-of-type(1) { animation-delay: 0.30s; }
+  :root:not([data-motion="reduce"]) .lull-egg-glint b:nth-of-type(2) { animation-delay: 0.52s; }
+  :root:not([data-motion="reduce"]) .lull-egg-glint b:nth-of-type(3) { animation-delay: 0.74s; }
+  :root:not([data-motion="reduce"]) .lull-egg-glint b:nth-of-type(4) { animation-delay: 0.96s; }
+  :root:not([data-motion="reduce"]) .lull-egg-glint b:nth-of-type(5) { animation-delay: 1.18s; }
+  :root:not([data-motion="reduce"]) .lull-egg-glint b:nth-of-type(6) { animation-delay: 1.40s; }
+  :root:not([data-motion="reduce"])[data-egg~="nudge"] :is(.header, .main, .ctx, .nowcol, .pbar) { animation: eg-shake .8s ease-in-out 2; }
+  :root:not([data-motion="reduce"])[data-egg~="nudge"] :is(.ctx, .nowcol) { animation-delay: .06s; } :root:not([data-motion="reduce"])[data-egg~="nudge"] .pbar { animation-delay: .12s; }
+  :root:not([data-motion="reduce"]) .lull-egg-buddy { animation: eg-peek 16s cubic-bezier(.3, 1.3, .5, 1) both; }
+  :root:not([data-motion="reduce"])[data-egg~="buddy"] .egg-line { animation: eg-say 16s ease-out both; }
+  :root:not([data-motion="reduce"]) .lull-egg-buddy__orb b { animation: eg-blink 4.4s step-end infinite; animation-play-state: var(--loop-play, running); }
+  :root:not([data-motion="reduce"]) .lull-egg-buddy__orb s { animation: eg-grin 16s ease-out both; }
+
+  @keyframes eg-pop { from { scale: .6; opacity: 0; } }
+  @keyframes eg-nod { from { rotate: -3deg; } to { rotate: 4deg; } }
+  @keyframes eg-zz { from { transform: translate(0, 1px); opacity: .55; } to { transform: translate(3px, -3px); opacity: 1; } }
+  @keyframes eg-halo { to { opacity: .15; } }
+  @keyframes eg-twinkle { from { opacity: .55; } to { opacity: 1; } }
+  @keyframes eg-lift {
+    0% { transform: translate(0, 30px) scale(.4); opacity: 0; }
+    10% { opacity: 1; }
+    45% { transform: translate(22px, -120px) scale(1.1); }
+    62% { opacity: 1; }
+    100% { transform: translate(-8px, -300px) scale(1.25); opacity: 0; }
+  }
+  @keyframes eg-conf { 0% { transform: translate(0, 0) scale(.3) rotate(0); opacity: 1; } 70% { opacity: 1; } 100% { transform: translate(var(--x), var(--y)) rotate(var(--r)); opacity: 0; } }
+  @keyframes eg-spark { 0% { transform: rotate(var(--a)) translateX(6px) scaleX(.4); opacity: 1; } 70% { opacity: 1; } 100% { transform: rotate(var(--a)) translateX(170px) scaleX(1); opacity: 0; } }
+  @keyframes eg-cd-in { from { transform: translateY(40px) scale(.5); opacity: 0; } }
+  @keyframes eg-spin { to { transform: rotate(360deg); } }
+  @keyframes eg-heart { 0% { transform: translate(0, 0) scale(.4); opacity: 0; } 12% { opacity: .95; } 50% { transform: translate(14px, calc(var(--up) * -.55)) scale(1); opacity: .95; } 100% { transform: translate(-10px, calc(var(--up) * -1)) scale(1.1); opacity: 0; } }
+  @keyframes eg-ring { 0% { transform: scale(.15); opacity: 0; } 15% { opacity: 1; } 100% { transform: scale(1.5); opacity: 0; } }
+  @keyframes eg-bloom { 0% { transform: scale(.2); opacity: 0; } 25% { opacity: 1; } 100% { transform: scale(1.6); opacity: 0; } }
+  @keyframes eg-rise {
+    0% { transform: translate(0, 0); opacity: 0; } 6% { opacity: .85; } 92% { opacity: .85; }
+    100% { transform: translate(var(--dx), calc(-100vh - var(--s) * 2)); opacity: 0; }
+  }
+  @keyframes eg-sweep { 0% { transform: translateX(-30vw) rotate(16deg); opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { transform: translateX(130vw) rotate(16deg); opacity: 0; } }
+  @keyframes eg-star { 0% { transform: scale(0) rotate(-40deg); opacity: 0; } 40% { transform: scale(1.15) rotate(10deg); opacity: 1; } 100% { transform: scale(.2) rotate(40deg); opacity: 0; } }
+  @keyframes eg-shake {
+    0%, 100% { transform: none; } 10% { transform: translate(-9px, 2px) rotate(-.25deg); } 20% { transform: translate(8px, -2px) rotate(.25deg); }
+    30% { transform: translate(-7px, 2px); } 40% { transform: translate(6px, -1px); } 50% { transform: translate(-5px, 1px); } 60% { transform: translate(4px, 0); } 75% { transform: translate(-2px, 0); }
+  }
+  @keyframes eg-peek { 0% { transform: translateY(130px); } 6% { transform: translateY(-10px); } 9% { transform: none; } 90% { transform: none; opacity: 1; } 100% { transform: translateY(130px); opacity: 0; } }
+  @keyframes eg-say { 0%, 8% { scale: .5; opacity: 0; } 14% { scale: 1; opacity: 1; } 90% { opacity: 1; } 100% { opacity: 0; } }
+  @keyframes eg-grin { 0%, 12% { transform: scaleY(.3); } 18% { transform: scaleY(1.2); } 24%, 100% { transform: none; } }
+  @keyframes eg-blink { 0%, 90% { transform: none; } 93% { transform: scaleY(.1); } 96%, 100% { transform: none; } }
+}
