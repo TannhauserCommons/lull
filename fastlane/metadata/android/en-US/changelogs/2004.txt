@@ -1,0 +1,9 @@
+The new designs.
+* Five new looks: lull's candy desktop, Starlight, Skydeck, Petal and Glasshouse
+* Steadier, fresher picks, with the exact reason and where each can play
+* Liking a song can save it too
+* Songs found only inside a full-album video play on their own
+* Add to queue straight from a shared link
+* On Windows, songs stream and seek while they download
+* YouTube copies are checked by their sound
+* A stopped song says exactly why
