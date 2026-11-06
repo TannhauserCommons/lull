@@ -643,6 +643,7 @@ A pack is a `pack.json` with the files it names:
 lull's own packs are in `web/packs/` (`default` and one per design), made by `scripts/sounds/` from code. Read
 `web/packs/default/pack.json` and `pack.css` to see every egg lull has and how it draws them; a design's pack draws
 lull's eggs its own way in its `pack.css`, and adds a few of its own.
+A built-in pack's egg slots are static files too: `render.mjs` declares each egg that has a `slots/egg.<name>.html` in the pack, and lists them in `web/packs/index.json` for the page.
 
 ### Sounds
 
