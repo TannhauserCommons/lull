@@ -43,7 +43,12 @@
     },
     {
       "id": "starlight",
-      "css": false
+      "css": true,
+      "slots": [
+        "bouquet",
+        "curtain-up",
+        "shooting-star"
+      ]
     },
     {
       "id": "petal",

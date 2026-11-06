@@ -1467,6 +1467,10 @@
   background: var(--bg); color: var(--fg); border: var(--stroke) solid var(--line); border-radius: var(--r-card); font: 500 .9375rem/1.35 var(--f-ui);
   box-shadow: 0 6px 0 -1.5px var(--stack-1), 0 6px 0 0 var(--line), 0 12px 0 -1.5px var(--stack-2), 0 12px 0 0 var(--line); margin-bottom: 12px;
 }
+/* the dream egg's scene (web/packs/starlight/pack.css moves it): the baked nebula, here so its picture is the design's own */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-design="starlight"]:not([data-motion="reduce"])[data-egg~="dream"] .sky-specks::after { background: url("assets/art/nebula.webp") center / cover; }
+}
 :root[data-design="starlight"] .toast { background-image: linear-gradient(rgba(30, 34, 54, .58), rgba(30, 34, 54, .58)), url("assets/art/nebula.webp"); background-size: auto, cover; background-position: 0 0, 80% 40%; }
 :root[data-design="starlight"] .toast > .ic { color: #fff9fe; }
 :root[data-design="starlight"] .toast--ok > .ic { color: #9ed9b4; }

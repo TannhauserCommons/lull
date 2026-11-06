@@ -71,6 +71,313 @@
       "sound": "sounds/birthday.ogg"
     },
     {
+      "name": "moon",
+      "when": [
+        {
+          "words": {
+            "in": [
+              "title"
+            ],
+            "any": [
+              "moon",
+              "luna",
+              "lune",
+              "mond",
+              "maan",
+              "lua",
+              "måne",
+              "księżyc",
+              "луна",
+              "月亮",
+              "달",
+              "चाँद"
+            ]
+          }
+        }
+      ],
+      "once": "song",
+      "sound": "sounds/moon.ogg"
+    },
+    {
+      "name": "rain",
+      "when": [
+        {
+          "words": {
+            "in": [
+              "title"
+            ],
+            "any": [
+              "rain",
+              "lluvia",
+              "pluie",
+              "regen",
+              "pioggia",
+              "chuva",
+              "regn",
+              "deszcz",
+              "дождь",
+              "yağmur",
+              "雨",
+              "비",
+              "बारिश"
+            ]
+          }
+        }
+      ],
+      "once": "song",
+      "sound": "sounds/rain.ogg"
+    },
+    {
+      "name": "star",
+      "when": [
+        {
+          "words": {
+            "in": [
+              "title"
+            ],
+            "any": [
+              "star",
+              "stars",
+              "estrella",
+              "étoile",
+              "stern",
+              "stella",
+              "estrela",
+              "ster",
+              "stjärna",
+              "gwiazda",
+              "звезда",
+              "yıldız",
+              "星",
+              "별",
+              "तारा"
+            ]
+          }
+        }
+      ],
+      "once": "song",
+      "sound": "sounds/star.ogg"
+    },
+    {
+      "name": "sun",
+      "when": [
+        {
+          "words": {
+            "in": [
+              "title"
+            ],
+            "any": [
+              "sun",
+              "sol",
+              "soleil",
+              "sonne",
+              "sole",
+              "zon",
+              "słońce",
+              "солнце",
+              "güneş",
+              "太陽",
+              "太阳",
+              "태양",
+              "सूरज"
+            ]
+          }
+        }
+      ],
+      "once": "song",
+      "sound": "sounds/sun.ogg"
+    },
+    {
+      "name": "snow",
+      "when": [
+        {
+          "words": {
+            "in": [
+              "title"
+            ],
+            "any": [
+              "snow",
+              "nieve",
+              "neige",
+              "schnee",
+              "neve",
+              "sneeuw",
+              "snö",
+              "śnieg",
+              "снег",
+              "雪",
+              "बर्फ़"
+            ]
+          }
+        }
+      ],
+      "once": "song",
+      "sound": "sounds/snow.ogg"
+    },
+    {
+      "name": "night",
+      "when": [
+        {
+          "words": {
+            "in": [
+              "title"
+            ],
+            "any": [
+              "night",
+              "nights",
+              "noche",
+              "nuit",
+              "nacht",
+              "notte",
+              "noite",
+              "natt",
+              "noc",
+              "ночь",
+              "gece",
+              "夜",
+              "밤",
+              "रात"
+            ]
+          }
+        }
+      ],
+      "once": "song",
+      "sound": "sounds/night.ogg"
+    },
+    {
+      "name": "sea",
+      "when": [
+        {
+          "words": {
+            "in": [
+              "title"
+            ],
+            "any": [
+              "sea",
+              "ocean",
+              "mar",
+              "mer",
+              "meer",
+              "mare",
+              "zee",
+              "hav",
+              "morze",
+              "море",
+              "deniz",
+              "海",
+              "바다",
+              "समंदर"
+            ]
+          }
+        }
+      ],
+      "once": "song",
+      "sound": "sounds/sea.ogg"
+    },
+    {
+      "name": "storm",
+      "when": [
+        {
+          "words": {
+            "in": [
+              "title"
+            ],
+            "any": [
+              "storm",
+              "storms",
+              "tormenta",
+              "tempête",
+              "sturm",
+              "tempesta",
+              "tempestade",
+              "burza",
+              "буря",
+              "fırtına",
+              "嵐",
+              "风暴",
+              "폭풍",
+              "तूफ़ान"
+            ]
+          }
+        }
+      ],
+      "once": "song",
+      "sound": "sounds/storm.ogg"
+    },
+    {
+      "name": "fire",
+      "when": [
+        {
+          "words": {
+            "in": [
+              "title"
+            ],
+            "any": [
+              "fire",
+              "fuego",
+              "feu",
+              "feuer",
+              "fuoco",
+              "fogo",
+              "vuur",
+              "eld",
+              "ogień",
+              "огонь",
+              "ateş",
+              "火",
+              "आग"
+            ]
+          }
+        }
+      ],
+      "once": "song",
+      "sound": "sounds/fire.ogg"
+    },
+    {
+      "name": "dream",
+      "when": [
+        {
+          "words": {
+            "in": [
+              "title"
+            ],
+            "any": [
+              "dream",
+              "dreams",
+              "sueño",
+              "rêve",
+              "traum",
+              "sogno",
+              "sonho",
+              "droom",
+              "dröm",
+              "мечта",
+              "rüya",
+              "夢",
+              "梦",
+              "꿈",
+              "सपना"
+            ]
+          }
+        }
+      ],
+      "once": "song",
+      "sound": "sounds/dream.ogg"
+    },
+    {
+      "name": "on-repeat",
+      "when": [
+        {
+          "repeat": {
+            "times": 10
+          }
+        }
+      ],
+      "line": "Ten times in a row",
+      "once": "song",
+      "sound": "sounds/on-repeat.ogg"
+    },
+    {
       "name": "milestone",
       "when": [
         {
@@ -128,6 +435,90 @@
       "instead": true,
       "once": "always",
       "sound": "sounds/rare-boot.ogg"
+    },
+    {
+      "name": "shooting-star",
+      "when": [
+        {
+          "gesture": {
+            "on": "brand",
+            "taps": 3,
+            "within": 1.5
+          }
+        }
+      ],
+      "line": "Make a wish",
+      "for": 5,
+      "once": "always",
+      "sound": "sounds/shooting-star.ogg"
+    },
+    {
+      "name": "encore",
+      "when": [
+        {
+          "words": {
+            "in": [
+              "title"
+            ],
+            "any": [
+              "encore",
+              "encores",
+              "bis",
+              "rappel",
+              "zugabe",
+              "bravo",
+              "applause",
+              "ovation",
+              "finale",
+              "curtain",
+              "overture",
+              "アンコール",
+              "앙코르"
+            ]
+          }
+        }
+      ],
+      "line": "Encore",
+      "once": "song",
+      "sound": "sounds/encore.ogg"
+    },
+    {
+      "name": "curtain-up",
+      "when": [
+        {
+          "clock": {
+            "from": "19:30",
+            "to": "19:32"
+          }
+        },
+        {
+          "player": {
+            "playing": true
+          }
+        }
+      ],
+      "line": "Curtain up",
+      "once": "day",
+      "sound": "sounds/curtain-up.ogg"
+    },
+    {
+      "name": "bouquet",
+      "when": [
+        {
+          "event": {
+            "on": "liked"
+          }
+        },
+        {
+          "chance": {
+            "one_in": 20
+          }
+        }
+      ],
+      "line": "Bravo",
+      "for": 6,
+      "once": "always",
+      "sound": "sounds/bouquet.ogg"
     }
   ]
 }

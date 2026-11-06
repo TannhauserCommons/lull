@@ -42,6 +42,43 @@ const pad = (rng, sec, notes) => d.mix(notes.map((note, i) => [
   0, 1 / notes.length
 ]));
 
+/** A struck glass bell: a clear tone with two inharmonic overtones that die away faster. */
+const ping = (f, sec = 0.9, lvl = 1) => d.bell(sec, f, [[1, lvl, sec * 0.45], [2.76, 0.25 * lvl, sec * 0.16], [5.4, 0.07 * lvl, sec * 0.06]], 0.001);
+
+/** `hands` claps near the moment `at`, each a few ms off the others: the more `spread`, the less the room is in step. */
+function clapAt(rng, buf, at, hands, spread, level = 1) {
+  for (let h = 0; h < hands; h++) {
+    const hand = d.shape(d.biquad(d.noise(0.03, rng), 'bandpass', 900 + 1800 * rng(), 1.6), d.perc(0.0006, 0.012));
+    d.mixInto(buf, hand, at + (rng() - 0.5) * spread, level * (0.3 + 0.7 * rng()) / Math.sqrt(hands));
+  }
+}
+
+/** An owl's hoot: a low, round tone that sags a little. */
+const hoot = (f, sec) => d.biquad(d.shape(d.mix([[d.osc(sec, (t) => f * (1 - 0.05 * t / sec)), 0, 1], [d.osc(sec, f * 2), 0, 0.2]]), d.ahr(0.06, 0.15, sec)), 'lowpass', 900);
+
+/** A crackle of embers: clicks at random, over a low breath of air. */
+function crackle(rng, sec) {
+  const buf = new Float32Array(d.n(sec));
+  for (let i = 0; i < sec * 55; i++) {
+    const c = d.shape(d.biquad(d.noise(0.02, rng), 'bandpass', 1200 + 3800 * rng(), 2.5), d.perc(0.0003, 0.004 + 0.012 * rng()));
+    d.mixInto(buf, c, sec * Math.pow(rng(), 0.8), 0.2 + 0.8 * rng() * rng());
+  }
+  const air = d.shape(d.biquad(d.pink(sec, rng), 'lowpass', 700), d.arch(sec));
+  return d.shape(d.mix([[buf, 0, 1], [air, 0, 0.55]]), d.arch(sec));
+}
+
+/** The eggs Starlight has and no other design does (docs/themes.md section 13): the opening night's own surprises. */
+export const eggs = [
+  // a masthead tapped three times quickly: the sky lets a star fall
+  { name: 'shooting-star', when: [{ gesture: { on: 'brand', taps: 3, within: 1.5 } }], line: 'Make a wish', for: 5, once: 'always' },
+  // a song named for the end of a show: the house calls for one more
+  { name: 'encore', when: [{ words: { in: ['title'], any: ['encore', 'encores', 'bis', 'rappel', 'zugabe', 'bravo', 'applause', 'ovation', 'finale', 'curtain', 'overture', 'アンコール', '앙코르'] } }], line: 'Encore', once: 'song' },
+  // half past seven, curtain time: while a song plays, the house lights go down and the footlights come up
+  { name: 'curtain-up', when: [{ clock: { from: '19:30', to: '19:32' } }, { player: { playing: true } }], line: 'Curtain up', once: 'day' },
+  // now and then a like is answered from the stalls
+  { name: 'bouquet', when: [{ event: { on: 'liked' } }, { chance: { one_in: 20 } }], line: 'Bravo', for: 6, once: 'always' },
+];
+
 export function sounds(rng) {
   const longMurmur = () => {
     const sec = 16, base = murmur(rng, sec);
@@ -91,6 +128,62 @@ export function sounds(rng) {
         const claps = [];
         for (let i = 0; i < 45; i++) claps.push([d.shape(d.biquad(d.noise(0.03, rng), 'bandpass', 1000 + 1500 * rng(), 1.8), d.perc(0.0006, 0.012)), 1.8 * Math.pow(rng(), 0.8), 0.3 + 0.7 * rng()]);
         return d.room(d.mix([[d.shape(d.mix(claps), d.ahr(0.3, 0.6, 1.9)), 0, 1], [punch(rng), 0, 0.5]]), 0.85, 0.45, 0.4, 1);
+      })(),
+      // the words a title can carry: each a small sound of the thing, as a poster would print it
+      moon: d.room(d.mix([[d.bell(1.8, d.hz('A4'), [[1, 1, 0.9], [2.01, 0.3, 0.5], [3, 0.12, 0.3]], 0.04), 0, 0.8], [d.bell(1.8, d.hz('E5'), [[1, 1, 0.9], [2.01, 0.3, 0.5]], 0.04), 0.28, 0.6]]), 0.9, 0.5, 0.4, 1.2),
+      rain: (() => {
+        const drops = [];
+        for (let i = 0; i < 7; i++) drops.push([d.shape(d.osc(0.1, (t) => (500 + 600 * rng()) * (1 + 0.8 * t)), d.perc(0.001, 0.045)), 1.2 * rng(), 0.12 + 0.12 * rng()]);
+        return d.room(d.mix([[rustle(rng, 1.4, 320, 3000, 9000), 0, 0.8], ...drops]), 0.6, 0.5, 0.25, 0.4);
+      })(),
+      star: d.room(d.mix([[ping(d.hz('E6'), 0.9), 0, 0.7], [ping(d.hz('G#6'), 0.9), 0.09, 0.6], [ping(d.hz('B6'), 1.1), 0.19, 0.5], [d.shape(d.biquad(d.noise(0.2, rng), 'highpass', 6000), d.perc(0.002, 0.1)), 0.18, 0.15]]), 0.7, 0.4, 0.3, 0.8),
+      sun: d.room(d.mix([[pad(rng, 1.7, ['D3', 'A3', 'F#4', 'D5']), 0, 0.9], [ping(d.hz('A5'), 1.0, 0.8), 0.7, 0.25]]), 0.8, 0.5, 0.35, 0.8),
+      snow: d.room(d.mix([[ping(d.hz('E6'), 2, 0.4), 0, 1], [ping(d.hz('B6'), 2, 0.3), 0.35, 1], [ping(d.hz('G#6'), 2, 0.25), 0.7, 1], [d.shape(d.biquad(d.pink(1.8, rng), 'lowpass', 2200), d.arch(1.8)), 0, 0.12]]), 0.95, 0.6, 0.55, 1.4),
+      night: d.room(d.mix([[hoot(d.hz('A3'), 0.32), 0, 1], [hoot(d.hz('F3'), 0.5), 0.42, 0.9], [pad(rng, 1.6, ['D3', 'A3']), 0, 0.3]]), 0.9, 0.55, 0.45, 1),
+      sea: (() => {
+        const sec = 2.4, hush = d.arch(sec);
+        const swell = d.shape(d.biquad(d.pink(sec, rng), 'lowpass', (t) => 300 + 2200 * Math.pow(hush(t), 2), 0.9), (t) => Math.pow(hush(t), 1.5));
+        const foam = d.shape(d.biquad(d.noise(sec, rng), 'highpass', 4000), (t) => 0.25 * Math.pow(Math.max(0, Math.sin(Math.PI * (t - 0.5) / 1.6)), 3));
+        return d.mix([[swell, 0, 1], [foam, 0, 0.5]]);
+      })(),
+      storm: d.room(d.mix([
+        [d.shape(d.biquad(d.biquad(d.noise(0.3, rng), 'highpass', 1500), 'lowpass', 5000), d.perc(0.002, 0.08)), 0, 0.3],
+        [d.shape(d.biquad(d.brown(2.6, rng), 'lowpass', 320), (t) => Math.min(1, t / 0.15) * Math.exp(-t * 1.3)), 0.02, 5],
+      ]), 0.8, 0.5, 0.3, 0.5),
+      fire: crackle(rng, 1.8),
+      dream: d.room(d.seq(['D5', 'E5', 'F#5', 'A5', 'B5', 'D6', 'E6', 'F#6'], 0.075, (f) => d.shape(d.pluck(1.4, f, rng, 0.25, 0.997), d.perc(0.002, 1))), 0.95, 0.45, 0.5, 1.4),
+      // ten plays in a row: the ticket punched ten times, quicker as it goes
+      'on-repeat': d.room(d.mix(Array.from({ length: 10 }, (_, i) => [punch(rng, 0.9 + 0.04 * i), 0.1 * i + 0.012 * i * i * 0.1 + 0.06 * i, 0.55 + 0.045 * i])), 0.6, 0.4, 0.2, 0.5),
+      // Starlight's own
+      'shooting-star': d.room(d.mix([
+        [d.shape(d.osc(1.3, (t) => 700 + 2800 * Math.exp(-t * 2.6)), (t) => 0.12 * (t < 0.03 ? t / 0.03 : Math.exp(-(t - 0.03) * 3.2))), 0, 1],
+        [d.shape(d.biquad(d.noise(1.2, rng), 'bandpass', (t) => 6000 - 3600 * t, 1.2), d.arch(1.2)), 0, 0.12],
+        [ping(d.hz('B6'), 1.4, 0.5), 0.45, 0.4], [ping(d.hz('F#6'), 1.6, 0.4), 0.62, 0.35],
+      ]), 0.8, 0.45, 0.35, 0.9),
+      // the whole house clapping in time, a little ragged, getting quicker
+      encore: (() => {
+        const sec = 4.2, buf = new Float32Array(d.n(sec + 0.5));
+        let at = 0.1, gap = 0.44, k = 0;
+        while (at < sec - 0.3) { clapAt(rng, buf, at, 16, 0.004 + 0.006 * k, 1); at += gap; gap = Math.max(0.27, gap * 0.955); k++; }
+        return d.room(d.shape(buf, (t) => Math.min(1, t / 0.5) * Math.min(1, Math.max(0, (sec - t) / 1))), 0.9, 0.45, 0.4, 1);
+      })(),
+      // the room hushes, the curtain swishes up, and strings open on D major
+      'curtain-up': d.room(d.mix([
+        [d.shape(murmur(rng, 1.6, 6), (t) => Math.max(0, 1 - t / 1.4)), 0, 0.7],
+        [d.shape(d.biquad(d.pink(1.1, rng), 'bandpass', (t) => 250 + 2600 * Math.pow(t / 1.1, 2), 1.2), d.arch(1.1)), 0.9, 0.55],
+        [pad(rng, 2.2, ['D3', 'A3', 'D4', 'F#4', 'A4']), 1.7, 0.9],
+        [ping(d.hz('D6'), 1.5, 0.35), 2.0, 0.3],
+      ]), 0.85, 0.45, 0.3, 1),
+      // a rose thrown from the stalls: the whoosh of its fall, the soft thud, and cellophane crinkling
+      bouquet: (() => {
+        const crinkle = new Float32Array(d.n(0.7));
+        for (let i = 0; i < 26; i++) d.mixInto(crinkle, d.shape(d.biquad(d.noise(0.012, rng), 'bandpass', 3000 + 4000 * rng(), 1.8), d.perc(0.0005, 0.004 + 0.006 * rng())), 0.6 * Math.pow(rng(), 1.3), 0.25 + 0.75 * rng());
+        return d.room(d.mix([
+          [d.shape(d.biquad(d.noise(0.5, rng), 'lowpass', (t) => 2400 - 1900 * t / 0.5), d.arch(0.5)), 0, 0.25],
+          [d.shape(d.osc(0.12, (t) => 150 + 70 * Math.exp(-t * 50)), d.perc(0.002, 0.07)), 0.5, 0.9],
+          [crinkle, 0.52, 0.55],
+          [ping(d.hz('E6'), 1, 0.2), 0.85, 0.3],
+        ]), 0.6, 0.45, 0.25, 0.6);
       })(),
     }
   };
