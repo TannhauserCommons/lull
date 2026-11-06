@@ -132,7 +132,9 @@ const playAlbum = async (page, album) => {
   // its own client on the fixture hub: a test playing the same song at the same time doesn't reopen this one's
   await page.context().setExtraHTTPHeaders({ 'x-fixture-client': fixtureClient() });
   await openScreen(page, `/album/${album}`, { clock: false });
-  await page.evaluate(() => App.player.playList([...document.querySelectorAll('#view .trow[data-track-id]')].map((r) => r.getAttribute('data-track-id')), 0));
+  // its first song alone: every song of the failing album fails, so a whole album skips on through them, and between two
+  // the player shows "Finding a source" (whole, with no tip to show); one song stays stopped with its reason
+  await page.evaluate(() => App.player.playList([...document.querySelectorAll('#view .trow[data-track-id]')].map((r) => r.getAttribute('data-track-id')).slice(0, 1), 0));
   await page.waitForFunction(() => document.querySelector('#pbar').dataset.status === 'failed', null, { timeout: 15_000 });
   return page.evaluate(() => document.querySelector('#pbar').dataset.statusText);
 };
