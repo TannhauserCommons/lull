@@ -74,14 +74,13 @@
   --sl-sleeves: 7px 7px 0 -1.5px var(--stack-1), 7px 7px 0 0 var(--sl-frame), 14px 14px 0 -1.5px var(--stack-2), 14px 14px 0 0 var(--sl-frame);
   --sl-print: 5px 5px 0 -1.5px var(--stack-1), 5px 5px 0 0 var(--sl-frame), 10px 10px 0 -1.5px var(--stack-2), 10px 10px 0 0 var(--sl-frame);
   --sl-print-sm: 3px 3px 0 -1px var(--stack-1), 3px 3px 0 0 var(--sl-frame), 6px 6px 0 -1px var(--stack-2), 6px 6px 0 0 var(--sl-frame);
-  /* a print's paper edge: a hairline inset from the sheet's edge, as a printed poster's border (unblurred: no layer) */
-  --sl-edge: inset 0 0 0 6px var(--bg), inset 0 0 0 7px color-mix(in srgb, var(--line) 38%, transparent);
-
+  
   /* art */
   --sl-paper: url("assets/art/paper-dawn.svg");
   --sl-stars: url("assets/art/stars-dawn.svg");
   --sl-spark-img: url("assets/art/spark-dawn.svg");
   --sl-streak: #f6cee4;
+  --sl-star-print: #b2589b;      /* a star printed on cream paper (the sky's own --sparkle is white at night) */
 
   /* dawn theme: lavender sky that warms to a peach horizon */
   --sky: #ebe2f5; --sky-deep: #ddd3f1;
@@ -200,14 +199,31 @@
 :root[data-design="starlight"] .sky-specks > .sparkle {
   -webkit-mask: none; mask: none; background: var(--sl-spark-img) center / contain no-repeat;
 }
-:root[data-design="starlight"] .sky-specks > .sparkle:nth-child(1) { --s: 84px !important; right: auto !important; left: 222px !important; top: 45% !important; bottom: auto !important; }
-:root[data-design="starlight"] .sky-specks > .sparkle:nth-child(2) { --s: 56px !important; left: auto !important; right: -12px !important; top: 56% !important; bottom: auto !important; }
-:root[data-design="starlight"] .sky-specks > .sparkle:nth-child(3) { --s: 40px !important; left: auto !important; right: 356px !important; bottom: auto !important; top: -8px !important; }
+/* one star hangs in the gutter between the rail and the page, wholly inside the sky (never behind a print, never cut by
+   an edge); the other two shell sparkles are not used: Home's constellation and the prints' own stars are the ornaments */
+:root[data-design="starlight"] .sky-specks > .sparkle:nth-child(1) { --s: 64px !important; right: auto !important; left: 236px !important; top: 45% !important; bottom: auto !important; }
+:root[data-design="starlight"] .sky-specks > .sparkle:is(:nth-child(2), :nth-child(3)) { display: none; }
 
 /* =====================================================================
    Prints: cream sheets everywhere content lives (both themes), square-cornered, a printed hairline inside the edge,
    on the two-sleeve stack.
    ===================================================================== */
+/* what runs on under the player is a deliberate fade into the sky, not a print cut flat by the ticket (the page rests 40 px
+   above its foot, so the last row of a page that ends is whole). The fade is a strip of the sky itself (the same fixed
+   layers as the page's background, so it matches exactly) over the foot of the main column, which does not scroll: it is
+   painted once and never touches the scroller */
+@media (min-width: 640px) {
+  :root[data-design="starlight"] .main { position: relative; }
+  :root[data-design="starlight"] .main::after {
+    content: ""; position: absolute; z-index: 2; left: 0; right: 0; bottom: 0; height: 72px; pointer-events: none;
+    background: var(--sl-sky-bg); background-attachment: fixed; background-blend-mode: soft-light, normal, normal, normal, normal, normal;
+    -webkit-mask: linear-gradient(180deg, transparent, rgba(0, 0, 0, .8) 30%, #000 48%); mask: linear-gradient(180deg, transparent, rgba(0, 0, 0, .8) 30%, #000 48%);   /* a page that runs on dissolves over the last rows: no card or line is ever a cut sliver */
+  }
+  :root[data-design="starlight"][data-theme="night"] .main::after {   /* and the night's stars, as the sky-specks lay them */
+    background: var(--sl-stars) 0 0 / max(1600px, 100vw) auto no-repeat fixed, var(--sl-sky-bg); background-attachment: fixed;
+    background-blend-mode: normal, soft-light, normal, normal, normal, normal, normal;
+  }
+}
 :root[data-design="starlight"] :is(.s-card, .card, .pbar, .ctx, .nowcol, .mini, .sl-hero, .now-head, .now__acts, .sys-nav, .sl-mini__card, .dk-strip) {
   --bg: var(--cream); --bg-2: var(--cream-2); --bg-3: var(--cream-3);
   --fg: var(--ink); --fg-2: var(--ink-2);
@@ -227,7 +243,7 @@
 :root[data-design="starlight"] :is(.ctx, .nowcol, .sl-hero, .sys-nav, .sl-mini__card, .card[data-region], .lib-card, .sys-card, .sys-design) {
   --sl-stack: 0 var(--sl-o1) 0 -2px var(--stack-1), 0 var(--sl-o1) 0 0 var(--line), 0 var(--sl-o2) 0 -2px var(--stack-2), 0 var(--sl-o2) 0 0 var(--line);
 }
-:root[data-design="starlight"] :is(.ctx, .nowcol, .sys-nav, .sl-mini__card, .card[data-region], .lib-card, .sys-card) { box-shadow: var(--sl-edge), var(--sl-stack); }
+:root[data-design="starlight"] :is(.ctx, .nowcol, .sys-nav, .sl-mini__card, .card[data-region], .lib-card, .sys-card) { box-shadow: inset 0 0 0 6px var(--bg), inset 0 0 0 7px color-mix(in srgb, var(--line) 38%, transparent), var(--sl-stack); }
 :root[data-design="starlight"] :is(.lib-card, .sys-card) { margin-bottom: var(--stack-reserve); }
 /* the stack is physical: a print under the pointer sinks 3 px onto its lavender sleeve, the periwinkle one peeks out */
 @media (hover: hover) and (prefers-reduced-motion: no-preference) {
@@ -418,18 +434,29 @@
   :root[data-design="starlight"] .disc-search .trow__badges { justify-self: start; margin-top: 2px; }
 }
 
+/* an artist's Popular on a narrow sheet (a phone): the plays sit under the artist, so the title keeps the row's width
+   instead of ending in "..." */
+@container tlist (max-width: 520px) {
+  :root[data-design="starlight"] .lib-popular .tlist--plays .trow { grid-template-columns: var(--art) minmax(0, 1fr) auto 40px; grid-template-areas: "art main like more" "art badges like more"; }
+  :root[data-design="starlight"] .lib-popular .tlist--plays .trow__badges { justify-self: start; margin-top: 1px; }
+}
 :root[data-design="starlight"] .tile__art { margin: 0 10px 18px 0; }
 :root[data-design="starlight"] .tile__art .cover { border-radius: var(--r-thumb); box-shadow: var(--sl-print); }
 :root[data-design="starlight"] .tile__title { font-size: .9375rem; }
 :root[data-design="starlight"] .tile__by { letter-spacing: .12em; }
 :root[data-design="starlight"] .tile__play { background: var(--cream); color: var(--sl-accent); border: var(--stroke) solid var(--sl-accent); width: 38px; height: 38px; right: 8px; bottom: 8px; }
 :root[data-design="starlight"] .tile__play:hover { background: var(--sl-accent); color: var(--cream); }
-/* horizontal shelves fade at the trailing edge, so a cut card reads as "more this way" */
-:root[data-design="starlight"] :is(.disc-shelf--sm, .disc-shelf--artists) {
-  -webkit-mask: linear-gradient(90deg, #000 calc(100% - 56px), transparent); mask: linear-gradient(90deg, #000 calc(100% - 56px), transparent);
+/* a shelf is one row of whole tiles: as many as its card's width holds, shared out to fill it. The ones that do not fit wait
+   in rows of no height (the card's "See all" / "History" link and the page behind it have the rest), so no tile is ever cut at
+   the card's edge, at any width */
+:root[data-design="starlight"] .shelf:not(.disc-shelf--grid, .lib-skel-shelf *, .disc-card[data-region="new"] *) {
+  grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(var(--sl-tile, 168px), 1fr)); grid-template-rows: auto; grid-auto-rows: 0;
+  gap: 0 var(--sp-5); overflow: hidden; scroll-snap-type: none; padding-right: 0; padding-bottom: 0;
 }
-/* jump back in: two whole cards and 40 % of the third, never a sliver */
-:root[data-design="starlight"] .disc-shelf--sm { grid-auto-columns: max(120px, calc((100% - 2 * var(--sp-5)) / 2.4)); }
+:root[data-design="starlight"] .shelf:not(.disc-shelf--grid, .disc-card[data-region="new"] *) > * { scroll-snap-align: none; }
+:root[data-design="starlight"] .disc-shelf--sm { --sl-tile: 152px; }
+:root[data-design="starlight"] .disc-shelf--artists { --sl-tile: 132px; }
+@media (max-width: 639px) { :root[data-design="starlight"] .shelf { --sl-tile: 140px; } :root[data-design="starlight"] .disc-shelf--artists { --sl-tile: 124px; } }
 
 /* =====================================================================
    Seek, toggles, tabs
@@ -497,6 +524,7 @@
     -webkit-mask: var(--mask-sparkle) center / contain no-repeat; mask: var(--mask-sparkle) center / contain no-repeat;
   }
   :root[data-design="starlight"] .nav-item .badge-count { letter-spacing: 0; }
+  :root[data-design="starlight"][data-playing="true"] .nav-item[aria-current="page"]::before { animation: sl-beat 1s var(--loop-in-out-30) infinite alternate; animation-play-state: var(--loop-play, running); }
 }
 /* the scroller fades into the sky at its foot, and keeps the fade's depth as room after its last row: while there is
    more below, rows fade out there; at the end the last one rests whole above it. Painted once: no scroll-driven
@@ -507,6 +535,10 @@
   -webkit-mask: linear-gradient(180deg, #000 calc(100% - var(--sl-fade)), transparent); mask: linear-gradient(180deg, #000 calc(100% - var(--sl-fade)), transparent);
 }
 :root[data-design="starlight"] .rail__scroll { scroll-snap-type: y proximity; }
+/* a list that scrolls shows it: a dotted rule with a periwinkle thumb on it (the scroller also fades at its foot) */
+:root[data-design="starlight"] :is(.rail__scroll, .ctx__body)::-webkit-scrollbar { width: 8px; }
+:root[data-design="starlight"] :is(.rail__scroll, .ctx__body)::-webkit-scrollbar-track { background: repeating-linear-gradient(180deg, var(--sl-rule) 0 3px, transparent 3px 7px) center / 1px 100% no-repeat; }
+:root[data-design="starlight"] :is(.rail__scroll, .ctx__body)::-webkit-scrollbar-thumb { background: var(--sl-accent); border: 2px solid transparent; border-radius: 4px; background-clip: padding-box; }
 :root[data-design="starlight"] .rail__list > li { scroll-snap-align: end; }
 :root[data-design="starlight"] .rail__section { padding: 12px 10px 2px 12px; }
 :root[data-design="starlight"] .rail__section .label-rule { --rule: color-mix(in srgb, var(--edge) 60%, transparent); }
@@ -524,6 +556,30 @@
 @media (max-height: 820px) {
   :root[data-design="starlight"] .rail__foot button { font-size: 0; }
   :root[data-design="starlight"] .rail__foot .kbd { font-size: .75rem; }
+}
+/* a short window: the rail tightens (the head, the five places, the rows) so more of the playlists show whole before
+   the list scrolls */
+@media (min-width: 1100px) and (max-height: 820px) {
+  :root[data-design="starlight"] .rail__head { padding: 12px 18px 6px 12px; }
+  :root[data-design="starlight"] .rail__nav { padding-block: 2px 4px; }
+  :root[data-design="starlight"] .rail__nav::before { top: 22px; bottom: 24px; }
+  :root[data-design="starlight"] .nav-item { min-height: 34px; }
+  :root[data-design="starlight"] .rail__section { padding-top: 6px; }
+  :root[data-design="starlight"] .rail__scroll { --sl-fade: 22px; }
+  :root[data-design="starlight"] .rail__tags { gap: 4px 5px; padding-block: 4px 2px; }   /* the tags wrap: no word is cut at the rail's edge */
+  :root[data-design="starlight"] .rail__tags .chip { min-height: 24px; padding: 0 8px; font-size: .75rem; }
+  :root[data-design="starlight"] .rail__list { padding-block: 2px; }
+  :root[data-design="starlight"] .rail__pl { min-height: 36px; padding-block: 2px; }
+  :root[data-design="starlight"] .rail__pl .mosaic { --cover-size: 28px !important; }
+  :root[data-design="starlight"] .rail__pl b { font-size: .875rem; line-height: 1.15; }
+  :root[data-design="starlight"] .rail__pl small { font-size: .6875rem; line-height: 1.15; }
+}
+@media (min-width: 1100px) and (max-height: 740px) {   /* a 720 px window: one more notch */
+  :root[data-design="starlight"] .rail__head { padding-block: 8px 2px; }
+  :root[data-design="starlight"] .rail__nav::before { top: 19px; bottom: 21px; }
+  :root[data-design="starlight"] .nav-item { min-height: 30px; }
+  :root[data-design="starlight"] .rail__pl { min-height: 34px; }
+  :root[data-design="starlight"] .rail__list { gap: 0; }
 }
 
 /* wordmark: sparkle + "LULL" baked from Poiret One caps, a small second sparkle above the last L (slots/brand.html) */
@@ -568,7 +624,10 @@
    the list scrolls inside with a fade while more is below, and the queue ends on a printed foot ("12 songs, 1 h 3 min")
    so the panel never ends mid-row
    ===================================================================== */
-:root[data-design="starlight"] .ctx__head { gap: 6px; padding: 18px 14px 6px 18px; }
+:root[data-design="starlight"] .ctx__head { gap: 4px; padding: 18px 10px 6px 18px; }
+:root[data-design="starlight"] .ctx__head .seg { min-width: 0; }
+:root[data-design="starlight"] .ctx__head .seg__btn { padding: 0 8px 4px; letter-spacing: .12em; }
+:root[data-design="starlight"] .ctx__head .btn-icon { flex: none; width: 36px; height: 36px; }
 :root[data-design="starlight"] .ctx__body { padding: 8px 14px var(--sl-fade); }
 :root[data-design="starlight"] .ctx .label-rule { margin-top: 10px; }
 :root[data-design="starlight"] .now-q__from { margin: 4px 4px 10px; font: 400 .6875rem/1.4 var(--f-px); letter-spacing: .12em; text-transform: uppercase; color: var(--fg-2); }
@@ -592,8 +651,15 @@
 :root[data-design="starlight"] .now-q__radio:not(:hover):not(:focus-within) .now-q__steer { display: none; }
 /* queue and search rows: status words wrap under the title line's end, the artist keeps its width */
 :root[data-design="starlight"] :is(.now-q__row, .disc-search .trow) .trow__artist { flex-wrap: wrap; row-gap: 2px; }
-/* the collapsed strip: a narrow print, its icons on the constellation's dotted line */
-:root[data-design="starlight"] .ctx__strip { gap: 6px; }
+/* the collapsed strip: a short narrow print (as tall as its keys, never a tall empty sheet), its icons strung on the
+   constellation's dotted line */
+:root[data-design="starlight"] .app[data-panel="strip"] .ctx { align-self: start; height: max-content; }
+:root[data-design="starlight"] .ctx__strip { position: relative; gap: 10px; padding: 14px 0 16px; }
+:root[data-design="starlight"] .ctx__strip::before {
+  content: ""; position: absolute; left: 50%; top: 26px; bottom: 28px; width: 1px; pointer-events: none;
+  background: repeating-linear-gradient(180deg, var(--sl-rule) 0 3px, transparent 3px 7px);
+}
+:root[data-design="starlight"] .ctx__strip .btn-icon { background: var(--bg); }
 
 /* =====================================================================
    The player bar is a concert ticket, in two rows: the song, the outlined transport and a stub (behind a
@@ -695,6 +761,7 @@
   :root[data-design="starlight"] .pbar:is([data-status="buffering"], [data-status="stalled"]) .pbar__seek::before { content: "\2726  waiting"; }
   :root[data-design="starlight"] .pbar[data-status="failed"] .pbar__seek::before { content: "\26A0  couldn\2019t play"; }
   :root[data-design="starlight"] .pbar[data-status="idle"] .pbar__seek::before { content: "\2726  nothing yet"; color: var(--fg-2); }
+  :root[data-design="starlight"] .pbar:is([data-status="finding"], [data-status="queued"], [data-status="buffering"], [data-status="stalled"]) .pbar__seek::before { animation: sl-wait 1.6s var(--loop-in-out-30) infinite alternate; animation-play-state: var(--loop-play, running); }
   :root[data-design="starlight"] .pbar__seek .seek { height: 26px; }
   :root[data-design="starlight"] .pbar__seek .seek__track {
     height: 2px; margin-top: -1px; border-radius: 0; box-shadow: none;
@@ -790,6 +857,12 @@
   content: ""; position: absolute; inset: -40px -30px -30px -90px; z-index: 0; pointer-events: none;
   background: radial-gradient(closest-side, rgba(182, 178, 226, .8), rgba(195, 194, 226, .35) 55%, rgba(195, 194, 226, 0));
 }
+:root[data-design="starlight"] .sl-hero__art::before { opacity: .45; transition: opacity 900ms var(--ease-out); }
+:root[data-design="starlight"][data-playing="true"] .sl-hero__art::before { opacity: 1; }   /* the print's moonlight comes up while the song plays */
+:root[data-design="starlight"] .now__dev[data-saved="true"] .sl-hero:not(.sl-hero--compact)::after {   /* a saved song is postmarked, on the corner of its print */
+  content: ""; position: absolute; z-index: 4; right: 10px; top: 12px; width: 126px; aspect-ratio: 168 / 100; pointer-events: none; opacity: .82; rotate: -9deg; max-width: 30%;
+  background: url("assets/art/postmark.svg") center / contain no-repeat;
+}
 :root[data-design="starlight"] .sl-hero__art > * { position: absolute; inset: 0; }
 :root[data-design="starlight"] .sl-hero__art .cover { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; aspect-ratio: auto; box-shadow: var(--sl-sleeves); }
 :root[data-design="starlight"] .sl-hero__art .now-dev__slot { position: absolute; inset: 0; width: auto; height: auto; border-radius: var(--r-art); margin: 0; border: var(--stroke) dashed var(--line); background: var(--cream-2); }
@@ -826,10 +899,11 @@
    and breathes while sound plays */
 :root[data-design="starlight"] .now__dev > .sl-hero { --song-pos: inherit; }
 :root[data-design="starlight"] .sl-hero__spark {
-  --s: 84px; left: -42px; top: -42px; z-index: 2; -webkit-mask: none; mask: none; background: var(--sl-spark-img) center / contain no-repeat;
+  --s: 84px; left: -36px; top: -36px; z-index: 2; -webkit-mask: none; mask: none; background: var(--sl-spark-img) center / contain no-repeat;
   --song-pos: inherit; rotate: calc(var(--song-pos) * .25turn);
 }
 :root[data-design="starlight"][data-playing="true"] .sl-hero__spark { animation: sl-beat 1s var(--loop-in-out-30) infinite alternate; animation-play-state: var(--loop-play, running); }
+@keyframes sl-wait { from { opacity: .35; } to { opacity: 1; } }
 @keyframes sl-beat { from { transform: scale(.82); opacity: .75; } to { transform: scale(1.08); opacity: 1; } }
 /* power on: the stack deals in (lavender sleeve, then periwinkle), the sheet settles, the art fades up last */
 :root[data-design="starlight"] .sl-hero.is-power-on { animation: sl-deal 620ms var(--ease-out) both; }
@@ -856,7 +930,7 @@
    poster lines, the two as tall as each other and both in view; under them one cream "about this song" print (meta +
    tags, actions, source and save progress), then up next. A wide page (the panel shut, wide windows) takes that print
    as a third column beside them */
-:root[data-design="starlight"] .now { max-width: 1720px; }
+:root[data-design="starlight"] .now { max-width: 2200px; }
 :root[data-design="starlight"] .now__grid {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); grid-template-rows: auto auto auto auto auto;
   grid-template-areas: "dev ly" "head head" "acts acts" "src src" "next next"; column-gap: var(--sp-6); row-gap: 0;
@@ -867,12 +941,41 @@
     grid-template-areas: "dev ly head" "dev ly acts" "dev ly src" "next next next";
   }
 }
+/* a tall window is used to its foot: the page is as tall as the window, the poster and the lyrics are as tall as the
+   page (the title stays at the foot of its sheet, the print above it grows with the window) and the about print keeps
+   its own height, hung at the top of its column. A short window scrolls as before */
+@media (min-width: 640px) { .app[data-height="tall"][data-screen="now"] .now { height: 100%; } }
+/* the poster lines are posters: large and thin, larger as the page widens (the A- / A+ steps still move them) */
+:root[data-design="starlight"] .now-ly:not(.now-ly--panel, .now-ly--col) { --ly-size: calc(1.375rem + var(--ly-step, 0) * .125rem); }
+@container now (min-width: 620px) {
+  :root[data-design="starlight"] .app[data-height="tall"] .now__grid { min-height: 100%; grid-template-rows: minmax(0, 1fr) auto auto auto auto; }
+  :root[data-design="starlight"] .app[data-height="tall"] .now__dev { align-self: stretch; display: flex; flex-direction: column; }
+  /* the print takes the height the sheet has over (a portrait or a square print, never a gap above the title) */
+  :root[data-design="starlight"] .app[data-height="tall"] .now__dev > .sl-hero { flex: 1; margin-bottom: 0; grid-template-rows: minmax(0, 1fr) auto auto auto auto auto auto; }
+  :root[data-design="starlight"] .app[data-height="tall"] .sl-hero__art { width: auto; aspect-ratio: auto; min-height: 150px; justify-self: stretch; align-self: stretch; }
+}
+@container now (min-width: 1100px) {
+  :root[data-design="starlight"] .app[data-height="tall"] .now__grid { grid-template-rows: auto auto minmax(0, 1fr) auto; }
+  /* the about print is as tall as the poster beside it; what its words don't use is a printed star chart (a planisphere
+     plate: rim ticks, dotted rings, a constellation), which gives way to the words and shows only where there is room */
+  :root[data-design="starlight"] .app[data-height="tall"] .now-srccard { align-self: stretch; display: flex; flex-direction: column; }
+  :root[data-design="starlight"] .app[data-height="tall"] .now-srccard::after {
+    content: ""; flex: 1 1 0; min-height: 0; margin-top: 18px; background: url("assets/art/chart.svg") center bottom / contain no-repeat; opacity: .85;
+  }
+}
+/* the lyrics grow with the page, so the poster lines stay posters on a big window */
+@container now (min-width: 1500px) {
+  :root[data-design="starlight"] .now-ly:not(.now-ly--panel, .now-ly--col) { --ly-size: calc(2rem + var(--ly-step, 0) * .125rem); }
+  :root[data-design="starlight"] .sl-hero:not(.sl-hero--compact) .device__title { font-size: 5.25rem; }
+  :root[data-design="starlight"] .sl-hero:not(.sl-hero--compact) .device__artist { font-size: 1.5rem; }
+}
 @container now (max-width: 619px) {
   :root[data-design="starlight"] .now__grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-template-areas: "dev" "head" "acts" "src" "ly" "next"; }
   :root[data-design="starlight"] .now-lycard { min-height: 440px; }
   :root[data-design="starlight"] .now__dev { max-width: none; }
 }
 :root[data-design="starlight"] .now__dev { min-width: 0; margin-bottom: var(--sp-5); }
+:root[data-design="starlight"] .now > .sparkle { display: none; }   /* the hero turns its own star; this one hung on a print's corner */
 :root[data-design="starlight"] .now-qcard { align-self: start; }
 /* the lyrics are as tall as the poster beside them, and scroll inside it */
 :root[data-design="starlight"] .now-lycard { align-self: stretch; min-height: 0; margin-bottom: var(--sp-5); }
@@ -940,23 +1043,105 @@
 /* your queue as a constellation (slots/homeLead): beside the headline on the sky, decorative (the queue panel lists
    the same songs); the dashed line matches the constellation cover, the playing song is the 4-point sparkle, which
    turns a quarter over the song (--song-pos, written on .disc-lead, inherited down to it) */
-:root[data-design="starlight"] .disc-home > .disc-lead { grid-column: 2; grid-row: 1; align-self: stretch; min-height: 120px; margin: 4px 0 0; }
-:root[data-design="starlight"] .sl-sky { display: flex; flex-direction: column-reverse; align-items: stretch; gap: 10px; height: 100%; }
-:root[data-design="starlight"] .sl-sky__map { position: relative; flex: 1; align-self: stretch; margin: 10px 10px 4px 24px; }
+/* the lead is a plate of tonight's sky: a framed print of a baked nebula (assets/art/nebula.webp, a shader rendered once)
+   hung in the headline's row, its right edge on the cards' right edge and its foot on the headline's. The queue is drawn
+   on it, or the day's dial while nothing plays. It is night in both themes (like the toasts: a scrap of night sky), so
+   what is drawn on it takes the night's inks */
+:root[data-design="starlight"] .disc-home > .disc-lead {
+  --fg-sky: #f2e3d1; --fg-sky-2: #d4d3ee; --sparkle: #fff9fe; --link: #c9d6fa; --sl-spark-img: url("assets/art/spark-night.svg"); text-shadow: none;
+  grid-column: 2; grid-row: 1; justify-self: end; width: min(100%, 720px); align-self: stretch; min-height: 132px; margin: 6px 12px 12px 0; position: relative; overflow: clip;
+  border: var(--stroke) solid var(--line); border-radius: var(--r-card); box-shadow: var(--sl-print);
+  background: #262a40 url("assets/art/nebula.webp") 60% 40% / cover no-repeat;
+}
+:root[data-design="starlight"] .disc-home > .disc-lead::after {   /* the plate's scale: a tick for every ten pixels, a long one every fifty */
+  content: ""; position: absolute; left: 18px; right: 18px; bottom: 7px; height: 7px; pointer-events: none;
+  background: repeating-linear-gradient(90deg, rgba(242, 227, 209, .7) 0 1px, transparent 1px 50px) 0 0 / 100% 7px no-repeat,
+              repeating-linear-gradient(90deg, rgba(242, 227, 209, .4) 0 1px, transparent 1px 10px) 0 4px / 100% 3px no-repeat;
+}
+:root[data-design="starlight"] .disc-home > .disc-lead:has(.sl-dial) { min-height: 184px; }
+:root[data-design="starlight"] .sl-sky { display: flex; flex-direction: column-reverse; align-items: stretch; gap: 6px; height: 100%; padding: 14px 0 12px; }
+:root[data-design="starlight"] .sl-sky__map { position: relative; flex: 1; align-self: stretch; margin: 6px 26px 8px 26px; }
 :root[data-design="starlight"] .disc-lead :is(.sl-sky, .sl-sky__map, .sl-sky__map *) { --song-pos: inherit; }
 :root[data-design="starlight"] .sky-line { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 :root[data-design="starlight"] .sky-line polyline { fill: none; stroke: var(--fg-sky-2); stroke-width: 1.25; stroke-dasharray: 3 5; stroke-linecap: round; opacity: .8; }
 :root[data-design="starlight"] .sky-star {
   position: absolute; width: 7px; height: 7px; margin: -3.5px; border-radius: 50%; background: var(--sparkle);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--sparkle) 22%, transparent);
-  animation: sl-twinkle 2.6s var(--loop-in-out-52) calc(var(--i) * -.45s) infinite alternate; animation-play-state: var(--loop-play, running);   /* the stagger is whole steps: all change together */
 }
+/* the stars rest while nothing plays and twinkle while it does (the stagger is whole steps: all change together) */
+:root[data-design="starlight"][data-playing="true"] .sky-star:not(.sky-star--now) { animation: sl-twinkle 2.6s var(--loop-in-out-52) calc(var(--i) * -.45s) infinite alternate; animation-play-state: var(--loop-play, running); }
 :root[data-design="starlight"] .sky-star--now {
   width: 40px; height: 40px; margin: -20px; border-radius: 0; box-shadow: none; animation: none; background: var(--sl-spark-img) center / contain no-repeat;
   rotate: calc(var(--song-pos) * .25turn);
 }
 @keyframes sl-twinkle { from { opacity: .55; transform: scale(.8); } to { opacity: 1; transform: none; } }
-:root[data-design="starlight"] .sl-sky__label { flex: none; align-self: flex-end; display: flex; align-items: center; gap: 10px; font: 400 .75rem/1 var(--f-px); letter-spacing: .12em; text-transform: uppercase; color: var(--fg-sky-2); }
+:root[data-design="starlight"] .sl-sky__label { flex: none; align-self: flex-start; margin-left: 22px; max-width: calc(100% - 40px); display: flex; align-items: center; gap: 12px; white-space: nowrap; font: 400 .75rem/1 var(--f-px); letter-spacing: .12em; text-transform: uppercase; color: var(--fg-sky-2); }
+:root[data-design="starlight"] .sl-sky__label b { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 400; color: var(--fg-sky); }
+@container main (max-width: 1049px) { :root[data-design="starlight"] .sl-sky__label b { display: none; } }   /* the next song's name needs room; a narrow page says only "your queue" */
+:root[data-design="starlight"] .sl-sky__label b::before { content: "\2014"; margin-right: 12px; color: var(--fg-sky-2); }
+/* nothing playing: tonight's sky, a planisphere dial. The 24 hours of the day are stars on a ring (hour 0 at the top, a
+   star a quarter turn for every six hours); the busier the hour the larger and brighter its star, the busiest a 4-point
+   sparkle. Painted once, nothing moves */
+:root[data-design="starlight"] .sl-dial { --sl-d: 128px; display: flex; align-items: center; justify-content: center; gap: clamp(20px, 3cqi, 52px); height: 100%; padding: 8px 24px 14px; }
+:root[data-design="starlight"] .sl-dial__face { position: relative; flex: none; width: var(--sl-d); aspect-ratio: 1; margin: 14px; }
+:root[data-design="starlight"] .sl-dial__face::before, :root[data-design="starlight"] .sl-dial__face::after { content: ""; position: absolute; border-radius: 50%; pointer-events: none; border: 1px dashed var(--fg-sky-2); opacity: .7; }
+:root[data-design="starlight"] .sl-dial__face::before {   /* the rim: a tick for every hour, as on a planisphere */
+  inset: 0; border: 0; opacity: .85;
+  background: repeating-conic-gradient(from -.35deg, var(--fg-sky-2) 0 .7deg, transparent .7deg 15deg);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 9px), #000 calc(100% - 9px)); mask: radial-gradient(farthest-side, transparent calc(100% - 9px), #000 calc(100% - 9px));
+}
+:root[data-design="starlight"] .sl-dial__face { border-radius: 50%; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg-sky-2) 70%, transparent); }
+:root[data-design="starlight"] .sl-dial__face::after { inset: 22%; opacity: .45; }
+:root[data-design="starlight"] .sl-dial__face i {
+  position: absolute; left: 50%; top: 50%; width: calc(4px + var(--v) * 10px); aspect-ratio: 1; margin: calc((4px + var(--v) * 10px) / -2); border-radius: 50%;
+  background: var(--sparkle); opacity: calc(.4 + var(--v) * .6); box-shadow: 0 0 0 calc(2px + var(--v) * 3px) color-mix(in srgb, var(--sparkle) 20%, transparent);
+  transform: rotate(calc(var(--h) * 15deg)) translateY(calc(var(--sl-d) / -2));
+}
+:root[data-design="starlight"] .sl-dial__face i.is-peak { width: 30px; margin: -15px; border-radius: 0; background: var(--sl-spark-img) center / contain no-repeat; box-shadow: none; opacity: 1; }
+:root[data-design="starlight"] .sl-dial__face i:nth-child(1) { --h: 0; }
+:root[data-design="starlight"] .sl-dial__face i:nth-child(2) { --h: 1; }
+:root[data-design="starlight"] .sl-dial__face i:nth-child(3) { --h: 2; }
+:root[data-design="starlight"] .sl-dial__face i:nth-child(4) { --h: 3; }
+:root[data-design="starlight"] .sl-dial__face i:nth-child(5) { --h: 4; }
+:root[data-design="starlight"] .sl-dial__face i:nth-child(6) { --h: 5; }
+:root[data-design="starlight"] .sl-dial__face i:nth-child(7) { --h: 6; }
+:root[data-design="starlight"] .sl-dial__face i:nth-child(8) { --h: 7; }
+:root[data-design="starlight"] .sl-dial__face i:nth-child(9) { --h: 8; }
+:root[data-design="starlight"] .sl-dial__face i:nth-child(10) { --h: 9; }
+:root[data-design="starlight"] .sl-dial__face i:nth-child(11) { --h: 10; }
+:root[data-design="starlight"] .sl-dial__face i:nth-child(12) { --h: 11; }
+:root[data-design="starlight"] .sl-dial__face i:nth-child(13) { --h: 12; }
+:root[data-design="starlight"] .sl-dial__face i:nth-child(14) { --h: 13; }
+:root[data-design="starlight"] .sl-dial__face i:nth-child(15) { --h: 14; }
+:root[data-design="starlight"] .sl-dial__face i:nth-child(16) { --h: 15; }
+:root[data-design="starlight"] .sl-dial__face i:nth-child(17) { --h: 16; }
+:root[data-design="starlight"] .sl-dial__face i:nth-child(18) { --h: 17; }
+:root[data-design="starlight"] .sl-dial__face i:nth-child(19) { --h: 18; }
+:root[data-design="starlight"] .sl-dial__face i:nth-child(20) { --h: 19; }
+:root[data-design="starlight"] .sl-dial__face i:nth-child(21) { --h: 20; }
+:root[data-design="starlight"] .sl-dial__face i:nth-child(22) { --h: 21; }
+:root[data-design="starlight"] .sl-dial__face i:nth-child(23) { --h: 22; }
+:root[data-design="starlight"] .sl-dial__face i:nth-child(24) { --h: 23; }
+:root[data-design="starlight"] .sl-dial__h { position: absolute; font: 400 .6875rem/1 var(--f-px); letter-spacing: .08em; color: var(--fg-sky-2); }
+:root[data-design="starlight"] .sl-dial__h--0 { left: 50%; top: 9%; translate: -50% 0; }
+:root[data-design="starlight"] .sl-dial__h--6 { right: 9%; top: 50%; translate: 0 -50%; }
+:root[data-design="starlight"] .sl-dial__h--12 { left: 50%; bottom: 9%; translate: -50% 0; }
+:root[data-design="starlight"] .sl-dial__h--18 { left: 9%; top: 50%; translate: 0 -50%; }
+:root[data-design="starlight"] .sl-dial__date { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 2px; margin: 0; text-align: center; }
+:root[data-design="starlight"] .sl-dial__date b { font: 300 clamp(2rem, 2.4vw, 3.25rem)/1 var(--f-ui); color: var(--fg-sky); }
+:root[data-design="starlight"] .sl-dial__date span { font: 400 .6875rem/1.3 var(--f-px); letter-spacing: .14em; text-transform: uppercase; color: var(--fg-sky-2); }
+:root[data-design="starlight"] .sl-dial__info { display: grid; gap: 6px; max-width: 26ch; }
+:root[data-design="starlight"] .sl-dial__info p { margin: 0; }
+:root[data-design="starlight"] .sl-dial__k { font: 400 .75rem/1 var(--f-px); letter-spacing: .14em; text-transform: uppercase; color: var(--fg-sky-2); }
+:root[data-design="starlight"] .sl-dial__stats { display: grid; justify-items: start; gap: 4px; }
+:root[data-design="starlight"] .sl-dial__big { font: 300 clamp(1.75rem, 2.2vw, 2.75rem)/1.05 var(--f-ui); color: var(--fg-sky); }
+:root[data-design="starlight"] .sl-dial__sub { font: 400 .8125rem/1.4 var(--f-px); letter-spacing: .02em; color: var(--fg-sky-2); }
+:root[data-design="starlight"] .sl-dial__stats .btn { margin: 4px 0 0 -8px; color: #c9d6fa; }
+:root[data-design="starlight"] .sl-dial__hint { font: 400 .875rem/1.4 var(--f-ui); color: var(--fg-sky-2); }
+:root[data-design="starlight"] .sl-dial__info:not([data-week="false"]) .sl-dial__hint { display: none; }
+:root[data-design="starlight"] .sl-dial__info[data-week="false"] .sl-dial__stats { display: none; }
+@container main (max-width: 1099px) { :root[data-design="starlight"] .sl-dial__info { display: none; } }
+
 /* numbered sections: every Home module is headed "01 NEW RELEASES", a print in a numbered series */
 :root[data-design="starlight"] .disc-modules { counter-reset: sl-sec; }
 :root[data-design="starlight"] .disc-mod { counter-increment: sl-sec; }
@@ -965,6 +1150,12 @@
 }
 :root[data-design="starlight"] .disc-mod > .card > .card-head > .card-head__title {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: clamp(1.125rem, 4.2cqi, 1.625rem); line-height: 1;
+}
+/* a heading ends in its star, set inside the print: the columns of Home clip whatever hangs over a print's edge, so no
+   ornament hangs there */
+:root[data-design="starlight"] .disc-mod > .card > .card-head > .card-head__title::after {
+  content: ""; display: inline-block; width: .62em; height: .62em; margin-left: .45em; vertical-align: .12em; background: var(--sl-star-print);
+  -webkit-mask: var(--mask-sparkle) center / contain no-repeat; mask: var(--mask-sparkle) center / contain no-repeat;
 }
 @container section (max-width: 560px) {
   :root[data-design="starlight"] .disc-mod > .card > .card-head::before { display: none; }
@@ -980,9 +1171,6 @@
 /* the release card: the first album is the feature (giant thin caps title, caps artist; play ring, Save and Radio on
    one row under the meta, as img 01 does); the other three sit in a compact row under a hairline */
 :root[data-design="starlight"] .disc-card[data-region="new"] { padding-bottom: 22px; }
-:root[data-design="starlight"] .disc-card[data-region="new"]::after {
-  content: ""; position: absolute; left: -44px; top: -44px; width: 88px; height: 88px; pointer-events: none; background: var(--sl-spark-img) center / contain no-repeat;
-}
 :root[data-design="starlight"] .disc-card[data-region="new"] .disc-shelf {
   display: grid; grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 16px; overflow: visible; padding: 0;
 }
@@ -1018,17 +1206,21 @@
 /* picked for you is a gallery wall: each pick a framed print on its sleeves, hung in a staggered row (every other one
    lower), the caps title and artist under it like a wall label, the reason in a quiet line; Like and More are pinned
    to the print's top corner, each on its own cream disc */
-:root[data-design="starlight"] .disc-card[data-region="picks"]::after {
-  content: ""; position: absolute; right: -36px; bottom: -22px; width: 68px; height: 68px; pointer-events: none; background: var(--sl-spark-img) center / contain no-repeat;
-}
-:root[data-design="starlight"] .disc-picks { grid-template-columns: repeat(auto-fill, minmax(min(124px, 100%), 1fr)); gap: 26px 20px; align-items: start; padding: 4px 14px 14px 0; }
-@container section (min-width: 600px) { :root[data-design="starlight"] .disc-picks { grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); } }
+/* the wall has a chosen count of prints a row (2, 3, 4 or 5 as the print's sheet widens), and the stagger follows the
+   count, so every row is hung the same way (high, low, high ...) and never reads as an accident */
+:root[data-design="starlight"] .disc-picks { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 26px 20px; align-items: start; padding: 4px 14px 14px 0; }
+@container section (min-width: 470px) { :root[data-design="starlight"] .disc-picks { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@container section (min-width: 852px) { :root[data-design="starlight"] .disc-picks { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@container section (min-width: 1071px) { :root[data-design="starlight"] .disc-picks { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
 :root[data-design="starlight"] .disc-pick {
   grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: none; grid-template-areas: "art art" "main main" "why why";
   align-items: start; column-gap: 4px; padding: 0; border-radius: 0; background: none;
 }
 :root[data-design="starlight"] .disc-pick:is(:hover, :focus-within) { background: none; }
 :root[data-design="starlight"] .disc-picks > .disc-pick:nth-child(even) { margin-top: 30px; }
+@container section (min-width: 470px) { :root[data-design="starlight"] .disc-picks > .disc-pick:nth-child(even) { margin-top: 0; } :root[data-design="starlight"] .disc-picks > .disc-pick:nth-child(3n+2) { margin-top: 30px; } }
+@container section (min-width: 852px) { :root[data-design="starlight"] .disc-picks > .disc-pick:nth-child(3n+2) { margin-top: 0; } :root[data-design="starlight"] .disc-picks > .disc-pick:nth-child(even) { margin-top: 30px; } }
+@container section (min-width: 1071px) { :root[data-design="starlight"] .disc-picks > .disc-pick:nth-child(even) { margin-top: 0; } :root[data-design="starlight"] .disc-picks > .disc-pick:is(:nth-child(5n+2), :nth-child(5n+4)) { margin-top: 30px; } }
 :root[data-design="starlight"] .disc-pick__art { margin: 0 10px 18px 0; }
 :root[data-design="starlight"] .disc-pick__art .cover { --cover-size: 100% !important; width: 100%; height: auto; aspect-ratio: 1; box-shadow: var(--sl-print); }
 :root[data-design="starlight"] .disc-pick__play { right: 8px; bottom: 8px; width: 40px; height: 40px; background: var(--bg); color: var(--sl-accent); border-color: var(--sl-accent); }
@@ -1052,6 +1244,20 @@
 :root[data-design="starlight"] .disc-starter__title { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 /* tags you follow: the description may take two lines instead of an ellipsis */
 :root[data-design="starlight"] .disc-tag__desc { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+
+/* search, from a wide page: the top result and the artists and albums shelves are one column beside the songs (they ran
+   under the songs and left the top result alone over an empty column); what only Soulseek has runs under both */
+@container main (min-width: 932px) {
+  :root[data-design="starlight"] .disc-search .disc-col { display: grid; grid-template-columns: minmax(300px, .8fr) minmax(0, 1.5fr); column-gap: var(--sp-6); align-items: start; }
+  :root[data-design="starlight"] .disc-search .disc-cat__lead { display: contents; }
+  :root[data-design="starlight"] .disc-search .disc-col > .disc-card:not(:has(> .disc-scan)), :root[data-design="starlight"] .disc-search .disc-top { grid-column: 1; }
+  /* nothing found: the card says so across the page, a wide plate with the constellation beside its words */
+  :root[data-design="starlight"] .disc-search .disc-col > .disc-card:has(> .empty):not(:has(~ .disc-songs)) { grid-column: 1 / -1; }
+  :root[data-design="starlight"] .disc-search .disc-col > .disc-card > .empty { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 36px; padding-block: 18px; text-align: left; }
+  :root[data-design="starlight"] .disc-search .disc-col > .disc-card > .empty .empty__art { flex: none; }
+  :root[data-design="starlight"] .disc-search .disc-songs { grid-column: 2; grid-row: 1 / span 6; }
+  :root[data-design="starlight"] .disc-search .disc-col > .disc-card:has(> .disc-scan) { grid-column: 1 / -1; }
+}
 
 /* =====================================================================
    Library and its pages. The page's headline over a horizontal constellation of its sections (a star per section on
@@ -1083,8 +1289,31 @@
   bottom: -1px; width: 22px; height: 22px; margin-left: -11px; border-radius: 0; box-shadow: none; background: var(--sparkle);
   -webkit-mask: var(--mask-sparkle) center / contain no-repeat; mask: var(--mask-sparkle) center / contain no-repeat;
 }
+/* a wide artist header has the planisphere plate at its right end, so the name is not left alone on a page-wide sheet */
+@container lib (min-width: 1100px) {
+  :root[data-design="starlight"] .lib-ahero::after {
+    content: ""; position: absolute; right: 36px; top: 22px; width: 280px; height: 280px; pointer-events: none; opacity: .9;
+    background: url("assets/art/chart.svg") center / contain no-repeat;
+  }
+  :root[data-design="starlight"] .lib-ahero .lib-hero { padding-right: 320px; }
+}
+/* About is the artist's statement: its words set large and thin */
+@container lib (min-width: 1100px) {
+  :root[data-design="starlight"] .lib-about .lib-bio { font: 300 1.5rem/1.4 var(--f-ui); }
+}
+@container lib (min-width: 1250px) {
+  :root[data-design="starlight"] .lib-page--album { grid-template-columns: minmax(340px, 440px) minmax(0, 1fr); }
+  :root[data-design="starlight"] .lib-page--album > .lib-hero { --lib-art: min(100%, 360px); }
+}
 :root[data-design="starlight"] .lib-count { font: 400 .75rem/1 var(--f-px); letter-spacing: .06em; }
 :root[data-design="starlight"] .lib-grid { row-gap: 26px; }
+/* a phone: the playlists come first, two across, and "new playlist" is one compact row above them, not a screen-tall frame */
+@media (max-width: 639px) {
+  :root[data-design="starlight"] .lib .lib-grid:has(> .lib-tile--pl) { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 16px; }
+  :root[data-design="starlight"] .lib-grid > .lib-newtile { grid-column: 1 / -1; grid-template-columns: 52px minmax(0, 1fr); align-items: center; gap: 0 14px; }
+  :root[data-design="starlight"] .lib-newtile__box { grid-row: 1 / span 2; width: 52px; margin: 0; }
+}
+:root[data-design="starlight"] .lib-grid:has(> .lib-tile--pl) { grid-template-columns: repeat(auto-fill, minmax(max(176px, calc((100% - 4 * var(--sp-5)) / 5)), 1fr)); }   /* the playlists share the row: five across a wide card */
 /* the poster heads: album, artist, tag, playlist */
 :root[data-design="starlight"] :is(.lib-hero, .lib-pl__head) > :is(.cover, .mosaic) { border-radius: var(--r-art); box-shadow: var(--sl-sleeves); }
 :root[data-design="starlight"] .lib-title { font: 300 clamp(2.5rem, 7cqi, 4.5rem)/.92 var(--f-ui); }
@@ -1115,6 +1344,35 @@
    Settings and Stats. The sections are a constellation on their print (as the rail: a star per section on a dotted
    line, the one open a 4-point star, the names in spaced caps); the design picker hangs each design as a framed print
    ===================================================================== */
+/* the page uses the window: the base look stops at 1180 px, which left a third of a wide window empty. From 1500 px
+   the open section is set in two columns (an index card per entry, its control under its words, as the base look
+   does in a narrow card), so a long section is shorter, not wider than it reads */
+:root[data-design="starlight"] .sys-page { max-width: none; }   /* Settings and Stats run to the side panel's strip like Home and Search */
+@container sys (min-width: 1500px) {
+  :root[data-design="starlight"] .sys-settings .sys-section { column-count: 2; column-gap: 72px; column-rule: 1px dashed var(--sl-rule); }
+  :root[data-design="starlight"] .sys-settings .sys-section > * { break-inside: avoid; }
+  :root[data-design="starlight"] .sys-settings .sys-section > :not(.sys-row:not(.sys-row--stack), .sys-group) { column-span: all; }   /* only the entries set in columns; anything else (lists, notes, panels) runs the full width */
+  :root[data-design="starlight"] .sys-settings .sys-section > .sys-group { break-after: avoid; }
+  :root[data-design="starlight"] .sys-settings .sys-section > .sys-group:has(+ :not(.sys-row:not(.sys-row--stack), .sys-group)) { column-span: all; }   /* a heading stays with the full-width part under it */
+  :root[data-design="starlight"] .sys-settings .sys-section .sys-row:not(.switch-row, .sys-row--stack) { grid-template-columns: minmax(0, 1fr); }
+  :root[data-design="starlight"] .sys-settings .sys-section .sys-row:not(.switch-row) .sys-row__ctl { align-items: flex-start; }
+  :root[data-design="starlight"] .sys-settings .sys-section .sys-row:not(.switch-row) .sys-row__ctl .sys-row__help { text-align: start; }
+  :root[data-design="starlight"] .sys-settings .sys-section .sys-row--stack:not(.switch-row) .sys-row__ctl { align-items: stretch; }
+  :root[data-design="starlight"] .sys-settings .sys-section :is(.sys-inline, .sys-inline--col) { justify-content: flex-start; align-items: flex-start; }
+}
+/* a short section does not leave the sky bare under it: from a side-by-side page both prints reach the page's foot (the
+   view's own height is --view-h, set by settings-fit.js), and a tall window prints the planisphere plate at the foot of the
+   index, where it has the room */
+@container sys (min-width: 640px) {
+  :root[data-design="starlight"] .sys-settings .sys-section { min-height: calc(var(--view-h, 0px) - 160px); }
+  :root[data-design="starlight"] .sys-settings .sys-nav { min-height: calc(var(--view-h, 0px) - 160px); box-sizing: border-box; }
+}
+@media (min-height: 1200px) {
+  @container sys (min-width: 640px) {
+    :root[data-design="starlight"] .sys-settings .sys-nav { background: var(--bg) url("assets/art/chart.svg") center bottom 22px / 190px auto no-repeat; }
+    :root[data-design="starlight"] .sys-settings .sys-section { padding-bottom: 300px; background-image: url("assets/art/chart.svg"); background-repeat: no-repeat; background-size: 260px auto; background-position: right 44px bottom 32px; box-sizing: border-box; }
+  }
+}
 :root[data-design="starlight"] .sys-nav { padding: 14px 10px; border-radius: var(--r-card); margin-bottom: var(--stack-reserve); }
 :root[data-design="starlight"] .sys-nav ul { position: relative; gap: 0; }
 :root[data-design="starlight"] .sys-nav ul::before {
@@ -1148,6 +1406,7 @@
 :root[data-design="starlight"] .sys-row__label { font-weight: 500; }
 :root[data-design="starlight"] .sys-gate__title { font: 300 1.5rem/1.15 var(--f-ui); letter-spacing: .12em; text-transform: uppercase; }
 /* the design picker: each design a framed print; the one in use is lifted on its stack and stamped "in use" */
+:root[data-design="starlight"] .sys-designs { grid-template-columns: repeat(auto-fit, minmax(196px, 1fr)); }   /* the prints share the row's whole width */
 :root[data-design="starlight"] .sys-design { border-radius: var(--r-card); }
 :root[data-design="starlight"] .sys-design__pv { border-color: var(--sl-frame); border-radius: var(--r-thumb); }
 :root[data-design="starlight"] .sys-design[aria-checked="true"] { background: var(--cream); color: var(--ink); box-shadow: var(--sl-stack); margin-bottom: 14px; }
@@ -1157,6 +1416,11 @@
 }
 :root[data-design="starlight"] .sys-design__name { font: 500 .9375rem/1.2 var(--f-ui); letter-spacing: .12em; text-transform: uppercase; }
 :root[data-design="starlight"] .sys-tile.card { padding: var(--sp-3); }
+/* the five tiles of a phone are one width: three, then two centred under them (the base look makes the last two wider) */
+@container sys (max-width: 520px) {
+  :root[data-design="starlight"] .sys-tile.card:nth-child(n+4) { grid-column: span 2; }
+  :root[data-design="starlight"] .sys-tile.card:nth-child(4) { grid-column: 2 / span 2; }
+}
 :root[data-design="starlight"] .sys-tile__value { font: 300 2.25rem/1.05 var(--f-ui); letter-spacing: 0; }
 :root[data-design="starlight"] :is(.sys-tile__sub, .sys-tile small) { font-size: .75rem; text-wrap: pretty; }
 :root[data-design="starlight"] .sys-tile__label { font: 400 .6875rem/1.3 var(--f-px); letter-spacing: .14em; text-transform: uppercase; }
@@ -1169,7 +1433,12 @@
    Overlays: sheets, dialogs, popovers and menus are cream prints with the printed edge; toasts are a scrap of night sky
    ===================================================================== */
 :root[data-design="starlight"] :is(.sheet, .dialog) { border-width: var(--stroke); }
-:root[data-design="starlight"] .dialog { box-shadow: var(--sl-edge), var(--stack); border-radius: var(--r-card); }
+:root[data-design="starlight"] :is(.sheet, .dialog)::before {
+  content: ""; position: absolute; z-index: 1; left: 0; right: 0; top: 0; height: 9px; pointer-events: none; border-radius: var(--r-card) var(--r-card) 0 0;
+  background: #262a40 url("assets/art/nebula.webp") 70% 40% / cover no-repeat; box-shadow: 0 1px 0 var(--line);
+}
+:root[data-design="starlight"] :is(.sheet, .dialog) > :first-child { margin-top: 9px; }
+:root[data-design="starlight"] .dialog { box-shadow: inset 0 0 0 6px var(--bg), inset 0 0 0 7px color-mix(in srgb, var(--line) 38%, transparent), var(--stack); border-radius: var(--r-card); }
 :root[data-design="starlight"] .sheet__title { display: flex; align-items: center; gap: var(--sp-3); font: 300 1.375rem/1.2 var(--f-ui); letter-spacing: .12em; text-transform: uppercase; }
 :root[data-design="starlight"] .sheet__title::after { content: ""; flex: 1; min-width: 16px; height: 1px; background: var(--sl-rule); }
 :root[data-design="starlight"] .sheet__head { position: relative; }
@@ -1198,17 +1467,30 @@
   background: var(--bg); color: var(--fg); border: var(--stroke) solid var(--line); border-radius: var(--r-card); font: 500 .9375rem/1.35 var(--f-ui);
   box-shadow: 0 6px 0 -1.5px var(--stack-1), 0 6px 0 0 var(--line), 0 12px 0 -1.5px var(--stack-2), 0 12px 0 0 var(--line); margin-bottom: 12px;
 }
+:root[data-design="starlight"] .toast { background-image: linear-gradient(rgba(30, 34, 54, .58), rgba(30, 34, 54, .58)), url("assets/art/nebula.webp"); background-size: auto, cover; background-position: 0 0, 80% 40%; }
 :root[data-design="starlight"] .toast > .ic { color: #fff9fe; }
 :root[data-design="starlight"] .toast--ok > .ic { color: #9ed9b4; }
 :root[data-design="starlight"] .toast--error > .ic { color: #f4a7bb; }
 :root[data-design="starlight"] .toast :is(.btn, .btn-icon) { color: var(--link); background: transparent; border-color: transparent; }
 :root[data-design="starlight"] .toast :is(.btn, .btn-icon):hover { background: var(--bg-2); }
-/* desktop: toasts sit at the bottom left of the main column, just above the player bar's stack */
+/* toasts are notices in the window's bottom right corner, above the ticket and clear of the page's prints, each whole on
+   its own sleeves (the gap is wider than they reach) */
+:root[data-design="starlight"] .toast-region { gap: 26px; }
 @media (min-width: 1100px) {
-  :root[data-design="starlight"][data-shell="rail"] .toast-region { left: calc(var(--rail) + 16px); bottom: calc(var(--bar-h) + 42px); transform: none; }
+  :root[data-design="starlight"][data-shell="rail"] .toast-region { left: auto; right: 28px; bottom: calc(var(--bar-h) + 40px); transform: none; }
 }
 :root[data-design="starlight"] .banner { font: 500 .9375rem/1.35 var(--f-ui); border-width: var(--stroke); border-radius: var(--r-card); }
-:root[data-design="starlight"] .tooltip { font: 500 .8125rem/1.3 var(--f-ui); border-radius: var(--r-thumb); }
+:root[data-design="starlight"] .tooltip { font: 400 .6875rem/1.35 var(--f-px); letter-spacing: .1em; text-transform: uppercase; border-radius: 2px; }
+:root[data-design="starlight"] ::selection { background: var(--sl-accent); color: var(--cream); }
+:root[data-design="starlight"] .menu__item { position: relative; }
+:root[data-design="starlight"] .menu__item:is(:hover, :focus-visible)::before {   /* a pointing star at the item under the pointer */
+  content: ""; position: absolute; left: 2px; top: 50%; width: 9px; height: 9px; margin-top: -4.5px; background: var(--sl-accent);
+  -webkit-mask: var(--mask-sparkle) center / contain no-repeat; mask: var(--mask-sparkle) center / contain no-repeat;
+}
+/* every scroller is the printed rule: dotted, with a periwinkle thumb on it */
+:root[data-design="starlight"] :is(.view, .nowcol__body, .now-ly__scroll, .sheet__body, .menu-list, .dialog)::-webkit-scrollbar { width: 9px; }
+:root[data-design="starlight"] :is(.view, .nowcol__body, .now-ly__scroll, .sheet__body, .menu-list, .dialog)::-webkit-scrollbar-track { background: repeating-linear-gradient(180deg, var(--sl-rule) 0 3px, transparent 3px 7px) center / 1px 100% no-repeat; }
+:root[data-design="starlight"] :is(.view, .nowcol__body, .now-ly__scroll, .sheet__body, .menu-list, .dialog)::-webkit-scrollbar-thumb { background: var(--sl-accent); border: 2px solid transparent; border-radius: 4px; background-clip: padding-box; }
 
 /* =====================================================================
    Empty states: a small dotted constellation (slots/emptyArt), its title in thin caps
@@ -1272,11 +1554,26 @@
 :root[data-design="starlight"] .sl-mini__foot .btn-icon.is-liked { color: var(--heart); }
 :root[data-design="starlight"] .sl-mini__vol { display: flex; align-items: center; gap: 4px; font: 400 .8125rem/1 var(--f-px); color: var(--fg-2); }
 :root[data-design="starlight"] .sl-mini .dk-mini__note { left: 16px; right: 16px; bottom: auto; top: 46px; background: var(--ink); color: var(--cream); font: 500 .8125rem/1.3 var(--f-ui); border-radius: var(--r-thumb); }
-:root[data-design="starlight"] .dk-strip { border-color: var(--line); border-radius: var(--r-card); box-shadow: var(--sl-edge), var(--stack-sm); }
+:root[data-design="starlight"] .dk-strip { border-color: var(--line); border-radius: var(--r-card); box-shadow: inset 0 0 0 6px var(--bg), inset 0 0 0 7px color-mix(in srgb, var(--line) 38%, transparent), var(--stack-sm); }
 :root[data-design="starlight"] .dk-strip .bezel-thumb .cover { --cover-size: 44px; box-shadow: var(--sl-print-sm); }
+/* the strip is a small ticket: its seek is the star-chart line along the top edge (dotted where nothing has arrived, solid
+   where it has), and a scrap of the night sky stands behind the song's name */
+:root[data-design="starlight"] .dk-strip { overflow: clip; }
+:root[data-design="starlight"] .dk-strip > .seek--line { left: 10px; right: 10px; top: 9px; height: 3px; }
+:root[data-design="starlight"] .dk-strip > .seek--line .seek__track { height: 2px; margin-top: -1px; border-radius: 0; box-shadow: none; background: repeating-linear-gradient(90deg, var(--line) 0 2px, transparent 2px 6px); }
+:root[data-design="starlight"] .dk-strip .seek__played { border-radius: 0; }
+:root[data-design="starlight"] .dk-strip .dk-strip__text { padding-top: 8px; }
+:root[data-design="starlight"] .dk-strip[data-playing="true"] .dk-strip__title::after, :root[data-design="starlight"] .sl-mini[data-playing="true"] .device__title::after { content: none; }
+/* the mini window's head: a band of the night sky, its words in the night's cream */
+:root[data-design="starlight"] .sl-mini__head { margin: -16px -18px 4px; padding: 11px 14px 11px 18px; background: #262a40 url("assets/art/nebula.webp") 70% 30% / cover no-repeat; border-bottom: var(--stroke) solid var(--line); }
+:root[data-design="starlight"] .sl-mini__head :is(.sl-mini__label, .dk-mini__win) { color: #f2e3d1; }
+:root[data-design="starlight"] .sl-mini__head .dk-mini__win:hover { background: rgba(242, 227, 209, .18); }
+:root[data-design="starlight"] .sl-mini__head .sl-mini__rule { background: rgba(242, 227, 209, .45); }
+:root[data-design="starlight"] .sl-mini__card { overflow: clip; }
+:root[data-design="starlight"] .sl-mini .cover { box-shadow: var(--sl-print); }
 :root[data-design="starlight"] .dk-strip__title { font: 600 .9375rem/1.2 var(--f-ui); text-transform: uppercase; letter-spacing: .03em; color: var(--sl-title); }
 :root[data-design="starlight"] .dk-strip__artist { text-transform: uppercase; letter-spacing: .05em; font-size: .75rem; }
-:root[data-design="starlight"] :is(.dk-card, .dk-modal) { border-radius: var(--r-card); box-shadow: var(--sl-edge), var(--stack); }
+:root[data-design="starlight"] :is(.dk-card, .dk-modal) { border-radius: var(--r-card); box-shadow: inset 0 0 0 6px var(--bg), inset 0 0 0 7px color-mix(in srgb, var(--line) 38%, transparent), var(--stack); }
 :root[data-design="starlight"] .dk-card__title { font: 300 1.5rem/1.15 var(--f-ui); letter-spacing: .12em; text-transform: uppercase; }
 :root[data-design="starlight"] .dk-status { border-radius: var(--r-thumb); font-weight: 500; }
 
@@ -1285,7 +1582,7 @@
    lavender layer; picks and search rows stop truncating
    ===================================================================== */
 @media (max-width: 1099px) {
-  :root[data-design="starlight"] .sky-specks > .sparkle:nth-child(1) { left: 52px !important; top: 62% !important; --s: 64px !important; }
+  :root[data-design="starlight"] .sky-specks > .sparkle:nth-child(1) { left: 38px !important; top: 62% !important; --s: 56px !important; }
 }
 @media (min-width: 640px) and (max-width: 1099px) {
   :root[data-design="starlight"] .rail__head .wordmark.sl-mark { font-size: 2rem; width: auto; height: auto; }
@@ -1310,11 +1607,9 @@
   :root[data-design="starlight"] .header .sl-mark { font-size: 1.125rem; }
   :root[data-design="starlight"] .tray--compact .tray__pill { padding: 0 10px 0 8px; }
   :root[data-design="starlight"] .tray--compact .tray__word { font-size: .75rem; }
-  :root[data-design="starlight"] .sky-specks > .sparkle:nth-child(1) { left: auto !important; right: -8px !important; top: 36% !important; --s: 60px !important; }
-  :root[data-design="starlight"] .sky-specks > .sparkle:nth-child(2) { display: none; }
-  :root[data-design="starlight"] .sky-specks > .sparkle:nth-child(3) { right: 44% !important; top: -6px !important; --s: 30px !important; }
+  :root[data-design="starlight"] .sky-specks > .sparkle:nth-child(1) { display: none; }
   :root[data-design="starlight"] .sys-tile__value { font-size: 1.75rem; white-space: nowrap; }
-  :root[data-design="starlight"] .mini { border: var(--stroke) solid var(--line); border-radius: var(--r-card); box-shadow: var(--sl-edge), var(--stack-sm); margin: 0 10px 18px; overflow: visible; }
+  :root[data-design="starlight"] .mini { border: var(--stroke) solid var(--line); border-radius: var(--r-card); box-shadow: inset 0 0 0 6px var(--bg), inset 0 0 0 7px color-mix(in srgb, var(--line) 38%, transparent), var(--stack-sm); margin: 0 10px 18px; overflow: visible; }
   :root[data-design="starlight"] .mini > .seek--line { left: 18px; right: 18px; top: -1px; }
   :root[data-design="starlight"] .mini .bezel-thumb .cover { --cover-size: 42px; box-shadow: var(--sl-print-sm); }
   :root[data-design="starlight"] .tabbar { background: var(--sky-deep); border-top: 1px solid var(--edge); }
@@ -1331,7 +1626,6 @@
   /* the page's line: the short rule over it, not beside it (no room for a hanging rule) */
   :root[data-design="starlight"] :is(.lib-head__sub, .disc-hello__sum) { padding-left: 0; text-indent: 0; }
   :root[data-design="starlight"] :is(.lib-head__sub, .disc-hello__sum)::before { display: block; margin: 0 0 8px; }
-  :root[data-design="starlight"] .disc-card[data-region="new"]::after { left: auto; right: -26px; top: -34px; width: 66px; height: 66px; }
   :root[data-design="starlight"] .disc-card[data-region="new"] .disc-shelf { grid-template-columns: minmax(0, 1fr); gap: 8px; }
   :root[data-design="starlight"] .disc-card[data-region="new"] .tile:first-child { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto auto auto; }
   :root[data-design="starlight"] .disc-card[data-region="new"] .tile:first-child .tile__art > a { grid-column: 1 / -1; grid-row: 1; margin: 0 14px 22px 0; }
@@ -1340,7 +1634,6 @@
   :root[data-design="starlight"] .disc-card[data-region="new"] .tile:first-child .tile__by { grid-row: 3; grid-column: 1 / -1; }
   :root[data-design="starlight"] .disc-card[data-region="new"] .tile:first-child .tile__meta { grid-row: 4; grid-column: 1 / -1; }
   :root[data-design="starlight"] .disc-card[data-region="new"] .tile:first-child .tile__play { grid-row: 4; }
-  :root[data-design="starlight"] .disc-card[data-region="picks"]::after { right: -10px; }
   /* search: the filter chips scroll with a trailing fade; the top result's actions wrap (its first action full width,
      the others share the next line) and the Soulseek status is one short line */
   :root[data-design="starlight"] .disc-filters { -webkit-mask: linear-gradient(90deg, #000 calc(100% - 44px), transparent); mask: linear-gradient(90deg, #000 calc(100% - 44px), transparent); padding-right: 44px; }
@@ -1352,6 +1645,7 @@
   :root[data-design="starlight"] .disc-scan > .btn { grid-row: 2; grid-column: 2 / -1; justify-self: start; margin-left: -8px; }
   /* library: the sections' constellation scrolls sideways under the headline */
   :root[data-design="starlight"] .lib-segs a.pill-filter { padding-inline: 12px; letter-spacing: .14em; }
+  :root[data-design="starlight"] .lib-segs ul { flex-wrap: wrap; overflow: visible; padding-right: 8px; row-gap: 2px; }   /* the sections wrap: no word is cut at the edge */
   /* Now Playing: the poster alone (the print, the title, the label, the seek and the transport); tags and actions
      share one cream print under it */
   :root[data-design="starlight"] .sl-hero:not(.sl-hero--compact) {
