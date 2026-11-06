@@ -947,7 +947,7 @@
     var load = [
       App.settingsFit ? null : App.needSettingsFit(),
       HUB_SECTIONS[params.section] && !App.hubKit ? App.needHub() : null,
-      params.section === 'sounds' && !App.settingsSections.sounds ? App.needScript('screens/sounds-settings.js', 'Sound settings') : null
+      params.section === 'sounds' && !App.settingsSections.sounds ? App.needSoundSettings() : null
     ].filter(Boolean);
     return load.length ? Promise.all(load) : null;
   }

@@ -1,33 +1,33 @@
 {
-  "note": "Pre-themes baseline (run 41312904377: median of 3 mobile runs on the CI hub with the fixture library) plus margin. shippedBytes (what lull ships, not the hub's live answers nor Chrome's own icon fetches: shipped.mjs): main's measured bytes + 1,000 B on every route, set again to the new main + 1,000 B by a change that passes it, with its measured reason. LCP +25%, CLS +0.025, TBT floored at 150 ms because lab TBT of 0-90 ms is noise. Budgets move only with a reason the user would accept: docs/context/quality.md#budgets. benchmarkIndex: the runner speed (Lighthouse's benchmark) they are met on, main's own runs 3,555-4,013; lighthouse.sh slows each runner's CPU 4x times its speed over it, so every runner plays the same device. settings/playback 361,225 B: main's 358,618 B (queue run 42098937660) + 1,607 B for Settings' own file, screens/settings-fit.js (749 B, brotli, and its 650 B of response headers) and the 208 B every page loads with it (designs.js 114 B, system.js 51 B, app.js 43 B), + 1,000 B: docs/context/quality.md#budgets. home, search and now 336,300 B, library/albums 352,478 B: what the player bar's cut-off stop reason, shown whole on a tap, ships (335,300 B and 351,478 B in queue run 42161977612, main 335,147 B and 351,325 B in run 42151325673: +153 B in app.js and the default design's stylesheet), + 1,000 B.",
+  "note": "Pre-themes baseline (run 41312904377: median of 3 mobile runs on the CI hub with the fixture library) plus margin. shippedBytes (what lull ships, not the hub's live answers nor Chrome's own icon fetches: shipped.mjs): main's measured bytes + 1,000 B on every route, set again to the new main + 1,000 B by a change that passes it, with its measured reason. LCP +25%, CLS +0.025, TBT floored at 150 ms because lab TBT of 0-90 ms is noise. Budgets move only with a reason the user would accept: docs/context/quality.md#budgets. benchmarkIndex: the runner speed (Lighthouse's benchmark) they are met on, main's own runs 3,555-4,013; lighthouse.sh slows each runner's CPU 4x times its speed over it, so every runner plays the same device. settings/playback 361,225 B: main's 358,618 B (queue run 42098937660) + 1,607 B for Settings' own file, screens/settings-fit.js (749 B, brotli, and its 650 B of response headers) and the 208 B every page loads with it (designs.js 114 B, system.js 51 B, app.js 43 B), + 1,000 B: docs/context/quality.md#budgets. home, search and now 336,300 B, library/albums 352,478 B: what the player bar's cut-off stop reason, shown whole on a tap, ships (335,300 B and 351,478 B in queue run 42161977612, main 335,147 B and 351,325 B in run 42151325673: +153 B in app.js and the default design's stylesheet), + 1,000 B. The UI sounds (ADR-0081): every route + 478 B, on main's 335,883 B (home, search, now), 352,061 B (library/albums) and 340,089 B (settings/playback) of queue run 42174194836, + 1,000 B. It is what app.js waits for the first tap with and what loads the sounds then, Settings' Sounds section in its list and Appearance's .lullpack import; the sounds themselves (about 9 KB) load on the first tap or key, as a browser lets nothing sound before one: docs/context/quality.md#budgets.",
   "benchmarkIndex": 3900,
   "routes": {
     "home": {
-      "shippedBytes": 336300,
+      "shippedBytes": 337361,
       "lcpMs": 4650,
       "tbtMs": 150,
       "cls": 0.025
     },
     "search": {
-      "shippedBytes": 336300,
+      "shippedBytes": 337361,
       "lcpMs": 4350,
       "tbtMs": 150,
       "cls": 0.025
     },
     "library/albums": {
-      "shippedBytes": 352478,
+      "shippedBytes": 353539,
       "lcpMs": 4600,
       "tbtMs": 150,
       "cls": 0.025
     },
     "now": {
-      "shippedBytes": 336300,
+      "shippedBytes": 337361,
       "lcpMs": 4500,
       "tbtMs": 150,
       "cls": 0.09
     },
     "settings/playback": {
-      "shippedBytes": 341089,
+      "shippedBytes": 341567,
       "lcpMs": 4500,
       "tbtMs": 150,
       "cls": 0.025

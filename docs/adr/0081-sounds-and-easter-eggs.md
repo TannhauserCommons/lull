@@ -161,9 +161,13 @@ low.
 
 ### Cost
 
-- **Tiny files, loaded once, decoded once.** The engine (`web/sounds.js`) loads with the start, is a few KB, and
-  touches no DOM. It fetches the pack's files after the first screen has settled (the service worker keeps them), and
-  decodes each once into a Web Audio buffer, on the first gesture.
+- **Nothing before it can sound, then loaded once, decoded once.** A browser plays no page's audio before the
+  listener's first tap or key, so in a browser the engine (`web/sounds.js` and its rules, about 9 KB) loads on that
+  first tap or key, and a tab nobody touches fetches none of it: the start pays only app.js' few lines that wait for the
+  tap. The app and an installed PWA, where audio may start by itself, load it at the start for the start-up sound. The
+  easter eggs come with it, so in a browser they begin at the first tap too; nothing but a clock egg could show before
+  one, as playing needs a tap. The engine touches no DOM. It fetches the pack's files after the first screen has
+  settled (the service worker keeps them), and decodes each once into a Web Audio buffer.
 - **Its own Web Audio context,** apart from the player's: a cue never passes through the equaliser, the crossfade or
   the level, and nothing in the player waits for it. The context starts on the first gesture (autoplay rules) and
   suspends after 10 s without a sound, so an idle lull keeps no audio thread awake.

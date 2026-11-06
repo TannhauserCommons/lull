@@ -149,7 +149,7 @@
     el.addEventListener('click', onClick);
     /* a .lullpack dropped anywhere on Studio becomes this theme's sounds and surprises */
     el.addEventListener('drop', function (e) { var f = packIn(e); if (f) { e.lullTaken = true; addPack(f); } });   // app.js: not imported again
-    App.sounds.load().then(paintPack);
+    App.needSounds().then(function () { return App.sounds.load(); }).then(paintPack, function () {});
     el.addEventListener('keydown', onKey);
     Object.keys(Designs.limits).forEach(count);
     var ta = $('[data-studio="css"]', el);
@@ -524,7 +524,7 @@
       });
   }
   /* ---------- sounds and surprises: the theme's pack (docs/themes.md section 13) ---------- */
-  function themePack() { return S && S.id ? App.sounds.known()['theme:' + S.id] : null; }
+  function themePack() { return S && S.id && App.sounds ? App.sounds.known()['theme:' + S.id] : null; }
   function packPanel() {
     if (!S || !S.id) return html`<p class="field__help">Save the theme, then add a .lullpack: its sounds and surprises come with the theme wherever it goes.</p>`;
     var p = themePack(), eggs = p ? p.eggs : [], n = p ? Object.keys(p.sounds).length : 0;
@@ -544,20 +544,20 @@
       if (!id) return;
       return fetch(M.url('/api/themes/' + encodeURIComponent(id) + '/pack'), { method: 'PUT', body: file, credentials: 'same-origin' })
         .then(function (r) { return r.ok ? null : r.json().then(function (j) { throw new Error(j.message || 'The hub answered ' + r.status); }); })
-        .then(function () { App.announce('Added the sounds and surprises of ' + file.name); return App.sounds.reload(); })
+        .then(function () { App.announce('Added the sounds and surprises of ' + file.name); return App.needSounds(); }).then(function () { return App.sounds.reload(); })
         .then(paintPack);
     }).catch(function (err) { App.toast('Couldn\'t add ' + file.name + ': ' + err.message, { kind: 'error', sticky: true }); });
   }
   function removePack() {
-    M.api('/api/themes/' + encodeURIComponent(S.id) + '/pack', { method: 'DELETE' }).then(function () { return App.sounds.reload(); }).then(paintPack,
+    M.api('/api/themes/' + encodeURIComponent(S.id) + '/pack', { method: 'DELETE' }).then(App.needSounds).then(function () { return App.sounds.reload(); }).then(paintPack,
       function (err) { App.toast('Couldn\'t remove the pack: ' + err.message, { kind: 'error' }); });
   }
   /* an egg fired by hand in both previews, whatever its conditions (they show the saved theme, its pack included) */
   function tryEgg(name) {
     S.frames.forEach(function (f) {
       var w = f.contentWindow;
-      if (!w || !w.App || !w.App.sounds) return;
-      w.App.sounds.reload().then(function () { return w.App.needEggs(); }).then(function () { w.App.eggs.fire(name); });
+      if (!w || !w.App || !w.App.needSounds) return;
+      w.App.needSounds().then(function () { return w.App.sounds.reload(); }).then(function () { return w.App.needEggs(); }).then(function () { w.App.eggs.fire(name); });
     });
   }
 

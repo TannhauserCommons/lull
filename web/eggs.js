@@ -160,12 +160,31 @@
       : '/api/packs/' + encodeURIComponent(pack.id) + '/slots/egg.' + name + '.html';
     var t = P.current(), d = new Date();
     fetch(url, { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.text() : ''; }).then(function (tpl) {
-      return tpl ? D.eggSlot(tpl, { count: h.count == null ? '' : h.count, word: h.word || '', title: t ? t.title : '', artist: t ? t.artist : '', hour: String(d.getHours()) }) : '';
+      return tpl ? eggSlot(tpl, { count: h.count == null ? '' : h.count, word: h.word || '', title: t ? t.title : '', artist: t ? t.artist : '', hour: String(d.getHours()) }) : '';
     }).then(function (markup) {
       if (!markup || !live[name]) return;
       var box = document.createElement('div'); box.setAttribute('data-egg-of', name); box.innerHTML = markup;
       stage().appendChild(box);
     }, function (err) { console.warn('An easter egg\'s slot didn\'t load', name, err); });
+  }
+  /* an egg's slot (`slots/egg.<name>.html`): fields only ({{count}}, {{word}}, {{title}}, {{artist}}, {{hour}},
+     escaped), sanitized as any listener's slot is (designs.js), and of the parts only `icon`. Resolves to markup. */
+  function eggSlot(tpl, fields) {
+    return D.purify().then(function () {
+      var f = Object.assign({ product: D.product }, fields), esc = function (v) { return App.esc(v == null ? '' : v); };
+      var filled = String(tpl).replace(/<!--[\s\S]*?-->/g, '').replace(/>\s*\n\s*</g, '><').trim()
+        .replace(/\{\{\s*([a-zA-Z][a-zA-Z0-9]*)\s*\}\}/g, function (all, k) { return Object.prototype.hasOwnProperty.call(f, k) ? esc(f[k]) : ''; });
+      var body = D.sanitize(filled), parts = body.querySelectorAll('lull-part');
+      for (var i = 0; i < parts.length; i++) {
+        var el = parts[i], cls = el.getAttribute('cls'), out = '';
+        if (el.getAttribute('name') === 'icon') {
+          out = String(App.icon(el.getAttribute('icon') || 'sparkle', null, el.getAttribute('size') === '16' ? 'ic-16' : ''));
+          if (cls) out = out.replace(/^(<[a-z]+[^>]*?\sclass=")/, '$1' + esc(cls) + ' ');
+        }
+        el.outerHTML = out;
+      }
+      return body.innerHTML;
+    });
   }
   function tidy() {
     var el = $('.egg-stage');

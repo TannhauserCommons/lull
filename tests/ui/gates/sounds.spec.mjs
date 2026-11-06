@@ -1,5 +1,5 @@
-// lull's UI sounds on the real page (ADR-0081, web/sounds.js): the start-up sound plays once per app start and never on
-// a reload, nothing but play and pause sounds while music plays, the buffering loop is gone the moment the song sounds,
+// lull's UI sounds on the real page (ADR-0081, web/sounds.js): a browser tab nobody has tapped fetches none of them,
+// the start-up sound plays once per app start and never on a reload, nothing but play and pause sounds while music plays, the buffering loop is gone the moment the song sounds,
 // and nothing sounds while the page is hidden. Every sound the page starts is read from Web Audio itself (each buffer
 // source started or stopped), named by the page's `sound` event.
 import { expect, test as base } from '@playwright/test';
@@ -34,6 +34,23 @@ async function listen(page, { standalone = false } = {}) {
 }
 const named = (page) => page.evaluate(() => window.__named.slice());
 
+test('a browser tab nobody has tapped fetches none of the sounds, and its first tap brings them', async ({ page }) => {
+  const asked = [];
+  page.on('request', (r) => {
+    const path = new URL(r.url()).pathname;
+    if (/\/(sounds|sound-rules|eggs|egg-rules)\.js$|\/packs\//.test(path)) asked.push(path);
+  });
+  await listen(page);
+  await openScreen(page, '/home', { clock: false });
+  await page.waitForTimeout(4000);              // longer than the packs wait for the first screen to settle (1.5 s, then idle)
+  expect(asked, 'fetched before a tap').toEqual([]);
+  expect(await page.evaluate(() => !!window.App.sounds)).toBe(false);
+  await page.mouse.click(5, 5);
+  await page.waitForFunction(() => !!window.App.sounds);
+  await page.waitForFunction(() => window.App.sounds.vocab(), null, { timeout: 10000 });
+  expect(asked.some((p) => p.endsWith('/sounds.js')), 'the sounds came with the tap').toBe(true);
+});
+
 test('the start-up sound plays once per app start, and a reload makes no sound', async ({ page }) => {
   await listen(page, { standalone: true });
   await openScreen(page, '/home', { clock: false });
@@ -48,7 +65,7 @@ test('the start-up sound plays once per app start, and a reload makes no sound',
 test('while music plays only play and pause sound; a like sounds once the music is paused', async ({ page }) => {
   await listen(page);
   await openScreen(page, '/home', { clock: false });
-  await page.evaluate(() => App.sounds.load());
+  await page.evaluate(() => App.needSounds().then(() => App.sounds.load()));
   const album = await page.evaluate(() => App.data.api('/api/feed').then((f) => f.newReleases[0]));
   await page.evaluate((id) => { location.hash = '#/album/' + id; }, album);
   await page.locator('#view .trow[data-track-id]').first().dblclick();
@@ -70,7 +87,7 @@ test('while music plays only play and pause sound; a like sounds once the music 
 test('the buffering loop plays only in silence and is gone the moment the song sounds', async ({ page, request }) => {
   await listen(page);
   await openScreen(page, '/home', { clock: false });
-  await page.evaluate(() => App.sounds.load());
+  await page.evaluate(() => App.needSounds().then(() => App.sounds.load()));
   const album = await page.evaluate(() => App.data.api('/api/feed').then((f) => f.newReleases[0]));
   await page.evaluate((id) => { location.hash = '#/album/' + id; }, album);
   const track = await page.waitForSelector('#view .trow[data-track-id]').then((r) => r.getAttribute('data-track-id'));
@@ -95,7 +112,7 @@ test('the buffering loop plays only in silence and is gone the moment the song s
 test('nothing sounds while the page is hidden', async ({ page }) => {
   await listen(page);
   await openScreen(page, '/home', { clock: false });
-  await page.evaluate(() => App.sounds.load());
+  await page.evaluate(() => App.needSounds().then(() => App.sounds.load()));
   await page.mouse.click(5, 5);
   await page.evaluate(() => {
     Object.defineProperty(document, 'visibilityState', { get: () => 'hidden', configurable: true });

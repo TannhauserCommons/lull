@@ -1,7 +1,8 @@
 /* lull's UI sounds (ADR-0081, docs/themes.md section 13): which sound each moment makes, from the packs that are on,
    under the rules in sound-rules.js (never over the music, never while lull isn't in front, quiet when the system asks).
-   It touches no DOM but the packs' stylesheet: a sound draws nothing. Files are fetched once the first screen has
-   settled (the service worker keeps them), decoded once into Web Audio buffers and levelled as they decode; the audio
+   It touches no DOM but the packs' stylesheet: a sound draws nothing. This file and its rules load on the first tap or
+   key, or at the start in the app (app.js, App.needSounds); its packs once the first screen has settled (the service
+   worker keeps them), decoded once into Web Audio buffers and levelled as they decode; the audio
    context is lull's own, apart from the player's, starts on the first tap or key (autoplay rules) and sleeps after
    10 s without a sound. App.sounds is the API (Settings > Sounds, Theme Studio, eggs.js). */
 (function () {
@@ -18,7 +19,7 @@
   var known = {};                // pack id -> pack (built-in, the listener's, `theme:<id>` for a theme's own)
   var themesWithPack = [];
   var builtIn = [];              // the built-in packs (web/packs/index.json)
-  var lastInput = -Infinity, cuedInput = null, armed = false;
+  var start0 = App.soundsStart, lastInput = start0.input, cuedInput = null, armed = lastInput > -Infinity;
   var appFront = null;           // the desktop app: one of lull's windows has the focus (null: not reported)
   var systemQuiet = false;       // the system asks for quiet (the app reports it; a browser can't know)
   var classic = root.getAttribute('data-classic') === 'on';
@@ -37,7 +38,9 @@
     return { heard: P.heard(), front: front(), quiet: systemQuiet, reducedMotion: App.reducedMotion(), classic: classic, egg: !!egg };
   }
   function input() { lastInput = now(); armed = true; unlock(); }
-  ['pointerdown', 'keydown'].forEach(function (type) { window.addEventListener(type, input, { capture: true, passive: true }); });
+  /* pointerup and click too: the tap that loaded this file went down before it was here, and Safari starts audio only
+     inside a gesture's own handler */
+  ['pointerdown', 'keydown', 'pointerup', 'click', 'keyup'].forEach(function (type) { window.addEventListener(type, input, { capture: true, passive: true }); });
 
   /* ---------- the packs ---------- */
   function lookPack() {
@@ -314,10 +317,8 @@
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') askQuiet(); });
 
   /* ---------- the start-up sound: once per app start, never on a reload, never late ---------- */
-  var started = false;
-  try { started = !!sessionStorage.getItem('lull:started'); sessionStorage.setItem('lull:started', '1'); } catch (e) { started = true; }
-  var bootAt = now();
-  App.on('ready', function () {
+  var started = start0.started, bootAt = start0.at;
+  function begin() {
     var bootWanted = !started && settings.on && !!context(true);
     if (bootWanted) {
       // the eggs first, so one can take the start-up sound's place
@@ -333,7 +334,7 @@
         if (window.requestIdleCallback) requestIdleCallback(go, { timeout: 5000 }); else go();
       }, 1500);
     }
-  });
+  }
 
   /* ---------- the API ---------- */
   /* the credits, which the `credits` egg opens: eggs.js draws them */
@@ -341,6 +342,7 @@
   App.needEggs = function () {
     return App.eggs ? Promise.resolve() : App.needScript('egg-rules.js', 'the easter eggs').then(function () { return App.needScript('eggs.js', 'the easter eggs'); });
   };
+  if (armed) unlock();
   App.sounds = {
     settings: function () { return settings; },
     /* change settings: a patch of S.DEFAULTS' keys */
@@ -378,4 +380,6 @@
     pressed: function () { lastInput = now(); armed = true; },
     front: front
   };
+  /* the start, once App.sounds and App.needEggs are here: at once when this file loads after the page is ready */
+  if (start0.ready) begin(); else App.on('ready', begin);
 })();

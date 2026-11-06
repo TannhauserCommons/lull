@@ -464,6 +464,23 @@
   App.needHub = function () {
     return App.hubKit ? Promise.resolve() : App.needScript('screens/hub.js', 'the hub\'s settings', 'screens/hub.css');
   };
+  /* the UI sounds (ADR-0081, web/sounds.js and its rules) load on the listener's first tap or key, since a browser lets
+     no page sound before one, or at the start where audio may start by itself (the app, an installed PWA), for the
+     start-up sound; until then none of them is fetched. A start is marked here, as the page starts, so a reload is told
+     from one. App.needSounds loads them for whatever wants them sooner (Settings > Sounds, Theme Studio, a .lullpack). */
+  var soundsLoad = null, soundsStart = App.soundsStart = { at: performance.now(), input: -Infinity, ready: false, started: true };
+  try { soundsStart.started = !!sessionStorage.getItem('lull:started'); sessionStorage.setItem('lull:started', '1'); } catch (e) { /* no storage: no start-up sound */ }
+  App.needSounds = function () {
+    return soundsLoad || (soundsLoad = App.needScript('sound-rules.js', 'the sounds').then(function () { return App.needScript('sounds.js', 'the sounds'); })
+      .then(null, function (err) { soundsLoad = null; throw err; }));
+  };
+  App.needSoundSettings = function () { return App.needSounds().then(function () { return App.needScript('screens/sounds-settings.js', 'Sound settings'); }); };
+  function soundsInput() { soundsStart.input = performance.now(); if (!App.sounds) App.needSounds().then(null, function () {}); }
+  ['pointerdown', 'keydown'].forEach(function (type) { window.addEventListener(type, soundsInput, { capture: true, passive: true }); });
+  App.on('ready', function () {
+    soundsStart.ready = true;
+    if (window.__TAURI__ || window.LullNative || (window.matchMedia && matchMedia('(display-mode: standalone)').matches)) App.needSounds().then(null, function () {});
+  });
   /* opening a screen shouldn't wait for its code (Classic's first open took ~150 ms more with the CPU slowed 6x, plus
      the fetches): it loads as the pointer or focus reaches a way in (or, for Classic, the menu that lists it opens,
      playerMenu). [where the pointer goes, what it loads]; each fires once */
@@ -501,7 +518,7 @@
   App.openFiles = function (files) {
     /* a .lullpack is sounds and surprises (ADR-0081): Settings > Sounds' code imports it */
     files.filter(function (f) { return /\.lullpack$/i.test(f.name); }).forEach(function (f) {
-      App.needScript('screens/sounds-settings.js', 'Sound settings').then(function () { App.importPack(f); }, function (err) { App.toast(err.message, { kind: 'error' }); });
+      App.needSoundSettings().then(function () { App.importPack(f); }, function (err) { App.toast(err.message, { kind: 'error' }); });
     });
     files = files.filter(function (f) { return !/\.lullpack$/i.test(f.name); });
     var skins = files.filter(function (f) { return /\.wsz$/i.test(f.name); });

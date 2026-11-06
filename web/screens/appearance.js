@@ -164,7 +164,7 @@
   function needThemes() { return App.needScript('screens/your-themes.js', 'Your themes'); }
   function importFile(file) {
     // a .lullpack is sounds and surprises (Settings > Sounds keeps them): it comes with that section's code
-    var load = /\.lullpack$/i.test(file.name) ? App.needScript('screens/sounds-settings.js', 'Sound settings').then(function () { App.importPack(file); })
+    var load = /\.lullpack$/i.test(file.name) ? App.needSoundSettings().then(function () { App.importPack(file); })
       : needThemes().then(function () { App.importTheme(file); });
     load.then(null, function (err) { App.toast('Couldn\'t import ' + file.name + ': ' + err.message, { kind: 'error' }); });
   }

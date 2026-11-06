@@ -372,18 +372,6 @@
     for (var i = 0; i < parts.length; i++) parts[i].outerHTML = part(name, parts[i], ctx, made);
     return body.innerHTML;
   }
-  /* an easter egg's slot (`slots/egg.<name>.html` in a pack, ADR-0081): fields only ({{count}}, {{word}}, {{title}},
-     {{artist}}, {{hour}}, escaped), sanitized as any listener's slot is, and of the parts only `icon`. Resolves to markup. */
-  D.eggSlot = function (tpl, fields) {
-    return loadPurify().then(function () {
-      var f = Object.assign({ product: D.product }, fields);
-      var filled = String(tpl).replace(/<!--[\s\S]*?-->/g, '').replace(/>\s*\n\s*</g, '><').trim()
-        .replace(/\{\{\s*([a-zA-Z][a-zA-Z0-9]*)\s*\}\}/g, function (all, k) { return Object.prototype.hasOwnProperty.call(f, k) ? esc(f[k]) : ''; });
-      var body = D.sanitize(filled), parts = body.querySelectorAll('lull-part');
-      for (var i = 0; i < parts.length; i++) parts[i].outerHTML = parts[i].getAttribute('name') === 'icon' ? part('egg', parts[i], {}, {}) : '';
-      return body.innerHTML;
-    });
-  };
   /* made: what this render already built, so ten picks from one device build it once */
   function part(slot, el, ctx, made) {
     var name = el.getAttribute('name'), make = PARTS[name];
@@ -587,6 +575,7 @@
   }
   /* everything a theme needs before the app renders with it: its manifest (and its design's), DOMPurify, slot templates */
   var purify = null;
+  D.purify = loadPurify;                         // eggs.js sanitizes an egg's slot with it
   function loadPurify() {
     if (window.DOMPurify) return Promise.resolve();
     return purify || (purify = new Promise(function (ok, fail) {
