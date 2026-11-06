@@ -19,6 +19,7 @@
   "preview": true,
   "slots": [
     "emptyArt",
+    "homeLead",
     "miniPlayer.device",
     "nowHero.compact",
     "nowHero.full"
