@@ -6,7 +6,8 @@
 
 | File | What |
 |---|---|
-| `lib.rs` | `run` (open the db, resolve settings, bind, serve), the restart loop, the hub's own routes, `wire` (the crates, the only place they meet) |
+| `lib.rs` | `run` (open the db, resolve settings, bind, serve) and `run_with` (the same, with the hub's own slskd), the restart loop, the hub's own routes, `wire` (the crates, the only place they meet) |
+| `managed/` | A hub that runs its own slskd (ADR-0090): the desktop app's and the Linux package's (`lull serve` with `LULL_SLSKD`, `managed::serve`). The slskd supervisor and how it is tied to whoever runs it, the mDNS advert, Tailscale serve, the LAN address pair codes carry. After each restart slskd gets the new settings; a wedged one (`restartSlskd`) is restarted at most every 30 minutes |
 | `hub.rs` | `Hub`: what outlives a restart (env, db, pairing, who is online) and the current `Wiring` (the crates' `Ctx` and routes); `restart` |
 | `gate.rs` | The pairing gate and the `lull_device` cookie |
 | `pairing.rs` | Setup code, pair codes, the wrong-code limit; `/api/setup`, `/api/setup/claim`, `/api/pair/codes`, `/api/pair` |

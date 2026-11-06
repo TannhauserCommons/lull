@@ -33,8 +33,10 @@ serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-# Pair and setup codes.
+# Pair and setup codes, and the API key and web password of a hub's own slskd.
 getrandom = "0.4.3"
+# A hub on a computer answers `_lull._tcp` on the local network (managed/advert.rs), as the app's always did.
+mdns-sd = "=0.21.6"
 # Ctx::shutdown, which ends the SSE streams and the hub's own tasks on a restart.
 tokio-util = "0.7.20"
 # `oneshot`: requests go to the crates' router of the moment, which a restart swaps.

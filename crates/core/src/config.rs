@@ -61,6 +61,9 @@ pub struct Soulseek {
     /// The `slskd.yml` lull owns when it runs this slskd (the desktop app's sidecar): lull writes
     /// the Soulseek account into it. Unset: the account is configured where slskd runs.
     pub config_file: Option<PathBuf>,
+    /// The slskd program the hub starts itself (the Linux package, ADR-0090). Unset: slskd runs
+    /// elsewhere and `slskd_url` reaches it.
+    pub program: Option<PathBuf>,
     /// The Soulseek account, only ever set with `config_file` (ADR-0002).
     pub account: Option<SoulseekAccount>,
     /// slskd's own web login. slskd lets a web session restart it, never an API key, so lull
@@ -262,6 +265,7 @@ impl Config {
                     other => return Err(invalid("LULL_SHARE", format!("{other:?} is not library or none"))),
                 },
                 config_file,
+                program: v.opt("LULL_SLSKD").map(PathBuf::from),
                 account,
                 web_login: v
                     .pair("LULL_SLSKD_WEB_USERNAME", "LULL_SLSKD_WEB_PASSWORD")?

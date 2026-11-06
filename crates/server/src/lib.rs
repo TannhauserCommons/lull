@@ -10,6 +10,7 @@ mod devices;
 mod events;
 mod gate;
 mod hub;
+pub mod managed;
 mod pairing;
 #[cfg(test)]
 mod tests;
@@ -41,13 +42,31 @@ pub async fn run(
     env: BTreeMap<String, String>,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<(), BoxError> {
+    run_with(env, None, shutdown).await
+}
+
+/// `run`, for a hub that runs its own slskd (`managed`): slskd follows the settings each restart
+/// brings and is restarted when the hub finds it wedged.
+pub async fn run_with(
+    env: BTreeMap<String, String>,
+    sidecar: Option<managed::Sidecar>,
+    shutdown: impl Future<Output = ()> + Send + 'static,
+) -> Result<(), BoxError> {
     // The data directory comes from `env` alone: it holds the database the stored settings live in.
     let db = Db::open(env.get("LULL_DATA_DIR").map_or("/data", String::as_str).as_ref())?;
     db.migrate(&db::CORE)?;
     let config = hub::configure(&env, &db).await?;
     let listener = tokio::net::TcpListener::bind(config.listen).await?;
     tracing::info!(listen = %config.listen, version = %lull_core::build::version(), "lull is up");
-    serve(listener, Hub::open(env, db, config).await?, shutdown).await
+    let hub = Hub::open(env, db, config).await?;
+    let wedge = sidecar
+        .clone()
+        .map(|s| tokio::spawn(managed::restart_when_wedged(hub.clone(), s)));
+    let served = serve(listener, hub, sidecar, shutdown).await;
+    if let Some(w) = wedge {
+        w.abort();
+    }
+    served
 }
 
 /// Serves the hub until `shutdown`, restarting its crates in place whenever one publishes
@@ -55,12 +74,13 @@ pub async fn run(
 async fn serve(
     listener: tokio::net::TcpListener,
     hub: Arc<Hub>,
+    sidecar: Option<managed::Sidecar>,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<(), BoxError> {
     let closed = CancellationToken::new();
     let server = axum::serve(listener, router(hub.clone())).with_graceful_shutdown(closed.clone().cancelled_owned());
     let restarts = async {
-        let outcome = restart_until(&hub, shutdown).await;
+        let outcome = restart_until(&hub, sidecar.as_ref(), shutdown).await;
         // Stopping the crates also ends the SSE streams, which graceful shutdown waits for.
         hub.stop().await;
         closed.cancel();
@@ -71,12 +91,22 @@ async fn serve(
     Ok(served?)
 }
 
-async fn restart_until(hub: &Hub, shutdown: impl Future<Output = ()>) -> Result<(), Error> {
+async fn restart_until(
+    hub: &Hub,
+    sidecar: Option<&managed::Sidecar>,
+    shutdown: impl Future<Output = ()>,
+) -> Result<(), Error> {
     tokio::pin!(shutdown);
     loop {
         tokio::select! {
             () = &mut shutdown => return Ok(()),
-            Some(reason) = hub.restart_requested() => hub.restart(&reason).await?,
+            Some(reason) = hub.restart_requested() => {
+                hub.restart(&reason).await?;
+                // What slskd shares may be among the changed settings; it restarts if so.
+                if let Some(s) = sidecar {
+                    s.apply(managed::launch_of(&hub.ctx().await.config));
+                }
+            }
         }
     }
 }

@@ -49,8 +49,6 @@ lull-core = { path = "../crates/core" }
 # The hub's runtime pieces: its shutdown signal, and its logs in a file next to the app's data.
 tokio = { version = "=1.54.1", features = ["sync"] }
 tracing-subscriber = { version = "=0.3.23", features = ["env-filter"] }
-# slskd's API key and web password, fresh each run. Same version as lull-core's.
-getrandom = "=0.4.3"
 # Logs of the in-process hub and its sidecar, written to a file (the hub logs through tracing).
 tracing = "=0.1.44"
 # Official plugins named in DESKTOP.md: window placement, one instance, launch at login.

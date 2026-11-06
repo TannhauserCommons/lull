@@ -334,7 +334,7 @@ async fn a_settings_change_rewires_the_crates_behind_the_same_listener() -> Resu
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let base = format!("http://{}", listener.local_addr()?);
     let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
-    let server = tokio::spawn(serve(listener, hub, async {
+    let server = tokio::spawn(serve(listener, hub, None, async {
         let _ = stopped.await;
     }));
     let http = reqwest::Client::new();
@@ -394,6 +394,105 @@ async fn a_settings_change_rewires_the_crates_behind_the_same_listener() -> Resu
 
     let _ = stop.send(());
     server.await??;
+    let _ = std::fs::remove_dir_all(dir);
+    Ok(())
+}
+
+/// The hub's own slskd (the app's and the Linux package's, ADR-0090) follows the settings: it
+/// starts sharing the music folder, and a change to what is shared restarts it without the share.
+/// A stand-in slskd writes each start's command line to a file.
+#[cfg(unix)]
+#[tokio::test]
+async fn its_own_slskd_restarts_when_what_it_shares_changes() -> Result<(), BoxError> {
+    use crate::managed::{self, Fixed, Tie};
+    use std::os::unix::fs::PermissionsExt;
+
+    let mut id = [0u8; 8];
+    getrandom::fill(&mut id)?;
+    let dir = std::env::temp_dir().join(format!("lull-managed-test-{}", u64::from_le_bytes(id)));
+    std::fs::create_dir_all(&dir)?;
+    let starts = dir.join("starts");
+    let exe = dir.join("slskd");
+    std::fs::write(&exe, format!("#!/bin/sh\necho \"$*\" >> '{}'\nexec sleep 600\n", starts.display()))?;
+    std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755))?;
+    let music = dir.join("music");
+    let fixed = Fixed {
+        exe,
+        app_dir: dir.join("slskd-app"),
+        transfers: dir.join("transfers"),
+        port: managed::free_port()?,
+        api_key: "k".into(),
+        web_password: "w".into(),
+        tie: Tie::NONE,
+    };
+    let mut env: BTreeMap<String, String> = [
+        ("LULL_DATA_DIR", dir.join("data")),
+        ("LULL_MUSIC_DIR", music.clone()),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_owned(), v.to_string_lossy().into_owned()))
+    .collect();
+    env.insert("LULL_SETUP_CODE".into(), SETUP_CODE.into());
+    env.extend(managed::vars(&fixed));
+    let db = Db::open(&dir.join("data"))?;
+    db.migrate(&db::CORE)?;
+    let launch = managed::launch(&env, &db).await?;
+    let config_file = fixed.config_file();
+    let sidecar = tokio::task::spawn_blocking(move || managed::slskd::start(fixed, launch)).await??;
+    let config = hub::configure(&env, &db).await?;
+    let hub = Hub::open(env, db, config).await?;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let base = format!("http://{}", listener.local_addr()?);
+    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+    let server = tokio::spawn(serve(listener, hub, Some(sidecar.clone()), async {
+        let _ = stopped.await;
+    }));
+
+    let lines = || async {
+        for _ in 0..100 {
+            let read = std::fs::read_to_string(&starts).unwrap_or_default();
+            if !read.is_empty() {
+                return read.lines().map(str::to_owned).collect::<Vec<_>>();
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        Vec::new()
+    };
+    let first = lines().await;
+    assert_eq!(first.len(), 1, "{first:?}");
+    assert!(first[0].contains(&format!("--shared {}", music.display())), "{first:?}");
+    assert!(config_file.is_file(), "the hub's slskd.yml exists before slskd starts");
+
+    let http = reqwest::Client::new();
+    let claimed: Value = http
+        .post(format!("{base}/api/setup/claim"))
+        .json(&json!({ "code": SETUP_CODE, "name": "Pixel", "kind": "app" }))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let token = claimed["token"].as_str().unwrap_or_default().to_owned();
+    http.patch(format!("{base}/api/config"))
+        .bearer_auth(&token)
+        .json(&json!({ "LULL_SHARE": "none" }))
+        .send()
+        .await?
+        .error_for_status()?;
+    let mut after = Vec::new();
+    for _ in 0..100 {
+        after = std::fs::read_to_string(&starts)?.lines().map(str::to_owned).collect();
+        if after.len() > 1 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert_eq!(after.len(), 2, "slskd started again with the new share: {after:?}");
+    assert!(!after[1].contains("--shared"), "{after:?}");
+
+    let _ = stop.send(());
+    server.await??;
+    tokio::task::spawn_blocking(move || sidecar.stop()).await?;
     let _ = std::fs::remove_dir_all(dir);
     Ok(())
 }

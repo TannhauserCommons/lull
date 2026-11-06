@@ -1,14 +1,15 @@
-//! The bundled slskd (ADR-0006, ADR-0010): a pinned release binary next to the app's own, which
-//! `build.rs` fetched. The app owns its lifecycle, folders, port and API key. It restarts slskd when
-//! what it shares changes, when it exits by itself (with backoff), and when the hub says it's
-//! wedged (`restartSlskd`: headless slskd refuses the web login the hub would restart it with). The hub writes the Soulseek account into its `slskd.yml`
-//! (`LULL_SLSKD_CONFIG_FILE`, docs/context/soulseek.md). slskd's web UI stays off: lull is the UI.
+//! The slskd a hub runs itself (ADR-0006, ADR-0010, ADR-0090): the desktop app's bundled one and the
+//! Linux package's. Whoever runs the hub owns slskd's lifecycle, folders, port and API key. It is
+//! restarted when what it shares changes, when it exits by itself (with backoff), and when the hub
+//! says it's wedged (`restartSlskd`: headless slskd refuses the web login the hub would restart it
+//! with). The hub writes the Soulseek account into its `slskd.yml` (`LULL_SLSKD_CONFIG_FILE`,
+//! docs/context/soulseek.md). slskd's web UI stays off: lull is the UI.
 //!
 //! slskd reads, lowest first: env, `slskd.yml`, the command line. Fixed things go on the command
 //! line, secrets in env (not in the process list).
 
 use std::path::PathBuf;
-use std::process::{Child, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -22,8 +23,8 @@ const RETRY_MAX: Duration = Duration::from_secs(5 * 60);
 /// slskd that ran this long before stopping counts as a fresh failure: the wait starts over.
 const RAN_FINE: Duration = Duration::from_secs(10 * 60);
 
-/// What slskd runs with for the whole life of the app's hub. The hub was started with this port and
-/// key, so a restarted slskd keeps them.
+/// What slskd runs with for the whole life of the hub. The hub was started with this port and key,
+/// so a restarted slskd keeps them.
 pub struct Fixed {
     pub exe: PathBuf,
     /// slskd's own data, logs and `slskd.yml`.
@@ -34,6 +35,26 @@ pub struct Fixed {
     pub api_key: String,
     /// slskd's own web login, never used but never the default `slskd`/`slskd` either.
     pub web_password: String,
+    pub tie: Tie,
+}
+
+/// How slskd is kept from outliving whoever runs it: a leftover slskd would keep the Soulseek login
+/// and log the next start out. The desktop app ties it to its own process (a kill-on-close job
+/// object on Windows, a parent-death signal on Linux). A systemd service needs nothing: systemd
+/// stops every process of the service with it.
+#[derive(Clone, Copy)]
+pub struct Tie {
+    /// Before the spawn, on the command.
+    pub prepare: fn(&mut Command),
+    /// After the spawn, on the child.
+    pub adopt: fn(&Child),
+}
+
+impl Tie {
+    pub const NONE: Tie = Tie {
+        prepare: |_| {},
+        adopt: |_| {},
+    };
 }
 
 /// What lull's settings decide at slskd's start: its shares can't change while it runs. A change
@@ -60,8 +81,8 @@ enum Order {
     Stop(mpsc::Sender<()>),
 }
 
-/// The thread that owns the slskd process. On Linux the process is tied to the thread that spawned
-/// it (PR_SET_PDEATHSIG), so one long-lived thread does every spawn.
+/// The thread that owns the slskd process. On Linux a parent-death signal ties the process to the
+/// thread that spawned it (PR_SET_PDEATHSIG), so one long-lived thread does every spawn.
 #[derive(Clone)]
 pub struct Sidecar {
     tx: mpsc::Sender<Order>,
@@ -252,47 +273,13 @@ fn spawn(fixed: &Fixed, launch: &Launch) -> Result<Child, String> {
     if let Some(share) = &launch.share {
         cmd.arg("--shared").arg(share);
     }
-    die_with_app::prepare(&mut cmd);
+    (fixed.tie.prepare)(&mut cmd);
     let child = cmd
         .spawn()
         .map_err(|e| format!("can't start slskd ({}): {e}", fixed.exe.display()))?;
-    die_with_app::adopt(&child);
+    (fixed.tie.adopt)(&child);
     tracing::info!(pid = child.id(), port = fixed.port, "slskd started");
     Ok(child)
-}
-
-/// slskd must never outlive the app, or it would keep the Soulseek login after a crash and log the
-/// next launch out. Windows: a kill-on-close job object. Linux: a parent-death signal.
-mod die_with_app {
-    use std::process::{Child, Command};
-
-    #[cfg(target_os = "linux")]
-    #[allow(unsafe_code)]
-    pub fn prepare(cmd: &mut Command) {
-        use std::os::unix::process::CommandExt;
-        // SAFETY: prctl is async-signal-safe and touches only the child between fork and exec.
-        unsafe {
-            cmd.pre_exec(|| {
-                if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM) == -1 {
-                    return Err(std::io::Error::last_os_error());
-                }
-                Ok(())
-            });
-        }
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    pub fn prepare(_: &mut Command) {}
-
-    #[cfg(windows)]
-    pub fn adopt(child: &Child) {
-        if let Err(e) = crate::desktop::platform::kill_with_app(child) {
-            tracing::warn!("slskd may outlive a crash of lull: {e}");
-        }
-    }
-
-    #[cfg(not(windows))]
-    pub fn adopt(_: &Child) {}
 }
 
 /// 32 random bytes as hex: slskd's API key and web password.

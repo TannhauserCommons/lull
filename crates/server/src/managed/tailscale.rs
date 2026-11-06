@@ -1,7 +1,7 @@
-//! One-click remote access (ADR-0002): when this computer is the hub and Tailscale is installed,
+//! One-step remote access (ADR-0002, ADR-0090): where the hub's computer has Tailscale,
 //! `tailscale serve --bg <port>` gives the hub an https address on the listener's tailnet, which
-//! phones need to install the web app. Nothing changes until the listener presses the button in
-//! Settings; the app only reads Tailscale's state before that.
+//! phones need to install the web app. Nothing changes until the listener asks for it (the
+//! desktop app's Settings button, `lull setup`); only Tailscale's state is read before that.
 
 use lull_core::process::command;
 use serde::{Deserialize, Serialize};

@@ -1,5 +1,6 @@
-//! The `lull` binary: the headless hub (Docker, servers) and the container healthcheck.
+//! The `lull` binary: the headless hub (Docker, the Linux package) and the container healthcheck.
 
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use lull_core::config::env_vars;
@@ -24,7 +25,11 @@ async fn main() -> ExitCode {
 async fn serve() -> Result<(), BoxError> {
     let env = env_vars()?;
     init_logs(env.get("LULL_LOG").map_or("info", String::as_str))?;
-    lull_server::run(env, shutdown()).await
+    // The Linux package names its slskd; the hub then runs it itself (ADR-0090).
+    match env.get("LULL_SLSKD").filter(|p| !p.is_empty()).map(PathBuf::from) {
+        Some(slskd) => lull_server::managed::serve(env, slskd, shutdown()).await,
+        None => lull_server::run(env, shutdown()).await,
+    }
 }
 
 fn init_logs(filter: &str) -> Result<(), BoxError> {

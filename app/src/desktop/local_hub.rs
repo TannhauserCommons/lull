@@ -1,17 +1,18 @@
 //! "This computer is my hub" (ADR-0002, ADR-0006): the hub runs in this process through
-//! `lull_server::run`, with its data under the app's data dir and the bundled slskd beside it. The
+//! `lull_server::run_with`, with its data under the app's data dir and the bundled slskd beside it,
+//! the same hub with its own slskd as the Linux package's (`lull_server::managed`, ADR-0090). The
 //! app pairs itself: it creates its own device token before the hub starts and hands it to the web
 //! UI as the device cookie.
 
-use crate::desktop::slskd::{self, Fixed, Launch, Sidecar};
 use crate::desktop::state::Desktop;
-use crate::discovery::{self, Advert};
 use crate::hub;
 use lull_core::db::{self, Db};
 use lull_core::devices::{self, Kind};
 use lull_core::settings;
+use lull_server::managed::advert::{self, Advert};
+use lull_server::managed::{self, Fixed, Sidecar, Tie, slskd};
 use std::collections::BTreeMap;
-use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
+use std::net::{Ipv4Addr, SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, mpsc};
 use std::time::{Duration, Instant};
@@ -24,11 +25,6 @@ pub const PORT: u16 = 8484;
 
 /// How long the hub may take from start to answering.
 const START_TIMEOUT: Duration = Duration::from_secs(30);
-
-/// How often the app reads the hub's `/health` for a wedged slskd, and how often at most it
-/// restarts slskd for that (as the hub itself would with a web login, docs/context/soulseek.md).
-const WEDGE_CHECK: Duration = Duration::from_secs(60);
-const WEDGE_RESTART_EVERY: Duration = Duration::from_secs(30 * 60);
 
 pub struct LocalHub {
     pub origin: Url,
@@ -58,19 +54,17 @@ pub fn start(app: &AppHandle) -> Result<LocalHub, String> {
         exe: sidecar_exe()?,
         app_dir: paths.slskd.clone(),
         transfers: paths.transfers.clone(),
-        port: free_port()?,
+        port: managed::free_port().map_err(|e| e.to_string())?,
         api_key: slskd::secret()?,
         web_password: slskd::secret()?,
+        tie: TIE,
     };
     let mut env = BTreeMap::from([
         ("LULL_DATA_DIR".to_owned(), path_string(&paths.data)),
         ("LULL_LISTEN".to_owned(), format!("0.0.0.0:{PORT}")),
-        ("LULL_SLSKD_URL".to_owned(), fixed.url()),
-        ("LULL_SLSKD_API_KEY".to_owned(), fixed.api_key.clone()),
-        ("LULL_TRANSFERS_DIR".to_owned(), path_string(&paths.transfers)),
-        // The hub writes the Soulseek account from its settings here and logs slskd in again.
-        ("LULL_SLSKD_CONFIG_FILE".to_owned(), path_string(&fixed.config_file())),
     ]);
+    // Where slskd answers, its key and folders, and the slskd.yml the hub writes the account into.
+    env.extend(managed::vars(&fixed));
     // YouTube's programs ship beside the app like slskd (docs/context/youtube.md). Without them
     // the hub looks on PATH, and Settings › Sources says when yt-dlp won't run.
     for (key, name) in [("LULL_YTDLP", "yt-dlp"), ("LULL_DENO", "deno")] {
@@ -85,18 +79,18 @@ pub fn start(app: &AppHandle) -> Result<LocalHub, String> {
     let db = Db::open(&paths.data).map_err(|e| e.to_string())?;
     db.migrate(&db::CORE).map_err(|e| e.to_string())?;
     block_on(seed_music_dir(&db, &env, app.path().audio_dir().ok()))?;
-    block_on(follow_lan_address(&db))?;
+    block_on(managed::follow_lan_address(&db, PORT)).map_err(|e| e.to_string())?;
     let token = block_on(own_token(app, &db))?;
-    let launch = block_on(launch(&db, &env))?;
+    let launch = block_on(managed::launch(&env, &db)).map_err(|e| e.to_string())?;
 
     let sidecar = slskd::start(fixed, launch)?;
-    let watch_env = env.clone();
     let (shutdown, stopped) = oneshot::channel();
     let (done_tx, done) = mpsc::channel();
     // It updates with the app: Settings › App says so instead of offering a server update.
     lull_core::build::set_install(lull_core::build::Install::Desktop);
+    let follows = sidecar.clone();
     tauri::async_runtime::spawn(async move {
-        let result = lull_server::run(env, async {
+        let result = lull_server::run_with(env, Some(follows), async {
             let _ = stopped.await;
         })
         .await;
@@ -111,9 +105,7 @@ pub fn start(app: &AppHandle) -> Result<LocalHub, String> {
     }
 
     let origin = Url::parse(&format!("http://127.0.0.1:{PORT}")).map_err(|e| e.to_string())?;
-    follow_restarts(origin.clone(), token.clone(), db, watch_env, sidecar.clone());
-    restart_when_wedged(origin.clone(), sidecar.clone());
-    let advert = discovery::advertise(&hub::device_name(), PORT)
+    let advert = advert::advertise(&hub::device_name(), PORT)
         .map_err(|e| tracing::warn!("no mDNS on this network: {e}"))
         .ok();
     Ok(LocalHub {
@@ -180,12 +172,6 @@ fn beside_app(name: &str) -> Option<PathBuf> {
     path.is_file().then_some(path)
 }
 
-/// A free port for slskd's API on loopback, chosen once per run (the hub keeps its URL).
-fn free_port() -> Result<u16, String> {
-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).map_err(|e| e.to_string())?;
-    listener.local_addr().map(|a| a.port()).map_err(|e| e.to_string())
-}
-
 fn path_string(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
@@ -202,37 +188,6 @@ async fn seed_music_dir(db: &Db, env: &BTreeMap<String, String>, music: Option<P
     settings::store(db, change).await.map_err(|e| e.to_string())
 }
 
-/// Pair codes carry `LULL_PUBLIC_URL`; without one they'd carry the webview's loopback address,
-/// which no phone can open. So each start stores this computer's LAN address, unless the listener
-/// set an https address (Tailscale or their own), which the app never touches.
-async fn follow_lan_address(db: &Db) -> Result<(), String> {
-    const KEY: &str = "LULL_PUBLIC_URL";
-    let stored = settings::stored(db).await.map_err(|e| e.to_string())?;
-    let ours = stored.get(KEY).is_none_or(|u| u.starts_with("http://"));
-    let Some(lan) = lan_ip().filter(|_| ours) else {
-        return Ok(());
-    };
-    let url = format!("http://{lan}:{PORT}");
-    if stored.get(KEY) == Some(&url) {
-        return Ok(());
-    }
-    settings::store(db, BTreeMap::from([(KEY.to_owned(), Some(url))]))
-        .await
-        .map_err(|e| e.to_string())
-}
-
-/// The address this computer uses on its default route, usually its LAN address. Connecting a UDP
-/// socket only picks the route; nothing is sent.
-fn lan_ip() -> Option<std::net::IpAddr> {
-    let socket = std::net::UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).ok()?;
-    socket.connect((Ipv4Addr::new(192, 0, 2, 1), 9)).ok()?;
-    socket
-        .local_addr()
-        .ok()
-        .map(|a| a.ip())
-        .filter(|ip| !ip.is_loopback() && !ip.is_unspecified())
-}
-
 /// The app's own device on its hub: the stored token while the hub still knows it, else a new one.
 async fn own_token(app: &AppHandle, db: &Db) -> Result<String, String> {
     let desktop = app.state::<Desktop>();
@@ -247,73 +202,6 @@ async fn own_token(app: &AppHandle, db: &Db) -> Result<String, String> {
     let token = token.expose().to_owned();
     desktop.update(|s| s.token = Some(token.clone()));
     Ok(token)
-}
-
-/// What slskd shares, from lull's settings as the hub sees them (env over stored).
-async fn launch(db: &Db, env: &BTreeMap<String, String>) -> Result<Launch, String> {
-    let stored = settings::stored(db).await.map_err(|e| e.to_string())?;
-    let (vars, _) = settings::merge(env, &stored);
-    let get = |k: &str| vars.get(k).filter(|v| !v.is_empty()).cloned();
-    let share = match get("LULL_SHARE").as_deref() {
-        Some("none") => None,
-        _ => get("LULL_MUSIC_DIR").map(PathBuf::from),
-    };
-    Ok(Launch { share })
-}
-
-/// The hub restarts its crates when a setting changes (`hub.restarting`), and what slskd shares may
-/// be among them: read the settings again and let the sidecar restart if they differ. The event
-/// stream drops during each restart, so it reconnects.
-fn follow_restarts(origin: Url, token: String, db: Db, env: BTreeMap<String, String>, sidecar: Sidecar) {
-    let watch = move || {
-        loop {
-            let streamed = hub::events(&origin, &token, |topic, _| {
-                if topic == "hub.restarting" {
-                    match block_on(launch(&db, &env)) {
-                        Ok(next) => sidecar.apply(next),
-                        Err(e) => tracing::warn!("can't read the settings for slskd: {e}"),
-                    }
-                }
-                true
-            });
-            if let Err(e) = streamed {
-                tracing::debug!("hub events: {e}");
-            }
-            std::thread::sleep(Duration::from_secs(1));
-        }
-    };
-    if let Err(e) = std::thread::Builder::new().name("hub-events".into()).spawn(watch) {
-        tracing::warn!("slskd won't follow setting changes until lull restarts: {e}");
-    }
-}
-
-/// The hub tells a wedged slskd that fresh logins didn't cure by `/health`
-/// `services.soulseek.extra.restartSlskd`. The bundled slskd is headless and refuses the web login
-/// the hub would restart it with, so the app restarts the process, at most once per 30 minutes.
-fn restart_when_wedged(origin: Url, sidecar: Sidecar) {
-    let watch = move || {
-        let mut restarted: Option<Instant> = None;
-        loop {
-            std::thread::sleep(WEDGE_CHECK);
-            let wedged = match hub::health(&origin) {
-                Ok(health) => health
-                    .services
-                    .get("soulseek")
-                    .is_some_and(|s| s.extra["restartSlskd"] == true),
-                Err(e) => {
-                    tracing::debug!("hub health: {e}");
-                    false
-                }
-            };
-            if wedged && restarted.is_none_or(|at| at.elapsed() >= WEDGE_RESTART_EVERY) {
-                restarted = Some(Instant::now());
-                sidecar.restart();
-            }
-        }
-    };
-    if let Err(e) = std::thread::Builder::new().name("slskd-wedge".into()).spawn(watch) {
-        tracing::warn!("a wedged slskd needs restarting lull: {e}");
-    }
 }
 
 /// Until the hub accepts connections, or fails to start.
@@ -346,4 +234,43 @@ fn port_hint(error: String) -> String {
 /// API, which validates it and restarts what needs it.
 pub fn set_public_url((origin, token): &(Url, String), url: &str) -> Result<(), String> {
     hub::patch_config(origin, token, serde_json::json!({ "LULL_PUBLIC_URL": url }))
+}
+
+/// slskd must never outlive the app, or it would keep the Soulseek login after a crash and log the
+/// next launch out. Windows: a kill-on-close job object. Linux: a parent-death signal.
+const TIE: Tie = Tie {
+    prepare: die_with_app::prepare,
+    adopt: die_with_app::adopt,
+};
+
+mod die_with_app {
+    use std::process::{Child, Command};
+
+    #[cfg(target_os = "linux")]
+    #[allow(unsafe_code)]
+    pub fn prepare(cmd: &mut Command) {
+        use std::os::unix::process::CommandExt;
+        // SAFETY: prctl is async-signal-safe and touches only the child between fork and exec.
+        unsafe {
+            cmd.pre_exec(|| {
+                if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM) == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    pub fn prepare(_: &mut Command) {}
+
+    #[cfg(windows)]
+    pub fn adopt(child: &Child) {
+        if let Err(e) = crate::desktop::platform::kill_with_app(child) {
+            tracing::warn!("slskd may outlive a crash of lull: {e}");
+        }
+    }
+
+    #[cfg(not(windows))]
+    pub fn adopt(_: &Child) {}
 }

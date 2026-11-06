@@ -426,7 +426,7 @@ async function dockerSlskd() {
 
 /**
  * The binary app/build.rs pins for this machine, downloaded and checked by its sha256 like build.rs does, and run
- * the way the desktop app runs it (app/src/desktop/slskd.rs): its folders on the command line, headless.
+ * the way the desktop app runs it (crates/server/src/managed/slskd.rs): its folders on the command line, headless.
  */
 async function nativeSlskd() {
   const target = { 'win32-x64': 'x86_64-pc-windows-msvc', 'win32-arm64': 'aarch64-pc-windows-msvc' }[`${process.platform}-${arch()}`];

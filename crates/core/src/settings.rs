@@ -11,13 +11,14 @@ use crate::error::{Error, Result};
 
 /// Keys only the environment may set: the hub needs them before the database is open, or they
 /// describe how lull is run (the setup code, the slskd.yml of an slskd the app runs, the programs
-/// the image or the app ships).
+/// the image, the app or the Linux package ships).
 pub const ENV_ONLY: &[&str] = &[
     "LULL_DATA_DIR",
     "LULL_LISTEN",
     "LULL_LOG",
     "LULL_SETUP_CODE",
     "LULL_SLSKD_CONFIG_FILE",
+    "LULL_SLSKD",
     "LULL_YTDLP",
     "LULL_DENO",
 ];

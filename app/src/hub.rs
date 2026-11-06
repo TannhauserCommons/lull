@@ -268,16 +268,8 @@ pub fn device_name() -> String {
 /// This device's name on the hub's Devices screen.
 #[cfg(not(target_os = "android"))]
 pub fn device_name() -> String {
-    let host = std::env::var("COMPUTERNAME")
-        .or_else(|_| std::env::var("HOSTNAME"))
-        .or_else(|_| std::fs::read_to_string("/etc/hostname"))
-        .map(|h| h.trim().to_owned())
-        .unwrap_or_default();
-    if host.is_empty() {
-        "lull app".to_owned()
-    } else {
-        format!("lull on {host}")
-    }
+    lull_server::managed::advert::computer_name()
+        .map_or_else(|| "lull app".to_owned(), |host| format!("lull on {host}"))
 }
 
 pub fn endpoint(origin: &Url, path: &str) -> Result<Url, String> {
