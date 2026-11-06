@@ -3,6 +3,21 @@ import * as d from '../dsp.mjs';
 
 export const meta = { id: 'skydeck', name: 'Star wheel', description: 'Paper cards, a soft ratchet, and a radio dial in the static.' };
 
+/** Skydeck's own surprises (ADR-0081): names only this design has. Their sounds are in `eggs` below, their looks in
+    web/packs/skydeck/pack.css and slots/. */
+export const eggs = [
+  // a night the earth passes through a meteor stream: the sky is lined with falling stars, and the radio pings
+  { name: 'meteor-shower', when: [{ clock: { date: ['01-03', '04-22', '08-12', '10-21', '11-17', '12-13', '12-22'], from: '20:00', to: '04:00' } }],
+    line: 'Meteor shower tonight', for: 8, once: 'night' },
+  // the planisphere's own gesture: three quick taps on the name turn the wheel to tonight
+  { name: 'wheel-set', when: [{ gesture: { on: 'brand', taps: 3, within: 1.5 } }], line: 'Wheel set to tonight', for: 6, once: 'always' },
+  // a song named for a constellation (or its bright star): the card prints that constellation
+  { name: 'constellation', when: [{ words: { in: ['title'], any: ['orion', 'lyra', 'vega', 'cygnus', 'swan', 'cassiopeia', 'dipper', 'ursa', 'scorpius', 'scorpio', 'pleiades'] } }],
+    line: 'Look up', for: 8, once: 'song' },
+  // a song the hub found, now and then: Halley's comet goes by
+  { name: 'comet', when: [{ event: { on: 'found' } }, { chance: { one_in: 30 } }], line: 'Halley\'s comet. See you in 2061.', for: 9, once: 'day' },
+];
+
 /** A paper card's click: a dry snap with a small papery body. */
 function card(rng, bright = 2600, body = 420) {
   const snap = d.shape(d.biquad(d.biquad(d.noise(0.04, rng), 'bandpass', bright, 1.4), 'highpass', 900), d.perc(0.0008, 0.018));
@@ -92,6 +107,25 @@ export function sounds(rng) {
       'new-year': d.room(d.mix([[ratchet(rng, 12, 0.03, 0.05, 0.95), 0, 0.6], [d.seq(['E6', 'A6', 'C#7', 'E7'], 0.09, (f) => star(f, 1.6)), 0.4, 0.5]]), 0.7, 0.4, 0.3, 1),
       birthday: d.room(d.seq(['A5', 'C#6', 'E6', 'D6', 'C#6', 'A6'], 0.15, (f) => star(f, 1.2)), 0.6, 0.4, 0.3, 0.9),
       milestone: d.room(d.mix(Array.from({ length: 14 }, (_, i) => [star(1800 + 3200 * rng(), 1), i * 0.06 + 0.02 * rng(), 0.35])), 0.7, 0.4, 0.35, 1),
+      // meteor-scatter pings on the radio: a carrier whistles in and fades, three or four times, in the static
+      'meteor-shower': d.room(d.mix([
+        [d.shape(d.biquad(d.pink(2.8, rng), 'bandpass', 1500, 1.2), (t) => 0.07 * (0.6 + 0.4 * Math.sin(t * 9))), 0, 1],
+        ...[[0.35, 1250, 1], [0.95, 1720, 0.8], [1.35, 980, 0.9], [2.0, 1480, 0.7]].map(([at, f, g]) =>
+          [d.shape(d.osc(0.6, (t) => f * (1 - 0.06 * t)), d.perc(0.004, 0.22)), at, 0.3 * g])
+      ]), 0.6, 0.5, 0.3, 0.8),
+      // the wheel turning to tonight: the ratchet clicks away, slowing, and a star lands
+      'wheel-set': d.room(d.mix([
+        [ratchet(rng, 20, 0.03, 0.09, 0.97), 0, 0.7],
+        [card(rng, 2600, 420), 1.05, 0.8],
+        [star(d.hz('E6'), 1.4), 1.12, 0.5]
+      ]), 0.5, 0.45, 0.25, 0.7),
+      // a constellation drawn star by star: a small high bell for each, climbing
+      constellation: d.room(d.seq(['E6', 'G#6', 'B6', 'F#6', 'C#7', 'B6', 'E7'], 0.17, (f) => star(f, 1.3)), 0.7, 0.4, 0.3, 1),
+      // a comet going by: a long breath of air rising and falling, and a trail of glitter after it
+      comet: d.room(d.mix([
+        [d.shape(d.biquad(d.pink(2.6, rng), 'bandpass', (t) => 500 + 1700 * Math.sin(Math.PI * Math.min(1, t / 2.6)), 0.9), d.arch(2.6)), 0, 0.5],
+        ...Array.from({ length: 9 }, (_, i) => [star(2400 + 2600 * rng(), 0.9), 1.2 + i * 0.17 + 0.05 * rng(), 0.3 * (1 - i / 11)])
+      ]), 0.8, 0.4, 0.3, 1),
     }
   };
 }
