@@ -1,0 +1,19 @@
+<!-- nothing playing: tonight's sky. Your listening by hour of day drawn as a dial of 24 stars (the busiest hour a 4-point
+     star), the date at its centre, this week's numbers beside it (shown once Stats has read them) -->
+<div class="sl-dial">
+  <div class="sl-dial__face" role="img" aria-label="Listening by hour of day, most around {{weekPeak}}:00">
+    <lull-part name="week-clock"></lull-part>
+    <span class="sl-dial__h sl-dial__h--0" aria-hidden="true">00</span><span class="sl-dial__h sl-dial__h--6" aria-hidden="true">06</span><span class="sl-dial__h sl-dial__h--12" aria-hidden="true">12</span><span class="sl-dial__h sl-dial__h--18" aria-hidden="true">18</span>
+    <p class="sl-dial__date"><b>{{date}}</b><span>{{month}}</span></p>
+  </div>
+  <div class="sl-dial__info" data-week="{{week}}">
+    <p class="sl-dial__k">{{weekday}} &mdash; this week</p>
+    <div class="sl-dial__stats">
+      <p class="sl-dial__big">{{weekTime}}</p>
+      <p class="sl-dial__sub">{{weekPlays}} plays, {{weekArtists}} artists</p>
+      <p class="sl-dial__sub">busiest around {{weekPeak}}:00</p>
+      <a class="btn btn--sm btn--quiet" href="#/stats">See stats</a>
+    </div>
+    <p class="sl-dial__hint">Play something and the sky fills in.</p>
+  </div>
+</div>

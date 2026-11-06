@@ -20,6 +20,7 @@
   "slots": [
     "brand",
     "emptyArt",
+    "homeLead.idle",
     "homeLead.playing",
     "miniPlayer.device",
     "nowHero.compact",
