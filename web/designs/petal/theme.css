@@ -1261,6 +1261,10 @@
      in a column, and long blocks (the design picker, the keys, the sound packs) break between their own parts, so no
      column is left empty beside a block and a short group never stands alone with two empty columns beside it */
   :root[data-design="petal"] .sys-section > .card-head { column-span: all; }
+  /* the design picker is the section's centrepiece: it spans the card, every design whole in one row where the card has the
+     room, instead of a tall block in one column that the page's foot would cross */
+  :root[data-design="petal"] .sys-section > .sys-row:has(.sys-designs) { column-span: all; }
+  :root[data-design="petal"] .sys-section .sys-designs { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
   :root[data-design="petal"] .sys-section > :is(.sys-row, .sys-group, .sys-note, .sys-card__lede, .eqp, .sys-usage, details, p) { break-inside: avoid; }
   :root[data-design="petal"] .sys-section > .sys-group { break-after: avoid; }
   :root[data-design="petal"] .sys-section > .sys-row--sub { break-before: avoid; }
