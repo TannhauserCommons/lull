@@ -143,7 +143,7 @@
           d.close();
           M.api(path, { method: 'PUT', body: LullLoops.apply(css, fixes) }).then(function () {
             App.toast(rates ? (fixes.length === 1 ? 'Added its rate to ' : 'Added their rates to ') + item.name
-              : lullWords ? item.name + ' shows lull’s own words now' : 'Updated ' + item.name, { kind: 'ok', icon: 'check' });
+              : lullWords ? item.name + ' shows lull’s own words now' : 'Updated ' + item.name, { confirms: true, group: 'theme', kind: 'ok', icon: 'check' });
           }, function (err) { App.toast('Couldn\'t change ' + item.name + ': ' + err.message, { kind: 'error' }); });
         });
       });

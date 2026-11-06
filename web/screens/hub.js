@@ -549,7 +549,7 @@
   }
   function saveLiked() {
     M.api('/api/likes/save', { method: 'POST', body: {} }).then(function (res) {
-      App.toast(res.asked ? 'Saving ' + plural(res.asked, 'liked song') : 'Your liked songs are all saved', { icon: 'save' });
+      App.toast(res.asked ? 'Saving ' + plural(res.asked, 'liked song') : 'Your liked songs are all saved', { confirms: true, group: 'save', icon: 'save' });
       M.reload(UNSAVED);
     }, function (err) { App.toast('Couldn\'t save your liked songs: ' + err.message, { kind: 'error' }); });
   }

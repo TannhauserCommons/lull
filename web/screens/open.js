@@ -43,7 +43,7 @@
       if (!there) return P.addToQueue(list, { paused: true });
       enqueue(there, list).then(function () {
         var what = list.length > 1 ? list.length + ' songs' : M.track(list[0]).title;
-        App.toast('Added to ' + there.name + '\'s queue: ' + what, { icon: 'connect' });
+        App.toast('Added to ' + there.name + '\'s queue: ' + what, { confirms: true, icon: 'connect' });
       }, function () { P.addToQueue(list, { paused: true }); });
     });
   }
