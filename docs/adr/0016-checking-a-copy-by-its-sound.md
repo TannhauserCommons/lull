@@ -108,7 +108,7 @@ Some songs are on YouTube only inside an upload of their whole album. The owner 
 - **A cut needs no sound check when its bounds are reliable:** YouTube's chapters, else the upload's description timestamps, with an entry whose title matches the song (loosely, as an upload's title) and whose length agrees within the strictness's slack. That entry is the evidence; the cut is taken out of the fingerprint path (no check, no "Unverified" question).
 - **Neither gives a reliable match: the upload is given up** for that song. No fingerprint search through a long video for a song with no track list.
 
-As built: youtube.md#full-album-uploads. The album's audio is downloaded once per video and each song's AAC frames copied out without re-encoding, as yt-dlp's own sections need ffmpeg, which lull doesn't ship.
+As built: youtube.md#full-album-uploads. The album's audio is downloaded once per video and each song's AAC frames copied out without re-encoding, into an M4A of its own, as yt-dlp's own sections need ffmpeg, which lull doesn't ship. (Raw AAC until 2026-11-06: tagged when saved, it didn't decode in Chrome.)
 
 ## Alternatives
 

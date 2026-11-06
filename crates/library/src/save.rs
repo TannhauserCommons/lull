@@ -760,3 +760,84 @@ async fn restart(svc: &Arc<Service>, mut job: SaveJob) -> Result<SaveJob> {
     }
     Ok(job)
 }
+
+#[cfg(test)]
+mod tests {
+    use lull_core::m4a;
+
+    use super::*;
+
+    /// A song cut from a full-album upload, as the cache holds it (`<video>~<from>-<to>.<format>.m4a`):
+    /// two seconds (87 frames) of AAC-LC's silent stereo frame at 44.1 kHz, in lull's own M4A.
+    fn cut_transfer(dir: &Path) -> Result<PathBuf, std::io::Error> {
+        let silence = [0x21, 0x00, 0x49, 0x90, 0x02, 0x19, 0x00, 0x23, 0x80];
+        let frames: Vec<m4a::Frame> = (0..87)
+            .map(|_| m4a::Frame {
+                data: silence.to_vec(),
+                duration: 1024,
+            })
+            .collect();
+        let path = dir.join("4rCUGWGHzWw~20000-22000.140.m4a");
+        std::fs::write(&path, m4a::write(&[0x12, 0x10], 44_100, 2, &frames))?;
+        Ok(path)
+    }
+
+    #[test]
+    fn a_song_cut_from_a_full_album_upload_saves_as_its_own_tagged_file() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = std::env::temp_dir().join(format!("lull-save-cut-{}", std::process::id()));
+        let music = dir.join("music");
+        std::fs::create_dir_all(&music)?;
+        let file = cut_transfer(&dir)?;
+        let set = TagSet {
+            title: "What Are We?".into(),
+            artist: "Mabisyo".into(),
+            album: "What Are We?".into(),
+            album_artist: "Mabisyo".into(),
+            track: Some(2),
+            track_total: Some(9),
+            disc: Some(1),
+            disc_total: Some(1),
+            date: Some("2023-03-10".into()),
+            ..TagSet::default()
+        };
+        let cover = vec![0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3];
+        // step 4 as `write` does it: the fields from the tags and the transfer's extension, then place
+        let ext = file
+            .extension()
+            .map(|e| e.to_string_lossy().to_ascii_lowercase())
+            .unwrap_or_default();
+        let fields = matched_fields(&set, ext);
+        let template = naming::Template::parse("{albumartist}/{album} ({year})/{disc}{track:02} - {title}")?;
+        let placed = place(Placement {
+            file,
+            temp_name: format!(".lull-job.{}", fields.ext),
+            dest: music.join(template.render(&fields)),
+            replaced: None,
+            tags: Tagging::Matched(Box::new(set), Some(cover.clone())),
+        })?;
+        assert_eq!(
+            placed,
+            music.join("Mabisyo/What Are We_ (2023)/02 - What Are We_.m4a"),
+            "named like any saved song"
+        );
+
+        // the library's scan reads it as the song, with its own length, and its cover
+        let rel = placed.strip_prefix(&music)?.to_string_lossy().replace('\\', "/");
+        let read = crate::files::read(&music, &rel, 0, std::fs::metadata(&placed)?.len())?;
+        let (track, facts) = (&read.saved.track, read.saved.track.file.clone().ok_or("no file facts")?);
+        assert_eq!(
+            (track.title.as_str(), track.artist.as_str(), track.album.as_str()),
+            ("What Are We?", "Mabisyo", "What Are We?")
+        );
+        assert_eq!(
+            (track.no, track.year, read.saved.album_artist.as_str()),
+            (Some(2), Some(2023), "Mabisyo")
+        );
+        assert_eq!(track.duration, Some(2), "two seconds");
+        assert_eq!((facts.codec.as_str(), facts.khz), ("AAC", Some(44.1)));
+        assert!(read.has_picture);
+        assert_eq!(tags::picture(&placed)?, Some(cover));
+        std::fs::remove_dir_all(&dir)?;
+        Ok(())
+    }
+}

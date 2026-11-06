@@ -212,7 +212,13 @@ impl Copy {
             Some((v, at)) => {
                 let (from, to) = at.split_once('-')?;
                 let (from, to): (u32, u32) = (from.parse().ok()?, to.parse().ok()?);
-                (v, (from < to && ext == "aac").then_some((from, to))?.into())
+                // a cut is an M4A; an earlier lull's, raw AAC
+                (
+                    v,
+                    (from < to && matches!(ext, "m4a" | "aac"))
+                        .then_some((from, to))?
+                        .into(),
+                )
             }
             None => (video, None),
         };
@@ -303,23 +309,32 @@ mod tests {
         let cut = Copy {
             video: "4rCUGWGHzWw".into(),
             format: "140".into(),
-            ext: "aac".into(),
+            ext: "m4a".into(),
             section: Some((0, 294_000)),
         };
         let r = cut.source_ref(4_700_000);
-        assert_eq!(r.path, "youtube:4rCUGWGHzWw~0-294000:140.aac");
+        assert_eq!(r.path, "youtube:4rCUGWGHzWw~0-294000:140.m4a");
         assert_eq!(Copy::of(&r), Some(cut.clone()));
         assert_eq!(cut.facts(r.size, Some(294)).format, "YouTube · AAC 128");
         let backwards = SourceRef {
-            path: "youtube:4rCUGWGHzWw~9-3:140.aac".into(),
+            path: "youtube:4rCUGWGHzWw~9-3:140.m4a".into(),
             ..r.clone()
         };
         assert_eq!(Copy::of(&backwards), None);
+        // an earlier lull's cut, raw AAC, still names its section; an .aac is only ever a cut
+        let earlier = SourceRef {
+            path: "youtube:4rCUGWGHzWw~0-294000:140.aac".into(),
+            ..r.clone()
+        };
+        assert_eq!(
+            Copy::of(&earlier).map(|c| (c.ext, c.section)),
+            Some(("aac".into(), Some((0, 294_000))))
+        );
         let whole = SourceRef {
             path: "youtube:4rCUGWGHzWw:140.aac".into(),
             ..r
         };
-        assert_eq!(Copy::of(&whole), None, "an .aac is only ever a cut");
+        assert_eq!(Copy::of(&whole), None);
     }
 
     #[test]

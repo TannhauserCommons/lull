@@ -1,6 +1,6 @@
 //! Songs that are on YouTube only inside a full-album upload (ADR-0016, "Full-album uploads"):
 //! the album's track list (its chapters, else its description's timestamps) names each song's
-//! bounds; a song is cut out of the album's audio as its own file, its AAC frames copied as they
+//! bounds; a song is cut out of the album's audio as its own M4A, its AAC frames copied as they
 //! are (no re-encoding), so starting, seeking, saving and scrobbling treat it like any copy. The
 //! album's audio is fetched once for all its songs. Without a track list that names the song at
 //! its length, there is no copy.
@@ -12,6 +12,8 @@ use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
+
+use lull_core::m4a;
 
 use crate::matching::{self, Wanted};
 
@@ -118,8 +120,10 @@ fn numbered_off(title: &str) -> String {
     }
 }
 
-/// Copies the AAC frames of `album` (an M4A) between `from_ms` and `to_ms` into `dest` as an ADTS
-/// stream, each frame with its own header: the song's own file, no re-encoding. Its size.
+/// Copies the AAC frames of `album` (an M4A) between `from_ms` and `to_ms` into `dest`, no
+/// re-encoding: an M4A of its own (`m4a::write`), so it is saved, tagged, seeked and read like any
+/// YouTube AAC copy. A `dest` ending `.aac` gets raw AAC (ADTS) instead, as an earlier lull's cut
+/// named so. Its size.
 pub fn cut(album: &Path, from_ms: u32, to_ms: u32, dest: &Path) -> Result<u64, String> {
     let file = std::fs::File::open(album).map_err(|e| format!("can't open {}: {e}", album.display()))?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
@@ -130,15 +134,14 @@ pub fn cut(album: &Path, from_ms: u32, to_ms: u32, dest: &Path) -> Result<u64, S
         .map_err(|e| format!("not an album lull can cut: {e}"))?;
     let mut format = probed.format;
     let track = format.default_track().ok_or("no audio in the album")?.clone();
-    let config = track
-        .codec_params
-        .extra_data
-        .as_deref()
-        .and_then(AudioConfig::of)
-        .ok_or("the album's audio is no AAC lull can cut")?;
-    let rate = u64::from(track.codec_params.sample_rate.unwrap_or(config.rate()));
-    let (from, to) = (u64::from(from_ms) * rate / 1000, u64::from(to_ms) * rate / 1000);
-    let mut out = Vec::new();
+    let asc = track.codec_params.extra_data.clone().unwrap_or_default();
+    let config = AudioConfig::of(&asc).ok_or("the album's audio is no AAC lull can cut")?;
+    let rate = track.codec_params.sample_rate.unwrap_or(config.rate());
+    let (from, to) = (
+        u64::from(from_ms) * u64::from(rate) / 1000,
+        u64::from(to_ms) * u64::from(rate) / 1000,
+    );
+    let mut frames = Vec::new();
     while let Ok(packet) = format.next_packet() {
         if packet.track_id() != track.id || packet.ts() < from {
             continue;
@@ -146,12 +149,28 @@ pub fn cut(album: &Path, from_ms: u32, to_ms: u32, dest: &Path) -> Result<u64, S
         if packet.ts() >= to {
             break;
         }
-        out.extend_from_slice(&config.adts_header(packet.data.len()));
-        out.extend_from_slice(&packet.data);
+        let duration = u32::try_from(packet.dur()).unwrap_or(1024);
+        frames.push(m4a::Frame {
+            data: packet.data.to_vec(),
+            duration,
+        });
     }
-    if out.is_empty() {
+    if frames.is_empty() {
         return Err("nothing of the album's audio lies there".into());
     }
+    let out = if dest.extension().is_some_and(|e| e == "aac") {
+        frames
+            .iter()
+            .flat_map(|f| {
+                config
+                    .adts_header(f.data.len())
+                    .into_iter()
+                    .chain(f.data.iter().copied())
+            })
+            .collect()
+    } else {
+        m4a::write(&asc, rate, config.channels(), &frames)
+    };
     std::fs::write(dest, &out).map_err(|e| format!("can't write {}: {e}", dest.display()))?;
     Ok(out.len() as u64)
 }
@@ -174,6 +193,10 @@ impl AudioConfig {
             channels: (b >> 3) & 0b1111,
         };
         (c.object_type >= 1 && c.object_type <= 4 && c.rate_index < 13).then_some(c)
+    }
+
+    fn channels(self) -> u16 {
+        u16::from(self.channels)
     }
 
     fn rate(self) -> u32 {
@@ -203,8 +226,9 @@ pub fn album_path(dir: &Path, video: &str) -> PathBuf {
     dir.join("albums").join(format!("{video}.m4a"))
 }
 
-pub fn cut_path(dir: &Path, video: &str, from_ms: u32, to_ms: u32) -> PathBuf {
-    dir.join("albums").join(format!("{video}~{from_ms}-{to_ms}.aac"))
+/// `ext`: the copy's, `m4a` (an earlier lull's cut is `aac`).
+pub fn cut_path(dir: &Path, video: &str, from_ms: u32, to_ms: u32, ext: &str) -> PathBuf {
+    dir.join("albums").join(format!("{video}~{from_ms}-{to_ms}.{ext}"))
 }
 
 #[cfg(test)]
@@ -302,20 +326,76 @@ mod tests {
         assert_eq!((h[2] >> 2) & 0xF, 4, "44.1 kHz");
     }
 
+    /// AAC-LC's silent frame for stereo at 44.1 kHz (the one hls.js pads gaps with): an album of it.
+    const SILENCE: [u8; 9] = [0x21, 0x00, 0x49, 0x90, 0x02, 0x19, 0x00, 0x23, 0x80];
+    const ASC: [u8; 2] = [0x12, 0x10];
+
+    fn silent_album(dir: &Path, seconds: u32) -> Result<PathBuf, std::io::Error> {
+        let frames = (0..seconds * 44_100 / 1024)
+            .map(|_| m4a::Frame {
+                data: SILENCE.to_vec(),
+                duration: 1024,
+            })
+            .collect::<Vec<_>>();
+        let path = dir.join("album.m4a");
+        std::fs::write(&path, m4a::write(&ASC, 44_100, 2, &frames))?;
+        Ok(path)
+    }
+
+    /// Decodes the file as the player's own decoder would: how long its audio is.
+    fn decoded_seconds(path: &Path) -> Result<f64, Box<dyn std::error::Error>> {
+        let mss = MediaSourceStream::new(Box::new(std::fs::File::open(path)?), Default::default());
+        let mut hint = Hint::new();
+        hint.with_extension("m4a");
+        let mut format = symphonia::default::get_probe()
+            .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())?
+            .format;
+        let track = format.default_track().ok_or("no audio")?.clone();
+        let mut decoder = symphonia::default::get_codecs().make(&track.codec_params, &Default::default())?;
+        let mut samples = 0;
+        while let Ok(packet) = format.next_packet() {
+            samples += decoder.decode(&packet)?.frames();
+        }
+        Ok(samples as f64 / f64::from(track.codec_params.sample_rate.ok_or("no rate")?))
+    }
+
+    #[test]
+    fn a_cut_is_an_m4a_of_the_songs_own_frames() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = std::env::temp_dir().join(format!("lull-cut-{}", std::process::id()));
+        std::fs::create_dir_all(&dir)?;
+        let album = silent_album(&dir, 6)?;
+        let dest = dir.join("song.m4a");
+        let size = cut(&album, 2_000, 4_000, &dest)?;
+        let bytes = std::fs::read(&dest)?;
+        assert_eq!(bytes.len() as u64, size);
+        assert_eq!(&bytes[4..8], b"ftyp", "an M4A");
+        let seconds = decoded_seconds(&dest)?;
+        assert!((seconds - 2.0).abs() < 0.05, "two seconds of the album: {seconds}");
+        // an earlier lull's cut, named .aac, is raw AAC
+        let earlier = dir.join("song.aac");
+        cut(&album, 2_000, 4_000, &earlier)?;
+        assert_eq!(&std::fs::read(&earlier)?[..2], [0xFF, 0xF1], "ADTS");
+        std::fs::remove_dir_all(&dir)?;
+        Ok(())
+    }
+
     /// The whole cut on a real album upload's AAC copy: point `LULL_ALBUM_M4A` at one.
     #[test]
     #[ignore = "needs a local full-album M4A"]
     fn a_cut_is_one_songs_audio_and_plays_as_its_own_file() -> Result<(), Box<dyn std::error::Error>> {
         let album = std::path::PathBuf::from(std::env::var("LULL_ALBUM_M4A")?);
-        // LULL_CUT_OUT keeps the cut there, to play it in a browser.
+        // LULL_CUT_OUT keeps the cut there, to play it in a browser; LULL_CUT_MS its bounds ("from-to")
         let keep = std::env::var("LULL_CUT_OUT").ok();
         let dest = keep
             .clone()
-            .map_or_else(|| std::env::temp_dir().join("lull-cut-test.aac"), PathBuf::from);
-        let size = cut(&album, 0, 294_000, &dest)?;
-        assert!(size > 1_000_000, "{size}");
+            .map_or_else(|| std::env::temp_dir().join("lull-cut-test.m4a"), PathBuf::from);
+        let bounds = std::env::var("LULL_CUT_MS").unwrap_or_else(|_| "0-294000".into());
+        let (from, to) = bounds.split_once('-').ok_or("LULL_CUT_MS is from-to")?;
+        let (from, to): (u32, u32) = (from.parse()?, to.parse()?);
+        cut(&album, from, to, &dest)?;
         let print = crate::sound::print_file(&dest, None)?;
-        assert!((print.seconds - 294.0).abs() < 1.0, "{}", print.seconds);
+        let want = f64::from(to - from) / 1000.0;
+        assert!((print.seconds - want).abs() < 1.0, "{} of {want}", print.seconds);
         if keep.is_none() {
             let _ = std::fs::remove_file(&dest);
         }

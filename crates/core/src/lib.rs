@@ -12,6 +12,7 @@ pub mod events;
 pub mod flags;
 pub mod http;
 pub mod ids;
+pub mod m4a;
 pub mod model;
 pub mod pictures;
 pub mod process;

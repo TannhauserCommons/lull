@@ -237,7 +237,10 @@ impl Youtube for Service {
         let matched = self.matched(track, &settings).await?;
         let Some(m) = matched else { return Ok(None) };
         if let Some(section) = m.section {
-            let (copy, size) = self.cut_copy(&m.video, section).await.map_err(|p| self.failed(p))?;
+            let (copy, size) = self
+                .cut_copy(&m.video, section, "m4a")
+                .await
+                .map_err(|p| self.failed(p))?;
             let (info, _) = search::info(self, &m.video, false).await.map_err(|p| self.failed(p))?;
             return Ok(Some(Found {
                 source: copy.source_ref(size),
@@ -266,8 +269,10 @@ impl Youtube for Service {
             Copy::of(source).ok_or_else(|| Error::BadRequest(format!("{} is not a YouTube copy", source.path)))?;
         self.backed_off()?;
         if let Some(section) = copy.section {
-            self.cut_copy(&copy.video, section).await.map_err(|p| self.failed(p))?;
-            let from = cut::cut_path(&self.dir, &copy.video, section.0, section.1);
+            self.cut_copy(&copy.video, section, &copy.ext)
+                .await
+                .map_err(|p| self.failed(p))?;
+            let from = cut::cut_path(&self.dir, &copy.video, section.0, section.1, &copy.ext);
             tokio::fs::copy(&from, dest)
                 .await
                 .map_err(|e| Error::internal(format!("copying the song's cut: {e}")))?;
@@ -374,15 +379,15 @@ impl Service {
 
     /// A song cut from a full-album upload (`cut`): the upload's AAC audio fetched once for all its
     /// songs (kept in `<data>/youtube/albums` a day), the song's frames copied into a file of its
-    /// own. Its copy and size.
-    async fn cut_copy(&self, video: &str, section: (u32, u32)) -> Result<(Copy, u64), Problem> {
+    /// own: an M4A (`ext` "m4a"; an earlier lull's cut, "aac", is raw AAC). Its copy and size.
+    async fn cut_copy(&self, video: &str, section: (u32, u32), ext: &str) -> Result<(Copy, u64), Problem> {
         let copy = Copy {
             video: video.to_owned(),
             format: "140".into(),
-            ext: "aac".into(),
+            ext: ext.to_owned(),
             section: Some(section),
         };
-        let path = cut::cut_path(&self.dir, video, section.0, section.1);
+        let path = cut::cut_path(&self.dir, video, section.0, section.1, ext);
         if let Ok(m) = tokio::fs::metadata(&path).await
             && m.len() > 0
         {

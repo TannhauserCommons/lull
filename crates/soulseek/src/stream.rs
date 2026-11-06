@@ -141,7 +141,7 @@ fn content_type(ext: &str) -> &'static str {
         "mp3" => "audio/mpeg",
         "ogg" | "opus" => "audio/ogg",
         "m4a" => "audio/mp4",
-        // A raw AAC stream (ADTS): a peer's .aac, a song cut from a full-album upload.
+        // A raw AAC stream (ADTS): a peer's .aac, a song an earlier lull cut from a full-album upload.
         "aac" => "audio/aac",
         // YouTube's Opus stream, as YouTube serves it.
         "webm" => "audio/webm",
