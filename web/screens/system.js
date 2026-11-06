@@ -705,16 +705,54 @@
   }
   App.action('sys-install', function () { installApp(); });
   App.action('sys-ios-sheet', function () { openIosSheet(); });
+  /* ---------- the server's version and updates: GET /api/updates { version, build: { release, changes, commit,
+     install }, latest: { version, url }, state: current|available|ahead|unknown, error } ---------- */
+  var srvUpd = null;                               // { loading } | { data } | { error }
+  function loadServerUpdate(check) {
+    if (!srvUpd || !srvUpd.data) srvUpd = { loading: true };
+    return M.api('/api/updates' + (check ? '?check=true' : '')).then(function (r) { srvUpd = { data: r }; },
+      function (err) { srvUpd = { error: errText(err) }; }).then(function () { repaint('#sys-server-update', serverUpdateBody()); });
+  }
+  /* "0.2.4", or between releases "0.2.4 + 12 changes (abc1234)": what the build says it holds */
+  function buildName(b) {
+    if (!b || !b.changes) return App.product + ' ' + (b ? b.release : App.server.version);
+    return App.product + ' ' + b.release + ' + ' + b.changes + (b.changes === 1 ? ' change' : ' changes') + (b.commit ? ' (' + b.commit + ')' : '');
+  }
   App.action('sys-update-check', function (el) {
-    var before = App.server.version;
     el.disabled = true;
-    checkHealth().then(function () {
-      el.disabled = false;
-      if (!App.server.reachable) App.toast('Couldn\'t reach your server to check for updates', { kind: 'error' });
-      else if (App.server.version === before) App.toast(App.product + ' ' + before + ' is the version your server runs', { icon: 'check' });
-      /* a new version raises the update toast through App.on('pwa') */
+    loadServerUpdate(true).then(function () {
+      var r = srvUpd.data;
+      if (srvUpd.error) App.toast('Couldn\'t reach your server to check for updates', { kind: 'error' });
+      else if (r.state === 'unknown') App.toast('Couldn\'t check for updates: ' + (r.error || 'GitHub didn\'t answer'), { kind: 'error' });
+      else App.announce({ current: 'Your server is up to date', ahead: 'Your server follows the latest changes', available: App.product + ' ' + (r.latest && r.latest.version) + ' is out' }[r.state] || '');
     });
   });
+  function serverUpdateBody() {
+    var u = srvUpd;
+    if (!u || u.loading) return html`<span class="px sys-version" id="sys-version">${App.server.version ? buildName(App.server.build) : 'not reported yet'}</span>${spinnerLine('Checking')}`;
+    if (u.error) return html`<span class="px sys-version" id="sys-version">${App.server.version ? buildName(App.server.build) : 'not reported yet'}</span>${statusLine('down', 'Couldn\'t ask your server: ' + u.error)}${checkButton('Try again')}`;
+    var r = u.data, b = r.build || {}, latest = r.latest && r.latest.version;
+    var how = {
+      desktop: 'It runs inside the desktop app and updates with it.',
+      docker: 'Update it where it runs: pull lull\'s newest image and start it again (docker compose pull, then docker compose up -d).',
+      server: 'Update it the way it was installed.'
+    }[b.install] || '';
+    var state = {
+      current: function () { return statusLine('ok', 'Up to date'); },
+      ahead: function () { return html`${statusLine('ok', 'Follows the latest changes')}<span class="sys-row__help">It has everything in ${App.product} ${latest} and what landed since.</span>`; },
+      available: function () {
+        return html`${statusLine('warn', App.product + ' ' + latest + ' is out')}${how ? html`<span class="sys-row__help">${how}</span>` : ''}<a class="btn btn--sm" href="${r.latest.url}" target="_blank" rel="noopener">${icon('external', null, 'ic-16')}What's new</a>`;
+      },
+      unknown: function () { return statusLine('down', 'Couldn\'t check for updates. ' + (r.error || '')); }
+    }[r.state];
+    return html`<span class="px sys-version" id="sys-version">${buildName(b)}</span>${state ? state() : ''}${checkButton(r.state === 'unknown' ? 'Try again' : 'Check for updates')}`;
+  }
+  function checkButton(label) { return html`<button class="btn btn--sm" data-act="sys-update-check">${icon('refresh')}${label}</button>`; }
+  function serverVersionRow(app) {
+    if (!srvUpd) loadServerUpdate(false);
+    return row(app ? 'Your server' : 'Version', app ? 'The hub this app plays from.' : 'This page comes from your server, so this is its version too.',
+      html`<div class="sys-inline sys-inline--col" id="sys-server-update" aria-live="polite">${serverUpdateBody()}</div>`);
+  }
   var NAMES = { soulseek: 'Soulseek', library: 'Library', lastfm: 'Last.fm', cache: 'Cache' };
   function healthRows(checked) {
     var s = App.store.get('services'), srv = App.server;
@@ -819,14 +857,14 @@
     var state = {
       idle: function () { return html`<span class="sys-row__help">Checks GitHub for a newer release.</span>${check}`; },
       checking: function () { return spinnerLine('Checking for updates'); },
-      current: function () { return html`${statusLine('ok', name(u.current) + ' is the newest version')}${check}`; },
+      current: function () { return html`${statusLine('ok', 'Up to date')}${check}`; },
       downloading: function () {
         var pct = u.total ? Math.floor(u.received * 100 / u.total) : null;
         return html`${spinnerLine('Downloading ' + name(u.version) + (pct == null ? '' : ': ' + pct + '%'))}${pct == null ? '' : html`<progress max="100" value="${pct}" aria-label="Download progress"></progress>`}`;
       },
-      ready: function () { return html`${statusLine('ok', name(u.version) + ' is downloaded')}${button('sys-app-update-install', 'Restart to update', true)}`; },
+      ready: function () { return html`${statusLine('warn', name(u.version) + ' is out')}<span class="sys-row__help">It's downloaded.</span>${button('sys-app-update-install', 'Restart to update', true)}`; },
       available: function () {
-        return html`${statusLine('ok', name(u.version) + ' is available')}<span class="sys-row__help">Your browser downloads it; open the file to install it over this version.</span>${button('sys-app-update-install', 'Download', true)}`;
+        return html`${statusLine('warn', name(u.version) + ' is out')}<span class="sys-row__help">Your browser downloads it; open the file to install it over this version.</span>${button('sys-app-update-install', 'Download', true)}`;
       },
       failed: function () { return html`${statusLine('down', 'Couldn\'t check for updates. ' + u.error)}${check}`; }
     }[u.state];
@@ -835,12 +873,12 @@
   }
   function appVersionRow() {
     if (!upd) loadUpdate();
-    return row('App version', 'This app\'s own version. It updates from lull\'s releases on GitHub.', html`<div class="sys-inline sys-inline--col" id="sys-app-update" aria-live="polite">${updateBody()}</div>`);
+    return row('This app', 'It updates from lull\'s releases on GitHub.', html`<div class="sys-inline sys-inline--col" id="sys-app-update" aria-live="polite">${updateBody()}</div>`);
   }
   function secApp() {
     if (inWrapper() && !desk) loadDesktop();
     var app = appUpdates();
-    return html`${row(app ? 'Server version' : 'Version', '', html`<span class="sys-inline"><span class="px sys-version" id="sys-version">${App.server.version || 'not reported yet'}</span><button class="btn btn--sm" data-act="sys-update-check">Check for updates</button></span>`)}
+    return html`${app ? appVersionRow() : ''}${serverVersionRow(!!app)}
       ${row('Install app', 'Adds lull to your home screen or dock with lock-screen controls and its own window.', html`<div id="sys-install">${installBody()}</div>`)}
       ${row('First-run setup', 'Your library, your Soulseek account and Last.fm, step by step.', html`<a class="btn" href="#/setup">Open setup</a>`)}
       ${row('Licence', 'lull is free software under the GNU Affero General Public License 3.0: you may use, change and share it, and its source is open to everyone who uses it.', html`<a class="btn" href="https://github.com/TannhauserCommons/lull" target="_blank" rel="noopener">${icon('external', null, 'ic-16')}Source code</a>`)}
@@ -848,8 +886,7 @@
       ${inWrapper() ? '' : configRow('Server address', serverAddress(), 'The address this page was loaded from.')}
       <div class="sys-row sys-row--stack"><div class="sys-row__text"><span class="sys-row__label">Server health</span><span class="sys-row__help">What the server reports about itself and its services.</span></div>
         <div class="sys-row__ctl"><div id="sys-health" aria-live="polite">${healthRows(false)}</div><button class="btn btn--sm" data-act="sys-health">${icon('refresh')}Check now</button></div></div>
-      ${inWrapper() ? html`${group('desktop app')}${appVersionRow()}<div id="sys-desktop">${desktopRows()}</div>` : ''}
-      ${app && !inWrapper() ? html`${group('android app')}${appVersionRow()}` : ''}`;
+      ${inWrapper() ? html`${group('desktop app')}<div id="sys-desktop">${desktopRows()}</div>` : ''}`;
   }
 
   var BODY = {
@@ -889,14 +926,14 @@
       }),
       App.on('server', function () {
         repaint('#sys-health', healthRows(false));
-        var v = $('#sys-version'); if (v) v.textContent = App.server.version || 'not reported yet';
+        if (srvUpd && srvUpd.data && srvUpd.data.version !== App.server.version) loadServerUpdate(false);
       }),
       App.on('pwa', function () { repaint('#sys-install', installBody()); }),
       App.on('config', function (key) { if (key === 'LULL_NAMING' || key === 'LULL_MUSIC_DIR') repaint('#sys-naming', namingBox()); })
     ];
     ctx.onCleanup(function () {
       offs.forEach(function (off) { off(); });
-      if (!/^#\/settings\/app\b/.test(location.hash)) desk = null;   // leaving Settings > App: read the wrapper again next visit
+      if (!/^#\/settings\/app\b/.test(location.hash)) { desk = null; srvUpd = null; }   // leaving Settings > App: ask again next visit
     });
   }
   /* Settings' own fits (screens/settings-fit.js) load on entry, and the sections built from screens/hub.js

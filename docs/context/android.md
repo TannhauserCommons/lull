@@ -78,7 +78,7 @@ The app uses the https scheme for its own pages (`https://tauri.localhost`), so 
 
 ## Updates
 
-Tauri's updater doesn't run on Android, so Settings > App's **App version** row (`window.LullNative.updates`, the desktop's calls without `on`; desktop.md) does it by hand, only on the listener's click:
+Tauri's updater doesn't run on Android, so Settings > App's **This app** row (`window.LullNative.updates`, the desktop's calls without `on`; desktop.md) does it by hand, only on the listener's click:
 1. **Check for updates** (`app_update_check`) reads `latest.json` from `plugins.updater.endpoints[0]` in `tauri.conf.json`, the desktop's address (20 s). A 404 means no release yet; no answer means offline.
 2. Its `version` against this build's (semver): not newer means **lull 0.1.0 is the newest version**. Newer means **lull X is available**, with the APK from the manifest's `android.url` (https only; a newer release without one is an error).
 3. **Download** (`app_update_install`) opens that URL in the browser, which downloads the APK; opening it installs it over this version, since both are signed with the release key. Android asks once to allow installs from the browser. The page never passes a URL: Rust opens the one it found.
