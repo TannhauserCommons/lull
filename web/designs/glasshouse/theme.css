@@ -1,14 +1,18 @@
-/* glasshouse: a silvery-glass Y2K media desktop after midnight (moodboard 03 + 05 + 01), "after-midnight aero".
-   Everything floats on the misty night: the page is one big frosted pane with a bright moonlit rim, the menu a glass
-   shelf of round keys, the logo, search and buttons stand on the night itself, and the player is a glass console
-   hovering under the page (the song, the rose play orb, the tools in a smoky pill, the seek a dark screen ribbon).
-   Every window on the pane is an aero window with a title bar and glossy beads, and ends on a foot of its own: what it
-   can't show scrolls behind that foot, so no window is ever cut by the page's edge or reaches the console (Windows).
+/* glasshouse: a silvery-glass Y2K media desktop after midnight (moodboard 03 + 05 + 01), "after-midnight aero", standing in
+   a conservatory: the wall behind it is the night seen through a glasshouse's pointed arches of steel and glass.
+   A real desktop: the windows float straight on that wall, each a slab of glass with a bright moonlit rim and a long
+   shadow, and a page spreads them over all the room it has (Stats' windows in columns, a Settings section flowing into
+   columns inside its window, Home's media window listing its songs in two). The menu is a glass shelf of round keys,
+   the logo, search and buttons stand on the night itself, and the player is a glass console hovering under the page
+   (the song, the rose play orb, the tools in a smoky pill, the seek a dark screen ribbon).
+   Every window is an aero window with a title bar and glossy beads and ends on a foot of its own (a frame strip with a
+   size grip), always whole: a page that is taller than its room scrolls under soft fades at its two edges, never
+   behind a fake edge of a window or cut flat by the console. The side panel, collapsed, is a capsule of round keys.
    Now Playing is a stage: the cover floats large with its colours glowing behind it and a faint reflection.
    Night is home, day is pale pearl. Every rule is scoped under :root[data-design="glasshouse"].
    Glass: solid token fills by default; translucency + blur only under @supports (backdrop-filter). Text on glass is
    checked on the worst composite (fill over the darkest / lightest wallpaper stop), see the check: comments.
-   Sections: fonts, tokens, contrast checks, wallpaper + captions, type, windows (the pane, windows, feet), controls,
+   Sections: fonts, tokens, contrast checks, wallpaper + captions, type, windows (the desktop, windows, feet), controls,
    rows + tiles + covers, seek, shell (header, shelf, status gadget, console, queue gadget, tablet), screens (home,
    search, library, stats + settings + welcome, empty states, banners, overlays), now playing (the stage), mini player,
    classic, phone, motion, wide screens, the see-through window. */
@@ -85,11 +89,13 @@
   --gh-lit-1: #eef4ff; --gh-lit-2: #b9cdee; --gh-lit-3: #93b0de; --gh-lit-edge: #4d6696;
   --gh-lcd: linear-gradient(180deg, #232840, #2a3048); --gh-lcd-edge: #1a1e2e;
   --gh-ok: #2f8f5f; --gh-warn: #b07a12; --gh-down: #c0405f; --gh-ring: #f8f8fc;
-  /* the pane (the page's one big frosted sheet), its moonlit rim, and a window's and a gadget's body made solid where
-     its foot fades the rows passing behind it (their glass composited over what lies under it, measured) */
-  --gh-pane: rgba(246, 247, 252, .5); --gh-pane-sheen: rgba(255, 255, 255, .7);
-  --gh-rim-grad: linear-gradient(155deg, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, .35) 18%, rgba(255, 255, 255, 0) 42%, rgba(255, 255, 255, 0) 68%, rgba(255, 255, 255, .55) 100%);
-  --gh-win-solid: #f3f4f9; --gh-gadget-solid: #eceef5;
+  /* a page window's body: its glass fill composited over the wall (measured, see the check: comments) and made solid, so
+     the wall's stars and rings never show in it; the lighter stop under its title bar, the gadgets keep their smoky glass */
+  --gh-win-1: #f2f3f8; --gh-win-2: #e9ebf4;
+  /* baked light (assets/*.webp, made offline from a shader: bake/ in the design's notes): the glass's caustic tile, the
+     pool of light under Now Playing's cover, the one diffraction streak, and the ring round the console's cover */
+  --gh-caustic: url("assets/caustic-day.webp"); --gh-pool: url("assets/pool-day.webp"); --gh-prism: url("assets/prism.webp");
+  --gh-ring-track: #c3cce2; --gh-ring-fill: #b3566f; --gh-sb: rgba(60, 70, 112, .42);
 }
 :root[data-design="glasshouse"][data-theme="night"] {
   --cream: #c9ccd8; --cream-2: #bdc0cd; --cream-3: #b1b4c2;
@@ -129,9 +135,9 @@
   --gh-lit-1: #8ea6d2; --gh-lit-2: #5b75a6; --gh-lit-3: #3f5786; --gh-lit-edge: #c9d6f0;
   --gh-lcd: linear-gradient(180deg, #11131c, #1d2131); --gh-lcd-edge: #0b0d14;
   --gh-ok: #6fd6a0; --gh-warn: #f0c060; --gh-down: #f08aa4; --gh-ring: #2a2e40;
-  --gh-pane: rgba(20, 23, 35, .56); --gh-pane-sheen: rgba(255, 255, 255, .09);
-  --gh-rim-grad: linear-gradient(155deg, rgba(255, 255, 255, .7) 0%, rgba(214, 226, 255, .22) 18%, rgba(255, 255, 255, 0) 42%, rgba(255, 255, 255, 0) 68%, rgba(243, 193, 207, .38) 100%);
-  --gh-win-solid: #a7abba; --gh-gadget-solid: #262a3a;
+  --gh-win-1: #b9bccb; --gh-win-2: #a9acba;
+  --gh-caustic: url("assets/caustic.webp"); --gh-pool: url("assets/pool-night.webp");
+  --gh-ring-track: #596181; --gh-ring-fill: #f3c1cf; --gh-sb: rgba(205, 215, 240, .45);
 }
 /* shape, depth and shared recipes (theme-invariant; the var() inside resolve per theme on :root) */
 :root[data-design="glasshouse"] {
@@ -144,12 +150,10 @@
   --stack-press: 0 6px 16px -12px var(--gh-cast);
   /* a slab floating over the night casts a long soft shadow */
   --gh-float: 0 34px 60px -34px var(--gh-cast), 0 10px 22px -16px var(--gh-cast);
-  --gh-r-pane: 26px;
   --gh-barh: 30px;
-  /* a window's foot: the frame strip it ends on, and the mist above it that the rows passing behind fade into */
-  --gh-foot: 11px; --gh-foot-mist: 18px;
-  /* the pane's own foot under its windows, and the room the scroller keeps at its end */
-  --gh-sill: 16px;
+  /* a window's foot: the frame strip it ends on; the sill is the room the page's scroller keeps at its end */
+  --gh-foot: 12px;
+  --gh-sill: 28px;
   --gh-bar: linear-gradient(180deg, var(--gh-bar-1) 0%, var(--gh-bar-2) 48%, var(--gh-bar-3) 52%, var(--gh-bar-4) 100%);
   --gh-lit: linear-gradient(180deg, #eef4ff 0%, #b9cdee 50%, #a9c1e8 51%, #c3d5f1 100%);   /* the lit glass key (ink text) */
   --gh-orb: radial-gradient(120% 90% at 50% 100%, #c97a92 0%, #8e3f58 46%, #6e2a42 74%);    /* rose gloss body (white text) */
@@ -341,14 +345,14 @@
      lens rings left out, as a blur this wide wipes them out (docs/themes.md, Drawing cheaply). So does the AIMP window,
      whose ticker would have its blur redone 20 times a second at rest, and a card showing the empty state's blinking caret
      (Now Playing's lyrics card with no lyrics); it repaints as the page scrolls, which costs less.
-     From tablet up the windows on the pane need no blur at all (the pane, below). Elsewhere (a phone's page, Now
+     From tablet up the windows on the page need no blur at all (they are near solid, below). Elsewhere (a phone's page, Now
      Playing's stage) the other windows move over the wallpaper as the page scrolls, and a fixed wallpaper under each
      would repaint them all on every scroll frame, so they blur live, as do a sheet, a menu, a toast and the queue sliding
      over the page: what is under them moves. Each rule weighs what the glass rule above weighs (:where), so a window's
      own fill wins */
   :root[data-design="glasshouse"] :is(.nowcol, .pbar, .mini, .tabbar, :where(.app[data-ctx="docked"]) .ctx) {
-    background: linear-gradient(128deg, var(--gh-sheen-panel) 0%, transparent 30%), linear-gradient(var(--gh-glass-panel) 0 0), var(--gh-wall);
-    background-attachment: scroll, scroll, var(--gh-wall-at);
+    background: var(--gh-caustic) 0 0 / 320px 320px, linear-gradient(128deg, var(--gh-sheen-panel) 0%, transparent 30%), linear-gradient(var(--gh-glass-panel) 0 0), var(--gh-wall);
+    background-attachment: scroll, scroll, scroll, var(--gh-wall-at);
     -webkit-backdrop-filter: none; backdrop-filter: none;
   }
   :root[data-design="glasshouse"] :is(.card.gh-aimp, .card:has(.gh-caret)) {
@@ -359,12 +363,12 @@
   }
 }
 
-/* the refraction rim of every floating slab (the pane, the shelf, the console, the gadgets, the media window): a 1.5 px
+/* the refraction rim of every floating slab (the shelf, the console, the gadgets, the media window): a 1.5 px
    gradient ring over its own border, bright where the moon catches it (top left), drawn by a pseudo-element that only
    paints the ring. It lies under the slab's own content (the slab is a stacking context of its own): a ring drawn
-   over it would be a layer of its own wherever something composited (a window rising in, a sticky foot) passes under */
-:root[data-design="glasshouse"] :is(.main, .rail, .pbar, .ctx, .nowcol, .gh-np__win) { isolation: isolate; }
-:root[data-design="glasshouse"] :is(.main, .rail, .pbar, .ctx, .nowcol, .gh-np__win)::after {
+   over it would be a layer of its own wherever something composited (a window rising in) passes under */
+:root[data-design="glasshouse"] :is(.rail, .pbar, .ctx, .nowcol, .gh-np__win) { isolation: isolate; }
+:root[data-design="glasshouse"] :is(.rail, .pbar, .ctx, .nowcol, .gh-np__win)::after {
   content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; padding: 1.5px; pointer-events: none;
   background: var(--gh-rim-grad);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
@@ -372,9 +376,8 @@
 }
 
 /* every card is a window: its head (visible or the revealed hidden one) becomes the aero title bar over an in-flow
-   spacer as tall as the bar and 18 px of air (--gh-air), not over a padding, so the window's foot can rise all the
-   way to its top: a window only just come in from below shows its own foot, rolled up under its bar, never a bar cut
-   by the page's edge. --gh-pad is its padding, which its foot reaches across */
+   spacer as tall as the bar and 18 px of air (--gh-air), not over a padding. --gh-pad is its padding, which its foot
+   reaches across */
 :root[data-design="glasshouse"] .card {
   border: 1px solid var(--gh-frame); border-radius: var(--r-card);
   box-shadow: inset 0 1px 0 var(--gh-rim), inset 0 0 0 1px color-mix(in srgb, var(--gh-rim) 45%, transparent), var(--stack);
@@ -385,58 +388,48 @@
 }
 :root[data-design="glasshouse"] .card::before { content: ""; display: block; flex: none; grid-column: 1 / -1; height: calc(var(--gh-barh) + var(--gh-air, 18px)); }
 :root[data-design="glasshouse"] .card--flush { --gh-pad: 0px; --gh-air: 0px; }
-/* a window's foot: whatever the window can't show scrolls behind it. It sticks to its scroller's foot, so a window
-   taller than its room ends there on its own frame, never on the page's edge or under the console; at rest it is the
-   window's bottom edge, under the window's padding. The mist over its frame strip (the window's body made solid,
-   --gh-foot-solid) fades the rows passing behind it, and a size grip sits in its corner. A grid window spans it across
-   its columns. The gadgets and Settings' section list end on the same foot (below) */
-:root[data-design="glasshouse"] .card { --gh-foot-solid: var(--gh-win-solid); --gh-foot-r: var(--r-card); }
+/* a window's foot: the frame strip every window (and every gadget) ends on, a real edge with a size grip in its corner.
+   It sits after the window's last row, so a window is always whole: what a page or a list can't show scrolls off its
+   scroller's soft edge (the fade below), never behind a fake edge of the window's own. A grid window spans it across its
+   columns. --gh-pad is the window's padding, which its foot reaches across */
+:root[data-design="glasshouse"] .card { --gh-foot-r: var(--r-card); }
 :root[data-design="glasshouse"] .card::after,
 :root[data-design="glasshouse"] :is(.ctx, .nowcol)::before,
 :root[data-design="glasshouse"] .sys-nav::after {
-  content: ""; display: block; flex: none; height: calc(var(--gh-foot-mist) + var(--gh-foot)); pointer-events: none;
+  content: ""; display: block; flex: none; height: var(--gh-foot); pointer-events: none;
   border-radius: 0 0 calc(var(--gh-foot-r) - 1px) calc(var(--gh-foot-r) - 1px);
   background:
     radial-gradient(circle, var(--gh-frame) 0 .9px, transparent 1.3px) right 5px bottom 2px / 4px 4px no-repeat,
     radial-gradient(circle, var(--gh-frame) 0 .9px, transparent 1.3px) right 9px bottom 2px / 4px 4px no-repeat,
     radial-gradient(circle, var(--gh-frame) 0 .9px, transparent 1.3px) right 5px bottom 6px / 4px 4px no-repeat,
-    linear-gradient(var(--gh-frame), var(--gh-frame)) 0 calc(100% - var(--gh-foot)) / 100% 1px no-repeat,
-    linear-gradient(180deg, color-mix(in srgb, #fff 55%, var(--gh-bar-2)), var(--gh-bar-2) 40%, var(--gh-bar-4)) 0 100% / 100% var(--gh-foot) no-repeat,
-    linear-gradient(180deg, color-mix(in srgb, var(--gh-foot-solid) 0%, transparent), var(--gh-foot-solid)) 0 0 / 100% var(--gh-foot-mist) no-repeat;
+    linear-gradient(var(--gh-frame), var(--gh-frame)) 0 0 / 100% 1px no-repeat,
+    linear-gradient(180deg, color-mix(in srgb, #fff 55%, var(--gh-bar-2)), var(--gh-bar-2) 40%, var(--gh-bar-4));
 }
-:root[data-design="glasshouse"] .card::after {
-  position: sticky; bottom: 0; z-index: 2; grid-column: 1 / -1;
-  margin: max(0px, calc(var(--gh-pad) - var(--gh-foot-mist))) calc(-1 * var(--gh-pad)) calc(-1 * var(--gh-pad));
-}
+:root[data-design="glasshouse"] .card::after { grid-column: 1 / -1; margin: var(--gh-pad) calc(-1 * var(--gh-pad)) calc(-1 * var(--gh-pad)); }
 /* grid windows keep their own top padding (a spacer would take a grid cell) */
 :root[data-design="glasshouse"] .card:is(.gh-aimp, .sys-tile)::before { display: none; }
 
-/* the page: from tablet up, one frosted pane floating on the night, baked (it never moves) with the rim and a long
-   shadow; its windows are lighter sheets of the same frost with no blur of their own (the pane under them is already
-   frosted and still), so a scroll costs no blur at all. Its scroller ends --gh-sill above the pane's lower edge: the
-   windows' feet ride there, on the pane's own glass. The scroller keeps that much room at its end, so the last window
-   rests whole above it. Now Playing has no pane: its stage stands on the night (below). The pane is a size container
+/* the page is a desktop: its windows float straight on the night, each with the rim and the long shadow of a slab of
+   glass, no sheet under them. The scroller (.view) runs the height of the room above the console and its two edges fade
+   out (a mask: one static layer), so a window that scrolls off is never cut flat by a line, and a window is always whole
+   inside it: it ends on its own foot (above). A window's fill is nearly solid: windows stand apart on the wall, so there
+   is nothing behind one to blur, and the wall's stars and lens rings stay out of them. The scroller is a size container
    (still named main), so what must fit its room can read its height (100cqb). */
-:root[data-design="glasshouse"] .main > .view { padding-bottom: 0; }
+:root[data-design="glasshouse"] .main > .view { padding-bottom: 0; --gh-fade-t: 20px; --gh-fade-b: 36px;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 var(--gh-fade-t), #000 calc(100% - var(--gh-fade-b)), transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0, #000 var(--gh-fade-t), #000 calc(100% - var(--gh-fade-b)), transparent 100%); }
 :root[data-design="glasshouse"] .main > .view::after { content: ""; display: block; height: var(--gh-sill); }
 @media (min-width: 640px) {
-  :root[data-design="glasshouse"] .main {
-    container-type: size; border: 1px solid var(--gh-frame); border-radius: var(--gh-r-pane); margin-bottom: 18px;
-    background: linear-gradient(162deg, var(--gh-pane-sheen) 0%, transparent 26%), linear-gradient(var(--gh-pane) 0 0), var(--gh-wall);
-    background-attachment: scroll, scroll, var(--gh-wall-at);
-    box-shadow: inset 0 1px 0 var(--gh-rim), inset 0 0 0 1px color-mix(in srgb, var(--gh-rim) 18%, transparent), inset 0 40px 60px -50px color-mix(in srgb, #fff 40%, transparent), var(--gh-float);
-  }
-  :root[data-design="glasshouse"] .main > .view { border-radius: calc(var(--gh-r-pane) - 1.5px) calc(var(--gh-r-pane) - 1.5px) 0 0; padding: 22px 24.5px 0; margin: 1.5px 1.5px var(--gh-sill); scroll-padding-top: 22px; }
+  :root[data-design="glasshouse"] .main { container-type: size; margin-bottom: 18px; }
+  :root[data-design="glasshouse"] .main > .view { padding: 22px 30px 0; margin: 0; scroll-padding-top: 22px; }
   :root[data-design="glasshouse"] .app:not([data-screen="now"]) .main .card {
     -webkit-backdrop-filter: none; backdrop-filter: none;
-    background: linear-gradient(128deg, var(--gh-sheen) 0%, transparent 34%), linear-gradient(180deg, var(--gh-glass-card) 0%, var(--gh-glass-card-2) 100%);
-    box-shadow: inset 0 1px 0 var(--gh-rim), inset 0 0 0 1px color-mix(in srgb, var(--gh-rim) 40%, transparent), 0 18px 34px -26px var(--gh-cast);
+    background: var(--gh-caustic) 0 0 / 320px 320px, linear-gradient(128deg, var(--gh-sheen) 0%, transparent 34%), linear-gradient(180deg, var(--gh-win-1) 0%, var(--gh-win-2) 100%);
+    box-shadow: inset 0 1px 0 var(--gh-rim), inset 0 0 0 1px color-mix(in srgb, var(--gh-rim) 40%, transparent), var(--gh-float);
   }
-  :root[data-design="glasshouse"] .app[data-screen="now"] .main { background: none; border-color: transparent; box-shadow: none; }
-  :root[data-design="glasshouse"] .app[data-screen="now"] .main > .view { padding: 8px 8px 0; margin-bottom: 0; }
+  :root[data-design="glasshouse"] .app[data-screen="now"] .main > .view { padding: 8px 8px 0; margin-bottom: 0; --gh-fade-t: 8px; }
 }
-@media (max-width: 639px) { :root[data-design="glasshouse"] .main::after { display: none; } }
-:root[data-design="glasshouse"] .app[data-screen="now"] .main::after { display: none; }
+@media (max-width: 639px) { :root[data-design="glasshouse"] .main > .view { --gh-fade-t: 8px; --gh-fade-b: 24px; } }
 /* one title-bar recipe for windows, sheets, gadgets and the queue */
 :root[data-design="glasshouse"] :is(.card > .card-head, .sheet__head, .ctx > .region-title, .nowcol__head, .sys-tile__label) {
   color: var(--gh-bar-ink); border-bottom: 1px solid var(--gh-frame); background: var(--gh-bar);
@@ -673,6 +666,18 @@
   :root[data-design="glasshouse"] .app:is([data-screen="album"], [data-screen="artist"]) .tlist:not(.tlist--dense) .trow__album { display: none; }
 }
 
+/* a shelf shows whole tiles for the width its window gives it, never a sliver of the next: the tiles share the row between
+   them (as many as a least width of 140 px allows, --gh-n by the window's own inner width) and the shelf scrolls a page of them
+   at a time, snapping to a tile's edge */
+:root[data-design="glasshouse"] .disc-shelf { --gh-n: 2; --gh-sg: var(--sp-5); gap: var(--gh-sg);
+  grid-auto-columns: calc((100% - (var(--gh-n) - 1) * var(--gh-sg)) / var(--gh-n)); scroll-snap-type: x mandatory; }
+@container section (min-width: 460px) { :root[data-design="glasshouse"] .disc-shelf { --gh-n: 3; } }
+@container section (min-width: 620px) { :root[data-design="glasshouse"] .disc-shelf { --gh-n: 4; } }
+@container section (min-width: 780px) { :root[data-design="glasshouse"] .disc-shelf { --gh-n: 5; } }
+@container section (min-width: 940px) { :root[data-design="glasshouse"] .disc-shelf { --gh-n: 6; } }
+@container section (min-width: 1100px) { :root[data-design="glasshouse"] .disc-shelf { --gh-n: 7; } }
+@container section (min-width: 1260px) { :root[data-design="glasshouse"] .disc-shelf { --gh-n: 8; } }
+@media (max-width: 639px) { :root[data-design="glasshouse"] .disc-shelf { --gh-sg: var(--sp-4); } }
 /* tiles: titles may take two lines; play orbs shown on hover / focus (always on touch) */
 :root[data-design="glasshouse"] .tile__title { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.2; }
 :root[data-design="glasshouse"] .tile__meta { font: 500 .75rem/1.2 var(--f-px); }
@@ -805,7 +810,7 @@
   :root[data-design="glasshouse"] .header .tray__pill .sg { --gh-ring: var(--panel); --gh-ok: inherit; --gh-warn: inherit; --gh-down: inherit; }
 }
 
-/* desktop (>= 1100): the desktop icons are a floating glass shelf of round keys beside the pane, the status gadget
+/* desktop (>= 1100): the desktop icons are a floating glass shelf of round keys beside the page, the status gadget
    under it */
 @media (min-width: 1100px) {
   :root[data-design="glasshouse"][data-shell="dock"] .header__brand { flex: 1 1 0; }
@@ -917,13 +922,21 @@
 :root[data-design="glasshouse"] .ctx .label-rule--sm > :is(h2, h3) { flex: 1; color: var(--fg-panel); }
 :root[data-design="glasshouse"] .ctx .label-rule--sm .label-rule__end { font: 500 .75rem/1 var(--f-px); color: var(--fg-panel-2); }
 :root[data-design="glasshouse"] .ctx .trow { --art: 36px; min-height: 46px; }
-/* the gadget's foot: the window's foot recipe (above) at the gadget's lower edge, its rows fading into the gadget's
-   smoky glass over it; the body keeps room at its end, so its last row scrolls clear of the mist */
-:root[data-design="glasshouse"] :is(.ctx, .nowcol) { --gh-foot-solid: var(--gh-gadget-solid); --gh-foot-r: var(--r-panel); }
-:root[data-design="glasshouse"] :is(.ctx, .nowcol)::before { position: relative; z-index: 2; order: 99; margin-top: calc(-1 * var(--gh-foot-mist)); }
-:root[data-design="glasshouse"] :is(.ctx__body, .nowcol__body) { padding-bottom: calc(var(--gh-foot-mist) + 6px); }
+/* the gadget's foot: the window's foot recipe (above) at the gadget's lower edge; its rows fade out in the last 26 px of
+   the body, never cut flat, and the body keeps room at its end so the last row scrolls clear of the fade */
+:root[data-design="glasshouse"] :is(.ctx, .nowcol) { --gh-foot-r: var(--r-panel); }
+:root[data-design="glasshouse"] :is(.ctx, .nowcol)::before { order: 99; }
+:root[data-design="glasshouse"] :is(.ctx__body, .nowcol__body) { padding-bottom: 26px;
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 26px), transparent); mask-image: linear-gradient(180deg, #000 calc(100% - 26px), transparent); }
+/* collapsed while docked (the strip of keys): the gadget shrinks to a capsule of round glass keys under the header, as
+   the shelf is on the other side, not a window-tall frame with nothing in it */
+:root[data-design="glasshouse"] .app[data-panel="strip"] .ctx, :root[data-design="glasshouse"] .app[data-nowcol="strip"] .nowcol {
+  align-self: start; height: max-content; min-height: 0; border-radius: 30px; }
+:root[data-design="glasshouse"] :is(.app[data-panel="strip"] .ctx, .app[data-nowcol="strip"] .nowcol)::before { display: none; }
+:root[data-design="glasshouse"] :is(.ctx__strip, .nowcol__strip) { gap: 10px; padding: 14px 0; }
+:root[data-design="glasshouse"] :is(.ctx__strip, .nowcol__strip) .btn-icon { width: 44px; height: 44px; border-radius: 50%; }
 
-/* the console: the player is a glass capsule hovering under the pane, centred, no wider than it reads well. Two tiers:
+/* the console: the player is a glass capsule hovering under the page, centred, no wider than it reads well. Two tiers:
    the song, the transport around the rose orb and the tools in a smoky pill of their own; under them the seek runs the
    whole width as a dark screen ribbon set into the glass, headed by what the stream is doing. The transport stays on
    the bar's centre line (the sides are lull's equal --fit-side columns). A phone has the mini player instead */
@@ -942,7 +955,12 @@
 /* the song: a round cover in a pearl ring, the serif title (it opens the place it plays from), the mono artist, the
    format strip */
 :root[data-design="glasshouse"] .pbar__from { display: none; }
-:root[data-design="glasshouse"] .pbar .bezel-thumb { padding: 2px; border: 0; border-radius: 50%; background: conic-gradient(from 200deg, #fff, var(--gh-glow-2), var(--gh-rose-glow), #fff); box-shadow: 0 8px 18px -10px var(--gh-cast); }
+:root[data-design="glasshouse"] .pbar .bezel-thumb { padding: 4px; border: 0; border-radius: 50%; box-shadow: 0 8px 18px -10px var(--gh-cast);
+  /* the ring is the song: it fills with rose light clockwise as the song goes (--song-pos, which each level down to the
+     ring passes on) and is lit round the cover while sound plays */
+  background: conic-gradient(from 0deg, var(--gh-ring-fill) calc(var(--song-pos, 0) * 360deg), var(--gh-ring-track) 0); }
+:root[data-design="glasshouse"] .pbar :is(.pbar__now, .cover-zoom, .bezel-thumb) { --song-pos: inherit; }
+:root[data-design="glasshouse"] .pbar[data-liked="true"] .bezel-thumb { box-shadow: 0 0 12px -1px color-mix(in srgb, var(--gh-rose-glow) 80%, transparent), 0 8px 18px -10px var(--gh-cast); }
 :root[data-design="glasshouse"] .pbar .bezel-thumb .cover { --cover-size: 52px; border-radius: 50%; border: 1px solid var(--gh-frame); }
 /* nothing loaded: the ring holds an empty disc of dark screen glass with the moon's highlight on it */
 :root[data-design="glasshouse"] .pbar .bezel-thumb--empty > span { border-radius: 50%; border: 1px solid var(--gh-frame);
@@ -1030,6 +1048,12 @@
   background: linear-gradient(180deg, #e9ebf3, #b9bfd1); box-shadow: inset 0 1px 0 #fff; }
 :root[data-design="glasshouse"] .bezel-thumb .cover { border-radius: 5px; }
 
+/* 1100 to 1359: the side panel lies over the page (no room beside it): the page under it dims a little, so what it
+   covers reads as behind it, not as cut. A click on the dimmed page closes the panel, as lull does */
+@media (min-width: 1100px) and (max-width: 1359px) {
+  :root[data-design="glasshouse"] .app[data-ctx="open"] .ctx-scrim { opacity: .34; }
+}
+
 /* tablet (640-1099): the shelf is lull's floating dock under the console, its keys round; compact search field */
 @media (min-width: 640px) and (max-width: 1099px) {
   :root[data-design="glasshouse"][data-shell="dock"] .rail { border-radius: 999px; padding: 5px 9px; box-shadow: inset 0 1px 0 var(--gh-rim), var(--gh-float); }
@@ -1046,13 +1070,25 @@
    ===================================================================== */
 :root[data-design="glasshouse"] .disc-hello { margin: 0 0 var(--sp-4); padding-right: 0; }
 :root[data-design="glasshouse"] .disc-hello h1 { margin-bottom: 4px; }
-:root[data-design="glasshouse"] .disc-home > .disc-hello h1 { font-size: 3.75rem; }
+:root[data-design="glasshouse"] .disc-home > .disc-hello h1 { font-size: 3.75rem; margin-bottom: .16em; }
 :root[data-design="glasshouse"] .disc-hello__sum { max-width: 58ch; }
 :root[data-design="glasshouse"] .disc-lead { margin-bottom: var(--sp-5); }
 /* the greeting is the night's headline, enormous italic serif */
 @container main (min-width: 720px) {
   :root[data-design="glasshouse"] .disc-home > .disc-hello { margin-bottom: var(--sp-6); }
-  :root[data-design="glasshouse"] .disc-home > .disc-hello h1 { font-size: clamp(4rem, 8cqi, 7rem); line-height: .9; letter-spacing: -.02em; }
+  :root[data-design="glasshouse"] .disc-home > .disc-hello h1 { font-size: clamp(4rem, 8cqi, 7rem); line-height: .9; letter-spacing: -.02em; margin-bottom: .16em; }   /* the g's tail clears the line under it */
+}
+
+/* a short room (a laptop): the greeting is a line, so the media window's whole deck is on the first screen */
+@container main (max-height: 640px) {
+  :root[data-design="glasshouse"] .disc-home > .disc-hello { margin-bottom: var(--sp-3); }
+  :root[data-design="glasshouse"] .disc-home > .disc-hello h1 { font-size: 3rem; }
+  :root[data-design="glasshouse"] .gh-aimp__lcd { --gh-deck-art: 120px; padding: 10px 10px 8px; gap: 4px; }
+  :root[data-design="glasshouse"] .gh-aimp__title { font-size: 1.375rem; }
+  :root[data-design="glasshouse"] .gh-aimp__artist { font-size: 1.0625rem; }
+  :root[data-design="glasshouse"] .gh-aimp__deck { gap: 8px; }
+  :root[data-design="glasshouse"] .gh-aimp__ticker { display: none; }
+  :root[data-design="glasshouse"] .gh-aimp .trow:nth-child(n+7) { display: none; }
 }
 
 /* the media window: LCD deck | header strip + numbered list; ticker on the bottom edge */
@@ -1061,7 +1097,7 @@
   --gh-pad: 12px; padding-top: calc(var(--gh-barh) + 12px);
 }
 :root[data-design="glasshouse"] .gh-aimp__bar { padding-right: 58px; }
-:root[data-design="glasshouse"] .gh-aimp__bar .gh-skin { top: 5px; right: 60px; }
+:root[data-design="glasshouse"] .gh-aimp__bar .gh-skin { top: 5px; right: 76px; }   /* clear of the three beads (23 to 64 px from the edge) */
 :root[data-design="glasshouse"] .gh-aimp__deck { grid-area: deck; display: grid; align-content: start; gap: 10px; min-width: 0; }
 /* the deck's LCD: the cover, with its own colour glowing into the screen from a blurred copy behind it (static, drawn
    once). The copy shares the cover's cell and its size (--gh-deck-art), so both ask the hub for the same picture */
@@ -1111,6 +1147,15 @@
 :root[data-design="glasshouse"] .gh-aimp .trow__fmt { display: block; grid-column: 1 / -1; font-size: .6875rem; }
 :root[data-design="glasshouse"] .gh-aimp :is(.trow__badges, .trow__album) { display: none; }
 :root[data-design="glasshouse"] .gh-aimp .trow .btn-icon { width: 32px; height: 32px; }
+/* a wide window shows its list in two columns of four, each row with its cover: the song numbers still read down the
+   first column and on, so the window keeps its height and its rows keep their reach */
+@container main (min-width: 1240px) {
+  :root[data-design="glasshouse"] .gh-aimp { grid-template-columns: 330px minmax(0, 1fr); gap: 14px 22px; }
+  :root[data-design="glasshouse"] .gh-aimp__list { grid-template-rows: auto minmax(0, 1fr); }
+  :root[data-design="glasshouse"] .gh-aimp .tlist { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(4, minmax(58px, 1fr)); grid-auto-flow: column; column-gap: 22px; }
+  :root[data-design="glasshouse"] .gh-aimp .trow { grid-template-columns: 22px 44px minmax(0, 1fr) 34px 44px 34px; grid-template-areas: "num art main like dur more"; min-height: 58px; }
+  :root[data-design="glasshouse"] .gh-aimp .trow__art { display: block; --art: 40px; }
+}
 /* tickers: one mono line that scrolls like img 03's footer; paused on hover / focus, static (ellipsised) under reduced motion */
 :root[data-design="glasshouse"] .gh-ticker { overflow: hidden; border-radius: 6px; padding: 4px 0; font: 500 .75rem/1.3 var(--f-px); letter-spacing: .02em; white-space: nowrap; }
 :root[data-design="glasshouse"] .gh-ticker__track { display: flex; width: max-content; animation: gh-tick 34s steps(680) infinite; animation-play-state: var(--loop-play, running); }   /* 20 steps a second: about a pixel each */
@@ -1145,6 +1190,18 @@
    Search
    ===================================================================== */
 :root[data-design="glasshouse"] .disc-top__title { font-size: 2rem; }
+/* each result window is the container its shelf measures (the column holds several windows of different widths) */
+:root[data-design="glasshouse"] .disc-search :not(.disc-splitview) > .disc-col > .disc-card { container: section / inline-size; }
+/* Search on a wide window: the songs take the right as one tall window, and the left stacks the top result, the artists,
+   the albums and the playlists, so neither column is left empty under a short window (side by side stays lull's) */
+@container disc (min-width: 1240px) {
+  :root[data-design="glasshouse"] .disc-search :not(.disc-splitview) > .disc-col { display: grid; grid-template-columns: minmax(380px, .75fr) minmax(0, 1.6fr); column-gap: var(--sp-6); align-items: start; align-content: start; }
+  :root[data-design="glasshouse"] .disc-search :not(.disc-splitview) > .disc-col > .disc-cat__lead { display: contents; }
+  :root[data-design="glasshouse"] .disc-search :not(.disc-splitview) > .disc-col > :not(.disc-cat__lead) { grid-column: 1; }
+  :root[data-design="glasshouse"] .disc-search :not(.disc-splitview) > .disc-col .disc-top { grid-column: 1; }
+  :root[data-design="glasshouse"] .disc-search :not(.disc-splitview) > .disc-col .disc-songs { grid-column: 2; grid-row: 1 / span 8; }
+  :root[data-design="glasshouse"] .disc-search :not(.disc-splitview) > .disc-col > :is(.disc-note, [aria-labelledby="disc-h-only"]) { grid-column: 1 / -1; }
+}
 /* "searching Soulseek" strip: a glass key groove with a lit glass fill */
 :root[data-design="glasshouse"] .disc-scan { border-radius: 8px; border: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
   background: linear-gradient(180deg, color-mix(in srgb, #fff 55%, transparent), color-mix(in srgb, var(--gh-lit-2) 26%, transparent)); font-family: var(--f-px); }
@@ -1161,6 +1218,15 @@
 :root[data-design="glasshouse"] .lib-hero .cover--round {
   box-shadow: inset 0 22px 34px -10px rgba(255, 255, 255, .55), inset 0 -26px 40px -12px rgba(20, 24, 44, .55), inset 0 0 0 1px rgba(255, 255, 255, .5),
     0 22px 44px -20px color-mix(in srgb, var(--gh-glow-2) 80%, transparent);
+}
+
+/* Playlists on a wide window: the playlists take the window's left, as big cards, and the import controls (the link form,
+   the drop zone, bookmarks) stand beside them in a column of their own, so neither the row nor the page is left empty */
+@container main (min-width: 1280px) {
+  :root[data-design="glasshouse"] .app[data-screen="playlists"] .lib-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 440px); column-gap: var(--sp-8); align-content: start; }
+  :root[data-design="glasshouse"] .app[data-screen="playlists"] .lib-card > :is(.lib-rule, .card-head, .card-head--hidden) { grid-column: 1 / -1; }
+  :root[data-design="glasshouse"] .app[data-screen="playlists"] .lib-card > .lib-grid { grid-column: 1; grid-row: 2 / span 8; grid-template-columns: repeat(auto-fit, minmax(clamp(176px, 9.5cqi, 270px), 1fr)); align-content: start; }
+  :root[data-design="glasshouse"] .app[data-screen="playlists"] .lib-card > :not(.lib-grid, .card-head, .card-head--hidden, .lib-rule) { grid-column: 2; }
 }
 
 /* =====================================================================
@@ -1184,22 +1250,48 @@
 :root[data-design="glasshouse"] .sys-bar { height: 9px; background: color-mix(in srgb, var(--bg-2) 70%, var(--line)); box-shadow: inset 0 1px 2px var(--gh-cast); }
 :root[data-design="glasshouse"] .sys-bar > i { background: linear-gradient(90deg, var(--gh-lit-3), var(--gh-lit-2)); box-shadow: inset -4px 0 0 var(--gh-rose), inset 0 1px 0 rgba(255, 255, 255, .5); }
 /* settings: the section list is a smoky gadget window too. It stays in view while a section scrolls (lull keeps it
-   sticky), so from tablet up it is never taller than the pane's room: its list scrolls inside it, above the gadget's
+   sticky), so from tablet up it is never taller than the page's room: its list scrolls inside it, above the gadget's
    foot */
 :root[data-design="glasshouse"] .sys-nav { display: flex; flex-direction: column; padding: calc(var(--gh-barh) + 8px) var(--sp-2) 0; border-color: var(--gh-frame); overflow: clip;
-  --gh-foot-solid: var(--gh-gadget-solid); --gh-foot-r: var(--r-panel); }
+  --gh-foot-r: var(--r-panel); }
 :root[data-design="glasshouse"] .sys-nav::before {
   content: ":: sections"; position: absolute; left: 0; right: 0; top: 0; height: var(--gh-barh); padding: 0 12px; display: flex; align-items: center;
   background: var(--gh-beads) right 10px center / 41px 11px no-repeat, var(--gh-bar); border-bottom: 1px solid var(--gh-frame);
   color: var(--gh-bar-ink); font: 600 .8125rem/1 var(--f-px); letter-spacing: .03em; text-shadow: 0 1px 0 var(--gh-bar-shadow);
 }
-:root[data-design="glasshouse"] .sys-nav > ul { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-bottom: calc(var(--gh-foot-mist) + 4px); scrollbar-width: thin; }
-/* its foot sticks to the page's foot, as a window's does, where the list is the page (a phone's Settings) */
-:root[data-design="glasshouse"] .sys-nav::after { position: sticky; bottom: 0; z-index: 2; margin: calc(-1 * var(--gh-foot-mist)) calc(-1 * var(--sp-2)) 0; }
-/* its room: the pane's (100cqb) less the pane's padding, its sill and the air under the gadget, and less the page's
-   heading over it (the title and its one-line lede, 6.5rem), so it ends whole before the page has scrolled */
-@media (min-width: 640px) { :root[data-design="glasshouse"] .sys-nav { max-height: calc(100cqb - 22px - var(--gh-sill) - 18px - 6.5rem); } }
-:root[data-design="glasshouse"] .sys-nav__item { border-radius: 8px; }
+:root[data-design="glasshouse"] .sys-nav > ul { flex: 1 1 auto; min-height: 0; gap: 1px; overflow-y: auto; padding-bottom: 26px;
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 26px), transparent); mask-image: linear-gradient(180deg, #000 calc(100% - 26px), transparent); }
+:root[data-design="glasshouse"] .sys-nav > ul::-webkit-scrollbar { width: 10px; }
+:root[data-design="glasshouse"] .sys-nav > ul::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: 6px; background: color-mix(in srgb, var(--fg-panel-2) 60%, transparent) padding-box; }
+@supports not selector(::-webkit-scrollbar) { :root[data-design="glasshouse"] .sys-nav > ul { scrollbar-width: thin; } }
+/* its foot is the gadget's own edge, reaching across its padding */
+:root[data-design="glasshouse"] .sys-nav::after { margin: 0 calc(-1 * var(--sp-2)); }
+/* its room: as tall as its list wherever the page has the room (14 keys of 40 px, its bar and foot: about 660 px), the
+   page's (100cqb) less its padding, its heading (title and its air, 5rem) and the fade under it. Where there is less (a
+   laptop) it is plainly a list that scrolls inside its window: a thin scrollbar, and its last rows fading out under the foot
+   instead of meeting it. Stuck to the page's top it keeps clear of the top fade. */
+@media (min-width: 640px) { :root[data-design="glasshouse"] .sys-nav { top: 22px; max-height: calc(100cqb - 22px - 5rem - var(--gh-fade-b)); } }
+:root[data-design="glasshouse"] .sys-nav__item { min-height: 40px; padding: 5px 12px; border-radius: 8px; }
+/* a room under 800 px (a laptop; one key a row needs about 800) : the list is two columns of seven in a wider gadget, so every section is in view; the section
+   you are in is never hidden below a fold */
+@container main (max-height: 800px) and (min-width: 760px) {
+  :root[data-design="glasshouse"] .sys-settings__grid { grid-template-columns: 300px minmax(0, 1fr); }
+  :root[data-design="glasshouse"] .sys-nav > ul { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(7, auto); grid-auto-flow: column; column-gap: 4px; }
+  :root[data-design="glasshouse"] .sys-nav__item { min-height: 32px; gap: 8px; padding: 3px 8px; font-size: .875rem; }
+}
+/* a wide desktop is used, not left empty: the page's windows spread over the room they have. Stats' windows stack in
+   columns as many as the room fits (a short window never leaves a hole beside a tall one), the taste window across all
+   of them; a Settings section, which is one tall window, flows into columns inside itself, each row whole, and the
+   section list stays at its side */
+:root[data-design="glasshouse"] .sys-page { max-width: none; }
+:root[data-design="glasshouse"] .sys-stats .sys-grid { display: block; columns: 3 440px; column-gap: var(--sp-6); }
+:root[data-design="glasshouse"] .sys-stats .sys-grid > .card { break-inside: avoid; margin-bottom: var(--sp-6); }
+:root[data-design="glasshouse"] .sys-stats .sys-grid > .sys-span { column-span: all; }
+:root[data-design="glasshouse"] .sys-stats .sys-grid > .sys-span:not(#sys-taste) { column-span: none; }
+:root[data-design="glasshouse"] .sys-section { column-width: 640px; column-gap: 56px; column-rule: 1px solid color-mix(in srgb, var(--line) 38%, transparent); }
+:root[data-design="glasshouse"] .sys-section::before, :root[data-design="glasshouse"] .sys-section::after { column-span: all; }
+:root[data-design="glasshouse"] .sys-section :is(.sys-row, .switch-row, .sys-note, .sys-follows li) { break-inside: avoid; }
+:root[data-design="glasshouse"] .sys-section :is(.label-rule, .sys-group > :first-child) { break-after: avoid; }
 /* cache legend: two wide columns so "Playing and queued" and its figure each stay on one line */
 :root[data-design="glasshouse"] .sys-usage__legend { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
 :root[data-design="glasshouse"] .sys-usage__legend .num { white-space: nowrap; }
@@ -1214,12 +1306,17 @@
    ===================================================================== */
 :root[data-design="glasshouse"] .empty { padding: var(--sp-6) var(--sp-4); }
 :root[data-design="glasshouse"] .empty__art { width: auto; height: auto; color: inherit; }
+/* the little window stands in a pool of moonlight (baked), lit as it comes in; an error window's bar is tinted rose */
+:root[data-design="glasshouse"] .empty__art { position: relative; isolation: isolate; }
+:root[data-design="glasshouse"] .empty__art::before { content: ""; position: absolute; z-index: -1; left: 50%; top: 50%; width: 340px; height: 170px; margin: -80px 0 0 -170px; pointer-events: none;
+  background: var(--gh-pool) 50% 50% / 100% 100% no-repeat; opacity: .6; }
 :root[data-design="glasshouse"] .gh-empty { display: grid; width: 220px; border: 1px solid var(--gh-frame); border-radius: 9px; overflow: hidden;
   background: linear-gradient(180deg, #e3e8f3, #cfd5e4); box-shadow: inset 0 1px 0 #fff, 0 16px 30px -18px var(--gh-cast); transform: rotate(-2deg); }
 :root[data-design="glasshouse"] .gh-empty__bar { height: 20px; border-bottom: 1px solid var(--gh-frame); background: var(--gh-beads) right 6px center / 33px 9px no-repeat, var(--gh-bar); }
 :root[data-design="glasshouse"] .gh-empty__lcd { display: flex; align-items: center; justify-content: center; gap: 2px; margin: 10px; padding: 16px 10px; border-radius: 6px;
   background: var(--gh-lcd); border: 1px solid var(--gh-lcd-edge); box-shadow: inset 0 1px 4px rgba(0, 0, 0, .6); font: 500 .9375rem/1.2 var(--f-px); color: #c6d6f2; }
 :root[data-design="glasshouse"] .gh-empty:is([data-title*="couldn" i], [data-title*="unavailable" i], [data-title^="that " i], [data-title*="snag" i], [data-title*="error" i]) .gh-empty__lcd { color: #f3c1cf; }
+:root[data-design="glasshouse"] .gh-empty:is([data-title*="couldn" i], [data-title*="unavailable" i], [data-title^="that " i], [data-title*="snag" i], [data-title*="error" i]) .gh-empty__bar { background: var(--gh-beads) right 6px center / 33px 9px no-repeat, linear-gradient(180deg, #f0cdd8, #c98fa3 48%, #b9728a 52%, #c98fa3); }
 /* the LCD line: "no signal" for errors, else "0 <what is missing>", else a word for the art */
 :root[data-design="glasshouse"] .gh-lcd { display: none; }
 :root[data-design="glasshouse"] .gh-empty:is([data-title*="couldn" i], [data-title*="unavailable" i], [data-title^="that " i], [data-title*="snag" i], [data-title*="error" i]) .gh-lcd--err,
@@ -1271,8 +1368,14 @@
   background: linear-gradient(180deg, #eef4ff 0%, #c3d5f1 100%); box-shadow: inset 0 0 0 1px color-mix(in srgb, #4d6696 45%, transparent), inset 0 1px 0 #fff;
 }
 /* toast: a small aero notification balloon (title bar, beads, mono label, rose action) */
-:root[data-design="glasshouse"] .toast-region { width: min(480px, calc(100vw - 32px)); }
-:root[data-design="glasshouse"] .toast { position: relative; padding-top: calc(22px + 8px); border-radius: 10px; overflow: hidden; background: var(--cream); }
+:root[data-design="glasshouse"] .toast-region { width: min(480px, calc(100vw - 32px)); gap: 18px; }
+/* a balloon is a whole little window: its bar above, a foot of its own below (--gh-toast-foot), so two stacked read as
+   two windows with air between, never one's bar lying over the other's end */
+:root[data-design="glasshouse"] .toast { --gh-toast-foot: 8px; position: relative; padding: calc(22px + 8px) 8px calc(8px + var(--gh-toast-foot)) 14px; border-radius: 10px; overflow: hidden; background: var(--cream); margin-bottom: 0; }
+:root[data-design="glasshouse"] .toast::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: var(--gh-toast-foot); pointer-events: none;
+  background: linear-gradient(var(--gh-frame), var(--gh-frame)) 0 0 / 100% 1px no-repeat, linear-gradient(180deg, color-mix(in srgb, #fff 55%, var(--gh-bar-2)), var(--gh-bar-2) 40%, var(--gh-bar-4));
+}
 :root[data-design="glasshouse"] .toast::before {
   content: ":: notice"; position: absolute; left: 0; right: 0; top: 0; height: 22px; padding: 0 10px; display: flex; align-items: center;
   background: var(--gh-beads) right 8px center / 41px 11px no-repeat, var(--gh-bar); border-bottom: 1px solid var(--gh-frame);
@@ -1368,7 +1471,7 @@
    --gh-art is the cover's side: from tablet up the room above the console sets it (the stage, below) */
 :root[data-design="glasshouse"] .gh-np { --gh-art: 300px; --gh-art-top: 16px;
   position: relative; display: grid; justify-items: center; max-width: 440px; margin-inline: auto; }
-:root[data-design="glasshouse"] .gh-np__stage { position: relative; width: min(var(--gh-art), 100%); aspect-ratio: 1; margin: var(--gh-art-top) 0 calc(var(--gh-art) * .06); isolation: isolate; }
+:root[data-design="glasshouse"] .gh-np__stage { position: relative; width: min(var(--gh-art), 100%); aspect-ratio: 1; margin: var(--gh-art-top) 0 max(26px, calc(var(--gh-art) * .06)); isolation: isolate; }
 :root[data-design="glasshouse"] .gh-np__like { position: absolute; z-index: 2; top: calc(var(--gh-art-top) + min(var(--gh-art), 100%) - 30px); left: calc(50% + min(var(--gh-art), 100%) / 2 - 30px); }
 :root[data-design="glasshouse"] .gh-np__like .device__key { position: static; display: block; }
 :root[data-design="glasshouse"] .gh-np__like .btn-gloss { --size: 46px; }
@@ -1416,8 +1519,8 @@
 /* track change: a light sweep crosses the LCD each time now.js slides a new track in */
 :root[data-design="glasshouse"] .gh-np .now-slide { position: relative; }
 :root[data-design="glasshouse"] .gh-np .now-slide::after {
-  content: ""; position: absolute; z-index: 3; top: -12px; bottom: -12px; left: 0; width: 40%; pointer-events: none;
-  background: linear-gradient(100deg, transparent, rgba(214, 228, 255, .22) 45%, rgba(255, 255, 255, .34) 50%, transparent);
+  content: ""; position: absolute; z-index: 3; top: calc(50% - 46px); height: 92px; left: 0; width: 70%; pointer-events: none;
+  background: var(--gh-prism) 0 0 / 100% 100% no-repeat;     /* a diffraction streak (baked): the one rainbow, for a new song */
   transform: translateX(-110%) skewX(-12deg); opacity: 0; animation: gh-lcd-sweep 1100ms var(--ease-out) 200ms 1;
 }
 @keyframes gh-lcd-sweep { 0% { transform: translateX(-110%) skewX(-12deg); opacity: 1; } 100% { transform: translateX(290%) skewX(-12deg); opacity: 0; } }
@@ -1470,7 +1573,7 @@
 :root[data-design="glasshouse"] .now-lycard .now-ly__view { margin-top: 0; }
 :root[data-design="glasshouse"] .now-ly__tag { border-width: 1px; border-radius: 4px; font-size: .75rem; }
 :root[data-design="glasshouse"][data-theme="night"] .now-lycard {
-  --fg: #c6cde0; --fg-2: #8d93aa; --bg-2: #262b3d; --link: #a9c3ea; --edge: #5b6380; --divider: #2c3246; --focus: #f4f5fb; --gh-win-solid: #171a27;
+  --fg: #c6cde0; --fg-2: #8d93aa; --bg-2: #262b3d; --link: #a9c3ea; --edge: #5b6380; --divider: #2c3246; --focus: #f4f5fb;
   background: repeating-linear-gradient(180deg, rgba(160, 190, 240, .04) 0 1px, transparent 1px 3px),
     radial-gradient(100% 60% at 70% 0%, #262c42 0%, #1a1e2c 60%, #161925 100%);
   box-shadow: inset 0 0 0 1px #3a4058, inset 0 1px 0 rgba(255, 255, 255, .12), var(--stack);
@@ -1511,7 +1614,7 @@
   :root[data-design="glasshouse"] .now__dev { align-self: stretch; min-height: 0; contain: size; scroll-snap-align: start; }
   :root[data-design="glasshouse"] .now__dev > .gh-np { height: 100%; grid-template-rows: minmax(0, 1fr) auto; container-type: inline-size; }
   :root[data-design="glasshouse"] .now__dev :is(.gh-np__stage, .gh-np__like) {
-    grid-area: 1 / 1; align-self: end; width: auto; height: min(100% - var(--gh-art-top) - 14px, 360px, 100cqi); aspect-ratio: 1; margin: 0 0 14px;
+    grid-area: 1 / 1; align-self: end; width: auto; height: min(100% - var(--gh-art-top) - 28px, 360px, 100cqi); aspect-ratio: 1; margin: 0 0 28px;
   }
   :root[data-design="glasshouse"] .now__dev .gh-np__like { position: relative; top: auto; left: auto; pointer-events: none; }
   :root[data-design="glasshouse"] .now__dev .gh-np__like .device__key { position: absolute; inset: auto -16px -16px auto; pointer-events: auto; }
@@ -1539,6 +1642,15 @@
     :root[data-design="glasshouse"] .now-lycard .now-ly__foot { min-height: 30px; padding-top: 4px; }
   }
 }
+/* a wide stage stays a composition, centred on the night: the stage and its player window keep a column of their own,
+   larger as the room allows, the title, its keys and the lyrics (bigger lines) take the rest up to a measure that reads */
+:root[data-design="glasshouse"] .now { max-width: 1680px; margin-inline: auto; }
+@container now (min-width: 1300px) {
+  :root[data-design="glasshouse"] .now__grid { grid-template-columns: minmax(360px, 480px) minmax(0, 1fr); column-gap: 56px; }
+  :root[data-design="glasshouse"] .now__dev :is(.gh-np__stage, .gh-np__like) { height: min(100% - var(--gh-art-top) - 28px, 440px, 100cqi); }
+  :root[data-design="glasshouse"] .now-dev { max-width: 480px; }
+  :root[data-design="glasshouse"] .now-lycard .now-ly { --ly-size: calc(1.375rem + var(--ly-step, 0) * .125rem); }
+}
 /* =====================================================================
    Desktop mini player window (desktop/window.html): window buttons sit in the title bar, so no beads there
    ===================================================================== */
@@ -1560,6 +1672,50 @@
 :root[data-design="glasshouse"] .dk-mini .device__facts { justify-content: center; }
 :root[data-design="glasshouse"] .dk-mini .device__title { font-size: 1.5rem; }
 :root[data-design="glasshouse"] .dk-strip { border: 1px solid var(--gh-frame); box-shadow: inset 0 1px 0 var(--gh-rim), var(--stack-1l); }
+
+/* the mini player, a glass slab on the desktop (no wallpaper behind it: the window is the slab): the keys stand on glass
+   with the caustic light in it, the foot is the song's progress, the cover stands in its pool of moonlight, and the lamp
+   is lit while sound plays (the window's own [data-playing] and --song-pos, which each level down passes on) */
+:root[data-design="glasshouse"] .dk-mini .device { --song-pos: inherit; }
+:root[data-design="glasshouse"] .dk-mini .device__controls { margin: 0 -10px; padding: 12px 10px 4px; border-radius: 16px;
+  background: var(--gh-caustic) 0 0 / 280px 280px, linear-gradient(180deg, color-mix(in srgb, #fff 12%, transparent), transparent 70%); }
+:root[data-design="glasshouse"] .dk-mini .device::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: var(--gh-foot); pointer-events: none; --song-pos: inherit;
+  border-radius: 0 0 calc(var(--r-device) - 1px) calc(var(--r-device) - 1px);
+  background:
+    radial-gradient(circle, var(--gh-frame) 0 .9px, transparent 1.3px) right 5px bottom 2px / 4px 4px no-repeat,
+    radial-gradient(circle, var(--gh-frame) 0 .9px, transparent 1.3px) right 9px bottom 2px / 4px 4px no-repeat,
+    radial-gradient(circle, var(--gh-frame) 0 .9px, transparent 1.3px) right 5px bottom 6px / 4px 4px no-repeat,
+    linear-gradient(var(--gh-frame), var(--gh-frame)) 0 0 / 100% 1px no-repeat,
+    linear-gradient(90deg, color-mix(in srgb, var(--gh-rose-glow) 30%, transparent), var(--gh-rose-glow)) 0 100% / calc(var(--song-pos, 0) * 100%) calc(100% - 1px) no-repeat,
+    linear-gradient(180deg, color-mix(in srgb, #fff 55%, var(--gh-bar-2)), var(--gh-bar-2) 40%, var(--gh-bar-4));
+}
+:root[data-design="glasshouse"] .dk-mini__now { position: relative; isolation: isolate; --song-pos: inherit; }
+:root[data-design="glasshouse"] .dk-mini__now::before {
+  content: ""; position: absolute; z-index: -1; left: 50%; top: 50%; width: 300px; height: 150px; margin: -60px 0 0 -150px; pointer-events: none;
+  background: var(--gh-pool) 50% 50% / 100% 100% no-repeat; opacity: .35; --song-pos: inherit;
+  transform: translateX(calc((var(--song-pos, 0) - .5) * 40px)); transition: opacity var(--dur-4) var(--ease-out);
+}
+:root[data-design="glasshouse"] [data-dk-player][data-playing="true"] .dk-mini__now::before { opacity: 1; }
+/* the strip: the console in small, a glass capsule: the cover in a ring that fills with rose light as the song goes, the
+   title in serif, the rose orb, and the song's thread under the words */
+:root[data-design="glasshouse"] .dk-strip { --song-pos: inherit; height: 64px; padding: 0 10px 0 8px; border-color: var(--gh-frame); border-radius: 999px; gap: var(--sp-3);
+  background: var(--gh-caustic) 0 0 / 280px 280px, linear-gradient(128deg, var(--gh-sheen-panel) 0%, transparent 34%), var(--gh-glass-panel);
+  box-shadow: inset 0 1px 0 var(--gh-rim), inset 0 -14px 24px -18px color-mix(in srgb, var(--gh-glow-2) 80%, transparent), var(--gh-float); }
+:root[data-design="glasshouse"] .dk-strip .bezel-thumb { --song-pos: inherit; padding: 3px; border: 0; border-radius: 50%;
+  background: conic-gradient(from 0deg, var(--gh-ring-fill) calc(var(--song-pos, 0) * 360deg), var(--gh-ring-track) 0); box-shadow: 0 6px 14px -8px var(--gh-cast); }
+:root[data-design="glasshouse"] .dk-strip .bezel-thumb .cover { --cover-size: 46px; border-radius: 50%; border: 1px solid var(--gh-frame); }
+:root[data-design="glasshouse"] .dk-strip__title { font: 400 1.375rem/1.05 var(--f-serif); letter-spacing: .005em; }
+:root[data-design="glasshouse"] .dk-strip__artist { font: 500 .75rem/1.3 var(--f-px); }
+:root[data-design="glasshouse"] .dk-strip__artist::before { content: ":: "; }
+:root[data-design="glasshouse"] .dk-strip__artist:empty::before { content: none; }
+:root[data-design="glasshouse"] .dk-strip > .seek--line { top: auto; bottom: 7px; left: 70px; right: 24px; }
+:root[data-design="glasshouse"] .dk-strip > .seek--line .seek__track { height: 2px; margin-top: 0; box-shadow: none; background: color-mix(in srgb, var(--gh-ring-track) 70%, transparent); }
+:root[data-design="glasshouse"] .dk-strip > .seek--line .seek__played { background: linear-gradient(90deg, color-mix(in srgb, var(--gh-ring-fill) 30%, transparent), var(--gh-ring-fill)); }
+:root[data-design="glasshouse"] .dk-strip .dk-sep { background: color-mix(in srgb, var(--gh-frame) 55%, transparent); }
+:root[data-design="glasshouse"] .dk-strip__keys .btn-icon { color: var(--fg-panel); }
+:root[data-design="glasshouse"] .dk-strip__keys .btn-gloss { --size: 44px; width: 44px; height: 44px; }
+:root[data-design="glasshouse"] .dk-strip[data-playing="false"] .dk-strip__title { opacity: .92; }
 
 /* =====================================================================
    Classic stage: Webamp alone on the misty desktop itself (the app is hidden while the stage is open, so nothing smears
@@ -1588,6 +1744,8 @@
   :root[data-design="glasshouse"] .tab[aria-current="page"] .ic { background: var(--gh-lit); box-shadow: inset 0 0 0 1px var(--gh-lit-edge); }
   :root[data-design="glasshouse"] .disc-home > .disc-hello h1 { font-size: 2.75rem; }
   :root[data-design="glasshouse"] .card { --gh-air: 12px; }
+  /* a title bar that carries links keeps its room for the title: the beads (decoration) go */
+  :root[data-design="glasshouse"] .card > .card-head:has(> .btn--quiet, > a, > .label-rule__end)::after { display: none; }
   :root[data-design="glasshouse"] .sys-tile__value { font-size: 1.375rem; white-space: nowrap; }
   /* home media window: one LCD row (cover + title), the strip, four rows, the ticker; the mini player has the keys */
   :root[data-design="glasshouse"] .gh-aimp { grid-template-columns: minmax(0, 1fr); grid-template-areas: "deck" "list" "tick"; --gh-pad: 10px; padding-top: calc(var(--gh-barh) + 10px); }
@@ -1629,6 +1787,82 @@
   :root[data-design="glasshouse"] .now-devc__keys > [data-now="cb"] { grid-column: 3; grid-row: 1; justify-self: start; }
 }
 
+/* a phone's library keys are a groove of three by three, every word whole, in place of a strip that runs off the edge and
+   cuts a word at it */
+@media (max-width: 639px) {
+  :root[data-design="glasshouse"] .lib-segs { margin: 0; }
+  :root[data-design="glasshouse"] .lib-segs ul { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; overflow: visible; padding: 3px; }
+  :root[data-design="glasshouse"] .lib-segs a.pill-filter { justify-content: center; padding: 0 6px; text-align: center; white-space: normal; line-height: 1.15; }
+}
+/* Popular (an artist's page) in a narrow window: the plays sit under the title, so the title and the artist keep the row's
+   width instead of giving it to "90,000 plays" */
+@container tlist (max-width: 520px) {
+  :root[data-design="glasshouse"] .lib-popular .tlist--plays .trow { grid-template-columns: var(--art) minmax(0, 1fr) 36px 36px; grid-template-areas: "art main like more" "art badges badges badges"; row-gap: 0; align-items: center; }
+  :root[data-design="glasshouse"] .lib-popular .tlist--plays .trow__badges { justify-self: start; margin: -2px 0 2px; }
+  :root[data-design="glasshouse"] .lib-popular .trow__plays { margin-left: 0; font: 500 .75rem/1.2 var(--f-px); }
+}
+
+/* =====================================================================
+   Alive with the music. What lull says (sound playing, the player's state, where the song is, liked) lights parts of the
+   glasshouse; every move is a transform, an opacity or a small fill that changes a hundredth of a song at a time
+   ===================================================================== */
+/* the media window's foot is the song's progress: the strip fills with rose light from the left (--song-pos is Home's lead
+   slot's, passed down to the window and its foot) */
+:root[data-design="glasshouse"] :is(.gh-aimp, .gh-aimp::after) { --song-pos: inherit; }
+:root[data-design="glasshouse"] .gh-aimp::after {
+  background:
+    radial-gradient(circle, var(--gh-frame) 0 .9px, transparent 1.3px) right 5px bottom 2px / 4px 4px no-repeat,
+    radial-gradient(circle, var(--gh-frame) 0 .9px, transparent 1.3px) right 9px bottom 2px / 4px 4px no-repeat,
+    radial-gradient(circle, var(--gh-frame) 0 .9px, transparent 1.3px) right 5px bottom 6px / 4px 4px no-repeat,
+    linear-gradient(var(--gh-frame), var(--gh-frame)) 0 0 / 100% 1px no-repeat,
+    linear-gradient(90deg, color-mix(in srgb, var(--gh-rose-glow) 30%, transparent), var(--gh-rose-glow)) 0 100% / calc(var(--song-pos, 0) * 100%) calc(100% - 1px) no-repeat,
+    linear-gradient(180deg, color-mix(in srgb, #fff 55%, var(--gh-bar-2)), var(--gh-bar-2) 40%, var(--gh-bar-4));
+}
+/* an on-air lamp at the end of that window's title: lit while sound plays (breathing, ten changes a second), a steel blink
+   while the song is being found or buffered, rose-red when it can't play, dark when nothing plays */
+:root[data-design="glasshouse"] .gh-aimp .card-head__title::after {
+  content: ""; display: inline-block; width: 8px; height: 8px; margin-left: 9px; border-radius: 50%; vertical-align: 1px;
+  background: radial-gradient(circle at 40% 35%, #fff 0 15%, var(--gh-rose-glow) 45%, var(--gh-rose) 80%); box-shadow: 0 0 7px var(--gh-rose-glow); opacity: .28;
+}
+:root[data-design="glasshouse"][data-playing="true"] .gh-aimp .card-head__title::after { opacity: 1; animation: gh-lamp 3s steps(30) infinite alternate; animation-play-state: var(--loop-play, running); }
+:root[data-design="glasshouse"]:is([data-player="finding"], [data-player="queued"], [data-player="buffering"], [data-player="stalled"]) .gh-aimp .card-head__title::after {
+  opacity: 1; background: radial-gradient(circle at 40% 35%, #fff 0 15%, #a9c3ea 45%, #5b75a6 80%); box-shadow: 0 0 7px #a9c3ea; animation: gh-blink 1s steps(1) infinite; animation-play-state: var(--loop-play, running); }
+:root[data-design="glasshouse"]:is([data-player="failed"], [data-player="jellyfin-error"]) .gh-aimp .card-head__title::after {
+  opacity: 1; background: radial-gradient(circle at 40% 35%, #fff 0 12%, var(--gh-down) 42%, #6b1d34 85%); box-shadow: 0 0 7px var(--gh-down); }
+@keyframes gh-lamp { from { opacity: .62; } to { opacity: 1; } }
+/* Now Playing's player lamp rests dark when nothing plays */
+:root[data-design="glasshouse"]:not([data-playing="true"]) .device__led i,
+:root[data-design="glasshouse"] [data-dk-player]:not([data-playing="true"]) .dk-mini__led i { opacity: .35; }
+/* the cover stands in a pool of moonlight (baked caustics) on the glass floor; it slides under the cover as the song goes and
+   is lit while sound plays */
+:root[data-design="glasshouse"] :is(.gh-np, .gh-np__stage, .gh-np__stage::after) { --song-pos: inherit; }
+:root[data-design="glasshouse"] .gh-np__stage::after {
+  content: ""; position: absolute; z-index: -1; left: -34%; right: -34%; bottom: -4%; height: 78%; pointer-events: none;
+  background: var(--gh-pool) 50% 50% / 100% 100% no-repeat; opacity: .4;
+  transform: translateX(calc((var(--song-pos, 0) - .5) * 30%)); transition: opacity var(--dur-4) var(--ease-out);
+}
+:root[data-design="glasshouse"][data-playing="true"] .gh-np__stage::after { opacity: 1; }
+/* the console's ribbon, while a song is being found or buffered: a light travels along the screen (it shows the work, so it
+   is stepped, ten changes a second, and still while lull is not in front) */
+:root[data-design="glasshouse"] .pbar:is([data-status="finding"], [data-status="queued"], [data-status="buffering"]) .pbar__seek { position: relative; overflow: hidden; }
+:root[data-design="glasshouse"] .pbar:is([data-status="finding"], [data-status="queued"], [data-status="buffering"]) .pbar__seek::after {
+  content: ""; position: absolute; left: 0; top: 3px; bottom: 3px; width: 24%; pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(198, 214, 242, .32), transparent); transform: translateX(-100%);
+  animation: gh-scan 1.8s steps(18) infinite; animation-play-state: var(--loop-play, running);
+}
+@keyframes gh-scan { to { transform: translateX(440%); } }
+
+/* =====================================================================
+   Parts that were stock: the scrollbar (a glass rail with a bead), selection, loading blocks
+   ===================================================================== */
+:root[data-design="glasshouse"] :is(.view, .ctx__body, .nowcol__body, .now-ly__scroll)::-webkit-scrollbar { width: 14px; height: 14px; }
+:root[data-design="glasshouse"] :is(.view, .ctx__body, .nowcol__body, .now-ly__scroll)::-webkit-scrollbar-track { background: transparent; }
+:root[data-design="glasshouse"] :is(.view, .ctx__body, .nowcol__body, .now-ly__scroll)::-webkit-scrollbar-thumb {
+  border: 4px solid transparent; border-radius: 10px; background: var(--gh-sb) padding-box; }
+:root[data-design="glasshouse"] :is(.view, .ctx__body, .nowcol__body, .now-ly__scroll)::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--gh-sb) 75%, var(--gh-rose-glow)) padding-box; }
+:root[data-design="glasshouse"] ::selection { background: color-mix(in srgb, var(--gh-lit-3) 55%, transparent); }
+:root[data-design="glasshouse"] .skel { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gh-frame) 32%, transparent), inset 0 1px 0 var(--gh-rim); }
+
 /* =====================================================================
    Motion: windows rise in on route change; base.css stops everything under reduced motion. The rise holds its first
    frame through its delay only (backwards): once it ends nothing of it stays applied, so a window at rest keeps no
@@ -1651,7 +1885,7 @@
 /* =====================================================================
    The see-through window (docs/themes.md section 12). Glasshouse asks for none: its misty night is the world. A theme
    that extends it and asks for one gets the real desktop where the night was, behind the system's glass and lull's
-   --window-backdrop: the glass that is baked from the wallpaper (the pane, the shelf, the console, the gadgets, the
+   --window-backdrop: the glass that is baked from the wallpaper (the shelf, the console, the gadgets, the
    AIMP window) drops the wallpaper it redraws under its tint, so it frosts the desktop through the window instead of
    painting a night that is no longer there. Its tints stay, so its text keeps the contrast checked above over the
    backdrop's own (themes.md: 0.85 of the page colour by default)
