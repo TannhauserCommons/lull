@@ -13,6 +13,7 @@ Curated pages for what is expensive to rediscover: boundaries, contracts, invari
 | Stream cache and eviction | [cache.md](cache.md) *(owner writes)* | `crates/soulseek/` |
 | YouTube as a second source: modes, matching, yt-dlp | [youtube.md](youtube.md), ADR-0012 | `crates/youtube/`, `crates/soulseek/src/fetch.rs` |
 | Deploying (plain, VPN, existing slskd) | [deploy.md](deploy.md) *(owner writes)* | `deploy/` |
+| The Linux server package: its service, its build, the hub contract | [deploy.md](deploy.md#the-linux-package), ADR-0090 | `packaging/linux/`, `crates/server/src/managed/`, `crates/server/src/cli/`, `tests/hub-contract/`, `.github/workflows/server-package.yml` |
 | Library sources (folder, Jellyfin), switching, saved-track streaming | [library.md](library.md) *(owner writes)*, ADR-0003 | `crates/library/` |
 | Save flow (match, cover, tags, naming, rescan) | [save-flow.md](save-flow.md) *(owner writes)* | `crates/library/` |
 | Discovery sources and their limits | [discovery.md](discovery.md) *(owner writes)* | `crates/discovery/` |

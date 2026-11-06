@@ -1,0 +1,44 @@
+# The .deb and .rpm of the Linux server package (ADR-0090), built by packaging/linux/build.sh from the files it
+# stages in ${STAGE} (it fills in the ${…} names). Only what the hub needs: lull, slskd, yt-dlp, Deno and their licences.
+name: lull
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+version_schema: none
+maintainer: TannhauserCommons <350945459+TannhauserCommons@users.noreply.github.com>
+description: |
+  lull, the music hub: streams from Soulseek while the transfer runs, saves into your music folder or
+  Jellyfin, recommends music. Set it up with: sudo lull setup
+homepage: https://github.com/TannhauserCommons/lull
+license: AGPL-3.0-only
+contents:
+  - src: ${STAGE}/lib/
+    dst: /usr/lib/lull/
+    type: tree
+  - src: /usr/lib/lull/lull
+    dst: /usr/bin/lull
+    type: symlink
+  - src: ${STAGE}/lull.service
+    dst: /usr/lib/systemd/system/lull.service
+  - src: ${STAGE}/licenses/
+    dst: /usr/share/doc/lull/
+    type: tree
+scripts:
+  postinstall: ${STAGE}/postinstall.sh
+  preremove: ${STAGE}/preremove.sh
+  postremove: ${STAGE}/postremove.sh
+# slskd is .NET, which aborts at start without ICU. Debian and Ubuntu name it by its version, so the .deb takes any
+# of the ones their supported releases ship (Ubuntu 22.04's 70 to Debian 13's 76) and the next few.
+overrides:
+  deb:
+    depends:
+      - libc6 (>= 2.35)
+      - systemd
+      - passwd
+      - libicu80 | libicu79 | libicu78 | libicu77 | libicu76 | libicu75 | libicu74 | libicu73 | libicu72 | libicu71 | libicu70
+  rpm:
+    depends:
+      - glibc >= 2.35
+      - systemd
+      - shadow-utils
+      - libicu

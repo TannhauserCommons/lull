@@ -1,0 +1,37 @@
+# lull, the music hub, as a system service (ADR-0090). The hub runs its own slskd from this package; its
+# settings live in its database (sudo lull setup, sudo lull config, or the web page), never in this file.
+[Unit]
+Description=lull, the music hub
+Documentation=https://github.com/TannhauserCommons/lull
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=lull
+Group=lull
+# How lull is run, not what it does: settings::ENV_ONLY.
+Environment=LULL_DATA_DIR=/var/lib/lull
+Environment=LULL_LISTEN=0.0.0.0:8484
+Environment=LULL_SLSKD=/usr/lib/lull/slskd
+Environment=LULL_YTDLP=/usr/lib/lull/yt-dlp
+Environment=LULL_DENO=/usr/lib/lull/deno
+Environment=HOME=/var/lib/lull
+ExecStart=/usr/lib/lull/lull serve
+Restart=on-failure
+RestartSec=5
+# slskd and everything else lull started stop with it.
+KillMode=control-group
+StateDirectory=lull
+StateDirectoryMode=0750
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

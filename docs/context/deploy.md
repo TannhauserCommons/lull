@@ -1,5 +1,47 @@
 # Deploying lull
 
+A hub runs three ways (ADR-0090): in the desktop app (desktop.md), as the Linux package below, or in Docker. Docker is one option, never required.
+
+## The Linux package
+
+For a computer that only serves: `lull_<version>_<amd64|arm64>.deb`, `lull-<version>.<x86_64|aarch64>.rpm`, or `lull_<version>_linux-<x64|arm64>.tar.gz` with `sudo ./install.sh`. Built by `packaging/linux/build.sh` (`server-package` workflow) on Ubuntu 22.04, so glibc 2.35 or newer. The packages depend on ICU, which slskd (.NET) aborts without; `install.sh` warns when it's missing.
+
+**What it holds:** `/usr/lib/lull/` has `lull` and the slskd, yt-dlp and Deno that `app/build.rs` pins for the app's Linux build (`packaging/linux/sidecars.mjs` reads them there), plus `/usr/bin/lull` and the licences in `/usr/share/doc/lull/`.
+
+**How it runs:** `lull.service`, under the system user `lull` (made by the package), with data in `/var/lib/lull`.
+- The unit sets only how lull is run: `LULL_DATA_DIR`, `LULL_LISTEN=0.0.0.0:8484`, `LULL_SLSKD`, `LULL_YTDLP` and `LULL_DENO`.
+- With `LULL_SLSKD` the hub runs that slskd itself, as the app does (`lull_server::managed`). Its folders are in the data folder, and systemd stops it with the service.
+- The hub advertises `_lull._tcp`, and stores the LAN address as `LULL_PUBLIC_URL` unless an https one is set.
+- Installing starts the service and enables it at boot. Removing stops it and keeps `/var/lib/lull` and the music.
+
+**Setting it up:** `sudo lull setup` asks about four things, and stores the answers as the web page does:
+- the music: a folder, or an existing Jellyfin (address, API key, user) and the folder it reads. A new folder is made for `lull`; for an existing one lull's user can't use, it offers an access rule (`setfacl`);
+- the Soulseek account;
+- sharing;
+- outside access: `tailscale serve` where Tailscale runs, or the https address of a reverse proxy or the listener's own domain (proxy it to port 8484).
+
+Then it prints the addresses and a pair link.
+
+The other commands:
+- `sudo lull status`, `sudo lull pair`;
+- `sudo lull config [get|set|unset KEY [VALUE]]`.
+
+They talk to the hub over `/var/lib/lull/admin.sock` (hub.md). A fresh hub's music folder is `/var/lib/lull/music`.
+
+**Firewalls:** where firewalld or ufw is on (Fedora's firewalld is, by default), `lull setup` offers to open the hub's port 8484 and Soulseek's 50300, or prints the commands.
+
+**Proof:** the queue builds the x64 package when its parts change and installs it in a fresh Ubuntu 24.04, Debian 13 and Fedora 43 running systemd (`tests/hub-contract/in-systemd.sh`). The hub contract (`tests/hub-contract/run.mjs`) runs against the service there:
+- `/health` and every part;
+- the web UI;
+- the gate, pairing with `lull pair`, and every part's API;
+- a settings round trip and Subsonic;
+- its slskd reached, yt-dlp and Deno run;
+- the mDNS advert.
+
+The removed package must leave no slskd running.
+
+## Docker
+
 One compose file (`deploy/compose.yaml`) and one env file (`.env`, copied from `deploy/.env.example`). `COMPOSE_PROFILES` in `.env` picks the shape. Why one file for all three: [ADR-0011](../adr/0011-one-compose-file-three-shapes.md).
 
 ## Every shape
