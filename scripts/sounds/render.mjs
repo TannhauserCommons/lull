@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Renders lull's built-in packs (ADR-0081) from their source in packs/ into web/packs/<id>/: their sounds, and
-// pack.json with lull's own easter eggs (eggs.mjs) declared the way any pack declares them.
+// pack.json with lull's own easter eggs (eggs.mjs) declared the way any pack declares them. A design's pack may also
+// declare eggs of its own (`export const eggs = [...]` in packs/<id>.mjs, the same declarations), which only it has.
 //
 //   node scripts/sounds/render.mjs            render every pack: pack.json and sounds/*.ogg (needs ffmpeg with libopus)
 //   node scripts/sounds/render.mjs --check    fail when a pack's source no longer renders the samples that were
@@ -35,9 +36,15 @@ export async function renderPack(id) {
   const mod = await import(new URL(`./packs/${id}.mjs`, import.meta.url));
   const rng = d.seeded(seedOf(id));
   const { sounds, eggs } = mod.sounds(rng);
+  // the pack's own eggs: names of their own, never one of lull's (eggs.mjs), so each is that design's alone
+  const own = mod.eggs || [], names = new Set(EGG_NAMES);
+  for (const e of own) {
+    if (names.has(e.name)) throw new Error(`${id}: egg ${e.name} is declared twice (or is one of lull's own)`);
+    names.add(e.name);
+  }
   const out = {}, L = VOCAB.limits;
   const add = (name, value, egg) => {
-    if (egg ? !EGG_NAMES.has(name) : !VOCAB.events.includes(name)) throw new Error(`${id}/${name} is no ${egg ? 'egg eggs.mjs declares' : 'sound event'}`);
+    if (egg ? !names.has(name) : !VOCAB.events.includes(name)) throw new Error(`${id}/${name} is no ${egg ? 'egg eggs.mjs or the pack declares' : 'sound event'}`);
     const loop = !(value instanceof Float32Array);
     let buf = loop ? value.loop : value;
     // below 110 Hz a phone or laptop speaker plays nothing, and it would only take headroom from what it plays
@@ -49,8 +56,8 @@ export async function renderPack(id) {
     out[name] = { pcm: toInt16(buf), loop, egg };
   };
   // a pack's module gives each sound under its event's or its egg's name
-  for (const [name, v] of Object.entries({ ...sounds, ...eggs })) add(name, v, EGG_NAMES.has(name));
-  return { meta: mod.meta, sounds: out };
+  for (const [name, v] of Object.entries({ ...sounds, ...eggs })) add(name, v, names.has(name));
+  return { meta: mod.meta, sounds: out, own };
 }
 
 function seedOf(id) { let h = 2166136261; for (const c of id) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0; }
@@ -75,11 +82,13 @@ function wav(pcm) {
 function ffmpeg(args) { execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', ...args], { stdio: 'inherit' }); }
 
 /** pack.json: the pack's sounds, and the eggs it declares: all of lull's own in `default`, and in a design's pack
-    the ones it has a sound for, so its sound wins over default's (ADR-0081: the higher pack's egg of a name wins). */
-function manifest(meta, sounds) {
+    the ones it has a sound for, so its sound wins over default's (ADR-0081: the higher pack's egg of a name wins),
+    then the design's own eggs. */
+function manifest(meta, sounds, own = []) {
   const entry = (name, s) => (s.loop ? { file: `sounds/${name}.ogg`, loop: true } : `sounds/${name}.ogg`);
   const events = Object.fromEntries(VOCAB.events.filter((e) => sounds[e]).map((e) => [e, entry(e, sounds[e])]));
   const eggs = EGGS.filter((e) => meta.id === 'default' || sounds[e.name])
+    .concat(own)
     .map((e) => (sounds[e.name] ? { ...e, sound: entry(e.name, sounds[e.name]) } : e));
   return { id: meta.id, name: meta.name, author: 'lull', api: VOCAB.api, description: meta.description, sounds: events, eggs };
 }
@@ -88,7 +97,7 @@ async function renderAll() {
   const prints = existingPrints(), tmp = mkdtempSync(join(tmpdir(), 'lull-sounds-'));
   try {
     for (const id of ONLY) {
-      const { meta, sounds } = await renderPack(id);
+      const { meta, sounds, own } = await renderPack(id);
       const dir = join(OUT, id, 'sounds');
       // only what this script writes: a pack's pack.css and slots are written by hand
       rmSync(dir, { recursive: true, force: true });
@@ -102,7 +111,7 @@ async function renderAll() {
           '-map_metadata', '-1', '-fflags', '+bitexact', '-flags:a', '+bitexact', join(dir, `${name}.ogg`)]);
         prints[id][name] = fingerprint(s.pcm);
       }
-      writeFileSync(join(OUT, id, 'pack.json'), JSON.stringify(manifest(meta, sounds), null, 2) + '\n');
+      writeFileSync(join(OUT, id, 'pack.json'), JSON.stringify(manifest(meta, sounds, own), null, 2) + '\n');
       console.log(`${id}: ${Object.keys(sounds).length} sounds, ${(dirBytes(dir) / 1024).toFixed(0)} KB`);
     }
   } finally { rmSync(tmp, { recursive: true, force: true }); }
@@ -123,13 +132,13 @@ function dirBytes(dir) { return readdirSync(dir).reduce((s, f) => s + readFileSy
 export async function check() {
   const want = JSON.parse(readFileSync(FINGERPRINTS, 'utf8')), problems = [];
   for (const id of PACKS) {
-    const { meta, sounds } = await renderPack(id);
+    const { meta, sounds, own } = await renderPack(id);
     for (const [name, s] of Object.entries(sounds)) {
       if (!want[id] || want[id][name] !== fingerprint(s.pcm)) problems.push(`${id}/${name} changed since it was rendered`);
     }
     for (const name of Object.keys(want[id] || {})) if (!sounds[name]) problems.push(`${id}/${name} is no longer made`);
     const json = readFileSync(join(OUT, id, 'pack.json'), 'utf8');
-    if (json !== JSON.stringify(manifest(meta, sounds), null, 2) + '\n') problems.push(`${id}/pack.json is stale`);
+    if (json !== JSON.stringify(manifest(meta, sounds, own), null, 2) + '\n') problems.push(`${id}/pack.json is stale`);
   }
   if (readFileSync(join(OUT, 'index.json'), 'utf8') !== index()) problems.push('web/packs/index.json is stale');
   return problems;
