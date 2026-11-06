@@ -71,7 +71,7 @@
       eggs: (pack.eggs || []).map(function (g) { return g.sound ? Object.assign({}, g, { sound: abs(g.sound) }) : g; })
     };
   }
-  var packsBase = new URL('packs/', document.baseURI).href, builtInCss = {};
+  var packsBase = new URL('packs/', document.baseURI).href, builtInCss = {}, builtInSlots = {};
   var loading = null, readAll = false, allRead = false;      // readAll: every built-in pack, for Settings to offer (else those that can be on)
   /* the vocabulary, the built-in packs that can be on, and the hub's (the listener's and themes'); again on a change */
   function load(all) {
@@ -79,7 +79,7 @@
     var everyOne = readAll;
     var index = builtIn.length ? Promise.resolve() : getJson(packsBase + 'index.json').then(function (j) {
       builtIn = j.packs.map(function (p) { return p.id; });
-      j.packs.forEach(function (p) { if (p.css) builtInCss[p.id] = true; });
+      j.packs.forEach(function (p) { if (p.css) builtInCss[p.id] = true; if (p.slots) builtInSlots[p.id] = p.slots; });
     });
     loading = Promise.all([
       vocab ? Promise.resolve(vocab) : getJson(packsBase + 'vocabulary.json'),
@@ -88,6 +88,7 @@
           if (known[id]) return null;
           return getJson(packsBase + id + '/pack.json').then(function (p) {
             if (builtInCss[id]) p.css = 'pack.css';
+            if (builtInSlots[id]) p.slots = builtInSlots[id];
             absorb(id, p, packsBase + id + '/');
           });
         }));

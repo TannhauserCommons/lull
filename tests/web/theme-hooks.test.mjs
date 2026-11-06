@@ -26,7 +26,8 @@ function walk(dir) {
 }
 const files = walk(WEB);
 const read = (f) => readFileSync(join(WEB, f), 'utf8');
-const designCss = (f) => DESIGNS.some((d) => f === `designs/${d}/theme.css`);
+// a built-in design's pack.css (packs/<id>/pack.css, the looks of its easter eggs) is that design's, with its own classes
+const designCss = (f) => DESIGNS.some((d) => f === `designs/${d}/theme.css` || f === `packs/${d}/pack.css`);
 const generated = (f) => DESIGNS.some((d) => f === `designs/${d}.js`);    // theme.json + slots, written by lull-themes
 const hooksJs = (f) => f === 'designs/hooks.js';                            // this reference, written by the test below
 
@@ -51,7 +52,9 @@ const attrsOf = (text) => new Set(text.match(/data-[a-z][a-z0-9]*(?:-[a-z0-9]+)*
 const block = (c) => (/^(is|has)-/.test(c) ? c : c.replace(/(__|--).*$/, ''));
 
 const shared = selectors(sharedCss.map(read).join('\n'));
-const designs = DESIGNS.map((d) => ({ name: d, sel: selectors(read(`designs/${d}/theme.css`)) }));
+const designs = DESIGNS.map((d) => ({
+  name: d, sel: selectors(read(`designs/${d}/theme.css`) + (files.includes(`packs/${d}/pack.css`) ? '\n' + read(`packs/${d}/pack.css`) : '')),
+}));
 const source = markup.map(read).join('\n') + '\n' + shared;
 
 /* names markup builds from a prefix (`now-ly--${key}`, 'c' + n): the prefix stands for all of them */
