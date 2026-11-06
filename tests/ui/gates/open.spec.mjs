@@ -17,13 +17,17 @@ const player = (page) => page.evaluate(() => ({
   queue: App.player.state.queue.map((q) => q.trackId),
   playing: App.player.state.playing,
 }));
+// Where a link to queue left lull: the screen, whether it plays, and how many songs joined. Waited on whole, since the
+// screen and "not playing" are also how it was before (screens/open.js loads on the first link, after the hash changed).
+const landed = async (page) => {
+  const { path, playing, queue } = await player(page);
+  return { path, playing, queued: queue.length };
+};
 
 test('a song joins next up without playing, and lull goes back to the screen it showed', async ({ page }) => {
   await openScreen(page, screens.settings);
   await page.evaluate((route) => { location.hash = route; }, queueing(SONG));
-  await expect.poll(() => player(page)).toMatchObject({ path: screens.settings, playing: false });
-  const { queue } = await player(page);
-  expect(queue).toHaveLength(1);
+  await expect.poll(() => landed(page)).toEqual({ path: screens.settings, playing: false, queued: 1 });
   expect(await page.evaluate(() => App.player.current().title)).toBe('Static Circuit');
   await expect(page.locator('.toast')).toContainText('Added to queue: Static Circuit');
 });
@@ -63,6 +67,5 @@ test('the device playing adds what another device sends it to next up, without i
 
 test('an album joins whole, and lull opened on the link goes Home', async ({ page }) => {
   await openScreen(page, queueing(ALBUM));
-  await expect.poll(() => player(page)).toMatchObject({ path: '/home', playing: false });
-  expect((await player(page)).queue).toHaveLength(14);
+  await expect.poll(() => landed(page)).toEqual({ path: '/home', playing: false, queued: 14 });
 });
