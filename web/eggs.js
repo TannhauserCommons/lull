@@ -135,9 +135,21 @@
   function endAll() { Object.keys(live).forEach(end); }
 
   /* ---------- the stage: its line of words and the eggs' slots, above the page, never under the pointer ---------- */
+  /* its look, in the components layer as if it were components.css's: it comes with this file, as only a live egg
+     needs it, so no page pays for it at start. A design's pack or a theme restyles it as any hook (.egg-stage,
+     .egg-line); a pack's slot boxes ([data-egg-of]) are placed by the pack's own CSS. */
+  var STAGE_CSS = '@layer components {' +
+    '.egg-stage { position: fixed; inset: 0; z-index: var(--z-toast); pointer-events: none; }' +
+    '.egg-line { position: absolute; left: 50%; bottom: calc(var(--bar-h) + 40px); transform: translateX(-50%); max-width: calc(100vw - 32px);' +
+    ' margin: 0; padding: 8px 16px; border: var(--stroke) solid var(--line); border-radius: var(--r-pill);' +
+    ' background: var(--panel); color: var(--fg-panel); box-shadow: var(--stack-sm); font: 700 .9375rem/1.35 var(--f-ui); }' +
+    '.egg-line[hidden] { display: none; } }';
   function stage() {
     var el = $('.egg-stage');
     if (!el) {
+      if (!document.getElementById('egg-css')) {
+        var css = document.createElement('style'); css.id = 'egg-css'; css.textContent = STAGE_CSS; document.head.appendChild(css);
+      }
       el = document.createElement('div'); el.className = 'egg-stage'; el.setAttribute('aria-hidden', 'false');
       el.innerHTML = '<p class="egg-line" role="status" aria-live="polite"></p>';
       document.body.appendChild(el);

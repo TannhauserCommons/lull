@@ -328,8 +328,3 @@ label.sys-row { cursor: pointer; }
 .cx-note { margin: var(--sp-2) 0 0; font: var(--t-meta); color: var(--fg-2); }
 .cx-foot { margin: var(--sp-2) 0 0; }
 @media (max-width: 639px) { .cx-remote { padding-left: 0; } }
-
-/* Settings > Sounds (screens/sounds-settings.js): the packs are rows of a plain list; the surprises sit behind a spoiler */
-.sys-packs { list-style: none; margin: 0; padding: 0; }
-.sys-surprises > summary { margin: var(--sp-2) 0; list-style: none; }
-.sys-surprises > summary::-webkit-details-marker { display: none; }

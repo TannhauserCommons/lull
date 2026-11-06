@@ -7,6 +7,17 @@
   var K = App.settingsKit, row = K.row, group = K.group, custom = K.custom;
   var SND = App.sounds, S = window.LullSoundRules;
 
+  /* its look, in the screens layer as if it were system.css's, which loads at start on every route: the packs are rows
+     of a plain list; the surprises sit behind a spoiler */
+  if (!document.getElementById('sounds-settings-css')) {
+    var css = document.createElement('style'); css.id = 'sounds-settings-css';
+    css.textContent = '@layer screens {' +
+      '.sys-packs { list-style: none; margin: 0; padding: 0; }' +
+      '.sys-surprises > summary { margin: var(--sp-2) 0; list-style: none; }' +
+      '.sys-surprises > summary::-webkit-details-marker { display: none; } }';
+    document.head.appendChild(css);
+  }
+
   /* the words for each sound: what it is, and when it plays */
   var WORDS = {
     boot: ['Start-up', 'Once, when lull starts'],
