@@ -1,0 +1,11 @@
+<!-- today's page, taped beside the greeting on a wide desk: a tear-off calendar leaf and the queue as a paper chain of
+     pixel hearts (the playing song the big one, the next songs smaller, each naming its song on hover). The queue panel
+     lists the same songs, so the chain is decorative; the count and the length are words beside it. -->
+<section class="pt-lead" aria-label="Today and your queue" data-playing="{{playing}}">
+  <p class="pt-lead__leaf"><span class="pt-lead__rings" aria-hidden="true"></span><span class="pt-lead__dow">{{weekday}}</span><b class="pt-lead__day">{{date}}</b><span class="pt-lead__mon">{{month}}</span></p>
+  <div class="pt-lead__chain">
+    <p class="pt-lead__k">your queue <span class="pt-lead__q">{{queueCount}} songs, {{queueDuration}}</span></p>
+    <div class="pt-lead__sky" aria-hidden="true"><lull-part name="queue-sky"></lull-part></div>
+    <p class="pt-lead__next">next: <b>{{next}}</b></p>
+  </div>
+</section>
