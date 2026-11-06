@@ -1,0 +1,257 @@
+/* Starlight's surprises (docs/themes.md section 13): lull's own eggs, printed the way this poster prints everything, and
+   the four that only this design has (declared in scripts/sounds/packs/starlight.mjs, their markup in slots/).
+   A word in a title is stamped on the ticket as a thin periwinkle line sign (the same sign hangs in the sky's gutter star,
+   and a faint scene crosses the sky behind the prints); a moment is a cream label with a lavender sleeve. Nothing here
+   takes a pointer, covers a control for long, or moves under reduced motion: the lines stay, the stage's decoration does not.
+   Only transform and opacity move; a loop is stepped and holds when lull isn't in front. */
+
+/* ---------- the line: a printed label, as the ticket's stub is, standing on the sky above the ticket (above the mini player and tab bar on a phone) ---------- */
+:root[data-design="starlight"] { --sl-foot: calc(var(--bar-h) + 26px); }
+@media (max-width: 639px) { :root[data-design="starlight"] { --sl-foot: calc(var(--bar-h) + var(--tab-h)); } }
+:root[data-design="starlight"] .egg-line {
+  bottom: calc(var(--sl-foot) + 14px); padding: 9px 22px 8px; border: var(--stroke) solid var(--line); border-radius: 3px; background: var(--cream); color: var(--ink);
+  box-shadow: inset 0 0 0 4px var(--cream), inset 0 0 0 5px color-mix(in srgb, var(--line) 40%, transparent), var(--sl-print-sm);
+  font: 500 .8125rem/1.3 var(--f-px); letter-spacing: .16em; text-transform: uppercase; text-align: center;
+}
+:root[data-design="starlight"] .egg-line::before { content: "\2726"; margin-right: .9em; color: var(--sl-star-print); }
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-design="starlight"]:not([data-motion="reduce"]) .egg-line { animation: sl-egg-in .45s var(--ease-out) both; }
+}
+@keyframes sl-egg-in { from { opacity: 0; transform: translateX(-50%) translateY(10px); } to { opacity: 1; transform: translateX(-50%); } }
+@keyframes sl-egg-away { to { opacity: 0; } }
+
+/* ---------- 3 in the morning: the masthead's star shuts, a z drifts up from it ---------- */
+:root[data-design="starlight"][data-egg~="night-owl"] .wordmark { opacity: .8; }
+:root[data-design="starlight"][data-egg~="night-owl"] .wordmark::after { content: "z"; align-self: flex-start; margin: -.1em 0 0 -.25em; font: 400 .62em/1 var(--f-px); color: var(--fg-sky-2); opacity: 1; }
+:root[data-design="starlight"][data-egg~="night-owl"] .sl-mark__spark { transform: scale(.55); opacity: .55; }
+:root[data-design="starlight"][data-egg~="night-owl"] .sky-specks::before { opacity: .6; }
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-design="starlight"]:not([data-motion="reduce"])[data-egg~="night-owl"] .wordmark::after { animation: sl-zzz 5.5s var(--loop-ease-in-out-55) infinite alternate; animation-play-state: var(--loop-play, running); }
+}
+@keyframes sl-zzz { from { transform: translateY(3px); opacity: .35; } to { transform: translateY(-3px); opacity: 1; } }
+
+/* ---------- lull's birthday: the masthead's star is a lit candle, and the sky's gutter star is one too ---------- */
+:root[data-design="starlight"][data-egg~="birthday"] .wordmark::after { content: none; }
+:root[data-design="starlight"][data-egg~="birthday"] .sl-mark__spark { fill: #f4a7bb; transform: scale(1.3); filter: drop-shadow(0 0 4px rgba(244, 167, 187, .85)); }
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-design="starlight"]:not([data-motion="reduce"])[data-egg~="birthday"] .sl-mark__spark { animation: sl-candle .9s var(--ease-out) both; }
+}
+@keyframes sl-candle { from { transform: scale(.4); opacity: 0; } 60% { transform: scale(1.55); } to { transform: scale(1.3); opacity: 1; } }
+
+/* ---------- a word in the title: its sign on the ticket, in the sky's gutter star, and a scene in the sky ---------- */
+:root[data-design="starlight"][data-egg~="moon"] { --sl-sign: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23000'%20stroke-width='1.5'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d=%22M20%2014.5A8.5%208.5%200%201%201%209.5%204a6.8%206.8%200%200%200%2010.5%2010.5z%22/%3E%3C/svg%3E"); }
+:root[data-design="starlight"][data-egg~="rain"] { --sl-sign: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23000'%20stroke-width='1.5'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d=%22M6.5%2013A4%204%200%200%201%207%205.1%205.5%205.5%200%200%201%2017.5%206.5%203.7%203.7%200%200%201%2017.5%2013z%22/%3E%3Cpath%20d=%22M8%2016l-1%203.5M12.5%2016l-1%203.5M17%2016l-1%203.5%22/%3E%3C/svg%3E"); }
+:root[data-design="starlight"][data-egg~="star"] { --sl-sign: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23000'%20stroke-width='1.5'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d=%22M12%202c.7%206.4%203.6%209.3%2010%2010-6.4.7-9.3%203.6-10%2010-.7-6.4-3.6-9.3-10-10%206.4-.7%209.3-3.6%2010-10z%22/%3E%3C/svg%3E"); }
+:root[data-design="starlight"][data-egg~="sun"] { --sl-sign: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23000'%20stroke-width='1.5'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Ccircle%20cx=%2212%22%20cy=%2212%22%20r=%224%22/%3E%3Cpath%20d=%22M12%202.5v3M12%2018.5v3M2.5%2012h3M18.5%2012h3M5.3%205.3l2.1%202.1M16.6%2016.6l2.1%202.1M5.3%2018.7l2.1-2.1M16.6%207.4l2.1-2.1%22/%3E%3C/svg%3E"); }
+:root[data-design="starlight"][data-egg~="snow"] { --sl-sign: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23000'%20stroke-width='1.5'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d=%22M12%202.5v19M3.8%207.2l16.4%209.6M3.8%2016.8L20.2%207.2M9.6%204.2L12%206.4l2.4-2.2M9.6%2019.8L12%2017.6l2.4%202.2%22/%3E%3C/svg%3E"); }
+:root[data-design="starlight"][data-egg~="night"] { --sl-sign: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23000'%20stroke-width='1.5'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d=%22M16.5%2016A7%207%200%201%201%209%205.5a5.6%205.6%200%200%200%207.5%2010.5z%22/%3E%3Cpath%20d=%22M18.5%203c.3%202.2%201.1%203%203.3%203.3-2.2.3-3%201.1-3.3%203.3-.3-2.2-1.1-3-3.3-3.3%202.2-.3%203-1.1%203.3-3.3z%22/%3E%3C/svg%3E"); }
+:root[data-design="starlight"][data-egg~="sea"] { --sl-sign: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23000'%20stroke-width='1.5'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d=%22M2%208.5c3-3%205%203%208%200s5%203%208%200%203-1.5%204-1.5M2%2014c3-3%205%203%208%200s5%203%208%200%203-1.5%204-1.5M2%2019.5c3-3%205%203%208%200s5%203%208%200%203-1.5%204-1.5%22/%3E%3C/svg%3E"); }
+:root[data-design="starlight"][data-egg~="storm"] { --sl-sign: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23000'%20stroke-width='1.5'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d=%22M6.5%2012A4%204%200%200%201%207%204.1%205.5%205.5%200%200%201%2017.5%205.5%203.7%203.7%200%200%201%2017.5%2012z%22/%3E%3Cpath%20d=%22M13%2012.5l-3%204.5h3.5l-2.5%204.5%22/%3E%3C/svg%3E"); }
+:root[data-design="starlight"][data-egg~="fire"] { --sl-sign: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23000'%20stroke-width='1.5'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d=%22M12%202.5c.6%204.2%206%206%206%2011.5a6%206%200%200%201-12%200c0-3%201.8-4.2%203-6.2.4%201.8.9%202.3%201.8%202.9C10.7%207.6%2011%205.5%2012%202.5z%22/%3E%3C/svg%3E"); }
+:root[data-design="starlight"][data-egg~="dream"] { --sl-sign: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23000'%20stroke-width='1.5'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d=%22M7%2018.5a4.2%204.2%200%200%201-.4-8.3A6%206%200%200%201%2017.7%208.7%204.9%204.9%200%200%201%2017.5%2018.5z%22/%3E%3Cpath%20d=%22M20%202.5c.2%201.5.8%202.1%202.3%202.3-1.5.2-2.1.8-2.3%202.3-.2-1.5-.8-2.1-2.3-2.3%201.5-.2%202.1-.8%202.3-2.3z%22/%3E%3C/svg%3E"); }
+:root[data-design="starlight"][data-egg~="birthday"] { --sl-sign: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23000'%20stroke-width='1.5'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d=%22M9%2021.5V12h6v9.5zM12%2012V9.5%22/%3E%3Cpath%20d=%22M12%202.2c1.9%202.3%202.8%203.5%202.8%204.8a2.8%202.8%200%200%201-5.6%200c0-1.300.9-2.500%202.800-4.800z%22/%3E%3C/svg%3E"); }
+:root[data-design="starlight"]:is([data-egg~="moon"], [data-egg~="rain"], [data-egg~="star"], [data-egg~="sun"], [data-egg~="snow"], [data-egg~="night"], [data-egg~="sea"], [data-egg~="storm"], [data-egg~="fire"], [data-egg~="dream"]) .pbar__title > a::after, :root[data-design="starlight"]:is([data-egg~="moon"], [data-egg~="rain"], [data-egg~="star"], [data-egg~="sun"], [data-egg~="snow"], [data-egg~="night"], [data-egg~="sea"], [data-egg~="storm"], [data-egg~="fire"], [data-egg~="dream"]) .mini__title::after {
+  content: ""; display: inline-block; width: 1.05em; height: 1.05em; margin: 0 0 0 .5em; vertical-align: -.16em; opacity: 1;
+  background: var(--sl-icon); -webkit-mask: var(--sl-sign) center / contain no-repeat; mask: var(--sl-sign) center / contain no-repeat;
+}
+:root[data-design="starlight"]:is([data-egg~="moon"], [data-egg~="rain"], [data-egg~="star"], [data-egg~="sun"], [data-egg~="snow"], [data-egg~="night"], [data-egg~="sea"], [data-egg~="storm"], [data-egg~="fire"], [data-egg~="dream"], [data-egg~="birthday"]) .sky-specks > .sparkle:nth-child(1) {
+  background: var(--sparkle); -webkit-mask: var(--sl-sign) center / contain no-repeat; mask: var(--sl-sign) center / contain no-repeat;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--sparkle) 70%, transparent));
+}
+:root[data-design="starlight"] { --sl-fx: #d3defc; }
+:root[data-design="starlight"][data-theme="day"] { --sl-fx: #6a7db9; }
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-design="starlight"]:not([data-motion="reduce"]):is([data-egg~="moon"], [data-egg~="rain"], [data-egg~="star"], [data-egg~="sun"], [data-egg~="snow"], [data-egg~="night"], [data-egg~="sea"], [data-egg~="storm"], [data-egg~="fire"], [data-egg~="dream"]) .pbar__title > a::after, :root[data-design="starlight"]:not([data-motion="reduce"]):is([data-egg~="moon"], [data-egg~="rain"], [data-egg~="star"], [data-egg~="sun"], [data-egg~="snow"], [data-egg~="night"], [data-egg~="sea"], [data-egg~="storm"], [data-egg~="fire"], [data-egg~="dream"]) .mini__title::after { animation: sl-sign-in .7s var(--ease-out) .25s both; }
+  :root[data-design="starlight"]:not([data-motion="reduce"]):is([data-egg~="moon"], [data-egg~="rain"], [data-egg~="star"], [data-egg~="sun"], [data-egg~="snow"], [data-egg~="night"], [data-egg~="sea"], [data-egg~="storm"], [data-egg~="fire"], [data-egg~="dream"]) .sky-specks::after { content: ""; display: block; position: absolute; inset: 0; pointer-events: none; animation: sl-scene 10s ease both; }
+}
+@keyframes sl-sign-in { from { transform: scale(.3) rotate(-25deg); opacity: 0; } 60% { transform: scale(1.18) rotate(4deg); } to { transform: none; opacity: 1; } }
+@keyframes sl-scene { 0% { opacity: 0; } 14% { opacity: 1; } 78% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: no-preference) {
+  /* the moon and the sun: a disc with a periwinkle ring, and its glow, in the sky's top right */
+  :root[data-design="starlight"]:not([data-motion="reduce"])[data-egg~="moon"] .sky-specks::after {
+    background: radial-gradient(circle at 58% 5%, #fffaf0 0 24px, #aab4e6 25px 26.5px, transparent 27.5px), radial-gradient(circle at 58% 5%, rgba(255, 246, 226, .32), transparent 230px);
+    animation: sl-scene 10s ease both, sl-rise 10s var(--ease-out) both;
+  }
+  :root[data-design="starlight"]:not([data-motion="reduce"])[data-egg~="sun"] .sky-specks::after {
+    background: radial-gradient(circle at 58% 5%, #ffe2b0 0 24px, #f2a36e 25px 27px, transparent 28px), radial-gradient(circle at 58% 5%, rgba(255, 190, 130, .4), transparent 260px);
+    animation: sl-scene 10s ease both, sl-rise 10s var(--ease-out) both;
+  }
+  /* rain slants down the sky; snow settles through it; the sea's swell rises from below */
+  :root[data-design="starlight"]:not([data-motion="reduce"])[data-egg~="rain"] .sky-specks::after {
+    inset: -12%; background: repeating-linear-gradient(104deg, transparent 0 26px, color-mix(in srgb, var(--sl-fx) 38%, transparent) 26px 27px, transparent 27px 61px, color-mix(in srgb, var(--sl-fx) 24%, transparent) 61px 62px);
+    animation: sl-scene 10s ease both, sl-fall-slant 10s linear both;
+  }
+  :root[data-design="starlight"]:not([data-motion="reduce"])[data-egg~="snow"] .sky-specks::after {
+    inset: -12%;
+    background: radial-gradient(circle, var(--speck) 0 2px, transparent 3px) 0 0 / 97px 113px, radial-gradient(circle, var(--speck) 0 1.5px, transparent 2.5px) 31px 47px / 71px 89px,
+      radial-gradient(circle, var(--speck) 0 1px, transparent 2px) 13px 71px / 53px 61px;
+    animation: sl-scene 10s ease both, sl-fall 10s linear both;
+  }
+  :root[data-design="starlight"]:not([data-motion="reduce"])[data-egg~="sea"] .sky-specks::after {
+    background: repeating-radial-gradient(circle at 50% 135%, transparent 0 34px, color-mix(in srgb, var(--sl-fx) 38%, transparent) 34px 36px);
+    animation: sl-scene 10s ease both, sl-rise 10s var(--ease-out) both;
+  }
+  /* the storm's flashes are the sky itself lighting, in ragged bursts */
+  :root[data-design="starlight"]:not([data-motion="reduce"])[data-egg~="storm"] .sky-specks::after {
+    background: radial-gradient(60% 50% at 28% 0, rgba(255, 255, 255, .7), transparent 70%), linear-gradient(rgba(20, 22, 50, .3), transparent 60%);
+    animation: sl-lightning 9s linear both;
+  }
+  :root[data-design="starlight"]:not([data-motion="reduce"])[data-egg~="fire"] .sky-specks::after {
+    background: radial-gradient(46% 55% at 0 100%, rgba(255, 140, 80, .6), transparent 70%), radial-gradient(46% 55% at 100% 100%, rgba(255, 140, 80, .6), transparent 70%);
+    transform-origin: 50% 100%; animation: sl-scene 10s ease both, sl-flicker .7s steps(1) 14 both;
+  }
+  :root[data-design="starlight"]:not([data-motion="reduce"])[data-egg~="night"] .sky-specks::after { background: linear-gradient(rgba(12, 14, 36, .5), rgba(12, 14, 36, .1) 75%); }
+  :root[data-design="starlight"][data-theme="day"]:not([data-motion="reduce"])[data-egg~="night"] .sky-specks::after { background: linear-gradient(rgba(70, 50, 120, .2), rgba(70, 50, 120, .04) 75%); }
+  :root[data-design="starlight"][data-theme="day"]:not([data-motion="reduce"])[data-egg~="storm"] .sky-specks::after { background: radial-gradient(60% 50% at 28% 0, rgba(255, 255, 255, .6), transparent 70%), linear-gradient(rgba(60, 60, 110, .16), transparent 60%); }
+  :root[data-design="starlight"]:not([data-motion="reduce"])[data-egg~="star"] .sky-specks::after {
+    background:
+      radial-gradient(circle at 12% 22%, #fff 0 1.5px, color-mix(in srgb, var(--sparkle) 45%, transparent) 2px 6px, transparent 7px),
+      radial-gradient(circle at 31% 9%, #fff 0 1.5px, color-mix(in srgb, var(--sparkle) 45%, transparent) 2px 6px, transparent 7px),
+      radial-gradient(circle at 58% 14%, #fff 0 2px, color-mix(in srgb, var(--sparkle) 45%, transparent) 2.5px 8px, transparent 9px),
+      radial-gradient(circle at 77% 6%, #fff 0 1.5px, color-mix(in srgb, var(--sparkle) 45%, transparent) 2px 6px, transparent 7px),
+      radial-gradient(circle at 93% 27%, #fff 0 2px, color-mix(in srgb, var(--sparkle) 45%, transparent) 2.5px 8px, transparent 9px),
+      radial-gradient(circle at 6% 61%, #fff 0 1.5px, color-mix(in srgb, var(--sparkle) 45%, transparent) 2px 6px, transparent 7px),
+      radial-gradient(circle at 96% 66%, #fff 0 1.5px, color-mix(in srgb, var(--sparkle) 45%, transparent) 2px 6px, transparent 7px);
+  }
+  :root[data-design="starlight"]:not([data-motion="reduce"])[data-egg~="dream"] .sky-specks::after { animation: sl-scene 10s ease both, sl-drift 10s ease-in-out both; }
+  :root[data-design="starlight"][data-theme="day"]:not([data-motion="reduce"])[data-egg~="dream"] .sky-specks::after {
+    background: radial-gradient(55% 45% at 78% 12%, rgba(178, 88, 155, .26), transparent 70%), radial-gradient(50% 40% at 12% 70%, rgba(110, 128, 200, .26), transparent 70%);
+  }
+}
+@keyframes sl-rise { from { transform: translateY(26px); } to { transform: none; } }
+@keyframes sl-drift { from { transform: translate(2%, 1%) scale(1.04); } to { transform: translate(-2%, -1%) scale(1.04); } }
+@keyframes sl-fall { from { transform: translateY(-113px); } to { transform: translateY(113px); } }
+@keyframes sl-fall-slant { from { transform: translate(0, -60px); } to { transform: translate(-40px, 160px); } }
+@keyframes sl-flicker { 0%, 100% { transform: scaleY(1); } 33% { transform: scaleY(.94); } 66% { transform: scaleY(1.04); } }
+@keyframes sl-lightning {
+  0%, 6% { opacity: 0; } 7% { opacity: .9; } 9% { opacity: .15; } 11% { opacity: .8; } 15% { opacity: 0; }
+  44% { opacity: 0; } 45% { opacity: .6; } 48% { opacity: 0; } 71% { opacity: 0; } 72% { opacity: .85; } 74% { opacity: .1; } 76% { opacity: .7; } 82%, 100% { opacity: 0; }
+}
+
+/* ---------- left alone on Now Playing: the stars slowly breathe ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-design="starlight"]:not([data-motion="reduce"])[data-egg~="still"] .sky-specks::before { animation: sl-breathe 5.5s var(--loop-ease-in-out-55) infinite alternate; animation-play-state: var(--loop-play, running); }
+}
+@keyframes sl-breathe { from { opacity: .55; } to { opacity: 1; } }
+
+/* ---------- a long wait: the house is filling ---------- */
+:root[data-design="starlight"][data-egg~="long-wait"] .pbar:is([data-status="finding"], [data-status="queued"], [data-status="buffering"]) .pbar__seek::before { content: "\2726  house filling"; }
+
+/* ---------- a rare start: the masthead's star flares once ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-design="starlight"]:not([data-motion="reduce"])[data-egg~="rare-boot"] .sl-mark__spark { animation: sl-candle 1.6s var(--ease-out) both; }
+}
+
+/* ---------- the stage's burst of stars: seven four-point stars drift up and fade ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-design="starlight"]:not([data-motion="reduce"]):is([data-egg~="new-year-hello"], [data-egg~="milestone"]) .egg-stage::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(135deg, #f4a7bb, #9fb2f0);
+    -webkit-mask: var(--mask-sparkle) 12% 24% / 34px no-repeat, var(--mask-sparkle) 27% 12% / 22px no-repeat, var(--mask-sparkle) 44% 28% / 40px no-repeat, var(--mask-sparkle) 61% 10% / 26px no-repeat,
+      var(--mask-sparkle) 76% 30% / 36px no-repeat, var(--mask-sparkle) 90% 14% / 24px no-repeat, var(--mask-sparkle) 52% 52% / 18px no-repeat;
+    mask: var(--mask-sparkle) 12% 24% / 34px no-repeat, var(--mask-sparkle) 27% 12% / 22px no-repeat, var(--mask-sparkle) 44% 28% / 40px no-repeat, var(--mask-sparkle) 61% 10% / 26px no-repeat,
+      var(--mask-sparkle) 76% 30% / 36px no-repeat, var(--mask-sparkle) 90% 14% / 24px no-repeat, var(--mask-sparkle) 52% 52% / 18px no-repeat;
+    animation: sl-burst-up 3.2s ease-out both;
+  }
+}
+@keyframes sl-burst-up { 0% { opacity: 0; transform: scale(.7); } 14% { opacity: 1; } 70% { opacity: 1; } 100% { opacity: 0; transform: scale(1.1) translateY(-12px); } }
+
+/* ---------- the new year: the countdown and the greeting as the poster's huge thin caps, on a cream print ---------- */
+:root[data-design="starlight"][data-egg~="new-year"] .egg-line { padding: 4px 38px 12px; font: 300 4rem/1 var(--f-ui); letter-spacing: .02em; text-transform: none; color: var(--sl-title); }
+:root[data-design="starlight"][data-egg~="new-year"] .egg-line::before { content: none; }
+:root[data-design="starlight"][data-egg~="new-year-hello"] .egg-line { padding: 8px 30px 9px; font: 300 1.75rem/1.1 var(--f-ui); letter-spacing: .2em; color: var(--sl-title); }
+
+/* ---------- a likes milestone: the count in thin caps, stars rising behind it ---------- */
+:root[data-design="starlight"][data-egg~="milestone"] .egg-line { padding: 8px 30px 9px; font: 300 1.75rem/1.1 var(--f-ui); letter-spacing: .14em; color: var(--sl-title); }
+
+/* ---------- ten in a row: ten holes punched in the line's stub, one by one ---------- */
+:root[data-design="starlight"][data-egg~="on-repeat"] .egg-line { padding-top: 30px; }
+:root[data-design="starlight"][data-egg~="on-repeat"] .egg-line::before {
+  content: ""; position: absolute; left: 50%; top: 11px; width: 220px; height: 10px; margin: 0; translate: -50% 0;
+  background: radial-gradient(circle at 11px 5px, var(--sky) 0 3.5px, var(--line) 4px 4.8px, transparent 5.2px) 0 0 / 22px 10px repeat-x;
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-design="starlight"]:not([data-motion="reduce"])[data-egg~="on-repeat"] .egg-line::after {
+    content: ""; position: absolute; left: 50%; top: 9px; width: 224px; height: 14px; translate: -50% 0; background: var(--cream); transform-origin: 100% 50%;
+    animation: sl-punch 1.7s steps(10, start) .15s both;
+  }
+}
+@keyframes sl-punch { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+/* =====================================================================
+   The four that only Starlight has
+   ===================================================================== */
+
+/* ---------- shooting-star: three taps on the masthead; the sky lets a star fall and the masthead's star takes the wish ---------- */
+:root[data-design="starlight"][data-egg~="shooting-star"] .sl-mark__spark { filter: drop-shadow(0 0 5px rgba(244, 167, 187, .9)); }
+:root[data-design="starlight"] [data-egg-of="shooting-star"] .sl-meteors { display: none; }
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-design="starlight"]:not([data-motion="reduce"])[data-egg~="shooting-star"] .sl-mark__spark { animation: sl-wish 1.8s var(--ease-out) .9s both; }
+  :root[data-design="starlight"]:not([data-motion="reduce"]) [data-egg-of="shooting-star"] .sl-meteors { display: block; position: fixed; inset: 0; overflow: hidden; }
+  :root[data-design="starlight"]:not([data-motion="reduce"]) .sl-meteors i {
+    position: absolute; left: 0; top: 0; width: var(--len, 240px); height: 12px; opacity: 0; transform-origin: 5px 50%;
+    background: radial-gradient(circle at 5px 50%, #fff 0 2.4px, rgba(190, 200, 255, .85) 3.2px, rgba(143, 157, 220, .4) 5.5px, transparent 10px), linear-gradient(90deg, #fff, #b9c4f3 14%, rgba(143, 157, 220, .6) 42%, transparent) center / 100% 3px no-repeat;
+    animation: sl-meteor var(--dur, 1.1s) cubic-bezier(.35, .1, .6, 1) var(--delay, 0s) both;
+  }
+  :root[data-design="starlight"]:not([data-motion="reduce"]) .sl-meteors i:nth-child(1) { --x0: 82vw; --y0: 9vh; --len: 320px; --dur: 1.25s; }
+  :root[data-design="starlight"]:not([data-motion="reduce"]) .sl-meteors i:nth-child(2) { --x0: 64vw; --y0: 4vh; --len: 210px; --dur: .95s; --delay: .4s; }
+  :root[data-design="starlight"]:not([data-motion="reduce"]) .sl-meteors i:nth-child(3) { --x0: 94vw; --y0: 26vh; --len: 260px; --dur: 1.05s; --delay: .85s; }
+}
+@keyframes sl-meteor {
+  from { transform: translate(var(--x0), var(--y0)) rotate(-24deg); opacity: 0; }
+  12% { opacity: 1; }
+  to { transform: translate(calc(var(--x0) - max(46vw, 240px)), calc(var(--y0) + max(46vw, 240px) * .445)) rotate(-24deg); opacity: 0; }
+}
+@keyframes sl-wish { from { transform: scale(1); } 35% { transform: scale(1.9); } to { transform: scale(1); } }
+
+/* ---------- encore: a title named for the end of a show; the line is a rubber stamp, ruled twice, ink burgundy ---------- */
+:root[data-design="starlight"][data-egg~="encore"] .egg-line {
+  padding: 11px 24px 10px 32px; border: 0; border-radius: 0; color: var(--sl-title); font: 500 1.375rem/1 var(--f-ui); letter-spacing: .34em;
+  box-shadow: inset 0 0 0 1.5px var(--sl-title), inset 0 0 0 5px var(--cream), inset 0 0 0 6.5px var(--sl-title), 4px 5px 0 var(--stack-1);
+  rotate: -3deg;
+}
+:root[data-design="starlight"][data-egg~="encore"] .egg-line::before { margin-right: .7em; }
+:root[data-design="starlight"][data-egg~="encore"] .egg-line::after { content: "\2726"; margin-left: .3em; color: var(--sl-star-print); }
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-design="starlight"]:not([data-motion="reduce"])[data-egg~="encore"] .egg-line { animation: sl-egg-stamp .5s var(--ease-out) both, sl-egg-away .8s ease 7s forwards; }
+}
+@keyframes sl-egg-stamp {
+  0% { opacity: 0; transform: translateX(-50%) scale(2.2); } 55% { opacity: 1; transform: translateX(-50%) scale(.94); } 100% { opacity: 1; transform: translateX(-50%) scale(1); }
+}
+
+/* ---------- curtain-up: half past seven, a song playing; the house lights go down, the footlights come up ---------- */
+:root[data-design="starlight"] [data-egg-of="curtain-up"] .sl-house { display: none; }
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-design="starlight"]:not([data-motion="reduce"])[data-egg~="curtain-up"] .egg-line { animation: sl-egg-in .5s var(--ease-out) 1.2s both, sl-egg-away .8s ease 8s forwards; }
+  :root[data-design="starlight"]:not([data-motion="reduce"]) [data-egg-of="curtain-up"] .sl-house { display: block; position: fixed; inset: 0; }
+  :root[data-design="starlight"]:not([data-motion="reduce"]) .sl-house i { position: absolute; display: block; pointer-events: none; opacity: 0; }
+  :root[data-design="starlight"]:not([data-motion="reduce"]) .sl-house__dim { inset: 0; background: radial-gradient(ellipse 80% 78% at 50% 46%, transparent 28%, rgba(10, 10, 28, .62)); animation: sl-house 8s ease both; }
+  :root[data-design="starlight"]:not([data-motion="reduce"]) .sl-house__wash { left: 0; right: 0; bottom: 0; height: 36vh; background: linear-gradient(0deg, rgba(255, 196, 110, .45), rgba(255, 205, 128, .12) 55%, transparent); animation: sl-house 8s ease .6s both; }
+  :root[data-design="starlight"]:not([data-motion="reduce"]) .sl-house__bulbs {
+    left: 0; right: 0; bottom: 3px; height: 12px;
+    background: radial-gradient(circle at 50% 50%, #fff6d8 0 2.2px, #ffd37a 3px, rgba(255, 190, 90, .55) 5px, transparent 7px) 0 0 / 30px 12px repeat-x;
+    animation: sl-house 8s ease .8s both, sl-chase 1s steps(1) .8s 6;
+  }
+  :root[data-design="starlight"]:not([data-motion="reduce"]) .sl-house__bulbs--b { background-position: 15px 0; animation: sl-house 8s ease .8s both, sl-chase-b 1s steps(1) .8s 6; }
+}
+@media (max-width: 639px) { :root[data-design="starlight"]:not([data-motion="reduce"]) .sl-house i.sl-house__bulbs { display: none; } }
+@keyframes sl-house { 0% { opacity: 0; } 14% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes sl-chase { 0% { transform: scale(1); } 50% { transform: scale(.001, 1); } }
+@keyframes sl-chase-b { 0% { transform: scale(.001, 1); } 50% { transform: scale(1); } }
+
+/* ---------- bouquet: now and then a like is answered from the stalls; the bouquet lands beside the line, on the sky above the ticket ---------- */
+:root[data-design="starlight"] [data-egg-of="bouquet"] { display: none; }
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-design="starlight"]:not([data-motion="reduce"]) [data-egg-of="bouquet"] {
+    display: block; position: fixed; left: calc(50% + 100px); bottom: calc(var(--sl-foot) + 4px); width: 46px; pointer-events: none;
+    animation: sl-throw 1.5s linear both, sl-egg-away .8s ease 5.1s forwards;
+  }
+  :root[data-design="starlight"]:not([data-motion="reduce"]) .sl-bouquet { display: block; width: 100%; height: auto; filter: drop-shadow(2px 3px 0 rgba(42, 47, 64, .35)); }
+}
+@keyframes sl-throw {
+  0% { transform: translate(24vw, -100vh) rotate(-60deg); animation-timing-function: cubic-bezier(.5, 0, .9, .55); }
+  62% { transform: translate(0, 0) rotate(62deg); animation-timing-function: ease-out; }
+  78% { transform: translate(0, -16px) rotate(70deg); animation-timing-function: ease-in; }
+  90%, 100% { transform: translate(0, 0) rotate(76deg); }
+}
+
