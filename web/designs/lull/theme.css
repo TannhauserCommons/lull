@@ -969,6 +969,8 @@
 /* empty states sit flat on the window: the pocket illustration (emptyArt slot), the message, one gloss pill */
 :root[data-design="lull"] .empty { padding: 28px 16px 20px; }
 :root[data-design="lull"] .empty__art { width: 140px; height: 110px; color: var(--link); background: url(assets/bubble.webp) 50% 50% / 132px no-repeat; }
+/* the closed side panel is drawn off screen, so its empty state would fetch the bubble on every page at start: it waits to be opened */
+:root[data-design="lull"] .app:not([data-ctx="open"], [data-ctx="docked"]) .ctx .empty__art { background: none; }
 :root[data-design="lull"] .empty__title { font: 900 1.25rem/1.2 var(--f-ui); }
 :root[data-design="lull"] .lull-empty .lull-empty__shell { fill: var(--l-tile); stroke: var(--l-edge); stroke-width: 1.5; }
 :root[data-design="lull"] .lull-empty .lull-empty__screen { fill: var(--screen); stroke: none; }
