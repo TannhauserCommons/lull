@@ -183,8 +183,16 @@ test('a source that says slow down is left alone for a while, and a lookup never
 test('past 60 requests a minute from one client: a page says to wait, a cover is still an image', async () => {
   const net = internet();
   await withWorker(net, async (w) => {
+    // Miniflare counts in windows aligned to the clock's minutes, so 61 requests across a minute's turn would start a
+    // fresh count and the 61st would pass (seen in queue run 42168991192). They take well under a second: start them
+    // with a minute's turn at least 10 s away, and check they ended in the window they began in.
+    const window = () => Math.floor(Date.now() / 60_000);
+    const toTurn = 60_000 - (Date.now() % 60_000);
+    if (toTurn < 10_000) await new Promise((r) => setTimeout(r, toTurn + 100));
+    const began = window();
     for (let i = 0; i < 60; i++) await (await w.get(SONG, { ip: '192.0.2.77' })).text();
     const page = await w.get(SONG, { ip: '192.0.2.77' });
+    assert.equal(window(), began, 'the 61 requests took over 10 s, so they crossed into a new minute: the limiter\'s count started over');
     assert.equal(page.status, 429);
     assert.equal(page.headers.get('retry-after'), '60');
     assert.match(await page.text(), /Wait a minute/);
