@@ -197,6 +197,11 @@ test.describe('the reason a song stopped, cut off in the mini player', () => {
     const { failingAlbum } = await import('../fixture-hub/library.mjs');
     const text = await playAlbum(page, failingAlbum);
     await page.tap('#mini-sub'); await expect.poll(() => tipText(page)).toBe(text);
+    // a tap's compatibility mouseover comes between its pointerdown and its click, or doesn't, as the page's timing has it;
+    // when it does, its hover timer must not show the tip again unasked (hidden on a phone) a moment later: send that order
+    await page.evaluate(() => { const el = document.getElementById('mini-sub');
+      for (const e of [new PointerEvent('pointerdown', { bubbles: true }), new MouseEvent('mouseover', { bubbles: true }), new MouseEvent('click', { bubbles: true, cancelable: true })]) el.dispatchEvent(e); });
+    await page.waitForTimeout(700); expect(await tipText(page), 'the tap\'s tip, still shown after the hover delay').toBe(text);
     expect(await page.evaluate(() => location.hash)).not.toContain('/now');
     await page.tap('#mini-title'); await expect.poll(() => page.evaluate(() => location.hash)).toContain('/now');
   });
