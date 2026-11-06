@@ -48,7 +48,7 @@ x-slskd: &slskd
 
 services:
   lull:
-    image: ghcr.io/tannhausercommons/lull:${IMAGE_TAG:-main}
+    image: ghcr.io/tannhausercommons/lull:${IMAGE_TAG:-latest}
     restart: unless-stopped
     user: ${RUN_AS:-1000:1000}
     depends_on:
