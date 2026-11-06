@@ -90,6 +90,8 @@ pub async fn run(hub: &Hub) -> Result<(), BoxError> {
         println!("Soulseek is set up where slskd runs, not here.");
     }
 
+    firewall(port, setup["soulseekManaged"] == true)?;
+
     println!();
     println!("Reaching lull from outside your home");
     if let Some(url) = outside(port, now.value("LULL_PUBLIC_URL")).await? {
@@ -179,6 +181,69 @@ async fn outside(port: u16, current: Option<&str>) -> Result<Option<Value>, BoxE
         }
         println!("  That should start with https:// (browsers install lull only from https).");
     }
+}
+
+/// slskd's port for other Soulseek users: slskd's own default, which the hub's slskd keeps.
+const SOULSEEK_PORT: u16 = 50300;
+
+/// A firewall on by default (Fedora's firewalld, an enabled ufw) blocks the hub's port for phones
+/// and Soulseek's for other users: opened with the listener's yes.
+fn firewall(port: u16, soulseek: bool) -> Result<(), BoxError> {
+    let mut ports = vec![port];
+    if soulseek {
+        ports.push(SOULSEEK_PORT);
+    }
+    let listed = ports.iter().map(|p| format!("{p}/tcp")).collect::<Vec<_>>();
+    let (name, rules): (&str, Vec<Vec<String>>) = if succeeds("firewall-cmd", &["--state"]) {
+        let mut add = vec!["--permanent".to_owned()];
+        add.extend(listed.iter().map(|p| format!("--add-port={p}")));
+        ("firewalld", vec![add, vec!["--reload".to_owned()]])
+    } else if output("ufw", &["status"]).is_some_and(|s| s.contains("Status: active")) {
+        (
+            "ufw",
+            listed.iter().map(|p| vec!["allow".to_owned(), p.clone()]).collect(),
+        )
+    } else {
+        return Ok(());
+    };
+    let program = if name == "ufw" { "ufw" } else { "firewall-cmd" };
+    println!();
+    let why = if soulseek {
+        "phones and computers reach lull, Soulseek users reach slskd"
+    } else {
+        "phones and computers reach lull"
+    };
+    if yes(&format!("{name} is on. Open {} ({why})?", listed.join(" and ")), true)? {
+        let opened = rules.iter().all(|args| {
+            let args: Vec<&str> = args.iter().map(String::as_str).collect();
+            succeeds(program, &args)
+        });
+        if opened {
+            println!("  Opened.");
+            return Ok(());
+        }
+    }
+    println!("  Until they are open, other devices can't reach lull. As root:");
+    for args in rules {
+        println!("    {program} {}", args.join(" "));
+    }
+    Ok(())
+}
+
+fn succeeds(program: &str, args: &[&str]) -> bool {
+    command(program)
+        .args(args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
+fn output(program: &str, args: &[&str]) -> Option<String> {
+    let out = command(program).args(args).stderr(Stdio::null()).output().ok()?;
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 /// The hub's user must be able to read and write the music folder: a new one is made its own; an
