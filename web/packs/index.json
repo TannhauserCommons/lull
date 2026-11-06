@@ -52,7 +52,20 @@
     },
     {
       "id": "petal",
-      "css": false
+      "css": true,
+      "slots": [
+        "birthday",
+        "bunny-hop",
+        "long-wait",
+        "margin-doodle",
+        "milestone",
+        "new-year",
+        "night-owl",
+        "on-repeat",
+        "rare-boot",
+        "side-b",
+        "sticker-rain"
+      ]
     },
     {
       "id": "glasshouse",
