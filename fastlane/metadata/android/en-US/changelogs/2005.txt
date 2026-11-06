@@ -1,0 +1,6 @@
+* Sounds for lull, with sound packs and little surprises a theme can bring
+* Confirmations gather into one note, and you can quiet them
+* An action you can undo always shows its Undo
+* Settings › App shows the app's version and the server's, and tells you when a newer lull is out
+* A stopped song's reason can be read in full
+* Songs cut from a full-album video save and play
