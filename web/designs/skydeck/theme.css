@@ -51,6 +51,7 @@
     linear-gradient(180deg, #dcd5f7 0%, #e3daf7 38%, #efd9ec 66%, #f7dcd7 86%, #f9dfcb 100%);
   --sd-moon: url("assets/sky-day.svg");
   --sd-spark: url("assets/sparkle-pink.svg");
+  --sd-wheel-img: url("assets/sky-wheel-day.svg"); --sd-wheel-op: .2;
 }
 :root[data-design="skydeck"][data-theme="night"] {
   --stack-1: #8d9bd6; --stack-2: #4d5f9e;
@@ -69,11 +70,12 @@
     linear-gradient(180deg, #2f3446 0%, #393f53 35%, #414759 70%, #4a4a63 100%);
   --sd-moon: url("assets/sky-night.svg");
   --sd-spark: url("assets/sparkle-star.svg");
+  --sd-wheel-img: url("assets/sky-wheel-night.svg"); --sd-wheel-op: .2;
 }
 @media (max-width: 1099px) { :root[data-design="skydeck"] { --sd-moon-room: 130px; } }
 @media (max-width: 639px) { :root[data-design="skydeck"] { --sd-moon-room: 0px; } }
 /* every surface that is card: its own colours, so text on it pairs with it (the sky's are the page's) */
-:root[data-design="skydeck"] :is(.card, .rail, .ctx, .nowcol, .pbar, .mini, .tabbar, .sheet, .dialog, .menu, .popover, .toast, .sd-wheel, .sd-mini, .dk-strip, .dk-card) {
+:root[data-design="skydeck"] :is(.card, .rail, .ctx, .nowcol, .pbar, .mini, .tabbar, .sheet, .dialog, .menu, .popover, .toast, .sd-wheel, .sd-lead, .sd-mini, .dk-strip, .dk-card) {
   --bg: var(--cream); --bg-2: var(--cream-2); --fg: var(--sd-ink); --fg-2: var(--ink-2);
   --edge: var(--sd-ink); --link: var(--link-on-cream); --accent-ui: var(--sd-ink); --focus: var(--sd-pink); --heart: var(--sd-pink);
   --divider: var(--sd-faint); --seek-played: var(--sd-pink); --seek-buffered: #cdbfe8; --seek-line: var(--sd-ink);
@@ -92,8 +94,15 @@
    ===================================================================== */
 :root[data-design="skydeck"], :root[data-design="skydeck"] body { background: var(--sky); }
 :root[data-design="skydeck"] body { background: var(--sd-sky-bg) fixed; }
-:root[data-design="skydeck"] .sky-specks::before { opacity: .7; }
-:root[data-design="skydeck"][data-theme="night"] .sky-specks::before { opacity: 1; }
+/* the sky is a star wheel: a planisphere as big as the window lets it be, whole, printed in one ink behind everything and
+   turning a quarter round over the song (--song-pos, written on .sky-specks). It is the page's own layer, painted once;
+   a step of the song moves it, nothing else */
+:root[data-design="skydeck"] .sky-specks::before {
+  --d: min(calc(100vw - 48px), calc(100vh - var(--bar-h) - 24px), 1500px);
+  inset: auto; left: 50%; top: calc(50% - var(--bar-h) / 2); width: var(--d); height: var(--d); margin: calc(var(--d) / -2) 0 0 calc(var(--d) / -2);
+  background: var(--sd-wheel-img) center / contain no-repeat; opacity: var(--sd-wheel-op);
+  --song-pos: inherit; rotate: calc(var(--song-pos) * 90deg);
+}
 /* the stepped easings this design's loops use (components.css, Keyframes; scripts/loop-easings.mjs) */
 :root[data-design="skydeck"] {
   --loop-ease-in-out-70: linear(0 0%, 0 1.42857%, 0.0004 1.42857%, 0.0004 2.85714%, 0.0016 2.85714%, 0.0016 4.28571%, 0.0036 4.28571%, 0.0036 5.71429%, 0.0065 5.71429%, 0.0065 7.14286%, 0.0102 7.14286%, 0.0102 8.57143%, 0.0148 8.57143%, 0.0148 10%, 0.0203 10%, 0.0203 11.42857%, 0.0267 11.42857%, 0.0267 12.85714%, 0.0339 12.85714%, 0.0339 14.28571%, 0.0421 14.28571%, 0.0421 15.71429%, 0.0512 15.71429%, 0.0512 17.14286%, 0.0613 17.14286%, 0.0613 18.57143%, 0.0722 18.57143%, 0.0722 20%, 0.0841 20%, 0.0841 21.42857%, 0.0969 21.42857%, 0.0969 22.85714%, 0.1107 22.85714%, 0.1107 24.28571%, 0.1254 24.28571%, 0.1254 25.71429%, 0.1409 25.71429%, 0.1409 27.14286%, 0.1574 27.14286%, 0.1574 28.57143%, 0.1747 28.57143%, 0.1747 30%, 0.1929 30%, 0.1929 31.42857%, 0.212 31.42857%, 0.212 32.85714%, 0.2318 32.85714%, 0.2318 34.28571%, 0.2523 34.28571%, 0.2523 35.71429%, 0.2736 35.71429%, 0.2736 37.14286%, 0.2955 37.14286%, 0.2955 38.57143%, 0.3181 38.57143%, 0.3181 40%, 0.3412 40%, 0.3412 41.42857%, 0.3648 41.42857%, 0.3648 42.85714%, 0.3888 42.85714%, 0.3888 44.28571%, 0.4131 44.28571%, 0.4131 45.71429%, 0.4377 45.71429%, 0.4377 47.14286%, 0.4626 47.14286%, 0.4626 48.57143%, 0.4875 48.57143%, 0.4875 50%, 0.5125 50%, 0.5125 51.42857%, 0.5374 51.42857%, 0.5374 52.85714%, 0.5623 52.85714%, 0.5623 54.28571%, 0.5869 54.28571%, 0.5869 55.71429%, 0.6112 55.71429%, 0.6112 57.14286%, 0.6352 57.14286%, 0.6352 58.57143%, 0.6588 58.57143%, 0.6588 60%, 0.6819 60%, 0.6819 61.42857%, 0.7045 61.42857%, 0.7045 62.85714%, 0.7264 62.85714%, 0.7264 64.28571%, 0.7477 64.28571%, 0.7477 65.71429%, 0.7682 65.71429%, 0.7682 67.14286%, 0.788 67.14286%, 0.788 68.57143%, 0.8071 68.57143%, 0.8071 70%, 0.8253 70%, 0.8253 71.42857%, 0.8426 71.42857%, 0.8426 72.85714%, 0.8591 72.85714%, 0.8591 74.28571%, 0.8746 74.28571%, 0.8746 75.71429%, 0.8893 75.71429%, 0.8893 77.14286%, 0.9031 77.14286%, 0.9031 78.57143%, 0.9159 78.57143%, 0.9159 80%, 0.9278 80%, 0.9278 81.42857%, 0.9387 81.42857%, 0.9387 82.85714%, 0.9488 82.85714%, 0.9488 84.28571%, 0.9579 84.28571%, 0.9579 85.71429%, 0.9661 85.71429%, 0.9661 87.14286%, 0.9733 87.14286%, 0.9733 88.57143%, 0.9797 88.57143%, 0.9797 90%, 0.9852 90%, 0.9852 91.42857%, 0.9898 91.42857%, 0.9898 92.85714%, 0.9935 92.85714%, 0.9935 94.28571%, 0.9964 94.28571%, 0.9964 95.71429%, 0.9984 95.71429%, 0.9984 97.14286%, 0.9996 97.14286%, 0.9996 98.57143%, 1 98.57143%, 1 100%);
@@ -138,10 +147,18 @@
 @media (max-width: 639px) { :root[data-design="skydeck"] .main::before { display: none; } }
 /* the scrolling view dissolves into the sky at its bottom edge instead of slicing what runs on under the player bar;
    the fade is as tall as the view's bottom padding, so at the end of the page nothing is faded */
-@media (min-width: 640px) {
-  :root[data-design="skydeck"] .view {
-    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent);
-    mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent);
+/* and at its top edge, under the header: the page leaves 22 px of sky before its first line and fades in over the next 18,
+   so a cover scrolling up is never sliced flat along the header's foot (what is pinned in the view sticks at the padding's
+   foot, below the fade) */
+:root[data-design="skydeck"] .view {
+  padding-top: 22px;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 18px, #000 calc(100% - 40px), transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 18px, #000 calc(100% - 40px), transparent);
+}
+@media (max-width: 639px) {
+  :root[data-design="skydeck"] .view { padding-top: 16px; }
+  :root[data-design="skydeck"] .app[data-view="now"] .view {
+    padding-top: 0; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent);
   }
 }
 
@@ -160,6 +177,8 @@
 }
 /* while sound plays the pins' heads are lit pink, and rest again with it (:root[data-playing], written at play and pause) */
 :root[data-design="skydeck"][data-playing="true"] :is(.rail, .ctx) { --pin: #e58bbf; }
+/* the collapsed panel is a pinned card the height of its three keys, not a column down the window */
+:root[data-design="skydeck"] .app[data-panel="strip"] .ctx { align-self: start; height: auto; }
 :root[data-design="skydeck"] :is(.rail__head, .ctx__head) { background: none; box-shadow: none; border-bottom: 1.5px dotted var(--sd-soft); margin: 0 12px 6px; }
 :root[data-design="skydeck"] .rail__head { padding: 18px 8px 12px; flex-direction: column; align-items: flex-start; gap: 4px; }
 :root[data-design="skydeck"] .rail__head .brand { --wm-1: var(--sd-ink); --wm-spark: var(--sd-pink); }
@@ -197,6 +216,7 @@
 :root[data-design="skydeck"] .rail__foot { color: var(--ink-2); }
 /* the icon rail (tablet): no numerals, no printed name */
 @media (max-width: 1099px) {
+  :root[data-design="skydeck"] .rail { align-self: start; }
   :root[data-design="skydeck"] :is(.nav-item, .rail__head)::after { display: none; }
   :root[data-design="skydeck"] .rail__nav { padding: 4px 8px; }
   :root[data-design="skydeck"] .nav-item[aria-current="page"]::before { left: -9px; width: 14px; height: 14px; margin-top: -7px; }
@@ -310,6 +330,14 @@
   :root[data-design="skydeck"] :is(.card-head h2, .card .label-rule > h2) { letter-spacing: .04em; font-size: .75rem; gap: 5px; }
   :root[data-design="skydeck"] :is(.card-head h2, .card .label-rule > h2)::before { width: 12px; height: 12px; }
 }
+/* a card head with two links (Picked for you) on a phone: the title has its line, the links the next, never one link
+   left alone under a rule */
+@media (max-width: 639px) {
+  :root[data-design="skydeck"] .card-head:has(> .btn ~ .btn) { flex-wrap: wrap; row-gap: 2px; }
+  :root[data-design="skydeck"] .card-head:has(> .btn ~ .btn)::after { display: none; }
+  :root[data-design="skydeck"] .card-head:has(> .btn ~ .btn) > .card-head__title { flex: 1 0 100%; }
+  :root[data-design="skydeck"] .card-head:has(> .btn ~ .btn) > .btn:first-of-type { margin-left: -12px; }
+}
 :root[data-design="skydeck"] .chip-reason { border: 1px dashed var(--sd-pink); }
 /* chips (tags, follows, the equaliser's presets, Sources' formats) are printed slips of the card, ruled in ink, wherever
    they sit; a chip or filter pill that is on is inked in, as the menu's place and the segmented controls are */
@@ -381,6 +409,8 @@
 :root[data-design="skydeck"] .sys-bar { height: 10px; border-radius: 3px; background: var(--cream-2); box-shadow: inset 0 0 0 1px var(--sd-soft); }
 :root[data-design="skydeck"] .sys-bar > i { border-radius: 2px; background: var(--sd-ink); }
 :root[data-design="skydeck"] .sys-bars__row:first-child .sys-bar > i { background: var(--sd-pink); }
+/* the page takes the window it is given (the base stops it at 1180 px, which left half of a wide window empty) */
+:root[data-design="skydeck"] .sys-stats { max-width: 2200px; }
 /* five tiles in a row while each has room for its numeral, then 3 + 2, then two a row */
 @container main (max-width: 900px) {
   :root[data-design="skydeck"] .sys-tile__value { font-size: 1.875rem; }
@@ -398,6 +428,16 @@
   :root[data-design="skydeck"] .sys-tile__sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }
 
+/* Settings uses the window it gets: the card grows with the page and sets its rows in as many columns as have room
+   (520 px and up each, so one on a laptop, two at 1920, three at 2560), read down each column; the sections' heads, the
+   design picker, the equaliser and the key lists keep the card's whole width. The menu stays beside it, pinned. */
+:root[data-design="skydeck"] .sys-settings { max-width: 2200px; }
+:root[data-design="skydeck"] .sys-settings .sys-section { columns: 520px; column-gap: 64px; }
+:root[data-design="skydeck"] .sys-settings .sys-section > :is(.label-rule, .sys-keys__groups, .sys-row:has(> .sys-row__ctl > .sys-designs)) { column-span: all; }
+:root[data-design="skydeck"] .sys-settings .sys-section :is(.sys-row, .sys-group, .sys-note, .eqp, .sys-packs > li, .hub-lib, .sys-usage, .inset) { break-inside: avoid; }
+:root[data-design="skydeck"] .sys-settings .sys-section .sys-group { break-after: avoid; }
+:root[data-design="skydeck"] .sys-settings .sys-designs { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+
 /* Settings: its menu inked like the rail's; the design picker's chosen card inked too */
 :root[data-design="skydeck"] .sys-nav a[aria-current="page"] { background: var(--sd-ink); color: var(--cream); border-color: var(--sd-ink); box-shadow: none; }
 :root[data-design="skydeck"] .sys-design[aria-checked="true"] { background: var(--cream-2); border-color: var(--sd-ink); box-shadow: 0 0 0 1.5px var(--sd-ink); }
@@ -413,6 +453,133 @@
   :root[data-design="skydeck"] .disc-home .disc-starter__play { width: 36px; height: 36px; }
 }
 :root[data-design="skydeck"] .disc-hello { margin-bottom: var(--sp-4); }
+/* shelves show only whole round windows, never one cut by the card's edge. From 640 px a shelf is a grid that fits as many
+   as the card has room for: a Home module sets its columns by its own width and shows that many tiles (its head has
+   See all or History for the rest), every other shelf (artist, album, search, library) wraps, so nothing is hidden;
+   tiles are 92 px and up, so the covers stay in proportion with the rows round them. On a phone a shelf scrolls, and
+   the last tile fades out along a margin of its own to say there is more that way */
+@media (min-width: 640px) {
+  :root[data-design="skydeck"] .shelf:not(.disc-shelf--grid) {
+    grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(116px, 1fr)); grid-auto-columns: auto; gap: var(--sp-4) var(--sp-5);
+    overflow: visible; scroll-snap-type: none; padding-right: 0;
+  }
+  :root[data-design="skydeck"] .disc-mod .disc-shelf:not(.disc-shelf--grid) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  @container section (max-width: 357px) { :root[data-design="skydeck"] .disc-mod .disc-shelf:not(.disc-shelf--grid) { grid-template-columns: repeat(2, minmax(0, 1fr)); } :root[data-design="skydeck"] .disc-mod .disc-shelf:not(.disc-shelf--grid) > :nth-child(n+3) { display: none; } }
+  @container section (min-width: 358px) and (max-width: 465px) { :root[data-design="skydeck"] .disc-mod .disc-shelf:not(.disc-shelf--grid) { grid-template-columns: repeat(3, minmax(0, 1fr)); } :root[data-design="skydeck"] .disc-mod .disc-shelf:not(.disc-shelf--grid) > :nth-child(n+4) { display: none; } }
+  @container section (min-width: 466px) and (max-width: 573px) { :root[data-design="skydeck"] .disc-mod .disc-shelf:not(.disc-shelf--grid) { grid-template-columns: repeat(4, minmax(0, 1fr)); } :root[data-design="skydeck"] .disc-mod .disc-shelf:not(.disc-shelf--grid) > :nth-child(n+5) { display: none; } }
+  @container section (min-width: 574px) and (max-width: 681px) { :root[data-design="skydeck"] .disc-mod .disc-shelf:not(.disc-shelf--grid) { grid-template-columns: repeat(5, minmax(0, 1fr)); } :root[data-design="skydeck"] .disc-mod .disc-shelf:not(.disc-shelf--grid) > :nth-child(n+6) { display: none; } }
+  @container section (min-width: 682px) and (max-width: 789px) { :root[data-design="skydeck"] .disc-mod .disc-shelf:not(.disc-shelf--grid) { grid-template-columns: repeat(6, minmax(0, 1fr)); } :root[data-design="skydeck"] .disc-mod .disc-shelf:not(.disc-shelf--grid) > :nth-child(n+7) { display: none; } }
+  @container section (min-width: 790px) and (max-width: 897px) { :root[data-design="skydeck"] .disc-mod .disc-shelf:not(.disc-shelf--grid) { grid-template-columns: repeat(7, minmax(0, 1fr)); } :root[data-design="skydeck"] .disc-mod .disc-shelf:not(.disc-shelf--grid) > :nth-child(n+8) { display: none; } }
+  @container section (min-width: 898px) and (max-width: 1005px) { :root[data-design="skydeck"] .disc-mod .disc-shelf:not(.disc-shelf--grid) { grid-template-columns: repeat(8, minmax(0, 1fr)); } :root[data-design="skydeck"] .disc-mod .disc-shelf:not(.disc-shelf--grid) > :nth-child(n+9) { display: none; } }
+  @container section (min-width: 1006px) and (max-width: 1113px) { :root[data-design="skydeck"] .disc-mod .disc-shelf:not(.disc-shelf--grid) { grid-template-columns: repeat(9, minmax(0, 1fr)); } :root[data-design="skydeck"] .disc-mod .disc-shelf:not(.disc-shelf--grid) > :nth-child(n+10) { display: none; } }
+  @container section (min-width: 1114px) { :root[data-design="skydeck"] .disc-mod .disc-shelf:not(.disc-shelf--grid) { grid-template-columns: repeat(10, minmax(0, 1fr)); }  }
+}
+@media (max-width: 639px) {
+  :root[data-design="skydeck"] .disc-shelf:not(.disc-shelf--grid) {
+    padding-right: 48px; scroll-padding-right: 48px;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
+  }
+}
+
+/* Home's star finder (slots/homeLead.html): where the page is wide, the greeting and the finder share the top row, the
+   finder between the greeting and the sun or moon; narrower, the greeting has the row and the finder is not drawn */
+.disc-lead { display: none; }
+@container main (min-width: 1100px) {
+  :root[data-design="skydeck"] .disc-home { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: var(--sp-6); align-items: start; }
+  :root[data-design="skydeck"] .disc-home > .disc-hello { grid-column: 1; padding-right: 0; }
+  :root[data-design="skydeck"] .disc-home > .disc-modules { grid-column: 1 / -1; }
+  :root[data-design="skydeck"] .disc-home > .disc-lead { display: block; grid-column: 2; grid-row: 1; margin: 6px var(--sd-moon-room) var(--sp-5) 0; min-width: 0; container: sdlead / inline-size; }
+  :root[data-design="skydeck"] .disc-home > .disc-hello:only-child { grid-column: 1 / -1; padding-right: var(--sd-moon-room); }
+}
+:root[data-design="skydeck"] .sd-lead {
+  --song-pos: inherit; display: grid; grid-template-columns: 112px minmax(0, 1fr) minmax(150px, 230px) auto; align-items: center; gap: 4px 20px;
+  min-height: 116px; padding: 10px 24px 10px 14px; background: var(--cream); color: var(--sd-ink); border: 1.5px solid var(--sd-ink); border-radius: 26px;
+  box-shadow: var(--sd-rule), var(--sd-lift);
+}
+/* the week as the hour rim: 24 spokes from a ring, the busiest hour a star on its tip */
+:root[data-design="skydeck"] .sd-lead__dial { position: relative; width: 100px; height: 100px; justify-self: center; --song-pos: inherit; }
+:root[data-design="skydeck"] .sd-lead__dial::before {
+  content: ""; position: absolute; inset: 0; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--sd-ink), inset 0 0 0 4px var(--cream), inset 0 0 0 5px var(--sd-soft);
+  background: repeating-conic-gradient(from -.4deg, var(--sd-ink) 0 .8deg, transparent .8deg 15deg);
+  -webkit-mask: radial-gradient(circle, transparent 0 41px, #000 41.5px 46px, transparent 46.5px); mask: radial-gradient(circle, transparent 0 41px, #000 41.5px 46px, transparent 46.5px);
+}
+/* the needle points at where the song is: a round of the dial is the song */
+:root[data-design="skydeck"] .sd-lead__dial::after {
+  content: ""; position: absolute; left: calc(50% - 1px); bottom: 50%; width: 2px; height: 42px; background: var(--sd-pink); transform-origin: 50% 100%;
+  --song-pos: inherit; rotate: calc(var(--song-pos) * 1turn);
+}
+:root[data-design="skydeck"] .sd-lead__hours { position: absolute; inset: 0; --song-pos: inherit; }
+/* the week not read yet: the spokes rest as stubs round the hub */
+:root[data-design="skydeck"] .sd-lead__hours::before {
+  content: ""; position: absolute; inset: 0; background: repeating-conic-gradient(from -.7deg, var(--sd-soft) 0 1.4deg, transparent 1.4deg 15deg);
+  -webkit-mask: radial-gradient(circle, transparent 0 13px, #000 13.5px 20px, transparent 20.5px); mask: radial-gradient(circle, transparent 0 13px, #000 13.5px 20px, transparent 20.5px);
+}
+:root[data-design="skydeck"] .sd-lead__hours i {
+  position: absolute; left: calc(50% - 1.5px); bottom: calc(50% + 14px); width: 3px; height: calc(3px + var(--v) * 22px); border-radius: 2px; background: var(--sd-ink);
+  transform-origin: 50% calc(100% + 14px);
+}
+:root[data-design="skydeck"] .sd-lead__hours i.is-peak { background: var(--sd-pink); }
+:root[data-design="skydeck"] .sd-lead__hours i.is-peak::after { content: ""; position: absolute; left: -6px; top: -14px; width: 15px; height: 15px; background: var(--sd-star) center / contain no-repeat; }
+:root[data-design="skydeck"] .sd-lead__hours i:nth-child(1) { rotate: 0deg; }
+:root[data-design="skydeck"] .sd-lead__hours i:nth-child(2) { rotate: 15deg; }
+:root[data-design="skydeck"] .sd-lead__hours i:nth-child(3) { rotate: 30deg; }
+:root[data-design="skydeck"] .sd-lead__hours i:nth-child(4) { rotate: 45deg; }
+:root[data-design="skydeck"] .sd-lead__hours i:nth-child(5) { rotate: 60deg; }
+:root[data-design="skydeck"] .sd-lead__hours i:nth-child(6) { rotate: 75deg; }
+:root[data-design="skydeck"] .sd-lead__hours i:nth-child(7) { rotate: 90deg; }
+:root[data-design="skydeck"] .sd-lead__hours i:nth-child(8) { rotate: 105deg; }
+:root[data-design="skydeck"] .sd-lead__hours i:nth-child(9) { rotate: 120deg; }
+:root[data-design="skydeck"] .sd-lead__hours i:nth-child(10) { rotate: 135deg; }
+:root[data-design="skydeck"] .sd-lead__hours i:nth-child(11) { rotate: 150deg; }
+:root[data-design="skydeck"] .sd-lead__hours i:nth-child(12) { rotate: 165deg; }
+:root[data-design="skydeck"] .sd-lead__hours i:nth-child(13) { rotate: 180deg; }
+:root[data-design="skydeck"] .sd-lead__hours i:nth-child(14) { rotate: 195deg; }
+:root[data-design="skydeck"] .sd-lead__hours i:nth-child(15) { rotate: 210deg; }
+:root[data-design="skydeck"] .sd-lead__hours i:nth-child(16) { rotate: 225deg; }
+:root[data-design="skydeck"] .sd-lead__hours i:nth-child(17) { rotate: 240deg; }
+:root[data-design="skydeck"] .sd-lead__hours i:nth-child(18) { rotate: 255deg; }
+:root[data-design="skydeck"] .sd-lead__hours i:nth-child(19) { rotate: 270deg; }
+:root[data-design="skydeck"] .sd-lead__hours i:nth-child(20) { rotate: 285deg; }
+:root[data-design="skydeck"] .sd-lead__hours i:nth-child(21) { rotate: 300deg; }
+:root[data-design="skydeck"] .sd-lead__hours i:nth-child(22) { rotate: 315deg; }
+:root[data-design="skydeck"] .sd-lead__hours i:nth-child(23) { rotate: 330deg; }
+:root[data-design="skydeck"] .sd-lead__hours i:nth-child(24) { rotate: 345deg; }
+/* the words */
+:root[data-design="skydeck"] .sd-lead__text { display: grid; gap: 2px; min-width: 0; }
+:root[data-design="skydeck"] .sd-lead__text p { margin: 0; min-width: 0; }
+:root[data-design="skydeck"] .sd-lead__kicker { display: flex; align-items: center; gap: 8px; font: var(--sd-caps); letter-spacing: .2em; text-transform: uppercase; color: var(--sd-pink); }
+:root[data-design="skydeck"] .sd-lead__kicker::before { content: ""; width: 13px; height: 13px; background: var(--sd-star) center / contain no-repeat; }
+:root[data-design="skydeck"] .sd-lead__now { font: 900 1.125rem/1.25 var(--f-ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root[data-design="skydeck"] .sd-lead__idle { display: none; font: 900 1.125rem/1.25 var(--f-ui); color: var(--ink-2); }
+:root[data-design="skydeck"] .sd-lead[data-status="idle"] .sd-lead__idle { display: block; }
+:root[data-design="skydeck"] .sd-lead[data-status="idle"] :is(.sd-lead__now, .sd-lead__next) { display: none; }
+:root[data-design="skydeck"] .sd-lead__line { display: flex; flex-wrap: wrap; gap: 0 12px; font: var(--t-meta); color: var(--fg-2); }
+:root[data-design="skydeck"] .sd-lead__next { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root[data-design="skydeck"] .sd-lead__week { font: var(--sd-caps); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); }
+:root[data-design="skydeck"] .sd-lead[data-week="false"] .sd-lead__week { display: none; }
+/* the horizon window: the queue as a constellation on the dark printed disc */
+:root[data-design="skydeck"] .sd-lead__window { --song-pos: inherit; align-self: stretch; display: grid; align-items: center; }
+:root[data-design="skydeck"] .sd-lead__map {
+  --song-pos: inherit; position: relative; height: 92px; border-radius: 50%; background: var(--sd-disc) 50% 40% / cover; box-shadow: 0 0 0 1.5px var(--sd-ink), 0 0 0 4px var(--cream), 0 0 0 5.5px var(--sd-ink);
+}
+:root[data-design="skydeck"] .sd-lead__map .sky-star { --song-pos: inherit; }
+:root[data-design="skydeck"] .sd-lead__stars { position: absolute; inset: 15px 34px; --song-pos: inherit; }
+:root[data-design="skydeck"] .sd-lead__map .sky-line { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+:root[data-design="skydeck"] .sd-lead__map .sky-line polyline { fill: none; stroke: #f2e3d199; stroke-width: 1.2; stroke-dasharray: 3 4; stroke-linecap: round; }
+/* the stars sit in the same inset box as the line, so a star is never on the window's rim */
+:root[data-design="skydeck"] .sd-lead__map .sky-star { position: absolute; width: 7px; height: 7px; margin: -3.5px; border-radius: 50%; background: #fff6e6; box-shadow: 0 0 0 3px #fff6e61f; }
+:root[data-design="skydeck"] .sd-lead__map .sky-star--now {
+  width: 30px; height: 30px; margin: -15px; border-radius: 0; box-shadow: none; background: var(--sd-star) center / contain no-repeat; rotate: calc(var(--song-pos) * .25turn);
+}
+/* the date: a numeral in the printed ring */
+:root[data-design="skydeck"] .sd-lead__date { margin: 0; display: grid; justify-items: center; align-content: center; gap: 1px; min-width: 76px; padding-left: 20px; border-left: 1.5px dotted var(--sd-soft); align-self: stretch; }
+:root[data-design="skydeck"] .sd-lead__date b { font: 900 2.25rem/1 var(--f-ui); letter-spacing: -.02em; }
+:root[data-design="skydeck"] .sd-lead__date span { font: var(--sd-caps); letter-spacing: .18em; text-transform: uppercase; color: var(--ink-2); }
+:root[data-design="skydeck"] .sd-lead__date span:first-of-type { color: var(--sd-pink); }
+/* the finder gives way to the room it has: first the date, then the window */
+@container sdlead (max-width: 700px) { :root[data-design="skydeck"] .sd-lead { grid-template-columns: 112px minmax(0, 1fr) minmax(130px, 200px); } :root[data-design="skydeck"] .sd-lead__date { display: none; } }
+@container sdlead (max-width: 520px) { :root[data-design="skydeck"] .sd-lead { grid-template-columns: 112px minmax(0, 1fr); } :root[data-design="skydeck"] .sd-lead__window { display: none; } }
 
 /* search: one compact top result, rows with one quiet line of facts, then the Soulseek section */
 @media (min-width: 640px) {
@@ -586,7 +753,7 @@
 /* =====================================================================
    11. Now Playing: the wheel (slots/nowHero.full.html, .compact.html)
    ===================================================================== */
-:root[data-design="skydeck"] .now { max-width: 1320px; }
+:root[data-design="skydeck"] .now { max-width: 2200px; }
 :root[data-design="skydeck"] .now__dev { position: relative; }
 :root[data-design="skydeck"] .sd-wheel {
   position: relative; display: grid; justify-items: center; gap: 10px; padding: 18px 22px 20px;
@@ -736,6 +903,27 @@
   }
   :root[data-design="skydeck"] .now-srccard .pipeline:not(:has(.is-done, .is-current, .is-failed)) { display: none; }
   :root[data-design="skydeck"] .now__keys { margin-top: 26px; }
+}
+/* wide pages: the wheel is the page's centre and grows with it (its bars and rim are drawn in the dial's own units); from
+   1700 px the lyrics take a column of their own beside the title, actions and source, so nothing is left in a corner */
+@container now (min-width: 1100px) {
+  :root[data-design="skydeck"] .now__grid { grid-template-columns: clamp(400px, 38%, 580px) minmax(0, 1fr); }
+  :root[data-design="skydeck"] .now-dev { max-width: none; }
+  :root[data-design="skydeck"] .sd-wheel { padding: 22px 28px 24px; gap: 14px; }
+  :root[data-design="skydeck"] .sd-dial { width: min(100%, 480px); }
+}
+@container now (min-width: 1700px) {
+  :root[data-design="skydeck"] .now__grid {
+    grid-template-columns: minmax(520px, 640px) minmax(0, 1fr) minmax(0, 1.1fr); grid-template-rows: auto auto auto 1fr;
+    grid-template-areas: "dev head ly" "dev acts ly" "dev src ly" "dev next ly";
+  }
+  :root[data-design="skydeck"] .sd-dial { width: min(100%, 560px); }
+  :root[data-design="skydeck"] .now-lycard { max-height: calc(100dvh - 190px); }
+}
+@container now (min-width: 2000px) {
+  :root[data-design="skydeck"] .now__grid { grid-template-columns: minmax(600px, 760px) minmax(0, 1fr) minmax(0, 1.1fr); column-gap: var(--sp-10); }
+  :root[data-design="skydeck"] .sd-dial { width: min(100%, 660px); }
+  :root[data-design="skydeck"] .sd-wheel { padding: 28px 36px 30px; gap: 18px; }
 }
 /* short windows: the wheel shrinks as one object */
 @media (min-width: 640px) and (max-height: 820px) { :root[data-design="skydeck"] .now__dev { zoom: .86; } }
