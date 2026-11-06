@@ -1817,7 +1817,9 @@
   document.addEventListener('click', function (e) {
     var t = e.target.closest && e.target.closest('[data-tip-cut]');
     if (!t || !cutOff(t)) return;
-    e.preventDefault(); e.stopPropagation(); showTip(t, true);
+    // a tap brings the mouse's compatibility mouseover too, whose hover timer would show the tip again unasked a moment
+    // later, and a phone design hides an unasked tip: the tap's tip wins
+    clearTimeout(tipTimer); e.preventDefault(); e.stopPropagation(); showTip(t, true);
   }, true);
   window.addEventListener('scroll', hideTip, true);
 
