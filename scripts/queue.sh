@@ -70,7 +70,8 @@ checks() { # <base> <candidate>
     out ci false
   fi
   want ui_gates '^(web/|tests/ui/)'
-  want ui '^(web/|crates/server/src/web\.rs$|tests/ui/|scripts/web-dist/|Dockerfile$)'
+  # ui: also what the hub asks slskd, which tests/ui/stub-slskd.mjs answers in its place
+  want ui '^(web/|crates/server/src/web\.rs$|crates/soulseek/src/slskd\.rs$|tests/ui/|scripts/web-dist/|Dockerfile$)'
   want app '^(app/|crates/|web/desktop/|web/assets/icons/|rust-toolchain\.toml$)'
   want android '^(app/gen/android/|app/src/mobile/|app/build\.rs$|app/Cargo\.(toml|lock)$|app/tauri\.android\.conf\.json$|scripts/android-|rust-toolchain\.toml$)'
   want slskd '^(deploy/compose\.yaml$|app/build\.rs$|app/slskd/|crates/soulseek/|tests/slskd-contract/)'

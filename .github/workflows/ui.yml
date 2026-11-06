@@ -108,6 +108,16 @@ jobs:
           export CHROME_PATH=$(node -e "console.log(require('@playwright/test').chromium.executablePath())")
           sh lighthouse.sh
 
+      # The stub answers what the hub asks slskd in these tests; a call it doesn't know would answer 404 and show on every
+      # page as a Soulseek banner (seen 2026-11-06 as layout shift on every route), so it fails here by name instead.
+      - name: Stub slskd answered every call
+        if: ${{ !cancelled() }}
+        run: |
+          if grep 'unhandled' "$RUNNER_TEMP/slskd-stub.log" | sort | uniq -c | grep .; then
+            echo "::error::the hub called slskd routes tests/ui/stub-slskd.mjs doesn't answer (above): answer them there"
+            exit 1
+          fi
+
       - name: Hub log
         if: ${{ failure() }}
         run: docker logs lull-ui 2>&1 | tail -200; cat "$RUNNER_TEMP/slskd-stub.log"

@@ -1,9 +1,11 @@
 // A stand-in for slskd's REST API (v0), so the hub under test has a Soulseek that is logged in,
 // shares its library and gets one fixed answer to every search: `node stub-slskd.mjs [port] [api key]`.
 // The visual tests need a connected `soulseek` status and deterministic searches, never the real
-// network. A search nobody answers is how lull spots a wedged slskd (crates/soulseek/src/recover.rs),
-// so a stub that found nothing would put a "searches got no answers" banner over every page after a
-// few searches. Only what crates/soulseek/src/slskd.rs calls is answered; anything else is a loud 404.
+// network. Every connection check asks the Soulseek server for our own user's status
+// (Slskd::server_answers, crates/soulseek/src/recover.rs), so a stub that didn't answer it would put
+// a "couldn't ask slskd" banner over every page and shift the content under it. The routes the hub
+// calls in these tests are answered; anything else is a loud 404, logged as "unhandled", which fails
+// the ui job (.github/workflows/ui.yml), so a new call to slskd can't go unanswered unseen.
 
 import { createServer } from 'node:http';
 
@@ -38,6 +40,8 @@ const routes = {
   'PUT /shares': () => null,
   'GET /logs/live': () => [],
   'GET /events': () => [],
+  // the Soulseek server's answer for any name, as the pinned slskd gives it (tests/slskd-contract, liveness)
+  'GET /users/*': (parts) => (parts[2] === 'status' ? { isPrivileged: false, presence: 'Online' } : undefined),
   'POST /searches': () => SEARCH,
   'GET /searches/*': (parts) => (parts[2] === 'responses' ? RESPONSES : SEARCH),
   'PUT /searches/*': () => null,
@@ -51,11 +55,11 @@ createServer((req, res) => {
   const handler = routes[`${req.method} ${path}`] ?? routes[`${req.method} /${parts[0]}/*`];
   req.resume();
   if (req.headers['x-api-key'] !== key) return send(res, 401, { error: 'bad api key' });
-  if (!handler) {
+  const body = handler?.(parts); // undefined: no such route (null: answered with no body)
+  if (body === undefined) {
     console.error(`stub slskd: unhandled ${req.method} ${path}`);
     return send(res, 404, { error: `stub slskd has no ${req.method} ${path}` });
   }
-  const body = handler(parts);
   return body === null ? send(res, 204) : send(res, 200, body);
 }).listen(port, '127.0.0.1', () => console.log(`stub slskd on 127.0.0.1:${port}`));
 

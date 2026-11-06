@@ -32,7 +32,7 @@ GitHub's own merge queue needs an organisation. lull lives under the user accoun
   |---|---|
   | `ci` (fmt, clippy, tests, the web's tests) | anything but docs, `*.md`, `design/`, `fastlane/` |
   | `ui-gates` (4 machines) | `web/`, `tests/ui/` |
-  | `ui` (visual matrix, Lighthouse) | `web/`, `crates/server/src/web.rs`, `tests/ui/`, `scripts/web-dist/`, `Dockerfile` |
+  | `ui` (visual matrix, Lighthouse) | `web/`, `crates/server/src/web.rs`, `crates/soulseek/src/slskd.rs`, `tests/ui/`, `scripts/web-dist/`, `Dockerfile` |
   | `app` checks (Linux, Windows) | `app/`, `crates/`, `web/desktop/`, `web/assets/icons/`, `rust-toolchain.toml` |
   | `app` Android | `app/gen/android/`, `app/src/mobile/`, `scripts/android-*.sh`, `app/tauri.android.conf.json`, `rust-toolchain.toml` |
   | `slskd-contract` | its paths today |
