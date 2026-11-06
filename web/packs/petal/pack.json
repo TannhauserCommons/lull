@@ -71,6 +71,19 @@
       "sound": "sounds/birthday.ogg"
     },
     {
+      "name": "on-repeat",
+      "when": [
+        {
+          "repeat": {
+            "times": 10
+          }
+        }
+      ],
+      "line": "Ten times in a row",
+      "once": "song",
+      "sound": "sounds/on-repeat.ogg"
+    },
+    {
       "name": "milestone",
       "when": [
         {
@@ -128,6 +141,81 @@
       "instead": true,
       "once": "always",
       "sound": "sounds/rare-boot.ogg"
+    },
+    {
+      "name": "bunny-hop",
+      "when": [
+        {
+          "gesture": {
+            "on": "title",
+            "taps": 3,
+            "within": 2
+          }
+        }
+      ],
+      "line": "hop hop hop",
+      "for": 6,
+      "once": "always",
+      "sound": "sounds/bunny-hop.ogg"
+    },
+    {
+      "name": "sticker-rain",
+      "when": [
+        {
+          "event": {
+            "on": "liked"
+          }
+        },
+        {
+          "chance": {
+            "one_in": 8
+          }
+        }
+      ],
+      "line": "Sticker sheet, just for you",
+      "for": 6,
+      "once": "session",
+      "sound": "sounds/sticker-rain.ogg"
+    },
+    {
+      "name": "side-b",
+      "when": [
+        {
+          "player": {
+            "status": "ended"
+          }
+        }
+      ],
+      "line": "Flip to side B",
+      "once": "song",
+      "sound": "sounds/side-b.ogg"
+    },
+    {
+      "name": "margin-doodle",
+      "when": [
+        {
+          "player": {
+            "playing": true,
+            "idle": 90,
+            "screen": [
+              "home",
+              "search",
+              "library",
+              "liked",
+              "history",
+              "following",
+              "album",
+              "artist",
+              "tag",
+              "playlists",
+              "playlist",
+              "stats"
+            ]
+          }
+        }
+      ],
+      "once": "song",
+      "sound": "sounds/margin-doodle.ogg"
     }
   ]
 }
