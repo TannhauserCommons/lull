@@ -60,6 +60,10 @@ run = "sh scripts/icons/build.sh"
 description = "Land HEAD on main through the queue and wait for its verdict: ship <topic>"
 run = "sh scripts/ship.sh {{arg(i=0)}}"
 
+[tasks."queue:first"]
+description = "Test a waiting queue topic alone, ahead of older ones, for a fix every batch needs: queue:first <topic>"
+run = "sh scripts/queue-first.sh {{arg(i=0)}}"
+
 [tasks.release]
 description = "Tag vX.Y.Z on main's newest green commit with the version and what's new; pushing the tag publishes the apps: release X.Y.Z"
 run = "sh scripts/release.sh {{arg(i=0)}}"

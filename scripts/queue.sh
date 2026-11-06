@@ -89,7 +89,8 @@ checks() { # <base> <candidate>
 }
 
 plan() {
-  git fetch -q origin '+refs/heads/queue/*:refs/remotes/origin/queue/*' '+refs/heads/main:refs/remotes/origin/main'
+  git fetch -q origin '+refs/heads/queue/*:refs/remotes/origin/queue/*' '+refs/heads/main:refs/remotes/origin/main' \
+    '+refs/heads/queue-first/*:refs/remotes/origin/queue-first/*'
   # One run at a time, so any other run's candidate is left from a run that was cancelled.
   for ref in $(git ls-remote origin 'refs/heads/queue-candidate/*' | cut -f2); do
     [ "$ref" = "refs/heads/queue-candidate/$GITHUB_RUN_ID" ] || git push -q origin --delete "$ref" || true
@@ -97,6 +98,17 @@ plan() {
   base=$(git rev-parse origin/main)
   # Oldest first, by when the tip was committed.
   waiting=$(git for-each-ref --sort=committerdate --format='%(refname:strip=4) %(objectname)' refs/remotes/origin/queue/)
+  # A topic asked to go first (`mise run queue:first <topic>`) is marked by refs/heads/queue-first/<topic>, which any
+  # run reads: a dispatch's input would be lost whenever a newer dispatch replaced the pending run before it started.
+  # The mark stays until its topic leaves queue/ (landed, or deleted), so a red one still goes first once fixed.
+  firsts=""
+  for topic in $(git for-each-ref --format='%(refname:strip=4)' refs/remotes/origin/queue-first/); do
+    if printf '%s\n' "$waiting" | awk -v t="$topic" '$1 == t { f = 1 } END { exit !f }'; then
+      firsts="$firsts $topic"
+    else
+      git push -q origin --delete "refs/heads/queue-first/$topic" || true
+    fi
+  done
   [ -n "$waiting" ] || { echo "nothing waiting"; out candidate ""; return; }
 
   # A red tip waits for its owner's next push. Tips left from a red batch go one at a time.
@@ -113,12 +125,31 @@ plan() {
 $waiting
 EOF
   [ -n "$eligible" ] || { out candidate ""; return; }
-  # A topic asked for first (queue.yml's `first`) goes alone, ahead of the rest: one that fixes what every batch trips on.
-  first=$(printf '%s' "$eligible" | awk -v t="${FIRST:-}" '$1 == t' | head -n 1)
-  if [ -n "$first" ]; then eligible=$first
-  elif $split; then eligible=$(printf '%s' "$eligible" | head -n 1); else eligible=$(printf '%s' "$eligible" | head -n "$MAX_BATCH"); fi
-
+  # A topic marked first goes alone, ahead of the rest (the oldest, if several): one that fixes what every batch trips
+  # on. If it turns out to be in main already, the usual batch follows in the same run.
+  first=$(printf '%s' "$eligible" | awk -v ts="$firsts" 'BEGIN { n = split(ts, a, " "); for (i = 1; i <= n; i++) m[a[i]] = 1 } $1 in m' | head -n 1)
+  [ -z "$first" ] || echo "queue/${first%% *}: asked to go first"
   cand=$base branches=""
+  if [ -n "$first" ]; then
+    build "$first"
+    eligible=$(printf '%s' "$eligible" | grep -vxF "$first" || true)
+  fi
+  if [ "$cand" = "$base" ] && [ -n "$eligible" ]; then
+    if $split; then build "$(printf '%s' "$eligible" | head -n 1)"; else build "$(printf '%s' "$eligible" | head -n "$MAX_BATCH")"; fi
+  fi
+  [ "$cand" != "$base" ] || { out candidate ""; return; }
+
+  # The candidate needs a ref for the check jobs to fetch; a push with the job's token starts nothing.
+  git push -q origin "$cand:refs/heads/queue-candidate/$GITHUB_RUN_ID"
+  git log --format='  %h %s' "$base..$cand"
+  out candidate "$cand"
+  out base "$base"
+  out branches "${branches% }"
+  checks "$base" "$cand"
+}
+
+# Stacks the given "<topic> <tip>" lines onto $cand, adding each that rebases cleanly to $branches.
+build() {
   while read -r topic tip; do
     [ -n "$topic" ] || continue
     if ! fork=$(git merge-base "$base" "$tip") || [ "$(git rev-list --count "$fork..$tip")" -gt "$MAX_TOPIC" ]; then
@@ -143,17 +174,8 @@ EOF
       status "$tip" failure "conflicts with main: rebase on origin/main and push again"
     fi
   done <<EOF
-$eligible
+$1
 EOF
-  [ "$cand" != "$base" ] || { out candidate ""; return; }
-
-  # The candidate needs a ref for the check jobs to fetch; a push with the job's token starts nothing.
-  git push -q origin "$cand:refs/heads/queue-candidate/$GITHUB_RUN_ID"
-  git log --format='  %h %s' "$base..$cand"
-  out candidate "$cand"
-  out base "$base"
-  out branches "${branches% }"
-  checks "$base" "$cand"
 }
 
 land() {
