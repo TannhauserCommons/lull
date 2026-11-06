@@ -199,6 +199,8 @@ pub struct Fetch {
     /// Whose profile orders the copies: the player's or a save's.
     pub purpose: Purpose,
     pub started: i64,
+    /// When it began: a search for the song that ended since then is its own (`searched_since`).
+    opened: Instant,
     progress: watch::Sender<Progress>,
     stop: watch::Sender<bool>,
     want: Mutex<Want>,
@@ -476,7 +478,7 @@ impl Fetcher {
                 want(&f, |w| w.streaming = true);
                 self.bus.publish("stream", self.player_event(&f, &f.now()));
                 if on_youtube && mode == Mode::StartFast {
-                    self.upgrade_later(track, playing).await?;
+                    self.upgrade_later(track, playing, Instant::now()).await?;
                 }
                 self.better_later(&f);
                 return Ok(f);
@@ -527,8 +529,9 @@ impl Fetcher {
     /// Start fast: fetches Soulseek's best copy in the background, for this play and later
     /// ones, unless one is running or a Soulseek copy is already cached. With "Switch to a
     /// better copy" on it is the streaming profile's (within its cap), so the player can move
-    /// to it mid-song; off, the saving profile's, for later plays and saves.
-    async fn upgrade_later(&self, track: Track, playing: SourceRef) -> Result<()> {
+    /// to it mid-song; off, the saving profile's, for later plays and saves. A search for the
+    /// song that ended `since` then (the one beside YouTube's lookup) is the upgrade's own.
+    async fn upgrade_later(&self, track: Track, playing: SourceRef, since: Instant) -> Result<()> {
         if self.upgrade(&track.id).is_some() {
             return Ok(());
         }
@@ -550,7 +553,7 @@ impl Fetcher {
         } else {
             (Purpose::Save, None)
         };
-        if let Some(f) = self.start_upgrade(track, purpose, bar) {
+        if let Some(f) = self.start_upgrade(track, purpose, bar, since) {
             tracing::info!(track = %f.track.id, job = f.job_id, "fetching Soulseek's copy while YouTube plays");
         }
         Ok(())
@@ -582,7 +585,7 @@ impl Fetcher {
         if !known.is_empty() && sources::better(known, &bar).is_empty() {
             return;
         }
-        if let Some(u) = self.start_upgrade(f.track.clone(), Purpose::Stream, Some(bar)) {
+        if let Some(u) = self.start_upgrade(f.track.clone(), Purpose::Stream, Some(bar), Instant::now()) {
             tracing::info!(track = %u.track.id, job = u.job_id, ?why, "fetching a better copy beside the one playing");
         }
     }
@@ -1006,7 +1009,7 @@ impl Fetcher {
     }
 
     fn new_fetch(&self, track: Track, purpose: Purpose, progress: Progress, wanted: Want, slot: Slot) -> Arc<Fetch> {
-        let f = self.fetch(track, purpose, progress, wanted, None);
+        let f = self.fetch(track, purpose, progress, wanted, None, Instant::now());
         let map = match slot {
             Slot::Live => &self.live,
             Slot::Upgrade => &self.upgrades,
@@ -1018,12 +1021,21 @@ impl Fetcher {
     }
 
     /// A fetch in no map yet.
-    fn fetch(&self, track: Track, purpose: Purpose, progress: Progress, wanted: Want, bar: Option<Bar>) -> Arc<Fetch> {
+    fn fetch(
+        &self,
+        track: Track,
+        purpose: Purpose,
+        progress: Progress,
+        wanted: Want,
+        bar: Option<Bar>,
+        opened: Instant,
+    ) -> Arc<Fetch> {
         let n = self.next.fetch_add(1, Ordering::Relaxed);
         Arc::new(Fetch {
             job_id: format!("job-{:x}{n}", lull_core::now()),
             purpose,
             started: lull_core::now(),
+            opened,
             progress: watch::channel(progress).0,
             stop: watch::channel(false).0,
             want: Mutex::new(wanted),
@@ -1083,8 +1095,16 @@ impl Fetcher {
     }
 
     /// A better copy fetched beside the song's live fetch, unless one is on its way already.
-    fn start_upgrade(&self, track: Track, purpose: Purpose, bar: Option<Bar>) -> Option<Arc<Fetch>> {
-        let f = self.fetch(track, purpose, Progress::new(Status::Finding), Want::default(), bar);
+    /// `opened`: since when a search for the song counts as the upgrade's own.
+    fn start_upgrade(&self, track: Track, purpose: Purpose, bar: Option<Bar>, opened: Instant) -> Option<Arc<Fetch>> {
+        let f = self.fetch(
+            track,
+            purpose,
+            Progress::new(Status::Finding),
+            Want::default(),
+            bar,
+            opened,
+        );
         {
             let mut upgrades = self.upgrades.lock().ok()?;
             let running = upgrades
@@ -1180,12 +1200,30 @@ impl Fetcher {
     }
 
     /// Start fast: the YouTube copy plays now, and Soulseek's best copy is fetched beside it.
+    /// Soulseek's search starts with YouTube's lookup: when YouTube has no copy, the song's
+    /// Soulseek copies are known by then, or soon; when it has one, the upgrade takes them.
     async fn youtube_first(&self, f: &Fetch, stop: &mut watch::Receiver<bool>) -> Result<PathBuf, Stop> {
+        self.search_beside(f);
         let copy = self.youtube_copy(f, stop).await?;
-        if let Err(e) = self.upgrade_later(f.track.clone(), copy.clone()).await {
+        if let Err(e) = self.upgrade_later(f.track.clone(), copy.clone(), f.opened).await {
             tracing::warn!(error = %e, "starting the Soulseek upgrade");
         }
         self.youtube_plays(f, copy, stop).await
+    }
+
+    /// The song's Soulseek search, in the player's lane, while YouTube's lookup runs: the one
+    /// search the fallback or the upgrade would make after it (they take its copies, or join it
+    /// while it runs). Not when copies are known or the song was searched since `f` began.
+    fn search_beside(&self, f: &Fetch) {
+        if self.sources.known(&f.track) || self.sources.searched_since(&f.track.id, f.opened) {
+            return;
+        }
+        let (searches, track) = (self.searches.clone(), f.track.clone());
+        tokio::spawn(async move {
+            if let Err(e) = searches.resolve(&track).await {
+                tracing::debug!(error = %e, track = %track.id, "searching Soulseek beside YouTube");
+            }
+        });
     }
 
     /// The YouTube copy, and when its sound turns out not to be the song, the next one `find`
@@ -1565,7 +1603,10 @@ impl Fetcher {
         loop {
             let (copies, queued_out) = self.untried(f, tried, &rules);
             if copies.is_empty() && queued_out == 0 && tried.is_empty() && searches == 0 {
-                self.find(f, stop).await?;
+                // One beside YouTube's lookup that ended since the fetch began is its search.
+                if !self.sources.searched_since(&f.track.id, f.opened) {
+                    self.find(f, stop).await?;
+                }
                 searches += 1;
                 continue;
             }
@@ -1642,7 +1683,7 @@ impl Fetcher {
             }
             self.update(f, |p| p.status = Status::Finding);
             tokio::select! {
-                r = self.searches.resolve_again(&f.track, Lane::Prefetch) => r.map_err(|e| Stop::Failed(reason(&e)))?,
+                r = self.searches.resolve_again_since(&f.track, Lane::Prefetch, f.opened) => r.map_err(|e| Stop::Failed(reason(&e)))?,
                 () = stopped(stop) => return Err(Stop::Cancelled),
             }
             searched = true;
@@ -2409,6 +2450,80 @@ mod tests {
             Ok(())
         }
 
+        /// YouTube's lookup as it was live for a song it couldn't match (2026-11-06): it takes
+        /// `LOOKUP` (several yt-dlp runs), then finds an upload of the song, or (`found` false) none.
+        struct SlowLookup {
+            found: bool,
+        }
+
+        const LOOKUP: Duration = Duration::from_secs(3);
+
+        #[async_trait]
+        impl Youtube for SlowLookup {
+            async fn find(&self, _: &Track, _: Want) -> Result<Option<Found>> {
+                tokio::time::sleep(LOOKUP).await;
+                Ok(self.found.then(|| Found {
+                    source: upload("rightupload"),
+                    title: "Song".into(),
+                    channel: "Artist - Topic".into(),
+                    official: true,
+                }))
+            }
+            async fn download(&self, _: &SourceRef, dest: &std::path::Path) -> Result<()> {
+                std::fs::write(dest, vec![7u8; SIZE as usize]).map_err(|e| Error::internal(e.to_string()))
+            }
+        }
+
+        async fn start_fast(found: bool) -> Result<(Fake, Fetcher)> {
+            let peer = Peer {
+                per_tick: 32_768,
+                overwrite: false,
+                reported: None,
+                settles: Duration::ZERO,
+            };
+            let fake = Fake::start(HashMap::from([(REMOTE.to_owned(), vec![5u8; 40_000])]), peer)
+                .await
+                .map_err(|e| Error::internal(e.to_string()))?;
+            let mut rules = Rules::default();
+            rules.youtube.mode = lull_core::youtube::Mode::StartFast;
+            let fetcher = with_youtube(&fake, rules, Arc::new(SlowLookup { found })).await?;
+            Ok((fake, fetcher))
+        }
+
+        #[tokio::test]
+        async fn a_song_youtube_cant_match_starts_on_soulseek_without_waiting_out_the_lookup() -> Result<()> {
+            // Live: 久石譲's 風のとおり道 (Acoustic Version) took 15 s to start, YouTube's lookup
+            // first and only then Soulseek's search. Now they run at once.
+            let (fake, fetcher) = start_fast(false).await?;
+            let t0 = std::time::Instant::now();
+            let p = ended(&fetcher.stream(track(), None).await?).await?;
+            let took = t0.elapsed();
+            assert_eq!(p.status, Status::Done, "{:?}", p.error);
+            assert_eq!(p.source.map(|s| s.user), Some("peer".to_owned()));
+            assert_eq!(fake.searches().len(), 1, "one search: {:?}", fake.searches());
+            // In order it took the lookup and the search, one after the other.
+            assert!(
+                took < LOOKUP + crate::fake_slskd::SEARCH_TAKES,
+                "{took:?}: the search waited for YouTube's lookup"
+            );
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn start_fasts_upgrade_takes_the_search_that_ran_beside_youtubes_lookup() -> Result<()> {
+            let (fake, fetcher) = start_fast(true).await?;
+            let p = ended(&fetcher.stream(track(), None).await?).await?;
+            assert_eq!(p.status, Status::Done, "{:?}", p.error);
+            let upgrade = fetcher
+                .upgrade(&track().id)
+                .ok_or_else(|| Error::internal("no upgrade"))?;
+            let u = ended(&upgrade).await?;
+            assert_eq!(u.status, Status::Done, "{:?}", u.error);
+            assert_eq!(u.source.map(|s| s.user), Some("peer".to_owned()));
+            assert_eq!(fake.searches().len(), 1, "no second search: {:?}", fake.searches());
+            Ok(())
+        }
+
         /// One official upload of the song, always the song.
         struct OneUpload;
 
@@ -2645,13 +2760,14 @@ mod tests {
         #[tokio::test]
         async fn the_job_answers_why_a_song_stopped_and_records_a_device_that_cant_play_it() -> Result<()> {
             // The hub failed the song: its own reason answers, YouTube's part included, unchanged.
+            // No search finds the song (the file is one peer's own); picking it still fetches it.
             let peer = Peer {
                 per_tick: 32_768,
                 overwrite: false,
                 reported: None,
                 settles: Duration::ZERO,
             };
-            let fake = Fake::start(HashMap::from([(REMOTE.to_owned(), vec![5u8; 50_000])]), peer)
+            let fake = Fake::start(HashMap::from([(format!("peer|{REMOTE}"), vec![5u8; 50_000])]), peer)
                 .await
                 .map_err(|e| Error::internal(e.to_string()))?;
             let mut rules = Rules::default();

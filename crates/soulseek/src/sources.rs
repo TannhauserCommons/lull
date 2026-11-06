@@ -235,6 +235,13 @@ impl Sources {
         }
     }
 
+    /// A search for the song itself ended after `since`.
+    pub fn searched_since(&self, track: &TrackId, since: Instant) -> bool {
+        self.inner
+            .read()
+            .is_ok_and(|m| m.searched.get(track).is_some_and(|at| *at >= since))
+    }
+
     pub fn mark_searched(&self, track: &TrackId) {
         if let Ok(mut map) = self.inner.write() {
             map.searched.insert(track.clone(), Instant::now());

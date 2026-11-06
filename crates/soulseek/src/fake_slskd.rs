@@ -4,7 +4,8 @@
 //! folder and reports `DownloadFileComplete`, in slskd's order: the transfer reads `Succeeded`
 //! before the file has moved and before the event says where (slskd 0.26.2's
 //! `DownloadService`; pinned by the contract test, tests/slskd-contract). This lets lull's fetches
-//! and their legs be tested in-process against it.
+//! and their legs be tested in-process against it. Its searches find every file it serves
+//! (`peer` shares them), after `SEARCH_TAKES`.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -23,6 +24,10 @@ use crate::slskd::Slskd;
 
 /// The pace the peer sends at: this many bytes every `TICK`.
 const TICK: Duration = Duration::from_millis(20);
+/// How long a search runs before slskd calls it complete.
+pub const SEARCH_TAKES: Duration = Duration::from_secs(1);
+/// The length the search reports for every file, seconds: the tests' song's.
+const LENGTH: u32 = 200;
 
 pub struct Fake {
     pub slskd: Slskd,
@@ -46,6 +51,8 @@ struct Shared {
     starts: Mutex<Vec<(String, u64)>>,
     events: Mutex<Vec<Value>>,
     next: Mutex<u32>,
+    /// Every search started: its text, and when.
+    searches: Mutex<Vec<(String, std::time::Instant)>>,
 }
 
 #[derive(Clone)]
@@ -97,6 +104,7 @@ impl Fake {
             starts: Mutex::default(),
             events: Mutex::default(),
             next: Mutex::new(0),
+            searches: Mutex::default(),
         });
         let app = Router::new()
             .route("/api/v0/transfers/downloads/batches", post(enqueue))
@@ -106,6 +114,14 @@ impl Fake {
                 get(one).merge(delete(cancel)),
             )
             .route("/api/v0/events", get(events))
+            .route("/api/v0/searches", post(start_search))
+            .route(
+                "/api/v0/searches/{id}",
+                get(search)
+                    .put(|| async { StatusCode::NO_CONTENT })
+                    .delete(|| async { StatusCode::NO_CONTENT }),
+            )
+            .route("/api/v0/searches/{id}/responses", get(responses))
             .with_state(shared.clone());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let url = format!("http://{}", listener.local_addr()?);
@@ -122,6 +138,15 @@ impl Fake {
             root,
             shared,
         })
+    }
+
+    /// The text of every search started, in order.
+    pub fn searches(&self) -> Vec<String> {
+        self.shared
+            .searches
+            .lock()
+            .map(|s| s.iter().map(|(text, _)| text.clone()).collect())
+            .unwrap_or_default()
     }
 
     /// The offsets downloads were asked from, in order.
@@ -141,6 +166,52 @@ impl Fake {
             .map(|s| s.iter().filter(|(u, _)| u == user).map(|(_, at)| *at).collect())
             .unwrap_or_default()
     }
+}
+
+async fn start_search(State(s): State<Arc<Shared>>, axum::Json(body): axum::Json<Value>) -> axum::Json<Value> {
+    let text = body["searchText"].as_str().unwrap_or_default().to_owned();
+    let n = s.searches.lock().map_or(0, |mut all| {
+        all.push((text, std::time::Instant::now()));
+        all.len()
+    });
+    axum::Json(json!({ "id": format!("s{n}"), "state": "InProgress", "responseCount": 0, "fileCount": 0 }))
+}
+
+/// The files `peer` shares: every one not named for one peer.
+fn shared_files(s: &Shared) -> Vec<(&String, &Vec<u8>)> {
+    s.files.iter().filter(|(path, _)| !path.contains('|')).collect()
+}
+
+async fn search(State(s): State<Arc<Shared>>, UrlPath(id): UrlPath<String>) -> Result<axum::Json<Value>, StatusCode> {
+    let n: usize = id.trim_start_matches('s').parse().map_err(|_| StatusCode::NOT_FOUND)?;
+    let started = s
+        .searches
+        .lock()
+        .ok()
+        .and_then(|all| all.get(n.wrapping_sub(1)).map(|(_, at)| *at))
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let files = shared_files(&s).len();
+    Ok(axum::Json(if started.elapsed() >= SEARCH_TAKES {
+        json!({ "id": id, "state": "Completed, Succeeded", "responseCount": u32::from(files > 0), "fileCount": files,
+                "endedAt": "2026-11-06T00:00:00Z" })
+    } else {
+        json!({ "id": id, "state": "InProgress", "responseCount": 0, "fileCount": 0 })
+    }))
+}
+
+async fn responses(State(s): State<Arc<Shared>>) -> axum::Json<Value> {
+    let files: Vec<Value> = shared_files(&s)
+        .into_iter()
+        .map(|(path, bytes)| {
+            json!({ "filename": path, "size": bytes.len(), "bitRate": 320, "bitDepth": null, "sampleRate": 44100,
+                    "length": LENGTH, "isVariableBitRate": false })
+        })
+        .collect();
+    axum::Json(match files.is_empty() {
+        true => json!([]),
+        false => json!([{ "username": "peer", "hasFreeUploadSlot": true, "queueLength": 0, "uploadSpeed": 2_000_000,
+                          "files": files }]),
+    })
 }
 
 fn rand_id() -> u64 {

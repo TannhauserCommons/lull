@@ -165,7 +165,11 @@ pub struct Outcome {
     pub state: String,
     pub peers: u32,
     pub files: u32,
+    /// When it ended, and when it started (Unix seconds) and how long it ran: slskd's own log
+    /// says only when a search ended.
     pub at: i64,
+    pub started: i64,
+    pub took_ms: u64,
 }
 
 /// Outcomes kept for diagnostics.
@@ -420,9 +424,13 @@ impl Searches {
     }
 
     /// Searches for one song again although copies are known (a better copy is wanted than
-    /// those), in `lane`, after its turn.
-    pub async fn resolve_again(&self, track: &Track, lane: Lane) -> Result<()> {
+    /// those), in `lane`, after its turn: unless a search for it ended `since` then (one that
+    /// ran meanwhile, such as the player's beside YouTube's lookup), whose copies are known.
+    pub async fn resolve_again_since(&self, track: &Track, lane: Lane, since: Instant) -> Result<()> {
         self.turn(lane).await;
+        if self.sources.searched_since(&track.id, since) {
+            return Ok(());
+        }
         self.search_song(track, lane).await
     }
 
@@ -589,6 +597,7 @@ impl Searches {
         if !self.budget.admit(priority, || self.answering()).await {
             return Ok(None);
         }
+        let began = (lull_core::now(), Instant::now());
         let search = self.slskd.start_search(text, INACTIVITY, RESPONSE_LIMIT).await?;
         let mut hearing = Hearing::new(Instant::now());
         let poll = match until {
@@ -632,6 +641,8 @@ impl Searches {
             peers: last.response_count,
             files: last.file_count,
             at: lull_core::now(),
+            started: began.0,
+            took_ms: u64::try_from(began.1.elapsed().as_millis()).unwrap_or(u64::MAX),
         });
         responses.map(Some)
     }
