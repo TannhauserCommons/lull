@@ -69,7 +69,30 @@
     },
     {
       "id": "glasshouse",
-      "css": false
+      "css": true,
+      "slots": [
+        "birthday",
+        "breath",
+        "dream",
+        "fire",
+        "frost",
+        "long-wait",
+        "milestone",
+        "moon",
+        "moth",
+        "new-year",
+        "new-year-hello",
+        "night",
+        "on-repeat",
+        "rain",
+        "sea",
+        "snow",
+        "star",
+        "still",
+        "storm",
+        "sun",
+        "twelve"
+      ]
     }
   ]
 }

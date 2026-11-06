@@ -1,0 +1,299 @@
+/* Glasshouse's surprises (ADR-0081): the eggs every listener can meet, and the few that only this design has, drawn in
+   its materials. A conservatory at night: panes that fog, bead with rain, frost over and let the moon through; a rose
+   lamp, mono type with serif titles. Every egg is short, soft and never over a control: nothing here takes the pointer,
+   only transform and opacity move, a loop is stepped and holds when lull is not in front, and under reduced motion
+   nothing moves (what is left is each egg's resting look). The slots are in slots/egg.<name>.html. The colours fall
+   back to plain values, so the pack looks right on any design it is added to. */
+
+/* ---------- what every egg here draws with: night's lit glass, and day's inked glass ---------- */
+:root[data-egg] {
+  --gh-e-lit: #e6edff;                 /* what catches the light */
+  --gh-e-head: #ffffff;
+  --gh-e-trail: rgba(36, 50, 108, .4);
+  --gh-e-rim: rgba(176, 196, 255, .34);
+  --gh-e-fog: #d2dbf0;
+  --gh-e-rose: #f0b4c6;
+  --gh-e-drop: radial-gradient(circle at 34% 26%, #fff 0 13%, rgba(255, 255, 255, 0) 21%), radial-gradient(ellipse at 50% 62%, rgba(132, 158, 224, .3) 0 46%, rgba(34, 48, 104, .62) 100%);
+  --gh-e-pearl: radial-gradient(circle at 36% 30%, #fff 0 18%, rgba(255, 255, 255, .2) 26% 50%, rgba(44, 60, 120, .5) 100%);
+  --gh-e-light: rgba(214, 226, 255, .2);
+  --gh-e-hoar: rgba(232, 240, 255, .28);
+  --gh-e-flake: radial-gradient(circle, #fff 0 38%, rgba(255, 255, 255, .5) 66%, transparent 70%);
+  --gh-e-bub: rgba(176, 202, 255, .34); --gh-e-bub2: rgba(246, 176, 226, .4); --gh-e-bub3: rgba(255, 255, 255, .62);
+  --gh-e-heart: #f0a3bb;
+  --gh-e-wing: #e7e2f2; --gh-e-vein: #8d86a8; --gh-e-moth: #4b4666;
+  --gh-e-wave: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='340' height='170' viewBox='0 0 340 170'%3E%3Cg fill='none' stroke='%23dbe8ff' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M0 28C40 4 86 52 128 28S214 6 254 28S308 50 340 28' stroke-opacity='.9'/%3E%3Cpath d='M0 84C54 62 96 108 156 84S258 60 340 84' stroke-opacity='.7'/%3E%3Cpath d='M0 142C36 122 90 164 134 142S214 122 262 144S316 160 340 142' stroke-opacity='.8'/%3E%3C/g%3E%3C/svg%3E");
+  --gh-e-dusk: rgba(3, 5, 14, .74);
+  --gh-e-dawn-a: rgba(255, 205, 140, .4); --gh-e-dawn-b: rgba(255, 160, 110, .16);
+  --gh-e-beam: rgba(255, 226, 170, .14);
+  --gh-e-bead-a: #f8ced9; --gh-e-bead-b: #8e3f58; --gh-e-bead-glow: rgba(224, 134, 164, .75);
+  --gh-e-disc: var(--gh-lcd, linear-gradient(180deg, #11131c, #1d2131));
+}
+:root[data-egg][data-theme="day"] {
+  --gh-e-lit: #3f5385;
+  --gh-e-fern: #5670b0;
+  --gh-e-head: #2c3470;
+  --gh-e-trail: rgba(36, 50, 108, .42);
+  --gh-e-rim: rgba(60, 76, 128, .3);
+  --gh-e-fog: #ffffff;
+  --gh-e-rose: #8e3f58;
+  --gh-e-drop: radial-gradient(circle at 34% 26%, #fff 0 13%, rgba(255, 255, 255, 0) 21%), radial-gradient(ellipse at 50% 62%, rgba(255, 255, 255, .3) 0 40%, rgba(34, 48, 104, .66) 100%);
+  --gh-e-pearl: radial-gradient(circle at 36% 30%, #fff 0 18%, rgba(255, 255, 255, .25) 26% 48%, rgba(44, 60, 120, .55) 100%);
+  --gh-e-light: rgba(96, 118, 200, .15);
+  --gh-e-hoar: rgba(120, 150, 215, .24);
+  --gh-e-flake: radial-gradient(circle, rgba(255, 255, 255, .96) 0 36%, rgba(86, 112, 184, .6) 66%, transparent 70%);
+  --gh-e-bub: rgba(80, 118, 210, .38); --gh-e-bub2: rgba(206, 90, 170, .34); --gh-e-bub3: rgba(60, 84, 160, .5);
+  --gh-e-heart: #b04a6b;
+  --gh-e-wing: #756f93; --gh-e-vein: #2f2c48; --gh-e-moth: #2a2840;
+  --gh-e-wave: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='340' height='170' viewBox='0 0 340 170'%3E%3Cg fill='none' stroke='%233a5296' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M0 28C40 4 86 52 128 28S214 6 254 28S308 50 340 28' stroke-opacity='.9'/%3E%3Cpath d='M0 84C54 62 96 108 156 84S258 60 340 84' stroke-opacity='.7'/%3E%3Cpath d='M0 142C36 122 90 164 134 142S214 122 262 144S316 160 340 142' stroke-opacity='.8'/%3E%3C/g%3E%3C/svg%3E");
+  --gh-e-dusk: rgba(30, 34, 90, .5);
+  --gh-e-dawn-a: rgba(255, 190, 120, .5); --gh-e-dawn-b: rgba(255, 140, 100, .2);
+  --gh-e-beam: rgba(255, 196, 120, .22);
+}
+
+/* ---------- the stage: a slot's box covers the window, clips what leaves it, and takes no pointer ---------- */
+.egg-stage [data-egg-of] { position: absolute; inset: 0; overflow: hidden; pointer-events: none; contain: paint; z-index: 1; }
+.egg-stage [data-egg-of] :is(i, b, svg, .gh-moonlight, .gh-breath, .gh-burst, .gh-moth, .gh-dial) { position: absolute; display: block; }
+:root[data-motion="reduce"] .egg-stage [data-egg-of] .gh-mv { display: none; }
+:root[data-motion="reduce"] .gh-dial--ten b { transition: none; }
+@media (prefers-reduced-motion: reduce) { .egg-stage [data-egg-of] .gh-mv { display: none; } .gh-dial--ten b { transition: none; } }
+
+/* ---------- lull's own words: a sign by the title in the console, in the lamp's rose ---------- */
+:root[data-egg] .pbar__title > a::after { color: var(--gh-e-rose); font-family: var(--f-px, ui-monospace, monospace); font-size: .8em; opacity: .95; text-shadow: 0 0 9px color-mix(in srgb, var(--gh-e-rose) 70%, transparent); }
+
+/* ---------- the line: a small smoky screen with the lamp lit in it, words typed in ---------- */
+.egg-line {
+  z-index: 3; bottom: calc(var(--bar-h, 122px) + 34px); display: flex; align-items: center; gap: 10px; padding: 10px 18px 10px 14px;
+  border: 1px solid var(--gh-lcd-edge, #0b0d14); border-radius: 12px; color: #e8ecf8; background: var(--gh-lcd, linear-gradient(180deg, #11131c, #1d2131));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16), inset 0 0 0 1px rgba(160, 185, 235, .14), 0 14px 30px -14px rgba(5, 7, 16, .75);
+  font: 500 .8125rem/1.25 var(--f-px, ui-monospace, monospace); letter-spacing: .04em;
+}
+.egg-line[hidden], .egg-line:empty { display: none; }
+.egg-line::before { content: ""; flex: none; width: 9px; height: 9px; border-radius: 50%; background: radial-gradient(circle at 40% 30%, #fff 0 15%, var(--gh-rose-glow, #c97a92) 46%, var(--gh-rose, #8e3f58) 84%); box-shadow: 0 0 8px var(--gh-rose-glow, #c97a92); }
+.egg-line::after { content: ""; flex: none; width: .5em; height: 2px; margin-top: .7em; background: currentColor; opacity: .8; }
+
+/* ---------- the ring of beads (the new year, midnight, ten times over) ---------- */
+.gh-dial { left: 50%; bottom: calc(var(--bar-h, 122px) + 76px); width: 132px; height: 132px; margin-left: -66px; }
+.gh-dial::before { content: ""; position: absolute; inset: 8px; border-radius: 50%; background: var(--gh-e-disc); border: 1px solid rgba(160, 185, 235, .3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18), 0 14px 30px -12px rgba(5, 7, 16, .7); }
+.gh-dial b { position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%;
+  background: radial-gradient(circle at 38% 30%, #fff 0 16%, var(--gh-e-bead-a) 46%, var(--gh-e-bead-b) 100%); box-shadow: 0 0 9px var(--gh-e-bead-glow);
+  transform: rotate(calc(var(--n) * 36deg)) translateY(-58px); }
+.gh-dial--twelve b { transform: rotate(calc(var(--n) * 30deg)) translateY(-58px); }
+/* the new year: a bead goes dark for each second that has gone (--egg-count is the seconds left) */
+.gh-dial--ten b { opacity: clamp(.2, calc(var(--egg-count, 10) - var(--n)), 1); transition: opacity .35s linear; }
+:root[data-egg~="new-year"] .egg-line {
+  bottom: calc(var(--bar-h, 122px) + 122px); width: 80px; height: 40px; padding: 0; display: block; text-align: center; border: 0; background: none; box-shadow: none;
+  font: italic 400 2.3rem/40px var(--f-serif, Georgia, serif); letter-spacing: 0; color: #f4f6ff; text-shadow: 0 0 16px rgba(176, 196, 255, .6);
+}
+:root[data-egg~="new-year"] .egg-line::before, :root[data-egg~="new-year"] .egg-line::after { display: none; }
+:root[data-egg~="new-year"] .egg-line[hidden] { display: none; }
+/* midnight, and ten times in a row: the beads light one to a stroke */
+.gh-crescent { left: 50%; bottom: calc(var(--bar-h, 122px) + 130px); width: 30px; height: 30px; margin-left: -15px; border-radius: 50%; box-shadow: inset -10px 3px 0 0 #f0f3ff; rotate: -24deg; filter: drop-shadow(0 0 7px rgba(190, 205, 255, .7)); }
+.gh-lamp { left: 50%; bottom: calc(var(--bar-h, 122px) + 128px); width: 34px; height: 34px; margin-left: -17px; border-radius: 50%; border: 1px solid var(--gh-rose-edge, #4d2a38);
+  background: radial-gradient(circle at 40% 30%, #fff 0 12%, var(--gh-rose-glow, #c97a92) 42%, var(--gh-rose, #8e3f58) 78%); box-shadow: 0 0 18px 2px rgba(224, 134, 164, .6); }
+
+/* ---------- rain: drops that cling, slip, and leave their beads ---------- */
+.gh-drop { left: var(--x); top: var(--y0, -4%); width: calc(11px * var(--s, 1)); height: calc(15px * var(--s, 1)); margin-left: -5px; border-radius: 50% 50% 50% 50% / 62% 62% 38% 38%;
+  background: var(--gh-e-drop); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .42), 0 1px 3px rgba(6, 9, 22, .45); opacity: 0; }
+.gh-drop::after { content: ""; position: absolute; left: 50%; bottom: 62%; width: 2px; height: calc(var(--len, 60) * 1px); margin-left: -1px; border-radius: 1px; background: linear-gradient(transparent, var(--gh-e-trail)); box-shadow: 1px 0 0 rgba(255, 255, 255, .28); }
+.gh-pearl { left: var(--x); top: var(--y); width: calc(8px * var(--s, 1)); height: calc(8px * var(--s, 1)); border-radius: 50%; background: var(--gh-e-pearl); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .4), 0 1px 2px rgba(6, 9, 22, .4); opacity: 0; }
+/* storm */
+.gh-flash { inset: 0; opacity: 0; background: radial-gradient(ellipse 70% 60% at 74% 0, rgba(236, 241, 255, .5), rgba(196, 208, 255, .16) 58%, transparent 82%); }
+:root[data-theme="day"] .gh-flash { background: radial-gradient(ellipse 70% 60% at 74% 0, rgba(96, 112, 204, .3), rgba(120, 132, 214, .1) 58%, transparent 82%); }
+.gh-bolt { left: 70%; top: 0; width: 7vmin; height: 21vmin; fill: none; stroke: var(--gh-e-head); stroke-width: 2.4; stroke-linejoin: round; stroke-linecap: round; opacity: 0; filter: drop-shadow(0 0 6px var(--gh-e-lit)); overflow: visible; }
+
+/* ---------- the moon crosses the room, its light falling through pointed arches ---------- */
+.gh-moonlight { left: 0; top: 0; width: 100%; height: 100%; opacity: 0; }
+.gh-pane { top: 10vh; width: 11vw; height: 64vh; clip-path: polygon(0% 34%,3.1% 24.3%,6.2% 20.3%,9.4% 17.4%,12.5% 15%,15.6% 12.9%,18.8% 11.1%,21.9% 9.5%,25% 8%,28.1% 6.7%,31.2% 5.5%,34.4% 4.4%,37.5% 3.4%,40.6% 2.4%,43.8% 1.5%,46.9% 0.7%,50% -0%,53.1% 0.7%,56.2% 1.5%,59.4% 2.4%,62.5% 3.4%,65.6% 4.4%,68.8% 5.5%,71.9% 6.7%,75% 8%,78.1% 9.5%,81.2% 11.1%,84.4% 12.9%,87.5% 15%,90.6% 17.4%,93.8% 20.3%,96.9% 24.3%,100% 34%,100% 100%,0% 100%);
+  background:
+    linear-gradient(90deg, transparent calc(50% - 1px), rgba(8, 10, 22, .13) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)),
+    linear-gradient(180deg, transparent 47%, rgba(8, 10, 22, .1) 47% calc(47% + 2px), transparent calc(47% + 2px)),
+    linear-gradient(180deg, var(--gh-e-light), color-mix(in srgb, var(--gh-e-light) 30%, transparent) 70%, transparent); }
+.gh-pane:nth-child(1) { left: -46vw; } .gh-pane:nth-child(2) { left: -33vw; } .gh-pane:nth-child(3) { left: -20vw; }
+.gh-orb { left: -51vw; top: 7vh; width: 58px; height: 58px; border-radius: 50%; background: radial-gradient(circle at 62% 30%, rgba(150, 160, 200, .5) 0 7%, transparent 9%), radial-gradient(circle at 30% 58%, rgba(150, 160, 200, .4) 0 10%, transparent 12%), radial-gradient(circle at 70% 70%, rgba(150, 160, 200, .35) 0 6%, transparent 8%), radial-gradient(circle at 36% 34%, #fff 0 32%, #eef1ff 58%, #c8d1f0 100%);
+  box-shadow: 0 0 38px 12px rgba(196, 212, 255, .38); opacity: .9; }
+:root[data-theme="day"] .gh-orb {  box-shadow: 0 0 0 1px rgba(60, 76, 128, .3), 0 0 30px 8px rgba(96, 118, 200, .4); }
+
+/* ---------- a star crosses, and stars open and close ---------- */
+.gh-streak { left: var(--x); top: var(--y); width: 230px; height: 2px; border-radius: 2px; transform-origin: 0 50%; rotate: var(--a); opacity: 0;
+  background: linear-gradient(90deg, transparent, var(--gh-e-lit) 86%, var(--gh-e-head)); }
+.gh-streak::after { content: ""; position: absolute; right: -3px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: radial-gradient(circle, var(--gh-e-head) 0 34%, transparent 72%); }
+.gh-streak--small { width: 130px; }
+.gh-twink { left: var(--x); top: var(--y); width: calc(36px * var(--s, 1)); height: calc(36px * var(--s, 1)); margin: calc(-18px * var(--s, 1)) 0 0 calc(-18px * var(--s, 1)); fill: #fff; opacity: 0; filter: drop-shadow(0 0 2px rgba(24, 34, 86, .85)) drop-shadow(0 0 7px rgba(190, 208, 255, .9)); }
+
+/* ---------- the sun: gold light low in the glass ---------- */
+.gh-dawn { inset: 0; background: radial-gradient(ellipse 80% 55% at 50% 108%, var(--gh-e-dawn-a), var(--gh-e-dawn-b) 45%, transparent 72%); }
+.gh-beam { top: -12vh; left: var(--x); width: 9vw; height: 130vh; transform-origin: 50% 0; rotate: 24deg; opacity: 0; background: linear-gradient(180deg, var(--gh-e-beam), transparent 86%); }
+.gh-flare { left: var(--x); top: var(--y); width: calc(56px * var(--s, 1)); height: calc(56px * var(--s, 1)); border-radius: 50%; opacity: 0;
+  background: radial-gradient(circle, rgba(255, 243, 210, .55), rgba(255, 206, 150, .22) 58%, transparent 70%); }
+
+/* ---------- snow: flakes drift past, frost comes in at the corners ---------- */
+.gh-hoar { inset: 0; background: radial-gradient(ellipse 46% 46% at 0 0, var(--gh-e-hoar), transparent 70%), radial-gradient(ellipse 44% 44% at 100% 100%, var(--gh-e-hoar), transparent 70%); }
+.gh-flake { left: var(--x); top: -4vh; width: calc(6px * var(--s, 1)); height: calc(6px * var(--s, 1)); background: var(--gh-e-flake); border-radius: 50%; opacity: 0; }
+.gh-fern { width: 22vmin; height: 22vmin; fill: none; stroke: var(--gh-e-fern, #f4f7ff); stroke-width: 1.2; stroke-linecap: round; transform-origin: 0 0; opacity: .8; filter: drop-shadow(0 0 1px rgba(24, 34, 86, .8)) drop-shadow(0 0 5px rgba(190, 208, 255, .55)); }
+.gh-fern--l { width: 30vmin; height: 30vmin; }
+.gh-fern--tl { left: 0; top: 0; } .gh-fern--tr { left: 100%; top: 0; rotate: 90deg; } .gh-fern--br { left: 100%; top: 100%; rotate: 180deg; } .gh-fern--bl { left: 0; top: 100%; rotate: 270deg; }
+.gh-rime { background: linear-gradient(var(--gh-rime-dir, 180deg), var(--gh-e-hoar), transparent); opacity: .9; }
+.gh-rime--t { left: 0; right: 0; top: 0; height: 78px; } .gh-rime--b { left: 0; right: 0; bottom: 0; height: 78px; --gh-rime-dir: 0deg; }
+.gh-rime--l { left: 0; top: 0; bottom: 0; width: 78px; --gh-rime-dir: 90deg; } .gh-rime--r { right: 0; top: 0; bottom: 0; width: 78px; --gh-rime-dir: 270deg; }
+
+/* ---------- night: the light goes down at the edges and the lamp warms ---------- */
+.gh-dusk { inset: 0; background: radial-gradient(ellipse 80% 76% at 50% 46%, transparent 36%, color-mix(in srgb, var(--gh-e-dusk) 45%, transparent) 70%, var(--gh-e-dusk) 100%); }
+:root[data-egg~="night"] .pbar .btn-gloss { box-shadow: 0 0 0 3px color-mix(in srgb, var(--gh-rose-glow, #c97a92) 30%, transparent), 0 0 30px 6px color-mix(in srgb, var(--gh-rose-glow, #c97a92) 48%, transparent), 0 8px 18px -8px var(--gh-rose-lo, #6e2a42), inset 0 -2px 6px rgba(255, 255, 255, .18); }
+
+/* ---------- the sea: light rippling across the glass ---------- */
+.gh-caustic { left: -10%; top: 0; width: 200%; height: 100%; opacity: 0; background-image: var(--gh-e-wave); background-size: 340px 170px; }
+.gh-caustic--b { background-size: 520px 260px; }
+
+/* ---------- fire: embers from the foot of the glass ---------- */
+.gh-hearth { left: 0; right: 0; bottom: 0; height: 36vh; opacity: 0; background: radial-gradient(70% 100% at 50% 100%, rgba(255, 150, 70, .3), rgba(255, 110, 60, .12) 50%, transparent 78%); }
+.gh-ember { left: var(--x); bottom: -2vh; width: calc(7px * var(--s, 1)); height: calc(7px * var(--s, 1)); border-radius: 50%; opacity: 0;
+  background: radial-gradient(circle, #fff3cf 0 24%, #ffb35f 54%, rgba(255, 120, 60, 0) 72%); }
+
+/* ---------- a dream: soap bubbles, each with its rainbow ---------- */
+.gh-bubble { left: var(--x); bottom: calc(var(--z) * -1); width: var(--z); height: var(--z); border-radius: 50%; opacity: 0;
+  background: radial-gradient(circle at 30% 26%, rgba(255, 255, 255, .95) 0 5%, rgba(255, 255, 255, 0) 14%),
+    radial-gradient(circle, rgba(255, 255, 255, .03) 56%, var(--gh-e-bub) 70%, var(--gh-e-bub2) 85%, var(--gh-e-bub3) 98%, transparent 100%); }
+
+/* ---------- the birthday: glass confetti ---------- */
+.gh-shard { left: var(--x); top: -4vh; width: 7px; height: 13px; border-radius: 2px; opacity: 0; }
+.gh-shard--0 { background: linear-gradient(135deg, #fbd3df, #d46f8f); }
+.gh-shard--1 { background: linear-gradient(135deg, #dbe6ff, #7a96d6); }
+.gh-shard--2 { background: linear-gradient(135deg, #fffbe9, #e8c98a); }
+:root[data-egg~="birthday"] .wordmark::after { content: none; }
+:root[data-egg~="birthday"] .gh-brand__bead { width: 9px; height: 14px; margin-top: -.02em; border: 0; border-radius: 50% 50% 50% 50% / 64% 64% 36% 36%; transform-origin: 50% 100%;
+  background: radial-gradient(ellipse at 50% 74%, #fff7dc 0 20%, #ffd27a 46%, #f0905a 82%); box-shadow: 0 0 10px 1px rgba(255, 190, 110, .7); }
+
+/* ---------- the new year: three bursts of glass light ---------- */
+.gh-burst { left: var(--x); top: var(--y); width: 0; height: 0; }
+.gh-ray { left: -1.5px; top: -11px; width: 3px; height: 22px; border-radius: 2px; transform-origin: 50% 11px; opacity: 0; rotate: var(--a); filter: drop-shadow(0 0 3px rgba(20, 30, 90, .75)); }
+.gh-burst::before { content: ""; position: absolute; left: -48px; top: -48px; width: 96px; height: 96px; border-radius: 50%; opacity: 0; background: radial-gradient(circle, rgba(255, 255, 255, .85), rgba(190, 208, 255, .35) 42%, transparent 70%); }
+.gh-ray--0 { background: linear-gradient(var(--gh-e-head), var(--gh-e-lit)); } .gh-ray--1 { background: linear-gradient(#fff, #f2a6bd); } .gh-ray--2 { background: linear-gradient(#fff, #9fb8ee); }
+
+/* ---------- a likes milestone: rose glass hearts rise from the console ---------- */
+.gh-bloom { left: 0; right: 0; bottom: 0; height: 40vh; opacity: 0; background: radial-gradient(60% 100% at 50% 100%, rgba(224, 130, 160, .3), transparent 72%); }
+.gh-heart { left: var(--x); bottom: calc(var(--bar-h, 122px) - 10px); width: calc(var(--z) * 1.5); height: calc(var(--z) * 1.5); fill: var(--gh-e-heart); stroke: rgba(255, 255, 255, .85); stroke-width: .9; opacity: 0; filter: drop-shadow(0 0 2px rgba(80, 20, 50, .6)) drop-shadow(0 0 8px rgba(236, 140, 172, .7)); }
+
+/* ---------- alone with the song: the glass fogs at its edges, dust turns in the moonlight ---------- */
+.gh-fog { inset: 0; background: radial-gradient(ellipse 80% 76% at 50% 50%, transparent 56%, var(--gh-e-hoar) 100%); }
+.gh-mote { left: var(--x); top: var(--y); width: calc(5px * var(--s, 1)); height: calc(5px * var(--s, 1)); border-radius: 50%; opacity: 0; background: radial-gradient(circle, var(--gh-e-head) 0 28%, transparent 70%); }
+
+/* ---------- a moth at the lamp (a long wait, and the moth egg) ---------- */
+.gh-moth { left: 50%; bottom: calc(var(--bar-h, 122px) - 22px); width: 0; height: 0; }
+.gh-moth__orbit { position: absolute; left: 0; top: 0; width: 0; height: 0; rotate: -50deg; }
+.gh-moth__fly { position: absolute; left: -24px; top: -18px; width: 48px; height: 36px; transform: translateX(64px) rotate(180deg); }
+.gh-moth__svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.gh-wing { fill: var(--gh-e-wing); fill-opacity: .94; stroke: var(--gh-e-vein); stroke-width: .8; transform-box: fill-box; }
+.gh-wing--l { transform-origin: 100% 50%; } .gh-wing--r { transform-origin: 0 50%; }
+.gh-body { fill: var(--gh-e-moth); } .gh-ant { fill: none; stroke: var(--gh-e-moth); stroke-width: 1; stroke-linecap: round; }
+@media (max-width: 639px) { .egg-stage [data-egg-of] .gh-moth { display: none; } }
+
+/* ---------- breath: fog over the console's top, a fingertip writing in it ---------- */
+.gh-breath { left: 50%; bottom: calc(var(--bar-h, 122px) + 14px); width: min(86vw, 440px); aspect-ratio: 360 / 250; translate: -50% 0; }
+.gh-breath__fog { left: 0; top: 0; width: 100%; height: 100%; }
+.gh-drop--fog { left: calc(50% + var(--dx)); top: 79%; margin-left: -4px; }
+
+/* ---------- frost: it grows from the corners over a room left quiet ---------- */
+:root[data-egg~="frost"] .pbar .btn-gloss { filter: saturate(.55) brightness(.9); }
+
+/* ================= motion: only transform and opacity; loops are stepped and hold when lull is not in front ================= */
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-motion="reduce"]) .egg-line { animation: gh-egg-in .6s var(--ease-out, ease-out) both; }
+  :root:not([data-motion="reduce"]) .egg-line::after { animation: gh-egg-blink 1s steps(1) infinite; animation-play-state: var(--loop-play, running); }
+  :root:not([data-motion="reduce"])[data-egg~="new-year"] .egg-line::after { animation: none; }
+
+  :root:not([data-motion="reduce"]) .gh-drop { animation: gh-egg-run var(--t, 6s) var(--d, 0s) both; }
+  :root:not([data-motion="reduce"]) .gh-drop--fast { animation-name: gh-egg-run-fast; animation-timing-function: cubic-bezier(.5, 0, .9, .6); }
+  :root:not([data-motion="reduce"]) .gh-drop--fog { animation: gh-egg-drip var(--t, 6s) var(--d, 0s) both; }
+  :root:not([data-motion="reduce"]) .gh-pearl { animation: gh-egg-pearl 3.4s var(--d, 0s) both; }
+  :root:not([data-motion="reduce"]) .gh-flash { animation: gh-egg-flash 1.5s .7s both; }
+  :root:not([data-motion="reduce"]) .gh-bolt { animation: gh-egg-bolt 1.1s .72s steps(1) both; }
+  :root:not([data-motion="reduce"]) .gh-moonlight { animation: gh-egg-cross 13s linear both; }
+  :root:not([data-motion="reduce"]) .gh-streak { animation: gh-egg-streak 1.8s var(--d, 0s) cubic-bezier(.4, 0, .9, .8) both; }
+  :root:not([data-motion="reduce"]) .gh-twink { animation: gh-egg-twink 2.8s var(--d, 0s) ease-in-out both; }
+  :root:not([data-motion="reduce"]) .gh-dawn { animation: gh-egg-fade 4.5s ease-out both; }
+  :root:not([data-motion="reduce"]) .gh-beam { animation: gh-egg-beam 10s var(--d, 0s) ease-in-out both; }
+  :root:not([data-motion="reduce"]) .gh-flare { animation: gh-egg-flare 8s 1s ease-in-out both; }
+  :root:not([data-motion="reduce"]) .gh-hoar, :root:not([data-motion="reduce"]) .gh-rime { animation: gh-egg-fade 8s ease-out both; }
+  :root:not([data-motion="reduce"]) .gh-fern { animation: gh-egg-grow 7s var(--d, 0s) cubic-bezier(.2, .6, .3, 1) both; }
+  :root:not([data-motion="reduce"]) .gh-fern--l { animation-duration: 10s; }
+  :root:not([data-motion="reduce"]) .gh-flake { animation: gh-egg-fall var(--t, 11s) var(--d, 0s) linear both, gh-egg-sway 3.4s var(--d, 0s) ease-in-out 5 alternate both; }
+  :root:not([data-motion="reduce"]) .gh-dusk { animation: gh-egg-fade 2.6s ease-out both; }
+  :root:not([data-motion="reduce"]) .gh-caustic--a { animation: gh-egg-ripple-a 16s linear both; }
+  :root:not([data-motion="reduce"]) .gh-caustic--b { animation: gh-egg-ripple-b 16s linear both; }
+  :root:not([data-motion="reduce"]) .gh-hearth { animation: gh-egg-hearth 9s ease-in-out both; }
+  :root:not([data-motion="reduce"]) .gh-ember { animation: gh-egg-rise var(--t, 5s) var(--d, 0s) ease-out both, gh-egg-sway 1.7s var(--d, 0s) ease-in-out 4 alternate both; }
+  :root:not([data-motion="reduce"]) .gh-bubble { animation: gh-egg-bubble var(--t, 14s) var(--d, 0s) linear both, gh-egg-sway 4.2s var(--d, 0s) ease-in-out 4 alternate both; }
+  :root:not([data-motion="reduce"]) .gh-shard { animation: gh-egg-confetti var(--t, 5s) var(--d, 0s) cubic-bezier(.3, .2, .6, 1) both; }
+  :root:not([data-motion="reduce"]) .gh-burst::before { animation: gh-egg-core 1.4s var(--d, 0s) ease-out both; }
+  :root:not([data-motion="reduce"]) .gh-ray { animation: gh-egg-ray 2.6s var(--d, 0s) ease-out both; }
+  :root:not([data-motion="reduce"]) .gh-dial--strike b { animation: gh-egg-strike .7s calc(var(--n) * .4s) both; }
+  :root:not([data-motion="reduce"]) .gh-dial--fast b { animation-duration: .5s; animation-delay: calc(var(--n) * .13s); }
+  :root:not([data-motion="reduce"]) .gh-bloom { animation: gh-egg-hearth 6s ease-out both; }
+  :root:not([data-motion="reduce"]) .gh-heart { animation: gh-egg-heart var(--t, 4.6s) var(--d, 0s) ease-out both, gh-egg-sway 1.6s var(--d, 0s) ease-in-out 4 alternate both; }
+  :root:not([data-motion="reduce"]) .gh-fog { animation: gh-egg-fade 9s linear both; }
+  :root:not([data-motion="reduce"]) .gh-mote { animation: gh-egg-mote var(--t, 16s) var(--d, 0s) linear infinite; --loop-fps: 6; }
+  :root:not([data-motion="reduce"]) .gh-breath__fog { animation: gh-egg-fade 1.4s ease-out both; }
+  :root:not([data-motion="reduce"]) .gh-wipe { animation: gh-egg-fade .5s calc(1.5s + var(--k) * .5s) both; }
+  :root:not([data-motion="reduce"]) .gh-moth__fly svg { animation: gh-egg-bob .8s steps(1) infinite; animation-play-state: var(--loop-play, running); }
+  :root:not([data-motion="reduce"]) .gh-wing { animation: gh-egg-flap .12s steps(1) infinite alternate; animation-play-state: var(--loop-play, running); }
+  :root:not([data-motion="reduce"]) .gh-moth--wait .gh-moth__orbit { animation: gh-egg-orbit 5s steps(50) infinite; animation-play-state: var(--loop-play, running); }
+  :root:not([data-motion="reduce"]) .gh-moth--visit .gh-moth__orbit { animation: gh-egg-orbit-visit 9s steps(90) both; }
+  :root:not([data-motion="reduce"]) .gh-moth--visit .gh-moth__fly { animation: gh-egg-visit 9s linear both; }
+
+  /* night owl: three z's float up by the lamp, and the lamp is nearly out */
+  :root:not([data-motion="reduce"])[data-egg~="night-owl"] .gh-brand__caret { animation: none; opacity: .45; }
+  :root:not([data-motion="reduce"])[data-egg~="night-owl"] .gh-brand__bead::before, :root:not([data-motion="reduce"])[data-egg~="night-owl"] .gh-brand__bead::after, :root:not([data-motion="reduce"])[data-egg~="night-owl"] .gh-brand__caret::after { animation: gh-egg-zzz 4.8s linear infinite; --loop-fps: 10; }
+  :root:not([data-motion="reduce"])[data-egg~="night-owl"] .gh-brand__bead::after { animation-delay: 1.6s; }
+  :root:not([data-motion="reduce"])[data-egg~="night-owl"] .gh-brand__caret::after { animation-delay: 3.2s; }
+  /* the birthday: the bead is a candle's flame, flickering */
+  :root:not([data-motion="reduce"])[data-egg~="birthday"] .gh-brand__bead { animation: gh-egg-flame .7s steps(1) infinite; animation-play-state: var(--loop-play, running); }
+
+}
+@keyframes gh-egg-in { from { opacity: 0; translate: 0 8px; } }
+@keyframes gh-egg-blink { 50% { opacity: 0; } }
+@keyframes gh-egg-fade { from { opacity: 0; } }
+@keyframes gh-egg-run {
+  0% { transform: translateY(0); opacity: 0; } 5% { opacity: 1; }
+  16% { transform: translateY(12vh); } 27% { transform: translateY(13vh); }
+  46% { transform: translateY(46vh); } 58% { transform: translateY(47.5vh); }
+  80% { transform: translateY(84vh); opacity: 1; } 100% { transform: translateY(112vh); opacity: 0; }
+}
+@keyframes gh-egg-run-fast { 0% { transform: translateY(0); opacity: 0; } 8% { opacity: 1; } 90% { opacity: 1; } 100% { transform: translateY(118vh); opacity: 0; } }
+@keyframes gh-egg-drip { 0% { transform: translateY(0); opacity: 0; } 12% { opacity: 1; } 55% { transform: translateY(14px); } 70% { transform: translateY(17px); } 100% { transform: translateY(46px); opacity: 0; } }
+@keyframes gh-egg-pearl { from { opacity: 0; scale: .4; } 60% { opacity: .85; } to { opacity: .75; scale: 1; } }
+@keyframes gh-egg-flash { 0% { opacity: 0; } 6% { opacity: .9; } 22% { opacity: .25; } 34% { opacity: .7; } 100% { opacity: 0; } }
+@keyframes gh-egg-bolt { 0% { opacity: 0; } 8% { opacity: .95; } 40% { opacity: .2; } 55% { opacity: .85; } 100% { opacity: 0; } }
+@keyframes gh-egg-cross { 0% { transform: translateX(46vw); opacity: 0; } 7% { opacity: 1; } 88% { opacity: 1; } 100% { transform: translateX(160vw); opacity: 0; } }
+@keyframes gh-egg-streak { 0% { transform: translateX(0); opacity: 0; } 12% { opacity: 1; } 100% { transform: translateX(var(--run, 50vw)); opacity: 0; } }
+@keyframes gh-egg-twink { 0% { opacity: 0; transform: scale(.2) rotate(0); } 40% { opacity: .95; transform: scale(1) rotate(40deg); } 100% { opacity: 0; transform: scale(.3) rotate(90deg); } }
+@keyframes gh-egg-beam { 0% { opacity: 0; transform: translateX(0); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateX(7vw); } }
+@keyframes gh-egg-flare { 0%, 100% { opacity: 0; transform: translate(0, 0); } 40% { opacity: .9; } 70% { opacity: .5; transform: translate(-3vw, 2vh); } }
+@keyframes gh-egg-grow { from { opacity: 0; scale: .1; } 25% { opacity: .85; } }
+@keyframes gh-egg-fall { 0% { transform: translateY(0); opacity: 0; } 8% { opacity: .95; } 92% { opacity: .95; } 100% { transform: translateY(112vh); opacity: 0; } }
+@keyframes gh-egg-sway { to { translate: var(--sway, 20px) 0; } }
+@keyframes gh-egg-ripple-a { 0% { transform: translateX(0); opacity: 0; } 8% { opacity: .17; } 82% { opacity: .17; } 100% { transform: translateX(-340px); opacity: 0; } }
+@keyframes gh-egg-ripple-b { 0% { transform: translateX(-520px); opacity: 0; } 8% { opacity: .12; } 82% { opacity: .12; } 100% { transform: translateX(0); opacity: 0; } }
+@keyframes gh-egg-hearth { 0% { opacity: 0; } 14% { opacity: 1; } 28% { opacity: .78; } 42% { opacity: 1; } 58% { opacity: .84; } 74% { opacity: .96; } 100% { opacity: 0; } }
+@keyframes gh-egg-rise { 0% { transform: translateY(0) scale(1); opacity: 0; } 12% { opacity: 1; } 100% { transform: translateY(calc(var(--rise, 60vh) * -1)) scale(.3); opacity: 0; } }
+@keyframes gh-egg-bubble { 0% { transform: translateY(0); opacity: 0; } 8% { opacity: .9; } 90% { opacity: .9; } 100% { transform: translateY(-122vh); opacity: 0; } }
+@keyframes gh-egg-confetti { 0% { transform: translateY(0); rotate: 0deg; opacity: 0; } 8% { opacity: 1; } 100% { transform: translateY(112vh); rotate: var(--rot, 360deg); opacity: .9; } }
+@keyframes gh-egg-ray { 0% { transform: translateY(0) scaleY(.3); opacity: 0; } 10% { opacity: 1; } 55% { opacity: 1; } 100% { transform: translateY(-130px) scaleY(1); opacity: 0; } }
+@keyframes gh-egg-core { 0% { transform: scale(.2); opacity: 0; } 12% { opacity: 1; } 100% { transform: scale(1.5); opacity: 0; } }
+@keyframes gh-egg-strike { from { opacity: .16; scale: 1.8; } to { opacity: 1; scale: 1; } }
+@keyframes gh-egg-heart { 0% { transform: translateY(0) scale(.5); opacity: 0; } 14% { opacity: .95; transform: translateY(-6vh) scale(1); } 100% { transform: translateY(-62vh) scale(1); opacity: 0; } }
+@keyframes gh-egg-mote { 0% { transform: translateY(0); opacity: 0; } 25% { opacity: .75; } 75% { opacity: .6; } 100% { transform: translateY(-16vh); opacity: 0; } }
+@keyframes gh-egg-flap { from { transform: scaleX(1); } to { transform: scaleX(.4); } }
+@keyframes gh-egg-bob { 50% { transform: translateY(-4px); } }
+@keyframes gh-egg-orbit { to { rotate: 310deg; } }
+@keyframes gh-egg-orbit-visit { from { rotate: 0deg; } to { rotate: 1030deg; } }
+@keyframes gh-egg-visit { 0% { transform: translateX(380px) rotate(180deg); opacity: 0; animation-timing-function: steps(13); } 14% { transform: translateX(90px) rotate(180deg); opacity: 1; animation-timing-function: steps(63); } 84% { transform: translateX(64px) rotate(180deg); opacity: 1; animation-timing-function: steps(14); } 100% { transform: translateX(520px) rotate(180deg); opacity: 0; } }
+@keyframes gh-egg-zzz { 0% { transform: translate(0, 0) scale(.6); opacity: 0; } 20% { opacity: .9; } 100% { transform: translate(14px, -26px) scale(1.25); opacity: 0; } }
+@keyframes gh-egg-flame { 0% { transform: scale(1, 1) rotate(-3deg); } 50% { transform: scale(.9, 1.15) rotate(3deg); } }
+
+/* ---------- 3 in the morning: the lamp is nearly out and the z's are by it (one z, still, under reduced motion) ---------- */
+:root[data-egg~="night-owl"] .wordmark::after { content: none; }
+:root[data-egg~="night-owl"] .gh-brand__bead { position: relative; box-shadow: none; background: radial-gradient(circle at 40% 30%, rgba(255, 255, 255, .45) 0 15%, color-mix(in srgb, var(--gh-rose, #8e3f58) 45%, #1a1d29) 62%); }
+:root[data-egg~="night-owl"] .gh-brand__caret { position: relative; }
+:root[data-egg~="night-owl"] .gh-brand__bead::before { content: "z"; position: absolute; left: 100%; bottom: 70%; font: italic 400 1.05rem/1 var(--f-serif, Georgia, serif); color: var(--fg-panel-2, #b4b8cb); opacity: .85; }
+:root[data-egg~="night-owl"] .gh-brand__bead::after, :root[data-egg~="night-owl"] .gh-brand__caret::after { content: "z"; position: absolute; left: 100%; bottom: 70%; font: italic 400 1.05rem/1 var(--f-serif, Georgia, serif); color: var(--fg-panel-2, #b4b8cb); opacity: 0; }
