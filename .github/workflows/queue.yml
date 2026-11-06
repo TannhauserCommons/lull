@@ -40,6 +40,7 @@ jobs:
       app: ${{ steps.plan.outputs.app }}
       android: ${{ steps.plan.outputs.android }}
       slskd: ${{ steps.plan.outputs.slskd }}
+      package: ${{ steps.plan.outputs.package }}
       image: ${{ steps.plan.outputs.image }}
       pages: ${{ steps.plan.outputs.pages }}
       notes: ${{ steps.plan.outputs.notes }}
@@ -106,6 +107,16 @@ jobs:
     uses: ./.github/workflows/slskd-contract.yml
     with:
       ref: ${{ needs.plan.outputs.candidate }}
+
+  # The Linux server package (ADR-0090), installed as a service and held to the hub contract.
+  server-package:
+    needs: plan
+    if: needs.plan.outputs.candidate != '' && needs.plan.outputs.package == 'true'
+    uses: ./.github/workflows/server-package.yml
+    with:
+      ref: ${{ needs.plan.outputs.candidate }}
+      build-release: ${{ needs.plan.outputs.build_release }}
+      build-changes: ${{ needs.plan.outputs.build_changes }}
 
   share:
     needs: plan
@@ -177,7 +188,7 @@ jobs:
         run: cp scripts/queue.sh "$RUNNER_TEMP/" && sh "$RUNNER_TEMP/queue.sh" watch
 
   land:
-    needs: [plan, privacy, ci, ui-gates, app, slskd-contract, share, image, ui]
+    needs: [plan, privacy, ci, ui-gates, app, slskd-contract, server-package, share, image, ui]
     # Green means every check the diff needed passed; a check it didn't need is skipped.
     if: >-
       !cancelled() && needs.plan.outputs.candidate != ''

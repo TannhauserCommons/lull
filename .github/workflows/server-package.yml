@@ -1,0 +1,105 @@
+name: server-package
+# The Linux server package (ADR-0090): lull built as the image builds it (the web UI minified into the binary), with
+# the slskd, yt-dlp and Deno that app/build.rs pins, as a .deb, an .rpm and a .tar.gz (packaging/linux/). Each
+# package is installed as a service in a fresh Ubuntu, Debian or Fedora running systemd and held to the hub contract
+# (tests/hub-contract/). On the oldest glibc of each architecture (Ubuntu 22.04), so the packages run on older
+# distributions too.
+on:
+  # A branch's packages, by hand (`gh workflow run server-package --ref <branch>`): kept as workflow artifacts.
+  workflow_dispatch:
+  # The queue (ADR-0095) on its candidate: x64 only; a release builds both architectures.
+  workflow_call:
+    inputs:
+      ref:
+        description: The commit to build
+        type: string
+        required: true
+      build-release:
+        description: The release the commit holds everything of (scripts/queue.sh's build_version); empty for a release
+        type: string
+        default: ""
+      build-changes:
+        description: Changes since that release
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            arch: x64
+    runs-on: ${{ matrix.os }}
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24.11"
+      # The web UI as the binary embeds it, the Dockerfile's web stage: Webamp vendored, every file minified and
+      # pre-compressed, in place of web/ (this checkout only).
+      - name: Web UI
+        run: |
+          sh scripts/vendor-web.sh
+          npm ci --prefix scripts/web-dist --ignore-scripts --no-audit --no-fund
+          node scripts/web-dist/build.mjs web "$RUNNER_TEMP/web-dist"
+          rm -rf web && mv "$RUNNER_TEMP/web-dist" web
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: server-package-${{ matrix.arch }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # What the hub says it is (lull_core::build), as the image says it.
+      - id: version
+        env:
+          RELEASE: ${{ inputs.build-release }}
+          CHANGES: ${{ inputs.build-changes }}
+          COMMIT: ${{ inputs.ref || github.sha }}
+        run: |
+          if [ -n "$RELEASE" ] && [ "${CHANGES:-0}" != 0 ]; then
+            version="$RELEASE+$CHANGES.$(printf %s "$COMMIT" | cut -c1-7)"
+          else
+            version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: lull
+        env:
+          LULL_BUILD_RELEASE: ${{ inputs.build-release }}
+          LULL_BUILD_CHANGES: ${{ inputs.build-changes }}
+          LULL_BUILD_COMMIT: ${{ inputs.build-release && (inputs.ref || github.sha) || '' }}
+        run: cargo build --release --locked --bin lull
+      - run: sh packaging/linux/build.sh target/release/lull "${{ steps.version.outputs.version }}" "$RUNNER_TEMP/packages"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lull-server-linux-${{ matrix.arch }}
+          path: ${{ runner.temp }}/packages/
+          retention-days: 7
+
+  contract:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [ubuntu, debian, fedora]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          sparse-checkout: tests/hub-contract
+      - uses: actions/download-artifact@v4
+        with:
+          name: lull-server-linux-x64
+          path: ${{ runner.temp }}/packages
+      - name: Installed as a service, the hub keeps the contract
+        run: |
+          case "${{ matrix.distro }}" in fedora) package=$(ls "$RUNNER_TEMP"/packages/*.rpm) ;; *) package=$(ls "$RUNNER_TEMP"/packages/*.deb) ;; esac
+          sh tests/hub-contract/in-systemd.sh "${{ matrix.distro }}" "$package"
