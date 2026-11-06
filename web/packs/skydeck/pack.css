@@ -1,0 +1,236 @@
+/* Skydeck's surprises, drawn the way the star wheel is printed: indigo ink on cream card, a pink star, a dotted rule, spaced
+   capitals, the wheel's own turning (ADR-0081, docs/themes.md section 13). This is lull's own eggs in Skydeck's world (the
+   words in a title, 3 a.m., lull's birthday, the new year, ten plays in a row, a likes milestone, being left alone, a long wait,
+   the line they speak in) and four that only it has (meteor-shower, wheel-set, constellation, comet; their sounds and
+   declarations are in scripts/sounds/packs/skydeck.mjs, their markup in slots/). It loads after the design's own theme.css, in
+   the user layer, and joins the page with the first egg (web/sounds.js), so it costs nothing at start.
+   Everything that moves is a transform or an opacity and ends (a live egg ends at the next tap or key); a loop is stepped and
+   held where it is declared (--loop-play); under reduced motion (the listener's setting or the system's) every egg is still.
+   The cards are the same cream by day and night, so these look the same in both. Art is data: or inline SVG in slots/, no files. */
+
+/* ---------- the line every egg speaks in: a printed slip, a star before the words ---------- */
+:root[data-design="skydeck"] .egg-line {
+  --bg: var(--cream);
+  display: flex; align-items: center; gap: 10px; padding: 10px 24px 9px 18px; border: 1.5px solid var(--sd-ink); border-radius: 16px;
+  background-color: var(--cream); color: var(--sd-ink);   /* the card's paper grain comes from theme.css, as on every card */
+  box-shadow: var(--sd-rule), var(--sd-lift);
+  font: 900 .8125rem/1.3 var(--f-ui); letter-spacing: .16em; text-transform: uppercase; text-align: left;
+}
+/* a slot-only egg makes the stage with an empty line (it is hidden only once a line has been spoken) */
+:root[data-design="skydeck"] .egg-line:is([hidden], :empty) { display: none; }
+:root[data-design="skydeck"] .egg-line::before { content: ""; flex: none; width: 15px; height: 15px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 .8L14.6 9.4L23.2 12L14.6 14.6L12 23.2L9.4 14.6L.8 12L9.4 9.4Z' fill='%23dd9fc9' stroke='%232b2550' stroke-width='1.6' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat; }
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-design="skydeck"]:not([data-motion="reduce"]) .egg-line { animation: sd-egg-print .5s steps(5) both; }
+}
+@keyframes sd-egg-print { from { opacity: 0; translate: 0 10px; } to { opacity: 1; translate: 0 0; } }
+
+/* ---------- a word in the song's title: its sign is stamped after the title in the player bar, in a ring ---------- */
+:root[data-design="skydeck"][data-egg~="moon"] { --egg-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z' fill='%232b2550'/%3E%3C/svg%3E"); }
+:root[data-design="skydeck"][data-egg~="rain"] { --egg-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 3.2C12 3.2 5.8 10.4 5.8 14.6a6.2 6.2 0 0 0 12.4 0C18.2 10.4 12 3.2 12 3.2z' fill='%232b2550'/%3E%3Cpath d='M9 15.2a3.2 3.2 0 0 0 2.4 3' fill='none' stroke='%23f4e8d6' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E"); }
+:root[data-design="skydeck"][data-egg~="star"] { --egg-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 .8L14.6 9.4L23.2 12L14.6 14.6L12 23.2L9.4 14.6L.8 12L9.4 9.4Z' fill='%23dd9fc9' stroke='%232b2550' stroke-width='1.6' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+:root[data-design="skydeck"][data-egg~="sun"] { --egg-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='4.6' fill='%232b2550'/%3E%3Cpath d='M19.6 12.0L22.4 12.0M17.4 17.4L19.4 19.4M12.0 19.6L12.0 22.4M6.6 17.4L4.6 19.4M4.4 12.0L1.6 12.0M6.6 6.6L4.6 4.6M12.0 4.4L12.0 1.6M17.4 6.6L19.4 4.6' stroke='%232b2550' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E"); }
+:root[data-design="skydeck"][data-egg~="snow"] { --egg-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2.8V21.2M4 7.4L20 16.6M20 7.4L4 16.6' stroke='%232b2550' stroke-width='2' stroke-linecap='round'/%3E%3Ccircle cx='12' cy='12' r='2' fill='%239c3f7e'/%3E%3C/svg%3E"); }
+:root[data-design="skydeck"][data-egg~="night"] { --egg-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z' fill='%232b2550' transform='translate(-1.5 2.5) scale(.82)'/%3E%3Cpath d='M18.5 2.6L19.5 5.4L22.3 6.4L19.5 7.4L18.5 10.2L17.5 7.4L14.7 6.4L17.5 5.4Z' fill='%239c3f7e'/%3E%3C/svg%3E"); }
+:root[data-design="skydeck"][data-egg~="sea"] { --egg-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M2.5 9.2q2.4-3.2 4.75 0t4.75 0 4.75 0 4.75 0M2.5 15.2q2.4-3.2 4.75 0t4.75 0 4.75 0 4.75 0' fill='none' stroke='%232b2550' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E"); }
+:root[data-design="skydeck"][data-egg~="storm"] { --egg-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M13.8 2L5 13.6h6L9.6 22 19 10.4h-6.2z' fill='%232b2550' stroke='%232b2550' stroke-width='1' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+:root[data-design="skydeck"][data-egg~="fire"] { --egg-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2.4c.7 3.7 5.9 5.7 5.9 11.4a5.9 5.9 0 0 1-11.8 0c0-2.8 1.6-4.2 2.6-6.4.9 1.7 1.8 2 2.6 1.4.3-1.8.2-3.8.7-6.4z' fill='%232b2550'/%3E%3Cpath d='M12 21a2.7 2.7 0 0 1-2.7-2.7c0-1.9 1.6-2.6 2.7-4.4 1.1 1.8 2.7 2.5 2.7 4.4A2.7 2.7 0 0 1 12 21z' fill='%23dd9fc9'/%3E%3C/svg%3E"); }
+:root[data-design="skydeck"][data-egg~="dream"] { --egg-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 18.6a4.2 4.2 0 0 1-.4-8.4 5.6 5.6 0 0 1 10.7 1.2 3.6 3.6 0 0 1-.3 7.2z' fill='%232b2550'/%3E%3Cpath d='M15.2 3.2h4.4l-4.4 4.8h4.4' fill='none' stroke='%239c3f7e' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+:root[data-design="skydeck"][data-egg] { --egg-sign: ""; }
+:root[data-design="skydeck"][data-egg] .pbar__title > a::after {
+  content: var(--egg-sign, none); display: inline-block; width: 1.25em; height: 1.25em; margin-left: .5em; vertical-align: -.3em; opacity: 1;
+  border: 1.5px solid var(--sd-ink); border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--cream), inset 0 0 0 2.5px var(--sd-soft);
+  background: var(--egg-glyph, none) center / 66% no-repeat, var(--cream-2);
+}
+/* an egg that is no word has no sign (the rule above sets one for any live egg, so it is unset where there is no glyph) */
+:root[data-design="skydeck"][data-egg]:not(:is([data-egg~="moon"], [data-egg~="rain"], [data-egg~="star"], [data-egg~="sun"], [data-egg~="snow"], [data-egg~="night"], [data-egg~="sea"], [data-egg~="storm"], [data-egg~="fire"], [data-egg~="dream"])) .pbar__title > a::after { content: none; }
+
+/* ---------- 3 in the morning: the card's printed name says the hour, the logo nods off, the wheel is the only thing awake ---------- */
+:root[data-design="skydeck"][data-egg~="night-owl"] .rail__head::after { content: "star wheel \00b7  3 a.m."; }
+:root[data-design="skydeck"][data-egg~="night-owl"] .wordmark { opacity: .75; }
+:root[data-design="skydeck"][data-egg~="night-owl"] .wordmark::after { content: "zz"; margin-left: .1em; font: 900 .5em/1 Georgia, serif; letter-spacing: .1em; vertical-align: .75em; color: var(--sd-pink); }
+:root[data-design="skydeck"][data-egg~="night-owl"] .sky-specks::before { opacity: .32; }
+
+/* ---------- lull's birthday: the pins light, the card's name says so, a pink star by the logo, stars let down over the sky ---------- */
+:root[data-design="skydeck"][data-egg~="birthday"] :is(.rail, .ctx) { --pin: #e58bbf; }
+:root[data-design="skydeck"][data-egg~="birthday"] .rail__head::after { content: "birthday \00b7  no. 7"; }
+:root[data-design="skydeck"][data-egg~="birthday"] .wordmark::after { color: var(--sd-pink); }
+:root[data-design="skydeck"] [data-egg-of="birthday"] { position: absolute; inset: 0; overflow: hidden; }
+:root[data-design="skydeck"] .sd-fall-box { position: absolute; inset: 0; }
+:root[data-design="skydeck"] .sd-fall { position: absolute; top: -40px; width: 16px; height: 16px; opacity: 0; --dx: 30px; }
+:root[data-design="skydeck"] .sd-fall svg { display: block; width: 100%; height: 100%; overflow: visible; }
+:root[data-design="skydeck"] .sd-fall path { fill: #dd9fc9; stroke: #2b2550; stroke-width: 1.6; stroke-linejoin: round; }
+:root[data-design="skydeck"] .sd-fall--1 { left: 8%; width: 14px; height: 14px; --d: 8s; --w: .2s; --dx: 34px; }
+:root[data-design="skydeck"] .sd-fall--2 { left: 19%; width: 20px; height: 20px; --d: 9.5s; --w: 1.1s; --dx: -30px; }
+:root[data-design="skydeck"] .sd-fall--3 { left: 31%; width: 13px; height: 13px; --d: 7.5s; --w: .6s; --dx: 40px; }
+:root[data-design="skydeck"] .sd-fall--4 { left: 43%; width: 18px; height: 18px; --d: 9s; --w: 1.6s; --dx: -36px; }
+:root[data-design="skydeck"] .sd-fall--5 { left: 55%; width: 15px; height: 15px; --d: 8.5s; --w: .1s; --dx: 28px; }
+:root[data-design="skydeck"] .sd-fall--6 { left: 66%; width: 22px; height: 22px; --d: 10s; --w: 1.3s; --dx: -40px; }
+:root[data-design="skydeck"] .sd-fall--7 { left: 77%; width: 13px; height: 13px; --d: 7.8s; --w: .8s; --dx: 32px; }
+:root[data-design="skydeck"] .sd-fall--8 { left: 88%; width: 17px; height: 17px; --d: 9.2s; --w: 1.9s; --dx: -26px; }
+:root[data-design="skydeck"] .sd-fall--9 { left: 94%; width: 12px; height: 12px; --d: 8.2s; --w: 2.4s; --dx: -22px; }
+:root[data-design="skydeck"] .sd-fall--10 { left: 25%; width: 11px; height: 11px; --d: 8.8s; --w: 2.7s; --dx: 24px; }
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-fall { animation: sd-egg-fall var(--d, 8s) linear var(--w, 0s) both; }
+}
+@keyframes sd-egg-fall { 0% { opacity: 0; translate: 0 0; rotate: 0deg; } 8% { opacity: 1; } 85% { opacity: 1; } 100% { opacity: 0; translate: var(--dx) 105vh; rotate: 320deg; } }
+@media (prefers-reduced-motion: reduce) { :root[data-design="skydeck"] [data-egg-of="birthday"] { display: none; } }
+:root[data-design="skydeck"][data-motion="reduce"] [data-egg-of="birthday"] { display: none; }
+
+/* ---------- the last seconds of the year: the numerals are the hours on the wheel, in a round card, ringed by ten stars going out ---------- */
+:root[data-design="skydeck"][data-egg~="new-year"] .egg-line {
+  top: 50%; bottom: auto; transform: translate(-50%, -50%); width: 192px; height: 192px; padding: 0; justify-content: center; border-radius: 50%;
+  font: 700 4.75rem/1 Georgia, "Times New Roman", serif; letter-spacing: 0; text-transform: none; font-variant-numeric: lining-nums;
+}
+:root[data-design="skydeck"][data-egg~="new-year"] .egg-line::before { display: none; }
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-design="skydeck"]:not([data-motion="reduce"])[data-egg~="new-year"] .egg-line { animation: sd-egg-tick 1s steps(5) infinite; animation-play-state: var(--loop-play, running); }
+}
+@keyframes sd-egg-tick { 0% { scale: 1.1; } 100% { scale: 1; } }
+:root[data-design="skydeck"] [data-egg-of="new-year"] { position: absolute; left: 50%; top: 50%; width: 330px; height: 330px; translate: -50% -50%; }
+:root[data-design="skydeck"] .sd-ring svg { display: block; width: 100%; height: 100%; overflow: visible; }
+:root[data-design="skydeck"] .sd-ring__star { fill: #dd9fc9; stroke: #2b2550; stroke-width: .7; stroke-linejoin: round; transform-box: fill-box; transform-origin: center; }
+@media (prefers-reduced-motion: no-preference) {
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-ring__star:nth-child(1) { animation: sd-egg-out .5s steps(4) 1s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-ring__star:nth-child(2) { animation: sd-egg-out .5s steps(4) 2s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-ring__star:nth-child(3) { animation: sd-egg-out .5s steps(4) 3s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-ring__star:nth-child(4) { animation: sd-egg-out .5s steps(4) 4s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-ring__star:nth-child(5) { animation: sd-egg-out .5s steps(4) 5s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-ring__star:nth-child(6) { animation: sd-egg-out .5s steps(4) 6s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-ring__star:nth-child(7) { animation: sd-egg-out .5s steps(4) 7s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-ring__star:nth-child(8) { animation: sd-egg-out .5s steps(4) 8s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-ring__star:nth-child(9) { animation: sd-egg-out .5s steps(4) 9s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-ring__star:nth-child(10) { animation: sd-egg-out .5s steps(4) 10s both; }
+}
+@keyframes sd-egg-out { to { opacity: .12; scale: .5; } }
+:root[data-design="skydeck"][data-egg~="new-year"] .sky-specks::before { opacity: .36; }
+
+/* ---------- ten plays in a row: a tally, two fives, after the words; the wheel is a little brighter ---------- */
+:root[data-design="skydeck"][data-egg~="on-repeat"] .egg-line::after { content: ""; flex: none; width: 54px; height: 18px; margin-left: 4px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 20'%3E%3Cpath d='M4 3V17M10 3V17M16 3V17M22 3V17M1 15L25 5M36 3V17M42 3V17M48 3V17M54 3V17M33 15L57 5' fill='none' stroke='%232b2550' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat; }
+:root[data-design="skydeck"][data-egg~="on-repeat"] .sky-specks::before { opacity: .34; }
+
+/* ---------- a likes milestone: a crown of stars on the hour rim's arc, lit one after another over the count ---------- */
+:root[data-design="skydeck"][data-egg~="milestone"] .egg-line { font-size: 1rem; padding: 12px 28px 11px 22px; }
+:root[data-design="skydeck"] [data-egg-of="milestone"] { position: absolute; left: 50%; bottom: calc(var(--bar-h) + 40px + 40px); width: 360px; max-width: calc(100vw - 16px); translate: -50% 0; }
+:root[data-design="skydeck"] .sd-crown svg { display: block; width: 100%; height: auto; overflow: visible; }
+:root[data-design="skydeck"] .sd-crown__star { fill: #dd9fc9; stroke: #2b2550; stroke-width: .8; stroke-linejoin: round; transform-box: fill-box; transform-origin: center; }
+@media (prefers-reduced-motion: no-preference) {
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-crown__star:nth-child(1) { animation: sd-egg-light .6s steps(6) 0.25s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-crown__star:nth-child(2) { animation: sd-egg-light .6s steps(6) 0.38s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-crown__star:nth-child(3) { animation: sd-egg-light .6s steps(6) 0.51s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-crown__star:nth-child(4) { animation: sd-egg-light .6s steps(6) 0.64s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-crown__star:nth-child(5) { animation: sd-egg-light .6s steps(6) 0.77s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-crown__star:nth-child(6) { animation: sd-egg-light .6s steps(6) 0.90s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-crown__star:nth-child(7) { animation: sd-egg-light .6s steps(6) 1.03s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-crown__star:nth-child(8) { animation: sd-egg-light .6s steps(6) 1.16s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-crown__star:nth-child(9) { animation: sd-egg-light .6s steps(6) 1.29s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-crown__star:nth-child(10) { animation: sd-egg-light .6s steps(6) 1.42s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-crown__star:nth-child(11) { animation: sd-egg-light .6s steps(6) 1.55s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-crown__star:nth-child(12) { animation: sd-egg-light .6s steps(6) 1.68s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-crown__star:nth-child(13) { animation: sd-egg-light .6s steps(6) 1.81s both; }
+}
+@keyframes sd-egg-light { 0% { opacity: 0; scale: .2; } 60% { opacity: 1; scale: 1.3; } 100% { opacity: 1; scale: 1; } }
+
+/* ---------- left alone on Now Playing: the printed scale round the dial glows, slowly (10 changes a second) ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-design="skydeck"]:not([data-motion="reduce"])[data-egg~="still"] .sd-dial__rim { animation: sd-egg-glow 4.5s var(--loop-ease-in-out-70) infinite alternate; animation-play-state: var(--loop-play, running); }
+}
+@keyframes sd-egg-glow { from { opacity: .5; } to { opacity: 1; } }
+:root[data-design="skydeck"][data-egg~="still"] .sky-specks::before { opacity: .34; }
+
+/* ---------- a long wait: the big wheel turns on its own, a notch every half second, as a dial is tuned ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-design="skydeck"]:not([data-motion="reduce"])[data-egg~="long-wait"] .sky-specks::before { animation: sd-egg-turn 48s steps(96) infinite; animation-play-state: var(--loop-play, running); }
+  :root.is-hidden[data-design="skydeck"][data-egg~="long-wait"] .sky-specks::before { animation-play-state: paused; }
+}
+:root[data-design="skydeck"][data-egg~="long-wait"] .sky-specks::before { opacity: .34; }
+@keyframes sd-egg-turn { to { transform: rotate(1turn); } }
+
+/* =====================================================================
+   Skydeck's own: meteor-shower, wheel-set, constellation, comet
+   ===================================================================== */
+
+/* meteor-shower: falling stars printed the way the wheel prints them (a dotted trail, a star on the head), across the sky */
+:root[data-design="skydeck"] [data-egg-of="meteor-shower"] { position: absolute; inset: 0; overflow: hidden; }
+:root[data-design="skydeck"] .sd-meteors { position: absolute; inset: 0; }
+:root[data-design="skydeck"] .sd-met { position: absolute; width: 280px; opacity: .92; }
+:root[data-design="skydeck"] .sd-met svg { display: block; width: 100%; height: auto; overflow: visible; }
+:root[data-design="skydeck"] .sd-met__trail circle { fill: var(--sd-pink-lt); stroke: #2b2550; stroke-width: .6; }
+:root[data-design="skydeck"] .sd-met__head { fill: #dd9fc9; stroke: #2b2550; stroke-width: 1.4; stroke-linejoin: round; }
+:root[data-design="skydeck"] .sd-met--1 { left: 5%; top: 10%; rotate: 21deg; --w: .3s; }
+:root[data-design="skydeck"] .sd-met--2 { left: 31%; top: 4%; rotate: 24deg; scale: .8; --w: 1.2s; }
+:root[data-design="skydeck"] .sd-met--3 { left: 58%; top: 13%; rotate: 19deg; --w: 2.1s; }
+:root[data-design="skydeck"] .sd-met--4 { left: 14%; top: 36%; rotate: 26deg; scale: .7; --w: 3s; }
+:root[data-design="skydeck"] .sd-met--5 { left: 74%; top: 3%; rotate: 23deg; scale: .9; --w: 3.9s; }
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-met { animation: sd-egg-meteor 1.7s cubic-bezier(.35, 0, .75, 1) var(--w, 0s) both; }
+}
+@keyframes sd-egg-meteor { 0% { opacity: 0; translate: 0 0; } 12% { opacity: .95; } 72% { opacity: .95; } 100% { opacity: 0; translate: 560px 225px; } }
+/* at rest (reduced motion) the shower is a print: three of them, over the top of the sky */
+:root[data-design="skydeck"][data-motion="reduce"] :is(.sd-met--4, .sd-met--5) { display: none; }
+@media (prefers-reduced-motion: reduce) { :root[data-design="skydeck"] :is(.sd-met--4, .sd-met--5) { display: none; } }
+
+/* wheel-set: three quick taps on the name turn the big wheel a whole round, a notch at a time, and light the pins */
+:root[data-design="skydeck"][data-egg~="wheel-set"] :is(.rail, .ctx) { --pin: #e58bbf; }
+:root[data-design="skydeck"][data-egg~="wheel-set"] .sky-specks::before { opacity: .46; }
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-design="skydeck"]:not([data-motion="reduce"])[data-egg~="wheel-set"] .sky-specks::before { animation: sd-egg-turn 1.8s steps(24) 1; }
+}
+
+/* constellation: the star wheel's horizon window, with the song's constellation lit star by star */
+:root[data-design="skydeck"] [data-egg-of="constellation"] { position: absolute; left: 50%; bottom: calc(var(--bar-h) + 40px + 56px); width: 176px; translate: -50% 0; }
+:root[data-design="skydeck"] .sd-con { position: relative; }
+:root[data-design="skydeck"] .sd-con__sky { display: block; width: 100%; height: auto; overflow: visible; }
+:root[data-design="skydeck"] .sd-con__card { fill: var(--cream); stroke: #2b2550; stroke-width: 1.5; }
+:root[data-design="skydeck"] .sd-con__rule { fill: none; stroke: var(--sd-soft); stroke-width: .8; }
+:root[data-design="skydeck"] .sd-con__disc { fill: #20263a; stroke: #2b2550; stroke-width: 1.2; }
+:root[data-design="skydeck"] .sd-con__rim { fill: none; stroke: #c3c2e2; stroke-width: 1.1; stroke-linecap: round; }
+:root[data-design="skydeck"] .sd-con__fig { display: none; }
+:root[data-design="skydeck"]:not([data-egg-word]) .sd-con__fig--orion,
+:root[data-design="skydeck"]:is([data-egg-word="orion"]) .sd-con__fig--orion,
+:root[data-design="skydeck"]:is([data-egg-word="lyra"], [data-egg-word="vega"]) .sd-con__fig--lyra,
+:root[data-design="skydeck"]:is([data-egg-word="cygnus"], [data-egg-word="swan"]) .sd-con__fig--cygnus,
+:root[data-design="skydeck"][data-egg-word="cassiopeia"] .sd-con__fig--cassiopeia,
+:root[data-design="skydeck"]:is([data-egg-word="dipper"], [data-egg-word="ursa"]) .sd-con__fig--dipper,
+:root[data-design="skydeck"]:is([data-egg-word="scorpius"], [data-egg-word="scorpio"]) .sd-con__fig--scorpius,
+:root[data-design="skydeck"][data-egg-word="pleiades"] .sd-con__fig--pleiades { display: block; }
+:root[data-design="skydeck"] .sd-con__lines { fill: none; stroke: #c3c2e2; stroke-width: 1; stroke-dasharray: 2 3; stroke-linecap: round; }
+:root[data-design="skydeck"] .sd-con__star { fill: #fff3df; transform-box: fill-box; transform-origin: center; }
+:root[data-design="skydeck"] .sd-con__star--big { fill: #dd9fc9; stroke: #fff3df; stroke-width: 1.2; }
+:root[data-design="skydeck"] .sd-con__name {
+  position: absolute; left: 50%; bottom: -12px; translate: -50% 0; white-space: nowrap; padding: 4px 14px 3px; border: 1.5px solid #2b2550; border-radius: 10px;
+  background: var(--cream); color: #2b2550; font: 900 .6875rem/1.2 var(--f-ui); letter-spacing: .2em; text-transform: uppercase;
+  box-shadow: inset 0 0 0 2px var(--cream), inset 0 0 0 3px var(--sd-soft);
+}
+:root[data-design="skydeck"] .sd-con__name:empty { display: none; }
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-con { animation: sd-egg-print .5s steps(5) both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-con__star:nth-child(1) { animation: sd-egg-light .6s steps(6) 0.50s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-con__star:nth-child(2) { animation: sd-egg-light .6s steps(6) 0.72s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-con__star:nth-child(3) { animation: sd-egg-light .6s steps(6) 0.94s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-con__star:nth-child(4) { animation: sd-egg-light .6s steps(6) 1.16s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-con__star:nth-child(5) { animation: sd-egg-light .6s steps(6) 1.38s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-con__star:nth-child(6) { animation: sd-egg-light .6s steps(6) 1.60s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-con__star:nth-child(7) { animation: sd-egg-light .6s steps(6) 1.82s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-con__star:nth-child(8) { animation: sd-egg-light .6s steps(6) 2.04s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-con__star:nth-child(9) { animation: sd-egg-light .6s steps(6) 2.26s both; }
+:root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-con__star:nth-child(10) { animation: sd-egg-light .6s steps(6) 2.48s both; }
+  :root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-con__lines { animation: sd-egg-fade 1.2s steps(6) 2.2s both; }
+}
+@keyframes sd-egg-fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* comet: once, slowly, from the right edge of the sky to the left, a lit head, a fan of dotted tails, glitter after it */
+:root[data-design="skydeck"] [data-egg-of="comet"] { position: absolute; inset: 0; overflow: hidden; }
+:root[data-design="skydeck"] .sd-comet { position: absolute; left: 100%; top: 12%; width: 560px; rotate: -5deg; }
+:root[data-design="skydeck"] .sd-comet svg { display: block; width: 100%; height: auto; overflow: visible; }
+:root[data-design="skydeck"] .sd-comet__tail circle { fill: var(--sd-pink-lt); stroke: #2b2550; stroke-width: .6; }
+:root[data-design="skydeck"] .sd-comet__glitter circle { fill: #fff3df; stroke: #2b2550; stroke-width: .6; }
+:root[data-design="skydeck"] .sd-comet__halo { fill: none; stroke: #2b2550; stroke-width: 1.2; stroke-dasharray: 1.5 3.5; stroke-linecap: round; }
+:root[data-design="skydeck"] .sd-comet__head { fill: var(--sd-pink-lt); stroke: #2b2550; stroke-width: 1.8; }
+:root[data-design="skydeck"] .sd-comet__core { fill: #fff3df; stroke: #2b2550; stroke-width: 1.4; }
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-comet { animation: sd-egg-comet 8.5s linear both; }
+}
+@keyframes sd-egg-comet { 0% { opacity: 0; translate: 0 0; } 6% { opacity: 1; } 94% { opacity: 1; } 100% { opacity: 0; translate: calc(-100vw - 600px) calc((100vw + 600px) * .06); } }
+/* at rest (reduced motion) the comet is a print, over the sky's right side */
+:root[data-design="skydeck"][data-motion="reduce"] .sd-comet { left: auto; right: 4%; }
+@media (prefers-reduced-motion: reduce) { :root[data-design="skydeck"] .sd-comet { left: auto; right: 4%; } }

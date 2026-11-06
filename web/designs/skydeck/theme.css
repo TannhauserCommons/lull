@@ -1083,7 +1083,7 @@
    14. Alive and printed all the way: what the music and the player's state do to the card, and the small parts
    ===================================================================== */
 /* paper: the card's grain, one baked tile over the cream (the colour under it is each part's own) */
-:root[data-design="skydeck"] :is(.card, .rail, .ctx, .nowcol, .pbar, .sheet, .dialog, .menu, .popover, .toast, .sd-wheel, .sd-lead, .sd-mini, .dk-strip, .dk-card) { background-image: var(--sd-paper); background-size: 192px 192px; }
+:root[data-design="skydeck"] :is(.card, .rail, .ctx, .nowcol, .pbar, .sheet, .dialog, .menu, .popover, .toast, .egg-line, .sd-wheel, .sd-lead, .sd-mini, .dk-strip, .dk-card) { background-image: var(--sd-paper); background-size: 192px 192px; }
 /* scrollbars are inked rules (a page-wide ::selection rule costs every clock tick a restyle of the whole page, so selection stays the browser's) */
 :root[data-design="skydeck"] :is(.view, .rail__scroll, .ctx__body, .sheet, .dialog, .menu, .popover, .eqp, .shelf, .now-lycard) { scrollbar-width: thin; scrollbar-color: var(--sd-scroll) transparent; }
 :root[data-design="skydeck"] :is(.sheet, .dialog, .menu, .popover, .card, .ctx) { --sd-scroll: #2b2550; }
