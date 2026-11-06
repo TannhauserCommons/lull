@@ -2,6 +2,7 @@
 //! lull's; `server` wires them together. Changes here are additive only (AGENTS.md).
 
 pub mod art;
+pub mod build;
 pub mod catalog;
 pub mod config;
 pub mod db;

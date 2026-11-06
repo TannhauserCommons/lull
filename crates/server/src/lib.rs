@@ -13,6 +13,7 @@ mod hub;
 mod pairing;
 #[cfg(test)]
 mod tests;
+mod updates;
 mod web;
 
 use std::collections::BTreeMap;
@@ -45,7 +46,7 @@ pub async fn run(
     db.migrate(&db::CORE)?;
     let config = hub::configure(&env, &db).await?;
     let listener = tokio::net::TcpListener::bind(config.listen).await?;
-    tracing::info!(listen = %config.listen, version = env!("CARGO_PKG_VERSION"), "lull is up");
+    tracing::info!(listen = %config.listen, version = %lull_core::build::version(), "lull is up");
     serve(listener, Hub::open(env, db, config).await?, shutdown).await
 }
 
@@ -89,6 +90,7 @@ fn router(hub: Arc<Hub>) -> Router {
         .merge(pairing::router())
         .merge(devices::router())
         .merge(config::router())
+        .merge(updates::router())
         .fallback(crates)
         .layer(axum::middleware::from_fn_with_state(hub.clone(), gate::require))
         .layer(axum::middleware::from_fn(conditional::not_modified))
@@ -158,5 +160,10 @@ async fn crates(State(hub): State<Arc<Hub>>, req: Request) -> Response {
 async fn health(State(hub): State<Arc<Hub>>) -> Json<serde_json::Value> {
     let ctx = hub.ctx().await;
     let flags: Vec<&str> = ctx.config.flags.names().collect();
-    Json(serde_json::json!({ "version": env!("CARGO_PKG_VERSION"), "services": ctx.status.snapshot(), "flags": flags }))
+    Json(serde_json::json!({
+        "version": lull_core::build::version(),
+        "build": lull_core::build::build(),
+        "services": ctx.status.snapshot(),
+        "flags": flags,
+    }))
 }

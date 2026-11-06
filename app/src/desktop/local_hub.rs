@@ -93,6 +93,8 @@ pub fn start(app: &AppHandle) -> Result<LocalHub, String> {
     let watch_env = env.clone();
     let (shutdown, stopped) = oneshot::channel();
     let (done_tx, done) = mpsc::channel();
+    // It updates with the app: Settings › App says so instead of offering a server update.
+    lull_core::build::set_install(lull_core::build::Install::Desktop);
     tauri::async_runtime::spawn(async move {
         let result = lull_server::run(env, async {
             let _ = stopped.await;
