@@ -1,6 +1,6 @@
 /* lull's UI sounds (ADR-0081, docs/themes.md section 13): which sound each moment makes, from the packs that are on,
    under the rules in sound-rules.js (never over the music, never while lull isn't in front, quiet when the system asks).
-   It touches no DOM but the packs' stylesheet: a sound draws nothing. This file and its rules load on the first tap or
+   It touches no DOM but the packs' stylesheet: a sound draws nothing. This file and its rules load after the first tap or
    key, or at the start in the app (app.js, App.needSounds); its packs once the first screen has settled (the service
    worker keeps them), decoded once into Web Audio buffers and levelled as they decode; the audio
    context is lull's own, apart from the player's, starts on the first tap or key (autoplay rules) and sleeps after
@@ -38,8 +38,9 @@
     return { heard: P.heard(), front: front(), quiet: systemQuiet, reducedMotion: App.reducedMotion(), classic: classic, egg: !!egg };
   }
   function input() { lastInput = now(); armed = true; unlock(); }
-  /* pointerup and click too: the tap that loaded this file went down before it was here, and Safari starts audio only
-     inside a gesture's own handler */
+  /* pointerup and click too: Safari starts audio only inside a gesture's own handler. The gesture that loaded this
+     file had ended before it was here (app.js); the context starts at once where the browser allows it after one,
+     else on the next tap or key. */
   ['pointerdown', 'keydown', 'pointerup', 'click', 'keyup'].forEach(function (type) { window.addEventListener(type, input, { capture: true, passive: true }); });
 
   /* ---------- the packs ---------- */

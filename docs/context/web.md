@@ -30,7 +30,7 @@ app.js       window.App: router, render helpers, overlays, save pipeline, player
              keyboard, Media Session, drag and drop, server events + boot
 sound-rules.js  window.LullSoundRules: the UI sounds' rules (ADR-0081: what may sound, which pack it comes from, levelling,
              the device's sound settings), pure, tested by tests/web/sound-rules.test.mjs
-sounds.js    App.sounds: the UI sounds, loaded with sound-rules.js on the first tap or key (at the start in the app, for the
+sounds.js    App.sounds: the UI sounds, loaded with sound-rules.js after the first tap or key, once the page is idle (at the start in the app, for the
              start-up sound: App.needSounds in app.js). Their own Web Audio context (sleeping when idle), the packs
              that are on (web/packs/ and GET /api/packs), the moments that sound (presses, player states, saves, errors),
              the buffering loop only in silence; App.player.heard() and the `heard` event are what it keeps quiet for

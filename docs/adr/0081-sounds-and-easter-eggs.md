@@ -164,9 +164,10 @@ low.
 ### Cost
 
 - **Nothing before it can sound, then loaded once, decoded once.** A browser plays no page's audio before the
-  listener's first tap or key, so in a browser the engine (`web/sounds.js` and its rules, about 9 KB) loads on that
-  first tap or key, and a tab nobody touches fetches none of it: the start pays only app.js' few lines that wait for the
-  tap. The app and an installed PWA, where audio may start by itself, load it at the start for the start-up sound. The
+  listener's first tap or key, so in a browser the engine (`web/sounds.js` and its rules, about 9 KB) loads after
+  that first tap or key, a second after the gesture ends and when the page is idle, so it never runs inside a drag or
+  beside a tap's own work. A tab nobody touches fetches none of it: the start pays only app.js' few lines that wait for
+  the tap. The app and an installed PWA, where audio may start by itself, load it at the start for the start-up sound. The
   easter eggs come with it, so in a browser they begin at the first tap too; nothing but a clock egg could show before
   one, as playing needs a tap. The engine touches no DOM. It fetches the pack's files after the first screen has
   settled (the service worker keeps them), and decodes each once into a Web Audio buffer.

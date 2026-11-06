@@ -464,9 +464,10 @@
   App.needHub = function () {
     return App.hubKit ? Promise.resolve() : App.needScript('screens/hub.js', 'the hub\'s settings', 'screens/hub.css');
   };
-  /* the UI sounds (ADR-0081, web/sounds.js and its rules) load on the listener's first tap or key, since a browser lets
-     no page sound before one, or at the start where audio may start by itself (the app, an installed PWA), for the
-     start-up sound; until then none of them is fetched. A start is marked here, as the page starts, so a reload is told
+  /* the UI sounds (ADR-0081, web/sounds.js and its rules) load after the listener's first tap or key, since a browser
+     lets no page sound before one: a second after that gesture has ended, when the page is idle (never inside a drag,
+     nor beside a tap's own work). Or at the start where audio may start by itself (the app, an installed PWA), for
+     the start-up sound; until then none of them is fetched. A start is marked here, as the page starts, so a reload is told
      from one. App.needSounds loads them for whatever wants them sooner (Settings > Sounds, Theme Studio, a .lullpack). */
   var soundsLoad = null, soundsStart = App.soundsStart = { at: performance.now(), input: -Infinity, ready: false, started: true };
   try { soundsStart.started = !!sessionStorage.getItem('lull:started'); sessionStorage.setItem('lull:started', '1'); } catch (e) { /* no storage: no start-up sound */ }
@@ -475,8 +476,11 @@
       .then(null, function (err) { soundsLoad = null; throw err; }));
   };
   App.needSoundSettings = function () { return App.needSounds().then(function () { return App.needScript('screens/sounds-settings.js', 'Sound settings'); }); };
-  function soundsInput() { soundsStart.input = performance.now(); if (!App.sounds) App.needSounds().then(null, function () {}); }
-  ['pointerdown', 'keydown'].forEach(function (type) { window.addEventListener(type, soundsInput, { capture: true, passive: true }); });
+  function soundsInput(e) {
+    soundsStart.input = performance.now();
+    if (!App.sounds && /up$/.test(e.type)) setTimeout(function () { (window.requestIdleCallback || setTimeout)(function () { App.needSounds().then(null, function () {}); }); }, 1000);
+  }
+  ['pointerdown', 'keydown', 'pointerup', 'keyup'].forEach(function (type) { window.addEventListener(type, soundsInput, { capture: true, passive: true }); });
   App.on('ready', function () {
     soundsStart.ready = true;
     if (window.__TAURI__ || window.LullNative || (window.matchMedia && matchMedia('(display-mode: standalone)').matches)) App.needSounds().then(null, function () {});
