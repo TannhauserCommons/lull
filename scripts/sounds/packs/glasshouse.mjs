@@ -22,6 +22,19 @@ function wind(rng, sec) {
   return d.shape(d.mix([[low, 0, 0.7], [high, 0, 0.3]]), g);
 }
 
+
+/** Eggs only Glasshouse has (the page draws them with web/packs/glasshouse/pack.css and slots/egg.<name>.html). */
+export const eggs = [
+  // tap the song's title four times: you breathe on the glass, and a finger writes in the fog
+  { name: 'breath', when: [{ gesture: { on: 'title', taps: 4, within: 2.5 } }], line: 'Written in the fog', for: 9, once: 'always' },
+  // now and then a moth finds the lamp when a song starts
+  { name: 'moth', when: [{ event: { on: 'play' } }, { chance: { one_in: 24 } }], for: 9, once: 'day' },
+  // midnight: the conservatory strikes twelve
+  { name: 'twelve', when: [{ clock: { from: '00:00', to: '00:00:07' } }], line: 'Midnight in the glasshouse', once: 'day' },
+  // the last song ended and the room stayed quiet: frost comes to the glass
+  { name: 'frost', when: [{ player: { status: ['ended'], playing: false, held: 12 } }], line: 'Frost on the glass', once: 'day' }
+];
+
 export function sounds(rng) {
   const glints = (sec, count, lo, hi) => d.mix(Array.from({ length: count }, () => [glass(lo + (hi - lo) * rng(), 0.9, 0.5), sec * rng(), 0.12 + 0.1 * rng()]));
   const longWind = () => {
@@ -30,6 +43,75 @@ export function sounds(rng) {
     ['F#5', 'A5', 'C#6', 'B5', 'A5', 'E5', 'F#5', 'C#6', 'E6'].forEach((note, i) => d.mixInto(base, glass(d.hz(note), 2.2), 2 + i * 1.35, 0.12 + 0.02 * Math.sin(i)));
     return { loop: d.seamless(base, 0.6) };
   };
+
+  // --- the eggs' own voices (made after every other sound, so the rest of the pack renders as it did) ---
+  /** a glint: a quiet ring at some pitch, no more than a breath of glass */
+  const glintsSoft = (sec, count, lo, hi) => d.mix(Array.from({ length: count }, () => [glass(lo + (hi - lo) * rng(), 0.7, 0.25), (sec - 0.8) * rng(), 0.08 + 0.1 * rng()]));
+  /** a tick on glass: a dry tap, bandpassed noise */
+  const tick = (f, sec = 0.045, q = 5) => d.shape(d.biquad(d.noise(sec, rng), 'bandpass', f, q), d.perc(0.0004, sec * 0.7));
+  /** times in [0, sec) that crowd where `density(t)` (0..1) is high */
+  const scatter = (sec, count, density) => {
+    const at = [];
+    while (at.length < count) { const t = (sec - 0.1) * rng(); if (rng() < density(t / sec)) at.push(t); }
+    return at;
+  };
+  /** a streak: a sine whose pitch falls from `from` to `to` in `sec`, fading as it goes */
+  const streak = (sec, from, to) => d.shape(d.osc(sec, (t) => from + (to - from) * Math.min(1, t / sec), d.sine), (t) => Math.pow(Math.max(0, 1 - t / sec), 2));
+  function rainOnGlass(sec) {
+    const out = d.mix([[d.shape(d.biquad(d.pink(sec, rng), 'lowpass', 2600), d.arch(sec)), 0, 0.4]]);
+    for (const t of scatter(sec, 85, (x) => Math.pow(Math.sin(Math.PI * x), 0.8))) d.mixInto(out, tick(1500 + 3500 * rng(), 0.05, 4), t, 0.22 + 0.3 * rng());
+    for (const t of scatter(sec, 9, (x) => Math.sin(Math.PI * x))) d.mixInto(out, glass(d.hz(['E6', 'A6', 'C#7', 'B6'][Math.floor(rng() * 4)]), 0.4, 0.15), t, 0.06);
+    return d.room(out, 0.5, 0.5, 0.25, 0.6);
+  }
+  function thunder(sec) {
+    const wind = d.shape(d.biquad(d.brown(sec, rng), 'lowpass', (t) => 260 - 110 * (t / sec)), (t) => (t < 0.35 ? 0 : Math.min(1, (t - 0.35) / 0.5) * Math.exp(-(t - 0.85) * 0.55)));
+    const crack = d.shape(d.biquad(d.noise(0.22, rng), 'bandpass', 1900, 0.8), d.perc(0.002, 0.14));
+    const hush = d.shape(d.biquad(d.pink(sec, rng), 'lowpass', 1400), (t) => (t < 0.2 ? 0 : Math.exp(-(t - 0.2) * 0.9)));
+    return d.room(d.warm(d.mix([[wind, 0, 1.6], [crack, 0.1, 0.35], [hush, 0, 0.12]]), 1.2), 0.8, 0.6, 0.3, 0.6);
+  }
+  function seaWash(sec) {
+    const swellAt = (c, w) => (t) => Math.exp(-Math.pow((t - c) / w, 2));
+    const foam = (t) => 0.9 * swellAt(1.4, 0.7)(t) + 0.7 * swellAt(3.6, 0.8)(t);
+    const body = d.shape(d.biquad(d.pink(sec, rng), 'lowpass', (t) => 500 + 1900 * foam(t), 0.9), foam);
+    const hiss = d.shape(d.biquad(d.pink(sec, rng), 'highpass', 3200), (t) => 0.35 * foam(t));
+    return d.room(d.mix([[body, 0, 1], [hiss, 0, 0.25], [glass(d.hz('A5'), 1.6, 0.4), 3.7, 0.12]]), 0.7, 0.5, 0.3, 0.7);
+  }
+  function crackle(sec) {
+    const bed = d.shape(d.biquad(d.brown(sec, rng), 'bandpass', 320, 0.7), (t) => 0.5 * d.arch(sec)(t) + 0.15);
+    const out = d.mix([[bed, 0, 0.5]]);
+    for (const t of scatter(sec, 46, (x) => 0.35 + 0.65 * Math.sin(Math.PI * x))) {
+      const pop = d.biquad(d.noise(0.03, rng), 'bandpass', 700 + 3800 * rng(), 1.6);
+      d.mixInto(out, d.shape(pop, d.perc(0.0003, 0.018 + 0.02 * rng())), t, 0.35 + 0.65 * rng());
+    }
+    return d.room(d.warm(out, 2.2), 0.4, 0.6, 0.2, 0.4);
+  }
+  function breathOnGlass() {
+    // an exhale on cold glass, then two strokes of a fingertip, then the glass settles
+    const sec = 2.7;
+    const breath = d.shape(d.biquad(d.pink(1.15, rng), 'bandpass', (t) => 1500 - 600 * t, 0.9), d.arch(1.15));
+    const stroke = (f0, f1, len) => d.shape(d.biquad(d.noise(len, rng), 'bandpass', (t) => f0 + (f1 - f0) * t / len, 28), (t) => Math.sin(Math.PI * t / len) * (0.65 + 0.35 * Math.sin(2 * Math.PI * 44 * t)));
+    return d.room(d.mix([[breath, 0, 1], [stroke(2900, 3500, 0.34), 1.35, 0.9], [stroke(3500, 2700, 0.4), 1.8, 0.9], [glass(d.hz('E7'), 0.7, 0.2), 2.15, 0.06]], 0.2), 0.5, 0.5, 0.2, 0.4);
+  }
+  function mothAtTheLamp() {
+    // soft wings (noise flicked at about forty beats a second) in bursts, and the moth touching the glass
+    const wings = (len) => d.shape(d.biquad(d.noise(len, rng), 'bandpass', 900, 1.4), (t) => Math.sin(Math.PI * t / len) * Math.pow(0.5 + 0.5 * Math.sin(2 * Math.PI * 38 * t), 2));
+    const out = d.mix([[wings(0.9), 0, 0.5], [wings(0.7), 1.2, 0.45], [wings(1.1), 2.2, 0.5]]);
+    [0.5, 1.5, 2.55, 3.1].forEach((t, i) => d.mixInto(out, glass(d.hz(['A6', 'E7', 'C#7', 'F#7'][i]), 0.9, 0.3), t, 0.16));
+    return d.room(out, 0.5, 0.5, 0.25, 0.6);
+  }
+  function strikeTwelve() {
+    // twelve strikes of a glass bell; the first loudest, each a little softer and a little lower, the last left to ring
+    const out = d.mix([[d.silence(5.1)]]);
+    for (let i = 0; i < 12; i++) d.mixInto(out, glass(d.hz('A4') * Math.pow(2, -i / 48), 1.5, 1), i * 0.4, 1 - i * 0.045);
+    return d.room(out, 0.9, 0.35, 0.4, 0.5);
+  }
+  function frostGrowing(sec) {
+    // ice forming: bright crystalline ticks that gather, over a faint high hush
+    const out = d.mix([[d.shape(d.biquad(d.pink(sec, rng), 'highpass', 5200), d.arch(sec)), 0, 0.12]]);
+    for (const t of scatter(sec, 34, (x) => 0.15 + 0.85 * x)) d.mixInto(out, glass(3600 + 5200 * rng(), 0.25 + 0.3 * rng(), 0.2), t, 0.08 + 0.1 * rng());
+    d.mixInto(out, glass(d.hz('E6'), 2.4, 0.7), sec - 2.6, 0.25);
+    return d.room(out, 0.85, 0.5, 0.4, 0.6);
+  }
   return {
     sounds: {
       boot: d.room(d.mix([[swell(rng, 3, ['D3', 'A3', 'E4', 'F#4', 'C#5']), 0, 0.9], [glints(1.6, 10, 2400, 5200), 0.9, 1], [glass(d.hz('A6'), 2), 2.2, 0.35]]), 0.85, 0.4, 0.4, 1),
@@ -54,6 +136,25 @@ export function sounds(rng) {
       'new-year': d.room(d.mix([[glints(2.2, 30, 2000, 7000), 0], [d.seq(['A5', 'C#6', 'E6', 'A6'], 0.12, (f) => glass(f, 1.8)), 0.3, 0.5]]), 0.85, 0.35, 0.4, 1.2),
       birthday: d.room(d.seq(['A5', 'C#6', 'E6', 'D6', 'C#6', 'A6'], 0.17, (f) => glass(f, 1.2, 0.6)), 0.7, 0.3, 0.35, 0.9),
       milestone: d.room(d.mix([[swell(rng, 1.8, ['A3', 'E4', 'C#5']), 0, 0.6], [glints(1.5, 22, 2500, 7000), 0.2, 1]]), 0.85, 0.35, 0.4, 1),
+      // lull's word eggs, in the glasshouse: weather on the panes, the moon, the stars, the sea, a fire
+      moon: d.room(d.mix([[glass(d.hz('E5'), 3.2, 1.1), 0], [glass(d.hz('B5'), 2.4, 0.5), 0.55, 0.5], [glass(d.hz('E6'), 1.8, 0.3), 1.3, 0.35]]), 0.9, 0.35, 0.4, 1),
+      rain: rainOnGlass(4.6),
+      star: d.room(d.mix([[streak(0.32, 7400, 2600), 0, 0.5], [d.seq(['E7', 'A7', 'C#8'], 0.11, (f) => glass(f, 0.9, 0.35)), 0.3, 0.5]]), 0.7, 0.3, 0.3, 0.7),
+      sun: d.room(d.mix([[swell(rng, 3.4, ['D3', 'A3', 'F#4', 'A4', 'D5'], 2200), 0, 0.8], [glass(d.hz('D6'), 2.2, 0.8), 1.4, 0.4], [glass(d.hz('A6'), 2, 0.6), 1.75, 0.3]]), 0.85, 0.35, 0.4, 0.9),
+      snow: d.room(d.mix([[d.shape(d.biquad(d.pink(3.2, rng), 'bandpass', 4200, 1.2), d.arch(3.2)), 0, 0.5], [glintsSoft(3.2, 9, 3600, 8000), 0, 1]]), 0.9, 0.5, 0.45, 0.9),
+      sea: seaWash(5.2),
+      storm: thunder(5),
+      fire: crackle(4.2),
+      dream: d.room(d.mix([[d.seq(['A5', 'C#6', 'E6', 'F#6', 'A6', 'C#7'], 0.26, (f) => glass(f, 1.6, 0.45)), 0.3, 0.6], [swell(rng, 4.2, ['A3', 'E4', 'C#5'], 1800), 0, 0.5]]), 0.95, 0.35, 0.5, 1.2),
+      'on-repeat': d.room(d.seq(['A5', 'B5', 'C#6', 'D6', 'E6', 'F#6', 'G#6', 'A6', 'B6', 'C#7'], 0.13, (f) => glass(f, 0.7, 0.3)), 0.6, 0.3, 0.3, 0.8),
+      // Glasshouse's own eggs
+      breath: breathOnGlass(),
+      moth: mothAtTheLamp(),
+      twelve: strikeTwelve(),
+      frost: frostGrowing(4.6),
+      // and the two of lull's that had no sound here yet (their looks are in pack.css)
+      night: d.room(d.mix([[d.shape(wind(rng, 3), d.arch(3)), 0, 0.55], [glass(d.hz('A4'), 2.6, 1), 0.2, 0.7], [glass(d.hz('E4'), 2.6, 1), 1.1, 0.5]]), 0.9, 0.4, 0.4, 1),
+      'new-year-hello': d.room(d.mix([[d.seq(['A5', 'C#6', 'E6', 'A6', 'C#7'], 0.14, (f) => glass(f, 1.6, 0.7)), 0], [glints(2.6, 16, 2500, 7000), 0.3, 0.6]]), 0.85, 0.35, 0.4, 1)
     }
   };
 }
