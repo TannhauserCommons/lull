@@ -140,7 +140,20 @@ EOF
   [ "$cand" != "$base" ] || { out candidate ""; return; }
 
   # The candidate needs a ref for the check jobs to fetch; a push with the job's token starts nothing.
-  git push -q origin "$cand:refs/heads/queue-candidate/$GITHUB_RUN_ID"
+  if ! push_err=$(git push -q origin "$cand:refs/heads/queue-candidate/$GITHUB_RUN_ID" 2>&1); then
+    printf '%s\n' "$push_err" >&2
+    # Refused anyway: no topic may hold the queue. A batch splits into single tries; a single topic is red with
+    # GitHub's reason. The run then fails, so its last job starts the next one.
+    reason=$(printf '%s\n' "$push_err" | sed -n 's/.*\[remote rejected\][^(]*(\(.*\))$/\1/p' | head -n 1)
+    set -- $branches
+    if [ $# -gt 1 ]; then
+      for b; do status "${b#*:}" pending "$SPLIT"; done
+    else
+      status "${1#*:}" failure "GitHub refused the queue's push: ${reason:-see the run}"
+    fi
+    out candidate ""
+    die "GitHub refused the candidate's push"
+  fi
   git log --format='  %h %s' "$base..$cand"
   out candidate "$cand"
   out base "$base"
@@ -173,6 +186,16 @@ build() {
         status "$tip" success "already in main"
         continue
       fi
+      if ! as_pushed "$tip" "$cand" "$new"; then
+        if [ "$cand" != "$base" ]; then
+          echo "queue/$topic: its workflow change can't be stacked on the topics ahead of it; it goes alone after them"
+          status "$tip" pending "waits to go alone: GitHub lets the queue push a workflow only as it was pushed"
+        else
+          echo "queue/$topic: changes a workflow main changed since"
+          status "$tip" failure "changes a workflow file main changed since: rebase on origin/main and push again"
+        fi
+        continue
+      fi
       cand=$new branches="$branches$topic:$tip "
       status "$tip" pending "testing with $(git rev-list --count "$base..$cand") commits on main"
     else
@@ -190,6 +213,16 @@ build() {
   done <<EOF
 $1
 EOF
+}
+
+# Whether each workflow file <cand>..<new> changes is exactly as <tip> has it (or gone in both). GitHub refuses the
+# job's token any push that brings a workflow file's content it hasn't been sent by someone allowed to: a topic's
+# own version was, by its owner's push, but merged with another topic's change, or rebased onto a main that changed
+# the same file, it is new (runs 42172853890 to 42173745670 failed so, every topic waiting behind them).
+as_pushed() { # <tip> <cand> <new>
+  for f in $(git diff --name-only "$2" "$3" -- .github/workflows/); do
+    [ "$(git rev-parse -q --verify "$1:$f" || true)" = "$(git rev-parse -q --verify "$3:$f" || true)" ] || return 1
+  done
 }
 
 # The topics on $branches that change a file <fork>..<tip> changes (all of them, when none does), as "queue/a, queue/b".
