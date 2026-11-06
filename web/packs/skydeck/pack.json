@@ -128,6 +128,94 @@
       "instead": true,
       "once": "always",
       "sound": "sounds/rare-boot.ogg"
+    },
+    {
+      "name": "meteor-shower",
+      "when": [
+        {
+          "clock": {
+            "date": [
+              "01-03",
+              "04-22",
+              "08-12",
+              "10-21",
+              "11-17",
+              "12-13",
+              "12-22"
+            ],
+            "from": "20:00",
+            "to": "04:00"
+          }
+        }
+      ],
+      "line": "Meteor shower tonight",
+      "for": 8,
+      "once": "night",
+      "sound": "sounds/meteor-shower.ogg"
+    },
+    {
+      "name": "wheel-set",
+      "when": [
+        {
+          "gesture": {
+            "on": "brand",
+            "taps": 3,
+            "within": 1.5
+          }
+        }
+      ],
+      "line": "Wheel set to tonight",
+      "for": 6,
+      "once": "always",
+      "sound": "sounds/wheel-set.ogg"
+    },
+    {
+      "name": "constellation",
+      "when": [
+        {
+          "words": {
+            "in": [
+              "title"
+            ],
+            "any": [
+              "orion",
+              "lyra",
+              "vega",
+              "cygnus",
+              "swan",
+              "cassiopeia",
+              "dipper",
+              "ursa",
+              "scorpius",
+              "scorpio",
+              "pleiades"
+            ]
+          }
+        }
+      ],
+      "line": "Look up",
+      "for": 8,
+      "once": "song",
+      "sound": "sounds/constellation.ogg"
+    },
+    {
+      "name": "comet",
+      "when": [
+        {
+          "event": {
+            "on": "found"
+          }
+        },
+        {
+          "chance": {
+            "one_in": 30
+          }
+        }
+      ],
+      "line": "Halley's comet. See you in 2061.",
+      "for": 9,
+      "once": "day",
+      "sound": "sounds/comet.ogg"
     }
   ]
 }

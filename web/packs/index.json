@@ -10,7 +10,15 @@
     },
     {
       "id": "skydeck",
-      "css": false
+      "css": true,
+      "slots": [
+        "birthday",
+        "comet",
+        "constellation",
+        "meteor-shower",
+        "milestone",
+        "new-year"
+      ]
     },
     {
       "id": "starlight",
