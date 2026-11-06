@@ -112,9 +112,12 @@
   }
   function wanted(id) { return id === 'default' || id === D.designOf(D.current) || settings.packs.indexOf(id) >= 0; }
 
-  /* the stylesheets of the packs that are on (their surprises' looks), after the theme's, in the user layer */
-  var packCss = null;
+  /* the stylesheets of the packs that are on (their surprises' looks), after the theme's, in the user layer. Every rule
+     in one hangs on a live egg (:root[data-egg]), so they join the page with the first egg (eggs.js, cssFor), and
+     stay: adding them restyles the whole page, which the tap that loads this file must not pay for. */
+  var packCss = null, cssWanted = false;
   function applyCss() {
+    if (!cssWanted) return;
     var css = stack().filter(function (p) { return p.css; }).reverse()
       .map(function (p) { return '@import url("' + p.css + '") layer(user);'; }).join('\n');
     if (!css) { if (packCss) { packCss.remove(); packCss = null; } return; }
@@ -378,7 +381,9 @@
     eggs: function () { return S.eggs(stack(), S.settings(Object.assign({}, settings, { eggsOff: {} }))); },
     /* a press in one of the app's own windows (the mini player): the listener's, as a tap here is */
     pressed: function () { lastInput = now(); armed = true; },
-    front: front
+    front: front,
+    /* an egg is about to go live (eggs.js): the packs' stylesheets join the page */
+    cssFor: function () { if (!cssWanted) { cssWanted = true; applyCss(); } }
   };
   /* the start, once App.sounds and App.needEggs are here: at once when this file loads after the page is ready */
   if (start0.ready) begin(); else App.on('ready', begin);

@@ -108,6 +108,7 @@
   /* the egg's look: its name on the root, with its count and word */
   function show(name, h) {
     var names = Object.keys(live).join(' ');
+    App.sounds.cssFor();
     if (root.getAttribute('data-egg') !== names) root.setAttribute('data-egg', names);
     if (h.count != null) { root.style.setProperty('--egg-count', String(h.count)); live[name].count = h.count; }
     if (h.word) root.setAttribute('data-egg-word', h.word);

@@ -80,7 +80,9 @@ surprises' looks an optional `pack.css` and `slots/egg.<name>.html`:
   mechanical), or `{ "file", "loop" }`. Only `buffering` may loop.
 - An event a pack leaves out falls back to the pack under it (below); `null` silences it on purpose.
 - `pack.css` is CSS with the same rules as `theme.css` (no outside URLs, its `url()`s inside the pack), loaded in the
-  `user` layer after the theme's. It is meant for the pack's surprises: `:root[data-egg~="rainy-song"] ...`.
+  `user` layer after the theme's. It is meant for the pack's surprises: `:root[data-egg~="rainy-song"] ...`. It joins
+  the page when the first surprise goes live, and stays: adding a stylesheet restyles the whole page, which the
+  first tap must not pay for, so a rule in it that hangs on no egg may not apply until then.
 
 **The hub validates it like a theme's assets** (`crates/themes`), with the same errors in Theme Studio, and refuses a
 pack, naming the problem, for:
