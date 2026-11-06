@@ -1,6 +1,7 @@
 #!/bin/sh
 # Builds the Linux server package (ADR-0090) from a lull binary built for this machine's architecture:
-# lull_<version>_<arch>.deb, lull-<version>.<arch>.rpm and lull_<version>_linux-<arch>.tar.gz in <out>.
+# lull-server_<version>_<arch>.deb, lull-server-<version>.<arch>.rpm and lull-server_<version>_linux-<arch>.tar.gz in
+# <out> (the desktop app's own packages are lull_…).
 #
 #   sh packaging/linux/build.sh <lull binary> <version> <out>
 # Needs node, unzip and curl; fetches the nfpm it builds the .deb and .rpm with, pinned below.
@@ -41,8 +42,8 @@ config() { # <arch>
   sed -e "s|\${ARCH}|$1|g" -e "s|\${VERSION}|$version|g" -e "s|\${STAGE}|$stage|g" "$here/nfpm.yaml" >"$stage/nfpm-$1.yaml"
   echo "$stage/nfpm-$1.yaml"
 }
-"$nfpm" package --config "$(config "$arch")" --packager deb --target "$out/lull_${version}_${arch}.deb"
-"$nfpm" package --config "$(config "$rpm_arch")" --packager rpm --target "$out/lull-${version}.${rpm_arch}.rpm"
-tar -C "$stage" -czf "$out/lull_${version}_linux-${tar_arch}.tar.gz" --transform 's,^\.,lull,' \
+"$nfpm" package --config "$(config "$arch")" --packager deb --target "$out/lull-server_${version}_${arch}.deb"
+"$nfpm" package --config "$(config "$rpm_arch")" --packager rpm --target "$out/lull-server-${version}.${rpm_arch}.rpm"
+tar -C "$stage" -czf "$out/lull-server_${version}_linux-${tar_arch}.tar.gz" --transform 's,^\.,lull-server,' \
   ./lib ./licenses ./lull.service ./postinstall.sh ./preremove.sh ./postremove.sh ./install.sh
 ls -l "$out"

@@ -13,11 +13,11 @@ Group=lull
 # How lull is run, not what it does: settings::ENV_ONLY.
 Environment=LULL_DATA_DIR=/var/lib/lull
 Environment=LULL_LISTEN=0.0.0.0:8484
-Environment=LULL_SLSKD=/usr/lib/lull/slskd
-Environment=LULL_YTDLP=/usr/lib/lull/yt-dlp
-Environment=LULL_DENO=/usr/lib/lull/deno
+Environment=LULL_SLSKD=/usr/lib/lull-server/slskd
+Environment=LULL_YTDLP=/usr/lib/lull-server/yt-dlp
+Environment=LULL_DENO=/usr/lib/lull-server/deno
 Environment=HOME=/var/lib/lull
-ExecStart=/usr/lib/lull/lull serve
+ExecStart=/usr/lib/lull-server/lull serve
 Restart=on-failure
 RestartSec=5
 # slskd and everything else lull started stop with it.

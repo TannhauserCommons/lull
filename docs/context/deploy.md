@@ -4,9 +4,9 @@ A hub runs three ways (ADR-0090): in the desktop app (desktop.md), as the Linux 
 
 ## The Linux package
 
-For a computer that only serves: `lull_<version>_<amd64|arm64>.deb`, `lull-<version>.<x86_64|aarch64>.rpm`, or `lull_<version>_linux-<x64|arm64>.tar.gz` with `sudo ./install.sh`. Built by `packaging/linux/build.sh` (`server-package` workflow) on Ubuntu 22.04, so glibc 2.35 or newer. The packages depend on ICU, which slskd (.NET) aborts without; `install.sh` warns when it's missing.
+For a computer that only serves: `lull-server_<version>_<amd64|arm64>.deb`, `lull-server-<version>.<x86_64|aarch64>.rpm`, or `lull-server_<version>_linux-<x64|arm64>.tar.gz` with `sudo ./install.sh`. Not `lull`: that is the desktop app's package, which the server package conflicts with (one hub per computer). Built by `packaging/linux/build.sh` (`server-package` workflow) on Ubuntu 22.04, so glibc 2.35 or newer. The packages depend on ICU, which slskd (.NET) aborts without; `install.sh` warns when it's missing.
 
-**What it holds:** `/usr/lib/lull/` has `lull` and the slskd, yt-dlp and Deno that `app/build.rs` pins for the app's Linux build (`packaging/linux/sidecars.mjs` reads them there), plus `/usr/bin/lull` and the licences in `/usr/share/doc/lull/`.
+**What it holds:** `/usr/lib/lull-server/` has `lull` and the slskd, yt-dlp and Deno that `app/build.rs` pins for the app's Linux build (`packaging/linux/sidecars.mjs` reads them there), plus `/usr/bin/lull` and the licences in `/usr/share/doc/lull-server/`.
 
 **How it runs:** `lull.service`, under the system user `lull` (made by the package), with data in `/var/lib/lull`.
 - The unit sets only how lull is run: `LULL_DATA_DIR`, `LULL_LISTEN=0.0.0.0:8484`, `LULL_SLSKD`, `LULL_YTDLP` and `LULL_DENO`.

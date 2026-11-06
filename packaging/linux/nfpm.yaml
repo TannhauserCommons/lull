@@ -1,6 +1,8 @@
 # The .deb and .rpm of the Linux server package (ADR-0090), built by packaging/linux/build.sh from the files it
 # stages in ${STAGE} (it fills in the ${…} names). Only what the hub needs: lull, slskd, yt-dlp, Deno and their licences.
-name: lull
+# lull-server, not lull: the desktop app's own .deb and .rpm are lull, and install /usr/bin/lull too. A computer runs
+# one hub (both answer on port 8484), so the two conflict.
+name: lull-server
 arch: ${ARCH}
 platform: linux
 version: ${VERSION}
@@ -10,18 +12,20 @@ description: |
   lull, the music hub: streams from Soulseek while the transfer runs, saves into your music folder or
   Jellyfin, recommends music. Set it up with: sudo lull setup
 homepage: https://github.com/TannhauserCommons/lull
+conflicts:
+  - lull
 license: AGPL-3.0-only
 contents:
   - src: ${STAGE}/lib/
-    dst: /usr/lib/lull/
+    dst: /usr/lib/lull-server/
     type: tree
-  - src: /usr/lib/lull/lull
+  - src: /usr/lib/lull-server/lull
     dst: /usr/bin/lull
     type: symlink
   - src: ${STAGE}/lull.service
     dst: /usr/lib/systemd/system/lull.service
   - src: ${STAGE}/licenses/
-    dst: /usr/share/doc/lull/
+    dst: /usr/share/doc/lull-server/
     type: tree
 scripts:
   postinstall: ${STAGE}/postinstall.sh

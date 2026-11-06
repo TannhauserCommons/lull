@@ -31,13 +31,13 @@ inside 'systemctl is-enabled lull && systemctl is-active lull'
 inside 'for i in $(seq 1 60); do [ -S /var/lib/lull/admin.sock ] && exit 0; sleep 1; done; journalctl -u lull --no-pager | tail -20; exit 1'
 inside 'test "$(stat -c %U /var/lib/lull)" = lull'
 inside 'pgrep -u lull -x slskd >/dev/null' || { inside 'journalctl -u lull --no-pager | tail -20'; echo "slskd doesn't run as lull" >&2; exit 1; }
-inside 'runuser -u lull -- /usr/lib/lull/deno --version | head -1'
+inside 'runuser -u lull -- /usr/lib/lull-server/deno --version | head -1'
 code=$(inside 'lull pair' | sed -n 's/.*enter the code \([A-Z0-9]*\).*/\1/p')
 [ -n "$code" ] || { echo "lull pair printed no code" >&2; exit 1; }
 inside "node /root/run.mjs http://127.0.0.1:8484 --pair $code --managed --mdns"
 inside 'lull status'
 
 echo "== remove"
-case "$distro" in fedora) inside 'dnf -y -q remove lull' ;; *) inside 'DEBIAN_FRONTEND=noninteractive apt-get remove -y -qq lull' ;; esac
+case "$distro" in fedora) inside 'dnf -y -q remove lull-server' ;; *) inside 'DEBIAN_FRONTEND=noninteractive apt-get remove -y -qq lull-server' ;; esac
 inside '! systemctl is-active lull && ! pgrep -x slskd && test -d /var/lib/lull'
 echo "== $distro: the package keeps the contract"

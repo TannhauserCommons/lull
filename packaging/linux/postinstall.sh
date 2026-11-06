@@ -11,5 +11,5 @@ if [ -d /run/systemd/system ]; then
   systemctl restart lull.service
   echo "lull runs. Set it up with: sudo lull setup"
 else
-  echo "lull is installed, but this system has no systemd: start it with /usr/lib/lull/lull serve (ADR-0090)."
+  echo "lull is installed, but this system has no systemd: start it with /usr/lib/lull-server/lull serve (ADR-0090)."
 fi
