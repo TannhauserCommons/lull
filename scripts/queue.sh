@@ -3,7 +3,7 @@
 #   plan   build the candidate: every waiting queue/<topic> branch rebased, oldest first, onto main
 #          and onto the ones before it; write which checks its diff needs to $GITHUB_OUTPUT
 #   land   fast-forward main to the tested candidate; mark and delete the branches it holds
-#   reject report a red candidate on its branches, or split a red batch into single tries
+#   reject report a red candidate on its branches, or split a red batch in halves
 #   rescue start the next run when this one broke off before it could (queue.yml's last job)
 #   dispatch <workflow>  start a workflow on main, asking again when GitHub fails
 # Needs git with push rights (the job's token), gh, and in CI: REPO, RUN_URL; land and reject also
@@ -19,7 +19,8 @@ out() { echo "$1=$2" >> "${GITHUB_OUTPUT:-/dev/stdout}"; }
 # The status every queue/<topic> tip and every landed commit carries. Only GitHub Actions sets it, and
 # main's ruleset requires it from GitHub Actions.
 CONTEXT=queue
-SPLIT="failed in a batch; trying alone"
+# A red batch's tips carry "<SPLIT> of <n>; tried again in halves": the batch they failed in, and its size.
+SPLIT="failed in a batch"
 MAX_BATCH=10
 # More commits than a topic holds: a branch made from history main no longer has (a rewrite), which a rebase
 # would replay whole.
@@ -131,13 +132,16 @@ plan() {
   done
   [ -n "$waiting" ] || { echo "nothing waiting"; out candidate ""; return; }
 
-  # A red tip waits for its owner's next push. Tips left from a red batch go one at a time.
-  eligible="" split=false
+  # A red tip waits for its owner's next push. Tips left from a red batch are tried again in halves (below).
+  eligible="" splits=""
   while read -r topic tip; do
     st=$(current "$tip")
     case "$st" in
       failure*|error*) echo "queue/$topic: red at $(short "$tip"), waiting for a new push"; continue ;;
-      "pending	$SPLIT"*) split=true ;;
+      "pending	$SPLIT"*)
+        size=$(printf '%s' "$st" | sed -n 's/.* of \([0-9][0-9]*\).*/\1/p')
+        splits="$splits${size:-1} $topic $tip
+" ;;
     esac
     eligible="$eligible$topic $tip
 "
@@ -155,7 +159,7 @@ EOF
     eligible=$(printf '%s' "$eligible" | grep -vxF "$first" || true)
   fi
   if [ "$cand" = "$base" ] && [ -n "$eligible" ]; then
-    if $split; then build "$(printf '%s' "$eligible" | head -n 1)"; else build "$(printf '%s' "$eligible" | head -n "$MAX_BATCH")"; fi
+    if [ -n "$splits" ]; then build "$(halve "$splits")"; else build "$(printf '%s' "$eligible" | head -n "$MAX_BATCH")"; fi
   fi
   [ "$cand" != "$base" ] || { out candidate ""; return; }
 
@@ -167,7 +171,7 @@ EOF
     reason=$(printf '%s\n' "$push_err" | sed -n 's/.*\[remote rejected\][^(]*(\(.*\))$/\1/p' | head -n 1)
     set -- $branches
     if [ $# -gt 1 ]; then
-      for b; do status "${b#*:}" pending "$SPLIT"; done
+      for b; do status "${b#*:}" pending "$SPLIT of $#; tried again in halves"; done
     else
       status "${1#*:}" failure "GitHub refused the queue's push: ${reason:-see the run}"
     fi
@@ -179,6 +183,17 @@ EOF
   out base "$base"
   out branches "${branches% }"
   checks "$base" "$cand"
+}
+
+# Which of a red batch's topics go next ("<size> <topic> <tip>" lines, oldest first): the oldest half of the group
+# that failed last (the smallest batch they failed in). A half that passes lands, and the other half is halved in
+# turn; a half that fails is halved again; a topic that fails alone is red. So one culprit in a batch of n is found
+# in about log2(n) runs, and the topics with it land on the way.
+halve() { # <splits>
+  smallest=$(printf '%s' "$1" | awk 'NF { print $1 }' | sort -n | head -n 1)
+  group=$(printf '%s' "$1" | awk -v s="$smallest" '$1 == s { print $2, $3 }')
+  count=$(printf '%s\n' "$group" | grep -c .)
+  printf '%s\n' "$group" | head -n $(((count + 1) / 2))
 }
 
 # Stacks the given "<topic> <tip>" lines onto $cand, adding each that rebases cleanly to $branches. A topic that
@@ -296,7 +311,7 @@ reject() {
   [ -n "${CANDIDATE:-}" ] || die "no candidate"
   set -- $BRANCHES
   if [ $# -gt 1 ]; then
-    for b; do status "${b#*:}" pending "$SPLIT"; done
+    for b; do status "${b#*:}" pending "$SPLIT of $#; tried again in halves"; done
     retry
   else
     failed=$(echo $FAILED | sed 's/ /, /g')
