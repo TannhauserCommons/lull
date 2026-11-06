@@ -1,0 +1,19 @@
+<!-- Home's star finder: one printed card between the greeting and the shelves, shown where the page is wide enough
+     (theme.css). The week is the hour rim, 24 spokes lit by how much was played at that hour, the busiest with a star, and the needle
+     is where the song is;
+     the queue is a constellation in the horizon window, the song playing the star that turns; the day is the date ring.
+     Decorative except its words: the dial says the busiest hour, the queue panel lists the songs. -->
+<section class="sd-lead" data-status="{{status}}" data-week="{{week}}" aria-label="Tonight's star finder">
+  <div class="sd-lead__dial" role="img" aria-label="Listening by hour of day this week, most around {{weekPeak}}:00">
+    <span class="sd-lead__hours"><lull-part name="week-clock"></lull-part></span>
+  </div>
+  <div class="sd-lead__text">
+    <p class="sd-lead__kicker">tonight's sky</p>
+    <p class="sd-lead__now">{{title}}</p>
+    <p class="sd-lead__idle">nothing charted yet</p>
+    <p class="sd-lead__line"><span>{{queueCount}} songs, {{queueDuration}}</span><span class="sd-lead__next">next: {{next}}</span></p>
+    <p class="sd-lead__week">{{weekTime}}, {{weekPlays}} plays this week</p>
+  </div>
+  <div class="sd-lead__window" aria-hidden="true"><div class="sd-lead__map"><div class="sd-lead__stars"><lull-part name="queue-sky"></lull-part></div></div></div>
+  <p class="sd-lead__date" aria-label="{{weekday}} {{date}} {{month}}"><b>{{date}}</b><span>{{month}}</span><span>{{weekday}}</span></p>
+</section>
