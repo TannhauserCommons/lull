@@ -7,6 +7,8 @@
 | File | What |
 |---|---|
 | `lib.rs` | `run` (open the db, resolve settings, bind, serve) and `run_with` (the same, with the hub's own slskd), the restart loop, the hub's own routes, `wire` (the crates, the only place they meet) |
+| `admin.rs` | The admin socket (ADR-0090): `<data>/admin.sock`, mode 0600, the hub's routes for lull's commands. A request over it passes the gate on the few routes they use (`admin::may`); `GET /api/host` answers only there |
+| `cli/` | `lull status`, `setup`, `pair`, `config get/set/unset` (Unix), over the admin socket. `setup` asks about the music (a folder, or Jellyfin and the folder it reads), Soulseek and sharing, and outside access (Tailscale serve, or a reverse proxy or domain as `LULL_PUBLIC_URL`), and gives the hub's user access to the music folder with the listener's yes |
 | `managed/` | A hub that runs its own slskd (ADR-0090): the desktop app's and the Linux package's (`lull serve` with `LULL_SLSKD`, `managed::serve`). The slskd supervisor and how it is tied to whoever runs it, the mDNS advert, Tailscale serve, the LAN address pair codes carry. After each restart slskd gets the new settings; a wedged one (`restartSlskd`) is restarted at most every 30 minutes |
 | `hub.rs` | `Hub`: what outlives a restart (env, db, pairing, who is online) and the current `Wiring` (the crates' `Ctx` and routes); `restart` |
 | `gate.rs` | The pairing gate and the `lull_device` cookie |

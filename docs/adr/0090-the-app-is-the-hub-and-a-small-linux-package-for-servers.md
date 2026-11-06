@@ -40,7 +40,9 @@ As before, plus **"Keep lull running when closed"** in Settings:
   - `sudo lull setup`: a few plain questions with good defaults. Where the music is (a folder, or an existing Jellyfin server's address and key). The Soulseek account. Whether to share the music. Then it prints:
     - the address to pair with and the setup code;
     - how to reach the hub from outside the home: Tailscale's serve if Tailscale is on this server, otherwise a reverse proxy or the listener's own domain, with `LULL_PUBLIC_URL`.
-  - `lull status`: the version, each part's state, the addresses and the paired devices.
+  - `sudo lull status`: the version, each part's state, the addresses and whether a device is paired.
+  - `sudo lull pair`: a link that pairs a phone or computer.
+  - The commands talk to the running hub over `<data>/admin.sock`, which only root and the hub's own user can open, through the routes the web page uses.
   - `sudo lull config get|set|unset KEY [value]`: one setting, validated as `PATCH /api/config` validates it. The hub then restarts its crates.
   - `sudo lull update`: the self-update below, from the command line.
 - **One place per setting:**

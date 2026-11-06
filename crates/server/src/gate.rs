@@ -13,6 +13,7 @@ use axum::response::{IntoResponse, Response};
 use lull_core::config::Config;
 use lull_core::devices::{self, Kind};
 
+use crate::admin;
 use crate::hub::Hub;
 
 pub const COOKIE: &str = "lull_device";
@@ -22,6 +23,10 @@ const COOKIE_MAX_AGE_S: u32 = 400 * 24 * 60 * 60;
 
 pub async fn require(State(hub): State<Arc<Hub>>, mut req: Request, next: Next) -> Response {
     if is_open(req.method(), req.uri().path()) {
+        return next.run(req).await;
+    }
+    // lull's own commands, over the hub's admin socket (admin.rs).
+    if req.extensions().get::<admin::Admin>().is_some() && admin::may(req.method(), req.uri().path()) {
         return next.run(req).await;
     }
     let Some((token, from_cookie)) = presented(req.headers()) else {

@@ -8,9 +8,13 @@ use lull_server::BoxError;
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    let outcome = match std::env::args().nth(1).as_deref() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let outcome = match args.first().map(String::as_str) {
         None | Some("serve") => serve().await,
         Some("healthcheck") => healthcheck().await,
+        #[cfg(unix)]
+        Some(_) => lull_server::cli::run(&args).await,
+        #[cfg(not(unix))]
         Some(other) => Err(format!("unknown command {other:?}; use serve or healthcheck").into()),
     };
     match outcome {

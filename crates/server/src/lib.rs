@@ -3,6 +3,9 @@
 //! (docs/context/workspace.md, docs/context/hub.md). The `lull` binary and the desktop app both
 //! start the hub through `run` (ADR-0002).
 
+mod admin;
+#[cfg(unix)]
+pub mod cli;
 mod compress;
 mod conditional;
 mod config;
@@ -59,12 +62,19 @@ pub async fn run_with(
     let listener = tokio::net::TcpListener::bind(config.listen).await?;
     tracing::info!(listen = %config.listen, version = %lull_core::build::version(), "lull is up");
     let hub = Hub::open(env, db, config).await?;
-    let wedge = sidecar
-        .clone()
-        .map(|s| tokio::spawn(managed::restart_when_wedged(hub.clone(), s)));
+    let mut tasks = Vec::new();
+    if let Some(s) = sidecar.clone() {
+        tasks.push(tokio::spawn(managed::restart_when_wedged(hub.clone(), s)));
+    }
+    // A data folder that can't hold a socket (some network shares) only loses lull's commands.
+    #[cfg(unix)]
+    match admin::listen(hub.clone()).await {
+        Ok(task) => tasks.push(task),
+        Err(e) => tracing::warn!("lull's commands can't reach this hub: {e}"),
+    }
     let served = serve(listener, hub, sidecar, shutdown).await;
-    if let Some(w) = wedge {
-        w.abort();
+    for task in tasks {
+        task.abort();
     }
     served
 }
@@ -121,6 +131,7 @@ fn router(hub: Arc<Hub>) -> Router {
         .merge(devices::router())
         .merge(config::router())
         .merge(updates::router())
+        .merge(admin::router())
         .fallback(crates)
         .layer(axum::middleware::from_fn_with_state(hub.clone(), gate::require))
         .layer(axum::middleware::from_fn(conditional::not_modified))

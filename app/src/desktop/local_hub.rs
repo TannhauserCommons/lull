@@ -8,7 +8,6 @@ use crate::desktop::state::Desktop;
 use crate::hub;
 use lull_core::db::{self, Db};
 use lull_core::devices::{self, Kind};
-use lull_core::settings;
 use lull_server::managed::advert::{self, Advert};
 use lull_server::managed::{self, Fixed, Sidecar, Tie, slskd};
 use std::collections::BTreeMap;
@@ -78,7 +77,9 @@ pub fn start(app: &AppHandle) -> Result<LocalHub, String> {
 
     let db = Db::open(&paths.data).map_err(|e| e.to_string())?;
     db.migrate(&db::CORE).map_err(|e| e.to_string())?;
-    block_on(seed_music_dir(&db, &env, app.path().audio_dir().ok()))?;
+    if let Ok(music) = app.path().audio_dir() {
+        block_on(managed::seed_music_dir(&db, &env, &music)).map_err(|e| e.to_string())?;
+    }
     block_on(managed::follow_lan_address(&db, PORT)).map_err(|e| e.to_string())?;
     let token = block_on(own_token(app, &db))?;
     let launch = block_on(managed::launch(&env, &db)).map_err(|e| e.to_string())?;
@@ -174,18 +175,6 @@ fn beside_app(name: &str) -> Option<PathBuf> {
 
 fn path_string(path: &Path) -> String {
     path.to_string_lossy().into_owned()
-}
-
-/// The hub's default music folder is a container path; on a computer it's the listener's Music
-/// folder. Stored, not set by env, so the setup screen can change it.
-async fn seed_music_dir(db: &Db, env: &BTreeMap<String, String>, music: Option<PathBuf>) -> Result<(), String> {
-    const KEY: &str = "LULL_MUSIC_DIR";
-    let stored = settings::stored(db).await.map_err(|e| e.to_string())?;
-    let Some(music) = music.filter(|_| !stored.contains_key(KEY) && !env.contains_key(KEY)) else {
-        return Ok(());
-    };
-    let change = BTreeMap::from([(KEY.to_owned(), Some(path_string(&music)))]);
-    settings::store(db, change).await.map_err(|e| e.to_string())
 }
 
 /// The app's own device on its hub: the stored token while the hub still knows it, else a new one.

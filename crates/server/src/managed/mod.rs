@@ -49,6 +49,7 @@ pub async fn serve(
     let db = Db::open(&data)?;
     db.migrate(&db::CORE)?;
     let port = crate::hub::configure(&env, &db).await?.listen.port();
+    seed_music_dir(&db, &env, &data.join("music")).await?;
     follow_lan_address(&db, port).await?;
     let launch = launch(&env, &db).await?;
     let sidecar = tokio::task::spawn_blocking(move || slskd::start(fixed, launch)).await??;
@@ -84,6 +85,19 @@ pub(crate) fn launch_of(config: &Config) -> Launch {
             Share::Library => Some(config.library.music_dir.clone()),
         },
     }
+}
+
+/// The hub's default music folder is the image's `/music`; on a computer it's `default` (the
+/// listener's Music folder for the app, one in the data folder for the package), made if missing.
+/// Stored, not set by env, so setup and the web page can change it.
+pub async fn seed_music_dir(db: &Db, env: &BTreeMap<String, String>, default: &Path) -> Result<(), BoxError> {
+    const KEY: &str = "LULL_MUSIC_DIR";
+    if env.get(KEY).is_some_and(|v| !v.is_empty()) || settings::stored(db).await?.contains_key(KEY) {
+        return Ok(());
+    }
+    std::fs::create_dir_all(default)?;
+    let change = BTreeMap::from([(KEY.to_owned(), Some(path_string(default)))]);
+    Ok(settings::store(db, change).await?)
 }
 
 /// Pair codes carry `LULL_PUBLIC_URL`; without one they'd carry whatever address the asking

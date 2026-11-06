@@ -413,7 +413,10 @@ async fn its_own_slskd_restarts_when_what_it_shares_changes() -> Result<(), BoxE
     std::fs::create_dir_all(&dir)?;
     let starts = dir.join("starts");
     let exe = dir.join("slskd");
-    std::fs::write(&exe, format!("#!/bin/sh\necho \"$*\" >> '{}'\nexec sleep 600\n", starts.display()))?;
+    std::fs::write(
+        &exe,
+        format!("#!/bin/sh\necho \"$*\" >> '{}'\nexec sleep 600\n", starts.display()),
+    )?;
     std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755))?;
     let music = dir.join("music");
     let fixed = Fixed {
@@ -425,13 +428,10 @@ async fn its_own_slskd_restarts_when_what_it_shares_changes() -> Result<(), BoxE
         web_password: "w".into(),
         tie: Tie::NONE,
     };
-    let mut env: BTreeMap<String, String> = [
-        ("LULL_DATA_DIR", dir.join("data")),
-        ("LULL_MUSIC_DIR", music.clone()),
-    ]
-    .into_iter()
-    .map(|(k, v)| (k.to_owned(), v.to_string_lossy().into_owned()))
-    .collect();
+    let mut env: BTreeMap<String, String> = [("LULL_DATA_DIR", dir.join("data")), ("LULL_MUSIC_DIR", music.clone())]
+        .into_iter()
+        .map(|(k, v)| (k.to_owned(), v.to_string_lossy().into_owned()))
+        .collect();
     env.insert("LULL_SETUP_CODE".into(), SETUP_CODE.into());
     env.extend(managed::vars(&fixed));
     let db = Db::open(&dir.join("data"))?;
@@ -493,6 +493,50 @@ async fn its_own_slskd_restarts_when_what_it_shares_changes() -> Result<(), BoxE
     let _ = stop.send(());
     server.await??;
     tokio::task::spawn_blocking(move || sidecar.stop()).await?;
+    let _ = std::fs::remove_dir_all(dir);
+    Ok(())
+}
+
+/// lull's commands reach the hub over its admin socket with no token, for the routes they use
+/// only: a setting changes as the web page changes it, and the devices stay closed.
+#[cfg(unix)]
+#[tokio::test]
+async fn the_admin_socket_opens_the_settings_and_nothing_else() -> Result<(), BoxError> {
+    let (hub, dir) = test_hub().await?;
+    let socket = hub.ctx().await.config.data_dir.join(crate::admin::SOCKET);
+    let task = crate::admin::listen(hub.clone()).await?;
+    let http = reqwest::Client::builder().unix_socket(socket.clone()).build()?;
+
+    let changed = http
+        .patch("http://lull/api/config")
+        .json(&json!({ "LULL_PUBLIC_URL": "https://music.example" }))
+        .send()
+        .await?;
+    assert_eq!(changed.status(), reqwest::StatusCode::OK);
+    let stored = lull_core::settings::stored(&hub.db).await?;
+    assert_eq!(
+        stored.get("LULL_PUBLIC_URL").map(String::as_str),
+        Some("https://music.example")
+    );
+    let host: Value = http
+        .get("http://lull/api/host")
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(host["paired"], false);
+    let devices = http.get("http://lull/api/devices").send().await?;
+    assert_eq!(devices.status(), reqwest::StatusCode::UNAUTHORIZED);
+    use std::os::unix::fs::PermissionsExt;
+    assert_eq!(std::fs::metadata(&socket)?.permissions().mode() & 0o777, 0o600);
+
+    // Over TCP, /api/host needs a token like every /api route.
+    let (status, _, _) = call(&hub, get("/api/host", Auth::None)?).await?;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    task.abort();
+    hub.stop().await;
     let _ = std::fs::remove_dir_all(dir);
     Ok(())
 }
