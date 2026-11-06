@@ -59,6 +59,8 @@ Why a song stopped is its job's: the fetch's progress (`status`, `error`) is the
 - **The player's audio failed** (a 502 the player can't read, a copy its browser or app can't decode, a response that broke off): it tells the hub, `POST /api/stream/{trackId}/output-error { jobId? }` (`Fetcher::output_error`). A failed job answers with its own event, unchanged. One whose copy arrived records that this device can't play it (`unplayable`: "this copy can't be played in <device> (<format>)") on the job, for Activity, and answers with that; other devices' playback is untouched. Without a job id (the audio failed before the player heard of its job), the song's live job answers, else its latest. Nothing is started or restarted.
 - **The hub can't be reached:** the one sentence the player says itself ("Can't reach the lull server").
 
+Once a song has failed, it stays failed. The job's earlier events (its opening `finding`, say) come on the event stream, and the outcome comes on the play's own request, so an event can arrive after the outcome. The player ignores any of them that isn't a newer `attempt`.
+
 Before (2026-11-05), the player's own "No peer delivered this song" covered every failure it hadn't heard the hub's reason for, a browser's decode error included.
 
 ## Better copies

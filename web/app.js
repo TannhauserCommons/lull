@@ -2491,6 +2491,8 @@
        it is adopted, not reopened; then only that job's events count */
     if (!e.job) { e.job = ev.jobId; e.attempt = ev.attempt || 0; }
     else if (e.job !== ev.jobId) return;               // another fetch of the song
+    // a song that stopped stays stopped: its job's earlier events can come after the outcome, on another connection
+    else if (e === cur && ps.status === 'failed' && ev.status !== 'failed' && !(ev.attempt > e.attempt)) return;
     else if (ev.attempt > e.attempt) { e.attempt = ev.attempt; if (e === cur) reopen(); }
     if (e === nxt) { e.resolve = ev.status === 'failed' ? 'none' : ev.status === 'streaming' ? 'ready' : 'resolving'; changed('queue'); return; }
     onUpgrade(e, ev.upgrade);
