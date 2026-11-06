@@ -1,0 +1,151 @@
+name: main-full
+# Every check on main's newest commit (ADR-0095). The queue runs only the checks a change needs, so this runs the rest
+# too, every three hours while main has a commit no full run has checked. Its verdict is the commit's `full` status; a
+# release is cut only from a commit the queue landed and a full run passed (scripts/release.sh). A red one files an
+# issue for the integrator.
+on:
+  schedule:
+    - cron: "41 */3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: main-full
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      commit: ${{ steps.plan.outputs.commit }}
+      build_release: ${{ steps.plan.outputs.build_release }}
+      build_changes: ${{ steps.plan.outputs.build_changes }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha=$(git rev-parse HEAD)
+          done=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/statuses" \
+            --jq '[.[] | select(.context == "full" and .creator.login == "github-actions[bot]")][0].state // ""')
+          if [ -n "$done" ] && [ "$GITHUB_EVENT_NAME" = schedule ]; then
+            echo "main's tip $sha had its full run ($done)"
+            exit 0
+          fi
+          echo "commit=$sha" >> "$GITHUB_OUTPUT"
+          # What the image says it is, as the queue's build_version works it out.
+          tag=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname --merged "$sha" | head -n 1)
+          if [ -n "$tag" ]; then
+            echo "build_release=${tag#v}" >> "$GITHUB_OUTPUT"
+            echo "build_changes=$(git rev-list --count --invert-grep --grep='^build(release): lull ' "$tag..$sha")" >> "$GITHUB_OUTPUT"
+          fi
+
+  ci:
+    needs: plan
+    if: needs.plan.outputs.commit != ''
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.plan.outputs.commit }}
+
+  ui-gates:
+    needs: plan
+    if: needs.plan.outputs.commit != ''
+    permissions:
+      contents: read
+      issues: write
+    uses: ./.github/workflows/ui-gates.yml
+    with:
+      ref: ${{ needs.plan.outputs.commit }}
+
+  app:
+    needs: plan
+    if: needs.plan.outputs.commit != ''
+    uses: ./.github/workflows/app.yml
+    with:
+      ref: ${{ needs.plan.outputs.commit }}
+      checks: true
+      android: true
+    secrets: inherit
+
+  slskd-contract:
+    needs: plan
+    if: needs.plan.outputs.commit != ''
+    uses: ./.github/workflows/slskd-contract.yml
+    with:
+      ref: ${{ needs.plan.outputs.commit }}
+
+  server-package:
+    needs: plan
+    if: needs.plan.outputs.commit != ''
+    uses: ./.github/workflows/server-package.yml
+    with:
+      ref: ${{ needs.plan.outputs.commit }}
+      build-release: ${{ needs.plan.outputs.build_release }}
+      build-changes: ${{ needs.plan.outputs.build_changes }}
+
+  image:
+    needs: plan
+    if: needs.plan.outputs.commit != ''
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.plan.outputs.commit }}
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          tags: lull:candidate
+          build-args: |
+            LULL_BUILD_RELEASE=${{ needs.plan.outputs.build_release }}
+            LULL_BUILD_CHANGES=${{ needs.plan.outputs.build_changes }}
+            LULL_BUILD_COMMIT=${{ needs.plan.outputs.commit }}
+          outputs: type=docker,dest=${{ runner.temp }}/lull-image.tar
+          cache-from: type=gha
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image
+          path: ${{ runner.temp }}/lull-image.tar
+          retention-days: 1
+
+  ui:
+    needs: [plan, image]
+    if: needs.plan.outputs.commit != ''
+    permissions:
+      contents: read
+      issues: write
+    uses: ./.github/workflows/ui.yml
+    with:
+      ref: ${{ needs.plan.outputs.commit }}
+      image-artifact: image
+
+  verdict:
+    needs: [plan, ci, ui-gates, app, slskd-contract, server-package, image, ui]
+    if: ${{ !cancelled() && needs.plan.outputs.commit != '' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      statuses: write
+      issues: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.plan.outputs.commit }}
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          failed=$(printf '%s' "$RESULTS" | jq -r 'to_entries[] | select(.key != "plan" and .value.result != "success") | .key' | tr '\n' ' ')
+          url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          if [ -z "$failed" ]; then
+            gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=success -f context=full -f description="every check passed" -f target_url="$url" >/dev/null
+            echo "every check passed on $SHA"
+          else
+            gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=failure -f context=full -f description="failed: $failed" -f target_url="$url" >/dev/null
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "main fails a full run at $(echo "$SHA" | cut -c1-7)" \
+              --body "A check the queue didn't need for this change failed on main's $SHA: $failed. $url" >/dev/null || true
+            echo "::error::failed on main: $failed"
+            exit 1
+          fi

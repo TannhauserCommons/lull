@@ -23,13 +23,15 @@ git fetch -q --tags origin main
 ! git rev-parse -q --verify "refs/tags/v$version" >/dev/null || die "v$version exists already"
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 
-# The newest green commit: the queue's status (ADR-0095), or before the queue, every check run passed.
+# The newest green commit: the queue landed it and a full run passed it (main-full.yml; the queue runs only what a
+# change needs), or before the queue, every check run passed.
 green() {
   for sha in $(git rev-list --first-parent -n 200 origin/main); do
-    # Only GitHub Actions can set it: main's ruleset requires it from there (ADR-0095).
-    queue=$(gh api "repos/$repo/commits/$sha/statuses" \
-      --jq '[.[] | select(.context == "queue" and .creator.login == "github-actions[bot]")][0].state // ""')
-    [ "$queue" = success ] && { echo "$sha"; return; }
+    # Only GitHub Actions can set them: main's ruleset requires the queue's from there (ADR-0095).
+    states=$(gh api "repos/$repo/commits/$sha/statuses" \
+      --jq '[.[] | select(.creator.login == "github-actions[bot]")] as $s | [($s | map(select(.context == "queue")) | .[0].state // ""), ($s | map(select(.context == "full")) | .[0].state // "")] | join(" ")')
+    queue=${states%% *} full=${states#* }
+    [ "$queue" = success ] && [ "$full" = success ] && { echo "$sha"; return; }
     [ -z "$queue" ] || continue
     runs=$(gh api "repos/$repo/commits/$sha/check-runs?per_page=100" \
       --jq '[.check_runs[].conclusion] | if length > 0 and all(. == "success" or . == "skipped" or . == "neutral") then "green" else "" end')

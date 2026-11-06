@@ -76,3 +76,11 @@ A check that fails without a change to blame gets an owner and a fix at its caus
 - **A change to the checks is tested with main's checks.** Actions reads a called workflow at the commit that calls it, so the queue runs main's `.github/workflows/`; a changed workflow is run by hand on its branch before it queues (quality.md).
 - **A red check ends the run at once.** A watch job beside the checks gives the verdict on the first failure and cancels the rest, so a red batch is split minutes sooner.
 - **The queue is a single point of failure.** If it is broken, the owner turns the ruleset off and pushes the fix directly; the queue's next runs then run the fixed copy.
+
+## Amended 2026-11-06: faster runs
+
+The owner asked for runs in minutes, not a 20-minute `ui` on one machine, and agreed to this:
+- **Split across machines:** `ui` six ways (the visual matrix four, Lighthouse's routes two), `ui-gates` seven (performance two, `fit` two, the rest three). Public repositories' runners are free.
+- **Only what a change needs** stays the queue's rule. `main-full.yml` runs every check on main's newest commit every three hours, sets its `full` status, and files an issue when red. A release is cut only from a commit with `queue` and `full` both green.
+- **A red batch is halved,** not tried one topic at a time: a passing half lands, and the culprit is found in about log2(n) runs.
+- **Flaky UI tests,** the open point above: a failing UI test runs once more on the same code. Failing then passing is flaky: it doesn't hold the landing and gets a `flaky` issue for its owner (`scripts/flaky.mjs`). Nothing else is retried, and no budget is loosened.

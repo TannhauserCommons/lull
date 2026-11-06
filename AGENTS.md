@@ -51,7 +51,7 @@ A music app for one listener who hosts it themselves (PROJECT.md). It streams fr
 - **Small commits, landed by the queue.** `mise run ship <topic>` pushes to `queue/<topic>`, which tests it on top of main and lands it only if green ([quality.md](docs/context/quality.md#the-queue-main-is-always-green)). Never push to `main`; it refuses. Red: fix it on your branch and ship again.
 - **Name what it holds.** Topics and branches say what they hold (`loops-in-css`), never the worktree's generated name: the repository is public. A branch's checks run by hand (docs/context/quality.md).
 - **Big work lands switched off** (`lull_core::flags`, ADR-0096; workspace.md), so a release never waits for it. Finishing it removes the switch.
-- **A flaky check is a bug:** its area's owner fixes the cause that day. Never retry it or loosen its budget (quality.md, Flaky checks).
+- **A flaky check is a bug:** its area's owner fixes the cause that day. CI gives a failing UI test one retry, and one that passes on it gets a `flaky` issue instead of holding the landing; nothing else is retried, and no budget is loosened (quality.md, Flaky checks).
 - **Stage only the files you changed.** Other agents may have uncommitted work here.
 - **Keep docs current.** A change that makes a `docs/context/` page wrong updates that page in the same commit.
 - **Record decisions as ADRs.** A decision with alternatives worth remembering gets an ADR in `docs/adr/`, numbered from your range in `workspace.md`.
