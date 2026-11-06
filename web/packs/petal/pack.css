@@ -67,6 +67,7 @@
   background-repeat: no-repeat; background-origin: border-box; background-clip: border-box, border-box, padding-box;
   box-shadow: var(--stack); font: 400 1.5rem/1 var(--f-zine); letter-spacing: .03em; text-transform: lowercase; text-align: center;
 }
+:root[data-design="petal"] .egg-line:is([hidden], :empty) { display: none; }   /* an egg drawn only by its slot speaks no line */
 /* the count of the new year: big pixel digits that tick with each second */
 :root[data-design="petal"][data-egg~="new-year"] .egg-line { font: 400 4.5rem/.9 var(--f-zine); padding: 14px 34px 10px; min-width: 2.4em; text-shadow: 3px 3px 0 var(--pt-frame); }
 @media (prefers-reduced-motion: no-preference) {
@@ -197,11 +198,17 @@
 @keyframes pe-roll { 0% { transform: translateY(100vh); } 48%, 100% { transform: translateY(-80px); } }
 @keyframes pe-trk { 0% { transform: scaleX(.17); } 100% { transform: scaleX(1); } }
 
-/* a rare start: "press start" blinks over the player */
-:root[data-design="petal"] [data-egg-of="rare-boot"] .pt-e-start { position: absolute; left: 50%; bottom: calc(var(--bar-h) + 56px); transform: translateX(-50%); padding: 8px 18px 6px; background: var(--panel); color: var(--link);
-  border: 2px solid var(--line); box-shadow: var(--stack-sm); font: 400 1.375rem/1 var(--f-zine); letter-spacing: .1em; white-space: nowrap; }
-:root[data-design="petal"] [data-egg-of="rare-boot"] .pt-e-bit { position: absolute; left: 50%; bottom: calc(var(--bar-h) + 80px); width: 12px; height: 12px; margin-left: -6px; background: var(--heart); opacity: 0;
-  -webkit-mask: var(--px-spark) center / 100% 100% no-repeat; mask: var(--px-spark) center / 100% 100% no-repeat; }
+/* a rare start: "press start" blinks on the desk in the player's tab strip, between its "now playing" tab and its keys,
+   where nothing can be pressed, and its sparks burst along the strip. The strip has that room from 840 px; narrower, the
+   start is heard, not drawn */
+:root[data-design="petal"] [data-egg-of="rare-boot"] :is(.pt-e-start, .pt-e-bit) { display: none; }
+@media (min-width: 840px) {
+  :root[data-design="petal"] [data-egg-of="rare-boot"] :is(.pt-e-start, .pt-e-bit) { display: block; }
+  :root[data-design="petal"] [data-egg-of="rare-boot"] .pt-e-start { position: absolute; left: calc((190px + 100vw - 497px) / 2); bottom: calc(var(--bar-h) - 15px); transform: translateX(-50%); padding: 5px 14px 3px; background: var(--panel); color: var(--link);
+    border: 2px solid var(--line); box-shadow: var(--stack-sm); font: 400 1.125rem/1 var(--f-zine); letter-spacing: .1em; white-space: nowrap; }
+  :root[data-design="petal"] [data-egg-of="rare-boot"] .pt-e-bit { position: absolute; left: calc((190px + 100vw - 497px) / 2); bottom: calc(var(--bar-h) - 4px); width: 12px; height: 12px; margin-left: -6px; background: var(--heart); opacity: 0;
+    -webkit-mask: var(--px-spark) center / 100% 100% no-repeat; mask: var(--px-spark) center / 100% 100% no-repeat; }
+}
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-motion="reduce"])[data-design="petal"] [data-egg-of="rare-boot"] .pt-e-start { animation: pe-start 1s steps(1, end) 5 both; }
   :root:not([data-motion="reduce"])[data-design="petal"] [data-egg-of="rare-boot"] .pt-e-bit { animation: pe-burst 1.2s steps(5, end) .2s both; }
