@@ -9,10 +9,12 @@ const port = +(process.env.FIXTURE_PORT || 8790);
 // Goldens are per platform: fonts and anti-aliasing differ between systems, so the committed ones are Linux's (CI)
 // and a run elsewhere compares against pictures it made itself the first time (gitignored).
 const capture = process.env.UI_CAPTURE === '1';
-// GATES picks the projects a run takes: `perf` alone (its task lengths must not share the CPU with screenshots), `rest`
-// (every other project, so a new gate runs in CI and in run.sh without being listed there), or, unset, all of them.
+// GATES picks the projects a run takes: `perf` alone (its task lengths must not share the CPU with screenshots), `fit`
+// (the chrome at every width: about half the gates' time, so CI gives it machines of its own), `rest` (every other
+// project, so a new gate runs in CI and in run.sh without being listed there), or, unset, all of them.
 const group = process.env.GATES;
-const inGroup = (p) => (group === 'perf' ? p.name === 'perf' : group === 'rest' ? p.name !== 'perf' : true);
+const inGroup = (p) =>
+  group === 'perf' || group === 'fit' ? p.name === group : group === 'rest' ? p.name !== 'perf' && p.name !== 'fit' : true;
 
 export default defineConfig({
   testDir: here,
@@ -20,9 +22,16 @@ export default defineConfig({
   snapshotPathTemplate: '{testDir}/goldens/{platform}/{arg}{ext}',
   // Linux without goldens is CI before the first capture: fail rather than pass on pictures nobody approved.
   updateSnapshots: capture ? 'all' : process.platform === 'linux' ? 'none' : 'missing',
-  reporter: [['list'], ['html', { outputFolder: join(here, '..', 'report', 'gates'), open: 'never' }]],
+  // results.json: which tests were flaky (failed, then passed on the retry), for scripts/flaky.mjs.
+  reporter: [
+    ['list'],
+    ['html', { outputFolder: join(here, '..', 'report', 'gates'), open: 'never' }],
+    ['json', { outputFile: join(here, '..', 'report', 'gates', 'results.json') }],
+  ],
   workers: process.env.CI ? 2 : 3,
-  retries: 0,
+  // In CI a failing test runs once more on the same code; failing then passing makes it flaky, which doesn't hold the
+  // landing and is reported to its owner (ADR-0095). Failing twice fails.
+  retries: process.env.CI ? 1 : 0,
   timeout: 90_000,
   expect: {
     toHaveScreenshot: { animations: 'disabled', caret: 'hide', maxDiffPixelRatio: 0.002 },
@@ -43,7 +52,8 @@ export default defineConfig({
   projects: [
     // run alone (run.sh): a gate that reads task lengths must not share the CPU with screenshots
     // no service worker under the perf traces: its install and caching would land in the startup numbers
-    { name: 'perf', testMatch: 'perf.spec.mjs', use: { viewport: { width: 1440, height: 900 }, serviceWorkers: 'block' } },
+    // fullyParallel so CI can split its tests across machines (--shard); each machine still runs them one at a time.
+    { name: 'perf', testMatch: 'perf.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 }, serviceWorkers: 'block' } },
     { name: 'screens', testMatch: 'screens.spec.mjs', fullyParallel: true },
     { name: 'a11y', testMatch: 'a11y.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
     { name: 'covers', testMatch: 'covers.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },

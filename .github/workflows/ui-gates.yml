@@ -26,15 +26,17 @@ on:
 
 permissions:
   contents: read
+  # scripts/flaky.mjs files an issue for each flaky test.
+  issues: write
 
 concurrency:
   group: ui-gates-${{ inputs.ref || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !inputs.ref }}
 
 jobs:
-  # Four machines at once: performance alone on one (its task lengths must not share the CPU), and every other gate
-  # split three ways by Playwright's --shard. GATES (gates/playwright.config.mjs) picks the projects, so a new gate runs
-  # here without being listed.
+  # Seven machines at once: performance split two ways, each machine running one test at a time (its task lengths must
+  # not share the CPU); `fit`, about half the rest's time, two ways; and every other gate three ways, by Playwright's
+  # --shard. GATES (gates/playwright.config.mjs) picks the projects, so a new gate runs here without being listed.
   gates:
     name: gates (${{ matrix.part }})
     runs-on: ubuntu-24.04
@@ -43,7 +45,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { part: perf, gates: perf, args: "--workers 1", browsers: chromium }
+          - { part: "perf 1 of 2", gates: perf, args: "--workers 1 --shard=1/2", browsers: chromium, slot: p1 }
+          - { part: "perf 2 of 2", gates: perf, args: "--workers 1 --shard=2/2", browsers: chromium, slot: p2 }
+          - { part: "fit 1 of 2", gates: fit, args: "--shard=1/2", browsers: chromium, slot: f1 }
+          - { part: "fit 2 of 2", gates: fit, args: "--shard=2/2", browsers: chromium, slot: f2 }
           - { part: "1 of 3", gates: rest, args: "--shard=1/3", browsers: chromium webkit, slot: 1 }
           - { part: "2 of 3", gates: rest, args: "--shard=2/3", browsers: chromium webkit, slot: 2 }
           - { part: "3 of 3", gates: rest, args: "--shard=3/3", browsers: chromium webkit, slot: 3 }
@@ -75,7 +80,7 @@ jobs:
             echo "capture=true" >> "$GITHUB_OUTPUT"
             echo "UI_CAPTURE=1" >> "$GITHUB_ENV"
             # Each machine uploads only the pictures it took: the committed ones from the other shards would overwrite
-            # fresh ones when ui:approve merges the three.
+            # fresh ones when ui:approve merges them.
             rm -rf tests/ui/gates/goldens/linux
           else
             echo "capture=false" >> "$GITHUB_OUTPUT"
@@ -83,14 +88,19 @@ jobs:
 
       # Every stepped easing a loop uses is exactly what scripts/loop-easings.mjs makes (docs/themes.md, Drawing cheaply).
       - name: Stepped easings
-        if: ${{ matrix.gates == 'perf' }}
+        if: ${{ matrix.slot == 'p1' }}
         run: node scripts/loop-easings.mjs --check web
       - name: Gates (${{ matrix.part }})
         working-directory: tests/ui
         run: npx playwright test -c gates/playwright.config.mjs ${{ matrix.args }}
+      - name: Flaky tests
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/flaky.mjs tests/ui/report/gates/results.json "ui-gates (${{ matrix.part }})"
 
       - uses: actions/upload-artifact@v4
-        if: ${{ always() && steps.mode.outputs.capture == 'true' && matrix.gates == 'rest' }}
+        if: ${{ always() && steps.mode.outputs.capture == 'true' && matrix.gates != 'perf' }}
         with:
           name: gates-goldens-${{ matrix.slot }}
           path: tests/ui/gates/goldens/linux
@@ -98,7 +108,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: ${{ failure() }}
         with:
-          name: gates-diffs-${{ matrix.gates }}${{ matrix.slot }}
+          name: gates-diffs-${{ matrix.slot }}
           # Expected, actual and diff images of every failing picture, the traces' numbers, and the HTML report.
           path: |
             tests/ui/test-results/gates

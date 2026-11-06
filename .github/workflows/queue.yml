@@ -86,6 +86,10 @@ jobs:
   ui-gates:
     needs: plan
     if: needs.plan.outputs.candidate != '' && needs.plan.outputs.ui_gates == 'true'
+    # A called workflow may ask for no more than this grants: its flaky tests file issues (scripts/flaky.mjs).
+    permissions:
+      contents: read
+      issues: write
     uses: ./.github/workflows/ui-gates.yml
     with:
       ref: ${{ needs.plan.outputs.candidate }}
@@ -164,6 +168,9 @@ jobs:
   ui:
     needs: [plan, image]
     if: needs.plan.outputs.candidate != '' && needs.plan.outputs.ui == 'true'
+    permissions:
+      contents: read
+      issues: write
     uses: ./.github/workflows/ui.yml
     with:
       ref: ${{ needs.plan.outputs.candidate }}

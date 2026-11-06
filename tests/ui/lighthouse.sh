@@ -17,8 +17,11 @@ LHCI_CPU_SLOWDOWN=$(node -p "const i = +process.argv[1]; if (!(i > 0)) throw new
 export LHCI_CPU_SLOWDOWN
 echo "this runner's benchmark: $index; the CPU slowed ${LHCI_CPU_SLOWDOWN}x"
 
+# LH_SHARD=i/n (CI) takes every n-th route from the i-th, so n machines share the routes.
+shard=${LH_SHARD:-1/1}
+routes=$(node -p "const [i, n] = process.argv[1].split('/').map(Number); Object.keys(require('./budgets.json').routes).filter((_, k) => k % n === i - 1).join(' ')" "$shard")
 status=0
-for route in $(node -p "Object.keys(require('./budgets.json').routes).join(' ')"); do
+for route in $routes; do
   echo "== $route"
   LHCI_ROUTE=$route npx lhci autorun --config=lighthouserc.cjs || status=1
   node shipped.mjs "$route" || status=1

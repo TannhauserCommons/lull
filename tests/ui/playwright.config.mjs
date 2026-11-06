@@ -21,9 +21,18 @@ export default defineConfig({
   snapshotPathTemplate: '{testDir}/goldens/{projectName}/{arg}{ext}',
   updateSnapshots: capture ? 'all' : 'none',
   outputDir: join(here, 'test-results'),
-  reporter: [['list'], ['html', { outputFolder: join(here, 'report'), open: 'never' }]],
+  // results.json: which tests were flaky (failed, then passed on the retry), for scripts/flaky.mjs.
+  reporter: [
+    ['list'],
+    ['html', { outputFolder: join(here, 'report'), open: 'never' }],
+    ['json', { outputFile: join(here, 'report', 'results.json') }],
+  ],
   workers: process.env.CI ? 3 : undefined,
-  retries: 0,
+  // Every test stands alone (its own page from the stored pairing), so CI can split them across machines (--shard).
+  fullyParallel: true,
+  // In CI a failing test runs once more on the same code; failing then passing makes it flaky, which doesn't hold the
+  // landing and is reported to its owner (ADR-0095). Failing twice fails.
+  retries: process.env.CI ? 1 : 0,
   timeout: 45_000,
   expect: {
     toHaveScreenshot: {

@@ -32,6 +32,8 @@ on:
 
 permissions:
   contents: read
+  # scripts/flaky.mjs files an issue for each flaky test.
+  issues: write
 
 concurrency:
   group: ui-${{ inputs.ref || github.ref }}
@@ -43,9 +45,22 @@ env:
   LULL_SETUP_CODE: ui-test-setup
 
 jobs:
+  # Six machines at once, each with its own hub from the same image: the visual matrix split four ways by
+  # Playwright's --shard, and the Lighthouse routes two ways (lighthouse.sh). One machine took 13 minutes.
   ui:
+    name: ui (${{ matrix.part }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { part: "1 of 4", shard: "1/4", slot: 1 }
+          - { part: "2 of 4", shard: "2/4", slot: 2 }
+          - { part: "3 of 4", shard: "3/4", slot: 3 }
+          - { part: "4 of 4", shard: "4/4", slot: 4 }
+          - { part: "lighthouse 1 of 2", lighthouse: "1/2", slot: 5 }
+          - { part: "lighthouse 2 of 2", lighthouse: "2/2", slot: 6 }
     steps:
       - uses: actions/checkout@v5
         with:
@@ -93,20 +108,37 @@ jobs:
           if [ "${{ inputs.capture }}" = "true" ] || [ -z "$(ls -A tests/ui/goldens 2>/dev/null)" ]; then
             echo "capture=true" >> "$GITHUB_OUTPUT"
             echo "UI_CAPTURE=1" >> "$GITHUB_ENV"
+            # Each machine uploads only the pictures it took: the committed ones from the other shards would overwrite
+            # fresh ones when ui:update merges them.
+            rm -rf tests/ui/goldens
           else
             echo "capture=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Visual matrix
+      - name: Visual matrix (${{ matrix.part }})
+        if: matrix.shard
         working-directory: tests/ui
-        run: npx playwright test
+        run: npx playwright test --shard=${{ matrix.shard }}
 
-      - name: Lighthouse budgets
-        if: ${{ !cancelled() }}
+      - name: Lighthouse budgets (${{ matrix.part }})
+        if: ${{ !cancelled() && matrix.lighthouse }}
         working-directory: tests/ui
+        env:
+          LH_SHARD: ${{ matrix.lighthouse }}
+        # The matrix's global setup pairs the hub and keeps the device cookie Lighthouse loads pages with; on a shard
+        # of its own Lighthouse would measure the unpaired hub's setup screen instead.
         run: |
+          node -e "import('./global-setup.mjs').then((m) => m.default())"
           export CHROME_PATH=$(node -e "console.log(require('@playwright/test').chromium.executablePath())")
           sh lighthouse.sh
+
+      # A test that failed and then passed on its retry (playwright.config.mjs) is flaky: it doesn't hold the
+      # landing, and its owner hears of it (scripts/flaky.mjs).
+      - name: Flaky tests
+        if: ${{ !cancelled() && matrix.shard }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/flaky.mjs tests/ui/report/results.json "ui (${{ matrix.part }})"
 
       # The stub answers what the hub asks slskd in these tests; a call it doesn't know would answer 404 and show on every
       # page as a Soulseek banner (seen 2026-11-06 as layout shift on every route), so it fails here by name instead.
@@ -123,23 +155,23 @@ jobs:
         run: docker logs lull-ui 2>&1 | tail -200; cat "$RUNNER_TEMP/slskd-stub.log"
 
       - uses: actions/upload-artifact@v4
-        if: ${{ always() && steps.mode.outputs.capture == 'true' }}
+        if: ${{ always() && steps.mode.outputs.capture == 'true' && matrix.shard }}
         with:
-          name: goldens
+          name: goldens-${{ matrix.slot }}
           path: tests/ui/goldens
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         if: ${{ failure() }}
         with:
-          name: diffs
+          name: diffs-${{ matrix.slot }}
           # Expected, actual and diff images of every failing picture, and the HTML report.
           path: |
             tests/ui/test-results
             tests/ui/report
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.lighthouse }}
         with:
-          name: lighthouse
+          name: lighthouse-${{ matrix.slot }}
           path: tests/ui/lhci
           if-no-files-found: ignore
