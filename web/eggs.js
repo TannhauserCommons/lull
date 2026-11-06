@@ -170,6 +170,7 @@
     var egg = live[name] && live[name].egg, pack = egg && App.sounds.known()[egg.pack];
     if (!pack || pack.slots.indexOf(name) < 0) return;
     var url = pack.source === 'theme' ? '/api/themes/' + encodeURIComponent(pack.theme) + '/slots/egg.' + name + '.html'
+      : pack.source === 'built-in' ? new URL('packs/' + pack.id + '/slots/egg.' + name + '.html', document.baseURI).href   // a static file of the UI
       : '/api/packs/' + encodeURIComponent(pack.id) + '/slots/egg.' + name + '.html';
     var t = P.current(), d = new Date();
     fetch(url, { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.text() : ''; }).then(function (tpl) {

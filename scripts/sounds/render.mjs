@@ -82,12 +82,13 @@ function wav(pcm) {
 function ffmpeg(args) { execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', ...args], { stdio: 'inherit' }); }
 
 /** pack.json: the pack's sounds, and the eggs it declares: all of lull's own in `default`, and in a design's pack
-    the ones it has a sound for, so its sound wins over default's (ADR-0081: the higher pack's egg of a name wins),
-    then the design's own eggs. */
+    the ones it has a sound or a slot (slots/egg.<name>.html) for, so its sound and its slot win over default's
+    (ADR-0081: the higher pack's egg of a name wins), then the design's own eggs. */
 function manifest(meta, sounds, own = []) {
   const entry = (name, s) => (s.loop ? { file: `sounds/${name}.ogg`, loop: true } : `sounds/${name}.ogg`);
   const events = Object.fromEntries(VOCAB.events.filter((e) => sounds[e]).map((e) => [e, entry(e, sounds[e])]));
-  const eggs = EGGS.filter((e) => meta.id === 'default' || sounds[e.name])
+  const slotted = (e) => existsSync(join(OUT, meta.id, 'slots', `egg.${e.name}.html`));
+  const eggs = EGGS.filter((e) => meta.id === 'default' || sounds[e.name] || slotted(e))
     .concat(own)
     .map((e) => (sounds[e.name] ? { ...e, sound: entry(e.name, sounds[e.name]) } : e));
   return { id: meta.id, name: meta.name, author: 'lull', api: VOCAB.api, description: meta.description, sounds: events, eggs };
@@ -119,9 +120,11 @@ async function renderAll() {
   writeFileSync(join(OUT, 'index.json'), index());
 }
 
-/** web/packs/index.json: the built-in packs the page knows, and which carry a hand-written pack.css */
+/** web/packs/index.json: the built-in packs the page knows, which carry a hand-written pack.css, and the eggs that
+    have a slot (slots/egg.<name>.html), since a built-in pack is static files and no hub lists them */
 function index() {
-  return JSON.stringify({ packs: PACKS.map((id) => ({ id, css: existsSync(join(OUT, id, 'pack.css')) })) }, null, 2) + '\n';
+  const slots = (id) => { try { return readdirSync(join(OUT, id, 'slots')).filter((f) => /^egg\..+\.html$/.test(f)).map((f) => f.slice(4, -5)).sort(); } catch { return []; } };
+  return JSON.stringify({ packs: PACKS.map((id) => ({ id, css: existsSync(join(OUT, id, 'pack.css')), ...(slots(id).length ? { slots: slots(id) } : {}) })) }, null, 2) + '\n';
 }
 
 function existingPrints() { try { return JSON.parse(readFileSync(FINGERPRINTS, 'utf8')); } catch { return {}; } }
