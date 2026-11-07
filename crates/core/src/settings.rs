@@ -165,19 +165,13 @@ pub(crate) async fn move_secrets(db: &Db) {
         return;
     }
     let count = moved.len();
-    let erased = db
-        .call(move |conn| {
-            conn.pragma_update(None, "secure_delete", true)?;
-            let tx = conn.transaction()?;
-            for key in &moved {
-                tx.execute("DELETE FROM core_config WHERE key = ?1", [key])?;
-            }
-            tx.commit()?;
-            conn.pragma_update(None, "secure_delete", false)?;
-            conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?;
-            Ok(())
-        })
-        .await;
+    let erased = secrets::erase(db, move |tx| {
+        for key in &moved {
+            tx.execute("DELETE FROM core_config WHERE key = ?1", [key])?;
+        }
+        Ok(())
+    })
+    .await;
     match erased {
         Ok(()) => tracing::info!(count, "secret settings moved out of the database"),
         Err(e) => tracing::warn!("secret settings are in the vault, but their old rows stay for now: {e}"),

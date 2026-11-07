@@ -1,6 +1,8 @@
 //! Paired devices (ADR-0002). Every call to the hub carries a device's token; the hub keeps only
 //! its sha256. A Subsonic app password is the exception: the Subsonic token scheme
-//! (`md5(password + salt)`) needs the password itself, so it is kept as given.
+//! (`md5(password + salt)`) needs the password itself, so it is kept as given: with the `secrets`
+//! switch on, in the credentials' vault as `subsonic.<device id>` (ADR-0091), its column holding a
+//! placeholder.
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -8,6 +10,7 @@ use sha2::{Digest, Sha256};
 use crate::config::Secret;
 use crate::db::Db;
 use crate::error::{Error, Result};
+use crate::secrets;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -64,7 +67,14 @@ pub async fn create(db: &Db, name: &str, kind: Kind) -> Result<(Device, Secret)>
         private: false,
     };
     let (d, hash) = (device.clone(), digest(&token));
-    let secret = (kind == Kind::Subsonic).then(|| token.clone());
+    let secret = match kind {
+        Kind::Subsonic if secrets::on(db) => {
+            secrets::put(db, &vault_name(&device.id), &token).await?;
+            Some(secrets::placeholder()?)
+        }
+        Kind::Subsonic => Some(token.clone()),
+        _ => None,
+    };
     db.call(move |conn| {
         conn.execute(
             "INSERT INTO core_devices (id, name, kind, token_hash, secret, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -98,16 +108,64 @@ pub async fn verify(db: &Db, token: &str) -> Result<Option<Device>> {
     .await
 }
 
-/// Every paired Subsonic client with its app password, for checking `md5(password + salt)`.
+/// Every paired Subsonic client with its app password, for checking `md5(password + salt)`. One whose
+/// password is in a vault that can't be read now is left out: it can't sign in until it can.
 pub async fn subsonic(db: &Db) -> Result<Vec<(Device, Secret)>> {
+    Ok(subsonic_columns(db)
+        .await?
+        .into_iter()
+        .filter_map(|(device, column)| {
+            let password = secrets::resolve(db, &vault_name(&device.id), column)?;
+            Some((device, Secret::new(password)))
+        })
+        .collect())
+}
+
+async fn subsonic_columns(db: &Db) -> Result<Vec<(Device, String)>> {
     db.call(|conn| {
         let mut stmt = conn.prepare(
             "SELECT id, name, kind, created_at, last_seen, private, secret FROM core_devices WHERE kind = 'subsonic'",
         )?;
-        let rows = stmt.query_map([], |r| Ok((row(r)?, Secret::new(r.get::<_, String>(6)?))))?;
+        let rows = stmt.query_map([], |r| Ok((row(r)?, r.get::<_, String>(6)?)))?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     })
     .await
+}
+
+/// With the `secrets` switch on, app passwords still in `core_devices` move to the vault, and a
+/// placeholder overwrites each on disk once the vault has read it back. One that can't move stays for
+/// the next start.
+pub(crate) async fn move_secrets(db: &Db) {
+    let columns = match subsonic_columns(db).await {
+        Ok(columns) => columns,
+        Err(e) => return tracing::warn!("reading Subsonic app passwords to move them: {e}"),
+    };
+    let mut moved = Vec::new();
+    for (device, column) in columns {
+        match secrets::adopt(db, &vault_name(&device.id), &column).await {
+            Ok(Some(placeholder)) => moved.push((device.id, placeholder)),
+            Ok(None) => {}
+            Err(e) => tracing::warn!(device = %device.id, "a Subsonic app password stays in the database for now: {e}"),
+        }
+    }
+    if moved.is_empty() {
+        return;
+    }
+    let erased = secrets::erase(db, move |tx| {
+        for (id, placeholder) in &moved {
+            tx.execute("UPDATE core_devices SET secret = ?1 WHERE id = ?2", [placeholder, id])?;
+        }
+        Ok(())
+    })
+    .await;
+    if let Err(e) = erased {
+        tracing::warn!("Subsonic app passwords are in the vault, but their old copies stay for now: {e}");
+    }
+}
+
+/// The name a Subsonic app password is kept under in the vault.
+fn vault_name(device: &str) -> String {
+    format!("subsonic.{device}")
 }
 
 pub async fn list(db: &Db) -> Result<Vec<Device>> {
@@ -158,13 +216,18 @@ pub fn is_private(conn: &rusqlite::Connection, id: &str) -> Result<bool> {
         })?)
 }
 
-/// Unpairs a device: its token stops working at once.
+/// Unpairs a device: its token stops working at once, and a Subsonic app password leaves its vault.
 pub async fn revoke(db: &Db, id: &str) -> Result<()> {
-    let id = id.to_owned();
+    let owned = id.to_owned();
     changed(
-        db.call(move |conn| Ok(conn.execute("DELETE FROM core_devices WHERE id = ?1", [&id])?))
+        db.call(move |conn| Ok(conn.execute("DELETE FROM core_devices WHERE id = ?1", [&owned])?))
             .await?,
-    )
+    )?;
+    let name = vault_name(id);
+    if secrets::kept(db, &name).is_some() {
+        secrets::remove(db, &name).await?;
+    }
+    Ok(())
 }
 
 const SELECT: &str = "SELECT id, name, kind, created_at, last_seen, private FROM core_devices";

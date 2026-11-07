@@ -301,6 +301,7 @@ pub async fn start(db: &Db, on: bool) -> Result<()> {
     }
     if on {
         crate::settings::move_secrets(db).await;
+        crate::devices::move_secrets(db).await;
     }
     Ok(())
 }
@@ -444,15 +445,58 @@ pub async fn remove(db: &Db, name: &str) -> Result<()> {
     Ok(())
 }
 
-/// A value an older lull finds where a credential was: random, so it matches nothing and logs nobody
-/// in (a Subsonic app password, a Last.fm session), and recognisable in a database someone reads.
+const PLACEHOLDER: &str = "kept-in-vault-";
+
+/// What a crate's own column holds once its credential is in a vault (a Subsonic app password, the
+/// Last.fm session). An older lull reads it as the credential: random, so it matches nothing and logs
+/// nobody in, where an empty value would match an empty password. Recognisable in a database someone
+/// reads.
 pub fn placeholder() -> Result<String> {
     let mut buf = [0u8; 24];
     getrandom::fill(&mut buf).map_err(|e| Error::internal(format!("random: {e}")))?;
     Ok(format!(
-        "kept-in-vault-{}",
+        "{PLACEHOLDER}{}",
         buf.iter().map(|b| format!("{b:02x}")).collect::<String>()
     ))
+}
+
+/// The credential `name` whose crate's column holds `column`: the vault's copy when the column holds a
+/// placeholder (`None` while that vault can't be read), else the column itself.
+pub fn resolve(db: &Db, name: &str, column: String) -> Option<String> {
+    if column.starts_with(PLACEHOLDER) {
+        get(db, name)
+    } else {
+        Some(column)
+    }
+}
+
+/// With the switch on, a credential `column` holds in plain moves to the vault as `name`: the returned
+/// placeholder is what the crate writes over its column (inside `erase`). `None`: nothing to move (the
+/// switch is off, or it is a placeholder already).
+pub async fn adopt(db: &Db, name: &str, column: &str) -> Result<Option<String>> {
+    if !on(db) || column.starts_with(PLACEHOLDER) {
+        return Ok(None);
+    }
+    put(db, name, column).await?;
+    Ok(Some(placeholder()?))
+}
+
+/// Runs `change` with SQLite's `secure_delete` on, then empties the WAL: what `change` deletes or
+/// overwrites is zeroed on disk, not just unlisted.
+pub async fn erase<F>(db: &Db, change: F) -> Result<()>
+where
+    F: FnOnce(&rusqlite::Transaction<'_>) -> Result<()> + Send + 'static,
+{
+    db.call(move |conn| {
+        conn.pragma_update(None, "secure_delete", true)?;
+        let tx = conn.transaction()?;
+        change(&tx)?;
+        tx.commit()?;
+        conn.pragma_update(None, "secure_delete", false)?;
+        conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?;
+        Ok(())
+    })
+    .await
 }
 
 async fn read(vaults: &Vaults, kept: Kept, name: &str) -> Result<Option<String>, VaultError> {
