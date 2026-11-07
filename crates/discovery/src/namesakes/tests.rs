@@ -172,3 +172,88 @@ fn musicbrainz_lists_every_artist_called_exactly_the_name_with_what_tells_them_a
     );
     Ok(())
 }
+
+/// The owner's rule in taste: plays, likes and a follow from before weigh only the artist they
+/// were made on; the namesake starts with nothing, and a song nothing places weighs nobody.
+#[test]
+fn taste_weighs_only_the_nirvana_the_listener_played_and_never_its_namesake() -> R {
+    use crate::taste::{Play, Signals, Taste};
+    let c = hub()?;
+    let now = 2_000_000_000;
+    let lithium = lull_core::ids::TrackId::of("Nirvana", "Nevermind", "Lithium");
+    let bootleg = lull_core::ids::TrackId::of("Nirvana", "Live Somewhere", "Bootleg");
+    for (t, title, album, al) in [
+        (&lithium, "Lithium", "Nevermind", "al-nevermind"),
+        (&bootleg, "Bootleg", "Live Somewhere", "al-live"),
+    ] {
+        c.execute(
+            "INSERT INTO plays (track_id, artist, title, album, duration_s, started_at, played_s, completed) VALUES (?1, 'Nirvana', ?2, ?3, 200, ?4, 200, 1)",
+            params![t.as_str(), title, album, now - 100],
+        )?;
+        let song = lull_core::model::Track {
+            id: (*t).clone(),
+            title: title.into(),
+            artist_id: ArtistId::of("Nirvana"),
+            artist: "Nirvana".into(),
+            album_id: AlbumId(al.into()),
+            album: album.into(),
+            year: None,
+            no: None,
+            disc: None,
+            duration: Some(200),
+            tags: vec!["grunge".into()],
+            saved: false,
+            file: None,
+        };
+        lull_core::catalog::remember(&c, &[song])?;
+    }
+    c.execute(
+        "INSERT INTO follows (kind, id, name, followed_at) VALUES ('artist', ?1, 'Nirvana', 1)",
+        [ArtistId::of("Nirvana").as_str()],
+    )?;
+    identity::place(
+        &c,
+        "Nirvana",
+        &[Anchor::Deezer(415), Anchor::Album(AlbumId("al-nevermind".into()))],
+        Came::Credit,
+    )?;
+    identity::place(&c, "Nirvana", &[Anchor::Deezer(278_793_911)], Came::Credit)?;
+    let (us, other) = (
+        ArtistId::own("Nirvana", "dz:415"),
+        ArtistId::own("Nirvana", "dz:278793911"),
+    );
+
+    let play = |track: &lull_core::ids::TrackId| Play {
+        track: track.clone(),
+        artist: "Nirvana".into(),
+        at: now - 100,
+        played_s: 200,
+        duration_s: 200,
+        completed: true,
+        skipped: false,
+    };
+    let mut signals = Signals {
+        plays: vec![play(&lithium), play(&bootleg)],
+        followed_artists: vec!["Nirvana".into()],
+        ..Signals::default()
+    };
+    let (placed, hidden) = placed(&c, &signals)?;
+    assert_eq!(placed.tracks.get(&lithium), Some(&Some(us.clone())));
+    assert_eq!(
+        placed.tracks.get(&bootleg),
+        Some(&None),
+        "the bootleg fits both: nobody's"
+    );
+    assert_eq!(
+        placed.follows,
+        [Some(us.clone())],
+        "the follow from before is the listener's Nirvana"
+    );
+    signals.namesakes = Some(placed);
+    signals.hidden = hidden;
+    let taste = Taste::build(&signals, now);
+    assert!(taste.artist_weight(&us) > 0.0);
+    assert_eq!(taste.artist_weight(&other), 0.0, "the namesake inherits nothing");
+    assert_eq!(taste.artist_weight(&ArtistId::of("Nirvana")), 0.0, "nor does the name");
+    Ok(())
+}

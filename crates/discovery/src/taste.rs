@@ -53,6 +53,47 @@ pub struct Signals {
     /// Tags of the tracks and artists named above; a track without tags uses its artist's.
     pub track_tags: HashMap<TrackId, Vec<String>>,
     pub artist_tags: HashMap<ArtistId, Vec<String>>,
+    /// ADR-0035, with the namesakes switch on: who each signal's artist is (`store` reads it from
+    /// the listener's songs' anchors). None: an artist is its name's id, as before.
+    pub namesakes: Option<Placed>,
+}
+
+/// Who the signals' artists are, by ADR-0035's rule. None for a signal is nobody: several artists
+/// share its name and nothing says which, so it weighs no artist (a song's tags still count).
+#[derive(Debug, Default, Clone)]
+pub struct Placed {
+    pub tracks: HashMap<TrackId, Option<ArtistId>>,
+    /// Artists known only by a name (Last.fm's history, the library's albums, feedback on an artist).
+    pub names: HashMap<String, Option<ArtistId>>,
+    /// Each followed artist, in `followed_artists`' order: the artist it is now.
+    pub follows: Vec<Option<ArtistId>>,
+}
+
+impl Signals {
+    /// The artist a signal is about: its song's placement, else its name's.
+    fn who(&self, artist: &str, track: Option<&TrackId>) -> Option<ArtistId> {
+        if artist.is_empty() {
+            return None;
+        }
+        let Some(placed) = &self.namesakes else {
+            return Some(ArtistId::of(artist));
+        };
+        match track.and_then(|t| placed.tracks.get(t)) {
+            Some(who) => who.clone(),
+            None => placed
+                .names
+                .get(artist)
+                .cloned()
+                .unwrap_or_else(|| Some(ArtistId::of(artist))),
+        }
+    }
+
+    fn who_followed(&self, i: usize, name: &str) -> Option<ArtistId> {
+        match &self.namesakes {
+            Some(placed) => placed.follows.get(i).cloned().flatten(),
+            None => self.who(name, None),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -228,7 +269,11 @@ impl Taste {
         for p in plays {
             let w = play_weight(p);
             let day = p.at.div_euclid(86_400);
-            let id = ArtistId::of(&p.artist);
+            let who = s.who(&p.artist, Some(&p.track));
+            let Some(id) = who.clone() else {
+                acc.add(None, &p.artist, Some(&p.track), w * fade(now - p.at));
+                continue;
+            };
             let n = today.entry((id.clone(), day, w > 0.0)).or_default();
             *n += 1;
             let counts = if w > 0.0 {
@@ -237,50 +282,61 @@ impl Taste {
                 w == 0.0 || *n <= SKIPS_PER_DAY
             };
             if counts {
-                acc.add(&p.artist, Some(&p.track), w * fade(now - p.at));
+                acc.add(who.clone(), &p.artist, Some(&p.track), w * fade(now - p.at));
             }
             if w > 0.0 {
-                acc.note(&p.artist, |e| e.plays += 1);
+                acc.note(&who, |e| e.plays += 1);
                 acc.heard_days.entry(id).or_default().insert(day);
             } else if w < 0.0 {
                 acc.skip_days.entry(id).or_default().insert(day);
             }
         }
         for m in &s.likes {
-            acc.add(&m.artist, Some(&m.track), weight::LIKE * fade(now - m.at));
-            acc.note(&m.artist, |e| e.liked += 1);
-            acc.acted(&m.artist);
+            let who = s.who(&m.artist, Some(&m.track));
+            acc.add(who.clone(), &m.artist, Some(&m.track), weight::LIKE * fade(now - m.at));
+            acc.note(&who, |e| e.liked += 1);
+            acc.acted(&who);
         }
         for m in &s.saves {
-            acc.add(&m.artist, Some(&m.track), weight::SAVE * fade(now - m.at));
-            acc.note(&m.artist, |e| e.saved += 1);
-            acc.acted(&m.artist);
+            let who = s.who(&m.artist, Some(&m.track));
+            acc.add(who.clone(), &m.artist, Some(&m.track), weight::SAVE * fade(now - m.at));
+            acc.note(&who, |e| e.saved += 1);
+            acc.acted(&who);
         }
         for f in &s.feedback {
             let sign = if f.positive { 1.0 } else { -1.0 };
-            acc.add(&f.artist, f.track.as_ref(), sign * weight::FEEDBACK * fade(now - f.at));
+            let who = s.who(&f.artist, f.track.as_ref());
+            acc.add(
+                who.clone(),
+                &f.artist,
+                f.track.as_ref(),
+                sign * weight::FEEDBACK * fade(now - f.at),
+            );
             if f.positive {
-                acc.acted(&f.artist);
+                acc.acted(&who);
             } else {
-                acc.disliked.insert(ArtistId::of(&f.artist));
+                acc.disliked.extend(who);
             }
         }
-        for a in &s.followed_artists {
-            acc.add(a, None, weight::FOLLOW);
-            acc.note(a, |e| e.followed = true);
-            acc.acted(a);
+        for (i, a) in s.followed_artists.iter().enumerate() {
+            let who = s.who_followed(i, a);
+            acc.add(who.clone(), a, None, weight::FOLLOW);
+            acc.note(&who, |e| e.followed = true);
+            acc.acted(&who);
         }
         let most = s.history.iter().map(|(_, n)| *n).max().unwrap_or(0);
         for (artist, plays) in &s.history {
-            acc.add(artist, None, weight::HISTORY * log_share(*plays, most));
-            acc.note(artist, |e| e.lastfm = u32::try_from(*plays).unwrap_or(u32::MAX));
-            acc.acted(artist);
+            let who = s.who(artist, None);
+            acc.add(who.clone(), artist, None, weight::HISTORY * log_share(*plays, most));
+            acc.note(&who, |e| e.lastfm = u32::try_from(*plays).unwrap_or(u32::MAX));
+            acc.acted(&who);
         }
         let most = s.library.iter().map(|(_, n)| *n).max().unwrap_or(0);
         for (artist, albums) in &s.library {
-            acc.add(artist, None, weight::LIBRARY * log_share(*albums, most));
-            acc.note(artist, |e| e.library = u32::try_from(*albums).unwrap_or(u32::MAX));
-            acc.acted(artist);
+            let who = s.who(artist, None);
+            acc.add(who.clone(), artist, None, weight::LIBRARY * log_share(*albums, most));
+            acc.note(&who, |e| e.library = u32::try_from(*albums).unwrap_or(u32::MAX));
+            acc.acted(&who);
         }
         acc.settle();
 
@@ -427,6 +483,8 @@ struct Accumulator<'a> {
     acted: HashSet<ArtistId>,
     disliked: HashSet<ArtistId>,
     established: HashSet<ArtistId>,
+    /// What songs nothing places weigh, by their tags: they count for no artist, but for the tags.
+    loose: HashMap<String, f64>,
 }
 
 impl<'a> Accumulator<'a> {
@@ -441,13 +499,12 @@ impl<'a> Accumulator<'a> {
             acted: HashSet::new(),
             disliked: HashSet::new(),
             established: HashSet::new(),
+            loose: HashMap::new(),
         }
     }
 
-    fn acted(&mut self, artist: &str) {
-        if !artist.is_empty() {
-            self.acted.insert(ArtistId::of(artist));
-        }
+    fn acted(&mut self, who: &Option<ArtistId>) {
+        self.acted.extend(who.clone());
     }
 
     /// Decides who is established, once every signal is in.
@@ -462,9 +519,9 @@ impl<'a> Accumulator<'a> {
     }
 
     /// Records what the listener did with the artist (a hidden one isn't kept).
-    fn note(&mut self, artist: &str, change: impl FnOnce(&mut Evidence)) {
-        let id = ArtistId::of(artist);
-        if artist.is_empty() || self.signals.hidden.contains(&id) {
+    fn note(&mut self, who: &Option<ArtistId>, change: impl FnOnce(&mut Evidence)) {
+        let Some(id) = who.clone() else { return };
+        if self.signals.hidden.contains(&id) {
             return;
         }
         change(self.evidence.entry(id).or_default());
@@ -474,7 +531,7 @@ impl<'a> Accumulator<'a> {
     /// established ones: a tag on many liked artists beats one artist's labels, and a stray play
     /// never unlocks a tag.
     fn tag_weights(&self) -> (HashMap<String, f64>, HashMap<String, usize>) {
-        let mut weights: HashMap<String, f64> = HashMap::new();
+        let mut weights: HashMap<String, f64> = self.loose.clone();
         let mut liked: HashMap<String, usize> = HashMap::new();
         for (id, tags) in &self.carried {
             let w = self.artists.get(id).map_or(0.0, |a| a.1);
@@ -489,11 +546,17 @@ impl<'a> Accumulator<'a> {
     }
 
     /// Adds `w` to the artist, which carries the track's (else the artist's own) tags.
-    fn add(&mut self, artist: &str, track: Option<&TrackId>, w: f64) {
+    /// A song nobody is placed on (`who` None) adds its own tags' share to them alone.
+    fn add(&mut self, who: Option<ArtistId>, artist: &str, track: Option<&TrackId>, w: f64) {
         if w == 0.0 || artist.is_empty() {
             return;
         }
-        let id = ArtistId::of(artist);
+        let Some(id) = who else {
+            for t in track.and_then(|t| self.signals.track_tags.get(t)).into_iter().flatten() {
+                *self.loose.entry(t.to_lowercase()).or_default() += w;
+            }
+            return;
+        };
         if self.signals.hidden.contains(&id) {
             return;
         }

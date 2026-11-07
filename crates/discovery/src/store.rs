@@ -903,7 +903,13 @@ pub fn signals(c: &Connection, now: i64) -> Result<Signals> {
                 })
             },
         )?,
-        followed_artists: rows(c, "SELECT name FROM follows WHERE kind = 'artist'", [], |r| r.get(0))?,
+        // In the order `namesakes::placed` reads their ids.
+        followed_artists: rows(
+            c,
+            "SELECT name FROM follows WHERE kind = 'artist' ORDER BY rowid",
+            [],
+            |r| r.get(0),
+        )?,
         followed_tags: followed_tags(c)?,
         history: rows(c, "SELECT artist, plays FROM discovery_history", [], |r| {
             Ok((r.get(0)?, r.get::<_, i64>(1)?.max(0) as u64))

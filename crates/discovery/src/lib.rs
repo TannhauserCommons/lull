@@ -280,6 +280,14 @@ impl Service {
                 Vec::new()
             }
         };
+        // ADR-0035: each signal counts for the artist it is placed on, and for nobody when its name is
+        // shared and nothing says which.
+        if namesakes::on(self) {
+            let read = signals.clone();
+            let (placed, hidden) = self.ctx.db.call(move |c| namesakes::placed(c, &read)).await?;
+            signals.namesakes = Some(placed);
+            signals.hidden = hidden;
+        }
         Ok(Taste::build(&signals, lull_core::now()))
     }
 }

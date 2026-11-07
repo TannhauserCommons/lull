@@ -21,6 +21,7 @@ use crate::search::merge::{ArtistHit, Merged, SongHit};
 use crate::sources::ArtistSource;
 use crate::sources::musicbrainz::Namesake;
 use crate::store;
+use crate::taste::{Placed, Signals};
 
 pub fn on(svc: &Service) -> bool {
     svc.ctx.config.flags.on(&flags::NAMESAKES)
@@ -83,7 +84,7 @@ struct Jobs {
 }
 
 /// Where each row went.
-struct Placed {
+struct Rows {
     artists: Vec<(usize, ArtistId)>,
     songs: Vec<(usize, ArtistId)>,
     albums: Vec<(usize, ArtistId)>,
@@ -123,9 +124,9 @@ impl Jobs {
     /// Artist rows, and songs that come with their artist's id, keep what they bring (an artist
     /// row with the ids of a second artist of its name is a new artist). Songs without one and
     /// albums are only read, so search writes nothing for them.
-    fn run(self, c: &mut Connection) -> Result<Placed> {
+    fn run(self, c: &mut Connection) -> Result<Rows> {
         let tx = c.transaction()?;
-        let mut placed = Placed {
+        let mut placed = Rows {
             artists: Vec::new(),
             songs: Vec::new(),
             albums: Vec::new(),
@@ -157,7 +158,7 @@ impl Jobs {
     }
 }
 
-impl Placed {
+impl Rows {
     fn apply(self, m: &mut Merged) {
         for (i, id) in self.artists {
             m.artists[i].placed = Some(id);
@@ -177,14 +178,65 @@ impl Placed {
 fn followed_in(c: &Connection, ids: HashSet<ArtistId>) -> Result<HashSet<ArtistId>> {
     let mut out = HashSet::new();
     for id in ids {
-        match identity::resolve(c, &id)? {
-            Place::One(artist) => {
-                out.insert(artist);
-            }
-            Place::Several(_) => out.extend(identity::owner(c, &id)?),
-        }
+        out.extend(now_is(c, &id)?);
     }
     Ok(out)
+}
+
+/// Who each taste signal's artist is (ADR-0035): a song by its anchors (the song, its album), a
+/// name alone by the artists called it (one, else nobody), a follow by the artist it is now; and
+/// the hidden artists as the artists they are now. A namesake never gets another's.
+pub fn placed(c: &Connection, s: &Signals) -> Result<(Placed, HashSet<ArtistId>)> {
+    let mut placed = Placed::default();
+    let songs = s
+        .plays
+        .iter()
+        .map(|p| (&p.track, &p.artist))
+        .chain(s.likes.iter().chain(&s.saves).map(|m| (&m.track, &m.artist)))
+        .chain(s.feedback.iter().filter_map(|f| Some((f.track.as_ref()?, &f.artist))));
+    for (track, artist) in songs {
+        if placed.tracks.contains_key(track) {
+            continue;
+        }
+        let mut anchors = vec![Anchor::Track(track.clone())];
+        anchors.extend(catalog::track(c, track)?.map(|t| Anchor::Album(t.album_id)));
+        let who = match identity::artist_of(c, artist, &anchors)? {
+            Place::One(a) => Some(a),
+            Place::Several(_) => None,
+        };
+        placed.tracks.insert(track.clone(), who);
+    }
+    let names = s
+        .history
+        .iter()
+        .chain(&s.library)
+        .map(|(a, _)| a)
+        .chain(s.feedback.iter().filter(|f| f.track.is_none()).map(|f| &f.artist));
+    for name in names {
+        if !placed.names.contains_key(name) {
+            let mut all = identity::artists_named(c, name)?;
+            let one = (all.len() == 1).then(|| all.remove(0));
+            placed.names.insert(name.clone(), one);
+        }
+    }
+    let mut stmt = c.prepare("SELECT id FROM follows WHERE kind = 'artist' ORDER BY rowid")?;
+    let follows: Vec<String> = stmt.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+    for id in follows {
+        placed.follows.push(now_is(c, &ArtistId(id))?);
+    }
+    let mut hidden = HashSet::new();
+    for id in &s.hidden {
+        hidden.extend(now_is(c, id)?);
+    }
+    Ok((placed, hidden))
+}
+
+/// The artist an id kept from before is now: itself, or for a shared name, the listener's (`owner`).
+fn now_is(c: &Connection, id: &ArtistId) -> Result<Option<ArtistId>> {
+    Ok(match identity::resolve(c, id)? {
+        Place::One(a) => Some(a),
+        Place::Several(_) => identity::owner(c, id)?,
+    })
 }
 
 /// What an artist id opens with the switch on.
