@@ -11,6 +11,7 @@ pub mod error;
 pub mod etag;
 pub mod events;
 pub mod flags;
+pub mod helpers;
 pub mod http;
 pub mod identity;
 pub mod ids;
