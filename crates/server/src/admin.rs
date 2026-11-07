@@ -19,17 +19,17 @@ use crate::hub::Hub;
 #[derive(Debug, Clone, Copy)]
 pub struct Admin;
 
-/// The routes the commands use: setup's state, the settings, the library source, a pair code
-/// and `/api/host`.
+/// The routes the commands use: setup's state, the settings, the library source, a pair code,
+/// updates and `/api/host`.
 pub fn may(method: &Method, path: &str) -> bool {
     matches!(
         (method, path),
         (
             &Method::GET,
-            "/api/setup" | "/api/config" | "/api/library/source" | "/api/host"
+            "/api/setup" | "/api/config" | "/api/library/source" | "/api/host" | "/api/updates"
         ) | (&Method::PATCH, "/api/config")
             | (&Method::PUT, "/api/library/source")
-            | (&Method::POST, "/api/pair/codes")
+            | (&Method::POST, "/api/pair/codes" | "/api/updates/apply")
     )
 }
 

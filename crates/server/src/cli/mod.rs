@@ -22,6 +22,7 @@ lull, the music hub
   sudo lull config get KEY        one setting
   sudo lull config set KEY VALUE  change one; lull restarts its parts to use it
   sudo lull config unset KEY      back to its default
+  sudo lull update                update to lull's newest release, as Update in Settings does
   lull serve                      run the hub (the lull service does this)
 ";
 
@@ -32,6 +33,7 @@ pub async fn run(args: &[String]) -> Result<(), BoxError> {
         ["status"] => status(&Hub::connect()?).await,
         ["setup"] => setup::run(&Hub::connect()?).await,
         ["pair"] => pair(&Hub::connect()?).await,
+        ["update"] => update(&Hub::connect()?).await,
         ["config"] => list(&Hub::connect()?).await,
         ["config", "get", key] => get(&Hub::connect()?, key).await,
         ["config", "set", key, value @ ..] if !value.is_empty() => {
@@ -190,6 +192,46 @@ pub(crate) async fn print_pair_code(hub: &Hub) -> Result<(), BoxError> {
         text(&code["code"])
     );
     Ok(())
+}
+
+/// `lull update`: the update Settings › App starts, followed until the hub answers again.
+async fn update(hub: &Hub) -> Result<(), BoxError> {
+    let started = hub.send(Method::POST, "/api/updates/apply", json!({})).await?;
+    let target = text(&started["latest"]["version"]);
+    let mut said = String::new();
+    // Until the hub stops answering: it exits to start again on the new version.
+    loop {
+        let Ok(now) = hub.get("/api/updates").await else { break };
+        let step = &now["selfUpdate"]["step"];
+        if let Some(error) = now["selfUpdate"]["error"].as_str().filter(|_| step.is_null()) {
+            return Err(error.to_owned().into());
+        }
+        if let Some(step) = step.as_str().filter(|s| *s != said) {
+            println!("{step}…");
+            said = step.to_owned();
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    // Back, as the new version or, if it didn't start, as the one before.
+    for _ in 0..360 {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        let Ok(host) = hub.get("/api/host").await else { continue };
+        let running = text(&host["version"]);
+        if running == target {
+            println!("lull {running} runs.");
+            return Ok(());
+        }
+        if let Ok(now) = hub.get("/api/updates").await
+            && now["selfUpdate"]["failed"]["version"] == target.as_str()
+        {
+            return Err(format!(
+                "lull {target} didn't start ({}), so lull {running} runs again.",
+                text(&now["selfUpdate"]["failed"]["why"])
+            )
+            .into());
+        }
+    }
+    Err("The hub didn't answer again within 3 minutes: sudo lull status".into())
 }
 
 /// `lull config`.

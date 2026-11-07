@@ -13,11 +13,13 @@ mod devices;
 mod events;
 mod gate;
 mod hub;
+mod kit;
+pub mod launch;
 pub mod managed;
 mod pairing;
 #[cfg(test)]
 mod tests;
-mod updates;
+pub mod updates;
 mod web;
 
 use std::collections::BTreeMap;

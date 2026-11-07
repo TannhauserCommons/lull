@@ -30,6 +30,13 @@ pub struct Config {
     pub skins_dir: Option<PathBuf>,
     /// The switches that are on (`LULL_FLAGS`, ADR-0096); all are off by default.
     pub flags: crate::flags::Flags,
+    /// A paired device may update this hub (ADR-0090; the Linux package and the image). `LULL_SELF_UPDATE=off`
+    /// keeps it on the version installed, as a pinned image tag means to.
+    pub self_update: bool,
+    /// The hub kit this process runs from (ADR-0090), set by the launcher that started it.
+    pub kit: Option<PathBuf>,
+    /// How the hub was installed, when the launcher runs a kit for it (`LULL_INSTALL`); else the build says.
+    pub install: Option<crate::build::Install>,
 }
 
 /// The programs YouTube needs (docs/context/youtube.md). The image and the desktop app ship both,
@@ -312,6 +319,19 @@ impl Config {
             },
             skins_dir: v.opt("LULL_SKINS_DIR").map(PathBuf::from),
             flags: crate::flags::Flags::parse(&v.or("LULL_FLAGS", "")).map_err(|e| invalid("LULL_FLAGS", e))?,
+            self_update: match v.or("LULL_SELF_UPDATE", "on").as_str() {
+                "on" => true,
+                "off" => false,
+                other => return Err(invalid("LULL_SELF_UPDATE", format!("{other:?} is not on or off"))),
+            },
+            kit: v.opt("LULL_KIT").map(PathBuf::from),
+            install: match v.opt("LULL_INSTALL") {
+                None => None,
+                Some(name) => Some(
+                    crate::build::Install::parse(&name)
+                        .ok_or_else(|| invalid("LULL_INSTALL", format!("{name:?} is not an install")))?,
+                ),
+            },
         };
         match v.0.into_keys().next() {
             Some(unknown) => Err(ConfigError::Unknown(unknown)),

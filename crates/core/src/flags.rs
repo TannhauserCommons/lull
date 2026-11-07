@@ -18,8 +18,16 @@ pub struct Flag {
     pub area: &'static str,
 }
 
+/// A hub installed as the Linux package or the image updates itself when a paired device asks (ADR-0090).
+pub const HUB_SELF_UPDATE: Flag = Flag {
+    name: "hub-self-update",
+    about: "Update in Settings › App updates the server itself, from the release's signed hub kit",
+    owner: "hub",
+    area: "hub",
+};
+
 /// Every switch there is. Empty while nothing is unfinished.
-pub const FLAGS: &[&Flag] = &[];
+pub const FLAGS: &[&Flag] = &[&HUB_SELF_UPDATE];
 
 /// The switches that are on.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

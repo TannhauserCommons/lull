@@ -2891,6 +2891,8 @@ name = "lull-server"
 version = "0.2.5"
 dependencies = [
  "axum",
+ "base64 0.23.1",
+ "flate2",
  "getrandom 0.4.3",
  "lull-collection",
  "lull-core",
@@ -2904,10 +2906,13 @@ dependencies = [
  "lull-themes",
  "lull-youtube",
  "mdns-sd",
+ "minisign-verify",
+ "nix",
  "reqwest",
  "rust-embed",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "tokio",
  "tokio-stream",
  "tokio-util",

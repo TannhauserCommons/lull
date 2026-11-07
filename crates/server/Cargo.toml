@@ -37,6 +37,16 @@ tracing.workspace = true
 getrandom = "0.4.3"
 # A hub on a computer answers `_lull._tcp` on the local network (managed/advert.rs), as the app's always did.
 mdns-sd = "=0.21.6"
+# A hub kit's manifest is signed with the desktop updater's minisign key (ADR-0090); pure Rust, no dependencies.
+minisign-verify = "=0.3.0"
+# A kit's programs come gzipped from the release, like the app's updater files.
+flate2 = "=1.1.10"
+# A kit's files are checked by SHA-256, as everywhere else in lull.
+sha2 = "0.11.1"
+# The base64 that wraps Tauri's minisign key and signatures.
+base64 = "0.23.1"
+# The launcher hands SIGTERM on to the kit it runs (Docker signals PID 1 only).
+nix = { version = "0.31.3", default-features = false, features = ["signal"] }
 # Ctx::shutdown, which ends the SSE streams and the hub's own tasks on a restart.
 tokio-util = "0.7.20"
 # `oneshot`: requests go to the crates' router of the moment, which a restart swaps.

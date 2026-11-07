@@ -3,7 +3,8 @@
 //! and `LULL_BUILD_COMMIT`, worked out from git (`scripts/queue.sh`'s `build_version`). Any other build,
 //! a release's included, is the version in `Cargo.toml` with no changes on top.
 //!
-//! `LULL_BUILD_INSTALL` says how the hub was installed (`docker` for the image); the desktop app's
+//! `LULL_BUILD_INSTALL` says how the hub was installed (`docker` for the image, `package` for the Linux
+//! package); the desktop app's
 //! built-in hub says so with [`set_install`] before it starts.
 
 use std::sync::OnceLock;
@@ -28,8 +29,28 @@ pub enum Install {
     Desktop,
     /// lull's image, run by Docker or compose.
     Docker,
+    /// lull's Linux package (ADR-0090), run as a systemd service.
+    Package,
     /// Built and run some other way.
     Server,
+}
+
+impl Install {
+    /// Its name, as `/api/updates` and `LULL_INSTALL` write it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Install::Desktop => "desktop",
+            Install::Docker => "docker",
+            Install::Package => "package",
+            Install::Server => "server",
+        }
+    }
+
+    pub fn parse(name: &str) -> Option<Install> {
+        [Install::Desktop, Install::Docker, Install::Package, Install::Server]
+            .into_iter()
+            .find(|i| i.name() == name)
+    }
 }
 
 static INSTALL: OnceLock<Install> = OnceLock::new();
@@ -42,6 +63,7 @@ pub fn set_install(install: Install) {
 pub fn install() -> Install {
     *INSTALL.get_or_init(|| match option_env!("LULL_BUILD_INSTALL") {
         Some("docker") => Install::Docker,
+        Some("package") => Install::Package,
         _ => Install::Server,
     })
 }

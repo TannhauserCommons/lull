@@ -11,14 +11,14 @@ async fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let outcome = match args.first().map(String::as_str) {
         None | Some("serve") => serve().await,
-        Some("healthcheck") => healthcheck().await,
+        Some("healthcheck") => healthcheck().await.map(|()| ExitCode::SUCCESS),
         #[cfg(unix)]
-        Some(_) => lull_server::cli::run(&args).await,
+        Some(_) => lull_server::cli::run(&args).await.map(|()| ExitCode::SUCCESS),
         #[cfg(not(unix))]
         Some(other) => Err(format!("unknown command {other:?}; use serve or healthcheck").into()),
     };
     match outcome {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(code) => code,
         Err(e) => {
             eprintln!("lull: {e}");
             ExitCode::FAILURE
@@ -26,14 +26,32 @@ async fn main() -> ExitCode {
     }
 }
 
-async fn serve() -> Result<(), BoxError> {
+async fn serve() -> Result<ExitCode, BoxError> {
     let env = env_vars()?;
     init_logs(env.get("LULL_LOG").map_or("info", String::as_str))?;
+    // A kit the launcher started runs as what the launcher was installed as.
+    if let Some(install) = env
+        .get("LULL_INSTALL")
+        .and_then(|i| lull_core::build::Install::parse(i))
+    {
+        lull_core::build::set_install(install);
+    }
+    // A newer hub kit in the data folder runs instead of this build, watched (ADR-0090).
+    if let Some(code) = lull_server::launch::kits(&env).await? {
+        return Ok(code);
+    }
     // The Linux package names its slskd; the hub then runs it itself (ADR-0090).
     match env.get("LULL_SLSKD").filter(|p| !p.is_empty()).map(PathBuf::from) {
-        Some(slskd) => lull_server::managed::serve(env, slskd, shutdown()).await,
-        None => lull_server::run(env, shutdown()).await,
+        Some(slskd) => lull_server::managed::serve(env, slskd, shutdown()).await?,
+        None => lull_server::run(env, shutdown()).await?,
     }
+    // Exiting to start again on the update it downloaded: systemd or Docker starts lull again, or the launcher
+    // runs the new kit.
+    Ok(if lull_server::updates::restarting() {
+        ExitCode::from(lull_server::launch::UPDATE)
+    } else {
+        ExitCode::SUCCESS
+    })
 }
 
 fn init_logs(filter: &str) -> Result<(), BoxError> {
@@ -44,18 +62,23 @@ fn init_logs(filter: &str) -> Result<(), BoxError> {
     Ok(())
 }
 
+/// Ctrl-C, SIGTERM, or an update ready to start.
 async fn shutdown() {
     let ctrl_c = tokio::signal::ctrl_c();
+    let update = lull_server::updates::restart_requested();
     #[cfg(unix)]
     {
         let mut term = match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
             Ok(s) => s,
-            Err(_) => return ctrl_c.await.unwrap_or(()),
+            Err(_) => {
+                tokio::select! { _ = ctrl_c => {}, () = update => {} }
+                return;
+            }
         };
-        tokio::select! { _ = ctrl_c => {}, _ = term.recv() => {} }
+        tokio::select! { _ = ctrl_c => {}, _ = term.recv() => {}, () = update => {} }
     }
     #[cfg(not(unix))]
-    ctrl_c.await.unwrap_or(());
+    tokio::select! { _ = ctrl_c => {}, () = update => {} }
 }
 
 /// For the container healthcheck (the runtime image has no curl): exit 0 when `/health` answers.

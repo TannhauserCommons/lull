@@ -19,6 +19,8 @@ pub const ENV_ONLY: &[&str] = &[
     "LULL_SETUP_CODE",
     "LULL_SLSKD_CONFIG_FILE",
     "LULL_SLSKD",
+    "LULL_KIT",
+    "LULL_INSTALL",
     "LULL_YTDLP",
     "LULL_DENO",
 ];
@@ -52,6 +54,7 @@ pub const KEYS: &[Key] = &[
     Key::plain("LULL_CATALOG_COUNTRY"),
     Key::plain("LULL_SKINS_DIR"),
     Key::plain("LULL_FLAGS"),
+    Key::plain("LULL_SELF_UPDATE"),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

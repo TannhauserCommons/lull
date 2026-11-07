@@ -96,3 +96,11 @@ Only lull and `init` start.
 `IMAGE_TAG=latest`, the default, follows lull's releases (from 0.2.4, the first made by release.yml), and `X.Y.Z` pins one; `main` follows every change lull's queue lands, and `sha-<commit>` pins one of those. The slskd and gluetun images are pinned in `compose.yaml` and move with lull's releases, because lull reads slskd's file layout (`crates/soulseek/src/layout.rs`).
 
 Settings › App shows the server's version and whether a newer release is out. An image from `main` says what it holds, for example **lull 0.2.4 + 12 changes (abc1234)**, and that it follows the latest changes; the queue works this out from git when it builds the image (`build_version` in `scripts/queue.sh`, `lull_core::build`). Updating is `docker compose pull` and `docker compose up -d` where the server runs.
+
+**Updating from any paired device** (ADR-0090, behind the `hub-self-update` switch while it is finished):
+- **Update in Settings › App,** or `sudo lull update` on the server. The hub of the Linux package or the image downloads the newest release's hub kit for its machine, checks its signature and files, and copies its database. Then it restarts on the new version.
+- **The Linux package** takes the whole kit (lull, slskd, yt-dlp, Deno) into `/var/lib/lull/hub/`. The files the package installed stay as they are, and a newer package wins over older kits.
+- **The image** takes only `lull` into `/data/hub/`; the image's yt-dlp and Deno and compose's slskd stay. A newer image wins the same way.
+- **The health window:** a new version that doesn't answer healthy within 2 minutes is marked bad, the database copy goes back, and the version before runs again. Settings says so.
+- **Following main:** an install that follows main (`IMAGE_TAG=main`) doesn't self-update: it is already ahead of every release.
+- **Pinning a version:** `LULL_SELF_UPDATE=off` turns Update off, for a pinned version.
