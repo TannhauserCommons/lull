@@ -237,14 +237,22 @@ fn retry_wait(wait: Duration, ran: Duration) -> Duration {
 fn spawn(fixed: &Fixed, launch: &Launch) -> Result<Child, String> {
     let complete = fixed.transfers.join("complete");
     let incomplete = fixed.transfers.join("incomplete");
-    // slskd exits at start when a folder it is given doesn't exist.
-    for dir in [&fixed.app_dir, &complete, &incomplete] {
+    // slskd exits at start when a folder it is given doesn't exist. Its own folder holds the account
+    // file, so it is lull's alone (ADR-0091); the transfers are music, readable as any music folder.
+    lull_core::private::create_dir_all(&fixed.app_dir)
+        .map_err(|e| format!("create {}: {e}", fixed.app_dir.display()))?;
+    for dir in [&complete, &incomplete] {
         std::fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
     }
     // The hub fills this file with the Soulseek account; slskd watches it from the start.
     let config = fixed.config_file();
-    if !config.exists() {
-        std::fs::write(&config, "").map_err(|e| format!("create {}: {e}", config.display()))?;
+    match lull_core::private::create_new(&config) {
+        Err(e) if e.kind() != std::io::ErrorKind::AlreadyExists => {
+            return Err(format!("create {}: {e}", config.display()));
+        }
+        // One an older lull wrote may be readable by others.
+        Err(_) => lull_core::private::restrict(&config).map_err(|e| format!("{}: {e}", config.display()))?,
+        Ok(_) => {}
     }
     let mut cmd = lull_core::process::command(&fixed.exe);
     cmd.arg("--app-dir")

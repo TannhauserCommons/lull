@@ -413,9 +413,12 @@ async fn download(hub: &Hub, latest: &Latest) -> lull_core::Result<()> {
     set_step("Saving a copy of your library".into());
     let backup = launch::backup_path(&ctx.config.data_dir, &manifest.version);
     if let Some(parent) = backup.parent() {
-        std::fs::create_dir_all(parent).map_err(io)?;
+        lull_core::private::create_dir_all(parent).map_err(io)?;
     }
     let _ = std::fs::remove_file(&backup);
+    // The copy holds what the database holds, so it is lull's alone from the start (ADR-0091): SQLite
+    // fills an empty file it is given.
+    lull_core::private::create_new(&backup).map_err(io)?;
     let to = backup.to_string_lossy().into_owned();
     ctx.db
         .call(move |conn| Ok(conn.execute("VACUUM INTO ?1", [to]).map(drop)?))

@@ -58,7 +58,9 @@ pub async fn run_with(
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<(), BoxError> {
     // The data directory comes from `env` alone: it holds the database the stored settings live in.
-    let db = Db::open(env.get("LULL_DATA_DIR").map_or("/data", String::as_str).as_ref())?;
+    let data: &std::path::Path = env.get("LULL_DATA_DIR").map_or("/data", String::as_str).as_ref();
+    let db = Db::open(data)?;
+    launch::restrict_backups(data);
     db.migrate(&db::CORE)?;
     let config = hub::configure(&env, &db).await?;
     let listener = tokio::net::TcpListener::bind(config.listen).await?;

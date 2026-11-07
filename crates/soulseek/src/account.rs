@@ -16,16 +16,14 @@ const RELOAD_WAIT: Duration = Duration::from_secs(60);
 const POLL: Duration = Duration::from_millis(500);
 
 /// Writes the file whole; true when its content changed. Written beside and renamed over, so
-/// slskd's file watcher never reads half a file.
+/// slskd's file watcher never reads half a file, and readable by lull's user alone (ADR-0091).
 pub async fn write(path: &Path, account: Option<&SoulseekAccount>) -> Result<bool> {
     let next = render(account)?;
     if tokio::fs::read_to_string(path).await.is_ok_and(|now| now == next) {
         return Ok(false);
     }
     let fail = |e: std::io::Error| Error::internal(format!("writing {}: {e}", path.display()));
-    let partial = path.with_extension("lull-partial");
-    tokio::fs::write(&partial, next).await.map_err(fail)?;
-    tokio::fs::rename(&partial, path).await.map_err(fail)?;
+    lull_core::private::write(path, next.as_bytes()).map_err(fail)?;
     Ok(true)
 }
 
@@ -103,6 +101,15 @@ mod tests {
         };
 
         assert!(write(&file, Some(&account)).await?, "a new file is a change");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&file)
+                .map_err(|e| Error::internal(e.to_string()))?
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o777, 0o600, "the account is readable by lull's user alone");
+        }
         let text = tokio::fs::read_to_string(&file)
             .await
             .map_err(|e| Error::internal(e.to_string()))?;

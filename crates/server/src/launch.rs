@@ -172,6 +172,18 @@ fn restore(data: &Path, version: &str) -> Result<(), BoxError> {
     Ok(())
 }
 
+/// Copies an older lull took before ADR-0091 were readable by others: lull's alone from now on.
+pub fn restrict_backups(data: &Path) {
+    let Ok(entries) = std::fs::read_dir(data.join("backups")) else {
+        return;
+    };
+    for path in entries.flatten().map(|e| e.path()) {
+        if let Err(e) = lull_core::private::restrict(&path) {
+            tracing::warn!("can't make {} readable by lull alone: {e}", path.display());
+        }
+    }
+}
+
 /// Where the copy of the database from before the update to `version` is kept.
 pub fn backup_path(data: &Path, version: &str) -> PathBuf {
     data.join("backups").join(format!("before-{version}.db"))
