@@ -18,6 +18,7 @@ fn hub() -> std::result::Result<Connection, Box<dyn std::error::Error>> {
     for m in [
         &lull_core::db::CORE,
         &lull_core::catalog::MIGRATIONS,
+        &crate::MIGRATIONS,
         &identity::MIGRATIONS,
     ] {
         for step in m.steps {
@@ -283,6 +284,47 @@ fn an_artist_link_opens_the_namesake_its_album_or_ids_say() -> R {
         open(crate::open::ArtistIds::default())?,
         ArtistId::of("Nirvana"),
         "the name's page"
+    );
+    Ok(())
+}
+
+/// ADR-0035, "Carried over": the ids lull already holds per artist become its anchors, so the
+/// listener's Nirvana keeps its MBID, and a second Nirvana with another is told apart from it.
+#[test]
+fn the_ids_lull_already_holds_become_anchors() -> R {
+    let c = hub()?;
+    c.execute(
+        "INSERT INTO discovery_artists (id, json, updated_at) VALUES (?1, ?2, 1)",
+        params![ArtistId::of("Nirvana").as_str(), r#"{"name":"Nirvana"}"#],
+    )?;
+    for (source, id) in [
+        ("musicbrainz", "5b11f4ce-a62d-471e-81fc-a69a8278c7da"),
+        ("deezer", "415"),
+    ] {
+        c.execute(
+            "INSERT INTO discovery_artist_ids (artist_id, source, id, evidence) VALUES (?1, ?2, ?3, '{}')",
+            params![ArtistId::of("Nirvana").as_str(), source, id],
+        )?;
+    }
+    let held = held_ids(&c)?;
+    assert_eq!(held.len(), 2);
+    for (name, anchors) in held {
+        identity::place(&c, &name, &anchors, Came::Library)?;
+    }
+    let other = identity::place(
+        &c,
+        "Nirvana",
+        &[Anchor::Mbid("9282c8b4-ca0b-4c6b-b7e3-4f7762dfc4d6".into())],
+        Came::Credit,
+    )?;
+    assert_eq!(identity::artists_named(&c, "Nirvana")?.len(), 2);
+    assert_eq!(
+        identity::artist_of(&c, "Nirvana", &[Anchor::Deezer(415)])?,
+        identity::Place::One(ArtistId::own("Nirvana", "mb:5b11f4ce-a62d-471e-81fc-a69a8278c7da"))
+    );
+    assert_ne!(
+        other,
+        identity::Place::One(ArtistId::own("Nirvana", "mb:5b11f4ce-a62d-471e-81fc-a69a8278c7da"))
     );
     Ok(())
 }

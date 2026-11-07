@@ -233,6 +233,9 @@ pub async fn start(
     ctx.spawn(artist::photo::work(svc.clone()));
     ctx.spawn(artist::photo::follow_screens(svc.clone()));
     ctx.spawn(artist::identity::recheck(svc.clone()));
+    if namesakes::on(&svc) {
+        ctx.spawn(namesakes::anchor_known(svc.clone()));
+    }
     ctx.spawn(feed::keep_fresh(svc.clone()));
     ctx.spawn(search::catalog::keep_choosing(svc.clone()));
     ctx.spawn(search::resolve::work(svc.clone()));

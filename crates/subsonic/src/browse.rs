@@ -37,8 +37,8 @@ pub async fn indexes(svc: &Service) -> Result<Reply, Fail> {
 
 /// Artists under their first letter ("#" for anything else), each with its album count.
 async fn index(svc: &Service) -> Result<Vec<Value>, Fail> {
-    let artists = svc.library.artists().await?;
-    let albums = svc.library.albums(None).await?;
+    let artists = svc.artists().await?;
+    let albums = svc.albums(None).await?;
     let by_artist = group_by_artist(&albums);
     let mut index: BTreeMap<String, Vec<Value>> = BTreeMap::new();
     for a in &artists {
@@ -72,13 +72,20 @@ pub fn group_by_artist(albums: &[Album]) -> HashMap<&ArtistId, Vec<&Album>> {
 pub async fn artist(svc: &Service, p: &Params) -> Result<Reply, Fail> {
     let id = ArtistId(p.required("id")?.to_owned());
     let artist = find_artist(svc, &id).await?;
-    let albums = svc.library.albums(Some(&id)).await?;
+    let mut albums = svc.albums(Some(&id)).await?;
+    if albums.is_empty() {
+        // An id a client kept from before a name had several artists (ADR-0035): its albums by name.
+        albums = svc.library.albums(Some(&id)).await?;
+    }
     let mut body = shape::artist(&artist, albums.len(), albums.first());
     body["album"] = albums.iter().map(shape::album).collect();
     Ok(Reply::of("artist", body))
 }
 
 async fn find_artist(svc: &Service, id: &ArtistId) -> Result<Artist, Fail> {
+    if let Some(a) = svc.artists().await?.into_iter().find(|a| &a.id == id) {
+        return Ok(a);
+    }
     svc.library
         .artists()
         .await?
@@ -94,6 +101,7 @@ pub async fn album(svc: &Service, p: &Params) -> Result<Reply, Fail> {
         .album(&id)
         .await?
         .ok_or_else(|| Fail::not_found(format!("no album {id}")))?;
+    let album = svc.place(album).await?;
     let starred = svc.starred().await?;
     let mut body = shape::album(&album);
     body["song"] = tracks.iter().map(|t| shape::song(t, &starred)).collect();
@@ -107,7 +115,7 @@ pub async fn song(svc: &Service, p: &Params) -> Result<Reply, Fail> {
 
 pub async fn album_list(svc: &Service, p: &Params) -> Result<Reply, Fail> {
     let (size, offset) = p.page("size", "offset", 10, 500)?;
-    let mut albums = svc.library.albums(None).await?;
+    let mut albums = svc.albums(None).await?;
     match p.required("type")? {
         "random" => shuffle(&mut albums)?,
         // lull doesn't know when an album was added; the newest release stands in.
@@ -240,7 +248,7 @@ pub async fn songs_by_genre(svc: &Service, p: &Params) -> Result<Reply, Fail> {
 /// Album tags are lull's genres.
 pub async fn genres(svc: &Service) -> Result<Reply, Fail> {
     let mut counts: BTreeMap<&str, (usize, usize)> = BTreeMap::new();
-    let albums = svc.library.albums(None).await?;
+    let albums = svc.albums(None).await?;
     for album in &albums {
         for tag in &album.tags {
             let (songs, albums) = counts.entry(tag).or_default();

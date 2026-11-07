@@ -179,6 +179,7 @@ impl Lyrics for FakeLyrics {
 }
 
 struct Hub {
+    db: Db,
     app: Router,
     library: Arc<FakeLibrary>,
     collection: Arc<FakeCollection>,
@@ -187,8 +188,17 @@ struct Hub {
 }
 
 async fn hub() -> Result<Hub> {
+    hub_with(false).await
+}
+
+/// `hub`, with ADR-0035's switch on or off; `db` is handed back to place anchors.
+async fn hub_with(namesakes: bool) -> Result<Hub> {
     let db = Db::memory()?;
     db.migrate(&db::CORE)?;
+    if namesakes {
+        db.migrate(&lull_core::catalog::MIGRATIONS)?;
+        db.migrate(&lull_core::identity::MIGRATIONS)?;
+    }
     let (device, password) = devices::create(&db, "Feishin", Kind::Subsonic).await?;
     let library = Arc::new(FakeLibrary {
         tracks: vec![track("Paper Moon Static", 1), track("Rock & Roll", 2)],
@@ -200,8 +210,10 @@ async fn hub() -> Result<Hub> {
         library: library.clone(),
         collection: collection.clone(),
         lyrics: Arc::new(FakeLyrics),
+        namesakes,
     });
     Ok(Hub {
+        db: svc.db.clone(),
         app: router(svc),
         library,
         collection,
@@ -478,5 +490,45 @@ async fn synced_lyrics_are_timed_lines_in_milliseconds() -> Result<()> {
         .get(&format!("/rest/getLyricsBySongId?{}&id={id}", hub.auth()), &[])
         .await;
     assert!(xml.contains(r#"<line start="15000">Static &amp; hum</line>"#));
+    Ok(())
+}
+
+/// ADR-0035: with the switch on, an album is under the artist the rule places it on, with that
+/// artist's own id and MBID; an id a client kept from before still opens the name's albums.
+#[tokio::test]
+async fn subsonic_lists_a_namesake_under_its_own_id_and_mbid() -> Result<()> {
+    use lull_core::identity::{self, Anchor, Came};
+    let hub = hub_with(true).await?;
+    let mine = "5b11f4ce-a62d-471e-81fc-a69a8278c7da";
+    hub.db
+        .call(move |c| {
+            let album = Anchor::Album(AlbumId::of(ARTIST, ALBUM));
+            identity::place(c, ARTIST, &[Anchor::Mbid(mine.into()), album], Came::Library)?;
+            identity::place(
+                c,
+                ARTIST,
+                &[Anchor::Mbid("9282c8b4-ca0b-4c6b-b7e3-4f7762dfc4d6".into())],
+                Came::Credit,
+            )?;
+            Ok(())
+        })
+        .await?;
+    let own = ArtistId::own(ARTIST, &format!("mb:{mine}"));
+    let artists = hub.json(&format!("/rest/getArtists.view?{}&f=json", hub.auth())).await;
+    let listed = &artists["artists"]["index"][0]["artist"][0];
+    assert_eq!(listed["id"], json!(own.as_str()), "{artists}");
+    assert_eq!(listed["musicBrainzId"], json!(mine));
+    let before = hub
+        .json(&format!(
+            "/rest/getArtist.view?{}&f=json&id={}",
+            hub.auth(),
+            ArtistId::of(ARTIST)
+        ))
+        .await;
+    assert_eq!(
+        before["artist"]["album"][0]["id"],
+        json!(AlbumId::of(ARTIST, ALBUM).as_str()),
+        "{before}"
+    );
     Ok(())
 }

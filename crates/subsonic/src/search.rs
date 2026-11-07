@@ -18,10 +18,9 @@ pub async fn search(svc: &Service, p: &Params) -> Result<Reply, Fail> {
     let (song_count, song_offset) = p.page("songCount", "songOffset", 20, 500)?;
     let matches = |text: &str| query.is_empty() || normalize(text).contains(&query);
 
-    let albums = svc.library.albums(None).await?;
+    let albums = svc.albums(None).await?;
     let by_artist = group_by_artist(&albums);
     let artist: Vec<Value> = svc
-        .library
         .artists()
         .await?
         .iter()

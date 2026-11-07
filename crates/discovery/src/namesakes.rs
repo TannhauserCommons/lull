@@ -289,6 +289,77 @@ pub async fn link_ids(svc: &Service, id: &ArtistId, name: &str) -> Result<(Optio
     Ok((mbid, ids))
 }
 
+/// Once at each start with the switch on (ADR-0035, "Carried over" and "Library"): the exact ids
+/// lull already holds for each artist (`discovery_artist_ids`) become its anchors, and the saved
+/// library's artists are anchored by their files' MusicBrainz ids and their albums. Idempotent:
+/// what is held already is kept as it is. No outside call.
+pub async fn anchor_known(svc: Arc<Service>) {
+    if let Err(e) = anchor_known_now(&svc).await {
+        tracing::warn!(error = %e, "artists not anchored from what lull holds; the next start tries again");
+    }
+}
+
+async fn anchor_known_now(svc: &Service) -> Result<()> {
+    let mut known = svc.ctx.db.call(|c| held_ids(c)).await?;
+    let artists = svc.store.library_artists().await?;
+    let albums = svc.store.library_album_list().await?;
+    for artist in artists {
+        let mut anchors: Vec<Anchor> = artist.musicbrainz_id.iter().map(|m| Anchor::Mbid(m.clone())).collect();
+        anchors.extend(
+            albums
+                .iter()
+                .filter(|a| a.artist_id == artist.id)
+                .map(|a| Anchor::Album(a.id.clone())),
+        );
+        if !anchors.is_empty() {
+            known.push((artist.name, anchors));
+        }
+    }
+    let placed = known.len();
+    svc.ctx
+        .db
+        .call(move |c| {
+            let tx = c.transaction()?;
+            for (name, anchors) in known {
+                identity::place(&tx, &name, &anchors, Came::Library)?;
+            }
+            tx.commit()?;
+            Ok(())
+        })
+        .await?;
+    tracing::info!(placed, "artists anchored from the ids and library lull holds");
+    Ok(())
+}
+
+/// The exact ids `artist::identity` keeps per artist, by the artist's name, as anchors.
+fn held_ids(c: &Connection) -> Result<Vec<(String, Vec<Anchor>)>> {
+    let mut stmt = c.prepare(
+        "SELECT i.source, i.id, json_extract(a.json, '$.name')
+           FROM discovery_artist_ids i JOIN discovery_artists a ON a.id = i.artist_id ORDER BY i.rowid",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, Option<String>>(2)?,
+        ))
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        let (source, id, name) = row?;
+        let anchor = match source.as_str() {
+            "musicbrainz" => Some(Anchor::Mbid(id)),
+            "deezer" => id.parse().ok().map(Anchor::Deezer),
+            "itunes" => id.parse().ok().map(Anchor::Itunes),
+            _ => None,
+        };
+        if let (Some(anchor), Some(name)) = (anchor, name) {
+            out.push((name, vec![anchor]));
+        }
+    }
+    Ok(out)
+}
+
 /// What an artist id opens with the switch on.
 pub enum Opens {
     Artist(ArtistId),

@@ -24,8 +24,9 @@ use axum::http::{HeaderMap, header};
 use axum::response::Response;
 use axum::routing::get;
 use lull_core::db::{Db, Migrations};
-use lull_core::ids::TrackId;
-use lull_core::model::Track;
+use lull_core::identity;
+use lull_core::ids::{AlbumId, ArtistId, TrackId};
+use lull_core::model::{Album, Artist, Track};
 use lull_core::seams::{Collection, Library, Lyrics};
 use lull_core::{Ctx, Result};
 use serde_json::{Map, Value, json};
@@ -43,6 +44,83 @@ pub struct Service {
     library: Arc<dyn Library>,
     collection: Arc<dyn Collection>,
     lyrics: Arc<dyn Lyrics>,
+    /// ADR-0035's switch: albums are each under the artist the rule places them on.
+    namesakes: bool,
+}
+
+impl Service {
+    /// The library's albums (of one artist), each under the artist ADR-0035's rule places it on
+    /// by its album, with the switch on: two artists called Nirvana are two artists here too.
+    async fn albums(&self, artist: Option<&ArtistId>) -> Result<Vec<Album>> {
+        if !self.namesakes {
+            return self.library.albums(artist).await;
+        }
+        let mut all = self.library.albums(None).await?;
+        let asked: Vec<(AlbumId, String)> = all.iter().map(|a| (a.id.clone(), a.artist.clone())).collect();
+        let placed = self
+            .db
+            .call(move |c| {
+                asked
+                    .into_iter()
+                    .map(|(id, name)| Ok(identity::artist_of(c, &name, &[identity::Anchor::Album(id)])?.id(&name)))
+                    .collect::<Result<Vec<ArtistId>>>()
+            })
+            .await?;
+        for (album, id) in all.iter_mut().zip(placed) {
+            album.artist_id = id;
+        }
+        if let Some(id) = artist {
+            all.retain(|a| a.artist_id == *id);
+        }
+        Ok(all)
+    }
+
+    /// One album, under the artist the rule places it on (switch on).
+    async fn place(&self, mut album: Album) -> Result<Album> {
+        if self.namesakes {
+            let (id, name) = (album.id.clone(), album.artist.clone());
+            album.artist_id = self
+                .db
+                .call(move |c| Ok(identity::artist_of(c, &name, &[identity::Anchor::Album(id)])?.id(&name)))
+                .await?;
+        }
+        Ok(album)
+    }
+
+    /// The library's artists; with the switch on, one per artist its albums are placed on, each
+    /// with its MBID from its anchors.
+    async fn artists(&self) -> Result<Vec<Artist>> {
+        if !self.namesakes {
+            return self.library.artists().await;
+        }
+        let albums = self.albums(None).await?;
+        let mut seen: Vec<(ArtistId, String)> = Vec::new();
+        for a in &albums {
+            if !seen.iter().any(|(id, _)| *id == a.artist_id) {
+                seen.push((a.artist_id.clone(), a.artist.clone()));
+            }
+        }
+        self.db
+            .call(move |c| {
+                let mut out = Vec::with_capacity(seen.len());
+                for (id, name) in seen {
+                    let mbid = identity::anchors(c, &id)?.into_iter().find_map(|a| match a {
+                        identity::Anchor::Mbid(m) => Some(m),
+                        _ => None,
+                    });
+                    out.push(Artist {
+                        id,
+                        name,
+                        tags: Vec::new(),
+                        listeners: None,
+                        bio: None,
+                        musicbrainz_id: mbid,
+                    });
+                }
+                Ok(out)
+            })
+            .await
+    }
 }
 
 pub async fn start(
@@ -56,6 +134,7 @@ pub async fn start(
         library,
         collection,
         lyrics,
+        namesakes: ctx.config.flags.on(&lull_core::flags::NAMESAKES),
     }))
 }
 

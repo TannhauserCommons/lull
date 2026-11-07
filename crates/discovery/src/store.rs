@@ -272,6 +272,11 @@ impl Store {
             .and_then(|a| a.musicbrainz_id))
     }
 
+    /// The saved library's albums.
+    pub async fn library_album_list(&self) -> Result<Vec<lull_core::model::Album>> {
+        self.library.albums(None).await
+    }
+
     /// The saved library's artists and how many of their albums it holds (taste's `library`).
     pub async fn library_albums(&self) -> Result<Vec<(String, u64)>> {
         let mut counts: BTreeMap<String, u64> = BTreeMap::new();
