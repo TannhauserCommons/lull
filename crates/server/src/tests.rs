@@ -769,3 +769,234 @@ async fn the_listener_tells_two_namesakes_apart_and_the_name_becomes_their_page(
     hub.stop().await;
     Ok(())
 }
+
+/// ADR-0035's migration on a real-shaped hub: thousands of songs, plays, likes, follows, playlists,
+/// Last.fm history and the ids lull held, with namesakes told apart by MBIDs, a band under two
+/// spellings, a band with no ids, and an unplaceable bootleg. Switching the rule on writes only its
+/// own tables: every other row is byte for byte what it was. And what the listener did stays with
+/// the artist it was made on, never a namesake.
+#[tokio::test]
+async fn switching_namesakes_on_rewrites_no_existing_row_on_a_real_shaped_hub() -> Result<(), BoxError> {
+    use lull_core::identity::{self, Anchor, Came, Place};
+    use lull_core::ids::{AlbumId, ArtistId, TrackId};
+    use lull_core::model::Track;
+
+    const US: &str = "5b11f4ce-a62d-471e-81fc-a69a8278c7da";
+    const UK: &str = "9282c8b4-ca0b-4c6b-b7e3-4f7762dfc4d6";
+    let (hub, dir) = test_hub_with(&[("LULL_FLAGS", "namesakes")]).await?;
+    hub.stop().await;
+    let db = Db::open(&dir.join("data"))?;
+
+    // The listener's hub as it was before: (artist, album, songs) and what they did with them.
+    let mut library: Vec<(String, String, usize)> = (0..40)
+        .flat_map(|a| (0..5).map(move |b| (format!("Artist {a:02}"), format!("Record {b}"), 10)))
+        .collect();
+    library.extend([
+        ("Nirvana".into(), "Nevermind".into(), 12),
+        ("Nirvana".into(), "In Utero".into(), 12),
+        ("Nirvana".into(), "Live Somewhere".into(), 8),
+        ("Velvet Orchard".into(), "Satellite Porch".into(), 9),
+        ("Velvet Orchard".into(), "Paper Moon".into(), 9),
+    ]);
+    db.call(move |c| {
+        let tx = c.transaction()?;
+        let mut n = 0i64;
+        for (artist, album, songs) in &library {
+            let tracks: Vec<Track> = (0..*songs)
+                .map(|i| Track {
+                    id: TrackId::of(artist, album, &format!("Song {i}")),
+                    title: format!("Song {i}"),
+                    artist_id: ArtistId::of(artist),
+                    artist: artist.clone(),
+                    album_id: AlbumId::of(artist, album),
+                    album: album.clone(),
+                    year: Some(1991),
+                    no: Some(i as u32 + 1),
+                    disc: None,
+                    duration: Some(200 + i as u32),
+                    tags: vec!["indie rock".into()],
+                    saved: i % 3 == 0,
+                    file: None,
+                })
+                .collect();
+            lull_core::catalog::remember(&tx, &tracks)?;
+            for t in &tracks {
+                n += 1;
+                for k in 0..3 {
+                    tx.execute(
+                        "INSERT INTO plays (track_id, artist, title, album, duration_s, started_at, played_s, completed)
+                         VALUES (?1, ?2, ?3, ?4, 200, ?5, 200, 1)",
+                        [t.id.as_str(), &t.artist, &t.title, &t.album, &(n * 10 + k).to_string()],
+                    )?;
+                }
+                if n % 7 == 0 {
+                    tx.execute(
+                        "INSERT INTO likes (track_id, artist, title, album, liked_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                        [t.id.as_str(), &t.artist, &t.title, &t.album, &n.to_string()],
+                    )?;
+                }
+            }
+        }
+        for name in ["Nirvana", "Velvet Orchard", "Artist 01", "Artist 02", "Artist 03"] {
+            tx.execute(
+                "INSERT INTO follows (kind, id, name, followed_at) VALUES ('artist', ?1, ?2, 1)",
+                [ArtistId::of(name).as_str(), name],
+            )?;
+        }
+        tx.execute_batch(
+            "INSERT INTO collection_playlists (name, description, created_at, updated_at) VALUES ('Drive', '', 1, 1), ('Rain', '', 1, 1);
+             INSERT INTO collection_playlist_items (playlist_seq, pos, track_id, added_at)
+                 SELECT 1 + (rowid % 2), rowid, id, 1 FROM catalog_tracks WHERE rowid <= 120;
+             INSERT INTO discovery_history (artist, plays) VALUES ('Nirvana', 4000), ('Artist 05', 900), ('Velvet Orchard', 12);",
+        )?;
+        tx.execute(
+            "INSERT INTO discovery_hidden (artist_id, artist, at) VALUES (?1, 'Artist 09', 1)",
+            [ArtistId::of("Artist 09").as_str()],
+        )?;
+        tx.commit()?;
+        Ok(())
+    })
+    .await?;
+
+    // Every table but the rule's own, row by row, as SQLite quotes its values.
+    macro_rules! dump {
+        () => {
+            |c| {
+                let tables: Vec<String> = c
+                    .prepare(
+                        "SELECT name FROM sqlite_master WHERE type = 'table'
+                         AND name NOT LIKE 'identity_%' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+                    )?
+                    .query_map([], |r| r.get(0))?
+                    .collect::<Result<_, _>>()?;
+                let mut out = Vec::new();
+                for t in tables {
+                    let cols: Vec<String> = c
+                        .prepare(&format!("PRAGMA table_info(\"{t}\")"))?
+                        .query_map([], |r| r.get(1))?
+                        .collect::<Result<_, _>>()?;
+                    let row = cols
+                        .iter()
+                        .map(|k| format!("quote(\"{k}\")"))
+                        .collect::<Vec<_>>()
+                        .join(" || '|' || ");
+                    let rows: Vec<String> = c
+                        .prepare(&format!("SELECT {row} FROM \"{t}\" ORDER BY 1"))?
+                        .query_map([], |r| r.get(0))?
+                        .collect::<Result<_, _>>()?;
+                    out.push(format!("{t} ({} rows)\n{}", rows.len(), rows.join("\n")));
+                }
+                Ok(out)
+            }
+        };
+    }
+    let before: Vec<String> = db.call(dump!()).await?;
+    let rows = |name: &str| {
+        before
+            .iter()
+            .find(|t| t.starts_with(&format!("{name} (")))
+            .map(|t| t.lines().count() - 1)
+    };
+    assert_eq!(rows("plays"), Some(6150), "the hub is real-shaped");
+    assert_eq!(rows("catalog_tracks"), Some(2050));
+    assert_eq!(rows("collection_playlist_items"), Some(120));
+    assert_eq!(rows("follows"), Some(5));
+
+    // Switched on: what lull learns places artists, in its own tables only.
+    db.call(|c| {
+        let tx = c.transaction()?;
+        let album = |artist: &str, title: &str| Anchor::Album(AlbumId::of(artist, title));
+        // The ids lull already held, the library's files, search rows and MusicBrainz's links.
+        identity::place(
+            &tx,
+            "Nirvana",
+            &[
+                Anchor::Mbid(US.into()),
+                Anchor::Deezer(415),
+                album("Nirvana", "Nevermind"),
+                album("Nirvana", "In Utero"),
+            ],
+            Came::Library,
+        )?;
+        identity::place(&tx, "Nirvana (UK)", &[Anchor::Deezer(281_527_041)], Came::Credit)?;
+        identity::place(
+            &tx,
+            "Nirvana",
+            &[Anchor::Mbid(UK.into()), Anchor::Deezer(281_527_041)],
+            Came::Link,
+        )?;
+        identity::add_distinct(
+            &tx,
+            "Nirvana",
+            &[Anchor::Mbid("c49d69dc-e008-47cf-b5ff-160fafb1fe1f".into())],
+            Came::Credit,
+        )?;
+        for a in 0..40 {
+            let name = format!("Artist {a:02}");
+            identity::place(
+                &tx,
+                &name,
+                &[Anchor::Deezer(10_000 + a), album(&name, "Record 0")],
+                Came::Credit,
+            )?;
+        }
+        identity::place(
+            &tx,
+            "Velvet Orchard",
+            &[album("Velvet Orchard", "Satellite Porch")],
+            Came::Lookup,
+        )?;
+        tx.commit()?;
+        Ok(())
+    })
+    .await?;
+    let after: Vec<String> = db.call(dump!()).await?;
+    assert_eq!(before.len(), after.len());
+    for (b, a) in before.iter().zip(&after) {
+        assert!(b == a, "a table changed: {}", b.lines().next().unwrap_or_default());
+    }
+
+    // What the listener did stays with the artist it was made on.
+    db.call(|c| {
+        let mine = ArtistId::own("Nirvana", &format!("mb:{US}"));
+        let named = identity::artists_named(c, "Nirvana")?;
+        assert_eq!(
+            named.len(),
+            3,
+            "the US band, the UK band under both its spellings, the French band: {named:?}"
+        );
+        assert!(
+            named.contains(&ArtistId::of("Nirvana (UK)")),
+            "one band under two spellings is one artist"
+        );
+        assert_eq!(
+            identity::now_is(c, &ArtistId::of("Nirvana"))?,
+            Some(mine.clone()),
+            "the follow from before"
+        );
+        let bootleg: Vec<TrackId> = (0..8)
+            .map(|i| TrackId::of("Nirvana", "Live Somewhere", &format!("Song {i}")))
+            .collect();
+        let songs = identity::listener_songs(c, "Nirvana")?;
+        assert_eq!(songs.len(), 32);
+        for (track, place) in songs {
+            match place {
+                Place::One(a) => assert_eq!(a, mine, "{track}: a song of theirs on another Nirvana"),
+                Place::Several(_) => assert!(bootleg.contains(&track), "{track} is theirs, yet unplaced"),
+            }
+        }
+        assert_eq!(
+            identity::artists_named(c, "Velvet Orchard")?,
+            [ArtistId::of("Velvet Orchard")],
+            "no ids: one artist, as before"
+        );
+        assert_eq!(
+            identity::now_is(c, &ArtistId::of("Artist 01"))?,
+            Some(ArtistId::of("Artist 01")),
+            "one artist keeps its id"
+        );
+        Ok(())
+    })
+    .await?;
+    Ok(())
+}
