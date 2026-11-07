@@ -261,6 +261,16 @@ fn music_folder(data: &Path, dir: &Path) -> Result<(), BoxError> {
         println!("  Made {} for lull.", dir.display());
         return Ok(());
     }
+    // Run as the hub's own user (not root): it can only try the folder itself.
+    if own_uid() == Some(owner.uid()) {
+        if !writable(dir) {
+            println!(
+                "  lull can't write to {}. Run sudo lull setup to give it access.",
+                dir.display()
+            );
+        }
+        return Ok(());
+    }
     let Some(user) = user_name(owner.uid()) else {
         return Ok(());
     };
@@ -296,6 +306,21 @@ fn music_folder(data: &Path, dir: &Path) -> Result<(), BoxError> {
         println!("    {rule}");
     }
     Ok(())
+}
+
+/// The user this command runs as (its effective id), from /proc.
+fn own_uid() -> Option<u32> {
+    let status = std::fs::read_to_string("/proc/self/status").ok()?;
+    let ids = status.lines().find_map(|l| l.strip_prefix("Uid:"))?;
+    ids.split_whitespace().nth(1)?.parse().ok()
+}
+
+/// Whether this process can make and remove a file in `dir`.
+fn writable(dir: &Path) -> bool {
+    let probe = dir.join(".lull-setup-check");
+    let made = std::fs::write(&probe, b"").is_ok();
+    let _ = std::fs::remove_file(&probe);
+    made && std::fs::read_dir(dir).is_ok()
 }
 
 /// Whether `user` can list, read and write `dir`, asked as that user.
