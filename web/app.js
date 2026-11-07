@@ -1787,14 +1787,14 @@
 
   /* tooltip: any element with data-tip (icon-only buttons always have one); dark cream-on-ink. data-tip-cut: only while
      the element's words are cut off, and on a tap too (.tooltip--asked, which phone designs keep) */
-  var tipEl = null, tipTimer = null, tipFor = null;
+  var tipEl = null, tipTimer = null, tipFor = null, tipAsked = false, touching = false;
   function cutOff(el) { return el.scrollWidth > el.clientWidth + 1; }
   function showTip(target, asked) {
     var text = target.getAttribute('data-tip'); if (!text) return;
     if (target.hasAttribute('data-tip-cut') && !cutOff(target)) return;
     var lbl = target.querySelector('.nav-item__label'); if (lbl && lbl.offsetParent) return;   // rail labels visible: no tooltip
     if (!tipEl) { tipEl = document.createElement('div'); tipEl.className = 'tooltip'; tipEl.setAttribute('role', 'tooltip'); tipEl.id = 'tooltip'; document.body.appendChild(tipEl); }
-    setText(tipEl, text); tipFor = target; tipEl.classList.toggle('tooltip--asked', !!asked);
+    setText(tipEl, text); tipFor = target; tipAsked = !!asked; tipEl.classList.toggle('tooltip--asked', !!asked);
     var r = target.getBoundingClientRect();
     tipEl.style.left = '0px'; tipEl.style.top = '0px'; tipEl.classList.add('is-on');
     var w = tipEl.offsetWidth, h = tipEl.offsetHeight;
@@ -1802,8 +1802,12 @@
     tipEl.style.left = clamp(r.left + r.width / 2 - w / 2, 8, window.innerWidth - w - 8) + 'px';
     tipEl.style.top = top + 'px';
   }
-  function hideTip() { clearTimeout(tipTimer); tipFor = null; if (tipEl) tipEl.classList.remove('is-on'); }
+  function hideTip() { clearTimeout(tipTimer); tipFor = null; tipAsked = false; if (tipEl) tipEl.classList.remove('is-on'); }
+  /* after a touch the pointer stays where the finger was, and the browser sends it mouseovers as the page moves under it
+     (the tip appearing, a row changing): a tip a tap asked for stays until the next tap, scroll or focus change */
+  document.addEventListener('pointerdown', function (e) { touching = e.pointerType === 'touch'; }, true);
   document.addEventListener('mouseover', function (e) {
+    if (tipAsked && touching) return;
     var t = e.target.closest && e.target.closest('[data-tip]');
     if (t === tipFor) return; hideTip();
     if (t) tipTimer = setTimeout(function () { showTip(t); }, 450);
