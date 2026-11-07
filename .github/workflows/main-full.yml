@@ -65,6 +65,10 @@ jobs:
   app:
     needs: plan
     if: needs.plan.outputs.commit != ''
+    # A called workflow may ask for no more than this grants, checked before any job is skipped: app's release job
+    # writes (skipped here, as in the queue).
+    permissions:
+      contents: write
     uses: ./.github/workflows/app.yml
     with:
       ref: ${{ needs.plan.outputs.commit }}
