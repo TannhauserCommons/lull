@@ -6,22 +6,22 @@
   "extends": null,
   "shell": "topnav",
   "swatches": [
-    "#e4def9",
-    "#f7f4ff",
-    "#5544aa",
-    "#2b2650"
+    "#b9a8ff",
+    "#fdfcff",
+    "#6a42e4",
+    "#24125f"
   ],
   "modes": [
     "day",
     "night"
   ],
-  "description": "Glossy lavender windows, pill navigation and orb title bars.",
+  "description": "Clear violet plastic in a lit sky: chrome keys, glowing readouts and a disc that turns with the song.",
   "preview": true,
   "slots": [
     "brand",
     "emptyArt",
-    "homeLead.idle",
-    "homeLead.playing",
+    "homeLead",
+    "miniPlayer.device",
     "nowHero.full"
   ],
   "coverVariety": true
