@@ -48,6 +48,6 @@ For every lull install, in any market (ADR-0034, "For every lull"): links hold p
 ## Deploying, and a domain later
 
 - **Secrets:** GitHub `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` (Bitwarden `lull/CLOUDFLARE_API_TOKEN`, `lull/CLOUDFLARE_ACCOUNT_ID`, set by the integrator through keygate). The deploy job puts `LULL_LASTFM_API_KEY` as the Worker's `LASTFM_API_KEY`. Until the Cloudflare secrets exist, `deploy` says so and does nothing.
-- **First host:** `lull.lullfm.workers.dev` (account subdomain `lullfm`, permanent) is listed and canonical in `hosts.json`, with its `autoVerify` filter in the app's manifest (`pathPrefix="/1/"`). The hub writes links on it; the app claims them from its next release. Its Worker serves `/.well-known/assetlinks.json`, copied from `packaging/android/assetlinks.json`.
+- **First host:** `listen.lullfm.workers.dev` (account subdomain `lullfm`, permanent) is listed and canonical in `hosts.json`, with its `autoVerify` filter in the app's manifest (`pathPrefix="/1/"`). The hub writes links on it; the app claims them from its next release. Its Worker serves `/.well-known/assetlinks.json`, copied from `packaging/android/assetlinks.json`.
 - **A domain:** attach it to the Worker, add it to `hosts` and the manifest, then make it `canonical`. Never remove a host or rename the Worker or the account subdomain: every link copied names them.
 - **Logs:** none. `observability` is off and wrangler sends no metrics (`wrangler.jsonc`).

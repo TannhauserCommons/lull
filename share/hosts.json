@@ -1,4 +1,4 @@
 {
-  "canonical": "lull.lullfm.workers.dev",
-  "hosts": ["lull.lullfm.workers.dev"]
+  "canonical": "listen.lullfm.workers.dev",
+  "hosts": ["listen.lullfm.workers.dev"]
 }

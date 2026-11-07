@@ -30,7 +30,7 @@ Share links serve every lull install, not one hub:
 ### One Worker, `share/`
 
 - A Cloudflare Worker in the lull repository (`share/`), with static assets and two Durable Object classes, deployed by CI with `wrangler`.
-- Its free address is `lull.<account subdomain>.workers.dev`. The account subdomain is set once when the Cloudflare account is made. It must say nothing about the owner (`tannhausercommons` does), and must never be renamed: renaming it breaks every link.
+- Its free address is `listen.<account subdomain>.workers.dev`. The account subdomain is set once when the Cloudflare account is made. It must say nothing about the owner (`tannhausercommons` does), and must never be renamed: renaming it breaks every link.
 - The page itself needs no outside call. Only the cover does (below). So the title, artist and album in a card never depend on anyone else being up.
 
 ### The link
@@ -41,7 +41,7 @@ https://<host>/1/album/<artist>/<title>?it=<iTunes album>&dz=<Deezer album>&mb=<
 https://<host>/1/artist/<name>?dz=<Deezer artist>&mb=<MusicBrainz artist>
 ```
 
-e.g. `https://lull.tannhausercommons.workers.dev/1/song/Portishead/Glory%20Box?al=Dummy&it=1440823733&ic=1440823517`.
+e.g. `https://listen.lullfm.workers.dev/1/song/Portishead/Glory%20Box?al=Dummy&it=1440823733&ic=1440823517`.
 
 - **`1` is the version.** Unknown keys are ignored, so new ids can join version 1. `/2/` is only for a change that version 1 can't express, and the Worker answers every version it has ever handed out, forever.
 - **Names are exact,** each one percent-encoded path segment, not slugs. lull's ids are hashes of names (ADR-0032), so the receiving lull needs the names exactly as sent. Browsers show them decoded.

@@ -1,8 +1,8 @@
 // lull's share links (docs/adr/0034). Deployed by .github/workflows/share.yml; tested locally by test/.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  // Part of every link's address (lull.<account subdomain>.workers.dev): never renamed.
-  "name": "lull",
+  // Part of every link's address (listen.<account subdomain>.workers.dev): never renamed.
+  "name": "listen",
   "main": "src/index.js",
   "compatibility_date": "2026-10-01",
   "workers_dev": true,
