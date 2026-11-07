@@ -101,23 +101,32 @@
     var v = i.value == null || i.value === '' ? cfgDefault(key) : i.value;
     return v == null ? 'not set' : String(v);
   }
-  /* a section that edits hub config says once when the hub can't (an older hub, or /api/config failing) */
+  /* a section that edits hub config says once when the hub can't (an older hub, or /api/config failing), and when
+     the vault its passwords go to won't open, with the other one to choose (ADR-0091: /api/config's credentials) */
   function cfgNotice() {
-    var r = M.get(CONFIG);
+    var r = M.get(CONFIG), k = !r.error && r.data && r.data.credentials;
+    if (k && k.offer) return html`<p class="sys-note sys-note--warn">${icon('lock', null, 'ic-16')}<span>${k.text}${k.problem ? ' ' + clause(k.problem) + '.' : ''}</span><button class="btn btn--sm" data-act="sys-keep" data-id="${k.offer}">${k.offer === 'file' ? 'Keep them in lull\'s own file' : 'Keep them in the keyring'}</button></p>`;
     if (!r.error) return '';
     return html`<p class="sys-note">${icon('lock', null, 'ic-16')}<span>These come from the hub's config and show read-only here: ${clause(r.error.message)}.</span></p>`;
   }
+  App.action('sys-keep', function (el) {
+    M.api('/api/credentials', { method: 'PUT', body: { keep: el.dataset.id } }).then(function () {
+      App.toast('Saved. lull restarts its services to use it, which takes a moment.', { kind: 'ok', icon: 'refresh' });
+    }, function (err) { App.toast(err.message, { kind: 'error' }); });
+  });
+  /* where a secret is kept, and what is wrong with that, under its field (ADR-0091) */
+  function keptText(i) { var k = i.secret && i.kept; return k ? ' ' + (k.in === 'env' ? '' : k.text) + (k.problem ? ' ' + k.problem : '') : ''; }
   /* a text, number or secret field for one config key: saved when it changes (Enter or leaving the field) */
   function cfgField(key, label, help, o) {
     o = o || {};
     var r = M.get(CONFIG), i = cfgItem(key);
     if (r.loading) return row(label, help, ui.skeleton('text', 1));
     if (!i || i.source === 'env') {
-      var why = i ? 'Set in the hub\'s environment, so it can\'t change here.' : 'Read-only until the hub can change its config.';
+      var why = i ? 'Set in the hub\'s environment, so it can\'t change here.' + keptText(i) : 'Read-only until the hub can change its config.';
       return row(label, (help ? help + ' ' : '') + why, lockedValue(label, cfgText(key) + (o.unit && i && i.value != null ? ' ' + o.unit : '')), { cls: 'sys-row--locked' });
     }
     var id = App.uid('sys-cfg'), type = i.secret ? 'password' : o.type || 'text';
-    var restart = i.restart ? ' Changing it restarts lull\'s services for a moment.' : '';
+    var restart = (i.restart ? ' Changing it restarts lull\'s services for a moment.' : '') + keptText(i);
     return html`<div class="sys-row sys-row--cfg">
       <div class="sys-row__text"><label class="sys-row__label" for="${id}">${label}</label>${help || restart ? html`<span class="sys-row__help" id="${id}-h">${help}${restart}</span>` : ''}</div>
       <div class="sys-row__ctl"><span class="sys-cfg">${o.unit ? html`<span class="sys-cfg__unit">${o.unit}</span>` : ''}<input class="input" id="${id}" type="${type}" data-cfg="${key}" ${type === 'number' ? raw('inputmode="numeric" min="0"') : ''}
