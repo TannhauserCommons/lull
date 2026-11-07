@@ -28,7 +28,7 @@ use crate::Service;
 use crate::art::{self, Pictured};
 use crate::search::merge::{AlbumHit, Found, SongHit};
 use crate::share_host;
-use crate::sources::{AlbumSource, ArtistInfo, Release, Song};
+use crate::sources::{AlbumSource, ArtistInfo, ArtistSource, Release, Song};
 use crate::store::{self, entities};
 
 /// lull's open page (site/open.html, deployed by `.github/workflows/pages.yml`).
@@ -60,7 +60,19 @@ pub enum Item {
     Artist {
         name: String,
         mbid: Option<String>,
+        /// The rest of what tells the artist apart (ADR-0035), from a share host's link or a catalogue.
+        ids: ArtistIds,
     },
+}
+
+/// An artist link's other anchors (ADR-0035): its catalogue ids, and one album of theirs, so even an
+/// artist with no id is opened by its work. `about` is words for the card and the page only.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ArtistIds {
+    pub deezer: Option<u64>,
+    pub itunes: Option<u64>,
+    pub album: Option<String>,
+    pub about: Option<String>,
 }
 
 /// A link read, before what it names is known.
@@ -149,7 +161,7 @@ fn fragment(item: &Item, page: &str) -> String {
             let (key, id) = source(album_source);
             put(key, Some(&id));
         }
-        Item::Artist { name, mbid } => {
+        Item::Artist { name, mbid, .. } => {
             put("kind", Some("artist"));
             put("artist", Some(name));
             put("mbid", mbid.as_deref());
@@ -235,7 +247,11 @@ fn named(ids: &str) -> Result<Item> {
             mbid,
             source,
         },
-        Some("artist") => Item::Artist { name: artist, mbid },
+        Some("artist") => Item::Artist {
+            name: artist,
+            mbid,
+            ids: ArtistIds::default(),
+        },
         _ => {
             return Err(Error::BadRequest(format!(
                 "This lull link names nothing lull knows. {READS}"
@@ -278,6 +294,7 @@ fn lastfm(path: &[&str]) -> Option<Item> {
         ["music", artist] => Some(Item::Artist {
             name: name(artist)?,
             mbid: None,
+            ids: ArtistIds::default(),
         }),
         ["music", artist, "_", title, ..] => Some(Item::Track {
             artist: name(artist)?,
@@ -317,6 +334,10 @@ async fn resolve(svc: &Service, link: Link) -> Result<Item> {
             Ok(Item::Artist {
                 name: artist.name,
                 mbid: None,
+                ids: ArtistIds {
+                    deezer: Some(id),
+                    ..ArtistIds::default()
+                },
             })
         }
         Link::ReleaseGroup(mbid) => {
@@ -342,6 +363,17 @@ fn first(found: Found) -> Option<Item> {
         return Some(album(a));
     }
     artists.into_iter().next().map(|a| Item::Artist {
+        ids: ArtistIds {
+            deezer: a.sources.iter().find_map(|s| match s {
+                ArtistSource::Deezer(id) => Some(*id),
+                ArtistSource::Itunes(_) => None,
+            }),
+            itunes: a.sources.iter().find_map(|s| match s {
+                ArtistSource::Itunes(id) => Some(*id),
+                ArtistSource::Deezer(_) => None,
+            }),
+            ..ArtistIds::default()
+        },
         name: a.name,
         mbid: a.mbid,
     })
@@ -449,11 +481,17 @@ async fn record(svc: &Service, item: Item) -> Result<Opened> {
             let id = albums.first().map(|a| a.id.0.clone()).unwrap_or_default();
             ("album", id)
         }
-        Item::Artist { name, mbid } => {
-            artists = svc
-                .store
-                .artists(vec![store::artist(ArtistInfo { mbid, name })])
-                .await?;
+        Item::Artist { name, mbid, ids } => {
+            // ADR-0035: the artist holding the link's anchors, else every artist of its name.
+            let placed = match crate::namesakes::on(svc) {
+                true => Some(crate::namesakes::place_link(svc, &name, mbid.as_deref(), &ids).await?),
+                false => None,
+            };
+            let mut artist = store::artist(ArtistInfo { mbid, name });
+            if let Some(id) = placed {
+                artist.id = id;
+            }
+            artists = svc.store.artists(vec![artist]).await?;
             let id = artists.first().map(|a| a.id.0.clone()).unwrap_or_default();
             ("artist", id)
         }
@@ -513,6 +551,7 @@ mod tests {
         let artist = Item::Artist {
             name: "AC/DC & Friends".into(),
             mbid: Some("66c662b6-6e2f-4930-8610-912e24c63ed1".into()),
+            ids: ArtistIds::default(),
         };
         let older = format!(
             "https://www.last.fm/music/AC%2FDC#{}",

@@ -20,9 +20,10 @@ lull links that chat apps show as cards, served by a Cloudflare Worker on the fr
 
 For every lull install, in any market (ADR-0034, "For every lull"): links hold public facts only, never the sender's store or hub; every lull reads a `/1/` link on any https host, so a share host someone runs from `share/` works too.
 
-`https://<host>/1/song/<artist>/<title>?al=&aa=&len=&it=&ic=&dz=&mb=`, `/1/album/<artist>/<title>?it=&dz=&mb=`, `/1/artist/<name>?dz=&mb=`.
+`https://<host>/1/song/<artist>/<title>?al=&aa=&len=&it=&ic=&dz=&mb=`, `/1/album/<artist>/<title>?it=&dz=&mb=`, `/1/artist/<name>?dz=&it=&mb=&al=&ds=`.
 - **Names** are exact, each one segment encoded as `encodeURIComponent` does (the hub's `share_host::encode` matches it), so the hub's link is the Worker's canonical one.
 - **Ids:** `it` the item's iTunes id (a song's track, an album's collection), `ic` a song's album's iTunes id, `dz` the album's (or artist's) Deezer id, `mb` the release group's (or artist's) MBID; `al`, `aa`, `len` a song's album, album artist and length. Malformed ids are dropped on both sides.
+- **An artist link** (ADR-0035, with the `namesakes` switch on the sending hub): `dz`, `it` and `mb` every id it holds for the artist, `al` one album of theirs (so an artist with no id is still opened by its work), `ds` what tells it apart from others of its name (MusicBrainz's comment), for the card and the page. A hub opens it by the rule: the artist holding those anchors, else every artist of the name. The Worker reads `ds` to show it under the name (share session).
 - **The public page** is derived: `song.link/i/<it>`, `album.link/i/<it>`, else Last.fm by name.
 
 ## The cover

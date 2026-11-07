@@ -13,7 +13,7 @@ use lull_core::{Error, Result};
 use serde::Deserialize;
 use url::Url;
 
-use crate::open::Item;
+use crate::open::{ArtistIds, Item};
 use crate::sources::AlbumSource;
 
 /// The links' version: the first segment of every path. The Worker answers every version it ever handed out.
@@ -88,8 +88,13 @@ fn link_on(host: &str, item: &Item, extra: &Extra) -> String {
             put("mb", mbid.clone());
             ("album", vec![artist, title])
         }
-        Item::Artist { name, mbid } => {
+        Item::Artist { name, mbid, ids } => {
             put("mb", mbid.clone());
+            // ADR-0035: every id the hub holds, one album of theirs and what tells them apart.
+            put("dz", ids.deezer.map(|id| id.to_string()));
+            put("it", ids.itunes.map(|id| id.to_string()));
+            put("al", ids.album.clone());
+            put("ds", ids.about.clone());
             ("artist", vec![name])
         }
     };
@@ -166,6 +171,12 @@ fn read_on(url: &Url, hosts: &[String]) -> Result<Option<Item>> {
         ("artist", 3) => Item::Artist {
             name: name(2)?,
             mbid: mbid(),
+            ids: ArtistIds {
+                deezer: id("dz"),
+                itunes: id("it"),
+                album: get("al").and_then(|a| checked(&a)),
+                about: get("ds").and_then(|a| checked(&a)),
+            },
         },
         _ => return Err(broken()),
     };
@@ -271,12 +282,30 @@ mod tests {
         let artist = Item::Artist {
             name: "AC/DC".into(),
             mbid: None,
+            ids: ArtistIds::default(),
         };
         assert_eq!(
             link_on(HOST, &artist, &Extra::default()),
             "https://lull.share-host.invalid/1/artist/AC%2FDC"
         );
         assert_eq!(read("https://lull.share-host.invalid/1/artist/AC%2FDC"), Some(artist));
+        // ADR-0035: an artist link carries its catalogue ids, one album and which one it is.
+        let nirvana = Item::Artist {
+            name: "Nirvana".into(),
+            mbid: Some("9282c8b4-ca0b-4c6b-b7e3-4f7762dfc4d6".into()),
+            ids: ArtistIds {
+                deezer: Some(281_527_041),
+                itunes: Some(215_143_797),
+                album: Some("The Story of Simon Simopath".into()),
+                about: Some("60s band from the UK".into()),
+            },
+        };
+        let link = link_on(HOST, &nirvana, &Extra::default());
+        assert!(
+            link.contains("dz=281527041") && link.contains("it=215143797") && link.contains("al=The%20Story"),
+            "{link}"
+        );
+        assert_eq!(read(&link), Some(nirvana));
     }
 
     #[test]
@@ -290,7 +319,8 @@ mod tests {
             elsewhere("https://share.example.org/1/artist/Portishead"),
             Some(Some(Item::Artist {
                 name: "Portishead".into(),
-                mbid: None
+                mbid: None,
+                ids: ArtistIds::default(),
             })),
             "a share host someone runs for themselves"
         );

@@ -257,3 +257,32 @@ fn taste_weighs_only_the_nirvana_the_listener_played_and_never_its_namesake() ->
     assert_eq!(taste.artist_weight(&ArtistId::of("Nirvana")), 0.0, "nor does the name");
     Ok(())
 }
+
+/// ADR-0035: an artist link with no id but one of the artist's albums opens the namesake holding
+/// that album; with neither, the name's page.
+#[test]
+fn an_artist_link_opens_the_namesake_its_album_or_ids_say() -> R {
+    let c = hub()?;
+    let nevermind = Anchor::Album(AlbumId::of("Nirvana", "Nevermind"));
+    identity::place(&c, "Nirvana", &[Anchor::Deezer(415), nevermind], Came::Credit)?;
+    identity::place(&c, "Nirvana", &[Anchor::Deezer(278_793_911)], Came::Credit)?;
+    let open = |ids: crate::open::ArtistIds| -> std::result::Result<ArtistId, Box<dyn std::error::Error>> {
+        Ok(identity::artist_of(&c, "Nirvana", &link_anchors("Nirvana", None, &ids))?.id("Nirvana"))
+    };
+    let by_album = crate::open::ArtistIds {
+        album: Some("Nevermind".into()),
+        ..Default::default()
+    };
+    assert_eq!(open(by_album)?, ArtistId::own("Nirvana", "dz:415"));
+    let by_id = crate::open::ArtistIds {
+        deezer: Some(278_793_911),
+        ..Default::default()
+    };
+    assert_eq!(open(by_id)?, ArtistId::own("Nirvana", "dz:278793911"));
+    assert_eq!(
+        open(crate::open::ArtistIds::default())?,
+        ArtistId::of("Nirvana"),
+        "the name's page"
+    );
+    Ok(())
+}

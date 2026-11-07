@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use crate::Service;
 use crate::art::{self, Pictured};
 use crate::artist::identity::resources;
+use crate::open::ArtistIds;
 use crate::search::merge::{ArtistHit, Merged, SongHit};
 use crate::sources::ArtistSource;
 use crate::sources::musicbrainz::Namesake;
@@ -229,6 +230,63 @@ pub fn placed(c: &Connection, s: &Signals) -> Result<(Placed, HashSet<ArtistId>)
         hidden.extend(identity::now_is(c, id)?);
     }
     Ok((placed, hidden))
+}
+
+/// Where an artist link goes (ADR-0035): the artist holding its ids or its album, else every
+/// artist of its name (`Place::id`: the name's id opens their page). What it brings is kept.
+pub async fn place_link(svc: &Service, name: &str, mbid: Option<&str>, ids: &ArtistIds) -> Result<ArtistId> {
+    let anchors = link_anchors(name, mbid, ids);
+    let name = name.to_owned();
+    svc.ctx
+        .db
+        .call(move |c| Ok(identity::place(c, &name, &anchors, Came::Link)?.id(&name)))
+        .await
+}
+
+/// A link's anchors: its ids, and the album it names as the album of that name lull would know.
+fn link_anchors(name: &str, mbid: Option<&str>, ids: &ArtistIds) -> Vec<Anchor> {
+    let mut anchors: Vec<Anchor> = mbid.map(|m| Anchor::Mbid(m.to_owned())).into_iter().collect();
+    anchors.extend(ids.deezer.map(Anchor::Deezer));
+    anchors.extend(ids.itunes.map(Anchor::Itunes));
+    anchors.extend(ids.album.as_deref().map(|al| Anchor::Album(AlbumId::of(name, al))));
+    anchors
+}
+
+/// What a link to `id` carries (ADR-0035): every exact id the hub holds for the artist (the rule's
+/// anchors, else what `artist::identity` keeps), one album of theirs, and, for a name several
+/// artists share, MusicBrainz's words for which one it is.
+pub async fn link_ids(svc: &Service, id: &ArtistId, name: &str) -> Result<(Option<String>, ArtistIds)> {
+    let (at, n) = (id.clone(), name.to_owned());
+    let (mut mbid, mut ids, shared) = svc
+        .ctx
+        .db
+        .call(move |c| {
+            let artist = identity::now_is(c, &at)?.unwrap_or_else(|| at.clone());
+            let (mut mbid, mut ids) = (None, ArtistIds::default());
+            for anchor in identity::anchors(c, &artist)? {
+                match anchor {
+                    Anchor::Mbid(m) => mbid = mbid.or(Some(m)),
+                    Anchor::Deezer(d) => ids.deezer = ids.deezer.or(Some(d)),
+                    Anchor::Itunes(i) => ids.itunes = ids.itunes.or(Some(i)),
+                    Anchor::Album(al) if ids.album.is_none() => ids.album = catalog::album(c, &al)?.map(|a| a.title),
+                    _ => {}
+                }
+            }
+            Ok((mbid, ids, identity::artists_named(c, &n)?.len() > 1))
+        })
+        .await?;
+    let held = svc.store.artist_ids(id.clone()).await?;
+    mbid = mbid.or_else(|| held.mbid().map(str::to_owned));
+    ids.deezer = ids.deezer.or(held.deezer());
+    ids.itunes = ids.itunes.or(held.itunes());
+    if shared && let Some(m) = &mbid {
+        // Words for the card only: without them the link still opens the right artist by its ids.
+        match svc.mb.named_artists(name).await {
+            Ok(found) => ids.about = found.into_iter().find(|f| f.mbid == *m).and_then(|f| f.about),
+            Err(e) => tracing::info!(artist = name, error = %e, "a link without its description"),
+        }
+    }
+    Ok((mbid, ids))
 }
 
 /// What an artist id opens with the switch on.

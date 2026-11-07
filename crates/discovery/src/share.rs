@@ -181,13 +181,24 @@ async fn known(svc: &Service, kind: &str, id: String) -> Result<Option<Shared>> 
         }
         "artist" if id.starts_with(ArtistId::PREFIX) => {
             let id = ArtistId(id);
-            svc.store.artist_ref(id.clone()).await?.map(|a| Shared::Artist {
-                item: Item::Artist {
-                    name: a.name,
-                    mbid: a.musicbrainz_id,
-                },
-                id,
-            })
+            match svc.store.artist_ref(id.clone()).await? {
+                Some(a) => {
+                    // ADR-0035: the link carries every anchor the hub holds for the artist.
+                    let (mbid, ids) = match crate::namesakes::on(svc) {
+                        true => crate::namesakes::link_ids(svc, &id, &a.name).await?,
+                        false => (a.musicbrainz_id, crate::open::ArtistIds::default()),
+                    };
+                    Some(Shared::Artist {
+                        item: Item::Artist {
+                            name: a.name,
+                            mbid,
+                            ids,
+                        },
+                        id,
+                    })
+                }
+                None => None,
+            }
         }
         _ => None,
     })
@@ -369,6 +380,7 @@ mod tests {
             item: Item::Artist {
                 name: "AC/DC".into(),
                 mbid: None,
+                ids: crate::open::ArtistIds::default(),
             },
             id: ArtistId("ar-x".into()),
         };
