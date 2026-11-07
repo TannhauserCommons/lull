@@ -352,11 +352,11 @@ pub async fn page(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Re
         discography: disco,
         similar,
         pending,
-        artist: entities
-            .artists
-            .get(&artist.id)
-            .cloned()
-            .unwrap_or(PicturedArtist { artist, image: None }),
+        artist: entities.artists.get(&artist.id).cloned().unwrap_or(PicturedArtist {
+            artist,
+            image: None,
+            about: None,
+        }),
         errors,
         entities,
     })

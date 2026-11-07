@@ -884,7 +884,7 @@
         <div class="disc-top__info">
           <p class="disc-top__kind">artist</p>
           <h3 class="disc-top__title${ui.placeCls('artist:' + ar.id)}" data-place="artist:${ar.id}"><a href="#/artist/${ar.id}">${ar.name}</a>${ui.placeMark('artist:' + ar.id)}</h3>
-          ${ar.listeners != null ? html`<p class="disc-top__by">${thousands(ar.listeners)} listeners</p>` : ''}
+          ${ar.about || ar.listeners != null ? html`<p class="disc-top__by">${ar.about || thousands(ar.listeners) + ' listeners'}</p>` : ''}
           <div class="cluster disc-top__badges">${ar.tags.slice(0, 2).map(function (g) { return ui.tagChip(g); })}</div>
         </div>
       </div>
@@ -929,7 +929,7 @@
       <div class="tile__art"><a href="#/artist/${a.id}" tabindex="-1" aria-hidden="true">${ui.cover(a.id, '100%', { round: true })}</a>
         <button class="tile__play" data-act="disc-radio" data-kind="artist" data-id="${a.id}" aria-label="Start ${a.name} radio" data-tip="Start radio">${icon('radio')}</button></div>
       <div class="tile__title"><a href="#/artist/${a.id}" data-place-at>${ui.placeMark(key)}${a.name}</a></div>
-      <div class="tile__by">${a.listeners != null ? thousands(a.listeners) + ' listeners' : 'artist'}</div>
+      ${a.about ? html`<div class="tile__by" data-tip="${a.about}" data-tip-cut>${a.about}</div>` : html`<div class="tile__by">${a.listeners != null ? thousands(a.listeners) + ' listeners' : 'artist'}</div>`}
     </div>`;
   }
 

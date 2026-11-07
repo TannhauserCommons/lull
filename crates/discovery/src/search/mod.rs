@@ -873,5 +873,9 @@ async fn describe(svc: &Service, m: &Merged, songs: &[usize], albums: &[usize], 
                 .collect(),
         )
         .await?;
-    art::pictured(svc, entities(tracks, album_rows, artist_rows)).await
+    let mut pictured = art::pictured(svc, entities(tracks, album_rows, artist_rows)).await?;
+    if m.namesakes {
+        crate::namesakes::describe_namesakes(svc, &mut pictured).await?;
+    }
+    Ok(pictured)
 }

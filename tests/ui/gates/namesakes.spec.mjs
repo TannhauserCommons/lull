@@ -40,3 +40,13 @@ test('the artists of a shared name are told apart, and the listener says whose a
   expect(body.name).toBe('Soft Choir');
   expect(body.tracks).toHaveLength(1);
 });
+
+test('artists sharing a name are separate search results, each saying which one it is', async ({ page }) => {
+  await page.goto(`${hub.url}/#/search?q=soft%20choir`);
+  await page.waitForFunction(() => window.App && App.server && App.server.checked);
+  await settle(page);
+  const by = page.locator('.disc-shelf--artists .tile__by');
+  await expect(by).toHaveCount(3);
+  await expect(by.nth(1)).toHaveAttribute('data-tip', '1970s Welsh male voice choir');
+  await expect(page.locator('.disc-top__by')).toHaveText('1990s English dream pop band');
+});

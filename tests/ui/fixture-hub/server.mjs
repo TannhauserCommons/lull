@@ -311,7 +311,15 @@ const routes = [
     const albums = L.albumIds.filter((id) => has(`${L.albums[id].title} ${L.albums[id].artist}`, w)).slice(0, 20);
     const artists = L.artistIds.filter((id) => has(L.artists[id].name, w)).slice(0, 20);
     const top = artists[0] ? { kind: 'artist', id: artists[0] } : albums[0] ? { kind: 'album', id: albums[0] } : tracks[0] ? { kind: 'track', id: tracks[0] } : null;
-    return { query: w, top, artists, albums, tracks, playlists: [], pending: [], entities: entities({ tracks, albums: [...albums, ...albumsOf(tracks)], artists }) };
+    const found = { query: w, top, artists, albums, tracks, playlists: [], pending: [], entities: entities({ tracks, albums: [...albums, ...albumsOf(tracks)], artists }) };
+    // With the namesakes switch, Soft Choir's namesakes are rows of their own, each told apart (ADR-0035).
+    if (FLAGS.includes('namesakes') && artists.some((id) => L.artists[id].name === 'Soft Choir')) {
+      const about = namedPage('Soft Choir').about;
+      for (const n of NAMESAKES) { found.artists.push(n.id); found.entities.artists[n.id] = { ...n, about: about[n.id] }; }
+      const own = artists.find((id) => L.artists[id].name === 'Soft Choir');
+      found.entities.artists[own] = { ...found.entities.artists[own], about: '1990s English dream pop band' };
+    }
+    return found;
   }],
   ['GET', /^\/api\/soulseek\/search$/, (m, q) => {
     const searchId = 'srch-' + words(q.get('q')).replace(/\W+/g, '-');

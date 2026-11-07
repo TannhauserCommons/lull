@@ -8,7 +8,7 @@ use std::sync::Arc;
 use axum::Json;
 use axum::extract::{Query as Params, State};
 use lull_core::identity::{self, Anchor, Came, Place};
-use lull_core::ids::{AlbumId, ArtistId, TrackId};
+use lull_core::ids::{AlbumId, ArtistId, TrackId, normalize_artist};
 use lull_core::model::Artist;
 use lull_core::{Error, Result, catalog, flags};
 use rusqlite::Connection;
@@ -411,6 +411,59 @@ pub async fn song_artist(svc: &Service, track: &Track) -> Result<Option<ArtistId
             })
         })
         .await
+}
+
+/// Search's rows of a name two of them share get what tells them apart (ADR-0035): MusicBrainz's
+/// comment for the artist's MBID, as already kept. Search never waits for MusicBrainz: a name it
+/// hasn't been asked about lately is asked in the background, for the next search.
+pub async fn describe_namesakes(svc: &Service, pictured: &mut Pictured) -> Result<()> {
+    let mut by_name: HashMap<String, Vec<ArtistId>> = HashMap::new();
+    for (id, a) in &pictured.artists {
+        by_name
+            .entry(normalize_artist(&a.artist.name))
+            .or_default()
+            .push(id.clone());
+    }
+    for ids in by_name.into_values().filter(|ids| ids.len() > 1) {
+        let name = pictured
+            .artists
+            .get(&ids[0])
+            .map(|a| a.artist.name.clone())
+            .unwrap_or_default();
+        let Some(found) = svc.mb.named_artists_known(&name).await? else {
+            let (mb, n) = (svc.mb.clone(), name.clone());
+            svc.ctx.spawn(async move {
+                if let Err(e) = mb.named_artists(&n).await {
+                    tracing::info!(artist = %n, error = %e, "namesakes not described this time");
+                }
+            });
+            continue;
+        };
+        let asked = ids.clone();
+        let mbids: Vec<(ArtistId, Option<String>)> = svc
+            .ctx
+            .db
+            .call(move |c| {
+                asked
+                    .into_iter()
+                    .map(|id| {
+                        let m = identity::anchors(c, &id)?.into_iter().find_map(|a| match a {
+                            Anchor::Mbid(m) => Some(m),
+                            _ => None,
+                        });
+                        Ok((id, m))
+                    })
+                    .collect()
+            })
+            .await?;
+        for (id, mbid) in mbids {
+            let about = mbid.and_then(|m| found.iter().find(|f| f.mbid == m).and_then(|f| f.about.clone()));
+            if let Some(a) = pictured.artists.get_mut(&id) {
+                a.about = about;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// What an artist id opens with the switch on.

@@ -51,6 +51,9 @@ pub struct PicturedArtist {
     pub artist: Artist,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image: Option<String>,
+    /// What tells the artist apart from others of its name (ADR-0035), where search shows two.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub about: Option<String>,
 }
 
 /// `Entities` with pictures (docs/context/api.md#conventions).
@@ -112,7 +115,14 @@ pub fn picture(c: &rusqlite::Connection, e: Entities) -> Result<Pictured> {
         // Only a vetted photo: what search recorded may be a cover (artist/photo.rs). Its version
         // makes a browser holding an old picture ask again.
         let image = crate::artist::photo::image_of(c, &id)?.map(|source| image_url(&id, &source));
-        out.artists.insert(id, PicturedArtist { artist, image });
+        out.artists.insert(
+            id,
+            PicturedArtist {
+                artist,
+                image,
+                about: None,
+            },
+        );
     }
     Ok(out)
 }

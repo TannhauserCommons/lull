@@ -513,6 +513,13 @@ impl MusicBrainz {
             .await
     }
 
+    /// `named_artists` only as already kept: None when MusicBrainz hasn't been asked lately.
+    pub async fn named_artists_known(&self, name: &str) -> Result<Option<Vec<Namesake>>> {
+        self.cache
+            .fresh(format!("mb:named:{}", normalize_artist(name)), 30 * DAY)
+            .await
+    }
+
     async fn get<T: DeserializeOwned>(&self, path: &str, query: &[(&str, &str)]) -> Result<T> {
         let call = self.breaker.call()?;
         self.http.pace(http::MUSICBRAINZ, http::MUSICBRAINZ_PACE).await;

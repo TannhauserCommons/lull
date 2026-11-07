@@ -156,7 +156,8 @@ pub struct Service {
     ctx: Ctx,
     store: Store,
     lb: ListenBrainz,
-    mb: MusicBrainz,
+    /// Shared, so a background look-up can outlive the request that started it.
+    mb: Arc<MusicBrainz>,
     deezer: Deezer,
     itunes: Itunes,
     /// Artist photos on Wikimedia Commons.
@@ -205,7 +206,7 @@ pub async fn start(
             cache.clone(),
             ctx.config.discovery.listenbrainz_token.clone(),
         ),
-        mb: MusicBrainz::new(ctx.http.clone(), cache.clone()),
+        mb: Arc::new(MusicBrainz::new(ctx.http.clone(), cache.clone())),
         deezer: Deezer::new(ctx.http.clone(), cache.clone()),
         itunes: Itunes::new(
             ctx.http.clone(),
