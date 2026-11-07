@@ -34,16 +34,27 @@ jfcall GET /Startup/User >/dev/null
 jfcall POST /Startup/User '{"Name":"admin","Password":"lull-ci-admin"}' >/dev/null
 jfcall POST /Startup/Complete >/dev/null
 token=$(jfcall POST /Users/AuthenticateByName '{"Username":"admin","Pw":"lull-ci-admin"}' | node -p 'JSON.parse(require("fs").readFileSync(0)).AccessToken')
+# Jellyfin scans its (empty) libraries once the wizard completes; a scan asked for meanwhile can be dropped. So the
+# library is added once that scan is idle.
+scan_state() { jfcall GET /ScheduledTasks | node -p 'JSON.parse(require("fs").readFileSync(0)).find((t) => t.Key === "RefreshLibrary")?.State ?? "Idle"'; }
+for _ in $(seq 1 60); do [ "$(scan_state)" = Idle ] && break; sleep 2; done
 jfcall POST "/Library/VirtualFolders?name=Music&collectionType=music&refreshLibrary=true" \
   "{\"LibraryOptions\":{\"PathInfos\":[{\"Path\":\"$music\"}]}}" >/dev/null
 jfcall POST "/Auth/Keys?app=lull" >/dev/null
 key=$(jfcall GET /Auth/Keys | node -p 'JSON.parse(require("fs").readFileSync(0)).Items.find((k) => k.AppName === "lull").AccessToken')
-for _ in $(seq 1 90); do
+# main-full run 42374497665 found 0 of 14 after 3 minutes and its rerun all 14 in seconds: the scan of the new
+# library may not have run. If it still hasn't after 20 s, it is asked for again; failing, Jellyfin's state is shown.
+for i in $(seq 1 120); do
   n=$(jfcall GET "/Items?IncludeItemTypes=Audio&Recursive=true&Limit=0" | node -p 'JSON.parse(require("fs").readFileSync(0)).TotalRecordCount')
   [ "$n" -ge "$songs" ] && break
+  [ $((i % 10)) -eq 0 ] && jfcall POST /Library/Refresh >/dev/null
   sleep 2
 done
-[ "$n" -ge "$songs" ] || fail "Jellyfin found $n of $songs songs"
+if [ "$n" -lt "$songs" ]; then
+  jfcall GET /Library/VirtualFolders >&2 || true
+  docker logs lull-jellyfin 2>&1 | tail -40 >&2
+  fail "Jellyfin found $n of $songs songs"
+fi
 echo "Jellyfin knows the $songs songs"
 
 echo "== a hub, set up with lull setup's questions"
