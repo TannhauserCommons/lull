@@ -108,6 +108,15 @@ Each feature uses whichever id serves it; one is missing only when no source hol
 
 Kept in `discovery_artist_ids`, the only place an artist's ids live: an MBID that comes with a name (a search row, a Last.fm profile, a lull link) isn't kept, an artist without an MBID keeps no artist tags, and one whose MBID changes or goes loses its tags and its photo's verdict. The listener's evidence for an artist is weighed on first need (its page, a feed seed, a radio) and again after 7 days (`discovery_artist_checked`); a lookup that fails keeps nothing, so the next need asks again. A new rule version (`identity::RULE`) weighs every remembered artist the listener has songs of once at start, then rebuilds the feed. Cost per such artist: its songs' albums' tracklists (cached a week), one MusicBrainz URL lookup, its MBID's links, an ISRC lookup only when those find no MBID; all MusicBrainz answers kept 30 days, through the shared pace.
 
+### Namesakes (ADR-0035, the `namesakes` switch)
+
+Code: `lull_core::identity` (the rule and its tables, created only with the switch on), `src/namesakes.rs` (discovery's side). With the switch off none of this runs.
+- **The rule:** an artist is a set of anchors (exact ids, its works, the listener's word); two things are the same artist when they share an anchor, or share a name with nothing telling them apart. An artist keeps every name it was called by. A name's id opens the one artist of that name, else the name's page (`GET /api/artists/named`); once a name has several, the artist that had its id gets its own (`ArtistId::own`).
+- **Who feeds it:** search's artist rows and songs that carry their catalogue artist's id (`place_rows`), artist links (`place_link`), the ids `artist::identity` held and the library's MBIDs and albums at each start (`anchor_known`), MusicBrainz's artists of a shared name as candidates that never join by name (`add_musicbrainz`), and the listener's word.
+- **Who reads it:** search (rows kept apart, a line saying which one from MusicBrainz's comment, from the cache only), artist pages and radio (the artist's own anchors, `artist_ids`), taste and picks (`placed`: each signal counts for the artist it is placed on, or nobody), follows and hides (`now_is`: the listener's artist, their pick, or nobody), stats and Subsonic (albums by their placed artist).
+- **Albums:** an album whose title its artist already has under another release group gets its own id (`store::apart`).
+- **What it never does:** rewrite a row outside its own tables (`switching_namesakes_on_rewrites_no_existing_row_on_a_real_shaped_hub`), or let a namesake inherit anything the listener did.
+
 ### Artist pages
 
 Code: `src/artist/` (`mod.rs` the page, `discography.rs`, `popular.rs`, `photo.rs`). Why: [ADR-0031](../adr/0031-artist-pages.md).
