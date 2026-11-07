@@ -333,6 +333,10 @@ const routes = [
     const a = L.albums[m[1]]; if (!a) return err(404, 'not_found', 'lull doesn\'t know this album.');
     return { album: a, entities: entities({ tracks: a.trackIds, albums: [a.id, ...L.albumIds.filter((x) => L.albums[x].artistId === a.artistId)], artists: [a.artistId] }) };
   }],
+  // ADR-0035's name page (the `namesakes` switch): Soft Choir shares its name with two invented artists.
+  ['GET', /^\/api\/artists\/named$/, (m, q) => FLAGS.includes('namesakes') ? namedPage(q.get('name')) : err(404, 'not_found', 'No such page.')],
+  ['POST', /^\/api\/artists\/(named\/split|place|named\/choose)$/, (m, q, body) => FLAGS.includes('namesakes')
+    ? { artist: body.artist || 'ar-5c0f7c401c0a0003' } : err(404, 'not_found', 'No such page.')],
   ['GET', /^\/api\/artists\/([^/]+)$/, (m, q, body, client) => {
     const ar = L.artists[m[1]]; if (!ar) return err(404, 'not_found', 'lull doesn\'t know this artist.');
     const page = artistPage(ar), late = artistLate.get(client + ' ' + ar.id);
@@ -380,6 +384,26 @@ function deepMerge(into, patch) {
   }
 }
 function cap(w) { return w[0].toUpperCase() + w.slice(1); }
+
+/* GET /api/artists/named?name=: Soft Choir (the listener's, with an album and two songs nothing places) and two
+   invented namesakes, one described by MusicBrainz's comment and one by its type, country and years */
+const NAMESAKES = [
+  { id: 'ar-5c0f7c401c0a0001', name: 'Soft Choir', tags: [], listeners: null, bio: null, musicbrainzId: null },
+  { id: 'ar-5c0f7c401c0a0002', name: 'Soft Choir', tags: [], listeners: null, bio: null, musicbrainzId: null },
+];
+function namedPage(name) {
+  const own = L.artistIds.find((id) => L.artists[id].name === name);
+  if (!own) return { name, artists: [], about: {}, albums: {}, yours: [], unplaced: [], entities: { tracks: {}, albums: {}, artists: {} } };
+  const albums = L.albumIds.filter((a) => L.albums[a].artistId === own);
+  const unplaced = (L.albums[albums[1] || albums[0]]?.trackIds || []).slice(0, 2);
+  const e = entities({ tracks: unplaced, albums: albums.slice(0, 1), artists: [own] });
+  for (const n of NAMESAKES) e.artists[n.id] = n;
+  return {
+    name, artists: [own, ...NAMESAKES.map((n) => n.id)],
+    about: { [NAMESAKES[0].id]: '1970s Welsh male voice choir', [NAMESAKES[1].id]: 'Group · NZ · since 2019' },
+    albums: albums[0] ? { [own]: albums[0] } : {}, yours: [own], unplaced, entities: e,
+  };
+}
 
 /* GET /api/artists/{id}: the whole page */
 function artistPage(ar) {
