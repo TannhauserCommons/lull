@@ -1,21 +1,29 @@
-<!-- "lull pocket": a glossy media-player window built from the default device's own live parts (screen, LED, A/B keys,
-     prev/next keys, pills), so every data-now / data-act hook keeps working. The D-pad's volume keys stay with the mini
-     player (the dock has the volume). The compact variant is the default device. -->
-<div class="lull-np" role="group" aria-label="Player">
-  <div class="lull-win__bar lull-np__bar"><span aria-hidden="true">now playing</span><lull-part name="device" pick=".device__led"></lull-part></div>
-  <div class="lull-np__shell">
-    <div class="lull-np__screen device__screen s-screen">
-      <span class="lull-np__art" data-now="c-art"><lull-part name="cover" size="100%"></lull-part></span>
-      <lull-part name="device" pick=".device__page-head"></lull-part><lull-part name="device" pick='[data-now="screen"]'></lull-part><lull-part name="device" pick='[data-now="osd"]'></lull-part>
+<!-- the disc system: a clear violet player whose tray holds the song as a printed disc. The disc turns with the song
+     (theme.css, --song-pos) while the light on it stays put; play is the chrome hub at the disc's centre; the other
+     keys are chrome beads in a groove below, a speaker grille between them. Every part is lull's own live part (data-now, data-act, data-bind). -->
+<div class="lull-now" role="group" aria-label="Player">
+  <div class="lull-dev">
+    <div class="lull-dev__cap"><span class="lull-dev__name" aria-hidden="true">disc system</span><span class="lull-dev__led" data-now="state"><lull-part name="state"></lull-part></span></div>
+    <div class="lull-dev__screen">
+      <div class="lull-tray">
+        <span class="lull-disc" data-now="c-art"><lull-part name="cover" size="100%"></lull-part></span>
+        <span class="lull-disc__light" aria-hidden="true"></span>
+        <span class="lull-hub" data-now="a"><lull-part name="play-button" size="64"></lull-part></span>
+      </div>
+      <span class="lull-dev__like" data-now="b"><lull-part name="like-button" size="52"></lull-part></span>
+      <lull-part name="device" pick='[data-now="osd"]'></lull-part>
     </div>
-    <div class="lull-np__foot">
-      <span class="lull-np__mark" aria-hidden="true">{{product}} <em>pocket</em></span>
-      <!-- phone: the title bar's status pill moves here -->
-      <span class="lull-np__state"><lull-part name="device" pick=".device__led"></lull-part></span>
-      <span class="lull-np__grill" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+    <div class="lull-keys">
+      <lull-part name="device" pick=".device__pill--shuffle" cls="lull-key lull-key--shuffle"></lull-part>
+      <lull-part name="device" pick=".dpad__btn--left" cls="lull-key lull-key--prev"></lull-part>
+      <span class="lull-keys__grille" aria-hidden="true"></span>
+      <lull-part name="device" pick=".dpad__btn--right" cls="lull-key lull-key--next"></lull-part>
+      <lull-part name="device" pick=".device__pill--repeat" cls="lull-key lull-key--repeat"></lull-part>
     </div>
-    <div class="lull-np__deck"><lull-part name="device" pick=".device__pill--shuffle"></lull-part><span class="lull-np__transport"><lull-part name="device" pick=".dpad__btn--left"></lull-part><lull-part name="device" pick=".device__key--a"></lull-part><lull-part name="device" pick=".dpad__btn--right"></lull-part></span><lull-part name="device" pick=".device__pill--repeat"></lull-part></div>
   </div>
-  <!-- the like orb sits beside the big title under the pocket, placed there by theme.css -->
-  <span class="lull-np__like"><lull-part name="device" pick=".device__key--b"></lull-part></span>
+  <div class="lull-now__readout">
+    <lull-part name="wave" bars="56"></lull-part>
+    <div class="wave-times"><b data-bind="pos">0:00</b><span class="wave-times__buf">buffered to <span data-bind="buffered-to">0:00</span></span><span data-bind="dur">0:00</span></div>
+    <div class="lull-now__facts" data-now="facts"><lull-part name="facts"></lull-part></div>
+  </div>
 </div>

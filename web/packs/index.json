@@ -6,7 +6,28 @@
     },
     {
       "id": "lull",
-      "css": false
+      "css": true,
+      "slots": [
+        "birthday",
+        "bubbles",
+        "buddy",
+        "dream",
+        "fire",
+        "future",
+        "long-wait",
+        "milestone",
+        "moon",
+        "new-year-hello",
+        "night",
+        "on-repeat",
+        "rain",
+        "rare-boot",
+        "sea",
+        "snow",
+        "star",
+        "storm",
+        "sun"
+      ]
     },
     {
       "id": "skydeck",
