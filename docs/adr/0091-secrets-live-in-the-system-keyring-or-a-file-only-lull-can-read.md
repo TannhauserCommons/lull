@@ -108,7 +108,7 @@ No credential is written to lull's database, to its backups, or to any file othe
   - The credential stays recorded where it was. The parts that need it report it in `/health` and the status tray, for example: "lull can't open your keyring (it's locked). Unlock it and press Try again, or keep your passwords in lull's own file instead."
   - The second choice asks the listener to type the password again. Nothing is ever erased.
 - **The environment and `LULL_CONFIG`:** they stay where the admin put them.
-  - If `LULL_CONFIG` holds a secret and others can read the file (Unix group or other bits), lull warns at start, in its log and in Settings. It never changes that file's mode itself.
+  - If `LULL_CONFIG` holds a secret and every user can read the file (Unix "other" bits), lull warns at start, in its log and in Settings. A group bit is fine: a file made 0640 for root and lull's group is what an admin's setup tool should write. It never changes that file's mode itself.
   - `deploy/` documents `chmod 600 .env`.
 - **The Linux package:**
   - `lull setup` and the web page send credentials to the hub as now, and they land in the file vault.

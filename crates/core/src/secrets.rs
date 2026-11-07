@@ -30,6 +30,12 @@ pub const MIGRATIONS: Migrations = Migrations {
             vault       TEXT NOT NULL CHECK (vault IN ('keyring', 'file')),
             updated_at  INTEGER NOT NULL
         );
+        -- The listener's choice of vault, when they made one (`choose`): lull's own file over a keyring
+        -- that won't open, or the keyring again.
+        CREATE TABLE secrets_choice (
+            id     INTEGER PRIMARY KEY CHECK (id = 1),
+            vault  TEXT NOT NULL CHECK (vault IN ('keyring', 'file'))
+        );
     "#],
 };
 
@@ -44,14 +50,14 @@ pub enum Kept {
 }
 
 impl Kept {
-    fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Kept::Keyring => "keyring",
             Kept::File => "file",
         }
     }
 
-    fn parse(s: &str) -> Option<Kept> {
+    pub fn parse(s: &str) -> Option<Kept> {
         match s {
             "keyring" => Some(Kept::Keyring),
             "file" => Some(Kept::File),
@@ -262,7 +268,12 @@ pub async fn start(db: &Db, on: bool) -> Result<()> {
         db.migrate(&MIGRATIONS)?;
     }
     let vaults = db.vaults();
-    let (target, keyring_problem) = if on { pick(vaults).await? } else { (None, None) };
+    let chosen = if on { choice(db).await? } else { None };
+    let (target, keyring_problem) = match (on, chosen) {
+        (false, _) => (None, None),
+        (true, Some(Kept::File)) if vaults.file.is_some() => (Some(Kept::File), None),
+        (true, _) => pick(vaults).await?,
+    };
     let rows: Vec<(String, String)> = db
         .call(|c| {
             let mut stmt = c.prepare("SELECT name, vault FROM secrets_kept")?;
@@ -296,8 +307,8 @@ pub async fn start(db: &Db, on: bool) -> Result<()> {
         }
     }
     *vaults.write_state() = state;
-    if on && target == Some(Kept::Keyring) {
-        to_keyring(db).await;
+    if let Some(target) = target.filter(|_| on) {
+        to_target(db, target).await;
     }
     if on {
         crate::settings::move_secrets(db).await;
@@ -326,24 +337,67 @@ async fn pick(vaults: &Vaults) -> Result<(Option<Kept>, Option<String>)> {
     }
 }
 
-/// Credentials the file holds, moved to the keyring that now works. The file's copy goes only once
-/// the keyring has read it back.
-async fn to_keyring(db: &Db) {
+/// Credentials another vault holds, moved to the target: the file's into a keyring that now works, or the
+/// keyring's into the file the listener chose. The old copy goes only once the target has read it back.
+async fn to_target(db: &Db, target: Kept) {
     let names: Vec<String> = {
         let state = db.vaults().read_state();
         state
             .kept
             .iter()
-            .filter(|(name, kept)| **kept == Kept::File && state.values.contains_key(*name))
+            .filter(|(name, kept)| **kept != target && state.values.contains_key(*name))
             .map(|(name, _)| name.clone())
             .collect()
     };
     for name in names {
         let Some(value) = get(db, &name) else { continue };
         if let Err(e) = put(db, &name, &value).await {
-            tracing::warn!("{name} stays in lull's own file: {e}");
+            tracing::warn!("{name} stays where it is for now: {e}");
         }
     }
+}
+
+/// The listener's choice of vault, if they made one.
+async fn choice(db: &Db) -> Result<Option<Kept>> {
+    let vault: Option<String> = db
+        .call(|c| {
+            Ok(
+                c.query_row("SELECT vault FROM secrets_choice WHERE id = 1", [], |r| r.get(0))
+                    .optional()?,
+            )
+        })
+        .await?;
+    Ok(vault.as_deref().and_then(Kept::parse))
+}
+
+/// The listener's choice: lull's own file instead of a keyring that won't open, or the keyring again. It
+/// takes effect at the next start of the crates, which moves what it can (a keyring that can't be read
+/// keeps its copies; the listener types those again).
+pub async fn choose(db: &Db, vault: Kept) -> Result<()> {
+    if vault == Kept::Keyring && db.vaults().keyring.is_none() {
+        return Err(Error::BadRequest(
+            "this hub has no system keyring to keep them in".into(),
+        ));
+    }
+    db.call(move |c| {
+        c.execute(
+            "INSERT INTO secrets_choice (id, vault) VALUES (1, ?1) ON CONFLICT(id) DO UPDATE SET vault = excluded.vault",
+            [vault.as_str()],
+        )?;
+        Ok(())
+    })
+    .await
+}
+
+/// Where a new credential goes, and that vault's place in words. `None` with the switch off.
+pub fn target(db: &Db) -> Option<(Kept, String)> {
+    let kept = db.vaults().read_state().target?;
+    Some((kept, db.vaults().vault(kept)?.place()))
+}
+
+/// Whether this hub was given a system keyring (the desktop app's), whether or not it works.
+pub fn has_keyring(db: &Db) -> bool {
+    db.vaults().keyring.is_some()
 }
 
 /// The credential `name`, as read at start or written since.

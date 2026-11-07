@@ -664,3 +664,89 @@ async fn no_credential_reaches_a_log_line_an_answer_or_an_event() -> Result<(), 
     let _ = std::fs::remove_dir_all(dir);
     Ok(())
 }
+
+/// What Settings shows (ADR-0091 section 7): with the switch on, each secret says where it is, a keyring that
+/// won't open says why and offers lull's own file, and choosing it keeps what the listener types again there.
+/// Off, `/api/config` is what it was and the choice isn't there.
+#[tokio::test]
+async fn settings_says_where_each_secret_is_and_offers_the_file_when_the_keyring_wont_open() -> Result<(), BoxError> {
+    use crate::tests::{Auth, SETUP_CODE, call, cookie_token, get, send};
+    use serde_json::{Value, json};
+
+    async fn item(hub: &Arc<Hub>, me: &str, key: &str) -> Result<(Value, Value), BoxError> {
+        let (_, _, body) = call(hub, get("/api/config", Auth::Cookie(me))?).await?;
+        let item = body["items"]
+            .as_array()
+            .and_then(|items| items.iter().find(|i| i["key"] == key).cloned())
+            .unwrap_or(Value::Null);
+        Ok((item, body["credentials"].clone()))
+    }
+
+    let dir = fresh_dir()?;
+    store_plain(&dir, &[("LULL_LISTENBRAINZ_TOKEN", TOKEN)]).await?;
+    let keyring = Arc::new(TestKeyring::default());
+
+    let (off, _) = start(&dir, false, Some(&keyring)).await?;
+    let claim = json!({ "code": SETUP_CODE, "name": "Laptop" });
+    let (_, cookie, _) = call(&off, send("POST", "/api/setup/claim", Auth::None, claim)?).await?;
+    let me = cookie_token(cookie);
+    let (token, credentials) = item(&off, &me, "LULL_LISTENBRAINZ_TOKEN").await?;
+    assert!(
+        token.get("kept").is_none() && credentials.is_null(),
+        "off: {token} {credentials}"
+    );
+    let (status, _, _) = call(
+        &off,
+        send("PUT", "/api/credentials", Auth::Cookie(&me), json!({ "keep": "file" }))?,
+    )
+    .await?;
+    assert_eq!(status, axum::http::StatusCode::NOT_FOUND, "off: no choice to make");
+    off.stop().await;
+
+    let (on, _) = start(&dir, true, Some(&keyring)).await?;
+    let (token, credentials) = item(&on, &me, "LULL_LISTENBRAINZ_TOKEN").await?;
+    assert_eq!(token["kept"]["in"], "keyring", "{token}");
+    assert_eq!(token["kept"]["text"], "Kept in the test keyring.");
+    assert_eq!(credentials["in"], "keyring");
+    assert!(
+        credentials["offer"].is_null(),
+        "a keyring that works offers nothing else: {credentials}"
+    );
+    let (unset, _) = item(&on, &me, "LULL_ACOUSTID_KEY").await?;
+    assert_eq!(unset["kept"]["text"], "A new one is kept in the test keyring.");
+    let (env, _) = item(&on, &me, "LULL_SLSKD_API_KEY").await?;
+    assert_eq!(env["kept"]["in"], "env");
+    on.stop().await;
+
+    keyring.set_state(1);
+    let (locked, _) = start(&dir, true, Some(&keyring)).await?;
+    let (token, credentials) = item(&locked, &me, "LULL_LISTENBRAINZ_TOKEN").await?;
+    assert!(
+        token["kept"]["problem"].as_str().is_some_and(|p| p.contains("locked")),
+        "{token}"
+    );
+    assert_eq!(credentials["offer"], "file", "{credentials}");
+    let (_, _, health) = call(&locked, get("/health", Auth::Cookie(&me))?).await?;
+    assert!(health.to_string().contains("can't be read now"), "{health}");
+    let (status, _, _) = call(
+        &locked,
+        send("PUT", "/api/credentials", Auth::Cookie(&me), json!({ "keep": "file" }))?,
+    )
+    .await?;
+    assert!(status.is_success());
+    locked.stop().await;
+
+    // The keyring still won't open: what the listener types again goes to the file, and nothing asks it.
+    let (chosen, _) = start(&dir, true, Some(&keyring)).await?;
+    let (_, credentials) = item(&chosen, &me, "LULL_LISTENBRAINZ_TOKEN").await?;
+    assert_eq!(credentials["in"], "file", "{credentials}");
+    let typed = json!({ "LULL_LISTENBRAINZ_TOKEN": "typed-again" });
+    let (status, _, body) = call(&chosen, send("PATCH", "/api/config", Auth::Cookie(&me), typed)?).await?;
+    assert!(status.is_success(), "{body}");
+    let (token, _) = item(&chosen, &me, "LULL_LISTENBRAINZ_TOKEN").await?;
+    assert_eq!(token["kept"]["in"], "file", "{token}");
+    chosen.stop().await;
+
+    let _ = std::fs::remove_dir_all(dir);
+    Ok(())
+}

@@ -78,6 +78,7 @@ pub async fn run_with(
         tasks.push(tokio::spawn(managed::restart_when_wedged(hub.clone(), s)));
     }
     if lull_core::secrets::on(&hub.db) {
+        warn_if_config_file_is_open(&hub.env);
         let kit = hub.env.get("LULL_KIT").map(std::path::PathBuf::from);
         tasks.push(tokio::spawn(launch::clean_backups_when_settled(
             data.to_path_buf(),
@@ -95,6 +96,23 @@ pub async fn run_with(
         task.abort();
     }
     served
+}
+
+/// A `LULL_CONFIG` file that holds a secret and that every user of the computer can read is the admin's to
+/// close (ADR-0091): lull says so at start, and Settings beside the secret. It never changes the file itself.
+fn warn_if_config_file_is_open(env: &BTreeMap<String, String>) {
+    let Some(file) = lull_core::config::config_file() else {
+        return;
+    };
+    let secret = lull_core::settings::KEYS
+        .iter()
+        .any(|k| k.secret && file.keys.contains(k.name) && env.get(k.name).is_some_and(|v| !v.is_empty()));
+    if secret && file.readable_by_others {
+        tracing::warn!(
+            "{} holds a password or key and every user of this computer can read it: chmod 640 (or 600) it",
+            file.path.display()
+        );
+    }
 }
 
 /// Serves the hub until `shutdown`, restarting its crates in place whenever one publishes

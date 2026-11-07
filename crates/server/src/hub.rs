@@ -105,8 +105,34 @@ impl Wiring {
         // is still heard.
         ctx.spawn(forward_restarts(ctx.bus.subscribe(), restarts));
         let router = crate::wire(&ctx).await?;
+        report_credentials(&ctx);
         Ok(Wiring { ctx, router })
     }
+}
+
+/// With the `secrets` switch on, a `credentials` status while some wait for a vault that won't open (ADR-0091):
+/// `/health` and `lull status` say so, and what needs them waits. Nothing is reported while all is well.
+fn report_credentials(ctx: &Ctx) {
+    if !secrets::on(&ctx.db) {
+        return;
+    }
+    let waiting = secrets::unreadable(&ctx.db);
+    let detail = match (waiting.values().next(), secrets::keyring_problem(&ctx.db)) {
+        (Some(why), _) => format!(
+            "{} of lull's passwords and keys can't be read now ({why}); what needs them waits",
+            waiting.len()
+        ),
+        (None, Some(why)) if secrets::target(&ctx.db).is_some_and(|(k, _)| k == secrets::Kept::Keyring) => {
+            format!("new passwords and keys can't be kept now ({why})")
+        }
+        _ => return,
+    };
+    ctx.status.set(
+        "credentials",
+        lull_core::status::State::Warn,
+        detail,
+        serde_json::Value::Null,
+    );
 }
 
 /// The environment merged over the stored settings (ADR-0002).

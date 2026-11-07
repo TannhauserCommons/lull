@@ -7,11 +7,11 @@ use std::sync::Arc;
 
 use axum::extract::State;
 use axum::extract::rejection::JsonRejection;
-use axum::routing::get;
+use axum::routing::{get, put};
 use axum::{Json, Router};
 use lull_core::config::Config;
 use lull_core::settings::{self, KEYS, Source};
-use lull_core::{Error, Result};
+use lull_core::{Error, Result, secrets};
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -19,7 +19,9 @@ use crate::hub::Hub;
 use crate::pairing::bad_json;
 
 pub fn router() -> Router<Arc<Hub>> {
-    Router::new().route("/api/config", get(list).patch(change))
+    Router::new()
+        .route("/api/config", get(list).patch(change))
+        .route("/api/credentials", put(choose))
 }
 
 #[derive(Serialize)]
@@ -32,10 +34,80 @@ struct Item {
     secret: bool,
     /// Every key is read when the crates start, so every change restarts them.
     restart: bool,
+    /// A secret's place, with the `secrets` switch on (ADR-0091).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    kept: Option<Kept>,
+}
+
+/// Where a secret is, as Settings says it under its field.
+#[derive(Serialize)]
+struct Kept {
+    /// `keyring`, `file`, `env` or `config-file`.
+    #[serde(rename = "in")]
+    place: &'static str,
+    text: String,
+    /// Why it can't be read now, or why where it is isn't safe.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    problem: Option<String>,
 }
 
 async fn list(State(hub): State<Arc<Hub>>) -> Result<Json<Value>> {
-    Ok(Json(json!({ "items": items(&hub).await? })))
+    let mut body = json!({ "items": items(&hub).await? });
+    if let Some(vault) = credentials(&hub) {
+        body["credentials"] = vault;
+    }
+    Ok(Json(body))
+}
+
+/// Where new credentials go, with the `secrets` switch on: `{ in, text, problem?, offer? }`. `offer` is the
+/// other vault the listener can choose (`PUT /api/credentials`): lull's own file when the keyring won't
+/// open, the keyring again once they chose the file.
+fn credentials(hub: &Hub) -> Option<Value> {
+    if !secrets::on(&hub.db) {
+        return None;
+    }
+    let (target, place) = secrets::target(&hub.db)?;
+    let problem = secrets::keyring_problem(&hub.db);
+    let offer = match target {
+        secrets::Kept::Keyring if problem.is_some() => Some("file"),
+        secrets::Kept::File if secrets::has_keyring(&hub.db) && problem.is_none() => Some("keyring"),
+        _ => None,
+    };
+    Some(json!({
+        "in": target.as_str(),
+        "text": format!("Passwords and keys are kept in {}.", words(target, &place)),
+        "problem": problem,
+        "offer": offer,
+    }))
+}
+
+/// `PUT /api/credentials { keep: "file" | "keyring" }`: the listener's choice of vault. The crates restart
+/// to use it, moving what they can.
+async fn choose(State(hub): State<Arc<Hub>>, body: Result<Json<Value>, JsonRejection>) -> Result<Json<Value>> {
+    if !secrets::on(&hub.db) {
+        return Err(Error::NotFound("no such route".into()));
+    }
+    let Json(body) = body.map_err(bad_json)?;
+    let vault = body["keep"]
+        .as_str()
+        .and_then(secrets::Kept::parse)
+        .ok_or_else(|| Error::BadRequest("keep is file or keyring".into()))?;
+    secrets::choose(&hub.db, vault).await?;
+    hub.ctx()
+        .await
+        .bus
+        .publish("hub.restart", json!({ "reason": "credentials' place chosen" }));
+    Ok(Json(json!({ "keep": vault.as_str() })))
+}
+
+/// A vault in Settings' words.
+fn words(kept: secrets::Kept, place: &str) -> String {
+    match kept {
+        secrets::Kept::Keyring => place.to_owned(),
+        secrets::Kept::File => {
+            format!("lull's own file, which only lull's account on this computer can open ({place})")
+        }
+    }
 }
 
 /// `PATCH /api/config { LULL_X: value | null }`: `null` or `""` goes back to the default.
@@ -109,20 +181,80 @@ fn changed_elsewhere(key: &str) -> Option<&'static str> {
 
 async fn items(hub: &Hub) -> Result<Vec<Item>> {
     let (vars, sources) = settings::merge(&hub.env, &settings::stored(&hub.db).await?);
+    let file = lull_core::config::config_file();
+    let unreadable = settings::withheld(&hub.db);
     Ok(KEYS
         .iter()
         .map(|key| {
             let value = vars.get(key.name).filter(|v| !v.is_empty());
+            let source = sources.get(key.name).copied().unwrap_or(Source::Default);
             Item {
                 key: key.name,
                 value: value.filter(|_| !key.secret).cloned(),
                 set: value.is_some(),
-                source: sources.get(key.name).copied().unwrap_or(Source::Default),
+                source,
                 secret: key.secret,
                 restart: true,
+                kept: key
+                    .secret
+                    .then(|| kept(hub, key.name, source, file.as_ref(), unreadable.get(key.name)))
+                    .flatten(),
             }
         })
         .collect())
+}
+
+/// Where the secret `key` is, with the `secrets` switch on.
+fn kept(
+    hub: &Hub,
+    key: &str,
+    source: Source,
+    file: Option<&lull_core::config::ConfigFile>,
+    unreadable: Option<&String>,
+) -> Option<Kept> {
+    if !secrets::on(&hub.db) {
+        return None;
+    }
+    let in_process = std::env::var(key).is_ok_and(|v| !v.is_empty());
+    let (target, target_place) = secrets::target(&hub.db)?;
+    Some(match (source, file.filter(|f| f.keys.contains(key) && !in_process)) {
+        (Source::Env, Some(file)) => Kept {
+            place: "config-file",
+            text: format!("Set in {}.", file.path.display()),
+            problem: file.readable_by_others.then(|| {
+                format!(
+                    "Every user of this computer can read {}: make it readable by its owner and lull alone \
+                     (chmod 640, or 600).",
+                    file.path.display()
+                )
+            }),
+        },
+        (Source::Env, None) => Kept {
+            place: "env",
+            text: "Set in the server's environment.".into(),
+            problem: None,
+        },
+        _ => match secrets::kept(&hub.db, key) {
+            Some((kept, place)) => Kept {
+                place: kept.as_str(),
+                text: format!("Kept in {}.", words(kept, &place)),
+                problem: unreadable.cloned(),
+            },
+            None if source == Source::Stored => Kept {
+                place: "database",
+                text: format!(
+                    "Still in lull's database until {} takes it.",
+                    words(target, &target_place)
+                ),
+                problem: None,
+            },
+            None => Kept {
+                place: target.as_str(),
+                text: format!("A new one is kept in {}.", words(target, &target_place)),
+                problem: None,
+            },
+        },
+    })
 }
 
 #[cfg(test)]

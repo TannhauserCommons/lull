@@ -367,6 +367,38 @@ pub fn env_vars() -> Result<BTreeMap<String, String>, ConfigError> {
     Ok(vars)
 }
 
+/// The file `LULL_CONFIG` names: where it is, the `LULL_*` keys it sets, and whether anyone but its owner
+/// (and the owner's group) can read it. ADR-0091: Settings says a secret set there is set there, and warns
+/// when others can read it; lull never changes the admin's file itself.
+pub struct ConfigFile {
+    pub path: PathBuf,
+    pub keys: BTreeSet<String>,
+    /// Readable by every user of the computer (Unix "other" bits). Always false on Windows, whose
+    /// folders' ACLs decide.
+    pub readable_by_others: bool,
+}
+
+pub fn config_file() -> Option<ConfigFile> {
+    let path = PathBuf::from(std::env::var("LULL_CONFIG").ok()?);
+    let text = std::fs::read_to_string(&path).ok()?;
+    let keys = parse_env_file(&text)
+        .map(|(k, _)| k)
+        .filter(|k| k.starts_with("LULL_"))
+        .collect();
+    #[cfg(unix)]
+    let readable_by_others = {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(&path).is_ok_and(|m| m.permissions().mode() & 0o004 != 0)
+    };
+    #[cfg(not(unix))]
+    let readable_by_others = false;
+    Some(ConfigFile {
+        path,
+        keys,
+        readable_by_others,
+    })
+}
+
 /// An ISO 3166 country code ("us" → "US").
 fn country(code: String) -> Result<String, ConfigError> {
     let code = code.trim().to_ascii_uppercase();
