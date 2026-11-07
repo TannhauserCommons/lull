@@ -15,10 +15,10 @@ sum() {
 # The second line of the base64 key file is the key itself.
 key=$(node -e "const c = require(process.argv[1]); console.log(Buffer.from(c.plugins.updater.pubkey, 'base64').toString().split('\n')[1])" \
   "$repo/app/tauri.conf.json")
-# What lull and its programs link on Arch, as namcap reads them from the binaries (aur.yml fails on a difference), and
-# what lull loads as it runs: the tray's AppIndicator (namcap can't see a library loaded at run time) and the icon
-# theme its icons go into.
-depends="'webkit2gtk-4.1' 'gtk3' 'glib2' 'pango' 'cairo' 'gdk-pixbuf2' 'libsoup3' 'dbus' 'alsa-lib' 'zlib' 'libgcc' 'libstdc++' 'glibc' 'libayatana-appindicator' 'hicolor-icon-theme'"
+# What lull links on Arch, as namcap reads it from the binary (aur.yml fails on a difference); what it loads as it runs,
+# which namcap can't see: the tray's AppIndicator, and the programs it runs (ADR-0064), Arch's yt-dlp and deno and the
+# AUR's slskd-bin; and the icon theme its icons go into.
+depends="'webkit2gtk-4.1' 'gtk3' 'glib2' 'pango' 'cairo' 'gdk-pixbuf2' 'libsoup3' 'dbus' 'alsa-lib' 'libgcc' 'glibc' 'libayatana-appindicator' 'yt-dlp' 'deno' 'slskd-bin' 'hicolor-icon-theme'"
 
 mkdir -p "$out"
 sed -e "s|@VERSION@|$version|" \

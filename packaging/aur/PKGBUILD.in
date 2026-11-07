@@ -15,7 +15,7 @@ depends=(@DEPENDS@)
 makedepends=('minisign')
 provides=('lull')
 conflicts=('lull')
-# Already stripped by the release build; slskd, yt-dlp and Deno are their own projects' builds.
+# Already stripped by the release build.
 options=('!strip' '!debug')
 _release="https://github.com/TannhauserCommons/lull/releases/download/v${pkgver}"
 # The key every lull release is signed with (the app's updater key, in tauri.conf.json).
@@ -50,10 +50,11 @@ prepare() {
 package() {
   cp -a deb/usr "$pkgdir/"
   cd "$pkgdir/usr"
-  # lull and the programs it runs (slskd, yt-dlp, Deno) in a folder of its own: Arch has its own yt-dlp and deno,
-  # and these are the versions lull is tested with. lull finds them next to itself.
+  # lull runs Arch's own yt-dlp and deno and the AUR's slskd (ADR-0064): the .deb's copies go. lull itself lives in a
+  # folder of its own, where it finds what its package says (below).
+  rm bin/slskd bin/yt-dlp bin/deno
   install -d lib/lull
-  mv bin/lull bin/slskd bin/yt-dlp bin/deno lib/lull/
+  mv bin/lull lib/lull/
   ln -s /usr/lib/lull/lull bin/lull
   # Updates come with pacman: lull's own updater stands down and says so (app/src/desktop/updater.rs).
   printf '%s\n' 'the AUR (lull-bin)' > lib/lull/updates-from
