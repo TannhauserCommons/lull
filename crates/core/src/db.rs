@@ -78,9 +78,27 @@ pub const CORE: Migrations = Migrations {
 };
 
 impl Db {
+    /// Opens `<dir>/lull.db`, readable by lull's own user alone (ADR-0091): a new folder is 0700, a
+    /// new database 0600 (SQLite gives its `-wal` and `-shm` the database's mode), and a database an
+    /// older lull made readable to others is narrowed.
     pub fn open(dir: &Path) -> Result<Self> {
-        std::fs::create_dir_all(dir).map_err(|e| Error::internal(format!("create {}: {e}", dir.display())))?;
-        let conn = Connection::open(dir.join("lull.db"))?;
+        let fail = |what: &Path, e: std::io::Error| Error::internal(format!("{}: {e}", what.display()));
+        crate::private::create_dir_all(dir).map_err(|e| fail(dir, e))?;
+        let path = dir.join("lull.db");
+        match crate::private::create_new(&path) {
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                // A folder lull doesn't own (a share that ignores modes, a volume another user made) may
+                // refuse: the hub still starts, and says so.
+                for file in [path.clone(), dir.join("lull.db-wal"), dir.join("lull.db-shm")] {
+                    if let Err(e) = crate::private::restrict(&file) {
+                        tracing::warn!("can't make {} readable by lull alone: {e}", file.display());
+                    }
+                }
+            }
+            Err(e) => return Err(fail(&path, e)),
+        }
+        let conn = Connection::open(&path)?;
         conn.execute_batch(
             "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;
              CREATE TABLE IF NOT EXISTS schema (owner TEXT PRIMARY KEY, version INTEGER NOT NULL);",

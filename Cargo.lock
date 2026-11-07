@@ -1215,6 +1215,7 @@ dependencies = [
  "axum",
  "getrandom 0.4.3",
  "image",
+ "nix",
  "reqwest",
  "rusqlite",
  "serde",

@@ -17,6 +17,7 @@ pub mod ids;
 pub mod m4a;
 pub mod model;
 pub mod pictures;
+pub mod private;
 pub mod process;
 pub mod quality;
 pub mod seams;

@@ -31,5 +31,9 @@ tracing.workspace = true
 # Paced and windowed requests are tested on paused time, exactly and without waiting.
 tokio = { workspace = true, features = ["test-util"] }
 
+[target.'cfg(unix)'.dev-dependencies]
+# `private`: its test sets the umask wide open, to prove the modes come from creation.
+nix = { version = "0.31.3", default-features = false, features = ["fs"] }
+
 [lints]
 workspace = true
