@@ -494,6 +494,25 @@ impl MusicBrainz {
             .await
     }
 
+    /// Every artist MusicBrainz calls exactly `name`, by its name or an alias (ADR-0035's name
+    /// page). Its search score only ranks them (seven artists named exactly Nirvana scored 60 to
+    /// 100), so the name decides who is listed, and nothing else is read from the score. Kept a month.
+    pub async fn named_artists(&self, name: &str) -> Result<Vec<Namesake>> {
+        self.switch.check()?;
+        let key = normalize_artist(name);
+        let words = normalize(name);
+        if words.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.cache
+            .get(format!("mb:named:{key}"), 30 * DAY, || async {
+                let query = format!("artist:\"{words}\" OR alias:\"{words}\"");
+                let body: serde_json::Value = self.get("artist", &[("query", &query), ("limit", "100")]).await?;
+                Ok(namesakes(body, &key))
+            })
+            .await
+    }
+
     async fn get<T: DeserializeOwned>(&self, path: &str, query: &[(&str, &str)]) -> Result<T> {
         let call = self.breaker.call()?;
         self.http.pace(http::MUSICBRAINZ, http::MUSICBRAINZ_PACE).await;
@@ -795,4 +814,74 @@ mod tests {
             None
         );
     }
+}
+
+/// An artist of a shared name, as MusicBrainz describes it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Namesake {
+    pub mbid: String,
+    pub name: String,
+    /// Its short description: MusicBrainz's comment ("60s band from the UK"), else its type,
+    /// country and years ("Group · GB · since 1967").
+    pub about: Option<String>,
+}
+
+/// An artist search's answer, as the artists whose name or alias is `key` (normalised).
+pub(crate) fn namesakes(body: serde_json::Value, key: &str) -> Vec<Namesake> {
+    #[derive(Deserialize)]
+    struct Answer {
+        #[serde(default)]
+        artists: Vec<Raw>,
+    }
+    #[derive(Deserialize)]
+    struct Raw {
+        id: String,
+        name: String,
+        #[serde(rename = "type")]
+        kind: Option<String>,
+        country: Option<String>,
+        disambiguation: Option<String>,
+        #[serde(rename = "life-span")]
+        life: Option<Life>,
+        #[serde(default)]
+        aliases: Vec<Alias>,
+    }
+    #[derive(Deserialize)]
+    struct Life {
+        begin: Option<String>,
+        end: Option<String>,
+    }
+    #[derive(Deserialize)]
+    struct Alias {
+        name: String,
+    }
+    let Ok(answer) = serde_json::from_value::<Answer>(body) else {
+        return Vec::new();
+    };
+    answer
+        .artists
+        .into_iter()
+        .filter(|a| normalize_artist(&a.name) == key || a.aliases.iter().any(|al| normalize_artist(&al.name) == key))
+        .map(|a| {
+            let years = a.life.and_then(|l| {
+                let year = |d: Option<String>| d.and_then(|d| d.get(..4).map(str::to_owned));
+                match (year(l.begin), year(l.end)) {
+                    (Some(b), Some(e)) => Some(format!("{b}–{e}")),
+                    (Some(b), None) => Some(format!("since {b}")),
+                    (None, Some(e)) => Some(format!("until {e}")),
+                    (None, None) => None,
+                }
+            });
+            let facts: Vec<String> = [a.kind, a.country, years].into_iter().flatten().collect();
+            let about = a
+                .disambiguation
+                .filter(|d| !d.trim().is_empty())
+                .or_else(|| (!facts.is_empty()).then(|| facts.join(" · ")));
+            Namesake {
+                mbid: a.id,
+                name: a.name,
+                about,
+            }
+        })
+        .collect()
 }

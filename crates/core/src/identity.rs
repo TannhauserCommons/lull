@@ -204,8 +204,25 @@ pub fn place(conn: &Connection, name: &str, anchors: &[Anchor], came: Came) -> R
         keep(conn, &landed, anchors, came)?;
     }
     let landed = alias(conn, &landed)?;
-    called(conn, name, &landed)?;
+    called(conn, name, &landed, true)?;
     Ok(Place::One(alias(conn, &landed)?))
+}
+
+/// One of a list of artists sharing `name` (MusicBrainz's): the artist holding its anchors, else a
+/// new artist of its own. A list says they are different artists, not which one lull already has,
+/// so it never joins one by name.
+pub fn add_distinct(conn: &Connection, name: &str, anchors: &[Anchor], came: Came) -> Result<ArtistId> {
+    if let Some((artist, _)) = holders(conn, anchors)?.into_iter().min_by_key(|(_, w)| *w) {
+        return called(conn, name, &artist, false);
+    }
+    let first = anchors
+        .iter()
+        .min_by_key(|a| a.weight())
+        .ok_or_else(|| Error::internal(format!("a {name:?} needs an anchor")))?;
+    let id = ArtistId::own(name, &first.key());
+    ensure_artist(conn, &id, name)?;
+    keep(conn, &id, anchors, came)?;
+    called(conn, name, &id, false)
 }
 
 /// What an id lull handed out opens: an artist's own id is that artist; a name's id is the one
@@ -288,7 +305,7 @@ pub fn listener_splits(conn: &Connection, name: &str, works: &[Anchor]) -> Resul
                 &artist,
                 Came::Listener,
             )?;
-            called(conn, name, &artist)?;
+            called(conn, name, &artist, false)?;
         }
     }
     let mine = Anchor::Listener(next_listener(conn)?);
@@ -297,7 +314,7 @@ pub fn listener_splits(conn: &Connection, name: &str, works: &[Anchor]) -> Resul
     for w in works {
         put(conn, &w.key(), &id, Came::Listener)?;
     }
-    let id = called(conn, name, &id)?;
+    let id = called(conn, name, &id, false)?;
     settle(conn, name)?;
     Ok(id)
 }
@@ -495,15 +512,16 @@ fn ensure_artist(conn: &Connection, id: &ArtistId, name: &str) -> Result<()> {
     Ok(())
 }
 
-/// `artist` is called `name`. Another artist of that name that nothing tells apart from it is it.
+/// `artist` is called `name`. Another artist of that name that nothing tells apart from it is it
+/// (`join_by_name`; a candidate from a list of namesakes is no evidence of that).
 /// Once a name has several artists, the one that had the name's id gets its own, so the name's id
 /// means the name, and whose it was before is settled. Returns the artist's id now.
-fn called(conn: &Connection, name: &str, artist: &ArtistId) -> Result<ArtistId> {
+fn called(conn: &Connection, name: &str, artist: &ArtistId, join_by_name: bool) -> Result<ArtistId> {
     let name_id = ArtistId::of(name);
     ensure_artist(conn, artist, name)?;
     let mine = exact(conn, artist)?;
     let mut fits = Vec::new();
-    for other in called_by(conn, &name_id)? {
+    for other in called_by(conn, &name_id)?.into_iter().filter(|_| join_by_name) {
         if other != *artist && !tells_apart(&mine, &exact(conn, &other)?) {
             fits.push(other);
         }
@@ -610,11 +628,38 @@ fn move_rows(conn: &Connection, from: &ArtistId, to: &ArtistId) -> Result<()> {
 }
 
 /// When a name has several artists, whose its id was: the one artist the listener's own songs of
-/// that name (played, liked or saved) are on, when exactly one. The listener's choice stays.
+/// that name are on, when exactly one. The listener's choice stays.
 fn settle(conn: &Connection, name: &str) -> Result<()> {
     let name_id = ArtistId::of(name);
+    let owners: BTreeSet<ArtistId> = listener_songs(conn, name)?
+        .into_iter()
+        .filter_map(|(_, place)| match place {
+            Place::One(a) => Some(a),
+            Place::Several(_) => None,
+        })
+        .collect();
+    if owners.len() == 1 {
+        let owner = owners.into_iter().next().unwrap_or_else(|| name_id.clone());
+        conn.execute(
+            "INSERT INTO identity_names (name_id, artist_id, by, at) VALUES (?1, ?2, 'songs', ?3)
+             ON CONFLICT(name_id) DO UPDATE SET artist_id = excluded.artist_id, at = excluded.at
+             WHERE identity_names.by = 'songs'",
+            params![name_id.as_str(), owner.as_str(), crate::now()],
+        )?;
+    } else {
+        conn.execute(
+            "DELETE FROM identity_names WHERE name_id = ?1 AND by = 'songs'",
+            [name_id.as_str()],
+        )?;
+    }
+    Ok(())
+}
+
+/// The listener's own songs credited to `name` (played, liked or saved), each with where the rule
+/// places it by its anchors (the song, its album): one artist, or several when nothing decides.
+pub fn listener_songs(conn: &Connection, name: &str) -> Result<Vec<(TrackId, Place)>> {
     let key = normalize_artist(name);
-    let mut songs: BTreeSet<(String, String)> = BTreeSet::new();
+    let mut songs: BTreeMap<String, String> = BTreeMap::new();
     for sql in [
         "SELECT p.track_id, p.artist, json_extract(c.json, '$.albumId')
            FROM (SELECT DISTINCT track_id, artist FROM plays) p LEFT JOIN catalog_tracks c ON c.id = p.track_id",
@@ -634,35 +679,31 @@ fn settle(conn: &Connection, name: &str) -> Result<()> {
         for row in rows {
             let (track, artist, album) = row?;
             if artist.is_some_and(|a| normalize_artist(&a) == key) {
-                songs.insert((track, album.unwrap_or_default()));
+                songs.entry(track).or_insert(album.unwrap_or_default());
             }
         }
     }
-    let mut owners = BTreeSet::new();
+    let mut out = Vec::with_capacity(songs.len());
     for (track, album) in songs {
-        let mut work = vec![Anchor::Track(TrackId(track))];
+        let mut work = vec![Anchor::Track(TrackId(track.clone()))];
         if !album.is_empty() {
             work.push(Anchor::Album(AlbumId(album)));
         }
-        if let Some((artist, _)) = holders(conn, &work)?.into_iter().min_by_key(|(_, w)| *w) {
-            owners.insert(artist);
-        }
+        out.push((TrackId(track), artist_of(conn, name, &work)?));
     }
-    if owners.len() == 1 {
-        let owner = owners.into_iter().next().unwrap_or_else(|| name_id.clone());
-        conn.execute(
-            "INSERT INTO identity_names (name_id, artist_id, by, at) VALUES (?1, ?2, 'songs', ?3)
-             ON CONFLICT(name_id) DO UPDATE SET artist_id = excluded.artist_id, at = excluded.at
-             WHERE identity_names.by = 'songs'",
-            params![name_id.as_str(), owner.as_str(), crate::now()],
-        )?;
-    } else {
-        conn.execute(
-            "DELETE FROM identity_names WHERE name_id = ?1 AND by = 'songs'",
+    Ok(out)
+}
+
+/// The name a name's id stands for, as an artist was called by it; None for a name this module
+/// has never seen.
+pub fn name_of(conn: &Connection, name_id: &ArtistId) -> Result<Option<String>> {
+    Ok(conn
+        .query_row(
+            "SELECT name FROM identity_called WHERE name_id = ?1 LIMIT 1",
             [name_id.as_str()],
-        )?;
-    }
-    Ok(())
+            |r| r.get(0),
+        )
+        .optional()?)
 }
 
 fn next_listener(conn: &Connection) -> Result<u64> {

@@ -25,6 +25,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use axum::Json;
 use axum::extract::{Path, State};
+use axum::response::{IntoResponse, Response};
 use lull_core::ids::{AlbumId, ArtistId, TrackId, normalize_artist};
 use lull_core::{Error, Result};
 use serde::Serialize;
@@ -98,8 +99,18 @@ struct Catalog {
     store_name: Option<String>,
 }
 
-pub async fn page(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Result<Json<ArtistPage>> {
-    let id = ArtistId(checked(id, ArtistId::PREFIX)?);
+pub async fn page(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Result<Response> {
+    let mut id = ArtistId(checked(id, ArtistId::PREFIX)?);
+    // ADR-0035: an id opens the one artist it is now, or, for a name several artists share, says
+    // so, and the UI opens the name's page.
+    if crate::namesakes::on(&svc) {
+        match crate::namesakes::opens(&svc, id.clone()).await? {
+            crate::namesakes::Opens::Artist(artist) => id = artist,
+            crate::namesakes::Opens::Named(name) => {
+                return Ok(Json(serde_json::json!({ "named": name })).into_response());
+            }
+        }
+    }
     let mut artist = svc
         .store
         .artist_ref(id.clone())
@@ -342,7 +353,8 @@ pub async fn page(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Re
             .unwrap_or(PicturedArtist { artist, image: None }),
         errors,
         entities,
-    }))
+    })
+    .into_response())
 }
 
 /// Everything the catalogs know of the artist, each by the artist's own id there, side by side.

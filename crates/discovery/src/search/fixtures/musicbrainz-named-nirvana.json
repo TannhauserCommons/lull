@@ -1,0 +1,132 @@
+{
+ "created": "2026-11-07T12:27:12.199Z",
+ "count": 10,
+ "artists": [
+  {
+   "id": "5b11f4ce-a62d-471e-81fc-a69a8278c7da",
+   "name": "Nirvana",
+   "type": "Group",
+   "country": "US",
+   "disambiguation": "1980s–1990s US grunge band",
+   "score": 100,
+   "life-span": {
+    "begin": "1987",
+    "end": "1994-04-05"
+   },
+   "aliases": [
+    {
+     "name": "ニルヴァーナ"
+    },
+    {
+     "name": "Nirvana"
+    },
+    {
+     "name": "Nirvana US"
+    }
+   ]
+  },
+  {
+   "id": "f2dfdff9-3862-4be0-bf85-9c833fa3059e",
+   "name": "Nirvana 2002",
+   "type": "Group",
+   "country": "SE",
+   "disambiguation": "Swedish death metal band",
+   "score": 62,
+   "life-span": {
+    "begin": "1988",
+    "end": "2012"
+   },
+   "aliases": [
+    {
+     "name": "Nirvana"
+    },
+    {
+     "name": "N2K2"
+    },
+    {
+     "name": "Prophet 2002"
+    }
+   ]
+  },
+  {
+   "id": "9282c8b4-ca0b-4c6b-b7e3-4f7762dfc4d6",
+   "name": "Nirvana",
+   "type": "Group",
+   "country": "GB",
+   "disambiguation": "60s band from the UK",
+   "score": 59,
+   "life-span": {
+    "begin": "1967"
+   }
+  },
+  {
+   "id": "c3a64a25-251b-4d03-afba-1471440245b8",
+   "name": "Approaching Nirvana",
+   "type": "Group",
+   "country": "US",
+   "score": 58,
+   "life-span": {
+    "begin": "2009"
+   }
+  },
+  {
+   "id": "c49d69dc-e008-47cf-b5ff-160fafb1fe1f",
+   "name": "Nirvana",
+   "type": "Group",
+   "country": "FR",
+   "disambiguation": "’70s French band from Martigues",
+   "score": 47,
+   "life-span": {}
+  },
+  {
+   "id": "85af0709-95db-4fbc-801a-120e9f4766d0",
+   "name": "Nirvana",
+   "type": "Group",
+   "country": "FI",
+   "disambiguation": "early 1980s Finnish punk band",
+   "score": 47,
+   "life-span": {}
+  },
+  {
+   "id": "28a4618c-38e4-4027-ad2c-db66a14a2d85",
+   "name": "Nirvana",
+   "type": "Group",
+   "country": "YU",
+   "disambiguation": "Croatian prog-rock band active in first half of 70s in former Yugoslavia.",
+   "score": 47,
+   "life-span": {}
+  },
+  {
+   "id": "f33b3d7b-776d-412e-9820-b32201f07999",
+   "name": "Nirvanna the Band",
+   "type": "Group",
+   "disambiguation": "fictitious band",
+   "score": 47,
+   "life-span": {
+    "begin": "2007-12-13"
+   },
+   "aliases": [
+    {
+     "name": "Nirvana the Band"
+    }
+   ]
+  },
+  {
+   "id": "3aa878c0-224b-41e5-abd1-63be359d2bca",
+   "name": "Nirvana",
+   "disambiguation": "founded in 1987 by a Michael Jackson double/imitator",
+   "score": 47,
+   "life-span": {
+    "begin": "1987"
+   }
+  },
+  {
+   "id": "426f27d1-8ae5-4d4b-89ef-17d18472134a",
+   "name": "Nirvana",
+   "type": "Person",
+   "disambiguation": "James Ferraro",
+   "score": 47,
+   "life-span": {}
+  }
+ ]
+}

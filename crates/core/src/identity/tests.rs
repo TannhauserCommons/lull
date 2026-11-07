@@ -290,3 +290,24 @@ fn a_names_id_is_nobodys_when_the_listeners_songs_are_on_two_or_none() -> R {
     assert_eq!(owner(&c, &nirvana())?, Some(uk));
     Ok(())
 }
+
+#[test]
+fn a_list_of_namesakes_adds_each_as_its_own_artist_and_joins_none_by_name() -> R {
+    let c = hub()?;
+    // lull knows one Nirvana by a Deezer id only, and songs of the name with no id at all.
+    place(&c, "Nirvana", &[Anchor::Deezer(415)], Came::Credit)?;
+    place(&c, "Nirvana", &[Anchor::Deezer(278_793_911)], Came::Credit)?;
+    // MusicBrainz's link proves which MBID the first is.
+    place(&c, "Nirvana", &[Anchor::Deezer(415), mb(US)], Came::Link)?;
+    let us = add_distinct(&c, "Nirvana", &[mb(US)], Came::Credit)?;
+    let uk = add_distinct(&c, "Nirvana", &[mb(UK)], Came::Credit)?;
+    assert_eq!(
+        us,
+        ArtistId::own("Nirvana", "dz:415"),
+        "the linked one is the one lull had"
+    );
+    assert_ne!(uk, us);
+    assert_ne!(uk, ArtistId::own("Nirvana", "dz:278793911"), "never joined by name");
+    assert_eq!(artists_named(&c, "Nirvana")?.len(), 3);
+    Ok(())
+}

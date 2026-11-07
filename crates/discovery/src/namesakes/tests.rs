@@ -145,3 +145,30 @@ fn a_follow_from_before_counts_for_nobody_when_nothing_decides() -> R {
     );
     Ok(())
 }
+
+#[test]
+fn musicbrainz_lists_every_artist_called_exactly_the_name_with_what_tells_them_apart() -> R {
+    // MusicBrainz's answer of 2026-11-07, trimmed: seven artists named Nirvana, one with it as an
+    // alias, and two other names its search also gave.
+    let body = serde_json::from_str(include_str!("../search/fixtures/musicbrainz-named-nirvana.json"))?;
+    let found = crate::sources::musicbrainz::namesakes(body, "nirvana");
+    let names: Vec<&str> = found.iter().map(|n| n.name.as_str()).collect();
+    assert_eq!(found.len(), 8, "{names:?}");
+    assert!(!names.contains(&"Approaching Nirvana") && !names.contains(&"Nirvanna the Band"));
+    assert!(names.contains(&"Nirvana 2002"), "called Nirvana by an alias");
+    let about = |mbid: &str| found.iter().find(|n| n.mbid == mbid).and_then(|n| n.about.clone());
+    assert_eq!(
+        about("9282c8b4-ca0b-4c6b-b7e3-4f7762dfc4d6").as_deref(),
+        Some("60s band from the UK")
+    );
+    let bare = serde_json::json!({ "artists": [
+        { "id": "x", "name": "Nirvana", "type": "Group", "country": "GB", "life-span": { "begin": "1967" } }
+    ] });
+    let bare = crate::sources::musicbrainz::namesakes(bare, "nirvana");
+    assert_eq!(
+        bare[0].about.as_deref(),
+        Some("Group · GB · since 1967"),
+        "no comment: type, country, years"
+    );
+    Ok(())
+}

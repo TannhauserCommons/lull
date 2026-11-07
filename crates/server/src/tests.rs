@@ -719,3 +719,53 @@ async fn the_namesakes_tables_exist_only_with_their_switch_on() -> Result<(), Bo
     on.stop().await;
     Ok(())
 }
+
+/// ADR-0035 end to end: the name's page and the listener's word answer only with the switch on;
+/// "This is another Nirvana" makes a second artist of the name, and the name's id then opens the
+/// name's page.
+#[tokio::test]
+async fn the_listener_tells_two_namesakes_apart_and_the_name_becomes_their_page() -> Result<(), BoxError> {
+    async fn claim(hub: &Arc<Hub>) -> Result<String, BoxError> {
+        let claim = json!({ "code": SETUP_CODE, "name": "Laptop" });
+        let (_, cookie, _) = call(hub, send("POST", "/api/setup/claim", Auth::None, claim)?).await?;
+        Ok(cookie_token(cookie))
+    }
+    let (off, _) = test_hub().await?;
+    let laptop = claim(&off).await?;
+    let (status, _, _) = call(&off, get("/api/artists/named?name=Nirvana", Auth::Cookie(&laptop))?).await?;
+    assert_eq!(status, StatusCode::NOT_FOUND, "off: no such page");
+    off.stop().await;
+
+    let (hub, _) = test_hub_with(&[("LULL_FLAGS", "namesakes")]).await?;
+    let laptop = claim(&hub).await?;
+    let named = get("/api/artists/named?name=Nirvana", Auth::Cookie(&laptop))?;
+    let (status, _, page) = call(&hub, named).await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        page["artists"],
+        json!(["ar-66558007284d9e5a"]),
+        "one artist: the name's id"
+    );
+
+    let split = json!({ "name": "Nirvana", "albums": ["al-0123456789abcdef"] });
+    let (status, _, said) = call(
+        &hub,
+        send("POST", "/api/artists/named/split", Auth::Cookie(&laptop), split)?,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK, "{said}");
+    // (The name's page now would ask MusicBrainz for the rest; that's discovery's own test.)
+    assert!(
+        said["artist"]
+            .as_str()
+            .is_some_and(|a| a.starts_with("ar-") && a != "ar-66558007284d9e5a")
+    );
+    let (_, _, opened) = call(&hub, get("/api/artists/ar-66558007284d9e5a", Auth::Cookie(&laptop))?).await?;
+    assert_eq!(
+        opened,
+        json!({ "named": "Nirvana" }),
+        "the name's id opens the name's page"
+    );
+    hub.stop().await;
+    Ok(())
+}
