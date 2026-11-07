@@ -8,9 +8,14 @@ use std::sync::{Arc, Mutex};
 use rusqlite::Connection;
 
 use crate::error::{Error, Result};
+use crate::secrets::{FileVault, Vault, Vaults};
 
+/// The database, and the vaults the credentials it doesn't hold are kept in (ADR-0091, `secrets`).
 #[derive(Clone)]
-pub struct Db(Arc<Mutex<Connection>>);
+pub struct Db {
+    conn: Arc<Mutex<Connection>>,
+    vaults: Arc<Vaults>,
+}
 
 /// A crate's schema: `owner` is the crate name, `steps` run in order, once each.
 pub struct Migrations {
@@ -103,14 +108,34 @@ impl Db {
             "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;
              CREATE TABLE IF NOT EXISTS schema (owner TEXT PRIMARY KEY, version INTEGER NOT NULL);",
         )?;
-        Ok(Db(Arc::new(Mutex::new(conn))))
+        Ok(Db {
+            conn: Arc::new(Mutex::new(conn)),
+            vaults: Arc::new(Vaults::new(Some(FileVault::new(dir)))),
+        })
     }
 
-    /// An empty in-memory database, for tests.
+    /// This database with the system keyring as the vault credentials go to (the desktop app's hub).
+    /// Before the hub starts: the vaults read at start are the keyring and the file.
+    #[must_use]
+    pub fn with_keyring(self, keyring: Arc<dyn Vault>) -> Db {
+        Db {
+            vaults: Arc::new(self.vaults.with_keyring(keyring)),
+            conn: self.conn,
+        }
+    }
+
+    pub(crate) fn vaults(&self) -> &Vaults {
+        &self.vaults
+    }
+
+    /// An empty in-memory database, for tests. It has no vault: tests of credentials open a folder.
     pub fn memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch("CREATE TABLE schema (owner TEXT PRIMARY KEY, version INTEGER NOT NULL);")?;
-        Ok(Db(Arc::new(Mutex::new(conn))))
+        Ok(Db {
+            conn: Arc::new(Mutex::new(conn)),
+            vaults: Arc::new(Vaults::new(None)),
+        })
     }
 
     /// Runs `f` with the connection on the blocking pool, so async tasks never wait on disk.
@@ -119,7 +144,7 @@ impl Db {
         T: Send + 'static,
         F: FnOnce(&mut Connection) -> Result<T> + Send + 'static,
     {
-        let db = self.0.clone();
+        let db = self.conn.clone();
         tokio::task::spawn_blocking(move || {
             let mut conn = db.lock().map_err(|_| Error::internal("database lock poisoned"))?;
             f(&mut conn)
@@ -129,7 +154,10 @@ impl Db {
     }
 
     pub fn migrate(&self, m: &Migrations) -> Result<()> {
-        let mut conn = self.0.lock().map_err(|_| Error::internal("database lock poisoned"))?;
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|_| Error::internal("database lock poisoned"))?;
         let tx = conn.transaction()?;
         let done: i64 = tx
             .query_row("SELECT version FROM schema WHERE owner = ?1", [m.owner], |r| r.get(0))

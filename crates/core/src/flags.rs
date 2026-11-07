@@ -43,8 +43,17 @@ pub const NAMESAKES: Flag = Flag {
     area: "search",
 };
 
+/// The listener's credentials live in the system keyring or a file only lull's user can read, never in the
+/// database (ADR-0091).
+pub const SECRETS: Flag = Flag {
+    name: "secrets",
+    about: "Passwords and keys move out of the database into the system keyring, or a file only lull can read",
+    owner: "hub",
+    area: "hub",
+};
+
 /// Every switch there is. Empty while nothing is unfinished.
-pub const FLAGS: &[&Flag] = &[&HUB_SELF_UPDATE, &KEEP_RUNNING, &NAMESAKES];
+pub const FLAGS: &[&Flag] = &[&HUB_SELF_UPDATE, &KEEP_RUNNING, &NAMESAKES, &SECRETS];
 
 /// The switches that are on.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

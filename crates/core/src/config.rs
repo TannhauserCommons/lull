@@ -2,7 +2,7 @@
 //! `LULL_CONFIG` (`KEY=value` lines; the environment wins). Every key is documented in
 //! `deploy/.env.example`. Unknown `LULL_*` keys are an error, so a typo never passes silently.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -216,7 +216,17 @@ impl Config {
     }
 
     pub fn from_vars(vars: BTreeMap<String, String>) -> Result<Self, ConfigError> {
-        let mut v = Vars(vars);
+        Self::from_vars_withheld(vars, &BTreeSet::new())
+    }
+
+    /// `from_vars`, where the credentials `withheld` names are kept but can't be read now (a locked
+    /// keyring, ADR-0091). What needs one waits instead of the hub refusing to start: a pair with a
+    /// withheld half is unset, and a Jellyfin library stays Jellyfin, showing what it last read.
+    pub fn from_vars_withheld(
+        vars: BTreeMap<String, String>,
+        withheld: &BTreeSet<String>,
+    ) -> Result<Self, ConfigError> {
+        let mut v = Vars(vars, withheld);
         let jellyfin = {
             let user = v.opt("LULL_JELLYFIN_USER");
             v.pair("LULL_JELLYFIN_URL", "LULL_JELLYFIN_API_KEY")?
@@ -228,7 +238,9 @@ impl Config {
         };
         let mode = match (v.opt("LULL_LIBRARY").as_deref(), &jellyfin) {
             (None, Some(_)) | (Some("jellyfin"), Some(_)) => LibraryMode::Jellyfin,
+            (None, None) if v.withheld("LULL_JELLYFIN_API_KEY") => LibraryMode::Jellyfin,
             (None, None) | (Some("folder"), _) => LibraryMode::Folder,
+            (Some("jellyfin"), None) if v.withheld("LULL_JELLYFIN_API_KEY") => LibraryMode::Jellyfin,
             (Some("jellyfin"), None) => {
                 return Err(invalid(
                     "LULL_LIBRARY",
@@ -387,9 +399,9 @@ fn parse_env_file(text: &str) -> impl Iterator<Item = (String, String)> + '_ {
 }
 
 /// Settings not yet consumed; whatever is left at the end is unknown.
-struct Vars(BTreeMap<String, String>);
+struct Vars<'a>(BTreeMap<String, String>, &'a BTreeSet<String>);
 
-impl Vars {
+impl Vars<'_> {
     fn opt(&mut self, key: &str) -> Option<String> {
         self.0.remove(key).filter(|v| !v.is_empty())
     }
@@ -406,7 +418,15 @@ impl Vars {
         let raw = self.or(key, default);
         raw.parse().map_err(|e: T::Err| invalid(key, e.to_string()))
     }
+    fn withheld(&self, key: &str) -> bool {
+        self.1.contains(key)
+    }
     fn pair(&mut self, a: &'static str, b: &'static str) -> Result<Option<(String, String)>, ConfigError> {
+        if self.withheld(a) || self.withheld(b) {
+            self.0.remove(a);
+            self.0.remove(b);
+            return Ok(None);
+        }
         match (self.opt(a), self.opt(b)) {
             (Some(x), Some(y)) => Ok(Some((x, y))),
             (None, None) => Ok(None),

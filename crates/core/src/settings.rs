@@ -8,6 +8,7 @@ use serde::Serialize;
 
 use crate::db::Db;
 use crate::error::{Error, Result};
+use crate::secrets;
 
 /// Keys only the environment may set: the hub needs them before the database is open, or they
 /// describe how lull is run (the setup code, the slskd.yml of an slskd the app runs, the programs
@@ -82,20 +83,48 @@ pub enum Source {
     Default,
 }
 
-/// Every stored key and its value.
+/// Every stored key and its value: the database's rows, and the secrets kept in a vault (ADR-0091). A
+/// secret still in the database is newer than the vault's copy (an older lull wrote it), so it wins.
 pub async fn stored(db: &Db) -> Result<BTreeMap<String, String>> {
-    db.call(|conn| {
-        let mut stmt = conn.prepare("SELECT key, value FROM core_config")?;
-        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
-        Ok(rows.collect::<rusqlite::Result<_>>()?)
-    })
-    .await
+    let mut stored: BTreeMap<String, String> = stored_rows(db).await?.into_iter().collect();
+    for (name, value) in secrets::all(db) {
+        if is_secret(&name) {
+            stored.entry(name).or_insert(value);
+        }
+    }
+    Ok(stored)
 }
 
-/// Applies `changes` in one transaction: `Some` sets a key, `None` removes it (back to default).
-pub async fn store(db: &Db, changes: BTreeMap<String, Option<String>>) -> Result<()> {
+/// The secret settings kept in a vault that can't be read now (a locked keyring), and why.
+pub fn withheld(db: &Db) -> BTreeMap<String, String> {
+    let mut unreadable = secrets::unreadable(db);
+    unreadable.retain(|name, _| is_secret(name));
+    unreadable
+}
+
+fn is_secret(name: &str) -> bool {
+    KEYS.iter().any(|k| k.secret && k.name == name)
+}
+
+/// Applies `changes`: `Some` sets a key, `None` removes it (back to default). With the `secrets` switch
+/// on, a secret goes to its vault first, so a vault that refuses changes nothing; the rest is one
+/// transaction.
+pub async fn store(db: &Db, mut changes: BTreeMap<String, Option<String>>) -> Result<()> {
     if let Some(key) = changes.keys().find(|k| !KEYS.iter().any(|key| key.name == k.as_str())) {
         return Err(Error::BadRequest(format!("{key} can't be set in the app")));
+    }
+    let on = secrets::on(db);
+    let secret: Vec<String> = changes.keys().filter(|k| is_secret(k)).cloned().collect();
+    for key in secret {
+        match changes.get(&key).cloned().flatten() {
+            Some(value) if on => secrets::put(db, &key, &value).await?,
+            Some(_) => continue,
+            // Removed, wherever it is kept: a vault's copy would otherwise still count.
+            None if secrets::kept(db, &key).is_some() => secrets::remove(db, &key).await?,
+            None => continue,
+        }
+        // A row an older lull left goes too: the vault holds the setting now.
+        changes.insert(key, None);
     }
     let now = crate::now();
     db.call(move |conn| {
@@ -112,6 +141,54 @@ pub async fn store(db: &Db, changes: BTreeMap<String, Option<String>>) -> Result
         }
         tx.commit()?;
         Ok(())
+    })
+    .await
+}
+
+/// Secret settings still in the database (from before the `secrets` switch, or written by an older
+/// lull) move to the vault. A row goes only once the vault has read its value back, and is
+/// overwritten on disk as it goes (`secure_delete`, then the WAL emptied); one that can't move stays
+/// for the next start, and only its name is logged.
+pub(crate) async fn move_secrets(db: &Db) {
+    let rows = match stored_rows(db).await {
+        Ok(rows) => rows,
+        Err(e) => return tracing::warn!("reading settings to move their secrets: {e}"),
+    };
+    let mut moved = Vec::new();
+    for (key, value) in rows.into_iter().filter(|(k, _)| is_secret(k)) {
+        match secrets::put(db, &key, &value).await {
+            Ok(()) => moved.push(key),
+            Err(e) => tracing::warn!("{key} stays in the database for now: {e}"),
+        }
+    }
+    if moved.is_empty() {
+        return;
+    }
+    let count = moved.len();
+    let erased = db
+        .call(move |conn| {
+            conn.pragma_update(None, "secure_delete", true)?;
+            let tx = conn.transaction()?;
+            for key in &moved {
+                tx.execute("DELETE FROM core_config WHERE key = ?1", [key])?;
+            }
+            tx.commit()?;
+            conn.pragma_update(None, "secure_delete", false)?;
+            conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?;
+            Ok(())
+        })
+        .await;
+    match erased {
+        Ok(()) => tracing::info!(count, "secret settings moved out of the database"),
+        Err(e) => tracing::warn!("secret settings are in the vault, but their old rows stay for now: {e}"),
+    }
+}
+
+async fn stored_rows(db: &Db) -> Result<Vec<(String, String)>> {
+    db.call(|conn| {
+        let mut stmt = conn.prepare("SELECT key, value FROM core_config")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
     })
     .await
 }

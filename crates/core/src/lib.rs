@@ -21,6 +21,7 @@ pub mod private;
 pub mod process;
 pub mod quality;
 pub mod seams;
+pub mod secrets;
 pub mod settings;
 pub mod status;
 pub mod warm;
