@@ -3,7 +3,8 @@ name: server-package
 # the slskd, yt-dlp and Deno that app/build.rs pins, as a .deb, an .rpm and a .tar.gz (packaging/linux/). Each
 # package is installed as a service in a fresh Ubuntu, Debian or Fedora running systemd and held to the hub contract
 # (tests/hub-contract/). On the oldest glibc of each architecture (Ubuntu 22.04), so the packages run on older
-# distributions too.
+# distributions too. A release (app.yml, on a v* tag) builds both architectures and the hub kits a hub updates
+# itself with, their manifests signed with the desktop updater's key, and attaches them with the apps.
 on:
   # A branch's packages, by hand (`gh workflow run server-package --ref <branch>`): kept as workflow artifacts.
   workflow_dispatch:
@@ -22,6 +23,10 @@ on:
         description: Changes since that release
         type: string
         default: ""
+      release:
+        description: A release's build (app.yml on a v* tag), both architectures, the kits' manifests signed
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -31,9 +36,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-22.04
-            arch: x64
+        include: ${{ fromJSON(inputs.release && '[{"os":"ubuntu-22.04","arch":"x64"},{"os":"ubuntu-22.04-arm","arch":"arm64"}]' || '[{"os":"ubuntu-22.04","arch":"x64"}]') }}
     runs-on: ${{ matrix.os }}
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -70,13 +73,29 @@ jobs:
             version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
+      # As the image builds it, but installed as the package: Settings › App and the updates say so (a kit's lull
+      # run by an image's hub runs as the image's, launch.rs). lull's own Last.fm app key when the caller passes it.
       - name: lull
         env:
           LULL_BUILD_RELEASE: ${{ inputs.build-release }}
           LULL_BUILD_CHANGES: ${{ inputs.build-changes }}
           LULL_BUILD_COMMIT: ${{ inputs.build-release && (inputs.ref || github.sha) || '' }}
+          LULL_BUILD_INSTALL: package
+          LULL_LASTFM_API_KEY: ${{ secrets.LULL_LASTFM_API_KEY }}
+          LULL_LASTFM_API_SECRET: ${{ secrets.LULL_LASTFM_API_SECRET }}
         run: cargo build --release --locked --bin lull
       - run: sh packaging/linux/build.sh target/release/lull "${{ steps.version.outputs.version }}" "$RUNNER_TEMP/packages"
+      # A hub runs a kit only when the manifest carries this signature (kit.rs): the desktop updater's key, the
+      # Tauri CLI the app bundles with.
+      - name: Sign the kit's manifest
+        if: inputs.release
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          cli=$(node -p "require('./app/package.json').devDependencies['@tauri-apps/cli']")
+          for manifest in "$RUNNER_TEMP"/packages/lull-hub-*.json; do
+            npx --yes "@tauri-apps/cli@$cli" signer sign --password "" "$manifest"
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: lull-server-linux-${{ matrix.arch }}
@@ -103,3 +122,36 @@ jobs:
         run: |
           case "${{ matrix.distro }}" in fedora) package=$(ls "$RUNNER_TEMP"/packages/*.rpm) ;; *) package=$(ls "$RUNNER_TEMP"/packages/*.deb) ;; esac
           sh tests/hub-contract/in-systemd.sh "${{ matrix.distro }}" "$package"
+
+  # A hub updating itself (tests/hub-contract/self-update.sh): two debug builds, a kit signed with a key made here and
+  # thrown away, a stand-in for GitHub's newest release. Only a debug build reads that key and that stand-in.
+  self-update:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24.11"
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: self-update
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: A throwaway kit key
+        run: |
+          cli=$(node -p "require('./app/package.json').devDependencies['@tauri-apps/cli']")
+          npx --yes "@tauri-apps/cli@$cli" signer generate --ci -p "" -w "$RUNNER_TEMP/kit.key" -f
+      - name: Two versions of lull, installed as the package
+        run: |
+          v1=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          v2=$(echo "$v1" | awk -F. '{ print $1 "." $2 "." $3 + 1 }')
+          v3=$(echo "$v1" | awk -F. '{ print $1 "." $2 "." $3 + 2 }')
+          export LULL_DEV_KIT_KEY="$(cat "$RUNNER_TEMP/kit.key.pub")" LULL_DEV_RELEASES=http://127.0.0.1:9999/latest.json \
+            LULL_BUILD_INSTALL=package
+          cargo build --locked --bin lull && cp target/debug/lull "$RUNNER_TEMP/lull-v1"
+          LULL_BUILD_RELEASE=$v2 LULL_BUILD_CHANGES=0 cargo build --locked --bin lull && cp target/debug/lull "$RUNNER_TEMP/lull-v2"
+          printf 'v1=%s\nv2=%s\nv3=%s\n' "$v1" "$v2" "$v3" >> "$GITHUB_ENV"
+      - name: It updates, goes back from a kit that doesn't start, and refuses a changed one
+        run: sh tests/hub-contract/self-update.sh "$RUNNER_TEMP/lull-v1" "$v1" "$RUNNER_TEMP/lull-v2" "$v2" "$v3" "$RUNNER_TEMP/kit.key"

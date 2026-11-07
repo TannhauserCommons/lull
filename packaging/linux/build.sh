@@ -1,7 +1,9 @@
 #!/bin/sh
 # Builds the Linux server package (ADR-0090) from a lull binary built for this machine's architecture:
 # lull-server_<version>_<arch>.deb, lull-server-<version>.<arch>.rpm and lull-server_<version>_linux-<arch>.tar.gz in
-# <out> (the desktop app's own packages are lull_…).
+# <out> (the desktop app's own packages are lull_…), and the hub kit a hub updates itself with (ADR-0090, kit.rs):
+# lull-hub-<version>-linux-<arch>-<program>.gz for lull, slskd, yt-dlp and Deno, and the manifest naming their
+# SHA-256s, lull-hub-<version>-linux-<arch>.json, which a release signs.
 #
 #   sh packaging/linux/build.sh <lull binary> <version> <out>
 # Needs node, unzip and curl; fetches the nfpm it builds the .deb and .rpm with, pinned below.
@@ -46,4 +48,13 @@ config() { # <arch>
 "$nfpm" package --config "$(config "$rpm_arch")" --packager rpm --target "$out/lull-server-${version}.${rpm_arch}.rpm"
 tar -C "$stage" -czf "$out/lull-server_${version}_linux-${tar_arch}.tar.gz" --transform 's,^\.,lull-server,' \
   ./lib ./licenses ./lull.service ./postinstall.sh ./preremove.sh ./postremove.sh ./install.sh
+# The hub kit: the same programs, gzipped one by one (an image's hub takes only lull), and the manifest.
+files=""
+for program in lull slskd yt-dlp deno; do
+  gzip -9 -n -c "$stage/lib/$program" >"$out/lull-hub-${version}-linux-${tar_arch}-${program}.gz"
+  sha=$(sha256sum "$stage/lib/$program" | cut -d' ' -f1)
+  files="$files${files:+,}\"$program\":\"$sha\""
+done
+printf '{"version":"%s","format":1,"arch":"%s","files":{%s}}' "$version" "$tar_arch" "$files" \
+  >"$out/lull-hub-${version}-linux-${tar_arch}.json"
 ls -l "$out"

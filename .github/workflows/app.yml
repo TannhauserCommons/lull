@@ -359,8 +359,17 @@ jobs:
           if-no-files-found: error
           path: out/lull-*.apk
 
+  # The Linux server package and the hub kits (ADR-0090), both architectures, held to the hub contract.
+  server-package:
+    if: github.ref_type == 'tag'
+    uses: ./.github/workflows/server-package.yml
+    with:
+      ref: ${{ github.ref }}
+      release: true
+    secrets: inherit
+
   release:
-    needs: [bundle, android-compare]
+    needs: [bundle, android-compare, server-package]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-24.04
     permissions:
