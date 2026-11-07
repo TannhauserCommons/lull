@@ -100,6 +100,9 @@ export default defineConfig({
     // confirmations collapse into one note, and Quiet keeps them off the screen but not from a screen reader (ADR-0040)
     { name: 'toasts', testMatch: 'toasts.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     { name: 'loops-webkit', testMatch: 'loops.spec.mjs', fullyParallel: true, use: { browserName: 'webkit', viewport: { width: 1440, height: 900 }, launchOptions: {} } },
+    // masks draw as they should: none on an inline box in any design (computed style), and Petal's title heart in WebKit
+    { name: 'masks', testMatch: 'masks.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
+    { name: 'masks-webkit', testMatch: 'masks.spec.mjs', grep: /title heart/, use: { browserName: 'webkit', viewport: { width: 1440, height: 900 }, launchOptions: {} } },
   ].filter(inGroup),
 });
 

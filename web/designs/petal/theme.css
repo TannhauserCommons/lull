@@ -243,13 +243,26 @@
   font-family: var(--f-zine); font-weight: 400; text-shadow: 3px 3px 0 var(--stack-2); letter-spacing: .01em;
 }
 :root[data-design="petal"] :is(.t-display, .lib-pl__title, .now-head__title)::after {
-  /* the mask is clipped to the pseudo-element's own box, which is two spaces wide and as tall as the font's ascent and
-     descent: a heart .53em from its left edge outran it and lost part of its right lobe and its top. The padding (it adds
-     no break to the line) makes the box a room the heart sits whole in, whatever the face's metrics */
+  /* the box is two spaces wide and as tall as the font's ascent and descent; the heart outran it and lost part of its
+     right lobe and its top, so the padding (it adds no break to the line) makes the box a room the heart sits whole in,
+     whatever the face's metrics.
+     The heart is drawn, not masked: its 9x8 pixels are eight rectangles of background (px-heart's rows), each pixel a
+     whole screen pixel (--pt-u), so it stays crisp. WebKit (the Linux app, Safari) paints a mask on an inline box inside
+     out, the whole room in the heart's colour with the heart cut from it, and the box must stay inline: its word joiner
+     keeps the heart on the line of the title's last word (gates/masks.spec.mjs) */
   content: "\2060\00a0\00a0" / ""; display: inline; margin-left: .05em; letter-spacing: 0; padding: .3em .4em .3em 0;
-  background: var(--heart); -webkit-mask: var(--px-heart) left .15em bottom .72em / .38em .34em no-repeat; mask: var(--px-heart) left .15em bottom .72em / .38em .34em no-repeat;
+  --pt-u: round(.042em, 1px); --pt-heart-ink: var(--heart);
+  background:
+    linear-gradient(var(--pt-heart-ink) 0 0) left calc(.15em + 1 * var(--pt-u)) bottom calc(.72em + 6 * var(--pt-u)) / calc(2 * var(--pt-u)) calc(1 * var(--pt-u)) no-repeat,
+    linear-gradient(var(--pt-heart-ink) 0 0) left calc(.15em + 6 * var(--pt-u)) bottom calc(.72em + 6 * var(--pt-u)) / calc(2 * var(--pt-u)) calc(1 * var(--pt-u)) no-repeat,
+    linear-gradient(var(--pt-heart-ink) 0 0) left calc(.15em + 0 * var(--pt-u)) bottom calc(.72em + 5 * var(--pt-u)) / calc(4 * var(--pt-u)) calc(1 * var(--pt-u)) no-repeat,
+    linear-gradient(var(--pt-heart-ink) 0 0) left calc(.15em + 5 * var(--pt-u)) bottom calc(.72em + 5 * var(--pt-u)) / calc(4 * var(--pt-u)) calc(1 * var(--pt-u)) no-repeat,
+    linear-gradient(var(--pt-heart-ink) 0 0) left calc(.15em + 0 * var(--pt-u)) bottom calc(.72em + 3 * var(--pt-u)) / calc(9 * var(--pt-u)) calc(2 * var(--pt-u)) no-repeat,
+    linear-gradient(var(--pt-heart-ink) 0 0) left calc(.15em + 1 * var(--pt-u)) bottom calc(.72em + 2 * var(--pt-u)) / calc(7 * var(--pt-u)) calc(1 * var(--pt-u)) no-repeat,
+    linear-gradient(var(--pt-heart-ink) 0 0) left calc(.15em + 2 * var(--pt-u)) bottom calc(.72em + 1 * var(--pt-u)) / calc(5 * var(--pt-u)) calc(1 * var(--pt-u)) no-repeat,
+    linear-gradient(var(--pt-heart-ink) 0 0) left calc(.15em + 3 * var(--pt-u)) bottom calc(.72em + 0 * var(--pt-u)) / calc(3 * var(--pt-u)) calc(1 * var(--pt-u)) no-repeat;
 }
-:root[data-design="petal"] .card .lib-pl__title::after { background: var(--pink-ink); }
+:root[data-design="petal"] .card .lib-pl__title::after { --pt-heart-ink: var(--pink-ink); }
 /* labels: the pixel face, a little tracked */
 :root[data-design="petal"] :is(.lib-kicker, .card-head__title, .lib-th, .label-rule--sm > h2, .label-rule--sm > h3, .label-rule--sm .label-rule__text) {
   font: var(--t-label); text-transform: uppercase; letter-spacing: .08em;
