@@ -18,6 +18,8 @@ pub mod launch;
 pub mod managed;
 mod pairing;
 #[cfg(test)]
+mod secrets_tests;
+#[cfg(test)]
 mod tests;
 pub mod updates;
 mod web;

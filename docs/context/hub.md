@@ -33,6 +33,12 @@
 
 - Settings are `LULL_*` keys: environment, then stored (`core_config`), then `Config`'s defaults. An empty environment value counts as unset (the deploy kit passes every key of its env file).
 - `settings::KEYS` lists what the app may set and which are secrets; `ENV_ONLY` (`LULL_DATA_DIR`, `LULL_LISTEN`, `LULL_LOG`, `LULL_SETUP_CODE`, `LULL_SLSKD_CONFIG_FILE`) never appear in `/api/config`. A test keeps both lists, `Config` and `deploy/.env.example` in step.
+- **Credentials** (ADR-0091, behind the `secrets` switch): the secret settings live in a vault, never in `lull.db`.
+  - **The vaults** (`lull_core::secrets`): the system keyring, which the desktop app hands over with `Db::with_keyring`, or `<data>/secrets/secrets.json` (folder 0700, file 0600, refused if wider).
+  - **The record:** `secrets_kept` says which vault holds each credential. It has its own migrations owner, so an older lull still starts.
+  - **Each start** (`hub::configure` → `secrets::start`) reads them all. With the switch on, it also moves what isn't in place: plain rows (erased with `secure_delete` and the WAL truncated, only after the vault reads the value back) and the file's entries once a keyring works.
+  - **`settings::stored`** merges them over `core_config`; a plain row is newer and wins.
+  - **A vault that won't open** (a locked keyring) withholds its credentials: `Config::from_vars_withheld` leaves what needs them waiting instead of refusing to start.
 - `PATCH /api/config` validates the whole merged map with `Config::from_vars`, stores, then publishes `hub.restart`. It refuses `LULL_LIBRARY`: `PUT /api/library/source` reconciles the library before it stores the mode.
 - **Restart** (`Hub::restart`, on any `hub.restart`):
   1. take the wiring's write lock, so requests wait;

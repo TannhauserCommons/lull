@@ -2,7 +2,7 @@
 //! and shows as locked; a change is validated as the whole merged configuration before it is
 //! stored, then the crates restart to read it.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use axum::extract::State;
@@ -49,7 +49,8 @@ async fn change(
         .map(|(k, v)| (k, v.map(|v| v.trim().to_owned()).filter(|v| !v.is_empty())))
         .collect();
     let _one_at_a_time = hub.settings.lock().await;
-    validate(&hub.env, &settings::stored(&hub.db).await?, &changes)?;
+    let withheld = settings::withheld(&hub.db).into_keys().collect();
+    validate(&hub.env, &settings::stored(&hub.db).await?, &withheld, &changes)?;
     if !changes.is_empty() {
         settings::store(&hub.db, changes).await?;
         hub.ctx()
@@ -62,9 +63,11 @@ async fn change(
 
 /// Refuses keys the app can't set or the environment already sets, and any change that leaves
 /// the merged settings invalid. The message names the key.
+/// `withheld`: secrets kept in a vault that can't be read now, which wait rather than fail the check.
 fn validate(
     env: &BTreeMap<String, String>,
     stored: &BTreeMap<String, String>,
+    withheld: &BTreeSet<String>,
     changes: &BTreeMap<String, Option<String>>,
 ) -> Result<()> {
     let mut next = stored.clone();
@@ -86,7 +89,12 @@ fn validate(
         };
     }
     let (vars, _) = settings::merge(env, &next);
-    Config::from_vars(vars).map_err(|e| Error::BadRequest(format!("{e}.")))?;
+    let withheld = withheld
+        .iter()
+        .filter(|k| !vars.contains_key(*k) && !changes.contains_key(*k))
+        .cloned()
+        .collect();
+    Config::from_vars_withheld(vars, &withheld).map_err(|e| Error::BadRequest(format!("{e}.")))?;
     Ok(())
 }
 
@@ -134,7 +142,7 @@ mod tests {
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.map(str::to_owned)))
                 .collect();
-            validate(&env, &stored, &changes).map_err(|e| e.to_string())
+            validate(&env, &stored, &BTreeSet::new(), &changes).map_err(|e| e.to_string())
         };
         assert!(
             change(&[("LULL_SHARE", Some("none"))]).is_ok(),

@@ -9,8 +9,9 @@ use lull_core::config::Config;
 use lull_core::db::Db;
 use lull_core::devices::{self, Kind};
 use lull_core::events::Bus;
+use lull_core::flags::{Flags, SECRETS};
 use lull_core::http::Http;
-use lull_core::{Ctx, Error, Result, settings};
+use lull_core::{Ctx, Error, Result, secrets, settings};
 use serde_json::json;
 use tokio::sync::{Mutex, RwLock, broadcast, mpsc};
 
@@ -110,8 +111,23 @@ impl Wiring {
 
 /// The environment merged over the stored settings (ADR-0002).
 pub async fn configure(env: &BTreeMap<String, String>, db: &Db) -> Result<Config> {
+    // The credentials first (ADR-0091): read from their vaults, and with the switch on, moved there.
+    secrets::start(db, secrets_switch(env, db).await?).await?;
     let (vars, _) = settings::merge(env, &settings::stored(db).await?);
-    Config::from_vars(vars).map_err(|e| Error::BadRequest(e.to_string()))
+    // A secret the environment sets isn't waiting for anything.
+    let withheld = settings::withheld(db)
+        .into_keys()
+        .filter(|k| !vars.contains_key(k))
+        .collect();
+    Config::from_vars_withheld(vars, &withheld).map_err(|e| Error::BadRequest(e.to_string()))
+}
+
+/// Whether `LULL_FLAGS` turns `secrets` on. It is a plain setting, read before any credential is.
+async fn secrets_switch(env: &BTreeMap<String, String>, db: &Db) -> Result<bool> {
+    let (vars, _) = settings::merge(env, &settings::stored(db).await?);
+    let flags = vars.get("LULL_FLAGS").map_or("", String::as_str);
+    // A list that doesn't parse is reported by `Config` just after.
+    Ok(Flags::parse(flags).is_ok_and(|f| f.on(&SECRETS)))
 }
 
 /// Hands `hub.restart` requests from this wiring's bus to the restart loop. A request made
