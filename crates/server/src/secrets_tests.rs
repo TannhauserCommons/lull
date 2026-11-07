@@ -517,3 +517,150 @@ async fn cleaning_a_copy_from_before_an_update_takes_its_logins_out_on_disk() ->
     let _ = std::fs::remove_dir_all(dir);
     Ok(())
 }
+
+/// Every log line of this test binary, at every level, from the moment `capture_logs` first runs.
+fn capture_logs() -> Arc<Mutex<Vec<u8>>> {
+    static LOGS: std::sync::OnceLock<Arc<Mutex<Vec<u8>>>> = std::sync::OnceLock::new();
+    LOGS.get_or_init(|| {
+        let logs = Arc::new(Mutex::new(Vec::new()));
+        let sink = logs.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::TRACE)
+            .with_ansi(false)
+            .with_writer(move || Sink(sink.clone()))
+            .finish();
+        // Another test may have set one first; then this test fails below for having seen no line.
+        let _ = tracing::subscriber::set_global_default(subscriber);
+        logs
+    })
+    .clone()
+}
+
+struct Sink(Arc<Mutex<Vec<u8>>>);
+
+impl std::io::Write for Sink {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if let Ok(mut logs) = self.0.lock() {
+            logs.extend_from_slice(buf);
+        }
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// ADR-0091 section 8: never logged, never echoed. A hub is given its own canary for every credential and goes
+/// through setting them, a refused change, the move, a restart, a Subsonic app and a Last.fm sign-in, with every
+/// log line captured at TRACE and every event it publishes kept. No canary appears in any of them, nor in any
+/// answer the hub gives.
+#[tokio::test]
+async fn no_credential_reaches_a_log_line_an_answer_or_an_event() -> Result<(), BoxError> {
+    use crate::tests::{Auth, SETUP_CODE, call, cookie_token, get, send};
+    use serde_json::{Value, json};
+
+    let logs = capture_logs();
+    let dir = fresh_dir()?;
+    let tag = std::process::id();
+    let canary = |key: &str| format!("canary{tag}-{}", key.to_ascii_lowercase());
+    let secrets: Vec<&str> = settings::KEYS
+        .iter()
+        .filter(|k| k.secret && k.name != "LULL_SLSKD_API_KEY") // the environment sets that one here
+        .map(|k| k.name)
+        .collect();
+    let mut change = serde_json::Map::new();
+    for key in &secrets {
+        change.insert((*key).to_owned(), json!(canary(key)));
+    }
+    for (pair, value) in [
+        ("LULL_SOULSEEK_USERNAME", "me"),
+        ("LULL_SLSKD_WEB_USERNAME", "lull"),
+        ("LULL_JELLYFIN_URL", "http://127.0.0.1:9"),
+    ] {
+        change.insert(pair.to_owned(), json!(value));
+    }
+    let session = canary("lastfm.session");
+    let mut seen = Vec::<Value>::new();
+
+    // The Soulseek account needs an slskd lull runs, so a file it owns.
+    let slskd_yml = dir.join("slskd.yml").to_string_lossy().into_owned();
+    let start_with = |switch: bool| {
+        let (dir, yml) = (dir.clone(), slskd_yml.clone());
+        async move {
+            let mut env = env(&dir, switch);
+            env.insert("LULL_SLSKD_CONFIG_FILE".into(), yml);
+            let db = open_db(&dir, None)?;
+            let config = hub::configure(&env, &db).await?;
+            Ok::<_, BoxError>(Hub::open(env, db, config).await?)
+        }
+    };
+
+    // Set with the switch off, as an older lull would, and checked once each way.
+    let off = start_with(false).await?;
+    let mut events = off.ctx().await.bus.subscribe();
+    let claim = json!({ "code": SETUP_CODE, "name": "Laptop" });
+    let (_, cookie, _) = call(&off, send("POST", "/api/setup/claim", Auth::None, claim)?).await?;
+    let me = cookie_token(cookie);
+    let (status, _, body) = call(
+        &off,
+        send("PATCH", "/api/config", Auth::Cookie(&me), Value::Object(change))?,
+    )
+    .await?;
+    assert!(status.is_success(), "{body}");
+    seen.push(body);
+    let refused = json!({ "LULL_LASTFM_API_SECRET": null, "LULL_ACOUSTID_KEY": canary("refused") });
+    let (status, _, body) = call(&off, send("PATCH", "/api/config", Auth::Cookie(&me), refused)?).await?;
+    assert!(status.is_client_error(), "{body}");
+    seen.push(body);
+    let (_, password) = lull_core::devices::create(&off.db, "Feishin", lull_core::devices::Kind::Subsonic).await?;
+    off.db
+        .call({
+            let session = session.clone();
+            move |c| {
+                c.execute(
+                    "INSERT INTO lastfm_session (id, user, session_key, connected_at) VALUES (1, 'listener', ?1, 0)",
+                    [session],
+                )?;
+                Ok(())
+            }
+        })
+        .await?;
+    while let Ok(e) = events.try_recv() {
+        seen.push(json!({ "topic": e.topic, "data": e.data }));
+    }
+    off.stop().await;
+
+    // The move, and a second start reading them back.
+    for _ in 0..2 {
+        let on = start_with(true).await?;
+        let mut events = on.ctx().await.bus.subscribe();
+        for path in ["/api/config", "/health", "/api/lastfm", "/api/devices"] {
+            let (status, _, body) = call(&on, get(path, Auth::Cookie(&me))?).await?;
+            assert!(status.is_success(), "{path}: {body}");
+            seen.push(body);
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        while let Ok(e) = events.try_recv() {
+            seen.push(json!({ "topic": e.topic, "data": e.data }));
+        }
+        on.stop().await;
+    }
+
+    let logs = String::from_utf8_lossy(&logs.lock().map_err(|_| "poisoned")?).into_owned();
+    assert!(
+        logs.contains("secret settings moved out of the database"),
+        "the log was captured"
+    );
+    let answers = seen.iter().map(Value::to_string).collect::<Vec<_>>().join("\n");
+    let canaries = secrets
+        .iter()
+        .map(|k| canary(k))
+        .chain([canary("refused"), session, password.expose().to_owned()]);
+    for c in canaries {
+        assert!(!logs.contains(&c), "{c} is in the log");
+        assert!(!answers.contains(&c), "{c} is in an answer or an event");
+    }
+
+    let _ = std::fs::remove_dir_all(dir);
+    Ok(())
+}

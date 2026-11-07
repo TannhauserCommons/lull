@@ -15,7 +15,7 @@ use tower::ServiceExt;
 use crate::hub::{self, Hub};
 use crate::{BoxError, router, serve};
 
-const SETUP_CODE: &str = "test-setup";
+pub(crate) const SETUP_CODE: &str = "test-setup";
 
 /// A hub on a fresh data directory, with an slskd nobody answers at.
 async fn test_hub() -> Result<(Arc<Hub>, PathBuf), BoxError> {
@@ -47,7 +47,7 @@ async fn test_hub_with(more: &[(&str, &str)]) -> Result<(Arc<Hub>, PathBuf), Box
     Ok((Hub::open(env, db, config).await?, dir))
 }
 
-async fn call(hub: &Arc<Hub>, req: Request<Body>) -> Result<(StatusCode, Option<String>, Value), BoxError> {
+pub(crate) async fn call(hub: &Arc<Hub>, req: Request<Body>) -> Result<(StatusCode, Option<String>, Value), BoxError> {
     let resp = router(hub.clone()).oneshot(req).await?;
     let status = resp.status();
     let cookie = resp
@@ -60,11 +60,11 @@ async fn call(hub: &Arc<Hub>, req: Request<Body>) -> Result<(StatusCode, Option<
     Ok((status, cookie, body))
 }
 
-fn get(path: &str, auth: Auth) -> Result<Request<Body>, BoxError> {
+pub(crate) fn get(path: &str, auth: Auth) -> Result<Request<Body>, BoxError> {
     Ok(auth.apply(Request::get(path)).body(Body::empty())?)
 }
 
-fn send(method: &str, path: &str, auth: Auth, body: Value) -> Result<Request<Body>, BoxError> {
+pub(crate) fn send(method: &str, path: &str, auth: Auth, body: Value) -> Result<Request<Body>, BoxError> {
     Ok(auth
         .apply(Request::builder().method(method).uri(path))
         .header(header::CONTENT_TYPE, "application/json")
@@ -72,7 +72,7 @@ fn send(method: &str, path: &str, auth: Auth, body: Value) -> Result<Request<Bod
 }
 
 #[derive(Clone, Copy)]
-enum Auth<'a> {
+pub(crate) enum Auth<'a> {
     None,
     Bearer(&'a str),
     Cookie(&'a str),
@@ -89,7 +89,7 @@ impl Auth<'_> {
 }
 
 /// The token in a `Set-Cookie: lull_device=...` header.
-fn cookie_token(cookie: Option<String>) -> String {
+pub(crate) fn cookie_token(cookie: Option<String>) -> String {
     cookie
         .and_then(|c| Some(c.strip_prefix("lull_device=")?.split(';').next()?.to_owned()))
         .unwrap_or_default()
