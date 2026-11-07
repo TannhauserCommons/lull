@@ -262,7 +262,7 @@
   position: absolute; z-index: 1; top: 6px; right: 0; width: max-content; text-align: left; pointer-events: none; white-space: pre;
   font: 400 .9375rem/1.6 var(--f-px); letter-spacing: .02em; color: var(--gh-caption);
   text-shadow: 0 0 14px var(--gh-wall-0), 0 0 2px var(--gh-wall-0);
-  animation: gh-type 1500ms 200ms both;
+  animation: gh-type 1500ms 200ms backwards;   /* backwards: once typed there is no clip left to trim the line or its glow */
 }
 @keyframes gh-type {
   0% { clip-path: polygon(0 0, 0 0, 0 50%, 0 50%, 0 50%, 0 50%); animation-timing-function: steps(34, end); }
@@ -284,16 +284,19 @@
   :root[data-design="glasshouse"] .sys-welcome__head::after { content: "three steps,\A then the night is yours_" / ""; }
   /* the song's title is as long as the song makes it: the caption has a column of its own beside the title and artist
      lines, so a long title wraps before it instead of running under it */
-  :root[data-design="glasshouse"] .now-head { grid-template-columns: minmax(0, 1fr) max-content; column-gap: 24px; }
+  :root[data-design="glasshouse"] .now-head { grid-template-columns: minmax(min(12rem, 100%), 1fr) minmax(0, max-content); column-gap: 24px; }
   :root[data-design="glasshouse"] .now-head > * { grid-column: 1; }
-  :root[data-design="glasshouse"] .now-head::after { content: "static on the line,\A moon on the glass_" / ""; position: static; grid-column: 2; grid-row: 2 / span 2; align-self: start; }
+  /* it may give up width to the title, never run past the page's edge: where the two don't fit it wraps in its column.
+     It is set, not typed: Now Playing is the page that stays open, and a line being typed in is, for its first
+     moments, half a line cut at the right; here it is whole from the first frame */
+  :root[data-design="glasshouse"] .now-head::after { content: "static on the line,\A moon on the glass_" / ""; position: static; grid-column: 2; grid-row: 2 / span 2; align-self: start; white-space: pre-wrap; overflow-wrap: anywhere; animation: none; }
   /* page windows: the caption types onto the glass on its own line under the title bar, built from the page's own meta:
      it is the window's air under its bar (the window's ::before), so it never sits on the hero or, on a two-column
      album page, on the first song. One line that never leaves the window: a long one (an album's meta grows with it)
      ends in an ellipsis */
   :root[data-design="glasshouse"] .lib-page::before { width: max-content; max-width: 100%; height: auto; margin: calc(var(--gh-barh) + 10px) 0 8px auto; pointer-events: none;
     font: 400 .875rem/1.6 var(--f-px); letter-spacing: .02em; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    animation: gh-type-line 1500ms steps(44, end) 200ms both; }
+    animation: gh-type-line 1500ms steps(44, end) 200ms backwards; }
   :root[data-design="glasshouse"] .app[data-screen="album"] .lib-page::before { content: "side a to side b :: " attr(data-meta) " of weather_" / ""; }
   :root[data-design="glasshouse"] .app[data-screen="playlist"] .lib-page::before { content: "for the window seat :: " attr(data-meta) "_" / ""; }
   :root[data-design="glasshouse"] .app[data-screen="artist"] .lib-page::before { content: "a voice on the wire, still transmitting_" / ""; }
@@ -818,28 +821,29 @@
   :root[data-design="glasshouse"][data-shell="dock"] .header > .spacer { display: none; }
   :root[data-design="glasshouse"][data-shell="dock"] .header__search { flex: 0 1 560px; max-width: 560px; }
   :root[data-design="glasshouse"][data-shell="dock"] .app {
-    grid-template-columns: 104px minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-columns: var(--gh-rail-col, 104px) minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto;
     grid-template-areas: "head head" "banner banner" "dock main" "bar bar"; column-gap: 12px;
   }
   :root[data-design="glasshouse"][data-shell="dock"] .app[data-ctx="docked"] {
-    grid-template-columns: 104px minmax(520px, 1fr) var(--ctx-drag, var(--ctx));
+    grid-template-columns: var(--gh-rail-col, 104px) minmax(520px, 1fr) var(--ctx-drag, var(--ctx));
     grid-template-areas: "head head head" "banner banner banner" "dock main ctx" "bar bar bar";
   }
   :root[data-design="glasshouse"][data-shell="dock"] .rail {
-    grid-area: dock; position: relative; justify-self: center; align-self: start; flex-direction: column; width: 96px; margin: 0; padding: 14px 0; overflow: visible;
+    grid-area: dock; position: relative; justify-self: center; align-self: start; flex-direction: column; width: var(--gh-rail-w, 96px); margin: 0; padding: var(--gh-rail-pad, 14px) 0; overflow: visible;
     border: 1px solid var(--gh-frame); border-radius: 30px;
     background: linear-gradient(170deg, var(--gh-sheen-panel) 0%, transparent 30%), linear-gradient(var(--gh-glass-panel) 0 0), var(--gh-wall);
     background-attachment: scroll, scroll, var(--gh-wall-at);
     box-shadow: inset 0 1px 0 var(--gh-rim), var(--gh-float);
   }
-  :root[data-design="glasshouse"][data-shell="dock"] .rail__nav { grid-auto-flow: row; gap: 10px; padding: 0; justify-items: center; }
+  :root[data-design="glasshouse"][data-shell="dock"] .rail__nav { grid-auto-flow: row; gap: var(--gh-rail-gap, 10px); padding: 0; justify-items: center; }
   :root[data-design="glasshouse"][data-shell="dock"] .nav-item {
-    width: 76px; height: auto; min-height: 0; flex-direction: column; gap: 5px; padding: 2px; border: 0; border-radius: 10px;
+    width: var(--gh-key-w, 76px); height: auto; min-height: 0; flex-direction: column; gap: 5px; padding: 2px; border: 0; border-radius: 10px;
     color: var(--fg-panel); background: transparent;
   }
   :root[data-design="glasshouse"][data-shell="dock"] .nav-item:hover { background: none; }
   /* a key's caption: mono on the shelf's glass, a lit chip for the current page */
   :root[data-design="glasshouse"][data-shell="dock"] .nav-item__label {
+    position: static; width: auto; height: auto; overflow: visible; clip-path: none; white-space: normal;
     display: block; padding: 1px 6px; border-radius: 999px; font: 500 .6875rem/1.2 var(--f-px); letter-spacing: .02em; color: var(--fg-panel);
   }
   :root[data-design="glasshouse"][data-shell="dock"] .nav-item .ic {
@@ -861,12 +865,21 @@
   /* set on .nav-item, not .nav-item .ic: under a page-wide :has() a selector ending in .ic restyles every icon on each DOM insertion */
   :root[data-design="glasshouse"][data-shell="dock"]:has(> :where(body) > :where(.app) > :where(.banner-slot) > .banner) .nav-item { --gh-dock-ic: 40px; --gh-dock-ic-pad: 10px; }
 }
+/* a window narrower than 1440 px, or shorter than 780, has no room for captions under the keys: the shelf was 513 px
+   tall (it ran under the console on a short window) and 104 px wide before the page. Its keys keep their names for the
+   tooltip (lull shows one when no caption is visible) and for a screen reader, and the shelf tightens to a column of
+   round keys. The page gets the room back. */
+@media (min-width: 1100px) and (max-width: 1439px), (min-width: 1100px) and (max-height: 779px) {
+  :root[data-design="glasshouse"][data-shell="dock"] { --gh-rail-col: 76px; --gh-rail-w: 64px; --gh-rail-pad: 10px; --gh-rail-gap: 8px; --gh-key-w: 48px; }
+  :root[data-design="glasshouse"][data-shell="dock"] .nav-item { --gh-dock-ic: 44px; --gh-dock-ic-pad: 11px; padding: 0; }
+  :root[data-design="glasshouse"][data-shell="dock"] .nav-item__label { position: fixed; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; padding: 0; }
+}
 /* status gadget (img 03's left gadgets): on a window 980 px or taller the tray leaves the header and stacks under the
    shelf as a small window of tiles, anchored to it (CSS anchor positioning) so it always sits right under the keys and
    can never cover them. On a shorter window it would sit on the console, so it stays in the header as capsules; so does
    it while a banner shows (the shelf moves down) and without anchor support. */
 @supports (anchor-name: --a) {
-  @media (min-width: 1100px) and (min-height: 980px) {
+  @media (min-width: 1440px) and (min-height: 980px) {
     :root[data-design="glasshouse"][data-shell="dock"] .rail { anchor-name: --gh-dock; }
     :root[data-design="glasshouse"][data-shell="dock"]:not(:has(> :where(body) > :where(.app) > :where(.banner-slot) > .banner)) .tray--full {
       position: fixed; z-index: 2; position-anchor: --gh-dock; top: calc(anchor(bottom) + 12px); left: anchor(left); width: anchor-size(width);
@@ -1055,6 +1068,11 @@
 }
 
 /* tablet (640-1099): the shelf is lull's floating dock under the console, its keys round; compact search field */
+@media (max-width: 1099px) {
+  /* no captions here (lull hides them with display: none, which leaves a key with no name): clipped, not removed, and
+     fixed so lull sees no visible caption and shows the tooltip */
+  :root[data-design="glasshouse"][data-shell="dock"] .nav-item__label { display: block; position: fixed; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; padding: 0; }
+}
 @media (min-width: 640px) and (max-width: 1099px) {
   :root[data-design="glasshouse"][data-shell="dock"] .rail { border-radius: 999px; padding: 5px 9px; box-shadow: inset 0 1px 0 var(--gh-rim), var(--gh-float); }
   :root[data-design="glasshouse"][data-shell="dock"] .nav-item { border-radius: 50%; }
@@ -1459,7 +1477,7 @@
   display: inline-flex; align-items: center; height: 100%; padding: 0 10px; border: 1px solid var(--gh-frame); border-bottom: 0; border-radius: 6px 6px 0 0;
   font: 600 .6875rem/1 var(--f-px); letter-spacing: .08em; text-transform: uppercase; text-shadow: none;
 }
-:root[data-design="glasshouse"] .gh-skin__btn { position: relative; color: var(--gh-bar-ink); background: var(--gh-bar-3); cursor: pointer; }
+:root[data-design="glasshouse"] .gh-skin__btn { position: relative; color: var(--gh-bar-ink); background: var(--gh-bar-3); }
 :root[data-design="glasshouse"] .gh-skin__btn::before { content: ""; position: absolute; inset: -8px -2px -4px; }
 :root[data-design="glasshouse"] .gh-skin__btn:hover { background: var(--gh-bar-2); }
 :root[data-design="glasshouse"] .gh-skin__cur { color: #191b28; background: linear-gradient(180deg, #fbfbff, #dfe3ee); box-shadow: inset 0 1px 0 #fff; }
@@ -1894,4 +1912,22 @@
   --gh-wall: linear-gradient(transparent 0 0); --gh-wall-at: scroll;
 }
 
+}
+
+/* =====================================================================
+   The cursor: a pane of glass. The arrow is a silver pane with a white specular, the hand over a link or a key is the
+   rose pearl of the play orb (the key that is armed), the caret where text is typed is the console's navy I-beam; each
+   has a white halo, so it reads on the day's mist and on the night's smoked glass. SVG, 32 px, at 1x and 2x. A listener
+   who asks for forced colours keeps the system's.
+   ===================================================================== */
+:root[data-design="glasshouse"] { --gh-cur: image-set(url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23ffffff'/%3E%3Cstop offset='.55' stop-color='%23d4dbea'/%3E%3Cstop offset='1' stop-color='%239eabc9'/%3E%3C/linearGradient%3E%3ClinearGradient id='r' x1='0' y1='0' x2='.7' y2='1'%3E%3Cstop offset='0' stop-color='%23fff5f8'/%3E%3Cstop offset='.5' stop-color='%23f3c1cf'/%3E%3Cstop offset='1' stop-color='%23c46c88'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M5 2.5V24L10.4 19.2L13.9 27L18.3 25L14.8 17.4L22 17Z' fill='none' stroke='%23fff' stroke-opacity='.9' stroke-width='4.2' stroke-linejoin='round'/%3E%3Cpath d='M5 2.5V24L10.4 19.2L13.9 27L18.3 25L14.8 17.4L22 17Z' fill='url(%23g)' stroke='%231c2340' stroke-width='1.5' stroke-linejoin='round'/%3E%3Cpath d='M7.1 6.6V18.6' stroke='%23fff' stroke-width='1.3' stroke-linecap='round' opacity='.95'/%3E%3Cpath d='M14.9 24.4L12.6 19.2' stroke='%231c2340' stroke-opacity='.28' stroke-width='1.2' stroke-linecap='round'/%3E%3C/svg%3E") 1x, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23ffffff'/%3E%3Cstop offset='.55' stop-color='%23d4dbea'/%3E%3Cstop offset='1' stop-color='%239eabc9'/%3E%3C/linearGradient%3E%3ClinearGradient id='r' x1='0' y1='0' x2='.7' y2='1'%3E%3Cstop offset='0' stop-color='%23fff5f8'/%3E%3Cstop offset='.5' stop-color='%23f3c1cf'/%3E%3Cstop offset='1' stop-color='%23c46c88'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M5 2.5V24L10.4 19.2L13.9 27L18.3 25L14.8 17.4L22 17Z' fill='none' stroke='%23fff' stroke-opacity='.9' stroke-width='4.2' stroke-linejoin='round'/%3E%3Cpath d='M5 2.5V24L10.4 19.2L13.9 27L18.3 25L14.8 17.4L22 17Z' fill='url(%23g)' stroke='%231c2340' stroke-width='1.5' stroke-linejoin='round'/%3E%3Cpath d='M7.1 6.6V18.6' stroke='%23fff' stroke-width='1.3' stroke-linecap='round' opacity='.95'/%3E%3Cpath d='M14.9 24.4L12.6 19.2' stroke='%231c2340' stroke-opacity='.28' stroke-width='1.2' stroke-linecap='round'/%3E%3C/svg%3E") 2x) 5 3, auto; --gh-cur-pt: image-set(url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23ffffff'/%3E%3Cstop offset='.55' stop-color='%23d4dbea'/%3E%3Cstop offset='1' stop-color='%239eabc9'/%3E%3C/linearGradient%3E%3ClinearGradient id='r' x1='0' y1='0' x2='.7' y2='1'%3E%3Cstop offset='0' stop-color='%23fff5f8'/%3E%3Cstop offset='.5' stop-color='%23f3c1cf'/%3E%3Cstop offset='1' stop-color='%23c46c88'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M9 5a2.5 2.5 0 0 1 5 0V11a2 2 0 0 1 4 0a2 2 0 0 1 4 .8a2 2 0 0 1 4 1.2V20c0 3-1.5 5-3.5 6.5V28H12.5V25.5c-2-1-3.5-2.8-5-5L4.2 15.6c-.8-1.2.2-2.8 1.6-2.4L9 15.5Z' fill='none' stroke='%23fff' stroke-opacity='.9' stroke-width='4.2' stroke-linejoin='round'/%3E%3Cpath d='M9 5a2.5 2.5 0 0 1 5 0V11a2 2 0 0 1 4 0a2 2 0 0 1 4 .8a2 2 0 0 1 4 1.2V20c0 3-1.5 5-3.5 6.5V28H12.5V25.5c-2-1-3.5-2.8-5-5L4.2 15.6c-.8-1.2.2-2.8 1.6-2.4L9 15.5Z' fill='url(%23r)' stroke='%231c2340' stroke-width='1.5' stroke-linejoin='round'/%3E%3Cpath d='M14 11.6V16M18 12v4M22 13v3' stroke='%231c2340' stroke-opacity='.3' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M10.7 6V12' stroke='%23fff' stroke-width='1.3' stroke-linecap='round' opacity='.95'/%3E%3C/svg%3E") 1x, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23ffffff'/%3E%3Cstop offset='.55' stop-color='%23d4dbea'/%3E%3Cstop offset='1' stop-color='%239eabc9'/%3E%3C/linearGradient%3E%3ClinearGradient id='r' x1='0' y1='0' x2='.7' y2='1'%3E%3Cstop offset='0' stop-color='%23fff5f8'/%3E%3Cstop offset='.5' stop-color='%23f3c1cf'/%3E%3Cstop offset='1' stop-color='%23c46c88'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M9 5a2.5 2.5 0 0 1 5 0V11a2 2 0 0 1 4 0a2 2 0 0 1 4 .8a2 2 0 0 1 4 1.2V20c0 3-1.5 5-3.5 6.5V28H12.5V25.5c-2-1-3.5-2.8-5-5L4.2 15.6c-.8-1.2.2-2.8 1.6-2.4L9 15.5Z' fill='none' stroke='%23fff' stroke-opacity='.9' stroke-width='4.2' stroke-linejoin='round'/%3E%3Cpath d='M9 5a2.5 2.5 0 0 1 5 0V11a2 2 0 0 1 4 0a2 2 0 0 1 4 .8a2 2 0 0 1 4 1.2V20c0 3-1.5 5-3.5 6.5V28H12.5V25.5c-2-1-3.5-2.8-5-5L4.2 15.6c-.8-1.2.2-2.8 1.6-2.4L9 15.5Z' fill='url(%23r)' stroke='%231c2340' stroke-width='1.5' stroke-linejoin='round'/%3E%3Cpath d='M14 11.6V16M18 12v4M22 13v3' stroke='%231c2340' stroke-opacity='.3' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M10.7 6V12' stroke='%23fff' stroke-width='1.3' stroke-linecap='round' opacity='.95'/%3E%3C/svg%3E") 2x) 11 3, pointer; --gh-cur-tx: image-set(url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23ffffff'/%3E%3Cstop offset='.55' stop-color='%23d4dbea'/%3E%3Cstop offset='1' stop-color='%239eabc9'/%3E%3C/linearGradient%3E%3ClinearGradient id='r' x1='0' y1='0' x2='.7' y2='1'%3E%3Cstop offset='0' stop-color='%23fff5f8'/%3E%3Cstop offset='.5' stop-color='%23f3c1cf'/%3E%3Cstop offset='1' stop-color='%23c46c88'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M10 4H22M16 4V28M10 28H22' fill='none' stroke='%23fff' stroke-opacity='.9' stroke-width='5' stroke-linecap='round'/%3E%3Cpath d='M10 4H22M16 4V28M10 28H22' fill='none' stroke='%231c2340' stroke-width='2' stroke-linecap='round'/%3E%3Cpath d='M16 7V25' stroke='%238ea5d6' stroke-width='.9' opacity='.8'/%3E%3C/svg%3E") 1x, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23ffffff'/%3E%3Cstop offset='.55' stop-color='%23d4dbea'/%3E%3Cstop offset='1' stop-color='%239eabc9'/%3E%3C/linearGradient%3E%3ClinearGradient id='r' x1='0' y1='0' x2='.7' y2='1'%3E%3Cstop offset='0' stop-color='%23fff5f8'/%3E%3Cstop offset='.5' stop-color='%23f3c1cf'/%3E%3Cstop offset='1' stop-color='%23c46c88'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M10 4H22M16 4V28M10 28H22' fill='none' stroke='%23fff' stroke-opacity='.9' stroke-width='5' stroke-linecap='round'/%3E%3Cpath d='M10 4H22M16 4V28M10 28H22' fill='none' stroke='%231c2340' stroke-width='2' stroke-linecap='round'/%3E%3Cpath d='M16 7V25' stroke='%238ea5d6' stroke-width='.9' opacity='.8'/%3E%3C/svg%3E") 2x) 16 16, text; }
+
+:root[data-design="glasshouse"] body { cursor: var(--gh-cur, auto); }
+:root[data-design="glasshouse"] :is(a[href], button, select, summary, label[for], [role="button"], [role="tab"], [role="menuitem"], [role="radio"], [role="switch"], [role="slider"], [data-act],
+  .trow, .tile, .seek, .wave, .btn, .btn-icon, .switch, .switch-row, .chip, .pill-filter, .q-chip, .src-badge, .nav-item, .gh-skin__btn, .range, .eqp__tone,
+  input[type="range"], input[type="checkbox"], input[type="radio"]):not(:disabled, [aria-disabled="true"]) { cursor: var(--gh-cur-pt, pointer); }
+:root[data-design="glasshouse"] :is(input:not([type="range"], [type="checkbox"], [type="radio"], [type="button"], [type="submit"]), textarea, [contenteditable="true"]) { cursor: var(--gh-cur-tx, text); }
+:root[data-design="glasshouse"] :is(:disabled, [aria-disabled="true"]) { cursor: not-allowed; }
+@media (forced-colors: active) {
+  :root[data-design="glasshouse"] { --gh-cur: auto; --gh-cur-pt: pointer; --gh-cur-tx: text; }
 }

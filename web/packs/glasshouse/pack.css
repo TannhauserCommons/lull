@@ -60,37 +60,49 @@
 /* ---------- lull's own words: a sign by the title in the console, in the lamp's rose ---------- */
 :root[data-egg] .pbar__title > a::after { color: var(--gh-e-rose); font-family: var(--f-px, ui-monospace, monospace); font-size: .8em; opacity: .95; text-shadow: 0 0 9px color-mix(in srgb, var(--gh-e-rose) 70%, transparent); }
 
-/* ---------- the line: a small smoky screen with the lamp lit in it, words typed in ---------- */
-.egg-line {
-  z-index: 3; bottom: calc(var(--bar-h, 122px) + 34px); display: flex; align-items: center; gap: 10px; padding: 10px 18px 10px 14px;
-  border: 1px solid var(--gh-lcd-edge, #0b0d14); border-radius: 12px; color: #e8ecf8; background: var(--gh-lcd, linear-gradient(180deg, #11131c, #1d2131));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16), inset 0 0 0 1px rgba(160, 185, 235, .14), 0 14px 30px -14px rgba(5, 7, 16, .75);
+/* ---------- the desk: what an egg says and counts stands in the console's top edge, as a tab ----------
+   The words (the line) and the beads (a ring unrolled into a string) are two LCD tabs side by side on the console's top
+   edge, either side of the lamp (the play orb): the one strip of the screen that holds no control and no page (the
+   page ends a hand above the console; the tab is seated in the console's empty rim, so it stays out of the page's foot). A phone's console is its mini player, and the beads give way to the words. */
+:root[data-egg] { --gh-e-tab: 18px; --gh-e-seat: 10px; --gh-e-desk: calc(var(--bar-h, 122px) + 18px - var(--gh-e-seat)); }
+:root[data-egg] .egg-line {
+  z-index: 3; left: 50%; bottom: var(--gh-e-desk); transform: translateX(-50%); display: flex; align-items: center; gap: 10px; min-height: calc(var(--gh-e-tab) + var(--gh-e-seat)); padding: 0 16px var(--gh-e-seat) 12px;
+  border: 1px solid var(--gh-lcd-edge, #0b0d14); border-bottom: 0; border-radius: 12px 12px 0 0; color: #e8ecf8; background: var(--gh-lcd, linear-gradient(180deg, #11131c, #1d2131));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16), inset 0 0 0 1px rgba(160, 185, 235, .14), 0 -10px 22px -12px rgba(5, 7, 16, .75);
   font: 500 .8125rem/1.25 var(--f-px, ui-monospace, monospace); letter-spacing: .04em;
 }
 .egg-line[hidden], .egg-line:empty { display: none; }
 .egg-line::before { content: ""; flex: none; width: 9px; height: 9px; border-radius: 50%; background: radial-gradient(circle at 40% 30%, #fff 0 15%, var(--gh-rose-glow, #c97a92) 46%, var(--gh-rose, #8e3f58) 84%); box-shadow: 0 0 8px var(--gh-rose-glow, #c97a92); }
 .egg-line::after { content: ""; flex: none; width: .5em; height: 2px; margin-top: .7em; background: currentColor; opacity: .8; }
+/* with beads (or fog) beside it, the words stand to the right of the lamp and the beads to the left of it */
+:root[data-egg~="new-year"] .egg-line, :root[data-egg~="on-repeat"] .egg-line, :root[data-egg~="twelve"] .egg-line, :root[data-egg~="breath"] .egg-line { transform: none; margin-left: 5px; }
+@supports (anchor-name: --a) {
+  :root[data-egg] :is(.pbar, .mini) { anchor-name: --gh-desk; }
+  :root[data-egg] .egg-line, :root[data-egg] .egg-stage [data-egg-of] :is(.gh-dial, .gh-breath) { position-anchor: --gh-desk; bottom: calc(anchor(top, calc(var(--gh-e-desk) + var(--gh-e-seat))) - var(--gh-e-seat)); }
+  :root[data-egg] .egg-line { left: anchor(center, 50%); }
+  :root[data-egg] .egg-stage [data-egg-of] :is(.gh-dial, .gh-breath) { right: anchor(center, 50%); }
+}
 
-/* ---------- the ring of beads (the new year, midnight, ten times over) ---------- */
-.gh-dial { left: 50%; bottom: calc(var(--bar-h, 122px) + 76px); width: 132px; height: 132px; margin-left: -66px; }
-.gh-dial::before { content: ""; position: absolute; inset: 8px; border-radius: 50%; background: var(--gh-e-disc); border: 1px solid rgba(160, 185, 235, .3);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18), 0 14px 30px -12px rgba(5, 7, 16, .7); }
-.gh-dial b { position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%;
-  background: radial-gradient(circle at 38% 30%, #fff 0 16%, var(--gh-e-bead-a) 46%, var(--gh-e-bead-b) 100%); box-shadow: 0 0 9px var(--gh-e-bead-glow);
-  transform: rotate(calc(var(--n) * 36deg)) translateY(-58px); }
-.gh-dial--twelve b { transform: rotate(calc(var(--n) * 30deg)) translateY(-58px); }
+/* ---------- the string of beads (the new year, midnight, ten times over) ---------- */
+.egg-stage [data-egg-of] .gh-dial { display: flex; align-items: center; gap: 8px; right: 50%; bottom: var(--gh-e-desk); left: auto; width: auto; height: calc(var(--gh-e-tab) + var(--gh-e-seat)); margin: 0 5px 0 0; padding: 0 14px 10px;
+  border: 1px solid var(--gh-lcd-edge, #0b0d14); border-bottom: 0; border-radius: 12px 12px 0 0; background: var(--gh-e-disc);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16), inset 0 0 0 1px rgba(160, 185, 235, .14), 0 -10px 22px -12px rgba(5, 7, 16, .75); }
+.egg-stage [data-egg-of] .gh-dial b { position: static; flex: none; width: 9px; height: 9px; margin: 0; border-radius: 50%; transform: none;
+  background: radial-gradient(circle at 38% 30%, #fff 0 16%, var(--gh-e-bead-a) 46%, var(--gh-e-bead-b) 100%); box-shadow: 0 0 8px var(--gh-e-bead-glow); }
+/* the lamp that ten plays light the beads round, and the moon that midnight rings under: the tab's first mark */
+.gh-dial--strike::before, .gh-dial--twelve::before { content: ""; flex: none; width: 14px; height: 14px; margin-right: 4px; border-radius: 50%; }
+.gh-dial--strike::before { border: 1px solid var(--gh-rose-edge, #4d2a38); background: radial-gradient(circle at 40% 30%, #fff 0 12%, var(--gh-rose-glow, #c97a92) 42%, var(--gh-rose, #8e3f58) 78%); box-shadow: 0 0 10px 1px rgba(224, 134, 164, .6); }
+.gh-dial--twelve::before { box-shadow: inset -5px 2px 0 0 #f0f3ff; rotate: -24deg; filter: drop-shadow(0 0 5px rgba(190, 205, 255, .7)); }
 /* the new year: a bead goes dark for each second that has gone (--egg-count is the seconds left) */
 .gh-dial--ten b { opacity: clamp(.2, calc(var(--egg-count, 10) - var(--n)), 1); transition: opacity .35s linear; }
-:root[data-egg~="new-year"] .egg-line {
-  bottom: calc(var(--bar-h, 122px) + 122px); width: 80px; height: 40px; padding: 0; display: block; text-align: center; border: 0; background: none; box-shadow: none;
-  font: italic 400 2.3rem/40px var(--f-serif, Georgia, serif); letter-spacing: 0; color: #f4f6ff; text-shadow: 0 0 16px rgba(176, 196, 255, .6);
-}
+:root[data-egg~="new-year"] .egg-line { min-width: 56px; justify-content: center; padding: 0 18px 10px; font: italic 400 1.125rem/1 var(--f-serif, Georgia, serif); letter-spacing: 0; color: #f4f6ff; text-shadow: 0 0 14px rgba(176, 196, 255, .6); }
 :root[data-egg~="new-year"] .egg-line::before, :root[data-egg~="new-year"] .egg-line::after { display: none; }
 :root[data-egg~="new-year"] .egg-line[hidden] { display: none; }
-/* midnight, and ten times in a row: the beads light one to a stroke */
-.gh-crescent { left: 50%; bottom: calc(var(--bar-h, 122px) + 130px); width: 30px; height: 30px; margin-left: -15px; border-radius: 50%; box-shadow: inset -10px 3px 0 0 #f0f3ff; rotate: -24deg; filter: drop-shadow(0 0 7px rgba(190, 205, 255, .7)); }
-.gh-lamp { left: 50%; bottom: calc(var(--bar-h, 122px) + 128px); width: 34px; height: 34px; margin-left: -17px; border-radius: 50%; border: 1px solid var(--gh-rose-edge, #4d2a38);
-  background: radial-gradient(circle at 40% 30%, #fff 0 12%, var(--gh-rose-glow, #c97a92) 42%, var(--gh-rose, #8e3f58) 78%); box-shadow: 0 0 18px 2px rgba(224, 134, 164, .6); }
+@media (max-width: 639px) {
+  :root[data-egg] .egg-stage [data-egg-of] :is(.gh-dial, .gh-breath) { display: none; }
+  :root[data-egg] .egg-line { transform: translateX(-50%); margin-left: 0; width: max-content; max-width: calc(100vw - 32px); }
+  @supports (anchor-name: --a) { :root[data-egg] .egg-line { left: 50%; } }
+}
 
 /* ---------- rain: drops that cling, slip, and leave their beads ---------- */
 .gh-drop { left: var(--x); top: var(--y0, -4%); width: calc(11px * var(--s, 1)); height: calc(15px * var(--s, 1)); margin-left: -5px; border-radius: 50% 50% 50% 50% / 62% 62% 38% 38%;
@@ -132,6 +144,11 @@
 .gh-flake { left: var(--x); top: -4vh; width: calc(6px * var(--s, 1)); height: calc(6px * var(--s, 1)); background: var(--gh-e-flake); border-radius: 50%; opacity: 0; }
 .gh-fern { width: 22vmin; height: 22vmin; fill: none; stroke: var(--gh-e-fern, #f4f7ff); stroke-width: 1.2; stroke-linecap: round; transform-origin: 0 0; opacity: .8; filter: drop-shadow(0 0 1px rgba(24, 34, 86, .8)) drop-shadow(0 0 5px rgba(190, 208, 255, .55)); }
 .gh-fern--l { width: 30vmin; height: 30vmin; }
+/* the corners the header and the rail stand in carry no fern; the two at the foot grow only where the window is wide
+   enough to leave them clear of the console, and are smaller */
+.egg-stage [data-egg-of] .gh-fern--tl, .egg-stage [data-egg-of] .gh-fern--tr { display: none; }
+@media (max-width: 1599px) { .egg-stage [data-egg-of] .gh-fern { display: none; } }
+@media (min-width: 1600px) { .gh-fern--bl, .gh-fern--br { width: 14vmin; height: 14vmin; } }
 .gh-fern--tl { left: 0; top: 0; } .gh-fern--tr { left: 100%; top: 0; rotate: 90deg; } .gh-fern--br { left: 100%; top: 100%; rotate: 180deg; } .gh-fern--bl { left: 0; top: 100%; rotate: 270deg; }
 .gh-rime { background: linear-gradient(var(--gh-rime-dir, 180deg), var(--gh-e-hoar), transparent); opacity: .9; }
 .gh-rime--t { left: 0; right: 0; top: 0; height: 78px; } .gh-rime--b { left: 0; right: 0; bottom: 0; height: 78px; --gh-rime-dir: 0deg; }
@@ -188,8 +205,8 @@
 .gh-body { fill: var(--gh-e-moth); } .gh-ant { fill: none; stroke: var(--gh-e-moth); stroke-width: 1; stroke-linecap: round; }
 @media (max-width: 639px) { .egg-stage [data-egg-of] .gh-moth { display: none; } }
 
-/* ---------- breath: fog over the console's top, a fingertip writing in it ---------- */
-.gh-breath { left: 50%; bottom: calc(var(--bar-h, 122px) + 14px); width: min(86vw, 440px); aspect-ratio: 360 / 250; translate: -50% 0; }
+/* ---------- breath: fog over the console's top edge, a fingertip writing in it (a heart and "lull") ---------- */
+.egg-stage [data-egg-of] .gh-breath { left: auto; right: 50%; bottom: var(--gh-e-desk); width: min(280px, calc(50vw - 8px)); height: calc(var(--gh-e-tab) + var(--gh-e-seat)); margin: 0 5px 0 0; }
 .gh-breath__fog { left: 0; top: 0; width: 100%; height: 100%; }
 .gh-drop--fog { left: calc(50% + var(--dx)); top: 79%; margin-left: -4px; }
 
