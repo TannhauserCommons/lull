@@ -445,6 +445,26 @@ pub async fn remove(db: &Db, name: &str) -> Result<()> {
     Ok(())
 }
 
+/// What the system keyring shows for a credential (Seahorse, KWallet), so the listener can tell lull's
+/// apart from the rest.
+pub fn label(name: &str) -> String {
+    let what = match name {
+        "LULL_SOULSEEK_PASSWORD" => "Soulseek password",
+        "LULL_SLSKD_API_KEY" => "slskd API key",
+        "LULL_SLSKD_WEB_PASSWORD" => "slskd web password",
+        "LULL_JELLYFIN_API_KEY" => "Jellyfin key",
+        "LULL_LASTFM_API_KEY" => "Last.fm API key",
+        "LULL_LASTFM_API_SECRET" => "Last.fm API secret",
+        "LULL_ACOUSTID_KEY" => "AcoustID key",
+        "LULL_ACOUSTID_USER_KEY" => "AcoustID user key",
+        "LULL_LISTENBRAINZ_TOKEN" => "ListenBrainz token",
+        "lastfm.session" => "Last.fm sign-in",
+        n if n.starts_with("subsonic.") => "a Subsonic app's password",
+        n => n,
+    };
+    format!("lull: {what}")
+}
+
 const PLACEHOLDER: &str = "kept-in-vault-";
 
 /// What a crate's own column holds once its credential is in a vault (a Subsonic app password, the
@@ -527,4 +547,22 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> 
     tokio::task::spawn_blocking(f)
         .await
         .map_err(|e| Error::internal(format!("vault task: {e}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every secret setting has its own words in the keyring, so a new one isn't shown by its key.
+    #[test]
+    fn every_secret_setting_has_a_label_in_words() {
+        for key in crate::settings::KEYS.iter().filter(|k| k.secret) {
+            assert_ne!(
+                label(key.name),
+                format!("lull: {}", key.name),
+                "{} has no label",
+                key.name
+            );
+        }
+    }
 }
