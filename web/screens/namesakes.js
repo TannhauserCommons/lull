@@ -42,6 +42,14 @@
         <p class="lib-ahero__facts"><span>${plural(artists.length, 'artist')} share this name. Open the one you mean.</span></p>
         ${d.errors && d.errors.musicbrainz ? html`<p class="t-micro fg-2">MusicBrainz didn't answer, so others called ${d.name} may be missing.</p>` : ''}
       </section>
+      ${d.askFollow ? html`<section class="card lib-card" aria-labelledby="ns-follow-h">
+        ${rule('which one you follow', 'ns-follow-h')}
+        <p class="t-micro fg-2">You followed ${d.name} before lull knew of more than one. Until you say which, the follow counts for none of them.</p>
+        <ul class="lib-flist">${artists.map(function (ar) {
+          return html`<li class="lib-frow"><div class="lib-frow__main"><span class="lib-frow__name">${ar.name}</span><span class="lib-frow__meta">${line(d, ar.id)}</span></div>
+            <button class="btn btn--sm" data-act="ns-follow-this" data-name="${d.name}" data-id="${ar.id}">This one</button></li>`;
+        })}</ul>
+      </section>` : ''}
       <section class="card lib-card" aria-labelledby="ns-list-h">
         ${rule('who they are', 'ns-list-h')}
         <ul class="lib-flist">${artists.map(function (ar) {
@@ -92,6 +100,17 @@
     M.api(to, { method: 'POST', body: body }).then(function () {
       M.invalidate(['/api/artists']);
       App.toast(picked.value ? 'Kept: that\'s whose it is' : 'Kept: another ' + p.name, { confirms: true, icon: 'check', kind: 'ok' });
+      App.refresh();
+    }, function (err) { App.toast('Couldn\'t keep that: ' + err.message, { kind: 'error' }); });
+  });
+  App.action('ns-follow-this', function (el) {
+    var name = el.getAttribute('data-name'), id = el.getAttribute('data-id');
+    M.api('/api/artists/named/choose', { method: 'POST', body: { name: name, artist: id } }).then(function () {
+      M.invalidate(['/api/artists', '/api/follows']);
+      M.api('/api/follows').then(function (r) {
+        var f = {}; (r.artists || []).concat(r.tags || []).forEach(function (x) { f[x] = true; }); App.store.set('followed', f);
+      });
+      App.toast('Kept: that\'s the ' + name + ' you follow', { confirms: true, icon: 'check', kind: 'ok' });
       App.refresh();
     }, function (err) { App.toast('Couldn\'t keep that: ' + err.message, { kind: 'error' }); });
   });

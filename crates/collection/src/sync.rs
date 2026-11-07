@@ -118,13 +118,14 @@ async fn apply_all(svc: &Service, device: &str, ops: Vec<Value>) -> Result<Value
     }
     let ops = ops.into_iter().map(envelope).collect::<Result<Vec<_>>>()?;
     svc.ctx.db.call(forget_old).await?;
+    let namesakes = svc.ctx.config.flags.on(&lull_core::flags::NAMESAKES);
 
     let (mut applied, mut rejected, mut made) = (Vec::new(), Vec::new(), BTreeMap::new());
     for (id, op) in ops {
         let outcome = match op {
             Ok((at, op)) => {
                 let (op_id, device) = (id.clone(), device.to_owned());
-                svc.write(move |tx, events| apply(tx, events, &device, &op_id, at, op))
+                svc.write(move |tx, events| apply(tx, events, &device, &op_id, at, op, namesakes))
                     .await
             }
             Err(message) => Err(Error::BadRequest(message)),
@@ -182,6 +183,7 @@ fn apply(
     id: &str,
     at: i64,
     op: Op,
+    namesakes: bool,
 ) -> Result<Option<(String, String)>> {
     let seen: Option<i64> = conn
         .query_row("SELECT 1 FROM collection_sync_ops WHERE id = ?1", [id], |r| r.get(0))
@@ -193,7 +195,7 @@ fn apply(
             _ => Ok(None),
         };
     }
-    let made = run(conn, events, device, at, op)?;
+    let made = run(conn, events, device, at, op, namesakes)?;
     conn.execute(
         "INSERT INTO collection_sync_ops (id, applied_at) VALUES (?1, ?2)",
         params![id, lull_core::now()],
@@ -201,7 +203,14 @@ fn apply(
     Ok(made)
 }
 
-fn run(conn: &Connection, events: &mut Events, device: &str, at: i64, op: Op) -> Result<Option<(String, String)>> {
+fn run(
+    conn: &Connection,
+    events: &mut Events,
+    device: &str,
+    at: i64,
+    op: Op,
+    namesakes: bool,
+) -> Result<Option<(String, String)>> {
     match op {
         Op::Play {
             track_id,
@@ -223,7 +232,18 @@ fn run(conn: &Connection, events: &mut Events, device: &str, at: i64, op: Op) ->
             id,
             name,
             followed,
-        } => follows::set(conn, events, kind, &id, name.as_deref(), followed, at)?,
+        } => follows::set(
+            conn,
+            events,
+            kind,
+            &id,
+            name.as_deref(),
+            follows::Change {
+                followed,
+                at,
+                namesakes,
+            },
+        )?,
         Op::PlaylistCreate {
             temp_id,
             name,

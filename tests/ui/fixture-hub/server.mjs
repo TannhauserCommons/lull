@@ -194,7 +194,9 @@ const routes = [
     emit('like', { trackId: m[1], liked: true }, client || undefined); return { status: 204 };
   }],
   ['DELETE', /^\/api\/likes\/(.+)$/, (m) => { state.likes = state.likes.filter((t) => t !== m[1]); emit('like', { trackId: m[1], liked: false }); return { status: 204 }; }],
-  ['GET', /^\/api\/follows$/, () => ({ ...state.follows, entities: entities({ artists: state.follows.artists }) })],
+  // With the namesakes switch, the follow of Soft Choir is one from before that nothing says which of (ADR-0035).
+  ['GET', /^\/api\/follows$/, () => ({ ...state.follows, entities: entities({ artists: state.follows.artists }),
+    ...(FLAGS.includes('namesakes') ? { unsure: state.follows.artists.filter((id) => L.artists[id].name === 'Soft Choir') } : {}) })],
   ['GET', /^\/api\/playlists$/, () => ({ items: state.playlists, total: state.playlists.length, entities: entities({ tracks: state.playlists.flatMap((p) => p.items.slice(0, 4).map((i) => i.trackId)), albums: albumsOf(state.playlists.flatMap((p) => p.items.slice(0, 4).map((i) => i.trackId))) }) })],
   ['GET', /^\/api\/playlists\/(pl-[^/]+)$/, (m) => { const p = state.playlists.find((x) => x.id === m[1]); return p ? playlistBody(p) : err(404, 'not_found', 'No such playlist.'); }],
   ['PUT', /^\/api\/playlists\/(pl-[^/]+)\/tracks$/, (m, q, body) => {
@@ -385,7 +387,8 @@ function deepMerge(into, patch) {
 }
 function cap(w) { return w[0].toUpperCase() + w.slice(1); }
 
-/* GET /api/artists/named?name=: Soft Choir (the listener's, with an album and two songs nothing places) and two
+/* GET /api/artists/named?name=: Soft Choir (the listener's, with an album, two songs nothing places and a follow from
+   before nothing says which of) and two
    invented namesakes, one described by MusicBrainz's comment and one by its type, country and years */
 const NAMESAKES = [
   { id: 'ar-5c0f7c401c0a0001', name: 'Soft Choir', tags: [], listeners: null, bio: null, musicbrainzId: null },
@@ -401,7 +404,7 @@ function namedPage(name) {
   return {
     name, artists: [own, ...NAMESAKES.map((n) => n.id)],
     about: { [NAMESAKES[0].id]: '1970s Welsh male voice choir', [NAMESAKES[1].id]: 'Group · NZ · since 2019' },
-    albums: albums[0] ? { [own]: albums[0] } : {}, yours: [own], unplaced, entities: e,
+    albums: albums[0] ? { [own]: albums[0] } : {}, yours: [own], unplaced, askFollow: true, entities: e,
   };
 }
 

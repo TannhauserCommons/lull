@@ -811,9 +811,10 @@
   function renderFollowing() {
     var path = '/api/follows', r = M.get(path);
     return libraryFrame('following', r.loading ? html`<div class="lib-cols">${listSkeleton('Artists you follow')}${listSkeleton('Tags you follow')}</div>`
-      : r.error ? App.errorCard(r.error, { path: path, label: 'Following' }) : followingBody(), path);
+      : r.error ? App.errorCard(r.error, { path: path, label: 'Following' }) : followingBody((r.data && r.data.unsure) || []), path);
   }
-  function followingBody() {
+  /* `unsure`: follows of a name several artists share, kept from before, that nothing says which of (ADR-0035) */
+  function followingBody(unsure) {
     var ids = Object.keys(App.store.get('followed'));
     /* the same artist-or-tag rule App.toggleFollow uses */
     var artists = ids.filter(function (id) { return /^ar-/.test(id); }).map(M.artist).filter(Boolean);
@@ -826,7 +827,7 @@
         ${ruleWith('artists you follow', 'lib-fa-h', artists.length ? html`<span class="lib-count">${artists.length}</span>` : '')}
         ${artists.length ? html`<ul class="lib-flist">${artists.map(function (ar) {
           return html`<li class="lib-frow">${ui.cover(ar, 48, { round: true })}
-            <div class="lib-frow__main"><a class="lib-frow__name" href="#/artist/${ar.id}">${ar.name}</a><span class="lib-frow__meta">${ar.tags.join(', ')}</span></div>
+            <div class="lib-frow__main"><a class="lib-frow__name" href="#/artist/${ar.id}">${ar.name}</a><span class="lib-frow__meta">${unsure.indexOf(ar.id) >= 0 ? 'Which one? Several artists are called ' + ar.name : ar.tags.join(', ')}</span></div>
             ${ui.iconButton('radio', 'Start ' + ar.name + ' radio', { 'data-act': 'start-radio', 'data-kind': 'artist', 'data-id': ar.id, cls: 'btn-icon--bare' })}
             ${followButton(ar.id)}</li>`;
         })}</ul>` : ui.emptyState({ art: 'moon', title: 'No artists followed', text: 'Follow an artist and their new releases appear on Home first.', action: { label: 'Browse artists', href: '#/library/artists' } })}

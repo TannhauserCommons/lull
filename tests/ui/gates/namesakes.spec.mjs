@@ -1,5 +1,6 @@
 // ADR-0035's name page, with the `namesakes` switch on: every artist called the name, told apart by their own line,
-// the listener's first; their songs nothing places; and the listener's word, which nothing picks for them.
+// the listener's first; their songs nothing places; a follow from before, asked about; and the listener's word,
+// which nothing picks for them.
 
 import { expect, test } from '@playwright/test';
 import { ownHub, settle } from './lib.mjs';
@@ -12,11 +13,18 @@ test('the artists of a shared name are told apart, and the listener says whose a
   await page.goto(`${hub.url}/#/artists/named/Soft%20Choir`);
   await page.waitForFunction(() => window.App && App.server && App.server.checked);
   await settle(page);
-  const rows = page.locator('.lib-named .lib-card').first().locator('.lib-frow');
+  // A follow from before that nothing says which of: asked, one button each.
+  const ask = page.locator('[data-act="ns-follow-this"]');
+  await expect(ask).toHaveCount(3);
+  const rows = page.locator('[aria-labelledby="ns-list-h"] .lib-frow');
   await expect(rows).toHaveCount(3);
   await expect(rows.first()).toContainText('Yours');
   await expect(rows.nth(1)).toContainText('1970s Welsh male voice choir');
   await expect(rows.nth(2)).toContainText('Group · NZ · since 2019');
+
+  const chose = page.waitForRequest((r) => r.url().endsWith('/api/artists/named/choose') && r.method() === 'POST');
+  await ask.nth(1).click();
+  expect((await chose).postDataJSON()).toEqual({ name: 'Soft Choir', artist: 'ar-5c0f7c401c0a0001' });
 
   await page.locator('[data-act="ns-whose"]').first().click();
   const picks = page.locator('.ns-pick input[name="ns-pick"]');

@@ -178,7 +178,7 @@ impl Rows {
 fn followed_in(c: &Connection, ids: HashSet<ArtistId>) -> Result<HashSet<ArtistId>> {
     let mut out = HashSet::new();
     for id in ids {
-        out.extend(now_is(c, &id)?);
+        out.extend(identity::now_is(c, &id)?);
     }
     Ok(out)
 }
@@ -222,21 +222,13 @@ pub fn placed(c: &Connection, s: &Signals) -> Result<(Placed, HashSet<ArtistId>)
     let mut stmt = c.prepare("SELECT id FROM follows WHERE kind = 'artist' ORDER BY rowid")?;
     let follows: Vec<String> = stmt.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
     for id in follows {
-        placed.follows.push(now_is(c, &ArtistId(id))?);
+        placed.follows.push(identity::now_is(c, &ArtistId(id))?);
     }
     let mut hidden = HashSet::new();
     for id in &s.hidden {
-        hidden.extend(now_is(c, id)?);
+        hidden.extend(identity::now_is(c, id)?);
     }
     Ok((placed, hidden))
-}
-
-/// The artist an id kept from before is now: itself, or for a shared name, the listener's (`owner`).
-fn now_is(c: &Connection, id: &ArtistId) -> Result<Option<ArtistId>> {
-    Ok(match identity::resolve(c, id)? {
-        Place::One(a) => Some(a),
-        Place::Several(_) => identity::owner(c, id)?,
-    })
 }
 
 /// What an artist id opens with the switch on.
@@ -299,6 +291,8 @@ pub struct NamedPage {
     /// Whose the name's id is, for what the listener did under it before; absent: which one?
     #[serde(skip_serializing_if = "Option::is_none")]
     owner: Option<ArtistId>,
+    /// The listener follows the name from before and nothing says which artist they meant: ask.
+    ask_follow: bool,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     errors: BTreeMap<&'static str, String>,
     entities: Pictured,
@@ -324,7 +318,7 @@ pub async fn named(State(svc): State<Arc<Service>>, Params(p): Params<NameParams
         HashMap::new()
     };
     let n = name.clone();
-    let (artists, about, albums, yours, unplaced, owner, tracks, album_rows) = svc
+    let (artists, about, albums, yours, unplaced, owner, ask_follow, tracks, album_rows) = svc
         .ctx
         .db
         .call(move |c| {
@@ -358,6 +352,7 @@ pub async fn named(State(svc): State<Arc<Service>>, Params(p): Params<NameParams
                 let ids = stmt.query_map([], |r| r.get::<_, String>(0))?;
                 ids.map(|r| r.map(ArtistId)).collect::<rusqlite::Result<_>>()?
             };
+            let ask_follow = follows.contains(&ArtistId::of(&n)) && identity::owner(c, &ArtistId::of(&n))?.is_none();
             for a in followed_in(c, follows)? {
                 if artists.contains(&a) && !yours.contains(&a) {
                     yours.push(a);
@@ -372,7 +367,9 @@ pub async fn named(State(svc): State<Arc<Service>>, Params(p): Params<NameParams
             for al in albums.values() {
                 album_rows.extend(catalog::album(c, al)?);
             }
-            Ok((artists, about, albums, yours, unplaced, owner, tracks, album_rows))
+            Ok((
+                artists, about, albums, yours, unplaced, owner, ask_follow, tracks, album_rows,
+            ))
         })
         .await?;
     let records = svc
@@ -400,6 +397,7 @@ pub async fn named(State(svc): State<Arc<Service>>, Params(p): Params<NameParams
         yours,
         unplaced,
         owner,
+        ask_follow,
         errors,
         entities,
     }))

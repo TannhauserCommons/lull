@@ -333,6 +333,27 @@ pub fn owner(conn: &Connection, name_id: &ArtistId) -> Result<Option<ArtistId>> 
     owner.map(|o| alias(conn, &ArtistId(o))).transpose()
 }
 
+/// The artist an id kept from before is now: an artist's own id that artist; a name's id the one
+/// artist of the name, else the listener's (`owner`); None while nothing says which ("which one?").
+pub fn now_is(conn: &Connection, id: &ArtistId) -> Result<Option<ArtistId>> {
+    Ok(match resolve(conn, id)? {
+        Place::One(a) => Some(a),
+        Place::Several(_) => owner(conn, id)?,
+    })
+}
+
+/// Whether `artist` is called `name`: how a follow of an artist's own id checks the name it comes with.
+pub fn is_called(conn: &Connection, artist: &ArtistId, name: &str) -> Result<bool> {
+    Ok(conn
+        .query_row(
+            "SELECT 1 FROM identity_called WHERE artist_id = ?1 AND name_id = ?2",
+            params![alias(conn, artist)?.as_str(), ArtistId::of(name).as_str()],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
+}
+
 /// The listener picks which artist a name's id meant (a follow or hide from before).
 pub fn listener_chooses(conn: &Connection, name_id: &ArtistId, artist: &ArtistId) -> Result<()> {
     conn.execute(
