@@ -228,6 +228,7 @@ impl Searches {
             started: Instant::now(),
             state: Mutex::new(RunState {
                 pending: sources.iter().copied().collect(),
+                merged: Merged::new(crate::namesakes::on(svc)),
                 ..RunState::default()
             }),
             arrived: Notify::new(),
@@ -550,7 +551,11 @@ async fn view(svc: &Service, query: &str, st: &mut RunState, touched: Option<&To
     let rows = match (board.as_ref(), touched) {
         (Some(shown), None) => shown.clone(),
         _ => {
-            let (liked, followed) = svc.store.own().await?;
+            let (liked, mut followed) = svc.store.own().await?;
+            if m.namesakes {
+                crate::namesakes::place_rows(svc, m).await?;
+                followed = crate::namesakes::followed(svc, followed).await?;
+            }
             let q = Query::new(query);
             match board {
                 Some(shown) => shown.add(rank_rows(&q, m, &liked, &followed)),
@@ -644,7 +649,7 @@ fn rank_rows(q: &Query, m: &Merged, liked: &HashSet<TrackId>, followed: &HashSet
     let fits = song_scores(q, m);
     let songs = merge::rank(&fits, |i| {
         let s = &m.songs[i];
-        s.saved.is_some() || liked.contains(&s.id()) || followed.contains(&ArtistId::of(&s.artist))
+        s.saved.is_some() || liked.contains(&s.id()) || followed.contains(&s.artist_id())
     });
     let album_fits: Vec<Score> = m
         .albums
@@ -655,7 +660,7 @@ fn rank_rows(q: &Query, m: &Merged, liked: &HashSet<TrackId>, followed: &HashSet
             ..Score::album(q, a)
         })
         .collect();
-    let albums = merge::rank(&album_fits, |i| followed.contains(&ArtistId::of(&m.albums[i].artist)));
+    let albums = merge::rank(&album_fits, |i| followed.contains(&m.albums[i].artist_id()));
     let mut artist_fits: Vec<Score> = m.artists.iter().map(|a| Score::artist(q, a)).collect();
     merge::overshadow(&m.artists, &mut artist_fits);
     let borrowed = merge::borrowed(&m.artists);
@@ -803,7 +808,7 @@ async fn describe(svc: &Service, m: &Merged, songs: &[usize], albums: &[usize], 
         .map(|&i| m.albums[i].clone())
         .chain(songs.iter().filter_map(|&i| m.songs[i].album_hit()))
         .collect();
-    let album_rows = svc
+    let mut album_rows = svc
         .store
         .albums(album_hits.iter().map(merge::AlbumHit::release).collect())
         .await?;
@@ -817,11 +822,40 @@ async fn describe(svc: &Service, m: &Merged, songs: &[usize], albums: &[usize], 
         )
         .await?;
     let artist_hits: Vec<_> = artists.iter().map(|&i| m.artists[i].clone()).collect();
+    // A placed row is stored under its own id (ADR-0035), so its page opens that artist.
     let artist_rows = svc
         .store
-        .artists(artist_hits.iter().map(|a| store::artist(a.info())).collect())
+        .artists(
+            artist_hits
+                .iter()
+                .map(|a| lull_core::model::Artist {
+                    id: a.id(),
+                    ..store::artist(a.info())
+                })
+                .collect(),
+        )
         .await?;
     let song_hits: Vec<&SongHit> = found.iter().map(|&i| &m.songs[i]).collect();
+    // What is shown carries the artist each song and album is placed on; what is stored keeps the
+    // name's id (ADR-0035's overlay).
+    let mut found_tracks = found_tracks;
+    if m.namesakes {
+        for (t, hit) in found_tracks.iter_mut().zip(&song_hits) {
+            t.artist_id = hit.artist_id();
+        }
+        for t in tracks.iter_mut() {
+            if let Some(hit) = songs
+                .iter()
+                .map(|&i| &m.songs[i])
+                .find(|h| h.saved.as_ref().is_some_and(|s| s.id == t.id))
+            {
+                t.artist_id = hit.artist_id();
+            }
+        }
+        for (row, hit) in album_rows.iter_mut().zip(&album_hits) {
+            row.artist_id = hit.artist_id();
+        }
+    }
     let artist_ids = artist_ids(&artist_rows, &artist_hits, &found_tracks, &song_hits);
     svc.store.artist_sources(artist_ids).await?;
     tracks.extend(found_tracks);

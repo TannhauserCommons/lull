@@ -662,6 +662,7 @@ pub fn artists_of(body: Value) -> Result<Vec<ArtistHit>> {
     Ok(Page::<RawArtist>::of(body, "artists")?
         .into_iter()
         .map(|a| ArtistHit {
+            placed: None,
             image: a.image(),
             popularity: a.nb_fan.map_or(0.0, |f| popularity(f, FULL_FANS)),
             audience: a.nb_fan,

@@ -6,6 +6,7 @@ mod art;
 mod artist;
 mod feed;
 mod mix;
+mod namesakes;
 mod open;
 mod pages;
 mod picking;

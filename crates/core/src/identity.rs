@@ -427,7 +427,7 @@ fn exact(conn: &Connection, artist: &ArtistId) -> Result<Vec<Anchor>> {
 
 /// Two sets of exact anchors are two artists when they share none and hold different ids of one
 /// source, or when either holds the listener's word (theirs joins only by the listener's word).
-fn tells_apart(ours: &[Anchor], theirs: &[Anchor]) -> bool {
+pub fn tells_apart(ours: &[Anchor], theirs: &[Anchor]) -> bool {
     let exact = |a: &&Anchor| a.source().is_some();
     if ours.iter().filter(exact).any(|a| theirs.contains(a)) {
         return false;

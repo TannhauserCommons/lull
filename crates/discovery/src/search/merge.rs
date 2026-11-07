@@ -195,6 +195,9 @@ pub struct SongHit {
     /// the row the source gave, never from the name.
     #[serde(default)]
     pub artist_source: Option<ArtistSource>,
+    /// The artist ADR-0035's rule placed the song on (`namesakes::place_rows`), switch on only.
+    #[serde(skip)]
+    pub placed: Option<ArtistId>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -212,6 +215,9 @@ pub struct AlbumHit {
     /// The album in the catalog that found it, for its tracklist.
     #[serde(default)]
     pub source: Option<AlbumSource>,
+    /// The artist ADR-0035's rule placed the album on, switch on only.
+    #[serde(skip)]
+    pub placed: Option<ArtistId>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -227,6 +233,9 @@ pub struct ArtistHit {
     /// The catalogs' own ids for the artist, from the rows they gave, never from the name.
     #[serde(default)]
     pub sources: Vec<ArtistSource>,
+    /// The artist ADR-0035's rule placed the row on, switch on only.
+    #[serde(skip)]
+    pub placed: Option<ArtistId>,
 }
 
 /// A count (fans, listeners, Deezer rank) on a 0..1 log scale where `full` reaches 1.
@@ -273,7 +282,13 @@ impl SongHit {
             popularity: 0.0,
             art: self.art.clone(),
             source: self.album_source,
+            placed: None,
         })
+    }
+
+    /// The song's artist: where ADR-0035's rule placed it, else its name's id.
+    pub fn artist_id(&self) -> ArtistId {
+        self.placed.clone().unwrap_or_else(|| ArtistId::of(&self.artist))
     }
 }
 
@@ -293,6 +308,11 @@ impl AlbumHit {
     pub fn id(&self) -> AlbumId {
         store::album(self.release()).id
     }
+
+    /// The album's artist: where ADR-0035's rule placed it, else its name's id.
+    pub fn artist_id(&self) -> ArtistId {
+        self.placed.clone().unwrap_or_else(|| ArtistId::of(&self.artist))
+    }
 }
 
 impl ArtistHit {
@@ -303,14 +323,17 @@ impl ArtistHit {
         }
     }
 
+    /// Where ADR-0035's rule placed the row, else its name's id.
     pub fn id(&self) -> ArtistId {
-        ArtistId::of(&self.name)
+        self.placed.clone().unwrap_or_else(|| ArtistId::of(&self.name))
     }
 }
 
 /// Every source's rows merged so far.
 #[derive(Debug, Default)]
 pub struct Merged {
+    /// ADR-0035's switch: rows whose ids tell them apart stay apart, whatever their names.
+    pub namesakes: bool,
     pub songs: Vec<SongHit>,
     pub albums: Vec<AlbumHit>,
     pub artists: Vec<ArtistHit>,
@@ -343,6 +366,14 @@ impl Touched {
 }
 
 impl Merged {
+    /// An empty merge; `namesakes` is ADR-0035's switch.
+    pub fn new(namesakes: bool) -> Merged {
+        Merged {
+            namesakes,
+            ..Merged::default()
+        }
+    }
+
     pub fn add(&mut self, found: Found) -> Touched {
         let mut touched = Touched::default();
         for hit in found.songs {
@@ -369,7 +400,7 @@ impl Merged {
             touched.albums.extend(at.filter(|i| !touched.albums.contains(i)));
         }
         for hit in found.artists {
-            let at = match self.artists.iter().position(|a| same_artist(a, &hit)) {
+            let at = match self.artists.iter().position(|a| same_artist(a, &hit, self.namesakes)) {
                 Some(i) => fill_artist(&mut self.artists[i], hit).then_some(i),
                 None => {
                     self.artists.push(hit);
@@ -477,8 +508,10 @@ fn same_album(a: &AlbumHit, b: &AlbumHit) -> bool {
     loose_artist(&a.artist) == loose_artist(&b.artist) && loose_title(&a.title) == loose_title(&b.title)
 }
 
-fn same_artist(a: &ArtistHit, b: &ArtistHit) -> bool {
+fn same_artist(a: &ArtistHit, b: &ArtistHit, namesakes: bool) -> bool {
     loose_artist(&a.name) == loose_artist(&b.name)
+        && !(namesakes
+            && lull_core::identity::tells_apart(&crate::namesakes::anchors(a), &crate::namesakes::anchors(b)))
 }
 
 /// Adds what `hit` knows and `row` doesn't; returns whether anything changed. While the row

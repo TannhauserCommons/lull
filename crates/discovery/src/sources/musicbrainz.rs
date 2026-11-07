@@ -607,6 +607,7 @@ pub fn release_groups(body: serde_json::Value) -> Result<Found> {
             .filter_map(|g| {
                 let (artist, _) = credited(&g.artist_credit)?;
                 Some(AlbumHit {
+                    placed: None,
                     kind: release_kind(g.primary_type.as_deref(), &g.secondary_types),
                     date: g.first_release_date.filter(|d| !d.is_empty()),
                     art: Some(crate::art::cover_archive(&g.id)),
@@ -719,6 +720,7 @@ pub fn recordings(body: serde_json::Value) -> Result<Found> {
             .filter(|name| *name != artist);
         if let (Some(home), Some(group)) = (home, group) {
             out.albums.push(AlbumHit {
+                placed: None,
                 title: home.title.clone(),
                 artist: album_artist.clone().unwrap_or_else(|| artist.clone()),
                 kind: kind(group),
@@ -737,6 +739,7 @@ pub fn recordings(body: serde_json::Value) -> Result<Found> {
                 .any(|a| a.mbid.as_deref() == Some(c.artist.id.as_str()))
             {
                 out.artists.push(ArtistHit {
+                    placed: None,
                     name: c.name.clone(),
                     mbid: Some(c.artist.id.clone()),
                     popularity: 0.0,
@@ -747,6 +750,7 @@ pub fn recordings(body: serde_json::Value) -> Result<Found> {
             }
         }
         out.songs.push(SongHit {
+            placed: None,
             saved: None,
             title: r.title,
             album: home.map(|h| h.title.clone()).unwrap_or_default(),

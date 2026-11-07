@@ -699,6 +699,7 @@ pub fn songs(body: Value) -> Result<Found> {
         let source = r.collection_id.map(AlbumSource::Itunes);
         if !album.is_empty() {
             found.albums.push(AlbumHit {
+                placed: None,
                 title: album.clone(),
                 artist: album_artist.clone().unwrap_or_else(|| artist.clone()),
                 kind: Some(kind.clone()),
@@ -797,6 +798,7 @@ pub fn albums(body: Value) -> Result<Found> {
                 kind
             };
             Some(AlbumHit {
+                placed: None,
                 title,
                 kind: Some(kind.to_owned()),
                 date: r.release_date.as_deref().and_then(|d| d.get(..10)).map(str::to_owned),
