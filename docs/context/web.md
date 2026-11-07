@@ -21,7 +21,9 @@ data.js      window.LullData = App.data: API client (the same read made twice at
              forgets the reads on their way), entity cache, per-route reads, the event stream
 player-rules.js  window.LullRules: the player's rules (what the queue moves to, plays, levels, preloading, radio,
              seeking, better copies), pure; app.js follows them and so does the desktop's native Classic player
-             (tests/player-rules.json, tested on both sides)
+             (tests/player-rules.json, tested on both sides). Its `playingCopy` is the page's alone (tests/web/playing-copy.test.mjs):
+             where the playing song comes from (device, library, soulseek, youtube), what to call it, its format when known; the
+             player bar, Now Playing and source details all read it, so they can't disagree (`App.player.playingCopy()`)
 align.js     window.LullAlign: how far apart two recordings of one moment are (switching to a better copy); pure,
              tested by tests/web/align.test.mjs (`node --test`, part of `mise run check`)
 eq.js        window.LullEq: the equaliser's settings (per device), its curve and automatic level, its Web Audio chain;

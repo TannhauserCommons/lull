@@ -1157,6 +1157,7 @@
   /* quality chip: outlined by default; { solid: true } for player bar / device; { button: true } opens source details */
   ui.qualityChip = function (fmt, opts) {
     opts = opts || {};
+    if (!fmt) return '';   // a format nobody knows yet is no chip, never an empty one
     var f = M.formats[fmt] || { label: fmt, lossless: false };
     /* a YouTube copy's own chip ("YouTube · Opus 160", docs/context/youtube.md): never a peer file's format */
     var cls = 'q-chip ' + (f.lossless ? 'q-chip--ll' : 'q-chip--ly') + (opts.solid ? ' q-chip--solid' : '') + (/^YouTube /.test(String(fmt)) ? ' q-chip--yt' : '');
@@ -2653,7 +2654,7 @@
     }
     if (now !== 'switch') return;
     var t = M.track(e.trackId); if (!t) return;
-    var id = encodeURIComponent(t.id), from = playingFormat(t) || (ps.peer && ps.peer.format), at = ps.pos;
+    var id = encodeURIComponent(t.id), from = P.playingCopy().format, at = ps.pos;
     var url = M.url('/api/stream/' + id + '/copy?peer=' + encodeURIComponent(up.peer) + '&path=' + encodeURIComponent(up.path));
     switching = true; up.state = 'switching'; releaseNext(); changed('source');
     out.switchTo(item(e, t, url), { commit: function () {
@@ -3280,6 +3281,12 @@
     }
   };
 
+  /* the copy that plays: LullRules.playingCopy over what the player knows (its rules say what each part means) */
+  P.playingCopy = function () {
+    var t = P.current(); if (!t) return null;
+    return LullRules.playingCopy({ track: t, e: cur, status: ps.status, peer: ps.peer, saved: App.isSaved(t.id), received: ps.received, library: state.services.library.mode });
+  };
+
   /* the state in words, whatever the state, for a theme to show (docs/themes.md: data-status-text, --status-text): the
      state tab's line where there is one, the hub's reason for a failure among them; else what plays from where */
   P.stateWords = function () {
@@ -3637,6 +3644,7 @@
     var x = svc.extra || {}, patch = { state: svc.state, detail: svc.detail };
     if (name === 'cache') { patch.usedGB = Math.round((x.usedBytes || 0) / 1e8) / 10; patch.capGB = Math.round((x.capBytes || 0) / 1e8) / 10; }
     if (name === 'lastfm') patch.queued = x.queued || 0;
+    if (name === 'library') patch.mode = x.mode || null;   // folder | jellyfin: what source details call the library
     App.setService(name, patch);
   }
   App.setService = function (key, patch) {
@@ -3829,7 +3837,7 @@
     var now = $('#pbar-now');
     /* private listening shows with the track, wherever the design puts it: the bar's tools are laid out per design */
     var priv = state.privateListening ? html`<a class="pbar__private" href="#/settings/privacy" aria-label="Private listening is on. Open its setting" data-tip="Private listening: nothing you play here is recorded or scrobbled" data-fit="4">${icon('eye-off')}<span class="pbar__private-label">Private</span></a>` : '';
-    var nowMarkup;
+    var nowMarkup, copy = idle ? null : P.playingCopy(), yt = !!copy && copy.where === 'youtube';
     if (idle) {
       nowMarkup = html`<span class="bezel-thumb bezel-thumb--empty" aria-hidden="true"><span></span></span><div class="pbar__idle">${priv || html`${icon('sparkle')}<span>Search or pick something from Home</span>`}</div>`;
     } else {
@@ -3841,7 +3849,7 @@
           ${ui.playingFrom('pbar__from', null, { fit: 1 })}
           <div class="pbar__title" data-fit-keep>${fromPath ? html`<a href="#${fromPath}" data-act="go-playing" data-tip="Show the song in ${App.placeName(from)}">${t.title}</a>` : html`<a href="#/album/${t.albumId}">${t.title}</a>`}</div>
           <div class="pbar__artist" data-fit-keep><a href="#/artist/${t.artistId}">${t.artist}</a></div>
-          <div class="pbar__badges" data-fit-row>${playingYoutube() ? '' : ui.sourceBadge(t, { button: true, fit: 1 })}${playingFormat(t) ? ui.qualityChip(playingFormat(t), { solid: true, button: true, id: t.id, fit: 3 }) : ''}${ps.belowMinimum ? ui.belowBadge({ fit: 2 }) : ''}${playingYoutube() && ps.unverified ? html`<span class="pbar__ask" data-fit="5"><span class="pbar__ask-q" data-fit="2">Unverified. Right song?</span><button class="btn btn--quiet btn--sm" data-act="verify" data-answer="yes" aria-label="Right song: yes" data-tip="Unverified copy. Right song?">Yes</button><button class="btn btn--quiet btn--sm" data-act="verify" data-answer="no" aria-label="Right song: no, play another copy" data-tip="Unverified copy. Right song?">No</button></span>` : ''}${priv}</div>
+          <div class="pbar__badges" data-fit-row>${yt ? '' : ui.sourceBadge(t, { button: true, fit: 1 })}${copy.format ? ui.qualityChip(copy.format, { solid: true, button: true, id: t.id, fit: 3 }) : ''}${ps.belowMinimum ? ui.belowBadge({ fit: 2 }) : ''}${yt && ps.unverified ? html`<span class="pbar__ask" data-fit="5"><span class="pbar__ask-q" data-fit="2">Unverified. Right song?</span><button class="btn btn--quiet btn--sm" data-act="verify" data-answer="yes" aria-label="Right song: yes" data-tip="Unverified copy. Right song?">Yes</button><button class="btn btn--quiet btn--sm" data-act="verify" data-answer="no" aria-label="Right song: no, play another copy" data-tip="Unverified copy. Right song?">No</button></span>` : ''}${priv}</div>
         </div>
         <div class="pbar__acts" data-fit="2">${ui.likeButton(t.id)}${saveButton(t)}</div>`;
     }
@@ -3914,10 +3922,6 @@
     updateSeeks();
     updateMediaSession();
   }
-  /* the format actually playing: the picked peer's file for Soulseek, the library file otherwise */
-  function playingFormat(t) { return ps.peer && ps.status !== 'library' ? ps.peer.format || t.format : t.format; }
-  /* the song plays from YouTube: its own chip ("YouTube · Opus 160") says so, not the Soulseek badge */
-  function playingYoutube() { return !!(ps.peer && ps.status !== 'library' && ps.peer.name === 'YouTube'); }
   App.on('player', renderBar);
   App.on('player', function (k) { if (k === 'track' || k === 'queue') ui.warmArt(P.upNext(1)[0]); });
   App.on('save', function (d) { if (d.id === P.currentId()) renderBar(); });

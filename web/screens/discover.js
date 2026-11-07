@@ -1230,39 +1230,53 @@
   /* --- source details (the playing item) --- */
   function xferState() {
     var ps = P.state;
-    if (ps.status === 'library') return ['ok', 'from your library'];
     if (ps.status === 'finding') return ['warn', 'looking for peers'];
     if (ps.status === 'queued') return ['warn', 'queued at peer, position ' + ps.queuePos];
     if (ps.status === 'stalled') return ['down', 'stalled'];
     if (ps.status === 'failed') return ['down', 'failed'];
+    if (!ps.peer) return ['warn', 'connecting to a peer'];
     return ps.received >= 1 ? ['ok', 'complete'] : ['ok', 'transferring'];
   }
   function detailsBody() {
     var t = P.current(), ps = P.state;
     if (!t) return ui.emptyState({ art: 'slot', title: 'Nothing playing', text: 'Play something and its source shows up here.', action: { label: 'Go home', href: '#/home' } });
-    var save = App.saves.get(t.id), st = xferState();
-    if (ps.status === 'library' || !ps.peer) {
-      var f0 = fmt(t.format);
+    var save = App.saves.get(t.id), st = xferState(), cp = P.playingCopy();
+    var f = cp.format ? fmt(cp.format) : null, chip = ui.qualityChip(cp.format, { solid: true });
+    var formatRow = f ? html`<div><dt>Format</dt><dd>${f.codec}${detail(f) ? ', ' + detail(f) : ''}</dd></div>` : '';
+    if (cp.where === 'library' || cp.where === 'device') {
       return html`${sheetHead(t)}<div class="source-card">
-          <div class="source-card__head">${icon('saved')}<span>Playing from <b>your library</b> via Jellyfin</span>${ui.qualityChip(t.format, { solid: true })}</div></div>
+          <div class="source-card__head">${icon('saved')}<span>Playing from <b>${cp.name}</b></span>${chip}</div></div>
         <dl class="disc-kv">
-          <div><dt>Format</dt><dd>${f0.codec}${detail(f0) ? ', ' + detail(f0) : ''}</dd></div>
-          ${t.kbps || f0.kbps ? html`<div><dt>Bitrate</dt><dd class="px">${t.kbps || f0.kbps} kbps</dd></div>` : ''}
+          ${formatRow}
+          ${t.kbps || (f && f.kbps) ? html`<div><dt>Bitrate</dt><dd class="px">${t.kbps || f.kbps} kbps</dd></div>` : ''}
           ${t.sizeMB ? html`<div><dt>Size</dt><dd class="px">${size(t.sizeMB)}</dd></div>` : ''}
           <div><dt>State</dt><dd>${ui.statusGlyph('ok')} saved, plays at once</dd></div>
         </dl>`;
     }
-    var peer = ps.peer, f = fmt(peer.format || t.format), total = peer.sizeMB || t.sizeMB, kbps = f.kbps || t.kbps;
+    var peer = cp.peer;
+    if (!peer) {
+      return html`${sheetHead(t)}<div class="source-card">
+          <div class="source-card__head">${icon('soulseek')}<span>Streaming from <b>Soulseek</b></span>${chip}
+            <span class="source-card__stat" data-d="recv">${Math.round(cp.received * 100)}% arrived</span></div>
+          ${save ? ui.pipeline(save.step, save.status === 'pending' ? 'saving' : save.status, save.error) : ''}
+        </div>
+        <dl class="disc-kv">
+          ${formatRow}
+          ${t.sizeMB ? html`<div><dt>Size</dt><dd class="px">${size(t.sizeMB)}</dd></div>` : ''}
+          <div><dt>State</dt><dd data-d="state">${ui.statusGlyph(st[0])} ${st[1]}</dd></div>
+        </dl>`;
+    }
+    var total = peer.sizeMB || t.sizeMB, kbps = (f && f.kbps) || t.kbps;
     var path = ps.source && ps.source.peer === peer.name ? ps.source.path : null;
     return html`${sheetHead(t)}
       <div class="source-card">
-        <div class="source-card__head">${icon('soulseek')}<span>Streaming from <b>${peer.name}</b></span>${ui.qualityChip(f.label, { solid: true })}
+        <div class="source-card__head">${icon('soulseek')}<span>Streaming from <b>${peer.name}</b></span>${chip}
           <span class="source-card__stat" data-d="speed">${mbps(peer.speed)}</span><span class="source-card__stat" data-d="recv">${Math.round(ps.received * 100)}%${total ? ' of ' + size(total) : ''}</span></div>
         ${save ? ui.pipeline(save.step, save.status === 'pending' ? 'saving' : save.status, save.error) : ''}
       </div>
       <dl class="disc-kv">
         <div><dt>Peer</dt><dd><b>${peer.name}</b>, source ${peer.rank}${peer.of ? ' of ' + peer.of : ''}</dd></div>
-        <div><dt>Format</dt><dd>${f.codec}${detail(f) ? ', ' + detail(f) : ''}</dd></div>
+        ${formatRow}
         ${kbps ? html`<div><dt>Bitrate</dt><dd class="px">${kbps} kbps</dd></div>` : ''}
         ${total ? html`<div><dt>Size</dt><dd class="px">${size(total)}</dd></div>` : ''}
         <div><dt>Speed</dt><dd class="px" data-d="speed">${mbps(peer.speed)}</dd></div>
@@ -1276,17 +1290,23 @@
         })}<li>${ui.statusGlyph('ok')}<span>Now from <b>${peer.name}</b>, kept your position</span></li></ol>`
         : html`<p class="disc-note">No fallbacks. The first peer has held up.</p>`}`;
   }
+  /* what the dialog shows changes shape with this: where the copy plays from, and whether a peer has answered */
+  function copyKey() { var cp = P.playingCopy(); return cp ? cp.where + (cp.peer ? '/' + cp.peer.name : '') + (cp.format || '') : ''; }
   function openDetails() {
-    var t = P.current(), offTick = null, offPlayer = null;
+    var t = P.current(), offTick = null, offPlayer = null, shown = copyKey();
     var sh = App.openSheet({ title: 'source details', className: 'disc-sheet', body: html`<div data-region="details">${detailsBody()}</div>`,
       foot: t ? html`<button class="btn" data-act="disc-swap-picker" data-id="${t.id}">${icon('soulseek')}Pick another source</button>${ui.saveButton(t.id)}` : '',
       onMount: function (el) {
         offTick = App.on('tick', function () {
-          var ps = P.state, peer = ps.peer, cur = P.current(); if (!peer || !cur) return;
-          var total = peer.sizeMB || cur.sizeMB, stt = xferState();
-          $$('[data-d="speed"]', el).forEach(function (n) { App.setText(n, mbps(peer.speed)); });
-          $$('[data-d="recv"]', el).forEach(function (n) { App.setText(n, Math.round(ps.received * 100) + '%' + (total ? ' of ' + size(total) : '')); });
-          if (total) $$('[data-d="bytes"]', el).forEach(function (n) { App.setText(n, size(total * ps.received) + ' of ' + size(total)); });
+          var ps = P.state, peer = ps.peer, cur = P.current(); if (!cur) return;
+          if (copyKey() !== shown) { shown = copyKey(); paint('details', detailsBody(), el); return; }   // a peer answered, or the copy changed
+          var total = (peer && peer.sizeMB) || cur.sizeMB, stt = xferState();
+          if (!peer) $$('[data-d="recv"]', el).forEach(function (n) { App.setText(n, Math.round(ps.received * 100) + '% arrived'); });
+          else {
+            $$('[data-d="speed"]', el).forEach(function (n) { App.setText(n, mbps(peer.speed)); });
+            $$('[data-d="recv"]', el).forEach(function (n) { App.setText(n, Math.round(ps.received * 100) + '%' + (total ? ' of ' + size(total) : '')); });
+            if (total) $$('[data-d="bytes"]', el).forEach(function (n) { App.setText(n, size(total * ps.received) + ' of ' + size(total)); });
+          }
           $$('[data-d="state"]', el).forEach(function (n) { if (n.getAttribute('data-was') !== stt[1]) { n.setAttribute('data-was', stt[1]); n.innerHTML = String(html`${ui.statusGlyph(stt[0])} ${stt[1]}`); } });
         });
         offPlayer = App.on('player', function (k) { if (k === 'track' || k === 'source') paint('details', detailsBody(), el); });

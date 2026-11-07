@@ -161,6 +161,26 @@
   /* the copy's level matched to the song's for the fade (it then glides to its own) */
   R.levelMatch = function (song, copy) { return clamp(song / Math.max(copy, 1e-6), 0.5, 2); };
 
+  /* The copy that plays, for every place that says so (the player bar, Now Playing, source details; the page only, so
+     tests/web/playing-copy.test.mjs holds its cases, not player-rules.json). Where it comes from is read from where the
+     bytes come from (e: the queue entry, once its source is known), never from a peer not having spoken yet.
+     s: { track, e: { local, soulseek, url }, status, peer: { name, format } | null, saved, received (0-1), library: folder | jellyfin | null }
+     -> { where: device | library | soulseek | youtube, name (what to call the place; null for Soulseek until a peer answers),
+          library, peer, format (null when unknown: show no chip), received, saved } */
+  R.playingCopy = function (s) {
+    var e = s.e || {}, peer = s.peer || null, lib = s.library || null, where;
+    if (e.local) where = 'device';
+    else if (e.soulseek) where = peer && peer.name === 'YouTube' ? 'youtube' : 'soulseek';
+    else if (e.url) where = 'library';
+    else where = s.status === 'library' || s.status === 'jellyfin-error' ? 'library' : 'soulseek';   // not resolved yet
+    var own = where === 'library' || where === 'device';
+    return {
+      where: where, library: lib, peer: own ? null : peer, saved: !!s.saved, received: s.received || 0,
+      format: (!own && peer && peer.format) || s.track.format || null,
+      name: where === 'device' ? 'this device' : where === 'library' ? (lib === 'jellyfin' ? 'Jellyfin' : lib === 'folder' ? 'your music folder' : 'your library') : peer ? peer.name : null
+    };
+  };
+
   root.LullRules = R;
   if (typeof module === 'object' && module.exports) module.exports = R;
 })(typeof self !== 'undefined' ? self : this);

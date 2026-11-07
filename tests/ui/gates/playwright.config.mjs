@@ -62,6 +62,8 @@ export default defineConfig({
     { name: 'on-use', testMatch: 'on-use.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     { name: 'open', testMatch: 'open.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     { name: 'now', testMatch: 'now.spec.mjs', fullyParallel: true },
+    // the source details of a stream no peer has answered for say Soulseek, not the library, and draw no empty chip
+    { name: 'source-details', testMatch: 'source-details.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
     // Esc on search goes back to the page before it, where it was
     { name: 'search-esc', testMatch: 'search-esc.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
     // a part still coming never hangs on one push: a missed one is read again, a failed one says so

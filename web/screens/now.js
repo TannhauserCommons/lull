@@ -24,11 +24,8 @@
   function busy() { return ['finding', 'queued', 'buffering', 'stalled'].indexOf(ps.status) >= 0; }
   function playingNow() { return ps.playing && cur() && ['idle', 'ended', 'failed', 'jellyfin-error'].indexOf(ps.status) < 0; }
   function onRoute() { return App.current.path === '/now'; }
-  /* the song plays from the library (Jellyfin), not a Soulseek peer; a saved song buffers before it plays */
-  function fromLibrary(t) {
-    if (ps.status === 'library' || ps.status === 'jellyfin-error') return true;
-    return ps.status === 'buffering' && !ps.peer && App.isSaved(t.id);
-  }
+  /* the song plays from storage (the library, or a download on this device), not from a transfer; the copy says so */
+  function fromLibrary() { var w = P.playingCopy().where; return w === 'library' || w === 'device'; }
   function peerName() { return ps.peer ? ps.peer.name : 'a peer'; }
   /* "2 of 7" ("2/7" with sep '/') once the number of answering peers is known, else "2" */
   function rankOf(n, sep) { return ps.peer && ps.peer.of ? n + (sep || ' of ') + ps.peer.of : String(n); }
@@ -88,7 +85,7 @@
     return html`<button class="now-sbtn" data-act="${act}" ${id ? raw('data-id="' + App.esc(id) + '"') : ''} data-fk="sbtn-${act}">${label}</button>`;
   }
   function nowFacts(t) {
-    var chip = ui.qualityChip(fromLibrary(t) || !ps.peer ? t.format : ps.peer.format || t.format, { solid: true });
+    var cp = P.playingCopy(), chip = ui.qualityChip(cp.format, { solid: true });
     switch (ps.status) {
       case 'finding': return html`${chip}<span class="device__fact"><span class="spin-ring" aria-hidden="true"></span>${ps.peersFound}&nbsp;peers</span>`;
       case 'queued': return html`${chip}<span class="device__fact">${ps.queuePos ? 'queue #' + ps.queuePos : 'queued'}</span>`;
@@ -97,7 +94,7 @@
       case 'jellyfin-error': return screenBtn('try soulseek', 'try-soulseek');
       case 'ended': return html`${screenBtn('replay', 'play')}${screenBtn('radio', 'start-radio-current')}`;
       default:
-        if (fromLibrary(t)) return html`${chip}<span class="device__fact">library</span>`;
+        if (fromLibrary()) return html`${chip}<span class="device__fact">${cp.where === 'device' ? 'this device' : 'library'}</span>`;
         return html`${chip}<span class="device__fact">peer&nbsp;<span data-bind="received">${Math.round(ps.received * 100)}%</span></span>`;
     }
   }
@@ -112,8 +109,9 @@
   }
   function pageSource(t) {
     if (!t) return kv([['source', 'none']]);
-    if (fromLibrary(t)) {
-      return kv([['source', 'jellyfin'], ['format', t.format], ['size', App.fmt.size(t.sizeMB)], ['state', ps.status === 'jellyfin-error' ? 'missing' : 'saved']]);
+    if (fromLibrary()) {
+      var cp = P.playingCopy();
+      return kv([['source', cp.name]].concat(cp.format ? [['format', cp.format]] : [], [['size', App.fmt.size(t.sizeMB)], ['state', ps.status === 'jellyfin-error' ? 'missing' : 'saved']]));
     }
     if (!ps.peer) return kv([['source', 'soulseek'], ['state', stateText()], ['peers', ps.peersFound]]);
     var s = peerSource(t), last = ps.failedPeers[ps.failedPeers.length - 1];
@@ -289,9 +287,9 @@
     var src = peerSource(t);
     var size = (ps.peer && ps.peer.sizeMB) || (src && src.sizeBytes / 1e6) || t.sizeMB;
     /* buffering after a peer fallback, or from the library: the engine's own sentence says which */
-    if (ps.status === 'buffering' && (ps.fallback || fromLibrary(t))) return html`${icon(ps.fallback ? 'refresh' : 'saved')}<span>${P.statusText()}</span>`;
+    if (ps.status === 'buffering' && (ps.fallback || fromLibrary())) return html`${icon(ps.fallback ? 'refresh' : 'saved')}<span>${P.statusText()}</span>`;
     switch (ps.status) {
-      case 'library': return html`${icon('saved')}<span>Playing from <b>your library</b></span>${ui.qualityChip(t.format, { solid: true })}<span class="source-card__stat">jellyfin</span>`;
+      case 'library': return html`${icon('saved')}<span>Playing from <b>${P.playingCopy().name}</b></span>${ui.qualityChip(P.playingCopy().format, { solid: true })}`;
       case 'jellyfin-error': return html`${icon('warning')}<span><b>Library item unavailable.</b> ${ps.error || ''}</span><button class="btn btn--sm" data-act="try-soulseek" data-fk="src-try">Try Soulseek instead</button>`;
       case 'finding': return html`${icon('soulseek')}<span>Finding a source, <b>${ps.peersFound}</b> peers answered</span>`;
       case 'choose': return html`${icon('warning')}<span><b>No copy meets your streaming minimum.</b> Pick one or skip.</span><button class="btn btn--sm" data-act="pick-source" data-fk="src-choose">Pick a copy</button>`;
@@ -299,7 +297,7 @@
       case 'failed': return html`${icon('warning')}<span><b>${P.statusText()}</b></span><button class="btn btn--sm" data-act="retry-search" data-fk="src-retry">Retry search</button>`;
       case 'stalled': return html`${icon('refresh')}<span><b>${peerName()}</b> stalled, switching to source ${rankOf(nextRank())}</span><button class="btn btn--sm" data-act="pick-source" data-fk="src-pick">Choose manually</button>`;
       case 'ended': return html`${icon('info')}<span>End of queue</span><button class="btn btn--sm" data-act="start-radio-current" data-fk="src-radio">Start radio</button>`;
-      default: return html`${icon('soulseek')}<span>Streaming from <b>${peerName()}</b></span>${ui.qualityChip(ps.peer && ps.peer.format || t.format, { solid: true })}${ps.belowMinimum ? ui.belowBadge() : ''}<span class="source-card__stat">${mbps(ps.peer && ps.peer.speed)}</span><span class="source-card__stat"><span data-bind="received">${Math.round(ps.received * 100)}%</span> of ${App.fmt.size(size)}</span>`;
+      default: return html`${icon('soulseek')}<span>Streaming from <b>${peerName()}</b></span>${ui.qualityChip(P.playingCopy().format, { solid: true })}${ps.belowMinimum ? ui.belowBadge() : ''}<span class="source-card__stat">${mbps(ps.peer && ps.peer.speed)}</span><span class="source-card__stat"><span data-bind="received">${Math.round(ps.received * 100)}%</span> of ${App.fmt.size(size)}</span>`;
     }
   }
   function saveState(t) {
@@ -311,14 +309,14 @@
       <div class="pipeline__text"><span class="pipeline__step">not saved</span><span class="pipeline__label">Save keeps a tagged copy in your library</span></div></div>`;
   }
   function sourceDetails(t) {
-    var src = peerSource(t), lib = fromLibrary(t), known = sources[t.id] && sources[t.id].data;
+    var src = peerSource(t), lib = fromLibrary(), cp = P.playingCopy(), known = sources[t.id] && sources[t.id].data;
     var rows = [['Album', html`<a class="link" href="#/album/${t.albumId}">${t.album}</a>${t.year ? ', ' + t.year : ''}`],
-      ['Format', (!lib && ps.peer && ps.peer.format) || t.format || 'unknown']];
+      ['Format', cp.format || 'unknown']];
     if (!lib && ps.peer) {
       rows.push(['Peer', ps.peer.name + ', source ' + rankOf(ps.peer.rank)]);
       if (src) rows.push(['Upload slot', src.freeSlot ? 'Free now' : 'Queue of ' + (src.queue || 0)]);
       rows.push(['Speed', mbps(ps.peer.speed)]);
-    } else rows.push(['Source', lib ? 'Jellyfin library' : 'Soulseek, ' + stateText()]);
+    } else rows.push(['Source', lib ? cp.name.charAt(0).toUpperCase() + cp.name.slice(1) : 'Soulseek, ' + stateText()]);
     rows.push(['Size', App.fmt.size((ps.peer && ps.peer.sizeMB) || t.sizeMB)]);
     if (ps.failedPeers.length) rows.push(['Fallbacks', ps.failedPeers.map(stalledAt).join(', ')]);
     if (!lib && ps.upgrade) rows.push(['Better copy', betterCopy(ps.upgrade)]);
