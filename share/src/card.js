@@ -1,7 +1,7 @@
 // lull's card in Discord (docs/adr/0034, "The Discord card"): a component embed, Discord's own layout for a site's
 // link, which Discord fetches from the page's `discord:component-embed` link. Everything in it comes from the link,
 // except the colour along its edge, which is the cover's when the cover's lookup has read it.
-//   Song shared from lull                 ┌──────┐
+//   Song shared from lull                 ┌──────┐   ("lull" links to lull's repository)
 //   Glory Box                             │cover │
 //   Portishead                            └──────┘
 //   Dummy · 5:01
@@ -18,6 +18,8 @@ const MAX_BYTES = 3000;
 const MAX_BUTTON_URL = 512;
 const MAX_URL = 2048;
 const NOUN = { song: 'Song', album: 'Album', artist: 'Artist' };
+/** Where "lull" in the card leads: what lull is, and how to get it. */
+const LULL = 'https://github.com/TannhauserCommons/lull';
 
 /**
  * The card for `item`, as Discord's JSON, with `colour` (`#rrggbb`) along its edge; null when it doesn't fit Discord's
@@ -28,7 +30,7 @@ export function discordCard(origin, item, colour = ACCENT) {
   const page = pageUrl(origin, item);
   const cover = coverUrl(origin, item);
   if (cover.length > MAX_URL) return null;
-  const lines = [`-# ${NOUN[kind]} shared from lull`, '### ' + md(kind === 'artist' ? names.artist : names.title)];
+  const lines = [`-# ${NOUN[kind]} shared from [lull](${LULL})`, '### ' + md(kind === 'artist' ? names.artist : names.title)];
   if (kind !== 'artist') lines.push(md(names.artist));
   if (kind === 'song') {
     const more = [ids.al && md(ids.al), ids.len && duration(+ids.len)].filter(Boolean);

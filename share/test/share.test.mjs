@@ -223,7 +223,7 @@ test('Discord gets lull\'s card: the link\'s words, its cover beside them, the c
     const edge = [16, 8, 0].map((shift) => (component.accent_color >> shift) & 255);
     assert.ok(edge.every((v, i) => Math.abs(v - [52, 110, 190][i]) <= 4), `the edge ${edge} is the cover's colour`);
     const [section, row] = component.components;
-    assert.equal(section.components[0].content, '-# Song shared from lull\n### Glory Box\nPortishead\n-# Dummy · 5:05');
+    assert.equal(section.components[0].content, '-# Song shared from [lull](https://github.com/TannhauserCommons/lull)\n### Glory Box\nPortishead\n-# Dummy · 5:05');
     assert.deepEqual(section.accessory, { type: 11, media: { url: HOST + COVER }, description: 'Cover of Dummy by Portishead' });
     assert.deepEqual(row.components, [
       { type: 2, style: 5, label: 'Open in lull', url: HOST + SONG },
@@ -240,13 +240,13 @@ test('a card with no cover\'s colour is lull\'s, names are printed as they are, 
   await withWorker(internet(), async (w) => {
     const album = (await (await w.get('/1/album/Nobody/Untitled/card')).json()).component;
     assert.equal(album.accent_color, 0x3d3491, 'no source has a cover: lull\'s colour');
-    assert.equal(album.components[0].components[0].content, '-# Album shared from lull\n### Untitled\nNobody');
+    assert.equal(album.components[0].components[0].content, '-# Album shared from [lull](https://github.com/TannhauserCommons/lull)\n### Untitled\nNobody');
     assert.deepEqual(album.components[1].components[1], { type: 2, style: 5, label: 'Last.fm', url: 'https://www.last.fm/music/Nobody/Untitled' });
 
     const name = '#1 *Hits* <@everyone> [x](y)';
     const artist = (await (await w.get(`/1/artist/${encodeURIComponent(name)}/card`)).json()).component;
     assert.equal(artist.components[0].components[0].content,
-      '-# Artist shared from lull\n### \\#1 \\*Hits\\* \\<\\@everyone\\> \\[x\\]\\(y\\)', 'no markup, no mention');
+      '-# Artist shared from [lull](https://github.com/TannhauserCommons/lull)\n### \\#1 \\*Hits\\* \\<\\@everyone\\> \\[x\\]\\(y\\)', 'no markup, no mention');
 
     const long = encodeURIComponent('夜'.repeat(200));
     const song = `/1/song/${long}/${long}`;

@@ -40,7 +40,7 @@ For every lull install, in any market (ADR-0034, "For every lull"): links hold p
 ## Discord's card
 
 Discord shows lull's own card for a link, a [component embed](https://docs.discord.com/developers/link-previews/component-embeds): the page links `…/card` (`<link rel="discord:component-embed">`, on the host the page was asked at, as Discord requires), and everyone else reads the Open Graph tags.
-- **What it holds:** "Song shared from lull", the title, the artist, the album and length; the cover beside them (`…/cover`); buttons "Open in lull" (the page) and "Every music app" (song.link or album.link) or "Last.fm". Names are escaped for Discord's markdown.
+- **What it holds:** "Song shared from lull" ("lull" links to lull's repository), the title, the artist, the album and length; the cover beside them (`…/cover`); buttons "Open in lull" (the page) and "Every music app" (song.link or album.link) or "Last.fm". Names are escaped for Discord's markdown.
 - **Its edge** is the cover's colour (above), waited for 2.5 s, which also starts the cover's lookup; else lull's `--primary`. Cached a day once known, a minute while it's looked for.
 - **Limits:** 3,000 bytes, link buttons' addresses 512 characters, any address 2,048. A card that can't fit (very long names in scripts that percent-encode long) isn't linked, and Discord shows the Open Graph card.
 - **Not possible for a site:** a player, a preview or any audio, a card filled with a colour, a logo beside the title. Spotify's card is Discord's own.
