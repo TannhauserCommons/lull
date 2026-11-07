@@ -23,6 +23,29 @@
   :root[data-design="skydeck"]:not([data-motion="reduce"]) .egg-line { animation: sd-egg-print .5s steps(5) both; }
 }
 @keyframes sd-egg-print { from { opacity: 0; translate: 0 10px; } to { opacity: 1; translate: 0 0; } }
+/* Where the marks that stay put go (ADR-0081: an egg never sits on a control): the player bar's upper-right corner is empty
+   cream above its tools, so the line is printed there as a small ticket (and the new year's stars and the milestone's crown
+   are printed beside it). Narrower than 1100 px the bar has no free corner, so the line is a slip that rises from above the
+   bar and fades as it goes (a moving mark passes over things; it never rests on one), and under reduced motion it is only
+   read out (it stays in the live region, off the page). */
+@keyframes sd-egg-rise { 0% { opacity: 0; translate: 0 0; } 8% { opacity: 1; } 78% { opacity: 1; } 100% { opacity: 0; translate: 0 -150px; } }
+@media (min-width: 1100px) {
+  :root[data-design="skydeck"] .egg-line {
+    left: auto; right: 36px; bottom: calc(var(--bar-h) - 9px); transform: none; gap: 7px; padding: 4px 12px 3px 9px; border-radius: 11px; white-space: nowrap;
+    font: 900 .6875rem/1 var(--f-ui); letter-spacing: .14em; box-shadow: inset 0 0 0 2px var(--cream), inset 0 0 0 3px var(--sd-soft);
+  }
+  :root[data-design="skydeck"] .egg-line::before { width: 11px; height: 11px; }
+}
+@media (max-width: 1099px) {
+  :root[data-design="skydeck"] .egg-line { width: max-content; }
+  @media (prefers-reduced-motion: no-preference) {
+    :root[data-design="skydeck"]:not([data-motion="reduce"]) .egg-line { animation: sd-egg-rise 7s linear both; }
+  }
+  :root[data-design="skydeck"][data-motion="reduce"] .egg-line { clip-path: inset(50%); width: 1px; height: 1px; padding: 0; border-width: 0; overflow: hidden; white-space: nowrap; }
+}
+@media (max-width: 1099px) and (prefers-reduced-motion: reduce) {
+  :root[data-design="skydeck"] .egg-line { clip-path: inset(50%); width: 1px; height: 1px; padding: 0; border-width: 0; overflow: hidden; white-space: nowrap; }
+}
 
 /* ---------- a word in the song's title: its sign is stamped after the title in the player bar, in a ring ---------- */
 :root[data-design="skydeck"][data-egg~="moon"] { --egg-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z' fill='%232b2550'/%3E%3C/svg%3E"); }
@@ -76,17 +99,16 @@
 @media (prefers-reduced-motion: reduce) { :root[data-design="skydeck"] [data-egg-of="birthday"] { display: none; } }
 :root[data-design="skydeck"][data-motion="reduce"] [data-egg-of="birthday"] { display: none; }
 
-/* ---------- the last seconds of the year: the numerals are the hours on the wheel, in a round card, ringed by ten stars going out ---------- */
+/* ---------- the last seconds of the year: the numerals are the hours on the wheel, printed in the ticket, ten stars in a row beside it going out ---------- */
 :root[data-design="skydeck"][data-egg~="new-year"] .egg-line {
-  top: 50%; bottom: auto; transform: translate(-50%, -50%); width: 192px; height: 192px; padding: 0; justify-content: center; border-radius: 50%;
-  font: 700 4.75rem/1 Georgia, "Times New Roman", serif; letter-spacing: 0; text-transform: none; font-variant-numeric: lining-nums;
+  justify-content: center; padding: 5px 22px 4px; font: 700 1.75rem/1 Georgia, "Times New Roman", serif; letter-spacing: 0; text-transform: none; font-variant-numeric: lining-nums;
 }
 :root[data-design="skydeck"][data-egg~="new-year"] .egg-line::before { display: none; }
-@media (prefers-reduced-motion: no-preference) {
-  :root[data-design="skydeck"]:not([data-motion="reduce"])[data-egg~="new-year"] .egg-line { animation: sd-egg-tick 1s steps(5) infinite; animation-play-state: var(--loop-play, running); }
+@media (min-width: 1100px) {
+  :root[data-design="skydeck"][data-egg~="new-year"] .egg-line { padding: 3px 16px 2px; font-size: .9375rem; border-radius: 11px; }
 }
-@keyframes sd-egg-tick { 0% { scale: 1.1; } 100% { scale: 1; } }
-:root[data-design="skydeck"] [data-egg-of="new-year"] { position: absolute; left: 50%; top: 50%; width: 330px; height: 330px; translate: -50% -50%; }
+:root[data-design="skydeck"] [data-egg-of="new-year"] { position: absolute; right: 128px; bottom: calc(var(--bar-h) - 9px); width: 210px; height: 22px; }
+@media (max-width: 1099px) { :root[data-design="skydeck"] [data-egg-of="new-year"] { display: none; } }
 :root[data-design="skydeck"] .sd-ring svg { display: block; width: 100%; height: 100%; overflow: visible; }
 :root[data-design="skydeck"] .sd-ring__star { fill: #dd9fc9; stroke: #2b2550; stroke-width: .7; stroke-linejoin: round; transform-box: fill-box; transform-origin: center; }
 @media (prefers-reduced-motion: no-preference) {
@@ -108,9 +130,10 @@
 :root[data-design="skydeck"][data-egg~="on-repeat"] .egg-line::after { content: ""; flex: none; width: 54px; height: 18px; margin-left: 4px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 20'%3E%3Cpath d='M4 3V17M10 3V17M16 3V17M22 3V17M1 15L25 5M36 3V17M42 3V17M48 3V17M54 3V17M33 15L57 5' fill='none' stroke='%232b2550' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat; }
 :root[data-design="skydeck"][data-egg~="on-repeat"] .sky-specks::before { opacity: .34; }
 
-/* ---------- a likes milestone: a crown of stars on the hour rim's arc, lit one after another over the count ---------- */
-:root[data-design="skydeck"][data-egg~="milestone"] .egg-line { font-size: 1rem; padding: 12px 28px 11px 22px; }
-:root[data-design="skydeck"] [data-egg-of="milestone"] { position: absolute; left: 50%; bottom: calc(var(--bar-h) + 40px + 40px); width: 360px; max-width: calc(100vw - 16px); translate: -50% 0; }
+/* ---------- a likes milestone: a crown of stars beside the count's ticket, lit one after another ---------- */
+:root[data-design="skydeck"][data-egg~="milestone"] .egg-line { padding-inline: 12px 14px; }
+:root[data-design="skydeck"] [data-egg-of="milestone"] { position: absolute; right: 240px; bottom: calc(var(--bar-h) - 9px); width: 260px; height: 22px; }
+@media (max-width: 1279px) { :root[data-design="skydeck"] [data-egg-of="milestone"] { display: none; } }
 :root[data-design="skydeck"] .sd-crown svg { display: block; width: 100%; height: auto; overflow: visible; }
 :root[data-design="skydeck"] .sd-crown__star { fill: #dd9fc9; stroke: #2b2550; stroke-width: .8; stroke-linejoin: round; transform-box: fill-box; transform-origin: center; }
 @media (prefers-reduced-motion: no-preference) {
@@ -165,9 +188,9 @@
   :root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-met { animation: sd-egg-meteor 1.7s cubic-bezier(.35, 0, .75, 1) var(--w, 0s) both; }
 }
 @keyframes sd-egg-meteor { 0% { opacity: 0; translate: 0 0; } 12% { opacity: .95; } 72% { opacity: .95; } 100% { opacity: 0; translate: 560px 225px; } }
-/* at rest (reduced motion) the shower is a print: three of them, over the top of the sky */
-:root[data-design="skydeck"][data-motion="reduce"] :is(.sd-met--4, .sd-met--5) { display: none; }
-@media (prefers-reduced-motion: reduce) { :root[data-design="skydeck"] :is(.sd-met--4, .sd-met--5) { display: none; } }
+/* a shower at rest would be a print lying on the page, so under reduced motion it is not drawn (the line still says it) */
+:root[data-design="skydeck"][data-motion="reduce"] [data-egg-of="meteor-shower"] { display: none; }
+@media (prefers-reduced-motion: reduce) { :root[data-design="skydeck"] [data-egg-of="meteor-shower"] { display: none; } }
 
 /* wheel-set: three quick taps on the name turn the big wheel a whole round, a notch at a time, and light the pins */
 :root[data-design="skydeck"][data-egg~="wheel-set"] :is(.rail, .ctx) { --pin: #e58bbf; }
@@ -177,7 +200,8 @@
 }
 
 /* constellation: the star wheel's horizon window, with the song's constellation lit star by star */
-:root[data-design="skydeck"] [data-egg-of="constellation"] { position: absolute; left: 50%; bottom: calc(var(--bar-h) + 40px + 56px); width: 176px; translate: -50% 0; }
+:root[data-design="skydeck"] [data-egg-of="constellation"] { position: absolute; right: 36px; bottom: calc(var(--bar-h) + 6px); width: 148px; }
+@media (max-width: 1099px) { :root[data-design="skydeck"] [data-egg-of="constellation"] { right: 12px; bottom: calc(var(--bar-h) + 86px); } }
 :root[data-design="skydeck"] .sd-con { position: relative; }
 :root[data-design="skydeck"] .sd-con__sky { display: block; width: 100%; height: auto; overflow: visible; }
 :root[data-design="skydeck"] .sd-con__card { fill: var(--cream); stroke: #2b2550; stroke-width: 1.5; }
@@ -202,8 +226,11 @@
   box-shadow: inset 0 0 0 2px var(--cream), inset 0 0 0 3px var(--sd-soft);
 }
 :root[data-design="skydeck"] .sd-con__name:empty { display: none; }
+/* it only rises (a moving mark), so at rest (reduced motion) it is not drawn: the line says "Look up" */
+:root[data-design="skydeck"][data-motion="reduce"] [data-egg-of="constellation"] { display: none; }
+@media (prefers-reduced-motion: reduce) { :root[data-design="skydeck"] [data-egg-of="constellation"] { display: none; } }
 @media (prefers-reduced-motion: no-preference) {
-  :root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-con { animation: sd-egg-print .5s steps(5) both; }
+  :root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-con { animation: sd-egg-rise 8s linear both; }
 :root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-con__star:nth-child(1) { animation: sd-egg-light .6s steps(6) 0.50s both; }
 :root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-con__star:nth-child(2) { animation: sd-egg-light .6s steps(6) 0.72s both; }
 :root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-con__star:nth-child(3) { animation: sd-egg-light .6s steps(6) 0.94s both; }
@@ -231,6 +258,6 @@
   :root[data-design="skydeck"]:not([data-motion="reduce"]) .sd-comet { animation: sd-egg-comet 8.5s linear both; }
 }
 @keyframes sd-egg-comet { 0% { opacity: 0; translate: 0 0; } 6% { opacity: 1; } 94% { opacity: 1; } 100% { opacity: 0; translate: calc(-100vw - 600px) calc((100vw + 600px) * .06); } }
-/* at rest (reduced motion) the comet is a print, over the sky's right side */
-:root[data-design="skydeck"][data-motion="reduce"] .sd-comet { left: auto; right: 4%; }
-@media (prefers-reduced-motion: reduce) { :root[data-design="skydeck"] .sd-comet { left: auto; right: 4%; } }
+/* a comet at rest would be a print lying on the page, so under reduced motion it is not drawn */
+:root[data-design="skydeck"][data-motion="reduce"] [data-egg-of="comet"] { display: none; }
+@media (prefers-reduced-motion: reduce) { :root[data-design="skydeck"] [data-egg-of="comet"] { display: none; } }

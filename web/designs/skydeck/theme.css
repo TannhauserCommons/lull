@@ -823,6 +823,10 @@
 }
 :root[data-design="skydeck"] .sd-wheel__cap { margin: 0; font: var(--sd-caps); letter-spacing: .24em; text-transform: uppercase; color: var(--ink-2); }
 :root[data-design="skydeck"] .sd-wheel__cap span { color: var(--sd-pink); }
+/* a saved song is stamped "in library" on the card's top-left corner: the caption steps right of the stamp (and clear of the
+   like key), dropping the name, so the stamp never lies over its letters */
+:root[data-design="skydeck"] .now__dev[data-saved="true"] .sd-wheel:not(.sd-wheel--compact) .sd-wheel__cap { justify-self: end; margin-right: 52px; }
+:root[data-design="skydeck"] .now__dev[data-saved="true"] .sd-wheel__cap span { display: none; }
 :root[data-design="skydeck"] .sd-dial { position: relative; width: min(100%, 330px); aspect-ratio: 1; container-type: inline-size; }
 :root[data-design="skydeck"] .sd-dial__rim { position: absolute; inset: 0; background: var(--sd-rim) center / contain no-repeat; pointer-events: none; }
 /* the wave is the dial: a round disc whose bars are printed round the pin */
@@ -933,9 +937,12 @@
 :root[data-design="skydeck"] .sd-wheel__read { display: grid; justify-items: center; gap: 6px; }
 :root[data-design="skydeck"] .sd-wheel__time { display: flex; align-items: baseline; gap: 8px; margin: 0; font-size: 1rem; }
 :root[data-design="skydeck"] .sd-wheel__of { font: var(--sd-caps); letter-spacing: .2em; text-transform: uppercase; color: var(--ink-2); }
-:root[data-design="skydeck"] .sd-wheel__facts { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; margin: 0; }
-:root[data-design="skydeck"] .sd-wheel__state { font: var(--sd-caps); letter-spacing: .18em; text-transform: uppercase; color: var(--sd-pink); }
-:root[data-design="skydeck"] .sd-wheel__facts .device__facts { display: inline-flex; gap: 6px; align-items: center; }
+:root[data-design="skydeck"] .sd-wheel__facts { display: grid; justify-items: center; gap: 8px; margin: 0; }
+/* the status word is the card's own line under the time and the sources the line under it, so no state (a short
+   "paused", a long "finding a source") can move the chips or ask them to share its row; the sources row is as tall as
+   the tallest thing it holds (a chip, a printed retry slip), so the seek and the keys under it never shift */
+:root[data-design="skydeck"] .sd-wheel__state { max-width: 100%; font: var(--sd-caps); line-height: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--sd-pink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:root[data-design="skydeck"] .sd-wheel__facts .device__facts { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; align-items: center; min-height: 26px; }
 :root[data-design="skydeck"] .sd-wheel > .seek { width: 100%; }
 :root[data-design="skydeck"] .sd-wheel__keys { display: flex; align-items: center; justify-content: center; gap: 14px; padding-top: 4px; }
 :root[data-design="skydeck"] .sd-wheel__keys .btn-icon { color: var(--sd-ink); }
@@ -1140,4 +1147,25 @@
 :root[data-design="skydeck"] .sd-empty__needle { transform-origin: 50% 100%; animation: sd-sweep 5s var(--loop-ease-in-out-40) infinite alternate; animation-play-state: var(--loop-play, running); }
 :root.is-hidden[data-design="skydeck"] .sd-empty__needle { animation-play-state: paused; }
 
+}
+
+/* =====================================================================
+   15. The pointer is the wheel's own: an arrow cut like the dial's needle (cream, inked, with a pink spark off its tail),
+   a needle with a star on its end over links and keys (its tip is the point you press), an ink I-beam to type with.
+   Each carries a cream halo so it reads on the night card and on the day one; vector, so sharp at any screen density;
+   the system's own under forced colors.
+   ===================================================================== */
+:root[data-design="skydeck"] {
+  --sd-cur: url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2232%22%20height=%2232%22%20viewBox=%220%200%2032%2032%22%3E%3Cpath%20d=%22M4%203.5L4%2025L9.2%2020.3L12.6%2027.9L16.4%2026.3L13.1%2018.9L20.2%2018.5Z%22%20fill=%22%23f4e8d6%22%20stroke=%22%23f4e8d6%22%20stroke-width=%224.4%22%20stroke-linejoin=%22round%22/%3E%3Cpath%20d=%22M4%203.5L4%2025L9.2%2020.3L12.6%2027.9L16.4%2026.3L13.1%2018.9L20.2%2018.5Z%22%20fill=%22%23f4e8d6%22%20stroke=%22%232b2550%22%20stroke-width=%221.7%22%20stroke-linejoin=%22round%22/%3E%3Cpath%20d=%22M24.8%2020.799999999999997L26.1%2023.9L29.200000000000003%2025.2L26.1%2026.5L24.8%2029.6L23.5%2026.5L20.4%2025.2L23.5%2023.9Z%22%20fill=%22%23f4e8d6%22%20stroke=%22%23f4e8d6%22%20stroke-width=%224.4%22%20stroke-linejoin=%22round%22/%3E%3Cpath%20d=%22M24.8%2020.799999999999997L26.1%2023.9L29.200000000000003%2025.2L26.1%2026.5L24.8%2029.6L23.5%2026.5L20.4%2025.2L23.5%2023.9Z%22%20fill=%22%23dd9fc9%22%20stroke=%22%232b2550%22%20stroke-width=%221.7%22%20stroke-linejoin=%22round%22/%3E%3C/svg%3E") 4 3, auto;
+  --sd-cur-pt: url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2232%22%20height=%2232%22%20viewBox=%220%200%2032%2032%22%3E%3Cpath%20d=%22M16%203L18.4%2016.2L26.8%2019.6L18.4%2023L16%2029.6L13.6%2023L5.2%2019.6L13.6%2016.2Z%22%20fill=%22%23f4e8d6%22%20stroke=%22%23f4e8d6%22%20stroke-width=%224.4%22%20stroke-linejoin=%22round%22/%3E%3Cpath%20d=%22M16%203L18.4%2016.2L26.8%2019.6L18.4%2023L16%2029.6L13.6%2023L5.2%2019.6L13.6%2016.2Z%22%20fill=%22%23dd9fc9%22%20stroke=%22%232b2550%22%20stroke-width=%221.7%22%20stroke-linejoin=%22round%22/%3E%3Ccircle%20cx=%2216%22%20cy=%2219.6%22%20r=%221.6%22%20fill=%22%232b2550%22/%3E%3C/svg%3E") 16 3, pointer;
+  --sd-cur-tx: url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2232%22%20height=%2232%22%20viewBox=%220%200%2032%2032%22%3E%3Cpath%20d=%22M11.5%204.5H20.5M16%204.5V27.5M11.5%2027.5H20.5%22%20fill=%22none%22%20stroke=%22%23f4e8d6%22%20stroke-width=%225%22%20stroke-linecap=%22round%22/%3E%3Cpath%20d=%22M11.5%204.5H20.5M16%204.5V27.5M11.5%2027.5H20.5%22%20fill=%22none%22%20stroke=%22%232b2550%22%20stroke-width=%221.9%22%20stroke-linecap=%22round%22/%3E%3C/svg%3E") 16 16, text;
+}
+:root[data-design="skydeck"] body { cursor: var(--sd-cur); }
+:root[data-design="skydeck"] :is(a[href], button:not(:disabled), [role="button"], [role="tab"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="radio"], [role="switch"], [role="option"], [data-act], label[for], summary, .trow, .tile, .seek, .wave, .btn, .btn-icon, .switch, .chip, .pill-filter) { cursor: var(--sd-cur-pt); }
+:root[data-design="skydeck"] :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="button"], [type="submit"]), textarea, [contenteditable="true"]) { cursor: var(--sd-cur-tx); }
+:root[data-design="skydeck"] :is(:disabled, [aria-disabled="true"]) { cursor: not-allowed; }
+@media (forced-colors: active) {
+  :root[data-design="skydeck"] body { cursor: auto; }
+  :root[data-design="skydeck"] :is(a[href], button:not(:disabled), [role="button"], [role="tab"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="radio"], [role="switch"], [role="option"], [data-act], label[for], summary, .trow, .tile, .seek, .wave, .btn, .btn-icon, .switch, .chip, .pill-filter) { cursor: pointer; }
+  :root[data-design="skydeck"] :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="button"], [type="submit"]), textarea, [contenteditable="true"]) { cursor: text; }
 }
