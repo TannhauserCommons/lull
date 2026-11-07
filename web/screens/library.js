@@ -488,6 +488,8 @@
   function renderArtist(ctx) {
     var path = artistPath(ctx.params.id);
     return entityPage('artist', path, function (d) {
+      /* a name several artists share opens their page (ADR-0035) */
+      if (d.named) { setTimeout(function () { App.go('/artists/named/' + encodeURIComponent(d.named), { replace: true }); }); return pageSkeleton(); }
       var ar = pageEntity(d, 'artist', 'artists', M.artist); if (!ar) return null;
       var view = artistView[ar.id] = artistView[ar.id] || { more: false, group: null };
       var pending = d.pending || [], top = resolve(d.topTracks, M.track);
@@ -1992,6 +1994,7 @@
       App.coverItem('album', a.id)
     ];
     if (a.trackIds[0]) items.push({ label: 'Show sources for track 1', icon: 'soulseek', run: function () { App.hooks.sourcePicker(a.trackIds[0]); } });
+    if (App.flag('namesakes')) items.push({ label: 'Not by ' + a.artist + '?', icon: 'peer', run: function () { needNamesakes().then(function () { App.namesakes.album(a); }); } });
     items.push('sep', { label: 'Copy link', icon: 'link', run: function () { App.copyShareLink('album', a.id); } });
     App.menu(anchor, items, { label: 'Actions for ' + a.title });
   }
@@ -2125,6 +2128,9 @@
   App.route('/history', { render: renderHistory, mount: mountLibrary, nav: 'library', title: 'History', place: function () { return App.place('history', '', 'History'); } });
   App.route('/following', { render: renderFollowing, mount: mountLibrary, nav: 'library', title: 'Following' });
   App.route('/album/:id', { render: renderAlbum, mount: mountAlbum, nav: 'library', title: titleOf(M.album, 'Album'), meta: metaOf(M.album, albumMeta), place: placeOf('album', M.album) });
+  function needNamesakes() { return App.namesakes ? Promise.resolve() : App.needScript('screens/namesakes.js', 'artists of a name'); }
+  App.route('/artists/named/:name', { need: function () { return App.namesakes ? null : needNamesakes(); }, render: function (ctx) { return App.namesakes.render(ctx); },
+    nav: 'library', title: function (ctx) { return 'Artists called ' + decodeURIComponent(ctx.params.name); } });
   App.route('/artist/:id', { render: renderArtist, mount: mountArtist, nav: 'library', title: titleOf(M.artist, 'Artist'), meta: artistMetaLine, place: placeOf('artist', M.artist) });
   App.route('/tag/:id', { render: renderTag, mount: mountTag, nav: 'library', title: function (ctx) { return M.tag(ctx.params.id).name; }, place: placeOf('tag', M.tag) });
   App.route('/playlists', { render: renderPlaylists, mount: mountPlaylists, nav: 'playlists', title: 'Playlists' });

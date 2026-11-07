@@ -78,6 +78,8 @@ export default defineConfig({
     { name: 'loops', testMatch: 'loops.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
     // the desktop app's own pages in the listener's theme, handed over by main (no hub beside them)
     { name: 'app-pages', testMatch: 'app-pages.spec.mjs', use: { viewport: { width: 1000, height: 700 } } },
+    // ADR-0035's name page and the listener's word, with the namesakes switch on (its own fixture hub).
+    { name: 'namesakes', testMatch: 'namesakes.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     // Theme Studio and import: a loop with no rate named, its rate added, the loop paced
     { name: 'theme-loops', testMatch: 'theme-loops.spec.mjs', use: { viewport: { width: 1440, height: 900 } } },
     // a theme's card shows a picture lull drew of it (ADR-0080), in Chromium and in WebKit (the Linux app's engine)
