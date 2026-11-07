@@ -1,4 +1,4 @@
 {
-  "canonical": null,
-  "hosts": []
+  "canonical": "lull.lullfm.workers.dev",
+  "hosts": ["lull.lullfm.workers.dev"]
 }
