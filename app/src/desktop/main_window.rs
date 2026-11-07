@@ -153,8 +153,11 @@ fn create(app: &AppHandle, url: Url) -> tauri::Result<WebviewWindow> {
     let desktop = app.state::<Desktop>();
     let settings = desktop.settings();
     let titlebar = platform::titlebar(&settings, &desktop.platform);
-    // Show once painted (no white flash), unless the tray holds a connected lull ("Start in the tray").
-    let reveal = !(settings.start_in_tray && desktop.has_tray() && settings.hub.is_some());
+    // Show once painted (no white flash), unless the tray holds a connected lull ("Start in the tray"), or lull
+    // started at login to keep running as this computer's hub ("Keep lull running when closed").
+    let in_tray = settings.start_in_tray && desktop.has_tray() && settings.hub.is_some();
+    let in_background = settings.keep_running && settings.hub == Some(HubChoice::Local) && started_at_login();
+    let reveal = !(in_tray || in_background);
     let reveal = std::sync::atomic::AtomicBool::new(reveal);
     // A window shows the desktop only if it was made able to (glass.rs). On Windows `main` always is,
     // so glass follows the theme live: the window itself paints nothing, and a solid theme's opaque
@@ -337,11 +340,29 @@ pub fn wake(app: &AppHandle) -> tauri::Result<()> {
     show(app)
 }
 
+/// The argument the login entry starts lull with (mod.rs).
+pub const BACKGROUND: &str = "--background";
+
+fn started_at_login() -> bool {
+    std::env::args().any(|a| a == BACKGROUND)
+}
+
 /// The close button (ours or the OS's). With a tray, the web UI keeps playing hidden; the first
-/// time, it asks (DESKTOP.md 1). A bundled page or no tray: close quits.
+/// time, it asks (DESKTOP.md 1). Keeping lull running as this computer's hub hides it, tray or not.
+/// A bundled page or no tray: close quits.
 pub fn close_requested(window: &tauri::Window, api: &tauri::CloseRequestApi) {
     let desktop = window.state::<Desktop>();
     let settings = desktop.settings();
+    if desktop.on_hub() && settings.keep_running && settings.hub == Some(HubChoice::Local) {
+        api.prevent_close();
+        report(
+            window
+                .app_handle()
+                .get_webview_window(LABEL)
+                .map_or(Ok(()), |main| hide(&main)),
+        );
+        return;
+    }
     if !desktop.on_hub() || !desktop.has_tray() || !settings.close_to_tray {
         return;
     }

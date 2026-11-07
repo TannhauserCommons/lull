@@ -52,6 +52,8 @@ pub enum WindowAction {
     Retry,
     /// The "keep playing in the tray?" dialog.
     CloseChoice { keep: bool, remember: bool },
+    /// Settings › App, with lull kept running and no tray to quit from.
+    Quit,
     /// Web UI without Media Session (some WebKitGTK builds): grab the media keys instead.
     MediaKeys,
     /// The Classic window's page handed the queue back to `main`: close it, wake `main`.
@@ -82,6 +84,10 @@ pub async fn window_action(app: AppHandle, request: WindowAction) -> Result<(), 
             main_window::open_chosen(&app)
         }
         WindowAction::CloseChoice { keep, remember } => main_window::close_choice(&app, keep, remember),
+        WindowAction::Quit => {
+            app.exit(0);
+            Ok(())
+        }
         WindowAction::MediaKeys => return platform::media_keys(&app),
         WindowAction::ClassicDone => classic::done(&app),
         WindowAction::Restart => app.restart(),
@@ -170,6 +176,8 @@ pub struct DesktopSettings {
     close_to_tray: bool,
     launch_at_login: bool,
     start_in_tray: bool,
+    /// "Keep lull running when closed"; None unless this computer is the hub.
+    keep_running: Option<bool>,
     mini_style: MiniStyle,
     mini_on_top: bool,
     /// None where the setting doesn't exist (only Linux has it).
@@ -205,6 +213,7 @@ pub fn desktop_settings(app: AppHandle) -> Result<DesktopSettings, String> {
         close_to_tray: s.close_to_tray,
         launch_at_login: app.autolaunch().is_enabled().map_err(|e| e.to_string())?,
         start_in_tray: s.start_in_tray,
+        keep_running: (s.hub == Some(HubChoice::Local)).then_some(s.keep_running),
         mini_style: s.mini_style,
         mini_on_top: s.mini_on_top,
         own_titlebar: cfg!(target_os = "linux").then_some(s.own_titlebar),
@@ -225,6 +234,7 @@ pub struct SettingsPatch {
     close_to_tray: Option<bool>,
     launch_at_login: Option<bool>,
     start_in_tray: Option<bool>,
+    keep_running: Option<bool>,
     mini_style: Option<MiniStyle>,
     mini_on_top: Option<bool>,
     own_titlebar: Option<bool>,
@@ -250,7 +260,8 @@ impl SettingsPatch {
 
 #[tauri::command]
 pub fn set_desktop_settings(app: AppHandle, patch: SettingsPatch) -> Result<(), String> {
-    if let Some(on) = patch.launch_at_login {
+    // Keeping lull running starts it at login too; turning it off stops that.
+    if let Some(on) = patch.launch_at_login.or(patch.keep_running) {
         let autolaunch = app.autolaunch();
         if on { autolaunch.enable() } else { autolaunch.disable() }.map_err(|e| e.to_string())?;
     }
@@ -267,6 +278,9 @@ pub fn set_desktop_settings(app: AppHandle, patch: SettingsPatch) -> Result<(), 
         }
         if let Some(on) = patch.start_in_tray {
             s.start_in_tray = on;
+        }
+        if let Some(on) = patch.keep_running {
+            s.keep_running = on;
         }
         if let Some(style) = patch.mini_style {
             s.mini_style = style;

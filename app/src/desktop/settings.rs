@@ -28,6 +28,9 @@ pub struct Settings {
     /// The one-time "keep playing in the tray?" question was answered with "Don't ask again".
     pub close_asked: bool,
     pub start_in_tray: bool,
+    /// "Keep lull running when closed" (ADR-0090; this computer is the hub): it starts at login with no window,
+    /// closing hides it with or without a tray, and the computer stays awake on mains power (awake.rs).
+    pub keep_running: bool,
     pub mini_style: MiniStyle,
     pub mini_on_top: bool,
     /// Linux only: draw the lull title bar instead of the native one. Needs a restart.
@@ -61,6 +64,7 @@ impl Default for Settings {
             close_to_tray: true,
             close_asked: false,
             start_in_tray: false,
+            keep_running: false,
             mini_style: MiniStyle::Device,
             mini_on_top: true,
             own_titlebar: false,

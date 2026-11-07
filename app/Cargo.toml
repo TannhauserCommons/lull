@@ -62,7 +62,8 @@ tauri-plugin-updater = "=2.14.1"
 dirs = "=7.0.0"
 
 [target.'cfg(windows)'.dependencies]
-# Taskbar theme for the tray glyph (registry), a job object so slskd dies with the app, a
+# Taskbar theme for the tray glyph (registry), a job object so slskd dies with the app, keeping the
+# computer awake while it serves (power, awake.rs), a
 # minidump of lull's own process if it crashes (dbghelp's MiniDumpWriteDump), and hearing this
 # computer's addresses change, to try an unreachable hub again at once (NotifyAddrChange).
 windows-sys = { version = "=0.61.2", features = [
@@ -75,6 +76,7 @@ windows-sys = { version = "=0.61.2", features = [
   "Win32_System_JobObjects",
   "Win32_System_Kernel",
   "Win32_System_Memory",
+  "Win32_System_Power",
   "Win32_System_Registry",
   "Win32_System_Threading",
 ] }

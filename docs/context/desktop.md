@@ -27,6 +27,7 @@ The Tauri v2 project in `app/` (its own Cargo workspace; ADR-0006) shows the hub
 | `app/src/desktop/updater.rs` | Update checks (at launch, every 6 hours, on request), the download with its progress, the install; the tray's update item |
 | `app/src/desktop/mini.rs` | Mini player windows `mini` (device) and `strip` |
 | `app/src/desktop/tray.rs` | Tray icon and native menu; player items become `tray` events |
+| `app/src/desktop/awake.rs` | Keep lull running when closed: the computer stays awake on mains power while this computer is the hub |
 | `app/src/desktop/player.rs` | Which window plays (`main`, or the Classic window), and showing `set_now_playing` in the tray, the taskbar buttons and Discord |
 | `app/src/desktop/classic.rs` | Classic mode's own window: Webamp alone (`web/desktop/winamp.html`), `main` asleep meanwhile |
 | `app/src/desktop/classic_native/` | Windows test build (`LULL_CLASSIC=native`): Classic's three windows drawn natively from the skin, with its own player and what the web UI does around it (plays, Like, Save, tray, media keys), `main` closed meanwhile |
@@ -81,7 +82,7 @@ The Tauri v2 project in `app/` (its own Cargo workspace; ADR-0006) shows the hub
    - **Each probe** has a hard limit of 25 s, whatever it waits on (a name lookup, a connection, TLS); one that runs out counts as failed. So does the first, at launch.
    - **Whatever the window does:** it runs in Rust, hidden, minimised or in the tray alike. Every outcome reaches the page as `reconnect`, and the page only shows it (its countdown is display). It stops when `main` shows anything else.
    - **Why:** v0.2.1 retried from the page's own timer, and Rust answered a failed retry by loading the same page again: same address, same error, same URL, which a webview doesn't load again, so the page sat on "trying now" with Attempt 1 for good (a hub name that didn't resolve when the app started, before Tailscale's DNS was up). Every bundled page `main` goes to is numbered now (`pages::fresh`), so going to the page it shows loads it again.
-4. `main` shows once its page has loaded, unless **Start in the tray** is on and a tray exists. It starts at `about:blank` when the cookie has to go in first; that page never shows.
+4. `main` shows once its page has loaded, unless **Start in the tray** is on and a tray exists, or **Keep lull running when closed** is on and lull started at login. It starts at `about:blank` when the cookie has to go in first; that page never shows.
 5. The app switches between its pages by changing the page's hash, so `desktop.js` re-renders on `hashchange`.
 
 **Pairing** (connect page): the page lists hubs found by mDNS for 3 s (**Search again**), each with its most reachable IPv4 address (home LAN ranges first, Tailscale's 100.64/10 next, link-local last), or takes an address (`192.168.1.20:8484` means http, a dotted name like `hub.example.ts.net` means https). With a 6-character pair code from a paired device, `find_hub` checks the address, then `window_action {pair}` posts `/api/pair { code, name: "lull on <computer>", kind: app }` and keeps the token. Choosing a remote hub while this computer's hub runs restarts the app, because the hub can't stop under its open connections.
@@ -208,6 +209,11 @@ The hub origin gets its capabilities at runtime when the app first loads it: one
 
 ## Behaviour worth knowing
 
+- **Keep lull running when closed** (`keepRunning`, ADR-0090; behind the `keep-running` switch, which only shows the row; only when this computer is the hub):
+  - it turns on Launch at login, and the login entry starts lull with `--background` (mod.rs), so it opens no window then. A start by hand still opens one;
+  - Close hides `main`, tray or not. Opening lull again (a second launch) brings it back;
+  - with no tray, Settings › App shows **Quit lull** (`windowAction('quit')`);
+  - on mains power the computer doesn't sleep when idle while the switch is on (`awake.rs`). On Windows that's `SetThreadExecutionState` from one thread; on Linux, logind's sleep:idle inhibitor. On battery the OS decides, and a closed lid still sleeps.
 - **Close:**
   - on a bundled page, or without a tray, it quits;
   - otherwise it hides `main`, asking once first. "Don't ask again" stores the answer as `closeToTray`;

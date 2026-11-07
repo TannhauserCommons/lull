@@ -2,6 +2,7 @@
 //! with a tray, a mini player and the first-run choice. When this computer is the hub, the app runs
 //! it in-process with its bundled slskd. Every player action runs in the web UI.
 
+mod awake;
 mod classic;
 #[cfg(any(windows, target_os = "linux"))]
 mod classic_native;
@@ -58,7 +59,12 @@ pub fn run() {
                 .with_state_flags(StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED)
                 .build(),
         )
-        .plugin(tauri_plugin_autostart::Builder::new().build())
+        // A start at login says so (BACKGROUND), so "Keep lull running when closed" opens no window then.
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .args([main_window::BACKGROUND])
+                .build(),
+        )
         .plugin(tauri_plugin_updater::Builder::new().build());
     #[cfg(target_os = "linux")]
     let builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
@@ -137,6 +143,7 @@ fn setup(
     classic::follow(handle);
     main_window::launch(handle);
     updater::start(handle);
+    awake::start(handle.clone());
     Ok(())
 }
 

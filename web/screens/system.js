@@ -783,7 +783,7 @@
     window.LullDesktop.settings().then(function (d) { desk = { data: d }; repaint('#sys-desktop', desktopRows()); },
       function (err) { desk = { error: errText(err) }; repaint('#sys-desktop', desktopRows()); });
   }
-  ['closeToTray', 'launchAtLogin', 'startInTray', 'miniStyle', 'miniOnTop', 'ownTitlebar', 'graphics', 'discordPresence', 'discordStatus',
+  ['keepRunning', 'closeToTray', 'launchAtLogin', 'startInTray', 'miniStyle', 'miniOnTop', 'ownTitlebar', 'graphics', 'discordPresence', 'discordStatus',
     'discordCover', 'discordButtons', 'discordPaused'].forEach(function (key) {
     custom['desktop.' + key] = { get: function () { return desk.data[key]; }, set: function (v) {
       var before = desk.data[key], patch = {}; patch[key] = v; desk.data[key] = v;
@@ -794,6 +794,9 @@
       });
     } };
   });
+  // keeping lull running starts it at login too, and shows Quit where there's no tray to quit from
+  effects['desktop.keepRunning'] = function (v) { desk.data.launchAtLogin = v; repaint('#sys-desktop', desktopRows()); };
+  App.action('sys-desktop-quit', function () { window.LullDesktop.windowAction('quit'); });
   effects['desktop.ownTitlebar'] = function () { App.toast('Restart lull to change the title bar', { icon: 'refresh' }); };
   App.action('sys-desktop-connect', function () { window.LullDesktop.windowAction('change-server'); });
   App.action('sys-desktop-reload', function () { loadDesktop(); repaint('#sys-desktop', desktopRows()); });
@@ -802,6 +805,7 @@
     if (desk.error) return ui.emptyState({ art: 'star', title: 'Couldn\'t read the desktop app\'s settings', text: desk.error, action: { label: 'Try again', act: 'sys-desktop-reload' } });
     var d = desk.data, noTray = !d.tray && 'This desktop has no tray icon';
     return html`${row('Server address', 'The desktop app loads lull from this server.', html`<span class="sys-inline">${lockedValue('Server address', d.server || serverAddress())}<button class="btn btn--sm" data-act="sys-desktop-connect">Change server...</button></span>`)}
+      ${d.keepRunning == null || !App.flag('keep-running') ? '' : keepRows(d)}
       ${switchRow('desktop.closeToTray', 'Close to tray', 'Closing the window keeps the music playing; quit from the tray icon.', { disabled: noTray })}
       ${switchRow('desktop.launchAtLogin', 'Launch at login', 'Starts with your computer.')}
       ${switchRow('desktop.startInTray', 'Start in the tray', 'Launches without opening the window.', { disabled: noTray })}
@@ -815,6 +819,12 @@
      only the app loads (LullDesktop.graphics) */
   function graphicsRow(g) {
     return html`${row('Graphics', g.help, choice('desktop.graphics', 'Graphics', g.modes, 'sys-seg--wrap'), { cls: 'sys-row--stack' })}<div id="sys-graphics">${raw(g.line())}</div>`;
+  }
+  /* "Keep lull running when closed" (ADR-0090), when this computer is the hub: it starts at login without a window, and
+     closing hides it, tray or not; with no tray, Quit is here */
+  function keepRows(d) {
+    return html`${switchRow('desktop.keepRunning', 'Keep lull running when closed', 'Starts with your computer without a window, and keeps running when you close it, so your phone can always reach lull. On mains power your computer stays awake.')}
+      ${d.keepRunning && !d.tray ? row('Quit lull', 'Stops the music and your hub until you open lull again.', html`<button class="btn btn--sm" data-act="sys-desktop-quit">Quit lull</button>`) : ''}`;
   }
   /* Discord Rich Presence (app/src/desktop/discord.rs): the switch, then its look while it is on */
   function discordRows(d) {
