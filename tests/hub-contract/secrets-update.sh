@@ -21,6 +21,8 @@ TOKEN=canary-listenbrainz-$$-token
 ACOUSTID=canary-acoustid-$$-key
 flags() { printf 'LULL_FLAGS=%s\n' "$1" >"$w/lull.conf"; }
 holds() { grep -qa "$2" "$1" 2>/dev/null; } # <file> <text>
+# The database and its write-ahead log: a new row sits in the log until a checkpoint copies it into lull.db.
+db_holds() { holds "$w/data/lull.db" "$1" || holds "$w/data/lull.db-wal" "$1"; } # <text>
 set_logins() {
   for check in LULL_LISTENBRAINZ_TOKEN LULL_ACOUSTID_KEY; do
     "$lull1" config get "$check" | grep -q '(set)' || fail "$check isn't set: the listener would have to type it again"
@@ -35,30 +37,34 @@ until_health "$v1"
 "$lull1" config set LULL_LISTENBRAINZ_TOKEN "$TOKEN" >/dev/null
 "$lull1" config set LULL_ACOUSTID_KEY "$ACOUSTID" >/dev/null
 set_logins
-holds "$w/data/lull.db" "$TOKEN" || fail "$v1 didn't keep the token in its database, so this test proves nothing"
+db_holds "$TOKEN" || fail "$v1 didn't keep the token in its database, so this test proves nothing"
 
 echo "== 1. the candidate moves the logins, then fails its health window"
 # Built as $v2, published as $v3: it never answers /health as $v3.
 cp "$lull2" "$w/wrong-version" && release "$v3" "$w/wrong-version"
 flags hub-self-update,secrets
 "$lull1" update >/dev/null 2>&1 &
+updating=$!
 for _ in $(seq 1 90); do holds "$w/data/secrets/secrets.json" "$TOKEN" && break; sleep 1; done
 holds "$w/data/secrets/secrets.json" "$TOKEN" || fail "the candidate didn't move the token into its vault"
 flags hub-self-update
+# The release to update to next is published while this one is still in its window: the release, back, asks
+# which is newest at once (`lull update` above follows it) and keeps the answer a minute.
+release "$v2" "$lull2"
 until_health "$v1" 300
+kill "$updating" 2>/dev/null || true # its answer is not what this checks
 [ -f "$w/data/hub/$v3/bad" ] || fail "$v3 wasn't marked bad"
 set_logins
-holds "$w/data/lull.db" "$TOKEN" || fail "$v1 came back without its token"
+db_holds "$TOKEN" || fail "$v1 came back without its token"
 
 echo "== 2. the update to $v2 starts, and nothing is asked again"
-release "$v2" "$lull2"
 flags hub-self-update,secrets
 "$lull1" update || fail "lull update to $v2"
 until_health "$v2"
 [ -f "$w/data/hub/$v2/good" ] || fail "$v2 wasn't marked good"
 set_logins
 for canary in "$TOKEN" "$ACOUSTID"; do
-  holds "$w/data/lull.db" "$canary" && fail "$canary is still in lull.db"
+  db_holds "$canary" && fail "$canary is still in lull.db or its log"
   holds "$w/data/secrets/secrets.json" "$canary" || fail "$canary isn't in the vault"
 done
 [ "$(stat -c %a "$w/data/secrets")" = 700 ] || fail "the vault's folder is $(stat -c %a "$w/data/secrets"), not 700"
