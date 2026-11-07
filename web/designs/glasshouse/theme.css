@@ -1501,7 +1501,8 @@
 :root[data-design="glasshouse"] :is(.gh-np__glow, .gh-np__art) .cover { --cover-size: 100%; width: 100%; height: 100%; border-radius: 14px; }
 /* the glow is a blurred copy of the cover in the same box (so both ask the hub for the same picture); it fades out
    inside its own box (the mask comes after the blur), so the scroller's edge never cuts it */
-:root[data-design="glasshouse"] .gh-np__glow { z-index: -1; opacity: .9; filter: blur(30px) saturate(1.7); transform: scale(1.45) translateY(3%);
+/* the glow is drawn 1.45 times the art's size, over "playing from" and the "…" above it on a phone: it lets clicks through */
+:root[data-design="glasshouse"] .gh-np__glow { z-index: -1; opacity: .9; filter: blur(30px) saturate(1.7); transform: scale(1.45) translateY(3%); pointer-events: none;
   -webkit-mask: radial-gradient(closest-side, #000 62%, transparent); mask: radial-gradient(closest-side, #000 62%, transparent); }
 :root[data-design="glasshouse"][data-theme="day"] .gh-np__glow { opacity: .6; }
 /* a liked song warms the stage: its glow turns a little rose */

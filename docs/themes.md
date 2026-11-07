@@ -145,17 +145,48 @@ Go beyond tokens with any selector. These hooks are the theme API: they stay put
 have (a docked panel, the Now column, the text size and a long title count as much as the window): each part that can
 give way has an order (`data-fit`), and when a row runs out of room its parts give way in that order and come back with
 room. So a theme never writes `@media (min-width: 1100px) and (max-width: 1359px)` to hide a tool or shrink a pill: style
-`[data-fit-out]` for how a part looks once it gave way, leave the bar's columns to lull (both sides are
+`[data-fit-out]` for how a part looks once it gave way, and, while the bar keeps lull's three columns, leave them to lull (both sides are
 `var(--fit-side)`, as wide as the tools need, so the transport stays centred; a design may set `--fit-centre-min` and
 `--fit-side-min` on `.pbar`) and let a part's track be `auto`, so a part that gives way takes its room with it. Width rules are for genuine layout changes: the
 shell breakpoints (640, 1100 and 1360 px) and content that rearranges by its container's room (`@container`).
 `mise run check:ui` sweeps every width from 360 to 2560 px for the built-in designs (docs/context/quality.md#ui-gates).
 
+**The shape is yours; the gates check what works (ADR-0083).** Where a part sits, whether it rises out of its bar,
+whether a bar is full width or a rectangle at all (a capsule narrower than the window, standing on a floor), whether one
+control sits inside another's area (a play key at the centre of the song's disc, a seek drawn as the capsule's tube), and
+whether a region keeps lull's usual shape: none of it fails a gate. What does, at every width from 360 to 2560 px:
+- a control nothing can click: off the screen, or under something that takes every point of it (a glow or a sheen
+  drawn over it that catches clicks; give a layer that only decorates `pointer-events: none`);
+- text under something that paints over it (a background, a picture; an empty box doesn't count), text drawn on other
+  text (letters on letters, not line boxes), text off the screen, and text cut without an ellipsis.
+  A page is judged once it has arrived: an entrance that slides it in from off the screen is fine, and so is content
+  that scrolls under a part laid over its scroller (the page under the chrome, lyrics under a foot), since it scrolls
+  clear;
+- a missing essential (play, previous, next, the player's "…", search);
+- a control under 24 × 24 px or anything else the accessibility gate (axe, WCAG 2.2 AA) finds, and the order the
+  keyboard and a screen reader take, which is lull's markup order whatever the CSS moves.
+
+A few checks guard lull's own look and can't tell a choice from a bug. Where your design differs from them on purpose,
+free it with `--gate-free` in your CSS, on the part or a box round it, naming the check and saying why (a reason of a few
+words; without one the check still runs, and says so). Several go in one string, separated by `;`:
+
+```css
+#pbar { --gate-free: "song-side-room: the capsule is narrower than the window, so the chips go to the menu"; }
+.pbar__badges { --gate-free: "even-tags: the chips lean like cards on a desk"; }
+```
+
+| Check | What it expects of lull's look |
+|---|---|
+| `even-tags` | tags side by side are one height on one centre line, with one icon size (**Tags**, below) |
+| `song-side-room` | at 1440 px the player bar's song side keeps its chips, Like and Save, rather than giving them to the "…" menu |
+| `seg-indicator` | a segmented control's indicator lies on (or just under) the picked choice (**Measured parts**, below) |
+
+
 Prefer `@container main` to `@media`: it follows the main area, so it stays right when a panel opens. Layout states that must hold whatever a theme draws (the strips, the room the column takes) are `!important` in lull's own CSS: style them, don't fight them. The widths the listener drags are custom properties (`--ctx`, `--now-w`); read them, don't set them. While a drag runs the column's width is `--ctx-drag` / `--now-drag` instead, so a theme's own shell grid that places the panel writes its track as `var(--ctx-drag, var(--ctx))`.
 
 `design/DESIGN.md` section 3.4 lists more state hooks (tray pills, track row file facts). Pseudo-elements are free for ornaments; keep them decorative.
 
-**Measured parts.** lull places a `.seg`'s indicator (`.seg__ind`) on the selected button by measuring it (`--seg-x`, `--seg-w`), so gaps, padding and labels of different lengths are fine: restyle or hide the indicator, but don't position it. A `.wave`'s bars share its whole width (set the `gap`, not the bars' width), and its head travels the strip less its own width, so it never passes the last bar: a bigger head sets `--wave-head` on the `.wave` and fills `.wave__rail`.
+**Measured parts.** lull places a `.seg`'s indicator (`.seg__ind`) on the selected button by measuring it (`--seg-x`, `--seg-w`), so gaps, padding and labels of different lengths are fine: restyle or hide the indicator, but don't position it. A design that shows the pick another way (a dot beside it) names `seg-indicator` in `--gate-free` (above). A `.wave`'s bars share its whole width (set the `gap`, not the bars' width), and its head travels the strip less its own width, so it never passes the last bar: a bigger head sets `--wave-head` on the `.wave` and fills `.wave__rail`.
 
 **Staying fast.** Chrome re-checks a `:has()` on a page-wide element (`:root`, `.app`, `.main`) whenever anything is inserted anywhere: a menu, a toast, a tooltip, a row. Each time it restyles every element the rest of the selector could match, so `:root:has(X) .now-card :is([data-act="retry"])` or `... span:not(:last-child)` restyles the whole page on every such change. End those selectors in a class, prefer a state lull already sets (`.app[data-screen="now"]` rather than `.app:has(.now)`; `.pipeline-wrap--idle` for a save pipeline that hasn't started; `.wave-times__buf` for the "buffered to" part of the times), and never test classes by substring (`[class*="is-"]`) inside `:has()`. Animate `transform` and `opacity` only, so loops run off the main thread, and draw them cheaply (below). `mise run check:ui` measures all of this for the built-in designs (docs/context/quality.md#ui-gates).
 
@@ -188,8 +219,8 @@ Prefer `@container main` to `@media`: it follows the main area, so it stays righ
 - **Covers.** `.cover` holds a recipe (`.c1`-`.c8`, drawn on `::before`/`::after`) until its picture loads; then `.has-art` hides the recipe. A cover still waiting for the hub keeps its recipe, so a recipe must look finished on its own. `.mosaic` is a playlist's 2×2 of covers, and `.mosaic--one` holds one picture: the playlist's own, or the one album its songs share.
 - **The cover viewer.** `.cover-zoom` wraps the player bar's and the Now column's cover, and its `.cover-zoom__btn` shows on hover and keyboard focus. The button is never shown on touch screens. The viewer is a `.dialog.cover-view` holding `.cover-view__art` and `.cover-view__info` (`__title`, `__by`). Its picture is as large as the window allows, up to 1024 px: give it a frame, not a size.
 - **Sortable column headers** on the playlist page (`.lib-thead > .lib-th`) carry `aria-sort="ascending|descending"` on the sorted column. The arrow is `.lib-th__btn .ic`, and `.lib-th--added` is the date column. While the list is sorted, `.lib-sortnote` says why dragging is off.
-- **Tags** (`.badge`, `.q-chip`, `.badge-new`, `.device__fact`, `.pbar__private`, `.mini__private`) are one box: `--tag-h` tall, border-box, contents centred, an icon `--tag-ic` square and `--tag-gap` from its words, so tags side by side are one height on one centre line with one icon size. Size them with these tokens, on `:root` or on the row that holds them (`.tile__meta`, `.pbar__badges`), never with a tag's own `height`, `gap` or icon size. A wrapper that holds only a tag (`.src-badge`) is only that tag's box.
-- **The player bar** keeps the transport centred on the bar: its three columns (`.pbar__now`, `.pbar__centre`, `.pbar__tools`) keep equal sides in every design, so change their gaps, not that balance. Every control has a fixed slot, and toggles show pressed or not (`aria-pressed`). Only width breakpoints move tools into the "…" menu (`.pbar__tools .is-wide` are the ones that go). The status line is `.pbar__state`, a tab on the bar's top edge that is `[hidden]` while all is well, with `.is-error` for a failure. `.pbar__xfade` floats above the tools during a crossfade, and `.pbar__private` is the "Private" tag. The two times are as wide as the song's duration reads (`--time-ch`), so the seek bar keeps its length.
+- **Tags** (`.badge`, `.q-chip`, `.badge-new`, `.device__fact`, `.pbar__private`, `.mini__private`) are one box: `--tag-h` tall, border-box, contents centred, an icon `--tag-ic` square and `--tag-gap` from its words, so tags side by side are one height on one centre line with one icon size. Size them with these tokens, on `:root` or on the row that holds them (`.tile__meta`, `.pbar__badges`), never with a tag's own `height`, `gap` or icon size. A wrapper that holds only a tag (`.src-badge`) is only that tag's box. Tags set apart on purpose name `even-tags` in `--gate-free` (above).
+- **The player bar** is laid out as three columns (`.pbar__now`, `.pbar__centre`, `.pbar__tools`) with equal sides, so the transport stays centred; that is lull's layout, not a rule: a design may shape and place the bar and its parts as it likes (a capsule, the play key in the disc), as long as each control can still be clicked. Toggles show pressed or not (`aria-pressed`). Only width breakpoints move tools into the "…" menu (`.pbar__tools .is-wide` are the ones that go). The status line is `.pbar__state`, a tab on the bar's top edge that is `[hidden]` while all is well, with `.is-error` for a failure. `.pbar__xfade` floats above the tools during a crossfade, and `.pbar__private` is the "Private" tag. The two times are as wide as the song's duration reads (`--time-ch`), so the seek bar keeps its length.
 - **Sliders** (`.seek`, `.range`, `.vol`): `.seek.is-scrubbing` while the pointer drags it. A slider clicked rather than tabbed to has `[data-pointer]` and no focus ring; the ring comes back with the first key. Show focus with `:focus-visible`, and never on `[data-pointer]`.
 - **Segmented controls** (`.seg`): place `.seg__ind` by the measured `--seg-x` and `--seg-w` (above).
 - **The side panel's tabs** (`.ctx__head .seg__btn[data-ctx-tab="queue|lyrics|activity"]`) and the phone Now Playing tabs (`.now-seg`) lose Lyrics for a song with no words (none found, or instrumental), and get it back when a song has some. Never give a tab a fixed position by count.

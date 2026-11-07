@@ -1,13 +1,15 @@
-// The chrome fits at any width: in every design and theme, with a song loaded, the window is narrowed from 2560 to
+// The chrome works at any width: in every design and theme, with a song loaded, the window is narrowed from 2560 to
 // 360 px and widened back, 20 px at a time, and the header, the player bar, the mini player and the tab bar are
-// checked at each step (checks.mjs `chrome`): nothing outside its bar or the window, no control on another, no text
-// cut off, every essential there; and Home's rows show every cover whole (`clippedCovers`). The header and the bar fit themselves (layout.js, data-fit), so no design needs a
-// width band to patch them; a new one that would is caught here. The desktop app's mini player is checked at its
-// own sizes. docs/context/quality.md#ui-gates.
+// checked at each step (checks.mjs `chrome`): every control on the screen and reachable by a click, no text covered,
+// on other text, off the screen or cut off, every essential there; and Home's rows show every cover whole
+// (`clippedCovers`). Function only, never form (ADR-0083): where a part sits, whether it rises out of its bar or sits
+// in another control's area, and the bar's shape are the design's. The header and the bar fit themselves (layout.js,
+// data-fit), so no design needs a width band to patch them; a new one that would is caught here. The desktop app's mini
+// player is checked at its own sizes. docs/context/quality.md#ui-gates.
 
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
-import { chrome, chromeNow, clippedCovers } from '../checks.mjs';
+import { chrome, chromeNow, clippedCovers, gateFree } from '../checks.mjs';
 import { designs, ids, openScreen, settle, themes } from './lib.mjs';
 
 const widths = [];
@@ -120,7 +122,8 @@ for (const design of designs) {
 
     // a laptop's window has room for the song's source and quality: at 1440 px its chips, and Like and Save, stay in the
     // bar (lull's song column once held its buttons inside its share of the room, and the chips gave way beside a
-    // 366 px seek)
+    // 366 px seek). What gave way is still in the "…" menu, so this is about room, not reach: a design whose bar is
+    // narrower than the window on purpose names `song-side-room` in --gate-free on #pbar, with the reason (gateFree)
     test(`player bar, a song at 1440 px keeps its chips / ${design} / ${theme}`, async ({ page }) => {
       await page.setViewportSize({ width: 1440, height: 900 });
       await openScreen(page, `/album/${ids.album}`, { design, theme });
@@ -129,8 +132,10 @@ for (const design of designs) {
       await page.evaluate(() => { location.hash = '#/home'; });
       await page.waitForTimeout(500);
       await frames(page);
+      const said = await page.evaluate((src) => (0, eval)('(' + src + ')')(document.querySelector('#pbar'), 'song-side-room'), gateFree.toString());
+      test.skip(said === 'free', 'the design says why its song side has less room (--gate-free: song-side-room)');
       const out = await page.evaluate(() => [...document.querySelectorAll('#pbar-now :is(.pbar__badges > *, .pbar__acts)[data-fit-out]')].map((p) => String(p.className).split(' ')[0]));
-      expect(out, 'what gave way in the song side at 1440 px').toEqual([]);
+      expect(out, `what gave way in the song side at 1440 px${said === 'no reason' ? ' (--gate-free names song-side-room without a reason: say why)' : ''}`).toEqual([]);
     });
 
     // the rows fit again by themselves when their text widens in place (a label that grew; no row changes size) and
@@ -204,8 +209,9 @@ for (const design of designs) {
 
     // the side panel's title strip names the panel and carries its meta: on Lyrics the meta is the song's title, which
     // can be any length (lull's ran over the word "lyrics", Petal's wrapped over its window keys). Each tab, with a long
-    // title playing: the meta stays clear of the title's text and the panel's own buttons, inside the panel, on one
-    // line, and ellipsises when it is cut
+    // title playing: the meta's text is on the screen, clear of the title's text, not under anything, ellipsised where
+    // it is cut, and the panel's own buttons can still be clicked. Where it sits and how many lines it takes are the
+    // design's
     test(`side panel strip, a long song title / ${design} / ${theme}`, async ({ page }) => {
       await page.setViewportSize({ width: 1440, height: 900 });
       await openScreen(page, `/album/${ids.album}`, { design, theme });
@@ -221,18 +227,37 @@ for (const design of designs) {
           // the tab as a press picks it (app.js hears clicks on the document), whether or not the panel shows now
           if (!(await page.evaluate((tab) => { const b = document.querySelector(`[data-ctx-tab="${tab}"]`); if (b) b.click(); return !!b; }, tab))) continue;
           await frames(page);
+          // judged once the panel has arrived (a panel that slides in is still off the screen mid-way)
+          await page.evaluate(() => Promise.race([Promise.all(document.getAnimations().filter((a) => Number.isFinite(a.effect?.getComputedTiming().endTime)).map((a) => a.finished.catch(() => {}))), new Promise((r) => setTimeout(r, 3000))]));
           const p = await page.evaluate(() => {
             const shown = (e) => { if (!e) return null; const s = getComputedStyle(e), r = e.getBoundingClientRect(); return s.display !== 'none' && s.visibility !== 'hidden' && r.width > 0 && r.height > 0 && parseFloat(s.fontSize) > 0 ? r : null; };
-            const hit = (a, b) => a.left < b.right - 0.5 && a.right > b.left + 0.5 && a.top < b.bottom - 0.5 && a.bottom > b.top + 0.5;
+            const meet = (a, b) => a.left < b.right - 0.5 && a.right > b.left + 0.5 && a.top < b.bottom - 0.5 && a.bottom > b.top + 0.5;
+            // a text's lines as they show: cut to its own box (an ellipsis), and to their glyphs (lines set tighter than the
+            // font's height have boxes that overlap where no letters do)
+            const lines = (e) => {
+              const rg = document.createRange(); rg.selectNodeContents(e); const b = e.getBoundingClientRect();
+              return [...rg.getClientRects()].filter((r) => r.width > 0).map((r) => { const h = r.bottom - r.top; return { left: Math.max(r.left, b.left), right: Math.min(r.right, b.right), top: r.top + h * 0.25, bottom: r.bottom - h * 0.25 }; }).filter((r) => r.right - r.left >= 1);
+            };
+            // a click reaches it somewhere: its centre, else a grid of 5 x 5 points
+            const reached = (k, r) => {
+              for (const [i, j] of [[2, 2], ...[0, 1, 2, 3, 4].flatMap((a) => [0, 1, 2, 3, 4].map((b) => [a, b]))]) if (mine(k, document.elementFromPoint(r.left + (r.width * (i + 0.5)) / 5, r.top + (r.height * (j + 0.5)) / 5))) return true;
+              return false;
+            };
+            const mine = (e, hit) => !!hit && (hit === e || e.contains(hit) || hit.contains(e));
             const ctx = shown(document.querySelector('#ctx')), m = document.querySelector('#ctx-meta'), mr = shown(m);
             if (!ctx || !mr || !m.textContent.trim()) return [];
-            const out = [], t = document.querySelector('#ctx-title');
-            const rg = document.createRange(); rg.selectNodeContents(t); const tr = rg.getBoundingClientRect();
-            if (shown(t) && tr.width > 0 && hit(mr, tr)) out.push('the meta runs over the title');
-            for (const k of document.querySelectorAll('#ctx .ctx__head > .btn-icon')) { const kr = shown(k); if (kr && hit(mr, kr)) out.push(`the meta runs under ${k.getAttribute('aria-label')}`); }
-            if (mr.left < ctx.left - 0.5 || mr.right > ctx.right + 0.5) out.push('the meta runs out of the panel');
-            const s = getComputedStyle(m), mt = document.createRange(); mt.selectNodeContents(m);
-            if (new Set([...mt.getClientRects()].filter((r) => r.width > 0).map((r) => Math.round(r.top))).size > 1) out.push('the meta wraps');
+            const out = [], t = document.querySelector('#ctx-title'), ml = lines(m);
+            if (shown(t) && lines(t).some((a) => ml.some((b) => meet(a, b)))) out.push('the meta\'s text on the title\'s');
+            if (ml.some((r) => r.left < -1 || r.right > innerWidth + 1 || r.top < -1 || r.bottom > innerHeight + 1)) out.push('the meta off screen');
+            const c = ml[0] && document.elementFromPoint((ml[0].left + ml[0].right) / 2, (ml[0].top + ml[0].bottom) / 2);
+            // what lies over it hides it only where it paints (an empty box stretched across the strip hides nothing)
+            const paints = (hit) => { for (let a = hit; a && !a.contains(m); a = a.parentElement) { const s = getComputedStyle(a); if (/^(IMG|svg|CANVAS|VIDEO)$/.test(a.tagName) || s.backgroundImage !== 'none' || !/^(transparent|rgba\([^)]*,\s*0\))$/.test(s.backgroundColor)) return true; } return false; };
+            if (c && getComputedStyle(m).pointerEvents !== 'none' && !mine(m, c) && paints(c)) out.push(`the meta under ${c.getAttribute('aria-label') || String(c.className).split(' ')[0]}`);
+            for (const k of document.querySelectorAll('#ctx .ctx__head > .btn-icon')) {
+              const kr = shown(k); if (!kr) continue;
+              if (!reached(k, kr)) { const on = document.elementFromPoint((kr.left + kr.right) / 2, (kr.top + kr.bottom) / 2); out.push(`${k.getAttribute('aria-label')} can't be clicked, under ${on ? (on.getAttribute('aria-label') || String(on.className).split(' ')[0] || on.tagName) : 'nothing'}`); }
+            }
+            const s = getComputedStyle(m);
             if (m.scrollWidth > m.clientWidth + 1 && s.textOverflow !== 'ellipsis') out.push('the meta is cut without an ellipsis');
             return out;
           });
@@ -262,25 +287,27 @@ for (const design of designs) {
     });
 
     // Settings' choices on a phone at the largest text size: a choice whose buttons don't fit its row side by side wraps
-    // (two to a row, else one; app.js fitSeg), so no choice runs past its row, and the indicator stays on the picked one
+    // (two to a row, else one; app.js fitSeg), so no choice runs past its row, and the indicator stays on the picked one,
+    // which it shows; a design that draws it elsewhere on purpose (a dot beside it) names `seg-indicator` in --gate-free
     test(`settings choices on a phone at the largest text / ${design} / ${theme}`, async ({ page }) => {
       await page.setViewportSize({ width: 390, height: 844 });
       await openScreen(page, '/settings/appearance', { design, theme });
       await page.evaluate(() => App.setPref('textSize', 125));
       await settle(page);
       await frames(page);
-      const bad = await page.evaluate(() => [...document.querySelectorAll('.sys-seg')].flatMap((seg) => {
+      const bad = await page.evaluate((src) => { const free = (0, eval)('(' + src + ')'); return [...document.querySelectorAll('.sys-seg')].flatMap((seg) => {
         const row = seg.closest('.sys-row').getBoundingClientRect(), key = seg.getAttribute('data-key'), out = [];
         const btns = [...seg.querySelectorAll('.seg__btn')], picked = btns.find((b) => b.getAttribute('aria-checked') === 'true');
         if (btns.some((b) => b.getBoundingClientRect().right > row.right + 1)) out.push(`${key}: a choice runs past its row`);
         const ind = seg.querySelector('.seg__ind');
-        if (picked && ind && getComputedStyle(ind).display !== 'none') {
+        const said = ind ? free(ind, 'seg-indicator') : '';
+        if (picked && ind && getComputedStyle(ind).display !== 'none' && said !== 'free') {
           const i = ind.getBoundingClientRect(), b = picked.getBoundingClientRect();
           // across it the picked button's width; down, from its top to just below it (a design may draw it as a line underneath)
-          if (Math.abs(i.left - b.left) > 2 || Math.abs(i.right - b.right) > 2 || i.top < b.top - 2 || i.top > b.bottom + 8) out.push(`${key}: the indicator is off the picked choice`);
+          if (Math.abs(i.left - b.left) > 2 || Math.abs(i.right - b.right) > 2 || i.top < b.top - 2 || i.top > b.bottom + 8) out.push(`${key}: the indicator is off the picked choice${said === 'no reason' ? ' (--gate-free names seg-indicator without a reason: say why)' : ''}`);
         }
         return out;
-      }));
+      }); }, gateFree.toString());
       expect(bad).toEqual([]);
     });
 

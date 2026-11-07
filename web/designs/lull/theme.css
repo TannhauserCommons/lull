@@ -1323,6 +1323,9 @@
      source window under it, as tall as its content, at the desk's bottom edge; the lyrics take what is left */
   :root[data-design="lull"] .now__side { position: absolute; inset: 0 0 0 calc(var(--np-w) + 16px); display: flex; flex-direction: column; gap: 16px; padding-bottom: 4px; }
   :root[data-design="lull"] .now .now-lycard { order: -1; flex: 1 1 0; min-height: 0; margin: 0; }
+  /* and its lines scroll in what is left, down to none (the source details open on a short window), so its foot and
+     its lines never run out of it onto the source window */
+  :root[data-design="lull"] .now .now-lycard :is(.now-ly__view, .now-ly__state) { min-height: 0; }
   :root[data-design="lull"] .now .now-srccard { flex: none; margin: 0; padding-bottom: 8px; }
   :root[data-design="lull"] .now-srccard .source-card { padding: 0; border: 0; background: none; box-shadow: none; display: grid; gap: 6px; }
   :root[data-design="lull"] .now-srccard .source-card__head { flex-wrap: wrap; row-gap: 4px; white-space: nowrap; font-size: .8125rem; }

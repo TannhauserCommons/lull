@@ -22,9 +22,9 @@ Curated pages for what is expensive to rediscover: boundaries, contracts, invari
 | Scrobbling rules, Last.fm auth | [scrobbling.md](scrobbling.md) *(owner writes)* | `crates/lastfm/` |
 | Likes, playlists, M3U, history, stats, settings, sync, imports | [collection.md](collection.md) *(owner writes)*, ADR-0005 | `crates/collection/` |
 | Subsonic API | [subsonic.md](subsonic.md) *(owner writes)* | `crates/subsonic/` |
-| Themes: format, hooks, Theme Studio | [../themes.md](../themes.md) *(owner writes)*, ADR-0004 | `web/designs/`, `crates/themes/` |
+| Themes: format, hooks, Theme Studio | [../themes.md](../themes.md) *(owner writes)*, ADR-0004, ADR-0083 (what the gates check) | `web/designs/`, `crates/themes/` |
 | Offline downloads, outbox, lull Connect (UI) | [web.md](web.md) *(owner writes)*, ADR-0005 | `web/` |
-| Visual tests, performance budgets, asset pipeline | [quality.md](quality.md) *(owner writes)* | `tests/ui/` |
+| Visual tests, performance budgets, asset pipeline | [quality.md](quality.md) *(owner writes)*, ADR-0083 | `tests/ui/` |
 | UI sounds, sound packs, easter eggs | [../themes.md](../themes.md) section 13, ADR-0081, [web.md](web.md) | `web/sounds.js`, `web/eggs.js`, `web/packs/`, `scripts/sounds/`, `crates/themes/src/pack.rs` |
 | Classic mode skins | [skins.md](skins.md) *(owner writes)* | `crates/skins/`, `web/screens/skins.js`, `web/screens/classic.js` |
 | Web UI: structure, data layer, player engine | [web.md](web.md) *(owner writes)*, `design/DESIGN.md` | `web/index.html`, `web/app.js` |
