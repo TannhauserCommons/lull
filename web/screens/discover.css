@@ -88,10 +88,6 @@ button.disc-pick__title:hover { text-decoration: underline; text-underline-offse
 .disc-pick__why { grid-area: why; display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); min-width: 0; margin-top: var(--sp-2); }
 .disc-pick__why > .cluster { flex-wrap: nowrap; align-items: flex-start; }       /* "+1" stays beside its chip */
 .disc-pick__end { grid-area: end; display: flex; align-items: center; margin-right: -4px; }
-/* a new release by an artist the listener likes that no peer shares yet: said quietly, on a line of its own under the
-   meta line (narrow tiles have no room beside it) */
-.tile__meta:has(.rel-unshared) { flex-wrap: wrap; row-gap: 0; }
-.rel-unshared { flex-basis: 100%; color: var(--fg-3); }
 /* where a pick plays from: quiet, at the end of the reason row (themes may restyle, move or hide it) */
 .pick-avail { display: inline-flex; gap: 2px; margin-left: auto; color: var(--fg-3); }
 .pick-avail .ic { width: 14px; height: 14px; }
