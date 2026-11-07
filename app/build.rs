@@ -191,6 +191,9 @@ fn main() -> io::Result<()> {
             "window_front",
             "sound_quiet",
             "reconnect_status",
+            "graphics_state",
+            "graphics_report",
+            "graphics_used",
         ]),
     ))
     .map_err(io::Error::other)

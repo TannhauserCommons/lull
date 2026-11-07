@@ -25,6 +25,9 @@
      quiet() / onQuiet(fn)                           main's web UI: the system asks for quiet (Windows' No Sounds scheme,
                                                      GNOME's event sounds off): a Promise of a boolean; fn hears changes
                                                      (front and quiet exist only in the app: ADR-0081's UI sounds)
+     graphics                                        what draws the page (app/src/desktop/graphics.rs): state ({ mode,
+                                                     software, light, fullLook, renderer, fellBack, ask }, null until the
+                                                     app answered) and on(fn), which hears every change
      mountPage()                                     wrapper.html: render the view named in the hash
    window.__LULL_DESKTOP__ ({ os, titlebar, layout }) is set by the wrapper before any page script runs. */
 (function () {
@@ -60,7 +63,13 @@
     return invoke('window_action', { request: Object.assign({ action: action }, detail || {}) });
   };
   D.settings = function () { return invoke('desktop_settings'); };
-  D.setSettings = function (patch) { return invoke('set_desktop_settings', { patch: patch }); };
+  D.setSettings = function (patch) {
+    return invoke('set_desktop_settings', { patch: patch }).then(function (r) {
+      // Graphics take effect at the next start (app/src/desktop/graphics.rs)
+      if (patch.graphics && window.App) App.toast('lull draws this way from its next start', { icon: 'refresh', action: 'Restart now', onAction: function () { D.windowAction('restart'); } });
+      return r;
+    });
+  };
   /* a see-through window (app/src/desktop/glass.rs): what `main` shows behind the page, and why not when its theme
      asked for glass and got none (held: off, system, unsupported, restart) */
   var glassFns = [];
@@ -69,6 +78,73 @@
     D.glass.state = grant;
     Designs.setWindow(grant && grant.material);
     glassFns.forEach(function (fn) { fn(grant); });
+  }
+  /* graphics (app/src/desktop/graphics.rs): where the processor draws the page, it takes lull's lighter look,
+     :root[data-graphics="light"] (base.css: no blur behind glass, no movement), and decorative loops hold still. The app
+     finds out itself on Linux (WebKitGTK's page scripts can't tell); on Windows it asks the page for WebGL's renderer
+     (state.ask), once the page has drawn. The listener's first click or key here tells the app this start's graphics
+     work: a start in a chosen mode that never gets one falls back to Automatic. The last look is kept on this device,
+     so a page opens in it. */
+  var graphicsFns = [];
+  D.graphics = { state: null, on: function (fn) { graphicsFns.push(fn); } };
+  function lightLook(on) {
+    if (on) root.setAttribute('data-graphics', 'light'); else root.removeAttribute('data-graphics');
+    if (window.App && App.still) App.still('graphics', on);
+  }
+  function webglRenderer() {
+    var gl = doc.createElement('canvas').getContext('webgl');
+    if (!gl) return null;
+    var info = gl.getExtension('WEBGL_debug_renderer_info'), lose = gl.getExtension('WEBGL_lose_context');
+    var name = String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+    if (lose) lose.loseContext();
+    return name;
+  }
+  /* Settings › App's line under its Graphics row (web/screens/system.js draws the row, #sys-graphics): what draws lull
+     and the look that follows, with the other look a click away, or that a chosen mode didn't come up */
+  D.graphics.help = 'How lull draws its window. Takes effect after a restart.';
+  D.graphics.modes = [['auto', 'Automatic'], ['gpu', 'Use the graphics card'], ['cpu', 'Processor only']];
+  var MODES = { gpu: D.graphics.modes[1][1], cpu: D.graphics.modes[2][1] };
+  D.graphics.line = function () {
+    var g = D.graphics.state;
+    if (g && g.fellBack) return '<p class="sys-note sys-note--warn">' + ic('warning', 'ic-16') + '<span>The last start with “' +
+      MODES[g.fellBack] + '” didn’t come up, so lull went back to Automatic.</span></p>';
+    if (!g || !g.software) return '';
+    return '<p class="sys-note">' + ic('info', 'ic-16') + '<span>' + (g.fullLook ? 'Your computer draws lull without its graphics card. The full look may feel slow.'
+      : 'Your computer draws lull without its graphics card, so lull uses a lighter look: no blur, fewer animations.') +
+      '</span><button class="btn btn--sm" data-dk-look>' + (g.fullLook ? 'Use the lighter look' : 'Use the full look') + '</button></p>';
+  };
+  function showGraphics(state) {
+    if (!state) return;
+    D.graphics.state = state;
+    lightLook(state.light);
+    var line = doc.getElementById('sys-graphics');
+    if (line) line.innerHTML = D.graphics.line();
+    try { localStorage.setItem('lull:graphicsLight', state.light ? '1' : ''); } catch (e) { /* no storage: the answer brings the look */ }
+    graphicsFns.forEach(function (fn) { fn(state); });
+    if (state.ask) requestAnimationFrame(function () { requestAnimationFrame(function () {
+      invoke('graphics_report', { drawn: { renderer: webglRenderer() } }).then(showGraphics, logFailure('graphics report'));
+    }); });
+  }
+  if (D.inWrapper) {
+    try { lightLook(localStorage.getItem('lull:graphicsLight') === '1'); } catch (e) { /* no storage: the answer brings the look */ }
+    invoke('graphics_state').then(showGraphics, logFailure('graphics'));
+    T.event.listen('graphics', function (e) { showGraphics(e.payload); }).catch(logFailure('graphics events'));
+    var used = function (e) {
+      if (!e.isTrusted) return;
+      doc.removeEventListener('pointerdown', used, true); doc.removeEventListener('keydown', used, true);
+      invoke('graphics_used').catch(logFailure('graphics used'));
+    };
+    doc.addEventListener('pointerdown', used, true); doc.addEventListener('keydown', used, true);
+    doc.addEventListener('click', function (e) {
+      if (e.target.closest && e.target.closest('[data-dk-look]') && D.graphics.state) {
+        D.setSettings({ fullLook: !D.graphics.state.fullLook }).catch(logFailure('the look'));
+      }
+    });
+    /* in the lighter look, the web UI's own motion stops too (its screens ask App.reducedMotion) */
+    if (window.App && App.reducedMotion) {
+      var reduced = App.reducedMotion;
+      App.reducedMotion = function () { return root.getAttribute('data-graphics') === 'light' || reduced(); };
+    }
   }
   D.openMini = function () { return D.windowAction('mini').catch(logFailure('mini player')); };
   /* Classic mode: Webamp alone in its own window (desktop/winamp.js); the app's window hides meanwhile */

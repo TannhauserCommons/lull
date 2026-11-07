@@ -8,6 +8,7 @@ mod classic_native;
 mod commands;
 mod discord;
 mod glass;
+mod graphics;
 mod links;
 mod local_hub;
 mod main_window;
@@ -33,6 +34,15 @@ use tauri::{App, AppHandle, Listener, Manager, RunEvent, Window, WindowEvent};
 use tauri_plugin_window_state::StateFlags;
 
 pub fn run() {
+    let context = tauri::generate_context!();
+    // Before Tauri and before any thread: the webview's graphics are set up from the settings file,
+    // so it is found as Tauri finds it (`app_config_dir`: the OS config folder, then the identifier).
+    let Some(config) = dirs::config_dir().map(|dir| dir.join(&context.config().identifier)) else {
+        eprintln!("lull: no config folder");
+        std::process::exit(1);
+    };
+    let store = Store::new(&config);
+    let graphics = graphics::prepare(&store);
     let builder = tauri::Builder::default()
         // First: a second launch hands over to this one and exits before anything else starts. A
         // `lull:` link it was started with opens here.
@@ -75,11 +85,14 @@ pub fn run() {
             commands::theme_package,
             commands::window_front,
             commands::sound_quiet,
+            commands::graphics_state,
+            commands::graphics_report,
+            commands::graphics_used,
             crate::reconnect::reconnect_status,
         ])
-        .setup(setup)
+        .setup(move |app| setup(app, store, graphics))
         .on_window_event(on_window_event)
-        .build(tauri::generate_context!());
+        .build(context);
     match app {
         Ok(app) => app.run(on_run_event),
         Err(e) => {
@@ -89,11 +102,15 @@ pub fn run() {
     }
 }
 
-fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
-    let store = Store::new(&app.path().app_config_dir()?);
+fn setup(
+    app: &mut App,
+    store: Store<settings::Settings>,
+    graphics: graphics::Graphics,
+) -> Result<(), Box<dyn std::error::Error>> {
     let platform = platform::detect();
     let with_tray = platform.tray;
     app.manage(Desktop::new(store, platform));
+    app.manage(graphics);
     app.manage(crate::reconnect::Reconnect::default());
     let handle = app.handle();
     let h = handle.clone();

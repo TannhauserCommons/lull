@@ -3,6 +3,7 @@
 
 use crate::desktop::classic;
 use crate::desktop::glass;
+use crate::desktop::graphics;
 use crate::desktop::links;
 use crate::desktop::local_hub;
 use crate::desktop::platform;
@@ -48,6 +49,9 @@ const HUB_PERMISSIONS: &[&str] = &[
     "allow-set-theme-package",
     "allow-window-front",
     "allow-sound-quiet",
+    "allow-graphics-state",
+    "allow-graphics-report",
+    "allow-graphics-used",
 ];
 
 /// What Webamp's page in the Classic window may call (classic.rs): fit and show its window (at its
@@ -176,6 +180,7 @@ fn create(app: &AppHandle, url: Url) -> tauri::Result<WebviewWindow> {
                 return;
             }
             loaded(&window, payload.url());
+            graphics::page_loaded(window.app_handle());
             if reveal.swap(false, std::sync::atomic::Ordering::Relaxed) {
                 report(show(window.app_handle()));
             }
@@ -260,6 +265,7 @@ pub fn show(app: &AppHandle) -> tauri::Result<()> {
         main.show()?;
         main.unminimize()?;
         main.set_focus()?;
+        graphics::shown(app);
     }
     Ok(())
 }

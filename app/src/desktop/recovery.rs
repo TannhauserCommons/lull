@@ -13,7 +13,7 @@
 //! - the GPU and helper processes come back on their own: logged only.
 
 use crate::desktop::state::{Desktop, NowPlaying, lock};
-use crate::desktop::{classic, main_window, mini, platform};
+use crate::desktop::{classic, graphics, main_window, mini, platform};
 use crate::pages;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -109,6 +109,16 @@ pub fn start(app: &AppHandle) {
             &format!("lull {version} started; no shared WebView2 environment, crash dumps go to Microsoft: {e}"),
         ),
     }
+    let graphics = app.state::<graphics::Graphics>();
+    let fell_back = match app
+        .state::<crate::desktop::state::Desktop>()
+        .settings()
+        .graphics_fell_back
+    {
+        Some(mode) if mode != graphics.mode => format!(" (back from {mode:?}: its last start didn't come up)"),
+        _ => String::new(),
+    };
+    log(app, &format!("graphics: {}{fell_back}", graphics.engine));
 }
 
 /// Every lull window is built here, so it uses the shared environment.
@@ -135,6 +145,10 @@ pub fn watch(window: &WebviewWindow) {
 
 /// Called from the platform's handler, on a thread of its own (window calls go through Tauri).
 pub fn failed(app: &AppHandle, label: &str, failure: Failure) {
+    // A page that dies before the listener used it puts this start's graphics on trial (graphics.rs).
+    if label == main_window::LABEL && !matches!(failure.process, Process::Helper(_)) {
+        graphics::page_lost(app);
+    }
     let recovery = app.state::<Recovery>();
     let action = match &failure.process {
         // A renderer this app ended because it hung: the hang counted, and decided what comes next.

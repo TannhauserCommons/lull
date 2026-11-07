@@ -4,6 +4,7 @@
 
 use crate::desktop::discord::Look;
 use crate::desktop::glass::Request;
+use crate::desktop::graphics::Mode;
 use crate::pages::Appearance;
 use serde::{Deserialize, Serialize};
 
@@ -36,6 +37,16 @@ pub struct Settings {
     /// "Show what I'm playing on Discord" (discord.rs), and how it looks.
     pub discord_presence: bool,
     pub discord: Look,
+    /// Settings › App › Graphics (graphics.rs): takes effect at the next start.
+    pub graphics: Mode,
+    /// A start in this mode showed `main` and the listener hasn't used the page yet: if the run ends
+    /// so, the next start falls back to Automatic (graphics.rs).
+    pub graphics_trial: Option<Mode>,
+    /// The choice lull left for Automatic after a start that didn't come up; Settings says so until
+    /// the listener chooses again.
+    pub graphics_fell_back: Option<Mode>,
+    /// The full look even where the processor draws the page (graphics.rs).
+    pub full_look: bool,
 }
 
 impl Default for Settings {
@@ -56,6 +67,10 @@ impl Default for Settings {
             wayland_hint_shown: false,
             discord_presence: false,
             discord: Look::default(),
+            graphics: Mode::Auto,
+            graphics_trial: None,
+            graphics_fell_back: None,
+            full_look: false,
         }
     }
 }

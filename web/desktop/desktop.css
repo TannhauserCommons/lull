@@ -219,3 +219,16 @@
    5. Standalone tooltip (the prototype's App provides its own)
    ===================================================================== */
 .dk-tip { white-space: nowrap; }
+
+/* ---------- the lighter look: the processor draws the page (app/src/desktop/graphics.rs; desktop.js sets it) ----------
+   Nothing moves (as under reduced motion, whatever the motion setting) and nothing blurs what's behind it, which the
+   processor works out again for every frame under it. Here, not in base.css: only the app ever sets it, and a browser
+   doesn't load this sheet. !important, as base.css's reduced motion: no design's own motion outlasts it. */
+:root[data-graphics="light"] *, :root[data-graphics="light"] *::before, :root[data-graphics="light"] *::after {
+  animation: none !important; scroll-behavior: auto !important;
+  transition-property: opacity, color, background-color, border-color, outline-color, box-shadow !important;
+  transition-duration: 120ms !important;
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+}
+/* Settings › App's line under Graphics (desktop.js): its button at the end */
+.sys-note > [data-dk-look] { flex: none; margin-left: auto; align-self: center; }

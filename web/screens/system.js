@@ -783,7 +783,7 @@
     window.LullDesktop.settings().then(function (d) { desk = { data: d }; repaint('#sys-desktop', desktopRows()); },
       function (err) { desk = { error: errText(err) }; repaint('#sys-desktop', desktopRows()); });
   }
-  ['closeToTray', 'launchAtLogin', 'startInTray', 'miniStyle', 'miniOnTop', 'ownTitlebar', 'discordPresence', 'discordStatus',
+  ['closeToTray', 'launchAtLogin', 'startInTray', 'miniStyle', 'miniOnTop', 'ownTitlebar', 'graphics', 'discordPresence', 'discordStatus',
     'discordCover', 'discordButtons', 'discordPaused'].forEach(function (key) {
     custom['desktop.' + key] = { get: function () { return desk.data[key]; }, set: function (v) {
       var before = desk.data[key], patch = {}; patch[key] = v; desk.data[key] = v;
@@ -795,7 +795,6 @@
     } };
   });
   effects['desktop.ownTitlebar'] = function () { App.toast('Restart lull to change the title bar', { icon: 'refresh' }); };
-  effects['desktop.discordPresence'] = function (v) { $$('[data-when="discord"]').forEach(function (r) { r.hidden = !v; }); };
   App.action('sys-desktop-connect', function () { window.LullDesktop.windowAction('change-server'); });
   App.action('sys-desktop-reload', function () { loadDesktop(); repaint('#sys-desktop', desktopRows()); });
   function desktopRows() {
@@ -809,7 +808,13 @@
       ${row('Mini player style', 'Opens from the tray, the player bar or Ctrl+Shift+M.', choice('desktop.miniStyle', 'Mini player style', [['device', 'Device'], ['strip', 'Strip']]))}
       ${switchRow('desktop.miniOnTop', 'Mini player always on top', 'Some Linux desktops decide this themselves.')}
       ${d.ownTitlebar == null ? '' : switchRow('desktop.ownTitlebar', 'Use lull title bar', 'Replaces the system title bar; takes effect after a restart.')}
+      ${d.graphics == null ? '' : graphicsRow(window.LullDesktop.graphics)}
       ${d.discordPresence == null ? '' : discordRows(d)}`;
+  }
+  /* Graphics (app/src/desktop/graphics.rs): its words, the toast on a change and the line under it are desktop.js's, which
+     only the app loads (LullDesktop.graphics) */
+  function graphicsRow(g) {
+    return html`${row('Graphics', g.help, choice('desktop.graphics', 'Graphics', g.modes, 'sys-seg--wrap'), { cls: 'sys-row--stack' })}<div id="sys-graphics">${raw(g.line())}</div>`;
   }
   /* Discord Rich Presence (app/src/desktop/discord.rs): the switch, then its look while it is on */
   function discordRows(d) {

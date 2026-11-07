@@ -351,12 +351,34 @@ unsafe impl Sync for Environment {}
 static ENVIRONMENT: std::sync::OnceLock<Environment> = std::sync::OnceLock::new();
 
 /// What wry passes when it makes the environment itself (wry's webview2 `create_environment`, with
-/// autoplay on as Tauri leaves it): the same, so nothing else changes.
+/// autoplay on as Tauri leaves it): the same, so nothing else changes. Arguments passed here replace
+/// wry's, so they are all repeated.
 const BROWSER_ARGS: &str =
     "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required";
 
+/// Chromium's switches for each graphics mode (graphics.rs), after `BROWSER_ARGS`. The graphics card:
+/// past Chromium's list of drivers it won't use, and on the high-performance adapter where there
+/// are two (ANGLE picks it). The processor: no GPU process at all. A listener's own
+/// `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` still comes after these.
+pub fn graphics_args(mode: crate::desktop::graphics::Mode) -> &'static str {
+    use crate::desktop::graphics::Mode;
+    match mode {
+        Mode::Auto => "",
+        Mode::Gpu => "--ignore-gpu-blocklist --force-high-performance-gpu",
+        Mode::Cpu => "--disable-gpu",
+    }
+}
+
+/// For the log: what the mode passes.
+pub fn graphics_said(mode: crate::desktop::graphics::Mode) -> String {
+    match graphics_args(mode) {
+        "" => "Automatic: WebView2's own choice".into(),
+        args => format!("WebView2 {args}"),
+    }
+}
+
 /// Makes the shared environment; says which WebView2 runs and where its crash dumps go.
-pub fn create_environment(data_dir: &std::path::Path) -> Result<String, String> {
+pub fn create_environment(data_dir: &std::path::Path, mode: crate::desktop::graphics::Mode) -> Result<String, String> {
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         CreateCoreWebView2EnvironmentWithOptions, ICoreWebView2Environment11, ICoreWebView2EnvironmentOptions,
     };
@@ -375,7 +397,8 @@ pub fn create_environment(data_dir: &std::path::Path) -> Result<String, String> 
     let options = CoreWebView2EnvironmentOptions::default();
     // SAFETY: setters on an options object this function owns.
     unsafe {
-        options.set_additional_browser_arguments(BROWSER_ARGS.to_owned());
+        options
+            .set_additional_browser_arguments(format!("{BROWSER_ARGS} {}", graphics_args(mode)).trim_end().to_owned());
         options.set_is_custom_crash_reporting_enabled(true);
     }
     let options: ICoreWebView2EnvironmentOptions = options.into();

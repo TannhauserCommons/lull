@@ -57,6 +57,9 @@ tauri-plugin-single-instance = "=2.5.5"
 tauri-plugin-autostart = "=2.7.0"
 # Auto-update from GitHub Releases, signature-checked (ADR-0006).
 tauri-plugin-updater = "=2.14.1"
+# The OS config folder, found before Tauri starts as Tauri finds it: the graphics choice is set up
+# before the first thread (src/desktop/graphics.rs). Tauri's own version.
+dirs = "=7.0.0"
 
 [target.'cfg(windows)'.dependencies]
 # Taskbar theme for the tray glyph (registry), a job object so slskd dies with the app, a
@@ -145,9 +148,11 @@ tauri-plugin-global-shortcut = "=2.4.1"
 zbus = "=5.19.0"
 # prctl(PR_SET_PDEATHSIG): slskd stops when the app does, even after a crash. Already in Tauri's tree.
 libc = "=0.2.191"
-# The page's process dying (web-process-terminated), so the window recovers (recovery.rs). Wry's
-# own WebKitGTK binding, same version.
+# The page's process dying (web-process-terminated), so the window recovers (recovery.rs), and
+# reading WebKitGTK's own graphics report (webkit://gpu). Wry's own WebKitGTK binding, same version.
 webkit2gtk = "=2.0.2"
+# The value that report's script answers with. webkit2gtk's own, same version.
+javascriptcore-rs = "=1.1.2"
 
 [target.'cfg(target_os = "android")'.dependencies]
 # The native player: Media3 with a MediaSession service, downloads to app storage (ADR-0006), and

@@ -1,10 +1,12 @@
 //! Where Windows and Linux differ: title bar, tray glyph, transparency and glass, media keys,
-//! taskbar buttons, a sleeping webview, opening links.
+//! taskbar buttons, a sleeping webview, opening links, the webview's graphics.
 
 #[cfg(windows)]
 mod glyphs;
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "linux")]
+mod linux_graphics;
 #[cfg(windows)]
 mod taskbar;
 #[cfg(windows)]
@@ -13,6 +15,7 @@ mod windows;
 pub use windows::kill_with_app;
 
 use crate::desktop::glass::Material;
+use crate::desktop::graphics::{Finding, Mode};
 use crate::desktop::settings::Settings;
 use crate::desktop::state::Platform;
 use tauri::image::Image;
@@ -120,13 +123,32 @@ pub fn prepare_webviews(app: &AppHandle) -> Result<String, String> {
             windows::dump_on_crash(&logs.join("lull.dmp"));
         }
         let data = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
-        windows::create_environment(&data)
+        windows::create_environment(&data, app.state::<crate::desktop::graphics::Graphics>().mode)
     }
     #[cfg(not(windows))]
     {
         let _ = app;
         Ok("WebKitGTK".into())
     }
+}
+
+/// First thing in the run, before any thread (graphics.rs): what the engine needs for this mode.
+/// Linux sets WebKitGTK's switches in the environment; Windows passes its browser arguments when it
+/// makes the WebView2 environment (`prepare_webviews`). Says what it did, for the log.
+pub fn prepare_graphics(mode: Mode) -> String {
+    #[cfg(target_os = "linux")]
+    return linux_graphics::prepare(mode);
+    #[cfg(windows)]
+    return windows::graphics_said(mode);
+}
+
+/// What draws the page, as the engine reports it, once (graphics.rs). Only WebKitGTK needs asking:
+/// WebView2 tells the page itself.
+pub fn probe_graphics(app: &AppHandle, found: impl FnOnce(Result<Finding, String>) + Send + 'static) {
+    #[cfg(target_os = "linux")]
+    linux_graphics::probe(app, found);
+    #[cfg(not(target_os = "linux"))]
+    let _ = (app, found);
 }
 
 /// A window builder that uses the environment `prepare_webviews` made.
@@ -167,11 +189,16 @@ pub fn open_in_browser(url: &Url) -> Result<(), String> {
     #[cfg(windows)]
     return windows::open_in_browser(url);
     #[cfg(not(windows))]
-    lull_core::process::command("xdg-open")
-        .arg(url.as_str())
-        .spawn()
-        .map(drop)
-        .map_err(|e| format!("xdg-open: {e}"))
+    {
+        let mut command = lull_core::process::command("xdg-open");
+        // The browser gets the graphics it would have had without lull's (graphics.rs).
+        linux_graphics::as_started(&mut command);
+        command
+            .arg(url.as_str())
+            .spawn()
+            .map(drop)
+            .map_err(|e| format!("xdg-open: {e}"))
+    }
 }
 
 /// `<scheme>:` links start this app (open_links.rs), for this user: the registry's

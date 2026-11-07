@@ -4,6 +4,7 @@
 use crate::desktop::classic::{self, Handoff};
 use crate::desktop::discord::{Presence, StatusLine, WhenPaused};
 use crate::desktop::glass::{self, Grant, Request};
+use crate::desktop::graphics::{self, Drawn, Mode};
 use crate::desktop::local_hub::{self, PORT};
 use crate::desktop::main_window;
 use crate::desktop::mini;
@@ -55,6 +56,8 @@ pub enum WindowAction {
     MediaKeys,
     /// The Classic window's page handed the queue back to `main`: close it, wake `main`.
     ClassicDone,
+    /// Settings > App, after a change that takes effect at the next start (Graphics): start again.
+    Restart,
 }
 
 #[tauri::command]
@@ -81,6 +84,7 @@ pub async fn window_action(app: AppHandle, request: WindowAction) -> Result<(), 
         WindowAction::CloseChoice { keep, remember } => main_window::close_choice(&app, keep, remember),
         WindowAction::MediaKeys => return platform::media_keys(&app),
         WindowAction::ClassicDone => classic::done(&app),
+        WindowAction::Restart => app.restart(),
     };
     done.map_err(|e| e.to_string())
 }
@@ -180,6 +184,9 @@ pub struct DesktopSettings {
     discord_cover: Option<bool>,
     discord_buttons: Option<bool>,
     discord_paused: Option<WhenPaused>,
+    /// Settings > App > Graphics: the choice, from the next start (graphics.rs). What this run found
+    /// drawing the page is `graphics_state`.
+    graphics: Mode,
 }
 
 #[tauri::command]
@@ -208,6 +215,7 @@ pub fn desktop_settings(app: AppHandle) -> Result<DesktopSettings, String> {
         discord_cover: Presence::available().then_some(s.discord.cover),
         discord_buttons: Presence::available().then_some(s.discord.buttons),
         discord_paused: Presence::available().then_some(s.discord.paused),
+        graphics: s.graphics,
     })
 }
 
@@ -226,6 +234,8 @@ pub struct SettingsPatch {
     discord_cover: Option<bool>,
     discord_buttons: Option<bool>,
     discord_paused: Option<WhenPaused>,
+    graphics: Option<Mode>,
+    full_look: Option<bool>,
 }
 
 impl SettingsPatch {
@@ -291,6 +301,9 @@ pub fn set_desktop_settings(app: AppHandle, patch: SettingsPatch) -> Result<(), 
     }
     if patch.glass.is_some() {
         glass::refresh(&app);
+    }
+    if patch.graphics.is_some() || patch.full_look.is_some() {
+        graphics::choose(&app, patch.graphics, patch.full_look);
     }
     Ok(())
 }
@@ -391,4 +404,26 @@ pub fn sound_quiet(app: AppHandle) -> bool {
 #[tauri::command]
 pub fn theme_package(app: AppHandle, id: String) -> Option<theme::Package> {
     theme::package(&app, &id)
+}
+
+/// A page (the web UI or a bundled one, in any window): what draws pages and how they should look
+/// (graphics.rs). Later changes come as `graphics`.
+#[tauri::command]
+pub fn graphics_state(app: AppHandle) -> graphics::State {
+    graphics::state(&app)
+}
+
+/// A page asked for it (`ask`): WebGL's renderer, once it has drawn. The answer is how it should
+/// look.
+#[tauri::command]
+pub fn graphics_report(app: AppHandle, drawn: Drawn) -> graphics::State {
+    graphics::report(&app, drawn)
+}
+
+/// The listener's first click or key in `main`'s page this run: the graphics work here.
+#[tauri::command]
+pub fn graphics_used(window: WebviewWindow) {
+    if window.label() == main_window::LABEL {
+        graphics::proven(window.app_handle());
+    }
 }

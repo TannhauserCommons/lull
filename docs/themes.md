@@ -118,6 +118,7 @@ Go beyond tokens with any selector. These hooks are the theme API: they stay put
 | `:root[data-motion]` | `reduce`, `full` (absent: follow the system). Keep motion off under `reduce`. |
 | `:root[data-design]` | the built-in design that is loaded (your `extends`), else your id |
 | `:root[data-window]` | `mica`, `acrylic`, `blur`, `transparent`: what the desktop app's window shows behind the page now (section 12); absent while the window is solid |
+| `:root[data-graphics]` | `light`: the desktop app found the processor drawing the page, not a graphics card (Settings › App › Graphics). lull stops all movement and every `backdrop-filter` there, and decorative loops hold still; make sure your glass reads without its blur. Absent otherwise |
 | `[data-region]` | `rail`, `header`, `topnav`, `content`, `ctx` (queue, lyrics, activity), `playerbar`, `mini` (phone player), `tabbar`, `lead` (Home's homeLead slot) |
 | `.app[data-screen]` | `home`, `search`, `now`, `library`, `liked`, `history`, `following`, `album`, `artist`, `tag`, `playlists`, `playlist`, `stats`, `settings`, `classic`... |
 | `.app[data-route]`, `.app[data-view]`, `.app[data-ctx]` | nav key; `page` or `now`; `docked`, `open`, `closed` |
@@ -366,6 +367,7 @@ Also a window narrowed past each `data-size` step. Nothing may scroll sideways, 
 - **Cheap to draw:** each loop is stepped where it is declared (`steps(n)` or a `--loop-*` stepped easing), moves only what moves, and stays off live glass; glass over your own wallpaper is baked (section 5, Drawing cheaply).
 - **As much as you like, within its cost:** how much moves is yours to choose; the bound is that it stays smooth on a cheap device (the checks above, and the perf gates for the built-in designs).
 - **Off under reduced motion:** nothing moves under `:root[data-motion="reduce"]`, or under the system's reduced-motion setting unless `data-motion="full"`. lull's base CSS already stops animations and travel there; don't undo it with `!important`.
+- **Off on the processor:** under `:root[data-graphics="light"]` (the desktop app on a computer whose graphics card isn't drawing the page) nothing moves and nothing blurs what's behind it, whatever the motion setting. Glass there shows its fill alone, so give it a fill that text reads on.
 - **Paused when hidden:** loops pause on `:root.is-hidden` (the page is hidden).
 - **Still when asked:** a decorative loop takes `animation-play-state: var(--loop-play, running)`, which pauses on `:root.is-still`, or names its rate with `--loop-fps`, which lull holds; a progress loop leaves the first out, or sets `--loop-holds: no` (section 5, Drawing cheaply).
 - **Keep restyles small:** follow "Staying fast" in section 5.
@@ -408,6 +410,7 @@ Every class lull's CSS styles and every `data-*` attribute lull's markup sets, e
   - `data-titlebar` and `data-window-inactive` (the desktop app);
   - `data-player` (the player's state, as `#pbar[data-status]`) and `data-playing` (`true` while sound plays);
   - `data-window` (`mica` `acrylic` `blur` `transparent`: the desktop app's window shows the desktop behind the page, section 12; absent while it is solid) and `data-window-preview` (the browser's preview of it, over a black and white checkerboard);
+  - `data-graphics` (`light`: the desktop app's lighter look, where the processor draws the page: no movement, no blur behind glass);
   - `.is-hidden` on `:root` (the page is hidden: loops pause);
   - `.is-still` on `:root` (decorative loops hold still: the listener's "Pause animations when lull isn't the active window", section 5, Drawing cheaply);
   - `--loop-<curve>-<n>` stepped easings and `--loop-play` (`paused` while `:root.is-still`) for a loop's timing and play-state; `--loop-fps` (a loop's changes a second, lull steps it) and `--loop-holds: no` (it shows progress) on a loop that names its rate instead (section 5, Drawing cheaply).
@@ -548,7 +551,7 @@ lull's plumbing: these may change in any release.
   - lists, filters and banners: `data-filters`, `data-issue`, `data-more`, `data-out`, `data-period`, `data-range`, `data-pick`, `data-pick-new`, `data-pick-made`, `data-pick-again`, `data-pick-done`, `data-sync`, `data-save-btn`, `data-save-songs`, `data-src-badge`, `data-src-mini`, `data-dl`, `data-cold-count`, `data-banner`, `data-banner-*`, `data-toast-*`, `data-cover-*`, `data-scan*`, `data-now-qlist`, `data-now-steer`, `data-fill` (a long list's row whose contents are drawn only near the screen: empty `<li>` while far from it);
   - Settings controls: `data-cfg`, `data-switch`, `data-step`, `data-stepper`, `data-min`, `data-max`, `data-unit`, `data-weight`, `data-when`, `data-format`, `data-formats`;
   - screens with their own wiring: `data-pack`, `data-imp-*`, `data-lib-*`, `data-linkrev*`, `data-rev-*`, `data-cx*`, `data-studio*`, `data-drop-theme`, `data-theme-file`, `data-add-rates`, `data-skin`, `data-skin-file`, `data-webamp`, `data-eq*`, `data-token`, `data-token-reset`;
-  - the desktop app's pages: `data-attempt`, `data-dk-attempt`, `data-dk-close`, `data-dk-connect`, `data-dk-error`, `data-dk-found`, `data-dk-offline`, `data-dk-retry-status`, `data-dk-welcome`.
+  - the desktop app's pages: `data-attempt`, `data-dk-attempt`, `data-dk-close`, `data-dk-connect`, `data-dk-error`, `data-dk-found`, `data-dk-look` (Settings › App: the other look, desktop.js), `data-dk-offline`, `data-dk-retry-status`, `data-dk-welcome`.
 
 ## 12. A see-through window
 
