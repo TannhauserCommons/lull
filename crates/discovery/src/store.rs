@@ -27,11 +27,13 @@ const SIGNAL_WINDOW_S: i64 = 365 * 86_400;
 pub struct Store {
     pub db: Db,
     library: Arc<dyn Library>,
+    /// ADR-0035's switch: albums of one artist sharing a title stay apart by their release group.
+    namesakes: bool,
 }
 
 impl Store {
-    pub fn new(db: Db, library: Arc<dyn Library>) -> Self {
-        Store { db, library }
+    pub fn new(db: Db, library: Arc<dyn Library>, namesakes: bool) -> Self {
+        Store { db, library, namesakes }
     }
 
     /// Asks library to fetch these saved albums' covers ahead: they have no catalog picture, so
@@ -62,9 +64,14 @@ impl Store {
 
     /// `albums`, for albums already in the UI's shape.
     pub async fn remember_albums(&self, albums: Vec<Album>) -> Result<Vec<Album>> {
+        let namesakes = self.namesakes;
         let (mut albums, members) = self
             .db
             .call(move |c| {
+                let albums = match namesakes {
+                    true => apart(c, albums)?,
+                    false => albums,
+                };
                 let artists: Vec<Artist> = albums
                     .iter()
                     .map(|a| {
@@ -562,6 +569,25 @@ fn song_album(s: &Song) -> Album {
         duration: None,
         musicbrainz_id: s.album_mbid.clone(),
     }
+}
+
+/// ADR-0035: an album whose title another album of its artist already has, with another release
+/// group, is another album: it gets its own id (Weezer's several "Weezer"s), never the other's
+/// tracks or cover. One with no release group, or the same, is the album already known.
+fn apart(c: &Connection, albums: Vec<Album>) -> Result<Vec<Album>> {
+    albums
+        .into_iter()
+        .map(|mut a| {
+            let Some(group) = a.musicbrainz_id.clone() else {
+                return Ok(a);
+            };
+            let known = get::<Album>(c, "discovery_albums", &a.id.0)?;
+            if known.is_some_and(|k| k.musicbrainz_id.as_ref().is_some_and(|g| *g != group)) {
+                a.id = AlbumId::own(&a.artist, &a.title, &format!("rg:{group}"));
+            }
+            Ok(a)
+        })
+        .collect()
 }
 
 pub fn album(r: Release) -> Album {
@@ -1298,6 +1324,41 @@ mod tests {
             .map(|(id, _, n, _)| (id.0, n))
             .collect();
         assert_eq!(plays, [("t-half".to_owned(), 2), ("t-loop".to_owned(), 1)]);
+        Ok(())
+    }
+
+    /// ADR-0035: Weezer's several albums called "Weezer" are separate albums by their release
+    /// groups; the same release group, or none, is the album already known.
+    #[test]
+    fn same_titled_albums_of_one_artist_stay_apart_by_release_group() -> Result<()> {
+        use lull_core::ids::AlbumId;
+        let c = discovery_db()?;
+        let weezer = |group: Option<&str>| {
+            super::album(crate::sources::Release {
+                mbid: group.map(str::to_owned),
+                title: "Weezer".into(),
+                artist: "Weezer".into(),
+                artist_mbid: None,
+                kind: Some("album".into()),
+                date: None,
+                tags: Vec::new(),
+            })
+        };
+        let blue = super::apart(&c, vec![weezer(Some("blue-group"))])?;
+        super::merge_put(&c, "discovery_albums", blue.clone(), |a| &a.id.0, super::merge_album)?;
+        assert_eq!(
+            blue[0].id,
+            AlbumId::of("Weezer", "Weezer"),
+            "the first keeps the title's id"
+        );
+        let green = super::apart(&c, vec![weezer(Some("green-group"))])?;
+        assert_eq!(green[0].id, AlbumId::own("Weezer", "Weezer", "rg:green-group"));
+        assert_eq!(super::apart(&c, vec![weezer(Some("blue-group"))])?[0].id, blue[0].id);
+        assert_eq!(
+            super::apart(&c, vec![weezer(None)])?[0].id,
+            blue[0].id,
+            "no release group: the one known"
+        );
         Ok(())
     }
 }

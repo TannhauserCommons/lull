@@ -195,7 +195,11 @@ pub async fn start(
     let cache = Cache::new(ctx.db.clone());
     cache.prune().await?;
     let svc = Arc::new(Service {
-        store: Store::new(ctx.db.clone(), library),
+        store: Store::new(
+            ctx.db.clone(),
+            library,
+            ctx.config.flags.on(&lull_core::flags::NAMESAKES),
+        ),
         lb: ListenBrainz::new(
             ctx.http.clone(),
             cache.clone(),

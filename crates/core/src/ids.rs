@@ -48,6 +48,15 @@ impl AlbumId {
             hash(&[&normalize_artist(artist), &normalize(album)])
         ))
     }
+
+    /// An album's own id, for one of several albums of an artist sharing a title (ADR-0035: a
+    /// band's several self-titled albums): the names and the album's anchor ("rg:<MBID>").
+    pub fn own(artist: &str, album: &str, anchor: &str) -> Self {
+        AlbumId(format!(
+            "al-{:016x}",
+            hash(&[&normalize_artist(artist), &normalize(album), anchor])
+        ))
+    }
 }
 
 impl TrackId {
