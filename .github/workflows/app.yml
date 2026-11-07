@@ -410,3 +410,15 @@ jobs:
               gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "lull $TAG" --generate-notes
             fi
           gh release upload "$TAG" bundles/* --repo "$GITHUB_REPOSITORY" --clobber
+
+  # lull in the AUR (aur.yml): the PKGBUILD for this release, built and started on Arch, then pushed to the AUR.
+  aur:
+    needs: release
+    if: github.ref_type == 'tag'
+    uses: ./.github/workflows/aur.yml
+    with:
+      ref: ${{ github.ref }}
+      version: ${{ github.ref_name }}
+      publish: true
+    secrets:
+      AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}

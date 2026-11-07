@@ -25,11 +25,19 @@ pub struct Updates {
 }
 
 /// Checks now and then every few hours, silently: a found update only changes Settings and the tray.
+/// An install a package manager keeps current never checks (`packaged_by`).
 pub fn start(app: &AppHandle) {
+    let packaged = packaged_by();
     app.manage(Updates {
-        status: Mutex::new(Status::Idle),
+        status: Mutex::new(match &packaged {
+            Some(by) => Status::Packaged { by: by.clone() },
+            None => Status::Idle,
+        }),
         pending: Mutex::new(None),
     });
+    if packaged.is_some() {
+        return;
+    }
     let app = app.clone();
     std::thread::spawn(move || {
         loop {
@@ -44,6 +52,15 @@ pub fn report(app: &AppHandle) -> Report {
         current: app.package_info().version.to_string(),
         status: lock(&app.state::<Updates>().status).clone(),
     }
+}
+
+/// A package that installs lull says where its updates come from in `updates-from` next to the app
+/// (the AUR's lull-bin: packaging/aur/PKGBUILD.in). pacman owns those files: lull replacing them would
+/// leave the package database wrong, and its .deb wouldn't install on Arch anyway.
+fn packaged_by() -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    let by = std::fs::read_to_string(exe.parent()?.join("updates-from")).ok()?;
+    Some(by.trim().to_owned()).filter(|by| !by.is_empty())
 }
 
 /// One check, unless one runs already or an update waits. Returns once GitHub has answered; a found
@@ -163,6 +180,7 @@ pub fn label(report: &Report) -> (String, bool) {
         }
         Status::Ready { version } => (format!("Restart to update to lull {version}"), true),
         Status::Failed { .. } => ("Couldn't check for updates: try again".into(), true),
+        Status::Packaged { by } => (format!("Updates come with {by}"), false),
     }
 }
 
@@ -246,6 +264,16 @@ mod tests {
         assert_eq!((text.as_str(), on), ("Restart to update to lull 0.2.0", true));
         let (text, on) = label(&report(Status::Current));
         assert_eq!((text.as_str(), on), ("lull 0.1.0 is up to date", true));
+    }
+
+    #[test]
+    fn a_packaged_install_points_to_its_package_manager_and_never_checks() {
+        let packaged = Status::Packaged {
+            by: "the AUR (lull-bin)".into(),
+        };
+        assert!(packaged.busy(), "a check would install over pacman's files");
+        let (text, on) = label(&report(packaged));
+        assert_eq!((text.as_str(), on), ("Updates come with the AUR (lull-bin)", false));
     }
 
     #[test]

@@ -83,6 +83,13 @@ jobs:
     with:
       ref: ${{ needs.plan.outputs.commit }}
 
+  aur:
+    needs: plan
+    if: needs.plan.outputs.commit != ''
+    uses: ./.github/workflows/aur.yml
+    with:
+      ref: ${{ needs.plan.outputs.commit }}
+
   slskd-contract:
     needs: plan
     if: needs.plan.outputs.commit != ''
@@ -136,7 +143,7 @@ jobs:
       image-artifact: image
 
   verdict:
-    needs: [plan, ci, ui-gates, app, graphics, slskd-contract, server-package, image, ui]
+    needs: [plan, ci, ui-gates, app, graphics, aur, slskd-contract, server-package, image, ui]
     if: ${{ !cancelled() && needs.plan.outputs.commit != '' }}
     runs-on: ubuntu-24.04
     permissions:

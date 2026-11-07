@@ -1,0 +1,147 @@
+name: aur
+# lull-bin, lull in the AUR (docs/context/desktop.md, The AUR): the PKGBUILD for a release (scripts/aur-pkgbuild.sh),
+# built with makepkg in Arch's own container on Arch's WebKitGTK, checked by namcap, installed with pacman and started
+# under Xvfb until its window draws; the aarch64 sources are downloaded and checked too (checksums, minisign). On a
+# release it is then pushed to the AUR, which needs the AUR_SSH_KEY secret (from Bitwarden's lull/AUR_SSH_KEY): until
+# that exists the push says so and stops there, as share.yml does without Cloudflare's.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The release to package (1.2.3); empty for the newest
+        type: string
+        default: ""
+      publish:
+        description: Push the PKGBUILD to the AUR
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      ref:
+        description: The commit whose PKGBUILD template and script to use
+        type: string
+        required: true
+      version:
+        description: The release to package (v1.2.3 or 1.2.3); empty for the newest
+        type: string
+        default: ""
+      publish:
+        type: boolean
+        default: false
+    secrets:
+      AUR_SSH_KEY:
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aur-${{ inputs.ref || github.ref }}-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # Arch's own image, dated; pacman -Syu brings it current, as an Arch install is.
+    container: archlinux:base-devel-20261018.0.612668
+    steps:
+      - run: pacman -Syu --noconfirm --needed git nodejs minisign namcap xorg-server-xvfb xorg-xauth imagemagick dbus
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+      - name: The release
+        id: release
+        env:
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=${VERSION#v}
+          if [ -z "$VERSION" ]; then
+            VERSION=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/latest" \
+              | node -e "let s=''; process.stdin.on('data', d => s += d).on('end', () => console.log(JSON.parse(s).tag_name.replace(/^v/, '')))")
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          mkdir -p bundles
+          for f in "lull_${VERSION}_amd64.deb" "lull_${VERSION}_amd64.deb.sig" "lull_${VERSION}_arm64.deb" "lull_${VERSION}_arm64.deb.sig"; do
+            curl -fsSL -o "bundles/$f" "https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION/$f"
+          done
+      - run: sh scripts/aur-pkgbuild.sh "${{ steps.release.outputs.version }}" bundles aur
+      # makepkg won't run as root, and its user can't install what the package needs: root does, from .SRCINFO.
+      - name: makepkg
+        run: |
+          useradd -m builder
+          chown -R builder aur
+          cd aur
+          su builder -c 'makepkg --printsrcinfo > .SRCINFO'
+          pacman -S --noconfirm --needed $(sed -n 's/^\t\(make\)\?depends = //p' .SRCINFO)
+          su builder -c 'makepkg -f --noconfirm'
+          # aarch64: its sources downloaded and checked (checksums, then prepare's minisign check), on this x86_64 machine
+          sed 's/^CARCH=.*/CARCH="aarch64"/' /etc/makepkg.conf > /tmp/aarch64.conf
+          su builder -c 'makepkg -f --nobuild --nodeps --config /tmp/aarch64.conf'
+      - name: namcap
+        run: |
+          cd aur
+          namcap PKGBUILD
+          namcap -i lull-bin-*.pkg.tar.zst | tee namcap.txt
+          # The depends are exactly what the binaries link: one missing, or one not needed, fails it. AppIndicator is
+          # loaded at run time (the tray), which namcap can't see.
+          ! grep -E ' E: | W: .*(Referenced library|detected and not included|implicitly satisfied|may not be needed)' namcap.txt \
+            | grep -v "may not be needed ('libayatana-appindicator')"
+      - run: pacman -U --noconfirm aur/lull-bin-*.pkg.tar.zst
+      - name: lull starts and draws, on Arch's WebKitGTK
+        run: |
+          useradd -m listener
+          su listener -c 'xvfb-run -a -s "-screen 0 1440x900x24" dbus-run-session -- sh -c "
+            lull & app=\$!
+            log=\$HOME/.local/share/io.github.tannhausercommons.lull/logs/webview.log
+            for i in \$(seq 1 60); do grep -q started \$log 2>/dev/null && break; sleep 1; done
+            sleep 8
+            kill -0 \$app || { echo lull exited; exit 1; }
+            sd=\$(magick x:root -colorspace gray -format %[fx:standard_deviation] info:)
+            echo \"screen: grey standard deviation \$sd\"; cat \$log
+            kill \$app
+            awk -v sd=\$sd \"BEGIN { exit !(sd > 0.05) }\" || { echo the window is blank; exit 1; }
+          "'
+          test "$(readlink -f /usr/bin/lull)" = /usr/lib/lull/lull
+          for tool in slskd yt-dlp deno; do test -x /usr/lib/lull/$tool; done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aur-lull-bin
+          path: |
+            aur/PKGBUILD
+            aur/.SRCINFO
+
+  publish:
+    needs: package
+    if: inputs.publish
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: aur-lull-bin
+          path: aur
+      - name: Push to the AUR
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+        run: |
+          if [ -z "$AUR_SSH_KEY" ]; then
+            echo "::notice::Not pushed to the AUR: the AUR_SSH_KEY secret isn't set yet (docs/context/desktop.md, The AUR)."
+            exit 0
+          fi
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$AUR_SSH_KEY" > ~/.ssh/aur && chmod 600 ~/.ssh/aur
+          # The AUR's host key, checked against the fingerprint aur.archlinux.org publishes.
+          ssh-keyscan -t ed25519 aur.archlinux.org > ~/.ssh/known_hosts 2>/dev/null
+          ssh-keygen -lf ~/.ssh/known_hosts | grep -q 'SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4' \
+            || { echo "aur.archlinux.org's host key isn't the published one"; exit 1; }
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/aur -o IdentitiesOnly=yes"
+          git clone ssh://aur@aur.archlinux.org/lull-bin.git repo
+          cp aur/PKGBUILD aur/.SRCINFO repo/
+          cd repo
+          git add PKGBUILD .SRCINFO
+          if git diff --cached --quiet; then echo "The AUR already has this PKGBUILD"; exit 0; fi
+          version=$(sed -n 's/^\tpkgver = //p' .SRCINFO)
+          git -c user.name=TannhauserCommons -c user.email=350945459+TannhauserCommons@users.noreply.github.com \
+            commit -q -m "lull $version"
+          git push origin HEAD:master

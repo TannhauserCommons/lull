@@ -33,14 +33,25 @@ pub enum Status {
     Failed {
         error: String,
     },
+    /// Desktop: this install came from a package manager, which brings its updates (the AUR's lull-bin):
+    /// lull's own updater stands down. `by` names where they come from ("the AUR (lull-bin)").
+    #[cfg_attr(all(mobile, not(test)), allow(dead_code))]
+    Packaged {
+        by: String,
+    },
 }
 
 impl Status {
-    /// A check or a download is running, or an update waits: another check would only repeat it.
+    /// A check or a download is running, or an update waits: another check would only repeat it. A
+    /// packaged install never checks.
     pub fn busy(&self) -> bool {
         matches!(
             self,
-            Self::Checking | Self::Downloading { .. } | Self::Ready { .. } | Self::Available { .. }
+            Self::Checking
+                | Self::Downloading { .. }
+                | Self::Ready { .. }
+                | Self::Available { .. }
+                | Self::Packaged { .. }
         )
     }
 }

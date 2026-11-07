@@ -77,6 +77,8 @@ checks() { # <base> <candidate>
   # The Linux app on a computer with no graphics card (graphics.yml): what draws it, the lighter look and every design's
   # frame rate there, in the app and in the web UI it shows.
   want graphics '^(app/|web/|tests/desktop/|tests/ui/fixture-hub/|rust-toolchain\.toml$)'
+  # lull-bin, lull in the AUR (aur.yml): how its PKGBUILD is written, built on Arch against the newest release.
+  want aur '^(packaging/aur/|scripts/aur-pkgbuild\.sh$)'
   want android '^(app/gen/android/|app/src/mobile/|app/build\.rs$|app/Cargo\.(toml|lock)$|app/tauri\.android\.conf\.json$|scripts/android-|rust-toolchain\.toml$)'
   want slskd '^(deploy/compose\.yaml$|app/build\.rs$|app/slskd/|crates/soulseek/|tests/slskd-contract/)'
   # The Linux server package (ADR-0090): how it is built, the programs app/build.rs pins for it, the contract, and the

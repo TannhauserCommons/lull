@@ -873,7 +873,8 @@
       available: function () {
         return html`${statusLine('warn', name(u.version) + ' is out')}<span class="sys-row__help">Your browser downloads it; open the file to install it over this version.</span>${button('sys-app-update-install', 'Download', true)}`;
       },
-      failed: function () { return html`${statusLine('down', 'Couldn\'t check for updates. ' + u.error)}${check}`; }
+      failed: function () { return html`${statusLine('down', 'Couldn\'t check for updates. ' + u.error)}${check}`; },
+      packaged: function () { return statusLine('ok', 'Updates come with ' + u.by); }
     }[u.state];
     if (!state) return statusLine('down', 'Unknown update state ' + u.state);
     return html`<span class="px sys-version">${name(u.current)}</span>${state()}`;
