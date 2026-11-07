@@ -37,8 +37,9 @@ const NEW_RELEASES: usize = 12;
 const RELEASE_CANDIDATES: usize = 30;
 /// How long a build waits for Soulseek's answers before serving the shelf.
 const AVAILABILITY_WAIT: Duration = Duration::from_secs(3);
-/// How long a build looks its picks up in the catalog (`search::resolve::now`), so a shelf of
-/// slow lookups doesn't hold the build; the picks not reached are looked up when shown.
+/// How long a background rebuild looks its picks up in the catalog (`search::resolve::now`), so a
+/// shelf of slow lookups doesn't hold the build; the picks not reached are looked up when shown.
+/// The build a Home request waits for (the first feed) gets `AVAILABILITY_WAIT` instead.
 const RESOLVE_PICKS_WITHIN: Duration = Duration::from_secs(60);
 /// A check still unanswered after this counts as unchecked.
 const AVAILABILITY_LIMIT: Duration = Duration::from_secs(600);
@@ -334,7 +335,7 @@ pub fn refresh_soon(svc: &Arc<Service>) {
     svc.ctx.clone().spawn(async move {
         let _building = svc.feed.building.lock().await;
         svc.feed.queued.store(false, Ordering::SeqCst);
-        if let Err(e) = rebuild(&svc).await {
+        if let Err(e) = rebuild(&svc, RESOLVE_PICKS_WITHIN).await {
             tracing::warn!(error = %e, "feed rebuild failed");
             let updated = svc.feed.current.read().await.as_ref().map_or(0, |b| b.feed.updated);
             svc.ctx.bus.publish("feed.updated", Updated { updated });
@@ -393,11 +394,11 @@ async fn build_now(svc: &Arc<Service>) -> Result<Built> {
     if let Some(b) = svc.feed.current.read().await.clone() {
         return Ok(b);
     }
-    rebuild(svc).await
+    rebuild(svc, AVAILABILITY_WAIT).await
 }
 
-async fn rebuild(svc: &Arc<Service>) -> Result<Built> {
-    let (built, answers) = build(svc).await?;
+async fn rebuild(svc: &Arc<Service>, resolve_within: Duration) -> Result<Built> {
+    let (built, answers) = build(svc, resolve_within).await?;
     {
         let mut current = svc.feed.current.write().await;
         persist(svc, &built).await?;
@@ -648,7 +649,7 @@ fn from_follows(shelf: &[Shelved], shown: &[AlbumId]) -> usize {
     shelf.iter().filter(|c| c.liked && shown.contains(&c.id)).count()
 }
 
-async fn build(svc: &Arc<Service>) -> Result<(Built, Answers)> {
+async fn build(svc: &Arc<Service>, resolve_within: Duration) -> Result<(Built, Answers)> {
     let now = lull_core::now();
     let taste = svc.taste().await?;
     let (followed_artists, followed_tags, recent, follows) = svc
@@ -702,7 +703,7 @@ async fn build(svc: &Arc<Service>) -> Result<(Built, Answers)> {
     let pick_songs: Vec<Song> = candidates.iter().map(|c| c.song.clone()).collect();
     let mut tracks = svc.store.tracks(pick_songs.clone()).await?;
     let sources: HashMap<TrackId, Song> = tracks.iter().map(|t| t.id.clone()).zip(pick_songs).collect();
-    resolve_picks(svc, &mut tracks).await;
+    resolve_picks(svc, &mut tracks, resolve_within).await;
     let mut picks: Vec<Pick> = candidates
         .into_iter()
         .zip(&tracks)
@@ -831,9 +832,9 @@ async fn build(svc: &Arc<Service>) -> Result<(Built, Answers)> {
 /// Looks the picks up in the catalog as the resolve worker does when a bare song is shown, so a
 /// pick comes with its catalog album and cover and "Go to album" is right from the first play.
 /// A lookup that fails leaves the pick as it is, and never the build.
-async fn resolve_picks(svc: &Service, tracks: &mut [Track]) {
+async fn resolve_picks(svc: &Service, tracks: &mut [Track], within: Duration) {
     let ids: Vec<TrackId> = tracks.iter().map(|t| t.id.clone()).collect();
-    let found = search::resolve::now(&svc.ctx.db, svc, &ids, RESOLVE_PICKS_WITHIN).await;
+    let found = search::resolve::now(&svc.ctx.db, svc, &ids, within).await;
     for resolved in found {
         if let Some(t) = tracks.iter_mut().find(|t| t.id == resolved.id) {
             *t = Track {

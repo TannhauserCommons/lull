@@ -144,12 +144,16 @@ pub async fn now(db: &Db, catalog: &dyn Catalog, ids: &[TrackId], within: Durati
     let until = Instant::now() + within;
     let mut found = Vec::new();
     for id in ids {
-        if Instant::now() >= until {
+        let left = until.saturating_duration_since(Instant::now());
+        if left.is_zero() {
             break;
         }
-        match resolve(db, catalog, id).await {
-            Ok(track) => found.extend(track),
-            Err(e) => tracing::info!(error = %e, track = %id, "a pick wasn't resolved; asked again when shown"),
+        // A lookup cut off here has written nothing of its own: `resolve` writes in one step, after
+        // the catalog answers (what the catalog records itself is whole facts about an album).
+        match tokio::time::timeout(left, resolve(db, catalog, id)).await {
+            Ok(Ok(track)) => found.extend(track),
+            Ok(Err(e)) => tracing::info!(error = %e, track = %id, "a pick wasn't resolved; asked again when shown"),
+            Err(_) => break,
         }
     }
     found
@@ -277,5 +281,66 @@ mod tests {
             ["t-0c", "t-0b", "t-0a", "t-0d"],
             "on screen top to bottom, then oldest first"
         );
+    }
+
+    /// A catalog that answers after `0`, as one that is slow does.
+    struct Slow(Duration);
+
+    #[async_trait::async_trait]
+    impl Catalog for Slow {
+        async fn find_song(&self, _: &SongQuery) -> Result<Option<Track>> {
+            tokio::time::sleep(self.0).await;
+            Ok(None)
+        }
+
+        fn same_take(&self, _: &SongQuery, _: &Track) -> bool {
+            true
+        }
+    }
+
+    #[tokio::test]
+    async fn a_lookup_slower_than_the_budget_is_cut_off_with_the_pick_left_bare() -> Result<()> {
+        // A first Home waits for its build, which resolves picks within AVAILABILITY_WAIT: one slow
+        // lookup must not hold it past that.
+        let db = Db::memory()?;
+        db.migrate(&catalog::MIGRATIONS)?;
+        let song = Track {
+            id: TrackId::of("Velvet Orchard", "Satellite Porch", "Paper Moon Static"),
+            title: "Paper Moon Static".into(),
+            artist_id: lull_core::ids::ArtistId::of("Velvet Orchard"),
+            artist: "Velvet Orchard".into(),
+            album_id: AlbumId::of("Velvet Orchard", "Satellite Porch"),
+            album: "Satellite Porch".into(),
+            year: None,
+            no: None,
+            disc: None,
+            duration: None,
+            tags: vec![],
+            saved: false,
+            file: None,
+        };
+        let id = song.id.clone();
+        db.call(move |c| catalog::remember(c, &[song])).await?;
+
+        let budget = Duration::from_millis(300);
+        let started = Instant::now();
+        let found = now(&db, &Slow(Duration::from_secs(30)), std::slice::from_ref(&id), budget).await;
+        let took = started.elapsed();
+        assert!(found.is_empty());
+        assert!(took < budget + Duration::from_millis(500), "returned in {took:?}");
+
+        let asked = id.clone();
+        let (bare, due) = db
+            .call(move |c| {
+                let t = catalog::track(c, &asked)?.ok_or_else(|| Error::internal("pick gone"))?;
+                Ok((
+                    catalog::is_bare(c, &t)?,
+                    catalog::resolution(c, &asked, lull_core::now())?.1,
+                ))
+            })
+            .await?;
+        assert!(bare, "the pick stays bare");
+        assert!(due, "and nothing was written: the worker looks it up when shown");
+        Ok(())
     }
 }
