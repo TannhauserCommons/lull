@@ -1,0 +1,24 @@
+<!-- the desktop mini window as lull's handheld disc player: a clear lilac shell, the song's disc turning in its tray
+     (theme.css, --song-pos), like on the screen's corner, the song on an LCD, the wave as the seek, and the keys in a
+     groove with play as the big chrome key in the middle. desktop.js rewrites [data-dk-now] (cover, title, facts) and drives every data-dk key. -->
+<div class="dk-mini {{opaqueClass}}" data-dk-player="device">
+  <section class="lull-dev lull-hand" aria-label="{{product}} mini player" data-tauri-drag-region>
+    <div class="lull-dev__cap" data-tauri-drag-region><span class="lull-dev__name" aria-hidden="true" data-tauri-drag-region>lull</span><span class="lull-hand__vol" data-dk-vol data-tauri-drag-region>vol</span><button class="dk-mini__win" data-dk="full" aria-label="Open full window" data-tip="Open full window"><lull-part name="icon" icon="expand"></lull-part></button><button class="dk-mini__win" data-dk="mini-close" aria-label="Close mini player" data-tip="Close mini player"><lull-part name="icon" icon="close"></lull-part></button></div>
+    <div class="lull-dev__screen" data-tauri-drag-region>
+      <div class="lull-tray" data-tauri-drag-region><span class="lull-disc__light" aria-hidden="true"></span><span class="lull-hub lull-hub--cap" aria-hidden="true"></span></div>
+      <span class="lull-dev__like"><button class="lull-key {{likeClass}}" data-dk="like" aria-pressed="{{liked}}" aria-label="Like" data-tip="Like"><lull-part name="icon" icon="{{likeIcon}}"></lull-part></button></span>
+      <div class="lull-hand__now" data-dk-now aria-live="polite"><div class="dk-mini__now"><lull-part name="cover" size="84"></lull-part><div><div class="device__title">{{title}}</div><div class="device__artist">{{artist}}</div><div class="device__facts"><span class="q-chip q-chip--{{quality}} q-chip--solid">{{format}}</span></div></div></div></div>
+    </div>
+    <lull-part name="wave"></lull-part>
+    <p class="lull-hand__times"><b data-dk-pos>0:00</b><span data-dk-dur>0:00</span></p>
+    <div class="lull-keys">
+      <button class="lull-key" data-dk="shuffle" aria-label="Shuffle" data-tip="Shuffle" aria-pressed="false"><lull-part name="icon" icon="shuffle"></lull-part></button>
+      <button class="lull-key" data-dk="previous" aria-label="Previous" data-tip="Previous"><lull-part name="icon" icon="prev"></lull-part></button>
+      <span class="lull-keys__play"><button class="btn-gloss btn-gloss--52" data-dk="play-pause" aria-label="{{playLabel}}" data-tip="{{playLabel}}"><lull-part name="icon" icon="{{playIcon}}" cls="{{playIconClass}}"></lull-part></button></span>
+      <button class="lull-key" data-dk="next" aria-label="Next" data-tip="Next"><lull-part name="icon" icon="next"></lull-part></button>
+      <button class="lull-key" data-dk="repeat" aria-label="Repeat" data-tip="Repeat" aria-pressed="false"><lull-part name="icon" icon="repeat"></lull-part></button>
+    </div>
+    <div class="lull-hand__foot"><button class="lull-key lull-key--sm" data-dk="vol-down" aria-label="Volume down" data-tip="Volume down"><lull-part name="icon" icon="minus"></lull-part></button><span class="lull-keys__grille" aria-hidden="true"></span><span class="lull-hand__model" aria-hidden="true">LD-80</span><button class="lull-key lull-key--sm" data-dk="vol-up" aria-label="Volume up" data-tip="Volume up"><lull-part name="icon" icon="plus"></lull-part></button></div>
+    <div class="dk-mini__note" aria-hidden="true"></div>
+  </section>
+</div>
