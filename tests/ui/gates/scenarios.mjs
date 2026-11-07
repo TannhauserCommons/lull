@@ -11,7 +11,7 @@ const playShown = (page) =>
 // rows fully on screen, clear of the header and the player bar (the list scrolled to start a few rows in)
 const rowsOf = async (page) => {
   await page.locator('#view .tlist > .trow').nth(10).evaluate((r) => r.scrollIntoView({ block: 'center' }));
-  await page.waitForTimeout(200);
+  await settle(page);   // the rows the scroll brings near are drawn (app.js, lazy rows) before anything is measured
   return page.$$eval('#view .tlist > .trow', (els) =>
     els
       .map((e) => e.getBoundingClientRect())
@@ -158,6 +158,10 @@ export async function openMenu(browser, page, opts) {
   await openScreen(page, `/playlist/${ids.longPlaylist}`, opts);
   const row = page.locator('#view .tlist > .trow').nth(6);
   await row.scrollIntoViewIfNeeded();
+  // the scroll brings rows back within a screen of view, which the long list then draws (app.js, lazy rows): that is the
+  // scroll's cost, not the menu's, so it is done before the count starts (else it lands in the first open, or not, by
+  // a few milliseconds' race)
+  await settle(page);
   await throttle(page, opts.rate);
   return traced(browser, page, async () => {
     for (let i = 0; i < 3; i++) {
