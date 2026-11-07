@@ -10,7 +10,7 @@ use axum::routing::get;
 use axum::{Json, Router};
 use lull_core::ids::{ArtistId, TrackId};
 use lull_core::model::Entities;
-use lull_core::{Error, Result, catalog};
+use lull_core::{Error, Result, catalog, identity};
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -65,10 +65,11 @@ async fn stats(State(svc): State<Arc<Service>>, q: Result<Query<StatsQuery>, Que
     let Query(q) = q.map_err(bad_query)?;
     let tz_offset = tz_seconds(q.tz)?;
     let since = q.period.since(lull_core::now());
+    let namesakes = svc.ctx.config.flags.on(&lull_core::flags::NAMESAKES);
     svc.ctx
         .db
         .call(move |conn| {
-            let inputs = Inputs::load(conn, since, tz_offset)?;
+            let inputs = Inputs::load(conn, since, tz_offset, namesakes)?;
             let stats = aggregate(&inputs);
             let mut entities = Entities::default();
             for (id, _) in &stats.top_tracks {
@@ -119,7 +120,23 @@ struct Inputs {
 }
 
 impl Inputs {
-    fn load(conn: &Connection, since: Option<i64>, tz_offset: i64) -> Result<Self> {
+    /// `namesakes`: ADR-0035's switch: a play counts for the artist its song is placed on, and one
+    /// that several artists of its name fit is listed under the name (which opens their page).
+    fn load(conn: &Connection, since: Option<i64>, tz_offset: i64, namesakes: bool) -> Result<Self> {
+        let mut placed: HashMap<TrackId, ArtistId> = HashMap::new();
+        let mut artist_of = |track: &TrackId, artist: &str| -> Result<ArtistId> {
+            if !namesakes {
+                return Ok(ArtistId::of(artist));
+            }
+            if let Some(id) = placed.get(track) {
+                return Ok(id.clone());
+            }
+            let mut anchors = vec![identity::Anchor::Track(track.clone())];
+            anchors.extend(catalog::track(conn, track)?.map(|t| identity::Anchor::Album(t.album_id)));
+            let id = identity::artist_of(conn, artist, &anchors)?.id(artist);
+            placed.insert(track.clone(), id.clone());
+            Ok(id)
+        };
         let from = since.unwrap_or(i64::MIN);
         let plays = conn
             .prepare(
@@ -143,7 +160,7 @@ impl Inputs {
             ..Default::default()
         };
         for (track_id, artist, at, played_s, skipped, recommended) in plays {
-            let artist_id = ArtistId::of(&artist);
+            let artist_id = artist_of(&track_id, &artist)?;
             inputs.artist_names.insert(artist_id.clone(), artist);
             inputs.plays.push(PlayRow {
                 track_id,
@@ -155,10 +172,19 @@ impl Inputs {
             });
         }
 
-        let mut first = conn.prepare("SELECT artist, MIN(started_at) FROM plays GROUP BY artist")?;
-        for row in first.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))? {
-            let (artist, at) = row?;
-            let e = inputs.first_play.entry(ArtistId::of(&artist)).or_insert(at);
+        // Off, by name as before; on, by song, as a name may be several artists.
+        let mut first = conn.prepare(if namesakes {
+            "SELECT track_id, artist, MIN(started_at) FROM plays GROUP BY track_id, artist"
+        } else {
+            "SELECT MIN(track_id), artist, MIN(started_at) FROM plays GROUP BY artist"
+        })?;
+        let firsts = first
+            .query_map([], |r| {
+                Ok((TrackId(r.get(0)?), r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        for (track, artist, at) in firsts {
+            let e = inputs.first_play.entry(artist_of(&track, &artist)?).or_insert(at);
             *e = (*e).min(at);
         }
 
@@ -332,5 +358,75 @@ mod tests {
             s.top_tags,
             vec![("slowcore".to_owned(), 60), ("dream-gaze".to_owned(), 40)]
         );
+    }
+
+    /// ADR-0035: two artists called Nirvana are two rows of stats; a play nothing places is listed
+    /// under the name, never under either. Off, one artist, as before.
+    #[test]
+    fn stats_count_namesakes_apart_with_the_switch_on() -> Result<()> {
+        use lull_core::identity::{self, Anchor, Came};
+        let conn = Connection::open_in_memory()?;
+        for m in [
+            &lull_core::db::CORE,
+            &catalog::MIGRATIONS,
+            &crate::MIGRATIONS,
+            &identity::MIGRATIONS,
+        ] {
+            for step in m.steps {
+                conn.execute_batch(step)?;
+            }
+        }
+        for (t, album, at) in [
+            ("t-0000000000000001", "al-0000000000000001", 10),
+            ("t-0000000000000002", "al-0000000000000002", 20),
+            ("t-0000000000000003", "al-0000000000000003", 30),
+        ] {
+            conn.execute(
+                "INSERT INTO plays (track_id, artist, title, album, duration_s, started_at, played_s) VALUES (?1, 'Nirvana', ?1, ?2, 200, ?3, 200)",
+                params![t, album, at],
+            )?;
+            let song = lull_core::model::Track {
+                id: TrackId(t.into()),
+                title: t.into(),
+                artist_id: ArtistId::of("Nirvana"),
+                artist: "Nirvana".into(),
+                album_id: lull_core::ids::AlbumId(album.into()),
+                album: album.into(),
+                year: None,
+                no: None,
+                disc: None,
+                duration: Some(200),
+                tags: Vec::new(),
+                saved: false,
+                file: None,
+            };
+            catalog::remember(&conn, &[song])?;
+        }
+        let album = |a: &str| Anchor::Album(lull_core::ids::AlbumId(a.into()));
+        identity::place(
+            &conn,
+            "Nirvana",
+            &[Anchor::Deezer(415), album("al-0000000000000001")],
+            Came::Credit,
+        )?;
+        identity::place(
+            &conn,
+            "Nirvana",
+            &[Anchor::Deezer(278_793_911), album("al-0000000000000002")],
+            Came::Credit,
+        )?;
+
+        let off = Inputs::load(&conn, None, 0, false)?;
+        assert_eq!(off.artist_names.len(), 1);
+        let on = Inputs::load(&conn, None, 0, true)?;
+        let ids: HashSet<&ArtistId> = on.plays.iter().map(|p| &p.artist_id).collect();
+        assert_eq!(ids.len(), 3, "each Nirvana, and the name for the play nothing places");
+        assert!(
+            ids.contains(&ArtistId::own("Nirvana", "dz:415"))
+                && ids.contains(&ArtistId::own("Nirvana", "dz:278793911"))
+        );
+        assert!(ids.contains(&ArtistId::of("Nirvana")));
+        assert_eq!(on.first_play.get(&ArtistId::own("Nirvana", "dz:278793911")), Some(&20));
+        Ok(())
     }
 }
