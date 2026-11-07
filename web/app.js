@@ -1659,7 +1659,7 @@
     var first = $('[autofocus]', el) || focusables($('.sheet__body', el))[0] || $('[data-close]', el) || el;
     if (first === el) el.setAttribute('tabindex', '-1');
     /* unless its content has already focused a control of its own (a form filled in as it arrives: the pairing gate) */
-    setTimeout(function () { var a = document.activeElement; if (!layer.closed && (a === el || !el.contains(a))) first.focus(); }, 30);
+    setTimeout(function () { var a = document.activeElement; if (!layer.closed && (a === el || !el.contains(a))) { appFocus = true; first.focus(); appFocus = false; } }, 30);
     return { el: el, close: function () { layer.close(); } };
   }
   App.openSheet = function (o) { return openLayer('sheet', o); };
@@ -1795,6 +1795,7 @@
 
   /* tooltip: any element with data-tip (icon-only buttons always have one); dark cream-on-ink. data-tip-cut: only while
      the element's words are cut off, and on a tap too (.tooltip--asked, which phone designs keep) */
+  var appFocus = false;                  // the app moved focus (a sheet's first control), not the listener: no tip for it
   var tipEl = null, tipTimer = null, tipFor = null, tipAsked = false, touching = false;
   function cutOff(el) { return el.scrollWidth > el.clientWidth + 1; }
   function showTip(target, asked) {
@@ -1803,8 +1804,16 @@
     var lbl = target.querySelector('.nav-item__label'); if (lbl && lbl.offsetParent) return;   // rail labels visible: no tooltip
     if (!tipEl) { tipEl = document.createElement('div'); tipEl.className = 'tooltip'; tipEl.setAttribute('role', 'tooltip'); tipEl.id = 'tooltip'; document.body.appendChild(tipEl); }
     setText(tipEl, text); tipFor = target; tipAsked = !!asked; tipEl.classList.toggle('tooltip--asked', !!asked);
-    var r = target.getBoundingClientRect();
-    tipEl.style.left = '0px'; tipEl.style.top = '0px'; tipEl.classList.add('is-on');
+    /* a sheet still sliding in has its button off the screen: the tip waits for the sheet to arrive, then is placed */
+    var layer = target.closest('.sheet, .dialog');
+    (function arrive() {
+      if (tipFor !== target || !target.isConnected) return;
+      if (layer && !(layer.classList.contains('is-open') && !layer.getAnimations().length)) requestAnimationFrame(arrive); else placeTip();
+    })();
+  }
+  function placeTip() {
+    var r = tipFor.getBoundingClientRect(); tipEl.classList.add('is-on');
+    tipEl.style.left = '0px'; tipEl.style.top = '0px';
     var w = tipEl.offsetWidth, h = tipEl.offsetHeight;
     var top = r.top - h - 8; if (top < 8) top = r.bottom + 8;
     tipEl.style.left = clamp(r.left + r.width / 2 - w / 2, 8, window.innerWidth - w - 8) + 'px';
@@ -1822,7 +1831,7 @@
   });
   document.addEventListener('focusin', function (e) {
     var t = e.target.closest && e.target.closest('[data-tip]'); hideTip();
-    if (t && t.matches(':focus-visible')) showTip(t);
+    if (t && !appFocus && t.matches(':focus-visible')) showTip(t);
   });
   document.addEventListener('focusout', hideTip);
   document.addEventListener('pointerdown', hideTip);
