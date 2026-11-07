@@ -1,0 +1,11 @@
+{
+  "minFps": 2,
+  "restMaxCore": 0.1,
+  "stepPx": 40,
+  "warmMs": 1500,
+  "ms": 1500,
+  "runs": 3,
+  "quietMs": 1500,
+  "restMs": 3000,
+  "routes": ["/home", "/library/albums", "/playlist/pl-1"]
+}

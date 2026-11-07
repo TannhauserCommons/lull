@@ -1,0 +1,6 @@
+{
+  "pages": [
+    { "design": "petal", "route": "/playlist/pl-1", "why": "0.3 to 10.8 frames a second scrolling the 1,200-song playlist on the processor, from run to run (42343808483, 42344729082, 42346617414): Petal's pixel frames on every row" }
+  ],
+  "rest": []
+}

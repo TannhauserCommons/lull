@@ -1,0 +1,53 @@
+name: graphics
+# The Linux app on a computer with no graphics card (tests/desktop/graphics.mjs; docs/context/quality.md, Graphics):
+# each graphics mode gives WebKitGTK the switches it names, starts and draws; the processor drawing is found and gives
+# the lighter look; a chosen mode that never came up falls back to Automatic; and every built-in design holds the
+# frame-rate budget on the processor. The queue runs it when the app, the web UI or the designs change.
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: The commit to check
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: graphics-${{ inputs.ref || github.ref }}
+  cancel-in-progress: ${{ !inputs.ref }}
+
+env:
+  # The app's Linux build prerequisites (app.yml), WebKitGTK's WebDriver, a screen (Xvfb) and ImageMagick to look at it.
+  LINUX_DEPS: libwebkit2gtk-4.1-dev build-essential file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev webkit2gtk-driver xvfb imagemagick dbus-x11
+  # Its own identifier, so its settings and logs are its own (docs/context/desktop.md, Run it).
+  IDENTIFIER: io.github.tannhausercommons.lull.graphics
+
+jobs:
+  linux:
+    # 22.04, as the release's Linux builds: its WebKitGTK is what the .deb and the AppImage run on.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+      - run: sudo apt-get update && sudo apt-get install -y $LINUX_DEPS
+      - run: rustup toolchain install
+      # Only main saves (ADR-0097). tauri-driver is kept with it (~/.cargo/bin).
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: command -v tauri-driver || cargo install tauri-driver --version 2.1.0 --locked
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24.11"
+      - working-directory: app
+        run: TAURI_CONFIG="{\"identifier\":\"$IDENTIFIER\"}" cargo build --locked
+      - name: The app's graphics, on the processor
+        run: xvfb-run -a -s "-screen 0 1440x900x24" dbus-run-session -- node tests/desktop/graphics.mjs "$PWD/app/target/debug/lull" "$IDENTIFIER"
+      - if: failure()
+        run: cat ~/.local/share/$IDENTIFIER/logs/webview.log || true

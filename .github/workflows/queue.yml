@@ -39,6 +39,7 @@ jobs:
       ui: ${{ steps.plan.outputs.ui }}
       app: ${{ steps.plan.outputs.app }}
       android: ${{ steps.plan.outputs.android }}
+      graphics: ${{ steps.plan.outputs.graphics }}
       slskd: ${{ steps.plan.outputs.slskd }}
       package: ${{ steps.plan.outputs.package }}
       image: ${{ steps.plan.outputs.image }}
@@ -104,6 +105,14 @@ jobs:
       ref: ${{ needs.plan.outputs.candidate }}
       checks: ${{ needs.plan.outputs.app == 'true' }}
       android: ${{ needs.plan.outputs.android == 'true' }}
+
+  # The Linux app with no graphics card: each mode, what draws it, the lighter look, every design's frame rate.
+  graphics:
+    needs: plan
+    if: needs.plan.outputs.candidate != '' && needs.plan.outputs.graphics == 'true'
+    uses: ./.github/workflows/graphics.yml
+    with:
+      ref: ${{ needs.plan.outputs.candidate }}
 
   slskd-contract:
     needs: plan
@@ -195,7 +204,7 @@ jobs:
         run: cp scripts/queue.sh "$RUNNER_TEMP/" && sh "$RUNNER_TEMP/queue.sh" watch
 
   land:
-    needs: [plan, privacy, ci, ui-gates, app, slskd-contract, server-package, share, image, ui]
+    needs: [plan, privacy, ci, ui-gates, app, graphics, slskd-contract, server-package, share, image, ui]
     # Green means every check the diff needed passed; a check it didn't need is skipped.
     if: >-
       !cancelled() && needs.plan.outputs.candidate != ''
@@ -275,7 +284,7 @@ jobs:
         run: sh scripts/queue.sh dispatch app.yml
 
   reject:
-    needs: [plan, privacy, ci, ui-gates, app, slskd-contract, share, image, ui]
+    needs: [plan, privacy, ci, ui-gates, app, graphics, slskd-contract, share, image, ui]
     if: >-
       !cancelled() && needs.plan.outputs.candidate != ''
       && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
@@ -296,6 +305,7 @@ jobs:
             ${{ contains(fromJSON('["failure", "cancelled"]'), needs.ci.result) && 'ci ' || '' }}
             ${{ contains(fromJSON('["failure", "cancelled"]'), needs.ui-gates.result) && 'ui-gates ' || '' }}
             ${{ contains(fromJSON('["failure", "cancelled"]'), needs.app.result) && 'app ' || '' }}
+            ${{ contains(fromJSON('["failure", "cancelled"]'), needs.graphics.result) && 'graphics ' || '' }}
             ${{ contains(fromJSON('["failure", "cancelled"]'), needs.slskd-contract.result) && 'slskd-contract ' || '' }}
             ${{ contains(fromJSON('["failure", "cancelled"]'), needs.share.result) && 'share ' || '' }}
             ${{ contains(fromJSON('["failure", "cancelled"]'), needs.image.result) && 'image ' || '' }}
