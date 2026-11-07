@@ -5,7 +5,12 @@
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
 
+    <!-- lull: no backups (ADR-0091). allowBackup covers Android 11 and older, dataExtractionRules
+         the cloud backup and phone-to-phone transfer of 12 and later. -->
     <application
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:theme="@style/Theme.lull_app"

@@ -36,14 +36,24 @@ impl<T: Serialize + DeserializeOwned + Default> Store<T> {
         }
     }
 
-    /// Write to a temporary file, then rename: a crash mid-write never leaves half a file.
+    /// Write to a temporary file, then rename: a crash mid-write never leaves half a file. The file can
+    /// hold this app's device token, so the new one is created readable by this user alone (ADR-0091),
+    /// as `lull_core::private::write` does on the hub (which the phone build doesn't link).
     pub fn save(&self, settings: &T) {
         let write = || -> std::io::Result<()> {
             if let Some(dir) = self.path.parent() {
                 fs::create_dir_all(dir)?;
             }
             let tmp = self.path.with_extension("json.tmp");
-            fs::write(&tmp, serde_json::to_vec_pretty(settings)?)?;
+            match fs::remove_file(&tmp) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
+                _ => {}
+            }
+            let mut options = fs::OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+            std::io::Write::write_all(&mut options.open(&tmp)?, &serde_json::to_vec_pretty(settings)?)?;
             fs::rename(&tmp, &self.path)
         };
         if let Err(e) = write() {
