@@ -122,6 +122,18 @@ test('with no picture anywhere, the cover is lull\'s card, never a broken image'
   });
 });
 
+test('when a source couldn\'t answer, lull\'s card stands in for a minute, not an hour, while it is asked again', async () => {
+  const net = internet();
+  net.on(/itunes\.apple\.com/, () => new Response('down', { status: 503 }));
+  await withWorker(net, async (w) => {
+    const first = await w.get('/1/album/Portishead/Dummy/cover?it=1440823517');
+    assert.equal(first.headers.get('content-type'), 'image/png');
+    assert.equal(first.headers.get('cache-control'), 'public, max-age=60', 'a chat app\'s proxy keeps it a minute');
+    const card = await w.get('/1/album/Portishead/Dummy/card?it=1440823517');
+    assert.equal(card.headers.get('cache-control'), 'public, max-age=60');
+  });
+});
+
 test('an album the US store doesn\'t list is looked up in the store of whoever opened the link', async () => {
   const net = internet();
   net.on(/itunes\.apple\.com\/lookup\?id=1440823517&country=US$/, () => json({ resultCount: 0, results: [] }));

@@ -17,7 +17,8 @@ export { Cover, Gate } from './objects.js';
 
 const PAGE_CACHE = 'public, max-age=86400';
 const PICTURE_CACHE = 'public, max-age=604800';
-/** lull's card stands in for a cover: kept an hour when no source has one, a minute when the lookup ran out of time. */
+/** lull's card stands in for a cover: kept an hour when no source has one, a minute when the lookup ran out of time
+    or a source couldn't answer (it is asked again in a minute: `settled`). */
 const CARD_CACHE = 'public, max-age=3600';
 const CARD_BRIEFLY = 'public, max-age=60';
 /** How long a cover request waits for a lookup: crawlers give up after a few seconds. */
@@ -113,7 +114,13 @@ async function cover(request, env, ctx, item, origin) {
   }
   if (!found) return lullCard(env, request, CARD_BRIEFLY);
   remember(key, found);
-  return lullCard(env, request, CARD_CACHE);
+  return lullCard(env, request, settled(found) ? CARD_CACHE : CARD_BRIEFLY);
+}
+
+/** Whether the lookup's answer stands for a while: a picture, or "none" from every source. A source that couldn't
+    answer is asked again in a minute (objects.js), so what stands in for its picture is kept no longer. */
+function settled(found) {
+  return Boolean(found.url) || found.until - Date.now() > 60 * 60 * 1000;
 }
 
 /** The iTunes store of whoever opened the link: Cloudflare's country for the request, when it is one. */
@@ -192,8 +199,8 @@ async function discord(request, env, item, origin) {
   return new Response(body, {
     headers: {
       'content-type': 'application/json; charset=utf-8',
-      // Kept as long as the page when the colour is the cover's or no cover exists; briefly while it's looked for.
-      'cache-control': found ? PAGE_CACHE : CARD_BRIEFLY,
+      // Kept as long as the page once the cover's lookup has settled; briefly while it's looked for.
+      'cache-control': found && settled(found) ? PAGE_CACHE : CARD_BRIEFLY,
       'x-robots-tag': 'noindex',
       'x-content-type-options': 'nosniff',
     },

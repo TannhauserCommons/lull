@@ -93,7 +93,7 @@ A song's cover is its album's. Covers are keyed by the album (its best id, else 
 - When the address it kept stops answering, that request runs the chain again instead of failing.
 - Nothing is stored that could grow without bound: one small row per album or artist that someone opened.
 
-**Time:** each step gets 3 s and the chain gets 6 s, because crawlers give up. Past that, the request gets lull's card with a one-minute cache, and the lookup finishes for the next request.
+**Time:** each step gets 3 s and the chain gets 6 s, because crawlers give up. Past that, the request gets lull's card with a one-minute cache, and the lookup finishes for the next request. A lookup that a source couldn't answer gets the same minute, since it is asked again then.
 
 ### A burst of clicks costs one lookup
 

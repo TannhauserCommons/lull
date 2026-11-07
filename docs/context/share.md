@@ -30,7 +30,7 @@ For every lull install, in any market (ADR-0034, "For every lull"): links hold p
 
 ## The cover
 
-`…/cover` always answers an image, `cache-control` a week for a picture, an hour for lull's card (`web/assets/fallback-art-512.png`), a minute when the lookup ran out of its 6 s.
+`…/cover` always answers an image, `cache-control` a week for a picture, an hour for lull's card (`web/assets/fallback-art-512.png`) when no source has a picture, a minute when the lookup ran out of its 6 s or a source couldn't answer (it is asked again then).
 - **Order:** the edge cache (works on a custom domain, does nothing on `*.workers.dev`), the instance's memory (10 minutes), then the `Cover` object for the album, which runs `sources.find` once for everyone waiting.
 - **Kept:** the picture's address, 30 days; "none" a day; a lookup a source couldn't answer, a minute. A kept address that stops answering is reported back (`broken`) and the chain runs again.
 - **Budgets** (`Gate`): iTunes 10 a minute, Deezer 10 a second, MusicBrainz and the archive 1 a second, Last.fm 2, Wikidata 1. A turn free within a second is waited for; otherwise the step is skipped. A 429 or 403 from an API pauses it 10 minutes.
