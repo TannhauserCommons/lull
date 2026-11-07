@@ -585,20 +585,21 @@
     `;
     }, opts.lazy);
   }
+  /* The queue always holds the radio switch: before any radio, and after one is switched off, it is the same switch
+     that turns radio on (a stopped radio keeps its seed, so on again resumes it). Steer and Retry belong to a radio that runs. */
   function radioHead() {
-    if (!ps.radio) return '';
-    var steer = ps.radio.steer == null ? .4 : ps.radio.steer, steerId = App.uid('now-steer');
+    var r = ps.radio, on = !!(r && r.keepsAdding);
+    var steer = r && r.steer != null ? r.steer : .4, steerId = App.uid('now-steer');
     return html`<div class="now-q__radio">
-      <div class="now-q__radio-row">${icon('radio')}<span class="now-q__radio-name">Radio: <b>${ps.radio.name}</b></span>
-        <button class="btn-icon btn-icon--bare btn-icon--sm" data-act="now-radio-stop" aria-label="Stop radio" data-tip="Stop radio" data-fk="radio-stop">${icon('close', null, 'ic-16')}</button></div>
+      <div class="now-q__radio-row">${icon('radio')}<span class="now-q__radio-name">${r ? html`Radio${on ? '' : ' stopped'}: <b>${r.name}</b>` : 'Radio: off'}</span></div>
       <label class="switch-row now-q__keep"><span class="switch-row__label">Keeps adding songs</span>
-        <button class="switch" role="switch" aria-checked="${ps.radio.keepsAdding ? 'true' : 'false'}" data-act="now-radio-keep" aria-label="Radio keeps adding songs" data-fk="radio-keep"></button></label>
-      <div class="now-q__steer">
+        <button class="switch" role="switch" aria-checked="${on ? 'true' : 'false'}" data-act="now-radio-keep" aria-label="Radio keeps adding songs" data-fk="radio-keep"></button></label>
+      ${on ? html`<div class="now-q__steer">
         <label class="now-q__steer-label" for="${steerId}">Steer</label>
         <input class="range" id="${steerId}" type="range" min="0" max="100" step="5" value="${Math.round(steer * 100)}" style="--fill:${Math.round(steer * 100)}%" data-now-steer aria-valuetext="${steerText(steer)}" data-fk="radio-steer">
         <div class="now-q__steer-ends" aria-hidden="true"><span>Familiar</span><span>Adventurous</span></div>
-      </div>
-      ${ps.radio.error ? html`<div class="now-q__err" role="alert">${icon('warning', null, 'ic-16')}<span>Radio paused: ${ps.radio.error}</span><button class="btn btn--sm" data-act="now-radio-retry" data-fk="radio-retry">Try again</button></div>` : ''}
+      </div>` : ''}
+      ${on && r.error ? html`<div class="now-q__err" role="alert">${icon('warning', null, 'ic-16')}<span>Radio paused: ${r.error}</span><button class="btn btn--sm" data-act="now-radio-retry" data-fk="radio-retry">Try again</button></div>` : ''}
     </div>`;
   }
   function steerText(v) { return v < .25 ? 'Mostly familiar' : v < .45 ? 'A little adventurous' : v < .7 ? 'Balanced' : 'Very adventurous'; }
@@ -1084,15 +1085,17 @@
     if (App.discover && ids.length > 1) App.discover.openAggregate('your queue', ids);
     else App.toast('Saving ' + ids.length + ' songs to your library', { confirms: true, group: 'save', icon: 'save', action: 'Show', onAction: function () { App.openPanel('activity'); } });
   });
+  /* the one radio switch: with a radio (running or stopped) it turns "keeps adding" on or off; with none it starts one
+     from the playing song that continues the queue (the song menu's Start radio replaces it) */
   App.action('now-radio-keep', function () {
-    var on = !(ps.radio && ps.radio.keepsAdding);
+    if (!ps.radio) {
+      var t = P.current();
+      if (t) P.startRadio({ kind: 'track', id: t.id }, { append: true });
+      return;
+    }
+    var on = !ps.radio.keepsAdding;
     withFocus('radio-keep', function () { P.setRadio({ keepsAdding: on }); });
-    App.announce(on ? 'Radio keeps adding songs' : 'Radio stops after the queue');
-  });
-  App.action('now-radio-stop', function () {
-    var before = ps.radio;
-    P.setRadio(null);
-    App.toast('Radio stopped. The queue stays.', { group: 'radio', icon: 'radio', action: 'Undo', onAction: function () { P.setRadio(before); } });
+    App.announce(on ? 'Radio keeps adding songs' : 'Radio stopped. The queue stays.');
   });
   App.action('now-radio-retry', function () {
     withFocus('radio-keep', function () { P.setRadio({ error: null }); });

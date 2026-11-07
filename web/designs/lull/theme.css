@@ -375,7 +375,7 @@
 :root[data-design="lull"] .ctx__head [data-act="close-panel"] .ic { width: 13px; height: 13px; filter: drop-shadow(0 1px 0 rgba(255, 255, 255, .8)); }
 :root[data-design="lull"] .ctx__head [data-act="close-panel"]:hover { background: var(--v-chrome-key); filter: brightness(1.06); }
 :root[data-design="lull"] .ctx .trow.is-playing { background: color-mix(in srgb, var(--v-edge-2) 12%, transparent); box-shadow: inset 3px 0 0 var(--v-edge-2); }
-/* queue window: the radio is a 40 px pink strip (name, "keeps adding", switch). Steer and Stop drop down
+/* queue window: the radio is a 40 px pink strip (name, "keeps adding", switch). Steer drops down
    from it as a little paper panel while the strip is hovered or holds focus, so the queue keeps its rows and ends
    on its own footer. Touch screens keep Steer in the flow. */
 :root[data-design="lull"] .now-q__radio {
@@ -397,9 +397,8 @@
     position: absolute; z-index: 3; top: calc(100% + 6px); left: 0; right: 0; padding: 10px 52px 10px 12px;
     background: var(--l-card); color: var(--fg-panel); border: var(--stroke) solid var(--l-edge); border-radius: 12px; box-shadow: var(--l-win-stack);
   }
-  :root[data-design="lull"] .now-q__radio [data-act="now-radio-stop"] { position: absolute; z-index: 4; top: calc(100% + 18px); right: 12px; color: var(--fg-panel); }
-  :root[data-design="lull"] .now-q__radio:not(:hover, :focus-within) :is(.now-q__steer, [data-act="now-radio-stop"]) { visibility: hidden; opacity: 0; }
-  :root[data-design="lull"] .now-q__radio :is(.now-q__steer, [data-act="now-radio-stop"]) { transition: opacity var(--dur-2), visibility var(--dur-2); }
+  :root[data-design="lull"] .now-q__radio:not(:hover, :focus-within) .now-q__steer { visibility: hidden; opacity: 0; }
+  :root[data-design="lull"] .now-q__radio .now-q__steer { transition: opacity var(--dur-2), visibility var(--dur-2); }
 }
 :root[data-design="lull"] .now-q__hint { white-space: normal; }
 /* check: --reason-fg on --reason-bg 4.5 */

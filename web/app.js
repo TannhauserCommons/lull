@@ -2499,26 +2499,32 @@
   /* one radio start at a time: a repeat click gets the same promise; a sticky toast says it is starting; an answer that
      takes longer than RADIO_WAIT_MS counts as failed (and is ignored if it comes later); a failure offers Retry */
   var RADIO_WAIT_MS = 25000, radioStart = null;
-  P.startRadio = function (from) {
-    var seed = radioSeed(from);
-    var key = seed.kind + ':' + seed.id;
+  /* startRadio(from) replaces the queue with the radio and plays it; startRadio(from, { append: true }) leaves the
+     queue and the playing song alone and adds the radio's songs after the queue (the queue's radio switch) */
+  P.startRadio = function (from, opts) {
+    var seed = radioSeed(from), append = !!(opts && opts.append);
+    var key = (append ? 'append:' : '') + seed.kind + ':' + seed.id;
     if (radioStart && radioStart.key === key) return radioStart.promise;
     if (radioStart) radioStart.cancel();
     var name = radioName(from), live = true, timer = null;     // an album's radio is named after the album, not its first song
     var note = App.toast('Starting ' + name + ' radio', { icon: 'radio', sticky: true });
     function settle() { live = false; clearTimeout(timer); note.close(); radioStart = null; }
     function failed(message) {
-      App.toast('Couldn\'t start ' + name + ' radio: ' + message, { kind: 'error', action: 'Retry', onAction: function () { P.startRadio(from); } });
+      App.toast('Couldn\'t start ' + name + ' radio: ' + message, { kind: 'error', action: 'Retry', onAction: function () { P.startRadio(from, opts); } });
       return false;
     }
     var promise = new Promise(function (resolve) {
       timer = setTimeout(function () { if (live) { settle(); resolve(failed('it didn\'t answer in time')); } }, RADIO_WAIT_MS);
-      fetchRadio(seed, .4, []).then(function (ids) {
+      var have = append ? ps.queue.map(function (q) { return q.trackId; }) : [];
+      fetchRadio(seed, .4, have).then(function (ids) {
         if (!live) return;
         settle();
-        if (seed.kind === 'track') ids = [seed.id].concat(ids.filter(function (id) { return id !== seed.id; }));
+        if (append) ids = ids.filter(function (id) { return have.indexOf(id) < 0; });
+        else if (seed.kind === 'track') ids = [seed.id].concat(ids.filter(function (id) { return id !== seed.id; }));
         if (!ids.length) { App.toast('No radio for ' + name + ' yet: nothing similar was found', { icon: 'radio' }); resolve(false); return; }
-        P.playList(ids, 0, { radio: { name: name, seed: seed, keepsAdding: true, steer: .4 }, context: radioPlace(from, name) });
+        var radio = { name: name, seed: seed, keepsAdding: true, steer: .4 };
+        if (append) { ps.radio = radio; ids.forEach(function (id) { ps.queue.push(entry(id, 'radio')); }); queueChanged(); }
+        else P.playList(ids, 0, { radio: radio, context: radioPlace(from, name) });
         App.toast('Radio: ' + name + ', keeps adding songs', { confirms: true, group: 'radio', icon: 'radio' });
         resolve(true);
       }, function (err) { if (live) { settle(); resolve(failed(err.message)); } });

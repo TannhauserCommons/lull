@@ -76,6 +76,8 @@ export default defineConfig({
     { name: 'like-saves', testMatch: 'like-saves.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
     // a song moved to the catalog's album shows its cover in the queue panel and the player bar, not only on the page
     { name: 'queue-moved', testMatch: 'queue-moved.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
+    // the queue's radio switch stays after radio is switched off, and starts a radio on a queue that never had one
+    { name: 'queue-radio', testMatch: 'queue-radio.spec.mjs', fullyParallel: true },
     // Home's parts the hub fills: the first-run screen and its artists, a followed tag's "you might like"
     { name: 'home', testMatch: 'home.spec.mjs', fullyParallel: true, use: { viewport: { width: 1440, height: 900 } } },
     // long lists: every row works, drawn or not (a fixture hub of its own: it likes, downloads and reorders)

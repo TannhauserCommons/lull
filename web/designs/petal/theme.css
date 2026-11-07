@@ -1102,7 +1102,7 @@
   :root[data-design="petal"] .now-qcard .card-head__meta { display: inline; margin-left: auto; font: 750 .75rem/1 var(--f-ui); color: var(--pt-tb-ink); }
   :root[data-design="petal"] .now-qcard .now-q { display: flex; flex-direction: column; flex: 1; min-height: 0; }
   :root[data-design="petal"] .now-qcard .now-q__radio { margin: 0; padding: 8px 14px; border-radius: 0; background: var(--bg-2); border-bottom: 2px solid var(--line); }
-  :root[data-design="petal"] .now-qcard :is(.now-q__keep, .now-q__steer, .now-q__hint, .now-q__err) { display: none; }
+  :root[data-design="petal"] .now-qcard :is(.now-q__steer, .now-q__hint) { display: none; }
   :root[data-design="petal"] .now-qcard .now-q__list { flex: 1; min-height: 0; overflow: auto; padding: 6px 8px 10px; counter-reset: pq; }
   :root[data-design="petal"] .now-qcard .now-q__foot { margin: 0; padding: 8px 12px; border-top: 2px dashed var(--pt-rule); background: var(--bg-2); }
   :root[data-design="petal"] .now-qcard .now-q__group { margin: 8px 0 2px; }

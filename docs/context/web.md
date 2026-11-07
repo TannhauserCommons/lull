@@ -241,7 +241,13 @@ The state shape and methods are DESIGN.md 7.8; the insides:
   at Webamp while open. `P.jumpTo(index, { at, autoplay })`, `P.streamUrl(trackId, source)` serve the hand-back.
 - **Radio**: `P.startRadio({ kind: track|artist|tag|album, id })` fetches `/api/radio`; while "keeps adding" is on
   the queue is topped up to three songs ahead (`exclude` = what is queued). With "radio when the queue ends", the
-  last song seeds a radio as it starts. Changing the steer re-fills the radio songs not yet played.
+  last song seeds a radio as it starts. Changing the steer re-fills the radio songs not yet played. The queue (panel,
+  Now Playing's card, the phone's Queue tab) always holds one radio switch, "Keeps adding songs": with no radio it
+  starts one from the playing song that continues the queue (`P.startRadio(from, { append: true })`: the queue and
+  the playing song's place stay, the radio's songs follow; without `append`, as in the song menu, it replaces the
+  queue and plays), with one it switches "keeps adding" on or off. A radio switched
+  off stays as "stopped" with its seed, so on again resumes it; Steer and Retry show only while it is on. No design
+  hides the switch (`gates/queue-radio.spec.mjs`).
 - **Where it plays from** (`ps.context = { kind, id, name }`, persisted with the queue): `playList(ids, start,
   { context })` records the place a play starts from. Left out, it is the page showing, `App.here()`: each list route
   declares its `place(ctx)` (album, artist, playlist, tag, Liked, History, Saved songs, Downloads, search results by
