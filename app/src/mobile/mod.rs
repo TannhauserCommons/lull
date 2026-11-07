@@ -2,6 +2,7 @@
 //! native player for background playback and the lock screen, and downloads to app storage. A phone
 //! is never a hub: it pairs with one by QR code or pair code.
 
+mod keyring;
 mod update;
 
 use crate::hub;
@@ -9,6 +10,7 @@ use crate::pages::{self, Appearance, Unreachable};
 use crate::pairing;
 use crate::reconnect;
 use crate::store::Store;
+use crate::token::Tokens;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::sync::{Mutex, MutexGuard, PoisonError};
@@ -31,17 +33,21 @@ const HUB_PERMISSIONS: &[&str] = &[
     "allow-app-update-install",
 ];
 
-/// The phone's own settings: which hub, and its device token there (ADR-0002).
+/// The phone's own settings: which hub, and its device token there (ADR-0002). Read the token through
+/// `Phone::token`: once the hub turns on its `secrets` switch it lives in Android's keystore (ADR-0091).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 struct Settings {
     hub: Option<String>,
     token: Option<String>,
+    /// The token is in Android's keystore, not here.
+    token_in_keyring: bool,
 }
 
 struct Phone {
     store: Store<Settings>,
     settings: Mutex<Settings>,
+    tokens: Tokens,
     /// Hub origins already given their IPC capability this run (Tauri can't revoke one).
     granted: Mutex<HashSet<String>>,
 }
@@ -55,6 +61,35 @@ impl Phone {
         let mut settings = lock(&self.settings);
         change(&mut settings);
         self.store.save(&settings);
+    }
+
+    /// This phone's token on its hub, wherever it is kept (token.rs).
+    fn token(&self) -> Option<String> {
+        let settings = self.settings();
+        self.tokens.get(settings.token.as_deref(), settings.token_in_keyring)
+    }
+
+    /// Keeps this phone's token where tokens are kept now; a keystore that refuses puts it in settings.json.
+    fn set_token(&self, token: Option<String>) {
+        if self.tokens.keep(self.settings().token_in_keyring, token.as_deref()) {
+            self.update(|s| s.token = None);
+        } else {
+            self.update(|s| {
+                s.token = token;
+                s.token_in_keyring = false;
+            });
+        }
+    }
+
+    /// The hub keeps credentials in a vault: the token moves into the keystore, out of settings.json once
+    /// the keystore has read it back.
+    fn keep_token_in_keyring(&self) {
+        if self.tokens.take_in(self.settings().token.as_deref()) {
+            self.update(|s| {
+                s.token = None;
+                s.token_in_keyring = true;
+            });
+        }
     }
 }
 
@@ -87,6 +122,7 @@ fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     app.manage(Phone {
         store,
         settings: Mutex::new(settings),
+        tokens: Tokens::new(std::sync::Arc::new(keyring::AndroidKeyring::default())),
         granted: Mutex::new(HashSet::new()),
     });
     let blank = Url::parse("about:blank")?;
@@ -111,9 +147,9 @@ fn open_chosen(app: &AppHandle) {
 }
 
 fn resolve(app: &AppHandle) -> Result<(), String> {
-    let settings = app.state::<Phone>().settings();
+    let phone = app.state::<Phone>();
     let appearance = Appearance::default();
-    let (Some(origin), Some(token)) = (settings.hub, settings.token) else {
+    let (Some(origin), Some(token)) = (phone.settings().hub, phone.token()) else {
         return navigate(app, pages::connect(None, false, &appearance));
     };
     let origin = Url::parse(&origin).map_err(|e| e.to_string())?;
@@ -156,10 +192,22 @@ fn reached(app: &AppHandle, origin: &Url, token: &str, paired: bool) -> Result<(
 /// Load the hub's web UI, paired: Kotlin puts the device cookie in the WebView and the token on its
 /// own requests before the first page request.
 fn open_hub(app: &AppHandle, origin: &Url, token: &str) -> Result<(), String> {
+    follow_secrets_switch(app, origin);
     app.player()
         .configure(origin.origin().ascii_serialization().as_str(), token)?;
     grant(app, origin).map_err(|e| e.to_string())?;
     navigate(app, Ok(origin.clone()))
+}
+
+/// A hub with its `secrets` switch on (ADR-0091): this phone's token there goes to the keystore too. Off the
+/// main thread: it asks the hub.
+fn follow_secrets_switch(app: &AppHandle, origin: &Url) {
+    let (app, origin) = (app.clone(), origin.clone());
+    std::thread::spawn(move || {
+        if crate::token::hub_keeps_secrets(&origin) {
+            app.state::<Phone>().keep_token_in_keyring();
+        }
+    });
 }
 
 /// `main` shows something else: a reconnect for the page it showed stops.
@@ -209,10 +257,9 @@ pub async fn window_action(app: AppHandle, request: WindowAction) -> Result<(), 
             let token = spawn_blocking(move || hub::pair(&o, &code, &hub::device_name()))
                 .await
                 .map_err(|e| e.to_string())??;
-            app.state::<Phone>().update(|s| {
-                s.hub = Some(origin.to_string());
-                s.token = Some(token.clone());
-            });
+            let phone = app.state::<Phone>();
+            phone.update(|s| s.hub = Some(origin.to_string()));
+            phone.set_token(Some(token.clone()));
             open_hub(&app, &origin, &token)
         }
         WindowAction::Retry => {

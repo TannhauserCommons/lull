@@ -9,9 +9,9 @@ use crate::desktop::local_hub::LocalHub;
 use crate::desktop::open_links::Shared;
 use crate::desktop::settings::{HubChoice, Settings};
 use crate::desktop::theme::Package;
-use crate::desktop::token::Tokens;
 use crate::desktop::tray::Tray;
 use crate::store::Store;
+use crate::token::Tokens;
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -137,13 +137,14 @@ impl Desktop {
 
     /// This app's device token on its hub (ADR-0002), wherever it is kept (token.rs).
     pub fn token(&self) -> Option<String> {
-        self.tokens.get(&self.settings())
+        let settings = self.settings();
+        self.tokens.get(settings.token.as_deref(), settings.token_in_keyring)
     }
 
     /// Keeps (or forgets) this app's token where tokens are kept now. A keyring that refuses puts it back in
     /// `settings.json`, so the app stays paired.
     pub fn set_token(&self, token: Option<String>) {
-        if self.tokens.keep(&self.settings(), token.as_deref()) {
+        if self.tokens.keep(self.settings().token_in_keyring, token.as_deref()) {
             self.update(|s| s.token = None);
         } else {
             self.update(|s| {
@@ -156,7 +157,7 @@ impl Desktop {
     /// The hub turned on its `secrets` switch (its `/health` lists it): the token moves into the keyring, and
     /// out of `settings.json` once the keyring has read it back. A keyring that refuses leaves it where it was.
     pub fn keep_token_in_keyring(&self) {
-        if self.tokens.take_in(&self.settings()) {
+        if self.tokens.take_in(self.settings().token.as_deref()) {
             self.update(|s| {
                 s.token = None;
                 s.token_in_keyring = true;

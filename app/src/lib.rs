@@ -9,6 +9,7 @@ mod pages;
 mod pairing;
 mod reconnect;
 mod store;
+mod token;
 mod updates;
 
 #[cfg(desktop)]

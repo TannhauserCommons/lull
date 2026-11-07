@@ -71,6 +71,19 @@ impl Vault for SystemKeyring {
     }
 }
 
+/// The app's own token goes here too (token.rs).
+impl crate::token::Keyring for SystemKeyring {
+    fn read(&self, name: &str) -> Result<Option<String>, String> {
+        Vault::read(self, name).map_err(|e| e.to_string())
+    }
+    fn write(&self, name: &str, value: &str) -> Result<(), String> {
+        Vault::write(self, name, value).map_err(|e| e.to_string())
+    }
+    fn remove(&self, name: &str) -> Result<(), String> {
+        Vault::remove(self, name).map_err(|e| e.to_string())
+    }
+}
+
 /// A locked store, or one the listener said no to, waits for them; anything else is a failure. Neither
 /// message holds a credential: keyring errors carry the entry's name at most.
 fn classify(e: Error) -> VaultError {

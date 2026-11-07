@@ -10,7 +10,7 @@ mod commands;
 mod discord;
 mod glass;
 mod graphics;
-mod keyring;
+pub(crate) mod keyring;
 mod links;
 mod local_hub;
 mod main_window;
@@ -24,7 +24,6 @@ mod signin;
 mod sounds;
 mod state;
 mod theme;
-mod token;
 mod tray;
 mod updater;
 

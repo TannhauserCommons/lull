@@ -229,7 +229,7 @@ pub fn open_hub(app: &AppHandle, origin: &Url, token: &str) -> tauri::Result<()>
 fn follow_secrets_switch(app: &AppHandle, origin: &Url) {
     let (app, origin) = (app.clone(), origin.clone());
     std::thread::spawn(move || {
-        if hub::health(&origin).is_ok_and(|h| h.flags.iter().any(|f| f == "secrets")) {
+        if crate::token::hub_keeps_secrets(&origin) {
             app.state::<Desktop>().keep_token_in_keyring();
         }
     });

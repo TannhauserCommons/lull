@@ -171,6 +171,10 @@ javascriptcore-rs = "=1.1.2"
 tauri-plugin-lull-player = { path = "plugins/player" }
 # Opens a newer release's APK in the browser, which downloads it for Android to install.
 tauri-plugin-opener = "=2.7.2"
+# This phone's token on its hub in Android's Keystore-backed storage once the hub keeps credentials in a vault
+# (ADR-0091): keyring-rs's core API and its Android store (MIT or Apache-2.0).
+keyring-core = "=1.0.1"
+android-native-keyring-store = "=1.0.0"
 
 [profile.release]
 lto = true
