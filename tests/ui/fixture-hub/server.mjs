@@ -63,6 +63,23 @@ const WEB = process.env.LULL_WEB || join(here, '..', '..', '..', 'web');
 const PORT = +(process.argv[2] || process.env.FIXTURE_PORT || 8790);
 const THEMES = process.env.FIXTURE_THEMES || null;
 const SKINS = process.env.FIXTURE_SKINS || null;
+// FIXTURE_HUB_SLSKD=1: a hub that runs its own slskd (the desktop app's, the Linux package's), whose Soulseek account is
+// two config keys the hub takes only together, as crates/core's Config does; it starts with none
+const MANAGED = process.env.FIXTURE_HUB_SLSKD === '1';
+const account = { user: null, pass: null };
+function configItems() {
+  return [
+    { key: 'LULL_PUBLIC_URL', value: null, set: false, source: 'default', secret: false, restart: true },
+    { key: 'LULL_SLSKD_URL', value: 'http://slskd:5030', set: true, source: 'env', secret: false, restart: true },
+    { key: 'LULL_SLSKD_API_KEY', value: null, set: true, source: 'env', secret: true, restart: true },
+    SKINS ? { key: 'LULL_SKINS_DIR', value: '/skins', set: true, source: 'env', secret: false, restart: true }
+      : { key: 'LULL_SKINS_DIR', value: null, set: false, source: 'default', secret: false, restart: true },
+    ...(MANAGED ? [
+      { key: 'LULL_SOULSEEK_USERNAME', value: account.user, set: account.user != null, source: account.user != null ? 'stored' : 'default', secret: false, restart: true },
+      { key: 'LULL_SOULSEEK_PASSWORD', value: null, set: account.pass != null, source: account.pass != null ? 'stored' : 'default', secret: true, restart: true },
+    ] : []),
+  ];
+}
 // The switches that are on, as the hub's LULL_FLAGS names them (ADR-0096): off unless a feature's own spec turns its own on.
 // What a real hub's /health and /api/updates say it is (lull_core::build), fixed so the pictures don't move.
 const BUILD = { release: '0.0.0-fixture', changes: 0, commit: null, install: 'docker' };
@@ -140,7 +157,7 @@ const routes = [
   ['GET', /^\/health$/, () => ({ version: '0.0.0-fixture', build: BUILD, services: SERVICES, flags: FLAGS })],
   ['GET', /^\/api\/updates$/, () => ({ version: '0.0.0-fixture', build: BUILD, state: 'current', latest: { version: '0.0.0-fixture', url: 'https://github.com/TannhauserCommons/lull/releases', publishedAt: null }, checkedAt: 0, error: null })],
   ['GET', /^\/api\/ping$/, () => ({ status: 204 })],
-  ['GET', /^\/api\/setup$/, () => ({ claimed: true, soulseekManaged: false, steps: { library: true, soulseek: true, lastfm: true } })],
+  ['GET', /^\/api\/setup$/, () => ({ claimed: true, soulseekManaged: MANAGED, steps: { library: true, soulseek: true, lastfm: true } })],
   ['GET', /^\/api\/devices$/, () => ({
     me: 'd-fixture',
     items: [
@@ -151,13 +168,17 @@ const routes = [
   ['PATCH', /^\/api\/devices\/me$/, () => ({ status: 204 })],
   ['POST', /^\/api\/devices\/me\/state$/, () => ({ status: 204 })],
   ['POST', /^\/api\/devices\/([^/]+)\/command$/, () => ({ status: 204 })],
-  ['GET', /^\/api\/config$/, () => ({ items: [
-    { key: 'LULL_PUBLIC_URL', value: null, set: false, source: 'default', secret: false, restart: true },
-    { key: 'LULL_SLSKD_URL', value: 'http://slskd:5030', set: true, source: 'env', secret: false, restart: true },
-    { key: 'LULL_SLSKD_API_KEY', value: null, set: true, source: 'env', secret: true, restart: true },
-    SKINS ? { key: 'LULL_SKINS_DIR', value: '/skins', set: true, source: 'env', secret: false, restart: true }
-      : { key: 'LULL_SKINS_DIR', value: null, set: false, source: 'default', secret: false, restart: true },
-  ] })],
+  ['GET', /^\/api\/config$/, () => ({ items: configItems() })],
+  // a hub that runs its own slskd keeps the Soulseek account as two config keys, taken only together
+  ['PATCH', /^\/api\/config$/, (m, q, body) => {
+    const user = body && body.LULL_SOULSEEK_USERNAME, pass = body && body.LULL_SOULSEEK_PASSWORD;
+    if (!MANAGED || ((user == null) !== (pass == null) && !(user == null ? account.user : account.pass))) {
+      return { status: 400, body: { error: 'bad_request', message: 'LULL_SOULSEEK_USERNAME and LULL_SOULSEEK_PASSWORD must be set together' } };
+    }
+    if (user != null) account.user = user;
+    if (pass != null) account.pass = pass;
+    return { items: configItems() };
+  }],
   // a test's own changes (X-Fixture-Client) stay its own, over everyone's settings; the hub tells every device
   ['GET', /^\/api\/settings$/, (m, q, body, client) => settingsOf(client)],
   ['PATCH', /^\/api\/settings$/, (m, q, body, client) => {

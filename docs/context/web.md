@@ -173,8 +173,10 @@ says the ping has answered.
   null) shows the default it runs on, read from `/api/settings` (`CFG_SETTING`): the selected choice, or a text
   field's placeholder, so leaving the field alone stores nothing.
 - **Soulseek account**: only when `GET /api/setup` says `soulseekManaged` (the desktop app runs its own slskd) do
-  setup and Settings > Sources show name and password fields (`LULL_SOULSEEK_USERNAME`, `LULL_SOULSEEK_PASSWORD`);
-  otherwise they show slskd's state and say the login is set where slskd runs.
+  setup and Settings > Sources show one sign-in form, name and password (`LULL_SOULSEEK_USERNAME`,
+  `LULL_SOULSEEK_PASSWORD`), sent together in one `PATCH /api/config`: the hub takes them only together, so they are
+  never saved one field at a time (`gates/settings-soulseek.spec.mjs`); otherwise they show slskd's state and say the
+  login is set where slskd runs.
 - **Not on HTTPS** (`!isSecureContext`): the gate, Settings > Devices and the pair dialog say the app can't install or
   keep downloads here, and point to `tailscale serve`.
 

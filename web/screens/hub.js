@@ -224,26 +224,30 @@
     var st = App.store.get('services').soulseek;
     return K.statusLine(st.state, st.detail);
   }
-  /* Settings > Sources: the two keys as config fields, with slskd's own status */
+  /* Settings > Sources: slskd's own status, then the same form as first-run setup. The hub takes the two keys only
+     together (a name without a password is refused), so they are never saved one field at a time */
   function soulseekRows() {
     var r = M.get(SETUP), managed = soulseekManaged();
     return html`${K.row('Soulseek', managed ? 'The account slskd signs in with. Soulseek allows one sign-in per account at a time.' : ELSEWHERE, html`<span id="hub-slsk-status">${soulseekStatus()}</span>`)}
-      ${!r.loading && managed ? html`${K.cfgField(SLSK_USER, 'Soulseek user name')}${K.cfgField(SLSK_PASS, 'Soulseek password')}` : ''}`;
+      ${!r.loading && managed ? html`<div id="hub-slsk" class="sys-row">${soulseekForm(true)}</div>` : ''}`;
   }
-  /* first-run setup: both keys in one form, one restart */
-  var slsk = { busy: false, error: null, sent: false };
-  function soulseekForm() {
+  /* both keys in one form, one restart (first-run setup, Settings > Sources). `quiet`: the status shows beside it
+     already (Settings' row) */
+  var slsk = { busy: false, error: null, sent: false, quiet: false };
+  function soulseekForm(quiet) {
+    if (quiet != null) slsk.quiet = quiet;
+    var status = function () { return slsk.quiet ? '' : soulseekStatus(); };
     var st = App.store.get('services').soulseek;
-    if (!soulseekManaged()) return html`<p class="sys-row__help">${ELSEWHERE}</p>${soulseekStatus()}`;
+    if (!soulseekManaged()) return html`<p class="sys-row__help">${ELSEWHERE}</p>${status()}`;
     var r = M.get(CONFIG), user = K.cfgItem(SLSK_USER), pass = K.cfgItem(SLSK_PASS);
     if (r.loading) return ui.skeleton('text', 2);
     if (r.error) return html`${fieldError(r.error.message)}<button class="btn btn--sm" data-act="reload-read" data-id="${CONFIG}">Try again</button>`;
     if (!user || !pass || user.source === 'env') {
-      return html`<p class="sys-row__help">${user && user.value ? html`Signed in as <b>${user.value}</b>. ` : ''}The hub's environment sets this account.</p>${soulseekStatus()}`;
+      return html`<p class="sys-row__help">${user && user.value ? html`Signed in as <b>${user.value}</b>. ` : ''}The hub's environment sets this account.</p>${status()}`;
     }
     if (user.value && pass.set && !slsk.editing) {
       return html`<p class="sys-step__done">${st.state === 'ok' ? icon('check', null, 'ic-16') : ''}${st.state === 'ok' ? html`Signed in as <b>${user.value}</b>` : html`<span>${user.value}</span>`}</p>
-        ${st.state === 'ok' ? '' : soulseekStatus()}<button class="btn btn--sm btn--quiet" data-act="hub-slsk-edit">Use another account</button>`;
+        ${st.state === 'ok' ? '' : status()}<button class="btn btn--sm btn--quiet" data-act="hub-slsk-edit">Use another account</button>`;
     }
     return html`<form class="hub-slsk" data-form="hub-slsk">
       <div class="field"><label class="field__label" for="hub-slsk-user">User name</label><input class="input" id="hub-slsk-user" value="${user.value || ''}" autocomplete="username" spellcheck="false"></div>
@@ -524,7 +528,7 @@
         ${ui.labelRule('get started', { id: 'setup-h' })}
         <ol class="sys-steps">
           ${stepItem(0, done[0], 'Choose your library', 'A music folder on the hub, or your Jellyfin server.', librarySource({ withFolder: true }))}
-          ${stepItem(1, done[1], 'Sign in to Soulseek', 'The account lull searches and downloads with.', html`<div id="hub-slsk">${soulseekForm()}</div>`)}
+          ${stepItem(1, done[1], 'Sign in to Soulseek', 'The account lull searches and downloads with.', html`<div id="hub-slsk">${soulseekForm(false)}</div>`)}
           ${stepItem(2, done[2], 'Connect Last.fm', 'Scrobble what you play, and let your history shape recommendations. Optional.', html`<div id="setup-lastfm">${lastfmStep()}</div>`)}
         </ol>
         <footer class="sys-welcome__foot"><span class="fg-2" aria-live="polite">${n} of 3 done</span><span class="spacer"></span>
@@ -573,6 +577,6 @@
     App.on(topic, function () { if ($('#sys-liked-unsaved')) M.reload(UNSAVED); });
   });
 
-  App.hubKit = { librarySource: librarySource, soulseekRows: soulseekRows, soulseekForm: function () { return html`<div id="hub-slsk">${soulseekForm()}</div>`; },
+  App.hubKit = { librarySource: librarySource, soulseekRows: soulseekRows, soulseekForm: function () { return html`<div id="hub-slsk">${soulseekForm(false)}</div>`; },
     httpsNote: httpsNote, deviceName: deviceName, devices: devices, gateForm: gateForm, setupPage: renderSetup, likeSaves: likeSaves, offerSaves: offerSaves };
 })();
