@@ -34,7 +34,7 @@ inside 'pgrep -u lull -x slskd >/dev/null' || { inside 'journalctl -u lull --no-
 inside 'runuser -u lull -- /usr/lib/lull-server/deno --version | head -1'
 code=$(inside 'lull pair' | sed -n 's/.*enter the code \([A-Z0-9]*\).*/\1/p')
 [ -n "$code" ] || { echo "lull pair printed no code" >&2; exit 1; }
-inside "node /root/run.mjs http://127.0.0.1:8484 --pair $code --managed --mdns"
+inside "node /root/run.mjs http://127.0.0.1:8484 --pair $code --managed --youtube --mdns"
 inside 'lull status'
 
 echo "== remove"

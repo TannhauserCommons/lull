@@ -38,7 +38,7 @@ They talk to the hub over `/var/lib/lull/admin.sock` (hub.md). A fresh hub's mus
 - its slskd reached, yt-dlp and Deno run;
 - the mDNS advert.
 
-The removed package must leave no slskd running.
+The removed package must leave no slskd running. The same contract runs against the image in `ui` (its first shard, after the pictures, with `--youtube`: compose runs slskd beside it), so the package's hub and the image's are held to one test. `tests/hub-contract/jellyfin.sh` meets a real Jellyfin (pinned, set up through its startup API with a music library on a folder): the package's lull, set up by `lull setup`'s Jellyfin questions, must list every song and save into the folder Jellyfin reads.
 
 ## Docker
 

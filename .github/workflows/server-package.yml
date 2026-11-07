@@ -123,6 +123,29 @@ jobs:
           case "${{ matrix.distro }}" in fedora) package=$(ls "$RUNNER_TEMP"/packages/*.rpm) ;; *) package=$(ls "$RUNNER_TEMP"/packages/*.deb) ;; esac
           sh tests/hub-contract/in-systemd.sh "${{ matrix.distro }}" "$package"
 
+  # The listener's existing Jellyfin (tests/hub-contract/jellyfin.sh): a real one, set up through its startup API, and
+  # the package's hub pointed at it by `lull setup`'s questions.
+  jellyfin:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24.11"
+      - uses: actions/download-artifact@v4
+        with:
+          name: lull-server-linux-x64
+          path: ${{ runner.temp }}/packages
+      - name: ffmpeg, for the fixture library
+        run: sudo apt-get install -y -qq ffmpeg >/dev/null
+      - name: lull uses the listener's Jellyfin
+        run: |
+          tar -C "$RUNNER_TEMP" -xzf "$RUNNER_TEMP"/packages/lull-server_*_linux-x64.tar.gz
+          sh tests/hub-contract/jellyfin.sh "$RUNNER_TEMP/lull-server/lib/lull"
+
   # A hub updating itself (tests/hub-contract/self-update.sh): two debug builds, a kit signed with a key made here and
   # thrown away, a stand-in for GitHub's newest release. Only a debug build reads that key and that stand-in.
   self-update:

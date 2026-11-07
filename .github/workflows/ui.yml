@@ -120,6 +120,14 @@ jobs:
         working-directory: tests/ui
         run: npx playwright test --shard=${{ matrix.shard }}
 
+      # The image holds the same hub contract as the Linux package (ADR-0090; server-package.yml runs it there). After
+      # the pictures: it changes a setting, and the parts restart.
+      - name: The image keeps the hub contract
+        if: ${{ !cancelled() && matrix.slot == 1 }}
+        run: |
+          code=$(docker exec lull-ui lull pair | sed -n 's/.*enter the code \([A-Z0-9]*\).*/\1/p')
+          node tests/hub-contract/run.mjs "$LULL_URL" --pair "$code" --youtube
+
       - name: Lighthouse budgets (${{ matrix.part }})
         if: ${{ !cancelled() && matrix.lighthouse }}
         working-directory: tests/ui

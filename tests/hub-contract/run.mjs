@@ -2,9 +2,10 @@
 // the Linux package's hub is held to the same test as the others. It touches nothing outside the hub: no
 // Soulseek account, no YouTube search, no network the hub would reach out to.
 //
-//   node tests/hub-contract/run.mjs <hub url> --pair <code> [--managed] [--mdns]
-// --pair    a pair code (`sudo lull pair`): the contract pairs itself as an app, then unpairs at the end
-// --managed the hub runs its own slskd, yt-dlp and Deno (the app's and the package's): they must run
+//   node tests/hub-contract/run.mjs <hub url> --pair <code> [--managed] [--youtube] [--mdns]
+// --pair    a pair code (`lull pair`): the contract pairs itself as an app, then unpairs at the end
+// --managed the hub runs its own slskd (the app's and the package's): it must reach it
+// --youtube the hub ships yt-dlp (the package and the image): it must run
 // --mdns    the hub answers _lull._tcp on this network
 import dgram from 'node:dgram';
 
@@ -12,7 +13,7 @@ const args = process.argv.slice(2);
 const base = args[0]?.replace(/\/$/, '');
 const flag = (name) => args.includes(`--${name}`);
 const option = (name) => args[args.indexOf(`--${name}`) + 1];
-if (!base || !flag('pair')) throw new Error('usage: run.mjs <hub url> --pair <code> [--managed] [--mdns]');
+if (!base || !flag('pair')) throw new Error('usage: run.mjs <hub url> --pair <code> [--managed] [--youtube] [--mdns]');
 
 let failed = 0;
 async function check(name, fn) {
@@ -140,9 +141,15 @@ if (flag('managed')) {
       return { ok: reached, why: detail };
     });
   });
+}
+
+if (flag('youtube')) {
+  // The version is read in the background each time the parts start, and the settings change above restarted them.
   await check('yt-dlp runs', async () => {
-    const { json } = await call('/api/youtube');
-    expect(json?.ytdlp?.version, `no yt-dlp version: ${JSON.stringify(json?.ytdlp)}`);
+    await until('yt-dlp says its version', async () => {
+      const { json } = await call('/api/youtube');
+      return { ok: Boolean(json?.ytdlp?.version), why: JSON.stringify(json?.ytdlp) };
+    }, 60);
   });
 }
 
