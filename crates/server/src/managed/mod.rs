@@ -84,6 +84,11 @@ pub(crate) fn launch_of(config: &Config) -> Launch {
             Share::None => None,
             Share::Library => Some(config.library.music_dir.clone()),
         },
+        account: config
+            .flags
+            .on(&lull_core::flags::SECRETS)
+            .then(|| config.soulseek.account.clone())
+            .flatten(),
     }
 }
 
@@ -159,4 +164,35 @@ pub(crate) async fn restart_when_wedged(hub: std::sync::Arc<Hub>, sidecar: Sidec
 
 fn path_string(path: &Path) -> String {
     path.to_string_lossy().into_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// With the `secrets` switch on, the account rides in slskd's launch (its environment, ADR-0091), so a
+    /// new account restarts slskd; off, slskd's file keeps it as before and the launch doesn't carry it.
+    #[test]
+    fn the_account_goes_to_slskd_in_its_launch_only_with_the_secrets_switch_on() -> Result<(), BoxError> {
+        let config = |flags: &str| {
+            Config::from_vars(BTreeMap::from(
+                [
+                    ("LULL_SLSKD_URL", "http://127.0.0.1:5030"),
+                    ("LULL_SLSKD_API_KEY", "k"),
+                    ("LULL_SLSKD_CONFIG_FILE", "slskd.yml"),
+                    ("LULL_SOULSEEK_USERNAME", "me"),
+                    ("LULL_SOULSEEK_PASSWORD", "pw"),
+                    ("LULL_FLAGS", flags),
+                ]
+                .map(|(k, v)| (k.to_owned(), v.to_owned())),
+            ))
+        };
+        let on = launch_of(&config("secrets")?);
+        assert_eq!(
+            on.account.as_ref().map(|a| (a.username.as_str(), a.password.expose())),
+            Some(("me", "pw"))
+        );
+        assert_eq!(launch_of(&config("")?).account, None);
+        Ok(())
+    }
 }

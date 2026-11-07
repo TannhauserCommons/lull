@@ -28,7 +28,7 @@
   - `ok`: logged in;
   - `warn`: reconnecting, or connected with a problem: lull can't see slskd's folders, shares don't match `LULL_SHARE`, or the Soulseek server isn't answering the session (below);
   - `down`: slskd unreachable, the key rejected, or slskd [stuck mid-transition](#stuck-transitions).
-- **The account of an slskd lull runs** (`account.rs`, ADR-0002). With `LULL_SLSKD_CONFIG_FILE` (the desktop app's sidecar), every start writes `LULL_SOULSEEK_USERNAME`/`PASSWORD` into that `slskd.yml`, which holds nothing else. When the file changed, lull waits up to 60 s for slskd to reload it, then logs in again (or out, when the account was removed). Details: [hub.md](hub.md).
+- **The account of an slskd lull runs** (`account.rs`, ADR-0002). With `LULL_SLSKD_CONFIG_FILE` (the desktop app's sidecar), every start writes `LULL_SOULSEEK_USERNAME`/`PASSWORD` into that `slskd.yml`, which holds nothing else. When the file changed, lull waits up to 60 s for slskd to reload it, then logs in again (or out, when the account was removed). With the `secrets` switch on (ADR-0091) the account goes in slskd's environment when the hub starts it, a change restarts slskd, and the file stays empty. Details: [hub.md](hub.md).
 - **State flags.** slskd sends state fields as comma-separated flag names (`Completed, Succeeded`, `Queued, Remotely`). A transfer slskd will retry itself still reads `Completed, Errored` while it waits, with `nextAttemptAt` set; lull treats that as queued. Only `Completed` without `nextAttemptAt` is final.
 - **Enqueue.** Downloads are queued with `POST /transfers/downloads/batches`, which returns the transfer ids. Queueing a file that is already running returns a failure, and lull reuses the running transfer.
 

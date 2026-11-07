@@ -152,8 +152,13 @@ pub struct Service {
 pub async fn start(ctx: &Ctx, youtube: Arc<dyn Youtube>) -> Result<Arc<Service>> {
     let config = &ctx.config.soulseek;
     let slskd = Slskd::new(ctx.http.clone(), &config.slskd_url, config.slskd_api_key.clone())?;
+    // With the `secrets` switch on, slskd gets the account in its environment when the hub starts it
+    // (ADR-0091), and the file lull owns is kept empty: slskd reads it over its environment.
+    let in_env = ctx.config.flags.on(&lull_core::flags::SECRETS);
+    let in_file = config.account.as_ref().filter(|_| !in_env);
     if let Some(file) = &config.config_file
-        && account::write(file, config.account.as_ref()).await?
+        && account::write(file, in_file).await?
+        && !in_env
     {
         ctx.spawn(account::apply(slskd.clone(), config.account.clone()));
     }

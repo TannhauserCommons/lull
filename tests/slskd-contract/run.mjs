@@ -20,6 +20,9 @@
 //   liveness   our own user's status is the server's to answer alone: slskd passes the answer on (200); with the
 //              server silent on that session it answers 500 "timed out" after its 5 s wait, and after lull's fresh
 //              login (DELETE then PUT /server) the server answers again.
+// And where the Soulseek password ends up (ADR-0091):
+//   password   lull hands slskd its login in slskd's environment (SLSKD_SLSK_USERNAME/PASSWORD); after logging in
+//              twice and stopping, no file in slskd's app folder holds the password.
 // Exits non-zero with one sentence saying what differed.
 //
 // Usage:
@@ -40,6 +43,7 @@ import { startPeer } from './peer.mjs';
 const NATIVE = process.argv.includes('--native');
 
 const ME = 'contract-lull'; // slskd's login on the stand-in server
+const PASSWORD = `contract-password-${randomBytes(8).toString('hex')}`; // looked for in slskd's files afterwards
 const PEER = 'contract-peer';
 // A SoulseekQt-style share root (@@xxxxx) that slskd strips from the incomplete path, then ordinary folders.
 const REMOTE = '@@lullc\\Music\\Contract Artist\\Contract Album\\01 - Seek Ahead.mp3';
@@ -123,7 +127,8 @@ async function main() {
     peer.close();
   }
   console.log(`\nPASS: slskd resumes a download from a pre-sized incomplete file (asked for ${X}), starts again from 0 with retry.partial: overwrite, and lets its file be read while it downloads and moves it;`
-    + ' it passes on the server\'s answer to our own status, times out when the server is silent, and is answered again after a fresh login.');
+    + ' it passes on the server\'s answer to our own status, times out when the server is silent, and is answered again after a fresh login;'
+    + ' and it keeps the password it is given in its environment out of its files.');
 }
 
 /** slskd's settings for logging in to the stand-in server, the same for every case. */
@@ -132,7 +137,7 @@ function slskdEnv({ slskd, server, listenPort, httpPort, apiKey }) {
     SLSKD_SLSK_ADDRESS: slskd.network.serverHost,
     SLSKD_SLSK_PORT: String(server.port),
     SLSKD_SLSK_USERNAME: ME,
-    SLSKD_SLSK_PASSWORD: 'contract',
+    SLSKD_SLSK_PASSWORD: PASSWORD,
     SLSKD_SLSK_LISTEN_PORT: String(listenPort),
     SLSKD_HTTP_PORT: String(httpPort),
     SLSKD_NO_HTTPS: 'true',
@@ -194,6 +199,16 @@ async function liveness({ slskd, server, listenPort }) {
       return x.code === 200 && x;
     }));
     log(`after a fresh login: HTTP ${s.code} ${s.text}`);
+
+    // ADR-0091: the password lull hands slskd in its environment never reaches slskd's files (its database, logs or
+    // settings), or that folder would have to be kept as private as the password itself.
+    await running.stop();
+    running = null;
+    const leaks = await filesHolding(join(work, 'app'), PASSWORD);
+    if (leaks.length) {
+      throw new ContractError(`password: slskd wrote the Soulseek password it was given in its environment into ${leaks.map((f) => f.slice(work.length)).join(', ')}.`);
+    }
+    log('the password is in none of slskd\'s files');
   } catch (e) {
     if (running) console.error(`--- last lines of slskd's log (liveness) ---\n${await running.logs()}---`);
     throw e;
@@ -365,6 +380,17 @@ async function transferOf(api, apiKey, remote) {
   if (!r.ok) return null;
   const user = await r.json();
   return user.directories?.flatMap((d) => d.files).find((f) => f.filename === remote) ?? null;
+}
+
+/** Every file under `dir` whose bytes hold `needle`. */
+async function filesHolding(dir, needle) {
+  const found = [];
+  for (const entry of await readdir(dir, { withFileTypes: true, recursive: true })) {
+    if (!entry.isFile()) continue;
+    const path = join(entry.parentPath, entry.name);
+    if ((await readFile(path)).includes(needle)) found.push(path);
+  }
+  return found;
 }
 
 // --- the slskd under test ---

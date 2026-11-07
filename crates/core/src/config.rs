@@ -84,7 +84,7 @@ pub struct SlskdWebLogin {
     pub password: Secret,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SoulseekAccount {
     pub username: String,
     pub password: Secret,

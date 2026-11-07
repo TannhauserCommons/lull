@@ -9,6 +9,8 @@
 //! line, secrets in env (not in the process list).
 
 use std::path::PathBuf;
+
+use lull_core::config::SoulseekAccount;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
@@ -62,6 +64,10 @@ impl Tie {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Launch {
     pub share: Option<PathBuf>,
+    /// With the `secrets` switch on (ADR-0091), the Soulseek account, handed over in slskd's own
+    /// environment instead of `slskd.yml`: nothing on disk holds the password. A new account restarts
+    /// slskd, which a new account's login interrupts anyway.
+    pub account: Option<SoulseekAccount>,
 }
 
 impl Fixed {
@@ -280,6 +286,12 @@ fn spawn(fixed: &Fixed, launch: &Launch) -> Result<Child, String> {
         .stderr(Stdio::null());
     if let Some(share) = &launch.share {
         cmd.arg("--shared").arg(share);
+    }
+    // slskd's own options for its Soulseek login. Only this process and lull's user (and root) can read
+    // a process's environment; it never reaches the disk.
+    if let Some(account) = &launch.account {
+        cmd.env("SLSKD_SLSK_USERNAME", &account.username)
+            .env("SLSKD_SLSK_PASSWORD", account.password.expose());
     }
     (fixed.tie.prepare)(&mut cmd);
     let child = cmd
