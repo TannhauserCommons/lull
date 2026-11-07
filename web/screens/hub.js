@@ -247,7 +247,7 @@
     }
     if (user.value && pass.set && !slsk.editing) {
       return html`<p class="sys-step__done">${st.state === 'ok' ? icon('check', null, 'ic-16') : ''}${st.state === 'ok' ? html`Signed in as <b>${user.value}</b>` : html`<span>${user.value}</span>`}</p>
-        ${st.state === 'ok' ? '' : status()}<button class="btn btn--sm btn--quiet" data-act="hub-slsk-edit">Use another account</button>`;
+        ${pass.kept ? html`<p class="sys-row__help">${pass.kept.text}${pass.kept.problem ? ' ' + pass.kept.problem : ''}</p>` : ''}${st.state === 'ok' ? '' : status()}<button class="btn btn--sm btn--quiet" data-act="hub-slsk-edit">Use another account</button>`;
     }
     return html`<form class="hub-slsk" data-form="hub-slsk">
       <div class="field"><label class="field__label" for="hub-slsk-user">User name</label><input class="input" id="hub-slsk-user" value="${user.value || ''}" autocomplete="username" spellcheck="false"></div>
