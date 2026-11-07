@@ -451,6 +451,35 @@ fn account(conn: &Connection) -> Result<Option<Account>> {
         .optional()?)
 }
 
+/// Takes the session key out of a copy of the database (a backup taken before an update, once the update
+/// has proved itself), leaving a placeholder. The caller has `secure_delete` on. True when it changed.
+pub fn scrub(tx: &rusqlite::Transaction<'_>) -> Result<bool> {
+    let has_table = tx
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'lastfm_session'",
+            [],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    let column: Option<String> = if has_table {
+        tx.query_row("SELECT session_key FROM lastfm_session WHERE id = 1", [], |r| r.get(0))
+            .optional()?
+    } else {
+        None
+    };
+    match column {
+        Some(key) if !lull_core::secrets::is_placeholder(&key) => {
+            tx.execute(
+                "UPDATE lastfm_session SET session_key = ?1 WHERE id = 1",
+                [lull_core::secrets::placeholder()?],
+            )?;
+            Ok(true)
+        }
+        _ => Ok(false),
+    }
+}
+
 /// With the `secrets` switch on, a session key still in `lastfm_session` (from before the switch, or
 /// stored by an older lull) moves to the vault, and a placeholder overwrites it on disk once the vault
 /// has read it back. One that can't move stays, and is tried again at the next start.

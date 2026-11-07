@@ -184,6 +184,54 @@ pub fn restrict_backups(data: &Path) {
     }
 }
 
+/// With the `secrets` switch on (ADR-0091), the copies of the database taken before updates lose their
+/// plain credentials once nothing can go back to them: once the launcher has marked this hub's kit good
+/// (its health window passed), or at once when no kit runs (no update to roll back). Inside the window a
+/// copy is untouched, so a failed update comes back with every login.
+pub async fn clean_backups_when_settled(data: PathBuf, kit: Option<PathBuf>) {
+    if let Some(kit) = kit {
+        let good = kit.join(kit::GOOD);
+        let until = tokio::time::Instant::now() + WINDOW * 3;
+        while !good.exists() {
+            if tokio::time::Instant::now() >= until {
+                return tracing::info!(
+                    "this update isn't marked good yet; its database copies keep their logins for now"
+                );
+            }
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+    }
+    let cleaned = tokio::task::spawn_blocking(move || clean_backups(&data)).await;
+    match cleaned {
+        Ok(Ok(0)) => {}
+        Ok(Ok(n)) => tracing::info!(
+            copies = n,
+            "logins taken out of the database copies from before updates"
+        ),
+        Ok(Err(e)) => tracing::warn!("cleaning the database copies from before updates: {e}"),
+        Err(e) => tracing::warn!("cleaning the database copies from before updates: {e}"),
+    }
+}
+
+/// Takes the plain credentials out of every copy in `<data>/backups`, overwriting them on disk. How many
+/// copies changed.
+pub(crate) fn clean_backups(data: &Path) -> Result<usize, BoxError> {
+    let Ok(entries) = std::fs::read_dir(data.join("backups")) else {
+        return Ok(0);
+    };
+    let mut changed = 0;
+    for path in entries.flatten().map(|e| e.path()) {
+        let mut conn = rusqlite::Connection::open(&path)?;
+        conn.pragma_update(None, "secure_delete", true)?;
+        let tx = conn.transaction()?;
+        let core = lull_core::secrets::scrub_core(&tx)?;
+        let lastfm = lull_lastfm::scrub(&tx)?;
+        tx.commit()?;
+        changed += usize::from(core || lastfm);
+    }
+    Ok(changed)
+}
+
 /// Where the copy of the database from before the update to `version` is kept.
 pub fn backup_path(data: &Path, version: &str) -> PathBuf {
     data.join("backups").join(format!("before-{version}.db"))

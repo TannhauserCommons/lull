@@ -62,12 +62,12 @@ pub async fn run_with(
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<(), BoxError> {
     // The data directory comes from `env` alone: it holds the database the stored settings live in.
-    let data: &std::path::Path = env.get("LULL_DATA_DIR").map_or("/data", String::as_str).as_ref();
+    let data = std::path::PathBuf::from(env.get("LULL_DATA_DIR").map_or("/data", String::as_str));
     let db = match keyring {
-        Some(keyring) => Db::open(data)?.with_keyring(keyring),
-        None => Db::open(data)?,
+        Some(keyring) => Db::open(&data)?.with_keyring(keyring),
+        None => Db::open(&data)?,
     };
-    launch::restrict_backups(data);
+    launch::restrict_backups(&data);
     db.migrate(&db::CORE)?;
     let config = hub::configure(&env, &db).await?;
     let listener = tokio::net::TcpListener::bind(config.listen).await?;
@@ -76,6 +76,13 @@ pub async fn run_with(
     let mut tasks = Vec::new();
     if let Some(s) = sidecar.clone() {
         tasks.push(tokio::spawn(managed::restart_when_wedged(hub.clone(), s)));
+    }
+    if lull_core::secrets::on(&hub.db) {
+        let kit = hub.env.get("LULL_KIT").map(std::path::PathBuf::from);
+        tasks.push(tokio::spawn(launch::clean_backups_when_settled(
+            data.to_path_buf(),
+            kit,
+        )));
     }
     // A data folder that can't hold a socket (some network shares) only loses lull's commands.
     #[cfg(unix)]

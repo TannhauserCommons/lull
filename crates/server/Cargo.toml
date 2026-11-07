@@ -33,6 +33,9 @@ serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+# The database copies taken before updates lose their logins once the update proved itself (ADR-0091):
+# opened as plain files, not as the hub's database.
+rusqlite.workspace = true
 # Pair and setup codes, and the API key and web password of a hub's own slskd.
 getrandom = "0.4.3"
 # A hub on a computer answers `_lull._tcp` on the local network (managed/advert.rs), as the app's always did.

@@ -1319,6 +1319,7 @@ dependencies = [
  "minisign-verify",
  "nix",
  "reqwest",
+ "rusqlite",
  "rust-embed",
  "serde",
  "serde_json",

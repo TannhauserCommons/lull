@@ -38,7 +38,7 @@ pub const SIGNATURE: &str = "manifest.json.sig";
 /// manifest with the same SHA-256, so this file needs no signature of its own.
 pub const KEPT: &str = "kept.json";
 /// Marks in a kit's folder: it ran healthy once, or it didn't start (the reason inside).
-const GOOD: &str = "good";
+pub(crate) const GOOD: &str = "good";
 const BAD: &str = "bad";
 
 /// This machine's architecture as releases name it.

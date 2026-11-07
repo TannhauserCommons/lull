@@ -467,3 +467,53 @@ async fn subsonic_passwords_and_the_lastfm_session_move_and_an_older_lull_signs_
     let _ = std::fs::remove_dir_all(dir);
     Ok(())
 }
+
+/// A copy of the database taken before an update (a 0.2.6 hub's, with plain logins) loses them when it is
+/// cleaned, on disk, and cleaning it again changes nothing.
+#[tokio::test]
+async fn cleaning_a_copy_from_before_an_update_takes_its_logins_out_on_disk() -> Result<(), BoxError> {
+    const SESSION: &str = "canary-lastfm-session-31f0";
+    let dir = fresh_dir()?;
+    store_plain(&dir, &[("LULL_LISTENBRAINZ_TOKEN", TOKEN)]).await?;
+    let (off, _) = start(&dir, false, None).await?;
+    let (_, password) = lull_core::devices::create(&off.db, "Feishin", lull_core::devices::Kind::Subsonic).await?;
+    let password = password.expose().to_owned();
+    let backups = dir.join("data").join("backups");
+    std::fs::create_dir_all(&backups)?;
+    let copy = backups.join("before-0.2.7.db");
+    let to = copy.to_string_lossy().into_owned();
+    off.db
+        .call(move |c| {
+            c.execute(
+                "INSERT INTO lastfm_session (id, user, session_key, connected_at) VALUES (1, 'listener', ?1, 0)",
+                [SESSION],
+            )?;
+            c.execute("VACUUM INTO ?1", [to])?;
+            Ok(())
+        })
+        .await?;
+    off.stop().await;
+    for canary in [TOKEN, SESSION, password.as_str()] {
+        assert_eq!(
+            files_holding(&backups, canary)?,
+            std::slice::from_ref(&copy),
+            "{canary} is in the copy"
+        );
+    }
+
+    assert_eq!(crate::launch::clean_backups(&dir.join("data"))?, 1);
+    for canary in [TOKEN, SESSION, password.as_str()] {
+        assert!(
+            files_holding(&backups, canary)?.is_empty(),
+            "{canary} is gone from the copy, on disk"
+        );
+    }
+    assert_eq!(
+        crate::launch::clean_backups(&dir.join("data"))?,
+        0,
+        "a clean copy isn't changed again"
+    );
+
+    let _ = std::fs::remove_dir_all(dir);
+    Ok(())
+}

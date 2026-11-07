@@ -480,6 +480,35 @@ pub fn placeholder() -> Result<String> {
     ))
 }
 
+/// Whether a crate's column holds a placeholder rather than its credential.
+pub fn is_placeholder(column: &str) -> bool {
+    column.starts_with(PLACEHOLDER)
+}
+
+/// Takes the plain credentials out of a copy of the database (one taken before an update, once the update
+/// has proved itself): the secret settings' rows go, Subsonic app passwords become placeholders. The
+/// caller has `secure_delete` on. True when anything changed.
+pub fn scrub_core(tx: &rusqlite::Transaction<'_>) -> Result<bool> {
+    let mut changed = 0;
+    for key in crate::settings::KEYS.iter().filter(|k| k.secret) {
+        changed += tx.execute("DELETE FROM core_config WHERE key = ?1", [key.name])?;
+    }
+    let plain: Vec<String> = {
+        let mut stmt = tx.prepare(
+            "SELECT id FROM core_devices WHERE kind = 'subsonic' AND secret IS NOT NULL AND secret NOT LIKE ?1",
+        )?;
+        let ids = stmt.query_map([format!("{PLACEHOLDER}%")], |r| r.get(0))?;
+        ids.collect::<rusqlite::Result<_>>()?
+    };
+    for id in plain {
+        changed += tx.execute(
+            "UPDATE core_devices SET secret = ?1 WHERE id = ?2",
+            [placeholder()?, id],
+        )?;
+    }
+    Ok(changed > 0)
+}
+
 /// The credential `name` whose crate's column holds `column`: the vault's copy when the column holds a
 /// placeholder (`None` while that vault can't be read), else the column itself.
 pub fn resolve(db: &Db, name: &str, column: String) -> Option<String> {
