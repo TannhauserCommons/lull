@@ -179,7 +179,7 @@ if (process.env.LULL_GRAPHICS_ONLY !== 'budget') {
       assert.equal(pageEnvironment().WEBKIT_WEB_RENDER_DEVICE_FILE, undefined);
       await app.run(() => App.go('/settings/app'));
       const line = await until('Settings › App\'s graphics line', () => app.run(() => document.querySelector('#sys-graphics')?.textContent.trim()));
-      assert.match(line, /The last start with “Use the graphics card” didn't come up, so lull went back to Automatic/);
+      assert.match(line, /The last start with “Use the graphics card” didn’t come up, so lull went back to Automatic/);
     } finally { await app.quit(); }
   });
 
