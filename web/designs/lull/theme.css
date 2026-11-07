@@ -532,7 +532,7 @@
 :root[data-design="lull"][data-theme="night"] .pbar__now .bezel-thumb { box-shadow: var(--v-chrome-sh), 0 0 24px -4px rgba(150, 110, 255, .6); }
 :root[data-design="lull"] .pbar__now .bezel-thumb .cover {
   --song-pos: inherit; --cover-size: 92px; width: 92px; height: 92px; margin: 0; border: 0; border-radius: 50%; box-shadow: none;
-  rotate: calc(var(--song-pos, 0) * 2turn); transition: rotate 2.4s linear;
+
   -webkit-mask: radial-gradient(circle, transparent 0 25px, #000 25.5px); mask: radial-gradient(circle, transparent 0 25px, #000 25.5px);
 }
 /* the light on the disc stays put while it turns: its rims and the rainbow */
@@ -1441,13 +1441,13 @@
   background: radial-gradient(circle at 0 0, rgba(255,255,255,.32) 0 14%, rgba(255,255,255,.85) 14.4% 15%, rgba(255,255,255,0) 15.4%), radial-gradient(circle at 100% 0, rgba(255,255,255,.32) 0 14%, rgba(255,255,255,.85) 14.4% 15%, rgba(255,255,255,0) 15.4%), radial-gradient(circle at 0 100%, rgba(255,255,255,.32) 0 14%, rgba(255,255,255,.85) 14.4% 15%, rgba(255,255,255,0) 15.4%), radial-gradient(circle at 100% 100%, rgba(255,255,255,.32) 0 14%, rgba(255,255,255,.85) 14.4% 15%, rgba(255,255,255,0) 15.4%), linear-gradient(150deg, rgba(255,255,255,.28), rgba(255,255,255,.08) 55%, rgba(255,255,255,.2));
   box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.85), inset 0 0 0 6px rgba(255,255,255,.05), inset 0 0 0 7px rgba(255,255,255,.35), 0 0 0 1px rgba(40,20,140,.3), 0 10px 20px -10px rgba(20, 0, 90, .45);
 }
-:root[data-design="lull"] :is(.lull-disc, .lull-hand .dk-mini__now > .cover) { position: relative; width: 92%; aspect-ratio: 1; border-radius: 50%; overflow: hidden; display: block; rotate: calc(var(--song-pos, 0) * 2turn); transition: rotate 2.4s linear; -webkit-mask: radial-gradient(circle, transparent 0 16%, #000 16.4%); mask: radial-gradient(circle, transparent 0 16%, #000 16.4%); box-shadow: 0 6px 18px rgba(20, 0, 90, .35); }
+:root[data-design="lull"] :is(.lull-disc, .lull-hand .dk-mini__now > .cover) { position: relative; width: 92%; aspect-ratio: 1; border-radius: 50%; overflow: hidden; display: block; -webkit-mask: radial-gradient(circle, transparent 0 16%, #000 16.4%); mask: radial-gradient(circle, transparent 0 16%, #000 16.4%); box-shadow: 0 6px 18px rgba(20, 0, 90, .35); }
 :root[data-design="lull"] .lull-disc .cover { width: 100% !important; height: 100% !important; border-radius: 50%; box-shadow: none; }
 :root[data-design="lull"] .lull-disc__light { position: absolute; inset: 4%; border-radius: 50%; pointer-events: none; background: radial-gradient(circle, rgba(255,255,255,0) 0 16.4%, rgba(255,255,255,.9) 16.8% 17.4%, rgba(220,215,255,.5) 17.8% 26%, rgba(255,255,255,.85) 26.4% 27%, rgba(255,255,255,0) 27.4% 98.4%, rgba(255,255,255,.95) 99%), var(--v-rainbow); }
 :root[data-design="lull"] .lull-hub { position: absolute; left: 50%; top: 50%; translate: -50% -50%; z-index: 2; display: grid; place-items: center; }
 :root[data-design="lull"] .lull-hub .btn-gloss { --size: 64px; width: 64px; height: 64px; margin: 0; }
 :root[data-design="lull"] .lull-hub .btn-gloss .ic { width: 26px; height: 26px; }
-:root[data-design="lull"] .lull-hub--cap { width: 56px; height: 56px; border-radius: 50%; background: var(--v-chrome-key); box-shadow: 0 0 0 1px var(--v-chrome-edge), 0 0 0 4px rgba(255,255,255,.5), 0 4px 8px -2px rgba(20,10,80,.5); }
+:root[data-design="lull"] .lull-hub--cap { width: calc(var(--d, 196px) * .29); height: calc(var(--d, 196px) * .29); border-radius: 50%; background: var(--v-chrome-key); box-shadow: 0 0 0 1px var(--v-chrome-edge), 0 0 0 4px rgba(255,255,255,.5), 0 4px 8px -2px rgba(20,10,80,.5); }
 :root[data-design="lull"] .lull-dev__screen [data-now="osd"] { position: absolute; left: 50%; bottom: 10px; translate: -50% 0; }
 :root[data-design="lull"] .lull-dev__like { position: absolute; right: 10px; top: 10px; z-index: 3; }
 :root[data-design="lull"] .lull-dev__like :is(.btn-icon, .btn-gloss) { width: 40px; height: 40px; border-radius: 50%; color: var(--v-chrome-ink); border: 0; background: var(--v-chrome-key); box-shadow: var(--v-chrome-sh), 0 3px 6px -2px rgba(30,0,110,.5); }
@@ -1518,12 +1518,14 @@
 :root[data-design="lull"] .lull-hand .lull-dev__name { font-size: 1.5rem; }
 :root[data-design="lull"] .lull-hand .lull-hand__vol { height: 20px; padding: 0 8px; border-radius: 4px; display: inline-flex; align-items: center; background: var(--v-lcd); color: var(--v-lcd-ink); font: 900 .6875rem/1 var(--f-ui); text-shadow: var(--v-lcd-glow); box-shadow: var(--v-lcd-sh); }
 :root[data-design="lull"] .lull-hand .dk-mini__win { width: 26px; height: 26px; border-radius: 50%; color: var(--v-chrome-ink); border: 0; background: var(--v-chrome-key); box-shadow: var(--v-chrome-sh); }
-:root[data-design="lull"] .lull-hand .lull-dev__screen { height: 300px; place-items: start center; }
-:root[data-design="lull"] .lull-hand .lull-dev__screen::before { content: ""; position: absolute; top: 14px; left: 50%; width: 196px; height: 196px; margin-left: -98px; border-radius: 16px; background: linear-gradient(150deg, rgba(255,255,255,.28), rgba(255,255,255,.08) 55%, rgba(255,255,255,.2)); box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.85), inset 0 0 0 7px rgba(255,255,255,.35), 0 10px 20px -10px rgba(20,0,90,.45); }
-:root[data-design="lull"] .lull-hand .lull-tray { position: absolute; top: 14px; left: 50%; width: 196px; height: 196px; margin-left: -98px; translate: none; z-index: 2; background: none; box-shadow: none; }
+/* the screen takes the room the window leaves, and the disc sizes itself to it (a mini window may be shorter than
+   560 px): at most 196 px, and always clear of the song's readout under it */
+:root[data-design="lull"] .lull-hand .lull-dev__screen { flex: 1 1 0; min-height: 150px; height: auto; place-items: start center; container-type: size; }
+:root[data-design="lull"] .lull-hand :is(.lull-tray, .dk-mini__now > .cover) { --d: max(64px, min(196px, calc(100cqh - 96px), calc(100cqw - 48px))); }
+:root[data-design="lull"] .lull-hand .lull-tray { position: absolute; top: 12px; left: 50%; width: var(--d); height: var(--d); margin-left: calc(var(--d) / -2); translate: none; z-index: 2; border-radius: 16px; background: none; box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.85), inset 0 0 0 7px rgba(255,255,255,.35), 0 10px 20px -10px rgba(20,0,90,.45); }
+:root[data-design="lull"] .lull-hand .dk-mini__now > .cover { position: absolute; z-index: 1; top: calc(12px + var(--d) * .04); left: 50%; width: calc(var(--d) * .92); height: calc(var(--d) * .92); margin-left: calc(var(--d) * -.46); }
 :root[data-design="lull"] .lull-hand .lull-hand__now { position: static; }
 :root[data-design="lull"] .lull-hand .dk-mini__now { display: block; }
-:root[data-design="lull"] .lull-hand .dk-mini__now > .cover { position: absolute; z-index: 1; top: calc(14px + 196px * .04); left: 50%; width: calc(196px * .92); height: calc(196px * .92); margin-left: calc(196px * -.46); }
 :root[data-design="lull"] .lull-hand .dk-mini__now > div { position: absolute; left: 10px; right: 10px; bottom: 10px; padding: 7px 12px; border-radius: 6px; background: var(--v-lcd); box-shadow: var(--v-lcd-sh); text-align: left; }
 :root[data-design="lull"] .lull-hand .device__title { font: 900 1rem/1.2 var(--f-ui); color: var(--v-lcd-ink); text-shadow: var(--v-lcd-glow); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 :root[data-design="lull"] .lull-hand .device__artist { font: 800 .8125rem/1.2 var(--f-ui); color: var(--v-lcd-ink-2); }
@@ -1546,6 +1548,14 @@
 :root[data-design="lull"] .dk-mini__note.is-on { opacity: 1; }
 :root[data-design="lull"] .dk-mini { padding: 0; }
 :root[data-design="lull"] .dk-mini--opaque .lull-hand { background: var(--v-screws), var(--v-desk); }
+/* while the song plays the disc spins like a real one (a turn every 6 s, 20 steps a second), and stops when it stops;
+   the light on it stays put. Moved only by transform; still under reduced motion */
+@keyframes lull-spin { to { transform: rotate(1turn); } }
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-design="lull"]:not([data-motion="reduce"]) :is(.pbar__now .bezel-thumb .cover, .lull-disc, .lull-hand .dk-mini__now > .cover, .dk-strip .bezel-thumb .cover) { animation: lull-spin 6s steps(120) infinite; animation-play-state: var(--loop-play, running); }
+  :root[data-design="lull"]:not([data-playing="true"]) :is(.pbar__now .bezel-thumb .cover, .lull-disc),
+  :root[data-design="lull"] [data-dk-player]:not([data-playing="true"]) :is(.dk-mini__now > .cover, .bezel-thumb .cover) { animation-play-state: paused; }
+}
 
 /* =====================================================================
    Devices. The compact player (phone Lyrics / Queue / Details tabs, short landscape) is the capsule in one row: the
@@ -1577,7 +1587,7 @@
 :root[data-design="lull"] .dk-strip__keys { display: contents; --song-pos: inherit; }
 /* the disc at the left end, play at its hub */
 :root[data-design="lull"] .dk-strip .bezel-thumb { position: absolute; left: 0; top: 0; width: 66px; height: 66px; padding: 4px; border-radius: 50%; background: var(--v-chrome-key); box-shadow: var(--v-chrome-sh); --song-pos: inherit; }
-:root[data-design="lull"] .dk-strip .bezel-thumb .cover { --song-pos: inherit; --cover-size: 58px; width: 58px; height: 58px; border: 0; border-radius: 50%; rotate: calc(var(--song-pos, 0) * 2turn); transition: rotate 2.4s linear; -webkit-mask: radial-gradient(circle, transparent 0 17px, #000 17.5px); mask: radial-gradient(circle, transparent 0 17px, #000 17.5px); }
+:root[data-design="lull"] .dk-strip .bezel-thumb .cover { --song-pos: inherit; --cover-size: 58px; width: 58px; height: 58px; border: 0; border-radius: 50%; -webkit-mask: radial-gradient(circle, transparent 0 17px, #000 17.5px); mask: radial-gradient(circle, transparent 0 17px, #000 17.5px); }
 :root[data-design="lull"] .dk-strip .bezel-thumb::after { content: ""; position: absolute; inset: 4px; border-radius: 50%; pointer-events: none; background: var(--v-rainbow); }
 /* play rides the disc's rim, so the cover under it (which opens the full window) stays a key of its own */
 :root[data-design="lull"] .dk-strip .btn-gloss { position: absolute; z-index: 2; left: 52px; top: 14px; --size: 38px; width: 38px; height: 38px; margin: 0; border-radius: 50%; color: var(--v-chrome-ink); background: var(--v-chrome-key); box-shadow: 0 0 0 1px var(--v-chrome-edge), 0 0 0 3px rgba(255, 255, 255, .55); }
