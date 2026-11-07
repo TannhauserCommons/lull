@@ -26,8 +26,17 @@ pub const HUB_SELF_UPDATE: Flag = Flag {
     area: "hub",
 };
 
+/// "Keep lull running when closed" in the desktop app's Settings (ADR-0090): it starts at login without a window,
+/// close hides it, and the computer stays awake on mains power while it is the hub.
+pub const KEEP_RUNNING: Flag = Flag {
+    name: "keep-running",
+    about: "Settings › App offers Keep lull running when closed, when this computer is the hub",
+    owner: "app",
+    area: "apps",
+};
+
 /// Every switch there is. Empty while nothing is unfinished.
-pub const FLAGS: &[&Flag] = &[&HUB_SELF_UPDATE];
+pub const FLAGS: &[&Flag] = &[&HUB_SELF_UPDATE, &KEEP_RUNNING];
 
 /// The switches that are on.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
