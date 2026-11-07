@@ -401,3 +401,69 @@ async fn a_secrets_file_readable_by_others_is_refused() -> Result<(), BoxError> 
     let _ = std::fs::remove_dir_all(dir);
     Ok(())
 }
+
+/// Subsonic app passwords and the Last.fm session move too, with a random placeholder in their columns: an
+/// older lull reads the placeholder as the credential, so it signs nobody in (an empty value would match an
+/// empty password), and Subsonic still checks the real password against the vault's copy.
+#[tokio::test]
+async fn subsonic_passwords_and_the_lastfm_session_move_and_an_older_lull_signs_nobody_in() -> Result<(), BoxError> {
+    const SESSION: &str = "canary-lastfm-session-77aa";
+    let dir = fresh_dir()?;
+    let (off, _) = start(&dir, false, None).await?;
+    let (device, password) = lull_core::devices::create(&off.db, "Feishin", lull_core::devices::Kind::Subsonic).await?;
+    let password = password.expose().to_owned();
+    off.db
+        .call(|c| {
+            c.execute(
+                "INSERT INTO lastfm_session (id, user, session_key, connected_at) VALUES (1, 'listener', ?1, 0)",
+                [SESSION],
+            )?;
+            Ok(())
+        })
+        .await?;
+    off.stop().await;
+
+    let (on, _) = start(&dir, true, None).await?;
+    let subsonic = lull_core::devices::subsonic(&on.db).await?;
+    assert_eq!(
+        subsonic
+            .iter()
+            .map(|(d, p)| (d.id.as_str(), p.expose()))
+            .collect::<Vec<_>>(),
+        [(device.id.as_str(), password.as_str())],
+        "Subsonic checks the password from the vault"
+    );
+    // What an older lull reads in the columns.
+    let columns: (String, String) = on
+        .db
+        .call(|c| {
+            Ok((
+                c.query_row("SELECT secret FROM core_devices WHERE kind = 'subsonic'", [], |r| {
+                    r.get(0)
+                })?,
+                c.query_row("SELECT session_key FROM lastfm_session", [], |r| r.get(0))?,
+            ))
+        })
+        .await?;
+    for column in [&columns.0, &columns.1] {
+        assert!(column.starts_with("kept-in-vault-") && column.len() > 40, "{column}");
+    }
+    assert_ne!(columns.0, columns.1, "each placeholder is its own random value");
+    assert_eq!(
+        lull_core::secrets::resolve(&on.db, "lastfm.session", columns.1.clone()).as_deref(),
+        Some(SESSION)
+    );
+
+    // Revoking the app removes its password from the vault.
+    lull_core::devices::revoke(&on.db, &device.id).await?;
+    on.stop().await;
+    let vault = dir.join("data").join("secrets").join("secrets.json");
+    assert!(
+        files_holding(&dir, &password)?.is_empty(),
+        "the revoked password is gone"
+    );
+    assert_eq!(files_holding(&dir, SESSION)?, std::slice::from_ref(&vault));
+
+    let _ = std::fs::remove_dir_all(dir);
+    Ok(())
+}

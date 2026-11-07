@@ -155,6 +155,14 @@ async fn sign_in(svc: &Arc<Service>, q: Callback) -> Result<()> {
         ));
     }
     let session = svc.client()?.session(&q.token).await?;
+    let db = &svc.ctx.db;
+    // With the `secrets` switch on the key goes to the vault first, and the row holds a placeholder.
+    let column = if lull_core::secrets::on(db) {
+        lull_core::secrets::put(db, crate::SESSION, &session.key).await?;
+        lull_core::secrets::placeholder()?
+    } else {
+        session.key.clone()
+    };
     svc.ctx
         .db
         .call(move |c| {
@@ -162,7 +170,7 @@ async fn sign_in(svc: &Arc<Service>, q: Callback) -> Result<()> {
                 "INSERT INTO lastfm_session (id, user, session_key, connected_at) VALUES (1, ?1, ?2, ?3)
                  ON CONFLICT(id) DO UPDATE SET user = excluded.user, session_key = excluded.session_key,
                  connected_at = excluded.connected_at",
-                params![session.name, session.key, lull_core::now()],
+                params![session.name, column, lull_core::now()],
             )?;
             Ok(())
         })
@@ -186,6 +194,9 @@ async fn disconnect(State(svc): State<Arc<Service>>) -> Result<StatusCode> {
             queue::clear(c)
         })
         .await?;
+    if lull_core::secrets::kept(&svc.ctx.db, crate::SESSION).is_some() {
+        lull_core::secrets::remove(&svc.ctx.db, crate::SESSION).await?;
+    }
     if let Ok(mut out) = svc.signed_out.lock() {
         *out = false;
     }

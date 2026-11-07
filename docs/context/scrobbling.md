@@ -17,7 +17,7 @@ The compiled-in secret can be read out of the binary, as with any desktop app's 
    - The nonce is 128 random bits, single use, valid for 15 minutes.
    - Without `LULL_PUBLIC_URL` the answer is 503.
 2. **Last.fm sends the browser back** to `/api/lastfm/callback?state=…&token=…`. The token is valid for 60 minutes and can be used once.
-3. **`auth.getSession`** (signed) trades the token for a session key. The key lasts until the listener revokes access, and is stored in `lastfm_session` with the user name.
+3. **`auth.getSession`** (signed) trades the token for a session key. The key lasts until the listener revokes access, and is stored in `lastfm_session` with the user name. With the `secrets` switch on it goes in the credentials' vault instead (ADR-0091), and the row holds a placeholder: while that vault can't be read, nothing is sent and scrobbles wait in the queue.
 4. **The browser lands on `/#/settings/lastfm`.** A failure is kept and shown as `error` in `GET /api/lastfm`.
 
 - **Signature:** `api_sig` is the md5 of every parameter, as `name+value` in name order, excluding `format` and `callback`, followed by the secret.

@@ -24,7 +24,7 @@
 ## Invariants
 
 - **Every `/api` call needs a paired browser or app.** `gate::require` runs before every route, the crates' too. The only open `/api` routes are `GET /api/setup`, `POST /api/setup/claim` and `POST /api/pair`. Nothing outside `/api` is gated: `/rest` does Subsonic's own auth. The gate never looks at the peer address: `tailscale serve` proxies from 127.0.0.1.
-- **Tokens are stored hashed** (`core::devices`); only a Subsonic app password is kept as given. An app password is refused under `/api`.
+- **Tokens are stored hashed** (`core::devices`); only a Subsonic app password is kept as given (with the `secrets` switch on, in the credentials' vault as `subsonic.<device id>`, its column holding a random placeholder an older lull can't sign in with). An app password is refused under `/api`.
 - **The setup code exists only while no browser or app is paired.** At start-up and after the last one is unpaired, the hub arms it: `LULL_SETUP_CODE`, or a random 8-character code printed in the log (`setup_code` field, level warn). Claims are serialised, so two devices can't both become the first.
 - **Pair codes** are 6 characters from an alphabet without 0/O/1/I, single use, 10 minutes, kept in memory (a process restart drops them). Ten wrong codes in a minute refuse every code until the minute is over, setup code included.
 - **Browsers never see their token.** It is set as `lull_device` (HttpOnly, SameSite=Lax so Last.fm's callback carries it, Secure when `LULL_PUBLIC_URL` is https or the proxy says `X-Forwarded-Proto: https`, 400 days). `/api/ping` renews it.
@@ -33,11 +33,12 @@
 
 - Settings are `LULL_*` keys: environment, then stored (`core_config`), then `Config`'s defaults. An empty environment value counts as unset (the deploy kit passes every key of its env file).
 - `settings::KEYS` lists what the app may set and which are secrets; `ENV_ONLY` (`LULL_DATA_DIR`, `LULL_LISTEN`, `LULL_LOG`, `LULL_SETUP_CODE`, `LULL_SLSKD_CONFIG_FILE`) never appear in `/api/config`. A test keeps both lists, `Config` and `deploy/.env.example` in step.
-- **Credentials** (ADR-0091, behind the `secrets` switch): the secret settings live in a vault, never in `lull.db`.
+- **Credentials** (ADR-0091, behind the `secrets` switch): the secret settings, the Last.fm session (`lastfm.session`) and Subsonic app passwords live in a vault, never in `lull.db`.
   - **The vaults** (`lull_core::secrets`): the system keyring, which the desktop app hands over with `Db::with_keyring`, or `<data>/secrets/secrets.json` (folder 0700, file 0600, refused if wider).
   - **The record:** `secrets_kept` says which vault holds each credential. It has its own migrations owner, so an older lull still starts.
   - **Each start** (`hub::configure` → `secrets::start`) reads them all. With the switch on, it also moves what isn't in place: plain rows (erased with `secure_delete` and the WAL truncated, only after the vault reads the value back) and the file's entries once a keyring works.
   - **`settings::stored`** merges them over `core_config`; a plain row is newer and wins.
+  - **A crate's own column** (`core_devices.secret`, `lastfm_session.session_key`) holds a random placeholder (`secrets::placeholder`, read back through `secrets::resolve`). An older lull reads it as the credential and signs nobody in; a plain value there is newer and moves (`secrets::adopt`, `secrets::erase`).
   - **A vault that won't open** (a locked keyring) withholds its credentials: `Config::from_vars_withheld` leaves what needs them waiting instead of refusing to start.
 - `PATCH /api/config` validates the whole merged map with `Config::from_vars`, stores, then publishes `hub.restart`. It refuses `LULL_LIBRARY`: `PUT /api/library/source` reconciles the library before it stores the mode.
 - **Restart** (`Hub::restart`, on any `hub.restart`):

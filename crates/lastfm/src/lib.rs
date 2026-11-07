@@ -72,11 +72,16 @@ pub struct Service {
     auth_error: Mutex<Option<String>>,
 }
 
+/// The name the session key is kept under in the credentials' vault (ADR-0091).
+const SESSION: &str = "lastfm.session";
+
 /// The stored connection: who, and the listener's two switches.
 #[derive(Debug, Clone)]
 struct Account {
     user: String,
-    session_key: String,
+    /// `None` while the vault holding it can't be read (a locked keyring): nothing is sent, and
+    /// scrobbles wait in the queue.
+    session_key: Option<String>,
     scrobbling: bool,
     use_history: bool,
 }
@@ -90,6 +95,7 @@ pub async fn start(ctx: &Ctx) -> Result<Arc<Service>> {
         signed_out: Mutex::new(false),
         auth_error: Mutex::new(None),
     });
+    move_session(ctx).await;
     svc.report().await;
     if svc.client.is_some() {
         ctx.spawn(listen(svc.clone(), ctx.bus.subscribe()));
@@ -252,15 +258,27 @@ impl Service {
     }
 
     async fn account(&self) -> Result<Option<Account>> {
-        self.ctx.db.call(|c| account(c)).await
+        let db = &self.ctx.db;
+        let acc = db.call(|c| account(c)).await?;
+        Ok(acc.map(|acc| Account {
+            session_key: acc
+                .session_key
+                .and_then(|k| lull_core::secrets::resolve(db, SESSION, k)),
+            ..acc
+        }))
     }
 
     async fn now_playing(&self, play: &Play) -> Result<()> {
-        let Some(acc) = self.account().await?.filter(|a| a.scrobbling) else {
+        let Some(key) = self
+            .account()
+            .await?
+            .filter(|a| a.scrobbling)
+            .and_then(|a| a.session_key)
+        else {
             return Ok(());
         };
         self.client()?
-            .now_playing(&acc.session_key, play)
+            .now_playing(&key, play)
             .await
             .or_else(|f| self.on_failure(f))
     }
@@ -294,7 +312,7 @@ impl Service {
     /// Sends every due batch until the queue is empty, waiting or Last.fm fails.
     async fn flush(&self) -> Result<()> {
         let client = self.client()?;
-        let Some(acc) = self.account().await? else {
+        let Some(key) = self.account().await?.and_then(|a| a.session_key) else {
             return Ok(());
         };
         loop {
@@ -308,7 +326,7 @@ impl Service {
             }
             let plays: Vec<Play> = batch.iter().map(|q| q.play.clone()).collect();
             let ids: Vec<i64> = batch.iter().map(|q| q.play_id).collect();
-            match client.scrobble(&acc.session_key, &plays).await {
+            match client.scrobble(&key, &plays).await {
                 Ok(()) => {
                     self.ctx.db.call(move |c| queue::remove(c, &ids)).await?;
                     for q in &batch {
@@ -424,13 +442,41 @@ fn account(conn: &Connection) -> Result<Option<Account>> {
             |r| {
                 Ok(Account {
                     user: r.get(0)?,
-                    session_key: r.get(1)?,
+                    session_key: Some(r.get(1)?),
                     scrobbling: r.get(2)?,
                     use_history: r.get(3)?,
                 })
             },
         )
         .optional()?)
+}
+
+/// With the `secrets` switch on, a session key still in `lastfm_session` (from before the switch, or
+/// stored by an older lull) moves to the vault, and a placeholder overwrites it on disk once the vault
+/// has read it back. One that can't move stays, and is tried again at the next start.
+async fn move_session(ctx: &Ctx) {
+    let db = &ctx.db;
+    let column = match db.call(|c| account(c)).await {
+        Ok(Some(Account {
+            session_key: Some(k), ..
+        })) => k,
+        Ok(_) => return,
+        Err(e) => return tracing::warn!("reading the Last.fm session to move it: {e}"),
+    };
+    let moved = match lull_core::secrets::adopt(db, SESSION, &column).await {
+        Ok(Some(placeholder)) => {
+            lull_core::secrets::erase(db, move |tx| {
+                tx.execute("UPDATE lastfm_session SET session_key = ?1 WHERE id = 1", [placeholder])?;
+                Ok(())
+            })
+            .await
+        }
+        Ok(None) => return,
+        Err(e) => Err(e),
+    };
+    if let Err(e) = moved {
+        tracing::warn!("the Last.fm session stays in the database for now: {e}");
+    }
 }
 
 #[cfg(test)]
