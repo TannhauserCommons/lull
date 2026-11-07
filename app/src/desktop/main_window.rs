@@ -112,7 +112,7 @@ fn resolve(app: &AppHandle) -> tauri::Result<()> {
         }
         Some(HubChoice::Remote { origin }) => {
             let origin = Url::parse(&origin).map_err(tauri::Error::InvalidUrl)?;
-            let token = settings.token.unwrap_or_default();
+            let token = desktop.token().unwrap_or_default();
             let unreachable = |error: &str| {
                 let page = Unreachable {
                     hub: &origin,
@@ -214,6 +214,7 @@ fn loaded(window: &WebviewWindow, url: &Url) {
 /// Load the hub's web UI in `main`, paired: the device cookie goes in before the first request.
 pub fn open_hub(app: &AppHandle, origin: &Url, token: &str) -> tauri::Result<()> {
     reconnect::stop(app);
+    follow_secrets_switch(app, origin);
     let main = match app.get_webview_window(LABEL) {
         Some(main) => main,
         None => create(app, Url::parse(BLANK).map_err(tauri::Error::InvalidUrl)?)?,
@@ -221,6 +222,17 @@ pub fn open_hub(app: &AppHandle, origin: &Url, token: &str) -> tauri::Result<()>
     main.set_cookie(hub::device_cookie(origin, token))?;
     grant(app, origin)?;
     main.navigate(origin.clone())
+}
+
+/// A hub with its `secrets` switch on (ADR-0091) keeps credentials in a keyring: this app's token there goes to
+/// the system keyring too. Asked off the UI thread: a keyring may ask to be unlocked.
+fn follow_secrets_switch(app: &AppHandle, origin: &Url) {
+    let (app, origin) = (app.clone(), origin.clone());
+    std::thread::spawn(move || {
+        if hub::health(&origin).is_ok_and(|h| h.flags.iter().any(|f| f == "secrets")) {
+            app.state::<Desktop>().keep_token_in_keyring();
+        }
+    });
 }
 
 pub fn open_page(app: &AppHandle, url: tauri::Result<Url>) -> tauri::Result<()> {

@@ -4,10 +4,12 @@
 use crate::desktop::classic::Held;
 use crate::desktop::discord::Presence;
 use crate::desktop::glass::{Grant, Material};
+use crate::desktop::keyring::SystemKeyring;
 use crate::desktop::local_hub::LocalHub;
 use crate::desktop::open_links::Shared;
 use crate::desktop::settings::{HubChoice, Settings};
 use crate::desktop::theme::Package;
+use crate::desktop::token::Tokens;
 use crate::desktop::tray::Tray;
 use crate::store::Store;
 use serde::Deserialize;
@@ -61,6 +63,10 @@ pub struct Platform {
 pub struct Desktop {
     store: Store<Settings>,
     settings: Mutex<Settings>,
+    /// The system keyring: the hub's own credentials when this computer is the hub (ADR-0091).
+    pub keyring: Arc<SystemKeyring>,
+    /// This app's token on its hub, once that hub keeps credentials in a keyring.
+    tokens: Tokens,
     /// What the web UI last reported, and when (recovery.rs works out where a playing song got to).
     now: Mutex<(NowPlaying, Instant)>,
     /// `main` is hidden and quiet while Classic mode plays (main_window::sleep).
@@ -91,11 +97,13 @@ pub struct Desktop {
 }
 
 impl Desktop {
-    pub fn new(store: Store<Settings>, platform: Platform) -> Self {
+    pub fn new(store: Store<Settings>, platform: Platform, keyring: Arc<SystemKeyring>) -> Self {
         let settings = store.load();
         Desktop {
             store,
             settings: Mutex::new(settings),
+            tokens: Tokens::new(keyring.clone()),
+            keyring,
             now: Mutex::new((NowPlaying::default(), Instant::now())),
             main_asleep: AtomicBool::new(false),
             on_hub: AtomicBool::new(false),
@@ -125,6 +133,35 @@ impl Desktop {
         let mut settings = lock(&self.settings);
         change(&mut settings);
         self.store.save(&settings);
+    }
+
+    /// This app's device token on its hub (ADR-0002), wherever it is kept (token.rs).
+    pub fn token(&self) -> Option<String> {
+        self.tokens.get(&self.settings())
+    }
+
+    /// Keeps (or forgets) this app's token where tokens are kept now. A keyring that refuses puts it back in
+    /// `settings.json`, so the app stays paired.
+    pub fn set_token(&self, token: Option<String>) {
+        if self.tokens.keep(&self.settings(), token.as_deref()) {
+            self.update(|s| s.token = None);
+        } else {
+            self.update(|s| {
+                s.token = token;
+                s.token_in_keyring = false;
+            });
+        }
+    }
+
+    /// The hub turned on its `secrets` switch (its `/health` lists it): the token moves into the keyring, and
+    /// out of `settings.json` once the keyring has read it back. A keyring that refuses leaves it where it was.
+    pub fn keep_token_in_keyring(&self) {
+        if self.tokens.take_in(&self.settings()) {
+            self.update(|s| {
+                s.token = None;
+                s.token_in_keyring = true;
+            });
+        }
     }
 
     pub fn has_tray(&self) -> bool {
@@ -191,8 +228,7 @@ impl Desktop {
         if let Some(local) = self.local_hub() {
             return Some((local.origin.clone(), local.token.clone()));
         }
-        let settings = self.settings();
-        match (settings.hub, settings.token) {
+        match (self.settings().hub, self.token()) {
             (Some(HubChoice::Remote { origin }), Some(token)) => Url::parse(&origin).ok().map(|o| (o, token)),
             _ => None,
         }

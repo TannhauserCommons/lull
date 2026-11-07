@@ -118,12 +118,11 @@ async fn pair(app: &AppHandle, url: &str, code: String) -> Result<(), String> {
 
 /// Stores the hub choice. A different hub means a different device: its token goes with it.
 fn choose(app: &AppHandle, choice: HubChoice, token: Option<String>) {
-    app.state::<Desktop>().update(|s| {
-        if s.hub.as_ref() != Some(&choice) || token.is_some() {
-            s.token = token;
-        }
-        s.hub = Some(choice);
-    });
+    let desktop = app.state::<Desktop>();
+    if desktop.settings().hub.as_ref() != Some(&choice) || token.is_some() {
+        desktop.set_token(token);
+    }
+    desktop.update(|s| s.hub = Some(choice));
 }
 
 /// The web UI opens Classic mode: Webamp in its own window takes over the queue (classic.rs).

@@ -24,6 +24,7 @@ mod signin;
 mod sounds;
 mod state;
 mod theme;
+mod token;
 mod tray;
 mod updater;
 
@@ -116,7 +117,8 @@ fn setup(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let platform = platform::detect();
     let with_tray = platform.tray;
-    app.manage(Desktop::new(store, platform));
+    let keyring = keyring::SystemKeyring::new(&app.config().identifier);
+    app.manage(Desktop::new(store, platform, keyring));
     app.manage(graphics);
     app.manage(crate::reconnect::Reconnect::default());
     let handle = app.handle();

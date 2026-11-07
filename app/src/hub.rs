@@ -68,6 +68,9 @@ fn on_lan(host: &str) -> bool {
 pub struct Health {
     pub version: String,
     pub services: BTreeMap<String, Service>,
+    /// The hub's switches that are on (ADR-0096); an older hub sends none.
+    #[serde(default)]
+    pub flags: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

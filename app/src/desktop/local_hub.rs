@@ -77,7 +77,7 @@ pub fn start(app: &AppHandle) -> Result<LocalHub, String> {
 
     // The system keyring holds the listener's credentials (ADR-0091); the hub falls back to its own file
     // where there is none.
-    let keyring = super::keyring::SystemKeyring::new(&app.config().identifier);
+    let keyring = app.state::<Desktop>().keyring.clone();
     let db = Db::open(&paths.data)
         .map_err(|e| e.to_string())?
         .with_keyring(keyring.clone());
@@ -185,7 +185,7 @@ fn path_string(path: &Path) -> String {
 /// The app's own device on its hub: the stored token while the hub still knows it, else a new one.
 async fn own_token(app: &AppHandle, db: &Db) -> Result<String, String> {
     let desktop = app.state::<Desktop>();
-    if let Some(token) = desktop.settings().token
+    if let Some(token) = desktop.token()
         && devices::verify(db, &token).await.map_err(|e| e.to_string())?.is_some()
     {
         return Ok(token);
@@ -194,7 +194,7 @@ async fn own_token(app: &AppHandle, db: &Db) -> Result<String, String> {
         .await
         .map_err(|e| e.to_string())?;
     let token = token.expose().to_owned();
-    desktop.update(|s| s.token = Some(token.clone()));
+    desktop.set_token(Some(token.clone()));
     Ok(token)
 }
 

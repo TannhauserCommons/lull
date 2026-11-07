@@ -12,7 +12,8 @@ The Tauri v2 project in `app/` (its own Cargo workspace; ADR-0006) shows the hub
 | `app/src/pairing.rs` | Shared: the connect page's `discover_hubs` and `find_hub` |
 | `app/src/reconnect.rs` | Shared: reconnecting to a hub that didn't answer: the backoff, a hard limit on each probe, waking on a network change or Retry now, and each attempt's outcome as `reconnect` |
 | `app/src/pages.rs` | Shared: URLs of the bundled page (`wrapper.html#view=…`), with the design, the built-in design it extends (`base`) and the theme they open in |
-| `app/src/store.rs` | Shared: `settings.json` in the app config dir, written atomically |
+| `app/src/store.rs` | Shared: `settings.json` in the app config dir, written atomically, readable by the user alone |
+| `app/src/desktop/keyring.rs`, `token.rs` | The system keyring (ADR-0091): Credential Manager on Windows, the Secret Service on Linux, opened on first use; the hub's credentials when this computer is the hub, and this app's token once its hub's `secrets` switch is on |
 | `app/src/updates.rs` | Shared: the update check's `Status` that Settings > App shows, and Android's reading of `latest.json` |
 | `app/src/desktop/mod.rs` | Builder: plugins (single instance first, window state, autostart, updater, global shortcut on Linux), commands, setup, exit |
 | `app/src/desktop/local_hub.rs` | This computer is the hub: `lull_server::run_with` in-process with the bundled slskd, its env, the app's own device token, slskd tied to the app's process |
@@ -87,7 +88,7 @@ The Tauri v2 project in `app/` (its own Cargo workspace; ADR-0006) shows the hub
 
 **Pairing** (connect page): the page lists hubs found by mDNS for 3 s (**Search again**), each with its most reachable IPv4 address (home LAN ranges first, Tailscale's 100.64/10 next, link-local last), or takes an address (`192.168.1.20:8484` means http, a dotted name like `hub.example.ts.net` means https). With a 6-character pair code from a paired device, `find_hub` checks the address, then `window_action {pair}` posts `/api/pair { code, name: "lull on <computer>", kind: app }` and keeps the token. Choosing a remote hub while this computer's hub runs restarts the app, because the hub can't stop under its open connections.
 
-**The device token** (ADR-0002): the app keeps one token for the hub it uses, in `settings.json`. At each launch it goes into the webview as the session cookie `lull_device` for the hub's host (HttpOnly, SameSite Lax, Secure on https). Rust sends it as `Authorization: Bearer`. Changing the hub forgets it.
+**The device token** (ADR-0002): the app keeps one token for the hub it uses, in `settings.json` (written 0600 on Linux). Once that hub's `/health` lists the `secrets` switch (ADR-0091), the token moves into the system keyring (`token.rs`, entry `app.token` under the app's identifier) and `settings.json` keeps only `tokenInKeyring`; a keyring that refuses leaves it in the file, and one an older lull wrote there wins. At each launch it goes into the webview as the session cookie `lull_device` for the hub's host (HttpOnly, SameSite Lax, Secure on https). Rust sends it as `Authorization: Bearer`. Changing the hub forgets it.
 
 ## This computer is the hub
 

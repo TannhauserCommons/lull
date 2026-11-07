@@ -13,8 +13,11 @@ use serde::{Deserialize, Serialize};
 pub struct Settings {
     /// Which hub this app uses. None until first run is answered.
     pub hub: Option<HubChoice>,
-    /// This app's device token on that hub (ADR-0002). Changing the hub forgets it.
+    /// This app's device token on that hub (ADR-0002). Changing the hub forgets it. Read it through
+    /// `Desktop::token`: once the hub turns on its `secrets` switch it lives in the system keyring instead.
     pub token: Option<String>,
+    /// The token is in the system keyring, not here (ADR-0091).
+    pub token_in_keyring: bool,
     /// Unix seconds of the last successful load of the web UI, for the unreachable page's details.
     pub last_connected: Option<u64>,
     /// Design and theme the web UI last reported, passed to the bundled pages (DESKTOP.md 6.1).
@@ -57,6 +60,7 @@ impl Default for Settings {
         Settings {
             hub: None,
             token: None,
+            token_in_keyring: false,
             last_connected: None,
             appearance: Appearance::default(),
             window: None,
