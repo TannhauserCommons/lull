@@ -73,7 +73,7 @@
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-motion="reduce"])[data-design="petal"][data-egg~="new-year"] .egg-line { animation: pe-tick 1s steps(1, end) infinite; animation-play-state: var(--loop-play, running); }
 }
-@keyframes pe-tick { 0% { transform: translateX(-50%) scale(1.12); } 20% { transform: translateX(-50%) scale(1); } }
+@keyframes pe-tick { 0% { transform: scale(1.12); } 20% { transform: scale(1); } }
 
 /* ---------- words in a title: a pixel sign sticks on the title, and a little weather passes once ---------- */
 :root[data-design="petal"][data-egg~="moon"] { --pe-sign: var(--pe-m-moon); --pe-sw: 9; --pe-sh: 9; }
@@ -277,8 +277,56 @@
 @media (min-width: 640px) {
   :root[data-design="petal"] .egg-stage { --pe-floor: calc(var(--bar-h) - 14px); --pe-top: 76px; }
 }
-/* a phone has no margin to draw in: the doodles run along the foot of the page, and the cassette sits above the line */
+/* Marks that stay put never stand on a control. Whatever a surprise leaves in place (the owl, the cake, the cassettes, the
+   heart stamp, the line of words, the doodles) has a spot of desk that holds no control, and the marks that move (sparks,
+   weather, the rolling tape, the hopping bunny, falling stickers) may cross anything.
+   - From 840 px the spot is the player's tab strip, between its "now playing" tab and its tool tabs: the picture stands at
+     the left end, as small as the strip is tall (2 px to a pixel of its art), and the words (from 1100 px) at the right
+     end, where the toasts end. Narrower than 1100 the strip has no room for the words: they are still said to a screen
+     reader, and the sound tells them.
+   - On a phone the spot is the gap in the page header between the wordmark and the tray (the tools, the strip is a
+     tab bar there). The words are said, not drawn. From 640 to 839 px there is no spot: the pictures are not drawn, the
+     sound and the words are said. The doodles keep the paper's margin on every page that has one. */
+:root[data-design="petal"] .egg-line:not(:empty) { transform: none; }
+@media (min-width: 840px) {
+  :root[data-design="petal"] [data-egg-of="night-owl"] .pt-e-owl { left: 210px; bottom: var(--pe-floor); width: 30px; height: 30px; }
+  :root[data-design="petal"] [data-egg-of="night-owl"] .pt-e-owl > .pt-e-s { --k: 2; }
+  :root[data-design="petal"] [data-egg-of="night-owl"] .pt-e-owl > .pt-e-s.pt-e-sp-moon { left: 36px; bottom: 6px; --k: 2; }
+  :root[data-design="petal"] [data-egg-of="birthday"] .pt-e-cake { left: 210px; bottom: var(--pe-floor); }
+  :root[data-design="petal"] [data-egg-of="birthday"] .pt-e-cake > .pt-e-s { --k: 2; }
+  :root[data-design="petal"] [data-egg-of="on-repeat"] .pt-e-cas { left: 210px; bottom: var(--pe-floor); --k: 2; }
+  :root[data-design="petal"] [data-egg-of="side-b"] .pt-e-flip { left: 210px; bottom: var(--pe-floor); margin-left: 0; width: 48px; height: 30px; }
+  :root[data-design="petal"] [data-egg-of="side-b"] .pt-e-cas { --k: 2; }
+  :root[data-design="petal"] [data-egg-of="milestone"] .pt-e-stamp { left: 210px; top: auto; bottom: var(--pe-floor); width: auto; height: 30px; margin: 0; display: flex; align-items: center; gap: 8px; }
+  :root[data-design="petal"] [data-egg-of="milestone"] .pt-e-stamp > .pt-e-s { position: static; --k: 3; flex: none; }
+  :root[data-design="petal"] [data-egg-of="milestone"] .pt-e-stamp > b { margin: 2px 0 0; font-size: 1.5rem; color: var(--fg-sky); text-shadow: none; }
+  :root[data-design="petal"] [data-egg-of="milestone"] .pt-e-bit { left: 226px; top: auto; bottom: calc(var(--pe-floor) + 14px); }
+}
+@media (min-width: 840px) and (max-width: 1099px) {
+  :root[data-design="petal"] .egg-line { position: absolute; width: 1px; height: 1px; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+@media (min-width: 1100px) {
+  :root[data-design="petal"] .egg-line { left: auto; right: 510px; bottom: calc(var(--bar-h) - 15px); transform: none; max-width: calc(100vw - 770px); padding: 5px 14px 3px; font-size: 1.125rem; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  :root[data-design="petal"][data-egg~="new-year"] .egg-line { font-size: 1.75rem; padding: 5px 16px 2px; min-width: 2em; transform-origin: right center; }
+}
+@media (min-width: 640px) and (max-width: 839px) {
+  :root[data-design="petal"] :is([data-egg-of="night-owl"] .pt-e-owl, [data-egg-of="birthday"] .pt-e-cake, [data-egg-of="on-repeat"] .pt-e-cas, [data-egg-of="side-b"] .pt-e-flip, [data-egg-of="milestone"] .pt-e-stamp) { display: none; }
+  :root[data-design="petal"] .egg-line { position: absolute; width: 1px; height: 1px; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
 @media (max-width: 639px) {
-  :root[data-design="petal"] [data-egg-of="margin-doodle"] .pt-e-doodle { left: 16px; right: 16px; top: auto; bottom: calc(var(--pe-floor) + 8px); width: auto; display: flex; justify-content: space-around; gap: 0; }
-  :root[data-design="petal"] [data-egg-of="on-repeat"] .pt-e-cas { left: auto; right: 14px; bottom: calc(var(--bar-h) + 100px); }
+  :root[data-design="petal"] .egg-line { position: absolute; width: 1px; height: 1px; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  :root[data-design="petal"] [data-egg-of="night-owl"] .pt-e-owl { left: 100px; top: 12px; bottom: auto; width: 30px; height: 30px; }
+  :root[data-design="petal"] [data-egg-of="night-owl"] .pt-e-owl > .pt-e-s { --k: 2; }
+  :root[data-design="petal"] [data-egg-of="night-owl"] .pt-e-owl > .pt-e-s.pt-e-sp-moon { left: 36px; bottom: 6px; --k: 2; }
+  :root[data-design="petal"] [data-egg-of="birthday"] .pt-e-cake { left: 100px; top: 14px; bottom: auto; }
+  :root[data-design="petal"] [data-egg-of="birthday"] .pt-e-cake > .pt-e-s { --k: 2; }
+  :root[data-design="petal"] [data-egg-of="on-repeat"] .pt-e-cas { left: 100px; top: 14px; right: auto; bottom: auto; --k: 2; }
+  :root[data-design="petal"] [data-egg-of="side-b"] .pt-e-flip { left: 100px; top: 14px; bottom: auto; margin-left: 0; width: 48px; height: 30px; }
+  :root[data-design="petal"] [data-egg-of="side-b"] .pt-e-cas { --k: 2; }
+  :root[data-design="petal"] [data-egg-of="milestone"] .pt-e-stamp { left: 100px; top: 14px; width: auto; height: 30px; margin: 0; display: flex; align-items: center; gap: 6px; }
+  :root[data-design="petal"] [data-egg-of="milestone"] .pt-e-stamp > .pt-e-s { position: static; --k: 3; flex: none; }
+  :root[data-design="petal"] [data-egg-of="milestone"] .pt-e-stamp > b { margin: 2px 0 0; font-size: 1.25rem; color: var(--fg-panel); text-shadow: none; }
+  :root[data-design="petal"] [data-egg-of="milestone"] .pt-e-bit { left: 116px; top: 30px; }
+  :root[data-design="petal"] [data-egg-of="margin-doodle"] .pt-e-doodle { left: 84px; right: auto; top: 18px; bottom: auto; width: auto; display: flex; align-items: center; gap: 4px; }
+  :root[data-design="petal"] [data-egg-of="margin-doodle"] .pt-e-d { width: calc(var(--dw) * 2px); height: calc(var(--dh) * 2px); }
 }

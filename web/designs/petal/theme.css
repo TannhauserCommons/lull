@@ -243,8 +243,11 @@
   font-family: var(--f-zine); font-weight: 400; text-shadow: 3px 3px 0 var(--stack-2); letter-spacing: .01em;
 }
 :root[data-design="petal"] :is(.t-display, .lib-pl__title, .now-head__title)::after {
-  content: "\2060\00a0\00a0" / ""; display: inline; margin-left: .05em; letter-spacing: 0;
-  background: var(--heart); -webkit-mask: var(--px-heart) left .15em bottom .42em / .38em .34em no-repeat; mask: var(--px-heart) left .15em bottom .42em / .38em .34em no-repeat;
+  /* the mask is clipped to the pseudo-element's own box, which is two spaces wide and as tall as the font's ascent and
+     descent: a heart .53em from its left edge outran it and lost part of its right lobe and its top. The padding (it adds
+     no break to the line) makes the box a room the heart sits whole in, whatever the face's metrics */
+  content: "\2060\00a0\00a0" / ""; display: inline; margin-left: .05em; letter-spacing: 0; padding: .3em .4em .3em 0;
+  background: var(--heart); -webkit-mask: var(--px-heart) left .15em bottom .72em / .38em .34em no-repeat; mask: var(--px-heart) left .15em bottom .72em / .38em .34em no-repeat;
 }
 :root[data-design="petal"] .card .lib-pl__title::after { background: var(--pink-ink); }
 /* labels: the pixel face, a little tracked */
@@ -585,7 +588,7 @@
 
 @media (min-width: 640px) {
   :root[data-design="petal"][data-shell="topnav"] .header {
-    position: relative; z-index: 3; min-height: 58px; margin: 0; padding: 0 4px 0 6px; align-items: center; background: none; border: 0; box-shadow: none;
+    position: relative; z-index: 3; min-height: 50px; margin: 0; padding: 0 4px 0 6px; align-items: center; background: none; border: 0; box-shadow: none;
   }
   :root[data-design="petal"][data-shell="topnav"] .header__nav { align-self: stretch; align-items: flex-end; gap: 4px; }
   /* the menu: one index tab per place, each its own colour; the open one is paper, taller, joined to the page under it
@@ -602,13 +605,16 @@
   :root[data-design="petal"] .nav-pill:not([data-fit-out]) .ic { display: none; }
   :root[data-design="petal"] .nav-pill[aria-current="page"] { z-index: 1; height: 48px; transform: none; background-color: var(--panel); color: var(--fg-sky); }
   :root[data-design="petal"] .nav-pill[aria-current="page"]::before {
-    content: ""; position: absolute; inset: auto auto calc(100% + 2px) 50%; width: 14px; height: 12px; margin-left: -7px; background: var(--heart);
+    content: ""; flex: none; width: 12px; height: 10px; margin-top: -3px; background: var(--heart);
     -webkit-mask: var(--px-heart) center / contain no-repeat; mask: var(--px-heart) center / contain no-repeat;
   }
   /* a tab that gave way (layout.js, data-fit) is an icon tab */
   :root[data-design="petal"] .header .nav-pill[data-fit-out] { width: 44px; padding: 4px 0 0; justify-content: center; }
   :root[data-design="petal"] .header .nav-pill[data-fit-out] .ic { display: block; }
-  :root[data-design="petal"][data-shell="topnav"] .header__search { flex: 1 1 300px; max-width: 380px; min-width: 300px; }
+  /* the tabs stand at the left, the keys at the right (beside the desktop window's buttons), and the search takes the stretch
+     between: it grows with the window, the room left over is the spacer's, so the row is whole at any width */
+  :root[data-design="petal"][data-shell="topnav"] .header__search { flex: 3 1 300px; max-width: clamp(380px, 34vw, 840px); min-width: 300px; }
+  :root[data-design="petal"][data-shell="topnav"] .header .spacer { flex: 1 1 0; }
   :root[data-design="petal"][data-shell="topnav"] .header__search .input { height: 40px; }
   :root[data-design="petal"] .header .btn-icon[aria-current="page"] { background-color: var(--peri); color: var(--ink); }
 
@@ -628,7 +634,7 @@
       linear-gradient(var(--sky-deep) 0 0) 2px 18% / 10px 14px no-repeat, linear-gradient(var(--sky-deep) 0 0) 0 18% / 14px 10px no-repeat,
       linear-gradient(var(--sky-deep) 0 0) 2px 82% / 10px 14px no-repeat, linear-gradient(var(--sky-deep) 0 0) 0 82% / 14px 10px no-repeat;
   }
-  :root[data-design="petal"] .app { column-gap: 22px; padding-top: 10px; }
+  :root[data-design="petal"] .app { column-gap: 22px; padding-top: 6px; }
 }
 @media (min-width: 640px) and (max-width: 1099px) {    /* tablet: icon tabs; the heart alone stands for the brand */
   :root[data-design="petal"] .nav-pill { padding: 4px 12px 0; }
@@ -653,7 +659,9 @@
 
 /* the side panel: a pixel window whose tabs are index tabs standing on its paper */
 :root[data-design="petal"] :is(.ctx, .nowcol) { background-color: var(--panel); }
-@media (min-width: 640px) { :root[data-design="petal"] :is(.ctx, .nowcol) { margin-top: -2px; } }
+/* the panel and the sheet stand on one line at the foot too: the sheet's frame is the grid row's (a long page fills it), so the
+   panel keeps the same 2 px under the row, not the shell's 21 px that left it short of the sheet */
+@media (min-width: 640px) { :root[data-design="petal"] :is(.ctx, .nowcol) { margin-top: -2px; margin-bottom: 2px; } }
 :root[data-design="petal"] .app[data-ctx="docked"] .ctx { position: relative; }
 :root[data-design="petal"] .ctx > .region-title { font-size: 0; letter-spacing: 0; }   /* the tabs below name the panel */
 /* the meta keeps to the bar between the window keys and the panel's own buttons (two panes, close), on one line that
@@ -1439,11 +1447,24 @@
    a focus ring that is a cut line, menus and snapshots that answer the hand. Everything that loops is stepped, small,
    moves by transform or opacity only, and rests when the song does (and under reduced motion, base.css).
    ===================================================================== */
-:root[data-design="petal"] { --pt-cur: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2234%22 height=%2232%22 viewBox=%220 0 34 32%22 shape-rendering=%22crispEdges%22%3E%3Cpath fill=%22%234a2342%22 d=%22M0 0h2v2h-2zM0 2h4v2h-4zM0 4h2v2h-2zM4 4h2v2h-2zM0 6h2v2h-2zM6 6h2v2h-2zM0 8h2v2h-2zM8 8h2v2h-2zM0 10h2v2h-2zM10 10h2v2h-2zM0 12h2v2h-2zM12 12h2v2h-2zM0 14h2v2h-2zM14 14h2v2h-2zM0 16h2v2h-2zM16 16h2v2h-2zM0 18h2v2h-2zM12 18h8v2h-8zM0 20h2v2h-2zM6 20h2v2h-2zM12 20h2v2h-2zM0 22h2v2h-2zM4 22h2v2h-2zM8 22h2v2h-2zM14 22h2v2h-2zM0 24h4v2h-4zM8 24h2v2h-2zM14 24h2v2h-2zM0 26h2v2h-2zM10 26h2v2h-2zM16 26h2v2h-2zM10 28h2v2h-2zM16 28h2v2h-2zM12 30h4v2h-4z%22/%3E%3Cpath fill=%22%23ffffff%22 d=%22M2 4h2v2h-2zM2 6h4v2h-4zM2 8h6v2h-6zM2 10h8v2h-8zM2 12h10v2h-10zM2 14h12v2h-12zM2 16h14v2h-14zM2 18h10v2h-10zM2 20h4v2h-4zM8 20h4v2h-4zM2 22h2v2h-2zM10 22h4v2h-4zM10 24h4v2h-4zM12 26h4v2h-4zM12 28h4v2h-4z%22/%3E%3C/svg%3E") 1 1, auto; --pt-cur-pt: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2234%22 height=%2232%22 viewBox=%220 0 34 32%22 shape-rendering=%22crispEdges%22%3E%3Cpath fill=%22%234a2342%22 d=%22M0 0h2v2h-2zM0 2h4v2h-4zM0 4h2v2h-2zM4 4h2v2h-2zM0 6h2v2h-2zM6 6h2v2h-2zM0 8h2v2h-2zM8 8h2v2h-2zM0 10h2v2h-2zM10 10h2v2h-2zM0 12h2v2h-2zM12 12h2v2h-2zM0 14h2v2h-2zM14 14h2v2h-2zM0 16h2v2h-2zM16 16h16v2h-16zM0 18h2v2h-2zM12 18h8v2h-8zM24 18h2v2h-2zM30 18h4v2h-4zM0 20h2v2h-2zM6 20h2v2h-2zM12 20h2v2h-2zM16 20h2v2h-2zM32 20h2v2h-2zM0 22h2v2h-2zM4 22h2v2h-2zM8 22h2v2h-2zM14 22h4v2h-4zM32 22h2v2h-2zM0 24h4v2h-4zM8 24h2v2h-2zM14 24h6v2h-6zM30 24h4v2h-4zM0 26h2v2h-2zM10 26h2v2h-2zM16 26h6v2h-6zM28 26h4v2h-4zM10 28h2v2h-2zM16 28h2v2h-2zM20 28h4v2h-4zM26 28h4v2h-4zM12 30h4v2h-4zM22 30h6v2h-6z%22/%3E%3Cpath fill=%22%23ffffff%22 d=%22M2 4h2v2h-2zM2 6h4v2h-4zM2 8h6v2h-6zM2 10h8v2h-8zM2 12h10v2h-10zM2 14h12v2h-12zM2 16h14v2h-14zM2 18h10v2h-10zM2 20h4v2h-4zM8 20h4v2h-4zM2 22h2v2h-2zM10 22h4v2h-4zM10 24h4v2h-4zM12 26h4v2h-4zM12 28h4v2h-4z%22/%3E%3Cpath fill=%22%23e58fc0%22 d=%22M20 18h4v2h-4zM26 18h4v2h-4zM18 20h14v2h-14zM18 22h14v2h-14zM20 24h10v2h-10zM22 26h6v2h-6zM24 28h2v2h-2z%22/%3E%3C/svg%3E") 1 1, pointer; }
+/* the pointer set, drawn on the paper: a pixel arrow (plum ring, white body, a pink ribbon in it), a pixel hand with a heart
+   on its palm over everything that answers a press, an I-beam in plum with a white halo where words are typed. Each is
+   32 px or less, 2 px to a cell (crisp at any scale: a 2x copy is for a high-density screen), the hotspot on the arrow's
+   point, the fingertip and the beam's middle. Under forced colours the system's own cursors stay. */
+:root[data-design="petal"] {
+  --pt-cur: image-set(url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2222%22%20height=%2232%22%20viewBox=%220%200%2022%2032%22%20shape-rendering=%22crispEdges%22%3E%3Cpath%20fill=%22%234a2342%22%20d=%22M0%200h6v2h-6zM0%202h2v2h-2zM4%202h4v2h-4zM0%204h2v2h-2zM6%204h4v2h-4zM0%206h2v2h-2zM8%206h4v2h-4zM0%208h2v2h-2zM10%208h4v2h-4zM0%2010h2v2h-2zM12%2010h4v2h-4zM0%2012h2v2h-2zM14%2012h4v2h-4zM0%2014h2v2h-2zM16%2014h4v2h-4zM0%2016h2v2h-2zM18%2016h4v2h-4zM0%2018h2v2h-2zM20%2018h2v2h-2zM0%2020h2v2h-2zM12%2020h10v2h-10zM0%2022h2v2h-2zM6%2022h2v2h-2zM14%2022h2v2h-2zM0%2024h2v2h-2zM4%2024h4v2h-4zM14%2024h4v2h-4zM0%2026h10v2h-10zM16%2026h2v2h-2zM8%2028h2v2h-2zM16%2028h2v2h-2zM8%2030h10v2h-10z%22/%3E%3Cpath%20fill=%22%23ffffff%22%20d=%22M2%202h2v2h-2zM2%204h4v2h-4zM2%206h6v2h-6zM2%208h2v2h-2zM8%208h2v2h-2zM2%2010h2v2h-2zM10%2010h2v2h-2zM2%2012h2v2h-2zM12%2012h2v2h-2zM2%2014h2v2h-2zM14%2014h2v2h-2zM2%2016h2v2h-2zM16%2016h2v2h-2zM2%2018h2v2h-2zM12%2018h8v2h-8zM2%2020h2v2h-2zM6%2020h2v2h-2zM10%2020h2v2h-2zM2%2022h4v2h-4zM8%2022h6v2h-6zM2%2024h2v2h-2zM8%2024h6v2h-6zM10%2026h6v2h-6zM10%2028h6v2h-6z%22/%3E%3Cpath%20fill=%22%23e58fc0%22%20d=%22M4%208h4v2h-4zM4%2010h6v2h-6zM4%2012h8v2h-8zM4%2014h10v2h-10zM4%2016h12v2h-12zM4%2018h8v2h-8zM4%2020h2v2h-2zM8%2020h2v2h-2z%22/%3E%3C/svg%3E") 1x, url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2244%22%20height=%2264%22%20viewBox=%220%200%2022%2032%22%20shape-rendering=%22crispEdges%22%3E%3Cpath%20fill=%22%234a2342%22%20d=%22M0%200h6v2h-6zM0%202h2v2h-2zM4%202h4v2h-4zM0%204h2v2h-2zM6%204h4v2h-4zM0%206h2v2h-2zM8%206h4v2h-4zM0%208h2v2h-2zM10%208h4v2h-4zM0%2010h2v2h-2zM12%2010h4v2h-4zM0%2012h2v2h-2zM14%2012h4v2h-4zM0%2014h2v2h-2zM16%2014h4v2h-4zM0%2016h2v2h-2zM18%2016h4v2h-4zM0%2018h2v2h-2zM20%2018h2v2h-2zM0%2020h2v2h-2zM12%2020h10v2h-10zM0%2022h2v2h-2zM6%2022h2v2h-2zM14%2022h2v2h-2zM0%2024h2v2h-2zM4%2024h4v2h-4zM14%2024h4v2h-4zM0%2026h10v2h-10zM16%2026h2v2h-2zM8%2028h2v2h-2zM16%2028h2v2h-2zM8%2030h10v2h-10z%22/%3E%3Cpath%20fill=%22%23ffffff%22%20d=%22M2%202h2v2h-2zM2%204h4v2h-4zM2%206h6v2h-6zM2%208h2v2h-2zM8%208h2v2h-2zM2%2010h2v2h-2zM10%2010h2v2h-2zM2%2012h2v2h-2zM12%2012h2v2h-2zM2%2014h2v2h-2zM14%2014h2v2h-2zM2%2016h2v2h-2zM16%2016h2v2h-2zM2%2018h2v2h-2zM12%2018h8v2h-8zM2%2020h2v2h-2zM6%2020h2v2h-2zM10%2020h2v2h-2zM2%2022h4v2h-4zM8%2022h6v2h-6zM2%2024h2v2h-2zM8%2024h6v2h-6zM10%2026h6v2h-6zM10%2028h6v2h-6z%22/%3E%3Cpath%20fill=%22%23e58fc0%22%20d=%22M4%208h4v2h-4zM4%2010h6v2h-6zM4%2012h8v2h-8zM4%2014h10v2h-10zM4%2016h12v2h-12zM4%2018h8v2h-8zM4%2020h2v2h-2zM8%2020h2v2h-2z%22/%3E%3C/svg%3E") 2x) 2 2, auto;   /* 22x32 */
+  --pt-cur-pt: image-set(url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2230%22%20height=%2232%22%20viewBox=%220%200%2030%2032%22%20shape-rendering=%22crispEdges%22%3E%3Cpath%20fill=%22%234a2342%22%20d=%22M8%200h8v2h-8zM8%202h2v2h-2zM14%202h2v2h-2zM8%204h2v2h-2zM14%204h2v2h-2zM8%206h2v2h-2zM14%206h2v2h-2zM8%208h2v2h-2zM14%208h6v2h-6zM8%2010h2v2h-2zM18%2010h6v2h-6zM8%2012h2v2h-2zM22%2012h6v2h-6zM0%2014h10v2h-10zM26%2014h4v2h-4zM0%2016h2v2h-2zM6%2016h4v2h-4zM28%2016h2v2h-2zM0%2018h2v2h-2zM8%2018h2v2h-2zM28%2018h2v2h-2zM0%2020h4v2h-4zM28%2020h2v2h-2zM2%2022h4v2h-4zM28%2022h2v2h-2zM4%2024h2v2h-2zM28%2024h2v2h-2zM4%2026h4v2h-4zM26%2026h4v2h-4zM6%2028h4v2h-4zM24%2028h4v2h-4zM8%2030h18v2h-18z%22/%3E%3Cpath%20fill=%22%23ffffff%22%20d=%22M10%202h4v2h-4zM10%204h4v2h-4zM10%206h4v2h-4zM10%208h4v2h-4zM10%2010h8v2h-8zM10%2012h12v2h-12zM10%2014h16v2h-16zM2%2016h4v2h-4zM10%2016h18v2h-18zM2%2018h6v2h-6zM10%2018h18v2h-18zM4%2020h10v2h-10zM16%2020h2v2h-2zM20%2020h8v2h-8zM6%2022h6v2h-6zM22%2022h6v2h-6zM6%2024h8v2h-8zM20%2024h8v2h-8zM8%2026h8v2h-8zM18%2026h8v2h-8zM10%2028h14v2h-14z%22/%3E%3Cpath%20fill=%22%23e58fc0%22%20d=%22M14%2020h2v2h-2zM18%2020h2v2h-2zM12%2022h10v2h-10zM14%2024h6v2h-6zM16%2026h2v2h-2z%22/%3E%3C/svg%3E") 1x, url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2260%22%20height=%2264%22%20viewBox=%220%200%2030%2032%22%20shape-rendering=%22crispEdges%22%3E%3Cpath%20fill=%22%234a2342%22%20d=%22M8%200h8v2h-8zM8%202h2v2h-2zM14%202h2v2h-2zM8%204h2v2h-2zM14%204h2v2h-2zM8%206h2v2h-2zM14%206h2v2h-2zM8%208h2v2h-2zM14%208h6v2h-6zM8%2010h2v2h-2zM18%2010h6v2h-6zM8%2012h2v2h-2zM22%2012h6v2h-6zM0%2014h10v2h-10zM26%2014h4v2h-4zM0%2016h2v2h-2zM6%2016h4v2h-4zM28%2016h2v2h-2zM0%2018h2v2h-2zM8%2018h2v2h-2zM28%2018h2v2h-2zM0%2020h4v2h-4zM28%2020h2v2h-2zM2%2022h4v2h-4zM28%2022h2v2h-2zM4%2024h2v2h-2zM28%2024h2v2h-2zM4%2026h4v2h-4zM26%2026h4v2h-4zM6%2028h4v2h-4zM24%2028h4v2h-4zM8%2030h18v2h-18z%22/%3E%3Cpath%20fill=%22%23ffffff%22%20d=%22M10%202h4v2h-4zM10%204h4v2h-4zM10%206h4v2h-4zM10%208h4v2h-4zM10%2010h8v2h-8zM10%2012h12v2h-12zM10%2014h16v2h-16zM2%2016h4v2h-4zM10%2016h18v2h-18zM2%2018h6v2h-6zM10%2018h18v2h-18zM4%2020h10v2h-10zM16%2020h2v2h-2zM20%2020h8v2h-8zM6%2022h6v2h-6zM22%2022h6v2h-6zM6%2024h8v2h-8zM20%2024h8v2h-8zM8%2026h8v2h-8zM18%2026h8v2h-8zM10%2028h14v2h-14z%22/%3E%3Cpath%20fill=%22%23e58fc0%22%20d=%22M14%2020h2v2h-2zM18%2020h2v2h-2zM12%2022h10v2h-10zM14%2024h6v2h-6zM16%2026h2v2h-2z%22/%3E%3C/svg%3E") 2x) 11 3, pointer;   /* 30x32 */
+  --pt-cur-tx: image-set(url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2216%22%20height=%2230%22%20viewBox=%220%200%2016%2030%22%20shape-rendering=%22crispEdges%22%3E%3Cpath%20fill=%22%23ffffff%22%20d=%22M0%200h16v2h-16zM0%202h2v2h-2zM14%202h2v2h-2zM0%204h2v2h-2zM14%204h2v2h-2zM0%206h6v2h-6zM10%206h6v2h-6zM4%208h2v2h-2zM10%208h2v2h-2zM4%2010h2v2h-2zM10%2010h2v2h-2zM4%2012h2v2h-2zM10%2012h2v2h-2zM4%2014h2v2h-2zM10%2014h2v2h-2zM4%2016h2v2h-2zM10%2016h2v2h-2zM4%2018h2v2h-2zM10%2018h2v2h-2zM4%2020h2v2h-2zM10%2020h2v2h-2zM0%2022h6v2h-6zM10%2022h6v2h-6zM0%2024h2v2h-2zM14%2024h2v2h-2zM0%2026h2v2h-2zM14%2026h2v2h-2zM0%2028h16v2h-16z%22/%3E%3Cpath%20fill=%22%234a2342%22%20d=%22M2%202h12v2h-12zM2%204h12v2h-12zM6%206h4v2h-4zM6%208h4v2h-4zM6%2010h4v2h-4zM6%2012h4v2h-4zM6%2014h4v2h-4zM6%2016h4v2h-4zM6%2018h4v2h-4zM6%2020h4v2h-4zM6%2022h4v2h-4zM2%2024h12v2h-12zM2%2026h12v2h-12z%22/%3E%3C/svg%3E") 1x, url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2232%22%20height=%2260%22%20viewBox=%220%200%2016%2030%22%20shape-rendering=%22crispEdges%22%3E%3Cpath%20fill=%22%23ffffff%22%20d=%22M0%200h16v2h-16zM0%202h2v2h-2zM14%202h2v2h-2zM0%204h2v2h-2zM14%204h2v2h-2zM0%206h6v2h-6zM10%206h6v2h-6zM4%208h2v2h-2zM10%208h2v2h-2zM4%2010h2v2h-2zM10%2010h2v2h-2zM4%2012h2v2h-2zM10%2012h2v2h-2zM4%2014h2v2h-2zM10%2014h2v2h-2zM4%2016h2v2h-2zM10%2016h2v2h-2zM4%2018h2v2h-2zM10%2018h2v2h-2zM4%2020h2v2h-2zM10%2020h2v2h-2zM0%2022h6v2h-6zM10%2022h6v2h-6zM0%2024h2v2h-2zM14%2024h2v2h-2zM0%2026h2v2h-2zM14%2026h2v2h-2zM0%2028h16v2h-16z%22/%3E%3Cpath%20fill=%22%234a2342%22%20d=%22M2%202h12v2h-12zM2%204h12v2h-12zM6%206h4v2h-4zM6%208h4v2h-4zM6%2010h4v2h-4zM6%2012h4v2h-4zM6%2014h4v2h-4zM6%2016h4v2h-4zM6%2018h4v2h-4zM6%2020h4v2h-4zM6%2022h4v2h-4zM2%2024h12v2h-12zM2%2026h12v2h-12z%22/%3E%3C/svg%3E") 2x) 8 15, text;   /* 16x30 */
+}
 :root[data-design="petal"] body { cursor: var(--pt-cur); }
 :root[data-design="petal"] :is(a[href], button:not(:disabled), [role="button"], [role="tab"], [role="menuitem"], [role="radio"], [data-act], label[for], summary, .trow, .tile, .seek, .wave, .btn, .btn-icon, .switch, .chip, .pill-filter) { cursor: var(--pt-cur-pt); }
-:root[data-design="petal"] :is(input, textarea, [contenteditable]) { cursor: text; }
+:root[data-design="petal"] :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="button"]), textarea, [contenteditable]) { cursor: var(--pt-cur-tx); }
 :root[data-design="petal"] :is(:disabled, [aria-disabled="true"]) { cursor: not-allowed; }
+@media (forced-colors: active) {
+  :root[data-design="petal"] body { cursor: auto; }
+  :root[data-design="petal"] :is(a[href], button:not(:disabled), [role="button"], [role="tab"], [role="menuitem"], [role="radio"], [data-act], label[for], summary, .trow, .tile, .seek, .wave, .btn, .btn-icon, .switch, .chip, .pill-filter) { cursor: pointer; }
+  :root[data-design="petal"] :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="button"]), textarea, [contenteditable]) { cursor: text; }
+}
 
 /* the cut line: where the keyboard is, a dashed square round it, as a page is cut out along a dotted line */
 :root[data-design="petal"] :focus-visible { outline: 2px dashed var(--focus); outline-offset: 3px; }
