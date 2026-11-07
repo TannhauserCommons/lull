@@ -49,5 +49,13 @@ jobs:
         run: TAURI_CONFIG="{\"identifier\":\"$IDENTIFIER\"}" cargo build --locked
       - name: The app's graphics, on the processor
         run: xvfb-run -a -s "-screen 0 1440x900x24" dbus-run-session -- node tests/desktop/graphics.mjs "$PWD/app/target/debug/lull" "$IDENTIFIER"
+      # As its own hub, the app signs in to Soulseek (the slskd contract's stand-in server) with the helpers it chose
+      # (ADR-0064): first lull's own, beside it; then copies this computer has, which it must prefer.
+      - name: Its own hub signs in, with lull's own helpers
+        run: xvfb-run -a dbus-run-session -- node tests/desktop/hub-signin.mjs "$PWD/app/target/debug/lull" "$IDENTIFIER" own
+      - name: Its own hub signs in, with this computer's helpers
+        run: |
+          for tool in slskd yt-dlp deno; do sudo install -m 755 "app/target/debug/$tool" "/usr/local/bin/$tool"; done
+          xvfb-run -a dbus-run-session -- node tests/desktop/hub-signin.mjs "$PWD/app/target/debug/lull" "$IDENTIFIER" system
       - if: failure()
         run: cat ~/.local/share/$IDENTIFIER/logs/webview.log || true

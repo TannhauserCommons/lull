@@ -53,6 +53,9 @@ pub struct Settings {
     pub graphics_fell_back: Option<Mode>,
     /// The full look even where the processor draws the page (graphics.rs).
     pub full_look: bool,
+    /// lull's own yt-dlp, Deno and slskd even where this computer has its own (ADR-0064). Takes
+    /// effect at the next start.
+    pub own_helpers: bool,
 }
 
 impl Default for Settings {
@@ -79,6 +82,7 @@ impl Default for Settings {
             graphics_trial: None,
             graphics_fell_back: None,
             full_look: false,
+            own_helpers: false,
         }
     }
 }

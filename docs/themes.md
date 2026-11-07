@@ -552,7 +552,7 @@ lull's plumbing: these may change in any release.
   - lists, filters and banners: `data-filters`, `data-issue`, `data-more`, `data-out`, `data-period`, `data-range`, `data-pick`, `data-pick-new`, `data-pick-made`, `data-pick-again`, `data-pick-done`, `data-sync`, `data-save-btn`, `data-save-songs`, `data-src-badge`, `data-src-mini`, `data-dl`, `data-cold-count`, `data-banner`, `data-banner-*`, `data-toast-*`, `data-cover-*`, `data-scan*`, `data-now-qlist`, `data-now-steer`, `data-fill` (a long list's row whose contents are drawn only near the screen: empty `<li>` while far from it);
   - Settings controls: `data-cfg`, `data-switch`, `data-step`, `data-stepper`, `data-min`, `data-max`, `data-unit`, `data-weight`, `data-when`, `data-format`, `data-formats`;
   - screens with their own wiring: `data-pack`, `data-imp-*`, `data-lib-*`, `data-linkrev*`, `data-rev-*`, `data-cx*`, `data-studio*`, `data-drop-theme`, `data-theme-file`, `data-add-rates`, `data-skin`, `data-skin-file`, `data-webamp`, `data-eq*`, `data-token`, `data-token-reset`;
-  - the desktop app's pages: `data-attempt`, `data-dk-attempt`, `data-dk-close`, `data-dk-connect`, `data-dk-error`, `data-dk-found`, `data-dk-look` (Settings › App: the other look, desktop.js), `data-dk-offline`, `data-dk-retry-status`, `data-dk-welcome`.
+  - the desktop app's pages: `data-attempt`, `data-dk-attempt`, `data-dk-close`, `data-dk-connect`, `data-dk-error`, `data-dk-found`, `data-dk-look` (Settings › App: the other look, desktop.js), `data-dk-own-helpers` (Settings › App: lull's own helper copies, desktop.js), `data-dk-offline`, `data-dk-retry-status`, `data-dk-welcome`.
 
 ## 12. A see-through window
 

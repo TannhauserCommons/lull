@@ -822,6 +822,7 @@
       ${switchRow('desktop.miniOnTop', 'Mini player always on top', 'Some Linux desktops decide this themselves.')}
       ${d.ownTitlebar == null ? '' : switchRow('desktop.ownTitlebar', 'Use lull title bar', 'Replaces the system title bar; takes effect after a restart.')}
       ${d.graphics == null ? '' : graphicsRow(window.LullDesktop.graphics)}
+      ${d.helpers ? raw(window.LullDesktop.helpersLine(d.helpers, App.store.get('services').soulseek)) : ''}
       ${d.discordPresence == null ? '' : discordRows(d)}`;
   }
   /* Graphics (app/src/desktop/graphics.rs): its words, the toast on a change and the line under it are desktop.js's, which

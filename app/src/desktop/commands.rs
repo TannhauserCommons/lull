@@ -194,6 +194,17 @@ pub struct DesktopSettings {
     /// Settings > App > Graphics: the choice, from the next start (graphics.rs). What this run found
     /// drawing the page is `graphics_state`.
     graphics: Mode,
+    /// When this computer is the hub: which copy of each helper it runs, whether lull has copies of
+    /// its own here, and the listener's choice of them (ADR-0064). None otherwise.
+    helpers: Option<Helpers>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Helpers {
+    chosen: Vec<lull_core::helpers::Choice>,
+    own: bool,
+    prefer_own: bool,
 }
 
 #[tauri::command]
@@ -224,6 +235,11 @@ pub fn desktop_settings(app: AppHandle) -> Result<DesktopSettings, String> {
         discord_buttons: Presence::available().then_some(s.discord.buttons),
         discord_paused: Presence::available().then_some(s.discord.paused),
         graphics: s.graphics,
+        helpers: desktop.local_hub().map(|hub| Helpers {
+            chosen: hub.helpers.clone(),
+            own: hub.own_helpers,
+            prefer_own: s.own_helpers,
+        }),
     })
 }
 
@@ -245,6 +261,7 @@ pub struct SettingsPatch {
     discord_paused: Option<WhenPaused>,
     graphics: Option<Mode>,
     full_look: Option<bool>,
+    own_helpers: Option<bool>,
 }
 
 impl SettingsPatch {
@@ -307,6 +324,9 @@ pub fn set_desktop_settings(app: AppHandle, patch: SettingsPatch) -> Result<(), 
         }
         if let Some(paused) = patch.discord_paused {
             s.discord.paused = paused;
+        }
+        if let Some(own) = patch.own_helpers {
+            s.own_helpers = own;
         }
     });
     if patch.touches_discord() {

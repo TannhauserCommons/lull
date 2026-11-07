@@ -230,5 +230,5 @@
   transition-duration: 120ms !important;
   -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
 }
-/* Settings › App's line under Graphics (desktop.js): its button at the end */
-.sys-note > [data-dk-look] { flex: none; margin-left: auto; align-self: center; }
+/* Settings › App's lines under Graphics and on the helpers (desktop.js): their button at the end */
+.sys-note > :is([data-dk-look], [data-dk-own-helpers]) { flex: none; margin-left: auto; align-self: center; }

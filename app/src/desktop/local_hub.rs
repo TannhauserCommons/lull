@@ -8,6 +8,7 @@ use crate::desktop::state::Desktop;
 use crate::hub;
 use lull_core::db::{self, Db};
 use lull_core::devices::{self, Kind};
+use lull_core::helpers::{self, Choice, Helper};
 use lull_server::managed::advert::{self, Advert};
 use lull_server::managed::{self, Fixed, Sidecar, Tie, slskd};
 use std::collections::BTreeMap;
@@ -30,6 +31,10 @@ pub struct LocalHub {
     pub token: String,
     shutdown: Mutex<Option<oneshot::Sender<()>>>,
     sidecar: Sidecar,
+    /// Which copy of yt-dlp, Deno and slskd this hub runs (ADR-0064), for Settings › App.
+    pub helpers: Vec<Choice>,
+    /// lull ships its own copies here (not the AUR's package, which asks pacman for them).
+    pub own_helpers: bool,
     /// Answers mDNS while the hub runs; None if this network refused it (pairing by address still works).
     _advert: Option<Advert>,
 }
@@ -49,8 +54,17 @@ impl LocalHub {
 pub fn start(app: &AppHandle) -> Result<LocalHub, String> {
     let paths = Paths::new(app)?;
     init_logs(&paths.log);
+    // Each helper: the listener's override, this computer's copy when it passes, else lull's own (ADR-0064).
+    let prefer_own = app.state::<Desktop>().settings().own_helpers;
+    let chosen = choose_helpers(prefer_own);
+    tracing::info!("helpers: {}", said(&chosen));
+    let slskd_exe = chosen
+        .iter()
+        .find(|c| c.helper == Helper::Slskd)
+        .map(|c| c.path.clone())
+        .ok_or("slskd isn't installed on this computer and lull has no copy of its own here; install slskd, or set LULL_SLSKD")?;
     let fixed = Fixed {
-        exe: sidecar_exe()?,
+        exe: slskd_exe,
         app_dir: paths.slskd.clone(),
         transfers: paths.transfers.clone(),
         port: managed::free_port().map_err(|e| e.to_string())?,
@@ -64,14 +78,17 @@ pub fn start(app: &AppHandle) -> Result<LocalHub, String> {
     ]);
     // Where slskd answers, its key and folders, and the slskd.yml the hub writes the account into.
     env.extend(managed::vars(&fixed));
-    // YouTube's programs ship beside the app like slskd (docs/context/youtube.md). Without them
-    // the hub looks on PATH, and Settings › Sources says when yt-dlp won't run.
-    for (key, name) in [("LULL_YTDLP", "yt-dlp"), ("LULL_DENO", "deno")] {
-        match beside_app(name) {
-            Some(path) => {
-                env.insert(key.to_owned(), path_string(&path));
+    // YouTube's programs, as chosen above (docs/context/youtube.md). With neither copy the hub looks on
+    // PATH, and Settings › Sources says when yt-dlp won't run.
+    for helper in [Helper::Ytdlp, Helper::Deno] {
+        match chosen.iter().find(|c| c.helper == helper) {
+            Some(c) => {
+                env.insert(helper.override_key().to_owned(), path_string(&c.path));
             }
-            None => tracing::warn!("{name} is missing next to the app; YouTube looks for it on PATH"),
+            None => tracing::warn!(
+                "no {} here or beside the app; YouTube looks for it on PATH",
+                helper.program()
+            ),
         }
     }
 
@@ -119,6 +136,8 @@ pub fn start(app: &AppHandle) -> Result<LocalHub, String> {
         token,
         shutdown: Mutex::new(Some(shutdown)),
         sidecar,
+        own_helpers: Helper::ALL.iter().any(|h| beside_app(h.program()).is_some()),
+        helpers: chosen,
         _advert: advert,
     })
 }
@@ -159,16 +178,41 @@ fn init_logs(path: &Path) {
     }
 }
 
-/// slskd sits next to the app's own executable: Tauri puts sidecars there, in bundles and in dev.
-fn sidecar_exe() -> Result<PathBuf, String> {
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let dir = exe.parent().ok_or("the app has no folder")?;
-    let slskd = dir.join(format!("slskd{}", std::env::consts::EXE_SUFFIX));
-    if slskd.is_file() {
-        Ok(slskd)
-    } else {
-        Err(format!("slskd is missing from {}; reinstall lull", dir.display()))
-    }
+/// Each helper's copy for this run (ADR-0064): `LULL_YTDLP`, `LULL_DENO`, `LULL_SLSKD` in the app's own
+/// environment win; then this computer's copy when it passes its check; then lull's own, beside the
+/// app (Tauri's sidecars, in bundles and in dev), which `prefer_own` puts first.
+fn choose_helpers(prefer_own: bool) -> Vec<Choice> {
+    Helper::ALL
+        .into_iter()
+        .filter_map(|h| {
+            let over = std::env::var_os(h.override_key())
+                .filter(|v| !v.is_empty())
+                .map(PathBuf::from);
+            helpers::choose(h, over, beside_app(h.program()), prefer_own)
+        })
+        .collect()
+}
+
+/// For the log: `yt-dlp 2026.10.26 (this computer's), …`.
+fn said(chosen: &[Choice]) -> String {
+    chosen
+        .iter()
+        .map(|c| {
+            let whose = match c.source {
+                helpers::Source::Override => "set by LULL_*",
+                helpers::Source::System => "this computer's",
+                helpers::Source::Own => "lull's own",
+            };
+            format!(
+                "{} {} ({whose}, {}){}",
+                c.helper.program(),
+                c.version.as_deref().unwrap_or("of unknown version"),
+                c.path.display(),
+                c.note.as_deref().map(|n| format!(": {n}")).unwrap_or_default()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 /// A program Tauri placed next to the app's own executable (a sidecar), when it is there.
@@ -267,4 +311,22 @@ mod die_with_app {
 
     #[cfg(not(windows))]
     pub fn adopt(_: &Child) {}
+}
+
+#[cfg(test)]
+mod helper_pins {
+    use lull_core::helpers::Helper;
+
+    /// lull-core's tested versions (ADR-0064) are the ones the app bundles: one source, so a bump of
+    /// app/build.rs's pins without core's fails here.
+    #[test]
+    fn the_bundled_helpers_are_the_tested_versions() {
+        let build = include_str!("../../build.rs");
+        assert!(build.contains(&format!("const YTDLP_VERSION: &str = \"{}\";", Helper::Ytdlp.tested())));
+        assert!(build.contains(&format!("const DENO_VERSION: &str = \"{}\";", Helper::Deno.tested())));
+        assert!(build.contains(&format!(
+            "/slskd/releases/download/{0}/slskd-{0}-linux-x64.zip",
+            Helper::Slskd.tested()
+        )));
+    }
 }

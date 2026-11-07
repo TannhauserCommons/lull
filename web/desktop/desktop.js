@@ -67,6 +67,8 @@
     return invoke('set_desktop_settings', { patch: patch }).then(function (r) {
       // Graphics take effect at the next start (app/src/desktop/graphics.rs)
       if (patch.graphics && window.App) App.toast('lull draws this way from its next start', { icon: 'refresh', action: 'Restart now', onAction: function () { D.windowAction('restart'); } });
+      // and so do the helpers' copies (app/src/desktop/local_hub.rs)
+      if (patch.ownHelpers != null && window.App) App.toast('lull uses these copies from its next start', { icon: 'refresh', action: 'Restart now', onAction: function () { D.windowAction('restart'); } });
       return r;
     });
   };
@@ -113,6 +115,30 @@
       : 'Your computer draws lull without its graphics card, so lull uses a lighter look: no blur, fewer animations.') +
       '</span><button class="btn btn--sm" data-dk-look>' + (g.fullLook ? 'Use the lighter look' : 'Use the full look') + '</button></p>';
   };
+  /* Settings › App's line on the helper programs this computer's hub runs (ADR-0064, app/src/desktop/local_hub.rs):
+     each one's version and whose copy it is, any note, what Soulseek says when this computer's untested slskd won't
+     work, and the way to lull's own copies (or back) where lull has them */
+  var HELPER = { ytdlp: 'yt-dlp', deno: 'Deno', slskd: 'slskd' };
+  var WHOSE = { override: 'set by its LULL_ setting', system: 'this computer’s', own: 'lull’s own' };
+  var helpersNow = null;
+  D.helpersLine = function (h, soulseek) {
+    helpersNow = h;
+    var notes = h.chosen.filter(function (c) { return c.note; }).map(function (c) { return esc(c.note); });
+    var slskd = h.chosen.filter(function (c) { return c.helper === 'slskd'; })[0];
+    if (slskd && slskd.source === 'system' && slskd.note && soulseek && soulseek.state === 'down') {
+      notes.push('lull can’t use this computer’s slskd ' + esc(slskd.version || '') + ': ' + esc(soulseek.detail) + '.' +
+        (h.own ? ' lull’s own copy should work.' : ' lull has no copy of its own here: install slskd ' + esc(slskd.tested) + ', or set LULL_SLSKD.'));
+    }
+    var mine = h.own && (h.preferOwn || h.chosen.some(function (c) { return c.source === 'system'; }));
+    return '<p class="sys-note">' + ic('info', 'ic-16') + '<span>Helpers: ' + h.chosen.map(function (c) {
+      return HELPER[c.helper] + ' ' + esc(c.version || '') + ' (' + WHOSE[c.source] + ')';
+    }).join(', ') + '.' + (notes.length ? ' ' + notes.join(' ') : '') + '</span>' +
+      (mine ? '<button class="btn btn--sm" data-dk-own-helpers>' + (h.preferOwn ? 'Use this computer’s copies' : 'Use lull’s own copies') + '</button>' : '') + '</p>';
+  };
+  doc.addEventListener('click', function (e) {
+    if (!(e.target.closest && e.target.closest('[data-dk-own-helpers]')) || !helpersNow) return;
+    D.setSettings({ ownHelpers: !helpersNow.preferOwn }).catch(logFailure('the helpers’ copies'));
+  });
   function showGraphics(state) {
     if (!state) return;
     D.graphics.state = state;
