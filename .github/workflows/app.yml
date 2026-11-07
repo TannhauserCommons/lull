@@ -74,6 +74,35 @@ jobs:
       - working-directory: app
         run: cargo test --locked
 
+  # ADR-0091 on Linux with a Secret Service: GNOME Keyring in its own D-Bus session, unlocked, then locked.
+  keyring:
+    if: github.ref_type != 'tag' && (!inputs.ref || inputs.checks)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+      - run: sudo apt-get update && sudo apt-get install -y $LINUX_DEPS gnome-keyring dbus-x11
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app
+          save-if: false
+      - working-directory: app
+        run: cargo test --locked --no-run
+      # The daemon reads its password from stdin, makes the login collection and unlocks it. Locking it
+      # afterwards needs no prompt; reading it then asks for one, which nobody can answer here.
+      - working-directory: app
+        run: |
+          dbus-run-session -- sh -euc '
+            printf lull-ci | gnome-keyring-daemon --components=secrets --daemonize --unlock >/dev/null
+            LULL_TEST_KEYRING=present cargo test --locked keyring
+            dbus-send --session --print-reply --dest=org.freedesktop.secrets /org/freedesktop/secrets \
+              org.freedesktop.Secret.Service.Lock array:objpath:/org/freedesktop/secrets/collection/login >/dev/null
+            LULL_TEST_KEYRING=locked timeout 120 cargo test --locked keyring
+          '
+
   bundle:
     if: ${{ !inputs.ref && !inputs.gradle-verification && (github.ref_type == 'tag' || github.event_name == 'workflow_dispatch') }}
     strategy:

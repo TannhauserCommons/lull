@@ -57,7 +57,7 @@ pub async fn serve(
     let _advert = advert::advertise(&name, port)
         .map_err(|e| tracing::warn!("no mDNS on this network: {e}"))
         .ok();
-    let served = crate::run_with(env, Some(sidecar.clone()), shutdown).await;
+    let served = crate::run_with(env, Some(sidecar.clone()), None, shutdown).await;
     tokio::task::spawn_blocking(move || sidecar.stop()).await?;
     served
 }

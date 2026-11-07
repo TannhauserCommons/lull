@@ -60,8 +60,13 @@ tauri-plugin-updater = "=2.14.1"
 # The OS config folder, found before Tauri starts as Tauri finds it: the graphics choice is set up
 # before the first thread (src/desktop/graphics.rs). Tauri's own version.
 dirs = "=7.0.0"
+# The system keyring the in-process hub keeps the listener's credentials in (ADR-0091): keyring-rs's
+# core API (MIT or Apache-2.0), with one store crate per system below.
+keyring-core = "=1.0.1"
 
 [target.'cfg(windows)'.dependencies]
+# Windows Credential Manager, for keyring-core (ADR-0091; MIT or Apache-2.0).
+windows-native-keyring-store = "=1.1.0"
 # Taskbar theme for the tray glyph (registry), a job object so slskd dies with the app, keeping the
 # computer awake while it serves (power, awake.rs), a
 # minidump of lull's own process if it crashes (dbghelp's MiniDumpWriteDump), and hearing this
@@ -140,6 +145,9 @@ image = { version = "=0.25.10", default-features = false, features = ["bmp", "pn
 zip = { version = "=9.2.1", default-features = false, features = ["deflate"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+# The Secret Service (GNOME Keyring, KWallet, KeePassXC) over zbus, already in the tree, for keyring-core
+# (ADR-0091; MIT or Apache-2.0). Pure-Rust crypto for the session's encryption, on Tauri's tokio.
+zbus-secret-service-keyring-store = { version = "=1.0.1", features = ["rt-tokio-crypto-rust"] }
 # StatusNotifier host check, GNOME button-layout, compositing check, native Classic's window. Same
 # version as Tauri's.
 gtk = "=0.18.2"

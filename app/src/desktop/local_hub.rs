@@ -75,7 +75,12 @@ pub fn start(app: &AppHandle) -> Result<LocalHub, String> {
         }
     }
 
-    let db = Db::open(&paths.data).map_err(|e| e.to_string())?;
+    // The system keyring holds the listener's credentials (ADR-0091); the hub falls back to its own file
+    // where there is none.
+    let keyring = super::keyring::SystemKeyring::new(&app.config().identifier);
+    let db = Db::open(&paths.data)
+        .map_err(|e| e.to_string())?
+        .with_keyring(keyring.clone());
     db.migrate(&db::CORE).map_err(|e| e.to_string())?;
     if let Ok(music) = app.path().audio_dir() {
         block_on(managed::seed_music_dir(&db, &env, &music)).map_err(|e| e.to_string())?;
@@ -91,7 +96,7 @@ pub fn start(app: &AppHandle) -> Result<LocalHub, String> {
     lull_core::build::set_install(lull_core::build::Install::Desktop);
     let follows = sidecar.clone();
     tauri::async_runtime::spawn(async move {
-        let result = lull_server::run_with(env, Some(follows), async {
+        let result = lull_server::run_with(env, Some(follows), Some(keyring), async {
             let _ = stopped.await;
         })
         .await;

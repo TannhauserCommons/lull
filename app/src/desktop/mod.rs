@@ -10,6 +10,7 @@ mod commands;
 mod discord;
 mod glass;
 mod graphics;
+mod keyring;
 mod links;
 mod local_hub;
 mod main_window;

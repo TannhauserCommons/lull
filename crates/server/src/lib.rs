@@ -49,19 +49,24 @@ pub async fn run(
     env: BTreeMap<String, String>,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<(), BoxError> {
-    run_with(env, None, shutdown).await
+    run_with(env, None, None, shutdown).await
 }
 
 /// `run`, for a hub that runs its own slskd (`managed`): slskd follows the settings each restart
-/// brings and is restarted when the hub finds it wedged.
+/// brings and is restarted when the hub finds it wedged. `keyring`: the system's, which the desktop
+/// app offers for the listener's credentials (ADR-0091); a server has none and keeps them in its file.
 pub async fn run_with(
     env: BTreeMap<String, String>,
     sidecar: Option<managed::Sidecar>,
+    keyring: Option<Arc<dyn lull_core::secrets::Vault>>,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<(), BoxError> {
     // The data directory comes from `env` alone: it holds the database the stored settings live in.
     let data: &std::path::Path = env.get("LULL_DATA_DIR").map_or("/data", String::as_str).as_ref();
-    let db = Db::open(data)?;
+    let db = match keyring {
+        Some(keyring) => Db::open(data)?.with_keyring(keyring),
+        None => Db::open(data)?,
+    };
     launch::restrict_backups(data);
     db.migrate(&db::CORE)?;
     let config = hub::configure(&env, &db).await?;
