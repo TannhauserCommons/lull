@@ -284,10 +284,13 @@ fn finding(tables: &Tables) -> Finding {
         || gl.is_some_and(|gl| crate::desktop::graphics::software_renderer(Some(gl)));
     Finding {
         software,
+        // What paces its frames, and how often: a screen faster than that gets no more frames.
         detail: format!(
-            "{webkit}; policy {policy}; renderer {}; GL {}",
+            "{webkit}; policy {policy}; renderer {}; GL {}; frames paced by {} at {}",
             renderer.unwrap_or("none"),
-            gl.unwrap_or("none")
+            gl.unwrap_or("none"),
+            row("Display Information", "VBlank type").unwrap_or("unknown"),
+            row("Display Information", "VBlank refresh rate").unwrap_or("an unknown rate"),
         ),
         renderer: gl.map(str::to_owned),
     }
@@ -424,6 +427,23 @@ mod tests {
             finding(&report("always", None, "NVIDIA GeForce RTX 3060")).software,
             "no DMA-BUF renderer since 2.44"
         );
+    }
+
+    #[test]
+    fn the_report_says_what_paces_the_frames() {
+        let mut tables = report(
+            "always",
+            Some("DMABuf (Supported buffers: Hardware)"),
+            "NVIDIA GeForce RTX 3060",
+        );
+        tables.push((
+            "Display Information".into(),
+            vec![
+                ("VBlank type".into(), "DRM".into()),
+                ("VBlank refresh rate".into(), "144Hz".into()),
+            ],
+        ));
+        assert!(finding(&tables).detail.ends_with("frames paced by DRM at 144Hz"));
     }
 
     #[test]
