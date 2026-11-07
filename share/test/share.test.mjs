@@ -5,10 +5,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { HOST, internet, json, picture, start } from './harness.mjs';
+import { SOLID } from './pictures.mjs';
 
 const MB = '48140466-cff6-3222-bd55-63c27e43190d';
 const SONG = '/1/song/Portishead/Glory%20Box?al=Dummy&len=305&it=1440823733&ic=1440823517&mb=' + MB;
 const COVER = '/1/song/Portishead/Glory%20Box/cover?al=Dummy&len=305&it=1440823733&ic=1440823517&mb=' + MB;
+const CARD = '/1/song/Portishead/Glory%20Box/card?al=Dummy&len=305&it=1440823733&ic=1440823517&mb=' + MB;
 const STORE_ART = 'https://is1-ssl.mzstatic.com/image/thumb/Music/dummy/100x100bb.jpg';
 
 /** iTunes knows the album; its CDN serves the cover at the size asked. */
@@ -201,6 +203,55 @@ test('past 60 requests a minute from one client: a page says to wait, a cover is
     assert.equal(cover.headers.get('content-type'), 'image/png');
     assert.equal(net.asked.length, 0, 'and nothing outside was asked for it');
     assert.equal((await w.get(SONG, { ip: '192.0.2.78' })).status, 200, 'another client is unaffected');
+  });
+});
+
+test('Discord gets lull\'s card: the link\'s words, its cover beside them, the cover\'s colour along its edge', async () => {
+  const net = internet();
+  storeKnowsIt(net);
+  // The cover's small copy, which its colour is read from: one colour, (52, 110, 190).
+  net.on(/mzstatic\.com\/.*\/128x128bb\.jpg$/, () => new Response(Buffer.from(SOLID, 'base64'), { headers: { 'content-type': 'image/jpeg' } }));
+  await withWorker(net, async (w) => {
+    const html = await (await w.get(SONG)).text();
+    const link = /<link rel="discord:component-embed" type="application\/json" href="([^"]+)">/.exec(html);
+    assert.equal(link?.[1].replace(/&#38;/g, '&'), HOST + CARD, 'the page links its card on its own host');
+    const res = await w.get(CARD);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /^application\/json/);
+    const { component } = await res.json();
+    assert.equal(component.type, 17);
+    const edge = [16, 8, 0].map((shift) => (component.accent_color >> shift) & 255);
+    assert.ok(edge.every((v, i) => Math.abs(v - [52, 110, 190][i]) <= 4), `the edge ${edge} is the cover's colour`);
+    const [section, row] = component.components;
+    assert.equal(section.components[0].content, '-# Song shared from lull\n### Glory Box\nPortishead\n-# Dummy · 5:05');
+    assert.deepEqual(section.accessory, { type: 11, media: { url: HOST + COVER }, description: 'Cover of Dummy by Portishead' });
+    assert.deepEqual(row.components, [
+      { type: 2, style: 5, label: 'Open in lull', url: HOST + SONG },
+      { type: 2, style: 5, label: 'Every music app', url: 'https://song.link/i/1440823733' },
+    ]);
+    // The card started the cover's lookup, so the cover Discord asks for next costs no call to iTunes.
+    const asked = net.count(/itunes\.apple\.com/);
+    assert.equal(await (await w.get(COVER)).text(), 'picture:itunes');
+    assert.equal(net.count(/itunes\.apple\.com/), asked);
+  });
+});
+
+test('a card with no cover\'s colour is lull\'s, names are printed as they are, and a card too long for Discord isn\'t linked', async () => {
+  await withWorker(internet(), async (w) => {
+    const album = (await (await w.get('/1/album/Nobody/Untitled/card')).json()).component;
+    assert.equal(album.accent_color, 0x3d3491, 'no source has a cover: lull\'s colour');
+    assert.equal(album.components[0].components[0].content, '-# Album shared from lull\n### Untitled\nNobody');
+    assert.deepEqual(album.components[1].components[1], { type: 2, style: 5, label: 'Last.fm', url: 'https://www.last.fm/music/Nobody/Untitled' });
+
+    const name = '#1 *Hits* <@everyone> [x](y)';
+    const artist = (await (await w.get(`/1/artist/${encodeURIComponent(name)}/card`)).json()).component;
+    assert.equal(artist.components[0].components[0].content,
+      '-# Artist shared from lull\n### \\#1 \\*Hits\\* \\<\\@everyone\\> \\[x\\]\\(y\\)', 'no markup, no mention');
+
+    const long = encodeURIComponent('夜'.repeat(200));
+    const song = `/1/song/${long}/${long}`;
+    assert.doesNotMatch(await (await w.get(song)).text(), /discord:component-embed/);
+    assert.equal((await w.get(`/1/song/${long}/${long}/card`)).status, 404);
   });
 });
 

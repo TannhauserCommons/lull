@@ -2,11 +2,13 @@
 // - /1/<kind>/<names>?<ids>: the page, made from its address alone (page.js);
 // - the same address + /cover: the cover, which always answers an image: the picture a source lull tracks has,
 //   else lull's card (sources.js, objects.js);
+// - the same address + /card: lull's card in Discord, which the page links (card.js), its edge the cover's colour;
 // - everything else this Worker serves is a static file (public/, built by build.mjs): the open page's script and
 //   style, the icon and font, lull's card, robots.txt, and Android's /.well-known/assetlinks.json.
 // It logs nothing.
 
 import hosts from '../hosts.json';
+import { ACCENT, discordCard } from './card.js';
 import { coverUrl, parse, subjectKey, subjectOf } from './link.js';
 import { nothing, page, tooMany } from './page.js';
 import { looksLikePicture, USER_AGENT } from './sources.js';
@@ -21,6 +23,9 @@ const CARD_BRIEFLY = 'public, max-age=60';
 /** How long a cover request waits for a lookup: crawlers give up after a few seconds. */
 const LOOKUP_MS = 6000;
 const FETCH_MS = 3000;
+/** How long Discord's card waits for the cover's colour: Discord has 10 s for the page, the card and the cover, and
+    the cover may wait its own 6 s. A lookup still running finishes for the next card. */
+const COLOUR_MS = 2500;
 
 export default {
   async fetch(request, env, ctx) {
@@ -32,11 +37,12 @@ export default {
     // themselves, from this same code, names its own.
     const origin = hosts.canonical && hosts.hosts.includes(url.hostname) ? 'https://' + hosts.canonical : url.origin;
     const item = parse(url);
-    if (item?.cover) return cover(request, env, ctx, item, origin);
+    if (item?.part === 'cover') return cover(request, env, ctx, item, origin);
+    if (item?.part === 'card') return discord(request, env, item, origin);
     if (!(await allowed(request, env))) return html(tooMany(), 429, 'no-store', { 'retry-after': '60' });
     const template = await openPage(env, url);
     if (!item) return html(nothing(template, origin), 404, CARD_CACHE);
-    return html(page(template, origin, item), 200, PAGE_CACHE);
+    return html(page(template, origin, item, url.origin), 200, PAGE_CACHE);
   },
 };
 
@@ -87,7 +93,7 @@ async function cover(request, env, ctx, item, origin) {
   const cached = await caches.default.match(cacheKey);
   if (cached) return cached;
   // Over the limit, a card rather than an error: a cover never breaks.
-  if (!(await allowed(request, env))) return card(env, request, CARD_BRIEFLY);
+  if (!(await allowed(request, env))) return lullCard(env, request, CARD_BRIEFLY);
 
   const subject = { ...subjectOf(item), store: storeOf(request) };
   const key = subjectKey(subject);
@@ -105,9 +111,9 @@ async function cover(request, env, ctx, item, origin) {
       return res;
     }
   }
-  if (!found) return card(env, request, CARD_BRIEFLY);
+  if (!found) return lullCard(env, request, CARD_BRIEFLY);
   remember(key, found);
-  return card(env, request, CARD_CACHE);
+  return lullCard(env, request, CARD_CACHE);
 }
 
 /** The iTunes store of whoever opened the link: Cloudflare's country for the request, when it is one. */
@@ -116,12 +122,12 @@ function storeOf(request) {
   return typeof country === 'string' && /^[A-Z]{2}$/.test(country) ? country : null;
 }
 
-/** The Cover object's answer, or null when it took longer than a crawler waits (it finishes for the next request)
-    or failed: the caller then answers lull's card. */
-async function lookup(env, key, subject, broken = null) {
+/** The Cover object's answer, or null when it took longer than `wait` (it finishes for the next request) or failed:
+    the caller then answers lull's card, or lull's colour. */
+async function lookup(env, key, subject, broken = null, wait = LOOKUP_MS) {
   const stub = env.COVERS.get(env.COVERS.idFromName(key));
   let timer;
-  const late = new Promise((resolve) => { timer = setTimeout(() => resolve(null), LOOKUP_MS); });
+  const late = new Promise((resolve) => { timer = setTimeout(() => resolve(null), wait); });
   try {
     return await Promise.race([stub.picture(subject, broken), late]);
   } catch {
@@ -148,7 +154,7 @@ async function fetchPicture(url) {
   });
 }
 
-async function card(env, request, cache) {
+async function lullCard(env, request, cache) {
   const res = await env.ASSETS.fetch(new URL('/lull-card.png', request.url));
   return new Response(res.body, {
     status: 200,
@@ -163,6 +169,33 @@ function remembered(key) {
 
 function remember(key, found) {
   known.delete(key);
-  known.set(key, { url: found.url, until: found.until, at: Date.now() });
+  known.set(key, { url: found.url, colour: found.colour, until: found.until, at: Date.now() });
   if (known.size > KNOWN_MAX) known.delete(known.keys().next().value);
+}
+
+// ---- Discord's card ----
+
+/**
+ * lull's card in Discord for `item` (card.js): its edge the cover's colour, from what this instance knows or the
+ * album's Cover object (whose lookup this starts, so the cover Discord asks for next is found already), else lull's.
+ */
+async function discord(request, env, item, origin) {
+  let found = null;
+  if (await allowed(request, env)) {
+    const subject = { ...subjectOf(item), store: storeOf(request) };
+    const key = subjectKey(subject);
+    found = remembered(key) || (await lookup(env, key, subject, null, COLOUR_MS));
+    if (found) remember(key, found);
+  }
+  const body = discordCard(origin, item, (found?.url && found.colour) || ACCENT);
+  if (!body) return new Response('This link\'s card doesn\'t fit Discord\'s limits.\n', { status: 404 });
+  return new Response(body, {
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      // Kept as long as the page when the colour is the cover's or no cover exists; briefly while it's looked for.
+      'cache-control': found ? PAGE_CACHE : CARD_BRIEFLY,
+      'x-robots-tag': 'noindex',
+      'x-content-type-options': 'nosniff',
+    },
+  });
 }

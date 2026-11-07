@@ -1,10 +1,10 @@
 // The Worker's two Durable Objects (docs/adr/0034, "A burst of clicks costs one lookup"):
 // - Cover, one per album or artist worldwide: runs the lookup once however many ask at once, and keeps the address
-//   of the picture it found (never its bytes);
+//   of the picture it found (never its bytes) and the picture's colour, for lull's Discord card;
 // - Gate, one for the Worker: hands out turns of each outside service's budget, worldwide.
 
 import { DurableObject } from 'cloudflare:workers';
-import { find } from './sources.js';
+import { colourOf, find } from './sources.js';
 
 const DAY = 24 * 3600 * 1000;
 /** A picture found is looked for again after a month; "none" after a day; a lookup a source couldn't answer (often a
@@ -18,7 +18,8 @@ export class Cover extends DurableObject {
   running = null;
 
   /**
-   * The picture for `subject`: `{ url, source, until }`, `url` null when no source has one (yet).
+   * The picture for `subject`: `{ url, source, colour, until }`, `url` null when no source has one (yet), `colour`
+   * (`#rrggbb`) null when it couldn't be read from the picture.
    * `broken` is an address the caller found no longer answering: it is dropped, and the lookup runs again.
    */
   async picture(subject, broken = null) {
@@ -27,6 +28,8 @@ export class Cover extends DurableObject {
       await this.ctx.storage.delete('picture');
       kept = null;
     }
+    // A picture kept before the card had colours gets its colour, and keeps its place.
+    if (kept?.url && kept.colour === undefined) kept = await this.keep({ ...kept, colour: await colourOf(kept.url, kept.source) });
     if (kept && Date.now() < kept.until) return kept;
     if (kept?.url) {
       // Stale: answered at once, and looked for again behind it.
@@ -46,12 +49,16 @@ export class Cover extends DurableObject {
     const now = Date.now();
     const kept = await this.ctx.storage.get('picture');
     let next;
-    if (found.url) next = { url: found.url, source: found.source, until: now + KEEP_FOUND };
+    if (found.url) next = { url: found.url, source: found.source, colour: await colourOf(found.url, found.source), until: now + KEEP_FOUND };
     // A picture kept still answered when it was last served: nothing found now doesn't replace it.
     else if (kept?.url) next = { ...kept, until: now + RETRY };
-    else next = { url: null, source: null, until: now + (found.busy ? RETRY : KEEP_NONE) };
-    await this.ctx.storage.put('picture', next);
-    return next;
+    else next = { url: null, source: null, colour: null, until: now + (found.busy ? RETRY : KEEP_NONE) };
+    return this.keep(next);
+  }
+
+  async keep(picture) {
+    await this.ctx.storage.put('picture', picture);
+    return picture;
   }
 }
 

@@ -137,6 +137,20 @@ A song's cover is its album's. Covers are keyed by the album (its best id, else 
 - **It joins the queue of whichever of the listener's devices is playing:** the queue lives in each device's player, so when the device the link opened on isn't playing and another is, lull sends it there (lull Connect's `enqueue` command), with a toast naming that device.
 - **The page no longer acts on its own for a song or an album:** a remembered lull isn't opened after a moment, and a computer isn't asked "Open lull?" on load, since either would take the choice away. An artist, with nothing to queue, opens as before.
 
+### The Discord card (2026-11-07, asked for by the listener: "like Spotify's")
+
+Discord lets a site replace its link preview with a layout of Discord's own components (a component embed, 2026). lull's card in Discord is one:
+- **What it shows:** "Song shared from lull" (or Album, Artist), the title, the artist, the album and length; the cover beside them; link buttons **Open in lull** (the page) and **Every music app** (song.link or album.link), else **Last.fm**. Only those hosts, as above.
+- **Its edge is the cover's colour,** as Spotify's card is filled with one. The colour is read once, in the album's `Cover` object, when its picture is found: from a 128 px copy of the picture, by the averages a JPEG keeps for each 8×8 block, so nothing is decoded in full (a millisecond or two). Only the colour is kept, beside the picture's address. A picture that isn't a JPEG has none, and the edge is lull's colour.
+- **The page stays made from its address alone.** It links the card at `…/card`, which Discord fetches like the cover. The card waits up to 2.5 s for the colour, which starts the cover's lookup for the cover Discord asks for next; past that it has lull's colour. Discord has 10 s for the page, the card and the cover together.
+- **Discord's limits** (3,000 bytes, 512-character button addresses) are checked when the page is made: a card that can't fit isn't linked, and Discord shows the Open Graph card, which every other app keeps showing.
+- **What a site's card can't have:** a player, a preview or any audio, a card filled with colour, or a logo beside the title. Spotify's card is Discord's own integration.
+
+Alternatives:
+- **The colour in the link** (written by the hub). Every lull would have to read the cover's colour before sharing, and links copied before it would never have one.
+- **The card inline in the page,** asking the `Cover` object for the colour on every page view. The page would depend on the lookup, and every view would cost a Durable Object request.
+- **A per-song picture** drawn with the cover and the words (as some sites' cards are). A rasterizer doesn't fit the free plan's 10 ms (Workers Paid, $5 a month, would allow it), and Discord already lays out the words.
+
 ### One page script, two hosts
 
 - `site/open.js` stays the one script. It reads the item from the `#lull?` part (old links) or from a JSON block the Worker writes into the page (new links).

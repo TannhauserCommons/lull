@@ -3,12 +3,15 @@
 // has none; a source that couldn't answer (its turn not given, a timeout, a 429 or 5xx) throws Busy, so the
 // lookup is tried again soon instead of being kept as "none".
 
+import { coverColour } from './colour.js';
 import { loose } from './link.js';
 
 export const USER_AGENT = 'lull-share/1 (+https://github.com/TannhauserCommons/lull)';
 const STEP_MS = 3000;
 const MAX_BYTES = 2 * 1024 * 1024;
 const SIZE = 600;
+/** The size of the copy a cover's colour is read from (colour.js): a few KB, 64 to 256 colours. */
+const SMALL = 128;
 
 /** A source that couldn't answer now; `pause` when it asked us to slow down (429, 403). */
 export class Busy extends Error {
@@ -37,6 +40,40 @@ export async function find(subject, { gate, lastfmKey }) {
     }
   }
   return busy ? { busy: true } : { none: true };
+}
+
+/**
+ * A small copy of a picture `find` answered, from the same source (each of their CDNs scales to the size named in its
+ * address), as a JPEG where the source can say so. The picture itself when its source has no smaller copy to name.
+ */
+export function smallCopy(url, source) {
+  const small = {
+    itunes: (u) => u.replace(/\/\d+x\d+bb\.\w+$/, `/${SMALL}x${SMALL}bb.jpg`),
+    deezer: (u) => u.replace(`/${SIZE}x${SIZE}-`, `/${SMALL}x${SMALL}-`),
+    coverartarchive: (u) => u.replace(/\/front-500$/, '/front-250'),
+    lastfm: (u) => u.replace(/\/i\/u\/(\d+x\d+|\d+s)\//, '/i/u/174s/'),
+    wikidata: (u) => u.replace(`width=${SIZE}`, `width=${SMALL}`),
+  }[source];
+  return small ? small(url) : url;
+}
+
+/** The colour of the picture `find` answered (colour.js), read from its small copy; null when it can't be read now. */
+export async function colourOf(url, source) {
+  let res;
+  try {
+    res = await get(smallCopy(url, source), source, { accept: 'image/jpeg,image/*', api: false });
+  } catch (e) {
+    if (e instanceof Busy) return null;
+    throw e;
+  }
+  if (!res) return null;
+  if (!looksLikePicture(res)) {
+    await res.body?.cancel();
+    return null;
+  }
+  let bytes;
+  try { bytes = await res.arrayBuffer(); } catch { return null; }
+  return bytes.byteLength <= MAX_BYTES ? coverColour(new Uint8Array(bytes)) : null;
 }
 
 /** A picture answers 200 with an image no larger than 2 MB. Its body is left unread. */

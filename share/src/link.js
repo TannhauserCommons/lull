@@ -1,4 +1,4 @@
-// A lull link (docs/adr/0034): /1/<kind>/<names>[/cover]?<ids>. Everything a page or a cover needs is read
+// A lull link (docs/adr/0034): /1/<kind>/<names>[/cover|/card]?<ids>. Everything a page or a cover needs is read
 // from the address, checked here, and trusted after: names are exact, ids keep their form or are dropped.
 
 /** The names each kind carries in its path, and the ids (query keys) it may carry, in the order links write them. */
@@ -10,6 +10,8 @@ const KINDS = {
 const VERSION = '1';
 const MAX_NAME = 200;
 const DIGITS = /^[0-9]{1,15}$/;
+/** What may follow a link's names: its cover (an image) or its Discord card (JSON). */
+const PARTS = ['cover', 'card'];
 const MBID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** How each query key's value is checked: a malformed id is dropped rather than trusted. */
 const CHECK = {
@@ -26,8 +28,8 @@ function name(v) {
 }
 
 /**
- * What an address names: `{ kind, names: {artist, title?}, ids: {…}, cover }`, or null for anything that isn't a
- * lull link. `cover` is true for the cover's own address (`…/cover`).
+ * What an address names: `{ kind, names: {artist, title?}, ids: {…}, part }`, or null for anything that isn't a
+ * lull link. `part` is `cover` or `card` for those addresses (`…/cover`, `…/card`), else null: the page.
  */
 export function parse(url) {
   const parts = url.pathname.split('/').slice(1);
@@ -35,8 +37,8 @@ export function parse(url) {
   const kind = KINDS[parts[1]];
   if (!kind) return null;
   const rest = parts.slice(2);
-  const cover = rest.length === kind.names.length + 1 && rest[rest.length - 1] === 'cover';
-  if (rest.length !== kind.names.length + (cover ? 1 : 0)) return null;
+  const part = rest.length === kind.names.length + 1 && PARTS.includes(rest[rest.length - 1]) ? rest[rest.length - 1] : null;
+  if (rest.length !== kind.names.length + (part ? 1 : 0)) return null;
   const names = {};
   for (let i = 0; i < kind.names.length; i++) {
     let decoded;
@@ -51,7 +53,7 @@ export function parse(url) {
     const ok = v === null ? null : CHECK[key](v);
     if (ok) ids[key] = ok;
   }
-  return { kind: parts[1], names, ids, cover };
+  return { kind: parts[1], names, ids, part };
 }
 
 /** The item's page, path and query, in the one order links are written. */
@@ -68,8 +70,16 @@ export function pageUrl(origin, item) {
 }
 
 export function coverUrl(origin, item) {
+  return partUrl(origin, item, 'cover');
+}
+
+export function cardUrl(origin, item) {
+  return partUrl(origin, item, 'card');
+}
+
+function partUrl(origin, item, part) {
   const { path, query } = pathOf(item);
-  return origin + path + '/cover' + query;
+  return origin + path + '/' + part + query;
 }
 
 /** The public page for it: song.link or album.link by its iTunes id, else Last.fm's by name (ADR-0032's three hosts). */
