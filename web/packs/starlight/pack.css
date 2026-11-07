@@ -17,6 +17,28 @@
 @media (prefers-reduced-motion: no-preference) {
   :root[data-design="starlight"]:not([data-motion="reduce"]) .egg-line { animation: sl-egg-in .45s var(--ease-out) both; }
 }
+/* the line has a strip of sky of its own: while one is up the page gives up the strip above the ticket (a tall one for the big
+   caps), so the label stands on the sky and never on a row, a card or a key of the page. --sl-line-room is that strip's height */
+:root[data-design="starlight"] { --sl-line-room: 68px; }
+:root[data-design="starlight"][data-egg~="new-year"] { --sl-line-room: 112px; }
+:root[data-design="starlight"]:is([data-egg~="new-year-hello"], [data-egg~="milestone"], [data-egg~="bouquet"]) { --sl-line-room: 84px; }
+:root[data-design="starlight"]:is([data-egg~="on-repeat"], [data-egg~="encore"]) { --sl-line-room: 88px; }
+:root[data-design="starlight"]:has(.egg-line:not([hidden])) .main { margin-bottom: var(--sl-line-room); }
+:root[data-design="starlight"]:has(.egg-line:not([hidden])) .ctx { margin-bottom: calc(30px + var(--sl-line-room)); }
+:root[data-design="starlight"] .egg-line { width: max-content; }   /* a label is as wide as its words (a box set at left: 50% would be offered half the window and wrap them) */
+@media (max-width: 639px) {
+  /* the phone's page has no fade of its own: while the strip is given up, the page dissolves into it as the wide page does at its foot */
+  :root[data-design="starlight"]:has(.egg-line:not([hidden])) .main { position: relative; }
+  :root[data-design="starlight"]:has(.egg-line:not([hidden])) .main::after {
+    content: ""; position: absolute; z-index: 2; left: 0; right: 0; bottom: 0; height: 40px; pointer-events: none;
+    background: var(--sl-sky-bg); background-attachment: fixed; background-blend-mode: soft-light, normal, normal, normal, normal, normal;
+    -webkit-mask: linear-gradient(180deg, transparent, rgba(0, 0, 0, .8) 45%, #000 85%); mask: linear-gradient(180deg, transparent, rgba(0, 0, 0, .8) 45%, #000 85%);
+  }
+  :root[data-design="starlight"][data-theme="night"]:has(.egg-line:not([hidden])) .main::after {
+    background: var(--sl-stars) 0 0 / max(1600px, 100vw) auto no-repeat fixed, var(--sl-sky-bg); background-attachment: fixed;
+    background-blend-mode: normal, soft-light, normal, normal, normal, normal, normal;
+  }
+}
 @keyframes sl-egg-in { from { opacity: 0; transform: translateX(-50%) translateY(10px); } to { opacity: 1; transform: translateX(-50%); } }
 @keyframes sl-egg-away { to { opacity: 0; } }
 
@@ -226,7 +248,7 @@
   :root[data-design="starlight"]:not([data-motion="reduce"]) [data-egg-of="curtain-up"] .sl-house { display: block; position: fixed; inset: 0; }
   :root[data-design="starlight"]:not([data-motion="reduce"]) .sl-house i { position: absolute; display: block; pointer-events: none; opacity: 0; }
   :root[data-design="starlight"]:not([data-motion="reduce"]) .sl-house__dim { inset: 0; background: radial-gradient(ellipse 80% 78% at 50% 46%, transparent 28%, rgba(10, 10, 28, .62)); animation: sl-house 8s ease both; }
-  :root[data-design="starlight"]:not([data-motion="reduce"]) .sl-house__wash { left: 0; right: 0; bottom: 0; height: 36vh; background: linear-gradient(0deg, rgba(255, 196, 110, .45), rgba(255, 205, 128, .12) 55%, transparent); animation: sl-house 8s ease .6s both; }
+  :root[data-design="starlight"]:not([data-motion="reduce"]) .sl-house__wash { left: 0; right: 0; bottom: var(--sl-foot); height: 26px; background: linear-gradient(0deg, rgba(255, 196, 110, .6), rgba(255, 205, 128, .16) 60%, transparent); animation: sl-house 8s ease .6s both; }
   :root[data-design="starlight"]:not([data-motion="reduce"]) .sl-house__bulbs {
     left: 0; right: 0; bottom: 3px; height: 12px;
     background: radial-gradient(circle at 50% 50%, #fff6d8 0 2.2px, #ffd37a 3px, rgba(255, 190, 90, .55) 5px, transparent 7px) 0 0 / 30px 12px repeat-x;
@@ -255,3 +277,8 @@
   90%, 100% { transform: translate(0, 0) rotate(76deg); }
 }
 
+
+/* on a phone the big caps are set so a greeting stays one line inside the strip */
+@media (max-width: 639px) {
+  :root[data-design="starlight"]:is([data-egg~="milestone"], [data-egg~="new-year-hello"]) .egg-line { padding: 8px 20px 9px; font-size: 1.25rem; letter-spacing: .1em; }
+}

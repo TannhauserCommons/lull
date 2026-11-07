@@ -211,13 +211,15 @@
 /* what runs on under the player is a deliberate fade into the sky, not a print cut flat by the ticket (the page rests 40 px
    above its foot, so the last row of a page that ends is whole). The fade is a strip of the sky itself (the same fixed
    layers as the page's background, so it matches exactly) over the foot of the main column, which does not scroll: it is
-   painted once and never touches the scroller */
+   painted once and never touches the scroller. --sl-page-foot is that fade's depth and also the room the scroller keeps after
+   its last row, so a page that ends rests its last row on the fade's top edge, whole, never under it */
 @media (min-width: 640px) {
-  :root[data-design="starlight"] .main { position: relative; }
+  :root[data-design="starlight"] .main { position: relative; --sl-page-foot: 56px; }
+  :root[data-design="starlight"] .main > .view { padding-bottom: var(--sl-page-foot); scroll-padding-bottom: var(--sl-page-foot); }
   :root[data-design="starlight"] .main::after {
-    content: ""; position: absolute; z-index: 2; left: 0; right: 0; bottom: 0; height: 72px; pointer-events: none;
+    content: ""; position: absolute; z-index: 2; left: 0; right: 0; bottom: 0; height: var(--sl-page-foot); pointer-events: none;
     background: var(--sl-sky-bg); background-attachment: fixed; background-blend-mode: soft-light, normal, normal, normal, normal, normal;
-    -webkit-mask: linear-gradient(180deg, transparent, rgba(0, 0, 0, .8) 30%, #000 48%); mask: linear-gradient(180deg, transparent, rgba(0, 0, 0, .8) 30%, #000 48%);   /* a page that runs on dissolves over the last rows: no card or line is ever a cut sliver */
+    -webkit-mask: linear-gradient(180deg, transparent, rgba(0, 0, 0, .8) 45%, #000 85%); mask: linear-gradient(180deg, transparent, rgba(0, 0, 0, .8) 45%, #000 85%);   /* a page that runs on dissolves over the last rows: no card or line is ever a cut sliver */
   }
   :root[data-design="starlight"][data-theme="night"] .main::after {   /* and the night's stars, as the sky-specks lay them */
     background: var(--sl-stars) 0 0 / max(1600px, 100vw) auto no-repeat fixed, var(--sl-sky-bg); background-attachment: fixed;
@@ -684,7 +686,9 @@
   padding: 4px 8px 3px 12px; bottom: calc(100% + 1px); border-bottom: 0;
 }
 :root[data-design="starlight"] .pbar__state .btn--quiet { color: var(--link); }
-:root[data-design="starlight"]:is([data-player="finding"], [data-player="queued"], [data-player="buffering"], [data-player="stalled"], [data-player="choose"], [data-player="failed"], [data-player="jellyfin-error"], [data-player="ended"]) .view { padding-bottom: 44px; }
+@media (max-width: 639px) {
+  :root[data-design="starlight"]:is([data-player="finding"], [data-player="queued"], [data-player="buffering"], [data-player="stalled"], [data-player="choose"], [data-player="failed"], [data-player="jellyfin-error"], [data-player="ended"]) .view { padding-bottom: 44px; }
+}
 :root[data-design="starlight"] .app[data-screen="now"] .pbar__state { display: none; }
 @media (min-width: 640px) {
   :root[data-design="starlight"] { --bar-h: 122px; }
@@ -944,11 +948,11 @@
 /* a tall window is used to its foot: the page is as tall as the window, the poster and the lyrics are as tall as the
    page (the title stays at the foot of its sheet, the print above it grows with the window) and the about print keeps
    its own height, hung at the top of its column. A short window scrolls as before */
-@media (min-width: 640px) { .app[data-height="tall"][data-screen="now"] .now { height: 100%; } }
+@media (min-width: 640px) { .app[data-height="tall"][data-screen="now"] .now { min-height: 100%; display: flex; flex-direction: column; } }   /* at least the page's height, and as tall as its prints when they are taller: the scroller's room after the last print is then kept */
 /* the poster lines are posters: large and thin, larger as the page widens (the A- / A+ steps still move them) */
 :root[data-design="starlight"] .now-ly:not(.now-ly--panel, .now-ly--col) { --ly-size: calc(1.375rem + var(--ly-step, 0) * .125rem); }
 @container now (min-width: 620px) {
-  :root[data-design="starlight"] .app[data-height="tall"] .now__grid { min-height: 100%; grid-template-rows: minmax(0, 1fr) auto auto auto auto; }
+  :root[data-design="starlight"] .app[data-height="tall"] .now__grid { flex: 1 0 auto; grid-template-rows: minmax(0, 1fr) auto auto auto auto; }
   :root[data-design="starlight"] .app[data-height="tall"] .now__dev { align-self: stretch; display: flex; flex-direction: column; }
   /* the print takes the height the sheet has over (a portrait or a square print, never a gap above the title) */
   :root[data-design="starlight"] .app[data-height="tall"] .now__dev > .sl-hero { flex: 1; margin-bottom: 0; grid-template-rows: minmax(0, 1fr) auto auto auto auto auto auto; }
@@ -984,17 +988,27 @@
 :root[data-design="starlight"] .now__keys { display: none; }
 :root[data-design="starlight"] .now-head__title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 :root[data-design="starlight"] .now-head > .now-head__from { display: none; }
-/* "about this song": the print's heading drawn on its own top edge (a rule behind it), so it reads as one print with
-   the actions and the source under it */
+/* "about this song": the print's heading drawn on its own top edge (a rule behind it) over its tags and keys, a print
+   of its own; the source and streaming details are the print under it, with a heading of the same kind */
 :root[data-design="starlight"] .now-head {
   position: relative; gap: var(--sp-3); padding: 20px 22px 8px; border: var(--stroke) solid var(--line); border-bottom: 0; border-radius: var(--r-card) var(--r-card) 0 0;
   background: linear-gradient(var(--sl-rule), var(--sl-rule)) 22px 31px / calc(100% - 44px) 1px no-repeat, var(--bg);
 }
 :root[data-design="starlight"] .now-head::before { content: "about this song"; justify-self: start; padding-right: 12px; background: var(--bg); font: 300 1.25rem/1.15 var(--f-ui); letter-spacing: .14em; text-transform: uppercase; color: var(--fg); }
 :root[data-design="starlight"] .now-head__by { margin: 0; font: 400 1rem/1.4 var(--f-ui); }
-:root[data-design="starlight"] .now__acts { padding: 6px 18px 14px; border-inline: var(--stroke) solid var(--line); }
+:root[data-design="starlight"] .now__acts {
+  padding: 6px 18px 18px; border: var(--stroke) solid var(--line); border-top: 0; border-radius: 0 0 var(--r-card) var(--r-card);
+  box-shadow: var(--stack-sm); margin-bottom: var(--sp-5);
+}
 :root[data-design="starlight"] .now__acts .now-acts { gap: 6px; }
-:root[data-design="starlight"] .now-srccard { border-top: 0; border-radius: 0 0 var(--r-card) var(--r-card); padding: 0 22px 22px; }
+:root[data-design="starlight"] .now-srccard {
+  border-radius: var(--r-card); padding: 20px 22px 22px;
+  background: linear-gradient(var(--sl-rule), var(--sl-rule)) 22px 31px / calc(100% - 44px) 1px no-repeat, var(--bg);
+}
+:root[data-design="starlight"] .now-srccard::before {
+  content: "source"; display: block; width: max-content; margin: 0 0 12px; padding-right: 12px; background: var(--bg);
+  font: 300 1.25rem/1.15 var(--f-ui); letter-spacing: .14em; text-transform: uppercase; color: var(--fg);
+}
 :root[data-design="starlight"] .now-srccard .source-card { border: var(--stroke) solid var(--divider); border-radius: var(--r-thumb); }
 /* lyrics are set as poster lines: thin and large, the line sung in burgundy with a star before it */
 :root[data-design="starlight"] :is(.now-ly__line, .now-ly__plain p) { font-weight: 300; }
@@ -1672,7 +1686,8 @@
     padding: 8px 16px 18px; border-bottom: var(--stroke) solid var(--line);
     border-radius: 0 0 var(--r-card) var(--r-card); box-shadow: var(--stack-sm); margin-bottom: 12px;
   }
-  :root[data-design="starlight"] .now-srccard { border-top: var(--stroke) solid var(--line); border-radius: var(--r-card); padding: 16px; }
+  :root[data-design="starlight"] .now-srccard { padding: 18px 16px 16px; background-position: 16px 29px; background-size: calc(100% - 32px) 1px; }
+  :root[data-design="starlight"] .now-srccard::before { font-size: 1.0625rem; }
 }
 
 /* =====================================================================
@@ -1687,4 +1702,23 @@
 :root[data-design="starlight"] .nowcol__from { font: 400 .6875rem/1.4 var(--f-px); letter-spacing: .12em; text-transform: uppercase; color: var(--fg-2); }
 :root[data-design="starlight"] .nowcol__from b { font-weight: 500; color: var(--fg); }
 
+
+/* =====================================================================
+   The cursor, from the sky: the arrow is a cream print edged in ink with a small star trailing off its tail, the
+   pointer over links and keys a bright four-point star (the constellation's own mark), the caret a thin ink beam with a
+   cream core. All are SVG at 24 px or less (a 2x image for a high-DPI screen), edged in ink and cream so they read on the
+   cream prints and on the night sky alike. A listener who forces colours keeps the system's own.
+   ===================================================================== */
+@media not (forced-colors: active) {
+  :root[data-design="starlight"] {
+    --sl-cur: image-set(url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='28' viewBox='0 0 24 28'%3E%3Cpath d='M2.2 1.6V22.4L7.6 17.4 11.3 25.4 15 23.8 11.4 16H18.6Z' fill='%23f2e3d1' stroke='%234a0f1c' stroke-width='1.6' stroke-linejoin='round'/%3E%3Cpath d='M20.5 19.9C21.1 22.18 21.82 22.9 24.1 23.5C21.82 24.1 21.1 24.82 20.5 27.1C19.9 24.82 19.18 24.1 16.9 23.5C19.18 22.9 19.9 22.18 20.5 19.9Z' fill='%235a75b5' stroke='%23f2e3d1' stroke-width='.9' stroke-linejoin='round'/%3E%3C/svg%3E") 1x, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='56' viewBox='0 0 24 28'%3E%3Cpath d='M2.2 1.6V22.4L7.6 17.4 11.3 25.4 15 23.8 11.4 16H18.6Z' fill='%23f2e3d1' stroke='%234a0f1c' stroke-width='1.6' stroke-linejoin='round'/%3E%3Cpath d='M20.5 19.9C21.1 22.18 21.82 22.9 24.1 23.5C21.82 24.1 21.1 24.82 20.5 27.1C19.9 24.82 19.18 24.1 16.9 23.5C19.18 22.9 19.9 22.18 20.5 19.9Z' fill='%235a75b5' stroke='%23f2e3d1' stroke-width='.9' stroke-linejoin='round'/%3E%3C/svg%3E") 2x) 2 2, default;
+    --sl-cur-pt: image-set(url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M12 1.5C14.4 6.72 17.28 9.6 22.5 12C17.28 14.4 14.4 17.28 12 22.5C9.6 17.28 6.72 14.4 1.5 12C6.72 9.6 9.6 6.72 12 1.5Z' fill='%234a0f1c' stroke='%234a0f1c' stroke-width='3' stroke-linejoin='round'/%3E%3Cpath d='M12 1.5C14.4 6.72 17.28 9.6 22.5 12C17.28 14.4 14.4 17.28 12 22.5C9.6 17.28 6.72 14.4 1.5 12C6.72 9.6 9.6 6.72 12 1.5Z' fill='%239db0ee' stroke='%23f2e3d1' stroke-width='1.1' stroke-linejoin='round'/%3E%3Ccircle cx='12' cy='12' r='1.5' fill='%23f2e3d1'/%3E%3C/svg%3E") 1x, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 24 24'%3E%3Cpath d='M12 1.5C14.4 6.72 17.28 9.6 22.5 12C17.28 14.4 14.4 17.28 12 22.5C9.6 17.28 6.72 14.4 1.5 12C6.72 9.6 9.6 6.72 12 1.5Z' fill='%234a0f1c' stroke='%234a0f1c' stroke-width='3' stroke-linejoin='round'/%3E%3Cpath d='M12 1.5C14.4 6.72 17.28 9.6 22.5 12C17.28 14.4 14.4 17.28 12 22.5C9.6 17.28 6.72 14.4 1.5 12C6.72 9.6 9.6 6.72 12 1.5Z' fill='%239db0ee' stroke='%23f2e3d1' stroke-width='1.1' stroke-linejoin='round'/%3E%3Ccircle cx='12' cy='12' r='1.5' fill='%23f2e3d1'/%3E%3C/svg%3E") 2x) 12 12, pointer;
+    --sl-cur-tx: image-set(url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='24' viewBox='0 0 12 24'%3E%3Cpath d='M2.5 2.5H9.5M6 2.5V21.5M2.5 21.5H9.5' fill='none' stroke='%234a0f1c' stroke-width='3.4' stroke-linecap='square'/%3E%3Cpath d='M2.5 2.5H9.5M6 2.5V21.5M2.5 21.5H9.5' fill='none' stroke='%23f2e3d1' stroke-width='1.2' stroke-linecap='square'/%3E%3C/svg%3E") 1x, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='48' viewBox='0 0 12 24'%3E%3Cpath d='M2.5 2.5H9.5M6 2.5V21.5M2.5 21.5H9.5' fill='none' stroke='%234a0f1c' stroke-width='3.4' stroke-linecap='square'/%3E%3Cpath d='M2.5 2.5H9.5M6 2.5V21.5M2.5 21.5H9.5' fill='none' stroke='%23f2e3d1' stroke-width='1.2' stroke-linecap='square'/%3E%3C/svg%3E") 2x) 6 12, text;
+  }
+  :root[data-design="starlight"] body { cursor: var(--sl-cur); }
+  :root[data-design="starlight"] :is(a[href], button:not(:disabled), [role="button"], [role="tab"], [role="menuitem"], [role="radio"], [role="switch"], [role="slider"], [role="option"], [data-act], label[for], summary,
+    .trow, .tile, .seek, .wave, .btn, .btn-icon, .chip, .pill-filter, .switch, .switch-row, .range, .from, .q-chip, .src-badge, .eqp__tone, .eqp__summary, select) { cursor: var(--sl-cur-pt); }
+  :root[data-design="starlight"] :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="button"], [type="submit"]), textarea, [contenteditable="true"]) { cursor: var(--sl-cur-tx); }
+  :root[data-design="starlight"] :is(:disabled, [aria-disabled="true"]) { cursor: not-allowed; }
+}
 }
