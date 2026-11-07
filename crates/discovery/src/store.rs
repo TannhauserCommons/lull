@@ -457,6 +457,12 @@ impl Store {
         self.db.call(move |c| catalog::track(c, &id)).await
     }
 
+    /// The albums these songs stand on (`songs`: what their sources said, by track id), so each
+    /// has a record the art route can name a cover for.
+    pub async fn albums_of(&self, tracks: Vec<Track>, songs: HashMap<TrackId, Song>) -> Result<Vec<Album>> {
+        self.db.call(move |c| albums_of(c, &tracks, &songs)).await
+    }
+
     /// The saved tracks among `ids`. Jellyfin being down only hides the badges, so the
     /// failure is logged, not raised.
     async fn saved(&self, ids: Vec<TrackId>) -> HashSet<TrackId> {
@@ -498,6 +504,58 @@ pub fn track(s: Song) -> Track {
         tags: s.tags,
         saved: false,
         file: None,
+    }
+}
+
+/// The album each track stands on, as the catalog has it: a resolved song's is the catalog's
+/// own, with its cover. A song still on its source's album (the hash of the name the source
+/// gave) gets a record carrying the release group's MBID, which the Cover Art Archive can
+/// answer for when no service finds a cover by name (`art::Covers`). Saved songs are left to
+/// the library, and songs without an album have none.
+pub fn albums_of(c: &Connection, tracks: &[Track], songs: &HashMap<TrackId, Song>) -> Result<Vec<Album>> {
+    let mut out: BTreeMap<AlbumId, Album> = BTreeMap::new();
+    for t in tracks {
+        if t.saved || t.album.trim().is_empty() || out.contains_key(&t.album_id) {
+            continue;
+        }
+        let named = songs.get(&t.id).map(song_album).filter(|a| a.id == t.album_id);
+        let album = match (catalog::album(c, &t.album_id)?, named) {
+            (Some(mut known), Some(named)) => {
+                if known.musicbrainz_id.is_none() && named.musicbrainz_id.is_some() {
+                    known.musicbrainz_id = named.musicbrainz_id;
+                    catalog::remember_album(c, &known, None)?;
+                }
+                known
+            }
+            (Some(known), None) => known,
+            (None, Some(named)) => {
+                catalog::remember_album(c, &named, None)?;
+                named
+            }
+            (None, None) => continue,
+        };
+        out.insert(album.id.clone(), album);
+    }
+    Ok(out.into_values().collect())
+}
+
+/// The album a source's song names, with the release group it gave.
+fn song_album(s: &Song) -> Album {
+    let artist = s.album_artist.as_deref().unwrap_or(&s.artist);
+    Album {
+        id: AlbumId::of(artist, &s.album),
+        artist_id: ArtistId::of(artist),
+        title: s.album.clone(),
+        artist: artist.to_owned(),
+        year: s.year,
+        kind: None,
+        released: None,
+        label: None,
+        tags: Vec::new(),
+        saved: Saved::None,
+        track_ids: Vec::new(),
+        duration: None,
+        musicbrainz_id: s.album_mbid.clone(),
     }
 }
 

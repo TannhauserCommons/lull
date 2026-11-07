@@ -21,6 +21,7 @@ use std::time::{Duration, Instant};
 use axum::Json;
 use axum::extract::State;
 use axum::extract::rejection::JsonRejection;
+use lull_core::db::Db;
 use lull_core::ids::{AlbumId, TrackId};
 use lull_core::model::{Entities, SongQuery, Track};
 use lull_core::pictures::Rank;
@@ -123,7 +124,7 @@ pub async fn work(svc: Arc<Service>) {
             svc.resolver.arrived.notified().await;
             continue;
         };
-        match resolve(&svc, &id).await {
+        match resolve(&svc.ctx.db, svc.as_ref(), &id).await {
             Ok(Some(track)) => batch.push(track),
             Ok(None) => {}
             Err(e) => tracing::info!(error = %e, track = %id, "a bare song wasn't resolved; asked again when shown"),
@@ -135,15 +136,32 @@ pub async fn work(svc: Arc<Service>) {
     }
 }
 
+/// Looks the songs up now, one at a time as the worker does, for as long as `within` allows: how
+/// a feed build resolves its picks, so they come with their catalog album and cover, not when
+/// first played. A failed lookup, and the songs not reached in time, are left for the worker
+/// (it asks again when the song is shown). The songs found, enriched in place.
+pub async fn now(db: &Db, catalog: &dyn Catalog, ids: &[TrackId], within: Duration) -> Vec<Track> {
+    let until = Instant::now() + within;
+    let mut found = Vec::new();
+    for id in ids {
+        if Instant::now() >= until {
+            break;
+        }
+        match resolve(db, catalog, id).await {
+            Ok(track) => found.extend(track),
+            Err(e) => tracing::info!(error = %e, track = %id, "a pick wasn't resolved; asked again when shown"),
+        }
+    }
+    found
+}
+
 /// The song as the catalog knows it, enriched in place; `None` when nothing matches (noted, so
 /// it isn't looked up again for a day) or it no longer needs it.
-async fn resolve(svc: &Service, id: &TrackId) -> Result<Option<Track>> {
+async fn resolve(db: &Db, catalog: &dyn Catalog, id: &TrackId) -> Result<Option<Track>> {
     let (bare, isrc) = {
         let id = id.clone();
         let now = lull_core::now();
-        let found = svc
-            .ctx
-            .db
+        let found = db
             .call(move |c| {
                 let Some(t) = catalog::track(c, &id)? else {
                     return Ok(None);
@@ -164,23 +182,21 @@ async fn resolve(svc: &Service, id: &TrackId) -> Result<Option<Track>> {
         duration: bare.duration,
         isrc,
     };
-    let found = svc.find_song(&query).await?;
+    let found = catalog.find_song(&query).await?;
     let id = id.clone();
-    svc.ctx
-        .db
-        .call(move |c| {
-            let now = lull_core::now();
-            match found {
-                // The catalog's song under the same id: its record and album are the catalog's now.
-                Some(f) if f.id == id => Ok(catalog::track(c, &id)?.filter(|t| !t.saved)),
-                Some(f) => catalog::enrich(c, &id, &f, now),
-                None => {
-                    catalog::missed(c, &id, now)?;
-                    Ok(None)
-                }
+    db.call(move |c| {
+        let now = lull_core::now();
+        match found {
+            // The catalog's song under the same id: its record and album are the catalog's now.
+            Some(f) if f.id == id => Ok(catalog::track(c, &id)?.filter(|t| !t.saved)),
+            Some(f) => catalog::enrich(c, &id, &f, now),
+            None => {
+                catalog::missed(c, &id, now)?;
+                Ok(None)
             }
-        })
-        .await
+        }
+    })
+    .await
 }
 
 /// Sends a batch as `catalog.tracks { entities }`.

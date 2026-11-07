@@ -29,7 +29,7 @@ use crate::sources::listenbrainz::Mode;
 use crate::sources::{AlbumSource, ArtistInfo, ArtistSource, Release, Song};
 use crate::store::{self, entities};
 use crate::taste::{Evidence, Taste};
-use crate::{Service, art, mix, pages, radio};
+use crate::{Service, art, mix, pages, radio, search};
 
 const STALE_AFTER_S: i64 = 6 * 3600;
 const NEW_RELEASES: usize = 12;
@@ -37,6 +37,9 @@ const NEW_RELEASES: usize = 12;
 const RELEASE_CANDIDATES: usize = 30;
 /// How long a build waits for Soulseek's answers before serving the shelf.
 const AVAILABILITY_WAIT: Duration = Duration::from_secs(3);
+/// How long a build looks its picks up in the catalog (`search::resolve::now`), so a shelf of
+/// slow lookups doesn't hold the build; the picks not reached are looked up when shown.
+const RESOLVE_PICKS_WITHIN: Duration = Duration::from_secs(60);
 /// A check still unanswered after this counts as unchecked.
 const AVAILABILITY_LIMIT: Duration = Duration::from_secs(600);
 /// How long releases Soulseek couldn't answer for (offline, searches unanswered) wait before
@@ -271,6 +274,8 @@ pub async fn get(State(svc): State<Arc<Service>>) -> Result<Json<serde_json::Val
             .get(id)
             .is_none_or(|a| !hidden.contains(&a.artist_id))
     });
+    let stored = std::mem::take(&mut feed.entities);
+    feed.entities = svc.ctx.db.call(move |c| current_records(c, stored)).await?;
     keep_named_albums(&mut feed);
     let tags: Vec<serde_json::Value> = feed
         .followed_tags
@@ -695,7 +700,9 @@ async fn build(svc: &Arc<Service>) -> Result<(Built, Answers)> {
 
     // Entities: picks as catalog tracks, releases as albums, seeds as artists.
     let pick_songs: Vec<Song> = candidates.iter().map(|c| c.song.clone()).collect();
-    let mut tracks = svc.store.tracks(pick_songs).await?;
+    let mut tracks = svc.store.tracks(pick_songs.clone()).await?;
+    let sources: HashMap<TrackId, Song> = tracks.iter().map(|t| t.id.clone()).zip(pick_songs).collect();
+    resolve_picks(svc, &mut tracks).await;
     let mut picks: Vec<Pick> = candidates
         .into_iter()
         .zip(&tracks)
@@ -737,6 +744,9 @@ async fn build(svc: &Arc<Service>) -> Result<(Built, Answers)> {
             .shelves
             .drain(..recent_picks.shelves.len() - picking::SHELVES);
     }
+    // Every pick's album, with the cover source it plays under, so a song played from Home
+    // already has its cover (`store::albums_of`).
+    let pick_albums = svc.store.albums_of(tracks.clone(), sources).await?;
     let albums = svc.store.albums(releases.iter().map(|r| r.0.clone()).collect()).await?;
     // The catalog album each own release came from, so its page asks that catalog.
     let sources: Vec<(AlbumId, AlbumSource)> = albums
@@ -787,7 +797,9 @@ async fn build(svc: &Arc<Service>) -> Result<(Built, Answers)> {
     } else {
         Vec::new()
     };
-    let mut all_albums = albums.clone();
+    // A release that is also a pick's album keeps its own record: it comes later.
+    let mut all_albums = pick_albums;
+    all_albums.extend(albums.iter().cloned());
     all_albums.extend(jump_albums);
     let mut all_tracks = tracks;
     all_tracks.extend(starter_tracks);
@@ -814,6 +826,42 @@ async fn build(svc: &Arc<Service>) -> Result<(Built, Answers)> {
         recent: recent_picks,
     };
     Ok((built, answers))
+}
+
+/// Looks the picks up in the catalog as the resolve worker does when a bare song is shown, so a
+/// pick comes with its catalog album and cover and "Go to album" is right from the first play.
+/// A lookup that fails leaves the pick as it is, and never the build.
+async fn resolve_picks(svc: &Service, tracks: &mut [Track]) {
+    let ids: Vec<TrackId> = tracks.iter().map(|t| t.id.clone()).collect();
+    let found = search::resolve::now(&svc.ctx.db, svc, &ids, RESOLVE_PICKS_WITHIN).await;
+    for resolved in found {
+        if let Some(t) = tracks.iter_mut().find(|t| t.id == resolved.id) {
+            *t = Track {
+                saved: t.saved,
+                ..resolved
+            };
+        }
+    }
+}
+
+/// The songs of a stored feed as the catalog has them now, and the albums they stand on. A feed
+/// keeps the records of its build; a song looked up since then (the resolve worker moves a
+/// bare song onto the catalog's album) must not go back to its old album when Home is read.
+fn current_records(c: &rusqlite::Connection, mut e: Entities) -> Result<Entities> {
+    for t in e.tracks.values_mut() {
+        if let Some(now) = lull_core::catalog::track(c, &t.id)? {
+            *t = Track { saved: t.saved, ..now };
+        }
+    }
+    let on: HashSet<AlbumId> = e.tracks.values().map(|t| t.album_id.clone()).collect();
+    for id in on {
+        if !e.albums.contains_key(&id)
+            && let Some(album) = lull_core::catalog::album(c, &id)?
+        {
+            e.albums.insert(id, album);
+        }
+    }
+    Ok(e)
 }
 
 /// The catalog tracks the picks name, in their order.
@@ -1410,18 +1458,23 @@ fn follows_key(c: &rusqlite::Connection) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
+    use std::time::Duration;
 
     use lull_core::ids::AlbumId;
+    use lull_core::model::{Album, Saved, Track};
+    use lull_core::{Result, catalog};
 
     use lull_core::ids::{ArtistId, TrackId};
 
     use super::{
-        Candidate, NEW_RELEASES, Reason, ReasonKind, Shelved, answered, next_to_ask, rank_releases, related_tags, shown,
+        Candidate, NEW_RELEASES, Reason, ReasonKind, Shelved, answered, current_records, next_to_ask, rank_releases,
+        related_tags, shown,
     };
-    use crate::picking;
     use crate::sources::{Release, Song};
+    use crate::store::{self, entities};
     use crate::taste::{Mark, Named, Signals, Taste};
+    use crate::{art, picking, search};
 
     const NOW: i64 = 1_800_000_000;
 
@@ -1699,5 +1752,156 @@ mod tests {
             Some(2),
             "an unanswered one above the twelfth could still take its place"
         );
+    }
+
+    /// The catalog, for picks: knows one song, on Deezer's album, and records it with its cover
+    /// as `find_song` does.
+    struct Deezerish(lull_core::db::Db);
+
+    #[async_trait::async_trait]
+    impl lull_core::seams::Catalog for Deezerish {
+        async fn find_song(&self, q: &lull_core::model::SongQuery) -> Result<Option<Track>> {
+            if q.title != "Paper Moon Static" {
+                return Ok(None);
+            }
+            let found = store::track(Song {
+                album: "Satellite Porch (Deluxe)".into(),
+                year: Some(2024),
+                ..song("Velvet Orchard", "Paper Moon Static", "Satellite Porch")
+            });
+            let (album, track) = (album_of(&found), found.clone());
+            self.0
+                .call(move |c| {
+                    catalog::remember(c, &[track])?;
+                    catalog::remember_album(c, &album, Some("https://cdn.example/deezer/{size}.jpg"))
+                })
+                .await?;
+            Ok(Some(found))
+        }
+
+        fn same_take(&self, _: &lull_core::model::SongQuery, _: &Track) -> bool {
+            true
+        }
+    }
+
+    /// The album record a catalog keeps for a track's album.
+    fn album_of(t: &Track) -> Album {
+        Album {
+            id: t.album_id.clone(),
+            title: t.album.clone(),
+            artist_id: t.artist_id.clone(),
+            artist: t.artist.clone(),
+            year: None,
+            kind: None,
+            released: None,
+            label: None,
+            tags: Vec::new(),
+            saved: Saved::None,
+            track_ids: vec![t.id.clone()],
+            duration: None,
+            musicbrainz_id: None,
+        }
+    }
+
+    fn song(artist: &str, title: &str, album: &str) -> Song {
+        Song {
+            album: album.into(),
+            ..candidate(artist, title).song
+        }
+    }
+
+    async fn catalog_db() -> Result<lull_core::db::Db> {
+        let db = lull_core::db::Db::memory()?;
+        db.migrate(&catalog::MIGRATIONS)?;
+        db.migrate(&crate::MIGRATIONS)?;
+        Ok(db)
+    }
+
+    #[tokio::test]
+    async fn a_built_feeds_picks_come_with_albums_that_have_a_cover_source() -> Result<()> {
+        // Live, 1 of 12 picks had an album record: a song played from Home had no cover in the
+        // player bar until a lookup ran after it started, and "Go to album" opened the wrong one.
+        let db = catalog_db().await?;
+        let found = song("Velvet Orchard", "Paper Moon Static", "Satellite Porch");
+        let mut lost = song("Night Arcade", "Glass Hour", "Slow Weather");
+        lost.album_mbid = Some("0c0b1cc8-36e2-3c8e-9b22-6e1ab3e1c1b5".into());
+        let songs = vec![found, lost];
+        let mut tracks = db
+            .call({
+                let fresh: Vec<Track> = songs.iter().cloned().map(store::track).collect();
+                move |c| catalog::remember_found(c, fresh)
+            })
+            .await?;
+        let sources: HashMap<TrackId, Song> = tracks.iter().map(|t| t.id.clone()).zip(songs).collect();
+
+        let ids: Vec<TrackId> = tracks.iter().map(|t| t.id.clone()).collect();
+        let resolved = search::resolve::now(&db, &Deezerish(db.clone()), &ids, Duration::from_secs(30)).await;
+        assert_eq!(
+            resolved.len(),
+            1,
+            "the catalog knows one of them; the other stays as it is"
+        );
+        for r in resolved {
+            if let Some(t) = tracks.iter_mut().find(|t| t.id == r.id) {
+                *t = r;
+            }
+        }
+
+        let (on, pictured) = db
+            .call(move |c| {
+                let albums = store::albums_of(c, &tracks, &sources)?;
+                let e = entities(tracks.clone(), albums, Vec::new());
+                Ok((tracks, art::picture(c, e)?))
+            })
+            .await?;
+        for t in &on {
+            let album = pictured.albums.get(&t.album_id);
+            assert!(
+                album.is_some_and(|a| a.art.is_some()),
+                "{} has an album with a cover source",
+                t.title
+            );
+        }
+        let resolved = &on[0];
+        assert_eq!(resolved.album, "Satellite Porch (Deluxe)", "on the catalog's album");
+        let kept = &pictured.albums[&on[1].album_id];
+        assert_eq!(
+            kept.album.musicbrainz_id.as_deref(),
+            Some("0c0b1cc8-36e2-3c8e-9b22-6e1ab3e1c1b5"),
+            "the release group stays for the Cover Art Archive"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_feed_read_after_a_lookup_serves_the_new_album_not_the_one_it_was_built_with() -> Result<()> {
+        let db = catalog_db().await?;
+        let bare = store::track(song("Velvet Orchard", "Paper Moon Static", "Satellite Porch"));
+        let built = entities(vec![bare.clone()], Vec::new(), Vec::new());
+        let id = bare.id.clone();
+        let old_album = bare.album_id.clone();
+        let (read, stored) = db
+            .call(move |c| {
+                catalog::remember(c, &[bare])?;
+                let stored = built.clone();
+                // The resolve worker's lookup, after the feed was stored.
+                let deluxe = store::track(Song {
+                    album: "Satellite Porch (Deluxe)".into(),
+                    ..song("Velvet Orchard", "Paper Moon Static", "Satellite Porch")
+                });
+                catalog::remember_album(c, &album_of(&deluxe), Some("https://cdn.example/{size}.jpg"))?;
+                catalog::enrich(c, &id, &deluxe, 1)?;
+                Ok((current_records(c, built)?, stored))
+            })
+            .await?;
+        let now = read.tracks.values().next().map(|t| t.album_id.clone());
+        assert_ne!(now, Some(old_album), "the stored copy's album was replaced");
+        assert_eq!(
+            now.as_ref().and_then(|a| read.albums.get(a)).map(|a| a.title.as_str()),
+            Some("Satellite Porch (Deluxe)"),
+            "with the album it stands on now"
+        );
+        assert_eq!(stored.tracks.len(), 1);
+        Ok(())
     }
 }
