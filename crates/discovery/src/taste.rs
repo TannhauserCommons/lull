@@ -4,7 +4,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use lull_core::ids::{AlbumId, ArtistId, TrackId, loose_artist, loose_title};
+use lull_core::ids::{AlbumId, ArtistId, TrackId, is_pseudo_artist, loose_artist, loose_title};
 use serde::{Deserialize, Serialize};
 
 use crate::radio::credited_names;
@@ -72,7 +72,9 @@ pub struct Placed {
 impl Signals {
     /// The artist a signal is about: its song's placement, else its name's.
     fn who(&self, artist: &str, track: Option<&TrackId>) -> Option<ArtistId> {
-        if artist.is_empty() {
+        // "Various Artists" and the like are a filing, not someone the listener can like. A signal
+        // on one, old data included, weighs no artist (its songs' tags still count).
+        if artist.is_empty() || is_pseudo_artist(artist) {
             return None;
         }
         let Some(placed) = &self.namesakes else {
@@ -254,6 +256,8 @@ pub struct Taste {
     /// Artists the listener came back to (`ESTABLISHED_DAYS`) or acted on: only they seed picks
     /// and count for a tag.
     established: HashSet<ArtistId>,
+    /// The established artists whose standing isn't only a saved album (`listened_artists`).
+    listened: HashSet<ArtistId>,
     /// Artists kept out of picks and radio: "less like this", or skipped on 2 or more days. A
     /// skip or two on one day doesn't hold an artist back.
     held_back: HashSet<ArtistId>,
@@ -336,7 +340,7 @@ impl Taste {
             let who = s.who(artist, None);
             acc.add(who.clone(), artist, None, weight::LIBRARY * log_share(*albums, most));
             acc.note(&who, |e| e.library = u32::try_from(*albums).unwrap_or(u32::MAX));
-            acc.acted(&who);
+            acc.kept(&who);
         }
         acc.settle();
 
@@ -346,6 +350,7 @@ impl Taste {
         }
         let evidence = std::mem::take(&mut acc.evidence);
         let established = std::mem::take(&mut acc.established);
+        let listened = std::mem::take(&mut acc.listened);
         let held_back: HashSet<ArtistId> = acc
             .artists
             .iter()
@@ -384,16 +389,26 @@ impl Taste {
                 .collect(),
             evidence,
             established,
+            listened,
             held_back,
         }
     }
 
     /// The best-liked artists that may seed picks: established ones (heard on separate days, or
-    /// acted on), strongest first.
+    /// acted on), strongest first. Never a pseudo-artist ("Various Artists").
     pub fn seed_artists(&self, n: usize) -> impl Iterator<Item = &Weighted> {
         self.artists
             .iter()
-            .filter(|a| a.weight > 0.0 && self.established.contains(&a.id))
+            .filter(|a| a.weight > 0.0 && self.established.contains(&a.id) && !is_pseudo_artist(&a.name))
+            .take(n)
+    }
+
+    /// The artists the listener really listens to or chose, strongest first: heard on separate
+    /// days, liked, saved, followed, asked for, or in their Last.fm history; not one only a saved
+    /// album stands for. These are the "artists you like" of Home's new releases.
+    pub fn listened_artists(&self, n: usize) -> impl Iterator<Item = &Weighted> {
+        self.seed_artists(usize::MAX)
+            .filter(|a| self.listened.contains(&a.id))
             .take(n)
     }
 
@@ -481,8 +496,11 @@ struct Accumulator<'a> {
     skip_days: HashMap<ArtistId, HashSet<i64>>,
     /// Artists the listener acted on, and those they asked for less of.
     acted: HashSet<ArtistId>,
+    /// Artists with saved albums: established (they seed picks) but not "listened to".
+    kept: HashSet<ArtistId>,
     disliked: HashSet<ArtistId>,
     established: HashSet<ArtistId>,
+    listened: HashSet<ArtistId>,
     /// What songs nothing places weigh, by their tags: they count for no artist, but for the tags.
     loose: HashMap<String, f64>,
 }
@@ -497,8 +515,10 @@ impl<'a> Accumulator<'a> {
             heard_days: HashMap::new(),
             skip_days: HashMap::new(),
             acted: HashSet::new(),
+            kept: HashSet::new(),
             disliked: HashSet::new(),
             established: HashSet::new(),
+            listened: HashSet::new(),
             loose: HashMap::new(),
         }
     }
@@ -514,8 +534,15 @@ impl<'a> Accumulator<'a> {
             .iter()
             .filter(|(_, days)| days.len() >= ESTABLISHED_DAYS)
             .map(|(id, _)| id.clone());
-        self.established = self.acted.iter().cloned().chain(returned).collect();
+        self.listened = self.acted.iter().cloned().chain(returned).collect();
+        self.listened.retain(|id| !self.signals.hidden.contains(id));
+        self.established = self.listened.iter().chain(&self.kept).cloned().collect();
         self.established.retain(|id| !self.signals.hidden.contains(id));
+    }
+
+    /// The listener keeps albums of the artist: that establishes it, as before, but isn't listening.
+    fn kept(&mut self, who: &Option<ArtistId>) {
+        self.kept.extend(who.clone());
     }
 
     /// Records what the listener did with the artist (a hidden one isn't kept).

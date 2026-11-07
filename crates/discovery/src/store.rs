@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use lull_core::catalog;
 use lull_core::db::Db;
-use lull_core::ids::{AlbumId, ArtistId, TrackId};
+use lull_core::ids::{AlbumId, ArtistId, TrackId, is_pseudo_artist};
 use lull_core::model::{Album, Artist, Entities, Saved, Track};
 use lull_core::seams::Library;
 use lull_core::{Error, Result};
@@ -285,10 +285,26 @@ impl Store {
     }
 
     /// The saved library's artists and how many of their albums it holds (taste's `library`).
+    /// A compilation's owner ("Various Artists") is no artist: each artist on its saved songs is
+    /// credited with the album instead.
     pub async fn library_albums(&self) -> Result<Vec<(String, u64)>> {
         let mut counts: BTreeMap<String, u64> = BTreeMap::new();
         for album in self.library.albums(None).await? {
-            *counts.entry(album.artist).or_default() += 1;
+            if !is_pseudo_artist(&album.artist) {
+                *counts.entry(album.artist).or_default() += 1;
+                continue;
+            }
+            let Some((_, tracks)) = self.library.album(&album.id).await? else {
+                continue;
+            };
+            let on_it: BTreeSet<String> = tracks
+                .into_iter()
+                .map(|t| t.artist)
+                .filter(|a| !is_pseudo_artist(a))
+                .collect();
+            for artist in on_it {
+                *counts.entry(artist).or_default() += 1;
+            }
         }
         Ok(counts.into_iter().collect())
     }
@@ -1151,12 +1167,13 @@ fn rows<T>(
 #[cfg(test)]
 mod tests {
     use lull_core::Result;
-    use lull_core::ids::{ArtistId, TrackId};
-    use lull_core::model::Artist;
+    use lull_core::ids::{AlbumId, ArtistId, TrackId};
+    use lull_core::model::{Album, Artist, Saved, Track};
+    use lull_core::seams::Library;
     use rusqlite::Connection;
 
     use super::{
-        artist, artist_ids, put_artists, recent_plays, remember_pick_seeds, replace_ids, seed_from_search,
+        Store, artist, artist_ids, put_artists, recent_plays, remember_pick_seeds, replace_ids, seed_from_search,
         seed_outcomes,
     };
     use crate::artist::identity::{Evidence, IdRow, Ids, Source};
@@ -1168,6 +1185,88 @@ mod tests {
             c.execute_batch(step)?;
         }
         Ok(c)
+    }
+
+    /// A library of one compilation filed under "Various Artists" and one album by a band.
+    struct Shelves;
+
+    fn saved_song(artist: &str, album: &str, title: &str) -> Track {
+        Track {
+            id: TrackId::of(artist, album, title),
+            title: title.into(),
+            artist_id: ArtistId::of(artist),
+            artist: artist.into(),
+            album_id: AlbumId::of("Various Artists", album),
+            album: album.into(),
+            year: None,
+            no: None,
+            disc: None,
+            duration: None,
+            tags: Vec::new(),
+            saved: true,
+            file: None,
+        }
+    }
+
+    fn saved_album(owner: &str, title: &str) -> Album {
+        Album {
+            id: AlbumId::of(owner, title),
+            title: title.into(),
+            artist_id: ArtistId::of(owner),
+            artist: owner.into(),
+            year: None,
+            kind: None,
+            released: None,
+            label: None,
+            tags: Vec::new(),
+            saved: Saved::All,
+            track_ids: Vec::new(),
+            duration: None,
+            musicbrainz_id: None,
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Library for Shelves {
+        async fn search(&self, _: &str, _: usize) -> Result<Vec<Track>> {
+            Ok(Vec::new())
+        }
+        async fn saved(&self, _: &[TrackId]) -> Result<Vec<Track>> {
+            Ok(Vec::new())
+        }
+        async fn albums(&self, _: Option<&ArtistId>) -> Result<Vec<Album>> {
+            Ok(vec![
+                saved_album("Various Artists", "Bravo Hits 135"),
+                saved_album("Glow Tape", "Second Light"),
+            ])
+        }
+        async fn album(&self, id: &AlbumId) -> Result<Option<(Album, Vec<Track>)>> {
+            let comp = saved_album("Various Artists", "Bravo Hits 135");
+            Ok((*id == comp.id).then(|| {
+                let tracks = vec![
+                    saved_song("Night Arcade", "Bravo Hits 135", "One"),
+                    saved_song("Tidal Bloom", "Bravo Hits 135", "Two"),
+                    saved_song("Night Arcade", "Bravo Hits 135", "Three"),
+                    saved_song("Various Artists", "Bravo Hits 135", "Four"),
+                ];
+                (comp, tracks)
+            }))
+        }
+    }
+
+    #[tokio::test]
+    async fn a_compilation_in_the_library_credits_its_track_artists_never_various_artists() -> Result<()> {
+        let store = Store::new(lull_core::db::Db::memory()?, std::sync::Arc::new(Shelves), false);
+        assert_eq!(
+            store.library_albums().await?,
+            [
+                ("Glow Tape".to_owned(), 1),
+                ("Night Arcade".to_owned(), 1),
+                ("Tidal Bloom".to_owned(), 1),
+            ],
+            "one album each; the compilation's owner holds none"
+        );
+        Ok(())
     }
 
     fn tagged(name: &str, mbid: &str, tags: &[&str]) -> Artist {

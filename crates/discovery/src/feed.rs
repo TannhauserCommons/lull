@@ -3,10 +3,10 @@
 //! when follows change, or after feedback. A shelf whose source failed is empty and says why in
 //! `errors`; the other shelves still come.
 //!
-//! New releases show only what can play: saved albums and those Soulseek peers share
-//! (`check_shelf`). Remembered answers fill the shelf at once; the rest are searched one at a
-//! time, best first, only while they could still make the shelf. The shelf is served with the
-//! answers in after 3 s, and re-served (`feed.updated`) as later ones arrive.
+//! New releases show only what can play: saved albums, those Soulseek peers share and those
+//! YouTube has (`check_shelf`). Remembered answers fill the shelf at once; the rest are asked
+//! one at a time, best first, only while they could still make the shelf. The shelf is served
+//! with the answers in after 3 s, and re-served (`feed.updated`) as later ones arrive.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use axum::Json;
 use axum::extract::State;
-use lull_core::ids::{AlbumId, ArtistId, TrackId};
+use lull_core::ids::{AlbumId, ArtistId, TrackId, is_pseudo_artist};
 use lull_core::model::{Album, Artist, Entities, Saved, Track};
 use lull_core::{Error, Result};
 use rusqlite::OptionalExtension;
@@ -98,10 +98,6 @@ pub struct Feed {
     /// On a first run, artists of the starter tags' picks, to follow from the first-run screen.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cold_start_artists: Vec<ArtistId>,
-    /// New releases shown that no Soulseek peer shares yet: by artists the listener follows or
-    /// likes, shown quietly as not shared (`Shelved::playable`).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub unshared: Vec<AlbumId>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
     pub errors: BTreeMap<String, String>,
     pub entities: Entities,
@@ -201,20 +197,28 @@ pub struct Shelved {
     pub id: AlbumId,
     pub artist: String,
     pub title: String,
-    /// By an artist the listener follows or likes.
+    /// By an artist the listener follows or really listens to (`Taste::listened_artists`).
     pub liked: bool,
-    /// Saved in the library: shown without asking Soulseek.
+    /// Saved in the library: shown without asking Soulseek or YouTube.
     pub saved: bool,
     /// Soulseek's answer: `None` until it gives one.
-    pub available: Option<bool>,
+    #[serde(alias = "available")]
+    pub soulseek: Option<bool>,
+    /// YouTube's answer: `None` until it gives one, or while YouTube is off.
+    #[serde(default)]
+    pub youtube: Option<bool>,
 }
 
 impl Shelved {
-    /// Can go on the shelf: saved, or peers share it, or by an artist the listener follows or
-    /// likes even when no peer shares it yet (shown quietly as not shared, `releaseAvail`). A
-    /// release without an answer can't.
+    /// Can go on the shelf: saved, or Soulseek peers share it, or YouTube has it. A release
+    /// nobody has a copy of, or nobody has answered for, never is.
     fn playable(&self) -> bool {
-        self.saved || self.available == Some(true) || (self.liked && self.available == Some(false))
+        self.saved || self.soulseek == Some(true) || self.youtube == Some(true)
+    }
+
+    /// Whether a source still has to say: no copy found, and one source has not answered.
+    fn unasked(&self) -> bool {
+        !self.playable() && (self.soulseek.is_none() || self.youtube.is_none())
     }
 }
 
@@ -231,8 +235,15 @@ pub struct Feeds {
     shelf_checks: AtomicU64,
 }
 
-/// Soulseek's answers as they arrive.
-type Answers = mpsc::UnboundedReceiver<(AlbumId, bool)>;
+/// What one source says about a release.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Answer {
+    Soulseek(bool),
+    Youtube(bool),
+}
+
+/// The sources' answers as they arrive.
+type Answers = mpsc::UnboundedReceiver<(AlbumId, Answer)>;
 
 #[derive(Serialize)]
 struct Updated {
@@ -253,14 +264,7 @@ pub async fn get(State(svc): State<Arc<Service>>) -> Result<Json<serde_json::Val
     if lull_core::now() - built.feed.updated > STALE_AFTER_S || follows != built.follows {
         refresh_soon(&svc);
     }
-    let unshared: Vec<AlbumId> = built
-        .shelf
-        .iter()
-        .filter(|c| !c.saved && c.available == Some(false) && built.feed.new_releases.contains(&c.id))
-        .map(|c| c.id.clone())
-        .collect();
     let mut feed = built.feed;
-    feed.unshared = unshared;
     feed.followed_tags = followed_tags;
     // Hiding takes effect at once; the rebuild catches up with the rest.
     feed.picks.retain(|p| {
@@ -493,7 +497,7 @@ async fn persist(svc: &Service, built: &Built) -> Result<()> {
         .await
 }
 
-/// Starts asking Soulseek about this shelf, which stops any check of an older one.
+/// Starts asking Soulseek and YouTube about this shelf, which stops any check of an older one.
 fn ask_soulseek(svc: &Arc<Service>, shelf: &[Shelved]) -> Answers {
     let (tx, rx) = mpsc::unbounded_channel();
     let check = svc.feed.shelf_checks.fetch_add(1, Ordering::SeqCst) + 1;
@@ -511,14 +515,14 @@ async fn check_shelf(
     svc: Arc<Service>,
     check: u64,
     mut shelf: Vec<Shelved>,
-    tx: mpsc::UnboundedSender<(AlbumId, bool)>,
+    tx: mpsc::UnboundedSender<(AlbumId, Answer)>,
 ) {
     let current = || svc.feed.shelf_checks.load(Ordering::SeqCst) == check && !tx.is_closed();
-    for c in shelf.iter_mut().filter(|c| !c.saved && c.available.is_none()) {
+    for c in shelf.iter_mut().filter(|c| !c.saved && c.soulseek.is_none()) {
         match svc.transfers.album_known(&c.artist, &c.title).await {
             Ok(Some(shared)) => {
-                c.available = Some(shared);
-                let _ = tx.send((c.id.clone(), shared));
+                c.soulseek = Some(shared);
+                let _ = tx.send((c.id.clone(), Answer::Soulseek(shared)));
             }
             Ok(None) => {}
             Err(e) => tracing::info!(error = %e, album = %c.id, "reading Soulseek's remembered answer"),
@@ -531,14 +535,23 @@ async fn check_shelf(
                 return;
             }
             let c = &mut shelf[i];
-            match ask(&svc, c).await {
-                Some(shared) => {
-                    c.available = Some(shared);
-                    let _ = tx.send((c.id.clone(), shared));
-                }
-                None => {
-                    unanswered.insert(c.id.clone());
-                }
+            if c.soulseek.is_none()
+                && let Some(shared) = ask(&svc, c).await
+            {
+                c.soulseek = Some(shared);
+                let _ = tx.send((c.id.clone(), Answer::Soulseek(shared)));
+            }
+            // YouTube is asked only for a release Soulseek doesn't have, behind the listener's own
+            // yt-dlp work (`Youtube::album_available`).
+            if !c.playable()
+                && c.youtube.is_none()
+                && let Some(found) = ask_youtube(&svc, c).await
+            {
+                c.youtube = Some(found);
+                let _ = tx.send((c.id.clone(), Answer::Youtube(found)));
+            }
+            if c.unasked() {
+                unanswered.insert(c.id.clone());
             }
         }
         if unanswered.is_empty() {
@@ -564,8 +577,21 @@ async fn ask(svc: &Service, c: &Shelved) -> Option<bool> {
     }
 }
 
-/// The best release still to ask about that could make the shelf: one without an answer
-/// (and not in `skip`) with fewer than `NEW_RELEASES` playable releases ranked above it.
+/// Whether YouTube has the release; `None` when it can't say now (off, or backed off).
+async fn ask_youtube(svc: &Service, c: &Shelved) -> Option<bool> {
+    let asked = svc.youtube.album_available(&c.artist, &c.title);
+    match tokio::time::timeout(AVAILABILITY_LIMIT, asked).await {
+        Ok(Ok(answer)) => answer,
+        Ok(Err(e)) => {
+            tracing::info!(error = %e, album = %c.id, "YouTube couldn't say whether it has the release");
+            None
+        }
+        Err(_) => None,
+    }
+}
+
+/// The best release still to ask about that could make the shelf: one a source has yet to
+/// answer for (and not in `skip`) with fewer than `NEW_RELEASES` playable releases ranked above it.
 fn next_to_ask(shelf: &[Shelved], skip: &HashSet<AlbumId>) -> Option<usize> {
     let mut playable = 0;
     for (i, c) in shelf.iter().enumerate() {
@@ -574,7 +600,7 @@ fn next_to_ask(shelf: &[Shelved], skip: &HashSet<AlbumId>) -> Option<usize> {
         }
         if c.playable() {
             playable += 1;
-        } else if c.available.is_none() && !skip.contains(&c.id) {
+        } else if c.unasked() && !skip.contains(&c.id) {
             return Some(i);
         }
     }
@@ -601,7 +627,7 @@ async fn keep_checking(svc: Arc<Service>, mut answers: Answers) {
     }
 }
 
-async fn reshelve(svc: &Service, batch: Vec<(AlbumId, bool)>) -> Result<()> {
+async fn reshelve(svc: &Service, batch: Vec<(AlbumId, Answer)>) -> Result<()> {
     let mut current = svc.feed.current.write().await;
     let Some(built) = current.as_mut() else { return Ok(()) };
     let mut changed = false;
@@ -624,17 +650,22 @@ async fn reshelve(svc: &Service, batch: Vec<(AlbumId, bool)>) -> Result<()> {
     Ok(())
 }
 
-/// Records Soulseek's answer for a release on the shelf; returns whether it changed anything.
-fn answered(shelf: &mut [Shelved], id: &AlbumId, shared: bool) -> bool {
+/// Records a source's answer for a release on the shelf; returns whether it changed anything.
+fn answered(shelf: &mut [Shelved], id: &AlbumId, answer: Answer) -> bool {
     shelf.iter_mut().filter(|c| c.id == *id).fold(false, |changed, c| {
-        let differs = c.available != Some(shared);
-        c.available = Some(shared);
+        let (slot, found) = match answer {
+            Answer::Soulseek(found) => (&mut c.soulseek, found),
+            Answer::Youtube(found) => (&mut c.youtube, found),
+        };
+        let differs = *slot != Some(found);
+        *slot = Some(found);
         changed || differs
     })
 }
 
-/// The new releases shown: saved ones and those Soulseek peers share, best first. A release
-/// without an answer isn't shown: the shelf is empty rather than wrong while Soulseek can't say.
+/// The new releases shown: saved ones, those Soulseek peers share and those YouTube has, best
+/// first. A release without a copy, or without an answer, isn't shown: the shelf is short rather
+/// than wrong while the sources can't say.
 pub fn shown(shelf: &[Shelved]) -> Vec<AlbumId> {
     shelf
         .iter()
@@ -764,7 +795,8 @@ async fn build(svc: &Arc<Service>, resolve_within: Duration) -> Result<(Built, A
             title: a.title.clone(),
             liked: why.is_some(),
             saved: matches!(a.saved, Saved::All | Saved::Partial),
-            available: None,
+            soulseek: None,
+            youtube: None,
         })
         .collect();
     let mut answers = ask_soulseek(svc, &shelf);
@@ -816,7 +848,6 @@ async fn build(svc: &Arc<Service>, resolve_within: Duration) -> Result<(Built, A
             cold_start_tags: COLD_START_TAGS.iter().map(|t| (*t).to_owned()).collect(),
             cold,
             cold_start_artists,
-            unshared: Vec::new(),
             errors,
             entities: entities(all_tracks, all_albums, artists),
         },
@@ -923,7 +954,7 @@ async fn own_releases(
 ) -> (Vec<Release>, HashMap<AlbumId, AlbumSource>) {
     let since = pages::iso_date(lull_core::now() - NEW_DAYS * 86_400);
     let mut artists: Vec<(ArtistId, String)> = followed.to_vec();
-    for a in taste.seed_artists(OWN_RELEASES_ARTISTS) {
+    for a in taste.listened_artists(OWN_RELEASES_ARTISTS) {
         if !artists.iter().any(|(id, _)| *id == a.id) {
             artists.push((a.id.clone(), a.name.clone()));
         }
@@ -1050,7 +1081,9 @@ fn rank_releases(
     fans: &HashSet<ArtistId>,
 ) -> Vec<(Release, Option<String>)> {
     let followed: HashSet<&ArtistId> = followed.iter().map(|(id, _)| id).collect();
-    let liked: HashMap<&ArtistId, f64> = taste.seed_artists(60).map(|a| (&a.id, a.weight)).collect();
+    // "Artists you like" are those the listener really listens to or chose, not one a saved album
+    // alone stands for.
+    let liked: HashMap<&ArtistId, f64> = taste.listened_artists(60).map(|a| (&a.id, a.weight)).collect();
     let mut tags: HashMap<String, f64> = taste.dig_tags().take(8).cloned().collect();
     for t in followed_tags {
         *tags.entry(t.to_lowercase()).or_default() += 1.0;
@@ -1063,7 +1096,10 @@ fn rank_releases(
             if taste.hidden.contains(&id) || taste.knows_release(&r.artist, &r.title) || is_reissue(&r.title) {
                 return None;
             }
-            let by_artist = if followed.contains(&id) {
+            // A compilation's owner is no artist: it matches by tag or fans like any release.
+            let by_artist = if is_pseudo_artist(&r.artist) {
+                None
+            } else if followed.contains(&id) {
                 Some(100.0)
             } else {
                 liked.get(&id).map(|w| 50.0 + w)
@@ -1469,8 +1505,8 @@ mod tests {
     use lull_core::ids::{ArtistId, TrackId};
 
     use super::{
-        Candidate, NEW_RELEASES, Reason, ReasonKind, Shelved, answered, current_records, next_to_ask, rank_releases,
-        related_tags, shown,
+        Answer, Candidate, NEW_RELEASES, Reason, ReasonKind, Shelved, answered, current_records, next_to_ask,
+        rank_releases, related_tags, shown,
     };
     use crate::sources::{Release, Song};
     use crate::store::{self, entities};
@@ -1582,22 +1618,104 @@ mod tests {
     }
 
     #[test]
-    fn a_liked_artists_release_nobody_shares_yet_is_shown_and_an_unanswered_one_isnt() {
-        let shelf = |liked, available| Shelved {
-            id: AlbumId::of("Glow Tape", &format!("{liked} {available:?}")),
+    fn a_release_shows_only_when_a_source_has_a_copy() {
+        let release = |soulseek, youtube| Shelved {
+            id: AlbumId::of("Glow Tape", &format!("{soulseek:?} {youtube:?}")),
             artist: "Glow Tape".into(),
-            title: format!("{liked} {available:?}"),
-            liked,
+            title: format!("{soulseek:?} {youtube:?}"),
+            liked: true,
             saved: false,
-            available,
+            soulseek,
+            youtube,
         };
         let shelf = vec![
-            shelf(true, Some(false)),
-            shelf(true, None),
-            shelf(false, Some(false)),
-            shelf(false, Some(true)),
+            release(Some(false), Some(false)),
+            release(Some(false), None),
+            release(None, None),
+            release(Some(true), None),
+            release(Some(false), Some(true)),
         ];
-        assert_eq!(shown(&shelf), [shelf[0].id.clone(), shelf[3].id.clone()]);
+        assert_eq!(
+            shown(&shelf),
+            [shelf[3].id.clone(), shelf[4].id.clone()],
+            "a liked artist's release nobody has isn't shown; one only YouTube has is"
+        );
+        assert_eq!(
+            next_to_ask(&shelf, &HashSet::new()),
+            Some(1),
+            "a release Soulseek lacks still waits for YouTube's word"
+        );
+    }
+
+    #[test]
+    fn a_release_that_gains_a_copy_appears_when_it_is_asked_again() {
+        let mut shelf = vec![release(0, false)];
+        let id = shelf[0].id.clone();
+        answered(&mut shelf, &id, Answer::Soulseek(false));
+        answered(&mut shelf, &id, Answer::Youtube(false));
+        assert!(shown(&shelf).is_empty());
+        assert!(answered(&mut shelf, &id, Answer::Youtube(true)));
+        assert_eq!(shown(&shelf).len(), 1);
+    }
+
+    #[test]
+    fn a_compilation_credited_to_various_artists_is_no_liked_artist_match() {
+        let signals = Signals {
+            library: vec![("Various Artists".into(), 5)],
+            followed_artists: vec!["Various Artists".into()],
+            ..Default::default()
+        };
+        let taste = Taste::build(&signals, NOW);
+        assert_eq!(taste.seed_artists(60).count(), 0, "no pseudo-artist seeds anything");
+        let ranked = rank_releases(
+            vec![fresh("Various Artists", "Bravo Hits 135", &[])],
+            &taste,
+            &[(ArtistId::of("Various Artists"), "Various Artists".into())],
+            &[],
+            &HashSet::new(),
+        );
+        assert!(ranked.is_empty(), "it matches nothing the listener likes");
+        let ranked = rank_releases(
+            vec![fresh("Various Artists", "Chill Hits", &["chillwave"])],
+            &listener(),
+            &[],
+            &[],
+            &HashSet::new(),
+        );
+        assert!(
+            ranked[0].1.is_none(),
+            "by tag it is a release like any, not 'fresh from an artist you like'"
+        );
+    }
+
+    #[test]
+    fn an_artist_only_in_the_library_is_not_liked_for_releases() {
+        let signals = Signals {
+            library: vec![("Quiet Shelf".into(), 3)],
+            ..Default::default()
+        };
+        let taste = Taste::build(&signals, NOW);
+        assert_eq!(taste.seed_artists(60).count(), 1, "saved albums still seed picks");
+        assert_eq!(taste.listened_artists(60).count(), 0);
+        let ranked = rank_releases(
+            vec![fresh("Quiet Shelf", "New One", &[])],
+            &taste,
+            &[],
+            &[],
+            &HashSet::new(),
+        );
+        assert!(
+            ranked.is_empty(),
+            "no plays, likes, saves or follows: not a liked artist"
+        );
+        let liked = rank_releases(
+            vec![fresh("Glow Tape", "New One", &[])],
+            &listener(),
+            &[],
+            &[],
+            &HashSet::new(),
+        );
+        assert_eq!(liked[0].1.as_deref(), Some("Glow Tape"));
     }
 
     #[test]
@@ -1698,7 +1816,8 @@ mod tests {
             title: format!("Release {n}"),
             liked: false,
             saved,
-            available: None,
+            soulseek: None,
+            youtube: None,
         }
     }
 
@@ -1713,16 +1832,19 @@ mod tests {
         );
         let id = |n: usize| shelf[n].id.clone();
         let (one, two, three, twenty) = (id(1), id(2), id(3), id(20));
-        assert!(answered(&mut shelf, &one, false));
-        assert!(answered(&mut shelf, &two, true));
-        assert!(answered(&mut shelf, &twenty, true));
-        assert!(!answered(&mut shelf, &twenty, true), "the same answer changes nothing");
+        assert!(answered(&mut shelf, &one, Answer::Soulseek(false)));
+        assert!(answered(&mut shelf, &two, Answer::Soulseek(true)));
+        assert!(answered(&mut shelf, &twenty, Answer::Soulseek(true)));
+        assert!(
+            !answered(&mut shelf, &twenty, Answer::Soulseek(true)),
+            "the same answer changes nothing"
+        );
         assert_eq!(
             shown(&shelf),
             [two.clone(), shelf[4].id.clone(), twenty.clone()],
             "peers share it, or it is saved; unchecked ones wait"
         );
-        answered(&mut shelf, &three, true);
+        answered(&mut shelf, &three, Answer::Soulseek(true));
         assert_eq!(shown(&shelf)[..2], [two, three]);
     }
 
@@ -1732,7 +1854,8 @@ mod tests {
         let none = HashSet::new();
         assert_eq!(next_to_ask(&shelf, &none), Some(1), "saved ones need no search");
         let id = |n: usize| AlbumId::of("Velvet Orchard", &format!("Release {n}"));
-        answered(&mut shelf, &id(1), false);
+        answered(&mut shelf, &id(1), Answer::Soulseek(false));
+        answered(&mut shelf, &id(1), Answer::Youtube(false));
         let unanswerable = HashSet::from([id(2)]);
         assert_eq!(
             next_to_ask(&shelf, &unanswerable),
@@ -1740,7 +1863,7 @@ mod tests {
             "one Soulseek couldn't answer for waits for the next round"
         );
         for n in 3..3 + NEW_RELEASES - 1 {
-            answered(&mut shelf, &id(n), true);
+            answered(&mut shelf, &id(n), Answer::Soulseek(true));
         }
         assert_eq!(shown(&shelf).len(), NEW_RELEASES);
         assert_eq!(

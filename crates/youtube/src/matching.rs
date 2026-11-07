@@ -266,6 +266,18 @@ pub fn candidates<'a>(wanted: &Wanted, found: &'a [Candidate], strictness: Match
     list
 }
 
+/// Whether an upload is the release itself, for new releases' availability: by the release's
+/// artist (`by_artist`) and naming the release as a run of words ("Artist - Album (Full Album)",
+/// a single's own song), and no other version of it. Its length is any length, and so is who
+/// uploaded it, unless the listener asks for official uploads only.
+pub fn holds_release(artist: &str, album: &str, c: &Candidate, strictness: Match) -> bool {
+    let wanted = Wanted::named(artist, album, None);
+    !another_version(&wanted, c)
+        && (strictness != Match::Official || c.official(&wanted))
+        && by_artist(&wanted, c)
+        && contains_words(&loose_title(&split(&c.title).1), &wanted.title)
+}
+
 /// The title alone, for YouTube Music's song results, which name no artist or length until the
 /// upload is extracted.
 pub fn title_matches(wanted: &Wanted, raw_title: &str) -> bool {
@@ -573,6 +585,24 @@ mod tests {
 
     fn fishes() -> Wanted {
         song("Radiohead", "Weird Fishes / Arpeggi", "In Rainbows", 318)
+    }
+
+    #[test]
+    fn an_upload_that_names_the_release_by_its_artist_holds_it() {
+        let held = |title: &str, channel: &str| {
+            holds_release("Glow Tape", "Second Light", &upload(title, channel, 2400), Match::Close)
+        };
+        assert!(held("Glow Tape - Second Light (Full Album)", "Some Uploader"));
+        assert!(held("Second Light", "Glow Tape - Topic"));
+        assert!(!held("Second Light (Live)", "Glow Tape - Topic"), "another version");
+        assert!(!held("Other Band - Second Light", "Other Band"), "another artist's");
+        assert!(!held("Glow Tape - First Light", "Glow Tape"), "another release");
+        assert!(!holds_release(
+            "Glow Tape",
+            "Second Light",
+            &upload("Glow Tape - Second Light", "Fan", 2400),
+            Match::Official
+        ));
     }
 
     #[test]

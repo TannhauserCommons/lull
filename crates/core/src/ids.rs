@@ -81,6 +81,17 @@ pub fn normalize_artist(s: &str) -> String {
     n.strip_prefix("the ").map(str::to_owned).unwrap_or(n)
 }
 
+/// The owner a compilation is filed under ("Various Artists", "VA"), not a person or a band.
+pub fn is_various(artist: &str) -> bool {
+    matches!(normalize_artist(artist).as_str(), "various artists" | "various" | "va")
+}
+
+/// A name that stands for no artist: a compilation's owner or a file's missing credit. It never
+/// becomes taste, a seed or a liked artist; the songs' real artists do.
+pub fn is_pseudo_artist(artist: &str) -> bool {
+    is_various(artist) || matches!(normalize_artist(artist).as_str(), "unknown artist" | "unknown" | "")
+}
+
 /// Words that make a bracket or a " - " suffix name a version of the same song, not another
 /// song: "(feat. X)", "- 2011 Remaster", "(Radio Edit)", "[Live]", "(Album Version)".
 const VERSION_WORDS: &[&str] = &[

@@ -314,22 +314,21 @@ impl Youtube for Service {
     }
 
     async fn available(&self, track: &Track) -> Result<Option<bool>> {
-        let settings = self.settings();
-        if settings.mode == Mode::Off || self.backed_off().is_err() {
+        let Some(turn) = self.availability_turn().await? else {
             return Ok(None);
-        }
-        let _one = self
-            .availability
-            .acquire()
+        };
+        let found = search::available(self, track, turn.matching)
             .await
-            .map_err(|_| Error::internal("youtube availability checks closed"))?;
-        // Behind everything the listener waits on: a check starts only once no other yt-dlp
-        // run is in flight (a play, a preload, a search), however long that takes.
-        while self.running.load(Ordering::SeqCst) > self.checking.load(Ordering::SeqCst) {
-            tokio::time::sleep(Duration::from_millis(250)).await;
-        }
-        let _counted = Counted::on(&self.checking);
-        let found = search::available(self, track, settings.matching)
+            .map_err(|p| self.failed(p))?;
+        self.succeeded();
+        Ok(Some(found))
+    }
+
+    async fn album_available(&self, artist: &str, album: &str) -> Result<Option<bool>> {
+        let Some(turn) = self.availability_turn().await? else {
+            return Ok(None);
+        };
+        let found = search::album_available(self, artist, album, turn.matching)
             .await
             .map_err(|p| self.failed(p))?;
         self.succeeded();
@@ -372,9 +371,39 @@ impl Youtube for Service {
     }
 }
 
+/// The right to run one availability check (`Service::availability_turn`), held while it runs.
+struct Turn<'a> {
+    _one: tokio::sync::SemaphorePermit<'a>,
+    _counted: Counted<'a>,
+    matching: lull_core::youtube::Match,
+}
+
 impl Service {
     pub fn settings(&self) -> Settings {
         self.settings.read().map(|s| s.clone()).unwrap_or_default()
+    }
+
+    /// Waits for a turn at an availability check, which is one at a time and behind everything
+    /// the listener waits on: it starts only once no other yt-dlp run is in flight (a play, a
+    /// preload, a search), however long that takes. `None` when YouTube is off or backed off.
+    async fn availability_turn(&self) -> Result<Option<Turn<'_>>> {
+        let settings = self.settings();
+        if settings.mode == Mode::Off || self.backed_off().is_err() {
+            return Ok(None);
+        }
+        let one = self
+            .availability
+            .acquire()
+            .await
+            .map_err(|_| Error::internal("youtube availability checks closed"))?;
+        while self.running.load(Ordering::SeqCst) > self.checking.load(Ordering::SeqCst) {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+        Ok(Some(Turn {
+            _one: one,
+            _counted: Counted::on(&self.checking),
+            matching: settings.matching,
+        }))
     }
 
     /// A song cut from a full-album upload (`cut`): the upload's AAC audio fetched once for all its

@@ -159,6 +159,13 @@ pub trait Youtube: Send + Sync {
         Ok(None)
     }
 
+    /// Whether YouTube has a release (a full-album upload, or the single's own song), by its
+    /// artist and title, for new releases' availability. Paced and remembered like `available`.
+    /// `None` when YouTube is off or backed off.
+    async fn album_available(&self, _artist: &str, _album: &str) -> Result<Option<bool>> {
+        Ok(None)
+    }
+
     /// Writes the copy's audio to `dest` front to back, the native stream with no transcoding,
     /// and returns once all of it is there. Dropping the future stops the download.
     async fn download(&self, source: &SourceRef, dest: &Path) -> Result<()>;

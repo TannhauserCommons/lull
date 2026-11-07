@@ -1,6 +1,6 @@
 //! Jellyfin audio items as lull tracks: content-derived ids, file facts and quality.
 
-use lull_core::ids::{AlbumId, ArtistId, TrackId, normalize_artist};
+use lull_core::ids::{AlbumId, ArtistId, TrackId, is_various};
 use lull_core::model::{FileFacts, Track};
 pub use lull_core::quality::is_lossless;
 use serde::{Deserialize, Serialize};
@@ -144,10 +144,6 @@ pub fn artists(album_artist: Option<&str>, track_artists: &[String]) -> (String,
         _ => track_artist.or(album_artist).unwrap_or("Unknown Artist"),
     };
     (credited.to_owned(), album_artist.unwrap_or(credited).to_owned())
-}
-
-fn is_various(artist: &str) -> bool {
-    matches!(normalize_artist(artist).as_str(), "various artists" | "various" | "va")
 }
 
 fn file_facts(item: &Item) -> Option<FileFacts> {

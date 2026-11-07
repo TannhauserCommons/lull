@@ -59,27 +59,8 @@ pub async fn available(svc: &Service, track: &Track, strictness: Match) -> Resul
     if let Some(m) = known {
         return Ok(m.is_some());
     }
-    let (id, how) = (track.id.as_str().to_owned(), strictness_key(strictness));
-    let checked: Option<bool> = {
-        let (id, how) = (id.clone(), how);
-        svc.ctx
-            .db
-            .call(move |c| {
-                let row: Option<(bool, i64)> = c
-                    .query_row(
-                        "SELECT available, checked_at FROM youtube_available WHERE track_id = ?1 AND strictness = ?2",
-                        params![id, how],
-                        |r| Ok((r.get(0)?, r.get(1)?)),
-                    )
-                    .optional()?;
-                let now = lull_core::now();
-                Ok(row
-                    .and_then(|(found, at)| (now - at < if found { FOUND_FOR } else { MISSING_FOR }).then_some(found)))
-            })
-            .await
-            .map_err(|e| Problem::Other(e.to_string()))?
-    };
-    if let Some(found) = checked {
+    let key = track.id.as_str().to_owned();
+    if let Some(found) = checked(svc, &key, strictness).await? {
         return Ok(found);
     }
     let wanted = Wanted::of(track);
@@ -90,6 +71,50 @@ pub async fn available(svc: &Service, track: &Track, strictness: Match) -> Resul
     )
     .await?;
     let found = !matching::ranked(&wanted, &videos, strictness).is_empty();
+    remember_availability(svc, key, strictness, found).await?;
+    Ok(found)
+}
+
+/// Whether YouTube has a release, for new releases (`Youtube::album_available`): a remembered
+/// answer at once, else one flat video search for "artist title", where an upload that is by the
+/// artist and names the release counts (`matching::holds_release`), however long it is: a
+/// full-album upload, or the single's own song. Remembered like a song's, under the release's
+/// own key; a release that gains an upload is found when its "none" has aged a day.
+pub async fn album_available(svc: &Service, artist: &str, album: &str, strictness: Match) -> Result<bool, Problem> {
+    let key = format!("album:{}|{}", loose_title(artist), loose_title(album));
+    if let Some(found) = checked(svc, &key, strictness).await? {
+        return Ok(found);
+    }
+    let videos = flat(svc, &format!("ytsearch{VIDEO_RESULTS}:{artist} {album}"), VIDEO_RESULTS).await?;
+    let found = videos
+        .iter()
+        .any(|c| matching::holds_release(artist, album, c, strictness));
+    remember_availability(svc, key, strictness, found).await?;
+    Ok(found)
+}
+
+/// A fresh remembered availability answer for the key (a track id, or a release's key).
+async fn checked(svc: &Service, key: &str, strictness: Match) -> Result<Option<bool>, Problem> {
+    let (key, how) = (key.to_owned(), strictness_key(strictness));
+    svc.ctx
+        .db
+        .call(move |c| {
+            let row: Option<(bool, i64)> = c
+                .query_row(
+                    "SELECT available, checked_at FROM youtube_available WHERE track_id = ?1 AND strictness = ?2",
+                    params![key, how],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .optional()?;
+            let now = lull_core::now();
+            Ok(row.and_then(|(found, at)| (now - at < if found { FOUND_FOR } else { MISSING_FOR }).then_some(found)))
+        })
+        .await
+        .map_err(|e| Problem::Other(e.to_string()))
+}
+
+async fn remember_availability(svc: &Service, key: String, strictness: Match, found: bool) -> Result<(), Problem> {
+    let how = strictness_key(strictness);
     svc.ctx
         .db
         .call(move |c| {
@@ -97,14 +122,13 @@ pub async fn available(svc: &Service, track: &Track, strictness: Match) -> Resul
             c.execute(
                 "INSERT INTO youtube_available (track_id, strictness, available, checked_at) VALUES (?1, ?2, ?3, ?4)
                  ON CONFLICT(track_id, strictness) DO UPDATE SET available = excluded.available, checked_at = excluded.checked_at",
-                params![id, how, found, now],
+                params![key, how, found, now],
             )?;
             c.execute("DELETE FROM youtube_available WHERE checked_at < ?1", [now - FOUND_FOR])?;
             Ok(())
         })
         .await
-        .map_err(|e| Problem::Other(e.to_string()))?;
-    Ok(found)
+        .map_err(|e| Problem::Other(e.to_string()))
 }
 
 /// The remembered answer for the song under this strictness: `Some(None)` = nothing matched.
