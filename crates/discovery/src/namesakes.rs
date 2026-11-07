@@ -17,12 +17,14 @@ use serde::{Deserialize, Serialize};
 use crate::Service;
 use crate::art::{self, Pictured};
 use crate::artist::identity::resources;
+use crate::artist::identity::{Evidence, IdRow, Ids as LegacyIds, Source as IdSource};
 use crate::open::ArtistIds;
 use crate::search::merge::{ArtistHit, Merged, SongHit};
 use crate::sources::ArtistSource;
 use crate::sources::musicbrainz::Namesake;
 use crate::store;
 use crate::taste::{Placed, Signals};
+use lull_core::model::Track;
 
 pub fn on(svc: &Service) -> bool {
     svc.ctx.config.flags.on(&flags::NAMESAKES)
@@ -358,6 +360,57 @@ fn held_ids(c: &Connection) -> Result<Vec<(String, Vec<Anchor>)>> {
         }
     }
     Ok(out)
+}
+
+/// The exact ids radio and pages use for `artist` (ADR-0035): its own anchors, so a namesake never
+/// borrows another's; for an artist with none, what `artist::identity` holds for its id.
+pub async fn artist_ids(svc: &Service, artist: &ArtistId) -> Result<LegacyIds> {
+    let at = artist.clone();
+    let ids = svc.ctx.db.call(move |c| own_ids(c, &at)).await?;
+    if ids.is_empty() {
+        return crate::artist::identity::ids(svc, artist).await;
+    }
+    Ok(ids)
+}
+
+/// An artist's exact ids from its own anchors (of the artist an id from before is now).
+fn own_ids(c: &Connection, artist: &ArtistId) -> Result<LegacyIds> {
+    let now = identity::now_is(c, artist)?.unwrap_or_else(|| artist.clone());
+    let mut ids = LegacyIds::default();
+    for anchor in identity::anchors(c, &now)? {
+        let (source, id) = match anchor {
+            Anchor::Mbid(m) => (IdSource::Musicbrainz, m),
+            Anchor::Deezer(d) => (IdSource::Deezer, d.to_string()),
+            Anchor::Itunes(i) => (IdSource::Itunes, i.to_string()),
+            _ => continue,
+        };
+        if ids.get(source).is_none() {
+            ids.set(IdRow {
+                source,
+                id,
+                evidence: Evidence::Searched,
+            });
+        }
+    }
+    Ok(ids)
+}
+
+/// The artist a song of the listener's is placed on (by the song and its album); None when
+/// several artists of its name fit.
+pub async fn song_artist(svc: &Service, track: &Track) -> Result<Option<ArtistId>> {
+    let (name, anchors) = (
+        track.artist.clone(),
+        vec![Anchor::Track(track.id.clone()), Anchor::Album(track.album_id.clone())],
+    );
+    svc.ctx
+        .db
+        .call(move |c| {
+            Ok(match identity::artist_of(c, &name, &anchors)? {
+                Place::One(a) => Some(a),
+                Place::Several(_) => None,
+            })
+        })
+        .await
 }
 
 /// What an artist id opens with the switch on.

@@ -342,6 +342,15 @@ pub fn now_is(conn: &Connection, id: &ArtistId) -> Result<Option<ArtistId>> {
     })
 }
 
+/// The names' ids an artist has been called by (none for an artist this module doesn't hold).
+pub fn names_of(conn: &Connection, artist: &ArtistId) -> Result<Vec<ArtistId>> {
+    let mut stmt = conn.prepare_cached("SELECT name_id FROM identity_called WHERE artist_id = ?1")?;
+    let ids: Vec<String> = stmt
+        .query_map([alias(conn, artist)?.as_str()], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(ids.into_iter().map(ArtistId).collect())
+}
+
 /// Whether `artist` is called `name`: how a follow of an artist's own id checks the name it comes with.
 pub fn is_called(conn: &Connection, artist: &ArtistId, name: &str) -> Result<bool> {
     Ok(conn

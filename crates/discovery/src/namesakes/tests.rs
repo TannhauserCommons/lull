@@ -328,3 +328,31 @@ fn the_ids_lull_already_holds_become_anchors() -> R {
     );
     Ok(())
 }
+
+/// ADR-0035 in radio: each Nirvana's radio asks by its own ids, never the other's.
+#[test]
+fn each_namesakes_radio_uses_its_own_ids() -> R {
+    let c = hub()?;
+    identity::place(
+        &c,
+        "Nirvana",
+        &[
+            Anchor::Mbid("5b11f4ce-a62d-471e-81fc-a69a8278c7da".into()),
+            Anchor::Deezer(415),
+        ],
+        Came::Credit,
+    )?;
+    identity::place(
+        &c,
+        "Nirvana",
+        &[Anchor::Mbid("9282c8b4-ca0b-4c6b-b7e3-4f7762dfc4d6".into())],
+        Came::Credit,
+    )?;
+    let us = own_ids(&c, &ArtistId::own("Nirvana", "mb:5b11f4ce-a62d-471e-81fc-a69a8278c7da"))?;
+    let uk = own_ids(&c, &ArtistId::own("Nirvana", "mb:9282c8b4-ca0b-4c6b-b7e3-4f7762dfc4d6"))?;
+    assert_eq!(us.mbid(), Some("5b11f4ce-a62d-471e-81fc-a69a8278c7da"));
+    assert_eq!(us.deezer(), Some(415));
+    assert_eq!(uk.mbid(), Some("9282c8b4-ca0b-4c6b-b7e3-4f7762dfc4d6"));
+    assert_eq!(uk.deezer(), None, "never the other Nirvana's Deezer id");
+    Ok(())
+}

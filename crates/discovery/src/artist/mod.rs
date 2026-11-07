@@ -129,7 +129,13 @@ pub async fn page(State(svc): State<Arc<Service>>, Path(id): Path<String>) -> Re
     // the deadline are kept for the next view.
     let ids = {
         let (s, id) = (svc.clone(), id.clone());
-        late.run(&["artist"], async move { identity::ids(&s, &id).await })
+        late.run(&["artist"], async move {
+            // ADR-0035: the artist's own anchors, never another's of its name.
+            match crate::namesakes::on(&s) {
+                true => crate::namesakes::artist_ids(&s, &id).await,
+                false => identity::ids(&s, &id).await,
+            }
+        })
     };
     let ids = match wait(until, ids).await {
         Ok(ids) => ids,

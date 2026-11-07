@@ -159,7 +159,11 @@ async fn known(svc: &Service, seed: Seed) -> Result<Known> {
                 .artist_ref(ArtistId(seed.id.clone()))
                 .await?
                 .ok_or_else(|| Error::NotFound(format!("Artist {} is unknown to lull.", seed.id)))?;
-            let ids = credited_ids(svc, &artist.name).await;
+            // ADR-0035: an artist's own ids, never those of others of its name.
+            let ids = match crate::namesakes::on(svc) {
+                true => crate::namesakes::artist_ids(svc, &artist.id).await?,
+                false => credited_ids(svc, &artist.name).await,
+            };
             let (songs, mut tags) = match ids.mbid() {
                 Some(_) => (Vec::new(), Vec::new()),
                 None => listener_songs(svc, &artist.id).await?,
@@ -181,9 +185,17 @@ async fn known(svc: &Service, seed: Seed) -> Result<Known> {
                 .track(TrackId(seed.id.clone()))
                 .await?
                 .ok_or_else(|| Error::NotFound(format!("Track {} is unknown to lull.", seed.id)))?;
+            let placed = match crate::namesakes::on(svc) {
+                true => crate::namesakes::song_artist(svc, &track).await?,
+                false => None,
+            };
+            let ids = match placed {
+                Some(artist) => crate::namesakes::artist_ids(svc, &artist).await?,
+                None => credited_ids(svc, &track.artist).await,
+            };
             Ok(Known {
                 kind: seed.kind,
-                ids: credited_ids(svc, &track.artist).await,
+                ids,
                 name: track.artist,
                 title: Some(track.title),
                 tags: track.tags,
@@ -216,11 +228,26 @@ async fn credited_ids(svc: &Service, credit: &str) -> Ids {
 /// The titles of the listener's songs credited to the artist, and their tags.
 async fn listener_songs(svc: &Service, id: &ArtistId) -> Result<(Vec<String>, Vec<String>)> {
     let (mut titles, mut tags) = (Vec::new(), Vec::new());
+    let namesakes = crate::namesakes::on(svc);
+    // Only songs credited by a name the artist is called by can be its (ADR-0035).
+    let names = match namesakes {
+        true => {
+            let at = id.clone();
+            let mut names = svc.ctx.db.call(move |c| lull_core::identity::names_of(c, &at)).await?;
+            names.push(id.clone());
+            names
+        }
+        false => vec![id.clone()],
+    };
     for (track, artist) in svc.store.listener_songs().await? {
-        if ArtistId::of(&artist) != *id {
+        if !names.contains(&ArtistId::of(&artist)) {
             continue;
         }
         if let Some(t) = svc.store.track(track).await? {
+            // ADR-0035: a song counts for the artist it is placed on, never for a namesake.
+            if namesakes && crate::namesakes::song_artist(svc, &t).await?.as_ref() != Some(id) {
+                continue;
+            }
             titles.push(t.title);
             tags.extend(t.tags);
         }
