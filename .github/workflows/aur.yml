@@ -1,8 +1,8 @@
 name: aur
 # lull-bin, lull in the AUR (docs/context/desktop.md, The AUR): the PKGBUILD for a release (scripts/aur-pkgbuild.sh),
-# built with makepkg in Arch's own container on Arch's WebKitGTK, checked by namcap, installed with pacman and started
-# under Xvfb until its window draws; the aarch64 sources are downloaded and checked too (checksums, minisign). On a
-# release it is then pushed to the AUR, which needs the AUR_SSH_KEY secret (from Bitwarden's lull/AUR_SSH_KEY): until
+# built with makepkg in Arch's own container on Arch's WebKitGTK, checked by namcap, installed with pacman, started under
+# Xvfb until its window draws, and run as its own hub with its slskd (packaging/aur/check-installed.sh); the aarch64
+# sources are downloaded and checked too (checksums, minisign). On a release it is then pushed to the AUR, which needs the AUR_SSH_KEY secret (from Bitwarden's lull/AUR_SSH_KEY): until
 # that exists the push says so and stops there, as share.yml does without Cloudflare's.
 on:
   workflow_dispatch:
@@ -46,7 +46,7 @@ jobs:
     # Arch's own image, dated; pacman -Syu brings it current, as an Arch install is.
     container: archlinux:base-devel-20261018.0.612668
     steps:
-      - run: pacman -Syu --noconfirm --needed git nodejs minisign namcap xorg-server-xvfb xorg-xauth imagemagick dbus
+      - run: pacman -Syu --noconfirm --needed git nodejs minisign namcap xorg-server-xvfb xorg-xauth imagemagick dbus procps-ng
       - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref }}
@@ -89,25 +89,18 @@ jobs:
           ! grep -E ' E: | W: .*(Referenced library|detected and not included|implicitly satisfied|may not be needed)' namcap.txt \
             | grep -v "may not be needed ('libayatana-appindicator')"
       - run: pacman -U --noconfirm aur/lull-bin-*.pkg.tar.zst
-      - name: lull starts and draws, on Arch's WebKitGTK
+      - name: lull starts, draws, and runs its own hub and slskd, on Arch
         run: |
-          useradd -m listener
-          su listener -c 'xvfb-run -a -s "-screen 0 1440x900x24" dbus-run-session -- sh -c "
-            lull & app=\$!
-            log=\$HOME/.local/share/io.github.tannhausercommons.lull/logs/webview.log
-            for i in \$(seq 1 60); do grep -q started \$log 2>/dev/null && break; sleep 1; done
-            sleep 8
-            kill -0 \$app || { echo lull exited; exit 1; }
-            sd=\$(magick x:root -colorspace gray -format %[fx:standard_deviation] info:)
-            echo \"screen: grey standard deviation \$sd\"; cat \$log
-            kill \$app
-            awk -v sd=\$sd \"BEGIN { exit !(sd > 0.05) }\" || { echo the window is blank; exit 1; }
-          "'
           test "$(readlink -f /usr/bin/lull)" = /usr/lib/lull/lull
           for tool in slskd yt-dlp deno; do test -x /usr/lib/lull/$tool; done
+          useradd -m listener
+          su listener -c 'xvfb-run -a -s "-screen 0 1440x900x24" dbus-run-session -- sh packaging/aur/check-installed.sh'
       - uses: actions/upload-artifact@v4
         with:
           name: aur-lull-bin
+          # .SRCINFO is a hidden file, which the upload leaves out unless asked: the AUR refuses a push without it.
+          include-hidden-files: true
+          if-no-files-found: error
           path: |
             aur/PKGBUILD
             aur/.SRCINFO
