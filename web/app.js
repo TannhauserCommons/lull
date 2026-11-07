@@ -771,11 +771,18 @@
       if (res && res.entities && Object.keys(res.entities.tracks || {}).length) repaintCovers();
     }, function () { batch.forEach(function (id) { resolveAsked.delete(id); }); });   // asked again when next drawn
   }
-  /* the route and the player bar again, at most twice a second, once entities brought covers */
+  /* the route, the player bar and the queue panel again, at most twice a second, once entities brought covers or moved a
+     song to another album (M.onMoved: any merge, so a queued song's album can't stay as the first answer drew it) */
   var repaintTimer = null;
+  M.onMoved = function (ids) {
+    if (ps.queue.some(function (q) { var t = M.track(q.trackId); return ids[q.trackId] || t && ids[t.albumId]; })) repaintCovers();
+  };
   function repaintCovers() {
     if (repaintTimer) return;
-    repaintTimer = setTimeout(function () { repaintTimer = null; App.refresh(); renderBar(); }, 500);
+    repaintTimer = setTimeout(function () {
+      repaintTimer = null; App.refresh(); renderBar();
+      if (state.ctxTab === 'queue' || state.ctxTab === 'lyrics') renderCtx();
+    }, 500);
   }
   ui.cover = function (item, size, opts) {
     opts = opts || {}; size = size == null ? 48 : size;

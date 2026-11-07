@@ -34,13 +34,17 @@ window.LullData = (function () {
   function values(map) { return Object.keys(map).map(function (k) { return map[k]; }); }
 
   /* ---------- entities: merged in from every response, normalised to the shapes the screens read ---------- */
+  /* a merge that moves a song to another album, or gives an album a cover, hands M.onMoved those ids (songs' and albums')
+     once it is whole, so whatever shows the song draws it again, whichever response or event brought the change */
   M.absorb = function (e) {
     if (!e) return;
+    var moved = {};
     each(e.artists, function (a) { artists[a.id] = Object.assign(artists[a.id] || {}, a, { tags: a.tags || [] }); });
-    each(e.albums, function (a) { albums[a.id] = normAlbum(Object.assign(albums[a.id] || {}, a)); });
-    each(e.tracks, function (t) { tracks[t.id] = normTrack(Object.assign(tracks[t.id] || {}, t)); });
+    each(e.albums, function (a) { var o = albums[a.id]; if (!o || a.art && o.art !== a.art) moved[a.id] = 1; albums[a.id] = normAlbum(Object.assign(o || {}, a)); });
+    each(e.tracks, function (t) { var o = tracks[t.id]; if (o && t.albumId && o.albumId !== t.albumId) moved[t.id] = 1; tracks[t.id] = normTrack(Object.assign(o || {}, t)); });
     each(e.tags, function (t) { tags[t.id] = Object.assign(tags[t.id] || {}, t); });
     each(e.albums, function (a) { albumFacts(albums[a.id]); });
+    if (M.onMoved && Object.keys(moved).length) M.onMoved(moved);
   };
   function each(map, fn) { if (map) Object.keys(map).forEach(function (k) { fn(map[k]); }); }
   function normTrack(t) {

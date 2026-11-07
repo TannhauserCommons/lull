@@ -623,8 +623,10 @@ Copies that don't line up (other masters, edits, loops) never switch mid-song: S
 
 `ui.cover` (and `ui.mosaic`) ask about every song they draw that isn't saved and has no pictured album: once a
 session, batched (`POST /api/catalog/resolve`, 200 at most). The answer's entities, and `catalog.tracks` events for
-songs the hub resolves later, are absorbed; covers then repaint (route and player bar, at most twice a second). So a
-song from any path, an import's line or a Last.fm-only result, shows the catalog's spelling and cover without a reload.
+songs the hub resolves later, are absorbed; covers then repaint (route, player bar and queue panel, at most twice a
+second). So a song from any path, an import's line or a Last.fm-only result, shows the catalog's spelling and cover
+without a reload. A merge that moves a song to another album, or gives an album a cover, tells `M.onMoved`
+(`data.js` `absorb`); when the song is playing or queued, the same repaint runs, whichever response brought it.
 
 ## Outside playlists
 
