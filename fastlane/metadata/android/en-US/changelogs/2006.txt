@@ -1,0 +1,6 @@
+* lull's default design is new: clear violet plastic in a lit sky, chrome keys, and a player bar whose disc turns with the song
+* Skydeck, Starlight, Petal and Glasshouse are rebuilt, each with its own cursor and surprises
+* Shared links show as cards in Discord and other chat apps, with the cover
+* Settings › App › Graphics, and a lighter look where a computer draws without its graphics card
+* Songs played from Home show their cover straight away
+* Songs start sooner
