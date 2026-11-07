@@ -303,7 +303,15 @@ async fn a_private_device_leaves_no_trace_while_the_others_still_do() -> Result<
     .await?;
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(plays().await?, 1, "nothing was recorded");
-    assert!(events.try_recv().is_err(), "nothing was published");
+    // No play event went out. The bus also carries what the crates publish by themselves as they start, such as the
+    // catalog's status once Deezer answers (search/catalog.rs), at a moment the network decides.
+    let mut about_plays = Vec::new();
+    while let Ok(e) = events.try_recv() {
+        if e.topic.starts_with("play.") || e.topic == "scrobble" || e.topic.starts_with("lastfm.") {
+            about_plays.push(e.topic);
+        }
+    }
+    assert!(about_plays.is_empty(), "a private play was published: {about_plays:?}");
 
     // The laptop is unaffected, and so is the agents' device once it switches back.
     let (status, ..) = call(
@@ -633,7 +641,15 @@ async fn enqueue_hands_the_songs_to_the_device_named_and_only_enqueue_carries_so
     let too_many: Vec<String> = (0..501).map(|i| format!("t-{i:016x}")).collect();
     let refused = call(&hub, command(json!({ "action": "enqueue", "tracks": too_many }))?).await?;
     assert_eq!(refused.0, StatusCode::BAD_REQUEST);
-    assert!(events.try_recv().is_err(), "nothing refused was sent");
+    // Nothing refused reaches the phone. The bus also carries what the crates publish by themselves as they start,
+    // such as the catalog's status once Deezer answers (search/catalog.rs), at a moment the network decides.
+    let mut commands = Vec::new();
+    while let Ok(e) = events.try_recv() {
+        if e.topic == "device.command" {
+            commands.push(e.data);
+        }
+    }
+    assert!(commands.is_empty(), "a refused command was sent: {commands:?}");
 
     let _ = std::fs::remove_dir_all(dir);
     Ok(())
