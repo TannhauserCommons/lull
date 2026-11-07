@@ -33,6 +33,12 @@ impl ArtistId {
     pub fn of(artist: &str) -> Self {
         ArtistId(format!("ar-{:016x}", hash(&[&normalize_artist(artist)])))
     }
+
+    /// An artist's own id, for one of several artists sharing a name (ADR-0035): the name and the
+    /// first anchor it was known by ("mb:<MBID>"), so it never equals the name's id.
+    pub fn own(artist: &str, anchor: &str) -> Self {
+        ArtistId(format!("ar-{:016x}", hash(&[&normalize_artist(artist), anchor])))
+    }
 }
 
 impl AlbumId {

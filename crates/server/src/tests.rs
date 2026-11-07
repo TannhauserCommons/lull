@@ -19,6 +19,11 @@ const SETUP_CODE: &str = "test-setup";
 
 /// A hub on a fresh data directory, with an slskd nobody answers at.
 async fn test_hub() -> Result<(Arc<Hub>, PathBuf), BoxError> {
+    test_hub_with(&[]).await
+}
+
+/// `test_hub`, with more of the hub's environment (`LULL_FLAGS`).
+async fn test_hub_with(more: &[(&str, &str)]) -> Result<(Arc<Hub>, PathBuf), BoxError> {
     let mut id = [0u8; 8];
     getrandom::fill(&mut id)?;
     let dir = std::env::temp_dir().join(format!("lull-hub-test-{}", u64::from_le_bytes(id)));
@@ -33,6 +38,7 @@ async fn test_hub() -> Result<(Arc<Hub>, PathBuf), BoxError> {
         ("LULL_SETUP_CODE", SETUP_CODE.into()),
     ]
     .into_iter()
+    .chain(more.iter().map(|(k, v)| (*k, (*v).to_owned())))
     .map(|(k, v)| (k.to_owned(), v))
     .collect();
     let db = Db::open(&dir.join("data"))?;
@@ -678,5 +684,38 @@ async fn the_built_in_packs_are_served_as_sound_and_json_and_the_sounds_as_they_
         }
     }
     let _ = std::fs::remove_dir_all(dir);
+    Ok(())
+}
+
+/// ADR-0035's tables exist only while its switch is on, so with it off the database is what it was.
+#[tokio::test]
+async fn the_namesakes_tables_exist_only_with_their_switch_on() -> Result<(), BoxError> {
+    async fn tables(dir: &std::path::Path) -> Result<Vec<String>, BoxError> {
+        let db = Db::open(&dir.join("data"))?;
+        Ok(db
+            .call(|c| {
+                let mut stmt = c.prepare(
+                    "SELECT name FROM sqlite_master WHERE name LIKE 'identity_%' AND type = 'table' ORDER BY name",
+                )?;
+                let names = stmt.query_map([], |r| r.get(0))?.collect::<Result<Vec<String>, _>>()?;
+                Ok(names)
+            })
+            .await?)
+    }
+    let (off, dir) = test_hub().await?;
+    assert!(tables(&dir).await?.is_empty(), "off: no new tables");
+    off.stop().await;
+    let (on, dir) = test_hub_with(&[("LULL_FLAGS", "namesakes")]).await?;
+    assert_eq!(
+        tables(&dir).await?,
+        [
+            "identity_aliases",
+            "identity_anchors",
+            "identity_artists",
+            "identity_called",
+            "identity_names"
+        ]
+    );
+    on.stop().await;
     Ok(())
 }

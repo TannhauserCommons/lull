@@ -35,8 +35,16 @@ pub const KEEP_RUNNING: Flag = Flag {
     area: "apps",
 };
 
+/// Namesakes are told apart by anchors, and a name shared by several artists is a page of them (ADR-0035).
+pub const NAMESAKES: Flag = Flag {
+    name: "namesakes",
+    about: "Artists sharing a name are told apart by their ids and works; a shared name opens a page of them",
+    owner: "discovery",
+    area: "search",
+};
+
 /// Every switch there is. Empty while nothing is unfinished.
-pub const FLAGS: &[&Flag] = &[&HUB_SELF_UPDATE, &KEEP_RUNNING];
+pub const FLAGS: &[&Flag] = &[&HUB_SELF_UPDATE, &KEEP_RUNNING, &NAMESAKES];
 
 /// The switches that are on.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

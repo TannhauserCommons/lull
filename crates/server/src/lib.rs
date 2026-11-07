@@ -159,6 +159,10 @@ async fn wire(ctx: &Ctx) -> Result<Router, Error> {
     ] {
         ctx.db.migrate(m)?;
     }
+    // ADR-0035's tables exist only while its switch is on, so with it off the database is what it was.
+    if ctx.config.flags.on(&lull_core::flags::NAMESAKES) {
+        ctx.db.migrate(&lull_core::identity::MIGRATIONS)?;
+    }
 
     let youtube = lull_youtube::start(ctx).await?;
     let soulseek = lull_soulseek::start(ctx, youtube.clone()).await?;
