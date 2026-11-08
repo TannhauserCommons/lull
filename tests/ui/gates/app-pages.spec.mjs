@@ -207,3 +207,24 @@ test('the mini player windows carry the player\'s state and its words, for a the
     expect(await read(), status).toEqual({ status, text: words, prop: JSON.stringify(words) });
   }
 });
+
+// The mini player says what a button press changed (the note and the announcer); main's first snapshot is the player as
+// it already was, so a window that has just opened says nothing.
+test('the mini player says what changed, never the player it opened on', async ({ page }) => {
+  await openWrapper(page, 'view=mini&design=lull&theme=day&opaque=1', null);
+  await page.waitForSelector('[data-dk-player]');
+  const snap = (volume) => ({ track: { id: 't', title: 'Song', artist: 'Artist' }, playing: true, liked: false, pos: 10, duration: 100,
+    durationKnown: true, buffered: [], received: 1, shuffle: false, repeat: 'off', volume, status: 'playing', statusText: '' });
+  // everything the announcer says, in order (it speaks a moment after the note shows)
+  await page.evaluate(() => {
+    const heard = window.__announced = [];
+    new MutationObserver(() => { const t = document.getElementById('dk-announcer')?.textContent; if (t) heard.push(t); })
+      .observe(document.body, { subtree: true, childList: true, characterData: true });
+  });
+  const notes = () => page.evaluate(() => [...document.querySelectorAll('.dk-mini__note.is-on')].map((n) => n.textContent));
+  await page.evaluate((s) => window.__bridge.fire('player', s), snap(.7));
+  expect(await notes(), 'the player as it was when the window opened').toEqual([]);
+  await page.evaluate((s) => window.__bridge.fire('player', s), snap(.8));
+  expect(await notes(), 'a volume press').toEqual(['volume 80%']);
+  await expect.poll(() => page.evaluate(() => window.__announced)).toEqual(['volume 80%']);
+});

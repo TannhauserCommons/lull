@@ -671,8 +671,10 @@
     });
     announce(text);
   }
-  /* a new snapshot from main: repaint, and say what the last button press changed */
+  /* a new snapshot from main: repaint, and say what the last button press changed. Until main's first snapshot, S is
+     the placeholder above: that first one is the player as it already was, not a change to say. */
   var REPEAT_TEXT = { off: 'repeat off', all: 'repeat all', one: 'repeat one' };
+  var heardMain = false;
   function receive(scope, next, first) {
     var prev = S; S = Object.assign({}, next, { art: prev.art });   // the cover comes on its own ('player-art')
     var key = function (s) { return JSON.stringify([s.track, s.received < 1]); };
@@ -680,6 +682,7 @@
     paintPlayer(scope);
     if (window.Live && next.live) Live.feed(next.live);   // the theme's live values, as the main window read them
     if (first) return;
+    if (!heardMain) { heardMain = true; return; }
     if (prev.volume !== next.volume) note(scope, 'volume ' + Math.round(next.volume * 100) + '%');
     if (prev.shuffle !== next.shuffle) note(scope, next.shuffle ? 'shuffle on' : 'shuffle off');
     if (prev.repeat !== next.repeat) note(scope, REPEAT_TEXT[next.repeat] || 'repeat');
