@@ -5,7 +5,7 @@
   "description": "lull's share links on Cloudflare: card pages, covers that never break, App Links (docs/adr/0034)",
   "type": "module",
   "scripts": {
-    "test": "node --test \"test/*.test.mjs\" ../tests/web/open-page.test.mjs",
+    "test": "node --test --test-timeout=60000 \"test/*.test.mjs\" ../tests/web/open-page.test.mjs",
     "deploy": "wrangler deploy"
   },
   "devDependencies": {

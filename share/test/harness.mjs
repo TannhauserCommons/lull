@@ -38,11 +38,20 @@ export async function start(net) {
     }],
   }));
   await mf.ready;
+  const answers = [];
   return {
     /** `country` is where Cloudflare places the client (request.cf.country). */
-    get: (path, { ip = '192.0.2.1', method = 'GET', country = 'US' } = {}) =>
-      mf.dispatchFetch(HOST + path, { method, headers: { 'cf-connecting-ip': ip }, cf: { country }, redirect: 'manual' }),
-    dispose: () => mf.dispose(),
+    async get(path, { ip = '192.0.2.1', method = 'GET', country = 'US' } = {}) {
+      const res = await mf.dispatchFetch(HOST + path, { method, headers: { 'cf-connecting-ip': ip }, cf: { country }, redirect: 'manual' });
+      answers.push(res);
+      return res;
+    },
+    /** A body a test left unread (one it checked only the headers of) is let go first: workerd can't stop while it
+        still writes one, and a large one (lull's 145 KB card) held disposal for 8 s, or for good. */
+    async dispose() {
+      await Promise.all(answers.filter((r) => !r.bodyUsed).map((r) => r.body?.cancel()));
+      await mf.dispose();
+    },
   };
 }
 
